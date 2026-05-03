@@ -50,6 +50,7 @@ type Model struct {
 	input    string
 	status   string
 	moveMode bool
+	helpOpen bool
 
 	taskScreen      taskScreenMode
 	taskID          int64
@@ -100,7 +101,7 @@ const (
 	taskFieldDescription
 )
 
-var viewNames = []string{"Board", "Table", "Graph", "Config"}
+var viewNames = []string{"BOARD", "TABLE", "GRAPH", "CONFIG"}
 
 func NewModel(ctx context.Context, project domain.ProjectContext, repos Repositories, theme config.Theme, counter token.Counter) (Model, error) {
 	if counter == nil {
@@ -135,6 +136,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleEditorFinished(msg)
 		return m, nil
 	case tea.KeyMsg:
+		if m.helpOpen {
+			switch msg.String() {
+			case "ctrl+c":
+				return m, tea.Quit
+			case "?", "esc", "q":
+				m.helpOpen = false
+			}
+			return m, nil
+		}
+		if msg.String() == "?" && m.mode == modeNormal {
+			m.helpOpen = true
+			return m, nil
+		}
 		if m.mode != modeNormal {
 			return m.updateInput(msg)
 		}
@@ -167,13 +181,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
+	if m.helpOpen {
+		return strings.Join([]string{m.renderHeader(), m.renderHelp(), m.renderHelpFooter()}, "\n")
+	}
 	if m.mode != modeNormal && !m.isEmbeddedCommentInput() {
 		return strings.Join([]string{m.renderHeader(), m.renderInput(), m.renderCurrentView(), m.renderFooter()}, "\n")
 	}
 
 	parts := []string{m.renderHeader()}
 	if m.status != "" && !m.isEmbeddedCommentInput() {
-		parts = append(parts, m.styles.status.Render("  "+m.status))
+		parts = append(parts, "  "+m.styles.statusBadge(m.status))
 	}
 	parts = append(parts, m.renderCurrentView(), m.renderFooter())
 	return strings.Join(parts, "\n")
@@ -677,24 +694,33 @@ func (m Model) computeMetrics(maxTokens int) domain.TokenMetrics {
 
 func (m Model) renderHeader() string {
 	var sb strings.Builder
-	sb.WriteString("\n  Project: ")
-	sb.WriteString(m.styles.title.Render(m.project.Slug))
-	sb.WriteString("  ")
-	sb.WriteString(m.styles.hint.Render("· local checkpoint"))
+	sb.WriteString("\n  ")
+	sb.WriteString(m.styles.title.Render("omakiten"))
+	sb.WriteString(m.styles.hint.Render(" › "))
+	sb.WriteString(m.styles.nav.Render(m.project.Slug))
+	sb.WriteString(m.styles.hint.Render(" · local checkpoint"))
 	if m.taskScreen != taskScreenClosed || m.entityScreen != entityScreenClosed {
 		return sb.String()
 	}
 	sb.WriteString("\n\n  ")
 
+	const navGap = "   "
 	items := make([]string, 0, len(viewNames))
+	rules := make([]string, 0, len(viewNames))
 	for i, name := range viewNames {
-		style := m.styles.nav
+		label := fmt.Sprintf("%02d // %s", i+1, name)
+		width := lipgloss.Width(label)
 		if i == m.view {
-			style = m.styles.activeNav
+			items = append(items, m.styles.activeNav.Render(label))
+			rules = append(rules, m.styles.activeNav.Render(strings.Repeat("─", width)))
+		} else {
+			items = append(items, m.styles.nav.Render(label))
+			rules = append(rules, strings.Repeat(" ", width))
 		}
-		items = append(items, style.Render(fmt.Sprintf("%d %s", i+1, name)))
 	}
-	sb.WriteString(strings.Join(items, "  "))
+	sb.WriteString(strings.Join(items, navGap))
+	sb.WriteString("\n  ")
+	sb.WriteString(strings.Join(rules, navGap))
 	return sb.String()
 }
 
@@ -729,7 +755,8 @@ func (m Model) renderBoard() string {
 	}
 
 	tasksByBucket := m.tasksByBucket()
-	columns := make([]string, 0, len(m.workflow.Buckets))
+	cells := make([]string, 0, len(m.workflow.Buckets))
+	widths := make([]int, 0, len(m.workflow.Buckets))
 	totalTasks := 0
 	for i, bucket := range m.workflow.Buckets {
 		bucketTasks := tasksByBucket[bucket.Key]
@@ -737,13 +764,16 @@ func (m Model) renderBoard() string {
 		if i == m.colIdx {
 			selectedIdx = m.cardIdx
 		}
-		columns = append(columns, m.renderKanbanColumn(bucket, bucketTasks, i == m.colIdx, selectedIdx))
+		cells = append(cells, m.renderKanbanCell(bucket, bucketTasks, i == m.colIdx, selectedIdx))
+		widths = append(widths, columnWidth)
 		totalTasks += len(bucketTasks)
 	}
 
+	grid := renderRowGrid(cells, widths, m.styles.border)
+
 	var sb strings.Builder
 	sb.WriteString("\n")
-	sb.WriteString(indentBlock(lipgloss.JoinHorizontal(lipgloss.Top, columns...), 2))
+	sb.WriteString(indentBlock(grid, 2))
 	if totalTasks == 0 {
 		sb.WriteString("\n\n")
 		sb.WriteString(indentBlock(m.renderEmptyBoardHint(), 2))
@@ -751,10 +781,14 @@ func (m Model) renderBoard() string {
 	return sb.String()
 }
 
-func (m Model) renderKanbanColumn(bucket domain.Bucket, tasks []domain.Task, focused bool, selectedIdx int) string {
-	header := truncateText(bucket.Name, columnWidth-7)
+func (m Model) renderKanbanCell(bucket domain.Bucket, tasks []domain.Task, focused bool, selectedIdx int) string {
+	headerStyle := m.styles.hintAccent
+	if !focused {
+		headerStyle = m.styles.muted
+	}
+	headerText := fmt.Sprintf("// %s · %d", strings.ToUpper(truncateText(bucket.Name, columnWidth-10)), len(tasks))
 	lines := []string{
-		m.styles.columnTitle.Render(fmt.Sprintf("%s (%d)", header, len(tasks))),
+		headerStyle.Render(headerText),
 		m.styles.separator.Render(strings.Repeat("─", columnWidth)),
 	}
 
@@ -765,12 +799,7 @@ func (m Model) renderKanbanColumn(bucket domain.Bucket, tasks []domain.Task, foc
 			lines = append(lines, m.renderCard(task, focused && i == selectedIdx))
 		}
 	}
-
-	borderStyle := m.styles.border
-	if focused {
-		borderStyle = m.styles.focusBorder
-	}
-	return renderFixedBox(lines, columnWidth, borderStyle)
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) renderCard(task domain.Task, selected bool) string {
@@ -784,6 +813,84 @@ func (m Model) renderCard(task domain.Task, selected bool) string {
 	title := truncateText(task.Title, titleBudget)
 	line := prefix + title
 	return m.styles.card.Render(line)
+}
+
+func (m Model) renderHelp() string {
+	type binding struct{ key, desc string }
+	type group struct {
+		title    string
+		bindings []binding
+	}
+	groups := []group{
+		{"Global", []binding{
+			{"?", "toggle this overlay"},
+			{"q · ctrl+c", "quit"},
+			{"tab · shift+tab", "cycle views"},
+			{"1 · 2 · 3 · 4", "jump to view"},
+			{"r", "refresh"},
+		}},
+		{"Board", []binding{
+			{"← ↑ ↓ → · h j k l", "navigate columns and cards"},
+			{"enter", "open task"},
+			{"n", "new task"},
+			{"e", "edit task"},
+			{"c", "add comment"},
+			{"m", "toggle move mode"},
+		}},
+		{"Task view", []binding{
+			{"e", "edit"},
+			{"c", "add comment"},
+			{"m", "move"},
+			{"esc", "back to board"},
+		}},
+		{"Task form", []binding{
+			{"tab", "switch field"},
+			{"enter · alt+enter · shift+enter", "newline in description"},
+			{"ctrl+s", "save"},
+			{"esc", "cancel"},
+		}},
+		{"Config", []binding{
+			{"← →", "switch entity kind"},
+			{"↑ ↓", "select entity"},
+			{"enter", "open detail"},
+			{"n · e · d", "new · edit · delete"},
+			{"p", "skill picker (persona)"},
+		}},
+		{"Entity view", []binding{
+			{"e", "edit (opens $EDITOR)"},
+			{"d", "delete"},
+			{"p", "skill picker (persona)"},
+			{"esc", "back"},
+		}},
+		{"Skill picker", []binding{
+			{"↑ ↓", "move"},
+			{"space", "toggle"},
+			{"enter on '+ create new'", "scaffold new skill"},
+			{"ctrl+s", "save"},
+			{"esc", "cancel"},
+		}},
+	}
+
+	const keyW = 36
+	var lines []string
+	lines = append(lines, m.styles.kicker("Keybindings"), "")
+	for _, g := range groups {
+		lines = append(lines, m.styles.kicker(g.title))
+		lines = append(lines, m.styles.separator.Render(strings.Repeat("─", keyW+24)))
+		for _, b := range g.bindings {
+			pad := keyW - lipgloss.Width(b.key)
+			if pad < 1 {
+				pad = 1
+			}
+			lines = append(lines, m.styles.hintAccent.Render(b.key)+strings.Repeat(" ", pad)+b.desc)
+		}
+		lines = append(lines, "")
+	}
+	return "\n" + indentBlock(strings.Join(lines, "\n"), 2)
+}
+
+func (m Model) renderHelpFooter() string {
+	return indentBlock(m.styles.footer.Render("? · esc · q   close help"), 2)
 }
 
 func (m Model) renderEmptyBoardHint() string {
@@ -818,15 +925,15 @@ func (m Model) renderTaskView() string {
 	}
 
 	detailLines := []string{
-		m.styles.columnTitle.Render(fmt.Sprintf("Task #%d", task.ID)),
+		m.styles.kicker(fmt.Sprintf("Task · #%d", task.ID)),
 		"",
-		"Title:    " + task.Title,
-		"Bucket:   " + task.BucketKey,
-		"Priority: " + string(task.Priority),
-		fmt.Sprintf("Deps:     %d", m.dependencyCount(task.ID)),
-		fmt.Sprintf("Comments: %d", m.commentCount(task.ID)),
+		m.styles.metaRow("Title", task.Title, 14),
+		m.styles.metaRow("Bucket", task.BucketKey, 14),
+		m.styles.metaRow("Priority", string(task.Priority), 14),
+		m.styles.metaRow("Blockers", fmt.Sprintf("%d", m.dependencyCount(task.ID)), 14),
+		m.styles.metaRow("Comments", fmt.Sprintf("%d", m.commentCount(task.ID)), 14),
 		"",
-		m.styles.columnTitle.Render("Description"),
+		m.styles.kicker("Description"),
 	}
 	if strings.TrimSpace(task.Description) == "" {
 		detailLines = append(detailLines, m.styles.hint.Render("No description"))
@@ -834,15 +941,20 @@ func (m Model) renderTaskView() string {
 		detailLines = append(detailLines, task.Description)
 	}
 
-	details := m.styles.taskDetails.Render(strings.Join(detailLines, "\n"))
-	comments := m.renderTaskComments(task.ID)
-	return "\n" + indentBlock(lipgloss.JoinHorizontal(lipgloss.Top, details, comments), 2)
+	detailsCell := indentBlock(strings.Join(detailLines, "\n"), 2)
+	commentsCell := m.renderTaskCommentsCell(task.ID)
+	grid := renderRowGrid(
+		[]string{detailsCell, commentsCell},
+		[]int{taskDetailsPanelWidth, taskCommentsPanelWidth},
+		m.styles.border,
+	)
+	return "\n" + indentBlock(grid, 2)
 }
 
-func (m Model) renderTaskComments(taskID int64) string {
+func (m Model) renderTaskCommentsCell(taskID int64) string {
 	comments := m.commentsForTask(taskID)
 	lines := []string{
-		m.styles.columnTitle.Render(fmt.Sprintf("Comments (%d)", len(comments))),
+		m.styles.kickerCount("Comments", len(comments)),
 	}
 	if len(comments) == 0 {
 		lines = append(lines, "", m.styles.hint.Render("No comments yet."), m.styles.hint.Render("Press c to add one."))
@@ -854,16 +966,16 @@ func (m Model) renderTaskComments(taskID int64) string {
 	if m.isEmbeddedCommentInput() && m.taskID == taskID {
 		lines = append(lines, "", m.renderCommentInput())
 	}
-	return m.styles.taskComments.Render(strings.Join(lines, "\n"))
+	return indentBlock(strings.Join(lines, "\n"), 2)
 }
 
 func (m Model) renderCommentInput() string {
 	lines := []string{
-		m.styles.columnTitle.Render("New comment"),
+		m.styles.kicker("New comment"),
 		m.styles.hint.Render("enter saves · alt+enter/shift+enter newline"),
 	}
 	if m.status != "" && m.status != "Comment body" {
-		lines = append(lines, m.styles.status.Render(m.status))
+		lines = append(lines, m.styles.statusBadge(m.status))
 	}
 	lines = append(lines, m.styles.commentInput.Render(m.input))
 	return strings.Join(lines, "\n")
@@ -883,7 +995,7 @@ func (m Model) renderCommentCard(comment domain.Comment) string {
 
 func (m Model) renderTaskForm(title string) string {
 	lines := []string{
-		m.styles.columnTitle.Render(title),
+		m.styles.kicker(title),
 		m.styles.hint.Render("ctrl+s saves. enter/alt+enter/shift+enter adds lines in description."),
 		"",
 		m.renderTaskFormLabel(taskFieldTitle, "Title"),
@@ -901,12 +1013,10 @@ func (m Model) renderTaskDescriptionInput() string {
 
 func (m Model) renderTaskFormLabel(field taskFormField, label string) string {
 	marker := " "
-	style := m.styles.columnTitle
 	if m.taskField == field {
 		marker = ">"
-		style = m.styles.hintAccent
 	}
-	return style.Render(marker + " " + label)
+	return m.styles.hintAccent.Render(marker+" // "+strings.ToUpper(label))
 }
 
 func (m Model) renderTable() string {
@@ -914,7 +1024,7 @@ func (m Model) renderTable() string {
 		return "\n" + indentBlock(m.styles.panel.Render("No tasks"), 2)
 	}
 	rows := []string{
-		m.styles.columnTitle.Render("ID   Bucket      Pri      Deps  Comments  Title"),
+		m.styles.hintAccent.Render("// ID   BUCKET      PRI      DEPS  COMMENTS  TITLE"),
 		m.styles.separator.Render(strings.Repeat("─", 70)),
 	}
 	for i, task := range m.tasks {
@@ -933,7 +1043,7 @@ func (m Model) renderGraph() string {
 		content := m.styles.hintBox.Render(m.styles.hint.Render("No task dependencies yet.") + "\n" + m.styles.hint.Render("Use ") + m.styles.hintAccent.Render("okt depend add TASK -i BLOCKER") + m.styles.hint.Render(" to define blocked_by edges."))
 		return "\n" + indentBlock(content, 2)
 	}
-	lines := []string{m.styles.columnTitle.Render("Task dependency graph"), m.styles.separator.Render(strings.Repeat("─", 44))}
+	lines := []string{m.styles.kicker("Task dependency graph"), m.styles.separator.Render(strings.Repeat("─", 44))}
 	for _, dependency := range m.dependencies {
 		lines = append(lines, fmt.Sprintf("#%d %s #%d", dependency.TaskID, m.styles.hint.Render("blocked_by"), dependency.DependsOnTaskID))
 	}
@@ -948,36 +1058,40 @@ func (m Model) renderConfig() string {
 	sort.Strings(bucketKeys)
 
 	left := []string{
-		m.styles.columnTitle.Render("Runtime"),
-		fmt.Sprintf("Workflow: %s", m.workflow.Key),
-		fmt.Sprintf("Buckets:  %s", strings.Join(bucketKeys, ", ")),
-		fmt.Sprintf("Theme:    %s", m.theme.Key),
+		m.styles.kicker("Runtime"),
+		m.styles.metaRow("Workflow", m.workflow.Key, 14),
+		m.styles.metaRow("Buckets", strings.Join(bucketKeys, ", "), 14),
+		m.styles.metaRow("Theme", m.theme.Key, 14),
 		"",
-		m.styles.columnTitle.Render("Totals"),
-		fmt.Sprintf("Tasks:    %d", len(m.tasks)),
-		fmt.Sprintf("Comments: %d", len(m.comments)),
-		fmt.Sprintf("Context:  %d", len(m.entries)),
+		m.styles.kicker("Totals"),
+		m.styles.metaRow("Tasks", fmt.Sprintf("%d", len(m.tasks)), 14),
+		m.styles.metaRow("Comments", fmt.Sprintf("%d", len(m.comments)), 14),
+		m.styles.metaRow("Context", fmt.Sprintf("%d", len(m.entries)), 14),
 	}
 	right := []string{
-		m.styles.columnTitle.Render("Token budget"),
-		fmt.Sprintf("Estimated: %d", m.metrics.EstimatedTotal),
-		fmt.Sprintf("Max:       %d", m.metrics.MaxTokens),
+		m.styles.kicker("Token budget"),
+		m.styles.metaRow("Estimated", fmt.Sprintf("%d", m.metrics.EstimatedTotal), 14),
+		m.styles.metaRow("Max", fmt.Sprintf("%d", m.metrics.MaxTokens), 14),
 	}
 	if m.metrics.Truncated {
-		right = append(right, m.styles.error.Render("Budget exceeded"))
+		right = append(right, m.styles.error.Render("[ERROR] budget exceeded"))
 	}
 
-	header := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		m.styles.configColumn.Render(strings.Join(left, "\n")),
-		m.styles.configColumn.Render(strings.Join(right, "\n")),
+	const configCellWidth = 40
+	header := renderRowGrid(
+		[]string{strings.Join(left, "\n"), strings.Join(right, "\n")},
+		[]int{configCellWidth, configCellWidth},
+		m.styles.border,
 	)
 
-	lists := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		m.renderEntityList(entityKindLaw),
-		m.renderEntityList(entityKindPersona),
-		m.renderEntityList(entityKindSkill),
+	lists := renderRowGrid(
+		[]string{
+			m.renderEntityCell(entityKindLaw),
+			m.renderEntityCell(entityKindPersona),
+			m.renderEntityCell(entityKindSkill),
+		},
+		[]int{entityListWidth, entityListWidth, entityListWidth},
+		m.styles.border,
 	)
 
 	return "\n" + indentBlock(header+"\n\n"+lists, 2)
@@ -1003,11 +1117,11 @@ func (m Model) renderFooter() string {
 	case m.moveMode:
 		text = "left/right: move task to column  esc: cancel  q: quit"
 	case m.view == 0:
-		text = "left/right: columns  up/down: cards  enter: open  m: move  n/e/c: change  q: quit"
+		text = "left/right: columns  up/down: cards  enter: open  m: move  n/e/c: change  ?: help  q: quit"
 	case m.view == 3:
-		text = "left/right: section  up/down: select  enter: open  n: new  e: edit  d: delete  q: quit"
+		text = "left/right: section  up/down: select  enter: open  n: new  e: edit  d: delete  ?: help  q: quit"
 	default:
-		text = "tab: switch view  up/down: select  enter: open  m: move  n/e/c: change  q: quit"
+		text = "tab: switch view  up/down: select  enter: open  m: move  n/e/c: change  ?: help  q: quit"
 	}
 	return "\n" + indentBlock(m.styles.footer.Render(text), 2)
 }
@@ -1200,11 +1314,65 @@ func centerText(s string, width int) string {
 }
 
 func renderFixedBox(lines []string, width int, border lipgloss.Style) string {
-	rows := []string{border.Render("╭" + strings.Repeat("─", width) + "╮")}
+	rows := []string{border.Render("┌" + strings.Repeat("─", width) + "┐")}
 	for _, line := range lines {
 		rows = append(rows, border.Render("│")+padStyledLine(line, width)+border.Render("│"))
 	}
-	rows = append(rows, border.Render("╰"+strings.Repeat("─", width)+"╯"))
+	rows = append(rows, border.Render("└"+strings.Repeat("─", width)+"┘"))
+	return strings.Join(rows, "\n")
+}
+
+// renderRowGrid renders cells as a single horizontal row with shared borders
+// using ┌┬┐ / └┴┘ junctions, so neighboring cells visually share a border —
+// the omacon "delimited grid" pattern. Each cell's content is padded to
+// widths[i] columns and rows are padded so all cells are the same height.
+func renderRowGrid(cells []string, widths []int, border lipgloss.Style) string {
+	n := len(cells)
+	if n == 0 || n != len(widths) {
+		return ""
+	}
+	cellLines := make([][]string, n)
+	maxHeight := 0
+	for i, cell := range cells {
+		lines := strings.Split(cell, "\n")
+		cellLines[i] = lines
+		if len(lines) > maxHeight {
+			maxHeight = len(lines)
+		}
+	}
+	for i := range cellLines {
+		for len(cellLines[i]) < maxHeight {
+			cellLines[i] = append(cellLines[i], "")
+		}
+	}
+
+	var top, bot strings.Builder
+	top.WriteString(border.Render("┌"))
+	bot.WriteString(border.Render("└"))
+	for i, w := range widths {
+		rule := strings.Repeat("─", w)
+		top.WriteString(border.Render(rule))
+		bot.WriteString(border.Render(rule))
+		if i < n-1 {
+			top.WriteString(border.Render("┬"))
+			bot.WriteString(border.Render("┴"))
+		}
+	}
+	top.WriteString(border.Render("┐"))
+	bot.WriteString(border.Render("┘"))
+
+	rows := []string{top.String()}
+	bar := border.Render("│")
+	for r := 0; r < maxHeight; r++ {
+		var row strings.Builder
+		row.WriteString(bar)
+		for i, w := range widths {
+			row.WriteString(padStyledLine(cellLines[i][r], w))
+			row.WriteString(bar)
+		}
+		rows = append(rows, row.String())
+	}
+	rows = append(rows, bot.String())
 	return strings.Join(rows, "\n")
 }
 
@@ -1227,32 +1395,66 @@ func indentBlock(block string, spaces int) string {
 	return strings.Join(lines, "\n")
 }
 
+// kicker renders a section label in dev-editorial style: `// LABEL` in the
+// accent color. Label is uppercased; pass it in any case.
+func (s styles) kicker(label string) string {
+	return s.hintAccent.Render("// " + strings.ToUpper(label))
+}
+
+// kickerCount renders `// LABEL · N` — kicker with a trailing count.
+func (s styles) kickerCount(label string, count int) string {
+	return s.hintAccent.Render(fmt.Sprintf("// %s · %d", strings.ToUpper(label), count))
+}
+
+// metaRow renders a definition-list row: `// LABEL` (kicker) + value, the label
+// padded to labelWidth so values align across multiple rows.
+func (s styles) metaRow(label, value string, labelWidth int) string {
+	rendered := "// " + strings.ToUpper(label)
+	pad := labelWidth - lipgloss.Width(rendered)
+	if pad < 1 {
+		pad = 1
+	}
+	return s.hintAccent.Render(rendered) + strings.Repeat(" ", pad) + value
+}
+
+// statusBadge renders a status message as `[INFO] msg` or `[ERROR] msg` based
+// on a content heuristic. Replaces italic-on-secondary status rendering.
+func (s styles) statusBadge(msg string) string {
+	if msg == "" {
+		return ""
+	}
+	level := "INFO"
+	tagStyle := s.hintAccent
+	lower := strings.ToLower(msg)
+	for _, needle := range []string{"error", "fail", "not found", "required", "cancel", "missing", "nothing", "invalid", "exceeded"} {
+		if strings.Contains(lower, needle) {
+			level = "ERROR"
+			tagStyle = s.error
+			break
+		}
+	}
+	return tagStyle.Render("["+level+"]") + " " + s.muted.Render(msg)
+}
+
 type styles struct {
 	title          lipgloss.Style
 	nav            lipgloss.Style
 	activeNav      lipgloss.Style
 	panel          lipgloss.Style
-	taskDetails    lipgloss.Style
-	taskComments   lipgloss.Style
 	commentCard    lipgloss.Style
 	commentInput   lipgloss.Style
-	column         lipgloss.Style
-	focusedColumn  lipgloss.Style
 	border         lipgloss.Style
-	focusBorder    lipgloss.Style
 	columnTitle    lipgloss.Style
 	card           lipgloss.Style
 	marker         lipgloss.Style
 	separator      lipgloss.Style
 	empty          lipgloss.Style
-	status         lipgloss.Style
 	input          lipgloss.Style
 	multilineInput lipgloss.Style
 	footer         lipgloss.Style
 	hint           lipgloss.Style
 	hintAccent     lipgloss.Style
 	hintBox        lipgloss.Style
-	configColumn   lipgloss.Style
 	muted          lipgloss.Style
 	success        lipgloss.Style
 	warning        lipgloss.Style
@@ -1267,41 +1469,32 @@ func newStyles(theme config.Theme) styles {
 		return lipgloss.Color(fallback)
 	}
 
-	border := color("border", "#494D64")
-	foreground := color("foreground", "#CAD3F5")
-	background := color("background", "#24273A")
-	primary := color("primary", "#8AADF4")
-	secondary := color("secondary", "#C6A0F6")
-	success := color("success", "#A6DA95")
-	warning := color("warning", "#EED49F")
-	errorColor := color("error", "#ED8796")
+	border := color("border", "#494543")
+	foreground := color("foreground", "#E5E2E1")
+	primary := color("primary", "#39FF14")
+	success := color("success", "#39FF14")
+	warning := color("warning", "#FFB347")
+	errorColor := color("error", "#FF5544")
 
 	return styles{
 		title:          lipgloss.NewStyle().Bold(true).Foreground(primary),
 		nav:            lipgloss.NewStyle().Foreground(foreground),
-		activeNav:      lipgloss.NewStyle().Foreground(background).Background(primary).Bold(true).Padding(0, 1),
-		panel:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 2),
-		taskDetails:    lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 2).MarginRight(2).Width(taskDetailsPanelWidth),
-		taskComments:   lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 2).Width(taskCommentsPanelWidth),
+		activeNav:      lipgloss.NewStyle().Foreground(primary).Bold(true),
+		panel:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2),
 		commentCard:    lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(taskCommentsPanelWidth - 8),
 		commentInput:   lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 1).Width(taskCommentsPanelWidth - 8).Height(commentInputHeight),
-		column:         lipgloss.NewStyle().Foreground(foreground),
-		focusedColumn:  lipgloss.NewStyle().Foreground(foreground),
 		border:         lipgloss.NewStyle().Foreground(border),
-		focusBorder:    lipgloss.NewStyle().Foreground(primary),
 		columnTitle:    lipgloss.NewStyle().Bold(true).Foreground(foreground),
 		card:           lipgloss.NewStyle().Width(columnWidth),
 		marker:         lipgloss.NewStyle().Foreground(primary).Bold(true),
 		separator:      lipgloss.NewStyle().Foreground(border),
-		empty:          lipgloss.NewStyle().Foreground(border).Italic(true).Width(columnWidth - 4).Align(lipgloss.Center),
-		status:         lipgloss.NewStyle().Foreground(secondary).Italic(true),
+		empty:          lipgloss.NewStyle().Foreground(border).Width(columnWidth - 4).Align(lipgloss.Center),
 		input:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 2),
 		multilineInput: lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 2).Width(taskFormInputWidth).Height(taskDescriptionInputHeight),
-		footer:         lipgloss.NewStyle().Foreground(border).Italic(true),
-		hint:           lipgloss.NewStyle().Foreground(border).Italic(true),
+		footer:         lipgloss.NewStyle().Foreground(border),
+		hint:           lipgloss.NewStyle().Foreground(border),
 		hintAccent:     lipgloss.NewStyle().Foreground(primary).Bold(true),
 		hintBox:        lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2).Width(60),
-		configColumn:   lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(1, 2).MarginRight(1).Width(40),
 		muted:          lipgloss.NewStyle().Foreground(border),
 		success:        lipgloss.NewStyle().Foreground(success),
 		warning:        lipgloss.NewStyle().Foreground(warning),

@@ -13,7 +13,7 @@ config:
   workflow:
     active: default
   theme:
-    active: catppuccin-macchiato
+    active: omakiten
 workflows:
   - id: 1
     key: default

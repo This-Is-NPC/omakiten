@@ -115,16 +115,16 @@ func (m *Model) clampEntityCursor() {
 	}
 }
 
-func (m Model) renderEntityList(kind entityKind) string {
+func (m Model) renderEntityCell(kind entityKind) string {
 	focused := m.entityKind == kind
 	count := m.entityCount(kind)
 	cursor := m.selectedEntityIndex(kind)
 
-	headerText := fmt.Sprintf("%s (%d)", kind.plural(), count)
-	headerStyle := m.styles.columnTitle
-	if focused {
-		headerStyle = m.styles.hintAccent
+	headerStyle := m.styles.hintAccent
+	if !focused {
+		headerStyle = m.styles.muted
 	}
+	headerText := fmt.Sprintf("// %s · %d", strings.ToUpper(kind.plural()), count)
 
 	lines := []string{
 		headerStyle.Render(headerText),
@@ -138,12 +138,7 @@ func (m Model) renderEntityList(kind entityKind) string {
 			lines = append(lines, m.renderEntityRow(kind, index, focused && index == cursor))
 		}
 	}
-
-	border := m.styles.border
-	if focused {
-		border = m.styles.focusBorder
-	}
-	return renderFixedBox(lines, entityListWidth, border)
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) renderEntityRow(kind entityKind, index int, selected bool) string {
@@ -539,7 +534,7 @@ func (m Model) renderEntityScreen() string {
 
 func (m Model) renderEntityView() string {
 	lines := []string{
-		m.styles.columnTitle.Render(fmt.Sprintf("%s %s", m.entityForm.kind.String(), m.entityForm.slug)),
+		m.styles.kicker(fmt.Sprintf("%s · %s", m.entityForm.kind.String(), m.entityForm.slug)),
 		"",
 	}
 	switch m.entityForm.kind {
@@ -550,11 +545,11 @@ func (m Model) renderEntityView() string {
 		}
 		badge := m.severityStyle(domain.LawSeverity(law.Severity)).Render(law.Severity)
 		lines = append(lines,
-			"Slug:     "+law.Key,
-			"Severity: "+badge,
-			"Source:   "+law.SourcePath,
+			m.styles.metaRow("Slug", law.Key, 14),
+			m.styles.metaRow("Severity", badge, 14),
+			m.styles.metaRow("Source", law.SourcePath, 14),
 			"",
-			m.styles.columnTitle.Render("Body"),
+			m.styles.kicker("Body"),
 			law.Body,
 		)
 	case entityKindSkill:
@@ -563,12 +558,12 @@ func (m Model) renderEntityView() string {
 			return "\n" + indentBlock(m.styles.panel.Render("Skill not found"), 2)
 		}
 		lines = append(lines,
-			"Slug:        "+skill.Key,
-			"Name:        "+skill.Name,
-			"Description: "+skill.Description,
-			"Source:      "+skill.SourcePath,
+			m.styles.metaRow("Slug", skill.Key, 16),
+			m.styles.metaRow("Name", skill.Name, 16),
+			m.styles.metaRow("Description", skill.Description, 16),
+			m.styles.metaRow("Source", skill.SourcePath, 16),
 			"",
-			m.styles.columnTitle.Render("Body"),
+			m.styles.kicker("Body"),
 			skill.Body,
 		)
 	case entityKindPersona:
@@ -581,13 +576,13 @@ func (m Model) renderEntityView() string {
 			skills = m.styles.hint.Render("none")
 		}
 		lines = append(lines,
-			"Slug:        "+persona.Key,
-			"Name:        "+persona.Name,
-			"Description: "+persona.Description,
-			"Skills:      "+skills,
-			"Source:      "+persona.SourcePath,
+			m.styles.metaRow("Slug", persona.Key, 16),
+			m.styles.metaRow("Name", persona.Name, 16),
+			m.styles.metaRow("Description", persona.Description, 16),
+			m.styles.metaRow("Skills", skills, 16),
+			m.styles.metaRow("Source", persona.SourcePath, 16),
 			"",
-			m.styles.columnTitle.Render("Body"),
+			m.styles.kicker("Body"),
 			persona.Body,
 			"",
 			m.styles.hint.Render("p: open skill picker"),
@@ -724,7 +719,7 @@ func (m *Model) openSelectedEntityViewForSlug(kind entityKind, slug string) {
 func (m Model) renderPersonaPicker() string {
 	persona, _ := m.findPersonaBySlug(m.entityForm.slug)
 	lines := []string{
-		m.styles.columnTitle.Render(fmt.Sprintf("Skills for persona %s", persona.Key)),
+		m.styles.kicker(fmt.Sprintf("Skills for persona · %s", persona.Key)),
 		m.styles.hint.Render("up/down: move · space: toggle · enter on '+ create new': new skill · ctrl+s: save · esc: cancel"),
 		"",
 	}

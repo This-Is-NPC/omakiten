@@ -301,7 +301,7 @@ func EnsureDefaultFiles(configDir string) error {
 	if err := copyDefaultDir(configDir, "personas"); err != nil {
 		return err
 	}
-	if err := copyDefaultIfMissing(filepath.Join(configDir, "themes", "catppuccin-macchiato.yaml"), "themes/catppuccin-macchiato.yaml"); err != nil {
+	if err := copyDefaultDir(configDir, "themes"); err != nil {
 		return err
 	}
 	return nil

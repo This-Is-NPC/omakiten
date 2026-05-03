@@ -85,18 +85,19 @@ func TestModelOpensExistingTaskScreen(t *testing.T) {
 		t.Fatalf("taskID = %d, want %d", got.taskID, task.ID)
 	}
 	view := got.View()
-	for _, hidden := range []string{"1 Board", "2 Table", "3 Graph", "4 Config"} {
+	for _, hidden := range []string{"01 // BOARD", "02 // TABLE", "03 // GRAPH", "04 // CONFIG"} {
 		if strings.Contains(view, hidden) {
 			t.Fatalf("View() contains hidden task-screen tab %q\n%s", hidden, view)
 		}
 	}
 	for _, want := range []string{
-		"Task #",
-		"Title:    Existing task",
-		"Description",
+		"// TASK · #",
+		"// TITLE",
+		"Existing task",
+		"// DESCRIPTION",
 		"First line",
 		"Second line",
-		"Comments (2)",
+		"// COMMENTS · 2",
 		"human",
 		humanComment.CreatedAt,
 		"Looks good to me.",
@@ -141,7 +142,7 @@ func TestModelAddsMultilineCommentInsideTaskCommentsPanel(t *testing.T) {
 		t.Fatalf("isEmbeddedCommentInput() = false, want true")
 	}
 	view := got.View()
-	for _, want := range []string{"Comments (0)", "New comment", "enter saves", "alt+enter/shift+enter", "newline"} {
+	for _, want := range []string{"// COMMENTS · 0", "// NEW COMMENT", "enter saves", "alt+enter/shift+enter", "newline"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("View() missing %q\n%s", want, view)
 		}
@@ -172,7 +173,7 @@ func TestModelAddsMultilineCommentInsideTaskCommentsPanel(t *testing.T) {
 		t.Fatalf("comment body = %q, want %q", comments[0].Body, wantBody)
 	}
 	view = got.View()
-	for _, want := range []string{"Comments (1)", "human", comments[0].CreatedAt, "First line", "Second line", "Third line"} {
+	for _, want := range []string{"// COMMENTS · 1", "human", comments[0].CreatedAt, "First line", "Second line", "Third line"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("View() missing %q\n%s", want, view)
 		}
@@ -250,12 +251,15 @@ func TestModelCreatesTaskFromDedicatedScreen(t *testing.T) {
 
 	view := got.View()
 	for _, want := range []string{
-		"Title:    " + title,
-		"Bucket:   backlog",
-		"Priority: normal",
-		"Deps:     0",
-		"Comments: 0",
-		"Description",
+		"// TITLE",
+		title,
+		"// BUCKET",
+		"backlog",
+		"// PRIORITY",
+		"normal",
+		"// BLOCKERS",
+		"// COMMENTS",
+		"// DESCRIPTION",
 		"First line",
 		"Second line",
 	} {

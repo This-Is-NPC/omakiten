@@ -1,0 +1,13 @@
+version: 1
+key: omakiten
+name: Omakiten
+colors:
+  background: "#121212"
+  foreground: "#E5E2E1"
+  primary: "#39FF14"
+  secondary: "#39FF14"
+  success: "#39FF14"
+  warning: "#FFB347"
+  error: "#FF5544"
+  border: "#494543"
+  highlight: "#1A1A19"
