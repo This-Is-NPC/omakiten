@@ -13,6 +13,11 @@ const (
 	ErrBucketNotFound            ErrorCode = "bucket_not_found"
 	ErrDependencyInvalid         ErrorCode = "dependency_invalid"
 	ErrValidation                ErrorCode = "validation_error"
+	ErrLawNotFound               ErrorCode = "law_not_found"
+	ErrSkillNotFound             ErrorCode = "skill_not_found"
+	ErrPersonaNotFound           ErrorCode = "persona_not_found"
+	ErrSkillReferenced           ErrorCode = "skill_referenced"
+	ErrEditorFailed              ErrorCode = "editor_failed"
 )
 
 type CodedError struct {

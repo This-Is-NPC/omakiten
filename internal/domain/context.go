@@ -13,13 +13,6 @@ type ContextDump struct {
 	Laws           []Law            `json:"laws,omitempty"`
 }
 
-type Law struct {
-	ID       int64  `json:"id"`
-	Key      string `json:"key"`
-	Severity string `json:"severity"`
-	Body     string `json:"body"`
-}
-
 type ContextEntry struct {
 	ID            int64  `json:"id"`
 	ProjectID     int64  `json:"project_id"`
