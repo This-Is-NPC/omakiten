@@ -17,6 +17,8 @@ type ProjectRepository interface {
 type ConfigRepository interface {
 	ImportBundle(ctx context.Context, bundle config.Bundle, sourcePath, sourceHash string) error
 	ListActiveLaws(ctx context.Context) ([]domain.Law, error)
+	ListActiveSkills(ctx context.Context) ([]domain.Skill, error)
+	ListActivePersonas(ctx context.Context) ([]domain.Persona, error)
 	ActiveWorkflow(ctx context.Context) (domain.Workflow, error)
 	ContextSettings(ctx context.Context) (domain.ContextSettings, error)
 }
