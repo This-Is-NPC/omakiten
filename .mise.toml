@@ -12,8 +12,9 @@ description = "Run Go tests"
 run = "go test ./..."
 
 [tasks.tui]
-description = "Start the Omakiten TUI"
-run = "go run ./cmd/okt tui"
+description = "Start the Omakiten TUI with local dev state under dev_env/"
+env = { OMAKITEN_HOME = "dev_env" }
+run = "mkdir -p dev_env && go run ./cmd/okt init --name Omakiten --slug omakiten >/dev/null && go run ./cmd/okt --project omakiten tui"
 
 [tasks.lint]
 description = "Run Go linter"

@@ -14,6 +14,7 @@ coverage.html
 *.db-shm
 *.db-wal
 .omakiten/
+dev_env/
 
 # Environment and secrets
 .env
@@ -39,3 +40,4 @@ tmp/
 
 # my stuff
 personal_notes
+opencode.json
