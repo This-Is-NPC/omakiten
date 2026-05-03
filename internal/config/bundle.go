@@ -1,13 +1,50 @@
 package config
 
+// Bundle is the in-memory representation of an omakiten config directory.
+// `omakiten.yaml` provides settings, workflows, and reference wiring; per-entity
+// `.md` files (skills/<slug>.md, laws/<slug>.md, personas/<slug>.md) provide the
+// authoring content. The loader merges them into Bundle; the saver splits them
+// back out.
 type Bundle struct {
-	Version   int        `yaml:"version" json:"version"`
-	Kit       Kit        `yaml:"kit" json:"kit"`
-	Config    Settings   `yaml:"config" json:"config"`
-	Skills    []Skill    `yaml:"skills" json:"skills,omitempty"`
-	Personas  []Persona  `yaml:"personas" json:"personas,omitempty"`
-	Laws      []Law      `yaml:"laws" json:"laws,omitempty"`
-	Workflows []Workflow `yaml:"workflows" json:"workflows,omitempty"`
+	Version   int             `yaml:"version" json:"version"`
+	Kit       Kit             `yaml:"kit" json:"kit"`
+	Config    Settings        `yaml:"config" json:"config"`
+	Skills    []Skill         `yaml:"-" json:"skills,omitempty"`
+	Personas  []Persona       `yaml:"-" json:"personas,omitempty"`
+	Laws      []Law           `yaml:"-" json:"laws,omitempty"`
+	Workflows []Workflow      `yaml:"workflows" json:"workflows,omitempty"`
+	Projects  []Project       `yaml:"-" json:"projects,omitempty"`
+	Warnings  []SourceWarning `yaml:"-" json:"warnings,omitempty"`
+}
+
+// wiring is the literal YAML shape of `omakiten.yaml`. Loader unmarshals into
+// this; saver marshals from it. Keeps Bundle decoupled from on-disk layout.
+type wiring struct {
+	Version   int                 `yaml:"version"`
+	Kit       Kit                 `yaml:"kit"`
+	Config    Settings            `yaml:"config"`
+	Workflows []Workflow          `yaml:"workflows"`
+	Skills    []string            `yaml:"skills,omitempty"`
+	Laws      []string            `yaml:"laws,omitempty"`
+	Personas  []PersonaWiring     `yaml:"personas,omitempty"`
+	Projects  []ProjectWiring     `yaml:"projects,omitempty"`
+}
+
+// PersonaWiring is the persona entry inside `omakiten.yaml`. The persona body
+// (description, free-form notes) lives in personas/<slug>.md; this struct only
+// holds the relationships managed by the system.
+type PersonaWiring struct {
+	Slug   string   `yaml:"slug"`
+	Skills []string `yaml:"skills,omitempty"`
+	Laws   []string `yaml:"laws,omitempty"`
+}
+
+// ProjectWiring is the project entry inside `omakiten.yaml` (Phase 2 surface).
+type ProjectWiring struct {
+	Slug        string   `yaml:"slug"`
+	Name        string   `yaml:"name"`
+	Description string   `yaml:"description,omitempty"`
+	Laws        []string `yaml:"laws,omitempty"`
 }
 
 type Kit struct {
@@ -41,24 +78,42 @@ type ThemeSettings struct {
 	Active string `yaml:"active" json:"active"`
 }
 
+// Skill is a resolved skill: its frontmatter + body merged with the slug taken
+// from the source filename (without `.md`).
 type Skill struct {
-	ID   int    `yaml:"id" json:"id"`
-	Key  string `yaml:"key" json:"key"`
-	Name string `yaml:"name" json:"name"`
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Body        string `json:"body,omitempty"`
+	SourcePath  string `json:"source_path,omitempty"`
 }
 
 type Persona struct {
-	ID       int    `yaml:"id" json:"id"`
-	Key      string `yaml:"key" json:"key"`
-	Name     string `yaml:"name" json:"name"`
-	SkillIDs []int  `yaml:"skill_ids" json:"skill_ids,omitempty"`
+	Slug        string   `json:"slug"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Body        string   `json:"body,omitempty"`
+	Skills      []string `json:"skills,omitempty"`
+	Laws        []string `json:"laws,omitempty"`
+	SourcePath  string   `json:"source_path,omitempty"`
 }
 
 type Law struct {
-	ID       int    `yaml:"id" json:"id"`
-	Key      string `yaml:"key" json:"key"`
-	Severity string `yaml:"severity" json:"severity"`
-	Body     string `yaml:"body" json:"body"`
+	Slug        string `json:"slug"`
+	Name        string `json:"name,omitempty"`
+	Severity    string `json:"severity"`
+	Body        string `json:"body"`
+	Scope       string `json:"scope,omitempty"`
+	ProjectSlug string `json:"project,omitempty"`
+	PersonaSlug string `json:"persona,omitempty"`
+	SourcePath  string `json:"source_path,omitempty"`
+}
+
+type Project struct {
+	Slug        string   `json:"slug"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Laws        []string `json:"laws,omitempty"`
 }
 
 type Workflow struct {
@@ -86,4 +141,34 @@ type Theme struct {
 	Key     string            `yaml:"key" json:"key"`
 	Name    string            `yaml:"name" json:"name"`
 	Colors  map[string]string `yaml:"colors" json:"colors"`
+}
+
+// SourceWarning surfaces non-fatal issues (e.g. filename ↔ frontmatter name
+// drift). Validator collects them; CLI/TUI render them as `warning` fields.
+type SourceWarning struct {
+	Slug    string `json:"slug,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Message string `json:"message"`
+}
+
+// EntityKind identifies the three folder-backed entity types.
+type EntityKind string
+
+const (
+	EntityKindSkill   EntityKind = "skill"
+	EntityKindLaw     EntityKind = "law"
+	EntityKindPersona EntityKind = "persona"
+)
+
+// EntityFolder returns the per-kind folder name relative to the config dir.
+func (k EntityKind) Folder() string {
+	switch k {
+	case EntityKindSkill:
+		return "skills"
+	case EntityKindLaw:
+		return "laws"
+	case EntityKindPersona:
+		return "personas"
+	}
+	return ""
 }

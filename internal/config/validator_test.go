@@ -13,18 +13,11 @@ func TestValidateBundle(t *testing.T) {
 	}{
 		{name: "valid bundle"},
 		{
-			name: "duplicate skill id",
-			mutate: func(bundle *Bundle) {
-				bundle.Skills = append(bundle.Skills, Skill{ID: 1, Key: "dup", Name: "Duplicate"})
-			},
-			wantErr: "duplicated id",
-		},
-		{
 			name: "persona references missing skill",
 			mutate: func(bundle *Bundle) {
-				bundle.Personas[0].SkillIDs = []int{99}
+				bundle.Personas[0].Skills = []string{"missing"}
 			},
-			wantErr: "missing skill",
+			wantErr: "no matching skill",
 		},
 		{
 			name: "invalid law severity",
@@ -56,7 +49,7 @@ func TestValidateBundle(t *testing.T) {
 				tt.mutate(&bundle)
 			}
 
-			err := ValidateBundle(bundle)
+			err := ValidateBundle(bundle, bundle.Skills, bundle.Laws, bundle.Personas)
 			if tt.wantErr == "" && err != nil {
 				t.Fatalf("ValidateBundle() error = %v", err)
 			}
@@ -82,14 +75,13 @@ func validBundle() Bundle {
 			Workflow: WorkflowSettings{Active: "default"},
 			Theme:    ThemeSettings{Active: "catppuccin"},
 		},
-		Skills: []Skill{{ID: 1, Key: "go", Name: "Go"}},
+		Skills: []Skill{{Slug: "go", Name: "Go"}},
 		Personas: []Persona{{
-			ID:       1,
-			Key:      "agent",
-			Name:     "Agent",
-			SkillIDs: []int{1},
+			Slug:   "agent",
+			Name:   "Agent",
+			Skills: []string{"go"},
 		}},
-		Laws: []Law{{ID: 1, Key: "scope", Severity: "error", Body: "Stay in scope."}},
+		Laws: []Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}},
 		Workflows: []Workflow{{
 			ID:   1,
 			Key:  "default",
