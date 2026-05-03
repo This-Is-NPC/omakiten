@@ -16,9 +16,14 @@ import (
 )
 
 const (
-	columnWidth     = 28
-	selectionMarker = "▌"
-	normalMarker    = " "
+	columnWidth                = 28
+	taskDetailsPanelWidth      = 40
+	taskCommentsPanelWidth     = 44
+	commentInputHeight         = 5
+	taskFormInputWidth         = 72
+	taskDescriptionInputHeight = 8
+	selectionMarker            = "▌"
+	normalMarker               = " "
 )
 
 type Repositories struct {
@@ -27,6 +32,7 @@ type Repositories struct {
 	Dependencies app.DependencyRepository
 	Entries      app.ContextEntryRepository
 	Config       app.ConfigRepository
+	Editor       *app.BundleEditor
 }
 
 type Model struct {
@@ -43,29 +49,55 @@ type Model struct {
 	mode     inputMode
 	input    string
 	status   string
-	detail   bool
 	moveMode bool
+
+	taskScreen      taskScreenMode
+	taskID          int64
+	taskTitle       string
+	taskDescription string
+	taskField       taskFormField
 
 	tasks        []domain.Task
 	workflow     domain.Workflow
 	dependencies []domain.TaskDependency
 	comments     []domain.Comment
 	laws         []domain.Law
+	skills       []domain.Skill
+	personas     []domain.Persona
 	entries      []domain.ContextEntry
 	metrics      domain.TokenMetrics
 	selected     int
 	colIdx       int
 	cardIdx      int
+
+	entityKind    entityKind
+	entityCursors map[entityKind]int
+	entityScreen  entityScreenMode
+	entityForm    entityForm
 }
 
 type inputMode int
 
 const (
 	modeNormal inputMode = iota
-	modeNewTask
-	modeEditTask
 	modeComment
 	modeMove
+)
+
+type taskScreenMode int
+
+const (
+	taskScreenClosed taskScreenMode = iota
+	taskScreenView
+	taskScreenCreate
+	taskScreenEdit
+)
+
+type taskFormField int
+
+const (
+	taskFieldTitle taskFormField = iota
+	taskFieldDescription
 )
 
 var viewNames = []string{"Board", "Table", "Graph", "Config"}
@@ -74,7 +106,16 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 	if counter == nil {
 		counter = token.ApproxCounter{}
 	}
-	model := Model{ctx: ctx, project: project, repos: repos, theme: theme, styles: newStyles(theme), counter: counter}
+	model := Model{
+		ctx:           ctx,
+		project:       project,
+		repos:         repos,
+		theme:         theme,
+		styles:        newStyles(theme),
+		counter:       counter,
+		entityKind:    entityKindLaw,
+		entityCursors: map[entityKind]int{entityKindLaw: 0, entityKindPersona: 0, entityKindSkill: 0},
+	}
 	if err := model.refresh(); err != nil {
 		return Model{}, err
 	}
@@ -90,9 +131,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+	case editorFinishedMsg:
+		m.handleEditorFinished(msg)
+		return m, nil
 	case tea.KeyMsg:
 		if m.mode != modeNormal {
 			return m.updateInput(msg)
+		}
+		if m.taskScreen != taskScreenClosed {
+			return m.updateTaskScreen(msg)
+		}
+
+		if m.entityScreen != entityScreenClosed {
+			return m.updateEntityScreen(msg)
 		}
 
 		if msg.String() == "ctrl+c" || msg.String() == "q" {
@@ -101,61 +152,75 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.handleCommonKey(msg) {
 			return m, nil
 		}
-		if m.view == 0 {
+		switch m.view {
+		case 0:
 			m.handleBoardKey(msg)
-			return m, nil
+		case 3:
+			if cmd := m.handleConfigKey(msg); cmd != nil {
+				return m, cmd
+			}
+		default:
+			m.handleListKey(msg)
 		}
-		m.handleListKey(msg)
 	}
 	return m, nil
 }
 
 func (m Model) View() string {
-	if m.mode != modeNormal {
+	if m.mode != modeNormal && !m.isEmbeddedCommentInput() {
 		return strings.Join([]string{m.renderHeader(), m.renderInput(), m.renderCurrentView(), m.renderFooter()}, "\n")
 	}
 
 	parts := []string{m.renderHeader()}
-	if m.status != "" {
+	if m.status != "" && !m.isEmbeddedCommentInput() {
 		parts = append(parts, m.styles.status.Render("  "+m.status))
 	}
 	parts = append(parts, m.renderCurrentView(), m.renderFooter())
 	return strings.Join(parts, "\n")
 }
 
+func (m Model) isEmbeddedCommentInput() bool {
+	return m.mode == modeComment && m.taskScreen == taskScreenView && m.taskID > 0
+}
+
 func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 	switch msg.String() {
 	case "esc":
-		if m.detail || m.moveMode {
-			m.detail = false
+		if m.moveMode {
 			m.moveMode = false
-			m.status = "Closed"
+			m.status = ""
 			return true
 		}
 	case "tab":
 		m.view = (m.view + 1) % len(viewNames)
-		m.detail = false
 		m.moveMode = false
 		return true
 	case "shift+tab":
 		m.view = (m.view + len(viewNames) - 1) % len(viewNames)
-		m.detail = false
 		m.moveMode = false
 		return true
 	case "1", "2", "3", "4":
 		m.view = int(msg.String()[0] - '1')
-		m.detail = false
 		m.moveMode = false
 		return true
 	case "n":
-		m.beginInput(modeNewTask, "New task title", "")
+		if m.view == 3 {
+			return false
+		}
+		m.openTaskCreate()
 		return true
 	case "e":
+		if m.view == 3 {
+			return false
+		}
 		if task, ok := m.selectedTask(); ok {
-			m.beginInput(modeEditTask, "Edit task title", task.Title)
+			m.openTaskEdit(task)
 		}
 		return true
 	case "c":
+		if m.view == 3 {
+			return false
+		}
 		if _, ok := m.selectedTask(); ok {
 			m.beginInput(modeComment, "Comment body", "")
 		}
@@ -174,8 +239,8 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 func (m *Model) handleBoardKey(msg tea.KeyMsg) {
 	switch msg.String() {
 	case "enter":
-		if _, ok := m.selectedTask(); ok {
-			m.detail = !m.detail
+		if task, ok := m.selectedTask(); ok {
+			m.openTaskView(task)
 		}
 	case "m":
 		if _, ok := m.selectedTask(); ok {
@@ -235,8 +300,8 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 			m.selected++
 		}
 	case "enter":
-		if _, ok := m.selectedTask(); ok {
-			m.detail = !m.detail
+		if task, ok := m.selectedTask(); ok {
+			m.openTaskView(task)
 		}
 	case "m":
 		if _, ok := m.selectedTask(); ok {
@@ -245,11 +310,189 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 	}
 }
 
+func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.taskScreen == taskScreenView {
+		switch msg.String() {
+		case "ctrl+c", "q":
+			return *m, tea.Quit
+		case "esc":
+			m.closeTaskScreen("")
+		case "e":
+			if task, ok := m.activeTask(); ok {
+				m.openTaskEdit(task)
+			}
+		case "c":
+			if _, ok := m.activeTask(); ok {
+				m.beginInput(modeComment, "Comment body", "")
+			}
+		case "m":
+			if _, ok := m.activeTask(); ok {
+				m.beginInput(modeMove, "Target bucket key", "")
+			}
+		case "r":
+			if err := m.refresh(); err != nil {
+				m.status = err.Error()
+			} else {
+				m.status = "Refreshed"
+			}
+		}
+		return *m, nil
+	}
+
+	switch {
+	case msg.String() == "ctrl+c":
+		return *m, tea.Quit
+	case msg.String() == "esc":
+		if m.taskScreen == taskScreenCreate {
+			m.closeTaskScreen("Cancelled")
+		} else if task, ok := m.activeTask(); ok {
+			m.openTaskView(task)
+		} else {
+			m.closeTaskScreen("Cancelled")
+		}
+	case msg.String() == "ctrl+s":
+		m.saveTaskForm()
+	case msg.String() == "tab" || msg.String() == "shift+tab":
+		m.toggleTaskField()
+	case isTaskFormNewline(msg):
+		m.insertTaskFormNewline()
+	case msg.String() == "backspace" || msg.String() == "ctrl+h":
+		m.deleteTaskFormRune()
+	default:
+		if len(msg.Runes) > 0 {
+			m.appendTaskFormText(string(msg.Runes))
+		} else if msg.String() == " " {
+			m.appendTaskFormText(" ")
+		}
+	}
+	return *m, nil
+}
+
+func isTaskFormNewline(msg tea.KeyMsg) bool {
+	if msg.Type == tea.KeyEnter || msg.Type == tea.KeyCtrlJ {
+		return true
+	}
+	switch msg.String() {
+	case "enter", "alt+enter", "shift+enter", "ctrl+j", "alt+ctrl+j":
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *Model) openTaskCreate() {
+	m.taskScreen = taskScreenCreate
+	m.taskID = 0
+	m.taskTitle = ""
+	m.taskDescription = ""
+	m.taskField = taskFieldTitle
+	m.status = "New task"
+	m.moveMode = false
+}
+
+func (m *Model) openTaskView(task domain.Task) {
+	m.taskScreen = taskScreenView
+	m.taskID = task.ID
+	m.taskTitle = ""
+	m.taskDescription = ""
+	m.taskField = taskFieldTitle
+	m.status = ""
+	m.moveMode = false
+}
+
+func (m *Model) openTaskEdit(task domain.Task) {
+	m.taskScreen = taskScreenEdit
+	m.taskID = task.ID
+	m.taskTitle = task.Title
+	m.taskDescription = task.Description
+	m.taskField = taskFieldTitle
+	m.status = "Editing task"
+	m.moveMode = false
+}
+
+func (m *Model) closeTaskScreen(status string) {
+	m.taskScreen = taskScreenClosed
+	m.taskID = 0
+	m.taskTitle = ""
+	m.taskDescription = ""
+	m.taskField = taskFieldTitle
+	m.status = status
+	m.moveMode = false
+}
+
+func (m *Model) toggleTaskField() {
+	if m.taskField == taskFieldTitle {
+		m.taskField = taskFieldDescription
+	} else {
+		m.taskField = taskFieldTitle
+	}
+}
+
+func (m *Model) appendTaskFormText(text string) {
+	if m.taskField == taskFieldTitle {
+		m.taskTitle += text
+		return
+	}
+	m.taskDescription += text
+}
+
+func (m *Model) insertTaskFormNewline() {
+	if m.taskField == taskFieldTitle {
+		m.taskField = taskFieldDescription
+		return
+	}
+	m.taskDescription += "\n"
+}
+
+func (m *Model) deleteTaskFormRune() {
+	if m.taskField == taskFieldTitle {
+		m.taskTitle = trimLastRune(m.taskTitle)
+		return
+	}
+	m.taskDescription = trimLastRune(m.taskDescription)
+}
+
+func (m *Model) saveTaskForm() {
+	title := strings.TrimSpace(m.taskTitle)
+	if title == "" {
+		m.status = "Task title is required"
+		return
+	}
+	description := strings.TrimSpace(m.taskDescription)
+
+	var task domain.Task
+	var err error
+	switch m.taskScreen {
+	case taskScreenCreate:
+		task, err = app.NewTaskService(m.repos.Tasks).Add(m.ctx, m.project, title, description, "backlog")
+	case taskScreenEdit:
+		current, ok := m.activeTask()
+		if !ok {
+			err = domain.NewError(domain.ErrTaskNotFound, "no selected task", nil)
+			break
+		}
+		task, err = app.NewTaskService(m.repos.Tasks).Edit(m.ctx, m.project, current.ID, domain.TaskUpdate{Title: &title, Description: &description})
+	default:
+		return
+	}
+	if err != nil {
+		m.status = err.Error()
+		return
+	}
+	if err := m.refresh(); err != nil {
+		m.status = err.Error()
+		return
+	}
+	if m.selectTaskByID(task.ID) {
+		m.openTaskView(task)
+	}
+	m.status = "Saved"
+}
+
 func (m *Model) beginInput(mode inputMode, status, input string) {
 	m.mode = mode
 	m.input = input
 	m.status = status
-	m.detail = false
 	m.moveMode = false
 }
 
@@ -261,6 +504,10 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeNormal
 		m.input = ""
 		m.status = "Cancelled"
+	case "alt+enter", "shift+enter", "ctrl+j", "alt+ctrl+j":
+		if m.mode == modeComment {
+			m.input += "\n"
+		}
 	case "enter":
 		m.submitInput()
 	case "backspace", "ctrl+h":
@@ -280,17 +527,10 @@ func (m *Model) submitInput() {
 		return
 	}
 
+	var savedTask domain.Task
+	selectSavedTask := false
 	var err error
 	switch m.mode {
-	case modeNewTask:
-		_, err = app.NewTaskService(m.repos.Tasks).Add(m.ctx, m.project, input, "", "backlog")
-	case modeEditTask:
-		task, ok := m.selectedTask()
-		if !ok {
-			err = domain.NewError(domain.ErrTaskNotFound, "no selected task", nil)
-			break
-		}
-		_, err = app.NewTaskService(m.repos.Tasks).Edit(m.ctx, m.project, task.ID, domain.TaskUpdate{Title: &input})
 	case modeComment:
 		task, ok := m.selectedTask()
 		if !ok {
@@ -304,7 +544,8 @@ func (m *Model) submitInput() {
 			err = domain.NewError(domain.ErrTaskNotFound, "no selected task", nil)
 			break
 		}
-		_, err = app.NewTaskService(m.repos.Tasks).Move(m.ctx, m.project, task.ID, input)
+		savedTask, err = app.NewTaskService(m.repos.Tasks).Move(m.ctx, m.project, task.ID, input)
+		selectSavedTask = true
 	}
 
 	if err != nil {
@@ -316,6 +557,9 @@ func (m *Model) submitInput() {
 	if err := m.refresh(); err != nil {
 		m.status = err.Error()
 	} else {
+		if selectSavedTask && m.selectTaskByID(savedTask.ID) {
+			m.taskID = savedTask.ID
+		}
 		m.status = "Saved"
 	}
 	m.mode = modeNormal
@@ -368,6 +612,26 @@ func (m *Model) refresh() error {
 	if err != nil {
 		return err
 	}
+	skills, err := m.repos.Config.ListActiveSkills(m.ctx)
+	if err != nil {
+		return err
+	}
+	personas, err := m.repos.Config.ListActivePersonas(m.ctx)
+	if err != nil {
+		return err
+	}
+	// The store returns identity-level fields only (id, key, name, severity).
+	// Merge frontmatter + body + source_path from the on-disk bundle so the
+	// detail views and the $EDITOR shell-out have the file path they need.
+	if m.repos.Editor != nil {
+		bundle, err := m.repos.Editor.Load()
+		if err != nil {
+			return err
+		}
+		skills = enrichSkillsFromBundle(skills, bundle)
+		laws = enrichLawsFromBundle(laws, bundle)
+		personas = enrichPersonasFromBundle(personas, bundle)
+	}
 	entries, err := m.repos.Entries.ListContextEntries(m.ctx, m.project.ID)
 	if err != nil {
 		return err
@@ -382,10 +646,13 @@ func (m *Model) refresh() error {
 	m.dependencies = dependencies
 	m.comments = comments
 	m.laws = laws
+	m.skills = skills
+	m.personas = personas
 	m.entries = entries
 	m.metrics = m.computeMetrics(settings.MaxTokens)
 	m.clampSelection()
 	m.clampCardIdx()
+	m.clampEntityCursor()
 	m.syncSelectedFromBoard()
 	return nil
 }
@@ -397,6 +664,10 @@ func (m Model) computeMetrics(maxTokens int) domain.TokenMetrics {
 	}
 	for _, law := range m.laws {
 		total += m.counter.Count(law.Key + " " + law.Body)
+	}
+	for _, persona := range m.personas {
+		// Persona descriptions count toward the budget; skill bodies do not.
+		total += m.counter.Count(persona.Description)
 	}
 	for _, comment := range m.comments {
 		total += m.counter.Count(comment.Body)
@@ -410,6 +681,9 @@ func (m Model) renderHeader() string {
 	sb.WriteString(m.styles.title.Render(m.project.Slug))
 	sb.WriteString("  ")
 	sb.WriteString(m.styles.hint.Render("· local checkpoint"))
+	if m.taskScreen != taskScreenClosed || m.entityScreen != entityScreenClosed {
+		return sb.String()
+	}
 	sb.WriteString("\n\n  ")
 
 	items := make([]string, 0, len(viewNames))
@@ -429,6 +703,12 @@ func (m Model) renderInput() string {
 }
 
 func (m Model) renderCurrentView() string {
+	if m.taskScreen != taskScreenClosed {
+		return m.renderTaskScreen()
+	}
+	if m.entityScreen != entityScreenClosed {
+		return m.renderEntityScreen()
+	}
 	switch m.view {
 	case 0:
 		return m.renderBoard()
@@ -467,12 +747,6 @@ func (m Model) renderBoard() string {
 	if totalTasks == 0 {
 		sb.WriteString("\n\n")
 		sb.WriteString(indentBlock(m.renderEmptyBoardHint(), 2))
-	}
-	if m.detail {
-		if task, ok := m.selectedTask(); ok {
-			sb.WriteString("\n\n")
-			sb.WriteString(indentBlock(m.renderDetailPanel(task), 2))
-		}
 	}
 	return sb.String()
 }
@@ -519,23 +793,120 @@ func (m Model) renderEmptyBoardHint() string {
 		m.styles.hint.Render("Create one with ") + m.styles.hintAccent.Render("n") + m.styles.hint.Render(" or from the CLI:"),
 		m.styles.hint.Render("  okt add -t \"Implement the next slice\""),
 		"",
-		m.styles.hintAccent.Render("m") + m.styles.hint.Render(" move  ") + m.styles.hintAccent.Render("enter") + m.styles.hint.Render(" detail  ") + m.styles.hintAccent.Render("c") + m.styles.hint.Render(" comment"),
+		m.styles.hintAccent.Render("m") + m.styles.hint.Render(" move  ") + m.styles.hintAccent.Render("enter") + m.styles.hint.Render(" open  ") + m.styles.hintAccent.Render("c") + m.styles.hint.Render(" comment"),
 	}
 	return m.styles.hintBox.Render(strings.Join(lines, "\n"))
 }
 
-func (m Model) renderDetailPanel(task domain.Task) string {
-	lines := []string{
+func (m Model) renderTaskScreen() string {
+	switch m.taskScreen {
+	case taskScreenCreate:
+		return m.renderTaskForm("Create task")
+	case taskScreenEdit:
+		return m.renderTaskForm("Edit task")
+	case taskScreenView:
+		return m.renderTaskView()
+	default:
+		return ""
+	}
+}
+
+func (m Model) renderTaskView() string {
+	task, ok := m.activeTask()
+	if !ok {
+		return "\n" + indentBlock(m.styles.panel.Render("Task not found"), 2)
+	}
+
+	detailLines := []string{
+		m.styles.columnTitle.Render(fmt.Sprintf("Task #%d", task.ID)),
+		"",
 		"Title:    " + task.Title,
 		"Bucket:   " + task.BucketKey,
 		"Priority: " + string(task.Priority),
 		fmt.Sprintf("Deps:     %d", m.dependencyCount(task.ID)),
 		fmt.Sprintf("Comments: %d", m.commentCount(task.ID)),
+		"",
+		m.styles.columnTitle.Render("Description"),
 	}
-	if strings.TrimSpace(task.Description) != "" {
-		lines = append(lines, "", "Description:", task.Description)
+	if strings.TrimSpace(task.Description) == "" {
+		detailLines = append(detailLines, m.styles.hint.Render("No description"))
+	} else {
+		detailLines = append(detailLines, task.Description)
 	}
-	return m.styles.detail.Render(strings.Join(lines, "\n"))
+
+	details := m.styles.taskDetails.Render(strings.Join(detailLines, "\n"))
+	comments := m.renderTaskComments(task.ID)
+	return "\n" + indentBlock(lipgloss.JoinHorizontal(lipgloss.Top, details, comments), 2)
+}
+
+func (m Model) renderTaskComments(taskID int64) string {
+	comments := m.commentsForTask(taskID)
+	lines := []string{
+		m.styles.columnTitle.Render(fmt.Sprintf("Comments (%d)", len(comments))),
+	}
+	if len(comments) == 0 {
+		lines = append(lines, "", m.styles.hint.Render("No comments yet."), m.styles.hint.Render("Press c to add one."))
+	} else {
+		for _, comment := range comments {
+			lines = append(lines, "", m.renderCommentCard(comment))
+		}
+	}
+	if m.isEmbeddedCommentInput() && m.taskID == taskID {
+		lines = append(lines, "", m.renderCommentInput())
+	}
+	return m.styles.taskComments.Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) renderCommentInput() string {
+	lines := []string{
+		m.styles.columnTitle.Render("New comment"),
+		m.styles.hint.Render("enter saves · alt+enter/shift+enter newline"),
+	}
+	if m.status != "" && m.status != "Comment body" {
+		lines = append(lines, m.styles.status.Render(m.status))
+	}
+	lines = append(lines, m.styles.commentInput.Render(m.input))
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderCommentCard(comment domain.Comment) string {
+	header := m.styles.hintAccent.Render(comment.AuthorType)
+	if strings.TrimSpace(comment.CreatedAt) != "" {
+		header += m.styles.hint.Render(" · " + comment.CreatedAt)
+	}
+	body := strings.TrimSpace(comment.Body)
+	if body == "" {
+		body = m.styles.hint.Render("empty comment")
+	}
+	return m.styles.commentCard.Render(header + "\n" + body)
+}
+
+func (m Model) renderTaskForm(title string) string {
+	lines := []string{
+		m.styles.columnTitle.Render(title),
+		m.styles.hint.Render("ctrl+s saves. enter/alt+enter/shift+enter adds lines in description."),
+		"",
+		m.renderTaskFormLabel(taskFieldTitle, "Title"),
+		m.styles.input.Width(taskFormInputWidth).Render(m.taskTitle),
+		"",
+		m.renderTaskFormLabel(taskFieldDescription, "Description"),
+		m.renderTaskDescriptionInput(),
+	}
+	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(lines, "\n")), 2)
+}
+
+func (m Model) renderTaskDescriptionInput() string {
+	return m.styles.multilineInput.Render(m.taskDescription)
+}
+
+func (m Model) renderTaskFormLabel(field taskFormField, label string) string {
+	marker := " "
+	style := m.styles.columnTitle
+	if m.taskField == field {
+		marker = ">"
+		style = m.styles.hintAccent
+	}
+	return style.Render(marker + " " + label)
 }
 
 func (m Model) renderTable() string {
@@ -554,13 +925,7 @@ func (m Model) renderTable() string {
 		row := fmt.Sprintf("%s %-4d %-11s %-8s %-5d %-9d %s", marker, task.ID, task.BucketKey, task.Priority, m.dependencyCount(task.ID), m.commentCount(task.ID), truncateText(task.Title, 32))
 		rows = append(rows, row)
 	}
-	content := strings.Join(rows, "\n")
-	if m.detail {
-		if task, ok := m.selectedTask(); ok {
-			content += "\n\n" + m.renderDetailPanel(task)
-		}
-	}
-	return "\n" + indentBlock(m.styles.panel.Render(content), 2)
+	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
 }
 
 func (m Model) renderGraph() string {
@@ -582,14 +947,6 @@ func (m Model) renderConfig() string {
 	}
 	sort.Strings(bucketKeys)
 
-	lawLines := make([]string, 0, len(m.laws))
-	for _, law := range m.laws {
-		lawLines = append(lawLines, fmt.Sprintf("  %s [%s]", law.Key, law.Severity))
-	}
-	if len(lawLines) == 0 {
-		lawLines = append(lawLines, "  none")
-	}
-
 	left := []string{
 		m.styles.columnTitle.Render("Runtime"),
 		fmt.Sprintf("Workflow: %s", m.workflow.Key),
@@ -609,35 +966,56 @@ func (m Model) renderConfig() string {
 	if m.metrics.Truncated {
 		right = append(right, m.styles.error.Render("Budget exceeded"))
 	}
-	right = append(right, "", m.styles.columnTitle.Render("Laws"))
-	right = append(right, lawLines...)
 
-	content := lipgloss.JoinHorizontal(
+	header := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		m.styles.configColumn.Render(strings.Join(left, "\n")),
 		m.styles.configColumn.Render(strings.Join(right, "\n")),
 	)
-	return "\n" + indentBlock(content, 2)
+
+	lists := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		m.renderEntityList(entityKindLaw),
+		m.renderEntityList(entityKindPersona),
+		m.renderEntityList(entityKindSkill),
+	)
+
+	return "\n" + indentBlock(header+"\n\n"+lists, 2)
 }
 
 func (m Model) renderFooter() string {
 	var text string
 	switch {
+	case m.isEmbeddedCommentInput():
+		text = "enter: add comment  alt+enter/shift+enter: newline  esc: cancel"
 	case m.mode != modeNormal:
 		text = "enter: save  esc: cancel  ctrl+c: quit"
-	case m.detail:
-		text = "esc: close detail  tab: switch view  q: quit"
+	case m.taskScreen == taskScreenView:
+		text = "e: edit  c: comment  m: move  r: refresh  esc: board  q: quit"
+	case m.taskScreen == taskScreenCreate:
+		text = "tab: switch field  enter/alt+enter: newline  ctrl+s: create  esc: cancel"
+	case m.taskScreen == taskScreenEdit:
+		text = "tab: switch field  enter/alt+enter: newline  ctrl+s: save  esc: view"
+	case m.entityScreen == entityScreenView:
+		text = "e: edit (opens $EDITOR)  d: delete  p: skill picker (persona)  r: refresh  esc: config  q: quit"
+	case m.entityScreen == entityScreenSkillPicker:
+		text = "up/down: move  space: toggle  enter on '+': new skill  ctrl+s: save  esc: cancel"
 	case m.moveMode:
 		text = "left/right: move task to column  esc: cancel  q: quit"
 	case m.view == 0:
-		text = "left/right: columns  up/down: cards  enter: detail  m: move  n/e/c: change  q: quit"
+		text = "left/right: columns  up/down: cards  enter: open  m: move  n/e/c: change  q: quit"
+	case m.view == 3:
+		text = "left/right: section  up/down: select  enter: open  n: new  e: edit  d: delete  q: quit"
 	default:
-		text = "tab: switch view  up/down: select  enter: detail  m: move  n/e/c: change  q: quit"
+		text = "tab: switch view  up/down: select  enter: open  m: move  n/e/c: change  q: quit"
 	}
 	return "\n" + indentBlock(m.styles.footer.Render(text), 2)
 }
 
 func (m Model) selectedTask() (domain.Task, bool) {
+	if m.taskScreen != taskScreenClosed && m.taskID > 0 {
+		return m.taskByID(m.taskID)
+	}
 	if m.view == 0 {
 		if len(m.workflow.Buckets) == 0 || m.colIdx >= len(m.workflow.Buckets) {
 			return domain.Task{}, false
@@ -652,6 +1030,22 @@ func (m Model) selectedTask() (domain.Task, bool) {
 		return domain.Task{}, false
 	}
 	return m.tasks[m.selected], true
+}
+
+func (m Model) activeTask() (domain.Task, bool) {
+	if m.taskID <= 0 {
+		return domain.Task{}, false
+	}
+	return m.taskByID(m.taskID)
+}
+
+func (m Model) taskByID(taskID int64) (domain.Task, bool) {
+	for _, task := range m.tasks {
+		if task.ID == taskID {
+			return task, true
+		}
+	}
+	return domain.Task{}, false
 }
 
 func (m Model) tasksByBucket() map[string][]domain.Task {
@@ -680,6 +1074,36 @@ func (m *Model) syncSelectedFromBoard() {
 			return
 		}
 	}
+}
+
+func (m *Model) selectTaskByID(taskID int64) bool {
+	for i, task := range m.tasks {
+		if task.ID != taskID {
+			continue
+		}
+
+		m.selected = i
+		for colIdx, bucket := range m.workflow.Buckets {
+			if bucket.Key != task.BucketKey {
+				continue
+			}
+
+			cardIdx := 0
+			for _, candidate := range m.tasks {
+				if candidate.BucketKey != task.BucketKey {
+					continue
+				}
+				if candidate.ID == taskID {
+					m.colIdx = colIdx
+					m.cardIdx = cardIdx
+					return true
+				}
+				cardIdx++
+			}
+		}
+		return true
+	}
+	return false
 }
 
 func (m *Model) clampSelection() {
@@ -722,13 +1146,17 @@ func (m Model) dependencyCount(taskID int64) int {
 }
 
 func (m Model) commentCount(taskID int64) int {
-	count := 0
+	return len(m.commentsForTask(taskID))
+}
+
+func (m Model) commentsForTask(taskID int64) []domain.Comment {
+	comments := make([]domain.Comment, 0)
 	for _, comment := range m.comments {
 		if comment.TaskID == taskID {
-			count++
+			comments = append(comments, comment)
 		}
 	}
-	return count
+	return comments
 }
 
 func (m Model) taskIndicator(task domain.Task) lipgloss.Style {
@@ -751,6 +1179,14 @@ func truncateText(s string, max int) string {
 		return s
 	}
 	return string(runes[:max-1]) + "…"
+}
+
+func trimLastRune(s string) string {
+	runes := []rune(s)
+	if len(runes) == 0 {
+		return s
+	}
+	return string(runes[:len(runes)-1])
 }
 
 func centerText(s string, width int) string {
@@ -792,31 +1228,35 @@ func indentBlock(block string, spaces int) string {
 }
 
 type styles struct {
-	title         lipgloss.Style
-	nav           lipgloss.Style
-	activeNav     lipgloss.Style
-	panel         lipgloss.Style
-	column        lipgloss.Style
-	focusedColumn lipgloss.Style
-	border        lipgloss.Style
-	focusBorder   lipgloss.Style
-	columnTitle   lipgloss.Style
-	card          lipgloss.Style
-	marker        lipgloss.Style
-	separator     lipgloss.Style
-	empty         lipgloss.Style
-	status        lipgloss.Style
-	input         lipgloss.Style
-	footer        lipgloss.Style
-	hint          lipgloss.Style
-	hintAccent    lipgloss.Style
-	hintBox       lipgloss.Style
-	detail        lipgloss.Style
-	configColumn  lipgloss.Style
-	muted         lipgloss.Style
-	success       lipgloss.Style
-	warning       lipgloss.Style
-	error         lipgloss.Style
+	title          lipgloss.Style
+	nav            lipgloss.Style
+	activeNav      lipgloss.Style
+	panel          lipgloss.Style
+	taskDetails    lipgloss.Style
+	taskComments   lipgloss.Style
+	commentCard    lipgloss.Style
+	commentInput   lipgloss.Style
+	column         lipgloss.Style
+	focusedColumn  lipgloss.Style
+	border         lipgloss.Style
+	focusBorder    lipgloss.Style
+	columnTitle    lipgloss.Style
+	card           lipgloss.Style
+	marker         lipgloss.Style
+	separator      lipgloss.Style
+	empty          lipgloss.Style
+	status         lipgloss.Style
+	input          lipgloss.Style
+	multilineInput lipgloss.Style
+	footer         lipgloss.Style
+	hint           lipgloss.Style
+	hintAccent     lipgloss.Style
+	hintBox        lipgloss.Style
+	configColumn   lipgloss.Style
+	muted          lipgloss.Style
+	success        lipgloss.Style
+	warning        lipgloss.Style
+	error          lipgloss.Style
 }
 
 func newStyles(theme config.Theme) styles {
@@ -837,30 +1277,34 @@ func newStyles(theme config.Theme) styles {
 	errorColor := color("error", "#ED8796")
 
 	return styles{
-		title:         lipgloss.NewStyle().Bold(true).Foreground(primary),
-		nav:           lipgloss.NewStyle().Foreground(foreground),
-		activeNav:     lipgloss.NewStyle().Foreground(background).Background(primary).Bold(true).Padding(0, 1),
-		panel:         lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 2),
-		column:        lipgloss.NewStyle().Foreground(foreground),
-		focusedColumn: lipgloss.NewStyle().Foreground(foreground),
-		border:        lipgloss.NewStyle().Foreground(border),
-		focusBorder:   lipgloss.NewStyle().Foreground(primary),
-		columnTitle:   lipgloss.NewStyle().Bold(true).Foreground(foreground),
-		card:          lipgloss.NewStyle().Width(columnWidth),
-		marker:        lipgloss.NewStyle().Foreground(primary).Bold(true),
-		separator:     lipgloss.NewStyle().Foreground(border),
-		empty:         lipgloss.NewStyle().Foreground(border).Italic(true).Width(columnWidth - 4).Align(lipgloss.Center),
-		status:        lipgloss.NewStyle().Foreground(secondary).Italic(true),
-		input:         lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 2),
-		footer:        lipgloss.NewStyle().Foreground(border).Italic(true),
-		hint:          lipgloss.NewStyle().Foreground(border).Italic(true),
-		hintAccent:    lipgloss.NewStyle().Foreground(primary).Bold(true),
-		hintBox:       lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2).Width(60),
-		detail:        lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.RoundedBorder()).BorderForeground(primary).Padding(0, 2).Width(54),
-		configColumn:  lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(1, 2).MarginRight(1).Width(40),
-		muted:         lipgloss.NewStyle().Foreground(border),
-		success:       lipgloss.NewStyle().Foreground(success),
-		warning:       lipgloss.NewStyle().Foreground(warning),
-		error:         lipgloss.NewStyle().Foreground(errorColor),
+		title:          lipgloss.NewStyle().Bold(true).Foreground(primary),
+		nav:            lipgloss.NewStyle().Foreground(foreground),
+		activeNav:      lipgloss.NewStyle().Foreground(background).Background(primary).Bold(true).Padding(0, 1),
+		panel:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 2),
+		taskDetails:    lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 2).MarginRight(2).Width(taskDetailsPanelWidth),
+		taskComments:   lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 2).Width(taskCommentsPanelWidth),
+		commentCard:    lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(taskCommentsPanelWidth - 8),
+		commentInput:   lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 1).Width(taskCommentsPanelWidth - 8).Height(commentInputHeight),
+		column:         lipgloss.NewStyle().Foreground(foreground),
+		focusedColumn:  lipgloss.NewStyle().Foreground(foreground),
+		border:         lipgloss.NewStyle().Foreground(border),
+		focusBorder:    lipgloss.NewStyle().Foreground(primary),
+		columnTitle:    lipgloss.NewStyle().Bold(true).Foreground(foreground),
+		card:           lipgloss.NewStyle().Width(columnWidth),
+		marker:         lipgloss.NewStyle().Foreground(primary).Bold(true),
+		separator:      lipgloss.NewStyle().Foreground(border),
+		empty:          lipgloss.NewStyle().Foreground(border).Italic(true).Width(columnWidth - 4).Align(lipgloss.Center),
+		status:         lipgloss.NewStyle().Foreground(secondary).Italic(true),
+		input:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 2),
+		multilineInput: lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 2).Width(taskFormInputWidth).Height(taskDescriptionInputHeight),
+		footer:         lipgloss.NewStyle().Foreground(border).Italic(true),
+		hint:           lipgloss.NewStyle().Foreground(border).Italic(true),
+		hintAccent:     lipgloss.NewStyle().Foreground(primary).Bold(true),
+		hintBox:        lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2).Width(60),
+		configColumn:   lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(1, 2).MarginRight(1).Width(40),
+		muted:          lipgloss.NewStyle().Foreground(border),
+		success:        lipgloss.NewStyle().Foreground(success),
+		warning:        lipgloss.NewStyle().Foreground(warning),
+		error:          lipgloss.NewStyle().Foreground(errorColor),
 	}
 }
