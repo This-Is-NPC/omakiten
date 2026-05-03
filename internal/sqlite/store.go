@@ -202,13 +202,26 @@ ON CONFLICT(bundle_id, key) DO UPDATE SET value = excluded.value, active = 1
 		}
 	}
 
+	// persona_skills must be cleared before skills are deleted to avoid FK
+	// violations; importPersonas re-creates them after personas are inserted.
+	if err := clearPersonaSkills(ctx, tx, bundleID); err != nil {
+		return err
+	}
 	if err := importSkills(ctx, tx, bundleID, bundle.Skills); err != nil {
 		return err
 	}
 	if err := importPersonas(ctx, tx, bundleID, bundle.Personas); err != nil {
 		return err
 	}
-	if err := importLaws(ctx, tx, bundleID, bundle.Laws); err != nil {
+	personasByKey, err := loadPersonaIDs(ctx, tx, bundleID)
+	if err != nil {
+		return err
+	}
+	projectsByKey, err := loadProjectIDsBySlug(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if err := importLaws(ctx, tx, bundleID, bundle.Laws, personasByKey, projectsByKey); err != nil {
 		return err
 	}
 	if err := importWorkflows(ctx, tx, bundleID, bundle.Workflows); err != nil {
@@ -216,6 +229,42 @@ ON CONFLICT(bundle_id, key) DO UPDATE SET value = excluded.value, active = 1
 	}
 
 	return tx.Commit()
+}
+
+func loadPersonaIDs(ctx context.Context, tx *sql.Tx, bundleID int64) (map[string]int64, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT id, key FROM personas WHERE bundle_id = ? AND active = 1", bundleID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]int64{}
+	for rows.Next() {
+		var id int64
+		var key string
+		if err := rows.Scan(&id, &key); err != nil {
+			return nil, err
+		}
+		out[key] = id
+	}
+	return out, rows.Err()
+}
+
+func loadProjectIDsBySlug(ctx context.Context, tx *sql.Tx) (map[string]int64, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT id, slug FROM projects WHERE archived_at IS NULL")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]int64{}
+	for rows.Next() {
+		var id int64
+		var slug string
+		if err := rows.Scan(&id, &slug); err != nil {
+			return nil, err
+		}
+		out[slug] = id
+	}
+	return out, rows.Err()
 }
 
 func upsertBundle(ctx context.Context, tx *sql.Tx, bundle config.Bundle, sourcePath, sourceHash string) (int64, error) {
@@ -238,14 +287,18 @@ RETURNING id
 }
 
 func importSkills(ctx context.Context, tx *sql.Tx, bundleID int64, skills []config.Skill) error {
-	if _, err := tx.ExecContext(ctx, "UPDATE skills SET active = 0 WHERE bundle_id = ?", bundleID); err != nil {
+	// Hard-delete prior rows for this bundle to avoid the UNIQUE(bundle_id,
+	// local_id) collision when slugs are reordered or removed. persona_skills
+	// is wiped earlier during personas import (see clearPersonaSkills).
+	if _, err := tx.ExecContext(ctx, "DELETE FROM skills WHERE bundle_id = ?", bundleID); err != nil {
 		return err
 	}
-	for _, skill := range skills {
+	for index, skill := range skills {
+		localID := index + 1
 		if _, err := tx.ExecContext(ctx, `
-INSERT INTO skills(bundle_id, local_id, key, name, active) VALUES (?, ?, ?, ?, 1)
-ON CONFLICT(bundle_id, local_id) DO UPDATE SET key = excluded.key, name = excluded.name, active = 1
-`, bundleID, skill.ID, skill.Key, skill.Name); err != nil {
+INSERT INTO skills(bundle_id, local_id, key, name, description, body, source_path, active)
+VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+`, bundleID, localID, skill.Slug, skill.Name, skill.Description, skill.Body, skill.SourcePath); err != nil {
 			return err
 		}
 	}
@@ -253,26 +306,27 @@ ON CONFLICT(bundle_id, local_id) DO UPDATE SET key = excluded.key, name = exclud
 }
 
 func importPersonas(ctx context.Context, tx *sql.Tx, bundleID int64, personas []config.Persona) error {
-	if _, err := tx.ExecContext(ctx, "UPDATE personas SET active = 0 WHERE bundle_id = ?", bundleID); err != nil {
+	if err := clearPersonaSkills(ctx, tx, bundleID); err != nil {
 		return err
 	}
-	for _, persona := range personas {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM personas WHERE bundle_id = ?", bundleID); err != nil {
+		return err
+	}
+	for index, persona := range personas {
+		localID := index + 1
 		var personaID int64
 		if err := tx.QueryRowContext(ctx, `
-INSERT INTO personas(bundle_id, local_id, key, name, active) VALUES (?, ?, ?, ?, 1)
-ON CONFLICT(bundle_id, local_id) DO UPDATE SET key = excluded.key, name = excluded.name, active = 1
+INSERT INTO personas(bundle_id, local_id, key, name, description, active)
+VALUES (?, ?, ?, ?, ?, 1)
 RETURNING id
-`, bundleID, persona.ID, persona.Key, persona.Name).Scan(&personaID); err != nil {
+`, bundleID, localID, persona.Slug, persona.Name, persona.Description).Scan(&personaID); err != nil {
 			return err
 		}
 
-		if _, err := tx.ExecContext(ctx, "DELETE FROM persona_skills WHERE persona_id = ?", personaID); err != nil {
-			return err
-		}
-		for _, skillLocalID := range persona.SkillIDs {
+		for _, skillSlug := range persona.Skills {
 			var skillID int64
-			if err := tx.QueryRowContext(ctx, "SELECT id FROM skills WHERE bundle_id = ? AND local_id = ? AND active = 1", bundleID, skillLocalID).Scan(&skillID); err != nil {
-				return err
+			if err := tx.QueryRowContext(ctx, "SELECT id FROM skills WHERE bundle_id = ? AND key = ? AND active = 1", bundleID, skillSlug).Scan(&skillID); err != nil {
+				return fmt.Errorf("persona %s references skill %s: %w", persona.Slug, skillSlug, err)
 			}
 			if _, err := tx.ExecContext(ctx, "INSERT INTO persona_skills(persona_id, skill_id) VALUES (?, ?)", personaID, skillID); err != nil {
 				return err
@@ -282,15 +336,39 @@ RETURNING id
 	return nil
 }
 
-func importLaws(ctx context.Context, tx *sql.Tx, bundleID int64, laws []config.Law) error {
-	if _, err := tx.ExecContext(ctx, "UPDATE laws SET active = 0 WHERE bundle_id = ?", bundleID); err != nil {
+func clearPersonaSkills(ctx context.Context, tx *sql.Tx, bundleID int64) error {
+	_, err := tx.ExecContext(ctx, `
+DELETE FROM persona_skills
+WHERE persona_id IN (SELECT id FROM personas WHERE bundle_id = ?)
+`, bundleID)
+	return err
+}
+
+func importLaws(ctx context.Context, tx *sql.Tx, bundleID int64, laws []config.Law, personasByKey map[string]int64, projectsByKey map[string]int64) error {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM laws WHERE bundle_id = ?", bundleID); err != nil {
 		return err
 	}
-	for _, law := range laws {
+	for index, law := range laws {
+		localID := index + 1
+		scope := law.Scope
+		if scope == "" {
+			scope = "global"
+		}
+		var projectID, personaID *int64
+		if scope == "project" && law.ProjectSlug != "" {
+			if id, ok := projectsByKey[law.ProjectSlug]; ok {
+				projectID = &id
+			}
+		}
+		if scope == "persona" && law.PersonaSlug != "" {
+			if id, ok := personasByKey[law.PersonaSlug]; ok {
+				personaID = &id
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `
-INSERT INTO laws(bundle_id, local_id, key, severity, body, active) VALUES (?, ?, ?, ?, ?, 1)
-ON CONFLICT(bundle_id, local_id) DO UPDATE SET key = excluded.key, severity = excluded.severity, body = excluded.body, active = 1
-`, bundleID, law.ID, law.Key, law.Severity, law.Body); err != nil {
+INSERT INTO laws(bundle_id, local_id, key, severity, body, scope, project_id, persona_id, active)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+`, bundleID, localID, law.Slug, law.Severity, law.Body, scope, projectID, personaID); err != nil {
 			return err
 		}
 	}
@@ -344,6 +422,93 @@ ON CONFLICT(workflow_id, from_bucket_id, to_bucket_id) DO UPDATE SET active = 1
 	}
 
 	return nil
+}
+
+func (s *Store) ListActiveSkills(ctx context.Context) ([]domain.Skill, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT skills.id, skills.key, skills.name
+FROM skills
+JOIN config_bundles ON config_bundles.id = skills.bundle_id
+WHERE skills.active = 1 AND config_bundles.active = 1
+ORDER BY skills.local_id
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var skills []domain.Skill
+	for rows.Next() {
+		var skill domain.Skill
+		if err := rows.Scan(&skill.ID, &skill.Key, &skill.Name); err != nil {
+			return nil, err
+		}
+		skills = append(skills, skill)
+	}
+	return skills, rows.Err()
+}
+
+func (s *Store) ListActivePersonas(ctx context.Context) ([]domain.Persona, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT personas.id, personas.key, personas.name
+FROM personas
+JOIN config_bundles ON config_bundles.id = personas.bundle_id
+WHERE personas.active = 1 AND config_bundles.active = 1
+ORDER BY personas.local_id
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var personas []domain.Persona
+	for rows.Next() {
+		var persona domain.Persona
+		if err := rows.Scan(&persona.ID, &persona.Key, &persona.Name); err != nil {
+			return nil, err
+		}
+		personas = append(personas, persona)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for index := range personas {
+		ids, keys, err := s.personaSkills(ctx, personas[index].ID)
+		if err != nil {
+			return nil, err
+		}
+		personas[index].SkillIDs = ids
+		personas[index].SkillKeys = keys
+	}
+	return personas, nil
+}
+
+func (s *Store) personaSkills(ctx context.Context, personaID int64) ([]int64, []string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT skills.id, skills.key
+FROM persona_skills
+JOIN skills ON skills.id = persona_skills.skill_id
+WHERE persona_skills.persona_id = ? AND skills.active = 1
+ORDER BY skills.local_id
+`, personaID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var ids []int64
+	var keys []string
+	for rows.Next() {
+		var id int64
+		var key string
+		if err := rows.Scan(&id, &key); err != nil {
+			return nil, nil, err
+		}
+		ids = append(ids, id)
+		keys = append(keys, key)
+	}
+	return ids, keys, rows.Err()
 }
 
 func (s *Store) ListActiveLaws(ctx context.Context) ([]domain.Law, error) {

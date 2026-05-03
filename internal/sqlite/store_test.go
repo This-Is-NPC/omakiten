@@ -237,9 +237,9 @@ func sqliteTestBundle() config.Bundle {
 			Workflow: config.WorkflowSettings{Active: "default"},
 			Theme:    config.ThemeSettings{Active: "catppuccin"},
 		},
-		Skills:   []config.Skill{{ID: 1, Key: "go", Name: "Go"}},
-		Personas: []config.Persona{{ID: 1, Key: "agent", Name: "Agent", SkillIDs: []int{1}}},
-		Laws:     []config.Law{{ID: 1, Key: "scope", Severity: "error", Body: "Stay scoped."}},
+		Skills:   []config.Skill{{Slug: "go", Name: "Go"}},
+		Personas: []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}},
+		Laws:     []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}},
 		Workflows: []config.Workflow{{
 			ID:   1,
 			Key:  "default",
