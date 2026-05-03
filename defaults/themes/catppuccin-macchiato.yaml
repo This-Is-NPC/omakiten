@@ -1,0 +1,13 @@
+version: 1
+key: catppuccin-macchiato
+name: Catppuccin Macchiato
+colors:
+  background: "#24273A"
+  foreground: "#CAD3F5"
+  primary: "#8AADF4"
+  secondary: "#C6A0F6"
+  success: "#A6DA95"
+  warning: "#EED49F"
+  error: "#ED8796"
+  border: "#494D64"
+  highlight: "#363A4F"

@@ -1,0 +1,74 @@
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default Omakiten Kit
+config:
+  output:
+    json_minified: true
+    omit_empty: true
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin-macchiato
+skills:
+  - id: 1
+    key: go
+    name: Go
+  - id: 2
+    key: sqlite
+    name: SQLite
+  - id: 3
+    key: cli
+    name: CLI
+personas:
+  - id: 1
+    key: backend-agent
+    name: Backend Agent
+    skill_ids: [1, 2, 3]
+laws:
+  - id: 1
+    key: project-scope-only
+    severity: error
+    body: Never mix tasks or context from different projects.
+  - id: 2
+    key: workflow-enforced
+    severity: error
+    body: Only move tasks through explicit workflow transitions.
+  - id: 3
+    key: yaml-is-canonical
+    severity: error
+    body: Persist changes to laws, workflows, personas, skills, and config in omakiten.yaml.
+workflows:
+  - id: 1
+    key: default
+    name: Default Workflow
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1
+      - id: 2
+        key: dev
+        name: Development
+        position: 2
+      - id: 3
+        key: review
+        name: Review
+        position: 3
+      - id: 4
+        key: done
+        name: Done
+        position: 4
+    transitions:
+      - from: 1
+        to: 2
+      - from: 2
+        to: 3
+      - from: 3
+        to: 4
+      - from: 3
+        to: 2

@@ -1,0 +1,38 @@
+# Binaries and build output
+okt
+bin/
+dist/
+build/
+
+# Go test artifacts
+*.test
+coverage.out
+coverage.html
+
+# Local databases and runtime state
+*.db
+*.db-shm
+*.db-wal
+.omakiten/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Temporary files
+tmp/
+*.tmp
+
+# >>> assisted_workflow >>>
+.workflow
+.opencode
+.claude
+# >>> assisted_workflow >>>

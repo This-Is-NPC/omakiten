@@ -1,0 +1,28 @@
+[tools]
+go = "1.25.9"
+golangci-lint = "latest"
+"go:golang.org/x/vuln/cmd/govulncheck" = "latest"
+
+[tasks.fmt]
+description = "Format Go sources"
+run = "gofmt -w ."
+
+[tasks.test]
+description = "Run Go tests"
+run = "go test ./..."
+
+[tasks.tui]
+description = "Start the Omakiten TUI"
+run = "go run ./cmd/okt tui"
+
+[tasks.lint]
+description = "Run Go linter"
+run = "golangci-lint run"
+
+[tasks.vuln]
+description = "Run Go vulnerability scan"
+run = "govulncheck ./..."
+
+[tasks.check]
+description = "Run the full verification suite"
+depends = ["test", "lint", "vuln"]
