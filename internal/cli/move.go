@@ -44,7 +44,7 @@ func newMoveCommand(opts *runtimeOptions) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&to, "to", "", "target bucket key")
+	cmd.Flags().StringVarP(&to, "to", "t", "", "target bucket key")
 	_ = cmd.MarkFlagRequired("to")
 	return cmd
 }

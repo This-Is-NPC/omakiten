@@ -64,7 +64,7 @@ func newContextCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	dump.Flags().IntVar(&level, "level", 2, "context detail level: 1, 2, or 3")
+	dump.Flags().IntVarP(&level, "level", "l", 2, "context detail level: 1, 2, or 3")
 
 	cmd.AddCommand(add)
 	cmd.AddCommand(dump)

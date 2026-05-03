@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
@@ -40,12 +41,14 @@ func runTUI(ctx context.Context, opts *runtimeOptions) error {
 		return err
 	}
 
+	editor := app.NewBundleEditor(rt.store, rt.configPath)
 	model, err := tui.NewModel(ctx, project, tui.Repositories{
 		Tasks:        rt.store,
 		Comments:     rt.store,
 		Dependencies: rt.store,
 		Entries:      rt.store,
 		Config:       rt.store,
+		Editor:       editor,
 	}, theme, token.NewCounter())
 	if err != nil {
 		return err

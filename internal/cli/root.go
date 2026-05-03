@@ -36,13 +36,20 @@ func NewRootCommand(version string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "okt",
 		Short:         "Opinionated checkpoints for AI-driven development",
+		Long: `okt drives Omakiten from the command line and TUI.
+
+Path resolution (highest to lowest precedence):
+  1. --config / --db flags
+  2. $OMAKITEN_HOME — pins config to <HOME>/config/omakiten.yaml and data to <HOME>/data/omakiten.db
+  3. $XDG_CONFIG_HOME / $XDG_DATA_HOME
+  4. ~/.config/omakiten and ~/.local/share/omakiten`,
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 
-	cmd.PersistentFlags().StringVar(&opts.dbPath, "db", "", "SQLite database path")
-	cmd.PersistentFlags().StringVar(&opts.configPath, "config", "", "omakiten.yaml path")
+	cmd.PersistentFlags().StringVar(&opts.dbPath, "db", "", "SQLite database path (overrides $OMAKITEN_HOME and XDG)")
+	cmd.PersistentFlags().StringVar(&opts.configPath, "config", "", "omakiten.yaml path (overrides $OMAKITEN_HOME and XDG)")
 	cmd.PersistentFlags().StringVarP(&opts.project, "project", "p", "", "project slug")
 	cmd.PersistentFlags().Int64Var(&opts.projectID, "project-id", 0, "project id")
 
@@ -56,6 +63,9 @@ func NewRootCommand(version string) *cobra.Command {
 	cmd.AddCommand(newContextCommand(opts))
 	cmd.AddCommand(newWorkflowCommand(opts))
 	cmd.AddCommand(newConfigCommand(opts))
+	cmd.AddCommand(newLawCommand(opts))
+	cmd.AddCommand(newSkillCommand(opts))
+	cmd.AddCommand(newPersonaCommand(opts))
 	cmd.AddCommand(newTUICommand(opts))
 
 	return cmd
