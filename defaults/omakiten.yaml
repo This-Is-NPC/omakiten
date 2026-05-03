@@ -14,34 +14,6 @@ config:
     active: default
   theme:
     active: catppuccin-macchiato
-skills:
-  - id: 1
-    key: go
-    name: Go
-  - id: 2
-    key: sqlite
-    name: SQLite
-  - id: 3
-    key: cli
-    name: CLI
-personas:
-  - id: 1
-    key: backend-agent
-    name: Backend Agent
-    skill_ids: [1, 2, 3]
-laws:
-  - id: 1
-    key: project-scope-only
-    severity: error
-    body: Never mix tasks or context from different projects.
-  - id: 2
-    key: workflow-enforced
-    severity: error
-    body: Only move tasks through explicit workflow transitions.
-  - id: 3
-    key: yaml-is-canonical
-    severity: error
-    body: Persist changes to laws, workflows, personas, skills, and config in omakiten.yaml.
 workflows:
   - id: 1
     key: default
@@ -72,3 +44,17 @@ workflows:
         to: 4
       - from: 3
         to: 2
+skills:
+  - go
+  - sqlite
+  - cli
+laws:
+  - project-scope-only
+  - workflow-enforced
+  - yaml-is-canonical
+personas:
+  - slug: backend-agent
+    skills:
+      - go
+      - sqlite
+      - cli
