@@ -2,10 +2,12 @@ package cli
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/config"
+	"omakiten/internal/domain"
 )
 
 func newConfigCommand(opts *runtimeOptions) *cobra.Command {
@@ -33,7 +35,7 @@ func newConfigCommand(opts *runtimeOptions) *cobra.Command {
 
 				bundle, err := config.LoadBundle(path)
 				if err != nil {
-					return nil, err
+					return nil, domain.NewError(domain.ErrConfigInvalid, "config is invalid", map[string]any{"path": path, "error": fmt.Sprint(err)})
 				}
 				return map[string]any{"path": path, "kit": bundle.Kit}, nil
 			})

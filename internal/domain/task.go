@@ -21,3 +21,25 @@ type Task struct {
 type TaskFilter struct {
 	BucketKey string
 }
+
+type TaskUpdate struct {
+	Title       *string
+	Description *string
+	Priority    *Priority
+	BucketKey   string
+}
+
+type Comment struct {
+	ID         int64  `json:"id"`
+	ProjectID  int64  `json:"project_id"`
+	TaskID     int64  `json:"task_id"`
+	Body       string `json:"body"`
+	AuthorType string `json:"author_type"`
+	CreatedAt  string `json:"created_at,omitempty"`
+}
+
+type TaskDependency struct {
+	ProjectID       int64 `json:"project_id"`
+	TaskID          int64 `json:"task_id"`
+	DependsOnTaskID int64 `json:"depends_on_task_id"`
+}

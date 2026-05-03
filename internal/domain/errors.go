@@ -11,6 +11,7 @@ const (
 	ErrTaskNotFound              ErrorCode = "task_not_found"
 	ErrWorkflowInvalidTransition ErrorCode = "workflow_invalid_transition"
 	ErrBucketNotFound            ErrorCode = "bucket_not_found"
+	ErrDependencyInvalid         ErrorCode = "dependency_invalid"
 	ErrValidation                ErrorCode = "validation_error"
 )
 

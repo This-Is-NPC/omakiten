@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	_ "modernc.org/sqlite"
@@ -369,6 +370,124 @@ ORDER BY laws.local_id
 	return laws, rows.Err()
 }
 
+func (s *Store) ActiveWorkflow(ctx context.Context) (domain.Workflow, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT workflows.id, workflows.key, workflows.name
+FROM workflows
+JOIN config_bundles ON config_bundles.id = workflows.bundle_id
+JOIN settings ON settings.bundle_id = config_bundles.id
+  AND settings.key = 'workflow.active'
+  AND settings.value = workflows.key
+  AND settings.active = 1
+WHERE workflows.active = 1 AND config_bundles.active = 1
+ORDER BY config_bundles.id DESC, workflows.id DESC
+LIMIT 1
+`)
+
+	var workflow domain.Workflow
+	if err := row.Scan(&workflow.ID, &workflow.Key, &workflow.Name); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Workflow{}, domain.NewError(domain.ErrConfigInvalid, "active workflow not found", nil)
+		}
+		return domain.Workflow{}, err
+	}
+
+	buckets, err := s.workflowBuckets(ctx, workflow.ID)
+	if err != nil {
+		return domain.Workflow{}, err
+	}
+	workflow.Buckets = buckets
+
+	transitions, err := s.workflowTransitions(ctx, workflow.ID)
+	if err != nil {
+		return domain.Workflow{}, err
+	}
+	workflow.Transitions = transitions
+
+	return workflow, nil
+}
+
+func (s *Store) workflowBuckets(ctx context.Context, workflowID int64) ([]domain.Bucket, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id, key, name, position FROM workflow_buckets WHERE workflow_id = ? AND active = 1 ORDER BY position, id", workflowID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var buckets []domain.Bucket
+	for rows.Next() {
+		var bucket domain.Bucket
+		if err := rows.Scan(&bucket.ID, &bucket.Key, &bucket.Name, &bucket.Position); err != nil {
+			return nil, err
+		}
+		buckets = append(buckets, bucket)
+	}
+	return buckets, rows.Err()
+}
+
+func (s *Store) workflowTransitions(ctx context.Context, workflowID int64) ([]domain.WorkflowTransition, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT from_bucket.id, from_bucket.key, to_bucket.id, to_bucket.key
+FROM workflow_transitions
+JOIN workflow_buckets AS from_bucket ON from_bucket.id = workflow_transitions.from_bucket_id
+JOIN workflow_buckets AS to_bucket ON to_bucket.id = workflow_transitions.to_bucket_id
+WHERE workflow_transitions.workflow_id = ?
+  AND workflow_transitions.active = 1
+  AND from_bucket.active = 1
+  AND to_bucket.active = 1
+ORDER BY from_bucket.position, to_bucket.position
+`, workflowID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var transitions []domain.WorkflowTransition
+	for rows.Next() {
+		var transition domain.WorkflowTransition
+		if err := rows.Scan(&transition.FromBucketID, &transition.FromBucketKey, &transition.ToBucketID, &transition.ToBucketKey); err != nil {
+			return nil, err
+		}
+		transitions = append(transitions, transition)
+	}
+	return transitions, rows.Err()
+}
+
+func (s *Store) ContextSettings(ctx context.Context) (domain.ContextSettings, error) {
+	settings := domain.ContextSettings{DefaultLevel: 2, MaxTokens: 12000}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT settings.key, settings.value
+FROM settings
+JOIN config_bundles ON config_bundles.id = settings.bundle_id
+WHERE settings.active = 1
+  AND config_bundles.active = 1
+  AND settings.key IN ('context.default_level', 'context.max_tokens')
+ORDER BY config_bundles.id DESC
+`)
+	if err != nil {
+		return domain.ContextSettings{}, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return domain.ContextSettings{}, err
+		}
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return domain.ContextSettings{}, domain.NewError(domain.ErrConfigInvalid, "context setting must be numeric", map[string]any{"key": key, "value": value})
+		}
+		switch key {
+		case "context.default_level":
+			settings.DefaultLevel = parsed
+		case "context.max_tokens":
+			settings.MaxTokens = parsed
+		}
+	}
+	return settings, rows.Err()
+}
+
 func (s *Store) CreateTask(ctx context.Context, projectID int64, title, description, bucketKey string) (domain.Task, error) {
 	if bucketKey == "" {
 		bucketKey = "backlog"
@@ -461,12 +580,165 @@ RETURNING id, project_id, bucket_id, title, description, priority
 	return task, tx.Commit()
 }
 
+func (s *Store) UpdateTask(ctx context.Context, projectID, taskID int64, update domain.TaskUpdate) (domain.Task, error) {
+	sets := []string{}
+	args := []any{}
+	if update.Title != nil {
+		sets = append(sets, "title = ?")
+		args = append(args, *update.Title)
+	}
+	if update.Description != nil {
+		sets = append(sets, "description = ?")
+		args = append(args, *update.Description)
+	}
+	if update.Priority != nil {
+		sets = append(sets, "priority = ?")
+		args = append(args, string(*update.Priority))
+	}
+	if len(sets) > 0 {
+		args = append(args, projectID, taskID)
+		result, err := s.db.ExecContext(ctx, "UPDATE tasks SET "+strings.Join(sets, ", ")+
+			", updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND id = ?", args...)
+		if err != nil {
+			return domain.Task{}, err
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return domain.Task{}, err
+		}
+		if changed == 0 {
+			return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
+		}
+	}
+
+	return s.taskByID(ctx, projectID, taskID)
+}
+
 func (s *Store) TaskCount(ctx context.Context, projectID int64) (int64, error) {
 	var count int64
 	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(1) FROM tasks WHERE project_id = ?", projectID).Scan(&count); err != nil {
 		return 0, err
 	}
 	return count, nil
+}
+
+func (s *Store) AddComment(ctx context.Context, projectID, taskID int64, body, authorType string) (domain.Comment, error) {
+	if err := s.ensureTaskExists(ctx, projectID, taskID); err != nil {
+		return domain.Comment{}, err
+	}
+	row := s.db.QueryRowContext(ctx, `
+INSERT INTO comments(project_id, task_id, body, author_type)
+VALUES (?, ?, ?, ?)
+RETURNING id, project_id, task_id, body, author_type, created_at
+`, projectID, taskID, body, authorType)
+	return scanComment(row)
+}
+
+func (s *Store) ListComments(ctx context.Context, projectID, taskID int64) ([]domain.Comment, error) {
+	query := "SELECT id, project_id, task_id, body, author_type, created_at FROM comments WHERE project_id = ?"
+	args := []any{projectID}
+	if taskID > 0 {
+		if err := s.ensureTaskExists(ctx, projectID, taskID); err != nil {
+			return nil, err
+		}
+		query += " AND task_id = ?"
+		args = append(args, taskID)
+	}
+	query += " ORDER BY id"
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var comments []domain.Comment
+	for rows.Next() {
+		var comment domain.Comment
+		if err := rows.Scan(&comment.ID, &comment.ProjectID, &comment.TaskID, &comment.Body, &comment.AuthorType, &comment.CreatedAt); err != nil {
+			return nil, err
+		}
+		comments = append(comments, comment)
+	}
+	return comments, rows.Err()
+}
+
+func (s *Store) AddTaskDependency(ctx context.Context, projectID, taskID, dependsOnTaskID int64) (domain.TaskDependency, error) {
+	if err := s.ensureTaskExists(ctx, projectID, taskID); err != nil {
+		return domain.TaskDependency{}, err
+	}
+	if err := s.ensureTaskExists(ctx, projectID, dependsOnTaskID); err != nil {
+		return domain.TaskDependency{}, err
+	}
+	if _, err := s.db.ExecContext(ctx, `
+INSERT INTO task_dependencies(project_id, task_id, depends_on_task_id)
+VALUES (?, ?, ?)
+ON CONFLICT(project_id, task_id, depends_on_task_id) DO NOTHING
+`, projectID, taskID, dependsOnTaskID); err != nil {
+		return domain.TaskDependency{}, err
+	}
+	return domain.TaskDependency{ProjectID: projectID, TaskID: taskID, DependsOnTaskID: dependsOnTaskID}, nil
+}
+
+func (s *Store) RemoveTaskDependency(ctx context.Context, projectID, taskID, dependsOnTaskID int64) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM task_dependencies WHERE project_id = ? AND task_id = ? AND depends_on_task_id = ?", projectID, taskID, dependsOnTaskID)
+	return err
+}
+
+func (s *Store) ListTaskDependencies(ctx context.Context, projectID, taskID int64) ([]domain.TaskDependency, error) {
+	query := "SELECT project_id, task_id, depends_on_task_id FROM task_dependencies WHERE project_id = ?"
+	args := []any{projectID}
+	if taskID > 0 {
+		if err := s.ensureTaskExists(ctx, projectID, taskID); err != nil {
+			return nil, err
+		}
+		query += " AND task_id = ?"
+		args = append(args, taskID)
+	}
+	query += " ORDER BY task_id, depends_on_task_id"
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var dependencies []domain.TaskDependency
+	for rows.Next() {
+		var dependency domain.TaskDependency
+		if err := rows.Scan(&dependency.ProjectID, &dependency.TaskID, &dependency.DependsOnTaskID); err != nil {
+			return nil, err
+		}
+		dependencies = append(dependencies, dependency)
+	}
+	return dependencies, rows.Err()
+}
+
+func (s *Store) AddContextEntry(ctx context.Context, projectID int64, body string, tokenEstimate int) (domain.ContextEntry, error) {
+	row := s.db.QueryRowContext(ctx, `
+INSERT INTO context_entries(project_id, body, token_estimate)
+VALUES (?, ?, ?)
+RETURNING id, project_id, body, token_estimate, created_at
+`, projectID, body, tokenEstimate)
+	return scanContextEntry(row)
+}
+
+func (s *Store) ListContextEntries(ctx context.Context, projectID int64) ([]domain.ContextEntry, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id, project_id, body, token_estimate, created_at FROM context_entries WHERE project_id = ? ORDER BY id DESC", projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var entries []domain.ContextEntry
+	for rows.Next() {
+		var entry domain.ContextEntry
+		if err := rows.Scan(&entry.ID, &entry.ProjectID, &entry.Body, &entry.TokenEstimate, &entry.CreatedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	return entries, rows.Err()
 }
 
 func (s *Store) activeBucketID(ctx context.Context, key string) (int64, error) {
@@ -488,6 +760,10 @@ SELECT workflow_buckets.id
 FROM workflow_buckets
 JOIN workflows ON workflows.id = workflow_buckets.workflow_id
 JOIN config_bundles ON config_bundles.id = workflows.bundle_id
+JOIN settings ON settings.bundle_id = config_bundles.id
+  AND settings.key = 'workflow.active'
+  AND settings.value = workflows.key
+  AND settings.active = 1
 WHERE workflow_buckets.key = ?
   AND workflow_buckets.active = 1
   AND workflows.active = 1
@@ -514,8 +790,56 @@ WHERE from_bucket_id = ? AND to_bucket_id = ? AND active = 1
 func scanTask(row *sql.Row, bucketKey string) (domain.Task, error) {
 	var task domain.Task
 	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", nil)
+		}
 		return domain.Task{}, err
 	}
 	task.BucketKey = bucketKey
 	return task, nil
+}
+
+func (s *Store) taskByID(ctx context.Context, projectID, taskID int64) (domain.Task, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority
+FROM tasks
+LEFT JOIN workflow_buckets ON workflow_buckets.id = tasks.bucket_id
+WHERE tasks.project_id = ? AND tasks.id = ?
+`, projectID, taskID)
+
+	var task domain.Task
+	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.BucketKey, &task.Title, &task.Description, &task.Priority); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
+		}
+		return domain.Task{}, err
+	}
+	return task, nil
+}
+
+func (s *Store) ensureTaskExists(ctx context.Context, projectID, taskID int64) error {
+	var exists int
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(1) FROM tasks WHERE project_id = ? AND id = ?", projectID, taskID).Scan(&exists); err != nil {
+		return err
+	}
+	if exists == 0 {
+		return domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
+	}
+	return nil
+}
+
+func scanComment(row *sql.Row) (domain.Comment, error) {
+	var comment domain.Comment
+	if err := row.Scan(&comment.ID, &comment.ProjectID, &comment.TaskID, &comment.Body, &comment.AuthorType, &comment.CreatedAt); err != nil {
+		return domain.Comment{}, err
+	}
+	return comment, nil
+}
+
+func scanContextEntry(row *sql.Row) (domain.ContextEntry, error) {
+	var entry domain.ContextEntry
+	if err := row.Scan(&entry.ID, &entry.ProjectID, &entry.Body, &entry.TokenEstimate, &entry.CreatedAt); err != nil {
+		return domain.ContextEntry{}, err
+	}
+	return entry, nil
 }

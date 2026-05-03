@@ -50,9 +50,13 @@ func NewRootCommand(version string) *cobra.Command {
 	cmd.AddCommand(newAddCommand(opts))
 	cmd.AddCommand(newListCommand(opts))
 	cmd.AddCommand(newMoveCommand(opts))
+	cmd.AddCommand(newEditCommand(opts))
+	cmd.AddCommand(newCommentCommand(opts))
+	cmd.AddCommand(newDependCommand(opts))
 	cmd.AddCommand(newContextCommand(opts))
+	cmd.AddCommand(newWorkflowCommand(opts))
 	cmd.AddCommand(newConfigCommand(opts))
-	cmd.AddCommand(newTUICommand())
+	cmd.AddCommand(newTUICommand(opts))
 
 	return cmd
 }

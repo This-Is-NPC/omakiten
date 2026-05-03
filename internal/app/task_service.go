@@ -38,3 +38,59 @@ func (s *TaskService) Move(ctx context.Context, project domain.ProjectContext, t
 
 	return s.repo.MoveTask(ctx, project.ID, taskID, targetBucketKey)
 }
+
+func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, taskID int64, update domain.TaskUpdate) (domain.Task, error) {
+	if taskID <= 0 {
+		return domain.Task{}, domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+	}
+
+	changed := false
+	if update.Title != nil {
+		title := strings.TrimSpace(*update.Title)
+		if title == "" {
+			return domain.Task{}, domain.NewError(domain.ErrValidation, "task title is required", nil)
+		}
+		update.Title = &title
+		changed = true
+	}
+	if update.Description != nil {
+		description := strings.TrimSpace(*update.Description)
+		update.Description = &description
+		changed = true
+	}
+	if update.Priority != nil {
+		priority := domain.Priority(strings.TrimSpace(string(*update.Priority)))
+		switch priority {
+		case domain.PriorityLow, domain.PriorityNormal, domain.PriorityHigh:
+			update.Priority = &priority
+		default:
+			return domain.Task{}, domain.NewError(domain.ErrValidation, "priority must be low, normal, or high", map[string]any{"priority": *update.Priority})
+		}
+		changed = true
+	}
+
+	update.BucketKey = strings.TrimSpace(update.BucketKey)
+	if update.BucketKey != "" {
+		changed = true
+	}
+	if !changed {
+		return domain.Task{}, domain.NewError(domain.ErrValidation, "at least one task update is required", nil)
+	}
+
+	var task domain.Task
+	var err error
+	if update.BucketKey != "" {
+		task, err = s.repo.MoveTask(ctx, project.ID, taskID, update.BucketKey)
+		if err != nil {
+			return domain.Task{}, err
+		}
+	}
+	if update.Title != nil || update.Description != nil || update.Priority != nil {
+		task, err = s.repo.UpdateTask(ctx, project.ID, taskID, update)
+		if err != nil {
+			return domain.Task{}, err
+		}
+	}
+
+	return task, nil
+}
