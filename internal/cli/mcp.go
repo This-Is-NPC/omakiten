@@ -110,7 +110,7 @@ func newMCPSetupCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&harness, "harness", "claude-desktop", "Target harness (claude-desktop or opencode)")
+	cmd.Flags().StringVar(&harness, "harness", agentsetup.ClaudeCodeHarness, "Target harness (claude-code, claude-desktop, or opencode)")
 	cmd.Flags().StringVar(&configPath, "config-path", "", "Path to harness config file (default: harness default)")
 	cmd.Flags().StringVar(&command, "command", "", "Command to run omakiten (default: current executable)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview changes without writing")

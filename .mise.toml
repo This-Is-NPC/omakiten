@@ -53,6 +53,17 @@ done
 '''
 
 [tasks."install:mcp:claude"]
+description = "Install Omakiten MCP server into Claude Code config"
+depends = ["build"]
+run = '''
+if [ -z "${HOME:-}" ]; then
+  printf 'HOME is not set\n' >&2
+  exit 1
+fi
+bin/okt mcp setup --harness claude-code --force
+'''
+
+[tasks."install:mcp:claude-desktop"]
 description = "Install Omakiten MCP server into Claude Desktop config"
 depends = ["build"]
 run = '''

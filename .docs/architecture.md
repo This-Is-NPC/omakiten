@@ -46,7 +46,7 @@
 | `internal/paths/` | Cross-platform config/data path resolution (XDG + `$OMAKITEN_HOME`) |
 | `internal/agent/` | Protocol-neutral agent intent layer; no MCP SDK or transport dependency (`internal/agent/service.go`, `internal/agent/runtime.go`) |
 | `internal/mcp/` | MCP adapter: maps MCP tools/resources/prompts to `internal/agent` services (`internal/mcp/adapter.go`, `internal/mcp/server.go`) |
-| `internal/agentsetup/` | MCP harness setup (currently `claude-desktop`, `opencode`); writes harness config atomically without overwriting other entries (`internal/agentsetup/setup.go`) |
+| `internal/agentsetup/` | MCP harness setup (currently `claude-code`, `claude-desktop`, `opencode`); writes harness config atomically without overwriting other entries (`internal/agentsetup/setup.go`) |
 | `internal/activity/` | Observability layer: tracks app service calls with context-scoped repositories (`internal/activity/track.go`, `internal/activity/context.go`) |
 | `defaults/` | Embedded default kit assets (YAML, themes, skills, laws, personas) |
 | `migrations/` | Embedded SQL migration scripts |

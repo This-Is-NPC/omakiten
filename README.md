@@ -42,6 +42,12 @@ okt tui
 
 Connect Omakiten to your AI agent via MCP.
 
+**Claude Code:**
+
+```bash
+okt mcp setup --harness claude-code --force
+```
+
 **Claude Desktop:**
 
 ```bash

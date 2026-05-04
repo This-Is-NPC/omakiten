@@ -10,7 +10,7 @@ Users can opt in from project initialization:
 okt init --enable-mcp
 ```
 
-The first supported harness is `claude-desktop`. Setup writes an `omakiten` MCP server entry that runs:
+Supported harnesses are `claude-code` (default), `claude-desktop`, and `opencode`. Setup writes an `omakiten` MCP server entry that runs:
 
 ```sh
 okt mcp serve

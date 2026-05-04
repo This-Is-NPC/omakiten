@@ -63,7 +63,7 @@ func newInitCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().StringVar(&slug, "slug", "", "project slug")
 	cmd.Flags().StringVar(&root, "root", "", "project root path")
 	cmd.Flags().BoolVar(&enableMCP, "enable-mcp", false, "enable global MCP agent access for a supported harness")
-	cmd.Flags().StringVar(&mcpHarness, "mcp-harness", agentsetup.ClaudeDesktopHarness, "MCP harness to configure")
+	cmd.Flags().StringVar(&mcpHarness, "mcp-harness", agentsetup.ClaudeCodeHarness, "MCP harness to configure")
 	cmd.Flags().StringVar(&mcpConfigPath, "mcp-config", "", "MCP harness config path")
 	cmd.Flags().StringVar(&mcpCommand, "mcp-command", "", "command path written to the harness MCP config")
 	cmd.Flags().BoolVar(&mcpDryRun, "mcp-dry-run", false, "preview MCP harness config changes without writing")

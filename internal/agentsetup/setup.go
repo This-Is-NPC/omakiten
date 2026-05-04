@@ -13,6 +13,7 @@ import (
 )
 
 const (
+	ClaudeCodeHarness    = "claude-code"
 	ClaudeDesktopHarness = "claude-desktop"
 	OpenCodeHarness      = "opencode"
 )
@@ -37,13 +38,13 @@ type Result struct {
 }
 
 func SupportedHarnesses() []string {
-	return []string{ClaudeDesktopHarness, OpenCodeHarness}
+	return []string{ClaudeCodeHarness, ClaudeDesktopHarness, OpenCodeHarness}
 }
 
 func Setup(opts Options) (Result, error) {
 	harness := strings.TrimSpace(opts.Harness)
 	if harness == "" {
-		harness = ClaudeDesktopHarness
+		harness = ClaudeCodeHarness
 	}
 	if !isSupportedHarness(harness) {
 		return Result{}, domain.NewError(domain.ErrValidation, "unsupported MCP harness", map[string]any{"harness": harness, "supported": SupportedHarnesses()})
@@ -120,14 +121,24 @@ func isSupportedHarness(harness string) bool {
 }
 
 func defaultConfigPath(harness string) (string, error) {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
 	switch harness {
+	case ClaudeCodeHarness:
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, ".claude.json"), nil
 	case ClaudeDesktopHarness:
+		configDir, err := os.UserConfigDir()
+		if err != nil {
+			return "", err
+		}
 		return filepath.Join(configDir, "Claude", "claude_desktop_config.json"), nil
 	case OpenCodeHarness:
+		configDir, err := os.UserConfigDir()
+		if err != nil {
+			return "", err
+		}
 		return filepath.Join(configDir, "opencode", "opencode.json"), nil
 	default:
 		return "", domain.NewError(domain.ErrValidation, "no default config path for harness", map[string]any{"harness": harness})
@@ -144,7 +155,7 @@ func defaultCommand() string {
 
 func entryExists(existing map[string]any, harness string) bool {
 	switch harness {
-	case ClaudeDesktopHarness:
+	case ClaudeCodeHarness, ClaudeDesktopHarness:
 		mcpServers, err := objectField(existing, "mcpServers")
 		if err != nil || mcpServers == nil {
 			return false
@@ -168,7 +179,7 @@ func mergeHarnessConfig(existing map[string]any, harness, command string, args [
 		out[k] = v
 	}
 	switch harness {
-	case ClaudeDesktopHarness:
+	case ClaudeCodeHarness, ClaudeDesktopHarness:
 		mcpServers, _ := objectField(out, "mcpServers")
 		if mcpServers == nil {
 			mcpServers = map[string]any{}

@@ -109,8 +109,8 @@ func TestSetupCreatedStatus(t *testing.T) {
 
 func TestSupportedHarnesses(t *testing.T) {
 	harnesses := SupportedHarnesses()
-	if len(harnesses) != 2 || harnesses[0] != ClaudeDesktopHarness || harnesses[1] != OpenCodeHarness {
-		t.Fatalf("SupportedHarnesses() = %v, want [claude-desktop opencode]", harnesses)
+	if len(harnesses) != 3 || harnesses[0] != ClaudeCodeHarness || harnesses[1] != ClaudeDesktopHarness || harnesses[2] != OpenCodeHarness {
+		t.Fatalf("SupportedHarnesses() = %v, want [claude-code claude-desktop opencode]", harnesses)
 	}
 }
 
@@ -120,8 +120,8 @@ func TestSetupDefaultHarnessAndCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Setup() error = %v", err)
 	}
-	if result.Harness != ClaudeDesktopHarness {
-		t.Fatalf("Harness = %q, want %q", result.Harness, ClaudeDesktopHarness)
+	if result.Harness != ClaudeCodeHarness {
+		t.Fatalf("Harness = %q, want %q", result.Harness, ClaudeCodeHarness)
 	}
 	if result.Command == "" {
 		t.Fatal("Command is empty")
@@ -290,6 +290,39 @@ func TestSetupOpenCodeCreatedStatus(t *testing.T) {
 	}
 	if omakiten["enabled"] != true {
 		t.Fatalf("enabled = %v, want true", omakiten["enabled"])
+	}
+}
+
+func TestSetupClaudeCodeDefaultConfigPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	result, err := Setup(Options{Harness: ClaudeCodeHarness, Command: "okt"})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	if result.Harness != ClaudeCodeHarness {
+		t.Fatalf("Harness = %q, want %q", result.Harness, ClaudeCodeHarness)
+	}
+	expected := filepath.Join(home, ".claude.json")
+	if result.ConfigPath != expected {
+		t.Fatalf("ConfigPath = %q, want %q", result.ConfigPath, expected)
+	}
+	if _, err := os.Stat(expected); err != nil {
+		t.Fatalf("default config file missing: %v", err)
+	}
+
+	data, _ := os.ReadFile(expected)
+	var written map[string]any
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	servers, ok := written["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcpServers missing or wrong type: %#v", written)
+	}
+	if _, ok := servers["omakiten"]; !ok {
+		t.Fatalf("mcpServers.omakiten missing: %#v", servers)
 	}
 }
 
