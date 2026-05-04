@@ -32,17 +32,18 @@ func newDependAddCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				rt, err := opts.open(ctx, true)
-				if err != nil {
-					return nil, err
-				}
-				defer func() { _ = rt.store.Close() }()
+			rt, err := opts.open(ctx, true)
+			if err != nil {
+				return nil, err
+			}
+			defer func() { _ = rt.store.Close() }()
+			ctx = rt.WithActivityRepo(ctx)
 
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				dependency, err := app.NewDependencyService(rt.store).Add(ctx, project, taskID, on)
+			project, err := opts.resolveProject(ctx, rt.store)
+			if err != nil {
+				return nil, err
+			}
+			dependency, err := app.NewDependencyService(rt.store).Add(ctx, project, taskID, on)
 				if err != nil {
 					return nil, err
 				}
@@ -67,17 +68,18 @@ func newDependRemoveCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				rt, err := opts.open(ctx, true)
-				if err != nil {
-					return nil, err
-				}
-				defer func() { _ = rt.store.Close() }()
+			rt, err := opts.open(ctx, true)
+			if err != nil {
+				return nil, err
+			}
+			defer func() { _ = rt.store.Close() }()
+			ctx = rt.WithActivityRepo(ctx)
 
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				if err := app.NewDependencyService(rt.store).Remove(ctx, project, taskID, on); err != nil {
+			project, err := opts.resolveProject(ctx, rt.store)
+			if err != nil {
+				return nil, err
+			}
+			if err := app.NewDependencyService(rt.store).Remove(ctx, project, taskID, on); err != nil {
 					return nil, err
 				}
 				return map[string]any{"project": project, "removed": true}, nil
@@ -105,6 +107,7 @@ func newDependListCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer func() { _ = rt.store.Close() }()
+				ctx = rt.WithActivityRepo(ctx)
 
 				project, err := opts.resolveProject(ctx, rt.store)
 				if err != nil {

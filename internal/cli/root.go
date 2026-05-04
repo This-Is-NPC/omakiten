@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
@@ -31,11 +32,15 @@ type runtime struct {
 	dbPath     string
 }
 
+func (r *runtime) WithActivityRepo(ctx context.Context) context.Context {
+	return activity.WithRepository(ctx, r.store)
+}
+
 func NewRootCommand(version string) *cobra.Command {
 	opts := &runtimeOptions{}
 	cmd := &cobra.Command{
-		Use:           "okt",
-		Short:         "Opinionated checkpoints for AI-driven development",
+		Use:   "okt",
+		Short: "Opinionated checkpoints for AI-driven development",
 		Long: `okt drives Omakiten from the command line and TUI.
 
 Path resolution (highest to lowest precedence):
@@ -67,6 +72,7 @@ Path resolution (highest to lowest precedence):
 	cmd.AddCommand(newSkillCommand(opts))
 	cmd.AddCommand(newPersonaCommand(opts))
 	cmd.AddCommand(newTUICommand(opts))
+	cmd.AddCommand(newMCPCommand(opts))
 
 	return cmd
 }
@@ -142,7 +148,8 @@ func writeError(cmd *cobra.Command, err error) error {
 }
 
 func runJSON(cmd *cobra.Command, fn func(context.Context) (any, error)) error {
-	data, err := fn(cmd.Context())
+	ctx := activity.WithSource(cmd.Context(), "cli", cmd.CommandPath())
+	data, err := fn(ctx)
 	if err != nil {
 		return writeError(cmd, err)
 	}

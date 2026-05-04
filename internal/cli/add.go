@@ -23,6 +23,7 @@ func newAddCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer func() { _ = rt.store.Close() }()
+				ctx = rt.WithActivityRepo(ctx)
 
 				project, err := opts.resolveProject(ctx, rt.store)
 				if err != nil {

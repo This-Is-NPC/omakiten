@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
@@ -31,6 +32,9 @@ func runTUI(ctx context.Context, opts *runtimeOptions) error {
 		return err
 	}
 	defer func() { _ = rt.store.Close() }()
+
+	ctx = activity.WithSource(ctx, "tui", "tui")
+	ctx = rt.WithActivityRepo(ctx)
 
 	project, err := opts.resolveProject(ctx, rt.store)
 	if err != nil {
