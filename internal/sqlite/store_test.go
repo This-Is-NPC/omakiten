@@ -31,10 +31,10 @@ func TestStoreProjectScopedTasks(t *testing.T) {
 		t.Fatalf("UpsertProject(B) error = %v", err)
 	}
 
-	if _, err := store.CreateTask(ctx, projectA.ID, "A task", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, projectA.ID, "A task", "", "", "backlog"); err != nil {
 		t.Fatalf("CreateTask(A) error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, projectB.ID, "B task", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, projectB.ID, "B task", "", "", "backlog"); err != nil {
 		t.Fatalf("CreateTask(B) error = %v", err)
 	}
 
@@ -66,7 +66,7 @@ func TestStoreMoveTaskEnforcesWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Task", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -114,15 +114,15 @@ func TestStoreOperationalDataIsProjectScoped(t *testing.T) {
 		t.Fatalf("UpsertProject(B) error = %v", err)
 	}
 
-	taskA1, err := store.CreateTask(ctx, projectA.ID, "A first", "", "backlog")
+	taskA1, err := store.CreateTask(ctx, projectA.ID, "A first", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(A1) error = %v", err)
 	}
-	taskA2, err := store.CreateTask(ctx, projectA.ID, "A second", "", "backlog")
+	taskA2, err := store.CreateTask(ctx, projectA.ID, "A second", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(A2) error = %v", err)
 	}
-	taskB, err := store.CreateTask(ctx, projectB.ID, "B first", "", "backlog")
+	taskB, err := store.CreateTask(ctx, projectB.ID, "B first", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(B) error = %v", err)
 	}
@@ -185,11 +185,11 @@ func TestDependencyServiceRejectsCycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	taskA, err := store.CreateTask(ctx, project.ID, "A", "", "backlog")
+	taskA, err := store.CreateTask(ctx, project.ID, "A", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(A) error = %v", err)
 	}
-	taskB, err := store.CreateTask(ctx, project.ID, "B", "", "backlog")
+	taskB, err := store.CreateTask(ctx, project.ID, "B", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(B) error = %v", err)
 	}
@@ -394,7 +394,7 @@ func TestStoreUpdateTask(t *testing.T) {
 		t.Fatal("UpdateTask() error = nil, want not found")
 	}
 
-	task, err := store.CreateTask(ctx, project.ID, "Task", "Desc", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Task", "Desc", "", "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -424,10 +424,10 @@ func TestStoreTaskCount(t *testing.T) {
 	projectA, _ := store.UpsertProject(ctx, "A", "a", "/work/a")
 	projectB, _ := store.UpsertProject(ctx, "B", "b", "/work/b")
 
-	if _, err := store.CreateTask(ctx, projectA.ID, "A1", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, projectA.ID, "A1", "", "", "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, projectB.ID, "B1", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, projectB.ID, "B1", "", "", "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
@@ -461,8 +461,8 @@ func TestStoreRemoveTaskDependency(t *testing.T) {
 	}
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	taskA, _ := store.CreateTask(ctx, project.ID, "A", "", "backlog")
-	taskB, _ := store.CreateTask(ctx, project.ID, "B", "", "backlog")
+	taskA, _ := store.CreateTask(ctx, project.ID, "A", "", "", "backlog")
+	taskB, _ := store.CreateTask(ctx, project.ID, "B", "", "", "backlog")
 
 	if _, err := store.AddTaskDependency(ctx, project.ID, taskB.ID, taskA.ID); err != nil {
 		t.Fatalf("AddTaskDependency() error = %v", err)
@@ -491,7 +491,7 @@ func TestStoreMoveTaskErrors(t *testing.T) {
 	}
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", "backlog")
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
 
 	_, err = store.MoveTask(ctx, project.ID, 9999, "dev")
 	if err == nil {

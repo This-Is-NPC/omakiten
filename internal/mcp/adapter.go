@@ -296,6 +296,7 @@ func createTaskSchema() map[string]any {
 	props := selectorProperties()
 	props["title"] = stringSchema("Optional task title; derived from description when omitted")
 	props["description"] = stringSchema("Task description or title text")
+	props["priority"] = stringSchema("Optional priority: low, normal, or high")
 	props["bucket_key"] = stringSchema("Optional target bucket key")
 	props["confirmed"] = booleanSchema("Set true after user confirmation")
 	return objectSchema(props, []string{"description"})

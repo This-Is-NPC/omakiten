@@ -15,13 +15,13 @@ func TestTaskServiceAdd(t *testing.T) {
 
 	service := NewTaskService(store)
 
-	_, err := service.Add(ctx, project.Context(), "", "", "")
+	_, err := service.Add(ctx, project.Context(), "", "", "", "")
 	if err == nil {
 		t.Fatal("Add() error = nil, want validation error")
 	}
 	assertCodedError(t, err, domain.ErrValidation)
 
-	task, err := service.Add(ctx, project.Context(), " Title ", " Description ", " backlog ")
+	task, err := service.Add(ctx, project.Context(), " Title ", " Description ", "", " backlog ")
 	if err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}
@@ -34,6 +34,23 @@ func TestTaskServiceAdd(t *testing.T) {
 	if task.BucketKey != "backlog" {
 		t.Fatalf("Add().BucketKey = %q, want %q", task.BucketKey, "backlog")
 	}
+	if task.Priority != domain.PriorityNormal {
+		t.Fatalf("Add().Priority = %q, want %q", task.Priority, domain.PriorityNormal)
+	}
+
+	highTask, err := service.Add(ctx, project.Context(), "High", "", "high", "backlog")
+	if err != nil {
+		t.Fatalf("Add(high priority) error = %v", err)
+	}
+	if highTask.Priority != domain.PriorityHigh {
+		t.Fatalf("Add(high).Priority = %q, want %q", highTask.Priority, domain.PriorityHigh)
+	}
+
+	_, err = service.Add(ctx, project.Context(), "Invalid", "", "urgent", "backlog")
+	if err == nil {
+		t.Fatal("Add(invalid priority) error = nil, want validation error")
+	}
+	assertCodedError(t, err, domain.ErrValidation)
 }
 
 func TestTaskServiceList(t *testing.T) {
@@ -42,10 +59,10 @@ func TestTaskServiceList(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	service := NewTaskService(store)
-	if _, err := service.Add(ctx, project.Context(), "A", "", "backlog"); err != nil {
+	if _, err := service.Add(ctx, project.Context(), "A", "", "", "backlog"); err != nil {
 		t.Fatalf("Add(A) error = %v", err)
 	}
-	if _, err := service.Add(ctx, project.Context(), "B", "", "dev"); err != nil {
+	if _, err := service.Add(ctx, project.Context(), "B", "", "", "dev"); err != nil {
 		t.Fatalf("Add(B) error = %v", err)
 	}
 
@@ -85,7 +102,7 @@ func TestTaskServiceMove(t *testing.T) {
 	}
 	assertCodedError(t, err, domain.ErrValidation)
 
-	task, err := service.Add(ctx, project.Context(), "Task", "", "backlog")
+	task, err := service.Add(ctx, project.Context(), "Task", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}
@@ -118,7 +135,7 @@ func TestTaskServiceEdit(t *testing.T) {
 	}
 	assertCodedError(t, err, domain.ErrValidation)
 
-	task, err := service.Add(ctx, project.Context(), "Task", "", "backlog")
+	task, err := service.Add(ctx, project.Context(), "Task", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}

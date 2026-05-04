@@ -179,7 +179,7 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 		}
 	}
 
-	task, err := app.NewTaskService(s.repo).Add(ctx, project, title, description, strings.TrimSpace(input.BucketKey))
+	task, err := app.NewTaskService(s.repo).Add(ctx, project, title, description, strings.TrimSpace(input.Priority), strings.TrimSpace(input.BucketKey))
 	if err != nil {
 		return CreateTaskResponse{}, err
 	}

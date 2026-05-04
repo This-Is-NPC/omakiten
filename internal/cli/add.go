@@ -30,7 +30,7 @@ func newAddCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 
-				task, err := app.NewTaskService(rt.store).Add(ctx, project, title, description, bucket)
+				task, err := app.NewTaskService(rt.store).Add(ctx, project, title, description, "", bucket)
 				if err != nil {
 					return nil, err
 				}

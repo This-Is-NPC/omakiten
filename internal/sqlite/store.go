@@ -653,7 +653,7 @@ ORDER BY config_bundles.id DESC
 	return settings, rows.Err()
 }
 
-func (s *Store) CreateTask(ctx context.Context, projectID int64, title, description, bucketKey string) (domain.Task, error) {
+func (s *Store) CreateTask(ctx context.Context, projectID int64, title, description, priority, bucketKey string) (domain.Task, error) {
 	if bucketKey == "" {
 		bucketKey = "backlog"
 	}
@@ -663,11 +663,21 @@ func (s *Store) CreateTask(ctx context.Context, projectID int64, title, descript
 		return domain.Task{}, err
 	}
 
-	row := s.db.QueryRowContext(ctx, `
+	query := `
+INSERT INTO tasks(project_id, bucket_id, title, description, priority)
+VALUES (?, ?, ?, ?, ?)
+RETURNING id, project_id, bucket_id, title, description, priority
+`
+	args := []any{projectID, bucketID, title, description, priority}
+	if priority == "" {
+		query = `
 INSERT INTO tasks(project_id, bucket_id, title, description)
 VALUES (?, ?, ?, ?)
 RETURNING id, project_id, bucket_id, title, description, priority
-`, projectID, bucketID, title, description)
+`
+		args = []any{projectID, bucketID, title, description}
+	}
+	row := s.db.QueryRowContext(ctx, query, args...)
 
 	return scanTask(row, bucketKey)
 }

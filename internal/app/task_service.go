@@ -16,8 +16,8 @@ func NewTaskService(repo TaskRepository) *TaskService {
 	return &TaskService{repo: repo}
 }
 
-func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, title, description, bucketKey string) (task domain.Task, err error) {
-	finish := activity.Track(ctx, "app.TaskService.Add", project, map[string]any{"title": title, "bucket": bucketKey})
+func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, title, description, priority, bucketKey string) (task domain.Task, err error) {
+	finish := activity.Track(ctx, "app.TaskService.Add", project, map[string]any{"title": title, "priority": priority, "bucket": bucketKey})
 	defer func() {
 		status := "ok"
 		errMsg := ""
@@ -33,8 +33,18 @@ func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, ti
 		err = domain.NewError(domain.ErrValidation, "task title is required", nil)
 		return
 	}
+	priorityValue := domain.Priority(strings.TrimSpace(priority))
+	if priorityValue == "" {
+		priorityValue = domain.PriorityNormal
+	}
+	switch priorityValue {
+	case domain.PriorityLow, domain.PriorityNormal, domain.PriorityHigh:
+	default:
+		err = domain.NewError(domain.ErrValidation, "priority must be low, normal, or high", map[string]any{"priority": priority})
+		return
+	}
 
-	task, err = s.repo.CreateTask(ctx, project.ID, title, strings.TrimSpace(description), strings.TrimSpace(bucketKey))
+	task, err = s.repo.CreateTask(ctx, project.ID, title, strings.TrimSpace(description), string(priorityValue), strings.TrimSpace(bucketKey))
 	return
 }
 

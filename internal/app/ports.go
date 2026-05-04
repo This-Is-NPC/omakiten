@@ -24,7 +24,7 @@ type ConfigRepository interface {
 }
 
 type TaskRepository interface {
-	CreateTask(ctx context.Context, projectID int64, title, description, bucketKey string) (domain.Task, error)
+	CreateTask(ctx context.Context, projectID int64, title, description, priority, bucketKey string) (domain.Task, error)
 	ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter) ([]domain.Task, error)
 	MoveTask(ctx context.Context, projectID, taskID int64, targetBucketKey string) (domain.Task, error)
 	UpdateTask(ctx context.Context, projectID, taskID int64, update domain.TaskUpdate) (domain.Task, error)

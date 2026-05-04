@@ -146,6 +146,7 @@ type CreateTaskInput struct {
 	ProjectSelector
 	Title               string `json:"title,omitempty"`
 	Description         string `json:"description"`
+	Priority            string `json:"priority,omitempty"`
 	BucketKey           string `json:"bucket_key,omitempty"`
 	Confirmed           bool   `json:"confirmed,omitempty"`
 	SkipSimilarityCheck bool   `json:"skip_similarity_check,omitempty"`

@@ -13,10 +13,10 @@ func TestDependencyServiceAdd(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	taskService := NewTaskService(store)
-	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "backlog")
-	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "backlog")
-	taskC, _ := taskService.Add(ctx, project.Context(), "C", "", "backlog")
-	taskD, _ := taskService.Add(ctx, project.Context(), "D", "", "backlog")
+	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "", "backlog")
+	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "", "backlog")
+	taskC, _ := taskService.Add(ctx, project.Context(), "C", "", "", "backlog")
+	taskD, _ := taskService.Add(ctx, project.Context(), "D", "", "", "backlog")
 
 	service := NewDependencyService(store)
 
@@ -71,8 +71,8 @@ func TestDependencyServiceRemove(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	taskService := NewTaskService(store)
-	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "backlog")
-	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "backlog")
+	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "", "backlog")
+	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "", "backlog")
 
 	service := NewDependencyService(store)
 	if _, err := service.Add(ctx, project.Context(), taskB.ID, taskA.ID); err != nil {
@@ -96,8 +96,8 @@ func TestDependencyServiceList(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	taskService := NewTaskService(store)
-	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "backlog")
-	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "backlog")
+	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "", "backlog")
+	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "", "backlog")
 
 	service := NewDependencyService(store)
 	if _, err := service.Add(ctx, project.Context(), taskB.ID, taskA.ID); err != nil {
