@@ -655,7 +655,14 @@ ORDER BY config_bundles.id DESC
 
 func (s *Store) CreateTask(ctx context.Context, projectID int64, title, description, priority, bucketKey string) (domain.Task, error) {
 	if bucketKey == "" {
-		bucketKey = "backlog"
+		workflow, err := s.ActiveWorkflow(ctx)
+		if err != nil {
+			return domain.Task{}, err
+		}
+		if len(workflow.Buckets) == 0 {
+			return domain.Task{}, domain.NewError(domain.ErrConfigInvalid, "active workflow has no buckets", nil)
+		}
+		bucketKey = workflow.Buckets[0].Key
 	}
 
 	bucketID, err := s.activeBucketID(ctx, bucketKey)
