@@ -1,103 +1,90 @@
 # Architecture
 
-## Overview
+## Tech Stack
 
-Omakiten is a local-first CLI/TUI for managing tasks, workflow rules, guardrails, and handoff context for AI-assisted development.
+| Layer | Technology | Version |
+|-------|-----------|---------|
+| Language | Go | 1.25.0 (`go.mod`) |
+| CLI Framework | Cobra | v1.10.2 (`go.mod`) |
+| TUI Framework | Bubble Tea | v1.3.10 (indirect, `go.mod`) |
+| Terminal Styling | Lipgloss | v1.1.0 (indirect, `go.mod`) |
+| Database | SQLite (pure Go) | v1.50.0 (`modernc.org/sqlite`, `go.mod`) |
+| YAML Parsing | gopkg.in/yaml.v3 | v3.0.1 (`go.mod`) |
+| Token Counting | tiktoken-go | v0.1.8 (`go.mod`) |
+| Build Tool | mise | via `.mise.toml` |
+| Linter | golangci-lint | via `.mise.toml` |
+| Vuln Scanner | govulncheck | via `.mise.toml` |
 
-The system is designed around one core rule: CLI and TUI must not implement business rules directly. Both interfaces call application services, and those services enforce project scope, workflow transitions, and persistence rules.
+## Dependencies
 
-## Storage Model
+| Dependency | Version | Purpose |
+|-----------|---------|---------|
+| `github.com/spf13/cobra` | v1.10.2 | CLI command tree, flags, help generation |
+| `gopkg.in/yaml.v3` | v3.0.1 | YAML parsing and generation for config bundles and frontmatter |
+| `modernc.org/sqlite` | v1.50.0 | Pure-Go SQLite driver (no CGo) |
+| `github.com/charmbracelet/bubbletea` | v1.3.10 | TUI framework (Elm-like model/update/view) |
+| `github.com/charmbracelet/lipgloss` | v1.1.0 | Terminal styling and layout |
+| `github.com/pkoukk/tiktoken-go` | v0.1.8 | OpenAI BPE token counting (`cl100k_base`) |
+| `github.com/google/uuid` | v1.6.0 | UUID generation |
+| `github.com/dustin/go-humanize` | v1.0.1 | Human-readable formatting |
 
-Omakiten uses two storage layers:
+## Project Structure
 
-- Global SQLite database for operational state.
-- Canonical YAML files for shareable configuration.
+| Directory | Responsibility |
+|-----------|----------------|
+| `cmd/okt/` | Binary entrypoint (`main.go`) |
+| `internal/cli/` | Cobra command tree, JSON I/O wiring, project resolution at CLI layer |
+| `internal/tui/` | Bubble Tea TUI: kanban board, table view, dependency graph, config entity browser |
+| `internal/app/` | Application services enforcing business rules (validation, workflow transitions, cycle detection, transactional file edits) |
+| `internal/domain/` | Pure domain entities and coded errors |
+| `internal/config/` | Canonical YAML bundle loading/saving, frontmatter parsing, entity file generation, validation |
+| `internal/sqlite/` | Global SQLite database access, schema migrations, operational repositories |
+| `internal/project/` | Resolves active project from flags or CWD |
+| `internal/output/` | JSON envelope formatting for machine-parseable CLI output |
+| `internal/token/` | Token estimation (BPE / word-count) for context budgeting |
+| `internal/graph/` | Cycle detection for task dependency DAGs |
+| `internal/paths/` | Cross-platform config/data path resolution (XDG + `$OMAKITEN_HOME`) |
+| `internal/agent/` | Protocol-neutral agent intent layer; no MCP SDK or transport dependency (`internal/agent/service.go`, `internal/agent/runtime.go`) |
+| `internal/mcp/` | MCP adapter: maps MCP tools/resources/prompts to `internal/agent` services (`internal/mcp/adapter.go`, `internal/mcp/server.go`) |
+| `internal/agentsetup/` | MCP harness setup (currently `claude-desktop`); writes harness config atomically without overwriting other entries (`internal/agentsetup/setup.go`) |
+| `defaults/` | Embedded default kit assets (YAML, themes, skills, laws, personas) |
+| `migrations/` | Embedded SQL migration scripts |
+| `testdata/` | Test fixtures |
+| `dev_env/` | Local development environment state |
+| `.omakiten/` | Project-local omakiten config |
+| `.workflow/` | Development workflow artifacts (plans, requirements, summaries) |
+| `.docs/` | Documentation and templates |
 
-The global database lives at:
+## Architectural Patterns
 
-```txt
-~/.local/share/omakiten/omakiten.db
-```
+- **Layered Architecture**: `cmd` → `cli/tui` → `app` → `domain` → `sqlite/config`
+- **Ports and Adapters (Hexagonal)**: `internal/app/ports.go` defines repository interfaces (`ProjectRepository`, `ConfigRepository`, `TaskRepository`, `CommentRepository`, `DependencyRepository`, `ContextEntryRepository`); `sqlite.Store` implements all of them (`internal/sqlite/store.go`)
+- **CQRS-like separation**: Canonical YAML is the write-model source of truth; SQLite is the read-model materialization (`internal/config/loader.go`, `internal/sqlite/store.go`)
+- **Transactional File Editing**: `BundleEditor` uses snapshot journals and atomic writes to ensure on-disk consistency before SQLite re-import (`internal/app/bundle_editor.go`)
+- **Coded Errors**: Every domain error has a stable machine-readable code for agent recovery (`internal/domain/errors.go`)
+- **Project Scoping**: All operational data is strictly filtered by `project_id` at the repository layer (`internal/sqlite/store.go`)
+- **Strict YAML Validation**: `yaml.NewDecoder` with `KnownFields(true)` prevents unknown field drift (`internal/config/loader.go:120`)
+- **Protocol-Neutral Agent Layer**: `internal/agent` depends only on `internal/app` services and `internal/domain`; it has no MCP SDK, package manager, or transport dependency (`internal/agent/service.go`). The MCP adapter (`internal/mcp`) is a thin translation layer.
 
-The main configuration file lives at:
+## Authentication
 
-```txt
-~/.config/omakiten/omakiten.yaml
-```
+Not applicable — local-first single-user CLI tool with no authentication or authorization layer.
 
-Themes are separate:
+## Infrastructure
 
-```txt
-~/.config/omakiten/themes/*.yaml
-```
+- **No CI/CD pipelines**: No `.github/workflows/`, no `Dockerfile`, no container orchestration.
+- **Local tool management**: `mise` (`.mise.toml`) pins Go 1.25.9, `golangci-lint`, and `govulncheck`.
+- **Local tasks**: `fmt`, `test`, `lint`, `vuln`, `check`, `tui` defined in `.mise.toml`.
+- **Database**: Local SQLite file (`~/.local/share/omakiten/omakiten.db`).
+- **Config**: Local YAML files (`~/.config/omakiten/omakiten.yaml` + per-entity `.md` files under `skills/`, `laws/`, `personas/`, `themes/`).
 
-## Canonical Configuration
+## Code Metrics
 
-`omakiten.yaml` is the source of truth for:
-
-- config
-- laws
-- workflows
-- personas
-- skills
-
-SQLite stores a materialized copy of this data for fast reads, stable IDs, and runtime queries. Any command or TUI action that changes laws, workflows, personas, skills, or config must update `omakiten.yaml` first, validate it, and then reimport it into SQLite.
-
-## Project Isolation
-
-The database is global, so project isolation is mandatory.
-
-Operational data must always be scoped by `project_id`, including:
-
-- tasks
-- comments
-- dependencies
-- context entries
-
-Commands resolve the active project by this order:
-
-- explicit `--project-id`
-- explicit `--project` slug
-- current working directory inside a registered project root
-
-Queries that return or mutate tasks must always filter by `project_id`.
-
-## Layers
-
-```txt
-cmd/okt          binary entrypoint
-internal/cli     CLI commands and JSON output wiring
-internal/tui     terminal UI models and views
-internal/app     application services and use cases
-internal/domain  core entities and coded errors
-internal/config  YAML contracts, validation, and canonical writes
-internal/sqlite  global database, migrations, and repositories
-internal/project project resolution
-internal/output  minified JSON envelopes
-internal/token   token counting abstractions
-internal/graph   task dependency helpers
-```
-
-## Security Rules
-
-- All writes go through `internal/app` services.
-- SQLite uses foreign keys and transactions for writes.
-- Workflow transitions are enforced centrally.
-- Task dependencies cannot cross projects.
-- YAML loading uses strict field validation.
-- CLI responses use stable JSON error codes for agents.
-- `context dump` must never mix data from different projects.
-
-## Testing Strategy
-
-Table-driven tests are preferred for business rules and validation.
-
-Priority coverage:
-
-- YAML validation
-- workflow transitions
-- project resolution
-- project-scoped task queries
-- context dump levels
-- minified JSON output
-- dependency graph rules
+| Metric | Status | Value / Finding | Source (tool + command) or Recommendation |
+|--------|--------|-----------------|-------------------------------------------|
+| Test structure | measured | 21 test files across 17 packages; standard Go `testing`; table-driven tests; integration-style CLI tests; TUI key simulation tests; MCP adapter tests; agent service tests; agentsetup tests | `go test ./...` |
+| Test coverage | measured | 56.5% statement coverage (17 packages) | `go test -coverprofile=/tmp/coverage_full.out ./... && go tool cover -func=/tmp/coverage_full.out` |
+| Module sizes (LOC) | measured | Top 5: `internal/tui/model.go` (1,503), `internal/sqlite/store.go` (1,010), `internal/tui/entity.go` (857), `internal/agent/service.go` (609), `internal/tui/model_test.go` (513); total Go LOC ~13,431 | `find . -name '*.go' | grep -v '/node_modules/' | xargs wc -l` |
+| Cyclomatic complexity | recommended | Not measured. **Recommendation**: `gocyclo` — purpose-built for Go, reports functions exceeding a configurable threshold (e.g., 15). Install: `go install github.com/fzipp/gocyclo/cmd/gocyclo@latest`; run: `gocyclo -over 15 .` | Tool: `gocyclo`; Rationale: Go-native cyclomatic complexity analyzer with per-function reporting |
+| Internal dependency structure | recommended | Not measured. **Recommendation**: `go list -deps ./...` shows dependency count per package; for circular dependency detection and visualization, use a small Go script using `golang.org/x/tools/go/packages`. No circular dependencies suspected in current flat `internal/` structure. | Tool: `go list -deps` + custom script; Rationale: Native Go tooling, no extra dependencies needed |
+| Mutation score | recommended | Not measurable — no mutation testing configured. **Recommendation**: `gremlins` (Go mutation testing). Install: `go install github.com/go-gremlins/gremlins@latest`; run: `gremlins run`. Fits the stack because it is Go-native and integrates with standard `go test`. | Tool: `gremlins`; Rationale: Go-native mutation tester that works with existing test suite |
