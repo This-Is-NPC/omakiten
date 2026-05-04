@@ -27,7 +27,7 @@
 | FR-021 | List laws | `internal/cli/law.go`, `internal/app/law_service.go`, `internal/sqlite/store.go:ListActiveLaws` |
 | FR-022 | Show law details | `internal/cli/law.go`, `internal/app/law_service.go` |
 | FR-023 | Add, edit, and remove laws as file-backed markdown entities | `internal/cli/law.go`, `internal/app/law_service.go`, `internal/app/bundle_editor.go`, `internal/config/saver.go` |
-| FR-024 | Launch TUI with kanban board, table view, dependency graph view, and config entity browser | `internal/cli/tui.go`, `internal/tui/model.go`, `internal/tui/entity.go` |
+| FR-024 | Launch TUI with kanban board, table view, dependency graph view, config entity browser, and activity logs view | `internal/cli/tui.go`, `internal/tui/model.go`, `internal/tui/entity.go` |
 | FR-025 | Resolve active project via `--project-id`, `--project`, or current working directory | `internal/cli/root.go`, `internal/project/resolver.go` |
 | FR-026 | Import YAML bundle into SQLite as a materialized read model | `internal/app/config_service.go`, `internal/sqlite/store.go:ImportBundle` |
 | FR-027 | Materialize embedded default config files on first run | `internal/config/loader.go:EnsureDefaultFiles`, `defaults/defaults.go` |
@@ -53,6 +53,7 @@
 | FR-047 | Call MCP tools directly from CLI (`okt mcp call TOOL_NAME --input JSON`) | `internal/cli/mcp.go:newMCPCallCommand` |
 | FR-048 | List MCP tool/resource/prompt definitions from CLI (`okt mcp tools`) | `internal/cli/mcp.go:newMCPToolsCommand` |
 | FR-049 | Set up MCP harness config from `okt init --enable-mcp` with dry-run, force, and custom config path support | `internal/cli/init.go`, `internal/agentsetup/setup.go` |
+| FR-050 | View recent activity logs in TUI with source, operation, duration, and status | `internal/tui/model.go:renderLogs`, `internal/sqlite/activity_logs.go:ListActivityLogs` |
 
 ## Non-Functional Requirements
 
@@ -74,6 +75,8 @@
 | NFR-014 | MCP adapter maps domain errors to compact coded failures with next-step guidance | `internal/agent/errors.go:FailureFromError`, `internal/agent/errors.go:guidanceForCode` |
 | NFR-015 | Ambiguous or destructive agent intents return `requires_confirmation` instead of mutating state | `internal/agent/service.go:CreateTaskIntent`, `internal/agent/service.go:RemoveDependency` |
 | NFR-016 | MCP harness setup preserves existing config entries and refuses silent overwrites | `internal/agentsetup/setup.go:Setup` |
+| NFR-017 | App service calls are tracked as activity logs with automatic pruning (max 500 rows, 7 days) | `internal/activity/track.go`, `internal/sqlite/activity_logs.go` |
+| NFR-018 | Activity log failures must not break business logic | `internal/activity/track.go` |
 
 ## Business Rules
 
@@ -96,3 +99,4 @@
 | BR-015 | Dependency removal via agent intent requires explicit `confirmed=true` | `internal/agent/service.go:RemoveDependency` |
 | BR-016 | Agent intents resolve project via standard precedence: explicit `project_id`, explicit `project` slug, then current working directory | `internal/agent/service.go:resolveProject` |
 | BR-017 | Agent intents must never mix data from different projects | `internal/agent/service_test.go:TestOverviewUsesResolvedProjectAndCompactState`, `internal/agent/service_test.go:TestResumeProjectDoesNotMixProjectState` |
+| BR-018 | Activity logs are pruned synchronously after insert to cap storage (max 500 rows, 7 days) | `internal/sqlite/activity_logs.go:BeginActivityLog`, `internal/sqlite/activity_logs.go:PruneActivityLogs` |

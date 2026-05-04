@@ -34,11 +34,11 @@
 |-----------|----------------|
 | `cmd/okt/` | Binary entrypoint (`main.go`) |
 | `internal/cli/` | Cobra command tree, JSON I/O wiring, project resolution at CLI layer |
-| `internal/tui/` | Bubble Tea TUI: kanban board, table view, dependency graph, config entity browser |
+| `internal/tui/` | Bubble Tea TUI: kanban board, table view, dependency graph, config entity browser, activity logs |
 | `internal/app/` | Application services enforcing business rules (validation, workflow transitions, cycle detection, transactional file edits) |
 | `internal/domain/` | Pure domain entities and coded errors |
 | `internal/config/` | Canonical YAML bundle loading/saving, frontmatter parsing, entity file generation, validation |
-| `internal/sqlite/` | Global SQLite database access, schema migrations, operational repositories |
+| `internal/sqlite/` | Global SQLite database access, schema migrations, operational repositories, activity logs |
 | `internal/project/` | Resolves active project from flags or CWD |
 | `internal/output/` | JSON envelope formatting for machine-parseable CLI output |
 | `internal/token/` | Token estimation (BPE / word-count) for context budgeting |
@@ -46,7 +46,8 @@
 | `internal/paths/` | Cross-platform config/data path resolution (XDG + `$OMAKITEN_HOME`) |
 | `internal/agent/` | Protocol-neutral agent intent layer; no MCP SDK or transport dependency (`internal/agent/service.go`, `internal/agent/runtime.go`) |
 | `internal/mcp/` | MCP adapter: maps MCP tools/resources/prompts to `internal/agent` services (`internal/mcp/adapter.go`, `internal/mcp/server.go`) |
-| `internal/agentsetup/` | MCP harness setup (currently `claude-desktop`); writes harness config atomically without overwriting other entries (`internal/agentsetup/setup.go`) |
+| `internal/agentsetup/` | MCP harness setup (currently `claude-desktop`, `opencode`); writes harness config atomically without overwriting other entries (`internal/agentsetup/setup.go`) |
+| `internal/activity/` | Observability layer: tracks app service calls with context-scoped repositories (`internal/activity/track.go`, `internal/activity/context.go`) |
 | `defaults/` | Embedded default kit assets (YAML, themes, skills, laws, personas) |
 | `migrations/` | Embedded SQL migration scripts |
 | `testdata/` | Test fixtures |
@@ -65,6 +66,7 @@
 - **Project Scoping**: All operational data is strictly filtered by `project_id` at the repository layer (`internal/sqlite/store.go`)
 - **Strict YAML Validation**: `yaml.NewDecoder` with `KnownFields(true)` prevents unknown field drift (`internal/config/loader.go:120`)
 - **Protocol-Neutral Agent Layer**: `internal/agent` depends only on `internal/app` services and `internal/domain`; it has no MCP SDK, package manager, or transport dependency (`internal/agent/service.go`). The MCP adapter (`internal/mcp`) is a thin translation layer.
+- **Context-Bound Observability**: `activity.Track` uses context-scoped repositories so logging is opt-in per runtime and never breaks business logic (`internal/activity/track.go`)
 
 ## Authentication
 
@@ -82,9 +84,9 @@ Not applicable — local-first single-user CLI tool with no authentication or au
 
 | Metric | Status | Value / Finding | Source (tool + command) or Recommendation |
 |--------|--------|-----------------|-------------------------------------------|
-| Test structure | measured | 21 test files across 17 packages; standard Go `testing`; table-driven tests; integration-style CLI tests; TUI key simulation tests; MCP adapter tests; agent service tests; agentsetup tests | `go test ./...` |
-| Test coverage | measured | 56.5% statement coverage (17 packages) | `go test -coverprofile=/tmp/coverage_full.out ./... && go tool cover -func=/tmp/coverage_full.out` |
-| Module sizes (LOC) | measured | Top 5: `internal/tui/model.go` (1,503), `internal/sqlite/store.go` (1,010), `internal/tui/entity.go` (857), `internal/agent/service.go` (609), `internal/tui/model_test.go` (513); total Go LOC ~13,431 | `find . -name '*.go' | grep -v '/node_modules/' | xargs wc -l` |
+| Test structure | measured | 34 test files across 18 packages; standard Go `testing`; table-driven tests; integration-style CLI tests; TUI key simulation tests; MCP adapter tests; agent service tests; agentsetup tests; activity log tests | `go test ./...` |
+| Test coverage | measured | 72.6% statement coverage (18 packages) | `go test -coverprofile=/tmp/coverage.out ./... && go tool cover -func=/tmp/coverage.out` |
+| Module sizes (LOC) | measured | Top 5 non-test: `internal/tui/model.go` (2,253), `internal/sqlite/store.go` (1,027), `internal/tui/entity.go` (905), `internal/agent/service.go` (609), `internal/config/loader.go` (382); non-test total: 11,732; test total: 6,287 | `find . -name '*.go' ! -name '*_test.go' -exec wc -l {} +` |
 | Cyclomatic complexity | recommended | Not measured. **Recommendation**: `gocyclo` — purpose-built for Go, reports functions exceeding a configurable threshold (e.g., 15). Install: `go install github.com/fzipp/gocyclo/cmd/gocyclo@latest`; run: `gocyclo -over 15 .` | Tool: `gocyclo`; Rationale: Go-native cyclomatic complexity analyzer with per-function reporting |
 | Internal dependency structure | recommended | Not measured. **Recommendation**: `go list -deps ./...` shows dependency count per package; for circular dependency detection and visualization, use a small Go script using `golang.org/x/tools/go/packages`. No circular dependencies suspected in current flat `internal/` structure. | Tool: `go list -deps` + custom script; Rationale: Native Go tooling, no extra dependencies needed |
 | Mutation score | recommended | Not measurable — no mutation testing configured. **Recommendation**: `gremlins` (Go mutation testing). Install: `go install github.com/go-gremlins/gremlins@latest`; run: `gremlins run`. Fits the stack because it is Go-native and integrates with standard `go test`. | Tool: `gremlins`; Rationale: Go-native mutation tester that works with existing test suite |
