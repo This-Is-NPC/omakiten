@@ -12,7 +12,10 @@ import (
 	"omakiten/internal/domain"
 )
 
-const ClaudeDesktopHarness = "claude-desktop"
+const (
+	ClaudeDesktopHarness = "claude-desktop"
+	OpenCodeHarness      = "opencode"
+)
 
 type Options struct {
 	Harness    string
@@ -34,7 +37,7 @@ type Result struct {
 }
 
 func SupportedHarnesses() []string {
-	return []string{ClaudeDesktopHarness}
+	return []string{ClaudeDesktopHarness, OpenCodeHarness}
 }
 
 func Setup(opts Options) (Result, error) {
@@ -42,13 +45,13 @@ func Setup(opts Options) (Result, error) {
 	if harness == "" {
 		harness = ClaudeDesktopHarness
 	}
-	if harness != ClaudeDesktopHarness {
+	if !isSupportedHarness(harness) {
 		return Result{}, domain.NewError(domain.ErrValidation, "unsupported MCP harness", map[string]any{"harness": harness, "supported": SupportedHarnesses()})
 	}
 
 	configPath := opts.ConfigPath
 	if configPath == "" {
-		path, err := defaultClaudeDesktopConfigPath()
+		path, err := defaultConfigPath(harness)
 		if err != nil {
 			return Result{}, err
 		}
@@ -63,30 +66,22 @@ func Setup(opts Options) (Result, error) {
 	if command == "" {
 		command = defaultCommand()
 	}
-	result := Result{Harness: harness, ConfigPath: absConfigPath, Command: command, Args: []string{"mcp", "serve"}, DryRun: opts.DryRun}
+	args := []string{"mcp", "serve"}
+	result := Result{Harness: harness, ConfigPath: absConfigPath, Command: command, Args: args, DryRun: opts.DryRun}
 
 	existing, exists, err := readConfig(absConfigPath)
 	if err != nil {
 		return Result{}, err
 	}
 
-	mcpServers, err := objectField(existing, "mcpServers")
-	if err != nil {
-		return Result{}, err
-	}
-	if mcpServers == nil {
-		mcpServers = map[string]any{}
-	}
-
-	if _, ok := mcpServers["omakiten"]; ok && !opts.Force {
+	if entryExists(existing, harness) && !opts.Force {
 		result.Changed = false
 		result.Status = "already_configured"
 		result.Message = "Omakiten MCP server is already configured; pass force=true or --mcp-force to replace it."
-		return result, domain.NewError(domain.ErrValidation, "omakiten MCP server already configured", map[string]any{"config_path": absConfigPath})
+		return result, domain.NewError(domain.ErrValidation, "omakiten MCP server already configured", map[string]any{"config_path": absConfigPath, "harness": harness})
 	}
 
-	mcpServers["omakiten"] = map[string]any{"command": command, "args": result.Args}
-	existing["mcpServers"] = mcpServers
+	updated := mergeHarnessConfig(existing, harness, command, args)
 	result.Changed = true
 	if opts.DryRun {
 		result.Status = "would_write"
@@ -98,7 +93,7 @@ func Setup(opts Options) (Result, error) {
 		return result, nil
 	}
 
-	data, err := marshalStable(existing)
+	data, err := marshalStable(updated)
 	if err != nil {
 		return Result{}, err
 	}
@@ -115,12 +110,28 @@ func Setup(opts Options) (Result, error) {
 	return result, nil
 }
 
-func defaultClaudeDesktopConfigPath() (string, error) {
+func isSupportedHarness(harness string) bool {
+	for _, h := range SupportedHarnesses() {
+		if h == harness {
+			return true
+		}
+	}
+	return false
+}
+
+func defaultConfigPath(harness string) (string, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(configDir, "Claude", "claude_desktop_config.json"), nil
+	switch harness {
+	case ClaudeDesktopHarness:
+		return filepath.Join(configDir, "Claude", "claude_desktop_config.json"), nil
+	case OpenCodeHarness:
+		return filepath.Join(configDir, "opencode", "opencode.json"), nil
+	default:
+		return "", domain.NewError(domain.ErrValidation, "no default config path for harness", map[string]any{"harness": harness})
+	}
 }
 
 func defaultCommand() string {
@@ -129,6 +140,53 @@ func defaultCommand() string {
 		return "okt"
 	}
 	return path
+}
+
+func entryExists(existing map[string]any, harness string) bool {
+	switch harness {
+	case ClaudeDesktopHarness:
+		mcpServers, err := objectField(existing, "mcpServers")
+		if err != nil || mcpServers == nil {
+			return false
+		}
+		_, ok := mcpServers["omakiten"]
+		return ok
+	case OpenCodeHarness:
+		mcpSection, err := objectField(existing, "mcp")
+		if err != nil || mcpSection == nil {
+			return false
+		}
+		_, ok := mcpSection["omakiten"]
+		return ok
+	}
+	return false
+}
+
+func mergeHarnessConfig(existing map[string]any, harness, command string, args []string) map[string]any {
+	out := make(map[string]any, len(existing))
+	for k, v := range existing {
+		out[k] = v
+	}
+	switch harness {
+	case ClaudeDesktopHarness:
+		mcpServers, _ := objectField(out, "mcpServers")
+		if mcpServers == nil {
+			mcpServers = map[string]any{}
+		}
+		mcpServers["omakiten"] = map[string]any{"command": command, "args": args}
+		out["mcpServers"] = mcpServers
+	case OpenCodeHarness:
+		mcpSection, _ := objectField(out, "mcp")
+		if mcpSection == nil {
+			mcpSection = map[string]any{}
+		}
+		cmd := make([]string, 0, len(args)+1)
+		cmd = append(cmd, command)
+		cmd = append(cmd, args...)
+		mcpSection["omakiten"] = map[string]any{"type": "local", "command": cmd, "enabled": true}
+		out["mcp"] = mcpSection
+	}
+	return out
 }
 
 func readConfig(path string) (map[string]any, bool, error) {
@@ -185,8 +243,25 @@ func sortMap(value map[string]any) map[string]any {
 		switch typed := value[key].(type) {
 		case map[string]any:
 			out[key] = sortMap(typed)
+		case []any:
+			out[key] = sortSlice(typed)
 		default:
 			out[key] = typed
+		}
+	}
+	return out
+}
+
+func sortSlice(value []any) []any {
+	out := make([]any, len(value))
+	for i, v := range value {
+		switch typed := v.(type) {
+		case map[string]any:
+			out[i] = sortMap(typed)
+		case []any:
+			out[i] = sortSlice(typed)
+		default:
+			out[i] = typed
 		}
 	}
 	return out

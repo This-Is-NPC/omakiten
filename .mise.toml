@@ -38,6 +38,28 @@ fi
 "$HOME/.local/bin/okt" init --name Omakiten --slug omakiten --root "$PWD"
 '''
 
+[tasks."install:mcp:claude"]
+description = "Install Omakiten MCP server into Claude Desktop config"
+depends = ["build"]
+run = '''
+if [ -z "${HOME:-}" ]; then
+  printf 'HOME is not set\n' >&2
+  exit 1
+fi
+bin/okt mcp setup --harness claude-desktop --force
+'''
+
+[tasks."install:mcp:opencode"]
+description = "Install Omakiten MCP server into OpenCode global config"
+depends = ["build"]
+run = '''
+if [ -z "${HOME:-}" ]; then
+  printf 'HOME is not set\n' >&2
+  exit 1
+fi
+bin/okt mcp setup --harness opencode --force
+'''
+
 [tasks.uninstall]
 description = "Remove the locally installed okt binary without deleting config or data"
 run = '''

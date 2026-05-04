@@ -109,8 +109,8 @@ func TestSetupCreatedStatus(t *testing.T) {
 
 func TestSupportedHarnesses(t *testing.T) {
 	harnesses := SupportedHarnesses()
-	if len(harnesses) != 1 || harnesses[0] != ClaudeDesktopHarness {
-		t.Fatalf("SupportedHarnesses() = %v, want [claude-desktop]", harnesses)
+	if len(harnesses) != 2 || harnesses[0] != ClaudeDesktopHarness || harnesses[1] != OpenCodeHarness {
+		t.Fatalf("SupportedHarnesses() = %v, want [claude-desktop opencode]", harnesses)
 	}
 }
 
@@ -179,6 +179,143 @@ func TestObjectFieldNotObject(t *testing.T) {
 func TestSetupRejectsUnsupportedHarness(t *testing.T) {
 	_, err := Setup(Options{Harness: "unknown", ConfigPath: filepath.Join(t.TempDir(), "config.json"), Command: "okt"})
 	assertSetupCode(t, err, domain.ErrValidation)
+}
+
+// OpenCode harness tests
+
+func TestSetupOpenCodeDryRunDoesNotWriteConfig(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "opencode.json")
+
+	result, err := Setup(Options{Harness: OpenCodeHarness, ConfigPath: configPath, Command: "okt", DryRun: true})
+	if err != nil {
+		t.Fatalf("Setup(dry-run) error = %v", err)
+	}
+	if !result.DryRun || result.Status != "would_write" || !result.Changed {
+		t.Fatalf("Setup(dry-run) = %#v, want would_write changed dry run", result)
+	}
+	if _, err := os.Stat(configPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("config file exists after dry run or unexpected error: %v", err)
+	}
+}
+
+func TestSetupOpenCodePreservesExistingConfigAndRefusesSilentOverwrite(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "opencode", "opencode.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	existing := []byte(`{"autoupdate":false,"mcp":{"other":{"type":"local","command":["other"]}}}`)
+	if err := os.WriteFile(configPath, existing, 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result, err := Setup(Options{Harness: OpenCodeHarness, ConfigPath: configPath, Command: "okt"})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	if result.Status != "updated" || !result.Changed {
+		t.Fatalf("Setup() = %#v, want updated changed", result)
+	}
+
+	var written map[string]any
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if written["autoupdate"] != false {
+		t.Fatalf("autoupdate = %v, want preserved false", written["autoupdate"])
+	}
+	mcpSection := written["mcp"].(map[string]any)
+	if _, ok := mcpSection["other"]; !ok {
+		t.Fatalf("mcp.other missing after setup: %#v", mcpSection)
+	}
+	if _, ok := mcpSection["omakiten"]; !ok {
+		t.Fatalf("mcp.omakiten missing after setup: %#v", mcpSection)
+	}
+
+	_, err = Setup(Options{Harness: OpenCodeHarness, ConfigPath: configPath, Command: "okt"})
+	assertSetupCode(t, err, domain.ErrValidation)
+}
+
+func TestSetupOpenCodeForceOverwrite(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "opencode.json")
+	if err := os.WriteFile(configPath, []byte(`{"mcp":{"omakiten":{"type":"local","command":["old"]}}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result, err := Setup(Options{Harness: OpenCodeHarness, ConfigPath: configPath, Command: "new-okt", Force: true})
+	if err != nil {
+		t.Fatalf("Setup(force) error = %v", err)
+	}
+	if result.Status != "updated" || !result.Changed {
+		t.Fatalf("Setup(force) = %#v, want updated changed", result)
+	}
+
+	data, _ := os.ReadFile(configPath)
+	var written map[string]any
+	json.Unmarshal(data, &written)
+	mcpSection := written["mcp"].(map[string]any)
+	omakiten := mcpSection["omakiten"].(map[string]any)
+	cmd := omakiten["command"].([]any)
+	if len(cmd) != 3 || cmd[0] != "new-okt" {
+		t.Fatalf("command = %v, want [new-okt mcp serve]", cmd)
+	}
+}
+
+func TestSetupOpenCodeCreatedStatus(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "opencode.json")
+
+	result, err := Setup(Options{Harness: OpenCodeHarness, ConfigPath: configPath, Command: "okt"})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	if result.Status != "created" || !result.Changed {
+		t.Fatalf("Setup() = %#v, want created changed", result)
+	}
+	if _, err := os.Stat(configPath); err != nil {
+		t.Fatalf("config file missing: %v", err)
+	}
+
+	data, _ := os.ReadFile(configPath)
+	var written map[string]any
+	json.Unmarshal(data, &written)
+	mcpSection := written["mcp"].(map[string]any)
+	omakiten := mcpSection["omakiten"].(map[string]any)
+	if omakiten["type"] != "local" {
+		t.Fatalf("type = %v, want local", omakiten["type"])
+	}
+	if omakiten["enabled"] != true {
+		t.Fatalf("enabled = %v, want true", omakiten["enabled"])
+	}
+}
+
+func TestSetupOpenCodeDefaultConfigPath(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("HOME", configDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+
+	configPath := filepath.Join(configDir, "opencode", "opencode.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	result, err := Setup(Options{Harness: OpenCodeHarness, Command: "okt"})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	if result.Harness != OpenCodeHarness {
+		t.Fatalf("Harness = %q, want %q", result.Harness, OpenCodeHarness)
+	}
+	if result.Status != "created" || !result.Changed {
+		t.Fatalf("Setup() = %#v, want created changed", result)
+	}
+	if _, err := os.Stat(configPath); err != nil {
+		t.Fatalf("default config file missing: %v", err)
+	}
 }
 
 func assertSetupCode(t *testing.T, err error, code domain.ErrorCode) {

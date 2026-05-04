@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/agent"
+	"omakiten/internal/agentsetup"
 	"omakiten/internal/mcp"
 )
 
@@ -20,6 +21,7 @@ func newMCPCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.AddCommand(newMCPToolsCommand())
 	cmd.AddCommand(newMCPCallCommand(opts))
 	cmd.AddCommand(newMCPServeCommand(opts))
+	cmd.AddCommand(newMCPSetupCommand())
 	return cmd
 }
 
@@ -83,6 +85,38 @@ func newMCPServeCommand(opts *runtimeOptions) *cobra.Command {
 			return mcp.Serve(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), adapter)
 		},
 	}
+}
+
+func newMCPSetupCommand() *cobra.Command {
+	var harness, configPath, command string
+	var dryRun, force bool
+
+	cmd := &cobra.Command{
+		Use:   "setup",
+		Short: "Configure Omakiten MCP server in an AI harness",
+		Long:  "Writes the Omakiten MCP server configuration to the harness config file (e.g. Claude Desktop or OpenCode).",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			result, err := agentsetup.Setup(agentsetup.Options{
+				Harness:    harness,
+				ConfigPath: configPath,
+				Command:    command,
+				DryRun:     dryRun,
+				Force:      force,
+			})
+			if err != nil {
+				return writeError(cmd, err)
+			}
+			return writeSuccess(cmd, result)
+		},
+	}
+
+	cmd.Flags().StringVar(&harness, "harness", "claude-desktop", "Target harness (claude-desktop or opencode)")
+	cmd.Flags().StringVar(&configPath, "config-path", "", "Path to harness config file (default: harness default)")
+	cmd.Flags().StringVar(&command, "command", "", "Command to run omakiten (default: current executable)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview changes without writing")
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing Omakiten MCP config")
+
+	return cmd
 }
 
 func agentOptions(opts *runtimeOptions) agent.Options {
