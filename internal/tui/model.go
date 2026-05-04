@@ -1132,8 +1132,7 @@ func (m Model) renderCard(task domain.Task, selected bool) string {
 	if selected {
 		marker = m.styles.marker.Render(selectionMarker)
 	}
-	indicator := m.taskIndicator(task).Render("●")
-	prefix := fmt.Sprintf("%s %s #%d ", marker, indicator, task.ID)
+	prefix := fmt.Sprintf("%s #%d ", marker, task.ID)
 	prefixWidth := lipgloss.Width(prefix)
 
 	firstWidth := cardContentWidth - prefixWidth
@@ -1146,7 +1145,7 @@ func (m Model) renderCard(task domain.Task, selected bool) string {
 	}
 
 	wrapped := wrapWords(task.Title, firstWidth, restWidth)
-	lines := make([]string, 0, len(wrapped))
+	lines := make([]string, 0, len(wrapped)+1)
 	for i, part := range wrapped {
 		if i == 0 {
 			lines = append(lines, prefix+part)
@@ -1155,11 +1154,64 @@ func (m Model) renderCard(task domain.Task, selected bool) string {
 		}
 	}
 
+	// Badges line (truncated to fit card width)
+	if badgeLine := m.renderTaskBadges(task, cardContentWidth); badgeLine != "" {
+		lines = append(lines, badgeLine)
+	}
+
 	style := m.styles.card
 	if selected {
 		style = m.styles.cardSelected
 	}
 	return style.Render(strings.Join(lines, "\n"))
+}
+
+// renderTaskBadges builds a line of colored badges for a task: priority,
+// blocker count, and comment count. Each badge is rendered as a filled pill
+// using Lipgloss background colors. Badges are dropped from the right when
+// the total width would exceed maxWidth.
+func (m Model) renderTaskBadges(task domain.Task, maxWidth int) string {
+	var badges []string
+	totalWidth := 0
+
+	tryAdd := func(badge string, width int) bool {
+		sep := 0
+		if totalWidth > 0 {
+			sep = 1 // space between badges
+		}
+		if totalWidth+sep+width > maxWidth {
+			return false
+		}
+		totalWidth += sep + width
+		badges = append(badges, badge)
+		return true
+	}
+
+	// Priority badge (always shown)
+	var priorityBadge string
+	switch task.Priority {
+	case domain.PriorityHigh:
+		priorityBadge = m.styles.badgeHigh.Render("HIGH")
+	case domain.PriorityLow:
+		priorityBadge = m.styles.badgeLow.Render("LOW")
+	default:
+		priorityBadge = m.styles.badgeNormal.Render("NORM")
+	}
+	tryAdd(priorityBadge, lipgloss.Width(priorityBadge))
+
+	// Blockers badge
+	if deps := m.dependencyCount(task.ID); deps > 0 {
+		badge := m.styles.badgeBlocker.Render(fmt.Sprintf("%d BLK", deps))
+		tryAdd(badge, lipgloss.Width(badge))
+	}
+
+	// Comments badge
+	if cmts := m.commentCount(task.ID); cmts > 0 {
+		badge := m.styles.badgeComment.Render(fmt.Sprintf("%d CMT", cmts))
+		tryAdd(badge, lipgloss.Width(badge))
+	}
+
+	return strings.Join(badges, " ")
 }
 
 func (m Model) renderHelp() string {
@@ -2203,6 +2255,11 @@ type styles struct {
 	success        lipgloss.Style
 	warning        lipgloss.Style
 	error          lipgloss.Style
+	badgeHigh      lipgloss.Style
+	badgeNormal    lipgloss.Style
+	badgeLow       lipgloss.Style
+	badgeBlocker   lipgloss.Style
+	badgeComment   lipgloss.Style
 }
 
 func newStyles(theme config.Theme) styles {
@@ -2249,5 +2306,10 @@ func newStyles(theme config.Theme) styles {
 		success:        lipgloss.NewStyle().Foreground(success),
 		warning:        lipgloss.NewStyle().Foreground(warning),
 		error:          lipgloss.NewStyle().Foreground(errorColor),
+		badgeHigh:      lipgloss.NewStyle().Background(errorColor).Foreground(lipgloss.Color("#1A1A1A")).Padding(0, 1).Bold(true),
+		badgeNormal:    lipgloss.NewStyle().Background(success).Foreground(lipgloss.Color("#1A1A1A")).Padding(0, 1).Bold(true),
+		badgeLow:       lipgloss.NewStyle().Background(secondary).Foreground(lipgloss.Color("#1A1A1A")).Padding(0, 1).Bold(true),
+		badgeBlocker:   lipgloss.NewStyle().Background(warning).Foreground(lipgloss.Color("#1A1A1A")).Padding(0, 1).Bold(true),
+		badgeComment:   lipgloss.NewStyle().Background(border).Foreground(foreground).Padding(0, 1).Bold(true),
 	}
 }
