@@ -150,7 +150,11 @@ func (m Model) renderEntityRow(kind entityKind, index int, selected bool) string
 	label := m.entityRowLabel(kind, index)
 	prefix := fmt.Sprintf("%s %s ", marker, indicator)
 	budget := entityListWidth - lipgloss.Width(prefix)
-	return m.styles.card.Render(prefix + truncateText(label, budget))
+	style := m.styles.entityRow
+	if selected {
+		style = m.styles.entitySelected
+	}
+	return style.Render(prefix + truncateText(label, budget))
 }
 
 func (m Model) entityRowLabel(kind entityKind, index int) string {
@@ -192,23 +196,35 @@ type editorFinishedMsg struct {
 
 func (m *Model) handleConfigKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
+	case "esc":
+		if m.deletePending {
+			m.clearDeletePrompt("Delete cancelled")
+		}
 	case "left", "h":
+		m.clearDeletePrompt("")
 		m.cycleEntityKind(-1)
 	case "right", "l":
+		m.clearDeletePrompt("")
 		m.cycleEntityKind(1)
 	case "up", "k":
+		m.clearDeletePrompt("")
 		m.moveEntityCursor(-1)
 	case "down", "j":
+		m.clearDeletePrompt("")
 		m.moveEntityCursor(1)
 	case "enter":
+		m.clearDeletePrompt("")
 		m.openSelectedEntityView()
 	case "n":
+		m.clearDeletePrompt("")
 		return m.openEntityCreate(m.entityKind)
 	case "e":
+		m.clearDeletePrompt("")
 		return m.openSelectedEntityEdit()
 	case "d":
-		m.deleteSelectedEntity()
+		m.requestSelectedEntityDelete()
 	case "p":
+		m.clearDeletePrompt("")
 		if m.entityKind == entityKindPersona {
 			m.openPersonaPickerForSelected()
 		}
@@ -435,16 +451,23 @@ func (m Model) updateEntityScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 	case "esc":
+		if m.deletePending {
+			m.clearDeletePrompt("Delete cancelled")
+			return m, nil
+		}
 		m.closeEntityScreen("")
 	case "e":
+		m.clearDeletePrompt("")
 		return m, m.openEntityEditor(m.entityForm.kind, m.entityForm.slug)
 	case "d":
-		m.deleteEntity(m.entityForm.kind, m.entityForm.slug)
+		m.requestEntityDelete(m.entityForm.kind, m.entityForm.slug)
 	case "p":
+		m.clearDeletePrompt("")
 		if m.entityForm.kind == entityKindPersona {
 			m.openPersonaPicker(m.entityForm.slug)
 		}
 	case "r":
+		m.clearDeletePrompt("")
 		if err := m.refresh(); err != nil {
 			m.status = err.Error()
 		} else {
@@ -474,7 +497,7 @@ func (m *Model) handleEditorFinished(msg editorFinishedMsg) {
 	m.status = "Saved"
 }
 
-func (m *Model) deleteSelectedEntity() {
+func (m *Model) requestSelectedEntityDelete() {
 	if m.entityCount(m.entityKind) == 0 {
 		m.status = "Nothing to delete"
 		return
@@ -484,7 +507,21 @@ func (m *Model) deleteSelectedEntity() {
 	if slug == "" {
 		return
 	}
-	m.deleteEntity(m.entityKind, slug)
+	m.requestEntityDelete(m.entityKind, slug)
+}
+
+func (m *Model) requestEntityDelete(kind entityKind, slug string) {
+	if slug == "" {
+		return
+	}
+	if m.deletePending && m.deleteKind == kind && m.deleteSlug == slug {
+		m.deleteEntity(kind, slug)
+		return
+	}
+	m.deletePending = true
+	m.deleteKind = kind
+	m.deleteSlug = slug
+	m.status = fmt.Sprintf("Confirm delete %s %q. Press d again to remove it; esc cancels.", strings.ToLower(kind.String()), slug)
 }
 
 func (m *Model) deleteEntity(kind entityKind, slug string) {
@@ -505,6 +542,7 @@ func (m *Model) deleteEntity(kind entityKind, slug string) {
 		m.status = err.Error()
 		return
 	}
+	m.clearDeletePrompt("")
 	if refreshErr := m.refresh(); refreshErr != nil {
 		m.status = refreshErr.Error()
 		return
@@ -517,9 +555,19 @@ func (m *Model) deleteEntity(kind entityKind, slug string) {
 }
 
 func (m *Model) closeEntityScreen(status string) {
+	m.clearDeletePrompt("")
 	m.entityScreen = entityScreenClosed
 	m.entityForm = entityForm{}
 	m.status = status
+}
+
+func (m *Model) clearDeletePrompt(status string) {
+	m.deletePending = false
+	m.deleteKind = entityKindLaw
+	m.deleteSlug = ""
+	if status != "" {
+		m.status = status
+	}
 }
 
 func (m Model) renderEntityScreen() string {

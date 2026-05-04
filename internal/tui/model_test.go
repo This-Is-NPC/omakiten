@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
@@ -41,6 +42,258 @@ func TestModelSwitchesViews(t *testing.T) {
 	got := updated.(Model)
 	if got.view != 1 {
 		t.Fatalf("view = %d, want 1", got.view)
+	}
+}
+
+func TestModelTableAndGraphShowCounts(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	blocker, err := store.CreateTask(ctx, project.ID, "Blocker", "", "", "backlog")
+	if err != nil {
+		t.Fatalf("CreateTask(blocker) error = %v", err)
+	}
+	blocked, err := store.CreateTask(ctx, project.ID, "Blocked", "", "", "backlog")
+	if err != nil {
+		t.Fatalf("CreateTask(blocked) error = %v", err)
+	}
+	if _, err := store.AddTaskDependency(ctx, project.ID, blocked.ID, blocker.ID); err != nil {
+		t.Fatalf("AddTaskDependency() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	table := ansi.Strip(pressRune(t, model, '2').View())
+	if !strings.Contains(table, "// TASKS · 2") {
+		t.Fatalf("table missing task count\n%s", table)
+	}
+
+	graph := ansi.Strip(pressRune(t, model, '3').View())
+	if !strings.Contains(graph, "// DEPENDENCY GRAPH · 1 EDGES") {
+		t.Fatalf("graph missing dependency count\n%s", graph)
+	}
+}
+
+func TestModelTablesUseWideTerminalSpace(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+
+	longTitle := "Investigate viewport usage for the TUI table without truncating the task title"
+	if _, err := store.CreateTask(ctx, project.ID, longTitle, "", "", "backlog"); err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	argsJSON := `{"root":"/home/howl/Projects/person/omakiten","view":"logs","expanded":true}`
+	logID, err := store.BeginActivityLog(ctx, domain.ActivityLog{
+		Source:        domain.ActivitySourceCLI,
+		Entrypoint:    "init",
+		Operation:     "app.ProjectService.Init",
+		ProjectID:     project.ID,
+		ProjectSlug:   project.Slug,
+		ArgumentsJSON: argsJSON,
+		Status:        "running",
+	})
+	if err != nil {
+		t.Fatalf("BeginActivityLog() error = %v", err)
+	}
+	if err := store.FinishActivityLog(ctx, logID, "ok", 12, ""); err != nil {
+		t.Fatalf("FinishActivityLog() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.width = 180
+	panelWidth := func(view string) int {
+		for _, line := range strings.Split(view, "\n") {
+			if strings.Contains(line, "┌") && strings.Contains(line, "┐") {
+				return lipgloss.Width(line)
+			}
+		}
+		return 0
+	}
+
+	table := ansi.Strip(pressRune(t, model, '2').View())
+	if !strings.Contains(table, longTitle) {
+		t.Fatalf("wide table truncated task title\n%s", table)
+	}
+
+	logs := ansi.Strip(pressRune(t, model, '5').View())
+	if !strings.Contains(logs, argsJSON) {
+		t.Fatalf("wide logs truncated arguments\n%s", logs)
+	}
+	if !strings.Contains(logs, "// ACTIVITY · 1") {
+		t.Fatalf("wide logs missing table-style section label\n%s", logs)
+	}
+	if tablePanelWidth, logsPanelWidth := panelWidth(table), panelWidth(logs); tablePanelWidth == 0 || logsPanelWidth == 0 || tablePanelWidth != logsPanelWidth {
+		t.Fatalf("table/log panel widths = %d/%d, want matching non-zero widths\nTABLE:\n%s\nLOGS:\n%s", tablePanelWidth, logsPanelWidth, table, logs)
+	}
+}
+
+func TestModelLoadsActivityLogsWhenOpeningLogsView(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	logID, err := store.BeginActivityLog(ctx, domain.ActivityLog{
+		Source:        domain.ActivitySourceCLI,
+		Entrypoint:    "add",
+		Operation:     "app.TaskService.Add",
+		ProjectID:     project.ID,
+		ProjectSlug:   project.Slug,
+		ArgumentsJSON: `{"title":"From CLI"}`,
+		Status:        "running",
+	})
+	if err != nil {
+		t.Fatalf("BeginActivityLog() error = %v", err)
+	}
+	if err := store.FinishActivityLog(ctx, logID, "ok", 12, ""); err != nil {
+		t.Fatalf("FinishActivityLog() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	got := pressRune(t, model, '5')
+	if got.view != 4 {
+		t.Fatalf("view = %d, want logs view", got.view)
+	}
+	view := ansi.Strip(got.View())
+	for _, want := range []string{"app.TaskService.Add", "project", `{"title":"From CLI"}`, "ok"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("View() missing %q\n%s", want, view)
+		}
+	}
+}
+
+func TestModelRefreshKeyUpdatesActivityLogs(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	got := pressRune(t, model, '5')
+	if strings.Contains(ansi.Strip(got.View()), "app.CommentService.Add") {
+		t.Fatalf("logs view unexpectedly contains new log before refresh\n%s", ansi.Strip(got.View()))
+	}
+	logID, err := store.BeginActivityLog(ctx, domain.ActivityLog{
+		Source:        domain.ActivitySourceMCP,
+		Entrypoint:    "tools/call",
+		Operation:     "app.CommentService.Add",
+		ProjectID:     project.ID,
+		ProjectSlug:   project.Slug,
+		ArgumentsJSON: `{"task_id":1}`,
+		Status:        "running",
+	})
+	if err != nil {
+		t.Fatalf("BeginActivityLog() error = %v", err)
+	}
+	if err := store.FinishActivityLog(ctx, logID, "ok", 7, ""); err != nil {
+		t.Fatalf("FinishActivityLog() error = %v", err)
+	}
+
+	got = pressRune(t, got, 'r')
+	view := ansi.Strip(got.View())
+	for _, want := range []string{"app.CommentService.Add", "mcp", `{"task_id":1}`} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("View() missing %q after refresh\n%s", want, view)
+		}
+	}
+}
+
+func TestModelRealtimeTickRefreshesBoardTasks(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	if cmd := model.Init(); cmd == nil {
+		t.Fatal("Init() command = nil, want realtime refresh tick")
+	}
+	if len(model.tasks) != 0 {
+		t.Fatalf("initial tasks len = %d, want 0", len(model.tasks))
+	}
+	if _, err := store.CreateTask(ctx, project.ID, "External task", "", "", "backlog"); err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	updated, cmd := model.Update(refreshTickMsg{})
+	if cmd == nil {
+		t.Fatal("Update(refreshTickMsg) command = nil, want next realtime tick")
+	}
+	got := updated.(Model)
+	if len(got.tasks) != 1 || got.tasks[0].Title != "External task" {
+		t.Fatalf("tasks after realtime tick = %#v, want external task", got.tasks)
+	}
+	if !strings.Contains(ansi.Strip(got.View()), "External task") {
+		t.Fatalf("board view missing external task\n%s", ansi.Strip(got.View()))
 	}
 }
 
@@ -451,6 +704,195 @@ func TestModelBoardMoveSurfacesWorkflowBlock(t *testing.T) {
 	}
 	if len(tasks) != 1 || tasks[0].BucketKey != "dev" {
 		t.Fatalf("tasks after blocked move = %#v, want unchanged in dev", tasks)
+	}
+}
+
+func TestModelTaskViewWrapsLongPropertyTextWithoutBreakingGrid(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	longTitle := "Atualizar a documentação do projeto com orientações operacionais muito detalhadas para evitar quebra visual"
+	longDescription := "Revisar a documentação existente, completar pontos faltantes e alinhar as instruções ao comportamento atual do projeto, incluindo casos de borda com textos extensos para validação de layout."
+	if _, err := store.CreateTask(ctx, project.ID, longTitle, longDescription, "", "backlog"); err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	got := pressKey(t, model, tea.KeyEnter)
+	view := got.View()
+	plain := ansi.Strip(view)
+	lines := strings.Split(plain, "\n")
+
+	start := -1
+	end := -1
+	for i, line := range lines {
+		if strings.Contains(line, "┌") && strings.Contains(line, "┬") && strings.Contains(line, "┐") {
+			start = i
+			break
+		}
+	}
+	if start == -1 {
+		t.Fatalf("task view grid top border not found\n%s", plain)
+	}
+	for i := start + 1; i < len(lines); i++ {
+		if strings.Contains(lines[i], "└") && strings.Contains(lines[i], "┴") && strings.Contains(lines[i], "┘") {
+			end = i
+			break
+		}
+	}
+	if end == -1 {
+		t.Fatalf("task view grid bottom border not found\n%s", plain)
+	}
+
+	wantWidth := lipgloss.Width(lines[start])
+	for i := start; i <= end; i++ {
+		if gotWidth := lipgloss.Width(lines[i]); gotWidth != wantWidth {
+			t.Fatalf("grid row %d width = %d, want %d\n%s", i, gotWidth, wantWidth, plain)
+		}
+	}
+
+	for _, want := range []string{"// TITLE", "// DESCRIPTION", "comportamento", "projeto"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("View() missing %q\n%s", want, plain)
+		}
+	}
+}
+
+func TestModelBoardCollapsesToFocusedColumnWhenNarrow(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	if _, err := store.CreateTask(ctx, project.ID, "Backlog task", "", "", "backlog"); err != nil {
+		t.Fatalf("CreateTask(backlog) error = %v", err)
+	}
+	devTask, err := store.CreateTask(ctx, project.ID, "Dev task", "", "", "backlog")
+	if err != nil {
+		t.Fatalf("CreateTask(dev) error = %v", err)
+	}
+	if _, err := store.MoveTask(ctx, project.ID, devTask.ID, "dev"); err != nil {
+		t.Fatalf("MoveTask(dev) error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.width = 40
+
+	view := ansi.Strip(model.View())
+	for _, want := range []string{"Column 1/2", "BACKLOG", "Backlog task"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("narrow board missing %q\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "DEVELOPMENT") {
+		t.Fatalf("narrow board rendered non-focused column\n%s", view)
+	}
+
+	got := pressStringKey(t, model, "right")
+	view = ansi.Strip(got.View())
+	for _, want := range []string{"Column 2/2", "DEVELOPMENT", "Dev task"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("narrow board after right missing %q\n%s", want, view)
+		}
+	}
+}
+
+func TestModelConfigUsesFocusedSectionWhenNarrow(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.width = 50
+	got := pressRune(t, model, '4')
+
+	view := ansi.Strip(got.View())
+	for _, want := range []string{"Focused config", "Laws", "left/right switches section"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("narrow config missing %q\n%s", want, view)
+		}
+	}
+}
+
+func TestModelHelpDefaultsToCurrentContext(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	got := pressStringKey(t, model, "?")
+	view := ansi.Strip(got.View())
+	for _, want := range []string{"KEYBINDINGS · CURRENT CONTEXT", "// GLOBAL", "// BOARD"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("context help missing %q\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "// SKILL PICKER") {
+		t.Fatalf("context help rendered unrelated skill picker group\n%s", view)
+	}
+
+	got = pressRune(t, got, 'a')
+	view = ansi.Strip(got.View())
+	for _, want := range []string{"KEYBINDINGS · ALL CONTEXTS", "// SKILL PICKER"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("all help missing %q\n%s", want, view)
+		}
 	}
 }
 

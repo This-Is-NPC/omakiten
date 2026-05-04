@@ -101,8 +101,30 @@ func TestEntityDeleteRemovesEntity(t *testing.T) {
 
 	got := pressRune(t, model, '4')
 	got = pressRune(t, got, 'd')
+	if len(got.laws) != 1 {
+		t.Fatalf("laws len after first delete key = %d, want 1 before confirmation", len(got.laws))
+	}
+	if !got.deletePending || !strings.Contains(got.status, "Confirm delete") {
+		t.Fatalf("delete confirmation not pending: pending=%v status=%q", got.deletePending, got.status)
+	}
+	got = pressRune(t, got, 'd')
 	if len(got.laws) != 0 {
 		t.Fatalf("laws len after delete = %d, want 0", len(got.laws))
+	}
+}
+
+func TestEntityDeleteCanBeCancelled(t *testing.T) {
+	model, _, _ := newEntityModel(t)
+
+	got := pressRune(t, model, '4')
+	got = pressRune(t, got, 'd')
+	got = pressKey(t, got, tea.KeyEsc)
+	if got.deletePending {
+		t.Fatalf("deletePending = true, want false after cancel")
+	}
+	got = pressRune(t, got, 'd')
+	if len(got.laws) != 1 {
+		t.Fatalf("laws len after cancelled delete and new first key = %d, want 1", len(got.laws))
 	}
 }
 
