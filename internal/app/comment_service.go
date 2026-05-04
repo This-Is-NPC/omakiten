@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/domain"
 )
 
@@ -15,28 +16,56 @@ func NewCommentService(repo CommentRepository) *CommentService {
 	return &CommentService{repo: repo}
 }
 
-func (s *CommentService) Add(ctx context.Context, project domain.ProjectContext, taskID int64, body, authorType string) (domain.Comment, error) {
+func (s *CommentService) Add(ctx context.Context, project domain.ProjectContext, taskID int64, body, authorType string) (comment domain.Comment, err error) {
+	finish := activity.Track(ctx, "app.CommentService.Add", project, map[string]any{"task_id": taskID, "author": authorType})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
 	if taskID <= 0 {
-		return domain.Comment{}, domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+		return
 	}
 	body = strings.TrimSpace(body)
 	if body == "" {
-		return domain.Comment{}, domain.NewError(domain.ErrValidation, "comment body is required", nil)
+		err = domain.NewError(domain.ErrValidation, "comment body is required", nil)
+		return
 	}
 	authorType = strings.TrimSpace(authorType)
 	if authorType == "" {
 		authorType = "human"
 	}
 	if authorType != "human" && authorType != "agent" {
-		return domain.Comment{}, domain.NewError(domain.ErrValidation, "author type must be human or agent", map[string]any{"author_type": authorType})
+		err = domain.NewError(domain.ErrValidation, "author type must be human or agent", map[string]any{"author_type": authorType})
+		return
 	}
 
-	return s.repo.AddComment(ctx, project.ID, taskID, body, authorType)
+	comment, err = s.repo.AddComment(ctx, project.ID, taskID, body, authorType)
+	return
 }
 
-func (s *CommentService) List(ctx context.Context, project domain.ProjectContext, taskID int64) ([]domain.Comment, error) {
+func (s *CommentService) List(ctx context.Context, project domain.ProjectContext, taskID int64) (comments []domain.Comment, err error) {
+	finish := activity.Track(ctx, "app.CommentService.List", project, map[string]any{"task_id": taskID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
 	if taskID < 0 {
-		return nil, domain.NewError(domain.ErrValidation, "task id cannot be negative", nil)
+		err = domain.NewError(domain.ErrValidation, "task id cannot be negative", nil)
+		return
 	}
-	return s.repo.ListComments(ctx, project.ID, taskID)
+	comments, err = s.repo.ListComments(ctx, project.ID, taskID)
+	return
 }

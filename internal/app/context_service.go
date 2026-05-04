@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
 )
@@ -25,34 +26,59 @@ func NewContextService(tasks TaskRepository, comments CommentRepository, depende
 	return &ContextService{tasks: tasks, comments: comments, dependencies: dependencies, entries: entries, config: config, counter: counter}
 }
 
-func (s *ContextService) Add(ctx context.Context, project domain.ProjectContext, body string) (domain.ContextEntry, error) {
+func (s *ContextService) Add(ctx context.Context, project domain.ProjectContext, body string) (entry domain.ContextEntry, err error) {
+	finish := activity.Track(ctx, "app.ContextService.Add", project, nil)
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
 	body = strings.TrimSpace(body)
 	if body == "" {
-		return domain.ContextEntry{}, domain.NewError(domain.ErrValidation, "context body is required", nil)
+		err = domain.NewError(domain.ErrValidation, "context body is required", nil)
+		return
 	}
-	return s.entries.AddContextEntry(ctx, project.ID, body, s.counter.Count(body))
+	entry, err = s.entries.AddContextEntry(ctx, project.ID, body, s.counter.Count(body))
+	return
 }
 
-func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext, level int) (domain.ContextDump, error) {
+func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext, level int) (dump domain.ContextDump, err error) {
+	finish := activity.Track(ctx, "app.ContextService.Dump", project, map[string]any{"level": level})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
 	if level < 1 || level > 3 {
-		return domain.ContextDump{}, domain.NewError(domain.ErrValidation, "context level must be 1, 2, or 3", nil)
+		err = domain.NewError(domain.ErrValidation, "context level must be 1, 2, or 3", nil)
+		return
 	}
 	settings, err := s.config.ContextSettings(ctx)
 	if err != nil {
-		return domain.ContextDump{}, err
+		return
 	}
 	budget := contextBudget{counter: s.counter, maxTokens: settings.MaxTokens}
 
 	taskCount, err := s.tasks.TaskCount(ctx, project.ID)
 	if err != nil {
-		return domain.ContextDump{}, err
+		return
 	}
 
-	dump := domain.ContextDump{Project: project, Level: level, TaskCount: taskCount, TokenMetrics: domain.TokenMetrics{MaxTokens: settings.MaxTokens}}
+	dump = domain.ContextDump{Project: project, Level: level, TaskCount: taskCount, TokenMetrics: domain.TokenMetrics{MaxTokens: settings.MaxTokens}}
 
 	entries, err := s.entries.ListContextEntries(ctx, project.ID)
 	if err != nil {
-		return domain.ContextDump{}, err
+		return
 	}
 	for _, entry := range entries {
 		estimate := entry.TokenEstimate
@@ -68,7 +94,7 @@ func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext
 	if level >= 2 {
 		workflow, err := s.config.ActiveWorkflow(ctx)
 		if err != nil {
-			return domain.ContextDump{}, err
+			return dump, err
 		}
 		if budget.add(s.counter.Count(workflowText(workflow))) {
 			dump.Workflow = workflow
@@ -76,7 +102,7 @@ func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext
 
 		tasks, err := s.tasks.ListTasks(ctx, project.ID, domain.TaskFilter{})
 		if err != nil {
-			return domain.ContextDump{}, err
+			return dump, err
 		}
 		for _, task := range tasks {
 			if !budget.add(s.counter.Count(taskText(task))) {
@@ -87,7 +113,7 @@ func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext
 
 		dependencies, err := s.dependencies.ListTaskDependencies(ctx, project.ID, 0)
 		if err != nil {
-			return domain.ContextDump{}, err
+			return dump, err
 		}
 		for _, dependency := range dependencies {
 			if !budget.add(s.counter.Count(fmt.Sprintf("%d depends on %d", dependency.TaskID, dependency.DependsOnTaskID))) {
@@ -100,7 +126,7 @@ func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext
 	if level >= 3 {
 		comments, err := s.comments.ListComments(ctx, project.ID, 0)
 		if err != nil {
-			return domain.ContextDump{}, err
+			return dump, err
 		}
 		for _, comment := range comments {
 			if !budget.add(s.counter.Count(comment.Body)) {
@@ -111,7 +137,7 @@ func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext
 
 		laws, err := s.config.ListActiveLaws(ctx)
 		if err != nil {
-			return domain.ContextDump{}, err
+			return dump, err
 		}
 		for _, law := range laws {
 			if !budget.add(s.counter.Count(law.Key + " " + law.Severity + " " + law.Body)) {
@@ -123,7 +149,7 @@ func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext
 
 	dump.TokenMetrics.EstimatedTotal = budget.total
 	dump.TokenMetrics.Truncated = budget.truncated
-	return dump, nil
+	return
 }
 
 type contextBudget struct {

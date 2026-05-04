@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/domain"
 )
 
@@ -16,10 +17,21 @@ func NewProjectService(repo ProjectRepository) *ProjectService {
 	return &ProjectService{repo: repo}
 }
 
-func (s *ProjectService) Init(ctx context.Context, name, slug, rootPath string) (domain.Project, error) {
+func (s *ProjectService) Init(ctx context.Context, name, slug, rootPath string) (project domain.Project, err error) {
+	finish := activity.Track(ctx, "app.ProjectService.Init", domain.ProjectContext{}, map[string]any{"slug": slug, "root": rootPath})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
 	absRoot, err := filepath.Abs(rootPath)
 	if err != nil {
-		return domain.Project{}, err
+		return
 	}
 
 	name = strings.TrimSpace(name)
@@ -32,10 +44,12 @@ func (s *ProjectService) Init(ctx context.Context, name, slug, rootPath string) 
 		slug = normalizeSlug(name)
 	}
 	if slug == "" {
-		return domain.Project{}, domain.NewError(domain.ErrValidation, "project slug is required", nil)
+		err = domain.NewError(domain.ErrValidation, "project slug is required", nil)
+		return
 	}
 
-	return s.repo.UpsertProject(ctx, name, slug, absRoot)
+	project, err = s.repo.UpsertProject(ctx, name, slug, absRoot)
+	return
 }
 
 func normalizeSlug(value string) string {

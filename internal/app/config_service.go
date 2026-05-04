@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
@@ -16,22 +17,35 @@ func NewConfigService(repo ConfigRepository) *ConfigService {
 	return &ConfigService{repo: repo}
 }
 
-func (s *ConfigService) Import(ctx context.Context, path string) (config.Bundle, string, error) {
-	bundle, err := config.LoadBundle(path)
+func (s *ConfigService) Import(ctx context.Context, path string) (bundle config.Bundle, hash string, err error) {
+	finish := activity.Track(ctx, "app.ConfigService.Import", domain.ProjectContext{}, map[string]any{"path": path})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	bundle, err = config.LoadBundle(path)
 	if err != nil {
-		return config.Bundle{}, "", configError(path, err)
+		err = configError(path, err)
+		return
 	}
 
-	hash, err := config.HashFile(path)
+	hash, err = config.HashFile(path)
 	if err != nil {
-		return config.Bundle{}, "", configError(path, err)
+		err = configError(path, err)
+		return
 	}
 
-	if err := s.repo.ImportBundle(ctx, bundle, path, hash); err != nil {
-		return config.Bundle{}, "", err
+	if err = s.repo.ImportBundle(ctx, bundle, path, hash); err != nil {
+		return
 	}
 
-	return bundle, hash, nil
+	return
 }
 
 func configError(path string, err error) error {

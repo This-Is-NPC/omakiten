@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/domain"
 )
 
@@ -15,40 +16,92 @@ func NewTaskService(repo TaskRepository) *TaskService {
 	return &TaskService{repo: repo}
 }
 
-func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, title, description, bucketKey string) (domain.Task, error) {
+func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, title, description, bucketKey string) (task domain.Task, err error) {
+	finish := activity.Track(ctx, "app.TaskService.Add", project, map[string]any{"title": title, "bucket": bucketKey})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
 	title = strings.TrimSpace(title)
 	if title == "" {
-		return domain.Task{}, domain.NewError(domain.ErrValidation, "task title is required", nil)
+		err = domain.NewError(domain.ErrValidation, "task title is required", nil)
+		return
 	}
 
-	return s.repo.CreateTask(ctx, project.ID, title, strings.TrimSpace(description), strings.TrimSpace(bucketKey))
+	task, err = s.repo.CreateTask(ctx, project.ID, title, strings.TrimSpace(description), strings.TrimSpace(bucketKey))
+	return
 }
 
-func (s *TaskService) List(ctx context.Context, project domain.ProjectContext, filter domain.TaskFilter) ([]domain.Task, error) {
-	return s.repo.ListTasks(ctx, project.ID, filter)
+func (s *TaskService) List(ctx context.Context, project domain.ProjectContext, filter domain.TaskFilter) (tasks []domain.Task, err error) {
+	finish := activity.Track(ctx, "app.TaskService.List", project, map[string]any{"bucket": filter.BucketKey})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	tasks, err = s.repo.ListTasks(ctx, project.ID, filter)
+	return
 }
 
-func (s *TaskService) Move(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string) (domain.Task, error) {
+func (s *TaskService) Move(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string) (task domain.Task, err error) {
+	finish := activity.Track(ctx, "app.TaskService.Move", project, map[string]any{"task_id": taskID, "bucket": targetBucketKey})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
 	if taskID <= 0 {
-		return domain.Task{}, domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+		return
 	}
 	if strings.TrimSpace(targetBucketKey) == "" {
-		return domain.Task{}, domain.NewError(domain.ErrValidation, "target bucket is required", nil)
+		err = domain.NewError(domain.ErrValidation, "target bucket is required", nil)
+		return
 	}
 
-	return s.repo.MoveTask(ctx, project.ID, taskID, targetBucketKey)
+	task, err = s.repo.MoveTask(ctx, project.ID, taskID, targetBucketKey)
+	return
 }
 
-func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, taskID int64, update domain.TaskUpdate) (domain.Task, error) {
+func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, taskID int64, update domain.TaskUpdate) (task domain.Task, err error) {
+	finish := activity.Track(ctx, "app.TaskService.Edit", project, map[string]any{"task_id": taskID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
 	if taskID <= 0 {
-		return domain.Task{}, domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+		return
 	}
 
 	changed := false
 	if update.Title != nil {
 		title := strings.TrimSpace(*update.Title)
 		if title == "" {
-			return domain.Task{}, domain.NewError(domain.ErrValidation, "task title is required", nil)
+			err = domain.NewError(domain.ErrValidation, "task title is required", nil)
+			return
 		}
 		update.Title = &title
 		changed = true
@@ -64,7 +117,8 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 		case domain.PriorityLow, domain.PriorityNormal, domain.PriorityHigh:
 			update.Priority = &priority
 		default:
-			return domain.Task{}, domain.NewError(domain.ErrValidation, "priority must be low, normal, or high", map[string]any{"priority": *update.Priority})
+			err = domain.NewError(domain.ErrValidation, "priority must be low, normal, or high", map[string]any{"priority": *update.Priority})
+			return
 		}
 		changed = true
 	}
@@ -74,23 +128,22 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 		changed = true
 	}
 	if !changed {
-		return domain.Task{}, domain.NewError(domain.ErrValidation, "at least one task update is required", nil)
+		err = domain.NewError(domain.ErrValidation, "at least one task update is required", nil)
+		return
 	}
 
-	var task domain.Task
-	var err error
 	if update.BucketKey != "" {
 		task, err = s.repo.MoveTask(ctx, project.ID, taskID, update.BucketKey)
 		if err != nil {
-			return domain.Task{}, err
+			return
 		}
 	}
 	if update.Title != nil || update.Description != nil || update.Priority != nil {
 		task, err = s.repo.UpdateTask(ctx, project.ID, taskID, update)
 		if err != nil {
-			return domain.Task{}, err
+			return
 		}
 	}
 
-	return task, nil
+	return
 }
