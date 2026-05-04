@@ -1,5 +1,5 @@
 # Binaries and build output
-okt
+/okt
 bin/
 dist/
 build/
