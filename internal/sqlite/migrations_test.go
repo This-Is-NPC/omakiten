@@ -52,3 +52,39 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 		}
 	}
 }
+
+func TestMigrationsRecordSchemaVersions(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "omakiten.db")
+
+	store, err := Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	rows, err := store.db.QueryContext(ctx, "SELECT version FROM schema_migrations ORDER BY version")
+	if err != nil {
+		t.Fatalf("Query schema_migrations error = %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var versions []string
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			t.Fatalf("Scan() error = %v", err)
+		}
+		versions = append(versions, v)
+	}
+
+	if len(versions) == 0 {
+		t.Fatal("schema_migrations is empty")
+	}
+	// Verify migrations are recorded in lexical order
+	for i := 1; i < len(versions); i++ {
+		if versions[i] < versions[i-1] {
+			t.Fatalf("schema_migrations not in lexical order: %v", versions)
+		}
+	}
+}
