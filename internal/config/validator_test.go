@@ -5,92 +5,101 @@ import (
 	"testing"
 )
 
-func TestValidateBundle(t *testing.T) {
+func TestValidateTheme(t *testing.T) {
+	if err := ValidateTheme(Theme{Version: 1, Key: "dark", Name: "Dark", Colors: map[string]string{"bg": "#000"}}); err != nil {
+		t.Fatalf("ValidateTheme() error = %v", err)
+	}
+
+	if err := ValidateTheme(Theme{Version: 2}); err == nil {
+		t.Fatal("ValidateTheme(version 2) error = nil")
+	}
+
+	if err := ValidateTheme(Theme{Version: 1, Key: "", Name: "Name", Colors: map[string]string{"bg": "#000"}}); err == nil {
+		t.Fatal("ValidateTheme(empty key) error = nil")
+	}
+
+	if err := ValidateTheme(Theme{Version: 1, Key: "key", Name: "", Colors: map[string]string{"bg": "#000"}}); err == nil {
+		t.Fatal("ValidateTheme(empty name) error = nil")
+	}
+
+	if err := ValidateTheme(Theme{Version: 1, Key: "key", Name: "Name"}); err == nil {
+		t.Fatal("ValidateTheme(no colors) error = nil")
+	}
+}
+
+func TestValidateBundleErrors(t *testing.T) {
+	validBundle := func() Bundle {
+		return Bundle{
+			Version: 1,
+			Kit:     Kit{ID: 1, Key: "default", Name: "Default"},
+			Config: Settings{
+				Output:   OutputSettings{JSONMinified: true, OmitEmpty: true},
+				Context:  ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
+				Workflow: WorkflowSettings{Active: "default"},
+				Theme:    ThemeSettings{Active: "catppuccin"},
+			},
+			Skills: []Skill{{Slug: "go", Name: "Go"}},
+			Laws:   []Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}},
+			Workflows: []Workflow{{
+				ID:   1,
+				Key:  "default",
+				Name: "Default",
+				Buckets: []Bucket{
+					{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
+				},
+			}},
+		}
+	}
+
 	tests := []struct {
 		name    string
 		mutate  func(*Bundle)
 		wantErr string
 	}{
-		{name: "valid bundle"},
-		{
-			name: "persona references missing skill",
-			mutate: func(bundle *Bundle) {
-				bundle.Personas[0].Skills = []string{"missing"}
-			},
-			wantErr: "no matching skill",
-		},
-		{
-			name: "invalid law severity",
-			mutate: func(bundle *Bundle) {
-				bundle.Laws[0].Severity = "fatal"
-			},
-			wantErr: "invalid severity",
-		},
-		{
-			name: "transition references missing bucket",
-			mutate: func(bundle *Bundle) {
-				bundle.Workflows[0].Transitions = append(bundle.Workflows[0].Transitions, Transition{From: 1, To: 99})
-			},
-			wantErr: "missing bucket",
-		},
-		{
-			name: "active workflow is required",
-			mutate: func(bundle *Bundle) {
-				bundle.Config.Workflow.Active = "missing"
-			},
-			wantErr: "does not match",
-		},
+		{"wrong version", func(b *Bundle) { b.Version = 2 }, "version must be 1"},
+		{"invalid context level", func(b *Bundle) { b.Config.Context.DefaultLevel = 0 }, "default_level must be between 1 and 3"},
+		{"negative max tokens", func(b *Bundle) { b.Config.Context.MaxTokens = -1 }, "max_tokens cannot be negative"},
+		{"empty workflow active", func(b *Bundle) { b.Config.Workflow.Active = "" }, "workflow.active is required"},
+		{"empty theme active", func(b *Bundle) { b.Config.Theme.Active = "" }, "theme.active is required"},
+		{"missing kit id", func(b *Bundle) { b.Kit.ID = 0 }, "kit.id must be positive"},
+		{"missing kit key", func(b *Bundle) { b.Kit.Key = "" }, "kit.key is required"},
+		{"missing kit name", func(b *Bundle) { b.Kit.Name = "" }, "kit.name is required"},
+		{"empty workflow list", func(b *Bundle) { b.Workflows = nil }, "workflows is required"},
+		{"workflow missing active", func(b *Bundle) { b.Config.Workflow.Active = "missing" }, "does not match any workflow"},
+		{"workflow empty buckets", func(b *Bundle) { b.Workflows[0].Buckets = nil }, "buckets is required"},
+		{"workflow bucket position", func(b *Bundle) { b.Workflows[0].Buckets[0].Position = 0 }, "position must be positive"},
+		{"workflow duplicate id", func(b *Bundle) {
+			b.Workflows[0].Buckets = append(b.Workflows[0].Buckets, Bucket{ID: 1, Key: "dup", Name: "Dup", Position: 2})
+		}, "duplicated id"},
+		{"workflow duplicate key", func(b *Bundle) {
+			b.Workflows[0].Buckets = append(b.Workflows[0].Buckets, Bucket{ID: 2, Key: "backlog", Name: "Dup", Position: 2})
+		}, "duplicated key"},
+		{"workflow transition missing bucket", func(b *Bundle) {
+			b.Workflows[0].Transitions = []Transition{{From: 999, To: 1}}
+		}, "from missing bucket id"},
+		{"workflow duplicate transition", func(b *Bundle) {
+			b.Workflows[0].Transitions = []Transition{{From: 1, To: 1}, {From: 1, To: 1}}
+		}, "duplicated transition"},
+		{"invalid law severity", func(b *Bundle) { b.Laws[0].Severity = "invalid" }, "invalid severity"},
+		{"project empty slug", func(b *Bundle) {
+			b.Projects = []Project{{Slug: "", Name: "Test"}}
+		}, "slug is required"},
+		{"project empty name", func(b *Bundle) {
+			b.Projects = []Project{{Slug: "test", Name: " "}}
+		}, "name is required"},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			bundle := validBundle()
-			if tt.mutate != nil {
-				tt.mutate(&bundle)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b := validBundle()
+			tc.mutate(&b)
+			err := ValidateBundle(b, b.Skills, b.Laws, b.Personas)
+			if err == nil {
+				t.Fatalf("ValidateBundle() error = nil, want %q", tc.wantErr)
 			}
-
-			err := ValidateBundle(bundle, bundle.Skills, bundle.Laws, bundle.Personas)
-			if tt.wantErr == "" && err != nil {
-				t.Fatalf("ValidateBundle() error = %v", err)
-			}
-			if tt.wantErr != "" {
-				if err == nil {
-					t.Fatalf("ValidateBundle() error = nil, want %q", tt.wantErr)
-				}
-				if !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("ValidateBundle() error = %q, want substring %q", err.Error(), tt.wantErr)
-				}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("ValidateBundle() error = %q, want containing %q", err.Error(), tc.wantErr)
 			}
 		})
-	}
-}
-
-func validBundle() Bundle {
-	return Bundle{
-		Version: 1,
-		Kit:     Kit{ID: 1, Key: "default", Name: "Default"},
-		Config: Settings{
-			Output:   OutputSettings{JSONMinified: true, OmitEmpty: true},
-			Context:  ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
-			Workflow: WorkflowSettings{Active: "default"},
-			Theme:    ThemeSettings{Active: "catppuccin"},
-		},
-		Skills: []Skill{{Slug: "go", Name: "Go"}},
-		Personas: []Persona{{
-			Slug:   "agent",
-			Name:   "Agent",
-			Skills: []string{"go"},
-		}},
-		Laws: []Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}},
-		Workflows: []Workflow{{
-			ID:   1,
-			Key:  "default",
-			Name: "Default",
-			Buckets: []Bucket{
-				{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
-				{ID: 2, Key: "dev", Name: "Development", Position: 2},
-			},
-			Transitions: []Transition{{From: 1, To: 2}},
-		}},
 	}
 }
