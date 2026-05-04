@@ -11,13 +11,13 @@ Omakiten is a local-first task and context manager for AI-assisted workflows. It
 **Linux / macOS / WSL:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/This-Is-NPC/omakiten/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.ps1 | iex
 ```
 
 Build from source (requires Go 1.25+):
