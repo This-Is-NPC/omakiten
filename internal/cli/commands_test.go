@@ -55,6 +55,34 @@ func TestCLIOperationalCommands(t *testing.T) {
 	}
 }
 
+func TestCLIInitCanPreviewMCPSetup(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
+	projectRoot := filepath.Join(tmp, "project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(projectRoot) error = %v", err)
+	}
+	t.Chdir(projectRoot)
+
+	mcpConfig := filepath.Join(tmp, "claude_desktop_config.json")
+	output := runCLI(t, dbPath, configPath,
+		"init",
+		"--name", "Project",
+		"--slug", "project",
+		"--enable-mcp",
+		"--mcp-dry-run",
+		"--mcp-config", mcpConfig,
+		"--mcp-command", "okt",
+	)
+	if !strings.Contains(output, `"agent_setup"`) || !strings.Contains(output, `"status":"would_write"`) {
+		t.Fatalf("init --enable-mcp dry-run output = %s, want agent setup preview", output)
+	}
+	if _, err := os.Stat(mcpConfig); !os.IsNotExist(err) {
+		t.Fatalf("MCP config exists after dry run or unexpected error: %v", err)
+	}
+}
+
 func TestCLICodedErrorsForAgentRecovery(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")

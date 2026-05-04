@@ -305,6 +305,71 @@ func TestBundleEditorApplyRollsBackOnFailure(t *testing.T) {
 	}
 }
 
+func TestLawServiceEditNoChange(t *testing.T) {
+	ctx := context.Background()
+	fixture := newEntitiesFixture(t)
+	service := app.NewLawService(fixture.store, fixture.editor)
+
+	// Edit with no changes should return current law
+	law, err := service.Show(ctx, "scope")
+	if err != nil {
+		t.Fatalf("Show() error = %v", err)
+	}
+	current, err := service.Edit(ctx, "scope", domain.LawUpdate{})
+	if err != nil {
+		t.Fatalf("Edit(no change) error = %v", err)
+	}
+	if current.Body != law.Body {
+		t.Fatalf("Edit(no change).Body = %q, want %q", current.Body, law.Body)
+	}
+}
+
+func TestSkillServiceEditNoChange(t *testing.T) {
+	ctx := context.Background()
+	fixture := newEntitiesFixture(t)
+	service := app.NewSkillService(fixture.store, fixture.editor)
+
+	skill, err := service.Show(ctx, "go")
+	if err != nil {
+		t.Fatalf("Show() error = %v", err)
+	}
+	current, err := service.Edit(ctx, "go", domain.SkillUpdate{})
+	if err != nil {
+		t.Fatalf("Edit(no change) error = %v", err)
+	}
+	if current.Name != skill.Name {
+		t.Fatalf("Edit(no change).Name = %q, want %q", current.Name, skill.Name)
+	}
+}
+
+func TestPersonaServiceEditNoChange(t *testing.T) {
+	ctx := context.Background()
+	fixture := newEntitiesFixture(t)
+	service := app.NewPersonaService(fixture.store, fixture.editor)
+
+	persona, err := service.Show(ctx, "backend-agent")
+	if err != nil {
+		t.Fatalf("Show() error = %v", err)
+	}
+	current, err := service.Edit(ctx, "backend-agent", domain.PersonaUpdate{})
+	if err != nil {
+		t.Fatalf("Edit(no change) error = %v", err)
+	}
+	if current.Name != persona.Name {
+		t.Fatalf("Edit(no change).Name = %q, want %q", current.Name, persona.Name)
+	}
+}
+
+func TestBundleEditorNilMutator(t *testing.T) {
+	ctx := context.Background()
+	fixture := newEntitiesFixture(t)
+
+	_, err := fixture.editor.ApplyWithFiles(ctx, nil, nil)
+	if err != nil {
+		t.Fatalf("ApplyWithFiles(nil mutator) error = %v", err)
+	}
+}
+
 func TestResolveEditorFallsBackToNano(t *testing.T) {
 	t.Setenv("EDITOR", "")
 	t.Setenv("VISUAL", "")

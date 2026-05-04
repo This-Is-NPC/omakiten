@@ -86,6 +86,111 @@ func TestContextServiceDumpRespectsTokenBudget(t *testing.T) {
 	}
 }
 
+func TestContextServiceAddValidates(t *testing.T) {
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(1000))
+	defer func() { _ = store.Close() }()
+
+	service := NewContextService(store, store, store, store, store, token.ApproxCounter{})
+	_, err := service.Add(ctx, project.Context(), "")
+	if err == nil {
+		t.Fatal("Add() error = nil, want validation error")
+	}
+	assertCodedError(t, err, domain.ErrValidation)
+
+	_, err = service.Add(ctx, project.Context(), "   ")
+	if err == nil {
+		t.Fatal("Add() whitespace error = nil, want validation error")
+	}
+	assertCodedError(t, err, domain.ErrValidation)
+}
+
+func TestContextServiceDumpInvalidLevel(t *testing.T) {
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(1000))
+	defer func() { _ = store.Close() }()
+
+	service := NewContextService(store, store, store, store, store, token.ApproxCounter{})
+	_, err := service.Dump(ctx, project.Context(), 0)
+	if err == nil {
+		t.Fatal("Dump(level 0) error = nil")
+	}
+	assertCodedError(t, err, domain.ErrValidation)
+
+	_, err = service.Dump(ctx, project.Context(), 4)
+	if err == nil {
+		t.Fatal("Dump(level 4) error = nil")
+	}
+	assertCodedError(t, err, domain.ErrValidation)
+}
+
+func TestContextServiceDumpUnlimitedBudget(t *testing.T) {
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(0))
+	defer func() { _ = store.Close() }()
+
+	service := NewContextService(store, store, store, store, store, token.ApproxCounter{})
+	if _, err := service.Add(ctx, project.Context(), "some context entry"); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+	dump, err := service.Dump(ctx, project.Context(), 1)
+	if err != nil {
+		t.Fatalf("Dump() error = %v", err)
+	}
+	if dump.TokenMetrics.Truncated {
+		t.Fatal("Dump().Truncated = true, want false")
+	}
+	if len(dump.ContextEntries) != 1 {
+		t.Fatalf("Dump().ContextEntries len = %d, want 1", len(dump.ContextEntries))
+	}
+}
+
+func TestContextBudgetAdd(t *testing.T) {
+	b := contextBudget{maxTokens: 10}
+	if !b.add(5) {
+		t.Fatal("add(5) = false, want true")
+	}
+	if b.total != 5 {
+		t.Fatalf("total = %d, want 5", b.total)
+	}
+	if !b.add(5) {
+		t.Fatal("add(5) = false, want true")
+	}
+	if b.total != 10 {
+		t.Fatalf("total = %d, want 10", b.total)
+	}
+	if b.add(1) {
+		t.Fatal("add(1) = true, want false")
+	}
+	if !b.truncated {
+		t.Fatal("truncated = false, want true")
+	}
+
+	// Negative estimate
+	b2 := contextBudget{maxTokens: 10}
+	if !b2.add(-5) {
+		t.Fatal("add(-5) = false, want true")
+	}
+	if b2.total != 0 {
+		t.Fatalf("total = %d, want 0", b2.total)
+	}
+	if b2.truncated {
+		t.Fatal("truncated = true, want false")
+	}
+
+	// Unlimited budget (maxTokens == 0)
+	b3 := contextBudget{maxTokens: 0}
+	if !b3.add(1000) {
+		t.Fatal("add(1000) = false, want true")
+	}
+	if b3.total != 1000 {
+		t.Fatalf("total = %d, want 1000", b3.total)
+	}
+	if b3.truncated {
+		t.Fatal("truncated = true, want false")
+	}
+}
+
 func appTestStore(t *testing.T, bundle config.Bundle) (*sqlite.Store, domain.Project) {
 	t.Helper()
 	ctx := context.Background()
