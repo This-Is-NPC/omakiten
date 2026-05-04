@@ -59,7 +59,13 @@ type Model struct {
 	taskID          int64
 	taskTitle       string
 	taskDescription string
+	taskPriority    string
 	taskField       taskFormField
+
+	blockerPickerOpen   bool
+	blockerPickerTaskID int64
+	blockerPickerCursor int
+	blockerPickerChecks map[int64]bool
 
 	tasks        []domain.Task
 	workflow     domain.Workflow
@@ -105,6 +111,7 @@ type taskFormField int
 const (
 	taskFieldTitle taskFormField = iota
 	taskFieldDescription
+	taskFieldPriority
 )
 
 var viewNames = []string{"BOARD", "TABLE", "GRAPH", "CONFIG", "LOGS"}
@@ -387,6 +394,10 @@ func (m *Model) handleLogsKey(msg tea.KeyMsg) {
 }
 
 func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.blockerPickerOpen {
+		return m.updateBlockerPicker(msg)
+	}
+
 	if m.taskScreen == taskScreenView {
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -396,6 +407,10 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "e":
 			if task, ok := m.activeTask(); ok {
 				m.openTaskEdit(task)
+			}
+		case "b":
+			if _, ok := m.activeTask(); ok {
+				m.openBlockerPicker()
 			}
 		case "c":
 			if _, ok := m.activeTask(); ok {
@@ -430,10 +445,18 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.saveTaskForm()
 	case msg.String() == "tab" || msg.String() == "shift+tab":
 		m.toggleTaskField()
+	case msg.String() == "ctrl+b":
+		if m.taskScreen == taskScreenEdit {
+			m.openBlockerPicker()
+		}
 	case isTaskFormNewline(msg):
 		m.insertTaskFormNewline()
 	case msg.String() == "backspace" || msg.String() == "ctrl+h":
 		m.deleteTaskFormRune()
+	case m.taskField == taskFieldPriority && (msg.String() == "left" || msg.String() == "h"):
+		m.cycleTaskPriority(-1)
+	case m.taskField == taskFieldPriority && (msg.String() == "right" || msg.String() == "l"):
+		m.cycleTaskPriority(1)
 	default:
 		if len(msg.Runes) > 0 {
 			m.appendTaskFormText(string(msg.Runes))
@@ -442,6 +465,46 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return *m, nil
+}
+
+func (m *Model) updateBlockerPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	candidates := m.blockerPickerCandidates()
+	switch msg.String() {
+	case "ctrl+c", "q":
+		return *m, tea.Quit
+	case "esc":
+		m.closeBlockerPicker("Cancelled")
+	case "up", "k":
+		if m.blockerPickerCursor > 0 {
+			m.blockerPickerCursor--
+		}
+	case "down", "j":
+		if m.blockerPickerCursor < len(candidates)-1 {
+			m.blockerPickerCursor++
+		}
+	case " ", "space":
+		if m.blockerPickerCursor >= 0 && m.blockerPickerCursor < len(candidates) {
+			taskID := candidates[m.blockerPickerCursor].ID
+			if m.blockerPickerChecks == nil {
+				m.blockerPickerChecks = map[int64]bool{}
+			}
+			m.blockerPickerChecks[taskID] = !m.blockerPickerChecks[taskID]
+		}
+	case "ctrl+s":
+		m.saveBlockerPicker()
+	}
+	return *m, nil
+}
+
+func (m Model) blockerPickerCandidates() []domain.Task {
+	candidates := make([]domain.Task, 0, len(m.tasks))
+	for _, task := range m.tasks {
+		if task.ID != m.blockerPickerTaskID {
+			candidates = append(candidates, task)
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].ID < candidates[j].ID })
+	return candidates
 }
 
 func isTaskFormNewline(msg tea.KeyMsg) bool {
@@ -461,6 +524,7 @@ func (m *Model) openTaskCreate() {
 	m.taskID = 0
 	m.taskTitle = ""
 	m.taskDescription = ""
+	m.taskPriority = "normal"
 	m.taskField = taskFieldTitle
 	m.status = "New task"
 	m.moveMode = false
@@ -481,51 +545,151 @@ func (m *Model) openTaskEdit(task domain.Task) {
 	m.taskID = task.ID
 	m.taskTitle = task.Title
 	m.taskDescription = task.Description
+	m.taskPriority = string(task.Priority)
 	m.taskField = taskFieldTitle
 	m.status = "Editing task"
 	m.moveMode = false
 }
 
 func (m *Model) closeTaskScreen(status string) {
+	m.blockerPickerOpen = false
+	m.blockerPickerTaskID = 0
+	m.blockerPickerCursor = 0
+	m.blockerPickerChecks = nil
 	m.taskScreen = taskScreenClosed
 	m.taskID = 0
 	m.taskTitle = ""
 	m.taskDescription = ""
+	m.taskPriority = ""
 	m.taskField = taskFieldTitle
 	m.status = status
 	m.moveMode = false
 }
 
 func (m *Model) toggleTaskField() {
-	if m.taskField == taskFieldTitle {
+	switch m.taskField {
+	case taskFieldTitle:
 		m.taskField = taskFieldDescription
-	} else {
+	case taskFieldDescription:
+		m.taskField = taskFieldPriority
+	default:
 		m.taskField = taskFieldTitle
 	}
 }
 
 func (m *Model) appendTaskFormText(text string) {
-	if m.taskField == taskFieldTitle {
+	switch m.taskField {
+	case taskFieldTitle:
 		m.taskTitle += text
-		return
+	case taskFieldDescription:
+		m.taskDescription += text
 	}
-	m.taskDescription += text
 }
 
 func (m *Model) insertTaskFormNewline() {
-	if m.taskField == taskFieldTitle {
+	switch m.taskField {
+	case taskFieldTitle:
 		m.taskField = taskFieldDescription
-		return
+	case taskFieldDescription:
+		m.taskDescription += "\n"
 	}
-	m.taskDescription += "\n"
 }
 
 func (m *Model) deleteTaskFormRune() {
-	if m.taskField == taskFieldTitle {
+	switch m.taskField {
+	case taskFieldTitle:
 		m.taskTitle = trimLastRune(m.taskTitle)
+	case taskFieldDescription:
+		m.taskDescription = trimLastRune(m.taskDescription)
+	}
+}
+
+func (m *Model) cycleTaskPriority(delta int) {
+	levels := []string{"low", "normal", "high"}
+	idx := 1 // default to normal
+	for i, v := range levels {
+		if v == m.taskPriority {
+			idx = i
+			break
+		}
+	}
+	idx += delta
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(levels) {
+		idx = len(levels) - 1
+	}
+	m.taskPriority = levels[idx]
+}
+
+func (m *Model) openBlockerPicker() {
+	if m.taskID <= 0 {
 		return
 	}
-	m.taskDescription = trimLastRune(m.taskDescription)
+	m.blockerPickerOpen = true
+	m.blockerPickerTaskID = m.taskID
+	m.blockerPickerCursor = 0
+	m.blockerPickerChecks = map[int64]bool{}
+	for _, dep := range m.dependencies {
+		if dep.TaskID == m.taskID {
+			m.blockerPickerChecks[dep.DependsOnTaskID] = true
+		}
+	}
+}
+
+func (m *Model) closeBlockerPicker(status string) {
+	m.blockerPickerOpen = false
+	m.blockerPickerTaskID = 0
+	m.blockerPickerCursor = 0
+	m.blockerPickerChecks = nil
+	m.status = status
+}
+
+func (m *Model) saveBlockerPicker() {
+	if m.blockerPickerTaskID <= 0 {
+		m.closeBlockerPicker("")
+		return
+	}
+	service := app.NewDependencyService(m.repos.Dependencies)
+	// Determine additions and removals
+	existing := map[int64]bool{}
+	for _, dep := range m.dependencies {
+		if dep.TaskID == m.blockerPickerTaskID {
+			existing[dep.DependsOnTaskID] = true
+		}
+	}
+	var added []int64
+	for taskID, checked := range m.blockerPickerChecks {
+		if checked && !existing[taskID] {
+			added = append(added, taskID)
+		}
+	}
+	var removed []int64
+	for taskID := range existing {
+		if !m.blockerPickerChecks[taskID] {
+			removed = append(removed, taskID)
+		}
+	}
+	sort.Slice(added, func(i, j int) bool { return added[i] < added[j] })
+	sort.Slice(removed, func(i, j int) bool { return removed[i] < removed[j] })
+	for _, depID := range removed {
+		if err := service.Remove(m.ctx, m.project, m.blockerPickerTaskID, depID); err != nil {
+			m.status = err.Error()
+			return
+		}
+	}
+	for _, depID := range added {
+		if _, err := service.Add(m.ctx, m.project, m.blockerPickerTaskID, depID); err != nil {
+			m.status = err.Error()
+			return
+		}
+	}
+	if err := m.refresh(); err != nil {
+		m.status = err.Error()
+		return
+	}
+	m.closeBlockerPicker("Blockers saved")
 }
 
 func (m *Model) saveTaskForm() {
@@ -540,14 +704,19 @@ func (m *Model) saveTaskForm() {
 	var err error
 	switch m.taskScreen {
 	case taskScreenCreate:
-		task, err = app.NewTaskService(m.repos.Tasks).Add(m.ctx, m.project, title, description, "backlog")
+		task, err = app.NewTaskService(m.repos.Tasks).Add(m.ctx, m.project, title, description, m.taskPriority, "backlog")
 	case taskScreenEdit:
 		current, ok := m.activeTask()
 		if !ok {
 			err = domain.NewError(domain.ErrTaskNotFound, "no selected task", nil)
 			break
 		}
-		task, err = app.NewTaskService(m.repos.Tasks).Edit(m.ctx, m.project, current.ID, domain.TaskUpdate{Title: &title, Description: &description})
+		update := domain.TaskUpdate{Title: &title, Description: &description}
+		if m.taskPriority != "" {
+			p := domain.Priority(m.taskPriority)
+			update.Priority = &p
+		}
+		task, err = app.NewTaskService(m.repos.Tasks).Edit(m.ctx, m.project, current.ID, update)
 	default:
 		return
 	}
@@ -900,13 +1069,22 @@ func (m Model) renderHelp() string {
 		}},
 		{"Task view", []binding{
 			{"e", "edit"},
+			{"b", "edit blockers"},
 			{"c", "add comment"},
 			{"m", "move"},
 			{"esc", "back to board"},
 		}},
 		{"Task form", []binding{
 			{"tab", "switch field"},
+			{"← → · h l", "change priority"},
+			{"ctrl+b", "edit blockers when editing an existing task"},
 			{"enter · alt+enter · shift+enter", "newline in description"},
+			{"ctrl+s", "save"},
+			{"esc", "cancel"},
+		}},
+		{"Blocker picker", []binding{
+			{"↑ ↓ · j k", "move"},
+			{"space", "toggle blocker"},
 			{"ctrl+s", "save"},
 			{"esc", "cancel"},
 		}},
@@ -972,6 +1150,9 @@ func (m Model) renderEmptyBoardHint() string {
 }
 
 func (m Model) renderTaskScreen() string {
+	if m.blockerPickerOpen {
+		return m.renderBlockerPicker()
+	}
 	switch m.taskScreen {
 	case taskScreenCreate:
 		return m.renderTaskForm("Create task")
@@ -989,6 +1170,7 @@ func (m Model) renderTaskView() string {
 	if !ok {
 		return "\n" + indentBlock(m.styles.panel.Render("Task not found"), 2)
 	}
+	blockers := m.blockersForTask(task.ID)
 
 	detailLines := []string{
 		m.styles.kicker(fmt.Sprintf("Task · #%d", task.ID)),
@@ -996,11 +1178,21 @@ func (m Model) renderTaskView() string {
 		m.styles.metaRow("Title", task.Title, 14),
 		m.styles.metaRow("Bucket", task.BucketKey, 14),
 		m.styles.metaRow("Priority", string(task.Priority), 14),
-		m.styles.metaRow("Blockers", fmt.Sprintf("%d", m.dependencyCount(task.ID)), 14),
 		m.styles.metaRow("Comments", fmt.Sprintf("%d", m.commentCount(task.ID)), 14),
 		"",
-		m.styles.kicker("Description"),
+		m.styles.kickerCount("Blockers", len(blockers)),
 	}
+	if len(blockers) == 0 {
+		detailLines = append(detailLines, m.styles.hint.Render("No blockers. Press b to add one."))
+	} else {
+		for _, blocker := range blockers {
+			detailLines = append(detailLines, m.renderTaskReference(blocker))
+		}
+	}
+	detailLines = append(detailLines,
+		"",
+		m.styles.kicker("Description"),
+	)
 	if strings.TrimSpace(task.Description) == "" {
 		detailLines = append(detailLines, m.styles.hint.Render("No description"))
 	} else {
@@ -1015,6 +1207,45 @@ func (m Model) renderTaskView() string {
 		m.styles.border,
 	)
 	return "\n" + indentBlock(grid, 2)
+}
+
+func (m Model) renderTaskReference(task domain.Task) string {
+	meta := m.styles.hint.Render(fmt.Sprintf("%s · %s", task.BucketKey, task.Priority))
+	return m.styles.hintAccent.Render(fmt.Sprintf("#%d", task.ID)) + " " + task.Title + "  " + meta
+}
+
+func (m Model) renderBlockerPicker() string {
+	task, ok := m.taskByID(m.blockerPickerTaskID)
+	if !ok {
+		return "\n" + indentBlock(m.styles.panel.Render("Task not found"), 2)
+	}
+
+	lines := []string{
+		m.styles.kicker(fmt.Sprintf("Blockers · #%d", task.ID)),
+		m.styles.hint.Render("up/down: move · space: toggle · ctrl+s: save · esc: cancel"),
+		"",
+		m.styles.metaRow("Task", task.Title, 10),
+		"",
+	}
+	candidates := m.blockerPickerCandidates()
+	if len(candidates) == 0 {
+		lines = append(lines, m.styles.hint.Render("No other tasks available."))
+	} else {
+		for index, candidate := range candidates {
+			marker := " "
+			if m.blockerPickerCursor == index {
+				marker = ">"
+			}
+			check := m.styles.hint.Render("[ ]")
+			if m.blockerPickerChecks[candidate.ID] {
+				check = m.styles.hintAccent.Render("[x]")
+			}
+			meta := m.styles.hint.Render(fmt.Sprintf("%s · %s", candidate.BucketKey, candidate.Priority))
+			row := fmt.Sprintf("%s %s #%d %s  %s", marker, check, candidate.ID, candidate.Title, meta)
+			lines = append(lines, row)
+		}
+	}
+	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(lines, "\n")), 2)
 }
 
 func (m Model) renderTaskCommentsCell(taskID int64) string {
@@ -1062,13 +1293,16 @@ func (m Model) renderCommentCard(comment domain.Comment) string {
 func (m Model) renderTaskForm(title string) string {
 	lines := []string{
 		m.styles.kicker(title),
-		m.styles.hint.Render("ctrl+s saves. enter/alt+enter/shift+enter adds lines in description."),
+		m.styles.hint.Render("ctrl+s saves. tab: switch field. ←/→ changes priority."),
 		"",
 		m.renderTaskFormLabel(taskFieldTitle, "Title"),
 		m.styles.input.Width(taskFormInputWidth).Render(m.taskTitle),
 		"",
 		m.renderTaskFormLabel(taskFieldDescription, "Description"),
 		m.renderTaskDescriptionInput(),
+		"",
+		m.renderTaskFormLabel(taskFieldPriority, "Priority"),
+		m.renderTaskPriorityInput(),
 	}
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(lines, "\n")), 2)
 }
@@ -1077,12 +1311,32 @@ func (m Model) renderTaskDescriptionInput() string {
 	return m.styles.multilineInput.Render(m.taskDescription)
 }
 
+func (m Model) renderTaskPriorityInput() string {
+	levels := []struct {
+		key   string
+		label string
+	}{
+		{"low", "low"},
+		{"normal", "normal"},
+		{"high", "high"},
+	}
+	var parts []string
+	for _, lvl := range levels {
+		if lvl.key == m.taskPriority {
+			parts = append(parts, m.styles.hintAccent.Render("["+lvl.label+"]"))
+		} else {
+			parts = append(parts, m.styles.hint.Render(lvl.label))
+		}
+	}
+	return m.styles.input.Width(taskFormInputWidth).Render(strings.Join(parts, "  "))
+}
+
 func (m Model) renderTaskFormLabel(field taskFormField, label string) string {
 	marker := " "
 	if m.taskField == field {
 		marker = ">"
 	}
-	return m.styles.hintAccent.Render(marker+" // "+strings.ToUpper(label))
+	return m.styles.hintAccent.Render(marker + " // " + strings.ToUpper(label))
 }
 
 func (m Model) renderLogs() string {
@@ -1216,14 +1470,16 @@ func (m Model) renderFooter() string {
 	switch {
 	case m.isEmbeddedCommentInput():
 		text = "enter: add comment  alt+enter/shift+enter: newline  esc: cancel"
+	case m.blockerPickerOpen:
+		text = "up/down: move  space: toggle blocker  ctrl+s: save  esc: cancel"
 	case m.mode != modeNormal:
 		text = "enter: save  esc: cancel  ctrl+c: quit"
 	case m.taskScreen == taskScreenView:
-		text = "e: edit  c: comment  m: move  r: refresh  esc: board  q: quit"
+		text = "e: edit  b: blockers  c: comment  m: move  r: refresh  esc: board  q: quit"
 	case m.taskScreen == taskScreenCreate:
-		text = "tab: switch field  enter/alt+enter: newline  ctrl+s: create  esc: cancel"
+		text = "tab: switch field  ←/→: priority  ctrl+s: create  esc: cancel"
 	case m.taskScreen == taskScreenEdit:
-		text = "tab: switch field  enter/alt+enter: newline  ctrl+s: save  esc: view"
+		text = "tab: switch field  ←/→: priority  ctrl+b: blockers  ctrl+s: save  esc: view"
 	case m.entityScreen == entityScreenView:
 		text = "e: edit (opens $EDITOR)  d: delete  p: skill picker (persona)  r: refresh  esc: config  q: quit"
 	case m.entityScreen == entityScreenSkillPicker:
@@ -1373,6 +1629,20 @@ func (m Model) dependencyCount(taskID int64) int {
 		}
 	}
 	return count
+}
+
+func (m Model) blockersForTask(taskID int64) []domain.Task {
+	blockers := make([]domain.Task, 0)
+	for _, dependency := range m.dependencies {
+		if dependency.TaskID != taskID {
+			continue
+		}
+		if blocker, ok := m.taskByID(dependency.DependsOnTaskID); ok {
+			blockers = append(blockers, blocker)
+		}
+	}
+	sort.Slice(blockers, func(i, j int) bool { return blockers[i].ID < blockers[j].ID })
+	return blockers
 }
 
 func (m Model) commentCount(taskID int64) int {

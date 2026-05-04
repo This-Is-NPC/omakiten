@@ -29,7 +29,7 @@ func TestModelSwitchesViews(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Task", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
@@ -59,7 +59,7 @@ func TestModelOpensExistingTaskScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Existing task", "First line\nSecond line", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Existing task", "First line\nSecond line", "", "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -126,7 +126,7 @@ func TestModelAddsMultilineCommentInsideTaskCommentsPanel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Existing task", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Existing task", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -221,6 +221,14 @@ func TestModelCreatesTaskFromDedicatedScreen(t *testing.T) {
 	got = sendText(t, got, "First line")
 	got = pressAltKey(t, got, tea.KeyEnter)
 	got = sendText(t, got, "Second line")
+	got = pressKey(t, got, tea.KeyTab)
+	if got.taskField != taskFieldPriority {
+		t.Fatalf("taskField = %v, want priority", got.taskField)
+	}
+	got = pressKey(t, got, tea.KeyRight)
+	if got.taskPriority != string(domain.PriorityHigh) {
+		t.Fatalf("taskPriority = %q, want high", got.taskPriority)
+	}
 	got = pressKey(t, got, tea.KeyCtrlS)
 
 	if got.taskScreen != taskScreenView {
@@ -238,8 +246,8 @@ func TestModelCreatesTaskFromDedicatedScreen(t *testing.T) {
 	}
 	title := "Created from TUI"
 	description := "First line\nSecond line"
-	if task.Title != title || task.Description != description || task.BucketKey != "backlog" {
-		t.Fatalf("selected task = %#v, want title %q description %q in backlog", task, title, description)
+	if task.Title != title || task.Description != description || task.Priority != domain.PriorityHigh || task.BucketKey != "backlog" {
+		t.Fatalf("selected task = %#v, want title %q description %q priority high in backlog", task, title, description)
 	}
 	count, err = store.TaskCount(ctx, project.ID)
 	if err != nil {
@@ -256,7 +264,7 @@ func TestModelCreatesTaskFromDedicatedScreen(t *testing.T) {
 		"// BUCKET",
 		"backlog",
 		"// PRIORITY",
-		"normal",
+		"high",
 		"// BLOCKERS",
 		"// COMMENTS",
 		"// DESCRIPTION",
@@ -284,7 +292,7 @@ func TestModelEditsTaskAndReturnsToView(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Old title", "Old description", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Old title", "Old description", "", "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
@@ -319,6 +327,76 @@ func TestModelEditsTaskAndReturnsToView(t *testing.T) {
 	}
 }
 
+func TestModelSetsTaskBlockersFromPicker(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	blocker, err := store.CreateTask(ctx, project.ID, "Design dependency", "", "", "backlog")
+	if err != nil {
+		t.Fatalf("CreateTask(blocker) error = %v", err)
+	}
+	blocked, err := store.CreateTask(ctx, project.ID, "Implement feature", "", "", "backlog")
+	if err != nil {
+		t.Fatalf("CreateTask(blocked) error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	got := pressKey(t, model, tea.KeyDown)
+	got = pressKey(t, got, tea.KeyEnter)
+	if got.taskID != blocked.ID || got.taskScreen != taskScreenView {
+		t.Fatalf("task screen = %v taskID = %d, want blocked task #%d", got.taskScreen, got.taskID, blocked.ID)
+	}
+	got = pressRune(t, got, 'e')
+	if got.taskScreen != taskScreenEdit {
+		t.Fatalf("taskScreen = %v, want edit", got.taskScreen)
+	}
+	got = pressKey(t, got, tea.KeyCtrlB)
+	if !got.blockerPickerOpen {
+		t.Fatalf("blockerPickerOpen = false, want true")
+	}
+	if !strings.Contains(got.View(), "Design dependency") {
+		t.Fatalf("blocker picker view missing candidate\n%s", got.View())
+	}
+	got = pressKey(t, got, tea.KeySpace)
+	got = pressKey(t, got, tea.KeyCtrlS)
+
+	if got.blockerPickerOpen {
+		t.Fatalf("blockerPickerOpen = true, want false after save")
+	}
+	deps, err := store.ListTaskDependencies(ctx, project.ID, blocked.ID)
+	if err != nil {
+		t.Fatalf("ListTaskDependencies() error = %v", err)
+	}
+	if len(deps) != 1 || deps[0].TaskID != blocked.ID || deps[0].DependsOnTaskID != blocker.ID {
+		t.Fatalf("dependencies = %#v, want blocked depends on blocker", deps)
+	}
+	if got.dependencyCount(blocked.ID) != 1 {
+		t.Fatalf("dependencyCount() = %d, want 1", got.dependencyCount(blocked.ID))
+	}
+	got = pressKey(t, got, tea.KeyEsc)
+	view := got.View()
+	for _, want := range []string{"// BLOCKERS · 1", "Design dependency", "backlog · normal"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("task view missing blocker detail %q\n%s", want, view)
+		}
+	}
+}
+
 func TestModelBoardMoveSurfacesWorkflowBlock(t *testing.T) {
 	ctx := context.Background()
 	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
@@ -334,7 +412,7 @@ func TestModelBoardMoveSurfacesWorkflowBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Pinned", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Pinned", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
