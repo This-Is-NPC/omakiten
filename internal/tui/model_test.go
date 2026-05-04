@@ -83,7 +83,7 @@ func TestModelTableAndGraphShowCounts(t *testing.T) {
 	}
 
 	graph := ansi.Strip(pressRune(t, model, '3').View())
-	if !strings.Contains(graph, "// DEPENDENCY GRAPH · 1 EDGES") {
+	if !strings.Contains(graph, "// DEPENDENCY GRAPH · 1") {
 		t.Fatalf("graph missing dependency count\n%s", graph)
 	}
 }
@@ -741,7 +741,7 @@ func TestModelTaskViewWrapsLongPropertyTextWithoutBreakingGrid(t *testing.T) {
 	start := -1
 	end := -1
 	for i, line := range lines {
-		if strings.Contains(line, "┌") && strings.Contains(line, "┬") && strings.Contains(line, "┐") {
+		if strings.Contains(line, "┌") && strings.Contains(line, "┐") {
 			start = i
 			break
 		}
@@ -749,8 +749,8 @@ func TestModelTaskViewWrapsLongPropertyTextWithoutBreakingGrid(t *testing.T) {
 	if start == -1 {
 		t.Fatalf("task view grid top border not found\n%s", plain)
 	}
-	for i := start + 1; i < len(lines); i++ {
-		if strings.Contains(lines[i], "└") && strings.Contains(lines[i], "┴") && strings.Contains(lines[i], "┘") {
+	for i := len(lines) - 1; i > start; i-- {
+		if strings.Contains(lines[i], "└") && strings.Contains(lines[i], "┘") {
 			end = i
 			break
 		}

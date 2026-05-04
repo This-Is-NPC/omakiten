@@ -17,7 +17,11 @@ import (
 )
 
 const (
-	entityListWidth = 30
+	entityListWidth = 28
+	// Token-count thresholds for the colored token badge on entity cards.
+	// Above tokenBadgeRedAt → red; above tokenBadgeYellowAt → yellow; else green.
+	tokenBadgeYellowAt = 50
+	tokenBadgeRedAt    = 200
 )
 
 type entityKind int
@@ -132,32 +136,155 @@ func (m Model) renderEntityCell(kind entityKind) string {
 	}
 
 	if count == 0 {
-		lines = append(lines, m.styles.empty.Render(centerText("empty", entityListWidth)))
+		lines = append(lines, m.styles.empty.Render("empty"))
 	} else {
 		for index := 0; index < count; index++ {
-			lines = append(lines, m.renderEntityRow(kind, index, focused && index == cursor))
+			lines = append(lines, m.renderEntityCard(kind, index, focused && index == cursor))
 		}
 	}
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) renderEntityRow(kind entityKind, index int, selected bool) string {
-	marker := normalMarker
-	if selected {
-		marker = m.styles.marker.Render(selectionMarker)
+func (m Model) renderEntityCard(kind entityKind, index int, selected bool) string {
+	label := m.entityCardLabel(kind, index)
+	wrapped := wrapWords(label, cardContentWidth, cardContentWidth)
+
+	// Badges line (truncated to fit card width)
+	badgeLine := m.renderEntityBadges(kind, index, cardContentWidth)
+
+	lines := make([]string, 0, len(wrapped)+1)
+	lines = append(lines, wrapped...)
+	if badgeLine != "" {
+		lines = append(lines, badgeLine)
 	}
-	indicator := m.entityIndicator(kind, index).Render("●")
-	label := m.entityRowLabel(kind, index)
-	prefix := fmt.Sprintf("%s %s ", marker, indicator)
-	budget := entityListWidth - lipgloss.Width(prefix)
-	style := m.styles.entityRow
+
+	style := m.styles.entityCard
 	if selected {
-		style = m.styles.entitySelected
+		style = m.styles.entityCardSelected
 	}
-	return style.Render(prefix + truncateText(label, budget))
+	return style.Render(strings.Join(lines, "\n"))
 }
 
-func (m Model) entityRowLabel(kind entityKind, index int) string {
+func (m Model) renderEntityBadges(kind entityKind, index int, maxWidth int) string {
+	switch kind {
+	case entityKindLaw:
+		return wrapBadges(m.renderLawBadges(index), maxWidth)
+	case entityKindPersona:
+		return wrapBadges(m.renderPersonaBadges(index), maxWidth)
+	case entityKindSkill:
+		return wrapBadges(m.renderSkillBadges(index), maxWidth)
+	}
+	return ""
+}
+
+// wrapBadges joins badges with single-space separators, breaking onto a new
+// line whenever the next badge would overflow maxWidth. Every badge is kept;
+// no truncation. A badge wider than maxWidth on its own occupies its own line.
+func wrapBadges(badges []string, maxWidth int) string {
+	if len(badges) == 0 {
+		return ""
+	}
+	var lines []string
+	var current []string
+	currentWidth := 0
+	for _, badge := range badges {
+		w := lipgloss.Width(badge)
+		sep := 0
+		if len(current) > 0 {
+			sep = 1
+		}
+		if len(current) > 0 && currentWidth+sep+w > maxWidth {
+			lines = append(lines, strings.Join(current, " "))
+			current = []string{badge}
+			currentWidth = w
+			continue
+		}
+		current = append(current, badge)
+		currentWidth += sep + w
+	}
+	if len(current) > 0 {
+		lines = append(lines, strings.Join(current, " "))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderLawBadges(index int) []string {
+	law := m.laws[index]
+	var badges []string
+
+	// Severity badge
+	severity := domain.LawSeverity(law.Severity)
+	var severityBadge string
+	switch severity {
+	case domain.LawSeverityError:
+		severityBadge = m.styles.badgeHigh.Render("ERROR")
+	case domain.LawSeverityWarning:
+		severityBadge = m.styles.badgeBlocker.Render("WARNING")
+	default:
+		severityBadge = m.styles.badgeInfo.Render("INFO")
+	}
+	badges = append(badges, severityBadge)
+
+	// Scope badge
+	scope := "GLOBAL"
+	switch law.Scope {
+	case domain.LawScopeProject:
+		scope = "PROJECT"
+	case domain.LawScopePersona:
+		scope = "PERSONA"
+	}
+	badges = append(badges, m.styles.badgeScope.Render(scope))
+
+	// Token count: matches computeMetrics (key + body) so the per-entity weight
+	// matches the totals shown in the Token budget panel.
+	tokens := m.counter.Count(law.Key + " " + law.Body)
+	badges = append(badges, m.tokenBadge(tokens))
+
+	if strings.TrimSpace(law.Warning) != "" {
+		badges = append(badges, m.styles.badgeFix.Render("FIX"))
+	}
+
+	return badges
+}
+
+func (m Model) renderPersonaBadges(index int) []string {
+	persona := m.personas[index]
+	// Token count: matches computeMetrics — only the description counts toward
+	// the budget. Body is not bundled into context for personas.
+	tokens := m.counter.Count(persona.Description)
+	badges := []string{m.tokenBadge(tokens)}
+	if strings.TrimSpace(persona.Warning) != "" {
+		badges = append(badges, m.styles.badgeFix.Render("FIX"))
+	}
+	return badges
+}
+
+func (m Model) renderSkillBadges(index int) []string {
+	skill := m.skills[index]
+	// Skills are not part of the computeMetrics total — their bodies attach to
+	// personas at injection time. The badge is informational so users can see
+	// how heavy a skill body is before wiring it.
+	tokens := m.counter.Count(skill.Body)
+	badges := []string{m.tokenBadge(tokens)}
+	if strings.TrimSpace(skill.Warning) != "" {
+		badges = append(badges, m.styles.badgeFix.Render("FIX"))
+	}
+	return badges
+}
+
+func (m Model) tokenBadge(tokens int) string {
+	label := fmt.Sprintf("TOKENS:%d", tokens)
+	switch {
+	case tokens > tokenBadgeRedAt:
+		return m.styles.badgeTokenRed.Render(label)
+	case tokens > tokenBadgeYellowAt:
+		return m.styles.badgeTokenYellow.Render(label)
+	default:
+		return m.styles.badgeTokenGreen.Render(label)
+	}
+}
+
+func (m Model) entityCardLabel(kind entityKind, index int) string {
 	switch kind {
 	case entityKindLaw:
 		return m.laws[index].Key
@@ -169,13 +296,6 @@ func (m Model) entityRowLabel(kind entityKind, index int) string {
 	return ""
 }
 
-func (m Model) entityIndicator(kind entityKind, index int) lipgloss.Style {
-	if kind == entityKindLaw {
-		return m.severityStyle(domain.LawSeverity(m.laws[index].Severity))
-	}
-	return m.styles.success
-}
-
 func (m Model) severityStyle(severity domain.LawSeverity) lipgloss.Style {
 	switch severity {
 	case domain.LawSeverityError:
@@ -183,7 +303,7 @@ func (m Model) severityStyle(severity domain.LawSeverity) lipgloss.Style {
 	case domain.LawSeverityWarning:
 		return m.styles.warning
 	case domain.LawSeverityInfo:
-		return m.styles.success
+		return m.styles.info
 	}
 	return m.styles.muted
 }
@@ -302,6 +422,23 @@ func (m *Model) openEntityCreate(kind entityKind) tea.Cmd {
 // snapshot returns a value-receiver copy of m suitable for read-only helpers.
 func (m *Model) snapshot() Model { return *m }
 
+// bundleWarningIndex returns the first source-warning message keyed by slug.
+// Mirrors app.warningIndex so the TUI's enrich pipeline can surface the same
+// non-fatal issues the CLI shows in `okt skill list` etc.
+func bundleWarningIndex(warnings []config.SourceWarning) map[string]string {
+	out := map[string]string{}
+	for _, w := range warnings {
+		if w.Slug == "" {
+			continue
+		}
+		if _, exists := out[w.Slug]; exists {
+			continue
+		}
+		out[w.Slug] = w.Message
+	}
+	return out
+}
+
 // enrichSkillsFromBundle merges the on-disk frontmatter + body + source path
 // into the identity-level skill records returned by the SQLite store.
 func enrichSkillsFromBundle(skills []domain.Skill, bundle config.Bundle) []domain.Skill {
@@ -309,6 +446,7 @@ func enrichSkillsFromBundle(skills []domain.Skill, bundle config.Bundle) []domai
 	for _, skill := range bundle.Skills {
 		bySlug[skill.Slug] = skill
 	}
+	warnings := bundleWarningIndex(bundle.Warnings)
 	for index, skill := range skills {
 		if file, ok := bySlug[skill.Key]; ok {
 			skills[index].Description = file.Description
@@ -317,6 +455,9 @@ func enrichSkillsFromBundle(skills []domain.Skill, bundle config.Bundle) []domai
 			if file.Name != "" {
 				skills[index].Name = file.Name
 			}
+		}
+		if w, ok := warnings[skill.Key]; ok {
+			skills[index].Warning = w
 		}
 	}
 	return skills
@@ -327,6 +468,7 @@ func enrichLawsFromBundle(laws []domain.Law, bundle config.Bundle) []domain.Law 
 	for _, law := range bundle.Laws {
 		bySlug[law.Slug] = law
 	}
+	warnings := bundleWarningIndex(bundle.Warnings)
 	for index, law := range laws {
 		if file, ok := bySlug[law.Key]; ok {
 			laws[index].Body = file.Body
@@ -339,6 +481,9 @@ func enrichLawsFromBundle(laws []domain.Law, bundle config.Bundle) []domain.Law 
 				laws[index].Name = file.Name
 			}
 		}
+		if w, ok := warnings[law.Key]; ok {
+			laws[index].Warning = w
+		}
 	}
 	return laws
 }
@@ -348,6 +493,7 @@ func enrichPersonasFromBundle(personas []domain.Persona, bundle config.Bundle) [
 	for _, persona := range bundle.Personas {
 		bySlug[persona.Slug] = persona
 	}
+	warnings := bundleWarningIndex(bundle.Warnings)
 	for index, persona := range personas {
 		if file, ok := bySlug[persona.Key]; ok {
 			personas[index].Description = file.Description
@@ -357,6 +503,9 @@ func enrichPersonasFromBundle(personas []domain.Persona, bundle config.Bundle) [
 			if file.Name != "" {
 				personas[index].Name = file.Name
 			}
+		}
+		if w, ok := warnings[persona.Key]; ok {
+			personas[index].Warning = w
 		}
 	}
 	return personas
@@ -581,10 +730,24 @@ func (m Model) renderEntityScreen() string {
 }
 
 func (m Model) renderEntityView() string {
-	lines := []string{
-		m.styles.kicker(fmt.Sprintf("%s · %s", m.entityForm.kind.String(), m.entityForm.slug)),
-		"",
+	const (
+		entityDetailLabelWidth = 14
+		entityDetailMinValue   = 20
+		entityDetailMaxTotal   = 96
+	)
+	totalWidth := clampInt(m.availableWidth()-4, entityDetailLabelWidth+entityDetailMinValue+3, entityDetailMaxTotal)
+	valueWidth := totalWidth - entityDetailLabelWidth - 3
+
+	labelCell := func(label string) string {
+		return m.styles.info.Render("// " + strings.ToUpper(label))
 	}
+
+	header := m.styles.kicker(fmt.Sprintf("%s · %s", m.entityForm.kind.String(), m.entityForm.slug))
+
+	var dataRows [][]string
+	var body string
+	var extraSpannedRows [][]string
+
 	switch m.entityForm.kind {
 	case entityKindLaw:
 		law, ok := m.findLawBySlug(m.entityForm.slug)
@@ -592,28 +755,24 @@ func (m Model) renderEntityView() string {
 			return "\n" + indentBlock(m.styles.panel.Render("Law not found"), 2)
 		}
 		badge := m.severityStyle(domain.LawSeverity(law.Severity)).Render(law.Severity)
-		lines = append(lines,
-			m.styles.metaRow("Slug", law.Key, 14),
-			m.styles.metaRow("Severity", badge, 14),
-			m.styles.metaRow("Source", law.SourcePath, 14),
-			"",
-			m.styles.kicker("Body"),
-			law.Body,
-		)
+		dataRows = [][]string{
+			{labelCell("Slug"), law.Key},
+			{labelCell("Severity"), badge},
+			{labelCell("Source"), law.SourcePath},
+		}
+		body = law.Body
 	case entityKindSkill:
 		skill, ok := m.findSkillBySlug(m.entityForm.slug)
 		if !ok {
 			return "\n" + indentBlock(m.styles.panel.Render("Skill not found"), 2)
 		}
-		lines = append(lines,
-			m.styles.metaRow("Slug", skill.Key, 16),
-			m.styles.metaRow("Name", skill.Name, 16),
-			m.styles.metaRow("Description", skill.Description, 16),
-			m.styles.metaRow("Source", skill.SourcePath, 16),
-			"",
-			m.styles.kicker("Body"),
-			skill.Body,
-		)
+		dataRows = [][]string{
+			{labelCell("Slug"), skill.Key},
+			{labelCell("Name"), skill.Name},
+			{labelCell("Description"), skill.Description},
+			{labelCell("Source"), skill.SourcePath},
+		}
+		body = skill.Body
 	case entityKindPersona:
 		persona, ok := m.findPersonaBySlug(m.entityForm.slug)
 		if !ok {
@@ -623,20 +782,32 @@ func (m Model) renderEntityView() string {
 		if skills == "" {
 			skills = m.styles.hint.Render("none")
 		}
-		lines = append(lines,
-			m.styles.metaRow("Slug", persona.Key, 16),
-			m.styles.metaRow("Name", persona.Name, 16),
-			m.styles.metaRow("Description", persona.Description, 16),
-			m.styles.metaRow("Skills", skills, 16),
-			m.styles.metaRow("Source", persona.SourcePath, 16),
-			"",
-			m.styles.kicker("Body"),
-			persona.Body,
-			"",
-			m.styles.hint.Render("p: open skill picker"),
-		)
+		dataRows = [][]string{
+			{labelCell("Slug"), persona.Key},
+			{labelCell("Name"), persona.Name},
+			{labelCell("Description"), persona.Description},
+			{labelCell("Skills"), skills},
+			{labelCell("Source"), persona.SourcePath},
+		}
+		body = persona.Body
+		extraSpannedRows = [][]string{{m.styles.hint.Render("p: open skill picker")}}
 	}
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(lines, "\n")), 2)
+
+	bodyText := strings.TrimRight(body, "\n")
+	if strings.TrimSpace(bodyText) == "" {
+		bodyText = m.styles.hint.Render("Empty body")
+	}
+
+	rows := [][]string{{header}}
+	rows = append(rows, dataRows...)
+	rows = append(rows,
+		[]string{m.styles.kicker("Body")},
+		[]string{bodyText},
+	)
+	rows = append(rows, extraSpannedRows...)
+
+	table := renderGridTable(rows, []int{entityDetailLabelWidth, valueWidth}, m.styles.border)
+	return "\n" + indentBlock(table, 2)
 }
 
 // openPersonaPicker initializes the multi-select picker for the persona at
@@ -766,28 +937,30 @@ func (m *Model) openSelectedEntityViewForSlug(kind entityKind, slug string) {
 
 func (m Model) renderPersonaPicker() string {
 	persona, _ := m.findPersonaBySlug(m.entityForm.slug)
+	contentWidth := m.availableWidth() - 4
 	lines := []string{
 		m.styles.kicker(fmt.Sprintf("Skills for persona · %s", persona.Key)),
 		m.styles.hint.Render("up/down: move · space: toggle · enter on '+ create new': new skill · ctrl+s: save · esc: cancel"),
 		"",
+		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
 	}
 	skills := append([]domain.Skill(nil), m.skills...)
 	sort.Slice(skills, func(i, j int) bool { return skills[i].Key < skills[j].Key })
 	for index, skill := range skills {
-		marker := " "
+		marker := normalMarker
 		check := "[ ]"
 		if m.entityForm.pickerChecks[skill.Key] {
 			check = "[x]"
 		}
 		if m.entityForm.pickerCursor == index {
-			marker = ">"
+			marker = m.styles.marker.Render(selectionMarker)
 		}
 		row := fmt.Sprintf("%s %s %s — %s", marker, check, skill.Key, skill.Name)
 		lines = append(lines, row)
 	}
-	addMarker := " "
+	addMarker := normalMarker
 	if m.entityForm.pickerCursor == len(skills) {
-		addMarker = ">"
+		addMarker = m.styles.marker.Render(selectionMarker)
 	}
 	lines = append(lines, fmt.Sprintf("%s + create new skill (opens $EDITOR)", addMarker))
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(lines, "\n")), 2)
