@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
@@ -33,6 +35,7 @@ type Repositories struct {
 	Entries      app.ContextEntryRepository
 	Config       app.ConfigRepository
 	Editor       *app.BundleEditor
+	ActivityLogs activity.ActivityLogRepository
 }
 
 type Model struct {
@@ -75,6 +78,9 @@ type Model struct {
 	entityCursors map[entityKind]int
 	entityScreen  entityScreenMode
 	entityForm    entityForm
+
+	logs         []domain.ActivityLog
+	logsSelected int
 }
 
 type inputMode int
@@ -101,7 +107,9 @@ const (
 	taskFieldDescription
 )
 
-var viewNames = []string{"BOARD", "TABLE", "GRAPH", "CONFIG"}
+var viewNames = []string{"BOARD", "TABLE", "GRAPH", "CONFIG", "LOGS"}
+
+type activityTickMsg struct{}
 
 func NewModel(ctx context.Context, project domain.ProjectContext, repos Repositories, theme config.Theme, counter token.Counter) (Model, error) {
 	if counter == nil {
@@ -128,10 +136,21 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	prevView := m.view
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+	case activityTickMsg:
+		if m.repos.ActivityLogs != nil {
+			if err := m.refreshActivityLogs(); err != nil {
+				m.status = err.Error()
+			}
+		}
+		if m.view == 4 {
+			return m, scheduleActivityTick()
+		}
+		return m, nil
 	case editorFinishedMsg:
 		m.handleEditorFinished(msg)
 		return m, nil
@@ -173,11 +192,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if cmd := m.handleConfigKey(msg); cmd != nil {
 				return m, cmd
 			}
+		case 4:
+			m.handleLogsKey(msg)
 		default:
 			m.handleListKey(msg)
 		}
 	}
+	if m.view == 4 && prevView != 4 {
+		return m, scheduleActivityTick()
+	}
 	return m, nil
+}
+
+func scheduleActivityTick() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return activityTickMsg{}
+	})
+}
+
+func (m *Model) refreshActivityLogs() error {
+	if m.repos.ActivityLogs == nil {
+		return nil
+	}
+	logs, err := m.repos.ActivityLogs.ListActivityLogs(m.ctx, domain.ActivityLogFilter{Limit: 50})
+	if err != nil {
+		return err
+	}
+	m.logs = logs
+	return nil
 }
 
 func (m Model) View() string {
@@ -216,18 +258,18 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		m.view = (m.view + len(viewNames) - 1) % len(viewNames)
 		m.moveMode = false
 		return true
-	case "1", "2", "3", "4":
+	case "1", "2", "3", "4", "5":
 		m.view = int(msg.String()[0] - '1')
 		m.moveMode = false
 		return true
 	case "n":
-		if m.view == 3 {
+		if m.view == 3 || m.view == 4 {
 			return false
 		}
 		m.openTaskCreate()
 		return true
 	case "e":
-		if m.view == 3 {
+		if m.view == 3 || m.view == 4 {
 			return false
 		}
 		if task, ok := m.selectedTask(); ok {
@@ -235,7 +277,7 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		}
 		return true
 	case "c":
-		if m.view == 3 {
+		if m.view == 3 || m.view == 4 {
 			return false
 		}
 		if _, ok := m.selectedTask(); ok {
@@ -323,6 +365,23 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 	case "m":
 		if _, ok := m.selectedTask(); ok {
 			m.beginInput(modeMove, "Target bucket key", "")
+		}
+	}
+}
+
+func (m *Model) handleLogsKey(msg tea.KeyMsg) {
+	switch msg.String() {
+	case "left", "h":
+		m.view = (m.view + len(viewNames) - 1) % len(viewNames)
+	case "right", "l":
+		m.view = (m.view + 1) % len(viewNames)
+	case "up", "k":
+		if m.logsSelected > 0 {
+			m.logsSelected--
+		}
+	case "down", "j":
+		if m.logsSelected < len(m.logs)-1 {
+			m.logsSelected++
 		}
 	}
 }
@@ -744,6 +803,8 @@ func (m Model) renderCurrentView() string {
 		return m.renderGraph()
 	case 3:
 		return m.renderConfig()
+	case 4:
+		return m.renderLogs()
 	default:
 		return ""
 	}
@@ -826,7 +887,7 @@ func (m Model) renderHelp() string {
 			{"?", "toggle this overlay"},
 			{"q · ctrl+c", "quit"},
 			{"tab · shift+tab", "cycle views"},
-			{"1 · 2 · 3 · 4", "jump to view"},
+			{"1 · 2 · 3 · 4 · 5", "jump to view"},
 			{"r", "refresh"},
 		}},
 		{"Board", []binding{
@@ -868,6 +929,11 @@ func (m Model) renderHelp() string {
 			{"enter on '+ create new'", "scaffold new skill"},
 			{"ctrl+s", "save"},
 			{"esc", "cancel"},
+		}},
+		{"Logs", []binding{
+			{"← →", "switch view"},
+			{"↑ ↓", "select row"},
+			{"r", "refresh"},
 		}},
 	}
 
@@ -1019,6 +1085,54 @@ func (m Model) renderTaskFormLabel(field taskFormField, label string) string {
 	return m.styles.hintAccent.Render(marker+" // "+strings.ToUpper(label))
 }
 
+func (m Model) renderLogs() string {
+	if m.repos.ActivityLogs == nil {
+		return "\n" + indentBlock(m.styles.panel.Render("Activity logging is not available"), 2)
+	}
+	if len(m.logs) == 0 {
+		return "\n" + indentBlock(m.styles.panel.Render("No activity yet. Use the CLI, TUI, or MCP to interact with Omakiten."), 2)
+	}
+
+	header := m.styles.hintAccent.Render("// TIME        SRC  OPERATION                           PROJECT     STATUS  MS   ARGS")
+	separator := m.styles.separator.Render(strings.Repeat("─", 90))
+	rows := []string{header, separator}
+
+	for i, log := range m.logs {
+		if i >= 50 {
+			break
+		}
+		marker := normalMarker
+		if i == m.logsSelected {
+			marker = m.styles.marker.Render(selectionMarker)
+		}
+
+		timeStr := log.StartedAt
+		if len(timeStr) > 12 {
+			timeStr = timeStr[len(timeStr)-12:]
+		}
+
+		statusStyle := m.styles.success
+		if log.Status == "error" {
+			statusStyle = m.styles.error
+		}
+		status := statusStyle.Render(fmt.Sprintf("%-5s", log.Status))
+
+		args := log.ArgumentsJSON
+		if len(args) > 24 {
+			args = args[:24] + "…"
+		}
+
+		row := fmt.Sprintf("%s %-12s %-4s %-35s %-11s %s %-4d %s",
+			marker, timeStr, log.Source, truncateText(log.Operation, 35), truncateText(log.ProjectSlug, 11),
+			status, log.DurationMs, args)
+		rows = append(rows, row)
+	}
+
+	rows = append(rows, "", m.styles.hint.Render("Only app service calls are logged. TUI refreshes and direct reads are not shown."))
+
+	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
+}
+
 func (m Model) renderTable() string {
 	if len(m.tasks) == 0 {
 		return "\n" + indentBlock(m.styles.panel.Render("No tasks"), 2)
@@ -1120,6 +1234,8 @@ func (m Model) renderFooter() string {
 		text = "left/right: columns  up/down: cards  enter: open  m: move  n/e/c: change  ?: help  q: quit"
 	case m.view == 3:
 		text = "left/right: section  up/down: select  enter: open  n: new  e: edit  d: delete  ?: help  q: quit"
+	case m.view == 4:
+		text = "left/right: switch view  up/down: select row  r: refresh  ?: help  q: quit"
 	default:
 		text = "tab: switch view  up/down: select  enter: open  m: move  n/e/c: change  ?: help  q: quit"
 	}
