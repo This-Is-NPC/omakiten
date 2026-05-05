@@ -26,7 +26,7 @@ func TestContextServiceDumpLevels(t *testing.T) {
 	if _, err := NewDependencyService(store).Add(ctx, project.Context(), taskB.ID, taskA.ID); err != nil {
 		t.Fatalf("Dependency Add() error = %v", err)
 	}
-	if _, err := NewCommentService(store).Add(ctx, project.Context(), taskA.ID, "Useful note", "human"); err != nil {
+	if _, err := NewCommentService(store).Add(ctx, project.Context(), taskA.ID, "Useful note", "human", nil); err != nil {
 		t.Fatalf("Comment Add() error = %v", err)
 	}
 	service := NewContextService(store, store, store, store, store, token.ApproxCounter{})

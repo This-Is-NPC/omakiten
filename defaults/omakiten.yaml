@@ -38,10 +38,25 @@ workflows:
     transitions:
       - from: 1
         to: 2
+        guards:
+          - type: comments_tagged
+            tag: self-branch
+            count: 1
+            hint: "Before starting, create a dedicated feature branch or git worktree for this task and add a comment tagged #self-branch documenting the branch name and working path."
       - from: 2
         to: 3
+        guards:
+          - type: comments_tagged
+            tag: resume
+            count: 1
+            hint: "Add a comment tagged #resume summarizing what was implemented, decisions made, and any open questions before requesting review."
       - from: 3
         to: 4
+        guards:
+          - type: comments_tagged
+            tag: documentation
+            count: 1
+            hint: "Add a comment tagged #documentation summarizing: commits merged (commit IDs), related tags (kebab-case), and confirmation that the task has been reviewed and properly tagged."
       - from: 3
         to: 2
       - from: 4
