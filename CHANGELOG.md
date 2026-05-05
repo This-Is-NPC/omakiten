@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/This-Is-NPC/omakiten/compare/v0.1.0...v0.1.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* **tui:** add responsive scrolling and adaptive width to all views ([#6](https://github.com/This-Is-NPC/omakiten/issues/6)) ([0d55f4e](https://github.com/This-Is-NPC/omakiten/commit/0d55f4edfcb2cc97ebbe11a69a7ffbf8efadb595))
+
 ## 0.1.0 (2026-05-05)
 
 
