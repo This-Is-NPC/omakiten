@@ -126,7 +126,16 @@ func readWiring(path string) (wiring, error) {
 	return w, nil
 }
 
+// pickSkills filters the on-disk skill set against the wiring's allowlist.
+// When the wiring omits the `skills:` slot (refs is empty), every loaded skill
+// is auto-included — adding a file is enough to activate it. When the slot is
+// present it acts as a strict allowlist; files not listed are not loaded.
 func pickSkills(loaded []Skill, refs []string) []Skill {
+	if len(refs) == 0 {
+		out := make([]Skill, len(loaded))
+		copy(out, loaded)
+		return out
+	}
 	bySlug := map[string]Skill{}
 	for _, s := range loaded {
 		bySlug[s.Slug] = s
@@ -149,10 +158,36 @@ func pickSkills(loaded []Skill, refs []string) []Skill {
 // the slug is referenced inside the wiring file. A law referenced from
 // `personas[i].laws` is scope=persona; from `projects[i].laws` is scope=project;
 // otherwise scope=global.
+//
+// When the wiring omits the top-level `laws:` slot (global is empty), every
+// loaded law that is not already scoped to a persona or project is promoted to
+// global so that dropping a file into laws/ is enough to activate it. Persona
+// and project law refs always behave as explicit allowlists regardless of the
+// global slot.
 func pickLaws(loaded []Law, global []string, personas []PersonaWiring, projects []ProjectWiring) []Law {
 	bySlug := map[string]Law{}
 	for _, l := range loaded {
 		bySlug[l.Slug] = l
+	}
+
+	if len(global) == 0 {
+		referenced := map[string]struct{}{}
+		for _, persona := range personas {
+			for _, slug := range persona.Laws {
+				referenced[slug] = struct{}{}
+			}
+		}
+		for _, project := range projects {
+			for _, slug := range project.Laws {
+				referenced[slug] = struct{}{}
+			}
+		}
+		for _, law := range loaded {
+			if _, scoped := referenced[law.Slug]; scoped {
+				continue
+			}
+			global = append(global, law.Slug)
+		}
 	}
 
 	type scoped struct {
@@ -223,7 +258,20 @@ func pickLaws(loaded []Law, global []string, personas []PersonaWiring, projects 
 	return out
 }
 
+// pickPersonas filters the on-disk persona set against the wiring's allowlist
+// and stamps each persona with its declared skill/law wiring. When the wiring
+// omits the `personas:` slot, every loaded persona is auto-included with empty
+// skill/law lists — explicit relationships still require a YAML entry.
 func pickPersonas(loaded []Persona, refs []PersonaWiring) []Persona {
+	if len(refs) == 0 {
+		out := make([]Persona, 0, len(loaded))
+		for _, p := range loaded {
+			p.Skills = nil
+			p.Laws = nil
+			out = append(out, p)
+		}
+		return out
+	}
 	bySlug := map[string]Persona{}
 	for _, p := range loaded {
 		bySlug[p.Slug] = p
@@ -379,4 +427,3 @@ func WriteAtomic(path string, data []byte) error {
 	cleanup = false
 	return nil
 }
-
