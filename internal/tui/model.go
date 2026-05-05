@@ -38,6 +38,7 @@ type Repositories struct {
 	Dependencies app.DependencyRepository
 	Entries      app.ContextEntryRepository
 	Config       app.ConfigRepository
+	Tags         app.TagRepository
 	Editor       *app.BundleEditor
 	ActivityLogs activity.ActivityLogRepository
 }
@@ -80,6 +81,8 @@ type Model struct {
 	skills       []domain.Skill
 	personas     []domain.Persona
 	entries      []domain.ContextEntry
+	tags         []domain.Tag
+	taskTagsMap  map[int64][]domain.Tag
 	metrics      domain.TokenMetrics
 	selected     int
 	colIdx       int
@@ -160,7 +163,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		styles:        newStyles(theme),
 		counter:       counter,
 		entityKind:    entityKindLaw,
-		entityCursors: map[entityKind]int{entityKindLaw: 0, entityKindPersona: 0, entityKindSkill: 0},
+		entityCursors: map[entityKind]int{entityKindLaw: 0, entityKindPersona: 0, entityKindSkill: 0, entityKindTag: 0},
 	}
 	if err := model.refresh(); err != nil {
 		return Model{}, err
@@ -1421,6 +1424,18 @@ func (m *Model) refresh() error {
 	if err != nil {
 		return err
 	}
+	var allTags []domain.Tag
+	taskTagsMap := map[int64][]domain.Tag{}
+	if m.repos.Tags != nil {
+		allTags, err = m.repos.Tags.ListAllTags(m.ctx)
+		if err != nil {
+			return err
+		}
+		taskTagsMap, err = m.repos.Tags.ListTaskTagsByProject(m.ctx, m.project.ID)
+		if err != nil {
+			return err
+		}
+	}
 
 	m.tasks = tasks
 	m.workflow = workflow
@@ -1430,6 +1445,8 @@ func (m *Model) refresh() error {
 	m.skills = skills
 	m.personas = personas
 	m.entries = entries
+	m.tags = allTags
+	m.taskTagsMap = taskTagsMap
 	m.metrics = m.computeMetrics(settings.MaxTokens)
 	m.clampSelection()
 	m.clampCardIdx()
@@ -2044,12 +2061,23 @@ func (m Model) renderTaskView() string {
 		return m.styles.info.Render("// " + strings.ToUpper(label))
 	}
 
+	taskTags := m.tagsForTask(task.ID)
+	tagLine := ""
+	if len(taskTags) > 0 {
+		tagNames := make([]string, len(taskTags))
+		for i, t := range taskTags {
+			tagNames[i] = t.Label
+		}
+		tagLine = strings.Join(tagNames, " · ")
+	}
+
 	rows := [][]string{
 		{m.styles.kicker(fmt.Sprintf("Task · #%d", task.ID))},
 		{labelCell("Title"), task.Title},
 		{labelCell("Bucket"), task.BucketKey},
 		{labelCell("Priority"), string(task.Priority)},
 		{labelCell("Comments"), fmt.Sprintf("%d", m.commentCount(task.ID))},
+		{labelCell("Tags"), tagLine},
 		{m.styles.kickerCount("Blockers", len(blockers))},
 	}
 	if len(blockers) == 0 {
@@ -2554,6 +2582,7 @@ func (m Model) renderConfig() string {
 		{labelCell("Tasks"), fmt.Sprintf("%d", len(m.tasks))},
 		{labelCell("Comments"), fmt.Sprintf("%d", len(m.comments))},
 		{labelCell("Context"), fmt.Sprintf("%d", len(m.entries))},
+		{labelCell("Tags"), fmt.Sprintf("%d", len(m.tags))},
 	}
 	rightRows := [][]string{
 		{labelCell("Tokens"), ""},
@@ -2591,11 +2620,27 @@ func (m Model) renderConfig() string {
 
 	// Entity lists share borders via renderRowGrid so the bottom of CONFIG
 	// follows the same shared-junction grid pattern as the runtime/budget cells
-	// above it. The grid renders three cells of width entityListWidth joined by
-	// `┬┴` junctions: total = 1 (left) + 28 + 1 + 28 + 1 + 28 + 1 (right) = 88.
-	const entityGridTotal = entityListWidth*3 + 4
+	// above it.
+	// 3-col: 1 + 28 + 1 + 28 + 1 + 28 + 1 = 88
+	// 4-col: 1 + 28 + 1 + 28 + 1 + 28 + 1 + 28 + 1 = 117
+	const (
+		entityGridTotal3 = entityListWidth*3 + 4
+		entityGridTotal4 = entityListWidth*4 + 5
+	)
 	var lists string
-	if m.availableWidth() >= entityGridTotal {
+	switch {
+	case m.availableWidth() >= entityGridTotal4:
+		lists = renderRowGrid(
+			[]string{
+				m.renderEntityCell(entityKindLaw),
+				m.renderEntityCell(entityKindPersona),
+				m.renderEntityCell(entityKindSkill),
+				m.renderEntityCell(entityKindTag),
+			},
+			[]int{entityListWidth, entityListWidth, entityListWidth, entityListWidth},
+			m.styles.border,
+		)
+	case m.availableWidth() >= entityGridTotal3:
 		lists = renderRowGrid(
 			[]string{
 				m.renderEntityCell(entityKindLaw),
@@ -2605,7 +2650,14 @@ func (m Model) renderConfig() string {
 			[]int{entityListWidth, entityListWidth, entityListWidth},
 			m.styles.border,
 		)
-	} else {
+		if m.entityKind == entityKindTag {
+			lists += "\n\n" + renderRowGrid(
+				[]string{m.renderEntityCell(entityKindTag)},
+				[]int{clampInt(m.availableWidth()-2, 16, entityListWidth)},
+				m.styles.border,
+			)
+		}
+	default:
 		// Narrow terminals see a single focused column wrapped in its own grid
 		// cell so the border treatment stays consistent with the wide layout.
 		focusedText := m.styles.hint.Render(fmt.Sprintf("Focused config · %s · left/right switches section", m.entityKind.plural()))
@@ -2647,6 +2699,8 @@ func (m Model) renderFooter() string {
 		text = "left/right lanes  up/down tasks  pgup/pgdn scroll  enter open  n new  e edit  m move  ? help"
 	case m.view == 3 && m.deletePending:
 		text = "d confirm delete  esc cancel  left/right changes target"
+	case m.view == 3 && m.entityKind == entityKindTag:
+		text = "left/right section  up/down select  d arm delete (orphan)  D delete all orphans  ? help"
 	case m.view == 3:
 		text = "left/right section  up/down select  enter open  n new  e edit  d arm delete  ? help"
 	case m.view == 4:
@@ -2808,6 +2862,13 @@ func (m Model) blockersForTask(taskID int64) []domain.Task {
 
 func (m Model) commentCount(taskID int64) int {
 	return len(m.commentsForTask(taskID))
+}
+
+func (m Model) tagsForTask(taskID int64) []domain.Tag {
+	if m.taskTagsMap == nil {
+		return nil
+	}
+	return m.taskTagsMap[taskID]
 }
 
 func (m Model) commentsForTask(taskID int64) []domain.Comment {
