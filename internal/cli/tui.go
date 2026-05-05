@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -70,7 +71,17 @@ func loadActiveTheme(configPath string) (config.Theme, error) {
 	if err != nil {
 		return config.Theme{}, domain.NewError(domain.ErrConfigInvalid, "config is invalid", map[string]any{"path": configPath, "error": fmt.Sprint(err)})
 	}
-	themePath := filepath.Join(filepath.Dir(configPath), "themes", bundle.Config.Theme.Active+".yaml")
+	root := config.ConfigRootFromYAMLPath(configPath)
+	active := bundle.Config.Theme.Active
+	// Resolution order: <root>/themes/custom/<slug>.yaml (user override) →
+	// <root>/themes/<slug>.yaml (default). The custom path lets users tweak the
+	// shipped theme or add new ones without losing them on default refresh.
+	customPath := filepath.Join(root, "themes", "custom", active+".yaml")
+	defaultPath := filepath.Join(root, "themes", active+".yaml")
+	themePath := defaultPath
+	if _, err := os.Stat(customPath); err == nil {
+		themePath = customPath
+	}
 	theme, err := config.LoadTheme(themePath)
 	if err != nil {
 		return config.Theme{}, domain.NewError(domain.ErrConfigInvalid, "theme is invalid", map[string]any{"path": themePath, "error": fmt.Sprint(err)})

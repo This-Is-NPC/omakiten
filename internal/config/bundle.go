@@ -12,6 +12,7 @@ type Bundle struct {
 	Skills    []Skill         `yaml:"-" json:"skills,omitempty"`
 	Personas  []Persona       `yaml:"-" json:"personas,omitempty"`
 	Laws      []Law           `yaml:"-" json:"laws,omitempty"`
+	Templates []TaskTemplate  `yaml:"-" json:"templates,omitempty"`
 	Workflows []Workflow      `yaml:"workflows" json:"workflows,omitempty"`
 	Projects  []Project       `yaml:"-" json:"projects,omitempty"`
 	Warnings  []SourceWarning `yaml:"-" json:"warnings,omitempty"`
@@ -26,6 +27,7 @@ type wiring struct {
 	Workflows []Workflow          `yaml:"workflows"`
 	Skills    []string            `yaml:"skills,omitempty"`
 	Laws      []string            `yaml:"laws,omitempty"`
+	Templates []string            `yaml:"templates,omitempty"`
 	Personas  []PersonaWiring     `yaml:"personas,omitempty"`
 	Projects  []ProjectWiring     `yaml:"projects,omitempty"`
 }
@@ -54,10 +56,17 @@ type Kit struct {
 }
 
 type Settings struct {
-	Output   OutputSettings   `yaml:"output" json:"output"`
-	Context  ContextSettings  `yaml:"context" json:"context"`
-	Workflow WorkflowSettings `yaml:"workflow" json:"workflow"`
-	Theme    ThemeSettings    `yaml:"theme" json:"theme"`
+	Output    OutputSettings    `yaml:"output" json:"output"`
+	Context   ContextSettings   `yaml:"context" json:"context"`
+	Workflow  WorkflowSettings  `yaml:"workflow" json:"workflow"`
+	Theme     ThemeSettings     `yaml:"theme" json:"theme"`
+	Templates TemplateSettings  `yaml:"templates,omitempty" json:"templates,omitempty"`
+}
+
+// TemplateSettings binds template slugs to their roles. Each field is the slug
+// of a loaded template that should be exposed for the corresponding action.
+type TemplateSettings struct {
+	Task string `yaml:"task,omitempty" json:"task,omitempty"`
 }
 
 type OutputSettings struct {
@@ -86,6 +95,7 @@ type Skill struct {
 	Description string `json:"description,omitempty"`
 	Body        string `json:"body,omitempty"`
 	SourcePath  string `json:"source_path,omitempty"`
+	IsCustom    bool   `json:"is_custom,omitempty"`
 }
 
 type Persona struct {
@@ -96,6 +106,7 @@ type Persona struct {
 	Skills      []string `json:"skills,omitempty"`
 	Laws        []string `json:"laws,omitempty"`
 	SourcePath  string   `json:"source_path,omitempty"`
+	IsCustom    bool     `json:"is_custom,omitempty"`
 }
 
 type Law struct {
@@ -107,6 +118,7 @@ type Law struct {
 	ProjectSlug string `json:"project,omitempty"`
 	PersonaSlug string `json:"persona,omitempty"`
 	SourcePath  string `json:"source_path,omitempty"`
+	IsCustom    bool   `json:"is_custom,omitempty"`
 }
 
 type Project struct {
@@ -114,6 +126,19 @@ type Project struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description,omitempty"`
 	Laws        []string `json:"laws,omitempty"`
+}
+
+// TaskTemplate is a resolved template: frontmatter fields merged with the body
+// from a templates/<slug>.md file. The body is free-form markdown and is not
+// validated structurally — agents use it as a scaffold, not as schema.
+type TaskTemplate struct {
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Entity      string `json:"entity,omitempty"`
+	Body        string `json:"body,omitempty"`
+	SourcePath  string `json:"source_path,omitempty"`
+	IsCustom    bool   `json:"is_custom,omitempty"`
 }
 
 type Workflow struct {
@@ -164,9 +189,10 @@ type SourceWarning struct {
 type EntityKind string
 
 const (
-	EntityKindSkill   EntityKind = "skill"
-	EntityKindLaw     EntityKind = "law"
-	EntityKindPersona EntityKind = "persona"
+	EntityKindSkill    EntityKind = "skill"
+	EntityKindLaw      EntityKind = "law"
+	EntityKindPersona  EntityKind = "persona"
+	EntityKindTemplate EntityKind = "template"
 )
 
 // EntityFolder returns the per-kind folder name relative to the config dir.
@@ -178,6 +204,8 @@ func (k EntityKind) Folder() string {
 		return "laws"
 	case EntityKindPersona:
 		return "personas"
+	case EntityKindTemplate:
+		return "templates"
 	}
 	return ""
 }

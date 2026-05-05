@@ -1,0 +1,170 @@
+package config
+
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+const templateBase = `version: 1
+kit: { id: 1, key: default, name: Default }
+config:
+  output: { json_minified: true, omit_empty: true }
+  context: { default_level: 2, max_tokens: 12000 }
+  workflow: { active: default }
+  theme: { active: catppuccin }
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    buckets:
+      - { id: 1, key: backlog, name: Backlog, position: 1 }
+    transitions: []
+`
+
+func writeTemplateFixture(t *testing.T, dir string) {
+	t.Helper()
+	writeFile(t, filepath.Join(dir, "templates", "task-default.md"),
+		"---\nname: Default Task Template\ndescription: Standard scaffold\nentity: task\n---\n**User Story**\n\nComo X.\n")
+	writeFile(t, filepath.Join(dir, "templates", "task-bug.md"),
+		"---\nname: Bug Report\nentity: task\n---\n**Steps**\n\n1.\n")
+}
+
+func TestLoadTemplatesAutoLoadsAllFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeTemplateFixture(t, dir)
+	configPath := filepath.Join(dir, "omakiten.yaml")
+	writeFile(t, configPath, templateBase)
+
+	bundle, err := LoadBundle(configPath)
+	if err != nil {
+		t.Fatalf("LoadBundle() error = %v", err)
+	}
+	if len(bundle.Templates) != 2 {
+		t.Fatalf("Templates len = %d, want 2 (auto-load)", len(bundle.Templates))
+	}
+
+	bySlug := map[string]TaskTemplate{}
+	for _, tpl := range bundle.Templates {
+		bySlug[tpl.Slug] = tpl
+	}
+	def, ok := bySlug["task-default"]
+	if !ok {
+		t.Fatal("task-default missing from auto-load")
+	}
+	if def.Name != "Default Task Template" {
+		t.Fatalf("task-default name = %q, want Default Task Template", def.Name)
+	}
+	if !strings.Contains(def.Body, "User Story") {
+		t.Fatalf("task-default body missing scaffold content: %q", def.Body)
+	}
+	if def.Entity != "task" {
+		t.Fatalf("task-default entity = %q, want task", def.Entity)
+	}
+}
+
+func TestLoadTemplatesAllowlistFilters(t *testing.T) {
+	dir := t.TempDir()
+	writeTemplateFixture(t, dir)
+	configPath := filepath.Join(dir, "omakiten.yaml")
+	writeFile(t, configPath, templateBase+`templates:
+  - task-default
+`)
+
+	bundle, err := LoadBundle(configPath)
+	if err != nil {
+		t.Fatalf("LoadBundle() error = %v", err)
+	}
+	if len(bundle.Templates) != 1 || bundle.Templates[0].Slug != "task-default" {
+		t.Fatalf("Templates = %+v, want [task-default] only", bundle.Templates)
+	}
+}
+
+func TestLoadTemplatesListedSlugWithoutFileFails(t *testing.T) {
+	dir := t.TempDir()
+	writeTemplateFixture(t, dir)
+	configPath := filepath.Join(dir, "omakiten.yaml")
+	writeFile(t, configPath, templateBase+`templates:
+  - task-default
+  - missing-template
+`)
+
+	_, err := LoadBundle(configPath)
+	if err == nil {
+		t.Fatal("LoadBundle() error = nil, want missing-template failure")
+	}
+	if !strings.Contains(err.Error(), "missing-template") {
+		t.Fatalf("LoadBundle() error = %v, want missing-template mention", err)
+	}
+}
+
+func TestConfigTemplatesTaskMustResolve(t *testing.T) {
+	dir := t.TempDir()
+	writeTemplateFixture(t, dir)
+	configPath := filepath.Join(dir, "omakiten.yaml")
+	// Override the default config to point at a non-existent template slug.
+	writeFile(t, configPath, strings.Replace(
+		templateBase,
+		"  theme: { active: catppuccin }",
+		"  theme: { active: catppuccin }\n  templates: { task: not-a-real-slug }",
+		1,
+	))
+
+	_, err := LoadBundle(configPath)
+	if err == nil {
+		t.Fatal("LoadBundle() error = nil, want config.templates.task validation failure")
+	}
+	if !strings.Contains(err.Error(), "config.templates.task") {
+		t.Fatalf("LoadBundle() error = %v, want config.templates.task mention", err)
+	}
+}
+
+func TestConfigTemplatesTaskResolvesToBundle(t *testing.T) {
+	dir := t.TempDir()
+	writeTemplateFixture(t, dir)
+	configPath := filepath.Join(dir, "omakiten.yaml")
+	writeFile(t, configPath, strings.Replace(
+		templateBase,
+		"  theme: { active: catppuccin }",
+		"  theme: { active: catppuccin }\n  templates: { task: task-default }",
+		1,
+	))
+
+	bundle, err := LoadBundle(configPath)
+	if err != nil {
+		t.Fatalf("LoadBundle() error = %v", err)
+	}
+	if bundle.Config.Templates.Task != "task-default" {
+		t.Fatalf("Config.Templates.Task = %q, want task-default", bundle.Config.Templates.Task)
+	}
+}
+
+func TestLoadBundleWithoutTemplatesFolderIsNotError(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "omakiten.yaml")
+	writeFile(t, configPath, templateBase)
+
+	bundle, err := LoadBundle(configPath)
+	if err != nil {
+		t.Fatalf("LoadBundle() error = %v, want success when templates/ is absent", err)
+	}
+	if len(bundle.Templates) != 0 {
+		t.Fatalf("Templates = %+v, want empty", bundle.Templates)
+	}
+}
+
+func TestLoadTemplatesRequiresName(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "templates", "broken.md"),
+		"---\ndescription: missing name\n---\nbody\n")
+	configPath := filepath.Join(dir, "omakiten.yaml")
+	writeFile(t, configPath, templateBase)
+
+	_, err := LoadBundle(configPath)
+	if err == nil {
+		t.Fatal("LoadBundle() error = nil, want template name validation failure")
+	}
+	if !strings.Contains(err.Error(), "template name is required") {
+		t.Fatalf("LoadBundle() error = %v, want template name required", err)
+	}
+}

@@ -31,14 +31,26 @@ type Repository interface {
 	app.ErrorRepository
 }
 
+// TaskTemplateLookup returns the active task template scaffold to embed in
+// task-creation responses. It returns nil when no template is configured.
+type TaskTemplateLookup func() *TaskTemplateSummary
+
 type Service struct {
-	repo     Repository
-	selector ProjectSelector
-	counter  token.Counter
+	repo             Repository
+	selector         ProjectSelector
+	counter          token.Counter
+	taskTemplateLookup TaskTemplateLookup
 }
 
 func NewService(repo Repository, selector ProjectSelector) *Service {
 	return &Service{repo: repo, selector: selector, counter: token.NewCounter()}
+}
+
+// SetTaskTemplateLookup wires the active task template provider. The runtime
+// calls this after constructing the service so that CreateTask responses can
+// embed the configured scaffold.
+func (s *Service) SetTaskTemplateLookup(lookup TaskTemplateLookup) {
+	s.taskTemplateLookup = lookup
 }
 
 func (s *Service) Overview(ctx context.Context, input OverviewInput) (OverviewResponse, error) {
@@ -159,6 +171,8 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 		return CreateTaskResponse{}, domain.NewError(domain.ErrValidation, "task title or description is required", nil)
 	}
 
+	template := s.activeTaskTemplate()
+
 	if !input.SkipSimilarityCheck && !input.Confirmed {
 		tasks, err := app.NewTaskService(s.repo).List(ctx, project, domain.TaskFilter{})
 		if err != nil {
@@ -169,6 +183,7 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 			return CreateTaskResponse{
 				Project:      projectSummary(project),
 				SimilarTasks: similar,
+				Template:     template,
 				Confirmation: Confirmation{
 					RequiresConfirmation: true,
 					Reason:               "Likely duplicate or related work already exists in this project.",
@@ -186,7 +201,14 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 		return CreateTaskResponse{}, err
 	}
 	summary := taskSummary(task)
-	return CreateTaskResponse{Project: projectSummary(project), Task: &summary}, nil
+	return CreateTaskResponse{Project: projectSummary(project), Task: &summary, Template: template}, nil
+}
+
+func (s *Service) activeTaskTemplate() *TaskTemplateSummary {
+	if s.taskTemplateLookup == nil {
+		return nil
+	}
+	return s.taskTemplateLookup()
 }
 
 func (s *Service) CreateTask(ctx context.Context, input CreateTaskInput) (CreateTaskResponse, error) {

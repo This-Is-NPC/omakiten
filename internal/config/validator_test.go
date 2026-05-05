@@ -114,7 +114,7 @@ func TestValidateBundleErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			b := validBundle()
 			tc.mutate(&b)
-			err := ValidateBundle(b, b.Skills, b.Laws, b.Personas)
+			err := ValidateBundle(b, b.Skills, b.Laws, b.Personas, b.Templates)
 			if err == nil {
 				t.Fatalf("ValidateBundle() error = nil, want %q", tc.wantErr)
 			}

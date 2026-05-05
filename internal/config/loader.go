@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -17,27 +18,32 @@ import (
 )
 
 // LoadBundle reads omakiten.yaml plus the per-entity folders rooted at the
-// directory containing path, and returns a fully resolved Bundle.
+// parent directory of the yaml's parent (i.e. the config root that holds both
+// `config/omakiten.yaml` and the entity folders as siblings).
 //
 // Validation runs against the merged result; dangling refs and missing files
 // fail with an error suitable for wrapping in domain.ErrConfigInvalid.
 func LoadBundle(path string) (Bundle, error) {
-	configDir := filepath.Dir(path)
+	rootDir := ConfigRootFromYAMLPath(path)
 
 	wired, err := readWiring(path)
 	if err != nil {
 		return Bundle{}, err
 	}
 
-	skills, skillWarn, err := LoadSkills(filepath.Join(configDir, EntityKindSkill.Folder()))
+	skills, skillWarn, err := LoadSkills(filepath.Join(rootDir, EntityKindSkill.Folder()))
 	if err != nil {
 		return Bundle{}, err
 	}
-	laws, lawWarn, err := LoadLaws(filepath.Join(configDir, EntityKindLaw.Folder()))
+	laws, lawWarn, err := LoadLaws(filepath.Join(rootDir, EntityKindLaw.Folder()))
 	if err != nil {
 		return Bundle{}, err
 	}
-	personas, personaWarn, err := LoadPersonas(filepath.Join(configDir, EntityKindPersona.Folder()))
+	personas, personaWarn, err := LoadPersonas(filepath.Join(rootDir, EntityKindPersona.Folder()))
+	if err != nil {
+		return Bundle{}, err
+	}
+	templates, templateWarn, err := LoadTemplates(filepath.Join(rootDir, EntityKindTemplate.Folder()))
 	if err != nil {
 		return Bundle{}, err
 	}
@@ -52,27 +58,43 @@ func LoadBundle(path string) (Bundle, error) {
 	bundle.Warnings = append(bundle.Warnings, skillWarn...)
 	bundle.Warnings = append(bundle.Warnings, lawWarn...)
 	bundle.Warnings = append(bundle.Warnings, personaWarn...)
+	bundle.Warnings = append(bundle.Warnings, templateWarn...)
 
 	bundle.Skills = pickSkills(skills, wired.Skills)
 	bundle.Laws = pickLaws(laws, wired.Laws, wired.Personas, wired.Projects)
 	bundle.Personas = pickPersonas(personas, wired.Personas)
+	bundle.Templates = pickTemplates(templates, wired.Templates)
 	bundle.Projects = pickProjects(wired.Projects)
 
-	if err := assertRefsResolve(wired, skills, laws, personas); err != nil {
+	if err := assertRefsResolve(wired, skills, laws, personas, templates); err != nil {
 		return Bundle{}, err
 	}
-	if err := ValidateBundle(bundle, skills, laws, personas); err != nil {
+	if err := ValidateBundle(bundle, skills, laws, personas, templates); err != nil {
 		return Bundle{}, err
 	}
 	return bundle, nil
 }
 
+// ConfigRootFromYAMLPath strips the trailing `config/omakiten.yaml` from path
+// and returns the layout root that holds both the yaml and the entity folders
+// as siblings. When the yaml is supplied directly at the root (legacy flat
+// layout) we return its parent so callers can still locate entities — the
+// migration step deals with normalizing the on-disk shape.
+func ConfigRootFromYAMLPath(path string) string {
+	configDir := filepath.Dir(path)
+	if filepath.Base(configDir) == "config" {
+		return filepath.Dir(configDir)
+	}
+	return configDir
+}
+
 // assertRefsResolve checks every slug referenced by omakiten.yaml against the
 // loaded entity sets and fails fast on a dangling ref.
-func assertRefsResolve(w wiring, skills []Skill, laws []Law, personas []Persona) error {
+func assertRefsResolve(w wiring, skills []Skill, laws []Law, personas []Persona, templates []TaskTemplate) error {
 	skillSet := slugSet(loadedSkillSlugs(skills))
 	lawSet := slugSet(loadedLawSlugs(laws))
 	personaSet := slugSet(loadedPersonaSlugs(personas))
+	templateSet := slugSet(loadedTemplateSlugs(templates))
 
 	for _, slug := range w.Skills {
 		if _, ok := skillSet[slug]; !ok {
@@ -82,6 +104,16 @@ func assertRefsResolve(w wiring, skills []Skill, laws []Law, personas []Persona)
 	for _, slug := range w.Laws {
 		if _, ok := lawSet[slug]; !ok {
 			return fmt.Errorf("laws: ref %q has no matching file", slug)
+		}
+	}
+	for _, slug := range w.Templates {
+		if _, ok := templateSet[slug]; !ok {
+			return fmt.Errorf("templates: ref %q has no matching file", slug)
+		}
+	}
+	if slug := strings.TrimSpace(w.Config.Templates.Task); slug != "" {
+		if _, ok := templateSet[slug]; !ok {
+			return fmt.Errorf("config.templates.task: ref %q has no matching file in templates/", slug)
 		}
 	}
 	for _, persona := range w.Personas {
@@ -287,6 +319,33 @@ func pickPersonas(loaded []Persona, refs []PersonaWiring) []Persona {
 	return out
 }
 
+// pickTemplates filters the on-disk template set against the wiring's
+// allowlist. When the wiring omits the `templates:` slot every loaded template
+// is auto-included; when present it acts as a strict allowlist.
+func pickTemplates(loaded []TaskTemplate, refs []string) []TaskTemplate {
+	if len(refs) == 0 {
+		out := make([]TaskTemplate, len(loaded))
+		copy(out, loaded)
+		return out
+	}
+	bySlug := map[string]TaskTemplate{}
+	for _, t := range loaded {
+		bySlug[t.Slug] = t
+	}
+	out := make([]TaskTemplate, 0, len(refs))
+	seen := map[string]struct{}{}
+	for _, ref := range refs {
+		if _, dup := seen[ref]; dup {
+			continue
+		}
+		seen[ref] = struct{}{}
+		if t, ok := bySlug[ref]; ok {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 func pickProjects(refs []ProjectWiring) []Project {
 	out := make([]Project, 0, len(refs))
 	for _, ref := range refs {
@@ -334,28 +393,59 @@ func HashFile(path string) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-// EnsureDefaultFiles materializes the embedded default kit into configDir on
-// first run. Existing files are never overwritten.
-func EnsureDefaultFiles(configDir string) error {
-	if err := copyDefaultIfMissing(filepath.Join(configDir, "omakiten.yaml"), "omakiten.yaml"); err != nil {
+// entityFolders lists the per-kind folders the layout expects as siblings of
+// the config/ yaml dir. Order matters only insofar as the migration path uses
+// it for stable iteration.
+var entityFolders = []string{"skills", "laws", "personas", "templates", "themes"}
+
+// EnsureDefaultFiles materializes the embedded default kit into a config root
+// using the new layout. Existing files are not overwritten — this is the
+// startup path that runs every time and must preserve user state.
+//
+//	<root>/config/omakiten.yaml
+//	<root>/<entity>/<file>      # only added if missing
+//	<root>/<entity>/custom/     # always created (empty placeholder)
+//
+// To overwrite defaults aggressively (e.g. on `okt install`) use
+// RefreshDefaultFiles instead.
+func EnsureDefaultFiles(rootDir string) error {
+	if err := copyDefaultIfMissing(filepath.Join(rootDir, "config", "omakiten.yaml"), "omakiten.yaml"); err != nil {
 		return err
 	}
-	if err := copyDefaultDir(configDir, "skills"); err != nil {
-		return err
-	}
-	if err := copyDefaultDir(configDir, "laws"); err != nil {
-		return err
-	}
-	if err := copyDefaultDir(configDir, "personas"); err != nil {
-		return err
-	}
-	if err := copyDefaultDir(configDir, "themes"); err != nil {
-		return err
+	for _, sub := range entityFolders {
+		if err := copyDefaultDir(rootDir, sub, false); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Join(rootDir, sub, "custom"), 0o755); err != nil {
+			return fmt.Errorf("create %s/custom: %w", sub, err)
+		}
 	}
 	return nil
 }
 
-func copyDefaultDir(configDir, sub string) error {
+// RefreshDefaultFiles overwrites every default file at the root of each entity
+// folder with the embed contents, unconditionally. The user-owned `custom/`
+// subtree is never touched. Use this from install scripts and dev sync flows
+// — never from regular runtime startup, because it would clobber edits the
+// user made directly to the default files.
+//
+// The yaml file at <root>/config/omakiten.yaml is also refreshed.
+func RefreshDefaultFiles(rootDir string) error {
+	if err := copyDefaultOverwrite(filepath.Join(rootDir, "config", "omakiten.yaml"), "omakiten.yaml"); err != nil {
+		return err
+	}
+	for _, sub := range entityFolders {
+		if err := copyDefaultDir(rootDir, sub, true); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Join(rootDir, sub, "custom"), 0o755); err != nil {
+			return fmt.Errorf("create %s/custom: %w", sub, err)
+		}
+	}
+	return nil
+}
+
+func copyDefaultDir(rootDir, sub string, overwrite bool) error {
 	entries, err := defaults.FS.ReadDir(sub)
 	if err != nil {
 		// A subfolder absent from the embed FS just means there are no
@@ -371,9 +461,15 @@ func copyDefaultDir(configDir, sub string) error {
 			continue
 		}
 		src := sub + "/" + entry.Name()
-		dst := filepath.Join(configDir, sub, entry.Name())
-		if err := copyDefaultIfMissing(dst, src); err != nil {
-			return err
+		dst := filepath.Join(rootDir, sub, entry.Name())
+		if overwrite {
+			if err := copyDefaultOverwrite(dst, src); err != nil {
+				return err
+			}
+		} else {
+			if err := copyDefaultIfMissing(dst, src); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -385,7 +481,10 @@ func copyDefaultIfMissing(dstPath, srcPath string) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
+	return copyDefaultOverwrite(dstPath, srcPath)
+}
 
+func copyDefaultOverwrite(dstPath, srcPath string) error {
 	data, err := defaults.FS.ReadFile(srcPath)
 	if err != nil {
 		return fmt.Errorf("read default %s: %w", srcPath, err)

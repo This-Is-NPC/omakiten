@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -152,6 +153,183 @@ func TestEntityRefreshAfterEditorMessage(t *testing.T) {
 	}
 	if got.status != "Saved" {
 		t.Fatalf("status = %q, want Saved", got.status)
+	}
+}
+
+// newEntityModelWithTemplates writes a templates/ folder before constructing
+// the model so refresh() picks up template files. The bundle's config slug
+// becomes the active template.
+func newEntityModelWithTemplates(t *testing.T) Model {
+	t.Helper()
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
+	dbPath := filepath.Join(tmp, "omakiten.db")
+
+	bundle := tuiTestBundle()
+	bundle.Config.Templates = config.TemplateSettings{Task: "task-default"}
+	if err := config.SaveFullBundle(configPath, bundle); err != nil {
+		t.Fatalf("SaveFullBundle() error = %v", err)
+	}
+
+	templatesDir := filepath.Join(tmp, "templates")
+	if err := os.MkdirAll(templatesDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(templatesDir, "task-default.md"),
+		[]byte("---\nname: Default Task Template\ndescription: Standard scaffold\nentity: task\n---\n**User Story**\n\nComo X.\n"),
+		0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(templatesDir, "task-bug.md"),
+		[]byte("---\nname: Bug Report\nentity: task\n---\n**Steps**\n\n1.\n"),
+		0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	editor := app.NewBundleEditor(store, configPath)
+	if _, err := editor.Apply(ctx, nil); err != nil {
+		t.Fatalf("editor.Apply() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
+	}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	return model
+}
+
+func TestRefreshLoadsTemplatesFromBundle(t *testing.T) {
+	model := newEntityModelWithTemplates(t)
+
+	if len(model.templates) != 2 {
+		t.Fatalf("model.templates len = %d, want 2", len(model.templates))
+	}
+	if model.activeTaskTemplateSlug != "task-default" {
+		t.Fatalf("activeTaskTemplateSlug = %q, want task-default", model.activeTaskTemplateSlug)
+	}
+	if path := model.entitySourcePath(entityKindTemplate, "task-default"); path == "" {
+		t.Fatalf("entitySourcePath(template, task-default) empty, want a real path")
+	}
+}
+
+func TestEntityCellRendersTemplatesWithActiveBadge(t *testing.T) {
+	model := newEntityModelWithTemplates(t)
+	model.entityKind = entityKindTemplate
+
+	cell := model.renderEntityCell(entityKindTemplate)
+	for _, want := range []string{"// TEMPLATES · 2", "task-default", "task-bug", "ACTIVE"} {
+		if !strings.Contains(cell, want) {
+			t.Fatalf("renderEntityCell missing %q\n%s", want, cell)
+		}
+	}
+}
+
+func TestCustomBadgeAppearsOnUserOverride(t *testing.T) {
+	model := newEntityModelWithTemplates(t)
+	// Drop a same-slug override into skills/custom/ so the loader merges it
+	// with IsCustom=true. Refresh picks it up via the bundle.
+	tmp := model.repos.Editor.RootDir()
+	customPath := filepath.Join(tmp, "skills", "custom", "go.md")
+	if err := os.MkdirAll(filepath.Dir(customPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(customPath, []byte("---\nname: Go (custom)\n---\noverride\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if _, err := model.repos.Editor.Apply(model.ctx, nil); err != nil {
+		t.Fatalf("editor.Apply() error = %v", err)
+	}
+	if err := model.refresh(); err != nil {
+		t.Fatalf("refresh() error = %v", err)
+	}
+
+	cell := model.renderEntityCell(entityKindSkill)
+	if !strings.Contains(cell, "CUSTOM") {
+		t.Fatalf("renderEntityCell missing CUSTOM badge for overridden go skill\n%s", cell)
+	}
+}
+
+func TestRenderConfigShowsTemplatesColumn(t *testing.T) {
+	model := newEntityModelWithTemplates(t)
+	// Force a width that fits the 5-column layout; renderConfig branches on
+	// availableWidth() so without a sized window the column might fall back
+	// to the secondary-row treatment.
+	model.width = 200
+	model.height = 60
+
+	out := model.renderConfig()
+	if !strings.Contains(out, "// TEMPLATES") {
+		t.Fatalf("renderConfig missing templates column\n%s", out)
+	}
+	// Sanity: existing columns still render alongside.
+	for _, want := range []string{"// LAWS", "// PERSONAS", "// SKILLS", "// TAGS"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("renderConfig missing %q\n%s", want, out)
+		}
+	}
+}
+
+func TestEntityViewRendersTemplateBody(t *testing.T) {
+	model := newEntityModelWithTemplates(t)
+	model.entityKind = entityKindTemplate
+	// Cursor at 0 points to the alphabetically-first template (task-bug);
+	// move to task-default explicitly so the assertion is not order-coupled.
+	if model.entityCursors == nil {
+		model.entityCursors = map[entityKind]int{}
+	}
+	for i, tpl := range model.templates {
+		if tpl.Slug == "task-default" {
+			model.entityCursors[entityKindTemplate] = i
+			break
+		}
+	}
+	model.openSelectedEntityView()
+
+	view := model.renderEntityView()
+	for _, want := range []string{"// TEMPLATE", "// SLUG", "// NAME", "// BODY", "User Story"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("renderEntityView missing %q\n%s", want, view)
+		}
+	}
+}
+
+func TestTemplateCreateAndDeleteAreNoOps(t *testing.T) {
+	model := newEntityModelWithTemplates(t)
+	// Switch into config view (4) so 'n'/'d' route to handleConfigKey rather than
+	// the table view's create-task / delete-task handlers.
+	model = pressRune(t, model, '4')
+	for model.entityKind != entityKindTemplate {
+		model = pressStringKey(t, model, "right")
+	}
+	beforeLen := len(model.templates)
+
+	got := pressRune(t, model, 'n')
+	if len(got.templates) != beforeLen {
+		t.Fatalf("templates len after 'n' = %d, want unchanged %d", len(got.templates), beforeLen)
+	}
+	if !strings.Contains(got.status, "auto-load") {
+		t.Fatalf("status after 'n' = %q, want auto-load hint", got.status)
+	}
+
+	got = pressRune(t, got, 'd')
+	if got.deletePending {
+		t.Fatalf("deletePending = true after 'd' on template, want no delete confirmation")
+	}
+	if !strings.Contains(got.status, "auto-load") {
+		t.Fatalf("status after 'd' = %q, want auto-load hint", got.status)
 	}
 }
 

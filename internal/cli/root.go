@@ -88,7 +88,11 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 	}
 
 	if materializeConfig {
-		if err := config.EnsureDefaultFiles(filepath.Dir(configPath)); err != nil {
+		rootDir := config.ConfigRootFromYAMLPath(configPath)
+		if err := config.MigrateLayout(rootDir); err != nil {
+			return nil, err
+		}
+		if err := config.EnsureDefaultFiles(rootDir); err != nil {
 			return nil, err
 		}
 	}

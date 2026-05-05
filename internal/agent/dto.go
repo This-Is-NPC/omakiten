@@ -158,10 +158,20 @@ type CreateTaskInput struct {
 }
 
 type CreateTaskResponse struct {
-	Project      ProjectSummary `json:"project"`
-	Confirmation Confirmation   `json:"confirmation,omitempty"`
-	SimilarTasks []TaskSummary  `json:"similar_tasks,omitempty"`
-	Task         *TaskSummary   `json:"task,omitempty"`
+	Project      ProjectSummary       `json:"project"`
+	Confirmation Confirmation         `json:"confirmation,omitempty"`
+	SimilarTasks []TaskSummary        `json:"similar_tasks,omitempty"`
+	Task         *TaskSummary         `json:"task,omitempty"`
+	Template     *TaskTemplateSummary `json:"template,omitempty"`
+}
+
+// TaskTemplateSummary is the scaffold returned alongside CreateTask responses.
+// Body is the raw markdown the agent should use when authoring the task body.
+type TaskTemplateSummary struct {
+	Slug        string `json:"slug"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	Body        string `json:"body"`
 }
 
 type MoveTaskInput struct {

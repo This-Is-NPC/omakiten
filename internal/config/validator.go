@@ -21,7 +21,7 @@ var allowedSeverities = map[string]struct{}{
 //   - severities are within the allowed enum
 //   - persona skill refs resolve to loaded skills
 //   - persona/project law refs resolve and don't double-list a global law
-func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loadedPersonas []Persona) error {
+func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loadedPersonas []Persona, loadedTemplates []TaskTemplate) error {
 	if bundle.Version != 1 {
 		return fmt.Errorf("version must be 1")
 	}
@@ -44,6 +44,18 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	skillSet := slugSet(loadedSkillSlugs(loadedSkills))
 	lawSet := slugSet(loadedLawSlugs(loadedLaws))
 	personaSet := slugSet(loadedPersonaSlugs(loadedPersonas))
+	templateSet := slugSet(loadedTemplateSlugs(loadedTemplates))
+
+	for _, template := range bundle.Templates {
+		if _, ok := templateSet[template.Slug]; !ok {
+			return fmt.Errorf("templates: ref %q has no matching file", template.Slug)
+		}
+	}
+	if slug := strings.TrimSpace(bundle.Config.Templates.Task); slug != "" {
+		if _, ok := templateSet[slug]; !ok {
+			return fmt.Errorf("config.templates.task: ref %q has no matching file in templates/", slug)
+		}
+	}
 
 	for _, skill := range bundle.Skills {
 		if _, ok := skillSet[skill.Slug]; !ok {
@@ -130,6 +142,14 @@ func loadedLawSlugs(items []Law) []string {
 }
 
 func loadedPersonaSlugs(items []Persona) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		out = append(out, item.Slug)
+	}
+	return out
+}
+
+func loadedTemplateSlugs(items []TaskTemplate) []string {
 	out := make([]string, 0, len(items))
 	for _, item := range items {
 		out = append(out, item.Slug)

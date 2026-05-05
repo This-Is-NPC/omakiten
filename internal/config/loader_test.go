@@ -50,21 +50,65 @@ func TestEnsureDefaultFiles(t *testing.T) {
 		t.Fatalf("EnsureDefaultFiles() error = %v", err)
 	}
 
-	// Verify omakiten.yaml was created
-	if _, err := os.Stat(filepath.Join(tmp, "omakiten.yaml")); err != nil {
-		t.Fatalf("omakiten.yaml missing: %v", err)
+	// New layout: yaml lives under config/, entity dirs are siblings.
+	if _, err := os.Stat(filepath.Join(tmp, "config", "omakiten.yaml")); err != nil {
+		t.Fatalf("config/omakiten.yaml missing: %v", err)
 	}
 
-	// Verify skills, laws, personas, themes dirs were created
-	for _, dir := range []string{"skills", "laws", "personas", "themes"} {
+	for _, dir := range []string{"skills", "laws", "personas", "templates", "themes"} {
 		if _, err := os.Stat(filepath.Join(tmp, dir)); err != nil {
 			t.Fatalf("%s dir missing: %v", dir, err)
+		}
+		// Each entity dir must have a custom/ subtree the user can write into.
+		if _, err := os.Stat(filepath.Join(tmp, dir, "custom")); err != nil {
+			t.Fatalf("%s/custom dir missing: %v", dir, err)
+		}
+	}
+
+	// The default kit must ship the task and PR templates; otherwise the embed.FS
+	// pattern silently dropped the templates/ subtree.
+	for _, name := range []string{"user-story.md", "pull-request.md"} {
+		if _, err := os.Stat(filepath.Join(tmp, "templates", name)); err != nil {
+			t.Fatalf("default template %s missing: %v", name, err)
 		}
 	}
 
 	// Second call should not error and should not overwrite
 	if err := EnsureDefaultFiles(tmp); err != nil {
 		t.Fatalf("EnsureDefaultFiles() second call error = %v", err)
+	}
+}
+
+func TestRefreshDefaultFilesOverwrites(t *testing.T) {
+	tmp := t.TempDir()
+	if err := EnsureDefaultFiles(tmp); err != nil {
+		t.Fatalf("EnsureDefaultFiles() error = %v", err)
+	}
+
+	// Mutate a default file to simulate user customization at the root.
+	defaultPath := filepath.Join(tmp, "skills", "go.md")
+	if err := os.WriteFile(defaultPath, []byte("# user edited\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	customPath := filepath.Join(tmp, "skills", "custom", "mine.md")
+	if err := os.WriteFile(customPath, []byte("---\nname: Mine\n---\nmine\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if err := RefreshDefaultFiles(tmp); err != nil {
+		t.Fatalf("RefreshDefaultFiles() error = %v", err)
+	}
+
+	got, err := os.ReadFile(defaultPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if string(got) == "# user edited\n" {
+		t.Fatalf("RefreshDefaultFiles did not overwrite the default file")
+	}
+
+	if _, err := os.Stat(customPath); err != nil {
+		t.Fatalf("RefreshDefaultFiles touched custom/: %v", err)
 	}
 }
 

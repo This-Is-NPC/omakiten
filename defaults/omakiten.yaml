@@ -14,6 +14,11 @@ config:
     active: default
   theme:
     active: omakiten
+  templates:
+    # Slug of the task template (file in templates/<slug>.md) included in
+    # tasks_create / tasks_create_intent responses as a scaffold for the agent.
+    # Comment out to disable; missing slugs fail validation.
+    task: user-story
 workflows:
   - id: 1
     key: default

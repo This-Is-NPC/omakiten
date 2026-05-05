@@ -269,7 +269,7 @@ func TestBundleEditorApplyRollsBackOnFailure(t *testing.T) {
 	ctx := context.Background()
 	fixture := newEntitiesFixture(t)
 
-	skillPath := config.EntityFilePath(fixture.configDir, config.EntityKindSkill, "go")
+	skillPath := config.EntityFilePath(filepath.Dir(fixture.configDir), config.EntityKindSkill, "go")
 	originalSkill, err := os.ReadFile(skillPath)
 	if err != nil {
 		t.Fatalf("ReadFile(go.md) error = %v", err)

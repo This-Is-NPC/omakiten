@@ -74,16 +74,20 @@ type Model struct {
 	blockerPickerCursor int
 	blockerPickerChecks map[int64]bool
 
-	tasks        []domain.Task
-	workflow     domain.Workflow
-	dependencies []domain.TaskDependency
-	comments     []domain.Comment
-	laws         []domain.Law
-	skills       []domain.Skill
-	personas     []domain.Persona
-	entries      []domain.ContextEntry
-	tags         []domain.Tag
-	taskTagsMap  map[int64][]domain.Tag
+	tasks                  []domain.Task
+	workflow               domain.Workflow
+	dependencies           []domain.TaskDependency
+	comments               []domain.Comment
+	laws                   []domain.Law
+	skills                 []domain.Skill
+	personas               []domain.Persona
+	templates              []config.TaskTemplate
+	activeTaskTemplateSlug string
+	themePickerOptions     []themeOption
+	configPickerOptions    []configOption
+	entries                []domain.ContextEntry
+	tags                   []domain.Tag
+	taskTagsMap            map[int64][]domain.Tag
 	metrics      domain.TokenMetrics
 	selected     int
 	colIdx       int
@@ -1408,6 +1412,8 @@ func (m *Model) refresh() error {
 	// The store returns identity-level fields only (id, key, name, severity).
 	// Merge frontmatter + body + source_path from the on-disk bundle so the
 	// detail views and the $EDITOR shell-out have the file path they need.
+	var templates []config.TaskTemplate
+	var activeTemplate string
 	if m.repos.Editor != nil {
 		bundle, err := m.repos.Editor.Load()
 		if err != nil {
@@ -1416,6 +1422,10 @@ func (m *Model) refresh() error {
 		skills = enrichSkillsFromBundle(skills, bundle)
 		laws = enrichLawsFromBundle(laws, bundle)
 		personas = enrichPersonasFromBundle(personas, bundle)
+		// Templates live only in the bundle (no SQLite materialization), so
+		// the TUI mirrors them straight from disk on every refresh.
+		templates = append([]config.TaskTemplate(nil), bundle.Templates...)
+		activeTemplate = bundle.Config.Templates.Task
 	}
 	entries, err := m.repos.Entries.ListContextEntries(m.ctx, m.project.ID)
 	if err != nil {
@@ -1445,6 +1455,8 @@ func (m *Model) refresh() error {
 	m.laws = laws
 	m.skills = skills
 	m.personas = personas
+	m.templates = templates
+	m.activeTaskTemplateSlug = activeTemplate
 	m.entries = entries
 	m.tags = allTags
 	m.taskTagsMap = taskTagsMap
@@ -2632,21 +2644,49 @@ func (m Model) renderConfig() string {
 	// above it.
 	// 3-col: 1 + 28 + 1 + 28 + 1 + 28 + 1 = 88
 	// 4-col: 1 + 28 + 1 + 28 + 1 + 28 + 1 + 28 + 1 = 117
+	// 5-col: 1 + 28 + 1 + 28 + 1 + 28 + 1 + 28 + 1 + 28 + 1 = 146
 	const (
 		entityGridTotal3 = entityListWidth*3 + 4
 		entityGridTotal4 = entityListWidth*4 + 5
+		entityGridTotal5 = entityListWidth*5 + 6
 	)
+	colWidths4 := []int{entityListWidth, entityListWidth, entityListWidth, entityListWidth}
+	colWidths5 := append(append([]int{}, colWidths4...), entityListWidth)
 	var lists string
 	switch {
-	case m.availableWidth() >= entityGridTotal4:
+	case m.availableWidth() >= entityGridTotal5:
 		lists = renderRowGrid(
 			[]string{
 				m.renderEntityCell(entityKindLaw),
 				m.renderEntityCell(entityKindPersona),
 				m.renderEntityCell(entityKindSkill),
+				m.renderEntityCell(entityKindTemplate),
 				m.renderEntityCell(entityKindTag),
 			},
-			[]int{entityListWidth, entityListWidth, entityListWidth, entityListWidth},
+			colWidths5,
+			m.styles.border,
+		)
+	case m.availableWidth() >= entityGridTotal4:
+		// Drop the secondary kind (Templates or Tags) the user is not focused on
+		// to a row below — same fallback used for tags at the 3-col breakpoint.
+		primary := []string{
+			m.renderEntityCell(entityKindLaw),
+			m.renderEntityCell(entityKindPersona),
+			m.renderEntityCell(entityKindSkill),
+		}
+		var secondary entityKind
+		switch m.entityKind {
+		case entityKindTemplate:
+			primary = append(primary, m.renderEntityCell(entityKindTemplate))
+			secondary = entityKindTag
+		default:
+			primary = append(primary, m.renderEntityCell(entityKindTag))
+			secondary = entityKindTemplate
+		}
+		lists = renderRowGrid(primary, colWidths4, m.styles.border)
+		lists += "\n\n" + renderRowGrid(
+			[]string{m.renderEntityCell(secondary)},
+			[]int{clampInt(m.availableWidth()-2, 16, entityListWidth)},
 			m.styles.border,
 		)
 	case m.availableWidth() >= entityGridTotal3:
@@ -2659,9 +2699,9 @@ func (m Model) renderConfig() string {
 			[]int{entityListWidth, entityListWidth, entityListWidth},
 			m.styles.border,
 		)
-		if m.entityKind == entityKindTag {
+		if m.entityKind == entityKindTag || m.entityKind == entityKindTemplate {
 			lists += "\n\n" + renderRowGrid(
-				[]string{m.renderEntityCell(entityKindTag)},
+				[]string{m.renderEntityCell(m.entityKind)},
 				[]int{clampInt(m.availableWidth()-2, 16, entityListWidth)},
 				m.styles.border,
 			)
@@ -2702,6 +2742,10 @@ func (m Model) renderFooter() string {
 		text = "j/k scroll  e edit in $EDITOR  d arm delete  p skills (persona)  r refresh  esc config"
 	case m.entityScreen == entityScreenSkillPicker:
 		text = "up/down move  pgup/pgdn scroll  space toggle  enter on '+': new skill  ctrl+s save  esc cancel"
+	case m.entityScreen == entityScreenThemePicker:
+		text = "up/down move  pgup/pgdn scroll  enter apply (hot-reload)  esc cancel"
+	case m.entityScreen == entityScreenConfigPicker:
+		text = "up/down move  pgup/pgdn scroll  enter select (restart required)  esc cancel"
 	case m.moveMode:
 		text = "left/right move task to lane  esc cancel  q quit"
 	case m.view == 0:
@@ -2711,7 +2755,7 @@ func (m Model) renderFooter() string {
 	case m.view == 3 && m.entityKind == entityKindTag:
 		text = "left/right section  up/down select  d arm delete (orphan)  D delete all orphans  ? help"
 	case m.view == 3:
-		text = "left/right section  up/down select  enter open  n new  e edit  d arm delete  ? help"
+		text = "left/right section  up/down select  enter open  n new  e edit  d arm delete  t theme  c config  ? help"
 	case m.view == 4:
 		text = "left/right switch view  up/down select row  pgup/pgdn scroll  g/G top/bottom  r refresh  ? help"
 	case m.view == 2:

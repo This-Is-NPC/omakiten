@@ -36,7 +36,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 
-	if err := config.EnsureDefaultFiles(filepath.Dir(configPath)); err != nil {
+	rootDir := config.ConfigRootFromYAMLPath(configPath)
+	if err := config.MigrateLayout(rootDir); err != nil {
+		return nil, err
+	}
+	if err := config.EnsureDefaultFiles(rootDir); err != nil {
 		return nil, err
 	}
 
@@ -45,7 +49,8 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 
-	if _, _, err := app.NewConfigService(store).Import(ctx, configPath); err != nil {
+	bundle, _, err := app.NewConfigService(store).Import(ctx, configPath)
+	if err != nil {
 		_ = store.Close()
 		return nil, err
 	}
@@ -61,7 +66,33 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 
 	runtime := &Runtime{store: store, configPath: configPath, dbPath: dbPath}
 	runtime.service = NewService(store, ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
+	runtime.service.SetTaskTemplateLookup(taskTemplateLookup(bundle))
 	return runtime, nil
+}
+
+// taskTemplateLookup captures the bundle at runtime startup and returns a
+// closure that resolves the active task template scaffold on demand. Returns
+// nil when no template is configured or the slug points at a missing file.
+func taskTemplateLookup(bundle config.Bundle) TaskTemplateLookup {
+	slug := bundle.Config.Templates.Task
+	if slug == "" {
+		return nil
+	}
+	for _, tpl := range bundle.Templates {
+		if tpl.Slug == slug {
+			summary := TaskTemplateSummary{
+				Slug:        tpl.Slug,
+				Name:        tpl.Name,
+				Description: tpl.Description,
+				Body:        tpl.Body,
+			}
+			return func() *TaskTemplateSummary {
+				out := summary
+				return &out
+			}
+		}
+	}
+	return nil
 }
 
 func (r *Runtime) Close() error {
