@@ -316,11 +316,11 @@ func TestModelOpensExistingTaskScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	humanComment, err := store.AddComment(ctx, project.ID, task.ID, "Looks good to me.", "human")
+	humanComment, err := store.AddComment(ctx, project.ID, task.ID, "Looks good to me.", "human", nil)
 	if err != nil {
 		t.Fatalf("AddComment(human) error = %v", err)
 	}
-	agentComment, err := store.AddComment(ctx, project.ID, task.ID, "I can take the next step.", "agent")
+	agentComment, err := store.AddComment(ctx, project.ID, task.ID, "I can take the next step.", "agent", nil)
 	if err != nil {
 		t.Fatalf("AddComment(agent) error = %v", err)
 	}

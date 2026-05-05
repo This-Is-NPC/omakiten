@@ -39,7 +39,7 @@ func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 			if err != nil {
 				return nil, err
 			}
-			comment, err := app.NewCommentService(rt.store).Add(ctx, project, taskID, body, author)
+			comment, err := app.NewCommentService(rt.store).Add(ctx, project, taskID, body, author, nil)
 				if err != nil {
 					return nil, err
 				}
