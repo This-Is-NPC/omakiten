@@ -60,4 +60,14 @@ type TagRepository interface {
 	AddProjectTag(ctx context.Context, projectID, tagID int64) error
 	RemoveProjectTag(ctx context.Context, projectID, tagID int64) error
 	ListProjectTags(ctx context.Context, projectID int64) ([]domain.Tag, error)
+	AddErrorTag(ctx context.Context, errorID, tagID int64) error
+	RemoveErrorTag(ctx context.Context, errorID, tagID int64) error
+	ListErrorTags(ctx context.Context, errorID int64) ([]domain.Tag, error)
+}
+
+type ErrorRepository interface {
+	RecordError(ctx context.Context, projectID int64, description, context string, tags []domain.Tag) (domain.ErrorRecord, error)
+	SearchErrors(ctx context.Context, query string, tagNames []string) ([]domain.ErrorRecord, error)
+	AddSolution(ctx context.Context, errorID int64, description, steps string, taskID *int64) (domain.Solution, error)
+	ConfirmSolution(ctx context.Context, solutionID int64, success bool) (domain.Solution, error)
 }

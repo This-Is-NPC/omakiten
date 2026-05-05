@@ -21,6 +21,8 @@ const (
 	ErrTagNotFound               ErrorCode = "tag_not_found"
 	ErrTagConflict               ErrorCode = "tag_conflict"
 	ErrGuardViolation            ErrorCode = "guard_violation"
+	ErrErrorNotFound             ErrorCode = "error_not_found"
+	ErrSolutionNotFound          ErrorCode = "solution_not_found"
 )
 
 type CodedError struct {

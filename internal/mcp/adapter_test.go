@@ -32,6 +32,10 @@ func TestToolsIncludePlannedSurface(t *testing.T) {
 		"context.add":         false,
 		"workflow.show":       false,
 		"progress.record":     false,
+		"errors.record":       false,
+		"errors.search":       false,
+		"solutions.add":       false,
+		"solutions.confirm":   false,
 	}
 	for _, tool := range Tools() {
 		if _, ok := want[tool.Name]; ok {
@@ -112,6 +116,10 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		"context.dump",
 		"workflow.show",
 		"progress.record",
+		"errors.record",
+		"errors.search",
+		"solutions.add",
+		"solutions.confirm",
 	}
 
 	for _, name := range tools {
@@ -129,6 +137,14 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 			args = map[string]any{"level": 1}
 		case "progress.record":
 			args = map[string]any{"task_id": 1, "comment": "note"}
+		case "errors.record":
+			args = map[string]any{"description": "boom", "tags": []any{"sqlite"}}
+		case "errors.search":
+			args = map[string]any{"tags": []any{"sqlite"}}
+		case "solutions.add":
+			args = map[string]any{"error_id": 1, "description": "try X"}
+		case "solutions.confirm":
+			args = map[string]any{"solution_id": 1, "success": true}
 		}
 		_, err := adapter.CallTool(ctx, name, args)
 		if err != nil {
