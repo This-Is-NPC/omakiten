@@ -127,10 +127,10 @@ func TestStoreOperationalDataIsProjectScoped(t *testing.T) {
 		t.Fatalf("CreateTask(B) error = %v", err)
 	}
 
-	if _, err := store.AddComment(ctx, projectA.ID, taskA1.ID, "A note", "human"); err != nil {
+	if _, err := store.AddComment(ctx, projectA.ID, taskA1.ID, "A note", "human", nil); err != nil {
 		t.Fatalf("AddComment(A) error = %v", err)
 	}
-	if _, err := store.AddComment(ctx, projectB.ID, taskB.ID, "B note", "human"); err != nil {
+	if _, err := store.AddComment(ctx, projectB.ID, taskB.ID, "B note", "human", nil); err != nil {
 		t.Fatalf("AddComment(B) error = %v", err)
 	}
 	comments, err := store.ListComments(ctx, projectA.ID, 0)
@@ -510,6 +510,228 @@ func TestStoreMoveTaskErrors(t *testing.T) {
 	}
 	if moved.BucketKey != "backlog" {
 		t.Fatalf("MoveTask().BucketKey = %q, want backlog", moved.BucketKey)
+	}
+}
+
+func bundleWithBlockersInGuard() config.Bundle {
+	b := sqliteTestBundle()
+	b.Workflows[0].Transitions = []config.Transition{{
+		From: 1, To: 2,
+		Guards: []config.TransitionGuard{{Type: "blockers_in", Buckets: []string{"done"}}},
+	}}
+	return b
+}
+
+func bundleWithCommentsMinGuard(minCount int) config.Bundle {
+	b := sqliteTestBundle()
+	b.Workflows[0].Transitions = []config.Transition{{
+		From: 1, To: 2,
+		Guards: []config.TransitionGuard{{Type: "comments_min", Count: minCount}},
+	}}
+	return b
+}
+
+func bundleWithCommentsTaggedGuard(tag string, minCount int) config.Bundle {
+	b := sqliteTestBundle()
+	b.Workflows[0].Transitions = []config.Transition{{
+		From: 1, To: 2,
+		Guards: []config.TransitionGuard{{Type: "comments_tagged", Tag: tag, Count: minCount}},
+	}}
+	return b
+}
+
+func TestStoreMoveTaskGuardBlockersIn(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, bundleWithBlockersInGuard(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+
+	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
+
+	blocker, _ := store.CreateTask(ctx, project.ID, "Blocker", "", "", "backlog")
+	main, _ := store.CreateTask(ctx, project.ID, "Main", "", "", "backlog")
+	if _, err := store.AddTaskDependency(ctx, project.ID, main.ID, blocker.ID); err != nil {
+		t.Fatalf("AddTaskDependency() error = %v", err)
+	}
+
+	// Guard fails: blocker is in backlog, not done
+	_, err = store.MoveTask(ctx, project.ID, main.ID, "dev")
+	if err == nil {
+		t.Fatal("MoveTask() error = nil, want guard_violation")
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrGuardViolation {
+		t.Fatalf("MoveTask() error = %v, want guard_violation", err)
+	}
+
+	// Move blocker to done bucket (create directly there since no dev→done transition)
+	doneBlocker, _ := store.CreateTask(ctx, project.ID, "Done Blocker", "", "", "done")
+	main2, _ := store.CreateTask(ctx, project.ID, "Main2", "", "", "backlog")
+	if _, err := store.AddTaskDependency(ctx, project.ID, main2.ID, doneBlocker.ID); err != nil {
+		t.Fatalf("AddTaskDependency() error = %v", err)
+	}
+
+	// Guard passes: blocker is in done
+	moved, err := store.MoveTask(ctx, project.ID, main2.ID, "dev")
+	if err != nil {
+		t.Fatalf("MoveTask() error = %v", err)
+	}
+	if moved.BucketKey != "dev" {
+		t.Fatalf("MoveTask().BucketKey = %q, want dev", moved.BucketKey)
+	}
+}
+
+func TestStoreMoveTaskGuardBlockersInNoBlockers(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, bundleWithBlockersInGuard(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+
+	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+
+	// No blockers — guard passes
+	moved, err := store.MoveTask(ctx, project.ID, task.ID, "dev")
+	if err != nil {
+		t.Fatalf("MoveTask() error = %v", err)
+	}
+	if moved.BucketKey != "dev" {
+		t.Fatalf("MoveTask().BucketKey = %q, want dev", moved.BucketKey)
+	}
+}
+
+func TestStoreMoveTaskGuardCommentsMin(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, bundleWithCommentsMinGuard(1), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+
+	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+
+	// Guard fails: 0 comments
+	_, err = store.MoveTask(ctx, project.ID, task.ID, "dev")
+	if err == nil {
+		t.Fatal("MoveTask() error = nil, want guard_violation")
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrGuardViolation {
+		t.Fatalf("MoveTask() error = %v, want guard_violation", err)
+	}
+
+	// Add a comment
+	if _, err := store.AddComment(ctx, project.ID, task.ID, "done", "human", nil); err != nil {
+		t.Fatalf("AddComment() error = %v", err)
+	}
+
+	// Guard passes: 1 comment >= 1
+	moved, err := store.MoveTask(ctx, project.ID, task.ID, "dev")
+	if err != nil {
+		t.Fatalf("MoveTask() error = %v", err)
+	}
+	if moved.BucketKey != "dev" {
+		t.Fatalf("MoveTask().BucketKey = %q, want dev", moved.BucketKey)
+	}
+}
+
+func TestStoreMoveTaskNoGuardUnaffected(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+
+	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	blocker, _ := store.CreateTask(ctx, project.ID, "Blocker", "", "", "backlog")
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+	if _, err := store.AddTaskDependency(ctx, project.ID, task.ID, blocker.ID); err != nil {
+		t.Fatalf("AddTaskDependency() error = %v", err)
+	}
+
+	// Transition has no guard — move succeeds even with pending blocker
+	moved, err := store.MoveTask(ctx, project.ID, task.ID, "dev")
+	if err != nil {
+		t.Fatalf("MoveTask() error = %v", err)
+	}
+	if moved.BucketKey != "dev" {
+		t.Fatalf("MoveTask().BucketKey = %q, want dev", moved.BucketKey)
+	}
+}
+
+func TestStoreMoveTaskGuardCommentsTagged(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, bundleWithCommentsTaggedGuard("resume", 1), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+
+	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+
+	// Guard fails: no comments at all
+	_, err = store.MoveTask(ctx, project.ID, task.ID, "dev")
+	if err == nil {
+		t.Fatal("MoveTask() error = nil, want guard_violation")
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrGuardViolation {
+		t.Fatalf("MoveTask() error = %v, want guard_violation", err)
+	}
+
+	// Add comment without the required tag
+	if _, err := store.AddComment(ctx, project.ID, task.ID, "untagged note", "human", nil); err != nil {
+		t.Fatalf("AddComment(untagged) error = %v", err)
+	}
+
+	// Guard still fails: comment exists but lacks the tag
+	_, err = store.MoveTask(ctx, project.ID, task.ID, "dev")
+	if err == nil {
+		t.Fatal("MoveTask() untagged error = nil, want guard_violation")
+	}
+	if !errors.As(err, &coded) || coded.Code != domain.ErrGuardViolation {
+		t.Fatalf("MoveTask() untagged error = %v, want guard_violation", err)
+	}
+
+	// Add comment with the required tag
+	if _, err := store.AddComment(ctx, project.ID, task.ID, "resume note", "agent", []domain.Tag{{Name: "resume", Label: "resume"}}); err != nil {
+		t.Fatalf("AddComment(tagged) error = %v", err)
+	}
+
+	// Guard passes
+	moved, err := store.MoveTask(ctx, project.ID, task.ID, "dev")
+	if err != nil {
+		t.Fatalf("MoveTask() error = %v", err)
+	}
+	if moved.BucketKey != "dev" {
+		t.Fatalf("MoveTask().BucketKey = %q, want dev", moved.BucketKey)
 	}
 }
 

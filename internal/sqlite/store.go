@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -412,10 +413,18 @@ RETURNING id
 		for _, transition := range workflow.Transitions {
 			fromID := bucketIDs[transition.From]
 			toID := bucketIDs[transition.To]
+			guards := transition.Guards
+			if guards == nil {
+				guards = []config.TransitionGuard{}
+			}
+			guardsJSON, err := json.Marshal(guards)
+			if err != nil {
+				return err
+			}
 			if _, err := tx.ExecContext(ctx, `
-INSERT INTO workflow_transitions(workflow_id, from_bucket_id, to_bucket_id, active) VALUES (?, ?, ?, 1)
-ON CONFLICT(workflow_id, from_bucket_id, to_bucket_id) DO UPDATE SET active = 1
-`, workflowID, fromID, toID); err != nil {
+INSERT INTO workflow_transitions(workflow_id, from_bucket_id, to_bucket_id, guards_json, active) VALUES (?, ?, ?, ?, 1)
+ON CONFLICT(workflow_id, from_bucket_id, to_bucket_id) DO UPDATE SET guards_json = excluded.guards_json, active = 1
+`, workflowID, fromID, toID, string(guardsJSON)); err != nil {
 				return err
 			}
 		}
@@ -747,6 +756,9 @@ func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBuc
 		if !allowed {
 			return domain.Task{}, domain.NewError(domain.ErrWorkflowInvalidTransition, "transition not allowed", map[string]any{"task_id": taskID, "from": currentBucketID, "to": targetBucketID})
 		}
+		if err := evaluateTransitionGuards(ctx, tx, projectID, taskID, currentBucketID, targetBucketID); err != nil {
+			return domain.Task{}, err
+		}
 	}
 
 	row := tx.QueryRowContext(ctx, `
@@ -804,16 +816,40 @@ func (s *Store) TaskCount(ctx context.Context, projectID int64) (int64, error) {
 	return count, nil
 }
 
-func (s *Store) AddComment(ctx context.Context, projectID, taskID int64, body, authorType string) (domain.Comment, error) {
+func (s *Store) AddComment(ctx context.Context, projectID, taskID int64, body, authorType string, tags []domain.Tag) (domain.Comment, error) {
 	if err := s.ensureTaskExists(ctx, projectID, taskID); err != nil {
 		return domain.Comment{}, err
 	}
-	row := s.db.QueryRowContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Comment{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var comment domain.Comment
+	if err := tx.QueryRowContext(ctx, `
 INSERT INTO comments(project_id, task_id, body, author_type)
 VALUES (?, ?, ?, ?)
 RETURNING id, project_id, task_id, body, author_type, created_at
-`, projectID, taskID, body, authorType)
-	return scanComment(row)
+`, projectID, taskID, body, authorType).Scan(&comment.ID, &comment.ProjectID, &comment.TaskID, &comment.Body, &comment.AuthorType, &comment.CreatedAt); err != nil {
+		return domain.Comment{}, err
+	}
+
+	for _, tag := range tags {
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO tags(name, label) VALUES (?, ?)`, tag.Name, tag.Label); err != nil {
+			return domain.Comment{}, err
+		}
+		var tagID int64
+		if err := tx.QueryRowContext(ctx, `SELECT id FROM tags WHERE name = ?`, tag.Name).Scan(&tagID); err != nil {
+			return domain.Comment{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO comment_tags(comment_id, tag_id) VALUES (?, ?)`, comment.ID, tagID); err != nil {
+			return domain.Comment{}, err
+		}
+		comment.Tags = append(comment.Tags, domain.Tag{ID: tagID, Name: tag.Name, Label: tag.Label})
+	}
+
+	return comment, tx.Commit()
 }
 
 func (s *Store) ListComments(ctx context.Context, projectID, taskID int64) ([]domain.Comment, error) {
@@ -842,7 +878,57 @@ func (s *Store) ListComments(ctx context.Context, projectID, taskID int64) ([]do
 		}
 		comments = append(comments, comment)
 	}
-	return comments, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(comments) > 0 {
+		ids := make([]int64, len(comments))
+		for i, c := range comments {
+			ids[i] = c.ID
+		}
+		tagsByComment, err := s.commentTagsByIDs(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		for i := range comments {
+			if tags, ok := tagsByComment[comments[i].ID]; ok {
+				comments[i].Tags = tags
+			}
+		}
+	}
+
+	return comments, nil
+}
+
+func (s *Store) commentTagsByIDs(ctx context.Context, commentIDs []int64) (map[int64][]domain.Tag, error) {
+	if len(commentIDs) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, len(commentIDs))
+	args := make([]any, len(commentIDs))
+	for i, id := range commentIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT ct.comment_id, t.id, t.name, t.label FROM comment_tags ct JOIN tags t ON t.id = ct.tag_id WHERE ct.comment_id IN ("+strings.Join(placeholders, ",")+")",
+		args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := map[int64][]domain.Tag{}
+	for rows.Next() {
+		var commentID int64
+		var tag domain.Tag
+		if err := rows.Scan(&commentID, &tag.ID, &tag.Name, &tag.Label); err != nil {
+			return nil, err
+		}
+		result[commentID] = append(result[commentID], tag)
+	}
+	return result, rows.Err()
 }
 
 func (s *Store) AddTaskDependency(ctx context.Context, projectID, taskID, dependsOnTaskID int64) (domain.TaskDependency, error) {
@@ -1024,4 +1110,140 @@ func scanContextEntry(row *sql.Row) (domain.ContextEntry, error) {
 		return domain.ContextEntry{}, err
 	}
 	return entry, nil
+}
+
+type transitionGuard struct {
+	Type    string   `json:"type"`
+	Buckets []string `json:"buckets,omitempty"`
+	Count   int      `json:"count,omitempty"`
+	Tag     string   `json:"tag,omitempty"`
+	Hint    string   `json:"hint,omitempty"`
+}
+
+func evaluateTransitionGuards(ctx context.Context, tx *sql.Tx, projectID, taskID, fromBucketID, toBucketID int64) error {
+	var guardsJSON string
+	err := tx.QueryRowContext(ctx, `
+SELECT guards_json FROM workflow_transitions
+WHERE from_bucket_id = ? AND to_bucket_id = ? AND active = 1
+LIMIT 1
+`, fromBucketID, toBucketID).Scan(&guardsJSON)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+
+	var guards []transitionGuard
+	if err := json.Unmarshal([]byte(guardsJSON), &guards); err != nil {
+		return err
+	}
+
+	for _, guard := range guards {
+		switch guard.Type {
+		case "blockers_in":
+			if err := checkBlockersIn(ctx, tx, projectID, taskID, guard.Buckets, guard.Hint); err != nil {
+				return err
+			}
+		case "comments_min":
+			if err := checkCommentsMin(ctx, tx, projectID, taskID, guard.Count, guard.Hint); err != nil {
+				return err
+			}
+		case "comments_tagged":
+			if err := checkCommentsTagged(ctx, tx, projectID, taskID, guard.Tag, guard.Count, guard.Hint); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func checkBlockersIn(ctx context.Context, tx *sql.Tx, projectID, taskID int64, allowedKeys []string, hint string) error {
+	rows, err := tx.QueryContext(ctx, `
+SELECT t.id, t.title, COALESCE(wb.key, '') AS bucket_key
+FROM task_dependencies td
+JOIN tasks t ON t.project_id = td.project_id AND t.id = td.depends_on_task_id
+LEFT JOIN workflow_buckets wb ON wb.id = t.bucket_id AND wb.active = 1
+WHERE td.project_id = ? AND td.task_id = ?
+ORDER BY t.id
+`, projectID, taskID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+
+	allowed := make(map[string]struct{}, len(allowedKeys))
+	for _, k := range allowedKeys {
+		allowed[k] = struct{}{}
+	}
+
+	var pending []string
+	for rows.Next() {
+		var id int64
+		var title, bucketKey string
+		if err := rows.Scan(&id, &title, &bucketKey); err != nil {
+			return err
+		}
+		if _, ok := allowed[bucketKey]; !ok {
+			pending = append(pending, fmt.Sprintf("#%d %q (in %q)", id, title, bucketKey))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(pending) > 0 {
+		msg := fmt.Sprintf("blockers_in guard: pending blockers: %s", strings.Join(pending, ", "))
+		details := map[string]any{"pending_blockers": pending}
+		if hint != "" {
+			msg += ". Hint: " + hint
+			details["hint"] = hint
+		}
+		return domain.NewError(domain.ErrGuardViolation, msg, details)
+	}
+	return nil
+}
+
+func checkCommentsMin(ctx context.Context, tx *sql.Tx, projectID, taskID int64, minCount int, hint string) error {
+	var count int
+	if err := tx.QueryRowContext(ctx, `
+SELECT COUNT(1) FROM comments WHERE project_id = ? AND task_id = ?
+`, projectID, taskID).Scan(&count); err != nil {
+		return err
+	}
+	if count < minCount {
+		msg := fmt.Sprintf("comments_min guard: task has %d comment(s); transition requires at least %d", count, minCount)
+		details := map[string]any{"count": count, "required": minCount}
+		if hint != "" {
+			msg += ". Hint: " + hint
+			details["hint"] = hint
+		}
+		return domain.NewError(domain.ErrGuardViolation, msg, details)
+	}
+	return nil
+}
+
+func checkCommentsTagged(ctx context.Context, tx *sql.Tx, projectID, taskID int64, tagName string, minCount int, hint string) error {
+	if minCount < 1 {
+		minCount = 1
+	}
+	var count int
+	if err := tx.QueryRowContext(ctx, `
+SELECT COUNT(DISTINCT c.id)
+FROM comments c
+JOIN comment_tags ct ON ct.comment_id = c.id
+JOIN tags t ON t.id = ct.tag_id
+WHERE c.project_id = ? AND c.task_id = ? AND t.name = ?
+`, projectID, taskID, tagName).Scan(&count); err != nil {
+		return err
+	}
+	if count < minCount {
+		msg := fmt.Sprintf("comments_tagged guard: task has %d comment(s) tagged %q; transition requires at least %d", count, tagName, minCount)
+		details := map[string]any{"count": count, "required": minCount, "tag": tagName}
+		if hint != "" {
+			msg += ". Hint: " + hint
+			details["hint"] = hint
+		}
+		return domain.NewError(domain.ErrGuardViolation, msg, details)
+	}
+	return nil
 }
