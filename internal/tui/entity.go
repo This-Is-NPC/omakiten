@@ -131,6 +131,12 @@ func (m *Model) clampEntityCursor() {
 	}
 }
 
+// renderEntityCell builds the inner content of one entity column. The cards
+// are clamped to the viewport budget computed from the terminal height: cards
+// outside the visible window are summarized as "▲ N above" / "▼ N below"
+// hints exactly like the kanban columns. Same scroll model: per-kind offset
+// stored in m.entityScroll, kept in sync with the cursor by
+// syncFocusedEntityScroll on every cursor move.
 func (m Model) renderEntityCell(kind entityKind) string {
 	focused := m.entityKind == kind
 	count := m.entityCount(kind)
@@ -149,12 +155,142 @@ func (m Model) renderEntityCell(kind entityKind) string {
 
 	if count == 0 {
 		lines = append(lines, m.styles.empty.Render("empty"))
-	} else {
-		for index := 0; index < count; index++ {
-			lines = append(lines, m.renderEntityCard(kind, index, focused && index == cursor))
+		return strings.Join(lines, "\n")
+	}
+
+	rendered := make([]string, count)
+	heights := make([]int, count)
+	for index := 0; index < count; index++ {
+		rendered[index] = m.renderEntityCard(kind, index, focused && index == cursor)
+		heights[index] = strings.Count(rendered[index], "\n") + 1
+	}
+
+	viewport := m.entityViewportRows()
+	if viewport <= 0 {
+		// Height unknown — render every card; the renderer-level clamp keeps
+		// the view bounded by terminal height.
+		lines = append(lines, rendered...)
+		return strings.Join(lines, "\n")
+	}
+
+	offset := 0
+	if m.entityScroll != nil {
+		offset = m.entityScroll[kind]
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > count-1 {
+		offset = count - 1
+	}
+
+	used := 0
+	end := offset
+	for end < count {
+		reserve := 0
+		if end < count-1 {
+			reserve = 1 // "▼ N below" hint line
 		}
+		if used+heights[end]+reserve > viewport {
+			break
+		}
+		used += heights[end]
+		end++
+	}
+	if end == offset {
+		// Never produce an empty viewport — show at least one card.
+		end = offset + 1
+	}
+
+	above := offset
+	below := count - end
+	if above > 0 {
+		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▲ %d above", above)))
+	}
+	lines = append(lines, rendered[offset:end]...)
+	if below > 0 {
+		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▼ %d below", below)))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// entityViewportRows is the number of terminal rows available for entity
+// cards inside one column, after the screen chrome and the column's own
+// header rows. Returns 0 when the height is unknown — callers treat 0 as
+// "no scroll" and render every card.
+func (m Model) entityViewportRows() int {
+	if m.height <= 0 {
+		return 0
+	}
+	// 5 screen header + 1 leading blank + 2 footer + 2 column header (kicker
+	// + separator) + ~12 for the runtime/tokens tables that sit above the
+	// entity grid in the config view.
+	chrome := 22
+	if m.status != "" {
+		chrome++
+	}
+	rows := m.height - chrome
+	if rows < 4 {
+		return 0
+	}
+	return rows
+}
+
+// syncFocusedEntityScroll keeps m.entityScroll[focusedKind] aligned so the
+// selected card stays fully inside the column viewport. Mirrors the
+// per-bucket scroll behavior of the kanban board: the offset advances by
+// real card heights (cards have variable heights because of badge wrapping).
+func (m *Model) syncFocusedEntityScroll() {
+	kind := m.entityKind
+	count := m.entityCount(kind)
+	viewport := m.entityViewportRows()
+	if viewport <= 0 || count == 0 {
+		if m.entityScroll != nil {
+			delete(m.entityScroll, kind)
+		}
+		return
+	}
+
+	cursor := m.selectedEntityIndex(kind)
+	heights := make([]int, count)
+	for i := 0; i < count; i++ {
+		rendered := m.renderEntityCard(kind, i, false)
+		heights[i] = strings.Count(rendered, "\n") + 1
+	}
+
+	if m.entityScroll == nil {
+		m.entityScroll = map[entityKind]int{}
+	}
+	offset := m.entityScroll[kind]
+	if offset > cursor {
+		offset = cursor
+	}
+	for offset < cursor {
+		used := 0
+		fits := true
+		for i := offset; i <= cursor; i++ {
+			reserve := 0
+			if i < count-1 {
+				reserve = 1
+			}
+			if used+heights[i]+reserve > viewport {
+				fits = false
+				break
+			}
+			used += heights[i]
+		}
+		if fits {
+			break
+		}
+		offset++
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > count-1 {
+		offset = count - 1
+	}
+	m.entityScroll[kind] = offset
 }
 
 func (m Model) renderEntityCard(kind entityKind, index int, selected bool) string {
@@ -451,6 +587,7 @@ func (m *Model) cycleEntityKind(delta int) {
 	}
 	current = (current + delta + len(kinds)) % len(kinds)
 	m.entityKind = kinds[current]
+	m.syncFocusedEntityScroll()
 }
 
 func (m *Model) moveEntityCursor(delta int) {
@@ -460,6 +597,7 @@ func (m *Model) moveEntityCursor(delta int) {
 	count := m.entityCount(m.entityKind)
 	if count == 0 {
 		m.entityCursors[m.entityKind] = 0
+		m.syncFocusedEntityScroll()
 		return
 	}
 	cursor := m.entityCursors[m.entityKind] + delta
@@ -470,6 +608,7 @@ func (m *Model) moveEntityCursor(delta int) {
 		cursor = count - 1
 	}
 	m.entityCursors[m.entityKind] = cursor
+	m.syncFocusedEntityScroll()
 }
 
 func (m *Model) openSelectedEntityView() {

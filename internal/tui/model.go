@@ -95,6 +95,7 @@ type Model struct {
 
 	entityKind    entityKind
 	entityCursors map[entityKind]int
+	entityScroll  map[entityKind]int
 	entityScreen  entityScreenMode
 	entityForm    entityForm
 	deletePending bool
@@ -2674,83 +2675,75 @@ func (m Model) renderConfig() string {
 		header = renderGridTable(all, narrowWidths, m.styles.border)
 	}
 
-	// Entity lists share borders via renderRowGrid so the bottom of CONFIG
-	// follows the same shared-junction grid pattern as the runtime/budget cells
-	// above it.
-	// 3-col: 1 + 28 + 1 + 28 + 1 + 28 + 1 = 88
-	// 4-col: 1 + 28 + 1 + 28 + 1 + 28 + 1 + 28 + 1 = 117
-	// 5-col: 1 + 28 + 1 + 28 + 1 + 28 + 1 + 28 + 1 + 28 + 1 = 146
-	const (
-		entityGridTotal3 = entityListWidth*3 + 4
-		entityGridTotal4 = entityListWidth*4 + 5
-		entityGridTotal5 = entityListWidth*5 + 6
-	)
-	colWidths4 := []int{entityListWidth, entityListWidth, entityListWidth, entityListWidth}
-	colWidths5 := append(append([]int{}, colWidths4...), entityListWidth)
-	var lists string
+	// Entity lists are rendered as separate, individually-bordered columns
+	// joined horizontally with a 1-space gap — same shape as the kanban
+	// board, so the user navigates with the same mental model: one column
+	// at a time, vertical scroll inside the focused column. Narrow terminals
+	// fall back to a single focused column with a hint.
+	allKinds := []entityKind{entityKindLaw, entityKindPersona, entityKindSkill, entityKindTemplate, entityKindTag}
+	cellGap := 1
+	available := m.availableWidth()
+
+	fits := func(n int) bool {
+		// Each column adds +2 cols for borders and the gap separator.
+		return n*(entityListWidth+2)+(n-1)*cellGap <= available
+	}
+
+	// Pick the widest layout that fits without horizontal overflow.
+	visible := allKinds
 	switch {
-	case m.availableWidth() >= entityGridTotal5:
-		lists = renderRowGrid(
-			[]string{
-				m.renderEntityCell(entityKindLaw),
-				m.renderEntityCell(entityKindPersona),
-				m.renderEntityCell(entityKindSkill),
-				m.renderEntityCell(entityKindTemplate),
-				m.renderEntityCell(entityKindTag),
-			},
-			colWidths5,
-			m.styles.border,
-		)
-	case m.availableWidth() >= entityGridTotal4:
-		// Drop the secondary kind (Templates or Tags) the user is not focused on
-		// to a row below — same fallback used for tags at the 3-col breakpoint.
-		primary := []string{
-			m.renderEntityCell(entityKindLaw),
-			m.renderEntityCell(entityKindPersona),
-			m.renderEntityCell(entityKindSkill),
-		}
-		var secondary entityKind
+	case fits(5):
+		// keep all five
+	case fits(4):
+		// Drop the kind that is currently NOT focused from the secondary pair
+		// (Templates / Tags) so the user can always see whichever one is in
+		// focus inside the main row.
+		visible = []entityKind{entityKindLaw, entityKindPersona, entityKindSkill}
 		switch m.entityKind {
 		case entityKindTemplate:
-			primary = append(primary, m.renderEntityCell(entityKindTemplate))
-			secondary = entityKindTag
+			visible = append(visible, entityKindTemplate)
 		default:
-			primary = append(primary, m.renderEntityCell(entityKindTag))
-			secondary = entityKindTemplate
+			visible = append(visible, entityKindTag)
 		}
-		lists = renderRowGrid(primary, colWidths4, m.styles.border)
-		lists += "\n\n" + renderRowGrid(
-			[]string{m.renderEntityCell(secondary)},
-			[]int{clampInt(m.availableWidth()-2, 16, entityListWidth)},
-			m.styles.border,
-		)
-	case m.availableWidth() >= entityGridTotal3:
-		lists = renderRowGrid(
-			[]string{
-				m.renderEntityCell(entityKindLaw),
-				m.renderEntityCell(entityKindPersona),
-				m.renderEntityCell(entityKindSkill),
-			},
-			[]int{entityListWidth, entityListWidth, entityListWidth},
-			m.styles.border,
-		)
-		if m.entityKind == entityKindTag || m.entityKind == entityKindTemplate {
-			lists += "\n\n" + renderRowGrid(
-				[]string{m.renderEntityCell(m.entityKind)},
-				[]int{clampInt(m.availableWidth()-2, 16, entityListWidth)},
-				m.styles.border,
-			)
-		}
+	case fits(3):
+		visible = []entityKind{entityKindLaw, entityKindPersona, entityKindSkill}
 	default:
-		// Narrow terminals see a single focused column wrapped in its own grid
-		// cell so the border treatment stays consistent with the wide layout.
-		focusedText := m.styles.hint.Render(fmt.Sprintf("Focused config · %s · left/right switches section", m.entityKind.plural()))
-		cellWidth := clampInt(m.availableWidth()-2, 16, entityListWidth)
-		lists = focusedText + "\n\n" + renderRowGrid(
-			[]string{m.renderEntityCell(m.entityKind)},
-			[]int{cellWidth},
-			m.styles.border,
-		)
+		visible = []entityKind{m.entityKind}
+	}
+
+	columnStyle := m.styles.kanbanColumn.Width(entityListWidth)
+	cells := make([]string, 0, len(visible))
+	for _, kind := range visible {
+		cells = append(cells, columnStyle.Render(m.renderEntityCell(kind)))
+	}
+
+	parts := make([]string, 0, len(cells)*2)
+	for i, cell := range cells {
+		parts = append(parts, cell)
+		if i < len(cells)-1 {
+			parts = append(parts, " ")
+		}
+	}
+	lists := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+
+	// When a kind is hidden behind a fallback (it didn't fit in `visible`),
+	// surface a hint so the user knows they can reach it via left/right.
+	hidden := []entityKind{}
+	visibleSet := map[entityKind]struct{}{}
+	for _, k := range visible {
+		visibleSet[k] = struct{}{}
+	}
+	for _, k := range allKinds {
+		if _, ok := visibleSet[k]; !ok {
+			hidden = append(hidden, k)
+		}
+	}
+	if len(hidden) > 0 {
+		names := make([]string, len(hidden))
+		for i, k := range hidden {
+			names[i] = k.plural()
+		}
+		lists += "\n  " + m.styles.hint.Render(fmt.Sprintf("hidden: %s · use ← / → to switch sections", strings.Join(names, ", ")))
 	}
 
 	return "\n" + indentBlock(header+"\n\n"+lists, 2)

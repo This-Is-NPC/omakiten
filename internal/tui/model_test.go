@@ -848,7 +848,9 @@ func TestModelConfigUsesFocusedSectionWhenNarrow(t *testing.T) {
 	got := pressRune(t, model, '4')
 
 	view := ansi.Strip(got.View())
-	for _, want := range []string{"Focused config", "Laws", "left/right switches section"} {
+	// Narrow terminals fall back to a single bordered column showing the
+	// focused section (Laws by default) plus a hint listing the hidden ones.
+	for _, want := range []string{"// LAWS", "hidden:", "← / → to switch sections"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("narrow config missing %q\n%s", want, view)
 		}

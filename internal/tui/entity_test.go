@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -259,6 +260,38 @@ func TestCustomBadgeAppearsOnUserOverride(t *testing.T) {
 	cell := model.renderEntityCell(entityKindSkill)
 	if !strings.Contains(cell, "CUSTOM") {
 		t.Fatalf("renderEntityCell missing CUSTOM badge for overridden go skill\n%s", cell)
+	}
+}
+
+func TestEntityCellShowsScrollHintsWhenColumnExceedsViewport(t *testing.T) {
+	model, _, _ := newEntityModel(t)
+	// Build many synthetic skills so the column is taller than any viewport.
+	model.skills = nil
+	for i := 0; i < 12; i++ {
+		model.skills = append(model.skills, domain.Skill{Key: fmt.Sprintf("skill-%02d", i), Name: fmt.Sprintf("Skill %d", i)})
+	}
+	model.entityKind = entityKindSkill
+	model.width = 200
+	model.height = 32 // chrome=22 leaves a viewport of ~10 rows ≈ 3 cards
+	if model.entityCursors == nil {
+		model.entityCursors = map[entityKind]int{}
+	}
+	model.entityCursors[entityKindSkill] = 8
+	model.syncFocusedEntityScroll()
+
+	cell := model.renderEntityCell(entityKindSkill)
+	if !strings.Contains(cell, "▲") {
+		t.Fatalf("expected '▲ N above' hint when cursor is past the top:\n%s", cell)
+	}
+	if !strings.Contains(cell, "▼") {
+		t.Fatalf("expected '▼ N below' hint when more cards exist below:\n%s", cell)
+	}
+	// Only the cards near the cursor should be present, not all 12.
+	if strings.Count(cell, "skill-00") > 0 {
+		t.Fatalf("first card should be scrolled out of view:\n%s", cell)
+	}
+	if !strings.Contains(cell, "skill-08") {
+		t.Fatalf("focused card skill-08 missing from column:\n%s", cell)
 	}
 }
 
