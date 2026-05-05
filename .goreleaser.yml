@@ -33,6 +33,7 @@ archives:
       - goos: windows
         formats: [zip]
     files:
+      - LICENSE
       - README.md
       - CONTRIBUTING.md
 
@@ -43,18 +44,9 @@ snapshot:
   version_template: "{{ incpatch .Version }}-snapshot"
 
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
-      - "^ci:"
-      - "merge conflict"
-      - Merge pull request
-      - Merge remote-tracking branch
-      - Merge branch
+  disable: true
 
 release:
+  mode: append
   draft: false
   prerelease: auto

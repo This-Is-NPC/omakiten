@@ -70,7 +70,7 @@ okt add -t "Implement search endpoint"
 okt list
 
 # Move a task through workflow
-okt move 1 --bucket review
+okt move 1 --to review
 
 # Add a handoff context entry
 okt context add -b "Refactored auth layer to use middleware"
@@ -86,3 +86,5 @@ okt tui
 - [MCP Agent Surface](.docs/mcp-agent-surface.md)
 - [Why Omakiten?](.docs/why_omakiten.md)
 - [Contributing](CONTRIBUTING.md)
+- [LICENSE](LICENSE)
+
