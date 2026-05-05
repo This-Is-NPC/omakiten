@@ -244,6 +244,159 @@ func TestMergeTagsReassignsErrorTags(t *testing.T) {
 	}
 }
 
+func TestConfirmSolutionIncrementsLikesOnSuccess(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+
+	rec, _ := store.RecordError(ctx, 0, "boom", "", nil)
+	sol, _ := store.AddSolution(ctx, rec.ID, "fix", "", nil)
+	if sol.Likes != 0 {
+		t.Fatalf("AddSolution() Likes = %d, want 0", sol.Likes)
+	}
+
+	confirmed, err := store.ConfirmSolution(ctx, sol.ID, true)
+	if err != nil {
+		t.Fatalf("ConfirmSolution(true) error = %v", err)
+	}
+	if confirmed.Likes != 1 {
+		t.Fatalf("ConfirmSolution(true) Likes = %d, want 1", confirmed.Likes)
+	}
+
+	// Re-confirming success should keep accumulating likes.
+	confirmed, err = store.ConfirmSolution(ctx, sol.ID, true)
+	if err != nil {
+		t.Fatalf("ConfirmSolution(true) again error = %v", err)
+	}
+	if confirmed.Likes != 2 {
+		t.Fatalf("ConfirmSolution(true) re-confirm Likes = %d, want 2", confirmed.Likes)
+	}
+
+	// success=false must not decrement or otherwise touch the counter.
+	confirmed, err = store.ConfirmSolution(ctx, sol.ID, false)
+	if err != nil {
+		t.Fatalf("ConfirmSolution(false) error = %v", err)
+	}
+	if confirmed.Likes != 2 {
+		t.Fatalf("ConfirmSolution(false) Likes = %d, want 2 (unchanged)", confirmed.Likes)
+	}
+}
+
+func TestSearchErrorsRanksSolutionsByLikes(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+
+	rec, _ := store.RecordError(ctx, 0, "boom", "", []domain.Tag{{Name: "boom", Label: "Boom"}})
+
+	// Two successful solutions; the one we confirm twice should rank above
+	// the one confirmed once even though both have success=true.
+	hot, _ := store.AddSolution(ctx, rec.ID, "hot", "", nil)
+	warm, _ := store.AddSolution(ctx, rec.ID, "warm", "", nil)
+	if _, err := store.ConfirmSolution(ctx, warm.ID, true); err != nil {
+		t.Fatalf("ConfirmSolution(warm) error = %v", err)
+	}
+	if _, err := store.ConfirmSolution(ctx, hot.ID, true); err != nil {
+		t.Fatalf("ConfirmSolution(hot 1) error = %v", err)
+	}
+	if _, err := store.ConfirmSolution(ctx, hot.ID, true); err != nil {
+		t.Fatalf("ConfirmSolution(hot 2) error = %v", err)
+	}
+
+	results, err := store.SearchErrors(ctx, "", []string{"boom"})
+	if err != nil {
+		t.Fatalf("SearchErrors() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("SearchErrors() len = %d, want 1", len(results))
+	}
+	sols := results[0].Solutions
+	if len(sols) != 2 {
+		t.Fatalf("Solutions len = %d, want 2", len(sols))
+	}
+	if sols[0].ID != hot.ID {
+		t.Fatalf("Solutions[0] = %d (likes=%d), want hot %d (likes=%d)", sols[0].ID, sols[0].Likes, hot.ID, sols[0].Likes)
+	}
+	if sols[0].Likes != 2 {
+		t.Fatalf("Solutions[0].Likes = %d, want 2", sols[0].Likes)
+	}
+	if sols[1].ID != warm.ID {
+		t.Fatalf("Solutions[1] = %d, want warm %d", sols[1].ID, warm.ID)
+	}
+	if sols[1].Likes != 1 {
+		t.Fatalf("Solutions[1].Likes = %d, want 1", sols[1].Likes)
+	}
+}
+
+func TestListTopSolutionsCrossProject(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+
+	projectA, _ := store.UpsertProject(ctx, "A", "a", "/work/a")
+	projectB, _ := store.UpsertProject(ctx, "B", "b", "/work/b")
+
+	errA, _ := store.RecordError(ctx, projectA.ID, "issue A", "", nil)
+	errB, _ := store.RecordError(ctx, projectB.ID, "issue B", "", nil)
+
+	// solution in A confirmed twice
+	solA, _ := store.AddSolution(ctx, errA.ID, "fix A", "", nil)
+	if _, err := store.ConfirmSolution(ctx, solA.ID, true); err != nil {
+		t.Fatalf("ConfirmSolution(A) error = %v", err)
+	}
+	if _, err := store.ConfirmSolution(ctx, solA.ID, true); err != nil {
+		t.Fatalf("ConfirmSolution(A) error = %v", err)
+	}
+	// solution in B confirmed once
+	solB, _ := store.AddSolution(ctx, errB.ID, "fix B", "", nil)
+	if _, err := store.ConfirmSolution(ctx, solB.ID, true); err != nil {
+		t.Fatalf("ConfirmSolution(B) error = %v", err)
+	}
+	// untouched solution stays at zero likes
+	zero, _ := store.AddSolution(ctx, errA.ID, "untried", "", nil)
+
+	top, err := store.ListTopSolutions(ctx, 5)
+	if err != nil {
+		t.Fatalf("ListTopSolutions() error = %v", err)
+	}
+	if len(top) != 3 {
+		t.Fatalf("ListTopSolutions() len = %d, want 3", len(top))
+	}
+	if top[0].ID != solA.ID || top[0].Likes != 2 {
+		t.Fatalf("ListTopSolutions()[0] = %+v, want solA likes=2", top[0])
+	}
+	if top[0].ProjectSlug != "a" {
+		t.Fatalf("ListTopSolutions()[0].ProjectSlug = %q, want a (cross-project metadata)", top[0].ProjectSlug)
+	}
+	if top[1].ID != solB.ID || top[1].Likes != 1 {
+		t.Fatalf("ListTopSolutions()[1] = %+v, want solB likes=1", top[1])
+	}
+	if top[1].ProjectSlug != "b" {
+		t.Fatalf("ListTopSolutions()[1].ProjectSlug = %q, want b", top[1].ProjectSlug)
+	}
+	if top[2].ID != zero.ID || top[2].Likes != 0 {
+		t.Fatalf("ListTopSolutions()[2] = %+v, want untried likes=0", top[2])
+	}
+}
+
+func TestListTopSolutionsRespectsLimit(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+
+	rec, _ := store.RecordError(ctx, 0, "boom", "", nil)
+	for i := 0; i < 5; i++ {
+		sol, _ := store.AddSolution(ctx, rec.ID, "candidate", "", nil)
+		if _, err := store.ConfirmSolution(ctx, sol.ID, true); err != nil {
+			t.Fatalf("ConfirmSolution() error = %v", err)
+		}
+	}
+
+	top, err := store.ListTopSolutions(ctx, 2)
+	if err != nil {
+		t.Fatalf("ListTopSolutions(2) error = %v", err)
+	}
+	if len(top) != 2 {
+		t.Fatalf("ListTopSolutions(2) len = %d, want 2", len(top))
+	}
+}
+
 func TestDeleteOrphanTagsRespectsErrorTags(t *testing.T) {
 	ctx := context.Background()
 	store := openTestStore(t)
