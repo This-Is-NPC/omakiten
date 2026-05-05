@@ -18,6 +18,7 @@ func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 
 	var body string
 	var author string
+	var tags []string
 	add := &cobra.Command{
 		Use:   "add TASK_ID",
 		Short: "Add a task comment",
@@ -39,7 +40,7 @@ func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 			if err != nil {
 				return nil, err
 			}
-			comment, err := app.NewCommentService(rt.store).Add(ctx, project, taskID, body, author)
+			comment, err := app.NewCommentService(rt.store).Add(ctx, project, taskID, body, author, tags)
 				if err != nil {
 					return nil, err
 				}
@@ -49,6 +50,7 @@ func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 	}
 	add.Flags().StringVarP(&body, "body", "b", "", "comment body")
 	add.Flags().StringVarP(&author, "author", "a", "human", "author type: human or agent")
+	add.Flags().StringArrayVarP(&tags, "tag", "T", nil, "tag name (repeatable)")
 	_ = add.MarkFlagRequired("body")
 
 	list := &cobra.Command{

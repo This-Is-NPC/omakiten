@@ -32,7 +32,8 @@ func (s *Store) ListAllTags(ctx context.Context) ([]domain.Tag, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT t.id, t.name, t.label,
   (SELECT COUNT(*) FROM task_tags WHERE tag_id = t.id) +
-  (SELECT COUNT(*) FROM project_tags WHERE tag_id = t.id) AS usage_count
+  (SELECT COUNT(*) FROM project_tags WHERE tag_id = t.id) +
+  (SELECT COUNT(*) FROM comment_tags WHERE tag_id = t.id) AS usage_count
 FROM tags t
 ORDER BY usage_count DESC, t.name
 `)
@@ -97,6 +98,17 @@ SELECT project_id, ? FROM project_tags WHERE tag_id = ?
 		return domain.Tag{}, err
 	}
 
+	// Reassign comment_tags
+	if _, err := tx.ExecContext(ctx, `
+INSERT OR IGNORE INTO comment_tags(comment_id, tag_id)
+SELECT comment_id, ? FROM comment_tags WHERE tag_id = ?
+`, targetTagID, sourceTagID); err != nil {
+		return domain.Tag{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM comment_tags WHERE tag_id = ?`, sourceTagID); err != nil {
+		return domain.Tag{}, err
+	}
+
 	if _, err := tx.ExecContext(ctx, `DELETE FROM tags WHERE id = ?`, sourceTagID); err != nil {
 		return domain.Tag{}, err
 	}
@@ -119,6 +131,8 @@ DELETE FROM tags WHERE id NOT IN (
   SELECT tag_id FROM task_tags
   UNION
   SELECT tag_id FROM project_tags
+  UNION
+  SELECT tag_id FROM comment_tags
 )
 `)
 	if err != nil {

@@ -20,19 +20,19 @@ func TestCommentServiceAdd(t *testing.T) {
 
 	service := NewCommentService(store)
 
-	_, err = service.Add(ctx, project.Context(), 0, "body", "human")
+	_, err = service.Add(ctx, project.Context(), 0, "body", "human", nil)
 	if err == nil {
 		t.Fatal("Add() error = nil, want validation error")
 	}
 	assertCodedError(t, err, domain.ErrValidation)
 
-	_, err = service.Add(ctx, project.Context(), task.ID, "", "human")
+	_, err = service.Add(ctx, project.Context(), task.ID, "", "human", nil)
 	if err == nil {
 		t.Fatal("Add() error = nil, want validation error")
 	}
 	assertCodedError(t, err, domain.ErrValidation)
 
-	comment, err := service.Add(ctx, project.Context(), task.ID, " Note ", "")
+	comment, err := service.Add(ctx, project.Context(), task.ID, " Note ", "", nil)
 	if err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}
@@ -43,13 +43,13 @@ func TestCommentServiceAdd(t *testing.T) {
 		t.Fatalf("Add().AuthorType = %q, want %q", comment.AuthorType, "human")
 	}
 
-	_, err = service.Add(ctx, project.Context(), task.ID, "body", "invalid")
+	_, err = service.Add(ctx, project.Context(), task.ID, "body", "invalid", nil)
 	if err == nil {
 		t.Fatal("Add() invalid authorType error = nil, want validation error")
 	}
 	assertCodedError(t, err, domain.ErrValidation)
 
-	agentComment, err := service.Add(ctx, project.Context(), task.ID, "agent note", "agent")
+	agentComment, err := service.Add(ctx, project.Context(), task.ID, "agent note", "agent", nil)
 	if err != nil {
 		t.Fatalf("Add() agent error = %v", err)
 	}
@@ -70,7 +70,7 @@ func TestCommentServiceList(t *testing.T) {
 	}
 
 	service := NewCommentService(store)
-	if _, err := service.Add(ctx, project.Context(), task.ID, "A", "human"); err != nil {
+	if _, err := service.Add(ctx, project.Context(), task.ID, "A", "human", nil); err != nil {
 		t.Fatalf("Add(A) error = %v", err)
 	}
 

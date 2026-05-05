@@ -30,6 +30,7 @@ const (
 	normalMarker               = " "
 	cardBoxWidth               = 26
 	cardContentWidth           = 24 // cardBoxWidth - horizontal padding(2); text fits here
+	commentCardContentWidth    = taskCommentsPanelWidth - 10 // card Width(36) - padding(2) - border(2)
 )
 
 type Repositories struct {
@@ -1319,7 +1320,7 @@ func (m *Model) submitInput() {
 			err = domain.NewError(domain.ErrTaskNotFound, "no selected task", nil)
 			break
 		}
-		_, err = app.NewCommentService(m.repos.Comments).Add(m.ctx, m.project, task.ID, input, "human")
+		_, err = app.NewCommentService(m.repos.Comments).Add(m.ctx, m.project, task.ID, input, "human", nil)
 	case modeMove:
 		task, ok := m.selectedTask()
 		if !ok {
@@ -2270,7 +2271,15 @@ func (m Model) renderCommentCard(comment domain.Comment) string {
 	if body == "" {
 		body = m.styles.hint.Render("empty comment")
 	}
-	return m.styles.commentCard.Render(header + "\n" + body)
+	content := header + "\n" + body
+	if len(comment.Tags) > 0 {
+		badges := make([]string, len(comment.Tags))
+		for i, tag := range comment.Tags {
+			badges[i] = m.styles.badgeInfo.Render("#" + tag.Label)
+		}
+		content += "\n" + wrapBadges(badges, commentCardContentWidth)
+	}
+	return m.styles.commentCard.Render(content)
 }
 
 func (m Model) renderTaskForm(title string) string {

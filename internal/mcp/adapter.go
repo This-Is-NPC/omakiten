@@ -76,7 +76,7 @@ func Tools() []ToolDefinition {
 		{Name: "tasks.create_intent", Description: "Create a task intent after checking for similar or related project tasks and requiring confirmation when needed.", InputSchema: createTaskSchema()},
 		{Name: "tasks.create", Description: "Create a task directly through Omakiten's shared task service.", InputSchema: createTaskSchema()},
 		{Name: "tasks.move", Description: "Move a task through an allowed workflow transition.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "bucket_key": stringSchema("Target bucket key")}, []string{"task_id", "bucket_key"})},
-		{Name: "comments.add", Description: "Add a human or agent comment to a project-owned task.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "body": stringSchema("Comment body"), "author_type": stringSchema("human or agent")}, []string{"task_id", "body"})},
+		{Name: "comments.add", Description: "Add a human or agent comment to a project-owned task. Optionally tag the comment with one or more tag names (normalized to kebab-case).", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "body": stringSchema("Comment body"), "author_type": stringSchema("human or agent"), "tags": arrayStringSchema("Optional tag names to attach to this comment (e.g. [\"resume\", \"deployment-notes\"])")}, []string{"task_id", "body"})},
 		{Name: "comments.list", Description: "List comments for a project-owned task.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id")}, []string{"task_id"})},
 		{Name: "dependencies.add", Description: "Add a project-scoped task dependency with cycle prevention.", InputSchema: dependencySchema(false)},
 		{Name: "dependencies.remove", Description: "Remove a task dependency after explicit confirmation.", InputSchema: dependencySchema(true)},
@@ -393,4 +393,8 @@ func integerSchema(description string) map[string]any {
 
 func booleanSchema(description string) map[string]any {
 	return map[string]any{"type": "boolean", "description": description}
+}
+
+func arrayStringSchema(description string) map[string]any {
+	return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": description}
 }

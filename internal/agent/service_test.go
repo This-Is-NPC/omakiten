@@ -454,10 +454,10 @@ func newAgentFixture(t *testing.T) agentFixture {
 	if _, err := store.AddTaskDependency(ctx, projectA.ID, taskA2.ID, taskA1.ID); err != nil {
 		t.Fatalf("AddTaskDependency(A) error = %v", err)
 	}
-	if _, err := store.AddComment(ctx, projectA.ID, taskA1.ID, "A comment", "agent"); err != nil {
+	if _, err := store.AddComment(ctx, projectA.ID, taskA1.ID, "A comment", "agent", nil); err != nil {
 		t.Fatalf("AddComment(A) error = %v", err)
 	}
-	if _, err := store.AddComment(ctx, projectB.ID, taskB.ID, "B comment", "agent"); err != nil {
+	if _, err := store.AddComment(ctx, projectB.ID, taskB.ID, "B comment", "agent", nil); err != nil {
 		t.Fatalf("AddComment(B) error = %v", err)
 	}
 	if _, err := store.AddContextEntry(ctx, projectA.ID, "A context", 2); err != nil {

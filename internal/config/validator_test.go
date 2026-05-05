@@ -87,6 +87,27 @@ func TestValidateBundleErrors(t *testing.T) {
 		{"project empty name", func(b *Bundle) {
 			b.Projects = []Project{{Slug: "test", Name: " "}}
 		}, "name is required"},
+		{"guard unknown type", func(b *Bundle) {
+			b.Workflows[0].Transitions = []Transition{{From: 1, To: 1, Guards: []TransitionGuard{{Type: "unknown_type"}}}}
+		}, "unknown guard type"},
+		{"guard blockers_in empty buckets", func(b *Bundle) {
+			b.Workflows[0].Transitions = []Transition{{From: 1, To: 1, Guards: []TransitionGuard{{Type: "blockers_in"}}}}
+		}, "buckets is required"},
+		{"guard blockers_in invalid bucket key", func(b *Bundle) {
+			b.Workflows[0].Transitions = []Transition{{From: 1, To: 1, Guards: []TransitionGuard{{Type: "blockers_in", Buckets: []string{"nonexistent"}}}}}
+		}, "bucket key"},
+		{"guard comments_min zero count", func(b *Bundle) {
+			b.Workflows[0].Transitions = []Transition{{From: 1, To: 1, Guards: []TransitionGuard{{Type: "comments_min", Count: 0}}}}
+		}, "count must be"},
+		{"guard comments_min negative count", func(b *Bundle) {
+			b.Workflows[0].Transitions = []Transition{{From: 1, To: 1, Guards: []TransitionGuard{{Type: "comments_min", Count: -1}}}}
+		}, "count must be"},
+		{"guard comments_tagged missing tag", func(b *Bundle) {
+			b.Workflows[0].Transitions = []Transition{{From: 1, To: 1, Guards: []TransitionGuard{{Type: "comments_tagged", Count: 1}}}}
+		}, "tag is required"},
+		{"guard comments_tagged zero count", func(b *Bundle) {
+			b.Workflows[0].Transitions = []Transition{{From: 1, To: 1, Guards: []TransitionGuard{{Type: "comments_tagged", Tag: "resume", Count: 0}}}}
+		}, "count must be"},
 	}
 
 	for _, tc := range tests {

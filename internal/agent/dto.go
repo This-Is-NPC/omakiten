@@ -53,11 +53,12 @@ type DependencySummary struct {
 }
 
 type CommentSummary struct {
-	ID         int64  `json:"id"`
-	TaskID     int64  `json:"task_id"`
-	Body       string `json:"body"`
-	AuthorType string `json:"author_type"`
-	CreatedAt  string `json:"created_at,omitempty"`
+	ID         int64        `json:"id"`
+	TaskID     int64        `json:"task_id"`
+	Body       string       `json:"body"`
+	AuthorType string       `json:"author_type"`
+	CreatedAt  string       `json:"created_at,omitempty"`
+	Tags       []TagSummary `json:"tags,omitempty"`
 }
 
 type ContextSnippet struct {
@@ -172,9 +173,10 @@ type MoveTaskResponse struct {
 
 type AddCommentInput struct {
 	ProjectSelector
-	TaskID     int64  `json:"task_id"`
-	Body       string `json:"body"`
-	AuthorType string `json:"author_type,omitempty"`
+	TaskID     int64    `json:"task_id"`
+	Body       string   `json:"body"`
+	AuthorType string   `json:"author_type,omitempty"`
+	Tags       []string `json:"tags,omitempty"`
 }
 
 type ListCommentsInput struct {
@@ -305,7 +307,11 @@ func dependencySummary(dependency domain.TaskDependency) DependencySummary {
 }
 
 func commentSummary(comment domain.Comment) CommentSummary {
-	return CommentSummary{ID: comment.ID, TaskID: comment.TaskID, Body: comment.Body, AuthorType: comment.AuthorType, CreatedAt: comment.CreatedAt}
+	s := CommentSummary{ID: comment.ID, TaskID: comment.TaskID, Body: comment.Body, AuthorType: comment.AuthorType, CreatedAt: comment.CreatedAt}
+	if len(comment.Tags) > 0 {
+		s.Tags = tagSummaries(comment.Tags)
+	}
+	return s
 }
 
 func contextSnippet(entry domain.ContextEntry) ContextSnippet {

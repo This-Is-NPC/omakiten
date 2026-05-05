@@ -20,6 +20,7 @@ const (
 	ErrEditorFailed              ErrorCode = "editor_failed"
 	ErrTagNotFound               ErrorCode = "tag_not_found"
 	ErrTagConflict               ErrorCode = "tag_conflict"
+	ErrGuardViolation            ErrorCode = "guard_violation"
 )
 
 type CodedError struct {

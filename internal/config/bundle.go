@@ -131,9 +131,18 @@ type Bucket struct {
 	Position int    `yaml:"position" json:"position"`
 }
 
+type TransitionGuard struct {
+	Type    string   `yaml:"type" json:"type"`
+	Buckets []string `yaml:"buckets,omitempty" json:"buckets,omitempty"`
+	Count   int      `yaml:"count,omitempty" json:"count,omitempty"`
+	Tag     string   `yaml:"tag,omitempty" json:"tag,omitempty"`
+	Hint    string   `yaml:"hint,omitempty" json:"hint,omitempty"`
+}
+
 type Transition struct {
-	From int `yaml:"from" json:"from"`
-	To   int `yaml:"to" json:"to"`
+	From   int               `yaml:"from" json:"from"`
+	To     int               `yaml:"to" json:"to"`
+	Guards []TransitionGuard `yaml:"guards,omitempty" json:"guards,omitempty"`
 }
 
 type Theme struct {

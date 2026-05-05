@@ -16,7 +16,7 @@ func NewCommentService(repo CommentRepository) *CommentService {
 	return &CommentService{repo: repo}
 }
 
-func (s *CommentService) Add(ctx context.Context, project domain.ProjectContext, taskID int64, body, authorType string) (comment domain.Comment, err error) {
+func (s *CommentService) Add(ctx context.Context, project domain.ProjectContext, taskID int64, body, authorType string, rawTags []string) (comment domain.Comment, err error) {
 	finish := activity.Track(ctx, "app.CommentService.Add", project, map[string]any{"task_id": taskID, "author": authorType})
 	defer func() {
 		status := "ok"
@@ -46,7 +46,16 @@ func (s *CommentService) Add(ctx context.Context, project domain.ProjectContext,
 		return
 	}
 
-	comment, err = s.repo.AddComment(ctx, project.ID, taskID, body, authorType)
+	tags := make([]domain.Tag, 0, len(rawTags))
+	for _, raw := range rawTags {
+		name := NormalizeTagName(raw)
+		if name == "" {
+			continue
+		}
+		tags = append(tags, domain.Tag{Name: name, Label: TagLabel(raw)})
+	}
+
+	comment, err = s.repo.AddComment(ctx, project.ID, taskID, body, authorType, tags)
 	return
 }
 
