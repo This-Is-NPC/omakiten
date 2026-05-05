@@ -30,12 +30,11 @@ fi
 install -Dm755 bin/okt "$HOME/.local/bin/okt"
 config_dir="$HOME/.config/omakiten"
 config_file="$config_dir/omakiten.yaml"
-if [ -f "$config_file" ] && ! "$HOME/.local/bin/okt" config validate "$config_file" >/dev/null 2>&1; then
-  backup_file="$config_file.bak.$(date +%Y%m%d%H%M%S)"
-  cp "$config_file" "$backup_file"
-  install -Dm644 defaults/omakiten.yaml "$config_file"
-  printf 'Backed up invalid Omakiten config to %s and reset wiring to current defaults.\n' "$backup_file" >&2
+if [ -f "$config_file" ] && ! cmp -s defaults/omakiten.yaml "$config_file"; then
+  cp "$config_file" "$config_file.bak.$(date +%Y%m%d%H%M%S)"
+  printf 'Refreshed %s (previous copy backed up).\n' "$config_file" >&2
 fi
+install -Dm644 defaults/omakiten.yaml "$config_file"
 for sub in themes skills laws personas; do
   src_dir="defaults/$sub"
   [ -d "$src_dir" ] || continue
