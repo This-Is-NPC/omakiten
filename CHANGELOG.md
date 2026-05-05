@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/This-Is-NPC/omakiten/compare/v0.3.0...v0.4.0) (2026-05-05)
+
+
+### Features
+
+* **errors:** Add error self-report registry with cross-project search ([#13](https://github.com/This-Is-NPC/omakiten/issues/13)) ([6cf1958](https://github.com/This-Is-NPC/omakiten/commit/6cf195877b0ad871875db9b6ada506cc1abdae4e))
+
 ## [0.3.0](https://github.com/This-Is-NPC/omakiten/compare/v0.2.0...v0.3.0) (2026-05-05)
 
 
