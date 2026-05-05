@@ -28,27 +28,15 @@ if [ -z "${HOME:-}" ]; then
   exit 1
 fi
 install -Dm755 bin/okt "$HOME/.local/bin/okt"
-config_dir="$HOME/.config/omakiten"
-config_file="$config_dir/omakiten.yaml"
-if [ -f "$config_file" ] && ! cmp -s defaults/omakiten.yaml "$config_file"; then
-  cp "$config_file" "$config_file.bak.$(date +%Y%m%d%H%M%S)"
-  printf 'Refreshed %s (previous copy backed up).\n' "$config_file" >&2
-fi
-install -Dm644 defaults/omakiten.yaml "$config_file"
-for sub in themes skills laws personas; do
-  src_dir="defaults/$sub"
-  [ -d "$src_dir" ] || continue
-  for src in "$src_dir"/*; do
-    [ -f "$src" ] || continue
-    dst="$config_dir/$sub/$(basename "$src")"
-    if [ -f "$dst" ] && ! cmp -s "$src" "$dst"; then
-      cp "$dst" "$dst.bak.$(date +%Y%m%d%H%M%S)"
-      printf 'Refreshed %s (previous copy backed up).\n' "$dst" >&2
-    fi
-    install -Dm644 "$src" "$dst"
-  done
-done
+"$PWD/scripts/sync-defaults.sh" "$HOME/.config/omakiten"
 "$HOME/.local/bin/okt" init --name Omakiten --slug omakiten --root "$PWD"
+'''
+
+[tasks."dev:sync"]
+description = "Mirror defaults/ into dev_env/ aggressively (overwrite root, leave custom/)"
+run = '''
+mkdir -p dev_env
+"$PWD/scripts/sync-defaults.sh" "$PWD/dev_env"
 '''
 
 [tasks."install:mcp:claude"]
@@ -107,7 +95,8 @@ rm -rf "$HOME/.config/omakiten" "$HOME/.local/share/omakiten"
 [tasks.tui]
 description = "Start the Omakiten TUI with local dev state under dev_env/"
 env = { OMAKITEN_HOME = "dev_env" }
-run = "mkdir -p dev_env && go run ./cmd/okt init --name Omakiten --slug omakiten >/dev/null && go run ./cmd/okt --project omakiten tui"
+depends = ["dev:sync"]
+run = "go run ./cmd/okt init --name Omakiten --slug omakiten >/dev/null && go run ./cmd/okt --project omakiten tui"
 
 [tasks.lint]
 description = "Run Go linter"
