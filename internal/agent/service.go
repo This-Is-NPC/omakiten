@@ -210,7 +210,7 @@ func (s *Service) AddComment(ctx context.Context, input AddCommentInput) (Commen
 	if err != nil {
 		return CommentResponse{}, err
 	}
-	comment, err := app.NewCommentService(s.repo).Add(ctx, project, input.TaskID, input.Body, input.AuthorType)
+	comment, err := app.NewCommentService(s.repo).Add(ctx, project, input.TaskID, input.Body, input.AuthorType, input.Tags)
 	if err != nil {
 		return CommentResponse{}, err
 	}
@@ -356,7 +356,7 @@ func (s *Service) RecordProgress(ctx context.Context, input RecordProgressInput)
 		response.Task = &summary
 	}
 	if strings.TrimSpace(input.Comment) != "" {
-		comment, err := app.NewCommentService(s.repo).Add(ctx, project, input.TaskID, input.Comment, input.AuthorType)
+		comment, err := app.NewCommentService(s.repo).Add(ctx, project, input.TaskID, input.Comment, input.AuthorType, nil)
 		if err != nil {
 			return RecordProgressResponse{}, err
 		}
