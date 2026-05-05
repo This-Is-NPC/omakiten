@@ -179,6 +179,88 @@ func TestConfigPickerListsProfilesExcludingStateFile(t *testing.T) {
 	}
 }
 
+func TestThemePickerEscRestoresNavTabs(t *testing.T) {
+	model, _ := newPickerModel(t)
+	model.width = 200
+	model.height = 60
+	model = pressRune(t, model, '4')
+
+	before := model.View()
+	if !strings.Contains(before, "// CONFIG") {
+		t.Fatalf("nav tabs missing before opening picker:\n%s", before)
+	}
+
+	model = pressRune(t, model, 't')
+	model = pressKey(t, model, tea.KeyEsc)
+
+	after := model.View()
+	if !strings.Contains(after, "// CONFIG") {
+		t.Fatalf("nav tabs missing after esc — bug repro:\n%s", after)
+	}
+	// Ensure ALL tab labels are present so we don't accept a degraded
+	// narrow-fallback rendering as a successful restore.
+	for _, want := range []string{"// BOARD", "// TABLE", "// GRAPH", "// CONFIG", "// LOGS"} {
+		if !strings.Contains(after, want) {
+			t.Fatalf("nav tab %q missing after esc — visual degradation:\n%s", want, after)
+		}
+	}
+}
+
+func TestThemePickerEnterRestoresNavTabs(t *testing.T) {
+	model, _ := newPickerModel(t)
+	model.width = 200
+	model.height = 60
+	model = pressRune(t, model, '4')
+	model = pressRune(t, model, 't')
+	// Move to the second option then apply via enter.
+	model = pressStringKey(t, model, "down")
+	model = pressKey(t, model, tea.KeyEnter)
+
+	if model.entityScreen != entityScreenClosed {
+		t.Fatalf("entityScreen = %v after enter, want closed", model.entityScreen)
+	}
+	out := model.View()
+	for _, want := range []string{"// BOARD", "// TABLE", "// GRAPH", "// CONFIG", "// LOGS"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("nav tab %q missing after apply:\n%s", want, out)
+		}
+	}
+}
+
+func TestThemePickerEscRestoresEntityScreenClosed(t *testing.T) {
+	model, _ := newPickerModel(t)
+	model = pressRune(t, model, '4')
+	model = pressRune(t, model, 't')
+	if model.entityScreen == entityScreenClosed {
+		t.Fatalf("expected entityScreen != closed after opening picker")
+	}
+	if model.entityForm.mode != entityScreenThemePicker {
+		t.Fatalf("expected theme picker mode, got %v", model.entityForm.mode)
+	}
+
+	model = pressKey(t, model, tea.KeyEsc)
+	if model.entityScreen != entityScreenClosed {
+		t.Fatalf("entityScreen = %v after esc, want closed (header would hide nav)", model.entityScreen)
+	}
+	if model.entityForm.mode != entityScreenClosed {
+		t.Fatalf("entityForm.mode = %v after esc, want closed", model.entityForm.mode)
+	}
+}
+
+func TestConfigPickerEscRestoresEntityScreenClosed(t *testing.T) {
+	model, _ := newPickerModel(t)
+	model = pressRune(t, model, '4')
+	model = pressRune(t, model, 'c')
+	if model.entityScreen == entityScreenClosed {
+		t.Fatalf("expected entityScreen != closed after opening picker")
+	}
+
+	model = pressKey(t, model, tea.KeyEsc)
+	if model.entityScreen != entityScreenClosed {
+		t.Fatalf("entityScreen = %v after esc, want closed (header would hide nav)", model.entityScreen)
+	}
+}
+
 func TestConfigPickerPersistsSelectionAndShowsRestartHint(t *testing.T) {
 	model, root := newPickerModel(t)
 	t.Setenv(paths.HomeEnv, root)

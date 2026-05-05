@@ -239,7 +239,12 @@ func (m Model) updateThemePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.entityForm.pickerCursor = rowCount - 1
 		m.syncPickerScroll(rowCount)
 	case "enter":
-		return m, m.applyThemeSelection()
+		// Evaluate the side-effecting call before reading m for the return
+		// tuple — Go does not specify the order of non-function operands
+		// against intervening function calls, and the pointer-receiver method
+		// must run before m is captured for the returned tea.Model.
+		cmd := m.applyThemeSelection()
+		return m, cmd
 	}
 	return m, nil
 }
