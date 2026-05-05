@@ -11,6 +11,7 @@ import (
 const (
 	TagEntityTask    = "task"
 	TagEntityProject = "project"
+	TagEntityError   = "error"
 )
 
 type TagService struct {
@@ -58,8 +59,14 @@ func (s *TagService) Add(ctx context.Context, project domain.ProjectContext, ent
 		err = s.repo.AddTaskTag(ctx, project.ID, entityID, tag.ID)
 	case TagEntityProject:
 		err = s.repo.AddProjectTag(ctx, project.ID, tag.ID)
+	case TagEntityError:
+		if entityID <= 0 {
+			err = domain.NewError(domain.ErrValidation, "entity_id must be positive for error tags", nil)
+			return
+		}
+		err = s.repo.AddErrorTag(ctx, entityID, tag.ID)
 	default:
-		err = domain.NewError(domain.ErrValidation, "entity_type must be 'task' or 'project'", map[string]any{"entity_type": entityType})
+		err = domain.NewError(domain.ErrValidation, "entity_type must be 'task', 'project', or 'error'", map[string]any{"entity_type": entityType})
 	}
 	return
 }
@@ -90,8 +97,14 @@ func (s *TagService) Remove(ctx context.Context, project domain.ProjectContext, 
 		err = s.repo.RemoveTaskTag(ctx, project.ID, entityID, tagID)
 	case TagEntityProject:
 		err = s.repo.RemoveProjectTag(ctx, project.ID, tagID)
+	case TagEntityError:
+		if entityID <= 0 {
+			err = domain.NewError(domain.ErrValidation, "entity_id must be positive for error tags", nil)
+			return
+		}
+		err = s.repo.RemoveErrorTag(ctx, entityID, tagID)
 	default:
-		err = domain.NewError(domain.ErrValidation, "entity_type must be 'task' or 'project'", map[string]any{"entity_type": entityType})
+		err = domain.NewError(domain.ErrValidation, "entity_type must be 'task', 'project', or 'error'", map[string]any{"entity_type": entityType})
 	}
 	return
 }
@@ -117,8 +130,14 @@ func (s *TagService) List(ctx context.Context, project domain.ProjectContext, en
 		tags, err = s.repo.ListTaskTags(ctx, project.ID, entityID)
 	case TagEntityProject:
 		tags, err = s.repo.ListProjectTags(ctx, project.ID)
+	case TagEntityError:
+		if entityID <= 0 {
+			err = domain.NewError(domain.ErrValidation, "entity_id must be positive for error tags", nil)
+			return
+		}
+		tags, err = s.repo.ListErrorTags(ctx, entityID)
 	default:
-		err = domain.NewError(domain.ErrValidation, "entity_type must be 'task' or 'project'", map[string]any{"entity_type": entityType})
+		err = domain.NewError(domain.ErrValidation, "entity_type must be 'task', 'project', or 'error'", map[string]any{"entity_type": entityType})
 	}
 	return
 }
