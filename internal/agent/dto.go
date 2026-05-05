@@ -1,6 +1,10 @@
 package agent
 
-import "omakiten/internal/domain"
+import (
+	"fmt"
+
+	"omakiten/internal/domain"
+)
 
 type ProjectSelector struct {
 	ProjectID int64  `json:"project_id,omitempty"`
@@ -414,6 +418,11 @@ type ConfirmSolutionInput struct {
 	Success    bool  `json:"success"`
 }
 
+type ListTopSolutionsInput struct {
+	ProjectSelector
+	Limit int `json:"limit,omitempty"`
+}
+
 type ErrorSummary struct {
 	ID          int64             `json:"id"`
 	Description string            `json:"description"`
@@ -434,6 +443,10 @@ type SolutionSummary struct {
 	TaskID      *int64 `json:"task_id,omitempty"`
 	TriedAt     string `json:"tried_at,omitempty"`
 	CreatedAt   string `json:"created_at,omitempty"`
+	Likes       int    `json:"likes"`
+	LikesBadge  string `json:"likes_badge,omitempty"`
+	ProjectID   int64  `json:"project_id,omitempty"`
+	ProjectSlug string `json:"project_slug,omitempty"`
 }
 
 type ErrorRecordResponse struct {
@@ -449,6 +462,11 @@ type SearchErrorsResponse struct {
 type SolutionResponse struct {
 	Project  ProjectSummary  `json:"project"`
 	Solution SolutionSummary `json:"solution"`
+}
+
+type TopSolutionsResponse struct {
+	Project   ProjectSummary    `json:"project"`
+	Solutions []SolutionSummary `json:"solutions"`
 }
 
 func errorSummary(record domain.ErrorRecord) ErrorSummary {
@@ -473,7 +491,7 @@ func errorSummary(record domain.ErrorRecord) ErrorSummary {
 }
 
 func solutionSummary(s domain.Solution) SolutionSummary {
-	return SolutionSummary{
+	out := SolutionSummary{
 		ID:          s.ID,
 		ErrorID:     s.ErrorID,
 		Description: s.Description,
@@ -482,5 +500,19 @@ func solutionSummary(s domain.Solution) SolutionSummary {
 		TaskID:      s.TaskID,
 		TriedAt:     s.TriedAt,
 		CreatedAt:   s.CreatedAt,
+		Likes:       s.Likes,
+		ProjectID:   s.ProjectID,
+		ProjectSlug: s.ProjectSlug,
 	}
+	if s.Likes > 0 {
+		out.LikesBadge = solutionLikesBadge(s.Likes)
+	}
+	return out
+}
+
+func solutionLikesBadge(likes int) string {
+	if likes <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("[★ %d]", likes)
 }

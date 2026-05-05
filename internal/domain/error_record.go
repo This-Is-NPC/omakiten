@@ -20,4 +20,7 @@ type Solution struct {
 	TaskID      *int64 `json:"task_id,omitempty"`
 	TriedAt     string `json:"tried_at,omitempty"`
 	CreatedAt   string `json:"created_at,omitempty"`
+	Likes       int    `json:"likes"`
+	ProjectID   int64  `json:"project_id,omitempty"`
+	ProjectSlug string `json:"project_slug,omitempty"`
 }

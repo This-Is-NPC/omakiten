@@ -115,6 +115,63 @@ func TestErrorServiceConfirmSolutionRanks(t *testing.T) {
 	}
 }
 
+func TestErrorServiceListTopSolutionsRanksByLikes(t *testing.T) {
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(1000))
+	defer func() { _ = store.Close() }()
+
+	service := NewErrorService(store)
+	rec, _ := service.Record(ctx, project.Context(), "boom", "", nil)
+
+	popular, _ := service.AddSolution(ctx, project.Context(), rec.ID, "popular", "", nil)
+	if _, err := service.ConfirmSolution(ctx, project.Context(), popular.ID, true); err != nil {
+		t.Fatalf("ConfirmSolution(popular) error = %v", err)
+	}
+	if _, err := service.ConfirmSolution(ctx, project.Context(), popular.ID, true); err != nil {
+		t.Fatalf("ConfirmSolution(popular) error = %v", err)
+	}
+	other, _ := service.AddSolution(ctx, project.Context(), rec.ID, "other", "", nil)
+	if _, err := service.ConfirmSolution(ctx, project.Context(), other.ID, true); err != nil {
+		t.Fatalf("ConfirmSolution(other) error = %v", err)
+	}
+
+	top, err := service.ListTopSolutions(ctx, project.Context(), 0)
+	if err != nil {
+		t.Fatalf("ListTopSolutions() error = %v", err)
+	}
+	if len(top) != 2 {
+		t.Fatalf("ListTopSolutions() len = %d, want 2", len(top))
+	}
+	if top[0].ID != popular.ID || top[0].Likes != 2 {
+		t.Fatalf("ListTopSolutions()[0] = %+v, want popular likes=2", top[0])
+	}
+}
+
+func TestErrorServiceListTopSolutionsClampsLimit(t *testing.T) {
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(1000))
+	defer func() { _ = store.Close() }()
+
+	service := NewErrorService(store)
+	rec, _ := service.Record(ctx, project.Context(), "boom", "", nil)
+	for i := 0; i < 3; i++ {
+		sol, _ := service.AddSolution(ctx, project.Context(), rec.ID, "fix", "", nil)
+		if _, err := service.ConfirmSolution(ctx, project.Context(), sol.ID, true); err != nil {
+			t.Fatalf("ConfirmSolution() error = %v", err)
+		}
+	}
+
+	// limit > 100 must be clamped silently to 100; here we only have 3 rows so
+	// the visible signal is that the call succeeds and returns all of them.
+	top, err := service.ListTopSolutions(ctx, project.Context(), 9999)
+	if err != nil {
+		t.Fatalf("ListTopSolutions(9999) error = %v", err)
+	}
+	if len(top) != 3 {
+		t.Fatalf("ListTopSolutions(9999) len = %d, want 3", len(top))
+	}
+}
+
 func TestErrorServiceCrossProjectSearch(t *testing.T) {
 	ctx := context.Background()
 	store, projectA := appTestStore(t, appTestBundle(1000))

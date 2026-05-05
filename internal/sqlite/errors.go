@@ -218,11 +218,12 @@ func (s *Store) solutionsByErrorIDs(ctx context.Context, errorIDs []int64) (map[
 		args[i] = id
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, error_id, description, steps, success, task_id, COALESCE(tried_at, ''), created_at
+SELECT id, error_id, description, steps, success, task_id, COALESCE(tried_at, ''), created_at, likes
 FROM solutions
 WHERE error_id IN (`+strings.Join(placeholders, ",")+`)
 ORDER BY error_id,
   CASE WHEN success = 1 THEN 0 WHEN success IS NULL THEN 1 ELSE 2 END,
+  likes DESC,
   COALESCE(tried_at, '') DESC,
   id DESC
 `, args...)
@@ -242,6 +243,48 @@ ORDER BY error_id,
 	return result, rows.Err()
 }
 
+// ListTopSolutions returns the top N solutions ranked by likes globally
+// (cross-project). Solutions with zero likes are still returned to fill the
+// quota when fewer than N solutions have been liked.
+func (s *Store) ListTopSolutions(ctx context.Context, limit int) ([]domain.Solution, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT s.id, s.error_id, s.description, s.steps, s.success, s.task_id, COALESCE(s.tried_at, ''), s.created_at, s.likes,
+       COALESCE(e.project_id, 0), COALESCE(p.slug, '')
+FROM solutions s
+JOIN errors e ON e.id = s.error_id
+LEFT JOIN projects p ON p.id = e.project_id
+ORDER BY s.likes DESC, COALESCE(s.tried_at, '') DESC, s.id DESC
+LIMIT ?
+`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []domain.Solution
+	for rows.Next() {
+		var solution domain.Solution
+		var success sql.NullInt64
+		var taskID sql.NullInt64
+		if err := rows.Scan(&solution.ID, &solution.ErrorID, &solution.Description, &solution.Steps, &success, &taskID, &solution.TriedAt, &solution.CreatedAt, &solution.Likes, &solution.ProjectID, &solution.ProjectSlug); err != nil {
+			return nil, err
+		}
+		if success.Valid {
+			v := success.Int64 == 1
+			solution.Success = &v
+		}
+		if taskID.Valid {
+			v := taskID.Int64
+			solution.TaskID = &v
+		}
+		out = append(out, solution)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) AddSolution(ctx context.Context, errorID int64, description, steps string, taskID *int64) (domain.Solution, error) {
 	if err := s.ensureErrorExists(ctx, errorID); err != nil {
 		return domain.Solution{}, err
@@ -249,22 +292,28 @@ func (s *Store) AddSolution(ctx context.Context, errorID int64, description, ste
 	row := s.db.QueryRowContext(ctx, `
 INSERT INTO solutions(error_id, description, steps, task_id)
 VALUES (?, ?, ?, ?)
-RETURNING id, error_id, description, steps, success, task_id, COALESCE(tried_at, ''), created_at
+RETURNING id, error_id, description, steps, success, task_id, COALESCE(tried_at, ''), created_at, likes
 `, errorID, description, steps, taskID)
 	return scanSolution(row)
 }
 
+// ConfirmSolution records the outcome of a solution attempt. When success is
+// true the solution's like counter is incremented atomically in the same
+// statement, so external callers cannot fabricate likes without a real
+// confirmation.
 func (s *Store) ConfirmSolution(ctx context.Context, solutionID int64, success bool) (domain.Solution, error) {
 	successInt := 0
+	likesIncrement := 0
 	if success {
 		successInt = 1
+		likesIncrement = 1
 	}
 	row := s.db.QueryRowContext(ctx, `
 UPDATE solutions
-SET success = ?, tried_at = CURRENT_TIMESTAMP
+SET success = ?, tried_at = CURRENT_TIMESTAMP, likes = likes + ?
 WHERE id = ?
-RETURNING id, error_id, description, steps, success, task_id, COALESCE(tried_at, ''), created_at
-`, successInt, solutionID)
+RETURNING id, error_id, description, steps, success, task_id, COALESCE(tried_at, ''), created_at, likes
+`, successInt, likesIncrement, solutionID)
 	solution, err := scanSolution(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -294,7 +343,7 @@ func scanSolution(row rowScanner) (domain.Solution, error) {
 	var solution domain.Solution
 	var success sql.NullInt64
 	var taskID sql.NullInt64
-	if err := row.Scan(&solution.ID, &solution.ErrorID, &solution.Description, &solution.Steps, &success, &taskID, &solution.TriedAt, &solution.CreatedAt); err != nil {
+	if err := row.Scan(&solution.ID, &solution.ErrorID, &solution.Description, &solution.Steps, &success, &taskID, &solution.TriedAt, &solution.CreatedAt, &solution.Likes); err != nil {
 		return domain.Solution{}, err
 	}
 	if success.Valid {
@@ -307,4 +356,3 @@ func scanSolution(row rowScanner) (domain.Solution, error) {
 	}
 	return solution, nil
 }
-

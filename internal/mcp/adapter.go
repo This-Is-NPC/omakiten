@@ -93,7 +93,8 @@ func Tools() []ToolDefinition {
 		{Name: "errors.record", Description: "Record an error encountered during development with optional context and tags. Errors and their solutions are visible cross-project so the agent can reuse prior fixes.", InputSchema: recordErrorSchema()},
 		{Name: "errors.search", Description: "Search errors by tag intersection and/or description text. Returns errors with nested solutions ranked by success then recency. Search is cross-project.", InputSchema: searchErrorsSchema()},
 		{Name: "solutions.add", Description: "Attach a candidate solution to an error. Multiple solutions per error are supported.", InputSchema: addSolutionSchema()},
-		{Name: "solutions.confirm", Description: "Confirm whether a solution worked. success=true marks it as the recommended fix; success=false marks it as known-bad so the agent does not retry it without new context.", InputSchema: confirmSolutionSchema()},
+		{Name: "solutions.confirm", Description: "Confirm whether a solution worked. success=true marks it as the recommended fix and increments its like counter; success=false marks it as known-bad so the agent does not retry it without new context.", InputSchema: confirmSolutionSchema()},
+		{Name: "solutions.list_top", Description: "List the top N most-liked solutions globally (cross-project). Useful to surface validated fixes and audit recurring patterns. Likes are incremented only by solutions.confirm(success=true).", InputSchema: listTopSolutionsSchema()},
 	}
 }
 
@@ -271,6 +272,12 @@ func (a *Adapter) CallTool(ctx context.Context, name string, args map[string]any
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = a.service.ConfirmSolution(ctx, input)
+		}
+	case "solutions.list_top":
+		var input agent.ListTopSolutionsInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.ListTopSolutions(ctx, input)
 		}
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP tool %q", name)
@@ -454,6 +461,12 @@ func addSolutionSchema() map[string]any {
 func confirmSolutionSchema() map[string]any {
 	props := selectorProperties()
 	props["solution_id"] = integerSchema("Solution id to confirm")
-	props["success"] = booleanSchema("true if the solution worked; false to mark it as known-bad")
+	props["success"] = booleanSchema("true if the solution worked (also increments the solution's like counter); false to mark it as known-bad")
 	return objectSchema(props, []string{"solution_id", "success"})
+}
+
+func listTopSolutionsSchema() map[string]any {
+	props := selectorProperties()
+	props["limit"] = integerSchema("Maximum number of solutions to return (default 10, max 100)")
+	return objectSchema(props, nil)
 }

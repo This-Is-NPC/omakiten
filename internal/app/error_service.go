@@ -110,6 +110,32 @@ func (s *ErrorService) ConfirmSolution(ctx context.Context, project domain.Proje
 	return
 }
 
+const defaultTopSolutionsLimit = 10
+
+// ListTopSolutions returns the N most-liked solutions globally (cross-project).
+// Limits beyond 100 are clamped to keep MCP responses bounded.
+func (s *ErrorService) ListTopSolutions(ctx context.Context, project domain.ProjectContext, limit int) (solutions []domain.Solution, err error) {
+	finish := activity.Track(ctx, "app.ErrorService.ListTopSolutions", project, map[string]any{"limit": limit})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	if limit <= 0 {
+		limit = defaultTopSolutionsLimit
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	solutions, err = s.repo.ListTopSolutions(ctx, limit)
+	return
+}
+
 func normalizeTagInputs(rawTags []string) []domain.Tag {
 	tags := make([]domain.Tag, 0, len(rawTags))
 	seen := map[string]struct{}{}
