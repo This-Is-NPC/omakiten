@@ -206,6 +206,30 @@ func TestThemePickerEscRestoresNavTabs(t *testing.T) {
 	}
 }
 
+func TestViewIsClampedToTerminalHeightPreservingHeaderAndFooter(t *testing.T) {
+	model, _ := newPickerModel(t)
+	// Force a tall config view (5 entity columns) into a short terminal so
+	// the renderer would otherwise scroll the header off the top.
+	model.width = 200
+	model.height = 18
+	model = pressRune(t, model, '4')
+
+	out := model.View()
+	lines := strings.Split(out, "\n")
+	if len(lines) > model.height {
+		t.Fatalf("View() returned %d lines for height=%d — clamp failed", len(lines), model.height)
+	}
+	// Header (project breadcrumb) must remain at the top.
+	if !strings.Contains(lines[1], "omakiten") {
+		t.Fatalf("first content line missing project breadcrumb:\n%s", lines[1])
+	}
+	// Footer (keybinding hints) must remain at the bottom.
+	footer := strings.Join(lines[len(lines)-3:], "\n")
+	if !strings.Contains(footer, "section") && !strings.Contains(footer, "switch") {
+		t.Fatalf("footer not anchored at bottom after clamp:\n%s", footer)
+	}
+}
+
 func TestThemePickerEnterRestoresNavTabs(t *testing.T) {
 	model, _ := newPickerModel(t)
 	model.width = 200

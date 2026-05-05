@@ -327,10 +327,10 @@ func (m *Model) refreshActivityLogs() error {
 
 func (m Model) View() string {
 	if m.helpOpen {
-		return strings.Join([]string{m.renderHeader(), m.renderHelp(), m.renderHelpFooter()}, "\n")
+		return clampViewToHeight(m.height, m.renderHeader(), m.renderHelp(), m.renderHelpFooter())
 	}
 	if m.mode != modeNormal && !m.isEmbeddedCommentInput() {
-		return strings.Join([]string{m.renderHeader(), m.renderInput(), m.renderCurrentView(), m.renderFooter()}, "\n")
+		return clampViewToHeight(m.height, m.renderHeader(), m.renderInput(), m.renderCurrentView(), m.renderFooter())
 	}
 
 	parts := []string{m.renderHeader()}
@@ -338,7 +338,42 @@ func (m Model) View() string {
 		parts = append(parts, "  "+m.styles.statusBadge(m.status))
 	}
 	parts = append(parts, m.renderCurrentView(), m.renderFooter())
-	return strings.Join(parts, "\n")
+	return clampViewToHeight(m.height, parts...)
+}
+
+// clampViewToHeight joins the segments of a view (header → middle → footer)
+// and ensures the result never exceeds the terminal height. When the joined
+// output is too tall, the trailing segment (footer) is preserved as the
+// bottom anchor and the middle segments are truncated from the bottom — so
+// the top-of-screen header and the keybinding footer always stay visible.
+//
+// Without this clamp the alt-screen renderer would scroll the top off the
+// terminal whenever a view exceeds the available rows (e.g. the config view
+// with five entity columns), making nav tabs and the project header invisible.
+func clampViewToHeight(height int, segments ...string) string {
+	output := strings.Join(segments, "\n")
+	if height <= 0 {
+		return output
+	}
+	lines := strings.Split(output, "\n")
+	if len(lines) <= height {
+		return output
+	}
+	if len(segments) < 2 {
+		return strings.Join(lines[:height], "\n")
+	}
+	footer := strings.Split(segments[len(segments)-1], "\n")
+	body := strings.Split(strings.Join(segments[:len(segments)-1], "\n"), "\n")
+	budget := height - len(footer)
+	if budget <= 0 {
+		// Footer alone exceeds the terminal — fall back to a plain top clamp
+		// so something always renders rather than producing an empty screen.
+		return strings.Join(lines[:height], "\n")
+	}
+	if len(body) > budget {
+		body = body[:budget]
+	}
+	return strings.Join(append(body, footer...), "\n")
 }
 
 func (m Model) availableWidth() int {
