@@ -90,6 +90,10 @@ func Tools() []ToolDefinition {
 		{Name: "tags.list", Description: "List tags for a specific task or project.", InputSchema: tagListSchema()},
 		{Name: "tags.list_all", Description: "List all tags across all projects with usage counts.", InputSchema: objectSchema(map[string]any{}, nil)},
 		{Name: "tags.merge", Description: "Merge a source tag into a target tag, reassigning all references and deleting the source.", InputSchema: objectSchema(map[string]any{"source_tag_id": integerSchema("Source tag id to merge from (will be deleted)"), "target_tag_id": integerSchema("Target tag id to merge into (canonical)")}, []string{"source_tag_id", "target_tag_id"})},
+		{Name: "errors.record", Description: "Record an error encountered during development with optional context and tags. Errors and their solutions are visible cross-project so the agent can reuse prior fixes.", InputSchema: recordErrorSchema()},
+		{Name: "errors.search", Description: "Search errors by tag intersection and/or description text. Returns errors with nested solutions ranked by success then recency. Search is cross-project.", InputSchema: searchErrorsSchema()},
+		{Name: "solutions.add", Description: "Attach a candidate solution to an error. Multiple solutions per error are supported.", InputSchema: addSolutionSchema()},
+		{Name: "solutions.confirm", Description: "Confirm whether a solution worked. success=true marks it as the recommended fix; success=false marks it as known-bad so the agent does not retry it without new context.", InputSchema: confirmSolutionSchema()},
 	}
 }
 
@@ -244,6 +248,30 @@ func (a *Adapter) CallTool(ctx context.Context, name string, args map[string]any
 		if err == nil {
 			data, err = a.service.MergeTags(ctx, input)
 		}
+	case "errors.record":
+		var input agent.RecordErrorInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.RecordError(ctx, input)
+		}
+	case "errors.search":
+		var input agent.SearchErrorsInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.SearchErrors(ctx, input)
+		}
+	case "solutions.add":
+		var input agent.AddSolutionInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.AddSolution(ctx, input)
+		}
+	case "solutions.confirm":
+		var input agent.ConfirmSolutionInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.ConfirmSolution(ctx, input)
+		}
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP tool %q", name)
 	}
@@ -397,4 +425,35 @@ func booleanSchema(description string) map[string]any {
 
 func arrayStringSchema(description string) map[string]any {
 	return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": description}
+}
+
+func recordErrorSchema() map[string]any {
+	props := selectorProperties()
+	props["description"] = stringSchema("One-line description of the error")
+	props["context"] = stringSchema("Optional surrounding context, stack trace, or symptoms")
+	props["tags"] = arrayStringSchema("Tag names attached to this error (normalized to kebab-case). Use specific tags so future searches can match — e.g. [\"sqlite\", \"foreign-key\"].")
+	return objectSchema(props, []string{"description"})
+}
+
+func searchErrorsSchema() map[string]any {
+	props := selectorProperties()
+	props["query"] = stringSchema("Optional substring matched against error description and context")
+	props["tags"] = arrayStringSchema("Optional tag names; results match errors carrying ANY of these tags")
+	return objectSchema(props, nil)
+}
+
+func addSolutionSchema() map[string]any {
+	props := selectorProperties()
+	props["error_id"] = integerSchema("Error id to attach the solution to")
+	props["description"] = stringSchema("One-line description of the candidate solution")
+	props["steps"] = stringSchema("Optional explicit steps, code snippet, or command to apply the solution")
+	props["task_id"] = integerSchema("Optional task id where this solution was discovered/applied")
+	return objectSchema(props, []string{"error_id", "description"})
+}
+
+func confirmSolutionSchema() map[string]any {
+	props := selectorProperties()
+	props["solution_id"] = integerSchema("Solution id to confirm")
+	props["success"] = booleanSchema("true if the solution worked; false to mark it as known-bad")
+	return objectSchema(props, []string{"solution_id", "success"})
 }
