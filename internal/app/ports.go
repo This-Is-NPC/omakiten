@@ -32,7 +32,7 @@ type TaskRepository interface {
 }
 
 type CommentRepository interface {
-	AddComment(ctx context.Context, projectID, taskID int64, body, authorType string) (domain.Comment, error)
+	AddComment(ctx context.Context, projectID, taskID int64, body, authorType string, tags []domain.Tag) (domain.Comment, error)
 	ListComments(ctx context.Context, projectID, taskID int64) ([]domain.Comment, error)
 }
 
