@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0](https://github.com/This-Is-NPC/omakiten/compare/v0.1.1...v0.2.0) (2026-05-05)
+
+
+### Features
+
+* **graph:** add cursor navigation and task opening to dependency view ([#8](https://github.com/This-Is-NPC/omakiten/issues/8)) ([0e33b27](https://github.com/This-Is-NPC/omakiten/commit/0e33b27ef55deff5e9c974f032434c4a6c6f23bf))
+* **tags:** Add reusable cross-project tags to tasks and projects ([#10](https://github.com/This-Is-NPC/omakiten/issues/10)) ([6a7ab73](https://github.com/This-Is-NPC/omakiten/commit/6a7ab7332bf6c990d33764c42cb7fda21c790674))
+
 ## [0.1.1](https://github.com/This-Is-NPC/omakiten/compare/v0.1.0...v0.1.1) (2026-05-05)
 
 
