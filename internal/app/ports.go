@@ -70,4 +70,5 @@ type ErrorRepository interface {
 	SearchErrors(ctx context.Context, query string, tagNames []string) ([]domain.ErrorRecord, error)
 	AddSolution(ctx context.Context, errorID int64, description, steps string, taskID *int64) (domain.Solution, error)
 	ConfirmSolution(ctx context.Context, solutionID int64, success bool) (domain.Solution, error)
+	ListTopSolutions(ctx context.Context, limit int) ([]domain.Solution, error)
 }
