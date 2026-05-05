@@ -52,6 +52,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions) error {
 		Dependencies: rt.store,
 		Entries:      rt.store,
 		Config:       rt.store,
+		Tags:         rt.store,
 		Editor:       editor,
 		ActivityLogs: rt.store,
 	}, theme, token.NewCounter())

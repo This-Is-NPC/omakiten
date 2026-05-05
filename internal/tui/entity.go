@@ -30,6 +30,7 @@ const (
 	entityKindLaw entityKind = iota
 	entityKindPersona
 	entityKindSkill
+	entityKindTag
 )
 
 type entityScreenMode int
@@ -58,6 +59,8 @@ func (k entityKind) String() string {
 		return "Persona"
 	case entityKindSkill:
 		return "Skill"
+	case entityKindTag:
+		return "Tag"
 	default:
 		return ""
 	}
@@ -68,7 +71,7 @@ func (k entityKind) plural() string {
 }
 
 func entityKinds() []entityKind {
-	return []entityKind{entityKindLaw, entityKindPersona, entityKindSkill}
+	return []entityKind{entityKindLaw, entityKindPersona, entityKindSkill, entityKindTag}
 }
 
 func (m Model) entityCount(kind entityKind) int {
@@ -79,6 +82,8 @@ func (m Model) entityCount(kind entityKind) int {
 		return len(m.personas)
 	case entityKindSkill:
 		return len(m.skills)
+	case entityKindTag:
+		return len(m.tags)
 	}
 	return 0
 }
@@ -173,6 +178,8 @@ func (m Model) renderEntityBadges(kind entityKind, index int, maxWidth int) stri
 		return wrapBadges(m.renderPersonaBadges(index), maxWidth)
 	case entityKindSkill:
 		return wrapBadges(m.renderSkillBadges(index), maxWidth)
+	case entityKindTag:
+		return wrapBadges(m.renderTagBadges(index), maxWidth)
 	}
 	return ""
 }
@@ -292,8 +299,22 @@ func (m Model) entityCardLabel(kind entityKind, index int) string {
 		return m.personas[index].Key
 	case entityKindSkill:
 		return m.skills[index].Key
+	case entityKindTag:
+		return m.tags[index].Label
 	}
 	return ""
+}
+
+func (m Model) renderTagBadges(index int) []string {
+	tag := m.tags[index]
+	label := fmt.Sprintf("USE:%d", tag.UsageCount)
+	var badge string
+	if tag.UsageCount == 0 {
+		badge = m.styles.badgeHigh.Render(label)
+	} else {
+		badge = m.styles.badgeInfo.Render(label)
+	}
+	return []string{badge}
 }
 
 func (m Model) severityStyle(severity domain.LawSeverity) lipgloss.Style {
@@ -332,17 +353,32 @@ func (m *Model) handleConfigKey(msg tea.KeyMsg) tea.Cmd {
 	case "down", "j":
 		m.clearDeletePrompt("")
 		m.moveEntityCursor(1)
+	case "D":
+		m.clearDeletePrompt("")
+		if m.entityKind == entityKindTag && m.repos.Tags != nil {
+			m.deleteOrphanTags()
+		}
 	case "enter":
 		m.clearDeletePrompt("")
-		m.openSelectedEntityView()
+		if m.entityKind != entityKindTag {
+			m.openSelectedEntityView()
+		}
 	case "n":
 		m.clearDeletePrompt("")
-		return m.openEntityCreate(m.entityKind)
+		if m.entityKind != entityKindTag {
+			return m.openEntityCreate(m.entityKind)
+		}
 	case "e":
 		m.clearDeletePrompt("")
-		return m.openSelectedEntityEdit()
+		if m.entityKind != entityKindTag {
+			return m.openSelectedEntityEdit()
+		}
 	case "d":
-		m.requestSelectedEntityDelete()
+		if m.entityKind == entityKindTag {
+			m.requestSelectedTagDelete()
+		} else {
+			m.requestSelectedEntityDelete()
+		}
 	case "p":
 		m.clearDeletePrompt("")
 		if m.entityKind == entityKindPersona {
@@ -569,6 +605,11 @@ func (m *Model) entitySlugAt(kind entityKind, index int) string {
 			return ""
 		}
 		return m.skills[index].Key
+	case entityKindTag:
+		if index < 0 || index >= len(m.tags) {
+			return ""
+		}
+		return m.tags[index].Name
 	}
 	return ""
 }
@@ -719,6 +760,68 @@ func (m *Model) deleteEntity(kind entityKind, slug string) {
 		return
 	}
 	m.status = "Deleted"
+}
+
+func (m *Model) deleteOrphanTags() {
+	if m.repos.Tags == nil {
+		m.status = "Tag repository not available"
+		return
+	}
+	n, err := m.repos.Tags.DeleteOrphanTags(m.ctx)
+	if err != nil {
+		m.status = err.Error()
+		return
+	}
+	if err := m.refresh(); err != nil {
+		m.status = err.Error()
+		return
+	}
+	if n == 0 {
+		m.status = "No orphan tags found"
+	} else {
+		m.status = fmt.Sprintf("%d orphan tag(s) deleted", n)
+	}
+}
+
+func (m *Model) requestSelectedTagDelete() {
+	if m.repos.Tags == nil || len(m.tags) == 0 {
+		m.status = "Nothing to delete"
+		return
+	}
+	cursor := m.selectedEntityIndex(entityKindTag)
+	tag := m.tags[cursor]
+	if tag.UsageCount > 0 {
+		m.status = fmt.Sprintf("Tag %q is in use (%d references) — cannot delete", tag.Label, tag.UsageCount)
+		return
+	}
+	if m.deletePending && m.deleteKind == entityKindTag && m.deleteSlug == tag.Name {
+		m.deleteTagByName(tag.Name)
+		return
+	}
+	m.deletePending = true
+	m.deleteKind = entityKindTag
+	m.deleteSlug = tag.Name
+	m.status = fmt.Sprintf("Confirm delete tag %q. Press d again to remove; esc cancels.", tag.Label)
+}
+
+func (m *Model) deleteTagByName(name string) {
+	if m.repos.Tags == nil {
+		m.status = "Tag repository not available"
+		return
+	}
+	n, err := m.repos.Tags.DeleteOrphanTags(m.ctx)
+	if err != nil {
+		m.status = err.Error()
+		return
+	}
+	m.clearDeletePrompt("")
+	if err := m.refresh(); err != nil {
+		m.status = err.Error()
+		return
+	}
+	if n > 0 {
+		m.status = fmt.Sprintf("Tag %q deleted", name)
+	}
 }
 
 func (m *Model) closeEntityScreen(status string) {

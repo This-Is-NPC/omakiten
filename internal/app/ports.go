@@ -46,3 +46,18 @@ type ContextEntryRepository interface {
 	AddContextEntry(ctx context.Context, projectID int64, body string, tokenEstimate int) (domain.ContextEntry, error)
 	ListContextEntries(ctx context.Context, projectID int64) ([]domain.ContextEntry, error)
 }
+
+type TagRepository interface {
+	FindOrCreateTag(ctx context.Context, name, label string) (domain.Tag, error)
+	ListAllTags(ctx context.Context) ([]domain.Tag, error)
+	RenameTag(ctx context.Context, tagID int64, newLabel string) (domain.Tag, error)
+	MergeTags(ctx context.Context, sourceTagID, targetTagID int64) (domain.Tag, error)
+	DeleteOrphanTags(ctx context.Context) (int64, error)
+	AddTaskTag(ctx context.Context, projectID, taskID, tagID int64) error
+	RemoveTaskTag(ctx context.Context, projectID, taskID, tagID int64) error
+	ListTaskTags(ctx context.Context, projectID, taskID int64) ([]domain.Tag, error)
+	ListTaskTagsByProject(ctx context.Context, projectID int64) (map[int64][]domain.Tag, error)
+	AddProjectTag(ctx context.Context, projectID, tagID int64) error
+	RemoveProjectTag(ctx context.Context, projectID, tagID int64) error
+	ListProjectTags(ctx context.Context, projectID int64) ([]domain.Tag, error)
+}
