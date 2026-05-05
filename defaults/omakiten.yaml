@@ -61,14 +61,19 @@ workflows:
         to: 2
       - from: 4
         to: 3
-skills:
-  - go
-  - sqlite
-  - cli
-laws:
-  - project-scope-only
-  - workflow-enforced
-  - yaml-is-canonical
+# skills:, laws: and personas: are optional. When omitted, every .md file in
+# skills/, laws/ and personas/ is loaded automatically — drop a file into the
+# folder and it becomes available. Uncomment a slot to act as a strict allowlist
+# (only listed slugs activate) or to declare explicit persona ⇄ skill/law wiring.
+#
+# skills:
+#   - go
+#   - sqlite
+#   - cli
+# laws:
+#   - project-scope-only
+#   - workflow-enforced
+#   - yaml-is-canonical
 personas:
   - slug: backend-agent
     skills:
