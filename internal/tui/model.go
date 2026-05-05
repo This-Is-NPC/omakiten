@@ -109,7 +109,8 @@ type Model struct {
 
 	tableScroll int
 
-	graphScroll int
+	graphScroll  int
+	graphCursor  int
 
 	helpScroll int
 
@@ -626,44 +627,80 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 	}
 }
 
-// handleGraphKey handles input on the dependency graph view. The graph has no
-// row selection — j/k/pgup/pgdn/g/G mutate m.graphScroll directly.
+// handleGraphKey handles input on the dependency graph view.
+// j/k/pgup/pgdn/g/G navigate between nodes; enter opens the selected task.
 func (m *Model) handleGraphKey(msg tea.KeyMsg) {
+	lines := buildDAGLines(m.dependencies, m.tasks)
+	sel := dagSelectableIndices(lines)
+	maxCursor := len(sel) - 1
+	if maxCursor < 0 {
+		maxCursor = 0
+	}
+
 	switch msg.String() {
 	case "left", "h":
 		m.view = (m.view + len(viewNames) - 1) % len(viewNames)
 	case "right", "l":
 		m.view = (m.view + 1) % len(viewNames)
 	case "up", "k":
-		if m.graphScroll > 0 {
-			m.graphScroll--
+		if m.graphCursor > 0 {
+			m.graphCursor--
 		}
 	case "down", "j":
-		m.graphScroll++
+		if m.graphCursor < maxCursor {
+			m.graphCursor++
+		}
 	case "pgup", "ctrl+u":
-		m.graphScroll -= taskViewPageStep(m.graphViewportRows())
-		if m.graphScroll < 0 {
-			m.graphScroll = 0
+		m.graphCursor -= taskViewPageStep(m.graphViewportRows())
+		if m.graphCursor < 0 {
+			m.graphCursor = 0
 		}
 	case "pgdown", "ctrl+d":
-		m.graphScroll += taskViewPageStep(m.graphViewportRows())
+		m.graphCursor += taskViewPageStep(m.graphViewportRows())
+		if m.graphCursor > maxCursor {
+			m.graphCursor = maxCursor
+		}
 	case "home", "g":
-		m.graphScroll = 0
+		m.graphCursor = 0
 	case "end", "G":
-		m.graphScroll = 1 << 20
+		m.graphCursor = maxCursor
+	case "enter":
+		if m.graphCursor >= 0 && m.graphCursor < len(sel) {
+			taskID := lines[sel[m.graphCursor]].taskID
+			if task, ok := m.taskByID(taskID); ok {
+				m.openTaskView(task)
+			}
+		}
+	}
+	m.syncGraphScroll(sel, len(lines))
+}
+
+// syncGraphScroll keeps m.graphScroll aligned so the cursor node stays in the viewport.
+func (m *Model) syncGraphScroll(sel []int, totalLines int) {
+	viewport := m.graphViewportRows()
+	if viewport <= 0 || len(sel) == 0 {
+		return
+	}
+	cursorLine := sel[clampInt(m.graphCursor, 0, len(sel)-1)]
+	if cursorLine < m.graphScroll {
+		m.graphScroll = cursorLine
+	}
+	if cursorLine >= m.graphScroll+viewport {
+		m.graphScroll = cursorLine - viewport + 1
+	}
+	if m.graphScroll < 0 {
+		m.graphScroll = 0
 	}
 }
 
-// graphViewportRows returns how many dependency rows fit between the screen
-// chrome and the grid's own header rows. Returns 0 when too small to bother
-// scrolling.
+// graphViewportRows returns how many DAG lines fit in the graph panel viewport.
+// Returns 0 when the terminal is too small to scroll.
 func (m Model) graphViewportRows() int {
 	if m.height <= 0 {
 		return 0
 	}
-	// 5 screen header + 1 leading blank + 2 footer + 4 grid chrome
-	// (kicker row + spanned divider + Task/Blocked-by header + bottom border)
-	// + 2 grid top/bottom borders' interplay with the kicker = 12.
+	// 5 screen header + 1 leading blank + 2 footer + 2 panel borders
+	// + 2 panel header rows (kicker + blank) = 12.
 	chrome := 12
 	if m.status != "" {
 		chrome++
@@ -1789,7 +1826,8 @@ func (m Model) renderHelp() string {
 		}},
 		{"Graph", []binding{
 			{"← →", "switch view"},
-			{"↑ ↓ · j k", "scroll dependency rows"},
+			{"↑ ↓ · j k", "move cursor"},
+			{"enter", "open task"},
 			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
 			{"g · G", "jump to top / bottom"},
 		}},
@@ -2471,72 +2509,30 @@ func (m Model) renderGraph() string {
 		return "\n" + indentBlock(content, 2)
 	}
 
-	const (
-		graphTaskWidth = 10
-		graphMinTotal  = graphTaskWidth + 16 + 3
-		graphMaxTotal  = 160
-	)
-	totalWidth := clampInt(m.availableWidth()-2, graphMinTotal, graphMaxTotal)
-	depWidth := totalWidth - graphTaskWidth - 3
+	lines := buildDAGLines(m.dependencies, m.tasks)
+	sel := dagSelectableIndices(lines)
 
-	labelCell := func(label string) string {
-		return m.styles.info.Render("// " + strings.ToUpper(label))
+	var cursorLineIdx int = -1
+	if len(sel) > 0 {
+		cursor := clampInt(m.graphCursor, 0, len(sel)-1)
+		cursorLineIdx = sel[cursor]
 	}
 
-	deps := m.dependencies
-	viewport := m.graphViewportRows()
-
-	above, below := 0, 0
-	if viewport > 0 && len(deps) > viewport {
-		offset := m.graphScroll
-		if offset < 0 {
-			offset = 0
+	dataRows := make([]string, len(lines))
+	for i, l := range lines {
+		if i == cursorLineIdx {
+			dataRows[i] = m.styles.hintAccent.Render(l.text)
+		} else {
+			dataRows[i] = l.text
 		}
-		maxOffset := len(deps) - viewport
-		if offset > maxOffset {
-			offset = maxOffset
-		}
-		visibleHeight := viewport
-		if offset > 0 {
-			visibleHeight--
-		}
-		if len(deps)-offset-visibleHeight > 0 {
-			visibleHeight--
-		}
-		if visibleHeight < 1 {
-			visibleHeight = 1
-		}
-		end := offset + visibleHeight
-		if end > len(deps) {
-			end = len(deps)
-		}
-		above = offset
-		below = len(deps) - end
-		deps = deps[offset:end]
 	}
 
-	rows := [][]string{
-		{m.styles.kickerCount("Dependency graph", len(m.dependencies))},
-		{labelCell("Task"), labelCell("Blocked by")},
+	rows := []string{
+		m.styles.kickerCount("Dependency graph", len(m.dependencies)),
+		"",
 	}
-	for _, dependency := range deps {
-		rows = append(rows, []string{
-			fmt.Sprintf("#%d", dependency.TaskID),
-			fmt.Sprintf("#%d", dependency.DependsOnTaskID),
-		})
-	}
-
-	table := renderGridTable(rows, []int{graphTaskWidth, depWidth}, m.styles.border)
-
-	parts := make([]string, 0, 3)
-	if above > 0 {
-		parts = append(parts, m.styles.hint.Render(fmt.Sprintf("▲ %d above", above)))
-	}
-	parts = append(parts, table)
-	if below > 0 {
-		parts = append(parts, m.styles.hint.Render(fmt.Sprintf("▼ %d below", below)))
-	}
-	return "\n" + indentBlock(strings.Join(parts, "\n"), 2)
+	rows = append(rows, m.sliceScrollRows(dataRows, m.graphScroll, m.graphViewportRows())...)
+	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
 }
 
 func (m Model) renderConfig() string {
@@ -2656,7 +2652,7 @@ func (m Model) renderFooter() string {
 	case m.view == 4:
 		text = "left/right switch view  up/down select row  pgup/pgdn scroll  g/G top/bottom  r refresh  ? help"
 	case m.view == 2:
-		text = "left/right switch view  j/k scroll  pgup/pgdn scroll  g/G top/bottom  ? help"
+		text = "left/right switch view  j/k move  pgup/pgdn scroll  g/G top/bottom  enter open  ? help"
 	default:
 		text = "tab switch view  up/down select  pgup/pgdn scroll  g/G top/bottom  enter open  n new  m move  ? help"
 	}
