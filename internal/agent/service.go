@@ -494,6 +494,22 @@ func (s *Service) ConfirmSolution(ctx context.Context, input ConfirmSolutionInpu
 	return SolutionResponse{Project: projectSummary(project), Solution: solutionSummary(solution)}, nil
 }
 
+func (s *Service) ListTopSolutions(ctx context.Context, input ListTopSolutionsInput) (TopSolutionsResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return TopSolutionsResponse{}, err
+	}
+	solutions, err := app.NewErrorService(s.repo).ListTopSolutions(ctx, project, input.Limit)
+	if err != nil {
+		return TopSolutionsResponse{}, err
+	}
+	out := make([]SolutionSummary, 0, len(solutions))
+	for _, sol := range solutions {
+		out = append(out, solutionSummary(sol))
+	}
+	return TopSolutionsResponse{Project: projectSummary(project), Solutions: out}, nil
+}
+
 func (s *Service) resolveProject(ctx context.Context, selector ProjectSelector) (domain.ProjectContext, error) {
 	effective := s.selector
 	if selector.ProjectID > 0 || strings.TrimSpace(selector.Project) != "" || strings.TrimSpace(selector.CWD) != "" {
