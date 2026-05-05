@@ -18,6 +18,8 @@ const (
 	ErrPersonaNotFound           ErrorCode = "persona_not_found"
 	ErrSkillReferenced           ErrorCode = "skill_referenced"
 	ErrEditorFailed              ErrorCode = "editor_failed"
+	ErrTagNotFound               ErrorCode = "tag_not_found"
+	ErrTagConflict               ErrorCode = "tag_conflict"
 )
 
 type CodedError struct {
