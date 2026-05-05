@@ -85,6 +85,11 @@ func Tools() []ToolDefinition {
 		{Name: "context.dump", Description: "Dump compact project context at level 1, 2, or 3.", InputSchema: objectSchema(map[string]any{"level": integerSchema("Context level: 1, 2, or 3")}, nil)},
 		{Name: "workflow.show", Description: "Show the active workflow buckets and allowed transitions.", InputSchema: selectorSchema()},
 		{Name: "progress.record", Description: "Record material agent progress through task edits, comments, context entries, and optional workflow movement.", InputSchema: progressSchema()},
+		{Name: "tags.add", Description: "Add a reusable tag to a task or project. The tag name is normalized to kebab-case and deduplicated automatically.", InputSchema: tagMutationSchema(false)},
+		{Name: "tags.remove", Description: "Remove a tag from a task or project after explicit confirmation.", InputSchema: tagMutationSchema(true)},
+		{Name: "tags.list", Description: "List tags for a specific task or project.", InputSchema: tagListSchema()},
+		{Name: "tags.list_all", Description: "List all tags across all projects with usage counts.", InputSchema: objectSchema(map[string]any{}, nil)},
+		{Name: "tags.merge", Description: "Merge a source tag into a target tag, reassigning all references and deleting the source.", InputSchema: objectSchema(map[string]any{"source_tag_id": integerSchema("Source tag id to merge from (will be deleted)"), "target_tag_id": integerSchema("Target tag id to merge into (canonical)")}, []string{"source_tag_id", "target_tag_id"})},
 	}
 }
 
@@ -213,6 +218,32 @@ func (a *Adapter) CallTool(ctx context.Context, name string, args map[string]any
 		if err == nil {
 			data, err = a.service.RecordProgress(ctx, input)
 		}
+	case "tags.add":
+		var input agent.AddTagInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.AddTag(ctx, input)
+		}
+	case "tags.remove":
+		var input agent.RemoveTagInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.RemoveTag(ctx, input)
+		}
+	case "tags.list":
+		var input agent.ListTagsInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.ListTags(ctx, input)
+		}
+	case "tags.list_all":
+		data, err = a.service.ListAllTags(ctx)
+	case "tags.merge":
+		var input agent.MergeTagsInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.MergeTags(ctx, input)
+		}
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP tool %q", name)
 	}
@@ -322,6 +353,26 @@ func progressSchema() map[string]any {
 	props["context"] = stringSchema("Optional project handoff context entry")
 	props["author_type"] = stringSchema("human or agent")
 	return objectSchema(props, nil)
+}
+
+func tagMutationSchema(includeTagID bool) map[string]any {
+	props := selectorProperties()
+	props["entity_type"] = stringSchema("Entity type: 'task' or 'project'")
+	props["entity_id"] = integerSchema("Entity id (task_id for tasks; omit for projects)")
+	if includeTagID {
+		props["tag_id"] = integerSchema("Tag id to remove")
+		props["confirmed"] = booleanSchema("Required true to remove the tag")
+		return objectSchema(props, []string{"entity_type", "tag_id"})
+	}
+	props["tag_name"] = stringSchema("Tag name (normalized to kebab-case automatically)")
+	return objectSchema(props, []string{"entity_type", "tag_name"})
+}
+
+func tagListSchema() map[string]any {
+	props := selectorProperties()
+	props["entity_type"] = stringSchema("Entity type: 'task' or 'project'")
+	props["entity_id"] = integerSchema("Entity id (task_id for tasks; omit for projects)")
+	return objectSchema(props, []string{"entity_type"})
 }
 
 func objectSchema(properties map[string]any, required []string) map[string]any {
