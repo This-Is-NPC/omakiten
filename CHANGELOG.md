@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/This-Is-NPC/omakiten/compare/v0.2.0...v0.3.0) (2026-05-05)
+
+
+### Features
+
+* **guards:** transition guard evaluation and comment tagging ([#11](https://github.com/This-Is-NPC/omakiten/issues/11)) ([89cac57](https://github.com/This-Is-NPC/omakiten/commit/89cac570e44178ae8a2d8137e10abca68c938a5f))
+
 ## [0.2.0](https://github.com/This-Is-NPC/omakiten/compare/v0.1.1...v0.2.0) (2026-05-05)
 
 
