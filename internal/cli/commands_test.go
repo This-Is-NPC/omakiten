@@ -23,6 +23,7 @@ func TestCLIOperationalCommands(t *testing.T) {
 	runCLI(t, dbPath, configPath, "add", "-t", "First")
 	runCLI(t, dbPath, configPath, "add", "-t", "Second")
 	runCLI(t, dbPath, configPath, "comment", "add", "1", "-b", "Remember this")
+	runCLI(t, dbPath, configPath, "comment", "add", "1", "-b", "feat/test", "--tag", "self-branch")
 	runCLI(t, dbPath, configPath, "depend", "add", "2", "-i", "1")
 	runCLI(t, dbPath, configPath, "context", "add", "-b", "handoff note")
 
