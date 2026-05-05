@@ -194,6 +194,11 @@ func validateWorkflows(workflows []Workflow, activeKey string) error {
 			}
 		}
 
+		bucketKeySet := make(map[string]struct{}, len(workflow.Buckets))
+		for _, bucket := range workflow.Buckets {
+			bucketKeySet[bucket.Key] = struct{}{}
+		}
+
 		seenTransitions := map[[2]int]struct{}{}
 		for _, transition := range workflow.Transitions {
 			if _, ok := bucketIDs[transition.From]; !ok {
@@ -207,6 +212,33 @@ func validateWorkflows(workflows []Workflow, activeKey string) error {
 				return fmt.Errorf("workflows.%s has duplicated transition %d -> %d", workflow.Key, transition.From, transition.To)
 			}
 			seenTransitions[key] = struct{}{}
+
+			for _, guard := range transition.Guards {
+				switch guard.Type {
+				case "blockers_in":
+					if len(guard.Buckets) == 0 {
+						return fmt.Errorf("workflows.%s guard blockers_in: buckets is required", workflow.Key)
+					}
+					for _, bKey := range guard.Buckets {
+						if _, ok := bucketKeySet[bKey]; !ok {
+							return fmt.Errorf("workflows.%s guard blockers_in: bucket key %q not found in workflow", workflow.Key, bKey)
+						}
+					}
+				case "comments_min":
+					if guard.Count < 1 {
+						return fmt.Errorf("workflows.%s guard comments_min: count must be >= 1", workflow.Key)
+					}
+				case "comments_tagged":
+					if strings.TrimSpace(guard.Tag) == "" {
+						return fmt.Errorf("workflows.%s guard comments_tagged: tag is required", workflow.Key)
+					}
+					if guard.Count < 1 {
+						return fmt.Errorf("workflows.%s guard comments_tagged: count must be >= 1", workflow.Key)
+					}
+				default:
+					return fmt.Errorf("workflows.%s: unknown guard type %q", workflow.Key, guard.Type)
+				}
+			}
 		}
 	}
 
