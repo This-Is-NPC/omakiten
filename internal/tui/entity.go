@@ -397,6 +397,7 @@ func (m *Model) openSelectedEntityView() {
 	m.entityScreen = entityScreenView
 	m.entityForm = entityForm{kind: m.entityKind, mode: entityScreenView, slug: slug}
 	m.status = ""
+	m.entityViewScroll = 0
 }
 
 // openEntityCreate scaffolds a new entity file and runs $EDITOR against it.
@@ -622,6 +623,23 @@ func (m Model) updateEntityScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = "Refreshed"
 		}
+	case "j", "down":
+		m.entityViewScroll++
+	case "k", "up":
+		if m.entityViewScroll > 0 {
+			m.entityViewScroll--
+		}
+	case "pgdown", "ctrl+d":
+		m.entityViewScroll += taskViewPageStep(m.entityViewportHeight())
+	case "pgup", "ctrl+u":
+		m.entityViewScroll -= taskViewPageStep(m.entityViewportHeight())
+		if m.entityViewScroll < 0 {
+			m.entityViewScroll = 0
+		}
+	case "home", "g":
+		m.entityViewScroll = 0
+	case "end", "G":
+		m.entityViewScroll = 1 << 20
 	}
 	return m, nil
 }
@@ -708,6 +726,7 @@ func (m *Model) closeEntityScreen(status string) {
 	m.entityScreen = entityScreenClosed
 	m.entityForm = entityForm{}
 	m.status = status
+	m.entityViewScroll = 0
 }
 
 func (m *Model) clearDeletePrompt(status string) {
@@ -733,9 +752,12 @@ func (m Model) renderEntityView() string {
 	const (
 		entityDetailLabelWidth = 14
 		entityDetailMinValue   = 20
-		entityDetailMaxTotal   = 96
+		entityDetailMaxValue   = 140
 	)
-	totalWidth := clampInt(m.availableWidth()-4, entityDetailLabelWidth+entityDetailMinValue+3, entityDetailMaxTotal)
+	available := m.availableWidth() - 4
+	minTotal := entityDetailLabelWidth + entityDetailMinValue + 3
+	maxTotal := entityDetailLabelWidth + entityDetailMaxValue + 3
+	totalWidth := clampInt(available, minTotal, maxTotal)
 	valueWidth := totalWidth - entityDetailLabelWidth - 3
 
 	labelCell := func(label string) string {
@@ -807,7 +829,55 @@ func (m Model) renderEntityView() string {
 	rows = append(rows, extraSpannedRows...)
 
 	table := renderGridTable(rows, []int{entityDetailLabelWidth, valueWidth}, m.styles.border)
-	return "\n" + indentBlock(table, 2)
+	return m.applyEntityViewScroll(table)
+}
+
+// entityViewportHeight is the line budget for the entity detail view content
+// between header and footer. Returns 0 when the height is unknown or too small
+// to scroll usefully — callers should render everything and let the terminal
+// scroll natively in that case.
+func (m Model) entityViewportHeight() int {
+	if m.height <= 0 {
+		return 0
+	}
+	chrome := 5 // header(2) + leading blank(1) + footer(2)
+	if m.status != "" {
+		chrome++
+	}
+	h := m.height - chrome
+	if h < 8 {
+		return 0
+	}
+	return h
+}
+
+// applyEntityViewScroll slices the rendered grid to the available viewport
+// based on m.entityViewScroll. Operates on the post-render line list (no
+// height heuristics) so very tall bodies behave deterministically.
+func (m Model) applyEntityViewScroll(content string) string {
+	viewport := m.entityViewportHeight()
+	lines := strings.Split(content, "\n")
+	if viewport <= 0 || len(lines) <= viewport {
+		return "\n" + indentBlock(content, 2)
+	}
+
+	visibleHeight := viewport - 1
+	maxOffset := len(lines) - visibleHeight
+	offset := m.entityViewScroll
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	visible := lines[offset : offset+visibleHeight]
+	above := offset
+	below := len(lines) - (offset + visibleHeight)
+	if below < 0 {
+		below = 0
+	}
+	hint := m.styles.hint.Render(fmt.Sprintf("▲ %d above · ▼ %d below  · j/k pgup/pgdn g/G", above, below))
+	return "\n" + indentBlock(strings.Join(visible, "\n")+"\n"+hint, 2)
 }
 
 // openPersonaPicker initializes the multi-select picker for the persona at
@@ -832,6 +902,7 @@ func (m *Model) openPersonaPicker(slug string) {
 		pickerChecks: checks,
 	}
 	m.status = "Skill picker"
+	m.pickerScroll = 0
 }
 
 func (m *Model) openPersonaPickerForSelected() {
@@ -857,11 +928,39 @@ func (m Model) updatePersonaPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		if m.entityForm.pickerCursor > 0 {
 			m.entityForm.pickerCursor--
+			m.syncPickerScroll(rowCount)
 		}
 	case "down", "j":
 		if m.entityForm.pickerCursor < rowCount-1 {
 			m.entityForm.pickerCursor++
+			m.syncPickerScroll(rowCount)
 		}
+	case "pgup", "ctrl+u":
+		step := taskViewPageStep(m.pickerViewportRows())
+		m.entityForm.pickerCursor -= step
+		if m.entityForm.pickerCursor < 0 {
+			m.entityForm.pickerCursor = 0
+		}
+		m.syncPickerScroll(rowCount)
+	case "pgdown", "ctrl+d":
+		step := taskViewPageStep(m.pickerViewportRows())
+		m.entityForm.pickerCursor += step
+		if m.entityForm.pickerCursor > rowCount-1 {
+			m.entityForm.pickerCursor = rowCount - 1
+		}
+		if m.entityForm.pickerCursor < 0 {
+			m.entityForm.pickerCursor = 0
+		}
+		m.syncPickerScroll(rowCount)
+	case "home", "g":
+		m.entityForm.pickerCursor = 0
+		m.syncPickerScroll(rowCount)
+	case "end", "G":
+		m.entityForm.pickerCursor = rowCount - 1
+		if m.entityForm.pickerCursor < 0 {
+			m.entityForm.pickerCursor = 0
+		}
+		m.syncPickerScroll(rowCount)
 	case " ", "space":
 		if m.entityForm.pickerCursor < len(m.skills) {
 			slug := m.skills[m.entityForm.pickerCursor].Key
@@ -879,6 +978,50 @@ func (m Model) updatePersonaPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.savePersonaPicker()
 	}
 	return m, nil
+}
+
+// syncPickerScroll keeps m.pickerScroll aligned so the cursor row stays
+// visible. Same cursor-following pattern as syncTableScroll/syncLogsScroll —
+// each picker row is exactly 1 line so no height heuristic is needed.
+func (m *Model) syncPickerScroll(rowCount int) {
+	viewport := m.pickerViewportRows()
+	if viewport <= 0 {
+		return
+	}
+	if m.entityForm.pickerCursor < m.pickerScroll {
+		m.pickerScroll = m.entityForm.pickerCursor
+	}
+	if m.entityForm.pickerCursor >= m.pickerScroll+viewport {
+		m.pickerScroll = m.entityForm.pickerCursor - viewport + 1
+	}
+	if m.pickerScroll < 0 {
+		m.pickerScroll = 0
+	}
+	if m.pickerScroll > rowCount-1 {
+		m.pickerScroll = rowCount - 1
+	}
+	if m.pickerScroll < 0 {
+		m.pickerScroll = 0
+	}
+}
+
+// pickerViewportRows returns how many picker rows fit between the screen
+// chrome and the panel's internal header rows.
+func (m Model) pickerViewportRows() int {
+	if m.height <= 0 {
+		return 0
+	}
+	// 2 entity-mode header + 1 leading blank + 2 footer + 2 panel borders
+	// + 4 panel header rows (kicker/hint/blank/separator) = 11.
+	chrome := 11
+	if m.status != "" {
+		chrome++
+	}
+	rows := m.height - chrome
+	if rows < 4 {
+		return 0
+	}
+	return rows
 }
 
 // savePersonaPicker writes only the persona wiring (skills slugs) without
@@ -933,19 +1076,17 @@ func (m *Model) scaffoldNewSkillFromPicker() tea.Cmd {
 func (m *Model) openSelectedEntityViewForSlug(kind entityKind, slug string) {
 	m.entityScreen = entityScreenView
 	m.entityForm = entityForm{kind: kind, mode: entityScreenView, slug: slug}
+	m.entityViewScroll = 0
 }
 
 func (m Model) renderPersonaPicker() string {
 	persona, _ := m.findPersonaBySlug(m.entityForm.slug)
 	contentWidth := m.availableWidth() - 4
-	lines := []string{
-		m.styles.kicker(fmt.Sprintf("Skills for persona · %s", persona.Key)),
-		m.styles.hint.Render("up/down: move · space: toggle · enter on '+ create new': new skill · ctrl+s: save · esc: cancel"),
-		"",
-		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
-	}
+
 	skills := append([]domain.Skill(nil), m.skills...)
 	sort.Slice(skills, func(i, j int) bool { return skills[i].Key < skills[j].Key })
+
+	dataRows := make([]string, 0, len(skills)+1)
 	for index, skill := range skills {
 		marker := normalMarker
 		check := "[ ]"
@@ -955,14 +1096,21 @@ func (m Model) renderPersonaPicker() string {
 		if m.entityForm.pickerCursor == index {
 			marker = m.styles.marker.Render(selectionMarker)
 		}
-		row := fmt.Sprintf("%s %s %s — %s", marker, check, skill.Key, skill.Name)
-		lines = append(lines, row)
+		dataRows = append(dataRows, fmt.Sprintf("%s %s %s — %s", marker, check, skill.Key, skill.Name))
 	}
 	addMarker := normalMarker
 	if m.entityForm.pickerCursor == len(skills) {
 		addMarker = m.styles.marker.Render(selectionMarker)
 	}
-	lines = append(lines, fmt.Sprintf("%s + create new skill (opens $EDITOR)", addMarker))
+	dataRows = append(dataRows, fmt.Sprintf("%s + create new skill (opens $EDITOR)", addMarker))
+
+	lines := []string{
+		m.styles.kicker(fmt.Sprintf("Skills for persona · %s", persona.Key)),
+		m.styles.hint.Render("up/down: move · space: toggle · enter on '+ create new': new skill · ctrl+s: save · esc: cancel"),
+		"",
+		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
+	}
+	lines = append(lines, m.sliceScrollRows(dataRows, m.pickerScroll, m.pickerViewportRows())...)
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(lines, "\n")), 2)
 }
 
