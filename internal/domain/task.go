@@ -36,6 +36,7 @@ type Comment struct {
 	Body       string `json:"body"`
 	AuthorType string `json:"author_type"`
 	CreatedAt  string `json:"created_at,omitempty"`
+	Tags       []Tag  `json:"tags,omitempty"`
 }
 
 type TaskDependency struct {
