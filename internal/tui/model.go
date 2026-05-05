@@ -95,6 +95,27 @@ type Model struct {
 
 	logs         []domain.ActivityLog
 	logsSelected int
+
+	taskViewScroll int
+
+	// boardScroll holds a per-bucket scroll offset (in cards) so long columns
+	// can be scrolled vertically without losing context when navigating between
+	// lanes. Keys are bucket keys (domain.Bucket.Key).
+	boardScroll map[string]int
+
+	entityViewScroll int
+
+	logsScroll int
+
+	tableScroll int
+
+	graphScroll int
+
+	helpScroll int
+
+	pickerScroll int
+
+	blockerPickerScroll int
 }
 
 type inputMode int
@@ -156,6 +177,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.syncFocusedColumnScroll()
 	case refreshTickMsg:
 		if m.shouldRealtimeRefresh() {
 			if err := m.refreshCurrentView(); err != nil {
@@ -173,15 +195,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			case "a":
 				m.helpAll = !m.helpAll
+				m.helpScroll = 0
 			case "?", "esc", "q":
 				m.helpOpen = false
 				m.helpAll = false
+				m.helpScroll = 0
+			case "j", "down":
+				m.helpScroll++
+			case "k", "up":
+				if m.helpScroll > 0 {
+					m.helpScroll--
+				}
+			case "pgdown", "ctrl+d":
+				m.helpScroll += taskViewPageStep(m.helpViewportRows())
+			case "pgup", "ctrl+u":
+				m.helpScroll -= taskViewPageStep(m.helpViewportRows())
+				if m.helpScroll < 0 {
+					m.helpScroll = 0
+				}
+			case "home", "g":
+				m.helpScroll = 0
+			case "end", "G":
+				m.helpScroll = 1 << 20
 			}
 			return m, nil
 		}
 		if msg.String() == "?" && m.mode == modeNormal {
 			m.helpOpen = true
 			m.helpAll = false
+			m.helpScroll = 0
 			return m, nil
 		}
 		if m.mode != modeNormal {
@@ -205,6 +247,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.view {
 		case 0:
 			m.handleBoardKey(msg)
+		case 2:
+			m.handleGraphKey(msg)
 		case 3:
 			if cmd := m.handleConfigKey(msg); cmd != nil {
 				return m, cmd
@@ -300,7 +344,7 @@ func (m Model) availableWidth() int {
 }
 
 func (m Model) taskFormWidth() int {
-	return clampInt(m.availableWidth()-8, 32, taskFormInputWidth)
+	return clampInt(m.availableWidth()-8, 32, 120)
 }
 
 func (m Model) commentInputWidth() int {
@@ -392,6 +436,7 @@ func (m *Model) handleBoardKey(msg tea.KeyMsg) {
 			m.colIdx--
 			m.clampCardIdx()
 			m.syncSelectedFromBoard()
+			m.syncFocusedColumnScroll()
 		}
 	case "right", "l":
 		if m.moveMode {
@@ -402,19 +447,131 @@ func (m *Model) handleBoardKey(msg tea.KeyMsg) {
 			m.colIdx++
 			m.clampCardIdx()
 			m.syncSelectedFromBoard()
+			m.syncFocusedColumnScroll()
 		}
 	case "up", "k":
 		if m.cardIdx > 0 {
 			m.cardIdx--
 			m.syncSelectedFromBoard()
+			m.syncFocusedColumnScroll()
 		}
 	case "down", "j":
 		bucketTasks := m.tasksInCurrentBucket()
 		if m.cardIdx < len(bucketTasks)-1 {
 			m.cardIdx++
 			m.syncSelectedFromBoard()
+			m.syncFocusedColumnScroll()
+		}
+	case "pgup", "ctrl+u":
+		m.cardIdx -= boardScrollPageStep(m)
+		if m.cardIdx < 0 {
+			m.cardIdx = 0
+		}
+		m.syncSelectedFromBoard()
+		m.syncFocusedColumnScroll()
+	case "pgdown", "ctrl+d":
+		bucketTasks := m.tasksInCurrentBucket()
+		m.cardIdx += boardScrollPageStep(m)
+		if m.cardIdx > len(bucketTasks)-1 {
+			m.cardIdx = len(bucketTasks) - 1
+		}
+		if m.cardIdx < 0 {
+			m.cardIdx = 0
+		}
+		m.syncSelectedFromBoard()
+		m.syncFocusedColumnScroll()
+	case "home", "g":
+		m.cardIdx = 0
+		m.syncSelectedFromBoard()
+		m.syncFocusedColumnScroll()
+	case "end", "G":
+		bucketTasks := m.tasksInCurrentBucket()
+		if len(bucketTasks) > 0 {
+			m.cardIdx = len(bucketTasks) - 1
+			m.syncSelectedFromBoard()
+			m.syncFocusedColumnScroll()
 		}
 	}
+}
+
+// syncFocusedColumnScroll keeps m.boardScroll[focusedBucket] aligned so the
+// selected card stays fully visible inside the column viewport. Rendered card
+// heights vary (1- vs 2-line titles, badges line) so we render each card to
+// measure the actual height instead of using an approximation, otherwise
+// `down` arrow lags behind the cursor by ~1 card.
+func (m *Model) syncFocusedColumnScroll() {
+	bucket, ok := m.focusedBucketKey()
+	if !ok {
+		return
+	}
+	viewport := m.boardViewportRows()
+	if viewport <= 0 {
+		return
+	}
+	tasks := m.tasksInCurrentBucket()
+	if len(tasks) == 0 {
+		if m.boardScroll != nil {
+			delete(m.boardScroll, bucket)
+		}
+		return
+	}
+
+	layout := m.computeBoardLayout(len(m.workflow.Buckets))
+	heights := make([]int, len(tasks))
+	for i, task := range tasks {
+		rendered := m.renderCard(task, false, layout)
+		heights[i] = strings.Count(rendered, "\n") + 1
+	}
+
+	if m.boardScroll == nil {
+		m.boardScroll = map[string]int{}
+	}
+	offset := m.boardScroll[bucket]
+	if offset > m.cardIdx {
+		offset = m.cardIdx
+	}
+	for offset < m.cardIdx {
+		used := 0
+		fits := true
+		for i := offset; i <= m.cardIdx; i++ {
+			used += heights[i]
+			// Reserve 1 row for the "▼ N below" hint when more cards remain.
+			reserve := 0
+			if i < len(tasks)-1 {
+				reserve = 1
+			}
+			if used+reserve > viewport {
+				fits = false
+				break
+			}
+		}
+		if fits {
+			break
+		}
+		offset++
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(tasks)-1 {
+		offset = len(tasks) - 1
+	}
+	m.boardScroll[bucket] = offset
+}
+
+func (m Model) focusedBucketKey() (string, bool) {
+	if len(m.workflow.Buckets) == 0 || m.colIdx < 0 || m.colIdx >= len(m.workflow.Buckets) {
+		return "", false
+	}
+	return m.workflow.Buckets[m.colIdx].Key, true
+}
+
+func boardScrollPageStep(m *Model) int {
+	step := m.boardViewportRows() / 8 // each card is ~4 rows; half-page ≈ rows/8 cards
+	if step < 2 {
+		return 2
+	}
+	return step
 }
 
 func (m *Model) handleListKey(msg tea.KeyMsg) {
@@ -426,10 +583,37 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 	case "up", "k":
 		if m.selected > 0 {
 			m.selected--
+			m.syncTableScroll()
 		}
 	case "down", "j":
 		if m.selected < len(m.tasks)-1 {
 			m.selected++
+			m.syncTableScroll()
+		}
+	case "pgup", "ctrl+u":
+		step := taskViewPageStep(m.tableViewportRows())
+		m.selected -= step
+		if m.selected < 0 {
+			m.selected = 0
+		}
+		m.syncTableScroll()
+	case "pgdown", "ctrl+d":
+		step := taskViewPageStep(m.tableViewportRows())
+		m.selected += step
+		if m.selected > len(m.tasks)-1 {
+			m.selected = len(m.tasks) - 1
+		}
+		if m.selected < 0 {
+			m.selected = 0
+		}
+		m.syncTableScroll()
+	case "home", "g":
+		m.selected = 0
+		m.syncTableScroll()
+	case "end", "G":
+		if len(m.tasks) > 0 {
+			m.selected = len(m.tasks) - 1
+			m.syncTableScroll()
 		}
 	case "enter":
 		if task, ok := m.selectedTask(); ok {
@@ -442,6 +626,94 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 	}
 }
 
+// handleGraphKey handles input on the dependency graph view. The graph has no
+// row selection — j/k/pgup/pgdn/g/G mutate m.graphScroll directly.
+func (m *Model) handleGraphKey(msg tea.KeyMsg) {
+	switch msg.String() {
+	case "left", "h":
+		m.view = (m.view + len(viewNames) - 1) % len(viewNames)
+	case "right", "l":
+		m.view = (m.view + 1) % len(viewNames)
+	case "up", "k":
+		if m.graphScroll > 0 {
+			m.graphScroll--
+		}
+	case "down", "j":
+		m.graphScroll++
+	case "pgup", "ctrl+u":
+		m.graphScroll -= taskViewPageStep(m.graphViewportRows())
+		if m.graphScroll < 0 {
+			m.graphScroll = 0
+		}
+	case "pgdown", "ctrl+d":
+		m.graphScroll += taskViewPageStep(m.graphViewportRows())
+	case "home", "g":
+		m.graphScroll = 0
+	case "end", "G":
+		m.graphScroll = 1 << 20
+	}
+}
+
+// graphViewportRows returns how many dependency rows fit between the screen
+// chrome and the grid's own header rows. Returns 0 when too small to bother
+// scrolling.
+func (m Model) graphViewportRows() int {
+	if m.height <= 0 {
+		return 0
+	}
+	// 5 screen header + 1 leading blank + 2 footer + 4 grid chrome
+	// (kicker row + spanned divider + Task/Blocked-by header + bottom border)
+	// + 2 grid top/bottom borders' interplay with the kicker = 12.
+	chrome := 12
+	if m.status != "" {
+		chrome++
+	}
+	rows := m.height - chrome
+	if rows < 4 {
+		return 0
+	}
+	return rows
+}
+
+// syncTableScroll keeps m.tableScroll aligned so the selected task row stays
+// in view. Each row is exactly 1 line — no height heuristic, same pattern as
+// syncLogsScroll.
+func (m *Model) syncTableScroll() {
+	viewport := m.tableViewportRows()
+	if viewport <= 0 {
+		return
+	}
+	if m.selected < m.tableScroll {
+		m.tableScroll = m.selected
+	}
+	if m.selected >= m.tableScroll+viewport {
+		m.tableScroll = m.selected - viewport + 1
+	}
+	if m.tableScroll < 0 {
+		m.tableScroll = 0
+	}
+}
+
+// tableViewportRows returns how many task rows fit in the table panel after
+// the screen chrome and the panel's internal header rows. Returns 0 when the
+// height is unknown or too small.
+func (m Model) tableViewportRows() int {
+	if m.height <= 0 {
+		return 0
+	}
+	// 5 screen header + 1 leading blank + 2 footer + 2 panel borders
+	// + 3 panel header rows (kicker/info/separator) = 13.
+	chrome := 13
+	if m.status != "" {
+		chrome++
+	}
+	rows := m.height - chrome
+	if rows < 4 {
+		return 0
+	}
+	return rows
+}
+
 func (m *Model) handleLogsKey(msg tea.KeyMsg) {
 	switch msg.String() {
 	case "left", "h":
@@ -451,12 +723,79 @@ func (m *Model) handleLogsKey(msg tea.KeyMsg) {
 	case "up", "k":
 		if m.logsSelected > 0 {
 			m.logsSelected--
+			m.syncLogsScroll()
 		}
 	case "down", "j":
 		if m.logsSelected < len(m.logs)-1 {
 			m.logsSelected++
+			m.syncLogsScroll()
+		}
+	case "pgup", "ctrl+u":
+		step := taskViewPageStep(m.logsViewportRows())
+		m.logsSelected -= step
+		if m.logsSelected < 0 {
+			m.logsSelected = 0
+		}
+		m.syncLogsScroll()
+	case "pgdown", "ctrl+d":
+		step := taskViewPageStep(m.logsViewportRows())
+		m.logsSelected += step
+		if m.logsSelected > len(m.logs)-1 {
+			m.logsSelected = len(m.logs) - 1
+		}
+		if m.logsSelected < 0 {
+			m.logsSelected = 0
+		}
+		m.syncLogsScroll()
+	case "home", "g":
+		m.logsSelected = 0
+		m.syncLogsScroll()
+	case "end", "G":
+		if len(m.logs) > 0 {
+			m.logsSelected = len(m.logs) - 1
+			m.syncLogsScroll()
 		}
 	}
+}
+
+// syncLogsScroll keeps m.logsScroll aligned so the selected log row stays
+// inside the viewport. Each log row is exactly 1 line (no wrapping) so this is
+// a simple cursor-following scroll — no height heuristic needed.
+func (m *Model) syncLogsScroll() {
+	viewport := m.logsViewportRows()
+	if viewport <= 0 {
+		return
+	}
+	if m.logsSelected < m.logsScroll {
+		m.logsScroll = m.logsSelected
+	}
+	if m.logsSelected >= m.logsScroll+viewport {
+		m.logsScroll = m.logsSelected - viewport + 1
+	}
+	if m.logsScroll < 0 {
+		m.logsScroll = 0
+	}
+}
+
+// logsViewportRows returns how many data rows fit in the activity log panel
+// after accounting for the screen chrome, panel borders, and the panel's
+// internal header (kicker + column header + separator) and footer (blank +
+// hint) rows. Returns 0 when the height is unknown or too small to scroll.
+func (m Model) logsViewportRows() int {
+	if m.height <= 0 {
+		return 0
+	}
+	// 5 screen header + 1 leading blank + 2 footer + 2 panel borders
+	// + 3 panel header rows + 2 panel footer rows = 15.
+	chrome := 15
+	if m.status != "" {
+		chrome++
+	}
+	rows := m.height - chrome
+	if rows < 4 {
+		return 0
+	}
+	return rows
 }
 
 func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -492,6 +831,23 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.status = "Refreshed"
 			}
+		case "j", "down":
+			m.taskViewScroll++
+		case "k", "up":
+			if m.taskViewScroll > 0 {
+				m.taskViewScroll--
+			}
+		case "pgdown", "ctrl+d":
+			m.taskViewScroll += taskViewPageStep(m.taskViewportHeight())
+		case "pgup", "ctrl+u":
+			m.taskViewScroll -= taskViewPageStep(m.taskViewportHeight())
+			if m.taskViewScroll < 0 {
+				m.taskViewScroll = 0
+			}
+		case "home", "g":
+			m.taskViewScroll = 0
+		case "end", "G":
+			m.taskViewScroll = 1 << 20
 		}
 		return *m, nil
 	}
@@ -535,6 +891,7 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) updateBlockerPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	candidates := m.blockerPickerCandidates()
+	rowCount := len(candidates)
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return *m, tea.Quit
@@ -543,13 +900,40 @@ func (m *Model) updateBlockerPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		if m.blockerPickerCursor > 0 {
 			m.blockerPickerCursor--
+			m.syncBlockerPickerScroll(rowCount)
 		}
 	case "down", "j":
-		if m.blockerPickerCursor < len(candidates)-1 {
+		if m.blockerPickerCursor < rowCount-1 {
 			m.blockerPickerCursor++
+			m.syncBlockerPickerScroll(rowCount)
+		}
+	case "pgup", "ctrl+u":
+		step := taskViewPageStep(m.blockerPickerViewportRows())
+		m.blockerPickerCursor -= step
+		if m.blockerPickerCursor < 0 {
+			m.blockerPickerCursor = 0
+		}
+		m.syncBlockerPickerScroll(rowCount)
+	case "pgdown", "ctrl+d":
+		step := taskViewPageStep(m.blockerPickerViewportRows())
+		m.blockerPickerCursor += step
+		if m.blockerPickerCursor > rowCount-1 {
+			m.blockerPickerCursor = rowCount - 1
+		}
+		if m.blockerPickerCursor < 0 {
+			m.blockerPickerCursor = 0
+		}
+		m.syncBlockerPickerScroll(rowCount)
+	case "home", "g":
+		m.blockerPickerCursor = 0
+		m.syncBlockerPickerScroll(rowCount)
+	case "end", "G":
+		if rowCount > 0 {
+			m.blockerPickerCursor = rowCount - 1
+			m.syncBlockerPickerScroll(rowCount)
 		}
 	case " ", "space":
-		if m.blockerPickerCursor >= 0 && m.blockerPickerCursor < len(candidates) {
+		if m.blockerPickerCursor >= 0 && m.blockerPickerCursor < rowCount {
 			taskID := candidates[m.blockerPickerCursor].ID
 			if m.blockerPickerChecks == nil {
 				m.blockerPickerChecks = map[int64]bool{}
@@ -560,6 +944,49 @@ func (m *Model) updateBlockerPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.saveBlockerPicker()
 	}
 	return *m, nil
+}
+
+// syncBlockerPickerScroll keeps m.blockerPickerScroll aligned so the cursor
+// row stays visible (cursor-following, same pattern as syncPickerScroll).
+func (m *Model) syncBlockerPickerScroll(rowCount int) {
+	viewport := m.blockerPickerViewportRows()
+	if viewport <= 0 {
+		return
+	}
+	if m.blockerPickerCursor < m.blockerPickerScroll {
+		m.blockerPickerScroll = m.blockerPickerCursor
+	}
+	if m.blockerPickerCursor >= m.blockerPickerScroll+viewport {
+		m.blockerPickerScroll = m.blockerPickerCursor - viewport + 1
+	}
+	if m.blockerPickerScroll < 0 {
+		m.blockerPickerScroll = 0
+	}
+	if rowCount > 0 && m.blockerPickerScroll > rowCount-1 {
+		m.blockerPickerScroll = rowCount - 1
+	}
+	if m.blockerPickerScroll < 0 {
+		m.blockerPickerScroll = 0
+	}
+}
+
+// blockerPickerViewportRows returns how many candidate rows fit in the picker
+// panel after the screen chrome and the panel's internal header rows.
+func (m Model) blockerPickerViewportRows() int {
+	if m.height <= 0 {
+		return 0
+	}
+	// 2 task-screen header + 1 leading blank + 2 footer + 2 panel borders
+	// + 6 panel header rows (kicker/hint/blank/metaRow/blank/separator) = 13.
+	chrome := 13
+	if m.status != "" {
+		chrome++
+	}
+	rows := m.height - chrome
+	if rows < 4 {
+		return 0
+	}
+	return rows
 }
 
 func (m Model) blockerPickerCandidates() []domain.Task {
@@ -604,6 +1031,7 @@ func (m *Model) openTaskView(task domain.Task) {
 	m.taskField = taskFieldTitle
 	m.status = ""
 	m.moveMode = false
+	m.taskViewScroll = 0
 }
 
 func (m *Model) openTaskEdit(task domain.Task) {
@@ -630,6 +1058,7 @@ func (m *Model) closeTaskScreen(status string) {
 	m.taskField = taskFieldTitle
 	m.status = status
 	m.moveMode = false
+	m.taskViewScroll = 0
 }
 
 func (m *Model) toggleTaskField() {
@@ -702,6 +1131,7 @@ func (m *Model) openBlockerPicker() {
 			m.blockerPickerChecks[dep.DependsOnTaskID] = true
 		}
 	}
+	m.blockerPickerScroll = 0
 }
 
 func (m *Model) closeBlockerPicker(status string) {
@@ -710,6 +1140,7 @@ func (m *Model) closeBlockerPicker(status string) {
 	m.blockerPickerCursor = 0
 	m.blockerPickerChecks = nil
 	m.status = status
+	m.blockerPickerScroll = 0
 }
 
 func (m *Model) saveBlockerPicker() {
@@ -900,6 +1331,8 @@ func (m *Model) moveSelectedToColumn(targetColIdx int) {
 	} else {
 		m.status = fmt.Sprintf("Moved #%d to %s", task.ID, target.Key)
 	}
+	m.selectTaskByID(task.ID)
+	m.syncFocusedColumnScroll()
 }
 
 func (m *Model) refresh() error {
@@ -1051,37 +1484,99 @@ func (m Model) renderCurrentView() string {
 	}
 }
 
+// boardLayout holds the per-render geometry for the kanban board so columns
+// and cards can grow with the available terminal width instead of being pinned
+// to the legacy fixed constants.
+type boardLayout struct {
+	columnInner      int // kanban column inner content width (passed to Width())
+	cardWidth        int // card.Width() — content width of each card box
+	cardContentWidth int // text area inside a card (cardWidth - 2 padding)
+	cardHeight       int // rendered on-screen height of a single card (incl. borders)
+	viewportRows     int // rows available inside a column for cards (after header+sep)
+}
+
+func (m Model) computeBoardLayout(n int) boardLayout {
+	const (
+		minColumnInner = 28
+		maxColumnInner = 44
+	)
+	available := m.availableWidth()
+	colOnScreen := minColumnInner + 2
+	if n > 0 {
+		colOnScreen = (available - (n - 1)) / n
+	}
+	columnInner := colOnScreen - 2
+	if columnInner < minColumnInner {
+		columnInner = minColumnInner
+	}
+	if columnInner > maxColumnInner {
+		columnInner = maxColumnInner
+	}
+	// The card style has its own border (+2 cols) and Padding(0,1) which adds
+	// 2 cols inside the Width() box, so:
+	//   on-screen card width = card.Width() + 2 (border)
+	//   card text width      = card.Width() - 2 (padding)
+	// To make the card fit exactly inside the column's inner area we set
+	// cardWidth = columnInner - 2.
+	cardWidth := columnInner - 2
+	cardContent := cardWidth - 2
+
+	return boardLayout{
+		columnInner:      columnInner,
+		cardWidth:        cardWidth,
+		cardContentWidth: cardContent,
+		cardHeight:       4,
+		viewportRows:     m.boardViewportRows(),
+	}
+}
+
+// boardViewportRows is the number of terminal rows the kanban columns can use
+// for cards (after the column header, separator, and the surrounding chrome).
+// Returns 0 when the height is unknown — callers should treat 0 as "no scroll
+// limit" and render every card.
+func (m Model) boardViewportRows() int {
+	if m.height <= 0 {
+		return 0
+	}
+	chrome := 9 // header(2) + nav(2) + view-leading-blank(1) + footer(2) + col header+sep(2)
+	if m.status != "" {
+		chrome++
+	}
+	rows := m.height - chrome
+	if rows < 6 {
+		return 0
+	}
+	return rows
+}
+
 func (m Model) renderBoard() string {
 	if len(m.workflow.Buckets) == 0 {
 		return "\n" + indentBlock(m.styles.panel.Render("No workflow buckets. Add buckets in the active workflow config."), 2)
 	}
 
 	tasksByBucket := m.tasksByBucket()
-	cells := make([]string, 0, len(m.workflow.Buckets))
 	totalTasks := 0
-	for i, bucket := range m.workflow.Buckets {
-		bucketTasks := tasksByBucket[bucket.Key]
-		selectedIdx := -1
-		if i == m.colIdx {
-			selectedIdx = m.cardIdx
-		}
-		cellContent := m.renderKanbanCell(bucket, bucketTasks, i == m.colIdx, selectedIdx)
-		col := m.styles.kanbanColumn.Render(cellContent)
-		cells = append(cells, col)
-		totalTasks += len(bucketTasks)
+	for _, bucket := range m.workflow.Buckets {
+		totalTasks += len(tasksByBucket[bucket.Key])
 	}
-	// Each rendered column = columnWidth content + 2 border cols. N columns
-	// joined by 1-space spacers: (columnWidth+2)*N + (N-1).
-	if len(cells) > 0 && len(cells)*(columnWidth+2)+len(cells)-1 > m.availableWidth() {
-		current := clampInt(m.colIdx, 0, len(m.workflow.Buckets)-1)
+
+	n := len(m.workflow.Buckets)
+	layout := m.computeBoardLayout(n)
+	columnStyle := m.styles.kanbanColumn.Width(layout.columnInner)
+	emptyStyle := m.styles.empty.Width(layout.columnInner)
+
+	// Trigger narrow fallback when the side-by-side layout no longer fits.
+	totalSideBySide := n*(layout.columnInner+2) + (n - 1)
+	if totalSideBySide > m.availableWidth() {
+		current := clampInt(m.colIdx, 0, n-1)
 		bucket := m.workflow.Buckets[current]
 		bucketTasks := tasksByBucket[bucket.Key]
 		selectedIdx := -1
 		if len(bucketTasks) > 0 {
 			selectedIdx = clampInt(m.cardIdx, 0, len(bucketTasks)-1)
 		}
-		board := m.styles.kanbanColumn.Render(m.renderKanbanCell(bucket, bucketTasks, true, selectedIdx))
-		hint := m.styles.hint.Render(fmt.Sprintf("Column %d/%d · left/right switches lane", current+1, len(m.workflow.Buckets)))
+		board := columnStyle.Render(m.renderKanbanCell(bucket, bucketTasks, true, selectedIdx, layout, emptyStyle))
+		hint := m.styles.hint.Render(fmt.Sprintf("Column %d/%d · left/right switches lane", current+1, n))
 		var sb strings.Builder
 		sb.WriteString("\n")
 		sb.WriteString(indentBlock(board+"\n"+hint, 2))
@@ -1092,7 +1587,17 @@ func (m Model) renderBoard() string {
 		return sb.String()
 	}
 
-	// Join columns side-by-side with a narrow spacer between them.
+	cells := make([]string, 0, n)
+	for i, bucket := range m.workflow.Buckets {
+		bucketTasks := tasksByBucket[bucket.Key]
+		selectedIdx := -1
+		if i == m.colIdx {
+			selectedIdx = m.cardIdx
+		}
+		cellContent := m.renderKanbanCell(bucket, bucketTasks, i == m.colIdx, selectedIdx, layout, emptyStyle)
+		cells = append(cells, columnStyle.Render(cellContent))
+	}
+
 	var parts []string
 	for i, cell := range cells {
 		parts = append(parts, cell)
@@ -1112,7 +1617,7 @@ func (m Model) renderBoard() string {
 	return sb.String()
 }
 
-func (m Model) renderKanbanCell(bucket domain.Bucket, tasks []domain.Task, focused bool, selectedIdx int) string {
+func (m Model) renderKanbanCell(bucket domain.Bucket, tasks []domain.Task, focused bool, selectedIdx int, layout boardLayout, emptyStyle lipgloss.Style) string {
 	headerStyle := m.styles.hintAccent
 	if !focused {
 		headerStyle = m.styles.muted
@@ -1120,25 +1625,74 @@ func (m Model) renderKanbanCell(bucket domain.Bucket, tasks []domain.Task, focus
 	headerText := fmt.Sprintf("// %s · %d", strings.ToUpper(bucket.Name), len(tasks))
 	lines := []string{
 		headerStyle.Render(headerText),
-		m.styles.separator.Render(strings.Repeat("─", columnWidth)),
+		m.styles.separator.Render(strings.Repeat("─", layout.columnInner)),
 	}
 
 	if len(tasks) == 0 {
-		lines = append(lines, m.styles.empty.Render("empty"))
-	} else {
-		for i, task := range tasks {
-			lines = append(lines, m.renderCard(task, focused && i == selectedIdx))
+		lines = append(lines, emptyStyle.Render("empty"))
+		return strings.Join(lines, "\n")
+	}
+
+	// Render every card first so we know the real rendered height of each one.
+	rendered := make([]string, len(tasks))
+	heights := make([]int, len(tasks))
+	for i, task := range tasks {
+		rendered[i] = m.renderCard(task, focused && i == selectedIdx, layout)
+		heights[i] = strings.Count(rendered[i], "\n") + 1
+	}
+
+	viewport := layout.viewportRows
+	if viewport <= 0 {
+		// Height unknown — render everything; the terminal will scroll natively.
+		lines = append(lines, rendered...)
+		return strings.Join(lines, "\n")
+	}
+
+	offset := m.boardScroll[bucket.Key]
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(rendered)-1 {
+		offset = len(rendered) - 1
+	}
+
+	used := 0
+	end := offset
+	for end < len(rendered) {
+		// Reserve 1 row for the "▼ N below" hint when there is more content.
+		reserve := 0
+		if end < len(rendered)-1 {
+			reserve = 1
 		}
+		if used+heights[end]+reserve > viewport {
+			break
+		}
+		used += heights[end]
+		end++
+	}
+	if end == offset && offset < len(rendered) {
+		// Never produce an empty viewport: render at least one card.
+		end = offset + 1
+	}
+
+	above := offset
+	below := len(rendered) - end
+	if above > 0 {
+		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▲ %d above", above)))
+	}
+	lines = append(lines, rendered[offset:end]...)
+	if below > 0 {
+		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▼ %d below", below)))
 	}
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) renderCard(task domain.Task, selected bool) string {
+func (m Model) renderCard(task domain.Task, selected bool, layout boardLayout) string {
 	prefix := fmt.Sprintf("#%d ", task.ID)
 	prefixWidth := lipgloss.Width(prefix)
 
-	firstWidth := cardContentWidth - prefixWidth
-	restWidth := cardContentWidth - prefixWidth
+	firstWidth := layout.cardContentWidth - prefixWidth
+	restWidth := layout.cardContentWidth - prefixWidth
 	if firstWidth < 1 {
 		firstWidth = 1
 	}
@@ -1156,14 +1710,13 @@ func (m Model) renderCard(task domain.Task, selected bool) string {
 		}
 	}
 
-	// Badges line (truncated to fit card width)
-	if badgeLine := m.renderTaskBadges(task, cardContentWidth); badgeLine != "" {
+	if badgeLine := m.renderTaskBadges(task, layout.cardContentWidth); badgeLine != "" {
 		lines = append(lines, badgeLine)
 	}
 
-	style := m.styles.card
+	style := m.styles.card.Width(layout.cardWidth)
 	if selected {
-		style = m.styles.cardSelected
+		style = m.styles.cardSelected.Width(layout.cardWidth)
 	}
 	return style.Render(strings.Join(lines, "\n"))
 }
@@ -1216,7 +1769,9 @@ func (m Model) renderHelp() string {
 			{"r", "refresh"},
 		}},
 		{"Board", []binding{
-			{"← ↑ ↓ → · h j k l", "navigate lanes and tasks"},
+			{"← ↑ ↓ → · h j k l", "navigate lanes and tasks (auto-scrolls column)"},
+			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll focused column by page"},
+			{"g · G", "first / last card in column"},
 			{"enter", "open task"},
 			{"n", "new task"},
 			{"e", "edit task"},
@@ -1224,13 +1779,24 @@ func (m Model) renderHelp() string {
 			{"m", "move task between lanes"},
 		}},
 		{"Task list", []binding{
-			{"↑ ↓ · j k", "select task"},
+			{"↑ ↓ · j k", "select task (auto-scrolls)"},
+			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
+			{"g · G", "first / last task"},
 			{"enter", "open task"},
 			{"n", "new task"},
 			{"e", "edit task"},
 			{"m", "move by bucket key"},
 		}},
+		{"Graph", []binding{
+			{"← →", "switch view"},
+			{"↑ ↓ · j k", "scroll dependency rows"},
+			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
+			{"g · G", "jump to top / bottom"},
+		}},
 		{"Task view", []binding{
+			{"↑ ↓ · j k", "scroll description"},
+			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
+			{"g · G", "jump to top / bottom"},
 			{"e", "edit"},
 			{"b", "edit blockers"},
 			{"c", "add comment"},
@@ -1251,7 +1817,9 @@ func (m Model) renderHelp() string {
 			{"esc", "cancel"},
 		}},
 		{"Blocker picker", []binding{
-			{"↑ ↓ · j k", "move"},
+			{"↑ ↓ · j k", "move (auto-scrolls)"},
+			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
+			{"g · G", "first / last candidate"},
 			{"space", "toggle blocker"},
 			{"ctrl+s", "save"},
 			{"esc", "cancel"},
@@ -1266,13 +1834,18 @@ func (m Model) renderHelp() string {
 			{"p", "skill picker (persona)"},
 		}},
 		{"Entity view", []binding{
+			{"↑ ↓ · j k", "scroll body"},
+			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
+			{"g · G", "jump to top / bottom"},
 			{"e", "edit (opens $EDITOR)"},
 			{"d · d", "arm delete, then confirm"},
 			{"p", "skill picker (persona)"},
 			{"esc", "back, or cancel pending delete"},
 		}},
 		{"Skill picker", []binding{
-			{"↑ ↓", "move"},
+			{"↑ ↓ · j k", "move (auto-scrolls)"},
+			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
+			{"g · G", "first / last row"},
 			{"space", "toggle"},
 			{"enter on '+ create new'", "scaffold new skill"},
 			{"ctrl+s", "save"},
@@ -1280,7 +1853,9 @@ func (m Model) renderHelp() string {
 		}},
 		{"Logs", []binding{
 			{"← →", "switch view"},
-			{"↑ ↓", "select row"},
+			{"↑ ↓ · j k", "select row (auto-scrolls)"},
+			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
+			{"g · G", "first / last row"},
 			{"r", "refresh"},
 		}},
 	}
@@ -1318,11 +1893,47 @@ func (m Model) renderHelp() string {
 		}
 		lines = append(lines, "")
 	}
+
+	viewport := m.helpViewportRows()
+	if viewport > 0 && len(lines) > viewport {
+		visibleHeight := viewport - 1
+		maxOffset := len(lines) - visibleHeight
+		offset := m.helpScroll
+		if offset < 0 {
+			offset = 0
+		}
+		if offset > maxOffset {
+			offset = maxOffset
+		}
+		visible := lines[offset : offset+visibleHeight]
+		above := offset
+		below := len(lines) - (offset + visibleHeight)
+		if below < 0 {
+			below = 0
+		}
+		hint := m.styles.hint.Render(fmt.Sprintf("▲ %d above · ▼ %d below  · j/k pgup/pgdn g/G", above, below))
+		return "\n" + indentBlock(strings.Join(visible, "\n")+"\n"+hint, 2)
+	}
 	return "\n" + indentBlock(strings.Join(lines, "\n"), 2)
 }
 
+// helpViewportRows returns the line budget for the help screen content. Help
+// view chrome is small: header (2) + leading blank from renderHelp (1) + help
+// footer (1).
+func (m Model) helpViewportRows() int {
+	if m.height <= 0 {
+		return 0
+	}
+	chrome := 4
+	rows := m.height - chrome
+	if rows < 8 {
+		return 0
+	}
+	return rows
+}
+
 func (m Model) renderHelpFooter() string {
-	return indentBlock(m.styles.footer.Render("a all/current · ?/esc/q close help"), 2)
+	return indentBlock(m.styles.footer.Render("j/k pgup/pgdn g/G scroll · a all/current · ?/esc/q close help"), 2)
 }
 
 func (m Model) currentHelpTitles() []string {
@@ -1341,8 +1952,10 @@ func (m Model) currentHelpTitles() []string {
 		return []string{"Entity view"}
 	case m.view == 0:
 		return []string{"Board"}
-	case m.view == 1 || m.view == 2:
+	case m.view == 1:
 		return []string{"Task list"}
+	case m.view == 2:
+		return []string{"Graph"}
 	case m.view == 3:
 		return []string{"Config"}
 	case m.view == 4:
@@ -1387,11 +2000,7 @@ func (m Model) renderTaskView() string {
 	}
 	blockers := m.blockersForTask(task.ID)
 
-	const (
-		taskDetailLabelWidth = 13
-		taskDetailValueWidth = 24
-	)
-	taskDetailTotal := 1 + taskDetailLabelWidth + 1 + taskDetailValueWidth + 1
+	const taskDetailLabelWidth = 13
 
 	labelCell := func(label string) string {
 		return m.styles.info.Render("// " + strings.ToUpper(label))
@@ -1421,18 +2030,96 @@ func (m Model) renderTaskView() string {
 
 	commentsCellText := m.renderTaskCommentsCell(task.ID)
 
-	if m.availableWidth() < taskDetailTotal+taskCommentsPanelWidth+2 {
-		valueWidth := clampInt(m.availableWidth()-taskDetailLabelWidth-3-2, 16, 72)
+	available := m.availableWidth()
+	// Side-by-side layout needs: details(label+1+value+2 borders) + 2 spacer + comments(inner+2 borders).
+	// Below this threshold, stack vertically and let each block use the full width.
+	const minWideValueWidth = 24
+	wideThreshold := taskDetailLabelWidth + 1 + minWideValueWidth + 2 + 2 + taskCommentsPanelWidth + 2
+
+	var rendered string
+	if available < wideThreshold {
+		valueWidth := available - taskDetailLabelWidth - 1 - 2
+		if valueWidth < 16 {
+			valueWidth = 16
+		}
 		details := renderGridTable(rows, []int{taskDetailLabelWidth, valueWidth}, m.styles.border)
-		commentsWidth := clampInt(m.availableWidth()-4, 36, 72)
+		commentsWidth := available - 2
+		if commentsWidth < 36 {
+			commentsWidth = 36
+		}
 		commentsBox := renderFixedBox(wrapLinesToWidth(strings.Split(commentsCellText, "\n"), commentsWidth), commentsWidth, m.styles.border)
-		return "\n" + indentBlock(details+"\n\n"+commentsBox, 2)
+		rendered = details + "\n\n" + commentsBox
+	} else {
+		valueWidth := available - (taskCommentsPanelWidth + 2) - 2 - (taskDetailLabelWidth + 1) - 2
+		if valueWidth < minWideValueWidth {
+			valueWidth = minWideValueWidth
+		}
+		if valueWidth > 120 {
+			valueWidth = 120
+		}
+		details := renderGridTable(rows, []int{taskDetailLabelWidth, valueWidth}, m.styles.border)
+		commentsBox := renderFixedBox(wrapLinesToWidth(strings.Split(commentsCellText, "\n"), taskCommentsPanelWidth), taskCommentsPanelWidth, m.styles.border)
+		rendered = lipgloss.JoinHorizontal(lipgloss.Top, details, "  ", commentsBox)
 	}
 
-	details := renderGridTable(rows, []int{taskDetailLabelWidth, taskDetailValueWidth}, m.styles.border)
-	commentsBox := renderFixedBox(wrapLinesToWidth(strings.Split(commentsCellText, "\n"), taskCommentsPanelWidth), taskCommentsPanelWidth, m.styles.border)
-	joined := lipgloss.JoinHorizontal(lipgloss.Top, details, "  ", commentsBox)
-	return "\n" + indentBlock(joined, 2)
+	return m.applyTaskViewScroll(rendered)
+}
+
+// taskViewportHeight returns how many lines of detail-view content can fit
+// between the header and footer. Returns 0 when the terminal height is unknown
+// or too small to bother scrolling, in which case the caller should render the
+// full content (the terminal will scroll natively if needed).
+func (m Model) taskViewportHeight() int {
+	if m.height <= 0 {
+		return 0
+	}
+	chrome := 5 // header(2) + leading blank(1) + footer(2)
+	if m.status != "" {
+		chrome++
+	}
+	h := m.height - chrome
+	if h < 8 {
+		return 0
+	}
+	return h
+}
+
+func taskViewPageStep(viewport int) int {
+	step := viewport / 2
+	if step < 4 {
+		return 4
+	}
+	return step
+}
+
+// applyTaskViewScroll slices the rendered detail content to the available
+// viewport based on m.taskViewScroll, appending an indicator when content is
+// hidden above or below.
+func (m Model) applyTaskViewScroll(content string) string {
+	viewport := m.taskViewportHeight()
+	lines := strings.Split(content, "\n")
+	if viewport <= 0 || len(lines) <= viewport {
+		return "\n" + indentBlock(content, 2)
+	}
+
+	// Reserve one line for the scroll indicator.
+	visibleHeight := viewport - 1
+	maxOffset := len(lines) - visibleHeight
+	offset := m.taskViewScroll
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	visible := lines[offset : offset+visibleHeight]
+	above := offset
+	below := len(lines) - (offset + visibleHeight)
+	if below < 0 {
+		below = 0
+	}
+	hint := m.styles.hint.Render(fmt.Sprintf("▲ %d above · ▼ %d below  · j/k pgup/pgdn g/G", above, below))
+	return "\n" + indentBlock(strings.Join(visible, "\n")+"\n"+hint, 2)
 }
 
 func (m Model) renderTaskReference(task domain.Task) string {
@@ -1458,21 +2145,23 @@ func (m Model) renderBlockerPicker() string {
 	candidates := m.blockerPickerCandidates()
 	if len(candidates) == 0 {
 		lines = append(lines, m.styles.hint.Render("No other tasks are available to block this task."))
-	} else {
-		for index, candidate := range candidates {
-			marker := normalMarker
-			if m.blockerPickerCursor == index {
-				marker = m.styles.marker.Render(selectionMarker)
-			}
-			check := m.styles.hint.Render("[ ]")
-			if m.blockerPickerChecks[candidate.ID] {
-				check = m.styles.hintAccent.Render("[x]")
-			}
-			meta := m.styles.hint.Render(fmt.Sprintf("%s · %s", candidate.BucketKey, candidate.Priority))
-			row := fmt.Sprintf("%s %s #%d %s  %s", marker, check, candidate.ID, candidate.Title, meta)
-			lines = append(lines, row)
-		}
+		return "\n" + indentBlock(m.styles.panel.Render(strings.Join(lines, "\n")), 2)
 	}
+
+	dataRows := make([]string, 0, len(candidates))
+	for index, candidate := range candidates {
+		marker := normalMarker
+		if m.blockerPickerCursor == index {
+			marker = m.styles.marker.Render(selectionMarker)
+		}
+		check := m.styles.hint.Render("[ ]")
+		if m.blockerPickerChecks[candidate.ID] {
+			check = m.styles.hintAccent.Render("[x]")
+		}
+		meta := m.styles.hint.Render(fmt.Sprintf("%s · %s", candidate.BucketKey, candidate.Priority))
+		dataRows = append(dataRows, fmt.Sprintf("%s %s #%d %s  %s", marker, check, candidate.ID, candidate.Title, meta))
+	}
+	lines = append(lines, m.sliceScrollRows(dataRows, m.blockerPickerScroll, m.blockerPickerViewportRows())...)
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(lines, "\n")), 2)
 }
 
@@ -1536,7 +2225,28 @@ func (m Model) renderTaskForm(title string) string {
 }
 
 func (m Model) renderTaskDescriptionInput() string {
-	return m.styles.multilineInput.Width(m.taskFormWidth()).Render(m.taskDescription)
+	width := m.taskFormWidth()
+	// multilineInput: Padding(0,2) → 4 cols of padding subtracted from Width to
+	// get the actual text area. Match lipgloss's wrap so we know exactly how
+	// many wrapped lines the text will occupy, then autoscroll-to-end if it
+	// exceeds taskDescriptionInputHeight (text always appends at the bottom,
+	// so the user's "cursor" is the last wrapped line).
+	innerWidth := width - 4
+	if innerWidth < 8 {
+		innerWidth = 8
+	}
+	wrapped := wrapLinesToWidth(strings.Split(m.taskDescription, "\n"), innerWidth)
+
+	height := taskDescriptionInputHeight
+	var content string
+	if len(wrapped) > height {
+		visible := wrapped[len(wrapped)-(height-1):]
+		hidden := len(wrapped) - len(visible)
+		content = m.styles.hint.Render(fmt.Sprintf("▲ %d more above", hidden)) + "\n" + strings.Join(visible, "\n")
+	} else {
+		content = strings.Join(wrapped, "\n")
+	}
+	return m.styles.multilineInput.Width(width).Render(content)
 }
 
 func (m Model) renderTaskPriorityInput() string {
@@ -1585,16 +2295,11 @@ func (m Model) renderLogs() string {
 	)
 	contentWidth := m.availableWidth() - 4
 	argsWidth := contentWidth - logFixedWidth - logOperationWidth - logProjectWidth
-	rows := []string{
-		m.styles.kickerCount("Activity", minInt(len(m.logs), 50)),
-		m.styles.info.Render(fmt.Sprintf("// TIME        SRC  %-*s %-*s STATUS  MS   ARGS", logOperationWidth, "OPERATION", logProjectWidth, "PROJECT")),
-		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
-	}
 
-	for i, log := range m.logs {
-		if i >= 50 {
-			break
-		}
+	limit := minInt(len(m.logs), 50)
+	dataRows := make([]string, 0, limit)
+	for i := 0; i < limit; i++ {
+		log := m.logs[i]
 		marker := normalMarker
 		if i == m.logsSelected {
 			marker = m.styles.marker.Render(selectionMarker)
@@ -1614,24 +2319,73 @@ func (m Model) renderLogs() string {
 		row := fmt.Sprintf("%s %-12s %-4s %-*s %-*s %s %-4d %s",
 			marker, timeStr, log.Source, logOperationWidth, truncateText(log.Operation, logOperationWidth), logProjectWidth, truncateText(log.ProjectSlug, logProjectWidth),
 			status, log.DurationMs, truncateText(log.ArgumentsJSON, argsWidth))
-		rows = append(rows, row)
+		dataRows = append(dataRows, row)
 	}
 
+	rows := []string{
+		m.styles.kickerCount("Activity", limit),
+		m.styles.info.Render(fmt.Sprintf("// TIME        SRC  %-*s %-*s STATUS  MS   ARGS", logOperationWidth, "OPERATION", logProjectWidth, "PROJECT")),
+		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
+	}
+	rows = append(rows, m.sliceScrollRows(dataRows, m.logsScroll, m.logsViewportRows())...)
 	rows = append(rows, "", m.styles.hint.Render("Only app service calls are logged. TUI refreshes and direct reads are not shown."))
 
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
 }
 
+// sliceScrollRows clamps `scroll` into a valid range and returns the visible
+// slice of single-line data rows plus up-to-2 indicator rows ("▲ N above" /
+// "▼ N below") inserted only when content is hidden in that direction. Each
+// data row is assumed to be exactly one physical line, so no height heuristic
+// is needed. Used by table, logs, and any future list-style view.
+func (m Model) sliceScrollRows(dataRows []string, scroll, viewport int) []string {
+	if viewport <= 0 || len(dataRows) <= viewport {
+		return dataRows
+	}
+	offset := scroll
+	if offset < 0 {
+		offset = 0
+	}
+	maxOffset := len(dataRows) - viewport
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+
+	above := offset
+	belowAvailable := len(dataRows) - offset
+	visibleHeight := viewport
+	if above > 0 {
+		visibleHeight--
+	}
+	if belowAvailable-visibleHeight > 0 {
+		visibleHeight--
+	}
+	if visibleHeight < 1 {
+		visibleHeight = 1
+	}
+	end := offset + visibleHeight
+	if end > len(dataRows) {
+		end = len(dataRows)
+	}
+	below := len(dataRows) - end
+
+	out := make([]string, 0, visibleHeight+2)
+	if above > 0 {
+		out = append(out, m.styles.hint.Render(fmt.Sprintf("▲ %d above", above)))
+	}
+	out = append(out, dataRows[offset:end]...)
+	if below > 0 {
+		out = append(out, m.styles.hint.Render(fmt.Sprintf("▼ %d below", below)))
+	}
+	return out
+}
+
 func (m Model) renderLogsCompact() string {
 	width := clampInt(m.availableWidth()-4, 32, 72)
-	rows := []string{
-		m.styles.kickerCount("Activity", minInt(len(m.logs), 50)),
-		m.styles.separator.Render(strings.Repeat("─", width)),
-	}
-	for i, log := range m.logs {
-		if i >= 50 {
-			break
-		}
+	limit := minInt(len(m.logs), 50)
+	dataRows := make([]string, 0, limit)
+	for i := 0; i < limit; i++ {
+		log := m.logs[i]
 		marker := normalMarker
 		if i == m.logsSelected {
 			marker = m.styles.marker.Render(selectionMarker)
@@ -1646,8 +2400,13 @@ func (m Model) renderLogsCompact() string {
 		}
 		prefix := fmt.Sprintf("%s %s %s ", marker, timeStr, statusStyle.Render(log.Status))
 		budget := clampInt(width-lipgloss.Width(prefix), 8, width)
-		rows = append(rows, prefix+truncateText(log.Operation, budget))
+		dataRows = append(dataRows, prefix+truncateText(log.Operation, budget))
 	}
+	rows := []string{
+		m.styles.kickerCount("Activity", limit),
+		m.styles.separator.Render(strings.Repeat("─", width)),
+	}
+	rows = append(rows, m.sliceScrollRows(dataRows, m.logsScroll, m.logsViewportRows())...)
 	rows = append(rows, "", m.styles.hint.Render("r refresh · full arguments appear on wider terminals"))
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
 }
@@ -1662,28 +2421,28 @@ func (m Model) renderTable() string {
 	const tableFixedWidth = 44
 	contentWidth := m.availableWidth() - 4
 	titleWidth := contentWidth - tableFixedWidth
-	rows := []string{
-		m.styles.kickerCount("Tasks", len(m.tasks)),
-		m.styles.info.Render("// ID   BUCKET      PRI      DEPS  COMMENTS  TITLE"),
-		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
-	}
+
+	dataRows := make([]string, 0, len(m.tasks))
 	for i, task := range m.tasks {
 		marker := normalMarker
 		if i == m.selected {
 			marker = m.styles.marker.Render(selectionMarker)
 		}
-		row := fmt.Sprintf("%s %-4d %-11s %-8s %-5d %-9d %s", marker, task.ID, task.BucketKey, task.Priority, m.dependencyCount(task.ID), m.commentCount(task.ID), truncateText(task.Title, titleWidth))
-		rows = append(rows, row)
+		dataRows = append(dataRows, fmt.Sprintf("%s %-4d %-11s %-8s %-5d %-9d %s", marker, task.ID, task.BucketKey, task.Priority, m.dependencyCount(task.ID), m.commentCount(task.ID), truncateText(task.Title, titleWidth)))
 	}
+
+	rows := []string{
+		m.styles.kickerCount("Tasks", len(m.tasks)),
+		m.styles.info.Render("// ID   BUCKET      PRI      DEPS  COMMENTS  TITLE"),
+		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
+	}
+	rows = append(rows, m.sliceScrollRows(dataRows, m.tableScroll, m.tableViewportRows())...)
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
 }
 
 func (m Model) renderTableCompact() string {
 	width := clampInt(m.availableWidth()-4, 32, 68)
-	rows := []string{
-		m.styles.kickerCount("Tasks", len(m.tasks)),
-		m.styles.separator.Render(strings.Repeat("─", width)),
-	}
+	dataRows := make([]string, 0, len(m.tasks))
 	for i, task := range m.tasks {
 		marker := normalMarker
 		if i == m.selected {
@@ -1691,8 +2450,13 @@ func (m Model) renderTableCompact() string {
 		}
 		prefix := fmt.Sprintf("%s #%d %s %s ", marker, task.ID, task.BucketKey, task.Priority)
 		budget := clampInt(width-lipgloss.Width(prefix), 8, width)
-		rows = append(rows, prefix+truncateText(task.Title, budget))
+		dataRows = append(dataRows, prefix+truncateText(task.Title, budget))
 	}
+	rows := []string{
+		m.styles.kickerCount("Tasks", len(m.tasks)),
+		m.styles.separator.Render(strings.Repeat("─", width)),
+	}
+	rows = append(rows, m.sliceScrollRows(dataRows, m.tableScroll, m.tableViewportRows())...)
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
 }
 
@@ -1710,7 +2474,7 @@ func (m Model) renderGraph() string {
 	const (
 		graphTaskWidth = 10
 		graphMinTotal  = graphTaskWidth + 16 + 3
-		graphMaxTotal  = 80
+		graphMaxTotal  = 160
 	)
 	totalWidth := clampInt(m.availableWidth()-2, graphMinTotal, graphMaxTotal)
 	depWidth := totalWidth - graphTaskWidth - 3
@@ -1719,11 +2483,43 @@ func (m Model) renderGraph() string {
 		return m.styles.info.Render("// " + strings.ToUpper(label))
 	}
 
+	deps := m.dependencies
+	viewport := m.graphViewportRows()
+
+	above, below := 0, 0
+	if viewport > 0 && len(deps) > viewport {
+		offset := m.graphScroll
+		if offset < 0 {
+			offset = 0
+		}
+		maxOffset := len(deps) - viewport
+		if offset > maxOffset {
+			offset = maxOffset
+		}
+		visibleHeight := viewport
+		if offset > 0 {
+			visibleHeight--
+		}
+		if len(deps)-offset-visibleHeight > 0 {
+			visibleHeight--
+		}
+		if visibleHeight < 1 {
+			visibleHeight = 1
+		}
+		end := offset + visibleHeight
+		if end > len(deps) {
+			end = len(deps)
+		}
+		above = offset
+		below = len(deps) - end
+		deps = deps[offset:end]
+	}
+
 	rows := [][]string{
 		{m.styles.kickerCount("Dependency graph", len(m.dependencies))},
 		{labelCell("Task"), labelCell("Blocked by")},
 	}
-	for _, dependency := range m.dependencies {
+	for _, dependency := range deps {
 		rows = append(rows, []string{
 			fmt.Sprintf("#%d", dependency.TaskID),
 			fmt.Sprintf("#%d", dependency.DependsOnTaskID),
@@ -1731,7 +2527,16 @@ func (m Model) renderGraph() string {
 	}
 
 	table := renderGridTable(rows, []int{graphTaskWidth, depWidth}, m.styles.border)
-	return "\n" + indentBlock(table, 2)
+
+	parts := make([]string, 0, 3)
+	if above > 0 {
+		parts = append(parts, m.styles.hint.Render(fmt.Sprintf("▲ %d above", above)))
+	}
+	parts = append(parts, table)
+	if below > 0 {
+		parts = append(parts, m.styles.hint.Render(fmt.Sprintf("▼ %d below", below)))
+	}
+	return "\n" + indentBlock(strings.Join(parts, "\n"), 2)
 }
 
 func (m Model) renderConfig() string {
@@ -1825,11 +2630,11 @@ func (m Model) renderFooter() string {
 	case m.isEmbeddedCommentInput():
 		text = "enter save comment  alt+enter/shift+enter newline  esc cancel"
 	case m.blockerPickerOpen:
-		text = "up/down move  space toggle blocker  ctrl+s save  esc cancel"
+		text = "up/down move  pgup/pgdn scroll  space toggle blocker  ctrl+s save  esc cancel"
 	case m.mode != modeNormal:
 		text = "enter save  esc cancel  ctrl+c quit"
 	case m.taskScreen == taskScreenView:
-		text = "e edit  b blockers  c comment  m move  r refresh  esc board  ? help"
+		text = "j/k scroll  e edit  b blockers  c comment  m move  r refresh  esc board  ? help"
 	case m.taskScreen == taskScreenCreate:
 		text = "tab field  ←/→ priority  ctrl+s create  esc cancel"
 	case m.taskScreen == taskScreenEdit:
@@ -1837,21 +2642,23 @@ func (m Model) renderFooter() string {
 	case m.entityScreen == entityScreenView && m.deletePending:
 		text = "d confirm delete  esc cancel  q quit"
 	case m.entityScreen == entityScreenView:
-		text = "e edit in $EDITOR  d arm delete  p skills (persona)  r refresh  esc config"
+		text = "j/k scroll  e edit in $EDITOR  d arm delete  p skills (persona)  r refresh  esc config"
 	case m.entityScreen == entityScreenSkillPicker:
-		text = "up/down move  space toggle  enter on '+': new skill  ctrl+s save  esc cancel"
+		text = "up/down move  pgup/pgdn scroll  space toggle  enter on '+': new skill  ctrl+s save  esc cancel"
 	case m.moveMode:
 		text = "left/right move task to lane  esc cancel  q quit"
 	case m.view == 0:
-		text = "left/right lanes  up/down tasks  enter open  n new  e edit  c comment  m move  ? help"
+		text = "left/right lanes  up/down tasks  pgup/pgdn scroll  enter open  n new  e edit  m move  ? help"
 	case m.view == 3 && m.deletePending:
 		text = "d confirm delete  esc cancel  left/right changes target"
 	case m.view == 3:
 		text = "left/right section  up/down select  enter open  n new  e edit  d arm delete  ? help"
 	case m.view == 4:
-		text = "left/right switch view  up/down select row  r refresh  ? help"
+		text = "left/right switch view  up/down select row  pgup/pgdn scroll  g/G top/bottom  r refresh  ? help"
+	case m.view == 2:
+		text = "left/right switch view  j/k scroll  pgup/pgdn scroll  g/G top/bottom  ? help"
 	default:
-		text = "tab switch view  up/down select  enter open  n new  e edit  m move  ? help"
+		text = "tab switch view  up/down select  pgup/pgdn scroll  g/G top/bottom  enter open  n new  m move  ? help"
 	}
 	return "\n" + indentBlock(m.styles.footer.Render(text), 2)
 }

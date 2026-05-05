@@ -1,5 +1,9 @@
 # Omakiten
 
+[![Release](https://img.shields.io/github/v/release/This-Is-NPC/omakiten)](https://github.com/This-Is-NPC/omakiten/releases)
+[![Release workflow](https://img.shields.io/github/actions/workflow/status/This-Is-NPC/omakiten/release.yml?branch=master&label=release)](https://github.com/This-Is-NPC/omakiten/actions/workflows/release.yml)
+[![License](https://img.shields.io/github/license/This-Is-NPC/omakiten)](LICENSE)
+
 Opinionated checkpoints for AI-driven development.
 
 Omakiten is a local-first task and context manager for AI-assisted workflows. It lives in your terminal, keeps your project state in a local SQLite database, and exposes agent intents through the Model Context Protocol (MCP).
@@ -18,6 +22,18 @@ curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install
 
 ```powershell
 irm https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.ps1 | iex
+```
+
+#### Pin a specific version
+
+Both installers honor a `VERSION` environment variable for reproducible installs (CI, locked deployments). When it is unset, the script resolves to the latest GitHub release.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.sh | VERSION=0.1.0 bash
+```
+
+```powershell
+$env:VERSION = "0.1.0"; irm https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.ps1 | iex
 ```
 
 Build from source (requires Go 1.25+):
