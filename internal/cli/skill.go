@@ -5,7 +5,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
 	"omakiten/internal/domain"
 )
 
@@ -33,9 +32,9 @@ func newSkillListCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
-				service := app.NewSkillService(rt.store, app.NewBundleEditor(rt.store, rt.configPath))
+				service := rt.skillService()
 				skills, err := service.List(ctx)
 				if err != nil {
 					return nil, err
@@ -57,9 +56,9 @@ func newSkillShowCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
-				skill, err := app.NewSkillService(rt.store, app.NewBundleEditor(rt.store, rt.configPath)).Show(ctx, args[0])
+				skill, err := rt.skillService().Show(ctx, args[0])
 				if err != nil {
 					return nil, err
 				}
@@ -81,9 +80,9 @@ func newSkillAddCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
-				service := app.NewSkillService(rt.store, app.NewBundleEditor(rt.store, rt.configPath))
+				service := rt.skillService()
 				skill, err := service.Add(ctx, domain.SkillInput{Key: key, Name: name, Description: description})
 				if err != nil {
 					return nil, err
@@ -122,9 +121,9 @@ func newSkillEditCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
-				service := app.NewSkillService(rt.store, app.NewBundleEditor(rt.store, rt.configPath))
+				service := rt.skillService()
 				slug, err := resolveSkillSlug(ctx, service, args[0])
 				if err != nil {
 					return nil, err
@@ -175,9 +174,9 @@ func newSkillRemoveCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
-				service := app.NewSkillService(rt.store, app.NewBundleEditor(rt.store, rt.configPath))
+				service := rt.skillService()
 				slug, err := resolveSkillSlug(ctx, service, args[0])
 				if err != nil {
 					return nil, err

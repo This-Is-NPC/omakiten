@@ -120,9 +120,10 @@ func (s *Service) ListTemplates(_ context.Context, input ListTemplatesInput) (Li
 		if input.Kind != "" && t.Default != input.Kind {
 			continue
 		}
-		if t.Project == input.Project {
+		switch t.Project {
+		case input.Project:
 			scoped[t.Default] = t
-		} else if t.Project == "" {
+		case "":
 			global[t.Default] = t
 		}
 	}

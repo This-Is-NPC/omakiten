@@ -4,9 +4,6 @@ import (
 	"context"
 
 	"github.com/spf13/cobra"
-
-	"omakiten/internal/app"
-	"omakiten/internal/token"
 )
 
 func newContextCommand(opts *runtimeOptions) *cobra.Command {
@@ -25,7 +22,7 @@ func newContextCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 				ctx = rt.WithActivityRepo(ctx)
 
 				project, err := opts.resolveProject(ctx, rt.store)
@@ -33,7 +30,7 @@ func newContextCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 
-				entry, err := app.NewContextService(rt.store, rt.store, rt.store, rt.store, rt.store, token.NewCounter()).Add(ctx, project, body)
+				entry, err := rt.contextService().Add(ctx, project, body)
 				if err != nil {
 					return nil, err
 				}
@@ -54,7 +51,7 @@ func newContextCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 				ctx = rt.WithActivityRepo(ctx)
 
 				project, err := opts.resolveProject(ctx, rt.store)
@@ -62,7 +59,7 @@ func newContextCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 
-				return app.NewContextService(rt.store, rt.store, rt.store, rt.store, rt.store, token.NewCounter()).Dump(ctx, project, level)
+				return rt.contextService().Dump(ctx, project, level)
 			})
 		},
 	}

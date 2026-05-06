@@ -32,7 +32,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = rt.store.Close() }()
+	defer rt.close()
 
 	ctx = activity.WithSource(ctx, "tui", "tui")
 	ctx = rt.WithActivityRepo(ctx)

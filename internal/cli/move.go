@@ -28,7 +28,7 @@ func newMoveCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
 				project, err := opts.resolveProject(ctx, rt.store)
 				if err != nil {
