@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.0](https://github.com/This-Is-NPC/omakiten/compare/v0.4.0...v0.5.0) (2026-05-06)
+
+
+### Features
+
+* **config:** auto-load skills, laws and personas from their folders ([#17](https://github.com/This-Is-NPC/omakiten/issues/17)) ([77c7d0c](https://github.com/This-Is-NPC/omakiten/commit/77c7d0c74ca656bc149f5eee5cf5c3391cba09b8))
+* **errors:** solution likes counter with cross-project top list ([#15](https://github.com/This-Is-NPC/omakiten/issues/15)) ([649ae41](https://github.com/This-Is-NPC/omakiten/commit/649ae41fb3c9632cff321ea290ac713e4574cfc2))
+* **templates:** task templates, custom-overlay layout & project-scoped defaults ([#18](https://github.com/This-Is-NPC/omakiten/issues/18)) ([8b0953a](https://github.com/This-Is-NPC/omakiten/commit/8b0953a08afb6690c6270063e43257ceda8d2425))
+
 ## [0.4.0](https://github.com/This-Is-NPC/omakiten/compare/v0.3.0...v0.4.0) (2026-05-05)
 
 
