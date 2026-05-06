@@ -11,6 +11,7 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/picker"
 )
 
@@ -215,7 +216,7 @@ func (m *Model) openTaskView(task domain.Task) {
 	m.taskField = taskFieldTitle
 	m.status = ""
 	m.moveMode = false
-	m.taskView.Scroll = 0
+	m.taskView = detailscreen.New(0)
 	m.activityScroll = 0
 	m.activityCursor = -1
 	m.taskFocus = taskFocusForm
@@ -271,7 +272,7 @@ func (m *Model) closeTaskScreen(status string) {
 	m.taskField = taskFieldTitle
 	m.status = status
 	m.moveMode = false
-	m.taskView.Scroll = 0
+	m.taskView = detailscreen.New(0)
 	m.activity = nil
 	m.activityForTask = 0
 	m.activityScroll = 0
@@ -279,7 +280,7 @@ func (m *Model) closeTaskScreen(status string) {
 	m.taskFocus = taskFocusForm
 	m.commentScreenOpen = false
 	m.commentScreenID = 0
-	m.commentScreen.Viewport.Scroll = 0
+	m.commentScreen = detailscreen.New(0)
 }
 
 func (m *Model) toggleTaskField() {
@@ -495,16 +496,16 @@ func (m Model) renderTaskView() string {
 	// Below this threshold, stack vertically and let each block use the full width.
 	const minWideValueWidth = 24
 	activityWidth := m.activityPanelWidth()
-	wideThreshold := detailGridLabelWidth + 1 + minWideValueWidth + 2 + 2 + activityWidth + 2
+	wideThreshold := detailscreen.LabelWidth + 1 + minWideValueWidth + 2 + 2 + activityWidth + 2
 
 	var valueWidth int
 	if available < wideThreshold {
-		valueWidth = available - detailGridLabelWidth - 1 - 2
+		valueWidth = available - detailscreen.LabelWidth - 1 - 2
 		if valueWidth < 16 {
 			valueWidth = 16
 		}
 	} else {
-		valueWidth = available - (activityWidth + 2) - 2 - (detailGridLabelWidth + 1) - 2
+		valueWidth = available - (activityWidth + 2) - 2 - (detailscreen.LabelWidth + 1) - 2
 		if valueWidth < minWideValueWidth {
 			valueWidth = minWideValueWidth
 		}
@@ -513,7 +514,7 @@ func (m Model) renderTaskView() string {
 		}
 	}
 
-	grid := m.newDetailGrid(valueWidth).
+	detail := m.taskView.Reset(valueWidth).
 		Custom(taskKicker).
 		Row("Title", task.Title).
 		Row("Bucket", task.BucketKey).
@@ -522,19 +523,19 @@ func (m Model) renderTaskView() string {
 		Row("Tags", tagLine).
 		KickerCount("Blockers", len(blockers))
 	if len(blockers) == 0 {
-		grid.Span(m.styles.hint.Render("No blockers. Press b to add one."))
+		detail = detail.Span(m.styles.hint.Render("No blockers. Press b to add one."))
 	} else {
 		for _, blocker := range blockers {
-			grid.Span(m.renderTaskReference(blocker))
+			detail = detail.Span(m.renderTaskReference(blocker))
 		}
 	}
-	grid.Kicker("Description")
+	detail = detail.Kicker("Description")
 	if strings.TrimSpace(task.Description) == "" {
-		grid.Span(m.styles.hint.Render("No description"))
+		detail = detail.Span(m.styles.hint.Render("No description"))
 	} else {
-		grid.Span(strings.TrimRight(task.Description, "\n"))
+		detail = detail.Span(strings.TrimRight(task.Description, "\n"))
 	}
-	details := grid.Render(m.styles.border)
+	details := detail.View(0, m.styles.border, m.styles.hint)
 
 	var rendered string
 	if available < wideThreshold {
@@ -583,7 +584,7 @@ func taskViewPageStep(viewport int) int {
 }
 
 // applyTaskViewScroll slices the rendered detail content to the available
-// viewport based on m.taskView.Scroll, appending an indicator when content is
+// viewport based on m.taskView.Viewport.Scroll, appending an indicator when content is
 // hidden above or below.
 func (m Model) applyTaskViewScroll(content string) string {
 	viewport := m.taskViewportHeight()
@@ -591,9 +592,8 @@ func (m Model) applyTaskViewScroll(content string) string {
 	if viewport <= 0 || len(lines) <= viewport {
 		return "\n" + indentBlock(content, 2)
 	}
-	// Overflow → reserve one row for the footer indicator.
-	visible, above, below := sliceViewport(lines, m.taskView.Scroll, viewport-1)
-	return "\n" + indentBlock(strings.Join(visible, "\n")+"\n"+m.viewportFooterHint(above, below), 2)
+	// Overflow: reserve one row for the footer indicator.
+	return "\n" + indentBlock(m.taskView.Viewport.View(lines, viewport-1, m.styles.hint), 2)
 }
 
 func (m Model) renderTaskReference(task domain.Task) string {

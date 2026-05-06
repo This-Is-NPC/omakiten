@@ -9,6 +9,7 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/picker"
 )
 
@@ -154,7 +155,7 @@ func (m *Model) scaffoldNewSkillFromPicker() tea.Cmd {
 func (m *Model) openSelectedEntityViewForSlug(kind entityKind, slug string) {
 	m.entityScreen = entityScreenView
 	m.entityForm = entityForm{kind: kind, mode: entityScreenView, slug: slug}
-	m.entityViewScroll = 0
+	m.entityView = detailscreen.New(0)
 }
 
 func (m Model) renderPersonaPicker() string {

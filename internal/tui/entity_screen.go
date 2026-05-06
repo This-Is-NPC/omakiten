@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/detailscreen"
 )
 
 func (m Model) updateEntityScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -55,23 +56,10 @@ func (m Model) updateEntityScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = "Refreshed"
 		}
-	case "j", "down":
-		m.entityViewScroll++
-	case "k", "up":
-		if m.entityViewScroll > 0 {
-			m.entityViewScroll--
-		}
-	case "pgdown", "ctrl+d":
-		m.entityViewScroll += taskViewPageStep(m.entityViewportHeight())
-	case "pgup", "ctrl+u":
-		m.entityViewScroll -= taskViewPageStep(m.entityViewportHeight())
-		if m.entityViewScroll < 0 {
-			m.entityViewScroll = 0
-		}
-	case "home", "g":
-		m.entityViewScroll = 0
-	case "end", "G":
-		m.entityViewScroll = 1 << 20
+	default:
+		var cmd tea.Cmd
+		m.entityView, cmd = m.entityView.Update(msg, m.entityViewportHeight())
+		return m, cmd
 	}
 	return m, nil
 }
@@ -81,7 +69,7 @@ func (m *Model) closeEntityScreen(status string) {
 	m.entityScreen = entityScreenClosed
 	m.entityForm = entityForm{}
 	m.status = status
-	m.entityViewScroll = 0
+	m.entityView = detailscreen.New(0)
 }
 
 func (m *Model) clearDeletePrompt(status string) {
@@ -111,25 +99,24 @@ func (m Model) renderEntityScreen() string {
 
 func (m Model) renderEntityView() string {
 	const (
-		entityDetailLabelWidth = 14
-		entityDetailMinValue   = 20
-		entityDetailMaxValue   = 140
+		entityDetailMinValue = 20
+		entityDetailMaxValue = 140
 	)
 	available := m.availableWidth() - 4
-	minTotal := entityDetailLabelWidth + entityDetailMinValue + 3
-	maxTotal := entityDetailLabelWidth + entityDetailMaxValue + 3
+	minTotal := detailscreen.LabelWidth + entityDetailMinValue + 3
+	maxTotal := detailscreen.LabelWidth + entityDetailMaxValue + 3
 	totalWidth := clampInt(available, minTotal, maxTotal)
-	valueWidth := totalWidth - entityDetailLabelWidth - 3
-
-	labelCell := func(label string) string {
-		return m.styles.info.Render("// " + strings.ToUpper(label))
-	}
+	valueWidth := totalWidth - detailscreen.LabelWidth - 3
 
 	header := m.styles.kicker(fmt.Sprintf("%s · %s", m.entityForm.kind.String(), m.entityForm.slug))
 
-	var dataRows [][]string
+	type detailRow struct {
+		label string
+		value string
+	}
+	var dataRows []detailRow
 	var body string
-	var extraSpannedRows [][]string
+	var extraSpannedRows []string
 
 	switch m.entityForm.kind {
 	case entityKindLaw:
@@ -138,10 +125,10 @@ func (m Model) renderEntityView() string {
 			return "\n" + indentBlock(m.styles.panel.Render("Law not found"), 2)
 		}
 		badge := m.severityStyle(domain.LawSeverity(law.Severity)).Render(law.Severity)
-		dataRows = [][]string{
-			{labelCell("Slug"), law.Key},
-			{labelCell("Severity"), badge},
-			{labelCell("Source"), law.SourcePath},
+		dataRows = []detailRow{
+			{label: "Slug", value: law.Key},
+			{label: "Severity", value: badge},
+			{label: "Source", value: law.SourcePath},
 		}
 		body = law.Body
 	case entityKindSkill:
@@ -149,11 +136,11 @@ func (m Model) renderEntityView() string {
 		if !ok {
 			return "\n" + indentBlock(m.styles.panel.Render("Skill not found"), 2)
 		}
-		dataRows = [][]string{
-			{labelCell("Slug"), skill.Key},
-			{labelCell("Name"), skill.Name},
-			{labelCell("Description"), skill.Description},
-			{labelCell("Source"), skill.SourcePath},
+		dataRows = []detailRow{
+			{label: "Slug", value: skill.Key},
+			{label: "Name", value: skill.Name},
+			{label: "Description", value: skill.Description},
+			{label: "Source", value: skill.SourcePath},
 		}
 		body = skill.Body
 	case entityKindPersona:
@@ -165,15 +152,15 @@ func (m Model) renderEntityView() string {
 		if skills == "" {
 			skills = m.styles.hint.Render("none")
 		}
-		dataRows = [][]string{
-			{labelCell("Slug"), persona.Key},
-			{labelCell("Name"), persona.Name},
-			{labelCell("Description"), persona.Description},
-			{labelCell("Skills"), skills},
-			{labelCell("Source"), persona.SourcePath},
+		dataRows = []detailRow{
+			{label: "Slug", value: persona.Key},
+			{label: "Name", value: persona.Name},
+			{label: "Description", value: persona.Description},
+			{label: "Skills", value: skills},
+			{label: "Source", value: persona.SourcePath},
 		}
 		body = persona.Body
-		extraSpannedRows = [][]string{{m.styles.hint.Render("p: open skill picker")}}
+		extraSpannedRows = []string{m.styles.hint.Render("p: open skill picker")}
 	case entityKindTemplate:
 		template, ok := m.findTemplateBySlug(m.entityForm.slug)
 		if !ok {
@@ -193,16 +180,16 @@ func (m Model) renderEntityView() string {
 			}
 			defaultLabel = m.styles.badgeInfo.Render(strings.ToUpper(text))
 		}
-		dataRows = [][]string{
-			{labelCell("Slug"), template.Slug},
-			{labelCell("Name"), template.Name},
-			{labelCell("Description"), template.Description},
-			{labelCell("Entity"), entity},
-			{labelCell("Default"), defaultLabel},
-			{labelCell("Source"), template.SourcePath},
+		dataRows = []detailRow{
+			{label: "Slug", value: template.Slug},
+			{label: "Name", value: template.Name},
+			{label: "Description", value: template.Description},
+			{label: "Entity", value: entity},
+			{label: "Default", value: defaultLabel},
+			{label: "Source", value: template.SourcePath},
 		}
 		body = template.Body
-		extraSpannedRows = [][]string{{m.styles.hint.Render("a: assign default kind")}}
+		extraSpannedRows = []string{m.styles.hint.Render("a: assign default kind")}
 	}
 
 	bodyText := strings.TrimRight(body, "\n")
@@ -210,16 +197,15 @@ func (m Model) renderEntityView() string {
 		bodyText = m.styles.hint.Render("Empty body")
 	}
 
-	rows := [][]string{{header}}
-	rows = append(rows, dataRows...)
-	rows = append(rows,
-		[]string{m.styles.kicker("Body")},
-		[]string{bodyText},
-	)
-	rows = append(rows, extraSpannedRows...)
-
-	table := renderGridTable(rows, []int{entityDetailLabelWidth, valueWidth}, m.styles.border)
-	return m.applyEntityViewScroll(table)
+	screen := m.entityView.Reset(valueWidth).Custom(header)
+	for _, row := range dataRows {
+		screen = screen.Row(row.label, row.value)
+	}
+	screen = screen.Kicker("Body").Span(bodyText)
+	for _, row := range extraSpannedRows {
+		screen = screen.Span(row)
+	}
+	return "\n" + indentBlock(screen.View(m.entityViewportHeight(), m.styles.border, m.styles.hint), 2)
 }
 
 // entityViewportHeight is the line budget for the entity detail view content
@@ -239,17 +225,4 @@ func (m Model) entityViewportHeight() int {
 		return 0
 	}
 	return h
-}
-
-// applyEntityViewScroll slices the rendered grid to the available viewport
-// based on m.entityViewScroll. Operates on the post-render line list (no
-// height heuristics) so very tall bodies behave deterministically.
-func (m Model) applyEntityViewScroll(content string) string {
-	viewport := m.entityViewportHeight()
-	lines := strings.Split(content, "\n")
-	if viewport <= 0 || len(lines) <= viewport {
-		return "\n" + indentBlock(content, 2)
-	}
-	visible, above, below := sliceViewport(lines, m.entityViewScroll, viewport-1)
-	return "\n" + indentBlock(strings.Join(visible, "\n")+"\n"+m.viewportFooterHint(above, below), 2)
 }

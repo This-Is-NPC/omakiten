@@ -11,9 +11,8 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/detailscreen"
 )
-
-
 
 // editorFinishedMsg is emitted after $EDITOR exits via tea.ExecProcess. The
 // model handler re-imports the bundle so SQLite reflects the user's edits.
@@ -139,7 +138,7 @@ func (m *Model) openSelectedEntityView() {
 	m.entityScreen = entityScreenView
 	m.entityForm = entityForm{kind: m.entityKind, mode: entityScreenView, slug: slug}
 	m.status = ""
-	m.entityViewScroll = 0
+	m.entityView = detailscreen.New(0)
 }
 
 // openEntityCreate scaffolds a new entity file and runs $EDITOR against it.
@@ -491,4 +490,3 @@ func (m *Model) deleteTagByName(name string) {
 		m.status = fmt.Sprintf("Tag %q deleted", name)
 	}
 }
-

@@ -146,7 +146,7 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 	before := got.commentScreen.Viewport.Scroll
 	got = pressRune(t, got, 'j')
 	if got.commentScreen.Viewport.Scroll <= before {
-		t.Fatalf("j did not advance commentScreenScroll: before=%d after=%d", before, got.commentScreen.Viewport.Scroll)
+		t.Fatalf("j did not advance commentScreen viewport: before=%d after=%d", before, got.commentScreen.Viewport.Scroll)
 	}
 
 	// esc returns to the task view, leaving the activity cursor on the same

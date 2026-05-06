@@ -10,8 +10,10 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/viewport"
 )
+
 func NewModel(ctx context.Context, project domain.ProjectContext, repos Repositories, theme config.Theme, counter token.Counter) (Model, error) {
 	if counter == nil {
 		counter = token.ApproxCounter{}
@@ -26,6 +28,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		entityKind:    entityKindLaw,
 		entityCursors: map[entityKind]int{entityKindLaw: 0, entityKindPersona: 0, entityKindSkill: 0, entityKindTag: 0},
 	}
+	detailscreen.SetStyles(model.styles.info)
 	if err := model.refresh(); err != nil {
 		return Model{}, err
 	}
@@ -369,9 +372,6 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 	return false
 }
 
-
-
-
 func (m *Model) refresh() error {
 	views := m.activeViewSettings()
 	m.views = views
@@ -481,6 +481,3 @@ func (m Model) computeMetrics(maxTokens int) domain.TokenMetrics {
 	}
 	return domain.TokenMetrics{EstimatedTotal: total, MaxTokens: maxTokens, Truncated: maxTokens > 0 && total > maxTokens}
 }
-
-
-

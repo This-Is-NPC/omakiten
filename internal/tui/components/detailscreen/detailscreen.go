@@ -61,6 +61,16 @@ func New(valueW int) Model {
 	}
 }
 
+// Reset clears the builder rows and applies a new value-column width while
+// preserving the embedded viewport state. Parents use it at render time: the
+// layout is rebuilt every frame, but scroll position belongs to the model.
+func (m Model) Reset(valueW int) Model {
+	m.rows = nil
+	m.labelW = LabelWidth
+	m.valueW = valueW
+	return m
+}
+
 // Custom appends a pre-rendered row that spans both columns. Used when
 // the caller has already chosen between kicker and kickerFocused based
 // on focus state — the package doesn't take a "focused?" bool because
@@ -151,7 +161,7 @@ var (
 // — body cells render whatever the caller passes verbatim.
 func SetStyles(info lipgloss.Style) { infoStyle = info }
 
-func kicker(label string) string       { return infoStyle.Render("// " + strings.ToUpper(label)) }
+func kicker(label string) string { return infoStyle.Render("// " + strings.ToUpper(label)) }
 func kickerCount(l string, n int) string {
 	return infoStyle.Render(fmt.Sprintf("// %s · %d", strings.ToUpper(l), n))
 }

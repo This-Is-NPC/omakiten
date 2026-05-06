@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/viewport"
 )
 
@@ -19,7 +20,7 @@ func (m Model) renderCommentScreen() string {
 	comment, ok := m.activeComment()
 	if !ok {
 		notFound := []string{
-			m.detailKickerWithID("Comment", m.commentScreenID),
+			m.styles.kicker(fmt.Sprintf("Comment · #%d", m.commentScreenID)),
 			"",
 			m.styles.hint.Render("Comment not found. Press esc to return."),
 		}
@@ -36,7 +37,7 @@ func (m Model) renderCommentScreen() string {
 	}
 
 	available := m.availableWidth()
-	valueWidth := available - detailGridLabelWidth - 1 - 2
+	valueWidth := available - detailscreen.LabelWidth - 1 - 2
 	if valueWidth < 24 {
 		valueWidth = 24
 	}
@@ -44,44 +45,32 @@ func (m Model) renderCommentScreen() string {
 		valueWidth = 120
 	}
 
-	grid := m.newDetailGrid(valueWidth).
-		Custom(m.detailKickerWithID("Comment", comment.ID)).
+	screen := m.commentScreen.Reset(valueWidth).
+		Custom(m.styles.kicker(fmt.Sprintf("Comment · #%d", comment.ID))).
 		Row("Task", fmt.Sprintf("#%d", comment.TaskID)).
 		Row("Author", strings.TrimSpace(comment.AuthorType)).
 		Row("When", strings.TrimSpace(comment.CreatedAt))
 	if tagLine != "" {
-		grid.Row("Tags", tagLine)
+		screen = screen.Row("Tags", tagLine)
 	}
-	grid.Kicker("Body")
+	screen = screen.Kicker("Body")
 	body := strings.TrimSpace(comment.Body)
 	if body == "" {
-		grid.Span(m.styles.hint.Render("empty comment"))
+		screen = screen.Span(m.styles.hint.Render("empty comment"))
 	} else {
 		// Pass the whole body as a single spanned row so renderGridTable wraps
 		// it inline; emitting one row per line would draw a horizontal border
 		// between every wrapped line and read like a price list.
-		grid.Span(strings.TrimRight(body, "\n"))
+		screen = screen.Span(strings.TrimRight(body, "\n"))
 	}
 
-	return m.applyCommentScreenScroll(grid.Render(m.styles.border))
-}
-
-// applyCommentScreenScroll mirrors applyTaskViewScroll but reads from
-// commentScreenScroll so the two screens scroll independently.
-func (m Model) applyCommentScreenScroll(content string) string {
-	viewport := m.taskViewportHeight()
-	lines := strings.Split(content, "\n")
-	if viewport <= 0 || len(lines) <= viewport {
-		return "\n" + indentBlock(content, 2)
-	}
-	visible, above, below := sliceViewport(lines, m.commentScreen.Viewport.Scroll, viewport-1)
-	return "\n" + indentBlock(strings.Join(visible, "\n")+"\n"+m.viewportFooterHint(above, below), 2)
+	return "\n" + indentBlock(screen.View(m.taskViewportHeight(), m.styles.border, m.styles.hint), 2)
 }
 
 // openCommentScreen opens the dedicated comment detail view for the comment
 // under the activity cursor. System events have no body to read, so they
 // ignore Enter (the activity feed still shows them inline as one-liners).
-// commentScreenScroll resets so the body always opens at the top.
+// commentScreen viewport resets so the body always opens at the top.
 func (m *Model) openCommentScreen() {
 	events := m.activityForTaskInView(m.taskID)
 	if m.activityCursor < 0 || m.activityCursor >= len(events) {
@@ -93,7 +82,7 @@ func (m *Model) openCommentScreen() {
 	}
 	m.commentScreenOpen = true
 	m.commentScreenID = ev.ID
-	m.commentScreen.Viewport.Scroll = 0
+	m.commentScreen = detailscreen.New(0)
 }
 
 // closeCommentScreen returns the user to the task detail view with the
@@ -101,7 +90,7 @@ func (m *Model) openCommentScreen() {
 func (m *Model) closeCommentScreen() {
 	m.commentScreenOpen = false
 	m.commentScreenID = 0
-	m.commentScreen.Viewport.Scroll = 0
+	m.commentScreen = detailscreen.New(0)
 }
 
 // activeComment returns the comment currently displayed in the comment screen,

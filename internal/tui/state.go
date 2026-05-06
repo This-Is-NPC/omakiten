@@ -159,11 +159,10 @@ type Model struct {
 	// the raw Settings so omitted fields show up as their canonical defaults.
 	views config.ViewSettings
 
-	// taskView owns the scroll offset for the form column on the task
-	// detail screen. The activity column manages its own scroll via
-	// activityScroll because it has separate semantics (line-based vs
-	// card-cursor-based).
-	taskView viewport.Model
+	// taskView owns the detail-grid builder + scroll offset for the form column
+	// on the task detail screen. The activity column manages its own scroll via
+	// activityScroll because it has separate semantics.
+	taskView detailscreen.Model
 
 	// boardColScroll is the leftmost-visible bucket index when the board is
 	// too wide to fit all columns side-by-side. Updated via syncBoardColScroll
@@ -175,7 +174,9 @@ type Model struct {
 	// lanes. Keys are bucket keys (domain.Bucket.Key).
 	boardScroll map[string]int
 
-	entityViewScroll int
+	// entityView owns the detail-grid builder + scroll offset for the focused
+	// entity detail screen.
+	entityView detailscreen.Model
 
 	logsScroll int
 
