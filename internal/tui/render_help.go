@@ -159,7 +159,7 @@ func (m Model) renderHelp() string {
 
 	viewport := m.helpViewportRows()
 	if viewport > 0 && len(lines) > viewport {
-		visible, above, below := sliceViewport(lines, m.helpScroll, viewport-1)
+		visible, above, below := sliceViewport(lines, m.help.Scroll, viewport-1)
 		return "\n" + indentBlock(strings.Join(visible, "\n")+"\n"+m.viewportFooterHint(above, below), 2)
 	}
 	return "\n" + indentBlock(strings.Join(lines, "\n"), 2)

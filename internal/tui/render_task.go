@@ -11,6 +11,7 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/picker"
 )
 
 func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -50,18 +51,6 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.toggleTaskFocus()
 		case "shift+tab":
 			m.toggleTaskFocus()
-		case "j", "down":
-			if m.taskFocus == taskFocusActivity {
-				m.moveActivityCursor(1)
-			} else {
-				m.taskViewScroll++
-			}
-		case "k", "up":
-			if m.taskFocus == taskFocusActivity {
-				m.moveActivityCursor(-1)
-			} else if m.taskViewScroll > 0 {
-				m.taskViewScroll--
-			}
 		case "J":
 			m.moveActivityCursor(1)
 		case "K":
@@ -70,33 +59,29 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.taskFocus == taskFocusActivity {
 				m.openCommentScreen()
 			}
-		case "pgdown", "ctrl+d":
+		default:
+			// Activity-column nav has split semantics (line scroll for the
+			// body, card cursor for J/K) so the activity branch stays
+			// inline. The form-column branch is a plain viewport — delegate
+			// to the embedded sub-model.
 			if m.taskFocus == taskFocusActivity {
-				m.scrollActivityLines(m.activityViewportLines() / 2)
-			} else {
-				m.taskViewScroll += taskViewPageStep(m.taskViewportHeight())
-			}
-		case "pgup", "ctrl+u":
-			if m.taskFocus == taskFocusActivity {
-				m.scrollActivityLines(-m.activityViewportLines() / 2)
-			} else {
-				m.taskViewScroll -= taskViewPageStep(m.taskViewportHeight())
-				if m.taskViewScroll < 0 {
-					m.taskViewScroll = 0
+				switch msg.String() {
+				case "j", "down":
+					m.moveActivityCursor(1)
+				case "k", "up":
+					m.moveActivityCursor(-1)
+				case "pgdown", "ctrl+d":
+					m.scrollActivityLines(m.activityViewportLines() / 2)
+				case "pgup", "ctrl+u":
+					m.scrollActivityLines(-m.activityViewportLines() / 2)
+				case "home", "g":
+					m.activityScroll = 0
+				case "end", "G":
+					m.activityScroll = 1 << 20
+					m.clampActivityScroll()
 				}
-			}
-		case "home", "g":
-			if m.taskFocus == taskFocusActivity {
-				m.activityScroll = 0
 			} else {
-				m.taskViewScroll = 0
-			}
-		case "end", "G":
-			if m.taskFocus == taskFocusActivity {
-				m.activityScroll = 1 << 20
-				m.clampActivityScroll()
-			} else {
-				m.taskViewScroll = 1 << 20
+				m.taskView, _ = m.taskView.Update(msg, m.taskViewportHeight())
 			}
 		}
 		return *m, nil
@@ -140,36 +125,33 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) updateBlockerPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" || msg.String() == "q" {
+		return *m, tea.Quit
+	}
 	candidates := m.blockerPickerCandidates()
 	rowCount := len(candidates)
-	if cursor, handled := pickerNavKey(msg, m.blockerPickerCursor, rowCount, m.blockerPickerViewportRows()); handled {
-		m.blockerPickerCursor = cursor
-		m.syncBlockerPickerScroll(rowCount)
-		return *m, nil
-	}
-	switch msg.String() {
-	case "ctrl+c", "q":
-		return *m, tea.Quit
-	case "esc":
+
+	// Delegate navigation + esc/space/ctrl+s recognition to the picker
+	// sub-model. We still own the side-effects (close/save/toggle) because
+	// those touch parent fields (m.blockerPickerChecks, status, refresh).
+	var cmd tea.Cmd
+	m.blockerPicker, cmd = m.blockerPicker.Update(msg, rowCount, m.blockerPickerViewportRows())
+
+	switch m.blockerPicker.LastEvent() {
+	case picker.EventCancel:
 		m.closeBlockerPicker("Cancelled")
-	case " ", "space":
-		if m.blockerPickerCursor >= 0 && m.blockerPickerCursor < rowCount {
-			taskID := candidates[m.blockerPickerCursor].ID
+	case picker.EventSelect:
+		m.saveBlockerPicker()
+	case picker.EventToggle:
+		if m.blockerPicker.Cursor >= 0 && m.blockerPicker.Cursor < rowCount {
+			taskID := candidates[m.blockerPicker.Cursor].ID
 			if m.blockerPickerChecks == nil {
 				m.blockerPickerChecks = map[int64]bool{}
 			}
 			m.blockerPickerChecks[taskID] = !m.blockerPickerChecks[taskID]
 		}
-	case "ctrl+s":
-		m.saveBlockerPicker()
 	}
-	return *m, nil
-}
-
-// syncBlockerPickerScroll keeps m.blockerPickerScroll aligned so the cursor
-// row stays visible.
-func (m *Model) syncBlockerPickerScroll(rowCount int) {
-	m.blockerPickerScroll = followCursor(m.blockerPickerScroll, m.blockerPickerCursor, m.blockerPickerViewportRows(), rowCount)
+	return *m, cmd
 }
 
 // blockerPickerViewportRows returns how many candidate rows fit in the picker
@@ -233,7 +215,7 @@ func (m *Model) openTaskView(task domain.Task) {
 	m.taskField = taskFieldTitle
 	m.status = ""
 	m.moveMode = false
-	m.taskViewScroll = 0
+	m.taskView.Scroll = 0
 	m.activityScroll = 0
 	m.activityCursor = -1
 	m.taskFocus = taskFocusForm
@@ -279,7 +261,7 @@ func (m *Model) openTaskEdit(task domain.Task) {
 func (m *Model) closeTaskScreen(status string) {
 	m.blockerPickerOpen = false
 	m.blockerPickerTaskID = 0
-	m.blockerPickerCursor = 0
+	m.blockerPicker.Cursor = 0
 	m.blockerPickerChecks = nil
 	m.taskScreen = taskScreenClosed
 	m.taskID = 0
@@ -289,7 +271,7 @@ func (m *Model) closeTaskScreen(status string) {
 	m.taskField = taskFieldTitle
 	m.status = status
 	m.moveMode = false
-	m.taskViewScroll = 0
+	m.taskView.Scroll = 0
 	m.activity = nil
 	m.activityForTask = 0
 	m.activityScroll = 0
@@ -297,7 +279,7 @@ func (m *Model) closeTaskScreen(status string) {
 	m.taskFocus = taskFocusForm
 	m.commentScreenOpen = false
 	m.commentScreenID = 0
-	m.commentScreenScroll = 0
+	m.commentScreen.Viewport.Scroll = 0
 }
 
 func (m *Model) toggleTaskField() {
@@ -363,23 +345,21 @@ func (m *Model) openBlockerPicker() {
 	}
 	m.blockerPickerOpen = true
 	m.blockerPickerTaskID = m.taskID
-	m.blockerPickerCursor = 0
+	m.blockerPicker = picker.New(picker.Multi)
 	m.blockerPickerChecks = map[int64]bool{}
 	for _, dep := range m.dependencies {
 		if dep.TaskID == m.taskID {
 			m.blockerPickerChecks[dep.DependsOnTaskID] = true
 		}
 	}
-	m.blockerPickerScroll = 0
 }
 
 func (m *Model) closeBlockerPicker(status string) {
 	m.blockerPickerOpen = false
 	m.blockerPickerTaskID = 0
-	m.blockerPickerCursor = 0
+	m.blockerPicker = picker.Model{}
 	m.blockerPickerChecks = nil
 	m.status = status
-	m.blockerPickerScroll = 0
 }
 
 func (m *Model) saveBlockerPicker() {
@@ -603,7 +583,7 @@ func taskViewPageStep(viewport int) int {
 }
 
 // applyTaskViewScroll slices the rendered detail content to the available
-// viewport based on m.taskViewScroll, appending an indicator when content is
+// viewport based on m.taskView.Scroll, appending an indicator when content is
 // hidden above or below.
 func (m Model) applyTaskViewScroll(content string) string {
 	viewport := m.taskViewportHeight()
@@ -612,7 +592,7 @@ func (m Model) applyTaskViewScroll(content string) string {
 		return "\n" + indentBlock(content, 2)
 	}
 	// Overflow → reserve one row for the footer indicator.
-	visible, above, below := sliceViewport(lines, m.taskViewScroll, viewport-1)
+	visible, above, below := sliceViewport(lines, m.taskView.Scroll, viewport-1)
 	return "\n" + indentBlock(strings.Join(visible, "\n")+"\n"+m.viewportFooterHint(above, below), 2)
 }
 
@@ -645,7 +625,7 @@ func (m Model) renderBlockerPicker() string {
 	dataRows := make([]string, 0, len(candidates))
 	for index, candidate := range candidates {
 		marker := normalMarker
-		if m.blockerPickerCursor == index {
+		if m.blockerPicker.Cursor == index {
 			marker = m.styles.marker.Render(selectionMarker)
 		}
 		check := m.styles.hint.Render("[ ]")
@@ -655,7 +635,7 @@ func (m Model) renderBlockerPicker() string {
 		meta := m.styles.hint.Render(fmt.Sprintf("%s · %s", candidate.BucketKey, candidate.Priority))
 		dataRows = append(dataRows, fmt.Sprintf("%s %s #%d %s  %s", marker, check, candidate.ID, candidate.Title, meta))
 	}
-	lines = append(lines, m.sliceScrollRows(dataRows, m.blockerPickerScroll, m.blockerPickerViewportRows())...)
+	lines = append(lines, m.sliceScrollRows(dataRows, m.blockerPicker.Scroll, m.blockerPickerViewportRows())...)
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(lines, "\n")), 2)
 }
 

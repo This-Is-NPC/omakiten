@@ -143,10 +143,10 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 	// j/k must scroll the body within the comment screen, not move between
 	// activity cards (that's the bug we're fixing — long comments need an
 	// in-screen scroll so the top and bottom are reachable).
-	before := got.commentScreenScroll
+	before := got.commentScreen.Viewport.Scroll
 	got = pressRune(t, got, 'j')
-	if got.commentScreenScroll <= before {
-		t.Fatalf("j did not advance commentScreenScroll: before=%d after=%d", before, got.commentScreenScroll)
+	if got.commentScreen.Viewport.Scroll <= before {
+		t.Fatalf("j did not advance commentScreenScroll: before=%d after=%d", before, got.commentScreen.Viewport.Scroll)
 	}
 
 	// esc returns to the task view, leaving the activity cursor on the same

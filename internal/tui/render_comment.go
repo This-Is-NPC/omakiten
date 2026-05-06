@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/viewport"
 )
 
 // renderCommentScreen renders a focused, full-width view of a single comment
@@ -73,7 +74,7 @@ func (m Model) applyCommentScreenScroll(content string) string {
 	if viewport <= 0 || len(lines) <= viewport {
 		return "\n" + indentBlock(content, 2)
 	}
-	visible, above, below := sliceViewport(lines, m.commentScreenScroll, viewport-1)
+	visible, above, below := sliceViewport(lines, m.commentScreen.Viewport.Scroll, viewport-1)
 	return "\n" + indentBlock(strings.Join(visible, "\n")+"\n"+m.viewportFooterHint(above, below), 2)
 }
 
@@ -92,7 +93,7 @@ func (m *Model) openCommentScreen() {
 	}
 	m.commentScreenOpen = true
 	m.commentScreenID = ev.ID
-	m.commentScreenScroll = 0
+	m.commentScreen.Viewport.Scroll = 0
 }
 
 // closeCommentScreen returns the user to the task detail view with the
@@ -100,7 +101,7 @@ func (m *Model) openCommentScreen() {
 func (m *Model) closeCommentScreen() {
 	m.commentScreenOpen = false
 	m.commentScreenID = 0
-	m.commentScreenScroll = 0
+	m.commentScreen.Viewport.Scroll = 0
 }
 
 // activeComment returns the comment currently displayed in the comment screen,
@@ -123,27 +124,16 @@ func (m Model) updateCommentScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
-	case "esc":
-		m.closeCommentScreen()
-	case "j", "down":
-		m.commentScreenScroll++
-	case "k", "up":
-		if m.commentScreenScroll > 0 {
-			m.commentScreenScroll--
-		}
-	case "pgdown", "ctrl+d":
-		m.commentScreenScroll += taskViewPageStep(m.taskViewportHeight())
-	case "pgup", "ctrl+u":
-		m.commentScreenScroll -= taskViewPageStep(m.taskViewportHeight())
-		if m.commentScreenScroll < 0 {
-			m.commentScreenScroll = 0
-		}
-	case "home", "g":
-		m.commentScreenScroll = 0
-	case "end", "G":
-		m.commentScreenScroll = 1 << 20
 	}
-	return m, nil
+	// Delegate scroll keys + esc to the embedded detailscreen sub-model.
+	// EventCancel from esc closes the comment view and returns to the
+	// underlying task screen with the activity cursor preserved.
+	var cmd tea.Cmd
+	m.commentScreen, cmd = m.commentScreen.Update(msg, m.taskViewportHeight())
+	if m.commentScreen.LastEvent() == viewport.EventCancel {
+		m.closeCommentScreen()
+	}
+	return m, cmd
 }
 
 func (m Model) renderCommentInput() string {

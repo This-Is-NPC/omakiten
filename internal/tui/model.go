@@ -15,6 +15,9 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/components/detailscreen"
+	"omakiten/internal/tui/components/picker"
+	"omakiten/internal/tui/components/viewport"
 )
 
 const (
@@ -75,7 +78,12 @@ type Model struct {
 
 	blockerPickerOpen   bool
 	blockerPickerTaskID int64
-	blockerPickerCursor int
+	// blockerPicker owns cursor + scroll for the multi-select blocker
+	// picker. Open/close lifecycle remains on the parent (an enum flag
+	// drives whether the picker is the active view); state inside the
+	// picker — what's highlighted, what's scrolled — lives in the
+	// component itself.
+	blockerPicker       picker.Model
 	blockerPickerChecks map[int64]bool
 
 	tasks               []domain.Task
@@ -130,16 +138,25 @@ type Model struct {
 	// a focused comment opens this dedicated screen where the body can scroll
 	// freely. Returning with esc preserves taskScreen + activityCursor so the
 	// user lands back on the same card.
-	commentScreenOpen   bool
-	commentScreenID     int64
-	commentScreenScroll int
+	commentScreenOpen bool
+	commentScreenID   int64
+	// commentScreen owns the scroll offset and grid build state for the
+	// dedicated full-width comment view; opened via Enter on a focused
+	// comment in the activity feed. The Model resets on each open via
+	// detailscreen.New() so prior scroll state never leaks across
+	// comments.
+	commentScreen detailscreen.Model
 
 	// views caches the resolved per-view sort/filter pulled from the active
 	// bundle on each refresh. Render and query helpers read it instead of
 	// the raw Settings so omitted fields show up as their canonical defaults.
 	views config.ViewSettings
 
-	taskViewScroll int
+	// taskView owns the scroll offset for the form column on the task
+	// detail screen. The activity column manages its own scroll via
+	// activityScroll because it has separate semantics (line-based vs
+	// card-cursor-based).
+	taskView viewport.Model
 
 	// boardColScroll is the leftmost-visible bucket index when the board is
 	// too wide to fit all columns side-by-side. Updated via syncBoardColScroll
@@ -160,11 +177,17 @@ type Model struct {
 	graphScroll  int
 	graphCursor  int
 
-	helpScroll int
+	// help owns scroll state for the keybindings overlay; instantiated
+	// once and reused (the overlay is closed/reopened, not destroyed,
+	// so scroll state persists across toggles which feels right — users
+	// often re-open help after a tangential keystroke).
+	help viewport.Model
 
-	pickerScroll int
-
-	blockerPickerScroll int
+	// entityPicker owns cursor + scroll for the entity-screen pickers
+	// (theme/config/template-default/persona). Reset to a fresh picker
+	// of the appropriate Mode when each one opens — single-select for
+	// theme/config/template-default, multi for persona.
+	entityPicker picker.Model
 }
 
 type inputMode int
@@ -256,35 +279,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			case "a":
 				m.helpAll = !m.helpAll
-				m.helpScroll = 0
-			case "?", "esc", "q":
+				m.help.Scroll = 0
+			case "?", "q":
 				m.helpOpen = false
 				m.helpAll = false
-				m.helpScroll = 0
-			case "j", "down":
-				m.helpScroll++
-			case "k", "up":
-				if m.helpScroll > 0 {
-					m.helpScroll--
+				m.help.Scroll = 0
+			default:
+				// Delegate scroll keys (j/k/pgup/pgdn/g/G) and esc to the
+				// embedded viewport sub-model. Esc surfaces as EventCancel
+				// which we treat as "close the overlay".
+				m.help, _ = m.help.Update(msg, m.helpViewportRows())
+				if m.help.LastEvent() == viewport.EventCancel {
+					m.helpOpen = false
+					m.helpAll = false
+					m.help.Scroll = 0
 				}
-			case "pgdown", "ctrl+d":
-				m.helpScroll += taskViewPageStep(m.helpViewportRows())
-			case "pgup", "ctrl+u":
-				m.helpScroll -= taskViewPageStep(m.helpViewportRows())
-				if m.helpScroll < 0 {
-					m.helpScroll = 0
-				}
-			case "home", "g":
-				m.helpScroll = 0
-			case "end", "G":
-				m.helpScroll = 1 << 20
 			}
 			return m, nil
 		}
 		if msg.String() == "?" && m.mode == modeNormal {
 			m.helpOpen = true
 			m.helpAll = false
-			m.helpScroll = 0
+			m.help.Scroll = 0
 			return m, nil
 		}
 		if m.mode != modeNormal {

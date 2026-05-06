@@ -258,7 +258,7 @@ func (m *Model) clampActivityScroll() {
 func (m *Model) toggleTaskFocus() {
 	if m.taskFocus == taskFocusForm {
 		m.taskFocus = taskFocusActivity
-		m.taskViewScroll = 0
+		m.taskView.Scroll = 0
 		if m.activityCursor < 0 {
 			rows := len(m.activityForTaskInView(m.taskID))
 			if rows > 0 {

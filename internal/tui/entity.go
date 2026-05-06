@@ -14,6 +14,7 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/picker"
 )
 
 const (
@@ -47,11 +48,13 @@ const (
 
 // entityForm carries the per-screen state. For Phase 1 it only holds the
 // detail-view target and (for personas) the skill picker selection set.
+// Cursor + scroll for the embedded picker live on m.entityPicker — they
+// were promoted out of this struct when picker.Model was introduced so
+// the picker component owns its own state.
 type entityForm struct {
 	kind         entityKind
 	mode         entityScreenMode
 	slug         string
-	pickerCursor int
 	pickerChecks map[string]bool
 }
 
@@ -1262,11 +1265,10 @@ func (m *Model) openPersonaPicker(slug string) {
 		kind:         entityKindPersona,
 		mode:         entityScreenSkillPicker,
 		slug:         slug,
-		pickerCursor: 0,
 		pickerChecks: checks,
 	}
+	m.entityPicker = picker.New(picker.Multi)
 	m.status = "Skill picker"
-	m.pickerScroll = 0
 }
 
 func (m *Model) openPersonaPickerForSelected() {
@@ -1283,40 +1285,37 @@ func (m *Model) openPersonaPickerForSelected() {
 }
 
 func (m Model) updatePersonaPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	rowCount := len(m.skills) + 1 // +1 for "create new skill" affordance
-	if cursor, handled := pickerNavKey(msg, m.entityForm.pickerCursor, rowCount, m.pickerViewportRows()); handled {
-		m.entityForm.pickerCursor = cursor
-		m.syncPickerScroll(rowCount)
-		return m, nil
-	}
-	switch msg.String() {
-	case "ctrl+c", "q":
+	if msg.String() == "ctrl+c" || msg.String() == "q" {
 		return m, tea.Quit
-	case "esc":
+	}
+	rowCount := len(m.skills) + 1 // +1 for "+ create new skill" affordance
+
+	// Special-case enter on the last row BEFORE delegating: the persona
+	// picker is multi-select (space toggles, ctrl+s saves) but enter on
+	// the sticky "+ create new skill" row escapes into the scaffold flow.
+	// In multi mode the picker reports EventNone for enter, so the
+	// fall-through below would be silent — handle the special row up front.
+	if msg.String() == "enter" && m.entityPicker.Cursor == len(m.skills) {
+		return m, m.scaffoldNewSkillFromPicker()
+	}
+
+	var cmd tea.Cmd
+	m.entityPicker, cmd = m.entityPicker.Update(msg, rowCount, m.pickerViewportRows())
+	switch m.entityPicker.LastEvent() {
+	case picker.EventCancel:
 		m.openSelectedEntityViewForSlug(entityKindPersona, m.entityForm.slug)
-	case " ", "space":
-		if m.entityForm.pickerCursor < len(m.skills) {
-			slug := m.skills[m.entityForm.pickerCursor].Key
+	case picker.EventSelect:
+		m.savePersonaPicker()
+	case picker.EventToggle:
+		if m.entityPicker.Cursor < len(m.skills) {
+			slug := m.skills[m.entityPicker.Cursor].Key
 			if m.entityForm.pickerChecks == nil {
 				m.entityForm.pickerChecks = map[string]bool{}
 			}
 			m.entityForm.pickerChecks[slug] = !m.entityForm.pickerChecks[slug]
 		}
-	case "enter":
-		// "enter" on the last row triggers the "+ create new skill" flow.
-		if m.entityForm.pickerCursor == len(m.skills) {
-			return m, m.scaffoldNewSkillFromPicker()
-		}
-	case "ctrl+s":
-		m.savePersonaPicker()
 	}
-	return m, nil
-}
-
-// syncPickerScroll keeps m.pickerScroll aligned so the cursor row stays
-// visible.
-func (m *Model) syncPickerScroll(rowCount int) {
-	m.pickerScroll = followCursor(m.pickerScroll, m.entityForm.pickerCursor, m.pickerViewportRows(), rowCount)
+	return m, cmd
 }
 
 // pickerViewportRows returns how many picker rows fit between the screen
@@ -1407,13 +1406,13 @@ func (m Model) renderPersonaPicker() string {
 		if m.entityForm.pickerChecks[skill.Key] {
 			check = "[x]"
 		}
-		if m.entityForm.pickerCursor == index {
+		if m.entityPicker.Cursor == index {
 			marker = m.styles.marker.Render(selectionMarker)
 		}
 		dataRows = append(dataRows, fmt.Sprintf("%s %s %s — %s", marker, check, skill.Key, skill.Name))
 	}
 	addMarker := normalMarker
-	if m.entityForm.pickerCursor == len(skills) {
+	if m.entityPicker.Cursor == len(skills) {
 		addMarker = m.styles.marker.Render(selectionMarker)
 	}
 	dataRows = append(dataRows, fmt.Sprintf("%s + create new skill (opens $EDITOR)", addMarker))
@@ -1424,7 +1423,7 @@ func (m Model) renderPersonaPicker() string {
 		"",
 		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
 	}
-	lines = append(lines, m.sliceScrollRows(dataRows, m.pickerScroll, m.pickerViewportRows())...)
+	lines = append(lines, m.sliceScrollRows(dataRows, m.entityPicker.Scroll, m.pickerViewportRows())...)
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(lines, "\n")), 2)
 }
 

@@ -9,6 +9,7 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/config"
+	"omakiten/internal/tui/components/picker"
 )
 
 // defaultPickerOption is one row in the template default picker. Kind is
@@ -55,12 +56,12 @@ func (m *Model) openTemplateDefaultPicker(slug string) {
 
 	m.entityScreen = entityScreenView
 	m.entityForm = entityForm{
-		kind:         entityKindTemplate,
-		mode:         entityScreenDefaultPicker,
-		slug:         slug,
-		pickerCursor: cursor,
+		kind: entityKindTemplate,
+		mode: entityScreenDefaultPicker,
+		slug: slug,
 	}
-	m.pickerScroll = 0
+	m.entityPicker = picker.New(picker.Single)
+	m.entityPicker.Cursor = cursor
 	m.status = "Default picker"
 }
 
@@ -108,30 +109,28 @@ func selectedDefaultOptionIndex(options []defaultPickerOption, currentKind, curr
 }
 
 func (m Model) updateTemplateDefaultPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" || msg.String() == "q" {
+		return m, tea.Quit
+	}
 	options := buildTemplateDefaultOptions(m.repos.Editor)
 	rowCount := len(options)
-	if cursor, handled := pickerNavKey(msg, m.entityForm.pickerCursor, rowCount, m.pickerViewportRows()); handled {
-		m.entityForm.pickerCursor = cursor
-		m.syncPickerScroll(rowCount)
-		return m, nil
-	}
-	switch msg.String() {
-	case "ctrl+c", "q":
-		return m, tea.Quit
-	case "esc":
+	var cmd tea.Cmd
+	m.entityPicker, cmd = m.entityPicker.Update(msg, rowCount, m.pickerViewportRows())
+	switch m.entityPicker.LastEvent() {
+	case picker.EventCancel:
 		m.closeEntityScreen("Default picker cancelled")
-	case "enter":
-		if m.entityForm.pickerCursor < 0 || m.entityForm.pickerCursor >= rowCount {
-			return m, nil
+	case picker.EventSelect:
+		if m.entityPicker.Cursor < 0 || m.entityPicker.Cursor >= rowCount {
+			return m, cmd
 		}
-		chosen := options[m.entityForm.pickerCursor]
+		chosen := options[m.entityPicker.Cursor]
 		if err := m.applyTemplateDefault(m.entityForm.slug, chosen.Kind, m.project.Slug); err != nil {
 			m.status = err.Error()
-			return m, nil
+			return m, cmd
 		}
 		if err := m.refresh(); err != nil {
 			m.status = err.Error()
-			return m, nil
+			return m, cmd
 		}
 		if chosen.Kind == "" {
 			m.closeEntityScreen(fmt.Sprintf("Template %s · default cleared", m.entityForm.slug))
@@ -139,7 +138,7 @@ func (m Model) updateTemplateDefaultPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			m.closeEntityScreen(fmt.Sprintf("Template %s · default %q for project %s", m.entityForm.slug, chosen.Kind, m.project.Slug))
 		}
 	}
-	return m, nil
+	return m, cmd
 }
 
 func (m Model) renderTemplateDefaultPicker() string {
@@ -158,7 +157,7 @@ func (m Model) renderTemplateDefaultPicker() string {
 	rows := make([]string, 0, len(options))
 	for index, opt := range options {
 		marker := normalMarker
-		if m.entityForm.pickerCursor == index {
+		if m.entityPicker.Cursor == index {
 			marker = m.styles.marker.Render(selectionMarker)
 		}
 		dot := " "
@@ -173,7 +172,7 @@ func (m Model) renderTemplateDefaultPicker() string {
 		"",
 		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
 	}
-	header = append(header, m.sliceScrollRows(rows, m.pickerScroll, m.pickerViewportRows())...)
+	header = append(header, m.sliceScrollRows(rows, m.entityPicker.Scroll, m.pickerViewportRows())...)
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(header, "\n")), 2)
 }
 
