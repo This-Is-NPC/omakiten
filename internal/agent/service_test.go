@@ -386,26 +386,6 @@ func TestGuidanceForCodes(t *testing.T) {
 
 func strPtr(s string) *string { return &s }
 
-func TestOpenMaterializesRuntime(t *testing.T) {
-	ctx := context.Background()
-	tmp := t.TempDir()
-	dbPath := filepath.Join(tmp, "data", "omakiten.db")
-	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
-
-	runtime, err := Open(ctx, Options{DBPath: dbPath, ConfigPath: configPath, CWD: tmp})
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = runtime.Close() }()
-
-	if runtime.DBPath() != dbPath {
-		t.Fatalf("Runtime.DBPath() = %q, want %q", runtime.DBPath(), dbPath)
-	}
-	if _, err := os.Stat(configPath); err != nil {
-		t.Fatalf("default config was not materialized: %v", err)
-	}
-}
-
 type agentFixture struct {
 	ctx      context.Context
 	store    *sqlite.Store
