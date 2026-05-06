@@ -2,14 +2,14 @@
 
 `omakiten.yaml` is the canonical write-model: every field below is parsed by `internal/config/loader.go` and validated by `internal/config/validator.go` before being imported into SQLite. YAML decoding uses `KnownFields(true)`, so unknown fields fail loud rather than silently.
 
-The active runtime path is, in precedence:
+The active runtime path is, in precedence (`internal/paths/paths.go`):
 
 1. `--config <path>` flag (CLI/TUI).
 2. `$OMAKITEN_HOME/config/omakiten.yaml`.
-3. `$XDG_CONFIG_HOME/omakiten/omakiten.yaml`.
-4. `~/.config/omakiten/omakiten.yaml`.
+3. `$XDG_CONFIG_HOME/omakiten/config/omakiten.yaml`.
+4. `~/.config/omakiten/config/omakiten.yaml`.
 
-Sibling per-entity files live alongside the YAML in `skills/`, `laws/`, `personas/`, `templates/`, and `themes/`. The default kit (`defaults/`) is materialized on first run by `configstore.EnsureDefaultFiles`.
+The yaml lives under `<root>/config/`; per-entity folders are siblings of `config/`, not nested inside it. See **Paths and backups** at the bottom for the full layout. The default kit (`defaults/`) is materialized into the entity folders on first run by `configstore.EnsureDefaultFiles`; legacy flat layouts are auto-migrated by `configstore.MigrateLayout`.
 
 ---
 
@@ -458,3 +458,125 @@ projects:
 ```
 
 The file references in this doc point at the source-of-truth code; if behavior ever drifts, those files are authoritative — update this doc.
+
+---
+
+## Default kit reference
+
+What ships in `defaults/` and is materialized on first run by `configstore.EnsureDefaultFiles`. Everything below can be overridden by writing to the matching `<root>/<folder>/custom/<slug>.md` (or by editing the file in place — though defaults are overwritten on update, customs are preserved).
+
+### Laws (`defaults/laws/`)
+
+| Slug | Severity | Body |
+|---|---|---|
+| `project-scope-only` | error | "Never mix tasks or context from different projects." |
+| `workflow-enforced` | error | "Only move tasks through explicit workflow transitions." |
+| `yaml-is-canonical` | error | "Persist changes to laws, workflows, personas, skills, and config in omakiten.yaml." |
+
+### Skills (`defaults/skills/`)
+
+| Slug | Description |
+|---|---|
+| `cli` | CLI design — argument parsing, exit codes, JSON envelopes. |
+| `go` | Go language proficiency — idiomatic Go, modules, testing. |
+| `sqlite` | SQLite proficiency — schema design, migrations, query tuning. |
+
+### Personas (`defaults/personas/`)
+
+| Slug | Description | Skills wired in `defaults/omakiten.yaml` |
+|---|---|---|
+| `backend-agent` | Backend-focused agent — services, storage, CLI surfaces. | `go`, `sqlite`, `cli` |
+
+### Templates (`defaults/templates/`)
+
+| Slug | Default kind | What the body scaffolds |
+|---|---|---|
+| `pull-request` | `pr` | Before/After framing, change log, files updated, validation matrix, deviations, risks/follow-ups, references. |
+| `user-story` | `task` | User Story (role/capability/benefit), Acceptance Criteria, Definition of Done. |
+
+### Themes (`defaults/themes/`)
+
+| Key | Vibe |
+|---|---|
+| `omakiten` | Dark with neon-green accent. The default. |
+| `catppuccin-macchiato` | Catppuccin Macchiato — pastels on deep navy. |
+
+See `.docs/theming-guide.md` for the eight color tokens consumed by the TUI.
+
+### Default workflow (`defaults/omakiten.yaml`)
+
+Single workflow `default` with four buckets — `backlog` → `dev` → `review` → `done` — and tag-anchored guards on every forward edge plus guard-free kickback paths (`review→dev`, `done→review`). Full transitions and guards: see `defaults/omakiten.yaml` or `.docs/guards-guide.md` §"Worked example".
+
+---
+
+## Paths and backups
+
+### Layout under the resolved root
+
+`<root>` is one of (highest precedence first):
+
+1. `$OMAKITEN_HOME`
+2. `$XDG_CONFIG_HOME/omakiten`
+3. `~/.config/omakiten`
+
+```
+<root>/
+  config/
+    omakiten.yaml          # active config (or whichever profile .active points to)
+    .active                # one-line state: basename of the active profile (optional)
+    custom/                # user-authored profile yamls (preserved across default refresh)
+      <profile>.yaml
+  laws/
+    <slug>.md              # default-kit law
+    custom/<slug>.md       # user-authored law (preserved; overrides same-slug default)
+  skills/
+    <slug>.md
+    custom/<slug>.md
+  personas/
+    <slug>.md
+    custom/<slug>.md
+  templates/
+    <slug>.md
+    custom/<slug>.md
+  themes/
+    <key>.yaml
+    custom/<key>.yaml
+```
+
+Source: `internal/paths/paths.go:ConfigRoot`, `EntityDir`, `EntityCustomDir`, `ActiveConfigFile`. Legacy flat layouts (`<root>/omakiten.yaml` at the root with no `config/` subdir) are tolerated by `ConfigRootFromYAMLPath` and migrated forward by `configstore.MigrateLayout` on next connect.
+
+### SQLite database
+
+```
+<data-root>/omakiten.db
+```
+
+`<data-root>` is one of (highest precedence first):
+
+1. `$OMAKITEN_HOME/data`
+2. `$XDG_DATA_HOME/omakiten`
+3. `~/.local/share/omakiten`
+
+The DB is a single file. Schema migrations are applied transactionally on every connect (`internal/sqlite/store.go:Open`). Source: `internal/paths/paths.go:DataDir`, `DatabaseFile`.
+
+### Profiles (advanced)
+
+The resolver supports multiple yaml profiles under `<root>/config/`. The active one is selected by writing its basename into `<root>/config/.active`; `<root>/config/custom/<name>.yaml` is tried before `<root>/config/<name>.yaml`. There is currently **no CLI to switch profiles** — `paths.SetActiveConfig` is the only writer, called from code. Most users will never touch this; the default `omakiten.yaml` is used when `.active` is missing or empty.
+
+### Backup
+
+Everything Omakiten persists is on the local filesystem. Two paths cover full state:
+
+```sh
+# Config (yaml + entity files + themes + customs)
+cp -a "${OMAKITEN_HOME:-$HOME/.config/omakiten}" /backup/omakiten-config
+
+# Data (SQLite)
+cp -a "${OMAKITEN_HOME:+$OMAKITEN_HOME/data}${OMAKITEN_HOME:-$HOME/.local/share/omakiten}" /backup/omakiten-data
+```
+
+The DB file can be copied while `okt` is not running; for a hot backup use SQLite's `.backup` command or `VACUUM INTO`. There is no concurrent multi-writer story — the tool is single-user, single-process by design.
+
+### Resetting
+
+`mise run purge` removes both `~/.config/omakiten` and `~/.local/share/omakiten` (`.mise.toml`). Re-run `okt init` to reseed defaults. Customs under `<entity>/custom/` are also removed by purge — back them up first if you care.
