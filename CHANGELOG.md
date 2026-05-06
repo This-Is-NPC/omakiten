@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/This-Is-NPC/omakiten/compare/v0.5.0...v0.6.0) (2026-05-06)
+
+
+### Features
+
+* **activity:** add task activity feed ([#21](https://github.com/This-Is-NPC/omakiten/issues/21)) ([acb0e49](https://github.com/This-Is-NPC/omakiten/commit/acb0e499744aff9a037a01e41efd8a53b966fc3a))
+* **views:** sort and filter configuration across all views ([#19](https://github.com/This-Is-NPC/omakiten/issues/19)) ([40ad4fd](https://github.com/This-Is-NPC/omakiten/commit/40ad4fdaa2c94cf699ca44f0605d1cefb1de37f0))
+
 ## [0.5.0](https://github.com/This-Is-NPC/omakiten/compare/v0.4.0...v0.5.0) (2026-05-06)
 
 
