@@ -16,10 +16,22 @@ type Task struct {
 	Title       string   `json:"title"`
 	Description string   `json:"description,omitempty"`
 	Priority    Priority `json:"priority"`
+	CreatedAt   string   `json:"created_at,omitempty"`
+}
+
+// TaskSort drives the ORDER BY clause applied by ListTasks. Field is one of
+// "id", "title", "priority", "created_at"; Order is "asc" or "desc". An empty
+// Field falls back to id ascending — the legacy default.
+type TaskSort struct {
+	Field string
+	Order string
 }
 
 type TaskFilter struct {
-	BucketKey string
+	BucketKey  string
+	BucketKeys []string
+	Priorities []Priority
+	Sort       TaskSort
 }
 
 type TaskUpdate struct {
