@@ -2646,9 +2646,9 @@ func (m Model) activityForTaskInView(taskID int64) []domain.Event {
 
 // activityRowsForRender renders each event card up front so pagination and
 // overflow accounting work on a stable list. Comments reuse the existing
-// commentCard (author + body + tags); system events use a borderless padded
-// style. The focused card (activityCursor) gets an accent border so card
-// navigation is discoverable.
+// commentCard (author + body + tags); system events use the same border color
+// as comments so the activity column reads as one cohesive stack. The focused
+// card (activityCursor) gets an accent border so card navigation is discoverable.
 func (m Model) activityRowsForRender(events []domain.Event) []string {
 	rows := make([]string, 0, len(events))
 	for i, ev := range events {
@@ -4303,9 +4303,9 @@ func newStyles(theme config.Theme) styles {
 		commentInput:   lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 1).Height(commentInputHeight),
 		// systemEventCard mirrors the commentCard geometry (border + padding)
 		// so the activity column stays visually consistent — same column
-		// alignment, same width budget. The dimmer border foreground signals
-		// "this is metadata" without changing the layout shape.
-		systemEventCard: lipgloss.NewStyle().Foreground(secondary).Border(lipgloss.NormalBorder()).BorderForeground(secondary).Padding(0, 1),
+		// alignment, same width budget. The metadata cue comes from the text
+		// color, not a different border color.
+		systemEventCard: lipgloss.NewStyle().Foreground(secondary).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1),
 		border:         lipgloss.NewStyle().Foreground(border),
 		kanbanColumn:   lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(border).Width(columnWidth).Padding(0, 0),
 		card:           lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(cardBoxWidth),
