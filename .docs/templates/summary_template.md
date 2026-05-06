@@ -1,5 +1,3 @@
-# {Feature Name} - Summary
-
 ## Before
 - {Pain point 1}
 - {Pain point 2}
@@ -41,5 +39,5 @@
 
 ## References
 - Main Commits: `{commit-hash}`, `{commit-hash}`
-- Issue: #{issue-number}
+- Issue or Okt task: #{issue-number}
 - Branch: `{branch-name}`

@@ -1,39 +1,50 @@
 ---
 name: Pull Request
-description: Standard PR scaffold with summary, change log, validation, and reviewer notes.
+description: Standard PR scaffold with before/after framing, change log, validation matrix, deviations, and references.
 entity: pr
+default: pr
 ---
 
-**Summary**
+## Before
+- {Pain point 1}
+- {Pain point 2}
+- {Pain point 3}
 
-One or two sentences describing what this PR delivers and why.
+## After
+- {Outcome 1}
+- {Outcome 2}
+- {Outcome 3}
 
----
+## Summary of Changes
+| Aspect | Change |
+| --- | --- |
+| {Aspect 1} | {Change 1} |
+| {Aspect 2} | {Change 2} |
+| {Aspect 3} | {Change 3} |
 
-**Changes**
+## Files Updated
+- `{file-path}`
+- `{file-path}`
+- `{file-path}`
 
-- File or area: what changed and why.
-- File or area: what changed and why.
+## Validation
+| Scenario | Outcome |
+| --- | --- |
+| {Scenario 1} | {Outcome 1} |
+| {Scenario 2} | {Outcome 2} |
+| {Scenario 3} | {Outcome 3} |
 
----
+## Deviations
+| Requirement / Criterion | Deviation | Rationale |
+| --- | --- | --- |
+| {Criterion 1} | {What diverged} | {Why} |
 
-**Validation**
+## Risks / Follow-ups
+- {Risk 1}
+- {Risk 2}
+- {Risk 3}
 
-- [ ] `go build ./...`
-- [ ] `go vet ./...`
-- [ ] `go test ./...`
-- [ ] Manual check: ...
-
----
-
-**Reviewer Notes**
-
-- Areas that need extra scrutiny.
-- Decisions taken and trade-offs considered.
-- Open questions or follow-ups (link to tasks).
-
----
-
-**Linked Tasks**
-
-- #
+## References
+- Main Commits: `{commit-hash}`, `{commit-hash}`
+- Issue or Okt task: #{issue-number}
+- Branch: `{branch-name}`
