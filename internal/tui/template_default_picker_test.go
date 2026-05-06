@@ -96,25 +96,28 @@ func TestTemplateDefaultPickerAssignsProjectScopedAndClearsPrior(t *testing.T) {
 	}
 }
 
-func TestTemplateDefaultPickerRejectsGlobalTemplates(t *testing.T) {
+func TestTemplateDefaultPickerOpensOnAnyTemplate(t *testing.T) {
+	// Pressing `a` always opens the picker so the user can pick from
+	// config.template_defaults — regardless of whether the focused template
+	// lives at the root (global) or under custom/. The picker's apply path
+	// always writes project: <current-project>, so opening on a global is
+	// just the user expressing "I want this template as my project's
+	// default for kind K".
 	model := newEntityModelWithTemplates(t)
 	model.entityKind = entityKindTemplate
 	if model.entityCursors == nil {
 		model.entityCursors = map[entityKind]int{}
 	}
 	for i, tpl := range model.templates {
-		if tpl.Slug == "task-default" { // global template (root, not custom/)
+		if tpl.Slug == "task-default" { // root (global) template
 			model.entityCursors[entityKindTemplate] = i
 			break
 		}
 	}
 
 	model.openTemplateDefaultPickerForSelected()
-	if model.entityForm.mode == entityScreenDefaultPicker {
-		t.Fatal("picker should NOT open on global templates")
-	}
-	if model.status == "" {
-		t.Fatal("expected status hint explaining why picker is gated")
+	if model.entityForm.mode != entityScreenDefaultPicker {
+		t.Fatalf("picker should open on any template; mode = %v / status = %q", model.entityForm.mode, model.status)
 	}
 }
 

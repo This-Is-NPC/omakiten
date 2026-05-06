@@ -45,14 +45,6 @@ func (m *Model) openTemplateDefaultPicker(slug string) {
 		m.status = "Template not found"
 		return
 	}
-	// `a` is a project-scoped override. Globals (templates at the root of
-	// templates/) ship with their own `default:` baked in by Omakiten or
-	// the user's own kit — to mutate that, the user edits the file
-	// directly with `e`. Customs are where project overrides land.
-	if !template.IsCustom {
-		m.status = "Press 'a' on a custom template to assign as this project's default — use 'e' to edit a global template"
-		return
-	}
 	if m.project.Slug == "" {
 		m.status = "TUI must be opened inside a project to assign a template default"
 		return
