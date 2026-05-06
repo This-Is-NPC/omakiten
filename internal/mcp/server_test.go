@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+
+	"omakiten/internal/domain"
 )
 
 func TestServeInitialize(t *testing.T) {
@@ -154,6 +157,45 @@ func TestServeEmptyLineSkip(t *testing.T) {
 	}
 	if response.Error != nil {
 		t.Fatalf("response error = %#v", response.Error)
+	}
+}
+
+func TestErrorPayloadCodedError(t *testing.T) {
+	err := domain.NewError(domain.ErrTaskNotFound, "task not found", map[string]any{"task_id": 7})
+	payload := errorPayload(err)
+	if payload.Code != -32602 {
+		t.Errorf("Code = %d, want -32602", payload.Code)
+	}
+	if payload.Message != "task not found" {
+		t.Errorf("Message = %q, want %q", payload.Message, "task not found")
+	}
+	data, ok := payload.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("Data = %T, want map[string]any", payload.Data)
+	}
+	if data["code"] != string(domain.ErrTaskNotFound) {
+		t.Errorf("Data.code = %v, want %s", data["code"], domain.ErrTaskNotFound)
+	}
+}
+
+func TestErrorPayloadOpaqueError(t *testing.T) {
+	// Generic errors must NOT leak the original message — the agent gets a
+	// flat "internal error" with the JSON-RPC internal-error code so we
+	// don't accidentally surface file paths, SQL fragments, or driver
+	// strings to the caller.
+	err := fmt.Errorf("open %s: permission denied", "/home/howl/.config/secret.yaml")
+	payload := errorPayload(err)
+	if payload.Code != -32603 {
+		t.Errorf("Code = %d, want -32603", payload.Code)
+	}
+	if payload.Message != "internal error" {
+		t.Errorf("Message = %q, want %q", payload.Message, "internal error")
+	}
+	if strings.Contains(payload.Message, ".config") || strings.Contains(payload.Message, "secret") {
+		t.Errorf("Message leaked path: %q", payload.Message)
+	}
+	if payload.Data != nil {
+		t.Errorf("Data = %v, want nil for opaque errors", payload.Data)
 	}
 }
 

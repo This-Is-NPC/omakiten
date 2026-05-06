@@ -4,9 +4,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
+
+	"omakiten/internal/domain"
 )
 
 type rpcRequest struct {
@@ -26,6 +29,26 @@ type rpcResponse struct {
 type rpcError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+	Data    any    `json:"data,omitempty"`
+}
+
+// errorPayload converts a service error into a JSON-RPC error payload that is
+// safe and useful to surface to the agent. Domain CodedErrors get a stable
+// machine-readable code + the validation message + optional details. Anything
+// else degrades to a generic "internal error" so we don't leak file paths,
+// SQL fragments, or stack-shaped strings to the client. The original error
+// text is intentionally dropped on the unknown path — debugging signal lives
+// in the server's stderr (handled at a higher layer), not in the wire format.
+func errorPayload(err error) *rpcError {
+	var coded *domain.CodedError
+	if errors.As(err, &coded) {
+		return &rpcError{
+			Code:    -32602,
+			Message: coded.Message,
+			Data:    map[string]any{"code": string(coded.Code), "details": coded.Details},
+		}
+	}
+	return &rpcError{Code: -32603, Message: "internal error"}
 }
 
 func Serve(ctx context.Context, input io.Reader, output io.Writer, adapter *Adapter) error {
@@ -89,7 +112,7 @@ func handleRPC(ctx context.Context, adapter *Adapter, request rpcRequest) (rpcRe
 		}
 		result, err := adapter.CallTool(ctx, params.Name, params.Arguments)
 		if err != nil {
-			base.Error = &rpcError{Code: -32602, Message: err.Error()}
+			base.Error = errorPayload(err)
 			break
 		}
 		base.Result = result
@@ -105,7 +128,7 @@ func handleRPC(ctx context.Context, adapter *Adapter, request rpcRequest) (rpcRe
 		}
 		result, err := adapter.ReadResource(ctx, params.URI)
 		if err != nil {
-			base.Error = &rpcError{Code: -32602, Message: err.Error()}
+			base.Error = errorPayload(err)
 			break
 		}
 		base.Result = map[string]any{"contents": result.Content}
@@ -122,7 +145,7 @@ func handleRPC(ctx context.Context, adapter *Adapter, request rpcRequest) (rpcRe
 		}
 		result, err := GetPrompt(params.Name, params.Arguments)
 		if err != nil {
-			base.Error = &rpcError{Code: -32602, Message: err.Error()}
+			base.Error = errorPayload(err)
 			break
 		}
 		base.Result = result
