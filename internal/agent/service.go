@@ -70,22 +70,70 @@ func (s *Service) SetTemplateCatalog(catalog TemplateCatalog) {
 	s.templateCatalog = catalog
 }
 
-// ListTemplates returns every loaded template, optionally filtered by kind
-// or project scope. Body is omitted by default to keep responses compact;
-// callers set IncludeBody=true when they need the full scaffold.
+// ListTemplates returns the templates relevant for the requested filters.
+//
+// When `project` is set, the response is project-aware: per default kind we
+// return the project-scoped template if one exists, otherwise the global
+// fallback — never both. This lets the agent ask "which template does this
+// project use for kind X?" with a single round-trip and a single result,
+// avoiding the wasted tokens of receiving both candidates and filtering
+// client-side. Templates without a `default:` are inactive — they are
+// excluded from project-filtered responses but appear in unfiltered ones.
+//
+// When `project` is empty the call is non-resolving: every loaded template
+// matching `kind` is returned (or every loaded template when `kind` is also
+// empty). Useful for browsing the full catalog.
+//
+// Body is omitted by default to keep responses compact; callers set
+// IncludeBody=true when they need the full scaffold.
 func (s *Service) ListTemplates(_ context.Context, input ListTemplatesInput) (ListTemplatesResponse, error) {
 	if s.templateCatalog == nil {
 		return ListTemplatesResponse{Templates: []TemplateSummary{}}, nil
 	}
 	all := s.templateCatalog()
-	out := make([]TemplateSummary, 0, len(all))
+
+	if input.Project == "" {
+		out := make([]TemplateSummary, 0, len(all))
+		for _, t := range all {
+			if input.Kind != "" && t.Default != input.Kind {
+				continue
+			}
+			if !input.IncludeBody {
+				t.Body = ""
+			}
+			out = append(out, t)
+		}
+		return ListTemplatesResponse{Templates: out}, nil
+	}
+
+	// project-filtered: resolve one template per kind. Iterate twice — first
+	// pass collects the project-scoped winners, second pass fills gaps with
+	// the global fallback. Single linear scan would also work but two passes
+	// keep the precedence rule obvious.
+	scoped := map[string]TemplateSummary{}
+	global := map[string]TemplateSummary{}
 	for _, t := range all {
+		if t.Default == "" {
+			continue
+		}
 		if input.Kind != "" && t.Default != input.Kind {
 			continue
 		}
-		if input.Project != "" && t.Project != input.Project {
-			continue
+		if t.Project == input.Project {
+			scoped[t.Default] = t
+		} else if t.Project == "" {
+			global[t.Default] = t
 		}
+	}
+	out := make([]TemplateSummary, 0, len(scoped)+len(global))
+	for kind, t := range scoped {
+		if !input.IncludeBody {
+			t.Body = ""
+		}
+		out = append(out, t)
+		delete(global, kind) // scoped wins; drop the global so it does not double up
+	}
+	for _, t := range global {
 		if !input.IncludeBody {
 			t.Body = ""
 		}

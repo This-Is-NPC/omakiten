@@ -93,13 +93,67 @@ func TestListTemplatesReturnsCatalog(t *testing.T) {
 		t.Fatalf("IncludeBody=true should expose body, got %q", full.Templates[0].Body)
 	}
 
-	// Filter by kind.
+	// Filter by kind (no project) — non-resolving, returns every match.
 	prs, err := fixture.service.ListTemplates(fixture.ctx, ListTemplatesInput{Kind: "pr"})
 	if err != nil {
 		t.Fatalf("ListTemplates(kind=pr) error = %v", err)
 	}
 	if len(prs.Templates) != 1 || prs.Templates[0].Slug != "pr-default" {
 		t.Fatalf("ListTemplates(kind=pr) = %+v, want only pr-default", prs.Templates)
+	}
+}
+
+func TestListTemplatesResolvesProjectScopedOverridesServerSide(t *testing.T) {
+	fixture := newAgentFixture(t)
+	fixture.service.SetTemplateCatalog(func() []TemplateSummary {
+		return []TemplateSummary{
+			{Slug: "pull-request", Name: "Global PR", Default: "pr"},
+			{Slug: "pr-concise", Name: "Concise", Default: "pr", Project: "omakiten", IsCustom: true},
+			{Slug: "user-story", Name: "Story", Default: "task"},
+		}
+	})
+
+	// Project-aware request for kind=pr returns ONLY the project-scoped
+	// override — global is dropped server-side so the agent does not have
+	// to filter or pay tokens for the fallback.
+	resp, err := fixture.service.ListTemplates(fixture.ctx, ListTemplatesInput{Kind: "pr", Project: "omakiten"})
+	if err != nil {
+		t.Fatalf("ListTemplates() error = %v", err)
+	}
+	if len(resp.Templates) != 1 {
+		t.Fatalf("project-aware list len = %d, want 1 (resolution should drop global)", len(resp.Templates))
+	}
+	if resp.Templates[0].Slug != "pr-concise" {
+		t.Fatalf("expected pr-concise to win for project=omakiten, got %s", resp.Templates[0].Slug)
+	}
+
+	// Different project with no scoped override falls back to the global.
+	other, err := fixture.service.ListTemplates(fixture.ctx, ListTemplatesInput{Kind: "pr", Project: "another"})
+	if err != nil {
+		t.Fatalf("ListTemplates(another) error = %v", err)
+	}
+	if len(other.Templates) != 1 || other.Templates[0].Slug != "pull-request" {
+		t.Fatalf("expected pull-request global fallback for project=another, got %+v", other.Templates)
+	}
+
+	// Project-only filter (no kind) collapses every kind to one resolved
+	// entry — pr → pr-concise, task → user-story.
+	all, err := fixture.service.ListTemplates(fixture.ctx, ListTemplatesInput{Project: "omakiten"})
+	if err != nil {
+		t.Fatalf("ListTemplates(project=omakiten) error = %v", err)
+	}
+	if len(all.Templates) != 2 {
+		t.Fatalf("project-only resolved set len = %d, want 2 (one per kind)", len(all.Templates))
+	}
+	bySlug := map[string]bool{}
+	for _, t := range all.Templates {
+		bySlug[t.Slug] = true
+	}
+	if !bySlug["pr-concise"] || !bySlug["user-story"] {
+		t.Fatalf("project=omakiten should resolve to pr-concise and user-story, got %+v", all.Templates)
+	}
+	if bySlug["pull-request"] {
+		t.Fatalf("global pull-request should be dropped when an override exists, got %+v", all.Templates)
 	}
 }
 
