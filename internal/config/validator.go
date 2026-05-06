@@ -149,18 +149,19 @@ func loadedPersonaSlugs(items []Persona) []string {
 
 // validateTemplateDefaults enforces the new default-binding model:
 //   - every template's `default:` value must be in config.template_defaults
-//   - every template's `project:` value must reference an existing project
 //   - at most one template per (default, project) pair (uniqueness)
+//
+// `project:` refs are NOT validated against bundle.Projects — that section
+// only declares declarative wiring, while the live project a template
+// scopes to may be tracked in SQLite (the runtime source of truth) and
+// never appear in the yaml. The runtime resolver falls back to the global
+// binding when a project ref does not match an active project.
 //
 // Templates without a `default:` are inactive and pass validation as-is.
 func validateTemplateDefaults(bundle Bundle) error {
 	allowed := map[string]struct{}{}
 	for _, kind := range bundle.Config.TemplateKinds() {
 		allowed[kind] = struct{}{}
-	}
-	projectSet := map[string]struct{}{}
-	for _, project := range bundle.Projects {
-		projectSet[project.Slug] = struct{}{}
 	}
 
 	type slot struct {
@@ -173,11 +174,6 @@ func validateTemplateDefaults(bundle Bundle) error {
 		}
 		if _, ok := allowed[t.Default]; !ok {
 			return fmt.Errorf("templates.%s: default %q is not in config.template_defaults", t.Slug, t.Default)
-		}
-		if t.ProjectSlug != "" {
-			if _, ok := projectSet[t.ProjectSlug]; !ok {
-				return fmt.Errorf("templates.%s: project %q does not match any project in projects:", t.Slug, t.ProjectSlug)
-			}
 		}
 		key := slot{kind: t.Default, project: t.ProjectSlug}
 		if other, dup := seen[key]; dup {

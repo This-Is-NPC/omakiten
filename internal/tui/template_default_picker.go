@@ -11,25 +11,19 @@ import (
 	"omakiten/internal/config"
 )
 
-// defaultPickerOption is one row in the template default picker. Kind is the
-// `default:` value to write; ProjectSlug optionally scopes it. Empty Kind
-// represents the "(none)" row that clears the binding.
+// defaultPickerOption is one row in the template default picker. Kind is
+// the default value to write; the binding is implicitly project-scoped to
+// the active project (the TUI always runs within one). Empty Kind is the
+// "(none)" row that clears the binding entirely.
 type defaultPickerOption struct {
-	Kind        string
-	ProjectSlug string
+	Kind string
 }
 
-// label renders the visible text for a row, e.g. "task (global)" or
-// "task (project: omakiten)".
 func (o defaultPickerOption) label() string {
 	if o.Kind == "" {
 		return "(none)"
 	}
-	scope := "global"
-	if o.ProjectSlug != "" {
-		scope = "project: " + o.ProjectSlug
-	}
-	return fmt.Sprintf("%s (%s)", o.Kind, scope)
+	return o.Kind
 }
 
 func (m *Model) openTemplateDefaultPickerForSelected() {
@@ -51,9 +45,21 @@ func (m *Model) openTemplateDefaultPicker(slug string) {
 		m.status = "Template not found"
 		return
 	}
+	// `a` is a project-scoped override. Globals (templates at the root of
+	// templates/) ship with their own `default:` baked in by Omakiten or
+	// the user's own kit — to mutate that, the user edits the file
+	// directly with `e`. Customs are where project overrides land.
+	if !template.IsCustom {
+		m.status = "Press 'a' on a custom template to assign as this project's default — use 'e' to edit a global template"
+		return
+	}
+	if m.project.Slug == "" {
+		m.status = "TUI must be opened inside a project to assign a template default"
+		return
+	}
 
-	options := buildTemplateDefaultOptions(m.repos.Editor, m.project.Slug)
-	cursor := selectedDefaultOptionIndex(options, template.Default, template.ProjectSlug)
+	options := buildTemplateDefaultOptions(m.repos.Editor)
+	cursor := selectedDefaultOptionIndex(options, template.Default, template.ProjectSlug, m.project.Slug)
 
 	m.entityScreen = entityScreenView
 	m.entityForm = entityForm{
@@ -66,11 +72,11 @@ func (m *Model) openTemplateDefaultPicker(slug string) {
 	m.status = "Default picker"
 }
 
-// buildTemplateDefaultOptions enumerates kind × {global, current-project}
-// combinations from config.template_defaults plus a final "(none)" row. The
-// active project provides the project-scoped option; when the model has no
-// active project (rare in practice) only the global rows render.
-func buildTemplateDefaultOptions(editor *app.BundleEditor, activeProject string) []defaultPickerOption {
+// buildTemplateDefaultOptions enumerates the kinds the user can claim from
+// `config.template_defaults`, plus a trailing "(none)" row that clears the
+// binding. Project scope is implicit (current project) — the TUI is always
+// opened inside a project, so no global/project toggle is needed.
+func buildTemplateDefaultOptions(editor *app.BundleEditor) []defaultPickerOption {
 	var kinds []string
 	if editor != nil {
 		if bundle, err := editor.Load(); err == nil {
@@ -80,25 +86,27 @@ func buildTemplateDefaultOptions(editor *app.BundleEditor, activeProject string)
 	if len(kinds) == 0 {
 		kinds = append(kinds, config.DefaultTemplateKinds...)
 	}
-	options := make([]defaultPickerOption, 0, len(kinds)*2+1)
+	options := make([]defaultPickerOption, 0, len(kinds)+1)
 	for _, kind := range kinds {
 		options = append(options, defaultPickerOption{Kind: kind})
-		if activeProject != "" {
-			options = append(options, defaultPickerOption{Kind: kind, ProjectSlug: activeProject})
-		}
 	}
 	options = append(options, defaultPickerOption{}) // (none)
 	return options
 }
 
-func selectedDefaultOptionIndex(options []defaultPickerOption, currentKind, currentProject string) int {
-	for i, opt := range options {
-		if opt.Kind == currentKind && opt.ProjectSlug == currentProject {
-			return i
+// selectedDefaultOptionIndex picks the option that matches the template's
+// current binding, but only when the binding is actually project-scoped to
+// the active project. A global binding (project="") on a custom template is
+// unusual but not invalid — the picker treats it as no project override and
+// lands on (none).
+func selectedDefaultOptionIndex(options []defaultPickerOption, currentKind, currentProject, activeProject string) int {
+	if currentKind != "" && currentProject == activeProject {
+		for i, opt := range options {
+			if opt.Kind == currentKind {
+				return i
+			}
 		}
 	}
-	// Fall back to (none) when the current binding is not in the visible
-	// option set (e.g. the kind was removed from template_defaults).
 	for i, opt := range options {
 		if opt.Kind == "" {
 			return i
@@ -108,7 +116,7 @@ func selectedDefaultOptionIndex(options []defaultPickerOption, currentKind, curr
 }
 
 func (m Model) updateTemplateDefaultPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	options := buildTemplateDefaultOptions(m.repos.Editor, m.project.Slug)
+	options := buildTemplateDefaultOptions(m.repos.Editor)
 	rowCount := len(options)
 	switch msg.String() {
 	case "ctrl+c", "q":
@@ -150,7 +158,7 @@ func (m Model) updateTemplateDefaultPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			return m, nil
 		}
 		chosen := options[m.entityForm.pickerCursor]
-		if err := m.applyTemplateDefault(m.entityForm.slug, chosen); err != nil {
+		if err := m.applyTemplateDefault(m.entityForm.slug, chosen.Kind, m.project.Slug); err != nil {
 			m.status = err.Error()
 			return m, nil
 		}
@@ -158,17 +166,27 @@ func (m Model) updateTemplateDefaultPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			m.status = err.Error()
 			return m, nil
 		}
-		m.closeEntityScreen(fmt.Sprintf("Template %s ← default %s", m.entityForm.slug, chosen.label()))
+		if chosen.Kind == "" {
+			m.closeEntityScreen(fmt.Sprintf("Template %s · default cleared", m.entityForm.slug))
+		} else {
+			m.closeEntityScreen(fmt.Sprintf("Template %s · default %q for project %s", m.entityForm.slug, chosen.Kind, m.project.Slug))
+		}
 	}
 	return m, nil
 }
 
 func (m Model) renderTemplateDefaultPicker() string {
-	options := buildTemplateDefaultOptions(m.repos.Editor, m.project.Slug)
+	options := buildTemplateDefaultOptions(m.repos.Editor)
 	contentWidth := m.availableWidth() - 4
 
 	template, _ := m.findTemplateBySlug(m.entityForm.slug)
-	currentKind, currentProject := template.Default, template.ProjectSlug
+	// Mark the option that matches the template's current binding for the
+	// active project. A global or different-project binding shows nothing
+	// marked — the picker is exclusively for the current project's scope.
+	currentKind := ""
+	if template.Default != "" && template.ProjectSlug == m.project.Slug {
+		currentKind = template.Default
+	}
 
 	rows := make([]string, 0, len(options))
 	for index, opt := range options {
@@ -177,14 +195,14 @@ func (m Model) renderTemplateDefaultPicker() string {
 			marker = m.styles.marker.Render(selectionMarker)
 		}
 		dot := " "
-		if opt.Kind == currentKind && opt.ProjectSlug == currentProject {
+		if opt.Kind == currentKind {
 			dot = "•"
 		}
 		rows = append(rows, fmt.Sprintf("%s %s %s", marker, dot, opt.label()))
 	}
 	header := []string{
-		m.styles.kicker(fmt.Sprintf("Default kind for template · %s", m.entityForm.slug)),
-		m.styles.hint.Render("up/down: move · enter: assign (clears any other template with the same default) · esc: cancel"),
+		m.styles.kicker(fmt.Sprintf("Default kind · template %s · project %s", m.entityForm.slug, m.project.Slug)),
+		m.styles.hint.Render("up/down: move · enter: assign for this project (clears prior owner) · esc: cancel"),
 		"",
 		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
 	}
@@ -192,12 +210,12 @@ func (m Model) renderTemplateDefaultPicker() string {
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(header, "\n")), 2)
 }
 
-// applyTemplateDefault writes the chosen kind/project into the focused
-// template's frontmatter and atomically clears the same default from any
-// other template that previously held it. Single BundleEditor.ApplyWithFiles
-// call: failures roll back both the file edits and the wiring (no half
-// assignments left on disk).
-func (m *Model) applyTemplateDefault(slug string, chosen defaultPickerOption) error {
+// applyTemplateDefault writes `default: <kind>` and `project: <projectSlug>`
+// into the focused template's frontmatter (or clears both when kind == "")
+// and atomically clears the same (kind, project) binding from any other
+// template that previously held it. Single BundleEditor.ApplyWithFiles
+// call: failures roll back both the file edits and the wiring.
+func (m *Model) applyTemplateDefault(slug, kind, projectSlug string) error {
 	if m.repos.Editor == nil {
 		return fmt.Errorf("editor not available")
 	}
@@ -210,22 +228,23 @@ func (m *Model) applyTemplateDefault(slug string, chosen defaultPickerOption) er
 		return fmt.Errorf("template %q not found", slug)
 	}
 
-	// Plan the file ops: rewrite `target` with the new default/project; for
-	// any sibling template currently bound to the same (kind, project),
-	// rewrite it to clear the binding.
+	scopeProject := projectSlug
+	if kind == "" {
+		scopeProject = ""
+	}
 	ops := []app.FileOp{}
-	updated, err := rewriteTemplateFrontmatter(target.SourcePath, chosen.Kind, chosen.ProjectSlug)
+	updated, err := rewriteTemplateFrontmatter(target.SourcePath, kind, scopeProject)
 	if err != nil {
 		return err
 	}
 	ops = append(ops, app.FileOp{Op: app.OpWrite, Path: target.SourcePath, Bytes: updated})
 
-	if chosen.Kind != "" {
+	if kind != "" {
 		for _, sibling := range bundle.Templates {
 			if sibling.Slug == slug {
 				continue
 			}
-			if sibling.Default == chosen.Kind && sibling.ProjectSlug == chosen.ProjectSlug {
+			if sibling.Default == kind && sibling.ProjectSlug == projectSlug {
 				cleared, err := rewriteTemplateFrontmatter(sibling.SourcePath, "", "")
 				if err != nil {
 					return err
