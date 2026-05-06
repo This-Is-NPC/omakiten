@@ -1,7 +1,6 @@
 # Omakiten
 
 [![Release](https://img.shields.io/github/v/release/This-Is-NPC/omakiten)](https://github.com/This-Is-NPC/omakiten/releases)
-[![Release workflow](https://img.shields.io/github/actions/workflow/status/This-Is-NPC/omakiten/release.yml?branch=master&label=release)](https://github.com/This-Is-NPC/omakiten/actions/workflows/release.yml)
 [![License](https://img.shields.io/github/license/This-Is-NPC/omakiten)](LICENSE)
 
 Opinionated checkpoints for AI-driven development.
@@ -113,6 +112,7 @@ okt tui
 
 **Project**
 
+- [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 - [LICENSE](LICENSE)
 
