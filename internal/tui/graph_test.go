@@ -197,7 +197,7 @@ func assertOrder(t *testing.T, s, a, b, c string) {
 	if pa < 0 || pb < 0 || pc < 0 {
 		t.Fatalf("one of %q, %q, %q not found in:\n%s", a, b, c, s)
 	}
-	if !(pa < pb && pb < pc) {
+	if pa >= pb || pb >= pc {
 		t.Errorf("expected order %q < %q < %q; positions %d, %d, %d in:\n%s", a, b, c, pa, pb, pc, s)
 	}
 }

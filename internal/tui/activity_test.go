@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -69,7 +70,7 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 	// expand test below.
 }
 
-func TestActivityEnterTogglesExpand(t *testing.T) {
+func TestActivityEnterOpensCommentScreen(t *testing.T) {
 	ctx := context.Background()
 	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
 	if err != nil {
@@ -111,28 +112,94 @@ func TestActivityEnterTogglesExpand(t *testing.T) {
 
 	got := pressKey(t, model, tea.KeyEnter)
 	view := got.View()
-	if !strings.Contains(view, "more lines — enter expands") {
-		t.Fatalf("collapsed view should show expand hint:\n%s", view)
+	if !strings.Contains(view, "more lines — enter opens") {
+		t.Fatalf("collapsed view should show open-detail hint:\n%s", view)
 	}
 
 	// Tab switches focus to the activity column so j/k navigate cards and
-	// enter toggles expand. task.created is at index 0 (asc); pressing j
-	// once advances to the comment at index 1.
+	// enter opens the comment detail screen. task.created is at index 0 (asc);
+	// pressing j once advances to the comment at index 1.
 	got = pressKey(t, got, tea.KeyTab)
 	got = pressRune(t, got, 'j')
 	got = pressKey(t, got, tea.KeyEnter)
-	if !got.activityExpanded[comment.ID] {
-		t.Fatalf("activityExpanded[%d] = false after enter, want true", comment.ID)
+	if !got.commentScreenOpen {
+		t.Fatalf("commentScreenOpen = false after enter, want true")
 	}
-	view = got.View()
-	if strings.Contains(view, "more lines — enter expands") {
-		t.Fatalf("expanded view should drop the cap hint:\n%s", view)
+	if got.commentScreenID != comment.ID {
+		t.Fatalf("commentScreenID = %d, want %d", got.commentScreenID, comment.ID)
 	}
 
-	// Second Enter collapses again.
+	// The dedicated screen renders the full body without the cap hint, with
+	// its own kicker and footer hint so the UX context is unmistakable.
+	view = got.View()
+	if strings.Contains(view, "more lines — enter opens") {
+		t.Fatalf("comment screen should drop the cap hint:\n%s", view)
+	}
+	// kicker uppercases ("// COMMENT · #N"), so assert on the uppercased form.
+	if !strings.Contains(view, fmt.Sprintf("COMMENT · #%d", comment.ID)) {
+		t.Fatalf("comment screen header missing:\n%s", view)
+	}
+
+	// j/k must scroll the body within the comment screen, not move between
+	// activity cards (that's the bug we're fixing — long comments need an
+	// in-screen scroll so the top and bottom are reachable).
+	before := got.commentScreenScroll
+	got = pressRune(t, got, 'j')
+	if got.commentScreenScroll <= before {
+		t.Fatalf("j did not advance commentScreenScroll: before=%d after=%d", before, got.commentScreenScroll)
+	}
+
+	// esc returns to the task view, leaving the activity cursor on the same
+	// comment so the user lands back where they were.
+	got = pressKey(t, got, tea.KeyEsc)
+	if got.commentScreenOpen {
+		t.Fatalf("commentScreenOpen = true after esc, want false")
+	}
+	if got.taskScreen != taskScreenView {
+		t.Fatalf("taskScreen = %v after esc, want taskScreenView", got.taskScreen)
+	}
+}
+
+func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() = %v", err)
+	}
+	if _, err := store.CreateTask(ctx, project.ID, "no comments", "", "", "backlog"); err != nil {
+		t.Fatalf("CreateTask() = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Events:       store,
+		Config:       store,
+	}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	// Open task view; the only activity event is task.created (a system
+	// event). Tab + j puts the cursor on it; Enter must NOT open the
+	// comment screen since system events have no body.
+	got := pressKey(t, model, tea.KeyEnter)
+	got = pressKey(t, got, tea.KeyTab)
 	got = pressKey(t, got, tea.KeyEnter)
-	if got.activityExpanded[comment.ID] {
-		t.Fatalf("activityExpanded[%d] = true after second enter, want false", comment.ID)
+	if got.commentScreenOpen {
+		t.Fatalf("Enter on a system event opened the comment screen — system events have no body to read")
 	}
 }
 

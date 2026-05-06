@@ -10,7 +10,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/activity"
 	"omakiten/internal/app"
@@ -122,14 +121,19 @@ type Model struct {
 	// "no card selected" and disables the focused-border styling. Card
 	// navigation moves it; the scroll offset auto-follows.
 	activityCursor int
-	// activityExpanded[event_id]=true expands a comment beyond the
-	// commentCardLineLimit cap. Cleared on closeTaskScreen so toggles don't
-	// leak across detail-view sessions.
-	activityExpanded map[int64]bool
 	// taskFocus tracks which column inside the task detail screen owns
 	// navigation keys. Default: form/details column. Tab toggles to the
 	// activity column so j/k navigate cards instead of scrolling description.
 	taskFocus taskScreenFocus
+
+	// commentScreenOpen is the modal "comment detail" view layered on top of
+	// taskScreenView. Long comments overflow the activity column, so Enter on
+	// a focused comment opens this dedicated screen where the body can scroll
+	// freely. Returning with esc preserves taskScreen + activityCursor so the
+	// user lands back on the same card.
+	commentScreenOpen   bool
+	commentScreenID     int64
+	commentScreenScroll int
 
 	// views caches the resolved per-view sort/filter pulled from the active
 	// bundle on each refresh. Render and query helpers read it instead of
@@ -286,6 +290,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.mode != modeNormal {
 			return m.updateInput(msg)
+		}
+		if m.commentScreenOpen {
+			return m.updateCommentScreen(msg)
 		}
 		if m.taskScreen != taskScreenClosed {
 			return m.updateTaskScreen(msg)
@@ -732,266 +739,6 @@ func boardScrollPageStep(m *Model) int {
 	return step
 }
 
-func (m *Model) handleListKey(msg tea.KeyMsg) {
-	switch msg.String() {
-	case "left", "h":
-		m.view = (m.view + len(viewNames) - 1) % len(viewNames)
-	case "right", "l":
-		m.view = (m.view + 1) % len(viewNames)
-	case "up", "k":
-		if m.selected > 0 {
-			m.selected--
-			m.syncTableScroll()
-		}
-	case "down", "j":
-		if m.selected < len(m.tasks)-1 {
-			m.selected++
-			m.syncTableScroll()
-		}
-	case "pgup", "ctrl+u":
-		step := taskViewPageStep(m.tableViewportRows())
-		m.selected -= step
-		if m.selected < 0 {
-			m.selected = 0
-		}
-		m.syncTableScroll()
-	case "pgdown", "ctrl+d":
-		step := taskViewPageStep(m.tableViewportRows())
-		m.selected += step
-		if m.selected > len(m.tasks)-1 {
-			m.selected = len(m.tasks) - 1
-		}
-		if m.selected < 0 {
-			m.selected = 0
-		}
-		m.syncTableScroll()
-	case "home", "g":
-		m.selected = 0
-		m.syncTableScroll()
-	case "end", "G":
-		if len(m.tasks) > 0 {
-			m.selected = len(m.tasks) - 1
-			m.syncTableScroll()
-		}
-	case "enter":
-		if task, ok := m.selectedTask(); ok {
-			m.openTaskView(task)
-		}
-	case "m":
-		if _, ok := m.selectedTask(); ok {
-			m.beginInput(modeMove, "Target bucket key", "")
-		}
-	}
-}
-
-// handleGraphKey handles input on the dependency graph view.
-// j/k/pgup/pgdn/g/G navigate between nodes; enter opens the selected task.
-func (m *Model) handleGraphKey(msg tea.KeyMsg) {
-	lines := buildDAGLinesSorted(m.dependencies, m.tasks, m.graphRootLess())
-	sel := dagSelectableIndices(lines)
-	maxCursor := len(sel) - 1
-	if maxCursor < 0 {
-		maxCursor = 0
-	}
-
-	switch msg.String() {
-	case "left", "h":
-		m.view = (m.view + len(viewNames) - 1) % len(viewNames)
-	case "right", "l":
-		m.view = (m.view + 1) % len(viewNames)
-	case "up", "k":
-		if m.graphCursor > 0 {
-			m.graphCursor--
-		}
-	case "down", "j":
-		if m.graphCursor < maxCursor {
-			m.graphCursor++
-		}
-	case "pgup", "ctrl+u":
-		m.graphCursor -= taskViewPageStep(m.graphViewportRows())
-		if m.graphCursor < 0 {
-			m.graphCursor = 0
-		}
-	case "pgdown", "ctrl+d":
-		m.graphCursor += taskViewPageStep(m.graphViewportRows())
-		if m.graphCursor > maxCursor {
-			m.graphCursor = maxCursor
-		}
-	case "home", "g":
-		m.graphCursor = 0
-	case "end", "G":
-		m.graphCursor = maxCursor
-	case "enter":
-		if m.graphCursor >= 0 && m.graphCursor < len(sel) {
-			taskID := lines[sel[m.graphCursor]].taskID
-			if task, ok := m.taskByID(taskID); ok {
-				m.openTaskView(task)
-			}
-		}
-	}
-	m.syncGraphScroll(sel, len(lines))
-}
-
-// syncGraphScroll keeps m.graphScroll aligned so the cursor node stays in the viewport.
-func (m *Model) syncGraphScroll(sel []int, totalLines int) {
-	viewport := m.graphViewportRows()
-	if viewport <= 0 || len(sel) == 0 {
-		return
-	}
-	cursorLine := sel[clampInt(m.graphCursor, 0, len(sel)-1)]
-	if cursorLine < m.graphScroll {
-		m.graphScroll = cursorLine
-	}
-	if cursorLine >= m.graphScroll+viewport {
-		m.graphScroll = cursorLine - viewport + 1
-	}
-	if m.graphScroll < 0 {
-		m.graphScroll = 0
-	}
-}
-
-// graphViewportRows returns how many DAG lines fit in the graph panel viewport.
-// Returns 0 when the terminal is too small to scroll.
-func (m Model) graphViewportRows() int {
-	if m.height <= 0 {
-		return 0
-	}
-	// 5 screen header + 1 leading blank + 2 footer + 2 panel borders
-	// + 2 panel header rows (kicker + blank) = 12.
-	chrome := 12
-	if m.status != "" {
-		chrome++
-	}
-	rows := m.height - chrome
-	if rows < 4 {
-		return 0
-	}
-	return rows
-}
-
-// syncTableScroll keeps m.tableScroll aligned so the selected task row stays
-// in view. Each row is exactly 1 line — no height heuristic, same pattern as
-// syncLogsScroll.
-func (m *Model) syncTableScroll() {
-	viewport := m.tableViewportRows()
-	if viewport <= 0 {
-		return
-	}
-	if m.selected < m.tableScroll {
-		m.tableScroll = m.selected
-	}
-	if m.selected >= m.tableScroll+viewport {
-		m.tableScroll = m.selected - viewport + 1
-	}
-	if m.tableScroll < 0 {
-		m.tableScroll = 0
-	}
-}
-
-// tableViewportRows returns how many task rows fit in the table panel after
-// the screen chrome and the panel's internal header rows. Returns 0 when the
-// height is unknown or too small.
-func (m Model) tableViewportRows() int {
-	if m.height <= 0 {
-		return 0
-	}
-	// 5 screen header + 1 leading blank + 2 footer + 2 panel borders
-	// + 3 panel header rows (kicker/info/separator) = 13.
-	chrome := 13
-	if m.status != "" {
-		chrome++
-	}
-	rows := m.height - chrome
-	if rows < 4 {
-		return 0
-	}
-	return rows
-}
-
-func (m *Model) handleLogsKey(msg tea.KeyMsg) {
-	switch msg.String() {
-	case "left", "h":
-		m.view = (m.view + len(viewNames) - 1) % len(viewNames)
-	case "right", "l":
-		m.view = (m.view + 1) % len(viewNames)
-	case "up", "k":
-		if m.logsSelected > 0 {
-			m.logsSelected--
-			m.syncLogsScroll()
-		}
-	case "down", "j":
-		if m.logsSelected < len(m.logs)-1 {
-			m.logsSelected++
-			m.syncLogsScroll()
-		}
-	case "pgup", "ctrl+u":
-		step := taskViewPageStep(m.logsViewportRows())
-		m.logsSelected -= step
-		if m.logsSelected < 0 {
-			m.logsSelected = 0
-		}
-		m.syncLogsScroll()
-	case "pgdown", "ctrl+d":
-		step := taskViewPageStep(m.logsViewportRows())
-		m.logsSelected += step
-		if m.logsSelected > len(m.logs)-1 {
-			m.logsSelected = len(m.logs) - 1
-		}
-		if m.logsSelected < 0 {
-			m.logsSelected = 0
-		}
-		m.syncLogsScroll()
-	case "home", "g":
-		m.logsSelected = 0
-		m.syncLogsScroll()
-	case "end", "G":
-		if len(m.logs) > 0 {
-			m.logsSelected = len(m.logs) - 1
-			m.syncLogsScroll()
-		}
-	}
-}
-
-// syncLogsScroll keeps m.logsScroll aligned so the selected log row stays
-// inside the viewport. Each log row is exactly 1 line (no wrapping) so this is
-// a simple cursor-following scroll — no height heuristic needed.
-func (m *Model) syncLogsScroll() {
-	viewport := m.logsViewportRows()
-	if viewport <= 0 {
-		return
-	}
-	if m.logsSelected < m.logsScroll {
-		m.logsScroll = m.logsSelected
-	}
-	if m.logsSelected >= m.logsScroll+viewport {
-		m.logsScroll = m.logsSelected - viewport + 1
-	}
-	if m.logsScroll < 0 {
-		m.logsScroll = 0
-	}
-}
-
-// logsViewportRows returns how many data rows fit in the activity log panel
-// after accounting for the screen chrome, panel borders, and the panel's
-// internal header (kicker + column header + separator) and footer (blank +
-// hint) rows. Returns 0 when the height is unknown or too small to scroll.
-func (m Model) logsViewportRows() int {
-	if m.height <= 0 {
-		return 0
-	}
-	// 5 screen header + 1 leading blank + 2 footer + 2 panel borders
-	// + 3 panel header rows + 2 panel footer rows = 15.
-	chrome := 15
-	if m.status != "" {
-		chrome++
-	}
-	rows := m.height - chrome
-	if rows < 4 {
-		return 0
-	}
-	return rows
-}
-
 func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.blockerPickerOpen {
 		return m.updateBlockerPicker(msg)
@@ -1047,7 +794,7 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.moveActivityCursor(-1)
 		case "enter":
 			if m.taskFocus == taskFocusActivity {
-				m.toggleFocusedActivity()
+				m.openCommentScreen()
 			}
 		case "pgdown", "ctrl+d":
 			if m.taskFocus == taskFocusActivity {
@@ -1263,7 +1010,6 @@ func (m *Model) openTaskView(task domain.Task) {
 	m.taskViewScroll = 0
 	m.activityScroll = 0
 	m.activityCursor = -1
-	m.activityExpanded = map[int64]bool{}
 	m.taskFocus = taskFocusForm
 	if err := m.refreshTaskActivity(task.ID); err != nil {
 		m.status = err.Error()
@@ -1322,8 +1068,10 @@ func (m *Model) closeTaskScreen(status string) {
 	m.activityForTask = 0
 	m.activityScroll = 0
 	m.activityCursor = -1
-	m.activityExpanded = nil
 	m.taskFocus = taskFocusForm
+	m.commentScreenOpen = false
+	m.commentScreenID = 0
+	m.commentScreenScroll = 0
 }
 
 func (m *Model) toggleTaskField() {
@@ -1758,6 +1506,9 @@ func (m Model) renderInput() string {
 }
 
 func (m Model) renderCurrentView() string {
+	if m.commentScreenOpen {
+		return m.renderCommentScreen()
+	}
 	if m.taskScreen != taskScreenClosed {
 		return m.renderTaskScreen()
 	}
@@ -2093,228 +1844,6 @@ func (m Model) renderTaskBadges(task domain.Task, maxWidth int) string {
 	return wrapBadges(badges, maxWidth)
 }
 
-func plural(n int, singular, plural string) string {
-	if n == 1 {
-		return singular
-	}
-	return plural
-}
-
-func (m Model) renderHelp() string {
-	type binding struct{ key, desc string }
-	type group struct {
-		title    string
-		bindings []binding
-	}
-	groups := []group{
-		{"Global", []binding{
-			{"?", "close this overlay"},
-			{"a", "toggle all bindings"},
-			{"q · ctrl+c", "quit"},
-			{"tab · shift+tab", "cycle views"},
-			{"1 · 2 · 3 · 4 · 5", "jump to view"},
-			{"r", "refresh"},
-		}},
-		{"Board", []binding{
-			{"← ↑ ↓ → · h j k l", "navigate lanes and tasks (auto-scrolls column)"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll focused column by page"},
-			{"g · G", "first / last card in column"},
-			{"enter", "open task"},
-			{"n", "new task"},
-			{"e", "edit task"},
-			{"c", "add comment"},
-			{"m", "move task between lanes"},
-		}},
-		{"Task list", []binding{
-			{"↑ ↓ · j k", "select task (auto-scrolls)"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "first / last task"},
-			{"enter", "open task"},
-			{"n", "new task"},
-			{"e", "edit task"},
-			{"m", "move by bucket key"},
-		}},
-		{"Graph", []binding{
-			{"← →", "switch view"},
-			{"↑ ↓ · j k", "move cursor"},
-			{"enter", "open task"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "jump to top / bottom"},
-		}},
-		{"Task view", []binding{
-			{"tab · shift+tab", "switch focus (form ⇄ activity)"},
-			{"↑ ↓ · j k", "scroll description (form) · navigate cards (activity)"},
-			{"J · K", "navigate activity cards (any focus)"},
-			{"enter", "expand / collapse focused comment"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "jump to top / bottom"},
-			{"e", "edit"},
-			{"b", "edit blockers"},
-			{"c", "add comment"},
-			{"m", "move"},
-			{"esc", "back to board"},
-		}},
-		{"Comment input", []binding{
-			{"enter", "save comment"},
-			{"alt+enter · shift+enter", "insert newline"},
-			{"esc", "cancel"},
-		}},
-		{"Task form", []binding{
-			{"tab", "switch field"},
-			{"← → · h l", "change priority"},
-			{"ctrl+b", "edit blockers when editing an existing task"},
-			{"enter · alt+enter · shift+enter", "newline in description"},
-			{"ctrl+s", "save"},
-			{"esc", "cancel"},
-		}},
-		{"Blocker picker", []binding{
-			{"↑ ↓ · j k", "move (auto-scrolls)"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "first / last candidate"},
-			{"space", "toggle blocker"},
-			{"ctrl+s", "save"},
-			{"esc", "cancel"},
-		}},
-		{"Config", []binding{
-			{"← →", "switch entity kind"},
-			{"↑ ↓", "select entity"},
-			{"enter", "open detail"},
-			{"n", "new entity"},
-			{"e", "edit in $EDITOR"},
-			{"d · d", "arm delete, then confirm"},
-			{"p", "skill picker (persona)"},
-		}},
-		{"Entity view", []binding{
-			{"↑ ↓ · j k", "scroll body"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "jump to top / bottom"},
-			{"e", "edit (opens $EDITOR)"},
-			{"d · d", "arm delete, then confirm"},
-			{"p", "skill picker (persona)"},
-			{"esc", "back, or cancel pending delete"},
-		}},
-		{"Skill picker", []binding{
-			{"↑ ↓ · j k", "move (auto-scrolls)"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "first / last row"},
-			{"space", "toggle"},
-			{"enter on '+ create new'", "scaffold new skill"},
-			{"ctrl+s", "save"},
-			{"esc", "cancel"},
-		}},
-		{"Logs", []binding{
-			{"← →", "switch view"},
-			{"↑ ↓ · j k", "select row (auto-scrolls)"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "first / last row"},
-			{"r", "refresh"},
-		}},
-	}
-
-	if !m.helpAll {
-		wanted := map[string]bool{"Global": true}
-		for _, title := range m.currentHelpTitles() {
-			wanted[title] = true
-		}
-		filtered := make([]group, 0, len(wanted))
-		for _, g := range groups {
-			if wanted[g.title] {
-				filtered = append(filtered, g)
-			}
-		}
-		groups = filtered
-	}
-
-	const keyW = 34
-	var lines []string
-	title := "Keybindings · current context"
-	if m.helpAll {
-		title = "Keybindings · all contexts"
-	}
-	lines = append(lines, m.styles.kicker(title), m.styles.hint.Render("press a to toggle scope"), "")
-	for _, g := range groups {
-		lines = append(lines, m.styles.kicker(g.title))
-		lines = append(lines, m.styles.separator.Render(strings.Repeat("─", keyW+24)))
-		for _, b := range g.bindings {
-			pad := keyW - lipgloss.Width(b.key)
-			if pad < 1 {
-				pad = 1
-			}
-			lines = append(lines, m.styles.hintAccent.Render(b.key)+strings.Repeat(" ", pad)+b.desc)
-		}
-		lines = append(lines, "")
-	}
-
-	viewport := m.helpViewportRows()
-	if viewport > 0 && len(lines) > viewport {
-		visibleHeight := viewport - 1
-		maxOffset := len(lines) - visibleHeight
-		offset := m.helpScroll
-		if offset < 0 {
-			offset = 0
-		}
-		if offset > maxOffset {
-			offset = maxOffset
-		}
-		visible := lines[offset : offset+visibleHeight]
-		above := offset
-		below := len(lines) - (offset + visibleHeight)
-		if below < 0 {
-			below = 0
-		}
-		hint := m.styles.hint.Render(fmt.Sprintf("▲ %d above · ▼ %d below  · j/k pgup/pgdn g/G", above, below))
-		return "\n" + indentBlock(strings.Join(visible, "\n")+"\n"+hint, 2)
-	}
-	return "\n" + indentBlock(strings.Join(lines, "\n"), 2)
-}
-
-// helpViewportRows returns the line budget for the help screen content. Help
-// view chrome is small: header (2) + leading blank from renderHelp (1) + help
-// footer (1).
-func (m Model) helpViewportRows() int {
-	if m.height <= 0 {
-		return 0
-	}
-	chrome := 4
-	rows := m.height - chrome
-	if rows < 8 {
-		return 0
-	}
-	return rows
-}
-
-func (m Model) renderHelpFooter() string {
-	return indentBlock(m.styles.footer.Render("j/k pgup/pgdn g/G scroll · a all/current · ?/esc/q close help"), 2)
-}
-
-func (m Model) currentHelpTitles() []string {
-	switch {
-	case m.isEmbeddedCommentInput():
-		return []string{"Comment input"}
-	case m.blockerPickerOpen:
-		return []string{"Blocker picker"}
-	case m.taskScreen == taskScreenCreate || m.taskScreen == taskScreenEdit:
-		return []string{"Task form"}
-	case m.taskScreen == taskScreenView:
-		return []string{"Task view"}
-	case m.entityScreen == entityScreenSkillPicker:
-		return []string{"Skill picker"}
-	case m.entityScreen == entityScreenView:
-		return []string{"Entity view"}
-	case m.view == 0:
-		return []string{"Board"}
-	case m.view == 1:
-		return []string{"Task list"}
-	case m.view == 2:
-		return []string{"Graph"}
-	case m.view == 3:
-		return []string{"Config"}
-	case m.view == 4:
-		return []string{"Logs"}
-	default:
-		return []string{"Board"}
-	}
-}
 
 func (m Model) renderEmptyBoardHint() string {
 	lines := []string{
@@ -2430,6 +1959,99 @@ func (m Model) renderTaskView() string {
 	}
 
 	return m.applyTaskViewScroll(rendered)
+}
+
+// renderCommentScreen renders a focused, full-width view of a single comment
+// so long bodies can be read end-to-end. Mirrors the renderTaskView visual
+// language: kicker · #ID, label rows, body in a viewport with the same
+// applyTaskViewScroll indicator. The body uses the full availableWidth (no
+// activity column) precisely so very long comments fit without sideways pinch.
+func (m Model) renderCommentScreen() string {
+	const labelWidth = 13
+
+	labelCell := func(label string) string {
+		return m.styles.info.Render("// " + strings.ToUpper(label))
+	}
+
+	comment, ok := m.activeComment()
+	if !ok {
+		notFound := []string{
+			m.styles.kicker(fmt.Sprintf("Comment · #%d", m.commentScreenID)),
+			"",
+			m.styles.hint.Render("Comment not found. Press esc to return."),
+		}
+		return "\n" + indentBlock(m.styles.panel.Render(strings.Join(notFound, "\n")), 2)
+	}
+
+	tagLine := ""
+	if len(comment.Tags) > 0 {
+		names := make([]string, len(comment.Tags))
+		for i, t := range comment.Tags {
+			names[i] = t.Label
+		}
+		tagLine = strings.Join(names, " · ")
+	}
+
+	rows := [][]string{
+		{m.styles.kicker(fmt.Sprintf("Comment · #%d", comment.ID))},
+		{labelCell("Task"), fmt.Sprintf("#%d", comment.TaskID)},
+		{labelCell("Author"), strings.TrimSpace(comment.AuthorType)},
+		{labelCell("When"), strings.TrimSpace(comment.CreatedAt)},
+	}
+	if tagLine != "" {
+		rows = append(rows, []string{labelCell("Tags"), tagLine})
+	}
+	rows = append(rows, []string{m.styles.kicker("Body")})
+
+	available := m.availableWidth()
+	valueWidth := available - labelWidth - 1 - 2
+	if valueWidth < 24 {
+		valueWidth = 24
+	}
+	if valueWidth > 120 {
+		valueWidth = 120
+	}
+
+	body := strings.TrimSpace(comment.Body)
+	if body == "" {
+		rows = append(rows, []string{m.styles.hint.Render("empty comment")})
+	} else {
+		// Pass the whole body as a single spanned row so renderGridTable wraps
+		// it inline; emitting one row per line would draw a horizontal border
+		// between every wrapped line and read like a price list.
+		rows = append(rows, []string{strings.TrimRight(body, "\n")})
+	}
+
+	rendered := renderGridTable(rows, []int{labelWidth, valueWidth}, m.styles.border)
+	return m.applyCommentScreenScroll(rendered)
+}
+
+// applyCommentScreenScroll mirrors applyTaskViewScroll but reads from
+// commentScreenScroll so the two screens scroll independently.
+func (m Model) applyCommentScreenScroll(content string) string {
+	viewport := m.taskViewportHeight()
+	lines := strings.Split(content, "\n")
+	if viewport <= 0 || len(lines) <= viewport {
+		return "\n" + indentBlock(content, 2)
+	}
+
+	visibleHeight := viewport - 1
+	maxOffset := len(lines) - visibleHeight
+	offset := m.commentScreenScroll
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	visible := lines[offset : offset+visibleHeight]
+	above := offset
+	below := len(lines) - (offset + visibleHeight)
+	if below < 0 {
+		below = 0
+	}
+	hint := m.styles.hint.Render(fmt.Sprintf("▲ %d above · ▼ %d below  · j/k pgup/pgdn g/G", above, below))
+	return "\n" + indentBlock(strings.Join(visible, "\n")+"\n"+hint, 2)
 }
 
 // (border colors stay neutral on purpose — focus is signalled by the
@@ -2879,11 +2501,11 @@ func (m *Model) syncActivityScrollToCursor() {
 	}
 }
 
-// toggleFocusedActivity flips the expanded state for the comment under the
-// activity cursor. System events ignore the toggle (no body to expand). The
-// scroll re-syncs after the toggle so an expanded card doesn't immediately
-// vanish below the viewport.
-func (m *Model) toggleFocusedActivity() {
+// openCommentScreen opens the dedicated comment detail view for the comment
+// under the activity cursor. System events have no body to read, so they
+// ignore Enter (the activity feed still shows them inline as one-liners).
+// commentScreenScroll resets so the body always opens at the top.
+func (m *Model) openCommentScreen() {
 	events := m.activityForTaskInView(m.taskID)
 	if m.activityCursor < 0 || m.activityCursor >= len(events) {
 		return
@@ -2892,11 +2514,60 @@ func (m *Model) toggleFocusedActivity() {
 	if ev.EventType != domain.EventTypeComment {
 		return
 	}
-	if m.activityExpanded == nil {
-		m.activityExpanded = map[int64]bool{}
+	m.commentScreenOpen = true
+	m.commentScreenID = ev.ID
+	m.commentScreenScroll = 0
+}
+
+// closeCommentScreen returns the user to the task detail view with the
+// activity cursor still on the comment they were reading.
+func (m *Model) closeCommentScreen() {
+	m.commentScreenOpen = false
+	m.commentScreenID = 0
+	m.commentScreenScroll = 0
+}
+
+// activeComment returns the comment currently displayed in the comment screen,
+// looked up from the loaded activity feed. Falls back to false when the
+// screen is open but the underlying event has been removed (refresh after
+// delete) — caller renders a "not found" placeholder in that case.
+func (m Model) activeComment() (domain.Comment, bool) {
+	if !m.commentScreenOpen || m.commentScreenID <= 0 {
+		return domain.Comment{}, false
 	}
-	m.activityExpanded[ev.ID] = !m.activityExpanded[ev.ID]
-	m.syncActivityScrollToCursor()
+	for _, ev := range m.activityForTaskInView(m.taskID) {
+		if ev.ID == m.commentScreenID && ev.EventType == domain.EventTypeComment {
+			return eventToComment(ev), true
+		}
+	}
+	return domain.Comment{}, false
+}
+
+func (m Model) updateCommentScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q":
+		return m, tea.Quit
+	case "esc":
+		m.closeCommentScreen()
+	case "j", "down":
+		m.commentScreenScroll++
+	case "k", "up":
+		if m.commentScreenScroll > 0 {
+			m.commentScreenScroll--
+		}
+	case "pgdown", "ctrl+d":
+		m.commentScreenScroll += taskViewPageStep(m.taskViewportHeight())
+	case "pgup", "ctrl+u":
+		m.commentScreenScroll -= taskViewPageStep(m.taskViewportHeight())
+		if m.commentScreenScroll < 0 {
+			m.commentScreenScroll = 0
+		}
+	case "home", "g":
+		m.commentScreenScroll = 0
+	case "end", "G":
+		m.commentScreenScroll = 1 << 20
+	}
+	return m, nil
 }
 
 // activityViewportLines is the maximum number of LINES the activity column
@@ -2934,10 +2605,6 @@ func (m Model) renderCommentInput() string {
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) renderCommentCard(comment domain.Comment) string {
-	return m.renderCommentCardSelected(comment, false)
-}
-
 // renderCommentCardSelected renders a single comment card. focused controls
 // the border accent (so the active card pops), and m.activityExpanded[id]
 // decides whether the body is shown in full or capped to commentCardLineLimit
@@ -2969,21 +2636,18 @@ func (m Model) renderCommentCardSelected(comment domain.Comment, focused bool) s
 	return style.Render(content)
 }
 
-// cappedCommentBody wraps the body to the available width and, when collapsed,
-// truncates to commentCardLineLimit visible lines plus a "↩ N more lines —
-// enter expands" footer. The limit only applies when m.activityExpanded[id]
-// is false; an expanded card shows everything.
-func (m Model) cappedCommentBody(commentID int64, body string, width int) string {
+// cappedCommentBody wraps the body to the available width and truncates to
+// commentCardLineLimit visible lines plus a "↩ N more lines — enter opens"
+// footer. The cap is unconditional: long comments are read in the dedicated
+// comment screen (Enter on a focused comment), where they can scroll freely.
+func (m Model) cappedCommentBody(_ int64, body string, width int) string {
 	wrapped := wrapLinesToWidth(strings.Split(body, "\n"), width)
-	if m.activityExpanded[commentID] {
-		return strings.Join(wrapped, "\n")
-	}
 	if len(wrapped) <= commentCardLineLimit {
 		return strings.Join(wrapped, "\n")
 	}
 	visible := wrapped[:commentCardLineLimit]
 	hidden := len(wrapped) - commentCardLineLimit
-	hint := m.styles.hint.Render(fmt.Sprintf("↩ %d more lines — enter expands", hidden))
+	hint := m.styles.hint.Render(fmt.Sprintf("↩ %d more lines — enter opens", hidden))
 	return strings.Join(visible, "\n") + "\n" + hint
 }
 
@@ -3057,471 +2721,8 @@ func (m Model) renderTaskFormLabel(field taskFormField, label string) string {
 	return m.styles.hintAccent.Render(marker + " // " + strings.ToUpper(label))
 }
 
-func (m Model) renderLogs() string {
-	if m.repos.ActivityLogs == nil {
-		return "\n" + indentBlock(m.styles.panel.Render("Activity logging is not available for this project."), 2)
-	}
-	if len(m.logs) == 0 {
-		return "\n" + indentBlock(m.styles.panel.Render("No activity yet. Use the CLI, TUI, or MCP to interact with Omakiten."), 2)
-	}
-	if m.availableWidth() < 92 {
-		return m.renderLogsCompact()
-	}
 
-	const (
-		logOperationWidth = 35
-		logProjectWidth   = 11
-		logFixedWidth     = 34
-	)
-	contentWidth := m.availableWidth() - 4
-	argsWidth := contentWidth - logFixedWidth - logOperationWidth - logProjectWidth
 
-	limit := minInt(len(m.logs), 50)
-	dataRows := make([]string, 0, limit)
-	for i := 0; i < limit; i++ {
-		log := m.logs[i]
-		marker := normalMarker
-		if i == m.logsSelected {
-			marker = m.styles.marker.Render(selectionMarker)
-		}
-
-		timeStr := log.StartedAt
-		if len(timeStr) > 12 {
-			timeStr = timeStr[len(timeStr)-12:]
-		}
-
-		statusStyle := m.styles.success
-		if log.Status == "error" {
-			statusStyle = m.styles.error
-		}
-		status := statusStyle.Render(fmt.Sprintf("%-5s", log.Status))
-
-		row := fmt.Sprintf("%s %-12s %-4s %-*s %-*s %s %-4d %s",
-			marker, timeStr, log.Source, logOperationWidth, truncateText(log.Operation, logOperationWidth), logProjectWidth, truncateText(log.ProjectSlug, logProjectWidth),
-			status, log.DurationMs, truncateText(log.ArgumentsJSON, argsWidth))
-		dataRows = append(dataRows, row)
-	}
-
-	rows := []string{
-		m.styles.kickerCount("Activity", limit),
-		m.styles.info.Render(fmt.Sprintf("// TIME        SRC  %-*s %-*s STATUS  MS   ARGS", logOperationWidth, "OPERATION", logProjectWidth, "PROJECT")),
-		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
-	}
-	rows = append(rows, m.sliceScrollRows(dataRows, m.logsScroll, m.logsViewportRows())...)
-	rows = append(rows, "", m.styles.hint.Render("Only app service calls are logged. TUI refreshes and direct reads are not shown."))
-
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
-}
-
-// sliceScrollRows clamps `scroll` into a valid range and returns the visible
-// slice of single-line data rows plus up-to-2 indicator rows ("▲ N above" /
-// "▼ N below") inserted only when content is hidden in that direction. Each
-// data row is assumed to be exactly one physical line, so no height heuristic
-// is needed. Used by table, logs, and any future list-style view.
-func (m Model) sliceScrollRows(dataRows []string, scroll, viewport int) []string {
-	if viewport <= 0 || len(dataRows) <= viewport {
-		return dataRows
-	}
-	offset := scroll
-	if offset < 0 {
-		offset = 0
-	}
-	maxOffset := len(dataRows) - viewport
-	if offset > maxOffset {
-		offset = maxOffset
-	}
-
-	above := offset
-	belowAvailable := len(dataRows) - offset
-	visibleHeight := viewport
-	if above > 0 {
-		visibleHeight--
-	}
-	if belowAvailable-visibleHeight > 0 {
-		visibleHeight--
-	}
-	if visibleHeight < 1 {
-		visibleHeight = 1
-	}
-	end := offset + visibleHeight
-	if end > len(dataRows) {
-		end = len(dataRows)
-	}
-	below := len(dataRows) - end
-
-	out := make([]string, 0, visibleHeight+2)
-	if above > 0 {
-		out = append(out, m.styles.hint.Render(fmt.Sprintf("▲ %d above", above)))
-	}
-	out = append(out, dataRows[offset:end]...)
-	if below > 0 {
-		out = append(out, m.styles.hint.Render(fmt.Sprintf("▼ %d below", below)))
-	}
-	return out
-}
-
-func (m Model) renderLogsCompact() string {
-	width := clampInt(m.availableWidth()-4, 32, 72)
-	limit := minInt(len(m.logs), 50)
-	dataRows := make([]string, 0, limit)
-	for i := 0; i < limit; i++ {
-		log := m.logs[i]
-		marker := normalMarker
-		if i == m.logsSelected {
-			marker = m.styles.marker.Render(selectionMarker)
-		}
-		timeStr := log.StartedAt
-		if len(timeStr) > 8 {
-			timeStr = timeStr[len(timeStr)-8:]
-		}
-		statusStyle := m.styles.success
-		if log.Status == "error" {
-			statusStyle = m.styles.error
-		}
-		prefix := fmt.Sprintf("%s %s %s ", marker, timeStr, statusStyle.Render(log.Status))
-		budget := clampInt(width-lipgloss.Width(prefix), 8, width)
-		dataRows = append(dataRows, prefix+truncateText(log.Operation, budget))
-	}
-	rows := []string{
-		m.styles.kickerCount("Activity", limit),
-		m.styles.separator.Render(strings.Repeat("─", width)),
-	}
-	rows = append(rows, m.sliceScrollRows(dataRows, m.logsScroll, m.logsViewportRows())...)
-	rows = append(rows, "", m.styles.hint.Render("r refresh · full arguments appear on wider terminals"))
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
-}
-
-func (m Model) renderTable() string {
-	tasks := m.applyTableView()
-	if len(tasks) == 0 {
-		if len(m.tasks) == 0 {
-			return "\n" + indentBlock(m.styles.panel.Render("No tasks yet. Press n to create one."), 2)
-		}
-		return "\n" + indentBlock(m.styles.panel.Render("No tasks match the configured table filter."), 2)
-	}
-	if m.availableWidth() < 74 {
-		return m.renderTableCompactWith(tasks)
-	}
-	const tableFixedWidth = 44
-	contentWidth := m.availableWidth() - 4
-	titleWidth := contentWidth - tableFixedWidth
-
-	selectedID := m.selectedTaskID()
-	dataRows := make([]string, 0, len(tasks))
-	for _, task := range tasks {
-		marker := normalMarker
-		if task.ID == selectedID {
-			marker = m.styles.marker.Render(selectionMarker)
-		}
-		dataRows = append(dataRows, fmt.Sprintf("%s %-4d %-11s %-8s %-5d %-9d %s", marker, task.ID, task.BucketKey, task.Priority, m.dependencyCount(task.ID), m.commentCount(task.ID), truncateText(task.Title, titleWidth)))
-	}
-
-	rows := []string{
-		m.styles.kickerCount("Tasks", len(tasks)),
-		m.styles.info.Render("// ID   BUCKET      PRI      DEPS  COMMENTS  TITLE"),
-		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
-	}
-	rows = append(rows, m.sliceScrollRows(dataRows, m.tableScroll, m.tableViewportRows())...)
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
-}
-
-func (m Model) renderTableCompactWith(tasks []domain.Task) string {
-	width := clampInt(m.availableWidth()-4, 32, 68)
-	selectedID := m.selectedTaskID()
-	dataRows := make([]string, 0, len(tasks))
-	for _, task := range tasks {
-		marker := normalMarker
-		if task.ID == selectedID {
-			marker = m.styles.marker.Render(selectionMarker)
-		}
-		prefix := fmt.Sprintf("%s #%d %s %s ", marker, task.ID, task.BucketKey, task.Priority)
-		budget := clampInt(width-lipgloss.Width(prefix), 8, width)
-		dataRows = append(dataRows, prefix+truncateText(task.Title, budget))
-	}
-	rows := []string{
-		m.styles.kickerCount("Tasks", len(tasks)),
-		m.styles.separator.Render(strings.Repeat("─", width)),
-	}
-	rows = append(rows, m.sliceScrollRows(dataRows, m.tableScroll, m.tableViewportRows())...)
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
-}
-
-// selectedTaskID resolves the currently-selected task id via m.tasks; used
-// by the table view to flag the matching row even when the visible list
-// has been re-sorted/filtered by view config.
-func (m Model) selectedTaskID() int64 {
-	if m.selected < 0 || m.selected >= len(m.tasks) {
-		return 0
-	}
-	return m.tasks[m.selected].ID
-}
-
-func (m Model) renderGraph() string {
-	if len(m.dependencies) == 0 {
-		content := m.styles.hintBox.Width(m.hintBoxWidth()).Render(strings.Join([]string{
-			m.styles.kickerCount("Dependency graph", 0),
-			"",
-			m.styles.hint.Render("No task dependencies yet."),
-			m.styles.hint.Render("Use ") + m.styles.hintAccent.Render("okt depend add TASK -i BLOCKER") + m.styles.hint.Render(" to define blocked_by edges."),
-		}, "\n"))
-		return "\n" + indentBlock(content, 2)
-	}
-
-	lines := buildDAGLinesSorted(m.dependencies, m.tasks, m.graphRootLess())
-	sel := dagSelectableIndices(lines)
-
-	var cursorLineIdx int = -1
-	if len(sel) > 0 {
-		cursor := clampInt(m.graphCursor, 0, len(sel)-1)
-		cursorLineIdx = sel[cursor]
-	}
-
-	dataRows := make([]string, len(lines))
-	for i, l := range lines {
-		if i == cursorLineIdx {
-			dataRows[i] = m.styles.hintAccent.Render(l.text)
-		} else {
-			dataRows[i] = l.text
-		}
-	}
-
-	rows := []string{
-		m.styles.kickerCount("Dependency graph", len(m.dependencies)),
-		"",
-	}
-	rows = append(rows, m.sliceScrollRows(dataRows, m.graphScroll, m.graphViewportRows())...)
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
-}
-
-// graphRootLess turns the graph view sort config into a comparator the DAG
-// builder can use. Returns nil when the config is at its default (id asc),
-// so the legacy ordering path stays untouched for users who never touch
-// the views section.
-func (m Model) graphRootLess() func(a, b domain.Task) bool {
-	field := m.views.Graph.Sort.Field
-	order := m.views.Graph.Sort.Order
-	if field == "" {
-		field = config.DefaultGraphSortField
-	}
-	if order == "" {
-		order = config.DefaultGraphSortOrder
-	}
-	if field == config.DefaultGraphSortField && order == config.DefaultGraphSortOrder {
-		return nil
-	}
-	asc := order != "desc"
-	switch field {
-	case "title":
-		return func(a, b domain.Task) bool {
-			ai, bi := strings.ToLower(a.Title), strings.ToLower(b.Title)
-			if asc {
-				return ai < bi
-			}
-			return ai > bi
-		}
-	default:
-		return func(a, b domain.Task) bool {
-			if asc {
-				return a.ID < b.ID
-			}
-			return a.ID > b.ID
-		}
-	}
-}
-
-func (m Model) renderConfig() string {
-	header := m.renderConfigHeader()
-
-	// Entity lists are rendered as separate, individually-bordered columns
-	// joined horizontally with a 1-space gap — same shape as the kanban
-	// board, so the user navigates with the same mental model: scroll the
-	// horizontal window so the focused column is always in view.
-	allKinds := configEntityKinds()
-	cap := m.entityKindCapacity()
-	if cap > len(allKinds) {
-		cap = len(allKinds)
-	}
-	focused := indexOfEntityKind(allKinds, m.entityKind)
-	start := scrollIntoView(m.entityKindScroll, focused, len(allKinds), cap)
-	end := start + cap
-	if end > len(allKinds) {
-		end = len(allKinds)
-	}
-	visible := allKinds[start:end]
-
-	// Compute the actual viewport budget for cards inside each column by
-	// measuring everything else first. Static chrome estimates would drift
-	// every time the runtime/tokens table grows — using the rendered header
-	// height is exact regardless of how many rows the tables produce.
-	viewport := m.entityCardsViewport(header)
-
-	columnStyle := m.styles.kanbanColumn.Width(entityListWidth)
-	cells := make([]string, 0, len(visible))
-	for _, kind := range visible {
-		cells = append(cells, columnStyle.Render(m.renderEntityCellWithViewport(kind, viewport)))
-	}
-
-	parts := make([]string, 0, len(cells)*2)
-	for i, cell := range cells {
-		parts = append(parts, cell)
-		if i < len(cells)-1 {
-			parts = append(parts, " ")
-		}
-	}
-	lists := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-
-	if cap < len(allKinds) {
-		// Show which sections are off-screen so the user knows ← / → keeps
-		// scrolling beyond the visible window.
-		hidden := []string{}
-		for i, k := range allKinds {
-			if i >= start && i < end {
-				continue
-			}
-			hidden = append(hidden, k.plural())
-		}
-		if len(hidden) > 0 {
-			lists += "\n  " + m.styles.hint.Render(fmt.Sprintf("sections %d–%d / %d · hidden: %s · ← / → scrolls", start+1, end, len(allKinds), strings.Join(hidden, ", ")))
-		}
-	}
-
-	return "\n" + indentBlock(header+"\n\n"+lists, 2)
-}
-
-// configEntityKinds is the canonical horizontal order of the config entity
-// columns — used both by renderConfig and the entity-kind scroll math.
-func configEntityKinds() []entityKind {
-	return []entityKind{entityKindLaw, entityKindPersona, entityKindSkill, entityKindTemplate, entityKindTag}
-}
-
-func indexOfEntityKind(kinds []entityKind, target entityKind) int {
-	for i, k := range kinds {
-		if k == target {
-			return i
-		}
-	}
-	return 0
-}
-
-// entityKindCapacity returns how many entity columns fit horizontally at the
-// current width. Identical accounting to the board: each column needs its
-// inner width plus 2 for the border, and a 1-cell gap between neighbors.
-func (m Model) entityKindCapacity() int {
-	available := m.availableWidth()
-	per := entityListWidth + 2
-	if per <= 0 {
-		return 1
-	}
-	cap := (available + 1) / (per + 1)
-	if cap < 1 {
-		cap = 1
-	}
-	return cap
-}
-
-// syncEntityKindScroll keeps entityKindScroll aligned so the focused entity
-// kind stays inside the visible horizontal window.
-func (m *Model) syncEntityKindScroll() {
-	allKinds := configEntityKinds()
-	cap := m.entityKindCapacity()
-	if cap > len(allKinds) {
-		cap = len(allKinds)
-	}
-	focused := indexOfEntityKind(allKinds, m.entityKind)
-	m.entityKindScroll = scrollIntoView(m.entityKindScroll, focused, len(allKinds), cap)
-}
-
-// renderConfigHeader produces the runtime/tokens summary tables that sit at
-// the top of the config view. Extracted so the viewport calculator can reuse
-// the exact rendered height instead of approximating it.
-func (m Model) renderConfigHeader() string {
-	bucketKeys := make([]string, 0, len(m.workflow.Buckets))
-	for _, bucket := range m.workflow.Buckets {
-		bucketKeys = append(bucketKeys, bucket.Key)
-	}
-	sort.Strings(bucketKeys)
-
-	labelCell := func(label string) string {
-		return m.styles.info.Render("// " + strings.ToUpper(label))
-	}
-	leftRows := [][]string{
-		{labelCell("Runtime"), ""},
-		{labelCell("Workflow"), m.workflow.Key},
-		{labelCell("Buckets"), strings.Join(bucketKeys, ", ")},
-		{labelCell("Theme"), m.theme.Key},
-		{labelCell("Totals"), ""},
-		{labelCell("Tasks"), fmt.Sprintf("%d", len(m.tasks))},
-		{labelCell("Comments"), fmt.Sprintf("%d", len(m.comments))},
-		{labelCell("Context"), fmt.Sprintf("%d", len(m.entries))},
-		{labelCell("Tags"), fmt.Sprintf("%d", len(m.tags))},
-	}
-	rightRows := [][]string{
-		{labelCell("Tokens"), ""},
-		{labelCell("Estimated"), fmt.Sprintf("%d", m.metrics.EstimatedTotal)},
-		{labelCell("Max"), fmt.Sprintf("%d", m.metrics.MaxTokens)},
-	}
-	if m.metrics.Truncated {
-		rightRows = append(rightRows, []string{m.styles.error.Render("[ERROR]"), m.styles.error.Render("budget exceeded")})
-	}
-
-	const (
-		configLabelWidth = 13
-		configValueWidth = 27
-		configTableWidth = 1 + configLabelWidth + 1 + configValueWidth + 1 // 43
-		configGap        = 2
-	)
-	widths := []int{configLabelWidth, configValueWidth}
-
-	switch {
-	case m.availableWidth() >= configTableWidth*2+configGap:
-		left := renderGridTable(leftRows, widths, m.styles.border)
-		right := renderGridTable(rightRows, widths, m.styles.border)
-		return lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", configGap), right)
-	case m.availableWidth() >= configTableWidth:
-		left := renderGridTable(leftRows, widths, m.styles.border)
-		right := renderGridTable(rightRows, widths, m.styles.border)
-		return left + "\n\n" + right
-	default:
-		valueW := clampInt(m.availableWidth()-configLabelWidth-3, 8, configValueWidth)
-		narrowWidths := []int{configLabelWidth, valueW}
-		all := append(append([][]string{}, leftRows...), rightRows...)
-		return renderGridTable(all, narrowWidths, m.styles.border)
-	}
-}
-
-// entityCardsViewport returns the number of rows available for cards inside
-// each entity column at the bottom of the config view. It measures the
-// rendered runtime/tokens header explicitly and subtracts the screen-level
-// chrome (header, footer, optional status, blank lines, column borders, and
-// column kicker+separator) so the viewport tracks the real layout instead
-// of relying on a static guess that drifts as the tables grow.
-func (m Model) entityCardsViewport(headerBlock string) int {
-	if m.height <= 0 {
-		return 0
-	}
-	const (
-		columnBorders     = 2 // top + bottom border of the kanbanColumn cell
-		columnHeaderRows  = 2 // kicker + separator inside the cell
-		blanksBeforeGrid  = 2 // "\n\n" between header tables and the grid
-		viewLeadingBlank  = 1 // leading "\n" prepended in renderConfig
-		footerLines       = 2 // newline + indented footer text
-	)
-
-	headerLines := strings.Count(headerBlock, "\n") + 1
-	screenHeader := strings.Count(m.renderHeader(), "\n") + 1
-	statusLine := 0
-	if m.status != "" && !m.isEmbeddedCommentInput() {
-		statusLine = 2 // newline separator + the status line
-	}
-
-	chrome := screenHeader + statusLine + viewLeadingBlank + headerLines +
-		blanksBeforeGrid + columnBorders + columnHeaderRows + footerLines
-	rows := m.height - chrome
-	if rows < 4 {
-		return 0
-	}
-	return rows
-}
 
 func (m Model) renderFooter() string {
 	var text string
@@ -3532,6 +2733,8 @@ func (m Model) renderFooter() string {
 		text = "up/down move  pgup/pgdn scroll  space toggle blocker  ctrl+s save  esc cancel"
 	case m.mode != modeNormal:
 		text = "enter save  esc cancel  ctrl+c quit"
+	case m.commentScreenOpen:
+		text = "j/k scroll  pgup/pgdn page  g/G top/bottom  esc back to task  ? help"
 	case m.taskScreen == taskScreenView:
 		text = "tab focus  j/k scroll  e edit  b blockers  c comment  m move  r refresh  esc board  ? help"
 	case m.taskScreen == taskScreenCreate:
@@ -3618,117 +2821,6 @@ func (m Model) tasksByBucket() map[string][]domain.Task {
 	return tasksByBucket
 }
 
-// priorityAllowSet returns nil when the configured slice is empty (meaning
-// "allow everything"), otherwise a lookup set. Centralised so board and
-// table views agree on the filter semantics.
-func priorityAllowSet(values []string) map[string]struct{} {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make(map[string]struct{}, len(values))
-	for _, v := range values {
-		out[v] = struct{}{}
-	}
-	return out
-}
-
-func priorityAllowed(allowed map[string]struct{}, priority domain.Priority) bool {
-	if allowed == nil {
-		return true
-	}
-	_, ok := allowed[string(priority)]
-	return ok
-}
-
-func bucketAllowSet(values []string) map[string]struct{} {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make(map[string]struct{}, len(values))
-	for _, v := range values {
-		out[v] = struct{}{}
-	}
-	return out
-}
-
-func bucketAllowed(allowed map[string]struct{}, bucketKey string) bool {
-	if allowed == nil {
-		return true
-	}
-	_, ok := allowed[bucketKey]
-	return ok
-}
-
-// applyTableView returns m.tasks filtered and sorted according to the
-// `table` view config. The returned slice is a copy — callers free to
-// re-order without mutating m.tasks (which is the board's source of truth).
-func (m Model) applyTableView() []domain.Task {
-	prioAllowed := priorityAllowSet(m.views.Table.Filter.Priority)
-	bucketAllowedSet := bucketAllowSet(m.views.Table.Filter.Bucket)
-	out := make([]domain.Task, 0, len(m.tasks))
-	for _, task := range m.tasks {
-		if !priorityAllowed(prioAllowed, task.Priority) {
-			continue
-		}
-		if !bucketAllowed(bucketAllowedSet, task.BucketKey) {
-			continue
-		}
-		out = append(out, task)
-	}
-	sortTasks(out, m.views.Table.Sort)
-	return out
-}
-
-// applyGraphSort returns m.tasks sorted by the graph view sort. The DAG
-// builder picks roots from the resulting order so the user can choose
-// "id ascending" (chronological) or "title ascending" (alphabetical).
-func (m Model) applyGraphSort() []domain.Task {
-	out := make([]domain.Task, len(m.tasks))
-	copy(out, m.tasks)
-	sortTasks(out, m.views.Graph.Sort)
-	return out
-}
-
-func sortTasks(tasks []domain.Task, sort config.SortSettings) {
-	if sort.Field == "" {
-		return
-	}
-	asc := sort.Order != "desc"
-	sortableLess := func(i, j int) bool {
-		a, b := tasks[i], tasks[j]
-		switch sort.Field {
-		case "title":
-			return strings.ToLower(a.Title) < strings.ToLower(b.Title)
-		case "priority":
-			return priorityRank(a.Priority) < priorityRank(b.Priority)
-		case "created_at":
-			return a.CreatedAt < b.CreatedAt
-		default:
-			return a.ID < b.ID
-		}
-	}
-	stableSort(tasks, sortableLess, asc)
-}
-
-func priorityRank(p domain.Priority) int {
-	switch p {
-	case domain.PriorityLow:
-		return 1
-	case domain.PriorityNormal:
-		return 2
-	case domain.PriorityHigh:
-		return 3
-	}
-	return 0
-}
-
-func stableSort(tasks []domain.Task, less func(i, j int) bool, asc bool) {
-	if asc {
-		sort.SliceStable(tasks, less)
-		return
-	}
-	sort.SliceStable(tasks, func(i, j int) bool { return less(j, i) })
-}
 
 func (m Model) tasksInCurrentBucket() []domain.Task {
 	if len(m.workflow.Buckets) == 0 || m.colIdx >= len(m.workflow.Buckets) {
@@ -3854,489 +2946,3 @@ func (m Model) commentsForTask(taskID int64) []domain.Comment {
 	return comments
 }
 
-func (m Model) taskIndicator(task domain.Task) lipgloss.Style {
-	if m.dependencyCount(task.ID) > 0 {
-		return m.styles.warning
-	}
-	switch task.Priority {
-	case domain.PriorityHigh:
-		return m.styles.error
-	case domain.PriorityLow:
-		return m.styles.muted
-	default:
-		return m.styles.success
-	}
-}
-
-func truncateText(s string, max int) string {
-	runes := []rune(s)
-	if max <= 0 {
-		return ""
-	}
-	if len(runes) <= max {
-		return s
-	}
-	return string(runes[:max-1]) + "…"
-}
-
-// wrapWords breaks s into lines where the first line is constrained to firstWidth
-// and subsequent lines to restWidth. It tries to keep whole words.
-func wrapWords(s string, firstWidth, restWidth int) []string {
-	if s == "" {
-		return []string{""}
-	}
-	words := strings.Fields(s)
-	if len(words) == 0 {
-		return []string{""}
-	}
-	var lines []string
-	current := words[0]
-	for _, word := range words[1:] {
-		limit := firstWidth
-		if len(lines) > 0 {
-			limit = restWidth
-		}
-		if lipgloss.Width(current+" "+word) <= limit {
-			current += " " + word
-		} else {
-			lines = append(lines, current)
-			current = word
-		}
-	}
-	lines = append(lines, current)
-	return lines
-}
-
-func trimLastRune(s string) string {
-	runes := []rune(s)
-	if len(runes) == 0 {
-		return s
-	}
-	return string(runes[:len(runes)-1])
-}
-
-func renderFixedBox(lines []string, width int, border lipgloss.Style) string {
-	rows := []string{border.Render("┌" + strings.Repeat("─", width) + "┐")}
-	for _, line := range lines {
-		rows = append(rows, border.Render("│")+padStyledLine(line, width)+border.Render("│"))
-	}
-	rows = append(rows, border.Render("└"+strings.Repeat("─", width)+"┘"))
-	return strings.Join(rows, "\n")
-}
-
-// renderRowGrid renders cells as a single horizontal row with shared borders
-// using ┌┬┐ / └┴┘ junctions, so neighboring cells visually share a border —
-// the omacon "delimited grid" pattern. Each cell's content is padded to
-// widths[i] columns and rows are padded so all cells are the same height.
-func renderRowGrid(cells []string, widths []int, border lipgloss.Style) string {
-	n := len(cells)
-	if n == 0 || n != len(widths) {
-		return ""
-	}
-	cellLines := make([][]string, n)
-	maxHeight := 0
-	for i, cell := range cells {
-		lines := wrapLinesToWidth(strings.Split(cell, "\n"), widths[i])
-		cellLines[i] = lines
-		if len(lines) > maxHeight {
-			maxHeight = len(lines)
-		}
-	}
-	for i := range cellLines {
-		for len(cellLines[i]) < maxHeight {
-			cellLines[i] = append(cellLines[i], "")
-		}
-	}
-
-	var top, bot strings.Builder
-	top.WriteString(border.Render("┌"))
-	bot.WriteString(border.Render("└"))
-	for i, w := range widths {
-		rule := strings.Repeat("─", w)
-		top.WriteString(border.Render(rule))
-		bot.WriteString(border.Render(rule))
-		if i < n-1 {
-			top.WriteString(border.Render("┬"))
-			bot.WriteString(border.Render("┴"))
-		}
-	}
-	top.WriteString(border.Render("┐"))
-	bot.WriteString(border.Render("┘"))
-
-	rows := []string{top.String()}
-	bar := border.Render("│")
-	for r := 0; r < maxHeight; r++ {
-		var row strings.Builder
-		row.WriteString(bar)
-		for i, w := range widths {
-			row.WriteString(padStyledLine(cellLines[i][r], w))
-			row.WriteString(bar)
-		}
-		rows = append(rows, row.String())
-	}
-	rows = append(rows, bot.String())
-	return strings.Join(rows, "\n")
-}
-
-// renderGridTable renders rows in a multi-row, multi-column table where every
-// cell is delimited by ─ and │ with shared junctions (┌┬┐ ├┼┤ └┴┘). Each row
-// must have len(widths) cells; missing trailing cells render as empty. A row
-// with a single cell when n>1 is treated as a spanned row that covers the full
-// width, and the surrounding horizontal dividers omit the internal junction.
-func renderGridTable(rows [][]string, widths []int, border lipgloss.Style) string {
-	n := len(widths)
-	if len(rows) == 0 || n == 0 {
-		return ""
-	}
-
-	totalWidth := 0
-	for _, w := range widths {
-		totalWidth += w
-	}
-	totalWidth += n - 1
-
-	spanned := make([]bool, len(rows))
-	rowLines := make([][][]string, len(rows))
-	rowHeights := make([]int, len(rows))
-	for r, row := range rows {
-		if n > 1 && len(row) == 1 {
-			spanned[r] = true
-			lines := wrapLinesToWidth(strings.Split(row[0], "\n"), totalWidth)
-			rowLines[r] = [][]string{lines}
-			rowHeights[r] = len(lines)
-			continue
-		}
-		cells := make([][]string, n)
-		h := 0
-		for c := 0; c < n; c++ {
-			text := ""
-			if c < len(row) {
-				text = row[c]
-			}
-			lines := wrapLinesToWidth(strings.Split(text, "\n"), widths[c])
-			cells[c] = lines
-			if len(lines) > h {
-				h = len(lines)
-			}
-		}
-		for c := 0; c < n; c++ {
-			for len(cells[c]) < h {
-				cells[c] = append(cells[c], "")
-			}
-		}
-		rowLines[r] = cells
-		rowHeights[r] = h
-	}
-
-	horizontal := func(left, right string, aboveSpanned, belowSpanned bool) string {
-		var b strings.Builder
-		b.WriteString(border.Render(left))
-		for i, w := range widths {
-			b.WriteString(border.Render(strings.Repeat("─", w)))
-			if i < n-1 {
-				var junc string
-				switch {
-				case aboveSpanned && belowSpanned:
-					junc = "─"
-				case aboveSpanned && !belowSpanned:
-					junc = "┬"
-				case !aboveSpanned && belowSpanned:
-					junc = "┴"
-				default:
-					junc = "┼"
-				}
-				b.WriteString(border.Render(junc))
-			}
-		}
-		b.WriteString(border.Render(right))
-		return b.String()
-	}
-
-	bar := border.Render("│")
-	var out strings.Builder
-	out.WriteString(horizontal("┌", "┐", true, spanned[0]))
-	for r, h := range rowHeights {
-		for line := 0; line < h; line++ {
-			out.WriteString("\n")
-			out.WriteString(bar)
-			if spanned[r] {
-				out.WriteString(padStyledLine(rowLines[r][0][line], totalWidth))
-			} else {
-				for c, w := range widths {
-					out.WriteString(padStyledLine(rowLines[r][c][line], w))
-					if c < n-1 {
-						out.WriteString(bar)
-					}
-				}
-			}
-			out.WriteString(bar)
-		}
-		if r < len(rows)-1 {
-			out.WriteString("\n")
-			out.WriteString(horizontal("├", "┤", spanned[r], spanned[r+1]))
-		}
-	}
-	out.WriteString("\n")
-	out.WriteString(horizontal("└", "┘", spanned[len(rows)-1], true))
-	return out.String()
-}
-
-func wrapLinesToWidth(lines []string, width int) []string {
-	if width <= 0 {
-		width = 1
-	}
-
-	wrapped := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if lipgloss.Width(line) <= width {
-			wrapped = append(wrapped, line)
-			continue
-		}
-
-		parts := strings.Split(ansi.Wrap(line, width, " "), "\n")
-		wrapped = append(wrapped, parts...)
-	}
-
-	if len(wrapped) == 0 {
-		return []string{""}
-	}
-	return wrapped
-}
-
-func padStyledLine(line string, width int) string {
-	visible := lipgloss.Width(line)
-	if visible >= width {
-		return line
-	}
-	return line + strings.Repeat(" ", width-visible)
-}
-
-func clampInt(value, minValue, maxValue int) int {
-	if maxValue < minValue {
-		return minValue
-	}
-	if value < minValue {
-		return minValue
-	}
-	if value > maxValue {
-		return maxValue
-	}
-	return value
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func indentBlock(block string, spaces int) string {
-	indent := strings.Repeat(" ", spaces)
-	lines := strings.Split(block, "\n")
-	for i, line := range lines {
-		if line != "" {
-			lines[i] = indent + line
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-// kicker renders a section label in dev-editorial style. Structural labels use
-// the secondary color so the primary accent stays reserved for active focus.
-func (s styles) kicker(label string) string {
-	return s.info.Render("// " + strings.ToUpper(label))
-}
-
-// kickerFocused is the focused-panel variant: replaces `//` with `▸` and
-// flips to the primary accent. Used to mark which side of the task screen
-// owns navigation keys without painting the full panel border green.
-func (s styles) kickerFocused(label string) string {
-	return s.hintAccent.Render("▸ " + strings.ToUpper(label))
-}
-
-// kickerCount renders `// LABEL · N` — kicker with a trailing count.
-func (s styles) kickerCount(label string, count int) string {
-	return s.info.Render(fmt.Sprintf("// %s · %d", strings.ToUpper(label), count))
-}
-
-// kickerCountFocused is the focused-panel variant of kickerCount.
-func (s styles) kickerCountFocused(label string, count int) string {
-	return s.hintAccent.Render(fmt.Sprintf("▸ %s · %d", strings.ToUpper(label), count))
-}
-
-// metaRow renders a definition-list row: `// LABEL` (kicker) + value, the label
-// padded to labelWidth so values align across multiple rows.
-func (s styles) metaRow(label, value string, labelWidth int) string {
-	rendered := "// " + strings.ToUpper(label)
-	pad := labelWidth - lipgloss.Width(rendered)
-	if pad < 1 {
-		pad = 1
-	}
-	return s.info.Render(rendered) + strings.Repeat(" ", pad) + value
-}
-
-// metaRowWrap is metaRow with word-wrapping. Long values break onto
-// continuation lines that are indented to the value gutter so the visual
-// alignment is preserved. contentWidth is the total cell width available.
-func (s styles) metaRowWrap(label, value string, labelWidth, contentWidth int) string {
-	rendered := "// " + strings.ToUpper(label)
-	pad := labelWidth - lipgloss.Width(rendered)
-	if pad < 1 {
-		pad = 1
-	}
-	gutter := lipgloss.Width(rendered) + pad
-	valueWidth := contentWidth - gutter
-	if valueWidth < 1 || contentWidth <= 0 {
-		return s.info.Render(rendered) + strings.Repeat(" ", pad) + value
-	}
-	wrapped := wrapWords(value, valueWidth, valueWidth)
-	indent := strings.Repeat(" ", gutter)
-	var b strings.Builder
-	for i, line := range wrapped {
-		if i == 0 {
-			b.WriteString(s.info.Render(rendered))
-			b.WriteString(strings.Repeat(" ", pad))
-		} else {
-			b.WriteString("\n")
-			b.WriteString(indent)
-		}
-		b.WriteString(line)
-	}
-	return b.String()
-}
-
-// statusBadge renders a status message as `[INFO] msg` or `[ERROR] msg` based
-// on a content heuristic. Replaces italic-on-secondary status rendering.
-func (s styles) statusBadge(msg string) string {
-	if msg == "" {
-		return ""
-	}
-	level := "INFO"
-	tagStyle := s.info
-	lower := strings.ToLower(msg)
-	for _, needle := range []string{"confirm", "pending"} {
-		if strings.Contains(lower, needle) {
-			level = "WARN"
-			tagStyle = s.warning
-			break
-		}
-	}
-	for _, needle := range []string{"error", "fail", "not found", "required", "missing", "invalid", "exceeded"} {
-		if strings.Contains(lower, needle) {
-			level = "ERROR"
-			tagStyle = s.error
-			break
-		}
-	}
-	return tagStyle.Render("["+level+"]") + " " + s.muted.Render(msg)
-}
-
-type styles struct {
-	title          lipgloss.Style
-	nav            lipgloss.Style
-	activeNav      lipgloss.Style
-	panel          lipgloss.Style
-	commentCard    lipgloss.Style
-	systemEventCard lipgloss.Style
-	commentInput   lipgloss.Style
-	border         lipgloss.Style
-	kanbanColumn   lipgloss.Style
-	card           lipgloss.Style
-	cardSelected   lipgloss.Style
-	entityCard     lipgloss.Style
-	entityCardSelected lipgloss.Style
-	marker         lipgloss.Style
-	separator      lipgloss.Style
-	empty          lipgloss.Style
-	input          lipgloss.Style
-	multilineInput lipgloss.Style
-	footer         lipgloss.Style
-	hint           lipgloss.Style
-	hintAccent     lipgloss.Style
-	hintBox        lipgloss.Style
-	muted          lipgloss.Style
-	info           lipgloss.Style
-	success        lipgloss.Style
-	warning        lipgloss.Style
-	error          lipgloss.Style
-
-	badgeHigh        lipgloss.Style
-	badgeNormal      lipgloss.Style
-	badgeLow         lipgloss.Style
-	badgeBlocker     lipgloss.Style
-	badgeComment     lipgloss.Style
-	badgeInfo        lipgloss.Style
-	badgeScope       lipgloss.Style
-	badgeFix         lipgloss.Style
-	badgeTokenGreen  lipgloss.Style
-	badgeTokenYellow lipgloss.Style
-	badgeTokenRed    lipgloss.Style
-}
-
-func newStyles(theme config.Theme) styles {
-	color := func(key, fallback string) lipgloss.Color {
-		if value := theme.Colors[key]; value != "" {
-			return lipgloss.Color(value)
-		}
-		return lipgloss.Color(fallback)
-	}
-
-	border := color("border", "#494543")
-	foreground := color("foreground", "#E5E2E1")
-	primary := color("primary", "#39FF14")
-	secondary := color("secondary", "#8FAE9A")
-	success := color("success", "#86D27A")
-	warning := color("warning", "#FFB347")
-	errorColor := color("error", "#FF5544")
-	// badgeFg is the foreground used on filled-pill badges (dark text on a
-	// bright background). Themable via the `badge_fg` color so dark-themed
-	// palettes can override it.
-	badgeFg := color("badge_fg", "#1A1A1A")
-
-	return styles{
-		title:          lipgloss.NewStyle().Bold(true).Foreground(primary),
-		nav:            lipgloss.NewStyle().Foreground(secondary),
-		activeNav:      lipgloss.NewStyle().Foreground(primary).Bold(true),
-		panel:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2),
-		commentCard:    lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1),
-		commentInput:   lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 1).Height(commentInputHeight),
-		// systemEventCard mirrors the commentCard geometry (border + padding)
-		// so the activity column stays visually consistent — same column
-		// alignment, same width budget. The metadata cue comes from the text
-		// color, not a different border color.
-		systemEventCard: lipgloss.NewStyle().Foreground(secondary).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1),
-		border:         lipgloss.NewStyle().Foreground(border),
-		kanbanColumn:   lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(border).Width(columnWidth).Padding(0, 0),
-		card:           lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(cardBoxWidth),
-		cardSelected:   lipgloss.NewStyle().Foreground(foreground).Bold(true).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 1).Width(cardBoxWidth),
-		entityCard:     lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(cardBoxWidth),
-		entityCardSelected: lipgloss.NewStyle().Foreground(foreground).Bold(true).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 1).Width(cardBoxWidth),
-		marker:         lipgloss.NewStyle().Foreground(primary).Bold(true),
-		separator:      lipgloss.NewStyle().Foreground(border),
-		empty:          lipgloss.NewStyle().Foreground(border).Width(columnWidth).Align(lipgloss.Center),
-		input:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 2),
-		multilineInput: lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 2).Width(taskFormInputWidth).Height(taskDescriptionInputHeight),
-		footer:         lipgloss.NewStyle().Foreground(border),
-		hint:           lipgloss.NewStyle().Foreground(border),
-		hintAccent:     lipgloss.NewStyle().Foreground(primary).Bold(true),
-		hintBox:        lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2).Width(60),
-		muted:          lipgloss.NewStyle().Foreground(border),
-		info:           lipgloss.NewStyle().Foreground(secondary),
-		success:        lipgloss.NewStyle().Foreground(success),
-		warning:        lipgloss.NewStyle().Foreground(warning),
-		error:          lipgloss.NewStyle().Foreground(errorColor),
-
-		badgeHigh:        lipgloss.NewStyle().Background(errorColor).Foreground(badgeFg).Padding(0, 1).Bold(true),
-		badgeNormal:      lipgloss.NewStyle().Background(success).Foreground(badgeFg).Padding(0, 1).Bold(true),
-		badgeLow:         lipgloss.NewStyle().Background(secondary).Foreground(badgeFg).Padding(0, 1).Bold(true),
-		badgeBlocker:     lipgloss.NewStyle().Background(warning).Foreground(badgeFg).Padding(0, 1).Bold(true),
-		badgeComment:     lipgloss.NewStyle().Background(border).Foreground(foreground).Padding(0, 1).Bold(true),
-		badgeInfo:        lipgloss.NewStyle().Background(secondary).Foreground(badgeFg).Padding(0, 1).Bold(true),
-		badgeScope:       lipgloss.NewStyle().Background(border).Foreground(foreground).Padding(0, 1).Bold(true),
-		badgeFix:         lipgloss.NewStyle().Background(warning).Foreground(badgeFg).Padding(0, 1).Bold(true),
-		badgeTokenGreen:  lipgloss.NewStyle().Background(success).Foreground(badgeFg).Padding(0, 1).Bold(true),
-		badgeTokenYellow: lipgloss.NewStyle().Background(warning).Foreground(badgeFg).Padding(0, 1).Bold(true),
-		badgeTokenRed:    lipgloss.NewStyle().Background(errorColor).Foreground(badgeFg).Padding(0, 1).Bold(true),
-	}
-}

@@ -554,11 +554,12 @@ func (m *Model) handleConfigKey(msg tea.KeyMsg) tea.Cmd {
 			return m.openSelectedEntityEdit()
 		}
 	case "d":
-		if m.entityKind == entityKindTag {
+		switch m.entityKind {
+		case entityKindTag:
 			m.requestSelectedTagDelete()
-		} else if m.entityKind == entityKindTemplate {
+		case entityKindTemplate:
 			m.status = "Templates auto-load — remove the .md file from templates/ and refresh"
-		} else {
+		default:
 			m.requestSelectedEntityDelete()
 		}
 	case "p":
