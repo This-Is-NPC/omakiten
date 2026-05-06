@@ -1,3 +1,10 @@
+---
+name: Pull Request
+description: Standard PR scaffold with before/after framing, change log, validation matrix, deviations, and references.
+entity: pr
+default: pr
+---
+
 ## Before
 - {Pain point 1}
 - {Pain point 2}

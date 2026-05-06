@@ -98,7 +98,7 @@ func (s *LawService) Add(ctx context.Context, input domain.LawInput) (domain.Law
 		return domain.Law{}, err
 	}
 
-	path := config.EntityFilePath(s.editor.ConfigDir(), config.EntityKindLaw, slug)
+	path := config.CustomEntityFilePath(s.editor.RootDir(), config.EntityKindLaw, slug)
 	bytes, err := config.LawFileBytes(config.Law{Slug: slug, Name: name, Severity: string(severity), Body: body})
 	if err != nil {
 		return domain.Law{}, configError(path, err)
@@ -120,6 +120,7 @@ func (s *LawService) Add(ctx context.Context, input domain.LawInput) (domain.Law
 			Severity: string(severity),
 			Body:     body,
 			Scope:    string(scope),
+			IsCustom: true,
 		}
 		switch scope {
 		case domain.LawScopeProject:
@@ -182,7 +183,10 @@ func (s *LawService) Edit(ctx context.Context, slug string, update domain.LawUpd
 		return current, nil
 	}
 
-	path := config.EntityFilePath(s.editor.ConfigDir(), config.EntityKindLaw, slug)
+	path := current.SourcePath
+	if path == "" {
+		path = config.EntityFilePath(s.editor.RootDir(), config.EntityKindLaw, slug)
+	}
 	bytes, err := config.LawFileBytes(law)
 	if err != nil {
 		return domain.Law{}, configError(path, err)
@@ -199,11 +203,15 @@ func (s *LawService) Remove(ctx context.Context, slug string) error {
 	if slug == "" {
 		return domain.NewError(domain.ErrValidation, "law slug is required", nil)
 	}
-	if _, err := s.Show(ctx, slug); err != nil {
+	current, err := s.Show(ctx, slug)
+	if err != nil {
 		return err
 	}
-	path := config.EntityFilePath(s.editor.ConfigDir(), config.EntityKindLaw, slug)
-	_, err := s.editor.ApplyWithFiles(ctx, func(bundle *config.Bundle) error {
+	path := current.SourcePath
+	if path == "" {
+		path = config.EntityFilePath(s.editor.RootDir(), config.EntityKindLaw, slug)
+	}
+	_, err = s.editor.ApplyWithFiles(ctx, func(bundle *config.Bundle) error {
 		bundle.Laws = filterLawsBySlug(bundle.Laws, slug)
 		for i := range bundle.Personas {
 			bundle.Personas[i].Laws = filterStrings(bundle.Personas[i].Laws, slug)

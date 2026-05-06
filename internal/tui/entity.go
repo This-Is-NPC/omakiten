@@ -30,6 +30,7 @@ const (
 	entityKindLaw entityKind = iota
 	entityKindPersona
 	entityKindSkill
+	entityKindTemplate
 	entityKindTag
 )
 
@@ -39,6 +40,9 @@ const (
 	entityScreenClosed entityScreenMode = iota
 	entityScreenView
 	entityScreenSkillPicker
+	entityScreenThemePicker
+	entityScreenConfigPicker
+	entityScreenDefaultPicker
 )
 
 // entityForm carries the per-screen state. For Phase 1 it only holds the
@@ -59,6 +63,8 @@ func (k entityKind) String() string {
 		return "Persona"
 	case entityKindSkill:
 		return "Skill"
+	case entityKindTemplate:
+		return "Template"
 	case entityKindTag:
 		return "Tag"
 	default:
@@ -71,7 +77,7 @@ func (k entityKind) plural() string {
 }
 
 func entityKinds() []entityKind {
-	return []entityKind{entityKindLaw, entityKindPersona, entityKindSkill, entityKindTag}
+	return []entityKind{entityKindLaw, entityKindPersona, entityKindSkill, entityKindTemplate, entityKindTag}
 }
 
 func (m Model) entityCount(kind entityKind) int {
@@ -82,6 +88,8 @@ func (m Model) entityCount(kind entityKind) int {
 		return len(m.personas)
 	case entityKindSkill:
 		return len(m.skills)
+	case entityKindTemplate:
+		return len(m.templates)
 	case entityKindTag:
 		return len(m.tags)
 	}
@@ -124,7 +132,21 @@ func (m *Model) clampEntityCursor() {
 	}
 }
 
+// renderEntityCell builds the inner content of one entity column. The cards
+// are clamped to the viewport budget computed from the terminal height: cards
+// outside the visible window are summarized as "▲ N above" / "▼ N below"
+// hints exactly like the kanban columns. Same scroll model: per-kind offset
+// stored in m.entityScroll, kept in sync with the cursor by
+// syncFocusedEntityScroll on every cursor move.
 func (m Model) renderEntityCell(kind entityKind) string {
+	return m.renderEntityCellWithViewport(kind, m.entityViewportRows())
+}
+
+// renderEntityCellWithViewport is the same as renderEntityCell but lets the
+// caller override the viewport budget — useful for renderConfig where we
+// already know how many rows the tables above the entity grid consumed and
+// can pass an exact number rather than relying on a static chrome estimate.
+func (m Model) renderEntityCellWithViewport(kind entityKind, viewport int) string {
 	focused := m.entityKind == kind
 	count := m.entityCount(kind)
 	cursor := m.selectedEntityIndex(kind)
@@ -142,12 +164,128 @@ func (m Model) renderEntityCell(kind entityKind) string {
 
 	if count == 0 {
 		lines = append(lines, m.styles.empty.Render("empty"))
-	} else {
-		for index := 0; index < count; index++ {
-			lines = append(lines, m.renderEntityCard(kind, index, focused && index == cursor))
+		return strings.Join(lines, "\n")
+	}
+
+	rendered := make([]string, count)
+	heights := make([]int, count)
+	for index := 0; index < count; index++ {
+		rendered[index] = m.renderEntityCard(kind, index, focused && index == cursor)
+		heights[index] = strings.Count(rendered[index], "\n") + 1
+	}
+
+	if viewport <= 0 {
+		// Height unknown — render every card; the renderer-level clamp keeps
+		// the view bounded by terminal height.
+		lines = append(lines, rendered...)
+		return strings.Join(lines, "\n")
+	}
+
+	offset := 0
+	if m.entityScroll != nil {
+		offset = m.entityScroll[kind]
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > count-1 {
+		offset = count - 1
+	}
+
+	used := 0
+	end := offset
+	for end < count {
+		reserve := 0
+		if end < count-1 {
+			reserve = 1 // "▼ N below" hint line
 		}
+		if used+heights[end]+reserve > viewport {
+			break
+		}
+		used += heights[end]
+		end++
+	}
+	if end == offset {
+		// Never produce an empty viewport — show at least one card.
+		end = offset + 1
+	}
+
+	above := offset
+	below := count - end
+	if above > 0 {
+		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▲ %d above", above)))
+	}
+	lines = append(lines, rendered[offset:end]...)
+	if below > 0 {
+		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▼ %d below", below)))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// entityViewportRows is the number of terminal rows available for entity
+// cards inside one column. Computed from the actual rendered config header
+// (runtime/tokens tables) rather than a static chrome guess so the value
+// stays correct as the tables grow or shrink across themes/data sets.
+// Returns 0 when the height is unknown.
+func (m Model) entityViewportRows() int {
+	return m.entityCardsViewport(m.renderConfigHeader())
+}
+
+// syncFocusedEntityScroll keeps m.entityScroll[focusedKind] aligned so the
+// selected card stays fully inside the column viewport. Mirrors the
+// per-bucket scroll behavior of the kanban board: the offset advances by
+// real card heights (cards have variable heights because of badge wrapping).
+func (m *Model) syncFocusedEntityScroll() {
+	kind := m.entityKind
+	count := m.entityCount(kind)
+	viewport := m.entityViewportRows()
+	if viewport <= 0 || count == 0 {
+		if m.entityScroll != nil {
+			delete(m.entityScroll, kind)
+		}
+		return
+	}
+
+	cursor := m.selectedEntityIndex(kind)
+	heights := make([]int, count)
+	for i := 0; i < count; i++ {
+		rendered := m.renderEntityCard(kind, i, false)
+		heights[i] = strings.Count(rendered, "\n") + 1
+	}
+
+	if m.entityScroll == nil {
+		m.entityScroll = map[entityKind]int{}
+	}
+	offset := m.entityScroll[kind]
+	if offset > cursor {
+		offset = cursor
+	}
+	for offset < cursor {
+		used := 0
+		fits := true
+		for i := offset; i <= cursor; i++ {
+			reserve := 0
+			if i < count-1 {
+				reserve = 1
+			}
+			if used+heights[i]+reserve > viewport {
+				fits = false
+				break
+			}
+			used += heights[i]
+		}
+		if fits {
+			break
+		}
+		offset++
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > count-1 {
+		offset = count - 1
+	}
+	m.entityScroll[kind] = offset
 }
 
 func (m Model) renderEntityCard(kind entityKind, index int, selected bool) string {
@@ -178,6 +316,8 @@ func (m Model) renderEntityBadges(kind entityKind, index int, maxWidth int) stri
 		return wrapBadges(m.renderPersonaBadges(index), maxWidth)
 	case entityKindSkill:
 		return wrapBadges(m.renderSkillBadges(index), maxWidth)
+	case entityKindTemplate:
+		return wrapBadges(m.renderTemplateBadges(index), maxWidth)
 	case entityKindTag:
 		return wrapBadges(m.renderTagBadges(index), maxWidth)
 	}
@@ -215,6 +355,13 @@ func wrapBadges(badges []string, maxWidth int) string {
 	return strings.Join(lines, "\n")
 }
 
+// customBadge returns a single CUSTOM marker styled as info — same visual
+// weight as other scope-style badges so the user can scan a column for
+// user-owned overrides at a glance.
+func (m Model) customBadge() string {
+	return m.styles.badgeInfo.Render("CUSTOM")
+}
+
 func (m Model) renderLawBadges(index int) []string {
 	law := m.laws[index]
 	var badges []string
@@ -250,6 +397,9 @@ func (m Model) renderLawBadges(index int) []string {
 	if strings.TrimSpace(law.Warning) != "" {
 		badges = append(badges, m.styles.badgeFix.Render("FIX"))
 	}
+	if law.IsCustom {
+		badges = append(badges, m.customBadge())
+	}
 
 	return badges
 }
@@ -263,6 +413,9 @@ func (m Model) renderPersonaBadges(index int) []string {
 	if strings.TrimSpace(persona.Warning) != "" {
 		badges = append(badges, m.styles.badgeFix.Render("FIX"))
 	}
+	if persona.IsCustom {
+		badges = append(badges, m.customBadge())
+	}
 	return badges
 }
 
@@ -275,6 +428,29 @@ func (m Model) renderSkillBadges(index int) []string {
 	badges := []string{m.tokenBadge(tokens)}
 	if strings.TrimSpace(skill.Warning) != "" {
 		badges = append(badges, m.styles.badgeFix.Render("FIX"))
+	}
+	if skill.IsCustom {
+		badges = append(badges, m.customBadge())
+	}
+	return badges
+}
+
+func (m Model) renderTemplateBadges(index int) []string {
+	template := m.templates[index]
+	tokens := m.counter.Count(template.Body)
+	badges := []string{m.tokenBadge(tokens)}
+	// DEFAULT marks the template that is the active scaffold for a kind.
+	// Project-scoped defaults include the project slug so the user can
+	// distinguish them from the global default at a glance.
+	if template.Default != "" {
+		label := "DEFAULT:" + strings.ToUpper(template.Default)
+		if template.ProjectSlug != "" {
+			label += "·" + strings.ToUpper(template.ProjectSlug)
+		}
+		badges = append(badges, m.styles.badgeInfo.Render(label))
+	}
+	if template.IsCustom {
+		badges = append(badges, m.customBadge())
 	}
 	return badges
 }
@@ -299,6 +475,8 @@ func (m Model) entityCardLabel(kind entityKind, index int) string {
 		return m.personas[index].Key
 	case entityKindSkill:
 		return m.skills[index].Key
+	case entityKindTemplate:
+		return m.templates[index].Slug
 	case entityKindTag:
 		return m.tags[index].Label
 	}
@@ -365,7 +543,9 @@ func (m *Model) handleConfigKey(msg tea.KeyMsg) tea.Cmd {
 		}
 	case "n":
 		m.clearDeletePrompt("")
-		if m.entityKind != entityKindTag {
+		if m.entityKind == entityKindTemplate {
+			m.status = "Templates auto-load — add a .md file to templates/ and refresh"
+		} else if m.entityKind != entityKindTag {
 			return m.openEntityCreate(m.entityKind)
 		}
 	case "e":
@@ -376,6 +556,8 @@ func (m *Model) handleConfigKey(msg tea.KeyMsg) tea.Cmd {
 	case "d":
 		if m.entityKind == entityKindTag {
 			m.requestSelectedTagDelete()
+		} else if m.entityKind == entityKindTemplate {
+			m.status = "Templates auto-load — remove the .md file from templates/ and refresh"
 		} else {
 			m.requestSelectedEntityDelete()
 		}
@@ -383,6 +565,17 @@ func (m *Model) handleConfigKey(msg tea.KeyMsg) tea.Cmd {
 		m.clearDeletePrompt("")
 		if m.entityKind == entityKindPersona {
 			m.openPersonaPickerForSelected()
+		}
+	case "t":
+		m.clearDeletePrompt("")
+		m.openThemePicker()
+	case "c":
+		m.clearDeletePrompt("")
+		m.openConfigPicker()
+	case "a":
+		m.clearDeletePrompt("")
+		if m.entityKind == entityKindTemplate {
+			m.openTemplateDefaultPickerForSelected()
 		}
 	}
 	return nil
@@ -399,6 +592,8 @@ func (m *Model) cycleEntityKind(delta int) {
 	}
 	current = (current + delta + len(kinds)) % len(kinds)
 	m.entityKind = kinds[current]
+	m.syncFocusedEntityScroll()
+	m.syncEntityKindScroll()
 }
 
 func (m *Model) moveEntityCursor(delta int) {
@@ -408,6 +603,7 @@ func (m *Model) moveEntityCursor(delta int) {
 	count := m.entityCount(m.entityKind)
 	if count == 0 {
 		m.entityCursors[m.entityKind] = 0
+		m.syncFocusedEntityScroll()
 		return
 	}
 	cursor := m.entityCursors[m.entityKind] + delta
@@ -418,6 +614,7 @@ func (m *Model) moveEntityCursor(delta int) {
 		cursor = count - 1
 	}
 	m.entityCursors[m.entityKind] = cursor
+	m.syncFocusedEntityScroll()
 }
 
 func (m *Model) openSelectedEntityView() {
@@ -489,6 +686,7 @@ func enrichSkillsFromBundle(skills []domain.Skill, bundle config.Bundle) []domai
 			skills[index].Description = file.Description
 			skills[index].Body = file.Body
 			skills[index].SourcePath = file.SourcePath
+			skills[index].IsCustom = file.IsCustom
 			if file.Name != "" {
 				skills[index].Name = file.Name
 			}
@@ -514,6 +712,7 @@ func enrichLawsFromBundle(laws []domain.Law, bundle config.Bundle) []domain.Law 
 			laws[index].Scope = domain.LawScope(file.Scope)
 			laws[index].ProjectKey = file.ProjectSlug
 			laws[index].PersonaKey = file.PersonaSlug
+			laws[index].IsCustom = file.IsCustom
 			if file.Name != "" {
 				laws[index].Name = file.Name
 			}
@@ -537,6 +736,7 @@ func enrichPersonasFromBundle(personas []domain.Persona, bundle config.Bundle) [
 			personas[index].Body = file.Body
 			personas[index].SourcePath = file.SourcePath
 			personas[index].LawKeys = append([]string(nil), file.Laws...)
+			personas[index].IsCustom = file.IsCustom
 			if file.Name != "" {
 				personas[index].Name = file.Name
 			}
@@ -605,6 +805,11 @@ func (m *Model) entitySlugAt(kind entityKind, index int) string {
 			return ""
 		}
 		return m.skills[index].Key
+	case entityKindTemplate:
+		if index < 0 || index >= len(m.templates) {
+			return ""
+		}
+		return m.templates[index].Slug
 	case entityKindTag:
 		if index < 0 || index >= len(m.tags) {
 			return ""
@@ -628,6 +833,10 @@ func (m Model) entitySourcePath(kind entityKind, slug string) string {
 		if skill, ok := m.findSkillBySlug(slug); ok {
 			return skill.SourcePath
 		}
+	case entityKindTemplate:
+		if template, ok := m.findTemplateBySlug(slug); ok {
+			return template.SourcePath
+		}
 	}
 	return ""
 }
@@ -635,8 +844,15 @@ func (m Model) entitySourcePath(kind entityKind, slug string) string {
 // updateEntityScreen handles input while a detail view or persona picker is
 // open. Returns whether handling consumed the message and any cmd to dispatch.
 func (m Model) updateEntityScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.entityForm.mode == entityScreenSkillPicker {
+	switch m.entityForm.mode {
+	case entityScreenSkillPicker:
 		return m.updatePersonaPicker(msg)
+	case entityScreenThemePicker:
+		return m.updateThemePicker(msg)
+	case entityScreenConfigPicker:
+		return m.updateConfigPicker(msg)
+	case entityScreenDefaultPicker:
+		return m.updateTemplateDefaultPicker(msg)
 	}
 	switch msg.String() {
 	case "ctrl+c", "q":
@@ -651,11 +867,20 @@ func (m Model) updateEntityScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.clearDeletePrompt("")
 		return m, m.openEntityEditor(m.entityForm.kind, m.entityForm.slug)
 	case "d":
+		if m.entityForm.kind == entityKindTemplate {
+			m.status = "Templates auto-load — remove the .md file from templates/ and refresh"
+			return m, nil
+		}
 		m.requestEntityDelete(m.entityForm.kind, m.entityForm.slug)
 	case "p":
 		m.clearDeletePrompt("")
 		if m.entityForm.kind == entityKindPersona {
 			m.openPersonaPicker(m.entityForm.slug)
+		}
+	case "a":
+		m.clearDeletePrompt("")
+		if m.entityForm.kind == entityKindTemplate {
+			m.openTemplateDefaultPicker(m.entityForm.slug)
 		}
 	case "r":
 		m.clearDeletePrompt("")
@@ -847,6 +1072,12 @@ func (m Model) renderEntityScreen() string {
 		return m.renderEntityView()
 	case entityScreenSkillPicker:
 		return m.renderPersonaPicker()
+	case entityScreenThemePicker:
+		return m.renderThemePicker()
+	case entityScreenConfigPicker:
+		return m.renderConfigPicker()
+	case entityScreenDefaultPicker:
+		return m.renderTemplateDefaultPicker()
 	}
 	return ""
 }
@@ -916,6 +1147,35 @@ func (m Model) renderEntityView() string {
 		}
 		body = persona.Body
 		extraSpannedRows = [][]string{{m.styles.hint.Render("p: open skill picker")}}
+	case entityKindTemplate:
+		template, ok := m.findTemplateBySlug(m.entityForm.slug)
+		if !ok {
+			return "\n" + indentBlock(m.styles.panel.Render("Template not found"), 2)
+		}
+		entity := template.Entity
+		if entity == "" {
+			entity = m.styles.hint.Render("none")
+		}
+		defaultLabel := m.styles.hint.Render("none")
+		if template.Default != "" {
+			text := template.Default
+			if template.ProjectSlug != "" {
+				text += "  (project: " + template.ProjectSlug + ")"
+			} else {
+				text += "  (global)"
+			}
+			defaultLabel = m.styles.badgeInfo.Render(strings.ToUpper(text))
+		}
+		dataRows = [][]string{
+			{labelCell("Slug"), template.Slug},
+			{labelCell("Name"), template.Name},
+			{labelCell("Description"), template.Description},
+			{labelCell("Entity"), entity},
+			{labelCell("Default"), defaultLabel},
+			{labelCell("Source"), template.SourcePath},
+		}
+		body = template.Body
+		extraSpannedRows = [][]string{{m.styles.hint.Render("a: assign default kind")}}
 	}
 
 	bodyText := strings.TrimRight(body, "\n")
@@ -1242,6 +1502,15 @@ func (m Model) findPersonaBySlug(slug string) (domain.Persona, bool) {
 		}
 	}
 	return domain.Persona{}, false
+}
+
+func (m Model) findTemplateBySlug(slug string) (config.TaskTemplate, bool) {
+	for _, template := range m.templates {
+		if template.Slug == slug {
+			return template, true
+		}
+	}
+	return config.TaskTemplate{}, false
 }
 
 // nextScaffoldName picks a unique placeholder name like "New skill 1" so that

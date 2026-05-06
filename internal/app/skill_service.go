@@ -65,8 +65,9 @@ func (s *SkillService) Show(ctx context.Context, slug string) (domain.Skill, err
 	return domain.Skill{}, domain.NewError(domain.ErrSkillNotFound, "skill not found", map[string]any{"slug": slug})
 }
 
-// Add creates a new skill: writes skills/<slug>.md from a scaffold and adds the
-// slug to the wiring file's `skills:` ref list. The on-disk file lands first
+// Add creates a new skill: writes skills/custom/<slug>.md (the user-owned
+// subtree, preserved across default refreshes) and adds the slug to the
+// wiring file's `skills:` ref list. The on-disk file lands first
 // (transactional via BundleEditor); the caller can then open $EDITOR against
 // SourcePath to flesh out the body.
 func (s *SkillService) Add(ctx context.Context, input domain.SkillInput) (domain.Skill, error) {
@@ -74,7 +75,7 @@ func (s *SkillService) Add(ctx context.Context, input domain.SkillInput) (domain
 	if err != nil {
 		return domain.Skill{}, err
 	}
-	path := config.EntityFilePath(s.editor.ConfigDir(), config.EntityKindSkill, slug)
+	path := config.CustomEntityFilePath(s.editor.RootDir(), config.EntityKindSkill, slug)
 	bytes, err := config.SkillFileBytes(config.Skill{Slug: slug, Name: name, Description: description, Body: body})
 	if err != nil {
 		return domain.Skill{}, configError(path, err)
@@ -88,7 +89,7 @@ func (s *SkillService) Add(ctx context.Context, input domain.SkillInput) (domain
 		if containsString(bundleSkillSlugs(*bundle), slug) {
 			return domain.NewError(domain.ErrValidation, "skill key must be unique", map[string]any{"slug": slug})
 		}
-		bundle.Skills = append(bundle.Skills, config.Skill{Slug: slug, Name: name, Description: description, Body: body, SourcePath: path})
+		bundle.Skills = append(bundle.Skills, config.Skill{Slug: slug, Name: name, Description: description, Body: body, SourcePath: path, IsCustom: true})
 		return nil
 	}, []FileOp{{Op: OpWrite, Path: path, Bytes: bytes}}); err != nil {
 		return domain.Skill{}, err
@@ -135,7 +136,11 @@ func (s *SkillService) Edit(ctx context.Context, slug string, update domain.Skil
 		return current, nil
 	}
 
-	path := config.EntityFilePath(s.editor.ConfigDir(), config.EntityKindSkill, slug)
+	path := current.SourcePath
+	if path == "" {
+		// Fallback for legacy callers that didn't get an enriched SourcePath.
+		path = config.EntityFilePath(s.editor.RootDir(), config.EntityKindSkill, slug)
+	}
 	bytes, err := config.SkillFileBytes(skill)
 	if err != nil {
 		return domain.Skill{}, configError(path, err)
@@ -155,12 +160,16 @@ func (s *SkillService) Remove(ctx context.Context, slug string) error {
 	if slug == "" {
 		return domain.NewError(domain.ErrValidation, "skill slug is required", nil)
 	}
-	if _, err := s.Show(ctx, slug); err != nil {
+	current, err := s.Show(ctx, slug)
+	if err != nil {
 		return err
 	}
-	path := config.EntityFilePath(s.editor.ConfigDir(), config.EntityKindSkill, slug)
+	path := current.SourcePath
+	if path == "" {
+		path = config.EntityFilePath(s.editor.RootDir(), config.EntityKindSkill, slug)
+	}
 
-	_, err := s.editor.ApplyWithFiles(ctx, func(bundle *config.Bundle) error {
+	_, err = s.editor.ApplyWithFiles(ctx, func(bundle *config.Bundle) error {
 		bundle.Skills = filterSkillsBySlug(bundle.Skills, slug)
 		for index := range bundle.Personas {
 			bundle.Personas[index].Skills = filterStrings(bundle.Personas[index].Skills, slug)
@@ -179,10 +188,11 @@ func (s *SkillService) ScaffoldPath(ctx context.Context, name string) (string, e
 	if slug == "" {
 		return "", domain.NewError(domain.ErrValidation, "skill name produces empty slug", map[string]any{"name": name})
 	}
-	if _, err := s.Add(ctx, domain.SkillInput{Key: slug, Name: name}); err != nil {
+	added, err := s.Add(ctx, domain.SkillInput{Key: slug, Name: name})
+	if err != nil {
 		return "", err
 	}
-	return config.EntityFilePath(s.editor.ConfigDir(), config.EntityKindSkill, slug), nil
+	return added.SourcePath, nil
 }
 
 func normalizeSkillInput(input domain.SkillInput) (string, string, string, string, error) {

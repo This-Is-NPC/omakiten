@@ -74,7 +74,7 @@ func (s *PersonaService) Add(ctx context.Context, input domain.PersonaInput) (do
 		return domain.Persona{}, err
 	}
 
-	path := config.EntityFilePath(s.editor.ConfigDir(), config.EntityKindPersona, slug)
+	path := config.CustomEntityFilePath(s.editor.RootDir(), config.EntityKindPersona, slug)
 	bytes, err := config.PersonaFileBytes(config.Persona{Slug: slug, Name: name, Description: description, Body: body})
 	if err != nil {
 		return domain.Persona{}, configError(path, err)
@@ -103,6 +103,7 @@ func (s *PersonaService) Add(ctx context.Context, input domain.PersonaInput) (do
 			Body:        body,
 			Skills:      skillKeys,
 			SourcePath:  path,
+			IsCustom:    true,
 		})
 		return nil
 	}, []FileOp{{Op: OpWrite, Path: path, Bytes: bytes}}); err != nil {
@@ -162,7 +163,10 @@ func (s *PersonaService) Edit(ctx context.Context, slug string, update domain.Pe
 		return current, nil
 	}
 
-	path := config.EntityFilePath(s.editor.ConfigDir(), config.EntityKindPersona, slug)
+	path := current.SourcePath
+	if path == "" {
+		path = config.EntityFilePath(s.editor.RootDir(), config.EntityKindPersona, slug)
+	}
 	var ops []FileOp
 	if fileChanged {
 		bytes, err := config.PersonaFileBytes(persona)
@@ -201,11 +205,15 @@ func (s *PersonaService) Remove(ctx context.Context, slug string) error {
 	if slug == "" {
 		return domain.NewError(domain.ErrValidation, "persona slug is required", nil)
 	}
-	if _, err := s.Show(ctx, slug); err != nil {
+	current, err := s.Show(ctx, slug)
+	if err != nil {
 		return err
 	}
-	path := config.EntityFilePath(s.editor.ConfigDir(), config.EntityKindPersona, slug)
-	_, err := s.editor.ApplyWithFiles(ctx, func(bundle *config.Bundle) error {
+	path := current.SourcePath
+	if path == "" {
+		path = config.EntityFilePath(s.editor.RootDir(), config.EntityKindPersona, slug)
+	}
+	_, err = s.editor.ApplyWithFiles(ctx, func(bundle *config.Bundle) error {
 		out := bundle.Personas[:0]
 		for _, persona := range bundle.Personas {
 			if persona.Slug == slug {

@@ -24,16 +24,17 @@ func SaveBundle(path string, bundle Bundle) error {
 }
 
 // SaveFullBundle writes the wiring file plus every entity file present in the
-// bundle. Tests and migrations use this to materialize a fresh config dir from
-// a Bundle literal in one call.
+// bundle. Tests and migrations use this to materialize a fresh config root
+// from a Bundle literal in one call. Entities flagged IsCustom are placed
+// under <root>/<kind>/custom/; the rest go to the default location.
 func SaveFullBundle(configPath string, bundle Bundle) error {
-	configDir := filepath.Dir(configPath)
+	rootDir := ConfigRootFromYAMLPath(configPath)
 	for _, skill := range bundle.Skills {
 		bytes, err := SkillFileBytes(skill)
 		if err != nil {
 			return err
 		}
-		if err := WriteAtomic(EntityFilePath(configDir, EntityKindSkill, skill.Slug), bytes); err != nil {
+		if err := WriteAtomic(entityWritePath(rootDir, EntityKindSkill, skill.Slug, skill.IsCustom), bytes); err != nil {
 			return err
 		}
 	}
@@ -42,7 +43,7 @@ func SaveFullBundle(configPath string, bundle Bundle) error {
 		if err != nil {
 			return err
 		}
-		if err := WriteAtomic(EntityFilePath(configDir, EntityKindLaw, law.Slug), bytes); err != nil {
+		if err := WriteAtomic(entityWritePath(rootDir, EntityKindLaw, law.Slug, law.IsCustom), bytes); err != nil {
 			return err
 		}
 	}
@@ -51,11 +52,18 @@ func SaveFullBundle(configPath string, bundle Bundle) error {
 		if err != nil {
 			return err
 		}
-		if err := WriteAtomic(EntityFilePath(configDir, EntityKindPersona, persona.Slug), bytes); err != nil {
+		if err := WriteAtomic(entityWritePath(rootDir, EntityKindPersona, persona.Slug, persona.IsCustom), bytes); err != nil {
 			return err
 		}
 	}
 	return SaveBundle(configPath, bundle)
+}
+
+func entityWritePath(rootDir string, kind EntityKind, slug string, isCustom bool) string {
+	if isCustom {
+		return CustomEntityFilePath(rootDir, kind, slug)
+	}
+	return EntityFilePath(rootDir, kind, slug)
 }
 
 func bundleToWiring(bundle Bundle) (wiring, error) {
@@ -162,9 +170,19 @@ func PersonaFileBytes(persona Persona) ([]byte, error) {
 	return JoinFrontmatter(fm, []byte(persona.Body)), nil
 }
 
-// EntityFilePath returns the canonical filesystem path for an entity file.
-func EntityFilePath(configDir string, kind EntityKind, slug string) string {
-	return filepath.Join(configDir, kind.Folder(), slug+".md")
+// EntityFilePath returns the canonical filesystem path for a default entity
+// file: <root>/<kind>/<slug>.md. Use CustomEntityFilePath for user-created
+// entries that should land under the custom/ subtree.
+func EntityFilePath(rootDir string, kind EntityKind, slug string) string {
+	return filepath.Join(rootDir, kind.Folder(), slug+".md")
+}
+
+// CustomEntityFilePath returns <root>/<kind>/custom/<slug>.md — the canonical
+// destination for entities the user creates themselves (CLI add, TUI 'n').
+// These files are preserved across default refreshes and override same-slug
+// defaults at load time.
+func CustomEntityFilePath(rootDir string, kind EntityKind, slug string) string {
+	return filepath.Join(rootDir, kind.Folder(), "custom", slug+".md")
 }
 
 func contains(haystack []string, needle string) bool {

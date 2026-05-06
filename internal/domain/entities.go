@@ -8,6 +8,7 @@ type Skill struct {
 	Body        string `json:"body,omitempty"`
 	SourcePath  string `json:"source_path,omitempty"`
 	Warning     string `json:"warning,omitempty"`
+	IsCustom    bool   `json:"is_custom,omitempty"`
 }
 
 type Persona struct {
@@ -21,6 +22,7 @@ type Persona struct {
 	LawKeys     []string `json:"law_keys,omitempty"`
 	SourcePath  string   `json:"source_path,omitempty"`
 	Warning     string   `json:"warning,omitempty"`
+	IsCustom    bool     `json:"is_custom,omitempty"`
 }
 
 type LawSeverity string
@@ -50,6 +52,7 @@ type Law struct {
 	PersonaKey  string   `json:"persona,omitempty"`
 	SourcePath  string   `json:"source_path,omitempty"`
 	Warning     string   `json:"warning,omitempty"`
+	IsCustom    bool     `json:"is_custom,omitempty"`
 }
 
 type LawInput struct {

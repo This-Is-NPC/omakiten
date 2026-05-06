@@ -95,6 +95,8 @@ func Tools() []ToolDefinition {
 		{Name: "solutions.add", Description: "Attach a candidate solution to an error. Multiple solutions per error are supported.", InputSchema: addSolutionSchema()},
 		{Name: "solutions.confirm", Description: "Confirm whether a solution worked. success=true marks it as the recommended fix and increments its like counter; success=false marks it as known-bad so the agent does not retry it without new context.", InputSchema: confirmSolutionSchema()},
 		{Name: "solutions.list_top", Description: "List the top N most-liked solutions globally (cross-project). Useful to surface validated fixes and audit recurring patterns. Likes are incremented only by solutions.confirm(success=true).", InputSchema: listTopSolutionsSchema()},
+		{Name: "templates.list", Description: "List every loaded template (slug, name, default kind, project scope, custom flag). Read-only; templates are authored by the user — the agent never modifies template bindings.", InputSchema: objectSchema(map[string]any{"kind": stringSchema("Optional default-kind filter (e.g. \"task\")"), "project": stringSchema("Optional project slug to scope project-bound templates"), "include_body": booleanSchema("Set true to include the template body in each entry; default omits it for compact responses")}, nil)},
+		{Name: "templates.show", Description: "Return one template by slug, including its full body. Read-only.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Template slug")}, []string{"slug"})},
 	}
 }
 
@@ -278,6 +280,18 @@ func (a *Adapter) CallTool(ctx context.Context, name string, args map[string]any
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = a.service.ListTopSolutions(ctx, input)
+		}
+	case "templates.list":
+		var input agent.ListTemplatesInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.ListTemplates(ctx, input)
+		}
+	case "templates.show":
+		var input agent.ShowTemplateInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.ShowTemplate(ctx, input)
 		}
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP tool %q", name)

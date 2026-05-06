@@ -21,7 +21,7 @@ var allowedSeverities = map[string]struct{}{
 //   - severities are within the allowed enum
 //   - persona skill refs resolve to loaded skills
 //   - persona/project law refs resolve and don't double-list a global law
-func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loadedPersonas []Persona) error {
+func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loadedPersonas []Persona, loadedTemplates []TaskTemplate) error {
 	if bundle.Version != 1 {
 		return fmt.Errorf("version must be 1")
 	}
@@ -44,6 +44,16 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	skillSet := slugSet(loadedSkillSlugs(loadedSkills))
 	lawSet := slugSet(loadedLawSlugs(loadedLaws))
 	personaSet := slugSet(loadedPersonaSlugs(loadedPersonas))
+	templateSet := slugSet(loadedTemplateSlugs(loadedTemplates))
+
+	for _, template := range bundle.Templates {
+		if _, ok := templateSet[template.Slug]; !ok {
+			return fmt.Errorf("templates: ref %q has no matching file", template.Slug)
+		}
+	}
+	if err := validateTemplateDefaults(bundle); err != nil {
+		return err
+	}
 
 	for _, skill := range bundle.Skills {
 		if _, ok := skillSet[skill.Slug]; !ok {
@@ -130,6 +140,55 @@ func loadedLawSlugs(items []Law) []string {
 }
 
 func loadedPersonaSlugs(items []Persona) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		out = append(out, item.Slug)
+	}
+	return out
+}
+
+// validateTemplateDefaults enforces the new default-binding model:
+//   - every template's `default:` value must be in config.template_defaults
+//   - at most one template per (default, project) pair (uniqueness)
+//
+// `project:` refs are NOT validated against bundle.Projects — that section
+// only declares declarative wiring, while the live project a template
+// scopes to may be tracked in SQLite (the runtime source of truth) and
+// never appear in the yaml. The runtime resolver falls back to the global
+// binding when a project ref does not match an active project.
+//
+// Templates without a `default:` are inactive and pass validation as-is.
+func validateTemplateDefaults(bundle Bundle) error {
+	allowed := map[string]struct{}{}
+	for _, kind := range bundle.Config.TemplateKinds() {
+		allowed[kind] = struct{}{}
+	}
+
+	type slot struct {
+		kind, project string
+	}
+	seen := map[slot]string{}
+	for _, t := range bundle.Templates {
+		if t.Default == "" {
+			continue
+		}
+		if _, ok := allowed[t.Default]; !ok {
+			return fmt.Errorf("templates.%s: default %q is not in config.template_defaults", t.Slug, t.Default)
+		}
+		key := slot{kind: t.Default, project: t.ProjectSlug}
+		if other, dup := seen[key]; dup {
+			scope := "global"
+			if t.ProjectSlug != "" {
+				scope = "project=" + t.ProjectSlug
+			}
+			return fmt.Errorf("templates.%s and templates.%s both declare default=%q (%s) — only one may", other, t.Slug, t.Default, scope)
+		}
+		seen[key] = t.Slug
+	}
+	return nil
+}
+
+func loadedTemplateSlugs(items []TaskTemplate) []string {
 	out := make([]string, 0, len(items))
 	for _, item := range items {
 		out = append(out, item.Slug)

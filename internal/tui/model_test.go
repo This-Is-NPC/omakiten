@@ -806,7 +806,7 @@ func TestModelBoardCollapsesToFocusedColumnWhenNarrow(t *testing.T) {
 	model.width = 40
 
 	view := ansi.Strip(model.View())
-	for _, want := range []string{"Column 1/2", "BACKLOG", "Backlog task"} {
+	for _, want := range []string{"lanes 1–1 / 2", "BACKLOG", "Backlog task"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("narrow board missing %q\n%s", want, view)
 		}
@@ -817,10 +817,88 @@ func TestModelBoardCollapsesToFocusedColumnWhenNarrow(t *testing.T) {
 
 	got := pressStringKey(t, model, "right")
 	view = ansi.Strip(got.View())
-	for _, want := range []string{"Column 2/2", "DEVELOPMENT", "Dev task"} {
+	for _, want := range []string{"lanes 2–2 / 2", "DEVELOPMENT", "Dev task"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("narrow board after right missing %q\n%s", want, view)
 		}
+	}
+}
+
+func TestModelBoardShowsMultipleColumnsWhenTheyFit(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	if err := store.ImportBundle(ctx, multiBucketBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	// Width that fits 2 of 4 buckets side-by-side. Workflow has Backlog,
+	// Development, Review, Done (4 buckets). The narrow path used to drop
+	// to a single column; now it should show as many as fit.
+	model.width = 80
+
+	view := ansi.Strip(model.View())
+	visibleHeaders := 0
+	for _, name := range []string{"BACKLOG", "DEVELOPMENT", "REVIEW", "DONE"} {
+		if strings.Contains(view, name) {
+			visibleHeaders++
+		}
+	}
+	if visibleHeaders < 2 {
+		t.Fatalf("expected ≥2 board columns visible, got %d:\n%s", visibleHeaders, view)
+	}
+	if !strings.Contains(view, "lanes") {
+		t.Fatalf("expected lanes scroll hint when not all columns fit:\n%s", view)
+	}
+}
+
+func TestModelBoardLaneNavigationWrapsAround(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	if err := store.ImportBundle(ctx, multiBucketBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	n := len(model.workflow.Buckets)
+	if n < 2 {
+		t.Fatalf("multiBucketBundle should produce >=2 buckets, got %d", n)
+	}
+
+	// Right past the last lane wraps to the first.
+	got := model
+	for i := 0; i < n; i++ {
+		got = pressStringKey(t, got, "right")
+	}
+	if got.colIdx != 0 {
+		t.Fatalf("after %d rights colIdx = %d, want 0 (wrap)", n, got.colIdx)
+	}
+
+	// Left from the first lane wraps to the last.
+	got = pressStringKey(t, got, "left")
+	if got.colIdx != n-1 {
+		t.Fatalf("left from first colIdx = %d, want %d (wrap)", got.colIdx, n-1)
 	}
 }
 
@@ -848,7 +926,10 @@ func TestModelConfigUsesFocusedSectionWhenNarrow(t *testing.T) {
 	got := pressRune(t, model, '4')
 
 	view := ansi.Strip(got.View())
-	for _, want := range []string{"Focused config", "Laws", "left/right switches section"} {
+	// Narrow terminals slide to show the focused kind. The default focused
+	// kind is Laws so it must be present; the hint must surface the hidden
+	// kinds and explain how to scroll.
+	for _, want := range []string{"// LAWS", "sections", "hidden:", "← / → scrolls"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("narrow config missing %q\n%s", want, view)
 		}
@@ -1013,6 +1094,23 @@ func tuiTestBundle() config.Bundle {
 			Transitions: []config.Transition{{From: 1, To: 2}},
 		}},
 	}
+}
+
+// multiBucketBundle returns a bundle with the same wiring as tuiTestBundle
+// but a 4-bucket workflow so tests can exercise the horizontal sliding
+// window in renderBoard at narrower widths.
+func multiBucketBundle() config.Bundle {
+	b := tuiTestBundle()
+	b.Workflows[0].Buckets = []config.Bucket{
+		{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
+		{ID: 2, Key: "dev", Name: "Development", Position: 2},
+		{ID: 3, Key: "review", Name: "Review", Position: 3},
+		{ID: 4, Key: "done", Name: "Done", Position: 4},
+	}
+	b.Workflows[0].Transitions = []config.Transition{
+		{From: 1, To: 2}, {From: 2, To: 3}, {From: 3, To: 4},
+	}
+	return b
 }
 
 func tuiTestTheme() config.Theme {

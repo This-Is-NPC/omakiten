@@ -46,6 +46,14 @@ func (e *BundleEditor) ConfigDir() string {
 	return filepath.Dir(e.path)
 }
 
+// RootDir is the layout root that holds both the config/ yaml directory and
+// the entity folders (skills/, laws/, personas/, templates/, themes/) as
+// siblings. New entity files (created via Add flows) land under
+// <root>/<kind>/custom/.
+func (e *BundleEditor) RootDir() string {
+	return config.ConfigRootFromYAMLPath(e.path)
+}
+
 // Load returns the current bundle as written on disk.
 func (e *BundleEditor) Load() (config.Bundle, error) {
 	bundle, err := config.LoadBundle(e.path)

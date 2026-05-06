@@ -74,25 +74,30 @@ type Model struct {
 	blockerPickerCursor int
 	blockerPickerChecks map[int64]bool
 
-	tasks        []domain.Task
-	workflow     domain.Workflow
-	dependencies []domain.TaskDependency
-	comments     []domain.Comment
-	laws         []domain.Law
-	skills       []domain.Skill
-	personas     []domain.Persona
-	entries      []domain.ContextEntry
-	tags         []domain.Tag
-	taskTagsMap  map[int64][]domain.Tag
+	tasks               []domain.Task
+	workflow            domain.Workflow
+	dependencies        []domain.TaskDependency
+	comments            []domain.Comment
+	laws                []domain.Law
+	skills              []domain.Skill
+	personas            []domain.Persona
+	templates           []config.TaskTemplate
+	themePickerOptions  []themeOption
+	configPickerOptions []configOption
+	entries                []domain.ContextEntry
+	tags                   []domain.Tag
+	taskTagsMap            map[int64][]domain.Tag
 	metrics      domain.TokenMetrics
 	selected     int
 	colIdx       int
 	cardIdx      int
 
-	entityKind    entityKind
-	entityCursors map[entityKind]int
-	entityScreen  entityScreenMode
-	entityForm    entityForm
+	entityKind         entityKind
+	entityCursors      map[entityKind]int
+	entityScroll       map[entityKind]int
+	entityKindScroll   int
+	entityScreen       entityScreenMode
+	entityForm         entityForm
 	deletePending bool
 	deleteKind    entityKind
 	deleteSlug    string
@@ -101,6 +106,11 @@ type Model struct {
 	logsSelected int
 
 	taskViewScroll int
+
+	// boardColScroll is the leftmost-visible bucket index when the board is
+	// too wide to fit all columns side-by-side. Updated via syncBoardColScroll
+	// to keep colIdx inside the visible window.
+	boardColScroll int
 
 	// boardScroll holds a per-bucket scroll offset (in cards) so long columns
 	// can be scrolled vertically without losing context when navigating between
@@ -183,6 +193,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.syncFocusedColumnScroll()
+		m.syncBoardColScroll()
+		m.syncEntityKindScroll()
 	case refreshTickMsg:
 		if m.shouldRealtimeRefresh() {
 			if err := m.refreshCurrentView(); err != nil {
@@ -323,10 +335,10 @@ func (m *Model) refreshActivityLogs() error {
 
 func (m Model) View() string {
 	if m.helpOpen {
-		return strings.Join([]string{m.renderHeader(), m.renderHelp(), m.renderHelpFooter()}, "\n")
+		return clampViewToHeight(m.height, m.renderHeader(), m.renderHelp(), m.renderHelpFooter())
 	}
 	if m.mode != modeNormal && !m.isEmbeddedCommentInput() {
-		return strings.Join([]string{m.renderHeader(), m.renderInput(), m.renderCurrentView(), m.renderFooter()}, "\n")
+		return clampViewToHeight(m.height, m.renderHeader(), m.renderInput(), m.renderCurrentView(), m.renderFooter())
 	}
 
 	parts := []string{m.renderHeader()}
@@ -334,7 +346,42 @@ func (m Model) View() string {
 		parts = append(parts, "  "+m.styles.statusBadge(m.status))
 	}
 	parts = append(parts, m.renderCurrentView(), m.renderFooter())
-	return strings.Join(parts, "\n")
+	return clampViewToHeight(m.height, parts...)
+}
+
+// clampViewToHeight joins the segments of a view (header → middle → footer)
+// and ensures the result never exceeds the terminal height. When the joined
+// output is too tall, the trailing segment (footer) is preserved as the
+// bottom anchor and the middle segments are truncated from the bottom — so
+// the top-of-screen header and the keybinding footer always stay visible.
+//
+// Without this clamp the alt-screen renderer would scroll the top off the
+// terminal whenever a view exceeds the available rows (e.g. the config view
+// with five entity columns), making nav tabs and the project header invisible.
+func clampViewToHeight(height int, segments ...string) string {
+	output := strings.Join(segments, "\n")
+	if height <= 0 {
+		return output
+	}
+	lines := strings.Split(output, "\n")
+	if len(lines) <= height {
+		return output
+	}
+	if len(segments) < 2 {
+		return strings.Join(lines[:height], "\n")
+	}
+	footer := strings.Split(segments[len(segments)-1], "\n")
+	body := strings.Split(strings.Join(segments[:len(segments)-1], "\n"), "\n")
+	budget := height - len(footer)
+	if budget <= 0 {
+		// Footer alone exceeds the terminal — fall back to a plain top clamp
+		// so something always renders rather than producing an empty screen.
+		return strings.Join(lines[:height], "\n")
+	}
+	if len(body) > budget {
+		body = body[:budget]
+	}
+	return strings.Join(append(body, footer...), "\n")
 }
 
 func (m Model) availableWidth() int {
@@ -437,22 +484,28 @@ func (m *Model) handleBoardKey(msg tea.KeyMsg) {
 			m.moveSelectedToColumn(m.colIdx - 1)
 			return
 		}
-		if m.colIdx > 0 {
-			m.colIdx--
+		// Plain navigation wraps the same way cycleEntityKind does on the
+		// config view: stepping past the first lane lands on the last.
+		// moveMode keeps its bounded behavior so dragging a task off the
+		// edge stays an explicit no-op.
+		if n := len(m.workflow.Buckets); n > 0 {
+			m.colIdx = (m.colIdx - 1 + n) % n
 			m.clampCardIdx()
 			m.syncSelectedFromBoard()
 			m.syncFocusedColumnScroll()
+			m.syncBoardColScroll()
 		}
 	case "right", "l":
 		if m.moveMode {
 			m.moveSelectedToColumn(m.colIdx + 1)
 			return
 		}
-		if m.colIdx < len(m.workflow.Buckets)-1 {
-			m.colIdx++
+		if n := len(m.workflow.Buckets); n > 0 {
+			m.colIdx = (m.colIdx + 1) % n
 			m.clampCardIdx()
 			m.syncSelectedFromBoard()
 			m.syncFocusedColumnScroll()
+			m.syncBoardColScroll()
 		}
 	case "up", "k":
 		if m.cardIdx > 0 {
@@ -1408,6 +1461,7 @@ func (m *Model) refresh() error {
 	// The store returns identity-level fields only (id, key, name, severity).
 	// Merge frontmatter + body + source_path from the on-disk bundle so the
 	// detail views and the $EDITOR shell-out have the file path they need.
+	var templates []config.TaskTemplate
 	if m.repos.Editor != nil {
 		bundle, err := m.repos.Editor.Load()
 		if err != nil {
@@ -1416,6 +1470,9 @@ func (m *Model) refresh() error {
 		skills = enrichSkillsFromBundle(skills, bundle)
 		laws = enrichLawsFromBundle(laws, bundle)
 		personas = enrichPersonasFromBundle(personas, bundle)
+		// Templates live only in the bundle (no SQLite materialization), so
+		// the TUI mirrors them straight from disk on every refresh.
+		templates = append([]config.TaskTemplate(nil), bundle.Templates...)
 	}
 	entries, err := m.repos.Entries.ListContextEntries(m.ctx, m.project.ID)
 	if err != nil {
@@ -1445,6 +1502,7 @@ func (m *Model) refresh() error {
 	m.laws = laws
 	m.skills = skills
 	m.personas = personas
+	m.templates = templates
 	m.entries = entries
 	m.tags = allTags
 	m.taskTagsMap = taskTagsMap
@@ -1604,6 +1662,62 @@ func (m Model) boardViewportRows() int {
 	return rows
 }
 
+// boardColumnCapacity returns how many board columns fit side-by-side at the
+// current width using the same column-inner sizing as the full layout.
+// Returns 1 even on very narrow terminals (one column always renders).
+func (m Model) boardColumnCapacity(layout boardLayout) int {
+	if layout.columnInner <= 0 {
+		return 1
+	}
+	available := m.availableWidth()
+	per := layout.columnInner + 2 // +2 for the border on either side
+	if per <= 0 {
+		return 1
+	}
+	// First column doesn't need a leading gap; each additional column adds 1.
+	cap := (available + 1) / (per + 1)
+	if cap < 1 {
+		cap = 1
+	}
+	return cap
+}
+
+// scrollIntoView slides start so that focused stays in the [start, start+cap)
+// window. Persistent — callers store the returned value so tabbing keeps the
+// previous scroll position when the focused column already fits in view.
+func scrollIntoView(start, focused, total, cap int) int {
+	if cap >= total {
+		return 0
+	}
+	if focused < start {
+		start = focused
+	}
+	if focused >= start+cap {
+		start = focused - cap + 1
+	}
+	if start < 0 {
+		start = 0
+	}
+	if start > total-cap {
+		start = total - cap
+	}
+	return start
+}
+
+// syncBoardColScroll keeps boardColScroll aligned so the focused bucket stays
+// inside the currently-visible horizontal window.
+func (m *Model) syncBoardColScroll() {
+	n := len(m.workflow.Buckets)
+	if n == 0 {
+		m.boardColScroll = 0
+		return
+	}
+	layout := m.computeBoardLayout(n)
+	cap := m.boardColumnCapacity(layout)
+	focused := clampInt(m.colIdx, 0, n-1)
+	m.boardColScroll = scrollIntoView(m.boardColScroll, focused, n, cap)
+}
+
 func (m Model) renderBoard() string {
 	if len(m.workflow.Buckets) == 0 {
 		return "\n" + indentBlock(m.styles.panel.Render("No workflow buckets. Add buckets in the active workflow config."), 2)
@@ -1620,30 +1734,19 @@ func (m Model) renderBoard() string {
 	columnStyle := m.styles.kanbanColumn.Width(layout.columnInner)
 	emptyStyle := m.styles.empty.Width(layout.columnInner)
 
-	// Trigger narrow fallback when the side-by-side layout no longer fits.
-	totalSideBySide := n*(layout.columnInner+2) + (n - 1)
-	if totalSideBySide > m.availableWidth() {
-		current := clampInt(m.colIdx, 0, n-1)
-		bucket := m.workflow.Buckets[current]
-		bucketTasks := tasksByBucket[bucket.Key]
-		selectedIdx := -1
-		if len(bucketTasks) > 0 {
-			selectedIdx = clampInt(m.cardIdx, 0, len(bucketTasks)-1)
-		}
-		board := columnStyle.Render(m.renderKanbanCell(bucket, bucketTasks, true, selectedIdx, layout, emptyStyle))
-		hint := m.styles.hint.Render(fmt.Sprintf("Column %d/%d · left/right switches lane", current+1, n))
-		var sb strings.Builder
-		sb.WriteString("\n")
-		sb.WriteString(indentBlock(board+"\n"+hint, 2))
-		if totalTasks == 0 {
-			sb.WriteString("\n\n")
-			sb.WriteString(indentBlock(m.renderEmptyBoardHint(), 2))
-		}
-		return sb.String()
+	cap := m.boardColumnCapacity(layout)
+	if cap > n {
+		cap = n
+	}
+	start := scrollIntoView(m.boardColScroll, clampInt(m.colIdx, 0, n-1), n, cap)
+	end := start + cap
+	if end > n {
+		end = n
 	}
 
-	cells := make([]string, 0, n)
-	for i, bucket := range m.workflow.Buckets {
+	cells := make([]string, 0, end-start)
+	for i := start; i < end; i++ {
+		bucket := m.workflow.Buckets[i]
 		bucketTasks := tasksByBucket[bucket.Key]
 		selectedIdx := -1
 		if i == m.colIdx {
@@ -1665,6 +1768,12 @@ func (m Model) renderBoard() string {
 	var sb strings.Builder
 	sb.WriteString("\n")
 	sb.WriteString(indentBlock(board, 2))
+	if cap < n {
+		// Surface a hint listing the off-screen lanes so the user knows
+		// left/right keeps scrolling beyond the visible window.
+		hint := fmt.Sprintf("lanes %d–%d / %d · left/right scrolls", start+1, end, n)
+		sb.WriteString("\n  " + m.styles.hint.Render(hint))
+	}
 	if totalTasks == 0 {
 		sb.WriteString("\n\n")
 		sb.WriteString(indentBlock(m.renderEmptyBoardHint(), 2))
@@ -2573,6 +2682,111 @@ func (m Model) renderGraph() string {
 }
 
 func (m Model) renderConfig() string {
+	header := m.renderConfigHeader()
+
+	// Entity lists are rendered as separate, individually-bordered columns
+	// joined horizontally with a 1-space gap — same shape as the kanban
+	// board, so the user navigates with the same mental model: scroll the
+	// horizontal window so the focused column is always in view.
+	allKinds := configEntityKinds()
+	cap := m.entityKindCapacity()
+	if cap > len(allKinds) {
+		cap = len(allKinds)
+	}
+	focused := indexOfEntityKind(allKinds, m.entityKind)
+	start := scrollIntoView(m.entityKindScroll, focused, len(allKinds), cap)
+	end := start + cap
+	if end > len(allKinds) {
+		end = len(allKinds)
+	}
+	visible := allKinds[start:end]
+
+	// Compute the actual viewport budget for cards inside each column by
+	// measuring everything else first. Static chrome estimates would drift
+	// every time the runtime/tokens table grows — using the rendered header
+	// height is exact regardless of how many rows the tables produce.
+	viewport := m.entityCardsViewport(header)
+
+	columnStyle := m.styles.kanbanColumn.Width(entityListWidth)
+	cells := make([]string, 0, len(visible))
+	for _, kind := range visible {
+		cells = append(cells, columnStyle.Render(m.renderEntityCellWithViewport(kind, viewport)))
+	}
+
+	parts := make([]string, 0, len(cells)*2)
+	for i, cell := range cells {
+		parts = append(parts, cell)
+		if i < len(cells)-1 {
+			parts = append(parts, " ")
+		}
+	}
+	lists := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+
+	if cap < len(allKinds) {
+		// Show which sections are off-screen so the user knows ← / → keeps
+		// scrolling beyond the visible window.
+		hidden := []string{}
+		for i, k := range allKinds {
+			if i >= start && i < end {
+				continue
+			}
+			hidden = append(hidden, k.plural())
+		}
+		if len(hidden) > 0 {
+			lists += "\n  " + m.styles.hint.Render(fmt.Sprintf("sections %d–%d / %d · hidden: %s · ← / → scrolls", start+1, end, len(allKinds), strings.Join(hidden, ", ")))
+		}
+	}
+
+	return "\n" + indentBlock(header+"\n\n"+lists, 2)
+}
+
+// configEntityKinds is the canonical horizontal order of the config entity
+// columns — used both by renderConfig and the entity-kind scroll math.
+func configEntityKinds() []entityKind {
+	return []entityKind{entityKindLaw, entityKindPersona, entityKindSkill, entityKindTemplate, entityKindTag}
+}
+
+func indexOfEntityKind(kinds []entityKind, target entityKind) int {
+	for i, k := range kinds {
+		if k == target {
+			return i
+		}
+	}
+	return 0
+}
+
+// entityKindCapacity returns how many entity columns fit horizontally at the
+// current width. Identical accounting to the board: each column needs its
+// inner width plus 2 for the border, and a 1-cell gap between neighbors.
+func (m Model) entityKindCapacity() int {
+	available := m.availableWidth()
+	per := entityListWidth + 2
+	if per <= 0 {
+		return 1
+	}
+	cap := (available + 1) / (per + 1)
+	if cap < 1 {
+		cap = 1
+	}
+	return cap
+}
+
+// syncEntityKindScroll keeps entityKindScroll aligned so the focused entity
+// kind stays inside the visible horizontal window.
+func (m *Model) syncEntityKindScroll() {
+	allKinds := configEntityKinds()
+	cap := m.entityKindCapacity()
+	if cap > len(allKinds) {
+		cap = len(allKinds)
+	}
+	focused := indexOfEntityKind(allKinds, m.entityKind)
+	m.entityKindScroll = scrollIntoView(m.entityKindScroll, focused, len(allKinds), cap)
+}
+
+// renderConfigHeader produces the runtime/tokens summary tables that sit at
+// the top of the config view. Extracted so the viewport calculator can reuse
+// the exact rendered height instead of approximating it.
+func (m Model) renderConfigHeader() string {
 	bucketKeys := make([]string, 0, len(m.workflow.Buckets))
 	for _, bucket := range m.workflow.Buckets {
 		bucketKeys = append(bucketKeys, bucket.Key)
@@ -2610,75 +2824,55 @@ func (m Model) renderConfig() string {
 	)
 	widths := []int{configLabelWidth, configValueWidth}
 
-	var header string
 	switch {
 	case m.availableWidth() >= configTableWidth*2+configGap:
 		left := renderGridTable(leftRows, widths, m.styles.border)
 		right := renderGridTable(rightRows, widths, m.styles.border)
-		header = lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", configGap), right)
+		return lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", configGap), right)
 	case m.availableWidth() >= configTableWidth:
 		left := renderGridTable(leftRows, widths, m.styles.border)
 		right := renderGridTable(rightRows, widths, m.styles.border)
-		header = left + "\n\n" + right
+		return left + "\n\n" + right
 	default:
 		valueW := clampInt(m.availableWidth()-configLabelWidth-3, 8, configValueWidth)
 		narrowWidths := []int{configLabelWidth, valueW}
 		all := append(append([][]string{}, leftRows...), rightRows...)
-		header = renderGridTable(all, narrowWidths, m.styles.border)
+		return renderGridTable(all, narrowWidths, m.styles.border)
 	}
+}
 
-	// Entity lists share borders via renderRowGrid so the bottom of CONFIG
-	// follows the same shared-junction grid pattern as the runtime/budget cells
-	// above it.
-	// 3-col: 1 + 28 + 1 + 28 + 1 + 28 + 1 = 88
-	// 4-col: 1 + 28 + 1 + 28 + 1 + 28 + 1 + 28 + 1 = 117
+// entityCardsViewport returns the number of rows available for cards inside
+// each entity column at the bottom of the config view. It measures the
+// rendered runtime/tokens header explicitly and subtracts the screen-level
+// chrome (header, footer, optional status, blank lines, column borders, and
+// column kicker+separator) so the viewport tracks the real layout instead
+// of relying on a static guess that drifts as the tables grow.
+func (m Model) entityCardsViewport(headerBlock string) int {
+	if m.height <= 0 {
+		return 0
+	}
 	const (
-		entityGridTotal3 = entityListWidth*3 + 4
-		entityGridTotal4 = entityListWidth*4 + 5
+		columnBorders     = 2 // top + bottom border of the kanbanColumn cell
+		columnHeaderRows  = 2 // kicker + separator inside the cell
+		blanksBeforeGrid  = 2 // "\n\n" between header tables and the grid
+		viewLeadingBlank  = 1 // leading "\n" prepended in renderConfig
+		footerLines       = 2 // newline + indented footer text
 	)
-	var lists string
-	switch {
-	case m.availableWidth() >= entityGridTotal4:
-		lists = renderRowGrid(
-			[]string{
-				m.renderEntityCell(entityKindLaw),
-				m.renderEntityCell(entityKindPersona),
-				m.renderEntityCell(entityKindSkill),
-				m.renderEntityCell(entityKindTag),
-			},
-			[]int{entityListWidth, entityListWidth, entityListWidth, entityListWidth},
-			m.styles.border,
-		)
-	case m.availableWidth() >= entityGridTotal3:
-		lists = renderRowGrid(
-			[]string{
-				m.renderEntityCell(entityKindLaw),
-				m.renderEntityCell(entityKindPersona),
-				m.renderEntityCell(entityKindSkill),
-			},
-			[]int{entityListWidth, entityListWidth, entityListWidth},
-			m.styles.border,
-		)
-		if m.entityKind == entityKindTag {
-			lists += "\n\n" + renderRowGrid(
-				[]string{m.renderEntityCell(entityKindTag)},
-				[]int{clampInt(m.availableWidth()-2, 16, entityListWidth)},
-				m.styles.border,
-			)
-		}
-	default:
-		// Narrow terminals see a single focused column wrapped in its own grid
-		// cell so the border treatment stays consistent with the wide layout.
-		focusedText := m.styles.hint.Render(fmt.Sprintf("Focused config · %s · left/right switches section", m.entityKind.plural()))
-		cellWidth := clampInt(m.availableWidth()-2, 16, entityListWidth)
-		lists = focusedText + "\n\n" + renderRowGrid(
-			[]string{m.renderEntityCell(m.entityKind)},
-			[]int{cellWidth},
-			m.styles.border,
-		)
+
+	headerLines := strings.Count(headerBlock, "\n") + 1
+	screenHeader := strings.Count(m.renderHeader(), "\n") + 1
+	statusLine := 0
+	if m.status != "" && !m.isEmbeddedCommentInput() {
+		statusLine = 2 // newline separator + the status line
 	}
 
-	return "\n" + indentBlock(header+"\n\n"+lists, 2)
+	chrome := screenHeader + statusLine + viewLeadingBlank + headerLines +
+		blanksBeforeGrid + columnBorders + columnHeaderRows + footerLines
+	rows := m.height - chrome
+	if rows < 4 {
+		return 0
+	}
+	return rows
 }
 
 func (m Model) renderFooter() string {
@@ -2702,6 +2896,12 @@ func (m Model) renderFooter() string {
 		text = "j/k scroll  e edit in $EDITOR  d arm delete  p skills (persona)  r refresh  esc config"
 	case m.entityScreen == entityScreenSkillPicker:
 		text = "up/down move  pgup/pgdn scroll  space toggle  enter on '+': new skill  ctrl+s save  esc cancel"
+	case m.entityScreen == entityScreenThemePicker:
+		text = "up/down move  pgup/pgdn scroll  enter apply (hot-reload)  esc cancel"
+	case m.entityScreen == entityScreenConfigPicker:
+		text = "up/down move  pgup/pgdn scroll  enter select (restart required)  esc cancel"
+	case m.entityScreen == entityScreenDefaultPicker:
+		text = "up/down move  pgup/pgdn scroll  enter assign (clears prior owner)  esc cancel"
 	case m.moveMode:
 		text = "left/right move task to lane  esc cancel  q quit"
 	case m.view == 0:
@@ -2711,7 +2911,7 @@ func (m Model) renderFooter() string {
 	case m.view == 3 && m.entityKind == entityKindTag:
 		text = "left/right section  up/down select  d arm delete (orphan)  D delete all orphans  ? help"
 	case m.view == 3:
-		text = "left/right section  up/down select  enter open  n new  e edit  d arm delete  ? help"
+		text = "left/right section  up/down select  enter open  n new  e edit  d arm delete  a default(template)  t theme  c config  ? help"
 	case m.view == 4:
 		text = "left/right switch view  up/down select row  pgup/pgdn scroll  g/G top/bottom  r refresh  ? help"
 	case m.view == 2:
