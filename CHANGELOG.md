@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### TUI internals
+
+* **components:** introduce `internal/tui/components/{viewport,picker,detailscreen}` sub-packages — Bubble Tea sub-models that own cursor + scroll state for the surfaces previously tracked as flat fields on the root `Model`. No user-facing behaviour change; visual output, key bindings and screen contracts are preserved exactly. The sub-packages have standalone unit tests so the components can evolve independently of the screens that embed them.
+
 ## [0.6.0](https://github.com/This-Is-NPC/omakiten/compare/v0.5.0...v0.6.0) (2026-05-06)
 
 
