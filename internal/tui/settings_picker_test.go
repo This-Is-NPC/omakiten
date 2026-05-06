@@ -75,7 +75,8 @@ func newPickerModel(t *testing.T) (Model, string) {
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
+		Tasks: store,
+		Workflow: app.NewWorkflowServiceFromStore(store), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
 	}, tuiTestTheme(), token.ApproxCounter{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)

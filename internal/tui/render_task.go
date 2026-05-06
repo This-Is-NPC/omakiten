@@ -421,7 +421,7 @@ func (m *Model) saveTaskForm() {
 	var err error
 	switch m.taskScreen {
 	case taskScreenCreate:
-		task, err = app.NewTaskService(m.repos.Tasks).Add(m.ctx, m.project, title, description, m.taskPriority, "backlog")
+		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow).Add(m.ctx, m.project, title, description, m.taskPriority, "")
 	case taskScreenEdit:
 		current, ok := m.activeTask()
 		if !ok {
@@ -433,7 +433,7 @@ func (m *Model) saveTaskForm() {
 			p := domain.Priority(m.taskPriority)
 			update.Priority = &p
 		}
-		task, err = app.NewTaskService(m.repos.Tasks).Edit(m.ctx, m.project, current.ID, update)
+		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow).Edit(m.ctx, m.project, current.ID, update)
 	default:
 		return
 	}

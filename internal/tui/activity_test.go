@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"omakiten/internal/app"
 	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
 )
@@ -39,6 +40,7 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
+		Workflow:        app.NewWorkflowServiceFromStore(store),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
@@ -98,6 +100,7 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
+		Workflow:        app.NewWorkflowServiceFromStore(store),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
@@ -180,6 +183,7 @@ func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
+		Workflow:        app.NewWorkflowServiceFromStore(store),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
@@ -227,6 +231,7 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
+		Workflow:        app.NewWorkflowServiceFromStore(store),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,

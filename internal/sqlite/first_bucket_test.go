@@ -4,10 +4,11 @@ import (
 	"context"
 	"testing"
 
+	"omakiten/internal/app"
 	"omakiten/internal/config"
 )
 
-func TestCreateTaskDefaultsToFirstWorkflowBucket(t *testing.T) {
+func TestWorkflowServiceCreateTaskDefaultsToFirstBucket(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, t.TempDir()+"/test.db")
 	if err != nil {
@@ -43,7 +44,8 @@ func TestCreateTaskDefaultsToFirstWorkflowBucket(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	task, err := store.CreateTask(ctx, project.ID, "Nova task", "Desc", "", "")
+	workflow := app.NewWorkflowServiceFromStore(store)
+	task, err := workflow.CreateTask(ctx, project.ID, "Nova task", "Desc", "", "")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}

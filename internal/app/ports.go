@@ -23,12 +23,37 @@ type ConfigRepository interface {
 	ContextSettings(ctx context.Context) (domain.ContextSettings, error)
 }
 
+// TaskRepository persists task rows. The methods are deliberately policy-free:
+// CreateTask requires a non-empty bucket key (default-bucket selection lives in
+// app.WorkflowService) and MoveTask is a pure persist + task.moved emission
+// (transition allowed?, guards, and task.completed-on-final live in
+// app.WorkflowService too).
 type TaskRepository interface {
 	CreateTask(ctx context.Context, projectID int64, title, description, priority, bucketKey string) (domain.Task, error)
 	ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter) ([]domain.Task, error)
 	MoveTask(ctx context.Context, projectID, taskID int64, targetBucketKey string) (domain.Task, error)
 	UpdateTask(ctx context.Context, projectID, taskID int64, update domain.TaskUpdate) (domain.Task, error)
 	TaskCount(ctx context.Context, projectID int64) (int64, error)
+}
+
+// WorkflowRepository exposes the workflow primitives the app's WorkflowService
+// composes into the move/create policy. Each method is a pure read against the
+// active workflow — no side effects, no policy decisions.
+type WorkflowRepository interface {
+	ResolveActiveBucket(ctx context.Context, key string) (domain.Bucket, error)
+	IsFinalActiveBucket(ctx context.Context, bucketID int64) (bool, error)
+	TransitionAllowed(ctx context.Context, fromBucketID, toBucketID int64) (bool, error)
+	LoadTransitionGuards(ctx context.Context, fromBucketID, toBucketID int64) ([]domain.TransitionGuard, error)
+	CurrentTaskBucket(ctx context.Context, projectID, taskID int64) (int64, string, error)
+}
+
+// GuardEvaluationRepository exposes the read-only counts the workflow guards
+// need. Split from WorkflowRepository so guard evaluation can be stubbed
+// independently in tests.
+type GuardEvaluationRepository interface {
+	ListTaskBlockerBuckets(ctx context.Context, projectID, taskID int64) ([]domain.TaskBlocker, error)
+	CountTaskComments(ctx context.Context, projectID, taskID int64) (int, error)
+	CountTaskCommentsTagged(ctx context.Context, projectID, taskID int64, tagName string) (int, error)
 }
 
 type CommentRepository interface {

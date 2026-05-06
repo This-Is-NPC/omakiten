@@ -52,7 +52,7 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				task, err := app.NewTaskService(rt.store).Edit(ctx, project, taskID, update)
+				task, err := app.NewTaskServiceFromStore(rt.store).Edit(ctx, project, taskID, update)
 				if err != nil {
 					return nil, err
 				}

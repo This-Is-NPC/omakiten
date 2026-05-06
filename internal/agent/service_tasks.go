@@ -19,7 +19,7 @@ func (s *Service) ContinueTask(ctx context.Context, input ContinueTaskInput) (Co
 		return ContinueTaskResponse{}, err
 	}
 
-	tasks, err := app.NewTaskService(s.repo).List(ctx, project, domain.TaskFilter{})
+	tasks, err := app.NewTaskServiceFromStore(s.repo).List(ctx, project, domain.TaskFilter{})
 	if err != nil {
 		return ContinueTaskResponse{}, err
 	}
@@ -61,7 +61,7 @@ func (s *Service) ListTasks(ctx context.Context, input ListTasksInput) (ListTask
 	if err != nil {
 		return ListTasksResponse{}, err
 	}
-	tasks, err := app.NewTaskService(s.repo).List(ctx, project, domain.TaskFilter{BucketKey: strings.TrimSpace(input.BucketKey)})
+	tasks, err := app.NewTaskServiceFromStore(s.repo).List(ctx, project, domain.TaskFilter{BucketKey: strings.TrimSpace(input.BucketKey)})
 	if err != nil {
 		return ListTasksResponse{}, err
 	}
@@ -82,7 +82,7 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 	template := s.activeTaskTemplate(project.Slug)
 
 	if !input.SkipSimilarityCheck && !input.Confirmed {
-		tasks, err := app.NewTaskService(s.repo).List(ctx, project, domain.TaskFilter{})
+		tasks, err := app.NewTaskServiceFromStore(s.repo).List(ctx, project, domain.TaskFilter{})
 		if err != nil {
 			return CreateTaskResponse{}, err
 		}
@@ -104,7 +104,7 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 		}
 	}
 
-	task, err := app.NewTaskService(s.repo).Add(ctx, project, title, description, strings.TrimSpace(input.Priority), strings.TrimSpace(input.BucketKey))
+	task, err := app.NewTaskServiceFromStore(s.repo).Add(ctx, project, title, description, strings.TrimSpace(input.Priority), strings.TrimSpace(input.BucketKey))
 	if err != nil {
 		return CreateTaskResponse{}, err
 	}
@@ -129,7 +129,7 @@ func (s *Service) MoveTask(ctx context.Context, input MoveTaskInput) (MoveTaskRe
 	if err != nil {
 		return MoveTaskResponse{}, err
 	}
-	task, err := app.NewTaskService(s.repo).Move(ctx, project, input.TaskID, input.BucketKey)
+	task, err := app.NewTaskServiceFromStore(s.repo).Move(ctx, project, input.TaskID, input.BucketKey)
 	if err != nil {
 		return MoveTaskResponse{}, err
 	}

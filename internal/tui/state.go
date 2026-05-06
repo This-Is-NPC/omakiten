@@ -39,6 +39,7 @@ const (
 // swapped without touching this file.
 type Repositories struct {
 	Tasks        app.TaskRepository
+	Workflow     *app.WorkflowService
 	Comments     app.CommentRepository
 	Dependencies app.DependencyRepository
 	Entries      app.ContextEntryRepository

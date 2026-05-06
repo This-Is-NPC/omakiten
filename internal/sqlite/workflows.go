@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 
 	"omakiten/internal/domain"
@@ -95,6 +96,115 @@ func (s *Store) activeBucketID(ctx context.Context, key string) (int64, error) {
 	return activeBucketIDQuery(ctx, s.db, key)
 }
 
+// ResolveActiveBucket looks up a bucket by key in the active workflow and
+// returns its full record (id, key, name, position). The app workflow service
+// uses this both to resolve the target of a move and to drive the default
+// bucket selection on task create.
+func (s *Store) ResolveActiveBucket(ctx context.Context, key string) (domain.Bucket, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT workflow_buckets.id, workflow_buckets.key, workflow_buckets.name, workflow_buckets.position
+FROM workflow_buckets
+JOIN workflows ON workflows.id = workflow_buckets.workflow_id
+JOIN config_bundles ON config_bundles.id = workflows.bundle_id
+JOIN settings ON settings.bundle_id = config_bundles.id
+  AND settings.key = 'workflow.active'
+  AND settings.value = workflows.key
+  AND settings.active = 1
+WHERE workflow_buckets.key = ?
+  AND workflow_buckets.active = 1
+  AND workflows.active = 1
+  AND config_bundles.active = 1
+ORDER BY config_bundles.id DESC, workflows.id DESC
+LIMIT 1
+`, key)
+	var bucket domain.Bucket
+	if err := row.Scan(&bucket.ID, &bucket.Key, &bucket.Name, &bucket.Position); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Bucket{}, domain.NewError(domain.ErrBucketNotFound, "bucket not found", map[string]any{"bucket": key})
+		}
+		return domain.Bucket{}, err
+	}
+	return bucket, nil
+}
+
+// IsFinalActiveBucket reports whether the given bucket is the highest-position
+// bucket in its active workflow. The app workflow service uses this to decide
+// whether a move into a bucket should additionally emit a task.completed event.
+func (s *Store) IsFinalActiveBucket(ctx context.Context, bucketID int64) (bool, error) {
+	var workflowID int64
+	var position int
+	err := s.db.QueryRowContext(ctx, `SELECT workflow_id, position FROM workflow_buckets WHERE id = ? AND active = 1`, bucketID).Scan(&workflowID, &position)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	var maxPosition int
+	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(position), 0) FROM workflow_buckets WHERE workflow_id = ? AND active = 1`, workflowID).Scan(&maxPosition); err != nil {
+		return false, err
+	}
+	return position == maxPosition, nil
+}
+
+// TransitionAllowed reports whether the active workflow declares a transition
+// between the two bucket ids. App-layer workflow policy decides what to do
+// when the answer is false (typically a domain.ErrWorkflowInvalidTransition).
+func (s *Store) TransitionAllowed(ctx context.Context, fromBucketID, toBucketID int64) (bool, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(1)
+FROM workflow_transitions
+WHERE from_bucket_id = ? AND to_bucket_id = ? AND active = 1
+`, fromBucketID, toBucketID).Scan(&count)
+	return count > 0, err
+}
+
+// LoadTransitionGuards returns the parsed guard list attached to the matching
+// transition. An empty list (or "no rows") means no guards apply.
+func (s *Store) LoadTransitionGuards(ctx context.Context, fromBucketID, toBucketID int64) ([]domain.TransitionGuard, error) {
+	var guardsJSON string
+	err := s.db.QueryRowContext(ctx, `
+SELECT guards_json FROM workflow_transitions
+WHERE from_bucket_id = ? AND to_bucket_id = ? AND active = 1
+LIMIT 1
+`, fromBucketID, toBucketID).Scan(&guardsJSON)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if guardsJSON == "" {
+		return nil, nil
+	}
+	var guards []domain.TransitionGuard
+	if err := json.Unmarshal([]byte(guardsJSON), &guards); err != nil {
+		return nil, err
+	}
+	return guards, nil
+}
+
+// CurrentTaskBucket returns the bucket id and key for a task. Returns
+// ErrTaskNotFound if the task is not in the project.
+func (s *Store) CurrentTaskBucket(ctx context.Context, projectID, taskID int64) (int64, string, error) {
+	var bucketID int64
+	var bucketKey string
+	err := s.db.QueryRowContext(ctx, `
+SELECT COALESCE(t.bucket_id, 0), COALESCE(wb.key, '')
+FROM tasks t
+LEFT JOIN workflow_buckets wb ON wb.id = t.bucket_id
+WHERE t.project_id = ? AND t.id = ?
+`, projectID, taskID).Scan(&bucketID, &bucketKey)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, "", domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
+		}
+		return 0, "", err
+	}
+	return bucketID, bucketKey, nil
+}
+
 func activeBucketIDTx(ctx context.Context, tx *sql.Tx, key string) (int64, error) {
 	return activeBucketIDQuery(ctx, tx, key)
 }
@@ -129,16 +239,6 @@ LIMIT 1
 	return id, err
 }
 
-func transitionAllowed(ctx context.Context, tx *sql.Tx, fromBucketID, toBucketID int64) (bool, error) {
-	var count int
-	err := tx.QueryRowContext(ctx, `
-SELECT COUNT(1)
-FROM workflow_transitions
-WHERE from_bucket_id = ? AND to_bucket_id = ? AND active = 1
-`, fromBucketID, toBucketID).Scan(&count)
-	return count > 0, err
-}
-
 // bucketKeyByIDTx resolves a bucket id to its key inside the active workflow.
 // Returns "" when the id is 0 (task had no bucket yet — happens only with
 // legacy data; the move event records "" as the source bucket then).
@@ -157,22 +257,3 @@ func bucketKeyByIDTx(ctx context.Context, tx *sql.Tx, bucketID int64) (string, e
 	return key, nil
 }
 
-// isFinalBucketTx reports whether the given bucket is the highest-position
-// bucket in its active workflow — i.e. the destination that triggers a
-// task.completed event in addition to task.moved.
-func isFinalBucketTx(ctx context.Context, tx *sql.Tx, bucketID int64) (bool, error) {
-	var workflowID int64
-	var position int
-	err := tx.QueryRowContext(ctx, `SELECT workflow_id, position FROM workflow_buckets WHERE id = ? AND active = 1`, bucketID).Scan(&workflowID, &position)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, nil
-		}
-		return false, err
-	}
-	var maxPosition int
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(position), 0) FROM workflow_buckets WHERE workflow_id = ? AND active = 1`, workflowID).Scan(&maxPosition); err != nil {
-		return false, err
-	}
-	return position == maxPosition, nil
-}

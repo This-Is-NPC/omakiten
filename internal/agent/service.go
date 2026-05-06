@@ -21,6 +21,8 @@ type Repository interface {
 	app.ProjectRepository
 	app.ConfigRepository
 	app.TaskRepository
+	app.WorkflowRepository
+	app.GuardEvaluationRepository
 	app.CommentRepository
 	app.EventRepository
 	app.DependencyRepository
@@ -83,7 +85,7 @@ func (s *Service) resolveProject(ctx context.Context, selector ProjectSelector) 
 }
 
 func (s *Service) projectState(ctx context.Context, project domain.ProjectContext) ([]domain.Task, domain.Workflow, []domain.ContextEntry, error) {
-	tasks, err := app.NewTaskService(s.repo).List(ctx, project, domain.TaskFilter{})
+	tasks, err := app.NewTaskServiceFromStore(s.repo).List(ctx, project, domain.TaskFilter{})
 	if err != nil {
 		return nil, domain.Workflow{}, nil, err
 	}

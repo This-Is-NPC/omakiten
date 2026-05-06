@@ -10,16 +10,14 @@ import (
 	"omakiten/internal/domain"
 )
 
+// CreateTask inserts a task into the given bucket and emits the matching
+// task.created event in the same transaction. The bucket key must be
+// non-empty — default-bucket selection is an app-layer concern (see
+// app.WorkflowService.ResolveDefaultBucket); the store enforces only the
+// foreign-key existence of the bucket in the active workflow.
 func (s *Store) CreateTask(ctx context.Context, projectID int64, title, description, priority, bucketKey string) (domain.Task, error) {
 	if bucketKey == "" {
-		workflow, err := s.ActiveWorkflow(ctx)
-		if err != nil {
-			return domain.Task{}, err
-		}
-		if len(workflow.Buckets) == 0 {
-			return domain.Task{}, domain.NewError(domain.ErrConfigInvalid, "active workflow has no buckets", nil)
-		}
-		bucketKey = workflow.Buckets[0].Key
+		return domain.Task{}, domain.NewError(domain.ErrValidation, "bucket key is required", nil)
 	}
 
 	bucketID, err := s.activeBucketID(ctx, bucketKey)
@@ -129,6 +127,11 @@ func taskOrderClause(sort domain.TaskSort) string {
 	return column + " " + direction + ", tasks.id ASC"
 }
 
+// MoveTask is the pure-persistence move: it resolves the target bucket id,
+// updates the task row, and emits a task.moved event when the bucket actually
+// changes. Workflow policy (transition allowed?, guards, task.completed on
+// final bucket) lives in app.WorkflowService — this method does not enforce
+// any of those rules so the adapter stays decision-free.
 func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBucketKey string) (domain.Task, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -147,19 +150,6 @@ func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBuc
 	targetBucketID, err := activeBucketIDTx(ctx, tx, targetBucketKey)
 	if err != nil {
 		return domain.Task{}, err
-	}
-
-	if currentBucketID != targetBucketID {
-		allowed, err := transitionAllowed(ctx, tx, currentBucketID, targetBucketID)
-		if err != nil {
-			return domain.Task{}, err
-		}
-		if !allowed {
-			return domain.Task{}, domain.NewError(domain.ErrWorkflowInvalidTransition, "transition not allowed", map[string]any{"task_id": taskID, "from": currentBucketID, "to": targetBucketID})
-		}
-		if err := evaluateTransitionGuards(ctx, tx, projectID, taskID, currentBucketID, targetBucketID); err != nil {
-			return domain.Task{}, err
-		}
 	}
 
 	currentBucketKey, err := bucketKeyByIDTx(ctx, tx, currentBucketID)
@@ -181,17 +171,6 @@ RETURNING id, project_id, bucket_id, title, description, priority, created_at
 		movePayload := fmt.Sprintf(`{"from":%q,"to":%q}`, currentBucketKey, targetBucketKey)
 		if _, err := insertTaskEvent(ctx, tx, projectID, taskID, domain.EventTypeTaskMoved, "", movePayload); err != nil {
 			return domain.Task{}, err
-		}
-
-		isFinal, err := isFinalBucketTx(ctx, tx, targetBucketID)
-		if err != nil {
-			return domain.Task{}, err
-		}
-		if isFinal {
-			completedPayload := fmt.Sprintf(`{"bucket":%q}`, targetBucketKey)
-			if _, err := insertTaskEvent(ctx, tx, projectID, taskID, domain.EventTypeTaskCompleted, "", completedPayload); err != nil {
-				return domain.Task{}, err
-			}
 		}
 	}
 

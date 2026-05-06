@@ -56,3 +56,13 @@ type TaskDependency struct {
 	TaskID          int64 `json:"task_id"`
 	DependsOnTaskID int64 `json:"depends_on_task_id"`
 }
+
+// TaskBlocker is a denormalized view of a single task this task depends on,
+// used by the blockers_in workflow guard to report which blockers still sit
+// in disallowed buckets. BucketKey is "" when the blocker has no active
+// bucket (legacy data only).
+type TaskBlocker struct {
+	TaskID    int64
+	Title     string
+	BucketKey string
+}

@@ -13,7 +13,7 @@ func TestTaskServiceAdd(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewTaskService(store)
+	service := NewTaskServiceFromStore(store)
 
 	_, err := service.Add(ctx, project.Context(), "", "", "", "")
 	if err == nil {
@@ -58,7 +58,7 @@ func TestTaskServiceList(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewTaskService(store)
+	service := NewTaskServiceFromStore(store)
 	if _, err := service.Add(ctx, project.Context(), "A", "", "", "backlog"); err != nil {
 		t.Fatalf("Add(A) error = %v", err)
 	}
@@ -88,7 +88,7 @@ func TestTaskServiceMove(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewTaskService(store)
+	service := NewTaskServiceFromStore(store)
 
 	_, err := service.Move(ctx, project.Context(), 0, "dev")
 	if err == nil {
@@ -121,7 +121,7 @@ func TestTaskServiceEdit(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewTaskService(store)
+	service := NewTaskServiceFromStore(store)
 
 	_, err := service.Edit(ctx, project.Context(), 0, domain.TaskUpdate{})
 	if err == nil {

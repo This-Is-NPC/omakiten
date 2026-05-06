@@ -12,7 +12,7 @@ func TestDependencyServiceAdd(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskService(store)
+	taskService := NewTaskServiceFromStore(store)
 	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "", "backlog")
 	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "", "backlog")
 	taskC, _ := taskService.Add(ctx, project.Context(), "C", "", "", "backlog")
@@ -70,7 +70,7 @@ func TestDependencyServiceRemove(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskService(store)
+	taskService := NewTaskServiceFromStore(store)
 	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "", "backlog")
 	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "", "backlog")
 
@@ -95,7 +95,7 @@ func TestDependencyServiceList(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskService(store)
+	taskService := NewTaskServiceFromStore(store)
 	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "", "backlog")
 	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "", "backlog")
 
