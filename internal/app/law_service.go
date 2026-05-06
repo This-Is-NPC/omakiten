@@ -9,12 +9,14 @@ import (
 )
 
 type LawService struct {
-	repo   ConfigRepository
-	editor *BundleEditor
+	repo    ConfigRepository
+	editor  *BundleEditor
+	files   EntityFileWriter
+	slugger Slugifier
 }
 
-func NewLawService(repo ConfigRepository, editor *BundleEditor) *LawService {
-	return &LawService{repo: repo, editor: editor}
+func NewLawService(repo ConfigRepository, editor *BundleEditor, files EntityFileWriter, slugger Slugifier) *LawService {
+	return &LawService{repo: repo, editor: editor, files: files, slugger: slugger}
 }
 
 // LawListFilter narrows the laws returned by List. Empty values mean "any".
@@ -93,13 +95,13 @@ func (s *LawService) Show(ctx context.Context, slug string) (domain.Law, error) 
 }
 
 func (s *LawService) Add(ctx context.Context, input domain.LawInput) (domain.Law, error) {
-	slug, name, severity, body, scope, project, persona, err := normalizeLawInput(input)
+	slug, name, severity, body, scope, project, persona, err := normalizeLawInput(input, s.slugger)
 	if err != nil {
 		return domain.Law{}, err
 	}
 
-	path := config.CustomEntityFilePath(s.editor.RootDir(), config.EntityKindLaw, slug)
-	bytes, err := config.LawFileBytes(config.Law{Slug: slug, Name: name, Severity: string(severity), Body: body})
+	path := s.files.CustomEntityFilePath(s.editor.RootDir(), config.EntityKindLaw, slug)
+	bytes, err := s.files.LawFileBytes(config.Law{Slug: slug, Name: name, Severity: string(severity), Body: body})
 	if err != nil {
 		return domain.Law{}, configError(path, err)
 	}
@@ -185,9 +187,9 @@ func (s *LawService) Edit(ctx context.Context, slug string, update domain.LawUpd
 
 	path := current.SourcePath
 	if path == "" {
-		path = config.EntityFilePath(s.editor.RootDir(), config.EntityKindLaw, slug)
+		path = s.files.EntityFilePath(s.editor.RootDir(), config.EntityKindLaw, slug)
 	}
-	bytes, err := config.LawFileBytes(law)
+	bytes, err := s.files.LawFileBytes(law)
 	if err != nil {
 		return domain.Law{}, configError(path, err)
 	}
@@ -209,7 +211,7 @@ func (s *LawService) Remove(ctx context.Context, slug string) error {
 	}
 	path := current.SourcePath
 	if path == "" {
-		path = config.EntityFilePath(s.editor.RootDir(), config.EntityKindLaw, slug)
+		path = s.files.EntityFilePath(s.editor.RootDir(), config.EntityKindLaw, slug)
 	}
 	_, err = s.editor.ApplyWithFiles(ctx, func(bundle *config.Bundle) error {
 		bundle.Laws = filterLawsBySlug(bundle.Laws, slug)
@@ -224,7 +226,7 @@ func (s *LawService) Remove(ctx context.Context, slug string) error {
 	return err
 }
 
-func normalizeLawInput(input domain.LawInput) (string, string, domain.LawSeverity, string, domain.LawScope, string, string, error) {
+func normalizeLawInput(input domain.LawInput, slugger Slugifier) (string, string, domain.LawSeverity, string, domain.LawScope, string, string, error) {
 	severity, err := normalizeSeverity(input.Severity)
 	if err != nil {
 		return "", "", "", "", "", "", "", err
@@ -237,7 +239,7 @@ func normalizeLawInput(input domain.LawInput) (string, string, domain.LawSeverit
 	if slug == "" {
 		return "", "", "", "", "", "", "", domain.NewError(domain.ErrValidation, "law key is required", nil)
 	}
-	if config.Slugify(slug) != slug {
+	if slugger.Slugify(slug) != slug {
 		return "", "", "", "", "", "", "", domain.NewError(domain.ErrValidation, "law key must be lowercase, hyphenated", map[string]any{"slug": slug})
 	}
 	name := strings.TrimSpace(input.Name)

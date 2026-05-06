@@ -407,11 +407,11 @@ func (m *Model) deleteEntity(kind entityKind, slug string) {
 	var err error
 	switch kind {
 	case entityKindLaw:
-		err = app.NewLawService(m.repos.Config, m.repos.Editor).Remove(m.ctx, slug)
+		err = app.NewLawService(m.repos.Config, m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger).Remove(m.ctx, slug)
 	case entityKindSkill:
-		err = app.NewSkillService(m.repos.Config, m.repos.Editor).Remove(m.ctx, slug)
+		err = app.NewSkillService(m.repos.Config, m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger).Remove(m.ctx, slug)
 	case entityKindPersona:
-		err = app.NewPersonaService(m.repos.Config, m.repos.Editor).Remove(m.ctx, slug)
+		err = app.NewPersonaService(m.repos.Config, m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger).Remove(m.ctx, slug)
 	}
 	if err != nil {
 		m.status = err.Error()

@@ -10,11 +10,12 @@ import (
 )
 
 type ConfigService struct {
-	repo ConfigRepository
+	repo   ConfigRepository
+	bundle BundleStore
 }
 
-func NewConfigService(repo ConfigRepository) *ConfigService {
-	return &ConfigService{repo: repo}
+func NewConfigService(repo ConfigRepository, bundle BundleStore) *ConfigService {
+	return &ConfigService{repo: repo, bundle: bundle}
 }
 
 func (s *ConfigService) Import(ctx context.Context, path string) (bundle config.Bundle, hash string, err error) {
@@ -29,13 +30,13 @@ func (s *ConfigService) Import(ctx context.Context, path string) (bundle config.
 		finish(status, errMsg)
 	}()
 
-	bundle, err = config.LoadBundle(path)
+	bundle, err = s.bundle.LoadBundle(path)
 	if err != nil {
 		err = configError(path, err)
 		return
 	}
 
-	hash, err = config.HashFile(path)
+	hash, err = s.bundle.HashFile(path)
 	if err != nil {
 		err = configError(path, err)
 		return

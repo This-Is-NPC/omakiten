@@ -11,7 +11,7 @@ import (
 
 	"omakiten/internal/activity"
 	"omakiten/internal/app"
-	"omakiten/internal/config"
+	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
 	"omakiten/internal/output"
 	"omakiten/internal/paths"
@@ -47,19 +47,22 @@ func (r *runtime) close() {
 // bundleEditor builds the editor the way every config-touching service expects
 // it. Centralising this lets the call sites stay one line each.
 func (r *runtime) bundleEditor() *app.BundleEditor {
-	return app.NewBundleEditor(r.store, r.configPath)
+	return app.NewBundleEditor(r.store, configstore.New(), r.configPath)
 }
 
 func (r *runtime) skillService() *app.SkillService {
-	return app.NewSkillService(r.store, r.bundleEditor())
+	store := configstore.New()
+	return app.NewSkillService(r.store, r.bundleEditor(), store, store)
 }
 
 func (r *runtime) lawService() *app.LawService {
-	return app.NewLawService(r.store, r.bundleEditor())
+	store := configstore.New()
+	return app.NewLawService(r.store, r.bundleEditor(), store, store)
 }
 
 func (r *runtime) personaService() *app.PersonaService {
-	return app.NewPersonaService(r.store, r.bundleEditor())
+	store := configstore.New()
+	return app.NewPersonaService(r.store, r.bundleEditor(), store, store)
 }
 
 func (r *runtime) contextService() *app.ContextService {
@@ -121,12 +124,13 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		return nil, err
 	}
 
+	cs := configstore.New()
 	if materializeConfig {
-		rootDir := config.ConfigRootFromYAMLPath(configPath)
-		if err := config.MigrateLayout(rootDir); err != nil {
+		rootDir := cs.ConfigRootFromYAMLPath(configPath)
+		if err := cs.MigrateLayout(rootDir); err != nil {
 			return nil, err
 		}
-		if err := config.EnsureDefaultFiles(rootDir); err != nil {
+		if err := cs.EnsureDefaultFiles(rootDir); err != nil {
 			return nil, err
 		}
 	}
@@ -137,7 +141,7 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 	}
 
 	if materializeConfig {
-		if _, _, err := app.NewConfigService(store).Import(ctx, configPath); err != nil {
+		if _, _, err := app.NewConfigService(store, cs).Import(ctx, configPath); err != nil {
 			_ = store.Close()
 			return nil, err
 		}

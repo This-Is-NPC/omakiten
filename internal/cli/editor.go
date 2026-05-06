@@ -10,6 +10,7 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/config"
+	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
 )
 
@@ -23,7 +24,7 @@ func openEditorAndReimport(ctx context.Context, rt *runtime, path string) error 
 	if err := runEditorCommand(path); err != nil {
 		return domain.NewError(domain.ErrEditorFailed, err.Error(), map[string]any{"path": path})
 	}
-	editor := app.NewBundleEditor(rt.store, rt.configPath)
+	editor := app.NewBundleEditor(rt.store, configstore.New(), rt.configPath)
 	if _, err := editor.Apply(ctx, nil); err != nil {
 		return err
 	}

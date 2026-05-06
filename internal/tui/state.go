@@ -46,6 +46,9 @@ type Repositories struct {
 	Config       app.ConfigRepository
 	Tags         app.TagRepository
 	Editor       *app.BundleEditor
+	BundleStore  app.BundleStore
+	EntityFiles  app.EntityFileWriter
+	Slugger      app.Slugifier
 	ActivityLogs activity.ActivityLogRepository
 	Events       app.EventRepository
 }

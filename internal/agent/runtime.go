@@ -7,6 +7,7 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/config"
+	"omakiten/internal/configstore"
 	"omakiten/internal/paths"
 	"omakiten/internal/sqlite"
 )
@@ -36,11 +37,12 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 
-	rootDir := config.ConfigRootFromYAMLPath(configPath)
-	if err := config.MigrateLayout(rootDir); err != nil {
+	cs := configstore.New()
+	rootDir := cs.ConfigRootFromYAMLPath(configPath)
+	if err := cs.MigrateLayout(rootDir); err != nil {
 		return nil, err
 	}
-	if err := config.EnsureDefaultFiles(rootDir); err != nil {
+	if err := cs.EnsureDefaultFiles(rootDir); err != nil {
 		return nil, err
 	}
 
@@ -49,7 +51,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 
-	bundle, _, err := app.NewConfigService(store).Import(ctx, configPath)
+	bundle, _, err := app.NewConfigService(store, cs).Import(ctx, configPath)
 	if err != nil {
 		_ = store.Close()
 		return nil, err

@@ -116,7 +116,7 @@ func (m *Model) savePersonaPicker() {
 			slugs = append(slugs, skill.Key)
 		}
 	}
-	service := app.NewPersonaService(m.repos.Config, m.repos.Editor)
+	service := app.NewPersonaService(m.repos.Config, m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger)
 	keys := slugs
 	if _, err := service.Edit(m.ctx, m.entityForm.slug, domain.PersonaUpdate{SkillKeys: &keys}); err != nil {
 		m.status = err.Error()

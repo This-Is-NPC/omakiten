@@ -101,14 +101,14 @@ func slugFromName(value string) string {
 func scaffoldEntity(ctx context.Context, kind entityKind, repos Repositories, name string) (string, error) {
 	switch kind {
 	case entityKindSkill:
-		service := app.NewSkillService(repos.Config, repos.Editor)
+		service := app.NewSkillService(repos.Config, repos.Editor, repos.EntityFiles, repos.Slugger)
 		skill, err := service.Add(ctx, domain.SkillInput{Name: name})
 		if err != nil {
 			return "", err
 		}
 		return skill.SourcePath, nil
 	case entityKindLaw:
-		service := app.NewLawService(repos.Config, repos.Editor)
+		service := app.NewLawService(repos.Config, repos.Editor, repos.EntityFiles, repos.Slugger)
 		law, err := service.Add(ctx, domain.LawInput{
 			Key:      slugFromName(name),
 			Name:     name,
@@ -120,7 +120,7 @@ func scaffoldEntity(ctx context.Context, kind entityKind, repos Repositories, na
 		}
 		return law.SourcePath, nil
 	case entityKindPersona:
-		service := app.NewPersonaService(repos.Config, repos.Editor)
+		service := app.NewPersonaService(repos.Config, repos.Editor, repos.EntityFiles, repos.Slugger)
 		persona, err := service.Add(ctx, domain.PersonaInput{Name: name})
 		if err != nil {
 			return "", err

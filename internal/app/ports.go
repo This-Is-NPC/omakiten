@@ -105,3 +105,35 @@ type ErrorRepository interface {
 	ConfirmSolution(ctx context.Context, solutionID int64, success bool) (domain.Solution, error)
 	ListTopSolutions(ctx context.Context, limit int) ([]domain.Solution, error)
 }
+
+// BundleStore is the adapter port for reading/writing the bundled config and
+// the generic atomic-write helper. The app layer talks to this instead of
+// reaching into `internal/config`'s I/O functions directly so that the
+// hexagonal direction stays inward (app → port → adapter → disk).
+type BundleStore interface {
+	LoadBundle(path string) (config.Bundle, error)
+	SaveBundle(path string, bundle config.Bundle) error
+	HashFile(path string) (string, error)
+	WriteAtomic(path string, data []byte) error
+	EnsureDefaultFiles(rootDir string) error
+	MigrateLayout(rootDir string) error
+	ConfigRootFromYAMLPath(path string) string
+}
+
+// EntityFileWriter renders per-entity (.md) file payloads and resolves their
+// canonical disk paths. Used by the law/persona/skill services to stage
+// FileOps that the BundleEditor then writes through atomically.
+type EntityFileWriter interface {
+	LawFileBytes(law config.Law) ([]byte, error)
+	PersonaFileBytes(persona config.Persona) ([]byte, error)
+	SkillFileBytes(skill config.Skill) ([]byte, error)
+	EntityFilePath(rootDir string, kind config.EntityKind, slug string) string
+	CustomEntityFilePath(rootDir string, kind config.EntityKind, slug string) string
+}
+
+// Slugifier normalizes user-supplied identifiers into the kebab-case
+// filename convention shared by every entity kind. Lives behind a port so
+// the slug-policy isn't owned by a specific config-package import.
+type Slugifier interface {
+	Slugify(value string) string
+}

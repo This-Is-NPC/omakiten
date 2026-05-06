@@ -12,6 +12,7 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/config"
+	"omakiten/internal/configstore"
 	"omakiten/internal/paths"
 	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
@@ -65,7 +66,8 @@ func newPickerModel(t *testing.T) (Model, string) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	editor := app.NewBundleEditor(store, configPath)
+	files := configstore.New()
+	editor := app.NewBundleEditor(store, files, configPath)
 	if _, err := editor.Apply(ctx, nil); err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
 	}
@@ -77,6 +79,7 @@ func newPickerModel(t *testing.T) (Model, string) {
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks: store,
 		Workflow: app.NewWorkflowServiceFromStore(store), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
+		BundleStore: files, EntityFiles: files, Slugger: files,
 	}, tuiTestTheme(), token.ApproxCounter{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)

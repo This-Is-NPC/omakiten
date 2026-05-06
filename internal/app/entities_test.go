@@ -9,6 +9,7 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/config"
+	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
 	"omakiten/internal/sqlite"
 )
@@ -16,6 +17,7 @@ import (
 type entitiesFixture struct {
 	store      *sqlite.Store
 	editor     *app.BundleEditor
+	files      *configstore.Adapter
 	configPath string
 	configDir  string
 }
@@ -38,12 +40,13 @@ func newEntitiesFixture(t *testing.T) entitiesFixture {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	editor := app.NewBundleEditor(store, configPath)
+	files := configstore.New()
+	editor := app.NewBundleEditor(store, files, configPath)
 	if _, err := editor.Apply(ctx, nil); err != nil {
 		t.Fatalf("editor.Apply(seed) error = %v", err)
 	}
 
-	return entitiesFixture{store: store, editor: editor, configPath: configPath, configDir: configDir}
+	return entitiesFixture{store: store, editor: editor, files: files, configPath: configPath, configDir: configDir}
 }
 
 func fixtureBundle() config.Bundle {
@@ -95,7 +98,7 @@ func TestLawServiceLifecycle(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fixture := newEntitiesFixture(t)
-			service := app.NewLawService(fixture.store, fixture.editor)
+			service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files)
 
 			law, err := service.Add(ctx, tt.input)
 			if tt.wantErr != "" {
@@ -137,7 +140,7 @@ func TestLawServiceLifecycle(t *testing.T) {
 func TestLawServiceRejectsDuplicateKey(t *testing.T) {
 	ctx := context.Background()
 	fixture := newEntitiesFixture(t)
-	service := app.NewLawService(fixture.store, fixture.editor)
+	service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files)
 
 	if _, err := service.Add(ctx, domain.LawInput{Key: "scope", Severity: domain.LawSeverityError, Body: "anything"}); err == nil {
 		t.Fatalf("Add(duplicate) error = nil, want validation error")
@@ -158,7 +161,7 @@ func TestSkillServiceLifecycle(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fixture := newEntitiesFixture(t)
-			service := app.NewSkillService(fixture.store, fixture.editor)
+			service := app.NewSkillService(fixture.store, fixture.editor, fixture.files, fixture.files)
 			skill, err := service.Add(ctx, tt.input)
 			if tt.wantErr != "" {
 				assertCoded(t, err, tt.wantErr)
@@ -187,7 +190,7 @@ func TestSkillServiceLifecycle(t *testing.T) {
 func TestSkillServiceRemovePrunesPersonaReferences(t *testing.T) {
 	ctx := context.Background()
 	fixture := newEntitiesFixture(t)
-	service := app.NewSkillService(fixture.store, fixture.editor)
+	service := app.NewSkillService(fixture.store, fixture.editor, fixture.files, fixture.files)
 
 	if err := service.Remove(ctx, "go"); err != nil {
 		t.Fatalf("Remove() error = %v", err)
@@ -209,8 +212,8 @@ func TestSkillServiceRemovePrunesPersonaReferences(t *testing.T) {
 func TestPersonaServiceLifecycle(t *testing.T) {
 	ctx := context.Background()
 	fixture := newEntitiesFixture(t)
-	service := app.NewPersonaService(fixture.store, fixture.editor)
-	skillService := app.NewSkillService(fixture.store, fixture.editor)
+	service := app.NewPersonaService(fixture.store, fixture.editor, fixture.files, fixture.files)
+	skillService := app.NewSkillService(fixture.store, fixture.editor, fixture.files, fixture.files)
 	skills, err := skillService.List(ctx)
 	if err != nil {
 		t.Fatalf("List(skills) error = %v", err)
@@ -251,7 +254,7 @@ func TestBundleEditorRoundTripsValidation(t *testing.T) {
 	ctx := context.Background()
 	fixture := newEntitiesFixture(t)
 
-	skillService := app.NewSkillService(fixture.store, fixture.editor)
+	skillService := app.NewSkillService(fixture.store, fixture.editor, fixture.files, fixture.files)
 	if _, err := skillService.Add(ctx, domain.SkillInput{Key: "tui", Name: "TUI"}); err != nil {
 		t.Fatalf("SkillService.Add() error = %v", err)
 	}
@@ -308,7 +311,7 @@ func TestBundleEditorApplyRollsBackOnFailure(t *testing.T) {
 func TestLawServiceEditNoChange(t *testing.T) {
 	ctx := context.Background()
 	fixture := newEntitiesFixture(t)
-	service := app.NewLawService(fixture.store, fixture.editor)
+	service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files)
 
 	// Edit with no changes should return current law
 	law, err := service.Show(ctx, "scope")
@@ -327,7 +330,7 @@ func TestLawServiceEditNoChange(t *testing.T) {
 func TestSkillServiceEditNoChange(t *testing.T) {
 	ctx := context.Background()
 	fixture := newEntitiesFixture(t)
-	service := app.NewSkillService(fixture.store, fixture.editor)
+	service := app.NewSkillService(fixture.store, fixture.editor, fixture.files, fixture.files)
 
 	skill, err := service.Show(ctx, "go")
 	if err != nil {
@@ -345,7 +348,7 @@ func TestSkillServiceEditNoChange(t *testing.T) {
 func TestPersonaServiceEditNoChange(t *testing.T) {
 	ctx := context.Background()
 	fixture := newEntitiesFixture(t)
-	service := app.NewPersonaService(fixture.store, fixture.editor)
+	service := app.NewPersonaService(fixture.store, fixture.editor, fixture.files, fixture.files)
 
 	persona, err := service.Show(ctx, "backend-agent")
 	if err != nil {
