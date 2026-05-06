@@ -138,6 +138,14 @@ func (m *Model) clampEntityCursor() {
 // stored in m.entityScroll, kept in sync with the cursor by
 // syncFocusedEntityScroll on every cursor move.
 func (m Model) renderEntityCell(kind entityKind) string {
+	return m.renderEntityCellWithViewport(kind, m.entityViewportRows())
+}
+
+// renderEntityCellWithViewport is the same as renderEntityCell but lets the
+// caller override the viewport budget — useful for renderConfig where we
+// already know how many rows the tables above the entity grid consumed and
+// can pass an exact number rather than relying on a static chrome estimate.
+func (m Model) renderEntityCellWithViewport(kind entityKind, viewport int) string {
 	focused := m.entityKind == kind
 	count := m.entityCount(kind)
 	cursor := m.selectedEntityIndex(kind)
@@ -165,7 +173,6 @@ func (m Model) renderEntityCell(kind entityKind) string {
 		heights[index] = strings.Count(rendered[index], "\n") + 1
 	}
 
-	viewport := m.entityViewportRows()
 	if viewport <= 0 {
 		// Height unknown — render every card; the renderer-level clamp keeps
 		// the view bounded by terminal height.
@@ -215,25 +222,12 @@ func (m Model) renderEntityCell(kind entityKind) string {
 }
 
 // entityViewportRows is the number of terminal rows available for entity
-// cards inside one column, after the screen chrome and the column's own
-// header rows. Returns 0 when the height is unknown — callers treat 0 as
-// "no scroll" and render every card.
+// cards inside one column. Computed from the actual rendered config header
+// (runtime/tokens tables) rather than a static chrome guess so the value
+// stays correct as the tables grow or shrink across themes/data sets.
+// Returns 0 when the height is unknown.
 func (m Model) entityViewportRows() int {
-	if m.height <= 0 {
-		return 0
-	}
-	// 5 screen header + 1 leading blank + 2 footer + 2 column header (kicker
-	// + separator) + ~12 for the runtime/tokens tables that sit above the
-	// entity grid in the config view.
-	chrome := 22
-	if m.status != "" {
-		chrome++
-	}
-	rows := m.height - chrome
-	if rows < 4 {
-		return 0
-	}
-	return rows
+	return m.entityCardsViewport(m.renderConfigHeader())
 }
 
 // syncFocusedEntityScroll keeps m.entityScroll[focusedKind] aligned so the
@@ -588,6 +582,7 @@ func (m *Model) cycleEntityKind(delta int) {
 	current = (current + delta + len(kinds)) % len(kinds)
 	m.entityKind = kinds[current]
 	m.syncFocusedEntityScroll()
+	m.syncEntityKindScroll()
 }
 
 func (m *Model) moveEntityCursor(delta int) {

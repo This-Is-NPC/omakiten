@@ -263,6 +263,39 @@ func TestCustomBadgeAppearsOnUserOverride(t *testing.T) {
 	}
 }
 
+func TestConfigSlidesHorizontalWindowToKeepFocusedColumnVisible(t *testing.T) {
+	model, _, _ := newEntityModel(t)
+	// Width that fits exactly 3 columns (3*30 + 2 gaps = 92, plus ~4 padding).
+	// allKinds = [Laws, Personas, Skills, Templates, Tags] — 5 total.
+	model.width = 100
+	model.height = 60
+
+	got := pressRune(t, model, '4')
+	view := got.View()
+	// Initial focus is Laws (index 0) — visible window starts at 0.
+	for _, want := range []string{"// LAWS", "// PERSONAS", "// SKILLS"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("initial config missing %q\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "// TEMPLATES") {
+		t.Fatalf("initial window should not include Templates yet:\n%s", view)
+	}
+
+	// Press right twice to move focus to Skills (still in window), then right
+	// again to move to Templates — window must slide so Templates is visible.
+	got = pressStringKey(t, got, "right")
+	got = pressStringKey(t, got, "right")
+	got = pressStringKey(t, got, "right")
+	view = got.View()
+	if !strings.Contains(view, "// TEMPLATES") {
+		t.Fatalf("Templates column should be visible after sliding right:\n%s", view)
+	}
+	if strings.Contains(view, "// LAWS") {
+		t.Fatalf("Laws should have scrolled out of view:\n%s", view)
+	}
+}
+
 func TestEntityCellShowsScrollHintsWhenColumnExceedsViewport(t *testing.T) {
 	model, _, _ := newEntityModel(t)
 	// Build many synthetic skills so the column is taller than any viewport.
@@ -272,7 +305,7 @@ func TestEntityCellShowsScrollHintsWhenColumnExceedsViewport(t *testing.T) {
 	}
 	model.entityKind = entityKindSkill
 	model.width = 200
-	model.height = 32 // chrome=22 leaves a viewport of ~10 rows ≈ 3 cards
+	model.height = 50 // viewport math measures the runtime header live; need more headroom
 	if model.entityCursors == nil {
 		model.entityCursors = map[entityKind]int{}
 	}

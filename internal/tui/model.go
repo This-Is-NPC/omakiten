@@ -93,11 +93,12 @@ type Model struct {
 	colIdx       int
 	cardIdx      int
 
-	entityKind    entityKind
-	entityCursors map[entityKind]int
-	entityScroll  map[entityKind]int
-	entityScreen  entityScreenMode
-	entityForm    entityForm
+	entityKind         entityKind
+	entityCursors      map[entityKind]int
+	entityScroll       map[entityKind]int
+	entityKindScroll   int
+	entityScreen       entityScreenMode
+	entityForm         entityForm
 	deletePending bool
 	deleteKind    entityKind
 	deleteSlug    string
@@ -106,6 +107,11 @@ type Model struct {
 	logsSelected int
 
 	taskViewScroll int
+
+	// boardColScroll is the leftmost-visible bucket index when the board is
+	// too wide to fit all columns side-by-side. Updated via syncBoardColScroll
+	// to keep colIdx inside the visible window.
+	boardColScroll int
 
 	// boardScroll holds a per-bucket scroll offset (in cards) so long columns
 	// can be scrolled vertically without losing context when navigating between
@@ -188,6 +194,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.syncFocusedColumnScroll()
+		m.syncBoardColScroll()
+		m.syncEntityKindScroll()
 	case refreshTickMsg:
 		if m.shouldRealtimeRefresh() {
 			if err := m.refreshCurrentView(); err != nil {
@@ -482,6 +490,7 @@ func (m *Model) handleBoardKey(msg tea.KeyMsg) {
 			m.clampCardIdx()
 			m.syncSelectedFromBoard()
 			m.syncFocusedColumnScroll()
+			m.syncBoardColScroll()
 		}
 	case "right", "l":
 		if m.moveMode {
@@ -493,6 +502,7 @@ func (m *Model) handleBoardKey(msg tea.KeyMsg) {
 			m.clampCardIdx()
 			m.syncSelectedFromBoard()
 			m.syncFocusedColumnScroll()
+			m.syncBoardColScroll()
 		}
 	case "up", "k":
 		if m.cardIdx > 0 {
@@ -1652,6 +1662,62 @@ func (m Model) boardViewportRows() int {
 	return rows
 }
 
+// boardColumnCapacity returns how many board columns fit side-by-side at the
+// current width using the same column-inner sizing as the full layout.
+// Returns 1 even on very narrow terminals (one column always renders).
+func (m Model) boardColumnCapacity(layout boardLayout) int {
+	if layout.columnInner <= 0 {
+		return 1
+	}
+	available := m.availableWidth()
+	per := layout.columnInner + 2 // +2 for the border on either side
+	if per <= 0 {
+		return 1
+	}
+	// First column doesn't need a leading gap; each additional column adds 1.
+	cap := (available + 1) / (per + 1)
+	if cap < 1 {
+		cap = 1
+	}
+	return cap
+}
+
+// scrollIntoView slides start so that focused stays in the [start, start+cap)
+// window. Persistent — callers store the returned value so tabbing keeps the
+// previous scroll position when the focused column already fits in view.
+func scrollIntoView(start, focused, total, cap int) int {
+	if cap >= total {
+		return 0
+	}
+	if focused < start {
+		start = focused
+	}
+	if focused >= start+cap {
+		start = focused - cap + 1
+	}
+	if start < 0 {
+		start = 0
+	}
+	if start > total-cap {
+		start = total - cap
+	}
+	return start
+}
+
+// syncBoardColScroll keeps boardColScroll aligned so the focused bucket stays
+// inside the currently-visible horizontal window.
+func (m *Model) syncBoardColScroll() {
+	n := len(m.workflow.Buckets)
+	if n == 0 {
+		m.boardColScroll = 0
+		return
+	}
+	layout := m.computeBoardLayout(n)
+	cap := m.boardColumnCapacity(layout)
+	focused := clampInt(m.colIdx, 0, n-1)
+	m.boardColScroll = scrollIntoView(m.boardColScroll, focused, n, cap)
+}
+
 func (m Model) renderBoard() string {
 	if len(m.workflow.Buckets) == 0 {
 		return "\n" + indentBlock(m.styles.panel.Render("No workflow buckets. Add buckets in the active workflow config."), 2)
@@ -1668,30 +1734,19 @@ func (m Model) renderBoard() string {
 	columnStyle := m.styles.kanbanColumn.Width(layout.columnInner)
 	emptyStyle := m.styles.empty.Width(layout.columnInner)
 
-	// Trigger narrow fallback when the side-by-side layout no longer fits.
-	totalSideBySide := n*(layout.columnInner+2) + (n - 1)
-	if totalSideBySide > m.availableWidth() {
-		current := clampInt(m.colIdx, 0, n-1)
-		bucket := m.workflow.Buckets[current]
-		bucketTasks := tasksByBucket[bucket.Key]
-		selectedIdx := -1
-		if len(bucketTasks) > 0 {
-			selectedIdx = clampInt(m.cardIdx, 0, len(bucketTasks)-1)
-		}
-		board := columnStyle.Render(m.renderKanbanCell(bucket, bucketTasks, true, selectedIdx, layout, emptyStyle))
-		hint := m.styles.hint.Render(fmt.Sprintf("Column %d/%d · left/right switches lane", current+1, n))
-		var sb strings.Builder
-		sb.WriteString("\n")
-		sb.WriteString(indentBlock(board+"\n"+hint, 2))
-		if totalTasks == 0 {
-			sb.WriteString("\n\n")
-			sb.WriteString(indentBlock(m.renderEmptyBoardHint(), 2))
-		}
-		return sb.String()
+	cap := m.boardColumnCapacity(layout)
+	if cap > n {
+		cap = n
+	}
+	start := scrollIntoView(m.boardColScroll, clampInt(m.colIdx, 0, n-1), n, cap)
+	end := start + cap
+	if end > n {
+		end = n
 	}
 
-	cells := make([]string, 0, n)
-	for i, bucket := range m.workflow.Buckets {
+	cells := make([]string, 0, end-start)
+	for i := start; i < end; i++ {
+		bucket := m.workflow.Buckets[i]
 		bucketTasks := tasksByBucket[bucket.Key]
 		selectedIdx := -1
 		if i == m.colIdx {
@@ -1713,6 +1768,12 @@ func (m Model) renderBoard() string {
 	var sb strings.Builder
 	sb.WriteString("\n")
 	sb.WriteString(indentBlock(board, 2))
+	if cap < n {
+		// Surface a hint listing the off-screen lanes so the user knows
+		// left/right keeps scrolling beyond the visible window.
+		hint := fmt.Sprintf("lanes %d–%d / %d · left/right scrolls", start+1, end, n)
+		sb.WriteString("\n  " + m.styles.hint.Render(hint))
+	}
 	if totalTasks == 0 {
 		sb.WriteString("\n\n")
 		sb.WriteString(indentBlock(m.renderEmptyBoardHint(), 2))
@@ -2621,6 +2682,111 @@ func (m Model) renderGraph() string {
 }
 
 func (m Model) renderConfig() string {
+	header := m.renderConfigHeader()
+
+	// Entity lists are rendered as separate, individually-bordered columns
+	// joined horizontally with a 1-space gap — same shape as the kanban
+	// board, so the user navigates with the same mental model: scroll the
+	// horizontal window so the focused column is always in view.
+	allKinds := configEntityKinds()
+	cap := m.entityKindCapacity()
+	if cap > len(allKinds) {
+		cap = len(allKinds)
+	}
+	focused := indexOfEntityKind(allKinds, m.entityKind)
+	start := scrollIntoView(m.entityKindScroll, focused, len(allKinds), cap)
+	end := start + cap
+	if end > len(allKinds) {
+		end = len(allKinds)
+	}
+	visible := allKinds[start:end]
+
+	// Compute the actual viewport budget for cards inside each column by
+	// measuring everything else first. Static chrome estimates would drift
+	// every time the runtime/tokens table grows — using the rendered header
+	// height is exact regardless of how many rows the tables produce.
+	viewport := m.entityCardsViewport(header)
+
+	columnStyle := m.styles.kanbanColumn.Width(entityListWidth)
+	cells := make([]string, 0, len(visible))
+	for _, kind := range visible {
+		cells = append(cells, columnStyle.Render(m.renderEntityCellWithViewport(kind, viewport)))
+	}
+
+	parts := make([]string, 0, len(cells)*2)
+	for i, cell := range cells {
+		parts = append(parts, cell)
+		if i < len(cells)-1 {
+			parts = append(parts, " ")
+		}
+	}
+	lists := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+
+	if cap < len(allKinds) {
+		// Show which sections are off-screen so the user knows ← / → keeps
+		// scrolling beyond the visible window.
+		hidden := []string{}
+		for i, k := range allKinds {
+			if i >= start && i < end {
+				continue
+			}
+			hidden = append(hidden, k.plural())
+		}
+		if len(hidden) > 0 {
+			lists += "\n  " + m.styles.hint.Render(fmt.Sprintf("sections %d–%d / %d · hidden: %s · ← / → scrolls", start+1, end, len(allKinds), strings.Join(hidden, ", ")))
+		}
+	}
+
+	return "\n" + indentBlock(header+"\n\n"+lists, 2)
+}
+
+// configEntityKinds is the canonical horizontal order of the config entity
+// columns — used both by renderConfig and the entity-kind scroll math.
+func configEntityKinds() []entityKind {
+	return []entityKind{entityKindLaw, entityKindPersona, entityKindSkill, entityKindTemplate, entityKindTag}
+}
+
+func indexOfEntityKind(kinds []entityKind, target entityKind) int {
+	for i, k := range kinds {
+		if k == target {
+			return i
+		}
+	}
+	return 0
+}
+
+// entityKindCapacity returns how many entity columns fit horizontally at the
+// current width. Identical accounting to the board: each column needs its
+// inner width plus 2 for the border, and a 1-cell gap between neighbors.
+func (m Model) entityKindCapacity() int {
+	available := m.availableWidth()
+	per := entityListWidth + 2
+	if per <= 0 {
+		return 1
+	}
+	cap := (available + 1) / (per + 1)
+	if cap < 1 {
+		cap = 1
+	}
+	return cap
+}
+
+// syncEntityKindScroll keeps entityKindScroll aligned so the focused entity
+// kind stays inside the visible horizontal window.
+func (m *Model) syncEntityKindScroll() {
+	allKinds := configEntityKinds()
+	cap := m.entityKindCapacity()
+	if cap > len(allKinds) {
+		cap = len(allKinds)
+	}
+	focused := indexOfEntityKind(allKinds, m.entityKind)
+	m.entityKindScroll = scrollIntoView(m.entityKindScroll, focused, len(allKinds), cap)
+}
+
+// renderConfigHeader produces the runtime/tokens summary tables that sit at
+// the top of the config view. Extracted so the viewport calculator can reuse
+// the exact rendered height instead of approximating it.
+func (m Model) renderConfigHeader() string {
 	bucketKeys := make([]string, 0, len(m.workflow.Buckets))
 	for _, bucket := range m.workflow.Buckets {
 		bucketKeys = append(bucketKeys, bucket.Key)
@@ -2658,95 +2824,55 @@ func (m Model) renderConfig() string {
 	)
 	widths := []int{configLabelWidth, configValueWidth}
 
-	var header string
 	switch {
 	case m.availableWidth() >= configTableWidth*2+configGap:
 		left := renderGridTable(leftRows, widths, m.styles.border)
 		right := renderGridTable(rightRows, widths, m.styles.border)
-		header = lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", configGap), right)
+		return lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", configGap), right)
 	case m.availableWidth() >= configTableWidth:
 		left := renderGridTable(leftRows, widths, m.styles.border)
 		right := renderGridTable(rightRows, widths, m.styles.border)
-		header = left + "\n\n" + right
+		return left + "\n\n" + right
 	default:
 		valueW := clampInt(m.availableWidth()-configLabelWidth-3, 8, configValueWidth)
 		narrowWidths := []int{configLabelWidth, valueW}
 		all := append(append([][]string{}, leftRows...), rightRows...)
-		header = renderGridTable(all, narrowWidths, m.styles.border)
+		return renderGridTable(all, narrowWidths, m.styles.border)
+	}
+}
+
+// entityCardsViewport returns the number of rows available for cards inside
+// each entity column at the bottom of the config view. It measures the
+// rendered runtime/tokens header explicitly and subtracts the screen-level
+// chrome (header, footer, optional status, blank lines, column borders, and
+// column kicker+separator) so the viewport tracks the real layout instead
+// of relying on a static guess that drifts as the tables grow.
+func (m Model) entityCardsViewport(headerBlock string) int {
+	if m.height <= 0 {
+		return 0
+	}
+	const (
+		columnBorders     = 2 // top + bottom border of the kanbanColumn cell
+		columnHeaderRows  = 2 // kicker + separator inside the cell
+		blanksBeforeGrid  = 2 // "\n\n" between header tables and the grid
+		viewLeadingBlank  = 1 // leading "\n" prepended in renderConfig
+		footerLines       = 2 // newline + indented footer text
+	)
+
+	headerLines := strings.Count(headerBlock, "\n") + 1
+	screenHeader := strings.Count(m.renderHeader(), "\n") + 1
+	statusLine := 0
+	if m.status != "" && !m.isEmbeddedCommentInput() {
+		statusLine = 2 // newline separator + the status line
 	}
 
-	// Entity lists are rendered as separate, individually-bordered columns
-	// joined horizontally with a 1-space gap — same shape as the kanban
-	// board, so the user navigates with the same mental model: one column
-	// at a time, vertical scroll inside the focused column. Narrow terminals
-	// fall back to a single focused column with a hint.
-	allKinds := []entityKind{entityKindLaw, entityKindPersona, entityKindSkill, entityKindTemplate, entityKindTag}
-	cellGap := 1
-	available := m.availableWidth()
-
-	fits := func(n int) bool {
-		// Each column adds +2 cols for borders and the gap separator.
-		return n*(entityListWidth+2)+(n-1)*cellGap <= available
+	chrome := screenHeader + statusLine + viewLeadingBlank + headerLines +
+		blanksBeforeGrid + columnBorders + columnHeaderRows + footerLines
+	rows := m.height - chrome
+	if rows < 4 {
+		return 0
 	}
-
-	// Pick the widest layout that fits without horizontal overflow.
-	visible := allKinds
-	switch {
-	case fits(5):
-		// keep all five
-	case fits(4):
-		// Drop the kind that is currently NOT focused from the secondary pair
-		// (Templates / Tags) so the user can always see whichever one is in
-		// focus inside the main row.
-		visible = []entityKind{entityKindLaw, entityKindPersona, entityKindSkill}
-		switch m.entityKind {
-		case entityKindTemplate:
-			visible = append(visible, entityKindTemplate)
-		default:
-			visible = append(visible, entityKindTag)
-		}
-	case fits(3):
-		visible = []entityKind{entityKindLaw, entityKindPersona, entityKindSkill}
-	default:
-		visible = []entityKind{m.entityKind}
-	}
-
-	columnStyle := m.styles.kanbanColumn.Width(entityListWidth)
-	cells := make([]string, 0, len(visible))
-	for _, kind := range visible {
-		cells = append(cells, columnStyle.Render(m.renderEntityCell(kind)))
-	}
-
-	parts := make([]string, 0, len(cells)*2)
-	for i, cell := range cells {
-		parts = append(parts, cell)
-		if i < len(cells)-1 {
-			parts = append(parts, " ")
-		}
-	}
-	lists := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-
-	// When a kind is hidden behind a fallback (it didn't fit in `visible`),
-	// surface a hint so the user knows they can reach it via left/right.
-	hidden := []entityKind{}
-	visibleSet := map[entityKind]struct{}{}
-	for _, k := range visible {
-		visibleSet[k] = struct{}{}
-	}
-	for _, k := range allKinds {
-		if _, ok := visibleSet[k]; !ok {
-			hidden = append(hidden, k)
-		}
-	}
-	if len(hidden) > 0 {
-		names := make([]string, len(hidden))
-		for i, k := range hidden {
-			names[i] = k.plural()
-		}
-		lists += "\n  " + m.styles.hint.Render(fmt.Sprintf("hidden: %s · use ← / → to switch sections", strings.Join(names, ", ")))
-	}
-
-	return "\n" + indentBlock(header+"\n\n"+lists, 2)
+	return rows
 }
 
 func (m Model) renderFooter() string {
