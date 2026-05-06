@@ -344,13 +344,13 @@ func TestModelOpensExistingTaskScreen(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"// TASK · #",
+		"▸ TASK · #",
 		"// TITLE",
 		"Existing task",
 		"// DESCRIPTION",
 		"First line",
 		"Second line",
-		"// COMMENTS · 2",
+		"// ACTIVITY · 2",
 		"human",
 		humanComment.CreatedAt,
 		"Looks good to me.",
@@ -395,7 +395,7 @@ func TestModelAddsMultilineCommentInsideTaskCommentsPanel(t *testing.T) {
 		t.Fatalf("isEmbeddedCommentInput() = false, want true")
 	}
 	view := got.View()
-	for _, want := range []string{"// COMMENTS · 0", "// NEW COMMENT", "enter saves", "alt+enter/shift+enter", "newline"} {
+	for _, want := range []string{"// ACTIVITY · 0", "// NEW COMMENT", "enter saves", "alt+enter/shift+enter", "newline"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("View() missing %q\n%s", want, view)
 		}
@@ -426,7 +426,7 @@ func TestModelAddsMultilineCommentInsideTaskCommentsPanel(t *testing.T) {
 		t.Fatalf("comment body = %q, want %q", comments[0].Body, wantBody)
 	}
 	view = got.View()
-	for _, want := range []string{"// COMMENTS · 1", "human", comments[0].CreatedAt, "First line", "Second line", "Third line"} {
+	for _, want := range []string{"// ACTIVITY · 1", "human", comments[0].CreatedAt, "First line", "Second line", "Third line"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("View() missing %q\n%s", want, view)
 		}

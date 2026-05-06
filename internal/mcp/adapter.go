@@ -78,6 +78,7 @@ func Tools() []ToolDefinition {
 		{Name: "tasks.move", Description: "Move a task through an allowed workflow transition.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "bucket_key": stringSchema("Target bucket key")}, []string{"task_id", "bucket_key"})},
 		{Name: "comments.add", Description: "Add a human or agent comment to a project-owned task. Optionally tag the comment with one or more tag names (normalized to kebab-case).", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "body": stringSchema("Comment body"), "author_type": stringSchema("human or agent"), "tags": arrayStringSchema("Optional tag names to attach to this comment (e.g. [\"resume\", \"deployment-notes\"])")}, []string{"task_id", "body"})},
 		{Name: "comments.list", Description: "List comments for a project-owned task.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id")}, []string{"task_id"})},
+		{Name: "task_activity.list", Description: "Return the unified activity feed for a task: comments and system events (task.created, task.moved, task.completed) ordered chronologically.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "order": stringSchema("Sort order: 'asc' (chronological, default) or 'desc' (newest first)")}, []string{"task_id"})},
 		{Name: "dependencies.add", Description: "Add a project-scoped task dependency with cycle prevention.", InputSchema: dependencySchema(false)},
 		{Name: "dependencies.remove", Description: "Remove a task dependency after explicit confirmation.", InputSchema: dependencySchema(true)},
 		{Name: "dependencies.list", Description: "List dependencies for one task or all active project tasks.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Optional task id; omit or set 0 for all")}, nil)},
@@ -182,6 +183,12 @@ func (a *Adapter) CallTool(ctx context.Context, name string, args map[string]any
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = a.service.ListComments(ctx, input)
+		}
+	case "task_activity.list":
+		var input agent.ListTaskActivityInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.ListTaskActivity(ctx, input)
 		}
 	case "dependencies.add":
 		var input agent.AddDependencyInput

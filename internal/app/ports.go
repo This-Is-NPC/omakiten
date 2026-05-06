@@ -36,6 +36,14 @@ type CommentRepository interface {
 	ListComments(ctx context.Context, projectID, taskID int64) ([]domain.Comment, error)
 }
 
+// EventRepository exposes the unified events log. Both the activity feed
+// (per-task) and the system event recorders write through this interface,
+// so the service layer never has to know the underlying table layout.
+type EventRepository interface {
+	RecordTaskEvent(ctx context.Context, projectID, taskID int64, eventType, body, payload string) (domain.Event, error)
+	ListTaskActivity(ctx context.Context, projectID, taskID int64, order string) ([]domain.Event, error)
+}
+
 type DependencyRepository interface {
 	AddTaskDependency(ctx context.Context, projectID, taskID, dependsOnTaskID int64) (domain.TaskDependency, error)
 	RemoveTaskDependency(ctx context.Context, projectID, taskID, dependsOnTaskID int64) error

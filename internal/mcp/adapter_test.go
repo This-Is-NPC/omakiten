@@ -109,6 +109,7 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		"tasks.move",
 		"comments.add",
 		"comments.list",
+		"task_activity.list",
 		"dependencies.add",
 		"dependencies.remove",
 		"dependencies.list",
@@ -125,7 +126,7 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 	for _, name := range tools {
 		var args map[string]any
 		switch name {
-		case "tasks.continue", "comments.add", "comments.list", "dependencies.add", "dependencies.remove", "dependencies.list":
+		case "tasks.continue", "comments.add", "comments.list", "task_activity.list", "dependencies.add", "dependencies.remove", "dependencies.list":
 			args = map[string]any{"task_id": 1}
 		case "tasks.move":
 			args = map[string]any{"task_id": 1, "bucket_key": "dev"}

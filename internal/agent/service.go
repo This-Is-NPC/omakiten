@@ -25,6 +25,7 @@ type Repository interface {
 	app.ConfigRepository
 	app.TaskRepository
 	app.CommentRepository
+	app.EventRepository
 	app.DependencyRepository
 	app.ContextEntryRepository
 	app.TagRepository
@@ -356,6 +357,26 @@ func (s *Service) ListComments(ctx context.Context, input ListCommentsInput) (Co
 		return CommentsResponse{}, err
 	}
 	return CommentsResponse{Project: projectSummary(project), Comments: commentSummaries(comments)}, nil
+}
+
+func (s *Service) ListTaskActivity(ctx context.Context, input ListTaskActivityInput) (ListTaskActivityResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return ListTaskActivityResponse{}, err
+	}
+	events, err := app.NewEventService(s.repo).ListTaskActivity(ctx, project, input.TaskID, input.Order)
+	if err != nil {
+		return ListTaskActivityResponse{}, err
+	}
+	resolvedOrder := strings.ToLower(strings.TrimSpace(input.Order))
+	if resolvedOrder != "asc" && resolvedOrder != "desc" {
+		resolvedOrder = "asc"
+	}
+	return ListTaskActivityResponse{
+		Project: projectSummary(project),
+		Events:  eventSummaries(events),
+		Order:   resolvedOrder,
+	}, nil
 }
 
 func (s *Service) AddDependency(ctx context.Context, input AddDependencyInput) (DependencyResponse, error) {

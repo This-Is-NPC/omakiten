@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -21,7 +22,8 @@ import (
 const (
 	columnWidth                = 28
 	taskDetailsPanelWidth      = 40
-	taskCommentsPanelWidth     = 44
+	taskCommentsPanelMinWidth  = 44
+	taskCommentsPanelMaxWidth  = 96
 	commentInputHeight         = 5
 	taskFormInputWidth         = 72
 	taskDescriptionInputHeight = 8
@@ -30,7 +32,10 @@ const (
 	normalMarker               = " "
 	cardBoxWidth               = 26
 	cardContentWidth           = 24 // cardBoxWidth - horizontal padding(2); text fits here
-	commentCardContentWidth    = taskCommentsPanelWidth - 10 // card Width(36) - padding(2) - border(2)
+	// commentCard padding/border accounting: card Width = panel - 2 (gutter);
+	// content (where text + tags wrap) = card.Width - 4 (padding 2 + border 2).
+	commentCardChromeWidth = 4
+	commentCardLineLimit   = 6
 )
 
 type Repositories struct {
@@ -42,6 +47,7 @@ type Repositories struct {
 	Tags         app.TagRepository
 	Editor       *app.BundleEditor
 	ActivityLogs activity.ActivityLogRepository
+	Events       app.EventRepository
 }
 
 type Model struct {
@@ -105,6 +111,26 @@ type Model struct {
 	logs         []domain.ActivityLog
 	logsSelected int
 
+	// activity holds the unified activity feed (comments + system events)
+	// for the currently-open task detail view. Populated on openTaskView
+	// and cleared when the screen closes — refresh does not refetch this
+	// because the rest of refresh() loads all-task data.
+	activity         []domain.Event
+	activityForTask  int64
+	activityScroll   int
+	// activityCursor is the index into the visible activity feed; -1 means
+	// "no card selected" and disables the focused-border styling. Card
+	// navigation moves it; the scroll offset auto-follows.
+	activityCursor int
+	// activityExpanded[event_id]=true expands a comment beyond the
+	// commentCardLineLimit cap. Cleared on closeTaskScreen so toggles don't
+	// leak across detail-view sessions.
+	activityExpanded map[int64]bool
+	// taskFocus tracks which column inside the task detail screen owns
+	// navigation keys. Default: form/details column. Tab toggles to the
+	// activity column so j/k navigate cards instead of scrolling description.
+	taskFocus taskScreenFocus
+
 	// views caches the resolved per-view sort/filter pulled from the active
 	// bundle on each refresh. Render and query helpers read it instead of
 	// the raw Settings so omitted fields show up as their canonical defaults.
@@ -153,6 +179,16 @@ const (
 	taskScreenView
 	taskScreenCreate
 	taskScreenEdit
+)
+
+// taskScreenFocus is which column owns navigation keys inside taskScreenView.
+// Tab toggles between them so the user can run j/k/enter on either side
+// without a separate keybinding for each surface.
+type taskScreenFocus int
+
+const (
+	taskFocusForm taskScreenFocus = iota
+	taskFocusActivity
 )
 
 type taskFormField int
@@ -429,7 +465,42 @@ func (m Model) taskFormWidth() int {
 }
 
 func (m Model) commentInputWidth() int {
-	return clampInt(m.availableWidth()-8, 24, taskCommentsPanelWidth-8)
+	return clampInt(m.availableWidth()-8, 24, m.activityPanelWidth()-8)
+}
+
+// activityPanelWidth returns the activity column width based on the current
+// terminal size. On narrow screens the column collapses below the side-by-side
+// threshold (handled by the caller), so this only matters in wide layout —
+// where it grows up to a max so a 200-col terminal doesn't render a single
+// 150-col column with awkward whitespace.
+func (m Model) activityPanelWidth() int {
+	available := m.availableWidth()
+	// Reserve ~55% for details, ~45% for activity, with a sensible floor and
+	// a hard cap so the column doesn't dominate ultra-wide terminals.
+	candidate := available * 45 / 100
+	if candidate < taskCommentsPanelMinWidth {
+		candidate = taskCommentsPanelMinWidth
+	}
+	if candidate > taskCommentsPanelMaxWidth {
+		candidate = taskCommentsPanelMaxWidth
+	}
+	return candidate
+}
+
+// commentCardWidth is the Width() value passed to the commentCard style.
+// lipgloss treats Width as content+padding (border excluded), so the visible
+// card occupies Width()+2 cells. We subtract enough from the panel width to
+// leave a 2-cell margin inside the activity box — without that margin lines
+// occasionally tipped past the box's inner edge and wrapLinesToWidth would
+// chop the card mid-row, which the user reported as "cards quebram".
+func (m Model) commentCardWidth() int {
+	return m.activityPanelWidth() - 6
+}
+
+// commentCardContentWidth is how many cells the comment body, header, and
+// tag badges have to fit in once padding (2) is subtracted from Width().
+func (m Model) commentCardContentWidth() int {
+	return m.commentCardWidth() - 2
 }
 
 func (m Model) hintBoxWidth() int {
@@ -954,23 +1025,58 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.status = "Refreshed"
 			}
+		case "tab":
+			m.toggleTaskFocus()
+		case "shift+tab":
+			m.toggleTaskFocus()
 		case "j", "down":
-			m.taskViewScroll++
+			if m.taskFocus == taskFocusActivity {
+				m.moveActivityCursor(1)
+			} else {
+				m.taskViewScroll++
+			}
 		case "k", "up":
-			if m.taskViewScroll > 0 {
+			if m.taskFocus == taskFocusActivity {
+				m.moveActivityCursor(-1)
+			} else if m.taskViewScroll > 0 {
 				m.taskViewScroll--
 			}
+		case "J":
+			m.moveActivityCursor(1)
+		case "K":
+			m.moveActivityCursor(-1)
+		case "enter":
+			if m.taskFocus == taskFocusActivity {
+				m.toggleFocusedActivity()
+			}
 		case "pgdown", "ctrl+d":
-			m.taskViewScroll += taskViewPageStep(m.taskViewportHeight())
+			if m.taskFocus == taskFocusActivity {
+				m.scrollActivityLines(m.activityViewportLines() / 2)
+			} else {
+				m.taskViewScroll += taskViewPageStep(m.taskViewportHeight())
+			}
 		case "pgup", "ctrl+u":
-			m.taskViewScroll -= taskViewPageStep(m.taskViewportHeight())
-			if m.taskViewScroll < 0 {
-				m.taskViewScroll = 0
+			if m.taskFocus == taskFocusActivity {
+				m.scrollActivityLines(-m.activityViewportLines() / 2)
+			} else {
+				m.taskViewScroll -= taskViewPageStep(m.taskViewportHeight())
+				if m.taskViewScroll < 0 {
+					m.taskViewScroll = 0
+				}
 			}
 		case "home", "g":
-			m.taskViewScroll = 0
+			if m.taskFocus == taskFocusActivity {
+				m.activityScroll = 0
+			} else {
+				m.taskViewScroll = 0
+			}
 		case "end", "G":
-			m.taskViewScroll = 1 << 20
+			if m.taskFocus == taskFocusActivity {
+				m.activityScroll = 1 << 20
+				m.clampActivityScroll()
+			} else {
+				m.taskViewScroll = 1 << 20
+			}
 		}
 		return *m, nil
 	}
@@ -1155,6 +1261,36 @@ func (m *Model) openTaskView(task domain.Task) {
 	m.status = ""
 	m.moveMode = false
 	m.taskViewScroll = 0
+	m.activityScroll = 0
+	m.activityCursor = -1
+	m.activityExpanded = map[int64]bool{}
+	m.taskFocus = taskFocusForm
+	if err := m.refreshTaskActivity(task.ID); err != nil {
+		m.status = err.Error()
+	}
+}
+
+// refreshTaskActivity loads the unified activity feed (comments + system
+// events) for the given task using the configured task_activity sort order.
+// Stored separately from m.comments so the global comments slice keeps
+// powering badges/metrics without leaking system events into them.
+func (m *Model) refreshTaskActivity(taskID int64) error {
+	if taskID <= 0 || m.repos.Events == nil {
+		m.activity = nil
+		m.activityForTask = 0
+		return nil
+	}
+	order := m.views.TaskActivity.Sort.Order
+	if order == "" {
+		order = config.DefaultTaskActivitySortOrder
+	}
+	events, err := m.repos.Events.ListTaskActivity(m.ctx, m.project.ID, taskID, order)
+	if err != nil {
+		return err
+	}
+	m.activity = events
+	m.activityForTask = taskID
+	return nil
 }
 
 func (m *Model) openTaskEdit(task domain.Task) {
@@ -1182,6 +1318,12 @@ func (m *Model) closeTaskScreen(status string) {
 	m.status = status
 	m.moveMode = false
 	m.taskViewScroll = 0
+	m.activity = nil
+	m.activityForTask = 0
+	m.activityScroll = 0
+	m.activityCursor = -1
+	m.activityExpanded = nil
+	m.taskFocus = taskFocusForm
 }
 
 func (m *Model) toggleTaskField() {
@@ -1426,6 +1568,11 @@ func (m *Model) submitInput() {
 			m.taskID = savedTask.ID
 		}
 		m.status = "Saved"
+	}
+	if m.taskID > 0 && m.taskScreen == taskScreenView {
+		if err := m.refreshTaskActivity(m.taskID); err != nil {
+			m.status = err.Error()
+		}
 	}
 	m.mode = modeNormal
 	m.input = ""
@@ -1995,7 +2142,10 @@ func (m Model) renderHelp() string {
 			{"g · G", "jump to top / bottom"},
 		}},
 		{"Task view", []binding{
-			{"↑ ↓ · j k", "scroll description"},
+			{"tab · shift+tab", "switch focus (form ⇄ activity)"},
+			{"↑ ↓ · j k", "scroll description (form) · navigate cards (activity)"},
+			{"J · K", "navigate activity cards (any focus)"},
+			{"enter", "expand / collapse focused comment"},
 			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
 			{"g · G", "jump to top / bottom"},
 			{"e", "edit"},
@@ -2217,8 +2367,12 @@ func (m Model) renderTaskView() string {
 		tagLine = strings.Join(tagNames, " · ")
 	}
 
+	taskKicker := m.styles.kicker(fmt.Sprintf("Task · #%d", task.ID))
+	if m.taskFocus == taskFocusForm {
+		taskKicker = m.styles.kickerFocused(fmt.Sprintf("Task · #%d", task.ID))
+	}
 	rows := [][]string{
-		{m.styles.kicker(fmt.Sprintf("Task · #%d", task.ID))},
+		{taskKicker},
 		{labelCell("Title"), task.Title},
 		{labelCell("Bucket"), task.BucketKey},
 		{labelCell("Priority"), string(task.Priority)},
@@ -2246,7 +2400,8 @@ func (m Model) renderTaskView() string {
 	// Side-by-side layout needs: details(label+1+value+2 borders) + 2 spacer + comments(inner+2 borders).
 	// Below this threshold, stack vertically and let each block use the full width.
 	const minWideValueWidth = 24
-	wideThreshold := taskDetailLabelWidth + 1 + minWideValueWidth + 2 + 2 + taskCommentsPanelWidth + 2
+	activityWidth := m.activityPanelWidth()
+	wideThreshold := taskDetailLabelWidth + 1 + minWideValueWidth + 2 + 2 + activityWidth + 2
 
 	var rendered string
 	if available < wideThreshold {
@@ -2262,7 +2417,7 @@ func (m Model) renderTaskView() string {
 		commentsBox := renderFixedBox(wrapLinesToWidth(strings.Split(commentsCellText, "\n"), commentsWidth), commentsWidth, m.styles.border)
 		rendered = details + "\n\n" + commentsBox
 	} else {
-		valueWidth := available - (taskCommentsPanelWidth + 2) - 2 - (taskDetailLabelWidth + 1) - 2
+		valueWidth := available - (activityWidth + 2) - 2 - (taskDetailLabelWidth + 1) - 2
 		if valueWidth < minWideValueWidth {
 			valueWidth = minWideValueWidth
 		}
@@ -2270,12 +2425,15 @@ func (m Model) renderTaskView() string {
 			valueWidth = 120
 		}
 		details := renderGridTable(rows, []int{taskDetailLabelWidth, valueWidth}, m.styles.border)
-		commentsBox := renderFixedBox(wrapLinesToWidth(strings.Split(commentsCellText, "\n"), taskCommentsPanelWidth), taskCommentsPanelWidth, m.styles.border)
+		commentsBox := renderFixedBox(wrapLinesToWidth(strings.Split(commentsCellText, "\n"), activityWidth), activityWidth, m.styles.border)
 		rendered = lipgloss.JoinHorizontal(lipgloss.Top, details, "  ", commentsBox)
 	}
 
 	return m.applyTaskViewScroll(rendered)
 }
+
+// (border colors stay neutral on purpose — focus is signalled by the
+// kicker style, not the panel border, so the screen stays calm visually.)
 
 // taskViewportHeight returns how many lines of detail-view content can fit
 // between the header and footer. Returns 0 when the terminal height is unknown
@@ -2378,21 +2536,390 @@ func (m Model) renderBlockerPicker() string {
 }
 
 func (m Model) renderTaskCommentsCell(taskID int64) string {
-	comments := m.commentsForTask(taskID)
-	lines := []string{
-		m.styles.kickerCount("Comments", len(comments)),
+	events := m.activityForTaskInView(taskID)
+
+	header := m.styles.kickerCount("Activity", len(events))
+	if m.taskFocus == taskFocusActivity {
+		header = m.styles.kickerCountFocused("Activity", len(events))
 	}
-	if len(comments) == 0 {
-		lines = append(lines, "", m.styles.hint.Render("No comments yet."), m.styles.hint.Render("Press c to add one."))
+	lines := []string{header}
+
+	if len(events) == 0 {
+		lines = append(lines, "", m.styles.hint.Render("No activity yet."), m.styles.hint.Render("Press c to add a comment."))
 	} else {
-		for _, comment := range comments {
-			lines = append(lines, "", m.renderCommentCard(comment))
+		cards := m.activityRowsForRender(events)
+		// Build the full activity body as a flat line list so pagination is
+		// line-based (not card-based). Expanded comments grow the body in
+		// place; the viewport keeps the focused card visible without the
+		// outer task scroll having to compensate.
+		body := flattenActivityCards(cards)
+		viewport := m.activityViewportLines()
+		scroll := m.activityScroll
+		total := len(body)
+		if viewport > 0 && total > viewport {
+			if scroll < 0 {
+				scroll = 0
+			}
+			if scroll > total-viewport {
+				scroll = total - viewport
+			}
+			if scroll > 0 {
+				lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▲ %d above", scroll)))
+			}
+			lines = append(lines, body[scroll:scroll+viewport]...)
+			if scroll+viewport < total {
+				lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▼ %d below", total-scroll-viewport)))
+			}
+		} else {
+			lines = append(lines, body...)
 		}
 	}
 	if m.isEmbeddedCommentInput() && m.taskID == taskID {
 		lines = append(lines, "", m.renderCommentInput())
 	}
 	return indentBlock(strings.Join(lines, "\n"), 2)
+}
+
+// flattenActivityCards splits each rendered card into its lines and joins
+// them with a single blank separator between cards. The result is a flat
+// []string the activity viewport slices line-by-line.
+func flattenActivityCards(cards []string) []string {
+	out := []string{}
+	for i, card := range cards {
+		if i > 0 {
+			out = append(out, "")
+		}
+		out = append(out, strings.Split(card, "\n")...)
+	}
+	// Add a leading blank so cards visually breathe under the kicker; matches
+	// the original "" + card spacing the previous card-based pagination used.
+	if len(out) > 0 {
+		out = append([]string{""}, out...)
+	}
+	return out
+}
+
+// cardLineRanges reports the line where each rendered card starts and how
+// many lines it spans inside the flattened body produced by
+// flattenActivityCards. Used by syncActivityScrollToCursor to scroll the
+// focused card fully into view even when it has been expanded.
+func cardLineRanges(cards []string) []struct{ start, height int } {
+	out := make([]struct{ start, height int }, len(cards))
+	cursor := 1 // skip the leading blank line
+	for i, card := range cards {
+		if i > 0 {
+			cursor++ // blank separator
+		}
+		h := len(strings.Split(card, "\n"))
+		out[i] = struct{ start, height int }{start: cursor, height: h}
+		cursor += h
+	}
+	return out
+}
+
+// activityForTaskInView returns the loaded activity feed when the task
+// detail view is showing the same task. When m.activity hasn't been loaded
+// yet (or belongs to a different task), it falls back to projecting from
+// m.comments so the panel still surfaces something useful instead of going
+// blank during the initial render.
+func (m Model) activityForTaskInView(taskID int64) []domain.Event {
+	if m.activityForTask == taskID {
+		return m.activity
+	}
+	comments := m.commentsForTask(taskID)
+	out := make([]domain.Event, len(comments))
+	for i, c := range comments {
+		out[i] = domain.Event{
+			ID:         c.ID,
+			EntityType: domain.EventEntityTask,
+			EntityID:   c.TaskID,
+			ProjectID:  c.ProjectID,
+			EventType:  domain.EventTypeComment,
+			Body:       c.Body,
+			AuthorType: c.AuthorType,
+			CreatedAt:  c.CreatedAt,
+			Tags:       c.Tags,
+		}
+	}
+	return out
+}
+
+// activityRowsForRender renders each event card up front so pagination and
+// overflow accounting work on a stable list. Comments reuse the existing
+// commentCard (author + body + tags); system events use the same border color
+// as comments so the activity column reads as one cohesive stack. The focused
+// card (activityCursor) gets an accent border so card navigation is discoverable.
+func (m Model) activityRowsForRender(events []domain.Event) []string {
+	rows := make([]string, 0, len(events))
+	for i, ev := range events {
+		focused := i == m.activityCursor
+		if ev.EventType == domain.EventTypeComment {
+			rows = append(rows, m.renderCommentCardSelected(eventToComment(ev), focused))
+			continue
+		}
+		rows = append(rows, m.renderSystemEventCard(ev, focused))
+	}
+	return rows
+}
+
+// renderSystemEventCard formats task.created/moved/completed in a card that
+// matches the comment card geometry but reads as metadata: dimmer border,
+// no author header, single-line label + timestamp. Boxed (vs. the previous
+// borderless variant) so the activity column stays visually consistent.
+func (m Model) renderSystemEventCard(ev domain.Event, focused bool) string {
+	label := systemEventLabel(ev)
+	timestamp := strings.TrimSpace(ev.CreatedAt)
+	width := m.commentCardContentWidth()
+	if width < 8 {
+		width = 8
+	}
+	line := m.styles.muted.Render(label)
+	if timestamp != "" {
+		line += m.styles.hint.Render(" · " + timestamp)
+	}
+	// Wrap to the same content width as comments so long event labels (e.g.
+	// "task moved review → done · 2026-05-06 03:17:47") don't run past the
+	// panel border.
+	wrapped := wrapLinesToWidth([]string{line}, width)
+	body := strings.Join(wrapped, "\n")
+	style := m.styles.systemEventCard.Width(m.commentCardWidth())
+	if focused {
+		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
+	}
+	return style.Render(body)
+}
+
+// eventToComment narrows a comment-typed Event back into the legacy Comment
+// shape that renderCommentCard expects. Lets the comment renderer stay
+// untouched while the activity feed funnels through Event.
+func eventToComment(ev domain.Event) domain.Comment {
+	return domain.Comment{
+		ID:         ev.ID,
+		ProjectID:  ev.ProjectID,
+		TaskID:     ev.EntityID,
+		Body:       ev.Body,
+		AuthorType: ev.AuthorType,
+		CreatedAt:  ev.CreatedAt,
+		Tags:       ev.Tags,
+	}
+}
+
+// systemEventLabel renders task.* events as human-readable strings using
+// the payload's `from`/`to`/`bucket` fields. Falls back to the bare event
+// type when payload is missing or malformed — defensive because old rows
+// that pre-date the migration carry an empty payload string.
+func systemEventLabel(ev domain.Event) string {
+	switch ev.EventType {
+	case domain.EventTypeTaskCreated:
+		bucket := payloadField(ev.Payload, "bucket")
+		if bucket != "" {
+			return "task created in " + bucket
+		}
+		return "task created"
+	case domain.EventTypeTaskMoved:
+		from := payloadField(ev.Payload, "from")
+		to := payloadField(ev.Payload, "to")
+		if from != "" && to != "" {
+			return "task moved " + from + " → " + to
+		}
+		if to != "" {
+			return "task moved to " + to
+		}
+		return "task moved"
+	case domain.EventTypeTaskCompleted:
+		bucket := payloadField(ev.Payload, "bucket")
+		if bucket != "" {
+			return "task completed in " + bucket
+		}
+		return "task completed"
+	}
+	return ev.EventType
+}
+
+// payloadField extracts a top-level string field from the Event.Payload JSON.
+// Tolerant of empty/malformed payloads — returns "" instead of erroring so
+// rendering never breaks on partial data.
+func payloadField(payload, key string) string {
+	if payload == "" || payload == "{}" {
+		return ""
+	}
+	var data map[string]any
+	if err := json.Unmarshal([]byte(payload), &data); err != nil {
+		return ""
+	}
+	if v, ok := data[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+// scrollActivityLines nudges activityScroll by a raw line delta and clamps
+// to valid range. Lets pgup/pgdn page the activity body independently of
+// the cursor — useful when a single expanded card is taller than the
+// viewport and the user wants to read past its first screenful.
+func (m *Model) scrollActivityLines(delta int) {
+	m.activityScroll += delta
+	m.clampActivityScroll()
+}
+
+// clampActivityScroll keeps activityScroll inside [0, total - viewport].
+// Computes total by re-rendering cards, which is cheap and avoids the
+// caller having to thread the body length through.
+func (m *Model) clampActivityScroll() {
+	events := m.activityForTaskInView(m.taskID)
+	body := flattenActivityCards(m.activityRowsForRender(events))
+	viewport := m.activityViewportLines()
+	if viewport <= 0 || len(body) <= viewport {
+		m.activityScroll = 0
+		return
+	}
+	maxScroll := len(body) - viewport
+	if m.activityScroll < 0 {
+		m.activityScroll = 0
+	}
+	if m.activityScroll > maxScroll {
+		m.activityScroll = maxScroll
+	}
+}
+
+// toggleTaskFocus flips which column inside the task detail screen owns
+// j/k/enter. Re-entering activity focus auto-lands the cursor on a card so
+// the first navigation key always moves something visible — the user gets
+// instant feedback instead of pressing j a few times into the void.
+//
+// We also reset taskViewScroll when leaving the form so the activity column
+// renders from the top of the joined output; the activity panel manages its
+// own internal viewport and shouldn't be at the mercy of the form's scroll
+// state.
+func (m *Model) toggleTaskFocus() {
+	if m.taskFocus == taskFocusForm {
+		m.taskFocus = taskFocusActivity
+		m.taskViewScroll = 0
+		if m.activityCursor < 0 {
+			rows := len(m.activityForTaskInView(m.taskID))
+			if rows > 0 {
+				m.activityCursor = 0
+				m.syncActivityScrollToCursor()
+			}
+		}
+		return
+	}
+	m.taskFocus = taskFocusForm
+	m.activityCursor = -1
+}
+
+// moveActivityCursor advances the focus to the previous/next event card and
+// auto-scrolls so the focused card stays inside the viewport. Wraps from
+// "no selection" (-1) to the first or last card depending on direction so a
+// single keypress always lands on a real row.
+func (m *Model) moveActivityCursor(delta int) {
+	rows := len(m.activityForTaskInView(m.taskID))
+	if rows == 0 {
+		m.activityCursor = -1
+		return
+	}
+	if m.activityCursor < 0 {
+		if delta > 0 {
+			m.activityCursor = 0
+		} else {
+			m.activityCursor = rows - 1
+		}
+	} else {
+		next := m.activityCursor + delta
+		if next < 0 {
+			next = 0
+		}
+		if next >= rows {
+			next = rows - 1
+		}
+		m.activityCursor = next
+	}
+	m.syncActivityScrollToCursor()
+}
+
+// syncActivityScrollToCursor positions activityScroll (a LINE offset, not
+// a card index) so the focused card's body is visible inside the viewport.
+// Tall expanded cards prefer top-aligned: we never push past the card's
+// header just to fit the bottom — the user can keep pressing j to scroll
+// further down inside it.
+func (m *Model) syncActivityScrollToCursor() {
+	if m.activityCursor < 0 {
+		return
+	}
+	events := m.activityForTaskInView(m.taskID)
+	if m.activityCursor >= len(events) {
+		return
+	}
+	cards := m.activityRowsForRender(events)
+	body := flattenActivityCards(cards)
+	ranges := cardLineRanges(cards)
+	viewport := m.activityViewportLines()
+	if viewport <= 0 || len(body) <= viewport {
+		m.activityScroll = 0
+		return
+	}
+	maxScroll := len(body) - viewport
+	r := ranges[m.activityCursor]
+	cardTop := r.start
+	cardBottom := r.start + r.height
+
+	// Bring the bottom into view first; if the card is taller than the
+	// viewport, fall back to top-aligned so the header is still visible.
+	if cardBottom > m.activityScroll+viewport {
+		m.activityScroll = cardBottom - viewport
+	}
+	if cardTop < m.activityScroll {
+		m.activityScroll = cardTop
+	}
+	if m.activityScroll < 0 {
+		m.activityScroll = 0
+	}
+	if m.activityScroll > maxScroll {
+		m.activityScroll = maxScroll
+	}
+}
+
+// toggleFocusedActivity flips the expanded state for the comment under the
+// activity cursor. System events ignore the toggle (no body to expand). The
+// scroll re-syncs after the toggle so an expanded card doesn't immediately
+// vanish below the viewport.
+func (m *Model) toggleFocusedActivity() {
+	events := m.activityForTaskInView(m.taskID)
+	if m.activityCursor < 0 || m.activityCursor >= len(events) {
+		return
+	}
+	ev := events[m.activityCursor]
+	if ev.EventType != domain.EventTypeComment {
+		return
+	}
+	if m.activityExpanded == nil {
+		m.activityExpanded = map[int64]bool{}
+	}
+	m.activityExpanded[ev.ID] = !m.activityExpanded[ev.ID]
+	m.syncActivityScrollToCursor()
+}
+
+// activityViewportLines is the maximum number of LINES the activity column
+// renders before pagination kicks in. Big enough to use most of the screen
+// (so the column matches the form column visually) but with a chrome budget
+// reserved for the screen header, footer, panel borders, and the embedded
+// comment input row.
+func (m Model) activityViewportLines() int {
+	if m.height <= 0 {
+		return 12
+	}
+	chrome := 12
+	if m.isEmbeddedCommentInput() {
+		// Reserve room for the comment input box (header + 5 input rows + 1
+		// hint = ~7 lines). Without this the input gets pushed off-screen
+		// when the activity column happens to be full.
+		chrome += 9
+	}
+	rows := m.height - chrome
+	if rows < 6 {
+		rows = 6
+	}
+	return rows
 }
 
 func (m Model) renderCommentInput() string {
@@ -2408,13 +2935,24 @@ func (m Model) renderCommentInput() string {
 }
 
 func (m Model) renderCommentCard(comment domain.Comment) string {
+	return m.renderCommentCardSelected(comment, false)
+}
+
+// renderCommentCardSelected renders a single comment card. focused controls
+// the border accent (so the active card pops), and m.activityExpanded[id]
+// decides whether the body is shown in full or capped to commentCardLineLimit
+// lines with a "↩ N more" hint.
+func (m Model) renderCommentCardSelected(comment domain.Comment, focused bool) string {
 	header := m.styles.hintAccent.Render(comment.AuthorType)
 	if strings.TrimSpace(comment.CreatedAt) != "" {
 		header += m.styles.hint.Render(" · " + comment.CreatedAt)
 	}
+	contentWidth := m.commentCardContentWidth()
 	body := strings.TrimSpace(comment.Body)
 	if body == "" {
 		body = m.styles.hint.Render("empty comment")
+	} else {
+		body = m.cappedCommentBody(comment.ID, body, contentWidth)
 	}
 	content := header + "\n" + body
 	if len(comment.Tags) > 0 {
@@ -2422,9 +2960,31 @@ func (m Model) renderCommentCard(comment domain.Comment) string {
 		for i, tag := range comment.Tags {
 			badges[i] = m.styles.badgeInfo.Render("#" + tag.Label)
 		}
-		content += "\n" + wrapBadges(badges, commentCardContentWidth)
+		content += "\n" + wrapBadges(badges, contentWidth)
 	}
-	return m.styles.commentCard.Render(content)
+	style := m.styles.commentCard.Width(m.commentCardWidth())
+	if focused {
+		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
+	}
+	return style.Render(content)
+}
+
+// cappedCommentBody wraps the body to the available width and, when collapsed,
+// truncates to commentCardLineLimit visible lines plus a "↩ N more lines —
+// enter expands" footer. The limit only applies when m.activityExpanded[id]
+// is false; an expanded card shows everything.
+func (m Model) cappedCommentBody(commentID int64, body string, width int) string {
+	wrapped := wrapLinesToWidth(strings.Split(body, "\n"), width)
+	if m.activityExpanded[commentID] {
+		return strings.Join(wrapped, "\n")
+	}
+	if len(wrapped) <= commentCardLineLimit {
+		return strings.Join(wrapped, "\n")
+	}
+	visible := wrapped[:commentCardLineLimit]
+	hidden := len(wrapped) - commentCardLineLimit
+	hint := m.styles.hint.Render(fmt.Sprintf("↩ %d more lines — enter expands", hidden))
+	return strings.Join(visible, "\n") + "\n" + hint
 }
 
 func (m Model) renderTaskForm(title string) string {
@@ -2973,7 +3533,7 @@ func (m Model) renderFooter() string {
 	case m.mode != modeNormal:
 		text = "enter save  esc cancel  ctrl+c quit"
 	case m.taskScreen == taskScreenView:
-		text = "j/k scroll  e edit  b blockers  c comment  m move  r refresh  esc board  ? help"
+		text = "tab focus  j/k scroll  e edit  b blockers  c comment  m move  r refresh  esc board  ? help"
 	case m.taskScreen == taskScreenCreate:
 		text = "tab field  ←/→ priority  ctrl+s create  esc cancel"
 	case m.taskScreen == taskScreenEdit:
@@ -3588,9 +4148,21 @@ func (s styles) kicker(label string) string {
 	return s.info.Render("// " + strings.ToUpper(label))
 }
 
+// kickerFocused is the focused-panel variant: replaces `//` with `▸` and
+// flips to the primary accent. Used to mark which side of the task screen
+// owns navigation keys without painting the full panel border green.
+func (s styles) kickerFocused(label string) string {
+	return s.hintAccent.Render("▸ " + strings.ToUpper(label))
+}
+
 // kickerCount renders `// LABEL · N` — kicker with a trailing count.
 func (s styles) kickerCount(label string, count int) string {
 	return s.info.Render(fmt.Sprintf("// %s · %d", strings.ToUpper(label), count))
+}
+
+// kickerCountFocused is the focused-panel variant of kickerCount.
+func (s styles) kickerCountFocused(label string, count int) string {
+	return s.hintAccent.Render(fmt.Sprintf("▸ %s · %d", strings.ToUpper(label), count))
 }
 
 // metaRow renders a definition-list row: `// LABEL` (kicker) + value, the label
@@ -3666,6 +4238,7 @@ type styles struct {
 	activeNav      lipgloss.Style
 	panel          lipgloss.Style
 	commentCard    lipgloss.Style
+	systemEventCard lipgloss.Style
 	commentInput   lipgloss.Style
 	border         lipgloss.Style
 	kanbanColumn   lipgloss.Style
@@ -3726,8 +4299,13 @@ func newStyles(theme config.Theme) styles {
 		nav:            lipgloss.NewStyle().Foreground(secondary),
 		activeNav:      lipgloss.NewStyle().Foreground(primary).Bold(true),
 		panel:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2),
-		commentCard:    lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(taskCommentsPanelWidth - 8),
-		commentInput:   lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 1).Width(taskCommentsPanelWidth - 8).Height(commentInputHeight),
+		commentCard:    lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1),
+		commentInput:   lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 1).Height(commentInputHeight),
+		// systemEventCard mirrors the commentCard geometry (border + padding)
+		// so the activity column stays visually consistent — same column
+		// alignment, same width budget. The metadata cue comes from the text
+		// color, not a different border color.
+		systemEventCard: lipgloss.NewStyle().Foreground(secondary).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1),
 		border:         lipgloss.NewStyle().Foreground(border),
 		kanbanColumn:   lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(border).Width(columnWidth).Padding(0, 0),
 		card:           lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(cardBoxWidth),
