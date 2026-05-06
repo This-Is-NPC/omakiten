@@ -56,19 +56,7 @@ func (m *Model) handleLogsKey(msg tea.KeyMsg) {
 // inside the viewport. Each log row is exactly 1 line (no wrapping) so this is
 // a simple cursor-following scroll — no height heuristic needed.
 func (m *Model) syncLogsScroll() {
-	viewport := m.logsViewportRows()
-	if viewport <= 0 {
-		return
-	}
-	if m.logsSelected < m.logsScroll {
-		m.logsScroll = m.logsSelected
-	}
-	if m.logsSelected >= m.logsScroll+viewport {
-		m.logsScroll = m.logsSelected - viewport + 1
-	}
-	if m.logsScroll < 0 {
-		m.logsScroll = 0
-	}
+	m.logsScroll = followCursor(m.logsScroll, m.logsSelected, m.logsViewportRows(), len(m.logs))
 }
 
 // logsViewportRows returns how many data rows fit in the activity log panel

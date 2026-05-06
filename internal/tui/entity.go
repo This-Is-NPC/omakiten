@@ -1284,47 +1284,16 @@ func (m *Model) openPersonaPickerForSelected() {
 
 func (m Model) updatePersonaPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rowCount := len(m.skills) + 1 // +1 for "create new skill" affordance
+	if cursor, handled := pickerNavKey(msg, m.entityForm.pickerCursor, rowCount, m.pickerViewportRows()); handled {
+		m.entityForm.pickerCursor = cursor
+		m.syncPickerScroll(rowCount)
+		return m, nil
+	}
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 	case "esc":
 		m.openSelectedEntityViewForSlug(entityKindPersona, m.entityForm.slug)
-	case "up", "k":
-		if m.entityForm.pickerCursor > 0 {
-			m.entityForm.pickerCursor--
-			m.syncPickerScroll(rowCount)
-		}
-	case "down", "j":
-		if m.entityForm.pickerCursor < rowCount-1 {
-			m.entityForm.pickerCursor++
-			m.syncPickerScroll(rowCount)
-		}
-	case "pgup", "ctrl+u":
-		step := taskViewPageStep(m.pickerViewportRows())
-		m.entityForm.pickerCursor -= step
-		if m.entityForm.pickerCursor < 0 {
-			m.entityForm.pickerCursor = 0
-		}
-		m.syncPickerScroll(rowCount)
-	case "pgdown", "ctrl+d":
-		step := taskViewPageStep(m.pickerViewportRows())
-		m.entityForm.pickerCursor += step
-		if m.entityForm.pickerCursor > rowCount-1 {
-			m.entityForm.pickerCursor = rowCount - 1
-		}
-		if m.entityForm.pickerCursor < 0 {
-			m.entityForm.pickerCursor = 0
-		}
-		m.syncPickerScroll(rowCount)
-	case "home", "g":
-		m.entityForm.pickerCursor = 0
-		m.syncPickerScroll(rowCount)
-	case "end", "G":
-		m.entityForm.pickerCursor = rowCount - 1
-		if m.entityForm.pickerCursor < 0 {
-			m.entityForm.pickerCursor = 0
-		}
-		m.syncPickerScroll(rowCount)
 	case " ", "space":
 		if m.entityForm.pickerCursor < len(m.skills) {
 			slug := m.skills[m.entityForm.pickerCursor].Key
@@ -1345,28 +1314,9 @@ func (m Model) updatePersonaPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // syncPickerScroll keeps m.pickerScroll aligned so the cursor row stays
-// visible. Same cursor-following pattern as syncTableScroll/syncLogsScroll —
-// each picker row is exactly 1 line so no height heuristic is needed.
+// visible.
 func (m *Model) syncPickerScroll(rowCount int) {
-	viewport := m.pickerViewportRows()
-	if viewport <= 0 {
-		return
-	}
-	if m.entityForm.pickerCursor < m.pickerScroll {
-		m.pickerScroll = m.entityForm.pickerCursor
-	}
-	if m.entityForm.pickerCursor >= m.pickerScroll+viewport {
-		m.pickerScroll = m.entityForm.pickerCursor - viewport + 1
-	}
-	if m.pickerScroll < 0 {
-		m.pickerScroll = 0
-	}
-	if m.pickerScroll > rowCount-1 {
-		m.pickerScroll = rowCount - 1
-	}
-	if m.pickerScroll < 0 {
-		m.pickerScroll = 0
-	}
+	m.pickerScroll = followCursor(m.pickerScroll, m.entityForm.pickerCursor, m.pickerViewportRows(), rowCount)
 }
 
 // pickerViewportRows returns how many picker rows fit between the screen

@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -160,23 +159,8 @@ func (m Model) renderHelp() string {
 
 	viewport := m.helpViewportRows()
 	if viewport > 0 && len(lines) > viewport {
-		visibleHeight := viewport - 1
-		maxOffset := len(lines) - visibleHeight
-		offset := m.helpScroll
-		if offset < 0 {
-			offset = 0
-		}
-		if offset > maxOffset {
-			offset = maxOffset
-		}
-		visible := lines[offset : offset+visibleHeight]
-		above := offset
-		below := len(lines) - (offset + visibleHeight)
-		if below < 0 {
-			below = 0
-		}
-		hint := m.styles.hint.Render(fmt.Sprintf("▲ %d above · ▼ %d below  · j/k pgup/pgdn g/G", above, below))
-		return "\n" + indentBlock(strings.Join(visible, "\n")+"\n"+hint, 2)
+		visible, above, below := sliceViewport(lines, m.helpScroll, viewport-1)
+		return "\n" + indentBlock(strings.Join(visible, "\n")+"\n"+m.viewportFooterHint(above, below), 2)
 	}
 	return "\n" + indentBlock(strings.Join(lines, "\n"), 2)
 }

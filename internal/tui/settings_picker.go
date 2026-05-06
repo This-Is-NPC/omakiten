@@ -203,41 +203,16 @@ func readYAMLProfilesIn(dir string, isCustom bool) ([]configOption, error) {
 // reuses the same enrichment path as the entity flows).
 func (m Model) updateThemePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rowCount := len(m.themePickerOptions)
+	if cursor, handled := pickerNavKey(msg, m.entityForm.pickerCursor, rowCount, m.pickerViewportRows()); handled {
+		m.entityForm.pickerCursor = cursor
+		m.syncPickerScroll(rowCount)
+		return m, nil
+	}
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 	case "esc":
 		m.closeEntityScreen("Theme picker cancelled")
-	case "up", "k":
-		if m.entityForm.pickerCursor > 0 {
-			m.entityForm.pickerCursor--
-			m.syncPickerScroll(rowCount)
-		}
-	case "down", "j":
-		if m.entityForm.pickerCursor < rowCount-1 {
-			m.entityForm.pickerCursor++
-			m.syncPickerScroll(rowCount)
-		}
-	case "pgup", "ctrl+u":
-		step := taskViewPageStep(m.pickerViewportRows())
-		m.entityForm.pickerCursor -= step
-		if m.entityForm.pickerCursor < 0 {
-			m.entityForm.pickerCursor = 0
-		}
-		m.syncPickerScroll(rowCount)
-	case "pgdown", "ctrl+d":
-		step := taskViewPageStep(m.pickerViewportRows())
-		m.entityForm.pickerCursor += step
-		if m.entityForm.pickerCursor > rowCount-1 {
-			m.entityForm.pickerCursor = rowCount - 1
-		}
-		m.syncPickerScroll(rowCount)
-	case "home", "g":
-		m.entityForm.pickerCursor = 0
-		m.syncPickerScroll(rowCount)
-	case "end", "G":
-		m.entityForm.pickerCursor = rowCount - 1
-		m.syncPickerScroll(rowCount)
 	case "enter":
 		// Evaluate the side-effecting call before reading m for the return
 		// tuple — Go does not specify the order of non-function operands
@@ -277,41 +252,16 @@ func (m *Model) applyThemeSelection() tea.Cmd {
 
 func (m Model) updateConfigPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rowCount := len(m.configPickerOptions)
+	if cursor, handled := pickerNavKey(msg, m.entityForm.pickerCursor, rowCount, m.pickerViewportRows()); handled {
+		m.entityForm.pickerCursor = cursor
+		m.syncPickerScroll(rowCount)
+		return m, nil
+	}
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 	case "esc":
 		m.closeEntityScreen("Config picker cancelled")
-	case "up", "k":
-		if m.entityForm.pickerCursor > 0 {
-			m.entityForm.pickerCursor--
-			m.syncPickerScroll(rowCount)
-		}
-	case "down", "j":
-		if m.entityForm.pickerCursor < rowCount-1 {
-			m.entityForm.pickerCursor++
-			m.syncPickerScroll(rowCount)
-		}
-	case "pgup", "ctrl+u":
-		step := taskViewPageStep(m.pickerViewportRows())
-		m.entityForm.pickerCursor -= step
-		if m.entityForm.pickerCursor < 0 {
-			m.entityForm.pickerCursor = 0
-		}
-		m.syncPickerScroll(rowCount)
-	case "pgdown", "ctrl+d":
-		step := taskViewPageStep(m.pickerViewportRows())
-		m.entityForm.pickerCursor += step
-		if m.entityForm.pickerCursor > rowCount-1 {
-			m.entityForm.pickerCursor = rowCount - 1
-		}
-		m.syncPickerScroll(rowCount)
-	case "home", "g":
-		m.entityForm.pickerCursor = 0
-		m.syncPickerScroll(rowCount)
-	case "end", "G":
-		m.entityForm.pickerCursor = rowCount - 1
-		m.syncPickerScroll(rowCount)
 	case "enter":
 		m.applyConfigSelection()
 	}

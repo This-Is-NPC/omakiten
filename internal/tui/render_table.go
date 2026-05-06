@@ -68,19 +68,7 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 // in view. Each row is exactly 1 line — no height heuristic, same pattern as
 // syncLogsScroll.
 func (m *Model) syncTableScroll() {
-	viewport := m.tableViewportRows()
-	if viewport <= 0 {
-		return
-	}
-	if m.selected < m.tableScroll {
-		m.tableScroll = m.selected
-	}
-	if m.selected >= m.tableScroll+viewport {
-		m.tableScroll = m.selected - viewport + 1
-	}
-	if m.tableScroll < 0 {
-		m.tableScroll = 0
-	}
+	m.tableScroll = followCursor(m.tableScroll, m.selected, m.tableViewportRows(), len(m.tasks))
 }
 
 // tableViewportRows returns how many task rows fit in the table panel after
