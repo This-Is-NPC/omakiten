@@ -14,11 +14,11 @@ config:
     active: default
   theme:
     active: omakiten
-  templates:
-    # Slug of the task template (file in templates/<slug>.md) included in
-    # tasks_create / tasks_create_intent responses as a scaffold for the agent.
-    # Comment out to disable; missing slugs fail validation.
-    task: user-story
+  # template_defaults declares the kinds the user can assign in the TUI
+  # picker. Each loaded template can claim at most one (kind, project) pair
+  # via its frontmatter (`default: <kind>`, optional `project: <slug>`).
+  # Defaults below match the canonical Omakiten kit; tweak as needed.
+  template_defaults: [task, pr, comment-resume, comment-selfbranch]
 workflows:
   - id: 1
     key: default

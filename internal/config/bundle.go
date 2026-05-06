@@ -18,6 +18,32 @@ type Bundle struct {
 	Warnings  []SourceWarning `yaml:"-" json:"warnings,omitempty"`
 }
 
+// TemplateByDefault resolves the template that should be used as the active
+// scaffold for `kind` in the context of `projectSlug`. Project-scoped wins:
+// if a template declares default=kind, project=projectSlug it is returned
+// first; otherwise the global default (default=kind, project="") is
+// returned. Returns nil when neither matches — the caller treats that as
+// "no template configured for this kind".
+func (b Bundle) TemplateByDefault(kind, projectSlug string) *TaskTemplate {
+	if kind == "" {
+		return nil
+	}
+	var global *TaskTemplate
+	for i := range b.Templates {
+		t := &b.Templates[i]
+		if t.Default != kind {
+			continue
+		}
+		if projectSlug != "" && t.ProjectSlug == projectSlug {
+			return t
+		}
+		if t.ProjectSlug == "" && global == nil {
+			global = t
+		}
+	}
+	return global
+}
+
 // wiring is the literal YAML shape of `omakiten.yaml`. Loader unmarshals into
 // this; saver marshals from it. Keeps Bundle decoupled from on-disk layout.
 type wiring struct {
@@ -56,17 +82,30 @@ type Kit struct {
 }
 
 type Settings struct {
-	Output    OutputSettings    `yaml:"output" json:"output"`
-	Context   ContextSettings   `yaml:"context" json:"context"`
-	Workflow  WorkflowSettings  `yaml:"workflow" json:"workflow"`
-	Theme     ThemeSettings     `yaml:"theme" json:"theme"`
-	Templates TemplateSettings  `yaml:"templates,omitempty" json:"templates,omitempty"`
+	Output           OutputSettings   `yaml:"output" json:"output"`
+	Context          ContextSettings  `yaml:"context" json:"context"`
+	Workflow         WorkflowSettings `yaml:"workflow" json:"workflow"`
+	Theme            ThemeSettings    `yaml:"theme" json:"theme"`
+	TemplateDefaults []string         `yaml:"template_defaults,omitempty" json:"template_defaults,omitempty"`
 }
 
-// TemplateSettings binds template slugs to their roles. Each field is the slug
-// of a loaded template that should be exposed for the corresponding action.
-type TemplateSettings struct {
-	Task string `yaml:"task,omitempty" json:"task,omitempty"`
+// DefaultTemplateKinds is the canonical set of template-default slots when
+// the user omits config.template_defaults. These are the kinds the TUI
+// picker offers and the agent consumers query for.
+var DefaultTemplateKinds = []string{"task", "pr", "comment-resume", "comment-selfbranch"}
+
+// TemplateKinds returns the configured template_defaults list, falling back
+// to DefaultTemplateKinds when omitted. Used by validator, TUI picker, and
+// MCP query endpoints — all of them must agree on the valid kinds.
+func (s Settings) TemplateKinds() []string {
+	if len(s.TemplateDefaults) == 0 {
+		out := make([]string, len(DefaultTemplateKinds))
+		copy(out, DefaultTemplateKinds)
+		return out
+	}
+	out := make([]string, len(s.TemplateDefaults))
+	copy(out, s.TemplateDefaults)
+	return out
 }
 
 type OutputSettings struct {
@@ -131,11 +170,19 @@ type Project struct {
 // TaskTemplate is a resolved template: frontmatter fields merged with the body
 // from a templates/<slug>.md file. The body is free-form markdown and is not
 // validated structurally — agents use it as a scaffold, not as schema.
+//
+// Default is the kind this template is the active scaffold for (e.g. "task",
+// "pr"). Empty means the template is loaded but inactive. ProjectSlug scopes
+// the default to a single project — empty means it is the global default for
+// the kind. Uniqueness is enforced by the validator: at most one template
+// per (default, project) pair.
 type TaskTemplate struct {
 	Slug        string `json:"slug"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Entity      string `json:"entity,omitempty"`
+	Default     string `json:"default,omitempty"`
+	ProjectSlug string `json:"project,omitempty"`
 	Body        string `json:"body,omitempty"`
 	SourcePath  string `json:"source_path,omitempty"`
 	IsCustom    bool   `json:"is_custom,omitempty"`

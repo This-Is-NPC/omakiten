@@ -51,10 +51,8 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 			return fmt.Errorf("templates: ref %q has no matching file", template.Slug)
 		}
 	}
-	if slug := strings.TrimSpace(bundle.Config.Templates.Task); slug != "" {
-		if _, ok := templateSet[slug]; !ok {
-			return fmt.Errorf("config.templates.task: ref %q has no matching file in templates/", slug)
-		}
+	if err := validateTemplateDefaults(bundle); err != nil {
+		return err
 	}
 
 	for _, skill := range bundle.Skills {
@@ -147,6 +145,51 @@ func loadedPersonaSlugs(items []Persona) []string {
 		out = append(out, item.Slug)
 	}
 	return out
+}
+
+// validateTemplateDefaults enforces the new default-binding model:
+//   - every template's `default:` value must be in config.template_defaults
+//   - every template's `project:` value must reference an existing project
+//   - at most one template per (default, project) pair (uniqueness)
+//
+// Templates without a `default:` are inactive and pass validation as-is.
+func validateTemplateDefaults(bundle Bundle) error {
+	allowed := map[string]struct{}{}
+	for _, kind := range bundle.Config.TemplateKinds() {
+		allowed[kind] = struct{}{}
+	}
+	projectSet := map[string]struct{}{}
+	for _, project := range bundle.Projects {
+		projectSet[project.Slug] = struct{}{}
+	}
+
+	type slot struct {
+		kind, project string
+	}
+	seen := map[slot]string{}
+	for _, t := range bundle.Templates {
+		if t.Default == "" {
+			continue
+		}
+		if _, ok := allowed[t.Default]; !ok {
+			return fmt.Errorf("templates.%s: default %q is not in config.template_defaults", t.Slug, t.Default)
+		}
+		if t.ProjectSlug != "" {
+			if _, ok := projectSet[t.ProjectSlug]; !ok {
+				return fmt.Errorf("templates.%s: project %q does not match any project in projects:", t.Slug, t.ProjectSlug)
+			}
+		}
+		key := slot{kind: t.Default, project: t.ProjectSlug}
+		if other, dup := seen[key]; dup {
+			scope := "global"
+			if t.ProjectSlug != "" {
+				scope = "project=" + t.ProjectSlug
+			}
+			return fmt.Errorf("templates.%s and templates.%s both declare default=%q (%s) — only one may", other, t.Slug, t.Default, scope)
+		}
+		seen[key] = t.Slug
+	}
+	return nil
 }
 
 func loadedTemplateSlugs(items []TaskTemplate) []string {

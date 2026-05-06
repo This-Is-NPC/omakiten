@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -109,11 +108,6 @@ func assertRefsResolve(w wiring, skills []Skill, laws []Law, personas []Persona,
 	for _, slug := range w.Templates {
 		if _, ok := templateSet[slug]; !ok {
 			return fmt.Errorf("templates: ref %q has no matching file", slug)
-		}
-	}
-	if slug := strings.TrimSpace(w.Config.Templates.Task); slug != "" {
-		if _, ok := templateSet[slug]; !ok {
-			return fmt.Errorf("config.templates.task: ref %q has no matching file in templates/", slug)
 		}
 	}
 	for _, persona := range w.Personas {

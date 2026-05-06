@@ -167,7 +167,6 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 	dbPath := filepath.Join(tmp, "omakiten.db")
 
 	bundle := tuiTestBundle()
-	bundle.Config.Templates = config.TemplateSettings{Task: "task-default"}
 	if err := config.SaveFullBundle(configPath, bundle); err != nil {
 		t.Fatalf("SaveFullBundle() error = %v", err)
 	}
@@ -176,8 +175,10 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 	if err := os.MkdirAll(templatesDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
+	// task-default declares default: task in its own frontmatter (the new
+	// binding model). task-bug stays unassigned for picker tests.
 	if err := os.WriteFile(filepath.Join(templatesDir, "task-default.md"),
-		[]byte("---\nname: Default Task Template\ndescription: Standard scaffold\nentity: task\n---\n**User Story**\n\nComo X.\n"),
+		[]byte("---\nname: Default Task Template\ndescription: Standard scaffold\nentity: task\ndefault: task\n---\n**User Story**\n\nComo X.\n"),
 		0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
@@ -218,8 +219,14 @@ func TestRefreshLoadsTemplatesFromBundle(t *testing.T) {
 	if len(model.templates) != 2 {
 		t.Fatalf("model.templates len = %d, want 2", len(model.templates))
 	}
-	if model.activeTaskTemplateSlug != "task-default" {
-		t.Fatalf("activeTaskTemplateSlug = %q, want task-default", model.activeTaskTemplateSlug)
+	var defaultTask *config.TaskTemplate
+	for i := range model.templates {
+		if model.templates[i].Slug == "task-default" {
+			defaultTask = &model.templates[i]
+		}
+	}
+	if defaultTask == nil || defaultTask.Default != "task" {
+		t.Fatalf("task-default template should declare default: task, got %+v", defaultTask)
 	}
 	if path := model.entitySourcePath(entityKindTemplate, "task-default"); path == "" {
 		t.Fatalf("entitySourcePath(template, task-default) empty, want a real path")
@@ -231,7 +238,7 @@ func TestEntityCellRendersTemplatesWithActiveBadge(t *testing.T) {
 	model.entityKind = entityKindTemplate
 
 	cell := model.renderEntityCell(entityKindTemplate)
-	for _, want := range []string{"// TEMPLATES · 2", "task-default", "task-bug", "ACTIVE"} {
+	for _, want := range []string{"// TEMPLATES · 2", "task-default", "task-bug", "DEFAULT:TASK"} {
 		if !strings.Contains(cell, want) {
 			t.Fatalf("renderEntityCell missing %q\n%s", want, cell)
 		}

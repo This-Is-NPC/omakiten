@@ -30,6 +30,8 @@ type templateFrontmatter struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description,omitempty"`
 	Entity      string `yaml:"entity,omitempty"`
+	Default     string `yaml:"default,omitempty"`
+	Project     string `yaml:"project,omitempty"`
 }
 
 // LoadSkills scans dir for *.md files (defaults at root + customs under
@@ -257,6 +259,8 @@ func LoadTemplates(dir string) ([]TaskTemplate, []SourceWarning, error) {
 			Name:        meta.Name,
 			Description: meta.Description,
 			Entity:      strings.TrimSpace(meta.Entity),
+			Default:     strings.TrimSpace(meta.Default),
+			ProjectSlug: strings.TrimSpace(meta.Project),
 			Body:        string(body),
 			SourcePath:  file.Path,
 			IsCustom:    file.IsCustom,

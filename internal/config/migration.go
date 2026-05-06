@@ -49,6 +49,9 @@ func MigrateLayout(rootDir string) error {
 	if err := segregateUserConfigProfiles(rootDir); err != nil {
 		return err
 	}
+	if err := migrateLegacyTemplateBinding(rootDir); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -175,6 +178,195 @@ func segregateUserCustoms(rootDir string) error {
 		}
 	}
 	return nil
+}
+
+// migrateLegacyTemplateBinding rewrites the v3 template binding (frontmatter
+// `default: task` on the template file itself) from the v2 binding
+// (`config.templates.task: <slug>` in omakiten.yaml). Idempotent: if the
+// yaml has no legacy key, returns nil. Permissive YAML parse is used here
+// because the strict loader would reject the unknown `templates` field
+// after the schema removal.
+func migrateLegacyTemplateBinding(rootDir string) error {
+	yamlPath := filepath.Join(rootDir, "config", "omakiten.yaml")
+	raw, err := os.ReadFile(yamlPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read %s: %w", yamlPath, err)
+	}
+
+	slug, found := extractLegacyTemplateBinding(raw)
+	if !found {
+		return nil
+	}
+
+	// Locate the template file in either templates/<slug>.md (default) or
+	// templates/custom/<slug>.md (user). The migration writes back to
+	// whichever exists; if both exist, custom wins to mirror the loader.
+	candidates := []string{
+		filepath.Join(rootDir, "templates", "custom", slug+".md"),
+		filepath.Join(rootDir, "templates", slug+".md"),
+	}
+	target := ""
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			target = c
+			break
+		}
+	}
+	if target == "" {
+		// No template file matches the legacy binding — drop the key and
+		// skip the frontmatter rewrite. Bundle validation later will report
+		// the dangling reference if anything else points at the slug.
+		return rewriteWithoutLegacyTemplateBinding(yamlPath, raw)
+	}
+
+	if err := writeDefaultIntoTemplateFrontmatter(target, "task"); err != nil {
+		return err
+	}
+	return rewriteWithoutLegacyTemplateBinding(yamlPath, raw)
+}
+
+// extractLegacyTemplateBinding scans the raw yaml for the v2-era
+// `config.templates.task: <slug>` line. Returns the slug (trimmed) and true
+// when found. Permissive on whitespace and quoting; works on the formatted
+// output our saver produces.
+func extractLegacyTemplateBinding(raw []byte) (string, bool) {
+	inConfig := false
+	inTemplates := false
+	configIndent := -1
+	templatesIndent := -1
+
+	for _, line := range strings.Split(string(raw), "\n") {
+		trimmed := strings.TrimRight(line, "\r")
+		if strings.TrimSpace(trimmed) == "" {
+			continue
+		}
+		indent := leadingSpaces(trimmed)
+		stripped := strings.TrimSpace(trimmed)
+		if strings.HasPrefix(stripped, "#") {
+			continue
+		}
+		if !inConfig {
+			if indent == 0 && strings.HasPrefix(stripped, "config:") {
+				inConfig = true
+				configIndent = indent
+			}
+			continue
+		}
+		if indent <= configIndent {
+			inConfig = false
+			inTemplates = false
+			// Re-evaluate this line as a top-level entry.
+			if indent == 0 && strings.HasPrefix(stripped, "config:") {
+				inConfig = true
+				configIndent = indent
+			}
+			continue
+		}
+		if !inTemplates {
+			if strings.HasPrefix(stripped, "templates:") {
+				inTemplates = true
+				templatesIndent = indent
+			}
+			continue
+		}
+		if indent <= templatesIndent {
+			inTemplates = false
+			continue
+		}
+		if strings.HasPrefix(stripped, "task:") {
+			value := strings.TrimSpace(strings.TrimPrefix(stripped, "task:"))
+			value = strings.Trim(value, "\"'")
+			if value != "" {
+				return value, true
+			}
+		}
+	}
+	return "", false
+}
+
+func leadingSpaces(line string) int {
+	count := 0
+	for _, r := range line {
+		if r != ' ' {
+			break
+		}
+		count++
+	}
+	return count
+}
+
+// rewriteWithoutLegacyTemplateBinding strips the `templates:` block (and its
+// `task:` child) from the `config:` section and writes the result back. Done
+// line-by-line rather than yaml.Marshal so comments and field order in the
+// rest of the file are preserved.
+func rewriteWithoutLegacyTemplateBinding(yamlPath string, raw []byte) error {
+	lines := strings.Split(string(raw), "\n")
+	out := make([]string, 0, len(lines))
+	inTemplates := false
+	templatesIndent := -1
+	for _, line := range lines {
+		trimmed := strings.TrimRight(line, "\r")
+		if inTemplates {
+			indent := leadingSpaces(trimmed)
+			stripped := strings.TrimSpace(trimmed)
+			if stripped == "" {
+				out = append(out, trimmed)
+				continue
+			}
+			if indent > templatesIndent {
+				continue // child of templates, drop
+			}
+			inTemplates = false
+		}
+		stripped := strings.TrimSpace(trimmed)
+		if strings.HasPrefix(stripped, "templates:") && !strings.HasPrefix(stripped, "templates: [") && !strings.HasPrefix(stripped, "template_defaults:") {
+			indent := leadingSpaces(trimmed)
+			// Only treat as the legacy block when indent > 0 (under config:).
+			if indent > 0 {
+				inTemplates = true
+				templatesIndent = indent
+				continue
+			}
+		}
+		out = append(out, trimmed)
+	}
+	return WriteAtomic(yamlPath, []byte(strings.Join(out, "\n")))
+}
+
+// writeDefaultIntoTemplateFrontmatter mutates the .md file in place,
+// inserting/updating the `default:` field in its YAML frontmatter. Body
+// content and other frontmatter keys are preserved.
+func writeDefaultIntoTemplateFrontmatter(path, defaultKind string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	fm, body, err := SplitFrontmatter(raw)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+
+	// Replace any existing default: line; otherwise append at the end of the
+	// frontmatter block. Preserve other keys exactly so user-authored
+	// formatting (comments, ordering) survives.
+	lines := strings.Split(strings.TrimRight(string(fm), "\n"), "\n")
+	wrote := false
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "default:") {
+			lines[i] = fmt.Sprintf("default: %s", defaultKind)
+			wrote = true
+			break
+		}
+	}
+	if !wrote {
+		lines = append(lines, fmt.Sprintf("default: %s", defaultKind))
+	}
+
+	updated := JoinFrontmatter([]byte(strings.Join(lines, "\n")+"\n"), body)
+	return WriteAtomic(path, updated)
 }
 
 // segregateUserConfigProfiles relocates yaml profiles other than the

@@ -42,6 +42,7 @@ const (
 	entityScreenSkillPicker
 	entityScreenThemePicker
 	entityScreenConfigPicker
+	entityScreenDefaultPicker
 )
 
 // entityForm carries the per-screen state. For Phase 1 it only holds the
@@ -438,10 +439,15 @@ func (m Model) renderTemplateBadges(index int) []string {
 	template := m.templates[index]
 	tokens := m.counter.Count(template.Body)
 	badges := []string{m.tokenBadge(tokens)}
-	// ACTIVE marks the template currently bound to config.templates.task — it
-	// is the one tasks_create / tasks_create_intent will hand back as scaffold.
-	if m.activeTaskTemplateSlug != "" && template.Slug == m.activeTaskTemplateSlug {
-		badges = append(badges, m.styles.badgeInfo.Render("ACTIVE"))
+	// DEFAULT marks the template that is the active scaffold for a kind.
+	// Project-scoped defaults include the project slug so the user can
+	// distinguish them from the global default at a glance.
+	if template.Default != "" {
+		label := "DEFAULT:" + strings.ToUpper(template.Default)
+		if template.ProjectSlug != "" {
+			label += "·" + strings.ToUpper(template.ProjectSlug)
+		}
+		badges = append(badges, m.styles.badgeInfo.Render(label))
 	}
 	if template.IsCustom {
 		badges = append(badges, m.customBadge())
@@ -566,6 +572,11 @@ func (m *Model) handleConfigKey(msg tea.KeyMsg) tea.Cmd {
 	case "c":
 		m.clearDeletePrompt("")
 		m.openConfigPicker()
+	case "a":
+		m.clearDeletePrompt("")
+		if m.entityKind == entityKindTemplate {
+			m.openTemplateDefaultPickerForSelected()
+		}
 	}
 	return nil
 }
@@ -840,6 +851,8 @@ func (m Model) updateEntityScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateThemePicker(msg)
 	case entityScreenConfigPicker:
 		return m.updateConfigPicker(msg)
+	case entityScreenDefaultPicker:
+		return m.updateTemplateDefaultPicker(msg)
 	}
 	switch msg.String() {
 	case "ctrl+c", "q":
@@ -863,6 +876,11 @@ func (m Model) updateEntityScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.clearDeletePrompt("")
 		if m.entityForm.kind == entityKindPersona {
 			m.openPersonaPicker(m.entityForm.slug)
+		}
+	case "a":
+		m.clearDeletePrompt("")
+		if m.entityForm.kind == entityKindTemplate {
+			m.openTemplateDefaultPicker(m.entityForm.slug)
 		}
 	case "r":
 		m.clearDeletePrompt("")
@@ -1058,6 +1076,8 @@ func (m Model) renderEntityScreen() string {
 		return m.renderThemePicker()
 	case entityScreenConfigPicker:
 		return m.renderConfigPicker()
+	case entityScreenDefaultPicker:
+		return m.renderTemplateDefaultPicker()
 	}
 	return ""
 }
@@ -1136,19 +1156,26 @@ func (m Model) renderEntityView() string {
 		if entity == "" {
 			entity = m.styles.hint.Render("none")
 		}
-		active := m.styles.hint.Render("no")
-		if m.activeTaskTemplateSlug != "" && template.Slug == m.activeTaskTemplateSlug {
-			active = m.styles.badgeInfo.Render("ACTIVE")
+		defaultLabel := m.styles.hint.Render("none")
+		if template.Default != "" {
+			text := template.Default
+			if template.ProjectSlug != "" {
+				text += "  (project: " + template.ProjectSlug + ")"
+			} else {
+				text += "  (global)"
+			}
+			defaultLabel = m.styles.badgeInfo.Render(strings.ToUpper(text))
 		}
 		dataRows = [][]string{
 			{labelCell("Slug"), template.Slug},
 			{labelCell("Name"), template.Name},
 			{labelCell("Description"), template.Description},
 			{labelCell("Entity"), entity},
-			{labelCell("Active"), active},
+			{labelCell("Default"), defaultLabel},
 			{labelCell("Source"), template.SourcePath},
 		}
 		body = template.Body
+		extraSpannedRows = [][]string{{m.styles.hint.Render("a: assign default kind")}}
 	}
 
 	bodyText := strings.TrimRight(body, "\n")

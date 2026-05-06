@@ -32,14 +32,24 @@ type Repository interface {
 }
 
 // TaskTemplateLookup returns the active task template scaffold to embed in
-// task-creation responses. It returns nil when no template is configured.
-type TaskTemplateLookup func() *TaskTemplateSummary
+// task-creation responses, scoped by project. The lookup prefers a template
+// declaring `default: task` and `project: <slug>` matching the current
+// project; it falls back to the global default (no project) when none
+// matches. Returns nil when neither is configured.
+type TaskTemplateLookup func(projectSlug string) *TaskTemplateSummary
+
+// TemplateCatalog returns every loaded template so the read-only MCP
+// endpoints (templates.list / templates.show) can browse the bundle without
+// reaching for the BundleEditor directly. The agent never mutates these
+// records — assignment happens in the TUI via direct file edits.
+type TemplateCatalog func() []TemplateSummary
 
 type Service struct {
 	repo             Repository
 	selector         ProjectSelector
 	counter          token.Counter
 	taskTemplateLookup TaskTemplateLookup
+	templateCatalog    TemplateCatalog
 }
 
 func NewService(repo Repository, selector ProjectSelector) *Service {
@@ -51,6 +61,54 @@ func NewService(repo Repository, selector ProjectSelector) *Service {
 // embed the configured scaffold.
 func (s *Service) SetTaskTemplateLookup(lookup TaskTemplateLookup) {
 	s.taskTemplateLookup = lookup
+}
+
+// SetTemplateCatalog wires the read-only catalog used by templates.list and
+// templates.show. Without it the service still works but the MCP query
+// endpoints return empty payloads.
+func (s *Service) SetTemplateCatalog(catalog TemplateCatalog) {
+	s.templateCatalog = catalog
+}
+
+// ListTemplates returns every loaded template, optionally filtered by kind
+// or project scope. Body is omitted by default to keep responses compact;
+// callers set IncludeBody=true when they need the full scaffold.
+func (s *Service) ListTemplates(_ context.Context, input ListTemplatesInput) (ListTemplatesResponse, error) {
+	if s.templateCatalog == nil {
+		return ListTemplatesResponse{Templates: []TemplateSummary{}}, nil
+	}
+	all := s.templateCatalog()
+	out := make([]TemplateSummary, 0, len(all))
+	for _, t := range all {
+		if input.Kind != "" && t.Default != input.Kind {
+			continue
+		}
+		if input.Project != "" && t.Project != input.Project {
+			continue
+		}
+		if !input.IncludeBody {
+			t.Body = ""
+		}
+		out = append(out, t)
+	}
+	return ListTemplatesResponse{Templates: out}, nil
+}
+
+// ShowTemplate returns one template by slug, with body included.
+func (s *Service) ShowTemplate(_ context.Context, input ShowTemplateInput) (ShowTemplateResponse, error) {
+	slug := strings.TrimSpace(input.Slug)
+	if slug == "" {
+		return ShowTemplateResponse{}, domain.NewError(domain.ErrValidation, "template slug is required", nil)
+	}
+	if s.templateCatalog == nil {
+		return ShowTemplateResponse{}, domain.NewError(domain.ErrValidation, "template catalog not initialized", map[string]any{"slug": slug})
+	}
+	for _, t := range s.templateCatalog() {
+		if t.Slug == slug {
+			return ShowTemplateResponse{Template: t}, nil
+		}
+	}
+	return ShowTemplateResponse{}, domain.NewError(domain.ErrValidation, "template not found", map[string]any{"slug": slug})
 }
 
 func (s *Service) Overview(ctx context.Context, input OverviewInput) (OverviewResponse, error) {
@@ -171,7 +229,7 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 		return CreateTaskResponse{}, domain.NewError(domain.ErrValidation, "task title or description is required", nil)
 	}
 
-	template := s.activeTaskTemplate()
+	template := s.activeTaskTemplate(project.Slug)
 
 	if !input.SkipSimilarityCheck && !input.Confirmed {
 		tasks, err := app.NewTaskService(s.repo).List(ctx, project, domain.TaskFilter{})
@@ -204,11 +262,11 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 	return CreateTaskResponse{Project: projectSummary(project), Task: &summary, Template: template}, nil
 }
 
-func (s *Service) activeTaskTemplate() *TaskTemplateSummary {
+func (s *Service) activeTaskTemplate(projectSlug string) *TaskTemplateSummary {
 	if s.taskTemplateLookup == nil {
 		return nil
 	}
-	return s.taskTemplateLookup()
+	return s.taskTemplateLookup(projectSlug)
 }
 
 func (s *Service) CreateTask(ctx context.Context, input CreateTaskInput) (CreateTaskResponse, error) {

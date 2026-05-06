@@ -98,44 +98,64 @@ func TestLoadTemplatesListedSlugWithoutFileFails(t *testing.T) {
 	}
 }
 
-func TestConfigTemplatesTaskMustResolve(t *testing.T) {
+func TestTemplateDefaultFrontmatterResolves(t *testing.T) {
 	dir := t.TempDir()
-	writeTemplateFixture(t, dir)
+	// Two templates; the bug one declares default: task in its frontmatter.
+	writeFile(t, filepath.Join(dir, "templates", "task-default.md"),
+		"---\nname: Default\nentity: task\n---\nbody\n")
+	writeFile(t, filepath.Join(dir, "templates", "task-bug.md"),
+		"---\nname: Bug Report\nentity: task\ndefault: task\n---\nbody\n")
 	configPath := filepath.Join(dir, "omakiten.yaml")
-	// Override the default config to point at a non-existent template slug.
-	writeFile(t, configPath, strings.Replace(
-		templateBase,
-		"  theme: { active: catppuccin }",
-		"  theme: { active: catppuccin }\n  templates: { task: not-a-real-slug }",
-		1,
-	))
-
-	_, err := LoadBundle(configPath)
-	if err == nil {
-		t.Fatal("LoadBundle() error = nil, want config.templates.task validation failure")
-	}
-	if !strings.Contains(err.Error(), "config.templates.task") {
-		t.Fatalf("LoadBundle() error = %v, want config.templates.task mention", err)
-	}
-}
-
-func TestConfigTemplatesTaskResolvesToBundle(t *testing.T) {
-	dir := t.TempDir()
-	writeTemplateFixture(t, dir)
-	configPath := filepath.Join(dir, "omakiten.yaml")
-	writeFile(t, configPath, strings.Replace(
-		templateBase,
-		"  theme: { active: catppuccin }",
-		"  theme: { active: catppuccin }\n  templates: { task: task-default }",
-		1,
-	))
+	writeFile(t, configPath, templateBase)
 
 	bundle, err := LoadBundle(configPath)
 	if err != nil {
 		t.Fatalf("LoadBundle() error = %v", err)
 	}
-	if bundle.Config.Templates.Task != "task-default" {
-		t.Fatalf("Config.Templates.Task = %q, want task-default", bundle.Config.Templates.Task)
+	got := bundle.TemplateByDefault("task", "")
+	if got == nil {
+		t.Fatalf("TemplateByDefault(task) = nil, want task-bug")
+	}
+	if got.Slug != "task-bug" {
+		t.Fatalf("TemplateByDefault(task).Slug = %q, want task-bug", got.Slug)
+	}
+}
+
+func TestTemplateDefaultUniquenessIsEnforced(t *testing.T) {
+	dir := t.TempDir()
+	// Two templates BOTH claim default: task — must fail validation.
+	writeFile(t, filepath.Join(dir, "templates", "a.md"),
+		"---\nname: A\ndefault: task\n---\nbody\n")
+	writeFile(t, filepath.Join(dir, "templates", "b.md"),
+		"---\nname: B\ndefault: task\n---\nbody\n")
+	configPath := filepath.Join(dir, "omakiten.yaml")
+	writeFile(t, configPath, templateBase)
+
+	_, err := LoadBundle(configPath)
+	if err == nil {
+		t.Fatal("LoadBundle() error = nil, want default-collision failure")
+	}
+	if !strings.Contains(err.Error(), "default=\"task\"") {
+		t.Fatalf("LoadBundle() error = %v, want default=task mention", err)
+	}
+}
+
+func TestTemplateDefaultRejectsKindOutsideTemplateDefaults(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "templates", "weird.md"),
+		"---\nname: Weird\ndefault: not-a-known-kind\n---\nbody\n")
+	configPath := filepath.Join(dir, "omakiten.yaml")
+	// templateBase doesn't customize template_defaults, so we get the
+	// canonical [task, pr, comment-resume, comment-selfbranch] list which
+	// rejects "not-a-known-kind".
+	writeFile(t, configPath, templateBase)
+
+	_, err := LoadBundle(configPath)
+	if err == nil {
+		t.Fatal("LoadBundle() error = nil, want kind-not-allowed failure")
+	}
+	if !strings.Contains(err.Error(), "template_defaults") {
+		t.Fatalf("LoadBundle() error = %v, want template_defaults mention", err)
 	}
 }
 

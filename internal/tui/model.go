@@ -74,17 +74,16 @@ type Model struct {
 	blockerPickerCursor int
 	blockerPickerChecks map[int64]bool
 
-	tasks                  []domain.Task
-	workflow               domain.Workflow
-	dependencies           []domain.TaskDependency
-	comments               []domain.Comment
-	laws                   []domain.Law
-	skills                 []domain.Skill
-	personas               []domain.Persona
-	templates              []config.TaskTemplate
-	activeTaskTemplateSlug string
-	themePickerOptions     []themeOption
-	configPickerOptions    []configOption
+	tasks               []domain.Task
+	workflow            domain.Workflow
+	dependencies        []domain.TaskDependency
+	comments            []domain.Comment
+	laws                []domain.Law
+	skills              []domain.Skill
+	personas            []domain.Persona
+	templates           []config.TaskTemplate
+	themePickerOptions  []themeOption
+	configPickerOptions []configOption
 	entries                []domain.ContextEntry
 	tags                   []domain.Tag
 	taskTagsMap            map[int64][]domain.Tag
@@ -1463,7 +1462,6 @@ func (m *Model) refresh() error {
 	// Merge frontmatter + body + source_path from the on-disk bundle so the
 	// detail views and the $EDITOR shell-out have the file path they need.
 	var templates []config.TaskTemplate
-	var activeTemplate string
 	if m.repos.Editor != nil {
 		bundle, err := m.repos.Editor.Load()
 		if err != nil {
@@ -1475,7 +1473,6 @@ func (m *Model) refresh() error {
 		// Templates live only in the bundle (no SQLite materialization), so
 		// the TUI mirrors them straight from disk on every refresh.
 		templates = append([]config.TaskTemplate(nil), bundle.Templates...)
-		activeTemplate = bundle.Config.Templates.Task
 	}
 	entries, err := m.repos.Entries.ListContextEntries(m.ctx, m.project.ID)
 	if err != nil {
@@ -1506,7 +1503,6 @@ func (m *Model) refresh() error {
 	m.skills = skills
 	m.personas = personas
 	m.templates = templates
-	m.activeTaskTemplateSlug = activeTemplate
 	m.entries = entries
 	m.tags = allTags
 	m.taskTagsMap = taskTagsMap
@@ -2904,6 +2900,8 @@ func (m Model) renderFooter() string {
 		text = "up/down move  pgup/pgdn scroll  enter apply (hot-reload)  esc cancel"
 	case m.entityScreen == entityScreenConfigPicker:
 		text = "up/down move  pgup/pgdn scroll  enter select (restart required)  esc cancel"
+	case m.entityScreen == entityScreenDefaultPicker:
+		text = "up/down move  pgup/pgdn scroll  enter assign (clears prior owner)  esc cancel"
 	case m.moveMode:
 		text = "left/right move task to lane  esc cancel  q quit"
 	case m.view == 0:
@@ -2913,7 +2911,7 @@ func (m Model) renderFooter() string {
 	case m.view == 3 && m.entityKind == entityKindTag:
 		text = "left/right section  up/down select  d arm delete (orphan)  D delete all orphans  ? help"
 	case m.view == 3:
-		text = "left/right section  up/down select  enter open  n new  e edit  d arm delete  t theme  c config  ? help"
+		text = "left/right section  up/down select  enter open  n new  e edit  d arm delete  a default(template)  t theme  c config  ? help"
 	case m.view == 4:
 		text = "left/right switch view  up/down select row  pgup/pgdn scroll  g/G top/bottom  r refresh  ? help"
 	case m.view == 2:

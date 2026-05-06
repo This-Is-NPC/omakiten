@@ -2,6 +2,7 @@
 name: User Story
 description: Standard task scaffold with User Story, Acceptance Criteria, and Definition of Done.
 entity: task
+default: task
 ---
 
 **User Story**
