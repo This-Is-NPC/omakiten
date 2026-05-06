@@ -862,6 +862,46 @@ func TestModelBoardShowsMultipleColumnsWhenTheyFit(t *testing.T) {
 	}
 }
 
+func TestModelBoardLaneNavigationWrapsAround(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	if err := store.ImportBundle(ctx, multiBucketBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	n := len(model.workflow.Buckets)
+	if n < 2 {
+		t.Fatalf("multiBucketBundle should produce >=2 buckets, got %d", n)
+	}
+
+	// Right past the last lane wraps to the first.
+	got := model
+	for i := 0; i < n; i++ {
+		got = pressStringKey(t, got, "right")
+	}
+	if got.colIdx != 0 {
+		t.Fatalf("after %d rights colIdx = %d, want 0 (wrap)", n, got.colIdx)
+	}
+
+	// Left from the first lane wraps to the last.
+	got = pressStringKey(t, got, "left")
+	if got.colIdx != n-1 {
+		t.Fatalf("left from first colIdx = %d, want %d (wrap)", got.colIdx, n-1)
+	}
+}
+
 func TestModelConfigUsesFocusedSectionWhenNarrow(t *testing.T) {
 	ctx := context.Background()
 	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")

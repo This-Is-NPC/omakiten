@@ -485,8 +485,12 @@ func (m *Model) handleBoardKey(msg tea.KeyMsg) {
 			m.moveSelectedToColumn(m.colIdx - 1)
 			return
 		}
-		if m.colIdx > 0 {
-			m.colIdx--
+		// Plain navigation wraps the same way cycleEntityKind does on the
+		// config view: stepping past the first lane lands on the last.
+		// moveMode keeps its bounded behavior so dragging a task off the
+		// edge stays an explicit no-op.
+		if n := len(m.workflow.Buckets); n > 0 {
+			m.colIdx = (m.colIdx - 1 + n) % n
 			m.clampCardIdx()
 			m.syncSelectedFromBoard()
 			m.syncFocusedColumnScroll()
@@ -497,8 +501,8 @@ func (m *Model) handleBoardKey(msg tea.KeyMsg) {
 			m.moveSelectedToColumn(m.colIdx + 1)
 			return
 		}
-		if m.colIdx < len(m.workflow.Buckets)-1 {
-			m.colIdx++
+		if n := len(m.workflow.Buckets); n > 0 {
+			m.colIdx = (m.colIdx + 1) % n
 			m.clampCardIdx()
 			m.syncSelectedFromBoard()
 			m.syncFocusedColumnScroll()
