@@ -99,8 +99,20 @@ okt tui
 
 - [Architecture & Tech Stack](.docs/architecture.md)
 - [Requirements & Behavior Map](.docs/requirements.md)
-- [MCP Agent Surface](.docs/mcp-agent-surface.md)
 - [Why Omakiten?](.docs/why_omakiten.md)
+
+**User guides**
+
+- [CLI Guide](.docs/cli-guide.md)
+- [TUI Guide](.docs/tui-guide.md)
+- [MCP Guide](.docs/mcp-guide.md)
+- [Configuration Guide](.docs/configuration-guide.md)
+- [Workflow Guards Guide](.docs/guards-guide.md)
+- [Theming Guide](.docs/theming-guide.md)
+- [Data Model Guide](.docs/data-model-guide.md)
+
+**Project**
+
 - [Contributing](CONTRIBUTING.md)
 - [LICENSE](LICENSE)
 
