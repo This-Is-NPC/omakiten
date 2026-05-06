@@ -1,0 +1,108 @@
+# golangci-lint configuration. The depguard rules mirror the boundary
+# enforcement test in internal/arch/arch_test.go so users running
+# golangci-lint locally see the same violations the test catches in CI.
+# Edit both files together when relaxing or extending the rules.
+
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - depguard
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+  settings:
+    depguard:
+      rules:
+        domain-is-pure:
+          list-mode: lax
+          files:
+            - "**/internal/domain/**"
+          deny:
+            - pkg: omakiten/internal/sqlite
+              desc: domain is the inner core; depending on adapters inverts the hex direction
+            - pkg: omakiten/internal/config
+              desc: domain is the inner core; depending on adapters inverts the hex direction
+            - pkg: omakiten/internal/configstore
+              desc: domain is the inner core; depending on adapters inverts the hex direction
+            - pkg: omakiten/internal/tui
+              desc: domain is the inner core; depending on adapters inverts the hex direction
+            - pkg: omakiten/internal/cli
+              desc: domain is the inner core; depending on adapters inverts the hex direction
+            - pkg: omakiten/internal/mcp
+              desc: domain is the inner core; depending on adapters inverts the hex direction
+            - pkg: omakiten/internal/agent
+              desc: domain is the inner core; depending on adapters inverts the hex direction
+            - pkg: omakiten/internal/app
+              desc: domain is the inner core; depending on application services inverts the hex direction
+            - pkg: omakiten/internal/agentruntime
+              desc: domain is the inner core; depending on the composition root inverts the hex direction
+
+        app-talks-to-ports-only:
+          list-mode: lax
+          files:
+            - "**/internal/app/**"
+          deny:
+            - pkg: omakiten/internal/sqlite
+              desc: app talks to adapters via ports declared in app/ports.go
+            - pkg: omakiten/internal/configstore
+              desc: app talks to adapters via ports declared in app/ports.go
+            - pkg: omakiten/internal/tui
+              desc: app talks to adapters via ports declared in app/ports.go
+            - pkg: omakiten/internal/cli
+              desc: app talks to adapters via ports declared in app/ports.go
+            - pkg: omakiten/internal/mcp
+              desc: app talks to adapters via ports declared in app/ports.go
+            - pkg: omakiten/internal/agent
+              desc: app talks to adapters via ports declared in app/ports.go
+            - pkg: omakiten/internal/agentruntime
+              desc: app cannot import its composition root
+
+        sqlite-leaf:
+          list-mode: lax
+          files:
+            - "**/internal/sqlite/**"
+          deny:
+            - pkg: omakiten/internal/app
+              desc: sqlite is a leaf adapter; depending on app cycles the graph
+            - pkg: omakiten/internal/configstore
+              desc: sqlite must not depend on a sibling adapter
+            - pkg: omakiten/internal/tui
+              desc: sqlite must not depend on a sibling adapter
+            - pkg: omakiten/internal/cli
+              desc: sqlite must not depend on a sibling adapter
+            - pkg: omakiten/internal/mcp
+              desc: sqlite must not depend on a sibling adapter
+            - pkg: omakiten/internal/agent
+              desc: sqlite must not depend on a sibling adapter
+            - pkg: omakiten/internal/agentruntime
+              desc: sqlite must not depend on the composition root
+
+        configstore-leaf:
+          list-mode: lax
+          files:
+            - "**/internal/configstore/**"
+          deny:
+            - pkg: omakiten/internal/app
+              desc: configstore is a leaf adapter; depending on app cycles the graph
+            - pkg: omakiten/internal/sqlite
+              desc: configstore must not depend on a sibling adapter
+            - pkg: omakiten/internal/tui
+              desc: configstore must not depend on a sibling adapter
+            - pkg: omakiten/internal/cli
+              desc: configstore must not depend on a sibling adapter
+            - pkg: omakiten/internal/mcp
+              desc: configstore must not depend on a sibling adapter
+            - pkg: omakiten/internal/agent
+              desc: configstore must not depend on a sibling adapter
+            - pkg: omakiten/internal/agentruntime
+              desc: configstore must not depend on the composition root
+
+  exclusions:
+    rules:
+      - path: _test\.go$
+        linters:
+          - depguard
