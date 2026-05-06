@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -176,111 +175,10 @@ func (m Model) renderTemplateDefaultPicker() string {
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(header, "\n")), 2)
 }
 
-// applyTemplateDefault writes `default: <kind>` and `project: <projectSlug>`
-// into the focused template's frontmatter (or clears both when kind == "")
-// and atomically clears the same (kind, project) binding from any other
-// template that previously held it. Single BundleEditor.ApplyWithFiles
-// call: failures roll back both the file edits and the wiring.
+// applyTemplateDefault delegates to app.TemplateService, which owns the
+// file/wiring transactional sequence. Local rewriting helpers used to live
+// here; they were promoted into internal/app/template_service.go so the
+// behavior has its own test surface and the TUI stays free of bundle I/O.
 func (m *Model) applyTemplateDefault(slug, kind, projectSlug string) error {
-	if m.repos.Editor == nil {
-		return fmt.Errorf("editor not available")
-	}
-	bundle, err := m.repos.Editor.Load()
-	if err != nil {
-		return err
-	}
-	target, found := findTemplateInBundle(bundle, slug)
-	if !found {
-		return fmt.Errorf("template %q not found", slug)
-	}
-
-	scopeProject := projectSlug
-	if kind == "" {
-		scopeProject = ""
-	}
-	ops := []app.FileOp{}
-	updated, err := rewriteTemplateFrontmatter(target.SourcePath, kind, scopeProject)
-	if err != nil {
-		return err
-	}
-	ops = append(ops, app.FileOp{Op: app.OpWrite, Path: target.SourcePath, Bytes: updated})
-
-	if kind != "" {
-		for _, sibling := range bundle.Templates {
-			if sibling.Slug == slug {
-				continue
-			}
-			if sibling.Default == kind && sibling.ProjectSlug == projectSlug {
-				cleared, err := rewriteTemplateFrontmatter(sibling.SourcePath, "", "")
-				if err != nil {
-					return err
-				}
-				ops = append(ops, app.FileOp{Op: app.OpWrite, Path: sibling.SourcePath, Bytes: cleared})
-			}
-		}
-	}
-
-	_, err = m.repos.Editor.ApplyWithFiles(m.ctx, nil, ops)
-	return err
-}
-
-func findTemplateInBundle(bundle config.Bundle, slug string) (config.TaskTemplate, bool) {
-	for _, t := range bundle.Templates {
-		if t.Slug == slug {
-			return t, true
-		}
-	}
-	return config.TaskTemplate{}, false
-}
-
-// rewriteTemplateFrontmatter loads the template file, sets/clears the
-// `default:` and `project:` fields in the frontmatter, and returns the new
-// file bytes. Other frontmatter keys, the body, and ordering are preserved
-// so user-authored formatting survives the round-trip.
-func rewriteTemplateFrontmatter(path, kind, projectSlug string) ([]byte, error) {
-	raw, err := readTemplateFile(path)
-	if err != nil {
-		return nil, err
-	}
-	fm, body, err := config.SplitFrontmatter(raw)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-
-	lines := strings.Split(strings.TrimRight(string(fm), "\n"), "\n")
-	wroteDefault := false
-	wroteProject := false
-	out := make([]string, 0, len(lines)+2)
-	for _, line := range lines {
-		stripped := strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(stripped, "default:"):
-			if kind != "" {
-				out = append(out, fmt.Sprintf("default: %s", kind))
-				wroteDefault = true
-			}
-			// kind=="" → drop the line (clears the binding)
-		case strings.HasPrefix(stripped, "project:"):
-			if projectSlug != "" {
-				out = append(out, fmt.Sprintf("project: %s", projectSlug))
-				wroteProject = true
-			}
-		default:
-			out = append(out, line)
-		}
-	}
-	if kind != "" && !wroteDefault {
-		out = append(out, fmt.Sprintf("default: %s", kind))
-	}
-	if projectSlug != "" && !wroteProject {
-		out = append(out, fmt.Sprintf("project: %s", projectSlug))
-	}
-
-	return config.JoinFrontmatter([]byte(strings.Join(out, "\n")+"\n"), body), nil
-}
-
-// readTemplateFile is a thin wrapper around os.ReadFile factored out for
-// stubbing in tests; production reads straight from disk.
-var readTemplateFile = func(path string) ([]byte, error) {
-	return os.ReadFile(path)
+	return app.NewTemplateService(m.repos.Editor, m.repos.EntityFiles).SetDefault(m.ctx, slug, kind, projectSlug)
 }

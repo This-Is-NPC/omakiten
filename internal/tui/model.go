@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
@@ -375,88 +376,25 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 func (m *Model) refresh() error {
 	views := m.activeViewSettings()
 	m.views = views
-	tasks, err := m.repos.Tasks.ListTasks(m.ctx, m.project.ID, domain.TaskFilter{
-		Sort: domain.TaskSort{
-			Field: views.Board.Sort.Field,
-			Order: views.Board.Sort.Order,
-		},
-	})
+
+	query := app.NewTUIQueryService(m.repos.Tasks, m.repos.Config, m.repos.Dependencies, m.repos.Comments, m.repos.Entries, m.repos.Tags, m.repos.Editor)
+	snap, err := query.Snapshot(m.ctx, m.project, domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order})
 	if err != nil {
 		return err
-	}
-	workflow, err := m.repos.Config.ActiveWorkflow(m.ctx)
-	if err != nil {
-		return err
-	}
-	dependencies, err := m.repos.Dependencies.ListTaskDependencies(m.ctx, m.project.ID, 0)
-	if err != nil {
-		return err
-	}
-	comments, err := m.repos.Comments.ListComments(m.ctx, m.project.ID, 0)
-	if err != nil {
-		return err
-	}
-	laws, err := m.repos.Config.ListActiveLaws(m.ctx)
-	if err != nil {
-		return err
-	}
-	skills, err := m.repos.Config.ListActiveSkills(m.ctx)
-	if err != nil {
-		return err
-	}
-	personas, err := m.repos.Config.ListActivePersonas(m.ctx)
-	if err != nil {
-		return err
-	}
-	// The store returns identity-level fields only (id, key, name, severity).
-	// Merge frontmatter + body + source_path from the on-disk bundle so the
-	// detail views and the $EDITOR shell-out have the file path they need.
-	var templates []config.TaskTemplate
-	if m.repos.Editor != nil {
-		bundle, err := m.repos.Editor.Load()
-		if err != nil {
-			return err
-		}
-		skills = enrichSkillsFromBundle(skills, bundle)
-		laws = enrichLawsFromBundle(laws, bundle)
-		personas = enrichPersonasFromBundle(personas, bundle)
-		// Templates live only in the bundle (no SQLite materialization), so
-		// the TUI mirrors them straight from disk on every refresh.
-		templates = append([]config.TaskTemplate(nil), bundle.Templates...)
-	}
-	entries, err := m.repos.Entries.ListContextEntries(m.ctx, m.project.ID)
-	if err != nil {
-		return err
-	}
-	settings, err := m.repos.Config.ContextSettings(m.ctx)
-	if err != nil {
-		return err
-	}
-	var allTags []domain.Tag
-	taskTagsMap := map[int64][]domain.Tag{}
-	if m.repos.Tags != nil {
-		allTags, err = m.repos.Tags.ListAllTags(m.ctx)
-		if err != nil {
-			return err
-		}
-		taskTagsMap, err = m.repos.Tags.ListTaskTagsByProject(m.ctx, m.project.ID)
-		if err != nil {
-			return err
-		}
 	}
 
-	m.tasks = tasks
-	m.workflow = workflow
-	m.dependencies = dependencies
-	m.comments = comments
-	m.laws = laws
-	m.skills = skills
-	m.personas = personas
-	m.templates = templates
-	m.entries = entries
-	m.tags = allTags
-	m.taskTagsMap = taskTagsMap
-	m.metrics = m.computeMetrics(settings.MaxTokens)
+	m.tasks = snap.Tasks
+	m.workflow = snap.Workflow
+	m.dependencies = snap.Dependencies
+	m.comments = snap.Comments
+	m.laws = snap.Laws
+	m.skills = snap.Skills
+	m.personas = snap.Personas
+	m.templates = snap.Templates
+	m.entries = snap.Entries
+	m.tags = snap.AllTags
+	m.taskTagsMap = snap.TaskTagsByID
+	m.metrics = m.computeMetrics(snap.Settings.MaxTokens)
 	m.clampSelection()
 	m.clampCardIdx()
 	m.clampEntityCursor()

@@ -9,8 +9,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/app"
-	"omakiten/internal/config"
-	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/detailscreen"
 )
 
@@ -163,98 +161,6 @@ func (m *Model) openEntityCreate(kind entityKind) tea.Cmd {
 
 // snapshot returns a value-receiver copy of m suitable for read-only helpers.
 func (m *Model) snapshot() Model { return *m }
-
-// bundleWarningIndex returns the first source-warning message keyed by slug.
-// Mirrors app.warningIndex so the TUI's enrich pipeline can surface the same
-// non-fatal issues the CLI shows in `okt skill list` etc.
-func bundleWarningIndex(warnings []config.SourceWarning) map[string]string {
-	out := map[string]string{}
-	for _, w := range warnings {
-		if w.Slug == "" {
-			continue
-		}
-		if _, exists := out[w.Slug]; exists {
-			continue
-		}
-		out[w.Slug] = w.Message
-	}
-	return out
-}
-
-// enrichSkillsFromBundle merges the on-disk frontmatter + body + source path
-// into the identity-level skill records returned by the SQLite store.
-func enrichSkillsFromBundle(skills []domain.Skill, bundle config.Bundle) []domain.Skill {
-	bySlug := map[string]config.Skill{}
-	for _, skill := range bundle.Skills {
-		bySlug[skill.Slug] = skill
-	}
-	warnings := bundleWarningIndex(bundle.Warnings)
-	for index, skill := range skills {
-		if file, ok := bySlug[skill.Key]; ok {
-			skills[index].Description = file.Description
-			skills[index].Body = file.Body
-			skills[index].SourcePath = file.SourcePath
-			skills[index].IsCustom = file.IsCustom
-			if file.Name != "" {
-				skills[index].Name = file.Name
-			}
-		}
-		if w, ok := warnings[skill.Key]; ok {
-			skills[index].Warning = w
-		}
-	}
-	return skills
-}
-
-func enrichLawsFromBundle(laws []domain.Law, bundle config.Bundle) []domain.Law {
-	bySlug := map[string]config.Law{}
-	for _, law := range bundle.Laws {
-		bySlug[law.Slug] = law
-	}
-	warnings := bundleWarningIndex(bundle.Warnings)
-	for index, law := range laws {
-		if file, ok := bySlug[law.Key]; ok {
-			laws[index].Body = file.Body
-			laws[index].Severity = file.Severity
-			laws[index].SourcePath = file.SourcePath
-			laws[index].Scope = domain.LawScope(file.Scope)
-			laws[index].ProjectKey = file.ProjectSlug
-			laws[index].PersonaKey = file.PersonaSlug
-			laws[index].IsCustom = file.IsCustom
-			if file.Name != "" {
-				laws[index].Name = file.Name
-			}
-		}
-		if w, ok := warnings[law.Key]; ok {
-			laws[index].Warning = w
-		}
-	}
-	return laws
-}
-
-func enrichPersonasFromBundle(personas []domain.Persona, bundle config.Bundle) []domain.Persona {
-	bySlug := map[string]config.Persona{}
-	for _, persona := range bundle.Personas {
-		bySlug[persona.Slug] = persona
-	}
-	warnings := bundleWarningIndex(bundle.Warnings)
-	for index, persona := range personas {
-		if file, ok := bySlug[persona.Key]; ok {
-			personas[index].Description = file.Description
-			personas[index].Body = file.Body
-			personas[index].SourcePath = file.SourcePath
-			personas[index].LawKeys = append([]string(nil), file.Laws...)
-			personas[index].IsCustom = file.IsCustom
-			if file.Name != "" {
-				personas[index].Name = file.Name
-			}
-		}
-		if w, ok := warnings[persona.Key]; ok {
-			personas[index].Warning = w
-		}
-	}
-	return personas
-}
 
 func (m *Model) openSelectedEntityEdit() tea.Cmd {
 	if m.entityCount(m.entityKind) == 0 {

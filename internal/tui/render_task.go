@@ -368,39 +368,15 @@ func (m *Model) saveBlockerPicker() {
 		m.closeBlockerPicker("")
 		return
 	}
-	service := app.NewDependencyService(m.repos.Dependencies)
-	// Determine additions and removals
-	existing := map[int64]bool{}
-	for _, dep := range m.dependencies {
-		if dep.TaskID == m.blockerPickerTaskID {
-			existing[dep.DependsOnTaskID] = true
-		}
-	}
-	var added []int64
+	desired := make([]int64, 0, len(m.blockerPickerChecks))
 	for taskID, checked := range m.blockerPickerChecks {
-		if checked && !existing[taskID] {
-			added = append(added, taskID)
+		if checked {
+			desired = append(desired, taskID)
 		}
 	}
-	var removed []int64
-	for taskID := range existing {
-		if !m.blockerPickerChecks[taskID] {
-			removed = append(removed, taskID)
-		}
-	}
-	sort.Slice(added, func(i, j int) bool { return added[i] < added[j] })
-	sort.Slice(removed, func(i, j int) bool { return removed[i] < removed[j] })
-	for _, depID := range removed {
-		if err := service.Remove(m.ctx, m.project, m.blockerPickerTaskID, depID); err != nil {
-			m.status = err.Error()
-			return
-		}
-	}
-	for _, depID := range added {
-		if _, err := service.Add(m.ctx, m.project, m.blockerPickerTaskID, depID); err != nil {
-			m.status = err.Error()
-			return
-		}
+	if err := app.NewDependencyService(m.repos.Dependencies).SyncBlockers(m.ctx, m.project, m.blockerPickerTaskID, desired); err != nil {
+		m.status = err.Error()
+		return
 	}
 	if err := m.refresh(); err != nil {
 		m.status = err.Error()
