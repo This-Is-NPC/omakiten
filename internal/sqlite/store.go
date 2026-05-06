@@ -682,14 +682,14 @@ func (s *Store) CreateTask(ctx context.Context, projectID int64, title, descript
 	query := `
 INSERT INTO tasks(project_id, bucket_id, title, description, priority)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, project_id, bucket_id, title, description, priority
+RETURNING id, project_id, bucket_id, title, description, priority, created_at
 `
 	args := []any{projectID, bucketID, title, description, priority}
 	if priority == "" {
 		query = `
 INSERT INTO tasks(project_id, bucket_id, title, description)
 VALUES (?, ?, ?, ?)
-RETURNING id, project_id, bucket_id, title, description, priority
+RETURNING id, project_id, bucket_id, title, description, priority, created_at
 `
 		args = []any{projectID, bucketID, title, description}
 	}
@@ -700,7 +700,7 @@ RETURNING id, project_id, bucket_id, title, description, priority
 
 func (s *Store) ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter) ([]domain.Task, error) {
 	query := `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority, tasks.created_at
 FROM tasks
 LEFT JOIN workflow_buckets ON workflow_buckets.id = tasks.bucket_id
 WHERE tasks.project_id = ?`
@@ -709,7 +709,19 @@ WHERE tasks.project_id = ?`
 		query += " AND workflow_buckets.key = ?"
 		args = append(args, filter.BucketKey)
 	}
-	query += " ORDER BY tasks.id"
+	if len(filter.BucketKeys) > 0 {
+		query += " AND workflow_buckets.key IN (" + placeholders(len(filter.BucketKeys)) + ")"
+		for _, key := range filter.BucketKeys {
+			args = append(args, key)
+		}
+	}
+	if len(filter.Priorities) > 0 {
+		query += " AND tasks.priority IN (" + placeholders(len(filter.Priorities)) + ")"
+		for _, p := range filter.Priorities {
+			args = append(args, string(p))
+		}
+	}
+	query += " ORDER BY " + taskOrderClause(filter.Sort)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -720,12 +732,44 @@ WHERE tasks.project_id = ?`
 	var tasks []domain.Task
 	for rows.Next() {
 		var task domain.Task
-		if err := rows.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.BucketKey, &task.Title, &task.Description, &task.Priority); err != nil {
+		if err := rows.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.BucketKey, &task.Title, &task.Description, &task.Priority, &task.CreatedAt); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, task)
 	}
 	return tasks, rows.Err()
+}
+
+func placeholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.Repeat("?,", n-1) + "?"
+}
+
+// taskOrderClause maps a TaskSort to a literal ORDER BY fragment. We never
+// interpolate Field/Order directly into SQL — they are validated against a
+// fixed allowlist here, and unknown values silently fall back to "tasks.id"
+// to keep the legacy ordering as the safe default.
+func taskOrderClause(sort domain.TaskSort) string {
+	column := "tasks.id"
+	switch sort.Field {
+	case "title":
+		column = "tasks.title COLLATE NOCASE"
+	case "priority":
+		// CASE expression so the ordering is semantic (low < normal < high)
+		// rather than alphabetical, which would put "high" before "low".
+		column = "CASE tasks.priority WHEN 'low' THEN 1 WHEN 'normal' THEN 2 WHEN 'high' THEN 3 ELSE 0 END"
+	case "created_at":
+		column = "tasks.created_at"
+	case "id", "":
+		column = "tasks.id"
+	}
+	direction := "ASC"
+	if sort.Order == "desc" {
+		direction = "DESC"
+	}
+	return column + " " + direction + ", tasks.id ASC"
 }
 
 func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBucketKey string) (domain.Task, error) {
@@ -763,7 +807,7 @@ func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBuc
 
 	row := tx.QueryRowContext(ctx, `
 UPDATE tasks SET bucket_id = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND id = ?
-RETURNING id, project_id, bucket_id, title, description, priority
+RETURNING id, project_id, bucket_id, title, description, priority, created_at
 `, targetBucketID, projectID, taskID)
 
 	task, err := scanTask(row, targetBucketKey)
@@ -1057,7 +1101,7 @@ WHERE from_bucket_id = ? AND to_bucket_id = ? AND active = 1
 
 func scanTask(row *sql.Row, bucketKey string) (domain.Task, error) {
 	var task domain.Task
-	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority); err != nil {
+	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.CreatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", nil)
 		}
@@ -1069,14 +1113,14 @@ func scanTask(row *sql.Row, bucketKey string) (domain.Task, error) {
 
 func (s *Store) taskByID(ctx context.Context, projectID, taskID int64) (domain.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority, tasks.created_at
 FROM tasks
 LEFT JOIN workflow_buckets ON workflow_buckets.id = tasks.bucket_id
 WHERE tasks.project_id = ? AND tasks.id = ?
 `, projectID, taskID)
 
 	var task domain.Task
-	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.BucketKey, &task.Title, &task.Description, &task.Priority); err != nil {
+	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.BucketKey, &task.Title, &task.Description, &task.Priority, &task.CreatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
 		}

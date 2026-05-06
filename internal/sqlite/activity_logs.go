@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"omakiten/internal/domain"
 )
@@ -52,6 +53,14 @@ func (s *Store) ListActivityLogs(ctx context.Context, filter domain.ActivityLogF
 		conds = append(conds, "source = ?")
 		args = append(args, string(filter.Source))
 	}
+	if len(filter.Sources) > 0 {
+		ph := make([]string, len(filter.Sources))
+		for i, src := range filter.Sources {
+			ph[i] = "?"
+			args = append(args, string(src))
+		}
+		conds = append(conds, "source IN ("+strings.Join(ph, ",")+")")
+	}
 	if filter.ProjectID > 0 {
 		conds = append(conds, "project_id = ?")
 		args = append(args, filter.ProjectID)
@@ -62,7 +71,11 @@ func (s *Store) ListActivityLogs(ctx context.Context, filter domain.ActivityLogF
 			query += " AND " + c
 		}
 	}
-	query += " ORDER BY started_at DESC"
+	direction := "DESC"
+	if filter.Order == "asc" {
+		direction = "ASC"
+	}
+	query += " ORDER BY started_at " + direction
 	if filter.Limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", filter.Limit)
 	}

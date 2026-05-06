@@ -87,6 +87,7 @@ type Settings struct {
 	Workflow         WorkflowSettings `yaml:"workflow" json:"workflow"`
 	Theme            ThemeSettings    `yaml:"theme" json:"theme"`
 	TemplateDefaults []string         `yaml:"template_defaults,omitempty" json:"template_defaults,omitempty"`
+	Views            ViewSettings     `yaml:"views,omitempty" json:"views,omitempty"`
 }
 
 // DefaultTemplateKinds is the canonical set of template-default slots when
@@ -124,6 +125,115 @@ type WorkflowSettings struct {
 
 type ThemeSettings struct {
 	Active string `yaml:"active" json:"active"`
+}
+
+// SortSettings is the (field, order) pair that drives ORDER BY for a view.
+// Field is interpreted per view (the validator enforces the allowed set);
+// Order is "asc" or "desc". Empty fields are filled in by EffectiveViews
+// from per-view defaults, so omitting the section in YAML keeps existing
+// configs working unchanged.
+type SortSettings struct {
+	Field string `yaml:"field,omitempty" json:"field,omitempty"`
+	Order string `yaml:"order,omitempty" json:"order,omitempty"`
+}
+
+type BoardFilterSettings struct {
+	Priority []string `yaml:"priority,omitempty" json:"priority,omitempty"`
+}
+
+type TableFilterSettings struct {
+	Priority []string `yaml:"priority,omitempty" json:"priority,omitempty"`
+	Bucket   []string `yaml:"bucket,omitempty" json:"bucket,omitempty"`
+}
+
+type LogsFilterSettings struct {
+	Source []string `yaml:"source,omitempty" json:"source,omitempty"`
+}
+
+type BoardViewSettings struct {
+	Sort   SortSettings        `yaml:"sort,omitempty" json:"sort,omitempty"`
+	Filter BoardFilterSettings `yaml:"filter,omitempty" json:"filter,omitempty"`
+}
+
+type TableViewSettings struct {
+	Sort   SortSettings        `yaml:"sort,omitempty" json:"sort,omitempty"`
+	Filter TableFilterSettings `yaml:"filter,omitempty" json:"filter,omitempty"`
+}
+
+type GraphViewSettings struct {
+	Sort SortSettings `yaml:"sort,omitempty" json:"sort,omitempty"`
+}
+
+type LogsViewSettings struct {
+	Sort   SortSettings       `yaml:"sort,omitempty" json:"sort,omitempty"`
+	Limit  int                `yaml:"limit,omitempty" json:"limit,omitempty"`
+	Filter LogsFilterSettings `yaml:"filter,omitempty" json:"filter,omitempty"`
+}
+
+type TaskActivityViewSettings struct {
+	Sort SortSettings `yaml:"sort,omitempty" json:"sort,omitempty"`
+}
+
+// ViewSettings is the per-view default sort/filter block. The TUI seeds
+// itself from these on startup so the user does not have to re-apply
+// preferences every session.
+type ViewSettings struct {
+	Board        BoardViewSettings        `yaml:"board,omitempty" json:"board,omitempty"`
+	Table        TableViewSettings        `yaml:"table,omitempty" json:"table,omitempty"`
+	Graph        GraphViewSettings        `yaml:"graph,omitempty" json:"graph,omitempty"`
+	Logs         LogsViewSettings         `yaml:"logs,omitempty" json:"logs,omitempty"`
+	TaskActivity TaskActivityViewSettings `yaml:"task_activity,omitempty" json:"task_activity,omitempty"`
+}
+
+// Default sort/filter values used when the user omits config.views or any
+// of its sub-fields. Centralising them here keeps the validator, the TUI
+// and the store query in agreement — all three call EffectiveViews() to
+// read the merged result rather than re-deriving the defaults locally.
+const (
+	DefaultBoardSortField        = "created_at"
+	DefaultBoardSortOrder        = "desc"
+	DefaultTableSortField        = "created_at"
+	DefaultTableSortOrder        = "desc"
+	DefaultGraphSortField        = "id"
+	DefaultGraphSortOrder        = "asc"
+	DefaultLogsSortOrder         = "desc"
+	DefaultLogsLimit             = 50
+	DefaultTaskActivitySortOrder = "asc"
+)
+
+// EffectiveViews returns ViewSettings with omitted fields filled in from
+// the canonical defaults. Callers should always go through this so the
+// store query, the validator and the TUI agree on the resolved values.
+func (s Settings) EffectiveViews() ViewSettings {
+	v := s.Views
+	if v.Board.Sort.Field == "" {
+		v.Board.Sort.Field = DefaultBoardSortField
+	}
+	if v.Board.Sort.Order == "" {
+		v.Board.Sort.Order = DefaultBoardSortOrder
+	}
+	if v.Table.Sort.Field == "" {
+		v.Table.Sort.Field = DefaultTableSortField
+	}
+	if v.Table.Sort.Order == "" {
+		v.Table.Sort.Order = DefaultTableSortOrder
+	}
+	if v.Graph.Sort.Field == "" {
+		v.Graph.Sort.Field = DefaultGraphSortField
+	}
+	if v.Graph.Sort.Order == "" {
+		v.Graph.Sort.Order = DefaultGraphSortOrder
+	}
+	if v.Logs.Sort.Order == "" {
+		v.Logs.Sort.Order = DefaultLogsSortOrder
+	}
+	if v.Logs.Limit <= 0 {
+		v.Logs.Limit = DefaultLogsLimit
+	}
+	if v.TaskActivity.Sort.Order == "" {
+		v.TaskActivity.Sort.Order = DefaultTaskActivitySortOrder
+	}
+	return v
 }
 
 // Skill is a resolved skill: its frontmatter + body merged with the slug taken

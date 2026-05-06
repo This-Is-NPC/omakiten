@@ -24,7 +24,9 @@ type ActivityLog struct {
 }
 
 type ActivityLogFilter struct {
-	Source      ActivitySource
-	ProjectID   int64
-	Limit       int
+	Source    ActivitySource
+	Sources   []ActivitySource
+	ProjectID int64
+	Limit     int
+	Order     string
 }

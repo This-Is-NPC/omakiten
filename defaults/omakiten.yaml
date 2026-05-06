@@ -19,6 +19,38 @@ config:
   # via its frontmatter (`default: <kind>`, optional `project: <slug>`).
   # Defaults below match the canonical Omakiten kit; tweak as needed.
   template_defaults: [task, pr, comment-resume, comment-selfbranch]
+  # views configures the default sort and filter applied to each view at
+  # startup. Every field is optional — omit a section and the canonical
+  # default takes over. Field/order values are validated; typos surface
+  # with a descriptive error instead of being silently ignored.
+  #
+  # views:
+  #   board:
+  #     sort:
+  #       field: created_at   # id | title | priority | created_at
+  #       order: desc         # asc | desc
+  #     filter:
+  #       priority: []        # [] = all | subset of [low, normal, high]
+  #   table:
+  #     sort:
+  #       field: created_at
+  #       order: desc
+  #     filter:
+  #       priority: []
+  #       bucket: []          # [] = all | subset of bucket keys in the active workflow
+  #   graph:
+  #     sort:
+  #       field: id           # id | title (only)
+  #       order: asc
+  #   logs:
+  #     sort:
+  #       order: desc         # only direction is configurable for logs
+  #     limit: 50
+  #     filter:
+  #       source: []          # [] = all | subset of [cli, tui, mcp]
+  #   task_activity:
+  #     sort:
+  #       order: asc          # asc = chronological | desc = newest first
 workflows:
   - id: 1
     key: default

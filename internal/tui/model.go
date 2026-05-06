@@ -105,6 +105,11 @@ type Model struct {
 	logs         []domain.ActivityLog
 	logsSelected int
 
+	// views caches the resolved per-view sort/filter pulled from the active
+	// bundle on each refresh. Render and query helpers read it instead of
+	// the raw Settings so omitted fields show up as their canonical defaults.
+	views config.ViewSettings
+
 	taskViewScroll int
 
 	// boardColScroll is the leftmost-visible bucket index when the board is
@@ -325,12 +330,36 @@ func (m *Model) refreshActivityLogs() error {
 	if m.repos.ActivityLogs == nil {
 		return nil
 	}
-	logs, err := m.repos.ActivityLogs.ListActivityLogs(m.ctx, domain.ActivityLogFilter{Limit: 50})
+	views := m.activeViewSettings()
+	m.views = views
+	sources := make([]domain.ActivitySource, 0, len(views.Logs.Filter.Source))
+	for _, src := range views.Logs.Filter.Source {
+		sources = append(sources, domain.ActivitySource(src))
+	}
+	logs, err := m.repos.ActivityLogs.ListActivityLogs(m.ctx, domain.ActivityLogFilter{
+		Limit:   views.Logs.Limit,
+		Order:   views.Logs.Sort.Order,
+		Sources: sources,
+	})
 	if err != nil {
 		return err
 	}
 	m.logs = logs
 	return nil
+}
+
+// activeViewSettings reads the resolved per-view sort/filter from the active
+// bundle. When the bundle editor is not wired (tests, headless callers) it
+// falls back to the canonical defaults so the TUI behaves the same way.
+func (m *Model) activeViewSettings() config.ViewSettings {
+	if m.repos.Editor == nil {
+		return config.Settings{}.EffectiveViews()
+	}
+	bundle, err := m.repos.Editor.Load()
+	if err != nil {
+		return config.Settings{}.EffectiveViews()
+	}
+	return bundle.Config.EffectiveViews()
 }
 
 func (m Model) View() string {
@@ -687,7 +716,7 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 // handleGraphKey handles input on the dependency graph view.
 // j/k/pgup/pgdn/g/G navigate between nodes; enter opens the selected task.
 func (m *Model) handleGraphKey(msg tea.KeyMsg) {
-	lines := buildDAGLines(m.dependencies, m.tasks)
+	lines := buildDAGLinesSorted(m.dependencies, m.tasks, m.graphRootLess())
 	sel := dagSelectableIndices(lines)
 	maxCursor := len(sel) - 1
 	if maxCursor < 0 {
@@ -1430,7 +1459,14 @@ func (m *Model) moveSelectedToColumn(targetColIdx int) {
 }
 
 func (m *Model) refresh() error {
-	tasks, err := m.repos.Tasks.ListTasks(m.ctx, m.project.ID, domain.TaskFilter{})
+	views := m.activeViewSettings()
+	m.views = views
+	tasks, err := m.repos.Tasks.ListTasks(m.ctx, m.project.ID, domain.TaskFilter{
+		Sort: domain.TaskSort{
+			Field: views.Board.Sort.Field,
+			Order: views.Board.Sort.Order,
+		},
+	})
 	if err != nil {
 		return err
 	}
@@ -2596,27 +2632,32 @@ func (m Model) renderLogsCompact() string {
 }
 
 func (m Model) renderTable() string {
-	if len(m.tasks) == 0 {
-		return "\n" + indentBlock(m.styles.panel.Render("No tasks yet. Press n to create one."), 2)
+	tasks := m.applyTableView()
+	if len(tasks) == 0 {
+		if len(m.tasks) == 0 {
+			return "\n" + indentBlock(m.styles.panel.Render("No tasks yet. Press n to create one."), 2)
+		}
+		return "\n" + indentBlock(m.styles.panel.Render("No tasks match the configured table filter."), 2)
 	}
 	if m.availableWidth() < 74 {
-		return m.renderTableCompact()
+		return m.renderTableCompactWith(tasks)
 	}
 	const tableFixedWidth = 44
 	contentWidth := m.availableWidth() - 4
 	titleWidth := contentWidth - tableFixedWidth
 
-	dataRows := make([]string, 0, len(m.tasks))
-	for i, task := range m.tasks {
+	selectedID := m.selectedTaskID()
+	dataRows := make([]string, 0, len(tasks))
+	for _, task := range tasks {
 		marker := normalMarker
-		if i == m.selected {
+		if task.ID == selectedID {
 			marker = m.styles.marker.Render(selectionMarker)
 		}
 		dataRows = append(dataRows, fmt.Sprintf("%s %-4d %-11s %-8s %-5d %-9d %s", marker, task.ID, task.BucketKey, task.Priority, m.dependencyCount(task.ID), m.commentCount(task.ID), truncateText(task.Title, titleWidth)))
 	}
 
 	rows := []string{
-		m.styles.kickerCount("Tasks", len(m.tasks)),
+		m.styles.kickerCount("Tasks", len(tasks)),
 		m.styles.info.Render("// ID   BUCKET      PRI      DEPS  COMMENTS  TITLE"),
 		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
 	}
@@ -2624,12 +2665,13 @@ func (m Model) renderTable() string {
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
 }
 
-func (m Model) renderTableCompact() string {
+func (m Model) renderTableCompactWith(tasks []domain.Task) string {
 	width := clampInt(m.availableWidth()-4, 32, 68)
-	dataRows := make([]string, 0, len(m.tasks))
-	for i, task := range m.tasks {
+	selectedID := m.selectedTaskID()
+	dataRows := make([]string, 0, len(tasks))
+	for _, task := range tasks {
 		marker := normalMarker
-		if i == m.selected {
+		if task.ID == selectedID {
 			marker = m.styles.marker.Render(selectionMarker)
 		}
 		prefix := fmt.Sprintf("%s #%d %s %s ", marker, task.ID, task.BucketKey, task.Priority)
@@ -2637,11 +2679,21 @@ func (m Model) renderTableCompact() string {
 		dataRows = append(dataRows, prefix+truncateText(task.Title, budget))
 	}
 	rows := []string{
-		m.styles.kickerCount("Tasks", len(m.tasks)),
+		m.styles.kickerCount("Tasks", len(tasks)),
 		m.styles.separator.Render(strings.Repeat("─", width)),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.tableScroll, m.tableViewportRows())...)
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
+}
+
+// selectedTaskID resolves the currently-selected task id via m.tasks; used
+// by the table view to flag the matching row even when the visible list
+// has been re-sorted/filtered by view config.
+func (m Model) selectedTaskID() int64 {
+	if m.selected < 0 || m.selected >= len(m.tasks) {
+		return 0
+	}
+	return m.tasks[m.selected].ID
 }
 
 func (m Model) renderGraph() string {
@@ -2655,7 +2707,7 @@ func (m Model) renderGraph() string {
 		return "\n" + indentBlock(content, 2)
 	}
 
-	lines := buildDAGLines(m.dependencies, m.tasks)
+	lines := buildDAGLinesSorted(m.dependencies, m.tasks, m.graphRootLess())
 	sel := dagSelectableIndices(lines)
 
 	var cursorLineIdx int = -1
@@ -2679,6 +2731,42 @@ func (m Model) renderGraph() string {
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.graphScroll, m.graphViewportRows())...)
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
+}
+
+// graphRootLess turns the graph view sort config into a comparator the DAG
+// builder can use. Returns nil when the config is at its default (id asc),
+// so the legacy ordering path stays untouched for users who never touch
+// the views section.
+func (m Model) graphRootLess() func(a, b domain.Task) bool {
+	field := m.views.Graph.Sort.Field
+	order := m.views.Graph.Sort.Order
+	if field == "" {
+		field = config.DefaultGraphSortField
+	}
+	if order == "" {
+		order = config.DefaultGraphSortOrder
+	}
+	if field == config.DefaultGraphSortField && order == config.DefaultGraphSortOrder {
+		return nil
+	}
+	asc := order != "desc"
+	switch field {
+	case "title":
+		return func(a, b domain.Task) bool {
+			ai, bi := strings.ToLower(a.Title), strings.ToLower(b.Title)
+			if asc {
+				return ai < bi
+			}
+			return ai > bi
+		}
+	default:
+		return func(a, b domain.Task) bool {
+			if asc {
+				return a.ID < b.ID
+			}
+			return a.ID > b.ID
+		}
+	}
 }
 
 func (m Model) renderConfig() string {
@@ -2960,10 +3048,126 @@ func (m Model) taskByID(taskID int64) (domain.Task, bool) {
 
 func (m Model) tasksByBucket() map[string][]domain.Task {
 	tasksByBucket := map[string][]domain.Task{}
+	allowed := priorityAllowSet(m.views.Board.Filter.Priority)
 	for _, task := range m.tasks {
+		if !priorityAllowed(allowed, task.Priority) {
+			continue
+		}
 		tasksByBucket[task.BucketKey] = append(tasksByBucket[task.BucketKey], task)
 	}
 	return tasksByBucket
+}
+
+// priorityAllowSet returns nil when the configured slice is empty (meaning
+// "allow everything"), otherwise a lookup set. Centralised so board and
+// table views agree on the filter semantics.
+func priorityAllowSet(values []string) map[string]struct{} {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(values))
+	for _, v := range values {
+		out[v] = struct{}{}
+	}
+	return out
+}
+
+func priorityAllowed(allowed map[string]struct{}, priority domain.Priority) bool {
+	if allowed == nil {
+		return true
+	}
+	_, ok := allowed[string(priority)]
+	return ok
+}
+
+func bucketAllowSet(values []string) map[string]struct{} {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(values))
+	for _, v := range values {
+		out[v] = struct{}{}
+	}
+	return out
+}
+
+func bucketAllowed(allowed map[string]struct{}, bucketKey string) bool {
+	if allowed == nil {
+		return true
+	}
+	_, ok := allowed[bucketKey]
+	return ok
+}
+
+// applyTableView returns m.tasks filtered and sorted according to the
+// `table` view config. The returned slice is a copy — callers free to
+// re-order without mutating m.tasks (which is the board's source of truth).
+func (m Model) applyTableView() []domain.Task {
+	prioAllowed := priorityAllowSet(m.views.Table.Filter.Priority)
+	bucketAllowedSet := bucketAllowSet(m.views.Table.Filter.Bucket)
+	out := make([]domain.Task, 0, len(m.tasks))
+	for _, task := range m.tasks {
+		if !priorityAllowed(prioAllowed, task.Priority) {
+			continue
+		}
+		if !bucketAllowed(bucketAllowedSet, task.BucketKey) {
+			continue
+		}
+		out = append(out, task)
+	}
+	sortTasks(out, m.views.Table.Sort)
+	return out
+}
+
+// applyGraphSort returns m.tasks sorted by the graph view sort. The DAG
+// builder picks roots from the resulting order so the user can choose
+// "id ascending" (chronological) or "title ascending" (alphabetical).
+func (m Model) applyGraphSort() []domain.Task {
+	out := make([]domain.Task, len(m.tasks))
+	copy(out, m.tasks)
+	sortTasks(out, m.views.Graph.Sort)
+	return out
+}
+
+func sortTasks(tasks []domain.Task, sort config.SortSettings) {
+	if sort.Field == "" {
+		return
+	}
+	asc := sort.Order != "desc"
+	sortableLess := func(i, j int) bool {
+		a, b := tasks[i], tasks[j]
+		switch sort.Field {
+		case "title":
+			return strings.ToLower(a.Title) < strings.ToLower(b.Title)
+		case "priority":
+			return priorityRank(a.Priority) < priorityRank(b.Priority)
+		case "created_at":
+			return a.CreatedAt < b.CreatedAt
+		default:
+			return a.ID < b.ID
+		}
+	}
+	stableSort(tasks, sortableLess, asc)
+}
+
+func priorityRank(p domain.Priority) int {
+	switch p {
+	case domain.PriorityLow:
+		return 1
+	case domain.PriorityNormal:
+		return 2
+	case domain.PriorityHigh:
+		return 3
+	}
+	return 0
+}
+
+func stableSort(tasks []domain.Task, less func(i, j int) bool, asc bool) {
+	if asc {
+		sort.SliceStable(tasks, less)
+		return
+	}
+	sort.SliceStable(tasks, func(i, j int) bool { return less(j, i) })
 }
 
 func (m Model) tasksInCurrentBucket() []domain.Task {

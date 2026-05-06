@@ -22,6 +22,14 @@ type dagLine struct {
 // via multiple paths) are rendered in full on first visit and shown with a back-reference
 // annotation [→ #A, ...] on subsequent visits to avoid duplicating subtrees.
 func buildDAGLines(deps []domain.TaskDependency, tasks []domain.Task) []dagLine {
+	return buildDAGLinesSorted(deps, tasks, nil)
+}
+
+// buildDAGLinesSorted is buildDAGLines with a custom root ordering. When less
+// is nil, roots are ordered by ascending task id (the legacy default). The TUI
+// view layer passes a comparator built from `config.views.graph.sort` so the
+// graph respects the user's preference.
+func buildDAGLinesSorted(deps []domain.TaskDependency, tasks []domain.Task, less func(a, b domain.Task) bool) []dagLine {
 	if len(deps) == 0 {
 		return nil
 	}
@@ -55,7 +63,21 @@ func buildDAGLines(deps []domain.TaskDependency, tasks []domain.Task) []dagLine 
 			roots = append(roots, id)
 		}
 	}
-	sort.Slice(roots, func(i, j int) bool { return roots[i] < roots[j] })
+	if less != nil {
+		sort.SliceStable(roots, func(i, j int) bool {
+			a, aok := taskByID[roots[i]]
+			b, bok := taskByID[roots[j]]
+			// Tasks missing from the lookup (deps reference non-existent ids)
+			// fall back to id ordering so the comparator never gets a zero
+			// value with a meaningful Title.
+			if !aok || !bok {
+				return roots[i] < roots[j]
+			}
+			return less(a, b)
+		})
+	} else {
+		sort.Slice(roots, func(i, j int) bool { return roots[i] < roots[j] })
+	}
 
 	var lines []dagLine
 	visited := map[int64]bool{}

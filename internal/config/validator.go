@@ -11,6 +11,18 @@ var allowedSeverities = map[string]struct{}{
 	"error":   {},
 }
 
+var allowedSortOrders = map[string]struct{}{
+	"asc":  {},
+	"desc": {},
+}
+
+var (
+	allowedTaskSortFields  = []string{"id", "title", "priority", "created_at"}
+	allowedGraphSortFields = []string{"id", "title"}
+	allowedPriorities      = []string{"low", "normal", "high"}
+	allowedLogsSources     = []string{"cli", "tui", "mcp"}
+)
+
 // ValidateBundle checks the merged bundle against on-disk entity sets.
 //
 // loadedSkills/loadedLaws/loadedPersonas hold the full set of files discovered
@@ -39,6 +51,9 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	}
 	if strings.TrimSpace(bundle.Config.Theme.Active) == "" {
 		return fmt.Errorf("config.theme.active is required")
+	}
+	if err := validateViewSettings(bundle.Config.Views, bundle.Workflows, bundle.Config.Workflow.Active); err != nil {
+		return err
 	}
 
 	skillSet := slugSet(loadedSkillSlugs(loadedSkills))
@@ -345,4 +360,110 @@ func requireIDKeyName(section string, id int, key, name string) error {
 
 func requireKitFields(kit Kit) error {
 	return requireIDKeyName("kit", kit.ID, kit.Key, kit.Name)
+}
+
+// validateViewSettings enforces per-view sort/filter rules. Empty fields are
+// fine — EffectiveViews fills them in with the canonical defaults — but any
+// value the user does provide must be in the allowed set, otherwise the TUI
+// would silently ignore typos and the user would never get feedback.
+func validateViewSettings(v ViewSettings, workflows []Workflow, activeWorkflow string) error {
+	if err := validateSort("config.views.board.sort", v.Board.Sort, allowedTaskSortFields, true); err != nil {
+		return err
+	}
+	if err := validateStringSet("config.views.board.filter.priority", v.Board.Filter.Priority, allowedPriorities); err != nil {
+		return err
+	}
+
+	if err := validateSort("config.views.table.sort", v.Table.Sort, allowedTaskSortFields, true); err != nil {
+		return err
+	}
+	if err := validateStringSet("config.views.table.filter.priority", v.Table.Filter.Priority, allowedPriorities); err != nil {
+		return err
+	}
+	if len(v.Table.Filter.Bucket) > 0 {
+		if err := validateBucketKeys("config.views.table.filter.bucket", v.Table.Filter.Bucket, workflows, activeWorkflow); err != nil {
+			return err
+		}
+	}
+
+	if err := validateSort("config.views.graph.sort", v.Graph.Sort, allowedGraphSortFields, true); err != nil {
+		return err
+	}
+
+	// Logs only carries an order — `field` is meaningless for time-series, so
+	// we pass requireField=false to skip the field-allowed check.
+	if err := validateSort("config.views.logs.sort", v.Logs.Sort, nil, false); err != nil {
+		return err
+	}
+	if v.Logs.Limit < 0 {
+		return fmt.Errorf("config.views.logs.limit cannot be negative")
+	}
+	if err := validateStringSet("config.views.logs.filter.source", v.Logs.Filter.Source, allowedLogsSources); err != nil {
+		return err
+	}
+
+	if err := validateSort("config.views.task_activity.sort", v.TaskActivity.Sort, nil, false); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateSort(section string, sort SortSettings, allowedFields []string, requireField bool) error {
+	if sort.Field != "" && requireField {
+		if !containsString(allowedFields, sort.Field) {
+			return fmt.Errorf("%s.field %q is not one of %v", section, sort.Field, allowedFields)
+		}
+	}
+	if sort.Field != "" && !requireField {
+		return fmt.Errorf("%s.field is not configurable", section)
+	}
+	if sort.Order != "" {
+		if _, ok := allowedSortOrders[sort.Order]; !ok {
+			return fmt.Errorf("%s.order %q must be \"asc\" or \"desc\"", section, sort.Order)
+		}
+	}
+	return nil
+}
+
+func validateStringSet(section string, values, allowed []string) error {
+	for _, value := range values {
+		if !containsString(allowed, value) {
+			return fmt.Errorf("%s value %q is not one of %v", section, value, allowed)
+		}
+	}
+	return nil
+}
+
+func validateBucketKeys(section string, values []string, workflows []Workflow, activeWorkflow string) error {
+	var keys map[string]struct{}
+	for _, w := range workflows {
+		if w.Key == activeWorkflow {
+			keys = make(map[string]struct{}, len(w.Buckets))
+			for _, b := range w.Buckets {
+				keys[b.Key] = struct{}{}
+			}
+			break
+		}
+	}
+	if keys == nil {
+		// Active workflow is validated separately; if we got here without
+		// finding it, the workflow validator will surface a clearer error.
+		return nil
+	}
+	for _, value := range values {
+		if _, ok := keys[value]; !ok {
+			return fmt.Errorf("%s value %q is not a bucket key in workflow %q", section, value, activeWorkflow)
+		}
+	}
+	return nil
+}
+
+func containsString(haystack []string, needle string) bool {
+	for _, v := range haystack {
+		if v == needle {
+			return true
+		}
+	}
+	return false
 }
