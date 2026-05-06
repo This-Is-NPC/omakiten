@@ -78,12 +78,15 @@ Not applicable — local-first single-user CLI/TUI/MCP tool with no authn or aut
 
 ## Infrastructure
 
-- **No CI/CD pipelines**: no `.github/workflows/`, no Dockerfile, no container orchestration.
+- **GitHub Actions workflows** (`.github/workflows/`):
+  - `ci.yml` — triggered by `pull_request` against `master`. Runs `go build`, `go vet`, `go test -race -count=1`, and `golangci-lint` (v2.12.1) on Go 1.25.
+  - `release.yml` — triggered by `pull_request: closed` against `master`. Runs `release-please-action` to manage Release PRs and tags; on a created release, runs `goreleaser-action` (v6, GoReleaser v2) to publish artifacts.
+- **No Dockerfile / container orchestration**: distribution is via `goreleaser`-built binaries plus `install.sh` / `install.ps1`.
 - **Local toolchain**: `.mise.toml` pins Go 1.25.9, `golangci-lint`, and `govulncheck`.
 - **Local tasks** (`mise run <task>`): `fmt`, `test`, `build`, `install`, `dev:sync`, `tui`, `lint`, `vuln`, `check`, `install:mcp:claude`, `install:mcp:claude-desktop`, `install:mcp:opencode`, `uninstall`, `purge`.
-- **Runtime data**: SQLite at `~/.local/share/omakiten/omakiten.db` (or `$XDG_DATA_HOME` / `$OMAKITEN_HOME`).
-- **Runtime config**: `~/.config/omakiten/omakiten.yaml` plus per-entity `.md` files under `skills/`, `laws/`, `personas/`, `themes/`, `templates/`.
-- **Release tooling**: `release-please-config.json`, `.release-please-manifest.json`, `.goreleaser.yml`, `install.sh` / `install.ps1` (no automated workflow file present).
+- **Runtime data**: SQLite at `~/.local/share/omakiten/omakiten.db` (or `$XDG_DATA_HOME` / `$OMAKITEN_HOME/data`).
+- **Runtime config**: `~/.config/omakiten/config/omakiten.yaml` plus per-entity `.md` files under sibling folders `skills/`, `laws/`, `personas/`, `themes/`, `templates/`.
+- **Release tooling**: `release-please-config.json`, `.release-please-manifest.json`, `.goreleaser.yml`, `install.sh` / `install.ps1`, automated by `.github/workflows/release.yml`.
 
 ## Code Metrics
 
