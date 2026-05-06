@@ -13,7 +13,7 @@ func TestCreateTaskDefaultsToFirstWorkflowBucket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	bundle := config.Bundle{
 		Version: 1,
