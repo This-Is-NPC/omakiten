@@ -679,6 +679,12 @@ func (s *Store) CreateTask(ctx context.Context, projectID int64, title, descript
 		return domain.Task{}, err
 	}
 
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Task{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	query := `
 INSERT INTO tasks(project_id, bucket_id, title, description, priority)
 VALUES (?, ?, ?, ?, ?)
@@ -693,9 +699,19 @@ RETURNING id, project_id, bucket_id, title, description, priority, created_at
 `
 		args = []any{projectID, bucketID, title, description}
 	}
-	row := s.db.QueryRowContext(ctx, query, args...)
+	row := tx.QueryRowContext(ctx, query, args...)
 
-	return scanTask(row, bucketKey)
+	task, err := scanTask(row, bucketKey)
+	if err != nil {
+		return domain.Task{}, err
+	}
+
+	payload := fmt.Sprintf(`{"bucket":%q}`, bucketKey)
+	if _, err := insertTaskEvent(ctx, tx, projectID, task.ID, domain.EventTypeTaskCreated, "", payload); err != nil {
+		return domain.Task{}, err
+	}
+
+	return task, tx.Commit()
 }
 
 func (s *Store) ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter) ([]domain.Task, error) {
@@ -805,6 +821,11 @@ func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBuc
 		}
 	}
 
+	currentBucketKey, err := bucketKeyByIDTx(ctx, tx, currentBucketID)
+	if err != nil {
+		return domain.Task{}, err
+	}
+
 	row := tx.QueryRowContext(ctx, `
 UPDATE tasks SET bucket_id = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND id = ?
 RETURNING id, project_id, bucket_id, title, description, priority, created_at
@@ -815,7 +836,63 @@ RETURNING id, project_id, bucket_id, title, description, priority, created_at
 		return domain.Task{}, err
 	}
 
+	if currentBucketID != targetBucketID {
+		movePayload := fmt.Sprintf(`{"from":%q,"to":%q}`, currentBucketKey, targetBucketKey)
+		if _, err := insertTaskEvent(ctx, tx, projectID, taskID, domain.EventTypeTaskMoved, "", movePayload); err != nil {
+			return domain.Task{}, err
+		}
+
+		isFinal, err := isFinalBucketTx(ctx, tx, targetBucketID)
+		if err != nil {
+			return domain.Task{}, err
+		}
+		if isFinal {
+			completedPayload := fmt.Sprintf(`{"bucket":%q}`, targetBucketKey)
+			if _, err := insertTaskEvent(ctx, tx, projectID, taskID, domain.EventTypeTaskCompleted, "", completedPayload); err != nil {
+				return domain.Task{}, err
+			}
+		}
+	}
+
 	return task, tx.Commit()
+}
+
+// bucketKeyByIDTx resolves a bucket id to its key inside the active workflow.
+// Returns "" when the id is 0 (task had no bucket yet — happens only with
+// legacy data; the move event records "" as the source bucket then).
+func bucketKeyByIDTx(ctx context.Context, tx *sql.Tx, bucketID int64) (string, error) {
+	if bucketID == 0 {
+		return "", nil
+	}
+	var key string
+	err := tx.QueryRowContext(ctx, "SELECT key FROM workflow_buckets WHERE id = ? AND active = 1", bucketID).Scan(&key)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
+// isFinalBucketTx reports whether the given bucket is the highest-position
+// bucket in its active workflow — i.e. the destination that triggers a
+// task.completed event in addition to task.moved.
+func isFinalBucketTx(ctx context.Context, tx *sql.Tx, bucketID int64) (bool, error) {
+	var workflowID int64
+	var position int
+	err := tx.QueryRowContext(ctx, `SELECT workflow_id, position FROM workflow_buckets WHERE id = ? AND active = 1`, bucketID).Scan(&workflowID, &position)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	var maxPosition int
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(position), 0) FROM workflow_buckets WHERE workflow_id = ? AND active = 1`, workflowID).Scan(&maxPosition); err != nil {
+		return false, err
+	}
+	return position == maxPosition, nil
 }
 
 func (s *Store) UpdateTask(ctx context.Context, projectID, taskID int64, update domain.TaskUpdate) (domain.Task, error) {
@@ -872,10 +949,10 @@ func (s *Store) AddComment(ctx context.Context, projectID, taskID int64, body, a
 
 	var comment domain.Comment
 	if err := tx.QueryRowContext(ctx, `
-INSERT INTO comments(project_id, task_id, body, author_type)
-VALUES (?, ?, ?, ?)
-RETURNING id, project_id, task_id, body, author_type, created_at
-`, projectID, taskID, body, authorType).Scan(&comment.ID, &comment.ProjectID, &comment.TaskID, &comment.Body, &comment.AuthorType, &comment.CreatedAt); err != nil {
+INSERT INTO events(entity_type, entity_id, project_id, event_type, body, author_type)
+VALUES ('task', ?, ?, 'comment', ?, ?)
+RETURNING id, project_id, entity_id, body, author_type, created_at
+`, taskID, projectID, body, authorType).Scan(&comment.ID, &comment.ProjectID, &comment.TaskID, &comment.Body, &comment.AuthorType, &comment.CreatedAt); err != nil {
 		return domain.Comment{}, err
 	}
 
@@ -887,7 +964,7 @@ RETURNING id, project_id, task_id, body, author_type, created_at
 		if err := tx.QueryRowContext(ctx, `SELECT id FROM tags WHERE name = ?`, tag.Name).Scan(&tagID); err != nil {
 			return domain.Comment{}, err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO comment_tags(comment_id, tag_id) VALUES (?, ?)`, comment.ID, tagID); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO event_tags(event_id, tag_id) VALUES (?, ?)`, comment.ID, tagID); err != nil {
 			return domain.Comment{}, err
 		}
 		comment.Tags = append(comment.Tags, domain.Tag{ID: tagID, Name: tag.Name, Label: tag.Label})
@@ -897,13 +974,13 @@ RETURNING id, project_id, task_id, body, author_type, created_at
 }
 
 func (s *Store) ListComments(ctx context.Context, projectID, taskID int64) ([]domain.Comment, error) {
-	query := "SELECT id, project_id, task_id, body, author_type, created_at FROM comments WHERE project_id = ?"
+	query := "SELECT id, project_id, entity_id, body, author_type, created_at FROM events WHERE entity_type = 'task' AND event_type = 'comment' AND project_id = ?"
 	args := []any{projectID}
 	if taskID > 0 {
 		if err := s.ensureTaskExists(ctx, projectID, taskID); err != nil {
 			return nil, err
 		}
-		query += " AND task_id = ?"
+		query += " AND entity_id = ?"
 		args = append(args, taskID)
 	}
 	query += " ORDER BY id"
@@ -931,12 +1008,12 @@ func (s *Store) ListComments(ctx context.Context, projectID, taskID int64) ([]do
 		for i, c := range comments {
 			ids[i] = c.ID
 		}
-		tagsByComment, err := s.commentTagsByIDs(ctx, ids)
+		tagsByEvent, err := s.eventTagsByIDs(ctx, ids)
 		if err != nil {
 			return nil, err
 		}
 		for i := range comments {
-			if tags, ok := tagsByComment[comments[i].ID]; ok {
+			if tags, ok := tagsByEvent[comments[i].ID]; ok {
 				comments[i].Tags = tags
 			}
 		}
@@ -945,18 +1022,18 @@ func (s *Store) ListComments(ctx context.Context, projectID, taskID int64) ([]do
 	return comments, nil
 }
 
-func (s *Store) commentTagsByIDs(ctx context.Context, commentIDs []int64) (map[int64][]domain.Tag, error) {
-	if len(commentIDs) == 0 {
+func (s *Store) eventTagsByIDs(ctx context.Context, eventIDs []int64) (map[int64][]domain.Tag, error) {
+	if len(eventIDs) == 0 {
 		return nil, nil
 	}
-	placeholders := make([]string, len(commentIDs))
-	args := make([]any, len(commentIDs))
-	for i, id := range commentIDs {
-		placeholders[i] = "?"
+	ph := make([]string, len(eventIDs))
+	args := make([]any, len(eventIDs))
+	for i, id := range eventIDs {
+		ph[i] = "?"
 		args[i] = id
 	}
 	rows, err := s.db.QueryContext(ctx,
-		"SELECT ct.comment_id, t.id, t.name, t.label FROM comment_tags ct JOIN tags t ON t.id = ct.tag_id WHERE ct.comment_id IN ("+strings.Join(placeholders, ",")+")",
+		"SELECT et.event_id, t.id, t.name, t.label FROM event_tags et JOIN tags t ON t.id = et.tag_id WHERE et.event_id IN ("+strings.Join(ph, ",")+")",
 		args...)
 	if err != nil {
 		return nil, err
@@ -965,12 +1042,12 @@ func (s *Store) commentTagsByIDs(ctx context.Context, commentIDs []int64) (map[i
 
 	result := map[int64][]domain.Tag{}
 	for rows.Next() {
-		var commentID int64
+		var eventID int64
 		var tag domain.Tag
-		if err := rows.Scan(&commentID, &tag.ID, &tag.Name, &tag.Label); err != nil {
+		if err := rows.Scan(&eventID, &tag.ID, &tag.Name, &tag.Label); err != nil {
 			return nil, err
 		}
-		result[commentID] = append(result[commentID], tag)
+		result[eventID] = append(result[eventID], tag)
 	}
 	return result, rows.Err()
 }
@@ -1250,7 +1327,7 @@ ORDER BY t.id
 func checkCommentsMin(ctx context.Context, tx *sql.Tx, projectID, taskID int64, minCount int, hint string) error {
 	var count int
 	if err := tx.QueryRowContext(ctx, `
-SELECT COUNT(1) FROM comments WHERE project_id = ? AND task_id = ?
+SELECT COUNT(1) FROM events WHERE entity_type = 'task' AND event_type = 'comment' AND project_id = ? AND entity_id = ?
 `, projectID, taskID).Scan(&count); err != nil {
 		return err
 	}
@@ -1272,11 +1349,11 @@ func checkCommentsTagged(ctx context.Context, tx *sql.Tx, projectID, taskID int6
 	}
 	var count int
 	if err := tx.QueryRowContext(ctx, `
-SELECT COUNT(DISTINCT c.id)
-FROM comments c
-JOIN comment_tags ct ON ct.comment_id = c.id
-JOIN tags t ON t.id = ct.tag_id
-WHERE c.project_id = ? AND c.task_id = ? AND t.name = ?
+SELECT COUNT(DISTINCT e.id)
+FROM events e
+JOIN event_tags et ON et.event_id = e.id
+JOIN tags t ON t.id = et.tag_id
+WHERE e.entity_type = 'task' AND e.event_type = 'comment' AND e.project_id = ? AND e.entity_id = ? AND t.name = ?
 `, projectID, taskID, tagName).Scan(&count); err != nil {
 		return err
 	}

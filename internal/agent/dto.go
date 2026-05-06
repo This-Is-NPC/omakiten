@@ -208,6 +208,32 @@ type CommentResponse struct {
 	Comment CommentSummary `json:"comment"`
 }
 
+// EventSummary is the agent-facing shape of a unified activity-feed entry.
+// Comments use AuthorType + Body + Tags; system events use EventType +
+// Payload. The TUI and external callers render the union — empty fields are
+// just omitted from the JSON output.
+type EventSummary struct {
+	ID         int64        `json:"id"`
+	EventType  string       `json:"event_type"`
+	Body       string       `json:"body,omitempty"`
+	Payload    string       `json:"payload,omitempty"`
+	AuthorType string       `json:"author_type,omitempty"`
+	CreatedAt  string       `json:"created_at"`
+	Tags       []TagSummary `json:"tags,omitempty"`
+}
+
+type ListTaskActivityInput struct {
+	ProjectSelector
+	TaskID int64  `json:"task_id"`
+	Order  string `json:"order,omitempty"`
+}
+
+type ListTaskActivityResponse struct {
+	Project ProjectSummary `json:"project"`
+	Events  []EventSummary `json:"events"`
+	Order   string         `json:"order"`
+}
+
 type AddDependencyInput struct {
 	ProjectSelector
 	TaskID          int64 `json:"task_id"`
@@ -330,6 +356,38 @@ func commentSummary(comment domain.Comment) CommentSummary {
 
 func contextSnippet(entry domain.ContextEntry) ContextSnippet {
 	return ContextSnippet{ID: entry.ID, Body: entry.Body, CreatedAt: entry.CreatedAt}
+}
+
+func eventSummary(event domain.Event) EventSummary {
+	s := EventSummary{
+		ID:         event.ID,
+		EventType:  event.EventType,
+		Body:       event.Body,
+		Payload:    event.Payload,
+		AuthorType: event.AuthorType,
+		CreatedAt:  event.CreatedAt,
+	}
+	// Default empty payload to "" so consumers don't see "{}" noise. The
+	// store always materialises payload as JSON, even for events that carry
+	// no structured data — strip the empty object here.
+	if s.Payload == "{}" {
+		s.Payload = ""
+	}
+	if len(event.Tags) > 0 {
+		s.Tags = tagSummaries(event.Tags)
+	}
+	return s
+}
+
+func eventSummaries(events []domain.Event) []EventSummary {
+	if len(events) == 0 {
+		return nil
+	}
+	out := make([]EventSummary, len(events))
+	for i, ev := range events {
+		out[i] = eventSummary(ev)
+	}
+	return out
 }
 
 // --- Tags ---

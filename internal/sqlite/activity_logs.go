@@ -14,16 +14,28 @@ const (
 	activityLogMaxAgeDays = 7
 )
 
+// BeginActivityLog inserts an in-flight `operation` event and returns its id.
+// FinishActivityLog later updates that same row with status/duration. We keep
+// the legacy two-step API so callers don't need to know about the unified
+// events table — the migration to a global log is invisible from the outside.
 func (s *Store) BeginActivityLog(ctx context.Context, log any) (int64, error) {
 	activityLog, ok := log.(domain.ActivityLog)
 	if !ok {
 		return 0, fmt.Errorf("invalid activity log type: %T", log)
 	}
+	var projectID any
+	if activityLog.ProjectID > 0 {
+		projectID = activityLog.ProjectID
+	}
+	var projectSlug any
+	if activityLog.ProjectSlug != "" {
+		projectSlug = activityLog.ProjectSlug
+	}
 	row := s.db.QueryRowContext(ctx, `
-INSERT INTO activity_logs(source, entrypoint, operation, project_id, project_slug, arguments_json, status, started_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+INSERT INTO events(entity_type, project_id, project_slug, event_type, payload, source, entrypoint, operation, status, created_at)
+VALUES ('system', ?, ?, 'operation', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 RETURNING id
-`, activityLog.Source, activityLog.Entrypoint, activityLog.Operation, activityLog.ProjectID, activityLog.ProjectSlug, activityLog.ArgumentsJSON, activityLog.Status)
+`, projectID, projectSlug, activityLog.ArgumentsJSON, string(activityLog.Source), activityLog.Entrypoint, activityLog.Operation, activityLog.Status)
 
 	var id int64
 	if err := row.Scan(&id); err != nil {
@@ -37,17 +49,17 @@ RETURNING id
 
 func (s *Store) FinishActivityLog(ctx context.Context, id int64, status string, durationMs int, errorMessage string) error {
 	_, err := s.db.ExecContext(ctx, `
-UPDATE activity_logs
+UPDATE events
 SET status = ?, duration_ms = ?, error_message = ?, finished_at = CURRENT_TIMESTAMP
-WHERE id = ?
+WHERE id = ? AND event_type = 'operation'
 `, status, durationMs, errorMessage, id)
 	return err
 }
 
 func (s *Store) ListActivityLogs(ctx context.Context, filter domain.ActivityLogFilter) ([]domain.ActivityLog, error) {
-	query := "SELECT id, source, entrypoint, operation, project_id, project_slug, arguments_json, status, duration_ms, error_message, started_at, finished_at FROM activity_logs"
+	query := "SELECT id, source, entrypoint, operation, COALESCE(project_id, 0), COALESCE(project_slug, ''), COALESCE(payload, ''), COALESCE(status, ''), COALESCE(duration_ms, 0), COALESCE(error_message, ''), created_at, finished_at FROM events"
 	args := []any{}
-	conds := []string{}
+	conds := []string{"event_type = 'operation'"}
 
 	if filter.Source != "" {
 		conds = append(conds, "source = ?")
@@ -65,17 +77,12 @@ func (s *Store) ListActivityLogs(ctx context.Context, filter domain.ActivityLogF
 		conds = append(conds, "project_id = ?")
 		args = append(args, filter.ProjectID)
 	}
-	if len(conds) > 0 {
-		query += " WHERE " + conds[0]
-		for _, c := range conds[1:] {
-			query += " AND " + c
-		}
-	}
+	query += " WHERE " + strings.Join(conds, " AND ")
 	direction := "DESC"
 	if filter.Order == "asc" {
 		direction = "ASC"
 	}
-	query += " ORDER BY started_at " + direction
+	query += " ORDER BY created_at " + direction
 	if filter.Limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", filter.Limit)
 	}
@@ -107,17 +114,17 @@ func (s *Store) ListActivityLogs(ctx context.Context, filter domain.ActivityLogF
 func (s *Store) PruneActivityLogs(ctx context.Context, maxRows int, maxAgeDays int) error {
 	if maxAgeDays > 0 {
 		if _, err := s.db.ExecContext(ctx, `
-DELETE FROM activity_logs
-WHERE started_at < datetime('now', '-' || ? || ' days')
+DELETE FROM events
+WHERE event_type = 'operation' AND created_at < datetime('now', '-' || ? || ' days')
 `, maxAgeDays); err != nil {
 			return err
 		}
 	}
 	if maxRows > 0 {
 		if _, err := s.db.ExecContext(ctx, `
-DELETE FROM activity_logs
-WHERE id NOT IN (
-  SELECT id FROM activity_logs ORDER BY started_at DESC LIMIT ?
+DELETE FROM events
+WHERE event_type = 'operation' AND id NOT IN (
+  SELECT id FROM events WHERE event_type = 'operation' ORDER BY created_at DESC LIMIT ?
 )
 `, maxRows); err != nil {
 			return err

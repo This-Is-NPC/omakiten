@@ -33,7 +33,7 @@ func (s *Store) ListAllTags(ctx context.Context) ([]domain.Tag, error) {
 SELECT t.id, t.name, t.label,
   (SELECT COUNT(*) FROM task_tags WHERE tag_id = t.id) +
   (SELECT COUNT(*) FROM project_tags WHERE tag_id = t.id) +
-  (SELECT COUNT(*) FROM comment_tags WHERE tag_id = t.id) +
+  (SELECT COUNT(*) FROM event_tags WHERE tag_id = t.id) +
   (SELECT COUNT(*) FROM error_tags WHERE tag_id = t.id) AS usage_count
 FROM tags t
 ORDER BY usage_count DESC, t.name
@@ -99,14 +99,14 @@ SELECT project_id, ? FROM project_tags WHERE tag_id = ?
 		return domain.Tag{}, err
 	}
 
-	// Reassign comment_tags
+	// Reassign event_tags (covers comments, which now live in events)
 	if _, err := tx.ExecContext(ctx, `
-INSERT OR IGNORE INTO comment_tags(comment_id, tag_id)
-SELECT comment_id, ? FROM comment_tags WHERE tag_id = ?
+INSERT OR IGNORE INTO event_tags(event_id, tag_id)
+SELECT event_id, ? FROM event_tags WHERE tag_id = ?
 `, targetTagID, sourceTagID); err != nil {
 		return domain.Tag{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM comment_tags WHERE tag_id = ?`, sourceTagID); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM event_tags WHERE tag_id = ?`, sourceTagID); err != nil {
 		return domain.Tag{}, err
 	}
 
@@ -144,7 +144,7 @@ DELETE FROM tags WHERE id NOT IN (
   UNION
   SELECT tag_id FROM project_tags
   UNION
-  SELECT tag_id FROM comment_tags
+  SELECT tag_id FROM event_tags
   UNION
   SELECT tag_id FROM error_tags
 )

@@ -131,12 +131,13 @@ func TestActivityLogMigrationIdempotent(t *testing.T) {
 	}
 	defer func() { _ = store2.Close() }()
 
-	// Sanity: activity_logs table must exist
+	// Sanity: events table must exist (activity_logs was folded into events
+	// in migration 009 — the legacy table is gone).
 	var count int
-	if err := store2.db.QueryRowContext(ctx, "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='activity_logs'").Scan(&count); err != nil {
+	if err := store2.db.QueryRowContext(ctx, "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='events'").Scan(&count); err != nil {
 		t.Fatalf("table check error = %v", err)
 	}
 	if count != 1 {
-		t.Fatalf("activity_logs table missing after migration")
+		t.Fatalf("events table missing after migration")
 	}
 }
