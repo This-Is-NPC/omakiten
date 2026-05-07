@@ -74,7 +74,8 @@ type Model struct {
 
 	width    int
 	height   int
-	view     int
+	top      topID
+	sub      subID
 	mode     inputMode
 	input    string
 	status   string
@@ -269,13 +270,139 @@ const (
 	taskFieldPriority
 )
 
-var viewNames = []string{"BOARD", "TABLE", "GRAPH", "CONFIG", "LOGS", "STATS"}
+// topID identifies a top-level navigation zone. Tops group surfaces by
+// purpose: Tasks (data lenses over the work queue), Stats (observability),
+// Settings (admin). topHome is the sentinel for the multi-project Home
+// screen — it sits outside the regular cycle and is reachable only via
+// empty-project startup or the dedicated ctrl+h binding.
+type topID int
 
-// viewHome is the sentinel index for the multi-project Home screen.
-// It deliberately sits outside viewNames so tab/shift+tab/digit keys
-// never land on it — Home is reachable only via empty-project startup
-// or the dedicated ctrl+h binding.
-const viewHome = -1
+const topHome topID = -1
+
+const (
+	topTasks topID = iota
+	topStats
+	topSettings
+)
+
+// subID identifies a sub-menu inside a top. Values are unique across all
+// tops so a (top, sub) pair is unambiguous and individual subs can be
+// referenced without first resolving their parent top.
+type subID int
+
+const (
+	subBoard subID = iota
+	subTable
+	subGraph
+	subStatsGeneral
+	subStatsLogs
+	subSettingsConfig
+)
+
+// topOrder is the canonical cycle order for tab/shift+tab and the order
+// the top kicker renders left to right.
+var topOrder = []topID{topTasks, topStats, topSettings}
+
+// subsByTop lists the subs each top exposes, in render and cycle order.
+// Settings has a single sub in T1 — the second header line is suppressed
+// when the active top has only one sub.
+var subsByTop = map[topID][]subID{
+	topTasks:    {subBoard, subTable, subGraph},
+	topStats:    {subStatsGeneral, subStatsLogs},
+	topSettings: {subSettingsConfig},
+}
+
+var topLabels = map[topID]string{
+	topTasks:    "TASKS",
+	topStats:    "STATS",
+	topSettings: "SETTINGS",
+}
+
+var subLabels = map[subID]string{
+	subBoard:          "board",
+	subTable:          "table",
+	subGraph:          "graph",
+	subStatsGeneral:   "general",
+	subStatsLogs:      "logs",
+	subSettingsConfig: "config",
+}
+
+// navState is the addressable navigation key — used to detect view
+// changes across an Update tick (so refreshAfterViewChange can re-fetch
+// only when the user actually navigated).
+type navState struct {
+	top  topID
+	sub  subID
+}
+
+// firstSub returns the canonical landing sub for a top — what the user
+// sees after `tab`/`shift+tab`/digit-jump. Stats lands on general, Tasks
+// on board, Settings on config.
+func firstSub(t topID) subID {
+	if subs := subsByTop[t]; len(subs) > 0 {
+		return subs[0]
+	}
+	return subID(-1)
+}
+
+// topIndex returns the position of t in topOrder, or -1 when not found.
+func topIndex(t topID) int {
+	for i, candidate := range topOrder {
+		if candidate == t {
+			return i
+		}
+	}
+	return -1
+}
+
+// subIndex returns the position of s within its parent top's sub list,
+// or -1 when the sub does not belong to t.
+func subIndex(t topID, s subID) int {
+	for i, candidate := range subsByTop[t] {
+		if candidate == s {
+			return i
+		}
+	}
+	return -1
+}
+
+// onHome reports whether the model is currently on the multi-project
+// Home view. Centralised so callers do not have to remember the sentinel.
+func (m Model) onHome() bool {
+	return m.top == topHome
+}
+
+// legacyNavOrder preserves the pre-refactor flat traversal order
+// [board, table, graph, config, logs, stats] used by `left`/`right`
+// inside the table/graph/logs handlers. AC9 keeps left/right behavior
+// untouched in T1; T3 will harmonize this so it can retire.
+var legacyNavOrder = []navState{
+	{topTasks, subBoard},
+	{topTasks, subTable},
+	{topTasks, subGraph},
+	{topSettings, subSettingsConfig},
+	{topStats, subStatsLogs},
+	{topStats, subStatsGeneral},
+}
+
+// cycleLegacyView advances the active (top, sub) along legacyNavOrder by
+// delta positions, wrapping at the ends. Used only by the per-view list
+// handlers to keep left/right semantics identical to the pre-refactor
+// flat cycle (board → table → graph → config → logs → stats → board).
+func (m *Model) cycleLegacyView(delta int) {
+	current := navState{top: m.top, sub: m.sub}
+	idx := 0
+	for i, candidate := range legacyNavOrder {
+		if candidate == current {
+			idx = i
+			break
+		}
+	}
+	n := len(legacyNavOrder)
+	next := legacyNavOrder[((idx+delta)%n+n)%n]
+	m.top = next.top
+	m.sub = next.sub
+}
 
 // refreshTickMsg drives the realtime refresh loop — emitted every second
 // while the user is on a "live" view (board, table, etc.) and not editing.

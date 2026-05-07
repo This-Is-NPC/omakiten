@@ -85,9 +85,9 @@ func TestRefreshEnrichesEntitiesWithBundleData(t *testing.T) {
 func TestEntityViewRendersFrontmatterAndBody(t *testing.T) {
 	model, _, _ := newEntityModel(t)
 
-	got := pressRune(t, model, '4')
-	if got.view != 3 {
-		t.Fatalf("view = %d, want 3", got.view)
+	got := pressRune(t, model, '3')
+	if got.top != topSettings || got.sub != subSettingsConfig {
+		t.Fatalf("(top, sub) = (%d, %d), want (topSettings, subSettingsConfig)", got.top, got.sub)
 	}
 
 	got = pressKey(t, got, tea.KeyEnter)
@@ -105,7 +105,7 @@ func TestEntityViewRendersFrontmatterAndBody(t *testing.T) {
 func TestEntityDeleteRemovesEntity(t *testing.T) {
 	model, _, _ := newEntityModel(t)
 
-	got := pressRune(t, model, '4')
+	got := pressRune(t, model, '3')
 	got = pressRune(t, got, 'd')
 	if len(got.laws) != 1 {
 		t.Fatalf("laws len after first delete key = %d, want 1 before confirmation", len(got.laws))
@@ -122,7 +122,7 @@ func TestEntityDeleteRemovesEntity(t *testing.T) {
 func TestEntityDeleteCanBeCancelled(t *testing.T) {
 	model, _, _ := newEntityModel(t)
 
-	got := pressRune(t, model, '4')
+	got := pressRune(t, model, '3')
 	got = pressRune(t, got, 'd')
 	got = pressKey(t, got, tea.KeyEsc)
 	if got.deletePending {
@@ -284,7 +284,7 @@ func TestConfigSlidesHorizontalWindowToKeepFocusedColumnVisible(t *testing.T) {
 	model.width = 100
 	model.height = 60
 
-	got := pressRune(t, model, '4')
+	got := pressRune(t, model, '3')
 	view := got.View()
 	// Initial focus is Laws (index 0) — visible window starts at 0.
 	for _, want := range []string{"// LAWS", "// PERSONAS", "// SKILLS"} {
@@ -390,7 +390,7 @@ func TestTemplateCreateAndDeleteAreNoOps(t *testing.T) {
 	model := newEntityModelWithTemplates(t)
 	// Switch into config view (4) so 'n'/'d' route to handleConfigKey rather than
 	// the table view's create-task / delete-task handlers.
-	model = pressRune(t, model, '4')
+	model = pressRune(t, model, '3')
 	for model.entityKind != entityKindTemplate {
 		model = pressStringKey(t, model, "right")
 	}
@@ -425,7 +425,7 @@ func TestPersonaPickerToggleAndSave(t *testing.T) {
 		t.Fatalf("refresh() error = %v", err)
 	}
 
-	got := pressRune(t, model, '4')
+	got := pressRune(t, model, '3')
 	got = pressStringKey(t, got, "right")
 	if got.entityKind != entityKindPersona {
 		t.Fatalf("entityKind = %v, want persona", got.entityKind)

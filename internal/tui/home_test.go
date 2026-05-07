@@ -47,8 +47,8 @@ func TestNewModelWithEmptyProjectOpensHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
-	if model.view != viewHome {
-		t.Fatalf("view = %d, want viewHome (%d)", model.view, viewHome)
+	if model.top != topHome {
+		t.Fatalf("top = %d, want topHome (%d)", model.top, topHome)
 	}
 
 	rendered := ansi.Strip(model.View())
@@ -92,9 +92,9 @@ func TestHomeHidesTabBar(t *testing.T) {
 	}
 
 	rendered := ansi.Strip(model.View())
-	for _, label := range []string{"01 // BOARD", "02 // TABLE", "03 // GRAPH", "04 // CONFIG", "05 // LOGS"} {
+	for _, label := range []string{"01 // TASKS", "02 // STATS", "03 // SETTINGS"} {
 		if strings.Contains(rendered, label) {
-			t.Fatalf("home should hide tab bar but found %q:\n%s", label, rendered)
+			t.Fatalf("home should hide nav bar but found %q:\n%s", label, rendered)
 		}
 	}
 	if !strings.Contains(rendered, "00 // HOME") {
@@ -135,14 +135,14 @@ func TestCtrlHReturnsToHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
-	if model.view != 0 {
-		t.Fatalf("view = %d, want 0 (board)", model.view)
+	if model.top != topTasks || model.sub != subBoard {
+		t.Fatalf("(top, sub) = (%d, %d), want (topTasks, subBoard)", model.top, model.sub)
 	}
 
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
 	got := updated.(Model)
-	if got.view != viewHome {
-		t.Fatalf("view = %d after ctrl+h, want viewHome (%d)", got.view, viewHome)
+	if got.top != topHome {
+		t.Fatalf("top = %d after ctrl+h, want topHome (%d)", got.top, topHome)
 	}
 }
 
@@ -178,8 +178,8 @@ func TestHomeEnterSelectsProject(t *testing.T) {
 
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := updated.(Model)
-	if got.view != 0 {
-		t.Fatalf("view = %d after enter, want 0 (board)", got.view)
+	if got.top != topTasks || got.sub != subBoard {
+		t.Fatalf("(top, sub) = (%d, %d) after enter, want (topTasks, subBoard)", got.top, got.sub)
 	}
 	if got.project.Slug != "alpha" {
 		t.Fatalf("project.Slug = %q, want %q", got.project.Slug, "alpha")
@@ -223,8 +223,8 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
 	got := updated.(Model)
-	if got.view != viewHome {
-		t.Fatalf("view = %d after ctrl+h on home, want viewHome (%d)", got.view, viewHome)
+	if got.top != topHome {
+		t.Fatalf("top = %d after ctrl+h on home, want topHome (%d)", got.top, topHome)
 	}
 	if got.status != "Refreshed" {
 		t.Fatalf("status = %q, want %q", got.status, "Refreshed")

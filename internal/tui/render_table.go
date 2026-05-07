@@ -15,9 +15,9 @@ import (
 func (m *Model) handleListKey(msg tea.KeyMsg) {
 	switch msg.String() {
 	case "left", "h":
-		m.view = (m.view + len(viewNames) - 1) % len(viewNames)
+		m.cycleLegacyView(-1)
 	case "right", "l":
-		m.view = (m.view + 1) % len(viewNames)
+		m.cycleLegacyView(1)
 	case "up", "k":
 		if m.selected > 0 {
 			m.selected--

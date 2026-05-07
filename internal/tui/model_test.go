@@ -41,8 +41,8 @@ func TestModelSwitchesViews(t *testing.T) {
 	}
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
 	got := updated.(Model)
-	if got.view != 1 {
-		t.Fatalf("view = %d, want 1", got.view)
+	if got.top != topStats || got.sub != subStatsGeneral {
+		t.Fatalf("(top, sub) = (%d, %d), want (topStats, subStatsGeneral)", got.top, got.sub)
 	}
 }
 
@@ -78,12 +78,13 @@ func TestModelTableAndGraphShowCounts(t *testing.T) {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
-	table := ansi.Strip(pressRune(t, model, '2').View())
+	table := ansi.Strip(pressStringKey(t, model, "/").View())
 	if !strings.Contains(table, "// TASKS · 2") {
 		t.Fatalf("table missing task count\n%s", table)
 	}
 
-	graph := ansi.Strip(pressRune(t, model, '3').View())
+	graphModel := pressStringKey(t, pressStringKey(t, model, "/"), "/")
+	graph := ansi.Strip(graphModel.View())
 	if !strings.Contains(graph, "// DEPENDENCY GRAPH · 1") {
 		t.Fatalf("graph missing dependency count\n%s", graph)
 	}
@@ -140,12 +141,14 @@ func TestModelTablesUseWideTerminalSpace(t *testing.T) {
 		return 0
 	}
 
-	table := ansi.Strip(pressRune(t, model, '2').View())
+	tableModel := pressStringKey(t, model, "/")
+	table := ansi.Strip(tableModel.View())
 	if !strings.Contains(table, longTitle) {
 		t.Fatalf("wide table truncated task title\n%s", table)
 	}
 
-	logs := ansi.Strip(pressRune(t, model, '5').View())
+	logsModel := pressStringKey(t, pressRune(t, model, '2'), "/")
+	logs := ansi.Strip(logsModel.View())
 	if !strings.Contains(logs, argsJSON) {
 		t.Fatalf("wide logs truncated arguments\n%s", logs)
 	}
@@ -193,9 +196,10 @@ func TestModelLoadsActivityLogsWhenOpeningLogsView(t *testing.T) {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
-	got := pressRune(t, model, '5')
-	if got.view != 4 {
-		t.Fatalf("view = %d, want logs view", got.view)
+	got := pressRune(t, model, '2')
+	got = pressRune(t, got, '/')
+	if got.top != topStats || got.sub != subStatsLogs {
+		t.Fatalf("(top, sub) = (%d, %d), want (topStats, subStatsLogs)", got.top, got.sub)
 	}
 	view := ansi.Strip(got.View())
 	for _, want := range []string{"app.TaskService.Add", "project", `{"title":"From CLI"}`, "ok"} {
@@ -226,7 +230,8 @@ func TestModelRefreshKeyUpdatesActivityLogs(t *testing.T) {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
-	got := pressRune(t, model, '5')
+	got := pressRune(t, model, '2')
+	got = pressRune(t, got, '/')
 	if strings.Contains(ansi.Strip(got.View()), "app.CommentService.Add") {
 		t.Fatalf("logs view unexpectedly contains new log before refresh\n%s", ansi.Strip(got.View()))
 	}
@@ -924,7 +929,7 @@ func TestModelConfigUsesFocusedSectionWhenNarrow(t *testing.T) {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 	model.width = 50
-	got := pressRune(t, model, '4')
+	got := pressRune(t, model, '3')
 
 	view := ansi.Strip(got.View())
 	// Narrow terminals slide to show the focused kind. The default focused
@@ -960,7 +965,7 @@ func TestModelHelpDefaultsToCurrentContext(t *testing.T) {
 
 	got := pressStringKey(t, model, "?")
 	view := ansi.Strip(got.View())
-	for _, want := range []string{"KEYBINDINGS · CURRENT CONTEXT", "// GLOBAL", "// BOARD"} {
+	for _, want := range []string{"KEYBINDINGS · CURRENT CONTEXT", "// GLOBAL", "// TASKS · BOARD LENS"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("context help missing %q\n%s", want, view)
 		}
@@ -1010,6 +1015,112 @@ func TestModelCancelsTaskCreateWithoutPersisting(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("TaskCount() = %d, want 0", count)
+	}
+}
+
+// TestNavHeaderRendersTopAndSubKickers locks in the T1 navigation refactor:
+// the per-project header renders the three top zones as `01 // TASKS`,
+// `02 // STATS`, `03 // SETTINGS`, and surfaces a sub-menu strip when the
+// active top has more than one sub. The strip is suppressed on Settings
+// (single sub).
+func TestNavHeaderRendersTopAndSubKickers(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store, Metrics: app.NewMetricsService(store)}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.width = 200
+
+	tasksHeader := ansi.Strip(model.View())
+	for _, want := range []string{"01 // TASKS", "02 // STATS", "03 // SETTINGS", "// board", "// table", "// graph"} {
+		if !strings.Contains(tasksHeader, want) {
+			t.Fatalf("tasks header missing %q\n%s", want, tasksHeader)
+		}
+	}
+
+	statsModel := pressRune(t, model, '2')
+	statsHeader := ansi.Strip(statsModel.View())
+	for _, want := range []string{"01 // TASKS", "02 // STATS", "03 // SETTINGS", "// general", "// logs"} {
+		if !strings.Contains(statsHeader, want) {
+			t.Fatalf("stats header missing %q\n%s", want, statsHeader)
+		}
+	}
+	if strings.Contains(statsHeader, "// board") || strings.Contains(statsHeader, "// graph") {
+		t.Fatalf("stats header leaked tasks subs:\n%s", statsHeader)
+	}
+
+	settingsModel := pressRune(t, model, '3')
+	settingsHeader := ansi.Strip(settingsModel.View())
+	for _, want := range []string{"01 // TASKS", "02 // STATS", "03 // SETTINGS"} {
+		if !strings.Contains(settingsHeader, want) {
+			t.Fatalf("settings header missing %q\n%s", want, settingsHeader)
+		}
+	}
+	for _, leaked := range []string{"// board", "// table", "// graph", "// general", "// logs"} {
+		if strings.Contains(settingsHeader, leaked) {
+			t.Fatalf("settings header should suppress sub strip but leaked %q:\n%s", leaked, settingsHeader)
+		}
+	}
+}
+
+// TestSubCycleBindings exercises the comma/slash sub-cycle bindings inside
+// the Tasks zone (board → table → graph and wrap-around) and confirms the
+// no-op behavior on Settings (single sub).
+func TestSubCycleBindings(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	got := pressStringKey(t, model, "/")
+	if got.top != topTasks || got.sub != subTable {
+		t.Fatalf("after first '/': (top, sub) = (%d, %d), want (topTasks, subTable)", got.top, got.sub)
+	}
+	got = pressStringKey(t, got, "/")
+	if got.sub != subGraph {
+		t.Fatalf("after second '/': sub = %d, want subGraph", got.sub)
+	}
+	got = pressStringKey(t, got, "/")
+	if got.sub != subBoard {
+		t.Fatalf("after third '/': sub = %d, want subBoard (wrap-around)", got.sub)
+	}
+	got = pressStringKey(t, got, ",")
+	if got.sub != subGraph {
+		t.Fatalf("after ',' from board: sub = %d, want subGraph (wrap-around)", got.sub)
+	}
+
+	got = pressRune(t, model, '3')
+	if got.top != topSettings || got.sub != subSettingsConfig {
+		t.Fatalf("after '3': (top, sub) = (%d, %d), want (topSettings, subSettingsConfig)", got.top, got.sub)
+	}
+	got = pressStringKey(t, got, "/")
+	if got.top != topSettings || got.sub != subSettingsConfig {
+		t.Fatalf("'/' on Settings should be a no-op: (top, sub) = (%d, %d)", got.top, got.sub)
 	}
 }
 

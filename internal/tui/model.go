@@ -36,12 +36,14 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		// Empty project — open on the multi-project Home picker.
 		// Do not call refresh() because every per-project query would 404
 		// without a resolved project_id.
-		model.view = viewHome
+		model.top = topHome
 		if err := model.loadHome(); err != nil {
 			return Model{}, err
 		}
 		return model, nil
 	}
+	model.top = topTasks
+	model.sub = subBoard
 	model.lastProjectRoot = project.RootPath
 	if err := model.refresh(); err != nil {
 		return Model{}, err
@@ -62,7 +64,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	prevView := m.view
+	prevNav := navState{top: m.top, sub: m.sub}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -128,32 +130,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" || msg.String() == "q" {
 			return m, tea.Quit
 		}
-		if m.view == viewHome {
+		if m.onHome() {
 			m.handleHomeKey(msg)
 			return m, nil
 		}
 		if m.handleCommonKey(msg) {
-			m.refreshAfterViewChange(prevView)
+			m.refreshAfterViewChange(prevNav)
 			return m, nil
 		}
-		switch m.view {
-		case 0:
+		switch m.sub {
+		case subBoard:
 			m.handleBoardKey(msg)
-		case 2:
+		case subTable:
+			m.handleListKey(msg)
+		case subGraph:
 			m.handleGraphKey(msg)
-		case 3:
+		case subStatsGeneral:
+			m.handleStatsKey(msg)
+		case subStatsLogs:
+			m.handleLogsKey(msg)
+		case subSettingsConfig:
 			if cmd := m.handleConfigKey(msg); cmd != nil {
 				return m, cmd
 			}
-		case 4:
-			m.handleLogsKey(msg)
-		case 5:
-			m.handleStatsKey(msg)
-		default:
-			m.handleListKey(msg)
 		}
 	}
-	m.refreshAfterViewChange(prevView)
+	m.refreshAfterViewChange(prevNav)
 	return m, nil
 }
 
@@ -164,7 +166,7 @@ func scheduleRefreshTick() tea.Cmd {
 }
 
 func (m Model) shouldRealtimeRefresh() bool {
-	if m.view == viewHome {
+	if m.onHome() {
 		// Home reads cross-project metadata (tags, pending counts) — refresh
 		// is driven by ctrl+h / startup, not by the per-project tick.
 		return false
@@ -172,8 +174,8 @@ func (m Model) shouldRealtimeRefresh() bool {
 	return !m.helpOpen && m.mode == modeNormal && m.taskScreen == taskScreenClosed && m.entityScreen == entityScreenClosed && !m.moveMode
 }
 
-func (m *Model) refreshAfterViewChange(prevView int) {
-	if m.view == prevView {
+func (m *Model) refreshAfterViewChange(prev navState) {
+	if m.top == prev.top && m.sub == prev.sub {
 		return
 	}
 	if err := m.refreshCurrentView(); err != nil {
@@ -182,13 +184,13 @@ func (m *Model) refreshAfterViewChange(prevView int) {
 }
 
 func (m *Model) refreshCurrentView() error {
-	if m.view == viewHome {
+	if m.onHome() {
 		return m.loadHome()
 	}
-	if m.view == 4 {
+	if m.top == topStats && m.sub == subStatsLogs {
 		return m.refreshActivityLogs()
 	}
-	if m.view == 5 {
+	if m.top == topStats && m.sub == subStatsGeneral {
 		return m.refreshStats()
 	}
 	return m.refreshPreservingTaskSelection()
@@ -375,14 +377,14 @@ func (m Model) isEmbeddedCommentInput() bool {
 
 func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 	switch msg.String() {
-	case "ctrl+h":
+	case "ctrl+h", "0":
 		// Multi-project Home is reachable from every per-project view. The
 		// underlying picker keeps its prior cursor so re-entry feels stable;
 		// we do reload tags/pending counts so a freshly-edited project row
 		// reflects the latest state.
 		m.moveMode = false
 		m.status = ""
-		m.view = viewHome
+		m.top = topHome
 		if err := m.loadHome(); err != nil {
 			m.status = err.Error()
 		}
@@ -394,25 +396,41 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 			return true
 		}
 	case "tab":
-		m.view = (m.view + 1) % len(viewNames)
+		m.cycleTop(1)
 		m.moveMode = false
 		return true
 	case "shift+tab":
-		m.view = (m.view + len(viewNames) - 1) % len(viewNames)
+		m.cycleTop(-1)
 		m.moveMode = false
 		return true
-	case "1", "2", "3", "4", "5", "6":
-		m.view = int(msg.String()[0] - '1')
+	case "1":
+		m.jumpTop(topTasks)
+		m.moveMode = false
+		return true
+	case "2":
+		m.jumpTop(topStats)
+		m.moveMode = false
+		return true
+	case "3":
+		m.jumpTop(topSettings)
+		m.moveMode = false
+		return true
+	case ",":
+		m.cycleSub(-1)
+		m.moveMode = false
+		return true
+	case "/":
+		m.cycleSub(1)
 		m.moveMode = false
 		return true
 	case "n":
-		if m.view == 3 || m.view == 4 || m.view == 5 {
+		if m.top != topTasks {
 			return false
 		}
 		m.openTaskCreate()
 		return true
 	case "e":
-		if m.view == 3 || m.view == 4 || m.view == 5 {
+		if m.top != topTasks {
 			return false
 		}
 		if task, ok := m.selectedTask(); ok {
@@ -420,7 +438,7 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		}
 		return true
 	case "c":
-		if m.view == 3 || m.view == 4 || m.view == 5 {
+		if m.top != topTasks {
 			return false
 		}
 		if _, ok := m.selectedTask(); ok {
@@ -436,6 +454,48 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		return true
 	}
 	return false
+}
+
+// cycleTop advances the active top by delta positions (positive forward,
+// negative backward) along topOrder. The sub always lands on the first
+// sub of the new top — there is no per-top "last sub used" memory in T1.
+func (m *Model) cycleTop(delta int) {
+	idx := topIndex(m.top)
+	if idx < 0 {
+		idx = 0
+	}
+	n := len(topOrder)
+	next := topOrder[((idx+delta)%n+n)%n]
+	m.top = next
+	m.sub = firstSub(next)
+}
+
+// jumpTop moves directly to a target top (bound to the digit keys 1/2/3),
+// landing on its first sub. No-op when the model is already on that top
+// and its first sub — keeps repeated digit presses from clobbering nav.
+func (m *Model) jumpTop(target topID) {
+	if m.top == target {
+		return
+	}
+	m.top = target
+	m.sub = firstSub(target)
+}
+
+// cycleSub moves the active sub forward (delta=1) or backward (delta=-1)
+// inside the current top. No-op when the top exposes a single sub — the
+// binding is silently dropped so users on Settings do not have to learn
+// "this only works on Tasks/Stats".
+func (m *Model) cycleSub(delta int) {
+	subs := subsByTop[m.top]
+	if len(subs) <= 1 {
+		return
+	}
+	idx := subIndex(m.top, m.sub)
+	if idx < 0 {
+		idx = 0
+	}
+	n := len(subs)
+	m.sub = subs[((idx+delta)%n+n)%n]
 }
 
 func (m *Model) refresh() error {

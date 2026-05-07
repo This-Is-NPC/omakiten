@@ -124,7 +124,8 @@ func (m *Model) handleHomeKey(msg tea.KeyMsg) {
 func (m *Model) selectHomeProject(project domain.Project) error {
 	m.project = project.Context()
 	m.lastProjectRoot = project.RootPath
-	m.view = 0
+	m.top = topTasks
+	m.sub = subBoard
 	m.colIdx = 0
 	m.cardIdx = 0
 	m.boardColScroll = 0

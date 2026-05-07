@@ -7,14 +7,15 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// renderHeader renders the global title bar + view navigation row. The
-// title (`omakiten · project · local checkpoint`) is always visible; the
-// view tabs are hidden when an overlay is open (help/task/entity) so the
-// overlay's own kicker reads as the focused surface. Falls back to a
-// compact "active tab + hint" form when the full nav row would overflow.
+// renderHeader renders the global title bar + the two-row navigation
+// kicker (top zones / sub menus). The title (`omakiten · project ·
+// local checkpoint`) is always visible; both nav rows are hidden when
+// an overlay is open (help/task/entity) so the overlay's own kicker
+// reads as the focused surface. Falls back to a compact "active tab +
+// hint" form when the full nav row would overflow.
 //
-// On the Home view the per-project tab bar is suppressed (Home is outside
-// the tab cycle and only reachable via ctrl+h), and the title swaps the
+// On the Home view the per-project nav is suppressed (Home is outside
+// the cycle and only reachable via 0 / ctrl+h), and the title swaps the
 // project segment for an explicit "select a project" hint so the absent
 // project slug never reads as a render bug.
 func (m Model) renderHeader() string {
@@ -22,7 +23,7 @@ func (m Model) renderHeader() string {
 	sb.WriteString("\n  ")
 	sb.WriteString(m.styles.title.Render("omakiten"))
 	sb.WriteString(m.styles.hint.Render(" › "))
-	if m.view == viewHome {
+	if m.onHome() {
 		sb.WriteString(m.styles.nav.Render("home"))
 		sb.WriteString(m.styles.hint.Render(" · select a project"))
 		sb.WriteString("\n\n  ")
@@ -37,28 +38,49 @@ func (m Model) renderHeader() string {
 	sb.WriteString("\n\n  ")
 
 	const navGap = "   "
-	items := make([]string, 0, len(viewNames))
-	rules := make([]string, 0, len(viewNames))
-	for i, name := range viewNames {
-		label := fmt.Sprintf("%02d // %s", i+1, name)
+	topItems := make([]string, 0, len(topOrder))
+	topRules := make([]string, 0, len(topOrder))
+	for i, t := range topOrder {
+		label := fmt.Sprintf("%02d // %s", i+1, topLabels[t])
 		width := lipgloss.Width(label)
-		if i == m.view {
-			items = append(items, m.styles.activeNav.Render(label))
-			rules = append(rules, m.styles.activeNav.Render(strings.Repeat("─", width)))
+		if t == m.top {
+			topItems = append(topItems, m.styles.activeNav.Render(label))
+			topRules = append(topRules, m.styles.activeNav.Render(strings.Repeat("─", width)))
 		} else {
-			items = append(items, m.styles.nav.Render(label))
-			rules = append(rules, strings.Repeat(" ", width))
+			topItems = append(topItems, m.styles.nav.Render(label))
+			topRules = append(topRules, strings.Repeat(" ", width))
 		}
 	}
-	if lipgloss.Width(strings.Join(items, navGap)) > m.availableWidth() {
-		active := fmt.Sprintf("%02d // %s", m.view+1, viewNames[m.view])
+	if lipgloss.Width(strings.Join(topItems, navGap)) > m.availableWidth() {
+		active := fmt.Sprintf("%02d // %s", topIndex(m.top)+1, topLabels[m.top])
 		sb.WriteString(m.styles.activeNav.Render(active))
-		sb.WriteString(m.styles.hint.Render("  tab/1-6 switch views"))
+		sb.WriteString(m.styles.hint.Render("  tab/1-3 switch zones · ,// switch sub"))
 		return sb.String()
 	}
-	sb.WriteString(strings.Join(items, navGap))
+	sb.WriteString(strings.Join(topItems, navGap))
 	sb.WriteString("\n  ")
-	sb.WriteString(strings.Join(rules, navGap))
+	sb.WriteString(strings.Join(topRules, navGap))
+
+	subs := subsByTop[m.top]
+	if len(subs) > 1 {
+		subItems := make([]string, 0, len(subs))
+		subRules := make([]string, 0, len(subs))
+		for _, s := range subs {
+			label := fmt.Sprintf("// %s", subLabels[s])
+			width := lipgloss.Width(label)
+			if s == m.sub {
+				subItems = append(subItems, m.styles.activeNav.Render(label))
+				subRules = append(subRules, m.styles.activeNav.Render(strings.Repeat("─", width)))
+			} else {
+				subItems = append(subItems, m.styles.nav.Render(label))
+				subRules = append(subRules, strings.Repeat(" ", width))
+			}
+		}
+		sb.WriteString("\n  ")
+		sb.WriteString(strings.Join(subItems, navGap))
+		sb.WriteString("\n  ")
+		sb.WriteString(strings.Join(subRules, navGap))
+	}
 	return sb.String()
 }
 
@@ -82,22 +104,22 @@ func (m Model) renderCurrentView() string {
 	if m.entityScreen != entityScreenClosed {
 		return m.renderEntityScreen()
 	}
-	if m.view == viewHome {
+	if m.onHome() {
 		return m.renderHome()
 	}
-	switch m.view {
-	case 0:
+	switch m.sub {
+	case subBoard:
 		return m.renderBoard()
-	case 1:
+	case subTable:
 		return m.renderTable()
-	case 2:
+	case subGraph:
 		return m.renderGraph()
-	case 3:
-		return m.renderConfig()
-	case 4:
-		return m.renderLogs()
-	case 5:
+	case subStatsGeneral:
 		return m.renderStats()
+	case subStatsLogs:
+		return m.renderLogs()
+	case subSettingsConfig:
+		return m.renderConfig()
 	default:
 		return ""
 	}
@@ -138,24 +160,24 @@ func (m Model) renderFooter() string {
 		text = "up/down move  pgup/pgdn scroll  enter assign (clears prior owner)  esc cancel"
 	case m.moveMode:
 		text = "left/right move task to lane  esc cancel  q quit"
-	case m.view == viewHome:
+	case m.onHome():
 		text = m.homeFooterHint()
-	case m.view == 0:
-		text = "left/right lanes  up/down tasks  pgup/pgdn scroll  enter open  n new  e edit  m move  ? help"
-	case m.view == 3 && m.deletePending:
+	case m.sub == subBoard:
+		text = "tab zones  ,// subs  left/right lanes  up/down tasks  pgup/pgdn scroll  enter open  n new  e edit  m move  ? help"
+	case m.sub == subSettingsConfig && m.deletePending:
 		text = "d confirm delete  esc cancel  left/right changes target"
-	case m.view == 3 && m.entityKind == entityKindTag:
-		text = "left/right section  up/down select  d arm delete (orphan)  D delete all orphans  ? help"
-	case m.view == 3:
-		text = "left/right section  up/down select  enter open  n new  e edit  d arm delete  a default(template)  t theme  c config  ? help"
-	case m.view == 4:
-		text = "left/right switch view  up/down select row  pgup/pgdn scroll  g/G top/bottom  r refresh  ? help"
-	case m.view == 5:
-		text = "← → period (7d / 30d / all)  r refresh  ? help"
-	case m.view == 2:
-		text = "left/right switch view  j/k move  pgup/pgdn scroll  g/G top/bottom  enter open  ? help"
+	case m.sub == subSettingsConfig && m.entityKind == entityKindTag:
+		text = "tab zones  left/right section  up/down select  d arm delete (orphan)  D delete all orphans  ? help"
+	case m.sub == subSettingsConfig:
+		text = "tab zones  left/right section  up/down select  enter open  n new  e edit  d arm delete  a default(template)  t theme  c config  ? help"
+	case m.sub == subStatsLogs:
+		text = "tab zones  ,// subs  up/down select row  pgup/pgdn scroll  g/G top/bottom  r refresh  ? help"
+	case m.sub == subStatsGeneral:
+		text = "tab zones  ,// subs  ← → period (7d / 30d / all)  r refresh  ? help"
+	case m.sub == subGraph:
+		text = "tab zones  ,// subs  j/k move  pgup/pgdn scroll  g/G top/bottom  enter open  ? help"
 	default:
-		text = "tab switch view  up/down select  pgup/pgdn scroll  g/G top/bottom  enter open  n new  m move  ? help"
+		text = "tab zones  ,// subs  up/down select  pgup/pgdn scroll  g/G top/bottom  enter open  n new  m move  ? help"
 	}
 	return "\n" + indentBlock(m.styles.footer.Render(text), 2)
 }
