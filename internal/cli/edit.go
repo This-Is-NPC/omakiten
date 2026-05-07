@@ -45,14 +45,14 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 				ctx = rt.WithActivityRepo(ctx)
 
 				project, err := opts.resolveProject(ctx, rt.store)
 				if err != nil {
 					return nil, err
 				}
-				task, err := app.NewTaskService(rt.store).Edit(ctx, project, taskID, update)
+				task, err := app.NewTaskServiceFromStore(rt.store).Edit(ctx, project, taskID, update)
 				if err != nil {
 					return nil, err
 				}

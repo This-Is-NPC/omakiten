@@ -30,7 +30,7 @@ func newInitCommand(opts *runtimeOptions) *cobra.Command {
 			if err != nil {
 				return nil, err
 			}
-			defer func() { _ = rt.store.Close() }()
+			defer rt.close()
 			ctx = rt.WithActivityRepo(ctx)
 
 			projectRoot := root

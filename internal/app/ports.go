@@ -23,12 +23,37 @@ type ConfigRepository interface {
 	ContextSettings(ctx context.Context) (domain.ContextSettings, error)
 }
 
+// TaskRepository persists task rows. The methods are deliberately policy-free:
+// CreateTask requires a non-empty bucket key (default-bucket selection lives in
+// app.WorkflowService) and MoveTask is a pure persist + task.moved emission
+// (transition allowed?, guards, and task.completed-on-final live in
+// app.WorkflowService too).
 type TaskRepository interface {
 	CreateTask(ctx context.Context, projectID int64, title, description, priority, bucketKey string) (domain.Task, error)
 	ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter) ([]domain.Task, error)
 	MoveTask(ctx context.Context, projectID, taskID int64, targetBucketKey string) (domain.Task, error)
 	UpdateTask(ctx context.Context, projectID, taskID int64, update domain.TaskUpdate) (domain.Task, error)
 	TaskCount(ctx context.Context, projectID int64) (int64, error)
+}
+
+// WorkflowRepository exposes the workflow primitives the app's WorkflowService
+// composes into the move/create policy. Each method is a pure read against the
+// active workflow — no side effects, no policy decisions.
+type WorkflowRepository interface {
+	ResolveActiveBucket(ctx context.Context, key string) (domain.Bucket, error)
+	IsFinalActiveBucket(ctx context.Context, bucketID int64) (bool, error)
+	TransitionAllowed(ctx context.Context, fromBucketID, toBucketID int64) (bool, error)
+	LoadTransitionGuards(ctx context.Context, fromBucketID, toBucketID int64) ([]domain.TransitionGuard, error)
+	CurrentTaskBucket(ctx context.Context, projectID, taskID int64) (int64, string, error)
+}
+
+// GuardEvaluationRepository exposes the read-only counts the workflow guards
+// need. Split from WorkflowRepository so guard evaluation can be stubbed
+// independently in tests.
+type GuardEvaluationRepository interface {
+	ListTaskBlockerBuckets(ctx context.Context, projectID, taskID int64) ([]domain.TaskBlocker, error)
+	CountTaskComments(ctx context.Context, projectID, taskID int64) (int, error)
+	CountTaskCommentsTagged(ctx context.Context, projectID, taskID int64, tagName string) (int, error)
 }
 
 type CommentRepository interface {
@@ -79,4 +104,36 @@ type ErrorRepository interface {
 	AddSolution(ctx context.Context, errorID int64, description, steps string, taskID *int64) (domain.Solution, error)
 	ConfirmSolution(ctx context.Context, solutionID int64, success bool) (domain.Solution, error)
 	ListTopSolutions(ctx context.Context, limit int) ([]domain.Solution, error)
+}
+
+// BundleStore is the adapter port for reading/writing the bundled config and
+// the generic atomic-write helper. The app layer talks to this instead of
+// reaching into `internal/config`'s I/O functions directly so that the
+// hexagonal direction stays inward (app → port → adapter → disk).
+type BundleStore interface {
+	LoadBundle(path string) (config.Bundle, error)
+	SaveBundle(path string, bundle config.Bundle) error
+	HashFile(path string) (string, error)
+	WriteAtomic(path string, data []byte) error
+	EnsureDefaultFiles(rootDir string) error
+	MigrateLayout(rootDir string) error
+	ConfigRootFromYAMLPath(path string) string
+}
+
+// EntityFileWriter renders per-entity (.md) file payloads and resolves their
+// canonical disk paths. Used by the law/persona/skill services to stage
+// FileOps that the BundleEditor then writes through atomically.
+type EntityFileWriter interface {
+	LawFileBytes(law config.Law) ([]byte, error)
+	PersonaFileBytes(persona config.Persona) ([]byte, error)
+	SkillFileBytes(skill config.Skill) ([]byte, error)
+	EntityFilePath(rootDir string, kind config.EntityKind, slug string) string
+	CustomEntityFilePath(rootDir string, kind config.EntityKind, slug string) string
+}
+
+// Slugifier normalizes user-supplied identifiers into the kebab-case
+// filename convention shared by every entity kind. Lives behind a port so
+// the slug-policy isn't owned by a specific config-package import.
+type Slugifier interface {
+	Slugify(value string) string
 }

@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### TUI internals
+
+* **components:** introduce `internal/tui/components/{viewport,picker,detailscreen}` sub-packages — Bubble Tea sub-models that own cursor + scroll state for the surfaces previously tracked as flat fields on the root `Model`. No user-facing behaviour change; visual output, key bindings and screen contracts are preserved exactly. The sub-packages have standalone unit tests so the components can evolve independently of the screens that embed them.
+
+### Architecture internals
+
+* **agent/config:** split the protocol-neutral agent DTO/service surface and config loader internals by responsibility, preserving the existing hexagonal boundaries between adapters, application services, domain, and persistence.
+* **hexagonal realignment:** workflow policy (default-bucket selection on create, transition allowed?, guards, task.completed-on-final emission) moves from `internal/sqlite` to a new `app.WorkflowService` that composes fine-grained ports (`WorkflowRepository`, `GuardEvaluationRepository`, plus existing `EventRepository`/`ConfigRepository`/`TaskRepository`). The sqlite Store keeps only pure-persistence variants of `CreateTask`/`MoveTask` plus the workflow primitives; integration tests now thread through the service.
+* **configstore adapter:** `internal/app/{config_service,bundle_editor,law_service,persona_service,skill_service}.go` no longer call `internal/config` for I/O. A new `internal/configstore.Adapter` implements three new ports declared in `app/ports.go` — `BundleStore` (`LoadBundle`/`SaveBundle`/`HashFile`/`WriteAtomic`/`EnsureDefaultFiles`/`MigrateLayout`/`ConfigRootFromYAMLPath`), `EntityFileWriter` (`LawFileBytes`/`PersonaFileBytes`/`SkillFileBytes`/path helpers), and `Slugifier`. App services depend on the ports; the composition root injects the adapter once.
+* **agent runtime → composition root:** `internal/agent/runtime.go` is gone; the bootstrap (path resolution, layout migration, default-file seeding, sqlite open, config import, template snapshots) now lives in a dedicated `internal/agentruntime` package. `internal/agent` carries only the `Service`, DTOs, and feature files — it no longer imports `internal/config`, `internal/paths`, or `internal/sqlite` from production code.
+* **TUI orchestration → app:** the dependency-set diff (`saveBlockerPicker`), template default frontmatter rewrite, and the read fan-out for the refresh tick all moved into `app.DependencyService.SyncBlockers`, `app.TemplateService.SetDefault`, and `app.TUIQueryService.Snapshot`. The TUI's `refresh()` shrunk from ~80 lines to ~25; `internal/tui/entity.go` lost its `config` and `domain` imports as a result.
+* **boundary enforcement:** new `internal/arch/arch_test.go` walks the import graph and fails if `internal/domain` reaches into adapters, if `internal/app` imports concrete adapters, or if any leaf adapter references a sibling. A `.golangci.yml` mirrors the rules under `depguard`. CI now runs `go vet`, `go test -race -count=1` and `golangci-lint`.
+* **eliminated `"backlog"` literal in production code:** `internal/cli/add.go --bucket` defaults to `""` (the `WorkflowService` resolves the active workflow's first bucket); the TUI's create form does the same.
+
 ## [0.6.0](https://github.com/This-Is-NPC/omakiten/compare/v0.5.0...v0.6.0) (2026-05-06)
 
 

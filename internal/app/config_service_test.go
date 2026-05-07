@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"omakiten/internal/configstore"
 )
 
 func TestConfigServiceImport(t *testing.T) {
@@ -14,7 +16,7 @@ func TestConfigServiceImport(t *testing.T) {
 	store, _ := appTestStore(t, appTestBundle(1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewConfigService(store)
+	service := NewConfigService(store, configstore.New())
 
 	tmp := t.TempDir()
 	validPath := filepath.Join(tmp, "omakiten.yaml")

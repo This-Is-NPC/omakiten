@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
@@ -72,16 +73,17 @@ func TestCreateTaskEmitsTaskCreatedEvent(t *testing.T) {
 func TestMoveTaskEmitsTaskMovedAndCompleted(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithFullTransitions(ctx, t)
+	workflow := app.NewWorkflowServiceFromStore(store)
 
 	task, err := store.CreateTask(ctx, project.ID, "to move", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
 
-	if _, err := store.MoveTask(ctx, project.ID, task.ID, "dev"); err != nil {
+	if _, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev"); err != nil {
 		t.Fatalf("MoveTask(backlog->dev) = %v", err)
 	}
-	if _, err := store.MoveTask(ctx, project.ID, task.ID, "done"); err != nil {
+	if _, err := workflow.MoveTask(ctx, project.Context(), task.ID, "done"); err != nil {
 		t.Fatalf("MoveTask(dev->done) = %v", err)
 	}
 

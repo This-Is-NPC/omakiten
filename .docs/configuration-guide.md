@@ -1,0 +1,582 @@
+# How to Configure `omakiten.yaml`
+
+`omakiten.yaml` is the canonical write-model: every field below is parsed by `internal/config/loader.go` and validated by `internal/config/validator.go` before being imported into SQLite. YAML decoding uses `KnownFields(true)`, so unknown fields fail loud rather than silently.
+
+The active runtime path is, in precedence (`internal/paths/paths.go`):
+
+1. `--config <path>` flag (CLI/TUI).
+2. `$OMAKITEN_HOME/config/omakiten.yaml`.
+3. `$XDG_CONFIG_HOME/omakiten/config/omakiten.yaml`.
+4. `~/.config/omakiten/config/omakiten.yaml`.
+
+The yaml lives under `<root>/config/`; per-entity folders are siblings of `config/`, not nested inside it. See **Paths and backups** at the bottom for the full layout. The default kit (`defaults/`) is materialized into the entity folders on first run by `configstore.EnsureDefaultFiles`; legacy flat layouts are auto-migrated by `configstore.MigrateLayout`.
+
+---
+
+## Top-level shape
+
+```yaml
+version: 1
+kit: { id, key, name }
+config: { … }
+workflows: [ … ]
+skills:    [ <slug>, … ]    # optional allowlist
+laws:      [ <slug>, … ]    # optional allowlist
+templates: [ <slug>, … ]    # optional allowlist
+personas:  [ { slug, skills?, laws? }, … ]
+projects:  [ { slug, name, description?, laws? }, … ]
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `version` | int | yes | Must be exactly `1`. Anything else fails validation. |
+| `kit` | object | yes | See **kit**. |
+| `config` | object | yes | See **config**. |
+| `workflows` | list | yes | At least one. See **workflows**. |
+| `skills` / `laws` / `templates` | list of slug strings | no | Strict allowlist when present; **autoload** otherwise. |
+| `personas` | list of `PersonaWiring` | no | Persona wiring (skill/law refs); body lives in `personas/<slug>.md`. |
+| `projects` | list of `ProjectWiring` | no | Declarative project wiring; the runtime project list is in SQLite. |
+
+### `kit`
+
+```yaml
+kit:
+  id: 1               # int, > 0, required
+  key: default        # string, required
+  name: Default Omakiten Kit   # string, required
+```
+
+`kit` identifies the bundle distribution. All three fields are required (`requireKitFields` → `requireIDKeyName`).
+
+---
+
+## `config`
+
+```yaml
+config:
+  output:
+    json_minified: true       # bool
+    omit_empty:    true       # bool
+  context:
+    default_level: 2          # int, 1..3
+    max_tokens:    12000      # int, >= 0
+  workflow:
+    active: default           # string, required; must match workflows[].key
+  theme:
+    active: omakiten          # string, required; must match a themes/<key>.yaml file
+  template_defaults: [task, pr, comment-resume, comment-selfbranch]
+  views: { … }
+```
+
+### `config.output`
+
+| Field | Type | Effect |
+|---|---|---|
+| `json_minified` | bool | When true, CLI envelopes are emitted as a single line (`internal/output/json.go`). |
+| `omit_empty` | bool | Drop empty/zero fields from the JSON envelope. |
+
+### `config.context`
+
+| Field | Type | Range | Effect |
+|---|---|---|---|
+| `default_level` | int | 1, 2, or 3 | Default level for `context.dump` when the caller omits one. Levels: **1** = context entries only · **2** adds workflow + tasks + dependencies · **3** adds comments + active laws (`internal/app/context_service.go`). |
+| `max_tokens` | int | `>= 0` | Token budget for `context.dump`. Truncation is newest-first; the response sets `truncated: true` once the budget is exceeded (`internal/app/context_service.go:contextBudget`). |
+
+### `config.workflow`
+
+| Field | Required | Effect |
+|---|---|---|
+| `active` | yes | Selects which `workflows[].key` is currently active. Must match an entry; otherwise validation fails with `config.workflow.active "<x>" does not match any workflow`. |
+
+### `config.theme`
+
+| Field | Required | Effect |
+|---|---|---|
+| `active` | yes | Theme key — must match a `themes/<key>.yaml` file. The bundled defaults are `omakiten` and `catppuccin-macchiato`. Custom themes go in `themes/<key>.yaml` next to `omakiten.yaml`. |
+
+Theme files are validated separately (`ValidateTheme`): `version: 1`, non-empty `key`, `name`, and `colors`. See `defaults/themes/omakiten.yaml` for the canonical color keys (`background`, `foreground`, `primary`, `secondary`, `success`, `warning`, `error`, `border`, `highlight`).
+
+### `config.template_defaults`
+
+```yaml
+template_defaults: [task, pr, comment-resume, comment-selfbranch]
+```
+
+The list of "kinds" that templates may claim as their `default:` slot. When omitted, falls back to the canonical default set (`config.DefaultTemplateKinds`).
+
+A template `.md` whose frontmatter declares `default: <kind>` activates as the scaffold for that kind. The validator enforces:
+
+- Every template's `default:` value must be in `template_defaults` (otherwise `default %q is not in config.template_defaults`).
+- At most one template per `(default, project)` pair (`only one may`).
+
+The TUI's template-default picker offers exactly the kinds in this list.
+
+### `config.views`
+
+Per-view defaults seeded into the TUI on startup. Every field is optional; omitted values fall back to canonical defaults via `Settings.EffectiveViews()` (`internal/config/bundle.go`).
+
+```yaml
+views:
+  board:
+    sort:   { field: created_at, order: desc }
+    filter: { priority: [] }                          # subset of [low, normal, high]; [] = all
+  table:
+    sort:   { field: created_at, order: desc }
+    filter:
+      priority: []                                    # same enum
+      bucket:   []                                    # subset of bucket keys in the active workflow; [] = all
+  graph:
+    sort:   { field: id, order: asc }                 # field in [id, title]
+  logs:
+    sort:   { order: desc }                           # field is rejected — only direction is configurable
+    limit:  50                                        # int, >= 0
+    filter: { source: [] }                            # subset of [cli, tui, mcp]
+  task_activity:
+    sort:   { order: asc }                            # asc = chronological, desc = newest first
+```
+
+Allowed values come from `internal/config/validator.go`:
+
+| Setting | Allowed values | Default |
+|---|---|---|
+| `board.sort.field`, `table.sort.field` | `id`, `title`, `priority`, `created_at` | `created_at` |
+| `board.sort.order`, `table.sort.order` | `asc`, `desc` | `desc` |
+| `graph.sort.field` | `id`, `title` | `id` |
+| `graph.sort.order` | `asc`, `desc` | `asc` |
+| `logs.sort.order` | `asc`, `desc` (no `field`) | `desc` |
+| `logs.limit` | int `>= 0` | `50` |
+| `logs.filter.source` | subset of `cli`, `tui`, `mcp` | `[]` (no filter) |
+| `task_activity.sort.order` | `asc`, `desc` (no `field`) | `asc` |
+| `*.filter.priority` | subset of `low`, `normal`, `high` | `[]` |
+| `table.filter.bucket` | subset of bucket keys in the active workflow | `[]` |
+
+Typos surface with errors like `config.views.board.sort.field "creatd_at" is not one of [id title priority created_at]` rather than being silently ignored.
+
+---
+
+## `workflows`
+
+```yaml
+workflows:
+  - id: 1
+    key: default
+    name: Default Workflow
+    buckets: [ … ]
+    transitions: [ … ]
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | int, > 0, unique | Stable identifier referenced by `transitions[].from` / `to`. |
+| `key` | string, required, unique | Used by `config.workflow.active` and human-facing CLI/TUI flows. |
+| `name` | string, required | Display name. |
+| `buckets` | list, non-empty | See **buckets**. |
+| `transitions` | list, optional | See **transitions**. Empty list = no moves allowed. |
+
+### `workflows[].buckets`
+
+```yaml
+buckets:
+  - { id: 1, key: backlog, name: Backlog,     position: 1 }
+  - { id: 2, key: dev,     name: Development, position: 2 }
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | int, > 0, unique within workflow | Used by transitions. |
+| `key` | string, required, unique within workflow | Stable identifier (also referenced by guards and view filters). |
+| `name` | string, required | Display name. |
+| `position` | int, >= 1 | Visual ordering in BOARD/TABLE views. The bucket at position 1 is the **default for new tasks** when none is supplied (`app.WorkflowService.ResolveDefaultBucket`); the bucket at the highest position is the **final** bucket whose entry triggers a `task.completed` event. |
+
+### `workflows[].transitions`
+
+```yaml
+transitions:
+  - from: 1            # bucket id
+    to: 2              # bucket id
+    guards: [ … ]      # optional
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `from` | int | Must reference an existing `buckets[].id` in the same workflow. |
+| `to` | int | Same. |
+| `guards` | list | Optional; see **Guards** below. |
+
+Each `(from, to)` pair must be unique within a workflow. Self-transitions (`from == to`) are never enforced because same-bucket moves are no-ops.
+
+### Guards
+
+Guards live on a transition and run before the move persists. Three types: `blockers_in`, `comments_min`, `comments_tagged`.
+
+See **`.docs/guards-guide.md`** for the full mechanics, validation rules, and worked examples. In summary:
+
+```yaml
+guards:
+  - type: blockers_in
+    buckets: [done]                       # required, non-empty; keys must exist in this workflow
+    hint: "Move blockers to Done first."  # optional, surfaced in the error
+  - type: comments_min
+    count: 1                              # required, >= 1
+    hint: "…"
+  - type: comments_tagged
+    tag: resume                           # required
+    count: 1                              # required, >= 1
+    hint: "…"
+```
+
+---
+
+## Per-entity wiring
+
+### `skills`
+
+```yaml
+skills:        # optional
+  - go
+  - sqlite
+```
+
+When present, **only** the listed slugs activate (strict allowlist). When omitted, every `skills/*.md` file (default + `skills/custom/*.md`) is autoloaded. Each slug must match an existing file (`skills/<slug>.md`); validation fails otherwise.
+
+A skill file's frontmatter (`internal/config/entity_loader.go:skillFrontmatter`):
+
+```markdown
+---
+name: Go
+description: Idiomatic Go for backends
+---
+Body in markdown — free-form.
+```
+
+Required: `name`. Optional: `description`. The `slug` is derived from the filename.
+
+### `laws`
+
+```yaml
+laws:          # optional global allowlist
+  - workflow-enforced
+```
+
+Top-level `laws:` declares **global** laws. Personas may declare per-persona laws and projects may declare per-project laws (`PersonaWiring.Laws`, `ProjectWiring.Laws`). Each slug must resolve to a `laws/<slug>.md` file; a single slug cannot appear in more than one scope (`validateScopeUniqueness`).
+
+Frontmatter (`lawFrontmatter`):
+
+```markdown
+---
+name: Workflow Enforced
+severity: error             # info | warning | error
+---
+Body…
+```
+
+`severity` is required and must be `info`, `warning`, or `error` (`allowedSeverities`).
+
+The scope (`global` / `persona` / `project`) is **not** stored in the file — it is determined by where the slug is referenced (`internal/config/loader_pick.go`).
+
+### `personas`
+
+```yaml
+personas:
+  - slug: backend-agent
+    skills: [go, sqlite, cli]   # optional, must be loaded slugs, no duplicates
+    laws:   [workflow-enforced] # optional, must be loaded slugs
+```
+
+Persona body (description, free-form notes) lives in `personas/<slug>.md`. The wiring above only declares relationships:
+
+| Field | Type | Notes |
+|---|---|---|
+| `slug` | string, required | Must match `personas/<slug>.md`. |
+| `skills` | list of slugs | Each must resolve to a loaded skill; no duplicates within the persona. |
+| `laws` | list of slugs | Each must resolve to a loaded law; the slug cannot also appear at the global or project scope. |
+
+Frontmatter (`personaFrontmatter`):
+
+```markdown
+---
+name: Backend Agent
+description: Owns server-side surface
+---
+Persona body…
+```
+
+### `projects`
+
+```yaml
+projects:                   # optional declarative wiring
+  - slug: omakiten
+    name: Omakiten
+    description: …
+    laws: [project-scope-only]
+```
+
+Note: the **runtime** project list lives in SQLite (`UpsertProject`); this section is purely declarative wiring used by validation/loading. Project laws referenced here must resolve to loaded files and not collide with global/persona scopes.
+
+### `templates`
+
+```yaml
+templates:    # optional allowlist; otherwise autoload
+  - pull-request
+  - user-story
+```
+
+Template files live in `templates/<slug>.md`. Frontmatter (`templateFrontmatter`):
+
+```markdown
+---
+name: Pull Request
+description: Standard PR scaffold
+entity: pr                  # optional, free-form classifier
+default: pr                 # optional — must be one of config.template_defaults
+project: omakiten           # optional — scopes the default to a single project
+---
+Body — used as the scaffold.
+```
+
+Template defaulting rules (`Bundle.TemplateByDefault`, `validateTemplateDefaults`):
+
+- A template with `default: <kind>` activates as the scaffold for that kind.
+- `project: <slug>` scopes the default to one project; otherwise it is the global default.
+- Project-scoped wins over global when both exist for the same kind.
+- At most one template per `(default, project)` pair.
+
+---
+
+## Autoload, custom overrides, and slug rules
+
+For each per-entity folder (`skills/`, `laws/`, `personas/`, `templates/`):
+
+- The slug is the filename without the `.md` extension.
+- Files at the folder root are the **default** kit.
+- Files under `<folder>/custom/` are user-customs and **override** same-slug defaults — the same slug appears once with `is_custom: true` in the loaded bundle.
+- When the matching top-level YAML key (`skills`, `laws`, `templates`) is omitted, every file is autoloaded; when present, only listed slugs activate (strict allowlist).
+- All four fronts share the same loader skeleton (`LoadSkills` / `LoadLaws` / `LoadPersonas` / `LoadTemplates` in `internal/config/entity_loader.go`).
+
+---
+
+## Validation summary
+
+`okt config validate` (and every bundle import) runs `ValidateBundle` (`internal/config/validator.go`). Common failure shapes:
+
+| Cause | Error |
+|---|---|
+| `version != 1` | `version must be 1` |
+| Missing `kit.id` / `kit.key` / `kit.name` | `kit.id must be positive` / `kit.key is required` / `kit.name is required` |
+| Bad context level | `config.context.default_level must be between 1 and 3` |
+| Negative `max_tokens` | `config.context.max_tokens cannot be negative` |
+| Empty `config.workflow.active` | `config.workflow.active is required` |
+| `active` not found | `config.workflow.active "<x>" does not match any workflow` |
+| Duplicated workflow / bucket id or key | `workflows has duplicated id <n>` / `… duplicated key "<k>"` |
+| Bucket position `< 1` | `workflows.<wf>.buckets.<key>.position must be positive` |
+| Transition referencing missing bucket id | `workflows.<wf> transitions from missing bucket id <n>` |
+| Duplicated transition pair | `workflows.<wf> has duplicated transition <a> -> <b>` |
+| Unknown guard type / bad guard payload | See **`.docs/guards-guide.md`** §"Validation rules". |
+| Reference to a non-existent skill/law/persona/template | `<section>: ref "<slug>" has no matching file` |
+| Law in two scopes | `laws.<slug> declared in multiple scopes (<a> and <b>)` |
+| Bad template `default` | `templates.<slug>: default "<kind>" is not in config.template_defaults` |
+| Two templates claiming the same `(default, project)` | `templates.<a> and templates.<b> both declare default="<kind>" (<scope>)` |
+| Bad view sort/filter | `config.views.<view>.* "<v>" is not one of [...]` |
+| Project laws referencing a non-existent law | `projects.<slug> laws: ref "<slug>" has no matching law file` |
+
+All errors are returned as plain Go errors in CLI flows (rendered through the JSON envelope) and as `config_invalid` coded errors when surfaced through the agent layer (`internal/domain/errors.go`).
+
+---
+
+## Worked example (annotated)
+
+```yaml
+version: 1
+
+kit:
+  id: 1
+  key: default
+  name: Default Omakiten Kit
+
+config:
+  output:    { json_minified: true, omit_empty: true }
+  context:   { default_level: 2, max_tokens: 12000 }
+  workflow:  { active: default }
+  theme:     { active: omakiten }
+  template_defaults: [task, pr, comment-resume, comment-selfbranch]
+  views:
+    board: { sort: { field: created_at, order: desc }, filter: { priority: [high, normal] } }
+    table: { sort: { field: title,      order: asc  } }
+    logs:  { limit: 100 }
+
+workflows:
+  - id: 1
+    key: default
+    name: Default Workflow
+    buckets:
+      - { id: 1, key: backlog, name: Backlog,     position: 1 }   # default bucket for new tasks
+      - { id: 2, key: dev,     name: Development, position: 2 }
+      - { id: 3, key: review,  name: Review,      position: 3 }
+      - { id: 4, key: done,    name: Done,        position: 4 }   # final → emits task.completed
+    transitions:
+      - from: 1
+        to: 2
+        guards:
+          - type: comments_tagged
+            tag: self-branch
+            count: 1
+            hint: "Tag #self-branch with the branch name before starting."
+      - from: 2
+        to: 3
+        guards:
+          - type: blockers_in
+            buckets: [done]
+            hint: "Move blockers to Done first."
+          - type: comments_tagged
+            tag: resume
+            count: 1
+      - from: 3
+        to: 4
+      - from: 3
+        to: 2          # kickback path, no guards
+      - from: 4
+        to: 3          # re-open path, no guards
+
+# Strict allowlist — only these skills activate even if more files exist.
+skills: [go, sqlite, cli]
+
+# Global laws.
+laws: [workflow-enforced, yaml-is-canonical]
+
+personas:
+  - slug: backend-agent
+    skills: [go, sqlite, cli]
+    laws:   [project-scope-only]   # persona-scoped — must NOT also appear in top-level laws
+
+projects:
+  - slug: omakiten
+    name: Omakiten
+    description: Opinionated checkpoints for AI-driven development
+    # Project-scoped laws also must not collide with global/persona scopes.
+
+# Templates: omitted → every templates/*.md autoloads. Frontmatter `default:` activates each.
+```
+
+The file references in this doc point at the source-of-truth code; if behavior ever drifts, those files are authoritative — update this doc.
+
+---
+
+## Default kit reference
+
+What ships in `defaults/` and is materialized on first run by `configstore.EnsureDefaultFiles`. Everything below can be overridden by writing to the matching `<root>/<folder>/custom/<slug>.md` (or by editing the file in place — though defaults are overwritten on update, customs are preserved).
+
+### Laws (`defaults/laws/`)
+
+| Slug | Severity | Body |
+|---|---|---|
+| `project-scope-only` | error | "Never mix tasks or context from different projects." |
+| `workflow-enforced` | error | "Only move tasks through explicit workflow transitions." |
+| `yaml-is-canonical` | error | "Persist changes to laws, workflows, personas, skills, and config in omakiten.yaml." |
+
+### Skills (`defaults/skills/`)
+
+| Slug | Description |
+|---|---|
+| `cli` | CLI design — argument parsing, exit codes, JSON envelopes. |
+| `go` | Go language proficiency — idiomatic Go, modules, testing. |
+| `sqlite` | SQLite proficiency — schema design, migrations, query tuning. |
+
+### Personas (`defaults/personas/`)
+
+| Slug | Description | Skills wired in `defaults/omakiten.yaml` |
+|---|---|---|
+| `backend-agent` | Backend-focused agent — services, storage, CLI surfaces. | `go`, `sqlite`, `cli` |
+
+### Templates (`defaults/templates/`)
+
+| Slug | Default kind | What the body scaffolds |
+|---|---|---|
+| `pull-request` | `pr` | Before/After framing, change log, files updated, validation matrix, deviations, risks/follow-ups, references. |
+| `user-story` | `task` | User Story (role/capability/benefit), Acceptance Criteria, Definition of Done. |
+
+### Themes (`defaults/themes/`)
+
+| Key | Vibe |
+|---|---|
+| `omakiten` | Dark with neon-green accent. The default. |
+| `catppuccin-macchiato` | Catppuccin Macchiato — pastels on deep navy. |
+
+See `.docs/theming-guide.md` for the eight color tokens consumed by the TUI.
+
+### Default workflow (`defaults/omakiten.yaml`)
+
+Single workflow `default` with four buckets — `backlog` → `dev` → `review` → `done` — and tag-anchored guards on every forward edge plus guard-free kickback paths (`review→dev`, `done→review`). Full transitions and guards: see `defaults/omakiten.yaml` or `.docs/guards-guide.md` §"Worked example".
+
+---
+
+## Paths and backups
+
+### Layout under the resolved root
+
+`<root>` is one of (highest precedence first):
+
+1. `$OMAKITEN_HOME`
+2. `$XDG_CONFIG_HOME/omakiten`
+3. `~/.config/omakiten`
+
+```
+<root>/
+  config/
+    omakiten.yaml          # active config (or whichever profile .active points to)
+    .active                # one-line state: basename of the active profile (optional)
+    custom/                # user-authored profile yamls (preserved across default refresh)
+      <profile>.yaml
+  laws/
+    <slug>.md              # default-kit law
+    custom/<slug>.md       # user-authored law (preserved; overrides same-slug default)
+  skills/
+    <slug>.md
+    custom/<slug>.md
+  personas/
+    <slug>.md
+    custom/<slug>.md
+  templates/
+    <slug>.md
+    custom/<slug>.md
+  themes/
+    <key>.yaml
+    custom/<key>.yaml
+```
+
+Source: `internal/paths/paths.go:ConfigRoot`, `EntityDir`, `EntityCustomDir`, `ActiveConfigFile`. Legacy flat layouts (`<root>/omakiten.yaml` at the root with no `config/` subdir) are tolerated by `ConfigRootFromYAMLPath` and migrated forward by `configstore.MigrateLayout` on next connect.
+
+### SQLite database
+
+```
+<data-root>/omakiten.db
+```
+
+`<data-root>` is one of (highest precedence first):
+
+1. `$OMAKITEN_HOME/data`
+2. `$XDG_DATA_HOME/omakiten`
+3. `~/.local/share/omakiten`
+
+The DB is a single file. Schema migrations are applied transactionally on every connect (`internal/sqlite/store.go:Open`). Source: `internal/paths/paths.go:DataDir`, `DatabaseFile`.
+
+### Profiles (advanced)
+
+The resolver supports multiple yaml profiles under `<root>/config/`. The active one is selected by writing its basename into `<root>/config/.active`; `<root>/config/custom/<name>.yaml` is tried before `<root>/config/<name>.yaml`. There is currently **no CLI to switch profiles** — `paths.SetActiveConfig` is the only writer, called from code. Most users will never touch this; the default `omakiten.yaml` is used when `.active` is missing or empty.
+
+### Backup
+
+Everything Omakiten persists is on the local filesystem. Two paths cover full state:
+
+```sh
+# Config (yaml + entity files + themes + customs)
+cp -a "${OMAKITEN_HOME:-$HOME/.config/omakiten}" /backup/omakiten-config
+
+# Data (SQLite)
+cp -a "${OMAKITEN_HOME:+$OMAKITEN_HOME/data}${OMAKITEN_HOME:-$HOME/.local/share/omakiten}" /backup/omakiten-data
+```
+
+The DB file can be copied while `okt` is not running; for a hot backup use SQLite's `.backup` command or `VACUUM INTO`. There is no concurrent multi-writer story — the tool is single-user, single-process by design.
+
+### Resetting
+
+`mise run purge` removes both `~/.config/omakiten` and `~/.local/share/omakiten` (`.mise.toml`). Re-run `okt init` to reseed defaults. Customs under `<entity>/custom/` are also removed by purge — back them up first if you care.

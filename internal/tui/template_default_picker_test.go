@@ -71,7 +71,7 @@ func TestTemplateDefaultPickerAssignsProjectScopedAndClearsPrior(t *testing.T) {
 	if idx < 0 {
 		t.Fatal("test setup: no task option in picker")
 	}
-	model.entityForm.pickerCursor = idx
+	model.entityPicker.Cursor = idx
 
 	got, _ := model.updateTemplateDefaultPicker(tea.KeyMsg{Type: tea.KeyEnter})
 	updated := got.(Model)
@@ -147,7 +147,7 @@ func TestTemplateDefaultPickerNoneClearsProjectBinding(t *testing.T) {
 
 	model.openTemplateDefaultPickerForSelected()
 	options := buildTemplateDefaultOptions(model.repos.Editor)
-	model.entityForm.pickerCursor = len(options) - 1 // (none)
+	model.entityPicker.Cursor = len(options) - 1 // (none)
 
 	got, _ := model.updateTemplateDefaultPicker(tea.KeyMsg{Type: tea.KeyEnter})
 	updated := got.(Model)

@@ -10,12 +10,14 @@ import (
 )
 
 type SkillService struct {
-	repo   ConfigRepository
-	editor *BundleEditor
+	repo    ConfigRepository
+	editor  *BundleEditor
+	files   EntityFileWriter
+	slugger Slugifier
 }
 
-func NewSkillService(repo ConfigRepository, editor *BundleEditor) *SkillService {
-	return &SkillService{repo: repo, editor: editor}
+func NewSkillService(repo ConfigRepository, editor *BundleEditor, files EntityFileWriter, slugger Slugifier) *SkillService {
+	return &SkillService{repo: repo, editor: editor, files: files, slugger: slugger}
 }
 
 // List returns the active skill set as imported into SQLite. Description, body,
@@ -71,12 +73,12 @@ func (s *SkillService) Show(ctx context.Context, slug string) (domain.Skill, err
 // (transactional via BundleEditor); the caller can then open $EDITOR against
 // SourcePath to flesh out the body.
 func (s *SkillService) Add(ctx context.Context, input domain.SkillInput) (domain.Skill, error) {
-	slug, name, description, body, err := normalizeSkillInput(input)
+	slug, name, description, body, err := normalizeSkillInput(input, s.slugger)
 	if err != nil {
 		return domain.Skill{}, err
 	}
-	path := config.CustomEntityFilePath(s.editor.RootDir(), config.EntityKindSkill, slug)
-	bytes, err := config.SkillFileBytes(config.Skill{Slug: slug, Name: name, Description: description, Body: body})
+	path := s.files.CustomEntityFilePath(s.editor.RootDir(), config.EntityKindSkill, slug)
+	bytes, err := s.files.SkillFileBytes(config.Skill{Slug: slug, Name: name, Description: description, Body: body})
 	if err != nil {
 		return domain.Skill{}, configError(path, err)
 	}
@@ -139,9 +141,9 @@ func (s *SkillService) Edit(ctx context.Context, slug string, update domain.Skil
 	path := current.SourcePath
 	if path == "" {
 		// Fallback for legacy callers that didn't get an enriched SourcePath.
-		path = config.EntityFilePath(s.editor.RootDir(), config.EntityKindSkill, slug)
+		path = s.files.EntityFilePath(s.editor.RootDir(), config.EntityKindSkill, slug)
 	}
-	bytes, err := config.SkillFileBytes(skill)
+	bytes, err := s.files.SkillFileBytes(skill)
 	if err != nil {
 		return domain.Skill{}, configError(path, err)
 	}
@@ -166,7 +168,7 @@ func (s *SkillService) Remove(ctx context.Context, slug string) error {
 	}
 	path := current.SourcePath
 	if path == "" {
-		path = config.EntityFilePath(s.editor.RootDir(), config.EntityKindSkill, slug)
+		path = s.files.EntityFilePath(s.editor.RootDir(), config.EntityKindSkill, slug)
 	}
 
 	_, err = s.editor.ApplyWithFiles(ctx, func(bundle *config.Bundle) error {
@@ -184,7 +186,7 @@ func (s *SkillService) Remove(ctx context.Context, slug string) error {
 // $EDITOR. After the editor exits the caller must run a re-import (Apply with
 // no mutations) to pick up the user's edits.
 func (s *SkillService) ScaffoldPath(ctx context.Context, name string) (string, error) {
-	slug := config.Slugify(name)
+	slug := s.slugger.Slugify(name)
 	if slug == "" {
 		return "", domain.NewError(domain.ErrValidation, "skill name produces empty slug", map[string]any{"name": name})
 	}
@@ -195,19 +197,19 @@ func (s *SkillService) ScaffoldPath(ctx context.Context, name string) (string, e
 	return added.SourcePath, nil
 }
 
-func normalizeSkillInput(input domain.SkillInput) (string, string, string, string, error) {
+func normalizeSkillInput(input domain.SkillInput, slugger Slugifier) (string, string, string, string, error) {
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
 		return "", "", "", "", domain.NewError(domain.ErrValidation, "skill name is required", nil)
 	}
 	slug := strings.TrimSpace(input.Key)
 	if slug == "" {
-		slug = config.Slugify(name)
+		slug = slugger.Slugify(name)
 	}
 	if slug == "" {
 		return "", "", "", "", domain.NewError(domain.ErrValidation, "skill key is required", nil)
 	}
-	if config.Slugify(slug) != slug {
+	if slugger.Slugify(slug) != slug {
 		return "", "", "", "", domain.NewError(domain.ErrValidation, "skill key must be lowercase, hyphenated", map[string]any{"slug": slug})
 	}
 	return slug, name, input.Description, input.Body, nil

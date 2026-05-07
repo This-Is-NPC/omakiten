@@ -11,12 +11,13 @@ import (
 
 	"omakiten/internal/activity"
 	"omakiten/internal/app"
-	"omakiten/internal/config"
+	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
 	"omakiten/internal/output"
 	"omakiten/internal/paths"
 	projectresolver "omakiten/internal/project"
 	"omakiten/internal/sqlite"
+	"omakiten/internal/token"
 )
 
 type runtimeOptions struct {
@@ -34,6 +35,42 @@ type runtime struct {
 
 func (r *runtime) WithActivityRepo(ctx context.Context) context.Context {
 	return activity.WithRepository(ctx, r.store)
+}
+
+// close swallows the close error after logging the intent — every CLI command
+// uses `defer rt.close()` instead of inlining `defer func() { _ = rt.store.Close() }()`
+// so the boilerplate stays in one place.
+func (r *runtime) close() {
+	_ = r.store.Close()
+}
+
+// bundleEditor builds the editor the way every config-touching service expects
+// it. Centralising this lets the call sites stay one line each.
+func (r *runtime) bundleEditor() *app.BundleEditor {
+	return app.NewBundleEditor(r.store, configstore.New(), r.configPath)
+}
+
+func (r *runtime) skillService() *app.SkillService {
+	store := configstore.New()
+	return app.NewSkillService(r.store, r.bundleEditor(), store, store)
+}
+
+func (r *runtime) lawService() *app.LawService {
+	store := configstore.New()
+	return app.NewLawService(r.store, r.bundleEditor(), store, store)
+}
+
+func (r *runtime) personaService() *app.PersonaService {
+	store := configstore.New()
+	return app.NewPersonaService(r.store, r.bundleEditor(), store, store)
+}
+
+func (r *runtime) contextService() *app.ContextService {
+	return app.NewContextService(r.store, r.store, r.store, r.store, r.store, r.tokenCounter())
+}
+
+func (r *runtime) tokenCounter() token.Counter {
+	return token.NewCounter()
 }
 
 func NewRootCommand(version string) *cobra.Command {
@@ -87,12 +124,13 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		return nil, err
 	}
 
+	cs := configstore.New()
 	if materializeConfig {
-		rootDir := config.ConfigRootFromYAMLPath(configPath)
-		if err := config.MigrateLayout(rootDir); err != nil {
+		rootDir := cs.ConfigRootFromYAMLPath(configPath)
+		if err := cs.MigrateLayout(rootDir); err != nil {
 			return nil, err
 		}
-		if err := config.EnsureDefaultFiles(rootDir); err != nil {
+		if err := cs.EnsureDefaultFiles(rootDir); err != nil {
 			return nil, err
 		}
 	}
@@ -103,7 +141,7 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 	}
 
 	if materializeConfig {
-		if _, _, err := app.NewConfigService(store).Import(ctx, configPath); err != nil {
+		if _, _, err := app.NewConfigService(store, cs).Import(ctx, configPath); err != nil {
 			_ = store.Close()
 			return nil, err
 		}

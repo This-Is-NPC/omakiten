@@ -29,13 +29,19 @@ const (
 // file and per-entity .md files. Every Apply that succeeds re-imports the
 // resulting bundle into the materialized SQLite store, so callers never need to
 // touch the store directly to keep it in sync.
+//
+// The editor depends on a BundleStore port (load/save/hash/atomic-write) and
+// the ConfigRepository (re-import). It deliberately does not import file I/O
+// helpers from `internal/config` directly so the hexagonal direction stays
+// inward.
 type BundleEditor struct {
-	repo ConfigRepository
-	path string
+	repo   ConfigRepository
+	bundle BundleStore
+	path   string
 }
 
-func NewBundleEditor(repo ConfigRepository, path string) *BundleEditor {
-	return &BundleEditor{repo: repo, path: path}
+func NewBundleEditor(repo ConfigRepository, bundle BundleStore, path string) *BundleEditor {
+	return &BundleEditor{repo: repo, bundle: bundle, path: path}
 }
 
 func (e *BundleEditor) Path() string {
@@ -51,12 +57,12 @@ func (e *BundleEditor) ConfigDir() string {
 // siblings. New entity files (created via Add flows) land under
 // <root>/<kind>/custom/.
 func (e *BundleEditor) RootDir() string {
-	return config.ConfigRootFromYAMLPath(e.path)
+	return e.bundle.ConfigRootFromYAMLPath(e.path)
 }
 
 // Load returns the current bundle as written on disk.
 func (e *BundleEditor) Load() (config.Bundle, error) {
-	bundle, err := config.LoadBundle(e.path)
+	bundle, err := e.bundle.LoadBundle(e.path)
 	if err != nil {
 		return config.Bundle{}, configError(e.path, err)
 	}
@@ -78,12 +84,12 @@ func (e *BundleEditor) Apply(ctx context.Context, mutate func(*config.Bundle) er
 // On any failure all renames are rolled back from the journal so the on-disk
 // state matches the pre-call snapshot.
 func (e *BundleEditor) ApplyWithFiles(ctx context.Context, mutate func(*config.Bundle) error, fileOps []FileOp) (config.Bundle, error) {
-	journal, err := snapshotFiles(e.wiringSnapshotPaths(fileOps))
+	journal, err := snapshotFiles(e.bundle, e.wiringSnapshotPaths(fileOps))
 	if err != nil {
 		return config.Bundle{}, configError(e.path, err)
 	}
 
-	bundle, err := config.LoadBundle(e.path)
+	bundle, err := e.bundle.LoadBundle(e.path)
 	if err != nil {
 		_ = journal.restore()
 		return config.Bundle{}, configError(e.path, err)
@@ -100,25 +106,25 @@ func (e *BundleEditor) ApplyWithFiles(ctx context.Context, mutate func(*config.B
 	// slugs are dropped from `omakiten.yaml` before the corresponding `.md` is
 	// deleted, and newly-referenced slugs see their file land before the next
 	// LoadBundle validates the wiring.
-	if err := writeWiringOnly(e.path, bundle); err != nil {
+	if err := e.bundle.SaveBundle(e.path, bundle); err != nil {
 		_ = journal.restore()
 		return config.Bundle{}, configError(e.path, err)
 	}
 
-	if err := executeFileOps(fileOps); err != nil {
+	if err := executeFileOps(e.bundle, fileOps); err != nil {
 		_ = journal.restore()
 		return config.Bundle{}, configError(e.path, err)
 	}
 
 	// Re-load from disk so that the freshly written wiring + entity files round
 	// trip through the validator before being imported.
-	resolved, err := config.LoadBundle(e.path)
+	resolved, err := e.bundle.LoadBundle(e.path)
 	if err != nil {
 		_ = journal.restore()
 		return config.Bundle{}, configError(e.path, err)
 	}
 
-	hash, err := config.HashFile(e.path)
+	hash, err := e.bundle.HashFile(e.path)
 	if err != nil {
 		_ = journal.restore()
 		return config.Bundle{}, configError(e.path, err)
@@ -128,13 +134,6 @@ func (e *BundleEditor) ApplyWithFiles(ctx context.Context, mutate func(*config.B
 		return config.Bundle{}, err
 	}
 	return resolved, nil
-}
-
-// writeWiringOnly writes the wiring slice of the bundle. Unlike SaveBundle it
-// skips validation, so a transitional state (slug present in wiring but file
-// not yet written) is allowed mid-Apply.
-func writeWiringOnly(path string, bundle config.Bundle) error {
-	return config.SaveBundle(path, bundle)
 }
 
 // wiringSnapshotPaths returns the set of paths that need a journal entry to
@@ -159,11 +158,12 @@ type fileSnapshot struct {
 }
 
 type fileJournal struct {
+	bundle  BundleStore
 	entries []fileSnapshot
 }
 
-func snapshotFiles(paths []string) (*fileJournal, error) {
-	journal := &fileJournal{}
+func snapshotFiles(store BundleStore, paths []string) (*fileJournal, error) {
+	journal := &fileJournal{bundle: store}
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -190,7 +190,7 @@ func (j *fileJournal) restore() error {
 			}
 			continue
 		}
-		if err := config.WriteAtomic(entry.path, entry.data); err != nil {
+		if err := j.bundle.WriteAtomic(entry.path, entry.data); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -199,11 +199,11 @@ func (j *fileJournal) restore() error {
 	return firstErr
 }
 
-func executeFileOps(ops []FileOp) error {
+func executeFileOps(store BundleStore, ops []FileOp) error {
 	for _, op := range ops {
 		switch op.Op {
 		case OpWrite:
-			if err := config.WriteAtomic(op.Path, op.Bytes); err != nil {
+			if err := store.WriteAtomic(op.Path, op.Bytes); err != nil {
 				return fmt.Errorf("write %s: %w", op.Path, err)
 			}
 		case OpDelete:
@@ -216,4 +216,3 @@ func executeFileOps(ops []FileOp) error {
 	}
 	return nil
 }
-

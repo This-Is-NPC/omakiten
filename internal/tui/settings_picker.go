@@ -11,6 +11,7 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/paths"
+	"omakiten/internal/tui/components/picker"
 )
 
 // themeOption is one row in the theme picker. Slug is the basename without
@@ -54,11 +55,9 @@ func (m *Model) openThemePicker() {
 	}
 	m.themePickerOptions = options
 	m.entityScreen = entityScreenView
-	m.entityForm = entityForm{
-		mode:         entityScreenThemePicker,
-		pickerCursor: cursor,
-	}
-	m.pickerScroll = 0
+	m.entityForm = entityForm{mode: entityScreenThemePicker}
+	m.entityPicker = picker.New(picker.Single)
+	m.entityPicker.Cursor = cursor
 	m.status = "Theme picker"
 }
 
@@ -82,11 +81,9 @@ func (m *Model) openConfigPicker() {
 	}
 	m.configPickerOptions = options
 	m.entityScreen = entityScreenView
-	m.entityForm = entityForm{
-		mode:         entityScreenConfigPicker,
-		pickerCursor: cursor,
-	}
-	m.pickerScroll = 0
+	m.entityForm = entityForm{mode: entityScreenConfigPicker}
+	m.entityPicker = picker.New(picker.Single)
+	m.entityPicker.Cursor = cursor
 	m.status = "Config picker"
 }
 
@@ -202,60 +199,32 @@ func readYAMLProfilesIn(dir string, isCustom bool) ([]configOption, error) {
 // the model + any tea.Cmd to dispatch (the editorFinishedMsg post-write
 // reuses the same enrichment path as the entity flows).
 func (m Model) updateThemePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	rowCount := len(m.themePickerOptions)
-	switch msg.String() {
-	case "ctrl+c", "q":
+	if msg.String() == "ctrl+c" || msg.String() == "q" {
 		return m, tea.Quit
-	case "esc":
+	}
+	var cmd tea.Cmd
+	m.entityPicker, cmd = m.entityPicker.Update(msg, len(m.themePickerOptions), m.pickerViewportRows())
+	switch m.entityPicker.LastEvent() {
+	case picker.EventCancel:
 		m.closeEntityScreen("Theme picker cancelled")
-	case "up", "k":
-		if m.entityForm.pickerCursor > 0 {
-			m.entityForm.pickerCursor--
-			m.syncPickerScroll(rowCount)
-		}
-	case "down", "j":
-		if m.entityForm.pickerCursor < rowCount-1 {
-			m.entityForm.pickerCursor++
-			m.syncPickerScroll(rowCount)
-		}
-	case "pgup", "ctrl+u":
-		step := taskViewPageStep(m.pickerViewportRows())
-		m.entityForm.pickerCursor -= step
-		if m.entityForm.pickerCursor < 0 {
-			m.entityForm.pickerCursor = 0
-		}
-		m.syncPickerScroll(rowCount)
-	case "pgdown", "ctrl+d":
-		step := taskViewPageStep(m.pickerViewportRows())
-		m.entityForm.pickerCursor += step
-		if m.entityForm.pickerCursor > rowCount-1 {
-			m.entityForm.pickerCursor = rowCount - 1
-		}
-		m.syncPickerScroll(rowCount)
-	case "home", "g":
-		m.entityForm.pickerCursor = 0
-		m.syncPickerScroll(rowCount)
-	case "end", "G":
-		m.entityForm.pickerCursor = rowCount - 1
-		m.syncPickerScroll(rowCount)
-	case "enter":
+	case picker.EventSelect:
 		// Evaluate the side-effecting call before reading m for the return
 		// tuple — Go does not specify the order of non-function operands
 		// against intervening function calls, and the pointer-receiver method
 		// must run before m is captured for the returned tea.Model.
-		cmd := m.applyThemeSelection()
-		return m, cmd
+		applied := m.applyThemeSelection()
+		return m, applied
 	}
-	return m, nil
+	return m, cmd
 }
 
 // applyThemeSelection writes the chosen theme slug into the active yaml,
 // re-imports the bundle, and reloads the theme + styles in place.
 func (m *Model) applyThemeSelection() tea.Cmd {
-	if m.entityForm.pickerCursor < 0 || m.entityForm.pickerCursor >= len(m.themePickerOptions) {
+	if m.entityPicker.Cursor < 0 || m.entityPicker.Cursor >= len(m.themePickerOptions) {
 		return nil
 	}
-	chosen := m.themePickerOptions[m.entityForm.pickerCursor].Slug
+	chosen := m.themePickerOptions[m.entityPicker.Cursor].Slug
 	if _, err := m.repos.Editor.Apply(m.ctx, func(bundle *config.Bundle) error {
 		bundle.Config.Theme.Active = chosen
 		return nil
@@ -276,46 +245,18 @@ func (m *Model) applyThemeSelection() tea.Cmd {
 }
 
 func (m Model) updateConfigPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	rowCount := len(m.configPickerOptions)
-	switch msg.String() {
-	case "ctrl+c", "q":
+	if msg.String() == "ctrl+c" || msg.String() == "q" {
 		return m, tea.Quit
-	case "esc":
+	}
+	var cmd tea.Cmd
+	m.entityPicker, cmd = m.entityPicker.Update(msg, len(m.configPickerOptions), m.pickerViewportRows())
+	switch m.entityPicker.LastEvent() {
+	case picker.EventCancel:
 		m.closeEntityScreen("Config picker cancelled")
-	case "up", "k":
-		if m.entityForm.pickerCursor > 0 {
-			m.entityForm.pickerCursor--
-			m.syncPickerScroll(rowCount)
-		}
-	case "down", "j":
-		if m.entityForm.pickerCursor < rowCount-1 {
-			m.entityForm.pickerCursor++
-			m.syncPickerScroll(rowCount)
-		}
-	case "pgup", "ctrl+u":
-		step := taskViewPageStep(m.pickerViewportRows())
-		m.entityForm.pickerCursor -= step
-		if m.entityForm.pickerCursor < 0 {
-			m.entityForm.pickerCursor = 0
-		}
-		m.syncPickerScroll(rowCount)
-	case "pgdown", "ctrl+d":
-		step := taskViewPageStep(m.pickerViewportRows())
-		m.entityForm.pickerCursor += step
-		if m.entityForm.pickerCursor > rowCount-1 {
-			m.entityForm.pickerCursor = rowCount - 1
-		}
-		m.syncPickerScroll(rowCount)
-	case "home", "g":
-		m.entityForm.pickerCursor = 0
-		m.syncPickerScroll(rowCount)
-	case "end", "G":
-		m.entityForm.pickerCursor = rowCount - 1
-		m.syncPickerScroll(rowCount)
-	case "enter":
+	case picker.EventSelect:
 		m.applyConfigSelection()
 	}
-	return m, nil
+	return m, cmd
 }
 
 // reloadTheme re-reads the theme yaml referenced by the (just-saved) active
@@ -349,10 +290,10 @@ func (m *Model) reloadTheme() error {
 // require rebuilding repos and re-importing the bundle without restarting
 // — out of scope for the current iteration.
 func (m *Model) applyConfigSelection() {
-	if m.entityForm.pickerCursor < 0 || m.entityForm.pickerCursor >= len(m.configPickerOptions) {
+	if m.entityPicker.Cursor < 0 || m.entityPicker.Cursor >= len(m.configPickerOptions) {
 		return
 	}
-	chosen := m.configPickerOptions[m.entityForm.pickerCursor].Filename
+	chosen := m.configPickerOptions[m.entityPicker.Cursor].Filename
 	if err := paths.SetActiveConfig(chosen); err != nil {
 		m.status = err.Error()
 		return
@@ -366,7 +307,7 @@ func (m Model) renderThemePicker() string {
 	rows := make([]string, 0, len(m.themePickerOptions))
 	for index, opt := range m.themePickerOptions {
 		marker := normalMarker
-		if m.entityForm.pickerCursor == index {
+		if m.entityPicker.Cursor == index {
 			marker = m.styles.marker.Render(selectionMarker)
 		}
 		active := " "
@@ -392,7 +333,7 @@ func (m Model) renderThemePicker() string {
 		"",
 		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
 	}
-	header = append(header, m.sliceScrollRows(rows, m.pickerScroll, m.pickerViewportRows())...)
+	header = append(header, m.sliceScrollRows(rows, m.entityPicker.Scroll, m.pickerViewportRows())...)
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(header, "\n")), 2)
 }
 
@@ -402,7 +343,7 @@ func (m Model) renderConfigPicker() string {
 	rows := make([]string, 0, len(m.configPickerOptions))
 	for index, opt := range m.configPickerOptions {
 		marker := normalMarker
-		if m.entityForm.pickerCursor == index {
+		if m.entityPicker.Cursor == index {
 			marker = m.styles.marker.Render(selectionMarker)
 		}
 		dot := " "
@@ -421,6 +362,6 @@ func (m Model) renderConfigPicker() string {
 		"",
 		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
 	}
-	header = append(header, m.sliceScrollRows(rows, m.pickerScroll, m.pickerViewportRows())...)
+	header = append(header, m.sliceScrollRows(rows, m.entityPicker.Scroll, m.pickerViewportRows())...)
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(header, "\n")), 2)
 }

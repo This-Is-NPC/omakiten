@@ -22,7 +22,7 @@ func newAddCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 				ctx = rt.WithActivityRepo(ctx)
 
 				project, err := opts.resolveProject(ctx, rt.store)
@@ -30,7 +30,7 @@ func newAddCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 
-				task, err := app.NewTaskService(rt.store).Add(ctx, project, title, description, "", bucket)
+				task, err := app.NewTaskServiceFromStore(rt.store).Add(ctx, project, title, description, "", bucket)
 				if err != nil {
 					return nil, err
 				}
@@ -41,6 +41,6 @@ func newAddCommand(opts *runtimeOptions) *cobra.Command {
 
 	cmd.Flags().StringVarP(&title, "title", "t", "", "task title")
 	cmd.Flags().StringVarP(&description, "description", "d", "", "task description")
-	cmd.Flags().StringVarP(&bucket, "bucket", "b", "backlog", "bucket key")
+	cmd.Flags().StringVarP(&bucket, "bucket", "b", "", "bucket key (defaults to the active workflow's first bucket)")
 	return cmd
 }

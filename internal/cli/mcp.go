@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/agent"
+	"omakiten/internal/agentruntime"
 	"omakiten/internal/agentsetup"
 	"omakiten/internal/mcp"
 )
@@ -50,7 +50,7 @@ func newMCPCallCommand(opts *runtimeOptions) *cobra.Command {
 					}
 				}
 
-				rt, err := agent.Open(ctx, agentOptions(opts))
+				rt, err := agentruntime.Open(ctx, agentOptions(opts))
 				if err != nil {
 					return nil, err
 				}
@@ -75,7 +75,7 @@ func newMCPServeCommand(opts *runtimeOptions) *cobra.Command {
 		Use:   "serve",
 		Short: "Run the Omakiten MCP stdio server",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			rt, err := agent.Open(cmd.Context(), agentOptions(opts))
+			rt, err := agentruntime.Open(cmd.Context(), agentOptions(opts))
 			if err != nil {
 				return err
 			}
@@ -119,7 +119,7 @@ func newMCPSetupCommand() *cobra.Command {
 	return cmd
 }
 
-func agentOptions(opts *runtimeOptions) agent.Options {
+func agentOptions(opts *runtimeOptions) agentruntime.Options {
 	cwd, _ := os.Getwd()
-	return agent.Options{DBPath: opts.dbPath, ConfigPath: opts.configPath, Project: opts.project, ProjectID: opts.projectID, CWD: cwd}
+	return agentruntime.Options{DBPath: opts.dbPath, ConfigPath: opts.configPath, Project: opts.project, ProjectID: opts.projectID, CWD: cwd}
 }

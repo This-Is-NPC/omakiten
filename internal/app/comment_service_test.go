@@ -12,7 +12,7 @@ func TestCommentServiceAdd(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskService(store)
+	taskService := NewTaskServiceFromStore(store)
 	task, err := taskService.Add(ctx, project.Context(), "Task", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("Add() error = %v", err)
@@ -63,7 +63,7 @@ func TestCommentServiceList(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskService(store)
+	taskService := NewTaskServiceFromStore(store)
 	task, err := taskService.Add(ctx, project.Context(), "Task", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("Add() error = %v", err)

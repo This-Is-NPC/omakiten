@@ -5,7 +5,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
 	"omakiten/internal/domain"
 )
 
@@ -32,9 +31,9 @@ func newPersonaListCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
-				personas, err := app.NewPersonaService(rt.store, app.NewBundleEditor(rt.store, rt.configPath)).List(ctx)
+				personas, err := rt.personaService().List(ctx)
 				if err != nil {
 					return nil, err
 				}
@@ -55,9 +54,9 @@ func newPersonaShowCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
-				persona, err := app.NewPersonaService(rt.store, app.NewBundleEditor(rt.store, rt.configPath)).Show(ctx, args[0])
+				persona, err := rt.personaService().Show(ctx, args[0])
 				if err != nil {
 					return nil, err
 				}
@@ -81,9 +80,9 @@ func newPersonaAddCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
-				service := app.NewPersonaService(rt.store, app.NewBundleEditor(rt.store, rt.configPath))
+				service := rt.personaService()
 				persona, err := service.Add(ctx, domain.PersonaInput{
 					Key:         key,
 					Name:        name,
@@ -132,9 +131,9 @@ func newPersonaEditCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
-				service := app.NewPersonaService(rt.store, app.NewBundleEditor(rt.store, rt.configPath))
+				service := rt.personaService()
 				slug, err := resolvePersonaSlug(ctx, service, args[0])
 				if err != nil {
 					return nil, err
@@ -195,9 +194,9 @@ func newPersonaRemoveCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
-				service := app.NewPersonaService(rt.store, app.NewBundleEditor(rt.store, rt.configPath))
+				service := rt.personaService()
 				slug, err := resolvePersonaSlug(ctx, service, args[0])
 				if err != nil {
 					return nil, err

@@ -21,7 +21,7 @@ func newListCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 				ctx = rt.WithActivityRepo(ctx)
 
 				project, err := opts.resolveProject(ctx, rt.store)
@@ -29,7 +29,7 @@ func newListCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 
-				tasks, err := app.NewTaskService(rt.store).List(ctx, project, domain.TaskFilter{BucketKey: bucket})
+				tasks, err := app.NewTaskServiceFromStore(rt.store).List(ctx, project, domain.TaskFilter{BucketKey: bucket})
 				if err != nil {
 					return nil, err
 				}

@@ -28,14 +28,14 @@ func newMoveCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
 				project, err := opts.resolveProject(ctx, rt.store)
 				if err != nil {
 					return nil, err
 				}
 
-				task, err := app.NewTaskService(rt.store).Move(ctx, project, taskID, to)
+				task, err := app.NewTaskServiceFromStore(rt.store).Move(ctx, project, taskID, to)
 				if err != nil {
 					return nil, err
 				}

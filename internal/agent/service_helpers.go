@@ -1,0 +1,213 @@
+package agent
+
+import (
+	"sort"
+	"strings"
+	"unicode"
+
+	"omakiten/internal/domain"
+)
+
+func taskSummaries(tasks []domain.Task) []TaskSummary {
+	out := make([]TaskSummary, 0, len(tasks))
+	for _, task := range tasks {
+		out = append(out, taskSummary(task))
+	}
+	return out
+}
+
+func dependencySummaries(dependencies []domain.TaskDependency) []DependencySummary {
+	out := make([]DependencySummary, 0, len(dependencies))
+	for _, dependency := range dependencies {
+		out = append(out, dependencySummary(dependency))
+	}
+	return out
+}
+
+func commentSummaries(comments []domain.Comment) []CommentSummary {
+	out := make([]CommentSummary, 0, len(comments))
+	for _, comment := range comments {
+		out = append(out, commentSummary(comment))
+	}
+	return out
+}
+
+func contextSnippets(entries []domain.ContextEntry, limit int) []ContextSnippet {
+	if limit > 0 && len(entries) > limit {
+		entries = entries[:limit]
+	}
+	out := make([]ContextSnippet, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, contextSnippet(entry))
+	}
+	return out
+}
+
+func recentComments(comments []domain.Comment, limit int) []CommentSummary {
+	if limit > 0 && len(comments) > limit {
+		comments = comments[len(comments)-limit:]
+	}
+	out := commentSummaries(comments)
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out
+}
+
+func findTask(tasks []domain.Task, taskID int64) (domain.Task, bool) {
+	for _, task := range tasks {
+		if task.ID == taskID {
+			return task, true
+		}
+	}
+	return domain.Task{}, false
+}
+
+func pendingCount(tasks []domain.Task) int {
+	count := 0
+	for _, task := range tasks {
+		if task.BucketKey != "done" {
+			count++
+		}
+	}
+	return count
+}
+
+func bucketCounts(workflow domain.Workflow, tasks []domain.Task) []BucketCount {
+	counts := map[string]int{}
+	for _, task := range tasks {
+		counts[task.BucketKey]++
+	}
+	out := make([]BucketCount, 0, len(workflow.Buckets))
+	seen := map[string]struct{}{}
+	for _, bucket := range workflow.Buckets {
+		out = append(out, BucketCount{BucketKey: bucket.Key, Name: bucket.Name, Count: counts[bucket.Key]})
+		seen[bucket.Key] = struct{}{}
+	}
+	for bucketKey, count := range counts {
+		if _, ok := seen[bucketKey]; !ok {
+			out = append(out, BucketCount{BucketKey: bucketKey, Count: count})
+		}
+	}
+	return out
+}
+
+func likelyNextWork(tasks []domain.Task) []TaskSummary {
+	candidates := make([]domain.Task, 0, len(tasks))
+	for _, task := range tasks {
+		if task.BucketKey != "done" {
+			candidates = append(candidates, task)
+		}
+	}
+	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].ID < candidates[j].ID })
+	if len(candidates) > nextWorkLimit {
+		candidates = candidates[:nextWorkLimit]
+	}
+	return taskSummaries(candidates)
+}
+
+func blockedWork(tasks []domain.Task, dependencies []domain.TaskDependency) []TaskSummary {
+	blocked := map[int64]struct{}{}
+	for _, dependency := range dependencies {
+		blocked[dependency.TaskID] = struct{}{}
+	}
+	out := []TaskSummary{}
+	for _, task := range tasks {
+		if _, ok := blocked[task.ID]; ok {
+			out = append(out, taskSummary(task))
+		}
+	}
+	return out
+}
+
+func taskTitleAndDescription(title, description string) (string, string) {
+	title = strings.TrimSpace(title)
+	description = strings.TrimSpace(description)
+	if title != "" {
+		return title, description
+	}
+	if description == "" {
+		return "", ""
+	}
+	line := strings.TrimSpace(strings.Split(description, "\n")[0])
+	if len(line) > 90 {
+		line = strings.TrimSpace(line[:90])
+	}
+	return line, description
+}
+
+func similarTasks(query string, tasks []domain.Task, limit int) []TaskSummary {
+	queryWords := wordSet(query)
+	if len(queryWords) == 0 {
+		return nil
+	}
+	type match struct {
+		task  domain.Task
+		score float64
+	}
+	matches := []match{}
+	queryLower := strings.ToLower(strings.TrimSpace(query))
+	for _, task := range tasks {
+		text := task.Title + " " + task.Description
+		textLower := strings.ToLower(strings.TrimSpace(text))
+		words := wordSet(text)
+		score := overlapScore(queryWords, words)
+		if textLower == queryLower || strings.Contains(textLower, queryLower) || strings.Contains(queryLower, strings.ToLower(task.Title)) {
+			score = 1
+		}
+		if score >= 0.5 {
+			matches = append(matches, match{task: task, score: score})
+		}
+	}
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].score == matches[j].score {
+			return matches[i].task.ID < matches[j].task.ID
+		}
+		return matches[i].score > matches[j].score
+	})
+	if limit > 0 && len(matches) > limit {
+		matches = matches[:limit]
+	}
+	out := make([]TaskSummary, 0, len(matches))
+	for _, match := range matches {
+		out = append(out, taskSummary(match.task))
+	}
+	return out
+}
+
+func wordSet(value string) map[string]struct{} {
+	words := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	out := map[string]struct{}{}
+	for _, word := range words {
+		if len(word) < 3 || stopWords[word] {
+			continue
+		}
+		out[word] = struct{}{}
+	}
+	return out
+}
+
+func overlapScore(a, b map[string]struct{}) float64 {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	common := 0
+	for word := range a {
+		if _, ok := b[word]; ok {
+			common++
+		}
+	}
+	return float64(common) / float64(len(a))
+}
+
+var stopWords = map[string]bool{
+	"and":  true,
+	"are":  true,
+	"for":  true,
+	"from": true,
+	"into": true,
+	"the":  true,
+	"this": true,
+	"that": true,
+	"with": true,
+}

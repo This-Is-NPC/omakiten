@@ -12,7 +12,7 @@ func TestDependencyServiceAdd(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskService(store)
+	taskService := NewTaskServiceFromStore(store)
 	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "", "backlog")
 	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "", "backlog")
 	taskC, _ := taskService.Add(ctx, project.Context(), "C", "", "", "backlog")
@@ -70,7 +70,7 @@ func TestDependencyServiceRemove(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskService(store)
+	taskService := NewTaskServiceFromStore(store)
 	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "", "backlog")
 	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "", "backlog")
 
@@ -90,12 +90,65 @@ func TestDependencyServiceRemove(t *testing.T) {
 	}
 }
 
+func TestDependencyServiceSyncBlockers(t *testing.T) {
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(1000))
+	defer func() { _ = store.Close() }()
+
+	taskService := NewTaskServiceFromStore(store)
+	main, _ := taskService.Add(ctx, project.Context(), "main", "", "", "backlog")
+	a, _ := taskService.Add(ctx, project.Context(), "a", "", "", "backlog")
+	b, _ := taskService.Add(ctx, project.Context(), "b", "", "", "backlog")
+	c, _ := taskService.Add(ctx, project.Context(), "c", "", "", "backlog")
+
+	service := NewDependencyService(store)
+
+	// Initial sync — adds a and b.
+	if err := service.SyncBlockers(ctx, project.Context(), main.ID, []int64{a.ID, b.ID}); err != nil {
+		t.Fatalf("SyncBlockers(initial) error = %v", err)
+	}
+	got, _ := service.List(ctx, project.Context(), main.ID)
+	if len(got) != 2 {
+		t.Fatalf("len(deps) after initial = %d, want 2", len(got))
+	}
+
+	// Reshape to {b, c} — removes a, adds c, keeps b.
+	if err := service.SyncBlockers(ctx, project.Context(), main.ID, []int64{b.ID, c.ID}); err != nil {
+		t.Fatalf("SyncBlockers(reshape) error = %v", err)
+	}
+	got, _ = service.List(ctx, project.Context(), main.ID)
+	if len(got) != 2 {
+		t.Fatalf("len(deps) after reshape = %d, want 2", len(got))
+	}
+	have := map[int64]bool{}
+	for _, d := range got {
+		have[d.DependsOnTaskID] = true
+	}
+	if !have[b.ID] || !have[c.ID] || have[a.ID] {
+		t.Fatalf("deps after reshape = %+v, want b+c only", got)
+	}
+
+	// Sync to empty — drops everything.
+	if err := service.SyncBlockers(ctx, project.Context(), main.ID, nil); err != nil {
+		t.Fatalf("SyncBlockers(empty) error = %v", err)
+	}
+	got, _ = service.List(ctx, project.Context(), main.ID)
+	if len(got) != 0 {
+		t.Fatalf("len(deps) after empty = %d, want 0", len(got))
+	}
+
+	// Validates task id.
+	if err := service.SyncBlockers(ctx, project.Context(), 0, nil); err == nil {
+		t.Fatal("SyncBlockers(taskID=0) error = nil, want validation error")
+	}
+}
+
 func TestDependencyServiceList(t *testing.T) {
 	ctx := context.Background()
 	store, project := appTestStore(t, appTestBundle(1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskService(store)
+	taskService := NewTaskServiceFromStore(store)
 	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "", "backlog")
 	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "", "backlog")
 

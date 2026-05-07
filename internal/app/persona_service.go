@@ -9,12 +9,14 @@ import (
 )
 
 type PersonaService struct {
-	repo   ConfigRepository
-	editor *BundleEditor
+	repo    ConfigRepository
+	editor  *BundleEditor
+	files   EntityFileWriter
+	slugger Slugifier
 }
 
-func NewPersonaService(repo ConfigRepository, editor *BundleEditor) *PersonaService {
-	return &PersonaService{repo: repo, editor: editor}
+func NewPersonaService(repo ConfigRepository, editor *BundleEditor, files EntityFileWriter, slugger Slugifier) *PersonaService {
+	return &PersonaService{repo: repo, editor: editor, files: files, slugger: slugger}
 }
 
 func (s *PersonaService) List(ctx context.Context) ([]domain.Persona, error) {
@@ -64,7 +66,7 @@ func (s *PersonaService) Show(ctx context.Context, slug string) (domain.Persona,
 }
 
 func (s *PersonaService) Add(ctx context.Context, input domain.PersonaInput) (domain.Persona, error) {
-	slug, name, description, body, err := normalizePersonaInput(input)
+	slug, name, description, body, err := normalizePersonaInput(input, s.slugger)
 	if err != nil {
 		return domain.Persona{}, err
 	}
@@ -74,8 +76,8 @@ func (s *PersonaService) Add(ctx context.Context, input domain.PersonaInput) (do
 		return domain.Persona{}, err
 	}
 
-	path := config.CustomEntityFilePath(s.editor.RootDir(), config.EntityKindPersona, slug)
-	bytes, err := config.PersonaFileBytes(config.Persona{Slug: slug, Name: name, Description: description, Body: body})
+	path := s.files.CustomEntityFilePath(s.editor.RootDir(), config.EntityKindPersona, slug)
+	bytes, err := s.files.PersonaFileBytes(config.Persona{Slug: slug, Name: name, Description: description, Body: body})
 	if err != nil {
 		return domain.Persona{}, configError(path, err)
 	}
@@ -165,11 +167,11 @@ func (s *PersonaService) Edit(ctx context.Context, slug string, update domain.Pe
 
 	path := current.SourcePath
 	if path == "" {
-		path = config.EntityFilePath(s.editor.RootDir(), config.EntityKindPersona, slug)
+		path = s.files.EntityFilePath(s.editor.RootDir(), config.EntityKindPersona, slug)
 	}
 	var ops []FileOp
 	if fileChanged {
-		bytes, err := config.PersonaFileBytes(persona)
+		bytes, err := s.files.PersonaFileBytes(persona)
 		if err != nil {
 			return domain.Persona{}, configError(path, err)
 		}
@@ -211,7 +213,7 @@ func (s *PersonaService) Remove(ctx context.Context, slug string) error {
 	}
 	path := current.SourcePath
 	if path == "" {
-		path = config.EntityFilePath(s.editor.RootDir(), config.EntityKindPersona, slug)
+		path = s.files.EntityFilePath(s.editor.RootDir(), config.EntityKindPersona, slug)
 	}
 	_, err = s.editor.ApplyWithFiles(ctx, func(bundle *config.Bundle) error {
 		out := bundle.Personas[:0]
@@ -276,19 +278,19 @@ func (s *PersonaService) resolveSkillRefs(ctx context.Context, input domain.Pers
 	return out, nil
 }
 
-func normalizePersonaInput(input domain.PersonaInput) (string, string, string, string, error) {
+func normalizePersonaInput(input domain.PersonaInput, slugger Slugifier) (string, string, string, string, error) {
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
 		return "", "", "", "", domain.NewError(domain.ErrValidation, "persona name is required", nil)
 	}
 	slug := strings.TrimSpace(input.Key)
 	if slug == "" {
-		slug = config.Slugify(name)
+		slug = slugger.Slugify(name)
 	}
 	if slug == "" {
 		return "", "", "", "", domain.NewError(domain.ErrValidation, "persona key is required", nil)
 	}
-	if config.Slugify(slug) != slug {
+	if slugger.Slugify(slug) != slug {
 		return "", "", "", "", domain.NewError(domain.ErrValidation, "persona key must be lowercase, hyphenated", map[string]any{"slug": slug})
 	}
 	return slug, name, input.Description, input.Body, nil

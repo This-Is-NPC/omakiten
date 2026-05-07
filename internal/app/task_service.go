@@ -9,11 +9,33 @@ import (
 )
 
 type TaskService struct {
-	repo TaskRepository
+	repo     TaskRepository
+	workflow *WorkflowService
 }
 
-func NewTaskService(repo TaskRepository) *TaskService {
-	return &TaskService{repo: repo}
+// NewTaskService wires the validation/orchestration layer for tasks. workflow
+// owns the policy bits (default-bucket selection on Add, transition+guards on
+// Move) so the task service stays focused on input validation and delegation.
+func NewTaskService(repo TaskRepository, workflow *WorkflowService) *TaskService {
+	return &TaskService{repo: repo, workflow: workflow}
+}
+
+// CompositeWorkflowStore is the adapter contract a single backing store (in
+// production: *sqlite.Store) must satisfy to back both the task service and
+// its embedded workflow service. Defining the composite here lets callers
+// avoid passing the same adapter five times.
+type CompositeWorkflowStore interface {
+	ConfigRepository
+	WorkflowRepository
+	GuardEvaluationRepository
+	TaskRepository
+	EventRepository
+}
+
+// NewTaskServiceFromStore is the production-path sugar: it wires WorkflowService
+// against the composite store and returns a TaskService ready for use.
+func NewTaskServiceFromStore(store CompositeWorkflowStore) *TaskService {
+	return NewTaskService(store, NewWorkflowServiceFromStore(store))
 }
 
 func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, title, description, priority, bucketKey string) (task domain.Task, err error) {
@@ -44,7 +66,7 @@ func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, ti
 		return
 	}
 
-	task, err = s.repo.CreateTask(ctx, project.ID, title, strings.TrimSpace(description), string(priorityValue), strings.TrimSpace(bucketKey))
+	task, err = s.workflow.CreateTask(ctx, project.ID, title, strings.TrimSpace(description), string(priorityValue), strings.TrimSpace(bucketKey))
 	return
 }
 
@@ -64,29 +86,8 @@ func (s *TaskService) List(ctx context.Context, project domain.ProjectContext, f
 	return
 }
 
-func (s *TaskService) Move(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string) (task domain.Task, err error) {
-	finish := activity.Track(ctx, "app.TaskService.Move", project, map[string]any{"task_id": taskID, "bucket": targetBucketKey})
-	defer func() {
-		status := "ok"
-		errMsg := ""
-		if err != nil {
-			status = "error"
-			errMsg = err.Error()
-		}
-		finish(status, errMsg)
-	}()
-
-	if taskID <= 0 {
-		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
-		return
-	}
-	if strings.TrimSpace(targetBucketKey) == "" {
-		err = domain.NewError(domain.ErrValidation, "target bucket is required", nil)
-		return
-	}
-
-	task, err = s.repo.MoveTask(ctx, project.ID, taskID, targetBucketKey)
-	return
+func (s *TaskService) Move(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string) (domain.Task, error) {
+	return s.workflow.MoveTask(ctx, project, taskID, targetBucketKey)
 }
 
 func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, taskID int64, update domain.TaskUpdate) (task domain.Task, err error) {
@@ -143,7 +144,7 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 	}
 
 	if update.BucketKey != "" {
-		task, err = s.repo.MoveTask(ctx, project.ID, taskID, update.BucketKey)
+		task, err = s.workflow.MoveTask(ctx, project, taskID, update.BucketKey)
 		if err != nil {
 			return
 		}

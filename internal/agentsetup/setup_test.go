@@ -84,7 +84,9 @@ func TestSetupForceOverwrite(t *testing.T) {
 
 	data, _ := os.ReadFile(configPath)
 	var written map[string]any
-	json.Unmarshal(data, &written)
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
 	servers := written["mcpServers"].(map[string]any)
 	omakiten := servers["omakiten"].(map[string]any)
 	if omakiten["command"] != "new-okt" {
@@ -257,7 +259,9 @@ func TestSetupOpenCodeForceOverwrite(t *testing.T) {
 
 	data, _ := os.ReadFile(configPath)
 	var written map[string]any
-	json.Unmarshal(data, &written)
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
 	mcpSection := written["mcp"].(map[string]any)
 	omakiten := mcpSection["omakiten"].(map[string]any)
 	cmd := omakiten["command"].([]any)
@@ -282,7 +286,9 @@ func TestSetupOpenCodeCreatedStatus(t *testing.T) {
 
 	data, _ := os.ReadFile(configPath)
 	var written map[string]any
-	json.Unmarshal(data, &written)
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
 	mcpSection := written["mcp"].(map[string]any)
 	omakiten := mcpSection["omakiten"].(map[string]any)
 	if omakiten["type"] != "local" {

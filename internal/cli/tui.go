@@ -12,6 +12,7 @@ import (
 	"omakiten/internal/activity"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
+	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
 	"omakiten/internal/tui"
@@ -32,7 +33,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = rt.store.Close() }()
+	defer rt.close()
 
 	ctx = activity.WithSource(ctx, "tui", "tui")
 	ctx = rt.WithActivityRepo(ctx)
@@ -46,9 +47,10 @@ func runTUI(ctx context.Context, opts *runtimeOptions) error {
 		return err
 	}
 
-	editor := app.NewBundleEditor(rt.store, rt.configPath)
+	editor := app.NewBundleEditor(rt.store, configstore.New(), rt.configPath)
 	model, err := tui.NewModel(ctx, project, tui.Repositories{
 		Tasks:        rt.store,
+		Workflow:     app.NewWorkflowServiceFromStore(rt.store),
 		Comments:     rt.store,
 		Dependencies: rt.store,
 		Entries:      rt.store,

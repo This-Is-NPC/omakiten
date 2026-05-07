@@ -33,9 +33,9 @@ func newLawListCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
-				service := app.NewLawService(rt.store, app.NewBundleEditor(rt.store, rt.configPath))
+				service := rt.lawService()
 				laws, err := service.ListFiltered(ctx, app.LawListFilter{Scope: scope, Project: project, Persona: persona})
 				if err != nil {
 					return nil, err
@@ -61,9 +61,9 @@ func newLawShowCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
-				law, err := app.NewLawService(rt.store, app.NewBundleEditor(rt.store, rt.configPath)).Show(ctx, args[0])
+				law, err := rt.lawService().Show(ctx, args[0])
 				if err != nil {
 					return nil, err
 				}
@@ -85,9 +85,9 @@ func newLawAddCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
-				service := app.NewLawService(rt.store, app.NewBundleEditor(rt.store, rt.configPath))
+				service := rt.lawService()
 				if body == "" {
 					body = " "
 				}
@@ -141,9 +141,9 @@ func newLawEditCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
-				service := app.NewLawService(rt.store, app.NewBundleEditor(rt.store, rt.configPath))
+				service := rt.lawService()
 				slug, err := resolveLawSlug(ctx, service, args[0])
 				if err != nil {
 					return nil, err
@@ -199,9 +199,9 @@ func newLawRemoveCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				defer func() { _ = rt.store.Close() }()
+				defer rt.close()
 
-				service := app.NewLawService(rt.store, app.NewBundleEditor(rt.store, rt.configPath))
+				service := rt.lawService()
 				slug, err := resolveLawSlug(ctx, service, args[0])
 				if err != nil {
 					return nil, err

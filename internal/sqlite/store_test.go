@@ -50,7 +50,11 @@ func TestStoreProjectScopedTasks(t *testing.T) {
 	}
 }
 
-func TestStoreMoveTaskEnforcesWorkflow(t *testing.T) {
+// TestMoveTaskEnforcesWorkflow exercises the move-policy that the workflow
+// service enforces on top of the store. The store no longer makes the
+// transition decision, so this test threads through app.WorkflowService to
+// keep integration coverage of the end-to-end path.
+func TestMoveTaskEnforcesWorkflow(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
 	if err != nil {
@@ -71,6 +75,8 @@ func TestStoreMoveTaskEnforcesWorkflow(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
+	workflow := app.NewWorkflowServiceFromStore(store)
+
 	tests := []struct {
 		name    string
 		to      string
@@ -82,7 +88,7 @@ func TestStoreMoveTaskEnforcesWorkflow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := store.MoveTask(ctx, project.ID, task.ID, tt.to)
+			_, err := workflow.MoveTask(ctx, project.Context(), task.ID, tt.to)
 			if tt.wantErr && err == nil {
 				t.Fatalf("MoveTask() error = nil, want error")
 			}
@@ -540,7 +546,7 @@ func bundleWithCommentsTaggedGuard(tag string, minCount int) config.Bundle {
 	return b
 }
 
-func TestStoreMoveTaskGuardBlockersIn(t *testing.T) {
+func TestMoveTaskGuardBlockersIn(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
 	if err != nil {
@@ -553,6 +559,7 @@ func TestStoreMoveTaskGuardBlockersIn(t *testing.T) {
 	}
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	workflow := app.NewWorkflowServiceFromStore(store)
 
 	blocker, _ := store.CreateTask(ctx, project.ID, "Blocker", "", "", "backlog")
 	main, _ := store.CreateTask(ctx, project.ID, "Main", "", "", "backlog")
@@ -561,7 +568,7 @@ func TestStoreMoveTaskGuardBlockersIn(t *testing.T) {
 	}
 
 	// Guard fails: blocker is in backlog, not done
-	_, err = store.MoveTask(ctx, project.ID, main.ID, "dev")
+	_, err = workflow.MoveTask(ctx, project.Context(), main.ID, "dev")
 	if err == nil {
 		t.Fatal("MoveTask() error = nil, want guard_violation")
 	}
@@ -578,7 +585,7 @@ func TestStoreMoveTaskGuardBlockersIn(t *testing.T) {
 	}
 
 	// Guard passes: blocker is in done
-	moved, err := store.MoveTask(ctx, project.ID, main2.ID, "dev")
+	moved, err := workflow.MoveTask(ctx, project.Context(), main2.ID, "dev")
 	if err != nil {
 		t.Fatalf("MoveTask() error = %v", err)
 	}
@@ -587,7 +594,7 @@ func TestStoreMoveTaskGuardBlockersIn(t *testing.T) {
 	}
 }
 
-func TestStoreMoveTaskGuardBlockersInNoBlockers(t *testing.T) {
+func TestMoveTaskGuardBlockersInNoBlockers(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
 	if err != nil {
@@ -601,9 +608,10 @@ func TestStoreMoveTaskGuardBlockersInNoBlockers(t *testing.T) {
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	task, _ := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+	workflow := app.NewWorkflowServiceFromStore(store)
 
 	// No blockers — guard passes
-	moved, err := store.MoveTask(ctx, project.ID, task.ID, "dev")
+	moved, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
 	if err != nil {
 		t.Fatalf("MoveTask() error = %v", err)
 	}
@@ -612,7 +620,7 @@ func TestStoreMoveTaskGuardBlockersInNoBlockers(t *testing.T) {
 	}
 }
 
-func TestStoreMoveTaskGuardCommentsMin(t *testing.T) {
+func TestMoveTaskGuardCommentsMin(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
 	if err != nil {
@@ -626,9 +634,10 @@ func TestStoreMoveTaskGuardCommentsMin(t *testing.T) {
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	task, _ := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+	workflow := app.NewWorkflowServiceFromStore(store)
 
 	// Guard fails: 0 comments
-	_, err = store.MoveTask(ctx, project.ID, task.ID, "dev")
+	_, err = workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
 	if err == nil {
 		t.Fatal("MoveTask() error = nil, want guard_violation")
 	}
@@ -643,7 +652,7 @@ func TestStoreMoveTaskGuardCommentsMin(t *testing.T) {
 	}
 
 	// Guard passes: 1 comment >= 1
-	moved, err := store.MoveTask(ctx, project.ID, task.ID, "dev")
+	moved, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
 	if err != nil {
 		t.Fatalf("MoveTask() error = %v", err)
 	}
@@ -652,7 +661,7 @@ func TestStoreMoveTaskGuardCommentsMin(t *testing.T) {
 	}
 }
 
-func TestStoreMoveTaskNoGuardUnaffected(t *testing.T) {
+func TestMoveTaskNoGuardUnaffected(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
 	if err != nil {
@@ -670,9 +679,10 @@ func TestStoreMoveTaskNoGuardUnaffected(t *testing.T) {
 	if _, err := store.AddTaskDependency(ctx, project.ID, task.ID, blocker.ID); err != nil {
 		t.Fatalf("AddTaskDependency() error = %v", err)
 	}
+	workflow := app.NewWorkflowServiceFromStore(store)
 
 	// Transition has no guard — move succeeds even with pending blocker
-	moved, err := store.MoveTask(ctx, project.ID, task.ID, "dev")
+	moved, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
 	if err != nil {
 		t.Fatalf("MoveTask() error = %v", err)
 	}
@@ -681,7 +691,7 @@ func TestStoreMoveTaskNoGuardUnaffected(t *testing.T) {
 	}
 }
 
-func TestStoreMoveTaskGuardCommentsTagged(t *testing.T) {
+func TestMoveTaskGuardCommentsTagged(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
 	if err != nil {
@@ -695,9 +705,10 @@ func TestStoreMoveTaskGuardCommentsTagged(t *testing.T) {
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	task, _ := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+	workflow := app.NewWorkflowServiceFromStore(store)
 
 	// Guard fails: no comments at all
-	_, err = store.MoveTask(ctx, project.ID, task.ID, "dev")
+	_, err = workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
 	if err == nil {
 		t.Fatal("MoveTask() error = nil, want guard_violation")
 	}
@@ -712,7 +723,7 @@ func TestStoreMoveTaskGuardCommentsTagged(t *testing.T) {
 	}
 
 	// Guard still fails: comment exists but lacks the tag
-	_, err = store.MoveTask(ctx, project.ID, task.ID, "dev")
+	_, err = workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
 	if err == nil {
 		t.Fatal("MoveTask() untagged error = nil, want guard_violation")
 	}
@@ -726,7 +737,7 @@ func TestStoreMoveTaskGuardCommentsTagged(t *testing.T) {
 	}
 
 	// Guard passes
-	moved, err := store.MoveTask(ctx, project.ID, task.ID, "dev")
+	moved, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
 	if err != nil {
 		t.Fatalf("MoveTask() error = %v", err)
 	}
