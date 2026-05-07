@@ -128,7 +128,14 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 				Template:     template,
 				Confirmation: Confirmation{
 					RequiresConfirmation: true,
-					Reason:               "Likely duplicate or related work already exists in this project.",
+					// The Reason text is the load-bearing instruction the agent
+					// acts on — it is intentionally self-explanatory so prompt
+					// resolution does not need an `if returns requires_confirmation`
+					// branch in its action text. Keep it imperative, name the
+					// next-step tools, and surface the choice to the user.
+					Reason: "Similar tasks already exist in this project. Surface them to the user verbatim and ask " +
+						"whether to continue an existing one (call `tasks.continue` with the chosen id) or create a " +
+						"separate task (call `tasks.create_intent` again with the same description and `confirmed=true`).",
 					Options: []ConfirmationOption{
 						{Action: "continue_existing", Label: "Continue one of the similar tasks"},
 						{Action: "create_separate", Label: "Create a separate task with confirmed=true"},
