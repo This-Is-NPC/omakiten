@@ -53,6 +53,14 @@ type Repositories struct {
 	ActivityLogs activity.ActivityLogRepository
 	Events       app.EventRepository
 	Metrics      *app.MetricsService
+
+	// Runtime metadata surfaced on Settings › General. The TUI itself
+	// does not consume these for routing or persistence; they exist so
+	// the read-only info card can reflect the active install. Empty
+	// strings are tolerated and rendered as "—".
+	ConfigPath string
+	DBPath     string
+	Version    string
 }
 
 // Model is the root Bubble Tea model for the TUI. It aggregates state that
@@ -118,11 +126,10 @@ type Model struct {
 	colIdx              int
 	cardIdx             int
 
-	entityKind       entityKind
-	entityCursors    map[entityKind]int
-	entityScroll     map[entityKind]int
-	entityKindScroll int
-	entityScreen     entityScreenMode
+	entityKind    entityKind
+	entityCursors map[entityKind]int
+	entityScroll  map[entityKind]int
+	entityScreen  entityScreenMode
 	entityForm       entityForm
 	deletePending    bool
 	deleteKind       entityKind
@@ -296,7 +303,12 @@ const (
 	subGraph
 	subStatsGeneral
 	subStatsLogs
-	subSettingsConfig
+	subSettingsGeneral
+	subSettingsLaws
+	subSettingsPersonas
+	subSettingsSkills
+	subSettingsTemplates
+	subSettingsTags
 )
 
 // topOrder is the canonical cycle order for tab/shift+tab and the order
@@ -304,12 +316,11 @@ const (
 var topOrder = []topID{topTasks, topStats, topSettings}
 
 // subsByTop lists the subs each top exposes, in render and cycle order.
-// Settings has a single sub in T1 — the second header line is suppressed
-// when the active top has only one sub.
+// The sub strip is suppressed when the active top has only one sub.
 var subsByTop = map[topID][]subID{
 	topTasks:    {subBoard, subTable, subGraph},
 	topStats:    {subStatsGeneral, subStatsLogs},
-	topSettings: {subSettingsConfig},
+	topSettings: {subSettingsGeneral, subSettingsLaws, subSettingsPersonas, subSettingsSkills, subSettingsTemplates, subSettingsTags},
 }
 
 var topLabels = map[topID]string{
@@ -319,12 +330,38 @@ var topLabels = map[topID]string{
 }
 
 var subLabels = map[subID]string{
-	subBoard:          "board",
-	subTable:          "table",
-	subGraph:          "graph",
-	subStatsGeneral:   "general",
-	subStatsLogs:      "logs",
-	subSettingsConfig: "config",
+	subBoard:             "board",
+	subTable:             "table",
+	subGraph:             "graph",
+	subStatsGeneral:      "general",
+	subStatsLogs:         "logs",
+	subSettingsGeneral:   "general",
+	subSettingsLaws:      "laws",
+	subSettingsPersonas:  "personas",
+	subSettingsSkills:    "skills",
+	subSettingsTemplates: "templates",
+	subSettingsTags:      "tags",
+}
+
+// settingsEntitySubs maps the per-entity Settings subs to the underlying
+// `entityKind` they drive. The "general" sub is intentionally excluded —
+// it is read-only and does not bind to an entity list. Used to keep
+// `m.entityKind` in sync as the user cycles through Settings subs.
+var settingsEntitySubs = map[subID]entityKind{
+	subSettingsLaws:      entityKindLaw,
+	subSettingsPersonas:  entityKindPersona,
+	subSettingsSkills:    entityKindSkill,
+	subSettingsTemplates: entityKindTemplate,
+	subSettingsTags:      entityKindTag,
+}
+
+// entityKindForSub returns the entity kind owned by a Settings sub, plus
+// a bool that is false for `subSettingsGeneral` (and any non-Settings
+// sub) — callers can distinguish "no entity" from "Laws" without a
+// second comparison.
+func entityKindForSub(s subID) (entityKind, bool) {
+	k, ok := settingsEntitySubs[s]
+	return k, ok
 }
 
 // navState is the addressable navigation key — used to detect view
@@ -373,14 +410,16 @@ func (m Model) onHome() bool {
 }
 
 // legacyNavOrder preserves the pre-refactor flat traversal order
-// [board, table, graph, config, logs, stats] used by `left`/`right`
+// [board, table, graph, settings, logs, stats] used by `left`/`right`
 // inside the table/graph/logs handlers. AC9 keeps left/right behavior
-// untouched in T1; T3 will harmonize this so it can retire.
+// untouched in T1/T2; T3 will harmonize this so it can retire. Settings
+// lands on its canonical entry point (`subSettingsGeneral`) so the cycle
+// arrives on a deterministic sub instead of "whatever was last open".
 var legacyNavOrder = []navState{
 	{topTasks, subBoard},
 	{topTasks, subTable},
 	{topTasks, subGraph},
-	{topSettings, subSettingsConfig},
+	{topSettings, subSettingsGeneral},
 	{topStats, subStatsLogs},
 	{topStats, subStatsGeneral},
 }
@@ -388,7 +427,10 @@ var legacyNavOrder = []navState{
 // cycleLegacyView advances the active (top, sub) along legacyNavOrder by
 // delta positions, wrapping at the ends. Used only by the per-view list
 // handlers to keep left/right semantics identical to the pre-refactor
-// flat cycle (board → table → graph → config → logs → stats → board).
+// flat cycle (board → table → graph → settings → logs → stats → board).
+// Mutates `m.entityKind` when the cycle lands on a Settings entity sub
+// so the entity handler reads the right list — Settings/general resets
+// nothing because it is read-only.
 func (m *Model) cycleLegacyView(delta int) {
 	current := navState{top: m.top, sub: m.sub}
 	idx := 0
@@ -402,6 +444,7 @@ func (m *Model) cycleLegacyView(delta int) {
 	next := legacyNavOrder[((idx+delta)%n+n)%n]
 	m.top = next.top
 	m.sub = next.sub
+	m.syncEntityKindFromSub()
 }
 
 // refreshTickMsg drives the realtime refresh loop — emitted every second

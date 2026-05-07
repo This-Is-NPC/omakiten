@@ -118,8 +118,18 @@ func (m Model) renderCurrentView() string {
 		return m.renderStats()
 	case subStatsLogs:
 		return m.renderLogs()
-	case subSettingsConfig:
-		return m.renderConfig()
+	case subSettingsGeneral:
+		return m.renderSettingsGeneral()
+	case subSettingsLaws:
+		return m.renderSettingsEntity(entityKindLaw)
+	case subSettingsPersonas:
+		return m.renderSettingsEntity(entityKindPersona)
+	case subSettingsSkills:
+		return m.renderSettingsEntity(entityKindSkill)
+	case subSettingsTemplates:
+		return m.renderSettingsEntity(entityKindTemplate)
+	case subSettingsTags:
+		return m.renderSettingsEntity(entityKindTag)
 	default:
 		return ""
 	}
@@ -164,12 +174,18 @@ func (m Model) renderFooter() string {
 		text = m.homeFooterHint()
 	case m.sub == subBoard:
 		text = "tab zones  ,// subs  left/right lanes  up/down tasks  pgup/pgdn scroll  enter open  n new  e edit  m move  ? help"
-	case m.sub == subSettingsConfig && m.deletePending:
-		text = "d confirm delete  esc cancel  left/right changes target"
-	case m.sub == subSettingsConfig && m.entityKind == entityKindTag:
-		text = "tab zones  left/right section  up/down select  d arm delete (orphan)  D delete all orphans  ? help"
-	case m.sub == subSettingsConfig:
-		text = "tab zones  left/right section  up/down select  enter open  n new  e edit  d arm delete  a default(template)  t theme  c config  ? help"
+	case m.sub == subSettingsGeneral:
+		text = "tab zones  ,// subs  t theme  c config  r refresh  ? help"
+	case m.sub == subSettingsTags && m.deletePending:
+		text = "d confirm delete  esc cancel"
+	case m.sub == subSettingsTags:
+		text = "tab zones  ,// subs  up/down select  d arm delete (orphan)  D delete all orphans  t theme  c config  ? help"
+	case m.sub == subSettingsTemplates:
+		text = "tab zones  ,// subs  up/down select  enter open  a default  t theme  c config  ? help"
+	case (m.sub == subSettingsLaws || m.sub == subSettingsPersonas || m.sub == subSettingsSkills) && m.deletePending:
+		text = "d confirm delete  esc cancel"
+	case m.sub == subSettingsLaws || m.sub == subSettingsPersonas || m.sub == subSettingsSkills:
+		text = "tab zones  ,// subs  up/down select  enter open  n new  e edit  d arm delete  p skills (persona)  t theme  c config  ? help"
 	case m.sub == subStatsLogs:
 		text = "tab zones  ,// subs  up/down select row  pgup/pgdn scroll  g/G top/bottom  r refresh  ? help"
 	case m.sub == subStatsGeneral:

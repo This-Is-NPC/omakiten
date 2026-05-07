@@ -908,7 +908,12 @@ func TestModelBoardLaneNavigationWrapsAround(t *testing.T) {
 	}
 }
 
-func TestModelConfigUsesFocusedSectionWhenNarrow(t *testing.T) {
+// TestModelSettingsLawsRendersOwnColumnWhenNarrow replaces the T1
+// horizontal-grid sliding test (`TestModelConfigUsesFocusedSectionWhenNarrow`).
+// The T2 split makes each entity kind its own Settings sub, so a
+// narrow terminal no longer needs a slide-and-hidden-list hint — the
+// active sub renders its single column at full width.
+func TestModelSettingsLawsRendersOwnColumnWhenNarrow(t *testing.T) {
 	ctx := context.Background()
 	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
 	if err != nil {
@@ -929,15 +934,17 @@ func TestModelConfigUsesFocusedSectionWhenNarrow(t *testing.T) {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 	model.width = 50
+	// Settings/general first, then advance to Settings/laws.
 	got := pressRune(t, model, '3')
+	got = pressStringKey(t, got, "/")
 
 	view := ansi.Strip(got.View())
-	// Narrow terminals slide to show the focused kind. The default focused
-	// kind is Laws so it must be present; the hint must surface the hidden
-	// kinds and explain how to scroll.
-	for _, want := range []string{"// LAWS", "sections", "hidden:", "← / → scrolls"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("narrow config missing %q\n%s", want, view)
+	if !strings.Contains(view, "// LAWS") {
+		t.Fatalf("Settings › Laws column header missing on narrow terminal:\n%s", view)
+	}
+	for _, leaked := range []string{"// PERSONAS", "// SKILLS", "// TEMPLATES", "// TAGS"} {
+		if strings.Contains(view, leaked) {
+			t.Fatalf("Settings › Laws should not co-render sibling kind %q:\n%s", leaked, view)
 		}
 	}
 }
@@ -1063,14 +1070,14 @@ func TestNavHeaderRendersTopAndSubKickers(t *testing.T) {
 
 	settingsModel := pressRune(t, model, '3')
 	settingsHeader := ansi.Strip(settingsModel.View())
-	for _, want := range []string{"01 // TASKS", "02 // STATS", "03 // SETTINGS"} {
+	for _, want := range []string{"01 // TASKS", "02 // STATS", "03 // SETTINGS", "// general", "// laws", "// personas", "// skills", "// templates", "// tags"} {
 		if !strings.Contains(settingsHeader, want) {
 			t.Fatalf("settings header missing %q\n%s", want, settingsHeader)
 		}
 	}
-	for _, leaked := range []string{"// board", "// table", "// graph", "// general", "// logs"} {
+	for _, leaked := range []string{"// board", "// table", "// graph"} {
 		if strings.Contains(settingsHeader, leaked) {
-			t.Fatalf("settings header should suppress sub strip but leaked %q:\n%s", leaked, settingsHeader)
+			t.Fatalf("settings header leaked tasks subs %q:\n%s", leaked, settingsHeader)
 		}
 	}
 }
@@ -1115,12 +1122,12 @@ func TestSubCycleBindings(t *testing.T) {
 	}
 
 	got = pressRune(t, model, '3')
-	if got.top != topSettings || got.sub != subSettingsConfig {
-		t.Fatalf("after '3': (top, sub) = (%d, %d), want (topSettings, subSettingsConfig)", got.top, got.sub)
+	if got.top != topSettings || got.sub != subSettingsGeneral {
+		t.Fatalf("after '3': (top, sub) = (%d, %d), want (topSettings, subSettingsGeneral)", got.top, got.sub)
 	}
 	got = pressStringKey(t, got, "/")
-	if got.top != topSettings || got.sub != subSettingsConfig {
-		t.Fatalf("'/' on Settings should be a no-op: (top, sub) = (%d, %d)", got.top, got.sub)
+	if got.top != topSettings || got.sub != subSettingsLaws {
+		t.Fatalf("'/' on Settings/general should advance to Settings/laws: (top, sub) = (%d, %d)", got.top, got.sub)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/app"
 	"omakiten/internal/config"
@@ -86,8 +87,14 @@ func TestEntityViewRendersFrontmatterAndBody(t *testing.T) {
 	model, _, _ := newEntityModel(t)
 
 	got := pressRune(t, model, '3')
-	if got.top != topSettings || got.sub != subSettingsConfig {
-		t.Fatalf("(top, sub) = (%d, %d), want (topSettings, subSettingsConfig)", got.top, got.sub)
+	if got.top != topSettings || got.sub != subSettingsGeneral {
+		t.Fatalf("(top, sub) = (%d, %d), want (topSettings, subSettingsGeneral)", got.top, got.sub)
+	}
+	// Cycle to Settings › Laws so the entity-detail flow under test still
+	// has a list to operate on (general is read-only).
+	got = pressStringKey(t, got, "/")
+	if got.sub != subSettingsLaws {
+		t.Fatalf("after '/': sub = %d, want subSettingsLaws", got.sub)
 	}
 
 	got = pressKey(t, got, tea.KeyEnter)
@@ -106,6 +113,7 @@ func TestEntityDeleteRemovesEntity(t *testing.T) {
 	model, _, _ := newEntityModel(t)
 
 	got := pressRune(t, model, '3')
+	got = pressStringKey(t, got, "/") // Settings › General → Settings › Laws
 	got = pressRune(t, got, 'd')
 	if len(got.laws) != 1 {
 		t.Fatalf("laws len after first delete key = %d, want 1 before confirmation", len(got.laws))
@@ -123,6 +131,7 @@ func TestEntityDeleteCanBeCancelled(t *testing.T) {
 	model, _, _ := newEntityModel(t)
 
 	got := pressRune(t, model, '3')
+	got = pressStringKey(t, got, "/")
 	got = pressRune(t, got, 'd')
 	got = pressKey(t, got, tea.KeyEsc)
 	if got.deletePending {
@@ -277,38 +286,12 @@ func TestCustomBadgeAppearsOnUserOverride(t *testing.T) {
 	}
 }
 
-func TestConfigSlidesHorizontalWindowToKeepFocusedColumnVisible(t *testing.T) {
-	model, _, _ := newEntityModel(t)
-	// Width that fits exactly 3 columns (3*30 + 2 gaps = 92, plus ~4 padding).
-	// allKinds = [Laws, Personas, Skills, Templates, Tags] — 5 total.
-	model.width = 100
-	model.height = 60
-
-	got := pressRune(t, model, '3')
-	view := got.View()
-	// Initial focus is Laws (index 0) — visible window starts at 0.
-	for _, want := range []string{"// LAWS", "// PERSONAS", "// SKILLS"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("initial config missing %q\n%s", want, view)
-		}
-	}
-	if strings.Contains(view, "// TEMPLATES") {
-		t.Fatalf("initial window should not include Templates yet:\n%s", view)
-	}
-
-	// Press right twice to move focus to Skills (still in window), then right
-	// again to move to Templates — window must slide so Templates is visible.
-	got = pressStringKey(t, got, "right")
-	got = pressStringKey(t, got, "right")
-	got = pressStringKey(t, got, "right")
-	view = got.View()
-	if !strings.Contains(view, "// TEMPLATES") {
-		t.Fatalf("Templates column should be visible after sliding right:\n%s", view)
-	}
-	if strings.Contains(view, "// LAWS") {
-		t.Fatalf("Laws should have scrolled out of view:\n%s", view)
-	}
-}
+// T1's horizontal Settings/Config grid was retired in T2. Each entity
+// kind now lives on its own Settings sub, so cycling between them no
+// longer involves a sliding window — `,` / `/` swaps the active sub
+// directly. The dedicated cycle test lives in model_test.go's
+// `TestSubCycleBindings`; the per-sub render is covered by
+// `TestSettingsSubsRenderIsolatedColumns`.
 
 func TestEntityCellShowsScrollHintsWhenColumnExceedsViewport(t *testing.T) {
 	model, _, _ := newEntityModel(t)
@@ -342,22 +325,42 @@ func TestEntityCellShowsScrollHintsWhenColumnExceedsViewport(t *testing.T) {
 	}
 }
 
-func TestRenderConfigShowsTemplatesColumn(t *testing.T) {
+func TestSettingsGeneralRendersRuntimeCard(t *testing.T) {
+	model, _, _ := newEntityModel(t)
+	model.repos.Version = "0.9.0-test"
+	model.repos.ConfigPath = "/tmp/omakiten.yaml"
+	model.repos.DBPath = "/tmp/omakiten.db"
+	model.width = 200
+	model.height = 40
+	model.top = topSettings
+	model.sub = subSettingsGeneral
+
+	view := ansi.Strip(model.View())
+	for _, want := range []string{"// RUNTIME", "// PROJECT", "// OKT VERSION", "0.9.0-test", "/tmp/omakiten.yaml", "/tmp/omakiten.db", "// THEME", "// WORKFLOW"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("Settings › General missing %q\n%s", want, view)
+		}
+	}
+}
+
+func TestSettingsTemplatesSubRendersColumn(t *testing.T) {
 	model := newEntityModelWithTemplates(t)
-	// Force a width that fits the 5-column layout; renderConfig branches on
-	// availableWidth() so without a sized window the column might fall back
-	// to the secondary-row treatment.
 	model.width = 200
 	model.height = 60
+	// In the T2 layout each entity kind owns its own Settings sub. Driving
+	// to Settings › Templates should land us on a single templates column —
+	// the legacy 5-column grid no longer exists.
+	model.top = topSettings
+	model.sub = subSettingsTemplates
+	model.entityKind = entityKindTemplate
 
-	out := model.renderConfig()
+	out := model.renderSettingsEntity(entityKindTemplate)
 	if !strings.Contains(out, "// TEMPLATES") {
-		t.Fatalf("renderConfig missing templates column\n%s", out)
+		t.Fatalf("Settings › Templates missing column header\n%s", out)
 	}
-	// Sanity: existing columns still render alongside.
-	for _, want := range []string{"// LAWS", "// PERSONAS", "// SKILLS", "// TAGS"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("renderConfig missing %q\n%s", want, out)
+	for _, leaked := range []string{"// LAWS", "// PERSONAS", "// SKILLS", "// TAGS"} {
+		if strings.Contains(out, leaked) {
+			t.Fatalf("Settings › Templates leaked sibling kind %q (T2 split should isolate columns):\n%s", leaked, out)
 		}
 	}
 }
@@ -388,11 +391,11 @@ func TestEntityViewRendersTemplateBody(t *testing.T) {
 
 func TestTemplateCreateAndDeleteAreNoOps(t *testing.T) {
 	model := newEntityModelWithTemplates(t)
-	// Switch into config view (4) so 'n'/'d' route to handleConfigKey rather than
-	// the table view's create-task / delete-task handlers.
+	// Drive into Settings › Templates so 'n'/'d' route to handleConfigKey
+	// rather than the table view's create-task / delete-task handlers.
 	model = pressRune(t, model, '3')
-	for model.entityKind != entityKindTemplate {
-		model = pressStringKey(t, model, "right")
+	for model.sub != subSettingsTemplates {
+		model = pressStringKey(t, model, "/")
 	}
 	beforeLen := len(model.templates)
 
@@ -426,9 +429,11 @@ func TestPersonaPickerToggleAndSave(t *testing.T) {
 	}
 
 	got := pressRune(t, model, '3')
-	got = pressStringKey(t, got, "right")
+	for got.sub != subSettingsPersonas {
+		got = pressStringKey(t, got, "/")
+	}
 	if got.entityKind != entityKindPersona {
-		t.Fatalf("entityKind = %v, want persona", got.entityKind)
+		t.Fatalf("entityKind = %v, want persona (sub-cycle should sync)", got.entityKind)
 	}
 	got = pressRune(t, got, 'p')
 	if got.entityForm.mode != entityScreenSkillPicker {

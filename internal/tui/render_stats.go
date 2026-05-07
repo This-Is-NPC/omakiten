@@ -129,5 +129,44 @@ func (m Model) renderStats() string {
 		rows = append(rows, "", m.styles.hint.Render("since "+summary.Since))
 	}
 
+	rows = append(rows, "", m.renderStatsTotalsBlock(), "", m.renderStatsTokensBlock())
+
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
+}
+
+// renderStatsTotalsBlock renders the project headline counts (tasks /
+// comments / context entries / tags) that previously lived on the Config
+// view's runtime header. Sourced from the slices loaded by `refresh()`,
+// so the block stays cheap even though it is rendered every tick.
+func (m Model) renderStatsTotalsBlock() string {
+	row := func(label string, count int) string {
+		return m.styles.info.Render(fmt.Sprintf("// %-10s", strings.ToUpper(label))) + " " + fmt.Sprintf("%d", count)
+	}
+	parts := []string{
+		m.styles.kicker("Totals"),
+		row("tasks", len(m.tasks)),
+		row("comments", len(m.comments)),
+		row("context", len(m.entries)),
+		row("tags", len(m.tags)),
+	}
+	return strings.Join(parts, "\n")
+}
+
+// renderStatsTokensBlock renders the token-budget summary (estimated /
+// max + a colored "[BUDGET EXCEEDED]" badge when m.metrics.Truncated).
+// The data is the same domain.TokenMetrics aggregated by computeMetrics
+// — moving it here keeps Stats as the single observability surface.
+func (m Model) renderStatsTokensBlock() string {
+	row := func(label, value string) string {
+		return m.styles.info.Render(fmt.Sprintf("// %-10s", strings.ToUpper(label))) + " " + value
+	}
+	parts := []string{
+		m.styles.kicker("Tokens"),
+		row("estimated", fmt.Sprintf("%d", m.metrics.EstimatedTotal)),
+		row("max", fmt.Sprintf("%d", m.metrics.MaxTokens)),
+	}
+	if m.metrics.Truncated {
+		parts = append(parts, m.styles.error.Render("[BUDGET EXCEEDED] estimated > max"))
+	}
+	return strings.Join(parts, "\n")
 }

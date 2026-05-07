@@ -20,17 +20,17 @@ import (
 	"omakiten/internal/tui"
 )
 
-func newTUICommand(opts *runtimeOptions) *cobra.Command {
+func newTUICommand(opts *runtimeOptions, version string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "tui",
 		Short: "Open the terminal UI",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runTUI(cmd.Context(), opts)
+			return runTUI(cmd.Context(), opts, version)
 		},
 	}
 }
 
-func runTUI(ctx context.Context, opts *runtimeOptions) error {
+func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 	rt, err := opts.open(ctx, true)
 	if err != nil {
 		return err
@@ -70,6 +70,9 @@ func runTUI(ctx context.Context, opts *runtimeOptions) error {
 		ActivityLogs: rt.store,
 		Events:       rt.store,
 		Metrics:      app.NewMetricsService(rt.store),
+		ConfigPath:   rt.configPath,
+		DBPath:       rt.dbPath,
+		Version:      version,
 	}, theme, token.NewCounter())
 	if err != nil {
 		return err

@@ -71,7 +71,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.syncFocusedColumnScroll()
 		m.syncBoardColScroll()
-		m.syncEntityKindScroll()
 	case refreshTickMsg:
 		if m.shouldRealtimeRefresh() {
 			if err := m.refreshCurrentView(); err != nil {
@@ -149,7 +148,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.handleStatsKey(msg)
 		case subStatsLogs:
 			m.handleLogsKey(msg)
-		case subSettingsConfig:
+		case subSettingsGeneral:
+			if cmd := m.handleSettingsGeneralKey(msg); cmd != nil {
+				return m, cmd
+			}
+		case subSettingsLaws, subSettingsPersonas, subSettingsSkills, subSettingsTemplates, subSettingsTags:
 			if cmd := m.handleConfigKey(msg); cmd != nil {
 				return m, cmd
 			}
@@ -468,6 +471,7 @@ func (m *Model) cycleTop(delta int) {
 	next := topOrder[((idx+delta)%n+n)%n]
 	m.top = next
 	m.sub = firstSub(next)
+	m.syncEntityKindFromSub()
 }
 
 // jumpTop moves directly to a target top (bound to the digit keys 1/2/3),
@@ -479,12 +483,13 @@ func (m *Model) jumpTop(target topID) {
 	}
 	m.top = target
 	m.sub = firstSub(target)
+	m.syncEntityKindFromSub()
 }
 
 // cycleSub moves the active sub forward (delta=1) or backward (delta=-1)
 // inside the current top. No-op when the top exposes a single sub — the
-// binding is silently dropped so users on Settings do not have to learn
-// "this only works on Tasks/Stats".
+// binding is silently dropped so users on a single-sub top do not have
+// to learn "this only works on Tasks/Stats/Settings".
 func (m *Model) cycleSub(delta int) {
 	subs := subsByTop[m.top]
 	if len(subs) <= 1 {
@@ -496,6 +501,19 @@ func (m *Model) cycleSub(delta int) {
 	}
 	n := len(subs)
 	m.sub = subs[((idx+delta)%n+n)%n]
+	m.syncEntityKindFromSub()
+}
+
+// syncEntityKindFromSub mirrors the active Settings sub onto m.entityKind
+// so the existing entity handlers (handleConfigKey, scaffold/edit/delete
+// helpers) keep reading the right list. No-op for non-Settings subs and
+// for `subSettingsGeneral` — general is read-only and does not bind to
+// any entity list.
+func (m *Model) syncEntityKindFromSub() {
+	if k, ok := entityKindForSub(m.sub); ok {
+		m.entityKind = k
+		m.syncFocusedEntityScroll()
+	}
 }
 
 func (m *Model) refresh() error {

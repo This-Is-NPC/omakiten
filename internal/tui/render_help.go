@@ -97,14 +97,31 @@ func (m Model) renderHelp() string {
 			{"ctrl+s", "save"},
 			{"esc", "cancel"},
 		}},
-		{"Settings · config", []binding{
-			{"← →", "switch entity kind"},
-			{"↑ ↓", "select entity"},
+		{"Settings · general", []binding{
+			{", · /", "previous · next sub (general → laws → personas → …)"},
+			{"t", "theme picker (hot-reload)"},
+			{"c", "config picker (restart required)"},
+			{"r", "refresh"},
+		}},
+		{"Settings · entity (laws / personas / skills / templates)", []binding{
+			{", · /", "previous · next sub"},
+			{"↑ ↓ · j k", "select entity (auto-scrolls)"},
+			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
+			{"g · G", "first / last entry"},
 			{"enter", "open detail"},
 			{"n", "new entity"},
 			{"e", "edit in $EDITOR"},
 			{"d · d", "arm delete, then confirm"},
 			{"p", "skill picker (persona)"},
+			{"a", "set as default (template)"},
+			{"t · c", "theme picker · config picker"},
+		}},
+		{"Settings · tags", []binding{
+			{", · /", "previous · next sub"},
+			{"↑ ↓ · j k", "select tag"},
+			{"d", "arm delete (orphan only)"},
+			{"D", "delete every orphan tag"},
+			{"t · c", "theme picker · config picker"},
 		}},
 		{"Entity view", []binding{
 			{"↑ ↓ · j k", "scroll body"},
@@ -222,8 +239,12 @@ func (m Model) currentHelpTitles() []string {
 		return []string{"Tasks · table lens"}
 	case m.sub == subGraph:
 		return []string{"Tasks · graph lens"}
-	case m.sub == subSettingsConfig:
-		return []string{"Settings · config"}
+	case m.sub == subSettingsGeneral:
+		return []string{"Settings · general"}
+	case m.sub == subSettingsTags:
+		return []string{"Settings · tags"}
+	case m.sub == subSettingsLaws || m.sub == subSettingsPersonas || m.sub == subSettingsSkills || m.sub == subSettingsTemplates:
+		return []string{"Settings · entity (laws / personas / skills / templates)"}
 	case m.sub == subStatsLogs:
 		return []string{"Stats · logs"}
 	case m.sub == subStatsGeneral:

@@ -100,12 +100,31 @@ func (m Model) renderEntityCellWithViewport(kind entityKind, viewport int) strin
 }
 
 // entityViewportRows is the number of terminal rows available for entity
-// cards inside one column. Computed from the actual rendered config header
-// (runtime/tokens tables) rather than a static chrome guess so the value
-// stays correct as the tables grow or shrink across themes/data sets.
-// Returns 0 when the height is unknown.
+// cards inside the active Settings entity column. Each Settings entity
+// sub renders one column full-height — the chrome is the screen header
+// (now up to two nav rows + a separator), the column borders, the column
+// kicker rows and the footer. Returns 0 when the height is unknown.
 func (m Model) entityViewportRows() int {
-	return m.entityCardsViewport(m.renderConfigHeader())
+	if m.height <= 0 {
+		return 0
+	}
+	const (
+		columnBorders    = 2 // top + bottom of the kanbanColumn
+		columnHeaderRows = 2 // kicker + separator inside the column
+		viewLeadingBlank = 1 // leading "\n" prepended in renderSettingsEntity
+		footerLines      = 2 // newline + indented footer text
+	)
+	screenHeader := strings.Count(m.renderHeader(), "\n") + 1
+	statusLine := 0
+	if m.status != "" && !m.isEmbeddedCommentInput() {
+		statusLine = 2
+	}
+	chrome := screenHeader + statusLine + viewLeadingBlank + columnBorders + columnHeaderRows + footerLines
+	rows := m.height - chrome
+	if rows < 4 {
+		return 0
+	}
+	return rows
 }
 
 // syncFocusedEntityScroll keeps m.entityScroll[focusedKind] aligned so the
