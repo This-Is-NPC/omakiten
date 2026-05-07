@@ -61,20 +61,29 @@ func (m *Model) syncLogsScroll() {
 	m.logsScroll = followCursor(m.logsScroll, m.logsSelected, m.logsViewportRows(), len(m.logs))
 }
 
-// logsViewportRows returns how many data rows fit in the activity log panel
-// after accounting for the screen chrome, panel borders, and the panel's
-// internal header (kicker + column header + separator) and footer (blank +
-// hint) rows. Returns 0 when the height is unknown or too small to scroll.
+// logsViewportRows returns how many data rows fit in the activity log
+// panel. The screen header (1- or 2-row nav kicker depending on the
+// active top) and the summary block above the panel both grow / shrink
+// with state, so they are measured live instead of folded into a static
+// constant — this keeps the cursor on-screen when the user adds a sub
+// strip or summary tables that change the chrome height.
 func (m Model) logsViewportRows() int {
 	if m.height <= 0 {
 		return 0
 	}
-	// 5 screen header + 1 leading blank + 2 footer + 2 panel borders
-	// + 3 panel header rows + 2 panel footer rows = 15.
-	chrome := 15
-	if m.status != "" {
-		chrome++
+	screenHeader := strings.Count(m.renderHeader(), "\n") + 1
+	summary := strings.Count(m.renderLogsSummaryTables(), "\n") + 1
+	statusLine := 0
+	if m.status != "" && !m.isEmbeddedCommentInput() {
+		statusLine = 2 // separator newline + the status badge
 	}
+	const (
+		leadingBlank = 1 // "\n" prepended by renderLogs before the body
+		gapToPanel   = 1 // blank line between summary and panel
+		panelChrome  = 7 // 2 borders + 3 header rows + 2 footer rows
+		footerLines  = 2 // newline + indented keybinding hint
+	)
+	chrome := screenHeader + statusLine + leadingBlank + summary + gapToPanel + panelChrome + footerLines
 	rows := m.height - chrome
 	if rows < 4 {
 		return 0
