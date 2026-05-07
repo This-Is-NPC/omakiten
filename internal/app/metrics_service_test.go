@@ -123,6 +123,16 @@ func TestMetricsServiceSummaryAggregatesPerModel(t *testing.T) {
 	if summary.Total.ErrorsRecorded != 3 {
 		t.Fatalf("total errors_recorded = %d, want 3", summary.Total.ErrorsRecorded)
 	}
+
+	// Total.SearchBeforeRecordRatio is reconstructed from absolute counts so
+	// it weights samples correctly: opus has 1 search-before-record over
+	// 1 session sample; sonnet has 0 over 2; combined sample is 3 → ratio 1/3.
+	if summary.Total.SessionCorrelatedSample != 3 {
+		t.Fatalf("total session_correlated_sample = %d, want 3", summary.Total.SessionCorrelatedSample)
+	}
+	if got := int(summary.Total.SearchBeforeRecordRatio*100 + 0.5); got != 33 {
+		t.Fatalf("total search_before_record_ratio = %d%%, want 33%%", got)
+	}
 }
 
 func TestMetricsServiceSummaryDefaultsPeriodTo30d(t *testing.T) {

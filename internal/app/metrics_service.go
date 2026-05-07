@@ -49,6 +49,7 @@ func (s *MetricsService) Summary(ctx context.Context, project domain.ProjectCont
 		Since:   since,
 		ByModel: rows,
 	}
+	var totalSearchBefore int
 	for _, m := range rows {
 		summary.Total.ErrorsRecorded += m.ErrorsRecorded
 		summary.Total.ErrorsSearched += m.ErrorsSearched
@@ -57,9 +58,17 @@ func (s *MetricsService) Summary(ctx context.Context, project domain.ProjectCont
 		summary.Total.SolutionsFailed += m.SolutionsFailed
 		summary.Total.SolutionsTopViewed += m.SolutionsTopViewed
 		summary.Total.SessionCorrelatedSample += m.SessionCorrelatedSample
+		// Reconstruct the per-model search-before-record count from the ratio
+		// so the totals row can recompute the ratio over the combined sample
+		// instead of averaging ratios (which would be wrong when samples
+		// differ in size).
+		totalSearchBefore += int(m.SearchBeforeRecordRatio*float64(m.SessionCorrelatedSample) + 0.5)
 	}
 	if summary.Total.SolutionsAdded > 0 {
 		summary.Total.LikeRate = float64(summary.Total.SolutionsLiked) / float64(summary.Total.SolutionsAdded)
+	}
+	if summary.Total.SessionCorrelatedSample > 0 {
+		summary.Total.SearchBeforeRecordRatio = float64(totalSearchBefore) / float64(summary.Total.SessionCorrelatedSample)
 	}
 	return
 }
