@@ -156,7 +156,7 @@ sequenceDiagram
 
     Note over Service: Reads bundle snapshots seeded<br/>at runtime startup — no DB hit.<br/>Effective laws =<br/>global ∪ persona ∪ command<br/>∪ template-bound,<br/>− laws_disabled, deduped.
 
-    Service->>Service: renderCommandMarkdown<br/>(persona + skills + laws +<br/>templates + action)
+    Service->>Service: renderCommandMarkdown<br/>(persona + skills + laws +<br/>template metadata +<br/>action — bodies kept out)
     Service-->>Adapter: ResolveCommandResponse{ Markdown, … }
     Adapter-->>Server: PromptResult
     Server-->>Client: { messages:[ user/text ] }
@@ -190,19 +190,40 @@ Every prompt invocation injects **at least one message** (the composed prompt) a
 
 For action-heavy prompts (`okt-implement`, `okt-document`) the agent will fan out and call several tools — `progress.record`, `comments.add`, `tasks.move` — each one adding another tool result message to the window. Those are the agent's choice, not the prompt's structure.
 
+### Just-in-time templates
+
+Bound templates ship as **metadata only** in the resolved prompt — slug, name, default kind, description — followed by a pointer telling the agent to call `templates.show <slug>` when ready to fill the scaffold. Bodies stay out of the prompt because they are large (the `pull-request` scaffold is ~700 tokens by itself), and the agent only needs them at the rare moment of materialization.
+
+This follows Anthropic's just-in-time context engineering principle: ship lightweight identifiers, let the agent fetch payloads on demand. The `template-fidelity` law remains pre-loaded (it is a constraint that must shape the fetch when it happens), but the body the constraint applies to lives behind a tool call.
+
+Trade-off: one extra MCP round-trip on the materialization step (only when the agent actually drafts the PR or fills the scaffold), in exchange for hundreds of tokens saved on every prompt resolution that does not reach materialization.
+
 ### Per-prompt fixed token cost
 
-These are the rendered prompt sizes for the default kit (measured against the bundle shipped under `defaults/`). Numbers move with persona/skill/law/template bindings — adding a law to `mcp_commands.global.laws` adds ~50 tokens to every row.
+Rendered prompt sizes for the default kit. Numbers move with persona/skill/law/template bindings — adding a law to `mcp_commands.global.laws` adds ~50 tokens to every row.
 
 | Prompt | Bytes | ~Tokens | Drivers |
 |---|---|---|---|
-| `okt-resume` | 1499 | 375 | engineer persona + 5 skills + 4 laws |
-| `okt` | 1521 | 380 | engineer persona + 5 skills + 4 laws |
-| `okt-continue` | 1682 | 420 | engineer persona + 5 skills + 4 laws |
-| `okt-imagine` | 1767 | 440 | product-owner persona + 3 skills + 4 laws (template-fidelity disabled) |
-| `okt-document` | 2260 | 565 | documentation-agent + 5 skills + 5 laws |
-| `okt-create` | 2866 | 720 | product-owner + 3 skills + 5 laws + user-story template inline |
-| `okt-implement` | 3708 | 930 | engineer + 5 skills + 7 laws + pull-request template inline |
+| `okt` | 1958 | 490 | engineer persona + 5 skills + 4 laws |
+| `okt-resume` | 1971 | 495 | engineer persona + 5 skills + 4 laws |
+| `okt-continue` | 2065 | 520 | engineer persona + 5 skills + 4 laws |
+| `okt-imagine` | 2217 | 555 | product-owner persona + 3 skills + 4 laws (template-fidelity disabled) |
+| `okt-document` | 2791 | 700 | documentation-agent + 5 skills + 5 laws |
+| `okt-create` | 3144 | 785 | product-owner + 3 skills + 5 laws + user-story metadata (JIT) |
+| `okt-implement` | 3818 | 955 | engineer + 5 skills + 7 laws + pull-request metadata (JIT) |
+
+Without JIT, `okt-implement` would carry the full `pull-request` body (~700 extra tokens, putting it past 1650). The same logic applies to any user-authored template — bind it via `mcp_commands.<cmd>.templates` and only metadata ships in the prompt.
+
+### Prompt engineering principles applied
+
+The default kit follows Anthropic's [context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) guidance. Customizers who add their own commands, laws, or templates should match these conventions so the resolved prompts stay coherent:
+
+- **Right altitude in action texts.** Frame the role, name the canonical tool, end with a REST handoff. Do not restate constraints already declared as bound laws — laws ship inline above the action and the agent reads them. Repeating a law in prose wastes the attention budget the article warns about.
+- **Just-in-time over pre-loading.** Template bodies are fetched via `templates.show` rather than embedded inline. The same logic applies to any heavy artifact (long context entries, large dumps): expose a tool, ship the slug, let the agent pull the body when actually needed.
+- **Few-shot examples in load-bearing laws.** Laws that govern judgment calls (`template-fidelity`, `conventional-commits`, `no-assumptions`) carry a `❌` / `✅` micro-example after the directive paragraph. Anthropic's principle: examples teach generalization better than abstract rules.
+- **No conditional logic in prompts.** Anti-pattern: `if returns requires_confirmation, ask the user…`. Instead, the server's response carries an actionable `Reason` field that names the next-step tools — the agent acts on the response shape, not on prompt-side branching. See `agent.Confirmation.Reason` in `internal/agent/dto.go`.
+- **Failure-driven additions.** Add a law or example only after observing a real failure mode. `template-fidelity` was added because the agent fabricated `Closes #40`; `authorize-remote-writes` was added because `git push` is destructive. Don't speculate.
+- **Markdown sections, not XML tags.** The renderer uses `## Persona`, `## Skills`, `## Laws`, `## Templates`, `## Action`. Same load-bearing structure Anthropic recommends, but markdown reads cleanly in both the agent prompt and a developer's terminal when debugging.
 
 ### Variable tool-result cost — `okt-continue` worked example
 
