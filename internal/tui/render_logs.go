@@ -12,10 +12,6 @@ import (
 
 func (m *Model) handleLogsKey(msg tea.KeyMsg) {
 	switch msg.String() {
-	case "left", "h":
-		m.cycleLegacyView(-1)
-	case "right", "l":
-		m.cycleLegacyView(1)
 	case "up", "k":
 		if m.logsSelected > 0 {
 			m.logsSelected--

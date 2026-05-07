@@ -1138,6 +1138,93 @@ func TestSubCycleBindings(t *testing.T) {
 	}
 }
 
+// TestCtrlOPopsBackStack covers AC2: every intentional zone/sub
+// navigation pushes the current (top, sub) onto the back-stack, and
+// `ctrl+o` pops the stack to restore the previous view. Empty-stack
+// presses are silent no-ops (no status flash, no nav change).
+func TestCtrlOPopsBackStack(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store, Metrics: app.NewMetricsService(store)}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	// Empty stack — ctrl+o is silently dropped, no nav change.
+	got := pressStringKey(t, model, "ctrl+o")
+	if got.top != topTasks || got.sub != subBoard {
+		t.Fatalf("ctrl+o on empty stack mutated nav: (top, sub) = (%d, %d)", got.top, got.sub)
+	}
+
+	// Tasks/board → Stats/general → Settings/general, then ctrl+o twice.
+	got = pressRune(t, model, '2')
+	if got.top != topStats || got.sub != subStatsGeneral {
+		t.Fatalf("'2' should jump to Stats/general: (top, sub) = (%d, %d)", got.top, got.sub)
+	}
+	got = pressRune(t, got, '3')
+	if got.top != topSettings || got.sub != subSettingsGeneral {
+		t.Fatalf("'3' should jump to Settings/general: (top, sub) = (%d, %d)", got.top, got.sub)
+	}
+	got = pressStringKey(t, got, "ctrl+o")
+	if got.top != topStats || got.sub != subStatsGeneral {
+		t.Fatalf("ctrl+o should restore Stats/general: (top, sub) = (%d, %d)", got.top, got.sub)
+	}
+	got = pressStringKey(t, got, "ctrl+o")
+	if got.top != topTasks || got.sub != subBoard {
+		t.Fatalf("ctrl+o should restore Tasks/board: (top, sub) = (%d, %d)", got.top, got.sub)
+	}
+	if len(got.viewHistory) != 0 {
+		t.Fatalf("viewHistory should be empty after popping every entry, got %d", len(got.viewHistory))
+	}
+}
+
+// TestHomeTileEmbeddedInTopStrip covers AC3: the per-project header
+// surfaces `00 // HOME` to the left of the three top zones, separated
+// by the faded `│` divider. Keeps the home affordance visible without
+// growing the chrome to a third row.
+func TestHomeTileEmbeddedInTopStrip(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store, Metrics: app.NewMetricsService(store)}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.width = 200
+	view := ansi.Strip(model.View())
+	for _, want := range []string{"00 // HOME", "│", "01 // TASKS", "02 // STATS", "03 // SETTINGS"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("top strip missing %q:\n%s", want, view)
+		}
+	}
+	homeIdx := strings.Index(view, "00 // HOME")
+	tasksIdx := strings.Index(view, "01 // TASKS")
+	if homeIdx < 0 || tasksIdx < 0 || homeIdx >= tasksIdx {
+		t.Fatalf("HOME tile must render before TASKS in the strip; homeIdx=%d, tasksIdx=%d", homeIdx, tasksIdx)
+	}
+}
+
 func pressRune(t *testing.T, model Model, r rune) Model {
 	t.Helper()
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})

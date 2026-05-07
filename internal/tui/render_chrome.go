@@ -7,17 +7,21 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// renderHeader renders the global title bar + the two-row navigation
-// kicker (top zones / sub menus). The title (`omakiten · project ·
-// local checkpoint`) is always visible; both nav rows are hidden when
-// an overlay is open (help/task/entity) so the overlay's own kicker
-// reads as the focused surface. Falls back to a compact "active tab +
-// hint" form when the full nav row would overflow.
+// renderHeader renders the global title breadcrumb + the navigation
+// kicker. The breadcrumb (`omakiten › project · local checkpoint`) is
+// always visible; the nav rows are hidden when an overlay is open
+// (help/task/entity) so the overlay's own kicker reads as the focused
+// surface. The Home tile is folded into the same top strip as Tasks /
+// Stats / Settings, separated by a faded `│` divider — it stays
+// reachable from every per-project view without forcing a separate
+// chrome layout. Falls back to a compact "active tab + hint" form when
+// the full nav row would overflow.
 //
-// On the Home view the per-project nav is suppressed (Home is outside
-// the cycle and only reachable via 0 / ctrl+h), and the title swaps the
-// project segment for an explicit "select a project" hint so the absent
-// project slug never reads as a render bug.
+// While on Home itself the per-project nav strip is suppressed (the
+// rest of the app's tops have no meaning before a project is picked),
+// and the breadcrumb swaps the project segment for an explicit
+// "select a project" hint so the absent project slug never reads as a
+// render bug.
 func (m Model) renderHeader() string {
 	var sb strings.Builder
 	sb.WriteString("\n  ")
@@ -30,7 +34,7 @@ func (m Model) renderHeader() string {
 		sb.WriteString(m.homeHeaderTitle())
 		return sb.String()
 	}
-	sb.WriteString(m.styles.nav.Render(m.project.Slug))
+	sb.WriteString(m.styles.nav.Render(truncateText(m.project.Slug, 40)))
 	sb.WriteString(m.styles.hint.Render(" · local checkpoint"))
 	if m.helpOpen || m.taskScreen != taskScreenClosed || m.entityScreen != entityScreenClosed {
 		return sb.String()
@@ -38,6 +42,11 @@ func (m Model) renderHeader() string {
 	sb.WriteString("\n\n  ")
 
 	const navGap = "   "
+	homeLabel := "00 // HOME"
+	homeItem := m.styles.nav.Render(homeLabel)
+	homeRule := strings.Repeat(" ", lipgloss.Width(homeLabel))
+	divider := m.styles.hint.Render("│")
+
 	topItems := make([]string, 0, len(topOrder))
 	topRules := make([]string, 0, len(topOrder))
 	for i, t := range topOrder {
@@ -51,15 +60,17 @@ func (m Model) renderHeader() string {
 			topRules = append(topRules, strings.Repeat(" ", width))
 		}
 	}
-	if lipgloss.Width(strings.Join(topItems, navGap)) > m.availableWidth() {
+	stripItems := homeItem + navGap + divider + navGap + strings.Join(topItems, navGap)
+	stripRules := homeRule + navGap + " " + navGap + strings.Join(topRules, navGap)
+	if lipgloss.Width(stripItems) > m.availableWidth() {
 		active := fmt.Sprintf("%02d // %s", topIndex(m.top)+1, topLabels[m.top])
 		sb.WriteString(m.styles.activeNav.Render(active))
-		sb.WriteString(m.styles.hint.Render("  tab/1-3 switch zones · ,// switch sub"))
+		sb.WriteString(m.styles.hint.Render("  tab/1-3 switch zones · ,// switch sub · 0 home · ctrl+o back"))
 		return sb.String()
 	}
-	sb.WriteString(strings.Join(topItems, navGap))
+	sb.WriteString(stripItems)
 	sb.WriteString("\n  ")
-	sb.WriteString(strings.Join(topRules, navGap))
+	sb.WriteString(stripRules)
 
 	subs := subsByTop[m.top]
 	if len(subs) > 1 {
@@ -135,65 +146,290 @@ func (m Model) renderCurrentView() string {
 	}
 }
 
-// renderFooter renders the keybindings hint at the bottom of the screen.
-// The big switch ladders through every modal/overlay/view in priority
-// order so the most-specific footer wins (e.g. an open picker shows its
-// keys, not the underlying screen's).
+// footerToken is one keybinding entry on the footer hint row. `Primary`
+// signals that the action is the focal verb for the current surface
+// (`enter` / `n` / `e` etc.) — `renderFooter` highlights up to three
+// primaries with `hintAccent` so the eye lands on them first; the rest
+// stay in the muted `hint` style.
+type footerToken struct {
+	key     string
+	label   string
+	primary bool
+}
+
+// renderFooter ladders through every modal/overlay/view in priority
+// order — the most-specific surface wins — and emits its keybinding
+// hint as a list of structured tokens. The renderer applies the
+// primary / secondary styling, joins with double-space separators,
+// guarantees `?` is the trailing token whenever help is reachable,
+// and indents the row to match the rest of the chrome.
 func (m Model) renderFooter() string {
-	var text string
+	tokens := m.footerTokens()
+	return "\n" + indentBlock(m.formatFooterTokens(tokens), 2)
+}
+
+// formatFooterTokens lays the token list out for the footer row. Up to
+// three primary tokens get `hintAccent` (more than that and the visual
+// hierarchy stops landing); the rest get `hint`. Tokens are joined
+// with double-space separators so the eye can chunk them cleanly.
+func (m Model) formatFooterTokens(tokens []footerToken) string {
+	const maxPrimaries = 3
+	primaryBudget := maxPrimaries
+	parts := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		var keyStyle string
+		if t.primary && primaryBudget > 0 {
+			keyStyle = m.styles.hintAccent.Render(t.key)
+			primaryBudget--
+		} else {
+			keyStyle = m.styles.footer.Render(t.key)
+		}
+		var piece string
+		if t.label == "" {
+			piece = keyStyle
+		} else {
+			piece = keyStyle + m.styles.footer.Render(" "+t.label)
+		}
+		parts = append(parts, piece)
+	}
+	return strings.Join(parts, m.styles.footer.Render("  "))
+}
+
+// helpToken returns the `?` token used at the trailing edge of every
+// surface that has the help overlay reachable. Centralised so the
+// `?` always appears last and never accidentally becomes a primary.
+func helpToken() footerToken { return footerToken{key: "?", label: "help"} }
+
+// escToken standardises the verbal of the Esc binding across overlays.
+// Every "go back" / "close overlay" / "cancel modal" footer renders it
+// the same way — `esc back` — so users do not have to retrain the
+// shortcut between surfaces. Pickers that explicitly *cancel* (vs.
+// step back) keep their own `esc cancel` token because the action is
+// destructive on save state.
+func escBack() footerToken { return footerToken{key: "esc", label: "back"} }
+
+// footerTokens returns the keybinding hint for the active surface as
+// a structured list. Order encodes priority: the most relevant action
+// for the surface comes first (and is usually marked `primary`).
+func (m Model) footerTokens() []footerToken {
 	switch {
 	case m.isEmbeddedCommentInput():
-		text = "enter save comment  alt+enter/shift+enter newline  esc cancel"
+		return []footerToken{
+			{key: "enter", label: "save comment", primary: true},
+			{key: "alt+enter/shift+enter", label: "newline"},
+			{key: "esc", label: "cancel"},
+		}
 	case m.blockerPickerOpen:
-		text = "up/down move  pgup/pgdn scroll  space toggle blocker  ctrl+s save  esc cancel"
+		return []footerToken{
+			{key: "space", label: "toggle blocker", primary: true},
+			{key: "ctrl+s", label: "save", primary: true},
+			{key: "up/down", label: "move"},
+			{key: "pgup/pgdn", label: "scroll"},
+			{key: "esc", label: "cancel"},
+		}
 	case m.mode != modeNormal:
-		text = "enter save  esc cancel  ctrl+c quit"
+		return []footerToken{
+			{key: "enter", label: "save", primary: true},
+			{key: "esc", label: "cancel"},
+			{key: "ctrl+c", label: "quit"},
+		}
 	case m.commentScreenOpen:
-		text = "j/k scroll  pgup/pgdn page  g/G top/bottom  esc back to task  ? help"
+		return []footerToken{
+			{key: "j/k", label: "scroll", primary: true},
+			{key: "pgup/pgdn", label: "page"},
+			{key: "g/G", label: "top/bottom"},
+			escBack(),
+			helpToken(),
+		}
 	case m.taskScreen == taskScreenView:
-		text = "tab focus  j/k scroll  e edit  b blockers  c comment  m move  r refresh  esc board  ? help"
+		return []footerToken{
+			{key: "e", label: "edit", primary: true},
+			{key: "c", label: "comment", primary: true},
+			{key: "m", label: "move", primary: true},
+			{key: "tab", label: "focus"},
+			{key: "j/k", label: "scroll"},
+			{key: "b", label: "blockers"},
+			{key: "r", label: "refresh"},
+			escBack(),
+			helpToken(),
+		}
 	case m.taskScreen == taskScreenCreate:
-		text = "tab field  ←/→ priority  ctrl+s create  esc cancel"
+		return []footerToken{
+			{key: "ctrl+s", label: "create", primary: true},
+			{key: "tab", label: "field"},
+			{key: "←/→", label: "priority"},
+			{key: "esc", label: "cancel"},
+		}
 	case m.taskScreen == taskScreenEdit:
-		text = "tab field  ←/→ priority  ctrl+b blockers  ctrl+s save  esc view"
+		return []footerToken{
+			{key: "ctrl+s", label: "save", primary: true},
+			{key: "ctrl+b", label: "blockers", primary: true},
+			{key: "tab", label: "field"},
+			{key: "←/→", label: "priority"},
+			escBack(),
+		}
 	case m.entityScreen == entityScreenView && m.deletePending:
-		text = "d confirm delete  esc cancel  q quit"
+		return []footerToken{
+			{key: "d", label: "confirm delete", primary: true},
+			{key: "esc", label: "cancel"},
+			{key: "q", label: "quit"},
+		}
 	case m.entityScreen == entityScreenView:
-		text = "j/k scroll  e edit in $EDITOR  d arm delete  p skills (persona)  r refresh  esc config"
+		return []footerToken{
+			{key: "e", label: "edit in $EDITOR", primary: true},
+			{key: "d", label: "arm delete"},
+			{key: "p", label: "skills (persona)"},
+			{key: "j/k", label: "scroll"},
+			{key: "r", label: "refresh"},
+			escBack(),
+		}
 	case m.entityScreen == entityScreenSkillPicker:
-		text = "up/down move  pgup/pgdn scroll  space toggle  enter on '+': new skill  ctrl+s save  esc cancel"
+		return []footerToken{
+			{key: "space", label: "toggle", primary: true},
+			{key: "enter", label: "on '+': new skill", primary: true},
+			{key: "ctrl+s", label: "save", primary: true},
+			{key: "up/down", label: "move"},
+			{key: "pgup/pgdn", label: "scroll"},
+			{key: "esc", label: "cancel"},
+		}
 	case m.entityScreen == entityScreenThemePicker:
-		text = "up/down move  pgup/pgdn scroll  enter apply (hot-reload)  esc cancel"
+		return []footerToken{
+			{key: "enter", label: "apply (hot-reload)", primary: true},
+			{key: "up/down", label: "move"},
+			{key: "pgup/pgdn", label: "scroll"},
+			{key: "esc", label: "cancel"},
+		}
 	case m.entityScreen == entityScreenConfigPicker:
-		text = "up/down move  pgup/pgdn scroll  enter select (restart required)  esc cancel"
+		return []footerToken{
+			{key: "enter", label: "select (restart required)", primary: true},
+			{key: "up/down", label: "move"},
+			{key: "pgup/pgdn", label: "scroll"},
+			{key: "esc", label: "cancel"},
+		}
 	case m.entityScreen == entityScreenDefaultPicker:
-		text = "up/down move  pgup/pgdn scroll  enter assign (clears prior owner)  esc cancel"
+		return []footerToken{
+			{key: "enter", label: "assign (clears prior owner)", primary: true},
+			{key: "up/down", label: "move"},
+			{key: "pgup/pgdn", label: "scroll"},
+			{key: "esc", label: "cancel"},
+		}
 	case m.moveMode:
-		text = "left/right move task to lane  esc cancel  q quit"
+		return []footerToken{
+			{key: "left/right", label: "move task to lane", primary: true},
+			{key: "esc", label: "cancel"},
+			{key: "q", label: "quit"},
+		}
 	case m.onHome():
-		text = m.homeFooterHint()
+		return m.homeFooterTokens()
 	case m.sub == subBoard:
-		text = "tab zones  ,// subs  left/right lanes  up/down tasks  pgup/pgdn scroll  enter open  n new  e edit  m move  ? help"
+		return []footerToken{
+			{key: "enter", label: "open", primary: true},
+			{key: "n", label: "new", primary: true},
+			{key: "m", label: "move", primary: true},
+			{key: "left/right", label: "lanes"},
+			{key: "up/down", label: "tasks"},
+			{key: "pgup/pgdn", label: "scroll"},
+			{key: "e", label: "edit"},
+			{key: "tab", label: "zones"},
+			{key: ",//", label: "subs"},
+			{key: "ctrl+o", label: "back"},
+			helpToken(),
+		}
 	case m.sub == subSettingsGeneral:
-		text = "tab zones  ,// subs  t theme  c config  r refresh  ? help"
+		return []footerToken{
+			{key: "t", label: "theme", primary: true},
+			{key: "c", label: "config", primary: true},
+			{key: "r", label: "refresh"},
+			{key: "tab", label: "zones"},
+			{key: ",//", label: "subs"},
+			{key: "ctrl+o", label: "back"},
+			helpToken(),
+		}
 	case m.sub == subSettingsTags && m.deletePending:
-		text = "d confirm delete  esc cancel"
+		return []footerToken{
+			{key: "d", label: "confirm delete", primary: true},
+			{key: "esc", label: "cancel"},
+		}
 	case m.sub == subSettingsTags:
-		text = "tab zones  ,// subs  up/down select  d arm delete (orphan)  D delete all orphans  t theme  c config  ? help"
+		return []footerToken{
+			{key: "d", label: "arm delete (orphan)", primary: true},
+			{key: "D", label: "delete all orphans", primary: true},
+			{key: "up/down", label: "select"},
+			{key: "t", label: "theme"},
+			{key: "c", label: "config"},
+			{key: "tab", label: "zones"},
+			{key: ",//", label: "subs"},
+			helpToken(),
+		}
 	case m.sub == subSettingsTemplates:
-		text = "tab zones  ,// subs  up/down select  enter open  a default  t theme  c config  ? help"
+		return []footerToken{
+			{key: "enter", label: "open", primary: true},
+			{key: "a", label: "default", primary: true},
+			{key: "up/down", label: "select"},
+			{key: "t", label: "theme"},
+			{key: "c", label: "config"},
+			{key: "tab", label: "zones"},
+			{key: ",//", label: "subs"},
+			helpToken(),
+		}
 	case (m.sub == subSettingsLaws || m.sub == subSettingsPersonas || m.sub == subSettingsSkills) && m.deletePending:
-		text = "d confirm delete  esc cancel"
+		return []footerToken{
+			{key: "d", label: "confirm delete", primary: true},
+			{key: "esc", label: "cancel"},
+		}
 	case m.sub == subSettingsLaws || m.sub == subSettingsPersonas || m.sub == subSettingsSkills:
-		text = "tab zones  ,// subs  up/down select  enter open  n new  e edit  d arm delete  p skills (persona)  t theme  c config  ? help"
+		return []footerToken{
+			{key: "enter", label: "open", primary: true},
+			{key: "n", label: "new", primary: true},
+			{key: "e", label: "edit", primary: true},
+			{key: "d", label: "arm delete"},
+			{key: "p", label: "skills (persona)"},
+			{key: "up/down", label: "select"},
+			{key: "t", label: "theme"},
+			{key: "c", label: "config"},
+			{key: "tab", label: "zones"},
+			{key: ",//", label: "subs"},
+			helpToken(),
+		}
 	case m.sub == subStatsLogs:
-		text = "tab zones  ,// subs  up/down select row  pgup/pgdn scroll  g/G top/bottom  r refresh  ? help"
+		return []footerToken{
+			{key: "up/down", label: "select row", primary: true},
+			{key: "r", label: "refresh", primary: true},
+			{key: "pgup/pgdn", label: "scroll"},
+			{key: "g/G", label: "top/bottom"},
+			{key: "tab", label: "zones"},
+			{key: ",//", label: "subs"},
+			helpToken(),
+		}
 	case m.sub == subStatsGeneral:
-		text = "tab zones  ,// subs  ← → period (7d / 30d / all)  r refresh  ? help"
+		return []footerToken{
+			{key: "←/→", label: "period (7d / 30d / all)", primary: true},
+			{key: "r", label: "refresh"},
+			{key: "tab", label: "zones"},
+			{key: ",//", label: "subs"},
+			helpToken(),
+		}
 	case m.sub == subGraph:
-		text = "tab zones  ,// subs  j/k move  pgup/pgdn scroll  g/G top/bottom  enter open  ? help"
+		return []footerToken{
+			{key: "enter", label: "open", primary: true},
+			{key: "j/k", label: "move"},
+			{key: "pgup/pgdn", label: "scroll"},
+			{key: "g/G", label: "top/bottom"},
+			{key: "tab", label: "zones"},
+			{key: ",//", label: "subs"},
+			helpToken(),
+		}
 	default:
-		text = "tab zones  ,// subs  up/down select  pgup/pgdn scroll  g/G top/bottom  enter open  n new  m move  ? help"
+		return []footerToken{
+			{key: "enter", label: "open", primary: true},
+			{key: "n", label: "new", primary: true},
+			{key: "m", label: "move", primary: true},
+			{key: "up/down", label: "select"},
+			{key: "pgup/pgdn", label: "scroll"},
+			{key: "g/G", label: "top/bottom"},
+			{key: "tab", label: "zones"},
+			{key: ",//", label: "subs"},
+			helpToken(),
+		}
 	}
-	return "\n" + indentBlock(m.styles.footer.Render(text), 2)
 }

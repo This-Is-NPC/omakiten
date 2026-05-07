@@ -388,9 +388,19 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		// reflects the latest state.
 		m.moveMode = false
 		m.status = ""
+		m.pushHistory()
 		m.top = topHome
 		if err := m.loadHome(); err != nil {
 			m.status = err.Error()
+		}
+		return true
+	case "ctrl+o":
+		// Vim-style "older": pop the back-stack to restore the most
+		// recent (top, sub). Silent no-op when the stack is empty so
+		// repeated presses at the start of a session do not spam status.
+		if m.popHistory() {
+			m.moveMode = false
+			m.status = ""
 		}
 		return true
 	case "esc":
@@ -400,30 +410,37 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 			return true
 		}
 	case "tab":
+		m.pushHistory()
 		m.cycleTop(1)
 		m.moveMode = false
 		return true
 	case "shift+tab":
+		m.pushHistory()
 		m.cycleTop(-1)
 		m.moveMode = false
 		return true
 	case "1":
+		m.pushHistory()
 		m.jumpTop(topTasks)
 		m.moveMode = false
 		return true
 	case "2":
+		m.pushHistory()
 		m.jumpTop(topStats)
 		m.moveMode = false
 		return true
 	case "3":
+		m.pushHistory()
 		m.jumpTop(topSettings)
 		m.moveMode = false
 		return true
 	case ",":
+		m.pushHistory()
 		m.cycleSub(-1)
 		m.moveMode = false
 		return true
 	case "/":
+		m.pushHistory()
 		m.cycleSub(1)
 		m.moveMode = false
 		return true

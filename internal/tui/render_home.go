@@ -118,14 +118,27 @@ func (m *Model) handleHomeKey(msg tea.KeyMsg) {
 	}
 }
 
-// selectHomeProject swaps the active project context, reloads the per-project
-// read-model, and lands on the Board view. The previous selection scratch
-// state (cursors, scroll) is reset so the new project does not inherit it.
+// selectHomeProject swaps the active project context, reloads the
+// per-project read-model, and restores the user's last (top, sub) for
+// the per-project surface. The (top, sub) is preserved across project
+// hops in T3 so power users who use Home as a project switcher keep
+// their working zone — picking a different project should not eject
+// them from `Stats › Logs` back to the board. View-specific cursors
+// (board / table / graph / logs) still reset because they reference
+// project-scoped data the new bundle does not share.
+//
+// The home sentinel is replaced with the canonical Tasks › Board only
+// when the session was started in Home (i.e. the previous top was
+// `topHome`) — without that, "the user picked their first project"
+// would land on an undefined sub.
 func (m *Model) selectHomeProject(project domain.Project) error {
 	m.project = project.Context()
 	m.lastProjectRoot = project.RootPath
-	m.top = topTasks
-	m.sub = subBoard
+	if m.top == topHome {
+		m.top = topTasks
+		m.sub = subBoard
+	}
+	m.syncEntityKindFromSub()
 	m.colIdx = 0
 	m.cardIdx = 0
 	m.boardColScroll = 0
@@ -326,14 +339,24 @@ func (m Model) renderHomeEmptyHint() string {
 	return m.styles.hintBox.Width(m.hintBoxWidth()).Render(strings.Join(lines, "\n"))
 }
 
-// homeFooterHint returns the footer hint shown while on Home. Kept inline
-// (not in render_chrome) so the Home-specific keymap lives next to the rest
+// homeFooterTokens returns the footer hint shown while on Home as the
+// structured token list `renderFooter` expects. Kept inline (not in
+// render_chrome) so the Home-specific keymap lives next to the rest
 // of the Home rendering — easier to keep in sync as the view evolves.
-func (m Model) homeFooterHint() string {
+func (m Model) homeFooterTokens() []footerToken {
 	if len(m.homeProjects) == 0 {
-		return "q quit  ? help"
+		return []footerToken{
+			{key: "q", label: "quit"},
+			helpToken(),
+		}
 	}
-	return "up/down move  enter open  ctrl+h refresh  q quit  ? help"
+	return []footerToken{
+		{key: "enter", label: "open", primary: true},
+		{key: "up/down", label: "move"},
+		{key: "ctrl+h", label: "refresh"},
+		{key: "q", label: "quit"},
+		helpToken(),
+	}
 }
 
 // homeHeaderTitle renders the chromeless Home title used by render_chrome

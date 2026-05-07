@@ -90,6 +90,13 @@ type Model struct {
 	moveMode bool
 	helpOpen bool
 	helpAll  bool
+	// viewHistory is the in-memory back-stack populated whenever the user
+	// makes an intentional zone/sub navigation (tab / digit / `,`/`/`,
+	// `0`, `ctrl+h`). Bound to a small cap so long sessions cannot grow
+	// it unbounded; `ctrl+o` (vim-style "older") pops the most recent
+	// entry. Refreshes and overlay close events do not touch this — the
+	// stack is a record of *navigation*, not of every state change.
+	viewHistory []navState
 
 	taskScreen      taskScreenMode
 	taskID          int64
@@ -409,43 +416,46 @@ func (m Model) onHome() bool {
 	return m.top == topHome
 }
 
-// legacyNavOrder preserves the pre-refactor flat traversal order
-// [board, table, graph, settings, logs, stats] used by `left`/`right`
-// inside the table/graph/logs handlers. AC9 keeps left/right behavior
-// untouched in T1/T2; T3 will harmonize this so it can retire. Settings
-// lands on its canonical entry point (`subSettingsGeneral`) so the cycle
-// arrives on a deterministic sub instead of "whatever was last open".
-var legacyNavOrder = []navState{
-	{topTasks, subBoard},
-	{topTasks, subTable},
-	{topTasks, subGraph},
-	{topSettings, subSettingsGeneral},
-	{topStats, subStatsLogs},
-	{topStats, subStatsGeneral},
+// viewHistoryCap bounds how many back-stack entries the model keeps.
+// 16 is roomy enough for typical session traversal without letting the
+// slice grow unboundedly across long-running TUI sessions.
+const viewHistoryCap = 16
+
+// pushHistory records the *current* (top, sub) before a navigation
+// changes them, so a subsequent `ctrl+o` can restore it. Skips
+// duplicate consecutive entries (e.g. pressing `1` twice when already
+// on Tasks) and drops the oldest entry when the stack hits its cap.
+func (m *Model) pushHistory() {
+	entry := navState{top: m.top, sub: m.sub}
+	if n := len(m.viewHistory); n > 0 && m.viewHistory[n-1] == entry {
+		return
+	}
+	m.viewHistory = append(m.viewHistory, entry)
+	if extra := len(m.viewHistory) - viewHistoryCap; extra > 0 {
+		m.viewHistory = m.viewHistory[extra:]
+	}
 }
 
-// cycleLegacyView advances the active (top, sub) along legacyNavOrder by
-// delta positions, wrapping at the ends. Used only by the per-view list
-// handlers to keep left/right semantics identical to the pre-refactor
-// flat cycle (board → table → graph → settings → logs → stats → board).
-// Mutates `m.entityKind` when the cycle lands on a Settings entity sub
-// so the entity handler reads the right list — Settings/general resets
-// nothing because it is read-only.
-func (m *Model) cycleLegacyView(delta int) {
-	current := navState{top: m.top, sub: m.sub}
-	idx := 0
-	for i, candidate := range legacyNavOrder {
-		if candidate == current {
-			idx = i
-			break
-		}
+// popHistory restores the most recent (top, sub) recorded by
+// pushHistory, returning true on success. No-op when the stack is
+// empty so `ctrl+o` at the start of a session is silently dropped.
+func (m *Model) popHistory() bool {
+	n := len(m.viewHistory)
+	if n == 0 {
+		return false
 	}
-	n := len(legacyNavOrder)
-	next := legacyNavOrder[((idx+delta)%n+n)%n]
-	m.top = next.top
-	m.sub = next.sub
+	prev := m.viewHistory[n-1]
+	m.viewHistory = m.viewHistory[:n-1]
+	m.top = prev.top
+	m.sub = prev.sub
 	m.syncEntityKindFromSub()
+	return true
 }
+
+// (T3 retired the legacy left/right flat cycle — `cycleLegacyView` and
+// `legacyNavOrder` are gone. AC9 from T1 / T2 only required behavior
+// preservation across the refactor; T3 explicitly drops it so left and
+// right are unambiguously within-view bindings everywhere.)
 
 // refreshTickMsg drives the realtime refresh loop — emitted every second
 // while the user is on a "live" view (board, table, etc.) and not editing.
