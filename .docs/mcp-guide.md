@@ -27,7 +27,7 @@ Existing harness config is preserved. Omakiten refuses to replace an existing `o
 
 ## Tools
 
-The full surface is the source of truth in `internal/mcp/adapter.go:ListTools`. Currently 28 tools, grouped below.
+The full surface is the source of truth in `internal/mcp/adapter.go:ListTools`. Currently 29 tools, grouped below.
 
 ### Project & workflow
 
