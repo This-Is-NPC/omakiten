@@ -55,10 +55,13 @@ func (m *Model) handleLogsKey(msg tea.KeyMsg) {
 }
 
 // syncLogsScroll keeps m.logsScroll aligned so the selected log row stays
-// inside the viewport. Each log row is exactly 1 line (no wrapping) so this is
-// a simple cursor-following scroll — no height heuristic needed.
+// inside the viewport. `sliceScrollRows` reserves up to 2 of the panel
+// rows for "▲ above" / "▼ below" hints, so the data window the cursor
+// can actually live in is `logsViewportRows() - 2`. Pass that effective
+// size to followCursor — otherwise the cursor lands in the reserved
+// zone and the render clips it without anyone scrolling.
 func (m *Model) syncLogsScroll() {
-	m.logsScroll = followCursor(m.logsScroll, m.logsSelected, m.logsViewportRows(), len(m.logs))
+	m.logsScroll = followCursor(m.logsScroll, m.logsSelected, scrollDataRows(m.logsViewportRows()), len(m.logs))
 }
 
 // logsViewportRows returns how many data rows fit in the activity log

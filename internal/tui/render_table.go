@@ -64,11 +64,12 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 	}
 }
 
-// syncTableScroll keeps m.tableScroll aligned so the selected task row stays
-// in view. Each row is exactly 1 line — no height heuristic, same pattern as
-// syncLogsScroll.
+// syncTableScroll keeps m.tableScroll aligned so the selected task row
+// stays in view. Same caveat as syncLogsScroll: `sliceScrollRows`
+// reserves up to 2 rows for hints, so the data-row window for the
+// cursor is `tableViewportRows() - 2`.
 func (m *Model) syncTableScroll() {
-	m.tableScroll = followCursor(m.tableScroll, m.selected, m.tableViewportRows(), len(m.tasks))
+	m.tableScroll = followCursor(m.tableScroll, m.selected, scrollDataRows(m.tableViewportRows()), len(m.tasks))
 }
 
 // tableViewportRows returns how many task rows fit in the table panel after

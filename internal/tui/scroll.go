@@ -1,5 +1,18 @@
 package tui
 
+// scrollDataRows reduces the viewport budget reported by panels that
+// route through `sliceScrollRows`. The renderer reserves up to 2 of
+// those rows for "▲ above" / "▼ below" hints, so the window the cursor
+// can actually live in is `viewport - 2`. Returning at least 1 keeps
+// followCursor responsive on tiny terminals instead of locking up.
+func scrollDataRows(viewport int) int {
+	const reservedHints = 2
+	if viewport <= reservedHints {
+		return 1
+	}
+	return viewport - reservedHints
+}
+
 // followCursor returns the new scroll offset that keeps `cursor` inside the
 // visible window of length `viewport`, given the current `scroll`. The
 // rule is symmetric: if the cursor moves above the window, scroll equals
