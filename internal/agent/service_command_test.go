@@ -117,6 +117,68 @@ func TestResolveCommandRestHandoffsPresent(t *testing.T) {
 	}
 }
 
+// TestResolveCommandTemplatesJITRendering pins the just-in-time pattern:
+// when a command has a bound template, the rendered Markdown must list the
+// template metadata (slug, name, default kind, description) and a pointer to
+// `templates.show`, but it must NOT embed the template body. Embedding the
+// body would defeat the entire point of JIT — the body is large and the agent
+// only needs it at the moment of materialization.
+func TestResolveCommandTemplatesJITRendering(t *testing.T) {
+	fixture := newAgentFixture(t)
+	wireBindingFixtures(t, fixture)
+
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-implement"})
+	if err != nil {
+		t.Fatalf("ResolveCommand() error = %v", err)
+	}
+	if !strings.Contains(resp.Markdown, "## Templates") {
+		t.Fatal("Markdown missing ## Templates section")
+	}
+	if !strings.Contains(resp.Markdown, "templates.show") {
+		t.Fatal("Markdown missing templates.show pointer — JIT contract broken")
+	}
+	// Pull-request body fixture starts with `## Before` — that body must NOT
+	// appear inline. If it does, the renderer regressed to embedding bodies.
+	if strings.Contains(resp.Markdown, "## Before") {
+		t.Fatalf("Template body leaked into Markdown — JIT contract broken:\n%s", resp.Markdown)
+	}
+	// Slug must still be present so the agent knows which template to fetch.
+	if !strings.Contains(resp.Markdown, "pull-request") {
+		t.Fatal("Markdown missing template slug — agent has no anchor for templates.show")
+	}
+}
+
+// TestLawBodiesCarryFewShotExamples pins the few-shot pattern Anthropic
+// recommends: load-bearing laws should ship at least one ❌/✅ example so the
+// agent learns from concrete cases instead of abstract directives. Accidental
+// over-compression of these law bodies would silently strip the examples — a
+// regression that is hard to spot without an explicit assertion.
+func TestLawBodiesCarryFewShotExamples(t *testing.T) {
+	fixture := newAgentFixture(t)
+	wireBindingFixtures(t, fixture)
+
+	loadBearing := []string{"template-fidelity"} // wired in the fixture's law catalog
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-implement"})
+	if err != nil {
+		t.Fatalf("ResolveCommand() error = %v", err)
+	}
+	for _, slug := range loadBearing {
+		var body string
+		for _, l := range resp.Laws {
+			if l.Slug == slug {
+				body = l.Body
+				break
+			}
+		}
+		if body == "" {
+			t.Fatalf("law %s not present in resolved laws", slug)
+		}
+		if !strings.Contains(body, "❌") || !strings.Contains(body, "✅") {
+			t.Fatalf("law %s body missing ❌/✅ example markers:\n%s", slug, body)
+		}
+	}
+}
+
 // TestResolveCommandWithoutCatalogsReturnsAction guards the degraded path:
 // when the runtime is unwired (no skills/laws/personas/commands catalogs),
 // ResolveCommand still surfaces the canonical action text so the MCP harness
@@ -145,7 +207,11 @@ func wireBindingFixtures(t *testing.T, fixture agentFixture) {
 	})
 	fixture.service.SetLawCatalog(func() []LawInfo {
 		return []LawInfo{
-			{Slug: "template-fidelity", Name: "Template fidelity", Severity: "warning", Body: "Do not invent fields."},
+			// Body deliberately mirrors the production shape: directive paragraph
+			// followed by ❌/✅ examples. The few-shot test asserts the markers
+			// are forwarded verbatim through ResolveCommand's renderer, so any
+			// future compression that strips them surfaces here.
+			{Slug: "template-fidelity", Name: "Template fidelity", Severity: "warning", Body: "Do not invent fields.\n\n❌ Wrote `Closes #40`.\n✅ Left References blank."},
 			{Slug: "project-scope-only", Name: "Project scope only", Severity: "error", Body: "Never mix projects."},
 		}
 	})

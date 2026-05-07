@@ -22,59 +22,46 @@ import (
 //	          okt-implement → (move to review)
 //	okt-document is parallel: surfaces drift; if material work is needed,
 //	suggests `okt-create` to spin up a documentation task.
+// Action texts deliberately stop short of repeating constraints already
+// declared inline in `## Laws`. Each one frames the role, names the canonical
+// tool, and ends with a REST-style handoff. Anthropic's context-engineering
+// guidance is the rubric: keep prompts at the right altitude, defer body-heavy
+// data via just-in-time fetches, and let bound laws/templates do the
+// constraint work instead of restating it in prose.
 var commandActions = map[string]string{
-	"okt": "Load the active Omakiten project state. Call `project.overview` to fetch identity, " +
-		"pending count, workflow buckets, recent context, and the next-step prompt. " +
-		"Report the snapshot to the user. " +
-		"Next: suggest `okt-resume` to scan likely-next work, or `okt-imagine` if the user " +
-		"wants to explore a new direction before committing to a task.",
+	"okt": "Load the active project state via `project.overview`. Report the snapshot to the user. " +
+		"Next: suggest `okt-resume` to scan likely-next work, or `okt-imagine` to explore a new direction.",
 
-	"okt-imagine": "Take the role of a product owner running discovery. The task does not exist yet — " +
-		"sketch the problem, the actors, and possible shapes of the solution. Call `project.overview` " +
-		"and `tasks.list` to ground yourself in current work; ask clarifying questions; surface " +
-		"hypotheses freely (template-fidelity is intentionally disabled for this command). " +
-		"Next: when the shape is clear, suggest `okt-create` to materialize the user story.",
+	"okt-imagine": "Take the role of a product owner in open discovery — no task exists yet. Ground yourself " +
+		"with `project.overview` and `tasks.list`, ask clarifying questions, and sketch hypotheses freely " +
+		"(template-fidelity is disabled here on purpose). Next: when the shape is clear, suggest `okt-create`.",
 
-	"okt-create": "Take the role of a product owner authoring the task. Run a feasibility check first — " +
-		"if the request is not implementable in the current state, stop and report technical reasons, " +
-		"blockers, and viable alternatives without creating anything. When feasible, ask any clarifying " +
-		"questions still pending, then call `tasks.create_intent` with the user-story template bound to " +
-		"this command (fill Description, Acceptance Criteria, Definition of Done, Scope in/out, " +
-		"Feasibility note — no fabricated content). If it returns `requires_confirmation`, ask the user " +
-		"whether to continue an existing task or create a separate confirmed task. " +
-		"Next: suggest the user create the task branch and add a `#self-branch` comment (use the " +
-		"`comment-selfbranch` template via `comments.add` with `template_slug`), then move the task " +
-		"to dev to unlock `okt-continue` or `okt-implement`.",
+	"okt-create": "Take the role of a product owner authoring the task. Apply feasibility-gate first — " +
+		"infeasible requests stop here with the report, no task created. Otherwise call " +
+		"`templates.show user-story` to fetch the scaffold, fill it per template-fidelity, then " +
+		"`tasks.create_intent` with the filled description. The response carries `confirmation` and " +
+		"`similar_tasks` when ambiguity exists — surface them to the user verbatim and let them choose. " +
+		"Next: suggest the user create the branch, add a `#self-branch` comment via `comments.add` " +
+		"(template_slug=`comment-selfbranch`), and move the task to dev.",
 
-	"okt-resume": "Take the role of an engineer scanning for next work. Call `project.resume` to identify " +
-		"likely continuation points, blocked/dependent work, and recent handoff context. Report the " +
-		"top candidates with one-line rationale. " +
-		"Next: when the user picks a task, suggest `okt-continue` with that task id to load the checkpoint.",
+	"okt-resume": "Take the role of an engineer scanning for next work. Call `project.resume` and report " +
+		"top candidates with one-line rationale. Next: when the user picks a task, suggest `okt-continue` " +
+		"with that task id.",
 
-	"okt-continue": "Take the role of an engineer reading a checkpoint — your only job is to understand " +
-		"where the task stopped. Call `tasks.continue` for the requested task id. Only continue if the " +
-		"task belongs to the active project; otherwise follow the coded guidance. Inspect the comments " +
-		"and recent context, summarize the last decision, the open questions, and the immediate next " +
-		"increment. Do not start coding here. " +
-		"Next: suggest `okt-implement` with the same task id to execute the next increment.",
+	"okt-continue": "Take the role of an engineer reading a checkpoint — understand where the task stopped, " +
+		"do not start coding. Call `tasks.continue` for the task id, then summarize the last decision, " +
+		"open questions, and the immediate next increment. Next: suggest `okt-implement` with the same id.",
 
-	"okt-implement": "Take the role of an engineer executing approved work. Call `tasks.continue` for the " +
-		"task id (if the user did not just run `okt-continue`) so you have its current state, then " +
-		"implement the next increment in small coherent steps. Add or update tests for new and impacted " +
-		"behavior. Run them; on failure analyze root cause and apply targeted fixes — cap the cycle at " +
-		"three attempts (bounded-self-review). When commits are needed, follow conventional-commits in " +
-		"English, one intent per commit. Document material changes inline (no silent behavior changes). " +
-		"Next: when the increment is validated, suggest the user add a `#resume` comment (use the " +
-		"`comment-resume` template via `comments.add` with `template_slug`), then move the task to " +
-		"review to surface it for closing review.",
+	"okt-implement": "Take the role of an engineer executing approved work. If you do not have the task " +
+		"state, call `tasks.continue` first. Implement the next increment, honoring every law above. " +
+		"When ready to draft the PR, call `templates.show pull-request` to fetch the scaffold. " +
+		"Next: suggest the user add a `#resume` comment via `comments.add` " +
+		"(template_slug=`comment-resume`) and move the task to review.",
 
-	"okt-document": "Take the role of a documentation curator. Survey the project's narrative artifacts — " +
-		"`.docs/architecture.md`, `.docs/requirements.md`, `README.md`, `CONTRIBUTING.md`, and any other " +
-		"top-level docs. Compare each claim against current code: dependency versions, file paths, " +
-		"declared patterns, public surface. List drift items with file references and suggested wording. " +
-		"Do not edit in place. " +
-		"Next: if material work is needed, suggest `okt-create` to spin up a documentation task that the " +
-		"engineer persona will execute via the regular workflow.",
+	"okt-document": "Take the role of a documentation curator. Survey `.docs/architecture.md`, " +
+		"`.docs/requirements.md`, `README.md`, `CONTRIBUTING.md`, and other top-level docs. List drift " +
+		"items with file references and suggested wording — do not edit in place. " +
+		"Next: if material work is needed, suggest `okt-create` to spin up a documentation task.",
 }
 
 // commandDescriptions match the prompts/list metadata. Keeping them next to
@@ -342,24 +329,57 @@ func renderCommandMarkdown(resp ResolveCommandResponse) string {
 			if label == "" {
 				label = law.Slug
 			}
-			fmt.Fprintf(&b, "- **[%s] %s** — %s\n", law.Severity, label, strings.TrimSpace(law.Body))
+			body := strings.TrimSpace(law.Body)
+			// Multi-line law bodies (those carrying ❌/✅ examples or a second
+			// paragraph) need every continuation line indented two spaces so
+			// they remain visually nested under the bullet — otherwise the
+			// example lines render as orphan paragraphs between laws.
+			if idx := strings.Index(body, "\n"); idx >= 0 {
+				head := body[:idx]
+				tail := body[idx+1:]
+				fmt.Fprintf(&b, "- **[%s] %s** — %s\n", law.Severity, label, head)
+				for _, line := range strings.Split(tail, "\n") {
+					if line == "" {
+						fmt.Fprintln(&b)
+						continue
+					}
+					fmt.Fprintf(&b, "  %s\n", line)
+				}
+				continue
+			}
+			fmt.Fprintf(&b, "- **[%s] %s** — %s\n", law.Severity, label, body)
 		}
 	}
 
 	if len(resp.Templates) > 0 {
+		// Just-in-time pattern: ship template metadata only, never the body.
+		// Bodies are large (the pull-request scaffold alone is ~700 tokens) and
+		// the agent only needs them at the moment of materialization. The
+		// per-command action text instructs the agent to call
+		// `templates.show <slug>` when it is ready to fill the scaffold; the
+		// `template-fidelity` law ships inline as a constraint reminder so the
+		// fetch happens with the right framing. This trades one extra MCP
+		// round-trip on the rare materialization step for hundreds of tokens
+		// saved on every prompt resolution.
 		fmt.Fprintf(&b, "\n## Templates\n")
 		for _, t := range resp.Templates {
-			heading := t.Name
-			if heading == "" {
-				heading = t.Slug
+			label := t.Name
+			if label == "" {
+				label = t.Slug
+			}
+			line := fmt.Sprintf("- **%s**", t.Slug)
+			if label != t.Slug {
+				line += fmt.Sprintf(" — %s", label)
 			}
 			if t.Default != "" {
-				fmt.Fprintf(&b, "\n### %s (default: %s)\n", heading, t.Default)
-			} else {
-				fmt.Fprintf(&b, "\n### %s\n", heading)
+				line += fmt.Sprintf(" (default: %s)", t.Default)
 			}
-			fmt.Fprintf(&b, "%s\n", strings.TrimSpace(t.Body))
+			if desc := strings.TrimSpace(t.Description); desc != "" {
+				line += fmt.Sprintf(" — %s", desc)
+			}
+			fmt.Fprintln(&b, line)
 		}
+		fmt.Fprintln(&b, "\nFetch the body with `templates.show <slug>` when ready to fill it.")
 	}
 
 	fmt.Fprintf(&b, "\n## Action\n%s\n", resp.Action)
