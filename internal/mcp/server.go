@@ -143,7 +143,7 @@ func handleRPC(ctx context.Context, adapter *Adapter, request rpcRequest) (rpcRe
 			base.Error = &rpcError{Code: -32602, Message: "invalid prompts/get params"}
 			break
 		}
-		result, err := GetPrompt(params.Name, params.Arguments)
+		result, err := adapter.GetPrompt(ctx, params.Name, params.Arguments)
 		if err != nil {
 			base.Error = errorPayload(err)
 			break

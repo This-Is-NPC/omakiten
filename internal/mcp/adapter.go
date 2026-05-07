@@ -63,20 +63,21 @@ type ToolResult struct {
 }
 
 type ContentItem struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type string         `json:"type"`
+	Text string         `json:"text"`
+	Meta map[string]any `json:"_meta,omitempty"`
 }
 
 func Tools() []ToolDefinition {
 	return []ToolDefinition{
 		{Name: "project.overview", Description: "Return active project identity, workflow awareness, pending count, recent context, and next-step prompt.", InputSchema: selectorSchema()},
 		{Name: "project.resume", Description: "Return project distribution, likely next work, blocked work, dependencies, recent context, and workflow state.", InputSchema: selectorSchema()},
-		{Name: "tasks.continue", Description: "Load a project-owned task with dependencies, comments, workflow bucket, and recent handoff context.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to continue")}, []string{"task_id"})},
+		{Name: "tasks.continue", Description: "Load a project-owned task with dependencies, comments, workflow bucket, and recent handoff context. Set include_workflow=false on subsequent calls in a session where the workflow shape was already loaded by /okt to save tokens.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to continue"), "include_workflow": booleanSchema("Optional override for config.mcp.include_workflow_in_continue. Pass false to skip the workflow block when /okt already loaded it.")}, []string{"task_id"})},
 		{Name: "tasks.list", Description: "List active project tasks, optionally filtered by workflow bucket.", InputSchema: objectSchema(map[string]any{"bucket_key": stringSchema("Optional workflow bucket key")}, nil)},
 		{Name: "tasks.create_intent", Description: "Create a task intent after checking for similar or related project tasks and requiring confirmation when needed.", InputSchema: createTaskSchema()},
 		{Name: "tasks.create", Description: "Create a task directly through Omakiten's shared task service.", InputSchema: createTaskSchema()},
 		{Name: "tasks.move", Description: "Move a task through an allowed workflow transition.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "bucket_key": stringSchema("Target bucket key")}, []string{"task_id", "bucket_key"})},
-		{Name: "comments.add", Description: "Add a human or agent comment to a project-owned task. Optionally tag the comment with one or more tag names (normalized to kebab-case).", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "body": stringSchema("Comment body"), "author_type": stringSchema("human or agent"), "tags": arrayStringSchema("Optional tag names to attach to this comment (e.g. [\"resume\", \"deployment-notes\"])")}, []string{"task_id", "body"})},
+		{Name: "comments.add", Description: "Add a human or agent comment to a project-owned task. Optionally tag the comment with one or more tag names (normalized to kebab-case) or pre-fill its body from a loaded template.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "body": stringSchema("Comment body"), "author_type": stringSchema("human or agent"), "tags": arrayStringSchema("Optional tag names to attach to this comment (e.g. [\"resume\", \"deployment-notes\"])"), "template_slug": stringSchema("Optional slug of a loaded template; when set, the template body is merged into the comment (user content first, template appended).")}, []string{"task_id", "body"})},
 		{Name: "comments.list", Description: "List comments for a project-owned task.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id")}, []string{"task_id"})},
 		{Name: "task_activity.list", Description: "Return the unified activity feed for a task: comments and system events (task.created, task.moved, task.completed) ordered chronologically.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "order": stringSchema("Sort order: 'asc' (chronological, default) or 'desc' (newest first)")}, []string{"task_id"})},
 		{Name: "dependencies.add", Description: "Add a project-scoped task dependency with cycle prevention.", InputSchema: dependencySchema(false)},
@@ -108,13 +109,28 @@ func Resources() []ResourceDefinition {
 	}
 }
 
+// promptArguments declares the per-command argument list. Keeping it next to
+// Prompts() means new commands only need a description in the agent layer
+// plus, optionally, an entry here when they take inputs.
+var promptArguments = map[string][]PromptArgument{
+	"okt-imagine":   {{Name: "topic", Description: "Topic, problem, or feature seed to explore", Required: false}},
+	"okt-create":    {{Name: "description", Description: "Task description", Required: true}},
+	"okt-continue":  {{Name: "task_id", Description: "Task id", Required: true}},
+	"okt-implement": {{Name: "task_id", Description: "Task id to implement", Required: false}},
+	"okt-document":  {{Name: "focus", Description: "Optional area to focus the survey (e.g. 'README', 'architecture')", Required: false}},
+}
+
 func Prompts() []PromptDefinition {
-	return []PromptDefinition{
-		{Name: "okt", Description: "Contextualize the agent with active Omakiten project state."},
-		{Name: "okt-create", Description: "Create a task intent with duplicate/related-work detection.", Arguments: []PromptArgument{{Name: "description", Description: "Task description", Required: true}}},
-		{Name: "okt-continue", Description: "Continue a specific Omakiten task by id.", Arguments: []PromptArgument{{Name: "task_id", Description: "Task id", Required: true}}},
-		{Name: "okt-resume", Description: "Resume from the most relevant active project checkpoint."},
+	names := agent.CommandNames()
+	out := make([]PromptDefinition, 0, len(names))
+	for _, name := range names {
+		out = append(out, PromptDefinition{
+			Name:        name,
+			Description: agent.CommandDescription(name),
+			Arguments:   promptArguments[name],
+		})
 	}
+	return out
 }
 
 func (a *Adapter) CallTool(ctx context.Context, name string, args map[string]any) (ToolResult, error) {
@@ -321,23 +337,49 @@ func (a *Adapter) ReadResource(ctx context.Context, uri string) (ToolResult, err
 	}
 }
 
-func GetPrompt(name string, args map[string]any) (PromptResult, error) {
-	switch name {
-	case "okt":
-		return promptResult("Use the `project.overview` tool to load active Omakiten project identity, pending work, workflow state, recent context, and the next-step prompt."), nil
-	case "okt-create":
-		return promptResult("Use the `tasks.create_intent` tool with the provided description. If it returns `requires_confirmation`, ask the user whether to continue an existing task or create a separate confirmed task."), nil
-	case "okt-continue":
-		return promptResult("Use the `tasks.continue` tool for the requested task id. Only continue if the task belongs to the active project; otherwise follow the coded guidance."), nil
-	case "okt-resume":
-		return promptResult("Use the `project.resume` tool to identify likely continuation points, blocked/dependent work, recent context, and current workflow state."), nil
-	default:
-		return PromptResult{}, fmt.Errorf("unknown MCP prompt %q", name)
+// GetPrompt resolves the bound persona, skills, laws, and templates for the
+// requested `okt-*` command and returns a single PromptMessage carrying the
+// composed markdown. Callers route through the adapter so the agent service's
+// command catalog drives the response — when no service is wired (older
+// runtimes / tests), GetPrompt falls back to the action text alone so the
+// prompt still functions.
+//
+// When the bundle's `config.mcp.cache_prompts` is true (the default), the
+// returned content carries a `_meta.anthropic.cache_control` hint so
+// Anthropic-aware MCP clients can reuse the cached prompt across calls.
+// Unaware clients simply ignore the metadata field — there is no protocol
+// risk in always emitting it, but the toggle exists for users who want to
+// observe pre/post caching behavior or work around a buggy client.
+func (a *Adapter) GetPrompt(ctx context.Context, name string, _ map[string]any) (PromptResult, error) {
+	if a == nil || a.service == nil {
+		text := agent.CommandActionFallback(name)
+		if text == "" {
+			return PromptResult{}, fmt.Errorf("unknown MCP prompt %q", name)
+		}
+		// No service wired — emit the cache hint anyway since the prompt is
+		// still byte-stable (it is just the canonical action text). Clients
+		// that cache benefit; clients that don't ignore.
+		return promptResult(text, text, true), nil
 	}
+	resolved, err := a.service.ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
+	if err != nil {
+		return PromptResult{}, err
+	}
+	description := resolved.Description
+	if description == "" {
+		description = resolved.Action
+	}
+	return promptResult(description, resolved.Markdown, a.service.SettingsCachePrompts()), nil
 }
 
-func promptResult(text string) PromptResult {
-	return PromptResult{Description: text, Messages: []PromptMessage{{Role: "user", Content: ContentItem{Type: "text", Text: text}}}}
+func promptResult(description, body string, cacheControl bool) PromptResult {
+	content := ContentItem{Type: "text", Text: body}
+	if cacheControl {
+		content.Meta = map[string]any{
+			"anthropic.cache_control": map[string]string{"type": "ephemeral"},
+		}
+	}
+	return PromptResult{Description: description, Messages: []PromptMessage{{Role: "user", Content: content}}}
 }
 
 func decodeArgs(args map[string]any, out any) error {
@@ -385,6 +427,7 @@ func createTaskSchema() map[string]any {
 	props["description"] = stringSchema("Task description or title text")
 	props["priority"] = stringSchema("Optional priority: low, normal, or high")
 	props["confirmed"] = booleanSchema("Set true after user confirmation")
+	props["template_slug"] = stringSchema("Optional slug of a loaded template; when set, the template body is merged into the description (user content first, template appended). Use templates.list to discover slugs.")
 	return objectSchema(props, []string{"description"})
 }
 
