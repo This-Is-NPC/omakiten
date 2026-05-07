@@ -39,6 +39,7 @@ const (
 // swapped without touching this file.
 type Repositories struct {
 	Tasks        app.TaskRepository
+	Projects     app.ProjectRepository
 	Workflow     *app.WorkflowService
 	Comments     app.CommentRepository
 	Dependencies app.DependencyRepository
@@ -124,6 +125,20 @@ type Model struct {
 	deletePending    bool
 	deleteKind       entityKind
 	deleteSlug       string
+
+	// home owns the multi-project picker shown when okt tui is launched
+	// without a resolvable project. The picker component handles cursor/
+	// scroll/keyboard navigation; the slices feed the row builder. Loaded
+	// lazily on entry to viewHome so projects/tags don't pay the query cost
+	// when the user opens the TUI inside a project.
+	homeProjects       []domain.Project
+	homeProjectTags    map[int64][]domain.Tag
+	homeProjectPending map[int64]int
+	homePicker         picker.Model
+	// lastProjectRoot is the root_path of the last project the user opened
+	// during the session. CLI-side cd-on-exit reads this after program.Run()
+	// returns so the parent shell wrapper can `cd` into the project.
+	lastProjectRoot string
 
 	logs         []domain.ActivityLog
 	logsSelected int
@@ -248,6 +263,12 @@ const (
 )
 
 var viewNames = []string{"BOARD", "TABLE", "GRAPH", "CONFIG", "LOGS"}
+
+// viewHome is the sentinel index for the multi-project Home screen.
+// It deliberately sits outside viewNames so tab/shift+tab/digit keys
+// never land on it — Home is reachable only via empty-project startup
+// or the dedicated ctrl+h binding.
+const viewHome = -1
 
 // refreshTickMsg drives the realtime refresh loop — emitted every second
 // while the user is on a "live" view (board, table, etc.) and not editing.
