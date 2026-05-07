@@ -111,6 +111,52 @@ A template `.md` whose frontmatter declares `default: <kind>` activates as the s
 
 The TUI's template-default picker offers exactly the kinds in this list.
 
+### `config.mcp`
+
+Tunes how MCP responses are shaped to fit the agent's context window. The full block is optional and so is every field inside it; omitted fields resolve to the canonical defaults in `internal/config/bundle.go` via the `Effective*` accessors. Pointer booleans (`*bool`) distinguish "not declared" from "declared `false`" — omitting `cache_prompts` keeps caching on, while writing `cache_prompts: false` is an explicit opt-out.
+
+```yaml
+config:
+  mcp:
+    recent_comment_limit: 5            # int >=0; 0 keeps default
+    max_comment_chars: 0               # int >=0; 0 keeps full bodies
+    include_workflow_in_continue: true # bool; omit to keep default true
+    cache_prompts: true                # bool; omit to keep default true
+```
+
+| Field | Type | Default | What it does |
+|---|---|---|---|
+| `recent_comment_limit` | int | `5` | Caps how many recent comments tools like `tasks.continue` and `project.overview` ship per call. Reverse-chronological — the most recent N. |
+| `max_comment_chars` | int | `0` (no truncation) | Truncates comment bodies past this many runes when shipped over MCP, appending `…`. Use to bound `tasks.continue` payloads on tasks with verbose `#resume` and `#documentation` comments. Does not affect `comments.list` (which is the read-the-full-thread endpoint). |
+| `include_workflow_in_continue` | `*bool` | `true` | Toggles the `workflow` block in `tasks.continue` responses. Per-call `include_workflow` argument overrides this default — set false once `/okt` already loaded the workflow shape for the session. |
+| `cache_prompts` | `*bool` | `true` | Emits a `_meta.anthropic.cache_control` hint on `prompts/get` content. Anthropic-aware MCP clients (recent Claude Code) reuse the cached prompt across calls; unaware clients ignore the hint silently. Disable only to work around a misbehaving client. |
+
+#### Validation rules (parse-time)
+
+| Rule | Error message shape |
+|---|---|
+| `recent_comment_limit` is negative | `config.mcp.recent_comment_limit cannot be negative` |
+| `max_comment_chars` is negative | `config.mcp.max_comment_chars cannot be negative` |
+
+A non-positive `recent_comment_limit` is silently coerced to the default by `EffectiveRecentCommentLimit()`, but a negative value is treated as a typo and rejected loudly.
+
+#### Worked example — taming a long-lived task
+
+A task with five long `#resume` comments (each ~1500 chars) ships ~6000 chars (~1500 tokens) of comments alone on every `tasks.continue` call. Combined with the workflow block (~150 tokens), the tool result lands at ~2400 tokens.
+
+Two changes cut that by more than half:
+
+```yaml
+config:
+  mcp:
+    recent_comment_limit: 3   # 5 → 3
+    max_comment_chars: 500    # 0 → 500
+```
+
+After: 3 comments × 500 chars = ~375 tokens for comments, no truncation on the most recent (it stays under 500). Workflow still ships (~150 tokens) unless you also add `include_workflow_in_continue: false` once `/okt` ran. Total: ~525 tokens — a ~78% reduction on the comment-heavy task.
+
+Cross-reference: `.docs/mcp-guide.md#anatomy-of-an-mcp-command` walks through how the tool result composes and which fields each setting trims.
+
 ### `config.views`
 
 Per-view defaults seeded into the TUI on startup. Every field is optional; omitted values fall back to canonical defaults via `Settings.EffectiveViews()` (`internal/config/bundle.go`).
@@ -278,7 +324,7 @@ The scope (`global` / `persona` / `project`) is **not** stored in the file — i
 
 ```yaml
 personas:
-  - slug: backend-agent
+  - slug: engineer
     skills: [go, sqlite, cli]   # optional, must be loaded slugs, no duplicates
     laws:   [workflow-enforced] # optional, must be loaded slugs
 ```
@@ -297,9 +343,13 @@ Frontmatter (`personaFrontmatter`):
 ---
 name: Backend Agent
 description: Owns server-side surface
+laws:                       # optional — merged with the persona's wiring laws
+  - project-scope-only
 ---
 Persona body…
 ```
+
+`laws:` declared in the frontmatter is merged with the same persona's `laws:` in the wiring file (union, dedup, frontmatter first). Use this when you want the law binding to live next to the persona authoring file rather than in `omakiten.yaml`.
 
 ### `projects`
 
@@ -330,6 +380,8 @@ description: Standard PR scaffold
 entity: pr                  # optional, free-form classifier
 default: pr                 # optional — must be one of config.template_defaults
 project: omakiten           # optional — scopes the default to a single project
+laws:                       # optional — laws bound to this template
+  - template-fidelity
 ---
 Body — used as the scaffold.
 ```
@@ -340,6 +392,35 @@ Template defaulting rules (`Bundle.TemplateByDefault`, `validateTemplateDefaults
 - `project: <slug>` scopes the default to one project; otherwise it is the global default.
 - Project-scoped wins over global when both exist for the same kind.
 - At most one template per `(default, project)` pair.
+
+Frontmatter `laws:` travels with the template — every law slug must resolve to a loaded law file. When the template is bound to an MCP command via `mcp_commands.<name>.templates`, these laws are folded into the command's effective law set so commands without a dedicated entry (e.g. PR creation flowing through `gh pr create`) still inherit the right guardrails when the template is shown via `templates.show`.
+
+### `mcp_commands`
+
+```yaml
+mcp_commands:
+  global:                       # reserved key — laws inherited by every okt-* prompt
+    laws: [template-fidelity]
+  okt-create:
+    persona: engineer      # optional — must be a loaded persona slug
+    laws: [workflow-enforced]   # optional — added on top of global
+    templates: [user-story]     # optional — bound template slugs
+  okt-imagine:
+    persona: engineer
+    laws_disabled:              # optional — opts out of inherited laws
+      - template-fidelity
+```
+
+Binds each `okt-*` MCP prompt to the persona, laws, and templates the agent receives in the resolved PromptMessage. The reserved `global:` slot supplies laws inherited by every command; per-command entries can declare additional `laws:` or remove inherited ones via `laws_disabled:`. See `.docs/guards-guide.md#agent-guardrails-laws-bound-to-commands-and-entities` for the resolution algorithm and worked examples.
+
+| Field | Type | Notes |
+|---|---|---|
+| `persona` | string | Must resolve to a loaded persona; ignored on the `global` slot. |
+| `laws` | list of slugs | Added to the effective law set; each slug must resolve to a loaded law. |
+| `laws_disabled` | list of slugs | Removed from the effective law set after the union. Cannot overlap with `laws` on the same command. |
+| `templates` | list of slugs | Bound template slugs; each must resolve to a loaded template; ignored on the `global` slot. |
+
+Validation rejects duplicate slugs in any list, slugs that overlap between `laws` and `laws_disabled`, and any reference that does not match a loaded entity.
 
 ---
 
@@ -444,7 +525,7 @@ skills: [go, sqlite, cli]
 laws: [workflow-enforced, yaml-is-canonical]
 
 personas:
-  - slug: backend-agent
+  - slug: engineer
     skills: [go, sqlite, cli]
     laws:   [project-scope-only]   # persona-scoped — must NOT also appear in top-level laws
 
@@ -467,11 +548,18 @@ What ships in `defaults/` and is materialized on first run by `configstore.Ensur
 
 ### Laws (`defaults/laws/`)
 
-| Slug | Severity | Body |
+| Slug | Severity | What it constrains |
 |---|---|---|
-| `project-scope-only` | error | "Never mix tasks or context from different projects." |
-| `workflow-enforced` | error | "Only move tasks through explicit workflow transitions." |
-| `yaml-is-canonical` | error | "Persist changes to laws, workflows, personas, skills, and config in omakiten.yaml." |
+| `project-scope-only` | error | Never mix tasks or context from different projects. |
+| `workflow-enforced` | error | Only move tasks through explicit workflow transitions. |
+| `yaml-is-canonical` | error | Persist changes to laws, workflows, personas, skills, and config in `omakiten.yaml`. |
+| `template-fidelity` | warning | When applying a template, do not invent fields, sections, or claims absent from the body or working context. |
+| `feasibility-gate` | error | Stop before authoring a user story when the request is not implementable in the current state. |
+| `bounded-self-review` | warning | Cap the self-review/fix cycle at three attempts; escalate with root cause and adjustment plan after. |
+| `no-silent-behavior-changes` | error | Every behavioral change ships with explicit evidence — failing-then-passing test, `#resume` comment, or commit message. |
+| `conventional-commits` | error | Conventional Commits in English; one intent per commit; never attribute commits to an AI agent. |
+| `no-assumptions` | warning | Every claim traceable to code or user input; mark `[assumption]` / `[user-provided]` when not. |
+| `authorize-remote-writes` | error | Never push, force-push, or create/edit/merge PRs without explicit user authorization in the current conversation. |
 
 ### Skills (`defaults/skills/`)
 
@@ -480,19 +568,32 @@ What ships in `defaults/` and is materialized on first run by `configstore.Ensur
 | `cli` | CLI design — argument parsing, exit codes, JSON envelopes. |
 | `go` | Go language proficiency — idiomatic Go, modules, testing. |
 | `sqlite` | SQLite proficiency — schema design, migrations, query tuning. |
+| `discovery` | Feasibility analysis, clarifying questions, scope boundaries. |
+| `user-story-writing` | Description, Acceptance Criteria, Definition of Done; matches the task template verbatim. |
+| `implementation` | Small coherent increments, tests for new and impacted behavior, regression analysis, bounded self-review. |
+| `markdown` | Frontmatter, tables, code fences, headings, mermaid diagrams. |
+| `documentation` | Doc generation/review with source traceability and no fabrication. |
+| `architecture-mapping` | Tech stack, dependencies, design patterns, infrastructure, code metrics. |
+| `requirements-mapping` | Functional, non-functional, business rules with source-file references. |
+| `readme-curation` | README hygiene — install, usage, examples in sync with the code surface. |
 
 ### Personas (`defaults/personas/`)
 
 | Slug | Description | Skills wired in `defaults/omakiten.yaml` |
 |---|---|---|
-| `backend-agent` | Backend-focused agent — services, storage, CLI surfaces. | `go`, `sqlite`, `cli` |
+| `engineer` | Implementation agent — small increments, self-review, regression awareness, commit discipline. | `go`, `sqlite`, `cli`, `implementation`, `markdown` |
+| `product-owner` | Discovery agent — feasibility, clarifying questions, user stories. | `discovery`, `user-story-writing`, `markdown` |
+| `documentation-agent` | Documentation curator — keeps narrative artifacts in sync with code. | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
 
 ### Templates (`defaults/templates/`)
 
 | Slug | Default kind | What the body scaffolds |
 |---|---|---|
 | `pull-request` | `pr` | Before/After framing, change log, files updated, validation matrix, deviations, risks/follow-ups, references. |
-| `user-story` | `task` | User Story (role/capability/benefit), Acceptance Criteria, Definition of Done. |
+| `user-story` | `task` | Description, Acceptance Criteria, Definition of Done, Scope in/out, Feasibility note. |
+| `comment-resume` | `comment-resume` | Implementation handoff filling the `#resume` guard (dev → review): Before/After, summary table, files, validation, open questions. |
+| `comment-selfbranch` | `comment-selfbranch` | Branch declaration filling the `#self-branch` guard (backlog → dev): branch name + working path. |
+| `comment-documentation` | `comment-documentation` | Closing checklist filling the `#documentation` guard (review → done): commits merged, tags applied, review confirmation. |
 
 ### Themes (`defaults/themes/`)
 

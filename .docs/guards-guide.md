@@ -179,6 +179,95 @@ All guard violations use the `guard_violation` coded error (`internal/domain/err
 
 Because the move never persists when a guard fails, no `task.moved` event is recorded. The current bucket is preserved.
 
+## Agent guardrails: laws bound to commands and entities
+
+Guards above run on **workflow transitions**. A second class of guardrails runs on **MCP prompt resolution** — when the agent asks for `okt-implement`, the server resolves the bound persona, skills, laws, and templates and ships them in a single PromptMessage. This is where the `template-fidelity` law lives, for example: bound globally to every command so the agent does not invent fields when filling a PR template.
+
+Resolution happens in `agent.Service.ResolveCommand` (`internal/agent/service_command.go`). The MCP adapter (`internal/mcp/adapter.go`) calls it from `prompts/get`.
+
+### What gets composed
+
+For each `okt-*` prompt, the resolver assembles:
+
+| Slot | Source |
+|---|---|
+| Persona | `mcp_commands.<name>.persona` slug |
+| Skills | The persona's `skills:` (wiring) — bodies pulled from `skills/<slug>.md` |
+| Laws | Union of `mcp_commands.global.laws` ∪ `personas.<slug>.laws` ∪ `mcp_commands.<name>.laws` ∪ `templates.<bound>.laws`, deduped, **minus** `mcp_commands.<name>.laws_disabled` |
+| Templates | `mcp_commands.<name>.templates` slugs — bodies pulled from `templates/<slug>.md` |
+| Action | The canonical instruction text for the prompt name |
+
+The merged response is rendered as one markdown body (Persona → Skills → Laws → Templates → Action) so the agent can scan it top-down without paying for multiple prompt messages.
+
+### Wiring location
+
+```yaml
+# omakiten.yaml
+mcp_commands:
+  global:
+    laws:
+      - template-fidelity        # applies to every okt-* command
+  okt-create:
+    persona: engineer
+    templates: [user-story]
+  okt-implement:
+    persona: engineer
+    templates: [pull-request]
+  okt-imagine:
+    persona: engineer
+    laws_disabled:               # opt out of the global law for discovery
+      - template-fidelity
+```
+
+Per-entity bindings travel with the file:
+
+```yaml
+# templates/pull-request.md
+---
+name: Pull Request
+default: pr
+laws:
+  - template-fidelity
+---
+```
+
+```yaml
+# personas/engineer.md
+---
+name: Backend Agent
+laws:
+  - project-scope-only
+---
+```
+
+Persona laws declared in frontmatter merge with persona laws declared in `omakiten.yaml`'s `personas:` block (union, dedup, frontmatter-first). Template frontmatter laws have no wiring counterpart — they live only in the `.md` file.
+
+### Validation rules (parse-time)
+
+| Rule | Error message shape |
+|---|---|
+| Persona slug on a command does not resolve | `mcp_commands.<name> persona: ref "<slug>" has no matching persona file` |
+| Law slug under `laws:` or `laws_disabled:` does not resolve | `mcp_commands.<name>.laws: ref "<slug>" has no matching law file` |
+| Same slug appears in both `laws:` and `laws_disabled:` on a command | `mcp_commands.<name>: law "<slug>" is in both laws and laws_disabled` |
+| Template slug on a command does not resolve | `mcp_commands.<name>.templates: ref "<slug>" has no matching template file` |
+| Duplicate slug in any list | `mcp_commands.<name>.<list>: duplicate "<slug>"` |
+| Template frontmatter law does not resolve | `templates.<slug> laws: ref "<slug>" has no matching law file` |
+
+The reserved `global` key is treated as a laws-only slot — its persona and templates fields are tolerated but unused.
+
+### The `template-fidelity` default law
+
+`defaults/laws/template-fidelity.md` ships in the bundled kit and is bound to `mcp_commands.global.laws` by default. Its body forbids the agent from inventing fields, links, or claims not present in the template body or the working context — directly addresses the original symptom (agent appending `Closes #40` that the template did not declare). Severity is `warning` because the law is guidance, not server-enforced rejection: the MCP layer ships it inline with the prompt, and an opt-out command (`okt-imagine`) is provided for discovery flows where free sketching is intentional.
+
+### Auto-applying templates on `tasks.create` / `comments.add`
+
+Both tools accept an optional `template_slug` argument. When set, the server resolves the slug against the loaded template catalog and merges the body into the description/comment:
+
+- empty user body ⇒ description = template body verbatim;
+- non-empty user body ⇒ user content first, blank line, template body appended.
+
+Unknown slugs surface as a validation error (no silent fallback). Dynamic placeholders are out of scope for this iteration — the materialized body is the literal template text.
+
 ## Adding a new guard type
 
 1. Add the case to the `evaluateGuards` switch in `internal/app/workflow_service.go`.

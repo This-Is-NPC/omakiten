@@ -1,26 +1,23 @@
 ---
 name: User Story
-description: Standard task scaffold with User Story, Acceptance Criteria, and Definition of Done.
+description: Task scaffold — Description, AC, DoD, Scope, Feasibility.
 entity: task
 default: task
+laws:
+  - template-fidelity
 ---
-
-**User Story**
-
+## Description
 As a [role], I want [capability] so that [benefit].
 
----
-
-**Acceptance Criteria**
-
+## Acceptance criteria
 1.
-2.
-3.
 
----
+## Definition of done
+- [ ]
 
-**Definition of Done**
+## Scope
+**In:** -
+**Out:** -
 
-- [ ]
-- [ ]
-- [ ]
+## Feasibility
+`Feasible` or `Not feasible`. When feasible, list relevant files/modules/constraints. When not feasible, list technical reasons, blockers, and viable alternatives — then stop.
