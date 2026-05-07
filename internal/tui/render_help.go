@@ -18,7 +18,7 @@ func (m Model) renderHelp() string {
 			{"a", "toggle all bindings"},
 			{"q · ctrl+c", "quit"},
 			{"tab · shift+tab", "cycle views"},
-			{"1 · 2 · 3 · 4 · 5", "jump to view"},
+			{"1 · 2 · 3 · 4 · 5 · 6", "jump to view"},
 			{"ctrl+h", "back to multi-project home"},
 			{"r", "refresh"},
 		}},
@@ -130,6 +130,10 @@ func (m Model) renderHelp() string {
 			{"g · G", "first / last row"},
 			{"r", "refresh"},
 		}},
+		{"Stats", []binding{
+			{"← →", "cycle period (7d / 30d / all)"},
+			{"r", "refresh"},
+		}},
 	}
 
 	if !m.helpAll {
@@ -221,6 +225,8 @@ func (m Model) currentHelpTitles() []string {
 		return []string{"Config"}
 	case m.view == 4:
 		return []string{"Logs"}
+	case m.view == 5:
+		return []string{"Stats"}
 	default:
 		return []string{"Board"}
 	}

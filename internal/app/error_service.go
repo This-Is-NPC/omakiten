@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"omakiten/internal/activity"
@@ -14,6 +15,19 @@ type ErrorService struct {
 
 func NewErrorService(repo ErrorRepository) *ErrorService {
 	return &ErrorService{repo: repo}
+}
+
+// emitDomainEvent serializes payload to JSON and writes a domain event row.
+// Telemetry must not break business logic: emission errors are swallowed by
+// design, mirroring activity.Track's contract.
+func (s *ErrorService) emitDomainEvent(ctx context.Context, entityType string, entityID, projectID int64, eventType string, payload map[string]any) {
+	body := "{}"
+	if len(payload) > 0 {
+		if b, err := json.Marshal(payload); err == nil {
+			body = string(b)
+		}
+	}
+	_ = s.repo.RecordEntityEvent(ctx, entityType, entityID, projectID, eventType, body)
 }
 
 func (s *ErrorService) Record(ctx context.Context, project domain.ProjectContext, description, errContext string, rawTags []string) (record domain.ErrorRecord, err error) {
@@ -36,6 +50,17 @@ func (s *ErrorService) Record(ctx context.Context, project domain.ProjectContext
 
 	tags := normalizeTagInputs(rawTags)
 	record, err = s.repo.RecordError(ctx, project.ID, description, strings.TrimSpace(errContext), tags)
+	if err != nil {
+		return
+	}
+	tagNames := make([]string, len(record.Tags))
+	for i, t := range record.Tags {
+		tagNames[i] = t.Name
+	}
+	s.emitDomainEvent(ctx, "error", record.ID, record.ProjectID, "error.recorded", map[string]any{
+		"tags":        tagNames,
+		"has_context": record.Context != "",
+	})
 	return
 }
 
@@ -58,7 +83,16 @@ func (s *ErrorService) Search(ctx context.Context, project domain.ProjectContext
 			tagNames = append(tagNames, name)
 		}
 	}
-	records, err = s.repo.SearchErrors(ctx, strings.TrimSpace(query), tagNames)
+	cleanQuery := strings.TrimSpace(query)
+	records, err = s.repo.SearchErrors(ctx, cleanQuery, tagNames)
+	if err != nil {
+		return
+	}
+	s.emitDomainEvent(ctx, "error", 0, project.ID, "error.searched", map[string]any{
+		"query":        cleanQuery,
+		"tags":         tagNames,
+		"result_count": len(records),
+	})
 	return
 }
 
@@ -87,6 +121,12 @@ func (s *ErrorService) AddSolution(ctx context.Context, project domain.ProjectCo
 		taskID = nil
 	}
 	solution, err = s.repo.AddSolution(ctx, errorID, description, strings.TrimSpace(steps), taskID)
+	if err != nil {
+		return
+	}
+	s.emitDomainEvent(ctx, "solution", solution.ID, project.ID, "solution.added", map[string]any{
+		"error_id": solution.ErrorID,
+	})
 	return
 }
 
@@ -107,6 +147,17 @@ func (s *ErrorService) ConfirmSolution(ctx context.Context, project domain.Proje
 		return
 	}
 	solution, err = s.repo.ConfirmSolution(ctx, solutionID, success)
+	if err != nil {
+		return
+	}
+	eventType := "solution.failed"
+	if success {
+		eventType = "solution.liked"
+	}
+	s.emitDomainEvent(ctx, "solution", solution.ID, project.ID, eventType, map[string]any{
+		"error_id": solution.ErrorID,
+		"likes":    solution.Likes,
+	})
 	return
 }
 
@@ -133,6 +184,13 @@ func (s *ErrorService) ListTopSolutions(ctx context.Context, project domain.Proj
 		limit = 100
 	}
 	solutions, err = s.repo.ListTopSolutions(ctx, limit)
+	if err != nil {
+		return
+	}
+	s.emitDomainEvent(ctx, "solution", 0, project.ID, "solution.viewed_top", map[string]any{
+		"limit":          limit,
+		"returned_count": len(solutions),
+	})
 	return
 }
 

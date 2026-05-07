@@ -1,6 +1,6 @@
 # TUI Guide
 
-`okt tui` opens the Bubble Tea terminal UI (`internal/cli/tui.go` → `internal/tui/model.go`). Five top-level views, several modal sub-screens, a multi-project Home, and a contextual help overlay.
+`okt tui` opens the Bubble Tea terminal UI (`internal/cli/tui.go` → `internal/tui/model.go`). Six top-level views, several modal sub-screens, a multi-project Home, and a contextual help overlay.
 
 ## Home (multi-project picker)
 
@@ -55,8 +55,9 @@ Cycle with `tab` / `shift+tab`, or jump directly with the digit keys.
 | `3` | **Graph** — dependency DAG | `internal/tui/render_graph.go` |
 | `4` | **Config** — entity browser (skills, laws, personas, templates) | `internal/tui/render_config.go`, `entity_screen.go` |
 | `5` | **Logs** — operations and per-task activity feeds | `internal/tui/render_logs.go`, `render_activity.go` |
+| `6` | **Stats** — per-AI-model benchmark over a period | `internal/tui/render_stats.go` |
 
-The canonical names live in `internal/tui/state.go:viewNames` (`BOARD`, `TABLE`, `GRAPH`, `CONFIG`, `LOGS`).
+The canonical names live in `internal/tui/state.go:viewNames` (`BOARD`, `TABLE`, `GRAPH`, `CONFIG`, `LOGS`, `STATS`).
 
 ## Help overlay
 
@@ -74,7 +75,7 @@ The full keymap below is the source of truth in `internal/tui/render_help.go`. A
 | `a` | toggle help between current context and all contexts |
 | `q` · `ctrl+c` | quit |
 | `tab` · `shift+tab` | cycle views forward / backward |
-| `1` · `2` · `3` · `4` · `5` | jump to view |
+| `1` · `2` · `3` · `4` · `5` · `6` | jump to view |
 | `ctrl+h` | back to multi-project Home |
 | `r` | refresh from store |
 
@@ -134,6 +135,17 @@ The full keymap below is the source of truth in `internal/tui/render_help.go`. A
 | `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
 | `g` · `G` | first / last row |
 | `r` | refresh |
+
+### Stats (view 6)
+
+Per-AI-model benchmark over a configurable period: errors recorded, errors searched, search-before-record ratio, solutions added, like rate. Backed by `app.MetricsService` — same aggregation the `metrics.summary` MCP tool returns.
+
+| Key | Action |
+|---|---|
+| `← →` · `h l` | cycle period (`7d` → `30d` → `all`) |
+| `r` | refresh |
+
+The TUI itself reports `agent_model="human"` so its own activity does not appear in this benchmark — only MCP traffic with a real `_agent_model` does. See `.docs/mcp-guide.md` for the underlying domain-event timeline.
 
 ## Modal sub-screens
 

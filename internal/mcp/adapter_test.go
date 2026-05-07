@@ -36,6 +36,7 @@ func TestToolsIncludePlannedSurface(t *testing.T) {
 		"errors.search":       false,
 		"solutions.add":       false,
 		"solutions.confirm":   false,
+		"metrics.summary":     false,
 	}
 	for _, tool := range Tools() {
 		if _, ok := want[tool.Name]; ok {
@@ -49,11 +50,22 @@ func TestToolsIncludePlannedSurface(t *testing.T) {
 	}
 }
 
+// withModel injects the coercive _agent_model field every CallTool now
+// requires. Tests use a stable sentinel so events emitted during the run
+// are easy to filter when debugging.
+func withModel(extra map[string]any) map[string]any {
+	args := map[string]any{"_agent_model": "test-model"}
+	for k, v := range extra {
+		args[k] = v
+	}
+	return args
+}
+
 func TestAdapterCallToolReturnsCompactJSONText(t *testing.T) {
 	ctx := context.Background()
 	service := newMCPTestService(t, ctx)
 
-	result, err := NewAdapter(service).CallTool(ctx, "project.overview", nil)
+	result, err := NewAdapter(service).CallTool(ctx, "project.overview", withModel(nil))
 	if err != nil {
 		t.Fatalf("CallTool() error = %v", err)
 	}
@@ -76,7 +88,7 @@ func TestAdapterMapsDomainErrorsToToolFailures(t *testing.T) {
 	ctx := context.Background()
 	service := newMCPTestService(t, ctx)
 
-	result, err := NewAdapter(service).CallTool(ctx, "tasks.continue", map[string]any{"task_id": 9999})
+	result, err := NewAdapter(service).CallTool(ctx, "tasks.continue", withModel(map[string]any{"task_id": 9999}))
 	if err != nil {
 		t.Fatalf("CallTool() error = %v", err)
 	}
@@ -121,6 +133,7 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		"errors.search",
 		"solutions.add",
 		"solutions.confirm",
+		"metrics.summary",
 	}
 
 	for _, name := range tools {
@@ -147,10 +160,56 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		case "solutions.confirm":
 			args = map[string]any{"solution_id": 1, "success": true}
 		}
-		_, err := adapter.CallTool(ctx, name, args)
+		_, err := adapter.CallTool(ctx, name, withModel(args))
 		if err != nil {
 			t.Fatalf("CallTool(%s) error = %v", name, err)
 		}
+	}
+}
+
+func TestAdapterCallToolRequiresAgentModel(t *testing.T) {
+	ctx := context.Background()
+	service := newMCPTestService(t, ctx)
+	adapter := NewAdapter(service)
+
+	// No _agent_model at all.
+	_, err := adapter.CallTool(ctx, "project.overview", nil)
+	if err == nil {
+		t.Fatal("CallTool(missing _agent_model) error = nil, want validation_error")
+	}
+	if !strings.Contains(err.Error(), "_agent_model is required") {
+		t.Fatalf("CallTool error = %v, want '_agent_model is required'", err)
+	}
+
+	// Empty _agent_model.
+	_, err = adapter.CallTool(ctx, "project.overview", map[string]any{"_agent_model": ""})
+	if err == nil {
+		t.Fatal("CallTool(empty _agent_model) error = nil, want validation_error")
+	}
+	if !strings.Contains(err.Error(), "_agent_model must be a non-empty string") {
+		t.Fatalf("CallTool error = %v, want non-empty validation", err)
+	}
+}
+
+func TestAdapterCallToolStripsAgentFieldsBeforeDecoding(t *testing.T) {
+	ctx := context.Background()
+	service := newMCPTestService(t, ctx)
+	adapter := NewAdapter(service)
+
+	// _agent_session_id is opt-in but must still be removed before the
+	// tool-specific decoder sees it (otherwise a strict decoder might fail
+	// on unknown fields).
+	args := map[string]any{
+		"_agent_model":      "test-model",
+		"_agent_session_id": "sess-9",
+		"description":       "boom",
+	}
+	result, err := adapter.CallTool(ctx, "errors.record", args)
+	if err != nil {
+		t.Fatalf("CallTool(errors.record) error = %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("CallTool(errors.record) failed: %v", result.Content)
 	}
 }
 

@@ -31,11 +31,15 @@ func (s *Store) BeginActivityLog(ctx context.Context, log any) (int64, error) {
 	if activityLog.ProjectSlug != "" {
 		projectSlug = activityLog.ProjectSlug
 	}
+	var sessionID any
+	if activityLog.AgentSessionID != "" {
+		sessionID = activityLog.AgentSessionID
+	}
 	row := s.db.QueryRowContext(ctx, `
-INSERT INTO events(entity_type, project_id, project_slug, event_type, payload, source, entrypoint, operation, status, created_at)
-VALUES ('system', ?, ?, 'operation', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+INSERT INTO events(entity_type, project_id, project_slug, event_type, payload, source, entrypoint, operation, status, agent_model, agent_session_id, created_at)
+VALUES ('system', ?, ?, 'operation', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 RETURNING id
-`, projectID, projectSlug, activityLog.ArgumentsJSON, string(activityLog.Source), activityLog.Entrypoint, activityLog.Operation, activityLog.Status)
+`, projectID, projectSlug, activityLog.ArgumentsJSON, string(activityLog.Source), activityLog.Entrypoint, activityLog.Operation, activityLog.Status, activityLog.AgentModel, sessionID)
 
 	var id int64
 	if err := row.Scan(&id); err != nil {
@@ -57,7 +61,7 @@ WHERE id = ? AND event_type = 'operation'
 }
 
 func (s *Store) ListActivityLogs(ctx context.Context, filter domain.ActivityLogFilter) ([]domain.ActivityLog, error) {
-	query := "SELECT id, source, entrypoint, operation, COALESCE(project_id, 0), COALESCE(project_slug, ''), COALESCE(payload, ''), COALESCE(status, ''), COALESCE(duration_ms, 0), COALESCE(error_message, ''), created_at, finished_at FROM events"
+	query := "SELECT id, source, entrypoint, operation, COALESCE(project_id, 0), COALESCE(project_slug, ''), COALESCE(payload, ''), COALESCE(status, ''), COALESCE(duration_ms, 0), COALESCE(error_message, ''), created_at, finished_at, COALESCE(agent_model, ''), COALESCE(agent_session_id, '') FROM events"
 	args := []any{}
 	conds := []string{"event_type = 'operation'"}
 
@@ -100,6 +104,7 @@ func (s *Store) ListActivityLogs(ctx context.Context, filter domain.ActivityLogF
 		if err := rows.Scan(
 			&log.ID, &log.Source, &log.Entrypoint, &log.Operation, &log.ProjectID, &log.ProjectSlug,
 			&log.ArgumentsJSON, &log.Status, &log.DurationMs, &log.ErrorMessage, &log.StartedAt, &finishedAt,
+			&log.AgentModel, &log.AgentSessionID,
 		); err != nil {
 			return nil, err
 		}

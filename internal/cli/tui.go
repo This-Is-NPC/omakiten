@@ -37,7 +37,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions) error {
 	}
 	defer rt.close()
 
-	ctx = activity.WithSource(ctx, "tui", "tui")
+	ctx = activity.WithAgent(ctx, "tui", "tui", "human", "")
 	ctx = rt.WithActivityRepo(ctx)
 
 	project, err := opts.resolveProject(ctx, rt.store)
@@ -69,6 +69,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions) error {
 		Editor:       editor,
 		ActivityLogs: rt.store,
 		Events:       rt.store,
+		Metrics:      app.NewMetricsService(rt.store),
 	}, theme, token.NewCounter())
 	if err != nil {
 		return err

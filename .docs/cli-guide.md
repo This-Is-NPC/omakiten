@@ -21,6 +21,17 @@ Inherited by every subcommand (`internal/cli/root.go:NewRootCommand`):
 
 **Path resolution order** (`internal/paths/paths.go`): `--config`/`--db` flag → `$OMAKITEN_HOME` → `$XDG_CONFIG_HOME`/`$XDG_DATA_HOME` → `~/.config/omakiten` and `~/.local/share/omakiten`.
 
+## Environment variables
+
+| Variable | Effect |
+|---|---|
+| `OMAKITEN_HOME` | Overrides config + data root (see path resolution above). |
+| `OMAKITEN_AGENT_MODEL` | Identifies the agent driving CLI calls; denormalized on every write (`events`, `errors`, `solutions`) and surfaced by `metrics.summary` / TUI Stats. Empty string is allowed and marks the call as non-benchmarked. |
+| `OMAKITEN_AGENT_SESSION_ID` | Optional opaque session id; lets `metrics.summary`'s `search_before_record_ratio` correlate searches to records within a session. |
+| `OKT_CD_FILE` · `XDG_RUNTIME_DIR` · `TMPDIR` | Resolution chain for the TUI `cd-on-exit` handshake file (see `okt tui` below). |
+
+The TUI sets `agent_model="human"` internally so its activity is filtered out of the per-model benchmark; it does not consult `OMAKITEN_AGENT_MODEL`.
+
 ---
 
 ## `okt init` — register the current project
@@ -345,7 +356,7 @@ okt persona edit engineer --skill-slug go --skill-slug cli   # replaces full ski
 
 ### `okt tui` — open the terminal UI
 
-`internal/cli/tui.go`. Loads the active theme (`<root>/themes/<active>.yaml`, with `themes/custom/<active>.yaml` overriding) and starts Bubble Tea in alt-screen mode. Five per-project views (BOARD, TABLE, GRAPH, CONFIG, LOGS — `internal/tui/state.go:viewNames`) plus a multi-project Home reachable via `ctrl+h`.
+`internal/cli/tui.go`. Loads the active theme (`<root>/themes/<active>.yaml`, with `themes/custom/<active>.yaml` overriding) and starts Bubble Tea in alt-screen mode. Six per-project views (BOARD, TABLE, GRAPH, CONFIG, LOGS, STATS — `internal/tui/state.go:viewNames`) plus a multi-project Home reachable via `ctrl+h`.
 
 **Project-resolution behavior on launch:**
 

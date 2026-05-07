@@ -38,7 +38,7 @@ func (f *fakeRepo) ListActivityLogs(_ context.Context, _ domain.ActivityLogFilte
 func TestTrackLogsSuccess(t *testing.T) {
 	repo := &fakeRepo{beginReturnID: 7}
 	ctx := WithRepository(context.Background(), repo)
-	ctx = WithSource(ctx, "mcp", "tasks.create")
+	ctx = WithAgent(ctx, "mcp", "tasks.create", "claude-opus-4-7", "sess-abc")
 
 	project := domain.ProjectContext{ID: 1, Slug: "test"}
 	finish := Track(ctx, "app.TaskService.Add", project, map[string]string{"title": "Hello"})
@@ -62,12 +62,18 @@ func TestTrackLogsSuccess(t *testing.T) {
 	if repo.lastLog.ProjectSlug != "test" {
 		t.Fatalf("project_slug = %q, want test", repo.lastLog.ProjectSlug)
 	}
+	if repo.lastLog.AgentModel != "claude-opus-4-7" {
+		t.Fatalf("agent_model = %q, want claude-opus-4-7", repo.lastLog.AgentModel)
+	}
+	if repo.lastLog.AgentSessionID != "sess-abc" {
+		t.Fatalf("agent_session_id = %q, want sess-abc", repo.lastLog.AgentSessionID)
+	}
 }
 
 func TestTrackLogsError(t *testing.T) {
 	repo := &fakeRepo{beginReturnID: 1}
 	ctx := WithRepository(context.Background(), repo)
-	ctx = WithSource(ctx, "cli", "okt add")
+	ctx = WithAgent(ctx, "cli", "okt add", "", "")
 
 	finish := Track(ctx, "app.TaskService.Add", domain.ProjectContext{}, nil)
 	finish("error", "validation failed")
@@ -81,7 +87,7 @@ func TestTrackLogsError(t *testing.T) {
 }
 
 func TrackNoOpWhenRepoMissing(t *testing.T) {
-	ctx := WithSource(context.Background(), "cli", "okt add")
+	ctx := WithAgent(context.Background(), "cli", "okt add", "", "")
 	finish := Track(ctx, "app.TaskService.Add", domain.ProjectContext{}, nil)
 	finish("ok", "")
 	// Should not panic
@@ -90,7 +96,7 @@ func TrackNoOpWhenRepoMissing(t *testing.T) {
 func TestTrackTruncatesLargeJSON(t *testing.T) {
 	repo := &fakeRepo{beginReturnID: 1}
 	ctx := WithRepository(context.Background(), repo)
-	ctx = WithSource(ctx, "mcp", "tasks.create")
+	ctx = WithAgent(ctx, "mcp", "tasks.create", "claude-opus-4-7", "sess-abc")
 
 	large := make(map[string]string)
 	for i := 0; i < 1000; i++ {
@@ -107,7 +113,7 @@ func TestTrackTruncatesLargeJSON(t *testing.T) {
 func TestTrackHandlesUnserializable(t *testing.T) {
 	repo := &fakeRepo{beginReturnID: 1}
 	ctx := WithRepository(context.Background(), repo)
-	ctx = WithSource(ctx, "mcp", "tasks.create")
+	ctx = WithAgent(ctx, "mcp", "tasks.create", "claude-opus-4-7", "sess-abc")
 
 	finish := Track(ctx, "app.TaskService.Add", domain.ProjectContext{}, make(chan int))
 	finish("ok", "")
@@ -120,7 +126,7 @@ func TestTrackHandlesUnserializable(t *testing.T) {
 func TestTrackBeginFailureIsNoOp(t *testing.T) {
 	repo := &fakeRepo{beginReturnID: 0, beginErr: errors.New("db down")}
 	ctx := WithRepository(context.Background(), repo)
-	ctx = WithSource(ctx, "mcp", "tasks.create")
+	ctx = WithAgent(ctx, "mcp", "tasks.create", "claude-opus-4-7", "sess-abc")
 
 	finish := Track(ctx, "app.TaskService.Add", domain.ProjectContext{}, nil)
 	finish("ok", "")

@@ -27,6 +27,60 @@ type dbExecutor interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+// RecordEntityEvent persists a domain event with attribution pulled from ctx.
+// Used by ErrorService to emit error.recorded, solution.added, solution.liked,
+// and other domain events. entityType="system" for events that don't tie to
+// a single row (e.g. solution.viewed_top — listing the top solutions). When
+// entityID is 0 we write NULL so foreign-key-style filters stay sane.
+// ListRecentEvents returns the most recent domain events filtered by
+// event_type, ordered newest-first. Used by tests to assert emission and
+// (eventually) by metrics.summary to introspect timelines.
+func (s *Store) ListRecentEvents(ctx context.Context, eventType string, limit int) ([]domain.Event, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, entity_type, COALESCE(entity_id, 0), COALESCE(project_id, 0), event_type, COALESCE(body, ''), COALESCE(payload, ''), COALESCE(source, ''), COALESCE(entrypoint, ''), COALESCE(agent_model, ''), COALESCE(agent_session_id, ''), created_at
+FROM events
+WHERE event_type = ?
+ORDER BY created_at DESC, id DESC
+LIMIT ?
+`, eventType, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []domain.Event
+	for rows.Next() {
+		var ev domain.Event
+		if err := rows.Scan(&ev.ID, &ev.EntityType, &ev.EntityID, &ev.ProjectID, &ev.EventType, &ev.Body, &ev.Payload, &ev.Source, &ev.Entrypoint, &ev.AgentModel, &ev.AgentSessionID, &ev.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, ev)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) RecordEntityEvent(ctx context.Context, entityType string, entityID int64, projectID int64, eventType string, payload string) error {
+	if payload == "" {
+		payload = "{}"
+	}
+	source, entrypoint, agentModel, agentSessionID := agentAttribution(ctx)
+	var entityIDArg, projectIDArg any
+	if entityID > 0 {
+		entityIDArg = entityID
+	}
+	if projectID > 0 {
+		projectIDArg = projectID
+	}
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO events(entity_type, entity_id, project_id, event_type, payload, source, entrypoint, agent_model, agent_session_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, entityType, entityIDArg, projectIDArg, eventType, payload, source, entrypoint, agentModel, agentSessionID)
+	return err
+}
+
 func insertTaskEvent(ctx context.Context, exec dbExecutor, projectID, taskID int64, eventType, body, payload string) (domain.Event, error) {
 	if payload == "" {
 		payload = "{}"

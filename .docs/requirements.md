@@ -55,6 +55,9 @@
 | FR-049 | Set up MCP harness config (`claude-code`, `claude-desktop`, `opencode`) with dry-run, force, and custom config-path support | `internal/cli/init.go`, `internal/cli/mcp.go`, `internal/agentsetup/setup.go` |
 | FR-050 | View recent activity logs in TUI with source, operation, duration, and status | `internal/tui/render_logs.go`, `internal/sqlite/activity_logs.go:ListActivityLogs` |
 | FR-051 | View per-task unified activity feed in TUI (comments + workflow events) | `internal/tui/render_activity.go`, `internal/sqlite/events.go:ListTaskActivity` |
+| FR-052 | Expose MCP tool `metrics.summary`: per-AI-model benchmark over a period (errors recorded/searched, solutions added, like rate, search-before-record ratio); supports `7d`/`30d`/`all` and an optional `project_id` filter | `internal/agent/service_metrics.go`, `internal/app/metrics_service.go`, `internal/sqlite/metrics.go`, `internal/mcp/adapter.go` |
+| FR-053 | TUI sixth view (`STATS`) renders the same per-AI-model benchmark inline with a period cycler (`7d`/`30d`/`all`) | `internal/tui/render_stats.go`, `internal/tui/model.go:refreshStats`, `internal/tui/state.go:viewNames` |
+| FR-054 | Emit domain events from `app.ErrorService` (`error.recorded`, `error.searched`, `solution.added`, `solution.liked`, `solution.failed`, `solution.viewed_top`) into the unified `events` table for benchmark reconstruction | `internal/app/error_service.go`, `internal/sqlite/events.go:RecordEntityEvent`, `internal/domain/event.go` |
 
 ## Non-Functional Requirements
 
@@ -79,6 +82,7 @@
 | NFR-017 | App service calls are tracked as activity logs with synchronous pruning (max 500 rows, 7 days) | `internal/activity/track.go`, `internal/sqlite/activity_logs.go` (`activityLogMaxRows = 500`, `activityLogMaxAgeDays = 7`) |
 | NFR-018 | Activity log failures must not break business logic | `internal/activity/track.go` |
 | NFR-019 | Hexagonal boundaries are enforced by an architecture test and mirrored as `depguard` lint rules | `internal/arch/arch_test.go`, `.golangci.yml`, `internal/app/doc.go` |
+| NFR-020 | Agent attribution (`source`, `entrypoint`, `agent_model`, `agent_session_id`) flows through the request context (`internal/activity`) and is denormalized on every write into `events`, `errors`, and `solutions` so per-model benchmarks need no joins | `internal/activity/context.go`, `internal/sqlite/errors.go:agentAttribution`, `internal/sqlite/events.go`, `internal/sqlite/activity_logs.go`, `migrations/010_agent_attribution.sql` |
 
 ## Business Rules
 
@@ -107,3 +111,5 @@
 | BR-021 | Tag names are normalized to kebab-case and deduplicated on creation | `internal/app/tag_normalization.go`, `internal/app/tag_service.go`, `internal/sqlite/tags.go:FindOrCreateTag` |
 | BR-022 | Errors and solutions are cross-project (visible globally) so the agent can reuse prior fixes; only `solutions.confirm(success=true)` increments a solution's like counter | `internal/agent/service_errors.go`, `internal/sqlite/errors.go` |
 | BR-023 | The MCP-supported harnesses are exactly `claude-code`, `claude-desktop`, and `opencode`; unsupported values are rejected | `internal/agentsetup/setup.go` (`SupportedHarnesses`) |
+| BR-024 | Every MCP tool call must carry a non-empty top-level `_agent_model`; the adapter rejects calls missing it with `validation_error` (system-internal `ReadResource` is exempt and writes empty attribution) | `internal/mcp/adapter.go:extractAgentAttribution`, `internal/mcp/adapter.go:CallTool` |
+| BR-025 | `metrics.summary` excludes rows with empty `agent_model` (TUI human, system internals); `search_before_record_ratio` is computed only over records carrying a non-empty `agent_session_id` (correlating searches across parallel agents would inflate the ratio) | `internal/sqlite/metrics.go:AgentMetricsSummary`, `internal/sqlite/metrics.go:fillSearchBeforeRecord` |

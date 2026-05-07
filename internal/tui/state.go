@@ -52,6 +52,7 @@ type Repositories struct {
 	Slugger      app.Slugifier
 	ActivityLogs activity.ActivityLogRepository
 	Events       app.EventRepository
+	Metrics      *app.MetricsService
 }
 
 // Model is the root Bubble Tea model for the TUI. It aggregates state that
@@ -204,6 +205,12 @@ type Model struct {
 	graphScroll int
 	graphCursor int
 
+	// statsSummary caches the last-fetched metrics summary. statsPeriod
+	// holds the active filter ("7d", "30d", "all"); refreshed on view entry
+	// and on period change via ←/→.
+	statsSummary domain.MetricsSummary
+	statsPeriod  string
+
 	// help owns scroll state for the keybindings overlay; instantiated
 	// once and reused (the overlay is closed/reopened, not destroyed,
 	// so scroll state persists across toggles which feels right — users
@@ -262,7 +269,7 @@ const (
 	taskFieldPriority
 )
 
-var viewNames = []string{"BOARD", "TABLE", "GRAPH", "CONFIG", "LOGS"}
+var viewNames = []string{"BOARD", "TABLE", "GRAPH", "CONFIG", "LOGS", "STATS"}
 
 // viewHome is the sentinel index for the multi-project Home screen.
 // It deliberately sits outside viewNames so tab/shift+tab/digit keys

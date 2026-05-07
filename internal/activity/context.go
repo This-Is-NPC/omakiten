@@ -8,17 +8,28 @@ import (
 
 type sourceKey struct{}
 type entrypointKey struct{}
+type agentModelKey struct{}
+type agentSessionKey struct{}
 type repoKey struct{}
 
-func WithSource(ctx context.Context, source, entrypoint string) context.Context {
+// WithAgent attaches the four-tuple that lets every downstream service
+// attribute its writes (operation events, domain events, denormalized
+// rows on errors/solutions). source/entrypoint were already carried;
+// agentModel and agentSessionID are new — required for benchmarking
+// AI agents (which model recorded what, which session searched first).
+func WithAgent(ctx context.Context, source, entrypoint, agentModel, agentSessionID string) context.Context {
 	ctx = context.WithValue(ctx, sourceKey{}, source)
-	return context.WithValue(ctx, entrypointKey{}, entrypoint)
+	ctx = context.WithValue(ctx, entrypointKey{}, entrypoint)
+	ctx = context.WithValue(ctx, agentModelKey{}, agentModel)
+	return context.WithValue(ctx, agentSessionKey{}, agentSessionID)
 }
 
-func FromContext(ctx context.Context) (source string, entrypoint string, ok bool) {
+func FromContext(ctx context.Context) (source string, entrypoint string, agentModel string, agentSessionID string, ok bool) {
 	s, sOk := ctx.Value(sourceKey{}).(string)
-	e, eOk := ctx.Value(entrypointKey{}).(string)
-	return s, e, sOk && eOk && s != ""
+	e, _ := ctx.Value(entrypointKey{}).(string)
+	m, _ := ctx.Value(agentModelKey{}).(string)
+	sess, _ := ctx.Value(agentSessionKey{}).(string)
+	return s, e, m, sess, sOk && s != ""
 }
 
 type ActivityLogRepository interface {

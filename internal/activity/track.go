@@ -14,7 +14,7 @@ func Track(ctx context.Context, operation string, project domain.ProjectContext,
 		return func(string, string) {}
 	}
 
-	source, entrypoint, _ := FromContext(ctx)
+	source, entrypoint, agentModel, agentSessionID, _ := FromContext(ctx)
 
 	argsJSON := ""
 	if args != nil {
@@ -30,13 +30,15 @@ func Track(ctx context.Context, operation string, project domain.ProjectContext,
 	}
 
 	log := domain.ActivityLog{
-		Source:        domain.ActivitySource(source),
-		Entrypoint:    entrypoint,
-		Operation:     operation,
-		ProjectID:     project.ID,
-		ProjectSlug:   project.Slug,
-		ArgumentsJSON: argsJSON,
-		Status:        "running",
+		Source:         domain.ActivitySource(source),
+		Entrypoint:     entrypoint,
+		Operation:      operation,
+		ProjectID:      project.ID,
+		ProjectSlug:    project.Slug,
+		ArgumentsJSON:  argsJSON,
+		Status:         "running",
+		AgentModel:     agentModel,
+		AgentSessionID: agentSessionID,
 	}
 
 	id, err := repo.BeginActivityLog(ctx, log)
