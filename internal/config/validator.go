@@ -55,6 +55,9 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	if err := validateViewSettings(bundle.Config.Views, bundle.Workflows, bundle.Config.Workflow.Active); err != nil {
 		return err
 	}
+	if err := validateMCPSettings(bundle.Config.MCP); err != nil {
+		return err
+	}
 
 	skillSet := slugSet(loadedSkillSlugs(loadedSkills))
 	lawSet := slugSet(loadedLawSlugs(loadedLaws))
@@ -64,6 +67,16 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	for _, template := range bundle.Templates {
 		if _, ok := templateSet[template.Slug]; !ok {
 			return fmt.Errorf("templates: ref %q has no matching file", template.Slug)
+		}
+		seenLaw := map[string]struct{}{}
+		for _, slug := range template.Laws {
+			if _, dup := seenLaw[slug]; dup {
+				return fmt.Errorf("templates.%s laws: duplicate %q", template.Slug, slug)
+			}
+			seenLaw[slug] = struct{}{}
+			if _, ok := lawSet[slug]; !ok {
+				return fmt.Errorf("templates.%s laws: ref %q has no matching law file", template.Slug, slug)
+			}
 		}
 	}
 	if err := validateTemplateDefaults(bundle); err != nil {
@@ -122,7 +135,84 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 		return err
 	}
 
+	if err := validateMCPCommands(bundle, personaSet, lawSet, templateSet); err != nil {
+		return err
+	}
+
 	return validateWorkflows(bundle.Workflows, bundle.Config.Workflow.Active)
+}
+
+// validateMCPCommands enforces that every persona/law/template slug referenced
+// inside `mcp_commands` resolves to a loaded entity. Per-command entries may
+// declare `laws:` (added) and `laws_disabled:` (removed from global); both
+// must be slugs of loaded laws. The reserved `global` key only contributes
+// laws — its persona/templates fields are tolerated but unused.
+func validateMCPCommands(bundle Bundle, personaSet, lawSet, templateSet map[string]struct{}) error {
+	for name, spec := range bundle.MCPCommands {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("mcp_commands: empty command name")
+		}
+		if name != MCPCommandsGlobalKey {
+			if persona := strings.TrimSpace(spec.Persona); persona != "" {
+				if _, ok := personaSet[persona]; !ok {
+					return fmt.Errorf("mcp_commands.%s persona: ref %q has no matching persona file", name, persona)
+				}
+			}
+			if err := validateSlugList("mcp_commands."+name+".templates", spec.Templates, templateSet, "template"); err != nil {
+				return err
+			}
+		}
+		if err := validateSlugList("mcp_commands."+name+".laws", spec.Laws, lawSet, "law"); err != nil {
+			return err
+		}
+		if err := validateSlugList("mcp_commands."+name+".laws_disabled", spec.LawsDisabled, lawSet, "law"); err != nil {
+			return err
+		}
+		if name != MCPCommandsGlobalKey {
+			seen := map[string]struct{}{}
+			for _, slug := range spec.Laws {
+				seen[slug] = struct{}{}
+			}
+			for _, slug := range spec.LawsDisabled {
+				if _, dup := seen[slug]; dup {
+					return fmt.Errorf("mcp_commands.%s: law %q is in both laws and laws_disabled", name, slug)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// validateMCPSettings catches obviously-wrong tuning values at parse time.
+// Non-positive `recent_comment_limit` and negative `max_comment_chars` are
+// silently coerced to defaults via the Effective* accessors, but values that
+// the user clearly intended (e.g. a typo'd negative number) surface here so
+// the user gets a descriptive error instead of a silent fallback.
+func validateMCPSettings(m MCPSettings) error {
+	if m.RecentCommentLimit < 0 {
+		return fmt.Errorf("config.mcp.recent_comment_limit cannot be negative")
+	}
+	if m.MaxCommentChars < 0 {
+		return fmt.Errorf("config.mcp.max_comment_chars cannot be negative")
+	}
+	return nil
+}
+
+func validateSlugList(section string, slugs []string, set map[string]struct{}, kind string) error {
+	seen := map[string]struct{}{}
+	for _, slug := range slugs {
+		if strings.TrimSpace(slug) == "" {
+			return fmt.Errorf("%s: empty slug", section)
+		}
+		if _, dup := seen[slug]; dup {
+			return fmt.Errorf("%s: duplicate %q", section, slug)
+		}
+		seen[slug] = struct{}{}
+		if _, ok := set[slug]; !ok {
+			return fmt.Errorf("%s: ref %q has no matching %s file", section, slug, kind)
+		}
+	}
+	return nil
 }
 
 // validateScopeUniqueness ensures a single law slug is not declared both as a

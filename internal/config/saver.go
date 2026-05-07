@@ -68,10 +68,11 @@ func entityWritePath(rootDir string, kind EntityKind, slug string, isCustom bool
 
 func bundleToWiring(bundle Bundle) (wiring, error) {
 	w := wiring{
-		Version:   bundle.Version,
-		Kit:       bundle.Kit,
-		Config:    bundle.Config,
-		Workflows: bundle.Workflows,
+		Version:     bundle.Version,
+		Kit:         bundle.Kit,
+		Config:      bundle.Config,
+		Workflows:   bundle.Workflows,
+		MCPCommands: bundle.MCPCommands,
 	}
 	for _, skill := range bundle.Skills {
 		w.Skills = append(w.Skills, skill.Slug)

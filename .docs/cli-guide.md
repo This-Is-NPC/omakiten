@@ -293,7 +293,7 @@ No flags. Deletes the file and prunes references.
 
 ```sh
 okt law add -k workflow-enforced -n "Workflow Enforced" -s error
-okt law list --scope persona --persona backend-agent
+okt law list --scope persona --persona engineer
 ```
 
 ---
@@ -335,8 +335,8 @@ No flags. Includes frontmatter, body, and resolved skill refs.
 No flags.
 
 ```sh
-okt persona add -n "Backend Agent" --skill-slug go --skill-slug sqlite
-okt persona edit backend-agent --skill-slug go --skill-slug cli   # replaces full skill set
+okt persona add -n "Engineer" --skill-slug go --skill-slug sqlite
+okt persona edit engineer --skill-slug go --skill-slug cli   # replaces full skill set
 ```
 
 ---

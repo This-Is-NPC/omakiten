@@ -1,50 +1,39 @@
 ---
 name: Pull Request
-description: Standard PR scaffold with before/after framing, change log, validation matrix, deviations, and references.
+description: PR scaffold — before/after, changes, files, validation, deviations, risks, references.
 entity: pr
 default: pr
+laws:
+  - template-fidelity
 ---
-
 ## Before
-- {Pain point 1}
-- {Pain point 2}
-- {Pain point 3}
+- {pain point}
 
 ## After
-- {Outcome 1}
-- {Outcome 2}
-- {Outcome 3}
+- {outcome}
 
-## Summary of Changes
+## Summary of changes
 | Aspect | Change |
 | --- | --- |
-| {Aspect 1} | {Change 1} |
-| {Aspect 2} | {Change 2} |
-| {Aspect 3} | {Change 3} |
+| {aspect} | {change} |
 
-## Files Updated
-- `{file-path}`
-- `{file-path}`
-- `{file-path}`
+## Files updated
+- `{path}`
 
 ## Validation
 | Scenario | Outcome |
 | --- | --- |
-| {Scenario 1} | {Outcome 1} |
-| {Scenario 2} | {Outcome 2} |
-| {Scenario 3} | {Outcome 3} |
+| {scenario} | {outcome} |
 
 ## Deviations
-| Requirement / Criterion | Deviation | Rationale |
+| Criterion | Deviation | Rationale |
 | --- | --- | --- |
-| {Criterion 1} | {What diverged} | {Why} |
+| {criterion} | {diverged} | {why} |
 
-## Risks / Follow-ups
-- {Risk 1}
-- {Risk 2}
-- {Risk 3}
+## Risks / follow-ups
+- {risk}
 
 ## References
-- Main Commits: `{commit-hash}`, `{commit-hash}`
-- Issue or Okt task: #{issue-number}
-- Branch: `{branch-name}`
+- Commits: `{hash}`
+- Okt task: #{id}
+- Branch: `{name}`

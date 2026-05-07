@@ -22,16 +22,18 @@ type lawFrontmatter struct {
 }
 
 type personaFrontmatter struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description,omitempty"`
+	Name        string   `yaml:"name"`
+	Description string   `yaml:"description,omitempty"`
+	Laws        []string `yaml:"laws,omitempty"`
 }
 
 type templateFrontmatter struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description,omitempty"`
-	Entity      string `yaml:"entity,omitempty"`
-	Default     string `yaml:"default,omitempty"`
-	Project     string `yaml:"project,omitempty"`
+	Name        string   `yaml:"name"`
+	Description string   `yaml:"description,omitempty"`
+	Entity      string   `yaml:"entity,omitempty"`
+	Default     string   `yaml:"default,omitempty"`
+	Project     string   `yaml:"project,omitempty"`
+	Laws        []string `yaml:"laws,omitempty"`
 }
 
 // LoadSkills scans dir for *.md files (defaults at root + customs under
@@ -197,6 +199,7 @@ func LoadPersonas(dir string) ([]Persona, []SourceWarning, error) {
 			Name:        meta.Name,
 			Description: meta.Description,
 			Body:        string(body),
+			Laws:        append([]string(nil), meta.Laws...),
 			SourcePath:  file.Path,
 			IsCustom:    file.IsCustom,
 		}
@@ -261,6 +264,7 @@ func LoadTemplates(dir string) ([]TaskTemplate, []SourceWarning, error) {
 			Entity:      strings.TrimSpace(meta.Entity),
 			Default:     strings.TrimSpace(meta.Default),
 			ProjectSlug: strings.TrimSpace(meta.Project),
+			Laws:        append([]string(nil), meta.Laws...),
 			Body:        string(body),
 			SourcePath:  file.Path,
 			IsCustom:    file.IsCustom,

@@ -191,20 +191,71 @@ func TestAdapterReadResource(t *testing.T) {
 }
 
 func TestAdapterGetPrompt(t *testing.T) {
-	prompts := []string{"okt", "okt-create", "okt-continue", "okt-resume"}
+	ctx := context.Background()
+	var adapter *Adapter // nil adapter exercises the fallback path
+	prompts := []string{"okt", "okt-create", "okt-continue", "okt-resume", "okt-imagine", "okt-implement"}
 	for _, name := range prompts {
-		result, err := GetPrompt(name, nil)
+		result, err := adapter.GetPrompt(ctx, name, nil)
 		if err != nil {
 			t.Fatalf("GetPrompt(%s) error = %v", name, err)
 		}
 		if len(result.Messages) == 0 {
 			t.Fatalf("GetPrompt(%s) Messages empty", name)
 		}
+		// The fallback path always emits the cache hint — the prompt is
+		// byte-stable so caching is always safe and the toggle only matters
+		// once a service is wired.
+		if result.Messages[0].Content.Meta == nil {
+			t.Fatalf("GetPrompt(%s) Content.Meta = nil, want cache hint on fallback path", name)
+		}
 	}
 
-	_, err := GetPrompt("unknown", nil)
-	if err == nil {
+	if _, err := adapter.GetPrompt(ctx, "unknown", nil); err == nil {
 		t.Fatal("GetPrompt(unknown) error = nil")
+	}
+}
+
+// TestAdapterGetPromptCacheHintToggle pins the contract for the
+// `config.mcp.cache_prompts` flag: when the wired service reports
+// SettingsCachePrompts()==true, the rendered content carries
+// `_meta.anthropic.cache_control` ; when false, the field is omitted so
+// clients sensitive to the metadata key see no hint at all.
+func TestAdapterGetPromptCacheHintToggle(t *testing.T) {
+	ctx := context.Background()
+	service := newMCPTestService(t, ctx)
+	adapter := NewAdapter(service)
+
+	service.SetSettings(agent.ServiceSettings{
+		RecentCommentLimit: 5,
+		IncludeWorkflow:    true,
+		CachePrompts:       true,
+	})
+	on, err := adapter.GetPrompt(ctx, "okt", nil)
+	if err != nil {
+		t.Fatalf("GetPrompt(on) error = %v", err)
+	}
+	if on.Messages[0].Content.Meta == nil {
+		t.Fatal("Meta nil with CachePrompts=true, want cache hint")
+	}
+	cc, ok := on.Messages[0].Content.Meta["anthropic.cache_control"]
+	if !ok {
+		t.Fatalf("Meta missing anthropic.cache_control: %+v", on.Messages[0].Content.Meta)
+	}
+	if m, ok := cc.(map[string]string); !ok || m["type"] != "ephemeral" {
+		t.Fatalf("cache_control payload = %+v, want {type: ephemeral}", cc)
+	}
+
+	service.SetSettings(agent.ServiceSettings{
+		RecentCommentLimit: 5,
+		IncludeWorkflow:    true,
+		CachePrompts:       false,
+	})
+	off, err := adapter.GetPrompt(ctx, "okt", nil)
+	if err != nil {
+		t.Fatalf("GetPrompt(off) error = %v", err)
+	}
+	if off.Messages[0].Content.Meta != nil {
+		t.Fatalf("Meta = %+v with CachePrompts=false, want nil", off.Messages[0].Content.Meta)
 	}
 }
 

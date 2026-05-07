@@ -6,16 +6,17 @@ package config
 // authoring content. The loader merges them into Bundle; the saver splits them
 // back out.
 type Bundle struct {
-	Version   int             `yaml:"version" json:"version"`
-	Kit       Kit             `yaml:"kit" json:"kit"`
-	Config    Settings        `yaml:"config" json:"config"`
-	Skills    []Skill         `yaml:"-" json:"skills,omitempty"`
-	Personas  []Persona       `yaml:"-" json:"personas,omitempty"`
-	Laws      []Law           `yaml:"-" json:"laws,omitempty"`
-	Templates []TaskTemplate  `yaml:"-" json:"templates,omitempty"`
-	Workflows []Workflow      `yaml:"workflows" json:"workflows,omitempty"`
-	Projects  []Project       `yaml:"-" json:"projects,omitempty"`
-	Warnings  []SourceWarning `yaml:"-" json:"warnings,omitempty"`
+	Version     int                       `yaml:"version" json:"version"`
+	Kit         Kit                       `yaml:"kit" json:"kit"`
+	Config      Settings                  `yaml:"config" json:"config"`
+	Skills      []Skill                   `yaml:"-" json:"skills,omitempty"`
+	Personas    []Persona                 `yaml:"-" json:"personas,omitempty"`
+	Laws        []Law                     `yaml:"-" json:"laws,omitempty"`
+	Templates   []TaskTemplate            `yaml:"-" json:"templates,omitempty"`
+	Workflows   []Workflow                `yaml:"workflows" json:"workflows,omitempty"`
+	Projects    []Project                 `yaml:"-" json:"projects,omitempty"`
+	MCPCommands map[string]MCPCommandSpec `yaml:"-" json:"mcp_commands,omitempty"`
+	Warnings    []SourceWarning           `yaml:"-" json:"warnings,omitempty"`
 }
 
 // TemplateByDefault resolves the template that should be used as the active
@@ -47,16 +48,37 @@ func (b Bundle) TemplateByDefault(kind, projectSlug string) *TaskTemplate {
 // wiring is the literal YAML shape of `omakiten.yaml`. Loader unmarshals into
 // this; saver marshals from it. Keeps Bundle decoupled from on-disk layout.
 type wiring struct {
-	Version   int                 `yaml:"version"`
-	Kit       Kit                 `yaml:"kit"`
-	Config    Settings            `yaml:"config"`
-	Workflows []Workflow          `yaml:"workflows"`
-	Skills    []string            `yaml:"skills,omitempty"`
-	Laws      []string            `yaml:"laws,omitempty"`
-	Templates []string            `yaml:"templates,omitempty"`
-	Personas  []PersonaWiring     `yaml:"personas,omitempty"`
-	Projects  []ProjectWiring     `yaml:"projects,omitempty"`
+	Version     int                       `yaml:"version"`
+	Kit         Kit                       `yaml:"kit"`
+	Config      Settings                  `yaml:"config"`
+	Workflows   []Workflow                `yaml:"workflows"`
+	Skills      []string                  `yaml:"skills,omitempty"`
+	Laws        []string                  `yaml:"laws,omitempty"`
+	Templates   []string                  `yaml:"templates,omitempty"`
+	Personas    []PersonaWiring           `yaml:"personas,omitempty"`
+	Projects    []ProjectWiring           `yaml:"projects,omitempty"`
+	MCPCommands map[string]MCPCommandSpec `yaml:"mcp_commands,omitempty"`
 }
+
+// MCPCommandSpec binds an `okt-*` MCP prompt to a persona, a set of laws, a
+// set of templates, and an opt-out list. The reserved key `global` declares
+// the laws applied to every command resolution; per-command entries can either
+// add laws (`laws:`) or remove laws inherited from `global` (`laws_disabled:`).
+//
+// Templates listed here are surfaced in the resolved prompt so the agent has
+// the relevant scaffold body without having to call templates.show first.
+type MCPCommandSpec struct {
+	Persona      string   `yaml:"persona,omitempty" json:"persona,omitempty"`
+	Laws         []string `yaml:"laws,omitempty" json:"laws,omitempty"`
+	LawsDisabled []string `yaml:"laws_disabled,omitempty" json:"laws_disabled,omitempty"`
+	Templates    []string `yaml:"templates,omitempty" json:"templates,omitempty"`
+}
+
+// MCPCommandsGlobalKey is the reserved entry inside mcp_commands that supplies
+// laws inherited by every command. Per-command entries may opt out via
+// `laws_disabled:`. Anything else under this key is ignored — the shape is
+// the same MCPCommandSpec for symmetry, but Persona/Templates are not applied.
+const MCPCommandsGlobalKey = "global"
 
 // PersonaWiring is the persona entry inside `omakiten.yaml`. The persona body
 // (description, free-form notes) lives in personas/<slug>.md; this struct only
@@ -88,6 +110,7 @@ type Settings struct {
 	Theme            ThemeSettings    `yaml:"theme" json:"theme"`
 	TemplateDefaults []string         `yaml:"template_defaults,omitempty" json:"template_defaults,omitempty"`
 	Views            ViewSettings     `yaml:"views,omitempty" json:"views,omitempty"`
+	MCP              MCPSettings      `yaml:"mcp,omitempty" json:"mcp,omitempty"`
 }
 
 // DefaultTemplateKinds is the canonical set of template-default slots when
@@ -112,6 +135,88 @@ func (s Settings) TemplateKinds() []string {
 type OutputSettings struct {
 	JSONMinified bool `yaml:"json_minified" json:"json_minified"`
 	OmitEmpty    bool `yaml:"omit_empty" json:"omit_empty"`
+}
+
+// MCPSettings tunes how MCP responses are shaped to fit the agent's context
+// window. Every field is optional; omit a key to keep the canonical default.
+// Pointer booleans (`*bool`) distinguish "not declared" from "declared false"
+// — e.g. omitting `cache_prompts` keeps caching on, while writing
+// `cache_prompts: false` is an explicit opt-out.
+//
+// Defaults are surfaced via the `Effective*` accessors so the validator and
+// the runtime agree on resolved values without each caller re-deriving them.
+type MCPSettings struct {
+	// RecentCommentLimit caps how many recent comments tools like
+	// `tasks.continue` and `project.overview` ship per call. <=0 keeps the
+	// canonical default (DefaultRecentCommentLimit).
+	RecentCommentLimit int `yaml:"recent_comment_limit,omitempty" json:"recent_comment_limit,omitempty"`
+
+	// MaxCommentChars truncates comment bodies past this length with a
+	// trailing ellipsis when shipped over MCP. <=0 keeps full bodies; >0
+	// truncates. Use to bound `tasks.continue` payloads on tasks with long
+	// `#resume` / `#documentation` comments.
+	MaxCommentChars int `yaml:"max_comment_chars,omitempty" json:"max_comment_chars,omitempty"`
+
+	// IncludeWorkflowInContinue toggles the `workflow` block in
+	// `tasks.continue` responses. nil keeps the canonical default
+	// (DefaultIncludeWorkflowInContinue, true). Set false once `okt` has
+	// loaded the workflow for the session and the agent does not need it
+	// re-shipped per call.
+	IncludeWorkflowInContinue *bool `yaml:"include_workflow_in_continue,omitempty" json:"include_workflow_in_continue,omitempty"`
+
+	// CachePrompts toggles emitting the Anthropic-aware `cache_control` hint
+	// on `prompts/get` content. nil keeps the canonical default
+	// (DefaultCachePrompts, true). Aware clients (recent Claude Code) reuse
+	// the cached prompt across calls; unaware clients ignore the hint
+	// silently — disabling only matters when a client misbehaves on it.
+	CachePrompts *bool `yaml:"cache_prompts,omitempty" json:"cache_prompts,omitempty"`
+}
+
+// Canonical defaults for MCPSettings. Centralized so validator and runtime
+// resolve to the same values without re-deriving them locally.
+const (
+	DefaultRecentCommentLimit        = 5
+	DefaultMaxCommentChars           = 0 // 0 = no truncation
+	DefaultIncludeWorkflowInContinue = true
+	DefaultCachePrompts              = true
+)
+
+// EffectiveRecentCommentLimit returns the configured cap on recent comments
+// shipped per MCP call, falling back to DefaultRecentCommentLimit when the
+// user omitted the field or set a non-positive value.
+func (m MCPSettings) EffectiveRecentCommentLimit() int {
+	if m.RecentCommentLimit <= 0 {
+		return DefaultRecentCommentLimit
+	}
+	return m.RecentCommentLimit
+}
+
+// EffectiveMaxCommentChars returns the configured comment-body truncation
+// length, falling back to DefaultMaxCommentChars (0 = no truncation) when the
+// user omitted the field or set a negative value.
+func (m MCPSettings) EffectiveMaxCommentChars() int {
+	if m.MaxCommentChars < 0 {
+		return DefaultMaxCommentChars
+	}
+	return m.MaxCommentChars
+}
+
+// EffectiveIncludeWorkflowInContinue returns whether `tasks.continue` should
+// embed the active workflow shape. nil → DefaultIncludeWorkflowInContinue.
+func (m MCPSettings) EffectiveIncludeWorkflowInContinue() bool {
+	if m.IncludeWorkflowInContinue == nil {
+		return DefaultIncludeWorkflowInContinue
+	}
+	return *m.IncludeWorkflowInContinue
+}
+
+// EffectiveCachePrompts returns whether `prompts/get` should emit the
+// `cache_control` hint. nil → DefaultCachePrompts.
+func (m MCPSettings) EffectiveCachePrompts() bool {
+	if m.CachePrompts == nil {
+		return DefaultCachePrompts
+	}
+	return *m.CachePrompts
 }
 
 type ContextSettings struct {
@@ -287,15 +392,16 @@ type Project struct {
 // the kind. Uniqueness is enforced by the validator: at most one template
 // per (default, project) pair.
 type TaskTemplate struct {
-	Slug        string `json:"slug"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Entity      string `json:"entity,omitempty"`
-	Default     string `json:"default,omitempty"`
-	ProjectSlug string `json:"project,omitempty"`
-	Body        string `json:"body,omitempty"`
-	SourcePath  string `json:"source_path,omitempty"`
-	IsCustom    bool   `json:"is_custom,omitempty"`
+	Slug        string   `json:"slug"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Entity      string   `json:"entity,omitempty"`
+	Default     string   `json:"default,omitempty"`
+	ProjectSlug string   `json:"project,omitempty"`
+	Laws        []string `json:"laws,omitempty"`
+	Body        string   `json:"body,omitempty"`
+	SourcePath  string   `json:"source_path,omitempty"`
+	IsCustom    bool     `json:"is_custom,omitempty"`
 }
 
 type Workflow struct {

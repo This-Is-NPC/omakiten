@@ -114,12 +114,150 @@ Every tool accepts optional project selector fields where useful: `project_id`, 
 
 ## Prompts
 
+`prompts/list` is built from `agent.CommandNames()`; bindings come from `mcp_commands` in `omakiten.yaml`. Each prompt resolves a persona, the union of bound laws, and any bound templates into a single user message — see the worked example below.
+
 | Prompt | Intent |
 |---|---|
 | `okt` | Load project overview before continuing work. |
-| `okt-create` | Create a task intent with duplicate detection. |
-| `okt-continue` | Continue a project-owned task by id. |
-| `okt-resume` | Resume from the most relevant checkpoint. |
+| `okt-imagine` | Brainstorm freely as a product owner before any task exists. |
+| `okt-create` | Author a task: feasibility check, user story, scope. |
+| `okt-resume` | Scan likely-next work across the active project. |
+| `okt-continue` | Read a task's checkpoint as an engineer before resuming work. |
+| `okt-implement` | Execute approved engineering work with strict rigor and commit discipline. |
+| `okt-document` | Survey project documentation for drift and propose updates. |
+
+The default kit follows a REST-style handoff pattern: each prompt's action text ends by suggesting the next prompt in the cycle. `okt → okt-resume / okt-imagine → okt-create → okt-continue → okt-implement` is the happy path; `okt-document` is parallel.
+
+## Anatomy of an MCP command
+
+Every `okt-*` prompt follows the same shape — only the bound tools and templates change. The flow is:
+
+1. **Prompt resolution** — the MCP client sends `prompts/get` and the server returns a single composed `PromptMessage`. This message carries the bound persona, the persona's skills, every effective law (global ∪ persona ∪ command ∪ template-bound, minus `laws_disabled`), any bound templates, and the action text ending with a REST-style handoff to the next command.
+2. **Tool calls (zero or more)** — the agent reads the action and calls the tool(s) named there. Most prompts point at one canonical tool (`okt-continue` → `tasks.continue`, `okt` → `project.overview`, etc.); read-only or open-ended ones (`okt-imagine`, `okt-document`) may call several or none.
+3. **REST handoff** — the action text always ends with a pointer at the next prompt in the cycle, so the agent can suggest `/okt-implement` after `/okt-continue`, `/okt-create` after `/okt-imagine`, and so on.
+
+The diagram below traces a concrete invocation — `/okt-continue 42` — but the shape applies to every prompt. Substitute the bound tool name and the DTO returned for the relevant command.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Client as MCP client
+    participant Server as okt mcp serve
+    participant Adapter as internal/mcp.Adapter
+    participant Service as internal/agent.Service
+    participant Store as SQLite (read model)
+    participant Agent as LLM agent
+
+    User->>Client: /okt-<command> [args]
+    Client->>Server: prompts/get { name, args }
+    Server->>Adapter: GetPrompt
+    Adapter->>Service: ResolveCommand(name)
+
+    Note over Service: Reads bundle snapshots seeded<br/>at runtime startup — no DB hit.<br/>Effective laws =<br/>global ∪ persona ∪ command<br/>∪ template-bound,<br/>− laws_disabled, deduped.
+
+    Service->>Service: renderCommandMarkdown<br/>(persona + skills + laws +<br/>template metadata +<br/>action — bodies kept out)
+    Service-->>Adapter: ResolveCommandResponse{ Markdown, … }
+    Adapter-->>Server: PromptResult
+    Server-->>Client: { messages:[ user/text ] }
+    Client->>Agent: inject user message (fixed size, see table)
+
+    Note over Agent: Reads "## Action" block,<br/>decides which tool(s) to call.
+
+    Agent->>Client: tools/call <bound tool> { args }
+    Client->>Server: tools/call
+    Server->>Adapter: CallTool
+    Adapter->>Service: <command method>(input)
+
+    Service->>Store: project-scoped reads<br/>(tasks / workflow / deps /<br/>comments / context / …)
+    Store-->>Service: aggregated payload
+    Service-->>Adapter: <command>Response{ … }
+    Adapter-->>Server: ToolResult (json text)
+    Server-->>Client: result
+    Client->>Agent: inject tool result<br/>(variable size, see table)
+
+    Note over Agent,User: Agent may call additional<br/>tools (progress.record,<br/>comments.add, tasks.move)<br/>before responding.
+
+    Agent->>User: synthesized response +<br/>REST handoff to next prompt
+```
+
+### Two-message floor
+
+Every prompt invocation injects **at least one message** (the composed prompt) and typically a second (the tool result):
+
+1. **The composed prompt** — one `PromptMessage` (`role: user`, `content.text: <rendered markdown>`). Size is **fixed per prompt** because no per-task data is embedded.
+2. **Tool result(s)** — zero or more, depending on what the action text directs. For prompts tied to a single tool, this is one `ToolResult` carrying a JSON payload whose size **varies** with the underlying data.
+
+For action-heavy prompts (`okt-implement`, `okt-document`) the agent will fan out and call several tools — `progress.record`, `comments.add`, `tasks.move` — each one adding another tool result message to the window. Those are the agent's choice, not the prompt's structure.
+
+### Just-in-time templates
+
+Bound templates ship as **metadata only** in the resolved prompt — slug, name, default kind, description — followed by a pointer telling the agent to call `templates.show <slug>` when ready to fill the scaffold. Bodies stay out of the prompt because they are large (the `pull-request` scaffold is ~700 tokens by itself), and the agent only needs them at the rare moment of materialization.
+
+This follows Anthropic's just-in-time context engineering principle: ship lightweight identifiers, let the agent fetch payloads on demand. The `template-fidelity` law remains pre-loaded (it is a constraint that must shape the fetch when it happens), but the body the constraint applies to lives behind a tool call.
+
+Trade-off: one extra MCP round-trip on the materialization step (only when the agent actually drafts the PR or fills the scaffold), in exchange for hundreds of tokens saved on every prompt resolution that does not reach materialization.
+
+### Per-prompt fixed token cost
+
+Rendered prompt sizes for the default kit. Numbers move with persona/skill/law/template bindings — adding a law to `mcp_commands.global.laws` adds ~50 tokens to every row.
+
+| Prompt | Bytes | ~Tokens | Drivers |
+|---|---|---|---|
+| `okt` | 1958 | 490 | engineer persona + 5 skills + 4 laws |
+| `okt-resume` | 1971 | 495 | engineer persona + 5 skills + 4 laws |
+| `okt-continue` | 2065 | 520 | engineer persona + 5 skills + 4 laws |
+| `okt-imagine` | 2217 | 555 | product-owner persona + 3 skills + 4 laws (template-fidelity disabled) |
+| `okt-document` | 2791 | 700 | documentation-agent + 5 skills + 5 laws |
+| `okt-create` | 3144 | 785 | product-owner + 3 skills + 5 laws + user-story metadata (JIT) |
+| `okt-implement` | 3818 | 955 | engineer + 5 skills + 7 laws + pull-request metadata (JIT) |
+
+Without JIT, `okt-implement` would carry the full `pull-request` body (~700 extra tokens, putting it past 1650). The same logic applies to any user-authored template — bind it via `mcp_commands.<cmd>.templates` and only metadata ships in the prompt.
+
+### Prompt engineering principles applied
+
+The default kit follows Anthropic's [context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) guidance. Customizers who add their own commands, laws, or templates should match these conventions so the resolved prompts stay coherent:
+
+- **Right altitude in action texts.** Frame the role, name the canonical tool, end with a REST handoff. Do not restate constraints already declared as bound laws — laws ship inline above the action and the agent reads them. Repeating a law in prose wastes the attention budget the article warns about.
+- **Just-in-time over pre-loading.** Template bodies are fetched via `templates.show` rather than embedded inline. The same logic applies to any heavy artifact (long context entries, large dumps): expose a tool, ship the slug, let the agent pull the body when actually needed.
+- **Few-shot examples in load-bearing laws.** Laws that govern judgment calls (`template-fidelity`, `conventional-commits`, `no-assumptions`) carry a `❌` / `✅` micro-example after the directive paragraph. Anthropic's principle: examples teach generalization better than abstract rules.
+- **No conditional logic in prompts.** Anti-pattern: `if returns requires_confirmation, ask the user…`. Instead, the server's response carries an actionable `Reason` field that names the next-step tools — the agent acts on the response shape, not on prompt-side branching. See `agent.Confirmation.Reason` in `internal/agent/dto.go`.
+- **Failure-driven additions.** Add a law or example only after observing a real failure mode. `template-fidelity` was added because the agent fabricated `Closes #40`; `authorize-remote-writes` was added because `git push` is destructive. Don't speculate.
+- **Markdown sections, not XML tags.** The renderer uses `## Persona`, `## Skills`, `## Laws`, `## Templates`, `## Action`. Same load-bearing structure Anthropic recommends, but markdown reads cleanly in both the agent prompt and a developer's terminal when debugging.
+
+### Variable tool-result cost — `okt-continue` worked example
+
+The fixed prompt is only half the picture. For prompts that fetch task state, the tool result dominates. `tasks.continue` ships:
+
+- the full `task` (title + description — descriptions can be thousands of chars on rich tasks);
+- the active workflow shape (~150 tokens, redundant if `okt` already ran in the session);
+- dependencies for the task;
+- the last 5 comments reversed-chronological with full body and tags;
+- the last 3 project context entries;
+- a `next_step_prompt` string.
+
+For a fresh task this lands at ~400 tokens; for a long-running task with verbose `#resume` and `#documentation` comments, 3000+ tokens is realistic. So:
+
+| Component | Tokens (typical) | Source |
+|---|---|---|
+| `okt-continue` prompt | ~420 | Fixed; `service.ResolveCommand` rendering |
+| `tasks.continue` tool result | 400 – 3000+ | Varies; dominated by `comments[]` body length |
+| **Total per `/okt-continue`** | **~800 – 3500** | |
+
+### Tuning context cost
+
+The biggest variable is the tool result, not the prompt. Four knobs in `config.mcp` (see `.docs/configuration-guide.md#configmcp`) shape it without changing the protocol:
+
+| Setting | Affects | Typical saving on `/okt-continue` |
+|---|---|---|
+| `recent_comment_limit` (int, default `5`) | Caps the comment-tail length in every checkpoint endpoint. Drop to `3` on tasks with many `#resume` notes. | ~40% of the `comments[]` block |
+| `max_comment_chars` (int, default `0`) | Truncates each comment body past N runes with `…`. Set to ~`500` for a hard floor while keeping the latest exchange readable. | ~50–70% of the `comments[]` block when bodies are long |
+| `include_workflow_in_continue` (`*bool`, default `true`) | Skips the `workflow` block in `tasks.continue`. The agent already has the workflow from the first `/okt` of the session — set `false` to stop re-shipping. | ~150 fixed tokens per call |
+| `cache_prompts` (`*bool`, default `true`) | Emits an Anthropic `cache_control` hint on `prompts/get` content. Aware clients reuse the cached prompt across calls. | ~90% of the prompt (~380 tokens) on subsequent calls within the cache window |
+
+The same accounting applies to every prompt — substitute the bound tool's DTO for the variable row above. `comments.list` is intentionally exempt from `max_comment_chars` because it's the explicit "read the full thread" endpoint; truncation would make the call useless.
+
+Per-call overrides are available where they make sense: `tasks.continue` accepts an `include_workflow` boolean argument that wins over the config default for that single call.
 
 ## Confirmation Behavior
 

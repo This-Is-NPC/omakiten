@@ -121,10 +121,10 @@ func TestCLISkillRemovePrunesPersonaRefs(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	// `go` skill is referenced by the default backend-agent persona.
+	// `go` skill is referenced by the default engineer persona.
 	runCLI(t, dbPath, configPath, "skill", "remove", "go")
 
-	out := runCLI(t, dbPath, configPath, "persona", "show", "backend-agent")
+	out := runCLI(t, dbPath, configPath, "persona", "show", "engineer")
 	if strings.Contains(out, `"go"`) {
 		t.Fatalf("persona still references removed skill: %s", out)
 	}

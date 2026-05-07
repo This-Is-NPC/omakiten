@@ -28,10 +28,23 @@ func (s *Service) ContinueTask(ctx context.Context, input ContinueTaskInput) (Co
 		return ContinueTaskResponse{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": input.TaskID, "project_id": project.ID})
 	}
 
-	workflow, err := s.repo.ActiveWorkflow(ctx)
-	if err != nil {
-		return ContinueTaskResponse{}, err
+	// Workflow shape is heavy (~150 tokens) and rarely changes mid-session.
+	// Skip the lookup when the caller has opted out via include_workflow=false
+	// or when config.mcp.include_workflow_in_continue is false and the caller
+	// did not override.
+	includeWorkflow := s.settings.IncludeWorkflow
+	if input.IncludeWorkflow != nil {
+		includeWorkflow = *input.IncludeWorkflow
 	}
+	var workflowSum WorkflowSummary
+	if includeWorkflow {
+		workflow, err := s.repo.ActiveWorkflow(ctx)
+		if err != nil {
+			return ContinueTaskResponse{}, err
+		}
+		workflowSum = workflowSummary(workflow)
+	}
+
 	dependencies, err := app.NewDependencyService(s.repo).List(ctx, project, input.TaskID)
 	if err != nil {
 		return ContinueTaskResponse{}, err
@@ -48,12 +61,25 @@ func (s *Service) ContinueTask(ctx context.Context, input ContinueTaskInput) (Co
 	return ContinueTaskResponse{
 		Project:        projectSummary(project),
 		Task:           taskSummary(task),
-		Workflow:       workflowSummary(workflow),
+		Workflow:       workflowSum,
 		Dependencies:   dependencySummaries(dependencies),
-		Comments:       recentComments(comments, recentCommentLimit),
+		Comments:       s.shapedRecentComments(comments),
 		RecentContext:  contextSnippets(entries, recentContextLimit),
 		NextStepPrompt: fmt.Sprintf("Continue task #%d from this checkpoint, then record material progress with `progress.record`.", task.ID),
 	}, nil
+}
+
+// shapedRecentComments applies the configured recent-comment cap and the
+// per-comment body truncation in one place so every endpoint that ships
+// comments uses the same shaping rules.
+func (s *Service) shapedRecentComments(comments []domain.Comment) []CommentSummary {
+	out := recentComments(comments, s.settings.RecentCommentLimit)
+	if s.settings.MaxCommentChars > 0 {
+		for i := range out {
+			out[i].Body = truncateBody(out[i].Body, s.settings.MaxCommentChars)
+		}
+	}
+	return out
 }
 
 func (s *Service) ListTasks(ctx context.Context, input ListTasksInput) (ListTasksResponse, error) {
@@ -80,6 +106,14 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 	}
 
 	template := s.activeTaskTemplate(project.Slug)
+	if input.TemplateSlug != "" {
+		merged, applied, err := s.applyTemplateBody(input.TemplateSlug, description, "task")
+		if err != nil {
+			return CreateTaskResponse{}, err
+		}
+		description = merged
+		template = applied
+	}
 
 	if !input.SkipSimilarityCheck && !input.Confirmed {
 		tasks, err := app.NewTaskServiceFromStore(s.repo).List(ctx, project, domain.TaskFilter{})
@@ -94,7 +128,14 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 				Template:     template,
 				Confirmation: Confirmation{
 					RequiresConfirmation: true,
-					Reason:               "Likely duplicate or related work already exists in this project.",
+					// The Reason text is the load-bearing instruction the agent
+					// acts on — it is intentionally self-explanatory so prompt
+					// resolution does not need an `if returns requires_confirmation`
+					// branch in its action text. Keep it imperative, name the
+					// next-step tools, and surface the choice to the user.
+					Reason: "Similar tasks already exist in this project. Surface them to the user verbatim and ask " +
+						"whether to continue an existing one (call `tasks.continue` with the chosen id) or create a " +
+						"separate task (call `tasks.create_intent` again with the same description and `confirmed=true`).",
 					Options: []ConfirmationOption{
 						{Action: "continue_existing", Label: "Continue one of the similar tasks"},
 						{Action: "create_separate", Label: "Create a separate task with confirmed=true"},

@@ -120,13 +120,16 @@ func pickLaws(loaded []Law, global []string, personas []PersonaWiring, projects 
 	return out
 }
 
-// pickPersonas filters loaded personas and stamps each with declared skill/law wiring.
+// pickPersonas filters loaded personas and stamps each with declared skill/law
+// wiring. Laws from the persona's frontmatter are preserved and merged (union,
+// dedup, frontmatter first) with any laws declared in the wiring entry, so the
+// authoring file and the wiring file can both contribute bindings. Skills only
+// flow through wiring — personas/<slug>.md does not carry a skills list.
 func pickPersonas(loaded []Persona, refs []PersonaWiring) []Persona {
 	if len(refs) == 0 {
 		out := make([]Persona, 0, len(loaded))
 		for _, p := range loaded {
 			p.Skills = nil
-			p.Laws = nil
 			out = append(out, p)
 		}
 		return out
@@ -139,9 +142,35 @@ func pickPersonas(loaded []Persona, refs []PersonaWiring) []Persona {
 	for _, ref := range refs {
 		if p, ok := bySlug[ref.Slug]; ok {
 			p.Skills = append([]string(nil), ref.Skills...)
-			p.Laws = append([]string(nil), ref.Laws...)
+			p.Laws = mergeLawSlugs(p.Laws, ref.Laws)
 			out = append(out, p)
 		}
+	}
+	return out
+}
+
+// mergeLawSlugs returns the union of two slug slices, preserving first-seen
+// order. Used to merge frontmatter-declared bindings with wiring-declared
+// bindings without duplicating slugs.
+func mergeLawSlugs(a, b []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(a)+len(b))
+	for _, slug := range a {
+		if _, dup := seen[slug]; dup {
+			continue
+		}
+		seen[slug] = struct{}{}
+		out = append(out, slug)
+	}
+	for _, slug := range b {
+		if _, dup := seen[slug]; dup {
+			continue
+		}
+		seen[slug] = struct{}{}
+		out = append(out, slug)
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

@@ -12,7 +12,15 @@ func (s *Service) AddComment(ctx context.Context, input AddCommentInput) (Commen
 	if err != nil {
 		return CommentResponse{}, err
 	}
-	comment, err := app.NewCommentService(s.repo).Add(ctx, project, input.TaskID, input.Body, input.AuthorType, input.Tags)
+	body := input.Body
+	if input.TemplateSlug != "" {
+		merged, _, err := s.applyTemplateBody(input.TemplateSlug, body, "comment")
+		if err != nil {
+			return CommentResponse{}, err
+		}
+		body = merged
+	}
+	comment, err := app.NewCommentService(s.repo).Add(ctx, project, input.TaskID, body, input.AuthorType, input.Tags)
 	if err != nil {
 		return CommentResponse{}, err
 	}
