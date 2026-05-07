@@ -138,7 +138,7 @@ func Tools() []ToolDefinition {
 		{Name: "solutions.list_top", Description: "List the top N most-liked solutions globally (cross-project). Useful to surface validated fixes and audit recurring patterns. Likes are incremented only by solutions.confirm(success=true).", InputSchema: listTopSolutionsSchema()},
 		{Name: "templates.list", Description: "List every loaded template (slug, name, default kind, project scope, custom flag). Read-only; templates are authored by the user — the agent never modifies template bindings.", InputSchema: objectSchema(map[string]any{"kind": stringSchema("Optional default-kind filter (e.g. \"task\")"), "project": stringSchema("Optional project slug to scope project-bound templates"), "include_body": booleanSchema("Set true to include the template body in each entry; default omits it for compact responses")}, nil)},
 		{Name: "metrics.summary", Description: "Aggregate per-AI-model behaviour over a period: errors recorded, errors searched, solutions added, like rate, and search-before-record ratio. Use to benchmark whether different agents research existing context before recording new errors. Requires that callers pass _agent_model on every tool call (now coercive).", InputSchema: objectSchema(map[string]any{"period": stringSchema("Time window: \"7d\", \"30d\" (default), or \"all\""), "project_id": integerSchema("Optional registered project id; omit for cross-project view")}, nil)},
-		{Name: "templates.show", Description: "Return one template by slug, including its full body. Read-only.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Template slug")}, []string{"slug"})},
+		{Name: "templates.show", Description: "Return one template by slug, including its full body. Read-only. Hard-rejects (validation_error) when the requested slug is a global template that is shadowed by a project-scoped override in the active project — the rejection's details name the active slug so callers can re-call directly.", InputSchema: showTemplateSchema()},
 	}
 }
 
@@ -481,6 +481,12 @@ func jsonText(data any) (string, error) {
 
 func selectorSchema() map[string]any {
 	return objectSchema(selectorProperties(), nil)
+}
+
+func showTemplateSchema() map[string]any {
+	props := selectorProperties()
+	props["slug"] = stringSchema("Template slug")
+	return objectSchema(props, []string{"slug"})
 }
 
 func selectorProperties() map[string]any {

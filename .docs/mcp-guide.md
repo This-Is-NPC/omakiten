@@ -103,7 +103,7 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | Tool | Purpose |
 |---|---|
 | `templates.list` | Lists every loaded template (slug, name, default kind, project scope, custom flag); optional `kind`/`project`/`include_body` filters. |
-| `templates.show` | Returns one template by slug, including its full body. |
+| `templates.show` | Returns one template by slug, including its full body. **Strict shadow validation:** when an active project resolves (via `project_id` / `project` / `cwd`) and the requested slug refers to a global template that the project shadows with an override of the same `default` kind, the call hard-rejects with `validation_error`. The rejection's `details` name `active_slug` so the agent can re-call directly. Outside any registered project, current slug-only lookup is preserved. An explicit `project` / `project_id` that does not resolve propagates `project_not_found` rather than falling back. |
 
 ### Metrics (cross-agent benchmarking)
 
