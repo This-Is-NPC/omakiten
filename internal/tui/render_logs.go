@@ -6,6 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"omakiten/internal/domain"
 )
 
 func (m *Model) handleLogsKey(msg tea.KeyMsg) {
@@ -87,10 +89,95 @@ func (m Model) renderLogs() string {
 	if len(m.logs) == 0 {
 		return "\n" + indentBlock(m.styles.panel.Render("No activity yet. Use the CLI, TUI, or MCP to interact with Omakiten."), 2)
 	}
+
+	summary := m.renderLogsSummaryTables()
+	var panel string
 	if m.availableWidth() < 92 {
-		return m.renderLogsCompact()
+		panel = m.renderLogsCompactPanel()
+	} else {
+		panel = m.renderLogsWidePanel()
+	}
+	return "\n" + indentBlock(summary+"\n\n"+panel, 2)
+}
+
+// renderLogsSummaryTables renders Status (total / ok / error / running)
+// and Sources (cli / mcp / tui) as two bordered grid tables — same
+// layout grammar as Stats › General. Aggregates over the loaded
+// `m.logs` window (capped by the view's `limit` setting), so the
+// numbers reflect what is actually shown below.
+func (m Model) renderLogsSummaryTables() string {
+	okCount := 0
+	errorCount := 0
+	runningCount := 0
+	cliCount := 0
+	mcpCount := 0
+	tuiCount := 0
+	for _, log := range m.logs {
+		switch log.Status {
+		case "ok":
+			okCount++
+		case "error":
+			errorCount++
+		case "running":
+			runningCount++
+		}
+		switch log.Source {
+		case domain.ActivitySourceCLI:
+			cliCount++
+		case domain.ActivitySourceMCP:
+			mcpCount++
+		case domain.ActivitySourceTUI:
+			tuiCount++
+		}
 	}
 
+	labelCell := func(label string) string {
+		return m.styles.info.Render("// " + strings.ToUpper(label))
+	}
+	statusRows := [][]string{
+		{labelCell("Status"), ""},
+		{labelCell("total"), fmt.Sprintf("%d", len(m.logs))},
+		{labelCell("ok"), fmt.Sprintf("%d", okCount)},
+		{labelCell("error"), fmt.Sprintf("%d", errorCount)},
+		{labelCell("running"), fmt.Sprintf("%d", runningCount)},
+	}
+	sourceRows := [][]string{
+		{labelCell("Sources"), ""},
+		{labelCell("cli"), fmt.Sprintf("%d", cliCount)},
+		{labelCell("mcp"), fmt.Sprintf("%d", mcpCount)},
+		{labelCell("tui"), fmt.Sprintf("%d", tuiCount)},
+	}
+
+	const (
+		labelWidth = 13
+		valueWidth = 27
+		tableWidth = 1 + labelWidth + 1 + valueWidth + 1
+		gap        = 2
+	)
+	widths := []int{labelWidth, valueWidth}
+
+	switch {
+	case m.availableWidth() >= tableWidth*2+gap:
+		left := renderGridTable(statusRows, widths, m.styles.border)
+		right := renderGridTable(sourceRows, widths, m.styles.border)
+		return lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", gap), right)
+	case m.availableWidth() >= tableWidth:
+		left := renderGridTable(statusRows, widths, m.styles.border)
+		right := renderGridTable(sourceRows, widths, m.styles.border)
+		return left + "\n\n" + right
+	default:
+		valueW := clampInt(m.availableWidth()-labelWidth-3, 8, valueWidth)
+		narrowWidths := []int{labelWidth, valueW}
+		all := append(append([][]string{}, statusRows...), sourceRows...)
+		return renderGridTable(all, narrowWidths, m.styles.border)
+	}
+}
+
+// renderLogsWidePanel renders the multi-column logs panel used on
+// terminals wider than 92 cells. Returned without the leading "\n" or
+// indentBlock so `renderLogs` can stack the summary block above it
+// inside a single indent block.
+func (m Model) renderLogsWidePanel() string {
 	const (
 		logOperationWidth = 35
 		logProjectWidth   = 11
@@ -133,7 +220,7 @@ func (m Model) renderLogs() string {
 	rows = append(rows, m.sliceScrollRows(dataRows, m.logsScroll, m.logsViewportRows())...)
 	rows = append(rows, "", m.styles.hint.Render("Only app service calls are logged. TUI refreshes and direct reads are not shown."))
 
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
+	return m.styles.panel.Render(strings.Join(rows, "\n"))
 }
 
 // sliceScrollRows clamps `scroll` into a valid range and returns the visible
@@ -183,7 +270,11 @@ func (m Model) sliceScrollRows(dataRows []string, scroll, viewport int) []string
 	return out
 }
 
-func (m Model) renderLogsCompact() string {
+// renderLogsCompactPanel is the narrow-terminal flavor of the activity
+// logs panel. Same body as the wide variant minus the project / args
+// columns. Returned without the leading "\n" or indentBlock so
+// `renderLogs` can stack the summary block above it.
+func (m Model) renderLogsCompactPanel() string {
 	width := clampInt(m.availableWidth()-4, 32, 72)
 	limit := minInt(len(m.logs), 50)
 	dataRows := make([]string, 0, limit)
@@ -211,5 +302,5 @@ func (m Model) renderLogsCompact() string {
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.logsScroll, m.logsViewportRows())...)
 	rows = append(rows, "", m.styles.hint.Render("r refresh · full arguments appear on wider terminals"))
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
+	return m.styles.panel.Render(strings.Join(rows, "\n"))
 }

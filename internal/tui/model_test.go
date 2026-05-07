@@ -132,13 +132,20 @@ func TestModelTablesUseWideTerminalSpace(t *testing.T) {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 	model.width = 180
+	// The Stats › Logs view now stacks two narrow summary grid tables on
+	// top of the wide activity panel, so the *first* ┌...┐ line belongs
+	// to the summary, not the panel. Walk every match and take the widest
+	// — that is the panel itself.
 	panelWidth := func(view string) int {
+		widest := 0
 		for _, line := range strings.Split(view, "\n") {
 			if strings.Contains(line, "┌") && strings.Contains(line, "┐") {
-				return lipgloss.Width(line)
+				if w := lipgloss.Width(line); w > widest {
+					widest = w
+				}
 			}
 		}
-		return 0
+		return widest
 	}
 
 	tableModel := pressStringKey(t, model, "/")
