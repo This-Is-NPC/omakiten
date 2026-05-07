@@ -29,7 +29,7 @@ config:
     active: default
   theme:
     active: omakiten
-  template_defaults: [task, pr, comment-resume, comment-selfbranch]
+  template_defaults: [task, pr, comment-resume, comment-selfbranch, comment-documentation]
   views:
     board:
       sort:
