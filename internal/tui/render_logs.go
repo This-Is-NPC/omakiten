@@ -10,10 +10,6 @@ import (
 
 func (m *Model) handleLogsKey(msg tea.KeyMsg) {
 	switch msg.String() {
-	case "left", "h":
-		m.view = (m.view + len(viewNames) - 1) % len(viewNames)
-	case "right", "l":
-		m.view = (m.view + 1) % len(viewNames)
 	case "up", "k":
 		if m.logsSelected > 0 {
 			m.logsSelected--
@@ -53,26 +49,38 @@ func (m *Model) handleLogsKey(msg tea.KeyMsg) {
 }
 
 // syncLogsScroll keeps m.logsScroll aligned so the selected log row stays
-// inside the viewport. Each log row is exactly 1 line (no wrapping) so this is
-// a simple cursor-following scroll — no height heuristic needed.
+// inside the viewport. `sliceScrollRows` reserves up to 2 of the panel
+// rows for "▲ above" / "▼ below" hints, so the data window the cursor
+// can actually live in is `logsViewportRows() - 2`. Pass that effective
+// size to followCursor — otherwise the cursor lands in the reserved
+// zone and the render clips it without anyone scrolling.
 func (m *Model) syncLogsScroll() {
-	m.logsScroll = followCursor(m.logsScroll, m.logsSelected, m.logsViewportRows(), len(m.logs))
+	m.logsScroll = followCursor(m.logsScroll, m.logsSelected, scrollDataRows(m.logsViewportRows()), len(m.logs))
 }
 
-// logsViewportRows returns how many data rows fit in the activity log panel
-// after accounting for the screen chrome, panel borders, and the panel's
-// internal header (kicker + column header + separator) and footer (blank +
-// hint) rows. Returns 0 when the height is unknown or too small to scroll.
+// logsViewportRows returns how many data rows fit in the activity log
+// panel. The screen header (1- or 2-row nav kicker depending on the
+// active top) and the summary block above the panel both grow / shrink
+// with state, so they are measured live instead of folded into a static
+// constant — this keeps the cursor on-screen when the user adds a sub
+// strip or summary tables that change the chrome height.
 func (m Model) logsViewportRows() int {
 	if m.height <= 0 {
 		return 0
 	}
-	// 5 screen header + 1 leading blank + 2 footer + 2 panel borders
-	// + 3 panel header rows + 2 panel footer rows = 15.
-	chrome := 15
-	if m.status != "" {
-		chrome++
+	screenHeader := strings.Count(m.renderHeader(), "\n") + 1
+	summary := strings.Count(m.renderLogsSummaryTables(), "\n") + 1
+	statusLine := 0
+	if m.status != "" && !m.isEmbeddedCommentInput() {
+		statusLine = 2 // separator newline + the status badge
 	}
+	const (
+		leadingBlank = 1 // "\n" prepended by renderLogs before the body
+		gapToPanel   = 1 // blank line between summary and panel
+		panelChrome  = 7 // 2 borders + 3 header rows + 2 footer rows
+		footerLines  = 2 // newline + indented keybinding hint
+	)
+	chrome := screenHeader + statusLine + leadingBlank + summary + gapToPanel + panelChrome + footerLines
 	rows := m.height - chrome
 	if rows < 4 {
 		return 0
@@ -87,10 +95,74 @@ func (m Model) renderLogs() string {
 	if len(m.logs) == 0 {
 		return "\n" + indentBlock(m.styles.panel.Render("No activity yet. Use the CLI, TUI, or MCP to interact with Omakiten."), 2)
 	}
+
+	summary := m.renderLogsSummaryTables()
+	var panel string
 	if m.availableWidth() < 92 {
-		return m.renderLogsCompact()
+		panel = m.renderLogsCompactPanel()
+	} else {
+		panel = m.renderLogsWidePanel()
+	}
+	return "\n" + indentBlock(summary+"\n\n"+panel, 2)
+}
+
+// renderLogsSummaryTables renders Status (total / ok / error / running)
+// and Sources (cli / mcp / tui) as two bordered grid tables — same
+// layout grammar as Stats › General. Aggregates over the **full
+// project log** via `m.logsStats` (populated alongside `m.logs` on
+// every refresh), so the headline numbers reflect everything the
+// project has recorded — independent of how many rows the panel
+// beneath happens to render under its `views.logs.limit`.
+func (m Model) renderLogsSummaryTables() string {
+	stats := m.logsStats
+
+	labelCell := func(label string) string {
+		return m.styles.info.Render("// " + strings.ToUpper(label))
+	}
+	statusRows := [][]string{
+		{labelCell("Status"), ""},
+		{labelCell("total"), fmt.Sprintf("%d", stats.Total)},
+		{labelCell("ok"), fmt.Sprintf("%d", stats.Ok)},
+		{labelCell("error"), fmt.Sprintf("%d", stats.Error)},
+		{labelCell("running"), fmt.Sprintf("%d", stats.Running)},
+	}
+	sourceRows := [][]string{
+		{labelCell("Sources"), ""},
+		{labelCell("cli"), fmt.Sprintf("%d", stats.CLI)},
+		{labelCell("mcp"), fmt.Sprintf("%d", stats.MCP)},
+		{labelCell("tui"), fmt.Sprintf("%d", stats.TUI)},
 	}
 
+	const (
+		labelWidth = 13
+		valueWidth = 27
+		tableWidth = 1 + labelWidth + 1 + valueWidth + 1
+		gap        = 2
+	)
+	widths := []int{labelWidth, valueWidth}
+
+	switch {
+	case m.availableWidth() >= tableWidth*2+gap:
+		left := renderGridTable(statusRows, widths, m.styles.border)
+		right := renderGridTable(sourceRows, widths, m.styles.border)
+		return lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", gap), right)
+	case m.availableWidth() >= tableWidth:
+		left := renderGridTable(statusRows, widths, m.styles.border)
+		right := renderGridTable(sourceRows, widths, m.styles.border)
+		return left + "\n\n" + right
+	default:
+		valueW := clampInt(m.availableWidth()-labelWidth-3, 8, valueWidth)
+		narrowWidths := []int{labelWidth, valueW}
+		all := append(append([][]string{}, statusRows...), sourceRows...)
+		return renderGridTable(all, narrowWidths, m.styles.border)
+	}
+}
+
+// renderLogsWidePanel renders the multi-column logs panel used on
+// terminals wider than 92 cells. Returned without the leading "\n" or
+// indentBlock so `renderLogs` can stack the summary block above it
+// inside a single indent block.
+func (m Model) renderLogsWidePanel() string {
 	const (
 		logOperationWidth = 35
 		logProjectWidth   = 11
@@ -133,7 +205,7 @@ func (m Model) renderLogs() string {
 	rows = append(rows, m.sliceScrollRows(dataRows, m.logsScroll, m.logsViewportRows())...)
 	rows = append(rows, "", m.styles.hint.Render("Only app service calls are logged. TUI refreshes and direct reads are not shown."))
 
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
+	return m.styles.panel.Render(strings.Join(rows, "\n"))
 }
 
 // sliceScrollRows clamps `scroll` into a valid range and returns the visible
@@ -149,7 +221,16 @@ func (m Model) sliceScrollRows(dataRows []string, scroll, viewport int) []string
 	if offset < 0 {
 		offset = 0
 	}
-	maxOffset := len(dataRows) - viewport
+	// When the scroll has any items above (offset > 0), the visibleHeight
+	// loses 1 row to the "▲ above" hint, so the renderer can still paint
+	// the last data row at offset = len(dataRows) - viewport + 1. Cap the
+	// clamp accordingly — otherwise the cursor at the last row gets
+	// scrolled off the panel because the old `total - viewport` cap was
+	// one row too tight to expose the trailing items.
+	maxOffset := len(dataRows) - viewport + 1
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
 	if offset > maxOffset {
 		offset = maxOffset
 	}
@@ -183,7 +264,11 @@ func (m Model) sliceScrollRows(dataRows []string, scroll, viewport int) []string
 	return out
 }
 
-func (m Model) renderLogsCompact() string {
+// renderLogsCompactPanel is the narrow-terminal flavor of the activity
+// logs panel. Same body as the wide variant minus the project / args
+// columns. Returned without the leading "\n" or indentBlock so
+// `renderLogs` can stack the summary block above it.
+func (m Model) renderLogsCompactPanel() string {
 	width := clampInt(m.availableWidth()-4, 32, 72)
 	limit := minInt(len(m.logs), 50)
 	dataRows := make([]string, 0, limit)
@@ -211,5 +296,5 @@ func (m Model) renderLogsCompact() string {
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.logsScroll, m.logsViewportRows())...)
 	rows = append(rows, "", m.styles.hint.Render("r refresh · full arguments appear on wider terminals"))
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
+	return m.styles.panel.Render(strings.Join(rows, "\n"))
 }

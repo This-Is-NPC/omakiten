@@ -24,12 +24,6 @@ func (m *Model) handleConfigKey(msg tea.KeyMsg) tea.Cmd {
 		if m.deletePending {
 			m.clearDeletePrompt("Delete cancelled")
 		}
-	case "left", "h":
-		m.clearDeletePrompt("")
-		m.cycleEntityKind(-1)
-	case "right", "l":
-		m.clearDeletePrompt("")
-		m.cycleEntityKind(1)
 	case "up", "k":
 		m.clearDeletePrompt("")
 		m.moveEntityCursor(-1)
@@ -85,21 +79,6 @@ func (m *Model) handleConfigKey(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 	return nil
-}
-
-func (m *Model) cycleEntityKind(delta int) {
-	kinds := entityKinds()
-	current := 0
-	for index, kind := range kinds {
-		if kind == m.entityKind {
-			current = index
-			break
-		}
-	}
-	current = (current + delta + len(kinds)) % len(kinds)
-	m.entityKind = kinds[current]
-	m.syncFocusedEntityScroll()
-	m.syncEntityKindScroll()
 }
 
 func (m *Model) moveEntityCursor(delta int) {

@@ -53,6 +53,14 @@ type Repositories struct {
 	ActivityLogs activity.ActivityLogRepository
 	Events       app.EventRepository
 	Metrics      *app.MetricsService
+
+	// Runtime metadata surfaced on Settings › General. The TUI itself
+	// does not consume these for routing or persistence; they exist so
+	// the read-only info card can reflect the active install. Empty
+	// strings are tolerated and rendered as "—".
+	ConfigPath string
+	DBPath     string
+	Version    string
 }
 
 // Model is the root Bubble Tea model for the TUI. It aggregates state that
@@ -74,13 +82,21 @@ type Model struct {
 
 	width    int
 	height   int
-	view     int
+	top      topID
+	sub      subID
 	mode     inputMode
 	input    string
 	status   string
 	moveMode bool
 	helpOpen bool
 	helpAll  bool
+	// viewHistory is the in-memory back-stack populated whenever the user
+	// makes an intentional zone/sub navigation (tab / digit / `,`/`/`,
+	// `0`, `ctrl+h`). Bound to a small cap so long sessions cannot grow
+	// it unbounded; `ctrl+o` (vim-style "older") pops the most recent
+	// entry. Refreshes and overlay close events do not touch this — the
+	// stack is a record of *navigation*, not of every state change.
+	viewHistory []navState
 
 	taskScreen      taskScreenMode
 	taskID          int64
@@ -117,11 +133,10 @@ type Model struct {
 	colIdx              int
 	cardIdx             int
 
-	entityKind       entityKind
-	entityCursors    map[entityKind]int
-	entityScroll     map[entityKind]int
-	entityKindScroll int
-	entityScreen     entityScreenMode
+	entityKind    entityKind
+	entityCursors map[entityKind]int
+	entityScroll  map[entityKind]int
+	entityScreen  entityScreenMode
 	entityForm       entityForm
 	deletePending    bool
 	deleteKind       entityKind
@@ -143,6 +158,12 @@ type Model struct {
 
 	logs         []domain.ActivityLog
 	logsSelected int
+	// logsStats is the unbounded aggregate over the activity log scope
+	// (project + view source filter). Populated alongside `logs` on
+	// every refresh of the Stats › Logs view; the summary tables read
+	// from this so the headline counts reflect the full project
+	// history rather than just the limit-N rows currently materialised.
+	logsStats domain.ActivityLogStats
 
 	// activity holds the unified activity feed (comments + system events)
 	// for the currently-open task detail view. Populated on openTaskView
@@ -269,13 +290,178 @@ const (
 	taskFieldPriority
 )
 
-var viewNames = []string{"BOARD", "TABLE", "GRAPH", "CONFIG", "LOGS", "STATS"}
+// topID identifies a top-level navigation zone. Tops group surfaces by
+// purpose: Tasks (data lenses over the work queue), Stats (observability),
+// Settings (admin). topHome is the sentinel for the multi-project Home
+// screen — it sits outside the regular cycle and is reachable only via
+// empty-project startup or the dedicated ctrl+h binding.
+type topID int
 
-// viewHome is the sentinel index for the multi-project Home screen.
-// It deliberately sits outside viewNames so tab/shift+tab/digit keys
-// never land on it — Home is reachable only via empty-project startup
-// or the dedicated ctrl+h binding.
-const viewHome = -1
+const topHome topID = -1
+
+const (
+	topTasks topID = iota
+	topStats
+	topSettings
+)
+
+// subID identifies a sub-menu inside a top. Values are unique across all
+// tops so a (top, sub) pair is unambiguous and individual subs can be
+// referenced without first resolving their parent top.
+type subID int
+
+const (
+	subBoard subID = iota
+	subTable
+	subGraph
+	subStatsGeneral
+	subStatsLogs
+	subSettingsGeneral
+	subSettingsLaws
+	subSettingsPersonas
+	subSettingsSkills
+	subSettingsTemplates
+	subSettingsTags
+)
+
+// topOrder is the canonical cycle order for tab/shift+tab and the order
+// the top kicker renders left to right.
+var topOrder = []topID{topTasks, topStats, topSettings}
+
+// subsByTop lists the subs each top exposes, in render and cycle order.
+// The sub strip is suppressed when the active top has only one sub.
+var subsByTop = map[topID][]subID{
+	topTasks:    {subBoard, subTable, subGraph},
+	topStats:    {subStatsGeneral, subStatsLogs},
+	topSettings: {subSettingsGeneral, subSettingsLaws, subSettingsPersonas, subSettingsSkills, subSettingsTemplates, subSettingsTags},
+}
+
+var topLabels = map[topID]string{
+	topTasks:    "TASKS",
+	topStats:    "STATS",
+	topSettings: "SETTINGS",
+}
+
+var subLabels = map[subID]string{
+	subBoard:             "board",
+	subTable:             "table",
+	subGraph:             "graph",
+	subStatsGeneral:      "general",
+	subStatsLogs:         "logs",
+	subSettingsGeneral:   "general",
+	subSettingsLaws:      "laws",
+	subSettingsPersonas:  "personas",
+	subSettingsSkills:    "skills",
+	subSettingsTemplates: "templates",
+	subSettingsTags:      "tags",
+}
+
+// settingsEntitySubs maps the per-entity Settings subs to the underlying
+// `entityKind` they drive. The "general" sub is intentionally excluded —
+// it is read-only and does not bind to an entity list. Used to keep
+// `m.entityKind` in sync as the user cycles through Settings subs.
+var settingsEntitySubs = map[subID]entityKind{
+	subSettingsLaws:      entityKindLaw,
+	subSettingsPersonas:  entityKindPersona,
+	subSettingsSkills:    entityKindSkill,
+	subSettingsTemplates: entityKindTemplate,
+	subSettingsTags:      entityKindTag,
+}
+
+// entityKindForSub returns the entity kind owned by a Settings sub, plus
+// a bool that is false for `subSettingsGeneral` (and any non-Settings
+// sub) — callers can distinguish "no entity" from "Laws" without a
+// second comparison.
+func entityKindForSub(s subID) (entityKind, bool) {
+	k, ok := settingsEntitySubs[s]
+	return k, ok
+}
+
+// navState is the addressable navigation key — used to detect view
+// changes across an Update tick (so refreshAfterViewChange can re-fetch
+// only when the user actually navigated).
+type navState struct {
+	top  topID
+	sub  subID
+}
+
+// firstSub returns the canonical landing sub for a top — what the user
+// sees after `tab`/`shift+tab`/digit-jump. Stats lands on general, Tasks
+// on board, Settings on config.
+func firstSub(t topID) subID {
+	if subs := subsByTop[t]; len(subs) > 0 {
+		return subs[0]
+	}
+	return subID(-1)
+}
+
+// topIndex returns the position of t in topOrder, or -1 when not found.
+func topIndex(t topID) int {
+	for i, candidate := range topOrder {
+		if candidate == t {
+			return i
+		}
+	}
+	return -1
+}
+
+// subIndex returns the position of s within its parent top's sub list,
+// or -1 when the sub does not belong to t.
+func subIndex(t topID, s subID) int {
+	for i, candidate := range subsByTop[t] {
+		if candidate == s {
+			return i
+		}
+	}
+	return -1
+}
+
+// onHome reports whether the model is currently on the multi-project
+// Home view. Centralised so callers do not have to remember the sentinel.
+func (m Model) onHome() bool {
+	return m.top == topHome
+}
+
+// viewHistoryCap bounds how many back-stack entries the model keeps.
+// 16 is roomy enough for typical session traversal without letting the
+// slice grow unboundedly across long-running TUI sessions.
+const viewHistoryCap = 16
+
+// pushHistory records the *current* (top, sub) before a navigation
+// changes them, so a subsequent `ctrl+o` can restore it. Skips
+// duplicate consecutive entries (e.g. pressing `1` twice when already
+// on Tasks) and drops the oldest entry when the stack hits its cap.
+func (m *Model) pushHistory() {
+	entry := navState{top: m.top, sub: m.sub}
+	if n := len(m.viewHistory); n > 0 && m.viewHistory[n-1] == entry {
+		return
+	}
+	m.viewHistory = append(m.viewHistory, entry)
+	if extra := len(m.viewHistory) - viewHistoryCap; extra > 0 {
+		m.viewHistory = m.viewHistory[extra:]
+	}
+}
+
+// popHistory restores the most recent (top, sub) recorded by
+// pushHistory, returning true on success. No-op when the stack is
+// empty so `ctrl+o` at the start of a session is silently dropped.
+func (m *Model) popHistory() bool {
+	n := len(m.viewHistory)
+	if n == 0 {
+		return false
+	}
+	prev := m.viewHistory[n-1]
+	m.viewHistory = m.viewHistory[:n-1]
+	m.top = prev.top
+	m.sub = prev.sub
+	m.syncEntityKindFromSub()
+	return true
+}
+
+// (T3 retired the legacy left/right flat cycle — `cycleLegacyView` and
+// `legacyNavOrder` are gone. AC9 from T1 / T2 only required behavior
+// preservation across the refactor; T3 explicitly drops it so left and
+// right are unambiguously within-view bindings everywhere.)
 
 // refreshTickMsg drives the realtime refresh loop — emitted every second
 // while the user is on a "live" view (board, table, etc.) and not editing.

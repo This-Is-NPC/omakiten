@@ -108,7 +108,7 @@ Path resolution (highest to lowest precedence):
 	cmd.AddCommand(newLawCommand(opts))
 	cmd.AddCommand(newSkillCommand(opts))
 	cmd.AddCommand(newPersonaCommand(opts))
-	cmd.AddCommand(newTUICommand(opts))
+	cmd.AddCommand(newTUICommand(opts, version))
 	cmd.AddCommand(newMCPCommand(opts))
 
 	return cmd

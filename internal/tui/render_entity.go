@@ -9,21 +9,23 @@ import (
 	"omakiten/internal/domain"
 )
 
-// renderEntityCell builds the inner content of one entity column. The cards
-// are clamped to the viewport budget computed from the terminal height: cards
-// outside the visible window are summarized as "▲ N above" / "▼ N below"
-// hints exactly like the kanban columns. Same scroll model: per-kind offset
-// stored in m.entityScroll, kept in sync with the cursor by
-// syncFocusedEntityScroll on every cursor move.
+// renderEntityCell builds the inner content of one entity column.
+// The cards wrap into multiple grid columns when the available width
+// allows, and per-row scroll keeps the focused card on-screen with
+// "▲ N above" / "▼ N below" summaries for hidden cards. Per-kind row
+// offset stored in `m.entityScroll[kind]` (encoded as the first visible
+// card index, snapped to a row boundary at render time).
 func (m Model) renderEntityCell(kind entityKind) string {
-	return m.renderEntityCellWithViewport(kind, m.entityViewportRows())
+	return m.renderEntityCellWithViewport(kind, m.entityViewportRows(), m.entityCellContentWidth())
 }
 
-// renderEntityCellWithViewport is the same as renderEntityCell but lets the
-// caller override the viewport budget — useful for renderConfig where we
-// already know how many rows the tables above the entity grid consumed and
-// can pass an exact number rather than relying on a static chrome estimate.
-func (m Model) renderEntityCellWithViewport(kind entityKind, viewport int) string {
+// renderEntityCellWithViewport renders the wrapped entity grid with an
+// explicit viewport budget and content-width budget — used by
+// `renderSettingsEntity` (which knows the kanbanColumn inner width
+// exactly). The grid packs cards left-to-right then top-to-bottom; each
+// row's height is the tallest card in that row so the column stays
+// visually flush regardless of badge wrap.
+func (m Model) renderEntityCellWithViewport(kind entityKind, viewport int, contentWidth int) string {
 	focused := m.entityKind == kind
 	count := m.entityCount(kind)
 	cursor := m.selectedEntityIndex(kind)
@@ -34,9 +36,13 @@ func (m Model) renderEntityCellWithViewport(kind entityKind, viewport int) strin
 	}
 	headerText := fmt.Sprintf("// %s · %d", strings.ToUpper(kind.plural()), count)
 
+	separatorWidth := contentWidth
+	if separatorWidth < entityListWidth {
+		separatorWidth = entityListWidth
+	}
 	lines := []string{
 		headerStyle.Render(headerText),
-		m.styles.separator.Render(strings.Repeat("─", entityListWidth)),
+		m.styles.separator.Render(strings.Repeat("─", separatorWidth)),
 	}
 
 	if count == 0 {
@@ -44,78 +50,170 @@ func (m Model) renderEntityCellWithViewport(kind entityKind, viewport int) strin
 		return strings.Join(lines, "\n")
 	}
 
+	cols := entityGridCols(contentWidth)
+
 	rendered := make([]string, count)
-	heights := make([]int, count)
+	cardHeights := make([]int, count)
 	for index := 0; index < count; index++ {
 		rendered[index] = m.renderEntityCard(kind, index, focused && index == cursor)
-		heights[index] = strings.Count(rendered[index], "\n") + 1
+		cardHeights[index] = strings.Count(rendered[index], "\n") + 1
+	}
+
+	// Pack cards into rows of `cols`; each row's text is the JoinHorizontal
+	// of its cards, and each row's height is the tallest card in the row.
+	numRows := (count + cols - 1) / cols
+	rowText := make([]string, numRows)
+	rowHeights := make([]int, numRows)
+	for r := 0; r < numRows; r++ {
+		var cells []string
+		h := 0
+		for c := 0; c < cols; c++ {
+			i := r*cols + c
+			if i >= count {
+				break
+			}
+			cells = append(cells, rendered[i])
+			if cardHeights[i] > h {
+				h = cardHeights[i]
+			}
+		}
+		if len(cells) == 1 {
+			rowText[r] = cells[0]
+		} else {
+			pieces := make([]string, 0, len(cells)*2-1)
+			for idx, cell := range cells {
+				if idx > 0 {
+					pieces = append(pieces, " ")
+				}
+				pieces = append(pieces, cell)
+			}
+			rowText[r] = lipgloss.JoinHorizontal(lipgloss.Top, pieces...)
+		}
+		rowHeights[r] = h
 	}
 
 	if viewport <= 0 {
-		// Height unknown — render every card; the renderer-level clamp keeps
+		// Height unknown — render every row; the screen-level clamp keeps
 		// the view bounded by terminal height.
-		lines = append(lines, rendered...)
+		lines = append(lines, rowText...)
 		return strings.Join(lines, "\n")
 	}
 
-	offset := 0
+	storedCardOffset := 0
 	if m.entityScroll != nil {
-		offset = m.entityScroll[kind]
+		storedCardOffset = m.entityScroll[kind]
 	}
-	if offset < 0 {
-		offset = 0
+	rowOffset := storedCardOffset / cols
+	if rowOffset < 0 {
+		rowOffset = 0
 	}
-	if offset > count-1 {
-		offset = count - 1
+	if rowOffset > numRows-1 {
+		rowOffset = numRows - 1
 	}
 
 	used := 0
-	end := offset
-	for end < count {
+	end := rowOffset
+	for end < numRows {
 		reserve := 0
-		if end < count-1 {
-			reserve = 1 // "▼ N below" hint line
+		if end < numRows-1 {
+			reserve = 1
 		}
-		if used+heights[end]+reserve > viewport {
+		if used+rowHeights[end]+reserve > viewport {
 			break
 		}
-		used += heights[end]
+		used += rowHeights[end]
 		end++
 	}
-	if end == offset {
-		// Never produce an empty viewport — show at least one card.
-		end = offset + 1
+	if end == rowOffset {
+		end = rowOffset + 1
 	}
 
-	above := offset
-	below := count - end
-	if above > 0 {
-		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▲ %d above", above)))
+	cardsAbove := rowOffset * cols
+	if cardsAbove > count {
+		cardsAbove = count
 	}
-	lines = append(lines, rendered[offset:end]...)
-	if below > 0 {
-		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▼ %d below", below)))
+	cardsBelow := count - end*cols
+	if cardsBelow < 0 {
+		cardsBelow = 0
+	}
+	if cardsAbove > 0 {
+		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▲ %d above", cardsAbove)))
+	}
+	lines = append(lines, rowText[rowOffset:end]...)
+	if cardsBelow > 0 {
+		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▼ %d below", cardsBelow)))
 	}
 	return strings.Join(lines, "\n")
 }
 
+// entityGridCols computes how many entity cards fit side-by-side inside
+// the kanbanColumn at the given content width. `entityListWidth` is the
+// inner width passed to the card style — `entityCardCellWidth` adds the
+// ±1 border so we measure the visible card on the terminal grid.
+func entityGridCols(contentWidth int) int {
+	const horizontalGap = 1
+	cell := entityCardCellWidth + horizontalGap
+	if cell <= 0 {
+		return 1
+	}
+	cols := (contentWidth + horizontalGap) / cell
+	if cols < 1 {
+		return 1
+	}
+	return cols
+}
+
+// entityCellContentWidth returns the width budget passed to the entity
+// grid renderer when no explicit content width is supplied (e.g. by
+// older callers / tests). Mirrors what `renderSettingsEntity` would
+// compute given the current available width.
+func (m Model) entityCellContentWidth() int {
+	w := m.availableWidth() - 4
+	if w < entityListWidth {
+		return entityListWidth
+	}
+	return w
+}
+
 // entityViewportRows is the number of terminal rows available for entity
-// cards inside one column. Computed from the actual rendered config header
-// (runtime/tokens tables) rather than a static chrome guess so the value
-// stays correct as the tables grow or shrink across themes/data sets.
-// Returns 0 when the height is unknown.
+// cards inside the active Settings entity column. Each Settings entity
+// sub renders one column full-height — the chrome is the screen header
+// (now up to two nav rows + a separator), the column borders, the column
+// kicker rows and the footer. Returns 0 when the height is unknown.
 func (m Model) entityViewportRows() int {
-	return m.entityCardsViewport(m.renderConfigHeader())
+	if m.height <= 0 {
+		return 0
+	}
+	const (
+		columnBorders    = 2 // top + bottom of the kanbanColumn
+		columnHeaderRows = 2 // kicker + separator inside the column
+		viewLeadingBlank = 1 // leading "\n" prepended in renderSettingsEntity
+		footerLines      = 2 // newline + indented footer text
+	)
+	screenHeader := strings.Count(m.renderHeader(), "\n") + 1
+	statusLine := 0
+	if m.status != "" && !m.isEmbeddedCommentInput() {
+		statusLine = 2
+	}
+	chrome := screenHeader + statusLine + viewLeadingBlank + columnBorders + columnHeaderRows + footerLines
+	rows := m.height - chrome
+	if rows < 4 {
+		return 0
+	}
+	return rows
 }
 
 // syncFocusedEntityScroll keeps m.entityScroll[focusedKind] aligned so the
-// selected card stays fully inside the column viewport. Mirrors the
-// per-bucket scroll behavior of the kanban board: the offset advances by
-// real card heights (cards have variable heights because of badge wrapping).
+// selected card stays fully inside the column viewport. The offset is
+// stored as a card index but always lands on a row boundary — the grid
+// renderer wraps cards into rows of `entityGridCols(contentWidth)`, and
+// scrolling jumps a whole row at a time so partial rows never appear at
+// the top of the viewport.
 func (m *Model) syncFocusedEntityScroll() {
 	kind := m.entityKind
 	count := m.entityCount(kind)
 	viewport := m.entityViewportRows()
+	contentWidth := m.entityCellContentWidth()
 	if viewport <= 0 || count == 0 {
 		if m.entityScroll != nil {
 			delete(m.entityScroll, kind)
@@ -123,46 +221,62 @@ func (m *Model) syncFocusedEntityScroll() {
 		return
 	}
 
+	cols := entityGridCols(contentWidth)
 	cursor := m.selectedEntityIndex(kind)
-	heights := make([]int, count)
-	for i := 0; i < count; i++ {
-		rendered := m.renderEntityCard(kind, i, false)
-		heights[i] = strings.Count(rendered, "\n") + 1
+	cursorRow := cursor / cols
+	numRows := (count + cols - 1) / cols
+
+	rowHeights := make([]int, numRows)
+	for r := 0; r < numRows; r++ {
+		h := 0
+		for c := 0; c < cols; c++ {
+			i := r*cols + c
+			if i >= count {
+				break
+			}
+			rendered := m.renderEntityCard(kind, i, false)
+			ch := strings.Count(rendered, "\n") + 1
+			if ch > h {
+				h = ch
+			}
+		}
+		rowHeights[r] = h
 	}
 
 	if m.entityScroll == nil {
 		m.entityScroll = map[entityKind]int{}
 	}
-	offset := m.entityScroll[kind]
-	if offset > cursor {
-		offset = cursor
+	stored := m.entityScroll[kind]
+	rowOffset := stored / cols
+	if rowOffset > cursorRow {
+		rowOffset = cursorRow
 	}
-	for offset < cursor {
+	for rowOffset < cursorRow {
 		used := 0
 		fits := true
-		for i := offset; i <= cursor; i++ {
+		for r := rowOffset; r <= cursorRow; r++ {
 			reserve := 0
-			if i < count-1 {
+			if r < numRows-1 {
 				reserve = 1
 			}
-			if used+heights[i]+reserve > viewport {
+			if used+rowHeights[r]+reserve > viewport {
 				fits = false
 				break
 			}
-			used += heights[i]
+			used += rowHeights[r]
 		}
 		if fits {
 			break
 		}
-		offset++
+		rowOffset++
 	}
-	if offset < 0 {
-		offset = 0
+	if rowOffset < 0 {
+		rowOffset = 0
 	}
-	if offset > count-1 {
-		offset = count - 1
+	if rowOffset > numRows-1 {
+		rowOffset = numRows - 1
 	}
-	m.entityScroll[kind] = offset
+	m.entityScroll[kind] = rowOffset * cols
 }
 
 func (m Model) renderEntityCard(kind entityKind, index int, selected bool) string {

@@ -35,6 +35,10 @@ func (f *fakeRepo) ListActivityLogs(_ context.Context, _ domain.ActivityLogFilte
 	return nil, nil
 }
 
+func (f *fakeRepo) ActivityLogStats(_ context.Context, _ domain.ActivityLogFilter) (domain.ActivityLogStats, error) {
+	return domain.ActivityLogStats{}, nil
+}
+
 func TestTrackLogsSuccess(t *testing.T) {
 	repo := &fakeRepo{beginReturnID: 7}
 	ctx := WithRepository(context.Background(), repo)
@@ -133,5 +137,27 @@ func TestTrackBeginFailureIsNoOp(t *testing.T) {
 
 	if repo.finishCalled {
 		t.Fatal("expected FinishActivityLog NOT to be called after Begin failure")
+	}
+}
+
+// TestTrackHonorsWithoutTracking covers the contract the TUI's
+// per-second realtime tick relies on: a context marked with
+// `WithoutTracking` is treated as no-op even when a repository is
+// attached, so refresh-driven app-service calls do not pollute the
+// activity log or the per-agent metrics.
+func TestTrackHonorsWithoutTracking(t *testing.T) {
+	repo := &fakeRepo{beginReturnID: 1}
+	ctx := WithRepository(context.Background(), repo)
+	ctx = WithAgent(ctx, "tui", "tui", "human", "")
+	ctx = WithoutTracking(ctx)
+
+	finish := Track(ctx, "app.MetricsService.Summary", domain.ProjectContext{ID: 1, Slug: "test"}, nil)
+	finish("ok", "")
+
+	if repo.beginCalled {
+		t.Fatal("BeginActivityLog must not run for a no-track context")
+	}
+	if repo.finishCalled {
+		t.Fatal("FinishActivityLog must not run for a no-track context")
 	}
 }

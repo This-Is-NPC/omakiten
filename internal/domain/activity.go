@@ -32,3 +32,21 @@ type ActivityLogFilter struct {
 	Limit     int
 	Order     string
 }
+
+// ActivityLogStats is an aggregate over an unbounded slice of the
+// activity log — used by the Stats › Logs summary tables so they
+// reflect the entire project's history rather than only the limit-N
+// rows materialised for the panel below. Counts are exclusive: every
+// row that lands in the scope is counted exactly once on the status
+// axis and once on the source axis.
+type ActivityLogStats struct {
+	Total    int
+	Ok       int
+	Error    int
+	Running  int
+	CLI      int
+	MCP      int
+	TUI      int
+	OldestAt string // created_at of the earliest entry in scope; empty when scope is empty
+	NewestAt string // created_at of the latest entry in scope; empty when scope is empty
+}

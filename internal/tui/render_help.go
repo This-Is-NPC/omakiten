@@ -17,9 +17,10 @@ func (m Model) renderHelp() string {
 			{"?", "close this overlay"},
 			{"a", "toggle all bindings"},
 			{"q · ctrl+c", "quit"},
-			{"tab · shift+tab", "cycle views"},
-			{"1 · 2 · 3 · 4 · 5 · 6", "jump to view"},
-			{"ctrl+h", "back to multi-project home"},
+			{"tab · shift+tab", "cycle zones (Tasks · Stats · Settings)"},
+			{"1 · 2 · 3", "jump to zone (Tasks · Stats · Settings)"},
+			{", · /", "previous · next sub-menu inside the current zone"},
+			{"0 · ctrl+h", "back to multi-project home"},
 			{"r", "refresh"},
 		}},
 		{"Home", []binding{
@@ -30,7 +31,7 @@ func (m Model) renderHelp() string {
 			{"ctrl+h", "reload home (refresh tags / counts)"},
 			{"q · ctrl+c", "quit"},
 		}},
-		{"Board", []binding{
+		{"Tasks · board lens", []binding{
 			{"← ↑ ↓ → · h j k l", "navigate lanes and tasks (auto-scrolls column)"},
 			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll focused column by page"},
 			{"g · G", "first / last card in column"},
@@ -40,7 +41,7 @@ func (m Model) renderHelp() string {
 			{"c", "add comment"},
 			{"m", "move task between lanes"},
 		}},
-		{"Task list", []binding{
+		{"Tasks · table lens", []binding{
 			{"↑ ↓ · j k", "select task (auto-scrolls)"},
 			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
 			{"g · G", "first / last task"},
@@ -49,7 +50,7 @@ func (m Model) renderHelp() string {
 			{"e", "edit task"},
 			{"m", "move by bucket key"},
 		}},
-		{"Graph", []binding{
+		{"Tasks · graph lens", []binding{
 			{"← →", "switch view"},
 			{"↑ ↓ · j k", "move cursor"},
 			{"enter", "open task"},
@@ -96,14 +97,31 @@ func (m Model) renderHelp() string {
 			{"ctrl+s", "save"},
 			{"esc", "cancel"},
 		}},
-		{"Config", []binding{
-			{"← →", "switch entity kind"},
-			{"↑ ↓", "select entity"},
+		{"Settings · general", []binding{
+			{", · /", "previous · next sub (general → laws → personas → …)"},
+			{"t", "theme picker (hot-reload)"},
+			{"c", "config picker (restart required)"},
+			{"r", "refresh"},
+		}},
+		{"Settings · entity (laws / personas / skills / templates)", []binding{
+			{", · /", "previous · next sub"},
+			{"↑ ↓ · j k", "select entity (auto-scrolls)"},
+			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
+			{"g · G", "first / last entry"},
 			{"enter", "open detail"},
 			{"n", "new entity"},
 			{"e", "edit in $EDITOR"},
 			{"d · d", "arm delete, then confirm"},
 			{"p", "skill picker (persona)"},
+			{"a", "set as default (template)"},
+			{"t · c", "theme picker · config picker"},
+		}},
+		{"Settings · tags", []binding{
+			{", · /", "previous · next sub"},
+			{"↑ ↓ · j k", "select tag"},
+			{"d", "arm delete (orphan only)"},
+			{"D", "delete every orphan tag"},
+			{"t · c", "theme picker · config picker"},
 		}},
 		{"Entity view", []binding{
 			{"↑ ↓ · j k", "scroll body"},
@@ -123,14 +141,14 @@ func (m Model) renderHelp() string {
 			{"ctrl+s", "save"},
 			{"esc", "cancel"},
 		}},
-		{"Logs", []binding{
+		{"Stats · logs", []binding{
 			{"← →", "switch view"},
 			{"↑ ↓ · j k", "select row (auto-scrolls)"},
 			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
 			{"g · G", "first / last row"},
 			{"r", "refresh"},
 		}},
-		{"Stats", []binding{
+		{"Stats · general", []binding{
 			{"← →", "cycle period (7d / 30d / all)"},
 			{"r", "refresh"},
 		}},
@@ -213,21 +231,25 @@ func (m Model) currentHelpTitles() []string {
 		return []string{"Skill picker"}
 	case m.entityScreen == entityScreenView:
 		return []string{"Entity view"}
-	case m.view == viewHome:
+	case m.onHome():
 		return []string{"Home"}
-	case m.view == 0:
-		return []string{"Board"}
-	case m.view == 1:
-		return []string{"Task list"}
-	case m.view == 2:
-		return []string{"Graph"}
-	case m.view == 3:
-		return []string{"Config"}
-	case m.view == 4:
-		return []string{"Logs"}
-	case m.view == 5:
-		return []string{"Stats"}
+	case m.sub == subBoard:
+		return []string{"Tasks · board lens"}
+	case m.sub == subTable:
+		return []string{"Tasks · table lens"}
+	case m.sub == subGraph:
+		return []string{"Tasks · graph lens"}
+	case m.sub == subSettingsGeneral:
+		return []string{"Settings · general"}
+	case m.sub == subSettingsTags:
+		return []string{"Settings · tags"}
+	case m.sub == subSettingsLaws || m.sub == subSettingsPersonas || m.sub == subSettingsSkills || m.sub == subSettingsTemplates:
+		return []string{"Settings · entity (laws / personas / skills / templates)"}
+	case m.sub == subStatsLogs:
+		return []string{"Stats · logs"}
+	case m.sub == subStatsGeneral:
+		return []string{"Stats · general"}
 	default:
-		return []string{"Board"}
+		return []string{"Tasks · board lens"}
 	}
 }

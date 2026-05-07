@@ -14,7 +14,7 @@ func (m Model) selectedTask() (domain.Task, bool) {
 	if m.taskScreen != taskScreenClosed && m.taskID > 0 {
 		return m.taskByID(m.taskID)
 	}
-	if m.view == 0 {
+	if m.top == topTasks && m.sub == subBoard {
 		if len(m.workflow.Buckets) == 0 || m.colIdx >= len(m.workflow.Buckets) {
 			return domain.Task{}, false
 		}

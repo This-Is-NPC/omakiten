@@ -41,8 +41,8 @@ func TestModelSwitchesViews(t *testing.T) {
 	}
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
 	got := updated.(Model)
-	if got.view != 1 {
-		t.Fatalf("view = %d, want 1", got.view)
+	if got.top != topStats || got.sub != subStatsGeneral {
+		t.Fatalf("(top, sub) = (%d, %d), want (topStats, subStatsGeneral)", got.top, got.sub)
 	}
 }
 
@@ -78,12 +78,13 @@ func TestModelTableAndGraphShowCounts(t *testing.T) {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
-	table := ansi.Strip(pressRune(t, model, '2').View())
+	table := ansi.Strip(pressStringKey(t, model, "/").View())
 	if !strings.Contains(table, "// TASKS · 2") {
 		t.Fatalf("table missing task count\n%s", table)
 	}
 
-	graph := ansi.Strip(pressRune(t, model, '3').View())
+	graphModel := pressStringKey(t, pressStringKey(t, model, "/"), "/")
+	graph := ansi.Strip(graphModel.View())
 	if !strings.Contains(graph, "// DEPENDENCY GRAPH · 1") {
 		t.Fatalf("graph missing dependency count\n%s", graph)
 	}
@@ -131,21 +132,30 @@ func TestModelTablesUseWideTerminalSpace(t *testing.T) {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 	model.width = 180
+	// The Stats › Logs view now stacks two narrow summary grid tables on
+	// top of the wide activity panel, so the *first* ┌...┐ line belongs
+	// to the summary, not the panel. Walk every match and take the widest
+	// — that is the panel itself.
 	panelWidth := func(view string) int {
+		widest := 0
 		for _, line := range strings.Split(view, "\n") {
 			if strings.Contains(line, "┌") && strings.Contains(line, "┐") {
-				return lipgloss.Width(line)
+				if w := lipgloss.Width(line); w > widest {
+					widest = w
+				}
 			}
 		}
-		return 0
+		return widest
 	}
 
-	table := ansi.Strip(pressRune(t, model, '2').View())
+	tableModel := pressStringKey(t, model, "/")
+	table := ansi.Strip(tableModel.View())
 	if !strings.Contains(table, longTitle) {
 		t.Fatalf("wide table truncated task title\n%s", table)
 	}
 
-	logs := ansi.Strip(pressRune(t, model, '5').View())
+	logsModel := pressStringKey(t, pressRune(t, model, '2'), "/")
+	logs := ansi.Strip(logsModel.View())
 	if !strings.Contains(logs, argsJSON) {
 		t.Fatalf("wide logs truncated arguments\n%s", logs)
 	}
@@ -193,9 +203,10 @@ func TestModelLoadsActivityLogsWhenOpeningLogsView(t *testing.T) {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
-	got := pressRune(t, model, '5')
-	if got.view != 4 {
-		t.Fatalf("view = %d, want logs view", got.view)
+	got := pressRune(t, model, '2')
+	got = pressRune(t, got, '/')
+	if got.top != topStats || got.sub != subStatsLogs {
+		t.Fatalf("(top, sub) = (%d, %d), want (topStats, subStatsLogs)", got.top, got.sub)
 	}
 	view := ansi.Strip(got.View())
 	for _, want := range []string{"app.TaskService.Add", "project", `{"title":"From CLI"}`, "ok"} {
@@ -226,7 +237,8 @@ func TestModelRefreshKeyUpdatesActivityLogs(t *testing.T) {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 
-	got := pressRune(t, model, '5')
+	got := pressRune(t, model, '2')
+	got = pressRune(t, got, '/')
 	if strings.Contains(ansi.Strip(got.View()), "app.CommentService.Add") {
 		t.Fatalf("logs view unexpectedly contains new log before refresh\n%s", ansi.Strip(got.View()))
 	}
@@ -903,7 +915,12 @@ func TestModelBoardLaneNavigationWrapsAround(t *testing.T) {
 	}
 }
 
-func TestModelConfigUsesFocusedSectionWhenNarrow(t *testing.T) {
+// TestModelSettingsLawsRendersOwnColumnWhenNarrow replaces the T1
+// horizontal-grid sliding test (`TestModelConfigUsesFocusedSectionWhenNarrow`).
+// The T2 split makes each entity kind its own Settings sub, so a
+// narrow terminal no longer needs a slide-and-hidden-list hint — the
+// active sub renders its single column at full width.
+func TestModelSettingsLawsRendersOwnColumnWhenNarrow(t *testing.T) {
 	ctx := context.Background()
 	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
 	if err != nil {
@@ -924,15 +941,17 @@ func TestModelConfigUsesFocusedSectionWhenNarrow(t *testing.T) {
 		t.Fatalf("NewModel() error = %v", err)
 	}
 	model.width = 50
-	got := pressRune(t, model, '4')
+	// Settings/general first, then advance to Settings/laws.
+	got := pressRune(t, model, '3')
+	got = pressStringKey(t, got, "/")
 
 	view := ansi.Strip(got.View())
-	// Narrow terminals slide to show the focused kind. The default focused
-	// kind is Laws so it must be present; the hint must surface the hidden
-	// kinds and explain how to scroll.
-	for _, want := range []string{"// LAWS", "sections", "hidden:", "← / → scrolls"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("narrow config missing %q\n%s", want, view)
+	if !strings.Contains(view, "// LAWS") {
+		t.Fatalf("Settings › Laws column header missing on narrow terminal:\n%s", view)
+	}
+	for _, leaked := range []string{"// PERSONAS", "// SKILLS", "// TEMPLATES", "// TAGS"} {
+		if strings.Contains(view, leaked) {
+			t.Fatalf("Settings › Laws should not co-render sibling kind %q:\n%s", leaked, view)
 		}
 	}
 }
@@ -960,7 +979,7 @@ func TestModelHelpDefaultsToCurrentContext(t *testing.T) {
 
 	got := pressStringKey(t, model, "?")
 	view := ansi.Strip(got.View())
-	for _, want := range []string{"KEYBINDINGS · CURRENT CONTEXT", "// GLOBAL", "// BOARD"} {
+	for _, want := range []string{"KEYBINDINGS · CURRENT CONTEXT", "// GLOBAL", "// TASKS · BOARD LENS"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("context help missing %q\n%s", want, view)
 		}
@@ -1010,6 +1029,199 @@ func TestModelCancelsTaskCreateWithoutPersisting(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("TaskCount() = %d, want 0", count)
+	}
+}
+
+// TestNavHeaderRendersTopAndSubKickers locks in the T1 navigation refactor:
+// the per-project header renders the three top zones as `01 // TASKS`,
+// `02 // STATS`, `03 // SETTINGS`, and surfaces a sub-menu strip when the
+// active top has more than one sub. The strip is suppressed on Settings
+// (single sub).
+func TestNavHeaderRendersTopAndSubKickers(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store, Metrics: app.NewMetricsService(store)}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.width = 200
+
+	tasksHeader := ansi.Strip(model.View())
+	for _, want := range []string{"01 // TASKS", "02 // STATS", "03 // SETTINGS", "// board", "// table", "// graph"} {
+		if !strings.Contains(tasksHeader, want) {
+			t.Fatalf("tasks header missing %q\n%s", want, tasksHeader)
+		}
+	}
+
+	statsModel := pressRune(t, model, '2')
+	statsHeader := ansi.Strip(statsModel.View())
+	for _, want := range []string{"01 // TASKS", "02 // STATS", "03 // SETTINGS", "// general", "// logs"} {
+		if !strings.Contains(statsHeader, want) {
+			t.Fatalf("stats header missing %q\n%s", want, statsHeader)
+		}
+	}
+	if strings.Contains(statsHeader, "// board") || strings.Contains(statsHeader, "// graph") {
+		t.Fatalf("stats header leaked tasks subs:\n%s", statsHeader)
+	}
+
+	settingsModel := pressRune(t, model, '3')
+	settingsHeader := ansi.Strip(settingsModel.View())
+	for _, want := range []string{"01 // TASKS", "02 // STATS", "03 // SETTINGS", "// general", "// laws", "// personas", "// skills", "// templates", "// tags"} {
+		if !strings.Contains(settingsHeader, want) {
+			t.Fatalf("settings header missing %q\n%s", want, settingsHeader)
+		}
+	}
+	for _, leaked := range []string{"// board", "// table", "// graph"} {
+		if strings.Contains(settingsHeader, leaked) {
+			t.Fatalf("settings header leaked tasks subs %q:\n%s", leaked, settingsHeader)
+		}
+	}
+}
+
+// TestSubCycleBindings exercises the comma/slash sub-cycle bindings inside
+// the Tasks zone (board → table → graph and wrap-around) and confirms the
+// no-op behavior on Settings (single sub).
+func TestSubCycleBindings(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	got := pressStringKey(t, model, "/")
+	if got.top != topTasks || got.sub != subTable {
+		t.Fatalf("after first '/': (top, sub) = (%d, %d), want (topTasks, subTable)", got.top, got.sub)
+	}
+	got = pressStringKey(t, got, "/")
+	if got.sub != subGraph {
+		t.Fatalf("after second '/': sub = %d, want subGraph", got.sub)
+	}
+	got = pressStringKey(t, got, "/")
+	if got.sub != subBoard {
+		t.Fatalf("after third '/': sub = %d, want subBoard (wrap-around)", got.sub)
+	}
+	got = pressStringKey(t, got, ",")
+	if got.sub != subGraph {
+		t.Fatalf("after ',' from board: sub = %d, want subGraph (wrap-around)", got.sub)
+	}
+
+	got = pressRune(t, model, '3')
+	if got.top != topSettings || got.sub != subSettingsGeneral {
+		t.Fatalf("after '3': (top, sub) = (%d, %d), want (topSettings, subSettingsGeneral)", got.top, got.sub)
+	}
+	got = pressStringKey(t, got, "/")
+	if got.top != topSettings || got.sub != subSettingsLaws {
+		t.Fatalf("'/' on Settings/general should advance to Settings/laws: (top, sub) = (%d, %d)", got.top, got.sub)
+	}
+}
+
+// TestCtrlOPopsBackStack covers AC2: every intentional zone/sub
+// navigation pushes the current (top, sub) onto the back-stack, and
+// `ctrl+o` pops the stack to restore the previous view. Empty-stack
+// presses are silent no-ops (no status flash, no nav change).
+func TestCtrlOPopsBackStack(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store, Metrics: app.NewMetricsService(store)}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	// Empty stack — ctrl+o is silently dropped, no nav change.
+	got := pressStringKey(t, model, "ctrl+o")
+	if got.top != topTasks || got.sub != subBoard {
+		t.Fatalf("ctrl+o on empty stack mutated nav: (top, sub) = (%d, %d)", got.top, got.sub)
+	}
+
+	// Tasks/board → Stats/general → Settings/general, then ctrl+o twice.
+	got = pressRune(t, model, '2')
+	if got.top != topStats || got.sub != subStatsGeneral {
+		t.Fatalf("'2' should jump to Stats/general: (top, sub) = (%d, %d)", got.top, got.sub)
+	}
+	got = pressRune(t, got, '3')
+	if got.top != topSettings || got.sub != subSettingsGeneral {
+		t.Fatalf("'3' should jump to Settings/general: (top, sub) = (%d, %d)", got.top, got.sub)
+	}
+	got = pressStringKey(t, got, "ctrl+o")
+	if got.top != topStats || got.sub != subStatsGeneral {
+		t.Fatalf("ctrl+o should restore Stats/general: (top, sub) = (%d, %d)", got.top, got.sub)
+	}
+	got = pressStringKey(t, got, "ctrl+o")
+	if got.top != topTasks || got.sub != subBoard {
+		t.Fatalf("ctrl+o should restore Tasks/board: (top, sub) = (%d, %d)", got.top, got.sub)
+	}
+	if len(got.viewHistory) != 0 {
+		t.Fatalf("viewHistory should be empty after popping every entry, got %d", len(got.viewHistory))
+	}
+}
+
+// TestHomeTileEmbeddedInTopStrip covers AC3: the per-project header
+// surfaces `00 // HOME` to the left of the three top zones, separated
+// by the faded `│` divider. Keeps the home affordance visible without
+// growing the chrome to a third row.
+func TestHomeTileEmbeddedInTopStrip(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store, Metrics: app.NewMetricsService(store)}, tuiTestTheme(), token.ApproxCounter{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.width = 200
+	view := ansi.Strip(model.View())
+	for _, want := range []string{"00 // HOME", "│", "01 // TASKS", "02 // STATS", "03 // SETTINGS"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("top strip missing %q:\n%s", want, view)
+		}
+	}
+	homeIdx := strings.Index(view, "00 // HOME")
+	tasksIdx := strings.Index(view, "01 // TASKS")
+	if homeIdx < 0 || tasksIdx < 0 || homeIdx >= tasksIdx {
+		t.Fatalf("HOME tile must render before TASKS in the strip; homeIdx=%d, tasksIdx=%d", homeIdx, tasksIdx)
 	}
 }
 

@@ -125,7 +125,7 @@ func TestThemePickerListsDefaultsAndCustom(t *testing.T) {
 
 func TestThemePickerHotReloadsOnEnter(t *testing.T) {
 	model, _ := newPickerModel(t)
-	model = pressRune(t, model, '4') // switch to config view
+	model = pressRune(t, model, '3') // switch to config view
 	model = pressRune(t, model, 't')
 	if model.entityForm.mode != entityScreenThemePicker {
 		t.Fatalf("expected theme picker open, got %v", model.entityForm.mode)
@@ -187,36 +187,36 @@ func TestThemePickerEscRestoresNavTabs(t *testing.T) {
 	model, _ := newPickerModel(t)
 	model.width = 200
 	model.height = 60
-	model = pressRune(t, model, '4')
+	model = pressRune(t, model, '3')
 
 	before := model.View()
-	if !strings.Contains(before, "// CONFIG") {
-		t.Fatalf("nav tabs missing before opening picker:\n%s", before)
+	if !strings.Contains(before, "// SETTINGS") {
+		t.Fatalf("nav bar missing before opening picker:\n%s", before)
 	}
 
 	model = pressRune(t, model, 't')
 	model = pressKey(t, model, tea.KeyEsc)
 
 	after := model.View()
-	if !strings.Contains(after, "// CONFIG") {
-		t.Fatalf("nav tabs missing after esc — bug repro:\n%s", after)
+	if !strings.Contains(after, "// SETTINGS") {
+		t.Fatalf("nav bar missing after esc — bug repro:\n%s", after)
 	}
-	// Ensure ALL tab labels are present so we don't accept a degraded
-	// narrow-fallback rendering as a successful restore.
-	for _, want := range []string{"// BOARD", "// TABLE", "// GRAPH", "// CONFIG", "// LOGS"} {
+	// Ensure every top-zone label is present so a degraded narrow-fallback
+	// rendering does not pass as a successful restore.
+	for _, want := range []string{"// TASKS", "// STATS", "// SETTINGS"} {
 		if !strings.Contains(after, want) {
-			t.Fatalf("nav tab %q missing after esc — visual degradation:\n%s", want, after)
+			t.Fatalf("nav zone %q missing after esc — visual degradation:\n%s", want, after)
 		}
 	}
 }
 
 func TestViewIsClampedToTerminalHeightPreservingHeaderAndFooter(t *testing.T) {
 	model, _ := newPickerModel(t)
-	// Force a tall config view (5 entity columns) into a short terminal so
-	// the renderer would otherwise scroll the header off the top.
+	// Force the Settings › General info card into a short terminal so the
+	// renderer would otherwise scroll the header off the top.
 	model.width = 200
 	model.height = 18
-	model = pressRune(t, model, '4')
+	model = pressRune(t, model, '3')
 
 	out := model.View()
 	lines := strings.Split(out, "\n")
@@ -227,9 +227,11 @@ func TestViewIsClampedToTerminalHeightPreservingHeaderAndFooter(t *testing.T) {
 	if !strings.Contains(lines[1], "omakiten") {
 		t.Fatalf("first content line missing project breadcrumb:\n%s", lines[1])
 	}
-	// Footer (keybinding hints) must remain at the bottom.
+	// Footer (keybinding hints) must remain at the bottom — Settings ›
+	// General advertises `tab zones`, `,// subs`, and the theme/config
+	// pickers, so any of those tokens proves the footer survived clamp.
 	footer := strings.Join(lines[len(lines)-3:], "\n")
-	if !strings.Contains(footer, "section") && !strings.Contains(footer, "switch") {
+	if !strings.Contains(footer, "tab zones") && !strings.Contains(footer, "theme") {
 		t.Fatalf("footer not anchored at bottom after clamp:\n%s", footer)
 	}
 }
@@ -238,7 +240,7 @@ func TestThemePickerEnterRestoresNavTabs(t *testing.T) {
 	model, _ := newPickerModel(t)
 	model.width = 200
 	model.height = 60
-	model = pressRune(t, model, '4')
+	model = pressRune(t, model, '3')
 	model = pressRune(t, model, 't')
 	// Move to the second option then apply via enter.
 	model = pressStringKey(t, model, "down")
@@ -248,16 +250,16 @@ func TestThemePickerEnterRestoresNavTabs(t *testing.T) {
 		t.Fatalf("entityScreen = %v after enter, want closed", model.entityScreen)
 	}
 	out := model.View()
-	for _, want := range []string{"// BOARD", "// TABLE", "// GRAPH", "// CONFIG", "// LOGS"} {
+	for _, want := range []string{"// TASKS", "// STATS", "// SETTINGS"} {
 		if !strings.Contains(out, want) {
-			t.Fatalf("nav tab %q missing after apply:\n%s", want, out)
+			t.Fatalf("nav zone %q missing after apply:\n%s", want, out)
 		}
 	}
 }
 
 func TestThemePickerEscRestoresEntityScreenClosed(t *testing.T) {
 	model, _ := newPickerModel(t)
-	model = pressRune(t, model, '4')
+	model = pressRune(t, model, '3')
 	model = pressRune(t, model, 't')
 	if model.entityScreen == entityScreenClosed {
 		t.Fatalf("expected entityScreen != closed after opening picker")
@@ -277,7 +279,7 @@ func TestThemePickerEscRestoresEntityScreenClosed(t *testing.T) {
 
 func TestConfigPickerEscRestoresEntityScreenClosed(t *testing.T) {
 	model, _ := newPickerModel(t)
-	model = pressRune(t, model, '4')
+	model = pressRune(t, model, '3')
 	model = pressRune(t, model, 'c')
 	if model.entityScreen == entityScreenClosed {
 		t.Fatalf("expected entityScreen != closed after opening picker")
@@ -294,7 +296,7 @@ func TestConfigPickerPersistsSelectionAndShowsRestartHint(t *testing.T) {
 	t.Setenv(paths.HomeEnv, root)
 	t.Setenv("XDG_CONFIG_HOME", "")
 
-	model = pressRune(t, model, '4')
+	model = pressRune(t, model, '3')
 	model = pressRune(t, model, 'c')
 	if model.entityForm.mode != entityScreenConfigPicker {
 		t.Fatalf("expected config picker open, got %v", model.entityForm.mode)
