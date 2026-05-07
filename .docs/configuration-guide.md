@@ -392,6 +392,7 @@ Template defaulting rules (`Bundle.TemplateByDefault`, `validateTemplateDefaults
 - `project: <slug>` scopes the default to one project; otherwise it is the global default.
 - Project-scoped wins over global when both exist for the same kind.
 - At most one template per `(default, project)` pair.
+- The same precedence is enforced at read time: `templates.show <global-slug>` from inside a project that shadows the same `default` kind hard-rejects with `validation_error`, naming the active project-scoped slug. Outside any registered project the legacy slug-only lookup is preserved. See `.docs/mcp-guide.md` §Templates.
 
 Frontmatter `laws:` travels with the template — every law slug must resolve to a loaded law file. When the template is bound to an MCP command via `mcp_commands.<name>.templates`, these laws are folded into the command's effective law set so commands without a dedicated entry (e.g. PR creation flowing through `gh pr create`) still inherit the right guardrails when the template is shown via `templates.show`.
 
