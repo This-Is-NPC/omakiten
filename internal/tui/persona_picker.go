@@ -66,7 +66,7 @@ func (m Model) updatePersonaPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	var cmd tea.Cmd
-	m.entityPicker, cmd = m.entityPicker.Update(msg, rowCount, m.pickerViewportRows())
+	m.entityPicker, cmd = m.entityPicker.Update(msg, rowCount, scrollDataRows(m.pickerViewportRows()))
 	switch m.entityPicker.LastEvent() {
 	case picker.EventCancel:
 		m.openSelectedEntityViewForSlug(entityKindPersona, m.entityForm.slug)

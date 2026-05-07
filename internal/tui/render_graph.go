@@ -55,18 +55,24 @@ func (m *Model) handleGraphKey(msg tea.KeyMsg) {
 	m.syncGraphScroll(sel, len(lines))
 }
 
-// syncGraphScroll keeps m.graphScroll aligned so the cursor node stays in the viewport.
+// syncGraphScroll keeps m.graphScroll aligned so the cursor node stays
+// in the viewport. The graph panel renders through `sliceScrollRows`,
+// which reserves up to 2 panel rows for the "▲ above" / "▼ below"
+// hints — so the cursor's effective window is `scrollDataRows(viewport)`,
+// not the raw `viewport`. Without that adjustment the bottom 1–2 nodes
+// would land in the reserved hint band and disappear.
 func (m *Model) syncGraphScroll(sel []int, totalLines int) {
 	viewport := m.graphViewportRows()
 	if viewport <= 0 || len(sel) == 0 {
 		return
 	}
+	effective := scrollDataRows(viewport)
 	cursorLine := sel[clampInt(m.graphCursor, 0, len(sel)-1)]
 	if cursorLine < m.graphScroll {
 		m.graphScroll = cursorLine
 	}
-	if cursorLine >= m.graphScroll+viewport {
-		m.graphScroll = cursorLine - viewport + 1
+	if cursorLine >= m.graphScroll+effective {
+		m.graphScroll = cursorLine - effective + 1
 	}
 	if m.graphScroll < 0 {
 		m.graphScroll = 0

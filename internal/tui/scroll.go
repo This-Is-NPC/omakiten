@@ -1,10 +1,20 @@
 package tui
 
-// scrollDataRows reduces the viewport budget reported by panels that
-// route through `sliceScrollRows`. The renderer reserves up to 2 of
-// those rows for "▲ above" / "▼ below" hints, so the window the cursor
-// can actually live in is `viewport - 2`. Returning at least 1 keeps
-// followCursor responsive on tiny terminals instead of locking up.
+// scrollDataRows is the canonical adapter between a panel's full row
+// budget (which `sliceScrollRows` expects) and the data-row window any
+// cursor-tracking helper should target. The renderer reserves up to 2
+// of those rows for "▲ above" / "▼ below" hints, so the window the
+// cursor can actually live in is `viewport - 2`.
+//
+// The contract for every panel that wraps `sliceScrollRows`:
+//   - pass the raw `*ViewportRows()` budget to `sliceScrollRows` (so
+//     the renderer reserves the right amount of chrome);
+//   - pass `scrollDataRows(*ViewportRows())` to anything that decides
+//     scroll from cursor — `followCursor`, `picker.Model.Update`, or a
+//     bespoke sync routine like `syncGraphScroll`.
+//
+// Returning at least 1 keeps followCursor responsive on tiny terminals
+// instead of locking up at zero.
 func scrollDataRows(viewport int) int {
 	const reservedHints = 2
 	if viewport <= reservedHints {

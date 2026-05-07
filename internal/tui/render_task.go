@@ -136,7 +136,7 @@ func (m *Model) updateBlockerPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// sub-model. We still own the side-effects (close/save/toggle) because
 	// those touch parent fields (m.blockerPickerChecks, status, refresh).
 	var cmd tea.Cmd
-	m.blockerPicker, cmd = m.blockerPicker.Update(msg, rowCount, m.blockerPickerViewportRows())
+	m.blockerPicker, cmd = m.blockerPicker.Update(msg, rowCount, scrollDataRows(m.blockerPickerViewportRows()))
 
 	switch m.blockerPicker.LastEvent() {
 	case picker.EventCancel:

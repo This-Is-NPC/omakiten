@@ -203,7 +203,7 @@ func (m Model) updateThemePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	var cmd tea.Cmd
-	m.entityPicker, cmd = m.entityPicker.Update(msg, len(m.themePickerOptions), m.pickerViewportRows())
+	m.entityPicker, cmd = m.entityPicker.Update(msg, len(m.themePickerOptions), scrollDataRows(m.pickerViewportRows()))
 	switch m.entityPicker.LastEvent() {
 	case picker.EventCancel:
 		m.closeEntityScreen("Theme picker cancelled")
@@ -249,7 +249,7 @@ func (m Model) updateConfigPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	var cmd tea.Cmd
-	m.entityPicker, cmd = m.entityPicker.Update(msg, len(m.configPickerOptions), m.pickerViewportRows())
+	m.entityPicker, cmd = m.entityPicker.Update(msg, len(m.configPickerOptions), scrollDataRows(m.pickerViewportRows()))
 	switch m.entityPicker.LastEvent() {
 	case picker.EventCancel:
 		m.closeEntityScreen("Config picker cancelled")
