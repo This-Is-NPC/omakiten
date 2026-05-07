@@ -107,6 +107,12 @@ type ErrorRepository interface {
 	AddSolution(ctx context.Context, errorID int64, description, steps string, taskID *int64) (domain.Solution, error)
 	ConfirmSolution(ctx context.Context, solutionID int64, success bool) (domain.Solution, error)
 	ListTopSolutions(ctx context.Context, limit int) ([]domain.Solution, error)
+	// RecordEntityEvent persists a domain event tied to an entity (error,
+	// solution, system) with the agent attribution carried in ctx. ErrorService
+	// calls it after each successful canonical write so /metrics.summary can
+	// reconstruct a per-model timeline (errors recorded, searches run,
+	// solutions added, likes given) without joining against the live tables.
+	RecordEntityEvent(ctx context.Context, entityType string, entityID int64, projectID int64, eventType string, payload string) error
 }
 
 // BundleStore is the adapter port for reading/writing the bundled config and

@@ -9,6 +9,17 @@ const (
 	EventTypeTaskMoved     = "task.moved"
 	EventTypeTaskCompleted = "task.completed"
 	EventTypeOperation     = "operation"
+
+	// Domain events emitted from the canonical service layer when an
+	// error or solution is recorded, searched, added, liked, etc. Used by
+	// metrics.summary to benchmark agents — which models record vs search
+	// vs reuse existing knowledge.
+	EventTypeErrorRecorded     = "error.recorded"
+	EventTypeErrorSearched     = "error.searched"
+	EventTypeSolutionAdded     = "solution.added"
+	EventTypeSolutionLiked     = "solution.liked"
+	EventTypeSolutionFailed    = "solution.failed"
+	EventTypeSolutionViewedTop = "solution.viewed_top"
 )
 
 const (
@@ -36,7 +47,9 @@ type Event struct {
 	Status       string `json:"status,omitempty"`
 	DurationMs   int    `json:"duration_ms,omitempty"`
 	ErrorMessage string `json:"error_message,omitempty"`
-	CreatedAt    string `json:"created_at"`
-	FinishedAt   string `json:"finished_at,omitempty"`
-	Tags         []Tag  `json:"tags,omitempty"`
+	CreatedAt      string `json:"created_at"`
+	FinishedAt     string `json:"finished_at,omitempty"`
+	Tags           []Tag  `json:"tags,omitempty"`
+	AgentModel     string `json:"agent_model,omitempty"`
+	AgentSessionID string `json:"agent_session_id,omitempty"`
 }

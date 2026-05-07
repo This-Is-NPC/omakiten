@@ -2,10 +2,89 @@ package app
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/domain"
 )
+
+func TestErrorServiceEmitsAttributedDomainEvents(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "mcp", "errors_record", "claude-opus-4-7", "sess-42")
+	store, project := appTestStore(t, appTestBundle(1000))
+	defer func() { _ = store.Close() }()
+
+	service := NewErrorService(store)
+
+	rec, err := service.Record(ctx, project.Context(), "FK violation", "during migration", []string{"sqlite"})
+	if err != nil {
+		t.Fatalf("Record() error = %v", err)
+	}
+	assertLatestEvent(t, store, domain.EventTypeErrorRecorded, "error", rec.ID, "claude-opus-4-7", "sess-42")
+
+	if _, err := service.Search(ctx, project.Context(), "FK", []string{"sqlite"}); err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	searchEv := assertLatestEvent(t, store, domain.EventTypeErrorSearched, "error", 0, "claude-opus-4-7", "sess-42")
+	if !strings.Contains(searchEv.Payload, `"result_count":1`) {
+		t.Fatalf("error.searched payload missing result_count: %s", searchEv.Payload)
+	}
+
+	sol, err := service.AddSolution(ctx, project.Context(), rec.ID, "drop fk", "alter table", nil)
+	if err != nil {
+		t.Fatalf("AddSolution() error = %v", err)
+	}
+	assertLatestEvent(t, store, domain.EventTypeSolutionAdded, "solution", sol.ID, "claude-opus-4-7", "sess-42")
+
+	confirmed, err := service.ConfirmSolution(ctx, project.Context(), sol.ID, true)
+	if err != nil {
+		t.Fatalf("ConfirmSolution(true) error = %v", err)
+	}
+	assertLatestEvent(t, store, domain.EventTypeSolutionLiked, "solution", confirmed.ID, "claude-opus-4-7", "sess-42")
+
+	failedSol, err := service.AddSolution(ctx, project.Context(), rec.ID, "another", "", nil)
+	if err != nil {
+		t.Fatalf("AddSolution() error = %v", err)
+	}
+	if _, err := service.ConfirmSolution(ctx, project.Context(), failedSol.ID, false); err != nil {
+		t.Fatalf("ConfirmSolution(false) error = %v", err)
+	}
+	assertLatestEvent(t, store, domain.EventTypeSolutionFailed, "solution", failedSol.ID, "claude-opus-4-7", "sess-42")
+
+	if _, err := service.ListTopSolutions(ctx, project.Context(), 5); err != nil {
+		t.Fatalf("ListTopSolutions() error = %v", err)
+	}
+	assertLatestEvent(t, store, domain.EventTypeSolutionViewedTop, "solution", 0, "claude-opus-4-7", "sess-42")
+}
+
+func assertLatestEvent(t *testing.T, store eventReader, eventType, wantEntityType string, wantEntityID int64, wantModel, wantSession string) domain.Event {
+	t.Helper()
+	events, err := store.ListRecentEvents(context.Background(), eventType, 1)
+	if err != nil {
+		t.Fatalf("ListRecentEvents(%s) error = %v", eventType, err)
+	}
+	if len(events) == 0 {
+		t.Fatalf("ListRecentEvents(%s) returned no events", eventType)
+	}
+	ev := events[0]
+	if ev.EntityType != wantEntityType {
+		t.Fatalf("%s entity_type = %q, want %q", eventType, ev.EntityType, wantEntityType)
+	}
+	if ev.EntityID != wantEntityID {
+		t.Fatalf("%s entity_id = %d, want %d", eventType, ev.EntityID, wantEntityID)
+	}
+	if ev.AgentModel != wantModel {
+		t.Fatalf("%s agent_model = %q, want %q", eventType, ev.AgentModel, wantModel)
+	}
+	if ev.AgentSessionID != wantSession {
+		t.Fatalf("%s agent_session_id = %q, want %q", eventType, ev.AgentSessionID, wantSession)
+	}
+	return ev
+}
+
+type eventReader interface {
+	ListRecentEvents(ctx context.Context, eventType string, limit int) ([]domain.Event, error)
+}
 
 func TestErrorServiceRecordValidatesDescription(t *testing.T) {
 	ctx := context.Background()
