@@ -12,6 +12,9 @@ type ProjectRepository interface {
 	FindProjectByID(ctx context.Context, id int64) (domain.Project, error)
 	FindProjectBySlug(ctx context.Context, slug string) (domain.Project, error)
 	FindProjectsContainingPath(ctx context.Context, path string) ([]domain.Project, error)
+	// ListProjects returns every non-archived project ordered by name.
+	// Used by the TUI Home view to render the multi-project picker.
+	ListProjects(ctx context.Context) ([]domain.Project, error)
 }
 
 type ConfigRepository interface {
