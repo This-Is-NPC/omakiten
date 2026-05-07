@@ -10,6 +10,35 @@ config:
   context:
     default_level: 2
     max_tokens: 12000
+  # mcp tunes how MCP responses are shaped to fit the agent's context window.
+  # Every field is optional — omit a key to keep the canonical default. See
+  # `.docs/configuration-guide.md#configmcp` for full semantics and worked
+  # examples; in short:
+  #
+  #   recent_comment_limit         (int, default 5)   cap on comments shipped
+  #                                                   per tasks.continue /
+  #                                                   project.overview call.
+  #   max_comment_chars            (int, default 0)   truncate comment bodies
+  #                                                   past this length with `…`
+  #                                                   (0 = full bodies). Use
+  #                                                   on tasks with verbose
+  #                                                   #resume / #documentation.
+  #   include_workflow_in_continue (*bool, default true) ship the workflow
+  #                                                   block in tasks.continue.
+  #                                                   Set false once /okt
+  #                                                   loaded the workflow for
+  #                                                   the session.
+  #   cache_prompts                (*bool, default true) emit the Anthropic
+  #                                                   `cache_control` hint on
+  #                                                   prompts/get content so
+  #                                                   aware clients reuse the
+  #                                                   cached prompt.
+  #
+  # mcp:
+  #   recent_comment_limit: 3
+  #   max_comment_chars: 500
+  #   include_workflow_in_continue: false
+  #   cache_prompts: true
   workflow:
     active: default
   theme:
@@ -18,7 +47,7 @@ config:
   # picker. Each loaded template can claim at most one (kind, project) pair
   # via its frontmatter (`default: <kind>`, optional `project: <slug>`).
   # Defaults below match the canonical Omakiten kit; tweak as needed.
-  template_defaults: [task, pr, comment-resume, comment-selfbranch]
+  template_defaults: [task, pr, comment-resume, comment-selfbranch, comment-documentation]
   # views configures the default sort and filter applied to each view at
   # startup. Every field is optional — omit a section and the canonical
   # default takes over. Field/order values are validated; typos surface
@@ -112,8 +141,68 @@ workflows:
 #   - workflow-enforced
 #   - yaml-is-canonical
 personas:
-  - slug: backend-agent
+  - slug: engineer
     skills:
       - go
       - sqlite
       - cli
+      - implementation
+      - markdown
+  - slug: product-owner
+    skills:
+      - discovery
+      - user-story-writing
+      - markdown
+  - slug: documentation-agent
+    skills:
+      - documentation
+      - architecture-mapping
+      - requirements-mapping
+      - readme-curation
+      - markdown
+# mcp_commands binds each `okt-*` MCP prompt to a persona, a set of laws, and a
+# set of templates. The reserved `global:` entry declares laws inherited by
+# every command. Per-command entries can add `laws:` or opt out of inherited
+# laws via `laws_disabled:` (e.g. `okt-imagine` skips template-fidelity so the
+# discovery flow can sketch freely).
+#
+# The default kit follows a REST-style handoff pattern: each command resolves
+# one role and ends its action text by suggesting the next command. Cycle:
+#
+#   okt → okt-resume / okt-imagine
+#     okt-imagine → okt-create
+#       okt-create → (move to dev → guard) → okt-continue / okt-implement
+#         okt-resume → okt-continue
+#           okt-continue → okt-implement
+#             okt-implement → (move to review → guard)
+#   okt-document is parallel — surfaces drift; if material work is needed,
+#   suggests okt-create to spin up a documentation task.
+mcp_commands:
+  global:
+    laws:
+      - template-fidelity
+      - authorize-remote-writes
+  okt:
+    persona: engineer
+  okt-imagine:
+    persona: product-owner
+    laws_disabled:
+      - template-fidelity
+  okt-create:
+    persona: product-owner
+    templates:
+      - user-story
+  okt-resume:
+    persona: engineer
+  okt-continue:
+    persona: engineer
+  okt-implement:
+    persona: engineer
+    laws:
+      - bounded-self-review
+      - no-silent-behavior-changes
+      - conventional-commits
+    templates:
+      - pull-request
+  okt-document:
+    persona: documentation-agent
