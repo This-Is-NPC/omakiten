@@ -36,7 +36,7 @@
 |-----------|----------------|
 | `cmd/okt/` | Binary entrypoint (`main.go`); invokes `cli.NewRootCommand` |
 | `internal/cli/` | Cobra command tree (CLI composition root); JSON I/O wiring; project resolution |
-| `internal/tui/` | Bubble Tea TUI: BOARD, TABLE, GRAPH, CONFIG, LOGS views (`state.go:viewNames`) + reusable components under `components/` |
+| `internal/tui/` | Bubble Tea TUI: hierarchical zones (Tasks / Stats / Settings) plus a multi-project Home sentinel; sub-menus per zone (`state.go:topID`, `subID`, `topOrder`, `subsByTop`) + reusable components under `components/` |
 | `internal/app/` | Application services + ports; workflow policy, bundle editing, dependency sync, template defaulting, read-model fan-out |
 | `internal/domain/` | Pure entities, value types, and coded errors |
 | `internal/config/` | Canonical YAML bundle schema, frontmatter parsing, entity-file rendering, validators |

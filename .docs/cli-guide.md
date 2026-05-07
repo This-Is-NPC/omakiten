@@ -356,7 +356,7 @@ okt persona edit engineer --skill-slug go --skill-slug cli   # replaces full ski
 
 ### `okt tui` — open the terminal UI
 
-`internal/cli/tui.go`. Loads the active theme (`<root>/themes/<active>.yaml`, with `themes/custom/<active>.yaml` overriding) and starts Bubble Tea in alt-screen mode. Six per-project views (BOARD, TABLE, GRAPH, CONFIG, LOGS, STATS — `internal/tui/state.go:viewNames`) plus a multi-project Home reachable via `ctrl+h`.
+`internal/cli/tui.go`. Loads the active theme (`<root>/themes/<active>.yaml`, with `themes/custom/<active>.yaml` overriding) and starts Bubble Tea in alt-screen mode. Per-project navigation is hierarchical (`internal/tui/state.go`): three top zones — Tasks (board / table / graph), Stats (general / logs), Settings (general / laws / personas / skills / templates / tags) — plus a multi-project Home sentinel reachable via `0` or `ctrl+h`. The CLI plumbs the resolved `omakiten.yaml` path, SQLite path, and `okt` version into the TUI so Settings › General can surface them.
 
 **Project-resolution behavior on launch:**
 

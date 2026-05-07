@@ -108,7 +108,7 @@ Your tasks, comments, dependencies, errors, and fixes live in a SQLite file in y
 
 ## When you want to see it
 
-`okt tui` opens a terminal UI with a kanban board, task table, dependency graph, and config browser same data, just visual. Run it outside a project and it opens a multi-project home — pick one, work on it, and your shell lands in that project's folder when you exit. → [TUI Guide](.docs/tui-guide.md)
+`okt tui` opens a terminal UI organised into three zones — Tasks (board / table / graph), Stats (model benchmark / activity logs), Settings (runtime info / entity browser) — same data the CLI and MCP layers see, just visual. Run it outside a project and it opens a multi-project home — pick one, work on it, and your shell lands in that project's folder when you exit. → [TUI Guide](.docs/tui-guide.md)
 
 The full MCP surface (29 tools, 2 resources, 4 prompts) is documented in the [MCP Guide](.docs/mcp-guide.md).
 
