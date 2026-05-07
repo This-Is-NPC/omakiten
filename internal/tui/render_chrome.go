@@ -12,11 +12,23 @@ import (
 // view tabs are hidden when an overlay is open (help/task/entity) so the
 // overlay's own kicker reads as the focused surface. Falls back to a
 // compact "active tab + hint" form when the full nav row would overflow.
+//
+// On the Home view the per-project tab bar is suppressed (Home is outside
+// the tab cycle and only reachable via ctrl+h), and the title swaps the
+// project segment for an explicit "select a project" hint so the absent
+// project slug never reads as a render bug.
 func (m Model) renderHeader() string {
 	var sb strings.Builder
 	sb.WriteString("\n  ")
 	sb.WriteString(m.styles.title.Render("omakiten"))
 	sb.WriteString(m.styles.hint.Render(" › "))
+	if m.view == viewHome {
+		sb.WriteString(m.styles.nav.Render("home"))
+		sb.WriteString(m.styles.hint.Render(" · select a project"))
+		sb.WriteString("\n\n  ")
+		sb.WriteString(m.homeHeaderTitle())
+		return sb.String()
+	}
 	sb.WriteString(m.styles.nav.Render(m.project.Slug))
 	sb.WriteString(m.styles.hint.Render(" · local checkpoint"))
 	if m.helpOpen || m.taskScreen != taskScreenClosed || m.entityScreen != entityScreenClosed {
@@ -70,6 +82,9 @@ func (m Model) renderCurrentView() string {
 	if m.entityScreen != entityScreenClosed {
 		return m.renderEntityScreen()
 	}
+	if m.view == viewHome {
+		return m.renderHome()
+	}
 	switch m.view {
 	case 0:
 		return m.renderBoard()
@@ -121,6 +136,8 @@ func (m Model) renderFooter() string {
 		text = "up/down move  pgup/pgdn scroll  enter assign (clears prior owner)  esc cancel"
 	case m.moveMode:
 		text = "left/right move task to lane  esc cancel  q quit"
+	case m.view == viewHome:
+		text = m.homeFooterHint()
 	case m.view == 0:
 		text = "left/right lanes  up/down tasks  pgup/pgdn scroll  enter open  n new  e edit  m move  ? help"
 	case m.view == 3 && m.deletePending:
