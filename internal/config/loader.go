@@ -55,6 +55,7 @@ func LoadBundle(path string) (Bundle, error) {
 	bundle.Personas = pickPersonas(personas, wired.Personas)
 	bundle.Templates = pickTemplates(templates, wired.Templates)
 	bundle.Projects = pickProjects(wired.Projects)
+	bundle.MCPCommands = wired.MCPCommands
 
 	if err := assertRefsResolve(wired, skills, laws, personas, templates); err != nil {
 		return Bundle{}, err

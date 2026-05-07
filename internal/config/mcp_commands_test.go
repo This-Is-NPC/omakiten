@@ -1,0 +1,167 @@
+package config
+
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// TestLoadBundleAcceptsMCPCommands round-trips a yaml that wires the new
+// mcp_commands block through LoadBundle. The merged Bundle must surface every
+// declared command, including the reserved `global` slot, and frontmatter
+// laws on personas/templates must merge with the wiring without duplication.
+func TestLoadBundleAcceptsMCPCommands(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "omakiten.yaml")
+	writeFile(t, configPath, `version: 1
+kit: { id: 1, key: default, name: Default }
+config:
+  output: { json_minified: true, omit_empty: true }
+  context: { default_level: 2, max_tokens: 12000 }
+  workflow: { active: default }
+  theme: { active: catppuccin }
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    buckets:
+      - { id: 1, key: backlog, name: Backlog, position: 1 }
+    transitions: []
+laws:
+  - project-scope-only
+  - template-fidelity
+personas:
+  - slug: backend-agent
+    skills:
+      - go
+mcp_commands:
+  global:
+    laws:
+      - template-fidelity
+  okt-implement:
+    persona: backend-agent
+    templates:
+      - pull-request
+  okt-imagine:
+    persona: backend-agent
+    laws_disabled:
+      - template-fidelity
+`)
+	writeFile(t, filepath.Join(dir, "skills", "go.md"), "---\nname: Go\n---\nbody\n")
+	writeFile(t, filepath.Join(dir, "laws", "project-scope-only.md"), "---\nseverity: error\n---\nbody\n")
+	writeFile(t, filepath.Join(dir, "laws", "template-fidelity.md"), "---\nseverity: warning\n---\nbody\n")
+	writeFile(t, filepath.Join(dir, "personas", "backend-agent.md"), "---\nname: Backend Agent\nlaws:\n  - project-scope-only\n---\nbody\n")
+	writeFile(t, filepath.Join(dir, "templates", "pull-request.md"), "---\nname: Pull Request\nentity: pr\ndefault: pr\nlaws:\n  - template-fidelity\n---\n\n## Before\n## After\n")
+
+	bundle, err := LoadBundle(configPath)
+	if err != nil {
+		t.Fatalf("LoadBundle() error = %v", err)
+	}
+	if len(bundle.MCPCommands) != 3 {
+		t.Fatalf("MCPCommands len = %d, want 3 (global + 2 commands)", len(bundle.MCPCommands))
+	}
+	if !containsStringInSlice(bundle.MCPCommands["global"].Laws, "template-fidelity") {
+		t.Fatalf("global laws missing template-fidelity: %+v", bundle.MCPCommands["global"])
+	}
+	if bundle.MCPCommands["okt-implement"].Persona != "backend-agent" {
+		t.Fatalf("okt-implement persona = %q", bundle.MCPCommands["okt-implement"].Persona)
+	}
+	if !containsStringInSlice(bundle.MCPCommands["okt-imagine"].LawsDisabled, "template-fidelity") {
+		t.Fatalf("okt-imagine laws_disabled missing template-fidelity: %+v", bundle.MCPCommands["okt-imagine"])
+	}
+
+	// Frontmatter law on persona should appear on the merged persona record.
+	persona := bundle.Personas[0]
+	if !containsStringInSlice(persona.Laws, "project-scope-only") {
+		t.Fatalf("persona laws missing frontmatter binding: %+v", persona.Laws)
+	}
+
+	// Frontmatter law on template should appear on the merged template record.
+	tmpl := bundle.Templates[0]
+	if !containsStringInSlice(tmpl.Laws, "template-fidelity") {
+		t.Fatalf("template laws missing frontmatter binding: %+v", tmpl.Laws)
+	}
+}
+
+// TestLoadBundleRejectsDanglingCommandRefs covers the validator: each persona,
+// law, and template slug referenced inside mcp_commands must resolve to a
+// loaded entity.
+func TestLoadBundleRejectsDanglingCommandRefs(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "omakiten.yaml")
+	writeFile(t, configPath, `version: 1
+kit: { id: 1, key: default, name: Default }
+config:
+  output: { json_minified: true, omit_empty: true }
+  context: { default_level: 2, max_tokens: 12000 }
+  workflow: { active: default }
+  theme: { active: catppuccin }
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    buckets:
+      - { id: 1, key: backlog, name: Backlog, position: 1 }
+    transitions: []
+mcp_commands:
+  okt-implement:
+    persona: ghost
+`)
+
+	_, err := LoadBundle(configPath)
+	if err == nil {
+		t.Fatal("LoadBundle() error = nil, want dangling-persona failure")
+	}
+	if !strings.Contains(err.Error(), "no matching persona file") {
+		t.Fatalf("LoadBundle() error = %v, want 'no matching persona file'", err)
+	}
+}
+
+// TestLoadBundleRejectsLawsDisabledOverlap covers the validator rule that
+// forbids the same slug from appearing in both laws and laws_disabled on the
+// same command — that combination has no defined semantics.
+func TestLoadBundleRejectsLawsDisabledOverlap(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "omakiten.yaml")
+	writeFile(t, configPath, `version: 1
+kit: { id: 1, key: default, name: Default }
+config:
+  output: { json_minified: true, omit_empty: true }
+  context: { default_level: 2, max_tokens: 12000 }
+  workflow: { active: default }
+  theme: { active: catppuccin }
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    buckets:
+      - { id: 1, key: backlog, name: Backlog, position: 1 }
+    transitions: []
+laws:
+  - template-fidelity
+mcp_commands:
+  okt-implement:
+    laws:
+      - template-fidelity
+    laws_disabled:
+      - template-fidelity
+`)
+	writeFile(t, filepath.Join(dir, "laws", "template-fidelity.md"), "---\nseverity: warning\n---\nbody\n")
+
+	_, err := LoadBundle(configPath)
+	if err == nil {
+		t.Fatal("LoadBundle() error = nil, want overlap failure")
+	}
+	if !strings.Contains(err.Error(), "both laws and laws_disabled") {
+		t.Fatalf("LoadBundle() error = %v, want overlap message", err)
+	}
+}
+
+func containsStringInSlice(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}
