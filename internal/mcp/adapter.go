@@ -137,6 +137,7 @@ func Tools() []ToolDefinition {
 		{Name: "solutions.confirm", Description: "Confirm whether a solution worked. success=true marks it as the recommended fix and increments its like counter; success=false marks it as known-bad so the agent does not retry it without new context.", InputSchema: confirmSolutionSchema()},
 		{Name: "solutions.list_top", Description: "List the top N most-liked solutions globally (cross-project). Useful to surface validated fixes and audit recurring patterns. Likes are incremented only by solutions.confirm(success=true).", InputSchema: listTopSolutionsSchema()},
 		{Name: "templates.list", Description: "List every loaded template (slug, name, default kind, project scope, custom flag). Read-only; templates are authored by the user — the agent never modifies template bindings.", InputSchema: objectSchema(map[string]any{"kind": stringSchema("Optional default-kind filter (e.g. \"task\")"), "project": stringSchema("Optional project slug to scope project-bound templates"), "include_body": booleanSchema("Set true to include the template body in each entry; default omits it for compact responses")}, nil)},
+		{Name: "metrics.summary", Description: "Aggregate per-AI-model behaviour over a period: errors recorded, errors searched, solutions added, like rate, and search-before-record ratio. Use to benchmark whether different agents research existing context before recording new errors. Requires that callers pass _agent_model on every tool call (now coercive).", InputSchema: objectSchema(map[string]any{"period": stringSchema("Time window: \"7d\", \"30d\" (default), or \"all\""), "project_id": integerSchema("Optional registered project id; omit for cross-project view")}, nil)},
 		{Name: "templates.show", Description: "Return one template by slug, including its full body. Read-only.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Template slug")}, []string{"slug"})},
 	}
 }
@@ -371,6 +372,12 @@ func (a *Adapter) dispatchTool(ctx context.Context, name string, args map[string
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = a.service.ShowTemplate(ctx, input)
+		}
+	case "metrics.summary":
+		var input agent.MetricsSummaryInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.MetricsSummary(ctx, input)
 		}
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP tool %q", name)

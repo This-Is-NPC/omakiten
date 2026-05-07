@@ -115,6 +115,13 @@ type ErrorRepository interface {
 	RecordEntityEvent(ctx context.Context, entityType string, entityID int64, projectID int64, eventType string, payload string) error
 }
 
+// MetricsRepository computes per-agent-model aggregations over the unified
+// events log. Used by /metrics.summary to benchmark how different AI models
+// behave (do they search before recording? do their solutions get liked?).
+type MetricsRepository interface {
+	AgentMetricsSummary(ctx context.Context, period string, projectID int64) ([]domain.AgentMetrics, string, error)
+}
+
 // BundleStore is the adapter port for reading/writing the bundled config and
 // the generic atomic-write helper. The app layer talks to this instead of
 // reaching into `internal/config`'s I/O functions directly so that the

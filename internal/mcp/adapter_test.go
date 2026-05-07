@@ -36,6 +36,7 @@ func TestToolsIncludePlannedSurface(t *testing.T) {
 		"errors.search":       false,
 		"solutions.add":       false,
 		"solutions.confirm":   false,
+		"metrics.summary":     false,
 	}
 	for _, tool := range Tools() {
 		if _, ok := want[tool.Name]; ok {
@@ -132,6 +133,7 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		"errors.search",
 		"solutions.add",
 		"solutions.confirm",
+		"metrics.summary",
 	}
 
 	for _, name := range tools {
