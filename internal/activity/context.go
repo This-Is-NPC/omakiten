@@ -37,6 +37,13 @@ type ActivityLogRepository interface {
 	BeginActivityLog(ctx context.Context, log any) (int64, error)
 	FinishActivityLog(ctx context.Context, id int64, status string, durationMs int, errorMessage string) error
 	ListActivityLogs(ctx context.Context, filter domain.ActivityLogFilter) ([]domain.ActivityLog, error)
+	// ActivityLogStats returns the unbounded aggregate over the activity
+	// log scope defined by `filter` (project / sources). Limit and Order
+	// on the filter are ignored — the aggregate covers every matching
+	// row, not just the panel window. Used by the Stats › Logs summary
+	// tables so the headline counts read as project totals instead of
+	// "last N entries".
+	ActivityLogStats(ctx context.Context, filter domain.ActivityLogFilter) (domain.ActivityLogStats, error)
 }
 
 func WithRepository(ctx context.Context, repo ActivityLogRepository) context.Context {

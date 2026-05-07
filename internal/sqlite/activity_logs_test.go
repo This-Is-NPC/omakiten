@@ -84,6 +84,96 @@ func TestActivityLogListFilterBySource(t *testing.T) {
 	}
 }
 
+// TestActivityLogStatsAggregatesFullScope covers the aggregate query
+// the Stats › Logs summary tables read from. The fixture spans two
+// projects + every source/status combination so the test guarantees:
+//   - the project filter actually narrows the count;
+//   - sources outside cli/mcp/tui aren't double-counted by `Total`;
+//   - status counts include `running` (rows that never reached Finish).
+func TestActivityLogStatsAggregatesFullScope(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	insert := func(source domain.ActivitySource, projectID int64, finishStatus string) {
+		id, err := store.BeginActivityLog(ctx, domain.ActivityLog{
+			Source:    source,
+			ProjectID: projectID,
+			Operation: "test",
+			Status:    "running",
+		})
+		if err != nil {
+			t.Fatalf("BeginActivityLog(%s) error = %v", source, err)
+		}
+		if finishStatus == "" {
+			return
+		}
+		if err := store.FinishActivityLog(ctx, id, finishStatus, 1, ""); err != nil {
+			t.Fatalf("FinishActivityLog(%s) error = %v", source, err)
+		}
+	}
+
+	// Project 1: 3 cli/ok, 2 mcp/ok, 4 tui/ok, 1 mcp/error, 1 tui/running.
+	for i := 0; i < 3; i++ {
+		insert(domain.ActivitySourceCLI, 1, "ok")
+	}
+	for i := 0; i < 2; i++ {
+		insert(domain.ActivitySourceMCP, 1, "ok")
+	}
+	for i := 0; i < 4; i++ {
+		insert(domain.ActivitySourceTUI, 1, "ok")
+	}
+	insert(domain.ActivitySourceMCP, 1, "error")
+	insert(domain.ActivitySourceTUI, 1, "") // remains running
+
+	// Project 2 noise — must not show up under project_id = 1.
+	for i := 0; i < 5; i++ {
+		insert(domain.ActivitySourceCLI, 2, "ok")
+	}
+
+	stats, err := store.ActivityLogStats(ctx, domain.ActivityLogFilter{ProjectID: 1})
+	if err != nil {
+		t.Fatalf("ActivityLogStats() error = %v", err)
+	}
+	if stats.Total != 11 {
+		t.Fatalf("Total = %d, want 11", stats.Total)
+	}
+	if stats.Ok != 9 {
+		t.Fatalf("Ok = %d, want 9", stats.Ok)
+	}
+	if stats.Error != 1 {
+		t.Fatalf("Error = %d, want 1", stats.Error)
+	}
+	if stats.Running != 1 {
+		t.Fatalf("Running = %d, want 1", stats.Running)
+	}
+	if stats.CLI != 3 {
+		t.Fatalf("CLI = %d, want 3", stats.CLI)
+	}
+	if stats.MCP != 3 {
+		t.Fatalf("MCP = %d, want 3", stats.MCP)
+	}
+	if stats.TUI != 5 {
+		t.Fatalf("TUI = %d, want 5", stats.TUI)
+	}
+	if stats.OldestAt == "" || stats.NewestAt == "" {
+		t.Fatalf("expected non-empty Oldest/NewestAt timestamps, got %q / %q", stats.OldestAt, stats.NewestAt)
+	}
+
+	// Empty scope: a project without logs returns a zeroed stats with
+	// empty timestamp markers.
+	empty, err := store.ActivityLogStats(ctx, domain.ActivityLogFilter{ProjectID: 99})
+	if err != nil {
+		t.Fatalf("ActivityLogStats(empty scope) error = %v", err)
+	}
+	if empty.Total != 0 || empty.OldestAt != "" || empty.NewestAt != "" {
+		t.Fatalf("empty scope = %+v, want zero values", empty)
+	}
+}
+
 func TestActivityLogPruneKeepsNewest(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, t.TempDir()+"/omakiten.db")

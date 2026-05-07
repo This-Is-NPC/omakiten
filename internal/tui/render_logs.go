@@ -6,8 +6,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-
-	"omakiten/internal/domain"
 )
 
 func (m *Model) handleLogsKey(msg tea.KeyMsg) {
@@ -110,50 +108,29 @@ func (m Model) renderLogs() string {
 
 // renderLogsSummaryTables renders Status (total / ok / error / running)
 // and Sources (cli / mcp / tui) as two bordered grid tables — same
-// layout grammar as Stats › General. Aggregates over the loaded
-// `m.logs` window (capped by the view's `limit` setting), so the
-// numbers reflect what is actually shown below.
+// layout grammar as Stats › General. Aggregates over the **full
+// project log** via `m.logsStats` (populated alongside `m.logs` on
+// every refresh), so the headline numbers reflect everything the
+// project has recorded — independent of how many rows the panel
+// beneath happens to render under its `views.logs.limit`.
 func (m Model) renderLogsSummaryTables() string {
-	okCount := 0
-	errorCount := 0
-	runningCount := 0
-	cliCount := 0
-	mcpCount := 0
-	tuiCount := 0
-	for _, log := range m.logs {
-		switch log.Status {
-		case "ok":
-			okCount++
-		case "error":
-			errorCount++
-		case "running":
-			runningCount++
-		}
-		switch log.Source {
-		case domain.ActivitySourceCLI:
-			cliCount++
-		case domain.ActivitySourceMCP:
-			mcpCount++
-		case domain.ActivitySourceTUI:
-			tuiCount++
-		}
-	}
+	stats := m.logsStats
 
 	labelCell := func(label string) string {
 		return m.styles.info.Render("// " + strings.ToUpper(label))
 	}
 	statusRows := [][]string{
 		{labelCell("Status"), ""},
-		{labelCell("total"), fmt.Sprintf("%d", len(m.logs))},
-		{labelCell("ok"), fmt.Sprintf("%d", okCount)},
-		{labelCell("error"), fmt.Sprintf("%d", errorCount)},
-		{labelCell("running"), fmt.Sprintf("%d", runningCount)},
+		{labelCell("total"), fmt.Sprintf("%d", stats.Total)},
+		{labelCell("ok"), fmt.Sprintf("%d", stats.Ok)},
+		{labelCell("error"), fmt.Sprintf("%d", stats.Error)},
+		{labelCell("running"), fmt.Sprintf("%d", stats.Running)},
 	}
 	sourceRows := [][]string{
 		{labelCell("Sources"), ""},
-		{labelCell("cli"), fmt.Sprintf("%d", cliCount)},
-		{labelCell("mcp"), fmt.Sprintf("%d", mcpCount)},
-		{labelCell("tui"), fmt.Sprintf("%d", tuiCount)},
+		{labelCell("cli"), fmt.Sprintf("%d", stats.CLI)},
+		{labelCell("mcp"), fmt.Sprintf("%d", stats.MCP)},
+		{labelCell("tui"), fmt.Sprintf("%d", stats.TUI)},
 	}
 
 	const (

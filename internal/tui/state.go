@@ -158,6 +158,12 @@ type Model struct {
 
 	logs         []domain.ActivityLog
 	logsSelected int
+	// logsStats is the unbounded aggregate over the activity log scope
+	// (project + view source filter). Populated alongside `logs` on
+	// every refresh of the Stats › Logs view; the summary tables read
+	// from this so the headline counts reflect the full project
+	// history rather than just the limit-N rows currently materialised.
+	logsStats domain.ActivityLogStats
 
 	// activity holds the unified activity feed (comments + system events)
 	// for the currently-open task detail view. Populated on openTaskView

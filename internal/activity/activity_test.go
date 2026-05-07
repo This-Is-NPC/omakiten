@@ -35,6 +35,10 @@ func (f *fakeRepo) ListActivityLogs(_ context.Context, _ domain.ActivityLogFilte
 	return nil, nil
 }
 
+func (f *fakeRepo) ActivityLogStats(_ context.Context, _ domain.ActivityLogFilter) (domain.ActivityLogStats, error) {
+	return domain.ActivityLogStats{}, nil
+}
+
 func TestTrackLogsSuccess(t *testing.T) {
 	repo := &fakeRepo{beginReturnID: 7}
 	ctx := WithRepository(context.Background(), repo)

@@ -235,15 +235,27 @@ func (m *Model) refreshActivityLogs() error {
 	for _, src := range views.Logs.Filter.Source {
 		sources = append(sources, domain.ActivitySource(src))
 	}
-	logs, err := m.repos.ActivityLogs.ListActivityLogs(m.ctx, domain.ActivityLogFilter{
-		Limit:   views.Logs.Limit,
-		Order:   views.Logs.Sort.Order,
-		Sources: sources,
-	})
+	listFilter := domain.ActivityLogFilter{
+		ProjectID: m.project.ID,
+		Limit:     views.Logs.Limit,
+		Order:     views.Logs.Sort.Order,
+		Sources:   sources,
+	}
+	logs, err := m.repos.ActivityLogs.ListActivityLogs(m.ctx, listFilter)
 	if err != nil {
 		return err
 	}
 	m.logs = logs
+	// Summary tables aggregate the full project history (no limit, no
+	// view source filter), so the headline numbers reflect everything
+	// the project has logged — not just whichever rows happen to fit
+	// in the panel beneath.
+	statsFilter := domain.ActivityLogFilter{ProjectID: m.project.ID}
+	stats, err := m.repos.ActivityLogs.ActivityLogStats(m.ctx, statsFilter)
+	if err != nil {
+		return err
+	}
+	m.logsStats = stats
 	return nil
 }
 

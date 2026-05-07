@@ -116,6 +116,60 @@ func (s *Store) ListActivityLogs(ctx context.Context, filter domain.ActivityLogF
 	return logs, rows.Err()
 }
 
+// ActivityLogStats returns the unbounded aggregate over the activity
+// log scope. Honours `filter.Source` / `filter.Sources` / `filter.ProjectID`
+// for narrowing; ignores `filter.Limit` and `filter.Order` because the
+// summary is meant to reflect the full project history regardless of
+// how the panel beneath it is paged. Implemented as a single scan with
+// per-status / per-source SUM(CASE …) aggregates so the round-trip
+// cost stays O(1) regardless of project size.
+func (s *Store) ActivityLogStats(ctx context.Context, filter domain.ActivityLogFilter) (domain.ActivityLogStats, error) {
+	args := []any{}
+	conds := []string{"event_type = 'operation'"}
+	if filter.Source != "" {
+		conds = append(conds, "source = ?")
+		args = append(args, string(filter.Source))
+	}
+	if len(filter.Sources) > 0 {
+		ph := make([]string, len(filter.Sources))
+		for i, src := range filter.Sources {
+			ph[i] = "?"
+			args = append(args, string(src))
+		}
+		conds = append(conds, "source IN ("+strings.Join(ph, ",")+")")
+	}
+	if filter.ProjectID > 0 {
+		conds = append(conds, "project_id = ?")
+		args = append(args, filter.ProjectID)
+	}
+
+	query := `SELECT
+COUNT(*),
+SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END),
+SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END),
+SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END),
+SUM(CASE WHEN source = 'cli' THEN 1 ELSE 0 END),
+SUM(CASE WHEN source = 'mcp' THEN 1 ELSE 0 END),
+SUM(CASE WHEN source = 'tui' THEN 1 ELSE 0 END),
+COALESCE(MIN(created_at), ''),
+COALESCE(MAX(created_at), '')
+FROM events WHERE ` + strings.Join(conds, " AND ")
+
+	row := s.db.QueryRowContext(ctx, query, args...)
+	var stats domain.ActivityLogStats
+	var ok, errCount, running, cli, mcp, tui sql.NullInt64
+	if err := row.Scan(&stats.Total, &ok, &errCount, &running, &cli, &mcp, &tui, &stats.OldestAt, &stats.NewestAt); err != nil {
+		return domain.ActivityLogStats{}, err
+	}
+	stats.Ok = int(ok.Int64)
+	stats.Error = int(errCount.Int64)
+	stats.Running = int(running.Int64)
+	stats.CLI = int(cli.Int64)
+	stats.MCP = int(mcp.Int64)
+	stats.TUI = int(tui.Int64)
+	return stats, nil
+}
+
 func (s *Store) PruneActivityLogs(ctx context.Context, maxRows int, maxAgeDays int) error {
 	if maxAgeDays > 0 {
 		if _, err := s.db.ExecContext(ctx, `
