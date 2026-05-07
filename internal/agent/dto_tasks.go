@@ -13,6 +13,11 @@ type TaskSummary struct {
 type ContinueTaskInput struct {
 	ProjectSelector
 	TaskID int64 `json:"task_id"`
+	// IncludeWorkflow overrides config.mcp.include_workflow_in_continue for
+	// this single call. nil → use the configured default; *true → force
+	// inclusion; *false → skip the workflow block. Use *false on subsequent
+	// continues in a session where `okt` already loaded the workflow shape.
+	IncludeWorkflow *bool `json:"include_workflow,omitempty"`
 }
 
 type ContinueTaskResponse struct {
@@ -43,6 +48,7 @@ type CreateTaskInput struct {
 	BucketKey           string `json:"bucket_key,omitempty"`
 	Confirmed           bool   `json:"confirmed,omitempty"`
 	SkipSimilarityCheck bool   `json:"skip_similarity_check,omitempty"`
+	TemplateSlug        string `json:"template_slug,omitempty"`
 }
 
 type CreateTaskResponse struct {

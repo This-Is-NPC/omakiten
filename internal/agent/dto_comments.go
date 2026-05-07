@@ -13,10 +13,11 @@ type CommentSummary struct {
 
 type AddCommentInput struct {
 	ProjectSelector
-	TaskID     int64    `json:"task_id"`
-	Body       string   `json:"body"`
-	AuthorType string   `json:"author_type,omitempty"`
-	Tags       []string `json:"tags,omitempty"`
+	TaskID       int64    `json:"task_id"`
+	Body         string   `json:"body"`
+	AuthorType   string   `json:"author_type,omitempty"`
+	Tags         []string `json:"tags,omitempty"`
+	TemplateSlug string   `json:"template_slug,omitempty"`
 }
 
 type ListCommentsInput struct {

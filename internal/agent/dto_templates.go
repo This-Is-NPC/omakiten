@@ -27,13 +27,14 @@ type ShowTemplateResponse struct {
 // included on show and optionally on list; default/project surface the active
 // binding so the agent can identify the canonical scaffold for a kind.
 type TemplateSummary struct {
-	Slug        string `json:"slug"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Entity      string `json:"entity,omitempty"`
-	Default     string `json:"default,omitempty"`
-	Project     string `json:"project,omitempty"`
-	IsCustom    bool   `json:"is_custom,omitempty"`
-	Body        string `json:"body,omitempty"`
-	SourcePath  string `json:"source_path,omitempty"`
+	Slug        string   `json:"slug"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Entity      string   `json:"entity,omitempty"`
+	Default     string   `json:"default,omitempty"`
+	Project     string   `json:"project,omitempty"`
+	Laws        []string `json:"laws,omitempty"`
+	IsCustom    bool     `json:"is_custom,omitempty"`
+	Body        string   `json:"body,omitempty"`
+	SourcePath  string   `json:"source_path,omitempty"`
 }

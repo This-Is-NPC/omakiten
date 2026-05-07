@@ -120,6 +120,68 @@ func blockedWork(tasks []domain.Task, dependencies []domain.TaskDependency) []Ta
 	return out
 }
 
+// truncateBody enforces config.mcp.max_comment_chars on a comment body.
+// When the body fits the budget, it is returned unchanged; when it exceeds,
+// it is cut at the budget and an ellipsis is appended (`…`). The cut respects
+// rune boundaries so we never split a multi-byte character. Callers should
+// only invoke this when settings.MaxCommentChars > 0.
+func truncateBody(body string, maxChars int) string {
+	if maxChars <= 0 {
+		return body
+	}
+	runes := []rune(body)
+	if len(runes) <= maxChars {
+		return body
+	}
+	return strings.TrimRight(string(runes[:maxChars]), " \t\r\n") + "…"
+}
+
+// applyTemplateBody resolves a template by slug from the registered catalog
+// and merges its body with the user-supplied body. When the user body is
+// empty, the template body wins outright; when it is non-empty, the user
+// content stays first and the template body is appended after a blank line so
+// the user's intent is not overwritten. Unknown slugs surface as a validation
+// error rather than silently degrading. Returns the merged body, the resolved
+// template summary, and an error.
+//
+// `kind` is just an enum tag used in error messages — "task" or "comment".
+func (s *Service) applyTemplateBody(slug, body, kind string) (string, *TaskTemplateSummary, error) {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return body, nil, nil
+	}
+	if s.templateCatalog == nil {
+		return "", nil, domain.NewError(domain.ErrValidation, "template catalog not initialized", map[string]any{"slug": slug, "kind": kind})
+	}
+	for _, t := range s.templateCatalog() {
+		if t.Slug != slug {
+			continue
+		}
+		merged := mergeUserBodyWithTemplate(body, t.Body)
+		summary := &TaskTemplateSummary{
+			Slug:        t.Slug,
+			Name:        t.Name,
+			Description: t.Description,
+			Body:        t.Body,
+		}
+		return merged, summary, nil
+	}
+	return "", nil, domain.NewError(domain.ErrValidation, "template not found", map[string]any{"slug": slug, "kind": kind})
+}
+
+func mergeUserBodyWithTemplate(userBody, templateBody string) string {
+	user := strings.TrimSpace(userBody)
+	template := strings.TrimSpace(templateBody)
+	switch {
+	case user == "":
+		return template
+	case template == "":
+		return user
+	default:
+		return user + "\n\n" + template
+	}
+}
+
 func taskTitleAndDescription(title, description string) (string, string) {
 	title = strings.TrimSpace(title)
 	description = strings.TrimSpace(description)
