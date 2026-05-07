@@ -3,6 +3,11 @@ $ErrorActionPreference = "Stop"
 $Repo = "This-Is-NPC/omakiten"
 $InstallDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { "$env:LOCALAPPDATA\Programs\okt" }
 
+# Sentinels delimit the okt() PowerShell wrapper block in $PROFILE. Must
+# match uninstall.ps1 byte-for-byte.
+$WrapperBegin = "# >>> okt wrapper >>>"
+$WrapperEnd = "# <<< okt wrapper <<<"
+
 function Get-LatestTag {
   $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest"
   return $release.tag_name.TrimStart("v")
@@ -43,6 +48,48 @@ Copy-Item -Path "$tmpdir\okt.exe" -Destination "$InstallDir\okt.exe" -Force
 Remove-Item -Recurse -Force $tmpdir
 
 Add-ToPath -Dir $InstallDir
+
+function Install-OktWrapper {
+  $profilePath = $PROFILE.CurrentUserAllHosts
+  if (-not (Test-Path $profilePath)) {
+    New-Item -ItemType File -Path $profilePath -Force | Out-Null
+  }
+
+  $block = @"
+$WrapperBegin
+# Auto-installed by omakiten. Lets `okt tui` cd the parent shell into the
+# project chosen on the Home screen when the TUI exits.
+# Remove with the bundled uninstall.ps1; do not edit by hand.
+function okt {
+    `$cdFile = if (`$env:OKT_CD_FILE) { `$env:OKT_CD_FILE } elseif (`$env:XDG_RUNTIME_DIR) { Join-Path `$env:XDG_RUNTIME_DIR 'okt-cd' } else { Join-Path `$env:TEMP 'okt-cd' }
+    if (Test-Path `$cdFile) { Remove-Item `$cdFile -Force -ErrorAction SilentlyContinue }
+    & okt.exe @args
+    `$rc = `$LASTEXITCODE
+    if (Test-Path `$cdFile) {
+        `$target = (Get-Content `$cdFile -TotalCount 1).Trim()
+        Remove-Item `$cdFile -Force -ErrorAction SilentlyContinue
+        if (`$target -and (Test-Path `$target -PathType Container)) {
+            Set-Location `$target
+        }
+    }
+    return `$rc
+}
+$WrapperEnd
+"@
+
+  $existing = if (Test-Path $profilePath) { Get-Content $profilePath -Raw } else { "" }
+  if ($existing -match [regex]::Escape($WrapperBegin)) {
+    $pattern = [regex]::Escape($WrapperBegin) + "[\s\S]*?" + [regex]::Escape($WrapperEnd)
+    $updated = [regex]::Replace($existing, $pattern, $block)
+    Set-Content -Path $profilePath -Value $updated -NoNewline
+  } else {
+    Add-Content -Path $profilePath -Value "`n$block"
+  }
+  Write-Host "=> Installed okt() wrapper into $profilePath"
+  Write-Host "   Open a new PowerShell session to enable cd-on-exit."
+}
+
+Install-OktWrapper
 
 $version = & "$InstallDir\okt.exe" --version
 Write-Host "=> Installed $version"
