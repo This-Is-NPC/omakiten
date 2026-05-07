@@ -54,7 +54,7 @@
 | `internal/activity/` | Context-scoped observability: `activity.Track`, `WithRepository`, `WithSource` |
 | `internal/arch/` | Architecture-boundary test (`arch_test.go`) |
 | `defaults/` | Embedded default kit assets (laws, skills, personas, templates, themes, omakiten.yaml) |
-| `migrations/` | Embedded SQL schema migrations (001–009) |
+| `migrations/` | Embedded SQL schema migrations (001–010) |
 | `dev_env/` | Local TUI/dev runtime state (`mise tui`) |
 | `.docs/` | Documentation, templates, personal notes |
 | `.workflow/` | Per-task requirements/plans/summaries used by the assisted-workflow skills |

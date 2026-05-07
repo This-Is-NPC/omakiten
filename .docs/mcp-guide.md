@@ -27,7 +27,15 @@ Existing harness config is preserved. Omakiten refuses to replace an existing `o
 
 ## Tools
 
-The full surface is the source of truth in `internal/mcp/adapter.go:ListTools`. Currently 29 tools, grouped below.
+The full surface is the source of truth in `internal/mcp/adapter.go:ListTools`. Currently 30 tools, grouped below.
+
+### Required `_agent_model` on every call
+
+Every tool call must carry a top-level `_agent_model` string identifying the AI model invoking the tool (e.g. `"claude-opus-4-7"`, `"claude-sonnet-4-6"`, `"gpt-5"`). Calls without it return `validation_error` with self-describing guidance — the agent can fix its own request without a follow-up.
+
+An optional `_agent_session_id` lets the metrics layer correlate searches to records within a session (used by `metrics.summary`'s `search_before_record_ratio`). Both fields are stripped from the input before tool-specific decoding, so they never leak into per-tool DTOs. They are denormalized on every write (`events`, `errors`, `solutions`) so cross-table benchmarks don't need joins.
+
+System-internal entry points (`ReadResource`) bypass the coercive check and write empty attribution so synthetic samples don't pollute the benchmark.
 
 ### Project & workflow
 
@@ -97,13 +105,19 @@ The full surface is the source of truth in `internal/mcp/adapter.go:ListTools`. 
 | `templates.list` | Lists every loaded template (slug, name, default kind, project scope, custom flag); optional `kind`/`project`/`include_body` filters. |
 | `templates.show` | Returns one template by slug, including its full body. |
 
+### Metrics (cross-agent benchmarking)
+
+| Tool | Purpose |
+|---|---|
+| `metrics.summary` | Aggregates per-AI-model behaviour over a period: errors recorded, errors searched, solutions added, like rate, and search-before-record ratio. Period defaults to `30d` (also accepts `7d` and `all`); invalid values fall back to `30d`. Optional `project_id` narrows the view to one project; omit for the cross-project benchmark. Models that never pass `_agent_session_id` report `0.0` for `search_before_record_ratio` even if they search heavily — correlating searches to records requires session continuity, by design. Rows with empty `agent_model` (TUI human, system internals) are excluded. |
+
 ### Progress
 
 | Tool | Purpose |
 |---|---|
 | `progress.record` | Records material progress through edits, comments, context, and optional workflow moves in a single call. |
 
-Every tool accepts optional project selector fields where useful: `project_id`, `project`, and `cwd`. Resolution follows Omakiten's standard order: explicit id, explicit slug, then current working directory inside a registered project root. `tags.list_all`, `errors.*`, `solutions.*`, and `templates.list` are intentionally cross-project and ignore the selector.
+Every tool accepts optional project selector fields where useful: `project_id`, `project`, and `cwd`. Resolution follows Omakiten's standard order: explicit id, explicit slug, then current working directory inside a registered project root. `tags.list_all`, `errors.*`, `solutions.*`, `templates.list`, and `metrics.summary` are intentionally cross-project and ignore the selector (`metrics.summary` accepts a separate `project_id` filter argument when scoped is desired).
 
 ## Resources
 

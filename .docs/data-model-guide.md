@@ -19,6 +19,7 @@ Schema versions are tracked in `schema_migrations(version)`. Each numbered file 
 | `007_errors.sql` | `errors`, `solutions`, `error_tags`. Errors and solutions are intentionally **cross-project**. |
 | `008_solution_likes.sql` | `solutions.likes` counter, incremented by `solutions.confirm(success=true)`. |
 | `009_events.sql` | Unified `events` table; migrates `comments` and `activity_logs` into it; rekeys `comment_tags` as `event_tags`; **drops** `comments`, `comment_tags`, `activity_logs`. |
+| `010_agent_attribution.sql` | Adds `agent_model` (NOT NULL DEFAULT '') and nullable `agent_session_id` to `events`, `errors`, and `solutions`; adds `source` / `entrypoint` to `errors` / `solutions`; creates `idx_events_agent_type(agent_model, event_type, created_at)` for the per-model benchmark queries. Existing rows are not backfilled — the domain-event timeline starts at this migration. |
 
 After 009, three tables that older code referenced (`comments`, `comment_tags`, `activity_logs`) **no longer exist** — every reader/writer goes through `events` (see "The unified events table" below).
 
@@ -248,8 +249,11 @@ Three join tables attach tags:
 ### `errors`, `solutions`, `error_tags`
 
 ```
-errors:    id, description, context, project_id?, created_at
-solutions: id, error_id (FK), description, steps, success NULL|0|1, task_id?, tried_at?, created_at, likes
+errors:    id, description, context, project_id?, created_at,
+           source, entrypoint, agent_model, agent_session_id?
+solutions: id, error_id (FK), description, steps, success NULL|0|1, task_id?,
+           tried_at?, created_at, likes,
+           source, entrypoint, agent_model, agent_session_id?
 error_tags: error_id, tag_id
 ```
 
@@ -261,11 +265,13 @@ error_tags: error_id, tag_id
 - `0` — known-bad (the agent should not retry without new context).
 - `1` — known-good — increments `solutions.likes` (`migration 008`).
 
+The `source` / `entrypoint` / `agent_model` / `agent_session_id` columns (`migration 010`) denormalize the calling agent's identity from the `internal/activity` context at write time. They feed `metrics.summary` directly without a join. `agent_session_id` is nullable so absent sessions don't distort `GROUP BY` queries; `agent_model=""` marks non-agent traffic (TUI human, system internals) and is filtered out of per-model benchmarks.
+
 Indexes: `idx_errors_project`, `idx_errors_created_at(DESC)`, `idx_solutions_error`, `idx_solutions_likes(DESC)`.
 
 ## The unified `events` table
 
-After migration 009, **comments**, **task lifecycle events**, and **operational telemetry** all live in one append-only log. The discriminators are `entity_type` and `event_type`:
+After migration 009, **comments**, **task lifecycle events**, **operational telemetry**, and (after migration 010) **domain events** all live in one append-only log. The discriminators are `entity_type` and `event_type`:
 
 | `entity_type` | `event_type` | `entity_id` | Use |
 |---|---|---|---|
@@ -274,13 +280,20 @@ After migration 009, **comments**, **task lifecycle events**, and **operational 
 | `task` | `task.moved` | task id | Emitted by the task repo when bucket changes. |
 | `task` | `task.completed` | task id | Emitted by `app.WorkflowService.MoveTask` when the destination bucket is the workflow's final bucket (`payload.bucket` set). |
 | `system` | `operation` | (null) | Operational telemetry from `activity.Track`: `source` (`cli`/`tui`/`mcp`), `entrypoint`, `operation`, `status`, `duration_ms`, `error_message`. |
+| `error` | `error.recorded` | error id | Emitted by `app.ErrorService.Record` after a successful insert. `payload` carries `tags` and `has_context`. |
+| `error` | `error.searched` | (null) | Emitted by `app.ErrorService.Search`; `payload` carries `query`, `tags`, and `result_count`. |
+| `solution` | `solution.added` | solution id | Emitted by `app.ErrorService.AddSolution`. |
+| `solution` | `solution.liked` | solution id | Emitted by `app.ErrorService.ConfirmSolution(success=true)` (also bumps `solutions.likes`). |
+| `solution` | `solution.failed` | solution id | Emitted by `app.ErrorService.ConfirmSolution(success=false)`. |
+| `solution` | `solution.viewed_top` | (null) | Emitted by `app.ErrorService.ListTopSolutions`; `payload` carries `limit` and `returned_count`. |
 
-Constants are defined in `internal/domain/event.go`.
+Constants are defined in `internal/domain/event.go`. `agent_model` and `agent_session_id` are populated from the request context on every domain event (and on `operation` rows after migration 010). `metrics.summary` aggregates these rows by `agent_model` to benchmark agent behaviour.
 
-The event row carries every column it might need; unused columns are nullable. Two indexes:
+The event row carries every column it might need; unused columns are nullable. Three indexes:
 
 - `idx_events_entity(entity_type, entity_id, created_at)` — feeds the per-task activity feed (`task_activity.list` MCP tool, the TUI's activity column, `internal/sqlite/events.go:ListTaskActivity`).
 - `idx_events_type_started(event_type, created_at)` — feeds the operational logs view (`internal/sqlite/activity_logs.go:ListActivityLogs`) and the synchronous pruner.
+- `idx_events_agent_type(agent_model, event_type, created_at)` — feeds the `metrics.summary` aggregation queries (`internal/sqlite/metrics.go:AgentMetricsSummary`).
 
 ### Pruning policy (operations only)
 
@@ -318,7 +331,7 @@ The driver is pure Go (`modernc.org/sqlite`), so the binary builds without CGo.
 
 ## Where to learn more
 
-- Migration sources: `migrations/001_initial.sql` … `migrations/009_events.sql`.
+- Migration sources: `migrations/001_initial.sql` … `migrations/010_agent_attribution.sql`.
 - Domain types behind every row: `internal/domain/`.
-- Adapter implementations: `internal/sqlite/` (one file per concern after the recent split — `tasks.go`, `comments.go`, `dependencies.go`, `events.go`, `tags.go`, `errors.go`, `workflows.go`, `bundles.go`, `activity_logs.go`, `guards.go`, `contexts.go`, `personas.go`, `laws.go`, `skills.go`, `projects.go`, `store.go`).
+- Adapter implementations: `internal/sqlite/` (one file per concern after the recent split — `tasks.go`, `comments.go`, `dependencies.go`, `events.go`, `tags.go`, `errors.go`, `metrics.go`, `workflows.go`, `bundles.go`, `activity_logs.go`, `guards.go`, `contexts.go`, `personas.go`, `laws.go`, `skills.go`, `projects.go`, `store.go`).
 - App-level ports the adapter satisfies: `internal/app/ports.go`.
