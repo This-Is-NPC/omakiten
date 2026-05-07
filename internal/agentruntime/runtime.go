@@ -86,6 +86,16 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	rt.service = agent.NewService(store, agent.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
 	rt.service.SetTaskTemplateLookup(taskTemplateLookup(bundle))
 	rt.service.SetTemplateCatalog(templateCatalog(bundle))
+	rt.service.SetSkillCatalog(skillCatalog(bundle))
+	rt.service.SetLawCatalog(lawCatalog(bundle))
+	rt.service.SetPersonaCatalog(personaCatalog(bundle))
+	rt.service.SetCommandCatalog(commandCatalog(bundle))
+	rt.service.SetSettings(agent.ServiceSettings{
+		RecentCommentLimit: bundle.Config.MCP.EffectiveRecentCommentLimit(),
+		MaxCommentChars:    bundle.Config.MCP.EffectiveMaxCommentChars(),
+		IncludeWorkflow:    bundle.Config.MCP.EffectiveIncludeWorkflowInContinue(),
+		CachePrompts:       bundle.Config.MCP.EffectiveCachePrompts(),
+	})
 	return rt, nil
 }
 
@@ -123,6 +133,7 @@ func templateCatalog(bundle config.Bundle) agent.TemplateCatalog {
 			Entity:      t.Entity,
 			Default:     t.Default,
 			Project:     t.ProjectSlug,
+			Laws:        append([]string(nil), t.Laws...),
 			IsCustom:    t.IsCustom,
 			Body:        t.Body,
 			SourcePath:  t.SourcePath,
@@ -159,6 +170,90 @@ func taskTemplateLookup(bundle config.Bundle) agent.TaskTemplateLookup {
 			return nil
 		}
 		return summarizeTaskTemplate(global)
+	}
+}
+
+// skillCatalog/lawCatalog/personaCatalog/commandCatalog snapshot the bundle so
+// agent.Service.ResolveCommand can resolve persona, skill, law and per-command
+// bindings without importing internal/config. Snapshots are taken once at
+// startup — same lifetime as templateCatalog — because a bundle reload
+// requires restarting the runtime.
+
+func skillCatalog(bundle config.Bundle) agent.SkillCatalog {
+	snapshot := make([]agent.SkillInfo, 0, len(bundle.Skills))
+	for _, s := range bundle.Skills {
+		snapshot = append(snapshot, agent.SkillInfo{
+			Slug:        s.Slug,
+			Name:        s.Name,
+			Description: s.Description,
+			Body:        s.Body,
+		})
+	}
+	return func() []agent.SkillInfo {
+		out := make([]agent.SkillInfo, len(snapshot))
+		copy(out, snapshot)
+		return out
+	}
+}
+
+func lawCatalog(bundle config.Bundle) agent.LawCatalog {
+	snapshot := make([]agent.LawInfo, 0, len(bundle.Laws))
+	for _, l := range bundle.Laws {
+		snapshot = append(snapshot, agent.LawInfo{
+			Slug:     l.Slug,
+			Name:     l.Name,
+			Severity: l.Severity,
+			Body:     l.Body,
+			Scope:    l.Scope,
+		})
+	}
+	return func() []agent.LawInfo {
+		out := make([]agent.LawInfo, len(snapshot))
+		copy(out, snapshot)
+		return out
+	}
+}
+
+func personaCatalog(bundle config.Bundle) agent.PersonaCatalog {
+	snapshot := make([]agent.PersonaInfo, 0, len(bundle.Personas))
+	for _, p := range bundle.Personas {
+		snapshot = append(snapshot, agent.PersonaInfo{
+			Slug:        p.Slug,
+			Name:        p.Name,
+			Description: p.Description,
+			Body:        p.Body,
+			Skills:      append([]string(nil), p.Skills...),
+			Laws:        append([]string(nil), p.Laws...),
+		})
+	}
+	return func() []agent.PersonaInfo {
+		out := make([]agent.PersonaInfo, len(snapshot))
+		copy(out, snapshot)
+		return out
+	}
+}
+
+func commandCatalog(bundle config.Bundle) agent.CommandCatalog {
+	snapshot := make(map[string]agent.MCPCommandBinding, len(bundle.MCPCommands))
+	for name, spec := range bundle.MCPCommands {
+		snapshot[name] = agent.MCPCommandBinding{
+			Persona:      spec.Persona,
+			Laws:         append([]string(nil), spec.Laws...),
+			LawsDisabled: append([]string(nil), spec.LawsDisabled...),
+			Templates:    append([]string(nil), spec.Templates...),
+		}
+	}
+	return func() map[string]agent.MCPCommandBinding {
+		out := make(map[string]agent.MCPCommandBinding, len(snapshot))
+		for k, v := range snapshot {
+			out[k] = agent.MCPCommandBinding{
+				Persona:      v.Persona,
+				Laws:         append([]string(nil), v.Laws...),
+				LawsDisabled: append([]string(nil), v.LawsDisabled...),
+				Templates:    append([]string(nil), v.Templates...),
+			}
+		}
+		return out
 	}
 }
 
