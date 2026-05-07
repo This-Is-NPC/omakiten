@@ -7,7 +7,46 @@ import (
 
 	"omakiten/internal/activity"
 	"omakiten/internal/agent"
+	"omakiten/internal/domain"
 )
+
+// agentModelArgKey / agentSessionArgKey are reserved top-level fields on
+// every MCP tool input. _agent_model is required (coercive validation
+// rejects calls missing it); _agent_session_id is optional. They are
+// stripped from args before tool-specific decoding so individual input
+// structs don't have to care.
+const (
+	agentModelArgKey   = "_agent_model"
+	agentSessionArgKey = "_agent_session_id"
+)
+
+// extractAgentAttribution pulls the reserved keys out of args, rejecting
+// the call when _agent_model is absent or empty. The error message is
+// self-describing so the AI agent can fix its own request without a
+// follow-up; failing closed forces every benchmark sample to carry a
+// model id, which is the whole point of /metrics.summary.
+func extractAgentAttribution(args map[string]any) (model, sessionID string, err error) {
+	rawModel, ok := args[agentModelArgKey]
+	if !ok {
+		return "", "", domain.NewError(domain.ErrValidation,
+			"_agent_model is required on all MCP tool calls. "+
+				"Identify the AI model invoking this tool (e.g., \"claude-opus-4-7\", \"claude-sonnet-4-6\", \"gpt-5\"). "+
+				"Pass it as a top-level field in the tool input args.", nil)
+	}
+	model, _ = rawModel.(string)
+	if model == "" {
+		return "", "", domain.NewError(domain.ErrValidation,
+			"_agent_model must be a non-empty string. "+
+				"Identify the AI model invoking this tool (e.g., \"claude-opus-4-7\").", nil)
+	}
+	delete(args, agentModelArgKey)
+
+	if raw, present := args[agentSessionArgKey]; present {
+		sessionID, _ = raw.(string)
+		delete(args, agentSessionArgKey)
+	}
+	return model, sessionID, nil
+}
 
 type Adapter struct {
 	service *agent.Service
@@ -138,7 +177,24 @@ func (a *Adapter) CallTool(ctx context.Context, name string, args map[string]any
 		return ToolResult{}, fmt.Errorf("mcp adapter requires an agent service")
 	}
 
-	ctx = activity.WithAgent(ctx, "mcp", name, "", "")
+	if args == nil {
+		args = map[string]any{}
+	}
+	agentModel, agentSessionID, err := extractAgentAttribution(args)
+	if err != nil {
+		return ToolResult{}, err
+	}
+
+	ctx = activity.WithAgent(ctx, "mcp", name, agentModel, agentSessionID)
+	return a.dispatchTool(ctx, name, args)
+}
+
+// dispatchTool runs the bare tool dispatch with the activity context the
+// caller already prepared. Splits out of CallTool so internal entry points
+// (ReadResource) can bypass the coercive _agent_model validation — those
+// calls are system-internal, not agent-driven, and shouldn't pollute the
+// per-model metrics with synthetic samples.
+func (a *Adapter) dispatchTool(ctx context.Context, name string, args map[string]any) (ToolResult, error) {
 	if a.repo != nil {
 		ctx = activity.WithRepository(ctx, a.repo)
 	}
@@ -327,11 +383,18 @@ func (a *Adapter) CallTool(ctx context.Context, name string, args map[string]any
 }
 
 func (a *Adapter) ReadResource(ctx context.Context, uri string) (ToolResult, error) {
+	if a.service == nil {
+		return ToolResult{}, fmt.Errorf("mcp adapter requires an agent service")
+	}
+	// Resource reads are system-internal — no _agent_model validation.
+	// Empty agent model marks them as "not benchmarked" so the metrics
+	// layer can filter them out without a special sentinel.
+	ctx = activity.WithAgent(ctx, "mcp", "resource:"+uri, "", "")
 	switch uri {
 	case "omakiten://project/overview":
-		return a.CallTool(ctx, "project.overview", nil)
+		return a.dispatchTool(ctx, "project.overview", map[string]any{})
 	case "omakiten://workflow/active":
-		return a.CallTool(ctx, "workflow.show", nil)
+		return a.dispatchTool(ctx, "workflow.show", map[string]any{})
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP resource %q", uri)
 	}

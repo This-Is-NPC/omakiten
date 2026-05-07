@@ -49,7 +49,7 @@ func TestServeToolsCall(t *testing.T) {
 	ctx := context.Background()
 	service := newMCPTestService(t, ctx)
 
-	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"project.overview","arguments":{}}}` + "\n")
+	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"project.overview","arguments":{"_agent_model":"test-model"}}}` + "\n")
 	var output bytes.Buffer
 	if err := Serve(ctx, input, &output, NewAdapter(service)); err != nil {
 		t.Fatalf("Serve() error = %v", err)
