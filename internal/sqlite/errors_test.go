@@ -4,8 +4,48 @@ import (
 	"context"
 	"testing"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/domain"
 )
+
+func TestRecordErrorPersistsAgentAttribution(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "mcp", "errors_record", "claude-opus-4-7", "sess-xyz")
+	store := openTestStore(t)
+
+	record, err := store.RecordError(ctx, 0, "boom", "", nil)
+	if err != nil {
+		t.Fatalf("RecordError() error = %v", err)
+	}
+	if record.Source != "mcp" || record.Entrypoint != "errors_record" {
+		t.Fatalf("source/entrypoint = %q/%q, want mcp/errors_record", record.Source, record.Entrypoint)
+	}
+	if record.AgentModel != "claude-opus-4-7" {
+		t.Fatalf("agent_model = %q, want claude-opus-4-7", record.AgentModel)
+	}
+	if record.AgentSessionID != "sess-xyz" {
+		t.Fatalf("agent_session_id = %q, want sess-xyz", record.AgentSessionID)
+	}
+}
+
+func TestAddSolutionPersistsAgentAttribution(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "mcp", "solutions_add", "claude-sonnet-4-6", "")
+	store := openTestStore(t)
+
+	parent, _ := store.RecordError(ctx, 0, "parent", "", nil)
+	solution, err := store.AddSolution(ctx, parent.ID, "fix", "steps", nil)
+	if err != nil {
+		t.Fatalf("AddSolution() error = %v", err)
+	}
+	if solution.Source != "mcp" || solution.Entrypoint != "solutions_add" {
+		t.Fatalf("source/entrypoint = %q/%q", solution.Source, solution.Entrypoint)
+	}
+	if solution.AgentModel != "claude-sonnet-4-6" {
+		t.Fatalf("agent_model = %q, want claude-sonnet-4-6", solution.AgentModel)
+	}
+	if solution.AgentSessionID != "" {
+		t.Fatalf("agent_session_id = %q, want empty (NULL session)", solution.AgentSessionID)
+	}
+}
 
 func TestRecordErrorWithTags(t *testing.T) {
 	ctx := context.Background()

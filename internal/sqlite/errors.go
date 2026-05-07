@@ -6,8 +6,21 @@ import (
 	"errors"
 	"strings"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/domain"
 )
+
+// agentAttribution pulls source/entrypoint/agent_model/agent_session_id
+// from the request context so RecordError and AddSolution can denormalize
+// them on the canonical row. NULL is preserved for session_id when absent
+// (the column is nullable; empty string would distort GROUP BY queries).
+func agentAttribution(ctx context.Context) (source, entrypoint, agentModel string, agentSessionID any) {
+	source, entrypoint, agentModel, sessionStr, _ := activity.FromContext(ctx)
+	if sessionStr != "" {
+		agentSessionID = sessionStr
+	}
+	return source, entrypoint, agentModel, agentSessionID
+}
 
 func (s *Store) RecordError(ctx context.Context, projectID int64, description, errContext string, tags []domain.Tag) (domain.ErrorRecord, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -21,12 +34,13 @@ func (s *Store) RecordError(ctx context.Context, projectID int64, description, e
 	if projectID > 0 {
 		projectIDArg = projectID
 	}
+	source, entrypoint, agentModel, agentSessionID := agentAttribution(ctx)
 	row := tx.QueryRowContext(ctx, `
-INSERT INTO errors(description, context, project_id)
-VALUES (?, ?, ?)
-RETURNING id, description, context, COALESCE(project_id, 0), created_at
-`, description, errContext, projectIDArg)
-	if err := row.Scan(&record.ID, &record.Description, &record.Context, &record.ProjectID, &record.CreatedAt); err != nil {
+INSERT INTO errors(description, context, project_id, source, entrypoint, agent_model, agent_session_id)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, description, context, COALESCE(project_id, 0), created_at, COALESCE(source, ''), COALESCE(entrypoint, ''), COALESCE(agent_model, ''), COALESCE(agent_session_id, '')
+`, description, errContext, projectIDArg, source, entrypoint, agentModel, agentSessionID)
+	if err := row.Scan(&record.ID, &record.Description, &record.Context, &record.ProjectID, &record.CreatedAt, &record.Source, &record.Entrypoint, &record.AgentModel, &record.AgentSessionID); err != nil {
 		return domain.ErrorRecord{}, err
 	}
 
@@ -104,7 +118,7 @@ func (s *Store) SearchErrors(ctx context.Context, query string, tagNames []strin
 	}
 
 	sqlQuery := `
-SELECT DISTINCT e.id, e.description, e.context, COALESCE(e.project_id, 0), COALESCE(p.slug, ''), e.created_at
+SELECT DISTINCT e.id, e.description, e.context, COALESCE(e.project_id, 0), COALESCE(p.slug, ''), e.created_at, COALESCE(e.source, ''), COALESCE(e.entrypoint, ''), COALESCE(e.agent_model, ''), COALESCE(e.agent_session_id, '')
 FROM errors e
 LEFT JOIN projects p ON p.id = e.project_id
 `
@@ -143,7 +157,7 @@ JOIN tags t ON t.id = et.tag_id
 	var records []domain.ErrorRecord
 	for rows.Next() {
 		var record domain.ErrorRecord
-		if err := rows.Scan(&record.ID, &record.Description, &record.Context, &record.ProjectID, &record.ProjectSlug, &record.CreatedAt); err != nil {
+		if err := rows.Scan(&record.ID, &record.Description, &record.Context, &record.ProjectID, &record.ProjectSlug, &record.CreatedAt, &record.Source, &record.Entrypoint, &record.AgentModel, &record.AgentSessionID); err != nil {
 			return nil, err
 		}
 		records = append(records, record)
@@ -218,7 +232,7 @@ func (s *Store) solutionsByErrorIDs(ctx context.Context, errorIDs []int64) (map[
 		args[i] = id
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, error_id, description, steps, success, task_id, COALESCE(tried_at, ''), created_at, likes
+SELECT id, error_id, description, steps, success, task_id, COALESCE(tried_at, ''), created_at, likes, COALESCE(source, ''), COALESCE(entrypoint, ''), COALESCE(agent_model, ''), COALESCE(agent_session_id, '')
 FROM solutions
 WHERE error_id IN (`+strings.Join(placeholders, ",")+`)
 ORDER BY error_id,
@@ -252,7 +266,8 @@ func (s *Store) ListTopSolutions(ctx context.Context, limit int) ([]domain.Solut
 	}
 	rows, err := s.db.QueryContext(ctx, `
 SELECT s.id, s.error_id, s.description, s.steps, s.success, s.task_id, COALESCE(s.tried_at, ''), s.created_at, s.likes,
-       COALESCE(e.project_id, 0), COALESCE(p.slug, '')
+       COALESCE(e.project_id, 0), COALESCE(p.slug, ''),
+       COALESCE(s.source, ''), COALESCE(s.entrypoint, ''), COALESCE(s.agent_model, ''), COALESCE(s.agent_session_id, '')
 FROM solutions s
 JOIN errors e ON e.id = s.error_id
 LEFT JOIN projects p ON p.id = e.project_id
@@ -269,7 +284,7 @@ LIMIT ?
 		var solution domain.Solution
 		var success sql.NullInt64
 		var taskID sql.NullInt64
-		if err := rows.Scan(&solution.ID, &solution.ErrorID, &solution.Description, &solution.Steps, &success, &taskID, &solution.TriedAt, &solution.CreatedAt, &solution.Likes, &solution.ProjectID, &solution.ProjectSlug); err != nil {
+		if err := rows.Scan(&solution.ID, &solution.ErrorID, &solution.Description, &solution.Steps, &success, &taskID, &solution.TriedAt, &solution.CreatedAt, &solution.Likes, &solution.ProjectID, &solution.ProjectSlug, &solution.Source, &solution.Entrypoint, &solution.AgentModel, &solution.AgentSessionID); err != nil {
 			return nil, err
 		}
 		if success.Valid {
@@ -289,11 +304,12 @@ func (s *Store) AddSolution(ctx context.Context, errorID int64, description, ste
 	if err := s.ensureErrorExists(ctx, errorID); err != nil {
 		return domain.Solution{}, err
 	}
+	source, entrypoint, agentModel, agentSessionID := agentAttribution(ctx)
 	row := s.db.QueryRowContext(ctx, `
-INSERT INTO solutions(error_id, description, steps, task_id)
-VALUES (?, ?, ?, ?)
-RETURNING id, error_id, description, steps, success, task_id, COALESCE(tried_at, ''), created_at, likes
-`, errorID, description, steps, taskID)
+INSERT INTO solutions(error_id, description, steps, task_id, source, entrypoint, agent_model, agent_session_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, error_id, description, steps, success, task_id, COALESCE(tried_at, ''), created_at, likes, COALESCE(source, ''), COALESCE(entrypoint, ''), COALESCE(agent_model, ''), COALESCE(agent_session_id, '')
+`, errorID, description, steps, taskID, source, entrypoint, agentModel, agentSessionID)
 	return scanSolution(row)
 }
 
@@ -312,7 +328,7 @@ func (s *Store) ConfirmSolution(ctx context.Context, solutionID int64, success b
 UPDATE solutions
 SET success = ?, tried_at = CURRENT_TIMESTAMP, likes = likes + ?
 WHERE id = ?
-RETURNING id, error_id, description, steps, success, task_id, COALESCE(tried_at, ''), created_at, likes
+RETURNING id, error_id, description, steps, success, task_id, COALESCE(tried_at, ''), created_at, likes, COALESCE(source, ''), COALESCE(entrypoint, ''), COALESCE(agent_model, ''), COALESCE(agent_session_id, '')
 `, successInt, likesIncrement, solutionID)
 	solution, err := scanSolution(row)
 	if err != nil {
@@ -343,7 +359,7 @@ func scanSolution(row rowScanner) (domain.Solution, error) {
 	var solution domain.Solution
 	var success sql.NullInt64
 	var taskID sql.NullInt64
-	if err := row.Scan(&solution.ID, &solution.ErrorID, &solution.Description, &solution.Steps, &success, &taskID, &solution.TriedAt, &solution.CreatedAt, &solution.Likes); err != nil {
+	if err := row.Scan(&solution.ID, &solution.ErrorID, &solution.Description, &solution.Steps, &success, &taskID, &solution.TriedAt, &solution.CreatedAt, &solution.Likes, &solution.Source, &solution.Entrypoint, &solution.AgentModel, &solution.AgentSessionID); err != nil {
 		return domain.Solution{}, err
 	}
 	if success.Valid {
