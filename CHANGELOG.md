@@ -21,6 +21,13 @@
 * **boundary enforcement:** new `internal/arch/arch_test.go` walks the import graph and fails if `internal/domain` reaches into adapters, if `internal/app` imports concrete adapters, or if any leaf adapter references a sibling. A `.golangci.yml` mirrors the rules under `depguard`. CI now runs `go vet`, `go test -race -count=1` and `golangci-lint`.
 * **eliminated `"backlog"` literal in production code:** `internal/cli/add.go --bucket` defaults to `""` (the `WorkflowService` resolves the active workflow's first bucket); the TUI's create form does the same.
 
+## [0.8.0](https://github.com/This-Is-NPC/omakiten/compare/v0.7.0...v0.8.0) (2026-05-07)
+
+
+### Features
+
+* bind laws/personas/skills/templates to MCP commands ([#25](https://github.com/This-Is-NPC/omakiten/issues/25)) ([13c4cd5](https://github.com/This-Is-NPC/omakiten/commit/13c4cd51db60f0dd34ab82486158b3c202004104))
+
 ## [0.7.0](https://github.com/This-Is-NPC/omakiten/compare/v0.6.0...v0.7.0) (2026-05-07)
 
 
