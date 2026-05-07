@@ -36,6 +36,24 @@ func (s *Store) FindProjectBySlug(ctx context.Context, slug string) (domain.Proj
 	return s.scanProject(s.db.QueryRowContext(ctx, "SELECT id, name, slug, root_path FROM projects WHERE slug = ? AND archived_at IS NULL", slug))
 }
 
+func (s *Store) ListProjects(ctx context.Context) ([]domain.Project, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id, name, slug, root_path FROM projects WHERE archived_at IS NULL ORDER BY LOWER(name), id")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var projects []domain.Project
+	for rows.Next() {
+		var project domain.Project
+		if err := rows.Scan(&project.ID, &project.Name, &project.Slug, &project.RootPath); err != nil {
+			return nil, err
+		}
+		projects = append(projects, project)
+	}
+	return projects, rows.Err()
+}
+
 func (s *Store) FindProjectsContainingPath(ctx context.Context, path string) ([]domain.Project, error) {
 	rows, err := s.db.QueryContext(ctx, "SELECT id, name, slug, root_path FROM projects WHERE archived_at IS NULL ORDER BY length(root_path) DESC")
 	if err != nil {
