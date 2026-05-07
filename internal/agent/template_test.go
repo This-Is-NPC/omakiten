@@ -1,7 +1,13 @@
 package agent
 
 import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"omakiten/internal/domain"
 )
 
 func TestCreateTaskIncludesActiveTemplate(t *testing.T) {
@@ -175,5 +181,115 @@ func TestShowTemplateReturnsBody(t *testing.T) {
 
 	if _, err := fixture.service.ShowTemplate(fixture.ctx, ShowTemplateInput{Slug: "missing"}); err == nil {
 		t.Fatal("ShowTemplate(missing) error = nil, want not-found")
+	}
+}
+
+// shadowCatalog mirrors the omakiten "pull-request" / "pr-concise" pair the
+// rigid validation is designed to disambiguate. project-a is the fixture's
+// default-resolved project (CWD = rootA), so the override applies whenever
+// the test reuses newAgentFixture's service.
+func shadowCatalog() func() []TemplateSummary {
+	return func() []TemplateSummary {
+		return []TemplateSummary{
+			{Slug: "pull-request", Name: "Pull Request", Default: "pr", Body: "global"},
+			{Slug: "pr-concise", Name: "Concise PR", Default: "pr", Project: "project-a", Body: "concise", IsCustom: true},
+		}
+	}
+}
+
+func TestShowTemplateRejectsShadowedSlug(t *testing.T) {
+	fixture := newAgentFixture(t)
+	fixture.service.SetTemplateCatalog(shadowCatalog())
+
+	_, err := fixture.service.ShowTemplate(fixture.ctx, ShowTemplateInput{Slug: "pull-request"})
+	if err == nil {
+		t.Fatal("ShowTemplate(shadowed) error = nil, want validation_error")
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrValidation {
+		t.Fatalf("error = %v (%T), want CodedError(validation_error)", err, err)
+	}
+	if got, want := coded.Details["requested_slug"], "pull-request"; got != want {
+		t.Fatalf("details.requested_slug = %v, want %v", got, want)
+	}
+	if got, want := coded.Details["active_slug"], "pr-concise"; got != want {
+		t.Fatalf("details.active_slug = %v, want %v", got, want)
+	}
+	if got, want := coded.Details["project"], "project-a"; got != want {
+		t.Fatalf("details.project = %v, want %v", got, want)
+	}
+}
+
+func TestShowTemplateReturnsProjectScopedSlug(t *testing.T) {
+	fixture := newAgentFixture(t)
+	fixture.service.SetTemplateCatalog(shadowCatalog())
+
+	resp, err := fixture.service.ShowTemplate(fixture.ctx, ShowTemplateInput{Slug: "pr-concise"})
+	if err != nil {
+		t.Fatalf("ShowTemplate(scoped) error = %v", err)
+	}
+	if resp.Template.Body != "concise" {
+		t.Fatalf("Body = %q, want concise", resp.Template.Body)
+	}
+}
+
+func TestShowTemplateReturnsGlobalWhenNoOverride(t *testing.T) {
+	fixture := newAgentFixture(t)
+	// Catalog has only a global "user-story" — no project-a override, so the
+	// shadow check must fall through.
+	fixture.service.SetTemplateCatalog(func() []TemplateSummary {
+		return []TemplateSummary{
+			{Slug: "user-story", Name: "User Story", Default: "task", Body: "task scaffold"},
+		}
+	})
+
+	resp, err := fixture.service.ShowTemplate(fixture.ctx, ShowTemplateInput{Slug: "user-story"})
+	if err != nil {
+		t.Fatalf("ShowTemplate(unshadowed) error = %v", err)
+	}
+	if resp.Template.Body != "task scaffold" {
+		t.Fatalf("Body = %q, want task scaffold", resp.Template.Body)
+	}
+}
+
+func TestShowTemplateAllowsShadowedSlugWithoutProjectContext(t *testing.T) {
+	// Service whose default selector points at a directory outside any
+	// registered project root → resolveProject returns ErrProjectNotFound, but
+	// because the failure came from CWD/default (not an explicit project_id /
+	// project) the call tolerates it and falls back to the legacy slug lookup.
+	ctx := context.Background()
+	store := newAgentStore(t, ctx)
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatalf("MkdirAll(outside) error = %v", err)
+	}
+	service := NewService(store, ProjectSelector{CWD: outside})
+	service.SetTemplateCatalog(shadowCatalog())
+
+	resp, err := service.ShowTemplate(ctx, ShowTemplateInput{Slug: "pull-request"})
+	if err != nil {
+		t.Fatalf("ShowTemplate(no project) error = %v", err)
+	}
+	if resp.Template.Body != "global" {
+		t.Fatalf("Body = %q, want global", resp.Template.Body)
+	}
+}
+
+func TestShowTemplateRejectsExplicitMissingProject(t *testing.T) {
+	// AC #5: an explicit project slug that does not resolve must propagate
+	// ErrProjectNotFound rather than silently fall back to global lookup.
+	fixture := newAgentFixture(t)
+	fixture.service.SetTemplateCatalog(shadowCatalog())
+
+	_, err := fixture.service.ShowTemplate(fixture.ctx, ShowTemplateInput{
+		ProjectSelector: ProjectSelector{Project: "no-such-project"},
+		Slug:            "pull-request",
+	})
+	if err == nil {
+		t.Fatal("ShowTemplate(explicit missing project) error = nil, want project_not_found")
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrProjectNotFound {
+		t.Fatalf("error = %v, want CodedError(project_not_found)", err)
 	}
 }

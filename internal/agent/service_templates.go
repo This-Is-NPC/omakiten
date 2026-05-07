@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"omakiten/internal/domain"
@@ -67,7 +68,15 @@ func (s *Service) ListTemplates(_ context.Context, input ListTemplatesInput) (Li
 }
 
 // ShowTemplate returns one template by slug, with body included.
-func (s *Service) ShowTemplate(_ context.Context, input ShowTemplateInput) (ShowTemplateResponse, error) {
+//
+// When a project context resolves (explicitly via project_id/project, or via
+// CWD/service-default), the call hard-rejects any global slug that is shadowed
+// by a project-scoped override of the same default kind. The rejection message
+// names the active slug so the agent can re-call without a clarification
+// round-trip — same pattern as the _agent_model coercion. Calls outside any
+// registered project (no resolution) preserve the legacy slug-only lookup so
+// `okt mcp tools` discovery and CLI debug calls keep working.
+func (s *Service) ShowTemplate(ctx context.Context, input ShowTemplateInput) (ShowTemplateResponse, error) {
 	slug := strings.TrimSpace(input.Slug)
 	if slug == "" {
 		return ShowTemplateResponse{}, domain.NewError(domain.ErrValidation, "template slug is required", nil)
@@ -75,10 +84,52 @@ func (s *Service) ShowTemplate(_ context.Context, input ShowTemplateInput) (Show
 	if s.templateCatalog == nil {
 		return ShowTemplateResponse{}, domain.NewError(domain.ErrValidation, "template catalog not initialized", map[string]any{"slug": slug})
 	}
-	for _, t := range s.templateCatalog() {
-		if t.Slug == slug {
-			return ShowTemplateResponse{Template: t}, nil
+
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		// Explicit project selectors must propagate ErrProjectNotFound — never
+		// silently fall back to a global lookup. CWD-only / service-default
+		// failures are tolerated so non-project contexts keep working.
+		if input.ProjectID > 0 || strings.TrimSpace(input.Project) != "" {
+			return ShowTemplateResponse{}, err
+		}
+		project = domain.ProjectContext{}
+	}
+
+	catalog := s.templateCatalog()
+	var requested *TemplateSummary
+	for i := range catalog {
+		if catalog[i].Slug == slug {
+			requested = &catalog[i]
+			break
 		}
 	}
-	return ShowTemplateResponse{}, domain.NewError(domain.ErrValidation, "template not found", map[string]any{"slug": slug})
+	if requested == nil {
+		return ShowTemplateResponse{}, domain.NewError(domain.ErrValidation, "template not found", map[string]any{"slug": slug})
+	}
+
+	// Shadow check: only when a project resolves AND the requested template is
+	// global (Project == "") AND has a default kind AND a project-scoped row
+	// exists for the same kind in the active project.
+	if project.Slug != "" && requested.Project == "" && requested.Default != "" {
+		for i := range catalog {
+			t := catalog[i]
+			if t.Default == requested.Default && t.Project == project.Slug {
+				return ShowTemplateResponse{}, domain.NewError(
+					domain.ErrValidation,
+					fmt.Sprintf(
+						"template %q is shadowed in project %q by %q; use slug %q instead",
+						slug, project.Slug, t.Slug, t.Slug,
+					),
+					map[string]any{
+						"requested_slug": slug,
+						"active_slug":    t.Slug,
+						"project":        project.Slug,
+					},
+				)
+			}
+		}
+	}
+
+	return ShowTemplateResponse{Template: *requested}, nil
 }
