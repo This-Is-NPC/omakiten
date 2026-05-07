@@ -147,6 +147,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case 4:
 			m.handleLogsKey(msg)
+		case 5:
+			m.handleStatsKey(msg)
 		default:
 			m.handleListKey(msg)
 		}
@@ -186,6 +188,9 @@ func (m *Model) refreshCurrentView() error {
 	if m.view == 4 {
 		return m.refreshActivityLogs()
 	}
+	if m.view == 5 {
+		return m.refreshStats()
+	}
 	return m.refreshPreservingTaskSelection()
 }
 
@@ -223,6 +228,21 @@ func (m *Model) refreshActivityLogs() error {
 		return err
 	}
 	m.logs = logs
+	return nil
+}
+
+func (m *Model) refreshStats() error {
+	if m.repos.Metrics == nil {
+		return nil
+	}
+	if m.statsPeriod == "" {
+		m.statsPeriod = "30d"
+	}
+	summary, err := m.repos.Metrics.Summary(m.ctx, m.project, m.statsPeriod, 0)
+	if err != nil {
+		return err
+	}
+	m.statsSummary = summary
 	return nil
 }
 
@@ -381,18 +401,18 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		m.view = (m.view + len(viewNames) - 1) % len(viewNames)
 		m.moveMode = false
 		return true
-	case "1", "2", "3", "4", "5":
+	case "1", "2", "3", "4", "5", "6":
 		m.view = int(msg.String()[0] - '1')
 		m.moveMode = false
 		return true
 	case "n":
-		if m.view == 3 || m.view == 4 {
+		if m.view == 3 || m.view == 4 || m.view == 5 {
 			return false
 		}
 		m.openTaskCreate()
 		return true
 	case "e":
-		if m.view == 3 || m.view == 4 {
+		if m.view == 3 || m.view == 4 || m.view == 5 {
 			return false
 		}
 		if task, ok := m.selectedTask(); ok {
@@ -400,7 +420,7 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		}
 		return true
 	case "c":
-		if m.view == 3 || m.view == 4 {
+		if m.view == 3 || m.view == 4 || m.view == 5 {
 			return false
 		}
 		if _, ok := m.selectedTask(); ok {

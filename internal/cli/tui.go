@@ -69,6 +69,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions) error {
 		Editor:       editor,
 		ActivityLogs: rt.store,
 		Events:       rt.store,
+		Metrics:      app.NewMetricsService(rt.store),
 	}, theme, token.NewCounter())
 	if err != nil {
 		return err

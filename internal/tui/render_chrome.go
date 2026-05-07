@@ -53,7 +53,7 @@ func (m Model) renderHeader() string {
 	if lipgloss.Width(strings.Join(items, navGap)) > m.availableWidth() {
 		active := fmt.Sprintf("%02d // %s", m.view+1, viewNames[m.view])
 		sb.WriteString(m.styles.activeNav.Render(active))
-		sb.WriteString(m.styles.hint.Render("  tab/1-5 switch views"))
+		sb.WriteString(m.styles.hint.Render("  tab/1-6 switch views"))
 		return sb.String()
 	}
 	sb.WriteString(strings.Join(items, navGap))
@@ -96,6 +96,8 @@ func (m Model) renderCurrentView() string {
 		return m.renderConfig()
 	case 4:
 		return m.renderLogs()
+	case 5:
+		return m.renderStats()
 	default:
 		return ""
 	}
@@ -148,6 +150,8 @@ func (m Model) renderFooter() string {
 		text = "left/right section  up/down select  enter open  n new  e edit  d arm delete  a default(template)  t theme  c config  ? help"
 	case m.view == 4:
 		text = "left/right switch view  up/down select row  pgup/pgdn scroll  g/G top/bottom  r refresh  ? help"
+	case m.view == 5:
+		text = "← → period (7d / 30d / all)  r refresh  ? help"
 	case m.view == 2:
 		text = "left/right switch view  j/k move  pgup/pgdn scroll  g/G top/bottom  enter open  ? help"
 	default:
