@@ -248,7 +248,16 @@ func (m Model) sliceScrollRows(dataRows []string, scroll, viewport int) []string
 	if offset < 0 {
 		offset = 0
 	}
-	maxOffset := len(dataRows) - viewport
+	// When the scroll has any items above (offset > 0), the visibleHeight
+	// loses 1 row to the "▲ above" hint, so the renderer can still paint
+	// the last data row at offset = len(dataRows) - viewport + 1. Cap the
+	// clamp accordingly — otherwise the cursor at the last row gets
+	// scrolled off the panel because the old `total - viewport` cap was
+	// one row too tight to expose the trailing items.
+	maxOffset := len(dataRows) - viewport + 1
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
 	if offset > maxOffset {
 		offset = maxOffset
 	}
