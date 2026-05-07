@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
@@ -74,9 +75,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncFocusedEntityScroll()
 	case refreshTickMsg:
 		if m.shouldRealtimeRefresh() {
+			// Realtime tick is renderer-driven, not user-triggered, so
+			// every app-service call it spawns (`MetricsService.Summary`,
+			// `Logs.List`) bypasses the activity tracker. Otherwise the
+			// log viewer fills with one row per second and pushes real
+			// agent activity out of the bounded window. The footer hint
+			// already advertises this contract.
+			savedCtx := m.ctx
+			m.ctx = activity.WithoutTracking(m.ctx)
 			if err := m.refreshCurrentView(); err != nil {
 				m.status = err.Error()
 			}
+			m.ctx = savedCtx
 		}
 		return m, scheduleRefreshTick()
 	case editorFinishedMsg:

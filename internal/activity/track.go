@@ -9,6 +9,12 @@ import (
 )
 
 func Track(ctx context.Context, operation string, project domain.ProjectContext, args any) func(status string, errMsg string) {
+	if skipTracking(ctx) {
+		// Caller marked this context as no-track (typically the TUI's
+		// realtime refresh tick). Skip both Begin and Finish so the
+		// activity log stays focused on intentional agent activity.
+		return func(string, string) {}
+	}
 	repo, ok := repositoryFromContext(ctx)
 	if !ok {
 		return func(string, string) {}
