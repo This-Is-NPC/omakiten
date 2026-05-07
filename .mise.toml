@@ -42,6 +42,11 @@ if [ -n "$on_path" ] && [ "$on_path" != "$installed_at" ]; then
   printf '       Remove the stale copy or reorder PATH so $HOME/.local/bin wins.\n' >&2
   printf '       e.g. rm %s\n\n' "$on_path" >&2
 fi
+
+# Install (or refresh) the okt() shell wrapper that lets `okt tui`
+# cd the parent shell into the project chosen on the Home screen.
+# Idempotent — safe to re-run on every `mise run install`.
+"$PWD/scripts/install-wrapper.sh"
 '''
 
 [tasks."dev:sync"]
@@ -85,13 +90,14 @@ bin/okt mcp setup --harness opencode --force
 '''
 
 [tasks.uninstall]
-description = "Remove the locally installed okt binary without deleting config or data"
+description = "Remove the locally installed okt binary and shell wrapper without deleting config or data"
 run = '''
 if [ -z "${HOME:-}" ]; then
   printf 'HOME is not set\n' >&2
   exit 1
 fi
 rm -f "$HOME/.local/bin/okt"
+"$PWD/scripts/uninstall-wrapper.sh"
 '''
 
 [tasks.purge]

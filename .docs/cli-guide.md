@@ -345,13 +345,27 @@ okt persona edit backend-agent --skill-slug go --skill-slug cli   # replaces ful
 
 ### `okt tui` — open the terminal UI
 
-`internal/cli/tui.go`. Loads the active theme (`<root>/themes/<active>.yaml`, with `themes/custom/<active>.yaml` overriding) and starts Bubble Tea in alt-screen mode. Five views: BOARD, TABLE, GRAPH, CONFIG, LOGS (`internal/tui/state.go:viewNames`).
+`internal/cli/tui.go`. Loads the active theme (`<root>/themes/<active>.yaml`, with `themes/custom/<active>.yaml` overriding) and starts Bubble Tea in alt-screen mode. Five per-project views (BOARD, TABLE, GRAPH, CONFIG, LOGS — `internal/tui/state.go:viewNames`) plus a multi-project Home reachable via `ctrl+h`.
+
+**Project-resolution behavior on launch:**
+
+- With `--project` / `--project-id`, or when `$CWD` matches a registered project root, the TUI opens directly on that project's Board (existing behavior).
+- Without any of the above, the TUI opens the Home Screen listing every registered project. Selecting one loads its Board normally. See [TUI Guide → Home](tui-guide.md#home-multi-project-picker).
 
 No flags beyond globals.
 
 ```sh
 okt --project omakiten tui
+okt tui                           # outside a registered project: opens Home
 ```
+
+**`cd-on-exit` shell wrapper:**
+
+`install.sh` / `install.ps1` install an `okt()` shell function (bash, zsh, PowerShell) that wraps the binary. When the TUI exits with a project loaded, the wrapper `cd`s the parent shell into that project's `root_path` — closing the TUI feels like a `cd` into the project you just worked on.
+
+The wrapper is delimited by sentinel comments (`# >>> okt wrapper >>>` / `# <<< okt wrapper <<<`) in your `~/.bashrc` / `~/.zshrc` / `$PROFILE`, and is fully removed by `uninstall.sh` / `uninstall.ps1`. Running `okt` without the wrapper is supported — the TUI works normally; only the post-exit `cd` is silently absent.
+
+The handshake file the wrapper reads can be overridden via `$OKT_CD_FILE`; defaults to `$XDG_RUNTIME_DIR/okt-cd` (or `$TMPDIR/okt-cd-$UID` as a last fallback).
 
 ---
 

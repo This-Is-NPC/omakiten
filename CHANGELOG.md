@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Features
+
+* **tui home:** running `okt tui` outside a registered project (no `--project` / `--project-id`, CWD does not match any `root_path`) now opens a multi-project Home Screen instead of erroring. The Home renders every project as a card in the same visual language as a board column, with tags from `project_tags` displayed as filled-pill badges. Navigation: `↑/↓` select, `enter` opens the project's Board. The new global `ctrl+h` binding returns to the Home from any per-project view; the per-view tab bar is suppressed while on Home (Home is outside the `tab` rotation).
+* **tui cd-on-exit:** the TUI now writes the absolute root path of the most recently opened project to a small handshake file (`$OKT_CD_FILE` → `$XDG_RUNTIME_DIR/okt-cd` → `$TMPDIR/okt-cd-$UID`) when it exits. `install.sh` and `install.ps1` install an `okt()` shell-wrapper function (bash, zsh, PowerShell) delimited by sentinels (`# >>> okt wrapper >>>` / `# <<< okt wrapper <<<`) that reads the file and `cd`s the parent shell into the project. Running the bare binary works exactly as before — only the post-exit `cd` is silently absent. New `uninstall.sh` / `uninstall.ps1` companions remove the sentinel-wrapped block surgically and leave unrelated rc-file content intact.
+
 ### TUI internals
 
 * **components:** introduce `internal/tui/components/{viewport,picker,detailscreen}` sub-packages — Bubble Tea sub-models that own cursor + scroll state for the surfaces previously tracked as flat fields on the root `Model`. No user-facing behaviour change; visual output, key bindings and screen contracts are preserved exactly. The sub-packages have standalone unit tests so the components can evolve independently of the screens that embed them.

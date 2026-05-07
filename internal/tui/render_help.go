@@ -19,7 +19,16 @@ func (m Model) renderHelp() string {
 			{"q · ctrl+c", "quit"},
 			{"tab · shift+tab", "cycle views"},
 			{"1 · 2 · 3 · 4 · 5", "jump to view"},
+			{"ctrl+h", "back to multi-project home"},
 			{"r", "refresh"},
+		}},
+		{"Home", []binding{
+			{"↑ ↓ · j k", "move project selection"},
+			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
+			{"g · G", "first / last project"},
+			{"enter", "open project (loads board)"},
+			{"ctrl+h", "reload home (refresh tags / counts)"},
+			{"q · ctrl+c", "quit"},
 		}},
 		{"Board", []binding{
 			{"← ↑ ↓ → · h j k l", "navigate lanes and tasks (auto-scrolls column)"},
@@ -200,6 +209,8 @@ func (m Model) currentHelpTitles() []string {
 		return []string{"Skill picker"}
 	case m.entityScreen == entityScreenView:
 		return []string{"Entity view"}
+	case m.view == viewHome:
+		return []string{"Home"}
 	case m.view == 0:
 		return []string{"Board"}
 	case m.view == 1:

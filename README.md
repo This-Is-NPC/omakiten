@@ -3,13 +3,13 @@
 [![Release](https://img.shields.io/github/v/release/This-Is-NPC/omakiten)](https://github.com/This-Is-NPC/omakiten/releases)
 [![License](https://img.shields.io/github/license/This-Is-NPC/omakiten)](LICENSE)
 
-Opinionated checkpoints for AI-driven development.
+**Opinionated checkpoints for AI-driven development.**
 
-Omakiten is a local-first task and context manager for AI-assisted workflows. It lives in your terminal, keeps your project state in a local SQLite database, and exposes agent intents through the Model Context Protocol (MCP) so your AI assistant can read and update project state directly — without you re-explaining context every session.
+AI agents lose context between sessions, take actions outside your workflow, and rediscover the same fixes every month. Omakiten is the local source of truth they read before continuing so they always start from the same picture you have.
 
-## Getting Started
+It lives in your terminal and keeps your project state tasks, dependencies, decisions, errors and fixes in a local SQLite database. Your agent reads and writes it through the Model Context Protocol (MCP), so the workflow rules you set apply to the agent too.
 
-### Install
+## Install
 
 **Linux / macOS / WSL:**
 
@@ -23,18 +23,13 @@ curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install
 irm https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.ps1 | iex
 ```
 
-### Project Setup
+## Connect your AI agent
 
-Register your project and launch the TUI:
+Register the project, then wire Omakiten into your agent via MCP.
 
 ```bash
 okt init --name MyProject --slug my-project
-okt tui
 ```
-
-### MCP Setup
-
-Connect Omakiten to your AI agent via MCP.
 
 **Claude Code:**
 
@@ -54,9 +49,9 @@ okt mcp setup --harness claude-desktop --force
 okt mcp setup --harness opencode --force
 ```
 
-## Use Omakiten with your AI agent
+## How you work with it
 
-Once MCP is set up, your agent can read and mutate Omakiten state directly. Two usage modes coexist: **canonical slash prompts** for the most common moves, and **natural-language requests** that the agent translates into MCP tool calls.
+Once connected, two modes coexist: **canonical slash prompts** for the most common moves, and **natural-language requests** the agent translates into MCP tool calls.
 
 ### Canonical prompts
 
@@ -64,10 +59,10 @@ Four prompts ship as MCP prompts and work in any harness that supports them:
 
 | Prompt | When to use it |
 |---|---|
-| `/okt` | Start of a session — loads project identity, active workflow, pending count, and the next-step suggestion so the agent stops guessing what's already happening. |
-| `/okt-resume` | Coming back to a project after a pause — surfaces the most relevant work to pick up next, including blocked items and recent handoff context. |
-| `/okt-continue <task_id>` | Resuming a specific task — pulls its dependencies, comments, workflow position, and recent context in one shot. |
-| `/okt-create <description>` | Creating a task **with duplicate detection** — the agent first checks for similar/related work and asks to confirm before creating. |
+| `/okt` | **Start of a session** loads project identity, active workflow, pending count, and the next-step suggestion so the agent stops guessing what's already happening. |
+| `/okt-resume` | **Coming back to a project after a pause** surfaces the most relevant work to pick up next, including blocked items and recent handoff context. |
+| `/okt-continue <task_id>` | **Resuming a specific task** pulls its dependencies, comments, workflow position, and recent context in one shot. |
+| `/okt-create <description>` | **Creating a task with duplicate detection** the agent first checks for similar/related work and asks to confirm before creating. |
 
 ### Natural-language scenarios
 
@@ -81,16 +76,39 @@ Beyond the slash prompts, describe the action and the agent picks the right tool
 | "Move task 17 to review." | Calls `tasks.move` (transition rules and guards still apply). |
 | "What's blocking task 42?" | Lists dependencies + their bucket state. |
 | "Save a handoff note: refactored auth to use middleware." | Stores a context entry for the next session. |
-| "Log this error: TLS handshake fails on staging — and the workaround I tried was disabling HTTP/2." | Records the error, attaches a candidate solution. |
+| "Log this error: TLS handshake fails on staging and the workaround I tried was disabling HTTP/2." | Records the error, attaches a candidate solution. |
 | "Have we ever hit this error before?" | Searches errors across **all** projects you track. |
 | "That fix worked." | Confirms the solution as known-good (increments its like counter). |
 
-### Why this changes how you work
+## What makes Omakiten different
 
-- **No re-onboarding every session.** Your agent always starts with the same picture you do.
-- **Workflow rules apply to the agent too.** It cannot move a task through a forbidden transition or skip a workflow guard — your guardrails are real, not aspirational.
-- **Errors and fixes become institutional memory.** Every error you record + every confirmed solution is searchable across projects, so the agent stops re-discovering the same fix.
-- **Handoffs are just notes.** A short context entry today is what makes "pick up where we left off" actually work tomorrow.
+### Guardrails the agent can't bypass
+
+Define your workflow as buckets and explicit transitions `backlog → dev → review → done` — with rules between them: *can't leave `dev` without a `#review` comment*, *can't move to `done` while blockers are still open*. Your agent is bound by the same rules you are. Forbidden moves come back as coded errors, not silent state changes. → [Guards Guide](.docs/guards-guide.md)
+
+### One tool, every project
+
+Omakiten tracks every project on your machine in a single local database. Switch directories and your agent picks up where you left off **no re-explaining** context, no separate setup for each repo. Project resolution falls back to your current working directory automatically.
+
+### Memory that survives the session
+
+Errors and the fixes that worked become a searchable, **cross-project** knowledge base. *"Have we hit this before?"* returns matches from any repo on your machine. Your agent stops re-discovering the same fix every quarter.
+
+### Compact handoffs that fit the context window
+
+Context dumps are tiered (level 1–3) and capped at a token budget you set. Your agent gets exactly enough state to continue not a wall of unrelated history. *"Pick up where we left off"* finally means something.
+
+### Customize how your agent behaves
+
+Define rules your agent must follow, give it personas with curated skill sets, and set up templates for tasks, PRs, and comments all in plain YAML and Markdown under your config directory. Edit them, version them, share them with a teammate by copying a folder. → [Configuration Guide](.docs/configuration-guide.md)
+
+### Local-first, by design
+
+Your tasks, comments, dependencies, errors, and fixes live in a SQLite file in your home directory. No account. No telemetry. No cloud.
+
+## When you want to see it
+
+`okt tui` opens a terminal UI with a kanban board, task table, dependency graph, and config browser same data, just visual. Run it outside a project and it opens a multi-project home — pick one, work on it, and your shell lands in that project's folder when you exit. → [TUI Guide](.docs/tui-guide.md)
 
 The full MCP surface (29 tools, 2 resources, 4 prompts) is documented in the [MCP Guide](.docs/mcp-guide.md).
 

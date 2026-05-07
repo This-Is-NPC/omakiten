@@ -1,6 +1,42 @@
 # TUI Guide
 
-`okt tui` opens the Bubble Tea terminal UI (`internal/cli/tui.go` → `internal/tui/model.go`). Five top-level views, several modal sub-screens, and a contextual help overlay.
+`okt tui` opens the Bubble Tea terminal UI (`internal/cli/tui.go` → `internal/tui/model.go`). Five top-level views, several modal sub-screens, a multi-project Home, and a contextual help overlay.
+
+## Home (multi-project picker)
+
+When `okt tui` is launched **outside** a registered project (no `--project` / `--project-id`, and the current working directory does not match any registered `root_path`), the TUI opens on the Home Screen. It lists every project in the local SQLite database as a card — name, slug, root path, pending task count, and the project's tags as filled-pill badges.
+
+Home is **outside** the `tab` rotation. Tab/digit keys never land on Home; the only ways in are:
+
+- starting `okt tui` without a resolvable project, or
+- pressing `ctrl+h` from any per-project view.
+
+While Home is the active view the per-view tab bar is hidden — Home reads as a chromeless surface.
+
+### Home keybindings
+
+| Key | Action |
+|---|---|
+| `↑ ↓` · `j k` | move project selection (auto-scrolls) |
+| `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
+| `g` · `G` | first / last project |
+| `enter` | open the highlighted project (loads the Board) |
+| `ctrl+h` | reload Home (refresh tags / pending counts) |
+| `q` · `ctrl+c` | quit |
+
+### `cd-on-exit` (parent shell follows the chosen project)
+
+When you exit the TUI with a project loaded, `okt` writes the absolute root path of the most recently opened project to a small handshake file. The shell wrapper installed by `install.sh` / `install.ps1` reads that file and runs `cd "$path"` in the parent shell, so closing the TUI feels like having `cd`'d into the project.
+
+The handshake-file path resolution mirrors what the wrapper expects:
+
+1. `$OKT_CD_FILE` if set.
+2. `$XDG_RUNTIME_DIR/okt-cd`.
+3. `$TMPDIR/okt-cd-$UID` (or `/tmp/okt-cd-$UID` when `$TMPDIR` is unset).
+
+If the wrapper is not installed (e.g. you run the bare `okt` binary in CI or via a script), the file is still written but nothing reads it — the TUI behaves identically and there is no error. To opt out, run the bundled `uninstall.sh` (or `uninstall.ps1`); it removes the wrapper block from your shell init using sentinel comments (`# >>> okt wrapper >>>` / `# <<< okt wrapper <<<`).
+
+
 
 ```sh
 okt --project omakiten tui
@@ -39,6 +75,7 @@ The full keymap below is the source of truth in `internal/tui/render_help.go`. A
 | `q` · `ctrl+c` | quit |
 | `tab` · `shift+tab` | cycle views forward / backward |
 | `1` · `2` · `3` · `4` · `5` | jump to view |
+| `ctrl+h` | back to multi-project Home |
 | `r` | refresh from store |
 
 ### Board (view 1)

@@ -66,3 +66,7 @@ func (f fakeProjectRepo) FindProjectBySlug(_ context.Context, slug string) (doma
 func (f fakeProjectRepo) FindProjectsContainingPath(context.Context, string) ([]domain.Project, error) {
 	return f.containing, nil
 }
+
+func (f fakeProjectRepo) ListProjects(context.Context) ([]domain.Project, error) {
+	return nil, nil
+}

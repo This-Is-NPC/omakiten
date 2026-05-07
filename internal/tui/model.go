@@ -12,6 +12,7 @@ import (
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
 	"omakiten/internal/tui/components/detailscreen"
+	"omakiten/internal/tui/components/picker"
 	"omakiten/internal/tui/components/viewport"
 )
 
@@ -28,12 +29,32 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		counter:       counter,
 		entityKind:    entityKindLaw,
 		entityCursors: map[entityKind]int{entityKindLaw: 0, entityKindPersona: 0, entityKindSkill: 0, entityKindTag: 0},
+		homePicker:    picker.New(picker.Single),
 	}
 	detailscreen.SetStyles(model.styles.info)
+	if project.ID == 0 {
+		// Empty project — open on the multi-project Home picker.
+		// Do not call refresh() because every per-project query would 404
+		// without a resolved project_id.
+		model.view = viewHome
+		if err := model.loadHome(); err != nil {
+			return Model{}, err
+		}
+		return model, nil
+	}
+	model.lastProjectRoot = project.RootPath
 	if err := model.refresh(); err != nil {
 		return Model{}, err
 	}
 	return model, nil
+}
+
+// LastProjectRoot returns the absolute root_path of the most recently opened
+// project during this TUI session, or an empty string if the user quit from
+// Home without picking a project. The CLI entrypoint reads this after the
+// program loop returns to drive the cd-on-exit shell-wrapper handshake.
+func (m Model) LastProjectRoot() string {
+	return m.lastProjectRoot
 }
 
 func (m Model) Init() tea.Cmd {
@@ -107,6 +128,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" || msg.String() == "q" {
 			return m, tea.Quit
 		}
+		if m.view == viewHome {
+			m.handleHomeKey(msg)
+			return m, nil
+		}
 		if m.handleCommonKey(msg) {
 			m.refreshAfterViewChange(prevView)
 			return m, nil
@@ -137,6 +162,11 @@ func scheduleRefreshTick() tea.Cmd {
 }
 
 func (m Model) shouldRealtimeRefresh() bool {
+	if m.view == viewHome {
+		// Home reads cross-project metadata (tags, pending counts) — refresh
+		// is driven by ctrl+h / startup, not by the per-project tick.
+		return false
+	}
 	return !m.helpOpen && m.mode == modeNormal && m.taskScreen == taskScreenClosed && m.entityScreen == entityScreenClosed && !m.moveMode
 }
 
@@ -150,6 +180,9 @@ func (m *Model) refreshAfterViewChange(prevView int) {
 }
 
 func (m *Model) refreshCurrentView() error {
+	if m.view == viewHome {
+		return m.loadHome()
+	}
 	if m.view == 4 {
 		return m.refreshActivityLogs()
 	}
@@ -322,6 +355,18 @@ func (m Model) isEmbeddedCommentInput() bool {
 
 func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 	switch msg.String() {
+	case "ctrl+h":
+		// Multi-project Home is reachable from every per-project view. The
+		// underlying picker keeps its prior cursor so re-entry feels stable;
+		// we do reload tags/pending counts so a freshly-edited project row
+		// reflects the latest state.
+		m.moveMode = false
+		m.status = ""
+		m.view = viewHome
+		if err := m.loadHome(); err != nil {
+			m.status = err.Error()
+		}
+		return true
 	case "esc":
 		if m.moveMode {
 			m.moveMode = false

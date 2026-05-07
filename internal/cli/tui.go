@@ -2,9 +2,11 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -40,7 +42,14 @@ func runTUI(ctx context.Context, opts *runtimeOptions) error {
 
 	project, err := opts.resolveProject(ctx, rt.store)
 	if err != nil {
-		return err
+		// Without an explicit --project / --project-id, an unresolvable CWD
+		// is not an error — it is the trigger for the multi-project Home
+		// screen. Explicit flags must still 404 loudly so typos are caught.
+		if opts.projectID == 0 && opts.project == "" && isProjectNotFoundError(err) {
+			project = domain.ProjectContext{}
+		} else {
+			return err
+		}
 	}
 	theme, err := loadActiveTheme(rt.configPath)
 	if err != nil {
@@ -50,6 +59,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions) error {
 	editor := app.NewBundleEditor(rt.store, configstore.New(), rt.configPath)
 	model, err := tui.NewModel(ctx, project, tui.Repositories{
 		Tasks:        rt.store,
+		Projects:     rt.store,
 		Workflow:     app.NewWorkflowServiceFromStore(rt.store),
 		Comments:     rt.store,
 		Dependencies: rt.store,
@@ -65,8 +75,55 @@ func runTUI(ctx context.Context, opts *runtimeOptions) error {
 	}
 
 	program := tea.NewProgram(model, tea.WithAltScreen())
-	_, err = program.Run()
-	return err
+	finalModel, runErr := program.Run()
+	// The shell wrapper installed by install.sh / install.ps1 reads the
+	// path written here and `cd`s the parent shell after the TUI exits.
+	// Without the wrapper this is a silent no-op; the TUI itself never
+	// changes the parent shell's CWD (it cannot).
+	if final, ok := finalModel.(tui.Model); ok {
+		if root := final.LastProjectRoot(); root != "" {
+			_ = writeOktCDPath(root)
+		}
+	}
+	return runErr
+}
+
+// isProjectNotFoundError returns true when the resolver signalled that the
+// current working directory is not inside any registered project. We unwrap
+// the domain CodedError to compare codes rather than match on message text.
+func isProjectNotFoundError(err error) bool {
+	var coded *domain.CodedError
+	if errors.As(err, &coded) {
+		return coded.Code == domain.ErrProjectNotFound
+	}
+	return false
+}
+
+// writeOktCDPath writes the absolute project root path to the channel the
+// shell wrapper reads after the TUI exits. Resolution order, mirroring the
+// wrapper itself: $OKT_CD_FILE → $XDG_RUNTIME_DIR/okt-cd → $TMPDIR/okt-cd-$UID
+// → /tmp/okt-cd-$UID. Best-effort: an I/O failure here is not surfaced to
+// the user because the wrapper treats a missing file as "no cd needed".
+func writeOktCDPath(root string) error {
+	target := oktCDPath()
+	if target == "" {
+		return nil
+	}
+	return os.WriteFile(target, []byte(root+"\n"), 0o600)
+}
+
+func oktCDPath() string {
+	if path := os.Getenv("OKT_CD_FILE"); path != "" {
+		return path
+	}
+	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
+		return filepath.Join(dir, "okt-cd")
+	}
+	tmp := os.Getenv("TMPDIR")
+	if tmp == "" {
+		tmp = "/tmp"
+	}
+	return filepath.Join(tmp, "okt-cd-"+strconv.Itoa(os.Getuid()))
 }
 
 func loadActiveTheme(configPath string) (config.Theme, error) {
