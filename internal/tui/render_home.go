@@ -269,10 +269,10 @@ func (m Model) renderProjectBadges(project domain.Project, maxWidth int) string 
 	var badges []string
 
 	pending := m.homeProjectPending[project.ID]
-	switch {
-	case pending == 0:
+	switch pending {
+	case 0:
 		badges = append(badges, m.styles.badgeLow.Render("0 OPEN"))
-	case pending == 1:
+	case 1:
 		badges = append(badges, m.styles.badgeNormal.Render("1 OPEN"))
 	default:
 		badges = append(badges, m.styles.badgeBlocker.Render(fmt.Sprintf("%d OPEN", pending)))
