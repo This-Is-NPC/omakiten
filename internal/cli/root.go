@@ -190,7 +190,7 @@ func writeError(cmd *cobra.Command, err error) error {
 }
 
 func runJSON(cmd *cobra.Command, fn func(context.Context) (any, error)) error {
-	ctx := activity.WithSource(cmd.Context(), "cli", cmd.CommandPath())
+	ctx := activity.WithAgent(cmd.Context(), "cli", cmd.CommandPath(), os.Getenv("OMAKITEN_AGENT_MODEL"), os.Getenv("OMAKITEN_AGENT_SESSION_ID"))
 	data, err := fn(ctx)
 	if err != nil {
 		return writeError(cmd, err)

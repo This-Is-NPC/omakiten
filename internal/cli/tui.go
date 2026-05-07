@@ -37,7 +37,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions) error {
 	}
 	defer rt.close()
 
-	ctx = activity.WithSource(ctx, "tui", "tui")
+	ctx = activity.WithAgent(ctx, "tui", "tui", "human", "")
 	ctx = rt.WithActivityRepo(ctx)
 
 	project, err := opts.resolveProject(ctx, rt.store)

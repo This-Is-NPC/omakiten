@@ -138,7 +138,7 @@ func (a *Adapter) CallTool(ctx context.Context, name string, args map[string]any
 		return ToolResult{}, fmt.Errorf("mcp adapter requires an agent service")
 	}
 
-	ctx = activity.WithSource(ctx, "mcp", name)
+	ctx = activity.WithAgent(ctx, "mcp", name, "", "")
 	if a.repo != nil {
 		ctx = activity.WithRepository(ctx, a.repo)
 	}
