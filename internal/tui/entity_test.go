@@ -301,8 +301,10 @@ func TestEntityCellShowsScrollHintsWhenColumnExceedsViewport(t *testing.T) {
 		model.skills = append(model.skills, domain.Skill{Key: fmt.Sprintf("skill-%02d", i), Name: fmt.Sprintf("Skill %d", i)})
 	}
 	model.entityKind = entityKindSkill
-	model.width = 200
-	model.height = 50 // viewport math measures the runtime header live; need more headroom
+	// Force a single-column wrap (width below the next card-cell threshold)
+	// so all 12 cards stack vertically and the viewport must scroll.
+	model.width = 36
+	model.height = 25
 	if model.entityCursors == nil {
 		model.entityCursors = map[entityKind]int{}
 	}

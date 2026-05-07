@@ -2,6 +2,12 @@ package tui
 
 const (
 	entityListWidth = 28
+	// entityCardCellWidth is the on-screen footprint of one rendered card
+	// — `entityListWidth` plus the 1-cell border on each side. The grid
+	// packer uses this (not entityListWidth) when computing how many
+	// cards fit side-by-side, so the wrap math matches the actual cell
+	// width Lipgloss draws.
+	entityCardCellWidth = entityListWidth + 2
 	// Token-count thresholds for the colored token badge on entity cards.
 	// Above tokenBadgeRedAt → red; above tokenBadgeYellowAt → yellow; else green.
 	tokenBadgeYellowAt = 50

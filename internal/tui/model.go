@@ -71,6 +71,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.syncFocusedColumnScroll()
 		m.syncBoardColScroll()
+		m.syncFocusedEntityScroll()
 	case refreshTickMsg:
 		if m.shouldRealtimeRefresh() {
 			if err := m.refreshCurrentView(); err != nil {
