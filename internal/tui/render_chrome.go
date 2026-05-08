@@ -99,7 +99,12 @@ func (m Model) renderHeader() string {
 // adding a comment or typing a move target. Lives in the chrome layer
 // because it's a screen-level surface, not a per-view widget.
 func (m Model) renderInput() string {
-	return indentBlock(m.styles.input.Render(fmt.Sprintf("%s: %s", m.status, m.input)), 2)
+	// Modal input is always the active surface while it's on screen, so
+	// override the neutral default border with the accent — the user is
+	// typing here and the focus cue should match the form's focused-field
+	// treatment.
+	style := m.styles.input.BorderForeground(m.styles.hintAccent.GetForeground())
+	return indentBlock(style.Render(fmt.Sprintf("%s: %s", m.status, m.input)), 2)
 }
 
 // renderCurrentView is the screen dispatcher: which renderer fires for the
@@ -234,14 +239,24 @@ func (m Model) footerTokens() []footerToken {
 			{key: "ctrl+c", label: "quit"},
 		}
 	case m.commentScreenOpen:
+		deleteLabel := "arm delete"
+		if m.commentDeletePendingID != 0 {
+			deleteLabel = "confirm delete"
+		}
 		return []footerToken{
-			{key: "j/k", label: "scroll", primary: true},
+			{key: "e", label: "edit", primary: true},
+			{key: "d", label: deleteLabel, primary: m.commentDeletePendingID != 0},
+			{key: "j/k", label: "scroll"},
 			{key: "pgup/pgdn", label: "page"},
 			{key: "g/G", label: "top/bottom"},
 			escBack(),
 			helpToken(),
 		}
 	case m.taskScreen == taskScreenView:
+		deleteLabel := "arm delete"
+		if m.taskDeletePendingID != 0 {
+			deleteLabel = "confirm delete"
+		}
 		return []footerToken{
 			{key: "e", label: "edit", primary: true},
 			{key: "c", label: "comment", primary: true},
@@ -249,6 +264,8 @@ func (m Model) footerTokens() []footerToken {
 			{key: "tab", label: "focus"},
 			{key: "j/k", label: "scroll"},
 			{key: "b", label: "blockers"},
+			{key: "d", label: deleteLabel, primary: m.taskDeletePendingID != 0},
+			{key: "enter", label: "open comment (activity)"},
 			{key: "r", label: "refresh"},
 			escBack(),
 			helpToken(),

@@ -3,6 +3,9 @@ package tui
 import (
 	"context"
 
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
+
 	"omakiten/internal/activity"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
@@ -100,12 +103,22 @@ type Model struct {
 	// stack is a record of *navigation*, not of every state change.
 	viewHistory []navState
 
-	taskScreen      taskScreenMode
-	taskID          int64
-	taskTitle       string
-	taskDescription string
-	taskPriority    string
-	taskField       taskFormField
+	taskScreen taskScreenMode
+	taskID     int64
+	// taskTitleInput / taskDescriptionInput own caret state and inline text
+	// editing for the create/edit form. Replacing the prior `taskTitle` /
+	// `taskDescription` strings with bubbles components fixed the "no
+	// cursor / can only erase from end" UX bug — these models handle
+	// arrow-key navigation, home/end, word-wise delete, paste, etc.
+	taskTitleInput       textinput.Model
+	taskDescriptionInput textarea.Model
+	taskPriority         string
+	taskField            taskFormField
+	// commentInput is reused by modeComment (add) and modeCommentEdit
+	// (rewrite). Reset on every beginInput call so the placeholder and
+	// pre-fill values reflect the active mode without leaking text across
+	// flows.
+	commentInput textarea.Model
 
 	blockerPickerOpen   bool
 	blockerPickerTaskID int64
@@ -143,6 +156,16 @@ type Model struct {
 	deletePending    bool
 	deleteKind       entityKind
 	deleteSlug       string
+
+	// Arm-then-confirm pending IDs for task and comment deletion. Non-zero
+	// means a `d` press on the same item will fire the delete; any other
+	// key clears the arm. The two are mutually exclusive — arming one
+	// resets the other so the on-screen prompt always names a single
+	// target. commentEditID stores which comment a modeCommentEdit input
+	// is rewriting.
+	taskDeletePendingID    int64
+	commentDeletePendingID int64
+	commentEditID          int64
 
 	// home owns the multi-project picker shown when okt tui is launched
 	// without a resolvable project. The picker component handles cursor/
@@ -263,6 +286,7 @@ const (
 	modeNormal inputMode = iota
 	modeComment
 	modeMove
+	modeCommentEdit
 )
 
 // taskScreenMode tracks the sub-surface of the task detail view stack:

@@ -11,19 +11,33 @@ import (
 )
 
 // beginInput puts the model into a modal text-input state. Used when the
-// user presses 'c' (comment) or 'm' (move) — the next keystrokes accumulate
-// into m.input until enter/esc resolves them through submitInput.
-func (m *Model) beginInput(mode inputMode, status, input string) {
+// user presses 'c' (comment), 'e' on a focused comment (edit), or 'm'
+// (move). Comment modes own a multi-line bubbles textarea (caret + arrow
+// nav + paste); modeMove keeps the simple m.input string because a bucket
+// key is a single short token.
+func (m *Model) beginInput(mode inputMode, status, prefill string) {
 	m.mode = mode
-	m.input = input
 	m.status = status
 	m.moveMode = false
+	switch mode {
+	case modeComment, modeCommentEdit:
+		m.commentInput = newCommentInput()
+		m.commentInput.SetValue(prefill)
+		m.commentInput.SetWidth(m.commentInputWidth())
+		m.commentInput.SetHeight(commentInputHeight)
+		m.commentInput.CursorEnd()
+		m.commentInput.Focus()
+		m.input = ""
+	default:
+		m.input = prefill
+	}
 }
 
 // updateInput is the per-keystroke handler while m.mode != modeNormal.
-// Comment input gets the alt+enter / shift+enter / ctrl+j newline shortcuts;
-// every other mode treats those as no-ops (the comment field is the only
-// multi-line input on the modal path).
+// Comment modes delegate every key to the textarea so arrow navigation,
+// home/end, and paste all work; only enter (without modifiers) and esc
+// are intercepted. modeMove keeps the legacy single-line append/backspace
+// loop because the input is a short bucket key.
 func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
@@ -31,11 +45,31 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.mode = modeNormal
 		m.input = ""
+		m.commentEditID = 0
+		m.commentInput = newCommentInput()
 		m.status = "Cancelled"
-	case "alt+enter", "shift+enter", "ctrl+j", "alt+ctrl+j":
-		if m.mode == modeComment {
-			m.input += "\n"
+		return m, nil
+	}
+	if m.mode == modeComment || m.mode == modeCommentEdit {
+		// Plain Enter saves; alt/shift/ctrl-Enter all emit a newline so
+		// the user can compose multi-line bodies with the modifier their
+		// terminal supports. bubbles' textarea does not recognise the
+		// modifier-Enter strings as newlines on its own, so we intercept
+		// them and inject "\n" directly. Every other key is forwarded.
+		switch msg.String() {
+		case "enter":
+			m.submitInput()
+			return m, nil
+		case "alt+enter", "shift+enter", "ctrl+j", "alt+ctrl+j":
+			m.commentInput.InsertString("\n")
+			return m, nil
 		}
+		var cmd tea.Cmd
+		m.commentInput, cmd = m.commentInput.Update(msg)
+		return m, cmd
+	}
+	// modeMove: legacy single-line input.
+	switch msg.String() {
 	case "enter":
 		m.submitInput()
 	case "backspace", "ctrl+h":
@@ -49,11 +83,17 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // submitInput resolves the modal input by dispatching to the appropriate
-// service. modeComment → comment-add; modeMove → move-task by bucket key.
+// service. modeComment → comment-add; modeMove → move-task by bucket key;
+// modeCommentEdit → comment-rewrite (workflow-aware so bucket policy fires).
 // Errors set m.status; the mode is always cleared on the way out so the
 // model returns to normal navigation regardless of outcome.
 func (m *Model) submitInput() {
-	input := strings.TrimSpace(m.input)
+	var input string
+	if m.mode == modeComment || m.mode == modeCommentEdit {
+		input = strings.TrimSpace(m.commentInput.Value())
+	} else {
+		input = strings.TrimSpace(m.input)
+	}
 	if input == "" {
 		m.status = "Input is required"
 		return
@@ -70,6 +110,26 @@ func (m *Model) submitInput() {
 			break
 		}
 		_, err = app.NewCommentService(m.repos.Comments).Add(m.ctx, m.project, task.ID, input, "human", nil)
+	case modeCommentEdit:
+		if m.commentEditID <= 0 {
+			err = domain.NewError(domain.ErrValidation, "no comment selected", nil)
+			break
+		}
+		// Tags stay untouched on edit-from-TUI: the modal only captures the
+		// body. CommentService.Edit replaces tags from the slice we pass, so
+		// passing nil would wipe them; we don't have a tag editor wired up
+		// yet, so re-pass the existing tag names instead. The service
+		// re-normalises them so round-tripping is safe.
+		existing, listErr := m.findCommentByID(m.commentEditID)
+		if listErr != nil {
+			err = listErr
+			break
+		}
+		tagNames := make([]string, len(existing.Tags))
+		for i, t := range existing.Tags {
+			tagNames[i] = t.Name
+		}
+		_, err = app.NewCommentServiceWithWorkflow(m.repos.Comments, m.repos.Workflow).Edit(m.ctx, m.project, m.commentEditID, input, tagNames)
 	case modeMove:
 		task, ok := m.selectedTask()
 		if !ok {
@@ -84,6 +144,8 @@ func (m *Model) submitInput() {
 		m.status = err.Error()
 		m.mode = modeNormal
 		m.input = ""
+		m.commentEditID = 0
+		m.commentInput = newCommentInput()
 		return
 	}
 	if err := m.refresh(); err != nil {
@@ -101,6 +163,20 @@ func (m *Model) submitInput() {
 	}
 	m.mode = modeNormal
 	m.input = ""
+	m.commentEditID = 0
+	m.commentInput = newCommentInput()
+}
+
+// findCommentByID looks the requested comment up in the loaded snapshot
+// (m.comments is the full project comment list refreshed on each tick) so
+// modeCommentEdit can preserve tags without an extra round-trip.
+func (m Model) findCommentByID(commentID int64) (domain.Comment, error) {
+	for _, c := range m.comments {
+		if c.ID == commentID {
+			return c, nil
+		}
+	}
+	return domain.Comment{}, domain.NewError(domain.ErrValidation, "comment not found in active snapshot", map[string]any{"comment_id": commentID})
 }
 
 // moveSelectedToColumn moves the currently-selected task to the bucket at

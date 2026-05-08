@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/activity"
@@ -35,6 +37,9 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		entityCursors:    map[entityKind]int{entityKindLaw: 0, entityKindPersona: 0, entityKindSkill: 0, entityKindTag: 0},
 		homePicker:       picker.New(picker.Single),
 	}
+	model.taskTitleInput = newTaskTitleInput()
+	model.taskDescriptionInput = newTaskDescriptionInput()
+	model.commentInput = newCommentInput()
 	detailscreen.SetStyles(model.styles.info)
 	if project.ID == 0 {
 		// Empty project — open on the multi-project Home picker.
@@ -174,6 +179,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m.refreshAfterViewChange(prevNav)
 	return m, nil
+}
+
+// newTaskTitleInput is the canonical textinput config for the task title
+// row of the create/edit form. Width is set later from terminal geometry;
+// a zero CharLimit keeps long titles editable, and the leading prompt is
+// suppressed because the form already kickers the field with `> // TITLE`.
+func newTaskTitleInput() textinput.Model {
+	t := textinput.New()
+	t.Prompt = ""
+	t.CharLimit = 0
+	return t
+}
+
+// newTaskDescriptionInput is the canonical textarea config for the
+// description row. Line numbers stay off (the form is not a code editor)
+// and the soft prompt is blanked so the visible text starts at column 0,
+// matching the title row visually.
+func newTaskDescriptionInput() textarea.Model {
+	t := textarea.New()
+	t.Prompt = ""
+	t.ShowLineNumbers = false
+	t.CharLimit = 0
+	return t
+}
+
+// newCommentInput is the textarea reused by the comment-add and
+// comment-edit modal flows. Same defaults as the description field so
+// the two modal surfaces feel uniform.
+func newCommentInput() textarea.Model {
+	t := textarea.New()
+	t.Prompt = ""
+	t.ShowLineNumbers = false
+	t.CharLimit = 0
+	return t
 }
 
 func scheduleRefreshTick() tea.Cmd {
@@ -401,7 +440,10 @@ func (m Model) hintBoxWidth() int {
 }
 
 func (m Model) isEmbeddedCommentInput() bool {
-	return m.mode == modeComment && m.taskScreen == taskScreenView && m.taskID > 0
+	if m.taskScreen != taskScreenView || m.taskID <= 0 {
+		return false
+	}
+	return m.mode == modeComment || m.mode == modeCommentEdit
 }
 
 func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {

@@ -157,8 +157,14 @@ func newStyles(theme config.Theme) styles {
 		marker:         lipgloss.NewStyle().Foreground(primary).Bold(true),
 		separator:      lipgloss.NewStyle().Foreground(border),
 		empty:          lipgloss.NewStyle().Foreground(border).Width(columnWidth).Align(lipgloss.Center),
-		input:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 2),
-		multilineInput: lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 2).Width(taskFormInputWidth).Height(taskDescriptionInputHeight),
+		// Default border color is the muted `border` token; the form
+		// helpers in render_task.go opt-in to the `primary` accent only
+		// when their field is focused. Without this default, every input
+		// in the create/edit form would render with the green border the
+		// user reported as confusing — the eye lost which field was the
+		// active one.
+		input:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2),
+		multilineInput: lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2).Width(taskFormInputWidth).Height(taskDescriptionInputHeight),
 		footer:         lipgloss.NewStyle().Foreground(border),
 		hint:           lipgloss.NewStyle().Foreground(border),
 		hintAccent:     lipgloss.NewStyle().Foreground(primary).Bold(true),

@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"omakiten/internal/app"
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/viewport"
@@ -110,9 +111,30 @@ func (m Model) activeComment() (domain.Comment, bool) {
 }
 
 func (m Model) updateCommentScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Disarm comment-delete on any non-`d` press so the second `d` is the
+	// only way to confirm. esc cancels arm-only without closing the view.
+	if msg.String() != "d" {
+		m.commentDeletePendingID = 0
+	}
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
+	case "e":
+		if comment, ok := m.activeComment(); ok {
+			m.openCommentEdit(comment)
+		}
+		return m, nil
+	case "d":
+		if comment, ok := m.activeComment(); ok {
+			m.armOrConfirmCommentDelete(comment)
+			// Confirmed delete closes the screen because the comment is
+			// gone — drop the modal immediately so the user does not see
+			// a "not found" placeholder.
+			if m.commentDeletePendingID == 0 && m.status != "" && strings.HasPrefix(m.status, "Deleted comment") {
+				m.closeCommentScreen()
+			}
+		}
+		return m, nil
 	}
 	// Delegate scroll keys + esc to the embedded detailscreen sub-model.
 	// EventCancel from esc closes the comment view and returns to the
@@ -125,15 +147,119 @@ func (m Model) updateCommentScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) renderCommentInput() string {
-	lines := []string{
-		m.styles.kicker("New comment"),
-		m.styles.hint.Render("enter saves · alt+enter/shift+enter newline"),
+// focusedActivityComment returns the comment under the activity cursor when
+// the activity column is focused and the cursor lands on a comment-typed
+// event. System events (task.created/moved/etc.) return false so callers
+// like the d/E keybindings can fall through to task-level operations.
+func (m Model) focusedActivityComment() (domain.Comment, bool) {
+	if m.taskFocus != taskFocusActivity || m.activityCursor < 0 {
+		return domain.Comment{}, false
 	}
-	if m.status != "" && m.status != "Comment body" {
+	events := m.activityForTaskInView(m.taskID)
+	if m.activityCursor >= len(events) {
+		return domain.Comment{}, false
+	}
+	ev := events[m.activityCursor]
+	if ev.EventType != domain.EventTypeComment {
+		return domain.Comment{}, false
+	}
+	return eventToComment(ev), true
+}
+
+// armOrConfirmCommentDelete is the arm-then-confirm gate for hard comment
+// deletion. The first `d` press records the comment ID; a second `d` on the
+// same comment fires CommentService.Remove, which enforces the bucket
+// permissions.comment.delete policy (inheriting from permissions.task when
+// not declared). The service emits the system comment.removed event with
+// the body snapshot for audit and writes one ActivityLog row per call.
+func (m *Model) armOrConfirmCommentDelete(comment domain.Comment) {
+	if comment.ID <= 0 {
+		return
+	}
+	if m.commentDeletePendingID == comment.ID {
+		m.executeCommentDelete(comment.ID)
+		return
+	}
+	if allowed, hint := m.canDeleteComment(comment.TaskID); !allowed {
+		m.status = hint
+		return
+	}
+	m.commentDeletePendingID = comment.ID
+	m.taskDeletePendingID = 0
+	m.status = fmt.Sprintf("Confirm delete comment #%d. Press d again; esc cancels.", comment.ID)
+}
+
+// executeCommentDelete runs the CommentService.Remove call (workflow-aware so
+// bucket policy is enforced) and refreshes the activity feed so the deleted
+// card disappears. On guard violation the policy hint surfaces in the status
+// badge while pending state is cleared so the user retries intentionally.
+func (m *Model) executeCommentDelete(commentID int64) {
+	m.commentDeletePendingID = 0
+	if _, err := app.NewCommentServiceWithWorkflow(m.repos.Comments, m.repos.Workflow).Remove(m.ctx, m.project, commentID); err != nil {
+		m.status = err.Error()
+		return
+	}
+	if err := m.refresh(); err != nil {
+		m.status = err.Error()
+		return
+	}
+	if m.taskID > 0 {
+		if err := m.refreshTaskActivity(m.taskID); err != nil {
+			m.status = err.Error()
+			return
+		}
+	}
+	m.activityCursor = -1
+	m.status = fmt.Sprintf("Deleted comment #%d", commentID)
+}
+
+// openCommentEdit opens the modal text input pre-filled with the comment
+// body so the user can rewrite it inline. The actual write happens in
+// submitInput on enter — modeCommentEdit threads commentEditID through so
+// the saved input lands on the right row. We close the dedicated comment
+// screen first so the embedded edit input renders unambiguously inside
+// the activity column of the underlying task view.
+//
+// Policy gate: the service re-checks bucket permissions before persisting,
+// but surfacing the hint here means the user never types into a modal
+// that is doomed to fail at save time.
+func (m *Model) openCommentEdit(comment domain.Comment) {
+	if comment.ID <= 0 {
+		return
+	}
+	if allowed, hint := m.canEditComment(comment.TaskID); !allowed {
+		m.status = hint
+		return
+	}
+	if m.commentScreenOpen {
+		m.closeCommentScreen()
+	}
+	m.commentEditID = comment.ID
+	m.beginInput(modeCommentEdit, fmt.Sprintf("Edit comment #%d", comment.ID), comment.Body)
+}
+
+func (m Model) renderCommentInput() string {
+	kicker := "New comment"
+	if m.mode == modeCommentEdit && m.commentEditID > 0 {
+		kicker = fmt.Sprintf("Edit comment · #%d", m.commentEditID)
+	}
+	lines := []string{
+		m.styles.kicker(kicker),
+		m.styles.hint.Render("enter saves · alt+enter/shift+enter newline · arrows/home/end navigate"),
+	}
+	if m.status != "" && m.status != "Comment body" && !strings.HasPrefix(m.status, "Edit comment") {
 		lines = append(lines, m.styles.statusBadge(m.status))
 	}
-	lines = append(lines, m.styles.commentInput.Width(m.commentInputWidth()).Render(m.input))
+	width := m.commentInputWidth()
+	innerWidth := width - 4
+	if innerWidth < 8 {
+		innerWidth = 8
+	}
+	input := m.commentInput
+	input.SetWidth(innerWidth)
+	input.SetHeight(commentInputHeight)
+	style := m.styles.commentInput.Width(width).BorderForeground(m.styles.hintAccent.GetForeground())
+	lines = append(lines, style.Render(input.View()))
 	return strings.Join(lines, "\n")
 }
 

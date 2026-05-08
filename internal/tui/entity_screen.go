@@ -76,6 +76,8 @@ func (m *Model) clearDeletePrompt(status string) {
 	m.deletePending = false
 	m.deleteKind = entityKindLaw
 	m.deleteSlug = ""
+	m.taskDeletePendingID = 0
+	m.commentDeletePendingID = 0
 	if status != "" {
 		m.status = status
 	}

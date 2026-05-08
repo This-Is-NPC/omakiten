@@ -3,8 +3,46 @@ package tui
 import (
 	"sort"
 
+	"omakiten/internal/app"
 	"omakiten/internal/domain"
 )
+
+// checkBucketPermission asks the workflow service whether (entity, op) is
+// allowed in the bucket the given task currently sits in. Used by the TUI
+// entry points (e/d shortcuts) to surface the policy hint at the moment
+// the user presses the action button — much clearer than letting them
+// type a whole edit and only failing at save time. Returns the hint
+// string when the answer is "no" so the caller can drop it straight into
+// the status badge.
+func (m Model) checkBucketPermission(taskID int64, entity, op string) (bool, string) {
+	if m.repos.Workflow == nil {
+		return true, ""
+	}
+	allowed, hint, err := m.repos.Workflow.ResolveBucketPermissions(m.ctx, m.project, taskID, entity, op)
+	if err != nil {
+		return false, err.Error()
+	}
+	return allowed, hint
+}
+
+// canEditTask / canDeleteTask / canEditComment / canDeleteComment are
+// thin wrappers that name the (entity, op) tuple at the call site so the
+// e/d handlers read closer to English. Each returns (allowed, hint).
+func (m Model) canEditTask(taskID int64) (bool, string) {
+	return m.checkBucketPermission(taskID, app.EntityTask, app.PermissionEdit)
+}
+
+func (m Model) canDeleteTask(taskID int64) (bool, string) {
+	return m.checkBucketPermission(taskID, app.EntityTask, app.PermissionDelete)
+}
+
+func (m Model) canEditComment(taskID int64) (bool, string) {
+	return m.checkBucketPermission(taskID, app.EntityComment, app.PermissionEdit)
+}
+
+func (m Model) canDeleteComment(taskID int64) (bool, string) {
+	return m.checkBucketPermission(taskID, app.EntityComment, app.PermissionDelete)
+}
 
 // selectedTask returns the task currently driven by the navigation cursor.
 // In task-screen modes, the open task wins regardless of which view sits

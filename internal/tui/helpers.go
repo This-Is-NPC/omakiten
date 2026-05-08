@@ -53,14 +53,6 @@ func wrapWords(s string, firstWidth, restWidth int) []string {
 	return lines
 }
 
-func trimLastRune(s string) string {
-	runes := []rune(s)
-	if len(runes) == 0 {
-		return s
-	}
-	return string(runes[:len(runes)-1])
-}
-
 func renderFixedBox(lines []string, width int, border lipgloss.Style) string {
 	rows := []string{border.Render("┌" + strings.Repeat("─", width) + "┐")}
 	for _, line := range lines {
