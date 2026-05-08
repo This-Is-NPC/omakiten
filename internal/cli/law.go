@@ -91,10 +91,14 @@ func newLawAddCommand(opts *runtimeOptions) *cobra.Command {
 				if body == "" {
 					body = " "
 				}
+				severityID, err := parseSeverity(severity)
+				if err != nil {
+					return nil, err
+				}
 				law, err := service.Add(ctx, domain.LawInput{
 					Key:      key,
 					Name:     name,
-					Severity: domain.LawSeverity(severity),
+					Severity: severityID,
 					Body:     body,
 					Scope:    domain.LawScope(scope),
 					Project:  project,
@@ -154,7 +158,10 @@ func newLawEditCommand(opts *runtimeOptions) *cobra.Command {
 						update.Name = &name
 					}
 					if cmd.Flags().Changed("severity") {
-						value := domain.LawSeverity(severity)
+						value, err := parseSeverity(severity)
+						if err != nil {
+							return nil, err
+						}
 						update.Severity = &value
 					}
 					if cmd.Flags().Changed("body") {

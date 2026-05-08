@@ -9,6 +9,8 @@ import (
 	"omakiten/internal/domain"
 )
 
+// (parsePriority lives in enums.go for cross-command reuse.)
+
 func newEditCommand(opts *runtimeOptions) *cobra.Command {
 	var title string
 	var description string
@@ -34,15 +36,15 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 					update.Description = &description
 				}
 				if cmd.Flags().Changed("priority") {
-					// CLI accepts the priority label string; resolve to
-					// the configured id via the registry so the service
-					// layer never sees raw strings. Unknown labels error
-					// loudly instead of silently writing PriorityZero.
-					value, ok := domain.PriorityFromLabel(priority)
-					if !ok {
-						return nil, domain.NewError(domain.ErrValidation,
-							"unknown priority label; must match a value in config.priorities",
-							map[string]any{"priority": priority})
+					// CLI accepts either the priority label ("high") or
+					// the numeric id ("3"). Numeric is parsed first so
+					// scripts can pass the storage handle directly;
+					// label fallback covers the human-friendly path.
+					// Both routes funnel through registry validation —
+					// the service layer never sees raw user input.
+					value, err := parsePriority(priority)
+					if err != nil {
+						return nil, err
 					}
 					update.Priority = &value
 				}
