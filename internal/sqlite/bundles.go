@@ -224,12 +224,24 @@ func importWorkflows(ctx context.Context, tx *sql.Tx, bundleID int64, workflows 
 		if err != nil {
 			return err
 		}
+		// defaults_json is "{}" when the workflow declares no defaults
+		// block — the resolver treats both empty object and a populated
+		// block uniformly because the WorkflowDefaults pointer/field
+		// chain falls through to the implicit "true" when fields are nil.
+		defaultsJSON := "{}"
+		if workflow.Defaults != nil {
+			raw, err := json.Marshal(workflow.Defaults)
+			if err != nil {
+				return err
+			}
+			defaultsJSON = string(raw)
+		}
 		var workflowID int64
 		if err := tx.QueryRowContext(ctx, `
-INSERT INTO workflows(bundle_id, local_id, key, name, operations_json, active) VALUES (?, ?, ?, ?, ?, 1)
-ON CONFLICT(bundle_id, local_id) DO UPDATE SET key = excluded.key, name = excluded.name, operations_json = excluded.operations_json, active = 1
+INSERT INTO workflows(bundle_id, local_id, key, name, operations_json, defaults_json, active) VALUES (?, ?, ?, ?, ?, ?, 1)
+ON CONFLICT(bundle_id, local_id) DO UPDATE SET key = excluded.key, name = excluded.name, operations_json = excluded.operations_json, defaults_json = excluded.defaults_json, active = 1
 RETURNING id
-`, bundleID, workflow.ID, workflow.Key, workflow.Name, string(operationsJSON)).Scan(&workflowID); err != nil {
+`, bundleID, workflow.ID, workflow.Key, workflow.Name, string(operationsJSON), defaultsJSON).Scan(&workflowID); err != nil {
 			return err
 		}
 

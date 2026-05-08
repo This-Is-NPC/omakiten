@@ -93,15 +93,45 @@ workflows:
   - id: 1
     key: default
     name: Default Workflow
+    # defaults declares the workflow-level fallback for task/comment edit
+    # and delete. Resolution order: bucket.permissions → workflow.defaults
+    # → implicit `true` (no rule = allow). The default kit ships strict
+    # defaults so a brand-new task respects "edit only in backlog" out of
+    # the box; per-bucket `permissions:` overrides relax this where the
+    # workflow author wants to allow edits/deletes elsewhere.
+    defaults:
+      task:
+        edit: false
+        delete: false
+      comment:
+        edit: false
+        delete: false
     buckets:
       - id: 1
         key: backlog
         name: Backlog
         position: 1
+        # Backlog opts in to edit/delete on both task and comment so the
+        # planning bucket can be freely reshaped before work starts. Move
+        # the task to dev/review/done to lock the description & threads.
+        permissions:
+          task:
+            edit: true
+            delete: true
+          comment:
+            edit: true
+            delete: true
       - id: 2
         key: dev
         name: Development
         position: 2
+        # Allow comment edit/delete during dev so the agent can correct
+        # in-flight notes; task fields stay locked (use archive/unarchive
+        # for major edits).
+        permissions:
+          comment:
+            edit: true
+            delete: true
       - id: 3
         key: review
         name: Review

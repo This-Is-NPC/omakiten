@@ -7,6 +7,21 @@ type Workflow struct {
 	Buckets     []Bucket             `json:"buckets,omitempty"`
 	Transitions []WorkflowTransition `json:"transitions,omitempty"`
 	Operations  WorkflowOperations   `json:"operations,omitempty"`
+	// Defaults declares the workflow-level fallback for task/comment edit
+	// and delete. A nil pointer means "no rule declared at the workflow
+	// level" — bucket overrides are still consulted, and when neither
+	// bucket nor workflow declares a value the final fallback is `true`
+	// (no rule = allow). Authors who want a strict default declare it
+	// explicitly here.
+	Defaults *WorkflowDefaults `json:"defaults,omitempty"`
+}
+
+// WorkflowDefaults is the policy fallback applied when a bucket does not
+// override the field. Task is the base; Comment, when nil, inherits from
+// Task field-by-field, mirroring the per-bucket inheritance rule.
+type WorkflowDefaults struct {
+	Task    *EntityPermission `json:"task,omitempty"`
+	Comment *EntityPermission `json:"comment,omitempty"`
 }
 
 type Bucket struct {
@@ -17,10 +32,10 @@ type Bucket struct {
 	Permissions *BucketPermissions `json:"permissions,omitempty"`
 }
 
-// BucketPermissions wires task/comment CRUD policy. nil pointers mean the
-// canonical default applies (edit=true on first bucket, false elsewhere;
-// delete=false everywhere). Comment falls back to task when its sub-block is
-// absent or partially set.
+// BucketPermissions wires task/comment CRUD policy at the bucket level.
+// nil pointers mean "no override at this layer" — the resolver falls back
+// to workflow.Defaults, then to the implicit `true` (no rule = allow).
+// Comment inherits from Task field-by-field at every layer of the chain.
 type BucketPermissions struct {
 	Task    *EntityPermission `json:"task,omitempty"`
 	Comment *EntityPermission `json:"comment,omitempty"`
@@ -44,40 +59,110 @@ type OperationPolicy struct {
 	Guards []TransitionGuard `json:"guards,omitempty"`
 }
 
-// ResolveTaskPermission returns the effective task-level (edit, delete) for
-// the bucket honoring the canonical defaults: edit=true on the first bucket
-// (position 1) and false elsewhere; delete=false everywhere. The bucketIsFirst
-// flag tells the resolver whether the bucket sits at position 1 — the runtime
-// supplies it because the bucket alone does not know its workflow context.
-func (b Bucket) ResolveTaskPermission(bucketIsFirst bool) (edit, del bool) {
-	edit = bucketIsFirst
-	del = false
-	if b.Permissions != nil && b.Permissions.Task != nil {
-		if b.Permissions.Task.Edit != nil {
-			edit = *b.Permissions.Task.Edit
-		}
-		if b.Permissions.Task.Delete != nil {
-			del = *b.Permissions.Task.Delete
-		}
-	}
+// ResolveTaskPermission returns the effective task-level (edit, delete)
+// for this bucket given the workflow-level defaults. Resolution chain:
+//  1. bucket.permissions.task.<field>      — most specific.
+//  2. workflow.defaults.task.<field>       — workflow-level fallback.
+//  3. true                                 — implicit fallback (no rule = allow).
+//
+// Defaults may be nil; nil means "no workflow-level rule declared" and the
+// resolver falls straight to step 3. There is no hardcoded "first bucket
+// is special" rule — the entire policy is data-driven.
+func (b Bucket) ResolveTaskPermission(defaults *WorkflowDefaults) (edit, del bool) {
+	edit = resolveBool(
+		bucketField(b, taskEdit),
+		defaultsField(defaults, taskEdit),
+	)
+	del = resolveBool(
+		bucketField(b, taskDelete),
+		defaultsField(defaults, taskDelete),
+	)
 	return edit, del
 }
 
-// ResolveCommentPermission returns the effective comment-level (edit, delete)
-// for the bucket. When `permissions.comment` is missing, both fields inherit
-// from `permissions.task`. When present partially, only the explicitly set
-// fields override.
-func (b Bucket) ResolveCommentPermission(bucketIsFirst bool) (edit, del bool) {
-	edit, del = b.ResolveTaskPermission(bucketIsFirst)
-	if b.Permissions != nil && b.Permissions.Comment != nil {
-		if b.Permissions.Comment.Edit != nil {
-			edit = *b.Permissions.Comment.Edit
-		}
-		if b.Permissions.Comment.Delete != nil {
-			del = *b.Permissions.Comment.Delete
+// ResolveCommentPermission returns the effective comment-level
+// (edit, delete) for this bucket. Comment fields inherit from task at each
+// layer of the chain — bucket.comment falls back to bucket.task; if both
+// are nil, defaults.comment falls back to defaults.task; if all four are
+// nil the implicit `true` wins.
+func (b Bucket) ResolveCommentPermission(defaults *WorkflowDefaults) (edit, del bool) {
+	edit = resolveBool(
+		bucketField(b, commentEdit),
+		bucketField(b, taskEdit),
+		defaultsField(defaults, commentEdit),
+		defaultsField(defaults, taskEdit),
+	)
+	del = resolveBool(
+		bucketField(b, commentDelete),
+		bucketField(b, taskDelete),
+		defaultsField(defaults, commentDelete),
+		defaultsField(defaults, taskDelete),
+	)
+	return edit, del
+}
+
+// resolveBool walks the candidate pointers in priority order and returns
+// the first non-nil value. When every candidate is nil the implicit
+// fallback is `true` — the documented "no rule = allow" semantics.
+func resolveBool(candidates ...*bool) bool {
+	for _, c := range candidates {
+		if c != nil {
+			return *c
 		}
 	}
-	return edit, del
+	return true
+}
+
+// permField is a small enum used by bucketField/defaultsField to pick
+// which (entity, op) pointer to extract without duplicating four nearly
+// identical lookup functions.
+type permField int
+
+const (
+	taskEdit permField = iota
+	taskDelete
+	commentEdit
+	commentDelete
+)
+
+func bucketField(b Bucket, f permField) *bool {
+	if b.Permissions == nil {
+		return nil
+	}
+	return entityField(b.Permissions.Task, b.Permissions.Comment, f)
+}
+
+func defaultsField(d *WorkflowDefaults, f permField) *bool {
+	if d == nil {
+		return nil
+	}
+	return entityField(d.Task, d.Comment, f)
+}
+
+func entityField(task, comment *EntityPermission, f permField) *bool {
+	switch f {
+	case taskEdit:
+		if task == nil {
+			return nil
+		}
+		return task.Edit
+	case taskDelete:
+		if task == nil {
+			return nil
+		}
+		return task.Delete
+	case commentEdit:
+		if comment == nil {
+			return nil
+		}
+		return comment.Edit
+	case commentDelete:
+		if comment == nil {
+			return nil
+		}
+		return comment.Delete
+	}
+	return nil
 }
 
 type WorkflowTransition struct {

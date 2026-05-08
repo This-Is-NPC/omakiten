@@ -11,7 +11,9 @@ import (
 
 func (s *Store) ActiveWorkflow(ctx context.Context) (domain.Workflow, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT workflows.id, workflows.key, workflows.name, COALESCE(workflows.operations_json, '{}')
+SELECT workflows.id, workflows.key, workflows.name,
+       COALESCE(workflows.operations_json, '{}'),
+       COALESCE(workflows.defaults_json, '{}')
 FROM workflows
 JOIN config_bundles ON config_bundles.id = workflows.bundle_id
 JOIN settings ON settings.bundle_id = config_bundles.id
@@ -24,8 +26,8 @@ LIMIT 1
 `)
 
 	var workflow domain.Workflow
-	var operationsJSON string
-	if err := row.Scan(&workflow.ID, &workflow.Key, &workflow.Name, &operationsJSON); err != nil {
+	var operationsJSON, defaultsJSON string
+	if err := row.Scan(&workflow.ID, &workflow.Key, &workflow.Name, &operationsJSON, &defaultsJSON); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Workflow{}, domain.NewError(domain.ErrConfigInvalid, "active workflow not found", nil)
 		}
@@ -35,6 +37,13 @@ LIMIT 1
 		if err := json.Unmarshal([]byte(operationsJSON), &workflow.Operations); err != nil {
 			return domain.Workflow{}, err
 		}
+	}
+	if defaultsJSON != "" && defaultsJSON != "{}" {
+		var defaults domain.WorkflowDefaults
+		if err := json.Unmarshal([]byte(defaultsJSON), &defaults); err != nil {
+			return domain.Workflow{}, err
+		}
+		workflow.Defaults = &defaults
 	}
 
 	buckets, err := s.workflowBuckets(ctx, workflow.ID)

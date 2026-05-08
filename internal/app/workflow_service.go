@@ -272,21 +272,22 @@ func (s *WorkflowService) runGuards(ctx context.Context, projectID, taskID int64
 
 // evaluatePermission resolves bucket policy without hitting the database.
 // Returns (allowed, otherBucketKeysWhereAllowed) so the caller can compose a
-// hint that tells the user where the action IS permitted.
+// hint that tells the user where the action IS permitted. Resolution is
+// fully data-driven: bucket overrides → workflow.defaults → implicit
+// `true` (no rule = allow). There is no hardcoded "first bucket is
+// special" rule — that lives in the YAML now.
 func evaluatePermission(workflow domain.Workflow, currentBucketID int64, entity, operation string) (bool, []string) {
 	if len(workflow.Buckets) == 0 {
 		return false, nil
 	}
-	firstBucketID := workflow.Buckets[0].ID
 
 	resolved := func(b domain.Bucket) (bool, bool) {
-		isFirst := b.ID == firstBucketID
 		var edit, del bool
 		switch entity {
 		case EntityComment:
-			edit, del = b.ResolveCommentPermission(isFirst)
+			edit, del = b.ResolveCommentPermission(workflow.Defaults)
 		default:
-			edit, del = b.ResolveTaskPermission(isFirst)
+			edit, del = b.ResolveTaskPermission(workflow.Defaults)
 		}
 		return edit, del
 	}

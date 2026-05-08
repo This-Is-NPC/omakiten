@@ -455,6 +455,21 @@ type Workflow struct {
 	Buckets     []Bucket           `yaml:"buckets" json:"buckets"`
 	Transitions []Transition       `yaml:"transitions" json:"transitions,omitempty"`
 	Operations  WorkflowOperations `yaml:"operations,omitempty" json:"operations,omitempty"`
+	// Defaults declares the workflow-level fallback for task/comment edit
+	// and delete. nil means "no rule declared at this layer" — the
+	// resolver falls through to bucket overrides and finally to the
+	// implicit `true` (no rule = allow). Authors who want strict policy
+	// declare it explicitly here.
+	Defaults *WorkflowDefaults `yaml:"defaults,omitempty" json:"defaults,omitempty"`
+}
+
+// WorkflowDefaults is the YAML mirror of domain.WorkflowDefaults. Comment
+// inherits from Task field-by-field at every layer, so a workflow that
+// declares only Task in defaults gets the same policy applied to comments
+// without restating it.
+type WorkflowDefaults struct {
+	Task    *EntityPermission `yaml:"task,omitempty" json:"task,omitempty"`
+	Comment *EntityPermission `yaml:"comment,omitempty" json:"comment,omitempty"`
 }
 
 type Bucket struct {
@@ -465,20 +480,19 @@ type Bucket struct {
 	Permissions *BucketPermissions `yaml:"permissions,omitempty" json:"permissions,omitempty"`
 }
 
-// BucketPermissions wires task/comment CRUD policy per bucket. A nil pointer
-// means "no override declared" — the runtime falls back to the canonical
-// defaults (edit=true on the first bucket, false elsewhere; delete=false
-// everywhere). Comment inherits from task when its sub-block is missing or
-// partially set.
+// BucketPermissions wires task/comment CRUD policy per bucket. nil pointers
+// mean "no override at this layer" — resolution falls through to
+// workflow.defaults and finally to the implicit `true`. Comment inherits
+// from Task field-by-field at every layer.
 type BucketPermissions struct {
 	Task    *EntityPermission `yaml:"task,omitempty" json:"task,omitempty"`
 	Comment *EntityPermission `yaml:"comment,omitempty" json:"comment,omitempty"`
 }
 
-// EntityPermission is the CRUD policy for one entity in one bucket. Both
-// fields are pointers so the YAML can omit a field and have the runtime
-// resolve the canonical default rather than treating the zero value as
-// "explicit false".
+// EntityPermission is the CRUD policy for one entity. Both fields are
+// pointers so the YAML can omit a field and have the runtime fall through
+// to the next layer of the resolution chain rather than treating the zero
+// value as "explicit false".
 type EntityPermission struct {
 	Edit   *bool `yaml:"edit,omitempty" json:"edit,omitempty"`
 	Delete *bool `yaml:"delete,omitempty" json:"delete,omitempty"`
