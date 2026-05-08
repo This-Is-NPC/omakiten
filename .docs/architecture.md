@@ -53,8 +53,9 @@
 | `internal/paths/` | Cross-platform config/data path resolution (XDG + `$OMAKITEN_HOME`) |
 | `internal/activity/` | Context-scoped observability: `activity.Track`, `WithRepository`, `WithSource` |
 | `internal/arch/` | Architecture-boundary test (`arch_test.go`) |
+| `internal/testfixtures/` | Shared test helper that loads `config.Bundle` values from per-package `testdata/*.yaml` so test inputs flow through the production parser; convention is documented in [`dev-guide.md` § Test fixtures](dev-guide.md#test-fixtures) |
 | `defaults/` | Embedded default kit assets (laws, skills, personas, templates, themes, omakiten.yaml) |
-| `migrations/` | Embedded SQL schema migrations (001–010) |
+| `migrations/` | Embedded SQL schema migrations (001–014; latest: `014_workflow_defaults.sql`) |
 | `dev_env/` | Local TUI/dev runtime state (`mise tui`) |
 | `.docs/` | Documentation, templates, personal notes |
 | `.workflow/` | Per-task requirements/plans/summaries used by the assisted-workflow skills |
@@ -65,7 +66,9 @@
 - **Boundary enforcement**: `internal/arch/arch_test.go` parses every non-test file under `internal/` and asserts that domain has no outward deps, app does not import concrete adapters, and `sqlite`/`configstore` do not import each other or app. The same rules are mirrored under `depguard` in `.golangci.yml`.
 - **CQRS-like split**: Canonical YAML files are the write-model source of truth; SQLite is the read-model materialization repopulated via `app.ConfigService.Import` → `Store.ImportBundle` (`internal/app/config_service.go`, `internal/sqlite/bundles.go`).
 - **Transactional file editing**: `app.BundleEditor` snapshots the bundle, stages atomic writes, and rolls back on failure before SQLite re-import (`internal/app/bundle_editor.go`).
-- **Workflow policy in app**: `app.WorkflowService` owns default-bucket resolution, transition allowance, guard evaluation, and `task.completed` emission. The sqlite layer holds only persistence primitives (`internal/app/workflow_service.go`).
+- **Workflow policy in app**: `app.WorkflowService` owns default-bucket resolution, transition allowance, guard evaluation, `task.completed` emission, and the per-bucket CRUD policy (`ResolveBucketPermissions`). The sqlite layer holds only persistence primitives (`internal/app/workflow_service.go`).
+- **Data-driven CRUD policy**: per-bucket and workflow-level overrides for `task.{edit,delete}` / `comment.{edit,delete}` are declared in YAML and serialized to SQLite as `permissions_json` (per bucket) and `defaults_json` (per workflow). The resolver walks bucket → workflow defaults → implicit `true`; comment falls back to task at every layer. No hardcoded "first bucket is special" rule (`internal/domain/workflow.go:ResolveTaskPermission` / `ResolveCommentPermission`).
+- **Archive lifecycle**: tasks carry a `state` column (`active|archived`); `Archive`/`Unarchive` bypass bucket policy and transition guards but respect `operations.{archive,unarchive}.guards` (`internal/app/task_service.go`, `internal/sqlite/tasks_lifecycle.go`).
 - **Coded errors**: Every domain error has a stable machine-readable code consumed by the JSON envelope and by the agent's recovery guidance (`internal/domain/errors.go`, `internal/agent/errors.go`).
 - **Strict project scoping**: Operational rows are filtered by `project_id` at the repository layer (`internal/sqlite/tasks.go`, `internal/sqlite/comments.go`, `internal/sqlite/dependencies.go`, …).
 - **Strict YAML validation**: `yaml.NewDecoder` uses `KnownFields(true)` to reject unknown fields and prevent silent drift (`internal/config/loader.go`, `internal/config/entity_loader.go`).
@@ -92,9 +95,9 @@ Not applicable — local-first single-user CLI/TUI/MCP tool with no authn or aut
 
 | Metric | Status | Value / Finding | Source (tool + command) or Recommendation |
 |--------|--------|-----------------|-------------------------------------------|
-| Test structure | measured | 62 test files across 21 packages with tests; standard Go `testing`; table-driven tests; integration-style CLI tests; TUI key-simulation tests; MCP adapter tests; agent service tests; agentsetup tests; activity log tests; dedicated boundary test in `internal/arch/`. 505 tests pass. | `go test ./...` |
-| Test coverage | measured | 69.1% statement coverage across the tested packages | `go test -coverprofile=/tmp/coverage.out ./... && go tool cover -func=/tmp/coverage.out` |
-| Module sizes (LOC) | measured | 148 non-test files / 20,839 LOC; 62 test files / 12,079 LOC. Top 5 non-test: `internal/tui/render_task.go` (686), `internal/tui/render_board.go` (504), `internal/mcp/adapter.go` (493), `internal/config/validator.go` (469), `internal/config/migration.go` (439) | `find . -name '*.go' ! -name '*_test.go' -exec wc -l {} +` |
+| Test structure | measured | 72 test files across 25 packages with tests; standard Go `testing`; table-driven tests driven by per-package `testdata/*.yaml` fixtures (loader in `internal/testfixtures`); integration-style CLI tests; TUI key-simulation tests; MCP adapter tests; agent service tests; agentsetup tests; activity log tests; dedicated boundary test in `internal/arch/`. 609 tests pass. | `go test ./...` |
+| Test coverage | recommended | Re-measure after the policy CRUD + test-fixture refactor. Use `go test -coverprofile=/tmp/coverage.out ./... && go tool cover -func=/tmp/coverage.out`. | `go test -coverprofile=/tmp/coverage.out ./...` |
+| Module sizes (LOC) | measured | 158 non-test files / 26,350 LOC; 72 test files / 15,300 LOC. Top 5 non-test: `internal/tui/render_task.go` (795), `internal/tui/model.go` (662), `internal/mcp/adapter.go` (647), `internal/config/validator.go` (582), `internal/config/bundle.go` (566). | `find . -name '*.go' ! -name '*_test.go' -exec wc -l {} +` |
 | Cyclomatic complexity | recommended | Not measured. **Recommendation**: `gocyclo` — purpose-built for Go, configurable per-function threshold (e.g., 15). Install `go install github.com/fzipp/gocyclo/cmd/gocyclo@latest`; run `gocyclo -over 15 .`. | Tool: `gocyclo`; Rationale: Go-native, per-function reporting |
 | Internal dependency structure | measured | No circular dependencies; hexagonal boundaries enforced by `internal/arch/arch_test.go` (passes) and mirrored as `depguard` rules in `.golangci.yml` (`golangci-lint run` → 0 issues). | `go list -deps ./...` per package + `go test ./internal/arch/...` |
 | Mutation score | recommended | Not measured — no mutation testing configured. **Recommendation**: `gremlins` (Go-native mutation tester). Install `go install github.com/go-gremlins/gremlins@latest`; run `gremlins run`. Integrates with the existing `go test` suite. | Tool: `gremlins`; Rationale: Go-native, works with existing tests |

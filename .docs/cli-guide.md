@@ -115,6 +115,27 @@ okt edit 42 -t "New title" -b done
 okt move 42 --to dev
 ```
 
+### `okt delete TASK_ID --confirm` — hard-delete a task
+
+`internal/cli/lifecycle.go`. Calls `app.TaskService.Delete`. Cascades through comments, event_tags, events, dependencies, tags, and the task row. Subject to bucket `permissions.task.delete` and `operations.delete.guards`. Emits `task.removed` with the pre-delete snapshot. Refuses to run without `--confirm` so a stray invocation cannot wipe data.
+
+```sh
+okt delete 42 --confirm
+```
+
+### `okt archive TASK_ID` — archive a task (escape hatch)
+
+`internal/cli/lifecycle.go`. Calls `app.TaskService.Archive`. Flips `state=archived` and moves the task to the workflow's final bucket atomically. Bypasses bucket permissions and transition guards but respects `operations.archive.guards`. Emits `task.archived`. Archived tasks are hidden from `okt list` and the TUI views by default.
+
+### `okt unarchive TASK_ID` — restore an archived task
+
+`internal/cli/lifecycle.go`. Calls `app.TaskService.Unarchive`. Flips `state=active`, leaves the bucket untouched. Respects `operations.unarchive.guards` if declared. Emits `task.unarchived`.
+
+```sh
+okt archive 42
+okt unarchive 42
+```
+
 ---
 
 ## Comments
@@ -133,9 +154,24 @@ okt move 42 --to dev
 
 No flags. Lists comments for the task in chronological order.
 
+### `okt comment edit COMMENT_ID`
+
+Calls `app.CommentService.Edit`. Subject to bucket `permissions.comment.edit` (inherits from `permissions.task.edit` when no comment block is declared). Replaces the body and the tag set in one call. Emits `comment.edited`.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--body`, `-b` | — | **Required.** New comment body. |
+| `--tag`, `-T` | — | Tag name. Repeatable. The submitted set replaces the old tags entirely. |
+
+### `okt comment delete COMMENT_ID --confirm`
+
+Calls `app.CommentService.Remove`. Subject to bucket `permissions.comment.delete` (same inheritance rule). Emits `comment.removed` with the body snapshot. Refuses to run without `--confirm`.
+
 ```sh
 okt comment add 42 -b "Branch: feature/foo" -T self-branch
 okt comment list 42
+okt comment edit 1234 -b "Branch: feature/foo (rebased)" -T self-branch -T rebased
+okt comment delete 1234 --confirm
 ```
 
 ---

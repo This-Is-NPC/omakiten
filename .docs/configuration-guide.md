@@ -228,8 +228,10 @@ workflows:
   - id: 1
     key: default
     name: Default Workflow
+    defaults: { … }    # optional — see workflow defaults
     buckets: [ … ]
     transitions: [ … ]
+    operations: { … } # optional — see workflows[].operations
 ```
 
 | Field | Type | Notes |
@@ -237,8 +239,34 @@ workflows:
 | `id` | int, > 0, unique | Stable identifier referenced by `transitions[].from` / `to`. |
 | `key` | string, required, unique | Used by `config.workflow.active` and human-facing CLI/TUI flows. |
 | `name` | string, required | Display name. |
+| `defaults` | object, optional | Workflow-level fallback for task / comment edit / delete. See **Workflow defaults**. |
 | `buckets` | list, non-empty | See **buckets**. |
 | `transitions` | list, optional | See **transitions**. Empty list = no moves allowed. |
+| `operations` | object, optional | Guards for archive / delete / unarchive. See **workflows[].operations**. |
+
+### Workflow defaults
+
+```yaml
+defaults:
+  task:
+    edit: true
+    delete: false
+  comment:
+    edit: true
+    delete: false   # comment may also omit fields — see inheritance below
+```
+
+`defaults` declares the policy applied when a bucket does not override the field. The full resolution chain for any `(bucket, entity, op)` lookup is:
+
+1. `bucket.permissions.<entity>.<op>` — the per-bucket override.
+2. Comment only: `bucket.permissions.task.<op>` — comment inherits from task at the bucket layer when the bucket has no `comment` block (or the field is `nil`).
+3. `workflow.defaults.<entity>.<op>` — the workflow-level fallback.
+4. Comment only: `workflow.defaults.task.<op>` — same comment-from-task inheritance at the defaults layer.
+5. Implicit `true` — when nothing in the chain declares a value, the action is allowed ("no rule = allow").
+
+The resolver picks the first non-`nil` value walking the chain top-to-bottom. Pointer booleans (`*bool`) distinguish "field omitted" from "explicitly `false`" — omitting `delete` flows to the next layer; writing `delete: false` ends the walk with a deny.
+
+There is no hardcoded "first bucket is special" rule anymore. The default kit (`defaults/omakiten.yaml`) reproduces the legacy semantics declaratively: strict defaults at the workflow level + an explicit opt-in on the `backlog` bucket.
 
 ### `workflows[].buckets`
 
@@ -258,13 +286,9 @@ buckets:
 
 #### Bucket permissions
 
-`permissions` gates `tasks.edit`, `tasks.delete`, `comments.edit`, and `comments.delete` based on the bucket the task currently sits in. Defaults when `permissions` is omitted:
+`permissions` gates `tasks.edit`, `tasks.delete`, `comments.edit`, and `comments.delete` based on the bucket the task currently sits in. When the field is omitted at the bucket layer the resolver falls through to `workflow.defaults` and then to the implicit `true` — see **Workflow defaults** above for the full chain.
 
-- `task.edit` is `true` only in the bucket at position 1; `false` everywhere else.
-- `task.delete` is `false` everywhere.
-- `comment.*` inherits 100% from `task.*` when no `comment` sub-block is declared.
-
-When `permissions.comment` is partially set, only the explicit fields override; the rest still inherit from `task`. Example:
+When `permissions.comment` is partially set, only the explicit fields override; the rest inherit from `task` at the same layer. Example:
 
 ```yaml
 buckets:
@@ -583,6 +607,9 @@ workflows:
   - id: 1
     key: default
     name: Default Workflow
+    defaults:
+      task:    { edit: false, delete: false }    # workflow-level baseline — buckets opt in
+      comment: { edit: false, delete: false }
     operations:
       archive:
         guards:
@@ -591,15 +618,20 @@ workflows:
         guards:
           - { type: comments_tagged, tag: justification,  count: 1, hint: "Tag #justification first." }
     buckets:
-      - { id: 1, key: backlog, name: Backlog,     position: 1 }   # default bucket for new tasks; task.edit defaults to true here
-      - { id: 2, key: dev,     name: Development, position: 2 }
-      - { id: 3, key: review,  name: Review,      position: 3 }
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1                                # default bucket for new tasks
+        permissions:
+          task: { edit: true }                     # planning bucket — edit allowed
+      - { id: 2, key: dev,    name: Development, position: 2 }
+      - { id: 3, key: review, name: Review,      position: 3 }
       - id: 4
         key: done
         name: Done
-        position: 4         # final → emits task.completed
+        position: 4                                # final → emits task.completed
         permissions:
-          task: { edit: false, delete: true }   # only Done permits hard delete
+          task: { delete: true }                   # only Done permits hard delete
     transitions:
       - from: 1
         to: 2

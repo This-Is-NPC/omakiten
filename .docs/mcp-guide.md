@@ -80,6 +80,9 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `tasks.create_intent` | Implements `/okt-create <description>` with similar-task detection and confirmation gate. |
 | `tasks.create` | Direct task creation equivalent to `okt add`. |
 | `tasks.move` | Moves a task through allowed workflow transitions. |
+| `tasks.delete` | Hard-deletes a task with cascade (comments, tags, dependencies, events). Subject to bucket `permissions.task.delete` and `operations.delete.guards`. Requires `confirmed=true`. |
+| `tasks.archive` | Flips `state=archived` and moves the task to the workflow's final bucket. Bypasses bucket policy and transition guards but respects `operations.archive.guards`. |
+| `tasks.unarchive` | Restores `state=active` while leaving the bucket untouched. Respects `operations.unarchive.guards` if declared. |
 
 ### Comments & activity
 
@@ -87,7 +90,9 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 |---|---|
 | `comments.add` | Adds a human or agent task comment, with optional tag attachment. |
 | `comments.list` | Lists task comments. |
-| `task_activity.list` | Unified chronological feed for a task (comments + system events such as `task.created`, `task.moved`, `task.completed`); supports `order=asc\|desc`. |
+| `comments.edit` | Rewrites a comment's body and replaces its tags. Subject to bucket `permissions.comment.edit` (inherits from `permissions.task.edit` when no comment block is declared). |
+| `comments.delete` | Hard-deletes a comment. Subject to bucket `permissions.comment.delete` (same inheritance rule). Requires `confirmed=true`. |
+| `task_activity.list` | Unified chronological feed for a task (comments + system events such as `task.created`, `task.moved`, `task.completed`, `task.archived`, `task.removed`, `comment.edited`, `comment.removed`); supports `order=asc\|desc`. |
 
 ### Dependencies
 

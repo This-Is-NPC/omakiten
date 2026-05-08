@@ -153,6 +153,31 @@ mise run build
 
 The shell tests do **not** depend on Go; they extract helper functions from `install.sh` / `install.ps1` via awk / PowerShell AST and exercise them in-process. Run them whenever you touch the installers.
 
+### Test fixtures
+
+Tests construct `config.Bundle` values from real YAML files under each package's `testdata/` directory instead of inline Go literals. This keeps test inputs identical to what the parser sees in production from `defaults/omakiten.yaml` — there is no "works in tests, fails in prod" drift.
+
+The single loader entry point lives in `internal/testfixtures`:
+
+```go
+import "omakiten/internal/testfixtures"
+
+func TestSomething(t *testing.T) {
+    bundle := testfixtures.LoadBundle(t, "policy_comment_inherits_task.yaml")
+    // ...
+}
+```
+
+`LoadBundle(t, name)` reads `<package-dir>/testdata/<name>` relative to the calling test's package. `LoadBundleFromAbsPath(t, path)` covers the rare cross-package fixture. Both helpers terminate the test via `t.Fatalf` on parse/read failure — callers do not thread errors.
+
+**Conventions:**
+- One fixture per scenario; one scenario per file.
+- Naming: `<feature>_<scenario>.yaml` (e.g. `policy_comment_inherits_task.yaml`). Avoid generic names — the filename documents the test.
+- Every fixture begins with a YAML comment describing the scenario, expected resolver behavior, and what a passing test proves. If a test reads a fixture and the comment is wrong, fix the comment first — it is the source of truth.
+- Add a new fixture when the policy shape differs; reuse an existing one when only the task or keystroke varies. Two near-identical files beat one with mental-overlay comments.
+
+**Limitation:** `config.Bundle.{Skills,Personas,Laws}` carry `yaml:"-"` because production loads them from per-entity folders next to the YAML, not from the YAML itself. Tests that need those entities wire them in Go after `LoadBundle` returns — see `internal/app/context_service_test.go` for the canonical pattern.
+
 Coverage target: don't drop below the current baseline.
 
 ```bash

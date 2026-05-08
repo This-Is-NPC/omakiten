@@ -111,11 +111,12 @@ The `primary` flag identifies the focal verb(s) of the surface (e.g. `enter open
 | `← ↑ ↓ →` · `h j k l` | navigate lanes and tasks (auto-scrolls column) |
 | `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll focused column by page |
 | `g` · `G` | first / last card in column |
-| `enter` | open task |
+| `enter` | open task (delete and edit live inside the task view) |
 | `n` | new task |
 | `e` | edit task |
 | `c` | add comment |
 | `m` | move task between lanes |
+| `A` | toggle archived tasks (hidden by default; archived rows render dimmed) |
 
 ### Tasks › Table
 
@@ -124,10 +125,11 @@ The `primary` flag identifies the focal verb(s) of the surface (e.g. `enter open
 | `↑ ↓` · `j k` | select task (auto-scrolls) |
 | `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
 | `g` · `G` | first / last task |
-| `enter` | open task |
+| `enter` | open task (delete and edit live inside the task view) |
 | `n` | new task |
 | `e` | edit task |
 | `m` | move by bucket key |
+| `A` | toggle archived tasks (hidden by default) |
 
 ### Tasks › Graph
 
@@ -220,6 +222,8 @@ These open on top of a zone/sub and intercept all input until dismissed. The con
 
 ### Task view (after `enter` on a task card)
 
+Destructive verbs live inside the entered surface only — the board has no `d` shortcut. Pressing `e` or `d` runs a policy pre-check; if the bucket forbids it the guard hint surfaces in the status badge instead of opening the form.
+
 | Key | Action |
 |---|---|
 | `tab` · `shift+tab` | switch focus (form ⇄ activity column) |
@@ -228,10 +232,11 @@ These open on top of a zone/sub and intercept all input until dismissed. The con
 | `enter` | open the focused comment in the comment-detail view |
 | `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
 | `g` · `G` | jump to top / bottom |
-| `e` | edit |
+| `e` | edit task (form-column focus only; gated by `permissions.task.edit`) |
 | `b` | edit blockers (opens the blocker picker) |
 | `c` | add comment |
 | `m` | move |
+| `d` `d` | arm hard-delete the task, then confirm (form-column focus only; gated by `permissions.task.delete` and `operations.delete.guards`) |
 | `esc` | back |
 
 ### Comment view (after `enter` on a comment)
@@ -241,14 +246,19 @@ These open on top of a zone/sub and intercept all input until dismissed. The con
 | `↑ ↓` · `j k` | scroll body |
 | `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
 | `g` · `G` | jump to top / bottom |
+| `e` | edit comment body (gated by `permissions.comment.edit`) |
+| `d` `d` | arm delete the comment, then confirm (gated by `permissions.comment.delete`) |
 | `esc` | back |
 
-### Comment input (after `c`)
+### Comment input (after `c` to add or `e` to edit)
+
+The same multi-line input renders for new comments and for edit-existing comments; in edit mode the body is pre-filled with the existing text so the caret lands ready to refine in place.
 
 | Key | Action |
 |---|---|
-| `enter` | save comment |
+| `enter` | save (creates a new comment, or saves the edit) |
 | `alt+enter` · `shift+enter` | insert newline |
+| `↑ ↓ ← →` · `home` · `end` | caret navigation within the body |
 | `esc` | cancel |
 
 ### Task form (`n` to create, `e` to edit)
