@@ -13,14 +13,14 @@ import (
 
 func TestConfigServiceImport(t *testing.T) {
 	ctx := context.Background()
-	store, _ := appTestStore(t, appTestBundle(1000))
+	store, _ := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	service := NewConfigService(store, configstore.New())
 
 	tmp := t.TempDir()
 	validPath := filepath.Join(tmp, "omakiten.yaml")
-	data, _ := yaml.Marshal(appTestBundle(1000))
+	data, _ := yaml.Marshal(appTestBundle(t, 1000))
 	if err := os.WriteFile(validPath, data, 0644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}

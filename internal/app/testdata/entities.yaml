@@ -1,0 +1,59 @@
+# Scenario: bundle for tests that exercise law/skill/persona services.
+# Carries a richer entity set than default.yaml — two skills, one persona
+# wired to both, one law — so the tests can verify list/edit/remove paths
+# return the right entities. Workflow shape mirrors default.yaml because
+# these tests do not care about policy.
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default Kit
+config:
+  output:
+    json_minified: true
+    omit_empty: true
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin
+skills:
+  - slug: go
+    name: Go
+    description: Go language.
+  - slug: sqlite
+    name: SQLite
+    description: SQLite stack.
+personas:
+  - slug: backend-agent
+    name: Backend Agent
+    description: Backend persona
+    skills:
+      - go
+      - sqlite
+laws:
+  - slug: scope
+    severity: error
+    body: Stay in scope.
+    scope: global
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    defaults:
+      task:    { edit: true, delete: true }
+      comment: { edit: true, delete: true }
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1
+      - id: 2
+        key: dev
+        name: Development
+        position: 2
+    transitions:
+      - from: 1
+        to: 2

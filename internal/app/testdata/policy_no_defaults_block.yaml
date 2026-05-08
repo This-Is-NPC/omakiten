@@ -1,0 +1,34 @@
+# Scenario: workflow has no `defaults` block at all and the only bucket
+# declares no `permissions` either. Expected behavior: every (entity, op)
+# pair walks the chain to the implicit fallback `true`. Documents the
+# user-stated rule "no rule = allow" — covers the bottom of the resolver
+# chain that the other fixtures don't reach.
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default
+config:
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1
+      - id: 2
+        key: dev
+        name: Development
+        position: 2
+    transitions:
+      - from: 1
+        to: 2

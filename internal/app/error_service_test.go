@@ -11,7 +11,7 @@ import (
 
 func TestErrorServiceEmitsAttributedDomainEvents(t *testing.T) {
 	ctx := activity.WithAgent(context.Background(), "mcp", "errors_record", "claude-opus-4-7", "sess-42")
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store)
@@ -88,7 +88,7 @@ type eventReader interface {
 
 func TestErrorServiceRecordValidatesDescription(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store)
@@ -102,7 +102,7 @@ func TestErrorServiceRecordValidatesDescription(t *testing.T) {
 
 func TestErrorServiceRecordNormalizesTags(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store)
@@ -121,7 +121,7 @@ func TestErrorServiceRecordNormalizesTags(t *testing.T) {
 
 func TestErrorServiceSearchByTag(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store)
@@ -144,7 +144,7 @@ func TestErrorServiceSearchByTag(t *testing.T) {
 
 func TestErrorServiceAddSolutionValidates(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store)
@@ -165,7 +165,7 @@ func TestErrorServiceAddSolutionValidates(t *testing.T) {
 
 func TestErrorServiceConfirmSolutionRanks(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store)
@@ -196,7 +196,7 @@ func TestErrorServiceConfirmSolutionRanks(t *testing.T) {
 
 func TestErrorServiceListTopSolutionsRanksByLikes(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store)
@@ -228,7 +228,7 @@ func TestErrorServiceListTopSolutionsRanksByLikes(t *testing.T) {
 
 func TestErrorServiceListTopSolutionsClampsLimit(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store)
@@ -253,7 +253,7 @@ func TestErrorServiceListTopSolutionsClampsLimit(t *testing.T) {
 
 func TestErrorServiceCrossProjectSearch(t *testing.T) {
 	ctx := context.Background()
-	store, projectA := appTestStore(t, appTestBundle(1000))
+	store, projectA := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	projectB, err := store.UpsertProject(ctx, "B", "b", "/work/b")
@@ -281,7 +281,7 @@ func TestErrorServiceCrossProjectSearch(t *testing.T) {
 
 func TestErrorServiceTagEntityIntegration(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	tagService := NewTagService(store)
@@ -317,7 +317,7 @@ func TestErrorServiceTagEntityIntegration(t *testing.T) {
 
 func TestErrorServiceTagEntityRequiresEntityID(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	tagService := NewTagService(store)

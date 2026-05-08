@@ -1,0 +1,38 @@
+# Scenario: minimal "kanban" workflow used by the first-bucket test in
+# sqlite. Three buckets (todo → wip → done). Permissive defaults so the
+# CreateTask path is not gated by policy — the test only proves the
+# workflow service falls into the first bucket when the caller passes no
+# bucket key.
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default
+config:
+  workflow:
+    active: kanban
+workflows:
+  - id: 1
+    key: kanban
+    name: Kanban
+    defaults:
+      task:    { edit: true, delete: true }
+      comment: { edit: true, delete: true }
+    buckets:
+      - id: 1
+        key: todo
+        name: To Do
+        position: 1
+      - id: 2
+        key: wip
+        name: In Progress
+        position: 2
+      - id: 3
+        key: done
+        name: Done
+        position: 3
+    transitions:
+      - from: 1
+        to: 2
+      - from: 2
+        to: 3

@@ -21,7 +21,7 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 		t.Fatalf("Open() = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -80,7 +80,7 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 		t.Fatalf("Open() = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -171,7 +171,7 @@ func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
 		t.Fatalf("Open() = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -215,7 +215,7 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 		t.Fatalf("Open() = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")

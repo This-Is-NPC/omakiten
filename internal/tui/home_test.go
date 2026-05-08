@@ -25,7 +25,7 @@ func TestNewModelWithEmptyProjectOpensHome(t *testing.T) {
 		t.Fatalf("Open() error = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	if _, err := store.UpsertProject(ctx, "Alpha", "alpha", "/work/alpha"); err != nil {
@@ -71,7 +71,7 @@ func TestHomeHidesTabBar(t *testing.T) {
 		t.Fatalf("Open() error = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	if _, err := store.UpsertProject(ctx, "Alpha", "alpha", "/work/alpha"); err != nil {
@@ -112,7 +112,7 @@ func TestCtrlHReturnsToHome(t *testing.T) {
 		t.Fatalf("Open() error = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -156,7 +156,7 @@ func TestHomeEnterSelectsProject(t *testing.T) {
 		t.Fatalf("Open() error = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	if _, err := store.UpsertProject(ctx, "Alpha", "alpha", "/work/alpha"); err != nil {
@@ -201,7 +201,7 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 		t.Fatalf("Open() error = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	if _, err := store.UpsertProject(ctx, "Alpha", "alpha", "/work/alpha"); err != nil {
@@ -241,7 +241,7 @@ func TestHomeRendersProjectTagBadges(t *testing.T) {
 		t.Fatalf("Open() error = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Alpha", "alpha", "/work/alpha")

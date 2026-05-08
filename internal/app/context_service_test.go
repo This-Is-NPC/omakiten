@@ -7,12 +7,13 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/sqlite"
+	"omakiten/internal/testfixtures"
 	"omakiten/internal/token"
 )
 
 func TestContextServiceDumpLevels(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	taskA, err := store.CreateTask(ctx, project.ID, "A", "Build A", "", "backlog")
@@ -67,7 +68,7 @@ func TestContextServiceDumpLevels(t *testing.T) {
 
 func TestContextServiceDumpRespectsTokenBudget(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1))
+	store, project := appTestStore(t, appTestBundle(t, 1))
 	defer func() { _ = store.Close() }()
 
 	service := NewContextService(store, store, store, store, store, token.ApproxCounter{})
@@ -88,7 +89,7 @@ func TestContextServiceDumpRespectsTokenBudget(t *testing.T) {
 
 func TestContextServiceAddValidates(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	service := NewContextService(store, store, store, store, store, token.ApproxCounter{})
@@ -107,7 +108,7 @@ func TestContextServiceAddValidates(t *testing.T) {
 
 func TestContextServiceDumpInvalidLevel(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	service := NewContextService(store, store, store, store, store, token.ApproxCounter{})
@@ -126,7 +127,7 @@ func TestContextServiceDumpInvalidLevel(t *testing.T) {
 
 func TestContextServiceDumpUnlimitedBudget(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(0))
+	store, project := appTestStore(t, appTestBundle(t, 0))
 	defer func() { _ = store.Close() }()
 
 	service := NewContextService(store, store, store, store, store, token.ApproxCounter{})
@@ -208,28 +209,18 @@ func appTestStore(t *testing.T, bundle config.Bundle) (*sqlite.Store, domain.Pro
 	return store, project
 }
 
-func appTestBundle(maxTokens int) config.Bundle {
-	return config.Bundle{
-		Version: 1,
-		Kit:     config.Kit{ID: 1, Key: "default", Name: "Default"},
-		Config: config.Settings{
-			Output:   config.OutputSettings{JSONMinified: true, OmitEmpty: true},
-			Context:  config.ContextSettings{DefaultLevel: 2, MaxTokens: maxTokens},
-			Workflow: config.WorkflowSettings{Active: "default"},
-			Theme:    config.ThemeSettings{Active: "catppuccin"},
-		},
-		Skills:   []config.Skill{{Slug: "go", Name: "Go"}},
-		Personas: []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}},
-		Laws:     []config.Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}},
-		Workflows: []config.Workflow{{
-			ID:   1,
-			Key:  "default",
-			Name: "Default",
-			Buckets: []config.Bucket{
-				{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
-				{ID: 2, Key: "dev", Name: "Development", Position: 2},
-			},
-			Transitions: []config.Transition{{From: 1, To: 2}},
-		}},
-	}
+// appTestBundle loads testdata/default.yaml for the workflow/policy/kit
+// shape, then layers minimal inline entities (skills/personas/laws) on
+// top. The entity arrays carry `yaml:"-"` in production — they are
+// populated by LoadBundle from per-entity folders, not from the YAML —
+// so tests that need them must wire them in Go. maxTokens varies per
+// test and is overlaid last.
+func appTestBundle(t *testing.T, maxTokens int) config.Bundle {
+	t.Helper()
+	bundle := testfixtures.LoadBundle(t, "default.yaml")
+	bundle.Config.Context.MaxTokens = maxTokens
+	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
+	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
+	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}}
+	return bundle
 }

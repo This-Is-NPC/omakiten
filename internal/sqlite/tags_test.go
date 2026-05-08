@@ -13,7 +13,7 @@ func openTestStore(t *testing.T) *Store {
 		t.Fatalf("Open() error = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	return store

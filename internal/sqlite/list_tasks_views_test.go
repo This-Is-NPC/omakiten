@@ -135,7 +135,7 @@ func openStoreWithProject(ctx context.Context, t *testing.T) (*Store, domain.Pro
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Test", "test", t.TempDir())

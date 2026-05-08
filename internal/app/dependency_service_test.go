@@ -9,7 +9,7 @@ import (
 
 func TestDependencyServiceAdd(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	taskService := NewTaskServiceFromStore(store)
@@ -67,7 +67,7 @@ func TestDependencyServiceAdd(t *testing.T) {
 
 func TestDependencyServiceRemove(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	taskService := NewTaskServiceFromStore(store)
@@ -92,7 +92,7 @@ func TestDependencyServiceRemove(t *testing.T) {
 
 func TestDependencyServiceSyncBlockers(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	taskService := NewTaskServiceFromStore(store)
@@ -145,7 +145,7 @@ func TestDependencyServiceSyncBlockers(t *testing.T) {
 
 func TestDependencyServiceList(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	taskService := NewTaskServiceFromStore(store)

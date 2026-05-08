@@ -6,61 +6,9 @@ import (
 	"testing"
 
 	"omakiten/internal/app"
-	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/testfixtures"
 )
-
-func boolPtr(b bool) *bool { return &b }
-
-// lifecycleBundle wires permissions and operations to exercise:
-//   - task.edit allowed in backlog, denied in dev, denied in done
-//   - task.delete allowed in done only
-//   - operations.delete.guards requires #justification
-//   - operations.archive.guards requires #archive-reason
-//   - comment policy partially overrides task policy in `dev`
-func lifecycleBundle() config.Bundle {
-	return config.Bundle{
-		Version: 1,
-		Kit:     config.Kit{ID: 1, Key: "default", Name: "Default"},
-		Config: config.Settings{
-			Output:   config.OutputSettings{JSONMinified: true, OmitEmpty: true},
-			Context:  config.ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
-			Workflow: config.WorkflowSettings{Active: "default"},
-			Theme:    config.ThemeSettings{Active: "catppuccin"},
-		},
-		Workflows: []config.Workflow{{
-			ID:   1,
-			Key:  "default",
-			Name: "Default",
-			Buckets: []config.Bucket{
-				{ID: 1, Key: "backlog", Name: "Backlog", Position: 1, Permissions: &config.BucketPermissions{
-					Task: &config.EntityPermission{Edit: boolPtr(true), Delete: boolPtr(false)},
-				}},
-				{ID: 2, Key: "dev", Name: "Development", Position: 2, Permissions: &config.BucketPermissions{
-					Task: &config.EntityPermission{Edit: boolPtr(false), Delete: boolPtr(false)},
-					// Comments inherit edit=false but override delete=true.
-					Comment: &config.EntityPermission{Delete: boolPtr(true)},
-				}},
-				{ID: 3, Key: "done", Name: "Done", Position: 3, Permissions: &config.BucketPermissions{
-					Task: &config.EntityPermission{Edit: boolPtr(false), Delete: boolPtr(true)},
-				}},
-			},
-			Transitions: []config.Transition{
-				{From: 1, To: 2},
-				{From: 2, To: 3},
-				{From: 3, To: 2},
-			},
-			Operations: config.WorkflowOperations{
-				Archive: config.OperationPolicy{Guards: []config.TransitionGuard{{
-					Type: "comments_tagged", Tag: "archive-reason", Count: 1, Hint: "tag a #archive-reason comment first",
-				}}},
-				Delete: config.OperationPolicy{Guards: []config.TransitionGuard{{
-					Type: "comments_tagged", Tag: "justification", Count: 1, Hint: "tag a #justification comment first",
-				}}},
-			},
-		}},
-	}
-}
 
 func setupLifecycle(t *testing.T) (context.Context, *Store, domain.ProjectContext) {
 	t.Helper()
@@ -70,7 +18,8 @@ func setupLifecycle(t *testing.T) (context.Context, *Store, domain.ProjectContex
 		t.Fatalf("Open() error = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	if err := store.ImportBundle(ctx, lifecycleBundle(), "test.yaml", "hash"); err != nil {
+	bundle := testfixtures.LoadBundle(t, "lifecycle_policy.yaml")
+	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")

@@ -40,7 +40,7 @@ func newPickerModel(t *testing.T) (Model, string) {
 	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
 	dbPath := filepath.Join(tmp, "omakiten.db")
 
-	if err := config.SaveFullBundle(configPath, tuiTestBundle()); err != nil {
+	if err := config.SaveFullBundle(configPath, tuiTestBundle(t)); err != nil {
 		t.Fatalf("SaveFullBundle() error = %v", err)
 	}
 

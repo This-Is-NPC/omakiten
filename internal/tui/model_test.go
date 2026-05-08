@@ -13,6 +13,7 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/sqlite"
+	"omakiten/internal/testfixtures"
 	"omakiten/internal/token"
 )
 
@@ -24,7 +25,7 @@ func TestModelSwitchesViews(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -54,7 +55,7 @@ func TestModelTableAndGraphShowCounts(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -98,7 +99,7 @@ func TestModelTablesUseWideTerminalSpace(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -175,7 +176,7 @@ func TestModelLoadsActivityLogsWhenOpeningLogsView(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -224,7 +225,7 @@ func TestModelRefreshKeyUpdatesActivityLogs(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -275,7 +276,7 @@ func TestModelRealtimeTickRefreshesBoardTasks(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -318,7 +319,7 @@ func TestModelOpensExistingTaskScreen(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -385,7 +386,7 @@ func TestModelAddsMultilineCommentInsideTaskCommentsPanel(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -454,7 +455,7 @@ func TestModelCreatesTaskFromDedicatedScreen(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -480,7 +481,7 @@ func TestModelCreatesTaskFromDedicatedScreen(t *testing.T) {
 	}
 
 	got = pressKey(t, got, tea.KeyTab)
-	descriptionInput := got.renderTaskDescriptionInput()
+	descriptionInput := got.renderTaskDescriptionField(got.taskFormWidth())
 	if lipgloss.Width(descriptionInput) < taskFormInputWidth || lipgloss.Height(descriptionInput) < taskDescriptionInputHeight {
 		t.Fatalf("description input size = %dx%d, want at least %dx%d", lipgloss.Width(descriptionInput), lipgloss.Height(descriptionInput), taskFormInputWidth, taskDescriptionInputHeight)
 	}
@@ -551,7 +552,7 @@ func TestModelEditsTaskAndReturnsToView(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -601,7 +602,7 @@ func TestModelSetsTaskBlockersFromPicker(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -671,7 +672,7 @@ func TestModelBoardMoveSurfacesWorkflowBlock(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -728,7 +729,7 @@ func TestModelTaskViewWrapsLongPropertyTextWithoutBreakingGrid(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -794,7 +795,7 @@ func TestModelBoardCollapsesToFocusedColumnWhenNarrow(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -844,7 +845,7 @@ func TestModelBoardShowsMultipleColumnsWhenTheyFit(t *testing.T) {
 		t.Fatalf("Open() error = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, multiBucketBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, multiBucketBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -882,7 +883,7 @@ func TestModelBoardLaneNavigationWrapsAround(t *testing.T) {
 		t.Fatalf("Open() error = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, multiBucketBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, multiBucketBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -928,7 +929,7 @@ func TestModelSettingsLawsRendersOwnColumnWhenNarrow(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -964,7 +965,7 @@ func TestModelHelpDefaultsToCurrentContext(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -1005,7 +1006,7 @@ func TestModelCancelsTaskCreateWithoutPersisting(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -1044,7 +1045,7 @@ func TestNavHeaderRendersTopAndSubKickers(t *testing.T) {
 		t.Fatalf("Open() error = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -1099,7 +1100,7 @@ func TestSubCycleBindings(t *testing.T) {
 		t.Fatalf("Open() error = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -1149,7 +1150,7 @@ func TestCtrlOPopsBackStack(t *testing.T) {
 		t.Fatalf("Open() error = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -1200,7 +1201,7 @@ func TestHomeTileEmbeddedInTopStrip(t *testing.T) {
 		t.Fatalf("Open() error = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -1222,6 +1223,381 @@ func TestHomeTileEmbeddedInTopStrip(t *testing.T) {
 	tasksIdx := strings.Index(view, "01 // TASKS")
 	if homeIdx < 0 || tasksIdx < 0 || homeIdx >= tasksIdx {
 		t.Fatalf("HOME tile must render before TASKS in the strip; homeIdx=%d, tasksIdx=%d", homeIdx, tasksIdx)
+	}
+}
+
+// TestModelDeletesTaskFromTaskViewWithDoubleD covers the new arm-then-confirm
+// `d`/`d` shortcut. Delete only fires from inside the task view with the
+// form column focused — the user has to commit to the task first, mirroring
+// the destructive-action gating the user asked for.
+func TestModelDeletesTaskFromTaskViewWithDoubleD(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "Doomed", "", "", "backlog")
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	got := pressKey(t, model, tea.KeyEnter) // open task view
+	if got.taskScreen != taskScreenView {
+		t.Fatalf("taskScreen = %v, want taskScreenView (must enter the task before deleting)", got.taskScreen)
+	}
+
+	armed := pressRune(t, got, 'd')
+	if armed.taskDeletePendingID != task.ID {
+		t.Fatalf("taskDeletePendingID = %d, want %d", armed.taskDeletePendingID, task.ID)
+	}
+	if !strings.Contains(armed.status, "Confirm delete task") {
+		t.Fatalf("status = %q, want a confirm-delete prompt", armed.status)
+	}
+
+	confirmed := pressRune(t, armed, 'd')
+	if confirmed.taskDeletePendingID != 0 {
+		t.Fatalf("taskDeletePendingID = %d, want cleared after confirm", confirmed.taskDeletePendingID)
+	}
+	tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{IncludeArchived: true})
+	if err != nil {
+		t.Fatalf("ListTasks() error = %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Fatalf("ListTasks() = %d tasks, want 0 (delete must hard-remove the row)", len(tasks))
+	}
+}
+
+// TestModelBlocksTaskEditOnPressWhenBucketForbids covers the pre-check
+// gate: pressing `e` on a task whose current bucket forbids edit must
+// surface the policy hint immediately and refuse to open the form. The
+// service still re-runs the policy on save, but the user should never
+// type into a modal that is doomed to fail.
+//
+func TestModelBlocksTaskEditOnPressWhenBucketForbids(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Default policy: edit allowed only on the workflow's first bucket.
+	// The fixture has backlog → dev; placing the task in dev means edit
+	// is forbidden under the canonical default.
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	if _, err := store.CreateTask(ctx, project.ID, "Locked", "", "", "dev"); err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	// Cursor starts in the first column (backlog) which is empty; move
+	// right to land on the dev column where the task lives.
+	got := pressKey(t, model, tea.KeyRight)
+	got = pressKey(t, got, tea.KeyEnter)
+	if got.taskScreen != taskScreenView {
+		t.Fatalf("taskScreen = %v, want taskScreenView", got.taskScreen)
+	}
+	got = pressRune(t, got, 'e')
+	if got.taskScreen != taskScreenView {
+		t.Fatalf("taskScreen = %v after blocked edit; want taskScreen unchanged (edit must not open)", got.taskScreen)
+	}
+	if !strings.Contains(got.status, "policy:") || !strings.Contains(got.status, "task.edit") {
+		t.Fatalf("status = %q, want a policy hint mentioning task.edit", got.status)
+	}
+}
+
+// TestModelBlocksTaskDeleteArmWhenBucketForbids mirrors the edit gate for
+// the destructive `d` arm. The first press in a forbidden bucket should
+// surface the policy hint and skip the arm — the user should not see a
+// "Confirm delete..." prompt for an action that cannot succeed.
+//
+func TestModelBlocksTaskDeleteArmWhenBucketForbids(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	// Default delete policy is "false everywhere" — every bucket forbids
+	// delete unless explicitly opted in. backlog suffices for the fixture.
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	if _, err := store.CreateTask(ctx, project.ID, "Locked", "", "", "backlog"); err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	got := pressKey(t, model, tea.KeyEnter)
+	got = pressRune(t, got, 'd')
+	if got.taskDeletePendingID != 0 {
+		t.Fatalf("taskDeletePendingID = %d, want 0 (forbidden delete must not arm)", got.taskDeletePendingID)
+	}
+	if !strings.Contains(got.status, "policy:") || !strings.Contains(got.status, "task.delete") {
+		t.Fatalf("status = %q, want a policy hint mentioning task.delete", got.status)
+	}
+}
+
+// TestModelBoardDoesNotArmDeleteOnD locks down the rule that destructive
+// actions are not reachable from the board — pressing `d` on a card must
+// be a no-op so an accidental keystroke cannot wipe a row the user has
+// not committed to.
+func TestModelBoardDoesNotArmDeleteOnD(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	if _, err := store.CreateTask(ctx, project.ID, "Survives", "", "", "backlog"); err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	got := pressRune(t, model, 'd')
+	if got.taskDeletePendingID != 0 {
+		t.Fatalf("board-level `d` must not arm delete; taskDeletePendingID = %d", got.taskDeletePendingID)
+	}
+	got = pressRune(t, got, 'd')
+	tasks, _ := store.ListTasks(ctx, project.ID, domain.TaskFilter{})
+	if len(tasks) != 1 {
+		t.Fatalf("ListTasks() = %d, want 1 (board `d` must not delete)", len(tasks))
+	}
+}
+
+// TestModelCancelsArmedTaskDeleteOnNavigation ensures any non-`d` keystroke
+// inside the task view disarms a pending delete prompt so the second `d`
+// cannot fire after the user moved focus or pressed something unrelated.
+func TestModelCancelsArmedTaskDeleteOnNavigation(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	if _, err := store.CreateTask(ctx, project.ID, "Survives", "", "", "backlog"); err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	got := pressKey(t, model, tea.KeyEnter)
+	armed := pressRune(t, got, 'd')
+	if armed.taskDeletePendingID == 0 {
+		t.Fatalf("expected armed pending after first d")
+	}
+	// `r` triggers a refresh — a non-`d` key that should disarm the prompt
+	// without otherwise touching the task.
+	disarmed := pressRune(t, armed, 'r')
+	if disarmed.taskDeletePendingID != 0 {
+		t.Fatalf("taskDeletePendingID = %d, want cleared by `r` navigation", disarmed.taskDeletePendingID)
+	}
+	tasks, _ := store.ListTasks(ctx, project.ID, domain.TaskFilter{})
+	if len(tasks) != 1 {
+		t.Fatalf("ListTasks() = %d, want 1 (delete must not have fired)", len(tasks))
+	}
+}
+
+// TestModelDeletesCommentFromCommentScreen covers the `d`/`d` shortcut
+// inside the dedicated comment screen — the user must enter the comment
+// (Enter on a focused activity card) before any destructive verb is
+// reachable. Comment delete enforces the bucket permissions.comment.delete
+// policy via CommentService.Remove.
+func TestModelDeletesCommentFromCommentScreen(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	comment, err := store.AddComment(ctx, project.ID, task.ID, "Comment to remove", "human", nil)
+	if err != nil {
+		t.Fatalf("AddComment() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	got := pressKey(t, model, tea.KeyEnter) // open task view
+	got = pressKey(t, got, tea.KeyTab)      // focus activity column
+	if got.taskFocus != taskFocusActivity {
+		t.Fatalf("taskFocus = %v, want activity", got.taskFocus)
+	}
+	// Activity feed is chronological: events[0] is the task.created system
+	// event, events[1] is the comment we just added. Advance past the
+	// system event so Enter lands on the comment.
+	got = pressStringKey(t, got, "J")
+	if got.activityCursor != 1 {
+		t.Fatalf("activityCursor = %d, want 1 (comment row)", got.activityCursor)
+	}
+	got = pressKey(t, got, tea.KeyEnter)
+	if !got.commentScreenOpen || got.commentScreenID != comment.ID {
+		t.Fatalf("commentScreenOpen = %v, commentScreenID = %d, want true / %d", got.commentScreenOpen, got.commentScreenID, comment.ID)
+	}
+
+	armed := pressRune(t, got, 'd')
+	if armed.commentDeletePendingID != comment.ID {
+		t.Fatalf("commentDeletePendingID = %d, want %d", armed.commentDeletePendingID, comment.ID)
+	}
+
+	confirmed := pressRune(t, armed, 'd')
+	if confirmed.commentDeletePendingID != 0 {
+		t.Fatalf("commentDeletePendingID = %d, want cleared after confirm", confirmed.commentDeletePendingID)
+	}
+	if confirmed.commentScreenOpen {
+		t.Fatalf("commentScreenOpen = true, want auto-closed after delete")
+	}
+	remaining, err := store.ListComments(ctx, project.ID, task.ID)
+	if err != nil {
+		t.Fatalf("ListComments() error = %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("ListComments() = %d, want 0 (comment should be hard-deleted)", len(remaining))
+	}
+}
+
+// TestModelEditsCommentFromCommentScreen covers the `e` shortcut from the
+// dedicated comment screen: open a pre-filled modal seeded with the
+// existing body, rewrite it, save through CommentService.Edit
+// (workflow-aware so bucket policy is enforced).
+func TestModelEditsCommentFromCommentScreen(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	comment, err := store.AddComment(ctx, project.ID, task.ID, "Original body", "human", nil)
+	if err != nil {
+		t.Fatalf("AddComment() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	got := pressKey(t, model, tea.KeyEnter)
+	got = pressKey(t, got, tea.KeyTab)
+	// Skip past the chronologically-first task.created system event so
+	// Enter on the activity card opens the comment we want to edit.
+	got = pressStringKey(t, got, "J")
+	got = pressKey(t, got, tea.KeyEnter)
+	if !got.commentScreenOpen {
+		t.Fatalf("commentScreenOpen = false, want true after entering the comment")
+	}
+	got = pressRune(t, got, 'e')
+	if got.mode != modeCommentEdit {
+		t.Fatalf("mode = %v, want modeCommentEdit", got.mode)
+	}
+	if got.commentEditID != comment.ID {
+		t.Fatalf("commentEditID = %d, want %d", got.commentEditID, comment.ID)
+	}
+	if got.commentScreenOpen {
+		t.Fatalf("commentScreenOpen = true, want closed once edit modal opens")
+	}
+	if !got.isEmbeddedCommentInput() {
+		t.Fatalf("isEmbeddedCommentInput() = false, want true under modeCommentEdit")
+	}
+	if got.commentInput.Value() != "Original body" {
+		t.Fatalf("commentInput.Value() = %q, want pre-filled with original body", got.commentInput.Value())
+	}
+
+	// Erase the original body via repeated backspace so we test caret
+	// editing instead of a blunt SetValue. bubbles' textarea handles
+	// rune-aware backspace at the cursor, mirroring real-terminal UX.
+	got = pressBackspace(t, got, len("Original body"))
+	got = sendText(t, got, "Rewritten body")
+	got = pressKey(t, got, tea.KeyEnter)
+
+	if got.mode != modeNormal {
+		t.Fatalf("mode after enter = %v, want modeNormal", got.mode)
+	}
+	if got.commentEditID != 0 {
+		t.Fatalf("commentEditID = %d, want cleared after save", got.commentEditID)
+	}
+	comments, err := store.ListComments(ctx, project.ID, task.ID)
+	if err != nil {
+		t.Fatalf("ListComments() error = %v", err)
+	}
+	if len(comments) != 1 || comments[0].Body != "Rewritten body" {
+		t.Fatalf("ListComments() = %+v, want one comment with body %q", comments, "Rewritten body")
 	}
 }
 
@@ -1283,47 +1659,41 @@ func pressBackspace(t *testing.T, model Model, count int) Model {
 	return got
 }
 
-func tuiTestBundle() config.Bundle {
-	return config.Bundle{
-		Version: 1,
-		Kit:     config.Kit{ID: 1, Key: "default", Name: "Default"},
-		Config: config.Settings{
-			Output:   config.OutputSettings{JSONMinified: true, OmitEmpty: true},
-			Context:  config.ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
-			Workflow: config.WorkflowSettings{Active: "default"},
-			Theme:    config.ThemeSettings{Active: "catppuccin"},
-		},
-		Skills:   []config.Skill{{Slug: "go", Name: "Go"}},
-		Personas: []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}},
-		Laws:     []config.Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}},
-		Workflows: []config.Workflow{{
-			ID:   1,
-			Key:  "default",
-			Name: "Default",
-			Buckets: []config.Bucket{
-				{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
-				{ID: 2, Key: "dev", Name: "Development", Position: 2},
-			},
-			Transitions: []config.Transition{{From: 1, To: 2}},
-		}},
-	}
+// tuiTestBundle loads the default 2-bucket workflow used by most TUI
+// tests. testdata/default_workflow.yaml carries strict defaults + a
+// backlog opt-in that mirrors the legacy "edit only on first bucket"
+// semantics. Skills/Personas/Laws are wired in Go because config.Bundle
+// marks those fields `yaml:"-"`.
+func tuiTestBundle(t *testing.T) config.Bundle {
+	t.Helper()
+	bundle := testfixtures.LoadBundle(t, "default_workflow.yaml")
+	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
+	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
+	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}}
+	return bundle
 }
 
-// multiBucketBundle returns a bundle with the same wiring as tuiTestBundle
-// but a 4-bucket workflow so tests can exercise the horizontal sliding
-// window in renderBoard at narrower widths.
-func multiBucketBundle() config.Bundle {
-	b := tuiTestBundle()
-	b.Workflows[0].Buckets = []config.Bucket{
-		{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
-		{ID: 2, Key: "dev", Name: "Development", Position: 2},
-		{ID: 3, Key: "review", Name: "Review", Position: 3},
-		{ID: 4, Key: "done", Name: "Done", Position: 4},
-	}
-	b.Workflows[0].Transitions = []config.Transition{
-		{From: 1, To: 2}, {From: 2, To: 3}, {From: 3, To: 4},
-	}
-	return b
+// tuiPermissiveBundle loads the all-allow fixture for tests that exercise
+// the success path of policy-gated keybindings.
+func tuiPermissiveBundle(t *testing.T) config.Bundle {
+	t.Helper()
+	bundle := testfixtures.LoadBundle(t, "permissive.yaml")
+	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
+	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
+	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}}
+	return bundle
+}
+
+// multiBucketBundle loads the 4-bucket fixture used by board-rendering
+// tests that assert the horizontal sliding window. Defaults permissive
+// because these tests care about geometry, not policy.
+func multiBucketBundle(t *testing.T) config.Bundle {
+	t.Helper()
+	bundle := testfixtures.LoadBundle(t, "multi_bucket.yaml")
+	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
+	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
+	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}}
+	return bundle
 }
 
 func tuiTestTheme() config.Theme {

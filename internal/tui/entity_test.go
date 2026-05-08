@@ -25,7 +25,7 @@ func newEntityModel(t *testing.T) (Model, *sqlite.Store, *app.BundleEditor) {
 	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
 	dbPath := filepath.Join(tmp, "omakiten.db")
 
-	if err := config.SaveFullBundle(configPath, tuiTestBundle()); err != nil {
+	if err := config.SaveFullBundle(configPath, tuiTestBundle(t)); err != nil {
 		t.Fatalf("SaveFullBundle() error = %v", err)
 	}
 
@@ -179,7 +179,7 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
 	dbPath := filepath.Join(tmp, "omakiten.db")
 
-	bundle := tuiTestBundle()
+	bundle := tuiTestBundle(t)
 	if err := config.SaveFullBundle(configPath, bundle); err != nil {
 		t.Fatalf("SaveFullBundle() error = %v", err)
 	}

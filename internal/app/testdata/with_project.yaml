@@ -1,0 +1,32 @@
+# Scenario: bundle for template-service tests that need a registered
+# Project so SetDefault can claim project-scoped bindings. Single-bucket
+# workflow because these tests do not move tasks; permissive defaults so
+# the policy chain stays out of the way.
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default
+config:
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin
+projects:
+  - slug: demo
+    name: Demo Project
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    defaults:
+      task:    { edit: true, delete: true }
+      comment: { edit: true, delete: true }
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1

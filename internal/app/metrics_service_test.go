@@ -8,7 +8,7 @@ import (
 )
 
 func TestMetricsServiceSummaryAggregatesPerModel(t *testing.T) {
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	errService := NewErrorService(store)
@@ -136,7 +136,7 @@ func TestMetricsServiceSummaryAggregatesPerModel(t *testing.T) {
 }
 
 func TestMetricsServiceSummaryDefaultsPeriodTo30d(t *testing.T) {
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	metrics := NewMetricsService(store)

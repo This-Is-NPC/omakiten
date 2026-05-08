@@ -8,6 +8,7 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/testfixtures"
 )
 
 func TestStoreProjectScopedTasks(t *testing.T) {
@@ -18,7 +19,7 @@ func TestStoreProjectScopedTasks(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -62,7 +63,7 @@ func TestMoveTaskEnforcesWorkflow(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -107,7 +108,7 @@ func TestStoreOperationalDataIsProjectScoped(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -184,7 +185,7 @@ func TestDependencyServiceRejectsCycle(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
@@ -216,7 +217,7 @@ func TestStoreActiveWorkflow(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	workflow, err := store.ActiveWorkflow(ctx)
@@ -234,31 +235,16 @@ func TestStoreActiveWorkflow(t *testing.T) {
 	}
 }
 
-func sqliteTestBundle() config.Bundle {
-	return config.Bundle{
-		Version: 1,
-		Kit:     config.Kit{ID: 1, Key: "default", Name: "Default"},
-		Config: config.Settings{
-			Output:   config.OutputSettings{JSONMinified: true, OmitEmpty: true},
-			Context:  config.ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
-			Workflow: config.WorkflowSettings{Active: "default"},
-			Theme:    config.ThemeSettings{Active: "catppuccin"},
-		},
-		Skills:   []config.Skill{{Slug: "go", Name: "Go"}},
-		Personas: []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}},
-		Laws:     []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}},
-		Workflows: []config.Workflow{{
-			ID:   1,
-			Key:  "default",
-			Name: "Default",
-			Buckets: []config.Bucket{
-				{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
-				{ID: 2, Key: "dev", Name: "Development", Position: 2},
-				{ID: 3, Key: "done", Name: "Done", Position: 3},
-			},
-			Transitions: []config.Transition{{From: 1, To: 2}},
-		}},
-	}
+// sqliteTestBundle loads the shared 3-bucket fixture used by store-level
+// tests and adds the inline entity arrays (skills/personas/laws) that
+// production loads from per-entity folders.
+func sqliteTestBundle(t *testing.T) config.Bundle {
+	t.Helper()
+	bundle := testfixtures.LoadBundle(t, "default_three_buckets.yaml")
+	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
+	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
+	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}}
+	return bundle
 }
 
 func TestStoreFindProject(t *testing.T) {
@@ -269,7 +255,7 @@ func TestStoreFindProject(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -365,7 +351,7 @@ func TestStoreListActiveEntities(t *testing.T) {
 	}
 
 	// After import
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -386,7 +372,7 @@ func TestStoreUpdateTask(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -423,7 +409,7 @@ func TestStoreTaskCount(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -462,7 +448,7 @@ func TestStoreRemoveTaskDependency(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -492,7 +478,7 @@ func TestStoreMoveTaskErrors(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -519,8 +505,9 @@ func TestStoreMoveTaskErrors(t *testing.T) {
 	}
 }
 
-func bundleWithBlockersInGuard() config.Bundle {
-	b := sqliteTestBundle()
+func bundleWithBlockersInGuard(t *testing.T) config.Bundle {
+	t.Helper()
+	b := sqliteTestBundle(t)
 	b.Workflows[0].Transitions = []config.Transition{{
 		From: 1, To: 2,
 		Guards: []config.TransitionGuard{{Type: "blockers_in", Buckets: []string{"done"}}},
@@ -528,8 +515,9 @@ func bundleWithBlockersInGuard() config.Bundle {
 	return b
 }
 
-func bundleWithCommentsMinGuard(minCount int) config.Bundle {
-	b := sqliteTestBundle()
+func bundleWithCommentsMinGuard(t *testing.T, minCount int) config.Bundle {
+	t.Helper()
+	b := sqliteTestBundle(t)
 	b.Workflows[0].Transitions = []config.Transition{{
 		From: 1, To: 2,
 		Guards: []config.TransitionGuard{{Type: "comments_min", Count: minCount}},
@@ -537,8 +525,9 @@ func bundleWithCommentsMinGuard(minCount int) config.Bundle {
 	return b
 }
 
-func bundleWithCommentsTaggedGuard(tag string, minCount int) config.Bundle {
-	b := sqliteTestBundle()
+func bundleWithCommentsTaggedGuard(t *testing.T, tag string, minCount int) config.Bundle {
+	t.Helper()
+	b := sqliteTestBundle(t)
 	b.Workflows[0].Transitions = []config.Transition{{
 		From: 1, To: 2,
 		Guards: []config.TransitionGuard{{Type: "comments_tagged", Tag: tag, Count: minCount}},
@@ -554,7 +543,7 @@ func TestMoveTaskGuardBlockersIn(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, bundleWithBlockersInGuard(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, bundleWithBlockersInGuard(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -602,7 +591,7 @@ func TestMoveTaskGuardBlockersInNoBlockers(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, bundleWithBlockersInGuard(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, bundleWithBlockersInGuard(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -628,7 +617,7 @@ func TestMoveTaskGuardCommentsMin(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, bundleWithCommentsMinGuard(1), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, bundleWithCommentsMinGuard(t, 1), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -669,7 +658,7 @@ func TestMoveTaskNoGuardUnaffected(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -699,7 +688,7 @@ func TestMoveTaskGuardCommentsTagged(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, bundleWithCommentsTaggedGuard("resume", 1), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, bundleWithCommentsTaggedGuard(t, "resume", 1), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 

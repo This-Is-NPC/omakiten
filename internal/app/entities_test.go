@@ -12,6 +12,7 @@ import (
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
 	"omakiten/internal/sqlite"
+	"omakiten/internal/testfixtures"
 )
 
 type entitiesFixture struct {
@@ -29,7 +30,7 @@ func newEntitiesFixture(t *testing.T) entitiesFixture {
 	configPath := filepath.Join(configDir, "omakiten.yaml")
 	dbPath := filepath.Join(tmp, "omakiten.db")
 
-	if err := config.SaveFullBundle(configPath, fixtureBundle()); err != nil {
+	if err := config.SaveFullBundle(configPath, fixtureBundle(t)); err != nil {
 		t.Fatalf("SaveFullBundle() error = %v", err)
 	}
 
@@ -49,37 +50,24 @@ func newEntitiesFixture(t *testing.T) entitiesFixture {
 	return entitiesFixture{store: store, editor: editor, files: files, configPath: configPath, configDir: configDir}
 }
 
-func fixtureBundle() config.Bundle {
-	return config.Bundle{
-		Version: 1,
-		Kit:     config.Kit{ID: 1, Key: "default", Name: "Default Kit"},
-		Config: config.Settings{
-			Output:   config.OutputSettings{JSONMinified: true, OmitEmpty: true},
-			Context:  config.ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
-			Workflow: config.WorkflowSettings{Active: "default"},
-			Theme:    config.ThemeSettings{Active: "catppuccin"},
-		},
-		Skills: []config.Skill{
-			{Slug: "go", Name: "Go", Description: "Go language."},
-			{Slug: "sqlite", Name: "SQLite", Description: "SQLite stack."},
-		},
-		Personas: []config.Persona{
-			{Slug: "backend-agent", Name: "Backend Agent", Description: "Backend persona", Skills: []string{"go", "sqlite"}},
-		},
-		Laws: []config.Law{
-			{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"},
-		},
-		Workflows: []config.Workflow{{
-			ID:   1,
-			Key:  "default",
-			Name: "Default",
-			Buckets: []config.Bucket{
-				{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
-				{ID: 2, Key: "dev", Name: "Development", Position: 2},
-			},
-			Transitions: []config.Transition{{From: 1, To: 2}},
-		}},
+// fixtureBundle loads the entities-flavored test bundle. testdata/entities.yaml
+// supplies the workflow + kit shape; the inline skills/personas/laws cover
+// the entity arrays that production loads from per-entity folders (and that
+// config.Bundle marks `yaml:"-"`).
+func fixtureBundle(t *testing.T) config.Bundle {
+	t.Helper()
+	bundle := testfixtures.LoadBundle(t, "entities.yaml")
+	bundle.Skills = []config.Skill{
+		{Slug: "go", Name: "Go", Description: "Go language."},
+		{Slug: "sqlite", Name: "SQLite", Description: "SQLite stack."},
 	}
+	bundle.Personas = []config.Persona{
+		{Slug: "backend-agent", Name: "Backend Agent", Description: "Backend persona", Skills: []string{"go", "sqlite"}},
+	}
+	bundle.Laws = []config.Law{
+		{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"},
+	}
+	return bundle
 }
 
 func TestLawServiceLifecycle(t *testing.T) {

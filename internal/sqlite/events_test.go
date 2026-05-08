@@ -13,8 +13,9 @@ import (
 // fullTransitionBundle wires every consecutive transition (1->2->3) so
 // MoveTask tests can walk a task all the way to the final bucket without
 // hitting workflow_invalid_transition along the way.
-func fullTransitionBundle() config.Bundle {
-	b := sqliteTestBundle()
+func fullTransitionBundle(t *testing.T) config.Bundle {
+	t.Helper()
+	b := sqliteTestBundle(t)
 	b.Workflows[0].Transitions = []config.Transition{
 		{From: 1, To: 2},
 		{From: 2, To: 3},
@@ -29,7 +30,7 @@ func openStoreWithFullTransitions(ctx context.Context, t *testing.T) (*Store, do
 		t.Fatalf("Open() = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	if err := store.ImportBundle(ctx, fullTransitionBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, fullTransitionBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Test", "test", t.TempDir())

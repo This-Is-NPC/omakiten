@@ -11,6 +11,7 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/sqlite"
+	"omakiten/internal/testfixtures"
 )
 
 func TestOverviewUsesResolvedProjectAndCompactState(t *testing.T) {
@@ -463,7 +464,7 @@ func newAgentStore(t *testing.T, ctx context.Context) *sqlite.Store {
 		t.Fatalf("Open() error = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	if err := store.ImportBundle(ctx, agentTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, agentTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	return store
@@ -483,29 +484,11 @@ func assertCodedError(t *testing.T, err error, code domain.ErrorCode) {
 	}
 }
 
-func agentTestBundle() config.Bundle {
-	return config.Bundle{
-		Version: 1,
-		Kit:     config.Kit{ID: 1, Key: "default", Name: "Default"},
-		Config: config.Settings{
-			Output:   config.OutputSettings{JSONMinified: true, OmitEmpty: true},
-			Context:  config.ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
-			Workflow: config.WorkflowSettings{Active: "default"},
-			Theme:    config.ThemeSettings{Active: "catppuccin"},
-		},
-		Skills:   []config.Skill{{Slug: "go", Name: "Go"}},
-		Personas: []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}},
-		Laws:     []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}},
-		Workflows: []config.Workflow{{
-			ID:   1,
-			Key:  "default",
-			Name: "Default",
-			Buckets: []config.Bucket{
-				{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
-				{ID: 2, Key: "dev", Name: "Development", Position: 2},
-				{ID: 3, Key: "done", Name: "Done", Position: 3},
-			},
-			Transitions: []config.Transition{{From: 1, To: 2}},
-		}},
-	}
+func agentTestBundle(t *testing.T) config.Bundle {
+	t.Helper()
+	bundle := testfixtures.LoadBundle(t, "default.yaml")
+	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
+	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
+	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}}
+	return bundle
 }
