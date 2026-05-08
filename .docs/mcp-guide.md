@@ -197,11 +197,14 @@ sequenceDiagram
 
     Note over Service: Reads bundle snapshots seeded<br/>at runtime startup — no DB hit.<br/>Effective laws =<br/>global ∪ persona ∪ command<br/>∪ template-bound,<br/>− laws_disabled, deduped.
 
-    Service->>Service: renderCommandMarkdown<br/>(persona + skills + laws +<br/>template metadata +<br/>action — bodies kept out)
+    Service->>Service: renderCommandMarkdown<br/>(persona description + body inline,<br/>skill names inline,<br/>law severity + name + body inline,<br/>template metadata only — body JIT,<br/>action text)
     Service-->>Adapter: ResolveCommandResponse{ Markdown, … }
+    Adapter->>Adapter: cache_prompts? attach<br/>cache_control: ephemeral hint
     Adapter-->>Server: PromptResult
     Server-->>Client: { messages:[ user/text ] }
     Client->>Agent: inject user message (fixed size, see table)
+
+    Note over Client,Agent: Subsequent prompts/get within<br/>the cache window reuse the cached<br/>body — ~90% cheaper.
 
     Note over Agent: Reads "## Action" block,<br/>decides which tool(s) to call.
 
@@ -231,13 +234,28 @@ Every prompt invocation injects **at least one message** (the composed prompt) a
 
 For action-heavy prompts (`okt-implement`, `okt-document`) the agent will fan out and call several tools — `progress.record`, `comments.add`, `tasks.move` — each one adding another tool result message to the window. Those are the agent's choice, not the prompt's structure.
 
-### Just-in-time templates
+### What ships inline vs JIT
 
-Bound templates ship as **metadata only** in the resolved prompt — slug, name, default kind, description — followed by a pointer telling the agent to call `templates.show <slug>` when ready to fill the scaffold. Bodies stay out of the prompt because they are large (the `pull-request` scaffold is ~700 tokens by itself), and the agent only needs them at the rare moment of materialization.
+Not every entity body trafega in the prompt. The renderer pre-loads what the agent needs at resolution time and defers heavy bodies to dedicated tools:
+
+| Entity | What ships in the prompt | When body is fetched |
+|---|---|---|
+| Persona | `description` + full `body` (inline under `## Persona`) | Always inline — body carries the role's procedural loop |
+| Skills | Names only, inline list under `## Skills — A, B, C` | Never — descriptions are decorative; procedure lives in persona body / action text |
+| Laws | `severity` + `name` + full `body` (inline under `## Laws`) | Always inline — laws are constraints that must frame every step |
+| Templates | Slug + optional name (when divergent from slug) + default kind + description | On demand via `templates.show <slug>` — bodies are large (the `pull-request` scaffold is ~700 tokens by itself) |
+
+The fetch hint for templates lives in the action text or the bound persona's body — not as a generic footer — so the prompt only mentions `templates.show` for commands that actually need it. `internal/agentruntime.TestTemplateBoundCommandsCarryFetchHint` enforces that contract: every `okt-*` prompt with bound templates must surface the hint somewhere in its rendered Markdown.
 
 This follows Anthropic's just-in-time context engineering principle: ship lightweight identifiers, let the agent fetch payloads on demand. The `template-fidelity` law remains pre-loaded (it is a constraint that must shape the fetch when it happens), but the body the constraint applies to lives behind a tool call.
 
 Trade-off: one extra MCP round-trip on the materialization step (only when the agent actually drafts the PR or fills the scaffold), in exchange for hundreds of tokens saved on every prompt resolution that does not reach materialization.
+
+### What does NOT ship in the prompt body
+
+- Prompt name and description — both already exposed via `prompts/list` metadata in the MCP protocol; aware clients surface them before calling `prompts/get`. Echoing them in the body would just duplicate bytes the agent already has.
+- Skill descriptions — see table above.
+- Law count parenthetical — `## Laws` carries no `(N)` suffix; the agent does not branch on the number.
 
 ### Per-prompt fixed token cost
 
@@ -245,16 +263,16 @@ Rendered prompt sizes for the default kit, measured via `mise run mcp:prompts`. 
 
 | Prompt | Bytes | ~Tokens | Drivers |
 |---|---|---|---|
-| `okt-resume` | 2066 | 515 | engineer + 2 skills + 4 laws + persona body (implement loop) |
-| `okt` | 2086 | 520 | engineer + 2 skills + 4 laws + persona body (implement loop) |
-| `okt-imagine` | 2142 | 535 | product-owner + 3 skills + 4 laws (template-fidelity disabled) |
-| `okt-continue` | 2168 | 540 | engineer + 2 skills + 4 laws + persona body (implement loop) |
-| `okt-document` | 2718 | 680 | documentation-agent + 5 skills + 5 laws |
-| `okt-create` | 3072 | 770 | product-owner + 3 skills + 5 laws + user-story metadata (JIT) |
-| `okt-config` | 3074 | 770 | documentation-agent + 5 skills + 5 laws + config-orientation metadata (JIT) |
-| `okt-implement` | 4387 | 1095 | engineer + 2 skills + 8 laws + persona body (implement loop) + pull-request metadata (JIT) |
+| `okt-imagine` | 1714 | 430 | product-owner + 3 skills + 4 laws (template-fidelity disabled) |
+| `okt-resume` | 1762 | 440 | engineer + 2 skills + 4 laws + persona body (implement loop) |
+| `okt` | 1778 | 445 | engineer + 2 skills + 4 laws + persona body (implement loop) |
+| `okt-continue` | 1849 | 460 | engineer + 2 skills + 4 laws + persona body (implement loop) |
+| `okt-document` | 2073 | 520 | documentation-agent + 5 skills + 5 laws |
+| `okt-config` | 2332 | 585 | documentation-agent + 5 skills + 5 laws + config-orientation metadata (JIT) |
+| `okt-create` | 2553 | 640 | product-owner + 3 skills + 5 laws + user-story metadata (JIT) |
+| `okt-implement` | 3969 | 990 | engineer + 2 skills + 8 laws + persona body (implement loop) + pull-request metadata (JIT) |
 
-Without JIT, `okt-implement` would carry the full `pull-request` body (~700 extra tokens, putting it past 1795). The same logic applies to any user-authored template — bind it via `mcp_commands.<cmd>.templates` and only metadata ships in the prompt.
+Without JIT, `okt-implement` would carry the full `pull-request` body (~700 extra tokens, putting it past 1690). The same logic applies to any user-authored template — bind it via `mcp_commands.<cmd>.templates` and only metadata ships in the prompt.
 
 A regression test (`internal/agentruntime/prompt_budget_test.go`) caps each prompt at current size + ~30% headroom; once a future change pushes a prompt past its budget the test fails and forces a deliberate tradeoff (trim entity bodies, add a JIT optimization, or raise the budget with justification).
 
