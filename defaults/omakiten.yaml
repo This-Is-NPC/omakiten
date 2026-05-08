@@ -10,35 +10,18 @@ config:
   context:
     default_level: 2
     max_tokens: 12000
-  # mcp tunes how MCP responses are shaped to fit the agent's context window.
-  # Every field is optional — omit a key to keep the canonical default. See
-  # `.docs/configuration-guide.md#configmcp` for full semantics and worked
-  # examples; in short:
-  #
-  #   recent_comment_limit         (int, default 5)   cap on comments shipped
-  #                                                   per tasks.continue /
-  #                                                   project.overview call.
-  #   max_comment_chars            (int, default 0)   truncate comment bodies
-  #                                                   past this length with `…`
-  #                                                   (0 = full bodies). Use
-  #                                                   on tasks with verbose
-  #                                                   #resume / #documentation.
-  #   include_workflow_in_continue (*bool, default true) ship the workflow
-  #                                                   block in tasks.continue.
-  #                                                   Set false once /okt
-  #                                                   loaded the workflow for
-  #                                                   the session.
-  #   cache_prompts                (*bool, default true) emit the Anthropic
-  #                                                   `cache_control` hint on
-  #                                                   prompts/get content so
-  #                                                   aware clients reuse the
-  #                                                   cached prompt.
-  #
-  # mcp:
-  #   recent_comment_limit: 3
-  #   max_comment_chars: 500
-  #   include_workflow_in_continue: false
-  #   cache_prompts: true
+  # mcp tunes how MCP responses are shaped to fit the agent's context
+  # window. Every field is REQUIRED — the validator rejects bundles that
+  # omit any. The values below are the canonical kit; tune them in your
+  # local omakiten.yaml to compress payloads for narrow contexts.
+  mcp:
+    recent_comment_limit: 5            # > 0; cap on comments shipped per call
+    max_comment_chars: 0               # >= 0; 0 = no truncation
+    include_workflow_in_continue: true # ship workflow block in tasks.continue
+    cache_prompts: true                # emit Anthropic cache_control hint
+    recent_context_limit: 3            # > 0; recent context entries shipped
+    next_work_limit: 5                 # > 0; "likely next work" suggestions
+    similar_task_limit: 5              # > 0; similar-task hints on create_intent
   workflow:
     active: default
   theme:
@@ -82,38 +65,58 @@ config:
     - id: 3
       value: high
       color: error
-  # views configures the default sort and filter applied to each view at
-  # startup. Every field is optional — omit a section and the canonical
-  # default takes over. Field/order values are validated; typos surface
-  # with a descriptive error instead of being silently ignored.
+  # severities declares the configurable id↔value table for law
+  # severities. Same shape as priorities — code references the int id,
+  # frontmatter parsers and renderers resolve labels via this table.
+  # Renaming "error" to "critical" here is a single-line YAML edit;
+  # existing law rows survive because storage is by id (see
+  # migrations/016_severity_id.sql).
   #
-  # views:
-  #   board:
-  #     sort:
-  #       field: created_at   # id | title | priority | created_at
-  #       order: desc         # asc | desc
-  #     filter:
-  #       priority: []        # [] = all | subset of [low, normal, high]
-  #   table:
-  #     sort:
-  #       field: created_at
-  #       order: desc
-  #     filter:
-  #       priority: []
-  #       bucket: []          # [] = all | subset of bucket keys in the active workflow
-  #   graph:
-  #     sort:
-  #       field: id           # id | title (only)
-  #       order: asc
-  #   logs:
-  #     sort:
-  #       order: desc         # only direction is configurable for logs
-  #     limit: 50
-  #     filter:
-  #       source: []          # [] = all | subset of [cli, tui, mcp]
-  #   task_activity:
-  #     sort:
-  #       order: asc          # asc = chronological | desc = newest first
+  # Omitting the block keeps the canonical 1=info / 2=warning default /
+  # 3=error kit. Adding a new entry (e.g. {id: 4, value: blocker})
+  # makes it valid for any law file's frontmatter `severity:` field.
+  severities:
+    - id: 1
+      value: info
+      color: info
+    - id: 2
+      value: warning
+      default: true
+      color: warning
+    - id: 3
+      value: error
+      color: error
+  # views configures the default sort and filter applied to each view at
+  # startup. Every block + sort field/order is REQUIRED — validator
+  # rejects omissions. Filter blocks default to empty lists (all values
+  # allowed); restrict by listing a subset.
+  views:
+    board:
+      sort:
+        field: created_at   # id | title | priority | created_at
+        order: desc         # asc | desc
+      filter:
+        priority: []        # subset of config.priorities[].value; [] = all
+    table:
+      sort:
+        field: created_at
+        order: desc
+      filter:
+        priority: []
+        bucket: []          # subset of bucket keys in the active workflow
+    graph:
+      sort:
+        field: id           # id | title (only)
+        order: asc
+    logs:
+      sort:
+        order: desc         # only direction is configurable for logs
+      limit: 50
+      filter:
+        source: []          # subset of [cli, tui, mcp]
+    task_activity:
+      sort:
+        order: asc          # asc = chronological | desc = newest first
 workflows:
   - id: 1
     key: default
