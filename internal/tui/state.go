@@ -73,12 +73,14 @@ type Repositories struct {
 // invariants and lifecycle. Sub-component fields are tagged so it's clear
 // which struct owns the cursor/scroll for that surface.
 type Model struct {
-	ctx     context.Context
-	project domain.ProjectContext
-	repos   Repositories
-	counter token.Counter
-	theme   config.Theme
-	styles  styles
+	ctx              context.Context
+	project          domain.ProjectContext
+	repos            Repositories
+	counter          token.Counter
+	theme            config.Theme
+	styles           styles
+	tokenBadgeYellow int
+	tokenBadgeRed    int
 
 	width    int
 	height   int

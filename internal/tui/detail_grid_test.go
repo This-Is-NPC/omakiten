@@ -24,13 +24,13 @@ func TestDetailGridRowsAndKickers(t *testing.T) {
 		Render(m.styles.border)
 
 	for _, want := range []string{
-		"COMMENT · #7",  // Custom kicker rendered through styles
-		"// AUTHOR",     // Row label
-		"agent",         // Row value
+		"COMMENT · #7", // Custom kicker rendered through styles
+		"// AUTHOR",    // Row label
+		"agent",        // Row value
 		"// WHEN",
 		"2026-05-06",
-		"// BODY",       // Kicker
-		"hello world",   // Span
+		"// BODY",     // Kicker
+		"hello world", // Span
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered grid missing %q:\n%s", want, out)

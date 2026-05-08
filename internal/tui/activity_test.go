@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"omakiten/internal/config"
 	"strings"
 	"testing"
 
@@ -40,13 +41,13 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:        app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -100,13 +101,13 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:        app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -183,13 +184,13 @@ func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:        app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -231,13 +232,13 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:        app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}

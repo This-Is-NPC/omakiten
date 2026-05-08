@@ -111,6 +111,7 @@ type Settings struct {
 	TemplateDefaults []string         `yaml:"template_defaults,omitempty" json:"template_defaults,omitempty"`
 	Views            ViewSettings     `yaml:"views,omitempty" json:"views,omitempty"`
 	MCP              MCPSettings      `yaml:"mcp,omitempty" json:"mcp,omitempty"`
+	TUI              TUISettings      `yaml:"tui,omitempty" json:"tui,omitempty"`
 }
 
 // DefaultTemplateKinds is the canonical set of template-default slots when
@@ -222,6 +223,49 @@ func (m MCPSettings) EffectiveCachePrompts() bool {
 type ContextSettings struct {
 	DefaultLevel int `yaml:"default_level" json:"default_level"`
 	MaxTokens    int `yaml:"max_tokens" json:"max_tokens"`
+}
+
+// TUISettings tunes how the terminal UI presents data. Every field is
+// optional; omit a key to keep the canonical default. Currently scoped to
+// the entity-card token-health badge thresholds, but ready to grow as more
+// TUI knobs need to escape hardcoded constants.
+type TUISettings struct {
+	TokenBadge TokenBadgeThresholds `yaml:"token_badge,omitempty" json:"token_badge,omitempty"`
+}
+
+// TokenBadgeThresholds drives the colored TOKENS:N badge on entity cards.
+// Above RedAt → red; above YellowAt → yellow; else green. Values are token
+// counts (the renderer uses the same approximation as the right-rail token
+// budget, so tuning here matches what users see in the rail). <=0 keeps the
+// canonical default.
+type TokenBadgeThresholds struct {
+	YellowAt int `yaml:"yellow_at,omitempty" json:"yellow_at,omitempty"`
+	RedAt    int `yaml:"red_at,omitempty" json:"red_at,omitempty"`
+}
+
+// Canonical defaults for TokenBadgeThresholds. Calibrated against the default
+// kit: most laws land in the 70–190 token range with their few-shot examples,
+// so the green band must extend above that to keep the panel signal-rich
+// rather than uniformly yellow.
+const (
+	DefaultTokenBadgeYellowAt = 150
+	DefaultTokenBadgeRedAt    = 400
+)
+
+// Effective returns the resolved (yellow, red) thresholds, falling back to
+// the canonical defaults when the user omitted a field or set a non-positive
+// value. Callers should use this rather than reading the raw fields so the
+// validator and the TUI agree on the same boundary.
+func (t TokenBadgeThresholds) Effective() (yellow, red int) {
+	yellow = t.YellowAt
+	red = t.RedAt
+	if yellow <= 0 {
+		yellow = DefaultTokenBadgeYellowAt
+	}
+	if red <= 0 {
+		red = DefaultTokenBadgeRedAt
+	}
+	return yellow, red
 }
 
 type WorkflowSettings struct {

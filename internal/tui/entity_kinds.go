@@ -8,10 +8,6 @@ const (
 	// cards fit side-by-side, so the wrap math matches the actual cell
 	// width Lipgloss draws.
 	entityCardCellWidth = entityListWidth + 2
-	// Token-count thresholds for the colored token badge on entity cards.
-	// Above tokenBadgeRedAt → red; above tokenBadgeYellowAt → yellow; else green.
-	tokenBadgeYellowAt = 50
-	tokenBadgeRedAt    = 200
 )
 
 // entityKind enumerates the kinds the config view can display side-by-side.

@@ -17,20 +17,23 @@ import (
 	"omakiten/internal/tui/components/viewport"
 )
 
-func NewModel(ctx context.Context, project domain.ProjectContext, repos Repositories, theme config.Theme, counter token.Counter) (Model, error) {
+func NewModel(ctx context.Context, project domain.ProjectContext, repos Repositories, theme config.Theme, counter token.Counter, badge config.TokenBadgeThresholds) (Model, error) {
 	if counter == nil {
 		counter = token.ApproxCounter{}
 	}
+	yellow, red := badge.Effective()
 	model := Model{
-		ctx:           ctx,
-		project:       project,
-		repos:         repos,
-		theme:         theme,
-		styles:        newStyles(theme),
-		counter:       counter,
-		entityKind:    entityKindLaw,
-		entityCursors: map[entityKind]int{entityKindLaw: 0, entityKindPersona: 0, entityKindSkill: 0, entityKindTag: 0},
-		homePicker:    picker.New(picker.Single),
+		ctx:              ctx,
+		project:          project,
+		repos:            repos,
+		theme:            theme,
+		styles:           newStyles(theme),
+		counter:          counter,
+		tokenBadgeYellow: yellow,
+		tokenBadgeRed:    red,
+		entityKind:       entityKindLaw,
+		entityCursors:    map[entityKind]int{entityKindLaw: 0, entityKindPersona: 0, entityKindSkill: 0, entityKindTag: 0},
+		homePicker:       picker.New(picker.Single),
 	}
 	detailscreen.SetStyles(model.styles.info)
 	if project.ID == 0 {

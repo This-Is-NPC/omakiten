@@ -43,6 +43,15 @@ config:
     active: default
   theme:
     active: omakiten
+  # tui tunes terminal UI presentation. Every field is optional — omit a key
+  # to keep the canonical default. token_badge controls the colored TOKENS:N
+  # badge on entity cards: above red_at → red; above yellow_at → yellow; else
+  # green. Calibrated for the default kit; raise both numbers if you author
+  # heavier laws/personas, lower them if you keep entities terse.
+  tui:
+    token_badge:
+      yellow_at: 150
+      red_at: 400
   # template_defaults declares the kinds the user can assign in the TUI
   # picker. Each loaded template can claim at most one (kind, project) pair
   # via its frontmatter (`default: <kind>`, optional `project: <slug>`).
