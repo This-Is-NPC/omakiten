@@ -48,7 +48,7 @@
 | FR-042 | Expose MCP tools `solutions.add`, `solutions.confirm`, `solutions.list_top`: candidate fixes per error with success likes | `internal/agent/service_errors.go`, `internal/sqlite/errors.go`, `internal/mcp/adapter.go` |
 | FR-043 | Expose MCP tools `templates.list` and `templates.show`: read-only template catalog. `templates.show` performs strict shadow validation — when an active project resolves and the requested slug is a global template that the project shadows with a same-kind override, the call hard-rejects with `validation_error` naming the active slug; an explicit unresolvable `project`/`project_id` propagates `project_not_found` instead of falling back. | `internal/agent/service_templates.go`, `internal/mcp/adapter.go` |
 | FR-044 | Expose MCP resources `omakiten://project/overview` and `omakiten://workflow/active` | `internal/mcp/adapter.go:ReadResource` |
-| FR-045 | Expose MCP prompts `okt`, `okt-create`, `okt-continue`, `okt-resume` | `internal/mcp/adapter.go:ListPrompts`, `internal/mcp/adapter.go:GetPrompt` |
+| FR-045 | Expose MCP prompts `okt`, `okt-imagine`, `okt-create`, `okt-resume`, `okt-continue`, `okt-implement`, `okt-document`, `okt-config` | `internal/agent/service_command.go:CommandNames`, `internal/mcp/adapter.go:ListPrompts`, `internal/mcp/adapter.go:GetPrompt` |
 | FR-046 | Serve MCP stdio server handling JSON-RPC 2.0 requests | `internal/mcp/server.go:Serve`, `internal/cli/mcp.go` |
 | FR-047 | Call MCP tools from CLI (`okt mcp call TOOL_NAME --input JSON`) | `internal/cli/mcp.go` |
 | FR-048 | List MCP tool/resource/prompt definitions from CLI (`okt mcp tools`) | `internal/cli/mcp.go` |

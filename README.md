@@ -31,14 +31,18 @@ Once connected, two modes coexist: **canonical slash prompts** for the most comm
 
 ### Canonical prompts
 
-Four prompts ship as MCP prompts and work in any harness that supports them:
+Eight prompts ship as MCP prompts and work in any harness that supports them. The first five form the happy-path cycle (`okt → okt-resume / okt-imagine → okt-create → okt-continue → okt-implement`); the last three are parallel surfaces for execution, drift survey, and config orientation.
 
 | Prompt | When to use it |
 |---|---|
 | `/okt` | **Start of a session** loads project identity, active workflow, pending count, and the next-step suggestion so the agent stops guessing what's already happening. |
+| `/okt-imagine` | **Brainstorming before any task exists** the agent grounds itself with project state, asks clarifying questions, and sketches hypotheses. |
+| `/okt-create <description>` | **Creating a task with duplicate detection** the agent first checks for similar/related work and asks to confirm before creating. |
 | `/okt-resume` | **Coming back to a project after a pause** surfaces the most relevant work to pick up next, including blocked items and recent handoff context. |
 | `/okt-continue <task_id>` | **Resuming a specific task** pulls its dependencies, comments, workflow position, and recent context in one shot. |
-| `/okt-create <description>` | **Creating a task with duplicate detection** the agent first checks for similar/related work and asks to confirm before creating. |
+| `/okt-implement` | **Executing approved work** runs the engineer's implement loop with bounded self-review, conventional commits, and self-report on retried errors. |
+| `/okt-document` | **Surveying project documentation** lists drift items in `.docs/`, `README.md`, `CONTRIBUTING.md` with file references — does not edit in place. |
+| `/okt-config` | **Orienting the agent on the active config layout** before edits — path resolution, entity folders, frontmatter shapes, wiring, workflow guard kinds. Read-only. |
 
 ### Natural-language scenarios
 
