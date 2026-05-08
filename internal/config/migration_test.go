@@ -37,7 +37,7 @@ func TestMigrateLayoutMovesEntityFoldersOutOfConfig(t *testing.T) {
 
 	// Entities moved to <root>/skills/.
 	if _, err := os.Stat(filepath.Join(tmp, "skills", "implementation.md")); err != nil {
-		t.Fatalf("skills/go.md not at new location: %v", err)
+		t.Fatalf("skills/implementation.md not at new location: %v", err)
 	}
 	// Legacy nested folder is gone.
 	if _, err := os.Stat(filepath.Join(tmp, "config", "skills")); !os.IsNotExist(err) {
@@ -58,7 +58,7 @@ func TestMigrateLayoutSegregatesUserCustoms(t *testing.T) {
 	}
 
 	if _, err := os.Stat(filepath.Join(tmp, "skills", "implementation.md")); err != nil {
-		t.Fatalf("skills/go.md must stay at root: %v", err)
+		t.Fatalf("skills/implementation.md must stay at root: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(tmp, "skills", "custom", "user-skill.md")); err != nil {
 		t.Fatalf("user-skill.md should have moved to custom/: %v", err)
@@ -114,7 +114,7 @@ func TestMigrateLayoutIsIdempotent(t *testing.T) {
 
 	// File is still at the root and a custom dir exists.
 	if _, err := os.Stat(filepath.Join(tmp, "skills", "implementation.md")); err != nil {
-		t.Fatalf("skills/go.md disappeared after repeated migration: %v", err)
+		t.Fatalf("skills/implementation.md disappeared after repeated migration: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(tmp, "skills", "custom")); err != nil {
 		t.Fatalf("skills/custom missing after repeated migration: %v", err)

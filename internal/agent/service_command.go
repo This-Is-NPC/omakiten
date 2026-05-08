@@ -329,10 +329,11 @@ func renderCommandMarkdown(resp ResolveCommandResponse) string {
 				label = law.Slug
 			}
 			body := strings.TrimSpace(law.Body)
-			// Multi-line law bodies (those carrying ❌/✅ examples or a second
-			// paragraph) need every continuation line indented two spaces so
-			// they remain visually nested under the bullet — otherwise the
-			// example lines render as orphan paragraphs between laws.
+			// Multi-line law bodies (those carrying Bad:/Good: examples or a
+			// second paragraph) need every continuation line indented two
+			// spaces so they remain visually nested under the bullet —
+			// otherwise the example lines render as orphan paragraphs between
+			// laws.
 			if idx := strings.Index(body, "\n"); idx >= 0 {
 				head := body[:idx]
 				tail := body[idx+1:]
