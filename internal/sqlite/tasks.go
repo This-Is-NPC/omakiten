@@ -31,25 +31,21 @@ func (s *Store) CreateTask(ctx context.Context, projectID int64, title, descript
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// PriorityZero means "use the column DEFAULT" (the canonical
-	// 'normal' id, 2). Callers that want a different default resolve
-	// it at the app layer before reaching here, so the store stays
-	// free of bundle-config dependencies.
-	query := `
+	// Priority must be resolved by the app layer (WorkflowService.
+	// CreateTask substitutes domain.DefaultPriority() when the input is
+	// PriorityZero). Migration 017 dropped the SQL DEFAULT — every
+	// INSERT must carry an explicit priority_id. Reaching this point
+	// with PriorityZero is a programming error and we error out loud.
+	if priority == domain.PriorityZero {
+		return domain.Task{}, domain.NewError(domain.ErrValidation,
+			"task priority unresolved at the storage layer; the app must substitute domain.DefaultPriority() before calling CreateTask",
+			map[string]any{"project_id": projectID, "bucket": bucketKey})
+	}
+	row := tx.QueryRowContext(ctx, `
 INSERT INTO tasks(project_id, bucket_id, title, description, priority_id)
 VALUES (?, ?, ?, ?, ?)
 RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at
-`
-	args := []any{projectID, bucketID, title, description, int(priority)}
-	if priority == domain.PriorityZero {
-		query = `
-INSERT INTO tasks(project_id, bucket_id, title, description)
-VALUES (?, ?, ?, ?)
-RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at
-`
-		args = []any{projectID, bucketID, title, description}
-	}
-	row := tx.QueryRowContext(ctx, query, args...)
+`, projectID, bucketID, title, description, int(priority))
 
 	task, err := scanTask(row, bucketKey)
 	if err != nil {

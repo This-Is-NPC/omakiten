@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"omakiten/internal/config"
+	"omakiten/internal/domain"
 )
 
 func (s *Store) ImportBundle(ctx context.Context, bundle config.Bundle, sourcePath, sourceHash string) error {
@@ -204,10 +205,21 @@ func importLaws(ctx context.Context, tx *sql.Tx, bundleID int64, laws []config.L
 				personaID = &id
 			}
 		}
+		// Resolve the frontmatter severity label to its configured id
+		// via the active registry. The validator runs against the
+		// loaded bundle BEFORE ImportBundle, so unknown labels at this
+		// point are a contract violation — fail rigid instead of
+		// silently substituting a default. The runtime composition
+		// root populates the registry from the user's config, so this
+		// never trips in production.
+		severityID, ok := domain.SeverityFromLabel(law.Severity)
+		if !ok {
+			return fmt.Errorf("law %q: severity %q not in active registry (validator should have caught this)", law.Slug, law.Severity)
+		}
 		if _, err := tx.ExecContext(ctx, `
-INSERT INTO laws(bundle_id, local_id, key, severity, body, scope, project_id, persona_id, active)
+INSERT INTO laws(bundle_id, local_id, key, severity_id, body, scope, project_id, persona_id, active)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-`, bundleID, localID, law.Slug, law.Severity, law.Body, scope, projectID, personaID); err != nil {
+`, bundleID, localID, law.Slug, int(severityID), law.Body, scope, projectID, personaID); err != nil {
 			return err
 		}
 	}

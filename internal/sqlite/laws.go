@@ -8,7 +8,7 @@ import (
 
 func (s *Store) ListActiveLaws(ctx context.Context) ([]domain.Law, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT laws.id, laws.key, laws.severity, laws.body
+SELECT laws.id, laws.key, laws.severity_id, laws.body
 FROM laws
 JOIN config_bundles ON config_bundles.id = laws.bundle_id
 WHERE laws.active = 1 AND config_bundles.active = 1
