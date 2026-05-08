@@ -113,38 +113,43 @@ The TUI's template-default picker offers exactly the kinds in this list.
 
 ### `config.mcp`
 
-Tunes how MCP responses are shaped to fit the agent's context window. The full block is optional and so is every field inside it; omitted fields resolve to the canonical defaults in `internal/config/bundle.go` via the `Effective*` accessors. Pointer booleans (`*bool`) distinguish "not declared" from "declared `false`" — omitting `cache_prompts` keeps caching on, while writing `cache_prompts: false` is an explicit opt-out.
+Tunes how MCP responses are shaped to fit the agent's context window. **Every field is required** — the validator rejects bundles missing any. The canonical values live in `defaults/omakiten.yaml` (the embedded kit YAML the installer materialises into the user's config root); your local file inherits at install time. Customise by editing values, never by removing fields.
+
+Pointer booleans (`*bool`) require an explicit `true` or `false` — there is no "not declared" state.
 
 ```yaml
 config:
   mcp:
-    recent_comment_limit: 5            # int >=0; 0 keeps default
-    max_comment_chars: 0               # int >=0; 0 keeps full bodies
-    include_workflow_in_continue: true # bool; omit to keep default true
-    cache_prompts: true                # bool; omit to keep default true
-    recent_context_limit: 3            # int >=0; 0 keeps default
-    next_work_limit: 5                 # int >=0; 0 keeps default
-    similar_task_limit: 5              # int >=0; 0 keeps default
+    recent_comment_limit: 5            # int >0
+    max_comment_chars: 0               # int >=0; 0 = no truncation
+    include_workflow_in_continue: true # bool; required
+    cache_prompts: true                # bool; required
+    recent_context_limit: 3            # int >0
+    next_work_limit: 5                 # int >0
+    similar_task_limit: 5              # int >0
 ```
 
-| Field | Type | Default | What it does |
+| Field | Type | Constraint | What it does |
 |---|---|---|---|
-| `recent_comment_limit` | int | `5` | Caps how many recent comments tools like `tasks.continue` and `project.overview` ship per call. Reverse-chronological — the most recent N. |
-| `max_comment_chars` | int | `0` (no truncation) | Truncates comment bodies past this many runes when shipped over MCP, appending `…`. Use to bound `tasks.continue` payloads on tasks with verbose `#resume` and `#documentation` comments. Does not affect `comments.list` (which is the read-the-full-thread endpoint). |
-| `include_workflow_in_continue` | `*bool` | `true` | Toggles the `workflow` block in `tasks.continue` responses. Per-call `include_workflow` argument overrides this default — set false once `/okt` already loaded the workflow shape for the session. |
-| `cache_prompts` | `*bool` | `true` | Emits a `_meta.anthropic.cache_control` hint on `prompts/get` content. Anthropic-aware MCP clients (recent Claude Code) reuse the cached prompt across calls; unaware clients ignore the hint silently. Disable only to work around a misbehaving client. |
-| `recent_context_limit` | int | `3` | Caps how many recent `context.add` entries flow into `tasks.continue` / `project.overview` / `project.resume`. Smaller than `recent_comment_limit` because each entry can be paragraphs of free-form notes — three is enough to set the scene. |
-| `next_work_limit` | int | `5` | Caps the "likely next work" suggestion list shipped in `project.resume`. Increase for project-overview screens; keep small for narrow agent contexts. |
-| `similar_task_limit` | int | `5` | Caps how many similar-task hints `tasks.create_intent` surfaces during the dedup check. Tune up if you frequently create near-duplicate intents and want broader dedup coverage. |
+| `recent_comment_limit` | int | `> 0` | Caps how many recent comments tools like `tasks.continue` and `project.overview` ship per call. Reverse-chronological — the most recent N. |
+| `max_comment_chars` | int | `>= 0` | Truncates comment bodies past this many runes when shipped over MCP, appending `…`. Zero disables truncation. Use to bound `tasks.continue` payloads on tasks with verbose `#resume` and `#documentation` comments. Does not affect `comments.list` (which is the read-the-full-thread endpoint). |
+| `include_workflow_in_continue` | `*bool` | required | Toggles the `workflow` block in `tasks.continue` responses. Per-call `include_workflow` argument overrides this default — set false once `/okt` already loaded the workflow shape for the session. |
+| `cache_prompts` | `*bool` | required | Emits a `_meta.anthropic.cache_control` hint on `prompts/get` content. Anthropic-aware MCP clients (recent Claude Code) reuse the cached prompt across calls; unaware clients ignore the hint silently. Disable only to work around a misbehaving client. |
+| `recent_context_limit` | int | `> 0` | Caps how many recent `context.add` entries flow into `tasks.continue` / `project.overview` / `project.resume`. Smaller than `recent_comment_limit` because each entry can be paragraphs of free-form notes. |
+| `next_work_limit` | int | `> 0` | Caps the "likely next work" suggestion list shipped in `project.resume`. Increase for project-overview screens; keep small for narrow agent contexts. |
+| `similar_task_limit` | int | `> 0` | Caps how many similar-task hints `tasks.create_intent` surfaces during the dedup check. Tune up if you frequently create near-duplicate intents and want broader dedup coverage. |
 
 #### Validation rules (parse-time)
 
+Every field above is required and validated. Missing or out-of-range values fail loud with messages pointing back at `defaults/omakiten.yaml` so the fix is obvious.
+
 | Rule | Error message shape |
 |---|---|
-| `recent_comment_limit` is negative | `config.mcp.recent_comment_limit cannot be negative` |
-| `max_comment_chars` is negative | `config.mcp.max_comment_chars cannot be negative` |
-
-A non-positive `recent_comment_limit` is silently coerced to the default by `EffectiveRecentCommentLimit()`, but a negative value is treated as a typo and rejected loudly.
+| `recent_comment_limit <= 0` | `config.mcp.recent_comment_limit: must be > 0 (see defaults/omakiten.yaml for canonical values)` |
+| `max_comment_chars < 0` | `config.mcp.max_comment_chars: must be >= 0 (0 = no truncation)` |
+| `include_workflow_in_continue` omitted | `config.mcp.include_workflow_in_continue: required boolean (see defaults/omakiten.yaml)` |
+| `cache_prompts` omitted | `config.mcp.cache_prompts: required boolean (see defaults/omakiten.yaml)` |
+| Same shape for `recent_context_limit / next_work_limit / similar_task_limit`. |
 
 #### Worked example — taming a long-lived task
 
@@ -165,7 +170,7 @@ Cross-reference: `.docs/mcp-guide.md#anatomy-of-an-mcp-command` walks through ho
 
 ### `config.tui`
 
-Tunes terminal UI presentation. The full block is optional and so is every field inside it; omitted fields resolve to the canonical defaults in `internal/config/bundle.go` via the `Effective()` accessors.
+Tunes terminal UI presentation. **Every field is required** (validator rejects omissions). Canonical values come from `defaults/omakiten.yaml`.
 
 ```yaml
 config:
@@ -253,6 +258,36 @@ After re-importing the bundle (`okt config import` or restarting the TUI):
 - Existing tasks keep their stored `priority_id`; nothing in the database changed.
 
 To rename `"high"` to `"critical"` instead, change only the `value:` on entry id 3 — every existing task with `priority_id = 3` immediately renders as "critical" on the next read.
+
+### `config.severities`
+
+Configurable id↔value table for law severities. Same shape and contract as `config.priorities` — code references the integer id (`tasks.severity_id` after migration 016 for laws is stored similarly), renderers (TUI badge, MCP `severity` field, JSON marshaling) resolve the human label via this table at the boundary. Renaming a label is a single YAML edit; existing law rows keep their stored `severity_id` so nothing breaks at the data layer.
+
+```yaml
+config:
+  severities:
+    - id: 1
+      value: info
+      color: info
+    - id: 2
+      value: warning
+      default: true
+      color: warning
+    - id: 3
+      value: error
+      color: error
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | int >0 | yes | Storage handle and SQL sort weight; declarations must be in ascending order (validator-enforced). |
+| `value` | string | yes | Human label written in law frontmatter (`severity: <label>`), rendered in TUI badges, CLI output, MCP responses. |
+| `default` | bool | no | Marks the severity applied when a law is created without naming one. At most one entry. |
+| `color` | string | no | Theme token for the badge: `error` / `warning` / `success` / `info`. Defaults to `info`. |
+
+Validator rules: positive unique ids, non-empty unique values, ≤1 default, ascending id order. Errors mirror the priority validator's shape (`config.severities: id 2 declared twice...`).
+
+Adding a `{id: 4, value: blocker, color: error}` entry makes `severity: blocker` a valid frontmatter value; no code change needed. Renaming `"error"` to `"critical"` updates how the badge is rendered for every existing law on the next read — `severity_id` storage absorbs the change.
 
 ### `config.views`
 
