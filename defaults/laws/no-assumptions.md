@@ -2,7 +2,7 @@
 name: No assumptions
 severity: warning
 ---
-Every claim must be traceable to code, configuration, or explicit user input. When information is missing: ask, mark `[assumption]` with the guess explicit, or `[user-provided]` when the user said so without code backing. Never invent versions, file paths, or business rules to fill a section.
+Every claim must be traceable to code, configuration, or explicit user input. When info missing: ask, mark `[assumption]` with the guess explicit, or `[user-provided]` when the user said so without code backing. Never invent versions, file paths, or business rules to fill a section.
 
 Bad: "We use database X v15" — not in code, not user-said.
 Good: "We use database X v15 [user-provided]" or "Database X [assumption: standard for the team]".

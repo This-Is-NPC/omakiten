@@ -35,11 +35,11 @@ func TestResolveCommandComposesEffectiveLaws(t *testing.T) {
 	if !equalStringSlices(gotSlugs, wantSlugs) {
 		t.Fatalf("ResolveCommand laws = %v, want %v (global ∪ persona, deduped)", gotSlugs, wantSlugs)
 	}
-	if !strings.Contains(resp.Markdown, "## Laws (2)") {
-		t.Fatalf("Markdown should headline the law count, got:\n%s", resp.Markdown)
+	if !strings.Contains(resp.Markdown, "## Laws\n") {
+		t.Fatalf("Markdown should headline the laws section, got:\n%s", resp.Markdown)
 	}
-	if !strings.Contains(resp.Markdown, "Pull Request") {
-		t.Fatalf("Markdown should embed the pull-request template body, got:\n%s", resp.Markdown)
+	if strings.Contains(resp.Markdown, "## Laws (") {
+		t.Fatalf("Markdown should not carry the (count) parenthetical on the Laws header, got:\n%s", resp.Markdown)
 	}
 }
 
@@ -103,6 +103,7 @@ func TestResolveCommandRestHandoffsPresent(t *testing.T) {
 		"okt-continue":  {"okt-implement"},
 		"okt-implement": {"comment-resume"},
 		"okt-document":  {"okt-create"},
+		"okt-config":    {"templates.show", "config-orientation", "okt-implement"},
 	}
 	for name, hints := range expectedHandoffs {
 		text := CommandActionFallback(name)
@@ -119,10 +120,15 @@ func TestResolveCommandRestHandoffsPresent(t *testing.T) {
 
 // TestResolveCommandTemplatesJITRendering pins the just-in-time pattern:
 // when a command has a bound template, the rendered Markdown must list the
-// template metadata (slug, name, default kind, description) and a pointer to
-// `templates.show`, but it must NOT embed the template body. Embedding the
-// body would defeat the entire point of JIT — the body is large and the agent
-// only needs it at the moment of materialization.
+// template metadata (slug, name when divergent, default kind, description),
+// but it must NOT embed the template body. Embedding the body would defeat
+// the entire point of JIT — the body is large and the agent only needs it
+// at the moment of materialization.
+//
+// The `templates.show` fetch hint itself is covered against the default kit
+// by `agentruntime.TestTemplateBoundCommandsCarryFetchHint`, which asserts
+// every command that binds templates surfaces the hint via its action text or
+// persona body.
 func TestResolveCommandTemplatesJITRendering(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
@@ -134,9 +140,6 @@ func TestResolveCommandTemplatesJITRendering(t *testing.T) {
 	if !strings.Contains(resp.Markdown, "## Templates") {
 		t.Fatal("Markdown missing ## Templates section")
 	}
-	if !strings.Contains(resp.Markdown, "templates.show") {
-		t.Fatal("Markdown missing templates.show pointer — JIT contract broken")
-	}
 	// Pull-request body fixture starts with `## Before` — that body must NOT
 	// appear inline. If it does, the renderer regressed to embedding bodies.
 	if strings.Contains(resp.Markdown, "## Before") {
@@ -145,6 +148,60 @@ func TestResolveCommandTemplatesJITRendering(t *testing.T) {
 	// Slug must still be present so the agent knows which template to fetch.
 	if !strings.Contains(resp.Markdown, "pull-request") {
 		t.Fatal("Markdown missing template slug — agent has no anchor for templates.show")
+	}
+}
+
+// TestRenderCommandMarkdownDropsRedundantStructure pins the renderer
+// streamlining contract: the rendered Markdown must NOT echo the prompt name
+// header or description (both ship in `prompts/list` metadata) and must NOT
+// emit per-skill description bullets (skill names suffice; the procedure
+// lives in persona body and action text).
+func TestRenderCommandMarkdownDropsRedundantStructure(t *testing.T) {
+	fixture := newAgentFixture(t)
+	wireBindingFixtures(t, fixture)
+
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-implement"})
+	if err != nil {
+		t.Fatalf("ResolveCommand() error = %v", err)
+	}
+	// No H1 header echoing the prompt name.
+	if strings.HasPrefix(resp.Markdown, "# ") || strings.Contains(resp.Markdown, "\n# okt-") {
+		t.Fatalf("Markdown should not echo prompt name as H1 header — already in prompts/list metadata. Got:\n%s", resp.Markdown)
+	}
+	// Skills section emits the inline list only — no per-skill bullets.
+	if !strings.Contains(resp.Markdown, "## Skills — Go") {
+		t.Fatalf("Markdown should carry inline `## Skills — <names>`, got:\n%s", resp.Markdown)
+	}
+	// Bulleted skill lines like `- **Go**: <description>` must be gone.
+	for _, line := range strings.Split(resp.Markdown, "\n") {
+		if strings.HasPrefix(line, "- **Go**:") || strings.HasPrefix(line, "- **SQLite**:") {
+			t.Fatalf("Markdown should not emit per-skill description bullets, got line: %q", line)
+		}
+	}
+}
+
+// TestRenderCommandMarkdownTemplateNameEchoSuppressed pins the rule that the
+// human-readable template name is dropped from the bound-template line when
+// it is just the title-case of the slug — the slug already carries the
+// information. When the name diverges, it stays.
+func TestRenderCommandMarkdownTemplateNameEchoSuppressed(t *testing.T) {
+	cases := []struct {
+		name string
+		slug string
+		echo bool
+	}{
+		{"Config Orientation", "config-orientation", true},
+		{"Pull Request", "pull-request", true},
+		{"User Story", "user-story", true},
+		{"Pull Request", "pr", false},
+		{"Resume comment", "comment-resume", false},
+		{"", "anything", false},
+	}
+	for _, c := range cases {
+		got := templateNameEchoesSlug(c.name, c.slug)
+		if got != c.echo {
+			t.Errorf("templateNameEchoesSlug(%q, %q) = %t, want %t", c.name, c.slug, got, c.echo)
+		}
 	}
 }
 

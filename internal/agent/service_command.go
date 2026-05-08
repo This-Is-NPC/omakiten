@@ -21,6 +21,9 @@ import (
 //	          okt-implement → (move to review)
 //	okt-document is parallel: surfaces drift; if material work is needed,
 //	suggests `okt-create` to spin up a documentation task.
+//	okt-config is parallel: orients the agent on the config layout so it can
+//	answer edit questions without guessing; suggests `okt-implement` when the
+//	user has a concrete edit in mind.
 // Action texts deliberately stop short of repeating constraints already
 // declared inline in `## Laws` or role-specific flow already declared in the
 // persona body. Each one names the canonical tool and ends with a REST-style
@@ -61,6 +64,12 @@ var commandActions = map[string]string{
 		"`.docs/requirements.md`, `README.md`, `CONTRIBUTING.md`, and other top-level docs. List drift " +
 		"items with file references and suggested wording — do not edit in place. " +
 		"Next: if material work is needed, suggest `okt-create` to spin up a documentation task.",
+
+	"okt-config": "Orient on the active config layout. Call `templates.show config-orientation` to " +
+		"load the path resolution order, entity layout, frontmatter shapes, wiring relationships, and " +
+		"workflow guard kinds. Read it fully before answering any config-edit question — do not guess. " +
+		"Next: if the user has a concrete edit in mind, suggest `okt-implement` with the change scoped to " +
+		"`omakiten.yaml` or the relevant entity file.",
 }
 
 // commandDescriptions match the prompts/list metadata. Keeping them next to
@@ -73,6 +82,7 @@ var commandDescriptions = map[string]string{
 	"okt-continue":  "Read a task's checkpoint as an engineer before resuming work.",
 	"okt-implement": "Execute approved engineering work with strict rigor and commit discipline.",
 	"okt-document":  "Survey project documentation for drift and propose updates.",
+	"okt-config":    "Orient the agent on the active Omakiten config layout before edits.",
 }
 
 // CommandNames returns the canonical, ordered list of `okt-*` prompts the MCP
@@ -87,6 +97,7 @@ func CommandNames() []string {
 		"okt-continue",
 		"okt-implement",
 		"okt-document",
+		"okt-config",
 	}
 }
 
@@ -289,15 +300,40 @@ func effectiveLaws(globalSpec, commandSpec MCPCommandBinding, persona *PersonaIn
 // renderCommandMarkdown produces the single PromptMessage body the MCP layer
 // returns. Sections are kept compact and ordered (persona → skills → laws →
 // templates → action) so the agent can scan them top-down without reordering.
+//
+// The prompt name and description are NOT echoed in the body — they ship via
+// `prompts/list` metadata in the MCP protocol, which every aware client
+// surfaces before calling `prompts/get`. Emitting them again here would just
+// duplicate bytes the agent already has.
+//
+// Skills render as a single inline list under `## Skills — A, B, C`. Skill
+// descriptions are decorative metadata; the procedural content lives in the
+// persona body and the action text, so per-bullet description lines just
+// inflate the prompt without driving agent behavior.
+//
+// Laws render under `## Laws` (no count parenthetical) — the number is
+// decorative; the agent does not branch on it.
+//
+// Templates render as JIT metadata: slug, optional name (only when it diverges
+// from the title-case of the slug), optional default kind, optional
+// description. The fetch hint (`templates.show <slug>`) is NOT emitted as a
+// trailing footer; instead, every templates-bound command must surface the
+// hint via its action text or its persona body. This is enforced by
+// `TestTemplateBoundCommandsCarryFetchHint`.
 func renderCommandMarkdown(resp ResolveCommandResponse) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# %s\n", resp.Name)
-	if resp.Description != "" {
-		fmt.Fprintf(&b, "\n%s\n", resp.Description)
+	sectionStarted := false
+	openSection := func(heading string) {
+		if sectionStarted {
+			b.WriteString("\n")
+		}
+		b.WriteString(heading)
+		b.WriteString("\n")
+		sectionStarted = true
 	}
 
 	if resp.Persona != nil {
-		fmt.Fprintf(&b, "\n## Persona — %s\n", resp.Persona.Name)
+		openSection(fmt.Sprintf("## Persona — %s", resp.Persona.Name))
 		if resp.Persona.Description != "" {
 			fmt.Fprintf(&b, "%s\n", resp.Persona.Description)
 		}
@@ -311,18 +347,11 @@ func renderCommandMarkdown(resp ResolveCommandResponse) string {
 		for _, sk := range resp.Skills {
 			names = append(names, sk.Name)
 		}
-		fmt.Fprintf(&b, "\n## Skills — %s\n", strings.Join(names, ", "))
-		for _, sk := range resp.Skills {
-			if desc := strings.TrimSpace(sk.Description); desc != "" {
-				fmt.Fprintf(&b, "- **%s**: %s\n", sk.Name, desc)
-			} else {
-				fmt.Fprintf(&b, "- **%s**\n", sk.Name)
-			}
-		}
+		openSection(fmt.Sprintf("## Skills — %s", strings.Join(names, ", ")))
 	}
 
 	if len(resp.Laws) > 0 {
-		fmt.Fprintf(&b, "\n## Laws (%d)\n", len(resp.Laws))
+		openSection("## Laws")
 		for _, law := range resp.Laws {
 			label := law.Name
 			if label == "" {
@@ -352,24 +381,11 @@ func renderCommandMarkdown(resp ResolveCommandResponse) string {
 	}
 
 	if len(resp.Templates) > 0 {
-		// Just-in-time pattern: ship template metadata only, never the body.
-		// Bodies are large (the pull-request scaffold alone is ~700 tokens) and
-		// the agent only needs them at the moment of materialization. The
-		// per-command action text instructs the agent to call
-		// `templates.show <slug>` when it is ready to fill the scaffold; the
-		// `template-fidelity` law ships inline as a constraint reminder so the
-		// fetch happens with the right framing. This trades one extra MCP
-		// round-trip on the rare materialization step for hundreds of tokens
-		// saved on every prompt resolution.
-		fmt.Fprintf(&b, "\n## Templates\n")
+		openSection("## Templates")
 		for _, t := range resp.Templates {
-			label := t.Name
-			if label == "" {
-				label = t.Slug
-			}
 			line := fmt.Sprintf("- **%s**", t.Slug)
-			if label != t.Slug {
-				line += fmt.Sprintf(" — %s", label)
+			if t.Name != "" && !templateNameEchoesSlug(t.Name, t.Slug) {
+				line += fmt.Sprintf(" — %s", t.Name)
 			}
 			if t.Default != "" {
 				line += fmt.Sprintf(" (default: %s)", t.Default)
@@ -379,11 +395,36 @@ func renderCommandMarkdown(resp ResolveCommandResponse) string {
 			}
 			fmt.Fprintln(&b, line)
 		}
-		fmt.Fprintln(&b, "\nFetch the body with `templates.show <slug>` when ready to fill it.")
 	}
 
-	fmt.Fprintf(&b, "\n## Action\n%s\n", resp.Action)
+	openSection("## Action")
+	fmt.Fprintf(&b, "%s\n", resp.Action)
 	return b.String()
+}
+
+// templateNameEchoesSlug reports whether the human-readable template name is
+// just the title-case of the slug (with hyphens turned into spaces). When
+// true, the renderer drops the name from the bound-template line because it
+// carries no information beyond the slug. The slug stays — the agent uses it
+// to call `templates.show`.
+//
+// "config-orientation" / "Config Orientation" → true (drop name)
+// "pull-request"       / "Pull Request"       → true (drop name)
+// "pr"                 / "Pull Request"       → false (keep name)
+// "comment-resume"     / "Resume comment"     → false (keep name)
+func templateNameEchoesSlug(name, slug string) bool {
+	if name == "" || slug == "" {
+		return false
+	}
+	parts := strings.Split(slug, "-")
+	titled := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		titled = append(titled, strings.ToUpper(p[:1])+p[1:])
+	}
+	return strings.EqualFold(strings.Join(titled, " "), name)
 }
 
 // SortedCommandNames is exposed for tests that want a stable iteration order.

@@ -3,6 +3,7 @@ package agentruntime
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"omakiten/internal/agent"
@@ -18,13 +19,51 @@ import (
 // Numbers come from `mise run mcp:prompts` output against `dev_env/`. Update
 // alongside any change that grows a prompt past its current budget.
 var promptBudgets = map[string]int{
-	"okt":           3000,
-	"okt-imagine":   3000,
-	"okt-create":    4200,
-	"okt-resume":    3000,
-	"okt-continue":  3100,
-	"okt-implement": 6000,
-	"okt-document":  3700,
+	"okt":           2300,
+	"okt-imagine":   2250,
+	"okt-create":    3300,
+	"okt-resume":    2300,
+	"okt-continue":  2400,
+	"okt-implement": 5150,
+	"okt-document":  2700,
+	"okt-config":    3050,
+}
+
+// TestTemplateBoundCommandsCarryFetchHint guards the JIT contract for
+// templates against the embedded default kit: every `okt-*` prompt that
+// binds at least one template must surface the `templates.show` fetch hint
+// somewhere in its rendered Markdown — typically via the action text
+// (e.g. `okt-create`, `okt-config`) or the persona body (engineer's implement
+// loop covers `okt-implement`). Without the hint, the agent has no
+// in-prompt anchor for the materialization step, which would defeat the JIT
+// pattern.
+func TestTemplateBoundCommandsCarryFetchHint(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "data", "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
+
+	rt, err := Open(ctx, Options{DBPath: dbPath, ConfigPath: configPath, CWD: tmp})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = rt.Close() }()
+
+	for _, name := range agent.CommandNames() {
+		t.Run(name, func(t *testing.T) {
+			resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
+			if err != nil {
+				t.Fatalf("ResolveCommand(%s) error = %v", name, err)
+			}
+			if len(resp.Templates) == 0 {
+				t.Skip("command does not bind any templates")
+			}
+			if !strings.Contains(resp.Markdown, "templates.show") {
+				t.Fatalf("prompt %s binds %d template(s) but the rendered Markdown carries no `templates.show` fetch hint — the agent has no in-prompt anchor for the JIT materialization step. Add the hint to the action text or to the bound persona's body.\n\nRendered prompt:\n%s",
+					name, len(resp.Templates), resp.Markdown)
+			}
+		})
+	}
 }
 
 // TestPromptBudgets renders every `okt-*` prompt against the embedded default
