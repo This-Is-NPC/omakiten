@@ -140,7 +140,7 @@ func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext
 			return dump, err
 		}
 		for _, law := range laws {
-			if !budget.add(s.counter.Count(law.Key + " " + law.Severity + " " + law.Body)) {
+			if !budget.add(s.counter.Count(law.Key + " " + law.Severity.String() + " " + law.Body)) {
 				break
 			}
 			dump.Laws = append(dump.Laws, law)

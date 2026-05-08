@@ -81,6 +81,16 @@ func (s *WorkflowService) CreateTask(ctx context.Context, projectID int64, title
 		}
 		bucketKey = key
 	}
+	// Resolve "no priority specified" to the configured `default: true`
+	// id BEFORE reaching the store. Without this, PriorityZero falls
+	// through to the SQL column DEFAULT (the canonical kit's id 2 =
+	// "normal") and ignores user customisations to config.priorities.
+	// domain.DefaultPriority returns PriorityZero when the registry has
+	// not been wired (test contexts), in which case the store's SQL
+	// DEFAULT keeps acting as the safety net.
+	if priority == domain.PriorityZero {
+		priority = domain.DefaultPriority()
+	}
 	return s.tasks.CreateTask(ctx, projectID, title, description, priority, bucketKey)
 }
 

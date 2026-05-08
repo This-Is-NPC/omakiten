@@ -191,7 +191,13 @@ func enrichLawsFromBundle(laws []domain.Law, bundle config.Bundle) []domain.Law 
 	for index, law := range laws {
 		if file, ok := bySlug[law.Key]; ok {
 			laws[index].Body = file.Body
-			laws[index].Severity = file.Severity
+			// Frontmatter carries the severity label; resolve to its
+			// configured id so the in-memory shape matches the store.
+			// Unknown labels keep whatever the store returned so the
+			// UI still renders while validator surfaces the typo.
+			if id, ok := domain.SeverityFromLabel(file.Severity); ok {
+				laws[index].Severity = id
+			}
 			laws[index].SourcePath = file.SourcePath
 			laws[index].Scope = domain.LawScope(file.Scope)
 			laws[index].ProjectKey = file.ProjectSlug
