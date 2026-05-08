@@ -30,6 +30,25 @@
 * **boundary enforcement:** new `internal/arch/arch_test.go` walks the import graph and fails if `internal/domain` reaches into adapters, if `internal/app` imports concrete adapters, or if any leaf adapter references a sibling. A `.golangci.yml` mirrors the rules under `depguard`. CI now runs `go vet`, `go test -race -count=1` and `golangci-lint`.
 * **eliminated `"backlog"` literal in production code:** `internal/cli/add.go --bucket` defaults to `""` (the `WorkflowService` resolves the active workflow's first bucket); the TUI's create form does the same.
 
+## [0.9.0](https://github.com/This-Is-NPC/omakiten/compare/v0.8.0...v0.9.0) (2026-05-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* every MCP tool input must now include _agent_model as a top-level string field. Clients that previously called CallTool without identifying the model will receive a validation error.
+
+### Features
+
+* **install:** interactive multi-harness MCP setup ([#31](https://github.com/This-Is-NPC/omakiten/issues/31)) ([d068510](https://github.com/This-Is-NPC/omakiten/commit/d06851034016970009334450924e9363d34067b3))
+* per-agent benchmarking via attributed domain events ([#27](https://github.com/This-Is-NPC/omakiten/issues/27)) ([daba09a](https://github.com/This-Is-NPC/omakiten/commit/daba09a107bb6ecf6738fb48f6da2c1789f1aa25))
+* **templates:** hard-reject shadowed slugs in templates.show ([#29](https://github.com/This-Is-NPC/omakiten/issues/29)) ([084fa2a](https://github.com/This-Is-NPC/omakiten/commit/084fa2ad02bb46e2e9ecc45ae9ca2f1e832dd8c5))
+* **tui:** hierarchical navigation overhaul (T1+T2+T3) ([#30](https://github.com/This-Is-NPC/omakiten/issues/30)) ([b45c6cf](https://github.com/This-Is-NPC/omakiten/commit/b45c6cfb87703177c16f78fbf76b7f7057c67ca4))
+
+
+### Bug Fixes
+
+* persona body carries role flow + self-report law + kit cleanup ([#32](https://github.com/This-Is-NPC/omakiten/issues/32)) ([d2ab986](https://github.com/This-Is-NPC/omakiten/commit/d2ab98625dce6de3dca862ff5b2b5fc89748f97a))
+
 ## [0.8.0](https://github.com/This-Is-NPC/omakiten/compare/v0.7.0...v0.8.0) (2026-05-07)
 
 
