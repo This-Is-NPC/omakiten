@@ -3,11 +3,13 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"omakiten/internal/agent"
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/agentsetup"
 	"omakiten/internal/mcp"
@@ -23,7 +25,61 @@ func newMCPCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.AddCommand(newMCPCallCommand(opts))
 	cmd.AddCommand(newMCPServeCommand(opts))
 	cmd.AddCommand(newMCPSetupCommand())
+	cmd.AddCommand(newMCPPromptsCommand(opts))
 	return cmd
+}
+
+// newMCPPromptsCommand renders each `okt-*` prompt's resolved markdown to
+// stdout so users can preview what the agent receives without spinning up
+// an MCP client. With no argument, every prompt in `agent.CommandNames()` is
+// rendered in handoff order, separated by horizontal rules and annotated
+// with byte/rune counts. A single name argument renders that prompt only.
+func newMCPPromptsCommand(opts *runtimeOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "prompts [name]",
+		Short: "Render resolved okt-* prompt markdown to stdout",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			rt, err := agentruntime.Open(ctx, agentOptions(opts))
+			if err != nil {
+				return err
+			}
+			defer func() { _ = rt.Close() }()
+
+			adapter := mcp.NewAdapter(rt.Service())
+
+			names := agent.CommandNames()
+			if len(args) == 1 {
+				names = []string{args[0]}
+			}
+
+			out := cmd.OutOrStdout()
+			for i, name := range names {
+				if i > 0 {
+					fmt.Fprint(out, "\n---\n\n")
+				}
+				result, err := adapter.GetPrompt(ctx, name, nil)
+				if err != nil {
+					return fmt.Errorf("get prompt %s: %w", name, err)
+				}
+				if len(result.Messages) == 0 {
+					return fmt.Errorf("prompt %s returned no messages", name)
+				}
+				body := result.Messages[0].Content.Text
+				fmt.Fprintf(out, "# %s — %d bytes / %d runes\n\n%s\n", name, len(body), runeCount(body), body)
+			}
+			return nil
+		},
+	}
+}
+
+func runeCount(s string) int {
+	n := 0
+	for range s {
+		n++
+	}
+	return n
 }
 
 func newMCPToolsCommand() *cobra.Command {
