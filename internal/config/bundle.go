@@ -117,9 +117,58 @@ type Settings struct {
 	// lookup. Authors who want to rename, add, or reorder priority labels
 	// edit this block in YAML — no code changes required. Order follows
 	// id ascending and is also the sort weight (higher id = higher
-	// priority on `ORDER BY priority`). Empty means "use the canonical
-	// default kit".
+	// priority on `ORDER BY priority`). Required — validator rejects an
+	// empty list; the kit YAML at defaults/omakiten.yaml ships the
+	// canonical 3-entry table.
 	Priorities []PriorityDefinition `yaml:"priorities,omitempty" json:"priorities,omitempty"`
+	// Severities is the configurable id↔value table for law severities.
+	// Same shape and contract as Priorities: code references the id,
+	// frontmatter parsers resolve labels via lookup, renamer edits a
+	// single line in YAML. Required — see Priorities.
+	Severities []SeverityDefinition `yaml:"severities,omitempty" json:"severities,omitempty"`
+}
+
+// SeverityDefinition is one row of the configurable law-severity table.
+// ID is the storage handle; Value is the human label rendered in
+// frontmatter, CLI output, MCP responses, and JSON marshaling. Default
+// flags the severity applied when a law arrives without one (validator
+// enforces at most one). Color is an optional theme-token name picked
+// up by the TUI badge renderer (`error` / `warning` / `success` /
+// `info`).
+type SeverityDefinition struct {
+	ID      int    `yaml:"id" json:"id"`
+	Value   string `yaml:"value" json:"value"`
+	Default bool   `yaml:"default,omitempty" json:"default,omitempty"`
+	Color   string `yaml:"color,omitempty" json:"color,omitempty"`
+}
+
+// EffectiveSeverities returns the resolved severity table. The validator
+// guarantees `Severities` is non-empty when the bundle reaches runtime;
+// the user's omakiten.yaml is the single canonical source. This method
+// remains for the explicit naming at call sites (`bundle.Config.
+// EffectiveSeverities()` reads more clearly than `bundle.Config.
+// Severities`); it returns a fresh copy so callers can mutate without
+// affecting the bundle.
+func (s Settings) EffectiveSeverities() []SeverityDefinition {
+	out := make([]SeverityDefinition, len(s.Severities))
+	copy(out, s.Severities)
+	return out
+}
+
+// DefaultSeverityID returns the id flagged `default: true` in the
+// configured severity table, falling back to the middle entry's id
+// when no flag is declared. Validator rejects multiple defaults and an
+// empty table.
+func (s Settings) DefaultSeverityID() int {
+	if len(s.Severities) == 0 {
+		return 0
+	}
+	for _, sev := range s.Severities {
+		if sev.Default {
+			return sev.ID
+		}
+	}
+	return s.Severities[len(s.Severities)/2].ID
 }
 
 // PriorityDefinition is one row of the configurable priority table.
@@ -136,61 +185,38 @@ type PriorityDefinition struct {
 	Color   string `yaml:"color,omitempty" json:"color,omitempty"`
 }
 
-// CanonicalPriorities is the shape the kit ships when omakiten.yaml does
-// not declare a priorities block. Lower id = lower urgency; the middle
-// entry is the implicit default. Centralised so validator, runtime, and
-// migration agree on the same fallback.
-var CanonicalPriorities = []PriorityDefinition{
-	{ID: 1, Value: "low", Color: "success"},
-	{ID: 2, Value: "normal", Default: true, Color: "info"},
-	{ID: 3, Value: "high", Color: "error"},
-}
-
-// EffectivePriorities returns the configured priority table with the
-// canonical fallback substituted when the user omitted the block. The
-// returned slice is a fresh copy so callers can mutate it without
-// affecting the bundle.
+// EffectivePriorities returns the resolved priority table. The validator
+// guarantees `Priorities` is non-empty at runtime — the user's
+// omakiten.yaml (materialised from defaults/omakiten.yaml on first run)
+// is the single canonical source. This method exists for the explicit
+// naming at call sites; it returns a fresh copy.
 func (s Settings) EffectivePriorities() []PriorityDefinition {
-	source := s.Priorities
-	if len(source) == 0 {
-		source = CanonicalPriorities
-	}
-	out := make([]PriorityDefinition, len(source))
-	copy(out, source)
+	out := make([]PriorityDefinition, len(s.Priorities))
+	copy(out, s.Priorities)
 	return out
 }
 
 // DefaultPriorityID returns the id of the priority flagged `default: true`
-// in the resolved table, falling back to the middle entry's id when no
-// explicit default is declared. Validator rejects multiple defaults so
-// this can pick the first match safely.
+// in the configured table, falling back to the middle entry's id when
+// no explicit default is declared. Validator rejects multiple defaults
+// and an empty table.
 func (s Settings) DefaultPriorityID() int {
-	prios := s.EffectivePriorities()
-	if len(prios) == 0 {
+	if len(s.Priorities) == 0 {
 		return 0
 	}
-	for _, p := range prios {
+	for _, p := range s.Priorities {
 		if p.Default {
 			return p.ID
 		}
 	}
-	return prios[len(prios)/2].ID
+	return s.Priorities[len(s.Priorities)/2].ID
 }
 
-// DefaultTemplateKinds is the canonical set of template-default slots when
-// the user omits config.template_defaults. These are the kinds the TUI
-// picker offers and the agent consumers query for.
-var DefaultTemplateKinds = []string{"task", "pr", "comment-resume", "comment-selfbranch"}
-
-// TemplateKinds returns the configured template_defaults list, falling back
-// to DefaultTemplateKinds when omitted. Used by validator, TUI picker, and
-// MCP query endpoints — all of them must agree on the valid kinds.
+// TemplateKinds returns the configured template_defaults list. Validator
+// enforces non-empty in the loaded bundle so callers do not need a
+// fallback — the kit's omakiten.yaml ships the canonical set and the
+// user's file inherits via install-time materialisation.
 func (s Settings) TemplateKinds() []string {
-	if len(s.TemplateDefaults) == 0 {
-		out := make([]string, len(DefaultTemplateKinds))
-		copy(out, DefaultTemplateKinds)
-		return out
-	}
 	out := make([]string, len(s.TemplateDefaults))
 	copy(out, s.TemplateDefaults)
 	return out
@@ -201,186 +227,85 @@ type OutputSettings struct {
 	OmitEmpty    bool `yaml:"omit_empty" json:"omit_empty"`
 }
 
-// MCPSettings tunes how MCP responses are shaped to fit the agent's context
-// window. Every field is optional; omit a key to keep the canonical default.
-// Pointer booleans (`*bool`) distinguish "not declared" from "declared false"
-// — e.g. omitting `cache_prompts` keeps caching on, while writing
-// `cache_prompts: false` is an explicit opt-out.
-//
-// Defaults are surfaced via the `Effective*` accessors so the validator and
-// the runtime agree on resolved values without each caller re-deriving them.
+// MCPSettings tunes how MCP responses are shaped to fit the agent's
+// context window. **Every field is required** — the canonical values
+// live in `defaults/omakiten.yaml` (the embedded kit YAML the installer
+// materialises into the user's config root). Validator rejects bundles
+// that omit any field. Pointer booleans (`*bool`) require an explicit
+// `true` / `false` declaration; nil = invalid.
 type MCPSettings struct {
 	// RecentCommentLimit caps how many recent comments tools like
-	// `tasks.continue` and `project.overview` ship per call. <=0 keeps the
-	// canonical default (DefaultRecentCommentLimit).
-	RecentCommentLimit int `yaml:"recent_comment_limit,omitempty" json:"recent_comment_limit,omitempty"`
+	// `tasks.continue` and `project.overview` ship per call. Required;
+	// validator demands > 0.
+	RecentCommentLimit int `yaml:"recent_comment_limit" json:"recent_comment_limit"`
 
 	// MaxCommentChars truncates comment bodies past this length with a
-	// trailing ellipsis when shipped over MCP. <=0 keeps full bodies; >0
-	// truncates. Use to bound `tasks.continue` payloads on tasks with long
-	// `#resume` / `#documentation` comments.
-	MaxCommentChars int `yaml:"max_comment_chars,omitempty" json:"max_comment_chars,omitempty"`
+	// trailing ellipsis when shipped over MCP. Required; validator
+	// demands >= 0 (0 = no truncation).
+	MaxCommentChars int `yaml:"max_comment_chars" json:"max_comment_chars"`
 
 	// IncludeWorkflowInContinue toggles the `workflow` block in
-	// `tasks.continue` responses. nil keeps the canonical default
-	// (DefaultIncludeWorkflowInContinue, true). Set false once `okt` has
-	// loaded the workflow for the session and the agent does not need it
-	// re-shipped per call.
-	IncludeWorkflowInContinue *bool `yaml:"include_workflow_in_continue,omitempty" json:"include_workflow_in_continue,omitempty"`
+	// `tasks.continue` responses. Required `*bool` — explicit
+	// declaration so the user opts in or out deliberately.
+	IncludeWorkflowInContinue *bool `yaml:"include_workflow_in_continue" json:"include_workflow_in_continue"`
 
-	// CachePrompts toggles emitting the Anthropic-aware `cache_control` hint
-	// on `prompts/get` content. nil keeps the canonical default
-	// (DefaultCachePrompts, true). Aware clients (recent Claude Code) reuse
-	// the cached prompt across calls; unaware clients ignore the hint
-	// silently — disabling only matters when a client misbehaves on it.
-	CachePrompts *bool `yaml:"cache_prompts,omitempty" json:"cache_prompts,omitempty"`
+	// CachePrompts toggles emitting the Anthropic-aware `cache_control`
+	// hint on `prompts/get` content. Required `*bool`.
+	CachePrompts *bool `yaml:"cache_prompts" json:"cache_prompts"`
 
 	// RecentContextLimit caps how many recent context entries flow into
-	// `tasks.continue` / `project.overview` / `project.resume` responses.
-	// <=0 keeps the canonical default (DefaultRecentContextLimit). Smaller
-	// than recent_comment_limit because each entry can be paragraphs of
-	// free-form notes — three is enough to set the scene.
-	RecentContextLimit int `yaml:"recent_context_limit,omitempty" json:"recent_context_limit,omitempty"`
+	// `tasks.continue` / `project.overview` / `project.resume`
+	// responses. Required; validator demands > 0.
+	RecentContextLimit int `yaml:"recent_context_limit" json:"recent_context_limit"`
 
 	// NextWorkLimit caps the "likely next work" suggestion list shipped
-	// in `project.resume`. <=0 keeps the canonical default
-	// (DefaultNextWorkLimit). Increase for project-overview screens; keep
-	// small for narrow agent contexts.
-	NextWorkLimit int `yaml:"next_work_limit,omitempty" json:"next_work_limit,omitempty"`
+	// in `project.resume`. Required; validator demands > 0.
+	NextWorkLimit int `yaml:"next_work_limit" json:"next_work_limit"`
 
 	// SimilarTaskLimit caps how many similar-task hints are surfaced by
-	// `tasks.create_intent`. <=0 keeps the canonical default
-	// (DefaultSimilarTaskLimit). Tune up if you frequently create
-	// near-duplicate intents and want broader dedup coverage.
-	SimilarTaskLimit int `yaml:"similar_task_limit,omitempty" json:"similar_task_limit,omitempty"`
+	// `tasks.create_intent`. Required; validator demands > 0.
+	SimilarTaskLimit int `yaml:"similar_task_limit" json:"similar_task_limit"`
 }
 
-// Canonical defaults for MCPSettings. Centralized so validator and runtime
-// resolve to the same values without re-deriving them locally.
-const (
-	DefaultRecentCommentLimit        = 5
-	DefaultMaxCommentChars           = 0 // 0 = no truncation
-	DefaultIncludeWorkflowInContinue = true
-	DefaultCachePrompts              = true
-	DefaultRecentContextLimit        = 3
-	DefaultNextWorkLimit             = 5
-	DefaultSimilarTaskLimit          = 5
-)
-
-// EffectiveRecentCommentLimit returns the configured cap on recent comments
-// shipped per MCP call, falling back to DefaultRecentCommentLimit when the
-// user omitted the field or set a non-positive value.
-func (m MCPSettings) EffectiveRecentCommentLimit() int {
-	if m.RecentCommentLimit <= 0 {
-		return DefaultRecentCommentLimit
-	}
-	return m.RecentCommentLimit
-}
-
-// EffectiveMaxCommentChars returns the configured comment-body truncation
-// length, falling back to DefaultMaxCommentChars (0 = no truncation) when the
-// user omitted the field or set a negative value.
-func (m MCPSettings) EffectiveMaxCommentChars() int {
-	if m.MaxCommentChars < 0 {
-		return DefaultMaxCommentChars
-	}
-	return m.MaxCommentChars
-}
-
-// EffectiveIncludeWorkflowInContinue returns whether `tasks.continue` should
-// embed the active workflow shape. nil → DefaultIncludeWorkflowInContinue.
+// EffectiveRecentCommentLimit and friends are identity passthroughs
+// kept for explicit naming at call sites. Validator guarantees the
+// fields are valid when the bundle reaches runtime — no fallback.
+func (m MCPSettings) EffectiveRecentCommentLimit() int { return m.RecentCommentLimit }
+func (m MCPSettings) EffectiveMaxCommentChars() int    { return m.MaxCommentChars }
 func (m MCPSettings) EffectiveIncludeWorkflowInContinue() bool {
-	if m.IncludeWorkflowInContinue == nil {
-		return DefaultIncludeWorkflowInContinue
-	}
-	return *m.IncludeWorkflowInContinue
+	return m.IncludeWorkflowInContinue != nil && *m.IncludeWorkflowInContinue
 }
-
-// EffectiveCachePrompts returns whether `prompts/get` should emit the
-// `cache_control` hint. nil → DefaultCachePrompts.
 func (m MCPSettings) EffectiveCachePrompts() bool {
-	if m.CachePrompts == nil {
-		return DefaultCachePrompts
-	}
-	return *m.CachePrompts
+	return m.CachePrompts != nil && *m.CachePrompts
 }
-
-// EffectiveRecentContextLimit returns the configured cap on recent context
-// entries shipped per MCP call, falling back to DefaultRecentContextLimit
-// when the user omitted the field or set a non-positive value.
-func (m MCPSettings) EffectiveRecentContextLimit() int {
-	if m.RecentContextLimit <= 0 {
-		return DefaultRecentContextLimit
-	}
-	return m.RecentContextLimit
-}
-
-// EffectiveNextWorkLimit returns the configured cap on the "likely next
-// work" suggestion list, falling back to DefaultNextWorkLimit when omitted
-// or set to a non-positive value.
-func (m MCPSettings) EffectiveNextWorkLimit() int {
-	if m.NextWorkLimit <= 0 {
-		return DefaultNextWorkLimit
-	}
-	return m.NextWorkLimit
-}
-
-// EffectiveSimilarTaskLimit returns the configured cap on similar-task
-// hints surfaced by tasks.create_intent, falling back to
-// DefaultSimilarTaskLimit when omitted or set to a non-positive value.
-func (m MCPSettings) EffectiveSimilarTaskLimit() int {
-	if m.SimilarTaskLimit <= 0 {
-		return DefaultSimilarTaskLimit
-	}
-	return m.SimilarTaskLimit
-}
+func (m MCPSettings) EffectiveRecentContextLimit() int { return m.RecentContextLimit }
+func (m MCPSettings) EffectiveNextWorkLimit() int      { return m.NextWorkLimit }
+func (m MCPSettings) EffectiveSimilarTaskLimit() int   { return m.SimilarTaskLimit }
 
 type ContextSettings struct {
 	DefaultLevel int `yaml:"default_level" json:"default_level"`
 	MaxTokens    int `yaml:"max_tokens" json:"max_tokens"`
 }
 
-// TUISettings tunes how the terminal UI presents data. Every field is
-// optional; omit a key to keep the canonical default. Currently scoped to
-// the entity-card token-health badge thresholds, but ready to grow as more
-// TUI knobs need to escape hardcoded constants.
+// TUISettings tunes how the terminal UI presents data. Required block
+// — the kit's `defaults/omakiten.yaml` declares the canonical values
+// the user inherits at install time.
 type TUISettings struct {
-	TokenBadge TokenBadgeThresholds `yaml:"token_badge,omitempty" json:"token_badge,omitempty"`
+	TokenBadge TokenBadgeThresholds `yaml:"token_badge" json:"token_badge"`
 }
 
-// TokenBadgeThresholds drives the colored TOKENS:N badge on entity cards.
-// Above RedAt → red; above YellowAt → yellow; else green. Values are token
-// counts (the renderer uses the same approximation as the right-rail token
-// budget, so tuning here matches what users see in the rail). <=0 keeps the
-// canonical default.
+// TokenBadgeThresholds drives the colored TOKENS:N badge on entity
+// cards. Above RedAt → red; above YellowAt → yellow; else green.
+// Required fields: validator demands both > 0.
 type TokenBadgeThresholds struct {
-	YellowAt int `yaml:"yellow_at,omitempty" json:"yellow_at,omitempty"`
-	RedAt    int `yaml:"red_at,omitempty" json:"red_at,omitempty"`
+	YellowAt int `yaml:"yellow_at" json:"yellow_at"`
+	RedAt    int `yaml:"red_at" json:"red_at"`
 }
 
-// Canonical defaults for TokenBadgeThresholds. Calibrated against the default
-// kit: most laws land in the 70–190 token range with their few-shot examples,
-// so the green band must extend above that to keep the panel signal-rich
-// rather than uniformly yellow.
-const (
-	DefaultTokenBadgeYellowAt = 150
-	DefaultTokenBadgeRedAt    = 400
-)
-
-// Effective returns the resolved (yellow, red) thresholds, falling back to
-// the canonical defaults when the user omitted a field or set a non-positive
-// value. Callers should use this rather than reading the raw fields so the
-// validator and the TUI agree on the same boundary.
+// Effective returns the configured (yellow, red) thresholds. Identity
+// passthrough — validator guarantees both > 0 at runtime.
 func (t TokenBadgeThresholds) Effective() (yellow, red int) {
-	yellow = t.YellowAt
-	red = t.RedAt
-	if yellow <= 0 {
-		yellow = DefaultTokenBadgeYellowAt
-	}
-	if red <= 0 {
-		red = DefaultTokenBadgeRedAt
-	}
-	return yellow, red
+	return t.YellowAt, t.RedAt
 }
 
 type WorkflowSettings struct {
@@ -449,56 +374,11 @@ type ViewSettings struct {
 	TaskActivity TaskActivityViewSettings `yaml:"task_activity,omitempty" json:"task_activity,omitempty"`
 }
 
-// Default sort/filter values used when the user omits config.views or any
-// of its sub-fields. Centralising them here keeps the validator, the TUI
-// and the store query in agreement — all three call EffectiveViews() to
-// read the merged result rather than re-deriving the defaults locally.
-const (
-	DefaultBoardSortField        = "created_at"
-	DefaultBoardSortOrder        = "desc"
-	DefaultTableSortField        = "created_at"
-	DefaultTableSortOrder        = "desc"
-	DefaultGraphSortField        = "id"
-	DefaultGraphSortOrder        = "asc"
-	DefaultLogsSortOrder         = "desc"
-	DefaultLogsLimit             = 50
-	DefaultTaskActivitySortOrder = "asc"
-)
-
-// EffectiveViews returns ViewSettings with omitted fields filled in from
-// the canonical defaults. Callers should always go through this so the
-// store query, the validator and the TUI agree on the resolved values.
-func (s Settings) EffectiveViews() ViewSettings {
-	v := s.Views
-	if v.Board.Sort.Field == "" {
-		v.Board.Sort.Field = DefaultBoardSortField
-	}
-	if v.Board.Sort.Order == "" {
-		v.Board.Sort.Order = DefaultBoardSortOrder
-	}
-	if v.Table.Sort.Field == "" {
-		v.Table.Sort.Field = DefaultTableSortField
-	}
-	if v.Table.Sort.Order == "" {
-		v.Table.Sort.Order = DefaultTableSortOrder
-	}
-	if v.Graph.Sort.Field == "" {
-		v.Graph.Sort.Field = DefaultGraphSortField
-	}
-	if v.Graph.Sort.Order == "" {
-		v.Graph.Sort.Order = DefaultGraphSortOrder
-	}
-	if v.Logs.Sort.Order == "" {
-		v.Logs.Sort.Order = DefaultLogsSortOrder
-	}
-	if v.Logs.Limit <= 0 {
-		v.Logs.Limit = DefaultLogsLimit
-	}
-	if v.TaskActivity.Sort.Order == "" {
-		v.TaskActivity.Sort.Order = DefaultTaskActivitySortOrder
-	}
-	return v
-}
+// EffectiveViews returns the configured ViewSettings. Identity
+// passthrough kept for explicit naming at call sites — validator
+// guarantees every required field (sort.field, sort.order, logs.limit)
+// is set when the bundle reaches runtime.
+func (s Settings) EffectiveViews() ViewSettings { return s.Views }
 
 // Skill is a resolved skill: its frontmatter + body merged with the slug taken
 // from the source filename (without `.md`).

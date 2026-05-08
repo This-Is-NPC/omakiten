@@ -5,12 +5,6 @@ import (
 	"strings"
 )
 
-var allowedSeverities = map[string]struct{}{
-	"info":    {},
-	"warning": {},
-	"error":   {},
-}
-
 var allowedSortOrders = map[string]struct{}{
 	"asc":  {},
 	"desc": {},
@@ -19,9 +13,36 @@ var allowedSortOrders = map[string]struct{}{
 var (
 	allowedTaskSortFields  = []string{"id", "title", "priority", "created_at"}
 	allowedGraphSortFields = []string{"id", "title"}
-	allowedPriorities      = []string{"low", "normal", "high"}
 	allowedLogsSources     = []string{"cli", "tui", "mcp"}
 )
+
+// effectiveSeverityValues returns the configurable label set for law
+// severity validation. Reads from config.severities (validator-required,
+// non-empty by guarantee) so authors can rename, add, or reorder
+// severity labels in YAML and have law frontmatter parse against the
+// new set without a code change.
+func effectiveSeverityValues(bundle Bundle) []string {
+	sevs := bundle.Config.EffectiveSeverities()
+	out := make([]string, len(sevs))
+	for i, s := range sevs {
+		out[i] = s.Value
+	}
+	return out
+}
+
+// effectivePriorityValues returns the configurable label set for
+// priority view filters. Reads from config.priorities (validator-
+// required, non-empty by guarantee) so an author who adds "urgent" or
+// renames "high" can reference the new label in
+// `config.views.{board,table}.filter.priority` without a code change.
+func effectivePriorityValues(bundle Bundle) []string {
+	prios := bundle.Config.EffectivePriorities()
+	out := make([]string, len(prios))
+	for i, p := range prios {
+		out[i] = p.Value
+	}
+	return out
+}
 
 // ValidateBundle checks the merged bundle against on-disk entity sets.
 //
@@ -52,14 +73,23 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	if strings.TrimSpace(bundle.Config.Theme.Active) == "" {
 		return fmt.Errorf("config.theme.active is required")
 	}
-	if err := validateViewSettings(bundle.Config.Views, bundle.Workflows, bundle.Config.Workflow.Active); err != nil {
+	if err := validateViewSettings(bundle.Config.Views, bundle.Workflows, bundle.Config.Workflow.Active, effectivePriorityValues(bundle)); err != nil {
 		return err
 	}
 	if err := validateMCPSettings(bundle.Config.MCP); err != nil {
 		return err
 	}
+	if err := validateTUISettings(bundle.Config.TUI); err != nil {
+		return err
+	}
 	if err := validatePriorities(bundle.Config.Priorities); err != nil {
 		return err
+	}
+	if err := validateSeverities(bundle.Config.Severities); err != nil {
+		return err
+	}
+	if len(bundle.Config.TemplateDefaults) == 0 {
+		return fmt.Errorf("config.template_defaults: required (declare the kinds the TUI picker offers; see defaults/omakiten.yaml)")
 	}
 
 	skillSet := slugSet(loadedSkillSlugs(loadedSkills))
@@ -91,12 +121,17 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 			return fmt.Errorf("skills: ref %q has no matching file", skill.Slug)
 		}
 	}
+	severityValues := effectiveSeverityValues(bundle)
+	allowedSeveritySet := make(map[string]struct{}, len(severityValues))
+	for _, v := range severityValues {
+		allowedSeveritySet[v] = struct{}{}
+	}
 	for _, law := range bundle.Laws {
 		if _, ok := lawSet[law.Slug]; !ok {
 			return fmt.Errorf("laws: ref %q has no matching file", law.Slug)
 		}
-		if _, ok := allowedSeverities[law.Severity]; !ok {
-			return fmt.Errorf("laws.%s has invalid severity %q", law.Slug, law.Severity)
+		if _, ok := allowedSeveritySet[law.Severity]; !ok {
+			return fmt.Errorf("laws.%s has invalid severity %q (must match a value in config.severities)", law.Slug, law.Severity)
 		}
 	}
 	for _, persona := range bundle.Personas {
@@ -186,17 +221,48 @@ func validateMCPCommands(bundle Bundle, personaSet, lawSet, templateSet map[stri
 	return nil
 }
 
-// validateMCPSettings catches obviously-wrong tuning values at parse time.
-// Non-positive `recent_comment_limit` and negative `max_comment_chars` are
-// silently coerced to defaults via the Effective* accessors, but values that
-// the user clearly intended (e.g. a typo'd negative number) surface here so
-// the user gets a descriptive error instead of a silent fallback.
+// validateMCPSettings enforces that every MCP-shape knob is declared
+// in the bundle. The runtime has no in-code fallback; the canonical
+// values live in defaults/omakiten.yaml (the embedded kit YAML the
+// installer materialises). A user who removes a field gets an error
+// pointing at the kit so the fix is obvious.
 func validateMCPSettings(m MCPSettings) error {
-	if m.RecentCommentLimit < 0 {
-		return fmt.Errorf("config.mcp.recent_comment_limit cannot be negative")
+	if m.RecentCommentLimit <= 0 {
+		return fmt.Errorf("config.mcp.recent_comment_limit: must be > 0 (see defaults/omakiten.yaml for canonical values)")
 	}
 	if m.MaxCommentChars < 0 {
-		return fmt.Errorf("config.mcp.max_comment_chars cannot be negative")
+		return fmt.Errorf("config.mcp.max_comment_chars: must be >= 0 (0 = no truncation)")
+	}
+	if m.IncludeWorkflowInContinue == nil {
+		return fmt.Errorf("config.mcp.include_workflow_in_continue: required boolean (see defaults/omakiten.yaml)")
+	}
+	if m.CachePrompts == nil {
+		return fmt.Errorf("config.mcp.cache_prompts: required boolean (see defaults/omakiten.yaml)")
+	}
+	if m.RecentContextLimit <= 0 {
+		return fmt.Errorf("config.mcp.recent_context_limit: must be > 0 (see defaults/omakiten.yaml)")
+	}
+	if m.NextWorkLimit <= 0 {
+		return fmt.Errorf("config.mcp.next_work_limit: must be > 0 (see defaults/omakiten.yaml)")
+	}
+	if m.SimilarTaskLimit <= 0 {
+		return fmt.Errorf("config.mcp.similar_task_limit: must be > 0 (see defaults/omakiten.yaml)")
+	}
+	return nil
+}
+
+// validateTUISettings enforces the TUI block. Currently scoped to the
+// token-badge thresholds which the renderer needs at every paint; as
+// more TUI knobs migrate from code to YAML, add their checks here.
+func validateTUISettings(t TUISettings) error {
+	if t.TokenBadge.YellowAt <= 0 {
+		return fmt.Errorf("config.tui.token_badge.yellow_at: must be > 0 (see defaults/omakiten.yaml)")
+	}
+	if t.TokenBadge.RedAt <= 0 {
+		return fmt.Errorf("config.tui.token_badge.red_at: must be > 0 (see defaults/omakiten.yaml)")
+	}
+	if t.TokenBadge.RedAt <= t.TokenBadge.YellowAt {
+		return fmt.Errorf("config.tui.token_badge: red_at (%d) must be > yellow_at (%d)", t.TokenBadge.RedAt, t.TokenBadge.YellowAt)
 	}
 	return nil
 }
@@ -298,18 +364,24 @@ func validateTemplateDefaults(bundle Bundle) error {
 
 // validatePriorities enforces the shape of the configurable priority
 // table: ids are positive and unique, values are non-empty and unique,
-// and at most one entry may flag itself default. Empty bundles are
-// fine — runtime substitutes the canonical kit fallback. The check
-// runs whether the user declared the block or not so a hand-edited
-// YAML with duplicate ids fails loudly instead of writing tasks with
-// ambiguous priority semantics.
+// and at most one entry may flag itself default. The block is
+// required (non-empty); the kit YAML at defaults/omakiten.yaml ships
+// the canonical 3-entry table.
+//
+// Also rejects declaration order that does not match ascending id
+// order. The id is the SQL sort weight (`ORDER BY priority` reads
+// `priority_id`), and the TUI cycle follows slice order — declaring
+// `[{id:3, value:high}, {id:1, value:low}]` would silently invert
+// both. Forcing ascending declaration order keeps the YAML readable
+// and the runtime semantics predictable.
 func validatePriorities(priorities []PriorityDefinition) error {
 	if len(priorities) == 0 {
-		return nil
+		return fmt.Errorf("config.priorities: required block (see defaults/omakiten.yaml for the canonical id↔value table)")
 	}
 	seenID := map[int]string{}
 	seenValue := map[string]int{}
 	defaults := 0
+	prevID := 0
 	for _, p := range priorities {
 		if p.ID <= 0 {
 			return fmt.Errorf("config.priorities: id must be positive, got %d for value %q", p.ID, p.Value)
@@ -329,9 +401,56 @@ func validatePriorities(priorities []PriorityDefinition) error {
 		if p.Default {
 			defaults++
 		}
+		if p.ID <= prevID {
+			return fmt.Errorf("config.priorities: ids must be declared in ascending order (id %d after %d for value %q) — id is the SQL sort weight and the TUI cycle follows slice order", p.ID, prevID, value)
+		}
+		prevID = p.ID
 	}
 	if defaults > 1 {
 		return fmt.Errorf("config.priorities: at most one entry may set default: true (got %d)", defaults)
+	}
+	return nil
+}
+
+// validateSeverities mirrors validatePriorities for law severities:
+// positive unique ids, non-empty unique values, at most one default,
+// and ascending declaration order. Block is required (non-empty);
+// the kit YAML at defaults/omakiten.yaml ships the canonical 3-entry
+// table.
+func validateSeverities(severities []SeverityDefinition) error {
+	if len(severities) == 0 {
+		return fmt.Errorf("config.severities: required block (see defaults/omakiten.yaml for the canonical id↔value table)")
+	}
+	seenID := map[int]string{}
+	seenValue := map[string]int{}
+	defaults := 0
+	prevID := 0
+	for _, s := range severities {
+		if s.ID <= 0 {
+			return fmt.Errorf("config.severities: id must be positive, got %d for value %q", s.ID, s.Value)
+		}
+		value := strings.TrimSpace(s.Value)
+		if value == "" {
+			return fmt.Errorf("config.severities[id=%d]: value is required", s.ID)
+		}
+		if existing, dup := seenID[s.ID]; dup {
+			return fmt.Errorf("config.severities: id %d declared twice (values %q and %q)", s.ID, existing, value)
+		}
+		seenID[s.ID] = value
+		if otherID, dup := seenValue[value]; dup {
+			return fmt.Errorf("config.severities: value %q declared twice (ids %d and %d)", value, otherID, s.ID)
+		}
+		seenValue[value] = s.ID
+		if s.Default {
+			defaults++
+		}
+		if s.ID <= prevID {
+			return fmt.Errorf("config.severities: ids must be declared in ascending order (id %d after %d for value %q)", s.ID, prevID, value)
+		}
+		prevID = s.ID
+	}
+	if defaults > 1 {
+		return fmt.Errorf("config.severities: at most one entry may set default: true (got %d)", defaults)
 	}
 	return nil
 }
@@ -518,19 +637,24 @@ func requireKitFields(kit Kit) error {
 	return requireIDKeyName("kit", kit.ID, kit.Key, kit.Name)
 }
 
-// validateViewSettings enforces per-view sort/filter rules. Empty fields are
-// fine — EffectiveViews fills them in with the canonical defaults — but any
-// value the user does provide must be in the allowed set, otherwise the TUI
-// would silently ignore typos and the user would never get feedback.
-func validateViewSettings(v ViewSettings, workflows []Workflow, activeWorkflow string) error {
-	if err := validateSort("config.views.board.sort", v.Board.Sort, allowedTaskSortFields, true); err != nil {
+// validateViewSettings enforces per-view sort/filter rules. Every
+// sort field/order is required — the kit YAML at defaults/omakiten.
+// yaml ships the canonical values; the user file inherits at install
+// time. Filter blocks default to empty lists (interpreted as "all
+// values allowed").
+//
+// allowedPriorities is the resolved label set from config.priorities
+// so authors who declare custom priority labels can reference them in
+// `config.views.{board,table}.filter.priority` without a code change.
+func validateViewSettings(v ViewSettings, workflows []Workflow, activeWorkflow string, allowedPriorities []string) error {
+	if err := validateRequiredSort("config.views.board.sort", v.Board.Sort, allowedTaskSortFields, true); err != nil {
 		return err
 	}
 	if err := validateStringSet("config.views.board.filter.priority", v.Board.Filter.Priority, allowedPriorities); err != nil {
 		return err
 	}
 
-	if err := validateSort("config.views.table.sort", v.Table.Sort, allowedTaskSortFields, true); err != nil {
+	if err := validateRequiredSort("config.views.table.sort", v.Table.Sort, allowedTaskSortFields, true); err != nil {
 		return err
 	}
 	if err := validateStringSet("config.views.table.filter.priority", v.Table.Filter.Priority, allowedPriorities); err != nil {
@@ -542,26 +666,50 @@ func validateViewSettings(v ViewSettings, workflows []Workflow, activeWorkflow s
 		}
 	}
 
-	if err := validateSort("config.views.graph.sort", v.Graph.Sort, allowedGraphSortFields, true); err != nil {
+	if err := validateRequiredSort("config.views.graph.sort", v.Graph.Sort, allowedGraphSortFields, true); err != nil {
 		return err
 	}
 
-	// Logs only carries an order — `field` is meaningless for time-series, so
-	// we pass requireField=false to skip the field-allowed check.
-	if err := validateSort("config.views.logs.sort", v.Logs.Sort, nil, false); err != nil {
+	// Logs only carries an order — `field` is meaningless for time-series.
+	if err := validateRequiredSort("config.views.logs.sort", v.Logs.Sort, nil, false); err != nil {
 		return err
 	}
-	if v.Logs.Limit < 0 {
-		return fmt.Errorf("config.views.logs.limit cannot be negative")
+	if v.Logs.Limit <= 0 {
+		return fmt.Errorf("config.views.logs.limit: must be > 0 (see defaults/omakiten.yaml)")
 	}
 	if err := validateStringSet("config.views.logs.filter.source", v.Logs.Filter.Source, allowedLogsSources); err != nil {
 		return err
 	}
 
-	if err := validateSort("config.views.task_activity.sort", v.TaskActivity.Sort, nil, false); err != nil {
+	if err := validateRequiredSort("config.views.task_activity.sort", v.TaskActivity.Sort, nil, false); err != nil {
 		return err
 	}
 
+	return nil
+}
+
+// validateRequiredSort is the strict variant of the original sort
+// validator: every sort block MUST declare its order, and views with
+// `requireField=true` MUST also declare a field. Empty values used to
+// fall through to canonical defaults; with the kit YAML now the only
+// canonical source, omitted fields are an authoring error.
+func validateRequiredSort(section string, sort SortSettings, allowedFields []string, requireField bool) error {
+	if requireField {
+		if sort.Field == "" {
+			return fmt.Errorf("%s.field: required (see defaults/omakiten.yaml)", section)
+		}
+		if !containsString(allowedFields, sort.Field) {
+			return fmt.Errorf("%s.field %q is not one of %v", section, sort.Field, allowedFields)
+		}
+	} else if sort.Field != "" {
+		return fmt.Errorf("%s.field is not configurable", section)
+	}
+	if sort.Order == "" {
+		return fmt.Errorf("%s.order: required (see defaults/omakiten.yaml)", section)
+	}
+	if _, ok := allowedSortOrders[sort.Order]; !ok {
+		return fmt.Errorf("%s.order %q must be \"asc\" or \"desc\"", section, sort.Order)
+	}
 	return nil
 }
 
