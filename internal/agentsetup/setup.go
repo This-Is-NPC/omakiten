@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -16,6 +17,8 @@ const (
 	ClaudeCodeHarness    = "claude-code"
 	ClaudeDesktopHarness = "claude-desktop"
 	OpenCodeHarness      = "opencode"
+	CrushHarness         = "crush"
+	GitHubCopilotHarness = "github-copilot"
 )
 
 type Options struct {
@@ -38,7 +41,7 @@ type Result struct {
 }
 
 func SupportedHarnesses() []string {
-	return []string{ClaudeCodeHarness, ClaudeDesktopHarness, OpenCodeHarness}
+	return []string{ClaudeCodeHarness, ClaudeDesktopHarness, OpenCodeHarness, CrushHarness, GitHubCopilotHarness}
 }
 
 func Setup(opts Options) (Result, error) {
@@ -140,9 +143,36 @@ func defaultConfigPath(harness string) (string, error) {
 			return "", err
 		}
 		return filepath.Join(configDir, "opencode", "opencode.json"), nil
+	case CrushHarness:
+		return crushDefaultConfigPath()
+	case GitHubCopilotHarness:
+		configDir, err := os.UserConfigDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(configDir, "Code", "User", "mcp.json"), nil
 	default:
 		return "", domain.NewError(domain.ErrValidation, "no default config path for harness", map[string]any{"harness": harness})
 	}
+}
+
+// crushDefaultConfigPath returns Crush's documented global config path. Crush
+// uses Local AppData on Windows (not Roaming, which os.UserConfigDir returns)
+// and ~/.config on macOS (not ~/Library/Application Support), so the standard
+// Go helpers don't fit.
+func crushDefaultConfigPath() (string, error) {
+	if runtime.GOOS == "windows" {
+		local := os.Getenv("LOCALAPPDATA")
+		if local == "" {
+			return "", domain.NewError(domain.ErrValidation, "LOCALAPPDATA is not set", map[string]any{"harness": CrushHarness})
+		}
+		return filepath.Join(local, "crush", "crush.json"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "crush", "crush.json"), nil
 }
 
 func defaultCommand() string {
@@ -162,12 +192,19 @@ func entryExists(existing map[string]any, harness string) bool {
 		}
 		_, ok := mcpServers["omakiten"]
 		return ok
-	case OpenCodeHarness:
+	case OpenCodeHarness, CrushHarness:
 		mcpSection, err := objectField(existing, "mcp")
 		if err != nil || mcpSection == nil {
 			return false
 		}
 		_, ok := mcpSection["omakiten"]
+		return ok
+	case GitHubCopilotHarness:
+		servers, err := objectField(existing, "servers")
+		if err != nil || servers == nil {
+			return false
+		}
+		_, ok := servers["omakiten"]
 		return ok
 	}
 	return false
@@ -196,6 +233,20 @@ func mergeHarnessConfig(existing map[string]any, harness, command string, args [
 		cmd = append(cmd, args...)
 		mcpSection["omakiten"] = map[string]any{"type": "local", "command": cmd, "enabled": true}
 		out["mcp"] = mcpSection
+	case CrushHarness:
+		mcpSection, _ := objectField(out, "mcp")
+		if mcpSection == nil {
+			mcpSection = map[string]any{}
+		}
+		mcpSection["omakiten"] = map[string]any{"type": "stdio", "command": command, "args": args}
+		out["mcp"] = mcpSection
+	case GitHubCopilotHarness:
+		servers, _ := objectField(out, "servers")
+		if servers == nil {
+			servers = map[string]any{}
+		}
+		servers["omakiten"] = map[string]any{"type": "stdio", "command": command, "args": args}
+		out["servers"] = servers
 	}
 	return out
 }
