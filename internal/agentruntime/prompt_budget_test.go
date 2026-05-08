@@ -25,6 +25,7 @@ var promptBudgets = map[string]int{
 	"okt-continue":  3100,
 	"okt-implement": 6000,
 	"okt-document":  3700,
+	"okt-config":    4100,
 }
 
 // TestPromptBudgets renders every `okt-*` prompt against the embedded default

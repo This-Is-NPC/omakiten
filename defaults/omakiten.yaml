@@ -183,6 +183,9 @@ personas:
 #             okt-implement → (move to review → guard)
 #   okt-document is parallel — surfaces drift; if material work is needed,
 #   suggests okt-create to spin up a documentation task.
+#   okt-config is parallel — orients the agent on the config layout so it can
+#   answer edit questions without guessing; suggests okt-implement when the
+#   user has a concrete edit in mind.
 mcp_commands:
   global:
     laws:
@@ -213,3 +216,7 @@ mcp_commands:
       - pull-request
   okt-document:
     persona: documentation-agent
+  okt-config:
+    persona: documentation-agent
+    templates:
+      - config-orientation

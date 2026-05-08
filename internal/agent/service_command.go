@@ -21,6 +21,9 @@ import (
 //	          okt-implement → (move to review)
 //	okt-document is parallel: surfaces drift; if material work is needed,
 //	suggests `okt-create` to spin up a documentation task.
+//	okt-config is parallel: orients the agent on the config layout so it can
+//	answer edit questions without guessing; suggests `okt-implement` when the
+//	user has a concrete edit in mind.
 // Action texts deliberately stop short of repeating constraints already
 // declared inline in `## Laws` or role-specific flow already declared in the
 // persona body. Each one names the canonical tool and ends with a REST-style
@@ -61,6 +64,12 @@ var commandActions = map[string]string{
 		"`.docs/requirements.md`, `README.md`, `CONTRIBUTING.md`, and other top-level docs. List drift " +
 		"items with file references and suggested wording — do not edit in place. " +
 		"Next: if material work is needed, suggest `okt-create` to spin up a documentation task.",
+
+	"okt-config": "Orient on the active config layout. Call `templates.show config-orientation` to " +
+		"load the path resolution order, entity layout, frontmatter shapes, wiring relationships, and " +
+		"workflow guard kinds. Read it fully before answering any config-edit question — do not guess. " +
+		"Next: if the user has a concrete edit in mind, suggest `okt-implement` with the change scoped to " +
+		"`omakiten.yaml` or the relevant entity file.",
 }
 
 // commandDescriptions match the prompts/list metadata. Keeping them next to
@@ -73,6 +82,7 @@ var commandDescriptions = map[string]string{
 	"okt-continue":  "Read a task's checkpoint as an engineer before resuming work.",
 	"okt-implement": "Execute approved engineering work with strict rigor and commit discipline.",
 	"okt-document":  "Survey project documentation for drift and propose updates.",
+	"okt-config":    "Orient the agent on the active Omakiten config layout before edits.",
 }
 
 // CommandNames returns the canonical, ordered list of `okt-*` prompts the MCP
@@ -87,6 +97,7 @@ func CommandNames() []string {
 		"okt-continue",
 		"okt-implement",
 		"okt-document",
+		"okt-config",
 	}
 }
 

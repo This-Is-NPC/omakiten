@@ -103,6 +103,7 @@ func TestResolveCommandRestHandoffsPresent(t *testing.T) {
 		"okt-continue":  {"okt-implement"},
 		"okt-implement": {"comment-resume"},
 		"okt-document":  {"okt-create"},
+		"okt-config":    {"templates.show", "config-orientation", "okt-implement"},
 	}
 	for name, hints := range expectedHandoffs {
 		text := CommandActionFallback(name)

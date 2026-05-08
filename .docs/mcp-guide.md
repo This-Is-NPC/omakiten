@@ -165,8 +165,9 @@ Every tool accepts optional project selector fields where useful: `project_id`, 
 | `okt-continue` | Read a task's checkpoint as an engineer before resuming work. |
 | `okt-implement` | Execute approved engineering work with strict rigor and commit discipline. |
 | `okt-document` | Survey project documentation for drift and propose updates. |
+| `okt-config` | Orient the agent on the active Omakiten config layout before edits. |
 
-The default kit follows a REST-style handoff pattern: each prompt's action text ends by suggesting the next prompt in the cycle. `okt → okt-resume / okt-imagine → okt-create → okt-continue → okt-implement` is the happy path; `okt-document` is parallel.
+The default kit follows a REST-style handoff pattern: each prompt's action text ends by suggesting the next prompt in the cycle. `okt → okt-resume / okt-imagine → okt-create → okt-continue → okt-implement` is the happy path; `okt-document` and `okt-config` are parallel.
 
 ## Anatomy of an MCP command
 
@@ -250,6 +251,7 @@ Rendered prompt sizes for the default kit, measured via `mise run mcp:prompts`. 
 | `okt-continue` | 2269 | 565 | engineer + 2 skills + 4 laws + persona body (implement loop) |
 | `okt-document` | 2761 | 690 | documentation-agent + 5 skills + 5 laws |
 | `okt-create` | 3120 | 780 | product-owner + 3 skills + 5 laws + user-story metadata (JIT) |
+| `okt-config` | 3117 | 780 | documentation-agent + 5 skills + 5 laws + config-orientation metadata (JIT) |
 | `okt-implement` | 4547 | 1135 | engineer + 2 skills + 8 laws + persona body (implement loop) + pull-request metadata (JIT) |
 
 Without JIT, `okt-implement` would carry the full `pull-request` body (~700 extra tokens, putting it past 1830). The same logic applies to any user-authored template — bind it via `mcp_commands.<cmd>.templates` and only metadata ships in the prompt.
