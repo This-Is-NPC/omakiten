@@ -10,9 +10,8 @@ import (
 )
 
 // commandActions stores the per-command instruction the MCP prompt lands on.
-// Each action follows a REST-style hypermedia handoff: it states the role,
-// the canonical tool to call, and ends by pointing at the next command in the
-// flow. The cycle is:
+// Each action follows a REST-style hypermedia handoff: it names the canonical
+// tool to call and points at the next command in the flow. The cycle is:
 //
 //	okt → okt-resume / okt-imagine
 //	  okt-imagine → okt-create
@@ -23,10 +22,11 @@ import (
 //	okt-document is parallel: surfaces drift; if material work is needed,
 //	suggests `okt-create` to spin up a documentation task.
 // Action texts deliberately stop short of repeating constraints already
-// declared inline in `## Laws`. Each one frames the role, names the canonical
-// tool, and ends with a REST-style handoff. Anthropic's context-engineering
-// guidance is the rubric: keep prompts at the right altitude, defer body-heavy
-// data via just-in-time fetches, and let bound laws/templates do the
+// declared inline in `## Laws` or role-specific flow already declared in the
+// persona body. Each one names the canonical tool and ends with a REST-style
+// handoff. Anthropic's context-engineering guidance is the rubric: keep
+// prompts at the right altitude, defer body-heavy data via just-in-time
+// fetches, and let bound laws/persona body/templates do the role and
 // constraint work instead of restating it in prose.
 var commandActions = map[string]string{
 	"okt": "Load the active project state via `project.overview`. Report the snapshot to the user. " +
@@ -52,9 +52,8 @@ var commandActions = map[string]string{
 		"do not start coding. Call `tasks.continue` for the task id, then summarize the last decision, " +
 		"open questions, and the immediate next increment. Next: suggest `okt-implement` with the same id.",
 
-	"okt-implement": "Take the role of an engineer executing approved work. If you do not have the task " +
-		"state, call `tasks.continue` first. Implement the next increment, honoring every law above. " +
-		"When ready to draft the PR, call `templates.show pull-request` to fetch the scaffold. " +
+	"okt-implement": "Apply the next increment for the task. If you do not have the task state, " +
+		"call `tasks.continue` first. " +
 		"Next: suggest the user add a `#resume` comment via `comments.add` " +
 		"(template_slug=`comment-resume`) and move the task to review.",
 

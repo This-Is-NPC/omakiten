@@ -179,6 +179,65 @@ func TestLawBodiesCarryFewShotExamples(t *testing.T) {
 	}
 }
 
+// TestResolveCommandRendersPersonaBody pins the persona-as-instruction-carrier
+// contract: when the bound persona has a non-empty body, the rendered Markdown
+// must include it under the `## Persona` section. Without this, role-specific
+// flow (the implement loop) silently drops out of the prompt.
+func TestResolveCommandRendersPersonaBody(t *testing.T) {
+	fixture := newAgentFixture(t)
+	wireBindingFixtures(t, fixture)
+	const marker = "PERSONA_BODY_MARKER_xyz"
+	fixture.service.SetPersonaCatalog(func() []PersonaInfo {
+		return []PersonaInfo{
+			{
+				Slug:        "backend-agent",
+				Name:        "Backend Agent",
+				Description: "Backend-focused agent.",
+				Body:        "Loop step 1.\n" + marker + "\nLoop step 3.",
+				Skills:      []string{"go"},
+				Laws:        []string{"project-scope-only"},
+			},
+		}
+	})
+
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-implement"})
+	if err != nil {
+		t.Fatalf("ResolveCommand() error = %v", err)
+	}
+	if !strings.Contains(resp.Markdown, marker) {
+		t.Fatalf("persona body marker %q missing from rendered markdown:\n%s", marker, resp.Markdown)
+	}
+}
+
+// TestOktImplementActionIsPersonaAgnostic guards the architectural separation
+// between command action text and persona body: the okt-implement action must
+// not carry engineer-specific role prose, so swapping
+// `mcp_commands.okt-implement.persona` for another persona does not leak
+// hardcoded engineer instructions into the prompt. The persona body — not the
+// action text — owns role-specific flow.
+func TestOktImplementActionIsPersonaAgnostic(t *testing.T) {
+	action := CommandActionFallback("okt-implement")
+	if action == "" {
+		t.Fatal("CommandActionFallback(okt-implement) is empty")
+	}
+	leakedPhrases := []string{
+		"engineer",
+		"Take the role",
+		"honoring every law",
+	}
+	for _, phrase := range leakedPhrases {
+		if strings.Contains(strings.ToLower(action), strings.ToLower(phrase)) {
+			t.Fatalf("okt-implement action leaks persona-specific phrase %q — role prose belongs in the persona body, not the action text:\n%s", phrase, action)
+		}
+	}
+	// Sanity-check the action still names its canonical bootstrap and handoff.
+	for _, want := range []string{"tasks.continue", "comment-resume"} {
+		if !strings.Contains(action, want) {
+			t.Fatalf("okt-implement action missing required marker %q:\n%s", want, action)
+		}
+	}
+}
+
 // TestResolveCommandWithoutCatalogsReturnsAction guards the degraded path:
 // when the runtime is unwired (no skills/laws/personas/commands catalogs),
 // ResolveCommand still surfaces the canonical action text so the MCP harness
