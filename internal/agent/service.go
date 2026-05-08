@@ -10,16 +10,15 @@ import (
 	"omakiten/internal/token"
 )
 
+// Defaults for the MCP-response shape settings. Mirror the
+// config.Default* constants so the agent layer keeps a sensible floor when
+// no settings have been wired (test fixtures, partially initialized
+// runtimes). Runtime overrides via Service.SetSettings.
 const (
-	recentContextLimit = 3
-	nextWorkLimit      = 5
-	similarTaskLimit   = 5
-
-	// Default cap on recent comments shipped per call. Mirrors
-	// config.DefaultRecentCommentLimit so the agent layer keeps a sensible
-	// floor when no settings have been wired (test fixtures, partially
-	// initialized runtimes). Runtime overrides via Service.SetSettings.
 	defaultRecentCommentLimit = 5
+	defaultRecentContextLimit = 3
+	defaultNextWorkLimit      = 5
+	defaultSimilarTaskLimit   = 5
 )
 
 // ServiceSettings carries the runtime-tunable knobs that shape MCP responses.
@@ -44,6 +43,21 @@ type ServiceSettings struct {
 	// CachePrompts toggles emitting the cache_control hint on prompts/get
 	// content so Anthropic-aware MCP clients reuse the cached prompt.
 	CachePrompts bool
+
+	// RecentContextLimit caps how many recent context entries flow into
+	// tasks.continue / project.overview / project.resume responses. <=0
+	// falls back to defaultRecentContextLimit (3) — small because each
+	// entry can be paragraphs of free-form notes.
+	RecentContextLimit int
+
+	// NextWorkLimit caps the "likely next work" suggestion list shipped
+	// in project.resume. <=0 falls back to defaultNextWorkLimit (5).
+	NextWorkLimit int
+
+	// SimilarTaskLimit caps how many similar-task hints flow into
+	// tasks.create_intent / tasks.continue. <=0 falls back to
+	// defaultSimilarTaskLimit (5).
+	SimilarTaskLimit int
 }
 
 type Repository interface {
@@ -97,6 +111,9 @@ func NewService(repo Repository, selector ProjectSelector) *Service {
 			MaxCommentChars:    0,
 			IncludeWorkflow:    true,
 			CachePrompts:       true,
+			RecentContextLimit: defaultRecentContextLimit,
+			NextWorkLimit:      defaultNextWorkLimit,
+			SimilarTaskLimit:   defaultSimilarTaskLimit,
 		},
 	}
 }
@@ -111,6 +128,15 @@ func (s *Service) SetSettings(settings ServiceSettings) {
 	}
 	if settings.MaxCommentChars < 0 {
 		settings.MaxCommentChars = 0
+	}
+	if settings.RecentContextLimit <= 0 {
+		settings.RecentContextLimit = defaultRecentContextLimit
+	}
+	if settings.NextWorkLimit <= 0 {
+		settings.NextWorkLimit = defaultNextWorkLimit
+	}
+	if settings.SimilarTaskLimit <= 0 {
+		settings.SimilarTaskLimit = defaultSimilarTaskLimit
 	}
 	s.settings = settings
 }

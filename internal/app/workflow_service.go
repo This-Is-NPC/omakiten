@@ -72,7 +72,7 @@ func (s *WorkflowService) FinalBucketKey(ctx context.Context) (string, error) {
 // CreateTask is the policy-bearing wrapper around TaskRepository.CreateTask:
 // it resolves the default bucket when bucketKey is empty, then delegates to
 // the persister. The store still emits task.created in the same transaction.
-func (s *WorkflowService) CreateTask(ctx context.Context, projectID int64, title, description, priority, bucketKey string) (domain.Task, error) {
+func (s *WorkflowService) CreateTask(ctx context.Context, projectID int64, title, description string, priority domain.Priority, bucketKey string) (domain.Task, error) {
 	bucketKey = strings.TrimSpace(bucketKey)
 	if bucketKey == "" {
 		key, err := s.ResolveDefaultBucket(ctx)
@@ -111,9 +111,11 @@ const (
 // ResolveBucketPermissions tells the caller whether (entity, operation) is
 // allowed in the bucket the task currently sits in. Returns a descriptive
 // hint when the answer is "no", listing buckets where the operation IS
-// permitted so the agent can suggest a remediation. Defaults: task.edit is
-// true only in the first bucket; task.delete is false everywhere; comment.*
-// inherits from task when not declared.
+// permitted so the agent can suggest a remediation. Resolution chain is
+// fully data-driven: bucket.permissions → workflow.defaults → implicit
+// `true` (no rule = allow). Comment fields inherit from task field-by-field
+// at every layer when unset. There is no hardcoded "first bucket is
+// special" rule — every constraint lives in the YAML.
 func (s *WorkflowService) ResolveBucketPermissions(ctx context.Context, project domain.ProjectContext, taskID int64, entity, operation string) (bool, string, error) {
 	currentBucketID, currentBucketKey, err := s.repo.CurrentTaskBucket(ctx, project.ID, taskID)
 	if err != nil {

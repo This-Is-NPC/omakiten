@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"omakiten/internal/app"
+	"omakiten/internal/domain"
 	"omakiten/internal/testfixtures"
 )
 
@@ -27,7 +28,7 @@ func TestWorkflowServiceCreateTaskDefaultsToFirstBucket(t *testing.T) {
 	}
 
 	workflow := app.NewWorkflowServiceFromStore(store)
-	task, err := workflow.CreateTask(ctx, project.ID, "Nova task", "Desc", "", "")
+	task, err := workflow.CreateTask(ctx, project.ID, "Nova task", "Desc", domain.PriorityZero, "")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}

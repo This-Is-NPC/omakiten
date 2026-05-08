@@ -103,7 +103,7 @@ func (f *fakeStores) CountTaskCommentsTagged(_ context.Context, _, _ int64, tag 
 }
 
 // TaskRepository
-func (f *fakeStores) CreateTask(_ context.Context, _ int64, _, _, _, _ string) (domain.Task, error) {
+func (f *fakeStores) CreateTask(_ context.Context, _ int64, _, _ string, _ domain.Priority, _ string) (domain.Task, error) {
 	f.createCalls++
 	return f.createResp, f.createErr
 }
@@ -172,7 +172,7 @@ func TestWorkflowCreateTaskUsesDefaultWhenBucketEmpty(t *testing.T) {
 	}
 	svc := newWorkflowServiceForTest(f)
 
-	if _, err := svc.CreateTask(context.Background(), 1, "title", "", "", ""); err != nil {
+	if _, err := svc.CreateTask(context.Background(), 1, "title", "", domain.PriorityZero, ""); err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
 	if f.createCalls != 1 {

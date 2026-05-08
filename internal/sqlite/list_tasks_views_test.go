@@ -13,10 +13,14 @@ func TestListTasksHonorsSortField(t *testing.T) {
 
 	// Create three tasks with deliberately non-id-sorted titles so sort
 	// behaviour is observable beyond the legacy "by id ascending" path.
-	for _, tc := range []struct{ title, priority string }{
-		{"charlie", "high"},
-		{"alpha", "low"},
-		{"bravo", "normal"},
+	// Priority ids match the canonical kit: 1=low, 2=normal, 3=high.
+	for _, tc := range []struct {
+		title    string
+		priority domain.Priority
+	}{
+		{"charlie", 3},
+		{"alpha", 1},
+		{"bravo", 2},
 	} {
 		if _, err := store.CreateTask(ctx, project.ID, tc.title, "", tc.priority, "backlog"); err != nil {
 			t.Fatalf("CreateTask(%s) = %v", tc.title, err)
@@ -57,10 +61,14 @@ func TestListTasksHonorsPriorityFilter(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithProject(ctx, t)
 
-	for _, tc := range []struct{ title, priority string }{
-		{"alpha", "low"},
-		{"bravo", "normal"},
-		{"charlie", "high"},
+	// Priority ids: 1=low, 2=normal, 3=high (canonical kit shape).
+	for _, tc := range []struct {
+		title    string
+		priority domain.Priority
+	}{
+		{"alpha", 1},
+		{"bravo", 2},
+		{"charlie", 3},
 	} {
 		if _, err := store.CreateTask(ctx, project.ID, tc.title, "", tc.priority, "backlog"); err != nil {
 			t.Fatalf("CreateTask(%s) = %v", tc.title, err)
@@ -68,7 +76,7 @@ func TestListTasksHonorsPriorityFilter(t *testing.T) {
 	}
 
 	tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{
-		Priorities: []domain.Priority{domain.PriorityHigh, domain.PriorityLow},
+		Priorities: []domain.Priority{3, 1},
 	})
 	if err != nil {
 		t.Fatalf("ListTasks() = %v", err)
@@ -77,8 +85,8 @@ func TestListTasksHonorsPriorityFilter(t *testing.T) {
 		t.Fatalf("len = %d, want 2 (low + high)", len(tasks))
 	}
 	for _, task := range tasks {
-		if task.Priority != domain.PriorityLow && task.Priority != domain.PriorityHigh {
-			t.Errorf("unexpected priority %q in filtered result", task.Priority)
+		if task.Priority != 1 && task.Priority != 3 {
+			t.Errorf("unexpected priority %d in filtered result", task.Priority)
 		}
 	}
 }
@@ -87,11 +95,11 @@ func TestListTasksHonorsBucketKeysFilter(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithProject(ctx, t)
 
-	a, err := store.CreateTask(ctx, project.ID, "alpha", "", "", "backlog")
+	a, err := store.CreateTask(ctx, project.ID, "alpha", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(alpha) = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "bravo", "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "bravo", "", domain.PriorityZero, "backlog"); err != nil {
 		t.Fatalf("CreateTask(bravo) = %v", err)
 	}
 	if _, err := store.MoveTask(ctx, project.ID, a.ID, "dev"); err != nil {
@@ -111,7 +119,7 @@ func TestListTasksReturnsCreatedAt(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithProject(ctx, t)
 
-	if _, err := store.CreateTask(ctx, project.ID, "task", "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "task", "", domain.PriorityZero, "backlog"); err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
 

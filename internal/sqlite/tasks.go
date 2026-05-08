@@ -15,7 +15,7 @@ import (
 // non-empty — default-bucket selection is an app-layer concern (see
 // app.WorkflowService.ResolveDefaultBucket); the store enforces only the
 // foreign-key existence of the bucket in the active workflow.
-func (s *Store) CreateTask(ctx context.Context, projectID int64, title, description, priority, bucketKey string) (domain.Task, error) {
+func (s *Store) CreateTask(ctx context.Context, projectID int64, title, description string, priority domain.Priority, bucketKey string) (domain.Task, error) {
 	if bucketKey == "" {
 		return domain.Task{}, domain.NewError(domain.ErrValidation, "bucket key is required", nil)
 	}
@@ -31,17 +31,21 @@ func (s *Store) CreateTask(ctx context.Context, projectID int64, title, descript
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// PriorityZero means "use the column DEFAULT" (the canonical
+	// 'normal' id, 2). Callers that want a different default resolve
+	// it at the app layer before reaching here, so the store stays
+	// free of bundle-config dependencies.
 	query := `
-INSERT INTO tasks(project_id, bucket_id, title, description, priority)
+INSERT INTO tasks(project_id, bucket_id, title, description, priority_id)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, project_id, bucket_id, title, description, priority, state, created_at
+RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at
 `
-	args := []any{projectID, bucketID, title, description, priority}
-	if priority == "" {
+	args := []any{projectID, bucketID, title, description, int(priority)}
+	if priority == domain.PriorityZero {
 		query = `
 INSERT INTO tasks(project_id, bucket_id, title, description)
 VALUES (?, ?, ?, ?)
-RETURNING id, project_id, bucket_id, title, description, priority, state, created_at
+RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at
 `
 		args = []any{projectID, bucketID, title, description}
 	}
@@ -62,7 +66,7 @@ RETURNING id, project_id, bucket_id, title, description, priority, state, create
 
 func (s *Store) ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter) ([]domain.Task, error) {
 	query := `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority, tasks.state, tasks.created_at
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at
 FROM tasks
 LEFT JOIN workflow_buckets ON workflow_buckets.id = tasks.bucket_id
 WHERE tasks.project_id = ?`
@@ -81,9 +85,9 @@ WHERE tasks.project_id = ?`
 		}
 	}
 	if len(filter.Priorities) > 0 {
-		query += " AND tasks.priority IN (" + placeholders(len(filter.Priorities)) + ")"
+		query += " AND tasks.priority_id IN (" + placeholders(len(filter.Priorities)) + ")"
 		for _, p := range filter.Priorities {
-			args = append(args, string(p))
+			args = append(args, int(p))
 		}
 	}
 	query += " ORDER BY " + taskOrderClause(filter.Sort)
@@ -115,9 +119,12 @@ func taskOrderClause(sort domain.TaskSort) string {
 	case "title":
 		column = "tasks.title COLLATE NOCASE"
 	case "priority":
-		// CASE expression so the ordering is semantic (low < normal < high)
-		// rather than alphabetical, which would put "high" before "low".
-		column = "CASE tasks.priority WHEN 'low' THEN 1 WHEN 'normal' THEN 2 WHEN 'high' THEN 3 ELSE 0 END"
+		// priority_id is the natural sort weight — config authors order
+		// the priorities table low→high by id, so ASC gives the
+		// historical "low first" semantics and DESC gives "high first"
+		// without a hardcoded CASE expression. Renaming a label in
+		// config.priorities never breaks this sort.
+		column = "tasks.priority_id"
 	case "created_at":
 		column = "tasks.created_at"
 	case "id", "":
@@ -162,7 +169,7 @@ func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBuc
 
 	row := tx.QueryRowContext(ctx, `
 UPDATE tasks SET bucket_id = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND id = ?
-RETURNING id, project_id, bucket_id, title, description, priority, state, created_at
+RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at
 `, targetBucketID, projectID, taskID)
 
 	task, err := scanTask(row, targetBucketKey)
@@ -192,8 +199,8 @@ func (s *Store) UpdateTask(ctx context.Context, projectID, taskID int64, update 
 		args = append(args, *update.Description)
 	}
 	if update.Priority != nil {
-		sets = append(sets, "priority = ?")
-		args = append(args, string(*update.Priority))
+		sets = append(sets, "priority_id = ?")
+		args = append(args, int(*update.Priority))
 	}
 	if len(sets) > 0 {
 		args = append(args, projectID, taskID)
@@ -236,7 +243,7 @@ func scanTask(row *sql.Row, bucketKey string) (domain.Task, error) {
 
 func (s *Store) taskByID(ctx context.Context, projectID, taskID int64) (domain.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority, tasks.state, tasks.created_at
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at
 FROM tasks
 LEFT JOIN workflow_buckets ON workflow_buckets.id = tasks.bucket_id
 WHERE tasks.project_id = ? AND tasks.id = ?

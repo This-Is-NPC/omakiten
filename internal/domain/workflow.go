@@ -165,6 +165,24 @@ func entityField(task, comment *EntityPermission, f permField) *bool {
 	return nil
 }
 
+// FinalBucketKey returns the key of the highest-position bucket — the
+// "completed / final" lane in the resolved workflow shape. Used by callers
+// that need to classify "open work" vs "shipped" without hardcoding a
+// bucket name. Returns "" when the workflow has no buckets so callers
+// can fall back to a degraded count.
+func (w Workflow) FinalBucketKey() string {
+	if len(w.Buckets) == 0 {
+		return ""
+	}
+	final := w.Buckets[0]
+	for _, b := range w.Buckets {
+		if b.Position > final.Position {
+			final = b
+		}
+	}
+	return final.Key
+}
+
 type WorkflowTransition struct {
 	FromBucketID  int64  `json:"from_bucket_id"`
 	FromBucketKey string `json:"from_bucket_key"`

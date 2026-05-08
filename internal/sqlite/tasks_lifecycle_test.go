@@ -32,14 +32,14 @@ func setupLifecycle(t *testing.T) (context.Context, *Store, domain.ProjectContex
 func TestTaskFilterIncludeArchived(t *testing.T) {
 	ctx, store, project := setupLifecycle(t)
 
-	keep, err := store.CreateTask(ctx, project.ID, "Active", "", "", "backlog")
+	keep, err := store.CreateTask(ctx, project.ID, "Active", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(active) = %v", err)
 	}
 	if keep.State != domain.TaskStateActive {
 		t.Fatalf("default state = %q, want active", keep.State)
 	}
-	archived, err := store.CreateTask(ctx, project.ID, "Archive me", "", "", "backlog")
+	archived, err := store.CreateTask(ctx, project.ID, "Archive me", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(archive) = %v", err)
 	}
@@ -68,7 +68,7 @@ func TestArchiveBypassesTransitionGuardsButHonorsOperationGuards(t *testing.T) {
 	ctx, store, project := setupLifecycle(t)
 	tasks := app.NewTaskServiceFromStore(store)
 
-	task, err := store.CreateTask(ctx, project.ID, "Frozen", "", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Frozen", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
@@ -117,7 +117,7 @@ func TestDeleteEnforcesPolicyAndCascades(t *testing.T) {
 	ctx, store, project := setupLifecycle(t)
 	tasks := app.NewTaskServiceFromStore(store)
 
-	task, err := store.CreateTask(ctx, project.ID, "Doomed", "", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Doomed", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
@@ -141,7 +141,7 @@ func TestDeleteEnforcesPolicyAndCascades(t *testing.T) {
 	}
 
 	// Add a comment + dependency to verify cascade.
-	other, err := store.CreateTask(ctx, project.ID, "Other", "", "", "backlog")
+	other, err := store.CreateTask(ctx, project.ID, "Other", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(other) = %v", err)
 	}
@@ -194,7 +194,7 @@ func TestEditPolicyAndCommentInheritance(t *testing.T) {
 	workflow := app.NewWorkflowServiceFromStore(store)
 	comments := app.NewCommentServiceWithWorkflow(store, workflow)
 
-	task, err := store.CreateTask(ctx, project.ID, "Title", "", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Title", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}

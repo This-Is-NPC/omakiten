@@ -58,6 +58,9 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	if err := validateMCPSettings(bundle.Config.MCP); err != nil {
 		return err
 	}
+	if err := validatePriorities(bundle.Config.Priorities); err != nil {
+		return err
+	}
 
 	skillSet := slugSet(loadedSkillSlugs(loadedSkills))
 	lawSet := slugSet(loadedLawSlugs(loadedLaws))
@@ -289,6 +292,46 @@ func validateTemplateDefaults(bundle Bundle) error {
 			return fmt.Errorf("templates.%s and templates.%s both declare default=%q (%s) — only one may", other, t.Slug, t.Default, scope)
 		}
 		seen[key] = t.Slug
+	}
+	return nil
+}
+
+// validatePriorities enforces the shape of the configurable priority
+// table: ids are positive and unique, values are non-empty and unique,
+// and at most one entry may flag itself default. Empty bundles are
+// fine — runtime substitutes the canonical kit fallback. The check
+// runs whether the user declared the block or not so a hand-edited
+// YAML with duplicate ids fails loudly instead of writing tasks with
+// ambiguous priority semantics.
+func validatePriorities(priorities []PriorityDefinition) error {
+	if len(priorities) == 0 {
+		return nil
+	}
+	seenID := map[int]string{}
+	seenValue := map[string]int{}
+	defaults := 0
+	for _, p := range priorities {
+		if p.ID <= 0 {
+			return fmt.Errorf("config.priorities: id must be positive, got %d for value %q", p.ID, p.Value)
+		}
+		value := strings.TrimSpace(p.Value)
+		if value == "" {
+			return fmt.Errorf("config.priorities[id=%d]: value is required", p.ID)
+		}
+		if existing, dup := seenID[p.ID]; dup {
+			return fmt.Errorf("config.priorities: id %d declared twice (values %q and %q)", p.ID, existing, value)
+		}
+		seenID[p.ID] = value
+		if otherID, dup := seenValue[value]; dup {
+			return fmt.Errorf("config.priorities: value %q declared twice (ids %d and %d)", value, otherID, p.ID)
+		}
+		seenValue[value] = p.ID
+		if p.Default {
+			defaults++
+		}
+	}
+	if defaults > 1 {
+		return fmt.Errorf("config.priorities: at most one entry may set default: true (got %d)", defaults)
 	}
 	return nil
 }

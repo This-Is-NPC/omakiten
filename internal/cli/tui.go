@@ -77,7 +77,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		ConfigPath:   rt.configPath,
 		DBPath:       rt.dbPath,
 		Version:      version,
-	}, theme, token.NewCounter(), bundle.Config.TUI.TokenBadge)
+	}, theme, token.NewCounter(), bundle.Config.TUI.TokenBadge, bundle.Config.EffectivePriorities())
 	if err != nil {
 		return err
 	}

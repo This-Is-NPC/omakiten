@@ -63,10 +63,20 @@ func findTask(tasks []domain.Task, taskID int64) (domain.Task, bool) {
 	return domain.Task{}, false
 }
 
-func pendingCount(tasks []domain.Task) int {
+// pendingCount returns the number of tasks NOT in the workflow's final
+// (highest-position) bucket. The final lane is resolved from workflow shape
+// — never compared to a hardcoded "done" — so users who rename their
+// terminal bucket (e.g. "shipped", "archived") still see correct counts.
+// When the workflow has no buckets the function falls back to len(tasks)
+// so the surface degrades gracefully instead of returning 0.
+func pendingCount(workflow domain.Workflow, tasks []domain.Task) int {
+	final := workflow.FinalBucketKey()
+	if final == "" {
+		return len(tasks)
+	}
 	count := 0
 	for _, task := range tasks {
-		if task.BucketKey != "done" {
+		if task.BucketKey != final {
 			count++
 		}
 	}
@@ -92,16 +102,21 @@ func bucketCounts(workflow domain.Workflow, tasks []domain.Task) []BucketCount {
 	return out
 }
 
-func likelyNextWork(tasks []domain.Task) []TaskSummary {
+// likelyNextWork returns up to nextWorkLimit tasks that are NOT in the
+// workflow's final bucket, ordered by id ASC. Same data-driven final-bucket
+// resolution as pendingCount — no hardcoded "done" — so the suggestion
+// list survives a bucket rename.
+func likelyNextWork(workflow domain.Workflow, tasks []domain.Task, limit int) []TaskSummary {
+	final := workflow.FinalBucketKey()
 	candidates := make([]domain.Task, 0, len(tasks))
 	for _, task := range tasks {
-		if task.BucketKey != "done" {
+		if final == "" || task.BucketKey != final {
 			candidates = append(candidates, task)
 		}
 	}
 	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].ID < candidates[j].ID })
-	if len(candidates) > nextWorkLimit {
-		candidates = candidates[:nextWorkLimit]
+	if limit > 0 && len(candidates) > limit {
+		candidates = candidates[:limit]
 	}
 	return taskSummaries(candidates)
 }

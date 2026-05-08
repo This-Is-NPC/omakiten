@@ -44,7 +44,7 @@ func TestNewModelWithEmptyProjectOpensHome(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -87,7 +87,7 @@ func TestHomeHidesTabBar(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -119,7 +119,7 @@ func TestCtrlHReturnsToHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.PriorityZero, "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
@@ -132,7 +132,7 @@ func TestCtrlHReturnsToHome(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -172,7 +172,7 @@ func TestHomeEnterSelectsProject(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -217,7 +217,7 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -265,7 +265,7 @@ func TestHomeRendersProjectTagBadges(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}

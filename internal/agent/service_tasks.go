@@ -64,7 +64,7 @@ func (s *Service) ContinueTask(ctx context.Context, input ContinueTaskInput) (Co
 		Workflow:       workflowSum,
 		Dependencies:   dependencySummaries(dependencies),
 		Comments:       s.shapedRecentComments(comments),
-		RecentContext:  contextSnippets(entries, recentContextLimit),
+		RecentContext:  contextSnippets(entries, s.settings.RecentContextLimit),
 		NextStepPrompt: fmt.Sprintf("Continue task #%d from this checkpoint, then record material progress with `progress.record`.", task.ID),
 	}, nil
 }
@@ -120,7 +120,7 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 		if err != nil {
 			return CreateTaskResponse{}, err
 		}
-		similar := similarTasks(title+" "+description, tasks, similarTaskLimit)
+		similar := similarTasks(title+" "+description, tasks, s.settings.SimilarTaskLimit)
 		if len(similar) > 0 {
 			return CreateTaskResponse{
 				Project:      projectSummary(project),

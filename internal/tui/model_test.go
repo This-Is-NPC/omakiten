@@ -17,6 +17,16 @@ import (
 	"omakiten/internal/token"
 )
 
+func init() {
+	// TUI tests assert on rendered priority labels and call
+	// CreateTask / Edit through the service layer, both of which
+	// resolve labels via the domain priority registry. Production
+	// wires this up in cli/agentruntime; tests register the canonical
+	// kit here so model_test, activity_test, entity_test, etc. all
+	// see the expected 1=low/2=normal/3=high mapping.
+	testfixtures.RegisterCanonicalPriorities()
+}
+
 func TestModelSwitchesViews(t *testing.T) {
 	ctx := context.Background()
 	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
@@ -32,11 +42,11 @@ func TestModelSwitchesViews(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.PriorityZero, "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -62,11 +72,11 @@ func TestModelTableAndGraphShowCounts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	blocker, err := store.CreateTask(ctx, project.ID, "Blocker", "", "", "backlog")
+	blocker, err := store.CreateTask(ctx, project.ID, "Blocker", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(blocker) error = %v", err)
 	}
-	blocked, err := store.CreateTask(ctx, project.ID, "Blocked", "", "", "backlog")
+	blocked, err := store.CreateTask(ctx, project.ID, "Blocked", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(blocked) error = %v", err)
 	}
@@ -74,7 +84,7 @@ func TestModelTableAndGraphShowCounts(t *testing.T) {
 		t.Fatalf("AddTaskDependency() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -108,7 +118,7 @@ func TestModelTablesUseWideTerminalSpace(t *testing.T) {
 	}
 
 	longTitle := "Investigate viewport usage for the TUI table without truncating the task title"
-	if _, err := store.CreateTask(ctx, project.ID, longTitle, "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, longTitle, "", domain.PriorityZero, "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 	argsJSON := `{"root":"/home/howl/Projects/person/omakiten","view":"logs","expanded":true}`
@@ -128,7 +138,7 @@ func TestModelTablesUseWideTerminalSpace(t *testing.T) {
 		t.Fatalf("FinishActivityLog() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -199,7 +209,7 @@ func TestModelLoadsActivityLogsWhenOpeningLogsView(t *testing.T) {
 		t.Fatalf("FinishActivityLog() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -233,7 +243,7 @@ func TestModelRefreshKeyUpdatesActivityLogs(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -284,7 +294,7 @@ func TestModelRealtimeTickRefreshesBoardTasks(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -294,7 +304,7 @@ func TestModelRealtimeTickRefreshesBoardTasks(t *testing.T) {
 	if len(model.tasks) != 0 {
 		t.Fatalf("initial tasks len = %d, want 0", len(model.tasks))
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "External task", "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "External task", "", domain.PriorityZero, "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
@@ -326,7 +336,7 @@ func TestModelOpensExistingTaskScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Existing task", "First line\nSecond line", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Existing task", "First line\nSecond line", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -339,7 +349,7 @@ func TestModelOpensExistingTaskScreen(t *testing.T) {
 		t.Fatalf("AddComment(agent) error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -393,12 +403,12 @@ func TestModelAddsMultilineCommentInsideTaskCommentsPanel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Existing task", "", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Existing task", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -463,7 +473,7 @@ func TestModelCreatesTaskFromDedicatedScreen(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -493,8 +503,8 @@ func TestModelCreatesTaskFromDedicatedScreen(t *testing.T) {
 		t.Fatalf("taskField = %v, want priority", got.taskField)
 	}
 	got = pressKey(t, got, tea.KeyRight)
-	if got.taskPriority != string(domain.PriorityHigh) {
-		t.Fatalf("taskPriority = %q, want high", got.taskPriority)
+	if got.taskPriority != domain.Priority(3) {
+		t.Fatalf("taskPriority = %d, want high (id 3)", got.taskPriority)
 	}
 	got = pressKey(t, got, tea.KeyCtrlS)
 
@@ -513,7 +523,7 @@ func TestModelCreatesTaskFromDedicatedScreen(t *testing.T) {
 	}
 	title := "Created from TUI"
 	description := "First line\nSecond line"
-	if task.Title != title || task.Description != description || task.Priority != domain.PriorityHigh || task.BucketKey != "backlog" {
+	if task.Title != title || task.Description != description || task.Priority != domain.Priority(3) || task.BucketKey != "backlog" {
 		t.Fatalf("selected task = %#v, want title %q description %q priority high in backlog", task, title, description)
 	}
 	count, err = store.TaskCount(ctx, project.ID)
@@ -559,11 +569,11 @@ func TestModelEditsTaskAndReturnsToView(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Old title", "Old description", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Old title", "Old description", domain.PriorityZero, "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -609,16 +619,16 @@ func TestModelSetsTaskBlockersFromPicker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	blocker, err := store.CreateTask(ctx, project.ID, "Design dependency", "", "", "backlog")
+	blocker, err := store.CreateTask(ctx, project.ID, "Design dependency", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(blocker) error = %v", err)
 	}
-	blocked, err := store.CreateTask(ctx, project.ID, "Implement feature", "", "", "backlog")
+	blocked, err := store.CreateTask(ctx, project.ID, "Implement feature", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(blocked) error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -679,7 +689,7 @@ func TestModelBoardMoveSurfacesWorkflowBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Pinned", "", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Pinned", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -687,7 +697,7 @@ func TestModelBoardMoveSurfacesWorkflowBlock(t *testing.T) {
 		t.Fatalf("MoveTask(setup) error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -738,11 +748,11 @@ func TestModelTaskViewWrapsLongPropertyTextWithoutBreakingGrid(t *testing.T) {
 	}
 	longTitle := "Atualizar a documentação do projeto com orientações operacionais muito detalhadas para evitar quebra visual"
 	longDescription := "Revisar a documentação existente, completar pontos faltantes e alinhar as instruções ao comportamento atual do projeto, incluindo casos de borda com textos extensos para validação de layout."
-	if _, err := store.CreateTask(ctx, project.ID, longTitle, longDescription, "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, longTitle, longDescription, domain.PriorityZero, "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -802,10 +812,10 @@ func TestModelBoardCollapsesToFocusedColumnWhenNarrow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Backlog task", "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Backlog task", "", domain.PriorityZero, "backlog"); err != nil {
 		t.Fatalf("CreateTask(backlog) error = %v", err)
 	}
-	devTask, err := store.CreateTask(ctx, project.ID, "Dev task", "", "", "backlog")
+	devTask, err := store.CreateTask(ctx, project.ID, "Dev task", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(dev) error = %v", err)
 	}
@@ -813,7 +823,7 @@ func TestModelBoardCollapsesToFocusedColumnWhenNarrow(t *testing.T) {
 		t.Fatalf("MoveTask(dev) error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -852,7 +862,7 @@ func TestModelBoardShowsMultipleColumnsWhenTheyFit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -890,7 +900,7 @@ func TestModelBoardLaneNavigationWrapsAround(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -937,7 +947,7 @@ func TestModelSettingsLawsRendersOwnColumnWhenNarrow(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -973,7 +983,7 @@ func TestModelHelpDefaultsToCurrentContext(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1014,7 +1024,7 @@ func TestModelCancelsTaskCreateWithoutPersisting(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1052,7 +1062,7 @@ func TestNavHeaderRendersTopAndSubKickers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store, Metrics: app.NewMetricsService(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store, Metrics: app.NewMetricsService(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1107,7 +1117,7 @@ func TestSubCycleBindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1157,7 +1167,7 @@ func TestCtrlOPopsBackStack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store, Metrics: app.NewMetricsService(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store, Metrics: app.NewMetricsService(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1208,7 +1218,7 @@ func TestHomeTileEmbeddedInTopStrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store, Metrics: app.NewMetricsService(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), ActivityLogs: store, Metrics: app.NewMetricsService(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1245,12 +1255,12 @@ func TestModelDeletesTaskFromTaskViewWithDoubleD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Doomed", "", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Doomed", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1305,11 +1315,11 @@ func TestModelBlocksTaskEditOnPressWhenBucketForbids(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Locked", "", "", "dev"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Locked", "", domain.PriorityZero, "dev"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1351,10 +1361,10 @@ func TestModelBlocksTaskDeleteArmWhenBucketForbids(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Locked", "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Locked", "", domain.PriorityZero, "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1386,10 +1396,10 @@ func TestModelBoardDoesNotArmDeleteOnD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Survives", "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Survives", "", domain.PriorityZero, "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1422,11 +1432,11 @@ func TestModelCancelsArmedTaskDeleteOnNavigation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Survives", "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Survives", "", domain.PriorityZero, "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1468,7 +1478,7 @@ func TestModelDeletesCommentFromCommentScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -1477,7 +1487,7 @@ func TestModelDeletesCommentFromCommentScreen(t *testing.T) {
 		t.Fatalf("AddComment() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -1539,7 +1549,7 @@ func TestModelEditsCommentFromCommentScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -1548,7 +1558,7 @@ func TestModelEditsCommentFromCommentScreen(t *testing.T) {
 		t.Fatalf("AddComment() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}

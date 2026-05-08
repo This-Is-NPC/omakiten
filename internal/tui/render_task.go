@@ -154,16 +154,14 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case taskFieldTitle:
 		m.taskTitleInput, cmd = m.taskTitleInput.Update(msg)
 	case taskFieldDescription:
-		// Modifier-Enter strings ("alt+enter" / "shift+enter" / "ctrl+j")
-		// have to be funnelled into an InsertString — bubbles textarea
-		// only treats a plain Enter as a newline. Without this every
-		// alt+enter from the test harness (and from terminals that emit
-		// the modifier form by default) lands as a no-op, so multi-line
-		// descriptions cannot be composed.
-		switch msg.String() {
-		case "alt+enter", "shift+enter", "ctrl+j", "alt+ctrl+j":
+		// Modifier-Enter strings have to be funnelled into an InsertString
+		// — bubbles textarea only treats a plain Enter as a newline.
+		// Without this every alt+enter from the test harness (and from
+		// terminals that emit the modifier form by default) lands as a
+		// no-op, so multi-line descriptions cannot be composed.
+		if isNewlineModifier(msg.String()) {
 			m.taskDescriptionInput.InsertString("\n")
-		default:
+		} else {
 			m.taskDescriptionInput, cmd = m.taskDescriptionInput.Update(msg)
 		}
 	}
@@ -235,11 +233,30 @@ func (m *Model) openTaskCreate() {
 	m.taskID = 0
 	m.taskTitleInput = newTaskTitleInput()
 	m.taskDescriptionInput = newTaskDescriptionInput()
-	m.taskPriority = "normal"
+	// Default the form to the priority flagged `default: true` in
+	// config.priorities, falling back to the middle entry when none is
+	// flagged. priorityZero falls through to the storage column DEFAULT.
+	m.taskPriority = m.defaultPriorityID()
 	m.taskField = taskFieldTitle
 	m.applyTaskFieldFocus()
 	m.status = "New task"
 	m.moveMode = false
+}
+
+// defaultPriorityID returns the id flagged `default: true` in the active
+// priorities table, falling back to the middle entry. PriorityZero when
+// no priorities are loaded so the form silently defers to the storage
+// column DEFAULT.
+func (m Model) defaultPriorityID() domain.Priority {
+	if len(m.priorities) == 0 {
+		return domain.PriorityZero
+	}
+	for _, p := range m.priorities {
+		if p.Default {
+			return domain.Priority(p.ID)
+		}
+	}
+	return domain.Priority(m.priorities[len(m.priorities)/2].ID)
 }
 
 func (m *Model) openTaskView(task domain.Task) {
@@ -304,7 +321,7 @@ func (m *Model) openTaskEdit(task domain.Task) {
 	m.taskDescriptionInput = newTaskDescriptionInput()
 	m.taskDescriptionInput.SetValue(task.Description)
 	m.taskDescriptionInput.CursorEnd()
-	m.taskPriority = string(task.Priority)
+	m.taskPriority = task.Priority
 	m.taskField = taskFieldTitle
 	m.applyTaskFieldFocus()
 	m.status = "Editing task"
@@ -320,7 +337,7 @@ func (m *Model) closeTaskScreen(status string) {
 	m.taskID = 0
 	m.taskTitleInput = newTaskTitleInput()
 	m.taskDescriptionInput = newTaskDescriptionInput()
-	m.taskPriority = ""
+	m.taskPriority = domain.PriorityZero
 	m.taskField = taskFieldTitle
 	m.status = status
 	m.moveMode = false
@@ -363,11 +380,19 @@ func (m *Model) applyTaskFieldFocus() {
 	}
 }
 
+// cycleTaskPriority advances the form's priority cursor through the
+// configured table by `delta` steps (+1 for ←/h, -1 for →/l per the
+// reverse-order convention used by the priority field). Clamped at
+// both ends. The cycle order is the slice order of m.priorities, which
+// renderers (board badges) and the SQL sort also follow — so cycling
+// "right" always feels like raising urgency.
 func (m *Model) cycleTaskPriority(delta int) {
-	levels := []string{"low", "normal", "high"}
-	idx := 1 // default to normal
-	for i, v := range levels {
-		if v == m.taskPriority {
+	if len(m.priorities) == 0 {
+		return
+	}
+	idx := 0
+	for i, p := range m.priorities {
+		if domain.Priority(p.ID) == m.taskPriority {
 			idx = i
 			break
 		}
@@ -376,10 +401,10 @@ func (m *Model) cycleTaskPriority(delta int) {
 	if idx < 0 {
 		idx = 0
 	}
-	if idx >= len(levels) {
-		idx = len(levels) - 1
+	if idx >= len(m.priorities) {
+		idx = len(m.priorities) - 1
 	}
-	m.taskPriority = levels[idx]
+	m.taskPriority = domain.Priority(m.priorities[idx].ID)
 }
 
 func (m *Model) openBlockerPicker() {
@@ -487,7 +512,12 @@ func (m *Model) saveTaskForm() {
 	var err error
 	switch m.taskScreen {
 	case taskScreenCreate:
-		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow).Add(m.ctx, m.project, title, description, m.taskPriority, "")
+		// Add takes the priority as a label string so CLI/MCP/TUI all
+		// share one input boundary; the form already holds the resolved
+		// id, so we map it back through priorityLabel to keep the
+		// service signature uniform across surfaces.
+		label := m.priorityLabel(m.taskPriority)
+		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow).Add(m.ctx, m.project, title, description, label, "")
 	case taskScreenEdit:
 		current, ok := m.activeTask()
 		if !ok {
@@ -495,8 +525,8 @@ func (m *Model) saveTaskForm() {
 			break
 		}
 		update := domain.TaskUpdate{Title: &title, Description: &description}
-		if m.taskPriority != "" {
-			p := domain.Priority(m.taskPriority)
+		if m.taskPriority != domain.PriorityZero {
+			p := m.taskPriority
 			update.Priority = &p
 		}
 		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow).Edit(m.ctx, m.project, current.ID, update)
@@ -584,7 +614,7 @@ func (m Model) renderTaskView() string {
 		Custom(taskKicker).
 		Row("Title", task.Title).
 		Row("Bucket", task.BucketKey).
-		Row("Priority", string(task.Priority)).
+		Row("Priority", m.priorityLabel(task.Priority)).
 		Row("Comments", fmt.Sprintf("%d", m.commentCount(task.ID))).
 		Row("Tags", tagLine).
 		KickerCount("Blockers", len(blockers))
@@ -763,20 +793,17 @@ func (m Model) renderTaskDescriptionField(width int) string {
 }
 
 func (m Model) renderTaskPriorityInput() string {
-	levels := []struct {
-		key   string
-		label string
-	}{
-		{"low", "low"},
-		{"normal", "normal"},
-		{"high", "high"},
-	}
+	// Pull the cycle from the active priorities table so the user sees
+	// exactly the labels they declared in config.priorities — including
+	// any custom entries (e.g. "urgent" past "high"). Order follows the
+	// slice order so the visual reads low→high left-to-right.
 	var parts []string
-	for _, lvl := range levels {
-		if lvl.key == m.taskPriority {
-			parts = append(parts, m.styles.hintAccent.Render("["+lvl.label+"]"))
+	for _, lvl := range m.priorities {
+		label := lvl.Value
+		if domain.Priority(lvl.ID) == m.taskPriority {
+			parts = append(parts, m.styles.hintAccent.Render("["+label+"]"))
 		} else {
-			parts = append(parts, m.styles.hint.Render(lvl.label))
+			parts = append(parts, m.styles.hint.Render(label))
 		}
 	}
 	style := m.styles.input.Width(m.taskFormWidth())

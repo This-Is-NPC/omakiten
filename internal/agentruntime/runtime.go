@@ -16,9 +16,22 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
+	"omakiten/internal/domain"
 	"omakiten/internal/paths"
 	"omakiten/internal/sqlite"
 )
+
+// registerPriorities translates the YAML-shaped priority definitions
+// into the domain registry shape and installs them. Lives here so the
+// domain layer stays free of an internal/config import — the runtime
+// is the composition root that knows about both sides.
+func registerPriorities(defs []config.PriorityDefinition) {
+	pairs := make([]domain.PriorityPair, len(defs))
+	for i, d := range defs {
+		pairs[i] = domain.PriorityPair{ID: d.ID, Value: d.Value}
+	}
+	domain.RegisterPriorities(pairs)
+}
 
 // Options mirrors agent.Open's old signature so call sites only swap the
 // import path.
@@ -82,6 +95,13 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		}
 	}
 
+	// Wire the configurable priority table into the domain registry
+	// before any task is read or written. Done here at the runtime
+	// composition root so every entry point (CLI, MCP, TUI) shares the
+	// same resolved id↔value mapping. Without this, Priority.Label()
+	// returns "" and JSON output falls back to raw integer ids.
+	registerPriorities(bundle.Config.EffectivePriorities())
+
 	rt := &Runtime{store: store, configPath: configPath, dbPath: dbPath}
 	rt.service = agent.NewService(store, agent.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
 	rt.service.SetTaskTemplateLookup(taskTemplateLookup(bundle))
@@ -95,6 +115,9 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		MaxCommentChars:    bundle.Config.MCP.EffectiveMaxCommentChars(),
 		IncludeWorkflow:    bundle.Config.MCP.EffectiveIncludeWorkflowInContinue(),
 		CachePrompts:       bundle.Config.MCP.EffectiveCachePrompts(),
+		RecentContextLimit: bundle.Config.MCP.EffectiveRecentContextLimit(),
+		NextWorkLimit:      bundle.Config.MCP.EffectiveNextWorkLimit(),
+		SimilarTaskLimit:   bundle.Config.MCP.EffectiveSimilarTaskLimit(),
 	})
 	return rt, nil
 }

@@ -2,10 +2,52 @@ package tui
 
 import (
 	"sort"
+	"strings"
 
 	"omakiten/internal/app"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
+
+// priorityByID returns the configured priority definition for the given
+// id, or false when the id is zero / not in the active table. Centralised
+// here so renderers (board/table/comment/badge) and the form cycle all
+// agree on the same lookup path — and so swapping config.priorities at
+// runtime takes effect uniformly.
+func (m Model) priorityByID(id domain.Priority) (config.PriorityDefinition, bool) {
+	if id == domain.PriorityZero {
+		return config.PriorityDefinition{}, false
+	}
+	for _, p := range m.priorities {
+		if domain.Priority(p.ID) == id {
+			return p, true
+		}
+	}
+	return config.PriorityDefinition{}, false
+}
+
+// priorityLabel returns the human label for a priority id, falling back
+// to the registry-resolved string when the model's table has not yet
+// been populated. Empty when neither source resolves the id.
+func (m Model) priorityLabel(id domain.Priority) string {
+	if def, ok := m.priorityByID(id); ok {
+		return def.Value
+	}
+	return id.Label()
+}
+
+// priorityBadge renders the colored pill badge for a priority id. Color
+// comes from config.priorities[].color (mapped via styles.badgeForColor);
+// label is uppercased for visual weight. Empty when the id is zero or
+// unknown so callers can drop the badge entirely instead of rendering an
+// empty pill.
+func (m Model) priorityBadge(id domain.Priority) string {
+	def, ok := m.priorityByID(id)
+	if !ok {
+		return ""
+	}
+	return m.styles.badgeForColor(def.Color).Render(strings.ToUpper(def.Value))
+}
 
 // checkBucketPermission asks the workflow service whether (entity, op) is
 // allowed in the bucket the given task currently sits in. Used by the TUI

@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/app"
+	"omakiten/internal/domain"
 	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
 )
@@ -28,7 +29,7 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "with comments", "", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "with comments", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -47,7 +48,7 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -87,7 +88,7 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "long body", "", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "long body", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -107,7 +108,7 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -178,7 +179,7 @@ func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "no comments", "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "no comments", "", domain.PriorityZero, "backlog"); err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
 
@@ -190,7 +191,7 @@ func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -222,7 +223,7 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "with comment", "", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "with comment", "", domain.PriorityZero, "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -238,7 +239,7 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}

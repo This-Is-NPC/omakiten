@@ -105,7 +105,7 @@ func (s *Store) SetTaskState(ctx context.Context, projectID, taskID int64, state
 	row := tx.QueryRowContext(ctx, `
 UPDATE tasks SET state = ?, bucket_id = ?, updated_at = CURRENT_TIMESTAMP
 WHERE project_id = ? AND id = ?
-RETURNING id, project_id, bucket_id, title, description, priority, state, created_at
+RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at
 `, string(state), bucketArg, projectID, taskID)
 	task, err := scanTask(row, bucketKey)
 	if err != nil {
@@ -155,7 +155,7 @@ func (s *Store) EmitTaskEditedEvent(ctx context.Context, projectID, taskID int64
 
 func taskByIDTx(ctx context.Context, tx *sql.Tx, projectID, taskID int64) (domain.Task, error) {
 	row := tx.QueryRowContext(ctx, `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority, tasks.state, tasks.created_at
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at
 FROM tasks
 LEFT JOIN workflow_buckets ON workflow_buckets.id = tasks.bucket_id
 WHERE tasks.project_id = ? AND tasks.id = ?

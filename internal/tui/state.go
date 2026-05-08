@@ -112,7 +112,7 @@ type Model struct {
 	// arrow-key navigation, home/end, word-wise delete, paste, etc.
 	taskTitleInput       textinput.Model
 	taskDescriptionInput textarea.Model
-	taskPriority         string
+	taskPriority         domain.Priority
 	taskField            taskFormField
 	// commentInput is reused by modeComment (add) and modeCommentEdit
 	// (rewrite). Reset on every beginInput call so the placeholder and
@@ -138,6 +138,12 @@ type Model struct {
 	skills              []domain.Skill
 	personas            []domain.Persona
 	templates           []config.TaskTemplate
+	// priorities is the resolved id↔value↔color table the renderer
+	// consults to draw priority badges and to drive the cycle in the
+	// task form. Populated from the active bundle on each refresh so
+	// edits to config.priorities take effect at the next view tick
+	// without restarting the TUI.
+	priorities []config.PriorityDefinition
 	themePickerOptions  []themeOption
 	configPickerOptions []configOption
 	entries             []domain.ContextEntry

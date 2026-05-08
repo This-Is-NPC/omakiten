@@ -57,6 +57,31 @@ config:
   # via its frontmatter (`default: <kind>`, optional `project: <slug>`).
   # Defaults below match the canonical Omakiten kit; tweak as needed.
   template_defaults: [task, pr, comment-resume, comment-selfbranch, comment-documentation]
+  # priorities declares the configurable id↔value table for task priorities.
+  # Code references the id (opaque); renderers resolve the human label via
+  # this table at the boundary, so renaming "high" to "urgent" here is a
+  # single-line edit and existing tasks pick up the new label on the next
+  # read. id is the SORT WEIGHT — list low → high so `ORDER BY priority`
+  # sorts the way users expect. `default: true` (at most one entry) flags
+  # which id the form/CLI substitutes when the user creates a task without
+  # naming a priority. `color` is an optional theme-token name picked up
+  # by the TUI badge renderer (`error` / `warning` / `success` / `info`).
+  #
+  # Omitting the block keeps the canonical 1=low/2=normal/3=high kit; add
+  # entries to introduce new priorities (e.g. `{id: 4, value: urgent}`)
+  # without any code change. The sqlite layer stores priority_id integers,
+  # so renaming a value never breaks references on existing rows.
+  priorities:
+    - id: 1
+      value: low
+      color: success
+    - id: 2
+      value: normal
+      default: true
+      color: info
+    - id: 3
+      value: high
+      color: error
   # views configures the default sort and filter applied to each view at
   # startup. Every field is optional — omit a section and the canonical
   # default takes over. Field/order values are validated; typos surface

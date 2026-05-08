@@ -55,19 +55,34 @@ func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, ti
 		err = domain.NewError(domain.ErrValidation, "task title is required", nil)
 		return
 	}
-	priorityValue := domain.Priority(strings.TrimSpace(priority))
-	if priorityValue == "" {
-		priorityValue = domain.PriorityNormal
-	}
-	switch priorityValue {
-	case domain.PriorityLow, domain.PriorityNormal, domain.PriorityHigh:
-	default:
-		err = domain.NewError(domain.ErrValidation, "priority must be low, normal, or high", map[string]any{"priority": priority})
+	priorityID, err := resolvePriorityInput(strings.TrimSpace(priority))
+	if err != nil {
 		return
 	}
 
-	task, err = s.workflow.CreateTask(ctx, project.ID, title, strings.TrimSpace(description), string(priorityValue), strings.TrimSpace(bucketKey))
+	task, err = s.workflow.CreateTask(ctx, project.ID, title, strings.TrimSpace(description), priorityID, strings.TrimSpace(bucketKey))
 	return
+}
+
+// resolvePriorityInput accepts the user-supplied priority token (label
+// or empty) and returns the configured id. Empty falls back to the
+// configured default priority; non-empty is resolved via the active
+// priorities registry. Unknown labels error with ErrValidation so the
+// caller surfaces a helpful message instead of silently writing
+// PriorityZero. Lives next to Add/Edit so the input rules stay in one
+// place across both create and update paths.
+func resolvePriorityInput(label string) (domain.Priority, error) {
+	if label == "" {
+		// Caller did not name a priority — defer to the configured
+		// default. Storage layer will substitute it before insert.
+		return domain.PriorityZero, nil
+	}
+	if p, ok := domain.PriorityFromLabel(label); ok {
+		return p, nil
+	}
+	return domain.PriorityZero, domain.NewError(domain.ErrValidation,
+		"unknown priority label; must match a value in config.priorities",
+		map[string]any{"priority": label})
 }
 
 func (s *TaskService) List(ctx context.Context, project domain.ProjectContext, filter domain.TaskFilter) (tasks []domain.Task, err error) {
@@ -123,12 +138,16 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 		changed = true
 	}
 	if update.Priority != nil {
-		priority := domain.Priority(strings.TrimSpace(string(*update.Priority)))
-		switch priority {
-		case domain.PriorityLow, domain.PriorityNormal, domain.PriorityHigh:
-			update.Priority = &priority
-		default:
-			err = domain.NewError(domain.ErrValidation, "priority must be low, normal, or high", map[string]any{"priority": *update.Priority})
+		// Edit callers already hold a resolved Priority id (TUI cycles
+		// through the configured table; CLI/MCP went through
+		// resolvePriorityInput before reaching here). The service still
+		// re-checks the id is registered so a stale id (priority entry
+		// removed since the caller cached it) is rejected loud rather
+		// than silently passed through to the store.
+		if !update.Priority.IsRegistered() {
+			err = domain.NewError(domain.ErrValidation,
+				"priority id is not in config.priorities",
+				map[string]any{"priority": int(*update.Priority)})
 			return
 		}
 		changed = true

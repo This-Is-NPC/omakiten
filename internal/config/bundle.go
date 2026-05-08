@@ -112,6 +112,69 @@ type Settings struct {
 	Views            ViewSettings     `yaml:"views,omitempty" json:"views,omitempty"`
 	MCP              MCPSettings      `yaml:"mcp,omitempty" json:"mcp,omitempty"`
 	TUI              TUISettings      `yaml:"tui,omitempty" json:"tui,omitempty"`
+	// Priorities is the configurable id↔value table for task priorities.
+	// Code references the id (opaque); renderers resolve the value via
+	// lookup. Authors who want to rename, add, or reorder priority labels
+	// edit this block in YAML — no code changes required. Order follows
+	// id ascending and is also the sort weight (higher id = higher
+	// priority on `ORDER BY priority`). Empty means "use the canonical
+	// default kit".
+	Priorities []PriorityDefinition `yaml:"priorities,omitempty" json:"priorities,omitempty"`
+}
+
+// PriorityDefinition is one row of the configurable priority table.
+// ID is the storage handle and the sort weight; Value is the human label
+// rendered in TUI/CLI/MCP/JSON output. Default flags the priority
+// applied to tasks created without an explicit priority — at most one
+// definition may set it (validator-enforced). Color is an optional
+// theme-token name (e.g. `error`, `warning`, `success`) used by the TUI
+// to colorize the badge; omitted falls back to the neutral info token.
+type PriorityDefinition struct {
+	ID      int    `yaml:"id" json:"id"`
+	Value   string `yaml:"value" json:"value"`
+	Default bool   `yaml:"default,omitempty" json:"default,omitempty"`
+	Color   string `yaml:"color,omitempty" json:"color,omitempty"`
+}
+
+// CanonicalPriorities is the shape the kit ships when omakiten.yaml does
+// not declare a priorities block. Lower id = lower urgency; the middle
+// entry is the implicit default. Centralised so validator, runtime, and
+// migration agree on the same fallback.
+var CanonicalPriorities = []PriorityDefinition{
+	{ID: 1, Value: "low", Color: "success"},
+	{ID: 2, Value: "normal", Default: true, Color: "info"},
+	{ID: 3, Value: "high", Color: "error"},
+}
+
+// EffectivePriorities returns the configured priority table with the
+// canonical fallback substituted when the user omitted the block. The
+// returned slice is a fresh copy so callers can mutate it without
+// affecting the bundle.
+func (s Settings) EffectivePriorities() []PriorityDefinition {
+	source := s.Priorities
+	if len(source) == 0 {
+		source = CanonicalPriorities
+	}
+	out := make([]PriorityDefinition, len(source))
+	copy(out, source)
+	return out
+}
+
+// DefaultPriorityID returns the id of the priority flagged `default: true`
+// in the resolved table, falling back to the middle entry's id when no
+// explicit default is declared. Validator rejects multiple defaults so
+// this can pick the first match safely.
+func (s Settings) DefaultPriorityID() int {
+	prios := s.EffectivePriorities()
+	if len(prios) == 0 {
+		return 0
+	}
+	for _, p := range prios {
+		if p.Default {
+			return p.ID
+		}
+	}
+	return prios[len(prios)/2].ID
 }
 
 // DefaultTemplateKinds is the canonical set of template-default slots when
@@ -171,6 +234,25 @@ type MCPSettings struct {
 	// the cached prompt across calls; unaware clients ignore the hint
 	// silently — disabling only matters when a client misbehaves on it.
 	CachePrompts *bool `yaml:"cache_prompts,omitempty" json:"cache_prompts,omitempty"`
+
+	// RecentContextLimit caps how many recent context entries flow into
+	// `tasks.continue` / `project.overview` / `project.resume` responses.
+	// <=0 keeps the canonical default (DefaultRecentContextLimit). Smaller
+	// than recent_comment_limit because each entry can be paragraphs of
+	// free-form notes — three is enough to set the scene.
+	RecentContextLimit int `yaml:"recent_context_limit,omitempty" json:"recent_context_limit,omitempty"`
+
+	// NextWorkLimit caps the "likely next work" suggestion list shipped
+	// in `project.resume`. <=0 keeps the canonical default
+	// (DefaultNextWorkLimit). Increase for project-overview screens; keep
+	// small for narrow agent contexts.
+	NextWorkLimit int `yaml:"next_work_limit,omitempty" json:"next_work_limit,omitempty"`
+
+	// SimilarTaskLimit caps how many similar-task hints are surfaced by
+	// `tasks.create_intent`. <=0 keeps the canonical default
+	// (DefaultSimilarTaskLimit). Tune up if you frequently create
+	// near-duplicate intents and want broader dedup coverage.
+	SimilarTaskLimit int `yaml:"similar_task_limit,omitempty" json:"similar_task_limit,omitempty"`
 }
 
 // Canonical defaults for MCPSettings. Centralized so validator and runtime
@@ -180,6 +262,9 @@ const (
 	DefaultMaxCommentChars           = 0 // 0 = no truncation
 	DefaultIncludeWorkflowInContinue = true
 	DefaultCachePrompts              = true
+	DefaultRecentContextLimit        = 3
+	DefaultNextWorkLimit             = 5
+	DefaultSimilarTaskLimit          = 5
 )
 
 // EffectiveRecentCommentLimit returns the configured cap on recent comments
@@ -218,6 +303,36 @@ func (m MCPSettings) EffectiveCachePrompts() bool {
 		return DefaultCachePrompts
 	}
 	return *m.CachePrompts
+}
+
+// EffectiveRecentContextLimit returns the configured cap on recent context
+// entries shipped per MCP call, falling back to DefaultRecentContextLimit
+// when the user omitted the field or set a non-positive value.
+func (m MCPSettings) EffectiveRecentContextLimit() int {
+	if m.RecentContextLimit <= 0 {
+		return DefaultRecentContextLimit
+	}
+	return m.RecentContextLimit
+}
+
+// EffectiveNextWorkLimit returns the configured cap on the "likely next
+// work" suggestion list, falling back to DefaultNextWorkLimit when omitted
+// or set to a non-positive value.
+func (m MCPSettings) EffectiveNextWorkLimit() int {
+	if m.NextWorkLimit <= 0 {
+		return DefaultNextWorkLimit
+	}
+	return m.NextWorkLimit
+}
+
+// EffectiveSimilarTaskLimit returns the configured cap on similar-task
+// hints surfaced by tasks.create_intent, falling back to
+// DefaultSimilarTaskLimit when omitted or set to a non-positive value.
+func (m MCPSettings) EffectiveSimilarTaskLimit() int {
+	if m.SimilarTaskLimit <= 0 {
+		return DefaultSimilarTaskLimit
+	}
+	return m.SimilarTaskLimit
 }
 
 type ContextSettings struct {

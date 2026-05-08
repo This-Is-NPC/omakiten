@@ -11,6 +11,7 @@ import (
 
 	"omakiten/internal/activity"
 	"omakiten/internal/app"
+	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
 	"omakiten/internal/output"
@@ -144,13 +145,33 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 	}
 
 	if materializeConfig {
-		if _, _, err := app.NewConfigService(store, cs).Import(ctx, configPath); err != nil {
+		bundle, _, err := app.NewConfigService(store, cs).Import(ctx, configPath)
+		if err != nil {
 			_ = store.Close()
 			return nil, err
 		}
+		// Register the configured priority table once per CLI invocation
+		// so any command that emits/consumes priorities (add, edit,
+		// list, table renderer) sees the user's id↔value mapping.
+		// Lives in the open() path so every entrypoint hits it without
+		// per-command bookkeeping; agentruntime does the same on the
+		// MCP side.
+		registerPriorities(bundle.Config.EffectivePriorities())
 	}
 
 	return &runtime{store: store, configPath: configPath, dbPath: dbPath}, nil
+}
+
+// registerPriorities mirrors the helper in internal/agentruntime: the
+// CLI is the second composition root (the first is the MCP runtime),
+// and both must populate the domain priority registry from the active
+// bundle before any service call resolves a Priority.
+func registerPriorities(defs []config.PriorityDefinition) {
+	pairs := make([]domain.PriorityPair, len(defs))
+	for i, d := range defs {
+		pairs[i] = domain.PriorityPair{ID: d.ID, Value: d.Value}
+	}
+	domain.RegisterPriorities(pairs)
 }
 
 func (o *runtimeOptions) resolvedConfigPath() (string, error) {

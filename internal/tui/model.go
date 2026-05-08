@@ -19,7 +19,7 @@ import (
 	"omakiten/internal/tui/components/viewport"
 )
 
-func NewModel(ctx context.Context, project domain.ProjectContext, repos Repositories, theme config.Theme, counter token.Counter, badge config.TokenBadgeThresholds) (Model, error) {
+func NewModel(ctx context.Context, project domain.ProjectContext, repos Repositories, theme config.Theme, counter token.Counter, badge config.TokenBadgeThresholds, priorities []config.PriorityDefinition) (Model, error) {
 	if counter == nil {
 		counter = token.ApproxCounter{}
 	}
@@ -36,6 +36,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		entityKind:       entityKindLaw,
 		entityCursors:    map[entityKind]int{entityKindLaw: 0, entityKindPersona: 0, entityKindSkill: 0, entityKindTag: 0},
 		homePicker:       picker.New(picker.Single),
+		priorities:       priorities,
 	}
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()

@@ -167,11 +167,16 @@ func priorityAllowSet(values []string) map[string]struct{} {
 	return out
 }
 
+// priorityAllowed checks the priority against the configured filter
+// values (label strings supplied by config.views.{board,table}.filter
+// .priority). Resolves the priority id to its label via the registry
+// before comparison so user-defined priorities (e.g. "urgent") match the
+// strings they typed in YAML, not the underlying integer ids.
 func priorityAllowed(allowed map[string]struct{}, priority domain.Priority) bool {
 	if allowed == nil {
 		return true
 	}
-	_, ok := allowed[string(priority)]
+	_, ok := allowed[priority.Label()]
 	return ok
 }
 
@@ -235,16 +240,12 @@ func sortTasks(tasks []domain.Task, sort config.SortSettings) {
 	stableSort(tasks, sortableLess, asc)
 }
 
+// priorityRank returns the configured id of the priority — which is also
+// the sort weight (config authors order the priorities table low→high
+// by id). Treating the id as the rank means renaming a label or
+// inserting a new mid-priority is a YAML edit, not a code change.
 func priorityRank(p domain.Priority) int {
-	switch p {
-	case domain.PriorityLow:
-		return 1
-	case domain.PriorityNormal:
-		return 2
-	case domain.PriorityHigh:
-		return 3
-	}
-	return 0
+	return int(p)
 }
 
 func stableSort(tasks []domain.Task, less func(i, j int) bool, asc bool) {

@@ -34,7 +34,16 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 					update.Description = &description
 				}
 				if cmd.Flags().Changed("priority") {
-					value := domain.Priority(priority)
+					// CLI accepts the priority label string; resolve to
+					// the configured id via the registry so the service
+					// layer never sees raw strings. Unknown labels error
+					// loudly instead of silently writing PriorityZero.
+					value, ok := domain.PriorityFromLabel(priority)
+					if !ok {
+						return nil, domain.NewError(domain.ErrValidation,
+							"unknown priority label; must match a value in config.priorities",
+							map[string]any{"priority": priority})
+					}
 					update.Priority = &value
 				}
 				if cmd.Flags().Changed("bucket") {
