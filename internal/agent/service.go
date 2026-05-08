@@ -10,17 +10,6 @@ import (
 	"omakiten/internal/token"
 )
 
-// Defaults for the MCP-response shape settings. Mirror the
-// config.Default* constants so the agent layer keeps a sensible floor when
-// no settings have been wired (test fixtures, partially initialized
-// runtimes). Runtime overrides via Service.SetSettings.
-const (
-	defaultRecentCommentLimit = 5
-	defaultRecentContextLimit = 3
-	defaultNextWorkLimit      = 5
-	defaultSimilarTaskLimit   = 5
-)
-
 // ServiceSettings carries the runtime-tunable knobs that shape MCP responses.
 // Mirrors `config.MCPSettings` but without importing internal/config — the
 // agent layer is config-neutral, so the runtime resolves the effective values
@@ -101,43 +90,28 @@ type Service struct {
 	settings           ServiceSettings
 }
 
+// NewService constructs the agent service with zero-value settings.
+// The composition root MUST call SetSettings with values resolved from
+// the user's config.mcp block before the service handles any request —
+// the agent layer no longer carries hardcoded defaults. Tests that
+// construct a service without going through the runtime composition
+// root must call SetSettings explicitly.
 func NewService(repo Repository, selector ProjectSelector) *Service {
 	return &Service{
 		repo:     repo,
 		selector: selector,
 		counter:  token.NewCounter(),
-		settings: ServiceSettings{
-			RecentCommentLimit: defaultRecentCommentLimit,
-			MaxCommentChars:    0,
-			IncludeWorkflow:    true,
-			CachePrompts:       true,
-			RecentContextLimit: defaultRecentContextLimit,
-			NextWorkLimit:      defaultNextWorkLimit,
-			SimilarTaskLimit:   defaultSimilarTaskLimit,
-		},
+		// settings are zero-valued; SetSettings wires the actual knobs.
 	}
 }
 
-// SetSettings replaces the service's runtime knobs. Wiring runs once at
-// startup from the resolved config bundle; changing values mid-flight is
-// allowed but not expected. Zero values fall through to defaults via the
-// effective getters below.
+// SetSettings replaces the service's runtime knobs with values from the
+// active bundle. The runtime composition root invokes this exactly once
+// at startup; the values flow from `bundle.Config.MCP.*`. The agent
+// layer cannot import internal/config (hexagonal rule), so the runtime
+// is the single point that bridges the two. Validator guarantees every
+// MCP field is set in the bundle, so settings here is always complete.
 func (s *Service) SetSettings(settings ServiceSettings) {
-	if settings.RecentCommentLimit <= 0 {
-		settings.RecentCommentLimit = defaultRecentCommentLimit
-	}
-	if settings.MaxCommentChars < 0 {
-		settings.MaxCommentChars = 0
-	}
-	if settings.RecentContextLimit <= 0 {
-		settings.RecentContextLimit = defaultRecentContextLimit
-	}
-	if settings.NextWorkLimit <= 0 {
-		settings.NextWorkLimit = defaultNextWorkLimit
-	}
-	if settings.SimilarTaskLimit <= 0 {
-		settings.SimilarTaskLimit = defaultSimilarTaskLimit
-	}
 	s.settings = settings
 }
 
