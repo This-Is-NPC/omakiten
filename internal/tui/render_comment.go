@@ -127,12 +127,6 @@ func (m Model) updateCommentScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		if comment, ok := m.activeComment(); ok {
 			m.armOrConfirmCommentDelete(comment)
-			// Confirmed delete closes the screen because the comment is
-			// gone — drop the modal immediately so the user does not see
-			// a "not found" placeholder.
-			if m.commentDeletePendingID == 0 && m.status != "" && strings.HasPrefix(m.status, "Deleted comment") {
-				m.closeCommentScreen()
-			}
 		}
 		return m, nil
 	}
@@ -193,6 +187,10 @@ func (m *Model) armOrConfirmCommentDelete(comment domain.Comment) {
 // bucket policy is enforced) and refreshes the activity feed so the deleted
 // card disappears. On guard violation the policy hint surfaces in the status
 // badge while pending state is cleared so the user retries intentionally.
+// When the deleted comment is the one currently displayed in the dedicated
+// comment screen, that overlay closes here — the alternative ("not found"
+// placeholder) is a worse UX and would require the caller to re-detect
+// success via a status-string sniff.
 func (m *Model) executeCommentDelete(commentID int64) {
 	m.commentDeletePendingID = 0
 	if _, err := app.NewCommentServiceWithWorkflow(m.repos.Comments, m.repos.Workflow).Remove(m.ctx, m.project, commentID); err != nil {
@@ -210,6 +208,9 @@ func (m *Model) executeCommentDelete(commentID int64) {
 		}
 	}
 	m.activityCursor = -1
+	if m.commentScreenOpen && m.commentScreenID == commentID {
+		m.closeCommentScreen()
+	}
 	m.status = fmt.Sprintf("Deleted comment #%d", commentID)
 }
 

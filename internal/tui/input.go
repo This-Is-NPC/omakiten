@@ -56,11 +56,12 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// terminal supports. bubbles' textarea does not recognise the
 		// modifier-Enter strings as newlines on its own, so we intercept
 		// them and inject "\n" directly. Every other key is forwarded.
-		switch msg.String() {
-		case "enter":
+		key := msg.String()
+		if key == "enter" {
 			m.submitInput()
 			return m, nil
-		case "alt+enter", "shift+enter", "ctrl+j", "alt+ctrl+j":
+		}
+		if isNewlineModifier(key) {
 			m.commentInput.InsertString("\n")
 			return m, nil
 		}

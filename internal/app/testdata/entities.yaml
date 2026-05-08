@@ -1,8 +1,12 @@
 # Scenario: bundle for tests that exercise law/skill/persona services.
-# Carries a richer entity set than default.yaml — two skills, one persona
-# wired to both, one law — so the tests can verify list/edit/remove paths
-# return the right entities. Workflow shape mirrors default.yaml because
-# these tests do not care about policy.
+# Workflow shape mirrors default.yaml because these tests do not care
+# about policy.
+#
+# NOTE: skills/personas/laws are intentionally absent. config.Bundle
+# marks those fields `yaml:"-"` (production loads them from per-entity
+# folders), so listing them here would be silently dropped. Tests that
+# need entity arrays wire them inline in Go after LoadBundle returns —
+# see fixtureBundle in entities_test.go.
 version: 1
 kit:
   id: 1
@@ -19,25 +23,6 @@ config:
     active: default
   theme:
     active: catppuccin
-skills:
-  - slug: go
-    name: Go
-    description: Go language.
-  - slug: sqlite
-    name: SQLite
-    description: SQLite stack.
-personas:
-  - slug: backend-agent
-    name: Backend Agent
-    description: Backend persona
-    skills:
-      - go
-      - sqlite
-laws:
-  - slug: scope
-    severity: error
-    body: Stay in scope.
-    scope: global
 workflows:
   - id: 1
     key: default

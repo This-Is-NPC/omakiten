@@ -7,6 +7,21 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+// isNewlineModifier reports whether a key string is one of the
+// modifier-Enter forms terminals emit for "insert a newline" inside a
+// bubbles textinput/textarea. The set covers the variants we have seen
+// across emulators (alacritty/kitty/iterm/etc.); bubbles itself only
+// recognises bare "enter" as a newline, so callers must intercept these
+// and forward `"\n"` via InsertString. Centralised so the create/edit
+// task form and the comment modal stay in lockstep when the set grows.
+func isNewlineModifier(key string) bool {
+	switch key {
+	case "alt+enter", "shift+enter", "ctrl+j", "alt+ctrl+j":
+		return true
+	}
+	return false
+}
+
 func plural(n int, singular, plural string) string {
 	if n == 1 {
 		return singular

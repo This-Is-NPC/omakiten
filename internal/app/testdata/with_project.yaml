@@ -1,7 +1,13 @@
-# Scenario: bundle for template-service tests that need a registered
-# Project so SetDefault can claim project-scoped bindings. Single-bucket
-# workflow because these tests do not move tasks; permissive defaults so
-# the policy chain stays out of the way.
+# Scenario: bundle for template-service tests. Single-bucket workflow
+# because these tests do not move tasks; permissive defaults so the
+# policy chain stays out of the way.
+#
+# NOTE: projects are intentionally absent. config.Bundle marks Projects
+# `yaml:"-"` (production loads them from the wiring layer in loader.go,
+# not directly from Bundle), so listing them here would be silently
+# dropped. The template tests reference project="demo" only inside
+# template frontmatter — SetDefault rewrites the file without enforcing
+# project existence, so the fixture does not need a registered project.
 version: 1
 kit:
   id: 1
@@ -15,9 +21,6 @@ config:
     active: default
   theme:
     active: catppuccin
-projects:
-  - slug: demo
-    name: Demo Project
 workflows:
   - id: 1
     key: default
