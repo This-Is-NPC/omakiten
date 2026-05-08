@@ -220,12 +220,16 @@ func importWorkflows(ctx context.Context, tx *sql.Tx, bundleID int64, workflows 
 	}
 
 	for _, workflow := range workflows {
+		operationsJSON, err := json.Marshal(workflow.Operations)
+		if err != nil {
+			return err
+		}
 		var workflowID int64
 		if err := tx.QueryRowContext(ctx, `
-INSERT INTO workflows(bundle_id, local_id, key, name, active) VALUES (?, ?, ?, ?, 1)
-ON CONFLICT(bundle_id, local_id) DO UPDATE SET key = excluded.key, name = excluded.name, active = 1
+INSERT INTO workflows(bundle_id, local_id, key, name, operations_json, active) VALUES (?, ?, ?, ?, ?, 1)
+ON CONFLICT(bundle_id, local_id) DO UPDATE SET key = excluded.key, name = excluded.name, operations_json = excluded.operations_json, active = 1
 RETURNING id
-`, bundleID, workflow.ID, workflow.Key, workflow.Name).Scan(&workflowID); err != nil {
+`, bundleID, workflow.ID, workflow.Key, workflow.Name, string(operationsJSON)).Scan(&workflowID); err != nil {
 			return err
 		}
 
@@ -234,12 +238,20 @@ RETURNING id
 		}
 		bucketIDs := map[int]int64{}
 		for _, bucket := range workflow.Buckets {
+			permissionsJSON := "{}"
+			if bucket.Permissions != nil {
+				raw, err := json.Marshal(bucket.Permissions)
+				if err != nil {
+					return err
+				}
+				permissionsJSON = string(raw)
+			}
 			var bucketID int64
 			if err := tx.QueryRowContext(ctx, `
-INSERT INTO workflow_buckets(workflow_id, local_id, key, name, position, active) VALUES (?, ?, ?, ?, ?, 1)
-ON CONFLICT(workflow_id, local_id) DO UPDATE SET key = excluded.key, name = excluded.name, position = excluded.position, active = 1
+INSERT INTO workflow_buckets(workflow_id, local_id, key, name, position, permissions_json, active) VALUES (?, ?, ?, ?, ?, ?, 1)
+ON CONFLICT(workflow_id, local_id) DO UPDATE SET key = excluded.key, name = excluded.name, position = excluded.position, permissions_json = excluded.permissions_json, active = 1
 RETURNING id
-`, workflowID, bucket.ID, bucket.Key, bucket.Name, bucket.Position).Scan(&bucketID); err != nil {
+`, workflowID, bucket.ID, bucket.Key, bucket.Name, bucket.Position, permissionsJSON).Scan(&bucketID); err != nil {
 				return err
 			}
 			bucketIDs[bucket.ID] = bucketID

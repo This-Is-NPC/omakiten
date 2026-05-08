@@ -254,6 +254,78 @@ buckets:
 | `key` | string, required, unique within workflow | Stable identifier (also referenced by guards and view filters). |
 | `name` | string, required | Display name. |
 | `position` | int, >= 1 | Visual ordering in BOARD/TABLE views. The bucket at position 1 is the **default for new tasks** when none is supplied (`app.WorkflowService.ResolveDefaultBucket`); the bucket at the highest position is the **final** bucket whose entry triggers a `task.completed` event. |
+| `permissions` | object, optional | Per-bucket task / comment CRUD policy. See **Bucket permissions** below. |
+
+#### Bucket permissions
+
+`permissions` gates `tasks.edit`, `tasks.delete`, `comments.edit`, and `comments.delete` based on the bucket the task currently sits in. Defaults when `permissions` is omitted:
+
+- `task.edit` is `true` only in the bucket at position 1; `false` everywhere else.
+- `task.delete` is `false` everywhere.
+- `comment.*` inherits 100% from `task.*` when no `comment` sub-block is declared.
+
+When `permissions.comment` is partially set, only the explicit fields override; the rest still inherit from `task`. Example:
+
+```yaml
+buckets:
+  - id: 1
+    key: backlog
+    name: Backlog
+    position: 1
+    permissions:
+      task:
+        edit: true
+        delete: false   # default — kept explicit for clarity
+  - id: 2
+    key: dev
+    name: Development
+    position: 2
+    permissions:
+      task:
+        edit: false     # frozen once accepted into dev
+        delete: false
+      comment:
+        delete: true    # but reviewers may still purge comments
+        # edit inherits task.edit (false)
+  - id: 3
+    key: done
+    name: Done
+    position: 3
+    permissions:
+      task:
+        edit: false
+        delete: true    # operators can purge completed work
+```
+
+When a CRUD operation is denied, the service emits a `guard_violation` error whose `details.hint` lists the buckets where the action *is* permitted, so the agent can suggest a remediation move.
+
+### `workflows[].operations`
+
+```yaml
+operations:
+  archive:
+    guards:
+      - type: comments_tagged
+        tag: archive-reason
+        count: 1
+        hint: "Add a #archive-reason comment before archiving."
+  delete:
+    guards:
+      - type: comments_tagged
+        tag: justification
+        count: 1
+        hint: "Add a #justification comment before deleting."
+  unarchive:
+    guards: []   # default
+```
+
+`operations` declares guards that gate the non-flow lifecycle operations:
+
+- **archive** — flips `state=archived`, moves the task into the workflow's final bucket, and **bypasses bucket permissions and transition guards** (escape hatch). Operation guards still apply.
+- **delete** — hard-deletes the task with cascade (comments → event_tags → events → dependencies → tags → task). Subject to **both** the bucket's `permissions.task.delete` and `operations.delete.guards`.
+- **unarchive** — flips `state=active`, leaves the bucket untouched. No guards by default.
+
+Operation guards reuse the same shape as transition guards (`type`, `tag`, `count`, `hint`). In the MVP only `comments_tagged` is wired into the operation evaluator; other types pass validation but currently have no effect on the operation path.
 
 ### `workflows[].transitions`
 
@@ -511,11 +583,23 @@ workflows:
   - id: 1
     key: default
     name: Default Workflow
+    operations:
+      archive:
+        guards:
+          - { type: comments_tagged, tag: archive-reason, count: 1, hint: "Tag #archive-reason first." }
+      delete:
+        guards:
+          - { type: comments_tagged, tag: justification,  count: 1, hint: "Tag #justification first." }
     buckets:
-      - { id: 1, key: backlog, name: Backlog,     position: 1 }   # default bucket for new tasks
+      - { id: 1, key: backlog, name: Backlog,     position: 1 }   # default bucket for new tasks; task.edit defaults to true here
       - { id: 2, key: dev,     name: Development, position: 2 }
       - { id: 3, key: review,  name: Review,      position: 3 }
-      - { id: 4, key: done,    name: Done,        position: 4 }   # final → emits task.completed
+      - id: 4
+        key: done
+        name: Done
+        position: 4         # final → emits task.completed
+        permissions:
+          task: { edit: false, delete: true }   # only Done permits hard delete
     transitions:
       - from: 1
         to: 2

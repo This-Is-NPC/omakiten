@@ -449,18 +449,52 @@ type TaskTemplate struct {
 }
 
 type Workflow struct {
-	ID          int          `yaml:"id" json:"id"`
-	Key         string       `yaml:"key" json:"key"`
-	Name        string       `yaml:"name" json:"name"`
-	Buckets     []Bucket     `yaml:"buckets" json:"buckets"`
-	Transitions []Transition `yaml:"transitions" json:"transitions,omitempty"`
+	ID          int                `yaml:"id" json:"id"`
+	Key         string             `yaml:"key" json:"key"`
+	Name        string             `yaml:"name" json:"name"`
+	Buckets     []Bucket           `yaml:"buckets" json:"buckets"`
+	Transitions []Transition       `yaml:"transitions" json:"transitions,omitempty"`
+	Operations  WorkflowOperations `yaml:"operations,omitempty" json:"operations,omitempty"`
 }
 
 type Bucket struct {
-	ID       int    `yaml:"id" json:"id"`
-	Key      string `yaml:"key" json:"key"`
-	Name     string `yaml:"name" json:"name"`
-	Position int    `yaml:"position" json:"position"`
+	ID          int                `yaml:"id" json:"id"`
+	Key         string             `yaml:"key" json:"key"`
+	Name        string             `yaml:"name" json:"name"`
+	Position    int                `yaml:"position" json:"position"`
+	Permissions *BucketPermissions `yaml:"permissions,omitempty" json:"permissions,omitempty"`
+}
+
+// BucketPermissions wires task/comment CRUD policy per bucket. A nil pointer
+// means "no override declared" — the runtime falls back to the canonical
+// defaults (edit=true on the first bucket, false elsewhere; delete=false
+// everywhere). Comment inherits from task when its sub-block is missing or
+// partially set.
+type BucketPermissions struct {
+	Task    *EntityPermission `yaml:"task,omitempty" json:"task,omitempty"`
+	Comment *EntityPermission `yaml:"comment,omitempty" json:"comment,omitempty"`
+}
+
+// EntityPermission is the CRUD policy for one entity in one bucket. Both
+// fields are pointers so the YAML can omit a field and have the runtime
+// resolve the canonical default rather than treating the zero value as
+// "explicit false".
+type EntityPermission struct {
+	Edit   *bool `yaml:"edit,omitempty" json:"edit,omitempty"`
+	Delete *bool `yaml:"delete,omitempty" json:"delete,omitempty"`
+}
+
+// WorkflowOperations declares the guards that gate non-flow operations
+// (archive / delete / unarchive). Reuses the TransitionGuard shape so the
+// existing comments_tagged evaluator can be reused without a new guard type.
+type WorkflowOperations struct {
+	Archive   OperationPolicy `yaml:"archive,omitempty" json:"archive,omitempty"`
+	Delete    OperationPolicy `yaml:"delete,omitempty" json:"delete,omitempty"`
+	Unarchive OperationPolicy `yaml:"unarchive,omitempty" json:"unarchive,omitempty"`
+}
+
+type OperationPolicy struct {
+	Guards []TransitionGuard `yaml:"guards,omitempty" json:"guards,omitempty"`
 }
 
 type TransitionGuard struct {

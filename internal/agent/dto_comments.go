@@ -20,6 +20,25 @@ type AddCommentInput struct {
 	TemplateSlug string   `json:"template_slug,omitempty"`
 }
 
+type EditCommentInput struct {
+	ProjectSelector
+	CommentID int64    `json:"comment_id"`
+	Body      string   `json:"body"`
+	Tags      []string `json:"tags,omitempty"`
+}
+
+type DeleteCommentInput struct {
+	ProjectSelector
+	CommentID int64 `json:"comment_id"`
+	Confirmed bool  `json:"confirmed,omitempty"`
+}
+
+type DeleteCommentResponse struct {
+	Project      ProjectSummary `json:"project"`
+	Confirmation Confirmation   `json:"confirmation,omitempty"`
+	Snapshot     *EventSummary  `json:"snapshot,omitempty"`
+}
+
 type ListCommentsInput struct {
 	ProjectSelector
 	TaskID int64 `json:"task_id"`

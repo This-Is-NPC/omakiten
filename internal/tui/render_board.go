@@ -463,6 +463,9 @@ func (m Model) renderCard(task domain.Task, selected bool, layout boardLayout) s
 	if selected {
 		style = m.styles.cardSelected.Width(layout.cardWidth)
 	}
+	if task.State == domain.TaskStateArchived {
+		style = m.styles.archivedCard.Width(layout.cardWidth)
+	}
 	return style.Render(strings.Join(lines, "\n"))
 }
 

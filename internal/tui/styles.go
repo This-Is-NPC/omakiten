@@ -109,6 +109,11 @@ type styles struct {
 	badgeTokenGreen  lipgloss.Style
 	badgeTokenYellow lipgloss.Style
 	badgeTokenRed    lipgloss.Style
+
+	// archivedCard renders archived tasks dimmed when the `A` toggle exposes
+	// them in board/table/graph. Strikethrough doubles as a redundant cue
+	// for users with limited color contrast.
+	archivedCard lipgloss.Style
 }
 
 func newStyles(theme config.Theme) styles {
@@ -175,5 +180,7 @@ func newStyles(theme config.Theme) styles {
 		badgeTokenGreen:  lipgloss.NewStyle().Background(success).Foreground(badgeFg).Padding(0, 1).Bold(true),
 		badgeTokenYellow: lipgloss.NewStyle().Background(warning).Foreground(badgeFg).Padding(0, 1).Bold(true),
 		badgeTokenRed:    lipgloss.NewStyle().Background(errorColor).Foreground(badgeFg).Padding(0, 1).Bold(true),
+
+		archivedCard: lipgloss.NewStyle().Foreground(border).Strikethrough(true).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(cardBoxWidth),
 	}
 }

@@ -245,6 +245,12 @@ type Model struct {
 	// of the appropriate Mode when each one opens — single-select for
 	// theme/config/template-default, multi for persona.
 	entityPicker picker.Model
+
+	// includeArchived flips the active-only task filter on every list view
+	// (board/table/graph/logs). Default false (archived hidden); the `A`
+	// keybind toggles it. Archived rows render with a dimmed style so the
+	// user can still spot them when the toggle is on.
+	includeArchived bool
 }
 
 // inputMode is the modal-input enum: normal navigation, comment input, or

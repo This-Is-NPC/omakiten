@@ -8,15 +8,26 @@ const (
 	PriorityHigh   Priority = "high"
 )
 
+// TaskState toggles a task between the active workflow and the archived
+// escape-hatch lane. Archive bypasses bucket-policy and transition guards but
+// still respects the declared operations.archive.guards.
+type TaskState string
+
+const (
+	TaskStateActive   TaskState = "active"
+	TaskStateArchived TaskState = "archived"
+)
+
 type Task struct {
-	ID          int64    `json:"id"`
-	ProjectID   int64    `json:"project_id"`
-	BucketID    int64    `json:"bucket_id,omitempty"`
-	BucketKey   string   `json:"bucket_key,omitempty"`
-	Title       string   `json:"title"`
-	Description string   `json:"description,omitempty"`
-	Priority    Priority `json:"priority"`
-	CreatedAt   string   `json:"created_at,omitempty"`
+	ID          int64     `json:"id"`
+	ProjectID   int64     `json:"project_id"`
+	BucketID    int64     `json:"bucket_id,omitempty"`
+	BucketKey   string    `json:"bucket_key,omitempty"`
+	Title       string    `json:"title"`
+	Description string    `json:"description,omitempty"`
+	Priority    Priority  `json:"priority"`
+	State       TaskState `json:"state,omitempty"`
+	CreatedAt   string    `json:"created_at,omitempty"`
 }
 
 // TaskSort drives the ORDER BY clause applied by ListTasks. Field is one of
@@ -32,6 +43,10 @@ type TaskFilter struct {
 	BucketKeys []string
 	Priorities []Priority
 	Sort       TaskSort
+	// IncludeArchived flips the default active-only filter so callers can opt
+	// into seeing archived tasks. Defaults to false: every list view (board,
+	// table, graph, logs, MCP) hides archived rows unless the toggle is on.
+	IncludeArchived bool
 }
 
 type TaskUpdate struct {

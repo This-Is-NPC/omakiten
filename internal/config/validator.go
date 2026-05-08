@@ -377,32 +377,19 @@ func validateWorkflows(workflows []Workflow, activeKey string) error {
 			}
 			seenTransitions[key] = struct{}{}
 
-			for _, guard := range transition.Guards {
-				switch guard.Type {
-				case "blockers_in":
-					if len(guard.Buckets) == 0 {
-						return fmt.Errorf("workflows.%s guard blockers_in: buckets is required", workflow.Key)
-					}
-					for _, bKey := range guard.Buckets {
-						if _, ok := bucketKeySet[bKey]; !ok {
-							return fmt.Errorf("workflows.%s guard blockers_in: bucket key %q not found in workflow", workflow.Key, bKey)
-						}
-					}
-				case "comments_min":
-					if guard.Count < 1 {
-						return fmt.Errorf("workflows.%s guard comments_min: count must be >= 1", workflow.Key)
-					}
-				case "comments_tagged":
-					if strings.TrimSpace(guard.Tag) == "" {
-						return fmt.Errorf("workflows.%s guard comments_tagged: tag is required", workflow.Key)
-					}
-					if guard.Count < 1 {
-						return fmt.Errorf("workflows.%s guard comments_tagged: count must be >= 1", workflow.Key)
-					}
-				default:
-					return fmt.Errorf("workflows.%s: unknown guard type %q", workflow.Key, guard.Type)
-				}
+			if err := validateGuards(workflow.Key, fmt.Sprintf("transition %d→%d", transition.From, transition.To), transition.Guards, bucketKeySet); err != nil {
+				return err
 			}
+		}
+
+		if err := validateGuards(workflow.Key, "operations.archive", workflow.Operations.Archive.Guards, bucketKeySet); err != nil {
+			return err
+		}
+		if err := validateGuards(workflow.Key, "operations.delete", workflow.Operations.Delete.Guards, bucketKeySet); err != nil {
+			return err
+		}
+		if err := validateGuards(workflow.Key, "operations.unarchive", workflow.Operations.Unarchive.Guards, bucketKeySet); err != nil {
+			return err
 		}
 	}
 
@@ -410,6 +397,42 @@ func validateWorkflows(workflows []Workflow, activeKey string) error {
 		return fmt.Errorf("config.workflow.active %q does not match any workflow", activeKey)
 	}
 
+	return nil
+}
+
+// validateGuards enforces the comments_tagged / comments_min / blockers_in
+// shape uniformly across transition guards and operation guards. Operation
+// guards in the MVP only support comments_tagged, but enforcement happens at
+// the engine level — the validator stays permissive so operators can
+// experiment with comments_min where it makes sense (e.g. delete needs ≥3
+// comments).
+func validateGuards(workflowKey, scope string, guards []TransitionGuard, bucketKeySet map[string]struct{}) error {
+	for _, guard := range guards {
+		switch guard.Type {
+		case "blockers_in":
+			if len(guard.Buckets) == 0 {
+				return fmt.Errorf("workflows.%s %s guard blockers_in: buckets is required", workflowKey, scope)
+			}
+			for _, bKey := range guard.Buckets {
+				if _, ok := bucketKeySet[bKey]; !ok {
+					return fmt.Errorf("workflows.%s %s guard blockers_in: bucket key %q not found in workflow", workflowKey, scope, bKey)
+				}
+			}
+		case "comments_min":
+			if guard.Count < 1 {
+				return fmt.Errorf("workflows.%s %s guard comments_min: count must be >= 1", workflowKey, scope)
+			}
+		case "comments_tagged":
+			if strings.TrimSpace(guard.Tag) == "" {
+				return fmt.Errorf("workflows.%s %s guard comments_tagged: tag is required", workflowKey, scope)
+			}
+			if guard.Count < 1 {
+				return fmt.Errorf("workflows.%s %s guard comments_tagged: count must be >= 1", workflowKey, scope)
+			}
+		default:
+			return fmt.Errorf("workflows.%s %s: unknown guard type %q", workflowKey, scope, guard.Type)
+		}
+	}
 	return nil
 }
 

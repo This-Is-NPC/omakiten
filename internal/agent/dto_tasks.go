@@ -8,6 +8,7 @@ type TaskSummary struct {
 	Description string          `json:"description,omitempty"`
 	BucketKey   string          `json:"bucket_key,omitempty"`
 	Priority    domain.Priority `json:"priority,omitempty"`
+	State       string          `json:"state,omitempty"`
 }
 
 type ContinueTaskInput struct {
@@ -79,6 +80,32 @@ type MoveTaskResponse struct {
 	Task    TaskSummary    `json:"task"`
 }
 
+type DeleteTaskInput struct {
+	ProjectSelector
+	TaskID    int64 `json:"task_id"`
+	Confirmed bool  `json:"confirmed,omitempty"`
+}
+
+type DeleteTaskResponse struct {
+	Project   ProjectSummary `json:"project"`
+	Confirmation Confirmation `json:"confirmation,omitempty"`
+	Snapshot  *EventSummary  `json:"snapshot,omitempty"`
+}
+
+type ArchiveTaskInput struct {
+	ProjectSelector
+	TaskID int64 `json:"task_id"`
+}
+
+type ArchiveTaskResponse struct {
+	Project ProjectSummary `json:"project"`
+	Task    TaskSummary    `json:"task"`
+}
+
 func taskSummary(task domain.Task) TaskSummary {
-	return TaskSummary{ID: task.ID, Title: task.Title, Description: task.Description, BucketKey: task.BucketKey, Priority: task.Priority}
+	s := TaskSummary{ID: task.ID, Title: task.Title, Description: task.Description, BucketKey: task.BucketKey, Priority: task.Priority}
+	if task.State != "" && task.State != domain.TaskStateActive {
+		s.State = string(task.State)
+	}
+	return s
 }

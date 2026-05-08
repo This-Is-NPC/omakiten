@@ -143,18 +143,155 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 		return
 	}
 
+	hasFieldEdit := update.Title != nil || update.Description != nil || update.Priority != nil
+	var before domain.Task
+	if hasFieldEdit {
+		before, err = s.taskByID(ctx, project, taskID)
+		if err != nil {
+			return
+		}
+		if before.State == domain.TaskStateArchived {
+			err = domain.NewError(domain.ErrValidation, "task is archived; unarchive before editing", map[string]any{"task_id": taskID, "hint": "call tasks.unarchive(task_id) first"})
+			return
+		}
+		var allowed bool
+		var hint string
+		allowed, hint, err = s.workflow.ResolveBucketPermissions(ctx, project, taskID, EntityTask, PermissionEdit)
+		if err != nil {
+			return
+		}
+		if !allowed {
+			err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"task_id": taskID, "hint": hint, "entity": EntityTask, "operation": PermissionEdit})
+			return
+		}
+	}
+
 	if update.BucketKey != "" {
 		task, err = s.workflow.MoveTask(ctx, project, taskID, update.BucketKey)
 		if err != nil {
 			return
 		}
 	}
-	if update.Title != nil || update.Description != nil || update.Priority != nil {
+	if hasFieldEdit {
 		task, err = s.repo.UpdateTask(ctx, project.ID, taskID, update)
 		if err != nil {
+			return
+		}
+		if _, evErr := s.repo.EmitTaskEditedEvent(ctx, project.ID, taskID, before, task); evErr != nil {
+			err = evErr
 			return
 		}
 	}
 
 	return
+}
+
+// Delete enforces the bucket-level task.delete policy and any
+// operations.delete.guards before hard-deleting the task with cascade.
+// Returns the system-level task.removed event whose payload carries the
+// pre-delete snapshot for audit.
+func (s *TaskService) Delete(ctx context.Context, project domain.ProjectContext, taskID int64) (event domain.Event, err error) {
+	finish := activity.Track(ctx, "app.TaskService.Delete", project, map[string]any{"task_id": taskID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	if taskID <= 0 {
+		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+		return
+	}
+
+	allowed, hint, err := s.workflow.ResolveBucketPermissions(ctx, project, taskID, EntityTask, PermissionDelete)
+	if err != nil {
+		return
+	}
+	if !allowed {
+		err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"task_id": taskID, "hint": hint, "entity": EntityTask, "operation": PermissionDelete})
+		return
+	}
+	if err = s.workflow.EvaluateOperationGuards(ctx, project.ID, taskID, OperationDelete); err != nil {
+		return
+	}
+
+	event, err = s.repo.HardDeleteTask(ctx, project.ID, taskID)
+	return
+}
+
+// Archive flips the task into archived state and moves it into the workflow's
+// final bucket atomically. Bypasses bucket-permission policy and transition
+// guards (escape hatch) but still respects operations.archive.guards.
+func (s *TaskService) Archive(ctx context.Context, project domain.ProjectContext, taskID int64) (task domain.Task, event domain.Event, err error) {
+	finish := activity.Track(ctx, "app.TaskService.Archive", project, map[string]any{"task_id": taskID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	if taskID <= 0 {
+		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+		return
+	}
+
+	if err = s.workflow.EvaluateOperationGuards(ctx, project.ID, taskID, OperationArchive); err != nil {
+		return
+	}
+
+	finalBucket, err := s.workflow.FinalBucketKey(ctx)
+	if err != nil {
+		return
+	}
+
+	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateArchived, finalBucket)
+	return
+}
+
+// Unarchive restores an archived task to active state, leaving its bucket
+// untouched. Respects operations.unarchive.guards if declared.
+func (s *TaskService) Unarchive(ctx context.Context, project domain.ProjectContext, taskID int64) (task domain.Task, event domain.Event, err error) {
+	finish := activity.Track(ctx, "app.TaskService.Unarchive", project, map[string]any{"task_id": taskID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	if taskID <= 0 {
+		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+		return
+	}
+
+	if err = s.workflow.EvaluateOperationGuards(ctx, project.ID, taskID, OperationUnarchive); err != nil {
+		return
+	}
+
+	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateActive, "")
+	return
+}
+
+func (s *TaskService) taskByID(ctx context.Context, project domain.ProjectContext, taskID int64) (domain.Task, error) {
+	tasks, err := s.repo.ListTasks(ctx, project.ID, domain.TaskFilter{IncludeArchived: true})
+	if err != nil {
+		return domain.Task{}, err
+	}
+	for _, t := range tasks {
+		if t.ID == taskID {
+			return t, nil
+		}
+	}
+	return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID})
 }

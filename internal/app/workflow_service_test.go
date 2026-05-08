@@ -21,6 +21,7 @@ type fakeStores struct {
 	currentBucketID  int64
 	currentBucketKey string
 	currentBucketErr error
+	taskState        domain.TaskState
 
 	createCalls  int
 	moveCalls    int
@@ -83,6 +84,12 @@ func (f *fakeStores) LoadTransitionGuards(_ context.Context, from, to int64) ([]
 func (f *fakeStores) CurrentTaskBucket(context.Context, int64, int64) (int64, string, error) {
 	return f.currentBucketID, f.currentBucketKey, f.currentBucketErr
 }
+func (f *fakeStores) TaskState(context.Context, int64, int64) (domain.TaskState, error) {
+	if f.taskState == "" {
+		return domain.TaskStateActive, nil
+	}
+	return f.taskState, nil
+}
 
 // GuardEvaluationRepository
 func (f *fakeStores) ListTaskBlockerBuckets(_ context.Context, _, taskID int64) ([]domain.TaskBlocker, error) {
@@ -112,6 +119,15 @@ func (f *fakeStores) UpdateTask(context.Context, int64, int64, domain.TaskUpdate
 }
 func (f *fakeStores) TaskCount(context.Context, int64) (int64, error) {
 	return 0, nil
+}
+func (f *fakeStores) HardDeleteTask(context.Context, int64, int64) (domain.Event, error) {
+	return domain.Event{}, nil
+}
+func (f *fakeStores) SetTaskState(context.Context, int64, int64, domain.TaskState, string) (domain.Task, domain.Event, error) {
+	return domain.Task{}, domain.Event{}, nil
+}
+func (f *fakeStores) EmitTaskEditedEvent(context.Context, int64, int64, domain.Task, domain.Task) (domain.Event, error) {
+	return domain.Event{}, nil
 }
 
 // EventRepository

@@ -34,14 +34,14 @@ func (s *Store) CreateTask(ctx context.Context, projectID int64, title, descript
 	query := `
 INSERT INTO tasks(project_id, bucket_id, title, description, priority)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, project_id, bucket_id, title, description, priority, created_at
+RETURNING id, project_id, bucket_id, title, description, priority, state, created_at
 `
 	args := []any{projectID, bucketID, title, description, priority}
 	if priority == "" {
 		query = `
 INSERT INTO tasks(project_id, bucket_id, title, description)
 VALUES (?, ?, ?, ?)
-RETURNING id, project_id, bucket_id, title, description, priority, created_at
+RETURNING id, project_id, bucket_id, title, description, priority, state, created_at
 `
 		args = []any{projectID, bucketID, title, description}
 	}
@@ -62,11 +62,14 @@ RETURNING id, project_id, bucket_id, title, description, priority, created_at
 
 func (s *Store) ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter) ([]domain.Task, error) {
 	query := `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority, tasks.created_at
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority, tasks.state, tasks.created_at
 FROM tasks
 LEFT JOIN workflow_buckets ON workflow_buckets.id = tasks.bucket_id
 WHERE tasks.project_id = ?`
 	args := []any{projectID}
+	if !filter.IncludeArchived {
+		query += " AND tasks.state = 'active'"
+	}
 	if filter.BucketKey != "" {
 		query += " AND workflow_buckets.key = ?"
 		args = append(args, filter.BucketKey)
@@ -94,7 +97,7 @@ WHERE tasks.project_id = ?`
 	var tasks []domain.Task
 	for rows.Next() {
 		var task domain.Task
-		if err := rows.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.BucketKey, &task.Title, &task.Description, &task.Priority, &task.CreatedAt); err != nil {
+		if err := rows.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.BucketKey, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, task)
@@ -159,7 +162,7 @@ func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBuc
 
 	row := tx.QueryRowContext(ctx, `
 UPDATE tasks SET bucket_id = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND id = ?
-RETURNING id, project_id, bucket_id, title, description, priority, created_at
+RETURNING id, project_id, bucket_id, title, description, priority, state, created_at
 `, targetBucketID, projectID, taskID)
 
 	task, err := scanTask(row, targetBucketKey)
@@ -221,7 +224,7 @@ func (s *Store) TaskCount(ctx context.Context, projectID int64) (int64, error) {
 
 func scanTask(row *sql.Row, bucketKey string) (domain.Task, error) {
 	var task domain.Task
-	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.CreatedAt); err != nil {
+	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", nil)
 		}
@@ -233,14 +236,14 @@ func scanTask(row *sql.Row, bucketKey string) (domain.Task, error) {
 
 func (s *Store) taskByID(ctx context.Context, projectID, taskID int64) (domain.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority, tasks.created_at
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority, tasks.state, tasks.created_at
 FROM tasks
 LEFT JOIN workflow_buckets ON workflow_buckets.id = tasks.bucket_id
 WHERE tasks.project_id = ? AND tasks.id = ?
 `, projectID, taskID)
 
 	var task domain.Task
-	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.BucketKey, &task.Title, &task.Description, &task.Priority, &task.CreatedAt); err != nil {
+	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.BucketKey, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
 		}

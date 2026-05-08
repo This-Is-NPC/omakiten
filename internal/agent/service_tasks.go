@@ -176,3 +176,53 @@ func (s *Service) MoveTask(ctx context.Context, input MoveTaskInput) (MoveTaskRe
 	}
 	return MoveTaskResponse{Project: projectSummary(project), Task: taskSummary(task)}, nil
 }
+
+func (s *Service) DeleteTask(ctx context.Context, input DeleteTaskInput) (DeleteTaskResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return DeleteTaskResponse{}, err
+	}
+	if !input.Confirmed {
+		return DeleteTaskResponse{
+			Project: projectSummary(project),
+			Confirmation: Confirmation{
+				RequiresConfirmation: true,
+				Reason:               "Deleting a task is destructive and cascades to comments, tags, dependencies, and events. Confirm with confirmed=true to proceed; consider tasks.archive instead for a reversible alternative.",
+				Options: []ConfirmationOption{
+					{Action: "archive_instead", Label: "Call tasks.archive(task_id) — reversible escape hatch"},
+					{Action: "confirm_delete", Label: "Retry tasks.delete with confirmed=true to hard-delete"},
+				},
+			},
+		}, nil
+	}
+	event, err := app.NewTaskServiceFromStore(s.repo).Delete(ctx, project, input.TaskID)
+	if err != nil {
+		return DeleteTaskResponse{}, err
+	}
+	snapshot := eventSummary(event)
+	return DeleteTaskResponse{Project: projectSummary(project), Snapshot: &snapshot}, nil
+}
+
+func (s *Service) ArchiveTask(ctx context.Context, input ArchiveTaskInput) (ArchiveTaskResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return ArchiveTaskResponse{}, err
+	}
+	task, _, err := app.NewTaskServiceFromStore(s.repo).Archive(ctx, project, input.TaskID)
+	if err != nil {
+		return ArchiveTaskResponse{}, err
+	}
+	return ArchiveTaskResponse{Project: projectSummary(project), Task: taskSummary(task)}, nil
+}
+
+func (s *Service) UnarchiveTask(ctx context.Context, input ArchiveTaskInput) (ArchiveTaskResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return ArchiveTaskResponse{}, err
+	}
+	task, _, err := app.NewTaskServiceFromStore(s.repo).Unarchive(ctx, project, input.TaskID)
+	if err != nil {
+		return ArchiveTaskResponse{}, err
+	}
+	return ArchiveTaskResponse{Project: projectSummary(project), Task: taskSummary(task)}, nil
+}

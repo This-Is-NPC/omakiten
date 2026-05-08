@@ -498,6 +498,19 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 			m.status = "Refreshed"
 		}
 		return true
+	case "A":
+		if m.top != topTasks {
+			return false
+		}
+		m.includeArchived = !m.includeArchived
+		if err := m.refreshCurrentView(); err != nil {
+			m.status = err.Error()
+		} else if m.includeArchived {
+			m.status = "Showing archived tasks"
+		} else {
+			m.status = "Hiding archived tasks"
+		}
+		return true
 	}
 	return false
 }
@@ -564,7 +577,7 @@ func (m *Model) refresh() error {
 	m.views = views
 
 	query := app.NewTUIQueryService(m.repos.Tasks, m.repos.Config, m.repos.Dependencies, m.repos.Comments, m.repos.Entries, m.repos.Tags, m.repos.Editor)
-	snap, err := query.Snapshot(m.ctx, m.project, domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order})
+	snap, err := query.Snapshot(m.ctx, m.project, domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order}, app.SnapshotOptions{IncludeArchived: m.includeArchived})
 	if err != nil {
 		return err
 	}

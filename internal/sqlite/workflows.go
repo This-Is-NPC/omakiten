@@ -11,7 +11,7 @@ import (
 
 func (s *Store) ActiveWorkflow(ctx context.Context) (domain.Workflow, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT workflows.id, workflows.key, workflows.name
+SELECT workflows.id, workflows.key, workflows.name, COALESCE(workflows.operations_json, '{}')
 FROM workflows
 JOIN config_bundles ON config_bundles.id = workflows.bundle_id
 JOIN settings ON settings.bundle_id = config_bundles.id
@@ -24,11 +24,17 @@ LIMIT 1
 `)
 
 	var workflow domain.Workflow
-	if err := row.Scan(&workflow.ID, &workflow.Key, &workflow.Name); err != nil {
+	var operationsJSON string
+	if err := row.Scan(&workflow.ID, &workflow.Key, &workflow.Name, &operationsJSON); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Workflow{}, domain.NewError(domain.ErrConfigInvalid, "active workflow not found", nil)
 		}
 		return domain.Workflow{}, err
+	}
+	if operationsJSON != "" && operationsJSON != "{}" {
+		if err := json.Unmarshal([]byte(operationsJSON), &workflow.Operations); err != nil {
+			return domain.Workflow{}, err
+		}
 	}
 
 	buckets, err := s.workflowBuckets(ctx, workflow.ID)
@@ -47,7 +53,7 @@ LIMIT 1
 }
 
 func (s *Store) workflowBuckets(ctx context.Context, workflowID int64) ([]domain.Bucket, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id, key, name, position FROM workflow_buckets WHERE workflow_id = ? AND active = 1 ORDER BY position, id", workflowID)
+	rows, err := s.db.QueryContext(ctx, "SELECT id, key, name, position, COALESCE(permissions_json, '{}') FROM workflow_buckets WHERE workflow_id = ? AND active = 1 ORDER BY position, id", workflowID)
 	if err != nil {
 		return nil, err
 	}
@@ -56,8 +62,16 @@ func (s *Store) workflowBuckets(ctx context.Context, workflowID int64) ([]domain
 	var buckets []domain.Bucket
 	for rows.Next() {
 		var bucket domain.Bucket
-		if err := rows.Scan(&bucket.ID, &bucket.Key, &bucket.Name, &bucket.Position); err != nil {
+		var permissionsJSON string
+		if err := rows.Scan(&bucket.ID, &bucket.Key, &bucket.Name, &bucket.Position, &permissionsJSON); err != nil {
 			return nil, err
+		}
+		if permissionsJSON != "" && permissionsJSON != "{}" {
+			var perms domain.BucketPermissions
+			if err := json.Unmarshal([]byte(permissionsJSON), &perms); err != nil {
+				return nil, err
+			}
+			bucket.Permissions = &perms
 		}
 		buckets = append(buckets, bucket)
 	}
@@ -203,6 +217,19 @@ WHERE t.project_id = ? AND t.id = ?
 		return 0, "", err
 	}
 	return bucketID, bucketKey, nil
+}
+
+// TaskState returns the active|archived flag for a task.
+func (s *Store) TaskState(ctx context.Context, projectID, taskID int64) (domain.TaskState, error) {
+	var state string
+	err := s.db.QueryRowContext(ctx, `SELECT state FROM tasks WHERE project_id = ? AND id = ?`, projectID, taskID).Scan(&state)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
+		}
+		return "", err
+	}
+	return domain.TaskState(state), nil
 }
 
 func activeBucketIDTx(ctx context.Context, tx *sql.Tx, key string) (int64, error) {
