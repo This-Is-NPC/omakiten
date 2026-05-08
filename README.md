@@ -80,7 +80,7 @@ Context dumps are tiered (level 1–3) and capped at a token budget you set. You
 
 ### Customize how your agent behaves
 
-Define rules your agent must follow, give it personas with curated skill sets, and set up templates for tasks, PRs, and comments all in plain YAML and Markdown under your config directory. Edit them, version them, share them with a teammate by copying a folder. → [Configuration Guide](.docs/configuration-guide.md)
+Define rules your agent must follow, give it personas with curated skill sets, set up templates for tasks/PRs/comments, declare workflow defaults and per-bucket CRUD policy, and reshape domain enums (priorities ship as a configurable id↔value table) — all in plain YAML and Markdown under your config directory. Edit them, version them, share them with a teammate by copying a folder. → [Configuration Guide](.docs/configuration-guide.md)
 
 ### Local-first, by design
 

@@ -122,6 +122,9 @@ config:
     max_comment_chars: 0               # int >=0; 0 keeps full bodies
     include_workflow_in_continue: true # bool; omit to keep default true
     cache_prompts: true                # bool; omit to keep default true
+    recent_context_limit: 3            # int >=0; 0 keeps default
+    next_work_limit: 5                 # int >=0; 0 keeps default
+    similar_task_limit: 5              # int >=0; 0 keeps default
 ```
 
 | Field | Type | Default | What it does |
@@ -130,6 +133,9 @@ config:
 | `max_comment_chars` | int | `0` (no truncation) | Truncates comment bodies past this many runes when shipped over MCP, appending `…`. Use to bound `tasks.continue` payloads on tasks with verbose `#resume` and `#documentation` comments. Does not affect `comments.list` (which is the read-the-full-thread endpoint). |
 | `include_workflow_in_continue` | `*bool` | `true` | Toggles the `workflow` block in `tasks.continue` responses. Per-call `include_workflow` argument overrides this default — set false once `/okt` already loaded the workflow shape for the session. |
 | `cache_prompts` | `*bool` | `true` | Emits a `_meta.anthropic.cache_control` hint on `prompts/get` content. Anthropic-aware MCP clients (recent Claude Code) reuse the cached prompt across calls; unaware clients ignore the hint silently. Disable only to work around a misbehaving client. |
+| `recent_context_limit` | int | `3` | Caps how many recent `context.add` entries flow into `tasks.continue` / `project.overview` / `project.resume`. Smaller than `recent_comment_limit` because each entry can be paragraphs of free-form notes — three is enough to set the scene. |
+| `next_work_limit` | int | `5` | Caps the "likely next work" suggestion list shipped in `project.resume`. Increase for project-overview screens; keep small for narrow agent contexts. |
+| `similar_task_limit` | int | `5` | Caps how many similar-task hints `tasks.create_intent` surfaces during the dedup check. Tune up if you frequently create near-duplicate intents and want broader dedup coverage. |
 
 #### Validation rules (parse-time)
 
@@ -177,6 +183,76 @@ config:
 | `red_at` | int | `400` | Threshold above which the badge turns red. Raise if you author heavy laws/personas; lower if you keep entities terse. |
 
 Non-positive values fall back to the canonical defaults silently.
+
+### `config.priorities`
+
+Configurable id↔value table for task priorities. Code references the integer id (opaque); renderers (TUI, CLI, MCP, JSON output) resolve the human label via this table at the boundary, so renaming `"high"` to `"urgent"` here is a single-line YAML edit and existing tasks pick up the new label on the next read. The sqlite layer stores `priority_id` integers (see `migrations/015_priority_id.sql`); the column type guarantees rename safety on persisted rows.
+
+```yaml
+config:
+  priorities:
+    - id: 1
+      value: low
+      color: success     # theme token: error | warning | success | info
+    - id: 2
+      value: normal
+      default: true       # at most one entry may set this
+      color: info
+    - id: 3
+      value: high
+      color: error
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | int >0 | yes | Storage handle and SQL sort weight (`ORDER BY priority` reads `priority_id`). List entries low→high so ascending order matches user intuition. Validator rejects duplicates and non-positive ids. |
+| `value` | string | yes | Human label rendered in the TUI badges, CLI output, MCP `priority` field, and `Priority` JSON marshaling. Validator rejects empty strings and duplicates across entries. |
+| `default` | bool | no | Marks the priority a task receives when the user creates one without naming a priority. At most one entry may set `default: true`; with none flagged, the runtime falls back to the middle entry by index. |
+| `color` | string | no | Theme-token name picked up by the TUI badge renderer. Recognised: `error`, `warning`, `success`, `info`. Anything else falls back to `info`. |
+
+Omitting the block keeps the canonical kit (`{1=low, 2=normal default, 3=high}`); add entries to introduce new priorities (e.g. `{id: 4, value: urgent, color: error}`) without any code change.
+
+#### Validation rules (parse-time)
+
+| Rule | Error message shape |
+|---|---|
+| `id` <= 0 | `config.priorities: id must be positive, got 0 for value "low"` |
+| missing `value` | `config.priorities[id=1]: value is required` |
+| duplicate `id` | `config.priorities: id 1 declared twice (values "low" and "...")` |
+| duplicate `value` | `config.priorities: value "low" declared twice (ids 1 and 4)` |
+| more than one `default: true` | `config.priorities: at most one entry may set default: true (got 2)` |
+
+#### How the runtime wires it
+
+The composition roots (`internal/cli/root.go` and `internal/agentruntime/runtime.go`) install the resolved table into the process-global priority registry (`internal/domain/task.go`) at startup. From that point on, `Priority(2).Label()` returns `"normal"`, `domain.PriorityFromLabel("high")` returns `(3, true)`, and JSON marshaling of `Priority(3)` emits `"high"`. Tests register the canonical kit via `testfixtures.RegisterCanonicalPriorities()` to mirror the production wiring.
+
+#### Worked example — adding an "urgent" priority
+
+```yaml
+config:
+  priorities:
+    - id: 1
+      value: low
+      color: success
+    - id: 2
+      value: normal
+      default: true
+      color: info
+    - id: 3
+      value: high
+      color: warning
+    - id: 4
+      value: urgent
+      color: error
+```
+
+After re-importing the bundle (`okt config import` or restarting the TUI):
+- The TUI form's priority cycle now offers `low | normal | high | urgent`.
+- `okt task add --priority urgent` resolves to `priority_id = 4`.
+- `ORDER BY priority DESC` lists urgent tasks first.
+- Existing tasks keep their stored `priority_id`; nothing in the database changed.
+
+To rename `"high"` to `"critical"` instead, change only the `value:` on entry id 3 — every existing task with `priority_id = 3` immediately renders as "critical" on the next read.
 
 ### `config.views`
 
