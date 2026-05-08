@@ -1,5 +1,7 @@
 # Contributing
 
+New to the codebase? Start with the [Developer Guide](.docs/dev-guide.md) — it covers prerequisites, the full mise task reference, local workflows, and release mechanics. This file is the canonical checklist for the rules every PR must follow.
+
 ## Commit Standards
 
 - Use [Conventional Commits](https://www.conventionalcommits.org/).

@@ -5,7 +5,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"testing"
+
+	toml "github.com/pelletier/go-toml/v2"
 
 	"omakiten/internal/domain"
 )
@@ -110,9 +114,10 @@ func TestSetupCreatedStatus(t *testing.T) {
 }
 
 func TestSupportedHarnesses(t *testing.T) {
-	harnesses := SupportedHarnesses()
-	if len(harnesses) != 3 || harnesses[0] != ClaudeCodeHarness || harnesses[1] != ClaudeDesktopHarness || harnesses[2] != OpenCodeHarness {
-		t.Fatalf("SupportedHarnesses() = %v, want [claude-code claude-desktop opencode]", harnesses)
+	want := []string{ClaudeCodeHarness, ClaudeDesktopHarness, OpenCodeHarness, CrushHarness, GitHubCopilotHarness, CodexHarness}
+	got := SupportedHarnesses()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("SupportedHarnesses() = %v, want %v", got, want)
 	}
 }
 
@@ -134,12 +139,13 @@ func TestSetupDefaultHarnessAndCommand(t *testing.T) {
 }
 
 func TestReadConfigEdgeCases(t *testing.T) {
+	codec := jsonCodec{}
 	// Empty file
 	emptyPath := filepath.Join(t.TempDir(), "empty.json")
 	if err := os.WriteFile(emptyPath, []byte("   "), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	cfg, exists, err := readConfig(emptyPath)
+	cfg, exists, err := readConfig(emptyPath, codec)
 	if err != nil {
 		t.Fatalf("readConfig(empty) error = %v", err)
 	}
@@ -152,7 +158,7 @@ func TestReadConfigEdgeCases(t *testing.T) {
 	if err := os.WriteFile(invalidPath, []byte("not json"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	_, _, err = readConfig(invalidPath)
+	_, _, err = readConfig(invalidPath, codec)
 	if err == nil {
 		t.Fatal("readConfig(invalid) error = nil")
 	}
@@ -162,7 +168,7 @@ func TestReadConfigEdgeCases(t *testing.T) {
 	if err := os.WriteFile(nullPath, []byte("null"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	cfg, exists, err = readConfig(nullPath)
+	cfg, exists, err = readConfig(nullPath, codec)
 	if err != nil {
 		t.Fatalf("readConfig(null) error = %v", err)
 	}
@@ -355,6 +361,338 @@ func TestSetupOpenCodeDefaultConfigPath(t *testing.T) {
 	if _, err := os.Stat(configPath); err != nil {
 		t.Fatalf("default config file missing: %v", err)
 	}
+}
+
+// Crush harness tests
+
+func TestSetupCrushPreservesExistingConfigAndRefusesSilentOverwrite(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "crush", "crush.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	existing := []byte(`{"providers":{"openai":{"apiKey":"sk-x"}},"mcp":{"other":{"type":"stdio","command":"other"}}}`)
+	if err := os.WriteFile(configPath, existing, 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result, err := Setup(Options{Harness: CrushHarness, ConfigPath: configPath, Command: "okt"})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	if result.Status != "updated" || !result.Changed {
+		t.Fatalf("Setup() = %#v, want updated changed", result)
+	}
+
+	var written map[string]any
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	providers, ok := written["providers"].(map[string]any)
+	if !ok || providers["openai"] == nil {
+		t.Fatalf("providers.openai missing after setup: %#v", written)
+	}
+	mcpSection := written["mcp"].(map[string]any)
+	if _, ok := mcpSection["other"]; !ok {
+		t.Fatalf("mcp.other missing after setup: %#v", mcpSection)
+	}
+	omakiten, ok := mcpSection["omakiten"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcp.omakiten missing after setup: %#v", mcpSection)
+	}
+	if omakiten["type"] != "stdio" {
+		t.Fatalf("type = %v, want stdio", omakiten["type"])
+	}
+	if omakiten["command"] != "okt" {
+		t.Fatalf("command = %v, want okt", omakiten["command"])
+	}
+	args, ok := omakiten["args"].([]any)
+	if !ok || len(args) != 2 || args[0] != "mcp" || args[1] != "serve" {
+		t.Fatalf("args = %v, want [mcp serve]", omakiten["args"])
+	}
+
+	_, err = Setup(Options{Harness: CrushHarness, ConfigPath: configPath, Command: "okt"})
+	assertSetupCode(t, err, domain.ErrValidation)
+}
+
+func TestSetupCrushForceOverwrite(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "crush.json")
+	if err := os.WriteFile(configPath, []byte(`{"mcp":{"omakiten":{"type":"stdio","command":"old","args":["mcp","serve"]}}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result, err := Setup(Options{Harness: CrushHarness, ConfigPath: configPath, Command: "new-okt", Force: true})
+	if err != nil {
+		t.Fatalf("Setup(force) error = %v", err)
+	}
+	if result.Status != "updated" || !result.Changed {
+		t.Fatalf("Setup(force) = %#v, want updated changed", result)
+	}
+
+	data, _ := os.ReadFile(configPath)
+	var written map[string]any
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	omakiten := written["mcp"].(map[string]any)["omakiten"].(map[string]any)
+	if omakiten["command"] != "new-okt" {
+		t.Fatalf("command = %v, want new-okt", omakiten["command"])
+	}
+}
+
+func TestSetupCrushDefaultConfigPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("crush default path on Windows uses LOCALAPPDATA which the test rig does not stub")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	result, err := Setup(Options{Harness: CrushHarness, Command: "okt"})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	expected := filepath.Join(home, ".config", "crush", "crush.json")
+	if result.ConfigPath != expected {
+		t.Fatalf("ConfigPath = %q, want %q", result.ConfigPath, expected)
+	}
+	if _, err := os.Stat(expected); err != nil {
+		t.Fatalf("default config file missing: %v", err)
+	}
+}
+
+// GitHub Copilot harness tests
+
+func TestSetupGitHubCopilotPreservesExistingConfigAndRefusesSilentOverwrite(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "Code", "User", "mcp.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	existing := []byte(`{"inputs":[{"id":"foo"}],"servers":{"other":{"type":"stdio","command":"other"}}}`)
+	if err := os.WriteFile(configPath, existing, 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result, err := Setup(Options{Harness: GitHubCopilotHarness, ConfigPath: configPath, Command: "okt"})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	if result.Status != "updated" || !result.Changed {
+		t.Fatalf("Setup() = %#v, want updated changed", result)
+	}
+
+	var written map[string]any
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	inputs, ok := written["inputs"].([]any)
+	if !ok || len(inputs) != 1 {
+		t.Fatalf("inputs missing or mutated: %#v", written["inputs"])
+	}
+	servers := written["servers"].(map[string]any)
+	if _, ok := servers["other"]; !ok {
+		t.Fatalf("servers.other missing after setup: %#v", servers)
+	}
+	omakiten, ok := servers["omakiten"].(map[string]any)
+	if !ok {
+		t.Fatalf("servers.omakiten missing after setup: %#v", servers)
+	}
+	if omakiten["type"] != "stdio" {
+		t.Fatalf("type = %v, want stdio", omakiten["type"])
+	}
+
+	_, err = Setup(Options{Harness: GitHubCopilotHarness, ConfigPath: configPath, Command: "okt"})
+	assertSetupCode(t, err, domain.ErrValidation)
+}
+
+func TestSetupGitHubCopilotForceOverwrite(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "mcp.json")
+	if err := os.WriteFile(configPath, []byte(`{"servers":{"omakiten":{"type":"stdio","command":"old","args":["mcp","serve"]}}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if _, err := Setup(Options{Harness: GitHubCopilotHarness, ConfigPath: configPath, Command: "new-okt", Force: true}); err != nil {
+		t.Fatalf("Setup(force) error = %v", err)
+	}
+
+	data, _ := os.ReadFile(configPath)
+	var written map[string]any
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	omakiten := written["servers"].(map[string]any)["omakiten"].(map[string]any)
+	if omakiten["command"] != "new-okt" {
+		t.Fatalf("command = %v, want new-okt", omakiten["command"])
+	}
+	if _, ok := written["mcpServers"]; ok {
+		t.Fatalf("Copilot config must not introduce mcpServers key: %#v", written)
+	}
+}
+
+func TestSetupGitHubCopilotDefaultConfigPath(t *testing.T) {
+	configDir := t.TempDir()
+	switch runtime.GOOS {
+	case "linux":
+		t.Setenv("XDG_CONFIG_HOME", configDir)
+	case "darwin":
+		t.Setenv("HOME", configDir)
+		configDir = filepath.Join(configDir, "Library", "Application Support")
+	case "windows":
+		t.Setenv("AppData", configDir)
+	default:
+		t.Skipf("os.UserConfigDir behavior not stubbed for GOOS=%s", runtime.GOOS)
+	}
+
+	result, err := Setup(Options{Harness: GitHubCopilotHarness, Command: "okt"})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	expected := filepath.Join(configDir, "Code", "User", "mcp.json")
+	if result.ConfigPath != expected {
+		t.Fatalf("ConfigPath = %q, want %q", result.ConfigPath, expected)
+	}
+}
+
+// Codex harness tests (TOML)
+
+func TestSetupCodexCreatesTOMLConfig(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+
+	result, err := Setup(Options{Harness: CodexHarness, ConfigPath: configPath, Command: "okt"})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	if result.Status != "created" || !result.Changed {
+		t.Fatalf("Setup() = %#v, want created changed", result)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var written map[string]any
+	if err := toml.Unmarshal(data, &written); err != nil {
+		t.Fatalf("toml.Unmarshal() error = %v\nfile:\n%s", err, string(data))
+	}
+	servers, ok := written["mcp_servers"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcp_servers missing or wrong type: %#v", written)
+	}
+	omakiten, ok := servers["omakiten"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcp_servers.omakiten missing: %#v", servers)
+	}
+	if omakiten["command"] != "okt" {
+		t.Fatalf("command = %v, want okt", omakiten["command"])
+	}
+	args, ok := omakiten["args"].([]any)
+	if !ok || len(args) != 2 || args[0] != "mcp" || args[1] != "serve" {
+		t.Fatalf("args = %v, want [mcp serve]", omakiten["args"])
+	}
+}
+
+func TestSetupCodexPreservesExistingTOMLAndRefusesSilentOverwrite(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config.toml")
+	existing := []byte(`model = "gpt-5"
+approval_policy = "manual"
+
+[mcp_servers.other]
+command = "uvx"
+args = ["other-tool"]
+`)
+	if err := os.WriteFile(configPath, existing, 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result, err := Setup(Options{Harness: CodexHarness, ConfigPath: configPath, Command: "okt"})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	if result.Status != "updated" || !result.Changed {
+		t.Fatalf("Setup() = %#v, want updated changed", result)
+	}
+
+	data, _ := os.ReadFile(configPath)
+	var written map[string]any
+	if err := toml.Unmarshal(data, &written); err != nil {
+		t.Fatalf("toml.Unmarshal() error = %v\nfile:\n%s", err, string(data))
+	}
+	if written["model"] != "gpt-5" {
+		t.Fatalf("model = %v, want preserved gpt-5", written["model"])
+	}
+	if written["approval_policy"] != "manual" {
+		t.Fatalf("approval_policy = %v, want preserved manual", written["approval_policy"])
+	}
+	servers := written["mcp_servers"].(map[string]any)
+	if _, ok := servers["other"]; !ok {
+		t.Fatalf("mcp_servers.other missing after setup: %#v", servers)
+	}
+	if _, ok := servers["omakiten"]; !ok {
+		t.Fatalf("mcp_servers.omakiten missing after setup: %#v", servers)
+	}
+
+	_, err = Setup(Options{Harness: CodexHarness, ConfigPath: configPath, Command: "okt"})
+	assertSetupCode(t, err, domain.ErrValidation)
+}
+
+func TestSetupCodexForceOverwrite(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config.toml")
+	if err := os.WriteFile(configPath, []byte("[mcp_servers.omakiten]\ncommand = \"old\"\nargs = [\"mcp\", \"serve\"]\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if _, err := Setup(Options{Harness: CodexHarness, ConfigPath: configPath, Command: "new-okt", Force: true}); err != nil {
+		t.Fatalf("Setup(force) error = %v", err)
+	}
+
+	data, _ := os.ReadFile(configPath)
+	var written map[string]any
+	if err := toml.Unmarshal(data, &written); err != nil {
+		t.Fatalf("toml.Unmarshal() error = %v\nfile:\n%s", err, string(data))
+	}
+	omakiten := written["mcp_servers"].(map[string]any)["omakiten"].(map[string]any)
+	if omakiten["command"] != "new-okt" {
+		t.Fatalf("command = %v, want new-okt", omakiten["command"])
+	}
+}
+
+func TestSetupCodexDefaultConfigPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	result, err := Setup(Options{Harness: CodexHarness, Command: "okt"})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	expected := filepath.Join(home, ".codex", "config.toml")
+	if result.ConfigPath != expected {
+		t.Fatalf("ConfigPath = %q, want %q", result.ConfigPath, expected)
+	}
+	if _, err := os.Stat(expected); err != nil {
+		t.Fatalf("default config file missing: %v", err)
+	}
+}
+
+func TestSetupCodexInvalidTOMLReturnsValidationError(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte("this = is = not valid toml"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	_, err := Setup(Options{Harness: CodexHarness, ConfigPath: configPath, Command: "okt"})
+	assertSetupCode(t, err, domain.ErrValidation)
 }
 
 func assertSetupCode(t *testing.T, err error, code domain.ErrorCode) {

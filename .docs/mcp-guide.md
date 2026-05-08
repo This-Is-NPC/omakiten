@@ -10,7 +10,18 @@ Users can opt in from project initialization:
 okt init --enable-mcp
 ```
 
-Supported harnesses are `claude-code` (default), `claude-desktop`, and `opencode`. Setup writes an `omakiten` MCP server entry that runs:
+Supported harnesses (CLI value → config target):
+
+| Harness | Default config path | Format | Server entry root |
+|---|---|---|---|
+| `claude-code` *(default)* | `~/.claude.json` | JSON | `mcpServers.omakiten` |
+| `claude-desktop` | `<UserConfigDir>/Claude/claude_desktop_config.json` | JSON | `mcpServers.omakiten` |
+| `opencode` | `<UserConfigDir>/opencode/opencode.json` | JSON | `mcp.omakiten` |
+| `crush` | `~/.config/crush/crush.json` (Linux/macOS) · `%LOCALAPPDATA%\crush\crush.json` (Windows) | JSON | `mcp.omakiten` |
+| `github-copilot` | `<UserConfigDir>/Code/User/mcp.json` (VS Code Copilot Chat, agent mode) | JSON | `servers.omakiten` |
+| `codex` | `~/.codex/config.toml` | TOML | `[mcp_servers.omakiten]` |
+
+Setup writes an `omakiten` server entry that runs:
 
 ```sh
 okt mcp serve
@@ -21,9 +32,13 @@ Useful setup flags:
 - `--mcp-dry-run` previews changes without writing.
 - `--mcp-config <path>` writes to a specific harness config path.
 - `--mcp-command <path>` overrides the command written into the harness config.
-- `--mcp-force` replaces an existing `mcpServers.omakiten` entry.
+- `--mcp-force` replaces an existing `omakiten` entry.
 
-Existing harness config is preserved. Omakiten refuses to replace an existing `omakiten` MCP entry unless `--mcp-force` is passed.
+Existing harness config is preserved (unrelated keys, other MCP servers, and any TOML tables outside `[mcp_servers]` round-trip untouched). Omakiten refuses to replace an existing `omakiten` MCP entry unless `--mcp-force` is passed.
+
+### Bundled installer flow
+
+Both `install.sh` and `install.ps1` end with an interactive multi-select prompt that lists every supported harness and runs `okt mcp setup --harness X --force` for each one chosen — no separate setup step required. Use the env override `OKT_HARNESSES=claude-code,opencode` (comma/space/tab/newline separated) to pre-pick selections and skip the prompt; in non-interactive shells (CI, no `/dev/tty`, non-`UserInteractive` PowerShell) the prompt is silently skipped.
 
 ## Tools
 

@@ -47,6 +47,12 @@ fi
 # cd the parent shell into the project chosen on the Home screen.
 # Idempotent — safe to re-run on every `mise run install`.
 "$PWD/scripts/install-wrapper.sh"
+
+# Mirror the curl|bash interactive prompt: offer to wire up MCP for any
+# of the supported AI agents (codex, claude-code, opencode, crush,
+# github-copilot, claude-desktop). Skipped silently in headless shells;
+# OKT_HARNESSES=name1,name2 pre-selects without prompting.
+"$PWD/scripts/harness-select.sh" "$installed_at"
 '''
 
 [tasks."dev:sync"]

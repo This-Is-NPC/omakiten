@@ -23,31 +23,7 @@ curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install
 irm https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.ps1 | iex
 ```
 
-## Connect your AI agent
-
-Register the project, then wire Omakiten into your agent via MCP.
-
-```bash
-okt init --name MyProject --slug my-project
-```
-
-**Claude Code:**
-
-```bash
-okt mcp setup --harness claude-code --force
-```
-
-**Claude Desktop:**
-
-```bash
-okt mcp setup --harness claude-desktop --force
-```
-
-**OpenCode:**
-
-```bash
-okt mcp setup --harness opencode --force
-```
+The installer asks which AI agents you use and wires Omakiten into each via MCP — see the [MCP Guide](.docs/mcp-guide.md#setup) for the harness list and re-running setup later. Then register your first project: `okt init --name MyProject --slug my-project`.
 
 ## How you work with it
 
