@@ -404,7 +404,7 @@ func newMCPTestService(t *testing.T, ctx context.Context) *agent.Service {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.PriorityZero, "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 	return agent.NewService(store, agent.ProjectSelector{CWD: root})

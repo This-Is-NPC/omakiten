@@ -1,15 +1,16 @@
 // Package testfixtures wires test packages to the YAML config files that
-// live next to them under testdata/. The convention is one fixture per
-// scenario (e.g. policy_comment_inherits_task.yaml), each documenting at
-// the top of the file what shape it covers, so a future reader can map
-// "what is this YAML for?" without re-reading the test that loads it.
+// live next to them under testdata/. Each fixture is a partial scenario;
+// the helper merges the embedded kit YAML (`defaults/omakiten.yaml`) on
+// top so missing canonical blocks (priorities, severities, mcp, views,
+// tui, template_defaults) inherit from the shipped kit. This mirrors
+// the production install pipeline where the kit YAML is materialised
+// into the user's config root on first run.
 //
-// Why a shared package: every layer of the codebase (config/app/sqlite/
-// tui/agent/mcp) needs to construct config.Bundle values for tests.
-// Inline Go construction drifts from the real parser path; loading from
-// real YAML keeps test inputs identical to what production sees from
-// `defaults/omakiten.yaml`. The helper is intentionally minimal — no
-// magic — so callers can extend it locally if a scenario needs more.
+// Why this matters: production has NO in-code canonical defaults. The
+// validator rejects bundles that omit required fields. Without the
+// merge step here, every fixture would have to repeat ~50 lines of
+// canonical boilerplate; with it, fixtures stay focused on the
+// scenario they exercise.
 package testfixtures
 
 import (
@@ -24,31 +25,41 @@ import (
 	"omakiten/internal/domain"
 )
 
-// RegisterCanonicalPriorities installs the kit's default 1=low /
-// 2=normal / 3=high priority registry into the domain package. Tests
-// that need to round-trip Priority through JSON marshaling, validate
-// PriorityFromLabel, or assert on Priority.Label() should call this in
-// setup. The runtime composition roots (cli, agentruntime) install the
-// configured table from the loaded bundle automatically; tests that
-// bypass those roots have to seed the registry themselves so their
-// scenarios reflect production semantics.
+// RegisterCanonicalPriorities loads the embedded kit YAML and installs
+// its priority table into the domain registry. Used by tests that
+// construct a Service / domain object directly without going through
+// LoadBundle (which auto-registers via the merged bundle).
 func RegisterCanonicalPriorities() {
-	defs := config.CanonicalPriorities
-	pairs := make([]domain.PriorityPair, len(defs))
-	for i, d := range defs {
-		pairs[i] = domain.PriorityPair{ID: d.ID, Value: d.Value}
+	kit := config.MustLoadKitConfig()
+	pairs := make([]domain.PriorityPair, len(kit.Priorities))
+	for i, d := range kit.Priorities {
+		pairs[i] = domain.PriorityPair{ID: d.ID, Value: d.Value, Default: d.Default}
 	}
 	domain.RegisterPriorities(pairs)
 }
 
-// LoadBundle reads <package-dir>/testdata/<name> and unmarshals it as a
-// config.Bundle. The relative path is resolved against the test binary's
-// working directory, which Go sets to the package directory for test
-// runs — meaning a fixture at internal/app/testdata/foo.yaml is reached
-// as LoadBundle(t, "foo.yaml") from any test in internal/app.
-//
-// Failures terminate the test via t.Fatalf so call sites do not have to
-// thread error returns through helper chains.
+// RegisterCanonicalSeverities mirrors RegisterCanonicalPriorities for
+// the law-severity table.
+func RegisterCanonicalSeverities() {
+	kit := config.MustLoadKitConfig()
+	pairs := make([]domain.SeverityPair, len(kit.Severities))
+	for i, d := range kit.Severities {
+		pairs[i] = domain.SeverityPair{ID: d.ID, Value: d.Value, Default: d.Default}
+	}
+	domain.RegisterSeverities(pairs)
+}
+
+// RegisterCanonical installs both canonical registries.
+func RegisterCanonical() {
+	RegisterCanonicalPriorities()
+	RegisterCanonicalSeverities()
+}
+
+// LoadBundle reads <package-dir>/testdata/<name>, parses strictly, and
+// merges the embedded kit YAML (`defaults/omakiten.yaml`) for any
+// canonical block the fixture omitted. Returns the merged bundle and
+// auto-registers its enum tables into the domain registries. Failures
+// terminate the test via t.Fatalf.
 func LoadBundle(t testing.TB, name string) config.Bundle {
 	t.Helper()
 	if filepath.IsAbs(name) {
@@ -59,8 +70,7 @@ func LoadBundle(t testing.TB, name string) config.Bundle {
 
 // LoadBundleFromAbsPath is the explicit-path variant for the rare test
 // that wants to point at a fixture outside its own testdata/ dir (e.g.
-// integration tests that load `defaults/omakiten.yaml` to assert the
-// shipped kit parses cleanly). Most callers should prefer LoadBundle.
+// integration tests that load `defaults/omakiten.yaml` directly).
 func LoadBundleFromAbsPath(t testing.TB, path string) config.Bundle {
 	t.Helper()
 	return loadFromPath(t, path)
@@ -72,17 +82,133 @@ func loadFromPath(t testing.TB, path string) config.Bundle {
 	if err != nil {
 		t.Fatalf("testfixtures: read %q: %v", path, err)
 	}
-	// KnownFields(true) makes typos and dead blocks fail loudly. Bundle
-	// marks Skills/Personas/Laws/Templates/Projects/MCPCommands as
-	// `yaml:"-"` because production loads them from per-entity folders;
-	// silently dropping those keys from a fixture would make scenarios
-	// look richer than they actually are. Tests that need those entities
-	// must wire them inline in Go after LoadBundle returns.
+	// Strict decoding so typos or removed-but-still-declared keys fail
+	// loudly. Yaml:"-" fields (Skills/Personas/Laws/Templates/Projects
+	// /MCPCommands) are loaded by production from per-entity folders,
+	// not from the wiring file — fixtures that need them wire inline.
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	var bundle config.Bundle
 	if err := dec.Decode(&bundle); err != nil {
 		t.Fatalf("testfixtures: parse %q: %v", path, err)
 	}
+
+	// Merge the kit YAML for any canonical block the fixture omitted.
+	// Production has no in-code defaults; the installer materialises
+	// the kit, and the validator rejects incomplete bundles. This step
+	// simulates the install pipeline so test fixtures can stay focused
+	// on the scenario under exercise without copying canonical boilerplate.
+	mergeKitDefaults(&bundle)
+
+	// Wire the resolved enum tables into the domain registries so
+	// Priority.Label() / Severity.Label() / FromLabel resolve as they
+	// would in production.
+	registerEnumsFromBundle(bundle)
 	return bundle
+}
+
+// mergeKitDefaults overlays the embedded kit's canonical blocks onto
+// the bundle for any field the fixture didn't declare. This is the
+// test-only equivalent of the install-time materialisation: production
+// reads the user's complete YAML; tests use partial fixtures + this
+// merge so each scenario file stays minimal.
+func mergeKitDefaults(b *config.Bundle) {
+	kit := config.MustLoadKitConfig()
+	cfg := &b.Config
+
+	// Priorities / severities — fixture wins when present.
+	if len(cfg.Priorities) == 0 {
+		cfg.Priorities = append([]config.PriorityDefinition(nil), kit.Priorities...)
+	}
+	if len(cfg.Severities) == 0 {
+		cfg.Severities = append([]config.SeverityDefinition(nil), kit.Severities...)
+	}
+
+	// Template defaults.
+	if len(cfg.TemplateDefaults) == 0 {
+		cfg.TemplateDefaults = append([]string(nil), kit.TemplateDefaults...)
+	}
+
+	// MCP block — fill missing scalar fields and pointer-bools.
+	if cfg.MCP.RecentCommentLimit == 0 {
+		cfg.MCP.RecentCommentLimit = kit.MCP.RecentCommentLimit
+	}
+	if cfg.MCP.RecentContextLimit == 0 {
+		cfg.MCP.RecentContextLimit = kit.MCP.RecentContextLimit
+	}
+	if cfg.MCP.NextWorkLimit == 0 {
+		cfg.MCP.NextWorkLimit = kit.MCP.NextWorkLimit
+	}
+	if cfg.MCP.SimilarTaskLimit == 0 {
+		cfg.MCP.SimilarTaskLimit = kit.MCP.SimilarTaskLimit
+	}
+	// MaxCommentChars: kit ships 0 as canonical (no truncation); the
+	// only invalid value is negative, which the validator catches. So
+	// we don't need to merge here unless the fixture explicitly set a
+	// negative — leave alone.
+	if cfg.MCP.IncludeWorkflowInContinue == nil {
+		cfg.MCP.IncludeWorkflowInContinue = kit.MCP.IncludeWorkflowInContinue
+	}
+	if cfg.MCP.CachePrompts == nil {
+		cfg.MCP.CachePrompts = kit.MCP.CachePrompts
+	}
+
+	// TUI badge thresholds.
+	if cfg.TUI.TokenBadge.YellowAt == 0 {
+		cfg.TUI.TokenBadge.YellowAt = kit.TUI.TokenBadge.YellowAt
+	}
+	if cfg.TUI.TokenBadge.RedAt == 0 {
+		cfg.TUI.TokenBadge.RedAt = kit.TUI.TokenBadge.RedAt
+	}
+
+	// Views: each sub-block fills its omitted fields.
+	mergeViewSettings(&cfg.Views, kit.Views)
+}
+
+func mergeViewSettings(v *config.ViewSettings, kit config.ViewSettings) {
+	if v.Board.Sort.Field == "" {
+		v.Board.Sort.Field = kit.Board.Sort.Field
+	}
+	if v.Board.Sort.Order == "" {
+		v.Board.Sort.Order = kit.Board.Sort.Order
+	}
+	if v.Table.Sort.Field == "" {
+		v.Table.Sort.Field = kit.Table.Sort.Field
+	}
+	if v.Table.Sort.Order == "" {
+		v.Table.Sort.Order = kit.Table.Sort.Order
+	}
+	if v.Graph.Sort.Field == "" {
+		v.Graph.Sort.Field = kit.Graph.Sort.Field
+	}
+	if v.Graph.Sort.Order == "" {
+		v.Graph.Sort.Order = kit.Graph.Sort.Order
+	}
+	if v.Logs.Sort.Order == "" {
+		v.Logs.Sort.Order = kit.Logs.Sort.Order
+	}
+	if v.Logs.Limit == 0 {
+		v.Logs.Limit = kit.Logs.Limit
+	}
+	if v.TaskActivity.Sort.Order == "" {
+		v.TaskActivity.Sort.Order = kit.TaskActivity.Sort.Order
+	}
+}
+
+// registerEnumsFromBundle wires the bundle's priority + severity
+// tables into the domain registries. Used by LoadBundle so every
+// fixture-driven test runs with the same id↔value mapping the
+// production composition roots install.
+func registerEnumsFromBundle(bundle config.Bundle) {
+	priorityPairs := make([]domain.PriorityPair, len(bundle.Config.Priorities))
+	for i, p := range bundle.Config.Priorities {
+		priorityPairs[i] = domain.PriorityPair{ID: p.ID, Value: p.Value, Default: p.Default}
+	}
+	domain.RegisterPriorities(priorityPairs)
+
+	severityPairs := make([]domain.SeverityPair, len(bundle.Config.Severities))
+	for i, s := range bundle.Config.Severities {
+		severityPairs[i] = domain.SeverityPair{ID: s.ID, Value: s.Value, Default: s.Default}
+	}
+	domain.RegisterSeverities(severityPairs)
 }

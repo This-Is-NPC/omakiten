@@ -172,7 +172,7 @@ func TestWorkflowCreateTaskUsesDefaultWhenBucketEmpty(t *testing.T) {
 	}
 	svc := newWorkflowServiceForTest(f)
 
-	if _, err := svc.CreateTask(context.Background(), 1, "title", "", domain.PriorityZero, ""); err != nil {
+	if _, err := svc.CreateTask(context.Background(), 1, "title", "", domain.Priority(2), ""); err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
 	if f.createCalls != 1 {

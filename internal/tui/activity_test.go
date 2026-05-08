@@ -29,7 +29,7 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "with comments", "", domain.PriorityZero, "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "with comments", "", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -48,7 +48,7 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -88,7 +88,7 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "long body", "", domain.PriorityZero, "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "long body", "", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -108,7 +108,7 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -179,7 +179,7 @@ func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "no comments", "", domain.PriorityZero, "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "no comments", "", domain.Priority(2), "backlog"); err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
 
@@ -191,7 +191,7 @@ func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -223,7 +223,7 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "with comment", "", domain.PriorityZero, "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "with comment", "", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -239,7 +239,7 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.CanonicalPriorities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}

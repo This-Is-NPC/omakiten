@@ -25,11 +25,31 @@ config:
   context:
     default_level: 2
     max_tokens: 12000
+  mcp:
+    recent_comment_limit: 5
+    max_comment_chars: 0
+    include_workflow_in_continue: true
+    cache_prompts: true
+    recent_context_limit: 3
+    next_work_limit: 5
+    similar_task_limit: 5
   workflow:
     active: default
   theme:
     active: omakiten
+  tui:
+    token_badge:
+      yellow_at: 150
+      red_at: 400
   template_defaults: [task, pr, comment-resume, comment-selfbranch, comment-documentation]
+  priorities:
+    - {id: 1, value: low, color: success}
+    - {id: 2, value: normal, default: true, color: info}
+    - {id: 3, value: high, color: error}
+  severities:
+    - {id: 1, value: info, color: info}
+    - {id: 2, value: warning, default: true, color: warning}
+    - {id: 3, value: error, color: error}
   views:
     board:
       sort:
@@ -92,7 +112,12 @@ workflows:
 	}
 }
 
-func TestLoadBundleAcceptsMissingViewsSection(t *testing.T) {
+// TestLoadBundleParsesKitDefaultFile is the round-trip integrity check
+// for the kit YAML: EnsureDefaultFiles materialises defaults/omakiten.
+// yaml into a temp config root, LoadBundle re-reads it, and the
+// validator must accept it. If this fails, the kit ships an
+// unparseable / incomplete document — the most basic invariant.
+func TestLoadBundleParsesKitDefaultFile(t *testing.T) {
 	tmp := t.TempDir()
 	if err := EnsureDefaultFiles(tmp); err != nil {
 		t.Fatalf("EnsureDefaultFiles() = %v", err)
@@ -100,71 +125,47 @@ func TestLoadBundleAcceptsMissingViewsSection(t *testing.T) {
 	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
 	bundle, err := LoadBundle(configPath)
 	if err != nil {
-		t.Fatalf("LoadBundle(default) = %v", err)
+		t.Fatalf("LoadBundle(default kit) = %v — kit YAML must be self-sufficient (no in-code fallback any more)", err)
 	}
-	// Default kit yaml does not declare views; the loader should not invent
-	// fields, but EffectiveViews must still surface canonical defaults.
-	v := bundle.Config.EffectiveViews()
-	if v.Board.Sort.Field == "" || v.Board.Sort.Order == "" {
-		t.Errorf("EffectiveViews on default kit = %+v, expected populated defaults", v.Board.Sort)
+	// Quick assertions that the resolved bundle is structurally complete:
+	// validator already covered the full set, but spot-check the most
+	// load-bearing pieces so a regression here points at the kit YAML.
+	if bundle.Config.MCP.RecentCommentLimit <= 0 {
+		t.Error("kit MCP.RecentCommentLimit not set")
 	}
-}
-
-func TestEffectiveViewsFillsCanonicalDefaults(t *testing.T) {
-	v := Settings{}.EffectiveViews()
-
-	if v.Board.Sort.Field != DefaultBoardSortField {
-		t.Errorf("Board.Sort.Field = %q, want %q", v.Board.Sort.Field, DefaultBoardSortField)
+	if bundle.Config.Views.Board.Sort.Field == "" {
+		t.Error("kit Views.Board.Sort.Field not set")
 	}
-	if v.Board.Sort.Order != DefaultBoardSortOrder {
-		t.Errorf("Board.Sort.Order = %q, want %q", v.Board.Sort.Order, DefaultBoardSortOrder)
+	if len(bundle.Config.Priorities) == 0 {
+		t.Error("kit Priorities empty")
 	}
-	if v.Table.Sort.Field != DefaultTableSortField {
-		t.Errorf("Table.Sort.Field = %q, want %q", v.Table.Sort.Field, DefaultTableSortField)
-	}
-	if v.Graph.Sort.Field != DefaultGraphSortField {
-		t.Errorf("Graph.Sort.Field = %q, want %q", v.Graph.Sort.Field, DefaultGraphSortField)
-	}
-	if v.Graph.Sort.Order != DefaultGraphSortOrder {
-		t.Errorf("Graph.Sort.Order = %q, want %q", v.Graph.Sort.Order, DefaultGraphSortOrder)
-	}
-	if v.Logs.Sort.Order != DefaultLogsSortOrder {
-		t.Errorf("Logs.Sort.Order = %q, want %q", v.Logs.Sort.Order, DefaultLogsSortOrder)
-	}
-	if v.Logs.Limit != DefaultLogsLimit {
-		t.Errorf("Logs.Limit = %d, want %d", v.Logs.Limit, DefaultLogsLimit)
-	}
-	if v.TaskActivity.Sort.Order != DefaultTaskActivitySortOrder {
-		t.Errorf("TaskActivity.Sort.Order = %q, want %q", v.TaskActivity.Sort.Order, DefaultTaskActivitySortOrder)
+	if len(bundle.Config.Severities) == 0 {
+		t.Error("kit Severities empty")
 	}
 }
 
-func TestEffectiveViewsPreservesUserValues(t *testing.T) {
-	s := Settings{
-		Views: ViewSettings{
-			Board: BoardViewSettings{
-				Sort: SortSettings{Field: "title", Order: "asc"},
-				Filter: BoardFilterSettings{Priority: []string{"high"}},
-			},
-			Logs: LogsViewSettings{
-				Limit: 200,
-			},
+// fullViewSettings returns a complete, validator-passing ViewSettings
+// derived from the kit so tests for individual rejection cases can mutate
+// just one field. Required because the strict validator rejects any
+// omitted field.
+func fullViewSettings() ViewSettings {
+	return ViewSettings{
+		Board: BoardViewSettings{
+			Sort: SortSettings{Field: "created_at", Order: "desc"},
 		},
-	}
-	v := s.EffectiveViews()
-
-	if v.Board.Sort.Field != "title" || v.Board.Sort.Order != "asc" {
-		t.Errorf("Board sort = %+v, want title/asc", v.Board.Sort)
-	}
-	if len(v.Board.Filter.Priority) != 1 || v.Board.Filter.Priority[0] != "high" {
-		t.Errorf("Board filter priority = %v, want [high]", v.Board.Filter.Priority)
-	}
-	if v.Logs.Limit != 200 {
-		t.Errorf("Logs.Limit = %d, want 200 (user override should not be replaced)", v.Logs.Limit)
-	}
-	// Order omitted by user — default still kicks in for that single field.
-	if v.Logs.Sort.Order != DefaultLogsSortOrder {
-		t.Errorf("Logs.Sort.Order = %q, want default %q", v.Logs.Sort.Order, DefaultLogsSortOrder)
+		Table: TableViewSettings{
+			Sort: SortSettings{Field: "created_at", Order: "desc"},
+		},
+		Graph: GraphViewSettings{
+			Sort: SortSettings{Field: "id", Order: "asc"},
+		},
+		Logs: LogsViewSettings{
+			Sort:  SortSettings{Order: "desc"},
+			Limit: 50,
+		},
+		TaskActivity: TaskActivityViewSettings{
+			Sort: SortSettings{Order: "asc"},
+		},
 	}
 }
 
@@ -179,59 +180,71 @@ func TestValidateViewSettingsRejectsBadValues(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		views   ViewSettings
+		mutate  func(*ViewSettings)
 		wantErr string
 	}{
 		{
 			name:    "board sort field invalid",
-			views:   ViewSettings{Board: BoardViewSettings{Sort: SortSettings{Field: "color"}}},
+			mutate:  func(v *ViewSettings) { v.Board.Sort.Field = "color" },
 			wantErr: "config.views.board.sort.field",
 		},
 		{
 			name:    "board sort order invalid",
-			views:   ViewSettings{Board: BoardViewSettings{Sort: SortSettings{Order: "alpha"}}},
+			mutate:  func(v *ViewSettings) { v.Board.Sort.Order = "alpha" },
 			wantErr: "config.views.board.sort.order",
 		},
 		{
 			name:    "board filter priority invalid",
-			views:   ViewSettings{Board: BoardViewSettings{Filter: BoardFilterSettings{Priority: []string{"medium"}}}},
+			mutate:  func(v *ViewSettings) { v.Board.Filter.Priority = []string{"medium"} },
 			wantErr: "config.views.board.filter.priority",
 		},
 		{
 			name:    "table filter bucket unknown",
-			views:   ViewSettings{Table: TableViewSettings{Filter: TableFilterSettings{Bucket: []string{"archive"}}}},
+			mutate:  func(v *ViewSettings) { v.Table.Filter.Bucket = []string{"archive"} },
 			wantErr: "config.views.table.filter.bucket",
 		},
 		{
 			name:    "graph sort field invalid",
-			views:   ViewSettings{Graph: GraphViewSettings{Sort: SortSettings{Field: "priority"}}},
+			mutate:  func(v *ViewSettings) { v.Graph.Sort.Field = "priority" },
 			wantErr: "config.views.graph.sort.field",
 		},
 		{
 			name:    "logs sort field forbidden",
-			views:   ViewSettings{Logs: LogsViewSettings{Sort: SortSettings{Field: "id"}}},
+			mutate:  func(v *ViewSettings) { v.Logs.Sort.Field = "id" },
 			wantErr: "config.views.logs.sort.field is not configurable",
 		},
 		{
 			name:    "logs filter source invalid",
-			views:   ViewSettings{Logs: LogsViewSettings{Filter: LogsFilterSettings{Source: []string{"slack"}}}},
+			mutate:  func(v *ViewSettings) { v.Logs.Filter.Source = []string{"slack"} },
 			wantErr: "config.views.logs.filter.source",
 		},
 		{
-			name:    "logs negative limit",
-			views:   ViewSettings{Logs: LogsViewSettings{Limit: -1}},
-			wantErr: "config.views.logs.limit cannot be negative",
+			name:    "logs zero limit",
+			mutate:  func(v *ViewSettings) { v.Logs.Limit = 0 },
+			wantErr: "config.views.logs.limit",
 		},
 		{
 			name:    "task_activity field forbidden",
-			views:   ViewSettings{TaskActivity: TaskActivityViewSettings{Sort: SortSettings{Field: "created_at"}}},
+			mutate:  func(v *ViewSettings) { v.TaskActivity.Sort.Field = "created_at" },
 			wantErr: "config.views.task_activity.sort.field is not configurable",
+		},
+		{
+			name:    "board missing sort field",
+			mutate:  func(v *ViewSettings) { v.Board.Sort.Field = "" },
+			wantErr: "config.views.board.sort.field",
+		},
+		{
+			name:    "board missing sort order",
+			mutate:  func(v *ViewSettings) { v.Board.Sort.Order = "" },
+			wantErr: "config.views.board.sort.order",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validateViewSettings(tc.views, baseWorkflow, "default")
+			views := fullViewSettings()
+			tc.mutate(&views)
+			err := validateViewSettings(views, baseWorkflow, "default", []string{"low", "normal", "high"})
 			if err == nil {
 				t.Fatalf("validateViewSettings() = nil, want error containing %q", tc.wantErr)
 			}
@@ -242,34 +255,52 @@ func TestValidateViewSettingsRejectsBadValues(t *testing.T) {
 	}
 }
 
-func TestValidateViewSettingsAcceptsEmptyAndValid(t *testing.T) {
+func TestValidateViewSettingsAcceptsValid(t *testing.T) {
 	baseWorkflow := []Workflow{{
 		ID: 1, Key: "default", Name: "Default",
 		Buckets: []Bucket{{ID: 1, Key: "backlog", Name: "Backlog", Position: 1}},
 	}}
 
-	if err := validateViewSettings(ViewSettings{}, baseWorkflow, "default"); err != nil {
-		t.Fatalf("empty ViewSettings should pass: %v", err)
+	if err := validateViewSettings(fullViewSettings(), baseWorkflow, "default", []string{"low", "normal", "high"}); err != nil {
+		t.Fatalf("kit-shape ViewSettings should pass: %v", err)
 	}
 
-	full := ViewSettings{
-		Board: BoardViewSettings{
-			Sort:   SortSettings{Field: "priority", Order: "desc"},
-			Filter: BoardFilterSettings{Priority: []string{"high", "normal"}},
-		},
-		Table: TableViewSettings{
-			Sort:   SortSettings{Field: "title", Order: "asc"},
-			Filter: TableFilterSettings{Priority: []string{"low"}, Bucket: []string{"backlog"}},
-		},
-		Graph: GraphViewSettings{Sort: SortSettings{Field: "title", Order: "desc"}},
-		Logs: LogsViewSettings{
-			Sort:   SortSettings{Order: "asc"},
-			Limit:  100,
-			Filter: LogsFilterSettings{Source: []string{"cli", "tui"}},
-		},
-		TaskActivity: TaskActivityViewSettings{Sort: SortSettings{Order: "desc"}},
+	// User-customised values pass too.
+	custom := fullViewSettings()
+	custom.Board.Sort = SortSettings{Field: "priority", Order: "desc"}
+	custom.Board.Filter.Priority = []string{"high", "normal"}
+	custom.Table.Filter.Bucket = []string{"backlog"}
+	custom.Logs.Limit = 200
+	custom.Logs.Filter.Source = []string{"cli", "tui"}
+	if err := validateViewSettings(custom, baseWorkflow, "default", []string{"low", "normal", "high"}); err != nil {
+		t.Fatalf("custom valid ViewSettings should pass: %v", err)
 	}
-	if err := validateViewSettings(full, baseWorkflow, "default"); err != nil {
-		t.Fatalf("full valid ViewSettings should pass: %v", err)
+}
+
+// TestValidateViewSettingsHonorsCustomPriorities was the regression test
+// for the post-config-driven review: prior to threading the priorities
+// list through, an "urgent" entry in config.priorities was rejected by
+// the view filter validator because it still consulted the hardcoded
+// ["low","normal","high"] allowlist. The fix derives the allowed list
+// from bundle.Config.EffectivePriorities() and threads it into
+// validateViewSettings as a parameter, so a board filter mentioning
+// "urgent" passes when the priority is declared.
+func TestValidateViewSettingsHonorsCustomPriorities(t *testing.T) {
+	baseWorkflow := []Workflow{{
+		ID: 1, Key: "default", Name: "Default",
+		Buckets: []Bucket{{ID: 1, Key: "backlog", Name: "Backlog", Position: 1}},
+	}}
+	customLabels := []string{"low", "normal", "high", "urgent"}
+	views := fullViewSettings()
+	views.Board.Filter.Priority = []string{"urgent"}
+	if err := validateViewSettings(views, baseWorkflow, "default", customLabels); err != nil {
+		t.Fatalf("custom priority %q rejected by validator: %v", "urgent", err)
+	}
+
+	// Sanity: a value NOT in the configured set is still rejected.
+	bad := fullViewSettings()
+	bad.Board.Filter.Priority = []string{"critical"}
+	if err := validateViewSettings(bad, baseWorkflow, "default", customLabels); err == nil {
+		t.Fatal("expected unknown priority \"critical\" to be rejected, got nil")
 	}
 }

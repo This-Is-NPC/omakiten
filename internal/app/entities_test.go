@@ -15,6 +15,14 @@ import (
 	"omakiten/internal/testfixtures"
 )
 
+func init() {
+	// LawService.Add resolves severity ids through the domain
+	// registry; the test bundle does not flow through cli/agentruntime
+	// composition roots that wire it up at runtime, so register the
+	// canonical kit here.
+	testfixtures.RegisterCanonicalSeverities()
+}
+
 type entitiesFixture struct {
 	store      *sqlite.Store
 	editor     *app.BundleEditor
@@ -77,10 +85,13 @@ func TestLawServiceLifecycle(t *testing.T) {
 		input   domain.LawInput
 		wantErr domain.ErrorCode
 	}{
-		{name: "creates law", input: domain.LawInput{Key: "warn-only", Severity: domain.LawSeverityWarning, Body: "Be careful."}},
-		{name: "rejects empty key", input: domain.LawInput{Key: " ", Severity: domain.LawSeverityInfo, Body: "anything"}, wantErr: domain.ErrValidation},
-		{name: "rejects empty body", input: domain.LawInput{Key: "x", Severity: domain.LawSeverityInfo, Body: " "}, wantErr: domain.ErrValidation},
-		{name: "rejects invalid severity", input: domain.LawInput{Key: "x", Severity: domain.LawSeverity("fatal"), Body: "anything"}, wantErr: domain.ErrValidation},
+		// Severity ids: 1=info, 2=warning, 3=error (canonical kit). 99 is
+		// unregistered, exercising the validator's "id not in
+		// config.severities" branch.
+		{name: "creates law", input: domain.LawInput{Key: "warn-only", Severity: domain.Severity(2), Body: "Be careful."}},
+		{name: "rejects empty key", input: domain.LawInput{Key: " ", Severity: domain.Severity(1), Body: "anything"}, wantErr: domain.ErrValidation},
+		{name: "rejects empty body", input: domain.LawInput{Key: "x", Severity: domain.Severity(1), Body: " "}, wantErr: domain.ErrValidation},
+		{name: "rejects invalid severity", input: domain.LawInput{Key: "x", Severity: domain.Severity(99), Body: "anything"}, wantErr: domain.ErrValidation},
 	}
 
 	for _, tt := range tests {
@@ -130,7 +141,7 @@ func TestLawServiceRejectsDuplicateKey(t *testing.T) {
 	fixture := newEntitiesFixture(t)
 	service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files)
 
-	if _, err := service.Add(ctx, domain.LawInput{Key: "scope", Severity: domain.LawSeverityError, Body: "anything"}); err == nil {
+	if _, err := service.Add(ctx, domain.LawInput{Key: "scope", Severity: domain.Severity(3), Body: "anything"}); err == nil {
 		t.Fatalf("Add(duplicate) error = nil, want validation error")
 	}
 }

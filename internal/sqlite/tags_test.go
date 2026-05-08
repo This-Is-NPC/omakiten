@@ -54,7 +54,7 @@ func TestListAllTags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.PriorityZero, "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -97,7 +97,7 @@ func TestAddRemoveListTaskTags(t *testing.T) {
 	store := openTestStore(t)
 
 	project, _ := store.UpsertProject(ctx, "P", "p", "/work/p")
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.PriorityZero, "backlog")
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog")
 
 	goTag, _ := store.FindOrCreateTag(ctx, "go", "Go")
 
@@ -134,8 +134,8 @@ func TestListTaskTagsByProject(t *testing.T) {
 	store := openTestStore(t)
 
 	project, _ := store.UpsertProject(ctx, "P", "p", "/work/p")
-	taskA, _ := store.CreateTask(ctx, project.ID, "A", "", domain.PriorityZero, "backlog")
-	taskB, _ := store.CreateTask(ctx, project.ID, "B", "", domain.PriorityZero, "backlog")
+	taskA, _ := store.CreateTask(ctx, project.ID, "A", "", domain.Priority(2), "backlog")
+	taskB, _ := store.CreateTask(ctx, project.ID, "B", "", domain.Priority(2), "backlog")
 
 	goTag, _ := store.FindOrCreateTag(ctx, "go", "Go")
 	tsTag, _ := store.FindOrCreateTag(ctx, "ts", "Ts")
@@ -161,7 +161,7 @@ func TestMergeTags(t *testing.T) {
 	store := openTestStore(t)
 
 	project, _ := store.UpsertProject(ctx, "P", "p", "/work/p")
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.PriorityZero, "backlog")
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog")
 
 	goTag, _ := store.FindOrCreateTag(ctx, "go", "Go")
 	golangTag, _ := store.FindOrCreateTag(ctx, "golang-alias", "Golang alias")
@@ -196,7 +196,7 @@ func TestDeleteOrphanTags(t *testing.T) {
 	store := openTestStore(t)
 
 	project, _ := store.UpsertProject(ctx, "P", "p", "/work/p")
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.PriorityZero, "backlog")
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog")
 
 	goTag, _ := store.FindOrCreateTag(ctx, "go", "Go")
 	orphan1, _ := store.FindOrCreateTag(ctx, "orphan1", "Orphan1")

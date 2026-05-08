@@ -95,11 +95,11 @@ func TestListTasksHonorsBucketKeysFilter(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithProject(ctx, t)
 
-	a, err := store.CreateTask(ctx, project.ID, "alpha", "", domain.PriorityZero, "backlog")
+	a, err := store.CreateTask(ctx, project.ID, "alpha", "", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(alpha) = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "bravo", "", domain.PriorityZero, "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "bravo", "", domain.Priority(2), "backlog"); err != nil {
 		t.Fatalf("CreateTask(bravo) = %v", err)
 	}
 	if _, err := store.MoveTask(ctx, project.ID, a.ID, "dev"); err != nil {
@@ -119,7 +119,7 @@ func TestListTasksReturnsCreatedAt(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithProject(ctx, t)
 
-	if _, err := store.CreateTask(ctx, project.ID, "task", "", domain.PriorityZero, "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "task", "", domain.Priority(2), "backlog"); err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
 

@@ -426,15 +426,15 @@ func newAgentFixture(t *testing.T) agentFixture {
 	if err != nil {
 		t.Fatalf("UpsertProject(B) error = %v", err)
 	}
-	taskA1, err := store.CreateTask(ctx, projectA.ID, "Add MCP agent integration", "Expose Omakiten state to AI harnesses", domain.PriorityZero, "backlog")
+	taskA1, err := store.CreateTask(ctx, projectA.ID, "Add MCP agent integration", "Expose Omakiten state to AI harnesses", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(A1) error = %v", err)
 	}
-	taskA2, err := store.CreateTask(ctx, projectA.ID, "Write agent tests", "Cover project isolation", domain.PriorityZero, "backlog")
+	taskA2, err := store.CreateTask(ctx, projectA.ID, "Write agent tests", "Cover project isolation", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(A2) error = %v", err)
 	}
-	taskB, err := store.CreateTask(ctx, projectB.ID, "Other project task", "Must never leak", domain.PriorityZero, "backlog")
+	taskB, err := store.CreateTask(ctx, projectB.ID, "Other project task", "Must never leak", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(B) error = %v", err)
 	}
@@ -454,7 +454,22 @@ func newAgentFixture(t *testing.T) agentFixture {
 		t.Fatalf("AddContextEntry(B) error = %v", err)
 	}
 
-	return agentFixture{ctx: ctx, store: store, service: NewService(store, ProjectSelector{CWD: rootA}), projectA: projectA, projectB: projectB, taskA1: taskA1, taskA2: taskA2, taskB: taskB}
+	// Production wires settings from bundle.Config.MCP via the
+	// composition root; tests construct the service directly so seed
+	// kit-shape settings here. The validator at the config layer
+	// guarantees these values in production; mirroring them keeps
+	// behavioural parity in tests.
+	svc := NewService(store, ProjectSelector{CWD: rootA})
+	svc.SetSettings(ServiceSettings{
+		RecentCommentLimit: 5,
+		MaxCommentChars:    0,
+		IncludeWorkflow:    true,
+		CachePrompts:       true,
+		RecentContextLimit: 3,
+		NextWorkLimit:      5,
+		SimilarTaskLimit:   5,
+	})
+	return agentFixture{ctx: ctx, store: store, service: svc, projectA: projectA, projectB: projectB, taskA1: taskA1, taskA2: taskA2, taskB: taskB}
 }
 
 func newAgentStore(t *testing.T, ctx context.Context) *sqlite.Store {

@@ -62,6 +62,52 @@ func TestPriorityRegistryRoundTrip(t *testing.T) {
 	}
 }
 
+// TestDefaultPriorityHonorsFlag was the regression for review item #2:
+// before threading `Default` through, `default: true` in YAML was
+// validator-checked but never consumed by the writer path — CLI/MCP
+// CreateTask requests with no priority fell back to the SQL column
+// DEFAULT (the canonical id 2). With Default propagated, the registry
+// returns the flagged id and WorkflowService.CreateTask substitutes it
+// before the store INSERT.
+func TestDefaultPriorityHonorsFlag(t *testing.T) {
+	RegisterPriorities([]PriorityPair{
+		{ID: 1, Value: "low"},
+		{ID: 2, Value: "normal"},
+		{ID: 3, Value: "high"},
+		{ID: 4, Value: "urgent", Default: true},
+	})
+	t.Cleanup(func() { RegisterPriorities(nil) })
+	if got := DefaultPriority(); got != Priority(4) {
+		t.Fatalf("DefaultPriority() = %d, want 4 (urgent flagged default)", got)
+	}
+}
+
+// TestDefaultPriorityFallsBackToMiddle verifies the registry's safety
+// net when no entry sets Default=true. Important because the validator
+// ALLOWS zero defaults (it only rejects more than one), and writers
+// must still resolve PriorityZero → some sensible id.
+func TestDefaultPriorityFallsBackToMiddle(t *testing.T) {
+	RegisterPriorities([]PriorityPair{
+		{ID: 1, Value: "low"},
+		{ID: 2, Value: "normal"},
+		{ID: 3, Value: "high"},
+	})
+	t.Cleanup(func() { RegisterPriorities(nil) })
+	if got := DefaultPriority(); got != Priority(2) {
+		t.Fatalf("DefaultPriority() = %d, want 2 (middle entry of 3-element table)", got)
+	}
+}
+
+// TestDefaultPriorityEmpty exercises the uninitialised-registry path:
+// returns PriorityZero so callers (writer path) can fall through to
+// the SQL column DEFAULT for partially-bootstrapped tests.
+func TestDefaultPriorityEmpty(t *testing.T) {
+	RegisterPriorities(nil)
+	if got := DefaultPriority(); got != PriorityZero {
+		t.Fatalf("DefaultPriority() with empty registry = %d, want PriorityZero (0)", got)
+	}
+}
+
 // TestPriorityRegistryEmptyFallback verifies the marshaler degrades to
 // raw integer output when the registry has not been wired (test
 // fixtures, partial bootstraps). Without this fallback consumers would

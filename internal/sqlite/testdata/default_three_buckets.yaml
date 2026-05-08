@@ -2,6 +2,14 @@
 # generic sqlite store tests. Permissive defaults so policy never gates
 # the assertions; transitions are minimal (only backlog → dev) because
 # tests that exercise transitions add their own.
+#
+# CONVENTION: this fixture intentionally OMITS the `priorities:` and
+# `severities:` blocks. The runtime layer (cli, agentruntime, and
+# testfixtures.LoadBundle) substitutes config.CanonicalPriorities /
+# CanonicalSeverities (1=low/2=normal/3=high and 1=info/2=warning/
+# 3=error). Add explicit blocks here ONLY when a test needs to
+# exercise a custom enum table; default tests rely on the canonical
+# kit being identical to what production ships.
 version: 1
 kit:
   id: 1

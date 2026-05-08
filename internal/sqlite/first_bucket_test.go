@@ -28,7 +28,7 @@ func TestWorkflowServiceCreateTaskDefaultsToFirstBucket(t *testing.T) {
 	}
 
 	workflow := app.NewWorkflowServiceFromStore(store)
-	task, err := workflow.CreateTask(ctx, project.ID, "Nova task", "Desc", domain.PriorityZero, "")
+	task, err := workflow.CreateTask(ctx, project.ID, "Nova task", "Desc", domain.Priority(2), "")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}

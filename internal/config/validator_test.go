@@ -28,6 +28,12 @@ func TestValidateTheme(t *testing.T) {
 }
 
 func TestValidateBundleErrors(t *testing.T) {
+	// validBundle returns the minimal Bundle that passes the strict
+	// validator: every required canonical block (mcp, tui, views,
+	// priorities, severities, template_defaults) is set to the kit's
+	// canonical values. Per-test mutations target the field under
+	// exercise without re-declaring everything else.
+	tru := true
 	validBundle := func() Bundle {
 		return Bundle{
 			Version: 1,
@@ -37,6 +43,34 @@ func TestValidateBundleErrors(t *testing.T) {
 				Context:  ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
 				Workflow: WorkflowSettings{Active: "default"},
 				Theme:    ThemeSettings{Active: "catppuccin"},
+				MCP: MCPSettings{
+					RecentCommentLimit:        5,
+					MaxCommentChars:           0,
+					IncludeWorkflowInContinue: &tru,
+					CachePrompts:              &tru,
+					RecentContextLimit:        3,
+					NextWorkLimit:             5,
+					SimilarTaskLimit:          5,
+				},
+				TUI: TUISettings{TokenBadge: TokenBadgeThresholds{YellowAt: 150, RedAt: 400}},
+				TemplateDefaults: []string{"task"},
+				Priorities: []PriorityDefinition{
+					{ID: 1, Value: "low"},
+					{ID: 2, Value: "normal", Default: true},
+					{ID: 3, Value: "high"},
+				},
+				Severities: []SeverityDefinition{
+					{ID: 1, Value: "info"},
+					{ID: 2, Value: "warning", Default: true},
+					{ID: 3, Value: "error"},
+				},
+				Views: ViewSettings{
+					Board:        BoardViewSettings{Sort: SortSettings{Field: "created_at", Order: "desc"}},
+					Table:        TableViewSettings{Sort: SortSettings{Field: "created_at", Order: "desc"}},
+					Graph:        GraphViewSettings{Sort: SortSettings{Field: "id", Order: "asc"}},
+					Logs:         LogsViewSettings{Sort: SortSettings{Order: "desc"}, Limit: 50},
+					TaskActivity: TaskActivityViewSettings{Sort: SortSettings{Order: "asc"}},
+				},
 			},
 			Skills: []Skill{{Slug: "go", Name: "Go"}},
 			Laws:   []Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}},
@@ -124,3 +158,54 @@ func TestValidateBundleErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestValidatePrioritiesEnforcesAscendingIDs is the regression for
+// review item #10: the id is the SQL sort weight (ORDER BY priority
+// reads priority_id) and the TUI cycle follows slice order, so a
+// declaration like [{id:3,value:high},{id:1,value:low}] would silently
+// invert both. Validator now rejects descending or jumbled order.
+func TestValidatePrioritiesEnforcesAscendingIDs(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   []PriorityDefinition
+		wantErr string
+	}{
+		{
+			name:    "strictly ascending passes",
+			input:   []PriorityDefinition{{ID: 1, Value: "low"}, {ID: 2, Value: "normal"}, {ID: 3, Value: "high"}},
+			wantErr: "",
+		},
+		{
+			name:    "sparse ascending passes",
+			input:   []PriorityDefinition{{ID: 1, Value: "low"}, {ID: 5, Value: "normal"}, {ID: 9, Value: "high"}},
+			wantErr: "",
+		},
+		{
+			name:    "descending rejected",
+			input:   []PriorityDefinition{{ID: 3, Value: "high"}, {ID: 1, Value: "low"}},
+			wantErr: "ascending order",
+		},
+		{
+			name:    "jumbled rejected",
+			input:   []PriorityDefinition{{ID: 1, Value: "low"}, {ID: 5, Value: "high"}, {ID: 3, Value: "normal"}},
+			wantErr: "ascending order",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validatePriorities(tc.input)
+			if tc.wantErr == "" && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("error %q missing %q", err.Error(), tc.wantErr)
+				}
+			}
+		})
+	}
+}
+

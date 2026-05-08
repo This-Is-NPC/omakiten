@@ -120,7 +120,7 @@ func TestWorkflowServicePolicyResolutionFromYAML(t *testing.T) {
 			// delete the task between asks to keep the workflow state clean
 			// — otherwise transition guards would interfere on later asks.
 			for _, a := range c.asks {
-				task, err := store.CreateTask(ctx, project.ID, "probe", "", domain.PriorityZero, a.bucket)
+				task, err := store.CreateTask(ctx, project.ID, "probe", "", domain.Priority(2), a.bucket)
 				if err != nil {
 					t.Fatalf("CreateTask(%s) = %v", a.bucket, err)
 				}
