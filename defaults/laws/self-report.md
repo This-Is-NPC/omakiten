@@ -7,4 +7,4 @@ Record any error that needed more than one fix attempt — the second attempt is
 Bad: attempt 1 failed; attempt 2 worked — moved on without recording.
 Good: before attempt 2, ran `errors.search`; attempt 2 worked — `errors.record` with symptom and tags, then `solutions.add` with the resolution.
 
-Single-attempt fixes do not require recording — keeps the log signal-rich.
+Single-attempt fixes don't require recording — keeps the log signal-rich.

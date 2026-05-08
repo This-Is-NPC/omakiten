@@ -7,7 +7,7 @@ laws:
 ---
 ### Implement loop
 
-When executing approved work, repeat until the task's Definition of Done is satisfied:
+Repeat until the task's Definition of Done is satisfied:
 
 1. Apply each change as a self-contained increment.
 2. Run tests per `bounded-self-review`.

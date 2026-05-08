@@ -245,16 +245,16 @@ Rendered prompt sizes for the default kit, measured via `mise run mcp:prompts`. 
 
 | Prompt | Bytes | ~Tokens | Drivers |
 |---|---|---|---|
-| `okt-resume` | 2167 | 545 | engineer + 2 skills + 4 laws + persona body (implement loop) |
-| `okt` | 2187 | 545 | engineer + 2 skills + 4 laws + persona body (implement loop) |
-| `okt-imagine` | 2190 | 550 | product-owner + 3 skills + 4 laws (template-fidelity disabled) |
-| `okt-continue` | 2269 | 565 | engineer + 2 skills + 4 laws + persona body (implement loop) |
-| `okt-document` | 2761 | 690 | documentation-agent + 5 skills + 5 laws |
-| `okt-create` | 3120 | 780 | product-owner + 3 skills + 5 laws + user-story metadata (JIT) |
-| `okt-config` | 3117 | 780 | documentation-agent + 5 skills + 5 laws + config-orientation metadata (JIT) |
-| `okt-implement` | 4547 | 1135 | engineer + 2 skills + 8 laws + persona body (implement loop) + pull-request metadata (JIT) |
+| `okt-resume` | 2115 | 530 | engineer + 2 skills + 4 laws + persona body (implement loop) |
+| `okt` | 2135 | 535 | engineer + 2 skills + 4 laws + persona body (implement loop) |
+| `okt-imagine` | 2153 | 540 | product-owner + 3 skills + 4 laws (template-fidelity disabled) |
+| `okt-continue` | 2217 | 555 | engineer + 2 skills + 4 laws + persona body (implement loop) |
+| `okt-document` | 2732 | 685 | documentation-agent + 5 skills + 5 laws |
+| `okt-create` | 3083 | 770 | product-owner + 3 skills + 5 laws + user-story metadata (JIT) |
+| `okt-config` | 3088 | 770 | documentation-agent + 5 skills + 5 laws + config-orientation metadata (JIT) |
+| `okt-implement` | 4462 | 1115 | engineer + 2 skills + 8 laws + persona body (implement loop) + pull-request metadata (JIT) |
 
-Without JIT, `okt-implement` would carry the full `pull-request` body (~700 extra tokens, putting it past 1830). The same logic applies to any user-authored template — bind it via `mcp_commands.<cmd>.templates` and only metadata ships in the prompt.
+Without JIT, `okt-implement` would carry the full `pull-request` body (~700 extra tokens, putting it past 1815). The same logic applies to any user-authored template — bind it via `mcp_commands.<cmd>.templates` and only metadata ships in the prompt.
 
 A regression test (`internal/agentruntime/prompt_budget_test.go`) caps each prompt at current size + ~30% headroom; once a future change pushes a prompt past its budget the test fails and forces a deliberate tradeoff (trim entity bodies, add a JIT optimization, or raise the budget with justification).
 
