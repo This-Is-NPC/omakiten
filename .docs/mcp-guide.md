@@ -40,6 +40,17 @@ Existing harness config is preserved (unrelated keys, other MCP servers, and any
 
 Both `install.sh` and `install.ps1` end with an interactive multi-select prompt that lists every supported harness and runs `okt mcp setup --harness X --force` for each one chosen — no separate setup step required. Use the env override `OKT_HARNESSES=claude-code,opencode` (comma/space/tab/newline separated) to pre-pick selections and skip the prompt; in non-interactive shells (CI, no `/dev/tty`, non-`UserInteractive` PowerShell) the prompt is silently skipped.
 
+### Inspecting prompts
+
+```sh
+okt mcp prompts            # render every okt-* prompt
+okt mcp prompts okt-implement   # render one
+```
+
+Resolves each `okt-*` prompt through the running agent service (using your active config) and prints the composed markdown to stdout, separated by horizontal rules and annotated with byte/rune counts. Useful for previewing the exact prompt the agent receives without spinning up an MCP client.
+
+`mise run mcp:prompts` is the contributor shortcut: syncs `dev_env/` defaults and runs the same command against them.
+
 ## Tools
 
 The full surface is the source of truth in `internal/mcp/adapter.go:ListTools`. Currently 30 tools, grouped below.
@@ -229,27 +240,29 @@ Trade-off: one extra MCP round-trip on the materialization step (only when the a
 
 ### Per-prompt fixed token cost
 
-Rendered prompt sizes for the default kit. Numbers move with persona/skill/law/template bindings — adding a law to `mcp_commands.global.laws` adds ~50 tokens to every row.
+Rendered prompt sizes for the default kit, measured via `mise run mcp:prompts`. Numbers move with persona body / skill / law / template bindings — adding a law to `mcp_commands.global.laws` adds ~50 tokens to every row.
 
 | Prompt | Bytes | ~Tokens | Drivers |
 |---|---|---|---|
-| `okt` | 1958 | 490 | engineer persona + 5 skills + 4 laws |
-| `okt-resume` | 1971 | 495 | engineer persona + 5 skills + 4 laws |
-| `okt-continue` | 2065 | 520 | engineer persona + 5 skills + 4 laws |
-| `okt-imagine` | 2217 | 555 | product-owner persona + 3 skills + 4 laws (template-fidelity disabled) |
-| `okt-document` | 2791 | 700 | documentation-agent + 5 skills + 5 laws |
-| `okt-create` | 3144 | 785 | product-owner + 3 skills + 5 laws + user-story metadata (JIT) |
-| `okt-implement` | 3818 | 955 | engineer + 5 skills + 7 laws + pull-request metadata (JIT) |
+| `okt-resume` | 2167 | 545 | engineer + 2 skills + 4 laws + persona body (implement loop) |
+| `okt` | 2187 | 545 | engineer + 2 skills + 4 laws + persona body (implement loop) |
+| `okt-imagine` | 2190 | 550 | product-owner + 3 skills + 4 laws (template-fidelity disabled) |
+| `okt-continue` | 2269 | 565 | engineer + 2 skills + 4 laws + persona body (implement loop) |
+| `okt-document` | 2761 | 690 | documentation-agent + 5 skills + 5 laws |
+| `okt-create` | 3120 | 780 | product-owner + 3 skills + 5 laws + user-story metadata (JIT) |
+| `okt-implement` | 4547 | 1135 | engineer + 2 skills + 8 laws + persona body (implement loop) + pull-request metadata (JIT) |
 
-Without JIT, `okt-implement` would carry the full `pull-request` body (~700 extra tokens, putting it past 1650). The same logic applies to any user-authored template — bind it via `mcp_commands.<cmd>.templates` and only metadata ships in the prompt.
+Without JIT, `okt-implement` would carry the full `pull-request` body (~700 extra tokens, putting it past 1830). The same logic applies to any user-authored template — bind it via `mcp_commands.<cmd>.templates` and only metadata ships in the prompt.
+
+A regression test (`internal/agentruntime/prompt_budget_test.go`) caps each prompt at current size + ~30% headroom; once a future change pushes a prompt past its budget the test fails and forces a deliberate tradeoff (trim entity bodies, add a JIT optimization, or raise the budget with justification).
 
 ### Prompt engineering principles applied
 
 The default kit follows Anthropic's [context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) guidance. Customizers who add their own commands, laws, or templates should match these conventions so the resolved prompts stay coherent:
 
-- **Right altitude in action texts.** Frame the role, name the canonical tool, end with a REST handoff. Do not restate constraints already declared as bound laws — laws ship inline above the action and the agent reads them. Repeating a law in prose wastes the attention budget the article warns about.
+- **Right altitude in action texts.** Action text describes the command's contract — name the canonical tool, end with a REST handoff. **Role lives in the persona body** (rendered in `## Persona`); **constraints live in bound laws** (rendered in `## Laws`); **scaffold lives in the templates section**. Action text never restates any of those — `mcp_commands.<cmd>.persona` is configurable, so persona-coupled prose in the action would leak engineer-specific instructions into prompts that bind a different persona. The persona body is the single source of truth for "how this role works"; the laws are the single source for "what is forbidden / required"; the action is just the command-specific bootstrap and handoff.
 - **Just-in-time over pre-loading.** Template bodies are fetched via `templates.show` rather than embedded inline. The same logic applies to any heavy artifact (long context entries, large dumps): expose a tool, ship the slug, let the agent pull the body when actually needed.
-- **Few-shot examples in load-bearing laws.** Laws that govern judgment calls (`template-fidelity`, `conventional-commits`, `no-assumptions`) carry a `❌` / `✅` micro-example after the directive paragraph. Anthropic's principle: examples teach generalization better than abstract rules.
+- **Few-shot examples in load-bearing laws.** Laws that govern judgment calls (`template-fidelity`, `conventional-commits`, `no-assumptions`, `self-report`) carry a `Bad:` / `Good:` micro-example after the directive paragraph. Anthropic's principle: examples teach generalization better than abstract rules. Plain text labels (no emoji) keep the prompt readable across terminals and clients.
 - **No conditional logic in prompts.** Anti-pattern: `if returns requires_confirmation, ask the user…`. Instead, the server's response carries an actionable `Reason` field that names the next-step tools — the agent acts on the response shape, not on prompt-side branching. See `agent.Confirmation.Reason` in `internal/agent/dto.go`.
 - **Failure-driven additions.** Add a law or example only after observing a real failure mode. `template-fidelity` was added because the agent fabricated `Closes #40`; `authorize-remote-writes` was added because `git push` is destructive. Don't speculate.
 - **Markdown sections, not XML tags.** The renderer uses `## Persona`, `## Skills`, `## Laws`, `## Templates`, `## Action`. Same load-bearing structure Anthropic recommends, but markdown reads cleanly in both the agent prompt and a developer's terminal when debugging.
