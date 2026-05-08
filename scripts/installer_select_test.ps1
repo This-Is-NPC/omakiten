@@ -57,25 +57,47 @@ function Assert-Equal {
     }
 }
 
-# --- Resolve-HarnessSelection ---
+# --- Resolve-HarnessSelection: shape ---
+# Resolve-HarnessSelection returns @{Harnesses=List[string]; Status=string}.
+# Status is one of: ok | invalid | skip | empty (drives the retry loop).
 
-$got = (Resolve-HarnessSelection -Raw "1,3,5") -join "|"
-Assert-Equal $got "claude-code|opencode|github-copilot" "numeric comma list"
+function Get-Selection {
+    param([string]$Raw)
+    $r = Resolve-HarnessSelection -Raw $Raw 6>$null
+    return ($r.Harnesses) -join "|"
+}
 
-$got = (Resolve-HarnessSelection -Raw "1 3 5") -join "|"
-Assert-Equal $got "claude-code|opencode|github-copilot" "numeric space list"
+function Get-Status {
+    param([string]$Raw)
+    return (Resolve-HarnessSelection -Raw $Raw 6>$null).Status
+}
 
-$got = (Resolve-HarnessSelection -Raw "claude-code,codex") -join "|"
-Assert-Equal $got "claude-code|codex" "name comma list"
+Assert-Equal (Get-Selection "1,3,5") "claude-code|opencode|github-copilot" "numeric comma list"
+Assert-Equal (Get-Selection "1 3 5") "claude-code|opencode|github-copilot" "numeric space list"
+Assert-Equal (Get-Selection "claude-code,codex") "claude-code|codex" "name comma list"
+Assert-Equal (Get-Selection "1 codex") "claude-code|codex" "mixed numeric and name"
+Assert-Equal (Get-Selection "") "" "empty input"
+Assert-Equal (Get-Selection "99 bogus claude-code") "claude-code" "invalid tokens skipped, valid kept"
+Assert-Equal (Get-Selection "1,bogus") "claude-code" "partial-valid input keeps valid"
 
-$got = (Resolve-HarnessSelection -Raw "1 codex") -join "|"
-Assert-Equal $got "claude-code|codex" "mixed numeric and name"
+# --- Resolve-HarnessSelection: status drives the retry loop ---
 
-$got = (Resolve-HarnessSelection -Raw "") -join "|"
-Assert-Equal $got "" "empty input"
+Assert-Equal (Get-Status "1,3,5")     "ok"      "status ok on full-valid input"
+Assert-Equal (Get-Status "1,bogus")   "ok"      "status ok on partial-valid input"
+Assert-Equal (Get-Status "")          "empty"   "status empty on blank input"
+Assert-Equal (Get-Status "   ")       "empty"   "status empty on whitespace-only input"
+Assert-Equal (Get-Status "bogus")     "invalid" "status invalid when no token matched"
+Assert-Equal (Get-Status "99")        "invalid" "status invalid on out-of-range numeric"
+Assert-Equal (Get-Status "0")         "skip"    "status skip on '0'"
+Assert-Equal (Get-Status "skip")      "skip"    "status skip on 'skip'"
+Assert-Equal (Get-Status "Skip")      "skip"    "status skip on 'Skip' (case-insensitive)"
+Assert-Equal (Get-Status "NONE")      "skip"    "status skip on 'NONE' (case-insensitive)"
+Assert-Equal (Get-Status "1,0")       "skip"    "skip wins over a valid token"
+Assert-Equal (Get-Status "bogus,skip") "skip"   "skip wins over invalid tokens"
 
-$got = (Resolve-HarnessSelection -Raw "99 bogus claude-code" 6>$null) -join "|"
-Assert-Equal $got "claude-code" "invalid tokens skipped, valid kept"
+# Skip status must produce an empty Harnesses list.
+Assert-Equal (Get-Selection "1,0") "" "'1,0' yields no harnesses (skip wins)"
+Assert-Equal (Get-Selection "skip") "" "'skip' yields no harnesses"
 
 # --- Select-Harnesses honors OKT_HARNESSES ---
 
@@ -91,6 +113,15 @@ $env:OKT_HARNESSES = "crush`tcodex, ,"
 try {
     $got = (Select-Harnesses) -join "|"
     Assert-Equal $got "crush|codex" "OKT_HARNESSES tolerates mixed separators"
+} finally {
+    Remove-Item Env:OKT_HARNESSES -ErrorAction SilentlyContinue
+}
+
+# OKT_HARNESSES with skip sentinel yields nothing (env-override path obeys skip).
+$env:OKT_HARNESSES = "1,0"
+try {
+    $got = (Select-Harnesses) -join "|"
+    Assert-Equal $got "" "OKT_HARNESSES with '0' honors skip"
 } finally {
     Remove-Item Env:OKT_HARNESSES -ErrorAction SilentlyContinue
 }

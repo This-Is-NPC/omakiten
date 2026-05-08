@@ -39,7 +39,7 @@ assert_equal() {
   fi
 }
 
-# --- parse_harness_selection ---
+# --- parse_harness_selection: stdout shape ---
 
 got="$(parse_harness_selection "1,3,5" 2>/dev/null)"
 assert_equal "$got" $'claude-code\nopencode\ngithub-copilot' "numeric comma list"
@@ -53,24 +53,60 @@ assert_equal "$got" $'claude-code\ncodex' "name comma list"
 got="$(parse_harness_selection "1 codex" 2>/dev/null)"
 assert_equal "$got" $'claude-code\ncodex' "mixed numeric and name"
 
-got="$(parse_harness_selection "" 2>/dev/null)"
+got="$(parse_harness_selection "1,bogus" 2>/dev/null)"
+assert_equal "$got" "claude-code" "partial-valid input emits the valid harness"
+
+# `|| true` is needed for the cases below: parse_harness_selection now exits
+# non-zero on empty / all-invalid input to drive the retry loop in
+# select_harnesses, and `var=$(cmd)` propagates that under `set -e`.
+got="$(parse_harness_selection "" 2>/dev/null || true)"
 assert_equal "$got" "" "empty input emits nothing"
 
-got="$(parse_harness_selection "99" 2>/dev/null)"
+got="$(parse_harness_selection "99" 2>/dev/null || true)"
 assert_equal "$got" "" "out-of-range index emits no harness"
-err="$(parse_harness_selection "99" 2>&1 >/dev/null)"
+err="$(parse_harness_selection "99" 2>&1 >/dev/null || true)"
 case "$err" in
   *"out of range"*) ;;
   *) fail "out-of-range index did not warn on stderr: $err" ;;
 esac
 
-got="$(parse_harness_selection "bogus" 2>/dev/null)"
+got="$(parse_harness_selection "bogus" 2>/dev/null || true)"
 assert_equal "$got" "" "unknown name emits no harness"
-err="$(parse_harness_selection "bogus" 2>&1 >/dev/null)"
+err="$(parse_harness_selection "bogus" 2>&1 >/dev/null || true)"
 case "$err" in
   *"ignoring unknown harness"*) ;;
   *) fail "unknown harness did not warn on stderr: $err" ;;
 esac
+
+# --- parse_harness_selection: exit codes drive the retry loop ---
+
+assert_rc() {
+  local raw="$1" want_rc="$2" label="$3"
+  local got_rc=0
+  parse_harness_selection "$raw" >/dev/null 2>&1 || got_rc=$?
+  if [ "$got_rc" -ne "$want_rc" ]; then
+    fail "$label — exit $got_rc, want $want_rc"
+  fi
+}
+
+assert_rc "1,3,5"          0 "rc 0 on full-valid input"
+assert_rc "1,bogus"        0 "rc 0 on partial-valid input"
+assert_rc ""               3 "rc 3 on empty input"
+assert_rc "   "            3 "rc 3 on whitespace-only input"
+assert_rc "bogus"          1 "rc 1 on tokens with zero matches"
+assert_rc "99"             1 "rc 1 on out-of-range numeric"
+assert_rc "0"              2 "rc 2 on '0' (skip sentinel)"
+assert_rc "skip"           2 "rc 2 on 'skip'"
+assert_rc "Skip"           2 "rc 2 on 'Skip' (case-insensitive)"
+assert_rc "NONE"           2 "rc 2 on 'NONE' (case-insensitive)"
+assert_rc "1,0"            2 "rc 2 — skip wins over a valid token in the same input"
+assert_rc "bogus,skip"     2 "rc 2 — skip wins over invalid tokens"
+
+# Skip sentinel must not leak any harness on stdout.
+got="$(parse_harness_selection "1,0" 2>/dev/null || true)"
+assert_equal "$got" "" "'1,0' emits nothing on stdout (skip wins)"
+got="$(parse_harness_selection "skip" 2>/dev/null || true)"
+assert_equal "$got" "" "'skip' emits nothing on stdout"
 
 # --- select_harnesses honors OKT_HARNESSES ---
 

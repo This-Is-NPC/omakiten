@@ -94,18 +94,30 @@ harness_is_supported() {
 # parse_harness_selection reads a free-form selection string (numbers, names,
 # any of "," " " "\t" "\n" as separators) and emits one valid harness per line
 # on stdout. Unknown tokens go to stderr but do not fail the function.
+#
+# Exit codes drive the retry loop in select_harnesses:
+#   0 — at least one valid harness was emitted
+#   1 — input had tokens but none matched a harness (typo / garbage)
+#   2 — input contained "0" / "skip" / "none" → user chose to skip explicitly
+#   3 — input was empty (only whitespace, no tokens)
 parse_harness_selection() {
-  local raw="$1" token idx
+  local raw="$1" token idx had_token=0
+  local results=()
   local oldifs="$IFS"
   IFS=$',\t \n'
   set -- $raw
   IFS="$oldifs"
   for token in "$@"; do
     [ -z "$token" ] && continue
+    had_token=1
+    # Skip sentinel — wins over anything else in the same input.
+    case "$(printf '%s' "$token" | tr '[:upper:]' '[:lower:]')" in
+      0|skip|none) return 2 ;;
+    esac
     case "$token" in
       ''|*[!0-9]*)
         if harness_is_supported "$token"; then
-          printf '%s\n' "$token"
+          results+=("$token")
         else
           printf 'warn: ignoring unknown harness "%s"\n' "$token" >&2
         fi
@@ -113,13 +125,21 @@ parse_harness_selection() {
       *)
         idx=$((token - 1))
         if [ "$idx" -ge 0 ] && [ "$idx" -lt ${#SUPPORTED_HARNESSES[@]} ]; then
-          printf '%s\n' "${SUPPORTED_HARNESSES[$idx]}"
+          results+=("${SUPPORTED_HARNESSES[$idx]}")
         else
           printf 'warn: index %s out of range\n' "$token" >&2
         fi
         ;;
     esac
   done
+  if [ ${#results[@]} -gt 0 ]; then
+    printf '%s\n' "${results[@]}"
+    return 0
+  fi
+  if [ "$had_token" -eq 0 ]; then
+    return 3
+  fi
+  return 1
 }
 
 # select_harnesses prints the chosen harness list (one per line) by reading
@@ -151,18 +171,38 @@ select_harnesses() {
     printf '   %d) %s\n' "$i" "$h" >&2
     i=$((i + 1))
   done
-  printf '\n   Enter numbers (e.g. 1,3,5), names, or press Enter to skip: ' >&2
+  printf '   0) skip\n' >&2
 
-  local raw
-  if ! IFS= read -r raw < "$input_src"; then
-    return 0
-  fi
-  raw="${raw#"${raw%%[![:space:]]*}"}"
-  raw="${raw%"${raw##*[![:space:]]}"}"
-  if [ -z "$raw" ]; then
-    return 0
-  fi
-  parse_harness_selection "$raw"
+  # Loop until the user picks at least one valid harness or asks to skip.
+  # Empty input or all-invalid input just re-prompts — only "0" / "skip" /
+  # "none" exits without configuring anything.
+  local raw out rc
+  while true; do
+    printf '\n   Enter numbers (e.g. 1,3,5) or names, or 0 to skip: ' >&2
+    if ! IFS= read -r raw < "$input_src"; then
+      return 0
+    fi
+    raw="${raw#"${raw%%[![:space:]]*}"}"
+    raw="${raw%"${raw##*[![:space:]]}"}"
+
+    rc=0
+    out="$(parse_harness_selection "$raw")" || rc=$?
+    case "$rc" in
+      0)
+        printf '%s\n' "$out"
+        return 0
+        ;;
+      2)
+        return 0
+        ;;
+      3)
+        printf '   please enter at least one number/name, or 0 to skip\n' >&2
+        ;;
+      *)
+        printf '   none of those matched a harness — try again, or 0 to skip\n' >&2
+        ;;
+    esac
+  done
 }
 
 # run_harness_setup runs `okt mcp setup --harness X --force` for each harness
