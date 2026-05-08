@@ -157,6 +157,27 @@ After: 3 comments × 500 chars = ~375 tokens for comments, no truncation on the 
 
 Cross-reference: `.docs/mcp-guide.md#anatomy-of-an-mcp-command` walks through how the tool result composes and which fields each setting trims.
 
+### `config.tui`
+
+Tunes terminal UI presentation. The full block is optional and so is every field inside it; omitted fields resolve to the canonical defaults in `internal/config/bundle.go` via the `Effective()` accessors.
+
+```yaml
+config:
+  tui:
+    token_badge:
+      yellow_at: 150   # int >=0; 0 keeps default
+      red_at:    400   # int >=0; 0 keeps default
+```
+
+`token_badge` drives the colored `TOKENS:N` badge on entity cards (laws, personas, skills, templates). Above `red_at` → red; above `yellow_at` → yellow; else green. Token counts use the same approximation as the right-rail token budget panel, so tuning here matches what the rail shows.
+
+| Field | Type | Default | What it does |
+|---|---|---|---|
+| `yellow_at` | int | `150` | Threshold above which the badge turns yellow. Calibrated for the default kit: most laws land in the 70–190 token range with their few-shot examples, so 150 keeps the green band signal-rich rather than uniformly yellow. |
+| `red_at` | int | `400` | Threshold above which the badge turns red. Raise if you author heavy laws/personas; lower if you keep entities terse. |
+
+Non-positive values fall back to the canonical defaults silently.
+
 ### `config.views`
 
 Per-view defaults seeded into the TUI on startup. Every field is optional; omitted values fall back to canonical defaults via `Settings.EffectiveViews()` (`internal/config/bundle.go`).
@@ -325,8 +346,8 @@ The scope (`global` / `persona` / `project`) is **not** stored in the file — i
 ```yaml
 personas:
   - slug: engineer
-    skills: [go, sqlite, cli]   # optional, must be loaded slugs, no duplicates
-    laws:   [workflow-enforced] # optional, must be loaded slugs
+    skills: [implementation, markdown]  # optional, must be loaded slugs, no duplicates
+    laws:   [workflow-enforced]         # optional, must be loaded slugs
 ```
 
 Persona body (description, free-form notes) lives in `personas/<slug>.md`. The wiring above only declares relationships:
@@ -520,14 +541,14 @@ workflows:
         to: 3          # re-open path, no guards
 
 # Strict allowlist — only these skills activate even if more files exist.
-skills: [go, sqlite, cli]
+skills: [implementation, markdown]
 
 # Global laws.
 laws: [workflow-enforced, yaml-is-canonical]
 
 personas:
   - slug: engineer
-    skills: [go, sqlite, cli]
+    skills: [implementation, markdown]
     laws:   [project-scope-only]   # persona-scoped — must NOT also appear in top-level laws
 
 projects:
@@ -561,14 +582,14 @@ What ships in `defaults/` and is materialized on first run by `configstore.Ensur
 | `conventional-commits` | error | Conventional Commits in English; one intent per commit; never attribute commits to an AI agent. |
 | `no-assumptions` | warning | Every claim traceable to code or user input; mark `[assumption]` / `[user-provided]` when not. |
 | `authorize-remote-writes` | error | Never push, force-push, or create/edit/merge PRs without explicit user authorization in the current conversation. |
+| `self-report` | error | Record any non-trivial error (>1 fix attempt) via `errors.record` + `solutions.add`; confirm previously applied solutions with `solutions.confirm`. |
 
 ### Skills (`defaults/skills/`)
 
+The default kit ships only project-agnostic skills. Stack-specific skills (Go, Python, SQLite, React, etc.) belong in `<root>/skills/custom/<slug>.md` and are wired per-persona in your local `omakiten.yaml`.
+
 | Slug | Description |
 |---|---|
-| `cli` | CLI design — argument parsing, exit codes, JSON envelopes. |
-| `go` | Go language proficiency — idiomatic Go, modules, testing. |
-| `sqlite` | SQLite proficiency — schema design, migrations, query tuning. |
 | `discovery` | Feasibility analysis, clarifying questions, scope boundaries. |
 | `user-story-writing` | Description, Acceptance Criteria, Definition of Done; matches the task template verbatim. |
 | `implementation` | Small coherent increments, tests for new and impacted behavior, regression analysis, bounded self-review. |
@@ -582,7 +603,7 @@ What ships in `defaults/` and is materialized on first run by `configstore.Ensur
 
 | Slug | Description | Skills wired in `defaults/omakiten.yaml` |
 |---|---|---|
-| `engineer` | Implementation agent — small increments, self-review, regression awareness, commit discipline. | `go`, `sqlite`, `cli`, `implementation`, `markdown` |
+| `engineer` | Implementation agent — small increments, self-review, regression awareness, commit discipline. Body in `defaults/personas/engineer.md` carries the implement loop (steps that delegate to laws like `bounded-self-review`, `self-report`, `conventional-commits`, `workflow-enforced`). | `implementation`, `markdown` |
 | `product-owner` | Discovery agent — feasibility, clarifying questions, user stories. | `discovery`, `user-story-writing`, `markdown` |
 | `documentation-agent` | Documentation curator — keeps narrative artifacts in sync with code. | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
 

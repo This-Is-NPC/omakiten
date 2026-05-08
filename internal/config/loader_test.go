@@ -86,7 +86,7 @@ func TestRefreshDefaultFilesOverwrites(t *testing.T) {
 	}
 
 	// Mutate a default file to simulate user customization at the root.
-	defaultPath := filepath.Join(tmp, "skills", "go.md")
+	defaultPath := filepath.Join(tmp, "skills", "implementation.md")
 	if err := os.WriteFile(defaultPath, []byte("# user edited\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"omakiten/internal/config"
 	"strings"
 	"testing"
 
@@ -43,7 +44,7 @@ func TestNewModelWithEmptyProjectOpensHome(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -86,7 +87,7 @@ func TestHomeHidesTabBar(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -131,7 +132,7 @@ func TestCtrlHReturnsToHome(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -171,7 +172,7 @@ func TestHomeEnterSelectsProject(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -216,7 +217,7 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -264,7 +265,7 @@ func TestHomeRendersProjectTagBadges(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}

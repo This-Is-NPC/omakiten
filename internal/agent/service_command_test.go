@@ -149,10 +149,10 @@ func TestResolveCommandTemplatesJITRendering(t *testing.T) {
 }
 
 // TestLawBodiesCarryFewShotExamples pins the few-shot pattern Anthropic
-// recommends: load-bearing laws should ship at least one ❌/✅ example so the
-// agent learns from concrete cases instead of abstract directives. Accidental
-// over-compression of these law bodies would silently strip the examples — a
-// regression that is hard to spot without an explicit assertion.
+// recommends: load-bearing laws should ship at least one Bad:/Good: example
+// so the agent learns from concrete cases instead of abstract directives.
+// Accidental over-compression of these law bodies would silently strip the
+// examples — a regression that is hard to spot without an explicit assertion.
 func TestLawBodiesCarryFewShotExamples(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
@@ -173,8 +173,74 @@ func TestLawBodiesCarryFewShotExamples(t *testing.T) {
 		if body == "" {
 			t.Fatalf("law %s not present in resolved laws", slug)
 		}
-		if !strings.Contains(body, "❌") || !strings.Contains(body, "✅") {
-			t.Fatalf("law %s body missing ❌/✅ example markers:\n%s", slug, body)
+		if !strings.Contains(body, "Bad:") || !strings.Contains(body, "Good:") {
+			t.Fatalf("law %s body missing Bad:/Good: example markers:\n%s", slug, body)
+		}
+	}
+}
+
+// TestResolveCommandRendersPersonaBody pins the persona-as-instruction-carrier
+// contract: when the bound persona has a non-empty body, the rendered Markdown
+// must include it under the `## Persona` section. Without this, role-specific
+// flow (the implement loop) silently drops out of the prompt.
+func TestResolveCommandRendersPersonaBody(t *testing.T) {
+	fixture := newAgentFixture(t)
+	wireBindingFixtures(t, fixture)
+	const marker = "PERSONA_BODY_MARKER_xyz"
+	fixture.service.SetPersonaCatalog(func() []PersonaInfo {
+		return []PersonaInfo{
+			{
+				Slug:        "backend-agent",
+				Name:        "Backend Agent",
+				Description: "Backend-focused agent.",
+				Body:        "Loop step 1.\n" + marker + "\nLoop step 3.",
+				Skills:      []string{"go"},
+				Laws:        []string{"project-scope-only"},
+			},
+		}
+	})
+
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-implement"})
+	if err != nil {
+		t.Fatalf("ResolveCommand() error = %v", err)
+	}
+	if !strings.Contains(resp.Markdown, marker) {
+		t.Fatalf("persona body marker %q missing from rendered markdown:\n%s", marker, resp.Markdown)
+	}
+}
+
+// TestCommandActionsArePersonaAgnostic guards the architectural separation
+// between command action text and persona body across every `okt-*` prompt.
+// Every command's `mcp_commands.<cmd>.persona` is configurable, so no action
+// text may carry persona-specific role prose ("Take the role of an X",
+// persona slug or name). Role-specific flow lives in the persona body, not
+// the action text — swapping the bound persona must change the prompt
+// uniformly without leaving hardcoded role instructions behind.
+func TestCommandActionsArePersonaAgnostic(t *testing.T) {
+	leakedPhrases := []string{
+		"Take the role",
+		"engineer",
+		"product owner",
+		"documentation curator",
+		"honoring every law",
+	}
+	for _, name := range CommandNames() {
+		action := CommandActionFallback(name)
+		if action == "" {
+			t.Fatalf("CommandActionFallback(%s) is empty", name)
+		}
+		lower := strings.ToLower(action)
+		for _, phrase := range leakedPhrases {
+			if strings.Contains(lower, strings.ToLower(phrase)) {
+				t.Fatalf("%s action leaks persona-specific phrase %q — role prose belongs in the persona body, not the action text:\n%s", name, phrase, action)
+			}
+		}
+	}
+	// Pin okt-implement specifics: bootstrap tool + handoff marker must remain.
+	implementAction := CommandActionFallback("okt-implement")
+	for _, want := range []string{"tasks.continue", "comment-resume"} {
+		if !strings.Contains(implementAction, want) {
+			t.Fatalf("okt-implement action missing required marker %q:\n%s", want, implementAction)
 		}
 	}
 }
@@ -208,10 +274,10 @@ func wireBindingFixtures(t *testing.T, fixture agentFixture) {
 	fixture.service.SetLawCatalog(func() []LawInfo {
 		return []LawInfo{
 			// Body deliberately mirrors the production shape: directive paragraph
-			// followed by ❌/✅ examples. The few-shot test asserts the markers
-			// are forwarded verbatim through ResolveCommand's renderer, so any
-			// future compression that strips them surfaces here.
-			{Slug: "template-fidelity", Name: "Template fidelity", Severity: "warning", Body: "Do not invent fields.\n\n❌ Wrote `Closes #40`.\n✅ Left References blank."},
+			// followed by Bad:/Good: examples. The few-shot test asserts the
+			// markers are forwarded verbatim through ResolveCommand's renderer,
+			// so any future compression that strips them surfaces here.
+			{Slug: "template-fidelity", Name: "Template fidelity", Severity: "warning", Body: "Do not invent fields.\n\nBad: wrote `Closes #40`.\nGood: left References blank."},
 			{Slug: "project-scope-only", Name: "Project scope only", Severity: "error", Body: "Never mix projects."},
 		}
 	})

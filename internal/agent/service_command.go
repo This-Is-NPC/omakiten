@@ -10,9 +10,8 @@ import (
 )
 
 // commandActions stores the per-command instruction the MCP prompt lands on.
-// Each action follows a REST-style hypermedia handoff: it states the role,
-// the canonical tool to call, and ends by pointing at the next command in the
-// flow. The cycle is:
+// Each action follows a REST-style hypermedia handoff: it names the canonical
+// tool to call and points at the next command in the flow. The cycle is:
 //
 //	okt → okt-resume / okt-imagine
 //	  okt-imagine → okt-create
@@ -23,20 +22,21 @@ import (
 //	okt-document is parallel: surfaces drift; if material work is needed,
 //	suggests `okt-create` to spin up a documentation task.
 // Action texts deliberately stop short of repeating constraints already
-// declared inline in `## Laws`. Each one frames the role, names the canonical
-// tool, and ends with a REST-style handoff. Anthropic's context-engineering
-// guidance is the rubric: keep prompts at the right altitude, defer body-heavy
-// data via just-in-time fetches, and let bound laws/templates do the
+// declared inline in `## Laws` or role-specific flow already declared in the
+// persona body. Each one names the canonical tool and ends with a REST-style
+// handoff. Anthropic's context-engineering guidance is the rubric: keep
+// prompts at the right altitude, defer body-heavy data via just-in-time
+// fetches, and let bound laws/persona body/templates do the role and
 // constraint work instead of restating it in prose.
 var commandActions = map[string]string{
 	"okt": "Load the active project state via `project.overview`. Report the snapshot to the user. " +
 		"Next: suggest `okt-resume` to scan likely-next work, or `okt-imagine` to explore a new direction.",
 
-	"okt-imagine": "Take the role of a product owner in open discovery — no task exists yet. Ground yourself " +
+	"okt-imagine": "Open discovery — no task exists yet. Ground yourself " +
 		"with `project.overview` and `tasks.list`, ask clarifying questions, and sketch hypotheses freely " +
 		"(template-fidelity is disabled here on purpose). Next: when the shape is clear, suggest `okt-create`.",
 
-	"okt-create": "Take the role of a product owner authoring the task. Apply feasibility-gate first — " +
+	"okt-create": "Author the task. Apply feasibility-gate first — " +
 		"infeasible requests stop here with the report, no task created. Otherwise call " +
 		"`templates.show user-story` to fetch the scaffold, fill it per template-fidelity, then " +
 		"`tasks.create_intent` with the filled description. The response carries `confirmation` and " +
@@ -44,21 +44,20 @@ var commandActions = map[string]string{
 		"Next: suggest the user create the branch, add a `#self-branch` comment via `comments.add` " +
 		"(template_slug=`comment-selfbranch`), and move the task to dev.",
 
-	"okt-resume": "Take the role of an engineer scanning for next work. Call `project.resume` and report " +
+	"okt-resume": "Scan for next work. Call `project.resume` and report " +
 		"top candidates with one-line rationale. Next: when the user picks a task, suggest `okt-continue` " +
 		"with that task id.",
 
-	"okt-continue": "Take the role of an engineer reading a checkpoint — understand where the task stopped, " +
+	"okt-continue": "Read a task's checkpoint — understand where the task stopped, " +
 		"do not start coding. Call `tasks.continue` for the task id, then summarize the last decision, " +
 		"open questions, and the immediate next increment. Next: suggest `okt-implement` with the same id.",
 
-	"okt-implement": "Take the role of an engineer executing approved work. If you do not have the task " +
-		"state, call `tasks.continue` first. Implement the next increment, honoring every law above. " +
-		"When ready to draft the PR, call `templates.show pull-request` to fetch the scaffold. " +
+	"okt-implement": "Apply the next increment for the task. If you do not have the task state, " +
+		"call `tasks.continue` first. " +
 		"Next: suggest the user add a `#resume` comment via `comments.add` " +
 		"(template_slug=`comment-resume`) and move the task to review.",
 
-	"okt-document": "Take the role of a documentation curator. Survey `.docs/architecture.md`, " +
+	"okt-document": "Survey `.docs/architecture.md`, " +
 		"`.docs/requirements.md`, `README.md`, `CONTRIBUTING.md`, and other top-level docs. List drift " +
 		"items with file references and suggested wording — do not edit in place. " +
 		"Next: if material work is needed, suggest `okt-create` to spin up a documentation task.",
@@ -330,10 +329,11 @@ func renderCommandMarkdown(resp ResolveCommandResponse) string {
 				label = law.Slug
 			}
 			body := strings.TrimSpace(law.Body)
-			// Multi-line law bodies (those carrying ❌/✅ examples or a second
-			// paragraph) need every continuation line indented two spaces so
-			// they remain visually nested under the bullet — otherwise the
-			// example lines render as orphan paragraphs between laws.
+			// Multi-line law bodies (those carrying Bad:/Good: examples or a
+			// second paragraph) need every continuation line indented two
+			// spaces so they remain visually nested under the bullet —
+			// otherwise the example lines render as orphan paragraphs between
+			// laws.
 			if idx := strings.Index(body, "\n"); idx >= 0 {
 				head := body[:idx]
 				tail := body[idx+1:]

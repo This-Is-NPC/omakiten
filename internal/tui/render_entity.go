@@ -449,9 +449,9 @@ func (m Model) renderTemplateBadges(index int) []string {
 func (m Model) tokenBadge(tokens int) string {
 	label := fmt.Sprintf("TOKENS:%d", tokens)
 	switch {
-	case tokens > tokenBadgeRedAt:
+	case tokens > m.tokenBadgeRed:
 		return m.styles.badgeTokenRed.Render(label)
-	case tokens > tokenBadgeYellowAt:
+	case tokens > m.tokenBadgeYellow:
 		return m.styles.badgeTokenYellow.Render(label)
 	default:
 		return m.styles.badgeTokenGreen.Render(label)

@@ -47,10 +47,10 @@ func newEntityModel(t *testing.T) (Model, *sqlite.Store, *app.BundleEditor) {
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks: store,
+		Tasks:    store,
 		Workflow: app.NewWorkflowServiceFromStore(store), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
-	}, tuiTestTheme(), token.ApproxCounter{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -219,10 +219,10 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks: store,
+		Tasks:    store,
 		Workflow: app.NewWorkflowServiceFromStore(store), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
-	}, tuiTestTheme(), token.ApproxCounter{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}

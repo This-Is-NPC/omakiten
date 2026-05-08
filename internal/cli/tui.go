@@ -51,7 +51,11 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 			return err
 		}
 	}
-	theme, err := loadActiveTheme(rt.configPath)
+	bundle, err := config.LoadBundle(rt.configPath)
+	if err != nil {
+		return domain.NewError(domain.ErrConfigInvalid, "config is invalid", map[string]any{"path": rt.configPath, "error": fmt.Sprint(err)})
+	}
+	theme, err := loadActiveThemeFromBundle(bundle, rt.configPath)
 	if err != nil {
 		return err
 	}
@@ -73,7 +77,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		ConfigPath:   rt.configPath,
 		DBPath:       rt.dbPath,
 		Version:      version,
-	}, theme, token.NewCounter())
+	}, theme, token.NewCounter(), bundle.Config.TUI.TokenBadge)
 	if err != nil {
 		return err
 	}
@@ -130,11 +134,7 @@ func oktCDPath() string {
 	return filepath.Join(tmp, "okt-cd-"+strconv.Itoa(os.Getuid()))
 }
 
-func loadActiveTheme(configPath string) (config.Theme, error) {
-	bundle, err := config.LoadBundle(configPath)
-	if err != nil {
-		return config.Theme{}, domain.NewError(domain.ErrConfigInvalid, "config is invalid", map[string]any{"path": configPath, "error": fmt.Sprint(err)})
-	}
+func loadActiveThemeFromBundle(bundle config.Bundle, configPath string) (config.Theme, error) {
 	root := config.ConfigRootFromYAMLPath(configPath)
 	active := bundle.Config.Theme.Active
 	// Resolution order: <root>/themes/custom/<slug>.yaml (user override) →
