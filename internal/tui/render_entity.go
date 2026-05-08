@@ -357,18 +357,12 @@ func (m Model) renderLawBadges(index int) []string {
 	law := m.laws[index]
 	var badges []string
 
-	// Severity badge
-	severity := domain.LawSeverity(law.Severity)
-	var severityBadge string
-	switch severity {
-	case domain.LawSeverityError:
-		severityBadge = m.styles.badgeHigh.Render("ERROR")
-	case domain.LawSeverityWarning:
-		severityBadge = m.styles.badgeBlocker.Render("WARNING")
-	default:
-		severityBadge = m.styles.badgeInfo.Render("INFO")
+	// Severity badge — color comes from config.severities[].color via
+	// styles.badgeForColor, so renaming or recoloring a severity in
+	// YAML re-paints the badges without touching this switch.
+	if badge := m.severityBadge(law.Severity); badge != "" {
+		badges = append(badges, badge)
 	}
-	badges = append(badges, severityBadge)
 
 	// Scope badge
 	scope := "GLOBAL"
@@ -486,13 +480,25 @@ func (m Model) renderTagBadges(index int) []string {
 	return []string{badge}
 }
 
-func (m Model) severityStyle(severity domain.LawSeverity) lipgloss.Style {
-	switch severity {
-	case domain.LawSeverityError:
+// severityStyle returns the foreground style for the severity badge
+// label based on config.severities[].color. Same four-token enum as
+// styles.badgeForColor (`error`, `warning`, `success`, `info`); unknown
+// or empty values fall back to muted so the entity-screen badge keeps
+// rendering. Theme authors edit palette tokens once and both badge
+// types follow.
+func (m Model) severityStyle(severity domain.Severity) lipgloss.Style {
+	def, ok := m.severityByID(severity)
+	if !ok {
+		return m.styles.muted
+	}
+	switch strings.ToLower(strings.TrimSpace(def.Color)) {
+	case "error":
 		return m.styles.error
-	case domain.LawSeverityWarning:
+	case "warning":
 		return m.styles.warning
-	case domain.LawSeverityInfo:
+	case "success":
+		return m.styles.success
+	case "info":
 		return m.styles.info
 	}
 	return m.styles.muted

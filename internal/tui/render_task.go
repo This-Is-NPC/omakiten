@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/app"
-	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/picker"
@@ -286,10 +285,9 @@ func (m *Model) refreshTaskActivity(taskID int64) error {
 		m.activityForTask = 0
 		return nil
 	}
+	// Validator guarantees task_activity.sort.order is set in the
+	// bundle; direct field access is safe.
 	order := m.views.TaskActivity.Sort.Order
-	if order == "" {
-		order = config.DefaultTaskActivitySortOrder
-	}
 	events, err := m.repos.Events.ListTaskActivity(m.ctx, m.project.ID, taskID, order)
 	if err != nil {
 		return err

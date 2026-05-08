@@ -144,6 +144,10 @@ type Model struct {
 	// edits to config.priorities take effect at the next view tick
 	// without restarting the TUI.
 	priorities []config.PriorityDefinition
+	// severities mirrors priorities for law severities: id↔value↔color
+	// table consulted by the entity-screen badge renderer. Same wire-up
+	// path (NewModel parameter; refreshed at composition root).
+	severities []config.SeverityDefinition
 	themePickerOptions  []themeOption
 	configPickerOptions []configOption
 	entries             []domain.ContextEntry

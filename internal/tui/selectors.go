@@ -49,6 +49,37 @@ func (m Model) priorityBadge(id domain.Priority) string {
 	return m.styles.badgeForColor(def.Color).Render(strings.ToUpper(def.Value))
 }
 
+// severityByID / severityLabel / severityBadge mirror the priority
+// helpers for the law-severity table. Same lookup semantics: TUI-side
+// state-driven cache (m.severities) keeps renderers in sync with the
+// active config without per-call store access.
+func (m Model) severityByID(id domain.Severity) (config.SeverityDefinition, bool) {
+	if id == domain.SeverityZero {
+		return config.SeverityDefinition{}, false
+	}
+	for _, s := range m.severities {
+		if domain.Severity(s.ID) == id {
+			return s, true
+		}
+	}
+	return config.SeverityDefinition{}, false
+}
+
+func (m Model) severityLabel(id domain.Severity) string {
+	if def, ok := m.severityByID(id); ok {
+		return def.Value
+	}
+	return id.Label()
+}
+
+func (m Model) severityBadge(id domain.Severity) string {
+	def, ok := m.severityByID(id)
+	if !ok {
+		return ""
+	}
+	return m.styles.badgeForColor(def.Color).Render(strings.ToUpper(def.Value))
+}
+
 // checkBucketPermission asks the workflow service whether (entity, op) is
 // allowed in the bucket the given task currently sits in. Used by the TUI
 // entry points (e/d shortcuts) to surface the policy hint at the moment

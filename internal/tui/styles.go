@@ -43,21 +43,22 @@ func (s styles) metaRow(label, value string, labelWidth int) string {
 	return s.info.Render(rendered) + strings.Repeat(" ", pad) + value
 }
 
-// badgeForColor returns the lipgloss style that paints a priority badge
-// in the requested theme color. Mirrors the canonical kit's intent —
-// `error/warning/success/info` map to the red/orange/green/secondary
-// palette tokens — so config.priorities[].color stays terse and theme
-// authors only have to edit colors in one place. Unknown / empty colors
-// fall back to the neutral info badge.
+// badgeForColor returns the lipgloss style that paints a config-driven
+// badge (priority, severity) in the requested theme color. The accepted
+// tokens are the four theme semantic names — `error`, `warning`,
+// `success`, `info` — so config.{priorities,severities}[].color stays
+// a stable enum and theme authors only have to edit palette tokens in
+// one place. Unknown / empty colors fall back to the neutral info
+// badge so the renderer never emits an unstyled pill.
 func (s styles) badgeForColor(color string) lipgloss.Style {
 	switch strings.ToLower(strings.TrimSpace(color)) {
-	case "error", "high", "danger":
+	case "error":
 		return s.badgeHigh
-	case "warning", "warn":
+	case "warning":
 		return s.badgeFix
-	case "success", "low", "ok":
+	case "success":
 		return s.badgeNormal
-	case "info", "secondary":
+	case "info":
 		return s.badgeInfo
 	}
 	return s.badgeInfo
