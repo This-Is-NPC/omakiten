@@ -30,6 +30,13 @@
 * **boundary enforcement:** new `internal/arch/arch_test.go` walks the import graph and fails if `internal/domain` reaches into adapters, if `internal/app` imports concrete adapters, or if any leaf adapter references a sibling. A `.golangci.yml` mirrors the rules under `depguard`. CI now runs `go vet`, `go test -race -count=1` and `golangci-lint`.
 * **eliminated `"backlog"` literal in production code:** `internal/cli/add.go --bucket` defaults to `""` (the `WorkflowService` resolves the active workflow's first bucket); the TUI's create form does the same.
 
+## [0.9.1](https://github.com/This-Is-NPC/omakiten/compare/v0.9.0...v0.9.1) (2026-05-08)
+
+
+### Bug Fixes
+
+* Compress MCP prompts (12-25%) and add okt-config ([#33](https://github.com/This-Is-NPC/omakiten/issues/33)) ([730f781](https://github.com/This-Is-NPC/omakiten/commit/730f781767bdb9d3daee5c0f9a80c81d8aaefbcf))
+
 ## [0.9.0](https://github.com/This-Is-NPC/omakiten/compare/v0.8.0...v0.9.0) (2026-05-08)
 
 
