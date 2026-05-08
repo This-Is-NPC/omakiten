@@ -10,6 +10,11 @@ INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 WRAPPER_BEGIN="# >>> okt wrapper >>>"
 WRAPPER_END="# <<< okt wrapper <<<"
 
+# Harnesses the multi-select prompt offers. Order is significant: the prompt
+# numbers options 1..N in this order, and the same index → name mapping is
+# used by the test in scripts/installer_select_test.sh.
+SUPPORTED_HARNESSES=("claude-code" "claude-desktop" "opencode" "crush" "github-copilot" "codex")
+
 get_latest_tag() {
   curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" |
     grep -m1 '"tag_name":' |
@@ -76,6 +81,101 @@ install_wrapper_into() {
   fi
 }
 
+harness_is_supported() {
+  local candidate="$1" h
+  for h in "${SUPPORTED_HARNESSES[@]}"; do
+    if [ "$h" = "$candidate" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# parse_harness_selection reads a free-form selection string (numbers, names,
+# any of "," " " "\t" "\n" as separators) and emits one valid harness per line
+# on stdout. Unknown tokens go to stderr but do not fail the function.
+parse_harness_selection() {
+  local raw="$1" token idx
+  local oldifs="$IFS"
+  IFS=$',\t \n'
+  set -- $raw
+  IFS="$oldifs"
+  for token in "$@"; do
+    [ -z "$token" ] && continue
+    case "$token" in
+      ''|*[!0-9]*)
+        if harness_is_supported "$token"; then
+          printf '%s\n' "$token"
+        else
+          printf 'warn: ignoring unknown harness "%s"\n' "$token" >&2
+        fi
+        ;;
+      *)
+        idx=$((token - 1))
+        if [ "$idx" -ge 0 ] && [ "$idx" -lt ${#SUPPORTED_HARNESSES[@]} ]; then
+          printf '%s\n' "${SUPPORTED_HARNESSES[$idx]}"
+        else
+          printf 'warn: index %s out of range\n' "$token" >&2
+        fi
+        ;;
+    esac
+  done
+}
+
+# select_harnesses prints the chosen harness list (one per line) by reading
+# OKT_HARNESSES (env override) when set, otherwise prompting on /dev/tty when
+# one is available. Silent when neither is present, so curl|bash with a
+# non-interactive parent (CI) finishes without hanging.
+select_harnesses() {
+  if [ -n "${OKT_HARNESSES:-}" ]; then
+    parse_harness_selection "$OKT_HARNESSES"
+    return
+  fi
+
+  if [ ! -r /dev/tty ] && [ ! -t 0 ]; then
+    return 0
+  fi
+
+  local input_src="/dev/tty"
+  [ -r "$input_src" ] || input_src="/dev/stdin"
+
+  printf '\n=> Wire up MCP for your AI agents (optional)\n' >&2
+  local i=1
+  for h in "${SUPPORTED_HARNESSES[@]}"; do
+    printf '   %d) %s\n' "$i" "$h" >&2
+    i=$((i + 1))
+  done
+  printf '\n   Enter numbers (e.g. 1,3,5), names, or press Enter to skip: ' >&2
+
+  local raw
+  if ! IFS= read -r raw < "$input_src"; then
+    return 0
+  fi
+  raw="${raw#"${raw%%[![:space:]]*}"}"
+  raw="${raw%"${raw##*[![:space:]]}"}"
+  if [ -z "$raw" ]; then
+    return 0
+  fi
+  parse_harness_selection "$raw"
+}
+
+# run_harness_setup runs `okt mcp setup --harness X --force` for each harness
+# read from stdin. Per-harness failures are reported but do not abort the
+# loop, so one missing config dir doesn't block the others.
+run_harness_setup() {
+  local okt_bin="$1" harness rc
+  while IFS= read -r harness; do
+    [ -z "$harness" ] && continue
+    printf '=> Configuring MCP for %s\n' "$harness"
+    if "$okt_bin" mcp setup --harness "$harness" --force >/dev/null 2>&1; then
+      continue
+    fi
+    rc=$?
+    printf '   (skipped %s, exit %d — re-run manually: %s mcp setup --harness %s --force)\n' \
+      "$harness" "$rc" "$okt_bin" "$harness"
+  done
+}
+
 install_wrapper() {
   local installed_into=()
   for rc in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
@@ -128,6 +228,13 @@ main() {
   install_wrapper
 
   echo "=> Installed $("${INSTALL_DIR}/okt" --version)"
+
+  local selections
+  selections="$(select_harnesses)"
+  if [ -n "$selections" ]; then
+    printf '%s\n' "$selections" | run_harness_setup "${INSTALL_DIR}/okt"
+  fi
+
   echo "=> Run 'okt --help' to get started"
 }
 
