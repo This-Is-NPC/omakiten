@@ -7,12 +7,12 @@ laws:
 ---
 ### Implement loop
 
-Repeat until the task's Definition of Done is satisfied:
+Repeat until task DoD satisfied:
 
-1. Apply each change as a self-contained increment.
+1. Apply each change as self-contained increment.
 2. Run tests per `bounded-self-review`.
 3. Self-report non-trivial errors per `self-report`.
 4. Commit per `conventional-commits`.
-5. When done, draft the PR via `templates.show <slug>` and move the task forward per `workflow-enforced`.
+5. When done, draft PR via `templates.show <slug>` and move task forward per `workflow-enforced`.
 
-Use `tasks.continue` to load the latest checkpoint when needed.
+Use `tasks.continue` to load latest checkpoint when needed.

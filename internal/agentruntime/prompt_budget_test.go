@@ -18,13 +18,13 @@ import (
 // Numbers come from `mise run mcp:prompts` output against `dev_env/`. Update
 // alongside any change that grows a prompt past its current budget.
 var promptBudgets = map[string]int{
-	"okt":           2800,
+	"okt":           2700,
 	"okt-imagine":   2800,
 	"okt-create":    4000,
-	"okt-resume":    2750,
-	"okt-continue":  2900,
-	"okt-implement": 5800,
-	"okt-document":  3600,
+	"okt-resume":    2700,
+	"okt-continue":  2850,
+	"okt-implement": 5700,
+	"okt-document":  3550,
 	"okt-config":    4000,
 }
 
