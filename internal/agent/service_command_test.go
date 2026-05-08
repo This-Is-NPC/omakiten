@@ -149,10 +149,10 @@ func TestResolveCommandTemplatesJITRendering(t *testing.T) {
 }
 
 // TestLawBodiesCarryFewShotExamples pins the few-shot pattern Anthropic
-// recommends: load-bearing laws should ship at least one ❌/✅ example so the
-// agent learns from concrete cases instead of abstract directives. Accidental
-// over-compression of these law bodies would silently strip the examples — a
-// regression that is hard to spot without an explicit assertion.
+// recommends: load-bearing laws should ship at least one Bad:/Good: example
+// so the agent learns from concrete cases instead of abstract directives.
+// Accidental over-compression of these law bodies would silently strip the
+// examples — a regression that is hard to spot without an explicit assertion.
 func TestLawBodiesCarryFewShotExamples(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
@@ -173,8 +173,8 @@ func TestLawBodiesCarryFewShotExamples(t *testing.T) {
 		if body == "" {
 			t.Fatalf("law %s not present in resolved laws", slug)
 		}
-		if !strings.Contains(body, "❌") || !strings.Contains(body, "✅") {
-			t.Fatalf("law %s body missing ❌/✅ example markers:\n%s", slug, body)
+		if !strings.Contains(body, "Bad:") || !strings.Contains(body, "Good:") {
+			t.Fatalf("law %s body missing Bad:/Good: example markers:\n%s", slug, body)
 		}
 	}
 }
@@ -274,10 +274,10 @@ func wireBindingFixtures(t *testing.T, fixture agentFixture) {
 	fixture.service.SetLawCatalog(func() []LawInfo {
 		return []LawInfo{
 			// Body deliberately mirrors the production shape: directive paragraph
-			// followed by ❌/✅ examples. The few-shot test asserts the markers
-			// are forwarded verbatim through ResolveCommand's renderer, so any
-			// future compression that strips them surfaces here.
-			{Slug: "template-fidelity", Name: "Template fidelity", Severity: "warning", Body: "Do not invent fields.\n\n❌ Wrote `Closes #40`.\n✅ Left References blank."},
+			// followed by Bad:/Good: examples. The few-shot test asserts the
+			// markers are forwarded verbatim through ResolveCommand's renderer,
+			// so any future compression that strips them surfaces here.
+			{Slug: "template-fidelity", Name: "Template fidelity", Severity: "warning", Body: "Do not invent fields.\n\nBad: wrote `Closes #40`.\nGood: left References blank."},
 			{Slug: "project-scope-only", Name: "Project scope only", Severity: "error", Body: "Never mix projects."},
 		}
 	})

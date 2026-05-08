@@ -28,7 +28,7 @@ func TestMigrateLayoutMovesEntityFoldersOutOfConfig(t *testing.T) {
 	tmp := t.TempDir()
 	// v1 layout: yaml + entity dirs all under <root>/config/.
 	writeFile(t, filepath.Join(tmp, "config", "omakiten.yaml"), baseConfigHeader)
-	writeFile(t, filepath.Join(tmp, "config", "skills", "go.md"), "---\nname: Go\n---\nbody\n")
+	writeFile(t, filepath.Join(tmp, "config", "skills", "implementation.md"), "---\nname: Implementation\n---\nbody\n")
 	writeFile(t, filepath.Join(tmp, "config", "skills", "user-skill.md"), "---\nname: Mine\n---\nbody\n")
 
 	if err := MigrateLayout(tmp); err != nil {
@@ -36,7 +36,7 @@ func TestMigrateLayoutMovesEntityFoldersOutOfConfig(t *testing.T) {
 	}
 
 	// Entities moved to <root>/skills/.
-	if _, err := os.Stat(filepath.Join(tmp, "skills", "go.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(tmp, "skills", "implementation.md")); err != nil {
 		t.Fatalf("skills/go.md not at new location: %v", err)
 	}
 	// Legacy nested folder is gone.
@@ -48,8 +48,8 @@ func TestMigrateLayoutMovesEntityFoldersOutOfConfig(t *testing.T) {
 func TestMigrateLayoutSegregatesUserCustoms(t *testing.T) {
 	tmp := t.TempDir()
 	writeFile(t, filepath.Join(tmp, "config", "omakiten.yaml"), baseConfigHeader)
-	// `go.md` ships in the embedded defaults, so it stays at the root.
-	writeFile(t, filepath.Join(tmp, "skills", "go.md"), "---\nname: Go\n---\nbody\n")
+	// `implementation.md` ships in the embedded defaults, so it stays at the root.
+	writeFile(t, filepath.Join(tmp, "skills", "implementation.md"), "---\nname: Implementation\n---\nbody\n")
 	// `user-skill.md` is not in the embed → user-created → must move to custom/.
 	writeFile(t, filepath.Join(tmp, "skills", "user-skill.md"), "---\nname: Mine\n---\nbody\n")
 
@@ -57,7 +57,7 @@ func TestMigrateLayoutSegregatesUserCustoms(t *testing.T) {
 		t.Fatalf("MigrateLayout() error = %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(tmp, "skills", "go.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(tmp, "skills", "implementation.md")); err != nil {
 		t.Fatalf("skills/go.md must stay at root: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(tmp, "skills", "custom", "user-skill.md")); err != nil {
@@ -104,7 +104,7 @@ func TestMigrateLayoutCreatesEmptyConfigCustomDir(t *testing.T) {
 func TestMigrateLayoutIsIdempotent(t *testing.T) {
 	tmp := t.TempDir()
 	writeFile(t, filepath.Join(tmp, "config", "omakiten.yaml"), baseConfigHeader)
-	writeFile(t, filepath.Join(tmp, "skills", "go.md"), "---\nname: Go\n---\nbody\n")
+	writeFile(t, filepath.Join(tmp, "skills", "implementation.md"), "---\nname: Implementation\n---\nbody\n")
 
 	for i := 0; i < 3; i++ {
 		if err := MigrateLayout(tmp); err != nil {
@@ -113,7 +113,7 @@ func TestMigrateLayoutIsIdempotent(t *testing.T) {
 	}
 
 	// File is still at the root and a custom dir exists.
-	if _, err := os.Stat(filepath.Join(tmp, "skills", "go.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(tmp, "skills", "implementation.md")); err != nil {
 		t.Fatalf("skills/go.md disappeared after repeated migration: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(tmp, "skills", "custom")); err != nil {

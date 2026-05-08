@@ -143,9 +143,6 @@ workflows:
 personas:
   - slug: engineer
     skills:
-      - go
-      - sqlite
-      - cli
       - implementation
       - markdown
   - slug: product-owner

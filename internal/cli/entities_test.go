@@ -63,12 +63,12 @@ func TestCLIEntityCommands(t *testing.T) {
 	})
 
 	t.Run("persona CRUD", func(t *testing.T) {
-		out := runCLI(t, dbPath, configPath, "persona", "add", "-k", "frontend", "-n", "Frontend Agent", "--skill-slug", "go", "--no-edit")
+		out := runCLI(t, dbPath, configPath, "persona", "add", "-k", "frontend", "-n", "Frontend Agent", "--skill-slug", "implementation", "--no-edit")
 		slug := extractSlug(t, out, "persona")
 		if slug != "frontend" {
 			t.Fatalf("persona add slug = %q, want frontend", slug)
 		}
-		if !strings.Contains(out, `"skill_keys":["go"]`) {
+		if !strings.Contains(out, `"skill_keys":["implementation"]`) {
 			t.Fatalf("persona add out missing skill_keys: %s", out)
 		}
 		runCLI(t, dbPath, configPath, "persona", "edit", slug, "-n", "Frontend v2", "--no-edit")
@@ -121,11 +121,11 @@ func TestCLISkillRemovePrunesPersonaRefs(t *testing.T) {
 	t.Chdir(projectRoot)
 
 	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
-	// `go` skill is referenced by the default engineer persona.
-	runCLI(t, dbPath, configPath, "skill", "remove", "go")
+	// `implementation` skill is referenced by the default engineer persona.
+	runCLI(t, dbPath, configPath, "skill", "remove", "implementation")
 
 	out := runCLI(t, dbPath, configPath, "persona", "show", "engineer")
-	if strings.Contains(out, `"go"`) {
+	if strings.Contains(out, `"implementation"`) {
 		t.Fatalf("persona still references removed skill: %s", out)
 	}
 }
