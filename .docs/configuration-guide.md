@@ -561,6 +561,7 @@ What ships in `defaults/` and is materialized on first run by `configstore.Ensur
 | `conventional-commits` | error | Conventional Commits in English; one intent per commit; never attribute commits to an AI agent. |
 | `no-assumptions` | warning | Every claim traceable to code or user input; mark `[assumption]` / `[user-provided]` when not. |
 | `authorize-remote-writes` | error | Never push, force-push, or create/edit/merge PRs without explicit user authorization in the current conversation. |
+| `self-report` | error | Record any non-trivial error (>1 fix attempt) via `errors.record` + `solutions.add`; confirm previously applied solutions with `solutions.confirm`. |
 
 ### Skills (`defaults/skills/`)
 
