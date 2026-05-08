@@ -23,32 +23,7 @@ curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install
 irm https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.ps1 | iex
 ```
 
-## Connect your AI agent
-
-The installer ends with an interactive multi-select prompt — pick the agents you use (any of `claude-code`, `claude-desktop`, `opencode`, `crush`, `github-copilot`, `codex`) and Enter. Each selection is wired via `okt mcp setup --harness <name> --force`, so the install + MCP-setup flow is one step.
-
-To skip the prompt (or pre-select in CI), set `OKT_HARNESSES`:
-
-```bash
-OKT_HARNESSES=claude-code,opencode \
-  curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.sh | bash
-```
-
-Then register the project so the MCP layer has something to attach to:
-
-```bash
-okt init --name MyProject --slug my-project
-```
-
-You can also re-run the wiring at any time without reinstalling:
-
-```bash
-okt mcp setup --harness claude-code --force
-okt mcp setup --harness codex --force
-# ... or any harness from the list above
-```
-
-The full table of harnesses, default config paths, and server-entry shapes lives in the [MCP Guide](.docs/mcp-guide.md#setup).
+The installer asks which AI agents you use and wires Omakiten into each via MCP — see the [MCP Guide](.docs/mcp-guide.md#setup) for the harness list and re-running setup later. Then register your first project: `okt init --name MyProject --slug my-project`.
 
 ## How you work with it
 
