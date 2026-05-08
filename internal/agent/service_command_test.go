@@ -209,31 +209,38 @@ func TestResolveCommandRendersPersonaBody(t *testing.T) {
 	}
 }
 
-// TestOktImplementActionIsPersonaAgnostic guards the architectural separation
-// between command action text and persona body: the okt-implement action must
-// not carry engineer-specific role prose, so swapping
-// `mcp_commands.okt-implement.persona` for another persona does not leak
-// hardcoded engineer instructions into the prompt. The persona body — not the
-// action text — owns role-specific flow.
-func TestOktImplementActionIsPersonaAgnostic(t *testing.T) {
-	action := CommandActionFallback("okt-implement")
-	if action == "" {
-		t.Fatal("CommandActionFallback(okt-implement) is empty")
-	}
+// TestCommandActionsArePersonaAgnostic guards the architectural separation
+// between command action text and persona body across every `okt-*` prompt.
+// Every command's `mcp_commands.<cmd>.persona` is configurable, so no action
+// text may carry persona-specific role prose ("Take the role of an X",
+// persona slug or name). Role-specific flow lives in the persona body, not
+// the action text — swapping the bound persona must change the prompt
+// uniformly without leaving hardcoded role instructions behind.
+func TestCommandActionsArePersonaAgnostic(t *testing.T) {
 	leakedPhrases := []string{
-		"engineer",
 		"Take the role",
+		"engineer",
+		"product owner",
+		"documentation curator",
 		"honoring every law",
 	}
-	for _, phrase := range leakedPhrases {
-		if strings.Contains(strings.ToLower(action), strings.ToLower(phrase)) {
-			t.Fatalf("okt-implement action leaks persona-specific phrase %q — role prose belongs in the persona body, not the action text:\n%s", phrase, action)
+	for _, name := range CommandNames() {
+		action := CommandActionFallback(name)
+		if action == "" {
+			t.Fatalf("CommandActionFallback(%s) is empty", name)
+		}
+		lower := strings.ToLower(action)
+		for _, phrase := range leakedPhrases {
+			if strings.Contains(lower, strings.ToLower(phrase)) {
+				t.Fatalf("%s action leaks persona-specific phrase %q — role prose belongs in the persona body, not the action text:\n%s", name, phrase, action)
+			}
 		}
 	}
-	// Sanity-check the action still names its canonical bootstrap and handoff.
+	// Pin okt-implement specifics: bootstrap tool + handoff marker must remain.
+	implementAction := CommandActionFallback("okt-implement")
 	for _, want := range []string{"tasks.continue", "comment-resume"} {
-		if !strings.Contains(action, want) {
-			t.Fatalf("okt-implement action missing required marker %q:\n%s", want, action)
+		if !strings.Contains(implementAction, want) {
+			t.Fatalf("okt-implement action missing required marker %q:\n%s", want, implementAction)
 		}
 	}
 }

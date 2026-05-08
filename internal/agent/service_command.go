@@ -32,11 +32,11 @@ var commandActions = map[string]string{
 	"okt": "Load the active project state via `project.overview`. Report the snapshot to the user. " +
 		"Next: suggest `okt-resume` to scan likely-next work, or `okt-imagine` to explore a new direction.",
 
-	"okt-imagine": "Take the role of a product owner in open discovery — no task exists yet. Ground yourself " +
+	"okt-imagine": "Open discovery — no task exists yet. Ground yourself " +
 		"with `project.overview` and `tasks.list`, ask clarifying questions, and sketch hypotheses freely " +
 		"(template-fidelity is disabled here on purpose). Next: when the shape is clear, suggest `okt-create`.",
 
-	"okt-create": "Take the role of a product owner authoring the task. Apply feasibility-gate first — " +
+	"okt-create": "Author the task. Apply feasibility-gate first — " +
 		"infeasible requests stop here with the report, no task created. Otherwise call " +
 		"`templates.show user-story` to fetch the scaffold, fill it per template-fidelity, then " +
 		"`tasks.create_intent` with the filled description. The response carries `confirmation` and " +
@@ -44,11 +44,11 @@ var commandActions = map[string]string{
 		"Next: suggest the user create the branch, add a `#self-branch` comment via `comments.add` " +
 		"(template_slug=`comment-selfbranch`), and move the task to dev.",
 
-	"okt-resume": "Take the role of an engineer scanning for next work. Call `project.resume` and report " +
+	"okt-resume": "Scan for next work. Call `project.resume` and report " +
 		"top candidates with one-line rationale. Next: when the user picks a task, suggest `okt-continue` " +
 		"with that task id.",
 
-	"okt-continue": "Take the role of an engineer reading a checkpoint — understand where the task stopped, " +
+	"okt-continue": "Read a task's checkpoint — understand where the task stopped, " +
 		"do not start coding. Call `tasks.continue` for the task id, then summarize the last decision, " +
 		"open questions, and the immediate next increment. Next: suggest `okt-implement` with the same id.",
 
@@ -57,7 +57,7 @@ var commandActions = map[string]string{
 		"Next: suggest the user add a `#resume` comment via `comments.add` " +
 		"(template_slug=`comment-resume`) and move the task to review.",
 
-	"okt-document": "Take the role of a documentation curator. Survey `.docs/architecture.md`, " +
+	"okt-document": "Survey `.docs/architecture.md`, " +
 		"`.docs/requirements.md`, `README.md`, `CONTRIBUTING.md`, and other top-level docs. List drift " +
 		"items with file references and suggested wording — do not edit in place. " +
 		"Next: if material work is needed, suggest `okt-create` to spin up a documentation task.",
