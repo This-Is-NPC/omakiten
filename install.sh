@@ -132,12 +132,18 @@ select_harnesses() {
     return
   fi
 
-  if [ ! -r /dev/tty ] && [ ! -t 0 ]; then
+  # Pick the readable input source. `[ -r /dev/tty ]` checks the device
+  # node but not whether open(2) succeeds — Docker without --tty and CI
+  # runners without a controlling terminal leave the node in place but
+  # return ENXIO on open. Probe with an exec redirect to be sure.
+  local input_src=""
+  if [ -t 0 ]; then
+    input_src="/dev/stdin"
+  elif ( exec 3</dev/tty ) 2>/dev/null; then
+    input_src="/dev/tty"
+  else
     return 0
   fi
-
-  local input_src="/dev/tty"
-  [ -r "$input_src" ] || input_src="/dev/stdin"
 
   printf '\n=> Wire up MCP for your AI agents (optional)\n' >&2
   local i=1
