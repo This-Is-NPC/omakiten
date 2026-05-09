@@ -225,3 +225,21 @@ func indentBlock(block string, spaces int) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// renderPanel wraps any rendered body in the canonical panel chrome —
+// leading newline (so the panel sits one row below the screen header),
+// `m.styles.panel` border, and 2-space indent. Every render_*.go that
+// drew its own surface used to inline this exact assembly; collapsing
+// to a single call keeps the leading-blank / indent / border contract
+// in one place so future tweaks (e.g. changing the indent) land here.
+func (m Model) renderPanel(content string) string {
+	return "\n" + indentBlock(m.styles.panel.Render(content), 2)
+}
+
+// hRule renders a horizontal rule of `width` columns in the separator
+// style — the kicker/separator/body sandwich every panel uses. Pulled
+// out so the `strings.Repeat("─", n)` literal stops appearing in render
+// files; the rule glyph is now declared once.
+func (m Model) hRule(width int) string {
+	return m.styles.separator.Render(strings.Repeat("─", width))
+}

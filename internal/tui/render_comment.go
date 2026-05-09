@@ -29,7 +29,7 @@ func (m Model) renderCommentScreen() string {
 			"",
 			m.styles.hint.Render("Comment not found. Press esc to return."),
 		}
-		return "\n" + indentBlock(m.styles.panel.Render(strings.Join(notFound, "\n")), 2)
+		return m.renderPanel(strings.Join(notFound, "\n"))
 	}
 	if m.commentScreenEditing {
 		return m.renderCommentEditScreen(comment)

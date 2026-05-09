@@ -263,7 +263,7 @@ func (m *Model) syncBoardColScroll() {
 
 func (m Model) renderBoard() string {
 	if len(m.workflow.Buckets) == 0 {
-		return "\n" + indentBlock(m.styles.panel.Render("No workflow buckets. Add buckets in the active workflow config."), 2)
+		return m.renderPanel("No workflow buckets. Add buckets in the active workflow config.")
 	}
 
 	tasksByBucket := m.tasksByBucket()
@@ -339,7 +339,7 @@ func (m Model) renderKanbanCell(bucket domain.Bucket, tasks []domain.Task, focus
 	headerText := fmt.Sprintf("// %s · %d", strings.ToUpper(bucket.Name), len(tasks))
 	lines := []string{
 		headerStyle.Render(headerText),
-		m.styles.separator.Render(strings.Repeat("─", layout.columnInner)),
+		m.hRule(layout.columnInner),
 	}
 
 	if len(tasks) == 0 {

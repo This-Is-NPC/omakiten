@@ -43,7 +43,7 @@ func (m Model) renderEntityCellWithViewport(kind entityKind, viewport int, conte
 	}
 	lines := []string{
 		headerStyle.Render(headerText),
-		m.styles.separator.Render(strings.Repeat("─", separatorWidth)),
+		m.hRule(separatorWidth),
 	}
 
 	if count == 0 {

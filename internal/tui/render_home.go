@@ -236,7 +236,7 @@ func (m Model) renderHome() string {
 	headerText := fmt.Sprintf("// PROJECTS · %d", len(m.homeProjects))
 	lines := []string{
 		m.styles.hintAccent.Render(headerText),
-		m.styles.separator.Render(strings.Repeat("─", columnInner)),
+		m.hRule(columnInner),
 	}
 
 	if len(m.homeProjects) == 0 {

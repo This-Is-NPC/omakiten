@@ -83,9 +83,9 @@ func (m Model) renderTable() string {
 	tasks := m.applyTableView()
 	if len(tasks) == 0 {
 		if len(m.tasks) == 0 {
-			return "\n" + indentBlock(m.styles.panel.Render("No tasks yet. Press n to create one."), 2)
+			return m.renderPanel("No tasks yet. Press n to create one.")
 		}
-		return "\n" + indentBlock(m.styles.panel.Render("No tasks match the configured table filter."), 2)
+		return m.renderPanel("No tasks match the configured table filter.")
 	}
 	if m.availableWidth() < 74 {
 		return m.renderTableCompactWith(tasks)
@@ -107,10 +107,10 @@ func (m Model) renderTable() string {
 	rows := []string{
 		m.styles.kickerCount("Tasks", len(tasks)),
 		m.styles.info.Render("// ID   BUCKET      PRI      DEPS  COMMENTS  TITLE"),
-		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
+		m.hRule(contentWidth),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.tableScroll, m.tableViewportRows())...)
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
+	return m.renderPanel(strings.Join(rows, "\n"))
 }
 
 func (m Model) renderTableCompactWith(tasks []domain.Task) string {
@@ -128,10 +128,10 @@ func (m Model) renderTableCompactWith(tasks []domain.Task) string {
 	}
 	rows := []string{
 		m.styles.kickerCount("Tasks", len(tasks)),
-		m.styles.separator.Render(strings.Repeat("─", width)),
+		m.hRule(width),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.tableScroll, m.tableViewportRows())...)
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
+	return m.renderPanel(strings.Join(rows, "\n"))
 }
 
 // selectedTaskID resolves the currently-selected task id via m.tasks; used

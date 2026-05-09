@@ -331,10 +331,10 @@ func (m Model) renderThemePicker() string {
 		m.styles.kicker(fmt.Sprintf("Theme · current: %s", m.theme.Key)),
 		m.styles.hint.Render("up/down: move · enter: apply (hot-reload) · esc: cancel"),
 		"",
-		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
+		m.hRule(contentWidth),
 	}
 	header = append(header, m.sliceScrollRows(rows, m.entityPicker.Scroll, m.pickerViewportRows())...)
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(header, "\n")), 2)
+	return m.renderPanel(strings.Join(header, "\n"))
 }
 
 func (m Model) renderConfigPicker() string {
@@ -360,8 +360,8 @@ func (m Model) renderConfigPicker() string {
 		m.styles.kicker(fmt.Sprintf("Config profile · active: %s", active)),
 		m.styles.hint.Render("up/down: move · enter: select (restart required) · esc: cancel"),
 		"",
-		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
+		m.hRule(contentWidth),
 	}
 	header = append(header, m.sliceScrollRows(rows, m.entityPicker.Scroll, m.pickerViewportRows())...)
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(header, "\n")), 2)
+	return m.renderPanel(strings.Join(header, "\n"))
 }

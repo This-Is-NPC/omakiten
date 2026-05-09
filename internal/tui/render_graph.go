@@ -127,7 +127,7 @@ func (m Model) renderGraph() string {
 		"",
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.graphScroll, m.graphViewportRows())...)
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
+	return m.renderPanel(strings.Join(rows, "\n"))
 }
 
 // graphRootLess turns the graph view sort config into a comparator the DAG

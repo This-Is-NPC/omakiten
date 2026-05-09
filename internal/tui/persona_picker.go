@@ -187,8 +187,8 @@ func (m Model) renderPersonaPicker() string {
 		m.styles.kicker(fmt.Sprintf("Skills for persona · %s", persona.Key)),
 		m.styles.hint.Render("up/down: move · space: toggle · enter on '+ create new': new skill · ctrl+s: save · esc: cancel"),
 		"",
-		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
+		m.hRule(contentWidth),
 	}
 	lines = append(lines, m.sliceScrollRows(dataRows, m.entityPicker.Scroll, m.pickerViewportRows())...)
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(lines, "\n")), 2)
+	return m.renderPanel(strings.Join(lines, "\n"))
 }

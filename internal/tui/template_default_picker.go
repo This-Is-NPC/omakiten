@@ -168,10 +168,10 @@ func (m Model) renderTemplateDefaultPicker() string {
 		m.styles.kicker(fmt.Sprintf("Default kind · template %s · project %s", m.entityForm.slug, m.project.Slug)),
 		m.styles.hint.Render("up/down: move · enter: assign for this project (clears prior owner) · esc: cancel"),
 		"",
-		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
+		m.hRule(contentWidth),
 	}
 	header = append(header, m.sliceScrollRows(rows, m.entityPicker.Scroll, m.pickerViewportRows())...)
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(header, "\n")), 2)
+	return m.renderPanel(strings.Join(header, "\n"))
 }
 
 // applyTemplateDefault delegates to app.TemplateService, which owns the

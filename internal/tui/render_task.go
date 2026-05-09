@@ -558,7 +558,7 @@ func (m Model) renderTaskScreen() string {
 func (m Model) renderTaskView() string {
 	task, ok := m.activeTask()
 	if !ok {
-		return "\n" + indentBlock(m.styles.panel.Render("Task not found. Refresh with r or return to the board."), 2)
+		return m.renderPanel("Task not found. Refresh with r or return to the board.")
 	}
 	blockers := m.blockersForTask(task.ID)
 
@@ -692,7 +692,7 @@ func (m Model) renderTaskReference(task domain.Task) string {
 func (m Model) renderBlockerPicker() string {
 	task, ok := m.taskByID(m.blockerPickerTaskID)
 	if !ok {
-		return "\n" + indentBlock(m.styles.panel.Render("Task not found. Press esc to return."), 2)
+		return m.renderPanel("Task not found. Press esc to return.")
 	}
 
 	contentWidth := m.availableWidth() - 4
@@ -702,12 +702,12 @@ func (m Model) renderBlockerPicker() string {
 		"",
 		m.styles.metaRow("Task", task.Title, metaRowLabelWidth),
 		"",
-		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
+		m.hRule(contentWidth),
 	}
 	candidates := m.blockerPickerCandidates()
 	if len(candidates) == 0 {
 		lines = append(lines, m.styles.hint.Render("No other tasks are available to block this task."))
-		return "\n" + indentBlock(m.styles.panel.Render(strings.Join(lines, "\n")), 2)
+		return m.renderPanel(strings.Join(lines, "\n"))
 	}
 
 	dataRows := make([]string, 0, len(candidates))
@@ -724,7 +724,7 @@ func (m Model) renderBlockerPicker() string {
 		dataRows = append(dataRows, fmt.Sprintf("%s %s #%d %s  %s", marker, check, candidate.ID, candidate.Title, meta))
 	}
 	lines = append(lines, m.sliceScrollRows(dataRows, m.blockerPicker.Scroll, m.blockerPickerViewportRows())...)
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(lines, "\n")), 2)
+	return m.renderPanel(strings.Join(lines, "\n"))
 }
 
 func (m Model) renderTaskForm(title string) string {
@@ -744,7 +744,7 @@ func (m Model) renderTaskForm(title string) string {
 		m.renderTaskFormLabel(taskFieldPriority, "Priority"),
 		m.renderTaskPriorityInput(),
 	}
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(lines, "\n")), 2)
+	return m.renderPanel(strings.Join(lines, "\n"))
 }
 
 // renderTaskTitleField renders the bubbles textinput inside the same boxed

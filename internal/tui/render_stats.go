@@ -38,7 +38,7 @@ func (m Model) statsPeriodIdx() int {
 
 func (m Model) renderStats() string {
 	if m.repos.Metrics == nil {
-		return "\n" + indentBlock(m.styles.panel.Render("Metrics repository not available."), 2)
+		return m.renderPanel("Metrics repository not available.")
 	}
 
 	// Top block: project Totals + Tokens as two bordered tables. Lives
@@ -83,7 +83,7 @@ func (m Model) renderStatsModelPanel() string {
 		likeW  = 7
 	)
 
-	sepLine := m.styles.separator.Render(strings.Repeat("─", contentWidth))
+	sepLine := m.hRule(contentWidth)
 	header := fmt.Sprintf("%-*s %*s %*s %*s %*s %*s",
 		modelW, "MODEL",
 		countW, "ERRORS",

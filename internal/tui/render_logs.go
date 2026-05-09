@@ -90,10 +90,10 @@ func (m Model) logsViewportRows() int {
 
 func (m Model) renderLogs() string {
 	if m.repos.ActivityLogs == nil {
-		return "\n" + indentBlock(m.styles.panel.Render("Activity logging is not available for this project."), 2)
+		return m.renderPanel("Activity logging is not available for this project.")
 	}
 	if len(m.logs) == 0 {
-		return "\n" + indentBlock(m.styles.panel.Render("No activity yet. Use the CLI, TUI, or MCP to interact with Omakiten."), 2)
+		return m.renderPanel("No activity yet. Use the CLI, TUI, or MCP to interact with Omakiten.")
 	}
 
 	summary := m.renderLogsSummaryTables()
@@ -200,7 +200,7 @@ func (m Model) renderLogsWidePanel() string {
 	rows := []string{
 		m.styles.kickerCount("Activity", limit),
 		m.styles.info.Render(fmt.Sprintf("// TIME        SRC  %-*s %-*s STATUS  MS   ARGS", logOperationWidth, "OPERATION", logProjectWidth, "PROJECT")),
-		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
+		m.hRule(contentWidth),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.logsScroll, m.logsViewportRows())...)
 	rows = append(rows, "", m.styles.hint.Render("Only app service calls are logged. TUI refreshes and direct reads are not shown."))
@@ -250,7 +250,7 @@ func (m Model) renderLogsCompactPanel() string {
 	}
 	rows := []string{
 		m.styles.kickerCount("Activity", limit),
-		m.styles.separator.Render(strings.Repeat("─", width)),
+		m.hRule(width),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.logsScroll, m.logsViewportRows())...)
 	rows = append(rows, "", m.styles.hint.Render("r refresh · full arguments appear on wider terminals"))

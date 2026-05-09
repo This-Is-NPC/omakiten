@@ -190,7 +190,7 @@ func (m Model) renderHelp() string {
 	lines = append(lines, m.styles.kicker(title), m.styles.hint.Render("press a to toggle scope"), "")
 	for _, g := range groups {
 		lines = append(lines, m.styles.kicker(g.title))
-		lines = append(lines, m.styles.separator.Render(strings.Repeat("─", keyW+24)))
+		lines = append(lines, m.hRule(keyW+24))
 		for _, b := range g.bindings {
 			pad := keyW - lipgloss.Width(b.key)
 			if pad < 1 {
