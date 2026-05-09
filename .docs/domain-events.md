@@ -1,0 +1,141 @@
+# Domain Events
+
+Omakiten persists every state-changing operation as a row in the unified
+`events` table. The same store backs three audiences:
+
+- **Activity feed** — `entity_type='task'` rows render in the per-task
+  activity column (TUI / MCP `tasks.continue`).
+- **Logs view** — `event_type='operation'` rows are the per-call activity
+  log written by `activity.Track`.
+- **Domain audit / metrics** — every other event_type (task.*, comment.*,
+  tag.*, dependency.*, guard.*, error.*, solution.*) is what this guide
+  catalogs.
+
+The catalog is closed: `internal/domain/event.go::KnownEventTypes` is the
+single source of truth and the config validator rejects overrides
+referencing values outside it.
+
+## Catalog
+
+| Event type            | Entity row              | Trigger                                                       | Payload (minimum)                                              | Source typical    | Default log |
+| --------------------- | ----------------------- | ------------------------------------------------------------- | -------------------------------------------------------------- | ----------------- | ----------- |
+| `task.created`        | task                    | `Store.CreateTask`                                            | `{bucket}` (priority/title implicit on the task row)           | cli / mcp / tui   | true        |
+| `task.moved`          | task                    | `Store.MoveTask` when bucket changes                          | `{from, to}`                                                   | cli / mcp / tui   | true        |
+| `task.completed`      | task                    | `WorkflowService.MoveTask` into the final bucket              | `{bucket}`                                                     | cli / mcp / tui   | true        |
+| `task.edited`         | task                    | `Store.EmitTaskEditedEvent` after `UpdateTask`                | `{title?,description?,priority?}` each as `{from,to}`          | cli / mcp / tui   | true        |
+| `task.removed`        | system (project-scoped) | `Store.HardDeleteTask`                                        | `{project_id, task_id, title, bucket_key, state}`              | cli / mcp / tui   | true        |
+| `task.archived`       | task                    | `Store.SetTaskState(archived)`                                | `{from_bucket, to_bucket, from_state, to_state}`               | cli / mcp / tui   | true        |
+| `task.unarchived`     | task                    | `Store.SetTaskState(active)`                                  | `{from_bucket, to_bucket, from_state, to_state}`               | cli / mcp / tui   | true        |
+| `comment` (=`comment.created`) | task           | `Store.AddComment` (raw insert; this row IS the comment data) | comment body in `body` column; `Tags` via `event_tags`         | cli / mcp / tui   | true (data; gating not honored — see note) |
+| `comment.edited`      | task                    | `Store.UpdateComment`                                         | `{comment_id, body:{from,to}?}`                                | cli / mcp / tui   | true        |
+| `comment.removed`     | task                    | `Store.DeleteComment`                                         | `{comment_id, author_type, body}`                              | cli / mcp / tui   | true        |
+| `tag.added`           | task / project / error  | `TagService.Add`                                              | `{entity_type, entity_id, tag_id, tag_name}`                   | cli / mcp / tui   | **false**   |
+| `tag.removed`         | task / project / error  | `TagService.Remove`                                           | `{entity_type, entity_id, tag_id, tag_name}`                   | cli / mcp / tui   | **false**   |
+| `dependency.added`    | task (the dependent)    | `DependencyService.Add`                                       | `{depends_on_task_id}`                                         | cli / mcp / tui   | true        |
+| `dependency.removed`  | task (the dependent)    | `DependencyService.Remove`                                    | `{depends_on_task_id}`                                         | cli / mcp / tui   | true        |
+| `guard.violated`      | task / comment          | Every `domain.ErrGuardViolation` return path (transitions, operation guards, permission denials) | `{operation, rule, hint, target, attempted_by}`               | cli / mcp / tui   | true        |
+| `error.recorded`      | error                   | `ErrorService.Record`                                         | `{tags, has_context}`                                          | mcp (typical)     | true        |
+| `error.searched`      | error (entity_id=0)     | `ErrorService.Search`                                         | `{query, tags, result_count}`                                  | mcp (typical)     | true        |
+| `solution.added`      | solution                | `ErrorService.AddSolution`                                    | `{error_id}`                                                   | mcp (typical)     | true        |
+| `solution.confirmed`  | solution                | `ErrorService.ConfirmSolution` (regardless of outcome)        | `{error_id, success, likes}`                                   | mcp (typical)     | true        |
+| `solution.liked`      | solution                | `ConfirmSolution(success=true)`                               | `{error_id, likes}`                                            | mcp (typical)     | true        |
+| `solution.failed`     | solution                | `ConfirmSolution(success=false)`                              | `{error_id, likes}`                                            | mcp (typical)     | true        |
+| `solution.viewed_top` | solution (entity_id=0)  | `ErrorService.ListTopSolutions`                               | `{limit, returned_count}`                                      | mcp (typical)     | true        |
+
+> **Note on `comment`:** the comment row IS user-visible data, not an
+> audit trail. The log gate (`config.events.overrides.comment.log`)
+> does NOT silence comment writes — `Store.AddComment` uses a raw
+> INSERT. Setting it to `false` only affects downstream tooling that
+> filters by event_type; the comment text still lands in the table.
+
+## Schema policy
+
+Every event row populates the canonical columns from
+`internal/sqlite/migrations/*` (`events` table). Different event types
+fill different subsets:
+
+- `body` — comment text (only for `event_type='comment'`); empty for
+  audit events.
+- `payload` — JSON object (string column). Audit events use this.
+- `author_type` — `human` | `agent`; populated for comments.
+- `source`, `entrypoint`, `agent_model`, `agent_session_id` — set by
+  `RecordEntityEvent` from the request context (`activity.WithAgent`).
+- `operation`, `status`, `duration_ms` — only for
+  `event_type='operation'` rows written by `activity.Track`.
+
+Payload contracts are documented above per event type. Today the runtime
+treats payload as opaque JSON — no per-event schema validation. Consumers
+are expected to honor the contracts; future work may add typed decoders.
+
+### Payload contract: `guard.violated`
+
+```json
+{
+  "operation":   "<task.transition | task.archive | task.delete | task.unarchive | task.edit | comment.edit | comment.delete>",
+  "rule":        "<transition_not_allowed | permissions | blockers_in | comments_min | comments_tagged | (any user-defined guard.Type)>",
+  "hint":        "<rendered guard message — same string returned in domain.ErrGuardViolation.Message>",
+  "target":      { "task_id": 123, "from_bucket": "review", "to_bucket": "done" },
+  "attempted_by": "user | agent"
+}
+```
+
+`operation` and `rule` are intentionally free-form strings. The runtime
+ships canonical values via `app.GuardOperation*` and `app.GuardRule*`
+constants, but custom guards can supply any string and consumers filter
+on whatever value lands in the payload.
+
+## Naming convention
+
+`<entity>.<action>` in past tense.
+
+- Use the existing entity prefixes (`task`, `comment`, `tag`,
+  `dependency`, `guard`, `error`, `solution`).
+- Past tense reflects "this happened" — events are facts about things
+  that already occurred. `task.create` (imperative) is wrong;
+  `task.created` is right.
+- Granularity belongs in the payload, not the name. `guard.violated`
+  with `rule=blockers_in` is preferred over `guard.blockers_in`.
+
+## Adding a new event
+
+1. **Declare the constant** in `internal/domain/event.go` with a one-line
+   godoc that names the entity, the trigger, and the minimum payload.
+2. **Add it to `KnownEventTypes`** so config validation accepts overrides
+   referencing it.
+3. **Emit it** at the canonical mutation point. Service layer
+   (`internal/app/*_service.go`) is preferred over the sqlite layer when
+   the emission can be expressed without a transaction; co-locate with
+   the persist call when atomicity matters.
+4. **Document it** in the catalog table above (alphabetical within the
+   family is fine).
+5. **Add a smoke test** asserting the row lands. Existing patterns:
+   `internal/sqlite/events_test.go` for transactional emits,
+   `internal/app/workflow_service_test.go` for service-level emits.
+
+## Configuration
+
+`config.events` controls per-event-type behaviour. See
+`defaults/omakiten.yaml::config.events` for the canonical block. The
+shape:
+
+```yaml
+config:
+  events:
+    default_recent_limit: 50    # Store.ListRecentEvents fallback
+    defaults:                    # required; applied to every event type
+      log: true
+      broadcast: true            # reserved for the upcoming event-bus task
+      hook: true                 # reserved for the upcoming event-bus task
+    overrides:                   # optional; keys must be in KnownEventTypes
+      tag.added:    { log: false }
+      tag.removed:  { log: false }
+```
+
+Pointer-to-bool semantics in code mean "omitted = inherit". An override
+that declares only `log: false` keeps inheriting the defaults' `broadcast`
+and `hook`. The validator hard-rejects unknown keys so YAML typos do not
+silently no-op.
+
+Today the runtime consumes only `log`. `broadcast` and `hook` are part
+of the upcoming event-bus / hook-engine task; they are declared today so
+configs land in their final shape without a future migration.
