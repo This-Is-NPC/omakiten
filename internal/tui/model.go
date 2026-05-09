@@ -40,6 +40,8 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		homePicker:       picker.New(picker.Single),
 		priorities:       priorities,
 		severities:       severities,
+		markdown:         newMarkdownRenderer(tokensFromTheme(theme)),
+		markdownRendered: true,
 	}
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()

@@ -292,6 +292,13 @@ type Model struct {
 	// keybind toggles it. Archived rows render with a dimmed style so the
 	// user can still spot them when the toggle is on.
 	includeArchived bool
+
+	// markdown owns rendering of body fields (task description, comment
+	// body, entity body) into ANSI-styled output. Rebuilt by reloadTheme
+	// when the active theme changes so cached renders never serve stale
+	// colors. markdownRendered is the session-only toggle bound to `M`.
+	markdown         *markdownRenderer
+	markdownRendered bool
 }
 
 // inputMode is the modal-input enum: normal navigation, comment-add input

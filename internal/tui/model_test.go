@@ -367,6 +367,7 @@ func TestModelOpensExistingTaskScreen(t *testing.T) {
 			t.Fatalf("View() contains hidden task-screen tab %q\n%s", hidden, view)
 		}
 	}
+	plain := stripANSI(view)
 	for _, want := range []string{
 		"▸ TASK · #",
 		"// TITLE",
@@ -382,7 +383,7 @@ func TestModelOpensExistingTaskScreen(t *testing.T) {
 		agentComment.CreatedAt,
 		"I can take the next step.",
 	} {
-		if !strings.Contains(view, want) {
+		if !strings.Contains(plain, want) {
 			t.Fatalf("View() missing %q\n%s", want, view)
 		}
 	}
@@ -450,8 +451,9 @@ func TestModelAddsMultilineCommentInsideTaskCommentsPanel(t *testing.T) {
 		t.Fatalf("comment body = %q, want %q", comments[0].Body, wantBody)
 	}
 	view = got.View()
+	plainView := stripANSI(view)
 	for _, want := range []string{"// ACTIVITY · 1", "human", comments[0].CreatedAt, "First line", "Second line", "Third line"} {
-		if !strings.Contains(view, want) {
+		if !strings.Contains(plainView, want) {
 			t.Fatalf("View() missing %q\n%s", want, view)
 		}
 	}
@@ -548,7 +550,7 @@ func TestModelCreatesTaskFromDedicatedScreen(t *testing.T) {
 		"First line",
 		"Second line",
 	} {
-		if !strings.Contains(view, want) {
+		if !strings.Contains(stripANSI(view), want) {
 			t.Fatalf("View() missing %q\n%s", want, view)
 		}
 	}
