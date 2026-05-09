@@ -52,14 +52,23 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 		return domain.Task{}, err
 	}
 
+	payload := fmt.Sprintf(`{"bucket":%q}`, bucketKey)
+	var ev domain.Event
 	if s.shouldLogEvent(domain.EventTypeTaskCreated) {
-		payload := fmt.Sprintf(`{"bucket":%q}`, bucketKey)
-		if _, err := insertTaskEvent(ctx, tx, projectID, task.ID, domain.EventTypeTaskCreated, "", payload); err != nil {
+		var err error
+		ev, err = insertTaskEvent(ctx, tx, projectID, task.ID, domain.EventTypeTaskCreated, "", payload)
+		if err != nil {
 			return domain.Task{}, err
 		}
+	} else {
+		ev = domain.Event{EntityType: domain.EventEntityTask, EntityID: task.ID, ProjectID: projectID, EventType: domain.EventTypeTaskCreated, Payload: payload}
 	}
 
-	return task, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return domain.Task{}, err
+	}
+	s.publishEvent(ctx, ev)
+	return task, nil
 }
 
 func (s *Store) ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter) ([]domain.Task, error) {
@@ -175,14 +184,27 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 		return domain.Task{}, err
 	}
 
-	if currentBucketID != targetBucketID && s.shouldLogEvent(domain.EventTypeTaskMoved) {
+	var moveEv domain.Event
+	if currentBucketID != targetBucketID {
 		movePayload := fmt.Sprintf(`{"from":%q,"to":%q}`, currentBucketKey, targetBucketKey)
-		if _, err := insertTaskEvent(ctx, tx, projectID, taskID, domain.EventTypeTaskMoved, "", movePayload); err != nil {
-			return domain.Task{}, err
+		if s.shouldLogEvent(domain.EventTypeTaskMoved) {
+			var err error
+			moveEv, err = insertTaskEvent(ctx, tx, projectID, taskID, domain.EventTypeTaskMoved, "", movePayload)
+			if err != nil {
+				return domain.Task{}, err
+			}
+		} else {
+			moveEv = domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: domain.EventTypeTaskMoved, Payload: movePayload}
 		}
 	}
 
-	return task, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return domain.Task{}, err
+	}
+	if moveEv.EventType != "" {
+		s.publishEvent(ctx, moveEv)
+	}
+	return task, nil
 }
 
 func (s *Store) UpdateTask(ctx context.Context, projectID, taskID int64, update domain.TaskUpdate) (domain.Task, error) {

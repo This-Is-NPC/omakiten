@@ -12,6 +12,8 @@ import (
 	_ "modernc.org/sqlite"
 
 	"omakiten/internal/config"
+	"omakiten/internal/domain"
+	"omakiten/internal/events"
 	"omakiten/migrations"
 )
 
@@ -53,6 +55,11 @@ type Store struct {
 	// everything" so tests that do not wire the policy keep their
 	// existing emission assertions.
 	eventsPolicy config.EventsSettings
+	// bus carries domain events to in-process subscribers (hooks
+	// engine, future buddies, future TUI live views). nil disables
+	// broadcast — production wires it from composition root, tests
+	// inherit a nil bus and silently skip the fan-out.
+	bus events.Bus
 }
 
 // SetActivityLogRetention installs the operation-log retention window the
@@ -85,6 +92,25 @@ func (s *Store) shouldLogEvent(eventType string) bool {
 	return s.eventsPolicy.ResolveLog(eventType)
 }
 
+// SetEventBus installs the in-process bus the Store fans events out to
+// after every successful emit (post-commit for transactional helpers).
+// nil disables broadcast — tests that do not wire a bus inherit the
+// existing single-writer semantics.
+func (s *Store) SetEventBus(bus events.Bus) {
+	s.bus = bus
+}
+
+// publishEvent fans an emitted event out to the bus. Caller is
+// responsible for placing this AFTER any surrounding tx.Commit so
+// subscribers never observe rolled-back rows. Telemetry must not break
+// business logic — publish errors are swallowed.
+func (s *Store) publishEvent(ctx context.Context, ev domain.Event) {
+	if s.bus == nil || ev.EventType == "" {
+		return
+	}
+	_ = s.bus.Publish(ctx, ev)
+}
+
 // ConfigKnobs is the resolved bundle of Store-level knobs the composition
 // root applies after Open + ConfigService.Import. Wraps the per-area
 // setters so the runtime writes them in one place; tests that don't care
@@ -98,6 +124,9 @@ type ConfigKnobs struct {
 	// EventsPolicy mirrors bundle.Config.Events so the Store can apply
 	// per-event-type log gates as soon as the bundle reaches it.
 	EventsPolicy config.EventsSettings
+	// EventBus is the in-process bus the Store fans emitted events to
+	// post-commit. nil disables broadcast.
+	EventBus events.Bus
 }
 
 // ApplyConfig writes the resolved config knobs into the live Store. The
@@ -115,6 +144,9 @@ func (s *Store) ApplyConfig(ctx context.Context, k ConfigKnobs) error {
 	s.SetActivityLogRetention(k.ActivityLogMaxRows, k.ActivityLogMaxAgeDays)
 	s.SetEventsRecentLimit(k.EventsDefaultRecentLimit)
 	s.SetEventsPolicy(k.EventsPolicy)
+	if k.EventBus != nil {
+		s.SetEventBus(k.EventBus)
+	}
 	return nil
 }
 

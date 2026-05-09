@@ -23,10 +23,20 @@ func (s *Store) RecordTaskEvent(ctx context.Context, projectID, taskID int64, ev
 	if err := s.ensureTaskExists(ctx, projectID, taskID); err != nil {
 		return domain.Event{}, err
 	}
-	if !s.shouldLogEvent(eventType) {
-		return domain.Event{}, nil
+	var ev domain.Event
+	if s.shouldLogEvent(eventType) {
+		var err error
+		ev, err = insertTaskEvent(ctx, s.db, projectID, taskID, eventType, body, payload)
+		if err != nil {
+			return domain.Event{}, err
+		}
+	} else {
+		// Synthetic event so subscribers still observe the action even
+		// when the row was suppressed by config.events.overrides.
+		ev = domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: eventType, Body: body, Payload: payload}
 	}
-	return insertTaskEvent(ctx, s.db, projectID, taskID, eventType, body, payload)
+	s.publishEvent(ctx, ev)
+	return ev, nil
 }
 
 // dbExecutor abstracts over *sql.DB and *sql.Tx so insertTaskEvent can run
@@ -83,25 +93,27 @@ LIMIT ?
 }
 
 func (s *Store) RecordEntityEvent(ctx context.Context, entityType string, entityID int64, projectID int64, eventType string, payload string) error {
-	if !s.shouldLogEvent(eventType) {
-		return nil
-	}
 	if payload == "" {
 		payload = "{}"
 	}
-	source, entrypoint, agentModel, agentSessionID := agentAttribution(ctx)
-	var entityIDArg, projectIDArg any
-	if entityID > 0 {
-		entityIDArg = entityID
-	}
-	if projectID > 0 {
-		projectIDArg = projectID
-	}
-	_, err := s.db.ExecContext(ctx, `
+	if s.shouldLogEvent(eventType) {
+		source, entrypoint, agentModel, agentSessionID := agentAttribution(ctx)
+		var entityIDArg, projectIDArg any
+		if entityID > 0 {
+			entityIDArg = entityID
+		}
+		if projectID > 0 {
+			projectIDArg = projectID
+		}
+		if _, err := s.db.ExecContext(ctx, `
 INSERT INTO events(entity_type, entity_id, project_id, event_type, payload, source, entrypoint, agent_model, agent_session_id)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, entityType, entityIDArg, projectIDArg, eventType, payload, source, entrypoint, agentModel, agentSessionID)
-	return err
+`, entityType, entityIDArg, projectIDArg, eventType, payload, source, entrypoint, agentModel, agentSessionID); err != nil {
+			return err
+		}
+	}
+	s.publishEvent(ctx, domain.Event{EntityType: entityType, EntityID: entityID, ProjectID: projectID, EventType: eventType, Payload: payload})
+	return nil
 }
 
 func insertTaskEvent(ctx context.Context, exec dbExecutor, projectID, taskID int64, eventType, body, payload string) (domain.Event, error) {
