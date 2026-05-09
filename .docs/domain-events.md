@@ -41,6 +41,7 @@ referencing values outside it.
 | `solution.liked`      | solution                | `ConfirmSolution(success=true)`                               | `{error_id, likes}`                                            | mcp (typical)     | true        |
 | `solution.failed`     | solution                | `ConfirmSolution(success=false)`                              | `{error_id, likes}`                                            | mcp (typical)     | true        |
 | `solution.viewed_top` | solution (entity_id=0)  | `ErrorService.ListTopSolutions`                               | `{limit, returned_count}`                                      | mcp (typical)     | true        |
+| `hook.executed`       | system (entity_id=0)    | `hooks.Engine` after `Action.Execute` returns                 | `{hook_index, action, event_type, target_event_id, success, error?, duration_ms}` | system            | true        |
 
 > **Note on `comment`:** the comment row IS user-visible data, not an
 > audit trail. The log gate (`config.events.overrides.comment.log`)
@@ -136,6 +137,79 @@ that declares only `log: false` keeps inheriting the defaults' `broadcast`
 and `hook`. The validator hard-rejects unknown keys so YAML typos do not
 silently no-op.
 
-Today the runtime consumes only `log`. `broadcast` and `hook` are part
-of the upcoming event-bus / hook-engine task; they are declared today so
-configs land in their final shape without a future migration.
+All three channels are now consumed at runtime:
+
+- `log` — gated inside `Store.RecordTaskEvent` / `RecordEntityEvent` /
+  inline-tx `insertTaskEvent` callsites. When false, the row is dropped
+  before insertion; the bus still receives a synthetic in-memory event
+  so subscribers (hooks, future buddies) cannot be silenced by a
+  log-only opt-out.
+- `broadcast` — gated inside `events.Bus.Publish`. When false, the bus
+  short-circuits the fan-out before walking subscribers.
+- `hook` — gated inside `hooks.Engine.dispatch`. When false, the engine
+  ignores the event entirely; no action runs and no `hook.executed` is
+  emitted.
+
+## Runtime broadcast
+
+The composition root constructs one `events.Bus` per process and wires
+it into the sqlite Store via `ApplyConfig{EventBus}`. Every emit path
+in the Store fans the captured event out to the bus AFTER the
+surrounding transaction commits, so subscribers never observe events
+for rows that were rolled back.
+
+Subscribers register through `Bus.Subscribe(filter, handler)`. Filter
+is exact-match equality only:
+
+- `EventTypes []string` — match if the event_type equals any entry.
+  Empty slice matches every type.
+- `PayloadEq map[string]string` — top-level keys in the JSON
+  `domain.Event.Payload`. Strings, bools (`"true"` / `"false"`), and
+  JSON numbers all coerce to string equality.
+
+The two dimensions AND together. Handlers run synchronously on the
+publisher's goroutine with a per-handler `recover` so a rogue panic
+cannot derail the others or the publisher itself. Hooks are the only
+subscriber that fans out to a fire-and-forget goroutine — they own
+that decision inside `hooks.Engine`.
+
+`Subscription.Unsubscribe()` is idempotent and thread-safe.
+
+## Hooks engine
+
+Authors declare hooks in `omakiten.yaml::config.hooks`:
+
+```yaml
+config:
+  hooks:
+    - on: guard.violated
+      when: { operation: task.delete }
+      do: exec
+      args:
+        argv: ["./scripts/log-blocked-delete.sh"]
+        timeout_ms: 3000
+```
+
+`on:` is matched against `event_type` (must be in
+`domain.KnownEventTypes`; the validator rejects typos at LoadBundle).
+`when:` is the same top-level payload-equality contract as `Filter.PayloadEq`.
+`do:` is the action's registered name; `args:` is per-action and
+documented in `.docs/hooks.md`.
+
+Dispatch is asynchronous — the engine spawns one goroutine per matched
+hook so a slow script never blocks the request that emitted the event.
+The goroutine:
+
+1. Drops any inherited request deadline so the action's own timeout
+   takes effect (`exec` defaults to 30s).
+2. Calls `Action.Execute(ctx, ev, args)`. Panics are recovered.
+3. Emits `hook.executed` via `Store.RecordEntityEvent` with payload
+   `{hook_index, action, event_type, target_event_id, success, error?, duration_ms}`.
+
+`hook.executed` fires only when an action actually ran. Skipped hooks
+(missing action, payload non-match, hook channel gated false) do not
+emit it — the event records what happened, not what was tried.
+
+Mutating `omakiten.yaml::config.hooks` requires restarting the app for
+changes to take effect; the bundle is read once at startup like every
+other config block.
