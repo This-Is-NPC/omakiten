@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -141,7 +140,6 @@ func (m Model) updateTemplateDefaultPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 
 func (m Model) renderTemplateDefaultPicker() string {
 	options := buildTemplateDefaultOptions(m.repos.Editor)
-	contentWidth := m.availableWidth() - 4
 
 	template, _ := m.findTemplateBySlug(m.entityForm.slug)
 	// Mark the option that matches the template's current binding for the
@@ -154,10 +152,7 @@ func (m Model) renderTemplateDefaultPicker() string {
 
 	rows := make([]string, 0, len(options))
 	for index, opt := range options {
-		marker := normalMarker
-		if m.entityPicker.Cursor == index {
-			marker = m.styles.marker.Render(selectionMarker)
-		}
+		marker := m.cursorMarker(m.entityPicker.Cursor == index)
 		dot := " "
 		if opt.Kind == currentKind {
 			dot = "•"
@@ -168,10 +163,8 @@ func (m Model) renderTemplateDefaultPicker() string {
 		m.styles.kicker(fmt.Sprintf("Default kind · template %s · project %s", m.entityForm.slug, m.project.Slug)),
 		m.styles.hint.Render("up/down: move · enter: assign for this project (clears prior owner) · esc: cancel"),
 		"",
-		m.hRule(contentWidth),
 	}
-	header = append(header, m.sliceScrollRows(rows, m.entityPicker.Scroll, m.pickerViewportRows())...)
-	return m.renderPanel(strings.Join(header, "\n"))
+	return m.renderPickerPanel(header, rows, m.entityPicker.Scroll, m.pickerViewportRows())
 }
 
 // applyTemplateDefault delegates to app.TemplateService, which owns the

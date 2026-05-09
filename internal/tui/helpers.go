@@ -243,3 +243,36 @@ func (m Model) renderPanel(content string) string {
 func (m Model) hRule(width int) string {
 	return m.styles.separator.Render(strings.Repeat("─", width))
 }
+
+// cursorMarker returns the accent-styled selectionMarker when `selected`
+// is true, otherwise the neutral normalMarker. Pulled out so the
+// four-line "marker := normalMarker / if cursor == idx ..." boilerplate
+// stops repeating across every list / picker render. The comparison
+// stays at the callsite because cursor/index can be int (slice index),
+// int64 (domain id), or any other comparable — keeping the bool decision
+// outside means no generics or type-switching here.
+func (m Model) cursorMarker(selected bool) string {
+	if selected {
+		return m.styles.marker.Render(selectionMarker)
+	}
+	return normalMarker
+}
+
+// renderPickerPanel is the canonical assembly for any "kicker + hint +
+// optional meta + horizontal rule + scrollable list, all wrapped in
+// the standard panel" surface. The picker shape — used by the persona /
+// theme / config / template-default / blocker pickers — is now declared
+// once: callers build only the variant prefix (kicker, hint, optional
+// metaRow lines) and pass dataRows + the picker's scroll/viewport state.
+//
+// The `header` slice is taken verbatim, then the rule, the scroll-clipped
+// data rows, and the panel chrome are appended. Future tweaks ("every
+// picker gets a count badge", "rule glyph changes", "panel chrome adds
+// a footer") land here instead of in five render files.
+func (m Model) renderPickerPanel(header, dataRows []string, scroll, viewport int) string {
+	lines := make([]string, 0, len(header)+len(dataRows)+1)
+	lines = append(lines, header...)
+	lines = append(lines, m.hRule(m.availableWidth()-4))
+	lines = append(lines, m.sliceScrollRows(dataRows, scroll, viewport)...)
+	return m.renderPanel(strings.Join(lines, "\n"))
+}

@@ -695,27 +695,22 @@ func (m Model) renderBlockerPicker() string {
 		return m.renderPanel("Task not found. Press esc to return.")
 	}
 
-	contentWidth := m.availableWidth() - 4
-	lines := []string{
+	header := []string{
 		m.styles.kicker(fmt.Sprintf("Blockers · #%d", task.ID)),
 		m.styles.hint.Render("up/down: move · space: toggle · ctrl+s: save · esc: cancel"),
 		"",
 		m.styles.metaRow("Task", task.Title, metaRowLabelWidth),
 		"",
-		m.hRule(contentWidth),
 	}
 	candidates := m.blockerPickerCandidates()
 	if len(candidates) == 0 {
-		lines = append(lines, m.styles.hint.Render("No other tasks are available to block this task."))
-		return m.renderPanel(strings.Join(lines, "\n"))
+		empty := []string{m.styles.hint.Render("No other tasks are available to block this task.")}
+		return m.renderPickerPanel(header, empty, 0, 0)
 	}
 
 	dataRows := make([]string, 0, len(candidates))
 	for index, candidate := range candidates {
-		marker := normalMarker
-		if m.blockerPicker.Cursor == index {
-			marker = m.styles.marker.Render(selectionMarker)
-		}
+		marker := m.cursorMarker(m.blockerPicker.Cursor == index)
 		check := m.styles.hint.Render("[ ]")
 		if m.blockerPickerChecks[candidate.ID] {
 			check = m.styles.hintAccent.Render("[x]")
@@ -723,8 +718,7 @@ func (m Model) renderBlockerPicker() string {
 		meta := m.styles.hint.Render(fmt.Sprintf("%s · %s", candidate.BucketKey, candidate.Priority))
 		dataRows = append(dataRows, fmt.Sprintf("%s %s #%d %s  %s", marker, check, candidate.ID, candidate.Title, meta))
 	}
-	lines = append(lines, m.sliceScrollRows(dataRows, m.blockerPicker.Scroll, m.blockerPickerViewportRows())...)
-	return m.renderPanel(strings.Join(lines, "\n"))
+	return m.renderPickerPanel(header, dataRows, m.blockerPicker.Scroll, m.blockerPickerViewportRows())
 }
 
 func (m Model) renderTaskForm(title string) string {

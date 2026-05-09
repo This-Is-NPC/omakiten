@@ -303,13 +303,9 @@ func (m *Model) applyConfigSelection() {
 }
 
 func (m Model) renderThemePicker() string {
-	contentWidth := m.availableWidth() - 4
 	rows := make([]string, 0, len(m.themePickerOptions))
 	for index, opt := range m.themePickerOptions {
-		marker := normalMarker
-		if m.entityPicker.Cursor == index {
-			marker = m.styles.marker.Render(selectionMarker)
-		}
+		marker := m.cursorMarker(m.entityPicker.Cursor == index)
 		active := " "
 		if opt.Slug == m.theme.Key {
 			active = "•"
@@ -331,21 +327,15 @@ func (m Model) renderThemePicker() string {
 		m.styles.kicker(fmt.Sprintf("Theme · current: %s", m.theme.Key)),
 		m.styles.hint.Render("up/down: move · enter: apply (hot-reload) · esc: cancel"),
 		"",
-		m.hRule(contentWidth),
 	}
-	header = append(header, m.sliceScrollRows(rows, m.entityPicker.Scroll, m.pickerViewportRows())...)
-	return m.renderPanel(strings.Join(header, "\n"))
+	return m.renderPickerPanel(header, rows, m.entityPicker.Scroll, m.pickerViewportRows())
 }
 
 func (m Model) renderConfigPicker() string {
-	contentWidth := m.availableWidth() - 4
 	active := filepath.Base(m.repos.Editor.Path())
 	rows := make([]string, 0, len(m.configPickerOptions))
 	for index, opt := range m.configPickerOptions {
-		marker := normalMarker
-		if m.entityPicker.Cursor == index {
-			marker = m.styles.marker.Render(selectionMarker)
-		}
+		marker := m.cursorMarker(m.entityPicker.Cursor == index)
 		dot := " "
 		if opt.Filename == active {
 			dot = "•"
@@ -360,8 +350,6 @@ func (m Model) renderConfigPicker() string {
 		m.styles.kicker(fmt.Sprintf("Config profile · active: %s", active)),
 		m.styles.hint.Render("up/down: move · enter: select (restart required) · esc: cancel"),
 		"",
-		m.hRule(contentWidth),
 	}
-	header = append(header, m.sliceScrollRows(rows, m.entityPicker.Scroll, m.pickerViewportRows())...)
-	return m.renderPanel(strings.Join(header, "\n"))
+	return m.renderPickerPanel(header, rows, m.entityPicker.Scroll, m.pickerViewportRows())
 }

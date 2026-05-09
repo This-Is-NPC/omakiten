@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -160,35 +159,26 @@ func (m *Model) openSelectedEntityViewForSlug(kind entityKind, slug string) {
 
 func (m Model) renderPersonaPicker() string {
 	persona, _ := m.findPersonaBySlug(m.entityForm.slug)
-	contentWidth := m.availableWidth() - 4
 
 	skills := append([]domain.Skill(nil), m.skills...)
 	sort.Slice(skills, func(i, j int) bool { return skills[i].Key < skills[j].Key })
 
 	dataRows := make([]string, 0, len(skills)+1)
 	for index, skill := range skills {
-		marker := normalMarker
 		check := "[ ]"
 		if m.entityForm.pickerChecks[skill.Key] {
 			check = "[x]"
 		}
-		if m.entityPicker.Cursor == index {
-			marker = m.styles.marker.Render(selectionMarker)
-		}
+		marker := m.cursorMarker(m.entityPicker.Cursor == index)
 		dataRows = append(dataRows, fmt.Sprintf("%s %s %s — %s", marker, check, skill.Key, skill.Name))
 	}
-	addMarker := normalMarker
-	if m.entityPicker.Cursor == len(skills) {
-		addMarker = m.styles.marker.Render(selectionMarker)
-	}
+	addMarker := m.cursorMarker(m.entityPicker.Cursor == len(skills))
 	dataRows = append(dataRows, fmt.Sprintf("%s + create new skill (opens $EDITOR)", addMarker))
 
-	lines := []string{
+	header := []string{
 		m.styles.kicker(fmt.Sprintf("Skills for persona · %s", persona.Key)),
 		m.styles.hint.Render("up/down: move · space: toggle · enter on '+ create new': new skill · ctrl+s: save · esc: cancel"),
 		"",
-		m.hRule(contentWidth),
 	}
-	lines = append(lines, m.sliceScrollRows(dataRows, m.entityPicker.Scroll, m.pickerViewportRows())...)
-	return m.renderPanel(strings.Join(lines, "\n"))
+	return m.renderPickerPanel(header, dataRows, m.entityPicker.Scroll, m.pickerViewportRows())
 }

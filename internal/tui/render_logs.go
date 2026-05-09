@@ -175,10 +175,7 @@ func (m Model) renderLogsWidePanel() string {
 	dataRows := make([]string, 0, limit)
 	for i := 0; i < limit; i++ {
 		log := m.logs[i]
-		marker := normalMarker
-		if i == m.logsSelected {
-			marker = m.styles.marker.Render(selectionMarker)
-		}
+		marker := m.cursorMarker(m.logsSelected == i)
 
 		timeStr := log.StartedAt
 		if len(timeStr) > 12 {
@@ -232,10 +229,7 @@ func (m Model) renderLogsCompactPanel() string {
 	dataRows := make([]string, 0, limit)
 	for i := 0; i < limit; i++ {
 		log := m.logs[i]
-		marker := normalMarker
-		if i == m.logsSelected {
-			marker = m.styles.marker.Render(selectionMarker)
-		}
+		marker := m.cursorMarker(m.logsSelected == i)
 		timeStr := log.StartedAt
 		if len(timeStr) > 8 {
 			timeStr = timeStr[len(timeStr)-8:]
