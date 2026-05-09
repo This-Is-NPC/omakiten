@@ -96,15 +96,17 @@ func (m Model) renderHeader() string {
 }
 
 // renderInput renders the modal text-input bar shown when the user is
-// adding a comment or typing a move target. Lives in the chrome layer
-// because it's a screen-level surface, not a per-view widget.
+// typing a move target (modeMove). The comment modal lives inside the
+// task-view chrome and is rendered by renderCommentInput; this top-bar
+// surface is only active for modeMove. Lives in the chrome layer because
+// it's a screen-level surface, not a per-view widget.
 func (m Model) renderInput() string {
 	// Modal input is always the active surface while it's on screen, so
 	// override the neutral default border with the accent — the user is
 	// typing here and the focus cue should match the form's focused-field
 	// treatment.
 	style := m.styles.input.BorderForeground(m.styles.hintAccent.GetForeground())
-	return indentBlock(style.Render(fmt.Sprintf("%s: %s", m.status, m.input)), 2)
+	return indentBlock(style.Render(fmt.Sprintf("%s: %s", m.status, m.moveInput.View())), 2)
 }
 
 // renderCurrentView is the screen dispatcher: which renderer fires for the

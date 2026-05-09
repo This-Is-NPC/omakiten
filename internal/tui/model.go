@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -42,6 +43,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()
 	model.commentInput = newCommentInput()
+	model.moveInput = newMoveInput()
 	detailscreen.SetStyles(model.styles.info)
 	if project.ID == 0 {
 		// Empty project — open on the multi-project Home picker.
@@ -197,22 +199,44 @@ func newTaskTitleInput() textinput.Model {
 // newTaskDescriptionInput is the canonical textarea config for the
 // description row. Line numbers stay off (the form is not a code editor)
 // and the soft prompt is blanked so the visible text starts at column 0,
-// matching the title row visually.
+// matching the title row visually. KeyMap.InsertNewline accepts both a
+// bare Enter (the form's own save key is ctrl+s, so Enter is free for
+// newlines) and the modifier-Enter set so terminals that emit
+// alt/shift/ctrl+j-Enter also insert a newline natively — the prior
+// hand-rolled InsertString shim is gone.
 func newTaskDescriptionInput() textarea.Model {
 	t := textarea.New()
 	t.Prompt = ""
 	t.ShowLineNumbers = false
 	t.CharLimit = 0
+	t.KeyMap.InsertNewline = key.NewBinding(
+		key.WithKeys("enter", "shift+enter", "alt+enter", "ctrl+j", "ctrl+m"),
+		key.WithHelp("enter · alt+enter · shift+enter", "insert newline"),
+	)
 	return t
 }
 
 // newCommentInput is the textarea reused by the comment-add and
 // comment-edit modal flows. Same defaults as the description field so
-// the two modal surfaces feel uniform.
+// the two modal surfaces feel uniform — including the modifier-Enter
+// rebind so updateInput can keep treating bare Enter as save.
 func newCommentInput() textarea.Model {
 	t := textarea.New()
 	t.Prompt = ""
 	t.ShowLineNumbers = false
+	t.CharLimit = 0
+	bindings := newCommentInputBindings()
+	t.KeyMap.InsertNewline = bindings.InsertNewline
+	return t
+}
+
+// newMoveInput is the canonical textinput used by the modal move flow
+// (`m` then type a bucket key). Prompt is blanked because the chrome
+// already labels the field with "Target bucket key:"; CharLimit stays
+// zero so user-defined bucket slugs of any length round-trip.
+func newMoveInput() textinput.Model {
+	t := textinput.New()
+	t.Prompt = ""
 	t.CharLimit = 0
 	return t
 }

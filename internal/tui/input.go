@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/app"
@@ -13,8 +14,8 @@ import (
 // beginInput puts the model into a modal text-input state. Used when the
 // user presses 'c' (comment), 'e' on a focused comment (edit), or 'm'
 // (move). Comment modes own a multi-line bubbles textarea (caret + arrow
-// nav + paste); modeMove keeps the simple m.input string because a bucket
-// key is a single short token.
+// nav + paste); modeMove owns a single-line bubbles textinput so cursor
+// movement, word-jump, and kill-line all work natively.
 func (m *Model) beginInput(mode inputMode, status, prefill string) {
 	m.mode = mode
 	m.status = status
@@ -27,60 +28,64 @@ func (m *Model) beginInput(mode inputMode, status, prefill string) {
 		m.commentInput.SetHeight(commentInputHeight)
 		m.commentInput.CursorEnd()
 		m.commentInput.Focus()
-		m.input = ""
+		m.moveInput.Reset()
 	default:
-		m.input = prefill
+		m.moveInput = newMoveInput()
+		m.moveInput.SetValue(prefill)
+		m.moveInput.CursorEnd()
+		m.moveInput.Focus()
 	}
 }
 
 // updateInput is the per-keystroke handler while m.mode != modeNormal.
-// Comment modes delegate every key to the textarea so arrow navigation,
-// home/end, and paste all work; only enter (without modifiers) and esc
-// are intercepted. modeMove keeps the legacy single-line append/backspace
-// loop because the input is a short bucket key.
+// Both modal surfaces are bubbles components — every key not claimed by
+// the parent (Save / Cancel / quit) is forwarded so cursor movement,
+// word-jump, kill-line, paste, etc. all work natively. Modifier-Enter
+// (shift+enter / alt+enter / ctrl+j) is bound to KeyMap.InsertNewline
+// inside `newCommentInput`, so a bare Enter consistently means "submit"
+// across every modal mode without a hand-rolled rune-append loop.
 func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
+	if msg.String() == "ctrl+c" {
 		return m, tea.Quit
-	case "esc":
-		m.mode = modeNormal
-		m.input = ""
-		m.commentEditID = 0
-		m.commentInput = newCommentInput()
-		m.status = "Cancelled"
-		return m, nil
 	}
 	if m.mode == modeComment || m.mode == modeCommentEdit {
-		// Plain Enter saves; alt/shift/ctrl-Enter all emit a newline so
-		// the user can compose multi-line bodies with the modifier their
-		// terminal supports. bubbles' textarea does not recognise the
-		// modifier-Enter strings as newlines on its own, so we intercept
-		// them and inject "\n" directly. Every other key is forwarded.
-		key := msg.String()
-		if key == "enter" {
-			m.submitInput()
+		bindings := newCommentInputBindings()
+		switch {
+		case key.Matches(msg, bindings.Cancel):
+			m.cancelInput()
 			return m, nil
-		}
-		if isNewlineModifier(key) {
-			m.commentInput.InsertString("\n")
+		case key.Matches(msg, bindings.Save):
+			m.submitInput()
 			return m, nil
 		}
 		var cmd tea.Cmd
 		m.commentInput, cmd = m.commentInput.Update(msg)
 		return m, cmd
 	}
-	// modeMove: legacy single-line input.
-	switch msg.String() {
-	case "enter":
+	bindings := newMoveInputBindings()
+	switch {
+	case key.Matches(msg, bindings.Cancel):
+		m.cancelInput()
+		return m, nil
+	case key.Matches(msg, bindings.Save):
 		m.submitInput()
-	case "backspace", "ctrl+h":
-		if len(m.input) > 0 {
-			m.input = m.input[:len(m.input)-1]
-		}
-	default:
-		m.input += msg.String()
+		return m, nil
 	}
-	return m, nil
+	var cmd tea.Cmd
+	m.moveInput, cmd = m.moveInput.Update(msg)
+	return m, cmd
+}
+
+// cancelInput aborts the active modal without persisting anything,
+// returning the model to normal navigation. Both bubbles inputs are
+// recreated so the next beginInput starts from a clean slate (no
+// leaked text, no leaked cursor position).
+func (m *Model) cancelInput() {
+	m.mode = modeNormal
+	m.commentEditID = 0
+	m.commentInput = newCommentInput()
+	m.moveInput = newMoveInput()
+	m.status = "Cancelled"
 }
 
 // submitInput resolves the modal input by dispatching to the appropriate
@@ -93,7 +98,7 @@ func (m *Model) submitInput() {
 	if m.mode == modeComment || m.mode == modeCommentEdit {
 		input = strings.TrimSpace(m.commentInput.Value())
 	} else {
-		input = strings.TrimSpace(m.input)
+		input = strings.TrimSpace(m.moveInput.Value())
 	}
 	if input == "" {
 		m.status = "Input is required"
@@ -144,9 +149,9 @@ func (m *Model) submitInput() {
 	if err != nil {
 		m.status = err.Error()
 		m.mode = modeNormal
-		m.input = ""
 		m.commentEditID = 0
 		m.commentInput = newCommentInput()
+		m.moveInput = newMoveInput()
 		return
 	}
 	if err := m.refresh(); err != nil {
@@ -163,9 +168,9 @@ func (m *Model) submitInput() {
 		}
 	}
 	m.mode = modeNormal
-	m.input = ""
 	m.commentEditID = 0
 	m.commentInput = newCommentInput()
+	m.moveInput = newMoveInput()
 }
 
 // findCommentByID looks the requested comment up in the loaded snapshot

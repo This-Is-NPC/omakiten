@@ -153,16 +153,10 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case taskFieldTitle:
 		m.taskTitleInput, cmd = m.taskTitleInput.Update(msg)
 	case taskFieldDescription:
-		// Modifier-Enter strings have to be funnelled into an InsertString
-		// — bubbles textarea only treats a plain Enter as a newline.
-		// Without this every alt+enter from the test harness (and from
-		// terminals that emit the modifier form by default) lands as a
-		// no-op, so multi-line descriptions cannot be composed.
-		if isNewlineModifier(msg.String()) {
-			m.taskDescriptionInput.InsertString("\n")
-		} else {
-			m.taskDescriptionInput, cmd = m.taskDescriptionInput.Update(msg)
-		}
+		// Modifier-Enter is wired into the textarea's KeyMap.InsertNewline
+		// (see newTaskDescriptionInput), so a bare Enter still falls through
+		// to the form-level ctrl+s/save plumbing because nothing matches it.
+		m.taskDescriptionInput, cmd = m.taskDescriptionInput.Update(msg)
 	}
 	return *m, cmd
 }

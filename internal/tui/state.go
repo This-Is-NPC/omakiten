@@ -85,14 +85,17 @@ type Model struct {
 	tokenBadgeYellow int
 	tokenBadgeRed    int
 
-	width    int
-	height   int
-	top      topID
-	sub      subID
-	mode     inputMode
-	input    string
-	status   string
-	moveMode bool
+	width  int
+	height int
+	top    topID
+	sub    subID
+	mode   inputMode
+	// moveInput is the bubbles textinput powering modeMove (the modal
+	// triggered by `m` followed by typing a target bucket key). Reset
+	// on every beginInput call so prior values don't leak across moves.
+	moveInput textinput.Model
+	status    string
+	moveMode  bool
 	helpOpen bool
 	helpAll  bool
 	// viewHistory is the in-memory back-stack populated whenever the user

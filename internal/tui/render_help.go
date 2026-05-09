@@ -12,6 +12,12 @@ func (m Model) renderHelp() string {
 		title    string
 		bindings []binding
 	}
+	commentKeys := newCommentInputBindings()
+	commentInputBindings := []binding{
+		{commentKeys.Save.Help().Key, commentKeys.Save.Help().Desc},
+		{commentKeys.InsertNewline.Help().Key, commentKeys.InsertNewline.Help().Desc},
+		{commentKeys.Cancel.Help().Key, commentKeys.Cancel.Help().Desc},
+	}
 	groups := []group{
 		{"Global", []binding{
 			{"?", "close this overlay"},
@@ -81,11 +87,7 @@ func (m Model) renderHelp() string {
 			{"d · d", "arm delete comment, then confirm"},
 			{"esc", "back to task view"},
 		}},
-		{"Comment input", []binding{
-			{"enter", "save comment (new) · save edit (existing)"},
-			{"alt+enter · shift+enter", "insert newline"},
-			{"esc", "cancel"},
-		}},
+		{"Comment input", commentInputBindings},
 		{"Task form", []binding{
 			{"tab", "switch field"},
 			{"← → · h l", "change priority"},
