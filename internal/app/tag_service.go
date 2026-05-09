@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"omakiten/internal/activity"
@@ -15,11 +16,45 @@ const (
 )
 
 type TagService struct {
-	repo TagRepository
+	repo   TagRepository
+	events EventRepository
 }
 
 func NewTagService(repo TagRepository) *TagService {
 	return &TagService{repo: repo}
+}
+
+// NewTagServiceWithEvents wires emission of tag.added / tag.removed
+// alongside the canonical write. events may be nil (callers that do not
+// want emission keep using NewTagService); telemetry errors are swallowed
+// so they cannot break business logic.
+func NewTagServiceWithEvents(repo TagRepository, events EventRepository) *TagService {
+	return &TagService{repo: repo, events: events}
+}
+
+func (s *TagService) emitTagEvent(ctx context.Context, eventType, entityType string, entityID, projectID, tagID int64, tagName string) {
+	if s.events == nil {
+		return
+	}
+	body, err := json.Marshal(map[string]any{
+		"entity_type": entityType,
+		"entity_id":   entityID,
+		"tag_id":      tagID,
+		"tag_name":    tagName,
+	})
+	if err != nil {
+		return
+	}
+	rowEntity := domain.EventEntityTask
+	rowEntityID := entityID
+	switch entityType {
+	case TagEntityProject:
+		rowEntity = domain.EventEntityProject
+		rowEntityID = projectID
+	case TagEntityError:
+		rowEntity = domain.EventEntityError
+	}
+	_ = s.events.RecordEntityEvent(ctx, rowEntity, rowEntityID, projectID, eventType, string(body))
 }
 
 func (s *TagService) Add(ctx context.Context, project domain.ProjectContext, entityType string, entityID int64, tagName string) (tag domain.Tag, err error) {
@@ -68,6 +103,9 @@ func (s *TagService) Add(ctx context.Context, project domain.ProjectContext, ent
 	default:
 		err = domain.NewError(domain.ErrValidation, "entity_type must be 'task', 'project', or 'error'", map[string]any{"entity_type": entityType})
 	}
+	if err == nil {
+		s.emitTagEvent(ctx, domain.EventTypeTagAdded, entityType, entityID, project.ID, tag.ID, tag.Name)
+	}
 	return
 }
 
@@ -105,6 +143,9 @@ func (s *TagService) Remove(ctx context.Context, project domain.ProjectContext, 
 		err = s.repo.RemoveErrorTag(ctx, entityID, tagID)
 	default:
 		err = domain.NewError(domain.ErrValidation, "entity_type must be 'task', 'project', or 'error'", map[string]any{"entity_type": entityType})
+	}
+	if err == nil {
+		s.emitTagEvent(ctx, domain.EventTypeTagRemoved, entityType, entityID, project.ID, tagID, "")
 	}
 	return
 }

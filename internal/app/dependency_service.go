@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 
 	"omakiten/internal/activity"
@@ -10,11 +11,31 @@ import (
 )
 
 type DependencyService struct {
-	repo DependencyRepository
+	repo   DependencyRepository
+	events EventRepository
 }
 
 func NewDependencyService(repo DependencyRepository) *DependencyService {
 	return &DependencyService{repo: repo}
+}
+
+// NewDependencyServiceWithEvents wires emission of dependency.added /
+// dependency.removed alongside the canonical write. events may be nil.
+func NewDependencyServiceWithEvents(repo DependencyRepository, events EventRepository) *DependencyService {
+	return &DependencyService{repo: repo, events: events}
+}
+
+func (s *DependencyService) emitDependencyEvent(ctx context.Context, eventType string, projectID, taskID, dependsOnTaskID int64) {
+	if s.events == nil {
+		return
+	}
+	body, err := json.Marshal(map[string]any{
+		"depends_on_task_id": dependsOnTaskID,
+	})
+	if err != nil {
+		return
+	}
+	_ = s.events.RecordEntityEvent(ctx, domain.EventEntityTask, taskID, projectID, eventType, string(body))
 }
 
 func (s *DependencyService) Add(ctx context.Context, project domain.ProjectContext, taskID, dependsOnTaskID int64) (dependency domain.TaskDependency, err error) {
@@ -53,6 +74,9 @@ func (s *DependencyService) Add(ctx context.Context, project domain.ProjectConte
 	}
 
 	dependency, err = s.repo.AddTaskDependency(ctx, project.ID, taskID, dependsOnTaskID)
+	if err == nil {
+		s.emitDependencyEvent(ctx, domain.EventTypeDependencyAdded, project.ID, taskID, dependsOnTaskID)
+	}
 	return
 }
 
@@ -73,6 +97,9 @@ func (s *DependencyService) Remove(ctx context.Context, project domain.ProjectCo
 		return
 	}
 	err = s.repo.RemoveTaskDependency(ctx, project.ID, taskID, dependsOnTaskID)
+	if err == nil {
+		s.emitDependencyEvent(ctx, domain.EventTypeDependencyRemoved, project.ID, taskID, dependsOnTaskID)
+	}
 	return
 }
 

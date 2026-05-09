@@ -84,10 +84,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 
 	if err := store.ApplyConfig(ctx, sqlite.ConfigKnobs{
-		BusyTimeoutMs:           bundle.Config.SQLite.BusyTimeoutMs,
-		ActivityLogMaxRows:      bundle.Config.ActivityLog.MaxRows,
-		ActivityLogMaxAgeDays:   bundle.Config.ActivityLog.MaxAgeDays,
+		BusyTimeoutMs:            bundle.Config.SQLite.BusyTimeoutMs,
+		ActivityLogMaxRows:       bundle.Config.ActivityLog.MaxRows,
+		ActivityLogMaxAgeDays:    bundle.Config.ActivityLog.MaxAgeDays,
 		EventsDefaultRecentLimit: bundle.Config.Events.DefaultRecentLimit,
+		EventsPolicy:             bundle.Config.Events,
 	}); err != nil {
 		_ = store.Close()
 		return nil, err

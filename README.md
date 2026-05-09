@@ -109,6 +109,7 @@ The full MCP surface (35 tools, 2 resources, 8 prompts) is documented in the [MC
 - [Workflow Guards Guide](.docs/guards-guide.md)
 - [Theming Guide](.docs/theming-guide.md)
 - [Data Model Guide](.docs/data-model-guide.md)
+- [Domain Events Catalog](.docs/domain-events.md)
 
 **Project**
 

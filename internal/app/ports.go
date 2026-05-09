@@ -88,6 +88,11 @@ type CommentRepository interface {
 // so the service layer never has to know the underlying table layout.
 type EventRepository interface {
 	RecordTaskEvent(ctx context.Context, projectID, taskID int64, eventType, body, payload string) (domain.Event, error)
+	// RecordEntityEvent persists a domain event with the agent attribution
+	// carried in ctx. Used by workflow/guard emission paths and by the
+	// ErrorService domain events. entityID may be 0 for events whose
+	// subject is the project as a whole.
+	RecordEntityEvent(ctx context.Context, entityType string, entityID int64, projectID int64, eventType string, payload string) error
 	ListTaskActivity(ctx context.Context, projectID, taskID int64, order string) ([]domain.Event, error)
 }
 

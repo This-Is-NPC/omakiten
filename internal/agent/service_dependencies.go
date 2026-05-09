@@ -11,7 +11,7 @@ func (s *Service) AddDependency(ctx context.Context, input AddDependencyInput) (
 	if err != nil {
 		return DependencyResponse{}, err
 	}
-	dependency, err := app.NewDependencyService(s.repo).Add(ctx, project, input.TaskID, input.DependsOnTaskID)
+	dependency, err := app.NewDependencyServiceWithEvents(s.repo, s.repo).Add(ctx, project, input.TaskID, input.DependsOnTaskID)
 	if err != nil {
 		return DependencyResponse{}, err
 	}
@@ -33,7 +33,7 @@ func (s *Service) RemoveDependency(ctx context.Context, input RemoveDependencyIn
 			},
 		}, nil
 	}
-	if err := app.NewDependencyService(s.repo).Remove(ctx, project, input.TaskID, input.DependsOnTaskID); err != nil {
+	if err := app.NewDependencyServiceWithEvents(s.repo, s.repo).Remove(ctx, project, input.TaskID, input.DependsOnTaskID); err != nil {
 		return RemoveDependencyResponse{}, err
 	}
 	return RemoveDependencyResponse{Project: projectSummary(project), Removed: true}, nil

@@ -57,12 +57,28 @@ config:
   solutions:
     default_top_limit: 10
     max_top_limit: 100
-  # events.default_recent_limit is the fallback row count Store.ListRecentEvents
-  # applies when the caller passes <=0. Raise for richer audit dumps; the
-  # query is indexed on (event_type, created_at, id) so larger values are
-  # cheap.
+  # events tunes the per-event-type domain log:
+  #   default_recent_limit — Store.ListRecentEvents fallback when <=0.
+  #   defaults — channel policy applied to every known event type.
+  #     log:       persist to the events table (today: gate the
+  #                RecordEntityEvent / RecordTaskEvent / RecordEvent paths).
+  #     broadcast: in-process pub/sub fanout (reserved for the upcoming
+  #                event-bus task; declared today so configs stay stable).
+  #     hook:      YAML-driven hook dispatcher (reserved; same).
+  #   overrides — per-event_type policy that wins over defaults. Pointer
+  #     semantics: omit a field to inherit the default; declare false to
+  #     opt out. Unknown keys are rejected at load time to catch typos.
   events:
     default_recent_limit: 50
+    defaults:
+      log: true
+      broadcast: true
+      hook: true
+    overrides:
+      tag.added:
+        log: false
+      tag.removed:
+        log: false
   # search tunes the heuristics shared across agent-side text ranking
   # (similar-task hints in tasks.create_intent, query overlap scoring).
   # stopwords is the lowercase token list dropped before scoring; add

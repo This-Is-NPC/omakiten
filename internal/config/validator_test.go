@@ -74,7 +74,10 @@ func TestValidateBundleErrors(t *testing.T) {
 				SQLite:      SQLiteSettings{BusyTimeoutMs: 5000},
 				ActivityLog: ActivityLogSettings{MaxRows: 500, MaxAgeDays: 7},
 				Solutions:   SolutionsSettings{DefaultTopLimit: 10, MaxTopLimit: 100},
-				Events:      EventsSettings{DefaultRecentLimit: 50},
+				Events: EventsSettings{
+					DefaultRecentLimit: 50,
+					Defaults:           EventChannelSettings{Log: &tru, Broadcast: &tru, Hook: &tru},
+				},
 				Search:      SearchSettings{Stopwords: []string{"and", "the"}},
 				TagSynonyms: map[string]string{"golang": "go"},
 			},
@@ -148,6 +151,12 @@ func TestValidateBundleErrors(t *testing.T) {
 		{"guard comments_tagged zero count", func(b *Bundle) {
 			b.Workflows[0].Transitions = []Transition{{From: 1, To: 1, Guards: []TransitionGuard{{Type: "comments_tagged", Tag: "resume", Count: 0}}}}
 		}, "count must be"},
+		{"events defaults log missing", func(b *Bundle) {
+			b.Config.Events.Defaults.Log = nil
+		}, "config.events.defaults.log: required"},
+		{"events overrides unknown event_type", func(b *Bundle) {
+			b.Config.Events.Overrides = map[string]EventChannelSettings{"task.unknown": {}}
+		}, `unknown event_type "task.unknown"`},
 	}
 
 	for _, tc := range tests {

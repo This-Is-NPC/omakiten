@@ -128,7 +128,7 @@ config:
   sqlite: { busy_timeout_ms: 5000 }
   activity_log: { max_rows: 500, max_age_days: 7 }
   solutions: { default_top_limit: 10, max_top_limit: 100 }
-  events: { default_recent_limit: 50 }
+  events: { default_recent_limit: 50, defaults: { log: true, broadcast: true, hook: true } }
   search: { stopwords: [and, the] }
   tag_synonyms: { golang: go }
 workflows:

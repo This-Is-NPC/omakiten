@@ -163,6 +163,7 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 			ActivityLogMaxRows:       bundle.Config.ActivityLog.MaxRows,
 			ActivityLogMaxAgeDays:    bundle.Config.ActivityLog.MaxAgeDays,
 			EventsDefaultRecentLimit: bundle.Config.Events.DefaultRecentLimit,
+			EventsPolicy:             bundle.Config.Events,
 		}); err != nil {
 			_ = store.Close()
 			return nil, err

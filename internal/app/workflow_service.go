@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -104,6 +105,28 @@ const (
 	OperationUnarchive = "unarchive"
 )
 
+// GuardOperation* are the canonical free-form `operation` payload values
+// emitted with guard.violated events. Consumers filter on these strings;
+// the catalog stays fixed so log grouping/aggregation is stable.
+const (
+	GuardOperationTaskTransition = "task.transition"
+	GuardOperationTaskArchive    = "task.archive"
+	GuardOperationTaskUnarchive  = "task.unarchive"
+	GuardOperationTaskEdit       = "task.edit"
+	GuardOperationTaskDelete     = "task.delete"
+	GuardOperationCommentEdit    = "comment.edit"
+	GuardOperationCommentDelete  = "comment.delete"
+)
+
+// GuardRule* are the canonical free-form `rule` payload values emitted
+// alongside the operation. Transition guards reuse the guard.Type strings
+// so consumers can join with workflow YAML; permission denials use
+// "permissions" so they are easy to bucket.
+const (
+	GuardRuleTransition  = "transition_not_allowed"
+	GuardRulePermissions = "permissions"
+)
+
 // EntityTask / EntityComment are the entity classes ResolveBucketPermissions
 // arbitrates over. Keep these in lockstep with domain.BucketPermissions sub
 // fields.
@@ -150,7 +173,8 @@ func (s *WorkflowService) ResolveBucketPermissions(ctx context.Context, project 
 // the same comments_tagged / comments_min / blockers_in evaluator as
 // transition guards so adding a guard type benefits both code paths at once.
 // Returns nil when no guards are violated; otherwise a domain.ErrGuardViolation
-// with the first failing guard's hint and counts.
+// with the first failing guard's hint and counts. Emits guard.violated when
+// a guard fails, tagged with the supplied opPayload (e.g. task.archive).
 func (s *WorkflowService) EvaluateOperationGuards(ctx context.Context, projectID, taskID int64, operation string) error {
 	workflow, err := s.config.ActiveWorkflow(ctx)
 	if err != nil {
@@ -160,7 +184,58 @@ func (s *WorkflowService) EvaluateOperationGuards(ctx context.Context, projectID
 	if len(guards) == 0 {
 		return nil
 	}
-	return s.runGuards(ctx, projectID, taskID, guards)
+	opPayload := operationPayloadName(operation)
+	return s.runGuards(ctx, projectID, taskID, guards, opPayload)
+}
+
+// EmitGuardViolated records a guard.violated domain event. operation and
+// rule are free-form strings — call sites pick the values that name the
+// operation precisely. target carries identifiers (task_id, comment_id,
+// from_bucket, to_bucket). attempted_by is derived from the request
+// source: mcp -> "agent", anything else -> "user". Telemetry must not
+// break business logic; emission errors are swallowed.
+func (s *WorkflowService) EmitGuardViolated(ctx context.Context, projectID int64, entityType string, entityID int64, operation, rule, hint string, target map[string]any) {
+	if s.events == nil {
+		return
+	}
+	if target == nil {
+		target = map[string]any{}
+	}
+	body, err := json.Marshal(map[string]any{
+		"operation":    operation,
+		"rule":         rule,
+		"hint":         hint,
+		"target":       target,
+		"attempted_by": guardAttemptedBy(ctx),
+	})
+	if err != nil {
+		return
+	}
+	_ = s.events.RecordEntityEvent(ctx, entityType, entityID, projectID, domain.EventTypeGuardViolated, string(body))
+}
+
+// guardAttemptedBy derives the attempted_by tag from the request source.
+// MCP traffic is agent-driven; CLI/TUI are treated as user-driven.
+func guardAttemptedBy(ctx context.Context) string {
+	source, _, _, _, _ := activity.FromContext(ctx)
+	if source == "mcp" {
+		return "agent"
+	}
+	return "user"
+}
+
+// operationPayloadName maps the internal Operation* constant to the
+// canonical free-form `operation` payload value used in guard.violated.
+func operationPayloadName(operation string) string {
+	switch operation {
+	case OperationArchive:
+		return GuardOperationTaskArchive
+	case OperationDelete:
+		return GuardOperationTaskDelete
+	case OperationUnarchive:
+		return GuardOperationTaskUnarchive
+	}
+	return operation
 }
 
 // MoveTask runs the full move policy: resolve current/target buckets, enforce
@@ -220,10 +295,14 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 			return
 		}
 		if !allowed {
+			s.EmitGuardViolated(ctx, project.ID, domain.EventEntityTask, taskID,
+				GuardOperationTaskTransition, GuardRuleTransition,
+				"transition not allowed",
+				map[string]any{"task_id": taskID, "from_bucket_id": currentBucketID, "to_bucket_id": target.ID, "to_bucket": targetBucketKey})
 			err = domain.NewError(domain.ErrWorkflowInvalidTransition, "transition not allowed", map[string]any{"task_id": taskID, "from": currentBucketID, "to": target.ID})
 			return
 		}
-		if err = s.evaluateGuards(ctx, project.ID, taskID, currentBucketID, target.ID); err != nil {
+		if err = s.evaluateGuards(ctx, project.ID, taskID, currentBucketID, target.ID, targetBucketKey); err != nil {
 			return
 		}
 	}
@@ -251,30 +330,39 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 
 // evaluateGuards runs each guard attached to the (from, to) transition.
 // Order follows declaration order; the first violation short-circuits.
-func (s *WorkflowService) evaluateGuards(ctx context.Context, projectID, taskID, fromBucketID, toBucketID int64) error {
+// targetBucketKey carries the user-visible bucket name used in the
+// guard.violated payload's target.to_bucket.
+func (s *WorkflowService) evaluateGuards(ctx context.Context, projectID, taskID, fromBucketID, toBucketID int64, targetBucketKey string) error {
 	guards, err := s.repo.LoadTransitionGuards(ctx, fromBucketID, toBucketID)
 	if err != nil {
 		return err
 	}
-	return s.runGuards(ctx, projectID, taskID, guards)
+	target := map[string]any{"task_id": taskID, "from_bucket_id": fromBucketID, "to_bucket_id": toBucketID, "to_bucket": targetBucketKey}
+	return s.runGuards(ctx, projectID, taskID, guards, GuardOperationTaskTransition, target)
 }
 
 // runGuards is the shared evaluator. Both transition guards and operation
 // guards (archive/delete/unarchive) feed through here so a new guard type
-// only needs one switch arm.
-func (s *WorkflowService) runGuards(ctx context.Context, projectID, taskID int64, guards []domain.TransitionGuard) error {
+// only needs one switch arm. operation labels the call site for the
+// guard.violated payload; defaultTarget carries call-site-specific
+// identifiers and is overridden per check when needed.
+func (s *WorkflowService) runGuards(ctx context.Context, projectID, taskID int64, guards []domain.TransitionGuard, operation string, defaultTarget ...map[string]any) error {
+	target := map[string]any{"task_id": taskID}
+	if len(defaultTarget) > 0 && defaultTarget[0] != nil {
+		target = defaultTarget[0]
+	}
 	for _, guard := range guards {
 		switch guard.Type {
 		case "blockers_in":
-			if err := s.checkBlockersIn(ctx, projectID, taskID, guard.Buckets, guard.Hint); err != nil {
+			if err := s.checkBlockersIn(ctx, projectID, taskID, guard.Buckets, guard.Hint, operation, target); err != nil {
 				return err
 			}
 		case "comments_min":
-			if err := s.checkCommentsMin(ctx, projectID, taskID, guard.Count, guard.Hint); err != nil {
+			if err := s.checkCommentsMin(ctx, projectID, taskID, guard.Count, guard.Hint, operation, target); err != nil {
 				return err
 			}
 		case "comments_tagged":
-			if err := s.checkCommentsTagged(ctx, projectID, taskID, guard.Tag, guard.Count, guard.Hint); err != nil {
+			if err := s.checkCommentsTagged(ctx, projectID, taskID, guard.Tag, guard.Count, guard.Hint, operation, target); err != nil {
 				return err
 			}
 		}
@@ -366,7 +454,7 @@ func operationGuards(workflow domain.Workflow, operation string) []domain.Transi
 	return nil
 }
 
-func (s *WorkflowService) checkBlockersIn(ctx context.Context, projectID, taskID int64, allowedKeys []string, hint string) error {
+func (s *WorkflowService) checkBlockersIn(ctx context.Context, projectID, taskID int64, allowedKeys []string, hint, operation string, target map[string]any) error {
 	blockers, err := s.guards.ListTaskBlockerBuckets(ctx, projectID, taskID)
 	if err != nil {
 		return err
@@ -390,10 +478,11 @@ func (s *WorkflowService) checkBlockersIn(ctx context.Context, projectID, taskID
 		msg += ". Hint: " + hint
 		details["hint"] = hint
 	}
+	s.EmitGuardViolated(ctx, projectID, domain.EventEntityTask, taskID, operation, "blockers_in", msg, target)
 	return domain.NewError(domain.ErrGuardViolation, msg, details)
 }
 
-func (s *WorkflowService) checkCommentsMin(ctx context.Context, projectID, taskID int64, minCount int, hint string) error {
+func (s *WorkflowService) checkCommentsMin(ctx context.Context, projectID, taskID int64, minCount int, hint, operation string, target map[string]any) error {
 	count, err := s.guards.CountTaskComments(ctx, projectID, taskID)
 	if err != nil {
 		return err
@@ -407,10 +496,11 @@ func (s *WorkflowService) checkCommentsMin(ctx context.Context, projectID, taskI
 		msg += ". Hint: " + hint
 		details["hint"] = hint
 	}
+	s.EmitGuardViolated(ctx, projectID, domain.EventEntityTask, taskID, operation, "comments_min", msg, target)
 	return domain.NewError(domain.ErrGuardViolation, msg, details)
 }
 
-func (s *WorkflowService) checkCommentsTagged(ctx context.Context, projectID, taskID int64, tag string, minCount int, hint string) error {
+func (s *WorkflowService) checkCommentsTagged(ctx context.Context, projectID, taskID int64, tag string, minCount int, hint, operation string, target map[string]any) error {
 	if minCount < 1 {
 		minCount = 1
 	}
@@ -427,5 +517,6 @@ func (s *WorkflowService) checkCommentsTagged(ctx context.Context, projectID, ta
 		msg += ". Hint: " + hint
 		details["hint"] = hint
 	}
+	s.EmitGuardViolated(ctx, projectID, domain.EventEntityTask, taskID, operation, "comments_tagged", msg, target)
 	return domain.NewError(domain.ErrGuardViolation, msg, details)
 }

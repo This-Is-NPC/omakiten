@@ -55,15 +55,17 @@ func (s *Store) HardDeleteTask(ctx context.Context, projectID, taskID int64) (do
 	}
 
 	var event domain.Event
-	if err := tx.QueryRowContext(ctx, `
+	if s.shouldLogEvent(domain.EventTypeTaskRemoved) {
+		if err := tx.QueryRowContext(ctx, `
 INSERT INTO events(entity_type, project_id, event_type, body, payload)
 VALUES ('system', ?, ?, '', ?)
 RETURNING id, entity_type, COALESCE(entity_id, 0), project_id, event_type, body, payload, created_at
 `, projectID, domain.EventTypeTaskRemoved, string(payload)).Scan(
-		&event.ID, &event.EntityType, &event.EntityID, &event.ProjectID,
-		&event.EventType, &event.Body, &event.Payload, &event.CreatedAt,
-	); err != nil {
-		return domain.Event{}, fmt.Errorf("emit task.removed: %w", err)
+			&event.ID, &event.EntityType, &event.EntityID, &event.ProjectID,
+			&event.EventType, &event.Body, &event.Payload, &event.CreatedAt,
+		); err != nil {
+			return domain.Event{}, fmt.Errorf("emit task.removed: %w", err)
+		}
 	}
 
 	return event, tx.Commit()
@@ -116,18 +118,21 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 	if state == domain.TaskStateActive {
 		eventType = domain.EventTypeTaskUnarchived
 	}
-	payload, err := json.Marshal(map[string]any{
-		"from_bucket": prev.BucketKey,
-		"to_bucket":   bucketKey,
-		"from_state":  prev.State,
-		"to_state":    state,
-	})
-	if err != nil {
-		return domain.Task{}, domain.Event{}, err
-	}
-	event, err := insertTaskEvent(ctx, tx, projectID, taskID, eventType, "", string(payload))
-	if err != nil {
-		return domain.Task{}, domain.Event{}, err
+	var event domain.Event
+	if s.shouldLogEvent(eventType) {
+		payload, marshalErr := json.Marshal(map[string]any{
+			"from_bucket": prev.BucketKey,
+			"to_bucket":   bucketKey,
+			"from_state":  prev.State,
+			"to_state":    state,
+		})
+		if marshalErr != nil {
+			return domain.Task{}, domain.Event{}, marshalErr
+		}
+		event, err = insertTaskEvent(ctx, tx, projectID, taskID, eventType, "", string(payload))
+		if err != nil {
+			return domain.Task{}, domain.Event{}, err
+		}
 	}
 
 	return task, event, tx.Commit()

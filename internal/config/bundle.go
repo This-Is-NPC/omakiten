@@ -332,12 +332,52 @@ type SolutionsSettings struct {
 	MaxTopLimit int `yaml:"max_top_limit" json:"max_top_limit"`
 }
 
-// EventsSettings declares the fallback recent-events limit used by
-// `Store.ListRecentEvents` when callers pass <=0. Required block.
+// EventsSettings declares per-event-type channel policies (log to db,
+// broadcast in-process, dispatch to hooks) plus the fallback recent-events
+// limit used by `Store.ListRecentEvents` when callers pass <=0. Defaults
+// apply to every known event type unless overridden in Overrides; an
+// override only carries the channels it changes (others inherit defaults).
+// Broadcast and Hook are reserved for the upcoming event-bus task —
+// declared today so authors can stage configuration alongside log gating.
 type EventsSettings struct {
 	// DefaultRecentLimit is the fallback row count applied when the
 	// caller passes <=0. Required; > 0.
 	DefaultRecentLimit int `yaml:"default_recent_limit" json:"default_recent_limit"`
+	// Defaults applies to every known event type unless explicitly
+	// overridden. Required block.
+	Defaults EventChannelSettings `yaml:"defaults" json:"defaults"`
+	// Overrides keys are event_type strings (e.g. "tag.added"); values
+	// override only the channels they declare. The validator rejects
+	// keys outside domain.KnownEventTypes so typos surface at load time
+	// rather than as silent no-ops.
+	Overrides map[string]EventChannelSettings `yaml:"overrides,omitempty" json:"overrides,omitempty"`
+}
+
+// EventChannelSettings is the per-event tri-channel policy. Pointer fields
+// distinguish "inherit default" (nil) from explicit false. The runtime
+// only consumes Log today; Broadcast and Hook are reserved for the
+// upcoming event-bus task.
+type EventChannelSettings struct {
+	Log       *bool `yaml:"log,omitempty" json:"log,omitempty"`
+	Broadcast *bool `yaml:"broadcast,omitempty" json:"broadcast,omitempty"`
+	Hook      *bool `yaml:"hook,omitempty" json:"hook,omitempty"`
+}
+
+// ResolveLog reports whether the given event_type should be persisted to
+// the events table. Lookup is overrides → defaults; nil leaves at every
+// layer mean "use the layer default" so authors can omit fields. When
+// neither layer declares Log explicitly, the conservative answer is true
+// (preserves the pre-feature behaviour).
+func (e EventsSettings) ResolveLog(eventType string) bool {
+	if override, ok := e.Overrides[eventType]; ok {
+		if override.Log != nil {
+			return *override.Log
+		}
+	}
+	if e.Defaults.Log != nil {
+		return *e.Defaults.Log
+	}
+	return true
 }
 
 // SearchSettings tunes text-similarity heuristics shared across

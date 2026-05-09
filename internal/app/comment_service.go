@@ -106,6 +106,9 @@ func (s *CommentService) Edit(ctx context.Context, project domain.ProjectContext
 			return
 		}
 		if !allowed {
+			s.workflow.EmitGuardViolated(ctx, project.ID, domain.EventEntityTask, existing.TaskID,
+				GuardOperationCommentEdit, GuardRulePermissions, hint,
+				map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "entity": EntityComment, "operation": PermissionEdit})
 			err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "hint": hint, "entity": EntityComment, "operation": PermissionEdit})
 			return
 		}
@@ -156,6 +159,9 @@ func (s *CommentService) Remove(ctx context.Context, project domain.ProjectConte
 			return
 		}
 		if !allowed {
+			s.workflow.EmitGuardViolated(ctx, project.ID, domain.EventEntityTask, existing.TaskID,
+				GuardOperationCommentDelete, GuardRulePermissions, hint,
+				map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "entity": EntityComment, "operation": PermissionDelete})
 			err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "hint": hint, "entity": EntityComment, "operation": PermissionDelete})
 			return
 		}

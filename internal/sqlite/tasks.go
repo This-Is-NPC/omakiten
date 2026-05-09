@@ -52,9 +52,11 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 		return domain.Task{}, err
 	}
 
-	payload := fmt.Sprintf(`{"bucket":%q}`, bucketKey)
-	if _, err := insertTaskEvent(ctx, tx, projectID, task.ID, domain.EventTypeTaskCreated, "", payload); err != nil {
-		return domain.Task{}, err
+	if s.shouldLogEvent(domain.EventTypeTaskCreated) {
+		payload := fmt.Sprintf(`{"bucket":%q}`, bucketKey)
+		if _, err := insertTaskEvent(ctx, tx, projectID, task.ID, domain.EventTypeTaskCreated, "", payload); err != nil {
+			return domain.Task{}, err
+		}
 	}
 
 	return task, tx.Commit()
@@ -173,7 +175,7 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 		return domain.Task{}, err
 	}
 
-	if currentBucketID != targetBucketID {
+	if currentBucketID != targetBucketID && s.shouldLogEvent(domain.EventTypeTaskMoved) {
 		movePayload := fmt.Sprintf(`{"from":%q,"to":%q}`, currentBucketKey, targetBucketKey)
 		if _, err := insertTaskEvent(ctx, tx, projectID, taskID, domain.EventTypeTaskMoved, "", movePayload); err != nil {
 			return domain.Task{}, err
