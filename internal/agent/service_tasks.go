@@ -165,6 +165,45 @@ func (s *Service) CreateTask(ctx context.Context, input CreateTaskInput) (Create
 	return s.CreateTaskIntent(ctx, input)
 }
 
+// EditTask exposes app.TaskService.Edit through MCP. The handler does
+// nothing more than serialize input → invoke the service → serialize
+// output: every policy decision (bucket permissions, archive gate,
+// priority registry lookup) lives in the service so the MCP surface
+// carries no canonical defaults of its own.
+func (s *Service) EditTask(ctx context.Context, input EditTaskInput) (EditTaskResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return EditTaskResponse{}, err
+	}
+	update := domain.TaskUpdate{}
+	if input.Title != nil {
+		update.Title = input.Title
+	}
+	if input.Description != nil {
+		update.Description = input.Description
+	}
+	if input.Priority != nil {
+		label := strings.TrimSpace(*input.Priority)
+		if label == "" {
+			return EditTaskResponse{}, domain.NewError(domain.ErrValidation,
+				"priority must be a non-empty label when provided; omit the field to leave it unchanged",
+				map[string]any{"priority": *input.Priority})
+		}
+		p, ok := domain.PriorityFromLabel(label)
+		if !ok {
+			return EditTaskResponse{}, domain.NewError(domain.ErrValidation,
+				"unknown priority label; must match a value in config.priorities",
+				map[string]any{"priority": label})
+		}
+		update.Priority = &p
+	}
+	task, err := app.NewTaskServiceFromStore(s.repo).Edit(ctx, project, input.TaskID, update)
+	if err != nil {
+		return EditTaskResponse{}, err
+	}
+	return EditTaskResponse{Project: projectSummary(project), Task: taskSummary(task)}, nil
+}
+
 func (s *Service) MoveTask(ctx context.Context, input MoveTaskInput) (MoveTaskResponse, error) {
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {

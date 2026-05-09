@@ -102,6 +102,26 @@ type ArchiveTaskResponse struct {
 	Task    TaskSummary    `json:"task"`
 }
 
+// EditTaskInput is the MCP-side shape for tasks.edit. Title, Description,
+// and Priority are pointers so the caller can opt into partial updates: a
+// nil pointer means "leave this field alone", while a non-nil pointer
+// (even pointing at "") signals an explicit edit. At least one of the
+// three must be non-nil, otherwise the service returns ErrValidation.
+// BucketKey is intentionally omitted from this surface — bucket moves go
+// through tasks.move so the activity log distinguishes the two intents.
+type EditTaskInput struct {
+	ProjectSelector
+	TaskID      int64   `json:"task_id"`
+	Title       *string `json:"title,omitempty"`
+	Description *string `json:"description,omitempty"`
+	Priority    *string `json:"priority,omitempty"`
+}
+
+type EditTaskResponse struct {
+	Project ProjectSummary `json:"project"`
+	Task    TaskSummary    `json:"task"`
+}
+
 func taskSummary(task domain.Task) TaskSummary {
 	s := TaskSummary{ID: task.ID, Title: task.Title, Description: task.Description, BucketKey: task.BucketKey, Priority: task.Priority}
 	if task.State != "" && task.State != domain.TaskStateActive {

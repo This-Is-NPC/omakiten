@@ -116,6 +116,7 @@ func Tools() []ToolDefinition {
 		{Name: "tasks.create_intent", Description: "Create a task intent after checking for similar or related project tasks and requiring confirmation when needed.", InputSchema: createTaskSchema()},
 		{Name: "tasks.create", Description: "Create a task directly through Omakiten's shared task service.", InputSchema: createTaskSchema()},
 		{Name: "tasks.move", Description: "Move a task through an allowed workflow transition.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "bucket_key": stringSchema("Target bucket key")}, []string{"task_id", "bucket_key"})},
+		{Name: "tasks.edit", Description: "Edit a task's title, description, and/or priority. Provide at least one of the three optional fields; the service rejects no-op calls. Subject to bucket policy (permissions.task.edit) — the default kit allows edits only in the planning bucket. Bucket moves go through tasks.move so the activity log distinguishes the two intents.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "title": stringSchema("Optional new title"), "description": stringSchema("Optional new description"), "priority": stringSchema("Optional priority label resolved against config.priorities (e.g. \"low\", \"normal\", \"high\")")}, []string{"task_id"})},
 		{Name: "tasks.delete", Description: "Hard-delete a task with cascade (comments, tags, dependencies, events). Subject to bucket policy (permissions.task.delete) and operations.delete.guards.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "confirmed": booleanSchema("Required true to actually delete the task")}, []string{"task_id"})},
 		{Name: "tasks.archive", Description: "Archive a task (state=archived) and move it into the workflow's final bucket. Bypasses bucket policy and transition guards but respects operations.archive.guards.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id")}, []string{"task_id"})},
 		{Name: "tasks.unarchive", Description: "Restore an archived task to active state, leaving its current bucket intact. Respects operations.unarchive.guards if declared.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id")}, []string{"task_id"})},
@@ -249,6 +250,12 @@ func (a *Adapter) dispatchTool(ctx context.Context, name string, args map[string
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = a.service.MoveTask(ctx, input)
+		}
+	case "tasks.edit":
+		var input agent.EditTaskInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.EditTask(ctx, input)
 		}
 	case "tasks.delete":
 		var input agent.DeleteTaskInput
