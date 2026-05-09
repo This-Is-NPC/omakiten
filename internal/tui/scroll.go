@@ -32,29 +32,16 @@ func (m Model) renderScrollWindowSplit(items []string, heights []int, offset, vi
 	if len(items) == 0 || len(items) != len(heights) {
 		return items
 	}
-	if viewport <= 0 || len(items) <= viewport {
-		// Pre-clamp escape: when the entire list fits without any
-		// reservation, render flush. Cheap check that lets the helper
-		// behave identically to the legacy fast-path of sliceScrollRows.
-		fits := true
-		total := 0
-		for _, h := range heights {
-			total += h
-		}
-		if viewport > 0 && total > viewport {
-			fits = false
-		}
-		if fits {
-			return items
-		}
+	if viewport <= 0 {
+		return items
 	}
-	end := scrollwindow.Slice(offset, heights, viewport, scrollwindow.HintsSplit)
 	if offset < 0 {
 		offset = 0
 	}
 	if offset > len(items)-1 {
 		offset = len(items) - 1
 	}
+	end := scrollwindow.Slice(offset, heights, viewport, scrollwindow.HintsSplit)
 	if offset == 0 && end == len(items) {
 		return items
 	}
