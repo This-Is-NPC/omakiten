@@ -13,7 +13,7 @@ func (m Model) renderHelp() string {
 		bindings []binding
 	}
 	commentKeys := newCommentInputBindings()
-	commentInputBindings := []binding{
+	commentInputHelpRows := []binding{
 		{commentKeys.Save.Help().Key, commentKeys.Save.Help().Desc},
 		{commentKeys.InsertNewline.Help().Key, commentKeys.InsertNewline.Help().Desc},
 		{commentKeys.Cancel.Help().Key, commentKeys.Cancel.Help().Desc},
@@ -87,7 +87,7 @@ func (m Model) renderHelp() string {
 			{"d · d", "arm delete comment, then confirm"},
 			{"esc", "back to task view"},
 		}},
-		{"Comment input", commentInputBindings},
+		{"Comment input", commentInputHelpRows},
 		{"Task form", []binding{
 			{"tab", "switch field"},
 			{"← → · h l", "change priority"},
