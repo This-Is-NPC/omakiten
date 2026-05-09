@@ -130,42 +130,7 @@ func (m *Model) syncFocusedColumnScroll() {
 	if m.boardScroll == nil {
 		m.boardScroll = map[string]int{}
 	}
-	offset := m.boardScroll[bucket]
-	if offset > m.cardIdx {
-		offset = m.cardIdx
-	}
-	for offset < m.cardIdx {
-		// Match the renderer's reservation: above-hint (when offset>0) and
-		// below-hint (when more cards remain) each cost one viewport row.
-		aboveReserve := 0
-		if offset > 0 {
-			aboveReserve = 1
-		}
-		used := 0
-		fits := true
-		for i := offset; i <= m.cardIdx; i++ {
-			used += heights[i]
-			belowReserve := 0
-			if i < len(tasks)-1 {
-				belowReserve = 1
-			}
-			if used+aboveReserve+belowReserve > viewport {
-				fits = false
-				break
-			}
-		}
-		if fits {
-			break
-		}
-		offset++
-	}
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > len(tasks)-1 {
-		offset = len(tasks) - 1
-	}
-	m.boardScroll[bucket] = offset
+	m.boardScroll[bucket] = followScrollWindowSplit(m.boardScroll[bucket], m.cardIdx, heights, viewport)
 }
 
 func (m Model) focusedBucketKey() (string, bool) {
@@ -398,49 +363,7 @@ func (m Model) renderKanbanCell(bucket domain.Bucket, tasks []domain.Task, focus
 	}
 
 	offset := m.boardScroll[bucket.Key]
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > len(rendered)-1 {
-		offset = len(rendered) - 1
-	}
-
-	// Reserve one viewport row for the "▲ above" hint when scrolled past
-	// the first card AND one for the "▼ below" hint when more cards remain.
-	// Without the above-hint reservation, a tall lane scrolled past row 0
-	// would render one extra card row beyond the budget — pushing the
-	// column box past the terminal floor when below-hint also fires.
-	aboveReserve := 0
-	if offset > 0 {
-		aboveReserve = 1
-	}
-	used := 0
-	end := offset
-	for end < len(rendered) {
-		belowReserve := 0
-		if end < len(rendered)-1 {
-			belowReserve = 1
-		}
-		if used+heights[end]+aboveReserve+belowReserve > viewport {
-			break
-		}
-		used += heights[end]
-		end++
-	}
-	if end == offset && offset < len(rendered) {
-		// Never produce an empty viewport: render at least one card.
-		end = offset + 1
-	}
-
-	above := offset
-	below := len(rendered) - end
-	if above > 0 {
-		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▲ %d above", above)))
-	}
-	lines = append(lines, rendered[offset:end]...)
-	if below > 0 {
-		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▼ %d below", below)))
-	}
+	lines = append(lines, m.renderScrollWindowSplit(rendered, heights, offset, viewport)...)
 	return strings.Join(lines, "\n")
 }
 

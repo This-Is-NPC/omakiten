@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/scrollwindow"
 )
 
 // renderEntityCell builds the inner content of one entity column.
@@ -104,39 +105,17 @@ func (m Model) renderEntityCellWithViewport(kind entityKind, viewport int, conte
 		storedCardOffset = m.entityScroll[kind]
 	}
 	rowOffset := storedCardOffset / cols
+	// Shared scroll math (scrollwindow.Slice) returns the row-end; the
+	// entity grid's only twist is that hints count CARDS, not rows, so
+	// we translate row offsets to card counts when emitting the
+	// indicator strings.
+	end := scrollwindow.Slice(rowOffset, rowHeights, viewport, scrollwindow.HintsSplit)
 	if rowOffset < 0 {
 		rowOffset = 0
 	}
 	if rowOffset > numRows-1 {
 		rowOffset = numRows - 1
 	}
-
-	// Reserve one viewport row for the "▲ above" hint when scrolled past
-	// the first grid row, AND one for the "▼ below" hint when more rows
-	// remain past `end`. Without the above-hint reservation the grid spilled
-	// past the terminal when the user navigated to the last tag (rowOffset
-	// > 0 + cardsBelow == 0 still costs a hint row at the top).
-	aboveReserve := 0
-	if rowOffset > 0 {
-		aboveReserve = 1
-	}
-	used := 0
-	end := rowOffset
-	for end < numRows {
-		belowReserve := 0
-		if end < numRows-1 {
-			belowReserve = 1
-		}
-		if used+rowHeights[end]+aboveReserve+belowReserve > viewport {
-			break
-		}
-		used += rowHeights[end]
-		end++
-	}
-	if end == rowOffset {
-		end = rowOffset + 1
-	}
-
 	cardsAbove := rowOffset * cols
 	if cardsAbove > count {
 		cardsAbove = count
@@ -236,42 +215,8 @@ func (m *Model) syncFocusedEntityScroll() {
 	if m.entityScroll == nil {
 		m.entityScroll = map[entityKind]int{}
 	}
-	stored := m.entityScroll[kind]
-	rowOffset := stored / cols
-	if rowOffset > cursorRow {
-		rowOffset = cursorRow
-	}
-	for rowOffset < cursorRow {
-		// Match the renderer's reservation: above-hint (when rowOffset>0)
-		// and below-hint (when more rows remain) each cost one row.
-		aboveReserve := 0
-		if rowOffset > 0 {
-			aboveReserve = 1
-		}
-		used := 0
-		fits := true
-		for r := rowOffset; r <= cursorRow; r++ {
-			belowReserve := 0
-			if r < numRows-1 {
-				belowReserve = 1
-			}
-			if used+rowHeights[r]+aboveReserve+belowReserve > viewport {
-				fits = false
-				break
-			}
-			used += rowHeights[r]
-		}
-		if fits {
-			break
-		}
-		rowOffset++
-	}
-	if rowOffset < 0 {
-		rowOffset = 0
-	}
-	if rowOffset > numRows-1 {
-		rowOffset = numRows - 1
-	}
+	rowOffset := m.entityScroll[kind] / cols
+	rowOffset = followScrollWindowSplit(rowOffset, cursorRow, rowHeights, viewport)
 	m.entityScroll[kind] = rowOffset * cols
 }
 

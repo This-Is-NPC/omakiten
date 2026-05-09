@@ -7,6 +7,16 @@ import (
 	"omakiten/internal/tui/components/scrollwindow"
 )
 
+// followScrollWindowSplit is the sync analog of renderScrollWindowSplit
+// — advances offset until the cursor item fits inside the viewport
+// with the same split-hint reservation contract. Wraps
+// scrollwindow.Follow so per-frame sync routines (board lane scroll,
+// entity grid scroll, home projects scroll) all share one definition
+// of "keep cursor on screen."
+func followScrollWindowSplit(offset, cursor int, heights []int, viewport int) int {
+	return scrollwindow.Follow(offset, cursor, heights, viewport, scrollwindow.HintsSplit)
+}
+
 // renderScrollWindowSplit assembles a scrollable list with separate
 // "▲ N above" / "▼ N below" hint rows. heights[i] is item i's
 // terminal-row count; items[i] is the pre-rendered string for that
