@@ -832,23 +832,6 @@ func validateRequiredSort(section string, sort SortSettings, allowedFields []str
 	return nil
 }
 
-func validateSort(section string, sort SortSettings, allowedFields []string, requireField bool) error {
-	if sort.Field != "" && requireField {
-		if !containsString(allowedFields, sort.Field) {
-			return fmt.Errorf("%s.field %q is not one of %v", section, sort.Field, allowedFields)
-		}
-	}
-	if sort.Field != "" && !requireField {
-		return fmt.Errorf("%s.field is not configurable", section)
-	}
-	if sort.Order != "" {
-		if _, ok := allowedSortOrders[sort.Order]; !ok {
-			return fmt.Errorf("%s.order %q must be \"asc\" or \"desc\"", section, sort.Order)
-		}
-	}
-	return nil
-}
-
 func validateStringSet(section string, values, allowed []string) error {
 	for _, value := range values {
 		if !containsString(allowed, value) {

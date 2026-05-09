@@ -141,25 +141,6 @@ func (m Model) updateCommentScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// focusedActivityComment returns the comment under the activity cursor when
-// the activity column is focused and the cursor lands on a comment-typed
-// event. System events (task.created/moved/etc.) return false so callers
-// like the d/E keybindings can fall through to task-level operations.
-func (m Model) focusedActivityComment() (domain.Comment, bool) {
-	if m.taskFocus != taskFocusActivity || m.activityCursor < 0 {
-		return domain.Comment{}, false
-	}
-	events := m.activityForTaskInView(m.taskID)
-	if m.activityCursor >= len(events) {
-		return domain.Comment{}, false
-	}
-	ev := events[m.activityCursor]
-	if ev.EventType != domain.EventTypeComment {
-		return domain.Comment{}, false
-	}
-	return eventToComment(ev), true
-}
-
 // armOrConfirmCommentDelete is the arm-then-confirm gate for hard comment
 // deletion. The first `d` press records the comment ID; a second `d` on the
 // same comment fires CommentService.Remove, which enforces the bucket
