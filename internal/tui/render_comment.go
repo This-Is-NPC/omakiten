@@ -11,6 +11,7 @@ import (
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/gridtable"
+	"omakiten/internal/tui/components/multilineform"
 	"omakiten/internal/tui/components/viewport"
 )
 
@@ -297,24 +298,27 @@ func (m Model) commentEditScreenInnerHeight() int {
 
 // renderCommentEditScreen renders the dedicated full-width edit form.
 // Layout matches the task edit screen (kicker · hint · bordered textarea
-// · footer cues come from renderFooter). Border switches to the accent
-// color so the active surface is unambiguous.
+// · footer cues come from renderFooter). Routes through the shared
+// multilineform leaf so the chrome — border, padding, cursor accent —
+// stays identical to the task description and inline comment-add.
+// Always focused: this screen is modal, the textarea owns the input.
 func (m Model) renderCommentEditScreen(comment domain.Comment) string {
 	width := m.availableWidth() - 4
-	innerWidth := m.commentEditScreenInnerWidth()
 	innerHeight := m.commentEditScreenInnerHeight()
 
-	input := m.commentInput
-	input.Cursor.Style = m.styles.cursor
-	input.SetWidth(innerWidth)
-	input.SetHeight(innerHeight)
-	style := m.styles.multilineInput.Width(width).Height(innerHeight + 2).BorderForeground(m.styles.hintAccent.GetForeground())
+	field := multilineform.Render(
+		m.commentInput,
+		width,
+		innerHeight,
+		true,
+		m.styles.multilineFormTheme(),
+	)
 
 	lines := []string{
 		m.styles.kicker(fmt.Sprintf("Edit comment · #%d", comment.ID)),
 		m.styles.hint.Render("ctrl+s saves · esc cancels · alt+enter/shift+enter newline · arrows/home/end navigate"),
 		"",
-		style.Render(input.View()),
+		field,
 	}
 	return "\n" + indentBlock(strings.Join(lines, "\n"), 2)
 }
@@ -407,17 +411,13 @@ func (m Model) renderCommentInput() string {
 	if m.status != "" && m.status != "Comment body" {
 		lines = append(lines, m.styles.statusBadge(m.status))
 	}
-	width := m.commentInputWidth()
-	innerWidth := width - 4
-	if innerWidth < 8 {
-		innerWidth = 8
-	}
-	input := m.commentInput
-	input.Cursor.Style = m.styles.cursor
-	input.SetWidth(innerWidth)
-	input.SetHeight(commentInputHeight)
-	style := m.styles.commentInput.Width(width).BorderForeground(m.styles.hintAccent.GetForeground())
-	lines = append(lines, style.Render(input.View()))
+	lines = append(lines, multilineform.Render(
+		m.commentInput,
+		m.commentInputWidth(),
+		commentInputHeight,
+		true,
+		m.styles.multilineFormTheme(),
+	))
 	return strings.Join(lines, "\n")
 }
 

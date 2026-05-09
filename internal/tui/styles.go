@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/config"
+	"omakiten/internal/tui/components/multilineform"
 )
 
 // kicker renders a section label in dev-editorial style. Structural labels use
@@ -78,6 +79,22 @@ func (s styles) kanbanColumnSized(innerWidth, innerHeight int) lipgloss.Style {
 	return style
 }
 
+// multilineFormTheme bundles the styles the shared multiline-form leaf
+// needs into the value type that components/multilineform.Render and
+// Resize accept. One canonical theme drives the task description, the
+// inline comment-add modal, and the comment-edit overlay so the three
+// surfaces render with identical chrome — the prior split between
+// `multilineInput` (Padding 0,2 / neutral border default) and
+// `commentInput` (Padding 0,1 / always-accent border) caused subtle
+// visual drift between forms and was the trigger for the unification.
+func (s styles) multilineFormTheme() multilineform.Theme {
+	return multilineform.Theme{
+		Border:       s.formMultiline,
+		BorderActive: s.hintAccent.GetForeground(),
+		Cursor:       s.cursor,
+	}
+}
+
 // statusBadge renders a status message as `[INFO] msg` or `[ERROR] msg` based
 // on a content heuristic. Replaces italic-on-secondary status rendering.
 func (s styles) statusBadge(msg string) string {
@@ -111,7 +128,6 @@ type styles struct {
 	panel           lipgloss.Style
 	commentCard     lipgloss.Style
 	systemEventCard lipgloss.Style
-	commentInput    lipgloss.Style
 	// cursor styles the visible-state of the bubbles cursor inside any
 	// textarea/textinput. Set Foreground=primary so the cursor.View()
 	// reverse-pass renders as a primary-bg block over a primary-fg char,
@@ -127,7 +143,14 @@ type styles struct {
 	separator       lipgloss.Style
 	empty           lipgloss.Style
 	input           lipgloss.Style
-	multilineInput  lipgloss.Style
+	// formMultiline is the bordered chrome shared by every multi-line
+	// textarea form — task description, inline comment-add, comment-edit
+	// overlay. Width and Height are intentionally not preset: the
+	// components/multilineform leaf overrides both per-call from the
+	// live terminal geometry, so baking them in here would either be
+	// shadowed (silent dead state) or surface as a stale override on
+	// resize.
+	formMultiline lipgloss.Style
 	footer          lipgloss.Style
 	hint            lipgloss.Style
 	hintAccent      lipgloss.Style
@@ -182,7 +205,6 @@ func newStyles(theme config.Theme) styles {
 		activeNav:      lipgloss.NewStyle().Foreground(primary).Bold(true),
 		panel:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2),
 		commentCard:    lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1),
-		commentInput:   lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 1).Height(commentInputHeight),
 		cursor:         lipgloss.NewStyle().Foreground(primary),
 		// systemEventCard mirrors the commentCard geometry (border + padding)
 		// so the activity column stays visually consistent — same column
@@ -205,7 +227,13 @@ func newStyles(theme config.Theme) styles {
 		// user reported as confusing — the eye lost which field was the
 		// active one.
 		input:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2),
-		multilineInput: lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2).Width(taskFormInputWidth).Height(taskDescriptionInputHeight),
+		// formMultiline holds the neutral-border defaults; multilineform.Render
+		// swaps BorderForeground to the accent color when its `focused` flag
+		// is true. Padding(0, 2) matches the surrounding panel chrome so the
+		// inner textarea inherits the same horizontal rhythm as the rest of
+		// the form. Width and Height are not preset — the leaf component owns
+		// per-render geometry (see styles.multilineFormTheme).
+		formMultiline: lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2),
 		footer:         lipgloss.NewStyle().Foreground(border),
 		hint:           lipgloss.NewStyle().Foreground(border),
 		hintAccent:     lipgloss.NewStyle().Foreground(primary).Bold(true),

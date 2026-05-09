@@ -12,6 +12,7 @@ import (
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/gridtable"
+	"omakiten/internal/tui/components/multilineform"
 	"omakiten/internal/tui/components/picker"
 )
 
@@ -761,29 +762,20 @@ func (m Model) renderTaskTitleField(width int) string {
 	return style.Render(input.View())
 }
 
-// renderTaskDescriptionField renders the bubbles textarea inside the same
-// boxed border. Width/height come from the form geometry; bubbles handles
-// soft-wrap, scrolling, and cursor positioning internally so the user can
-// jump to any line/column without rebuilding the whole string.
+// renderTaskDescriptionField renders the description textarea via the
+// shared multilineform leaf so its border, padding, and cursor accent
+// stay aligned with the comment forms. The persistent textarea is
+// calibrated at form-open time (openTaskCreate / openTaskEdit) so the
+// internal viewport stays in sync with the on-screen geometry across
+// keystrokes — see multilineform.Resize for the bug this guards.
 func (m Model) renderTaskDescriptionField(width int) string {
-	input := m.taskDescriptionInput
-	// Override the default empty cursor Style with an explicit accent
-	// foreground so the reverse-video block always renders as a visible
-	// primary-colored cell — without this the cursor disappears against
-	// the textarea's default line styling on some terminals (the user
-	// flagged "no cursor on description").
-	input.Cursor.Style = m.styles.cursor
-	innerWidth := width - 4
-	if innerWidth < 8 {
-		innerWidth = 8
-	}
-	input.SetWidth(innerWidth)
-	input.SetHeight(taskDescriptionInputHeight)
-	style := m.styles.multilineInput.Width(width)
-	if m.taskField == taskFieldDescription {
-		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
-	}
-	return style.Render(input.View())
+	return multilineform.Render(
+		m.taskDescriptionInput,
+		width,
+		taskDescriptionInputHeight,
+		m.taskField == taskFieldDescription,
+		m.styles.multilineFormTheme(),
+	)
 }
 
 func (m Model) renderTaskPriorityInput() string {
