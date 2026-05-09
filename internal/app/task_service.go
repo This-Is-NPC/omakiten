@@ -180,6 +180,9 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 			return
 		}
 		if !allowed {
+			s.workflow.EmitGuardViolated(ctx, project.ID, domain.EventEntityTask, taskID,
+				GuardOperationTaskEdit, GuardRulePermissions, hint,
+				map[string]any{"task_id": taskID, "entity": EntityTask, "operation": PermissionEdit})
 			err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"task_id": taskID, "hint": hint, "entity": EntityTask, "operation": PermissionEdit})
 			return
 		}
@@ -231,6 +234,9 @@ func (s *TaskService) Delete(ctx context.Context, project domain.ProjectContext,
 		return
 	}
 	if !allowed {
+		s.workflow.EmitGuardViolated(ctx, project.ID, domain.EventEntityTask, taskID,
+			GuardOperationTaskDelete, GuardRulePermissions, hint,
+			map[string]any{"task_id": taskID, "entity": EntityTask, "operation": PermissionDelete})
 		err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"task_id": taskID, "hint": hint, "entity": EntityTask, "operation": PermissionDelete})
 		return
 	}

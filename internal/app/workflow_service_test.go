@@ -135,6 +135,10 @@ func (f *fakeStores) RecordTaskEvent(_ context.Context, projectID, taskID int64,
 	f.eventCalls = append(f.eventCalls, recordedEvent{projectID, taskID, eventType, payload})
 	return domain.Event{}, nil
 }
+func (f *fakeStores) RecordEntityEvent(_ context.Context, _ string, entityID, projectID int64, eventType, payload string) error {
+	f.eventCalls = append(f.eventCalls, recordedEvent{projectID, entityID, eventType, payload})
+	return nil
+}
 func (f *fakeStores) ListTaskActivity(context.Context, int64, int64, string) ([]domain.Event, error) {
 	return nil, nil
 }
@@ -272,6 +276,18 @@ func TestWorkflowMoveTaskBlockersInGuard(t *testing.T) {
 	if !errors.As(err, &coded) || coded.Code != domain.ErrGuardViolation {
 		t.Fatalf("err = %v, want guard_violation", err)
 	}
+	if !hasEvent(f.eventCalls, domain.EventTypeGuardViolated) {
+		t.Fatalf("guard.violated event not emitted; got %#v", f.eventCalls)
+	}
+}
+
+func hasEvent(calls []recordedEvent, eventType string) bool {
+	for _, c := range calls {
+		if c.eventType == eventType {
+			return true
+		}
+	}
+	return false
 }
 
 func TestWorkflowMoveTaskCommentsMinGuard(t *testing.T) {
