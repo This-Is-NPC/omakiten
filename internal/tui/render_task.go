@@ -573,9 +573,11 @@ func (m Model) renderTaskScreen() string {
 	}
 	switch m.taskScreen {
 	case taskScreenCreate:
-		return m.renderTaskForm("Create task")
+		return m.renderTaskForm("New task")
 	case taskScreenEdit:
-		return m.renderTaskForm("Edit task")
+		// Mirrors the comment-edit kicker pattern (`Edit comment · #N`)
+		// so both write surfaces read as the same shape.
+		return m.renderTaskForm(fmt.Sprintf("Edit task · #%d", m.taskID))
 	case taskScreenView:
 		return m.renderTaskView()
 	default:
@@ -755,7 +757,7 @@ func (m Model) renderTaskForm(title string) string {
 	descriptionField := m.renderTaskDescriptionField(width)
 	lines := []string{
 		m.styles.kicker(title),
-		m.styles.hint.Render("ctrl+s saves · tab: switch field · ←/→ priority · arrows/home/end navigate text"),
+		m.formHint("ctrl+s saves", "tab switches field", "←/→ cycles priority", "esc cancels"),
 		"",
 		m.renderTaskFormLabel(taskFieldTitle, "Title"),
 		titleField,

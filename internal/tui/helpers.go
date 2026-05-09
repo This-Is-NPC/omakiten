@@ -104,6 +104,24 @@ func (m Model) renderPanel(content string) string {
 	return "\n" + indentBlock(m.styles.panel.Render(content), 2)
 }
 
+// formHint renders the canonical hint line for any form / modal: the
+// supplied tokens joined by ` · ` and painted in the muted hint style.
+// Centralising the assembly means every form surface uses the same
+// separator and the same color, so the same key/action pair reads
+// identically across task edit, comment add, comment edit, and any
+// future form. Empty tokens are dropped so callers can build the
+// list conditionally without leaking double separators.
+func (m Model) formHint(tokens ...string) string {
+	kept := tokens[:0]
+	for _, t := range tokens {
+		if t == "" {
+			continue
+		}
+		kept = append(kept, t)
+	}
+	return m.styles.hint.Render(strings.Join(kept, " · "))
+}
+
 // hRule renders a horizontal rule of `width` columns in the separator
 // style — the kicker/separator/body sandwich every panel uses. Pulled
 // out so the `strings.Repeat("─", n)` literal stops appearing in render

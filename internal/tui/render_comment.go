@@ -297,11 +297,10 @@ func (m Model) commentEditScreenInnerHeight() int {
 }
 
 // renderCommentEditScreen renders the dedicated full-width edit form.
-// Layout matches the task edit screen (kicker · hint · bordered textarea
-// · footer cues come from renderFooter). Routes through the shared
-// multilineform leaf so the chrome — border, padding, cursor accent —
-// stays identical to the task description and inline comment-add.
-// Always focused: this screen is modal, the textarea owns the input.
+// Wraps its content in `renderPanel` so the outer chrome (border +
+// indent) matches the task edit form. Routes the textarea through the
+// shared multilineform leaf for identical inner chrome (border,
+// padding, cursor accent). Always focused: this screen is modal.
 func (m Model) renderCommentEditScreen(comment domain.Comment) string {
 	width := m.availableWidth() - 4
 	innerHeight := m.commentEditScreenInnerHeight()
@@ -316,11 +315,11 @@ func (m Model) renderCommentEditScreen(comment domain.Comment) string {
 
 	lines := []string{
 		m.styles.kicker(fmt.Sprintf("Edit comment · #%d", comment.ID)),
-		m.styles.hint.Render("ctrl+s saves · esc cancels · alt+enter/shift+enter newline · arrows/home/end navigate"),
+		m.formHint("ctrl+s saves", "alt+enter/shift+enter newline", "esc cancels"),
 		"",
 		field,
 	}
-	return "\n" + indentBlock(strings.Join(lines, "\n"), 2)
+	return m.renderPanel(strings.Join(lines, "\n"))
 }
 
 // updateCommentEditScreen handles keystrokes while the dedicated comment
@@ -406,7 +405,7 @@ func (m *Model) exitCommentEditMode() {
 func (m Model) renderCommentInput() string {
 	lines := []string{
 		m.styles.kicker("New comment"),
-		m.styles.hint.Render("enter saves · alt+enter/shift+enter newline · arrows/home/end navigate"),
+		m.formHint("enter saves", "alt+enter/shift+enter newline", "esc cancels"),
 	}
 	if m.status != "" && m.status != "Comment body" {
 		lines = append(lines, m.styles.statusBadge(m.status))
@@ -418,7 +417,7 @@ func (m Model) renderCommentInput() string {
 		true,
 		m.styles.multilineFormTheme(),
 	))
-	return strings.Join(lines, "\n")
+	return m.renderPanel(strings.Join(lines, "\n"))
 }
 
 // renderCommentCardSelected renders a single comment card. focused controls
