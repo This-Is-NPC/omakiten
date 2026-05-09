@@ -12,7 +12,7 @@ import (
 
 // entityFolders lists the per-kind folders the layout expects as siblings of
 // the config/ yaml dir. Order matters only for stable migration iteration.
-var entityFolders = []string{"skills", "laws", "personas", "templates", "themes"}
+var entityFolders = []string{"skills", "laws", "personas", "templates", "themes", "buddies"}
 
 // EnsureDefaultFiles materializes the embedded default kit into a config root.
 // Existing files are not overwritten; user-owned custom folders are created.

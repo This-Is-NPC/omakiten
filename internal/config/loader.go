@@ -37,12 +37,17 @@ func LoadBundle(path string) (Bundle, error) {
 	if err != nil {
 		return Bundle{}, err
 	}
+	buddies, err := LoadBuddies(filepath.Join(rootDir, "buddies"))
+	if err != nil {
+		return Bundle{}, err
+	}
 
 	bundle := Bundle{
 		Version:   wired.Version,
 		Kit:       wired.Kit,
 		Config:    wired.Config,
 		Workflows: wired.Workflows,
+		Buddies:   buddies,
 	}
 
 	bundle.Warnings = append(bundle.Warnings, skillWarn...)

@@ -16,6 +16,7 @@ type Bundle struct {
 	Workflows   []Workflow                `yaml:"workflows" json:"workflows,omitempty"`
 	Projects    []Project                 `yaml:"-" json:"projects,omitempty"`
 	MCPCommands map[string]MCPCommandSpec `yaml:"-" json:"mcp_commands,omitempty"`
+	Buddies     map[string]Buddy          `yaml:"-" json:"buddies,omitempty"`
 	Warnings    []SourceWarning           `yaml:"-" json:"warnings,omitempty"`
 }
 
@@ -425,6 +426,14 @@ type SearchSettings struct {
 // the user inherits at install time.
 type TUISettings struct {
 	TokenBadge TokenBadgeThresholds `yaml:"token_badge" json:"token_badge"`
+	Buddy      BuddySettings        `yaml:"buddy,omitempty" json:"buddy,omitempty"`
+}
+
+// BuddySettings selects which loaded buddy is the active mascot. The
+// validator rejects an empty Active value when at least one configured
+// hook does `do: buddy.show`; otherwise the field is optional.
+type BuddySettings struct {
+	Active string `yaml:"active,omitempty" json:"active,omitempty"`
 }
 
 // TokenBadgeThresholds drives the colored TOKENS:N badge on entity
