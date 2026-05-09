@@ -330,6 +330,110 @@ Allowed values come from `internal/config/validator.go`:
 
 Typos surface with errors like `config.views.board.sort.field "creatd_at" is not one of [id title priority created_at]` rather than being silently ignored.
 
+### `config.sqlite`
+
+Connection-level engine knobs the Store applies at Open. **Required block** — the kit ships the canonical `busy_timeout` the user inherits at install time. Other PRAGMAs (`foreign_keys=ON`, `journal_mode=WAL`, `synchronous=NORMAL`) intentionally stay in code: they encode the engine-level contract Omakiten depends on, not user preference.
+
+```yaml
+config:
+  sqlite:
+    busy_timeout_ms: 5000     # int >0; PRAGMA busy_timeout
+```
+
+| Field | Type | Constraint | What it does |
+|---|---|---|---|
+| `busy_timeout_ms` | int | `> 0` | Sets `PRAGMA busy_timeout`. Larger DBs or systems with concurrent writers (TUI + MCP server sharing a Store) may need a higher value to avoid `database is locked` errors. |
+
+### `config.activity_log`
+
+Retention window for the per-call `operation` event log used by the activity feed. **Required block** — disabling retention is not a supported mode (the activity log would grow unbounded). Each `BeginActivityLog` runs a synchronous prune pass after insert; the writer never blocks longer than O(rows-deleted).
+
+```yaml
+config:
+  activity_log:
+    max_rows: 500             # int >0
+    max_age_days: 7           # int >0
+```
+
+| Field | Type | Constraint | What it does |
+|---|---|---|---|
+| `max_rows` | int | `> 0` | Hard ceiling on `operation` rows. Older rows are deleted in id-DESC order after every insert. |
+| `max_age_days` | int | `> 0` | Sliding window — rows older than this many days are deleted on every insert. |
+
+### `config.solutions`
+
+Caps the `solutions.list_top` MCP response shape. **Required block** — `default_top_limit` applies when the caller passes `<=0`; `max_top_limit` clamps caller-supplied limits so MCP responses stay bounded regardless of what the agent asks for.
+
+```yaml
+config:
+  solutions:
+    default_top_limit: 10     # int >0
+    max_top_limit: 100        # int >= default_top_limit
+```
+
+| Field | Type | Constraint | What it does |
+|---|---|---|---|
+| `default_top_limit` | int | `> 0` | Limit applied when the caller omits one. |
+| `max_top_limit` | int | `>= default_top_limit` | Hard cap on caller-supplied limits. Validator rejects inverted ranges so the runtime always has a sane window. |
+
+### `config.events`
+
+Fallback recent-events limit used by `Store.ListRecentEvents` when callers pass `<=0`. **Required block.**
+
+```yaml
+config:
+  events:
+    default_recent_limit: 50  # int >0
+```
+
+| Field | Type | Constraint | What it does |
+|---|---|---|---|
+| `default_recent_limit` | int | `> 0` | Fallback row count applied when the caller passes `<=0`. The query is indexed on `(event_type, created_at, id)` so larger values are cheap. |
+
+### `config.search`
+
+Tunes text-similarity heuristics shared across agent-side ranking (similar-task hints in `tasks.create_intent`, query overlap scoring). **Required block** — multilingual users add Portuguese/Spanish/etc. words here without a code change.
+
+```yaml
+config:
+  search:
+    stopwords: [and, are, for, from, into, the, this, that, with]
+```
+
+| Field | Type | Constraint | What it does |
+|---|---|---|---|
+| `stopwords` | list of strings | non-empty, lowercase, unique | Tokens dropped before computing overlap scores. Validator rejects empties, duplicates, and uppercase entries (must match the tokenizer's lowercased output). |
+
+### `config.tag_synonyms`
+
+Maps non-canonical tag slugs to their canonical form. **Required block.** `NormalizeTagName` collapses input → kebab-case, then applies one hop of substitution (no chains). Edit this block to align tag names with your team's vocabulary; existing rows survive because storage is by tag id, so renaming the canonical label here re-routes future writes without touching history.
+
+```yaml
+config:
+  tag_synonyms:
+    golang: go
+    javascript: js
+    typescript: ts
+    nodejs: node
+    node-js: node
+    postgres: postgresql
+    psql: postgresql
+    mongo: mongodb
+    k8s: kubernetes
+    tf: terraform
+    py: python
+```
+
+Validation rules:
+
+| Rule | Error message shape |
+|---|---|
+| empty key or value | `config.tag_synonyms: empty key` / `config.tag_synonyms[<key>]: empty target` |
+| self-loop (`go: go`) | `config.tag_synonyms[<key>]: maps to itself` |
+| two-hop chain (target is also a key) | `config.tag_synonyms[<key>]: target <value> is itself a key (two-hop chains are not resolved)` |
+
+The runtime applies one substitution; `golang` → `go` works, but if you also declared `go: golang` (which the validator catches anyway as a self-loop pair), the runtime would not chase the chain.
+
 ---
 
 ## `workflows`
