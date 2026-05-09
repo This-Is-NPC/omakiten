@@ -8,7 +8,7 @@ import (
 	"omakiten/internal/tui/components/gridtable"
 )
 
-// summaryRows builds a [][]string suitable for renderGridTable from a
+// summaryRows builds a [][]string suitable for gridtable.Render from a
 // titled list of label/value pairs. The first row is a kicker (`// TITLE`)
 // spanning into the value column; each subsequent row is `// LABEL` +
 // value. Callers may append extra pre-rendered rows (error badges,
@@ -37,7 +37,7 @@ type summaryTablesOpts struct {
 
 // renderSummaryTables draws multiple key-value summary tables behind a
 // shared responsive policy. Each table is a [][]string (typically built
-// via summaryRows) ready for renderGridTable.
+// via summaryRows) ready for gridtable.Render.
 func (m Model) renderSummaryTables(opts summaryTablesOpts, tables ...[][]string) string {
 	const gap = 2
 	tableWidth := 1 + opts.LabelWidth + 1 + opts.ValueWidth + 1
