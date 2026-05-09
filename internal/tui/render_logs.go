@@ -208,60 +208,18 @@ func (m Model) renderLogsWidePanel() string {
 	return m.styles.panel.Render(strings.Join(rows, "\n"))
 }
 
-// sliceScrollRows clamps `scroll` into a valid range and returns the visible
-// slice of single-line data rows plus up-to-2 indicator rows ("▲ N above" /
-// "▼ N below") inserted only when content is hidden in that direction. Each
-// data row is assumed to be exactly one physical line, so no height heuristic
-// is needed. Used by table, logs, and any future list-style view.
+// sliceScrollRows is the public assembly helper for fixed-height
+// (single-line) list panels — table, logs, graph, blocker picker,
+// persona picker. Implementation flows through scrollwindow.Slice with
+// heights of 1s so single-line and multi-line surfaces share one
+// algorithm. Inserts up to two indicator rows ("▲ N above" /
+// "▼ N below") only when content is hidden in that direction.
 func (m Model) sliceScrollRows(dataRows []string, scroll, viewport int) []string {
-	if viewport <= 0 || len(dataRows) <= viewport {
-		return dataRows
+	heights := make([]int, len(dataRows))
+	for i := range heights {
+		heights[i] = 1
 	}
-	offset := scroll
-	if offset < 0 {
-		offset = 0
-	}
-	// When the scroll has any items above (offset > 0), the visibleHeight
-	// loses 1 row to the "▲ above" hint, so the renderer can still paint
-	// the last data row at offset = len(dataRows) - viewport + 1. Cap the
-	// clamp accordingly — otherwise the cursor at the last row gets
-	// scrolled off the panel because the old `total - viewport` cap was
-	// one row too tight to expose the trailing items.
-	maxOffset := len(dataRows) - viewport + 1
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
-	if offset > maxOffset {
-		offset = maxOffset
-	}
-
-	above := offset
-	belowAvailable := len(dataRows) - offset
-	visibleHeight := viewport
-	if above > 0 {
-		visibleHeight--
-	}
-	if belowAvailable-visibleHeight > 0 {
-		visibleHeight--
-	}
-	if visibleHeight < 1 {
-		visibleHeight = 1
-	}
-	end := offset + visibleHeight
-	if end > len(dataRows) {
-		end = len(dataRows)
-	}
-	below := len(dataRows) - end
-
-	out := make([]string, 0, visibleHeight+2)
-	if above > 0 {
-		out = append(out, m.styles.hint.Render(fmt.Sprintf("▲ %d above", above)))
-	}
-	out = append(out, dataRows[offset:end]...)
-	if below > 0 {
-		out = append(out, m.styles.hint.Render(fmt.Sprintf("▼ %d below", below)))
-	}
-	return out
+	return m.renderScrollWindowSplit(dataRows, heights, scroll, viewport)
 }
 
 // renderLogsCompactPanel is the narrow-terminal flavor of the activity

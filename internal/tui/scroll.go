@@ -1,6 +1,63 @@
 package tui
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+
+	"omakiten/internal/tui/components/scrollwindow"
+)
+
+// renderScrollWindowSplit assembles a scrollable list with separate
+// "▲ N above" / "▼ N below" hint rows. heights[i] is item i's
+// terminal-row count; items[i] is the pre-rendered string for that
+// item. Used by every "list of items with split hints" surface — the
+// board lanes, settings entity grid, home projects column, activity
+// feed, and the fixed-height callers (logs/table/graph/pickers via
+// sliceScrollRows). The slice math is delegated to scrollwindow.Slice
+// so styling, wording, and reservation can never drift across surfaces.
+//
+// Returns the full content as-is when nothing is hidden in either
+// direction — callers don't need to special-case the no-scroll path.
+func (m Model) renderScrollWindowSplit(items []string, heights []int, offset, viewport int) []string {
+	if len(items) == 0 || len(items) != len(heights) {
+		return items
+	}
+	if viewport <= 0 || len(items) <= viewport {
+		// Pre-clamp escape: when the entire list fits without any
+		// reservation, render flush. Cheap check that lets the helper
+		// behave identically to the legacy fast-path of sliceScrollRows.
+		fits := true
+		total := 0
+		for _, h := range heights {
+			total += h
+		}
+		if viewport > 0 && total > viewport {
+			fits = false
+		}
+		if fits {
+			return items
+		}
+	}
+	end := scrollwindow.Slice(offset, heights, viewport, scrollwindow.HintsSplit)
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(items)-1 {
+		offset = len(items) - 1
+	}
+	if offset == 0 && end == len(items) {
+		return items
+	}
+	out := make([]string, 0, end-offset+2)
+	if above := scrollwindow.Above(offset); above > 0 {
+		out = append(out, m.styles.hint.Render(fmt.Sprintf("▲ %d above", above)))
+	}
+	out = append(out, items[offset:end]...)
+	if below := scrollwindow.Below(end, len(items)); below > 0 {
+		out = append(out, m.styles.hint.Render(fmt.Sprintf("▼ %d below", below)))
+	}
+	return out
+}
 
 // panelViewportRows is the canonical "rows the data area gets" budget
 // for any view that draws a single panel under the screen chrome (table,
