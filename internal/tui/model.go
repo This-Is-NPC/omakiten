@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/activity"
 	"omakiten/internal/app"
@@ -213,6 +214,7 @@ func newTaskDescriptionInput() textarea.Model {
 		key.WithKeys("enter", "shift+enter", "alt+enter", "ctrl+j", "ctrl+m"),
 		key.WithHelp("enter · alt+enter · shift+enter", "insert newline"),
 	)
+	clearTextareaCursorLineBackground(&t)
 	return t
 }
 
@@ -227,7 +229,20 @@ func newCommentInput() textarea.Model {
 	t.CharLimit = 0
 	bindings := newCommentInputBindings()
 	t.KeyMap.InsertNewline = bindings.InsertNewline
+	clearTextareaCursorLineBackground(&t)
 	return t
+}
+
+// clearTextareaCursorLineBackground neutralises the textarea's default
+// CursorLine background so the reverse-video cursor block stays visible
+// when focused. Without this, the focused-style adaptive Background swaps
+// over the cursor cell at render time and the caret disappears into the
+// line — the user reported "cursor only on title, not description".
+// Applied to both focused and blurred styles for symmetry, even though
+// only the focused state renders the cursor.
+func clearTextareaCursorLineBackground(t *textarea.Model) {
+	t.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	t.BlurredStyle.CursorLine = lipgloss.NewStyle()
 }
 
 // newMoveInput is the canonical textinput used by the modal move flow
@@ -469,7 +484,7 @@ func (m Model) isEmbeddedCommentInput() bool {
 	if m.taskScreen != taskScreenView || m.taskID <= 0 {
 		return false
 	}
-	return m.mode == modeComment || m.mode == modeCommentEdit
+	return m.mode == modeComment
 }
 
 func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
