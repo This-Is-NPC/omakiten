@@ -220,6 +220,19 @@ Tag browser. Only **orphan** tags (zero references) can be deleted from the TUI;
 
 These open on top of a zone/sub and intercept all input until dismissed. The contextual help overlay (`?`) automatically narrows to whichever sub-screen is open. Esc verbal across all back-style overlays is `esc back`; cancel-style modals (pickers, modes) keep `esc cancel`.
 
+### Modal text inputs
+
+Every modal that captures text — `modeMove` (move task by bucket key), the inline new-comment (`modeComment`), the dedicated comment edit overlay (`commentScreenEditing`), and the create / edit task form — drives a Charm `bubbles` component:
+
+- `bubbles/textinput.Model` — single-line surfaces (`modeMove`, task title field).
+- `bubbles/textarea.Model` — multi-line surfaces (comment add, comment edit, task description).
+
+`KeyMap.InsertNewline` is rebound on every textarea so `shift+enter` / `alt+enter` / `ctrl+j` insert a newline natively (the prior `isNewlineModifier` shim that injected `\n` via `InsertString` is gone). For the task description textarea — where `ctrl+s` is the save key and a bare Enter is free for newlines — the binding includes `enter` too. For the comment textareas, `enter` is reserved for "save".
+
+`internal/tui/keys.go` declares the `commentInputBindings` and `moveInputBindings` records via `bubbles/key.Binding`. The same records drive both the runtime handlers in `updateInput` and the help-overlay rows in `render_help.go` — there is no separate hard-coded help string.
+
+**Cursor visibility:** every `bubbles` input renders its cursor with `Cursor.Style = m.styles.cursor` (foreground = primary accent) so the reverse-pass produces a visible primary-colored block regardless of the surrounding line styling. Textareas additionally clear `FocusedStyle.CursorLine.Background` (`clearTextareaCursorLineBackground` in `model.go`) so the line background no longer swallows the cursor cell.
+
 ### Task view (after `enter` on a task card)
 
 Destructive verbs live inside the entered surface only — the board has no `d` shortcut. Pressing `e` or `d` runs a policy pre-check; if the bucket forbids it the guard hint surfaces in the status badge instead of opening the form.
@@ -250,16 +263,27 @@ Destructive verbs live inside the entered surface only — the board has no `d` 
 | `d` `d` | arm delete the comment, then confirm (gated by `permissions.comment.delete`) |
 | `esc` | back |
 
-### Comment input (after `c` to add or `e` to edit)
+### Comment input — new comment (after `c` on a task card or in task view)
 
-The same multi-line input renders for new comments and for edit-existing comments; in edit mode the body is pre-filled with the existing text so the caret lands ready to refine in place.
+A multi-line `bubbles/textarea` opens **inline inside the activity column** of the task view; the body is empty and the caret is focused. `enter` saves; `esc` cancels and returns to whichever surface launched the modal.
 
 | Key | Action |
 |---|---|
-| `enter` | save (creates a new comment, or saves the edit) |
-| `alt+enter` · `shift+enter` | insert newline |
+| `enter` | save (creates a new comment) |
+| `alt+enter` · `shift+enter` · `ctrl+j` | insert newline |
 | `↑ ↓ ← →` · `home` · `end` | caret navigation within the body |
 | `esc` | cancel |
+
+### Comment edit — edit existing comment (`e` on the comment view)
+
+Pressing `e` on the comment-view overlay flips the **same overlay** into a dedicated full-screen edit form (kicker · hint · bordered textarea · footer) — distinct from the inline new-comment input. The pre-filled body, the wider textarea, and `ctrl+s` as the save key match the task-edit form so the two write surfaces feel uniform.
+
+| Key | Action |
+|---|---|
+| `ctrl+s` | save the rewritten body (gated by `permissions.comment.edit`; tags survive the round-trip) |
+| `alt+enter` · `shift+enter` · `ctrl+j` | insert newline |
+| `↑ ↓ ← →` · `home` · `end` | caret navigation within the body |
+| `esc` | cancel — return to the read-only comment view |
 
 ### Task form (`n` to create, `e` to edit)
 
@@ -335,12 +359,47 @@ Per-project zones emit a refresh tick about once a second while idle (`internal/
 
 ## Scroll abstraction
 
-Panels that page through long lists (Tasks › Table, Stats › Logs, Tasks › Graph, every picker) share two helpers:
+Every list / grid / line viewport in the TUI flows through a single algorithm in `internal/tui/components/scrollwindow/`. The package is a leaf with no dependency on the parent `tui` package, so detail-screen sub-components can import it without an import cycle.
 
-- `sliceScrollRows(dataRows, scroll, viewport)` — given the panel's full row budget, produces the visible slice plus the `▲ above` / `▼ below` hint rows when content overflows.
-- `scrollDataRows(viewport)` — the canonical adapter for cursor-tracking helpers (`followCursor`, `picker.Model.Update`, bespoke syncs). Subtracts the worst-case 2 rows that `sliceScrollRows` reserves for hints, so the cursor never lands in the reserved band.
+### `scrollwindow` — pure scroll math
 
-Contract: pass the raw `*ViewportRows()` budget to `sliceScrollRows`; pass `scrollDataRows(*ViewportRows())` to anything that decides scroll from cursor. Documented on the helper at `internal/tui/scroll.go`.
+```go
+type HintMode int
+const (
+    HintsSplit    HintMode = iota // ▲ above + ▼ below as separate rows
+    HintsCombined                  // single combined ▲ X · ▼ Y footer
+    HintsNone                      // caller handles indicator chrome outside
+)
+
+func Slice(offset int, heights []int, viewport int, mode HintMode) int
+func Follow(offset, cursor int, heights []int, viewport int, mode HintMode) int
+```
+
+`Slice` returns the visible end index given offset, per-item heights (in terminal rows), and a viewport row budget. It reserves rows for indicator chrome dynamically based on the chosen `HintMode` and the actual scroll position, so the rendered slice plus its hint rows can never exceed `viewport`. `Follow` is the cursor-sync analog used by per-frame routines that keep the cursor on screen.
+
+Heights of `1` service fixed-height surfaces (table rows, log entries, picker rows, activity feed lines); measured heights service variable-height surfaces (board cards, entity grid rows, home project cards). Same helper, parameterized contract — fixed-height is just a special case where every item happens to take one terminal row.
+
+### Assembly helpers (in `internal/tui/scroll.go`)
+
+- `m.renderScrollWindowSplit(items, heights, offset, viewport)` — wraps `scrollwindow.Slice` with `HintsSplit`, prepends `▲ N above` and appends `▼ N below` rows. Used by the board lanes, settings entity grid, home projects column, activity feed, and (via `sliceScrollRows`) the fixed-height table/logs/graph/picker surfaces.
+- `followScrollWindowSplit(offset, cursor, heights, viewport)` — sync analog. Used by `syncFocusedColumnScroll`, `syncFocusedEntityScroll`, and `syncHomeScroll`.
+- `m.sliceScrollRows(rows, scroll, viewport)` — legacy public API for fixed-height callers. Now a thin wrapper that builds heights of 1s and delegates to `renderScrollWindowSplit`.
+- `m.panelViewportRows(panelChrome int)` — terminal-row budget for any panel sitting under the screen chrome. Live-measures the screen header / status line / footer so the budget tracks header changes automatically. Each caller declares only the rows internal to its own panel (border + kicker + separator + any trailing hint).
+- `scrollDataRows(viewport)` — the cursor-tracking adapter for fixed-height surfaces; subtracts the 2 worst-case hint rows so cursor + scroll math agree.
+- `followCursor(scroll, cursor, viewport, total)` — fixed-height cursor follow used by every picker.
+
+### Detail-screen viewport (combined-footer style)
+
+The task view, comment view, help overlay, and entity view emit a single combined `▲ X above · ▼ Y below · j/k pgup/pgdn g/G` footer instead of split hint rows. They route through the same `scrollwindow.Slice` math but with `HintsNone` — the caller passes `viewport-1` and renders the footer outside the slice budget. See `internal/tui/components/viewport/viewport.go` for the assembly and `internal/tui/viewport.go:sliceViewport` for the parent-package wrapper.
+
+### Adding a new scrollable surface
+
+1. Compute heights — `1` per item for fixed-height, `strings.Count(rendered, "\n") + 1` for measured.
+2. Get a viewport budget via `m.panelViewportRows(panelChrome)`.
+3. For split-hint UX: assemble via `m.renderScrollWindowSplit(items, heights, offset, viewport)` and sync cursor via `followScrollWindowSplit(...)`.
+4. For combined-footer UX: route through `components/viewport.Model.View(lines, viewport-1, hintStyle)`.
+
+Never inline the walk-and-reserve loop. The 16-case `scrollwindow_test.go` locks the contract; future bugs in scroll budgeting land in one place.
 
 ## Theming
 
