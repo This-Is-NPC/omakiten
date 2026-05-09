@@ -3,10 +3,36 @@ package agent
 import (
 	"sort"
 	"strings"
+	"sync/atomic"
 	"unicode"
 
 	"omakiten/internal/domain"
 )
+
+// activeStopWords is the registered stopwords set used by similar-task
+// ranking. Lives as a process-global atomic pointer so leaf helpers
+// (wordSet) can read without thread-bookkeeping; composition root writes
+// it once at startup from config.search.stopwords. Multilingual users
+// extend the list in YAML — no code change needed for PT/ES additions.
+var activeStopWords atomic.Pointer[map[string]bool]
+
+// RegisterStopWords installs the lowercase stopwords set similar-task
+// ranking drops before scoring. Composition root resolves the bundle's
+// config.search.stopwords and writes them here once at startup.
+// Passing nil or an empty slice clears the registry — wordSet then
+// keeps every token, slightly worsening ranking quality but never
+// failing.
+func RegisterStopWords(words []string) {
+	if len(words) == 0 {
+		activeStopWords.Store(nil)
+		return
+	}
+	set := make(map[string]bool, len(words))
+	for _, w := range words {
+		set[strings.ToLower(strings.TrimSpace(w))] = true
+	}
+	activeStopWords.Store(&set)
+}
 
 func taskSummaries(tasks []domain.Task) []TaskSummary {
 	out := make([]TaskSummary, 0, len(tasks))
@@ -254,9 +280,13 @@ func similarTasks(query string, tasks []domain.Task, limit int) []TaskSummary {
 
 func wordSet(value string) map[string]struct{} {
 	words := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	stops := activeStopWords.Load()
 	out := map[string]struct{}{}
 	for _, word := range words {
-		if len(word) < 3 || stopWords[word] {
+		if len(word) < 3 {
+			continue
+		}
+		if stops != nil && (*stops)[word] {
 			continue
 		}
 		out[word] = struct{}{}
@@ -277,14 +307,3 @@ func overlapScore(a, b map[string]struct{}) float64 {
 	return float64(common) / float64(len(a))
 }
 
-var stopWords = map[string]bool{
-	"and":  true,
-	"are":  true,
-	"for":  true,
-	"from": true,
-	"into": true,
-	"the":  true,
-	"this": true,
-	"that": true,
-	"with": true,
-}

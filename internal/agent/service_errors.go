@@ -68,7 +68,12 @@ func (s *Service) ListTopSolutions(ctx context.Context, input ListTopSolutionsIn
 	if err != nil {
 		return TopSolutionsResponse{}, err
 	}
-	solutions, err := app.NewErrorService(s.repo).ListTopSolutions(ctx, project, input.Limit)
+	es := app.NewErrorService(s.repo)
+	es.SetSolutionsDefaults(app.SolutionsDefaults{
+		TopLimitDefault: s.settings.SolutionsTopLimitDefault,
+		TopLimitMax:     s.settings.SolutionsTopLimitMax,
+	})
+	solutions, err := es.ListTopSolutions(ctx, project, input.Limit)
 	if err != nil {
 		return TopSolutionsResponse{}, err
 	}

@@ -12,41 +12,54 @@ import (
 
 // ServiceSettings carries the runtime-tunable knobs that shape MCP responses.
 // Mirrors `config.MCPSettings` but without importing internal/config — the
-// agent layer is config-neutral, so the runtime resolves the effective values
-// and pushes them in via SetSettings. Defaults are sensible: full bodies,
-// 5 most-recent comments, workflow shipped per call, caching hint emitted.
+// agent layer is config-neutral, so the runtime resolves the values from
+// the loaded bundle and pushes them in via SetSettings. The composition
+// root MUST call SetSettings before the service handles any request;
+// validator-required fields in `config.mcp.*` mean the bundle is
+// guaranteed complete by the time it reaches here.
 type ServiceSettings struct {
 	// RecentCommentLimit caps how many comments tools like tasks.continue
-	// and project.overview ship per call. <=0 falls back to the canonical
-	// default (5).
+	// and project.overview ship per call. Sourced from
+	// config.mcp.recent_comment_limit (validator-required > 0).
 	RecentCommentLimit int
 
 	// MaxCommentChars truncates comment bodies past this length with `…`
-	// when shipped. <=0 keeps full bodies.
+	// when shipped. Sourced from config.mcp.max_comment_chars (validator-
+	// required >= 0; 0 keeps full bodies).
 	MaxCommentChars int
 
 	// IncludeWorkflow toggles the `workflow` block in tasks.continue
 	// responses by default. Per-call `include_workflow` overrides this.
+	// Sourced from config.mcp.include_workflow_in_continue.
 	IncludeWorkflow bool
 
 	// CachePrompts toggles emitting the cache_control hint on prompts/get
 	// content so Anthropic-aware MCP clients reuse the cached prompt.
+	// Sourced from config.mcp.cache_prompts.
 	CachePrompts bool
 
 	// RecentContextLimit caps how many recent context entries flow into
-	// tasks.continue / project.overview / project.resume responses. <=0
-	// falls back to defaultRecentContextLimit (3) — small because each
-	// entry can be paragraphs of free-form notes.
+	// tasks.continue / project.overview / project.resume responses.
+	// Sourced from config.mcp.recent_context_limit (validator-required > 0).
 	RecentContextLimit int
 
 	// NextWorkLimit caps the "likely next work" suggestion list shipped
-	// in project.resume. <=0 falls back to defaultNextWorkLimit (5).
+	// in project.resume. Sourced from config.mcp.next_work_limit
+	// (validator-required > 0).
 	NextWorkLimit int
 
 	// SimilarTaskLimit caps how many similar-task hints flow into
-	// tasks.create_intent / tasks.continue. <=0 falls back to
-	// defaultSimilarTaskLimit (5).
+	// tasks.create_intent / tasks.continue. Sourced from
+	// config.mcp.similar_task_limit (validator-required > 0).
 	SimilarTaskLimit int
+
+	// SolutionsTopLimitDefault and SolutionsTopLimitMax mirror
+	// config.solutions.{default_top_limit, max_top_limit}. Used by
+	// ListTopSolutions to clamp caller-supplied limits so MCP
+	// responses stay bounded; the agent constructs an ErrorService
+	// per call and writes these values via SetSolutionsDefaults.
+	SolutionsTopLimitDefault int
+	SolutionsTopLimitMax     int
 }
 
 type Repository interface {
