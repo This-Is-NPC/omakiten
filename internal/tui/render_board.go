@@ -224,23 +224,15 @@ func (m Model) computeBoardLayout(n int) boardLayout {
 	}
 }
 
-// boardViewportRows is the number of terminal rows the kanban columns can use
-// for cards (after the column header, separator, and the surrounding chrome).
-// Returns 0 when the height is unknown — callers should treat 0 as "no scroll
-// limit" and render every card.
+// boardViewportRows is the number of terminal rows the kanban columns
+// can use for cards (after each lane's header + separator and the
+// surrounding screen chrome). Sources its chrome from the shared
+// `panelViewportRows` helper so the budget tracks live header / status
+// / nav strip changes — the prior hard-coded `chrome := 9` undercounted
+// the screen header and let tall lanes spill below the terminal.
+// Per-lane chrome = 2 borders + 2 header rows (kicker / separator) = 4.
 func (m Model) boardViewportRows() int {
-	if m.height <= 0 {
-		return 0
-	}
-	chrome := 9 // header(2) + nav(2) + view-leading-blank(1) + footer(2) + col header+sep(2)
-	if m.status != "" {
-		chrome++
-	}
-	rows := m.height - chrome
-	if rows < 6 {
-		return 0
-	}
-	return rows
+	return m.panelViewportRows(4)
 }
 
 // boardColumnCapacity returns how many board columns fit side-by-side at the

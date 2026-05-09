@@ -1,5 +1,43 @@
 package tui
 
+import "strings"
+
+// panelViewportRows is the canonical "rows the data area gets" budget
+// for any view that draws a single panel under the screen chrome (table,
+// board lane, entity grid, settings entity). It subtracts the live
+// chrome — measured rather than hard-coded so changes in the header /
+// nav / sub strip update the budget automatically — from the terminal
+// height. The Stats / Logs panel keeps its own variant because its
+// summary tables sit between the screen header and the panel body; the
+// callers here all start the panel right after the screen chrome.
+//
+// `panelChrome` is the rows the panel itself owns (border + kicker +
+// separator + any trailing hint), so the returned number is exactly
+// what `sliceScrollRows` (or a per-card scroller) should treat as its
+// data window. Returns 0 on tiny terminals so callers fall back to
+// "render everything and let clampViewToHeight chop" — never returning
+// a negative budget.
+func (m Model) panelViewportRows(panelChrome int) int {
+	if m.height <= 0 {
+		return 0
+	}
+	screenHeader := strings.Count(m.renderHeader(), "\n") + 1
+	statusLine := 0
+	if m.status != "" && !m.isEmbeddedCommentInput() {
+		statusLine = 2 // separator newline + the status badge
+	}
+	const (
+		leadingBlank = 1 // "\n" prepended by every renderXxx before the body
+		footerLines  = 2 // newline + indented keybinding row
+	)
+	chrome := screenHeader + statusLine + leadingBlank + panelChrome + footerLines
+	rows := m.height - chrome
+	if rows < 4 {
+		return 0
+	}
+	return rows
+}
+
 // scrollDataRows is the canonical adapter between a panel's full row
 // budget (which `sliceScrollRows` expects) and the data-row window any
 // cursor-tracking helper should target. The renderer reserves up to 2
