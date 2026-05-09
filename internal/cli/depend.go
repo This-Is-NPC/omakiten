@@ -43,7 +43,7 @@ func newDependAddCommand(opts *runtimeOptions) *cobra.Command {
 			if err != nil {
 				return nil, err
 			}
-			dependency, err := app.NewDependencyService(rt.store).Add(ctx, project, taskID, on)
+			dependency, err := app.NewDependencyServiceWithEvents(rt.store, rt.store).Add(ctx, project, taskID, on)
 				if err != nil {
 					return nil, err
 				}
@@ -79,7 +79,7 @@ func newDependRemoveCommand(opts *runtimeOptions) *cobra.Command {
 			if err != nil {
 				return nil, err
 			}
-			if err := app.NewDependencyService(rt.store).Remove(ctx, project, taskID, on); err != nil {
+			if err := app.NewDependencyServiceWithEvents(rt.store, rt.store).Remove(ctx, project, taskID, on); err != nil {
 					return nil, err
 				}
 				return map[string]any{"project": project, "removed": true}, nil

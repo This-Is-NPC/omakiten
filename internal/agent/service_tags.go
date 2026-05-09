@@ -11,7 +11,7 @@ func (s *Service) AddTag(ctx context.Context, input AddTagInput) (TagResponse, e
 	if err != nil {
 		return TagResponse{}, err
 	}
-	tag, err := app.NewTagService(s.repo).Add(ctx, project, input.EntityType, input.EntityID, input.TagName)
+	tag, err := app.NewTagServiceWithEvents(s.repo, s.repo).Add(ctx, project, input.EntityType, input.EntityID, input.TagName)
 	if err != nil {
 		return TagResponse{}, err
 	}
@@ -33,7 +33,7 @@ func (s *Service) RemoveTag(ctx context.Context, input RemoveTagInput) (RemoveTa
 			},
 		}, nil
 	}
-	if err := app.NewTagService(s.repo).Remove(ctx, project, input.EntityType, input.EntityID, input.TagID); err != nil {
+	if err := app.NewTagServiceWithEvents(s.repo, s.repo).Remove(ctx, project, input.EntityType, input.EntityID, input.TagID); err != nil {
 		return RemoveTagResponse{}, err
 	}
 	return RemoveTagResponse{Project: projectSummary(project), Removed: true}, nil
@@ -44,7 +44,7 @@ func (s *Service) ListTags(ctx context.Context, input ListTagsInput) (TagListRes
 	if err != nil {
 		return TagListResponse{}, err
 	}
-	tags, err := app.NewTagService(s.repo).List(ctx, project, input.EntityType, input.EntityID)
+	tags, err := app.NewTagServiceWithEvents(s.repo, s.repo).List(ctx, project, input.EntityType, input.EntityID)
 	if err != nil {
 		return TagListResponse{}, err
 	}
@@ -52,7 +52,7 @@ func (s *Service) ListTags(ctx context.Context, input ListTagsInput) (TagListRes
 }
 
 func (s *Service) ListAllTags(ctx context.Context) (AllTagsResponse, error) {
-	tags, err := app.NewTagService(s.repo).ListAll(ctx)
+	tags, err := app.NewTagServiceWithEvents(s.repo, s.repo).ListAll(ctx)
 	if err != nil {
 		return AllTagsResponse{}, err
 	}
@@ -60,7 +60,7 @@ func (s *Service) ListAllTags(ctx context.Context) (AllTagsResponse, error) {
 }
 
 func (s *Service) MergeTags(ctx context.Context, input MergeTagsInput) (TagResponse, error) {
-	tag, err := app.NewTagService(s.repo).Merge(ctx, input.SourceTagID, input.TargetTagID)
+	tag, err := app.NewTagServiceWithEvents(s.repo, s.repo).Merge(ctx, input.SourceTagID, input.TargetTagID)
 	if err != nil {
 		return TagResponse{}, err
 	}

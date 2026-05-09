@@ -80,7 +80,7 @@ func (s *ErrorService) Record(ctx context.Context, project domain.ProjectContext
 	for i, t := range record.Tags {
 		tagNames[i] = t.Name
 	}
-	s.emitDomainEvent(ctx, "error", record.ID, record.ProjectID, "error.recorded", map[string]any{
+	s.emitDomainEvent(ctx, "error", record.ID, record.ProjectID, domain.EventTypeErrorRecorded, map[string]any{
 		"tags":        tagNames,
 		"has_context": record.Context != "",
 	})
@@ -111,7 +111,7 @@ func (s *ErrorService) Search(ctx context.Context, project domain.ProjectContext
 	if err != nil {
 		return
 	}
-	s.emitDomainEvent(ctx, "error", 0, project.ID, "error.searched", map[string]any{
+	s.emitDomainEvent(ctx, "error", 0, project.ID, domain.EventTypeErrorSearched, map[string]any{
 		"query":        cleanQuery,
 		"tags":         tagNames,
 		"result_count": len(records),
@@ -147,7 +147,7 @@ func (s *ErrorService) AddSolution(ctx context.Context, project domain.ProjectCo
 	if err != nil {
 		return
 	}
-	s.emitDomainEvent(ctx, "solution", solution.ID, project.ID, "solution.added", map[string]any{
+	s.emitDomainEvent(ctx, "solution", solution.ID, project.ID, domain.EventTypeSolutionAdded, map[string]any{
 		"error_id": solution.ErrorID,
 	})
 	return
@@ -173,9 +173,14 @@ func (s *ErrorService) ConfirmSolution(ctx context.Context, project domain.Proje
 	if err != nil {
 		return
 	}
-	eventType := "solution.failed"
+	s.emitDomainEvent(ctx, "solution", solution.ID, project.ID, domain.EventTypeSolutionConfirmed, map[string]any{
+		"error_id": solution.ErrorID,
+		"success":  success,
+		"likes":    solution.Likes,
+	})
+	eventType := domain.EventTypeSolutionFailed
 	if success {
-		eventType = "solution.liked"
+		eventType = domain.EventTypeSolutionLiked
 	}
 	s.emitDomainEvent(ctx, "solution", solution.ID, project.ID, eventType, map[string]any{
 		"error_id": solution.ErrorID,
@@ -217,7 +222,7 @@ func (s *ErrorService) ListTopSolutions(ctx context.Context, project domain.Proj
 	if err != nil {
 		return
 	}
-	s.emitDomainEvent(ctx, "solution", 0, project.ID, "solution.viewed_top", map[string]any{
+	s.emitDomainEvent(ctx, "solution", 0, project.ID, domain.EventTypeSolutionViewedTop, map[string]any{
 		"limit":          limit,
 		"returned_count": len(solutions),
 	})
