@@ -112,6 +112,11 @@ type styles struct {
 	commentCard     lipgloss.Style
 	systemEventCard lipgloss.Style
 	commentInput    lipgloss.Style
+	// cursor styles the visible-state of the bubbles cursor inside any
+	// textarea/textinput. Set Foreground=primary so the cursor.View()
+	// reverse-pass renders as a primary-bg block over a primary-fg char,
+	// guaranteeing visibility regardless of the surrounding line style.
+	cursor          lipgloss.Style
 	border          lipgloss.Style
 	kanbanColumn    lipgloss.Style
 	card            lipgloss.Style
@@ -178,6 +183,7 @@ func newStyles(theme config.Theme) styles {
 		panel:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2),
 		commentCard:    lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1),
 		commentInput:   lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 1).Height(commentInputHeight),
+		cursor:         lipgloss.NewStyle().Foreground(primary),
 		// systemEventCard mirrors the commentCard geometry (border + padding)
 		// so the activity column stays visually consistent — same column
 		// alignment, same width budget. The metadata cue comes from the text

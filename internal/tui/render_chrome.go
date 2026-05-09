@@ -105,8 +105,10 @@ func (m Model) renderInput() string {
 	// override the neutral default border with the accent — the user is
 	// typing here and the focus cue should match the form's focused-field
 	// treatment.
+	input := m.moveInput
+	input.Cursor.Style = m.styles.cursor
 	style := m.styles.input.BorderForeground(m.styles.hintAccent.GetForeground())
-	return indentBlock(style.Render(fmt.Sprintf("%s: %s", m.status, m.moveInput.View())), 2)
+	return indentBlock(style.Render(fmt.Sprintf("%s: %s", m.status, input.View())), 2)
 }
 
 // renderCurrentView is the screen dispatcher: which renderer fires for the

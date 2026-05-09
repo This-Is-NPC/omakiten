@@ -753,6 +753,7 @@ func (m Model) renderTaskForm(title string) string {
 // the user is never confused about where the next keystroke lands.
 func (m Model) renderTaskTitleField(width int) string {
 	input := m.taskTitleInput
+	input.Cursor.Style = m.styles.cursor
 	innerWidth := width - 4
 	if innerWidth < 8 {
 		innerWidth = 8
@@ -771,6 +772,12 @@ func (m Model) renderTaskTitleField(width int) string {
 // jump to any line/column without rebuilding the whole string.
 func (m Model) renderTaskDescriptionField(width int) string {
 	input := m.taskDescriptionInput
+	// Override the default empty cursor Style with an explicit accent
+	// foreground so the reverse-video block always renders as a visible
+	// primary-colored cell — without this the cursor disappears against
+	// the textarea's default line styling on some terminals (the user
+	// flagged "no cursor on description").
+	input.Cursor.Style = m.styles.cursor
 	innerWidth := width - 4
 	if innerWidth < 8 {
 		innerWidth = 8
