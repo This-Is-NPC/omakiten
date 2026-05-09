@@ -12,8 +12,12 @@ import (
 	"omakiten/internal/activity"
 	"omakiten/internal/agent"
 	"omakiten/internal/app"
+	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
+	"omakiten/internal/events"
+	"omakiten/internal/hooks"
+	"omakiten/internal/hooks/actions"
 	"omakiten/internal/output"
 	"omakiten/internal/paths"
 	projectresolver "omakiten/internal/project"
@@ -29,9 +33,11 @@ type runtimeOptions struct {
 }
 
 type runtime struct {
-	store      *sqlite.Store
-	configPath string
-	dbPath     string
+	store       *sqlite.Store
+	configPath  string
+	dbPath      string
+	bus         events.Bus
+	hooksEngine *hooks.Engine
 }
 
 func (r *runtime) WithActivityRepo(ctx context.Context) context.Context {
@@ -42,6 +48,9 @@ func (r *runtime) WithActivityRepo(ctx context.Context) context.Context {
 // uses `defer rt.close()` instead of inlining `defer func() { _ = rt.store.Close() }()`
 // so the boilerplate stays in one place.
 func (r *runtime) close() {
+	if r.hooksEngine != nil {
+		r.hooksEngine.Stop()
+	}
 	_ = r.store.Close()
 }
 
@@ -144,6 +153,8 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		return nil, err
 	}
 
+	rt := &runtime{store: store, configPath: configPath, dbPath: dbPath}
+
 	if materializeConfig {
 		// Import loads + validates + populates the domain registries
 		// (priority/severity) BEFORE writing to SQLite, so the rest
@@ -154,6 +165,18 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 			_ = store.Close()
 			return nil, err
 		}
+
+		bus := events.NewInProcessBus(bundle.Config.Events)
+		registry := hooks.NewActionRegistry()
+		actions.RegisterBuiltins(registry)
+		if err := config.ValidateHooks(bundle.Config.Hooks, func(name string) bool {
+			_, ok := registry.Get(name)
+			return ok
+		}); err != nil {
+			_ = store.Close()
+			return nil, err
+		}
+
 		// Reapply busy_timeout with the user-resolved value, then wire the
 		// activity-log + events knobs into the live Store. Mirrors the
 		// agentruntime composition root — every entry point that opens a
@@ -164,6 +187,7 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 			ActivityLogMaxAgeDays:    bundle.Config.ActivityLog.MaxAgeDays,
 			EventsDefaultRecentLimit: bundle.Config.Events.DefaultRecentLimit,
 			EventsPolicy:             bundle.Config.Events,
+			EventBus:                 bus,
 		}); err != nil {
 			_ = store.Close()
 			return nil, err
@@ -174,9 +198,18 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		// here.
 		app.RegisterTagSynonyms(bundle.Config.TagSynonyms)
 		agent.RegisterStopWords(bundle.Config.Search.Stopwords)
+
+		hookEntries := make([]hooks.Hook, 0, len(bundle.Config.Hooks))
+		for _, spec := range bundle.Config.Hooks {
+			hookEntries = append(hookEntries, hooks.Hook{On: spec.On, When: spec.When, Do: spec.Do, Args: spec.Args})
+		}
+		engine := hooks.NewEngine(hookEntries, registry, bundle.Config.Events, store)
+		engine.Start(bus)
+		rt.bus = bus
+		rt.hooksEngine = engine
 	}
 
-	return &runtime{store: store, configPath: configPath, dbPath: dbPath}, nil
+	return rt, nil
 }
 
 func (o *runtimeOptions) resolvedConfigPath() (string, error) {

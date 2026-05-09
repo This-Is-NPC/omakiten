@@ -43,7 +43,19 @@ RETURNING id, project_id, entity_id, body, author_type, created_at
 		comment.Tags = append(comment.Tags, domain.Tag{ID: tagID, Name: tag.Name, Label: tag.Label})
 	}
 
-	return comment, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return domain.Comment{}, err
+	}
+	s.publishEvent(ctx, domain.Event{
+		ID:         comment.ID,
+		EntityType: domain.EventEntityTask,
+		EntityID:   comment.TaskID,
+		ProjectID:  comment.ProjectID,
+		EventType:  domain.EventTypeComment,
+		Body:       comment.Body,
+		AuthorType: comment.AuthorType,
+	})
+	return comment, nil
 }
 
 func (s *Store) ListComments(ctx context.Context, projectID, taskID int64) ([]domain.Comment, error) {
@@ -143,23 +155,29 @@ UPDATE events SET body = ? WHERE id = ? AND project_id = ? AND entity_type = 'ta
 		updated.Tags = append(updated.Tags, domain.Tag{ID: tagID, Name: tag.Name, Label: tag.Label})
 	}
 
+	payload := map[string]any{"comment_id": commentID}
+	if prev.Body != body {
+		payload["body"] = map[string]any{"from": prev.Body, "to": body}
+	}
+	payloadBytes, marshalErr := json.Marshal(payload)
+	if marshalErr != nil {
+		return domain.Comment{}, domain.Event{}, marshalErr
+	}
 	var event domain.Event
 	if s.shouldLogEvent(domain.EventTypeCommentEdited) {
-		payload := map[string]any{"comment_id": commentID}
-		if prev.Body != body {
-			payload["body"] = map[string]any{"from": prev.Body, "to": body}
-		}
-		payloadBytes, marshalErr := json.Marshal(payload)
-		if marshalErr != nil {
-			return domain.Comment{}, domain.Event{}, marshalErr
-		}
 		event, err = insertTaskEvent(ctx, tx, projectID, prev.TaskID, domain.EventTypeCommentEdited, "", string(payloadBytes))
 		if err != nil {
 			return domain.Comment{}, domain.Event{}, err
 		}
+	} else {
+		event = domain.Event{EntityType: domain.EventEntityTask, EntityID: prev.TaskID, ProjectID: projectID, EventType: domain.EventTypeCommentEdited, Payload: string(payloadBytes)}
 	}
 
-	return updated, event, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return domain.Comment{}, domain.Event{}, err
+	}
+	s.publishEvent(ctx, event)
+	return updated, event, nil
 }
 
 // DeleteComment hard-deletes a comment (including its event_tags via FK
@@ -183,23 +201,29 @@ DELETE FROM events WHERE id = ? AND project_id = ? AND entity_type = 'task' AND 
 		return domain.Event{}, err
 	}
 
+	payload, marshalErr := json.Marshal(map[string]any{
+		"comment_id":  commentID,
+		"author_type": prev.AuthorType,
+		"body":        prev.Body,
+	})
+	if marshalErr != nil {
+		return domain.Event{}, marshalErr
+	}
 	var event domain.Event
 	if s.shouldLogEvent(domain.EventTypeCommentRemoved) {
-		payload, marshalErr := json.Marshal(map[string]any{
-			"comment_id":  commentID,
-			"author_type": prev.AuthorType,
-			"body":        prev.Body,
-		})
-		if marshalErr != nil {
-			return domain.Event{}, marshalErr
-		}
 		event, err = insertTaskEvent(ctx, tx, projectID, prev.TaskID, domain.EventTypeCommentRemoved, "", string(payload))
 		if err != nil {
 			return domain.Event{}, fmt.Errorf("emit comment.removed: %w", err)
 		}
+	} else {
+		event = domain.Event{EntityType: domain.EventEntityTask, EntityID: prev.TaskID, ProjectID: projectID, EventType: domain.EventTypeCommentRemoved, Payload: string(payload)}
 	}
 
-	return event, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return domain.Event{}, err
+	}
+	s.publishEvent(ctx, event)
+	return event, nil
 }
 
 // CommentByID returns a single comment row scoped to the active project.

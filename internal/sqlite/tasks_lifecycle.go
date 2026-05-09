@@ -66,9 +66,15 @@ RETURNING id, entity_type, COALESCE(entity_id, 0), project_id, event_type, body,
 		); err != nil {
 			return domain.Event{}, fmt.Errorf("emit task.removed: %w", err)
 		}
+	} else {
+		event = domain.Event{EntityType: domain.EventEntitySystem, ProjectID: projectID, EventType: domain.EventTypeTaskRemoved, Payload: string(payload)}
 	}
 
-	return event, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return domain.Event{}, err
+	}
+	s.publishEvent(ctx, event)
+	return event, nil
 }
 
 // SetTaskState flips the active|archived flag and emits the matching
@@ -118,24 +124,30 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 	if state == domain.TaskStateActive {
 		eventType = domain.EventTypeTaskUnarchived
 	}
+	payload, marshalErr := json.Marshal(map[string]any{
+		"from_bucket": prev.BucketKey,
+		"to_bucket":   bucketKey,
+		"from_state":  prev.State,
+		"to_state":    state,
+	})
+	if marshalErr != nil {
+		return domain.Task{}, domain.Event{}, marshalErr
+	}
 	var event domain.Event
 	if s.shouldLogEvent(eventType) {
-		payload, marshalErr := json.Marshal(map[string]any{
-			"from_bucket": prev.BucketKey,
-			"to_bucket":   bucketKey,
-			"from_state":  prev.State,
-			"to_state":    state,
-		})
-		if marshalErr != nil {
-			return domain.Task{}, domain.Event{}, marshalErr
-		}
 		event, err = insertTaskEvent(ctx, tx, projectID, taskID, eventType, "", string(payload))
 		if err != nil {
 			return domain.Task{}, domain.Event{}, err
 		}
+	} else {
+		event = domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: eventType, Payload: string(payload)}
 	}
 
-	return task, event, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return domain.Task{}, domain.Event{}, err
+	}
+	s.publishEvent(ctx, event)
+	return task, event, nil
 }
 
 // EmitTaskEditedEvent records a task.edited event with a payload describing

@@ -26,6 +26,7 @@ func TestKnownEventTypesCoversCatalog(t *testing.T) {
 		EventTypeSolutionLiked:     {},
 		EventTypeSolutionFailed:    {},
 		EventTypeSolutionViewedTop: {},
+		EventTypeHookExecuted:      {},
 	}
 	if len(KnownEventTypes) != len(want) {
 		t.Fatalf("KnownEventTypes len = %d, want %d", len(KnownEventTypes), len(want))

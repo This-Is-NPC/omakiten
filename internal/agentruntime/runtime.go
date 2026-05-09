@@ -16,6 +16,9 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
+	"omakiten/internal/events"
+	"omakiten/internal/hooks"
+	"omakiten/internal/hooks/actions"
 	"omakiten/internal/paths"
 	"omakiten/internal/sqlite"
 )
@@ -39,10 +42,13 @@ type Options struct {
 // connection, the resolved paths, and the agent.Service that handlers
 // dispatch through.
 type Runtime struct {
-	store      *sqlite.Store
-	configPath string
-	dbPath     string
-	service    *agent.Service
+	store        *sqlite.Store
+	configPath   string
+	dbPath       string
+	service      *agent.Service
+	bus          events.Bus
+	hooksEngine  *hooks.Engine
+	actionRegistry *hooks.ActionRegistry
 }
 
 // Open materializes the runtime: resolves paths, runs config layout
@@ -83,12 +89,28 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 
+	bus := events.NewInProcessBus(bundle.Config.Events)
+	registry := hooks.NewActionRegistry()
+	actions.RegisterBuiltins(registry)
+
+	// Re-validate hooks now that the registry is populated so unknown
+	// `do:` names abort startup with a clear error rather than silently
+	// going untriggered.
+	if err := config.ValidateHooks(bundle.Config.Hooks, func(name string) bool {
+		_, ok := registry.Get(name)
+		return ok
+	}); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+
 	if err := store.ApplyConfig(ctx, sqlite.ConfigKnobs{
 		BusyTimeoutMs:            bundle.Config.SQLite.BusyTimeoutMs,
 		ActivityLogMaxRows:       bundle.Config.ActivityLog.MaxRows,
 		ActivityLogMaxAgeDays:    bundle.Config.ActivityLog.MaxAgeDays,
 		EventsDefaultRecentLimit: bundle.Config.Events.DefaultRecentLimit,
 		EventsPolicy:             bundle.Config.Events,
+		EventBus:                 bus,
 	}); err != nil {
 		_ = store.Close()
 		return nil, err
@@ -108,7 +130,14 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// the bundle. No need to re-register here — the registry is
 	// already populated for the rest of the runtime.
 
-	rt := &Runtime{store: store, configPath: configPath, dbPath: dbPath}
+	hookEntries := make([]hooks.Hook, 0, len(bundle.Config.Hooks))
+	for _, spec := range bundle.Config.Hooks {
+		hookEntries = append(hookEntries, hooks.Hook{On: spec.On, When: spec.When, Do: spec.Do, Args: spec.Args})
+	}
+	engine := hooks.NewEngine(hookEntries, registry, bundle.Config.Events, store)
+	engine.Start(bus)
+
+	rt := &Runtime{store: store, configPath: configPath, dbPath: dbPath, bus: bus, hooksEngine: engine, actionRegistry: registry}
 	rt.service = agent.NewService(store, agent.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
 	rt.service.SetTaskTemplateLookup(taskTemplateLookup(bundle))
 	rt.service.SetTemplateCatalog(templateCatalog(bundle))
@@ -141,7 +170,22 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 }
 
 func (r *Runtime) Close() error {
+	if r.hooksEngine != nil {
+		r.hooksEngine.Stop()
+	}
 	return r.store.Close()
+}
+
+// ActionRegistry exposes the hook action registry so callers (TUI startup,
+// tests) can register additional actions before the engine is busy.
+func (r *Runtime) ActionRegistry() *hooks.ActionRegistry {
+	return r.actionRegistry
+}
+
+// Bus returns the in-process events bus. Subscribers (live TUI panels,
+// future buddies) register via this handle.
+func (r *Runtime) Bus() events.Bus {
+	return r.bus
 }
 
 func (r *Runtime) Service() *agent.Service {

@@ -117,6 +117,7 @@ type Settings struct {
 	Solutions        SolutionsSettings   `yaml:"solutions,omitempty" json:"solutions,omitempty"`
 	Events           EventsSettings      `yaml:"events,omitempty" json:"events,omitempty"`
 	Search           SearchSettings      `yaml:"search,omitempty" json:"search,omitempty"`
+	Hooks            []HookSpec          `yaml:"hooks,omitempty" json:"hooks,omitempty"`
 	TagSynonyms      map[string]string   `yaml:"tag_synonyms,omitempty" json:"tag_synonyms,omitempty"`
 	// Priorities is the configurable id↔value table for task priorities.
 	// Code references the id (opaque); renderers resolve the value via
@@ -332,6 +333,17 @@ type SolutionsSettings struct {
 	MaxTopLimit int `yaml:"max_top_limit" json:"max_top_limit"`
 }
 
+// HookSpec is one entry of `config.hooks`. Mirrors hooks.Hook so the
+// config layer stays free of an import cycle (internal/hooks imports
+// config). Composition root maps HookSpec → hooks.Hook before handing
+// the slice to the engine.
+type HookSpec struct {
+	On   string                 `yaml:"on" json:"on"`
+	When map[string]string      `yaml:"when,omitempty" json:"when,omitempty"`
+	Do   string                 `yaml:"do" json:"do"`
+	Args map[string]interface{} `yaml:"args,omitempty" json:"args,omitempty"`
+}
+
 // EventsSettings declares per-event-type channel policies (log to db,
 // broadcast in-process, dispatch to hooks) plus the fallback recent-events
 // limit used by `Store.ListRecentEvents` when callers pass <=0. Defaults
@@ -369,13 +381,31 @@ type EventChannelSettings struct {
 // neither layer declares Log explicitly, the conservative answer is true
 // (preserves the pre-feature behaviour).
 func (e EventsSettings) ResolveLog(eventType string) bool {
+	return resolveEventChannel(e, eventType, func(c EventChannelSettings) *bool { return c.Log })
+}
+
+// ResolveBroadcast reports whether the event bus should fan the event
+// out to subscribers. Same overrides → defaults → true fallback as
+// ResolveLog so an unconfigured runtime keeps broadcasting.
+func (e EventsSettings) ResolveBroadcast(eventType string) bool {
+	return resolveEventChannel(e, eventType, func(c EventChannelSettings) *bool { return c.Broadcast })
+}
+
+// ResolveHook reports whether the hooks engine should consider the
+// event for dispatch. Same overrides → defaults → true fallback as
+// ResolveLog.
+func (e EventsSettings) ResolveHook(eventType string) bool {
+	return resolveEventChannel(e, eventType, func(c EventChannelSettings) *bool { return c.Hook })
+}
+
+func resolveEventChannel(e EventsSettings, eventType string, pick func(EventChannelSettings) *bool) bool {
 	if override, ok := e.Overrides[eventType]; ok {
-		if override.Log != nil {
-			return *override.Log
+		if v := pick(override); v != nil {
+			return *v
 		}
 	}
-	if e.Defaults.Log != nil {
-		return *e.Defaults.Log
+	if v := pick(e.Defaults); v != nil {
+		return *v
 	}
 	return true
 }
