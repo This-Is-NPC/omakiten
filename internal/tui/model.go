@@ -16,12 +16,22 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/components/buddy"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/picker"
 	"omakiten/internal/tui/components/viewport"
 )
 
-func NewModel(ctx context.Context, project domain.ProjectContext, repos Repositories, theme config.Theme, counter token.Counter, badge config.TokenBadgeThresholds, priorities []config.PriorityDefinition, severities []config.SeverityDefinition) (Model, error) {
+// BuddyBinding pairs the loaded buddies with the active selection
+// from `config.tui.buddy.active`. Empty Active means buddies are
+// loaded but no mascot is wired — buddy.show events are no-ops at
+// the parent.
+type BuddyBinding struct {
+	Buddies map[string]config.Buddy
+	Active  string
+}
+
+func NewModel(ctx context.Context, project domain.ProjectContext, repos Repositories, theme config.Theme, counter token.Counter, badge config.TokenBadgeThresholds, priorities []config.PriorityDefinition, severities []config.SeverityDefinition, buddies BuddyBinding) (Model, error) {
 	if counter == nil {
 		counter = token.ApproxCounter{}
 	}
@@ -42,6 +52,8 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		severities:       severities,
 		markdown:         newMarkdownRenderer(tokensFromTheme(theme)),
 		markdownRendered: true,
+		buddies:          buddies.Buddies,
+		activeBuddy:      buddies.Active,
 	}
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()
@@ -81,6 +93,9 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	prevNav := navState{top: m.top, sub: m.sub}
+	if next, cmd, handled := m.dispatchBuddy(msg); handled {
+		return next, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -375,6 +390,14 @@ func (m *Model) activeViewSettings() config.ViewSettings {
 }
 
 func (m Model) View() string {
+	view := m.renderView()
+	if m.buddy != nil {
+		view = buddy.Overlay(view, m.buddy.View(), m.buddy.Position())
+	}
+	return view
+}
+
+func (m Model) renderView() string {
 	if m.helpOpen {
 		return clampViewToHeight(m.height, m.renderHeader(), m.renderHelp(), m.renderHelpFooter())
 	}
@@ -388,6 +411,60 @@ func (m Model) View() string {
 	}
 	parts = append(parts, m.renderCurrentView(), m.renderFooter())
 	return clampViewToHeight(m.height, parts...)
+}
+
+// dispatchBuddy routes buddy-related messages to the live buddy
+// model when present, and intercepts ShowMsg / DismissedMsg to flip
+// the buddy slot. handled=true means the parent's regular dispatch
+// should stop — buddy is intentionally exclusive while active so
+// dismiss + scroll keys take priority over the app underneath.
+func (m Model) dispatchBuddy(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	if showMsg, ok := msg.(buddy.ShowMsg); ok {
+		// Drop the new request when a buddy is still typing in —
+		// avoids interrupting an Appearing animation with a fresh
+		// payload (Settled buddies are replaceable).
+		if m.buddy != nil && m.buddy.State() == buddy.StateAppearing {
+			return m, nil, true
+		}
+		bm, cmd := buddy.New(buddy.Options{
+			Buddy:           showMsg.Buddy,
+			Theme:           m.theme,
+			Animation:       showMsg.Animation,
+			Text:            showMsg.Text,
+			Position:        showMsg.Position,
+			Dismiss:         showMsg.Dismiss,
+			TypingMsPerChar: showMsg.TypingMsPerChar,
+			FrameIntervalMs: showMsg.FrameIntervalMs,
+		})
+		m.buddy = &bm
+		return m, cmd, true
+	}
+	if dm, ok := msg.(buddy.DismissedMsg); ok {
+		if m.buddy != nil && dm.ID == m.buddy.ID() {
+			m.buddy = nil
+		}
+		return m, nil, true
+	}
+	if m.buddy == nil {
+		return m, nil, false
+	}
+	switch msg.(type) {
+	case tea.KeyMsg:
+		// Buddy consumes keys exclusively while active: scroll +
+		// dismiss handled, others swallowed so the app doesn't react.
+		next, cmd := m.buddy.Update(msg)
+		m.buddy = &next
+		return m, cmd, true
+	}
+	// Forward non-key messages (ticks, timeouts, window size) to
+	// buddy without consuming the parent's chance to react. Buddy
+	// returns nil cmd for unrelated messages so this is cheap.
+	next, cmd := m.buddy.Update(msg)
+	m.buddy = &next
+	if cmd != nil {
+		return m, cmd, true
+	}
+	return m, nil, false
 }
 
 // clampViewToHeight joins the segments of a view (header → middle → footer)

@@ -44,7 +44,7 @@ func TestNewModelWithEmptyProjectOpensHome(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, BuddyBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -87,7 +87,7 @@ func TestHomeHidesTabBar(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, BuddyBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -132,7 +132,7 @@ func TestCtrlHReturnsToHome(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, BuddyBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -172,7 +172,7 @@ func TestHomeEnterSelectsProject(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, BuddyBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -217,7 +217,7 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, BuddyBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -265,7 +265,7 @@ func TestHomeRendersProjectTagBadges(t *testing.T) {
 		Entries:      store,
 		Config:       store,
 		Tags:         store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, BuddyBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}

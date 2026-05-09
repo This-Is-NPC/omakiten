@@ -13,11 +13,20 @@ import (
 // unknown actions so typos surface at LoadBundle, not at first event.
 type HookActionResolver func(name string) bool
 
+// HookActionArgValidator gives the composition root a place to plug
+// per-action argument shape checks at LoadBundle. The closure is
+// invoked once per hook with the resolved action name and its raw
+// args map. Returning an error aborts startup with the wrapped
+// message; returning nil leaves the hook accepted.
+type HookActionArgValidator func(action string, args map[string]any) error
+
 // ValidateHooks runs the hooks block through the catalog + action
 // checks. on:/event_type must be a known event type; do: must be
 // registered. exec actions need a non-empty argv array. Empty hooks
-// list is allowed.
-func ValidateHooks(hooks []HookSpec, isAction HookActionResolver) error {
+// list is allowed. validateArgs (optional) lets the composition root
+// register per-action arg validators (e.g. buddy.show) without
+// pulling additional packages into config.
+func ValidateHooks(hooks []HookSpec, isAction HookActionResolver, validateArgs HookActionArgValidator) error {
 	for i, h := range hooks {
 		on := strings.TrimSpace(h.On)
 		if on == "" {
@@ -36,6 +45,11 @@ func ValidateHooks(hooks []HookSpec, isAction HookActionResolver) error {
 		if do == "exec" {
 			if err := validateExecArgs(i, h.Args); err != nil {
 				return err
+			}
+		}
+		if validateArgs != nil {
+			if err := validateArgs(do, h.Args); err != nil {
+				return fmt.Errorf("config.hooks[%d]: %w", i, err)
 			}
 		}
 	}

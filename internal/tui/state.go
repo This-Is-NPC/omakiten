@@ -11,6 +11,7 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/components/buddy"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/picker"
 	"omakiten/internal/tui/components/viewport"
@@ -299,6 +300,14 @@ type Model struct {
 	// colors. markdownRendered is the session-only toggle bound to `M`.
 	markdown         *markdownRenderer
 	markdownRendered bool
+
+	// buddies is the catalog of loaded mascots; activeBuddy names the
+	// one a buddy.show hook will spawn. Both are captured at NewModel
+	// time from the active bundle. buddy is the live mascot model
+	// while one is on screen; nil otherwise.
+	buddies     map[string]config.Buddy
+	activeBuddy string
+	buddy       *buddy.Model
 }
 
 // inputMode is the modal-input enum: normal navigation, comment-add input

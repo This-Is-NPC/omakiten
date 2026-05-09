@@ -23,6 +23,7 @@ import (
 	projectresolver "omakiten/internal/project"
 	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/components/buddy"
 )
 
 type runtimeOptions struct {
@@ -38,6 +39,7 @@ type runtime struct {
 	dbPath      string
 	bus         events.Bus
 	hooksEngine *hooks.Engine
+	buddyAction *buddy.ShowAction
 }
 
 func (r *runtime) WithActivityRepo(ctx context.Context) context.Context {
@@ -169,10 +171,13 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		bus := events.NewInProcessBus(bundle.Config.Events)
 		registry := hooks.NewActionRegistry()
 		actions.RegisterBuiltins(registry)
+		buddyAction := buddy.NewShowAction(buddySnapshotFromBundle(bundle))
+		registry.Register(buddyAction)
+		rt.buddyAction = buddyAction
 		if err := config.ValidateHooks(bundle.Config.Hooks, func(name string) bool {
 			_, ok := registry.Get(name)
 			return ok
-		}); err != nil {
+		}, buddyHookArgValidator(bundle)); err != nil {
 			_ = store.Close()
 			return nil, err
 		}
@@ -249,6 +254,40 @@ func writeError(cmd *cobra.Command, err error) error {
 
 	_ = output.Write(cmd.OutOrStdout(), output.Failure("internal_error", err.Error(), nil))
 	return exitError{code: 1}
+}
+
+// buddySnapshotFromBundle builds the slim view of the bundle the
+// buddy.show action consults at execute time. Captured at the
+// composition root so the action stays decoupled from config plumbing.
+func buddySnapshotFromBundle(bundle config.Bundle) buddy.BundleSnapshot {
+	return buddy.BundleSnapshot{
+		ActiveBuddy: bundle.Config.TUI.Buddy.Active,
+		Buddies:     bundle.Buddies,
+	}
+}
+
+// buddyHookArgValidator returns the per-action arg validator the
+// hooks validator invokes for buddy.show. The closure is bound to the
+// bundle so it can build the animation set from the active buddy.
+func buddyHookArgValidator(bundle config.Bundle) config.HookActionArgValidator {
+	return func(action string, args map[string]any) error {
+		if action != buddy.ActionName {
+			return nil
+		}
+		active := bundle.Config.TUI.Buddy.Active
+		if active == "" {
+			return buddy.ValidateShowArgs(args, nil)
+		}
+		b, ok := bundle.Buddies[active]
+		if !ok {
+			return fmt.Errorf("buddy.show: config.tui.buddy.active=%q not loaded", active)
+		}
+		known := make(map[string]struct{}, len(b.Animations))
+		for k := range b.Animations {
+			known[k] = struct{}{}
+		}
+		return buddy.ValidateShowArgs(args, known)
+	}
 }
 
 func runJSON(cmd *cobra.Command, fn func(context.Context) (any, error)) error {

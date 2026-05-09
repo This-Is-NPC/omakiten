@@ -9,6 +9,7 @@ package agentruntime
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -21,6 +22,7 @@ import (
 	"omakiten/internal/hooks/actions"
 	"omakiten/internal/paths"
 	"omakiten/internal/sqlite"
+	"omakiten/internal/tui/components/buddy"
 )
 
 // registerPriorities/registerSeverities used to live here. They were
@@ -49,6 +51,7 @@ type Runtime struct {
 	bus          events.Bus
 	hooksEngine  *hooks.Engine
 	actionRegistry *hooks.ActionRegistry
+	buddyAction  *buddy.ShowAction
 }
 
 // Open materializes the runtime: resolves paths, runs config layout
@@ -92,6 +95,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	bus := events.NewInProcessBus(bundle.Config.Events)
 	registry := hooks.NewActionRegistry()
 	actions.RegisterBuiltins(registry)
+	buddyAction := buddy.NewShowAction(buddy.BundleSnapshot{
+		ActiveBuddy: bundle.Config.TUI.Buddy.Active,
+		Buddies:     bundle.Buddies,
+	})
+	registry.Register(buddyAction)
 
 	// Re-validate hooks now that the registry is populated so unknown
 	// `do:` names abort startup with a clear error rather than silently
@@ -99,7 +107,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if err := config.ValidateHooks(bundle.Config.Hooks, func(name string) bool {
 		_, ok := registry.Get(name)
 		return ok
-	}); err != nil {
+	}, buddyArgsValidator(bundle)); err != nil {
 		_ = store.Close()
 		return nil, err
 	}
@@ -137,7 +145,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	engine := hooks.NewEngine(hookEntries, registry, bundle.Config.Events, store)
 	engine.Start(bus)
 
-	rt := &Runtime{store: store, configPath: configPath, dbPath: dbPath, bus: bus, hooksEngine: engine, actionRegistry: registry}
+	rt := &Runtime{store: store, configPath: configPath, dbPath: dbPath, bus: bus, hooksEngine: engine, actionRegistry: registry, buddyAction: buddyAction}
 	rt.service = agent.NewService(store, agent.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
 	rt.service.SetTaskTemplateLookup(taskTemplateLookup(bundle))
 	rt.service.SetTemplateCatalog(templateCatalog(bundle))
@@ -174,6 +182,32 @@ func (r *Runtime) Close() error {
 		r.hooksEngine.Stop()
 	}
 	return r.store.Close()
+}
+
+// buddyArgsValidator returns the per-action arg validator the hooks
+// validator invokes when do == "buddy.show". The closure is bound to
+// the bundle so it can build the animation set from the active buddy
+// (which the bundle validator separately enforces is non-empty when
+// any hook does buddy.show).
+func buddyArgsValidator(bundle config.Bundle) config.HookActionArgValidator {
+	return func(action string, args map[string]any) error {
+		if action != buddy.ActionName {
+			return nil
+		}
+		active := bundle.Config.TUI.Buddy.Active
+		if active == "" {
+			return buddy.ValidateShowArgs(args, nil)
+		}
+		b, ok := bundle.Buddies[active]
+		if !ok {
+			return fmt.Errorf("buddy.show: config.tui.buddy.active=%q not loaded", active)
+		}
+		known := make(map[string]struct{}, len(b.Animations))
+		for k := range b.Animations {
+			known[k] = struct{}{}
+		}
+		return buddy.ValidateShowArgs(args, known)
+	}
 }
 
 // ActionRegistry exposes the hook action registry so callers (TUI startup,

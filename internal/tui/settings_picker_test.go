@@ -80,7 +80,7 @@ func newPickerModel(t *testing.T) (Model, string) {
 		Tasks:    store,
 		Workflow: app.NewWorkflowServiceFromStore(store), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, BuddyBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}

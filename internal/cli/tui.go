@@ -77,12 +77,18 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		ConfigPath:   rt.configPath,
 		DBPath:       rt.dbPath,
 		Version:      version,
-	}, theme, token.NewCounter(), bundle.Config.TUI.TokenBadge, bundle.Config.EffectivePriorities(), bundle.Config.EffectiveSeverities())
+	}, theme, token.NewCounter(), bundle.Config.TUI.TokenBadge, bundle.Config.EffectivePriorities(), bundle.Config.EffectiveSeverities(), tui.BuddyBinding{
+		Buddies: bundle.Buddies,
+		Active:  bundle.Config.TUI.Buddy.Active,
+	})
 	if err != nil {
 		return err
 	}
 
 	program := tea.NewProgram(model, tea.WithAltScreen())
+	if rt.buddyAction != nil {
+		rt.buddyAction.SetProgram(program)
+	}
 	finalModel, runErr := program.Run()
 	// The shell wrapper installed by install.sh / install.ps1 reads the
 	// path written here and `cd`s the parent shell after the TUI exits.

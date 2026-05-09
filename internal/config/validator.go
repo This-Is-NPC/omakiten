@@ -100,7 +100,7 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	// runtime registers built-ins); skip it here so plain LoadBundle
 	// callers (tests, CLI subcommands) still validate event-type +
 	// argv shape without needing an engine.
-	if err := ValidateHooks(bundle.Config.Hooks, nil); err != nil {
+	if err := ValidateHooks(bundle.Config.Hooks, nil, nil); err != nil {
 		return err
 	}
 	if err := validateSearchSettings(bundle.Config.Search); err != nil {
