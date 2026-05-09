@@ -93,6 +93,45 @@ Always returns nil. Used by tests and as a smoke option in user yamls
 when you want to confirm the engine sees an event without side-effects.
 Takes no args.
 
+### `buddy.show`
+
+Spawns the configured ASCII mascot over the TUI when the event matches.
+Outside the TUI (CLI / MCP processes) the action is a silent no-op so
+the same hook block stays valid in every entry point. The buddy
+catalogue lives in `buddies/<name>.yaml` and the active mascot is
+selected via `config.tui.buddy.active`. See
+[`buddies.md`](buddies.md) for the buddy YAML schema, color refs, and
+authoring guidance.
+
+| Key                  | Type    | Required | Default                       | Description |
+| -------------------- | ------- | -------- | ----------------------------- | ----------- |
+| `animation`          | string  | yes      | —                             | Name of an animation declared on the active buddy (`idle`, `deny`, …). The validator rejects names not present at `LoadBundle`. |
+| `position`           | string  | yes      | —                             | One of `top-left`, `top-center`, `top-right`, `middle-left`, `center`, `middle-right`, `bottom-left`, `bottom-center`, `bottom-right`. |
+| `typing_ms_per_char` | integer | yes      | —                             | Per-character delay during the appear-typing phase. `0` means show the full bubble immediately. |
+| `dismiss`            | object  | yes      | —                             | Discriminated by `mode`. See below. |
+| `message_field`      | string  | yes      | —                             | Top-level key to pull from `domain.Event.Payload`. Falls back to `domain.Event.Body`; an empty result aborts the show. |
+| `frame_interval_ms`  | integer | no       | buddy YAML's `frame_interval_ms` | Override per-hook frame cadence; otherwise the buddy's declared rhythm wins. Must be `> 0` when set. |
+
+`dismiss.mode` selects which extra fields apply:
+
+| `mode`        | Required extra | Behaviour |
+| ------------- | -------------- | --------- |
+| `key`         | `keys` — non-empty array of key names | Buddy stays until the user presses one of the listed keys. Ignored while typing. |
+| `timeout`     | `after_ms` — integer `> 0`            | Timer starts when the buddy reaches `Settled` (typing finished); expires → dismiss. |
+| `next_status` | none                                  | Buddy stays until the parent triggers a domain transition; useful for sticky “did you mean…” prompts. |
+
+The hook is rejected at `LoadBundle` when:
+
+- `config.tui.buddy.active` is empty AND any hook does `do: buddy.show`;
+- `animation` does not exist on the active buddy;
+- `position` is not one of the nine anchors;
+- `dismiss.mode` is `key` without a non-empty `keys`, or `timeout` without a positive `after_ms`;
+- `typing_ms_per_char` is negative; `frame_interval_ms` is `<= 0` when supplied.
+
+`message_field` is a single top-level key — path syntax is intentionally
+out of scope. Wire payloads to top-level fields if you need to surface a
+specific value.
+
 ## Recipes
 
 ### Log every blocked delete
@@ -138,6 +177,51 @@ config:
 
 The script reads the JSON event from stdin and can call
 `jq -r .entity_id` to pull the archived task's id.
+
+### Show a mascot when a guard blocks delete
+
+```yaml
+config:
+  tui:
+    buddy:
+      active: kitten
+  hooks:
+    - on: guard.violated
+      when: { operation: task.delete }
+      do: buddy.show
+      args:
+        animation: deny
+        position: top-right
+        typing_ms_per_char: 25
+        dismiss: { mode: key, keys: [esc] }
+        message_field: hint
+```
+
+The guard violation event ships a `hint` field in its payload (see
+[`guards-guide.md`](guards-guide.md)); the buddy types it letter by
+letter, settles, and disappears on `esc`.
+
+### Surface every agent comment for 8 seconds
+
+```yaml
+config:
+  tui:
+    buddy:
+      active: kitten
+  hooks:
+    - on: comment.created
+      when: { author_type: agent }
+      do: buddy.show
+      args:
+        animation: idle
+        position: bottom-center
+        typing_ms_per_char: 0
+        dismiss: { mode: timeout, after_ms: 8000 }
+        message_field: body
+```
+
+`typing_ms_per_char: 0` shows the full comment instantly so the buddy
+is mostly visible during the timeout window, not while typing.
 
 ### Filter by author_type or source
 
