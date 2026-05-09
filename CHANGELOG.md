@@ -51,6 +51,15 @@
 * **boundary enforcement:** new `internal/arch/arch_test.go` walks the import graph and fails if `internal/domain` reaches into adapters, if `internal/app` imports concrete adapters, or if any leaf adapter references a sibling. A `.golangci.yml` mirrors the rules under `depguard`. CI now runs `go vet`, `go test -race -count=1` and `golangci-lint`.
 * **eliminated `"backlog"` literal in production code:** `internal/cli/add.go --bucket` defaults to `""` (the `WorkflowService` resolves the active workflow's first bucket); the TUI's create form does the same.
 
+## [0.11.0](https://github.com/This-Is-NPC/omakiten/compare/v0.10.0...v0.11.0) (2026-05-09)
+
+
+### Features
+
+* domain events catalog, guard.violated emission, and per-event log gate ([#39](https://github.com/This-Is-NPC/omakiten/issues/39)) ([5009136](https://github.com/This-Is-NPC/omakiten/commit/50091366cbd8053486efb9c1dcd6f940c911d4d0))
+* in-process event bus + YAML-driven hooks engine with async exec action ([#42](https://github.com/This-Is-NPC/omakiten/issues/42)) ([f2c6f2a](https://github.com/This-Is-NPC/omakiten/commit/f2c6f2aaf1ba1e43bbd1c70b4f540c63b601e088))
+* **tui:** render markdown bodies on detail panels ([#41](https://github.com/This-Is-NPC/omakiten/issues/41)) ([7dd0d70](https://github.com/This-Is-NPC/omakiten/commit/7dd0d705d34103e25c0c3127eda863e62b0fe60d))
+
 ## [0.10.0](https://github.com/This-Is-NPC/omakiten/compare/v0.9.1...v0.10.0) (2026-05-09)
 
 
