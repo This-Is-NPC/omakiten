@@ -18,7 +18,16 @@ func (m Model) renderSettingsEntity(kind entityKind) string {
 	if contentWidth < entityListWidth {
 		contentWidth = entityListWidth
 	}
-	cell := m.renderEntityCellWithViewport(kind, m.entityViewportRows(), contentWidth)
-	body := m.styles.kanbanColumn.Width(columnInner).Render(cell)
+	viewport := m.entityViewportRows()
+	cell := m.renderEntityCellWithViewport(kind, viewport, contentWidth)
+	style := m.styles.kanbanColumn.Width(columnInner)
+	// Match the board's uniform-height treatment so the entity grid box
+	// closes its bottom border at the terminal floor instead of where the
+	// last card happened to land. +2 covers the inner kicker + separator
+	// rows so the inner grid still has `viewport` rows of card budget.
+	if viewport > 0 {
+		style = style.Height(viewport + 2)
+	}
+	body := style.Render(cell)
 	return "\n" + indentBlock(body, 2)
 }
