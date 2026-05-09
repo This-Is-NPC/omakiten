@@ -20,12 +20,10 @@ func (m Model) renderSettingsEntity(kind entityKind) string {
 	}
 	viewport := m.entityViewportRows()
 	cell := m.renderEntityCellWithViewport(kind, viewport, contentWidth)
-	innerHeight := 0
-	if viewport > 0 {
-		// +2 = kicker + separator inside the column, mirroring the board's
-		// uniform-height treatment via the shared kanbanColumnSized helper.
-		innerHeight = viewport + 2
-	}
-	body := m.styles.kanbanColumnSized(columnInner, innerHeight).Render(cell)
+	// Content-sized box: short entity sets keep a small box; tall ones
+	// hit the renderEntityCellWithViewport scroll cap (▲ N above /
+	// ▼ N below). Forcing a fixed Height made the empty bottom show as
+	// dead vertical space — the user flagged that as a regression.
+	body := m.styles.kanbanColumnSized(columnInner, 0).Render(cell)
 	return "\n" + indentBlock(body, 2)
 }

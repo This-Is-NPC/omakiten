@@ -312,16 +312,14 @@ func (m Model) renderBoard() string {
 
 	n := len(m.workflow.Buckets)
 	layout := m.computeBoardLayout(n)
-	innerHeight := 0
-	if layout.viewportRows > 0 {
-		// +2 = header + separator inside the lane, so the inner card budget
-		// stays equal to viewportRows. Lanes with fewer cards get padded
-		// with blank lines so every lane's bottom border lands on the same
-		// terminal row. On too-small terminals viewportRows falls to 0 and
-		// we keep the legacy content-sized box.
-		innerHeight = layout.viewportRows + 2
-	}
-	columnStyle := m.styles.kanbanColumnSized(layout.columnInner, innerHeight)
+	// Lanes are content-sized: short columns close their bottom border at
+	// the last card, tall columns hit the internal viewport scroll (which
+	// already caps height to layout.viewportRows). Forcing a fixed Height
+	// here pads short lanes with empty rows AND can overshoot the screen
+	// when the chrome estimate undercounts — both regressions the user
+	// flagged. The natural sizing matches "ajusta a quantidade de cards
+	// dentro dela e não passa do tamanho limite da tela".
+	columnStyle := m.styles.kanbanColumnSized(layout.columnInner, 0)
 	emptyStyle := m.styles.empty.Width(layout.columnInner)
 
 	cap := m.boardColumnCapacity(layout)
