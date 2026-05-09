@@ -257,15 +257,39 @@ func (m Model) commentEditScreenInnerWidth() int {
 }
 
 // commentEditScreenInnerHeight returns the textarea height inside the
-// dedicated comment edit screen. We give the body roughly the full task
-// viewport height minus the kicker / hint / footer rows so a long comment
-// has room to breathe — much more than the 5-row inline modal.
+// dedicated comment edit screen. The textarea is roomier than the task
+// description (comments are prose, not summaries) but stays well under
+// the terminal height — the user flagged a previous full-screen sizing
+// as overshooting visible space. Cap is half the task viewport, floored
+// to a sane minimum so a tiny terminal still shows enough rows to type.
 func (m Model) commentEditScreenInnerHeight() int {
-	const minHeight = 8
-	chrome := 6 // kicker + hint + status + blank + bordered chrome (2 rows of border + padding)
-	h := m.taskViewportHeight() - chrome
-	if h < minHeight {
+	const (
+		minHeight     = 8
+		preferredCap  = 16
+		terminalShare = 2 // half of taskViewportHeight at most
+	)
+	available := m.taskViewportHeight()
+	if available <= 0 {
 		return minHeight
+	}
+	h := available / terminalShare
+	if h > preferredCap {
+		h = preferredCap
+	}
+	if h < minHeight {
+		h = minHeight
+	}
+	// Clamp to leave room for kicker + hint + blank + borders + footer
+	// (~8 rows of chrome around the textarea). When the terminal is too
+	// short to fit the preferred height + chrome, scale the textarea
+	// down so the form never exceeds the visible viewport.
+	const chromeBudget = 8
+	maxByTerminal := available - chromeBudget
+	if maxByTerminal > 0 && h > maxByTerminal {
+		h = maxByTerminal
+	}
+	if h < minHeight {
+		h = minHeight
 	}
 	return h
 }
@@ -280,6 +304,7 @@ func (m Model) renderCommentEditScreen(comment domain.Comment) string {
 	innerHeight := m.commentEditScreenInnerHeight()
 
 	input := m.commentInput
+	input.Cursor.Style = m.styles.cursor
 	input.SetWidth(innerWidth)
 	input.SetHeight(innerHeight)
 	style := m.styles.multilineInput.Width(width).Height(innerHeight + 2).BorderForeground(m.styles.hintAccent.GetForeground())
@@ -387,6 +412,7 @@ func (m Model) renderCommentInput() string {
 		innerWidth = 8
 	}
 	input := m.commentInput
+	input.Cursor.Style = m.styles.cursor
 	input.SetWidth(innerWidth)
 	input.SetHeight(commentInputHeight)
 	style := m.styles.commentInput.Width(width).BorderForeground(m.styles.hintAccent.GetForeground())
