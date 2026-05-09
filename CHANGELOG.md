@@ -50,6 +50,20 @@
 * **boundary enforcement:** new `internal/arch/arch_test.go` walks the import graph and fails if `internal/domain` reaches into adapters, if `internal/app` imports concrete adapters, or if any leaf adapter references a sibling. A `.golangci.yml` mirrors the rules under `depguard`. CI now runs `go vet`, `go test -race -count=1` and `golangci-lint`.
 * **eliminated `"backlog"` literal in production code:** `internal/cli/add.go --bucket` defaults to `""` (the `WorkflowService` resolves the active workflow's first bucket); the TUI's create form does the same.
 
+## [0.10.0](https://github.com/This-Is-NPC/omakiten/compare/v0.9.1...v0.10.0) (2026-05-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **tui:** migrate modal inputs to bubbles, unify scroll math, and extract render leaves ([#38](https://github.com/This-Is-NPC/omakiten/issues/38))
+* data-driven config — CRUD policy, archive lifecycle, configurable enums, kit YAML single source of truth ([#35](https://github.com/This-Is-NPC/omakiten/issues/35))
+
+### Features
+
+* data-driven config — CRUD policy, archive lifecycle, configurable enums, kit YAML single source of truth ([#35](https://github.com/This-Is-NPC/omakiten/issues/35)) ([8db76d6](https://github.com/This-Is-NPC/omakiten/commit/8db76d6a712179c661b2252d523c202d7ff5e9af))
+* **mcp:** expose tasks.edit delegating to TaskService.Edit ([#37](https://github.com/This-Is-NPC/omakiten/issues/37)) ([ad3e332](https://github.com/This-Is-NPC/omakiten/commit/ad3e332aedca22327c8e4dd33b5380a6ed10601a))
+* **tui:** migrate modal inputs to bubbles, unify scroll math, and extract render leaves ([#38](https://github.com/This-Is-NPC/omakiten/issues/38)) ([79bd200](https://github.com/This-Is-NPC/omakiten/commit/79bd20011b39689dea05f443f0f397b9ab29e4b2))
+
 ## [0.9.1](https://github.com/This-Is-NPC/omakiten/compare/v0.9.0...v0.9.1) (2026-05-08)
 
 
