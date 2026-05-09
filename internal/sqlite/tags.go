@@ -8,6 +8,54 @@ import (
 	"omakiten/internal/domain"
 )
 
+// tagPivot enumerates the join tables that link a tag to an entity. The
+// values are kept inside the package so attachTagsTx can switch on a closed
+// set rather than concatenate caller-supplied table names into SQL.
+type tagPivot int
+
+const (
+	tagPivotEvent tagPivot = iota
+	tagPivotError
+)
+
+// attachTagsTx ensures each tag exists (insert-or-ignore by name), reads
+// back the canonical (id, label) pair, and links it to the entity through
+// the supplied pivot. Returns the resolved tags so the caller can echo them
+// back on the entity it just wrote. Pivot and entity column are enumerated
+// here so SQL stays string-literal — callers cannot inject a third table.
+//
+// Used by AddComment / UpdateComment (event_tags) and RecordError
+// (error_tags); each previously inlined the same loop.
+func attachTagsTx(ctx context.Context, tx *sql.Tx, pivot tagPivot, entityID int64, tags []domain.Tag) ([]domain.Tag, error) {
+	if len(tags) == 0 {
+		return nil, nil
+	}
+	out := make([]domain.Tag, 0, len(tags))
+	for _, tag := range tags {
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO tags(name, label) VALUES (?, ?)`, tag.Name, tag.Label); err != nil {
+			return nil, err
+		}
+		var stored domain.Tag
+		if err := tx.QueryRowContext(ctx, `SELECT id, name, label FROM tags WHERE name = ?`, tag.Name).Scan(&stored.ID, &stored.Name, &stored.Label); err != nil {
+			return nil, err
+		}
+		switch pivot {
+		case tagPivotEvent:
+			if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO event_tags(event_id, tag_id) VALUES (?, ?)`, entityID, stored.ID); err != nil {
+				return nil, err
+			}
+		case tagPivotError:
+			if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO error_tags(error_id, tag_id) VALUES (?, ?)`, entityID, stored.ID); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, errors.New("attachTagsTx: unknown pivot")
+		}
+		out = append(out, stored)
+	}
+	return out, nil
+}
+
 func (s *Store) FindOrCreateTag(ctx context.Context, name, label string) (domain.Tag, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

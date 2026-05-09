@@ -4,11 +4,11 @@
 
 | Layer | Technology | Version |
 |-------|-----------|---------|
-| Language | Go | 1.25.0 (`go.mod`); 1.25.9 toolchain pin (`.mise.toml`) |
+| Language | Go | 1.25.0 (`go.mod`); 1.25.10 toolchain pin (`.mise.toml`) |
 | CLI Framework | Cobra | v1.10.2 (`go.mod`) |
 | TUI Framework | Bubble Tea | v1.3.10 (`go.mod`) |
-| Terminal Styling | Lipgloss | v1.1.0 (`go.mod`) |
-| ANSI helpers | `charmbracelet/x/ansi` | v0.10.1 (`go.mod`) |
+| Terminal Styling | Lipgloss | v1.1.1-0.20250404203927-76690c660834 (`go.mod`) |
+| ANSI helpers | `charmbracelet/x/ansi` | v0.11.6 (`go.mod`) |
 | Database | SQLite (pure Go) | v1.50.0 — `modernc.org/sqlite` (`go.mod`) |
 | YAML Parsing | `gopkg.in/yaml.v3` | v3.0.1 (`go.mod`) |
 | Token Counting | `tiktoken-go` | v0.1.8 (`go.mod`) |
@@ -24,8 +24,8 @@
 | `gopkg.in/yaml.v3` | v3.0.1 | YAML parsing/generation for config bundles + frontmatter |
 | `modernc.org/sqlite` | v1.50.0 | Pure-Go SQLite driver (no CGo) |
 | `github.com/charmbracelet/bubbletea` | v1.3.10 | TUI framework (Elm-like model/update/view) |
-| `github.com/charmbracelet/lipgloss` | v1.1.0 | Terminal styling and layout |
-| `github.com/charmbracelet/x/ansi` | v0.10.1 | ANSI escape utilities used by TUI rendering |
+| `github.com/charmbracelet/lipgloss` | v1.1.1-0.20250404203927-76690c660834 | Terminal styling and layout |
+| `github.com/charmbracelet/x/ansi` | v0.11.6 | ANSI escape utilities used by TUI rendering |
 | `github.com/pkoukk/tiktoken-go` | v0.1.8 | OpenAI BPE token counting (`cl100k_base`) |
 | `github.com/google/uuid` | v1.6.0 | UUID generation (indirect, used by activity layer) |
 | `github.com/dustin/go-humanize` | v1.0.1 | Human-readable formatting in TUI |
@@ -44,7 +44,7 @@
 | `internal/sqlite/` | Right-side adapter: SQLite store, schema migration, all repository implementations, activity logs, events |
 | `internal/agent/` | Protocol-neutral agent service (intents, DTOs, error mapping); imports only `internal/app`, `internal/domain`, `internal/project`, `internal/token` |
 | `internal/agentruntime/` | Composition root for the agent: opens sqlite, configstore, imports bundle, wires `agent.Service` (`runtime.go`) |
-| `internal/agentsetup/` | MCP harness setup writer for `claude-code`, `claude-desktop`, `opencode` |
+| `internal/agentsetup/` | MCP harness setup writer for the six supported harnesses (`claude-code`, `claude-desktop`, `opencode`, `crush`, `github-copilot`, `codex`); canonical list in `setup.go::SupportedHarnesses` |
 | `internal/mcp/` | MCP adapter: maps MCP tools/resources/prompts to `agent.Service` calls + JSON-RPC stdio server |
 | `internal/project/` | Active-project resolver (`--project-id`, `--project`, CWD precedence) |
 | `internal/output/` | JSON envelope formatting for machine-parseable CLI output |
@@ -97,9 +97,9 @@ Not applicable — local-first single-user CLI/TUI/MCP tool with no authn or aut
 
 | Metric | Status | Value / Finding | Source (tool + command) or Recommendation |
 |--------|--------|-----------------|-------------------------------------------|
-| Test structure | measured | 75 test files across 25 packages with tests; standard Go `testing`; table-driven tests driven by per-package `testdata/*.yaml` fixtures (loader in `internal/testfixtures` baseline-merges the embedded kit YAML so partial fixtures inherit canonical values, mirroring the install pipeline); integration-style CLI tests; TUI key-simulation tests; MCP adapter tests; agent service tests; agentsetup tests; activity log tests; domain priority + severity registry tests; dedicated boundary test in `internal/arch/` (hexagonal rules). 621 tests pass. | `go test ./...` |
-| Test coverage | recommended | Re-measure after the policy CRUD + test-fixture refactor. Use `go test -coverprofile=/tmp/coverage.out ./... && go tool cover -func=/tmp/coverage.out`. | `go test -coverprofile=/tmp/coverage.out ./...` |
-| Module sizes (LOC) | measured | 160 non-test files / 27,926 LOC; 75 test files / 16,070 LOC. Top 5 non-test: `internal/config/validator.go` (892), `internal/tui/render_task.go` (820), `internal/tui/model.go` (664), `internal/mcp/adapter.go` (647), `internal/config/bundle.go` (624). | `find . -name '*.go' ! -name '*_test.go' -exec wc -l {} +` |
+| Test structure | measured (2026-05) | 95 test files across 28 packages with tests; standard Go `testing`; table-driven tests driven by per-package `testdata/*.yaml` fixtures (loader in `internal/testfixtures` baseline-merges the embedded kit YAML so partial fixtures inherit canonical values, mirroring the install pipeline); map-based subtests + `t.Parallel()` adopted in new files (`CONTRIBUTING.md` §Patterns for new test files); golden snapshots under `internal/tui/testdata/*.golden`; native fuzz on parsers (`FuzzSplitFrontmatter`); integration-style CLI tests; TUI key-simulation tests; MCP adapter tests; agent service tests; agentsetup tests; activity log tests; domain priority + severity registry tests; dedicated boundary test in `internal/arch/` (hexagonal rules). All packages green at branch HEAD. | `go test ./...` |
+| Test coverage | measured (2026-05) | Total **~67%**. Per-package floor 60% in non-exempt packages. Highlights: `internal/domain` 87.3%, `internal/tui/components/gridtable` 97.6%, `internal/tui/components/scrollwindow` 91.8%, `internal/cli` 66.5%. Exempt: `cmd/okt` (entry point) and `internal/testfixtures` (test helper). | `go test -coverprofile=/tmp/coverage.out ./... && go tool cover -func=/tmp/coverage.out` |
+| Module sizes (LOC) | measured (2026-05) | 192 non-test files / 30,345 LOC; 95 test files / 19,205 LOC. Top 5 non-test: `internal/config/validator.go` (901), `internal/tui/render_task.go` (838), `internal/tui/model.go` (706), `internal/mcp/adapter.go` (703), `internal/config/bundle.go` (694). | `find . -name '*.go' ! -name '*_test.go' -exec wc -l {} +` |
 | Cyclomatic complexity | recommended | Not measured. **Recommendation**: `gocyclo` — purpose-built for Go, configurable per-function threshold (e.g., 15). Install `go install github.com/fzipp/gocyclo/cmd/gocyclo@latest`; run `gocyclo -over 15 .`. | Tool: `gocyclo`; Rationale: Go-native, per-function reporting |
 | Internal dependency structure | measured | No circular dependencies; hexagonal boundaries enforced by `internal/arch/arch_test.go` (passes) and mirrored as `depguard` rules in `.golangci.yml` (`golangci-lint run` → 0 issues). | `go list -deps ./...` per package + `go test ./internal/arch/...` |
 | Mutation score | recommended | Not measured — no mutation testing configured. **Recommendation**: `gremlins` (Go-native mutation tester). Install `go install github.com/go-gremlins/gremlins@latest`; run `gremlins run`. Integrates with the existing `go test` suite. | Tool: `gremlins`; Rationale: Go-native, works with existing tests |

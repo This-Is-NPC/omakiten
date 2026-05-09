@@ -6,6 +6,7 @@ import (
 
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/gridtable"
+	"omakiten/internal/tui/components/scrollwindow"
 )
 
 func (m Model) renderTaskCommentsCell(taskID int64) string {
@@ -303,9 +304,12 @@ func (m *Model) moveActivityCursor(delta int) {
 
 // syncActivityScrollToCursor positions activityScroll (a LINE offset, not
 // a card index) so the focused card's body is visible inside the viewport.
-// Tall expanded cards prefer top-aligned: we never push past the card's
-// header just to fit the bottom — the user can keep pressing j to scroll
-// further down inside it.
+// Delegates the slice math to scrollwindow.Follow with HintsSplit so the
+// hint-row reservation is identical to what renderScrollWindowSplit will
+// consume — without that the bottom of the card silently lands behind
+// the "▼ N below" row and stays invisible. Tall expanded cards prefer
+// top-aligned so the header is reachable; the user can keep pressing j
+// to step into the rest.
 func (m *Model) syncActivityScrollToCursor() {
 	if m.activityCursor < 0 {
 		return
@@ -322,25 +326,24 @@ func (m *Model) syncActivityScrollToCursor() {
 		m.activityScroll = 0
 		return
 	}
-	maxScroll := len(body) - viewport
+	heights := make([]int, len(body))
+	for i := range heights {
+		heights[i] = 1
+	}
 	r := ranges[m.activityCursor]
 	cardTop := r.start
-	cardBottom := r.start + r.height
-
-	// Bring the bottom into view first; if the card is taller than the
-	// viewport, fall back to top-aligned so the header is still visible.
-	if cardBottom > m.activityScroll+viewport {
-		m.activityScroll = cardBottom - viewport
+	cardLast := r.start + r.height - 1
+	scroll := scrollwindow.Follow(m.activityScroll, cardLast, heights, viewport, scrollwindow.HintsSplit)
+	if scroll > cardTop {
+		scroll = cardTop
 	}
-	if cardTop < m.activityScroll {
-		m.activityScroll = cardTop
+	if scroll < 0 {
+		scroll = 0
 	}
-	if m.activityScroll < 0 {
-		m.activityScroll = 0
+	if maxScroll := len(body) - viewport; scroll > maxScroll {
+		scroll = maxScroll
 	}
-	if m.activityScroll > maxScroll {
-		m.activityScroll = maxScroll
-	}
+	m.activityScroll = scroll
 }
 
 // activityViewportLines is the maximum number of LINES the activity column

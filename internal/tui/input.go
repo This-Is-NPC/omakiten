@@ -43,6 +43,9 @@ func (m *Model) beginInput(mode inputMode, status, prefill string) {
 		m.commentInput.CursorEnd()
 		m.commentInput.Focus()
 		m.moveInput.Reset()
+		// Embedded comment input shrinks activityViewportLines by ~9 rows.
+		// Re-sync so the focused card stays inside the new budget.
+		m.syncActivityScrollToCursor()
 	default:
 		m.moveInput = newMoveInput()
 		m.moveInput.SetValue(prefill)
@@ -100,6 +103,9 @@ func (m *Model) cancelInput() {
 	m.commentInput = newCommentInput()
 	m.moveInput = newMoveInput()
 	m.status = "Cancelled"
+	// Closing the embedded comment input restores the full activityViewportLines
+	// budget; re-sync so the focused card is positioned against the new height.
+	m.syncActivityScrollToCursor()
 }
 
 // submitInput resolves the modal input by dispatching to the appropriate
@@ -146,6 +152,7 @@ func (m *Model) submitInput() {
 		m.commentEditID = 0
 		m.commentInput = newCommentInput()
 		m.moveInput = newMoveInput()
+		m.syncActivityScrollToCursor()
 		return
 	}
 	if err := m.refresh(); err != nil {
@@ -165,6 +172,7 @@ func (m *Model) submitInput() {
 	m.commentEditID = 0
 	m.commentInput = newCommentInput()
 	m.moveInput = newMoveInput()
+	m.syncActivityScrollToCursor()
 }
 
 // findCommentByID looks the requested comment up in the loaded snapshot

@@ -268,6 +268,143 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 	}
 }
 
+// TestActivityScrollKeepsFocusedCardVisible reproduces task #74: navigating
+// j past the activity viewport with the (pre-fix) sync routine left the
+// focused card hidden behind the "▼ N below" hint row because sync compared
+// against the raw viewport while renderScrollWindowSplit reserved up to two
+// rows for the split hints. Each comment carries a unique body so the test
+// can assert the focused one renders inside the visible region instead of
+// asserting on activityScroll directly.
+func TestActivityScrollKeepsFocusedCardVisible(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "lots of activity", "", domain.Priority(2), "backlog")
+	if err != nil {
+		t.Fatalf("CreateTask() = %v", err)
+	}
+	const total = 30
+	for i := 0; i < total; i++ {
+		body := fmt.Sprintf("activity-marker-%02d", i)
+		if _, err := store.AddComment(ctx, project.ID, task.ID, body, "human", nil); err != nil {
+			t.Fatalf("AddComment(%d) = %v", i, err)
+		}
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Workflow:     app.NewWorkflowServiceFromStore(store),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Events:       store,
+		Config:       store,
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	if err != nil {
+		t.Fatalf("NewModel() = %v", err)
+	}
+	model.height = 30
+	model.width = 160
+
+	got := pressKey(t, model, tea.KeyEnter)
+	got = pressKey(t, got, tea.KeyTab)
+
+	for n := 0; n < total/2; n++ {
+		got = pressRune(t, got, 'j')
+	}
+	if got.activityCursor < 0 {
+		t.Fatalf("activityCursor = %d after j×%d, want >= 0", got.activityCursor, total/2)
+	}
+
+	events := got.activityForTaskInView(got.taskID)
+	if got.activityCursor >= len(events) {
+		t.Fatalf("activityCursor = %d out of range (%d events)", got.activityCursor, len(events))
+	}
+	focused := events[got.activityCursor]
+	body := stripANSI(got.View())
+	if focused.Body == "" {
+		t.Fatalf("focused event has empty body — picked the wrong cursor")
+	}
+	if !strings.Contains(body, focused.Body) {
+		t.Fatalf("focused card %q hidden after navigation; rendered view did not contain it.\n--- view ---\n%s", focused.Body, body)
+	}
+}
+
+// TestActivityScrollResyncsOnResize covers AC#2 — shrinking the terminal
+// height after navigating must keep the focused card visible. Without the
+// resize-time sync, `activityScroll` keeps the offset that was valid for
+// the old viewport and the focused card slides off-screen.
+func TestActivityScrollResyncsOnResize(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "resize repro", "", domain.Priority(2), "backlog")
+	if err != nil {
+		t.Fatalf("CreateTask() = %v", err)
+	}
+	const total = 25
+	for i := 0; i < total; i++ {
+		body := fmt.Sprintf("resize-marker-%02d", i)
+		if _, err := store.AddComment(ctx, project.ID, task.ID, body, "human", nil); err != nil {
+			t.Fatalf("AddComment(%d) = %v", i, err)
+		}
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Workflow:     app.NewWorkflowServiceFromStore(store),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Events:       store,
+		Config:       store,
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	if err != nil {
+		t.Fatalf("NewModel() = %v", err)
+	}
+	model.height = 50
+	model.width = 160
+
+	got := pressKey(t, model, tea.KeyEnter)
+	got = pressKey(t, got, tea.KeyTab)
+	for n := 0; n < total/2; n++ {
+		got = pressRune(t, got, 'j')
+	}
+
+	resized, _ := got.Update(tea.WindowSizeMsg{Width: 160, Height: 24})
+	got, ok := resized.(Model)
+	if !ok {
+		t.Fatalf("Update(WindowSizeMsg) returned %T, want Model", resized)
+	}
+
+	events := got.activityForTaskInView(got.taskID)
+	focused := events[got.activityCursor]
+	body := stripANSI(got.View())
+	if !strings.Contains(body, focused.Body) {
+		t.Fatalf("focused card %q hidden after resize.\n--- view ---\n%s", focused.Body, body)
+	}
+}
+
 func TestActivityPanelGrowsWithAvailableWidth(t *testing.T) {
 	// Skip NewModel — its refresh path needs a fully wired repo set. We only
 	// exercise pure sizing math, so a zero-value Model with width set is enough.

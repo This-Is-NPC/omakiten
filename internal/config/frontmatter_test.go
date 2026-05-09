@@ -106,3 +106,32 @@ func TestJoinFrontmatterRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+// TestJoinFrontmatterNormalisesTrailingCR locks the post-condition that
+// JoinFrontmatter trims trailing `\r` and `\r\n` from the body. The CRLF
+// branch in SplitFrontmatter would otherwise collapse a body ending with
+// `\r` on the next read (FuzzSplitFrontmatter caught the drift on input
+// `---\n\n---\r`).
+func TestJoinFrontmatterNormalisesTrailingCR(t *testing.T) {
+	cases := map[string]struct {
+		body string
+		want string
+	}{
+		"trailing CR":    {body: "hello\r", want: "hello"},
+		"trailing CRLF":  {body: "hello\r\n", want: "hello"},
+		"trailing CR×2":  {body: "hello\r\r", want: "hello"},
+		"interior CR ok": {body: "line\rone", want: "line\rone"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			joined := JoinFrontmatter([]byte("name: Foo"), []byte(tc.body))
+			_, body, err := SplitFrontmatter(joined)
+			if err != nil {
+				t.Fatalf("Split err = %v", err)
+			}
+			if string(body) != tc.want {
+				t.Fatalf("body = %q, want %q", string(body), tc.want)
+			}
+		})
+	}
+}

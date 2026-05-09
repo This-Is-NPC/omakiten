@@ -14,11 +14,26 @@ var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
 // SplitFrontmatter separates the YAML frontmatter from the markdown body of an
 // entity file. The fence is `---` on its own line. CRLF line endings and a
-// leading BOM are tolerated. The returned body has its trailing newline trimmed
-// to keep round-trips stable.
+// leading BOM are tolerated. Both the returned frontmatter and body have their
+// trailing `\r` and `\n` trimmed so that round-tripping through JoinFrontmatter
+// is stable — without that, FuzzSplitFrontmatter caught Split→Join→Split drift
+// when a section happened to end in a lone CR (carriage return survives the
+// CRLF replacement pass at the top of this function but JoinFrontmatter would
+// strip it on the next write).
 func SplitFrontmatter(data []byte) (frontmatter, body []byte, err error) {
 	data = bytes.TrimPrefix(data, utf8BOM)
-	normalized := bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+	// Repeated ReplaceAll until idempotent: a single pass leaves overlap-ish
+	// shapes like `\r\r\n` as `\r\n` (the engine matches non-overlappingly
+	// left-to-right), which would silently re-introduce CRLF on the next
+	// Split call. Loop until no `\r\n` survives so the output is canonical.
+	normalized := data
+	for {
+		next := bytes.ReplaceAll(normalized, []byte("\r\n"), []byte("\n"))
+		if bytes.Equal(next, normalized) {
+			break
+		}
+		normalized = next
+	}
 
 	text := string(normalized)
 	if !strings.HasPrefix(text, frontmatterDelim) {
@@ -40,7 +55,7 @@ func SplitFrontmatter(data []byte) (frontmatter, body []byte, err error) {
 		}
 		bodySection := rest[bodyStart:]
 		bodySection = strings.TrimPrefix(bodySection, "\n")
-		return []byte{}, []byte(strings.TrimRight(bodySection, "\n")), nil
+		return []byte{}, []byte(strings.TrimRight(bodySection, "\r\n")), nil
 	}
 
 	closeIdx := strings.Index(rest, "\n"+frontmatterDelim)
@@ -48,29 +63,34 @@ func SplitFrontmatter(data []byte) (frontmatter, body []byte, err error) {
 		return nil, nil, errors.New("missing closing --- frontmatter delimiter")
 	}
 
-	frontmatter = []byte(rest[:closeIdx])
+	frontmatter = []byte(strings.TrimRight(rest[:closeIdx], "\r\n"))
 	bodyStart := closeIdx + 1 + len(frontmatterDelim)
 	if bodyStart >= len(rest) {
 		return frontmatter, []byte{}, nil
 	}
 	bodySection := rest[bodyStart:]
 	bodySection = strings.TrimPrefix(bodySection, "\n")
-	body = []byte(strings.TrimRight(bodySection, "\n"))
+	body = []byte(strings.TrimRight(bodySection, "\r\n"))
 	return frontmatter, body, nil
 }
 
 // JoinFrontmatter renders an entity file from its frontmatter and body, always
 // terminating with a single trailing newline so editors don't add one on save.
+// Trailing CR is stripped alongside LF: SplitFrontmatter normalizes CRLF to LF
+// on read, so a body that ends with `\r` would survive Split but get collapsed
+// to no-trailer when re-encoded — caught as a Split→Join→Split round-trip
+// drift by FuzzSplitFrontmatter.
 func JoinFrontmatter(frontmatter, body []byte) []byte {
 	var buf bytes.Buffer
 	buf.WriteString(frontmatterDelim)
 	buf.WriteByte('\n')
-	buf.Write(bytes.TrimRight(frontmatter, "\n"))
+	buf.Write(bytes.TrimRight(frontmatter, "\r\n"))
 	buf.WriteByte('\n')
 	buf.WriteString(frontmatterDelim)
 	buf.WriteByte('\n')
+	body = bytes.TrimRight(body, "\r\n")
 	if len(body) > 0 {
-		buf.Write(bytes.TrimRight(body, "\n"))
+		buf.Write(body)
 		buf.WriteByte('\n')
 	}
 	return buf.Bytes()

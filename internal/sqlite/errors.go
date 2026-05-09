@@ -45,20 +45,11 @@ RETURNING id, description, context, COALESCE(project_id, 0), created_at, COALESC
 		return domain.ErrorRecord{}, err
 	}
 
-	for _, tag := range tags {
-		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO tags(name, label) VALUES (?, ?)`, tag.Name, tag.Label); err != nil {
-			return domain.ErrorRecord{}, err
-		}
-		var tagID int64
-		var label string
-		if err := tx.QueryRowContext(ctx, `SELECT id, label FROM tags WHERE name = ?`, tag.Name).Scan(&tagID, &label); err != nil {
-			return domain.ErrorRecord{}, err
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO error_tags(error_id, tag_id) VALUES (?, ?)`, record.ID, tagID); err != nil {
-			return domain.ErrorRecord{}, err
-		}
-		record.Tags = append(record.Tags, domain.Tag{ID: tagID, Name: tag.Name, Label: label})
+	attached, err := attachTagsTx(ctx, tx, tagPivotError, record.ID, tags)
+	if err != nil {
+		return domain.ErrorRecord{}, err
 	}
+	record.Tags = attached
 
 	return record, tx.Commit()
 }

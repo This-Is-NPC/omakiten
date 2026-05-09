@@ -8,6 +8,13 @@ build/
 *.test
 coverage.out
 coverage.html
+cov_*.out
+*.prof
+*.pprof
+
+# Go workspaces (this repo is a single module; workspace files would mask drift)
+go.work
+go.work.sum
 
 # Local databases and runtime state
 *.db
@@ -42,3 +49,7 @@ tmp/
 personal_notes
 opencode.json
 .impeccable.md
+
+# Audit / quality-review working docs — drafted in-tree per audit cycle
+# but kept local until the maintainer decides to ship them with the PR.
+.docs/quality-review-*.md

@@ -29,19 +29,11 @@ RETURNING id, project_id, entity_id, body, author_type, created_at
 		return domain.Comment{}, err
 	}
 
-	for _, tag := range tags {
-		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO tags(name, label) VALUES (?, ?)`, tag.Name, tag.Label); err != nil {
-			return domain.Comment{}, err
-		}
-		var tagID int64
-		if err := tx.QueryRowContext(ctx, `SELECT id FROM tags WHERE name = ?`, tag.Name).Scan(&tagID); err != nil {
-			return domain.Comment{}, err
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO event_tags(event_id, tag_id) VALUES (?, ?)`, comment.ID, tagID); err != nil {
-			return domain.Comment{}, err
-		}
-		comment.Tags = append(comment.Tags, domain.Tag{ID: tagID, Name: tag.Name, Label: tag.Label})
+	attached, err := attachTagsTx(ctx, tx, tagPivotEvent, comment.ID, tags)
+	if err != nil {
+		return domain.Comment{}, err
 	}
+	comment.Tags = attached
 
 	if err := tx.Commit(); err != nil {
 		return domain.Comment{}, err
@@ -141,19 +133,11 @@ UPDATE events SET body = ? WHERE id = ? AND project_id = ? AND entity_type = 'ta
 		AuthorType: prev.AuthorType,
 		CreatedAt:  prev.CreatedAt,
 	}
-	for _, tag := range tags {
-		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO tags(name, label) VALUES (?, ?)`, tag.Name, tag.Label); err != nil {
-			return domain.Comment{}, domain.Event{}, err
-		}
-		var tagID int64
-		if err := tx.QueryRowContext(ctx, `SELECT id FROM tags WHERE name = ?`, tag.Name).Scan(&tagID); err != nil {
-			return domain.Comment{}, domain.Event{}, err
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO event_tags(event_id, tag_id) VALUES (?, ?)`, commentID, tagID); err != nil {
-			return domain.Comment{}, domain.Event{}, err
-		}
-		updated.Tags = append(updated.Tags, domain.Tag{ID: tagID, Name: tag.Name, Label: tag.Label})
+	attached, err := attachTagsTx(ctx, tx, tagPivotEvent, commentID, tags)
+	if err != nil {
+		return domain.Comment{}, domain.Event{}, err
 	}
+	updated.Tags = attached
 
 	payload := map[string]any{"comment_id": commentID}
 	if prev.Body != body {

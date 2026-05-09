@@ -88,6 +88,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncFocusedColumnScroll()
 		m.syncBoardColScroll()
 		m.syncFocusedEntityScroll()
+		m.syncActivityScrollToCursor()
 	case refreshTickMsg:
 		if m.shouldRealtimeRefresh() {
 			// Realtime tick is renderer-driven, not user-triggered, so

@@ -104,6 +104,10 @@ func (m *Model) closeCommentScreen() {
 	m.commentScreen = detailscreen.New(0)
 	m.commentScreenEditing = false
 	m.commentEditID = 0
+	// activityCursor survives the round-trip (so esc lands the user back on
+	// the same comment); re-sync so any stale scroll from before the overlay
+	// gets corrected against the current viewport budget.
+	m.syncActivityScrollToCursor()
 }
 
 // activeComment returns the comment currently displayed in the comment screen,
