@@ -2,18 +2,16 @@ package tui
 
 import (
 	"fmt"
+
+	"omakiten/internal/tui/components/scrollwindow"
 )
 
-// sliceViewport returns the visible slice of `lines` at the given scroll
-// offset and viewport height, plus the counts of lines hidden above and
-// below the window. Pure math — does not render hints; callers compose
-// their own indicator lines around the returned slice (single footer at
-// the bottom for detail screens, split header/footer for the activity
-// feed).
-//
-// When all content fits or `viewport` is non-positive, returns the full
-// slice with above=below=0 — callers can use that to skip indicator rows
-// entirely.
+// sliceViewport is the line-based slicer used by callers that emit
+// their own combined "▲ X above · ▼ Y below · j/k..." footer outside
+// the viewport budget — i.e. the detail-screen surfaces (renderHelp,
+// applyTaskViewScroll). Routes through scrollwindow.Slice with
+// HintsNone since the caller already reduced viewport by 1 to leave
+// room for the footer it adds itself.
 //
 // Scroll is clamped to a valid offset so callers can store a "1 << 20"
 // sentinel for "jump to end" without doing the bounds check themselves.
@@ -21,15 +19,18 @@ func sliceViewport(lines []string, scroll, viewport int) (visible []string, abov
 	if viewport <= 0 || len(lines) <= viewport {
 		return lines, 0, 0
 	}
-	offset := scroll
-	if offset < 0 {
-		offset = 0
+	if scroll < 0 {
+		scroll = 0
 	}
-	maxOffset := len(lines) - viewport
-	if offset > maxOffset {
-		offset = maxOffset
+	if maxOffset := len(lines) - viewport; scroll > maxOffset {
+		scroll = maxOffset
 	}
-	return lines[offset : offset+viewport], offset, len(lines) - (offset + viewport)
+	heights := make([]int, len(lines))
+	for i := range heights {
+		heights[i] = 1
+	}
+	end := scrollwindow.Slice(scroll, heights, viewport, scrollwindow.HintsNone)
+	return lines[scroll:end], scrollwindow.Above(scroll), scrollwindow.Below(end, len(lines))
 }
 
 // viewportFooterHint renders the standard "▲ X above · ▼ Y below · j/k
