@@ -15,6 +15,7 @@ func TestErrorServiceEmitsAttributedDomainEvents(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store)
+	service.SetSolutionsDefaults(SolutionsDefaults{TopLimitDefault: 10, TopLimitMax: 100})
 
 	rec, err := service.Record(ctx, project.Context(), "FK violation", "during migration", []string{"sqlite"})
 	if err != nil {
@@ -200,6 +201,7 @@ func TestErrorServiceListTopSolutionsRanksByLikes(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store)
+	service.SetSolutionsDefaults(SolutionsDefaults{TopLimitDefault: 10, TopLimitMax: 100})
 	rec, _ := service.Record(ctx, project.Context(), "boom", "", nil)
 
 	popular, _ := service.AddSolution(ctx, project.Context(), rec.ID, "popular", "", nil)
@@ -232,6 +234,7 @@ func TestErrorServiceListTopSolutionsClampsLimit(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store)
+	service.SetSolutionsDefaults(SolutionsDefaults{TopLimitDefault: 10, TopLimitMax: 100})
 	rec, _ := service.Record(ctx, project.Context(), "boom", "", nil)
 	for i := 0; i < 3; i++ {
 		sol, _ := service.AddSolution(ctx, project.Context(), rec.ID, "fix", "", nil)
