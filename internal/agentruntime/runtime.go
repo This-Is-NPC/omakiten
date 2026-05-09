@@ -67,6 +67,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 
+	// Open the store before the bundle is parsed because ConfigService.Import
+	// needs to write the bundle into SQLite. The kit-canonical busy_timeout
+	// applied here covers the bootstrap window; once Import returns, we
+	// reapply the user-resolved value via PRAGMA (per-connection) and wire
+	// the activity-log + events knobs into the Store.
 	store, err := sqlite.Open(ctx, dbPath)
 	if err != nil {
 		return nil, err
@@ -74,6 +79,16 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 
 	bundle, _, err := app.NewConfigService(store, cs).Import(ctx, configPath)
 	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+
+	if err := store.ApplyConfig(ctx, sqlite.ConfigKnobs{
+		BusyTimeoutMs:           bundle.Config.SQLite.BusyTimeoutMs,
+		ActivityLogMaxRows:      bundle.Config.ActivityLog.MaxRows,
+		ActivityLogMaxAgeDays:   bundle.Config.ActivityLog.MaxAgeDays,
+		EventsDefaultRecentLimit: bundle.Config.Events.DefaultRecentLimit,
+	}); err != nil {
 		_ = store.Close()
 		return nil, err
 	}
@@ -105,14 +120,22 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// The *bool fields are dereferenced here because validator confirmed
 	// they are non-nil.
 	rt.service.SetSettings(agent.ServiceSettings{
-		RecentCommentLimit: bundle.Config.MCP.RecentCommentLimit,
-		MaxCommentChars:    bundle.Config.MCP.MaxCommentChars,
-		IncludeWorkflow:    *bundle.Config.MCP.IncludeWorkflowInContinue,
-		CachePrompts:       *bundle.Config.MCP.CachePrompts,
-		RecentContextLimit: bundle.Config.MCP.RecentContextLimit,
-		NextWorkLimit:      bundle.Config.MCP.NextWorkLimit,
-		SimilarTaskLimit:   bundle.Config.MCP.SimilarTaskLimit,
+		RecentCommentLimit:       bundle.Config.MCP.RecentCommentLimit,
+		MaxCommentChars:          bundle.Config.MCP.MaxCommentChars,
+		IncludeWorkflow:          *bundle.Config.MCP.IncludeWorkflowInContinue,
+		CachePrompts:             *bundle.Config.MCP.CachePrompts,
+		RecentContextLimit:       bundle.Config.MCP.RecentContextLimit,
+		NextWorkLimit:            bundle.Config.MCP.NextWorkLimit,
+		SimilarTaskLimit:         bundle.Config.MCP.SimilarTaskLimit,
+		SolutionsTopLimitDefault: bundle.Config.Solutions.DefaultTopLimit,
+		SolutionsTopLimitMax:     bundle.Config.Solutions.MaxTopLimit,
 	})
+	// Tag synonyms + similar-task stopwords are process-global registries
+	// the consumer packages read at every NormalizeTagName / wordSet call.
+	// The composition root is the single point that knows the bundle, so
+	// installation lives here.
+	app.RegisterTagSynonyms(bundle.Config.TagSynonyms)
+	agent.RegisterStopWords(bundle.Config.Search.Stopwords)
 	return rt, nil
 }
 

@@ -642,6 +642,6 @@ func confirmSolutionSchema() map[string]any {
 
 func listTopSolutionsSchema() map[string]any {
 	props := selectorProperties()
-	props["limit"] = integerSchema("Maximum number of solutions to return (default 10, max 100)")
+	props["limit"] = integerSchema("Maximum number of solutions to return (defaults and caps come from config.solutions; omitted/<=0 = default_top_limit, larger values clamped to max_top_limit)")
 	return objectSchema(props, nil)
 }

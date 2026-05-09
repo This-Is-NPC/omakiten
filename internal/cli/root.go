@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/agent"
 	"omakiten/internal/app"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
@@ -148,10 +149,30 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		// (priority/severity) BEFORE writing to SQLite, so the rest
 		// of the CLI invocation sees a fully wired runtime. The
 		// registries live for the duration of the process.
-		if _, _, err := app.NewConfigService(store, cs).Import(ctx, configPath); err != nil {
+		bundle, _, err := app.NewConfigService(store, cs).Import(ctx, configPath)
+		if err != nil {
 			_ = store.Close()
 			return nil, err
 		}
+		// Reapply busy_timeout with the user-resolved value, then wire the
+		// activity-log + events knobs into the live Store. Mirrors the
+		// agentruntime composition root — every entry point that opens a
+		// Store from the user's bundle goes through this step.
+		if err := store.ApplyConfig(ctx, sqlite.ConfigKnobs{
+			BusyTimeoutMs:            bundle.Config.SQLite.BusyTimeoutMs,
+			ActivityLogMaxRows:       bundle.Config.ActivityLog.MaxRows,
+			ActivityLogMaxAgeDays:    bundle.Config.ActivityLog.MaxAgeDays,
+			EventsDefaultRecentLimit: bundle.Config.Events.DefaultRecentLimit,
+		}); err != nil {
+			_ = store.Close()
+			return nil, err
+		}
+		// Tag synonyms + similar-task stopwords flow through process-global
+		// registries the leaf helpers read at every call. Composition root
+		// is the single point that knows the bundle, so the install lives
+		// here.
+		app.RegisterTagSynonyms(bundle.Config.TagSynonyms)
+		agent.RegisterStopWords(bundle.Config.Search.Stopwords)
 	}
 
 	return &runtime{store: store, configPath: configPath, dbPath: dbPath}, nil
