@@ -79,6 +79,16 @@ config:
         log: false
       tag.removed:
         log: false
+  # hooks subscribes to events.bus and dispatches actions when the
+  # event_type matches `on:` and every key in `when:` matches the
+  # corresponding top-level key in event.payload (string equality;
+  # numbers/bools coerce). Actions run async (fire-and-forget), so a
+  # slow script never blocks the request that emitted the event.
+  # Built-in actions: `exec` (shells nothing — argv array is literal,
+  # the full domain.Event lands on stdin as JSON) and `noop`. See
+  # .docs/hooks.md for the per-action arg contract and worked examples.
+  # Empty list ships by default; add entries to wire automation.
+  hooks: []
   # search tunes the heuristics shared across agent-side text ranking
   # (similar-task hints in tasks.create_intent, query overlap scoring).
   # stopwords is the lowercase token list dropped before scoring; add

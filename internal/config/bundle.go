@@ -117,6 +117,7 @@ type Settings struct {
 	Solutions        SolutionsSettings   `yaml:"solutions,omitempty" json:"solutions,omitempty"`
 	Events           EventsSettings      `yaml:"events,omitempty" json:"events,omitempty"`
 	Search           SearchSettings      `yaml:"search,omitempty" json:"search,omitempty"`
+	Hooks            []HookSpec          `yaml:"hooks,omitempty" json:"hooks,omitempty"`
 	TagSynonyms      map[string]string   `yaml:"tag_synonyms,omitempty" json:"tag_synonyms,omitempty"`
 	// Priorities is the configurable id↔value table for task priorities.
 	// Code references the id (opaque); renderers resolve the value via
@@ -330,6 +331,17 @@ type SolutionsSettings struct {
 	// MaxTopLimit caps caller-supplied limits. Required; >=
 	// DefaultTopLimit so the validator catches inverted ranges.
 	MaxTopLimit int `yaml:"max_top_limit" json:"max_top_limit"`
+}
+
+// HookSpec is one entry of `config.hooks`. Mirrors hooks.Hook so the
+// config layer stays free of an import cycle (internal/hooks imports
+// config). Composition root maps HookSpec → hooks.Hook before handing
+// the slice to the engine.
+type HookSpec struct {
+	On   string                 `yaml:"on" json:"on"`
+	When map[string]string      `yaml:"when,omitempty" json:"when,omitempty"`
+	Do   string                 `yaml:"do" json:"do"`
+	Args map[string]interface{} `yaml:"args,omitempty" json:"args,omitempty"`
 }
 
 // EventsSettings declares per-event-type channel policies (log to db,

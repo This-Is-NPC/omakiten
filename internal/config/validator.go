@@ -96,6 +96,13 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	if err := validateEventsSettings(bundle.Config.Events); err != nil {
 		return err
 	}
+	// Action-name resolution happens at composition root (after the
+	// runtime registers built-ins); skip it here so plain LoadBundle
+	// callers (tests, CLI subcommands) still validate event-type +
+	// argv shape without needing an engine.
+	if err := ValidateHooks(bundle.Config.Hooks, nil); err != nil {
+		return err
+	}
 	if err := validateSearchSettings(bundle.Config.Search); err != nil {
 		return err
 	}
