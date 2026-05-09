@@ -9,6 +9,7 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/multilineform"
 )
 
 // beginInput puts the model into a modal text-input state. Used when the
@@ -26,8 +27,19 @@ func (m *Model) beginInput(mode inputMode, status, prefill string) {
 	case modeComment:
 		m.commentInput = newCommentInput()
 		m.commentInput.SetValue(prefill)
-		m.commentInput.SetWidth(m.commentInputWidth())
-		m.commentInput.SetHeight(commentInputHeight)
+		// Calibrate the persistent textarea geometry BEFORE CursorEnd so
+		// the end-of-content scroll is computed against the same wrap
+		// width that renderCommentInput will pass into multilineform.Render.
+		// Without this, the persistent viewport keeps the bubbles default
+		// (40 cols / 6 rows) and the first keystroke desyncs yOffset.
+		// See multilineform.Resize for the full explanation; mirrors
+		// resizeTaskDescriptionInput and openCommentEdit.
+		multilineform.Resize(
+			&m.commentInput,
+			m.commentInputWidth(),
+			commentInputHeight,
+			m.styles.multilineFormTheme(),
+		)
 		m.commentInput.CursorEnd()
 		m.commentInput.Focus()
 		m.moveInput.Reset()

@@ -238,24 +238,32 @@ func (m *Model) openCommentEdit(comment domain.Comment) {
 	m.commentEditID = comment.ID
 	m.commentInput = newCommentInput()
 	m.commentInput.SetValue(comment.Body)
-	m.commentInput.SetWidth(m.commentEditScreenInnerWidth())
-	m.commentInput.SetHeight(m.commentEditScreenInnerHeight())
+	// Calibrate the persistent textarea geometry BEFORE CursorEnd so the
+	// end-of-content scroll is computed against the same wrap width that
+	// renderCommentEditScreen will pass into multilineform.Render. Without
+	// this, the persistent viewport keeps the bubbles default (40 cols /
+	// 6 rows) and the first keystroke desyncs yOffset — visible symptom is
+	// the field appearing to vanish. See multilineform.Resize for the full
+	// explanation; mirrors resizeTaskDescriptionInput.
+	multilineform.Resize(
+		&m.commentInput,
+		m.commentEditScreenOuterWidth(),
+		m.commentEditScreenInnerHeight(),
+		m.styles.multilineFormTheme(),
+	)
 	m.commentInput.CursorEnd()
 	m.commentInput.Focus()
 	m.status = fmt.Sprintf("Editing comment #%d", comment.ID)
 	m.moveMode = false
 }
 
-// commentEditScreenInnerWidth returns the textarea inner width (after the
-// outer panel's border + padding) used by the dedicated comment edit
-// screen. Mirrors the task form's width budget so editing a long comment
-// feels just like editing a task description.
-func (m Model) commentEditScreenInnerWidth() int {
-	width := m.availableWidth() - 8
-	if width < 24 {
-		width = 24
-	}
-	return width
+// commentEditScreenOuterWidth returns the OUTER cell width passed to
+// multilineform.Render — the leaf derives the inner textarea width by
+// subtracting the formMultiline horizontal padding. Used by both the
+// render path and openCommentEdit's Resize call so persistent geometry
+// matches what the renderer actually draws.
+func (m Model) commentEditScreenOuterWidth() int {
+	return m.availableWidth() - 4
 }
 
 // commentEditScreenInnerHeight returns the textarea height inside the
@@ -302,7 +310,7 @@ func (m Model) commentEditScreenInnerHeight() int {
 // shared multilineform leaf for identical inner chrome (border,
 // padding, cursor accent). Always focused: this screen is modal.
 func (m Model) renderCommentEditScreen(comment domain.Comment) string {
-	width := m.availableWidth() - 4
+	width := m.commentEditScreenOuterWidth()
 	innerHeight := m.commentEditScreenInnerHeight()
 
 	field := multilineform.Render(

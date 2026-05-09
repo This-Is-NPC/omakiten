@@ -263,3 +263,117 @@ func TestModeCommentEditInputMultilineCursor(t *testing.T) {
 		t.Fatalf("saved.Tags = [%s], want [keep-me] preserved across edit", strings.Join(names, ", "))
 	}
 }
+
+// TestBeginInputModeCommentCalibratesTextarea locks the fix for the
+// "field empties on first keystroke" bug on the inline new-comment
+// modal. Pre-fix, beginInput called SetWidth/SetHeight with the OUTER
+// width while renderCommentInput passed that same outer width into
+// multilineform.Render — the leaf then derived a smaller inner width by
+// subtracting the formMultiline horizontal padding. The persistent
+// model and the render-time copy operated on different wraps; the
+// first Update(msg) desynced yOffset and the field appeared to vanish.
+//
+// Mirrors TestOpenTaskEditCalibratesDescriptionTextarea: the persistent
+// textarea Width() must equal the inner width derived from
+// commentInputWidth() minus formMultiline padding.
+func TestBeginInputModeCommentCalibratesTextarea(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	if _, err := store.CreateTask(ctx, project.ID, "Subject", "", domain.Priority(2), "backlog"); err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatalf("Update(WindowSizeMsg) returned %T, want Model", updated)
+	}
+
+	got = pressKey(t, got, tea.KeyEnter)
+	got = pressRune(t, got, 'c')
+	if got.mode != modeComment {
+		t.Fatalf("mode = %v, want modeComment", got.mode)
+	}
+
+	wantInnerWidth := got.commentInputWidth() - got.styles.formMultiline.GetHorizontalPadding()
+	if w := got.commentInput.Width(); w != wantInnerWidth {
+		t.Fatalf("commentInput.Width() = %d, want %d (commentInputWidth %d minus padding %d) — Resize at beginInput(modeComment) not applied", w, wantInnerWidth, got.commentInputWidth(), got.styles.formMultiline.GetHorizontalPadding())
+	}
+	if h := got.commentInput.Height(); h != commentInputHeight {
+		t.Fatalf("commentInput.Height() = %d, want %d — Resize at beginInput(modeComment) not applied", h, commentInputHeight)
+	}
+}
+
+// TestOpenCommentEditCalibratesTextarea locks the fix for the
+// "field empties on first keystroke" bug on the dedicated comment edit
+// overlay. Same root cause and same remedy as the inline-comment test
+// above, but for openCommentEdit's full-screen path where the outer
+// width is commentEditScreenOuterWidth instead of commentInputWidth.
+func TestOpenCommentEditCalibratesTextarea(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog")
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if _, err := store.AddComment(ctx, project.ID, task.ID, "first line\nsecond\nthird", "human", nil); err != nil {
+		t.Fatalf("AddComment() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store), Events: store, ActivityLogs: store, Tags: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatalf("Update(WindowSizeMsg) returned %T, want Model", updated)
+	}
+
+	got = pressKey(t, got, tea.KeyEnter)
+	got = pressKey(t, got, tea.KeyTab)
+	got = pressStringKey(t, got, "J")
+	got = pressKey(t, got, tea.KeyEnter)
+	got = pressRune(t, got, 'e')
+	if !got.commentScreenEditing {
+		t.Fatalf("commentScreenEditing = false, want true after 'e' on the comment screen")
+	}
+
+	wantInnerWidth := got.commentEditScreenOuterWidth() - got.styles.formMultiline.GetHorizontalPadding()
+	if w := got.commentInput.Width(); w != wantInnerWidth {
+		t.Fatalf("commentInput.Width() = %d, want %d (commentEditScreenOuterWidth %d minus padding %d) — Resize at openCommentEdit not applied", w, wantInnerWidth, got.commentEditScreenOuterWidth(), got.styles.formMultiline.GetHorizontalPadding())
+	}
+	if h := got.commentInput.Height(); h != got.commentEditScreenInnerHeight() {
+		t.Fatalf("commentInput.Height() = %d, want %d — Resize at openCommentEdit not applied", h, got.commentEditScreenInnerHeight())
+	}
+}
