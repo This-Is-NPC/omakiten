@@ -15,29 +15,36 @@ import (
 // rejects calls missing it); _agent_session_id is optional. They are
 // stripped from args before tool-specific decoding so individual input
 // structs don't have to care.
+//
+// Both fields are also declared on every tool's InputSchema by
+// withAgentAttribution so schema-aware clients (Claude Code harness,
+// JSON-Schema-validating SDKs) include them automatically — without that
+// declaration the client strips the unknown keys and the call fails with
+// a "_agent_model is required" rejection the LLM cannot recover from.
 const (
 	agentModelArgKey   = "_agent_model"
 	agentSessionArgKey = "_agent_session_id"
 )
 
+const agentModelSchemaDescription = "AI model identifier invoking this tool (e.g. \"claude-opus-4-7\", \"claude-sonnet-4-6\", \"gpt-5\"). Required — the server rejects calls without it so /metrics.summary can benchmark per-model behaviour."
+
+const agentSessionSchemaDescription = "Optional session id correlating multiple tool calls from the same agent run. Stripped before tool-specific decoding."
+
 // extractAgentAttribution pulls the reserved keys out of args, rejecting
-// the call when _agent_model is absent or empty. The error message is
-// self-describing so the AI agent can fix its own request without a
-// follow-up; failing closed forces every benchmark sample to carry a
-// model id, which is the whole point of /metrics.summary.
+// the call when _agent_model is absent or empty. Failing closed forces
+// every benchmark sample to carry a model id, which is the whole point of
+// /metrics.summary. The schema (see withAgentAttribution) carries the
+// usage hint; this guard exists for clients that bypass schema validation.
 func extractAgentAttribution(args map[string]any) (model, sessionID string, err error) {
 	rawModel, ok := args[agentModelArgKey]
 	if !ok {
 		return "", "", domain.NewError(domain.ErrValidation,
-			"_agent_model is required on all MCP tool calls. "+
-				"Identify the AI model invoking this tool (e.g., \"claude-opus-4-7\", \"claude-sonnet-4-6\", \"gpt-5\"). "+
-				"Pass it as a top-level field in the tool input args.", nil)
+			"_agent_model is required on all MCP tool calls (see tool inputSchema for usage).", nil)
 	}
 	model, _ = rawModel.(string)
 	if model == "" {
 		return "", "", domain.NewError(domain.ErrValidation,
-			"_agent_model must be a non-empty string. "+
-				"Identify the AI model invoking this tool (e.g., \"claude-opus-4-7\").", nil)
+			"_agent_model must be a non-empty string (see tool inputSchema for usage).", nil)
 	}
 	delete(args, agentModelArgKey)
 
@@ -108,6 +115,48 @@ type ContentItem struct {
 }
 
 func Tools() []ToolDefinition {
+	defs := tools()
+	for i := range defs {
+		defs[i].InputSchema = withAgentAttribution(defs[i].InputSchema)
+	}
+	return defs
+}
+
+// withAgentAttribution mutates an InputSchema in place to declare the
+// reserved _agent_model (string, required) and _agent_session_id (string,
+// optional) fields. Centralising the injection here keeps every tool
+// schema in lockstep with extractAgentAttribution's contract — adding a
+// new tool registration cannot forget the attribution fields.
+func withAgentAttribution(schema map[string]any) map[string]any {
+	if schema == nil {
+		schema = map[string]any{"type": "object"}
+	}
+	props, _ := schema["properties"].(map[string]any)
+	if props == nil {
+		props = map[string]any{}
+	}
+	props[agentModelArgKey] = stringSchema(agentModelSchemaDescription)
+	props[agentSessionArgKey] = stringSchema(agentSessionSchemaDescription)
+	schema["properties"] = props
+
+	required, _ := schema["required"].([]string)
+	if !containsString(required, agentModelArgKey) {
+		required = append(required, agentModelArgKey)
+	}
+	schema["required"] = required
+	return schema
+}
+
+func containsString(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func tools() []ToolDefinition {
 	return []ToolDefinition{
 		{Name: "project.overview", Description: "Return active project identity, workflow awareness, pending count, recent context, and next-step prompt.", InputSchema: selectorSchema()},
 		{Name: "project.resume", Description: "Return project distribution, likely next work, blocked work, dependencies, recent context, and workflow state.", InputSchema: selectorSchema()},
