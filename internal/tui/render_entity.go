@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/scrollwindow"
 )
 
 // renderEntityCell builds the inner content of one entity column.
@@ -42,7 +43,7 @@ func (m Model) renderEntityCellWithViewport(kind entityKind, viewport int, conte
 	}
 	lines := []string{
 		headerStyle.Render(headerText),
-		m.styles.separator.Render(strings.Repeat("─", separatorWidth)),
+		m.hRule(separatorWidth),
 	}
 
 	if count == 0 {
@@ -104,30 +105,17 @@ func (m Model) renderEntityCellWithViewport(kind entityKind, viewport int, conte
 		storedCardOffset = m.entityScroll[kind]
 	}
 	rowOffset := storedCardOffset / cols
+	// Shared scroll math (scrollwindow.Slice) returns the row-end; the
+	// entity grid's only twist is that hints count CARDS, not rows, so
+	// we translate row offsets to card counts when emitting the
+	// indicator strings.
+	end := scrollwindow.Slice(rowOffset, rowHeights, viewport, scrollwindow.HintsSplit)
 	if rowOffset < 0 {
 		rowOffset = 0
 	}
 	if rowOffset > numRows-1 {
 		rowOffset = numRows - 1
 	}
-
-	used := 0
-	end := rowOffset
-	for end < numRows {
-		reserve := 0
-		if end < numRows-1 {
-			reserve = 1
-		}
-		if used+rowHeights[end]+reserve > viewport {
-			break
-		}
-		used += rowHeights[end]
-		end++
-	}
-	if end == rowOffset {
-		end = rowOffset + 1
-	}
-
 	cardsAbove := rowOffset * cols
 	if cardsAbove > count {
 		cardsAbove = count
@@ -176,31 +164,12 @@ func (m Model) entityCellContentWidth() int {
 }
 
 // entityViewportRows is the number of terminal rows available for entity
-// cards inside the active Settings entity column. Each Settings entity
-// sub renders one column full-height — the chrome is the screen header
-// (now up to two nav rows + a separator), the column borders, the column
-// kicker rows and the footer. Returns 0 when the height is unknown.
+// cards inside the active Settings entity column. Sources its chrome
+// from the shared `panelViewportRows` helper so it tracks live header /
+// status / nav changes. Per-column chrome = 2 borders + 2 header rows
+// (kicker / separator) = 4.
 func (m Model) entityViewportRows() int {
-	if m.height <= 0 {
-		return 0
-	}
-	const (
-		columnBorders    = 2 // top + bottom of the kanbanColumn
-		columnHeaderRows = 2 // kicker + separator inside the column
-		viewLeadingBlank = 1 // leading "\n" prepended in renderSettingsEntity
-		footerLines      = 2 // newline + indented footer text
-	)
-	screenHeader := strings.Count(m.renderHeader(), "\n") + 1
-	statusLine := 0
-	if m.status != "" && !m.isEmbeddedCommentInput() {
-		statusLine = 2
-	}
-	chrome := screenHeader + statusLine + viewLeadingBlank + columnBorders + columnHeaderRows + footerLines
-	rows := m.height - chrome
-	if rows < 4 {
-		return 0
-	}
-	return rows
+	return m.panelViewportRows(4)
 }
 
 // syncFocusedEntityScroll keeps m.entityScroll[focusedKind] aligned so the
@@ -246,36 +215,8 @@ func (m *Model) syncFocusedEntityScroll() {
 	if m.entityScroll == nil {
 		m.entityScroll = map[entityKind]int{}
 	}
-	stored := m.entityScroll[kind]
-	rowOffset := stored / cols
-	if rowOffset > cursorRow {
-		rowOffset = cursorRow
-	}
-	for rowOffset < cursorRow {
-		used := 0
-		fits := true
-		for r := rowOffset; r <= cursorRow; r++ {
-			reserve := 0
-			if r < numRows-1 {
-				reserve = 1
-			}
-			if used+rowHeights[r]+reserve > viewport {
-				fits = false
-				break
-			}
-			used += rowHeights[r]
-		}
-		if fits {
-			break
-		}
-		rowOffset++
-	}
-	if rowOffset < 0 {
-		rowOffset = 0
-	}
-	if rowOffset > numRows-1 {
-		rowOffset = numRows - 1
-	}
+	rowOffset := m.entityScroll[kind] / cols
+	rowOffset = followScrollWindowSplit(rowOffset, cursorRow, rowHeights, viewport)
 	m.entityScroll[kind] = rowOffset * cols
 }
 

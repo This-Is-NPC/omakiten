@@ -15,6 +15,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"omakiten/internal/tui/components/scrollwindow"
 )
 
 // Model owns the scroll offset for a single scrollable content surface.
@@ -113,22 +115,28 @@ func (m Model) View(lines []string, viewport int, hintStyle lipgloss.Style) stri
 
 // Slice clamps scroll to a valid offset for `lines` at the given viewport
 // height and returns the visible window plus counts hidden above/below.
-// Exported so callers that don't want the auto-rendered footer (e.g. the
-// activity feed which prefers split top/bottom hints) can reuse the math
-// directly.
+// Routes through scrollwindow.Slice with HintsNone — the detail-screen
+// View renders the combined-footer hint OUTSIDE the slice budget by
+// asking callers to pass viewport-1 when they need a footer row, so
+// the slicer itself reserves nothing. The pre-clamp preserves the
+// "jump to end" behavior callers depend on (sentinel scroll = 1<<20
+// resolves to len-viewport, not len-1).
 func Slice(lines []string, scroll, viewport int) (visible []string, above, below int) {
 	if viewport <= 0 || len(lines) <= viewport {
 		return lines, 0, 0
 	}
-	offset := scroll
-	if offset < 0 {
-		offset = 0
+	if scroll < 0 {
+		scroll = 0
 	}
-	maxOffset := len(lines) - viewport
-	if offset > maxOffset {
-		offset = maxOffset
+	if maxOffset := len(lines) - viewport; scroll > maxOffset {
+		scroll = maxOffset
 	}
-	return lines[offset : offset+viewport], offset, len(lines) - (offset + viewport)
+	heights := make([]int, len(lines))
+	for i := range heights {
+		heights[i] = 1
+	}
+	end := scrollwindow.Slice(scroll, heights, viewport, scrollwindow.HintsNone)
+	return lines[scroll:end], scrollwindow.Above(scroll), scrollwindow.Below(end, len(lines))
 }
 
 // pageStep returns the half-page step used by pgup/pgdn. Floored at 4 so

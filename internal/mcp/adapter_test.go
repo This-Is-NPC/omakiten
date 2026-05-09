@@ -63,6 +63,64 @@ func withModel(extra map[string]any) map[string]any {
 	return args
 }
 
+// TestToolsDeclareAgentAttributionSchema pins the contract that every
+// registered tool exposes _agent_model (required) and _agent_session_id
+// (optional) on its InputSchema. Without this declaration, schema-aware
+// clients strip the reserved fields before sending the call, which makes
+// extractAgentAttribution reject every request with a self-describing
+// error the LLM cannot act on (the field is invisible to it).
+func TestToolsDeclareAgentAttributionSchema(t *testing.T) {
+	for _, tool := range Tools() {
+		props, ok := tool.InputSchema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s: InputSchema.properties missing or wrong type: %#v", tool.Name, tool.InputSchema["properties"])
+		}
+		modelSchema, ok := props["_agent_model"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s: properties._agent_model missing", tool.Name)
+		}
+		if modelSchema["type"] != "string" {
+			t.Fatalf("%s: _agent_model.type = %v, want string", tool.Name, modelSchema["type"])
+		}
+		desc, _ := modelSchema["description"].(string)
+		if !strings.Contains(desc, "claude-opus-4-7") || !strings.Contains(desc, "Required") {
+			t.Fatalf("%s: _agent_model.description missing exemplars or required hint: %q", tool.Name, desc)
+		}
+		sessionSchema, ok := props["_agent_session_id"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s: properties._agent_session_id missing", tool.Name)
+		}
+		if sessionSchema["type"] != "string" {
+			t.Fatalf("%s: _agent_session_id.type = %v, want string", tool.Name, sessionSchema["type"])
+		}
+
+		required, ok := tool.InputSchema["required"].([]string)
+		if !ok {
+			t.Fatalf("%s: InputSchema.required missing or wrong type: %#v", tool.Name, tool.InputSchema["required"])
+		}
+		found := false
+		for _, name := range required {
+			if name == "_agent_model" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("%s: required missing _agent_model: %v", tool.Name, required)
+		}
+		if found2 := false; func() bool {
+			for _, name := range required {
+				if name == "_agent_session_id" {
+					return true
+				}
+			}
+			return found2
+		}() {
+			t.Fatalf("%s: required must NOT include _agent_session_id (it is optional): %v", tool.Name, required)
+		}
+	}
+}
+
 func TestAdapterCallToolReturnsCompactJSONText(t *testing.T) {
 	ctx := context.Background()
 	service := newMCPTestService(t, ctx)

@@ -12,6 +12,12 @@ func (m Model) renderHelp() string {
 		title    string
 		bindings []binding
 	}
+	commentKeys := newCommentInputBindings()
+	commentInputHelpRows := []binding{
+		{commentKeys.Save.Help().Key, commentKeys.Save.Help().Desc},
+		{commentKeys.InsertNewline.Help().Key, commentKeys.InsertNewline.Help().Desc},
+		{commentKeys.Cancel.Help().Key, commentKeys.Cancel.Help().Desc},
+	}
 	groups := []group{
 		{"Global", []binding{
 			{"?", "close this overlay"},
@@ -81,10 +87,12 @@ func (m Model) renderHelp() string {
 			{"d · d", "arm delete comment, then confirm"},
 			{"esc", "back to task view"},
 		}},
-		{"Comment input", []binding{
-			{"enter", "save comment (new) · save edit (existing)"},
+		{"Comment input", commentInputHelpRows},
+		{"Comment edit", []binding{
+			{"ctrl+s", "save the rewritten body"},
 			{"alt+enter · shift+enter", "insert newline"},
-			{"esc", "cancel"},
+			{"esc", "cancel — return to comment view"},
+			{"arrows · home · end", "navigate caret"},
 		}},
 		{"Task form", []binding{
 			{"tab", "switch field"},
@@ -182,7 +190,7 @@ func (m Model) renderHelp() string {
 	lines = append(lines, m.styles.kicker(title), m.styles.hint.Render("press a to toggle scope"), "")
 	for _, g := range groups {
 		lines = append(lines, m.styles.kicker(g.title))
-		lines = append(lines, m.styles.separator.Render(strings.Repeat("─", keyW+24)))
+		lines = append(lines, m.hRule(keyW+24))
 		for _, b := range g.bindings {
 			pad := keyW - lipgloss.Width(b.key)
 			if pad < 1 {
@@ -226,6 +234,8 @@ func (m Model) currentHelpTitles() []string {
 		return []string{"Comment input"}
 	case m.blockerPickerOpen:
 		return []string{"Blocker picker"}
+	case m.commentScreenOpen && m.commentScreenEditing:
+		return []string{"Comment edit"}
 	case m.commentScreenOpen:
 		return []string{"Comment view"}
 	case m.taskScreen == taskScreenCreate || m.taskScreen == taskScreenEdit:

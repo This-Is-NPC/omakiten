@@ -68,33 +68,24 @@ func (m *Model) syncTableScroll() {
 	m.tableScroll = followCursor(m.tableScroll, m.selected, scrollDataRows(m.tableViewportRows()), len(m.tasks))
 }
 
-// tableViewportRows returns how many task rows fit in the table panel after
-// the screen chrome and the panel's internal header rows. Returns 0 when the
-// height is unknown or too small.
+// tableViewportRows returns how many task rows fit in the table panel.
+// Sources its chrome from the shared `panelViewportRows` helper so the
+// budget tracks live header / status / nav strip changes — the prior
+// hard-coded `chrome := 13` undercounted the screen header on the
+// standard 4-line nav layout, so the table over-rendered and the bottom
+// rows fell off the terminal. Panel chrome here = 2 borders + 3 header
+// rows (kicker / info / separator) = 5.
 func (m Model) tableViewportRows() int {
-	if m.height <= 0 {
-		return 0
-	}
-	// 5 screen header + 1 leading blank + 2 footer + 2 panel borders
-	// + 3 panel header rows (kicker/info/separator) = 13.
-	chrome := 13
-	if m.status != "" {
-		chrome++
-	}
-	rows := m.height - chrome
-	if rows < 4 {
-		return 0
-	}
-	return rows
+	return m.panelViewportRows(5)
 }
 
 func (m Model) renderTable() string {
 	tasks := m.applyTableView()
 	if len(tasks) == 0 {
 		if len(m.tasks) == 0 {
-			return "\n" + indentBlock(m.styles.panel.Render("No tasks yet. Press n to create one."), 2)
+			return m.renderPanel("No tasks yet. Press n to create one.")
 		}
-		return "\n" + indentBlock(m.styles.panel.Render("No tasks match the configured table filter."), 2)
+		return m.renderPanel("No tasks match the configured table filter.")
 	}
 	if m.availableWidth() < 74 {
 		return m.renderTableCompactWith(tasks)
@@ -106,20 +97,17 @@ func (m Model) renderTable() string {
 	selectedID := m.selectedTaskID()
 	dataRows := make([]string, 0, len(tasks))
 	for _, task := range tasks {
-		marker := normalMarker
-		if task.ID == selectedID {
-			marker = m.styles.marker.Render(selectionMarker)
-		}
+		marker := m.cursorMarker(selectedID == task.ID)
 		dataRows = append(dataRows, fmt.Sprintf("%s %-4d %-11s %-8s %-5d %-9d %s", marker, task.ID, task.BucketKey, task.Priority, m.dependencyCount(task.ID), m.commentCount(task.ID), truncateText(task.Title, titleWidth)))
 	}
 
 	rows := []string{
 		m.styles.kickerCount("Tasks", len(tasks)),
 		m.styles.info.Render("// ID   BUCKET      PRI      DEPS  COMMENTS  TITLE"),
-		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
+		m.hRule(contentWidth),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.tableScroll, m.tableViewportRows())...)
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
+	return m.renderPanel(strings.Join(rows, "\n"))
 }
 
 func (m Model) renderTableCompactWith(tasks []domain.Task) string {
@@ -127,20 +115,17 @@ func (m Model) renderTableCompactWith(tasks []domain.Task) string {
 	selectedID := m.selectedTaskID()
 	dataRows := make([]string, 0, len(tasks))
 	for _, task := range tasks {
-		marker := normalMarker
-		if task.ID == selectedID {
-			marker = m.styles.marker.Render(selectionMarker)
-		}
+		marker := m.cursorMarker(selectedID == task.ID)
 		prefix := fmt.Sprintf("%s #%d %s %s ", marker, task.ID, task.BucketKey, task.Priority)
 		budget := clampInt(width-lipgloss.Width(prefix), 8, width)
 		dataRows = append(dataRows, prefix+truncateText(task.Title, budget))
 	}
 	rows := []string{
 		m.styles.kickerCount("Tasks", len(tasks)),
-		m.styles.separator.Render(strings.Repeat("─", width)),
+		m.hRule(width),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.tableScroll, m.tableViewportRows())...)
-	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(rows, "\n")), 2)
+	return m.renderPanel(strings.Join(rows, "\n"))
 }
 
 // selectedTaskID resolves the currently-selected task id via m.tasks; used

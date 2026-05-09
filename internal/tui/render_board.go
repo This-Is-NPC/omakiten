@@ -130,37 +130,7 @@ func (m *Model) syncFocusedColumnScroll() {
 	if m.boardScroll == nil {
 		m.boardScroll = map[string]int{}
 	}
-	offset := m.boardScroll[bucket]
-	if offset > m.cardIdx {
-		offset = m.cardIdx
-	}
-	for offset < m.cardIdx {
-		used := 0
-		fits := true
-		for i := offset; i <= m.cardIdx; i++ {
-			used += heights[i]
-			// Reserve 1 row for the "▼ N below" hint when more cards remain.
-			reserve := 0
-			if i < len(tasks)-1 {
-				reserve = 1
-			}
-			if used+reserve > viewport {
-				fits = false
-				break
-			}
-		}
-		if fits {
-			break
-		}
-		offset++
-	}
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > len(tasks)-1 {
-		offset = len(tasks) - 1
-	}
-	m.boardScroll[bucket] = offset
+	m.boardScroll[bucket] = followScrollWindowSplit(m.boardScroll[bucket], m.cardIdx, heights, viewport)
 }
 
 func (m Model) focusedBucketKey() (string, bool) {
@@ -224,23 +194,15 @@ func (m Model) computeBoardLayout(n int) boardLayout {
 	}
 }
 
-// boardViewportRows is the number of terminal rows the kanban columns can use
-// for cards (after the column header, separator, and the surrounding chrome).
-// Returns 0 when the height is unknown — callers should treat 0 as "no scroll
-// limit" and render every card.
+// boardViewportRows is the number of terminal rows the kanban columns
+// can use for cards (after each lane's header + separator and the
+// surrounding screen chrome). Sources its chrome from the shared
+// `panelViewportRows` helper so the budget tracks live header / status
+// / nav strip changes — the prior hard-coded `chrome := 9` undercounted
+// the screen header and let tall lanes spill below the terminal.
+// Per-lane chrome = 2 borders + 2 header rows (kicker / separator) = 4.
 func (m Model) boardViewportRows() int {
-	if m.height <= 0 {
-		return 0
-	}
-	chrome := 9 // header(2) + nav(2) + view-leading-blank(1) + footer(2) + col header+sep(2)
-	if m.status != "" {
-		chrome++
-	}
-	rows := m.height - chrome
-	if rows < 6 {
-		return 0
-	}
-	return rows
+	return m.panelViewportRows(4)
 }
 
 // boardColumnCapacity returns how many board columns fit side-by-side at the
@@ -301,7 +263,7 @@ func (m *Model) syncBoardColScroll() {
 
 func (m Model) renderBoard() string {
 	if len(m.workflow.Buckets) == 0 {
-		return "\n" + indentBlock(m.styles.panel.Render("No workflow buckets. Add buckets in the active workflow config."), 2)
+		return m.renderPanel("No workflow buckets. Add buckets in the active workflow config.")
 	}
 
 	tasksByBucket := m.tasksByBucket()
@@ -312,7 +274,14 @@ func (m Model) renderBoard() string {
 
 	n := len(m.workflow.Buckets)
 	layout := m.computeBoardLayout(n)
-	columnStyle := m.styles.kanbanColumn.Width(layout.columnInner)
+	// Lanes are content-sized: short columns close their bottom border at
+	// the last card, tall columns hit the internal viewport scroll (which
+	// already caps height to layout.viewportRows). Forcing a fixed Height
+	// here pads short lanes with empty rows AND can overshoot the screen
+	// when the chrome estimate undercounts — both regressions the user
+	// flagged. The natural sizing matches "ajusta a quantidade de cards
+	// dentro dela e não passa do tamanho limite da tela".
+	columnStyle := m.styles.kanbanColumnSized(layout.columnInner, 0)
 	emptyStyle := m.styles.empty.Width(layout.columnInner)
 
 	cap := m.boardColumnCapacity(layout)
@@ -370,7 +339,7 @@ func (m Model) renderKanbanCell(bucket domain.Bucket, tasks []domain.Task, focus
 	headerText := fmt.Sprintf("// %s · %d", strings.ToUpper(bucket.Name), len(tasks))
 	lines := []string{
 		headerStyle.Render(headerText),
-		m.styles.separator.Render(strings.Repeat("─", layout.columnInner)),
+		m.hRule(layout.columnInner),
 	}
 
 	if len(tasks) == 0 {
@@ -394,41 +363,7 @@ func (m Model) renderKanbanCell(bucket domain.Bucket, tasks []domain.Task, focus
 	}
 
 	offset := m.boardScroll[bucket.Key]
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > len(rendered)-1 {
-		offset = len(rendered) - 1
-	}
-
-	used := 0
-	end := offset
-	for end < len(rendered) {
-		// Reserve 1 row for the "▼ N below" hint when there is more content.
-		reserve := 0
-		if end < len(rendered)-1 {
-			reserve = 1
-		}
-		if used+heights[end]+reserve > viewport {
-			break
-		}
-		used += heights[end]
-		end++
-	}
-	if end == offset && offset < len(rendered) {
-		// Never produce an empty viewport: render at least one card.
-		end = offset + 1
-	}
-
-	above := offset
-	below := len(rendered) - end
-	if above > 0 {
-		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▲ %d above", above)))
-	}
-	lines = append(lines, rendered[offset:end]...)
-	if below > 0 {
-		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▼ %d below", below)))
-	}
+	lines = append(lines, m.renderScrollWindowSplit(rendered, heights, offset, viewport)...)
 	return strings.Join(lines, "\n")
 }
 

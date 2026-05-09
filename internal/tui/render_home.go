@@ -55,6 +55,7 @@ func (m *Model) loadHome() error {
 			m.homePicker.Cursor = len(projects) - 1
 		}
 	}
+	m.syncHomeScroll()
 	return nil
 }
 
@@ -99,9 +100,19 @@ func (m *Model) handleHomeKey(msg tea.KeyMsg) {
 		return
 	}
 	rowCount := len(m.homeProjects)
-	viewport := m.homeViewportRows()
-	updated, _ := m.homePicker.Update(msg, rowCount, viewport)
+	// Picker uses viewport for pgup/pgdn step + cursor scroll bounds in
+	// CARDS, not rows; project cards average ~5 terminal rows so divide
+	// the row budget down. The picker's Scroll is then overwritten by
+	// syncHomeScroll which does the proper height-aware budgeting via
+	// the shared scrollwindow helpers.
+	const avgCardLines = 5
+	cardsViewport := m.homeViewportRows() / avgCardLines
+	if cardsViewport < 1 {
+		cardsViewport = 1
+	}
+	updated, _ := m.homePicker.Update(msg, rowCount, cardsViewport)
 	m.homePicker = updated
+	m.syncHomeScroll()
 
 	switch m.homePicker.LastEvent() {
 	case picker.EventSelect:
@@ -153,24 +164,53 @@ func (m *Model) selectHomeProject(project domain.Project) error {
 	return m.refresh()
 }
 
-// homeViewportRows is how many project cards can fit vertically below the
-// header chrome. Returns 0 when height is unknown so the picker treats it
-// as "no scroll limit" and the terminal scrolls natively.
+// homeViewportRows is the terminal-row budget for the project picker
+// panel — used by both the renderer and the height-aware scroll sync
+// so card heights drive the slice. Sources its chrome from the shared
+// panelViewportRows helper (panel chrome = 2 borders + 2 header rows).
 func (m Model) homeViewportRows() int {
-	if m.height <= 0 {
-		return 0
+	return m.panelViewportRows(4)
+}
+
+// homeCardSizes returns the card width and inner content width used
+// when rendering project cards on the Home picker. Extracted so the
+// renderer and the sync routine measure heights against the same
+// geometry — the prior inline version lived in renderHome only and
+// the count-based scroll bypassed the question entirely.
+func (m Model) homeCardSizes() (cardWidth, cardContent int) {
+	available := m.availableWidth()
+	columnInner := available - 2
+	if columnInner > homeColumnInnerMax {
+		columnInner = homeColumnInnerMax
 	}
-	chrome := 8 // header + leading blank + footer + kicker + rule
-	if m.status != "" {
-		chrome++
+	if columnInner < homeColumnInnerMin {
+		columnInner = homeColumnInnerMin
 	}
-	rows := m.height - chrome
-	cardLines := 4 // border(2) + name + meta + badges
-	per := cardLines + 1
-	if rows < per {
-		return 0
+	cardWidth = columnInner - 2
+	cardContent = cardWidth - 2
+	if cardContent < 16 {
+		cardContent = 16
 	}
-	return rows / per
+	return cardWidth, cardContent
+}
+
+// syncHomeScroll keeps m.homePicker.Scroll aligned so the cursor
+// project card stays inside the viewport regardless of multi-line
+// titles or badge rows. Project cards have variable heights so the
+// scroll can't be counted in items — it's measured in rendered
+// terminal rows via the shared scrollwindow helpers.
+func (m *Model) syncHomeScroll() {
+	if len(m.homeProjects) == 0 {
+		m.homePicker.Scroll = 0
+		return
+	}
+	cardWidth, cardContent := m.homeCardSizes()
+	heights := make([]int, len(m.homeProjects))
+	for i := range m.homeProjects {
+		rendered := m.renderProjectCard(m.homeProjects[i], false, cardWidth, cardContent)
+		heights[i] = strings.Count(rendered, "\n") + 1
+	}
+	m.homePicker.Scroll = followScrollWindowSplit(m.homePicker.Scroll, m.homePicker.Cursor, heights, m.homeViewportRows())
 }
 
 // renderHome renders the multi-project picker mirroring the visual grammar
@@ -184,23 +224,19 @@ func (m Model) homeViewportRows() int {
 // card rendering so chip alignment matches across surfaces.
 func (m Model) renderHome() string {
 	available := m.availableWidth()
-	columnInner := available - 2 // -2 for the outer column border
+	columnInner := available - 2
 	if columnInner > homeColumnInnerMax {
 		columnInner = homeColumnInnerMax
 	}
 	if columnInner < homeColumnInnerMin {
 		columnInner = homeColumnInnerMin
 	}
-	cardWidth := columnInner - 2     // -2 leaves a 1-cell margin inside the column
-	cardContent := cardWidth - 2     // -2 for card padding(0,1) + border(1px each side)
-	if cardContent < 16 {
-		cardContent = 16
-	}
+	cardWidth, cardContent := m.homeCardSizes()
 
 	headerText := fmt.Sprintf("// PROJECTS · %d", len(m.homeProjects))
 	lines := []string{
 		m.styles.hintAccent.Render(headerText),
-		m.styles.separator.Render(strings.Repeat("─", columnInner)),
+		m.hRule(columnInner),
 	}
 
 	if len(m.homeProjects) == 0 {
@@ -211,23 +247,13 @@ func (m Model) renderHome() string {
 
 	cursor := m.homePicker.Cursor
 	scroll := m.homePicker.Scroll
-	rendered := make([]string, 0, len(m.homeProjects))
+	rendered := make([]string, len(m.homeProjects))
+	heights := make([]int, len(m.homeProjects))
 	for i := range m.homeProjects {
-		rendered = append(rendered, m.renderProjectCard(m.homeProjects[i], i == cursor, cardWidth, cardContent))
+		rendered[i] = m.renderProjectCard(m.homeProjects[i], i == cursor, cardWidth, cardContent)
+		heights[i] = strings.Count(rendered[i], "\n") + 1
 	}
-
-	viewport := m.homeViewportRows()
-	end := len(rendered)
-	if viewport > 0 && viewport < end-scroll {
-		end = scroll + viewport
-	}
-	if scroll > 0 {
-		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▲ %d above", scroll)))
-	}
-	lines = append(lines, rendered[scroll:end]...)
-	if end < len(rendered) {
-		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▼ %d below", len(rendered)-end)))
-	}
+	lines = append(lines, m.renderScrollWindowSplit(rendered, heights, scroll, m.homeViewportRows())...)
 
 	body := m.styles.kanbanColumn.Width(columnInner).Render(strings.Join(lines, "\n"))
 	return "\n" + indentBlock(body, 2)

@@ -604,6 +604,74 @@ func TestModelEditsTaskAndReturnsToView(t *testing.T) {
 	}
 }
 
+// TestOpenTaskEditCalibratesDescriptionTextarea locks the fix for the
+// "field empties on first keystroke" bug. Pre-fix, openTaskEdit loaded
+// the description into a textarea that still carried the bubbles
+// package-default geometry (Width=40, Height=6 after Prompt/LineNumbers
+// reservations resolve). Subsequent Update(msg) calls — typing,
+// arrow-key navigation — wrapped against that stale 40-col width even
+// though the render path sized a per-frame copy to ~68 cols. The
+// resulting yOffset desync visually emptied the field for users
+// running terminals where the form's inner width and the bubbles
+// default diverge.
+//
+// The fix calls multilineform.Resize on the persistent textarea so
+// every Update operates on the same wrap width Render uses. This test
+// asserts the persistent geometry after openTaskEdit matches what
+// renderTaskDescriptionField will pass downstream — pre-fix Width()
+// would still report the bubbles default and Height() would still be
+// the default viewport rows.
+func TestOpenTaskEditCalibratesDescriptionTextarea(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	if _, err := store.CreateTask(ctx, project.ID, "Task with body", "Existing description across\nmultiple lines.", domain.Priority(2), "backlog"); err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store)}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatalf("Update(WindowSizeMsg) returned %T, want Model", updated)
+	}
+
+	got = pressKey(t, got, tea.KeyEnter) // enter task view
+	got = pressRune(t, got, 'e')         // open edit form
+	if got.taskScreen != taskScreenEdit {
+		t.Fatalf("taskScreen = %v, want %v", got.taskScreen, taskScreenEdit)
+	}
+
+	// Persistent textarea must be sized to the form's actual geometry.
+	// renderTaskDescriptionField passes taskFormWidth and
+	// taskDescriptionInputHeight down to multilineform.Render, which
+	// derives the inner width by subtracting the formMultiline
+	// horizontal padding (4 cols). The persistent model has to mirror
+	// that or Update operates on a different wrap.
+	wantInnerWidth := got.taskFormWidth() - got.styles.formMultiline.GetHorizontalPadding()
+	if w := got.taskDescriptionInput.Width(); w != wantInnerWidth {
+		t.Fatalf("taskDescriptionInput.Width() = %d, want %d (taskFormWidth %d minus padding %d) — Resize at openTaskEdit not applied", w, wantInnerWidth, got.taskFormWidth(), got.styles.formMultiline.GetHorizontalPadding())
+	}
+	if h := got.taskDescriptionInput.Height(); h != taskDescriptionInputHeight {
+		t.Fatalf("taskDescriptionInput.Height() = %d, want %d — Resize at openTaskEdit not applied", h, taskDescriptionInputHeight)
+	}
+}
+
 func TestModelSetsTaskBlockersFromPicker(t *testing.T) {
 	ctx := context.Background()
 	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
@@ -1573,17 +1641,17 @@ func TestModelEditsCommentFromCommentScreen(t *testing.T) {
 		t.Fatalf("commentScreenOpen = false, want true after entering the comment")
 	}
 	got = pressRune(t, got, 'e')
-	if got.mode != modeCommentEdit {
-		t.Fatalf("mode = %v, want modeCommentEdit", got.mode)
+	if !got.commentScreenEditing {
+		t.Fatalf("commentScreenEditing = false, want true after pressing 'e'")
 	}
 	if got.commentEditID != comment.ID {
 		t.Fatalf("commentEditID = %d, want %d", got.commentEditID, comment.ID)
 	}
-	if got.commentScreenOpen {
-		t.Fatalf("commentScreenOpen = true, want closed once edit modal opens")
+	if !got.commentScreenOpen {
+		t.Fatalf("commentScreenOpen = false, want the dedicated overlay to stay open while editing")
 	}
-	if !got.isEmbeddedCommentInput() {
-		t.Fatalf("isEmbeddedCommentInput() = false, want true under modeCommentEdit")
+	if got.isEmbeddedCommentInput() {
+		t.Fatalf("isEmbeddedCommentInput() = true, want false — edit lives in the dedicated overlay now")
 	}
 	if got.commentInput.Value() != "Original body" {
 		t.Fatalf("commentInput.Value() = %q, want pre-filled with original body", got.commentInput.Value())
@@ -1594,13 +1662,16 @@ func TestModelEditsCommentFromCommentScreen(t *testing.T) {
 	// rune-aware backspace at the cursor, mirroring real-terminal UX.
 	got = pressBackspace(t, got, len("Original body"))
 	got = sendText(t, got, "Rewritten body")
-	got = pressKey(t, got, tea.KeyEnter)
+	got = pressKey(t, got, tea.KeyCtrlS)
 
-	if got.mode != modeNormal {
-		t.Fatalf("mode after enter = %v, want modeNormal", got.mode)
+	if got.commentScreenEditing {
+		t.Fatalf("commentScreenEditing = true after ctrl+s, want false (back to read view)")
 	}
 	if got.commentEditID != 0 {
 		t.Fatalf("commentEditID = %d, want cleared after save", got.commentEditID)
+	}
+	if !got.commentScreenOpen {
+		t.Fatalf("commentScreenOpen = false after save, want true (still in read view)")
 	}
 	comments, err := store.ListComments(ctx, project.ID, task.ID)
 	if err != nil {

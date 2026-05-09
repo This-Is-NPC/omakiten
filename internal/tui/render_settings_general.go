@@ -18,9 +18,6 @@ import (
 // pickers (`t` for theme, `c` for config) which remain reachable from
 // every Settings sub.
 func (m Model) renderSettingsGeneral() string {
-	labelCell := func(label string) string {
-		return m.styles.info.Render("// " + strings.ToUpper(label))
-	}
 	valueOrDash := func(value string) string {
 		if value == "" {
 			return m.styles.hint.Render("—")
@@ -34,38 +31,21 @@ func (m Model) renderSettingsGeneral() string {
 	}
 	sort.Strings(bucketKeys)
 
-	runtimeRows := [][]string{
-		{labelCell("Runtime"), ""},
-		{labelCell("okt version"), valueOrDash(m.repos.Version)},
-		{labelCell("config"), valueOrDash(m.repos.ConfigPath)},
-		{labelCell("database"), valueOrDash(m.repos.DBPath)},
-	}
-	projectRows := [][]string{
-		{labelCell("Project"), ""},
-		{labelCell("workflow"), valueOrDash(m.workflow.Key)},
-		{labelCell("buckets"), valueOrDash(strings.Join(bucketKeys, ", "))},
-		{labelCell("theme"), valueOrDash(m.theme.Key)},
-	}
-
-	const (
-		labelWidth = 14
-		valueWidth = 46
-		tableWidth = 1 + labelWidth + 1 + valueWidth + 1
+	runtimeRows := m.summaryRows("Runtime",
+		[2]string{"okt version", valueOrDash(m.repos.Version)},
+		[2]string{"config", valueOrDash(m.repos.ConfigPath)},
+		[2]string{"database", valueOrDash(m.repos.DBPath)},
 	)
-	widths := []int{labelWidth, valueWidth}
+	projectRows := m.summaryRows("Project",
+		[2]string{"workflow", valueOrDash(m.workflow.Key)},
+		[2]string{"buckets", valueOrDash(strings.Join(bucketKeys, ", "))},
+		[2]string{"theme", valueOrDash(m.theme.Key)},
+	)
 
-	var body string
-	if m.availableWidth() >= tableWidth {
-		runtime := renderGridTable(runtimeRows, widths, m.styles.border)
-		project := renderGridTable(projectRows, widths, m.styles.border)
-		body = runtime + "\n\n" + project
-	} else {
-		valueW := clampInt(m.availableWidth()-labelWidth-3, 8, valueWidth)
-		narrowWidths := []int{labelWidth, valueW}
-		runtime := renderGridTable(runtimeRows, narrowWidths, m.styles.border)
-		project := renderGridTable(projectRows, narrowWidths, m.styles.border)
-		body = runtime + "\n\n" + project
-	}
+	body := m.renderSummaryTables(summaryTablesOpts{
+		LabelWidth: 14,
+		ValueWidth: 46,
+	}, runtimeRows, projectRows)
 
 	hint := m.styles.hint.Render("read-only · use t (theme) / c (config) to switch · edit ~/.config/omakiten/omakiten.yaml for the rest")
 	return "\n" + indentBlock(body+"\n\n"+hint, 2)

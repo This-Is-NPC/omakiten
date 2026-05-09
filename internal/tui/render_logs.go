@@ -90,10 +90,10 @@ func (m Model) logsViewportRows() int {
 
 func (m Model) renderLogs() string {
 	if m.repos.ActivityLogs == nil {
-		return "\n" + indentBlock(m.styles.panel.Render("Activity logging is not available for this project."), 2)
+		return m.renderPanel("Activity logging is not available for this project.")
 	}
 	if len(m.logs) == 0 {
-		return "\n" + indentBlock(m.styles.panel.Render("No activity yet. Use the CLI, TUI, or MCP to interact with Omakiten."), 2)
+		return m.renderPanel("No activity yet. Use the CLI, TUI, or MCP to interact with Omakiten.")
 	}
 
 	summary := m.renderLogsSummaryTables()
@@ -116,46 +116,24 @@ func (m Model) renderLogs() string {
 func (m Model) renderLogsSummaryTables() string {
 	stats := m.logsStats
 
-	labelCell := func(label string) string {
-		return m.styles.info.Render("// " + strings.ToUpper(label))
-	}
-	statusRows := [][]string{
-		{labelCell("Status"), ""},
-		{labelCell("total"), fmt.Sprintf("%d", stats.Total)},
-		{labelCell("ok"), fmt.Sprintf("%d", stats.Ok)},
-		{labelCell("error"), fmt.Sprintf("%d", stats.Error)},
-		{labelCell("running"), fmt.Sprintf("%d", stats.Running)},
-	}
-	sourceRows := [][]string{
-		{labelCell("Sources"), ""},
-		{labelCell("cli"), fmt.Sprintf("%d", stats.CLI)},
-		{labelCell("mcp"), fmt.Sprintf("%d", stats.MCP)},
-		{labelCell("tui"), fmt.Sprintf("%d", stats.TUI)},
-	}
-
-	const (
-		labelWidth = 13
-		valueWidth = 27
-		tableWidth = 1 + labelWidth + 1 + valueWidth + 1
-		gap        = 2
+	statusRows := m.summaryRows("Status",
+		[2]string{"total", fmt.Sprintf("%d", stats.Total)},
+		[2]string{"ok", fmt.Sprintf("%d", stats.Ok)},
+		[2]string{"error", fmt.Sprintf("%d", stats.Error)},
+		[2]string{"running", fmt.Sprintf("%d", stats.Running)},
 	)
-	widths := []int{labelWidth, valueWidth}
+	sourceRows := m.summaryRows("Sources",
+		[2]string{"cli", fmt.Sprintf("%d", stats.CLI)},
+		[2]string{"mcp", fmt.Sprintf("%d", stats.MCP)},
+		[2]string{"tui", fmt.Sprintf("%d", stats.TUI)},
+	)
 
-	switch {
-	case m.availableWidth() >= tableWidth*2+gap:
-		left := renderGridTable(statusRows, widths, m.styles.border)
-		right := renderGridTable(sourceRows, widths, m.styles.border)
-		return lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", gap), right)
-	case m.availableWidth() >= tableWidth:
-		left := renderGridTable(statusRows, widths, m.styles.border)
-		right := renderGridTable(sourceRows, widths, m.styles.border)
-		return left + "\n\n" + right
-	default:
-		valueW := clampInt(m.availableWidth()-labelWidth-3, 8, valueWidth)
-		narrowWidths := []int{labelWidth, valueW}
-		all := append(append([][]string{}, statusRows...), sourceRows...)
-		return renderGridTable(all, narrowWidths, m.styles.border)
-	}
+	return m.renderSummaryTables(summaryTablesOpts{
+		LabelWidth:  13,
+		ValueWidth:  27,
+		SideBySide:  true,
+		MergeNarrow: true,
+	}, statusRows, sourceRows)
 }
 
 // renderLogsWidePanel renders the multi-column logs panel used on
@@ -175,10 +153,7 @@ func (m Model) renderLogsWidePanel() string {
 	dataRows := make([]string, 0, limit)
 	for i := 0; i < limit; i++ {
 		log := m.logs[i]
-		marker := normalMarker
-		if i == m.logsSelected {
-			marker = m.styles.marker.Render(selectionMarker)
-		}
+		marker := m.cursorMarker(m.logsSelected == i)
 
 		timeStr := log.StartedAt
 		if len(timeStr) > 12 {
@@ -200,7 +175,7 @@ func (m Model) renderLogsWidePanel() string {
 	rows := []string{
 		m.styles.kickerCount("Activity", limit),
 		m.styles.info.Render(fmt.Sprintf("// TIME        SRC  %-*s %-*s STATUS  MS   ARGS", logOperationWidth, "OPERATION", logProjectWidth, "PROJECT")),
-		m.styles.separator.Render(strings.Repeat("─", contentWidth)),
+		m.hRule(contentWidth),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.logsScroll, m.logsViewportRows())...)
 	rows = append(rows, "", m.styles.hint.Render("Only app service calls are logged. TUI refreshes and direct reads are not shown."))
@@ -208,60 +183,18 @@ func (m Model) renderLogsWidePanel() string {
 	return m.styles.panel.Render(strings.Join(rows, "\n"))
 }
 
-// sliceScrollRows clamps `scroll` into a valid range and returns the visible
-// slice of single-line data rows plus up-to-2 indicator rows ("▲ N above" /
-// "▼ N below") inserted only when content is hidden in that direction. Each
-// data row is assumed to be exactly one physical line, so no height heuristic
-// is needed. Used by table, logs, and any future list-style view.
+// sliceScrollRows is the public assembly helper for fixed-height
+// (single-line) list panels — table, logs, graph, blocker picker,
+// persona picker. Implementation flows through scrollwindow.Slice with
+// heights of 1s so single-line and multi-line surfaces share one
+// algorithm. Inserts up to two indicator rows ("▲ N above" /
+// "▼ N below") only when content is hidden in that direction.
 func (m Model) sliceScrollRows(dataRows []string, scroll, viewport int) []string {
-	if viewport <= 0 || len(dataRows) <= viewport {
-		return dataRows
+	heights := make([]int, len(dataRows))
+	for i := range heights {
+		heights[i] = 1
 	}
-	offset := scroll
-	if offset < 0 {
-		offset = 0
-	}
-	// When the scroll has any items above (offset > 0), the visibleHeight
-	// loses 1 row to the "▲ above" hint, so the renderer can still paint
-	// the last data row at offset = len(dataRows) - viewport + 1. Cap the
-	// clamp accordingly — otherwise the cursor at the last row gets
-	// scrolled off the panel because the old `total - viewport` cap was
-	// one row too tight to expose the trailing items.
-	maxOffset := len(dataRows) - viewport + 1
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
-	if offset > maxOffset {
-		offset = maxOffset
-	}
-
-	above := offset
-	belowAvailable := len(dataRows) - offset
-	visibleHeight := viewport
-	if above > 0 {
-		visibleHeight--
-	}
-	if belowAvailable-visibleHeight > 0 {
-		visibleHeight--
-	}
-	if visibleHeight < 1 {
-		visibleHeight = 1
-	}
-	end := offset + visibleHeight
-	if end > len(dataRows) {
-		end = len(dataRows)
-	}
-	below := len(dataRows) - end
-
-	out := make([]string, 0, visibleHeight+2)
-	if above > 0 {
-		out = append(out, m.styles.hint.Render(fmt.Sprintf("▲ %d above", above)))
-	}
-	out = append(out, dataRows[offset:end]...)
-	if below > 0 {
-		out = append(out, m.styles.hint.Render(fmt.Sprintf("▼ %d below", below)))
-	}
-	return out
+	return m.renderScrollWindowSplit(dataRows, heights, scroll, viewport)
 }
 
 // renderLogsCompactPanel is the narrow-terminal flavor of the activity
@@ -274,10 +207,7 @@ func (m Model) renderLogsCompactPanel() string {
 	dataRows := make([]string, 0, limit)
 	for i := 0; i < limit; i++ {
 		log := m.logs[i]
-		marker := normalMarker
-		if i == m.logsSelected {
-			marker = m.styles.marker.Render(selectionMarker)
-		}
+		marker := m.cursorMarker(m.logsSelected == i)
 		timeStr := log.StartedAt
 		if len(timeStr) > 8 {
 			timeStr = timeStr[len(timeStr)-8:]
@@ -292,7 +222,7 @@ func (m Model) renderLogsCompactPanel() string {
 	}
 	rows := []string{
 		m.styles.kickerCount("Activity", limit),
-		m.styles.separator.Render(strings.Repeat("─", width)),
+		m.hRule(width),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.logsScroll, m.logsViewportRows())...)
 	rows = append(rows, "", m.styles.hint.Render("r refresh · full arguments appear on wider terminals"))

@@ -5,9 +5,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/activity"
 	"omakiten/internal/app"
@@ -42,6 +44,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()
 	model.commentInput = newCommentInput()
+	model.moveInput = newMoveInput()
 	detailscreen.SetStyles(model.styles.info)
 	if project.ID == 0 {
 		// Empty project — open on the multi-project Home picker.
@@ -127,7 +130,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if msg.String() == "?" && m.mode == modeNormal {
+		if msg.String() == "?" && m.mode == modeNormal && !m.commentScreenEditing {
 			m.helpOpen = true
 			m.helpAll = false
 			m.help.Scroll = 0
@@ -197,22 +200,58 @@ func newTaskTitleInput() textinput.Model {
 // newTaskDescriptionInput is the canonical textarea config for the
 // description row. Line numbers stay off (the form is not a code editor)
 // and the soft prompt is blanked so the visible text starts at column 0,
-// matching the title row visually.
+// matching the title row visually. KeyMap.InsertNewline accepts both a
+// bare Enter (the form's own save key is ctrl+s, so Enter is free for
+// newlines) and the modifier-Enter set so terminals that emit
+// alt/shift/ctrl+j-Enter also insert a newline natively — the prior
+// hand-rolled InsertString shim is gone.
 func newTaskDescriptionInput() textarea.Model {
 	t := textarea.New()
 	t.Prompt = ""
 	t.ShowLineNumbers = false
 	t.CharLimit = 0
+	t.KeyMap.InsertNewline = key.NewBinding(
+		key.WithKeys("enter", "shift+enter", "alt+enter", "ctrl+j", "ctrl+m"),
+		key.WithHelp("enter · alt+enter · shift+enter", "insert newline"),
+	)
+	clearTextareaCursorLineBackground(&t)
 	return t
 }
 
 // newCommentInput is the textarea reused by the comment-add and
 // comment-edit modal flows. Same defaults as the description field so
-// the two modal surfaces feel uniform.
+// the two modal surfaces feel uniform — including the modifier-Enter
+// rebind so updateInput can keep treating bare Enter as save.
 func newCommentInput() textarea.Model {
 	t := textarea.New()
 	t.Prompt = ""
 	t.ShowLineNumbers = false
+	t.CharLimit = 0
+	bindings := newCommentInputBindings()
+	t.KeyMap.InsertNewline = bindings.InsertNewline
+	clearTextareaCursorLineBackground(&t)
+	return t
+}
+
+// clearTextareaCursorLineBackground neutralises the textarea's default
+// CursorLine background so the reverse-video cursor block stays visible
+// when focused. Without this, the focused-style adaptive Background swaps
+// over the cursor cell at render time and the caret disappears into the
+// line — the user reported "cursor only on title, not description".
+// Applied to both focused and blurred styles for symmetry, even though
+// only the focused state renders the cursor.
+func clearTextareaCursorLineBackground(t *textarea.Model) {
+	t.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	t.BlurredStyle.CursorLine = lipgloss.NewStyle()
+}
+
+// newMoveInput is the canonical textinput used by the modal move flow
+// (`m` then type a bucket key). Prompt is blanked because the chrome
+// already labels the field with "Target bucket key:"; CharLimit stays
+// zero so user-defined bucket slugs of any length round-trip.
+func newMoveInput() textinput.Model {
+	t := textinput.New()
+	t.Prompt = ""
 	t.CharLimit = 0
 	return t
 }
@@ -425,7 +464,7 @@ func (m Model) activityPanelWidth() int {
 // lipgloss treats Width as content+padding (border excluded), so the visible
 // card occupies Width()+2 cells. We subtract enough from the panel width to
 // leave a 2-cell margin inside the activity box — without that margin lines
-// occasionally tipped past the box's inner edge and wrapLinesToWidth would
+// occasionally tipped past the box's inner edge and gridtable.WrapLines would
 // chop the card mid-row, which the user reported as "cards quebram".
 func (m Model) commentCardWidth() int {
 	return m.activityPanelWidth() - 6
@@ -445,7 +484,7 @@ func (m Model) isEmbeddedCommentInput() bool {
 	if m.taskScreen != taskScreenView || m.taskID <= 0 {
 		return false
 	}
-	return m.mode == modeComment || m.mode == modeCommentEdit
+	return m.mode == modeComment
 }
 
 func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {

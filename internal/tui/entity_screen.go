@@ -123,7 +123,7 @@ func (m Model) renderEntityView() string {
 	case entityKindLaw:
 		law, ok := m.findLawBySlug(m.entityForm.slug)
 		if !ok {
-			return "\n" + indentBlock(m.styles.panel.Render("Law not found"), 2)
+			return m.renderPanel("Law not found")
 		}
 		// Severity badge: style comes from config-driven color token
 		// (severityStyle reads m.severities[].color); label comes from
@@ -140,7 +140,7 @@ func (m Model) renderEntityView() string {
 	case entityKindSkill:
 		skill, ok := m.findSkillBySlug(m.entityForm.slug)
 		if !ok {
-			return "\n" + indentBlock(m.styles.panel.Render("Skill not found"), 2)
+			return m.renderPanel("Skill not found")
 		}
 		dataRows = []detailRow{
 			{label: "Slug", value: skill.Key},
@@ -152,7 +152,7 @@ func (m Model) renderEntityView() string {
 	case entityKindPersona:
 		persona, ok := m.findPersonaBySlug(m.entityForm.slug)
 		if !ok {
-			return "\n" + indentBlock(m.styles.panel.Render("Persona not found"), 2)
+			return m.renderPanel("Persona not found")
 		}
 		skills := strings.Join(persona.SkillKeys, ", ")
 		if skills == "" {
@@ -170,7 +170,7 @@ func (m Model) renderEntityView() string {
 	case entityKindTemplate:
 		template, ok := m.findTemplateBySlug(m.entityForm.slug)
 		if !ok {
-			return "\n" + indentBlock(m.styles.panel.Render("Template not found"), 2)
+			return m.renderPanel("Template not found")
 		}
 		entity := template.Entity
 		if entity == "" {

@@ -2,10 +2,10 @@ package tui
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/gridtable"
 )
 
 func (m Model) renderTaskCommentsCell(taskID int64) string {
@@ -29,14 +29,14 @@ func (m Model) renderTaskCommentsCell(taskID int64) string {
 		// the form column and a footer-only indicator would float far below
 		// the cards it's describing.
 		body := flattenActivityCards(cards)
-		visible, above, below := sliceViewport(body, m.activityScroll, m.activityViewportLines())
-		if above > 0 {
-			lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▲ %d above", above)))
+		// Each body entry is one terminal line, so heights are uniformly
+		// 1 — the same scroll math services this surface as the board /
+		// entity grid (split ▲/▼ hints reserved inside viewport).
+		heights := make([]int, len(body))
+		for i := range heights {
+			heights[i] = 1
 		}
-		lines = append(lines, visible...)
-		if below > 0 {
-			lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▼ %d below", below)))
-		}
+		lines = append(lines, m.renderScrollWindowSplit(body, heights, m.activityScroll, m.activityViewportLines())...)
 	}
 	if m.isEmbeddedCommentInput() && m.taskID == taskID {
 		lines = append(lines, "", m.renderCommentInput())
@@ -144,7 +144,7 @@ func (m Model) renderSystemEventCard(ev domain.Event, focused bool) string {
 	// Wrap to the same content width as comments so long event labels (e.g.
 	// "task moved review → done · 2026-05-06 03:17:47") don't run past the
 	// panel border.
-	wrapped := wrapLinesToWidth([]string{line}, width)
+	wrapped := gridtable.WrapLines([]string{line}, width)
 	body := strings.Join(wrapped, "\n")
 	style := m.styles.systemEventCard.Width(m.commentCardWidth())
 	if focused {
