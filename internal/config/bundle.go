@@ -369,13 +369,31 @@ type EventChannelSettings struct {
 // neither layer declares Log explicitly, the conservative answer is true
 // (preserves the pre-feature behaviour).
 func (e EventsSettings) ResolveLog(eventType string) bool {
+	return resolveEventChannel(e, eventType, func(c EventChannelSettings) *bool { return c.Log })
+}
+
+// ResolveBroadcast reports whether the event bus should fan the event
+// out to subscribers. Same overrides → defaults → true fallback as
+// ResolveLog so an unconfigured runtime keeps broadcasting.
+func (e EventsSettings) ResolveBroadcast(eventType string) bool {
+	return resolveEventChannel(e, eventType, func(c EventChannelSettings) *bool { return c.Broadcast })
+}
+
+// ResolveHook reports whether the hooks engine should consider the
+// event for dispatch. Same overrides → defaults → true fallback as
+// ResolveLog.
+func (e EventsSettings) ResolveHook(eventType string) bool {
+	return resolveEventChannel(e, eventType, func(c EventChannelSettings) *bool { return c.Hook })
+}
+
+func resolveEventChannel(e EventsSettings, eventType string, pick func(EventChannelSettings) *bool) bool {
 	if override, ok := e.Overrides[eventType]; ok {
-		if override.Log != nil {
-			return *override.Log
+		if v := pick(override); v != nil {
+			return *v
 		}
 	}
-	if e.Defaults.Log != nil {
-		return *e.Defaults.Log
+	if v := pick(e.Defaults); v != nil {
+		return *v
 	}
 	return true
 }

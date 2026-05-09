@@ -87,6 +87,14 @@ const (
 	// feed. EntityType=system, Source/Operation/Status/DurationMs populated.
 	EventTypeOperation = "operation"
 
+	// EventTypeHookExecuted fires once a hook's action has finished
+	// running (success or failure). Emitted from inside the dispatch
+	// goroutine after Action.Execute returns; never emitted when the
+	// hook was filtered out before dispatch. EntityType=system,
+	// Payload={hook_index, action, event_type, target_event_id,
+	// success, error, duration_ms}.
+	EventTypeHookExecuted = "hook.executed"
+
 	// Domain events emitted from the canonical service layer when an
 	// error or solution is recorded, searched, added, liked, etc. Used by
 	// metrics.summary to benchmark agents — which models record vs search
@@ -148,6 +156,7 @@ var KnownEventTypes = []string{
 	EventTypeSolutionLiked,
 	EventTypeSolutionFailed,
 	EventTypeSolutionViewedTop,
+	EventTypeHookExecuted,
 }
 
 // IsKnownEventType reports whether s matches one of KnownEventTypes.
