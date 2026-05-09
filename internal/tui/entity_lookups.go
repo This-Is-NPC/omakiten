@@ -109,10 +109,16 @@ func scaffoldEntity(ctx context.Context, kind entityKind, repos Repositories, na
 		return skill.SourcePath, nil
 	case entityKindLaw:
 		service := app.NewLawService(repos.Config, repos.Editor, repos.EntityFiles, repos.Slugger)
+		// New laws default to the configured `default: true` severity
+		// (typically "warning"). DefaultSeverity returns SeverityZero
+		// when the registry is empty (uninitialised tests), in which
+		// case the validator on the next bundle import surfaces the
+		// missing severity — better than silently picking a label.
+		severityID := domain.DefaultSeverity()
 		law, err := service.Add(ctx, domain.LawInput{
 			Key:      slugFromName(name),
 			Name:     name,
-			Severity: domain.LawSeverityError,
+			Severity: severityID,
 			Body:     "TODO: write the law body.",
 		})
 		if err != nil {

@@ -1,0 +1,38 @@
+# Scenario: workflow.defaults declares only `task` (with strict
+# false/false). The `comment` field is omitted at the workflow level and
+# no bucket declares `permissions`. Expected behavior: comment edit and
+# delete inherit from the task layer at the workflow.defaults position
+# of the resolution chain — both should resolve to false in every bucket.
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default
+config:
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    defaults:
+      task:
+        edit: false
+        delete: false
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1
+      - id: 2
+        key: dev
+        name: Development
+        position: 2
+    transitions:
+      - from: 1
+        to: 2

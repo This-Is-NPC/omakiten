@@ -1,0 +1,51 @@
+# Scenario: 4-bucket workflow (backlog → dev → review → done) used by
+# board-rendering tests that assert the horizontal sliding window when
+# more lanes exist than fit on screen. Defaults permissive so policy
+# stays out of the way; only the geometry/scroll behavior matters here.
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default
+config:
+  output:
+    json_minified: true
+    omit_empty: true
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    defaults:
+      task:    { edit: true, delete: true }
+      comment: { edit: true, delete: true }
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1
+      - id: 2
+        key: dev
+        name: Development
+        position: 2
+      - id: 3
+        key: review
+        name: Review
+        position: 3
+      - id: 4
+        key: done
+        name: Done
+        position: 4
+    transitions:
+      - from: 1
+        to: 2
+      - from: 2
+        to: 3
+      - from: 3
+        to: 4

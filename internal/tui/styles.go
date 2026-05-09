@@ -43,6 +43,27 @@ func (s styles) metaRow(label, value string, labelWidth int) string {
 	return s.info.Render(rendered) + strings.Repeat(" ", pad) + value
 }
 
+// badgeForColor returns the lipgloss style that paints a config-driven
+// badge (priority, severity) in the requested theme color. The accepted
+// tokens are the four theme semantic names — `error`, `warning`,
+// `success`, `info` — so config.{priorities,severities}[].color stays
+// a stable enum and theme authors only have to edit palette tokens in
+// one place. Unknown / empty colors fall back to the neutral info
+// badge so the renderer never emits an unstyled pill.
+func (s styles) badgeForColor(color string) lipgloss.Style {
+	switch strings.ToLower(strings.TrimSpace(color)) {
+	case "error":
+		return s.badgeHigh
+	case "warning":
+		return s.badgeFix
+	case "success":
+		return s.badgeNormal
+	case "info":
+		return s.badgeInfo
+	}
+	return s.badgeInfo
+}
+
 // statusBadge renders a status message as `[INFO] msg` or `[ERROR] msg` based
 // on a content heuristic. Replaces italic-on-secondary status rendering.
 func (s styles) statusBadge(msg string) string {
@@ -109,6 +130,11 @@ type styles struct {
 	badgeTokenGreen  lipgloss.Style
 	badgeTokenYellow lipgloss.Style
 	badgeTokenRed    lipgloss.Style
+
+	// archivedCard renders archived tasks dimmed when the `A` toggle exposes
+	// them in board/table/graph. Strikethrough doubles as a redundant cue
+	// for users with limited color contrast.
+	archivedCard lipgloss.Style
 }
 
 func newStyles(theme config.Theme) styles {
@@ -152,8 +178,14 @@ func newStyles(theme config.Theme) styles {
 		marker:         lipgloss.NewStyle().Foreground(primary).Bold(true),
 		separator:      lipgloss.NewStyle().Foreground(border),
 		empty:          lipgloss.NewStyle().Foreground(border).Width(columnWidth).Align(lipgloss.Center),
-		input:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 2),
-		multilineInput: lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 2).Width(taskFormInputWidth).Height(taskDescriptionInputHeight),
+		// Default border color is the muted `border` token; the form
+		// helpers in render_task.go opt-in to the `primary` accent only
+		// when their field is focused. Without this default, every input
+		// in the create/edit form would render with the green border the
+		// user reported as confusing — the eye lost which field was the
+		// active one.
+		input:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2),
+		multilineInput: lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2).Width(taskFormInputWidth).Height(taskDescriptionInputHeight),
 		footer:         lipgloss.NewStyle().Foreground(border),
 		hint:           lipgloss.NewStyle().Foreground(border),
 		hintAccent:     lipgloss.NewStyle().Foreground(primary).Bold(true),
@@ -175,5 +207,7 @@ func newStyles(theme config.Theme) styles {
 		badgeTokenGreen:  lipgloss.NewStyle().Background(success).Foreground(badgeFg).Padding(0, 1).Bold(true),
 		badgeTokenYellow: lipgloss.NewStyle().Background(warning).Foreground(badgeFg).Padding(0, 1).Bold(true),
 		badgeTokenRed:    lipgloss.NewStyle().Background(errorColor).Foreground(badgeFg).Padding(0, 1).Bold(true),
+
+		archivedCard: lipgloss.NewStyle().Foreground(border).Strikethrough(true).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(cardBoxWidth),
 	}
 }

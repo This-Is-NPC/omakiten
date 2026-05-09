@@ -43,15 +43,27 @@ func NewTUIQueryService(tasks TaskRepository, cfg ConfigRepository, deps Depende
 	return &TUIQueryService{tasks: tasks, config: cfg, deps: deps, comments: comments, entries: entries, tags: tags, editor: editor}
 }
 
+// SnapshotOptions tunes the TUI snapshot fetch. IncludeArchived flips the
+// active-only filter so the user can opt into seeing archived tasks via the
+// `A` toggle in board/table/graph/logs.
+type SnapshotOptions struct {
+	IncludeArchived bool
+}
+
 // Snapshot loads every collection the TUI needs to render the board, the
 // activity feeds and the entity views in one shot. Order: tasks first
 // (most likely to fail with a fresh empty store), workflow, dependencies,
 // comments, the entity collections (with on-disk enrichment when the
 // editor is available), context entries + settings, then tag indexes.
-func (s *TUIQueryService) Snapshot(ctx context.Context, project domain.ProjectContext, sort domain.TaskSort) (TUISnapshot, error) {
+func (s *TUIQueryService) Snapshot(ctx context.Context, project domain.ProjectContext, sort domain.TaskSort, opts ...SnapshotOptions) (TUISnapshot, error) {
 	snap := TUISnapshot{TaskTagsByID: map[int64][]domain.Tag{}}
 
-	tasks, err := s.tasks.ListTasks(ctx, project.ID, domain.TaskFilter{Sort: sort})
+	var options SnapshotOptions
+	if len(opts) > 0 {
+		options = opts[0]
+	}
+
+	tasks, err := s.tasks.ListTasks(ctx, project.ID, domain.TaskFilter{Sort: sort, IncludeArchived: options.IncludeArchived})
 	if err != nil {
 		return snap, err
 	}
@@ -179,7 +191,13 @@ func enrichLawsFromBundle(laws []domain.Law, bundle config.Bundle) []domain.Law 
 	for index, law := range laws {
 		if file, ok := bySlug[law.Key]; ok {
 			laws[index].Body = file.Body
-			laws[index].Severity = file.Severity
+			// Frontmatter carries the severity label; resolve to its
+			// configured id so the in-memory shape matches the store.
+			// Unknown labels keep whatever the store returned so the
+			// UI still renders while validator surfaces the typo.
+			if id, ok := domain.SeverityFromLabel(file.Severity); ok {
+				laws[index].Severity = id
+			}
 			laws[index].SourcePath = file.SourcePath
 			laws[index].Scope = domain.LawScope(file.Scope)
 			laws[index].ProjectKey = file.ProjectSlug

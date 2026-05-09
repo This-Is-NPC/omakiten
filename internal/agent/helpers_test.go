@@ -3,8 +3,18 @@ package agent
 import (
 	"testing"
 
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
+
+// init seeds the stopwords registry from the embedded kit so similar-task
+// scoring filters tokens like "the" / "and" in this package's tests.
+// Production wires the same list from the user's bundle via
+// agentruntime.Open / cli.runtimeOptions.open.
+func init() {
+	kit := config.MustLoadKitConfig()
+	RegisterStopWords(kit.Search.Stopwords)
+}
 
 func TestContextSnippets(t *testing.T) {
 	entries := []domain.ContextEntry{

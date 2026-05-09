@@ -10,35 +10,18 @@ config:
   context:
     default_level: 2
     max_tokens: 12000
-  # mcp tunes how MCP responses are shaped to fit the agent's context window.
-  # Every field is optional — omit a key to keep the canonical default. See
-  # `.docs/configuration-guide.md#configmcp` for full semantics and worked
-  # examples; in short:
-  #
-  #   recent_comment_limit         (int, default 5)   cap on comments shipped
-  #                                                   per tasks.continue /
-  #                                                   project.overview call.
-  #   max_comment_chars            (int, default 0)   truncate comment bodies
-  #                                                   past this length with `…`
-  #                                                   (0 = full bodies). Use
-  #                                                   on tasks with verbose
-  #                                                   #resume / #documentation.
-  #   include_workflow_in_continue (*bool, default true) ship the workflow
-  #                                                   block in tasks.continue.
-  #                                                   Set false once /okt
-  #                                                   loaded the workflow for
-  #                                                   the session.
-  #   cache_prompts                (*bool, default true) emit the Anthropic
-  #                                                   `cache_control` hint on
-  #                                                   prompts/get content so
-  #                                                   aware clients reuse the
-  #                                                   cached prompt.
-  #
-  # mcp:
-  #   recent_comment_limit: 3
-  #   max_comment_chars: 500
-  #   include_workflow_in_continue: false
-  #   cache_prompts: true
+  # mcp tunes how MCP responses are shaped to fit the agent's context
+  # window. Every field is REQUIRED — the validator rejects bundles that
+  # omit any. The values below are the canonical kit; tune them in your
+  # local omakiten.yaml to compress payloads for narrow contexts.
+  mcp:
+    recent_comment_limit: 5            # > 0; cap on comments shipped per call
+    max_comment_chars: 0               # >= 0; 0 = no truncation
+    include_workflow_in_continue: true # ship workflow block in tasks.continue
+    cache_prompts: true                # emit Anthropic cache_control hint
+    recent_context_limit: 3            # > 0; recent context entries shipped
+    next_work_limit: 5                 # > 0; "likely next work" suggestions
+    similar_task_limit: 5              # > 0; similar-task hints on create_intent
   workflow:
     active: default
   theme:
@@ -52,56 +35,192 @@ config:
     token_badge:
       yellow_at: 150
       red_at: 400
+  # sqlite tunes connection-level engine knobs the Store applies at Open.
+  # busy_timeout_ms is the value passed to PRAGMA busy_timeout; raise it on
+  # systems with concurrent writers or larger DBs that occasionally see
+  # "database is locked" errors. Other PRAGMAs (foreign_keys, journal_mode,
+  # synchronous) stay in code because they describe correctness invariants
+  # rather than user preference.
+  sqlite:
+    busy_timeout_ms: 5000
+  # activity_log retention: prunes the per-call `operation` event log so
+  # the activity feed stays fast. Each BeginActivityLog runs a synchronous
+  # prune pass; the writer never blocks longer than O(rows-deleted).
+  # max_rows is a hard ceiling (extra rows deleted in id-DESC order),
+  # max_age_days is a sliding window (rows older than N days deleted).
+  activity_log:
+    max_rows: 500
+    max_age_days: 7
+  # solutions caps the `solutions.list_top` MCP response shape. Callers
+  # that omit `limit` get default_top_limit; callers that pass a larger
+  # value get clamped to max_top_limit so the response stays bounded.
+  solutions:
+    default_top_limit: 10
+    max_top_limit: 100
+  # events.default_recent_limit is the fallback row count Store.ListRecentEvents
+  # applies when the caller passes <=0. Raise for richer audit dumps; the
+  # query is indexed on (event_type, created_at, id) so larger values are
+  # cheap.
+  events:
+    default_recent_limit: 50
+  # search tunes the heuristics shared across agent-side text ranking
+  # (similar-task hints in tasks.create_intent, query overlap scoring).
+  # stopwords is the lowercase token list dropped before scoring; add
+  # Portuguese/Spanish/etc. words here without a code change.
+  search:
+    stopwords:
+      - and
+      - are
+      - for
+      - from
+      - into
+      - the
+      - this
+      - that
+      - with
+  # tag_synonyms maps non-canonical tag slugs to their canonical form.
+  # NormalizeTagName collapses input → kebab-case, then applies one hop
+  # of substitution (no chains). Edit this block to align tag names with
+  # your team's vocabulary; existing rows survive because storage is by
+  # tag id, so renaming the canonical label here re-routes future writes
+  # without touching history.
+  tag_synonyms:
+    golang: go
+    javascript: js
+    typescript: ts
+    nodejs: node
+    node-js: node
+    postgres: postgresql
+    psql: postgresql
+    mongo: mongodb
+    k8s: kubernetes
+    tf: terraform
+    py: python
   # template_defaults declares the kinds the user can assign in the TUI
   # picker. Each loaded template can claim at most one (kind, project) pair
   # via its frontmatter (`default: <kind>`, optional `project: <slug>`).
   # Defaults below match the canonical Omakiten kit; tweak as needed.
   template_defaults: [task, pr, comment-resume, comment-selfbranch, comment-documentation]
-  # views configures the default sort and filter applied to each view at
-  # startup. Every field is optional — omit a section and the canonical
-  # default takes over. Field/order values are validated; typos surface
-  # with a descriptive error instead of being silently ignored.
+  # priorities declares the configurable id↔value table for task priorities.
+  # Code references the id (opaque); renderers resolve the human label via
+  # this table at the boundary, so renaming "high" to "urgent" here is a
+  # single-line edit and existing tasks pick up the new label on the next
+  # read. id is the SORT WEIGHT — list low → high so `ORDER BY priority`
+  # sorts the way users expect. `default: true` (at most one entry) flags
+  # which id the form/CLI substitutes when the user creates a task without
+  # naming a priority. `color` is an optional theme-token name picked up
+  # by the TUI badge renderer (`error` / `warning` / `success` / `info`).
   #
-  # views:
-  #   board:
-  #     sort:
-  #       field: created_at   # id | title | priority | created_at
-  #       order: desc         # asc | desc
-  #     filter:
-  #       priority: []        # [] = all | subset of [low, normal, high]
-  #   table:
-  #     sort:
-  #       field: created_at
-  #       order: desc
-  #     filter:
-  #       priority: []
-  #       bucket: []          # [] = all | subset of bucket keys in the active workflow
-  #   graph:
-  #     sort:
-  #       field: id           # id | title (only)
-  #       order: asc
-  #   logs:
-  #     sort:
-  #       order: desc         # only direction is configurable for logs
-  #     limit: 50
-  #     filter:
-  #       source: []          # [] = all | subset of [cli, tui, mcp]
-  #   task_activity:
-  #     sort:
-  #       order: asc          # asc = chronological | desc = newest first
+  # Omitting the block keeps the canonical 1=low/2=normal/3=high kit; add
+  # entries to introduce new priorities (e.g. `{id: 4, value: urgent}`)
+  # without any code change. The sqlite layer stores priority_id integers,
+  # so renaming a value never breaks references on existing rows.
+  priorities:
+    - id: 1
+      value: low
+      color: success
+    - id: 2
+      value: normal
+      default: true
+      color: info
+    - id: 3
+      value: high
+      color: error
+  # severities declares the configurable id↔value table for law
+  # severities. Same shape as priorities — code references the int id,
+  # frontmatter parsers and renderers resolve labels via this table.
+  # Renaming "error" to "critical" here is a single-line YAML edit;
+  # existing law rows survive because storage is by id (see
+  # migrations/016_severity_id.sql).
+  #
+  # Omitting the block keeps the canonical 1=info / 2=warning default /
+  # 3=error kit. Adding a new entry (e.g. {id: 4, value: blocker})
+  # makes it valid for any law file's frontmatter `severity:` field.
+  severities:
+    - id: 1
+      value: info
+      color: info
+    - id: 2
+      value: warning
+      default: true
+      color: warning
+    - id: 3
+      value: error
+      color: error
+  # views configures the default sort and filter applied to each view at
+  # startup. Every block + sort field/order is REQUIRED — validator
+  # rejects omissions. Filter blocks default to empty lists (all values
+  # allowed); restrict by listing a subset.
+  views:
+    board:
+      sort:
+        field: created_at   # id | title | priority | created_at
+        order: desc         # asc | desc
+      filter:
+        priority: []        # subset of config.priorities[].value; [] = all
+    table:
+      sort:
+        field: created_at
+        order: desc
+      filter:
+        priority: []
+        bucket: []          # subset of bucket keys in the active workflow
+    graph:
+      sort:
+        field: id           # id | title (only)
+        order: asc
+    logs:
+      sort:
+        order: desc         # only direction is configurable for logs
+      limit: 50
+      filter:
+        source: []          # subset of [cli, tui, mcp]
+    task_activity:
+      sort:
+        order: asc          # asc = chronological | desc = newest first
 workflows:
   - id: 1
     key: default
     name: Default Workflow
+    # defaults declares the workflow-level fallback for task/comment edit
+    # and delete. Resolution order: bucket.permissions → workflow.defaults
+    # → implicit `true` (no rule = allow). The default kit ships strict
+    # defaults so a brand-new task respects "edit only in backlog" out of
+    # the box; per-bucket `permissions:` overrides relax this where the
+    # workflow author wants to allow edits/deletes elsewhere.
+    defaults:
+      task:
+        edit: false
+        delete: false
+      comment:
+        edit: false
+        delete: false
     buckets:
       - id: 1
         key: backlog
         name: Backlog
         position: 1
+        # Backlog opts in to edit/delete on both task and comment so the
+        # planning bucket can be freely reshaped before work starts. Move
+        # the task to dev/review/done to lock the description & threads.
+        permissions:
+          task:
+            edit: true
+            delete: true
+          comment:
+            edit: true
+            delete: true
       - id: 2
         key: dev
         name: Development
         position: 2
+        # Allow comment edit/delete during dev so the agent can correct
+        # in-flight notes; task fields stay locked (use archive/unarchive
+        # for major edits).
+        permissions:
+          comment:
+            edit: true
+            delete: true
       - id: 3
         key: review
         name: Review

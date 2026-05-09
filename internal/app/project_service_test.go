@@ -9,7 +9,7 @@ import (
 
 func TestProjectServiceInit(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	service := NewProjectService(store)

@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/app"
-	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/picker"
@@ -21,6 +20,12 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.taskScreen == taskScreenView {
+		// Disarm pending delete prompts on any key other than `d` so the
+		// arm-then-confirm gate cannot accidentally fire after navigation.
+		if msg.String() != "d" {
+			m.taskDeletePendingID = 0
+			m.commentDeletePendingID = 0
+		}
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return *m, tea.Quit
@@ -41,6 +46,19 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "m":
 			if _, ok := m.activeTask(); ok {
 				m.beginInput(modeMove, "Target bucket key", "")
+			}
+		case "d":
+			// Task delete only fires when the form column owns focus —
+			// activity-column keys belong to comment navigation, and the
+			// dedicated comment screen (Enter on a focused comment) owns
+			// per-comment edit/delete. Surfacing two destructive verbs
+			// behind the same key on different focus states was the bug
+			// the user reported as "as vezes o botão estar visivel e as
+			// vezes não".
+			if m.taskFocus == taskFocusForm {
+				if task, ok := m.activeTask(); ok {
+					m.armOrConfirmTaskDelete(task)
+				}
 			}
 		case "r":
 			if err := m.refresh(); err != nil {
@@ -88,10 +106,15 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return *m, nil
 	}
 
-	switch {
-	case msg.String() == "ctrl+c":
+	// Form-mode keys split into two layers: the verbs handled by the
+	// surrounding screen (esc/ctrl+s/ctrl+b/tab/priority cycle) and the
+	// raw text edits that the focused bubbles input owns. Anything not
+	// claimed by the screen is forwarded to the active input's Update so
+	// arrow keys, home/end, paste, word delete, etc. work natively.
+	switch msg.String() {
+	case "ctrl+c":
 		return *m, tea.Quit
-	case msg.String() == "esc":
+	case "esc":
 		if m.taskScreen == taskScreenCreate {
 			m.closeTaskScreen("Cancelled")
 		} else if task, ok := m.activeTask(); ok {
@@ -99,30 +122,49 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.closeTaskScreen("Cancelled")
 		}
-	case msg.String() == "ctrl+s":
+		return *m, nil
+	case "ctrl+s":
 		m.saveTaskForm()
-	case msg.String() == "tab" || msg.String() == "shift+tab":
+		return *m, nil
+	case "tab", "shift+tab":
 		m.toggleTaskField()
-	case msg.String() == "ctrl+b":
+		return *m, nil
+	case "ctrl+b":
 		if m.taskScreen == taskScreenEdit {
 			m.openBlockerPicker()
 		}
-	case isTaskFormNewline(msg):
-		m.insertTaskFormNewline()
-	case msg.String() == "backspace" || msg.String() == "ctrl+h":
-		m.deleteTaskFormRune()
-	case m.taskField == taskFieldPriority && (msg.String() == "left" || msg.String() == "h"):
-		m.cycleTaskPriority(-1)
-	case m.taskField == taskFieldPriority && (msg.String() == "right" || msg.String() == "l"):
-		m.cycleTaskPriority(1)
-	default:
-		if len(msg.Runes) > 0 {
-			m.appendTaskFormText(string(msg.Runes))
-		} else if msg.String() == " " {
-			m.appendTaskFormText(" ")
+		return *m, nil
+	}
+	if m.taskField == taskFieldPriority {
+		switch msg.String() {
+		case "left", "h":
+			m.cycleTaskPriority(-1)
+			return *m, nil
+		case "right", "l":
+			m.cycleTaskPriority(1)
+			return *m, nil
+		}
+		// Other keys are no-ops on the priority enum so they don't
+		// accidentally feed into a blurred input below.
+		return *m, nil
+	}
+	var cmd tea.Cmd
+	switch m.taskField {
+	case taskFieldTitle:
+		m.taskTitleInput, cmd = m.taskTitleInput.Update(msg)
+	case taskFieldDescription:
+		// Modifier-Enter strings have to be funnelled into an InsertString
+		// — bubbles textarea only treats a plain Enter as a newline.
+		// Without this every alt+enter from the test harness (and from
+		// terminals that emit the modifier form by default) lands as a
+		// no-op, so multi-line descriptions cannot be composed.
+		if isNewlineModifier(msg.String()) {
+			m.taskDescriptionInput.InsertString("\n")
+		} else {
+			m.taskDescriptionInput, cmd = m.taskDescriptionInput.Update(msg)
 		}
 	}
-	return *m, nil
+	return *m, cmd
 }
 
 func (m *Model) updateBlockerPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -185,34 +227,42 @@ func (m Model) blockerPickerCandidates() []domain.Task {
 	return candidates
 }
 
-func isTaskFormNewline(msg tea.KeyMsg) bool {
-	if msg.Type == tea.KeyEnter || msg.Type == tea.KeyCtrlJ {
-		return true
-	}
-	switch msg.String() {
-	case "enter", "alt+enter", "shift+enter", "ctrl+j", "alt+ctrl+j":
-		return true
-	default:
-		return false
-	}
-}
-
 func (m *Model) openTaskCreate() {
 	m.taskScreen = taskScreenCreate
 	m.taskID = 0
-	m.taskTitle = ""
-	m.taskDescription = ""
-	m.taskPriority = "normal"
+	m.taskTitleInput = newTaskTitleInput()
+	m.taskDescriptionInput = newTaskDescriptionInput()
+	// Default the form to the priority flagged `default: true` in
+	// config.priorities, falling back to the middle entry when none is
+	// flagged. priorityZero falls through to the storage column DEFAULT.
+	m.taskPriority = m.defaultPriorityID()
 	m.taskField = taskFieldTitle
+	m.applyTaskFieldFocus()
 	m.status = "New task"
 	m.moveMode = false
+}
+
+// defaultPriorityID returns the id flagged `default: true` in the active
+// priorities table, falling back to the middle entry. PriorityZero when
+// no priorities are loaded so the form silently defers to the storage
+// column DEFAULT.
+func (m Model) defaultPriorityID() domain.Priority {
+	if len(m.priorities) == 0 {
+		return domain.PriorityZero
+	}
+	for _, p := range m.priorities {
+		if p.Default {
+			return domain.Priority(p.ID)
+		}
+	}
+	return domain.Priority(m.priorities[len(m.priorities)/2].ID)
 }
 
 func (m *Model) openTaskView(task domain.Task) {
 	m.taskScreen = taskScreenView
 	m.taskID = task.ID
-	m.taskTitle = ""
-	m.taskDescription = ""
+	m.taskTitleInput = newTaskTitleInput()
+	m.taskDescriptionInput = newTaskDescriptionInput()
 	m.taskField = taskFieldTitle
 	m.status = ""
 	m.moveMode = false
@@ -235,10 +285,9 @@ func (m *Model) refreshTaskActivity(taskID int64) error {
 		m.activityForTask = 0
 		return nil
 	}
+	// Validator guarantees task_activity.sort.order is set in the
+	// bundle; direct field access is safe.
 	order := m.views.TaskActivity.Sort.Order
-	if order == "" {
-		order = config.DefaultTaskActivitySortOrder
-	}
 	events, err := m.repos.Events.ListTaskActivity(m.ctx, m.project.ID, taskID, order)
 	if err != nil {
 		return err
@@ -249,12 +298,30 @@ func (m *Model) refreshTaskActivity(taskID int64) error {
 }
 
 func (m *Model) openTaskEdit(task domain.Task) {
+	// Surface the policy hint at the press of `e` instead of waiting for
+	// ctrl+s. Without this gate the user types a whole edit just to be
+	// rejected at save time, which feels like a bait-and-switch — the
+	// same enforcement that runs in the service is mirrored here so the
+	// form simply does not open when the bucket forbids edits. The
+	// service still re-checks before persisting, so this is a UX gate
+	// only, not a security boundary.
+	if allowed, hint := m.canEditTask(task.ID); !allowed {
+		m.status = hint
+		return
+	}
 	m.taskScreen = taskScreenEdit
 	m.taskID = task.ID
-	m.taskTitle = task.Title
-	m.taskDescription = task.Description
-	m.taskPriority = string(task.Priority)
+	m.taskTitleInput = newTaskTitleInput()
+	m.taskTitleInput.SetValue(task.Title)
+	// Position the caret at the end so the field opens "ready to extend"
+	// rather than overwriting the first char on the next keystroke.
+	m.taskTitleInput.SetCursor(len(task.Title))
+	m.taskDescriptionInput = newTaskDescriptionInput()
+	m.taskDescriptionInput.SetValue(task.Description)
+	m.taskDescriptionInput.CursorEnd()
+	m.taskPriority = task.Priority
 	m.taskField = taskFieldTitle
+	m.applyTaskFieldFocus()
 	m.status = "Editing task"
 	m.moveMode = false
 }
@@ -266,9 +333,9 @@ func (m *Model) closeTaskScreen(status string) {
 	m.blockerPickerChecks = nil
 	m.taskScreen = taskScreenClosed
 	m.taskID = 0
-	m.taskTitle = ""
-	m.taskDescription = ""
-	m.taskPriority = ""
+	m.taskTitleInput = newTaskTitleInput()
+	m.taskDescriptionInput = newTaskDescriptionInput()
+	m.taskPriority = domain.PriorityZero
 	m.taskField = taskFieldTitle
 	m.status = status
 	m.moveMode = false
@@ -292,40 +359,38 @@ func (m *Model) toggleTaskField() {
 	default:
 		m.taskField = taskFieldTitle
 	}
+	m.applyTaskFieldFocus()
 }
 
-func (m *Model) appendTaskFormText(text string) {
-	switch m.taskField {
-	case taskFieldTitle:
-		m.taskTitle += text
-	case taskFieldDescription:
-		m.taskDescription += text
+// applyTaskFieldFocus mirrors m.taskField onto the bubbles inputs so the
+// caret only blinks in the focused field. Without this, both inputs would
+// render carets simultaneously which is visually ambiguous.
+func (m *Model) applyTaskFieldFocus() {
+	if m.taskField == taskFieldTitle {
+		m.taskTitleInput.Focus()
+	} else {
+		m.taskTitleInput.Blur()
+	}
+	if m.taskField == taskFieldDescription {
+		m.taskDescriptionInput.Focus()
+	} else {
+		m.taskDescriptionInput.Blur()
 	}
 }
 
-func (m *Model) insertTaskFormNewline() {
-	switch m.taskField {
-	case taskFieldTitle:
-		m.taskField = taskFieldDescription
-	case taskFieldDescription:
-		m.taskDescription += "\n"
-	}
-}
-
-func (m *Model) deleteTaskFormRune() {
-	switch m.taskField {
-	case taskFieldTitle:
-		m.taskTitle = trimLastRune(m.taskTitle)
-	case taskFieldDescription:
-		m.taskDescription = trimLastRune(m.taskDescription)
-	}
-}
-
+// cycleTaskPriority advances the form's priority cursor through the
+// configured table by `delta` steps (+1 for ←/h, -1 for →/l per the
+// reverse-order convention used by the priority field). Clamped at
+// both ends. The cycle order is the slice order of m.priorities, which
+// renderers (board badges) and the SQL sort also follow — so cycling
+// "right" always feels like raising urgency.
 func (m *Model) cycleTaskPriority(delta int) {
-	levels := []string{"low", "normal", "high"}
-	idx := 1 // default to normal
-	for i, v := range levels {
-		if v == m.taskPriority {
+	if len(m.priorities) == 0 {
+		return
+	}
+	idx := 0
+	for i, p := range m.priorities {
+		if domain.Priority(p.ID) == m.taskPriority {
 			idx = i
 			break
 		}
@@ -334,10 +399,10 @@ func (m *Model) cycleTaskPriority(delta int) {
 	if idx < 0 {
 		idx = 0
 	}
-	if idx >= len(levels) {
-		idx = len(levels) - 1
+	if idx >= len(m.priorities) {
+		idx = len(m.priorities) - 1
 	}
-	m.taskPriority = levels[idx]
+	m.taskPriority = domain.Priority(m.priorities[idx].ID)
 }
 
 func (m *Model) openBlockerPicker() {
@@ -385,19 +450,72 @@ func (m *Model) saveBlockerPicker() {
 	m.closeBlockerPicker("Blockers saved")
 }
 
+// armOrConfirmTaskDelete is the arm-then-confirm gate for hard task deletion.
+// First press records the task ID and surfaces a status hint; a second `d` on
+// the same task fires TaskService.Delete, which enforces the bucket
+// permissions.task.delete policy and operations.delete.guards before
+// hard-deleting with cascade. The service emits the system task.removed event
+// and writes one ActivityLog row (visible in Stats › Logs) on every call.
+func (m *Model) armOrConfirmTaskDelete(task domain.Task) {
+	if task.ID <= 0 {
+		return
+	}
+	// Confirm path runs the service (which re-checks policy) — this gate
+	// only covers the arm path so the hint surfaces on the first `d` when
+	// the bucket forbids delete, instead of letting the user "Confirm
+	// delete..." just to be rejected on the second press.
+	if m.taskDeletePendingID == task.ID {
+		m.executeTaskDelete(task.ID)
+		return
+	}
+	if allowed, hint := m.canDeleteTask(task.ID); !allowed {
+		m.status = hint
+		return
+	}
+	m.taskDeletePendingID = task.ID
+	m.commentDeletePendingID = 0
+	m.status = fmt.Sprintf("Confirm delete task #%d %q. Press d again; esc cancels.", task.ID, task.Title)
+}
+
+// executeTaskDelete runs the TaskService.Delete call and reconciles UI state
+// after the cascade. On success the task screen closes (the row is gone) and
+// a refresh repopulates board/table; on guard violation the policy hint
+// surfaces in the status badge while pending state is cleared so the user
+// can retry intentionally rather than re-confirming a stale arm.
+func (m *Model) executeTaskDelete(taskID int64) {
+	m.taskDeletePendingID = 0
+	if _, err := app.NewTaskService(m.repos.Tasks, m.repos.Workflow).Delete(m.ctx, m.project, taskID); err != nil {
+		m.status = err.Error()
+		return
+	}
+	if m.taskScreen == taskScreenView && m.taskID == taskID {
+		m.closeTaskScreen("")
+	}
+	if err := m.refresh(); err != nil {
+		m.status = err.Error()
+		return
+	}
+	m.status = fmt.Sprintf("Deleted task #%d", taskID)
+}
+
 func (m *Model) saveTaskForm() {
-	title := strings.TrimSpace(m.taskTitle)
+	title := strings.TrimSpace(m.taskTitleInput.Value())
 	if title == "" {
 		m.status = "Task title is required"
 		return
 	}
-	description := strings.TrimSpace(m.taskDescription)
+	description := strings.TrimSpace(m.taskDescriptionInput.Value())
 
 	var task domain.Task
 	var err error
 	switch m.taskScreen {
 	case taskScreenCreate:
-		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow).Add(m.ctx, m.project, title, description, m.taskPriority, "")
+		// Add takes the priority as a label string so CLI/MCP/TUI all
+		// share one input boundary; the form already holds the resolved
+		// id, so we map it back through priorityLabel to keep the
+		// service signature uniform across surfaces.
+		label := m.priorityLabel(m.taskPriority)
+		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow).Add(m.ctx, m.project, title, description, label, "")
 	case taskScreenEdit:
 		current, ok := m.activeTask()
 		if !ok {
@@ -405,8 +523,8 @@ func (m *Model) saveTaskForm() {
 			break
 		}
 		update := domain.TaskUpdate{Title: &title, Description: &description}
-		if m.taskPriority != "" {
-			p := domain.Priority(m.taskPriority)
+		if m.taskPriority != domain.PriorityZero {
+			p := m.taskPriority
 			update.Priority = &p
 		}
 		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow).Edit(m.ctx, m.project, current.ID, update)
@@ -494,7 +612,7 @@ func (m Model) renderTaskView() string {
 		Custom(taskKicker).
 		Row("Title", task.Title).
 		Row("Bucket", task.BucketKey).
-		Row("Priority", string(task.Priority)).
+		Row("Priority", m.priorityLabel(task.Priority)).
 		Row("Comments", fmt.Sprintf("%d", m.commentCount(task.ID))).
 		Row("Tags", tagLine).
 		KickerCount("Blockers", len(blockers))
@@ -616,15 +734,18 @@ func (m Model) renderBlockerPicker() string {
 }
 
 func (m Model) renderTaskForm(title string) string {
+	width := m.taskFormWidth()
+	titleField := m.renderTaskTitleField(width)
+	descriptionField := m.renderTaskDescriptionField(width)
 	lines := []string{
 		m.styles.kicker(title),
-		m.styles.hint.Render("ctrl+s saves. tab: switch field. ←/→ changes priority."),
+		m.styles.hint.Render("ctrl+s saves · tab: switch field · ←/→ priority · arrows/home/end navigate text"),
 		"",
 		m.renderTaskFormLabel(taskFieldTitle, "Title"),
-		m.styles.input.Width(m.taskFormWidth()).Render(m.taskTitle),
+		titleField,
 		"",
 		m.renderTaskFormLabel(taskFieldDescription, "Description"),
-		m.renderTaskDescriptionInput(),
+		descriptionField,
 		"",
 		m.renderTaskFormLabel(taskFieldPriority, "Priority"),
 		m.renderTaskPriorityInput(),
@@ -632,49 +753,62 @@ func (m Model) renderTaskForm(title string) string {
 	return "\n" + indentBlock(m.styles.panel.Render(strings.Join(lines, "\n")), 2)
 }
 
-func (m Model) renderTaskDescriptionInput() string {
-	width := m.taskFormWidth()
-	// multilineInput: Padding(0,2) → 4 cols of padding subtracted from Width to
-	// get the actual text area. Match lipgloss's wrap so we know exactly how
-	// many wrapped lines the text will occupy, then autoscroll-to-end if it
-	// exceeds taskDescriptionInputHeight (text always appends at the bottom,
-	// so the user's "cursor" is the last wrapped line).
+// renderTaskTitleField renders the bubbles textinput inside the same boxed
+// border as the rest of the form. Border color tracks focus: only the
+// active field gets the accent color, every other field stays neutral so
+// the user is never confused about where the next keystroke lands.
+func (m Model) renderTaskTitleField(width int) string {
+	input := m.taskTitleInput
 	innerWidth := width - 4
 	if innerWidth < 8 {
 		innerWidth = 8
 	}
-	wrapped := wrapLinesToWidth(strings.Split(m.taskDescription, "\n"), innerWidth)
-
-	height := taskDescriptionInputHeight
-	var content string
-	if len(wrapped) > height {
-		visible := wrapped[len(wrapped)-(height-1):]
-		hidden := len(wrapped) - len(visible)
-		content = m.styles.hint.Render(fmt.Sprintf("▲ %d more above", hidden)) + "\n" + strings.Join(visible, "\n")
-	} else {
-		content = strings.Join(wrapped, "\n")
+	input.Width = innerWidth
+	style := m.styles.input.Width(width)
+	if m.taskField == taskFieldTitle {
+		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
 	}
-	return m.styles.multilineInput.Width(width).Render(content)
+	return style.Render(input.View())
+}
+
+// renderTaskDescriptionField renders the bubbles textarea inside the same
+// boxed border. Width/height come from the form geometry; bubbles handles
+// soft-wrap, scrolling, and cursor positioning internally so the user can
+// jump to any line/column without rebuilding the whole string.
+func (m Model) renderTaskDescriptionField(width int) string {
+	input := m.taskDescriptionInput
+	innerWidth := width - 4
+	if innerWidth < 8 {
+		innerWidth = 8
+	}
+	input.SetWidth(innerWidth)
+	input.SetHeight(taskDescriptionInputHeight)
+	style := m.styles.multilineInput.Width(width)
+	if m.taskField == taskFieldDescription {
+		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
+	}
+	return style.Render(input.View())
 }
 
 func (m Model) renderTaskPriorityInput() string {
-	levels := []struct {
-		key   string
-		label string
-	}{
-		{"low", "low"},
-		{"normal", "normal"},
-		{"high", "high"},
-	}
+	// Pull the cycle from the active priorities table so the user sees
+	// exactly the labels they declared in config.priorities — including
+	// any custom entries (e.g. "urgent" past "high"). Order follows the
+	// slice order so the visual reads low→high left-to-right.
 	var parts []string
-	for _, lvl := range levels {
-		if lvl.key == m.taskPriority {
-			parts = append(parts, m.styles.hintAccent.Render("["+lvl.label+"]"))
+	for _, lvl := range m.priorities {
+		label := lvl.Value
+		if domain.Priority(lvl.ID) == m.taskPriority {
+			parts = append(parts, m.styles.hintAccent.Render("["+label+"]"))
 		} else {
-			parts = append(parts, m.styles.hint.Render(lvl.label))
+			parts = append(parts, m.styles.hint.Render(label))
 		}
 	}
-	return m.styles.input.Width(m.taskFormWidth()).Render(strings.Join(parts, "  "))
+	style := m.styles.input.Width(m.taskFormWidth())
+	if m.taskField == taskFieldPriority {
+		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
+	}
+	return style.Render(strings.Join(parts, "  "))
 }
 
 func (m Model) renderTaskFormLabel(field taskFormField, label string) string {

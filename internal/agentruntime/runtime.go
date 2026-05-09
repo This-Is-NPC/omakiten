@@ -20,6 +20,11 @@ import (
 	"omakiten/internal/sqlite"
 )
 
+// registerPriorities/registerSeverities used to live here. They were
+// hoisted into app.ConfigService.Import (which runs at every bundle
+// load) so the registry is populated before any path that consumes
+// it — including ImportBundle's own resolve-label-to-id step.
+
 // Options mirrors agent.Open's old signature so call sites only swap the
 // import path.
 type Options struct {
@@ -62,6 +67,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 
+	// Open the store before the bundle is parsed because ConfigService.Import
+	// needs to write the bundle into SQLite. The kit-canonical busy_timeout
+	// applied here covers the bootstrap window; once Import returns, we
+	// reapply the user-resolved value via PRAGMA (per-connection) and wire
+	// the activity-log + events knobs into the Store.
 	store, err := sqlite.Open(ctx, dbPath)
 	if err != nil {
 		return nil, err
@@ -69,6 +79,16 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 
 	bundle, _, err := app.NewConfigService(store, cs).Import(ctx, configPath)
 	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+
+	if err := store.ApplyConfig(ctx, sqlite.ConfigKnobs{
+		BusyTimeoutMs:           bundle.Config.SQLite.BusyTimeoutMs,
+		ActivityLogMaxRows:      bundle.Config.ActivityLog.MaxRows,
+		ActivityLogMaxAgeDays:   bundle.Config.ActivityLog.MaxAgeDays,
+		EventsDefaultRecentLimit: bundle.Config.Events.DefaultRecentLimit,
+	}); err != nil {
 		_ = store.Close()
 		return nil, err
 	}
@@ -82,6 +102,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		}
 	}
 
+	// Note: domain.RegisterPriorities / RegisterSeverities are called
+	// inside ConfigService.Import (above) BEFORE ImportBundle writes
+	// the bundle. No need to re-register here — the registry is
+	// already populated for the rest of the runtime.
+
 	rt := &Runtime{store: store, configPath: configPath, dbPath: dbPath}
 	rt.service = agent.NewService(store, agent.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
 	rt.service.SetTaskTemplateLookup(taskTemplateLookup(bundle))
@@ -90,12 +115,27 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	rt.service.SetLawCatalog(lawCatalog(bundle))
 	rt.service.SetPersonaCatalog(personaCatalog(bundle))
 	rt.service.SetCommandCatalog(commandCatalog(bundle))
+	// Validator guarantees every MCP field is declared in the loaded
+	// bundle, so direct field access is safe — no Effective* fallback.
+	// The *bool fields are dereferenced here because validator confirmed
+	// they are non-nil.
 	rt.service.SetSettings(agent.ServiceSettings{
-		RecentCommentLimit: bundle.Config.MCP.EffectiveRecentCommentLimit(),
-		MaxCommentChars:    bundle.Config.MCP.EffectiveMaxCommentChars(),
-		IncludeWorkflow:    bundle.Config.MCP.EffectiveIncludeWorkflowInContinue(),
-		CachePrompts:       bundle.Config.MCP.EffectiveCachePrompts(),
+		RecentCommentLimit:       bundle.Config.MCP.RecentCommentLimit,
+		MaxCommentChars:          bundle.Config.MCP.MaxCommentChars,
+		IncludeWorkflow:          *bundle.Config.MCP.IncludeWorkflowInContinue,
+		CachePrompts:             *bundle.Config.MCP.CachePrompts,
+		RecentContextLimit:       bundle.Config.MCP.RecentContextLimit,
+		NextWorkLimit:            bundle.Config.MCP.NextWorkLimit,
+		SimilarTaskLimit:         bundle.Config.MCP.SimilarTaskLimit,
+		SolutionsTopLimitDefault: bundle.Config.Solutions.DefaultTopLimit,
+		SolutionsTopLimitMax:     bundle.Config.Solutions.MaxTopLimit,
 	})
+	// Tag synonyms + similar-task stopwords are process-global registries
+	// the consumer packages read at every NormalizeTagName / wordSet call.
+	// The composition root is the single point that knows the bundle, so
+	// installation lives here.
+	app.RegisterTagSynonyms(bundle.Config.TagSynonyms)
+	agent.RegisterStopWords(bundle.Config.Search.Stopwords)
 	return rt, nil
 }
 

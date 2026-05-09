@@ -6,11 +6,19 @@ import (
 	"testing"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/testfixtures"
 )
+
+func init() {
+	// task_service tests assert on Priority labels and reject unknown
+	// ids — both require an active priority registry. Production wires
+	// this from the loaded bundle; unit tests use the canonical kit.
+	testfixtures.RegisterCanonicalPriorities()
+}
 
 func TestTaskServiceAdd(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	service := NewTaskServiceFromStore(store)
@@ -34,16 +42,16 @@ func TestTaskServiceAdd(t *testing.T) {
 	if task.BucketKey != "backlog" {
 		t.Fatalf("Add().BucketKey = %q, want %q", task.BucketKey, "backlog")
 	}
-	if task.Priority != domain.PriorityNormal {
-		t.Fatalf("Add().Priority = %q, want %q", task.Priority, domain.PriorityNormal)
+	if task.Priority != domain.Priority(2) {
+		t.Fatalf("Add().Priority = %q, want %q", task.Priority, domain.Priority(2))
 	}
 
 	highTask, err := service.Add(ctx, project.Context(), "High", "", "high", "backlog")
 	if err != nil {
 		t.Fatalf("Add(high priority) error = %v", err)
 	}
-	if highTask.Priority != domain.PriorityHigh {
-		t.Fatalf("Add(high).Priority = %q, want %q", highTask.Priority, domain.PriorityHigh)
+	if highTask.Priority != domain.Priority(3) {
+		t.Fatalf("Add(high).Priority = %q, want %q", highTask.Priority, domain.Priority(3))
 	}
 
 	_, err = service.Add(ctx, project.Context(), "Invalid", "", "urgent", "backlog")
@@ -55,7 +63,7 @@ func TestTaskServiceAdd(t *testing.T) {
 
 func TestTaskServiceList(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	service := NewTaskServiceFromStore(store)
@@ -85,7 +93,7 @@ func TestTaskServiceList(t *testing.T) {
 
 func TestTaskServiceMove(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	service := NewTaskServiceFromStore(store)
@@ -118,7 +126,7 @@ func TestTaskServiceMove(t *testing.T) {
 
 func TestTaskServiceEdit(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	service := NewTaskServiceFromStore(store)
@@ -147,7 +155,8 @@ func TestTaskServiceEdit(t *testing.T) {
 	}
 	assertCodedError(t, err, domain.ErrValidation)
 
-	invalidPriority := domain.Priority("invalid")
+	// Priority id 999 is not in the registered table → must reject.
+	invalidPriority := domain.Priority(999)
 	_, err = service.Edit(ctx, project.Context(), task.ID, domain.TaskUpdate{Priority: &invalidPriority})
 	if err == nil {
 		t.Fatal("Edit() invalid priority error = nil, want validation error")
@@ -157,7 +166,7 @@ func TestTaskServiceEdit(t *testing.T) {
 	// Move + update combined
 	newTitle := "Updated"
 	newDesc := "Desc"
-	normalPriority := domain.PriorityNormal
+	normalPriority := domain.Priority(2)
 	edited, err := service.Edit(ctx, project.Context(), task.ID, domain.TaskUpdate{
 		Title:       &newTitle,
 		Description: &newDesc,
@@ -173,8 +182,8 @@ func TestTaskServiceEdit(t *testing.T) {
 	if edited.Description != "Desc" {
 		t.Fatalf("Edit().Description = %q, want %q", edited.Description, "Desc")
 	}
-	if edited.Priority != domain.PriorityNormal {
-		t.Fatalf("Edit().Priority = %q, want %q", edited.Priority, domain.PriorityNormal)
+	if edited.Priority != domain.Priority(2) {
+		t.Fatalf("Edit().Priority = %q, want %q", edited.Priority, domain.Priority(2))
 	}
 	if edited.BucketKey != "dev" {
 		t.Fatalf("Edit().BucketKey = %q, want %q", edited.BucketKey, "dev")

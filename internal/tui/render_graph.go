@@ -5,7 +5,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
 
@@ -136,15 +135,13 @@ func (m Model) renderGraph() string {
 // so the legacy ordering path stays untouched for users who never touch
 // the views section.
 func (m Model) graphRootLess() func(a, b domain.Task) bool {
+	// Validator guarantees both fields are set in the loaded bundle;
+	// no fallback. The "skip sort builder when at canonical asc-id"
+	// shortcut still applies because it's a perf optimisation, not a
+	// default — compare against the configured (not hardcoded) values.
 	field := m.views.Graph.Sort.Field
 	order := m.views.Graph.Sort.Order
-	if field == "" {
-		field = config.DefaultGraphSortField
-	}
-	if order == "" {
-		order = config.DefaultGraphSortOrder
-	}
-	if field == config.DefaultGraphSortField && order == config.DefaultGraphSortOrder {
+	if field == "id" && order == "asc" {
 		return nil
 	}
 	asc := order != "desc"

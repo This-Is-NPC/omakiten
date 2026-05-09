@@ -55,19 +55,34 @@ func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, ti
 		err = domain.NewError(domain.ErrValidation, "task title is required", nil)
 		return
 	}
-	priorityValue := domain.Priority(strings.TrimSpace(priority))
-	if priorityValue == "" {
-		priorityValue = domain.PriorityNormal
-	}
-	switch priorityValue {
-	case domain.PriorityLow, domain.PriorityNormal, domain.PriorityHigh:
-	default:
-		err = domain.NewError(domain.ErrValidation, "priority must be low, normal, or high", map[string]any{"priority": priority})
+	priorityID, err := resolvePriorityInput(strings.TrimSpace(priority))
+	if err != nil {
 		return
 	}
 
-	task, err = s.workflow.CreateTask(ctx, project.ID, title, strings.TrimSpace(description), string(priorityValue), strings.TrimSpace(bucketKey))
+	task, err = s.workflow.CreateTask(ctx, project.ID, title, strings.TrimSpace(description), priorityID, strings.TrimSpace(bucketKey))
 	return
+}
+
+// resolvePriorityInput accepts the user-supplied priority token (label
+// or empty) and returns the configured id. Empty falls back to the
+// configured default priority; non-empty is resolved via the active
+// priorities registry. Unknown labels error with ErrValidation so the
+// caller surfaces a helpful message instead of silently writing
+// PriorityZero. Lives next to Add/Edit so the input rules stay in one
+// place across both create and update paths.
+func resolvePriorityInput(label string) (domain.Priority, error) {
+	if label == "" {
+		// Caller did not name a priority — defer to the configured
+		// default. Storage layer will substitute it before insert.
+		return domain.PriorityZero, nil
+	}
+	if p, ok := domain.PriorityFromLabel(label); ok {
+		return p, nil
+	}
+	return domain.PriorityZero, domain.NewError(domain.ErrValidation,
+		"unknown priority label; must match a value in config.priorities",
+		map[string]any{"priority": label})
 }
 
 func (s *TaskService) List(ctx context.Context, project domain.ProjectContext, filter domain.TaskFilter) (tasks []domain.Task, err error) {
@@ -123,12 +138,16 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 		changed = true
 	}
 	if update.Priority != nil {
-		priority := domain.Priority(strings.TrimSpace(string(*update.Priority)))
-		switch priority {
-		case domain.PriorityLow, domain.PriorityNormal, domain.PriorityHigh:
-			update.Priority = &priority
-		default:
-			err = domain.NewError(domain.ErrValidation, "priority must be low, normal, or high", map[string]any{"priority": *update.Priority})
+		// Edit callers already hold a resolved Priority id (TUI cycles
+		// through the configured table; CLI/MCP went through
+		// resolvePriorityInput before reaching here). The service still
+		// re-checks the id is registered so a stale id (priority entry
+		// removed since the caller cached it) is rejected loud rather
+		// than silently passed through to the store.
+		if !update.Priority.IsRegistered() {
+			err = domain.NewError(domain.ErrValidation,
+				"priority id is not in config.priorities",
+				map[string]any{"priority": int(*update.Priority)})
 			return
 		}
 		changed = true
@@ -143,18 +162,155 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 		return
 	}
 
+	hasFieldEdit := update.Title != nil || update.Description != nil || update.Priority != nil
+	var before domain.Task
+	if hasFieldEdit {
+		before, err = s.taskByID(ctx, project, taskID)
+		if err != nil {
+			return
+		}
+		if before.State == domain.TaskStateArchived {
+			err = domain.NewError(domain.ErrValidation, "task is archived; unarchive before editing", map[string]any{"task_id": taskID, "hint": "call tasks.unarchive(task_id) first"})
+			return
+		}
+		var allowed bool
+		var hint string
+		allowed, hint, err = s.workflow.ResolveBucketPermissions(ctx, project, taskID, EntityTask, PermissionEdit)
+		if err != nil {
+			return
+		}
+		if !allowed {
+			err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"task_id": taskID, "hint": hint, "entity": EntityTask, "operation": PermissionEdit})
+			return
+		}
+	}
+
 	if update.BucketKey != "" {
 		task, err = s.workflow.MoveTask(ctx, project, taskID, update.BucketKey)
 		if err != nil {
 			return
 		}
 	}
-	if update.Title != nil || update.Description != nil || update.Priority != nil {
+	if hasFieldEdit {
 		task, err = s.repo.UpdateTask(ctx, project.ID, taskID, update)
 		if err != nil {
+			return
+		}
+		if _, evErr := s.repo.EmitTaskEditedEvent(ctx, project.ID, taskID, before, task); evErr != nil {
+			err = evErr
 			return
 		}
 	}
 
 	return
+}
+
+// Delete enforces the bucket-level task.delete policy and any
+// operations.delete.guards before hard-deleting the task with cascade.
+// Returns the system-level task.removed event whose payload carries the
+// pre-delete snapshot for audit.
+func (s *TaskService) Delete(ctx context.Context, project domain.ProjectContext, taskID int64) (event domain.Event, err error) {
+	finish := activity.Track(ctx, "app.TaskService.Delete", project, map[string]any{"task_id": taskID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	if taskID <= 0 {
+		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+		return
+	}
+
+	allowed, hint, err := s.workflow.ResolveBucketPermissions(ctx, project, taskID, EntityTask, PermissionDelete)
+	if err != nil {
+		return
+	}
+	if !allowed {
+		err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"task_id": taskID, "hint": hint, "entity": EntityTask, "operation": PermissionDelete})
+		return
+	}
+	if err = s.workflow.EvaluateOperationGuards(ctx, project.ID, taskID, OperationDelete); err != nil {
+		return
+	}
+
+	event, err = s.repo.HardDeleteTask(ctx, project.ID, taskID)
+	return
+}
+
+// Archive flips the task into archived state and moves it into the workflow's
+// final bucket atomically. Bypasses bucket-permission policy and transition
+// guards (escape hatch) but still respects operations.archive.guards.
+func (s *TaskService) Archive(ctx context.Context, project domain.ProjectContext, taskID int64) (task domain.Task, event domain.Event, err error) {
+	finish := activity.Track(ctx, "app.TaskService.Archive", project, map[string]any{"task_id": taskID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	if taskID <= 0 {
+		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+		return
+	}
+
+	if err = s.workflow.EvaluateOperationGuards(ctx, project.ID, taskID, OperationArchive); err != nil {
+		return
+	}
+
+	finalBucket, err := s.workflow.FinalBucketKey(ctx)
+	if err != nil {
+		return
+	}
+
+	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateArchived, finalBucket)
+	return
+}
+
+// Unarchive restores an archived task to active state, leaving its bucket
+// untouched. Respects operations.unarchive.guards if declared.
+func (s *TaskService) Unarchive(ctx context.Context, project domain.ProjectContext, taskID int64) (task domain.Task, event domain.Event, err error) {
+	finish := activity.Track(ctx, "app.TaskService.Unarchive", project, map[string]any{"task_id": taskID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	if taskID <= 0 {
+		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+		return
+	}
+
+	if err = s.workflow.EvaluateOperationGuards(ctx, project.ID, taskID, OperationUnarchive); err != nil {
+		return
+	}
+
+	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateActive, "")
+	return
+}
+
+func (s *TaskService) taskByID(ctx context.Context, project domain.ProjectContext, taskID int64) (domain.Task, error) {
+	tasks, err := s.repo.ListTasks(ctx, project.ID, domain.TaskFilter{IncludeArchived: true})
+	if err != nil {
+		return domain.Task{}, err
+	}
+	for _, t := range tasks {
+		if t.ID == taskID {
+			return t, nil
+		}
+	}
+	return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID})
 }

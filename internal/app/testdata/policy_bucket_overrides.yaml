@@ -1,0 +1,63 @@
+# Scenario: strict workflow.defaults forbid every (entity, op); each
+# bucket flips one field on. Expected behavior:
+#   - "backlog" enables task.edit (only). Note: comment has no bucket
+#     block, so comment.edit inherits from bucket.task.edit at the
+#     bucket layer (= true). comment.delete and task.delete fall
+#     through to workflow.defaults (= false).
+#   - "dev" enables comment.delete (only). The bucket has no task
+#     block, so task fields fall through to workflow.defaults (= false).
+#     comment.edit also falls through (defaults.comment.edit = false).
+#   - "done" has no override — all four fields stay forbidden via
+#     workflow.defaults.
+#
+# Proves bucket overrides take precedence over workflow.defaults at the
+# top of the resolution chain, AND that comment←task inheritance fires
+# at the bucket layer when the bucket declares task but not comment.
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default
+config:
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    defaults:
+      task:
+        edit: false
+        delete: false
+      comment:
+        edit: false
+        delete: false
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1
+        permissions:
+          task:
+            edit: true
+      - id: 2
+        key: dev
+        name: Development
+        position: 2
+        permissions:
+          comment:
+            delete: true
+      - id: 3
+        key: done
+        name: Done
+        position: 3
+    transitions:
+      - from: 1
+        to: 2
+      - from: 2
+        to: 3

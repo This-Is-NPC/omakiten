@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/activity"
@@ -17,7 +19,7 @@ import (
 	"omakiten/internal/tui/components/viewport"
 )
 
-func NewModel(ctx context.Context, project domain.ProjectContext, repos Repositories, theme config.Theme, counter token.Counter, badge config.TokenBadgeThresholds) (Model, error) {
+func NewModel(ctx context.Context, project domain.ProjectContext, repos Repositories, theme config.Theme, counter token.Counter, badge config.TokenBadgeThresholds, priorities []config.PriorityDefinition, severities []config.SeverityDefinition) (Model, error) {
 	if counter == nil {
 		counter = token.ApproxCounter{}
 	}
@@ -34,7 +36,12 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		entityKind:       entityKindLaw,
 		entityCursors:    map[entityKind]int{entityKindLaw: 0, entityKindPersona: 0, entityKindSkill: 0, entityKindTag: 0},
 		homePicker:       picker.New(picker.Single),
+		priorities:       priorities,
+		severities:       severities,
 	}
+	model.taskTitleInput = newTaskTitleInput()
+	model.taskDescriptionInput = newTaskDescriptionInput()
+	model.commentInput = newCommentInput()
 	detailscreen.SetStyles(model.styles.info)
 	if project.ID == 0 {
 		// Empty project — open on the multi-project Home picker.
@@ -174,6 +181,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m.refreshAfterViewChange(prevNav)
 	return m, nil
+}
+
+// newTaskTitleInput is the canonical textinput config for the task title
+// row of the create/edit form. Width is set later from terminal geometry;
+// a zero CharLimit keeps long titles editable, and the leading prompt is
+// suppressed because the form already kickers the field with `> // TITLE`.
+func newTaskTitleInput() textinput.Model {
+	t := textinput.New()
+	t.Prompt = ""
+	t.CharLimit = 0
+	return t
+}
+
+// newTaskDescriptionInput is the canonical textarea config for the
+// description row. Line numbers stay off (the form is not a code editor)
+// and the soft prompt is blanked so the visible text starts at column 0,
+// matching the title row visually.
+func newTaskDescriptionInput() textarea.Model {
+	t := textarea.New()
+	t.Prompt = ""
+	t.ShowLineNumbers = false
+	t.CharLimit = 0
+	return t
+}
+
+// newCommentInput is the textarea reused by the comment-add and
+// comment-edit modal flows. Same defaults as the description field so
+// the two modal surfaces feel uniform.
+func newCommentInput() textarea.Model {
+	t := textarea.New()
+	t.Prompt = ""
+	t.ShowLineNumbers = false
+	t.CharLimit = 0
+	return t
 }
 
 func scheduleRefreshTick() tea.Cmd {
@@ -401,7 +442,10 @@ func (m Model) hintBoxWidth() int {
 }
 
 func (m Model) isEmbeddedCommentInput() bool {
-	return m.mode == modeComment && m.taskScreen == taskScreenView && m.taskID > 0
+	if m.taskScreen != taskScreenView || m.taskID <= 0 {
+		return false
+	}
+	return m.mode == modeComment || m.mode == modeCommentEdit
 }
 
 func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
@@ -498,6 +542,19 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 			m.status = "Refreshed"
 		}
 		return true
+	case "A":
+		if m.top != topTasks {
+			return false
+		}
+		m.includeArchived = !m.includeArchived
+		if err := m.refreshCurrentView(); err != nil {
+			m.status = err.Error()
+		} else if m.includeArchived {
+			m.status = "Showing archived tasks"
+		} else {
+			m.status = "Hiding archived tasks"
+		}
+		return true
 	}
 	return false
 }
@@ -564,7 +621,7 @@ func (m *Model) refresh() error {
 	m.views = views
 
 	query := app.NewTUIQueryService(m.repos.Tasks, m.repos.Config, m.repos.Dependencies, m.repos.Comments, m.repos.Entries, m.repos.Tags, m.repos.Editor)
-	snap, err := query.Snapshot(m.ctx, m.project, domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order})
+	snap, err := query.Snapshot(m.ctx, m.project, domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order}, app.SnapshotOptions{IncludeArchived: m.includeArchived})
 	if err != nil {
 		return err
 	}

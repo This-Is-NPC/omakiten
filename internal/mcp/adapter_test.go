@@ -11,7 +11,9 @@ import (
 
 	"omakiten/internal/agent"
 	"omakiten/internal/config"
+	"omakiten/internal/domain"
 	"omakiten/internal/sqlite"
+	"omakiten/internal/testfixtures"
 )
 
 func TestToolsIncludePlannedSurface(t *testing.T) {
@@ -391,7 +393,7 @@ func newMCPTestService(t *testing.T, ctx context.Context) *agent.Service {
 		t.Fatalf("Open() error = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	if err := store.ImportBundle(ctx, mcpTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, mcpTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	root := filepath.Join(t.TempDir(), "project")
@@ -402,34 +404,17 @@ func newMCPTestService(t *testing.T, ctx context.Context) *agent.Service {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 	return agent.NewService(store, agent.ProjectSelector{CWD: root})
 }
 
-func mcpTestBundle() config.Bundle {
-	return config.Bundle{
-		Version: 1,
-		Kit:     config.Kit{ID: 1, Key: "default", Name: "Default"},
-		Config: config.Settings{
-			Output:   config.OutputSettings{JSONMinified: true, OmitEmpty: true},
-			Context:  config.ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
-			Workflow: config.WorkflowSettings{Active: "default"},
-			Theme:    config.ThemeSettings{Active: "catppuccin"},
-		},
-		Skills:   []config.Skill{{Slug: "go", Name: "Go"}},
-		Personas: []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}},
-		Laws:     []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}},
-		Workflows: []config.Workflow{{
-			ID:   1,
-			Key:  "default",
-			Name: "Default",
-			Buckets: []config.Bucket{
-				{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
-				{ID: 2, Key: "dev", Name: "Development", Position: 2},
-			},
-			Transitions: []config.Transition{{From: 1, To: 2}},
-		}},
-	}
+func mcpTestBundle(t *testing.T) config.Bundle {
+	t.Helper()
+	bundle := testfixtures.LoadBundle(t, "default.yaml")
+	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
+	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
+	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}}
+	return bundle
 }

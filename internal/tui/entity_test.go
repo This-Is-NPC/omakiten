@@ -25,7 +25,7 @@ func newEntityModel(t *testing.T) (Model, *sqlite.Store, *app.BundleEditor) {
 	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
 	dbPath := filepath.Join(tmp, "omakiten.db")
 
-	if err := config.SaveFullBundle(configPath, tuiTestBundle()); err != nil {
+	if err := config.SaveFullBundle(configPath, tuiTestBundle(t)); err != nil {
 		t.Fatalf("SaveFullBundle() error = %v", err)
 	}
 
@@ -50,7 +50,7 @@ func newEntityModel(t *testing.T) (Model, *sqlite.Store, *app.BundleEditor) {
 		Tasks:    store,
 		Workflow: app.NewWorkflowServiceFromStore(store), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -179,7 +179,7 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
 	dbPath := filepath.Join(tmp, "omakiten.db")
 
-	bundle := tuiTestBundle()
+	bundle := tuiTestBundle(t)
 	if err := config.SaveFullBundle(configPath, bundle); err != nil {
 		t.Fatalf("SaveFullBundle() error = %v", err)
 	}
@@ -222,7 +222,7 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 		Tasks:    store,
 		Workflow: app.NewWorkflowServiceFromStore(store), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}

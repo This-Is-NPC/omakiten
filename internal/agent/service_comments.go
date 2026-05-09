@@ -27,6 +27,45 @@ func (s *Service) AddComment(ctx context.Context, input AddCommentInput) (Commen
 	return CommentResponse{Project: projectSummary(project), Comment: commentSummary(comment)}, nil
 }
 
+func (s *Service) EditComment(ctx context.Context, input EditCommentInput) (CommentResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return CommentResponse{}, err
+	}
+	workflow := app.NewWorkflowServiceFromStore(s.repo)
+	comment, err := app.NewCommentServiceWithWorkflow(s.repo, workflow).Edit(ctx, project, input.CommentID, input.Body, input.Tags)
+	if err != nil {
+		return CommentResponse{}, err
+	}
+	return CommentResponse{Project: projectSummary(project), Comment: commentSummary(comment)}, nil
+}
+
+func (s *Service) DeleteComment(ctx context.Context, input DeleteCommentInput) (DeleteCommentResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return DeleteCommentResponse{}, err
+	}
+	if !input.Confirmed {
+		return DeleteCommentResponse{
+			Project: projectSummary(project),
+			Confirmation: Confirmation{
+				RequiresConfirmation: true,
+				Reason:               "Deleting a comment is destructive. Confirm with confirmed=true to proceed.",
+				Options: []ConfirmationOption{
+					{Action: "confirm_delete", Label: "Retry comments.delete with confirmed=true to hard-delete"},
+				},
+			},
+		}, nil
+	}
+	workflow := app.NewWorkflowServiceFromStore(s.repo)
+	event, err := app.NewCommentServiceWithWorkflow(s.repo, workflow).Remove(ctx, project, input.CommentID)
+	if err != nil {
+		return DeleteCommentResponse{}, err
+	}
+	snap := eventSummary(event)
+	return DeleteCommentResponse{Project: projectSummary(project), Snapshot: &snap}, nil
+}
+
 func (s *Service) ListComments(ctx context.Context, input ListCommentsInput) (CommentsResponse, error) {
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {

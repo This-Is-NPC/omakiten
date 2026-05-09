@@ -1,0 +1,12 @@
+-- Per-workflow defaults block for task/comment edit/delete policy. Lives at
+-- the workflow level (not the bucket level) because it expresses the
+-- fallback applied when a bucket does not declare its own override. Stored
+-- as JSON for parity with operations_json so the schema stays open to
+-- richer fields without another migration.
+--
+-- No backfill needed: pre-existing rows get '{}' from the DEFAULT clause,
+-- which the resolver treats identically to an absent block (every field
+-- nil → falls through to the implicit `true`). The next bundle import
+-- writes the populated block via ImportBundle's UPSERT, so authored
+-- workflows pick up their declared defaults on the very next load.
+ALTER TABLE workflows ADD COLUMN defaults_json TEXT NOT NULL DEFAULT '{}';

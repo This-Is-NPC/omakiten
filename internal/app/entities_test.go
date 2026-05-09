@@ -12,7 +12,16 @@ import (
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
 	"omakiten/internal/sqlite"
+	"omakiten/internal/testfixtures"
 )
+
+func init() {
+	// LawService.Add resolves severity ids through the domain
+	// registry; the test bundle does not flow through cli/agentruntime
+	// composition roots that wire it up at runtime, so register the
+	// canonical kit here.
+	testfixtures.RegisterCanonicalSeverities()
+}
 
 type entitiesFixture struct {
 	store      *sqlite.Store
@@ -29,7 +38,7 @@ func newEntitiesFixture(t *testing.T) entitiesFixture {
 	configPath := filepath.Join(configDir, "omakiten.yaml")
 	dbPath := filepath.Join(tmp, "omakiten.db")
 
-	if err := config.SaveFullBundle(configPath, fixtureBundle()); err != nil {
+	if err := config.SaveFullBundle(configPath, fixtureBundle(t)); err != nil {
 		t.Fatalf("SaveFullBundle() error = %v", err)
 	}
 
@@ -49,37 +58,24 @@ func newEntitiesFixture(t *testing.T) entitiesFixture {
 	return entitiesFixture{store: store, editor: editor, files: files, configPath: configPath, configDir: configDir}
 }
 
-func fixtureBundle() config.Bundle {
-	return config.Bundle{
-		Version: 1,
-		Kit:     config.Kit{ID: 1, Key: "default", Name: "Default Kit"},
-		Config: config.Settings{
-			Output:   config.OutputSettings{JSONMinified: true, OmitEmpty: true},
-			Context:  config.ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
-			Workflow: config.WorkflowSettings{Active: "default"},
-			Theme:    config.ThemeSettings{Active: "catppuccin"},
-		},
-		Skills: []config.Skill{
-			{Slug: "go", Name: "Go", Description: "Go language."},
-			{Slug: "sqlite", Name: "SQLite", Description: "SQLite stack."},
-		},
-		Personas: []config.Persona{
-			{Slug: "backend-agent", Name: "Backend Agent", Description: "Backend persona", Skills: []string{"go", "sqlite"}},
-		},
-		Laws: []config.Law{
-			{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"},
-		},
-		Workflows: []config.Workflow{{
-			ID:   1,
-			Key:  "default",
-			Name: "Default",
-			Buckets: []config.Bucket{
-				{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
-				{ID: 2, Key: "dev", Name: "Development", Position: 2},
-			},
-			Transitions: []config.Transition{{From: 1, To: 2}},
-		}},
+// fixtureBundle loads the entities-flavored test bundle. testdata/entities.yaml
+// supplies the workflow + kit shape; the inline skills/personas/laws cover
+// the entity arrays that production loads from per-entity folders (and that
+// config.Bundle marks `yaml:"-"`).
+func fixtureBundle(t *testing.T) config.Bundle {
+	t.Helper()
+	bundle := testfixtures.LoadBundle(t, "entities.yaml")
+	bundle.Skills = []config.Skill{
+		{Slug: "go", Name: "Go", Description: "Go language."},
+		{Slug: "sqlite", Name: "SQLite", Description: "SQLite stack."},
 	}
+	bundle.Personas = []config.Persona{
+		{Slug: "backend-agent", Name: "Backend Agent", Description: "Backend persona", Skills: []string{"go", "sqlite"}},
+	}
+	bundle.Laws = []config.Law{
+		{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"},
+	}
+	return bundle
 }
 
 func TestLawServiceLifecycle(t *testing.T) {
@@ -89,10 +85,13 @@ func TestLawServiceLifecycle(t *testing.T) {
 		input   domain.LawInput
 		wantErr domain.ErrorCode
 	}{
-		{name: "creates law", input: domain.LawInput{Key: "warn-only", Severity: domain.LawSeverityWarning, Body: "Be careful."}},
-		{name: "rejects empty key", input: domain.LawInput{Key: " ", Severity: domain.LawSeverityInfo, Body: "anything"}, wantErr: domain.ErrValidation},
-		{name: "rejects empty body", input: domain.LawInput{Key: "x", Severity: domain.LawSeverityInfo, Body: " "}, wantErr: domain.ErrValidation},
-		{name: "rejects invalid severity", input: domain.LawInput{Key: "x", Severity: domain.LawSeverity("fatal"), Body: "anything"}, wantErr: domain.ErrValidation},
+		// Severity ids: 1=info, 2=warning, 3=error (canonical kit). 99 is
+		// unregistered, exercising the validator's "id not in
+		// config.severities" branch.
+		{name: "creates law", input: domain.LawInput{Key: "warn-only", Severity: domain.Severity(2), Body: "Be careful."}},
+		{name: "rejects empty key", input: domain.LawInput{Key: " ", Severity: domain.Severity(1), Body: "anything"}, wantErr: domain.ErrValidation},
+		{name: "rejects empty body", input: domain.LawInput{Key: "x", Severity: domain.Severity(1), Body: " "}, wantErr: domain.ErrValidation},
+		{name: "rejects invalid severity", input: domain.LawInput{Key: "x", Severity: domain.Severity(99), Body: "anything"}, wantErr: domain.ErrValidation},
 	}
 
 	for _, tt := range tests {
@@ -142,7 +141,7 @@ func TestLawServiceRejectsDuplicateKey(t *testing.T) {
 	fixture := newEntitiesFixture(t)
 	service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files)
 
-	if _, err := service.Add(ctx, domain.LawInput{Key: "scope", Severity: domain.LawSeverityError, Body: "anything"}); err == nil {
+	if _, err := service.Add(ctx, domain.LawInput{Key: "scope", Severity: domain.Severity(3), Body: "anything"}); err == nil {
 		t.Fatalf("Add(duplicate) error = nil, want validation error")
 	}
 }

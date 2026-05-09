@@ -1,0 +1,29 @@
+# Scenario: minimal bundle for configstore round-trip tests. The Skills
+# field of config.Bundle is `yaml:"-"` (loaded from per-entity folders),
+# so this fixture covers only Version/Kit/Config/Workflows. The actual
+# skills file is materialized separately by the test under skills/go.md.
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default
+config:
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    defaults:
+      task:    { edit: true, delete: true }
+      comment: { edit: true, delete: true }
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1

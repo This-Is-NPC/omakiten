@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 
 	"omakiten/internal/activity"
@@ -259,10 +260,14 @@ ORDER BY error_id,
 
 // ListTopSolutions returns the top N solutions ranked by likes globally
 // (cross-project). Solutions with zero likes are still returned to fill the
-// quota when fewer than N solutions have been liked.
+// quota when fewer than N solutions have been liked. Caller (ErrorService)
+// is responsible for applying config.solutions.{default_top_limit,
+// max_top_limit} so the value reaching this layer is already clamped — a
+// non-positive limit here is a programming error rather than a missing
+// default.
 func (s *Store) ListTopSolutions(ctx context.Context, limit int) ([]domain.Solution, error) {
 	if limit <= 0 {
-		limit = 10
+		return nil, fmt.Errorf("ListTopSolutions: limit must be > 0 (caller forgot to apply config.solutions clamps)")
 	}
 	rows, err := s.db.QueryContext(ctx, `
 SELECT s.id, s.error_id, s.description, s.steps, s.success, s.task_id, COALESCE(s.tried_at, ''), s.created_at, s.likes,

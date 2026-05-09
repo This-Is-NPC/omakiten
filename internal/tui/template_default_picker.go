@@ -7,7 +7,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/app"
-	"omakiten/internal/config"
 	"omakiten/internal/tui/components/picker"
 )
 
@@ -69,14 +68,14 @@ func (m *Model) openTemplateDefaultPicker(slug string) {
 // binding. Project scope is implicit (current project) — the TUI is always
 // opened inside a project, so no global/project toggle is needed.
 func buildTemplateDefaultOptions(editor *app.BundleEditor) []defaultPickerOption {
+	// Validator guarantees template_defaults is non-empty in the
+	// loaded bundle. When the editor is nil (test contexts) we can't
+	// load — return empty kinds; callers handle the empty list.
 	var kinds []string
 	if editor != nil {
 		if bundle, err := editor.Load(); err == nil {
 			kinds = bundle.Config.TemplateKinds()
 		}
-	}
-	if len(kinds) == 0 {
-		kinds = append(kinds, config.DefaultTemplateKinds...)
 	}
 	options := make([]defaultPickerOption, 0, len(kinds)+1)
 	for _, kind := range kinds {

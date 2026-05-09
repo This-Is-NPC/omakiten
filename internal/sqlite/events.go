@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
 
@@ -34,10 +35,22 @@ type dbExecutor interface {
 // entityID is 0 we write NULL so foreign-key-style filters stay sane.
 // ListRecentEvents returns the most recent domain events filtered by
 // event_type, ordered newest-first. Used by tests to assert emission and
-// (eventually) by metrics.summary to introspect timelines.
+// (eventually) by metrics.summary to introspect timelines. Callers that
+// pass <=0 inherit the configured fallback (config.events.default_recent_limit,
+// wired in by SetEventsRecentLimit at composition root). When neither
+// the caller nor the composition root supplied a value, falls back to
+// the kit canonical so tests using bare sqlite.Open still work.
 func (s *Store) ListRecentEvents(ctx context.Context, eventType string, limit int) ([]domain.Event, error) {
 	if limit <= 0 {
-		limit = 50
+		limit = s.eventsDefaultRecentLimit
+	}
+	if limit <= 0 {
+		// Composition root forgot to wire SetEventsRecentLimit; fall
+		// through to the kit canonical so the query still runs. Production
+		// always sets a positive value via the runtime bootstrap.
+		if cfg, err := config.LoadKitConfig(); err == nil && cfg.Events.DefaultRecentLimit > 0 {
+			limit = cfg.Events.DefaultRecentLimit
+		}
 	}
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, entity_type, COALESCE(entity_id, 0), COALESCE(project_id, 0), event_type, COALESCE(body, ''), COALESCE(payload, ''), COALESCE(source, ''), COALESCE(entrypoint, ''), COALESCE(agent_model, ''), COALESCE(agent_session_id, ''), created_at

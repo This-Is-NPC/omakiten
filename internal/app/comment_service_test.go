@@ -9,7 +9,7 @@ import (
 
 func TestCommentServiceAdd(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	taskService := NewTaskServiceFromStore(store)
@@ -60,7 +60,7 @@ func TestCommentServiceAdd(t *testing.T) {
 
 func TestCommentServiceList(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(1000))
+	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
 	taskService := NewTaskServiceFromStore(store)

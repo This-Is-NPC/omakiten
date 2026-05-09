@@ -5,23 +5,25 @@ import (
 	"testing"
 )
 
-// TestSetSettingsClampsInvalidValues guards the contract documented on
-// ServiceSettings: zero/negative RecentCommentLimit falls back to the
-// canonical default, and negative MaxCommentChars normalizes to zero
-// (no truncation) so the runtime never ships a malformed cap.
-func TestSetSettingsClampsInvalidValues(t *testing.T) {
+// TestSetSettingsStoresValuesVerbatim verifies the strict contract:
+// SetSettings is a plain assignment now that the validator guarantees
+// every MCP field is positive before the composition root reaches
+// here. The previous "clamp zero/negative to defaults" behaviour is
+// gone — defaults no longer exist in code.
+func TestSetSettingsStoresValuesVerbatim(t *testing.T) {
 	fixture := newAgentFixture(t)
 
 	fixture.service.SetSettings(ServiceSettings{
-		RecentCommentLimit: 0,
-		MaxCommentChars:    -10,
+		RecentCommentLimit: 7,
+		MaxCommentChars:    42,
+		RecentContextLimit: 4,
+		NextWorkLimit:      6,
+		SimilarTaskLimit:   3,
 	})
-	if fixture.service.settings.RecentCommentLimit != defaultRecentCommentLimit {
-		t.Fatalf("RecentCommentLimit clamp = %d, want %d",
-			fixture.service.settings.RecentCommentLimit, defaultRecentCommentLimit)
-	}
-	if fixture.service.settings.MaxCommentChars != 0 {
-		t.Fatalf("MaxCommentChars clamp = %d, want 0", fixture.service.settings.MaxCommentChars)
+	got := fixture.service.settings
+	if got.RecentCommentLimit != 7 || got.MaxCommentChars != 42 ||
+		got.RecentContextLimit != 4 || got.NextWorkLimit != 6 || got.SimilarTaskLimit != 3 {
+		t.Fatalf("SetSettings did not store values verbatim: %+v", got)
 	}
 }
 

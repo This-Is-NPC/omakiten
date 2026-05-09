@@ -8,6 +8,12 @@ const (
 	EventTypeTaskCreated   = "task.created"
 	EventTypeTaskMoved     = "task.moved"
 	EventTypeTaskCompleted = "task.completed"
+	EventTypeTaskEdited    = "task.edited"
+	EventTypeTaskRemoved   = "task.removed"
+	EventTypeTaskArchived  = "task.archived"
+	EventTypeTaskUnarchived = "task.unarchived"
+	EventTypeCommentEdited = "comment.edited"
+	EventTypeCommentRemoved = "comment.removed"
 	EventTypeOperation     = "operation"
 
 	// Domain events emitted from the canonical service layer when an

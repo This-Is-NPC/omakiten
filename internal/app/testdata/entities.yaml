@@ -1,0 +1,44 @@
+# Scenario: bundle for tests that exercise law/skill/persona services.
+# Workflow shape mirrors default.yaml because these tests do not care
+# about policy.
+#
+# NOTE: skills/personas/laws are intentionally absent. config.Bundle
+# marks those fields `yaml:"-"` (production loads them from per-entity
+# folders), so listing them here would be silently dropped. Tests that
+# need entity arrays wire them inline in Go after LoadBundle returns —
+# see fixtureBundle in entities_test.go.
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default Kit
+config:
+  output:
+    json_minified: true
+    omit_empty: true
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    defaults:
+      task:    { edit: true, delete: true }
+      comment: { edit: true, delete: true }
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1
+      - id: 2
+        key: dev
+        name: Development
+        position: 2
+    transitions:
+      - from: 1
+        to: 2

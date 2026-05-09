@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"omakiten/internal/app"
-	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/sqlite"
+	"omakiten/internal/testfixtures"
 )
 
 // TestTemplateServiceSetDefaultRewritesFrontmatter exercises the frontmatter
@@ -42,22 +42,7 @@ func TestTemplateServiceSetDefaultRewritesFrontmatter(t *testing.T) {
 		t.Fatalf("WriteFile(beta) = %v", err)
 	}
 
-	bundle := config.Bundle{
-		Version: 1,
-		Kit:     config.Kit{ID: 1, Key: "default", Name: "Default"},
-		Config: config.Settings{
-			Context:  config.ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
-			Workflow: config.WorkflowSettings{Active: "default"},
-			Theme:    config.ThemeSettings{Active: "catppuccin"},
-		},
-		Workflows: []config.Workflow{{
-			ID:      1,
-			Key:     "default",
-			Name:    "Default",
-			Buckets: []config.Bucket{{ID: 1, Key: "backlog", Name: "Backlog", Position: 1}},
-		}},
-		Projects: []config.Project{{Slug: "demo", Name: "Demo Project"}},
-	}
+	bundle := testfixtures.LoadBundle(t, "with_project.yaml")
 	cs := configstore.New()
 	if err := cs.SaveBundle(configPath, bundle); err != nil {
 		t.Fatalf("SaveBundle = %v", err)
@@ -119,22 +104,7 @@ func TestTemplateServiceSetDefaultClears(t *testing.T) {
 		t.Fatalf("WriteFile(only) = %v", err)
 	}
 
-	bundle := config.Bundle{
-		Version: 1,
-		Kit:     config.Kit{ID: 1, Key: "default", Name: "Default"},
-		Config: config.Settings{
-			Context:  config.ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
-			Workflow: config.WorkflowSettings{Active: "default"},
-			Theme:    config.ThemeSettings{Active: "catppuccin"},
-		},
-		Workflows: []config.Workflow{{
-			ID:      1,
-			Key:     "default",
-			Name:    "Default",
-			Buckets: []config.Bucket{{ID: 1, Key: "backlog", Name: "Backlog", Position: 1}},
-		}},
-		Projects: []config.Project{{Slug: "demo", Name: "Demo Project"}},
-	}
+	bundle := testfixtures.LoadBundle(t, "with_project.yaml")
 	cs := configstore.New()
 	if err := cs.SaveBundle(configPath, bundle); err != nil {
 		t.Fatalf("SaveBundle = %v", err)

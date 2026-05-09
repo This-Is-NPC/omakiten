@@ -46,7 +46,15 @@ func (s *LawService) ListFiltered(ctx context.Context, filter LawListFilter) ([]
 	for _, law := range laws {
 		if file, ok := bySlug[law.Key]; ok {
 			law.Body = file.Body
-			law.Severity = file.Severity
+			// Frontmatter carries the severity label; resolve to its
+			// id via the active registry so the in-memory shape stays
+			// consistent with what the sqlite layer wrote. When the
+			// label is unknown (typo), keep whatever the store had so
+			// the UI can still render and the validator will surface
+			// the error on the next bundle import.
+			if id, ok := domain.SeverityFromLabel(file.Severity); ok {
+				law.Severity = id
+			}
 			law.Name = file.Name
 			law.Scope = domain.LawScope(file.Scope)
 			law.ProjectKey = file.ProjectSlug
@@ -101,7 +109,7 @@ func (s *LawService) Add(ctx context.Context, input domain.LawInput) (domain.Law
 	}
 
 	path := s.files.CustomEntityFilePath(s.editor.RootDir(), config.EntityKindLaw, slug)
-	bytes, err := s.files.LawFileBytes(config.Law{Slug: slug, Name: name, Severity: string(severity), Body: body})
+	bytes, err := s.files.LawFileBytes(config.Law{Slug: slug, Name: name, Severity: severity.Label(), Body: body})
 	if err != nil {
 		return domain.Law{}, configError(path, err)
 	}
@@ -119,7 +127,7 @@ func (s *LawService) Add(ctx context.Context, input domain.LawInput) (domain.Law
 		law := config.Law{
 			Slug:     slug,
 			Name:     name,
-			Severity: string(severity),
+			Severity: severity.Label(),
 			Body:     body,
 			Scope:    string(scope),
 			IsCustom: true,
@@ -157,7 +165,10 @@ func (s *LawService) Edit(ctx context.Context, slug string, update domain.LawUpd
 	law := config.Law{
 		Slug:     slug,
 		Name:     current.Name,
-		Severity: current.Severity,
+		// config.Law.Severity is the YAML/frontmatter label string;
+		// translate from the in-memory id back to the configured label
+		// so the rewritten file reads naturally.
+		Severity: current.Severity.Label(),
 		Body:     current.Body,
 	}
 	changed := false
@@ -170,7 +181,7 @@ func (s *LawService) Edit(ctx context.Context, slug string, update domain.LawUpd
 		if err != nil {
 			return domain.Law{}, err
 		}
-		law.Severity = string(next)
+		law.Severity = next.Label()
 		changed = true
 	}
 	if update.Body != nil {
@@ -226,21 +237,21 @@ func (s *LawService) Remove(ctx context.Context, slug string) error {
 	return err
 }
 
-func normalizeLawInput(input domain.LawInput, slugger Slugifier) (string, string, domain.LawSeverity, string, domain.LawScope, string, string, error) {
+func normalizeLawInput(input domain.LawInput, slugger Slugifier) (string, string, domain.Severity, string, domain.LawScope, string, string, error) {
 	severity, err := normalizeSeverity(input.Severity)
 	if err != nil {
-		return "", "", "", "", "", "", "", err
+		return "", "", domain.SeverityZero, "", "", "", "", err
 	}
 	body := strings.TrimSpace(input.Body)
 	if body == "" {
-		return "", "", "", "", "", "", "", domain.NewError(domain.ErrValidation, "law body is required", nil)
+		return "", "", domain.SeverityZero, "", "", "", "", domain.NewError(domain.ErrValidation, "law body is required", nil)
 	}
 	slug := strings.TrimSpace(input.Key)
 	if slug == "" {
-		return "", "", "", "", "", "", "", domain.NewError(domain.ErrValidation, "law key is required", nil)
+		return "", "", domain.SeverityZero, "", "", "", "", domain.NewError(domain.ErrValidation, "law key is required", nil)
 	}
 	if slugger.Slugify(slug) != slug {
-		return "", "", "", "", "", "", "", domain.NewError(domain.ErrValidation, "law key must be lowercase, hyphenated", map[string]any{"slug": slug})
+		return "", "", domain.SeverityZero, "", "", "", "", domain.NewError(domain.ErrValidation, "law key must be lowercase, hyphenated", map[string]any{"slug": slug})
 	}
 	name := strings.TrimSpace(input.Name)
 	scope := input.Scope
@@ -252,25 +263,34 @@ func normalizeLawInput(input domain.LawInput, slugger Slugifier) (string, string
 		// no owner needed
 	case domain.LawScopeProject:
 		if strings.TrimSpace(input.Project) == "" {
-			return "", "", "", "", "", "", "", domain.NewError(domain.ErrValidation, "project slug is required for project-scoped laws", nil)
+			return "", "", domain.SeverityZero, "", "", "", "", domain.NewError(domain.ErrValidation, "project slug is required for project-scoped laws", nil)
 		}
 	case domain.LawScopePersona:
 		if strings.TrimSpace(input.Persona) == "" {
-			return "", "", "", "", "", "", "", domain.NewError(domain.ErrValidation, "persona slug is required for persona-scoped laws", nil)
+			return "", "", domain.SeverityZero, "", "", "", "", domain.NewError(domain.ErrValidation, "persona slug is required for persona-scoped laws", nil)
 		}
 	default:
-		return "", "", "", "", "", "", "", domain.NewError(domain.ErrValidation, "law scope must be global, project, or persona", map[string]any{"scope": string(scope)})
+		return "", "", domain.SeverityZero, "", "", "", "", domain.NewError(domain.ErrValidation, "law scope must be global, project, or persona", map[string]any{"scope": string(scope)})
 	}
 	return slug, name, severity, body, scope, strings.TrimSpace(input.Project), strings.TrimSpace(input.Persona), nil
 }
 
-func normalizeSeverity(value domain.LawSeverity) (domain.LawSeverity, error) {
-	severity := domain.LawSeverity(strings.TrimSpace(strings.ToLower(string(value))))
-	switch severity {
-	case domain.LawSeverityInfo, domain.LawSeverityWarning, domain.LawSeverityError:
-		return severity, nil
+// normalizeSeverity validates that the supplied severity id is in the
+// active config.severities table. Callers (CLI, MCP) translate user
+// input from label to id via domain.SeverityFromLabel before reaching
+// this point; this function only accepts ids and is the second-line
+// guard against stale ids (e.g. caller cached an id whose entry was
+// removed since).
+func normalizeSeverity(value domain.Severity) (domain.Severity, error) {
+	if value == domain.SeverityZero {
+		return domain.SeverityZero, domain.NewError(domain.ErrValidation, "law severity is required", nil)
 	}
-	return "", domain.NewError(domain.ErrValidation, "law severity must be info, warning, or error", map[string]any{"severity": string(value)})
+	if !value.IsRegistered() {
+		return domain.SeverityZero, domain.NewError(domain.ErrValidation,
+			"law severity id is not in config.severities",
+			map[string]any{"severity": int(value)})
+	}
+	return value, nil
 }
 
 func indexLaws(items []config.Law) map[string]config.Law {

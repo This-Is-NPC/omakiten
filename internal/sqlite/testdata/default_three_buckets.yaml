@@ -1,0 +1,51 @@
+# Scenario: standard 3-bucket workflow (backlog → dev → done) used by
+# generic sqlite store tests. Permissive defaults so policy never gates
+# the assertions; transitions are minimal (only backlog → dev) because
+# tests that exercise transitions add their own.
+#
+# CONVENTION: this fixture intentionally OMITS the `priorities:` and
+# `severities:` blocks. The runtime layer (cli, agentruntime, and
+# testfixtures.LoadBundle) substitutes config.CanonicalPriorities /
+# CanonicalSeverities (1=low/2=normal/3=high and 1=info/2=warning/
+# 3=error). Add explicit blocks here ONLY when a test needs to
+# exercise a custom enum table; default tests rely on the canonical
+# kit being identical to what production ships.
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default
+config:
+  output:
+    json_minified: true
+    omit_empty: true
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    defaults:
+      task:    { edit: true, delete: true }
+      comment: { edit: true, delete: true }
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1
+      - id: 2
+        key: dev
+        name: Development
+        position: 2
+      - id: 3
+        key: done
+        name: Done
+        position: 3
+    transitions:
+      - from: 1
+        to: 2

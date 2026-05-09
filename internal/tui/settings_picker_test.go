@@ -40,7 +40,7 @@ func newPickerModel(t *testing.T) (Model, string) {
 	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
 	dbPath := filepath.Join(tmp, "omakiten.db")
 
-	if err := config.SaveFullBundle(configPath, tuiTestBundle()); err != nil {
+	if err := config.SaveFullBundle(configPath, tuiTestBundle(t)); err != nil {
 		t.Fatalf("SaveFullBundle() error = %v", err)
 	}
 
@@ -80,7 +80,7 @@ func newPickerModel(t *testing.T) (Model, string) {
 		Tasks:    store,
 		Workflow: app.NewWorkflowServiceFromStore(store), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}

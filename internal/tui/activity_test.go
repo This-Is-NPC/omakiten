@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/app"
+	"omakiten/internal/domain"
 	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
 )
@@ -21,14 +22,14 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 		t.Fatalf("Open() = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "with comments", "", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "with comments", "", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -47,7 +48,7 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -80,14 +81,14 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 		t.Fatalf("Open() = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "long body", "", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "long body", "", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -107,7 +108,7 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -171,14 +172,14 @@ func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
 		t.Fatalf("Open() = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "no comments", "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "no comments", "", domain.Priority(2), "backlog"); err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
 
@@ -190,7 +191,7 @@ func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -215,14 +216,14 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 		t.Fatalf("Open() = %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	if err := store.ImportBundle(ctx, tuiTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "with comment", "", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "with comment", "", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -238,7 +239,7 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}

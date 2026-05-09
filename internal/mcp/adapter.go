@@ -116,8 +116,13 @@ func Tools() []ToolDefinition {
 		{Name: "tasks.create_intent", Description: "Create a task intent after checking for similar or related project tasks and requiring confirmation when needed.", InputSchema: createTaskSchema()},
 		{Name: "tasks.create", Description: "Create a task directly through Omakiten's shared task service.", InputSchema: createTaskSchema()},
 		{Name: "tasks.move", Description: "Move a task through an allowed workflow transition.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "bucket_key": stringSchema("Target bucket key")}, []string{"task_id", "bucket_key"})},
+		{Name: "tasks.delete", Description: "Hard-delete a task with cascade (comments, tags, dependencies, events). Subject to bucket policy (permissions.task.delete) and operations.delete.guards.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "confirmed": booleanSchema("Required true to actually delete the task")}, []string{"task_id"})},
+		{Name: "tasks.archive", Description: "Archive a task (state=archived) and move it into the workflow's final bucket. Bypasses bucket policy and transition guards but respects operations.archive.guards.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id")}, []string{"task_id"})},
+		{Name: "tasks.unarchive", Description: "Restore an archived task to active state, leaving its current bucket intact. Respects operations.unarchive.guards if declared.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id")}, []string{"task_id"})},
 		{Name: "comments.add", Description: "Add a human or agent comment to a project-owned task. Optionally tag the comment with one or more tag names (normalized to kebab-case) or pre-fill its body from a loaded template.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "body": stringSchema("Comment body"), "author_type": stringSchema("human or agent"), "tags": arrayStringSchema("Optional tag names to attach to this comment (e.g. [\"resume\", \"deployment-notes\"])"), "template_slug": stringSchema("Optional slug of a loaded template; when set, the template body is merged into the comment (user content first, template appended).")}, []string{"task_id", "body"})},
 		{Name: "comments.list", Description: "List comments for a project-owned task.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id")}, []string{"task_id"})},
+		{Name: "comments.edit", Description: "Rewrite a comment body and replace its tags. Subject to bucket policy (permissions.comment.edit, inherited from permissions.task when not declared).", InputSchema: objectSchema(map[string]any{"comment_id": integerSchema("Comment id"), "body": stringSchema("New comment body"), "tags": arrayStringSchema("Optional tag names; replaces all existing tags on the comment")}, []string{"comment_id", "body"})},
+		{Name: "comments.delete", Description: "Hard-delete a comment. Subject to bucket policy (permissions.comment.delete, inherited from permissions.task when not declared).", InputSchema: objectSchema(map[string]any{"comment_id": integerSchema("Comment id"), "confirmed": booleanSchema("Required true to actually delete the comment")}, []string{"comment_id"})},
 		{Name: "task_activity.list", Description: "Return the unified activity feed for a task: comments and system events (task.created, task.moved, task.completed) ordered chronologically.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "order": stringSchema("Sort order: 'asc' (chronological, default) or 'desc' (newest first)")}, []string{"task_id"})},
 		{Name: "dependencies.add", Description: "Add a project-scoped task dependency with cycle prevention.", InputSchema: dependencySchema(false)},
 		{Name: "dependencies.remove", Description: "Remove a task dependency after explicit confirmation.", InputSchema: dependencySchema(true)},
@@ -245,6 +250,24 @@ func (a *Adapter) dispatchTool(ctx context.Context, name string, args map[string
 		if err == nil {
 			data, err = a.service.MoveTask(ctx, input)
 		}
+	case "tasks.delete":
+		var input agent.DeleteTaskInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.DeleteTask(ctx, input)
+		}
+	case "tasks.archive":
+		var input agent.ArchiveTaskInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.ArchiveTask(ctx, input)
+		}
+	case "tasks.unarchive":
+		var input agent.ArchiveTaskInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.UnarchiveTask(ctx, input)
+		}
 	case "comments.add":
 		var input agent.AddCommentInput
 		err = decodeArgs(args, &input)
@@ -256,6 +279,18 @@ func (a *Adapter) dispatchTool(ctx context.Context, name string, args map[string
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = a.service.ListComments(ctx, input)
+		}
+	case "comments.edit":
+		var input agent.EditCommentInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.EditComment(ctx, input)
+		}
+	case "comments.delete":
+		var input agent.DeleteCommentInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.DeleteComment(ctx, input)
 		}
 	case "task_activity.list":
 		var input agent.ListTaskActivityInput
@@ -607,6 +642,6 @@ func confirmSolutionSchema() map[string]any {
 
 func listTopSolutionsSchema() map[string]any {
 	props := selectorProperties()
-	props["limit"] = integerSchema("Maximum number of solutions to return (default 10, max 100)")
+	props["limit"] = integerSchema("Maximum number of solutions to return (defaults and caps come from config.solutions; omitted/<=0 = default_top_limit, larger values clamped to max_top_limit)")
 	return objectSchema(props, nil)
 }

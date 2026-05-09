@@ -3,6 +3,9 @@ package tui
 import (
 	"context"
 
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
+
 	"omakiten/internal/activity"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
@@ -100,12 +103,22 @@ type Model struct {
 	// stack is a record of *navigation*, not of every state change.
 	viewHistory []navState
 
-	taskScreen      taskScreenMode
-	taskID          int64
-	taskTitle       string
-	taskDescription string
-	taskPriority    string
-	taskField       taskFormField
+	taskScreen taskScreenMode
+	taskID     int64
+	// taskTitleInput / taskDescriptionInput own caret state and inline text
+	// editing for the create/edit form. Replacing the prior `taskTitle` /
+	// `taskDescription` strings with bubbles components fixed the "no
+	// cursor / can only erase from end" UX bug — these models handle
+	// arrow-key navigation, home/end, word-wise delete, paste, etc.
+	taskTitleInput       textinput.Model
+	taskDescriptionInput textarea.Model
+	taskPriority         domain.Priority
+	taskField            taskFormField
+	// commentInput is reused by modeComment (add) and modeCommentEdit
+	// (rewrite). Reset on every beginInput call so the placeholder and
+	// pre-fill values reflect the active mode without leaking text across
+	// flows.
+	commentInput textarea.Model
 
 	blockerPickerOpen   bool
 	blockerPickerTaskID int64
@@ -125,6 +138,16 @@ type Model struct {
 	skills              []domain.Skill
 	personas            []domain.Persona
 	templates           []config.TaskTemplate
+	// priorities is the resolved id↔value↔color table the renderer
+	// consults to draw priority badges and to drive the cycle in the
+	// task form. Populated from the active bundle on each refresh so
+	// edits to config.priorities take effect at the next view tick
+	// without restarting the TUI.
+	priorities []config.PriorityDefinition
+	// severities mirrors priorities for law severities: id↔value↔color
+	// table consulted by the entity-screen badge renderer. Same wire-up
+	// path (NewModel parameter; refreshed at composition root).
+	severities []config.SeverityDefinition
 	themePickerOptions  []themeOption
 	configPickerOptions []configOption
 	entries             []domain.ContextEntry
@@ -143,6 +166,16 @@ type Model struct {
 	deletePending    bool
 	deleteKind       entityKind
 	deleteSlug       string
+
+	// Arm-then-confirm pending IDs for task and comment deletion. Non-zero
+	// means a `d` press on the same item will fire the delete; any other
+	// key clears the arm. The two are mutually exclusive — arming one
+	// resets the other so the on-screen prompt always names a single
+	// target. commentEditID stores which comment a modeCommentEdit input
+	// is rewriting.
+	taskDeletePendingID    int64
+	commentDeletePendingID int64
+	commentEditID          int64
 
 	// home owns the multi-project picker shown when okt tui is launched
 	// without a resolvable project. The picker component handles cursor/
@@ -245,6 +278,12 @@ type Model struct {
 	// of the appropriate Mode when each one opens — single-select for
 	// theme/config/template-default, multi for persona.
 	entityPicker picker.Model
+
+	// includeArchived flips the active-only task filter on every list view
+	// (board/table/graph/logs). Default false (archived hidden); the `A`
+	// keybind toggles it. Archived rows render with a dimmed style so the
+	// user can still spot them when the toggle is on.
+	includeArchived bool
 }
 
 // inputMode is the modal-input enum: normal navigation, comment input, or
@@ -257,6 +296,7 @@ const (
 	modeNormal inputMode = iota
 	modeComment
 	modeMove
+	modeCommentEdit
 )
 
 // taskScreenMode tracks the sub-surface of the task detail view stack:

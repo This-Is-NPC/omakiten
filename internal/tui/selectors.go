@@ -2,9 +2,120 @@ package tui
 
 import (
 	"sort"
+	"strings"
 
+	"omakiten/internal/app"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
+
+// priorityByID returns the configured priority definition for the given
+// id, or false when the id is zero / not in the active table. Centralised
+// here so renderers (board/table/comment/badge) and the form cycle all
+// agree on the same lookup path — and so swapping config.priorities at
+// runtime takes effect uniformly.
+func (m Model) priorityByID(id domain.Priority) (config.PriorityDefinition, bool) {
+	if id == domain.PriorityZero {
+		return config.PriorityDefinition{}, false
+	}
+	for _, p := range m.priorities {
+		if domain.Priority(p.ID) == id {
+			return p, true
+		}
+	}
+	return config.PriorityDefinition{}, false
+}
+
+// priorityLabel returns the human label for a priority id, falling back
+// to the registry-resolved string when the model's table has not yet
+// been populated. Empty when neither source resolves the id.
+func (m Model) priorityLabel(id domain.Priority) string {
+	if def, ok := m.priorityByID(id); ok {
+		return def.Value
+	}
+	return id.Label()
+}
+
+// priorityBadge renders the colored pill badge for a priority id. Color
+// comes from config.priorities[].color (mapped via styles.badgeForColor);
+// label is uppercased for visual weight. Empty when the id is zero or
+// unknown so callers can drop the badge entirely instead of rendering an
+// empty pill.
+func (m Model) priorityBadge(id domain.Priority) string {
+	def, ok := m.priorityByID(id)
+	if !ok {
+		return ""
+	}
+	return m.styles.badgeForColor(def.Color).Render(strings.ToUpper(def.Value))
+}
+
+// severityByID / severityLabel / severityBadge mirror the priority
+// helpers for the law-severity table. Same lookup semantics: TUI-side
+// state-driven cache (m.severities) keeps renderers in sync with the
+// active config without per-call store access.
+func (m Model) severityByID(id domain.Severity) (config.SeverityDefinition, bool) {
+	if id == domain.SeverityZero {
+		return config.SeverityDefinition{}, false
+	}
+	for _, s := range m.severities {
+		if domain.Severity(s.ID) == id {
+			return s, true
+		}
+	}
+	return config.SeverityDefinition{}, false
+}
+
+func (m Model) severityLabel(id domain.Severity) string {
+	if def, ok := m.severityByID(id); ok {
+		return def.Value
+	}
+	return id.Label()
+}
+
+func (m Model) severityBadge(id domain.Severity) string {
+	def, ok := m.severityByID(id)
+	if !ok {
+		return ""
+	}
+	return m.styles.badgeForColor(def.Color).Render(strings.ToUpper(def.Value))
+}
+
+// checkBucketPermission asks the workflow service whether (entity, op) is
+// allowed in the bucket the given task currently sits in. Used by the TUI
+// entry points (e/d shortcuts) to surface the policy hint at the moment
+// the user presses the action button — much clearer than letting them
+// type a whole edit and only failing at save time. Returns the hint
+// string when the answer is "no" so the caller can drop it straight into
+// the status badge.
+func (m Model) checkBucketPermission(taskID int64, entity, op string) (bool, string) {
+	if m.repos.Workflow == nil {
+		return true, ""
+	}
+	allowed, hint, err := m.repos.Workflow.ResolveBucketPermissions(m.ctx, m.project, taskID, entity, op)
+	if err != nil {
+		return false, err.Error()
+	}
+	return allowed, hint
+}
+
+// canEditTask / canDeleteTask / canEditComment / canDeleteComment are
+// thin wrappers that name the (entity, op) tuple at the call site so the
+// e/d handlers read closer to English. Each returns (allowed, hint).
+func (m Model) canEditTask(taskID int64) (bool, string) {
+	return m.checkBucketPermission(taskID, app.EntityTask, app.PermissionEdit)
+}
+
+func (m Model) canDeleteTask(taskID int64) (bool, string) {
+	return m.checkBucketPermission(taskID, app.EntityTask, app.PermissionDelete)
+}
+
+func (m Model) canEditComment(taskID int64) (bool, string) {
+	return m.checkBucketPermission(taskID, app.EntityComment, app.PermissionEdit)
+}
+
+func (m Model) canDeleteComment(taskID int64) (bool, string) {
+	return m.checkBucketPermission(taskID, app.EntityComment, app.PermissionDelete)
+}
 
 // selectedTask returns the task currently driven by the navigation cursor.
 // In task-screen modes, the open task wins regardless of which view sits

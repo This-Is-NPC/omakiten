@@ -10,40 +10,56 @@ import (
 	"omakiten/internal/token"
 )
 
-const (
-	recentContextLimit = 3
-	nextWorkLimit      = 5
-	similarTaskLimit   = 5
-
-	// Default cap on recent comments shipped per call. Mirrors
-	// config.DefaultRecentCommentLimit so the agent layer keeps a sensible
-	// floor when no settings have been wired (test fixtures, partially
-	// initialized runtimes). Runtime overrides via Service.SetSettings.
-	defaultRecentCommentLimit = 5
-)
-
 // ServiceSettings carries the runtime-tunable knobs that shape MCP responses.
 // Mirrors `config.MCPSettings` but without importing internal/config — the
-// agent layer is config-neutral, so the runtime resolves the effective values
-// and pushes them in via SetSettings. Defaults are sensible: full bodies,
-// 5 most-recent comments, workflow shipped per call, caching hint emitted.
+// agent layer is config-neutral, so the runtime resolves the values from
+// the loaded bundle and pushes them in via SetSettings. The composition
+// root MUST call SetSettings before the service handles any request;
+// validator-required fields in `config.mcp.*` mean the bundle is
+// guaranteed complete by the time it reaches here.
 type ServiceSettings struct {
 	// RecentCommentLimit caps how many comments tools like tasks.continue
-	// and project.overview ship per call. <=0 falls back to the canonical
-	// default (5).
+	// and project.overview ship per call. Sourced from
+	// config.mcp.recent_comment_limit (validator-required > 0).
 	RecentCommentLimit int
 
 	// MaxCommentChars truncates comment bodies past this length with `…`
-	// when shipped. <=0 keeps full bodies.
+	// when shipped. Sourced from config.mcp.max_comment_chars (validator-
+	// required >= 0; 0 keeps full bodies).
 	MaxCommentChars int
 
 	// IncludeWorkflow toggles the `workflow` block in tasks.continue
 	// responses by default. Per-call `include_workflow` overrides this.
+	// Sourced from config.mcp.include_workflow_in_continue.
 	IncludeWorkflow bool
 
 	// CachePrompts toggles emitting the cache_control hint on prompts/get
 	// content so Anthropic-aware MCP clients reuse the cached prompt.
+	// Sourced from config.mcp.cache_prompts.
 	CachePrompts bool
+
+	// RecentContextLimit caps how many recent context entries flow into
+	// tasks.continue / project.overview / project.resume responses.
+	// Sourced from config.mcp.recent_context_limit (validator-required > 0).
+	RecentContextLimit int
+
+	// NextWorkLimit caps the "likely next work" suggestion list shipped
+	// in project.resume. Sourced from config.mcp.next_work_limit
+	// (validator-required > 0).
+	NextWorkLimit int
+
+	// SimilarTaskLimit caps how many similar-task hints flow into
+	// tasks.create_intent / tasks.continue. Sourced from
+	// config.mcp.similar_task_limit (validator-required > 0).
+	SimilarTaskLimit int
+
+	// SolutionsTopLimitDefault and SolutionsTopLimitMax mirror
+	// config.solutions.{default_top_limit, max_top_limit}. Used by
+	// ListTopSolutions to clamp caller-supplied limits so MCP
+	// responses stay bounded; the agent constructs an ErrorService
+	// per call and writes these values via SetSolutionsDefaults.
+	SolutionsTopLimitDefault int
+	SolutionsTopLimitMax     int
 }
 
 type Repository interface {
@@ -87,31 +103,28 @@ type Service struct {
 	settings           ServiceSettings
 }
 
+// NewService constructs the agent service with zero-value settings.
+// The composition root MUST call SetSettings with values resolved from
+// the user's config.mcp block before the service handles any request —
+// the agent layer no longer carries hardcoded defaults. Tests that
+// construct a service without going through the runtime composition
+// root must call SetSettings explicitly.
 func NewService(repo Repository, selector ProjectSelector) *Service {
 	return &Service{
 		repo:     repo,
 		selector: selector,
 		counter:  token.NewCounter(),
-		settings: ServiceSettings{
-			RecentCommentLimit: defaultRecentCommentLimit,
-			MaxCommentChars:    0,
-			IncludeWorkflow:    true,
-			CachePrompts:       true,
-		},
+		// settings are zero-valued; SetSettings wires the actual knobs.
 	}
 }
 
-// SetSettings replaces the service's runtime knobs. Wiring runs once at
-// startup from the resolved config bundle; changing values mid-flight is
-// allowed but not expected. Zero values fall through to defaults via the
-// effective getters below.
+// SetSettings replaces the service's runtime knobs with values from the
+// active bundle. The runtime composition root invokes this exactly once
+// at startup; the values flow from `bundle.Config.MCP.*`. The agent
+// layer cannot import internal/config (hexagonal rule), so the runtime
+// is the single point that bridges the two. Validator guarantees every
+// MCP field is set in the bundle, so settings here is always complete.
 func (s *Service) SetSettings(settings ServiceSettings) {
-	if settings.RecentCommentLimit <= 0 {
-		settings.RecentCommentLimit = defaultRecentCommentLimit
-	}
-	if settings.MaxCommentChars < 0 {
-		settings.MaxCommentChars = 0
-	}
 	s.settings = settings
 }
 

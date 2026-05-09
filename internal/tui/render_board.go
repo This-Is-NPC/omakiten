@@ -463,6 +463,9 @@ func (m Model) renderCard(task domain.Task, selected bool, layout boardLayout) s
 	if selected {
 		style = m.styles.cardSelected.Width(layout.cardWidth)
 	}
+	if task.State == domain.TaskStateArchived {
+		style = m.styles.archivedCard.Width(layout.cardWidth)
+	}
 	return style.Render(strings.Join(lines, "\n"))
 }
 
@@ -473,13 +476,8 @@ func (m Model) renderCard(task domain.Task, selected bool, layout boardLayout) s
 func (m Model) renderTaskBadges(task domain.Task, maxWidth int) string {
 	var badges []string
 
-	switch task.Priority {
-	case domain.PriorityHigh:
-		badges = append(badges, m.styles.badgeHigh.Render("HIGH"))
-	case domain.PriorityLow:
-		badges = append(badges, m.styles.badgeLow.Render("LOW"))
-	default:
-		badges = append(badges, m.styles.badgeNormal.Render("NORMAL"))
+	if badge := m.priorityBadge(task.Priority); badge != "" {
+		badges = append(badges, badge)
 	}
 	if deps := m.dependencyCount(task.ID); deps > 0 {
 		badges = append(badges, m.styles.badgeBlocker.Render(fmt.Sprintf("%d %s", deps, plural(deps, "BLOCKER", "BLOCKERS"))))

@@ -21,6 +21,7 @@ type fakeStores struct {
 	currentBucketID  int64
 	currentBucketKey string
 	currentBucketErr error
+	taskState        domain.TaskState
 
 	createCalls  int
 	moveCalls    int
@@ -83,6 +84,12 @@ func (f *fakeStores) LoadTransitionGuards(_ context.Context, from, to int64) ([]
 func (f *fakeStores) CurrentTaskBucket(context.Context, int64, int64) (int64, string, error) {
 	return f.currentBucketID, f.currentBucketKey, f.currentBucketErr
 }
+func (f *fakeStores) TaskState(context.Context, int64, int64) (domain.TaskState, error) {
+	if f.taskState == "" {
+		return domain.TaskStateActive, nil
+	}
+	return f.taskState, nil
+}
 
 // GuardEvaluationRepository
 func (f *fakeStores) ListTaskBlockerBuckets(_ context.Context, _, taskID int64) ([]domain.TaskBlocker, error) {
@@ -96,7 +103,7 @@ func (f *fakeStores) CountTaskCommentsTagged(_ context.Context, _, _ int64, tag 
 }
 
 // TaskRepository
-func (f *fakeStores) CreateTask(_ context.Context, _ int64, _, _, _, _ string) (domain.Task, error) {
+func (f *fakeStores) CreateTask(_ context.Context, _ int64, _, _ string, _ domain.Priority, _ string) (domain.Task, error) {
 	f.createCalls++
 	return f.createResp, f.createErr
 }
@@ -112,6 +119,15 @@ func (f *fakeStores) UpdateTask(context.Context, int64, int64, domain.TaskUpdate
 }
 func (f *fakeStores) TaskCount(context.Context, int64) (int64, error) {
 	return 0, nil
+}
+func (f *fakeStores) HardDeleteTask(context.Context, int64, int64) (domain.Event, error) {
+	return domain.Event{}, nil
+}
+func (f *fakeStores) SetTaskState(context.Context, int64, int64, domain.TaskState, string) (domain.Task, domain.Event, error) {
+	return domain.Task{}, domain.Event{}, nil
+}
+func (f *fakeStores) EmitTaskEditedEvent(context.Context, int64, int64, domain.Task, domain.Task) (domain.Event, error) {
+	return domain.Event{}, nil
 }
 
 // EventRepository
@@ -156,7 +172,7 @@ func TestWorkflowCreateTaskUsesDefaultWhenBucketEmpty(t *testing.T) {
 	}
 	svc := newWorkflowServiceForTest(f)
 
-	if _, err := svc.CreateTask(context.Background(), 1, "title", "", "", ""); err != nil {
+	if _, err := svc.CreateTask(context.Background(), 1, "title", "", domain.Priority(2), ""); err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
 	if f.createCalls != 1 {

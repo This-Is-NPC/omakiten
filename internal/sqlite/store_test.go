@@ -8,6 +8,7 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/testfixtures"
 )
 
 func TestStoreProjectScopedTasks(t *testing.T) {
@@ -18,7 +19,7 @@ func TestStoreProjectScopedTasks(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -31,10 +32,10 @@ func TestStoreProjectScopedTasks(t *testing.T) {
 		t.Fatalf("UpsertProject(B) error = %v", err)
 	}
 
-	if _, err := store.CreateTask(ctx, projectA.ID, "A task", "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, projectA.ID, "A task", "", domain.Priority(2), "backlog"); err != nil {
 		t.Fatalf("CreateTask(A) error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, projectB.ID, "B task", "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, projectB.ID, "B task", "", domain.Priority(2), "backlog"); err != nil {
 		t.Fatalf("CreateTask(B) error = %v", err)
 	}
 
@@ -62,7 +63,7 @@ func TestMoveTaskEnforcesWorkflow(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -70,7 +71,7 @@ func TestMoveTaskEnforcesWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -107,7 +108,7 @@ func TestStoreOperationalDataIsProjectScoped(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -120,15 +121,15 @@ func TestStoreOperationalDataIsProjectScoped(t *testing.T) {
 		t.Fatalf("UpsertProject(B) error = %v", err)
 	}
 
-	taskA1, err := store.CreateTask(ctx, projectA.ID, "A first", "", "", "backlog")
+	taskA1, err := store.CreateTask(ctx, projectA.ID, "A first", "", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(A1) error = %v", err)
 	}
-	taskA2, err := store.CreateTask(ctx, projectA.ID, "A second", "", "", "backlog")
+	taskA2, err := store.CreateTask(ctx, projectA.ID, "A second", "", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(A2) error = %v", err)
 	}
-	taskB, err := store.CreateTask(ctx, projectB.ID, "B first", "", "", "backlog")
+	taskB, err := store.CreateTask(ctx, projectB.ID, "B first", "", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(B) error = %v", err)
 	}
@@ -184,18 +185,18 @@ func TestDependencyServiceRejectsCycle(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	taskA, err := store.CreateTask(ctx, project.ID, "A", "", "", "backlog")
+	taskA, err := store.CreateTask(ctx, project.ID, "A", "", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(A) error = %v", err)
 	}
-	taskB, err := store.CreateTask(ctx, project.ID, "B", "", "", "backlog")
+	taskB, err := store.CreateTask(ctx, project.ID, "B", "", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(B) error = %v", err)
 	}
@@ -216,7 +217,7 @@ func TestStoreActiveWorkflow(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	workflow, err := store.ActiveWorkflow(ctx)
@@ -234,31 +235,16 @@ func TestStoreActiveWorkflow(t *testing.T) {
 	}
 }
 
-func sqliteTestBundle() config.Bundle {
-	return config.Bundle{
-		Version: 1,
-		Kit:     config.Kit{ID: 1, Key: "default", Name: "Default"},
-		Config: config.Settings{
-			Output:   config.OutputSettings{JSONMinified: true, OmitEmpty: true},
-			Context:  config.ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
-			Workflow: config.WorkflowSettings{Active: "default"},
-			Theme:    config.ThemeSettings{Active: "catppuccin"},
-		},
-		Skills:   []config.Skill{{Slug: "go", Name: "Go"}},
-		Personas: []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}},
-		Laws:     []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}},
-		Workflows: []config.Workflow{{
-			ID:   1,
-			Key:  "default",
-			Name: "Default",
-			Buckets: []config.Bucket{
-				{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
-				{ID: 2, Key: "dev", Name: "Development", Position: 2},
-				{ID: 3, Key: "done", Name: "Done", Position: 3},
-			},
-			Transitions: []config.Transition{{From: 1, To: 2}},
-		}},
-	}
+// sqliteTestBundle loads the shared 3-bucket fixture used by store-level
+// tests and adds the inline entity arrays (skills/personas/laws) that
+// production loads from per-entity folders.
+func sqliteTestBundle(t *testing.T) config.Bundle {
+	t.Helper()
+	bundle := testfixtures.LoadBundle(t, "default_three_buckets.yaml")
+	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
+	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
+	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}}
+	return bundle
 }
 
 func TestStoreFindProject(t *testing.T) {
@@ -269,7 +255,7 @@ func TestStoreFindProject(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -365,7 +351,7 @@ func TestStoreListActiveEntities(t *testing.T) {
 	}
 
 	// After import
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -386,7 +372,7 @@ func TestStoreUpdateTask(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
@@ -400,7 +386,7 @@ func TestStoreUpdateTask(t *testing.T) {
 		t.Fatal("UpdateTask() error = nil, want not found")
 	}
 
-	task, err := store.CreateTask(ctx, project.ID, "Task", "Desc", "", "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Task", "Desc", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -423,17 +409,17 @@ func TestStoreTaskCount(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
 	projectA, _ := store.UpsertProject(ctx, "A", "a", "/work/a")
 	projectB, _ := store.UpsertProject(ctx, "B", "b", "/work/b")
 
-	if _, err := store.CreateTask(ctx, projectA.ID, "A1", "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, projectA.ID, "A1", "", domain.Priority(2), "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, projectB.ID, "B1", "", "", "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, projectB.ID, "B1", "", domain.Priority(2), "backlog"); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
@@ -462,13 +448,13 @@ func TestStoreRemoveTaskDependency(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	taskA, _ := store.CreateTask(ctx, project.ID, "A", "", "", "backlog")
-	taskB, _ := store.CreateTask(ctx, project.ID, "B", "", "", "backlog")
+	taskA, _ := store.CreateTask(ctx, project.ID, "A", "", domain.Priority(2), "backlog")
+	taskB, _ := store.CreateTask(ctx, project.ID, "B", "", domain.Priority(2), "backlog")
 
 	if _, err := store.AddTaskDependency(ctx, project.ID, taskB.ID, taskA.ID); err != nil {
 		t.Fatalf("AddTaskDependency() error = %v", err)
@@ -492,12 +478,12 @@ func TestStoreMoveTaskErrors(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog")
 
 	_, err = store.MoveTask(ctx, project.ID, 9999, "dev")
 	if err == nil {
@@ -519,8 +505,9 @@ func TestStoreMoveTaskErrors(t *testing.T) {
 	}
 }
 
-func bundleWithBlockersInGuard() config.Bundle {
-	b := sqliteTestBundle()
+func bundleWithBlockersInGuard(t *testing.T) config.Bundle {
+	t.Helper()
+	b := sqliteTestBundle(t)
 	b.Workflows[0].Transitions = []config.Transition{{
 		From: 1, To: 2,
 		Guards: []config.TransitionGuard{{Type: "blockers_in", Buckets: []string{"done"}}},
@@ -528,8 +515,9 @@ func bundleWithBlockersInGuard() config.Bundle {
 	return b
 }
 
-func bundleWithCommentsMinGuard(minCount int) config.Bundle {
-	b := sqliteTestBundle()
+func bundleWithCommentsMinGuard(t *testing.T, minCount int) config.Bundle {
+	t.Helper()
+	b := sqliteTestBundle(t)
 	b.Workflows[0].Transitions = []config.Transition{{
 		From: 1, To: 2,
 		Guards: []config.TransitionGuard{{Type: "comments_min", Count: minCount}},
@@ -537,8 +525,9 @@ func bundleWithCommentsMinGuard(minCount int) config.Bundle {
 	return b
 }
 
-func bundleWithCommentsTaggedGuard(tag string, minCount int) config.Bundle {
-	b := sqliteTestBundle()
+func bundleWithCommentsTaggedGuard(t *testing.T, tag string, minCount int) config.Bundle {
+	t.Helper()
+	b := sqliteTestBundle(t)
 	b.Workflows[0].Transitions = []config.Transition{{
 		From: 1, To: 2,
 		Guards: []config.TransitionGuard{{Type: "comments_tagged", Tag: tag, Count: minCount}},
@@ -554,15 +543,15 @@ func TestMoveTaskGuardBlockersIn(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, bundleWithBlockersInGuard(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, bundleWithBlockersInGuard(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	workflow := app.NewWorkflowServiceFromStore(store)
 
-	blocker, _ := store.CreateTask(ctx, project.ID, "Blocker", "", "", "backlog")
-	main, _ := store.CreateTask(ctx, project.ID, "Main", "", "", "backlog")
+	blocker, _ := store.CreateTask(ctx, project.ID, "Blocker", "", domain.Priority(2), "backlog")
+	main, _ := store.CreateTask(ctx, project.ID, "Main", "", domain.Priority(2), "backlog")
 	if _, err := store.AddTaskDependency(ctx, project.ID, main.ID, blocker.ID); err != nil {
 		t.Fatalf("AddTaskDependency() error = %v", err)
 	}
@@ -578,8 +567,8 @@ func TestMoveTaskGuardBlockersIn(t *testing.T) {
 	}
 
 	// Move blocker to done bucket (create directly there since no dev→done transition)
-	doneBlocker, _ := store.CreateTask(ctx, project.ID, "Done Blocker", "", "", "done")
-	main2, _ := store.CreateTask(ctx, project.ID, "Main2", "", "", "backlog")
+	doneBlocker, _ := store.CreateTask(ctx, project.ID, "Done Blocker", "", domain.Priority(2), "done")
+	main2, _ := store.CreateTask(ctx, project.ID, "Main2", "", domain.Priority(2), "backlog")
 	if _, err := store.AddTaskDependency(ctx, project.ID, main2.ID, doneBlocker.ID); err != nil {
 		t.Fatalf("AddTaskDependency() error = %v", err)
 	}
@@ -602,12 +591,12 @@ func TestMoveTaskGuardBlockersInNoBlockers(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, bundleWithBlockersInGuard(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, bundleWithBlockersInGuard(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog")
 	workflow := app.NewWorkflowServiceFromStore(store)
 
 	// No blockers — guard passes
@@ -628,12 +617,12 @@ func TestMoveTaskGuardCommentsMin(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, bundleWithCommentsMinGuard(1), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, bundleWithCommentsMinGuard(t, 1), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog")
 	workflow := app.NewWorkflowServiceFromStore(store)
 
 	// Guard fails: 0 comments
@@ -669,13 +658,13 @@ func TestMoveTaskNoGuardUnaffected(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, sqliteTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	blocker, _ := store.CreateTask(ctx, project.ID, "Blocker", "", "", "backlog")
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+	blocker, _ := store.CreateTask(ctx, project.ID, "Blocker", "", domain.Priority(2), "backlog")
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog")
 	if _, err := store.AddTaskDependency(ctx, project.ID, task.ID, blocker.ID); err != nil {
 		t.Fatalf("AddTaskDependency() error = %v", err)
 	}
@@ -699,12 +688,12 @@ func TestMoveTaskGuardCommentsTagged(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	if err := store.ImportBundle(ctx, bundleWithCommentsTaggedGuard("resume", 1), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, bundleWithCommentsTaggedGuard(t, "resume", 1), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", "", "backlog")
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog")
 	workflow := app.NewWorkflowServiceFromStore(store)
 
 	// Guard fails: no comments at all

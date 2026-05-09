@@ -10,11 +10,34 @@ import (
 )
 
 type ErrorService struct {
-	repo ErrorRepository
+	repo     ErrorRepository
+	defaults SolutionsDefaults
+}
+
+// SolutionsDefaults mirrors config.SolutionsSettings without forcing the
+// app layer to import internal/config (avoids a cycle through BundleStore).
+// Composition root resolves the values from the loaded bundle and writes
+// them via SetSolutionsDefaults; tests that exercise ListTopSolutions wire
+// their own values explicitly. Zero values mean "settings not yet wired"
+// and ListTopSolutions errors loudly so the gap surfaces.
+type SolutionsDefaults struct {
+	// TopLimitDefault is the limit applied when the caller passes <=0.
+	// Validator-required > 0 in the bundle.
+	TopLimitDefault int
+	// TopLimitMax caps caller-supplied limits. Validator-required >=
+	// TopLimitDefault in the bundle.
+	TopLimitMax int
 }
 
 func NewErrorService(repo ErrorRepository) *ErrorService {
 	return &ErrorService{repo: repo}
+}
+
+// SetSolutionsDefaults installs the limits used by ListTopSolutions.
+// Composition root calls this once at startup with values resolved from
+// config.solutions.
+func (s *ErrorService) SetSolutionsDefaults(defaults SolutionsDefaults) {
+	s.defaults = defaults
 }
 
 // emitDomainEvent serializes payload to JSON and writes a domain event row.
@@ -161,10 +184,11 @@ func (s *ErrorService) ConfirmSolution(ctx context.Context, project domain.Proje
 	return
 }
 
-const defaultTopSolutionsLimit = 10
-
 // ListTopSolutions returns the N most-liked solutions globally (cross-project).
-// Limits beyond 100 are clamped to keep MCP responses bounded.
+// Limits beyond config.solutions.max_top_limit are clamped so MCP responses
+// stay bounded. Caller-omitted limit (<=0) inherits
+// config.solutions.default_top_limit. Validator guarantees both knobs are
+// present and positive when the bundle reaches runtime.
 func (s *ErrorService) ListTopSolutions(ctx context.Context, project domain.ProjectContext, limit int) (solutions []domain.Solution, err error) {
 	finish := activity.Track(ctx, "app.ErrorService.ListTopSolutions", project, map[string]any{"limit": limit})
 	defer func() {
@@ -177,11 +201,17 @@ func (s *ErrorService) ListTopSolutions(ctx context.Context, project domain.Proj
 		finish(status, errMsg)
 	}()
 
-	if limit <= 0 {
-		limit = defaultTopSolutionsLimit
+	if s.defaults.TopLimitDefault <= 0 || s.defaults.TopLimitMax <= 0 {
+		err = domain.NewError(domain.ErrValidation, "ErrorService.SolutionsDefaults not configured", map[string]any{
+			"hint": "composition root must call SetSolutionsDefaults from config.solutions before serving requests",
+		})
+		return
 	}
-	if limit > 100 {
-		limit = 100
+	if limit <= 0 {
+		limit = s.defaults.TopLimitDefault
+	}
+	if limit > s.defaults.TopLimitMax {
+		limit = s.defaults.TopLimitMax
 	}
 	solutions, err = s.repo.ListTopSolutions(ctx, limit)
 	if err != nil {

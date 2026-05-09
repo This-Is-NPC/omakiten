@@ -6,11 +6,11 @@ import (
 	"testing"
 )
 
-// TestLoadBundleAcceptsMCPSettings round-trips a yaml carrying a populated
-// `config.mcp` block. The merged Settings must preserve every declared field,
-// including the boolean pointers (so that omitted == nil, declared false ==
-// non-nil with *false). The Effective* accessors are checked against the
-// canonical default constants on the side.
+// TestLoadBundleAcceptsMCPSettings round-trips a YAML carrying a fully
+// populated `config.mcp` block and verifies the loader preserves every
+// declared field — including pointer booleans (omitted == nil, declared
+// false == non-nil with *false). Strict validator now rejects omitted
+// fields, so this fixture declares them all.
 func TestLoadBundleAcceptsMCPSettings(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "omakiten.yaml")
@@ -26,6 +26,32 @@ config:
     max_comment_chars: 400
     include_workflow_in_continue: false
     cache_prompts: false
+    recent_context_limit: 2
+    next_work_limit: 4
+    similar_task_limit: 6
+  tui:
+    token_badge: { yellow_at: 150, red_at: 400 }
+  template_defaults: [task]
+  priorities:
+    - {id: 1, value: low}
+    - {id: 2, value: normal, default: true}
+    - {id: 3, value: high}
+  severities:
+    - {id: 1, value: info}
+    - {id: 2, value: warning, default: true}
+    - {id: 3, value: error}
+  views:
+    board: { sort: {field: created_at, order: desc}, filter: {priority: []} }
+    table: { sort: {field: created_at, order: desc}, filter: {priority: [], bucket: []} }
+    graph: { sort: {field: id, order: asc} }
+    logs: { sort: {order: desc}, limit: 50, filter: {source: []} }
+    task_activity: { sort: {order: asc} }
+  sqlite: { busy_timeout_ms: 5000 }
+  activity_log: { max_rows: 500, max_age_days: 7 }
+  solutions: { default_top_limit: 10, max_top_limit: 100 }
+  events: { default_recent_limit: 50 }
+  search: { stopwords: [and, the] }
+  tag_synonyms: { golang: go }
 workflows:
   - id: 1
     key: default
@@ -52,7 +78,6 @@ workflows:
 	if mcp.CachePrompts == nil || *mcp.CachePrompts != false {
 		t.Fatalf("CachePrompts = %v, want *false", mcp.CachePrompts)
 	}
-	// Effective getters must surface the declared values verbatim.
 	if mcp.EffectiveRecentCommentLimit() != 3 || mcp.EffectiveMaxCommentChars() != 400 {
 		t.Fatalf("Effective getters disagree with declared values: %+v", mcp)
 	}
@@ -64,10 +89,12 @@ workflows:
 	}
 }
 
-// TestMCPSettingsDefaultsWhenOmitted guards the contract documented on
-// MCPSettings: omitted fields resolve to the canonical defaults via the
-// Effective* accessors so the runtime always sees a consistent picture.
-func TestMCPSettingsDefaultsWhenOmitted(t *testing.T) {
+// TestMCPSettingsRejectsOmittedFields locks the strict contract: every
+// MCP knob is required in the loaded bundle. The kit's `defaults/
+// omakiten.yaml` is the canonical source; any user file missing a
+// field fails loudly so authoring mistakes never silently fall through
+// to a code-side default (which no longer exists).
+func TestMCPSettingsRejectsOmittedFields(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "omakiten.yaml")
 	writeFile(t, configPath, `version: 1
@@ -86,28 +113,14 @@ workflows:
     transitions: []
 `)
 
-	bundle, err := LoadBundle(configPath)
-	if err != nil {
-		t.Fatalf("LoadBundle() error = %v", err)
-	}
-	mcp := bundle.Config.MCP
-	if mcp.EffectiveRecentCommentLimit() != DefaultRecentCommentLimit {
-		t.Fatalf("RecentCommentLimit default = %d, want %d", mcp.EffectiveRecentCommentLimit(), DefaultRecentCommentLimit)
-	}
-	if mcp.EffectiveMaxCommentChars() != DefaultMaxCommentChars {
-		t.Fatalf("MaxCommentChars default = %d, want %d", mcp.EffectiveMaxCommentChars(), DefaultMaxCommentChars)
-	}
-	if mcp.EffectiveIncludeWorkflowInContinue() != DefaultIncludeWorkflowInContinue {
-		t.Fatalf("IncludeWorkflowInContinue default = %v, want %v", mcp.EffectiveIncludeWorkflowInContinue(), DefaultIncludeWorkflowInContinue)
-	}
-	if mcp.EffectiveCachePrompts() != DefaultCachePrompts {
-		t.Fatalf("CachePrompts default = %v, want %v", mcp.EffectiveCachePrompts(), DefaultCachePrompts)
+	if _, err := LoadBundle(configPath); err == nil {
+		t.Fatal("LoadBundle() = nil, want validation error: bundle without config.mcp must be rejected")
 	}
 }
 
-// TestLoadBundleRejectsNegativeMCPSettings ensures the validator surfaces
-// obviously-wrong values instead of silently coercing them — typos like a
-// negative comment cap should fail loudly.
+// TestLoadBundleRejectsNegativeMCPSettings ensures the validator
+// surfaces obviously-wrong values. Negative recent_comment_limit fails
+// in the strict-mode check (must be > 0) with a descriptive message.
 func TestLoadBundleRejectsNegativeMCPSettings(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "omakiten.yaml")
@@ -120,6 +133,29 @@ config:
   theme: { active: catppuccin }
   mcp:
     recent_comment_limit: -5
+    max_comment_chars: 0
+    include_workflow_in_continue: true
+    cache_prompts: true
+    recent_context_limit: 3
+    next_work_limit: 5
+    similar_task_limit: 5
+  tui:
+    token_badge: { yellow_at: 150, red_at: 400 }
+  template_defaults: [task]
+  priorities:
+    - {id: 1, value: low}
+    - {id: 2, value: normal, default: true}
+    - {id: 3, value: high}
+  severities:
+    - {id: 1, value: info}
+    - {id: 2, value: warning, default: true}
+    - {id: 3, value: error}
+  views:
+    board: { sort: {field: created_at, order: desc}, filter: {priority: []} }
+    table: { sort: {field: created_at, order: desc}, filter: {priority: [], bucket: []} }
+    graph: { sort: {field: id, order: asc} }
+    logs: { sort: {order: desc}, limit: 50, filter: {source: []} }
+    task_activity: { sort: {order: asc} }
 workflows:
   - id: 1
     key: default

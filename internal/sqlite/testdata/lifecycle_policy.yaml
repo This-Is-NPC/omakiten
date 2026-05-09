@@ -1,0 +1,80 @@
+# Scenario: full task lifecycle with mixed per-bucket permissions, operation
+# guards, and comment-policy partial overrides. Three buckets:
+#   - backlog: task edit on, task delete off (planning bucket).
+#   - dev:     task locked; comment edit inherits task (off) but delete is
+#              overridden to on. Exercises partial override + comment←task
+#              inheritance at the bucket layer.
+#   - done:    task delete on (final bucket); edit off.
+#
+# Operation guards require a tagged comment before archive (#archive-reason)
+# and before delete (#justification). The defaults block stays absent so
+# the per-bucket overrides are the only declared policy — exercises the
+# fall-through to the implicit `true` only when neither bucket nor
+# defaults declare a value.
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default
+config:
+  output:
+    json_minified: true
+    omit_empty: true
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1
+        permissions:
+          task:
+            edit: true
+            delete: false
+      - id: 2
+        key: dev
+        name: Development
+        position: 2
+        permissions:
+          task:
+            edit: false
+            delete: false
+          comment:
+            delete: true
+      - id: 3
+        key: done
+        name: Done
+        position: 3
+        permissions:
+          task:
+            edit: false
+            delete: true
+    transitions:
+      - from: 1
+        to: 2
+      - from: 2
+        to: 3
+      - from: 3
+        to: 2
+    operations:
+      archive:
+        guards:
+          - type: comments_tagged
+            tag: archive-reason
+            count: 1
+            hint: "tag a #archive-reason comment first"
+      delete:
+        guards:
+          - type: comments_tagged
+            tag: justification
+            count: 1
+            hint: "tag a #justification comment first"

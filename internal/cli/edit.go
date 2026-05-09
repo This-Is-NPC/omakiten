@@ -9,6 +9,8 @@ import (
 	"omakiten/internal/domain"
 )
 
+// (parsePriority lives in enums.go for cross-command reuse.)
+
 func newEditCommand(opts *runtimeOptions) *cobra.Command {
 	var title string
 	var description string
@@ -34,7 +36,16 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 					update.Description = &description
 				}
 				if cmd.Flags().Changed("priority") {
-					value := domain.Priority(priority)
+					// CLI accepts either the priority label ("high") or
+					// the numeric id ("3"). Numeric is parsed first so
+					// scripts can pass the storage handle directly;
+					// label fallback covers the human-friendly path.
+					// Both routes funnel through registry validation —
+					// the service layer never sees raw user input.
+					value, err := parsePriority(priority)
+					if err != nil {
+						return nil, err
+					}
 					update.Priority = &value
 				}
 				if cmd.Flags().Changed("bucket") {

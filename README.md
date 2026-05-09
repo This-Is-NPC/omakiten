@@ -80,7 +80,7 @@ Context dumps are tiered (level 1–3) and capped at a token budget you set. You
 
 ### Customize how your agent behaves
 
-Define rules your agent must follow, give it personas with curated skill sets, and set up templates for tasks, PRs, and comments all in plain YAML and Markdown under your config directory. Edit them, version them, share them with a teammate by copying a folder. → [Configuration Guide](.docs/configuration-guide.md)
+Define rules your agent must follow, give it personas with curated skill sets, set up templates for tasks/PRs/comments, declare workflow defaults and per-bucket CRUD policy, and reshape domain enums (priorities ship as a configurable id↔value table) — all in plain YAML and Markdown under your config directory. Edit them, version them, share them with a teammate by copying a folder. → [Configuration Guide](.docs/configuration-guide.md)
 
 ### Local-first, by design
 
@@ -90,7 +90,7 @@ Your tasks, comments, dependencies, errors, and fixes live in a SQLite file in y
 
 `okt tui` opens a terminal UI organised into three zones — Tasks (board / table / graph), Stats (model benchmark / activity logs), Settings (runtime info / entity browser) — same data the CLI and MCP layers see, just visual. Run it outside a project and it opens a multi-project home — pick one, work on it, and your shell lands in that project's folder when you exit. → [TUI Guide](.docs/tui-guide.md)
 
-The full MCP surface (29 tools, 2 resources, 4 prompts) is documented in the [MCP Guide](.docs/mcp-guide.md).
+The full MCP surface (35 tools, 2 resources, 8 prompts) is documented in the [MCP Guide](.docs/mcp-guide.md).
 
 ## Documentation
 

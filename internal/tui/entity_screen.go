@@ -6,7 +6,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/detailscreen"
 )
 
@@ -76,6 +75,8 @@ func (m *Model) clearDeletePrompt(status string) {
 	m.deletePending = false
 	m.deleteKind = entityKindLaw
 	m.deleteSlug = ""
+	m.taskDeletePendingID = 0
+	m.commentDeletePendingID = 0
 	if status != "" {
 		m.status = status
 	}
@@ -124,7 +125,12 @@ func (m Model) renderEntityView() string {
 		if !ok {
 			return "\n" + indentBlock(m.styles.panel.Render("Law not found"), 2)
 		}
-		badge := m.severityStyle(domain.LawSeverity(law.Severity)).Render(law.Severity)
+		// Severity badge: style comes from config-driven color token
+		// (severityStyle reads m.severities[].color); label comes from
+		// the registry-resolved name. This replaces the hardcoded
+		// switch on the LawSeverity constants the previous version
+		// used.
+		badge := m.severityStyle(law.Severity).Render(m.severityLabel(law.Severity))
 		dataRows = []detailRow{
 			{label: "Slug", value: law.Key},
 			{label: "Severity", value: badge},

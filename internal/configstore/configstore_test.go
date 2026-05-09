@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"omakiten/internal/config"
+	"omakiten/internal/testfixtures"
 )
 
 // TestAdapterBundleRoundTrip writes a minimal bundle with the adapter's
@@ -31,22 +32,12 @@ func TestAdapterBundleRoundTrip(t *testing.T) {
 	}
 
 	adapter := New()
-	bundle := config.Bundle{
-		Version: 1,
-		Kit:     config.Kit{ID: 1, Key: "default", Name: "Default"},
-		Config: config.Settings{
-			Context:  config.ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
-			Workflow: config.WorkflowSettings{Active: "default"},
-			Theme:    config.ThemeSettings{Active: "catppuccin"},
-		},
-		Skills: []config.Skill{{Slug: "go", Name: "Go", Description: "Go skill."}},
-		Workflows: []config.Workflow{{
-			ID:      1,
-			Key:     "default",
-			Name:    "Default",
-			Buckets: []config.Bucket{{ID: 1, Key: "backlog", Name: "Backlog", Position: 1}},
-		}},
-	}
+	bundle := testfixtures.LoadBundle(t, "default.yaml")
+	// Skills is yaml:"-" so the YAML cannot supply it. Wire the in-memory
+	// value here so SaveBundle has the same payload the legacy inline
+	// bundle had — adapter.SaveBundle ignores it for the YAML write but
+	// downstream callers may inspect the in-memory shape.
+	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go", Description: "Go skill."}}
 	if err := adapter.SaveBundle(configPath, bundle); err != nil {
 		t.Fatalf("SaveBundle = %v", err)
 	}

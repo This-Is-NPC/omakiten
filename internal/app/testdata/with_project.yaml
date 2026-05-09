@@ -1,0 +1,35 @@
+# Scenario: bundle for template-service tests. Single-bucket workflow
+# because these tests do not move tasks; permissive defaults so the
+# policy chain stays out of the way.
+#
+# NOTE: projects are intentionally absent. config.Bundle marks Projects
+# `yaml:"-"` (production loads them from the wiring layer in loader.go,
+# not directly from Bundle), so listing them here would be silently
+# dropped. The template tests reference project="demo" only inside
+# template frontmatter — SetDefault rewrites the file without enforcing
+# project existence, so the fixture does not need a registered project.
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default
+config:
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    defaults:
+      task:    { edit: true, delete: true }
+      comment: { edit: true, delete: true }
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1

@@ -1,0 +1,46 @@
+# Scenario: minimal valid bundle used by most app-layer tests that need a
+# loaded workflow but do not exercise policy specifically. Workflow has
+# two buckets (backlog → dev) with a permissive defaults block so any
+# task service path that calls ResolveBucketPermissions accepts edits and
+# deletes regardless of bucket — keeps the fixture orthogonal to policy
+# concerns. Tests that need strict policy must use a different fixture.
+#
+# Note on entities: skills/personas/laws are tagged `yaml:"-"` on
+# config.Bundle (they are loaded from per-entity folders in production,
+# not from this YAML). Tests that need entities wire them inline in Go
+# after calling testfixtures.LoadBundle.
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default
+config:
+  output:
+    json_minified: true
+    omit_empty: true
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    defaults:
+      task:    { edit: true, delete: true }
+      comment: { edit: true, delete: true }
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1
+      - id: 2
+        key: dev
+        name: Development
+        position: 2
+    transitions:
+      - from: 1
+        to: 2

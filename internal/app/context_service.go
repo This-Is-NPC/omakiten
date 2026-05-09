@@ -140,7 +140,7 @@ func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext
 			return dump, err
 		}
 		for _, law := range laws {
-			if !budget.add(s.counter.Count(law.Key + " " + law.Severity + " " + law.Body)) {
+			if !budget.add(s.counter.Count(law.Key + " " + law.Severity.String() + " " + law.Body)) {
 				break
 			}
 			dump.Laws = append(dump.Laws, law)
@@ -172,7 +172,11 @@ func (b *contextBudget) add(estimate int) bool {
 }
 
 func taskText(task domain.Task) string {
-	return strings.TrimSpace(task.Title + " " + task.Description + " " + task.BucketKey + " " + string(task.Priority))
+	// Priority.String() resolves the configured label via the registry
+	// (or the int id when unregistered), keeping context-text token
+	// estimation accurate for both "low" (3 chars) and "high" (4 chars)
+	// labels regardless of which fields the user redefines in YAML.
+	return strings.TrimSpace(task.Title + " " + task.Description + " " + task.BucketKey + " " + task.Priority.String())
 }
 
 func workflowText(workflow domain.Workflow) string {

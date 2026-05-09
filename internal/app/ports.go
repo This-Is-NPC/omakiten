@@ -32,11 +32,23 @@ type ConfigRepository interface {
 // (transition allowed?, guards, and task.completed-on-final live in
 // app.WorkflowService too).
 type TaskRepository interface {
-	CreateTask(ctx context.Context, projectID int64, title, description, priority, bucketKey string) (domain.Task, error)
+	CreateTask(ctx context.Context, projectID int64, title, description string, priority domain.Priority, bucketKey string) (domain.Task, error)
 	ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter) ([]domain.Task, error)
 	MoveTask(ctx context.Context, projectID, taskID int64, targetBucketKey string) (domain.Task, error)
 	UpdateTask(ctx context.Context, projectID, taskID int64, update domain.TaskUpdate) (domain.Task, error)
 	TaskCount(ctx context.Context, projectID int64) (int64, error)
+	// HardDeleteTask removes a task and its dependent rows (events, event_tags,
+	// task_dependencies, task_tags) and emits a task.removed system event with
+	// a snapshot payload. Bucket policy/operation guards are enforced at the
+	// service layer; the repository performs the cascade unconditionally.
+	HardDeleteTask(ctx context.Context, projectID, taskID int64) (domain.Event, error)
+	// SetTaskState flips active|archived. When targetBucketKey is non-empty
+	// the row also moves into that bucket atomically (used by archive). Emits
+	// task.archived / task.unarchived in the same transaction.
+	SetTaskState(ctx context.Context, projectID, taskID int64, state domain.TaskState, targetBucketKey string) (domain.Task, domain.Event, error)
+	// EmitTaskEditedEvent records a task.edited row with a payload describing
+	// the changed fields. Service layer calls it after a successful UpdateTask.
+	EmitTaskEditedEvent(ctx context.Context, projectID, taskID int64, before, after domain.Task) (domain.Event, error)
 }
 
 // WorkflowRepository exposes the workflow primitives the app's WorkflowService
@@ -48,6 +60,10 @@ type WorkflowRepository interface {
 	TransitionAllowed(ctx context.Context, fromBucketID, toBucketID int64) (bool, error)
 	LoadTransitionGuards(ctx context.Context, fromBucketID, toBucketID int64) ([]domain.TransitionGuard, error)
 	CurrentTaskBucket(ctx context.Context, projectID, taskID int64) (int64, string, error)
+	// TaskState returns the active|archived flag for a task. Used by MoveTask
+	// to reject moves on archived rows and by the guards engine to skip
+	// transition-guard evaluation when the task sits in the archived lane.
+	TaskState(ctx context.Context, projectID, taskID int64) (domain.TaskState, error)
 }
 
 // GuardEvaluationRepository exposes the read-only counts the workflow guards
@@ -62,6 +78,9 @@ type GuardEvaluationRepository interface {
 type CommentRepository interface {
 	AddComment(ctx context.Context, projectID, taskID int64, body, authorType string, tags []domain.Tag) (domain.Comment, error)
 	ListComments(ctx context.Context, projectID, taskID int64) ([]domain.Comment, error)
+	UpdateComment(ctx context.Context, projectID, commentID int64, body string, tags []domain.Tag) (domain.Comment, domain.Event, error)
+	DeleteComment(ctx context.Context, projectID, commentID int64) (domain.Event, error)
+	CommentByID(ctx context.Context, projectID, commentID int64) (domain.Comment, error)
 }
 
 // EventRepository exposes the unified events log. Both the activity feed

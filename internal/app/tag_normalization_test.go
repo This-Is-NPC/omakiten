@@ -1,6 +1,19 @@
 package app
 
-import "testing"
+import (
+	"testing"
+
+	"omakiten/internal/config"
+)
+
+// init loads the canonical tag-synonym table from the embedded kit YAML
+// so NormalizeTagName resolves "golang" → "go" etc. in this package's
+// tests. Production wires the same map from the user's bundle via
+// agentruntime.Open / cli.runtimeOptions.open.
+func init() {
+	kit := config.MustLoadKitConfig()
+	RegisterTagSynonyms(kit.TagSynonyms)
+}
 
 func TestNormalizeTagName(t *testing.T) {
 	cases := []struct {

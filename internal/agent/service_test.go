@@ -11,6 +11,7 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/sqlite"
+	"omakiten/internal/testfixtures"
 )
 
 func TestOverviewUsesResolvedProjectAndCompactState(t *testing.T) {
@@ -425,15 +426,15 @@ func newAgentFixture(t *testing.T) agentFixture {
 	if err != nil {
 		t.Fatalf("UpsertProject(B) error = %v", err)
 	}
-	taskA1, err := store.CreateTask(ctx, projectA.ID, "Add MCP agent integration", "Expose Omakiten state to AI harnesses", "", "backlog")
+	taskA1, err := store.CreateTask(ctx, projectA.ID, "Add MCP agent integration", "Expose Omakiten state to AI harnesses", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(A1) error = %v", err)
 	}
-	taskA2, err := store.CreateTask(ctx, projectA.ID, "Write agent tests", "Cover project isolation", "", "backlog")
+	taskA2, err := store.CreateTask(ctx, projectA.ID, "Write agent tests", "Cover project isolation", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(A2) error = %v", err)
 	}
-	taskB, err := store.CreateTask(ctx, projectB.ID, "Other project task", "Must never leak", "", "backlog")
+	taskB, err := store.CreateTask(ctx, projectB.ID, "Other project task", "Must never leak", domain.Priority(2), "backlog")
 	if err != nil {
 		t.Fatalf("CreateTask(B) error = %v", err)
 	}
@@ -453,7 +454,22 @@ func newAgentFixture(t *testing.T) agentFixture {
 		t.Fatalf("AddContextEntry(B) error = %v", err)
 	}
 
-	return agentFixture{ctx: ctx, store: store, service: NewService(store, ProjectSelector{CWD: rootA}), projectA: projectA, projectB: projectB, taskA1: taskA1, taskA2: taskA2, taskB: taskB}
+	// Production wires settings from bundle.Config.MCP via the
+	// composition root; tests construct the service directly so seed
+	// kit-shape settings here. The validator at the config layer
+	// guarantees these values in production; mirroring them keeps
+	// behavioural parity in tests.
+	svc := NewService(store, ProjectSelector{CWD: rootA})
+	svc.SetSettings(ServiceSettings{
+		RecentCommentLimit: 5,
+		MaxCommentChars:    0,
+		IncludeWorkflow:    true,
+		CachePrompts:       true,
+		RecentContextLimit: 3,
+		NextWorkLimit:      5,
+		SimilarTaskLimit:   5,
+	})
+	return agentFixture{ctx: ctx, store: store, service: svc, projectA: projectA, projectB: projectB, taskA1: taskA1, taskA2: taskA2, taskB: taskB}
 }
 
 func newAgentStore(t *testing.T, ctx context.Context) *sqlite.Store {
@@ -463,7 +479,7 @@ func newAgentStore(t *testing.T, ctx context.Context) *sqlite.Store {
 		t.Fatalf("Open() error = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	if err := store.ImportBundle(ctx, agentTestBundle(), "test.yaml", "hash"); err != nil {
+	if err := store.ImportBundle(ctx, agentTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
 	return store
@@ -483,29 +499,11 @@ func assertCodedError(t *testing.T, err error, code domain.ErrorCode) {
 	}
 }
 
-func agentTestBundle() config.Bundle {
-	return config.Bundle{
-		Version: 1,
-		Kit:     config.Kit{ID: 1, Key: "default", Name: "Default"},
-		Config: config.Settings{
-			Output:   config.OutputSettings{JSONMinified: true, OmitEmpty: true},
-			Context:  config.ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
-			Workflow: config.WorkflowSettings{Active: "default"},
-			Theme:    config.ThemeSettings{Active: "catppuccin"},
-		},
-		Skills:   []config.Skill{{Slug: "go", Name: "Go"}},
-		Personas: []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}},
-		Laws:     []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}},
-		Workflows: []config.Workflow{{
-			ID:   1,
-			Key:  "default",
-			Name: "Default",
-			Buckets: []config.Bucket{
-				{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
-				{ID: 2, Key: "dev", Name: "Development", Position: 2},
-				{ID: 3, Key: "done", Name: "Done", Position: 3},
-			},
-			Transitions: []config.Transition{{From: 1, To: 2}},
-		}},
-	}
+func agentTestBundle(t *testing.T) config.Bundle {
+	t.Helper()
+	bundle := testfixtures.LoadBundle(t, "default.yaml")
+	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
+	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
+	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}}
+	return bundle
 }

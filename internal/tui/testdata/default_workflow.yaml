@@ -1,0 +1,43 @@
+# Scenario: TUI's default 2-bucket workflow with strict-defaults +
+# backlog edit override. Mirrors the legacy "edit only on first bucket"
+# semantics declaratively (no hardcoded bucketIsFirst rule lives in
+# domain code anymore). Used by every test that asserts the default
+# policy gate (e.g. TestModelBlocksTaskEditOnPressWhenBucketForbids).
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default
+config:
+  output:
+    json_minified: true
+    omit_empty: true
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    defaults:
+      task:    { edit: false, delete: false }
+      comment: { edit: false, delete: false }
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1
+        permissions:
+          task:
+            edit: true
+      - id: 2
+        key: dev
+        name: Development
+        position: 2
+    transitions:
+      - from: 1
+        to: 2

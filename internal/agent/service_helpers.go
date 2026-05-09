@@ -3,10 +3,36 @@ package agent
 import (
 	"sort"
 	"strings"
+	"sync/atomic"
 	"unicode"
 
 	"omakiten/internal/domain"
 )
+
+// activeStopWords is the registered stopwords set used by similar-task
+// ranking. Lives as a process-global atomic pointer so leaf helpers
+// (wordSet) can read without thread-bookkeeping; composition root writes
+// it once at startup from config.search.stopwords. Multilingual users
+// extend the list in YAML — no code change needed for PT/ES additions.
+var activeStopWords atomic.Pointer[map[string]bool]
+
+// RegisterStopWords installs the lowercase stopwords set similar-task
+// ranking drops before scoring. Composition root resolves the bundle's
+// config.search.stopwords and writes them here once at startup.
+// Passing nil or an empty slice clears the registry — wordSet then
+// keeps every token, slightly worsening ranking quality but never
+// failing.
+func RegisterStopWords(words []string) {
+	if len(words) == 0 {
+		activeStopWords.Store(nil)
+		return
+	}
+	set := make(map[string]bool, len(words))
+	for _, w := range words {
+		set[strings.ToLower(strings.TrimSpace(w))] = true
+	}
+	activeStopWords.Store(&set)
+}
 
 func taskSummaries(tasks []domain.Task) []TaskSummary {
 	out := make([]TaskSummary, 0, len(tasks))
@@ -63,10 +89,20 @@ func findTask(tasks []domain.Task, taskID int64) (domain.Task, bool) {
 	return domain.Task{}, false
 }
 
-func pendingCount(tasks []domain.Task) int {
+// pendingCount returns the number of tasks NOT in the workflow's final
+// (highest-position) bucket. The final lane is resolved from workflow shape
+// — never compared to a hardcoded "done" — so users who rename their
+// terminal bucket (e.g. "shipped", "archived") still see correct counts.
+// When the workflow has no buckets the function falls back to len(tasks)
+// so the surface degrades gracefully instead of returning 0.
+func pendingCount(workflow domain.Workflow, tasks []domain.Task) int {
+	final := workflow.FinalBucketKey()
+	if final == "" {
+		return len(tasks)
+	}
 	count := 0
 	for _, task := range tasks {
-		if task.BucketKey != "done" {
+		if task.BucketKey != final {
 			count++
 		}
 	}
@@ -92,16 +128,21 @@ func bucketCounts(workflow domain.Workflow, tasks []domain.Task) []BucketCount {
 	return out
 }
 
-func likelyNextWork(tasks []domain.Task) []TaskSummary {
+// likelyNextWork returns up to nextWorkLimit tasks that are NOT in the
+// workflow's final bucket, ordered by id ASC. Same data-driven final-bucket
+// resolution as pendingCount — no hardcoded "done" — so the suggestion
+// list survives a bucket rename.
+func likelyNextWork(workflow domain.Workflow, tasks []domain.Task, limit int) []TaskSummary {
+	final := workflow.FinalBucketKey()
 	candidates := make([]domain.Task, 0, len(tasks))
 	for _, task := range tasks {
-		if task.BucketKey != "done" {
+		if final == "" || task.BucketKey != final {
 			candidates = append(candidates, task)
 		}
 	}
 	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].ID < candidates[j].ID })
-	if len(candidates) > nextWorkLimit {
-		candidates = candidates[:nextWorkLimit]
+	if limit > 0 && len(candidates) > limit {
+		candidates = candidates[:limit]
 	}
 	return taskSummaries(candidates)
 }
@@ -239,9 +280,13 @@ func similarTasks(query string, tasks []domain.Task, limit int) []TaskSummary {
 
 func wordSet(value string) map[string]struct{} {
 	words := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	stops := activeStopWords.Load()
 	out := map[string]struct{}{}
 	for _, word := range words {
-		if len(word) < 3 || stopWords[word] {
+		if len(word) < 3 {
+			continue
+		}
+		if stops != nil && (*stops)[word] {
 			continue
 		}
 		out[word] = struct{}{}
@@ -262,14 +307,3 @@ func overlapScore(a, b map[string]struct{}) float64 {
 	return float64(common) / float64(len(a))
 }
 
-var stopWords = map[string]bool{
-	"and":  true,
-	"are":  true,
-	"for":  true,
-	"from": true,
-	"into": true,
-	"the":  true,
-	"this": true,
-	"that": true,
-	"with": true,
-}

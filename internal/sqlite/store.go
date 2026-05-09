@@ -11,18 +11,115 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"omakiten/internal/config"
 	"omakiten/migrations"
 )
+
+// kitBusyTimeoutMs reads PRAGMA busy_timeout from the embedded kit YAML.
+// Used as the fallback when Open is called without a bundle (tests, the
+// brief bootstrap window before ConfigService.Import runs). Production
+// passes the user's value via OpenWithOptions and never hits this path.
+func kitBusyTimeoutMs() int {
+	cfg, err := config.LoadKitConfig()
+	if err != nil {
+		// Embedded YAML failure means the binary is corrupt; the rest of
+		// the runtime would also panic. Use a tiny safe value so the
+		// caller's error message points at the real failure (the next
+		// migration / query) rather than at an opaque PRAGMA reject.
+		return 1
+	}
+	return cfg.SQLite.BusyTimeoutMs
+}
 
 // Store wraps the SQLite connection pool with the domain-specific methods used
 // by the rest of the app. The methods themselves live in topic-focused files
 // (tasks.go, comments.go, bundles.go, ...) so this file stays small and
 // focused on lifecycle: opening, closing, and bringing the schema up to date.
+//
+// Knobs that flow from config (activity_log retention, events fallback) live
+// as fields here so the composition root can write them once with
+// `SetActivityLogRetention` / `SetEventsRecentLimit` after `Open`. The Store
+// has no in-code defaults: zero values mean "config not yet wired" and the
+// affected code paths skip work or error out rather than masking the gap.
 type Store struct {
 	db *sql.DB
+
+	activityLogMaxRows    int
+	activityLogMaxAgeDays int
+	eventsDefaultRecentLimit int
 }
 
+// SetActivityLogRetention installs the operation-log retention window the
+// Store applies after every BeginActivityLog. Composition root resolves the
+// values from config.activity_log and calls this exactly once at startup.
+func (s *Store) SetActivityLogRetention(maxRows, maxAgeDays int) {
+	s.activityLogMaxRows = maxRows
+	s.activityLogMaxAgeDays = maxAgeDays
+}
+
+// SetEventsRecentLimit installs the fallback row count Store.ListRecentEvents
+// applies when callers pass <=0. Composition root resolves the value from
+// config.events.default_recent_limit.
+func (s *Store) SetEventsRecentLimit(limit int) {
+	s.eventsDefaultRecentLimit = limit
+}
+
+// ConfigKnobs is the resolved bundle of Store-level knobs the composition
+// root applies after Open + ConfigService.Import. Wraps the per-area
+// setters so the runtime writes them in one place; tests that don't care
+// about post-Open re-application skip this entirely and inherit the
+// kit-canonical busy_timeout that Open applied.
+type ConfigKnobs struct {
+	BusyTimeoutMs            int
+	ActivityLogMaxRows       int
+	ActivityLogMaxAgeDays    int
+	EventsDefaultRecentLimit int
+}
+
+// ApplyConfig writes the resolved config knobs into the live Store. The
+// busy_timeout PRAGMA fires on the borrowed connection — modernc.org/sqlite
+// keeps it sticky for the connection's lifetime, and the small pool
+// (MaxOpenConns=4) means subsequent connections rerun PRAGMAs at first
+// use elsewhere. activity_log + events knobs are simple field writes the
+// hot-path code reads without taking a lock.
+func (s *Store) ApplyConfig(ctx context.Context, k ConfigKnobs) error {
+	if k.BusyTimeoutMs > 0 {
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout = %d", k.BusyTimeoutMs)); err != nil {
+			return fmt.Errorf("apply busy_timeout: %w", err)
+		}
+	}
+	s.SetActivityLogRetention(k.ActivityLogMaxRows, k.ActivityLogMaxAgeDays)
+	s.SetEventsRecentLimit(k.EventsDefaultRecentLimit)
+	return nil
+}
+
+// Options carries the per-Open knobs that flow from config. Today only
+// BusyTimeoutMs is exposed (PRAGMA busy_timeout). Other PRAGMAs
+// (foreign_keys, journal_mode, synchronous) describe correctness
+// invariants Omakiten depends on and intentionally stay in code.
+//
+// BusyTimeoutMs == 0 means "use the kit canonical value via Open's
+// fallback path"; production passes the value resolved from
+// config.sqlite.busy_timeout_ms. Tests that don't load config pass 0
+// and inherit the same canonical value (read from the embedded kit
+// YAML on first call) so they don't have to thread the bundle around.
+type Options struct {
+	BusyTimeoutMs int
+}
+
+// Open with the kit's default busy_timeout. Reserved for tests and
+// composition-root paths that haven't loaded the bundle yet (the
+// composition root then re-applies the configured value via the
+// store's per-connection pragma helpers when needed).
 func Open(ctx context.Context, path string) (*Store, error) {
+	return OpenWithOptions(ctx, path, Options{})
+}
+
+// OpenWithOptions is the production entry point — composition root
+// passes Options.BusyTimeoutMs from the loaded bundle. Zero falls
+// back to the kit canonical so test paths don't have to load YAML
+// just to open a Store.
+func OpenWithOptions(ctx context.Context, path string, opts Options) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
@@ -40,6 +137,13 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	db.SetMaxIdleConns(2)
 
 	store := &Store{db: db}
+	busyTimeout := opts.BusyTimeoutMs
+	if busyTimeout <= 0 {
+		// Test paths and the bootstrap window (between sqlite.Open and
+		// ConfigService.Import) inherit the kit canonical so the engine
+		// never runs without a busy_timeout configured.
+		busyTimeout = kitBusyTimeoutMs()
+	}
 	// PRAGMAs run per-connection in SQLite, so they have to fire on every conn
 	// the pool hands out — not just once at Open. journal_mode=WAL is the
 	// outlier (it persists to the database header), but setting it here is
@@ -48,7 +152,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		"PRAGMA foreign_keys = ON",
 		"PRAGMA journal_mode = WAL",
 		"PRAGMA synchronous = NORMAL", // WAL-safe; full-fsync is overkill for a local CLI.
-		"PRAGMA busy_timeout = 5000",
+		fmt.Sprintf("PRAGMA busy_timeout = %d", busyTimeout),
 	} {
 		if _, err := db.ExecContext(ctx, pragma); err != nil {
 			_ = store.Close()

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"omakiten/internal/config"
+	"omakiten/internal/domain"
 )
 
 func (s *Store) ImportBundle(ctx context.Context, bundle config.Bundle, sourcePath, sourceHash string) error {
@@ -204,10 +205,21 @@ func importLaws(ctx context.Context, tx *sql.Tx, bundleID int64, laws []config.L
 				personaID = &id
 			}
 		}
+		// Resolve the frontmatter severity label to its configured id
+		// via the active registry. The validator runs against the
+		// loaded bundle BEFORE ImportBundle, so unknown labels at this
+		// point are a contract violation — fail rigid instead of
+		// silently substituting a default. The runtime composition
+		// root populates the registry from the user's config, so this
+		// never trips in production.
+		severityID, ok := domain.SeverityFromLabel(law.Severity)
+		if !ok {
+			return fmt.Errorf("law %q: severity %q not in active registry (validator should have caught this)", law.Slug, law.Severity)
+		}
 		if _, err := tx.ExecContext(ctx, `
-INSERT INTO laws(bundle_id, local_id, key, severity, body, scope, project_id, persona_id, active)
+INSERT INTO laws(bundle_id, local_id, key, severity_id, body, scope, project_id, persona_id, active)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-`, bundleID, localID, law.Slug, law.Severity, law.Body, scope, projectID, personaID); err != nil {
+`, bundleID, localID, law.Slug, int(severityID), law.Body, scope, projectID, personaID); err != nil {
 			return err
 		}
 	}
@@ -220,12 +232,28 @@ func importWorkflows(ctx context.Context, tx *sql.Tx, bundleID int64, workflows 
 	}
 
 	for _, workflow := range workflows {
+		operationsJSON, err := json.Marshal(workflow.Operations)
+		if err != nil {
+			return err
+		}
+		// defaults_json is "{}" when the workflow declares no defaults
+		// block — the resolver treats both empty object and a populated
+		// block uniformly because the WorkflowDefaults pointer/field
+		// chain falls through to the implicit "true" when fields are nil.
+		defaultsJSON := "{}"
+		if workflow.Defaults != nil {
+			raw, err := json.Marshal(workflow.Defaults)
+			if err != nil {
+				return err
+			}
+			defaultsJSON = string(raw)
+		}
 		var workflowID int64
 		if err := tx.QueryRowContext(ctx, `
-INSERT INTO workflows(bundle_id, local_id, key, name, active) VALUES (?, ?, ?, ?, 1)
-ON CONFLICT(bundle_id, local_id) DO UPDATE SET key = excluded.key, name = excluded.name, active = 1
+INSERT INTO workflows(bundle_id, local_id, key, name, operations_json, defaults_json, active) VALUES (?, ?, ?, ?, ?, ?, 1)
+ON CONFLICT(bundle_id, local_id) DO UPDATE SET key = excluded.key, name = excluded.name, operations_json = excluded.operations_json, defaults_json = excluded.defaults_json, active = 1
 RETURNING id
-`, bundleID, workflow.ID, workflow.Key, workflow.Name).Scan(&workflowID); err != nil {
+`, bundleID, workflow.ID, workflow.Key, workflow.Name, string(operationsJSON), defaultsJSON).Scan(&workflowID); err != nil {
 			return err
 		}
 
@@ -234,12 +262,20 @@ RETURNING id
 		}
 		bucketIDs := map[int]int64{}
 		for _, bucket := range workflow.Buckets {
+			permissionsJSON := "{}"
+			if bucket.Permissions != nil {
+				raw, err := json.Marshal(bucket.Permissions)
+				if err != nil {
+					return err
+				}
+				permissionsJSON = string(raw)
+			}
 			var bucketID int64
 			if err := tx.QueryRowContext(ctx, `
-INSERT INTO workflow_buckets(workflow_id, local_id, key, name, position, active) VALUES (?, ?, ?, ?, ?, 1)
-ON CONFLICT(workflow_id, local_id) DO UPDATE SET key = excluded.key, name = excluded.name, position = excluded.position, active = 1
+INSERT INTO workflow_buckets(workflow_id, local_id, key, name, position, permissions_json, active) VALUES (?, ?, ?, ?, ?, ?, 1)
+ON CONFLICT(workflow_id, local_id) DO UPDATE SET key = excluded.key, name = excluded.name, position = excluded.position, permissions_json = excluded.permissions_json, active = 1
 RETURNING id
-`, workflowID, bucket.ID, bucket.Key, bucket.Name, bucket.Position).Scan(&bucketID); err != nil {
+`, workflowID, bucket.ID, bucket.Key, bucket.Name, bucket.Position, permissionsJSON).Scan(&bucketID); err != nil {
 				return err
 			}
 			bucketIDs[bucket.ID] = bucketID

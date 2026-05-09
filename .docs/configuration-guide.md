@@ -113,32 +113,43 @@ The TUI's template-default picker offers exactly the kinds in this list.
 
 ### `config.mcp`
 
-Tunes how MCP responses are shaped to fit the agent's context window. The full block is optional and so is every field inside it; omitted fields resolve to the canonical defaults in `internal/config/bundle.go` via the `Effective*` accessors. Pointer booleans (`*bool`) distinguish "not declared" from "declared `false`" — omitting `cache_prompts` keeps caching on, while writing `cache_prompts: false` is an explicit opt-out.
+Tunes how MCP responses are shaped to fit the agent's context window. **Every field is required** — the validator rejects bundles missing any. The canonical values live in `defaults/omakiten.yaml` (the embedded kit YAML the installer materialises into the user's config root); your local file inherits at install time. Customise by editing values, never by removing fields.
+
+Pointer booleans (`*bool`) require an explicit `true` or `false` — there is no "not declared" state.
 
 ```yaml
 config:
   mcp:
-    recent_comment_limit: 5            # int >=0; 0 keeps default
-    max_comment_chars: 0               # int >=0; 0 keeps full bodies
-    include_workflow_in_continue: true # bool; omit to keep default true
-    cache_prompts: true                # bool; omit to keep default true
+    recent_comment_limit: 5            # int >0
+    max_comment_chars: 0               # int >=0; 0 = no truncation
+    include_workflow_in_continue: true # bool; required
+    cache_prompts: true                # bool; required
+    recent_context_limit: 3            # int >0
+    next_work_limit: 5                 # int >0
+    similar_task_limit: 5              # int >0
 ```
 
-| Field | Type | Default | What it does |
+| Field | Type | Constraint | What it does |
 |---|---|---|---|
-| `recent_comment_limit` | int | `5` | Caps how many recent comments tools like `tasks.continue` and `project.overview` ship per call. Reverse-chronological — the most recent N. |
-| `max_comment_chars` | int | `0` (no truncation) | Truncates comment bodies past this many runes when shipped over MCP, appending `…`. Use to bound `tasks.continue` payloads on tasks with verbose `#resume` and `#documentation` comments. Does not affect `comments.list` (which is the read-the-full-thread endpoint). |
-| `include_workflow_in_continue` | `*bool` | `true` | Toggles the `workflow` block in `tasks.continue` responses. Per-call `include_workflow` argument overrides this default — set false once `/okt` already loaded the workflow shape for the session. |
-| `cache_prompts` | `*bool` | `true` | Emits a `_meta.anthropic.cache_control` hint on `prompts/get` content. Anthropic-aware MCP clients (recent Claude Code) reuse the cached prompt across calls; unaware clients ignore the hint silently. Disable only to work around a misbehaving client. |
+| `recent_comment_limit` | int | `> 0` | Caps how many recent comments tools like `tasks.continue` and `project.overview` ship per call. Reverse-chronological — the most recent N. |
+| `max_comment_chars` | int | `>= 0` | Truncates comment bodies past this many runes when shipped over MCP, appending `…`. Zero disables truncation. Use to bound `tasks.continue` payloads on tasks with verbose `#resume` and `#documentation` comments. Does not affect `comments.list` (which is the read-the-full-thread endpoint). |
+| `include_workflow_in_continue` | `*bool` | required | Toggles the `workflow` block in `tasks.continue` responses. Per-call `include_workflow` argument overrides this default — set false once `/okt` already loaded the workflow shape for the session. |
+| `cache_prompts` | `*bool` | required | Emits a `_meta.anthropic.cache_control` hint on `prompts/get` content. Anthropic-aware MCP clients (recent Claude Code) reuse the cached prompt across calls; unaware clients ignore the hint silently. Disable only to work around a misbehaving client. |
+| `recent_context_limit` | int | `> 0` | Caps how many recent `context.add` entries flow into `tasks.continue` / `project.overview` / `project.resume`. Smaller than `recent_comment_limit` because each entry can be paragraphs of free-form notes. |
+| `next_work_limit` | int | `> 0` | Caps the "likely next work" suggestion list shipped in `project.resume`. Increase for project-overview screens; keep small for narrow agent contexts. |
+| `similar_task_limit` | int | `> 0` | Caps how many similar-task hints `tasks.create_intent` surfaces during the dedup check. Tune up if you frequently create near-duplicate intents and want broader dedup coverage. |
 
 #### Validation rules (parse-time)
 
+Every field above is required and validated. Missing or out-of-range values fail loud with messages pointing back at `defaults/omakiten.yaml` so the fix is obvious.
+
 | Rule | Error message shape |
 |---|---|
-| `recent_comment_limit` is negative | `config.mcp.recent_comment_limit cannot be negative` |
-| `max_comment_chars` is negative | `config.mcp.max_comment_chars cannot be negative` |
-
-A non-positive `recent_comment_limit` is silently coerced to the default by `EffectiveRecentCommentLimit()`, but a negative value is treated as a typo and rejected loudly.
+| `recent_comment_limit <= 0` | `config.mcp.recent_comment_limit: must be > 0 (see defaults/omakiten.yaml for canonical values)` |
+| `max_comment_chars < 0` | `config.mcp.max_comment_chars: must be >= 0 (0 = no truncation)` |
+| `include_workflow_in_continue` omitted | `config.mcp.include_workflow_in_continue: required boolean (see defaults/omakiten.yaml)` |
+| `cache_prompts` omitted | `config.mcp.cache_prompts: required boolean (see defaults/omakiten.yaml)` |
+| Same shape for `recent_context_limit / next_work_limit / similar_task_limit`. |
 
 #### Worked example — taming a long-lived task
 
@@ -159,7 +170,7 @@ Cross-reference: `.docs/mcp-guide.md#anatomy-of-an-mcp-command` walks through ho
 
 ### `config.tui`
 
-Tunes terminal UI presentation. The full block is optional and so is every field inside it; omitted fields resolve to the canonical defaults in `internal/config/bundle.go` via the `Effective()` accessors.
+Tunes terminal UI presentation. **Every field is required** (validator rejects omissions). Canonical values come from `defaults/omakiten.yaml`.
 
 ```yaml
 config:
@@ -177,6 +188,106 @@ config:
 | `red_at` | int | `400` | Threshold above which the badge turns red. Raise if you author heavy laws/personas; lower if you keep entities terse. |
 
 Non-positive values fall back to the canonical defaults silently.
+
+### `config.priorities`
+
+Configurable id↔value table for task priorities. Code references the integer id (opaque); renderers (TUI, CLI, MCP, JSON output) resolve the human label via this table at the boundary, so renaming `"high"` to `"urgent"` here is a single-line YAML edit and existing tasks pick up the new label on the next read. The sqlite layer stores `priority_id` integers (see `migrations/015_priority_id.sql`); the column type guarantees rename safety on persisted rows.
+
+```yaml
+config:
+  priorities:
+    - id: 1
+      value: low
+      color: success     # theme token: error | warning | success | info
+    - id: 2
+      value: normal
+      default: true       # at most one entry may set this
+      color: info
+    - id: 3
+      value: high
+      color: error
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | int >0 | yes | Storage handle and SQL sort weight (`ORDER BY priority` reads `priority_id`). List entries low→high so ascending order matches user intuition. Validator rejects duplicates and non-positive ids. |
+| `value` | string | yes | Human label rendered in the TUI badges, CLI output, MCP `priority` field, and `Priority` JSON marshaling. Validator rejects empty strings and duplicates across entries. |
+| `default` | bool | no | Marks the priority a task receives when the user creates one without naming a priority. At most one entry may set `default: true`; with none flagged, the runtime falls back to the middle entry by index. |
+| `color` | string | no | Theme-token name picked up by the TUI badge renderer. Recognised: `error`, `warning`, `success`, `info`. Anything else falls back to `info`. |
+
+Omitting the block keeps the canonical kit (`{1=low, 2=normal default, 3=high}`); add entries to introduce new priorities (e.g. `{id: 4, value: urgent, color: error}`) without any code change.
+
+#### Validation rules (parse-time)
+
+| Rule | Error message shape |
+|---|---|
+| `id` <= 0 | `config.priorities: id must be positive, got 0 for value "low"` |
+| missing `value` | `config.priorities[id=1]: value is required` |
+| duplicate `id` | `config.priorities: id 1 declared twice (values "low" and "...")` |
+| duplicate `value` | `config.priorities: value "low" declared twice (ids 1 and 4)` |
+| more than one `default: true` | `config.priorities: at most one entry may set default: true (got 2)` |
+
+#### How the runtime wires it
+
+`app.ConfigService.Import` (called from both composition roots — `internal/cli/root.go` and `internal/agentruntime/runtime.go`) installs the resolved table into the process-global priority registry (`internal/domain/task.go`) via `registerEnumsFromBundle`, between `LoadBundle` (validate) and `ImportBundle` (write). From that point on, `Priority(2).Label()` returns `"normal"`, `domain.PriorityFromLabel("high")` returns `(3, true)`, and JSON marshaling of `Priority(3)` emits `"high"`. Tests register the canonical kit via `testfixtures.RegisterCanonicalPriorities()` to mirror the production wiring.
+
+#### Worked example — adding an "urgent" priority
+
+```yaml
+config:
+  priorities:
+    - id: 1
+      value: low
+      color: success
+    - id: 2
+      value: normal
+      default: true
+      color: info
+    - id: 3
+      value: high
+      color: warning
+    - id: 4
+      value: urgent
+      color: error
+```
+
+After re-importing the bundle (`okt config import` or restarting the TUI):
+- The TUI form's priority cycle now offers `low | normal | high | urgent`.
+- `okt task add --priority urgent` resolves to `priority_id = 4`.
+- `ORDER BY priority DESC` lists urgent tasks first.
+- Existing tasks keep their stored `priority_id`; nothing in the database changed.
+
+To rename `"high"` to `"critical"` instead, change only the `value:` on entry id 3 — every existing task with `priority_id = 3` immediately renders as "critical" on the next read.
+
+### `config.severities`
+
+Configurable id↔value table for law severities. Same shape and contract as `config.priorities` — code references the integer id (`tasks.severity_id` after migration 016 for laws is stored similarly), renderers (TUI badge, MCP `severity` field, JSON marshaling) resolve the human label via this table at the boundary. Renaming a label is a single YAML edit; existing law rows keep their stored `severity_id` so nothing breaks at the data layer.
+
+```yaml
+config:
+  severities:
+    - id: 1
+      value: info
+      color: info
+    - id: 2
+      value: warning
+      default: true
+      color: warning
+    - id: 3
+      value: error
+      color: error
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | int >0 | yes | Storage handle and SQL sort weight; declarations must be in ascending order (validator-enforced). |
+| `value` | string | yes | Human label written in law frontmatter (`severity: <label>`), rendered in TUI badges, CLI output, MCP responses. |
+| `default` | bool | no | Marks the severity applied when a law is created without naming one. At most one entry. |
+| `color` | string | no | Theme token for the badge: `error` / `warning` / `success` / `info`. Defaults to `info`. |
+
+Validator rules: positive unique ids, non-empty unique values, ≤1 default, ascending id order. Errors mirror the priority validator's shape (`config.severities: id 2 declared twice...`).
+
+Adding a `{id: 4, value: blocker, color: error}` entry makes `severity: blocker` a valid frontmatter value; no code change needed. Renaming `"error"` to `"critical"` updates how the badge is rendered for every existing law on the next read — `severity_id` storage absorbs the change.
 
 ### `config.views`
 
@@ -219,6 +330,110 @@ Allowed values come from `internal/config/validator.go`:
 
 Typos surface with errors like `config.views.board.sort.field "creatd_at" is not one of [id title priority created_at]` rather than being silently ignored.
 
+### `config.sqlite`
+
+Connection-level engine knobs the Store applies at Open. **Required block** — the kit ships the canonical `busy_timeout` the user inherits at install time. Other PRAGMAs (`foreign_keys=ON`, `journal_mode=WAL`, `synchronous=NORMAL`) intentionally stay in code: they encode the engine-level contract Omakiten depends on, not user preference.
+
+```yaml
+config:
+  sqlite:
+    busy_timeout_ms: 5000     # int >0; PRAGMA busy_timeout
+```
+
+| Field | Type | Constraint | What it does |
+|---|---|---|---|
+| `busy_timeout_ms` | int | `> 0` | Sets `PRAGMA busy_timeout`. Larger DBs or systems with concurrent writers (TUI + MCP server sharing a Store) may need a higher value to avoid `database is locked` errors. |
+
+### `config.activity_log`
+
+Retention window for the per-call `operation` event log used by the activity feed. **Required block** — disabling retention is not a supported mode (the activity log would grow unbounded). Each `BeginActivityLog` runs a synchronous prune pass after insert; the writer never blocks longer than O(rows-deleted).
+
+```yaml
+config:
+  activity_log:
+    max_rows: 500             # int >0
+    max_age_days: 7           # int >0
+```
+
+| Field | Type | Constraint | What it does |
+|---|---|---|---|
+| `max_rows` | int | `> 0` | Hard ceiling on `operation` rows. Older rows are deleted in id-DESC order after every insert. |
+| `max_age_days` | int | `> 0` | Sliding window — rows older than this many days are deleted on every insert. |
+
+### `config.solutions`
+
+Caps the `solutions.list_top` MCP response shape. **Required block** — `default_top_limit` applies when the caller passes `<=0`; `max_top_limit` clamps caller-supplied limits so MCP responses stay bounded regardless of what the agent asks for.
+
+```yaml
+config:
+  solutions:
+    default_top_limit: 10     # int >0
+    max_top_limit: 100        # int >= default_top_limit
+```
+
+| Field | Type | Constraint | What it does |
+|---|---|---|---|
+| `default_top_limit` | int | `> 0` | Limit applied when the caller omits one. |
+| `max_top_limit` | int | `>= default_top_limit` | Hard cap on caller-supplied limits. Validator rejects inverted ranges so the runtime always has a sane window. |
+
+### `config.events`
+
+Fallback recent-events limit used by `Store.ListRecentEvents` when callers pass `<=0`. **Required block.**
+
+```yaml
+config:
+  events:
+    default_recent_limit: 50  # int >0
+```
+
+| Field | Type | Constraint | What it does |
+|---|---|---|---|
+| `default_recent_limit` | int | `> 0` | Fallback row count applied when the caller passes `<=0`. The query is indexed on `(event_type, created_at, id)` so larger values are cheap. |
+
+### `config.search`
+
+Tunes text-similarity heuristics shared across agent-side ranking (similar-task hints in `tasks.create_intent`, query overlap scoring). **Required block** — multilingual users add Portuguese/Spanish/etc. words here without a code change.
+
+```yaml
+config:
+  search:
+    stopwords: [and, are, for, from, into, the, this, that, with]
+```
+
+| Field | Type | Constraint | What it does |
+|---|---|---|---|
+| `stopwords` | list of strings | non-empty, lowercase, unique | Tokens dropped before computing overlap scores. Validator rejects empties, duplicates, and uppercase entries (must match the tokenizer's lowercased output). |
+
+### `config.tag_synonyms`
+
+Maps non-canonical tag slugs to their canonical form. **Required block.** `NormalizeTagName` collapses input → kebab-case, then applies one hop of substitution (no chains). Edit this block to align tag names with your team's vocabulary; existing rows survive because storage is by tag id, so renaming the canonical label here re-routes future writes without touching history.
+
+```yaml
+config:
+  tag_synonyms:
+    golang: go
+    javascript: js
+    typescript: ts
+    nodejs: node
+    node-js: node
+    postgres: postgresql
+    psql: postgresql
+    mongo: mongodb
+    k8s: kubernetes
+    tf: terraform
+    py: python
+```
+
+Validation rules:
+
+| Rule | Error message shape |
+|---|---|
+| empty key or value | `config.tag_synonyms: empty key` / `config.tag_synonyms[<key>]: empty target` |
+| self-loop (`go: go`) | `config.tag_synonyms[<key>]: maps to itself` |
+| two-hop chain (target is also a key) | `config.tag_synonyms[<key>]: target <value> is itself a key (two-hop chains are not resolved)` |
+
+The runtime applies one substitution; `golang` → `go` works, but if you also declared `go: golang` (which the validator catches anyway as a self-loop pair), the runtime would not chase the chain.
+
 ---
 
 ## `workflows`
@@ -228,8 +443,10 @@ workflows:
   - id: 1
     key: default
     name: Default Workflow
+    defaults: { … }    # optional — see workflow defaults
     buckets: [ … ]
     transitions: [ … ]
+    operations: { … } # optional — see workflows[].operations
 ```
 
 | Field | Type | Notes |
@@ -237,8 +454,34 @@ workflows:
 | `id` | int, > 0, unique | Stable identifier referenced by `transitions[].from` / `to`. |
 | `key` | string, required, unique | Used by `config.workflow.active` and human-facing CLI/TUI flows. |
 | `name` | string, required | Display name. |
+| `defaults` | object, optional | Workflow-level fallback for task / comment edit / delete. See **Workflow defaults**. |
 | `buckets` | list, non-empty | See **buckets**. |
 | `transitions` | list, optional | See **transitions**. Empty list = no moves allowed. |
+| `operations` | object, optional | Guards for archive / delete / unarchive. See **workflows[].operations**. |
+
+### Workflow defaults
+
+```yaml
+defaults:
+  task:
+    edit: true
+    delete: false
+  comment:
+    edit: true
+    delete: false   # comment may also omit fields — see inheritance below
+```
+
+`defaults` declares the policy applied when a bucket does not override the field. The full resolution chain for any `(bucket, entity, op)` lookup is:
+
+1. `bucket.permissions.<entity>.<op>` — the per-bucket override.
+2. Comment only: `bucket.permissions.task.<op>` — comment inherits from task at the bucket layer when the bucket has no `comment` block (or the field is `nil`).
+3. `workflow.defaults.<entity>.<op>` — the workflow-level fallback.
+4. Comment only: `workflow.defaults.task.<op>` — same comment-from-task inheritance at the defaults layer.
+5. Implicit `true` — when nothing in the chain declares a value, the action is allowed ("no rule = allow").
+
+The resolver picks the first non-`nil` value walking the chain top-to-bottom. Pointer booleans (`*bool`) distinguish "field omitted" from "explicitly `false`" — omitting `delete` flows to the next layer; writing `delete: false` ends the walk with a deny.
+
+There is no hardcoded "first bucket is special" rule anymore. The default kit (`defaults/omakiten.yaml`) reproduces the legacy semantics declaratively: strict defaults at the workflow level + an explicit opt-in on the `backlog` bucket.
 
 ### `workflows[].buckets`
 
@@ -254,6 +497,74 @@ buckets:
 | `key` | string, required, unique within workflow | Stable identifier (also referenced by guards and view filters). |
 | `name` | string, required | Display name. |
 | `position` | int, >= 1 | Visual ordering in BOARD/TABLE views. The bucket at position 1 is the **default for new tasks** when none is supplied (`app.WorkflowService.ResolveDefaultBucket`); the bucket at the highest position is the **final** bucket whose entry triggers a `task.completed` event. |
+| `permissions` | object, optional | Per-bucket task / comment CRUD policy. See **Bucket permissions** below. |
+
+#### Bucket permissions
+
+`permissions` gates `tasks.edit`, `tasks.delete`, `comments.edit`, and `comments.delete` based on the bucket the task currently sits in. When the field is omitted at the bucket layer the resolver falls through to `workflow.defaults` and then to the implicit `true` — see **Workflow defaults** above for the full chain.
+
+When `permissions.comment` is partially set, only the explicit fields override; the rest inherit from `task` at the same layer. Example:
+
+```yaml
+buckets:
+  - id: 1
+    key: backlog
+    name: Backlog
+    position: 1
+    permissions:
+      task:
+        edit: true
+        delete: false   # default — kept explicit for clarity
+  - id: 2
+    key: dev
+    name: Development
+    position: 2
+    permissions:
+      task:
+        edit: false     # frozen once accepted into dev
+        delete: false
+      comment:
+        delete: true    # but reviewers may still purge comments
+        # edit inherits task.edit (false)
+  - id: 3
+    key: done
+    name: Done
+    position: 3
+    permissions:
+      task:
+        edit: false
+        delete: true    # operators can purge completed work
+```
+
+When a CRUD operation is denied, the service emits a `guard_violation` error whose `details.hint` lists the buckets where the action *is* permitted, so the agent can suggest a remediation move.
+
+### `workflows[].operations`
+
+```yaml
+operations:
+  archive:
+    guards:
+      - type: comments_tagged
+        tag: archive-reason
+        count: 1
+        hint: "Add a #archive-reason comment before archiving."
+  delete:
+    guards:
+      - type: comments_tagged
+        tag: justification
+        count: 1
+        hint: "Add a #justification comment before deleting."
+  unarchive:
+    guards: []   # default
+```
+
+`operations` declares guards that gate the non-flow lifecycle operations:
+
+- **archive** — flips `state=archived`, moves the task into the workflow's final bucket, and **bypasses bucket permissions and transition guards** (escape hatch). Operation guards still apply.
+- **delete** — hard-deletes the task with cascade (comments → event_tags → events → dependencies → tags → task). Subject to **both** the bucket's `permissions.task.delete` and `operations.delete.guards`.
+- **unarchive** — flips `state=active`, leaves the bucket untouched. No guards by default.
+
+Operation guards reuse the same shape as transition guards (`type`, `tag`, `count`, `hint`). In the MVP only `comments_tagged` is wired into the operation evaluator; other types pass validation but currently have no effect on the operation path.
 
 ### `workflows[].transitions`
 
@@ -481,6 +792,12 @@ For each per-entity folder (`skills/`, `laws/`, `personas/`, `templates/`):
 | Two templates claiming the same `(default, project)` | `templates.<a> and templates.<b> both declare default="<kind>" (<scope>)` |
 | Bad view sort/filter | `config.views.<view>.* "<v>" is not one of [...]` |
 | Project laws referencing a non-existent law | `projects.<slug> laws: ref "<slug>" has no matching law file` |
+| Missing/zero `config.sqlite.busy_timeout_ms` | `config.sqlite.busy_timeout_ms: must be > 0 (see defaults/omakiten.yaml)` |
+| Missing/zero `config.activity_log.{max_rows, max_age_days}` | `config.activity_log.max_rows: must be > 0 (see defaults/omakiten.yaml)` |
+| Missing/zero `config.solutions.*` or inverted range | `config.solutions: max_top_limit (<n>) must be >= default_top_limit (<n>)` |
+| Missing/zero `config.events.default_recent_limit` | `config.events.default_recent_limit: must be > 0 (see defaults/omakiten.yaml)` |
+| Empty/uppercase/duplicate `config.search.stopwords` | `config.search.stopwords: entry "X" must be lowercase (matching tokenizer output)` |
+| Empty / self-loop / two-hop `config.tag_synonyms` | `config.tag_synonyms[<key>]: target "<v>" is itself a key (two-hop chains are not resolved)` |
 
 All errors are returned as plain Go errors in CLI flows (rendered through the JSON envelope) and as `config_invalid` coded errors when surfaced through the agent layer (`internal/domain/errors.go`).
 
@@ -506,16 +823,42 @@ config:
     board: { sort: { field: created_at, order: desc }, filter: { priority: [high, normal] } }
     table: { sort: { field: title,      order: asc  } }
     logs:  { limit: 100 }
+  sqlite:       { busy_timeout_ms: 5000 }
+  activity_log: { max_rows: 500, max_age_days: 7 }
+  solutions:    { default_top_limit: 10, max_top_limit: 100 }
+  events:       { default_recent_limit: 50 }
+  search:       { stopwords: [and, are, for, from, into, the, this, that, with] }
+  tag_synonyms: { golang: go, javascript: js, k8s: kubernetes }
 
 workflows:
   - id: 1
     key: default
     name: Default Workflow
+    defaults:
+      task:    { edit: false, delete: false }    # workflow-level baseline — buckets opt in
+      comment: { edit: false, delete: false }
+    operations:
+      archive:
+        guards:
+          - { type: comments_tagged, tag: archive-reason, count: 1, hint: "Tag #archive-reason first." }
+      delete:
+        guards:
+          - { type: comments_tagged, tag: justification,  count: 1, hint: "Tag #justification first." }
     buckets:
-      - { id: 1, key: backlog, name: Backlog,     position: 1 }   # default bucket for new tasks
-      - { id: 2, key: dev,     name: Development, position: 2 }
-      - { id: 3, key: review,  name: Review,      position: 3 }
-      - { id: 4, key: done,    name: Done,        position: 4 }   # final → emits task.completed
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1                                # default bucket for new tasks
+        permissions:
+          task: { edit: true }                     # planning bucket — edit allowed
+      - { id: 2, key: dev,    name: Development, position: 2 }
+      - { id: 3, key: review, name: Review,      position: 3 }
+      - id: 4
+        key: done
+        name: Done
+        position: 4                                # final → emits task.completed
+        permissions:
+          task: { delete: true }                   # only Done permits hard delete
     transitions:
       - from: 1
         to: 2
