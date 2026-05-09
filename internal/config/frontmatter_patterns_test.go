@@ -66,12 +66,11 @@ func TestSplitFrontmatter_MapBased(t *testing.T) {
 // documented in CONTRIBUTING.md. Seeds cover the well-formed shape, the
 // CRLF + BOM tolerance branches, and the two error paths so the fuzzer
 // has a representative starting set. The invariant under fuzz is the
-// minimum useful one — "must not panic on arbitrary bytes" — which is
-// what catches index-of-bounds and slice-allocation regressions in the
-// parser. Round-trip equality is exercised by TestJoinFrontmatterRoundTrip
-// against curated inputs; mixing the two layers under fuzz pulls in
-// encoder edge cases (CR-only line endings, etc.) that belong to a
-// different ticket.
+// Split→Join→Split round-trip: every input that parses successfully must
+// re-parse to the same frontmatter and body after JoinFrontmatter
+// re-encodes it. Catches encoder drift like the CR-trailer bug fixed
+// alongside this assertion (Join used to leave `\r` on the body, which
+// the next Split then collapsed via CRLF normalisation).
 func FuzzSplitFrontmatter(f *testing.F) {
 	f.Add([]byte("---\nname: Foo\n---\nhello\n"))
 	f.Add([]byte("---\r\nname: Foo\r\n---\r\nhello\r\n"))
@@ -81,6 +80,20 @@ func FuzzSplitFrontmatter(f *testing.F) {
 	f.Add([]byte("---\nname: Foo\nstill here\n"))
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _, _ = SplitFrontmatter(data)
+		fm, body, err := SplitFrontmatter(data)
+		if err != nil {
+			return
+		}
+		joined := JoinFrontmatter(fm, body)
+		fm2, body2, err := SplitFrontmatter(joined)
+		if err != nil {
+			t.Fatalf("round-trip Split err = %v\noriginal = %q\njoined = %q", err, data, joined)
+		}
+		if string(fm2) != string(fm) {
+			t.Fatalf("round-trip frontmatter drift: got %q, want %q", string(fm2), string(fm))
+		}
+		if string(body2) != string(body) {
+			t.Fatalf("round-trip body drift: got %q, want %q", string(body2), string(body))
+		}
 	})
 }
