@@ -130,7 +130,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if msg.String() == "?" && m.mode == modeNormal {
+		if msg.String() == "?" && m.mode == modeNormal && !m.commentScreenEditing {
 			m.helpOpen = true
 			m.helpAll = false
 			m.help.Scroll = 0
