@@ -116,46 +116,24 @@ func (m Model) renderLogs() string {
 func (m Model) renderLogsSummaryTables() string {
 	stats := m.logsStats
 
-	labelCell := func(label string) string {
-		return m.styles.info.Render("// " + strings.ToUpper(label))
-	}
-	statusRows := [][]string{
-		{labelCell("Status"), ""},
-		{labelCell("total"), fmt.Sprintf("%d", stats.Total)},
-		{labelCell("ok"), fmt.Sprintf("%d", stats.Ok)},
-		{labelCell("error"), fmt.Sprintf("%d", stats.Error)},
-		{labelCell("running"), fmt.Sprintf("%d", stats.Running)},
-	}
-	sourceRows := [][]string{
-		{labelCell("Sources"), ""},
-		{labelCell("cli"), fmt.Sprintf("%d", stats.CLI)},
-		{labelCell("mcp"), fmt.Sprintf("%d", stats.MCP)},
-		{labelCell("tui"), fmt.Sprintf("%d", stats.TUI)},
-	}
-
-	const (
-		labelWidth = 13
-		valueWidth = 27
-		tableWidth = 1 + labelWidth + 1 + valueWidth + 1
-		gap        = 2
+	statusRows := m.summaryRows("Status",
+		[2]string{"total", fmt.Sprintf("%d", stats.Total)},
+		[2]string{"ok", fmt.Sprintf("%d", stats.Ok)},
+		[2]string{"error", fmt.Sprintf("%d", stats.Error)},
+		[2]string{"running", fmt.Sprintf("%d", stats.Running)},
 	)
-	widths := []int{labelWidth, valueWidth}
+	sourceRows := m.summaryRows("Sources",
+		[2]string{"cli", fmt.Sprintf("%d", stats.CLI)},
+		[2]string{"mcp", fmt.Sprintf("%d", stats.MCP)},
+		[2]string{"tui", fmt.Sprintf("%d", stats.TUI)},
+	)
 
-	switch {
-	case m.availableWidth() >= tableWidth*2+gap:
-		left := renderGridTable(statusRows, widths, m.styles.border)
-		right := renderGridTable(sourceRows, widths, m.styles.border)
-		return lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", gap), right)
-	case m.availableWidth() >= tableWidth:
-		left := renderGridTable(statusRows, widths, m.styles.border)
-		right := renderGridTable(sourceRows, widths, m.styles.border)
-		return left + "\n\n" + right
-	default:
-		valueW := clampInt(m.availableWidth()-labelWidth-3, 8, valueWidth)
-		narrowWidths := []int{labelWidth, valueW}
-		all := append(append([][]string{}, statusRows...), sourceRows...)
-		return renderGridTable(all, narrowWidths, m.styles.border)
-	}
+	return m.renderSummaryTables(summaryTablesOpts{
+		LabelWidth:  13,
+		ValueWidth:  27,
+		SideBySide:  true,
+		MergeNarrow: true,
+	}, statusRows, sourceRows)
 }
 
 // renderLogsWidePanel renders the multi-column logs panel used on

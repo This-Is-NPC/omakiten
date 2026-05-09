@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 var statsPeriods = []string{"7d", "30d", "all"}
@@ -158,46 +157,24 @@ func (m Model) renderStatsModelPanel() string {
 // wide enough; otherwise stacked, with a single combined table as the
 // narrow-terminal fallback.
 func (m Model) renderStatsBudgetTables() string {
-	labelCell := func(label string) string {
-		return m.styles.info.Render("// " + strings.ToUpper(label))
-	}
-	totalsRows := [][]string{
-		{labelCell("Totals"), ""},
-		{labelCell("tasks"), fmt.Sprintf("%d", len(m.tasks))},
-		{labelCell("comments"), fmt.Sprintf("%d", len(m.comments))},
-		{labelCell("context"), fmt.Sprintf("%d", len(m.entries))},
-		{labelCell("tags"), fmt.Sprintf("%d", len(m.tags))},
-	}
-	tokensRows := [][]string{
-		{labelCell("Tokens"), ""},
-		{labelCell("estimated"), fmt.Sprintf("%d", m.metrics.EstimatedTotal)},
-		{labelCell("max"), fmt.Sprintf("%d", m.metrics.MaxTokens)},
-	}
+	totalsRows := m.summaryRows("Totals",
+		[2]string{"tasks", fmt.Sprintf("%d", len(m.tasks))},
+		[2]string{"comments", fmt.Sprintf("%d", len(m.comments))},
+		[2]string{"context", fmt.Sprintf("%d", len(m.entries))},
+		[2]string{"tags", fmt.Sprintf("%d", len(m.tags))},
+	)
+	tokensRows := m.summaryRows("Tokens",
+		[2]string{"estimated", fmt.Sprintf("%d", m.metrics.EstimatedTotal)},
+		[2]string{"max", fmt.Sprintf("%d", m.metrics.MaxTokens)},
+	)
 	if m.metrics.Truncated {
 		tokensRows = append(tokensRows, []string{m.styles.error.Render("[ERROR]"), m.styles.error.Render("budget exceeded")})
 	}
 
-	const (
-		labelWidth = 13
-		valueWidth = 27
-		tableWidth = 1 + labelWidth + 1 + valueWidth + 1
-		gap        = 2
-	)
-	widths := []int{labelWidth, valueWidth}
-
-	switch {
-	case m.availableWidth() >= tableWidth*2+gap:
-		left := renderGridTable(totalsRows, widths, m.styles.border)
-		right := renderGridTable(tokensRows, widths, m.styles.border)
-		return lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", gap), right)
-	case m.availableWidth() >= tableWidth:
-		left := renderGridTable(totalsRows, widths, m.styles.border)
-		right := renderGridTable(tokensRows, widths, m.styles.border)
-		return left + "\n\n" + right
-	default:
-		valueW := clampInt(m.availableWidth()-labelWidth-3, 8, valueWidth)
-		narrowWidths := []int{labelWidth, valueW}
-		all := append(append([][]string{}, totalsRows...), tokensRows...)
-		return renderGridTable(all, narrowWidths, m.styles.border)
-	}
+	return m.renderSummaryTables(summaryTablesOpts{
+		LabelWidth:  13,
+		ValueWidth:  27,
+		SideBySide:  true,
+		MergeNarrow: true,
+	}, totalsRows, tokensRows)
 }
