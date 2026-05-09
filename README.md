@@ -111,6 +111,7 @@ The full MCP surface (36 tools, 2 resources, 8 prompts) is documented in the [MC
 - [Data Model Guide](.docs/data-model-guide.md)
 - [Domain Events Catalog](.docs/domain-events.md)
 - [Hooks Engine](.docs/hooks.md)
+- [Integration Guide — wiring hooks](.docs/integration-guide.md)
 
 **Project**
 
