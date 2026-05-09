@@ -143,17 +143,20 @@ UPDATE events SET body = ? WHERE id = ? AND project_id = ? AND entity_type = 'ta
 		updated.Tags = append(updated.Tags, domain.Tag{ID: tagID, Name: tag.Name, Label: tag.Label})
 	}
 
-	payload := map[string]any{"comment_id": commentID}
-	if prev.Body != body {
-		payload["body"] = map[string]any{"from": prev.Body, "to": body}
-	}
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return domain.Comment{}, domain.Event{}, err
-	}
-	event, err := insertTaskEvent(ctx, tx, projectID, prev.TaskID, domain.EventTypeCommentEdited, "", string(payloadBytes))
-	if err != nil {
-		return domain.Comment{}, domain.Event{}, err
+	var event domain.Event
+	if s.shouldLogEvent(domain.EventTypeCommentEdited) {
+		payload := map[string]any{"comment_id": commentID}
+		if prev.Body != body {
+			payload["body"] = map[string]any{"from": prev.Body, "to": body}
+		}
+		payloadBytes, marshalErr := json.Marshal(payload)
+		if marshalErr != nil {
+			return domain.Comment{}, domain.Event{}, marshalErr
+		}
+		event, err = insertTaskEvent(ctx, tx, projectID, prev.TaskID, domain.EventTypeCommentEdited, "", string(payloadBytes))
+		if err != nil {
+			return domain.Comment{}, domain.Event{}, err
+		}
 	}
 
 	return updated, event, tx.Commit()
@@ -180,17 +183,20 @@ DELETE FROM events WHERE id = ? AND project_id = ? AND entity_type = 'task' AND 
 		return domain.Event{}, err
 	}
 
-	payload, err := json.Marshal(map[string]any{
-		"comment_id":  commentID,
-		"author_type": prev.AuthorType,
-		"body":        prev.Body,
-	})
-	if err != nil {
-		return domain.Event{}, err
-	}
-	event, err := insertTaskEvent(ctx, tx, projectID, prev.TaskID, domain.EventTypeCommentRemoved, "", string(payload))
-	if err != nil {
-		return domain.Event{}, fmt.Errorf("emit comment.removed: %w", err)
+	var event domain.Event
+	if s.shouldLogEvent(domain.EventTypeCommentRemoved) {
+		payload, marshalErr := json.Marshal(map[string]any{
+			"comment_id":  commentID,
+			"author_type": prev.AuthorType,
+			"body":        prev.Body,
+		})
+		if marshalErr != nil {
+			return domain.Event{}, marshalErr
+		}
+		event, err = insertTaskEvent(ctx, tx, projectID, prev.TaskID, domain.EventTypeCommentRemoved, "", string(payload))
+		if err != nil {
+			return domain.Event{}, fmt.Errorf("emit comment.removed: %w", err)
+		}
 	}
 
 	return event, tx.Commit()

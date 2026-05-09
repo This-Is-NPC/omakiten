@@ -99,7 +99,10 @@ func TestSaveBundleAndLoadRoundTrip(t *testing.T) {
 			SQLite:      SQLiteSettings{BusyTimeoutMs: 5000},
 			ActivityLog: ActivityLogSettings{MaxRows: 500, MaxAgeDays: 7},
 			Solutions:   SolutionsSettings{DefaultTopLimit: 10, MaxTopLimit: 100},
-			Events:      EventsSettings{DefaultRecentLimit: 50},
+			Events: EventsSettings{
+				DefaultRecentLimit: 50,
+				Defaults:           EventChannelSettings{Log: &tru, Broadcast: &tru, Hook: &tru},
+			},
 			Search:      SearchSettings{Stopwords: []string{"and", "the"}},
 			TagSynonyms: map[string]string{"golang": "go"},
 		},

@@ -15,9 +15,16 @@ import (
 // Returns the persisted Event so callers can fold it into the activity feed
 // without an extra read. Comments go through AddComment instead — they share
 // the same table but require tag handling.
+//
+// When the configured events policy resolves Log=false for eventType the
+// row is dropped silently — callers receive a zero Event and nil error so
+// telemetry gating cannot break business logic.
 func (s *Store) RecordTaskEvent(ctx context.Context, projectID, taskID int64, eventType, body, payload string) (domain.Event, error) {
 	if err := s.ensureTaskExists(ctx, projectID, taskID); err != nil {
 		return domain.Event{}, err
+	}
+	if !s.shouldLogEvent(eventType) {
+		return domain.Event{}, nil
 	}
 	return insertTaskEvent(ctx, s.db, projectID, taskID, eventType, body, payload)
 }
@@ -76,6 +83,9 @@ LIMIT ?
 }
 
 func (s *Store) RecordEntityEvent(ctx context.Context, entityType string, entityID int64, projectID int64, eventType string, payload string) error {
+	if !s.shouldLogEvent(eventType) {
+		return nil
+	}
 	if payload == "" {
 		payload = "{}"
 	}

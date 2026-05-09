@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"strings"
+
+	"omakiten/internal/domain"
 )
 
 var allowedSortOrders = map[string]struct{}{
@@ -310,10 +312,27 @@ func validateSolutionsSettings(s SolutionsSettings) error {
 }
 
 // validateEventsSettings enforces the events.default_recent_limit
-// fallback used by ListRecentEvents.
+// fallback used by ListRecentEvents and the per-event channel policy
+// shape: defaults must declare every channel explicitly so runtime
+// behaviour is deterministic; overrides keys must be known event types
+// (typos rejected at load time, not silently ignored).
 func validateEventsSettings(e EventsSettings) error {
 	if e.DefaultRecentLimit <= 0 {
 		return fmt.Errorf("config.events.default_recent_limit: must be > 0 (see defaults/omakiten.yaml)")
+	}
+	if e.Defaults.Log == nil {
+		return fmt.Errorf("config.events.defaults.log: required (see defaults/omakiten.yaml)")
+	}
+	if e.Defaults.Broadcast == nil {
+		return fmt.Errorf("config.events.defaults.broadcast: required (see defaults/omakiten.yaml)")
+	}
+	if e.Defaults.Hook == nil {
+		return fmt.Errorf("config.events.defaults.hook: required (see defaults/omakiten.yaml)")
+	}
+	for key := range e.Overrides {
+		if !domain.IsKnownEventType(key) {
+			return fmt.Errorf("config.events.overrides: unknown event_type %q (see internal/domain/event.go::KnownEventTypes)", key)
+		}
 	}
 	return nil
 }

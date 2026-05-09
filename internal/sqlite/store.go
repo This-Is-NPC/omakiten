@@ -47,6 +47,12 @@ type Store struct {
 	activityLogMaxRows    int
 	activityLogMaxAgeDays int
 	eventsDefaultRecentLimit int
+	// eventsPolicy gates the per-event-type log channel: when
+	// ResolveLog returns false, the audit event is dropped before
+	// reaching the events table. The zero value resolves to "log
+	// everything" so tests that do not wire the policy keep their
+	// existing emission assertions.
+	eventsPolicy config.EventsSettings
 }
 
 // SetActivityLogRetention installs the operation-log retention window the
@@ -64,6 +70,21 @@ func (s *Store) SetEventsRecentLimit(limit int) {
 	s.eventsDefaultRecentLimit = limit
 }
 
+// SetEventsPolicy installs the per-event-type channel policy. When the
+// policy resolves Log=false for an event_type, RecordTaskEvent /
+// RecordEntityEvent / insertTaskEvent drop the row before insertion
+// without surfacing an error to callers.
+func (s *Store) SetEventsPolicy(policy config.EventsSettings) {
+	s.eventsPolicy = policy
+}
+
+// shouldLogEvent reports whether an event of eventType should be
+// persisted. Centralised so every emission path consults the same
+// resolution logic.
+func (s *Store) shouldLogEvent(eventType string) bool {
+	return s.eventsPolicy.ResolveLog(eventType)
+}
+
 // ConfigKnobs is the resolved bundle of Store-level knobs the composition
 // root applies after Open + ConfigService.Import. Wraps the per-area
 // setters so the runtime writes them in one place; tests that don't care
@@ -74,6 +95,9 @@ type ConfigKnobs struct {
 	ActivityLogMaxRows       int
 	ActivityLogMaxAgeDays    int
 	EventsDefaultRecentLimit int
+	// EventsPolicy mirrors bundle.Config.Events so the Store can apply
+	// per-event-type log gates as soon as the bundle reaches it.
+	EventsPolicy config.EventsSettings
 }
 
 // ApplyConfig writes the resolved config knobs into the live Store. The
@@ -90,6 +114,7 @@ func (s *Store) ApplyConfig(ctx context.Context, k ConfigKnobs) error {
 	}
 	s.SetActivityLogRetention(k.ActivityLogMaxRows, k.ActivityLogMaxAgeDays)
 	s.SetEventsRecentLimit(k.EventsDefaultRecentLimit)
+	s.SetEventsPolicy(k.EventsPolicy)
 	return nil
 }
 

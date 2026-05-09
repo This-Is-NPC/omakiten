@@ -40,6 +40,28 @@ func openStoreWithFullTransitions(ctx context.Context, t *testing.T) (*Store, do
 	return store, project
 }
 
+func TestEventsPolicyGatesTaskCreated(t *testing.T) {
+	ctx := context.Background()
+	store, project := openStoreWithProject(ctx, t)
+	fal := false
+	tru := true
+	store.SetEventsPolicy(config.EventsSettings{
+		Defaults:  config.EventChannelSettings{Log: &tru, Broadcast: &tru, Hook: &tru},
+		Overrides: map[string]config.EventChannelSettings{domain.EventTypeTaskCreated: {Log: &fal}},
+	})
+	task, err := store.CreateTask(ctx, project.ID, "gated", "", domain.Priority(2), "backlog")
+	if err != nil {
+		t.Fatalf("CreateTask = %v", err)
+	}
+	events, err := store.ListTaskActivity(ctx, project.ID, task.ID, "asc")
+	if err != nil {
+		t.Fatalf("ListTaskActivity = %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("len(events) = %d, want 0 (gated by config.events.overrides[task.created].log=false)", len(events))
+	}
+}
+
 func TestCreateTaskEmitsTaskCreatedEvent(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithProject(ctx, t)

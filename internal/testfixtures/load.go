@@ -182,9 +182,26 @@ func mergeKitDefaults(b *config.Bundle) {
 		cfg.Solutions.MaxTopLimit = kit.Solutions.MaxTopLimit
 	}
 
-	// Events fallback.
+	// Events fallback + channel policy. Defaults must be fully declared
+	// (validator-required), so fixtures inherit the kit values when their
+	// override left them nil.
 	if cfg.Events.DefaultRecentLimit == 0 {
 		cfg.Events.DefaultRecentLimit = kit.Events.DefaultRecentLimit
+	}
+	if cfg.Events.Defaults.Log == nil {
+		cfg.Events.Defaults.Log = kit.Events.Defaults.Log
+	}
+	if cfg.Events.Defaults.Broadcast == nil {
+		cfg.Events.Defaults.Broadcast = kit.Events.Defaults.Broadcast
+	}
+	if cfg.Events.Defaults.Hook == nil {
+		cfg.Events.Defaults.Hook = kit.Events.Defaults.Hook
+	}
+	if len(cfg.Events.Overrides) == 0 && len(kit.Events.Overrides) > 0 {
+		cfg.Events.Overrides = make(map[string]config.EventChannelSettings, len(kit.Events.Overrides))
+		for k, v := range kit.Events.Overrides {
+			cfg.Events.Overrides[k] = v
+		}
 	}
 
 	// Search stopwords.
