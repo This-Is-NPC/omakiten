@@ -80,6 +80,7 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `tasks.create_intent` | Implements `/okt-create <description>` with similar-task detection and confirmation gate. |
 | `tasks.create` | Direct task creation equivalent to `okt add`. |
 | `tasks.move` | Moves a task through allowed workflow transitions. |
+| `tasks.edit` | Edits a task's title, description, and/or priority. At least one of the three optional fields must be provided. Subject to bucket `permissions.task.edit` — the default kit allows edits only in the planning bucket; bucket moves go through `tasks.move` so the activity log distinguishes the two intents. |
 | `tasks.delete` | Hard-deletes a task with cascade (comments, tags, dependencies, events). Subject to bucket `permissions.task.delete` and `operations.delete.guards`. Requires `confirmed=true`. |
 | `tasks.archive` | Flips `state=archived` and moves the task to the workflow's final bucket. Bypasses bucket policy and transition guards but respects `operations.archive.guards`. |
 | `tasks.unarchive` | Restores `state=active` while leaving the bucket untouched. Respects `operations.unarchive.guards` if declared. |
