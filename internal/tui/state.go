@@ -232,6 +232,11 @@ type Model struct {
 	// detailscreen.New() so prior scroll state never leaks across
 	// comments.
 	commentScreen detailscreen.Model
+	// commentScreenEditing flips the same overlay into a full-screen
+	// edit form (kicker + textarea + footer) — the read-only detail
+	// view is suppressed while editing. Cancel returns to the read
+	// view; save runs CommentService.Edit and refreshes the comment.
+	commentScreenEditing bool
 
 	// views caches the resolved per-view sort/filter pulled from the active
 	// bundle on each refresh. Render and query helpers read it instead of
@@ -289,17 +294,16 @@ type Model struct {
 	includeArchived bool
 }
 
-// inputMode is the modal-input enum: normal navigation, comment input, or
-// move input (typing a target bucket key). The mode flag drives whether the
-// next keystroke is consumed by the inline text input or routed to the
-// view-specific handler.
+// inputMode is the modal-input enum: normal navigation, comment-add input
+// (embedded in the activity column), or move input (typing a target bucket
+// key in the screen-level modal bar). Comment editing lives in its own
+// full-screen overlay (`commentScreenEditing`), not in this enum.
 type inputMode int
 
 const (
 	modeNormal inputMode = iota
 	modeComment
 	modeMove
-	modeCommentEdit
 )
 
 // taskScreenMode tracks the sub-surface of the task detail view stack:

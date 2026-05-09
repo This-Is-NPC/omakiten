@@ -211,17 +211,17 @@ func TestModeCommentEditInputMultilineCursor(t *testing.T) {
 	got = pressStringKey(t, got, "J")
 	got = pressKey(t, got, tea.KeyEnter)
 	got = pressRune(t, got, 'e')
-	if got.mode != modeCommentEdit {
-		t.Fatalf("mode = %v, want modeCommentEdit", got.mode)
+	if !got.commentScreenEditing {
+		t.Fatalf("commentScreenEditing = false, want true after 'e' on the comment screen")
 	}
 	if got.commentInput.Value() != original {
 		t.Fatalf("commentInput.Value() = %q, want %q", got.commentInput.Value(), original)
 	}
 
-	// Caret lands at the end (CursorEnd in beginInput). Move up twice to
-	// reach the first line, then to its end via end-of-line. Append " A"
-	// to the first line — proving up-arrow navigation works across
-	// wrapped textarea rows.
+	// Caret lands at the end (CursorEnd in openCommentEdit). Move up twice
+	// to reach the first line, then to its end via end-of-line. Append
+	// " A" to the first line — proving up-arrow navigation works across
+	// wrapped textarea rows in the dedicated edit overlay.
 	got = pressStringKey(t, got, "up")
 	got = pressStringKey(t, got, "up")
 	got = pressStringKey(t, got, "end")
@@ -231,9 +231,12 @@ func TestModeCommentEditInputMultilineCursor(t *testing.T) {
 		t.Fatalf("after multiline edit: commentInput.Value() = %q, want %q", got.commentInput.Value(), want)
 	}
 
-	got = pressKey(t, got, tea.KeyEnter)
-	if got.mode != modeNormal {
-		t.Fatalf("after save: mode = %v, want modeNormal", got.mode)
+	got = pressKey(t, got, tea.KeyCtrlS)
+	if got.commentScreenEditing {
+		t.Fatalf("after ctrl+s: commentScreenEditing = true, want false")
+	}
+	if !got.commentScreenOpen {
+		t.Fatalf("after ctrl+s: commentScreenOpen = false, want true (read view)")
 	}
 
 	// Reload from the store and assert tag preservation: edit-from-TUI

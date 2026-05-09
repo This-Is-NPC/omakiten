@@ -12,16 +12,18 @@ import (
 )
 
 // beginInput puts the model into a modal text-input state. Used when the
-// user presses 'c' (comment), 'e' on a focused comment (edit), or 'm'
-// (move). Comment modes own a multi-line bubbles textarea (caret + arrow
-// nav + paste); modeMove owns a single-line bubbles textinput so cursor
-// movement, word-jump, and kill-line all work natively.
+// user presses 'c' (comment-add embedded in the activity column) or 'm'
+// (move target bucket key). Comment editing has its own full-screen
+// overlay (`commentScreenEditing`) and does not go through this entry
+// point. modeComment uses a bubbles textarea for multi-line composition;
+// modeMove uses a bubbles textinput so cursor / word-jump / kill-line all
+// work natively.
 func (m *Model) beginInput(mode inputMode, status, prefill string) {
 	m.mode = mode
 	m.status = status
 	m.moveMode = false
 	switch mode {
-	case modeComment, modeCommentEdit:
+	case modeComment:
 		m.commentInput = newCommentInput()
 		m.commentInput.SetValue(prefill)
 		m.commentInput.SetWidth(m.commentInputWidth())
@@ -48,7 +50,7 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
 		return m, tea.Quit
 	}
-	if m.mode == modeComment || m.mode == modeCommentEdit {
+	if m.mode == modeComment {
 		bindings := newCommentInputBindings()
 		switch {
 		case key.Matches(msg, bindings.Cancel):
@@ -95,7 +97,7 @@ func (m *Model) cancelInput() {
 // model returns to normal navigation regardless of outcome.
 func (m *Model) submitInput() {
 	var input string
-	if m.mode == modeComment || m.mode == modeCommentEdit {
+	if m.mode == modeComment {
 		input = strings.TrimSpace(m.commentInput.Value())
 	} else {
 		input = strings.TrimSpace(m.moveInput.Value())
@@ -116,26 +118,6 @@ func (m *Model) submitInput() {
 			break
 		}
 		_, err = app.NewCommentService(m.repos.Comments).Add(m.ctx, m.project, task.ID, input, "human", nil)
-	case modeCommentEdit:
-		if m.commentEditID <= 0 {
-			err = domain.NewError(domain.ErrValidation, "no comment selected", nil)
-			break
-		}
-		// Tags stay untouched on edit-from-TUI: the modal only captures the
-		// body. CommentService.Edit replaces tags from the slice we pass, so
-		// passing nil would wipe them; we don't have a tag editor wired up
-		// yet, so re-pass the existing tag names instead. The service
-		// re-normalises them so round-tripping is safe.
-		existing, listErr := m.findCommentByID(m.commentEditID)
-		if listErr != nil {
-			err = listErr
-			break
-		}
-		tagNames := make([]string, len(existing.Tags))
-		for i, t := range existing.Tags {
-			tagNames[i] = t.Name
-		}
-		_, err = app.NewCommentServiceWithWorkflow(m.repos.Comments, m.repos.Workflow).Edit(m.ctx, m.project, m.commentEditID, input, tagNames)
 	case modeMove:
 		task, ok := m.selectedTask()
 		if !ok {

@@ -88,6 +88,12 @@ func (m Model) renderHelp() string {
 			{"esc", "back to task view"},
 		}},
 		{"Comment input", commentInputHelpRows},
+		{"Comment edit", []binding{
+			{"ctrl+s", "save the rewritten body"},
+			{"alt+enter · shift+enter", "insert newline"},
+			{"esc", "cancel — return to comment view"},
+			{"arrows · home · end", "navigate caret"},
+		}},
 		{"Task form", []binding{
 			{"tab", "switch field"},
 			{"← → · h l", "change priority"},
@@ -228,6 +234,8 @@ func (m Model) currentHelpTitles() []string {
 		return []string{"Comment input"}
 	case m.blockerPickerOpen:
 		return []string{"Blocker picker"}
+	case m.commentScreenOpen && m.commentScreenEditing:
+		return []string{"Comment edit"}
 	case m.commentScreenOpen:
 		return []string{"Comment view"}
 	case m.taskScreen == taskScreenCreate || m.taskScreen == taskScreenEdit:

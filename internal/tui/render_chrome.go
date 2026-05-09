@@ -240,6 +240,13 @@ func (m Model) footerTokens() []footerToken {
 			{key: "esc", label: "cancel"},
 			{key: "ctrl+c", label: "quit"},
 		}
+	case m.commentScreenOpen && m.commentScreenEditing:
+		return []footerToken{
+			{key: "ctrl+s", label: "save", primary: true},
+			{key: "alt+enter", label: "newline"},
+			{key: "esc", label: "cancel"},
+			helpToken(),
+		}
 	case m.commentScreenOpen:
 		deleteLabel := "arm delete"
 		if m.commentDeletePendingID != 0 {

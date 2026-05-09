@@ -1573,17 +1573,17 @@ func TestModelEditsCommentFromCommentScreen(t *testing.T) {
 		t.Fatalf("commentScreenOpen = false, want true after entering the comment")
 	}
 	got = pressRune(t, got, 'e')
-	if got.mode != modeCommentEdit {
-		t.Fatalf("mode = %v, want modeCommentEdit", got.mode)
+	if !got.commentScreenEditing {
+		t.Fatalf("commentScreenEditing = false, want true after pressing 'e'")
 	}
 	if got.commentEditID != comment.ID {
 		t.Fatalf("commentEditID = %d, want %d", got.commentEditID, comment.ID)
 	}
-	if got.commentScreenOpen {
-		t.Fatalf("commentScreenOpen = true, want closed once edit modal opens")
+	if !got.commentScreenOpen {
+		t.Fatalf("commentScreenOpen = false, want the dedicated overlay to stay open while editing")
 	}
-	if !got.isEmbeddedCommentInput() {
-		t.Fatalf("isEmbeddedCommentInput() = false, want true under modeCommentEdit")
+	if got.isEmbeddedCommentInput() {
+		t.Fatalf("isEmbeddedCommentInput() = true, want false — edit lives in the dedicated overlay now")
 	}
 	if got.commentInput.Value() != "Original body" {
 		t.Fatalf("commentInput.Value() = %q, want pre-filled with original body", got.commentInput.Value())
@@ -1594,13 +1594,16 @@ func TestModelEditsCommentFromCommentScreen(t *testing.T) {
 	// rune-aware backspace at the cursor, mirroring real-terminal UX.
 	got = pressBackspace(t, got, len("Original body"))
 	got = sendText(t, got, "Rewritten body")
-	got = pressKey(t, got, tea.KeyEnter)
+	got = pressKey(t, got, tea.KeyCtrlS)
 
-	if got.mode != modeNormal {
-		t.Fatalf("mode after enter = %v, want modeNormal", got.mode)
+	if got.commentScreenEditing {
+		t.Fatalf("commentScreenEditing = true after ctrl+s, want false (back to read view)")
 	}
 	if got.commentEditID != 0 {
 		t.Fatalf("commentEditID = %d, want cleared after save", got.commentEditID)
+	}
+	if !got.commentScreenOpen {
+		t.Fatalf("commentScreenOpen = false after save, want true (still in read view)")
 	}
 	comments, err := store.ListComments(ctx, project.ID, task.ID)
 	if err != nil {
