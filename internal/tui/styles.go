@@ -64,6 +64,20 @@ func (s styles) badgeForColor(color string) lipgloss.Style {
 	return s.badgeInfo
 }
 
+// kanbanColumnSized returns the kanban-column style sized to the given
+// inner width and (optional) viewport budget. innerHeight is the number
+// of rows the box should occupy on screen — pass 0 to keep the legacy
+// content-sized behavior. Centralising the policy here means every
+// card-in-column surface (board lanes, settings entity grid) closes its
+// bottom border on the same row regardless of how many cards fit.
+func (s styles) kanbanColumnSized(innerWidth, innerHeight int) lipgloss.Style {
+	style := s.kanbanColumn.Width(innerWidth)
+	if innerHeight > 0 {
+		style = style.Height(innerHeight)
+	}
+	return style
+}
+
 // statusBadge renders a status message as `[INFO] msg` or `[ERROR] msg` based
 // on a content heuristic. Replaces italic-on-secondary status rendering.
 func (s styles) statusBadge(msg string) string {
