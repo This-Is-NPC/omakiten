@@ -102,8 +102,9 @@ func TestEntityViewRendersFrontmatterAndBody(t *testing.T) {
 		t.Fatalf("entityScreen = %v, want view", got.entityScreen)
 	}
 	view := got.View()
+	plain := stripANSI(view)
 	for _, want := range []string{"// LAW · ", "// SLUG", "// SEVERITY", "// BODY", "Stay in scope"} {
-		if !strings.Contains(view, want) {
+		if !strings.Contains(plain, want) {
 			t.Fatalf("View() missing %q\n%s", want, view)
 		}
 	}

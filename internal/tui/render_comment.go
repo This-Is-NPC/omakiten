@@ -71,7 +71,7 @@ func (m Model) renderCommentScreen() string {
 		// Pass the whole body as a single spanned row so gridtable.Render
 		// wraps it inline; emitting one row per line would draw a horizontal
 		// border between every wrapped line and read like a price list.
-		screen = screen.Span(strings.TrimRight(body, "\n"))
+		screen = screen.Span(m.renderBodyMarkdown(body, valueWidth))
 	}
 
 	return "\n" + indentBlock(screen.View(m.taskViewportHeight(), m.styles.border, m.styles.hint), 2)
@@ -143,6 +143,9 @@ func (m Model) updateCommentScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if comment, ok := m.activeComment(); ok {
 			m.armOrConfirmCommentDelete(comment)
 		}
+		return m, nil
+	case "M":
+		m.toggleMarkdownRendered()
 		return m, nil
 	}
 	// Delegate scroll keys + esc to the embedded detailscreen sub-model.

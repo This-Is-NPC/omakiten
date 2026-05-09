@@ -282,6 +282,10 @@ func (m *Model) reloadTheme() error {
 	}
 	m.theme = theme
 	m.styles = newStyles(theme)
+	// Rebuild the markdown renderer so cached body renders pick up the
+	// new palette on the next View() — the cache lives inside the
+	// renderer, so swapping the pointer is enough to invalidate it.
+	m.markdown = newMarkdownRenderer(tokensFromTheme(theme))
 	return nil
 }
 

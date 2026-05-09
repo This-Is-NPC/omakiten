@@ -249,6 +249,7 @@ Destructive verbs live inside the entered surface only — the board has no `d` 
 | `b` | edit blockers (opens the blocker picker) |
 | `c` | add comment |
 | `m` | move |
+| `M` | toggle markdown render of the description (raw ⇄ rendered; default rendered) |
 | `d` `d` | arm hard-delete the task, then confirm (form-column focus only; gated by `permissions.task.delete` and `operations.delete.guards`) |
 | `esc` | back |
 
@@ -260,6 +261,7 @@ Destructive verbs live inside the entered surface only — the board has no `d` 
 | `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
 | `g` · `G` | jump to top / bottom |
 | `e` | edit comment body (gated by `permissions.comment.edit`) |
+| `M` | toggle markdown render of the comment body (raw ⇄ rendered; default rendered) |
 | `d` `d` | arm delete the comment, then confirm (gated by `permissions.comment.delete`) |
 | `esc` | back |
 
@@ -315,6 +317,7 @@ Pressing `e` on the comment-view overlay flips the **same overlay** into a dedic
 | `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
 | `g` · `G` | jump to top / bottom |
 | `e` | edit (opens `$EDITOR`) |
+| `M` | toggle markdown render of the entity body (raw ⇄ rendered; default rendered) |
 | `d` `d` | arm delete, then confirm |
 | `p` | skill picker (persona only) |
 | `esc` | back, or cancel a pending delete |
@@ -404,3 +407,9 @@ Never inline the walk-and-reserve loop. The 16-case `scrollwindow_test.go` locks
 ## Theming
 
 The TUI loads its theme from `<config-root>/themes/<active>.yaml` with `themes/custom/<active>.yaml` taking precedence (`internal/cli/tui.go:loadActiveTheme`). The active theme key is `config.theme.active`. See `.docs/theming-guide.md` for color tokens and authoring.
+
+## Markdown rendering
+
+Body fields shown in the read-only detail panels (task description, comment body inside the dedicated comment view, and the entity body for laws / personas / skills / templates) render as styled markdown by default. The renderer (`internal/tui/markdown.go`) builds an `ansi.StyleConfig` from the active theme tokens (`primary`, `foreground`, `border`, `secondary`) — switching theme rebuilds the renderer and clears its per-(body, width) cache. Code blocks render as plain mono (no chroma syntax highlight) so they stay aligned with the dev-editorial palette.
+
+Press `M` (capital) inside the task view, comment view, or entity view to toggle between raw and rendered for the rest of the session — useful when you need to copy markdown verbatim or debug formatting. The toggle is session-only; it is not persisted to `omakiten.yaml`. The status badge confirms the active mode (`Markdown rendered` / `Markdown raw`). Editing flows (textareas + `$EDITOR`) are unaffected — they always show raw text.

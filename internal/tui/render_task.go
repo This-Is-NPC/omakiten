@@ -68,6 +68,8 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.status = "Refreshed"
 			}
+		case "M":
+			m.toggleMarkdownRendered()
 		case "tab":
 			m.toggleTaskFocus()
 		case "shift+tab":
@@ -651,7 +653,7 @@ func (m Model) renderTaskView() string {
 	if strings.TrimSpace(task.Description) == "" {
 		detail = detail.Span(m.styles.hint.Render("No description"))
 	} else {
-		detail = detail.Span(strings.TrimRight(task.Description, "\n"))
+		detail = detail.Span(m.renderBodyMarkdown(task.Description, valueWidth))
 	}
 	details := detail.View(0, m.styles.border, m.styles.hint)
 

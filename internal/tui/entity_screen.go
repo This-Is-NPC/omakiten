@@ -55,6 +55,9 @@ func (m Model) updateEntityScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = "Refreshed"
 		}
+	case "M":
+		m.clearDeletePrompt("")
+		m.toggleMarkdownRendered()
 	default:
 		var cmd tea.Cmd
 		m.entityView, cmd = m.entityView.Update(msg, m.entityViewportHeight())
@@ -198,7 +201,7 @@ func (m Model) renderEntityView() string {
 		extraSpannedRows = []string{m.styles.hint.Render("a: assign default kind")}
 	}
 
-	bodyText := strings.TrimRight(body, "\n")
+	bodyText := m.renderBodyMarkdown(body, valueWidth)
 	if strings.TrimSpace(bodyText) == "" {
 		bodyText = m.styles.hint.Render("Empty body")
 	}
