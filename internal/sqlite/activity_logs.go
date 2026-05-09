@@ -9,11 +9,6 @@ import (
 	"omakiten/internal/domain"
 )
 
-const (
-	activityLogMaxRows    = 500
-	activityLogMaxAgeDays = 7
-)
-
 // BeginActivityLog inserts an in-flight `operation` event and returns its id.
 // FinishActivityLog later updates that same row with status/duration. We keep
 // the legacy two-step API so callers don't need to know about the unified
@@ -46,8 +41,14 @@ RETURNING id
 		return 0, fmt.Errorf("begin activity log: %w", err)
 	}
 	// Prune synchronously after insert; cleanup is fast on local SQLite.
-	// Errors during pruning must not break the original insert.
-	_ = s.PruneActivityLogs(ctx, activityLogMaxRows, activityLogMaxAgeDays)
+	// Errors during pruning must not break the original insert. Retention
+	// values come from config.activity_log (max_rows, max_age_days) wired
+	// in by the composition root via Store.SetActivityLogRetention; when
+	// unset (rare paths that build a Store without going through a
+	// composition root, e.g. some boundary tests) prune is skipped.
+	if s.activityLogMaxRows > 0 && s.activityLogMaxAgeDays > 0 {
+		_ = s.PruneActivityLogs(ctx, s.activityLogMaxRows, s.activityLogMaxAgeDays)
+	}
 	return id, nil
 }
 
