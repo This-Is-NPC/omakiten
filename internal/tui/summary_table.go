@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"omakiten/internal/tui/components/gridtable"
 )
 
 // summaryRows builds a [][]string suitable for renderGridTable from a
@@ -48,7 +50,7 @@ func (m Model) renderSummaryTables(opts summaryTablesOpts, tables ...[][]string)
 			if i > 0 {
 				parts = append(parts, strings.Repeat(" ", gap))
 			}
-			parts = append(parts, renderGridTable(rows, widths, m.styles.border))
+			parts = append(parts, gridtable.Render(rows, widths, m.styles.border))
 		}
 		return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
 	}
@@ -56,7 +58,7 @@ func (m Model) renderSummaryTables(opts summaryTablesOpts, tables ...[][]string)
 	if m.availableWidth() >= tableWidth {
 		parts := make([]string, len(tables))
 		for i, rows := range tables {
-			parts[i] = renderGridTable(rows, widths, m.styles.border)
+			parts[i] = gridtable.Render(rows, widths, m.styles.border)
 		}
 		return strings.Join(parts, "\n\n")
 	}
@@ -68,11 +70,11 @@ func (m Model) renderSummaryTables(opts summaryTablesOpts, tables ...[][]string)
 		for _, rows := range tables {
 			all = append(all, rows...)
 		}
-		return renderGridTable(all, narrowWidths, m.styles.border)
+		return gridtable.Render(all, narrowWidths, m.styles.border)
 	}
 	parts := make([]string, len(tables))
 	for i, rows := range tables {
-		parts[i] = renderGridTable(rows, narrowWidths, m.styles.border)
+		parts[i] = gridtable.Render(rows, narrowWidths, m.styles.border)
 	}
 	return strings.Join(parts, "\n\n")
 }

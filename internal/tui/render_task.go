@@ -11,6 +11,7 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/detailscreen"
+	"omakiten/internal/tui/components/gridtable"
 	"omakiten/internal/tui/components/picker"
 )
 
@@ -631,10 +632,10 @@ func (m Model) renderTaskView() string {
 		if commentsWidth < 36 {
 			commentsWidth = 36
 		}
-		commentsBox := renderFixedBox(wrapLinesToWidth(strings.Split(commentsCellText, "\n"), commentsWidth), commentsWidth, m.styles.border)
+		commentsBox := renderFixedBox(gridtable.WrapLines(strings.Split(commentsCellText, "\n"), commentsWidth), commentsWidth, m.styles.border)
 		rendered = details + "\n\n" + commentsBox
 	} else {
-		commentsBox := renderFixedBox(wrapLinesToWidth(strings.Split(commentsCellText, "\n"), activityWidth), activityWidth, m.styles.border)
+		commentsBox := renderFixedBox(gridtable.WrapLines(strings.Split(commentsCellText, "\n"), activityWidth), activityWidth, m.styles.border)
 		rendered = lipgloss.JoinHorizontal(lipgloss.Top, details, "  ", commentsBox)
 	}
 

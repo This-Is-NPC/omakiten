@@ -10,6 +10,7 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/detailscreen"
+	"omakiten/internal/tui/components/gridtable"
 	"omakiten/internal/tui/components/viewport"
 )
 
@@ -66,9 +67,9 @@ func (m Model) renderCommentScreen() string {
 	if body == "" {
 		screen = screen.Span(m.styles.hint.Render("empty comment"))
 	} else {
-		// Pass the whole body as a single spanned row so renderGridTable wraps
-		// it inline; emitting one row per line would draw a horizontal border
-		// between every wrapped line and read like a price list.
+		// Pass the whole body as a single spanned row so gridtable.Render
+		// wraps it inline; emitting one row per line would draw a horizontal
+		// border between every wrapped line and read like a price list.
 		screen = screen.Span(strings.TrimRight(body, "\n"))
 	}
 
@@ -455,7 +456,7 @@ func (m Model) renderCommentCardSelected(comment domain.Comment, focused bool) s
 // footer. The cap is unconditional: long comments are read in the dedicated
 // comment screen (Enter on a focused comment), where they can scroll freely.
 func (m Model) cappedCommentBody(_ int64, body string, width int) string {
-	wrapped := wrapLinesToWidth(strings.Split(body, "\n"), width)
+	wrapped := gridtable.WrapLines(strings.Split(body, "\n"), width)
 	if len(wrapped) <= commentCardLineLimit {
 		return strings.Join(wrapped, "\n")
 	}

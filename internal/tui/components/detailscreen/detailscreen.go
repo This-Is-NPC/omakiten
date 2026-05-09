@@ -10,10 +10,11 @@
 // same conceptual surface, and changing one usually means changing the
 // other.
 //
-// Rendering primitives (renderGrid, padStyledLine, wrapLinesToWidth) are
-// kept private to this package so the public API stays small. Callers
-// build a screen via the chainable Builder methods, then call View() to
-// produce the scrollable content string ready to embed in the panel.
+// Rendering primitives (Render, WrapLines, PadLine) live in the leaf
+// gridtable package so the package-level summary tables and the detail
+// screens share one implementation. Callers build a screen via the
+// chainable Builder methods, then call View() to produce the
+// scrollable content string ready to embed in the panel.
 package detailscreen
 
 import (
@@ -22,8 +23,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 
+	"omakiten/internal/tui/components/gridtable"
 	"omakiten/internal/tui/components/viewport"
 )
 
@@ -131,7 +132,7 @@ func (m Model) LastEvent() viewport.Event { return m.Viewport.LastEvent() }
 // border paints the grid borders and the panel-internal vertical bars;
 // hint paints the "▲ N above · ▼ N below · j/k pgup/pgdn g/G" footer.
 func (m Model) View(viewportHeight int, border, hint lipgloss.Style) string {
-	rendered := renderGrid(m.rows, m.labelW, m.valueW, border)
+	rendered := gridtable.Render(m.rows, []int{m.labelW, m.valueW}, border)
 	if viewportHeight <= 0 {
 		return rendered
 	}
@@ -166,137 +167,3 @@ func kickerCount(l string, n int) string {
 	return infoStyle.Render(fmt.Sprintf("// %s · %d", strings.ToUpper(l), n))
 }
 func labelCell(label string) string { return infoStyle.Render("// " + strings.ToUpper(label)) }
-
-// renderGrid produces the multi-row, two-column table with shared
-// junctions used by every detail screen. A row with a single cell is
-// treated as a spanned row that covers the full width; the surrounding
-// horizontal dividers omit the internal junction so the spanned content
-// reads as a contiguous block instead of chopped halves.
-//
-// This is a private copy of the package-level renderGridTable in
-// internal/tui/helpers.go — keeping the implementation here so the
-// detailscreen package can be vendored or extracted without dragging
-// the rest of the TUI along. The two will drift if both are touched;
-// drift is OK because they serve different audiences (this one for
-// detail screens specifically; the helper for ad-hoc layouts).
-func renderGrid(rows [][]string, labelW, valueW int, border lipgloss.Style) string {
-	widths := []int{labelW, valueW}
-	n := len(widths)
-	if len(rows) == 0 {
-		return ""
-	}
-
-	totalWidth := labelW + valueW + 1
-
-	spanned := make([]bool, len(rows))
-	rowLines := make([][][]string, len(rows))
-	rowHeights := make([]int, len(rows))
-	for r, row := range rows {
-		if len(row) == 1 {
-			spanned[r] = true
-			lines := wrapLinesToWidth(strings.Split(row[0], "\n"), totalWidth)
-			rowLines[r] = [][]string{lines}
-			rowHeights[r] = len(lines)
-			continue
-		}
-		cells := make([][]string, n)
-		h := 0
-		for c := 0; c < n; c++ {
-			text := ""
-			if c < len(row) {
-				text = row[c]
-			}
-			lines := wrapLinesToWidth(strings.Split(text, "\n"), widths[c])
-			cells[c] = lines
-			if len(lines) > h {
-				h = len(lines)
-			}
-		}
-		for c := 0; c < n; c++ {
-			for len(cells[c]) < h {
-				cells[c] = append(cells[c], "")
-			}
-		}
-		rowLines[r] = cells
-		rowHeights[r] = h
-	}
-
-	horizontal := func(left, right string, aboveSpanned, belowSpanned bool) string {
-		var b strings.Builder
-		b.WriteString(border.Render(left))
-		for i, w := range widths {
-			b.WriteString(border.Render(strings.Repeat("─", w)))
-			if i < n-1 {
-				var junc string
-				switch {
-				case aboveSpanned && belowSpanned:
-					junc = "─"
-				case aboveSpanned && !belowSpanned:
-					junc = "┬"
-				case !aboveSpanned && belowSpanned:
-					junc = "┴"
-				default:
-					junc = "┼"
-				}
-				b.WriteString(border.Render(junc))
-			}
-		}
-		b.WriteString(border.Render(right))
-		return b.String()
-	}
-
-	bar := border.Render("│")
-	var out strings.Builder
-	out.WriteString(horizontal("┌", "┐", true, spanned[0]))
-	for r, h := range rowHeights {
-		for line := 0; line < h; line++ {
-			out.WriteString("\n")
-			out.WriteString(bar)
-			if spanned[r] {
-				out.WriteString(padStyledLine(rowLines[r][0][line], totalWidth))
-			} else {
-				for c, w := range widths {
-					out.WriteString(padStyledLine(rowLines[r][c][line], w))
-					if c < n-1 {
-						out.WriteString(bar)
-					}
-				}
-			}
-			out.WriteString(bar)
-		}
-		if r < len(rows)-1 {
-			out.WriteString("\n")
-			out.WriteString(horizontal("├", "┤", spanned[r], spanned[r+1]))
-		}
-	}
-	out.WriteString("\n")
-	out.WriteString(horizontal("└", "┘", spanned[len(rows)-1], true))
-	return out.String()
-}
-
-func wrapLinesToWidth(lines []string, width int) []string {
-	if width <= 0 {
-		width = 1
-	}
-	wrapped := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if lipgloss.Width(line) <= width {
-			wrapped = append(wrapped, line)
-			continue
-		}
-		parts := strings.Split(ansi.Wrap(line, width, " "), "\n")
-		wrapped = append(wrapped, parts...)
-	}
-	if len(wrapped) == 0 {
-		return []string{""}
-	}
-	return wrapped
-}
-
-func padStyledLine(line string, width int) string {
-	visible := lipgloss.Width(line)
-	if visible >= width {
-		return line
-	}
-	return line + strings.Repeat(" ", width-visible)
-}

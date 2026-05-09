@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/gridtable"
 )
 
 func (m Model) renderTaskCommentsCell(taskID int64) string {
@@ -143,7 +144,7 @@ func (m Model) renderSystemEventCard(ev domain.Event, focused bool) string {
 	// Wrap to the same content width as comments so long event labels (e.g.
 	// "task moved review → done · 2026-05-06 03:17:47") don't run past the
 	// panel border.
-	wrapped := wrapLinesToWidth([]string{line}, width)
+	wrapped := gridtable.WrapLines([]string{line}, width)
 	body := strings.Join(wrapped, "\n")
 	style := m.styles.systemEventCard.Width(m.commentCardWidth())
 	if focused {

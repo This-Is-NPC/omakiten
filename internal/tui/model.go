@@ -464,7 +464,7 @@ func (m Model) activityPanelWidth() int {
 // lipgloss treats Width as content+padding (border excluded), so the visible
 // card occupies Width()+2 cells. We subtract enough from the panel width to
 // leave a 2-cell margin inside the activity box — without that margin lines
-// occasionally tipped past the box's inner edge and wrapLinesToWidth would
+// occasionally tipped past the box's inner edge and gridtable.WrapLines would
 // chop the card mid-row, which the user reported as "cards quebram".
 func (m Model) commentCardWidth() int {
 	return m.activityPanelWidth() - 6
