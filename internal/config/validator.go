@@ -82,6 +82,24 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	if err := validateTUISettings(bundle.Config.TUI); err != nil {
 		return err
 	}
+	if err := validateSQLiteSettings(bundle.Config.SQLite); err != nil {
+		return err
+	}
+	if err := validateActivityLogSettings(bundle.Config.ActivityLog); err != nil {
+		return err
+	}
+	if err := validateSolutionsSettings(bundle.Config.Solutions); err != nil {
+		return err
+	}
+	if err := validateEventsSettings(bundle.Config.Events); err != nil {
+		return err
+	}
+	if err := validateSearchSettings(bundle.Config.Search); err != nil {
+		return err
+	}
+	if err := validateTagSynonyms(bundle.Config.TagSynonyms); err != nil {
+		return err
+	}
 	if err := validatePriorities(bundle.Config.Priorities); err != nil {
 		return err
 	}
@@ -247,6 +265,107 @@ func validateMCPSettings(m MCPSettings) error {
 	}
 	if m.SimilarTaskLimit <= 0 {
 		return fmt.Errorf("config.mcp.similar_task_limit: must be > 0 (see defaults/omakiten.yaml)")
+	}
+	return nil
+}
+
+// validateSQLiteSettings enforces the SQLite connection-tuning block.
+// Required and non-zero; the kit ships the canonical busy_timeout the
+// user inherits at install time.
+func validateSQLiteSettings(s SQLiteSettings) error {
+	if s.BusyTimeoutMs <= 0 {
+		return fmt.Errorf("config.sqlite.busy_timeout_ms: must be > 0 (see defaults/omakiten.yaml)")
+	}
+	return nil
+}
+
+// validateActivityLogSettings enforces the operation-log retention
+// block. Both knobs are required and positive — disabling retention is
+// not a supported mode (the activity log would grow unbounded).
+func validateActivityLogSettings(a ActivityLogSettings) error {
+	if a.MaxRows <= 0 {
+		return fmt.Errorf("config.activity_log.max_rows: must be > 0 (see defaults/omakiten.yaml)")
+	}
+	if a.MaxAgeDays <= 0 {
+		return fmt.Errorf("config.activity_log.max_age_days: must be > 0 (see defaults/omakiten.yaml)")
+	}
+	return nil
+}
+
+// validateSolutionsSettings enforces the solutions.list_top limits.
+// Both required; max must be >= default so the validator catches an
+// inverted range that would clamp every caller below the implicit
+// floor.
+func validateSolutionsSettings(s SolutionsSettings) error {
+	if s.DefaultTopLimit <= 0 {
+		return fmt.Errorf("config.solutions.default_top_limit: must be > 0 (see defaults/omakiten.yaml)")
+	}
+	if s.MaxTopLimit <= 0 {
+		return fmt.Errorf("config.solutions.max_top_limit: must be > 0 (see defaults/omakiten.yaml)")
+	}
+	if s.MaxTopLimit < s.DefaultTopLimit {
+		return fmt.Errorf("config.solutions: max_top_limit (%d) must be >= default_top_limit (%d)", s.MaxTopLimit, s.DefaultTopLimit)
+	}
+	return nil
+}
+
+// validateEventsSettings enforces the events.default_recent_limit
+// fallback used by ListRecentEvents.
+func validateEventsSettings(e EventsSettings) error {
+	if e.DefaultRecentLimit <= 0 {
+		return fmt.Errorf("config.events.default_recent_limit: must be > 0 (see defaults/omakiten.yaml)")
+	}
+	return nil
+}
+
+// validateSearchSettings enforces the stopwords block. Non-empty so
+// multilingual users have a clear extension point: edit the YAML to
+// add Portuguese/Spanish/etc. stopwords without touching code.
+func validateSearchSettings(s SearchSettings) error {
+	if len(s.Stopwords) == 0 {
+		return fmt.Errorf("config.search.stopwords: required non-empty list (see defaults/omakiten.yaml)")
+	}
+	seen := map[string]struct{}{}
+	for _, word := range s.Stopwords {
+		trimmed := strings.TrimSpace(word)
+		if trimmed == "" {
+			return fmt.Errorf("config.search.stopwords: empty entry")
+		}
+		if trimmed != strings.ToLower(trimmed) {
+			return fmt.Errorf("config.search.stopwords: entry %q must be lowercase (matching tokenizer output)", word)
+		}
+		if _, dup := seen[trimmed]; dup {
+			return fmt.Errorf("config.search.stopwords: duplicate %q", trimmed)
+		}
+		seen[trimmed] = struct{}{}
+	}
+	return nil
+}
+
+// validateTagSynonyms enforces the alias map shape: keys and values
+// are non-empty kebab-case slugs, no entry maps a slug to itself, and
+// no value is itself a key (which would create a two-hop normalisation
+// chain the runtime does not follow). Empty map is allowed — users may
+// remove aliases entirely.
+func validateTagSynonyms(syns map[string]string) error {
+	if len(syns) == 0 {
+		return fmt.Errorf("config.tag_synonyms: required non-empty map (see defaults/omakiten.yaml)")
+	}
+	for from, to := range syns {
+		fromTrim := strings.TrimSpace(from)
+		toTrim := strings.TrimSpace(to)
+		if fromTrim == "" {
+			return fmt.Errorf("config.tag_synonyms: empty key")
+		}
+		if toTrim == "" {
+			return fmt.Errorf("config.tag_synonyms[%q]: empty target", from)
+		}
+		if fromTrim == toTrim {
+			return fmt.Errorf("config.tag_synonyms[%q]: maps to itself", from)
+		}
+		if _, chain := syns[toTrim]; chain {
+			return fmt.Errorf("config.tag_synonyms[%q]: target %q is itself a key (two-hop chains are not resolved)", from, to)
+		}
 	}
 	return nil
 }

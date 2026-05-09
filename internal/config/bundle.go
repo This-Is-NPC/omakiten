@@ -104,14 +104,20 @@ type Kit struct {
 }
 
 type Settings struct {
-	Output           OutputSettings   `yaml:"output" json:"output"`
-	Context          ContextSettings  `yaml:"context" json:"context"`
-	Workflow         WorkflowSettings `yaml:"workflow" json:"workflow"`
-	Theme            ThemeSettings    `yaml:"theme" json:"theme"`
-	TemplateDefaults []string         `yaml:"template_defaults,omitempty" json:"template_defaults,omitempty"`
-	Views            ViewSettings     `yaml:"views,omitempty" json:"views,omitempty"`
-	MCP              MCPSettings      `yaml:"mcp,omitempty" json:"mcp,omitempty"`
-	TUI              TUISettings      `yaml:"tui,omitempty" json:"tui,omitempty"`
+	Output           OutputSettings      `yaml:"output" json:"output"`
+	Context          ContextSettings     `yaml:"context" json:"context"`
+	Workflow         WorkflowSettings    `yaml:"workflow" json:"workflow"`
+	Theme            ThemeSettings       `yaml:"theme" json:"theme"`
+	TemplateDefaults []string            `yaml:"template_defaults,omitempty" json:"template_defaults,omitempty"`
+	Views            ViewSettings        `yaml:"views,omitempty" json:"views,omitempty"`
+	MCP              MCPSettings         `yaml:"mcp,omitempty" json:"mcp,omitempty"`
+	TUI              TUISettings         `yaml:"tui,omitempty" json:"tui,omitempty"`
+	SQLite           SQLiteSettings      `yaml:"sqlite,omitempty" json:"sqlite,omitempty"`
+	ActivityLog      ActivityLogSettings `yaml:"activity_log,omitempty" json:"activity_log,omitempty"`
+	Solutions        SolutionsSettings   `yaml:"solutions,omitempty" json:"solutions,omitempty"`
+	Events           EventsSettings      `yaml:"events,omitempty" json:"events,omitempty"`
+	Search           SearchSettings      `yaml:"search,omitempty" json:"search,omitempty"`
+	TagSynonyms      map[string]string   `yaml:"tag_synonyms,omitempty" json:"tag_synonyms,omitempty"`
 	// Priorities is the configurable id↔value table for task priorities.
 	// Code references the id (opaque); renderers resolve the value via
 	// lookup. Authors who want to rename, add, or reorder priority labels
@@ -285,6 +291,63 @@ func (m MCPSettings) EffectiveSimilarTaskLimit() int   { return m.SimilarTaskLim
 type ContextSettings struct {
 	DefaultLevel int `yaml:"default_level" json:"default_level"`
 	MaxTokens    int `yaml:"max_tokens" json:"max_tokens"`
+}
+
+// SQLiteSettings tunes the connection-level SQLite knobs the Store applies
+// at Open time. Required block — the kit's defaults/omakiten.yaml ships
+// the canonical value the user inherits at install time. PRAGMAs that
+// describe correctness invariants (foreign_keys=ON, journal_mode=WAL,
+// synchronous=NORMAL) intentionally stay in code: they encode the
+// engine-level contract Omakiten depends on, not user preference.
+type SQLiteSettings struct {
+	// BusyTimeoutMs sets PRAGMA busy_timeout. Required; validator
+	// demands > 0. Larger DBs or systems with concurrent writers may
+	// need a higher value than the kit's default.
+	BusyTimeoutMs int `yaml:"busy_timeout_ms" json:"busy_timeout_ms"`
+}
+
+// ActivityLogSettings declares the retention window for the per-call
+// `operation` event log used by the activity feed. Required block — the
+// kit ships the canonical values; users with longer support windows
+// can raise MaxAgeDays without a code change.
+type ActivityLogSettings struct {
+	// MaxRows caps how many `operation` rows survive after a prune
+	// pass. Older rows are deleted in id-DESC order. Required; > 0.
+	MaxRows int `yaml:"max_rows" json:"max_rows"`
+	// MaxAgeDays prunes `operation` rows older than this many days.
+	// Required; > 0.
+	MaxAgeDays int `yaml:"max_age_days" json:"max_age_days"`
+}
+
+// SolutionsSettings caps the `solutions.list_top` MCP response shape.
+// DefaultTopLimit applies when a caller passes <=0; MaxTopLimit clamps
+// caller-supplied limits so MCP responses stay bounded regardless of
+// what the agent asks for. Required block.
+type SolutionsSettings struct {
+	// DefaultTopLimit is the limit applied when the caller omits one.
+	// Required; > 0.
+	DefaultTopLimit int `yaml:"default_top_limit" json:"default_top_limit"`
+	// MaxTopLimit caps caller-supplied limits. Required; >=
+	// DefaultTopLimit so the validator catches inverted ranges.
+	MaxTopLimit int `yaml:"max_top_limit" json:"max_top_limit"`
+}
+
+// EventsSettings declares the fallback recent-events limit used by
+// `Store.ListRecentEvents` when callers pass <=0. Required block.
+type EventsSettings struct {
+	// DefaultRecentLimit is the fallback row count applied when the
+	// caller passes <=0. Required; > 0.
+	DefaultRecentLimit int `yaml:"default_recent_limit" json:"default_recent_limit"`
+}
+
+// SearchSettings tunes text-similarity heuristics shared across
+// agent-side ranking (similar-task hints, query overlap scoring).
+// Required block — the kit ships an English baseline; multilingual
+// users add Portuguese/Spanish/etc. words without a code change.
+type SearchSettings struct {
+	// Stopwords are the lowercase tokens dropped before computing
+	// overlap scores. Required; non-empty.
+	Stopwords []string `yaml:"stopwords" json:"stopwords"`
 }
 
 // TUISettings tunes how the terminal UI presents data. Required block

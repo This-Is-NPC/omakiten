@@ -45,6 +45,12 @@ config:
     graph: { sort: {field: id, order: asc} }
     logs: { sort: {order: desc}, limit: 50, filter: {source: []} }
     task_activity: { sort: {order: asc} }
+  sqlite: { busy_timeout_ms: 5000 }
+  activity_log: { max_rows: 500, max_age_days: 7 }
+  solutions: { default_top_limit: 10, max_top_limit: 100 }
+  events: { default_recent_limit: 50 }
+  search: { stopwords: [and, the] }
+  tag_synonyms: { golang: go }
 workflows:
   - id: 1
     key: default
@@ -146,6 +152,12 @@ config:
     graph: { sort: {field: id, order: asc} }
     logs: { sort: {order: desc}, limit: 50, filter: {source: []} }
     task_activity: { sort: {order: asc} }
+  sqlite: { busy_timeout_ms: 5000 }
+  activity_log: { max_rows: 500, max_age_days: 7 }
+  solutions: { default_top_limit: 10, max_top_limit: 100 }
+  events: { default_recent_limit: 50 }
+  search: { stopwords: [and, the] }
+  tag_synonyms: { golang: go }
 workflows:
   - id: 1
     key: default
@@ -205,6 +217,12 @@ config:
     graph: { sort: {field: id, order: asc} }
     logs: { sort: {order: desc}, limit: 50, filter: {source: []} }
     task_activity: { sort: {order: asc} }
+  sqlite: { busy_timeout_ms: 5000 }
+  activity_log: { max_rows: 500, max_age_days: 7 }
+  solutions: { default_top_limit: 10, max_top_limit: 100 }
+  events: { default_recent_limit: 50 }
+  search: { stopwords: [and, the] }
+  tag_synonyms: { golang: go }
 workflows:
   - id: 1
     key: default

@@ -161,6 +161,45 @@ func mergeKitDefaults(b *config.Bundle) {
 		cfg.TUI.TokenBadge.RedAt = kit.TUI.TokenBadge.RedAt
 	}
 
+	// SQLite knobs: only one field today.
+	if cfg.SQLite.BusyTimeoutMs == 0 {
+		cfg.SQLite.BusyTimeoutMs = kit.SQLite.BusyTimeoutMs
+	}
+
+	// Activity log retention.
+	if cfg.ActivityLog.MaxRows == 0 {
+		cfg.ActivityLog.MaxRows = kit.ActivityLog.MaxRows
+	}
+	if cfg.ActivityLog.MaxAgeDays == 0 {
+		cfg.ActivityLog.MaxAgeDays = kit.ActivityLog.MaxAgeDays
+	}
+
+	// Solutions limits.
+	if cfg.Solutions.DefaultTopLimit == 0 {
+		cfg.Solutions.DefaultTopLimit = kit.Solutions.DefaultTopLimit
+	}
+	if cfg.Solutions.MaxTopLimit == 0 {
+		cfg.Solutions.MaxTopLimit = kit.Solutions.MaxTopLimit
+	}
+
+	// Events fallback.
+	if cfg.Events.DefaultRecentLimit == 0 {
+		cfg.Events.DefaultRecentLimit = kit.Events.DefaultRecentLimit
+	}
+
+	// Search stopwords.
+	if len(cfg.Search.Stopwords) == 0 {
+		cfg.Search.Stopwords = append([]string(nil), kit.Search.Stopwords...)
+	}
+
+	// Tag synonyms.
+	if len(cfg.TagSynonyms) == 0 {
+		cfg.TagSynonyms = make(map[string]string, len(kit.TagSynonyms))
+		for k, v := range kit.TagSynonyms {
+			cfg.TagSynonyms[k] = v
+		}
+	}
+
 	// Views: each sub-block fills its omitted fields.
 	mergeViewSettings(&cfg.Views, kit.Views)
 }
