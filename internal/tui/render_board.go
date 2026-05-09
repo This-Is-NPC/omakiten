@@ -135,16 +135,21 @@ func (m *Model) syncFocusedColumnScroll() {
 		offset = m.cardIdx
 	}
 	for offset < m.cardIdx {
+		// Match the renderer's reservation: above-hint (when offset>0) and
+		// below-hint (when more cards remain) each cost one viewport row.
+		aboveReserve := 0
+		if offset > 0 {
+			aboveReserve = 1
+		}
 		used := 0
 		fits := true
 		for i := offset; i <= m.cardIdx; i++ {
 			used += heights[i]
-			// Reserve 1 row for the "▼ N below" hint when more cards remain.
-			reserve := 0
+			belowReserve := 0
 			if i < len(tasks)-1 {
-				reserve = 1
+				belowReserve = 1
 			}
-			if used+reserve > viewport {
+			if used+aboveReserve+belowReserve > viewport {
 				fits = false
 				break
 			}
@@ -400,15 +405,23 @@ func (m Model) renderKanbanCell(bucket domain.Bucket, tasks []domain.Task, focus
 		offset = len(rendered) - 1
 	}
 
+	// Reserve one viewport row for the "▲ above" hint when scrolled past
+	// the first card AND one for the "▼ below" hint when more cards remain.
+	// Without the above-hint reservation, a tall lane scrolled past row 0
+	// would render one extra card row beyond the budget — pushing the
+	// column box past the terminal floor when below-hint also fires.
+	aboveReserve := 0
+	if offset > 0 {
+		aboveReserve = 1
+	}
 	used := 0
 	end := offset
 	for end < len(rendered) {
-		// Reserve 1 row for the "▼ N below" hint when there is more content.
-		reserve := 0
+		belowReserve := 0
 		if end < len(rendered)-1 {
-			reserve = 1
+			belowReserve = 1
 		}
-		if used+heights[end]+reserve > viewport {
+		if used+heights[end]+aboveReserve+belowReserve > viewport {
 			break
 		}
 		used += heights[end]

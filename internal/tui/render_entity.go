@@ -111,14 +111,23 @@ func (m Model) renderEntityCellWithViewport(kind entityKind, viewport int, conte
 		rowOffset = numRows - 1
 	}
 
+	// Reserve one viewport row for the "▲ above" hint when scrolled past
+	// the first grid row, AND one for the "▼ below" hint when more rows
+	// remain past `end`. Without the above-hint reservation the grid spilled
+	// past the terminal when the user navigated to the last tag (rowOffset
+	// > 0 + cardsBelow == 0 still costs a hint row at the top).
+	aboveReserve := 0
+	if rowOffset > 0 {
+		aboveReserve = 1
+	}
 	used := 0
 	end := rowOffset
 	for end < numRows {
-		reserve := 0
+		belowReserve := 0
 		if end < numRows-1 {
-			reserve = 1
+			belowReserve = 1
 		}
-		if used+rowHeights[end]+reserve > viewport {
+		if used+rowHeights[end]+aboveReserve+belowReserve > viewport {
 			break
 		}
 		used += rowHeights[end]
@@ -233,14 +242,20 @@ func (m *Model) syncFocusedEntityScroll() {
 		rowOffset = cursorRow
 	}
 	for rowOffset < cursorRow {
+		// Match the renderer's reservation: above-hint (when rowOffset>0)
+		// and below-hint (when more rows remain) each cost one row.
+		aboveReserve := 0
+		if rowOffset > 0 {
+			aboveReserve = 1
+		}
 		used := 0
 		fits := true
 		for r := rowOffset; r <= cursorRow; r++ {
-			reserve := 0
+			belowReserve := 0
 			if r < numRows-1 {
-				reserve = 1
+				belowReserve = 1
 			}
-			if used+rowHeights[r]+reserve > viewport {
+			if used+rowHeights[r]+aboveReserve+belowReserve > viewport {
 				fits = false
 				break
 			}
