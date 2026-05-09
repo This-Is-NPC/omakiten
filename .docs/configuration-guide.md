@@ -229,7 +229,7 @@ Omitting the block keeps the canonical kit (`{1=low, 2=normal default, 3=high}`)
 
 #### How the runtime wires it
 
-The composition roots (`internal/cli/root.go` and `internal/agentruntime/runtime.go`) install the resolved table into the process-global priority registry (`internal/domain/task.go`) at startup. From that point on, `Priority(2).Label()` returns `"normal"`, `domain.PriorityFromLabel("high")` returns `(3, true)`, and JSON marshaling of `Priority(3)` emits `"high"`. Tests register the canonical kit via `testfixtures.RegisterCanonicalPriorities()` to mirror the production wiring.
+`app.ConfigService.Import` (called from both composition roots — `internal/cli/root.go` and `internal/agentruntime/runtime.go`) installs the resolved table into the process-global priority registry (`internal/domain/task.go`) via `registerEnumsFromBundle`, between `LoadBundle` (validate) and `ImportBundle` (write). From that point on, `Priority(2).Label()` returns `"normal"`, `domain.PriorityFromLabel("high")` returns `(3, true)`, and JSON marshaling of `Priority(3)` emits `"high"`. Tests register the canonical kit via `testfixtures.RegisterCanonicalPriorities()` to mirror the production wiring.
 
 #### Worked example — adding an "urgent" priority
 
@@ -792,6 +792,12 @@ For each per-entity folder (`skills/`, `laws/`, `personas/`, `templates/`):
 | Two templates claiming the same `(default, project)` | `templates.<a> and templates.<b> both declare default="<kind>" (<scope>)` |
 | Bad view sort/filter | `config.views.<view>.* "<v>" is not one of [...]` |
 | Project laws referencing a non-existent law | `projects.<slug> laws: ref "<slug>" has no matching law file` |
+| Missing/zero `config.sqlite.busy_timeout_ms` | `config.sqlite.busy_timeout_ms: must be > 0 (see defaults/omakiten.yaml)` |
+| Missing/zero `config.activity_log.{max_rows, max_age_days}` | `config.activity_log.max_rows: must be > 0 (see defaults/omakiten.yaml)` |
+| Missing/zero `config.solutions.*` or inverted range | `config.solutions: max_top_limit (<n>) must be >= default_top_limit (<n>)` |
+| Missing/zero `config.events.default_recent_limit` | `config.events.default_recent_limit: must be > 0 (see defaults/omakiten.yaml)` |
+| Empty/uppercase/duplicate `config.search.stopwords` | `config.search.stopwords: entry "X" must be lowercase (matching tokenizer output)` |
+| Empty / self-loop / two-hop `config.tag_synonyms` | `config.tag_synonyms[<key>]: target "<v>" is itself a key (two-hop chains are not resolved)` |
 
 All errors are returned as plain Go errors in CLI flows (rendered through the JSON envelope) and as `config_invalid` coded errors when surfaced through the agent layer (`internal/domain/errors.go`).
 
@@ -817,6 +823,12 @@ config:
     board: { sort: { field: created_at, order: desc }, filter: { priority: [high, normal] } }
     table: { sort: { field: title,      order: asc  } }
     logs:  { limit: 100 }
+  sqlite:       { busy_timeout_ms: 5000 }
+  activity_log: { max_rows: 500, max_age_days: 7 }
+  solutions:    { default_top_limit: 10, max_top_limit: 100 }
+  events:       { default_recent_limit: 50 }
+  search:       { stopwords: [and, are, for, from, into, the, this, that, with] }
+  tag_synonyms: { golang: go, javascript: js, k8s: kubernetes }
 
 workflows:
   - id: 1

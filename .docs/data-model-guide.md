@@ -297,10 +297,12 @@ The event row carries every column it might need; unused columns are nullable. T
 
 ### Pruning policy (operations only)
 
-After every successful operation insert, the `operation` rows are pruned synchronously by `internal/sqlite/activity_logs.go:PruneActivityLogs`:
+After every successful operation insert, the `operation` rows are pruned synchronously by `internal/sqlite/activity_logs.go:PruneActivityLogs`. Both knobs come from the user's bundle (`config.activity_log.max_rows`, `config.activity_log.max_age_days`) and are wired into the `Store` at composition-root time via `Store.SetActivityLogRetention`. The kit canonical (`defaults/omakiten.yaml`) ships:
 
-- **Max age**: 7 days (`activityLogMaxAgeDays`).
-- **Max rows**: 500 most-recent (`activityLogMaxRows`).
+- **Max age**: 7 days (`config.activity_log.max_age_days`).
+- **Max rows**: 500 most-recent (`config.activity_log.max_rows`).
+
+Both fields are validator-required (> 0) — disabling retention is not a supported mode.
 
 **Comments and task lifecycle events are not pruned** — they are durable history. Pruning is scoped to `event_type='operation'`.
 
