@@ -228,6 +228,7 @@ func (m *Model) openTaskCreate() {
 	m.taskID = 0
 	m.taskTitleInput = newTaskTitleInput()
 	m.taskDescriptionInput = newTaskDescriptionInput()
+	m.resizeTaskDescriptionInput()
 	// Default the form to the priority flagged `default: true` in
 	// config.priorities, falling back to the middle entry when none is
 	// flagged. priorityZero falls through to the storage column DEFAULT.
@@ -314,12 +315,37 @@ func (m *Model) openTaskEdit(task domain.Task) {
 	m.taskTitleInput.SetCursor(len(task.Title))
 	m.taskDescriptionInput = newTaskDescriptionInput()
 	m.taskDescriptionInput.SetValue(task.Description)
+	// Calibrate the persistent textarea geometry BEFORE CursorEnd so
+	// the end-of-content scroll is computed against the wrap width
+	// the user will actually see. Without this the persistent
+	// viewport keeps the bubbles default (40 cols / 6 rows) and any
+	// downstream Update(msg) operates against that stale wrap; the
+	// render path's per-call SetWidth on a copy can't repair it
+	// because the copy is discarded. See multilineform.Resize for
+	// the full explanation.
+	m.resizeTaskDescriptionInput()
 	m.taskDescriptionInput.CursorEnd()
 	m.taskPriority = task.Priority
 	m.taskField = taskFieldTitle
 	m.applyTaskFieldFocus()
 	m.status = "Editing task"
 	m.moveMode = false
+}
+
+// resizeTaskDescriptionInput keeps the persistent task description
+// textarea sized to match what renderTaskDescriptionField will pass
+// to multilineform.Render. Without this, the textarea retains the
+// bubbles package-default geometry and the first keystroke after
+// focus desyncs the viewport — the field appears to vanish. Called
+// from every entry point that mutates m.taskDescriptionInput so the
+// invariant holds across create / edit transitions.
+func (m *Model) resizeTaskDescriptionInput() {
+	multilineform.Resize(
+		&m.taskDescriptionInput,
+		m.taskFormWidth(),
+		taskDescriptionInputHeight,
+		m.styles.multilineFormTheme(),
+	)
 }
 
 func (m *Model) closeTaskScreen(status string) {
