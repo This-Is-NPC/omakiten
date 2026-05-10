@@ -1,5 +1,5 @@
 // Package events declares the in-process event bus that downstream
-// consumers (hooks engine, future buddies, future TUI live views)
+// consumers (hooks engine, future notifications, future TUI live views)
 // subscribe to. The bus is panic-safe and synchronous: subscribers run
 // on the publisher's goroutine so UI callers can rely on
 // "publish returned" meaning "every subscriber observed it" — except

@@ -93,6 +93,51 @@ Always returns nil. Used by tests and as a smoke option in user yamls
 when you want to confirm the engine sees an event without side-effects.
 Takes no args.
 
+### Notification hooks (`notification: <slug>`)
+
+Notification hooks ship a notification card over the TUI when the event
+matches. They use a different shape from the action hooks above: the
+entry carries `notification: <slug>` instead of `do:` + `args:`. Mixing the
+two shapes in the same entry fails validation.
+
+```yaml
+hooks:
+  - on: guard.violated
+    notification: task-guard             # → notifications/task-guard.yaml
+  - on: comment
+    when: { author_type: agent }
+    notification: agent-note
+    message: "Agent comment"             # optional hook-level message fallback
+    detail_message_field: hint            # optional second page shown with tab
+```
+
+The hook entry may carry `message:` (literal) or `message_field:`
+(payload key) as a **fallback** the action consults when the
+referenced notification YAML did not declare its own. Notification YAML wins on
+tie-break — see [`notifications.md`](notifications.md#message-resolution) for
+the full precedence table.
+
+The hook entry may also carry `detail_message:` or `detail_message_field:`.
+When either resolves to text, the TUI card shows the normal short message first;
+pressing `tab` toggles to the detail page. This is intended for funny short copy
+plus the complete guard/error hint. Detail fields are optional and are ignored
+outside the TUI just like the notification itself.
+
+Every render knob (animation, position, dismiss, message text, card
+size, colors) lives inside the notification YAML — `omakiten.yaml` only
+links events to slugs. See [`notifications.md`](notifications.md) for the notification
+schema.
+
+The hook is rejected at `LoadBundle` when:
+
+- `notification: <slug>` references a notification that is not loaded (no matching
+  `notifications/<slug>.yaml` or `notifications/custom/<slug>.yaml`);
+- both `notification:` and `do:` are set in the same entry;
+- neither `notification:` nor `do:` is set.
+
+Outside the TUI (CLI / MCP processes) the notification dispatch is a silent
+no-op so the same hook block stays valid in every entry point.
+
 ## Recipes
 
 ### Log every blocked delete
@@ -138,6 +183,38 @@ config:
 
 The script reads the JSON event from stdin and can call
 `jq -r .entity_id` to pull the archived task's id.
+
+### Show a notification when a guard blocks delete
+
+```yaml
+config:
+  hooks:
+    - on: guard.violated
+      when: { operation: task.delete }
+      notification: task-delete-warning
+      message: "Trying to burn the quest log? Adorable."
+      detail_message_field: hint
+```
+
+Every render knob (position, animation, dismiss) lives inside the notification
+YAML. The hook supplies the short message and, when useful, a detail field such
+as `hint` for the second page. To customise per event, copy the notification file to
+`notifications/custom/<your-slug>.yaml`, change the slug, and reference it
+from a new hook entry.
+
+### Surface every agent comment for 8 seconds
+
+```yaml
+config:
+  hooks:
+    - on: comment
+      when: { author_type: agent }
+      notification: agent-note
+```
+
+Assuming `notifications/agent-note.yaml` carries `dismiss: { mode: timeout,
+after_ms: 12000, keys: [...] }` and `message_field: body`, the comment renders
+inline, can be closed manually, and disappears 12s after settling.
 
 ### Filter by author_type or source
 

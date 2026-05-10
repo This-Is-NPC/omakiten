@@ -13,11 +13,16 @@ import (
 // unknown actions so typos surface at LoadBundle, not at first event.
 type HookActionResolver func(name string) bool
 
-// ValidateHooks runs the hooks block through the catalog + action
-// checks. on:/event_type must be a known event type; do: must be
-// registered. exec actions need a non-empty argv array. Empty hooks
-// list is allowed.
-func ValidateHooks(hooks []HookSpec, isAction HookActionResolver) error {
+// ValidateHooks runs the hooks block through the catalog + ref
+// checks. Each entry is one of two mutually-exclusive shapes:
+//
+//   - action:   on + when + do + args (legacy exec/noop dispatch)
+//   - notification:    on + when + notification:<slug>  (notification card)
+//
+// `do:` must name a registered action; `notification:` must resolve to a
+// loaded notification. on/event_type must be a known event type. Empty
+// hooks list is allowed.
+func ValidateHooks(hooks []HookSpec, isAction HookActionResolver, notifications map[string]Notification) error {
 	for i, h := range hooks {
 		on := strings.TrimSpace(h.On)
 		if on == "" {
@@ -26,20 +31,54 @@ func ValidateHooks(hooks []HookSpec, isAction HookActionResolver) error {
 		if !domain.IsKnownEventType(on) {
 			return fmt.Errorf("config.hooks[%d]: unknown event_type %q (see internal/domain/event.go::KnownEventTypes)", i, on)
 		}
+
 		do := strings.TrimSpace(h.Do)
-		if do == "" {
-			return fmt.Errorf("config.hooks[%d]: do is required", i)
-		}
-		if isAction != nil && !isAction(do) {
-			return fmt.Errorf("config.hooks[%d]: unknown action %q (register it before LoadBundle)", i, do)
-		}
-		if do == "exec" {
-			if err := validateExecArgs(i, h.Args); err != nil {
-				return err
+		notificationSlug := strings.TrimSpace(h.Notification)
+		switch {
+		case do == "" && notificationSlug == "":
+			return fmt.Errorf("config.hooks[%d]: one of do or notification is required", i)
+		case do != "" && notificationSlug != "":
+			return fmt.Errorf("config.hooks[%d]: do and notification are mutually exclusive — pick one", i)
+		case notificationSlug != "":
+			bud, ok := notifications[notificationSlug]
+			if !ok {
+				return fmt.Errorf("config.hooks[%d]: notification %q not loaded (declare a notifications/%s.yaml file)", i, notificationSlug, notificationSlug)
+			}
+			if strings.TrimSpace(h.Message) != "" && strings.TrimSpace(h.MessageField) != "" {
+				return fmt.Errorf("config.hooks[%d]: message and message_field are mutually exclusive — pick one", i)
+			}
+			if strings.TrimSpace(h.DetailMessage) != "" && strings.TrimSpace(h.DetailMessageField) != "" {
+				return fmt.Errorf("config.hooks[%d]: detail_message and detail_message_field are mutually exclusive — pick one", i)
+			}
+			if !notificationOrHookHasMessageSource(bud, h) {
+				return fmt.Errorf("config.hooks[%d]: notification %q declares no message/message_field and the hook supplies neither — set one on either layer", i, notificationSlug)
+			}
+		case do != "":
+			if isAction != nil && !isAction(do) {
+				return fmt.Errorf("config.hooks[%d]: unknown action %q (register it before LoadBundle)", i, do)
+			}
+			if do == "exec" {
+				if err := validateExecArgs(i, h.Args); err != nil {
+					return err
+				}
 			}
 		}
 	}
 	return nil
+}
+
+// notificationOrHookHasMessageSource reports whether the (notification, hook) pair
+// resolves to at least one bubble-text source. Either layer may
+// supply a literal `message` or a payload-driven `message_field`;
+// the action picks the notification layer first when both are set.
+func notificationOrHookHasMessageSource(bud Notification, h HookSpec) bool {
+	if strings.TrimSpace(bud.Message) != "" || strings.TrimSpace(bud.MessageField) != "" {
+		return true
+	}
+	if strings.TrimSpace(h.Message) != "" || strings.TrimSpace(h.MessageField) != "" {
+		return true
+	}
+	return false
 }
 
 func validateExecArgs(i int, args map[string]interface{}) error {

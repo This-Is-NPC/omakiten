@@ -48,7 +48,7 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -108,7 +108,7 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -191,7 +191,7 @@ func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -239,7 +239,7 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -309,7 +309,7 @@ func TestActivityScrollKeepsFocusedCardVisible(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
@@ -378,7 +378,7 @@ func TestActivityScrollResyncsOnResize(t *testing.T) {
 		Entries:      store,
 		Events:       store,
 		Config:       store,
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities)
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}

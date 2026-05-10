@@ -7,9 +7,9 @@ Omakiten persists every state-changing operation as a row in the unified
   activity column (TUI / MCP `tasks.continue`).
 - **Logs view** — `event_type='operation'` rows are the per-call activity
   log written by `activity.Track`.
-- **Domain audit / metrics** — every other event_type (task.*, comment.*,
-  tag.*, dependency.*, guard.*, error.*, solution.*) is what this guide
-  catalogs.
+- **Domain audit / metrics** — every other event_type (task.*, comment,
+  comment.*, tag.*, dependency.*, guard.*, error.*, solution.*) is what
+  this guide catalogs.
 
 The catalog is closed: `internal/domain/event.go::KnownEventTypes` is the
 single source of truth and the config validator rejects overrides
@@ -26,7 +26,7 @@ referencing values outside it.
 | `task.removed`        | system (project-scoped) | `Store.HardDeleteTask`                                        | `{project_id, task_id, title, bucket_key, state}`              | cli / mcp / tui   | true        |
 | `task.archived`       | task                    | `Store.SetTaskState(archived)`                                | `{from_bucket, to_bucket, from_state, to_state}`               | cli / mcp / tui   | true        |
 | `task.unarchived`     | task                    | `Store.SetTaskState(active)`                                  | `{from_bucket, to_bucket, from_state, to_state}`               | cli / mcp / tui   | true        |
-| `comment` (=`comment.created`) | task           | `Store.AddComment` (raw insert; this row IS the comment data) | comment body in `body` column; `Tags` via `event_tags`         | cli / mcp / tui   | true (data; gating not honored — see note) |
+| `comment`             | task                    | `Store.AddComment` (raw insert; this row IS the comment data) | comment body in `body` column; `Tags` via `event_tags`         | cli / mcp / tui   | true (data; gating not honored — see note) |
 | `comment.edited`      | task                    | `Store.UpdateComment`                                         | `{comment_id, body:{from,to}?}`                                | cli / mcp / tui   | true        |
 | `comment.removed`     | task                    | `Store.DeleteComment`                                         | `{comment_id, author_type, body}`                              | cli / mcp / tui   | true        |
 | `tag.added`           | task / project / error  | `TagService.Add`                                              | `{entity_type, entity_id, tag_id, tag_name}`                   | cli / mcp / tui   | **false**   |
@@ -142,7 +142,7 @@ All three channels are now consumed at runtime:
 - `log` — gated inside `Store.RecordTaskEvent` / `RecordEntityEvent` /
   inline-tx `insertTaskEvent` callsites. When false, the row is dropped
   before insertion; the bus still receives a synthetic in-memory event
-  so subscribers (hooks, future buddies) cannot be silenced by a
+  so subscribers (hooks, future notifications) cannot be silenced by a
   log-only opt-out.
 - `broadcast` — gated inside `events.Bus.Publish`. When false, the bus
   short-circuits the fan-out before walking subscribers.

@@ -26,7 +26,7 @@ type ActionRegistry struct {
 
 // NewActionRegistry returns an empty registry. Built-in actions register
 // themselves through Register; the runtime's composition root may also
-// register additional adapters (e.g. the buddy show in the upcoming
+// register additional adapters (e.g. the notification show in the upcoming
 // task 3).
 func NewActionRegistry() *ActionRegistry {
 	return &ActionRegistry{byName: map[string]Action{}}

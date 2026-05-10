@@ -11,6 +11,7 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/picker"
 	"omakiten/internal/tui/components/viewport"
@@ -299,6 +300,13 @@ type Model struct {
 	// colors. markdownRendered is the session-only toggle bound to `M`.
 	markdown         *markdownRenderer
 	markdownRendered bool
+
+	// notifications is the catalog of loaded notification cards keyed by
+	// slug; the hooks engine names a slug per event and the parent
+	// renders that notification as configured. notification is the live model while
+	// one is on screen; nil otherwise.
+	notifications map[string]config.Notification
+	notification   *notification.Model
 }
 
 // inputMode is the modal-input enum: normal navigation, comment-add input

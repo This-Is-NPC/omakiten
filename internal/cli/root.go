@@ -33,11 +33,12 @@ type runtimeOptions struct {
 }
 
 type runtime struct {
-	store       *sqlite.Store
-	configPath  string
-	dbPath      string
-	bus         events.Bus
-	hooksEngine *hooks.Engine
+	store              *sqlite.Store
+	configPath         string
+	dbPath             string
+	bus                events.Bus
+	hooksEngine        *hooks.Engine
+	notificationAction *actions.NotificationShowAction
 }
 
 func (r *runtime) WithActivityRepo(ctx context.Context) context.Context {
@@ -165,14 +166,18 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 			_ = store.Close()
 			return nil, err
 		}
+		emitBundleWarnings(bundle)
 
 		bus := events.NewInProcessBus(bundle.Config.Events)
 		registry := hooks.NewActionRegistry()
 		actions.RegisterBuiltins(registry)
+		notificationAction := actions.NewNotificationShowAction(notificationSnapshotFromBundle(bundle))
+		registry.Register(notificationAction)
+		rt.notificationAction = notificationAction
 		if err := config.ValidateHooks(bundle.Config.Hooks, func(name string) bool {
 			_, ok := registry.Get(name)
 			return ok
-		}); err != nil {
+		}, bundle.Notifications); err != nil {
 			_ = store.Close()
 			return nil, err
 		}
@@ -199,10 +204,7 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		app.RegisterTagSynonyms(bundle.Config.TagSynonyms)
 		agent.RegisterStopWords(bundle.Config.Search.Stopwords)
 
-		hookEntries := make([]hooks.Hook, 0, len(bundle.Config.Hooks))
-		for _, spec := range bundle.Config.Hooks {
-			hookEntries = append(hookEntries, hooks.Hook{On: spec.On, When: spec.When, Do: spec.Do, Args: spec.Args})
-		}
+		hookEntries := buildHookEntries(bundle.Config.Hooks)
 		engine := hooks.NewEngine(hookEntries, registry, bundle.Config.Events, store)
 		engine.Start(bus)
 		rt.bus = bus
@@ -210,6 +212,36 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 	}
 
 	return rt, nil
+}
+
+// buildHookEntries lifts user-facing HookSpec entries into the
+// engine's hooks.Hook shape. Notification-shape entries (HookSpec.Notification
+// non-empty) are rewritten to call the notification.show action with the
+// slug stashed under actions.NotificationArgSlug. Optional hook-level
+// `message:` / `message_field:` overrides ride along under their
+// own arg keys so the action can fall back to them when the
+// referenced notification YAML does not declare its own message source.
+func buildHookEntries(specs []config.HookSpec) []hooks.Hook {
+	out := make([]hooks.Hook, 0, len(specs))
+	for _, spec := range specs {
+		if spec.Notification != "" {
+			out = append(out, hooks.Hook{
+				On:   spec.On,
+				When: spec.When,
+				Do:   actions.NotificationActionName,
+				Args: map[string]any{
+					actions.NotificationArgSlug:               spec.Notification,
+					actions.NotificationArgMessage:            spec.Message,
+					actions.NotificationArgMessageField:       spec.MessageField,
+					actions.NotificationArgDetailMessage:      spec.DetailMessage,
+					actions.NotificationArgDetailMessageField: spec.DetailMessageField,
+				},
+			})
+			continue
+		}
+		out = append(out, hooks.Hook{On: spec.On, When: spec.When, Do: spec.Do, Args: spec.Args})
+	}
+	return out
 }
 
 func (o *runtimeOptions) resolvedConfigPath() (string, error) {
@@ -249,6 +281,32 @@ func writeError(cmd *cobra.Command, err error) error {
 
 	_ = output.Write(cmd.OutOrStdout(), output.Failure("internal_error", err.Error(), nil))
 	return exitError{code: 1}
+}
+
+// notificationSnapshotFromBundle builds the slim view of the bundle that the
+// notification.show action consults at execute time.
+func notificationSnapshotFromBundle(bundle config.Bundle) actions.NotificationBundleSnapshot {
+	return actions.NotificationBundleSnapshot{Notifications: bundle.Notifications}
+}
+
+// emitBundleWarnings surfaces non-fatal config issues (skipped custom
+// notifications, slug↔frontmatter drift, etc.) on stderr at startup so the
+// user sees them on `okt init` / `okt tui` / any CLI command without
+// having to inspect bundle.Warnings programmatically. Silent when the
+// bundle is clean.
+func emitBundleWarnings(bundle config.Bundle) {
+	for _, w := range bundle.Warnings {
+		switch {
+		case w.Path != "" && w.Slug != "":
+			fmt.Fprintf(os.Stderr, "warning: %s [%s]: %s\n", w.Path, w.Slug, w.Message)
+		case w.Path != "":
+			fmt.Fprintf(os.Stderr, "warning: %s: %s\n", w.Path, w.Message)
+		case w.Slug != "":
+			fmt.Fprintf(os.Stderr, "warning: [%s]: %s\n", w.Slug, w.Message)
+		default:
+			fmt.Fprintf(os.Stderr, "warning: %s\n", w.Message)
+		}
+	}
 }
 
 func runJSON(cmd *cobra.Command, fn func(context.Context) (any, error)) error {

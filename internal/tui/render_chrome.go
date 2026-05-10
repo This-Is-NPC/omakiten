@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"omakiten/internal/tui/components/keyfooter"
 )
 
 // renderHeader renders the global title breadcrumb + the navigation
@@ -182,26 +184,18 @@ func (m Model) renderFooter() string {
 // hierarchy stops landing); the rest get `hint`. Tokens are joined
 // with double-space separators so the eye can chunk them cleanly.
 func (m Model) formatFooterTokens(tokens []footerToken) string {
-	const maxPrimaries = 3
-	primaryBudget := maxPrimaries
-	parts := make([]string, 0, len(tokens))
+	return keyfooter.Render(toKeyFooterTokens(tokens), keyfooter.Styles{
+		Primary:   m.styles.hintAccent,
+		Secondary: m.styles.footer,
+	})
+}
+
+func toKeyFooterTokens(tokens []footerToken) []keyfooter.Token {
+	out := make([]keyfooter.Token, 0, len(tokens))
 	for _, t := range tokens {
-		var keyStyle string
-		if t.primary && primaryBudget > 0 {
-			keyStyle = m.styles.hintAccent.Render(t.key)
-			primaryBudget--
-		} else {
-			keyStyle = m.styles.footer.Render(t.key)
-		}
-		var piece string
-		if t.label == "" {
-			piece = keyStyle
-		} else {
-			piece = keyStyle + m.styles.footer.Render(" "+t.label)
-		}
-		parts = append(parts, piece)
+		out = append(out, keyfooter.Token{Key: t.key, Label: t.label, Primary: t.primary})
 	}
-	return strings.Join(parts, m.styles.footer.Render("  "))
+	return out
 }
 
 // helpToken returns the `?` token used at the trailing edge of every

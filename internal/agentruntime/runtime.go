@@ -42,13 +42,14 @@ type Options struct {
 // connection, the resolved paths, and the agent.Service that handlers
 // dispatch through.
 type Runtime struct {
-	store        *sqlite.Store
-	configPath   string
-	dbPath       string
-	service      *agent.Service
-	bus          events.Bus
-	hooksEngine  *hooks.Engine
-	actionRegistry *hooks.ActionRegistry
+	store              *sqlite.Store
+	configPath         string
+	dbPath             string
+	service            *agent.Service
+	bus                events.Bus
+	hooksEngine        *hooks.Engine
+	actionRegistry     *hooks.ActionRegistry
+	notificationAction *actions.NotificationShowAction
 }
 
 // Open materializes the runtime: resolves paths, runs config layout
@@ -92,6 +93,8 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	bus := events.NewInProcessBus(bundle.Config.Events)
 	registry := hooks.NewActionRegistry()
 	actions.RegisterBuiltins(registry)
+	notificationAction := actions.NewNotificationShowAction(actions.NotificationBundleSnapshot{Notifications: bundle.Notifications})
+	registry.Register(notificationAction)
 
 	// Re-validate hooks now that the registry is populated so unknown
 	// `do:` names abort startup with a clear error rather than silently
@@ -99,7 +102,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	if err := config.ValidateHooks(bundle.Config.Hooks, func(name string) bool {
 		_, ok := registry.Get(name)
 		return ok
-	}); err != nil {
+	}, bundle.Notifications); err != nil {
 		_ = store.Close()
 		return nil, err
 	}
@@ -130,14 +133,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// the bundle. No need to re-register here — the registry is
 	// already populated for the rest of the runtime.
 
-	hookEntries := make([]hooks.Hook, 0, len(bundle.Config.Hooks))
-	for _, spec := range bundle.Config.Hooks {
-		hookEntries = append(hookEntries, hooks.Hook{On: spec.On, When: spec.When, Do: spec.Do, Args: spec.Args})
-	}
+	hookEntries := buildHookEntries(bundle.Config.Hooks)
 	engine := hooks.NewEngine(hookEntries, registry, bundle.Config.Events, store)
 	engine.Start(bus)
 
-	rt := &Runtime{store: store, configPath: configPath, dbPath: dbPath, bus: bus, hooksEngine: engine, actionRegistry: registry}
+	rt := &Runtime{store: store, configPath: configPath, dbPath: dbPath, bus: bus, hooksEngine: engine, actionRegistry: registry, notificationAction: notificationAction}
 	rt.service = agent.NewService(store, agent.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
 	rt.service.SetTaskTemplateLookup(taskTemplateLookup(bundle))
 	rt.service.SetTemplateCatalog(templateCatalog(bundle))
@@ -176,6 +176,34 @@ func (r *Runtime) Close() error {
 	return r.store.Close()
 }
 
+// buildHookEntries lifts user-facing HookSpec entries into the
+// engine's hooks.Hook shape. Notification-shape entries are rewritten to
+// call notification.show; per-hook message overrides ride along under
+// dedicated arg keys so the action can use them when the notification YAML
+// has no message source of its own.
+func buildHookEntries(specs []config.HookSpec) []hooks.Hook {
+	out := make([]hooks.Hook, 0, len(specs))
+	for _, spec := range specs {
+		if spec.Notification != "" {
+			out = append(out, hooks.Hook{
+				On:   spec.On,
+				When: spec.When,
+				Do:   actions.NotificationActionName,
+				Args: map[string]any{
+					actions.NotificationArgSlug:               spec.Notification,
+					actions.NotificationArgMessage:            spec.Message,
+					actions.NotificationArgMessageField:       spec.MessageField,
+					actions.NotificationArgDetailMessage:      spec.DetailMessage,
+					actions.NotificationArgDetailMessageField: spec.DetailMessageField,
+				},
+			})
+			continue
+		}
+		out = append(out, hooks.Hook{On: spec.On, When: spec.When, Do: spec.Do, Args: spec.Args})
+	}
+	return out
+}
+
 // ActionRegistry exposes the hook action registry so callers (TUI startup,
 // tests) can register additional actions before the engine is busy.
 func (r *Runtime) ActionRegistry() *hooks.ActionRegistry {
@@ -183,7 +211,7 @@ func (r *Runtime) ActionRegistry() *hooks.ActionRegistry {
 }
 
 // Bus returns the in-process events bus. Subscribers (live TUI panels,
-// future buddies) register via this handle.
+// future notifications) register via this handle.
 func (r *Runtime) Bus() events.Bus {
 	return r.bus
 }

@@ -10,18 +10,30 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/activity"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	hookactions "omakiten/internal/hooks/actions"
 	"omakiten/internal/token"
 	"omakiten/internal/tui/components/detailscreen"
+	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/picker"
 	"omakiten/internal/tui/components/viewport"
 )
 
-func NewModel(ctx context.Context, project domain.ProjectContext, repos Repositories, theme config.Theme, counter token.Counter, badge config.TokenBadgeThresholds, priorities []config.PriorityDefinition, severities []config.SeverityDefinition) (Model, error) {
+// NotificationBinding carries the loaded notification catalog into the TUI Model.
+// Each notification YAML is one notification card with all behaviour
+// (animation, position, dismiss, message) baked in — no per-mode
+// presets and no global "active" selection. The hooks engine names
+// the slug per event and the parent renders it as configured.
+type NotificationBinding struct {
+	Notifications map[string]config.Notification
+}
+
+func NewModel(ctx context.Context, project domain.ProjectContext, repos Repositories, theme config.Theme, counter token.Counter, badge config.TokenBadgeThresholds, priorities []config.PriorityDefinition, severities []config.SeverityDefinition, notifications NotificationBinding) (Model, error) {
 	if counter == nil {
 		counter = token.ApproxCounter{}
 	}
@@ -42,6 +54,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		severities:       severities,
 		markdown:         newMarkdownRenderer(tokensFromTheme(theme)),
 		markdownRendered: true,
+		notifications:    notifications.Notifications,
 	}
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()
@@ -81,6 +94,9 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	prevNav := navState{top: m.top, sub: m.sub}
+	if next, cmd, handled := m.dispatchNotification(msg); handled {
+		return next, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -375,6 +391,47 @@ func (m *Model) activeViewSettings() config.ViewSettings {
 }
 
 func (m Model) View() string {
+	view := m.renderView()
+	if m.notification != nil {
+		view = normalizeViewToTerminal(view, m.width, m.height)
+		view = notification.Overlay(view, m.notification.View(), m.notification.Position())
+	}
+	return view
+}
+
+// normalizeViewToTerminal rectangularises the rendered view so the
+// notification overlay positions relative to the FULL terminal grid instead
+// of the (often shorter / narrower) rendered content. Without this
+// "center" lands inside the active card and "top-right" can fall off
+// the visible columns when the status badge wraps wide.
+//
+// width/height come from the most recent tea.WindowSizeMsg. When
+// either is zero the view is returned untouched — the overlay path
+// still works against the natural content rectangle.
+func normalizeViewToTerminal(view string, width, height int) string {
+	if width <= 0 || height <= 0 {
+		return view
+	}
+	lines := strings.Split(view, "\n")
+	for i, line := range lines {
+		w := ansi.StringWidth(line)
+		switch {
+		case w < width:
+			lines[i] = line + strings.Repeat(" ", width-w)
+		case w > width:
+			lines[i] = ansi.Truncate(line, width, "")
+		}
+	}
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, strings.Repeat(" ", width))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderView() string {
 	if m.helpOpen {
 		return clampViewToHeight(m.height, m.renderHeader(), m.renderHelp(), m.renderHelpFooter())
 	}
@@ -388,6 +445,56 @@ func (m Model) View() string {
 	}
 	parts = append(parts, m.renderCurrentView(), m.renderFooter())
 	return clampViewToHeight(m.height, parts...)
+}
+
+// dispatchNotification routes notification-related messages to the live notification
+// model when present, and intercepts ShowMsg / DismissedMsg to flip
+// the notification slot. handled=true means the parent's regular dispatch
+// should stop — notification is intentionally exclusive while active so
+// dismiss + scroll keys take priority over the app underneath.
+func (m Model) dispatchNotification(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	if showMsg, ok := msg.(hookactions.NotificationShowMsg); ok {
+		// Drop the new request when a notification is still typing in —
+		// avoids interrupting an Appearing animation with a fresh
+		// payload (Settled notifications are replaceable).
+		if m.notification != nil && m.notification.State() == notification.StateAppearing {
+			return m, nil, true
+		}
+		bm, cmd := notification.New(notification.Options{
+			Notification: showMsg.Notification,
+			Theme:        m.theme,
+			Text:         showMsg.Text,
+			DetailText:   showMsg.DetailText,
+		})
+		m.notification = &bm
+		return m, cmd, true
+	}
+	if dm, ok := msg.(notification.DismissedMsg); ok {
+		if m.notification != nil && dm.ID == m.notification.ID() {
+			m.notification = nil
+		}
+		return m, nil, true
+	}
+	if m.notification == nil {
+		return m, nil, false
+	}
+	switch msg.(type) {
+	case tea.KeyMsg:
+		// Notification consumes keys exclusively while active: scroll +
+		// dismiss handled, others swallowed so the app doesn't react.
+		next, cmd := m.notification.Update(msg)
+		m.notification = &next
+		return m, cmd, true
+	}
+	// Forward non-key messages (ticks, timeouts, window size) to
+	// notification without consuming the parent's chance to react. Notification
+	// returns nil cmd for unrelated messages so this is cheap.
+	next, cmd := m.notification.Update(msg)
+	m.notification = &next
+	if cmd != nil {
+		return m, cmd, true
+	}
+	return m, nil, false
 }
 
 // clampViewToHeight joins the segments of a view (header → middle → footer)

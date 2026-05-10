@@ -1,6 +1,5 @@
-// Package actions provides the built-in hook actions registered by the
-// runtime composition root: noop (test fixture) and exec (shell-less
-// command runner with JSON stdin and timeout).
+// Package actions provides hook action implementations registered by runtime
+// composition roots: noop, exec, and bundle-backed notification.show.
 package actions
 
 import (
