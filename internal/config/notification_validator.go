@@ -14,9 +14,15 @@ func ValidateNotification(notification Notification) error {
 	if strings.TrimSpace(notification.Name) == "" {
 		return wrapNotificationErr("", notification.SourcePath, fmt.Errorf("name is required"))
 	}
+	if strings.TrimSpace(notification.Description) == "" {
+		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("description is required"))
+	}
 
 	if notification.Size.Width <= 0 || notification.Size.Height <= 0 {
 		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("size.width and size.height must be > 0"))
+	}
+	if strings.TrimSpace(notification.Background) == "" {
+		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("background is required (use transparent to opt out)"))
 	}
 
 	if err := IsValidColorSyntax(notification.Background); err != nil {
@@ -30,7 +36,10 @@ func ValidateNotification(notification Notification) error {
 		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("frame_interval_ms must be > 0 when an animation is set"))
 	}
 
-	if notification.TypingMsPerChar < 0 {
+	if notification.TypingMsPerChar == nil {
+		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("typing_ms_per_char is required"))
+	}
+	if *notification.TypingMsPerChar < 0 {
 		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("typing_ms_per_char must be >= 0"))
 	}
 
@@ -52,7 +61,7 @@ func ValidateNotification(notification Notification) error {
 		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
 	}
 
-	if err := validateBubble(notification.Bubble); err != nil {
+	if err := validateBubbleForAnimation(notification.Bubble, len(notification.Animation) > 0); err != nil {
 		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
 	}
 
@@ -64,11 +73,23 @@ func ValidateNotification(notification Notification) error {
 		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
 	}
 
-	if err := validatePadding(notification.Padding); err != nil {
+	if notification.Padding == nil {
+		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("padding is required (set all sides to 0 for no padding)"))
+	}
+	if err := validatePadding(*notification.Padding); err != nil {
 		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
 	}
+	if notification.AutoHeight == nil {
+		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("auto_height is required"))
+	}
+	if notification.PaddingInside == nil {
+		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("padding_inside is required"))
+	}
+	if notification.FooterVisible == nil {
+		return wrapNotificationErr(notification.Name, notification.SourcePath, fmt.Errorf("footer_visible is required"))
+	}
 
-	if err := validateFooterPosition(notification.FooterPosition); err != nil {
+	if err := validateFooterPosition(notification.FooterPosition, *notification.FooterVisible); err != nil {
 		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
 	}
 
@@ -92,7 +113,10 @@ func validateNotificationStyle(notification Notification) error {
 }
 
 func validateNotificationBorder(border NotificationBorder) error {
-	if !border.Visible {
+	if border.Visible == nil {
+		return fmt.Errorf("border.visible is required")
+	}
+	if !*border.Visible {
 		return nil
 	}
 	if border.Width <= 0 {
@@ -167,11 +191,11 @@ func validateAnimation(frames []NotificationFrame) error {
 	return nil
 }
 
-// validateBubble lets bubble.tail_side be empty (default = "bottom"
-// when an animation is present; ignored when not). When set, it
-// must be one of the closed enum values.
-func validateBubble(bubble NotificationBubble) error {
+func validateBubbleForAnimation(bubble NotificationBubble, hasAnimation bool) error {
 	if bubble.TailSide == "" {
+		if hasAnimation {
+			return fmt.Errorf("bubble.tail_side is required when animation is set")
+		}
 		return nil
 	}
 	for _, allowed := range NotificationTailSides {
@@ -183,16 +207,23 @@ func validateBubble(bubble NotificationBubble) error {
 }
 
 func validatePadding(p NotificationPadding) error {
-	for name, v := range map[string]int{"top": p.Top, "right": p.Right, "bottom": p.Bottom, "left": p.Left} {
-		if v < 0 {
-			return fmt.Errorf("padding.%s must be >= 0, got %d", name, v)
+	values := map[string]*int{"top": p.Top, "right": p.Right, "bottom": p.Bottom, "left": p.Left}
+	for name, v := range values {
+		if v == nil {
+			return fmt.Errorf("padding.%s is required (set 0 for no padding)", name)
+		}
+		if *v < 0 {
+			return fmt.Errorf("padding.%s must be >= 0, got %d", name, *v)
 		}
 	}
 	return nil
 }
 
-func validateFooterPosition(position string) error {
+func validateFooterPosition(position string, footerVisible bool) error {
 	if position == "" {
+		if footerVisible {
+			return fmt.Errorf("footer_position is required when footer_visible=true")
+		}
 		return nil
 	}
 	for _, allowed := range NotificationFooterPositions {

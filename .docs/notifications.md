@@ -53,6 +53,12 @@ starting points when authoring a new notification. Copy one into
 `notifications/custom/<your-slug>.yaml`, change `name:` to match the
 slug, and wire it from `config.hooks`.
 
+Notification YAML has no code-side visual defaults: every render or behaviour
+knob is either explicitly declared in the file or rejected by validation. To
+opt out of a visual feature, write that choice in YAML (for example
+`background: transparent`, `footer_visible: false`, or padding sides set to
+`0`).
+
 ```yaml
 # Identity
 name: task-guard                   # required; should match the filename slug
@@ -63,11 +69,11 @@ size:
   width: 28                        # required; > 0 — outer card width in cells (border + padding + content + border)
   height: 12                       # required; > 0 — pinned outer height when auto_height=false; bubble scroll viewport cap
 
-# Behaviour flags (all optional)
-auto_height: true                  # default true → card flows to body height. false → outer height pinned to size.height
-padding_inside: false              # default false → body top-anchored. true (auto_height=false) → body vertically centered
-footer_visible: false              # default false → no footer. true → key hints on a reserved bottom row
-footer_position: left              # optional, default left; left | center | right alignment for the footer row(s)
+# Behaviour flags (required; declare the value you want)
+auto_height: true                  # true → card flows to body height. false → outer height pinned to size.height
+padding_inside: false              # false → body top-anchored. true (auto_height=false) → body vertically centered
+footer_visible: false              # false → no footer. true → key hints on a reserved bottom row
+footer_position: left              # required when footer_visible=true; left | center | right alignment for the footer row(s)
 
 # Background + chrome
 background: $theme.highlight       # required; transparent | $theme.<key> | #rrggbb
@@ -91,17 +97,17 @@ custom_border:                     # required ONLY when style: custom
 # Footer + scroll hint sit OUTSIDE this band — padding.bottom adds
 # rows BETWEEN the body and the footer, not after it.
 padding:
-  top: 1                           # optional, default 0
-  right: 2
-  bottom: 1
-  left: 2
+  top: 1                           # required; set 0 for no padding
+  right: 2                         # required
+  bottom: 1                        # required
+  left: 2                          # required
 
 # Placement
 position: center                   # required; one of nine fixed anchors (see below)
 
 # Bubble + tail
 bubble:
-  tail_side: bottom                # optional when no animation; required values: bottom | top | left | right
+  tail_side: bottom                # required when animation is set; bottom | top | left | right
 
 # Animation (optional — omit the block for a plain bubble notification)
 frame_interval_ms: 600             # required ONLY when `animation:` is set; > 0
@@ -129,7 +135,7 @@ dismiss:
 
 The validator rejects:
 
-- any required field missing or zero,
+- any required field missing or invalid,
 - unknown `style` / `position` / `dismiss.mode` / `bubble.tail_side`,
 - unknown `footer_position`,
 - `style: custom` with a partial `custom_border`,
@@ -139,7 +145,7 @@ The validator rejects:
 - `dismiss.mode=key` with no `keys`; any empty `dismiss.keys` entry;
   `dismiss.mode=timeout` with `after_ms <= 0`,
 - both `message` and `message_field` set on the same layer,
-- `padding.*` < 0.
+- missing `padding.*` or `padding.*` < 0.
 
 The combined-presence rule (at least one of `message` /
 `message_field` between the notification YAML and the hook entry) is
@@ -175,7 +181,7 @@ bubble fills the body region alone.
 
 | `auto_height` | Behaviour                                                                                                         |
 | ------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `true` (default) | Card outer height tracks the rendered body. `size.height` only caps the bubble's scroll viewport.              |
+| `true`        | Card outer height tracks the rendered body. `size.height` only caps the bubble's scroll viewport.              |
 | `false`       | Card outer height is pinned to `size.height`. The bubble scrolls inside the body region; tail + frame stay fixed. |
 
 When `auto_height=false`:
@@ -196,7 +202,7 @@ declare `keys`, giving the card both auto-dismiss and manual close. With
 width — it ignores horizontal `padding` so the band sits flush edge-to-edge.
 
 `footer_position` controls how each footer row aligns inside that full-width
-band: `left` (default), `center`, or `right`. This affects only the footer;
+band: `left`, `center`, or `right`. This affects only the footer;
 card `padding` still applies to the bubble/body region above it.
 
 ## Colors

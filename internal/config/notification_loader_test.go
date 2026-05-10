@@ -13,6 +13,10 @@ description: tester
 size:
   width: 16
   height: 4
+auto_height: false
+padding_inside: true
+footer_visible: true
+footer_position: center
 background: transparent
 frame_interval_ms: 200
 style: rounded
@@ -25,6 +29,11 @@ animation:
     value: "X"
 bubble:
   tail_side: bottom
+padding:
+  top: 0
+  right: 0
+  bottom: 0
+  left: 0
 position: center
 typing_ms_per_char: 0
 message_field: hint

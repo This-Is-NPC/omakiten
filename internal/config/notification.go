@@ -19,14 +19,14 @@ type Notification struct {
 	CustomBorder    NotificationCustomBorder `yaml:"custom_border,omitempty" json:"custom_border,omitempty"`
 	Animation       []NotificationFrame      `yaml:"animation" json:"animation"`
 	Bubble          NotificationBubble       `yaml:"bubble" json:"bubble"`
-	Padding         NotificationPadding      `yaml:"padding,omitempty" json:"padding,omitempty"`
-	AutoHeight      *bool                    `yaml:"auto_height,omitempty" json:"auto_height,omitempty"`
-	PaddingInside   bool                     `yaml:"padding_inside,omitempty" json:"padding_inside,omitempty"`
-	FooterVisible   bool                     `yaml:"footer_visible,omitempty" json:"footer_visible,omitempty"`
+	Padding         *NotificationPadding     `yaml:"padding" json:"padding"`
+	AutoHeight      *bool                    `yaml:"auto_height" json:"auto_height"`
+	PaddingInside   *bool                    `yaml:"padding_inside" json:"padding_inside"`
+	FooterVisible   *bool                    `yaml:"footer_visible" json:"footer_visible"`
 	FooterPosition  string                   `yaml:"footer_position,omitempty" json:"footer_position,omitempty"`
 	Position        string                   `yaml:"position" json:"position"`
 	Dismiss         NotificationDismiss      `yaml:"dismiss" json:"dismiss"`
-	TypingMsPerChar int                      `yaml:"typing_ms_per_char" json:"typing_ms_per_char"`
+	TypingMsPerChar *int                     `yaml:"typing_ms_per_char" json:"typing_ms_per_char"`
 	Message         string                   `yaml:"message,omitempty" json:"message,omitempty"`
 	MessageField    string                   `yaml:"message_field,omitempty" json:"message_field,omitempty"`
 
@@ -56,7 +56,7 @@ type NotificationSize struct {
 // around the card. Width is character cells (lipgloss caps it at 1 for
 // most styles). Color/Background accept the color-resolver grammar.
 type NotificationBorder struct {
-	Visible    bool   `yaml:"visible" json:"visible"`
+	Visible    *bool  `yaml:"visible" json:"visible"`
 	Width      int    `yaml:"width,omitempty" json:"width,omitempty"`
 	Color      string `yaml:"color,omitempty" json:"color,omitempty"`
 	Background string `yaml:"background,omitempty" json:"background,omitempty"`
@@ -77,13 +77,13 @@ type NotificationCustomBorder struct {
 
 // NotificationPadding is the per-side cell pad applied INSIDE the
 // border. Each value is the row/column count to inset; zero means
-// flush against the border. The block is optional — omit to render
-// the body flush against the border.
+// flush against the border. The block and every side are required so
+// YAML, not Go zero values, owns the rendered spacing.
 type NotificationPadding struct {
-	Top    int `yaml:"top,omitempty" json:"top,omitempty"`
-	Right  int `yaml:"right,omitempty" json:"right,omitempty"`
-	Bottom int `yaml:"bottom,omitempty" json:"bottom,omitempty"`
-	Left   int `yaml:"left,omitempty" json:"left,omitempty"`
+	Top    *int `yaml:"top" json:"top"`
+	Right  *int `yaml:"right" json:"right"`
+	Bottom *int `yaml:"bottom" json:"bottom"`
+	Left   *int `yaml:"left" json:"left"`
 }
 
 // NotificationFrame is a single ASCII frame inside an animation. Frames are

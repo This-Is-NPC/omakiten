@@ -13,14 +13,27 @@ func validNotification() Notification {
 		Background:      "transparent",
 		FrameIntervalMs: 500,
 		Style:           NotificationStyleRounded,
-		Border:          NotificationBorder{Visible: true, Width: 1, Color: "#ffffff"},
+		Border:          NotificationBorder{Visible: boolPtr(true), Width: 1, Color: "#ffffff"},
 		Animation:       []NotificationFrame{{Frame: 0, Value: "x"}},
 		Bubble:          NotificationBubble{TailSide: NotificationTailBottom},
+		Padding:         zeroNotificationPadding(),
+		AutoHeight:      boolPtr(false),
+		PaddingInside:   boolPtr(true),
+		FooterVisible:   boolPtr(true),
+		FooterPosition:  NotificationFooterCenter,
 		Position:        NotificationPositionCenter,
 		Dismiss:         NotificationDismiss{Mode: NotificationDismissModeKey, Keys: []string{"esc"}},
-		TypingMsPerChar: 0,
+		TypingMsPerChar: intPtr(0),
 		MessageField:    "hint",
 	}
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+func intPtr(v int) *int { return &v }
+
+func zeroNotificationPadding() *NotificationPadding {
+	return &NotificationPadding{Top: intPtr(0), Right: intPtr(0), Bottom: intPtr(0), Left: intPtr(0)}
 }
 
 func TestValidateNotification_happyPath(t *testing.T) {
@@ -68,7 +81,7 @@ func TestValidateNotification_rejectsZeroFrameInterval(t *testing.T) {
 
 func TestValidateNotification_rejectsNegativeTyping(t *testing.T) {
 	b := validNotification()
-	b.TypingMsPerChar = -1
+	b.TypingMsPerChar = intPtr(-1)
 	if err := ValidateNotification(b); err == nil || !strings.Contains(err.Error(), "typing_ms_per_char") {
 		t.Fatalf("got %v", err)
 	}
@@ -112,7 +125,7 @@ func TestValidateNotification_visibleBorderNeedsWidthAndColor(t *testing.T) {
 
 func TestValidateNotification_invisibleBorderSkipsColor(t *testing.T) {
 	b := validNotification()
-	b.Border = NotificationBorder{Visible: false}
+	b.Border = NotificationBorder{Visible: boolPtr(false)}
 	if err := ValidateNotification(b); err != nil {
 		t.Fatalf("invisible border with empty color should pass: %v", err)
 	}
@@ -186,15 +199,36 @@ func TestValidateNotification_invalidFooterPosition(t *testing.T) {
 	}
 }
 
-func TestValidateNotification_footerPositionOptional(t *testing.T) {
+func TestValidateNotification_footerPositionRequiredWhenFooterVisible(t *testing.T) {
 	b := validNotification()
 	b.FooterPosition = ""
+	if err := ValidateNotification(b); err == nil || !strings.Contains(err.Error(), "footer_position") {
+		t.Fatalf("expected footer_position error, got %v", err)
+	}
+	b.FooterVisible = boolPtr(false)
 	if err := ValidateNotification(b); err != nil {
-		t.Fatalf("empty footer_position should pass: %v", err)
+		t.Fatalf("empty footer_position should pass when footer hidden: %v", err)
 	}
 	b.FooterPosition = NotificationFooterRight
 	if err := ValidateNotification(b); err != nil {
 		t.Fatalf("right footer_position should pass: %v", err)
+	}
+}
+
+func TestValidateNotification_requiresExplicitBehaviourFields(t *testing.T) {
+	tests := map[string]func(*Notification){
+		"auto_height":    func(n *Notification) { n.AutoHeight = nil },
+		"padding_inside": func(n *Notification) { n.PaddingInside = nil },
+		"footer_visible": func(n *Notification) { n.FooterVisible = nil },
+		"border.visible": func(n *Notification) { n.Border.Visible = nil },
+		"padding.left":   func(n *Notification) { n.Padding.Left = nil },
+	}
+	for want, mutate := range tests {
+		b := validNotification()
+		mutate(&b)
+		if err := ValidateNotification(b); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("%s: got %v", want, err)
+		}
 	}
 }
 
