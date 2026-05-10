@@ -51,9 +51,9 @@ func TestValidateHooksExecArgvMustBeStrings(t *testing.T) {
 
 func TestValidateHooks_notificationHookMessageFromHookOK(t *testing.T) {
 	specs := []HookSpec{{
-		On:      domain.EventTypeGuardViolated,
-		Notification:   "kit",
-		Message: "from-hook",
+		On:           domain.EventTypeGuardViolated,
+		Notification: "kit",
+		Message:      "from-hook",
 	}}
 	notifications := map[string]Notification{"kit": {Name: "kit"}}
 	if err := ValidateHooks(specs, func(string) bool { return true }, notifications); err != nil {
@@ -79,5 +79,17 @@ func TestValidateHooks_notificationHookExclusiveMessage(t *testing.T) {
 	err := ValidateHooks(specs, func(string) bool { return true }, notifications)
 	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
 		t.Fatalf("expected exclusivity error, got %v", err)
+	}
+}
+
+func TestValidateHooks_notificationHookExclusiveDetailMessage(t *testing.T) {
+	specs := []HookSpec{{
+		On: domain.EventTypeGuardViolated, Notification: "kit",
+		Message: "x", DetailMessage: "full", DetailMessageField: "hint",
+	}}
+	notifications := map[string]Notification{"kit": {Name: "kit"}}
+	err := ValidateHooks(specs, func(string) bool { return true }, notifications)
+	if err == nil || !strings.Contains(err.Error(), "detail_message and detail_message_field are mutually exclusive") {
+		t.Fatalf("expected detail exclusivity error, got %v", err)
 	}
 }

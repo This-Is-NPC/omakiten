@@ -68,6 +68,10 @@ func ValidateNotification(notification Notification) error {
 		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
 	}
 
+	if err := validateFooterPosition(notification.FooterPosition); err != nil {
+		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
+	}
+
 	if err := validateNotificationMessage(notification); err != nil {
 		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
 	}
@@ -187,6 +191,18 @@ func validatePadding(p NotificationPadding) error {
 	return nil
 }
 
+func validateFooterPosition(position string) error {
+	if position == "" {
+		return nil
+	}
+	for _, allowed := range NotificationFooterPositions {
+		if position == allowed {
+			return nil
+		}
+	}
+	return fmt.Errorf("footer_position %q is not one of %s", position, strings.Join(NotificationFooterPositions, ", "))
+}
+
 func validatePosition(position string) error {
 	if position == "" {
 		return fmt.Errorf("position is required (one of %s)", strings.Join(NotificationPositions, ", "))
@@ -218,14 +234,14 @@ func validateDismiss(d NotificationDismiss) error {
 		if len(d.Keys) == 0 {
 			return fmt.Errorf("dismiss.keys must be non-empty when dismiss.mode=key")
 		}
-		for i, key := range d.Keys {
-			if key == "" {
-				return fmt.Errorf("dismiss.keys[%d] must not be empty", i)
-			}
-		}
 	case NotificationDismissModeTimeout:
 		if d.AfterMs <= 0 {
 			return fmt.Errorf("dismiss.after_ms must be > 0 when dismiss.mode=timeout")
+		}
+	}
+	for i, key := range d.Keys {
+		if key == "" {
+			return fmt.Errorf("dismiss.keys[%d] must not be empty", i)
 		}
 	}
 	return nil

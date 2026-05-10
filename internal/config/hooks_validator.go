@@ -47,6 +47,9 @@ func ValidateHooks(hooks []HookSpec, isAction HookActionResolver, notifications 
 			if strings.TrimSpace(h.Message) != "" && strings.TrimSpace(h.MessageField) != "" {
 				return fmt.Errorf("config.hooks[%d]: message and message_field are mutually exclusive — pick one", i)
 			}
+			if strings.TrimSpace(h.DetailMessage) != "" && strings.TrimSpace(h.DetailMessageField) != "" {
+				return fmt.Errorf("config.hooks[%d]: detail_message and detail_message_field are mutually exclusive — pick one", i)
+			}
 			if !notificationOrHookHasMessageSource(bud, h) {
 				return fmt.Errorf("config.hooks[%d]: notification %q declares no message/message_field and the hook supplies neither — set one on either layer", i, notificationSlug)
 			}

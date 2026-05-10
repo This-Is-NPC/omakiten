@@ -43,14 +43,14 @@ type Options struct {
 // connection, the resolved paths, and the agent.Service that handlers
 // dispatch through.
 type Runtime struct {
-	store        *sqlite.Store
-	configPath   string
-	dbPath       string
-	service      *agent.Service
-	bus          events.Bus
-	hooksEngine  *hooks.Engine
-	actionRegistry *hooks.ActionRegistry
-	notificationAction  *notification.ShowAction
+	store              *sqlite.Store
+	configPath         string
+	dbPath             string
+	service            *agent.Service
+	bus                events.Bus
+	hooksEngine        *hooks.Engine
+	actionRegistry     *hooks.ActionRegistry
+	notificationAction *notification.ShowAction
 }
 
 // Open materializes the runtime: resolves paths, runs config layout
@@ -191,9 +191,11 @@ func buildHookEntries(specs []config.HookSpec) []hooks.Hook {
 				When: spec.When,
 				Do:   notification.ActionName,
 				Args: map[string]any{
-					notification.ArgNotificationSlug:    spec.Notification,
-					notification.ArgMessage:      spec.Message,
-					notification.ArgMessageField: spec.MessageField,
+					notification.ArgNotificationSlug:   spec.Notification,
+					notification.ArgMessage:            spec.Message,
+					notification.ArgMessageField:       spec.MessageField,
+					notification.ArgDetailMessage:      spec.DetailMessage,
+					notification.ArgDetailMessageField: spec.DetailMessageField,
 				},
 			})
 			continue

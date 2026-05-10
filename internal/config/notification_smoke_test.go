@@ -1,9 +1,19 @@
 package config
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestLoadNotification_defaults(t *testing.T) {
-	for _, p := range []string{"../../defaults/notifications/guard-violation.yaml", "../../defaults/notifications/agent-comment.yaml"} {
+	paths, err := filepath.Glob("../../defaults/notifications/*.yaml")
+	if err != nil {
+		t.Fatalf("Glob defaults: %v", err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("no default notifications found")
+	}
+	for _, p := range paths {
 		notification, err := LoadNotification(p)
 		if err != nil {
 			t.Fatalf("%s: %v", p, err)

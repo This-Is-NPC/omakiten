@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/config"
 )
@@ -115,9 +116,28 @@ func TestUpdate_timeoutDismiss(t *testing.T) {
 	if m.State() != StateSettled {
 		t.Fatalf("expected Settled, got %v", m.State())
 	}
-	m, _ = m.Update(timeoutTickMsg{id: m.id})
+	m, cmd := m.Update(timeoutTickMsg{id: m.id})
 	if !m.dismissed {
 		t.Fatalf("timeout tick should mark dismissed")
+	}
+	if cmd == nil {
+		t.Fatalf("timeout tick should emit DismissedMsg cmd")
+	}
+	if _, ok := cmd().(DismissedMsg); !ok {
+		t.Fatalf("timeout tick produced wrong dismiss message")
+	}
+}
+
+func TestUpdate_timeoutWithKeysCanDismissManually(t *testing.T) {
+	bud := sampleNotification()
+	bud.Dismiss = config.NotificationDismiss{Mode: config.NotificationDismissModeTimeout, Keys: []string{"esc"}, AfterMs: 12000}
+	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "x"})
+	_, cmd := m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEsc}))
+	if cmd == nil {
+		t.Fatalf("timeout notification with keys should return a dismiss cmd")
+	}
+	if _, ok := cmd().(DismissedMsg); !ok {
+		t.Fatalf("timeout manual close produced wrong message")
 	}
 }
 
@@ -135,6 +155,75 @@ func TestUpdate_scrollKeysHitViewportInBothStates(t *testing.T) {
 	m, _ = m.Update(jKey)
 	if m.bubble.Scroll <= prev {
 		t.Fatalf("scroll key in Settled should advance viewport")
+	}
+}
+
+func TestUpdate_tabTogglesDetailAndResetsScroll(t *testing.T) {
+	bud := sampleNotification()
+	bud.Size = config.NotificationSize{Width: 36, Height: 10}
+	bud.Animation = nil
+	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "short warning", DetailText: "full policy hint"})
+	if m.page != 0 {
+		t.Fatalf("initial page = %d, want 0", m.page)
+	}
+	if strings.Contains(m.View(), "full policy hint") {
+		t.Fatalf("detail text rendered on first page")
+	}
+	m.bubble.Scroll = 2
+	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyTab}))
+	if m.page != 1 {
+		t.Fatalf("page after tab = %d, want 1", m.page)
+	}
+	if m.bubble.Scroll != 0 {
+		t.Fatalf("scroll after tab = %d, want reset to 0", m.bubble.Scroll)
+	}
+	if !strings.Contains(m.View(), "full policy hint") {
+		t.Fatalf("detail page did not render detail text:\n%s", m.View())
+	}
+	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyTab}))
+	if m.page != 0 {
+		t.Fatalf("page after second tab = %d, want 0", m.page)
+	}
+}
+
+func TestUpdate_tabWithoutDetailIsNoop(t *testing.T) {
+	bud := sampleNotification()
+	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "short warning"})
+	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyTab}))
+	if m.page != 0 {
+		t.Fatalf("page without detail = %d, want 0", m.page)
+	}
+}
+
+func TestRenderFooter_detailAdvertisesTab(t *testing.T) {
+	bud := sampleNotification()
+	bud.FooterVisible = true
+	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "short", DetailText: "full"})
+	footer := ansi.Strip(m.renderFooter(40))
+	if !strings.Contains(footer, "tab details") {
+		t.Fatalf("footer = %q, want tab details hint", footer)
+	}
+}
+
+func TestRenderFooter_respectsFooterPosition(t *testing.T) {
+	bud := sampleNotification()
+	bud.FooterVisible = true
+	bud.FooterPosition = config.NotificationFooterRight
+	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "short"})
+	footer := ansi.Strip(m.renderFooter(16))
+	if footer != "       esc close" {
+		t.Fatalf("footer = %q, want right-aligned close hint", footer)
+	}
+}
+
+func TestRenderFooter_timeoutWithKeysShowsCloseHint(t *testing.T) {
+	bud := sampleNotification()
+	bud.FooterVisible = true
+	bud.Dismiss = config.NotificationDismiss{Mode: config.NotificationDismissModeTimeout, Keys: []string{"esc"}, AfterMs: 12000}
+	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "short"})
+	footer := ansi.Strip(m.renderFooter(20))
+	if !strings.Contains(footer, "esc close") {
+		t.Fatalf("footer = %q, want close hint", footer)
 	}
 }
 

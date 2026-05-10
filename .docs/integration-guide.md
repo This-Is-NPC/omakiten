@@ -39,7 +39,7 @@ Hooks live under `config.hooks` as a list. Each entry has three required fields 
 config:
   # … your existing config …
   hooks:
-    - on: comment.created
+    - on: comment
       do: exec
       args:
         argv: ["/home/me/scripts/log-comment.sh"]

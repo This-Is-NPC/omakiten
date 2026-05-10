@@ -148,6 +148,42 @@ func TestResolveMessage_hookFieldFallback(t *testing.T) {
 	}
 }
 
+func TestResolveOptionalMessage_payloadField(t *testing.T) {
+	ev := domain.Event{Payload: `{"hint":"full guard hint"}`}
+	got := resolveOptionalMessage(ev, "", "hint")
+	if got != "full guard hint" {
+		t.Fatalf("got %q, want full guard hint", got)
+	}
+}
+
+func TestShowAction_resolvesDetailField(t *testing.T) {
+	a := NewShowAction(sampleBundleSnapshotForNotification())
+	sender := &recordingSender{msgs: make(chan tea.Msg, 1)}
+	a.SetSender(sender)
+	err := a.Execute(context.Background(), domain.Event{Payload: `{"hint":"short", "full":"complete policy hint"}`}, map[string]any{
+		ArgNotificationSlug:   "kit",
+		ArgDetailMessageField: "full",
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	select {
+	case msg := <-sender.msgs:
+		show, ok := msg.(ShowMsg)
+		if !ok {
+			t.Fatalf("got %T, want ShowMsg", msg)
+		}
+		if show.Text != "short" {
+			t.Fatalf("Text = %q, want short", show.Text)
+		}
+		if show.DetailText != "complete policy hint" {
+			t.Fatalf("DetailText = %q, want complete policy hint", show.DetailText)
+		}
+	default:
+		t.Fatal("Execute did not send ShowMsg")
+	}
+}
+
 // recordingSender is a tiny in-memory stand-in for *tea.Program; the
 // integration tests use a richer one but the action_test only needs
 // to know that Execute attempted a Send.

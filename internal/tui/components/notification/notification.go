@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/config"
+	"omakiten/internal/tui/components/keyfooter"
 	"omakiten/internal/tui/components/viewport"
 )
 
@@ -29,8 +30,9 @@ const (
 // at every View() so a runtime theme switch repaints the card.
 type Options struct {
 	Notification config.Notification
-	Theme config.Theme
-	Text  string
+	Theme        config.Theme
+	Text         string
+	DetailText   string
 }
 
 // Model owns the running notification notification. The parent typically
@@ -38,15 +40,17 @@ type Options struct {
 // route messages through Update; emit on screen via View() and place
 // via Overlay at Position().
 type Model struct {
-	notification     config.Notification
-	theme     config.Theme
-	state     State
-	text      string
-	cursor    int // rune cursor into text
-	frame     int
-	bubble    viewport.Model
-	id        int64 // tick generation; replaced notifications get a new id
-	dismissed bool
+	notification config.Notification
+	theme        config.Theme
+	state        State
+	text         string
+	detailText   string
+	page         int
+	cursor       int // rune cursor into text
+	frame        int
+	bubble       viewport.Model
+	id           int64 // tick generation; replaced notifications get a new id
+	dismissed    bool
 }
 
 // DismissedMsg is sent when the notification should be removed by the parent.
@@ -77,14 +81,15 @@ func nextSession() int64 {
 func New(opts Options) (Model, tea.Cmd) {
 	id := nextSession()
 	m := Model{
-		notification:  opts.Notification,
-		theme:  opts.Theme,
-		text:   opts.Text,
-		bubble: viewport.New(),
-		id:     id,
+		notification: opts.Notification,
+		theme:        opts.Theme,
+		text:         opts.Text,
+		detailText:   opts.DetailText,
+		bubble:       viewport.New(),
+		id:           id,
 	}
 	if m.notification.TypingMsPerChar <= 0 {
-		m.cursor = utf8.RuneCountInString(m.text)
+		m.cursor = utf8.RuneCountInString(m.currentText())
 		m.state = StateSettled
 	}
 	cmds := []tea.Cmd{m.frameCmd()}
@@ -140,7 +145,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if v.id != m.id {
 			return m, nil
 		}
-		return m.dismiss_(), nil
+		return m.Dismiss()
 	}
 	return m, nil
 }
@@ -157,19 +162,21 @@ func (m Model) Dismiss() (Model, tea.Cmd) {
 	return m, func() tea.Msg { return DismissedMsg{ID: id} }
 }
 
-func (m Model) dismiss_() Model {
-	m.dismissed = true
-	return m
-}
-
 func (m Model) handleKey(key tea.KeyMsg) (Model, tea.Cmd) {
 	keyStr := key.String()
+	if keyStr == "tab" && m.hasDetailText() {
+		m.page = 1 - m.page
+		m.cursor = utf8.RuneCountInString(m.currentText())
+		m.state = StateSettled
+		m.bubble.Scroll = 0
+		return m, nil
+	}
 	if isScrollKey(keyStr) {
 		bubble, _ := m.bubble.Update(key, m.bubbleViewport())
 		m.bubble = bubble
 		return m, nil
 	}
-	if m.state == StateSettled && m.notification.Dismiss.Mode == config.NotificationDismissModeKey {
+	if m.state == StateSettled && m.dismissKeysEnabled() {
 		for _, k := range m.notification.Dismiss.Keys {
 			if k == keyStr {
 				return m.Dismiss()
@@ -180,8 +187,15 @@ func (m Model) handleKey(key tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) dismissKeysEnabled() bool {
+	if len(m.notification.Dismiss.Keys) == 0 {
+		return false
+	}
+	return m.notification.Dismiss.Mode == config.NotificationDismissModeKey || m.notification.Dismiss.Mode == config.NotificationDismissModeTimeout
+}
+
 func (m Model) advanceTyping() (Model, tea.Cmd) {
-	total := utf8.RuneCountInString(m.text)
+	total := utf8.RuneCountInString(m.currentText())
 	if m.cursor < total {
 		m.cursor++
 	}
@@ -519,29 +533,45 @@ func (m Model) notificationAutoHeight() bool {
 	return *m.notification.AutoHeight
 }
 
-// renderFooter paints a single right-aligned dismiss-key hint when
-// FooterVisible is on AND the dismiss mode actually has visible
-// keys to advertise. Other modes (timeout, next_status) yield an
-// empty footer — the user already knows the card disappears on its
-// own, so a hint would only add noise.
+// renderFooter paints the same compact keybinding treatment used by the
+// main TUI footer. It advertises tab paging when detail text is present and
+// key-based dismiss controls when the notification uses dismiss.mode=key.
 func (m Model) renderFooter(innerWidth int) string {
 	if !m.notification.FooterVisible {
 		return ""
 	}
-	if m.notification.Dismiss.Mode != config.NotificationDismissModeKey || len(m.notification.Dismiss.Keys) == 0 {
+	tokens := make([]keyfooter.Token, 0, 2)
+	if m.hasDetailText() {
+		tokens = append(tokens, keyfooter.Token{Key: "tab", Label: "details", Primary: true})
+	}
+	if m.dismissKeysEnabled() {
+		if key := footerDismissKey(m.notification.Dismiss.Keys); key != "" {
+			tokens = append(tokens, keyfooter.Token{Key: key, Label: "close", Primary: !m.hasDetailText()})
+		}
+	}
+	if len(tokens) == 0 {
 		return ""
 	}
-	hint := footerKeyHint(m.notification.Dismiss.Keys)
-	if hint == "" {
-		return ""
-	}
-	return centerLine(hint, innerWidth)
+	styles := keyfooter.ThemeStyles(m.theme)
+	styles.Align = notificationFooterPosition(m.notification.FooterPosition)
+	return keyfooter.RenderWrapped(tokens, styles, innerWidth)
 }
 
-// footerKeyHint formats the dismiss-key list as "esc/q/enter to close"
-// using readable labels for the few keys whose Key.String() form
-// would surprise the user (a literal space becomes "space").
-func footerKeyHint(keys []string) string {
+func notificationFooterPosition(position string) string {
+	switch position {
+	case config.NotificationFooterCenter:
+		return keyfooter.AlignCenter
+	case config.NotificationFooterRight:
+		return keyfooter.AlignRight
+	default:
+		return keyfooter.AlignLeft
+	}
+}
+
+// footerDismissKey formats the dismiss-key list as "esc/q/enter/space" using
+// readable labels for the few keys whose Key.String() form would surprise the
+// user (a literal space becomes "space").
+func footerDismissKey(keys []string) string {
 	if len(keys) == 0 {
 		return ""
 	}
@@ -559,7 +589,7 @@ func footerKeyHint(keys []string) string {
 	if len(labels) == 0 {
 		return ""
 	}
-	return strings.Join(labels, "/") + " to close"
+	return strings.Join(labels, "/")
 }
 
 // renderBody composes bubble + tail + frame in the order/orientation
@@ -697,11 +727,23 @@ func joinNonEmpty(parts ...string) string {
 }
 
 func (m Model) typed() string {
-	if m.cursor >= utf8.RuneCountInString(m.text) {
-		return m.text
+	text := m.currentText()
+	if m.cursor >= utf8.RuneCountInString(text) {
+		return text
 	}
-	runes := []rune(m.text)
+	runes := []rune(text)
 	return string(runes[:m.cursor])
+}
+
+func (m Model) currentText() string {
+	if m.page == 1 && m.hasDetailText() {
+		return m.detailText
+	}
+	return m.text
+}
+
+func (m Model) hasDetailText() bool {
+	return strings.TrimSpace(m.detailText) != ""
 }
 
 func (m Model) renderBubble(width int) string {

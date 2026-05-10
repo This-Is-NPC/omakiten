@@ -34,11 +34,11 @@ type runtimeOptions struct {
 }
 
 type runtime struct {
-	store       *sqlite.Store
-	configPath  string
-	dbPath      string
-	bus         events.Bus
-	hooksEngine *hooks.Engine
+	store              *sqlite.Store
+	configPath         string
+	dbPath             string
+	bus                events.Bus
+	hooksEngine        *hooks.Engine
 	notificationAction *notification.ShowAction
 }
 
@@ -231,9 +231,11 @@ func buildHookEntries(specs []config.HookSpec) []hooks.Hook {
 				When: spec.When,
 				Do:   notification.ActionName,
 				Args: map[string]any{
-					notification.ArgNotificationSlug:    spec.Notification,
-					notification.ArgMessage:      spec.Message,
-					notification.ArgMessageField: spec.MessageField,
+					notification.ArgNotificationSlug:   spec.Notification,
+					notification.ArgMessage:            spec.Message,
+					notification.ArgMessageField:       spec.MessageField,
+					notification.ArgDetailMessage:      spec.DetailMessage,
+					notification.ArgDetailMessageField: spec.DetailMessageField,
 				},
 			})
 			continue

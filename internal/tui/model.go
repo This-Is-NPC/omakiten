@@ -17,8 +17,8 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
-	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/detailscreen"
+	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/picker"
 	"omakiten/internal/tui/components/viewport"
 )
@@ -53,7 +53,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		severities:       severities,
 		markdown:         newMarkdownRenderer(tokensFromTheme(theme)),
 		markdownRendered: true,
-		notifications:          notifications.Notifications,
+		notifications:    notifications.Notifications,
 	}
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()
@@ -461,8 +461,9 @@ func (m Model) dispatchNotification(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		bm, cmd := notification.New(notification.Options{
 			Notification: showMsg.Notification,
-			Theme: m.theme,
-			Text:  showMsg.Text,
+			Theme:        m.theme,
+			Text:         showMsg.Text,
+			DetailText:   showMsg.DetailText,
 		})
 		m.notification = &bm
 		return m, cmd, true

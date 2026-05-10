@@ -29,16 +29,17 @@ type MessageSender interface {
 // tests + the hooks validator.
 const ActionName = "notification.show"
 
-// ArgNotificationSlug, ArgMessage, ArgMessageField are the internal arg
-// keys the action receives. The composition root stages them from
-// the user-facing HookSpec fields (Notification, Message, MessageField);
-// users never write these keys directly. Empty values are fine —
-// the action falls back to the notification YAML when a hook layer key is
-// blank.
+// ArgNotificationSlug, ArgMessage, ArgMessageField, ArgDetailMessage, and
+// ArgDetailMessageField are the internal arg keys the action receives.
+// The composition root stages them from the user-facing HookSpec fields;
+// users never write these keys directly. Empty values are fine — the
+// action falls back to the notification YAML when a hook layer key is blank.
 const (
-	ArgNotificationSlug    = "_notification_slug"
-	ArgMessage      = "_notification_message"
-	ArgMessageField = "_notification_message_field"
+	ArgNotificationSlug   = "_notification_slug"
+	ArgMessage            = "_notification_message"
+	ArgMessageField       = "_notification_message_field"
+	ArgDetailMessage      = "_notification_detail_message"
+	ArgDetailMessageField = "_notification_detail_message_field"
 )
 
 // ShowMsg is the message the action sends into the running tea.Program
@@ -47,7 +48,8 @@ const (
 // constructs a notification.Model from these values.
 type ShowMsg struct {
 	Notification config.Notification
-	Text  string
+	Text         string
+	DetailText   string
 }
 
 // BundleSnapshot is the narrow port the action consults at execute
@@ -130,13 +132,16 @@ func (a *ShowAction) Execute(_ context.Context, ev domain.Event, args map[string
 
 	hookMessage, _ := args[ArgMessage].(string)
 	hookField, _ := args[ArgMessageField].(string)
+	detailMessage, _ := args[ArgDetailMessage].(string)
+	detailField, _ := args[ArgDetailMessageField].(string)
 
 	text, err := resolveMessage(ev, notification.Message, notification.MessageField, hookMessage, hookField)
 	if err != nil {
 		return err
 	}
+	detailText := resolveOptionalMessage(ev, detailMessage, detailField)
 
-	sender.Send(ShowMsg{Notification: notification, Text: text})
+	sender.Send(ShowMsg{Notification: notification, Text: text, DetailText: detailText})
 	return nil
 }
 
@@ -169,6 +174,16 @@ func resolveMessage(ev domain.Event, notificationMsg, notificationField, hookMsg
 		return ev.Body, nil
 	}
 	return "", fmt.Errorf("notification has no resolvable message — set message/message_field on the notification YAML or the hook entry, or surface ev.Body")
+}
+
+func resolveOptionalMessage(ev domain.Event, msg, field string) string {
+	if v, ok := tryLiteral(msg); ok {
+		return v
+	}
+	if v, ok := tryPayload(ev, field); ok {
+		return v
+	}
+	return ""
 }
 
 func tryLiteral(s string) (string, bool) {

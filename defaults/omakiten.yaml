@@ -93,11 +93,106 @@ config:
   # named notifications/<slug>.yaml so omakiten.yaml only links event →
   # notification file.
   hooks:
+    - on: task.created
+      notification: kitten_informative
+      message: "A new quest has appeared."
+    - on: task.moved
+      notification: kitten_informative
+      message: "Fast travel complete."
+    - on: task.edited
+      notification: kitten_informative
+      message: "The scroll has been amended under supervision."
+    - on: task.completed
+      notification: kitten_success
+      message: "Achievement unlocked: task complete."
     - on: guard.violated
-      notification: guard-violation
+      when: { operation: task.delete }
+      notification: kitten_destructive
+      message: "Trying to burn the quest log? Adorable."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: comment.delete }
+      notification: kitten_destructive
+      message: "Witness tampering? Bold move."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.transition }
+      notification: kitten_blocked
+      message: "You shall not pass."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.edit }
+      notification: kitten_blocked
+      message: "The council has denied this edit."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: comment.edit }
+      notification: kitten_blocked
+      message: "The scribe's quill has been confiscated."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.archive }
+      notification: kitten_blocked
+      message: "Not so fast, vault dweller."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.unarchive }
+      notification: kitten_blocked
+      message: "The seal holds. Wake it properly."
+      detail_message_field: hint
+    - on: task.removed
+      notification: kitten_destructive
+      message: "Ashes logged. The archive approves."
+    - on: comment.removed
+      notification: kitten_destructive
+      message: "The witness has left the material plane."
+    - on: task.archived
+      notification: kitten_archive
+      message: "The quest sleeps in the vault."
+    - on: task.unarchived
+      notification: kitten_archive
+      message: "The ancient quest awakens."
+    - on: comment
+      when: { author_type: human }
+      notification: kitten_informative
+      message: "A raven arrives with testimony."
     - on: comment
       when: { author_type: agent }
-      notification: agent-comment
+      notification: kitten_informative
+      message: "Your companion filed a note with the guild."
+    - on: comment.edited
+      notification: kitten_informative
+      message: "The scribe corrected the record under watch."
+    - on: tag.added
+      notification: kitten_link
+      message: "A rune has been etched onto the quest."
+    - on: tag.removed
+      notification: kitten_link
+      message: "The rune fades. The record remains."
+    - on: dependency.added
+      notification: kitten_link
+      message: "A new side quest is chained."
+    - on: dependency.removed
+      notification: kitten_link
+      message: "The chain has been broken."
+    - on: error.recorded
+      notification: kitten_knowledge
+      message: "A wild bug enters the bestiary."
+    - on: error.searched
+      notification: kitten_knowledge
+      message: "Consulting the forbidden archives."
+    - on: solution.added
+      notification: kitten_knowledge
+      message: "A new spell enters the grimoire."
+    - on: solution.liked
+      notification: kitten_success
+      message: "The party gains inspiration."
+    - on: solution.failed
+      notification: kitten_knowledge
+      message: "The princess is in another castle."
+    - on: solution.viewed_top
+      notification: kitten_knowledge
+      message: "Opening the hall of proven spells."
   # search tunes the heuristics shared across agent-side text ranking
   # (similar-task hints in tasks.create_intent, query overlap scoring).
   # stopwords is the lowercase token list dropped before scoring; add

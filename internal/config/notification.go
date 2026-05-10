@@ -9,12 +9,12 @@ package config
 // validator rejects zero values rather than silently filling defaults
 // so config drift surfaces at LoadBundle, never at first event.
 type Notification struct {
-	Name            string            `yaml:"name" json:"name"`
-	Description     string            `yaml:"description" json:"description"`
+	Name            string                   `yaml:"name" json:"name"`
+	Description     string                   `yaml:"description" json:"description"`
 	Size            NotificationSize         `yaml:"size" json:"size"`
-	Background      string            `yaml:"background" json:"background"`
-	FrameIntervalMs int               `yaml:"frame_interval_ms" json:"frame_interval_ms"`
-	Style           string            `yaml:"style" json:"style"`
+	Background      string                   `yaml:"background" json:"background"`
+	FrameIntervalMs int                      `yaml:"frame_interval_ms" json:"frame_interval_ms"`
+	Style           string                   `yaml:"style" json:"style"`
 	Border          NotificationBorder       `yaml:"border" json:"border"`
 	CustomBorder    NotificationCustomBorder `yaml:"custom_border,omitempty" json:"custom_border,omitempty"`
 	Animation       []NotificationFrame      `yaml:"animation" json:"animation"`
@@ -23,20 +23,22 @@ type Notification struct {
 	AutoHeight      *bool                    `yaml:"auto_height,omitempty" json:"auto_height,omitempty"`
 	PaddingInside   bool                     `yaml:"padding_inside,omitempty" json:"padding_inside,omitempty"`
 	FooterVisible   bool                     `yaml:"footer_visible,omitempty" json:"footer_visible,omitempty"`
-	Position        string            `yaml:"position" json:"position"`
+	FooterPosition  string                   `yaml:"footer_position,omitempty" json:"footer_position,omitempty"`
+	Position        string                   `yaml:"position" json:"position"`
 	Dismiss         NotificationDismiss      `yaml:"dismiss" json:"dismiss"`
-	TypingMsPerChar int               `yaml:"typing_ms_per_char" json:"typing_ms_per_char"`
-	Message         string            `yaml:"message,omitempty" json:"message,omitempty"`
-	MessageField    string            `yaml:"message_field,omitempty" json:"message_field,omitempty"`
+	TypingMsPerChar int                      `yaml:"typing_ms_per_char" json:"typing_ms_per_char"`
+	Message         string                   `yaml:"message,omitempty" json:"message,omitempty"`
+	MessageField    string                   `yaml:"message_field,omitempty" json:"message_field,omitempty"`
 
 	SourcePath string `yaml:"-" json:"-"`
 	IsCustom   bool   `yaml:"-" json:"-"`
 }
 
 // NotificationDismiss is the close-strategy for the rendered card. Mode
-// chooses key|timeout|next_status; Keys is required for key, AfterMs
-// for timeout. The renderer rejects shapes that pair the wrong field
-// with the chosen mode at validate time.
+// chooses key|timeout|next_status; Keys is required for key and optional for
+// timeout when authors want manual close plus auto-dismiss. AfterMs is required
+// for timeout. The renderer rejects shapes that pair the wrong field with the
+// chosen mode at validate time.
 type NotificationDismiss struct {
 	Mode    string   `yaml:"mode" json:"mode"`
 	Keys    []string `yaml:"keys,omitempty" json:"keys,omitempty"`
@@ -111,6 +113,10 @@ const (
 	NotificationTailTop    = "top"
 	NotificationTailLeft   = "left"
 	NotificationTailRight  = "right"
+
+	NotificationFooterLeft   = "left"
+	NotificationFooterCenter = "center"
+	NotificationFooterRight  = "right"
 )
 
 // NotificationStyles is the closed set of valid style values.
@@ -129,6 +135,13 @@ var NotificationTailSides = []string{
 	NotificationTailTop,
 	NotificationTailLeft,
 	NotificationTailRight,
+}
+
+// NotificationFooterPositions is the closed set of valid footer alignments.
+var NotificationFooterPositions = []string{
+	NotificationFooterLeft,
+	NotificationFooterCenter,
+	NotificationFooterRight,
 }
 
 // Notification dismiss + position enum closed sets.

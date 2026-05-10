@@ -103,11 +103,12 @@ two shapes in the same entry fails validation.
 ```yaml
 hooks:
   - on: guard.violated
-    notification: guard-violation        # → notifications/guard-violation.yaml
+    notification: task-guard             # → notifications/task-guard.yaml
   - on: comment
     when: { author_type: agent }
-    notification: agent-comment
-    message: "Agent comment"      # optional hook-level message override
+    notification: agent-note
+    message: "Agent comment"             # optional hook-level message fallback
+    detail_message_field: hint            # optional second page shown with tab
 ```
 
 The hook entry may carry `message:` (literal) or `message_field:`
@@ -115,6 +116,12 @@ The hook entry may carry `message:` (literal) or `message_field:`
 referenced notification YAML did not declare its own. Notification YAML wins on
 tie-break — see [`notifications.md`](notifications.md#message-resolution) for
 the full precedence table.
+
+The hook entry may also carry `detail_message:` or `detail_message_field:`.
+When either resolves to text, the TUI card shows the normal short message first;
+pressing `tab` toggles to the detail page. This is intended for funny short copy
+plus the complete guard/error hint. Detail fields are optional and are ignored
+outside the TUI just like the notification itself.
 
 Every render knob (animation, position, dismiss, message text, card
 size, colors) lives inside the notification YAML — `omakiten.yaml` only
@@ -184,13 +191,14 @@ config:
   hooks:
     - on: guard.violated
       when: { operation: task.delete }
-      notification: guard-violation
+      notification: task-delete-warning
+      message: "Trying to burn the quest log? Adorable."
+      detail_message_field: hint
 ```
 
-Every render knob (position, animation, dismiss, message field) lives
-inside `notifications/guard-violation.yaml`. The default ships with
-`message_field: hint`, so the notification reads the guard's hint payload
-field. To customise per event, copy the notification file to
+Every render knob (position, animation, dismiss) lives inside the notification
+YAML. The hook supplies the short message and, when useful, a detail field such
+as `hint` for the second page. To customise per event, copy the notification file to
 `notifications/custom/<your-slug>.yaml`, change the slug, and reference it
 from a new hook entry.
 
@@ -201,12 +209,12 @@ config:
   hooks:
     - on: comment
       when: { author_type: agent }
-      notification: agent-comment
+      notification: agent-note
 ```
 
-`notifications/agent-comment.yaml` carries `dismiss: { mode: timeout,
-after_ms: 8000 }` and `message_field: body`, so the comment renders
-inline and disappears 8s after settling.
+Assuming `notifications/agent-note.yaml` carries `dismiss: { mode: timeout,
+after_ms: 12000, keys: [...] }` and `message_field: body`, the comment renders
+inline, can be closed manually, and disappears 12s after settling.
 
 ### Filter by author_type or source
 

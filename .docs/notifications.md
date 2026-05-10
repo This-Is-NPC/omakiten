@@ -7,11 +7,11 @@ renderer needs (card geometry, optional ASCII animation, position,
 dismiss strategy, message text). `omakiten.yaml` only links events to
 notification slugs.
 
-The mental model: think of each notification file as a one-line
-`task.delete = notification_error_msg_task_delete.yml` mapping.
-Different copy per event? New notification file. Different look per
-situation? New notification file. The visual config does duplicate
-across files — that's the price for modularity.
+The mental model: think of each notification file as a reusable visual
+recipe. Different copy per event can live on the hook entry; different
+look, placement, timing, or animation means a different notification
+recipe. The visual config may duplicate across files — that's the price
+for modularity.
 
 ## Lifecycle in three lines
 
@@ -33,10 +33,9 @@ animation block entirely.
 ```
 config/
 notifications/
-  guard-violation.yaml    # default — refreshed on every install sync
-  agent-comment.yaml      # default
+  <slug>.yaml              # default — refreshed on every install sync
   custom/
-    error-task-delete.yaml  # user-authored, never overwritten
+    <slug>.yaml            # user-authored, never overwritten
 themes/
 omakiten.yaml
 ```
@@ -49,14 +48,14 @@ runtime stays usable; only that one card is dropped.
 
 ## Notification YAML schema
 
-The default kit ships fully-annotated examples at
-`defaults/notifications/guard-violation.yaml` and
-`defaults/notifications/agent-comment.yaml`. Copy one of those when
-authoring a new notification.
+The embedded defaults under `defaults/notifications/*.yaml` are useful
+starting points when authoring a new notification. Copy one into
+`notifications/custom/<your-slug>.yaml`, change `name:` to match the
+slug, and wire it from `config.hooks`.
 
 ```yaml
 # Identity
-name: guard-violation              # required
+name: task-guard                   # required; should match the filename slug
 description: short blurb           # required
 
 # Geometry
@@ -67,7 +66,8 @@ size:
 # Behaviour flags (all optional)
 auto_height: true                  # default true → card flows to body height. false → outer height pinned to size.height
 padding_inside: false              # default false → body top-anchored. true (auto_height=false) → body vertically centered
-footer_visible: false              # default false → no footer. true → "<keys> to close" hint on a reserved bottom row (only meaningful when dismiss.mode=key)
+footer_visible: false              # default false → no footer. true → key hints on a reserved bottom row
+footer_position: left              # optional, default left; left | center | right alignment for the footer row(s)
 
 # Background + chrome
 background: $theme.highlight       # required; transparent | $theme.<key> | #rrggbb
@@ -123,7 +123,7 @@ message_field: hint                # alternate to message — top-level key to r
 # Dismiss
 dismiss:
   mode: key                        # required; key | timeout | next_status
-  keys: [esc, q, enter, " "]       # required when mode=key
+  keys: [esc, q, enter, " "]       # required when mode=key; optional with timeout for manual close
   after_ms: 8000                   # required when mode=timeout
 ```
 
@@ -131,12 +131,13 @@ The validator rejects:
 
 - any required field missing or zero,
 - unknown `style` / `position` / `dismiss.mode` / `bubble.tail_side`,
+- unknown `footer_position`,
 - `style: custom` with a partial `custom_border`,
 - `border.visible: true` with `width <= 0` or empty `color`,
 - frame indices not `0..N-1` (gaps OR duplicates), empty frame
   `value`, `frame_interval_ms <= 0` when an animation is set,
-- `dismiss.mode=key` with no `keys`; `dismiss.mode=timeout` with
-  `after_ms <= 0`,
+- `dismiss.mode=key` with no `keys`; any empty `dismiss.keys` entry;
+  `dismiss.mode=timeout` with `after_ms <= 0`,
 - both `message` and `message_field` set on the same layer,
 - `padding.*` < 0.
 
@@ -166,9 +167,9 @@ regardless of which TUI surface is open.
 | `left`    | Horizontal — frame on left, bubble on right, tail `<` column. |
 
 For vertical layouts the frame is horizontally centered so the
-centered tail glyph visually points at the kitten. When the
-notification has no animation, the tail and frame are skipped and
-the bubble fills the body region alone.
+centered tail glyph visually points at the animation. When the
+notification has no animation, the tail and frame are skipped and the
+bubble fills the body region alone.
 
 ## Sizing modes
 
@@ -187,12 +188,16 @@ When `auto_height=false`:
 
 ## Footer
 
-`footer_visible: true` reserves the bottom row of the card for a
-dismiss-key hint (`esc/q/enter/space to close`). The hint reads only
-when `dismiss.mode=key`; `timeout` and `next_status` produce nothing,
-even with `footer_visible: true`. The footer is rendered at the
-frame width — it ignores horizontal `padding` so the band sits flush
-edge-to-edge.
+`footer_visible: true` reserves the bottom row of the card for key hints. The
+footer can show a dismiss-key hint (`esc/q/enter/space close`) and, when a hook
+supplies a detail page, the `tab details` hint. `dismiss.mode=timeout` may also
+declare `keys`, giving the card both auto-dismiss and manual close. With
+`next_status`, close keys are not shown. The footer is rendered at the frame
+width — it ignores horizontal `padding` so the band sits flush edge-to-edge.
+
+`footer_position` controls how each footer row aligns inside that full-width
+band: `left` (default), `center`, or `right`. This affects only the footer;
+card `padding` still applies to the bubble/body region above it.
 
 ## Colors
 
@@ -214,11 +219,12 @@ picker repaints the card on the next frame.
 config:
   hooks:
     - on: guard.violated
-      notification: guard-violation                # → notifications/guard-violation.yaml
+      notification: task-guard                     # → notifications/task-guard.yaml
     - on: comment
       when: { author_type: agent }
-      notification: agent-comment
+      notification: agent-note
       message: "Agent dropped a comment"           # optional hook-level fallback
+      detail_message_field: hint                    # optional tab detail page
 ```
 
 Each hook entry uses **either** `notification: <slug>` or
@@ -241,19 +247,41 @@ wins on tie-break.** Resolution order:
 `message` and `message_field` are mutually exclusive within each
 layer; declare one or the other, never both.
 
+### Detail page
+
+Notification hooks may declare `detail_message` (literal) or
+`detail_message_field` (payload key). These fields do not replace the primary
+bubble text. When they resolve to non-empty text, the TUI footer advertises
+`tab details`, and pressing `tab` toggles the bubble between the short message
+and the detail page. The detail page uses the same scroll keys as long primary
+messages.
+
+This is useful for defaults that keep the first page playful while still
+letting the user inspect the complete guard hint:
+
+```yaml
+config:
+  hooks:
+    - on: guard.violated
+      when: { operation: task.delete }
+      notification: task-guard
+      message: "Trying to burn the quest log? Adorable."
+      detail_message_field: hint
+```
+
 ## Default notifications
 
-The kit ships two:
+The default kit ships reusable notification recipes for common workflow
+events. Event-specific copy lives in `config.hooks`, so one visual recipe can
+serve many operations while each hook keeps its own message and optional detail
+text.
 
-- **guard-violation** — centered card with border + theme-highlight
-  background; rendered when any `guard.violated` event fires.
-- **agent-comment** — top-right card that auto-dismisses 8s after it
-  settles; fires when an agent posts a comment.
-
-Both files are heavily commented and meant to be cloned. Copy into
-`notifications/custom/<your-slug>.yaml`, change `name:` to match the
-new filename, tweak the message + frames, and reference the slug
-from a new `omakiten.yaml::config.hooks` entry.
+Default recipes use timeout dismissal with manual close keys: routine notices
+settle and disappear automatically, while guard/destructive notices can stay a
+little longer and expose `tab details` when the hook provides a detail message.
+Copy any default into `notifications/custom/<your-slug>.yaml`, change `name:` to
+match the new filename, tweak frames, and reference the slug from a new
+`omakiten.yaml::config.hooks` entry.
 
 ## Behaviour notes
 
@@ -266,6 +294,6 @@ from a new `omakiten.yaml::config.hooks` entry.
   non-dismiss keys so the app underneath stays inert.
 - A new notification event arriving while the current card is still
   typing is dropped; once Settled, the new payload replaces it.
-- The buddy.show action is registered from CLI / MCP / TUI
-  composition roots so hook validation works the same in every
-  entry point. Outside the TUI it is a silent no-op.
+- The notification action is registered from CLI / MCP / TUI
+  composition roots so hook validation works the same in every entry point.
+  Outside the TUI it is a silent no-op.

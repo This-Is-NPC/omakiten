@@ -1,0 +1,70 @@
+# Identity ------------------------------------------------------------
+name: kitten_informative
+description: Calm kitten for workflow updates and routine messages.
+
+# Geometry ------------------------------------------------------------
+size:
+  width: 40
+  height: 20
+
+# Behaviour flags -----------------------------------------------------
+auto_height: false
+padding_inside: true
+footer_visible: true
+footer_position: center
+
+# Background + chrome -------------------------------------------------
+background: transparent
+style: rounded
+border:
+  visible: true
+  width: 1
+  color: $theme.secondary
+  background: transparent
+
+# Inner padding -------------------------------------------------------
+padding:
+  top: 1
+  right: 2
+  bottom: 1
+  left: 2
+
+# Placement on the terminal grid -------------------------------------
+position: center
+
+# Bubble + tail -------------------------------------------------------
+bubble:
+  tail_side: bottom
+
+# Animation -----------------------------------------------------------
+frame_interval_ms: 900
+animation:
+  - frame: 0
+    value: |2
+
+           /\__/\
+          ( o o  )
+          (  v   )
+
+  - frame: 1
+    value: |2
+
+           /\__/\
+          ( - -  )
+          (  v   )
+
+  - frame: 2
+    value: |2
+
+           /\__/\
+          ( o o  )
+          (  v   )
+
+# Bubble text ---------------------------------------------------------
+typing_ms_per_char: 0
+
+# Dismiss -------------------------------------------------------------
+dismiss:
+  mode: timeout
+  keys: [esc, q, enter, " "]
+  after_ms: 12000

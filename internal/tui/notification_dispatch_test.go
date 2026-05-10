@@ -88,6 +88,24 @@ func TestModelDispatchesShowMsg(t *testing.T) {
 	}
 }
 
+func TestModelDispatchesShowMsgWithDetailText(t *testing.T) {
+	model := newNotificationTestModel(t)
+	bud := model.notifications["guard-violation"]
+	msg := notification.ShowMsg{Notification: bud, Text: "short warning", DetailText: "full policy details"}
+
+	next, _ := model.Update(msg)
+	mn := next.(Model)
+	if mn.notification == nil {
+		t.Fatalf("ShowMsg did not populate m.notification")
+	}
+	next, _ = mn.Update(tea.KeyMsg(tea.Key{Type: tea.KeyTab}))
+	mn = next.(Model)
+	view := stripANSI(mn.notification.View())
+	if !strings.Contains(view, "full") {
+		t.Fatalf("tab did not render detail text: %q", trim(view, 400))
+	}
+}
+
 func TestModel_notificationEscapeDismissesViaCmd(t *testing.T) {
 	model := newNotificationTestModel(t)
 	bud := model.notifications["guard-violation"]

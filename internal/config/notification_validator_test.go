@@ -178,6 +178,26 @@ func TestValidateNotification_invalidPosition(t *testing.T) {
 	}
 }
 
+func TestValidateNotification_invalidFooterPosition(t *testing.T) {
+	b := validNotification()
+	b.FooterPosition = "bottom"
+	if err := ValidateNotification(b); err == nil || !strings.Contains(err.Error(), "footer_position") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestValidateNotification_footerPositionOptional(t *testing.T) {
+	b := validNotification()
+	b.FooterPosition = ""
+	if err := ValidateNotification(b); err != nil {
+		t.Fatalf("empty footer_position should pass: %v", err)
+	}
+	b.FooterPosition = NotificationFooterRight
+	if err := ValidateNotification(b); err != nil {
+		t.Fatalf("right footer_position should pass: %v", err)
+	}
+}
+
 func TestValidateNotification_dismissKeyNeedsKeys(t *testing.T) {
 	b := validNotification()
 	b.Dismiss = NotificationDismiss{Mode: NotificationDismissModeKey}
@@ -190,6 +210,22 @@ func TestValidateNotification_dismissTimeoutNeedsAfterMs(t *testing.T) {
 	b := validNotification()
 	b.Dismiss = NotificationDismiss{Mode: NotificationDismissModeTimeout}
 	if err := ValidateNotification(b); err == nil || !strings.Contains(err.Error(), "after_ms") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestValidateNotification_dismissTimeoutAllowsKeys(t *testing.T) {
+	b := validNotification()
+	b.Dismiss = NotificationDismiss{Mode: NotificationDismissModeTimeout, Keys: []string{"esc"}, AfterMs: 12000}
+	if err := ValidateNotification(b); err != nil {
+		t.Fatalf("timeout with manual close keys should pass: %v", err)
+	}
+}
+
+func TestValidateNotification_dismissRejectsEmptyKey(t *testing.T) {
+	b := validNotification()
+	b.Dismiss = NotificationDismiss{Mode: NotificationDismissModeTimeout, Keys: []string{""}, AfterMs: 12000}
+	if err := ValidateNotification(b); err == nil || !strings.Contains(err.Error(), "dismiss.keys") {
 		t.Fatalf("got %v", err)
 	}
 }
