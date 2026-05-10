@@ -56,6 +56,17 @@
 * **boundary enforcement:** new `internal/arch/arch_test.go` walks the import graph and fails if `internal/domain` reaches into adapters, if `internal/app` imports concrete adapters, or if any leaf adapter references a sibling. A `.golangci.yml` mirrors the rules under `depguard`. CI now runs `go vet`, `go test -race -count=1` and `golangci-lint`.
 * **eliminated `"backlog"` literal in production code:** `internal/cli/add.go --bucket` defaults to `""` (the `WorkflowService` resolves the active workflow's first bucket); the TUI's create form does the same.
 
+## [0.12.0](https://github.com/This-Is-NPC/omakiten/compare/v0.11.0...v0.12.0) (2026-05-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **notifications:** add configurable notification cards ([#44](https://github.com/This-Is-NPC/omakiten/issues/44))
+
+### Features
+
+* **notifications:** add configurable notification cards ([#44](https://github.com/This-Is-NPC/omakiten/issues/44)) ([9a418dd](https://github.com/This-Is-NPC/omakiten/commit/9a418dd9e538a38383832eda36b4c1dca7314769))
+
 ## [0.11.0](https://github.com/This-Is-NPC/omakiten/compare/v0.10.0...v0.11.0) (2026-05-09)
 
 
