@@ -1,31 +1,37 @@
 # Notifications
 
-Notifications are configurable ASCII notification cards that pop over the
-Omakiten TUI when a domain event matches a hook. Each notification is a
-**self-contained recipe** — the YAML file declares everything the
-renderer needs (visuals, animation, position, dismiss strategy,
-message text). `omakiten.yaml` only links events to notification slugs.
+Notifications are configurable popup cards that paint over the
+Omakiten TUI when a domain event matches a hook. Each notification is
+a **self-contained recipe** — the YAML file declares everything the
+renderer needs (card geometry, optional ASCII animation, position,
+dismiss strategy, message text). `omakiten.yaml` only links events to
+notification slugs.
 
 The mental model: think of each notification file as a one-line
-`task.delete = notification_error_msg_task_delete.yml` mapping. Custom copy
-per event? New notification file. Different look per situation? New notification
-file. Yes, this duplicates the visual config across files — that's
-the price for modularity, and the user explicitly chose it.
+`task.delete = notification_error_msg_task_delete.yml` mapping.
+Different copy per event? New notification file. Different look per
+situation? New notification file. The visual config does duplicate
+across files — that's the price for modularity.
 
 ## Lifecycle in three lines
 
 1. A notification lives at `notifications/<slug>.yaml` (default) or
-   `notifications/custom/<slug>.yaml` (override). Drop a file in either and
-   it loads at startup — no entry in `omakiten.yaml`.
-2. `omakiten.yaml::config.hooks` links event matches to a notification slug
-   via the `notification: <slug>` field.
+   `notifications/custom/<slug>.yaml` (override). Drop a file in
+   either and it loads at startup — no entry in `omakiten.yaml`.
+2. `omakiten.yaml::config.hooks` links event matches to a notification
+   slug via the `notification: <slug>` field.
 3. The hooks engine runs on the event bus; when a hook matches, the
-   action looks up the notification by slug and emits a notification card.
+   action looks up the notification by slug and emits a card.
+
+Notifications are **opt-in** and **animation-optional**: a card
+without an `animation:` block renders as a plain bubble, no ASCII
+mascot. Authors that want a quiet text-only alert can omit the
+animation block entirely.
 
 ## File layout
 
 ```
-config/                   # active config
+config/
 notifications/
   guard-violation.yaml    # default — refreshed on every install sync
   agent-comment.yaml      # default
@@ -35,27 +41,43 @@ themes/
 omakiten.yaml
 ```
 
-`notifications/custom/<slug>.yaml` overrides any default that shares a
-filename slug. Two files at the same scope (both default OR both
-custom) with the same slug fail at `LoadBundle`.
+`notifications/custom/<slug>.yaml` overrides any default that shares
+the same `name:`. Two files at the same scope (both default OR both
+custom) with the same name fail at `LoadBundle`. Custom files that
+fail validation are SKIPPED with a warning printed to stderr — the
+runtime stays usable; only that one card is dropped.
 
 ## Notification YAML schema
 
+The default kit ships fully-annotated examples at
+`defaults/notifications/guard-violation.yaml` and
+`defaults/notifications/agent-comment.yaml`. Copy one of those when
+authoring a new notification.
+
 ```yaml
-name: guard-violation         # required; canonical id used by hook entries
-description: short blurb      # required
-size:                         # required; inner content rect (border sits OUTSIDE)
-  width: 28                   # > 0 — visible cell width
-  height: 12                  # > 0 — bubble scroll viewport row cap (does NOT pad the card)
-background: $theme.highlight  # required; transparent | $theme.<key> | #rrggbb
-frame_interval_ms: 600        # required; > 0 — ASCII animation cadence
-style: rounded                # required; rounded | square | double | thick | hidden | custom
+# Identity
+name: guard-violation              # required
+description: short blurb           # required
+
+# Geometry
+size:
+  width: 28                        # required; > 0 — outer card width in cells (border + padding + content + border)
+  height: 12                       # required; > 0 — pinned outer height when auto_height=false; bubble scroll viewport cap
+
+# Behaviour flags (all optional)
+auto_height: true                  # default true → card flows to body height. false → outer height pinned to size.height
+padding_inside: false              # default false → body top-anchored. true (auto_height=false) → body vertically centered
+footer_visible: false              # default false → no footer. true → "<keys> to close" hint on a reserved bottom row (only meaningful when dismiss.mode=key)
+
+# Background + chrome
+background: $theme.highlight       # required; transparent | $theme.<key> | #rrggbb
+style: rounded                     # required; rounded | square | double | thick | hidden | custom
 border:
-  visible: true               # required
-  width: 1                    # required when visible — > 0
-  color: $theme.primary       # required when visible
-  background: transparent     # optional; same grammar as color
-custom_border:                # required ONLY when style: custom; ignored otherwise
+  visible: true                    # required
+  width: 1                         # required when visible — > 0
+  color: $theme.primary            # required when visible
+  background: transparent          # optional; same grammar as color
+custom_border:                     # required ONLY when style: custom
   top: "─"
   bottom: "─"
   left: "│"
@@ -64,16 +86,27 @@ custom_border:                # required ONLY when style: custom; ignored otherw
   top_right: "╮"
   bottom_left: "╰"
   bottom_right: "╯"
-position: center              # required; one of nine fixed anchors (see below)
-typing_ms_per_char: 0         # required; >= 0 — 0 means "show full bubble immediately"
-message: "Move blocked here." # required IF message_field unset
-message_field: hint           # required IF message unset; mutually exclusive with message
-dismiss:
-  mode: key                   # required; key | timeout | next_status
-  keys: [esc, q, enter]       # required when mode=key
-  after_ms: 8000              # required when mode=timeout
+
+# Inner padding (cells eaten from the frame BEFORE the body renders).
+# Footer + scroll hint sit OUTSIDE this band — padding.bottom adds
+# rows BETWEEN the body and the footer, not after it.
+padding:
+  top: 1                           # optional, default 0
+  right: 2
+  bottom: 1
+  left: 2
+
+# Placement
+position: center                   # required; one of nine fixed anchors (see below)
+
+# Bubble + tail
+bubble:
+  tail_side: bottom                # optional when no animation; required values: bottom | top | left | right
+
+# Animation (optional — omit the block for a plain bubble notification)
+frame_interval_ms: 600             # required ONLY when `animation:` is set; > 0
 animation:
-  - frame: 0                  # frames are indexed 0..N-1, gap-free
+  - frame: 0                       # frames are indexed 0..N-1, gap-free
     value: |2
         /\___/\
        ( o   o )
@@ -81,24 +114,37 @@ animation:
     value: |2
         /\___/\
        ( -   - )
-bubble:
-  tail_side: bottom           # required; bottom | top | left | right
+
+# Bubble text
+typing_ms_per_char: 0              # required; >= 0; 0 = show full bubble immediately
+message: "Move blocked here."      # one of message OR message_field per layer; mutually exclusive
+message_field: hint                # alternate to message — top-level key to read from event.payload
+
+# Dismiss
+dismiss:
+  mode: key                        # required; key | timeout | next_status
+  keys: [esc, q, enter, " "]       # required when mode=key
+  after_ms: 8000                   # required when mode=timeout
 ```
 
 The validator rejects:
 
 - any required field missing or zero,
-- unknown `style` / `position` / `bubble.tail_side` / `dismiss.mode`,
+- unknown `style` / `position` / `dismiss.mode` / `bubble.tail_side`,
 - `style: custom` with a partial `custom_border`,
 - `border.visible: true` with `width <= 0` or empty `color`,
-- empty `animation`, frame indices not `0..N-1` (gaps OR duplicates),
-  empty frame `value`,
+- frame indices not `0..N-1` (gaps OR duplicates), empty frame
+  `value`, `frame_interval_ms <= 0` when an animation is set,
 - `dismiss.mode=key` with no `keys`; `dismiss.mode=timeout` with
   `after_ms <= 0`,
-- both `message` and `message_field` set; or neither.
+- both `message` and `message_field` set on the same layer,
+- `padding.*` < 0.
 
-Errors cite the notification name + source path so the offending file is
-easy to find when several notifications are loaded.
+The combined-presence rule (at least one of `message` /
+`message_field` between the notification YAML and the hook entry) is
+enforced by the hooks validator at LoadBundle. Errors cite the
+notification name + source path so the offending file is easy to
+find.
 
 ## Positions
 
@@ -112,29 +158,55 @@ regardless of which TUI surface is open.
 
 ## Layout: tail_side drives orientation
 
-| Tail side | Layout                                                       |
-| --------- | ------------------------------------------------------------ |
-| `bottom`  | Vertical — bubble on top, frame on bottom, tail `\V/`.       |
-| `top`     | Vertical — frame on top, bubble on bottom, tail `/\`.        |
+| Tail side | Layout                                                        |
+| --------- | ------------------------------------------------------------- |
+| `bottom`  | Vertical — bubble on top, frame on bottom, tail `\V/`.        |
+| `top`     | Vertical — frame on top, bubble on bottom, tail `/\`.         |
 | `right`   | Horizontal — bubble on left, frame on right, tail `>` column. |
 | `left`    | Horizontal — frame on left, bubble on right, tail `<` column. |
 
-The frame is always horizontally centered for vertical layouts so
-the centered tail glyph visually points at the kitten.
+For vertical layouts the frame is horizontally centered so the
+centered tail glyph visually points at the kitten. When the
+notification has no animation, the tail and frame are skipped and
+the bubble fills the body region alone.
+
+## Sizing modes
+
+| `auto_height` | Behaviour                                                                                                         |
+| ------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `true` (default) | Card outer height tracks the rendered body. `size.height` only caps the bubble's scroll viewport.              |
+| `false`       | Card outer height is pinned to `size.height`. The bubble scrolls inside the body region; tail + frame stay fixed. |
+
+When `auto_height=false`:
+
+- `padding_inside=true` vertically centers the body inside the body
+  region, splitting blank rows top + bottom. Useful for square cards.
+- A scroll hint (`▲ N above · ▼ N below`) auto-renders on a reserved
+  row between the body and the footer when bubble content overflows
+  the visible region. The row is reclaimed when nothing is hidden.
+
+## Footer
+
+`footer_visible: true` reserves the bottom row of the card for a
+dismiss-key hint (`esc/q/enter/space to close`). The hint reads only
+when `dismiss.mode=key`; `timeout` and `next_status` produce nothing,
+even with `footer_visible: true`. The footer is rendered at the
+frame width — it ignores horizontal `padding` so the band sits flush
+edge-to-edge.
 
 ## Colors
 
 Three forms accepted anywhere a color is expected
 (`background`, `border.color`, `border.background`):
 
-| Form              | Resolves to                                  |
-| ----------------- | -------------------------------------------- |
-| `transparent`     | `lipgloss.NoColor{}` — terminal default.     |
-| `$theme.<key>`    | The active theme's `colors[<key>]` hex.      |
-| `#rrggbb`         | Literal hex, six digits.                     |
+| Form              | Resolves to                              |
+| ----------------- | ---------------------------------------- |
+| `transparent`     | `lipgloss.NoColor{}` — terminal default. |
+| `$theme.<key>`    | Active theme's `colors[<key>]` hex.      |
+| `#rrggbb`         | Literal hex, six digits.                 |
 
-Theme references resolve at every `View()` call, so the in-app theme
-picker repaints the notification on the next frame.
+Theme references resolve at every `View()` call so the in-app theme
+picker repaints the card on the next frame.
 
 ## Wiring events to notifications
 
@@ -142,29 +214,23 @@ picker repaints the notification on the next frame.
 config:
   hooks:
     - on: guard.violated
-      notification: guard-violation                  # → notifications/guard-violation.yaml
+      notification: guard-violation                # → notifications/guard-violation.yaml
     - on: comment
       when: { author_type: agent }
       notification: agent-comment
-      message: "Agent dropped a comment"     # optional hook-level fallback
+      message: "Agent dropped a comment"           # optional hook-level fallback
 ```
 
-Each hook entry uses **either** `notification: <slug>` (notification card)
-or `do: <action>` + `args:` (legacy exec/noop). Mixing both shapes
-in the same entry fails validation.
-
-`notification: <slug>` must resolve to a loaded notification file; unknown slugs
-fail at `LoadBundle`.
+Each hook entry uses **either** `notification: <slug>` or
+`do: <action>` + `args:` (legacy exec/noop). Mixing both shapes in
+the same entry fails validation. Unknown slugs fail at `LoadBundle`.
 
 ### Message resolution
 
 Either layer (notification YAML or hook entry) may declare `message`
-(literal) or `message_field` (payload key). Both layers may set
-neither, but the validator rejects the combo if neither layer
-supplies any source. **Notification YAML wins on tie-break** — useful
-when a single notification fires on many events but the user wants to
-override the wording from omakiten.yaml without touching the notification
-file. Resolution order:
+(literal) or `message_field` (payload key). The validator rejects
+the combo when neither layer supplies any source. **Notification YAML
+wins on tie-break.** Resolution order:
 
 1. `notification.message` (literal in the notification YAML)
 2. `event.payload[notification.message_field]`
@@ -181,24 +247,25 @@ The kit ships two:
 
 - **guard-violation** — centered card with border + theme-highlight
   background; rendered when any `guard.violated` event fires.
-- **agent-comment** — top-right card that auto-dismisses 8s after
-  it settles; fires when an agent posts a comment.
+- **agent-comment** — top-right card that auto-dismisses 8s after it
+  settles; fires when an agent posts a comment.
 
-Both are reasonable starting points for custom notifications — copy the
-YAML into `notifications/custom/<your-slug>.yaml`, change `name:` to match
-the new filename, tweak the message + frames, and reference it from
-a new `omakiten.yaml::config.hooks` entry.
+Both files are heavily commented and meant to be cloned. Copy into
+`notifications/custom/<your-slug>.yaml`, change `name:` to match the
+new filename, tweak the message + frames, and reference the slug
+from a new `omakiten.yaml::config.hooks` entry.
 
 ## Behaviour notes
 
-- Notifications are **opt-in**: an empty `config.hooks` block ships no
-  notifications. The system has no global "active mascot" — each event
+- Notifications are **opt-in**: an empty `config.hooks` block ships
+  no cards. The system has no global "active mascot" — each event
   declares its own.
-- A notification is exclusive while alive: it consumes scroll keys for its
-  bubble (`j`/`k`, page nav, `g`/`G`, `home`/`end`) and swallows
+- A notification is exclusive while alive: it consumes scroll keys
+  for its bubble (`j`/`k`, page nav, `g`/`G`, `home`/`end`) — only
+  the bubble scrolls, the animation stays put — and swallows
   non-dismiss keys so the app underneath stays inert.
-- A new notification event arriving while the current notification is still typing
-  is dropped; once the notification is Settled, the new payload replaces it.
-- The runtime registers the action from CLI/MCP/TUI composition
-  roots so hook validation works the same in every entry point.
-  Outside the TUI it is a silent no-op.
+- A new notification event arriving while the current card is still
+  typing is dropped; once Settled, the new payload replaces it.
+- The buddy.show action is registered from CLI / MCP / TUI
+  composition roots so hook validation works the same in every
+  entry point. Outside the TUI it is a silent no-op.

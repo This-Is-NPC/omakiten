@@ -4,8 +4,8 @@ description: Centered ASCII kitten that surfaces guard.violated events as a focu
 
 # Geometry ────────────────────────────────────────────────────────────
 size:
-  width: 36         # outer card width in cells (border + padding + content + border)
-  height: 18         # used as bubble scroll viewport cap; pinned as outer height when auto_height=false
+  width: 40         # outer card width in cells (border + padding + content + border)
+  height: 20         # used as bubble scroll viewport cap; pinned as outer height when auto_height=false
 
 # Behaviour flags ─────────────────────────────────────────────────────
 auto_height: false    # true = card flows to body height (no bottom blank rows). false = lipgloss enforces Size.Height
