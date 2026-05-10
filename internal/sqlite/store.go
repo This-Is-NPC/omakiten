@@ -56,7 +56,7 @@ type Store struct {
 	// existing emission assertions.
 	eventsPolicy config.EventsSettings
 	// bus carries domain events to in-process subscribers (hooks
-	// engine, future buddies, future TUI live views). nil disables
+	// engine, future notifications, future TUI live views). nil disables
 	// broadcast — production wires it from composition root, tests
 	// inherit a nil bus and silently skip the fan-out.
 	bus events.Bus

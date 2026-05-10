@@ -11,7 +11,7 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
-	"omakiten/internal/tui/components/buddy"
+	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/picker"
 	"omakiten/internal/tui/components/viewport"
@@ -301,13 +301,12 @@ type Model struct {
 	markdown         *markdownRenderer
 	markdownRendered bool
 
-	// buddies is the catalog of loaded mascots; activeBuddy names the
-	// one a buddy.show hook will spawn. Both are captured at NewModel
-	// time from the active bundle. buddy is the live mascot model
-	// while one is on screen; nil otherwise.
-	buddies     map[string]config.Buddy
-	activeBuddy string
-	buddy       *buddy.Model
+	// notifications is the catalog of loaded notification cards keyed by
+	// slug; the hooks engine names a slug per event and the parent
+	// renders that notification as configured. notification is the live model while
+	// one is on screen; nil otherwise.
+	notifications map[string]config.Notification
+	notification   *notification.Model
 }
 
 // inputMode is the modal-input enum: normal navigation, comment-add input

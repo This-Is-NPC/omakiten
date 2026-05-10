@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Mirror defaults/ into a target config root using the v2 layout:
 #
-#   <root>/config/omakiten.yaml         (overwritten on every run)
-#   <root>/<entity>/<file>              (defaults — overwritten on every run)
-#   <root>/<entity>/custom/             (created if missing, never touched)
+#   <root>/config/omakiten.yaml   (overwritten every run)
+#   <root>/<entity>/<file>        (default scope — fully mirrored: stale
+#                                  files at the default scope are removed,
+#                                  fresh ones from defaults/ are copied in)
+#   <root>/<entity>/custom/       (user scope — created if missing,
+#                                  contents NEVER touched)
 #
-# Default files that the user customized at the root are intentionally
-# overwritten. Customization belongs in <entity>/custom/, which this script
-# never touches.
+# The default scope is treated like a published kit: it MUST equal what
+# defaults/ ships, no more, no less. Users keep their tweaks under
+# custom/, which this script ignores.
 #
 # Usage: sync-defaults.sh <target-root>
 
@@ -30,10 +33,20 @@ fi
 mkdir -p "$target_root/config"
 install -m644 "$defaults_dir/omakiten.yaml" "$target_root/config/omakiten.yaml"
 
-for sub in skills laws personas templates themes; do
+for sub in skills laws personas templates themes notifications; do
   src_dir="$defaults_dir/$sub"
   dst_dir="$target_root/$sub"
   mkdir -p "$dst_dir/custom"
+
+  # Purge stale files at the default scope (top-level only — never
+  # descend into custom/) so removed defaults disappear on re-sync.
+  if [ -d "$dst_dir" ]; then
+    for existing in "$dst_dir"/*; do
+      [ -f "$existing" ] || continue
+      rm -f "$existing"
+    done
+  fi
+
   [ -d "$src_dir" ] || continue
   for src in "$src_dir"/*; do
     [ -f "$src" ] || continue

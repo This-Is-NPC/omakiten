@@ -37,7 +37,7 @@ func LoadBundle(path string) (Bundle, error) {
 	if err != nil {
 		return Bundle{}, err
 	}
-	buddies, err := LoadBuddies(filepath.Join(rootDir, "buddies"))
+	notifications, notificationWarn, err := LoadNotifications(filepath.Join(rootDir, "notifications"))
 	if err != nil {
 		return Bundle{}, err
 	}
@@ -47,13 +47,14 @@ func LoadBundle(path string) (Bundle, error) {
 		Kit:       wired.Kit,
 		Config:    wired.Config,
 		Workflows: wired.Workflows,
-		Buddies:   buddies,
+		Notifications:   notifications,
 	}
 
 	bundle.Warnings = append(bundle.Warnings, skillWarn...)
 	bundle.Warnings = append(bundle.Warnings, lawWarn...)
 	bundle.Warnings = append(bundle.Warnings, personaWarn...)
 	bundle.Warnings = append(bundle.Warnings, templateWarn...)
+	bundle.Warnings = append(bundle.Warnings, notificationWarn...)
 
 	bundle.Skills = pickSkills(skills, wired.Skills)
 	bundle.Laws = pickLaws(laws, wired.Laws, wired.Personas, wired.Projects)

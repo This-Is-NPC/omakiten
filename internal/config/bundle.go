@@ -16,7 +16,7 @@ type Bundle struct {
 	Workflows   []Workflow                `yaml:"workflows" json:"workflows,omitempty"`
 	Projects    []Project                 `yaml:"-" json:"projects,omitempty"`
 	MCPCommands map[string]MCPCommandSpec `yaml:"-" json:"mcp_commands,omitempty"`
-	Buddies     map[string]Buddy          `yaml:"-" json:"buddies,omitempty"`
+	Notifications     map[string]Notification          `yaml:"-" json:"notifications,omitempty"`
 	Warnings    []SourceWarning           `yaml:"-" json:"warnings,omitempty"`
 }
 
@@ -338,11 +338,28 @@ type SolutionsSettings struct {
 // config layer stays free of an import cycle (internal/hooks imports
 // config). Composition root maps HookSpec → hooks.Hook before handing
 // the slice to the engine.
+//
+// Two mutually-exclusive shapes are supported:
+//
+//   - action shape:  on + when + do + args (legacy exec/noop dispatch)
+//   - notification shape:   on + when + notification:<slug> (per-event notification card)
+//
+// In notification shape the hook MAY also carry Message or MessageField as a
+// fallback the action consults when the referenced notification YAML did
+// not set its own. The notification YAML wins on tie-break — useful when
+// the same notification fires on many events but the per-event hint is
+// different.
+//
+// Validators reject mixing the action and notification shapes in the same
+// entry.
 type HookSpec struct {
-	On   string                 `yaml:"on" json:"on"`
-	When map[string]string      `yaml:"when,omitempty" json:"when,omitempty"`
-	Do   string                 `yaml:"do" json:"do"`
-	Args map[string]interface{} `yaml:"args,omitempty" json:"args,omitempty"`
+	On           string                 `yaml:"on" json:"on"`
+	When         map[string]string      `yaml:"when,omitempty" json:"when,omitempty"`
+	Do           string                 `yaml:"do,omitempty" json:"do,omitempty"`
+	Args         map[string]interface{} `yaml:"args,omitempty" json:"args,omitempty"`
+	Notification        string                 `yaml:"notification,omitempty" json:"notification,omitempty"`
+	Message      string                 `yaml:"message,omitempty" json:"message,omitempty"`
+	MessageField string                 `yaml:"message_field,omitempty" json:"message_field,omitempty"`
 }
 
 // EventsSettings declares per-event-type channel policies (log to db,
@@ -426,14 +443,6 @@ type SearchSettings struct {
 // the user inherits at install time.
 type TUISettings struct {
 	TokenBadge TokenBadgeThresholds `yaml:"token_badge" json:"token_badge"`
-	Buddy      BuddySettings        `yaml:"buddy,omitempty" json:"buddy,omitempty"`
-}
-
-// BuddySettings selects which loaded buddy is the active mascot. The
-// validator rejects an empty Active value when at least one configured
-// hook does `do: buddy.show`; otherwise the field is optional.
-type BuddySettings struct {
-	Active string `yaml:"active,omitempty" json:"active,omitempty"`
 }
 
 // TokenBadgeThresholds drives the colored TOKENS:N badge on entity

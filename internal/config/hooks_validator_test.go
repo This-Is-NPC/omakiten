@@ -48,3 +48,36 @@ func TestValidateHooksExecArgvMustBeStrings(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestValidateHooks_notificationHookMessageFromHookOK(t *testing.T) {
+	specs := []HookSpec{{
+		On:      domain.EventTypeGuardViolated,
+		Notification:   "kit",
+		Message: "from-hook",
+	}}
+	notifications := map[string]Notification{"kit": {Name: "kit"}}
+	if err := ValidateHooks(specs, func(string) bool { return true }, notifications); err != nil {
+		t.Fatalf("hook-only message should be accepted, got %v", err)
+	}
+}
+
+func TestValidateHooks_notificationHookNoMessageAnywhere(t *testing.T) {
+	specs := []HookSpec{{On: domain.EventTypeGuardViolated, Notification: "kit"}}
+	notifications := map[string]Notification{"kit": {Name: "kit"}}
+	err := ValidateHooks(specs, func(string) bool { return true }, notifications)
+	if err == nil || !strings.Contains(err.Error(), "no message") {
+		t.Fatalf("expected combined-presence error, got %v", err)
+	}
+}
+
+func TestValidateHooks_notificationHookExclusiveMessage(t *testing.T) {
+	specs := []HookSpec{{
+		On: domain.EventTypeGuardViolated, Notification: "kit",
+		Message: "x", MessageField: "y",
+	}}
+	notifications := map[string]Notification{"kit": {Name: "kit"}}
+	err := ValidateHooks(specs, func(string) bool { return true }, notifications)
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("expected exclusivity error, got %v", err)
+	}
+}

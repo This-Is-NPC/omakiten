@@ -142,7 +142,7 @@ All three channels are now consumed at runtime:
 - `log` — gated inside `Store.RecordTaskEvent` / `RecordEntityEvent` /
   inline-tx `insertTaskEvent` callsites. When false, the row is dropped
   before insertion; the bus still receives a synthetic in-memory event
-  so subscribers (hooks, future buddies) cannot be silenced by a
+  so subscribers (hooks, future notifications) cannot be silenced by a
   log-only opt-out.
 - `broadcast` — gated inside `events.Bus.Publish`. When false, the bus
   short-circuits the fan-out before walking subscribers.

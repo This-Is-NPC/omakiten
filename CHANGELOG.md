@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### ⚠ BREAKING CHANGES
+
+* **notifications:** replace the old buddy system with notification cards. Existing `buddy` / `buddies` config and docs are removed, and hook wiring now uses `notification` / `notifications`.
+
 ### Features
 
 * **tui — markdown rendering on detail panels:** task description, comment body (dedicated comment view), and entity body (laws / personas / skills / templates) render as styled markdown by default. New `internal/tui/markdown.go` builds an `ansi.StyleConfig` from the four theme tokens (`primary`, `foreground`, `border`, `secondary`) consumed today by `internal/tui/styles.go` — no extra theme schema, no JSON file. Glamour (`github.com/charmbracelet/glamour`) handles the parse/wrap; word wrap is delegated to the renderer at the panel's value width so the surrounding `gridtable` math stays untouched. Headings stay un-prefixed and rely on `primary` color/bold (the gridtable kicker already labels each section); blockquotes use `secondary` with a `│ ` prefix; bullets / horizontal rules use `border` with `·` / `─` glyphs (dev-editorial alignment); code blocks render plain mono — chroma syntax highlight is intentionally off. Per-(body, width) cache lives on the renderer; switching theme via `Settings › Theme picker` rebuilds the renderer in place which discards the cache. New keybinding `M` (capital, to avoid colliding with `m`/move on the task view) toggles raw ⇄ rendered for the rest of the session — exposed in the help overlay (`render_help.go`), the footer status badge surfaces the active mode (`Markdown rendered` / `Markdown raw`). Editor flows (the `taskDescriptionInput` / `commentInput` textareas and the `$EDITOR` delegate for entity bodies) are unchanged — render-only feature.

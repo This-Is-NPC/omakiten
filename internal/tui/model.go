@@ -10,28 +10,29 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/activity"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
-	"omakiten/internal/tui/components/buddy"
+	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/picker"
 	"omakiten/internal/tui/components/viewport"
 )
 
-// BuddyBinding pairs the loaded buddies with the active selection
-// from `config.tui.buddy.active`. Empty Active means buddies are
-// loaded but no mascot is wired — buddy.show events are no-ops at
-// the parent.
-type BuddyBinding struct {
-	Buddies map[string]config.Buddy
-	Active  string
+// NotificationBinding carries the loaded notification catalog into the TUI Model.
+// Each notification YAML is one notification card with all behaviour
+// (animation, position, dismiss, message) baked in — no per-mode
+// presets and no global "active" selection. The hooks engine names
+// the slug per event and the parent renders it as configured.
+type NotificationBinding struct {
+	Notifications map[string]config.Notification
 }
 
-func NewModel(ctx context.Context, project domain.ProjectContext, repos Repositories, theme config.Theme, counter token.Counter, badge config.TokenBadgeThresholds, priorities []config.PriorityDefinition, severities []config.SeverityDefinition, buddies BuddyBinding) (Model, error) {
+func NewModel(ctx context.Context, project domain.ProjectContext, repos Repositories, theme config.Theme, counter token.Counter, badge config.TokenBadgeThresholds, priorities []config.PriorityDefinition, severities []config.SeverityDefinition, notifications NotificationBinding) (Model, error) {
 	if counter == nil {
 		counter = token.ApproxCounter{}
 	}
@@ -52,8 +53,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		severities:       severities,
 		markdown:         newMarkdownRenderer(tokensFromTheme(theme)),
 		markdownRendered: true,
-		buddies:          buddies.Buddies,
-		activeBuddy:      buddies.Active,
+		notifications:          notifications.Notifications,
 	}
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()
@@ -93,7 +93,7 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	prevNav := navState{top: m.top, sub: m.sub}
-	if next, cmd, handled := m.dispatchBuddy(msg); handled {
+	if next, cmd, handled := m.dispatchNotification(msg); handled {
 		return next, cmd
 	}
 	switch msg := msg.(type) {
@@ -391,10 +391,43 @@ func (m *Model) activeViewSettings() config.ViewSettings {
 
 func (m Model) View() string {
 	view := m.renderView()
-	if m.buddy != nil {
-		view = buddy.Overlay(view, m.buddy.View(), m.buddy.Position())
+	if m.notification != nil {
+		view = normalizeViewToTerminal(view, m.width, m.height)
+		view = notification.Overlay(view, m.notification.View(), m.notification.Position())
 	}
 	return view
+}
+
+// normalizeViewToTerminal rectangularises the rendered view so the
+// notification overlay positions relative to the FULL terminal grid instead
+// of the (often shorter / narrower) rendered content. Without this
+// "center" lands inside the active card and "top-right" can fall off
+// the visible columns when the status badge wraps wide.
+//
+// width/height come from the most recent tea.WindowSizeMsg. When
+// either is zero the view is returned untouched — the overlay path
+// still works against the natural content rectangle.
+func normalizeViewToTerminal(view string, width, height int) string {
+	if width <= 0 || height <= 0 {
+		return view
+	}
+	lines := strings.Split(view, "\n")
+	for i, line := range lines {
+		w := ansi.StringWidth(line)
+		switch {
+		case w < width:
+			lines[i] = line + strings.Repeat(" ", width-w)
+		case w > width:
+			lines[i] = ansi.Truncate(line, width, "")
+		}
+	}
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, strings.Repeat(" ", width))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) renderView() string {
@@ -413,54 +446,49 @@ func (m Model) renderView() string {
 	return clampViewToHeight(m.height, parts...)
 }
 
-// dispatchBuddy routes buddy-related messages to the live buddy
+// dispatchNotification routes notification-related messages to the live notification
 // model when present, and intercepts ShowMsg / DismissedMsg to flip
-// the buddy slot. handled=true means the parent's regular dispatch
-// should stop — buddy is intentionally exclusive while active so
+// the notification slot. handled=true means the parent's regular dispatch
+// should stop — notification is intentionally exclusive while active so
 // dismiss + scroll keys take priority over the app underneath.
-func (m Model) dispatchBuddy(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	if showMsg, ok := msg.(buddy.ShowMsg); ok {
-		// Drop the new request when a buddy is still typing in —
+func (m Model) dispatchNotification(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	if showMsg, ok := msg.(notification.ShowMsg); ok {
+		// Drop the new request when a notification is still typing in —
 		// avoids interrupting an Appearing animation with a fresh
-		// payload (Settled buddies are replaceable).
-		if m.buddy != nil && m.buddy.State() == buddy.StateAppearing {
+		// payload (Settled notifications are replaceable).
+		if m.notification != nil && m.notification.State() == notification.StateAppearing {
 			return m, nil, true
 		}
-		bm, cmd := buddy.New(buddy.Options{
-			Buddy:           showMsg.Buddy,
-			Theme:           m.theme,
-			Animation:       showMsg.Animation,
-			Text:            showMsg.Text,
-			Position:        showMsg.Position,
-			Dismiss:         showMsg.Dismiss,
-			TypingMsPerChar: showMsg.TypingMsPerChar,
-			FrameIntervalMs: showMsg.FrameIntervalMs,
+		bm, cmd := notification.New(notification.Options{
+			Notification: showMsg.Notification,
+			Theme: m.theme,
+			Text:  showMsg.Text,
 		})
-		m.buddy = &bm
+		m.notification = &bm
 		return m, cmd, true
 	}
-	if dm, ok := msg.(buddy.DismissedMsg); ok {
-		if m.buddy != nil && dm.ID == m.buddy.ID() {
-			m.buddy = nil
+	if dm, ok := msg.(notification.DismissedMsg); ok {
+		if m.notification != nil && dm.ID == m.notification.ID() {
+			m.notification = nil
 		}
 		return m, nil, true
 	}
-	if m.buddy == nil {
+	if m.notification == nil {
 		return m, nil, false
 	}
 	switch msg.(type) {
 	case tea.KeyMsg:
-		// Buddy consumes keys exclusively while active: scroll +
+		// Notification consumes keys exclusively while active: scroll +
 		// dismiss handled, others swallowed so the app doesn't react.
-		next, cmd := m.buddy.Update(msg)
-		m.buddy = &next
+		next, cmd := m.notification.Update(msg)
+		m.notification = &next
 		return m, cmd, true
 	}
 	// Forward non-key messages (ticks, timeouts, window size) to
-	// buddy without consuming the parent's chance to react. Buddy
+	// notification without consuming the parent's chance to react. Notification
 	// returns nil cmd for unrelated messages so this is cheap.
-	next, cmd := m.buddy.Update(msg)
-	m.buddy = &next
+	next, cmd := m.notification.Update(msg)
+	m.notification = &next
 	if cmd != nil {
 		return m, cmd, true
 	}

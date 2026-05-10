@@ -494,6 +494,13 @@ func (m *Model) armOrConfirmTaskDelete(task domain.Task) {
 	}
 	if allowed, hint := m.canDeleteTask(task.ID); !allowed {
 		m.status = hint
+		// Mirror the service path: the bucket-permission denial that
+		// TaskService.Delete emits at line task_service.go:237 must fire
+		// here too so hooks (notification.show, exec, …) see every guard hit
+		// regardless of which entry point caught it.
+		m.repos.Workflow.EmitGuardViolated(m.ctx, m.project.ID, domain.EventEntityTask, task.ID,
+			app.GuardOperationTaskDelete, app.GuardRulePermissions, hint,
+			map[string]any{"task_id": task.ID, "entity": app.EntityTask, "operation": app.PermissionDelete})
 		return
 	}
 	m.taskDeletePendingID = task.ID

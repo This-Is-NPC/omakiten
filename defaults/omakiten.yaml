@@ -35,13 +35,6 @@ config:
     token_badge:
       yellow_at: 150
       red_at: 400
-    # buddy.active picks the loaded mascot a buddy.show hook spawns
-    # over the TUI. Required when at least one entry under config.hooks
-    # has `do: buddy.show`; otherwise optional. Mascot YAMLs live in
-    # buddies/<name>.yaml (defaults) or buddies/custom/<name>.yaml
-    # (overrides). See .docs/buddies.md for authoring + examples.
-    buddy:
-      active: kitten
   # sqlite tunes connection-level engine knobs the Store applies at Open.
   # busy_timeout_ms is the value passed to PRAGMA busy_timeout; raise it on
   # systems with concurrent writers or larger DBs that occasionally see
@@ -95,29 +88,16 @@ config:
   # the full domain.Event lands on stdin as JSON) and `noop`. See
   # .docs/hooks.md for the per-action arg contract and worked examples.
   # Empty list ships by default; add entries to wire automation.
-  # Two worked examples for the buddy.show action follow — keep them
-  # commented unless you want a mascot to pop over the TUI:
-  #
-  # - on: guard.violated
-  #   when: { operation: task.delete }
-  #   do: buddy.show
-  #   args:
-  #     animation: deny
-  #     position: top-right
-  #     typing_ms_per_char: 25
-  #     dismiss: { mode: key, keys: [esc] }
-  #     message_field: hint
-  #
-  # - on: comment.created
-  #   when: { author_type: agent }
-  #   do: buddy.show
-  #   args:
-  #     animation: idle
-  #     position: bottom-center
-  #     typing_ms_per_char: 0
-  #     dismiss: { mode: timeout, after_ms: 8000 }
-  #     message_field: body
-  hooks: []
+  # Notification entries use the `notification: <slug>` shorthand — every render
+  # knob (position, animation, dismiss, message) lives inside the
+  # named notifications/<slug>.yaml so omakiten.yaml only links event →
+  # notification file.
+  hooks:
+    - on: guard.violated
+      notification: guard-violation
+    - on: comment
+      when: { author_type: agent }
+      notification: agent-comment
   # search tunes the heuristics shared across agent-side text ranking
   # (similar-task hints in tasks.create_intent, query overlap scoring).
   # stopwords is the lowercase token list dropped before scoring; add

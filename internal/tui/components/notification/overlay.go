@@ -1,9 +1,9 @@
-// Package buddy renders configurable ASCII mascots on top of the
+// Package notification renders configurable ASCII mascots on top of the
 // regular TUI surface. The overlay helper here is the z-order primitive
 // every mascot frame goes through; it is intentionally
 // component-agnostic so detail screens, the home grid, and tests can
 // stitch any pre-rendered string on top of any other.
-package buddy
+package notification
 
 import (
 	"strings"
@@ -12,7 +12,7 @@ import (
 )
 
 // Position names one of the nine fixed anchor points the user can pick
-// from in the buddy.show hook args. The validator rejects any other
+// from in the notification.show hook args. The validator rejects any other
 // string at LoadBundle time, so the renderer takes a typed value here
 // and never has to fall back to a default.
 type Position string

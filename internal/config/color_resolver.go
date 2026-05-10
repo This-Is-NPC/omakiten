@@ -40,7 +40,7 @@ func (r ResolvedColor) TerminalColor() lipgloss.TerminalColor {
 	return r.Color
 }
 
-// ResolveColor maps the buddy color grammar onto a lipgloss color.
+// ResolveColor maps the notification color grammar onto a lipgloss color.
 //
 // Accepted forms:
 //   - "transparent"        → ResolvedColor{Transparent: true}
@@ -48,8 +48,8 @@ func (r ResolvedColor) TerminalColor() lipgloss.TerminalColor {
 //   - "#rrggbb"            → literal hex
 //
 // Returns an error for any other shape (including empty string and
-// short hex like "#fff"). Errors carry enough context for the buddy
-// validator to wrap with the buddy name + path.
+// short hex like "#fff"). Errors carry enough context for the notification
+// validator to wrap with the notification name + path.
 func ResolveColor(value string, theme Theme) (ResolvedColor, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
