@@ -26,12 +26,12 @@ func sampleNotificationConfig() config.Notification {
 		Background:      "transparent",
 		FrameIntervalMs: 100,
 		Style:           config.NotificationStyleRounded,
-		Border:          config.NotificationBorder{Visible: true, Width: 1, Color: "#ffffff"},
+		Border:          config.NotificationBorder{Visible: boolPtr(true), Width: 1, Color: "#ffffff"},
 		Animation:       []config.NotificationFrame{{Frame: 0, Value: "X"}},
 		Bubble:          config.NotificationBubble{TailSide: config.NotificationTailBottom},
 		Position:        config.NotificationPositionCenter,
 		Dismiss:         config.NotificationDismiss{Mode: config.NotificationDismissModeKey, Keys: []string{"esc"}},
-		TypingMsPerChar: 0,
+		TypingMsPerChar: intPtr(0),
 		MessageField:    "hint",
 	}
 }
