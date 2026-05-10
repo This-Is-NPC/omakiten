@@ -88,7 +88,7 @@ func New(opts Options) (Model, tea.Cmd) {
 		bubble:       viewport.New(),
 		id:           id,
 	}
-	if m.notification.TypingMsPerChar <= 0 {
+	if *m.notification.TypingMsPerChar <= 0 {
 		m.cursor = utf8.RuneCountInString(m.currentText())
 		m.state = StateSettled
 	}
@@ -220,11 +220,11 @@ func (m Model) advanceFrame() (Model, tea.Cmd) {
 }
 
 func (m Model) typingCmd() tea.Cmd {
-	if m.notification.TypingMsPerChar <= 0 {
+	if *m.notification.TypingMsPerChar <= 0 {
 		return nil
 	}
 	id := m.id
-	delay := time.Duration(m.notification.TypingMsPerChar) * time.Millisecond
+	delay := time.Duration(*m.notification.TypingMsPerChar) * time.Millisecond
 	return tea.Tick(delay, func(time.Time) tea.Msg { return typingTickMsg{id: id} })
 }
 
@@ -260,7 +260,7 @@ func isScrollKey(s string) bool {
 //
 // Layout follows Bubble.TailSide:
 //
-//   - bottom (default) — vertical, bubble above frame, tail "\V/" between.
+//   - bottom           — vertical, bubble above frame, tail "\V/" between.
 //   - top              — vertical, frame above bubble, tail "/\" between.
 //   - right            — horizontal, bubble left, tail ">" column, frame right.
 //   - left             — horizontal, frame left, tail "<" column, bubble right.
@@ -276,7 +276,7 @@ func (m Model) View() string {
 	// padding) and the border lives outside. To make the visible card
 	// honour Size.Width, hand lipgloss `width-2` when a border is on.
 	frameWidth := width
-	if m.notification.Border.Visible {
+	if *m.notification.Border.Visible {
 		frameWidth = width - 2
 	}
 	if frameWidth < 1 {
@@ -284,7 +284,7 @@ func (m Model) View() string {
 	}
 	// Body's content rectangle subtracts the padding columns lipgloss
 	// will eat from the frame.
-	innerWidth := frameWidth - m.notification.Padding.Left - m.notification.Padding.Right
+	innerWidth := frameWidth - *m.notification.Padding.Left - *m.notification.Padding.Right
 	if innerWidth < 1 {
 		innerWidth = 1
 	}
@@ -321,7 +321,7 @@ func (m Model) renderFlowHeight(innerWidth, frameWidth int, footer string) strin
 	if body != "" {
 		bodyLines = strings.Split(body, "\n")
 	}
-	rows := composeFramedRows(bodyLines, m.notification.Padding, frameWidth, "", footer)
+	rows := composeFramedRows(bodyLines, *m.notification.Padding, frameWidth, "", footer)
 	return strings.Join(rows, "\n")
 }
 
@@ -335,15 +335,15 @@ func (m Model) renderFlowHeight(innerWidth, frameWidth int, footer string) strin
 // the footer so the user always knows there's more text to scroll.
 func (m Model) renderFixedHeight(innerWidth, frameWidth int, footer string, footerH int) string {
 	frameHeight := m.notification.Size.Height
-	if m.notification.Border.Visible {
+	if *m.notification.Border.Visible {
 		frameHeight -= 2
 	}
 	if frameHeight < 1 {
 		frameHeight = 1
 	}
 
-	paddingTop := m.notification.Padding.Top
-	paddingBottom := m.notification.Padding.Bottom
+	paddingTop := *m.notification.Padding.Top
+	paddingBottom := *m.notification.Padding.Bottom
 
 	// Speculatively reserve one row for the scroll hint; rebuild
 	// without the reservation if the bubble actually fits so we
@@ -364,13 +364,13 @@ func (m Model) renderFixedHeight(innerWidth, frameWidth int, footer string, foot
 		bodyLines, _, _ = m.renderBodyWithBubbleScroll(innerWidth, bodyH)
 	}
 
-	if m.notification.PaddingInside {
+	if *m.notification.PaddingInside {
 		bodyLines = padToHeightCentered(bodyLines, bodyH)
 	} else {
 		bodyLines = padToHeightTop(bodyLines, bodyH)
 	}
 
-	rows := composeFramedRows(bodyLines, m.notification.Padding, frameWidth, hint, footer)
+	rows := composeFramedRows(bodyLines, *m.notification.Padding, frameWidth, hint, footer)
 	return strings.Join(rows, "\n")
 }
 
@@ -386,16 +386,16 @@ func (m Model) renderFixedHeight(innerWidth, frameWidth int, footer string, foot
 // so the scroll hint and footer can break free of the indent and sit
 // edge-to-edge against the border.
 func composeFramedRows(bodyLines []string, p config.NotificationPadding, frameWidth int, scrollHint, footer string) []string {
-	rows := make([]string, 0, p.Top+len(bodyLines)+p.Bottom+2)
+	rows := make([]string, 0, *p.Top+len(bodyLines)+*p.Bottom+2)
 	blank := strings.Repeat(" ", frameWidth)
-	leftPad := strings.Repeat(" ", p.Left)
-	for i := 0; i < p.Top; i++ {
+	leftPad := strings.Repeat(" ", *p.Left)
+	for i := 0; i < *p.Top; i++ {
 		rows = append(rows, blank)
 	}
 	for _, line := range bodyLines {
 		rows = append(rows, leftPad+line)
 	}
-	for i := 0; i < p.Bottom; i++ {
+	for i := 0; i < *p.Bottom; i++ {
 		rows = append(rows, blank)
 	}
 	if scrollHint != "" {
@@ -451,20 +451,22 @@ func (m Model) renderBodyWithBubbleScroll(innerWidth, bodyH int) ([]string, int,
 	visible, above, below := viewport.Slice(bubbleLines, m.bubble.Scroll, bubbleH)
 
 	rows := make([]string, 0, bodyH)
-	switch side {
-	case config.NotificationTailTop:
+	if side == config.NotificationTailTop {
 		rows = append(rows, frameLines...)
 		if tail != "" {
 			rows = append(rows, tail)
 		}
 		rows = append(rows, visible...)
-	default:
-		rows = append(rows, visible...)
-		if tail != "" {
-			rows = append(rows, tail)
-		}
-		rows = append(rows, frameLines...)
+		return rows, above, below
 	}
+	if side != "" && side != config.NotificationTailBottom {
+		panic("invalid notification bubble.tail_side: " + side)
+	}
+	rows = append(rows, visible...)
+	if tail != "" {
+		rows = append(rows, tail)
+	}
+	rows = append(rows, frameLines...)
 	return rows, above, below
 }
 
@@ -508,7 +510,7 @@ func padToHeightCentered(lines []string, h int) []string {
 }
 
 // padToHeightTop shrinks or grows `lines` to exactly `h` rows with
-// any extra rows tacked on at the bottom (default top-anchored).
+// any extra rows tacked on at the bottom.
 func padToHeightTop(lines []string, h int) []string {
 	if len(lines) >= h {
 		return lines[:h]
@@ -522,14 +524,9 @@ func padToHeightTop(lines []string, h int) []string {
 }
 
 // notificationAutoHeight reports whether the card height should track
-// the body's natural row count (true, default) or be pinned to
-// Size.Height by lipgloss (false). Authors flip it via auto_height in
-// the YAML — pointer typing here lets us tell "field absent" (default)
-// apart from "explicitly true".
+// the body's natural row count or be pinned to Size.Height. The value is
+// required by notification YAML and validated before the renderer sees it.
 func (m Model) notificationAutoHeight() bool {
-	if m.notification.AutoHeight == nil {
-		return true
-	}
 	return *m.notification.AutoHeight
 }
 
@@ -537,7 +534,7 @@ func (m Model) notificationAutoHeight() bool {
 // main TUI footer. It advertises tab paging when detail text is present and
 // key-based dismiss controls when the notification uses dismiss.mode=key.
 func (m Model) renderFooter(innerWidth int) string {
-	if !m.notification.FooterVisible {
+	if !*m.notification.FooterVisible {
 		return ""
 	}
 	tokens := make([]keyfooter.Token, 0, 2)
@@ -559,13 +556,14 @@ func (m Model) renderFooter(innerWidth int) string {
 
 func notificationFooterPosition(position string) string {
 	switch position {
+	case config.NotificationFooterLeft:
+		return keyfooter.AlignLeft
 	case config.NotificationFooterCenter:
 		return keyfooter.AlignCenter
 	case config.NotificationFooterRight:
 		return keyfooter.AlignRight
-	default:
-		return keyfooter.AlignLeft
 	}
+	panic("invalid notification footer_position: " + position)
 }
 
 // footerDismissKey formats the dismiss-key list as "esc/q/enter/space" using
@@ -611,15 +609,17 @@ func (m Model) renderBody(innerWidth int) string {
 		tail := m.renderTail(innerWidth)
 		bubble := m.renderBubble(innerWidth)
 		return joinNonEmpty(frame, tail, bubble)
+	case config.NotificationTailBottom:
+		bubble := m.renderBubble(innerWidth)
+		tail := m.renderTail(innerWidth)
+		frame := m.renderFrame(innerWidth)
+		return joinNonEmpty(bubble, tail, frame)
 	case config.NotificationTailLeft:
 		return m.renderHorizontal(innerWidth, false)
 	case config.NotificationTailRight:
 		return m.renderHorizontal(innerWidth, true)
 	}
-	bubble := m.renderBubble(innerWidth)
-	tail := m.renderTail(innerWidth)
-	frame := m.renderFrame(innerWidth)
-	return joinNonEmpty(bubble, tail, frame)
+	panic("invalid notification bubble.tail_side: " + m.notification.Bubble.TailSide)
 }
 
 // renderHorizontal lays out bubble + tail glyph column + frame
@@ -781,6 +781,8 @@ func (m Model) bubbleViewport() int {
 
 func (m Model) renderTail(width int) string {
 	switch m.notification.Bubble.TailSide {
+	case "":
+		return ""
 	case config.NotificationTailBottom:
 		return centerLine("\\/", width)
 	case config.NotificationTailTop:
@@ -790,7 +792,7 @@ func (m Model) renderTail(width int) string {
 	case config.NotificationTailRight:
 		return padRight("", width-1) + ">"
 	}
-	return ""
+	panic("invalid notification bubble.tail_side: " + m.notification.Bubble.TailSide)
 }
 
 func (m Model) renderFrame(width int) string {
@@ -856,7 +858,7 @@ func (m Model) cardStyle(width int) lipgloss.Style {
 	// .Padding here would double the rows (manual rows + lipgloss
 	// rows) and would also indent the footer — the user wants the
 	// footer flush at the frame width on its own reserved band.
-	if !m.notification.Border.Visible || m.notification.Style == config.NotificationStyleHidden {
+	if !*m.notification.Border.Visible || m.notification.Style == config.NotificationStyleHidden {
 		return style
 	}
 

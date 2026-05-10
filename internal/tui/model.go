@@ -16,6 +16,7 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	hookactions "omakiten/internal/hooks/actions"
 	"omakiten/internal/token"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/notification"
@@ -452,7 +453,7 @@ func (m Model) renderView() string {
 // should stop — notification is intentionally exclusive while active so
 // dismiss + scroll keys take priority over the app underneath.
 func (m Model) dispatchNotification(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	if showMsg, ok := msg.(notification.ShowMsg); ok {
+	if showMsg, ok := msg.(hookactions.NotificationShowMsg); ok {
 		// Drop the new request when a notification is still typing in —
 		// avoids interrupting an Appearing animation with a fresh
 		// payload (Settled notifications are replaceable).

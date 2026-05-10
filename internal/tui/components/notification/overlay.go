@@ -110,7 +110,7 @@ func resolveOffset(pos Position, baseW, baseH, overW, overH int) (int, int) {
 	case PositionBottomRight:
 		x, y = baseW-overW, baseH-overH
 	default:
-		x, y = 0, 0
+		panic("invalid notification position: " + string(pos))
 	}
 	if x < 0 {
 		x = 0

@@ -17,17 +17,30 @@ func sampleNotification() config.Notification {
 		Background:      "transparent",
 		FrameIntervalMs: 100,
 		Style:           config.NotificationStyleRounded,
-		Border:          config.NotificationBorder{Visible: true, Width: 1, Color: "#ffffff"},
+		Border:          config.NotificationBorder{Visible: boolPtr(true), Width: 1, Color: "#ffffff"},
 		Animation: []config.NotificationFrame{
 			{Frame: 0, Value: "A"},
 			{Frame: 1, Value: "B"},
 		},
 		Bubble:          config.NotificationBubble{TailSide: config.NotificationTailBottom},
+		Padding:         zeroNotificationPadding(),
+		AutoHeight:      boolPtr(true),
+		PaddingInside:   boolPtr(false),
+		FooterVisible:   boolPtr(false),
+		FooterPosition:  config.NotificationFooterLeft,
 		Position:        config.NotificationPositionCenter,
 		Dismiss:         config.NotificationDismiss{Mode: config.NotificationDismissModeKey, Keys: []string{"esc"}},
-		TypingMsPerChar: 0,
+		TypingMsPerChar: intPtr(0),
 		MessageField:    "hint",
 	}
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+func intPtr(v int) *int { return &v }
+
+func zeroNotificationPadding() *config.NotificationPadding {
+	return &config.NotificationPadding{Top: intPtr(0), Right: intPtr(0), Bottom: intPtr(0), Left: intPtr(0)}
 }
 
 func sampleTheme() config.Theme {
@@ -49,7 +62,7 @@ func TestNew_typingZeroSettlesImmediately(t *testing.T) {
 
 func TestUpdate_typingTickAdvancesAndSettles(t *testing.T) {
 	bud := sampleNotification()
-	bud.TypingMsPerChar = 10
+	bud.TypingMsPerChar = intPtr(10)
 	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "hi"})
 	if m.State() != StateAppearing {
 		t.Fatalf("expected Appearing, got %v", m.State())
@@ -81,7 +94,7 @@ func TestUpdate_frameTickLoops(t *testing.T) {
 
 func TestUpdate_appearingIgnoresDismissKey(t *testing.T) {
 	bud := sampleNotification()
-	bud.TypingMsPerChar = 100
+	bud.TypingMsPerChar = intPtr(100)
 	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "hello world"})
 	m, cmd := m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEsc}))
 	if cmd != nil {
@@ -143,7 +156,7 @@ func TestUpdate_timeoutWithKeysCanDismissManually(t *testing.T) {
 
 func TestUpdate_scrollKeysHitViewportInBothStates(t *testing.T) {
 	bud := sampleNotification()
-	bud.TypingMsPerChar = 100
+	bud.TypingMsPerChar = intPtr(100)
 	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "hi there friend, this should wrap"})
 	jKey := tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	m, _ = m.Update(jKey)
@@ -197,7 +210,7 @@ func TestUpdate_tabWithoutDetailIsNoop(t *testing.T) {
 
 func TestRenderFooter_detailAdvertisesTab(t *testing.T) {
 	bud := sampleNotification()
-	bud.FooterVisible = true
+	bud.FooterVisible = boolPtr(true)
 	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "short", DetailText: "full"})
 	footer := ansi.Strip(m.renderFooter(40))
 	if !strings.Contains(footer, "tab details") {
@@ -207,7 +220,7 @@ func TestRenderFooter_detailAdvertisesTab(t *testing.T) {
 
 func TestRenderFooter_respectsFooterPosition(t *testing.T) {
 	bud := sampleNotification()
-	bud.FooterVisible = true
+	bud.FooterVisible = boolPtr(true)
 	bud.FooterPosition = config.NotificationFooterRight
 	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "short"})
 	footer := ansi.Strip(m.renderFooter(16))
@@ -218,7 +231,7 @@ func TestRenderFooter_respectsFooterPosition(t *testing.T) {
 
 func TestRenderFooter_timeoutWithKeysShowsCloseHint(t *testing.T) {
 	bud := sampleNotification()
-	bud.FooterVisible = true
+	bud.FooterVisible = boolPtr(true)
 	bud.Dismiss = config.NotificationDismiss{Mode: config.NotificationDismissModeTimeout, Keys: []string{"esc"}, AfterMs: 12000}
 	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "short"})
 	footer := ansi.Strip(m.renderFooter(20))
@@ -329,7 +342,7 @@ func TestRenderFrame_horizontallyCentered(t *testing.T) {
 	bud := sampleNotification()
 	bud.Size = config.NotificationSize{Width: 22, Height: 4}
 	bud.Style = config.NotificationStyleHidden
-	bud.Border = config.NotificationBorder{Visible: false}
+	bud.Border = config.NotificationBorder{Visible: boolPtr(false)}
 	bud.Animation = []config.NotificationFrame{{Frame: 0, Value: "o"}}
 	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "x"})
 	rendered := m.renderFrame(22)
@@ -346,12 +359,16 @@ func layoutFixtureNotification(tail string) config.Notification {
 		Background:      "transparent",
 		FrameIntervalMs: 100,
 		Style:           config.NotificationStyleHidden,
-		Border:          config.NotificationBorder{Visible: false},
+		Border:          config.NotificationBorder{Visible: boolPtr(false)},
 		Animation:       []config.NotificationFrame{{Frame: 0, Value: "FRAMEMARK"}},
 		Bubble:          config.NotificationBubble{TailSide: tail},
+		Padding:         zeroNotificationPadding(),
+		AutoHeight:      boolPtr(true),
+		PaddingInside:   boolPtr(false),
+		FooterVisible:   boolPtr(false),
 		Position:        config.NotificationPositionCenter,
 		Dismiss:         config.NotificationDismiss{Mode: config.NotificationDismissModeKey, Keys: []string{"esc"}},
-		TypingMsPerChar: 0,
+		TypingMsPerChar: intPtr(0),
 		MessageField:    "hint",
 	}
 }

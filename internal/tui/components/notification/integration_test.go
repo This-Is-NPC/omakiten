@@ -5,21 +5,18 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/events"
 	"omakiten/internal/hooks"
 	"omakiten/internal/hooks/actions"
-	"omakiten/internal/tui/components/notification"
 )
 
 type recordingSender struct {
-	msgs chan tea.Msg
+	msgs chan actions.NotificationShowMsg
 }
 
-func (r *recordingSender) Send(msg tea.Msg) {
+func (r *recordingSender) SendNotification(msg actions.NotificationShowMsg) {
 	select {
 	case r.msgs <- msg:
 	default:
@@ -27,6 +24,12 @@ func (r *recordingSender) Send(msg tea.Msg) {
 }
 
 func ptrBool(b bool) *bool { return &b }
+
+func ptrInt(i int) *int { return &i }
+
+func zeroNotificationPadding() *config.NotificationPadding {
+	return &config.NotificationPadding{Top: ptrInt(0), Right: ptrInt(0), Bottom: ptrInt(0), Left: ptrInt(0)}
+}
 
 func openEventSettings() config.EventsSettings {
 	return config.EventsSettings{
@@ -41,12 +44,16 @@ func newTestNotification() config.Notification {
 		Background:      "transparent",
 		FrameIntervalMs: 100,
 		Style:           config.NotificationStyleRounded,
-		Border:          config.NotificationBorder{Visible: true, Width: 1, Color: "#ffffff"},
+		Border:          config.NotificationBorder{Visible: ptrBool(true), Width: 1, Color: "#ffffff"},
 		Animation:       []config.NotificationFrame{{Frame: 0, Value: "X"}},
 		Bubble:          config.NotificationBubble{TailSide: config.NotificationTailBottom},
+		Padding:         zeroNotificationPadding(),
+		AutoHeight:      ptrBool(true),
+		PaddingInside:   ptrBool(false),
+		FooterVisible:   ptrBool(false),
 		Position:        config.NotificationPositionCenter,
 		Dismiss:         config.NotificationDismiss{Mode: config.NotificationDismissModeKey, Keys: []string{"esc"}},
-		TypingMsPerChar: 0,
+		TypingMsPerChar: ptrInt(0),
 		MessageField:    "hint",
 	}
 }
@@ -55,13 +62,13 @@ func newTestNotification() config.Notification {
 //
 //	bus.Publish(guard.violated)
 //	  → hooks.Engine matches on the notification hook (rewritten to notification.show)
-//	  → ShowAction.Execute looks up the notification by slug, resolves message
+//	  → NotificationShowAction.Execute looks up the notification by slug, resolves message
 //	  → MessageSender (recorder) captures the dispatched ShowMsg
 func TestHooksToNotificationShow(t *testing.T) {
 	bud := newTestNotification()
 	settings := openEventSettings()
-	sender := &recordingSender{msgs: make(chan tea.Msg, 4)}
-	notificationAction := notification.NewShowAction(notification.BundleSnapshot{
+	sender := &recordingSender{msgs: make(chan actions.NotificationShowMsg, 4)}
+	notificationAction := actions.NewNotificationShowAction(actions.NotificationBundleSnapshot{
 		Notifications: map[string]config.Notification{bud.Name: bud},
 	})
 	notificationAction.SetSender(sender)
@@ -72,8 +79,8 @@ func TestHooksToNotificationShow(t *testing.T) {
 
 	hookSpec := hooks.Hook{
 		On:   domain.EventTypeGuardViolated,
-		Do:   notification.ActionName,
-		Args: map[string]any{notification.ArgNotificationSlug: bud.Name},
+		Do:   actions.NotificationActionName,
+		Args: map[string]any{actions.NotificationArgSlug: bud.Name},
 	}
 	engine := hooks.NewEngine([]hooks.Hook{hookSpec}, registry, settings, nopRecorder{})
 	bus := events.NewInProcessBus(settings)
@@ -91,15 +98,11 @@ func TestHooksToNotificationShow(t *testing.T) {
 
 	select {
 	case msg := <-sender.msgs:
-		show, ok := msg.(notification.ShowMsg)
-		if !ok {
-			t.Fatalf("expected ShowMsg, got %T", msg)
+		if msg.Notification.Name != bud.Name {
+			t.Fatalf("notification.Name = %q, want %q", msg.Notification.Name, bud.Name)
 		}
-		if show.Notification.Name != bud.Name {
-			t.Fatalf("notification.Name = %q, want %q", show.Notification.Name, bud.Name)
-		}
-		if show.Text != "policy: blocked" {
-			t.Fatalf("text = %q, want hint payload", show.Text)
+		if msg.Text != "policy: blocked" {
+			t.Fatalf("text = %q, want hint payload", msg.Text)
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatalf("no ShowMsg received within timeout")
@@ -111,8 +114,8 @@ func TestHooksToNotificationShow(t *testing.T) {
 func TestHooksToNotificationShow_skipsWhenWhenFilterMisses(t *testing.T) {
 	bud := newTestNotification()
 	settings := openEventSettings()
-	sender := &recordingSender{msgs: make(chan tea.Msg, 4)}
-	notificationAction := notification.NewShowAction(notification.BundleSnapshot{
+	sender := &recordingSender{msgs: make(chan actions.NotificationShowMsg, 4)}
+	notificationAction := actions.NewNotificationShowAction(actions.NotificationBundleSnapshot{
 		Notifications: map[string]config.Notification{bud.Name: bud},
 	})
 	notificationAction.SetSender(sender)
@@ -124,8 +127,8 @@ func TestHooksToNotificationShow_skipsWhenWhenFilterMisses(t *testing.T) {
 	hookSpec := hooks.Hook{
 		On:   domain.EventTypeGuardViolated,
 		When: map[string]string{"operation": "task.delete"},
-		Do:   notification.ActionName,
-		Args: map[string]any{notification.ArgNotificationSlug: bud.Name},
+		Do:   actions.NotificationActionName,
+		Args: map[string]any{actions.NotificationArgSlug: bud.Name},
 	}
 	engine := hooks.NewEngine([]hooks.Hook{hookSpec}, registry, settings, nopRecorder{})
 	bus := events.NewInProcessBus(settings)
@@ -155,8 +158,8 @@ func TestHooksToNotificationShow_fallsBackToBody(t *testing.T) {
 	bud.Name = "agent-comment"
 	bud.MessageField = "missing_key"
 	settings := openEventSettings()
-	sender := &recordingSender{msgs: make(chan tea.Msg, 4)}
-	notificationAction := notification.NewShowAction(notification.BundleSnapshot{
+	sender := &recordingSender{msgs: make(chan actions.NotificationShowMsg, 4)}
+	notificationAction := actions.NewNotificationShowAction(actions.NotificationBundleSnapshot{
 		Notifications: map[string]config.Notification{bud.Name: bud},
 	})
 	notificationAction.SetSender(sender)
@@ -167,8 +170,8 @@ func TestHooksToNotificationShow_fallsBackToBody(t *testing.T) {
 
 	hookSpec := hooks.Hook{
 		On:   domain.EventTypeComment,
-		Do:   notification.ActionName,
-		Args: map[string]any{notification.ArgNotificationSlug: bud.Name},
+		Do:   actions.NotificationActionName,
+		Args: map[string]any{actions.NotificationArgSlug: bud.Name},
 	}
 	engine := hooks.NewEngine([]hooks.Hook{hookSpec}, registry, settings, nopRecorder{})
 	bus := events.NewInProcessBus(settings)
@@ -187,12 +190,8 @@ func TestHooksToNotificationShow_fallsBackToBody(t *testing.T) {
 
 	select {
 	case msg := <-sender.msgs:
-		show, ok := msg.(notification.ShowMsg)
-		if !ok {
-			t.Fatalf("expected ShowMsg, got %T", msg)
-		}
-		if show.Text != "fallback comment body" {
-			t.Errorf("text = %q, want fallback to body", show.Text)
+		if msg.Text != "fallback comment body" {
+			t.Errorf("text = %q, want fallback to body", msg.Text)
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatalf("no ShowMsg received — body fallback not exercised")

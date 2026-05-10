@@ -10,10 +10,19 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	hookactions "omakiten/internal/hooks/actions"
 	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
 	"omakiten/internal/tui/components/notification"
 )
+
+func ptrBool(v bool) *bool { return &v }
+
+func ptrInt(v int) *int { return &v }
+
+func zeroNotificationPadding() *config.NotificationPadding {
+	return &config.NotificationPadding{Top: ptrInt(0), Right: ptrInt(0), Bottom: ptrInt(0), Left: ptrInt(0)}
+}
 
 func newNotificationTestModel(t *testing.T) Model {
 	t.Helper()
@@ -36,12 +45,16 @@ func newNotificationTestModel(t *testing.T) Model {
 		Background:      "transparent",
 		FrameIntervalMs: 100,
 		Style:           config.NotificationStyleRounded,
-		Border:          config.NotificationBorder{Visible: true, Width: 1, Color: "#ffffff"},
+		Border:          config.NotificationBorder{Visible: ptrBool(true), Width: 1, Color: "#ffffff"},
 		Animation:       []config.NotificationFrame{{Frame: 0, Value: "X"}},
 		Bubble:          config.NotificationBubble{TailSide: config.NotificationTailBottom},
+		Padding:         zeroNotificationPadding(),
+		AutoHeight:      ptrBool(true),
+		PaddingInside:   ptrBool(false),
+		FooterVisible:   ptrBool(false),
 		Position:        config.NotificationPositionCenter,
 		Dismiss:         config.NotificationDismiss{Mode: config.NotificationDismissModeKey, Keys: []string{"esc"}},
-		TypingMsPerChar: 0,
+		TypingMsPerChar: ptrInt(0),
 		MessageField:    "hint",
 	}
 	binding := NotificationBinding{Notifications: map[string]config.Notification{bud.Name: bud}}
@@ -65,11 +78,11 @@ func newNotificationTestModel(t *testing.T) Model {
 }
 
 // TestModelDispatchesShowMsg confirms the parent Model wiring picks up
-// a notification.ShowMsg, sets the slot, and renders the notification.
+// a NotificationShowMsg, sets the slot, and renders the notification.
 func TestModelDispatchesShowMsg(t *testing.T) {
 	model := newNotificationTestModel(t)
 	bud := model.notifications["guard-violation"]
-	msg := notification.ShowMsg{Notification: bud, Text: "policy violation"}
+	msg := hookactions.NotificationShowMsg{Notification: bud, Text: "policy violation"}
 
 	next, _ := model.Update(msg)
 	mn := next.(Model)
@@ -91,7 +104,7 @@ func TestModelDispatchesShowMsg(t *testing.T) {
 func TestModelDispatchesShowMsgWithDetailText(t *testing.T) {
 	model := newNotificationTestModel(t)
 	bud := model.notifications["guard-violation"]
-	msg := notification.ShowMsg{Notification: bud, Text: "short warning", DetailText: "full policy details"}
+	msg := hookactions.NotificationShowMsg{Notification: bud, Text: "short warning", DetailText: "full policy details"}
 
 	next, _ := model.Update(msg)
 	mn := next.(Model)
@@ -109,7 +122,7 @@ func TestModelDispatchesShowMsgWithDetailText(t *testing.T) {
 func TestModel_notificationEscapeDismissesViaCmd(t *testing.T) {
 	model := newNotificationTestModel(t)
 	bud := model.notifications["guard-violation"]
-	show := notification.ShowMsg{Notification: bud, Text: "hello"}
+	show := hookactions.NotificationShowMsg{Notification: bud, Text: "hello"}
 
 	next, _ := model.Update(show)
 	mn := next.(Model)
@@ -138,7 +151,7 @@ func TestModel_notificationEscapeDismissesViaCmd(t *testing.T) {
 func TestModelDismissedMsgClearsNotification(t *testing.T) {
 	model := newNotificationTestModel(t)
 	bud := model.notifications["guard-violation"]
-	show := notification.ShowMsg{Notification: bud, Text: "x"}
+	show := hookactions.NotificationShowMsg{Notification: bud, Text: "x"}
 	next, _ := model.Update(show)
 	mn := next.(Model)
 	if mn.notification == nil {
