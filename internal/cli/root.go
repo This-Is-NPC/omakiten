@@ -23,7 +23,6 @@ import (
 	projectresolver "omakiten/internal/project"
 	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
-	"omakiten/internal/tui/components/notification"
 )
 
 type runtimeOptions struct {
@@ -39,7 +38,7 @@ type runtime struct {
 	dbPath             string
 	bus                events.Bus
 	hooksEngine        *hooks.Engine
-	notificationAction *notification.ShowAction
+	notificationAction *actions.NotificationShowAction
 }
 
 func (r *runtime) WithActivityRepo(ctx context.Context) context.Context {
@@ -172,7 +171,7 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		bus := events.NewInProcessBus(bundle.Config.Events)
 		registry := hooks.NewActionRegistry()
 		actions.RegisterBuiltins(registry)
-		notificationAction := notification.NewShowAction(notificationSnapshotFromBundle(bundle))
+		notificationAction := actions.NewNotificationShowAction(notificationSnapshotFromBundle(bundle))
 		registry.Register(notificationAction)
 		rt.notificationAction = notificationAction
 		if err := config.ValidateHooks(bundle.Config.Hooks, func(name string) bool {
@@ -218,7 +217,7 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 // buildHookEntries lifts user-facing HookSpec entries into the
 // engine's hooks.Hook shape. Notification-shape entries (HookSpec.Notification
 // non-empty) are rewritten to call the notification.show action with the
-// slug stashed under notification.ArgNotificationSlug. Optional hook-level
+// slug stashed under actions.NotificationArgSlug. Optional hook-level
 // `message:` / `message_field:` overrides ride along under their
 // own arg keys so the action can fall back to them when the
 // referenced notification YAML does not declare its own message source.
@@ -229,13 +228,13 @@ func buildHookEntries(specs []config.HookSpec) []hooks.Hook {
 			out = append(out, hooks.Hook{
 				On:   spec.On,
 				When: spec.When,
-				Do:   notification.ActionName,
+				Do:   actions.NotificationActionName,
 				Args: map[string]any{
-					notification.ArgNotificationSlug:   spec.Notification,
-					notification.ArgMessage:            spec.Message,
-					notification.ArgMessageField:       spec.MessageField,
-					notification.ArgDetailMessage:      spec.DetailMessage,
-					notification.ArgDetailMessageField: spec.DetailMessageField,
+					actions.NotificationArgSlug:               spec.Notification,
+					actions.NotificationArgMessage:            spec.Message,
+					actions.NotificationArgMessageField:       spec.MessageField,
+					actions.NotificationArgDetailMessage:      spec.DetailMessage,
+					actions.NotificationArgDetailMessageField: spec.DetailMessageField,
 				},
 			})
 			continue
@@ -284,12 +283,10 @@ func writeError(cmd *cobra.Command, err error) error {
 	return exitError{code: 1}
 }
 
-// notificationSnapshotFromBundle builds the slim view of the bundle the
-// notificationSnapshotFromBundle builds the slim view of the bundle the
-// notification.show action consults at execute time. Captured at the
-// composition root so the action stays decoupled from config plumbing.
-func notificationSnapshotFromBundle(bundle config.Bundle) notification.BundleSnapshot {
-	return notification.BundleSnapshot{Notifications: bundle.Notifications}
+// notificationSnapshotFromBundle builds the slim view of the bundle that the
+// notification.show action consults at execute time.
+func notificationSnapshotFromBundle(bundle config.Bundle) actions.NotificationBundleSnapshot {
+	return actions.NotificationBundleSnapshot{Notifications: bundle.Notifications}
 }
 
 // emitBundleWarnings surfaces non-fatal config issues (skipped custom

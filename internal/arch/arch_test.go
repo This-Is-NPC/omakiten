@@ -62,6 +62,13 @@ var hexagonalRules = []rule{
 		},
 		reason: "configstore is a leaf adapter for config I/O; depending on app or sibling adapters cycles the graph",
 	},
+	{
+		from: "internal/agentruntime",
+		forbidden: []string{
+			"internal/tui",
+		},
+		reason: "agentruntime is the headless agent/MCP composition root; TUI delivery must stay behind neutral hook actions and sender ports",
+	},
 }
 
 // TestHexagonalBoundaries scans every non-test Go file in internal/ and

@@ -21,7 +21,6 @@ import (
 	"omakiten/internal/hooks/actions"
 	"omakiten/internal/paths"
 	"omakiten/internal/sqlite"
-	"omakiten/internal/tui/components/notification"
 )
 
 // registerPriorities/registerSeverities used to live here. They were
@@ -50,7 +49,7 @@ type Runtime struct {
 	bus                events.Bus
 	hooksEngine        *hooks.Engine
 	actionRegistry     *hooks.ActionRegistry
-	notificationAction *notification.ShowAction
+	notificationAction *actions.NotificationShowAction
 }
 
 // Open materializes the runtime: resolves paths, runs config layout
@@ -94,7 +93,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	bus := events.NewInProcessBus(bundle.Config.Events)
 	registry := hooks.NewActionRegistry()
 	actions.RegisterBuiltins(registry)
-	notificationAction := notification.NewShowAction(notification.BundleSnapshot{Notifications: bundle.Notifications})
+	notificationAction := actions.NewNotificationShowAction(actions.NotificationBundleSnapshot{Notifications: bundle.Notifications})
 	registry.Register(notificationAction)
 
 	// Re-validate hooks now that the registry is populated so unknown
@@ -189,13 +188,13 @@ func buildHookEntries(specs []config.HookSpec) []hooks.Hook {
 			out = append(out, hooks.Hook{
 				On:   spec.On,
 				When: spec.When,
-				Do:   notification.ActionName,
+				Do:   actions.NotificationActionName,
 				Args: map[string]any{
-					notification.ArgNotificationSlug:   spec.Notification,
-					notification.ArgMessage:            spec.Message,
-					notification.ArgMessageField:       spec.MessageField,
-					notification.ArgDetailMessage:      spec.DetailMessage,
-					notification.ArgDetailMessageField: spec.DetailMessageField,
+					actions.NotificationArgSlug:               spec.Notification,
+					actions.NotificationArgMessage:            spec.Message,
+					actions.NotificationArgMessageField:       spec.MessageField,
+					actions.NotificationArgDetailMessage:      spec.DetailMessage,
+					actions.NotificationArgDetailMessageField: spec.DetailMessageField,
 				},
 			})
 			continue

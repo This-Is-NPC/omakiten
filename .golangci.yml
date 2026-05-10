@@ -101,6 +101,14 @@ linters:
             - pkg: omakiten/internal/agentruntime
               desc: configstore must not depend on the composition root
 
+        agentruntime-is-headless:
+          list-mode: lax
+          files:
+            - "**/internal/agentruntime/**"
+          deny:
+            - pkg: omakiten/internal/tui
+              desc: agentruntime is the headless agent/MCP composition root; TUI delivery must stay behind neutral hook actions and sender ports
+
   exclusions:
     rules:
       - path: _test\.go$

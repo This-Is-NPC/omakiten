@@ -16,6 +16,7 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
+	hookactions "omakiten/internal/hooks/actions"
 	"omakiten/internal/token"
 	"omakiten/internal/tui"
 )
@@ -86,7 +87,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 
 	program := tea.NewProgram(model, tea.WithAltScreen())
 	if rt.notificationAction != nil {
-		rt.notificationAction.SetProgram(program)
+		rt.notificationAction.SetSender(teaNotificationSender{program: program})
 	}
 	finalModel, runErr := program.Run()
 	// The shell wrapper installed by install.sh / install.ps1 reads the
@@ -99,6 +100,14 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		}
 	}
 	return runErr
+}
+
+type teaNotificationSender struct {
+	program *tea.Program
+}
+
+func (s teaNotificationSender) SendNotification(msg hookactions.NotificationShowMsg) {
+	s.program.Send(msg)
 }
 
 // isProjectNotFoundError returns true when the resolver signalled that the
