@@ -68,7 +68,10 @@ ON CONFLICT(bundle_id, key) DO UPDATE SET value = excluded.value, active = 1
 	if err != nil {
 		return err
 	}
-	if err := importLaws(ctx, tx, bundleID, bundle.Laws, personasByKey, projectsByKey); err != nil {
+	// Build an instance-scoped registry so importLaws can resolve severity
+	// labels without reading from process-global state.
+	registry := buildRegistryFromBundle(bundle)
+	if err := importLaws(ctx, tx, bundleID, bundle.Laws, personasByKey, projectsByKey, registry); err != nil {
 		return err
 	}
 	if err := importWorkflows(ctx, tx, bundleID, bundle.Workflows); err != nil {
@@ -191,7 +194,7 @@ WHERE persona_id IN (SELECT id FROM personas WHERE bundle_id = ?)
 	return err
 }
 
-func importLaws(ctx context.Context, tx *sql.Tx, bundleID int64, laws []config.Law, personasByKey map[string]int64, projectsByKey map[string]int64) error {
+func importLaws(ctx context.Context, tx *sql.Tx, bundleID int64, laws []config.Law, personasByKey map[string]int64, projectsByKey map[string]int64, registry *domain.EnumRegistry) error {
 	if _, err := tx.ExecContext(ctx, "DELETE FROM laws WHERE bundle_id = ?", bundleID); err != nil {
 		return err
 	}
@@ -213,13 +216,11 @@ func importLaws(ctx context.Context, tx *sql.Tx, bundleID int64, laws []config.L
 			}
 		}
 		// Resolve the frontmatter severity label to its configured id
-		// via the active registry. The validator runs against the
+		// via the bundle-scoped registry. The validator runs against the
 		// loaded bundle BEFORE ImportBundle, so unknown labels at this
 		// point are a contract violation — fail rigid instead of
-		// silently substituting a default. The runtime composition
-		// root populates the registry from the user's config, so this
-		// never trips in production.
-		severityID, ok := domain.SeverityFromLabel(law.Severity)
+		// silently substituting a default.
+		severityID, ok := registry.SeverityFromLabel(law.Severity)
 		if !ok {
 			return fmt.Errorf("law %q: severity %q not in active registry (validator should have caught this)", law.Slug, law.Severity)
 		}
@@ -231,6 +232,21 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
 		}
 	}
 	return nil
+}
+
+// buildRegistryFromBundle constructs a minimal severity/priority lookup
+// from the bundle's own definition tables. Used by importLaws to resolve
+// severity labels without process-global state.
+func buildRegistryFromBundle(bundle config.Bundle) *domain.EnumRegistry {
+	pPairs := make([]domain.PriorityPair, len(bundle.Config.Priorities))
+	for i, p := range bundle.Config.Priorities {
+		pPairs[i] = domain.PriorityPair{ID: p.ID, Value: p.Value, Default: p.Default}
+	}
+	sPairs := make([]domain.SeverityPair, len(bundle.Config.Severities))
+	for i, s := range bundle.Config.Severities {
+		sPairs[i] = domain.SeverityPair{ID: s.ID, Value: s.Value, Default: s.Default}
+	}
+	return domain.NewEnumRegistry(pPairs, sPairs)
 }
 
 func importWorkflows(ctx context.Context, tx *sql.Tx, bundleID int64, workflows []config.Workflow) error {
