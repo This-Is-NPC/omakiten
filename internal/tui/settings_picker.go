@@ -140,7 +140,7 @@ func readThemeFiles(dir string, isCustom bool) ([]themeOption, error) {
 // discoverConfigProfiles lists every yaml profile available to the picker:
 // defaults at the config-dir root + user profiles under custom/. Custom
 // entries are tagged so the picker can render the CUSTOM badge. Ordering:
-// the canonical default first, then defaults alpha, then customs alpha.
+// defaults alpha, then customs alpha. No file is privileged by name.
 func discoverConfigProfiles(configDir string) ([]configOption, error) {
 	defaults, err := readYAMLProfilesIn(configDir, false)
 	if err != nil {
@@ -152,12 +152,6 @@ func discoverConfigProfiles(configDir string) ([]configOption, error) {
 	}
 	out := append(defaults, customs...)
 	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Filename == paths.DefaultConfigFilename {
-			return true
-		}
-		if out[j].Filename == paths.DefaultConfigFilename {
-			return false
-		}
 		if out[i].IsCustom != out[j].IsCustom {
 			return !out[i].IsCustom
 		}

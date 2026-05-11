@@ -156,6 +156,9 @@ func TestConfigPickerListsProfilesExcludingStateFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "config", paths.ActiveConfigStateFile), []byte("omakiten.yaml\n"), 0o644); err != nil {
 		t.Fatalf("write state file: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "config", "omakase.yaml"), []byte("# official preset\n"), 0o644); err != nil {
+		t.Fatalf("write omakase profile: %v", err)
+	}
 
 	model.openConfigPicker()
 	if model.entityForm.mode != entityScreenConfigPicker {
@@ -166,19 +169,26 @@ func TestConfigPickerListsProfilesExcludingStateFile(t *testing.T) {
 	for i, opt := range model.configPickerOptions {
 		files[i] = opt.Filename
 	}
-	if len(files) != 2 {
-		t.Fatalf("configPickerOptions = %v, want 2 entries (.active filtered)", files)
+	if len(files) != 3 {
+		t.Fatalf("configPickerOptions = %v, want 3 entries (.active filtered)", files)
 	}
-	if files[0] != "omakiten.yaml" {
-		t.Fatalf("first option = %q, want omakiten.yaml (default first)", files[0])
+	// Alphabetical order: defaults first, then custom. No special casing.
+	if files[0] != "omakase.yaml" {
+		t.Fatalf("first option = %q, want omakase.yaml", files[0])
 	}
-	if files[1] != "config-experiment.yaml" {
-		t.Fatalf("second option = %q, want config-experiment.yaml", files[1])
+	if files[1] != "omakiten.yaml" {
+		t.Fatalf("second option = %q, want omakiten.yaml", files[1])
+	}
+	if files[2] != "config-experiment.yaml" {
+		t.Fatalf("third option = %q, want config-experiment.yaml", files[2])
 	}
 	if model.configPickerOptions[0].IsCustom {
 		t.Fatalf("default profile incorrectly tagged as custom")
 	}
-	if !model.configPickerOptions[1].IsCustom {
+	if model.configPickerOptions[1].IsCustom {
+		t.Fatalf("default profile incorrectly tagged as custom")
+	}
+	if !model.configPickerOptions[2].IsCustom {
 		t.Fatalf("user profile under custom/ not tagged as custom")
 	}
 }
