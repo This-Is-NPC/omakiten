@@ -161,7 +161,7 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		// (priority/severity) BEFORE writing to SQLite, so the rest
 		// of the CLI invocation sees a fully wired runtime. The
 		// registries live for the duration of the process.
-		bundle, _, err := app.NewConfigService(store, cs).Import(ctx, configPath)
+		bundle, _, _, err := app.NewConfigService(store, cs).Import(ctx, configPath)
 		if err != nil {
 			_ = store.Close()
 			return nil, err

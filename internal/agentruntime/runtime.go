@@ -84,7 +84,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 
-	bundle, _, err := app.NewConfigService(store, cs).Import(ctx, configPath)
+	bundle, _, _, err := app.NewConfigService(store, cs).Import(ctx, configPath)
 	if err != nil {
 		_ = store.Close()
 		return nil, err

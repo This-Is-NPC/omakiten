@@ -18,7 +18,7 @@ func NewConfigService(repo ConfigRepository, bundle BundleStore) *ConfigService 
 	return &ConfigService{repo: repo, bundle: bundle}
 }
 
-func (s *ConfigService) Import(ctx context.Context, path string) (bundle config.Bundle, hash string, err error) {
+func (s *ConfigService) Import(ctx context.Context, path string) (bundle config.Bundle, hash string, registry *domain.EnumRegistry, err error) {
 	finish := activity.Track(ctx, "app.ConfigService.Import", domain.ProjectContext{}, map[string]any{"path": path})
 	defer func() {
 		status := "ok"
@@ -48,7 +48,7 @@ func (s *ConfigService) Import(ctx context.Context, path string) (bundle config.
 	// to ids via the registry; without this step the import errors
 	// out on the first law. Validator already passed in LoadBundle
 	// above, so the tables are guaranteed non-empty and well-formed.
-	registerEnumsFromBundle(bundle)
+	registry = registerEnumsFromBundle(bundle)
 
 	if err = s.repo.ImportBundle(ctx, bundle, path, hash); err != nil {
 		return
@@ -58,12 +58,12 @@ func (s *ConfigService) Import(ctx context.Context, path string) (bundle config.
 }
 
 // registerEnumsFromBundle installs the bundle's priority + severity
-// tables into the domain registries. Mirrors the per-runtime-root
-// helpers in cli/agentruntime so any path that loads a bundle (Import,
-// composition roots) leaves the registries in a state that downstream
-// code can rely on. The validator guarantees the bundle is complete
-// before this runs.
-func registerEnumsFromBundle(bundle config.Bundle) {
+// tables into the domain registries and returns an instance-scoped
+// EnumRegistry. It still updates the process globals for backward
+// compatibility with code that has not yet migrated to injected registries.
+// The returned registry should be used by new code; the globals are
+// deprecated and will be removed in a future refactor.
+func registerEnumsFromBundle(bundle config.Bundle) *domain.EnumRegistry {
 	priorityPairs := make([]domain.PriorityPair, len(bundle.Config.Priorities))
 	for i, p := range bundle.Config.Priorities {
 		priorityPairs[i] = domain.PriorityPair{ID: p.ID, Value: p.Value, Default: p.Default}
@@ -75,6 +75,8 @@ func registerEnumsFromBundle(bundle config.Bundle) {
 		severityPairs[i] = domain.SeverityPair{ID: s.ID, Value: s.Value, Default: s.Default}
 	}
 	domain.RegisterSeverities(severityPairs)
+
+	return domain.NewEnumRegistry(priorityPairs, severityPairs)
 }
 
 func configError(path string, err error) error {
