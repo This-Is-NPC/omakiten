@@ -17,8 +17,11 @@ var entityFolders = []string{"skills", "laws", "personas", "templates", "themes"
 // EnsureDefaultFiles materializes the embedded default kit into a config root.
 // Existing files are not overwritten; user-owned custom folders are created.
 func EnsureDefaultFiles(rootDir string) error {
-	if err := copyDefaultIfMissing(filepath.Join(rootDir, "config", "omakiten.yaml"), "omakiten.yaml"); err != nil {
+	if err := copyDefaultConfigProfiles(rootDir, false); err != nil {
 		return err
+	}
+	if err := os.MkdirAll(filepath.Join(rootDir, "config", "custom"), 0o755); err != nil {
+		return fmt.Errorf("create config/custom: %w", err)
 	}
 	for _, sub := range entityFolders {
 		if err := copyDefaultDir(rootDir, sub, false); err != nil {
@@ -33,8 +36,11 @@ func EnsureDefaultFiles(rootDir string) error {
 
 // RefreshDefaultFiles overwrites every bundled default file while preserving custom/.
 func RefreshDefaultFiles(rootDir string) error {
-	if err := copyDefaultOverwrite(filepath.Join(rootDir, "config", "omakiten.yaml"), "omakiten.yaml"); err != nil {
+	if err := copyDefaultConfigProfiles(rootDir, true); err != nil {
 		return err
+	}
+	if err := os.MkdirAll(filepath.Join(rootDir, "config", "custom"), 0o755); err != nil {
+		return fmt.Errorf("create config/custom: %w", err)
 	}
 	for _, sub := range entityFolders {
 		if err := copyDefaultDir(rootDir, sub, true); err != nil {
@@ -42,6 +48,34 @@ func RefreshDefaultFiles(rootDir string) error {
 		}
 		if err := os.MkdirAll(filepath.Join(rootDir, sub, "custom"), 0o755); err != nil {
 			return fmt.Errorf("create %s/custom: %w", sub, err)
+		}
+	}
+	return nil
+}
+
+func copyDefaultConfigProfiles(rootDir string, overwrite bool) error {
+	entries, err := defaults.FS.ReadDir("config")
+	if err != nil {
+		var pathErr *fs.PathError
+		if errors.As(err, &pathErr) {
+			return nil
+		}
+		return fmt.Errorf("read embedded config profiles: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		src := "config/" + entry.Name()
+		dst := filepath.Join(rootDir, "config", entry.Name())
+		if overwrite {
+			if err := copyDefaultOverwrite(dst, src); err != nil {
+				return err
+			}
+		} else {
+			if err := copyDefaultIfMissing(dst, src); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

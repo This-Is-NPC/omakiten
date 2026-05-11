@@ -9,7 +9,7 @@ import (
 	"omakiten/defaults"
 )
 
-// LoadKitConfig parses the embedded `defaults/omakiten.yaml` and returns
+// LoadKitConfig parses the embedded `defaults/config/omakiten.yaml` and returns
 // just the Settings block — the canonical defaults the kit ships with
 // the binary. Production code does NOT consult this at runtime: the
 // installer (`EnsureDefaultFiles`) materialises the kit YAML into the
@@ -22,7 +22,7 @@ import (
 //     don't have to repeat the canonical blocks
 //   - `okt config doctor` (future) to compare user vs. kit
 func LoadKitConfig() (Settings, error) {
-	data, err := defaults.FS.ReadFile("omakiten.yaml")
+	data, err := defaults.FS.ReadFile("config/omakiten.yaml")
 	if err != nil {
 		return Settings{}, fmt.Errorf("read embedded kit YAML: %w", err)
 	}

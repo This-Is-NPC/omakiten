@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Mirror defaults/ into a target config root using the v2 layout:
 #
-#   <root>/config/omakiten.yaml   (overwritten every run)
+#   <root>/config/<profile>.yaml  (official config profiles, overwritten every run)
 #   <root>/<entity>/<file>        (default scope — fully mirrored: stale
 #                                  files at the default scope are removed,
 #                                  fresh ones from defaults/ are copied in)
@@ -30,8 +30,14 @@ if [ ! -d "$defaults_dir" ]; then
   exit 1
 fi
 
-mkdir -p "$target_root/config"
-install -m644 "$defaults_dir/omakiten.yaml" "$target_root/config/omakiten.yaml"
+mkdir -p "$target_root/config/custom"
+
+if [ -d "$defaults_dir/config" ]; then
+  for src in "$defaults_dir/config"/*.yaml; do
+    [ -f "$src" ] || continue
+    install -m644 "$src" "$target_root/config/$(basename "$src")"
+  done
+fi
 
 for sub in skills laws personas templates themes notifications; do
   src_dir="$defaults_dir/$sub"
