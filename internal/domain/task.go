@@ -92,6 +92,8 @@ type PriorityPair struct {
 // entry is flagged. PriorityZero when the registry has not been wired —
 // callers should treat that as "let the storage layer pick" so
 // uninitialised tests still write rows.
+//
+// Deprecated: Use EnumRegistry.DefaultPriority instead.
 func DefaultPriority() Priority {
 	if reg := activePriorities.Load(); reg != nil {
 		return reg.defaultID
@@ -102,6 +104,9 @@ func DefaultPriority() Priority {
 // Label returns the configured label for this priority id, or "" when
 // the registry is empty or the id is unknown. Callers that need a
 // fallback string should branch on Label() == "".
+//
+// Deprecated: Use EnumRegistry.PriorityLabel instead. This method relies
+// on process-global state and will be removed in a future version.
 func (p Priority) Label() string {
 	if reg := activePriorities.Load(); reg != nil {
 		return reg.byID[int(p)]
@@ -171,6 +176,8 @@ func (p *Priority) UnmarshalJSON(data []byte) error {
 // Returns PriorityZero, false when the registry is empty or the label
 // is not configured. Used by CLI/MCP boundary layers to translate
 // user-supplied strings into ids before crossing the domain boundary.
+//
+// Deprecated: Use EnumRegistry.PriorityFromLabel instead.
 func PriorityFromLabel(label string) (Priority, bool) {
 	if label == "" {
 		return PriorityZero, false
@@ -186,6 +193,8 @@ func PriorityFromLabel(label string) (Priority, bool) {
 // IsRegistered reports whether the given id corresponds to an entry in
 // the active priority table. Validator and app services use this to
 // reject IDs that refer to deleted priority entries.
+//
+// Deprecated: Use EnumRegistry.IsPriorityRegistered instead.
 func (p Priority) IsRegistered() bool {
 	if reg := activePriorities.Load(); reg != nil {
 		_, ok := reg.byID[int(p)]

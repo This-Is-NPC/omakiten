@@ -66,6 +66,8 @@ func RegisterSeverities(pairs []SeverityPair) {
 // registry, falling back to the middle entry when no flag is set.
 // SeverityZero when uninitialised — callers should treat that as "let
 // the storage layer pick" so partially-bootstrapped tests still work.
+//
+// Deprecated: Use EnumRegistry.DefaultSeverity instead.
 func DefaultSeverity() Severity {
 	if reg := activeSeverities.Load(); reg != nil {
 		return reg.defaultID
@@ -75,6 +77,8 @@ func DefaultSeverity() Severity {
 
 // Label returns the configured label for this severity id, or "" when
 // the registry is empty or the id is unknown.
+//
+// Deprecated: Use EnumRegistry.SeverityLabel instead.
 func (s Severity) Label() string {
 	if reg := activeSeverities.Load(); reg != nil {
 		return reg.byID[int(s)]
@@ -144,6 +148,8 @@ func (s *Severity) UnmarshalJSON(data []byte) error {
 // is not configured. Used by CLI/MCP boundary layers and the
 // configstore frontmatter loader to translate user-supplied strings
 // into ids before crossing the domain boundary.
+//
+// Deprecated: Use EnumRegistry.SeverityFromLabel instead.
 func SeverityFromLabel(label string) (Severity, bool) {
 	if label == "" {
 		return SeverityZero, false
@@ -158,6 +164,8 @@ func SeverityFromLabel(label string) (Severity, bool) {
 
 // IsRegistered reports whether the given id corresponds to an entry
 // in the active severity table.
+//
+// Deprecated: Use EnumRegistry.IsSeverityRegistered instead.
 func (s Severity) IsRegistered() bool {
 	if reg := activeSeverities.Load(); reg != nil {
 		_, ok := reg.byID[int(s)]
