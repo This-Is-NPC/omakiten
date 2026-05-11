@@ -43,12 +43,14 @@ func (s *ConfigService) Import(ctx context.Context, path string) (bundle config.
 	}
 
 	// Wire the resolved priority + severity tables into the domain
-	// registries BEFORE writing the bundle to SQLite. ImportBundle's
-	// adapter (sqlite/bundles.go) resolves frontmatter severity labels
-	// to ids via the registry; without this step the import errors
-	// out on the first law. Validator already passed in LoadBundle
-	// above, so the tables are guaranteed non-empty and well-formed.
-	registry = registerEnumsFromBundle(bundle)
+	// registries BEFORE writing the bundle to SQLite. Also populates the
+	// process-global registries used by Severity.MarshalJSON and other
+	// domain-level fallbacks that have not yet migrated to instance-scoped
+	// lookups. The SQLite layer now builds its own registry from the bundle
+	// directly (see sqlite/bundles.go buildRegistryFromBundle), so the
+	// global registration here is no longer needed by the import path but
+	// is still required for correct JSON serialization of domain types.
+	registry = enumRegistryFromBundle(bundle)
 
 	if err = s.repo.ImportBundle(ctx, bundle, path, hash); err != nil {
 		return
@@ -57,13 +59,13 @@ func (s *ConfigService) Import(ctx context.Context, path string) (bundle config.
 	return
 }
 
-// registerEnumsFromBundle installs the bundle's priority + severity
-// tables into the domain registries and returns an instance-scoped
-// EnumRegistry. It still updates the process globals for backward
-// compatibility with code that has not yet migrated to injected registries.
-// The returned registry should be used by new code; the globals are
-// deprecated and will be removed in a future refactor.
-func registerEnumsFromBundle(bundle config.Bundle) *domain.EnumRegistry {
+// enumRegistryFromBundle builds an instance-scoped EnumRegistry from the
+// bundle's priority and severity tables. It also populates the process-global
+// registries for backward compatibility with domain types (e.g.
+// Severity.MarshalJSON, Priority.IsRegistered) that still read from globals.
+// New code should use the returned EnumRegistry directly; the global calls
+// will be removed once those domain-level fallbacks are migrated.
+func enumRegistryFromBundle(bundle config.Bundle) *domain.EnumRegistry {
 	priorityPairs := make([]domain.PriorityPair, len(bundle.Config.Priorities))
 	for i, p := range bundle.Config.Priorities {
 		priorityPairs[i] = domain.PriorityPair{ID: p.ID, Value: p.Value, Default: p.Default}
