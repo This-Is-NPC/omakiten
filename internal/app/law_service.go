@@ -9,14 +9,18 @@ import (
 )
 
 type LawService struct {
-	repo    ConfigRepository
-	editor  *BundleEditor
-	files   EntityFileWriter
-	slugger Slugifier
+	repo     ConfigRepository
+	editor   *BundleEditor
+	files    EntityFileWriter
+	slugger  Slugifier
+	registry *domain.EnumRegistry
 }
 
-func NewLawService(repo ConfigRepository, editor *BundleEditor, files EntityFileWriter, slugger Slugifier) *LawService {
-	return &LawService{repo: repo, editor: editor, files: files, slugger: slugger}
+// NewLawService wires the law orchestration layer. registry is optional —
+// when nil the service falls back to process-global domain registries for
+// backward compatibility during the migration to instance-scoped registries.
+func NewLawService(repo ConfigRepository, editor *BundleEditor, files EntityFileWriter, slugger Slugifier, registry *domain.EnumRegistry) *LawService {
+	return &LawService{repo: repo, editor: editor, files: files, slugger: slugger, registry: registry}
 }
 
 // LawListFilter narrows the laws returned by List. Empty values mean "any".
@@ -52,7 +56,7 @@ func (s *LawService) ListFiltered(ctx context.Context, filter LawListFilter) ([]
 			// label is unknown (typo), keep whatever the store had so
 			// the UI can still render and the validator will surface
 			// the error on the next bundle import.
-			if id, ok := domain.SeverityFromLabel(file.Severity); ok {
+			if id, ok := s.severityFromLabel(file.Severity); ok {
 				law.Severity = id
 			}
 			law.Name = file.Name
@@ -109,7 +113,7 @@ func (s *LawService) Add(ctx context.Context, input domain.LawInput) (domain.Law
 	}
 
 	path := s.files.CustomEntityFilePath(s.editor.RootDir(), config.EntityKindLaw, slug)
-	bytes, err := s.files.LawFileBytes(config.Law{Slug: slug, Name: name, Severity: severity.Label(), Body: body})
+	bytes, err := s.files.LawFileBytes(config.Law{Slug: slug, Name: name, 			Severity: s.severityLabel(severity), Body: body})
 	if err != nil {
 		return domain.Law{}, configError(path, err)
 	}
@@ -127,7 +131,7 @@ func (s *LawService) Add(ctx context.Context, input domain.LawInput) (domain.Law
 		law := config.Law{
 			Slug:     slug,
 			Name:     name,
-			Severity: severity.Label(),
+			Severity: s.severityLabel(severity),
 			Body:     body,
 			Scope:    string(scope),
 			IsCustom: true,
@@ -168,7 +172,7 @@ func (s *LawService) Edit(ctx context.Context, slug string, update domain.LawUpd
 		// config.Law.Severity is the YAML/frontmatter label string;
 		// translate from the in-memory id back to the configured label
 		// so the rewritten file reads naturally.
-		Severity: current.Severity.Label(),
+			Severity: s.severityLabel(current.Severity),
 		Body:     current.Body,
 	}
 	changed := false
@@ -177,11 +181,11 @@ func (s *LawService) Edit(ctx context.Context, slug string, update domain.LawUpd
 		changed = true
 	}
 	if update.Severity != nil {
-		next, err := normalizeSeverity(*update.Severity)
+		next, err := s.normalizeSeverity(*update.Severity)
 		if err != nil {
 			return domain.Law{}, err
 		}
-		law.Severity = next.Label()
+		law.Severity = s.severityLabel(next)
 		changed = true
 	}
 	if update.Body != nil {
@@ -281,6 +285,20 @@ func normalizeLawInput(input domain.LawInput, slugger Slugifier) (string, string
 // this point; this function only accepts ids and is the second-line
 // guard against stale ids (e.g. caller cached an id whose entry was
 // removed since).
+func (s *LawService) normalizeSeverity(value domain.Severity) (domain.Severity, error) {
+	if value == domain.SeverityZero {
+		return domain.SeverityZero, domain.NewError(domain.ErrValidation, "law severity is required", nil)
+	}
+	if !s.isSeverityRegistered(value) {
+		return domain.SeverityZero, domain.NewError(domain.ErrValidation,
+			"law severity id is not in config.severities",
+			map[string]any{"severity": int(value)})
+	}
+	return value, nil
+}
+
+// standaloneNormalizeSeverity is the package-level variant used by
+// normalizeLawInput (a pure function with no service receiver).
 func normalizeSeverity(value domain.Severity) (domain.Severity, error) {
 	if value == domain.SeverityZero {
 		return domain.SeverityZero, domain.NewError(domain.ErrValidation, "law severity is required", nil)
@@ -328,4 +346,31 @@ func personaExists(bundle config.Bundle, slug string) bool {
 		}
 	}
 	return false
+}
+
+// severityFromLabel resolves a severity label to its id, using the injected
+// registry when available or falling back to the global registry.
+func (s *LawService) severityFromLabel(label string) (domain.Severity, bool) {
+	if s.registry != nil {
+		return s.registry.SeverityFromLabel(label)
+	}
+	return domain.SeverityFromLabel(label)
+}
+
+// severityLabel returns the label for a severity id, using the injected
+// registry when available or falling back to the global registry.
+func (s *LawService) severityLabel(sev domain.Severity) string {
+	if s.registry != nil {
+		return s.registry.SeverityLabel(sev)
+	}
+	return sev.Label()
+}
+
+// isSeverityRegistered reports whether the given severity id is known in
+// the active table, using the injected registry when available.
+func (s *LawService) isSeverityRegistered(sev domain.Severity) bool {
+	if s.registry != nil {
+		return s.registry.IsSeverityRegistered(sev)
+	}
+	return sev.IsRegistered()
 }

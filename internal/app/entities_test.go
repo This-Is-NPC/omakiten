@@ -97,7 +97,7 @@ func TestLawServiceLifecycle(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fixture := newEntitiesFixture(t)
-			service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files)
+service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files, nil)
 
 			law, err := service.Add(ctx, tt.input)
 			if tt.wantErr != "" {
@@ -139,7 +139,7 @@ func TestLawServiceLifecycle(t *testing.T) {
 func TestLawServiceRejectsDuplicateKey(t *testing.T) {
 	ctx := context.Background()
 	fixture := newEntitiesFixture(t)
-	service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files)
+	service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files, nil)
 
 	if _, err := service.Add(ctx, domain.LawInput{Key: "scope", Severity: domain.Severity(3), Body: "anything"}); err == nil {
 		t.Fatalf("Add(duplicate) error = nil, want validation error")
@@ -310,7 +310,7 @@ func TestBundleEditorApplyRollsBackOnFailure(t *testing.T) {
 func TestLawServiceEditNoChange(t *testing.T) {
 	ctx := context.Background()
 	fixture := newEntitiesFixture(t)
-	service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files)
+	service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files, nil)
 
 	// Edit with no changes should return current law
 	law, err := service.Show(ctx, "scope")
