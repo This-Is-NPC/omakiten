@@ -154,14 +154,15 @@ func priorityAllowSet(values []string) map[string]struct{} {
 
 // priorityAllowed checks the priority against the configured filter
 // values (label strings supplied by config.views.{board,table}.filter
-// .priority). Resolves the priority id to its label via the registry
-// before comparison so user-defined priorities (e.g. "urgent") match the
-// strings they typed in YAML, not the underlying integer ids.
-func priorityAllowed(allowed map[string]struct{}, priority domain.Priority) bool {
+// .priority). Resolves the priority id to its label via the model's
+// priority table before comparison so user-defined priorities (e.g.
+// "urgent") match the strings they typed in YAML, not the underlying
+// integer ids.
+func (m Model) priorityAllowed(allowed map[string]struct{}, priority domain.Priority) bool {
 	if allowed == nil {
 		return true
 	}
-	_, ok := allowed[priority.Label()]
+	_, ok := allowed[m.priorityLabel(priority)]
 	return ok
 }
 
@@ -192,7 +193,7 @@ func (m Model) applyTableView() []domain.Task {
 	bucketAllowedSet := bucketAllowSet(m.views.Table.Filter.Bucket)
 	out := make([]domain.Task, 0, len(m.tasks))
 	for _, task := range m.tasks {
-		if !priorityAllowed(prioAllowed, task.Priority) {
+		if !m.priorityAllowed(prioAllowed, task.Priority) {
 			continue
 		}
 		if !bucketAllowed(bucketAllowedSet, task.BucketKey) {
