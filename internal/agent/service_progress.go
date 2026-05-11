@@ -23,7 +23,7 @@ func (s *Service) RecordProgress(ctx context.Context, input RecordProgressInput)
 
 	response := RecordProgressResponse{Project: projectSummary(project)}
 	if input.TaskID > 0 && (input.Title != nil || input.Description != nil || input.Priority != nil || strings.TrimSpace(input.MoveToBucket) != "") {
-		task, err := app.NewTaskServiceFromStore(s.repo).Edit(ctx, project, input.TaskID, domain.TaskUpdate{
+		task, err := app.NewTaskServiceFromStore(s.repo, s.registry).Edit(ctx, project, input.TaskID, domain.TaskUpdate{
 			Title:       input.Title,
 			Description: input.Description,
 			Priority:    input.Priority,

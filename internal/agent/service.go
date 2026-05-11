@@ -101,6 +101,7 @@ type Service struct {
 	personaCatalog     PersonaCatalog
 	commandCatalog     CommandCatalog
 	settings           ServiceSettings
+	registry           *domain.EnumRegistry
 }
 
 // NewService constructs the agent service with zero-value settings.
@@ -126,6 +127,13 @@ func NewService(repo Repository, selector ProjectSelector) *Service {
 // MCP field is set in the bundle, so settings here is always complete.
 func (s *Service) SetSettings(settings ServiceSettings) {
 	s.settings = settings
+}
+
+// SetRegistry wires the enum registry so priority/severity label lookups
+// use the user-configured values rather than the deprecated global methods.
+// The runtime composition root calls this once at startup after Import.
+func (s *Service) SetRegistry(r *domain.EnumRegistry) {
+	s.registry = r
 }
 
 // SettingsCachePrompts exposes the cache-prompts toggle for the MCP adapter.
@@ -178,7 +186,7 @@ func (s *Service) resolveProject(ctx context.Context, selector ProjectSelector) 
 }
 
 func (s *Service) projectState(ctx context.Context, project domain.ProjectContext) ([]domain.Task, domain.Workflow, []domain.ContextEntry, error) {
-	tasks, err := app.NewTaskServiceFromStore(s.repo).List(ctx, project, domain.TaskFilter{})
+	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry).List(ctx, project, domain.TaskFilter{})
 	if err != nil {
 		return nil, domain.Workflow{}, nil, err
 	}
