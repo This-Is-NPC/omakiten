@@ -17,22 +17,23 @@ import (
 // supplies the underlying primitives; nothing about workflow rules lives in
 // the Store any longer.
 type WorkflowService struct {
-	config ConfigRepository
-	repo   WorkflowRepository
-	guards GuardEvaluationRepository
-	tasks  TaskRepository
-	events EventRepository
+	config   ConfigRepository
+	repo     WorkflowRepository
+	guards   GuardEvaluationRepository
+	tasks    TaskRepository
+	events   EventRepository
+	registry *domain.EnumRegistry
 }
 
-func NewWorkflowService(config ConfigRepository, workflow WorkflowRepository, guards GuardEvaluationRepository, tasks TaskRepository, events EventRepository) *WorkflowService {
-	return &WorkflowService{config: config, repo: workflow, guards: guards, tasks: tasks, events: events}
+func NewWorkflowService(config ConfigRepository, workflow WorkflowRepository, guards GuardEvaluationRepository, tasks TaskRepository, events EventRepository, registry *domain.EnumRegistry) *WorkflowService {
+	return &WorkflowService{config: config, repo: workflow, guards: guards, tasks: tasks, events: events, registry: registry}
 }
 
 // NewWorkflowServiceFromStore is the production-path sugar for callers that
 // hold a single composite store implementing every workflow port (in
 // production: *sqlite.Store).
 func NewWorkflowServiceFromStore(store CompositeWorkflowStore) *WorkflowService {
-	return NewWorkflowService(store, store, store, store, store)
+	return NewWorkflowService(store, store, store, store, store, nil)
 }
 
 // ResolveDefaultBucket returns the key of the first bucket in the active
@@ -90,7 +91,7 @@ func (s *WorkflowService) CreateTask(ctx context.Context, projectID int64, title
 	// not been wired (test contexts), in which case the store's SQL
 	// DEFAULT keeps acting as the safety net.
 	if priority == domain.PriorityZero {
-		priority = domain.DefaultPriority()
+		priority = s.defaultPriority()
 	}
 	return s.tasks.CreateTask(ctx, projectID, title, description, priority, bucketKey)
 }
@@ -519,4 +520,13 @@ func (s *WorkflowService) checkCommentsTagged(ctx context.Context, projectID, ta
 	}
 	s.EmitGuardViolated(ctx, projectID, domain.EventEntityTask, taskID, operation, "comments_tagged", msg, target)
 	return domain.NewError(domain.ErrGuardViolation, msg, details)
+}
+
+// defaultPriority returns the configured default priority id, using the
+// injected registry when available or falling back to the global registry.
+func (s *WorkflowService) defaultPriority() domain.Priority {
+	if s.registry != nil {
+		return s.registry.DefaultPriority()
+	}
+	return domain.DefaultPriority()
 }
