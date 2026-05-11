@@ -38,8 +38,14 @@ type CompositeWorkflowStore interface {
 
 // NewTaskServiceFromStore is the production-path sugar: it wires WorkflowService
 // against the composite store and returns a TaskService ready for use.
-func NewTaskServiceFromStore(store CompositeWorkflowStore) *TaskService {
-	return NewTaskService(store, NewWorkflowServiceFromStore(store), nil)
+// The optional registry is forwarded to both WorkflowService and TaskService
+// so priority/severity lookups use instance-scoped tables.
+func NewTaskServiceFromStore(store CompositeWorkflowStore, registry ...*domain.EnumRegistry) *TaskService {
+	var reg *domain.EnumRegistry
+	if len(registry) > 0 {
+		reg = registry[0]
+	}
+	return NewTaskService(store, NewWorkflowServiceFromStore(store, reg), reg)
 }
 
 func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, title, description, priority, bucketKey string) (task domain.Task, err error) {

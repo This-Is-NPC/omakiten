@@ -107,7 +107,7 @@ func (s *LawService) Show(ctx context.Context, slug string) (domain.Law, error) 
 }
 
 func (s *LawService) Add(ctx context.Context, input domain.LawInput) (domain.Law, error) {
-	slug, name, severity, body, scope, project, persona, err := normalizeLawInput(input, s.slugger)
+	slug, name, severity, body, scope, project, persona, err := normalizeLawInput(input, s.slugger, s.normalizeSeverity)
 	if err != nil {
 		return domain.Law{}, err
 	}
@@ -241,8 +241,11 @@ func (s *LawService) Remove(ctx context.Context, slug string) error {
 	return err
 }
 
-func normalizeLawInput(input domain.LawInput, slugger Slugifier) (string, string, domain.Severity, string, domain.LawScope, string, string, error) {
-	severity, err := normalizeSeverity(input.Severity)
+func normalizeLawInput(input domain.LawInput, slugger Slugifier, severityValidator func(domain.Severity) (domain.Severity, error)) (string, string, domain.Severity, string, domain.LawScope, string, string, error) {
+	if severityValidator == nil {
+		severityValidator = normalizeSeverity
+	}
+	severity, err := severityValidator(input.Severity)
 	if err != nil {
 		return "", "", domain.SeverityZero, "", "", "", "", err
 	}
@@ -297,8 +300,10 @@ func (s *LawService) normalizeSeverity(value domain.Severity) (domain.Severity, 
 	return value, nil
 }
 
-// standaloneNormalizeSeverity is the package-level variant used by
-// normalizeLawInput (a pure function with no service receiver).
+// normalizeSeverity is the package-level fallback used by normalizeLawInput
+// when no instance-scoped validator is supplied. Reads from process-global
+// registry — callers with an EnumRegistry should pass s.normalizeSeverity
+// instead.
 func normalizeSeverity(value domain.Severity) (domain.Severity, error) {
 	if value == domain.SeverityZero {
 		return domain.SeverityZero, domain.NewError(domain.ErrValidation, "law severity is required", nil)

@@ -31,9 +31,15 @@ func NewWorkflowService(config ConfigRepository, workflow WorkflowRepository, gu
 
 // NewWorkflowServiceFromStore is the production-path sugar for callers that
 // hold a single composite store implementing every workflow port (in
-// production: *sqlite.Store).
-func NewWorkflowServiceFromStore(store CompositeWorkflowStore) *WorkflowService {
-	return NewWorkflowService(store, store, store, store, store, nil)
+// production: *sqlite.Store). The optional registry is injected into the
+// service so priority/severity lookups use the instance-scoped tables
+// rather than process-global state.
+func NewWorkflowServiceFromStore(store CompositeWorkflowStore, registry ...*domain.EnumRegistry) *WorkflowService {
+	var reg *domain.EnumRegistry
+	if len(registry) > 0 {
+		reg = registry[0]
+	}
+	return NewWorkflowService(store, store, store, store, store, reg)
 }
 
 // ResolveDefaultBucket returns the key of the first bucket in the active
