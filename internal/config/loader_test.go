@@ -54,6 +54,14 @@ func TestEnsureDefaultFiles(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(tmp, "config", "omakiten.yaml")); err != nil {
 		t.Fatalf("config/omakiten.yaml missing: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(tmp, "config", "custom")); err != nil {
+		t.Fatalf("config/custom dir missing: %v", err)
+	}
+	for _, name := range []string{"omakase.yaml", "izakaya.yaml", "kaiseki.yaml", "shokunin.yaml"} {
+		if _, err := os.Stat(filepath.Join(tmp, "config", name)); err != nil {
+			t.Fatalf("default config profile %s missing: %v", name, err)
+		}
+	}
 
 	for _, dir := range []string{"skills", "laws", "personas", "templates", "themes"} {
 		if _, err := os.Stat(filepath.Join(tmp, dir)); err != nil {
@@ -109,6 +117,9 @@ func TestRefreshDefaultFilesOverwrites(t *testing.T) {
 
 	if _, err := os.Stat(customPath); err != nil {
 		t.Fatalf("RefreshDefaultFiles touched custom/: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tmp, "config", "omakase.yaml")); err != nil {
+		t.Fatalf("RefreshDefaultFiles did not keep default config profiles: %v", err)
 	}
 }
 

@@ -71,6 +71,8 @@ func TestMigrateLayoutSegregatesUserCustoms(t *testing.T) {
 func TestMigrateLayoutMovesUserConfigProfilesToCustom(t *testing.T) {
 	tmp := t.TempDir()
 	writeFile(t, filepath.Join(tmp, "config", "omakiten.yaml"), baseConfigHeader)
+	// Official profiles shipped under defaults/config remain default-scope files.
+	writeFile(t, filepath.Join(tmp, "config", "omakase.yaml"), "# official profile\n")
 	// User-authored profile that lived flat under config/.
 	writeFile(t, filepath.Join(tmp, "config", "config-experiment.yaml"), "# user profile\n")
 
@@ -80,6 +82,9 @@ func TestMigrateLayoutMovesUserConfigProfilesToCustom(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(tmp, "config", "omakiten.yaml")); err != nil {
 		t.Fatalf("default omakiten.yaml must stay at config/ root: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tmp, "config", "omakase.yaml")); err != nil {
+		t.Fatalf("official config profile must stay at config/ root: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(tmp, "config", "config-experiment.yaml")); !os.IsNotExist(err) {
 		t.Fatalf("user profile still at config/ root after migration: %v", err)
