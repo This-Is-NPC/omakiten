@@ -35,7 +35,7 @@ func TestCLIInitPresetCopiesFlatConfigToGitRoot(t *testing.T) {
 		t.Fatalf("init --preset output = %s, want preset rooted at git root %s", output, projectRoot)
 	}
 
-	presetConfigPath := filepath.Join(projectRoot, ".omakiten", "config", "omakiten.yaml")
+	presetConfigPath := filepath.Join(projectRoot, ".omakiten", "config", "izakaya.yaml")
 	data, err := os.ReadFile(presetConfigPath)
 	if err != nil {
 		t.Fatalf("ReadFile(preset config) error = %v", err)
@@ -102,7 +102,7 @@ func TestCLIPresetWorkflowsEndToEnd(t *testing.T) {
 
 			globalConfigPath := filepath.Join(tmp, "global", "config", "omakiten.yaml")
 			runCLI(t, dbPath, globalConfigPath, "init", "--preset", preset, "--name", preset, "--slug", preset)
-			presetConfigPath := filepath.Join(projectRoot, ".omakiten", "config", "omakiten.yaml")
+			presetConfigPath := filepath.Join(projectRoot, ".omakiten", "config", preset+".yaml")
 			runCLI(t, dbPath, presetConfigPath, "add", "-t", "Preset task")
 			for _, args := range steps {
 				runCLI(t, dbPath, presetConfigPath, args...)

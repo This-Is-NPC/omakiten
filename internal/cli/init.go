@@ -12,6 +12,7 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/paths"
 )
 
 func newInitCommand(opts *runtimeOptions) *cobra.Command {
@@ -54,6 +55,10 @@ func newInitCommand(opts *runtimeOptions) *cobra.Command {
 					if err != nil {
 						return nil, presetCLIError(err)
 					}
+				projectConfigDir := filepath.Join(installRoot, ".omakiten", "config")
+				if err := paths.SetActiveConfigInDir(projectConfigDir, preset.Name+".yaml"); err != nil {
+					return nil, err
+				}
 					presetResult = map[string]any{"name": preset.Name, "title": preset.Title, "path": path, "root": installRoot}
 				}
 
@@ -94,7 +99,7 @@ func newInitCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().StringVar(&mcpCommand, "mcp-command", "", "command path written to the harness MCP config")
 	cmd.Flags().BoolVar(&mcpDryRun, "mcp-dry-run", false, "preview MCP harness config changes without writing")
 	cmd.Flags().BoolVar(&mcpForce, "mcp-force", false, "replace an existing Omakiten MCP harness entry")
-	cmd.Flags().StringVar(&presetName, "preset", "", "official workflow preset to copy into .omakiten/config/omakiten.yaml")
+	cmd.Flags().StringVar(&presetName, "preset", "", "official workflow preset to copy into .omakiten/config/<preset>.yaml and activate")
 	cmd.Flags().BoolVar(&presetForce, "preset-force", false, "overwrite an existing .omakiten preset config")
 	return cmd
 }

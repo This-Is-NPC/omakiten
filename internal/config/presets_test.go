@@ -19,8 +19,9 @@ func TestOfficialPresetsCopyAndValidate(t *testing.T) {
 			if copied.Name != preset.Name {
 				t.Fatalf("CopyPreset() preset = %q, want %q", copied.Name, preset.Name)
 			}
-			if filepath.Base(path) != "omakiten.yaml" || filepath.Base(filepath.Dir(path)) != "config" {
-				t.Fatalf("CopyPreset() path = %q, want config/omakiten.yaml", path)
+			wantBase := preset.Name + ".yaml"
+			if filepath.Base(path) != wantBase || filepath.Base(filepath.Dir(path)) != "config" {
+				t.Fatalf("CopyPreset() path = %q, want config/%s", path, wantBase)
 			}
 
 			bundle, err := LoadBundle(path)
@@ -39,7 +40,7 @@ func TestOfficialPresetsCopyAndValidate(t *testing.T) {
 
 func TestCopyPresetRefusesOverwriteWithoutForce(t *testing.T) {
 	root := filepath.Join(t.TempDir(), ".omakiten")
-	if _, _, err := CopyPreset("izakaya", root, false); err != nil {
+	if _, _, err := CopyPreset("omakase", root, false); err != nil {
 		t.Fatalf("CopyPreset() initial error = %v", err)
 	}
 	if _, _, err := CopyPreset("omakase", root, false); !errors.Is(err, ErrPresetTargetExists) {
@@ -48,7 +49,7 @@ func TestCopyPresetRefusesOverwriteWithoutForce(t *testing.T) {
 	if _, _, err := CopyPreset("omakase", root, true); err != nil {
 		t.Fatalf("CopyPreset() forced overwrite error = %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(root, "config", "omakiten.yaml"))
+	data, err := os.ReadFile(filepath.Join(root, "config", "omakase.yaml"))
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}

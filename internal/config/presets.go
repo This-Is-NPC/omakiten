@@ -47,7 +47,8 @@ func PresetByName(name string) (Preset, bool) {
 	return Preset{}, false
 }
 
-// CopyPreset writes defaults/config/<name>.yaml as <dstRoot>/config/omakiten.yaml.
+// CopyPreset writes defaults/config/<name>.yaml as <dstRoot>/config/<name>.yaml
+// and returns the preset metadata together with the absolute destination path.
 func CopyPreset(name, dstRoot string, overwrite bool) (Preset, string, error) {
 	preset, ok := PresetByName(name)
 	if !ok || name != filepath.Base(name) {
@@ -60,13 +61,13 @@ func CopyPreset(name, dstRoot string, overwrite bool) (Preset, string, error) {
 		return Preset{}, "", fmt.Errorf("%w: %s", ErrPresetNotFound, name)
 	}
 
-	dstPath := filepath.Join(dstRoot, "config", "omakiten.yaml")
-	if _, err := os.Stat(dstRoot); err == nil {
+	dstPath := filepath.Join(dstRoot, "config", preset.Name+".yaml")
+	if _, err := os.Stat(dstPath); err == nil {
 		if !overwrite {
-			return Preset{}, "", fmt.Errorf("%w: %s", ErrPresetTargetExists, dstRoot)
+			return Preset{}, "", fmt.Errorf("%w: %s", ErrPresetTargetExists, dstPath)
 		}
 	} else if !os.IsNotExist(err) {
-		return Preset{}, "", fmt.Errorf("stat preset target %s: %w", dstRoot, err)
+		return Preset{}, "", fmt.Errorf("stat preset target %s: %w", dstPath, err)
 	}
 
 	if err := WriteAtomic(dstPath, data); err != nil {
