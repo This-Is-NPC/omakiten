@@ -18,7 +18,7 @@ func setupLifecycle(t *testing.T) (context.Context, *Store, domain.ProjectContex
 		t.Fatalf("Open() error = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	bundle := testfixtures.LoadBundle(t, "lifecycle_policy.yaml")
+	bundle, _ := testfixtures.LoadBundle(t, "lifecycle_policy.yaml")
 	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}

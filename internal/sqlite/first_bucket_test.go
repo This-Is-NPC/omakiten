@@ -17,7 +17,7 @@ func TestWorkflowServiceCreateTaskDefaultsToFirstBucket(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	bundle := testfixtures.LoadBundle(t, "kanban_three_buckets.yaml")
+	bundle, _ := testfixtures.LoadBundle(t, "kanban_three_buckets.yaml")
 	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}

@@ -57,10 +57,10 @@ func RegisterCanonical() {
 
 // LoadBundle reads <package-dir>/testdata/<name>, parses strictly, and
 // merges the embedded kit YAML (`defaults/omakiten.yaml`) for any
-// canonical block the fixture omitted. Returns the merged bundle and
-// auto-registers its enum tables into the domain registries. Failures
-// terminate the test via t.Fatalf.
-func LoadBundle(t testing.TB, name string) config.Bundle {
+// canonical block the fixture omitted. Returns the merged bundle, an
+// instance-scoped EnumRegistry, and auto-registers its enum tables into
+// the domain registries. Failures terminate the test via t.Fatalf.
+func LoadBundle(t testing.TB, name string) (config.Bundle, *domain.EnumRegistry) {
 	t.Helper()
 	if filepath.IsAbs(name) {
 		return loadFromPath(t, name)
@@ -71,12 +71,12 @@ func LoadBundle(t testing.TB, name string) config.Bundle {
 // LoadBundleFromAbsPath is the explicit-path variant for the rare test
 // that wants to point at a fixture outside its own testdata/ dir (e.g.
 // integration tests that load `defaults/omakiten.yaml` directly).
-func LoadBundleFromAbsPath(t testing.TB, path string) config.Bundle {
+func LoadBundleFromAbsPath(t testing.TB, path string) (config.Bundle, *domain.EnumRegistry) {
 	t.Helper()
 	return loadFromPath(t, path)
 }
 
-func loadFromPath(t testing.TB, path string) config.Bundle {
+func loadFromPath(t testing.TB, path string) (config.Bundle, *domain.EnumRegistry) {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -103,8 +103,8 @@ func loadFromPath(t testing.TB, path string) config.Bundle {
 	// Wire the resolved enum tables into the domain registries so
 	// Priority.Label() / Severity.Label() / FromLabel resolve as they
 	// would in production.
-	registerEnumsFromBundle(bundle)
-	return bundle
+	registry := registerEnumsFromBundle(bundle)
+	return bundle, registry
 }
 
 // mergeKitDefaults overlays the embedded kit's canonical blocks onto
@@ -252,10 +252,11 @@ func mergeViewSettings(v *config.ViewSettings, kit config.ViewSettings) {
 }
 
 // registerEnumsFromBundle wires the bundle's priority + severity
-// tables into the domain registries. Used by LoadBundle so every
-// fixture-driven test runs with the same id↔value mapping the
-// production composition roots install.
-func registerEnumsFromBundle(bundle config.Bundle) {
+// tables into the domain registries and returns an instance-scoped
+// EnumRegistry. Used by LoadBundle so every fixture-driven test runs
+// with the same id↔value mapping the production composition roots
+// install.
+func registerEnumsFromBundle(bundle config.Bundle) *domain.EnumRegistry {
 	priorityPairs := make([]domain.PriorityPair, len(bundle.Config.Priorities))
 	for i, p := range bundle.Config.Priorities {
 		priorityPairs[i] = domain.PriorityPair{ID: p.ID, Value: p.Value, Default: p.Default}
@@ -267,4 +268,6 @@ func registerEnumsFromBundle(bundle config.Bundle) {
 		severityPairs[i] = domain.SeverityPair{ID: s.ID, Value: s.Value, Default: s.Default}
 	}
 	domain.RegisterSeverities(severityPairs)
+
+	return domain.NewEnumRegistry(priorityPairs, severityPairs)
 }

@@ -217,7 +217,7 @@ func appTestStore(t *testing.T, bundle config.Bundle) (*sqlite.Store, domain.Pro
 // test and is overlaid last.
 func appTestBundle(t *testing.T, maxTokens int) config.Bundle {
 	t.Helper()
-	bundle := testfixtures.LoadBundle(t, "default.yaml")
+	bundle, _ := testfixtures.LoadBundle(t, "default.yaml")
 	bundle.Config.Context.MaxTokens = maxTokens
 	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
 	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}

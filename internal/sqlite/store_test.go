@@ -240,7 +240,7 @@ func TestStoreActiveWorkflow(t *testing.T) {
 // production loads from per-entity folders.
 func sqliteTestBundle(t *testing.T) config.Bundle {
 	t.Helper()
-	bundle := testfixtures.LoadBundle(t, "default_three_buckets.yaml")
+	bundle, _ := testfixtures.LoadBundle(t, "default_three_buckets.yaml")
 	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
 	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
 	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}}

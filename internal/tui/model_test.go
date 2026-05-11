@@ -1749,7 +1749,7 @@ func pressBackspace(t *testing.T, model Model, count int) Model {
 // marks those fields `yaml:"-"`.
 func tuiTestBundle(t *testing.T) config.Bundle {
 	t.Helper()
-	bundle := testfixtures.LoadBundle(t, "default_workflow.yaml")
+	bundle, _ := testfixtures.LoadBundle(t, "default_workflow.yaml")
 	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
 	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
 	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}}
@@ -1760,7 +1760,7 @@ func tuiTestBundle(t *testing.T) config.Bundle {
 // the success path of policy-gated keybindings.
 func tuiPermissiveBundle(t *testing.T) config.Bundle {
 	t.Helper()
-	bundle := testfixtures.LoadBundle(t, "permissive.yaml")
+	bundle, _ := testfixtures.LoadBundle(t, "permissive.yaml")
 	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
 	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
 	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}}
@@ -1772,7 +1772,7 @@ func tuiPermissiveBundle(t *testing.T) config.Bundle {
 // because these tests care about geometry, not policy.
 func multiBucketBundle(t *testing.T) config.Bundle {
 	t.Helper()
-	bundle := testfixtures.LoadBundle(t, "multi_bucket.yaml")
+	bundle, _ := testfixtures.LoadBundle(t, "multi_bucket.yaml")
 	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
 	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
 	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}}

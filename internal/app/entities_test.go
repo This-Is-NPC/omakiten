@@ -64,7 +64,7 @@ func newEntitiesFixture(t *testing.T) entitiesFixture {
 // config.Bundle marks `yaml:"-"`).
 func fixtureBundle(t *testing.T) config.Bundle {
 	t.Helper()
-	bundle := testfixtures.LoadBundle(t, "entities.yaml")
+	bundle, _ := testfixtures.LoadBundle(t, "entities.yaml")
 	bundle.Skills = []config.Skill{
 		{Slug: "go", Name: "Go", Description: "Go language."},
 		{Slug: "sqlite", Name: "SQLite", Description: "SQLite stack."},
