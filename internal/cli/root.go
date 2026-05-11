@@ -68,7 +68,7 @@ func (r *runtime) skillService() *app.SkillService {
 
 func (r *runtime) lawService() *app.LawService {
 	store := configstore.New()
-	return app.NewLawService(r.store, r.bundleEditor(), store, store)
+	return app.NewLawService(r.store, r.bundleEditor(), store, store, nil)
 }
 
 func (r *runtime) personaService() *app.PersonaService {
