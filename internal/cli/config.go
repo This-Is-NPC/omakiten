@@ -42,6 +42,17 @@ func newConfigCommand(opts *runtimeOptions) *cobra.Command {
 		},
 	}
 
+	presets := &cobra.Command{
+		Use:   "presets",
+		Short: "List official workflow presets",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runJSON(cmd, func(context.Context) (any, error) {
+				return map[string]any{"presets": config.ListPresets()}, nil
+			})
+		},
+	}
+
 	cmd.AddCommand(validate)
+	cmd.AddCommand(presets)
 	return cmd
 }

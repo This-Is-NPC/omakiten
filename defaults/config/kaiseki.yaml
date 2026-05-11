@@ -1,0 +1,117 @@
+version: 1
+kit: {id: 103, key: kaiseki, name: Kaiseki Workflow Preset}
+config:
+  output: {json_minified: true, omit_empty: true}
+  context: {default_level: 2, max_tokens: 12000}
+  mcp:
+    recent_comment_limit: 5
+    max_comment_chars: 0
+    include_workflow_in_continue: true
+    cache_prompts: true
+    recent_context_limit: 3
+    next_work_limit: 5
+    similar_task_limit: 5
+  workflow: {active: kaiseki}
+  theme: {active: omakiten}
+  tui:
+    token_badge: {yellow_at: 150, red_at: 400}
+  sqlite: {busy_timeout_ms: 5000}
+  activity_log: {max_rows: 500, max_age_days: 7}
+  solutions: {default_top_limit: 10, max_top_limit: 100}
+  events:
+    default_recent_limit: 50
+    defaults: {log: true, broadcast: true, hook: true}
+  hooks: []
+  search:
+    stopwords: [and, are, for, from, into, the, this, that, with]
+  tag_synonyms:
+    golang: go
+    javascript: js
+    typescript: ts
+    nodejs: node
+    node-js: node
+    postgres: postgresql
+    psql: postgresql
+    mongo: mongodb
+    k8s: kubernetes
+    tf: terraform
+    py: python
+  template_defaults: [task, pr, comment-resume, comment-selfbranch, comment-documentation]
+  priorities:
+    - {id: 1, value: low, color: success}
+    - {id: 2, value: normal, default: true, color: info}
+    - {id: 3, value: high, color: error}
+  severities:
+    - {id: 1, value: info, color: info}
+    - {id: 2, value: warning, default: true, color: warning}
+    - {id: 3, value: error, color: error}
+  views:
+    board:
+      sort: {field: created_at, order: desc}
+      filter: {priority: []}
+    table:
+      sort: {field: created_at, order: desc}
+      filter: {priority: [], bucket: []}
+    graph:
+      sort: {field: id, order: asc}
+    logs:
+      sort: {order: desc}
+      limit: 50
+      filter: {source: []}
+    task_activity:
+      sort: {order: asc}
+workflows:
+  - id: 1
+    key: kaiseki
+    name: Kaiseki Workflow
+    defaults:
+      task: {edit: false, delete: false}
+      comment: {edit: false, delete: false}
+    buckets:
+      - id: 1
+        key: requirements
+        name: Requirements
+        position: 1
+        permissions:
+          task: {edit: true, delete: true}
+          comment: {edit: true, delete: true}
+      - id: 2
+        key: planning
+        name: Planning
+        position: 2
+        permissions:
+          task: {edit: true, delete: true}
+          comment: {edit: true, delete: true}
+      - id: 3
+        key: dev
+        name: Development
+        position: 3
+        permissions:
+          comment: {edit: true, delete: true}
+      - {id: 4, key: review, name: Review, position: 4}
+      - {id: 5, key: docs, name: Documentation, position: 5}
+      - {id: 6, key: done, name: Done, position: 6}
+    transitions:
+      - from: 1
+        to: 2
+        guards:
+          - {type: comments_tagged, tag: requirements, count: 1, hint: "Add a #requirements comment before planning starts."}
+      - from: 2
+        to: 3
+        guards:
+          - {type: comments_tagged, tag: self-branch, count: 1, hint: "Add a #self-branch comment naming the branch and working path."}
+      - from: 3
+        to: 4
+        guards:
+          - {type: comments_tagged, tag: resume, count: 1, hint: "Add a #resume handoff before review."}
+      - from: 4
+        to: 5
+        guards:
+          - {type: comments_tagged, tag: review, count: 1, hint: "Add a #review comment with reviewer outcome before documentation."}
+      - from: 5
+        to: 6
+        guards:
+          - {type: comments_tagged, tag: documentation, count: 1, hint: "Add a #documentation comment before closing."}
+      - {from: 4, to: 3}
+      - {from: 5, to: 4}
+      - {from: 6, to: 4}

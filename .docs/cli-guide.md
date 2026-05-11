@@ -49,11 +49,35 @@ The TUI sets `agent_model="human"` internally so its activity is filtered out of
 | `--mcp-command` | current executable | Command written into the harness config. |
 | `--mcp-dry-run` | `false` | Preview changes without writing. |
 | `--mcp-force` | `false` | Replace an existing `mcpServers.omakiten` entry. |
+| `--preset` | — | Copy an official workflow preset from `defaults/config/<name>.yaml` to `.omakiten/config/omakiten.yaml`. Without `--root`, a Git worktree is detected by walking up from `$CWD`; outside Git, `$CWD` is used. |
+| `--preset-force` | `false` | Overwrite an existing `.omakiten` target when applying `--preset`. |
 
 ```sh
 okt init --name Omakiten --slug omakiten --root "$PWD"
 okt init --slug acme --enable-mcp --mcp-harness opencode --mcp-dry-run
+okt init --preset kaiseki --name Acme --slug acme
 ```
+
+Official presets are flat YAML starter files in `defaults/config/`: `omakase.yaml`, `izakaya.yaml`, `kaiseki.yaml`, and `shokunin.yaml`. Applying one writes only `.omakiten/config/omakiten.yaml`; local merge behavior is handled by the config resolver.
+
+---
+
+## `okt config presets` — list official workflow presets
+
+`internal/cli/config.go`. Returns the bundled preset menu as JSON.
+
+```sh
+okt config presets
+```
+
+Presets:
+
+| Preset | Style |
+|---|---|
+| `omakase` | Chef's choice: balanced backlog -> dev -> review -> done with self-branch, resume, and documentation guards. |
+| `izakaya` | Casual: backlog -> dev -> done, no guards. |
+| `kaiseki` | Multi-course: requirements -> planning -> dev -> review -> docs -> done with ritual guards. |
+| `shokunin` | Artisan: kaiseki plus tests-passing and peer-review checkpoints. |
 
 ---
 

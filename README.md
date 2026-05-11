@@ -82,6 +82,8 @@ Context dumps are tiered (level 1–3) and capped at a token budget you set. You
 
 Define rules your agent must follow, give it personas with curated skill sets, set up templates for tasks/PRs/comments, declare workflow defaults and per-bucket CRUD policy, and reshape domain enums (priorities ship as a configurable id↔value table) — all in plain YAML and Markdown under your config directory. Edit them, version them, share them with a teammate by copying a folder. → [Configuration Guide](.docs/configuration-guide.md)
 
+Official workflow presets ship as starter YAML files under `defaults/config/` and can be copied into a repo with `okt init --preset <name>`. The names lean into the Omakiten identity: **omakase** is the chef's balanced default, **izakaya** is casual and guard-light for spikes, **kaiseki** adds requirements/planning/docs courses, and **shokunin** adds tests-passing and peer-review checkpoints for maximum rigor. List the menu with `okt config presets`.
+
 ### Local-first, by design
 
 Your tasks, comments, dependencies, errors, and fixes live in a SQLite file in your home directory. No account. No telemetry. No cloud.
