@@ -3,12 +3,13 @@ package agent
 import "omakiten/internal/domain"
 
 type TaskSummary struct {
-	ID          int64           `json:"id"`
-	Title       string          `json:"title"`
-	Description string          `json:"description,omitempty"`
-	BucketKey   string          `json:"bucket_key,omitempty"`
-	Priority    domain.Priority `json:"priority,omitempty"`
-	State       string          `json:"state,omitempty"`
+	ID            int64           `json:"id"`
+	Title         string          `json:"title"`
+	Description   string          `json:"description,omitempty"`
+	BucketKey     string          `json:"bucket_key,omitempty"`
+	Priority      domain.Priority `json:"priority,omitempty"`
+	PriorityLabel string          `json:"priority_label,omitempty"`
+	State         string          `json:"state,omitempty"`
 }
 
 type ContinueTaskInput struct {
@@ -123,7 +124,14 @@ type EditTaskResponse struct {
 }
 
 func taskSummary(task domain.Task) TaskSummary {
+	return taskSummaryWithRegistry(task, nil)
+}
+
+func taskSummaryWithRegistry(task domain.Task, registry *domain.EnumRegistry) TaskSummary {
 	s := TaskSummary{ID: task.ID, Title: task.Title, Description: task.Description, BucketKey: task.BucketKey, Priority: task.Priority}
+	if registry != nil {
+		s.PriorityLabel = registry.PriorityLabel(task.Priority)
+	}
 	if task.State != "" && task.State != domain.TaskStateActive {
 		s.State = string(task.State)
 	}
