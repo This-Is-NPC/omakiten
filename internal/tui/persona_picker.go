@@ -133,7 +133,7 @@ func (m *Model) savePersonaPicker() {
 // against it, and pre-checks it on the picker once the editor returns.
 func (m *Model) scaffoldNewSkillFromPicker() tea.Cmd {
 	name := nextScaffoldName(entityKindSkill, m.snapshot())
-	path, err := scaffoldEntity(m.ctx, entityKindSkill, m.repos, name)
+	path, err := m.scaffoldEntity(m.ctx, entityKindSkill, m.repos, name)
 	if err != nil {
 		m.status = err.Error()
 		return nil

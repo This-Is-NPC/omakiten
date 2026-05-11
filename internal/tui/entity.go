@@ -127,7 +127,7 @@ func (m *Model) openEntityCreate(kind entityKind) tea.Cmd {
 		return nil
 	}
 	name := nextScaffoldName(kind, m.snapshot())
-	path, err := scaffoldEntity(m.ctx, kind, m.repos, name)
+	path, err := m.scaffoldEntity(m.ctx, kind, m.repos, name)
 	if err != nil {
 		m.status = err.Error()
 		return nil
