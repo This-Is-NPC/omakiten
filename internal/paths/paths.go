@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -14,7 +15,8 @@ import (
 const ActiveConfigStateFile = ".active"
 
 // DefaultConfigFilename is the canonical default yaml profile that ships
-// with the embed and is always present after EnsureDefaultFiles.
+// with the embed. Kept for backward compatibility when creating a fresh
+// default; the resolver no longer hardcodes it as the only valid fallback.
 const DefaultConfigFilename = "omakiten.yaml"
 
 const AppName = "omakiten"
@@ -23,7 +25,7 @@ const AppName = "omakiten"
 // under a single directory. When set, it takes precedence over XDG and the
 // per-user defaults. The expected layout is:
 //
-//	$OMAKITEN_HOME/config/omakiten.yaml
+//	$OMAKITEN_HOME/config/<profile>.yaml
 //	$OMAKITEN_HOME/data/omakiten.db
 //	$OMAKITEN_HOME/<entity>/<slug>.md
 //	$OMAKITEN_HOME/<entity>/custom/<slug>.md
@@ -42,7 +44,7 @@ const HomeEnv = "OMAKITEN_HOME"
 // (config/) and every entity folder (personas/, laws/, skills/, templates/,
 // themes/) as siblings. Layout:
 //
-//	<root>/config/omakiten.yaml
+//	<root>/config/<profile>.yaml
 //	<root>/<entity>/<slug>.md            # default entries (overwritten on update)
 //	<root>/<entity>/custom/<slug>.md     # user-created entries (preserved)
 func ConfigRoot() (string, error) {
@@ -59,8 +61,8 @@ func ConfigRoot() (string, error) {
 	return filepath.Join(home, ".config", AppName), nil
 }
 
-// ConfigDir returns the directory that holds omakiten.yaml and any sibling
-// profile yamls. Always <root>/config across all resolution modes.
+// ConfigDir returns the directory that holds the active yaml profile and any
+// sibling profile yamls. Always <root>/config across all resolution modes.
 func ConfigDir() (string, error) {
 	root, err := ConfigRoot()
 	if err != nil {
@@ -91,31 +93,75 @@ func ConfigFile() (string, error) {
 // ActiveConfigFile returns the absolute path of the yaml profile currently
 // selected as active. The selection is persisted in <config-dir>/.active —
 // a one-line text file containing the basename of the chosen profile. When
-// the file is missing or blank the default `omakiten.yaml` is used.
+// the file is missing or blank the resolver scans <config-dir>/ for the
+// first .yaml file (alphabetical order) and falls back to <config-dir>/custom/
+// if none is found at the root. If no .yaml exists anywhere the app errors
+// out — a config file is mandatory.
 //
 // User-authored profiles live under <config-dir>/custom/ (mirroring the
-// custom/ convention used by personas, laws, skills, templates, themes); the
-// resolver tries that subtree first and only falls back to the default at the
-// config-dir root when nothing matches there.
+// custom/ convention used by personas, laws, skills, templates, themes); when
+// the active name is explicitly set via .active, the resolver tries that
+// subtree first and only falls back to the config-dir root when nothing
+// matches there.
 func ActiveConfigFile() (string, error) {
 	dir, err := ConfigDir()
 	if err != nil {
 		return "", err
 	}
-	name := DefaultConfigFilename
 	data, err := os.ReadFile(filepath.Join(dir, ActiveConfigStateFile))
 	if err == nil {
-		if s := strings.TrimSpace(string(data)); s != "" {
-			name = s
+		if name := strings.TrimSpace(string(data)); name != "" {
+			customPath := filepath.Join(dir, "custom", name)
+			if _, err := os.Stat(customPath); err == nil {
+				return customPath, nil
+			}
+			return filepath.Join(dir, name), nil
 		}
 	} else if !os.IsNotExist(err) {
 		return "", err
 	}
-	customPath := filepath.Join(dir, "custom", name)
-	if _, err := os.Stat(customPath); err == nil {
-		return customPath, nil
+	// .active missing or blank — discover the first .yaml file.
+	name, err := firstYAMLInDir(dir)
+	if err == nil {
+		return filepath.Join(dir, name), nil
 	}
-	return filepath.Join(dir, name), nil
+	if !os.IsNotExist(err) {
+		return "", err
+	}
+	// No yaml at root; try custom/.
+	name, err = firstYAMLInDir(filepath.Join(dir, "custom"))
+	if err == nil {
+		return filepath.Join(dir, "custom", name), nil
+	}
+	if os.IsNotExist(err) {
+		return "", fmt.Errorf("no config yaml found in %s or %s/custom", dir, dir)
+	}
+	return "", err
+}
+
+// firstYAMLInDir returns the first file with a .yaml extension in dir,
+// sorted alphabetically. Returns an error if dir does not exist or no .yaml
+// is found.
+func firstYAMLInDir(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	var names []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasSuffix(strings.ToLower(name), ".yaml") {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return "", fmt.Errorf("no yaml files in %s", dir)
+	}
+	sort.Strings(names)
+	return names[0], nil
 }
 
 // ConfigCustomDir returns <config-dir>/custom/ — the user-owned subtree for
@@ -134,16 +180,23 @@ func ConfigCustomDir() (string, error) {
 // caller must restart the runtime for the change to take effect — Omakiten
 // loads the config exactly once during startup.
 func SetActiveConfig(filename string) error {
+	dir, err := ConfigDir()
+	if err != nil {
+		return err
+	}
+	return SetActiveConfigInDir(dir, filename)
+}
+
+// SetActiveConfigInDir writes the state file inside a specific config
+// directory. Used when the caller knows the target directory (e.g. the
+// project-local .omakiten/config/) rather than the global config root.
+func SetActiveConfigInDir(dir, filename string) error {
 	filename = strings.TrimSpace(filename)
 	if filename == "" {
 		return fmt.Errorf("active config filename is required")
 	}
 	if filename != filepath.Base(filename) {
 		return fmt.Errorf("active config filename must be a basename, got %q", filename)
-	}
-	dir, err := ConfigDir()
-	if err != nil {
-		return err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err

@@ -93,16 +93,24 @@ func TestConfigRootDoesNotIncludeConfigSubdir(t *testing.T) {
 	}
 }
 
-func TestActiveConfigFileFallsBackToDefault(t *testing.T) {
+func TestActiveConfigFileDiscoversFirstYAML(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv(HomeEnv, tmp)
 	t.Setenv("XDG_CONFIG_HOME", "")
+
+	configDir := filepath.Join(tmp, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "alpha.yaml"), []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
 
 	got, err := ActiveConfigFile()
 	if err != nil {
 		t.Fatalf("ActiveConfigFile() error = %v", err)
 	}
-	want := filepath.Join(tmp, "config", DefaultConfigFilename)
+	want := filepath.Join(tmp, "config", "alpha.yaml")
 	if got != want {
 		t.Fatalf("ActiveConfigFile() = %q, want %q", got, want)
 	}
@@ -237,22 +245,31 @@ func TestDataDirPrecedence(t *testing.T) {
 }
 
 func TestConfigAndDatabaseFileNamesUnderOmakitenHome(t *testing.T) {
-	t.Setenv(HomeEnv, "/srv/omakiten")
+	tmp := t.TempDir()
+	t.Setenv(HomeEnv, tmp)
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("XDG_DATA_HOME", "")
+
+	configDir := filepath.Join(tmp, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "omakiten.yaml"), []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
 
 	cfg, err := ConfigFile()
 	if err != nil {
 		t.Fatalf("ConfigFile() error = %v", err)
 	}
-	if want := filepath.Join("/srv/omakiten", "config", "omakiten.yaml"); cfg != want {
+	if want := filepath.Join(tmp, "config", "omakiten.yaml"); cfg != want {
 		t.Fatalf("ConfigFile() = %q, want %q", cfg, want)
 	}
 	db, err := DatabaseFile()
 	if err != nil {
 		t.Fatalf("DatabaseFile() error = %v", err)
 	}
-	if want := filepath.Join("/srv/omakiten", "data", "omakiten.db"); db != want {
+	if want := filepath.Join(tmp, "data", "omakiten.db"); db != want {
 		t.Fatalf("DatabaseFile() = %q, want %q", db, want)
 	}
 }
