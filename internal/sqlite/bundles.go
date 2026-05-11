@@ -17,6 +17,13 @@ func (s *Store) ImportBundle(ctx context.Context, bundle config.Bundle, sourcePa
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Deactivate any previously active bundle so that only the
+	// newly imported one is visible to queries. The config selection
+	// is single-tenant: one active yaml file -> one active bundle.
+	if _, err := tx.ExecContext(ctx, "UPDATE config_bundles SET active = 0"); err != nil {
+		return err
+	}
+
 	bundleID, err := upsertBundle(ctx, tx, bundle, sourcePath, sourceHash)
 	if err != nil {
 		return err
