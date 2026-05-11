@@ -29,7 +29,7 @@ func newListCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 
-				tasks, err := app.NewTaskServiceFromStore(rt.store).List(ctx, project, domain.TaskFilter{BucketKey: bucket})
+				tasks, err := app.NewTaskServiceFromStore(rt.store, rt.registry).List(ctx, project, domain.TaskFilter{BucketKey: bucket})
 				if err != nil {
 					return nil, err
 				}

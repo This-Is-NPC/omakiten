@@ -28,6 +28,18 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 
+				rt, err := opts.open(ctx, true)
+				if err != nil {
+					return nil, err
+				}
+				defer rt.close()
+				ctx = rt.WithActivityRepo(ctx)
+
+				project, err := opts.resolveProject(ctx, rt.store)
+				if err != nil {
+					return nil, err
+				}
+
 				update := domain.TaskUpdate{}
 				if cmd.Flags().Changed("title") {
 					update.Title = &title
@@ -42,7 +54,7 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 					// label fallback covers the human-friendly path.
 					// Both routes funnel through registry validation —
 					// the service layer never sees raw user input.
-					value, err := parsePriority(priority)
+					value, err := parsePriorityWithRegistry(priority, rt.registry)
 					if err != nil {
 						return nil, err
 					}
@@ -52,18 +64,7 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 					update.BucketKey = bucket
 				}
 
-				rt, err := opts.open(ctx, true)
-				if err != nil {
-					return nil, err
-				}
-				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
-
-				project, err := opts.resolveProject(ctx, rt.store)
-				if err != nil {
-					return nil, err
-				}
-				task, err := app.NewTaskServiceFromStore(rt.store).Edit(ctx, project, taskID, update)
+				task, err := app.NewTaskServiceFromStore(rt.store, rt.registry).Edit(ctx, project, taskID, update)
 				if err != nil {
 					return nil, err
 				}

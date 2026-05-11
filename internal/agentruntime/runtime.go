@@ -16,6 +16,7 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
+	"omakiten/internal/domain"
 	"omakiten/internal/events"
 	"omakiten/internal/hooks"
 	"omakiten/internal/hooks/actions"
@@ -50,6 +51,7 @@ type Runtime struct {
 	hooksEngine        *hooks.Engine
 	actionRegistry     *hooks.ActionRegistry
 	notificationAction *actions.NotificationShowAction
+	registry           *domain.EnumRegistry
 }
 
 // Open materializes the runtime: resolves paths, runs config layout
@@ -84,7 +86,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 
-	bundle, _, _, err := app.NewConfigService(store, cs).Import(ctx, configPath)
+	bundle, _, enumRegistry, err := app.NewConfigService(store, cs).Import(ctx, configPath)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -137,8 +139,9 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	engine := hooks.NewEngine(hookEntries, registry, bundle.Config.Events, store)
 	engine.Start(bus)
 
-	rt := &Runtime{store: store, configPath: configPath, dbPath: dbPath, bus: bus, hooksEngine: engine, actionRegistry: registry, notificationAction: notificationAction}
+	rt := &Runtime{store: store, configPath: configPath, dbPath: dbPath, bus: bus, hooksEngine: engine, actionRegistry: registry, notificationAction: notificationAction, registry: enumRegistry}
 	rt.service = agent.NewService(store, agent.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
+	rt.service.SetRegistry(enumRegistry)
 	rt.service.SetTaskTemplateLookup(taskTemplateLookup(bundle))
 	rt.service.SetTemplateCatalog(templateCatalog(bundle))
 	rt.service.SetSkillCatalog(skillCatalog(bundle))

@@ -39,6 +39,7 @@ type runtime struct {
 	bus                events.Bus
 	hooksEngine        *hooks.Engine
 	notificationAction *actions.NotificationShowAction
+	registry           *domain.EnumRegistry
 }
 
 func (r *runtime) WithActivityRepo(ctx context.Context) context.Context {
@@ -68,7 +69,7 @@ func (r *runtime) skillService() *app.SkillService {
 
 func (r *runtime) lawService() *app.LawService {
 	store := configstore.New()
-	return app.NewLawService(r.store, r.bundleEditor(), store, store, nil)
+	return app.NewLawService(r.store, r.bundleEditor(), store, store, r.registry)
 }
 
 func (r *runtime) personaService() *app.PersonaService {
@@ -161,12 +162,13 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		// (priority/severity) BEFORE writing to SQLite, so the rest
 		// of the CLI invocation sees a fully wired runtime. The
 		// registries live for the duration of the process.
-		bundle, _, _, err := app.NewConfigService(store, cs).Import(ctx, configPath)
+		bundle, _, enumRegistry, err := app.NewConfigService(store, cs).Import(ctx, configPath)
 		if err != nil {
 			_ = store.Close()
 			return nil, err
 		}
 		emitBundleWarnings(bundle)
+		rt.registry = enumRegistry
 
 		bus := events.NewInProcessBus(bundle.Config.Events)
 		registry := hooks.NewActionRegistry()
