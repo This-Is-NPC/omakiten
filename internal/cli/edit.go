@@ -54,7 +54,7 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 					// label fallback covers the human-friendly path.
 					// Both routes funnel through registry validation —
 					// the service layer never sees raw user input.
-					value, err := parsePriorityWithRegistry(priority, rt.registry)
+					value, err := parsePriority(priority, rt.registry)
 					if err != nil {
 						return nil, err
 					}

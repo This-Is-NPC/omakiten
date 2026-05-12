@@ -91,7 +91,7 @@ func newLawAddCommand(opts *runtimeOptions) *cobra.Command {
 				if body == "" {
 					body = " "
 				}
-				severityID, err := parseSeverityWithRegistry(severity, rt.registry)
+				severityID, err := parseSeverity(severity, rt.registry)
 				if err != nil {
 					return nil, err
 				}
@@ -158,7 +158,7 @@ func newLawEditCommand(opts *runtimeOptions) *cobra.Command {
 						update.Name = &name
 					}
 					if cmd.Flags().Changed("severity") {
-						value, err := parseSeverityWithRegistry(severity, rt.registry)
+						value, err := parseSeverity(severity, rt.registry)
 						if err != nil {
 							return nil, err
 						}

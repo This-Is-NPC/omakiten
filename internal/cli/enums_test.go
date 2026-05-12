@@ -7,35 +7,26 @@ import (
 	"omakiten/internal/domain"
 )
 
-func resetEnums(t *testing.T) {
-	t.Helper()
-	t.Cleanup(func() {
-		domain.RegisterPriorities(nil)
-		domain.RegisterSeverities(nil)
-	})
-}
-
 func TestParsePriority(t *testing.T) {
-	resetEnums(t)
-	domain.RegisterPriorities([]domain.PriorityPair{
+	registry := domain.NewEnumRegistry([]domain.PriorityPair{
 		{ID: 1, Value: "low"},
 		{ID: 2, Value: "med"},
 		{ID: 3, Value: "high"},
-	})
+	}, nil)
 
 	cases := map[string]struct {
-		in       string
-		wantID   domain.Priority
-		wantErr  string
+		in      string
+		wantID  domain.Priority
+		wantErr string
 	}{
-		"numeric known":  {in: "2", wantID: domain.Priority(2)},
-		"label known":    {in: "high", wantID: domain.Priority(3)},
+		"numeric known":   {in: "2", wantID: domain.Priority(2)},
+		"label known":     {in: "high", wantID: domain.Priority(3)},
 		"numeric unknown": {in: "99", wantErr: "priority id is not in config.priorities"},
-		"label unknown":  {in: "crit", wantErr: "unknown priority"},
+		"label unknown":   {in: "crit", wantErr: "unknown priority"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, err := parsePriority(tc.in)
+			got, err := parsePriority(tc.in, registry)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("parsePriority(%q) err = %v, want substring %q", tc.in, err, tc.wantErr)
@@ -53,17 +44,16 @@ func TestParsePriority(t *testing.T) {
 }
 
 func TestParseSeverity(t *testing.T) {
-	resetEnums(t)
-	domain.RegisterSeverities([]domain.SeverityPair{
+	registry := domain.NewEnumRegistry(nil, []domain.SeverityPair{
 		{ID: 1, Value: "info"},
 		{ID: 2, Value: "warning"},
 		{ID: 3, Value: "error"},
 	})
 
 	cases := map[string]struct {
-		in       string
-		wantID   domain.Severity
-		wantErr  string
+		in      string
+		wantID  domain.Severity
+		wantErr string
 	}{
 		"numeric known":   {in: "1", wantID: domain.Severity(1)},
 		"label known":     {in: "error", wantID: domain.Severity(3)},
@@ -72,7 +62,7 @@ func TestParseSeverity(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, err := parseSeverity(tc.in)
+			got, err := parseSeverity(tc.in, registry)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("parseSeverity(%q) err = %v, want substring %q", tc.in, err, tc.wantErr)
