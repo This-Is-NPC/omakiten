@@ -25,34 +25,21 @@ import (
 	"omakiten/internal/domain"
 )
 
-// RegisterCanonicalPriorities loads the embedded kit YAML and installs
-// its priority table into the domain registry. Used by tests that
-// construct a Service / domain object directly without going through
-// LoadBundle (which auto-registers via the merged bundle).
-func RegisterCanonicalPriorities() {
+// CanonicalRegistry builds an EnumRegistry from the embedded kit YAML's
+// priority and severity tables. Used by tests that construct services
+// directly without going through LoadBundle (which builds a registry
+// from the merged bundle).
+func CanonicalRegistry() *domain.EnumRegistry {
 	kit := config.MustLoadKitConfig()
-	pairs := make([]domain.PriorityPair, len(kit.Priorities))
+	priorityPairs := make([]domain.PriorityPair, len(kit.Priorities))
 	for i, d := range kit.Priorities {
-		pairs[i] = domain.PriorityPair{ID: d.ID, Value: d.Value, Default: d.Default}
+		priorityPairs[i] = domain.PriorityPair{ID: d.ID, Value: d.Value, Default: d.Default}
 	}
-	domain.RegisterPriorities(pairs)
-}
-
-// RegisterCanonicalSeverities mirrors RegisterCanonicalPriorities for
-// the law-severity table.
-func RegisterCanonicalSeverities() {
-	kit := config.MustLoadKitConfig()
-	pairs := make([]domain.SeverityPair, len(kit.Severities))
+	severityPairs := make([]domain.SeverityPair, len(kit.Severities))
 	for i, d := range kit.Severities {
-		pairs[i] = domain.SeverityPair{ID: d.ID, Value: d.Value, Default: d.Default}
+		severityPairs[i] = domain.SeverityPair{ID: d.ID, Value: d.Value, Default: d.Default}
 	}
-	domain.RegisterSeverities(pairs)
-}
-
-// RegisterCanonical installs both canonical registries.
-func RegisterCanonical() {
-	RegisterCanonicalPriorities()
-	RegisterCanonicalSeverities()
+	return domain.NewEnumRegistry(priorityPairs, severityPairs)
 }
 
 // LoadBundle reads <package-dir>/testdata/<name>, parses strictly, and
@@ -100,10 +87,9 @@ func loadFromPath(t testing.TB, path string) (config.Bundle, *domain.EnumRegistr
 	// on the scenario under exercise without copying canonical boilerplate.
 	mergeKitDefaults(&bundle)
 
-	// Wire the resolved enum tables into the domain registries so
-	// Priority.Label() / Severity.Label() / FromLabel resolve as they
-	// would in production.
-	registry := registerEnumsFromBundle(bundle)
+	// Build the bundle-scoped EnumRegistry tests inject into services.
+	// No process-global state involved.
+	registry := registryFromBundle(bundle)
 	return bundle, registry
 }
 
@@ -251,23 +237,18 @@ func mergeViewSettings(v *config.ViewSettings, kit config.ViewSettings) {
 	}
 }
 
-// registerEnumsFromBundle wires the bundle's priority + severity
-// tables into the domain registries and returns an instance-scoped
-// EnumRegistry. Used by LoadBundle so every fixture-driven test runs
-// with the same id↔value mapping the production composition roots
-// install.
-func registerEnumsFromBundle(bundle config.Bundle) *domain.EnumRegistry {
+// registryFromBundle builds an instance-scoped EnumRegistry from the
+// bundle's priority + severity tables. Used by LoadBundle so every
+// fixture-driven test runs with the same id↔value mapping the production
+// composition roots build.
+func registryFromBundle(bundle config.Bundle) *domain.EnumRegistry {
 	priorityPairs := make([]domain.PriorityPair, len(bundle.Config.Priorities))
 	for i, p := range bundle.Config.Priorities {
 		priorityPairs[i] = domain.PriorityPair{ID: p.ID, Value: p.Value, Default: p.Default}
 	}
-	domain.RegisterPriorities(priorityPairs)
-
 	severityPairs := make([]domain.SeverityPair, len(bundle.Config.Severities))
 	for i, s := range bundle.Config.Severities {
 		severityPairs[i] = domain.SeverityPair{ID: s.ID, Value: s.Value, Default: s.Default}
 	}
-	domain.RegisterSeverities(severityPairs)
-
 	return domain.NewEnumRegistry(priorityPairs, severityPairs)
 }
