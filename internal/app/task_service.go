@@ -17,9 +17,8 @@ type TaskService struct {
 // NewTaskService wires the validation/orchestration layer for tasks. workflow
 // owns the policy bits (default-bucket selection on Add, transition+guards on
 // Move) so the task service stays focused on input validation and delegation.
-// registry is optional — when nil the service falls back to the process-global
-// domain registries for backward compatibility during the migration to
-// instance-scoped registries.
+// registry must be non-nil: priority label resolution and id validation go
+// through the supplied bundle-scoped EnumRegistry.
 func NewTaskService(repo TaskRepository, workflow *WorkflowService, registry *domain.EnumRegistry) *TaskService {
 	return &TaskService{repo: repo, workflow: workflow, registry: registry}
 }
@@ -38,14 +37,10 @@ type CompositeWorkflowStore interface {
 
 // NewTaskServiceFromStore is the production-path sugar: it wires WorkflowService
 // against the composite store and returns a TaskService ready for use.
-// The optional registry is forwarded to both WorkflowService and TaskService
-// so priority/severity lookups use instance-scoped tables.
-func NewTaskServiceFromStore(store CompositeWorkflowStore, registry ...*domain.EnumRegistry) *TaskService {
-	var reg *domain.EnumRegistry
-	if len(registry) > 0 {
-		reg = registry[0]
-	}
-	return NewTaskService(store, NewWorkflowServiceFromStore(store, reg), reg)
+// The registry is required and forwarded to both WorkflowService and TaskService
+// so priority lookups use the bundle-scoped tables.
+func NewTaskServiceFromStore(store CompositeWorkflowStore, registry *domain.EnumRegistry) *TaskService {
+	return NewTaskService(store, NewWorkflowServiceFromStore(store, registry), registry)
 }
 
 func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, title, description, priority, bucketKey string) (task domain.Task, err error) {
@@ -76,24 +71,17 @@ func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, ti
 
 // resolvePriorityInput accepts the user-supplied priority token (label
 // or empty) and returns the configured id. Empty falls back to the
-// configured default priority; non-empty is resolved via the injected
-// registry (or the global fallback when registry is nil). Unknown labels
-// error with ErrValidation so the caller surfaces a helpful message
-// instead of silently writing PriorityZero.
+// configured default priority; non-empty is resolved via the bundle-scoped
+// registry. Unknown labels error with ErrValidation so the caller surfaces
+// a helpful message instead of silently writing PriorityZero.
 func (s *TaskService) resolvePriorityInput(label string) (domain.Priority, error) {
 	if label == "" {
 		// Caller did not name a priority — defer to the configured
 		// default. Storage layer will substitute it before insert.
 		return domain.PriorityZero, nil
 	}
-	if s.registry != nil {
-		if p, ok := s.registry.PriorityFromLabel(label); ok {
-			return p, nil
-		}
-	} else {
-		if p, ok := domain.PriorityFromLabel(label); ok {
-			return p, nil
-		}
+	if p, ok := s.registry.PriorityFromLabel(label); ok {
+		return p, nil
 	}
 	return domain.PriorityZero, domain.NewError(domain.ErrValidation,
 		"unknown priority label; must match a value in config.priorities",
@@ -101,12 +89,9 @@ func (s *TaskService) resolvePriorityInput(label string) (domain.Priority, error
 }
 
 // isPriorityRegistered reports whether the given priority id is known in
-// the active table, using the injected registry when available.
+// the active table.
 func (s *TaskService) isPriorityRegistered(p domain.Priority) bool {
-	if s.registry != nil {
-		return s.registry.IsPriorityRegistered(p)
-	}
-	return p.IsRegistered()
+	return s.registry.IsPriorityRegistered(p)
 }
 
 func (s *TaskService) List(ctx context.Context, project domain.ProjectContext, filter domain.TaskFilter) (tasks []domain.Task, err error) {

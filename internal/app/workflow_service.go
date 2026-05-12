@@ -31,15 +31,10 @@ func NewWorkflowService(config ConfigRepository, workflow WorkflowRepository, gu
 
 // NewWorkflowServiceFromStore is the production-path sugar for callers that
 // hold a single composite store implementing every workflow port (in
-// production: *sqlite.Store). The optional registry is injected into the
-// service so priority/severity lookups use the instance-scoped tables
-// rather than process-global state.
-func NewWorkflowServiceFromStore(store CompositeWorkflowStore, registry ...*domain.EnumRegistry) *WorkflowService {
-	var reg *domain.EnumRegistry
-	if len(registry) > 0 {
-		reg = registry[0]
-	}
-	return NewWorkflowService(store, store, store, store, store, reg)
+// production: *sqlite.Store). The registry is required and is threaded into
+// the service so priority lookups use the bundle-scoped tables.
+func NewWorkflowServiceFromStore(store CompositeWorkflowStore, registry *domain.EnumRegistry) *WorkflowService {
+	return NewWorkflowService(store, store, store, store, store, registry)
 }
 
 // ResolveDefaultBucket returns the key of the first bucket in the active
@@ -93,9 +88,9 @@ func (s *WorkflowService) CreateTask(ctx context.Context, projectID int64, title
 	// id BEFORE reaching the store. Without this, PriorityZero falls
 	// through to the SQL column DEFAULT (the canonical kit's id 2 =
 	// "normal") and ignores user customisations to config.priorities.
-	// domain.DefaultPriority returns PriorityZero when the registry has
-	// not been wired (test contexts), in which case the store's SQL
-	// DEFAULT keeps acting as the safety net.
+	// registry.DefaultPriority returns PriorityZero when the registry
+	// has no entries (uninitialised tests), in which case the store's
+	// SQL DEFAULT keeps acting as the safety net.
 	if priority == domain.PriorityZero {
 		priority = s.defaultPriority()
 	}
@@ -528,11 +523,10 @@ func (s *WorkflowService) checkCommentsTagged(ctx context.Context, projectID, ta
 	return domain.NewError(domain.ErrGuardViolation, msg, details)
 }
 
-// defaultPriority returns the configured default priority id, using the
-// injected registry when available or falling back to the global registry.
+// defaultPriority returns the configured default priority id via the
+// bundle-scoped registry. Returns PriorityZero when the registry has no
+// entries (uninitialised tests) — callers treat that as "let the storage
+// layer pick" so partially-bootstrapped tests still write rows.
 func (s *WorkflowService) defaultPriority() domain.Priority {
-	if s.registry != nil {
-		return s.registry.DefaultPriority()
-	}
-	return domain.DefaultPriority()
+	return s.registry.DefaultPriority()
 }

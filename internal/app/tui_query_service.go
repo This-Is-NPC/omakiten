@@ -242,12 +242,8 @@ func enrichPersonasFromBundle(personas []domain.Persona, bundle config.Bundle) [
 }
 
 // severityFromLabel is the package-level variant used by enrichLawsFromBundle
-// (a pure function with no service receiver). When registry is nil falls back
-// to the deprecated process-global lookup so partially-wired tests still pass;
-// production paths always supply a registry resolved by ConfigService.Import.
+// (a pure function with no service receiver). registry is nil-safe: returns
+// SeverityZero, false when no registry is supplied.
 func severityFromLabel(label string, registry *domain.EnumRegistry) (domain.Severity, bool) {
-	if registry != nil {
-		return registry.SeverityFromLabel(label)
-	}
-	return domain.SeverityFromLabel(label)
+	return registry.SeverityFromLabel(label)
 }

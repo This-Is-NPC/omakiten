@@ -16,9 +16,10 @@ type LawService struct {
 	registry *domain.EnumRegistry
 }
 
-// NewLawService wires the law orchestration layer. registry is optional —
-// when nil the service falls back to process-global domain registries for
-// backward compatibility during the migration to instance-scoped registries.
+// NewLawService wires the law orchestration layer. registry must be non-nil:
+// the service resolves severity labels and ids exclusively through the
+// supplied EnumRegistry so each call site operates against the bundle that
+// was actually loaded, free of process-global state.
 func NewLawService(repo ConfigRepository, editor *BundleEditor, files EntityFileWriter, slugger Slugifier, registry *domain.EnumRegistry) *LawService {
 	return &LawService{repo: repo, editor: editor, files: files, slugger: slugger, registry: registry}
 }
@@ -243,7 +244,9 @@ func (s *LawService) Remove(ctx context.Context, slug string) error {
 
 func normalizeLawInput(input domain.LawInput, slugger Slugifier, severityValidator func(domain.Severity) (domain.Severity, error)) (string, string, domain.Severity, string, domain.LawScope, string, string, error) {
 	if severityValidator == nil {
-		severityValidator = normalizeSeverity
+		return "", "", domain.SeverityZero, "", "", "", "", domain.NewError(domain.ErrValidation,
+			"law severity validator is required; supply LawService.normalizeSeverity",
+			nil)
 	}
 	severity, err := severityValidator(input.Severity)
 	if err != nil {
@@ -284,7 +287,7 @@ func normalizeLawInput(input domain.LawInput, slugger Slugifier, severityValidat
 
 // normalizeSeverity validates that the supplied severity id is in the
 // active config.severities table. Callers (CLI, MCP) translate user
-// input from label to id via domain.SeverityFromLabel before reaching
+// input from label to id via the bundle-scoped registry before reaching
 // this point; this function only accepts ids and is the second-line
 // guard against stale ids (e.g. caller cached an id whose entry was
 // removed since).
@@ -300,21 +303,6 @@ func (s *LawService) normalizeSeverity(value domain.Severity) (domain.Severity, 
 	return value, nil
 }
 
-// normalizeSeverity is the package-level fallback used by normalizeLawInput
-// when no instance-scoped validator is supplied. Reads from process-global
-// registry — callers with an EnumRegistry should pass s.normalizeSeverity
-// instead.
-func normalizeSeverity(value domain.Severity) (domain.Severity, error) {
-	if value == domain.SeverityZero {
-		return domain.SeverityZero, domain.NewError(domain.ErrValidation, "law severity is required", nil)
-	}
-	if !value.IsRegistered() {
-		return domain.SeverityZero, domain.NewError(domain.ErrValidation,
-			"law severity id is not in config.severities",
-			map[string]any{"severity": int(value)})
-	}
-	return value, nil
-}
 
 func indexLaws(items []config.Law) map[string]config.Law {
 	out := make(map[string]config.Law, len(items))
@@ -353,29 +341,20 @@ func personaExists(bundle config.Bundle, slug string) bool {
 	return false
 }
 
-// severityFromLabel resolves a severity label to its id, using the injected
-// registry when available or falling back to the global registry.
+// severityFromLabel resolves a severity label to its id via the bundle-scoped
+// registry.
 func (s *LawService) severityFromLabel(label string) (domain.Severity, bool) {
-	if s.registry != nil {
-		return s.registry.SeverityFromLabel(label)
-	}
-	return domain.SeverityFromLabel(label)
+	return s.registry.SeverityFromLabel(label)
 }
 
-// severityLabel returns the label for a severity id, using the injected
-// registry when available or falling back to the global registry.
+// severityLabel returns the label for a severity id via the bundle-scoped
+// registry.
 func (s *LawService) severityLabel(sev domain.Severity) string {
-	if s.registry != nil {
-		return s.registry.SeverityLabel(sev)
-	}
-	return sev.Label()
+	return s.registry.SeverityLabel(sev)
 }
 
 // isSeverityRegistered reports whether the given severity id is known in
-// the active table, using the injected registry when available.
+// the active table.
 func (s *LawService) isSeverityRegistered(sev domain.Severity) bool {
-	if s.registry != nil {
-		return s.registry.IsSeverityRegistered(sev)
-	}
-	return sev.IsRegistered()
+	return s.registry.IsSeverityRegistered(sev)
 }

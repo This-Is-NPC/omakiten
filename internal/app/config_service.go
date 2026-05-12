@@ -42,14 +42,12 @@ func (s *ConfigService) Import(ctx context.Context, path string) (bundle config.
 		return
 	}
 
-	// Wire the resolved priority + severity tables into the domain
-	// registries BEFORE writing the bundle to SQLite. Also populates the
-	// process-global registries used by Severity.MarshalJSON and other
-	// domain-level fallbacks that have not yet migrated to instance-scoped
-	// lookups. The SQLite layer now builds its own registry from the bundle
-	// directly (see sqlite/bundles.go buildRegistryFromBundle), so the
-	// global registration here is no longer needed by the import path but
-	// is still required for correct JSON serialization of domain types.
+	// Build an instance-scoped EnumRegistry from the bundle's priority +
+	// severity tables. Returned to the caller so each surface (CLI, TUI,
+	// MCP agent) threads the registry into the services it constructs;
+	// no process-global state is touched. The SQLite layer builds its own
+	// registry from the bundle directly (see sqlite/bundles.go
+	// buildRegistryFromBundle) for the law import path.
 	registry = enumRegistryFromBundle(bundle)
 
 	if err = s.repo.ImportBundle(ctx, bundle, path, hash); err != nil {
@@ -60,24 +58,16 @@ func (s *ConfigService) Import(ctx context.Context, path string) (bundle config.
 }
 
 // enumRegistryFromBundle builds an instance-scoped EnumRegistry from the
-// bundle's priority and severity tables. It also populates the process-global
-// registries for backward compatibility with domain types (e.g.
-// Severity.MarshalJSON, Priority.IsRegistered) that still read from globals.
-// New code should use the returned EnumRegistry directly; the global calls
-// will be removed once those domain-level fallbacks are migrated.
+// bundle's priority and severity tables. No process-global state involved.
 func enumRegistryFromBundle(bundle config.Bundle) *domain.EnumRegistry {
 	priorityPairs := make([]domain.PriorityPair, len(bundle.Config.Priorities))
 	for i, p := range bundle.Config.Priorities {
 		priorityPairs[i] = domain.PriorityPair{ID: p.ID, Value: p.Value, Default: p.Default}
 	}
-	domain.RegisterPriorities(priorityPairs)
-
 	severityPairs := make([]domain.SeverityPair, len(bundle.Config.Severities))
 	for i, s := range bundle.Config.Severities {
 		severityPairs[i] = domain.SeverityPair{ID: s.ID, Value: s.Value, Default: s.Default}
 	}
-	domain.RegisterSeverities(severityPairs)
-
 	return domain.NewEnumRegistry(priorityPairs, severityPairs)
 }
 
