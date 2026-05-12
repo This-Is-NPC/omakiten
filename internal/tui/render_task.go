@@ -515,7 +515,7 @@ func (m *Model) armOrConfirmTaskDelete(task domain.Task) {
 // can retry intentionally rather than re-confirming a stale arm.
 func (m *Model) executeTaskDelete(taskID int64) {
 	m.taskDeletePendingID = 0
-		if _, err := app.NewTaskService(m.repos.Tasks, m.repos.Workflow, nil).Delete(m.ctx, m.project, taskID); err != nil {
+		if _, err := app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry).Delete(m.ctx, m.project, taskID); err != nil {
 		m.status = err.Error()
 		return
 	}
@@ -546,7 +546,7 @@ func (m *Model) saveTaskForm() {
 		// id, so we map it back through priorityLabel to keep the
 		// service signature uniform across surfaces.
 		label := m.priorityLabel(m.taskPriority)
-		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow, nil).Add(m.ctx, m.project, title, description, label, "")
+		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry).Add(m.ctx, m.project, title, description, label, "")
 	case taskScreenEdit:
 		current, ok := m.activeTask()
 		if !ok {
@@ -558,7 +558,7 @@ func (m *Model) saveTaskForm() {
 			p := m.taskPriority
 			update.Priority = &p
 		}
-		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow, nil).Edit(m.ctx, m.project, current.ID, update)
+		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry).Edit(m.ctx, m.project, current.ID, update)
 	default:
 		return
 	}

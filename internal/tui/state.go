@@ -152,6 +152,12 @@ type Model struct {
 	// table consulted by the entity-screen badge renderer. Same wire-up
 	// path (NewModel parameter; refreshed at composition root).
 	severities []config.SeverityDefinition
+	// registry is the instance-scoped EnumRegistry built from priorities
+	// and severities at NewModel time. Threaded into the app services the
+	// TUI constructs on the fly (TaskService, TUIQueryService) so they
+	// resolve labels/ids against this bundle instead of the deprecated
+	// process-global tables.
+	registry *domain.EnumRegistry
 	themePickerOptions  []themeOption
 	configPickerOptions []configOption
 	entries             []domain.ContextEntry

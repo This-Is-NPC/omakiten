@@ -123,7 +123,7 @@ func (m Model) scaffoldEntity(ctx context.Context, kind entityKind, repos Reposi
 		}
 		return skill.SourcePath, nil
 	case entityKindLaw:
-		service := app.NewLawService(repos.Config, repos.Editor, repos.EntityFiles, repos.Slugger, nil)
+		service := app.NewLawService(repos.Config, repos.Editor, repos.EntityFiles, repos.Slugger, m.registry)
 		// New laws default to the configured `default: true` severity
 		// (typically "warning"). DefaultSeverity returns SeverityZero
 		// when the registry is empty (uninitialised tests), in which
