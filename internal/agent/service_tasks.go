@@ -60,7 +60,7 @@ func (s *Service) ContinueTask(ctx context.Context, input ContinueTaskInput) (Co
 
 	return ContinueTaskResponse{
 		Project:        projectSummary(project),
-		Task:           taskSummary(task),
+		Task:           taskSummary(task, s.registry),
 		Workflow:       workflowSum,
 		Dependencies:   dependencySummaries(dependencies),
 		Comments:       s.shapedRecentComments(comments),
@@ -91,7 +91,7 @@ func (s *Service) ListTasks(ctx context.Context, input ListTasksInput) (ListTask
 	if err != nil {
 		return ListTasksResponse{}, err
 	}
-	return ListTasksResponse{Project: projectSummary(project), Tasks: taskSummaries(tasks)}, nil
+	return ListTasksResponse{Project: projectSummary(project), Tasks: taskSummaries(tasks, s.registry)}, nil
 }
 
 func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (CreateTaskResponse, error) {
@@ -120,7 +120,7 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 		if err != nil {
 			return CreateTaskResponse{}, err
 		}
-		similar := similarTasks(title+" "+description, tasks, s.settings.SimilarTaskLimit)
+		similar := similarTasks(title+" "+description, tasks, s.settings.SimilarTaskLimit, s.registry)
 		if len(similar) > 0 {
 			return CreateTaskResponse{
 				Project:      projectSummary(project),
@@ -149,7 +149,7 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 	if err != nil {
 		return CreateTaskResponse{}, err
 	}
-	summary := taskSummary(task)
+	summary := taskSummary(task, s.registry)
 	return CreateTaskResponse{Project: projectSummary(project), Task: &summary, Template: template}, nil
 }
 
@@ -207,7 +207,7 @@ func (s *Service) EditTask(ctx context.Context, input EditTaskInput) (EditTaskRe
 	if err != nil {
 		return EditTaskResponse{}, err
 	}
-	return EditTaskResponse{Project: projectSummary(project), Task: taskSummary(task)}, nil
+	return EditTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry)}, nil
 }
 
 func (s *Service) MoveTask(ctx context.Context, input MoveTaskInput) (MoveTaskResponse, error) {
@@ -219,7 +219,7 @@ func (s *Service) MoveTask(ctx context.Context, input MoveTaskInput) (MoveTaskRe
 	if err != nil {
 		return MoveTaskResponse{}, err
 	}
-	return MoveTaskResponse{Project: projectSummary(project), Task: taskSummary(task)}, nil
+	return MoveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry)}, nil
 }
 
 func (s *Service) DeleteTask(ctx context.Context, input DeleteTaskInput) (DeleteTaskResponse, error) {
@@ -257,7 +257,7 @@ func (s *Service) ArchiveTask(ctx context.Context, input ArchiveTaskInput) (Arch
 	if err != nil {
 		return ArchiveTaskResponse{}, err
 	}
-	return ArchiveTaskResponse{Project: projectSummary(project), Task: taskSummary(task)}, nil
+	return ArchiveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry)}, nil
 }
 
 func (s *Service) UnarchiveTask(ctx context.Context, input ArchiveTaskInput) (ArchiveTaskResponse, error) {
@@ -269,5 +269,5 @@ func (s *Service) UnarchiveTask(ctx context.Context, input ArchiveTaskInput) (Ar
 	if err != nil {
 		return ArchiveTaskResponse{}, err
 	}
-	return ArchiveTaskResponse{Project: projectSummary(project), Task: taskSummary(task)}, nil
+	return ArchiveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry)}, nil
 }

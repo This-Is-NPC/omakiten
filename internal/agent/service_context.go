@@ -42,7 +42,7 @@ func (s *Service) DumpContext(ctx context.Context, input DumpContextInput) (Dump
 		TokenMetrics: dump.TokenMetrics,
 		Context:      contextSnippets(dump.ContextEntries, 0),
 		Workflow:     workflowSummary(dump.Workflow),
-		Tasks:        taskSummaries(dump.Tasks),
+		Tasks:        taskSummaries(dump.Tasks, s.registry),
 		Dependencies: dependencySummaries(dump.Dependencies),
 		Comments:     commentSummaries(dump.Comments),
 	}, nil

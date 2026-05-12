@@ -123,11 +123,11 @@ type EditTaskResponse struct {
 	Task    TaskSummary    `json:"task"`
 }
 
-func taskSummary(task domain.Task) TaskSummary {
-	return taskSummaryWithRegistry(task, nil)
-}
-
-func taskSummaryWithRegistry(task domain.Task, registry *domain.EnumRegistry) TaskSummary {
+// taskSummary projects a domain.Task into the MCP wire shape, resolving the
+// priority label via the supplied registry. registry may be nil — the result
+// then omits the priority_label field but still emits the numeric id so
+// consumers retain unambiguous data.
+func taskSummary(task domain.Task, registry *domain.EnumRegistry) TaskSummary {
 	s := TaskSummary{ID: task.ID, Title: task.Title, Description: task.Description, BucketKey: task.BucketKey, Priority: task.Priority}
 	if registry != nil {
 		s.PriorityLabel = registry.PriorityLabel(task.Priority)

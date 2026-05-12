@@ -76,29 +76,29 @@ func TestSimilarTasks(t *testing.T) {
 	}
 
 	// Empty query -> no matches
-	if len(similarTasks("", tasks, 5)) != 0 {
+	if len(similarTasks("", tasks, 5, nil)) != 0 {
 		t.Fatal("similarTasks(empty) should return no matches")
 	}
 
 	// Exact match
-	exact := similarTasks("Add MCP agent integration", tasks, 5)
+	exact := similarTasks("Add MCP agent integration", tasks, 5, nil)
 	if len(exact) != 1 || exact[0].ID != 1 {
 		t.Fatalf("similarTasks(exact) = %#v, want task 1", exact)
 	}
 
 	// Substring match
-	sub := similarTasks("MCP", tasks, 5)
+	sub := similarTasks("MCP", tasks, 5, nil)
 	if len(sub) != 1 || sub[0].ID != 1 {
 		t.Fatalf("similarTasks(sub) = %#v, want task 1", sub)
 	}
 
 	// No matches below threshold
-	if len(similarTasks("totally unrelated search query for testing", tasks, 5)) != 0 {
+	if len(similarTasks("totally unrelated search query for testing", tasks, 5, nil)) != 0 {
 		t.Fatal("similarTasks(no match) should return empty")
 	}
 
 	// Limit trimming - use a query that matches nothing perfectly to exercise score path
-	limited := similarTasks("write tests cover code", tasks, 1)
+	limited := similarTasks("write tests cover code", tasks, 1, nil)
 	if len(limited) != 1 {
 		t.Fatalf("similarTasks(limit) len = %d, want 1", len(limited))
 	}

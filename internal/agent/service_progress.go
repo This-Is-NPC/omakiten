@@ -32,7 +32,7 @@ func (s *Service) RecordProgress(ctx context.Context, input RecordProgressInput)
 		if err != nil {
 			return RecordProgressResponse{}, err
 		}
-		summary := taskSummary(task)
+		summary := taskSummary(task, s.registry)
 		response.Task = &summary
 	}
 	if strings.TrimSpace(input.Comment) != "" {
