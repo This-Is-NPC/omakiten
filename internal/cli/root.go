@@ -78,7 +78,7 @@ func (r *runtime) personaService() *app.PersonaService {
 }
 
 func (r *runtime) contextService() *app.ContextService {
-	return app.NewContextService(r.store, r.store, r.store, r.store, r.store, r.tokenCounter())
+	return app.NewContextService(r.store, r.store, r.store, r.store, r.store, r.tokenCounter(), r.registry)
 }
 
 func (r *runtime) tokenCounter() token.Counter {
