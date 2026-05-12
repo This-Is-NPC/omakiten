@@ -46,7 +46,7 @@ func (s *Store) HardDeleteTask(ctx context.Context, projectID, taskID int64) (do
 		"task_id":     task.ID,
 		"title":       task.Title,
 		"description": task.Description,
-		"priority":    task.Priority,
+		"priority":    int(task.Priority),
 		"bucket_key":  task.BucketKey,
 		"state":       task.State,
 	})
@@ -161,7 +161,7 @@ func (s *Store) EmitTaskEditedEvent(ctx context.Context, projectID, taskID int64
 		payload["description"] = map[string]any{"from": before.Description, "to": after.Description}
 	}
 	if before.Priority != after.Priority {
-		payload["priority"] = map[string]any{"from": before.Priority, "to": after.Priority}
+		payload["priority"] = map[string]any{"from": int(before.Priority), "to": int(after.Priority)}
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

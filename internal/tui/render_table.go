@@ -98,7 +98,7 @@ func (m Model) renderTable() string {
 	dataRows := make([]string, 0, len(tasks))
 	for _, task := range tasks {
 		marker := m.cursorMarker(selectedID == task.ID)
-		dataRows = append(dataRows, fmt.Sprintf("%s %-4d %-11s %-8s %-5d %-9d %s", marker, task.ID, task.BucketKey, task.Priority, m.dependencyCount(task.ID), m.commentCount(task.ID), truncateText(task.Title, titleWidth)))
+		dataRows = append(dataRows, fmt.Sprintf("%s %-4d %-11s %-8s %-5d %-9d %s", marker, task.ID, task.BucketKey, m.priorityLabel(task.Priority), m.dependencyCount(task.ID), m.commentCount(task.ID), truncateText(task.Title, titleWidth)))
 	}
 
 	rows := []string{
@@ -116,7 +116,7 @@ func (m Model) renderTableCompactWith(tasks []domain.Task) string {
 	dataRows := make([]string, 0, len(tasks))
 	for _, task := range tasks {
 		marker := m.cursorMarker(selectedID == task.ID)
-		prefix := fmt.Sprintf("%s #%d %s %s ", marker, task.ID, task.BucketKey, task.Priority)
+		prefix := fmt.Sprintf("%s #%d %s %s ", marker, task.ID, task.BucketKey, m.priorityLabel(task.Priority))
 		budget := clampInt(width-lipgloss.Width(prefix), 8, width)
 		dataRows = append(dataRows, prefix+truncateText(task.Title, budget))
 	}

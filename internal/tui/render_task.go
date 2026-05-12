@@ -724,7 +724,7 @@ func (m Model) applyTaskViewScroll(content string) string {
 }
 
 func (m Model) renderTaskReference(task domain.Task) string {
-	meta := m.styles.hint.Render(fmt.Sprintf("%s · %s", task.BucketKey, task.Priority))
+	meta := m.styles.hint.Render(fmt.Sprintf("%s · %s", task.BucketKey, m.priorityLabel(task.Priority)))
 	return m.styles.hintAccent.Render(fmt.Sprintf("#%d", task.ID)) + " " + task.Title + "  " + meta
 }
 
@@ -754,7 +754,7 @@ func (m Model) renderBlockerPicker() string {
 		if m.blockerPickerChecks[candidate.ID] {
 			check = m.styles.hintAccent.Render("[x]")
 		}
-		meta := m.styles.hint.Render(fmt.Sprintf("%s · %s", candidate.BucketKey, candidate.Priority))
+		meta := m.styles.hint.Render(fmt.Sprintf("%s · %s", candidate.BucketKey, m.priorityLabel(candidate.Priority)))
 		dataRows = append(dataRows, fmt.Sprintf("%s %s #%d %s  %s", marker, check, candidate.ID, candidate.Title, meta))
 	}
 	return m.renderPickerPanel(header, dataRows, m.blockerPicker.Scroll, m.blockerPickerViewportRows())
