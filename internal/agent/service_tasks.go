@@ -189,13 +189,7 @@ func (s *Service) EditTask(ctx context.Context, input EditTaskInput) (EditTaskRe
 				"priority must be a non-empty label when provided; omit the field to leave it unchanged",
 				map[string]any{"priority": *input.Priority})
 		}
-		var p domain.Priority
-		var ok bool
-		if s.registry != nil {
-			p, ok = s.registry.PriorityFromLabel(label)
-		} else {
-			p, ok = domain.PriorityFromLabel(label)
-		}
+		p, ok := s.registry.PriorityFromLabel(label)
 		if !ok {
 			return EditTaskResponse{}, domain.NewError(domain.ErrValidation,
 				"unknown priority label; must match a value in config.priorities",
