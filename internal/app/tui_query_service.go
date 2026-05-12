@@ -241,17 +241,10 @@ func enrichPersonasFromBundle(personas []domain.Persona, bundle config.Bundle) [
 	return personas
 }
 
-// severityFromLabel resolves a severity label to its id, using the injected
-// registry when available or falling back to the global registry.
-func (s *TUIQueryService) severityFromLabel(label string) (domain.Severity, bool) {
-	if s.registry != nil {
-		return s.registry.SeverityFromLabel(label)
-	}
-	return domain.SeverityFromLabel(label)
-}
-
 // severityFromLabel is the package-level variant used by enrichLawsFromBundle
-// (a pure function with no service receiver).
+// (a pure function with no service receiver). When registry is nil falls back
+// to the deprecated process-global lookup so partially-wired tests still pass;
+// production paths always supply a registry resolved by ConfigService.Import.
 func severityFromLabel(label string, registry *domain.EnumRegistry) (domain.Severity, bool) {
 	if registry != nil {
 		return registry.SeverityFromLabel(label)
