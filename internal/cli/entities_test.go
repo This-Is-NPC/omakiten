@@ -30,8 +30,9 @@ func TestCLIEntityCommands(t *testing.T) {
 			t.Fatalf("law add slug = %q, want no-secrets", slug)
 		}
 		out = runCLI(t, dbPath, configPath, "law", "edit", slug, "-s", "error", "--no-edit")
-		if !strings.Contains(out, `"severity":"error"`) {
-			t.Fatalf("law edit out = %s, want severity=error", out)
+		// CLI emits the raw severity id; the canonical kit maps "error" to id 3.
+		if !strings.Contains(out, `"severity":3`) {
+			t.Fatalf("law edit out = %s, want severity=3 (error)", out)
 		}
 		out = runCLI(t, dbPath, configPath, "law", "list")
 		if !strings.Contains(out, "no-secrets") {

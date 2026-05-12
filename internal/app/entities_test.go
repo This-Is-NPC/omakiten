@@ -15,13 +15,6 @@ import (
 	"omakiten/internal/testfixtures"
 )
 
-func init() {
-	// LawService.Add resolves severity ids through the domain
-	// registry; the test bundle does not flow through cli/agentruntime
-	// composition roots that wire it up at runtime, so register the
-	// canonical kit here.
-	testfixtures.RegisterCanonicalSeverities()
-}
 
 type entitiesFixture struct {
 	store      *sqlite.Store
@@ -97,7 +90,7 @@ func TestLawServiceLifecycle(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fixture := newEntitiesFixture(t)
-service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files, nil)
+service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files, testfixtures.CanonicalRegistry())
 
 			law, err := service.Add(ctx, tt.input)
 			if tt.wantErr != "" {
@@ -139,7 +132,7 @@ service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixtu
 func TestLawServiceRejectsDuplicateKey(t *testing.T) {
 	ctx := context.Background()
 	fixture := newEntitiesFixture(t)
-	service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files, nil)
+	service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files, testfixtures.CanonicalRegistry())
 
 	if _, err := service.Add(ctx, domain.LawInput{Key: "scope", Severity: domain.Severity(3), Body: "anything"}); err == nil {
 		t.Fatalf("Add(duplicate) error = nil, want validation error")
@@ -310,7 +303,7 @@ func TestBundleEditorApplyRollsBackOnFailure(t *testing.T) {
 func TestLawServiceEditNoChange(t *testing.T) {
 	ctx := context.Background()
 	fixture := newEntitiesFixture(t)
-	service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files, nil)
+	service := app.NewLawService(fixture.store, fixture.editor, fixture.files, fixture.files, testfixtures.CanonicalRegistry())
 
 	// Edit with no changes should return current law
 	law, err := service.Show(ctx, "scope")

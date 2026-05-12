@@ -16,6 +16,7 @@ import (
 	"omakiten/internal/paths"
 	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
+	"omakiten/internal/testfixtures"
 )
 
 const minimalThemeYAML = `version: 1
@@ -78,7 +79,7 @@ func newPickerModel(t *testing.T) (Model, string) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:    store,
-		Workflow: app.NewWorkflowServiceFromStore(store), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
+		Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {

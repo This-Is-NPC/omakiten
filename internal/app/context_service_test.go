@@ -30,7 +30,7 @@ func TestContextServiceDumpLevels(t *testing.T) {
 	if _, err := NewCommentService(store).Add(ctx, project.Context(), taskA.ID, "Useful note", "human", nil); err != nil {
 		t.Fatalf("Comment Add() error = %v", err)
 	}
-	service := NewContextService(store, store, store, store, store, token.ApproxCounter{})
+	service := NewContextService(store, store, store, store, store, token.ApproxCounter{}, testfixtures.CanonicalRegistry())
 	if _, err := service.Add(ctx, project.Context(), "Handoff context"); err != nil {
 		t.Fatalf("Context Add() error = %v", err)
 	}
@@ -71,7 +71,7 @@ func TestContextServiceDumpRespectsTokenBudget(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1))
 	defer func() { _ = store.Close() }()
 
-	service := NewContextService(store, store, store, store, store, token.ApproxCounter{})
+	service := NewContextService(store, store, store, store, store, token.ApproxCounter{}, testfixtures.CanonicalRegistry())
 	if _, err := service.Add(ctx, project.Context(), "too many words"); err != nil {
 		t.Fatalf("Context Add() error = %v", err)
 	}
@@ -92,7 +92,7 @@ func TestContextServiceAddValidates(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewContextService(store, store, store, store, store, token.ApproxCounter{})
+	service := NewContextService(store, store, store, store, store, token.ApproxCounter{}, testfixtures.CanonicalRegistry())
 	_, err := service.Add(ctx, project.Context(), "")
 	if err == nil {
 		t.Fatal("Add() error = nil, want validation error")
@@ -111,7 +111,7 @@ func TestContextServiceDumpInvalidLevel(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewContextService(store, store, store, store, store, token.ApproxCounter{})
+	service := NewContextService(store, store, store, store, store, token.ApproxCounter{}, testfixtures.CanonicalRegistry())
 	_, err := service.Dump(ctx, project.Context(), 0)
 	if err == nil {
 		t.Fatal("Dump(level 0) error = nil")
@@ -130,7 +130,7 @@ func TestContextServiceDumpUnlimitedBudget(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 0))
 	defer func() { _ = store.Close() }()
 
-	service := NewContextService(store, store, store, store, store, token.ApproxCounter{})
+	service := NewContextService(store, store, store, store, store, token.ApproxCounter{}, testfixtures.CanonicalRegistry())
 	if _, err := service.Add(ctx, project.Context(), "some context entry"); err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}

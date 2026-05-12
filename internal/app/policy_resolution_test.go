@@ -113,7 +113,7 @@ func TestWorkflowServicePolicyResolutionFromYAML(t *testing.T) {
 			if err != nil {
 				t.Fatalf("UpsertProject() = %v", err)
 			}
-			workflow := app.NewWorkflowServiceFromStore(store)
+			workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry())
 
 			// Each ask creates a fresh task in the named bucket so the
 			// resolver evaluates the policy for that exact location. We

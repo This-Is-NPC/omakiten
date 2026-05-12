@@ -9,19 +9,12 @@ import (
 	"omakiten/internal/testfixtures"
 )
 
-func init() {
-	// task_service tests assert on Priority labels and reject unknown
-	// ids — both require an active priority registry. Production wires
-	// this from the loaded bundle; unit tests use the canonical kit.
-	testfixtures.RegisterCanonicalPriorities()
-}
-
 func TestTaskServiceAdd(t *testing.T) {
 	ctx := context.Background()
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewTaskServiceFromStore(store)
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
 
 	_, err := service.Add(ctx, project.Context(), "", "", "", "")
 	if err == nil {
@@ -66,7 +59,7 @@ func TestTaskServiceList(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewTaskServiceFromStore(store)
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
 	if _, err := service.Add(ctx, project.Context(), "A", "", "", "backlog"); err != nil {
 		t.Fatalf("Add(A) error = %v", err)
 	}
@@ -96,7 +89,7 @@ func TestTaskServiceMove(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewTaskServiceFromStore(store)
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
 
 	_, err := service.Move(ctx, project.Context(), 0, "dev")
 	if err == nil {
@@ -129,7 +122,7 @@ func TestTaskServiceEdit(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewTaskServiceFromStore(store)
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
 
 	_, err := service.Edit(ctx, project.Context(), 0, domain.TaskUpdate{})
 	if err == nil {

@@ -460,6 +460,7 @@ func newAgentFixture(t *testing.T) agentFixture {
 	// guarantees these values in production; mirroring them keeps
 	// behavioural parity in tests.
 	svc := NewService(store, ProjectSelector{CWD: rootA})
+	svc.SetRegistry(testfixtures.CanonicalRegistry())
 	svc.SetSettings(ServiceSettings{
 		RecentCommentLimit: 5,
 		MaxCommentChars:    0,

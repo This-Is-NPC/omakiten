@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/testfixtures"
 )
 
 func TestDependencyServiceAdd(t *testing.T) {
@@ -12,7 +13,7 @@ func TestDependencyServiceAdd(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskServiceFromStore(store)
+	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
 	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "", "backlog")
 	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "", "backlog")
 	taskC, _ := taskService.Add(ctx, project.Context(), "C", "", "", "backlog")
@@ -70,7 +71,7 @@ func TestDependencyServiceRemove(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskServiceFromStore(store)
+	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
 	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "", "backlog")
 	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "", "backlog")
 
@@ -95,7 +96,7 @@ func TestDependencyServiceSyncBlockers(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskServiceFromStore(store)
+	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
 	main, _ := taskService.Add(ctx, project.Context(), "main", "", "", "backlog")
 	a, _ := taskService.Add(ctx, project.Context(), "a", "", "", "backlog")
 	b, _ := taskService.Add(ctx, project.Context(), "b", "", "", "backlog")
@@ -148,7 +149,7 @@ func TestDependencyServiceList(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskServiceFromStore(store)
+	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
 	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "", "backlog")
 	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "", "backlog")
 
