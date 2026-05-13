@@ -69,6 +69,12 @@ mkdir -p dev_env
 "$PWD/scripts/sync-defaults.sh" "$PWD/dev_env"
 '''
 
+[tasks."dev:install"]
+description = "Simulate a fresh omakiten install into dev_env/ — sync defaults, then pin .active to a stock preset so the resolver never falls back to a stale custom/<name>.yaml"
+env = { OMAKITEN_HOME = "dev_env", OKT_PRESET = "omakase" }
+depends = ["dev:sync"]
+run = '"$PWD/scripts/preset-select.sh"'
+
 [tasks."install:mcp:claude"]
 description = "Install Omakiten MCP server into Claude Code config"
 depends = ["build"]
@@ -126,7 +132,7 @@ rm -rf "$HOME/.config/omakiten" "$HOME/.local/share/omakiten"
 [tasks.tui]
 description = "Start the Omakiten TUI with local dev state under dev_env/"
 env = { OMAKITEN_HOME = "dev_env" }
-depends = ["dev:sync"]
+depends = ["dev:install"]
 run = "go run ./cmd/okt init --name Omakiten --slug omakiten >/dev/null && go run ./cmd/okt --project omakiten tui"
 
 [tasks."mcp:prompts"]
