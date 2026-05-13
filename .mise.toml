@@ -146,6 +146,14 @@ run = "golangci-lint run"
 description = "Run Go vulnerability scan"
 run = "govulncheck ./..."
 
+[tasks."docs:refresh"]
+description = "Regenerate .docs/_generated/* and rewrite auto-include markers across .docs/ from canonical sources"
+run = "go run ./cmd/okt-docs-refresh --root ."
+
+[tasks."docs:check"]
+description = "Fail if .docs/ would change after a regenerate (CI gate)"
+run = "go run ./cmd/okt-docs-refresh --root . --check"
+
 [tasks.check]
 description = "Run the full verification suite"
-depends = ["test", "lint", "vuln"]
+depends = ["test", "lint", "vuln", "docs:check"]
