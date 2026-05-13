@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/paths"
 )
 
 // reloadBundle re-imports the bundle at path, then updates every
@@ -21,6 +23,7 @@ import (
 // workflow lost buckets the previous one had).
 func (m *Model) reloadBundle(path string) error {
 	fromWorkflow := m.workflow.Key
+	fromPath := m.repos.Editor.Path()
 
 	cfgSvc := app.NewConfigService(m.repos.Config, m.repos.BundleStore)
 	bundle, _, registry, err := cfgSvc.Import(m.ctx, path)
@@ -48,22 +51,31 @@ func (m *Model) reloadBundle(path string) error {
 		return err
 	}
 
-	if m.project.ID != 0 {
-		m.emitBundleSwapped(fromWorkflow, m.workflow.Key)
+	suppressed := m.suppressNextSwapEmit
+	m.suppressNextSwapEmit = false
+	if m.project.ID != 0 && !suppressed {
+		m.emitBundleSwapped(fromWorkflow, m.workflow.Key, fromPath)
 	}
 	return nil
 }
 
 // emitBundleSwapped records bundle.swapped with the orphan preview folded
-// into the payload. Failures are swallowed: the swap itself already
+// into the payload. When the report carries orphans, the previous config
+// path is stashed on the model so an esc-press on the resulting prompt
+// reverts the swap. Failures are swallowed: the swap itself already
 // succeeded, and a missing event must not crash the TUI mid-render.
-func (m *Model) emitBundleSwapped(fromKey, toKey string) {
+func (m *Model) emitBundleSwapped(fromKey, toKey, fromPath string) {
 	report, err := m.repos.Orphans.PreviewOrphanedTasks(m.ctx, m.project.ID)
 	if err != nil {
 		// Preview failed but the swap already committed. Best we can do
 		// is surface the partial state — emit the event with zero orphans
 		// and leave the message in m.status for the user.
 		report = domain.OrphanReport{WorkflowKey: toKey}
+	}
+	if report.Total > 0 {
+		m.pendingSwapRevertPath = fromPath
+	} else {
+		m.pendingSwapRevertPath = ""
 	}
 	payload := struct {
 		FromWorkflow string              `json:"from_workflow"`
@@ -83,6 +95,31 @@ func (m *Model) emitBundleSwapped(fromKey, toKey string) {
 		return
 	}
 	_ = m.repos.Events.RecordEntityEvent(m.ctx, domain.EventEntitySystem, 0, m.project.ID, domain.EventTypeBundleSwapped, string(raw))
+}
+
+// revertConfigSwap re-imports the previous bundle and rewrites .active to
+// match. Called when the user dismisses the orphan-migration notification
+// without picking an action — the contract is "no decision = no commit".
+// The next reloadBundle on the revert path skips its own bundle.swapped
+// emit so the user is not bounced through an immediate second prompt.
+func (m *Model) revertConfigSwap() {
+	if m.pendingSwapRevertPath == "" {
+		return
+	}
+	path := m.pendingSwapRevertPath
+	m.pendingSwapRevertPath = ""
+	m.suppressNextSwapEmit = true
+	if err := m.reloadBundle(path); err != nil {
+		m.status = fmt.Sprintf("Config swap cancel failed: %v", err)
+		return
+	}
+	base := filepath.Base(path)
+	if err := paths.SetActiveConfig(base); err != nil {
+		m.status = err.Error()
+		return
+	}
+	display := strings.TrimSuffix(base, filepath.Ext(base))
+	m.status = fmt.Sprintf("Config swap cancelled — restored %s", display)
 }
 
 // loadActiveTheme resolves the theme yaml referenced by bundle.Config.Theme.

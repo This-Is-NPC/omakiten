@@ -322,6 +322,20 @@ type Model struct {
 	// one is on screen; nil otherwise.
 	notifications map[string]config.Notification
 	notification   *notification.Model
+
+	// pendingSwapRevertPath stores the previous config yaml path when the
+	// active swap produced orphaned tasks. The hooks engine paints an
+	// orphan-migration notification overlay; if the user presses esc to
+	// dismiss it without choosing migrate or skip, the TUI reverts the
+	// swap by re-importing the previous bundle so the user is never left
+	// with a config they did not commit to. Cleared whenever the user
+	// makes an explicit choice (any ActionMsg) or after the revert runs.
+	pendingSwapRevertPath string
+	// suppressNextSwapEmit skips the bundle.swapped emit on the next
+	// reloadBundle call. Used by revertConfigSwap so the revert hop does
+	// not trigger another orphan-migration notification — the revert
+	// itself is the user's cancel intent.
+	suppressNextSwapEmit bool
 }
 
 // inputMode is the modal-input enum: normal navigation, comment-add input
