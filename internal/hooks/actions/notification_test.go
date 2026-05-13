@@ -174,6 +174,65 @@ func TestNotificationShowAction_resolvesDetailField(t *testing.T) {
 	}
 }
 
+func TestNotificationShowAction_templatesActionCommands(t *testing.T) {
+	a := NewNotificationShowAction(NotificationBundleSnapshot{
+		Notifications: map[string]config.Notification{
+			"prompt": withActions(sampleNotificationConfig(), []config.NotificationAction{
+				{Key: "a", ID: "apply", Label: "Apply", Command: []string{"workflow", "orphans", "--id={{.Payload.id}}", "--confirm"}},
+				{Key: "s", ID: "skip", Label: "Skip"},
+			}),
+		},
+	})
+	sink := &recordingSender{msgs: make(chan NotificationShowMsg, 1)}
+	a.SetSender(sink)
+	err := a.Execute(context.Background(), domain.Event{Body: "swap", Payload: `{"id": 42}`}, map[string]any{NotificationArgSlug: "prompt"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	select {
+	case msg := <-sink.msgs:
+		if len(msg.Notification.Actions) != 2 {
+			t.Fatalf("Actions len = %d, want 2", len(msg.Notification.Actions))
+		}
+		got := msg.Notification.Actions[0].Command
+		want := []string{"workflow", "orphans", "--id=42", "--confirm"}
+		if len(got) != len(want) {
+			t.Fatalf("rendered cmd = %v, want %v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("cmd[%d] = %q, want %q", i, got[i], want[i])
+			}
+		}
+		if len(msg.Notification.Actions[1].Command) != 0 {
+			t.Fatalf("skip action command should remain empty, got %v", msg.Notification.Actions[1].Command)
+		}
+	default:
+		t.Fatal("Execute did not send NotificationShowMsg")
+	}
+}
+
+func TestNotificationShowAction_templatingErrorPropagates(t *testing.T) {
+	a := NewNotificationShowAction(NotificationBundleSnapshot{
+		Notifications: map[string]config.Notification{
+			"prompt": withActions(sampleNotificationConfig(), []config.NotificationAction{
+				{Key: "a", ID: "apply", Label: "Apply", Command: []string{"workflow", "orphans", "--id={{.Payload.missing}}"}},
+			}),
+		},
+	})
+	a.SetSender(&recordingSender{msgs: make(chan NotificationShowMsg, 1)})
+	err := a.Execute(context.Background(), domain.Event{Body: "swap", Payload: `{"id": 42}`}, map[string]any{NotificationArgSlug: "prompt"})
+	if err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("expected missingkey error, got %v", err)
+	}
+}
+
+func withActions(base config.Notification, actions []config.NotificationAction) config.Notification {
+	base.Actions = actions
+	base.Name = "prompt"
+	return base
+}
+
 type recordingSender struct {
 	msgs chan NotificationShowMsg
 }
