@@ -16,16 +16,7 @@ If you need the schema reference, the full action contract, or the list of chann
 
 ## Step 1 — Locate the active profile yaml
 
-The config file lives under `<config-dir>/`. Default `<config-dir>` per platform:
-
-```
-# explicit override wins:           $OMAKITEN_HOME/config/
-# otherwise XDG default on Linux:   ~/.config/omakiten/config/
-# macOS:                            ~/Library/Application Support/omakiten/config/
-# Windows:                          %AppData%\omakiten\config\
-```
-
-The active profile basename is recorded in `<config-dir>/.active` (one line, no path separators). The resolver prefers `<config-dir>/custom/<name>.yaml` over `<config-dir>/<name>.yaml`, so a user-authored override at `custom/` shadows the embedded default. When `.active` is missing or names a vanished profile, the resolver falls through to discovery: first alphabetical `.yaml` at the root, then under `custom/`.
+See [`reference/path-resolution.md`](./reference/path-resolution.md) for the full resolver contract — `$OMAKITEN_HOME` / XDG / OS defaults, `.active` resolution, `custom/` shadowing, and discovery fallthrough.
 
 ```bash
 cat "$HOME/.config/omakiten/config/.active"   # prints the active basename (e.g. omakase.yaml)

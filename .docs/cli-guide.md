@@ -19,9 +19,7 @@ Inherited by every subcommand (`internal/cli/root.go:NewRootCommand`):
 
 **Project resolution order** (`internal/project/resolver.go`): `--project-id` → `--project` → current working directory matching a registered project root.
 
-**Path resolution order** (`internal/paths/paths.go`): `--config`/`--db` flag → `$OMAKITEN_HOME` → `$XDG_CONFIG_HOME`/`$XDG_DATA_HOME` → `~/.config/omakiten` and `~/.local/share/omakiten`.
-
-Inside `<config-dir>/`, the active yaml profile basename is recorded in `.active` (a one-line state file). Resolution prefers `<config-dir>/custom/<name>.yaml` over `<config-dir>/<name>.yaml`, so a user-authored override at `custom/` shadows a same-named embedded default. When `.active` is missing, blank, or names a profile that exists in neither location, the resolver falls through to discovery: first alphabetical `.yaml` at the root, then under `custom/`. This guarantees boot succeeds even when the canonical kit is renamed or removed between releases.
+**Path resolution** — full contract (precedence, `.active` lookup, `custom/` shadowing, discovery fallthrough, boot order) lives in [`reference/path-resolution.md`](./reference/path-resolution.md). TL;DR precedence: `--config` / `--db` flag → `$OMAKITEN_HOME` → `$XDG_CONFIG_HOME` / `$XDG_DATA_HOME` → `~/.config/omakiten` and `~/.local/share/omakiten`.
 
 ## Environment variables
 

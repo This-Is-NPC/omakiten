@@ -7,31 +7,27 @@ laws:
 ---
 ## Path resolution
 
-The active yaml profile is resolved by `internal/paths/paths.go` in this precedence:
+Precedence (full contract in `.docs/reference/path-resolution.md`):
 
 1. `--config <path>` flag (CLI / TUI / MCP).
 2. `$OMAKITEN_HOME/config/<active>.yaml`.
 3. `$XDG_CONFIG_HOME/omakiten/config/<active>.yaml`.
 4. `~/.config/omakiten/config/<active>.yaml`.
 
-`<active>` is the basename written in `<config-dir>/.active` (a one-line state file). When `.active` is missing, blank, or names a profile that exists neither at `<config-dir>/<name>.yaml` nor `<config-dir>/custom/<name>.yaml`, the resolver falls through to discovery: first alphabetical `.yaml` at the root, then under `custom/`. A `custom/<name>.yaml` always wins over a same-named root file — that is how a user-authored override shadows the embedded default. The yaml's siblings (the entity folders) are located via the same root regardless of whether the active profile sits at the root or under `custom/`.
+`<active>` is the basename written in `<config-dir>/.active`. The resolver prefers `<config-dir>/custom/<name>.yaml` over `<config-dir>/<name>.yaml` — user-authored overrides shadow defaults. If `.active` is missing or names a vanished profile, the resolver falls through to discovery: first alphabetical `.yaml` at the root, then under `custom/`.
 
 ## Layout under `<root>`
+
+Full tree in `.docs/reference/layout.md`. Quick map:
 
 | Folder | Purpose |
 | --- | --- |
 | `config/<profile>.yaml` | Workflow profile (write-model). Embedded presets ship here; refreshed on update. |
-| `config/custom/<profile>.yaml` | User-authored profile that survives default refreshes. Wins over a same-named root profile. |
+| `config/custom/<profile>.yaml` | User-authored profile; survives default refreshes; shadows same-named root profile. |
 | `config/.active` | One-line state file naming the active profile basename. |
-| `laws/<slug>.md` | Constraint entities. Frontmatter: `severity` (required, matches `config.severities[].value`). |
-| `skills/<slug>.md` | Capability bundles bound to personas. |
-| `personas/<slug>.md` | Role bodies. Frontmatter may declare `description`, `skills`, `laws`. |
-| `templates/<slug>.md` | Scaffolds. Frontmatter may declare `entity`, `default`, `project`, `laws`. |
-| `themes/<slug>.yaml` | TUI palettes (key + name + token table). |
-| `notifications/<slug>.yaml` | TUI notification cards (geometry, animation, dismiss policy). |
-| `<entity>/custom/` | User-authored overrides under any entity folder. Preserved across kit refreshes. |
-
-User-authored entities under `custom/` shadow same-named defaults at the entity-folder root. A future kit update can ship a new default without overwriting the user's tweak.
+| `<entity>/<slug>.md` | Default entity files (laws / skills / personas / templates). Overwritten on update. |
+| `<entity>/custom/<slug>.md` | User-authored overrides. Preserved; always win over same-named defaults. |
+| `themes/<slug>.yaml`, `notifications/<slug>.yaml` | TUI palettes / notification cards. |
 
 ## Workflow presets
 
