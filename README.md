@@ -120,7 +120,7 @@ The full MCP surface (36 tools, 2 resources, 8 prompts) is documented in the [MC
 **Reference**
 
 - [Architecture & Tech Stack](.docs/architecture.md)
-- [Requirements & Behavior Map](.docs/requirements.md)
+- [Requirements & Behavior Map](.docs/_generated/requirements.md)
 - [Why Omakiten?](.docs/why_omakiten.md)
 
 **User guides**
