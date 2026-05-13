@@ -1,5 +1,5 @@
 ---
-name: Comment Non-functional requirements
+name: Comment Non-functional
 description: NFRs separated from functional — performance / security / usability / observability / scale / accessibility / compliance.
 entity: comment
 laws:
