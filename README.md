@@ -88,6 +88,8 @@ Context dumps are tiered (level 1–3) and capped at a token budget you set. You
 
 Define rules your agent must follow, give it personas with curated skill sets, set up templates for tasks/PRs/comments, declare workflow defaults and per-bucket CRUD policy, and reshape domain enums (priorities ship as a configurable id↔value table) — all in plain YAML and Markdown under your config directory. Edit them, version them, share them with a teammate by copying a folder. → [Configuration Guide](.docs/configuration-guide.md)
 
+**Per-repo overrides**: drop a `.omakiten/` directory at the root of a project and Omakiten layers it over your user-global config — same `skills/`, `laws/`, `personas/`, `templates/`, `notifications/` folders plus an optional `omakiten.yaml` overlay. Walk-up discovery (git-style) finds it from any subdir. The repo-local layer is config-only; SQLite stays in your home directory so the data is yours, the conventions are the team's. → [Configuration Guide › Repo-local override](.docs/configuration-guide.md#repo-local-omakiten-override-4-layer-resolution)
+
 ### Workflow presets
 
 Four official presets ship under `defaults/config/`. Each one is a different **process discipline** — they do not prescribe architecture, only how the team works through the development cycle.

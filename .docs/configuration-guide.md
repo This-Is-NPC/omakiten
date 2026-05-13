@@ -1138,6 +1138,74 @@ Single workflow `default` with four buckets — `backlog` → `dev` → `review`
 
 Source: `internal/paths/paths.go:ConfigRoot`, `EntityDir`, `EntityCustomDir`, `ActiveConfigFile`. Legacy flat layouts (`<root>/<name>.yaml` at the root with no `config/` subdir) are tolerated by `ConfigRootFromYAMLPath` and migrated forward by `configstore.MigrateLayout` on next connect. `ConfigRootFromYAMLPath` also recognizes `<root>/config/custom/<name>.yaml`, so entity folders resolve correctly when the active profile lives under `custom/`.
 
+### Repo-local `.omakiten/` override (4-layer resolution)
+
+The bundle resolver layers four sources, lowest precedence first:
+
+1. **Kit defaults** — embedded in the binary, materialized into `<root>/` on first run.
+2. **User-global default** — `<root>/<entity>/<slug>.md` + `<root>/config/<profile>.yaml`.
+3. **User-global custom** — `<root>/<entity>/custom/<slug>.md` + `<root>/config/custom/<profile>.yaml`.
+4. **Repo-local** — `<repo>/.omakiten/<entity>/<slug>.md` + `<repo>/.omakiten/omakiten.yaml`.
+
+Rule: **more specific wins on slug collision; absent layer = inherit**. The repo-local layer is discovered by walking up from the current working directory (`config.FindRepoLocal`), git-style, stopping at the first hit, at `$HOME`, or at the filesystem root. When the walker finds no `.omakiten/`, behaviour is identical to the legacy three-layer model.
+
+```
+<repo-root>/
+  .omakiten/
+    omakiten.yaml          # optional wiring overlay (entry-merge, see below)
+    skills/<slug>.md       # repo-scoped skills (override or extend)
+    laws/<slug>.md
+    personas/<slug>.md
+    templates/<slug>.md
+    notifications/<slug>.yaml
+```
+
+`.omakiten/` is **config-only** — the SQLite database stays under the user data root. Commits in `.omakiten/` cross machines; project state does not.
+
+#### Entity folder merge
+
+For each entity kind, slugs union across layers and the highest-precedence file wins:
+
+- Same slug in a higher layer → body and frontmatter override.
+- Slug only in a higher layer → appended to the active set.
+- Folder absent in a layer → that layer contributes nothing.
+
+Provenance: each loaded entity carries `IsCustom` (user-global custom) or `IsRepoLocal` (repo-local) flags so the TUI / CLI can render where the body came from. Both false → kit default.
+
+#### `omakiten.yaml` entry-merge
+
+When `<repo>/.omakiten/omakiten.yaml` exists, it overlays the user-global wiring by identity key:
+
+| Section | Identity | Merge |
+|---|---|---|
+| `workflows` | `key` | overlay entry replaces base entry; new entries append |
+| `personas` | `slug` | overlay entry replaces base entry; new entries append |
+| `projects` | `slug` | overlay entry replaces base entry; new entries append |
+| `mcp_commands` | map key | overlay key replaces base value (no deeper merge) |
+| `config` | nested keys | recursive deep-merge per key |
+| `skills` / `laws` / `templates` | string value | string-list union |
+| `version` / `kit` / etc. | — | overlay scalar replaces base |
+
+#### Removing inherited entries
+
+To subtract an inherited slug instead of overriding it, list it under one of the `*_disabled` keys in the repo-local yaml:
+
+```yaml
+workflows_disabled:    [izakaya]
+personas_disabled:     [reviewer]
+projects_disabled:     [legacy-app]
+mcp_commands_disabled: [okt-debug]
+skills_disabled:       [rust]
+laws_disabled:         [scope]
+templates_disabled:    [pull-request]
+```
+
+Disables apply after the overlay-merge pass. For skills/laws/personas/templates, the filter also removes auto-loaded entities (the ones the loader picks up automatically when the wiring slot is absent), so `*_disabled` works in both strict-allowlist and auto-load modes.
+
+#### Discovery start
+
+Walk-up starts at the CWD captured by the composition root (`cli.runtime`, `agentruntime.Open`). MCP clients launching `okt mcp` from inside a repo see the layer; clients launching from `$HOME` do not. The diagnostic `okt config validate` deliberately skips the repo-local overlay — its contract is "validate this YAML file in isolation". Sources: `internal/config/repo_local.go:FindRepoLocal`, `internal/config/wiring_merge.go:mergeWiringMaps`, `internal/configstore/configstore.go:NewWithRepoLocal`.
+
 ### SQLite database
 
 ```
