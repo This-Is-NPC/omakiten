@@ -1,14 +1,14 @@
 ---
-name: ADR
-description: Architecture Decision Record — Nygard format (Status / Context / Decision / Consequences / Alternatives).
-entity: adr
+name: Decision record
+description: Generic decision-record scaffold — status, context, decision, consequences, alternatives. Project picks file path.
+entity: decision
 laws:
   - template-fidelity
-  - adr-on-divergence
+  - decision-record-on-divergence
 ---
-# ADR-NNNN — <short title>
+# <NNNN> — <short title>
 
-**Status** — <proposed | accepted | superseded by ADR-XXXX | deprecated>
+**Status** — <proposed | accepted | superseded by <other id> | deprecated>
 **Date** — <YYYY-MM-DD>
 
 ## Context

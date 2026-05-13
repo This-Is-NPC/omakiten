@@ -1,33 +1,27 @@
 ---
-name: Task — Feature (DDD)
-description: Feature scaffold — domain question, bounded context, aggregate, ports, acceptance criteria, risks.
+name: Task — Feature
+description: Feature scaffold for staged delivery — requirements summary, approach, acceptance criteria, risks.
 entity: task
 laws:
   - template-fidelity
-  - design-before-code
-  - ubiquitous-language
+  - design-recorded
+  - acceptance-criteria-required
 ---
-## Domain question
-<one-sentence question the change answers — phrased in the ubiquitous language>
+## Requirements summary
+<the user story or problem statement; what the requester wants and why>
 
-## Bounded context
-<the context this change touches; map link if relevant>
+## Approach
+<high-level approach; key components or steps; the project picks the architecture style>
 
-## Aggregate(s) touched
-<aggregate name(s) + invariants the change preserves>
-
-## Ports introduced or changed
-<application-side interfaces; adapters listed separately>
-
-## Acceptance criteria (BDD)
-- **Given** … **When** … **Then** …
-- **Given** … **When** … **Then** …
+## Acceptance criteria
+- <testable outcome 1>
+- <testable outcome 2>
 
 ## Non-functionals
-<performance, security, observability, scale targets>
+<performance, security, observability, scale targets — when relevant>
 
 ## Risks
-<top 3 risks + mitigation; ADR pointers if any decision diverges>
+<top 3 risks + mitigation; link decision records for significant divergences>
 
 ## Out of scope
-<related contexts intentionally untouched>
+<related work intentionally not covered in this task>

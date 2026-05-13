@@ -1,18 +1,23 @@
 ---
 name: Comment — Acceptance criteria
-description: BDD acceptance criteria for `comment-acceptance` guard (requirements → planning).
+description: Fills the `#acceptance` guard. Project picks the format — Given/When/Then or any other testable shape.
 entity: comment
 laws:
   - template-fidelity
-  - design-before-code
+  - acceptance-criteria-required
 ---
-**Acceptance**
-- **Given** <initial state> · **When** <action> · **Then** <observable outcome>
-- **Given** … **When** … **Then** …
+**Acceptance criteria** — pick the format your project uses:
 
-**Non-functionals**
-- Performance — <target>
-- Security — <target>
-- Observability — <signals required>
+- Given/When/Then bullets, or
+- numbered testable outcomes, or
+- executable test stubs, or
+- the project's existing convention.
 
-**Out of scope** — <what acceptance does NOT cover>
+Each criterion must be:
+- testable (a reviewer can verify it against the implementation),
+- agreed by the requester (sign-off in writing),
+- and free of architectural prescription (focus on observable behaviour, not internals).
+
+**Non-functionals** — performance / security / observability targets when they apply.
+
+**Out of scope** — acceptance does NOT cover: <list>
