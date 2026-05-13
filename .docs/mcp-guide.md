@@ -266,8 +266,6 @@ Trade-off: one extra MCP round-trip on the materialization step (only when the a
 ### Per-prompt fixed token cost
 
 <!-- BEGIN include:_generated/prompt-costs.md -->
-<!-- GENERATED snapshot — hand-refreshed via `mise run mcp:prompts` until the dedicated `mcp:prompts:costs` subtask lands. Numbers move with persona body / skill / law / template bindings. -->
-
 # Prompt Costs — omakase canonical kit
 
 | Prompt | Bytes | ~Tokens | Drivers |

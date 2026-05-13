@@ -613,9 +613,15 @@ func splitTarget(s string) (rel, section string) {
 	return s, ""
 }
 
+// stripGeneratedHeader drops the leading "<!-- GENERATED ... -->" comment line
+// (the docs:refresh banner, or the hand-maintained prompt-costs / requirements
+// variants) before splicing content into a marker block in another doc — the
+// surrounding file already names the source on the BEGIN marker.
 func stripGeneratedHeader(s string) string {
-	if strings.HasPrefix(s, generatedHeader) {
-		s = s[len(generatedHeader):]
+	if strings.HasPrefix(s, "<!-- GENERATED") {
+		if i := strings.Index(s, "\n"); i >= 0 {
+			s = s[i+1:]
+		}
 	}
 	return strings.TrimLeft(s, "\n")
 }

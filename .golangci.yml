@@ -114,3 +114,12 @@ linters:
       - path: _test\.go$
         linters:
           - depguard
+      # staticcheck QF1012 is a quickfix suggestion (`fmt.Fprintf(&b, ...)`
+      # over `b.WriteString(fmt.Sprintf(...))`). The two forms are
+      # equivalent; the WriteString shape reads cleaner in the
+      # docs-refresh generator where most builder writes are plain
+      # strings.
+      - path: cmd/okt-docs-refresh/
+        text: "QF1012"
+        linters:
+          - staticcheck
