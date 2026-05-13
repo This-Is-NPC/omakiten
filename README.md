@@ -23,7 +23,13 @@ curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install
 irm https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.ps1 | iex
 ```
 
-The installer asks which AI agents you use and wires Omakiten into each via MCP — see the [MCP Guide](.docs/mcp-guide.md#setup) for the harness list and re-running setup later. Then register your first project: `okt init --name MyProject --slug my-project`.
+The installer asks which AI agents you use and wires Omakiten into each via MCP — see the [MCP Guide](.docs/mcp-guide.md#setup) for the harness list and re-running setup later. It also asks which workflow preset to activate (defaults to `omakase`); pick a different one with `OKT_PRESET=<name>` or via the interactive prompt — see [Workflow Presets](#workflow-presets) below. Then register your first project:
+
+```bash
+okt init --name MyProject --slug my-project
+# or pin a different preset per-project:
+okt init --name MyProject --slug my-project --preset shokunin
+```
 
 ## How you work with it
 
@@ -82,7 +88,20 @@ Context dumps are tiered (level 1–3) and capped at a token budget you set. You
 
 Define rules your agent must follow, give it personas with curated skill sets, set up templates for tasks/PRs/comments, declare workflow defaults and per-bucket CRUD policy, and reshape domain enums (priorities ship as a configurable id↔value table) — all in plain YAML and Markdown under your config directory. Edit them, version them, share them with a teammate by copying a folder. → [Configuration Guide](.docs/configuration-guide.md)
 
-Official workflow presets ship as starter YAML files under `defaults/config/` and can be copied into a repo with `okt init --preset <name>`. The names lean into the Omakiten identity: **omakase** is the chef's balanced default, **izakaya** is casual and guard-light for spikes, **kaiseki** adds requirements/planning/docs courses, and **shokunin** adds tests-passing and peer-review checkpoints for maximum rigor. List the menu with `okt config presets`.
+### Workflow presets
+
+Four official presets ship under `defaults/config/`. Each one is a different **process discipline** — they do not prescribe architecture, only how the team works through the development cycle.
+
+| Preset | Methodology | When to use |
+|---|---|---|
+| **omakase** | Trunk-based + CI + DORA + TDD + Conventional Commits + Boy-Scout cleanup | The balanced default. Mainstream professional software work. |
+| **izakaya** | Lean Startup + XP Spike + Tracer Bullet + Walking Skeleton | Spikes, prototypes, side-projects. Minimum ceremony. |
+| **kaiseki** | Staged delivery (PMBOK-flavored) with formal sign-offs + decision records + peer review | Planned features in a serious codebase. Architecture-agnostic. |
+| **shokunin** | Site Reliability Engineering + Pre-mortem + Multi-reviewer change control + Blameless postmortem | Regulated environments, irreversible changes, audit-trail-mandatory work. |
+
+The installer asks which one to activate at install time (defaults to omakase). Switch later from the TUI Settings › Config picker, with `okt init --preset <name>` on a new project, or by editing `~/.config/omakiten/config/.active`. List the menu via `okt config presets`.
+
+Authoring your own preset is a first-class path. The agent can orient itself on the active configuration layout via the `/okt-config` MCP prompt — frontmatter shapes, wiring, guard kinds, and the naming convention all live in the orientation template the agent fetches via `templates.show config-orientation`. The full picker / fork recipe sits in the [Workflow Guide](.docs/workflow-guide.md).
 
 ### Local-first, by design
 
@@ -108,6 +127,7 @@ The full MCP surface (36 tools, 2 resources, 8 prompts) is documented in the [MC
 - [TUI Guide](.docs/tui-guide.md)
 - [MCP Guide](.docs/mcp-guide.md)
 - [Configuration Guide](.docs/configuration-guide.md)
+- [Workflow Guide — presets and authoring your own](.docs/workflow-guide.md)
 - [Workflow Guards Guide](.docs/guards-guide.md)
 - [Theming Guide](.docs/theming-guide.md)
 - [Data Model Guide](.docs/data-model-guide.md)
