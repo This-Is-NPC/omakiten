@@ -502,9 +502,10 @@ func processMarkers(docsDir string, generated map[string]string, check bool, dif
 		if err != nil {
 			return err
 		}
+		fences := codeFenceSpans(raw)
 		updated := raw
 
-		updated = autoCatalogRe.ReplaceAllFunc(updated, func(match []byte) []byte {
+		updated = replaceOutsideFences(updated, autoCatalogRe, func(match []byte) []byte {
 			sub := autoCatalogRe.FindSubmatch(match)
 			kind := string(sub[1])
 			rel := fmt.Sprintf(".docs/_generated/entities-%s.md", kind)
@@ -514,9 +515,13 @@ func processMarkers(docsDir string, generated map[string]string, check bool, dif
 			}
 			body = stripGeneratedHeader(body)
 			return []byte(fmt.Sprintf("<!-- BEGIN auto:catalog kind=%s -->\n%s<!-- END auto:catalog -->", kind, body))
-		})
+		}, fences)
 
-		updated = includeRe.ReplaceAllFunc(updated, func(match []byte) []byte {
+		// Recompute fences after the first pass; auto-catalog replacements
+		// can shift later byte offsets enough that the second pass would
+		// reuse stale spans.
+		fences = codeFenceSpans(updated)
+		updated = replaceOutsideFences(updated, includeRe, func(match []byte) []byte {
 			sub := includeRe.FindSubmatch(match)
 			target := string(sub[1])
 			rel, section := splitTarget(target)
@@ -543,7 +548,7 @@ func processMarkers(docsDir string, generated map[string]string, check bool, dif
 			}
 			body = strings.TrimRight(body, "\n") + "\n"
 			return []byte(fmt.Sprintf("<!-- BEGIN include:%s -->\n%s<!-- END include -->", target, body))
-		})
+		}, fences)
 
 		if bytes.Equal(raw, updated) {
 			return nil
@@ -555,6 +560,59 @@ func processMarkers(docsDir string, generated map[string]string, check bool, dif
 		}
 		return os.WriteFile(path, updated, 0o644)
 	})
+}
+
+type span struct{ start, end int }
+
+// codeFenceSpans returns byte ranges (start inclusive, end exclusive) covered
+// by triple-backtick fenced code blocks. Used to suppress marker replacement
+// inside example snippets in AUTHORING.md and similar docs.
+func codeFenceSpans(b []byte) []span {
+	var out []span
+	lines := bytes.Split(b, []byte("\n"))
+	offset := 0
+	openStart := -1
+	for _, line := range lines {
+		trimmed := bytes.TrimLeft(line, " \t")
+		if bytes.HasPrefix(trimmed, []byte("```")) {
+			if openStart < 0 {
+				openStart = offset
+			} else {
+				out = append(out, span{openStart, offset + len(line) + 1})
+				openStart = -1
+			}
+		}
+		offset += len(line) + 1
+	}
+	return out
+}
+
+func insideAny(pos int, spans []span) bool {
+	for _, s := range spans {
+		if pos >= s.start && pos < s.end {
+			return true
+		}
+	}
+	return false
+}
+
+func replaceOutsideFences(src []byte, re *regexp.Regexp, repl func([]byte) []byte, fences []span) []byte {
+	matches := re.FindAllIndex(src, -1)
+	if len(matches) == 0 {
+		return src
+	}
+	var b bytes.Buffer
+	last := 0
+	for _, m := range matches {
+		if insideAny(m[0], fences) {
+			continue
+		}
+		b.Write(src[last:m[0]])
+		b.Write(repl(src[m[0]:m[1]]))
+		last = m[1]
+	}
+	b.Write(src[last:])
+	return b.Bytes()
 }
 
 func splitTarget(s string) (rel, section string) {

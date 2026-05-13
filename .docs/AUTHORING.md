@@ -37,7 +37,7 @@ Renders in any markdown viewer. Anchor breakage is caught by the `markdown-link-
 
 ```markdown
 <!-- BEGIN include:_generated/presets-omakase.md#workflow-guards -->
-...rewritten by mise run docs:refresh...
+...rewritten by mise run docs:refresh from .docs/_generated/presets-omakase.md...
 <!-- END include -->
 ```
 
@@ -49,7 +49,7 @@ Include can target a whole file (`include:_generated/foo.md`) or a section (`inc
 
 ```markdown
 <!-- BEGIN auto:catalog kind=laws -->
-...table rewritten by mise run docs:refresh...
+...table rewritten by mise run docs:refresh from .docs/_generated/entities-laws.md...
 <!-- END auto:catalog -->
 ```
 
