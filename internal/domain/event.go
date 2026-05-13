@@ -40,6 +40,12 @@ const (
 	// EventTypeTaskMoved fires when a task transitions between buckets.
 	// EntityType=task, Payload={from, to}.
 	EventTypeTaskMoved = "task.moved"
+	// EventTypeTaskMigrated fires when a task is rebinded to a new bucket
+	// because the active workflow changed (preset swap, bucket removed or
+	// renamed). Distinct from task.moved because the trigger is a config
+	// change, not a workflow transition — transition guards are bypassed.
+	// EntityType=task, Payload={from, to, reason}.
+	EventTypeTaskMigrated = "task.migrated"
 	// EventTypeTaskCompleted fires when a task moves into the workflow's
 	// final bucket. Co-emits with task.moved on the same transition.
 	// EntityType=task, Payload={bucket}.
@@ -139,6 +145,7 @@ var KnownEventTypes = []string{
 	EventTypeCommentRemoved,
 	EventTypeTaskCreated,
 	EventTypeTaskMoved,
+	EventTypeTaskMigrated,
 	EventTypeTaskCompleted,
 	EventTypeTaskEdited,
 	EventTypeTaskRemoved,

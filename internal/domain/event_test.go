@@ -9,6 +9,7 @@ func TestKnownEventTypesCoversCatalog(t *testing.T) {
 		EventTypeCommentRemoved:    {},
 		EventTypeTaskCreated:       {},
 		EventTypeTaskMoved:         {},
+		EventTypeTaskMigrated:      {},
 		EventTypeTaskCompleted:     {},
 		EventTypeTaskEdited:        {},
 		EventTypeTaskRemoved:       {},
