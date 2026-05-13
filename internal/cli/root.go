@@ -36,6 +36,7 @@ type runtime struct {
 	store              *sqlite.Store
 	configPath         string
 	dbPath             string
+	repoLocalDir       string
 	bus                events.Bus
 	hooksEngine        *hooks.Engine
 	notificationAction *actions.NotificationShowAction
@@ -56,24 +57,32 @@ func (r *runtime) close() {
 	_ = r.store.Close()
 }
 
+// bundleStore returns a configstore.Adapter wired with the discovered
+// repo-local `.omakiten/` directory (when any). All composition-time
+// constructors funnel through this helper so the repo-local layer is
+// honoured uniformly across services.
+func (r *runtime) bundleStore() *configstore.Adapter {
+	return configstore.NewWithRepoLocal(r.repoLocalDir)
+}
+
 // bundleEditor builds the editor the way every config-touching service expects
 // it. Centralising this lets the call sites stay one line each.
 func (r *runtime) bundleEditor() *app.BundleEditor {
-	return app.NewBundleEditor(r.store, configstore.New(), r.configPath)
+	return app.NewBundleEditor(r.store, r.bundleStore(), r.configPath)
 }
 
 func (r *runtime) skillService() *app.SkillService {
-	store := configstore.New()
+	store := r.bundleStore()
 	return app.NewSkillService(r.store, r.bundleEditor(), store, store)
 }
 
 func (r *runtime) lawService() *app.LawService {
-	store := configstore.New()
+	store := r.bundleStore()
 	return app.NewLawService(r.store, r.bundleEditor(), store, store, r.registry)
 }
 
 func (r *runtime) personaService() *app.PersonaService {
-	store := configstore.New()
+	store := r.bundleStore()
 	return app.NewPersonaService(r.store, r.bundleEditor(), store, store)
 }
 
@@ -135,7 +144,8 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		return nil, err
 	}
 
-	cs := configstore.New()
+	repoLocalDir := discoverRepoLocal()
+	cs := configstore.NewWithRepoLocal(repoLocalDir)
 	if materializeConfig {
 		rootDir, err := o.resolvedConfigRoot()
 		if err != nil {
@@ -164,7 +174,7 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		return nil, err
 	}
 
-	rt := &runtime{store: store, configPath: configPath, dbPath: dbPath}
+	rt := &runtime{store: store, configPath: configPath, dbPath: dbPath, repoLocalDir: repoLocalDir}
 
 	if materializeConfig {
 		// Import loads + validates + populates the domain registries
@@ -253,6 +263,24 @@ func buildHookEntries(specs []config.HookSpec) []hooks.Hook {
 		out = append(out, hooks.Hook{On: spec.On, When: spec.When, Do: spec.Do, Args: spec.Args})
 	}
 	return out
+}
+
+// discoverRepoLocal walks up from the current working directory looking
+// for a `.omakiten/` config layer the loader will overlay onto the
+// user-global wiring. Returns "" when the walker hits $HOME or the
+// filesystem root without finding one — falling back to the legacy
+// user-global-only path. Best-effort: an os.Getwd / Stat failure
+// degrades to "" rather than aborting startup.
+func discoverRepoLocal() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	dir, ok, err := config.FindRepoLocal(cwd)
+	if err != nil || !ok {
+		return ""
+	}
+	return dir
 }
 
 func (o *runtimeOptions) resolvedConfigPath() (string, error) {

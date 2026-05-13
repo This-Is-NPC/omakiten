@@ -1,10 +1,7 @@
 package config
 
 import (
-	"os"
 	"path/filepath"
-
-	"gopkg.in/yaml.v3"
 )
 
 // LoadBundle reads the active yaml profile plus the per-entity folders
@@ -140,23 +137,6 @@ func ConfigRootFromYAMLPath(path string) string {
 		return filepath.Dir(configDir)
 	}
 	return configDir
-}
-
-func readWiring(path string) (wiring, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return wiring{}, err
-	}
-	defer func() { _ = file.Close() }()
-
-	decoder := yaml.NewDecoder(file)
-	decoder.KnownFields(true)
-
-	var w wiring
-	if err := decoder.Decode(&w); err != nil {
-		return wiring{}, err
-	}
-	return w, nil
 }
 
 // repoLocalEntityDir returns the per-kind subfolder inside a discovered

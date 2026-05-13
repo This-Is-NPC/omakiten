@@ -53,7 +53,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 			return err
 		}
 	}
-	bundle, err := config.LoadBundle(rt.configPath)
+	bundle, err := config.LoadBundleWithRepoLocal(rt.configPath, rt.repoLocalDir)
 	if err != nil {
 		return domain.NewError(domain.ErrConfigInvalid, "config is invalid", map[string]any{"path": rt.configPath, "error": fmt.Sprint(err)})
 	}
@@ -62,7 +62,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		return err
 	}
 
-	bundleStore := configstore.New()
+	bundleStore := configstore.NewWithRepoLocal(rt.repoLocalDir)
 	editor := app.NewBundleEditor(rt.store, bundleStore, rt.configPath)
 	model, err := tui.NewModel(ctx, project, tui.Repositories{
 		Tasks:        rt.store,

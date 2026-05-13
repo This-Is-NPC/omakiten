@@ -24,7 +24,7 @@ func openEditorAndReimport(ctx context.Context, rt *runtime, path string) error 
 	if err := runEditorCommand(path); err != nil {
 		return domain.NewError(domain.ErrEditorFailed, err.Error(), map[string]any{"path": path})
 	}
-	editor := app.NewBundleEditor(rt.store, configstore.New(), rt.configPath)
+	editor := app.NewBundleEditor(rt.store, configstore.NewWithRepoLocal(rt.repoLocalDir), rt.configPath)
 	if _, err := editor.Apply(ctx, nil); err != nil {
 		return err
 	}

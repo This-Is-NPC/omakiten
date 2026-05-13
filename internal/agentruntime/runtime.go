@@ -63,7 +63,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 
-	cs := configstore.New()
+	cs := configstore.NewWithRepoLocal(discoverRepoLocalDir(opts.CWD))
 	rootDir, err := resolvedConfigRoot(opts.ConfigPath)
 	if err != nil {
 		return nil, err
@@ -420,4 +420,23 @@ func resolvedDBPath(path string) (string, error) {
 		return filepath.Abs(path)
 	}
 	return paths.DatabaseFile()
+}
+
+// discoverRepoLocalDir walks up from the supplied CWD (falling back to
+// os.Getwd when empty) looking for a `.omakiten/` repo-local config
+// layer. Returns "" on any failure so a missing CWD or filesystem error
+// degrades to "no repo-local" rather than aborting the runtime.
+func discoverRepoLocalDir(cwd string) string {
+	if cwd == "" {
+		got, err := os.Getwd()
+		if err != nil {
+			return ""
+		}
+		cwd = got
+	}
+	dir, ok, err := config.FindRepoLocal(cwd)
+	if err != nil || !ok {
+		return ""
+	}
+	return dir
 }

@@ -17,20 +17,37 @@ import (
 )
 
 // Adapter is the production wiring of the BundleStore, EntityFileWriter and
-// Slugifier ports. A single zero-value instance is enough — no state lives
-// here; all I/O is parameterized by the path/root passed per call.
-type Adapter struct{}
+// Slugifier ports. The optional repoLocalDir captures a `.omakiten/`
+// directory discovered via config.FindRepoLocal at composition time; when
+// set, LoadBundle applies the repo-local override layer.
+type Adapter struct {
+	repoLocalDir string
+}
 
-// New returns the production adapter. Callers usually wire it once at the
-// composition root and hand it to every config-touching app service.
+// New returns the production adapter wired without repo-local discovery.
+// Use NewWithRepoLocal at the composition root to apply a discovered
+// `.omakiten/` directory.
 func New() *Adapter {
 	return &Adapter{}
 }
 
+// NewWithRepoLocal returns an adapter that layers a discovered repo-local
+// `.omakiten/` directory on top of the user-global wiring at LoadBundle
+// time. An empty repoLocalDir is equivalent to New().
+func NewWithRepoLocal(repoLocalDir string) *Adapter {
+	return &Adapter{repoLocalDir: repoLocalDir}
+}
+
+// RepoLocalDir reports the discovered `.omakiten/` directory, or "" when
+// the adapter was wired without one. Lets composition roots forward the
+// same value to other ports (e.g. direct `config.LoadBundle` callers
+// that bypass the port for backwards compatibility).
+func (a Adapter) RepoLocalDir() string { return a.repoLocalDir }
+
 // --- BundleStore -----------------------------------------------------------
 
-func (Adapter) LoadBundle(path string) (config.Bundle, error) {
-	return config.LoadBundle(path)
+func (a Adapter) LoadBundle(path string) (config.Bundle, error) {
+	return config.LoadBundleWithRepoLocal(path, a.repoLocalDir)
 }
 
 func (Adapter) SaveBundle(path string, bundle config.Bundle) error {
