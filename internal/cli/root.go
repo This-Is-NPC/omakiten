@@ -94,7 +94,7 @@ func NewRootCommand(version string) *cobra.Command {
 
 Path resolution (highest to lowest precedence):
   1. --config / --db flags
-  2. $OMAKITEN_HOME — pins config to <HOME>/config/omakiten.yaml and data to <HOME>/data/omakiten.db
+  2. $OMAKITEN_HOME — pins config to <HOME>/config/<active>.yaml and data to <HOME>/data/omakiten.db
   3. $XDG_CONFIG_HOME / $XDG_DATA_HOME
   4. ~/.config/omakiten and ~/.local/share/omakiten`,
 		Version:       version,
@@ -130,10 +130,6 @@ Path resolution (highest to lowest precedence):
 }
 
 func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*runtime, error) {
-	configPath, err := o.resolvedConfigPath()
-	if err != nil {
-		return nil, err
-	}
 	dbPath, err := o.resolvedDBPath()
 	if err != nil {
 		return nil, err
@@ -141,13 +137,26 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 
 	cs := configstore.New()
 	if materializeConfig {
-		rootDir := cs.ConfigRootFromYAMLPath(configPath)
+		rootDir, err := o.resolvedConfigRoot()
+		if err != nil {
+			return nil, err
+		}
 		if err := cs.MigrateLayout(rootDir); err != nil {
 			return nil, err
 		}
 		if err := cs.EnsureDefaultFiles(rootDir); err != nil {
 			return nil, err
 		}
+	}
+
+	// Resolve configPath AFTER MigrateLayout has had a chance to relocate
+	// renamed kits — otherwise a snapshot taken pre-migration points at
+	// the just-moved root copy and Import fails with ENOENT. Non-materialize
+	// callers (e.g. `okt config validate`) skip migration and accept the raw
+	// resolver output.
+	configPath, err := o.resolvedConfigPath()
+	if err != nil {
+		return nil, err
 	}
 
 	store, err := sqlite.Open(ctx, dbPath)
@@ -251,6 +260,22 @@ func (o *runtimeOptions) resolvedConfigPath() (string, error) {
 		return filepath.Abs(o.configPath)
 	}
 	return paths.ConfigFile()
+}
+
+// resolvedConfigRoot returns the directory MigrateLayout / EnsureDefaultFiles
+// operate on. Computed without consulting ActiveConfigFile so migration can
+// run before path resolution — otherwise a stale pre-migration configPath
+// would survive into Import. When --config is supplied, root is derived from
+// the flag path; otherwise from the XDG / OMAKITEN_HOME defaults.
+func (o *runtimeOptions) resolvedConfigRoot() (string, error) {
+	if o.configPath != "" {
+		abs, err := filepath.Abs(o.configPath)
+		if err != nil {
+			return "", err
+		}
+		return config.ConfigRootFromYAMLPath(abs), nil
+	}
+	return paths.ConfigRoot()
 }
 
 func (o *runtimeOptions) resolvedDBPath() (string, error) {

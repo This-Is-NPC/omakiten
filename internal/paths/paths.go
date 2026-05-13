@@ -102,7 +102,10 @@ func ConfigFile() (string, error) {
 // custom/ convention used by personas, laws, skills, templates, themes); when
 // the active name is explicitly set via .active, the resolver tries that
 // subtree first and only falls back to the config-dir root when nothing
-// matches there.
+// matches there. If the named profile is missing from both locations the
+// resolver falls through to discovery rather than returning a stale path that
+// would error at open time — so a removed or renamed canonical kit degrades
+// to "first available .yaml" instead of breaking init.
 func ActiveConfigFile() (string, error) {
 	dir, err := ConfigDir()
 	if err != nil {
@@ -112,31 +115,29 @@ func ActiveConfigFile() (string, error) {
 	if err == nil {
 		if name := strings.TrimSpace(string(data)); name != "" {
 			customPath := filepath.Join(dir, "custom", name)
-			if _, err := os.Stat(customPath); err == nil {
+			if _, statErr := os.Stat(customPath); statErr == nil {
 				return customPath, nil
 			}
-			return filepath.Join(dir, name), nil
+			rootPath := filepath.Join(dir, name)
+			if _, statErr := os.Stat(rootPath); statErr == nil {
+				return rootPath, nil
+			}
+			// Named profile missing from both locations — fall through to discovery.
 		}
 	} else if !os.IsNotExist(err) {
 		return "", err
 	}
-	// .active missing or blank — discover the first .yaml file.
-	name, err := firstYAMLInDir(dir)
-	if err == nil {
+	// .active missing, blank, or pointing at a vanished profile —
+	// discover the first .yaml file. Root before custom/. Treat both
+	// "directory missing" and "directory empty of yaml" the same way:
+	// fall through to the next candidate location.
+	if name, err := firstYAMLInDir(dir); err == nil {
 		return filepath.Join(dir, name), nil
 	}
-	if !os.IsNotExist(err) {
-		return "", err
-	}
-	// No yaml at root; try custom/.
-	name, err = firstYAMLInDir(filepath.Join(dir, "custom"))
-	if err == nil {
+	if name, err := firstYAMLInDir(filepath.Join(dir, "custom")); err == nil {
 		return filepath.Join(dir, "custom", name), nil
 	}
-	if os.IsNotExist(err) {
-		return "", fmt.Errorf("no config yaml found in %s or %s/custom", dir, dir)
-	}
-	return "", err
+	return "", fmt.Errorf("no config yaml found in %s or %s/custom", dir, dir)
 }
 
 // firstYAMLInDir returns the first file with a .yaml extension in dir,

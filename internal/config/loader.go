@@ -7,9 +7,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// LoadBundle reads omakiten.yaml plus the per-entity folders rooted at the
-// parent directory of the yaml's parent (i.e. the config root that holds both
-// `config/omakiten.yaml` and the entity folders as siblings).
+// LoadBundle reads the active yaml profile plus the per-entity folders
+// rooted at the parent directory of the yaml's parent (i.e. the config
+// root that holds both `config/<active>.yaml` and the entity folders as
+// siblings).
 //
 // Validation runs against the merged result; dangling refs and missing files
 // fail with an error suitable for wrapping in domain.ErrConfigInvalid.
@@ -72,14 +73,29 @@ func LoadBundle(path string) (Bundle, error) {
 	return bundle, nil
 }
 
-// ConfigRootFromYAMLPath strips the trailing `config/omakiten.yaml` from path
-// and returns the layout root that holds both the yaml and the entity folders
-// as siblings. When the yaml is supplied directly at the root (legacy flat
-// layout) we return its parent so callers can still locate entities — the
-// migration step deals with normalizing the on-disk shape.
+// ConfigRootFromYAMLPath strips the trailing `config/<file>.yaml` (or
+// `config/custom/<file>.yaml`) from path and returns the layout root that
+// holds both the yaml and the entity folders as siblings. Three shapes are
+// recognized:
+//
+//   - <root>/config/<file>.yaml          → returns <root>
+//   - <root>/config/custom/<file>.yaml   → returns <root>
+//   - <root>/<file>.yaml (legacy flat)   → returns <root>
+//
+// The custom/ branch matters when `.active` resolves to a user-authored
+// profile (or a kit that was migrated into custom/ during a layout
+// migration) — without it, entity folders would be searched at
+// <root>/config/custom/<entity> instead of <root>/<entity>.
 func ConfigRootFromYAMLPath(path string) string {
 	configDir := filepath.Dir(path)
-	if filepath.Base(configDir) == "config" {
+	base := filepath.Base(configDir)
+	if base == "custom" {
+		parent := filepath.Dir(configDir)
+		if filepath.Base(parent) == "config" {
+			return filepath.Dir(parent)
+		}
+	}
+	if base == "config" {
 		return filepath.Dir(configDir)
 	}
 	return configDir
