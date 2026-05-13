@@ -228,9 +228,24 @@ func tryPayload(ev domain.Event, field string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	s, ok := raw.(string)
-	if !ok || s == "" {
-		return "", false
+	switch v := raw.(type) {
+	case string:
+		if v == "" {
+			return "", false
+		}
+		return v, true
+	case bool:
+		if v {
+			return "true", true
+		}
+		return "false", true
+	case float64:
+		// JSON numbers always round-trip through float64; format whole
+		// values as ints so "2 tasks" stays cleaner than "2.000000 tasks".
+		if v == float64(int64(v)) {
+			return fmt.Sprintf("%d", int64(v)), true
+		}
+		return fmt.Sprintf("%g", v), true
 	}
-	return s, true
+	return "", false
 }

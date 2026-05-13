@@ -174,6 +174,22 @@ func TestNotificationShowAction_resolvesDetailField(t *testing.T) {
 	}
 }
 
+func TestResolveOptionalNotificationMessage_payloadBoolCoerced(t *testing.T) {
+	ev := domain.Event{Payload: `{"has_orphans": true}`}
+	got := ResolveOptionalNotificationMessage(ev, "", "has_orphans")
+	if got != "true" {
+		t.Fatalf("got %q, want \"true\"", got)
+	}
+}
+
+func TestResolveOptionalNotificationMessage_payloadIntCoerced(t *testing.T) {
+	ev := domain.Event{Payload: `{"orphan_count": 3}`}
+	got := ResolveOptionalNotificationMessage(ev, "", "orphan_count")
+	if got != "3" {
+		t.Fatalf("got %q, want \"3\"", got)
+	}
+}
+
 func TestNotificationShowAction_templatesActionCommands(t *testing.T) {
 	a := NewNotificationShowAction(NotificationBundleSnapshot{
 		Notifications: map[string]config.Notification{
