@@ -16,10 +16,19 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # guard env var lets install.sh's main() bail out at the very end.
 helpers="$(awk '
   /^SUPPORTED_HARNESSES=/                          { print; next }
+  /^SUPPORTED_PRESETS=/                            { print; next }
+  /^SUPPORTED_PRESETS_DESC=/                       { in_arr = 1 }
+  in_arr                                           { print }
+  in_arr && /^\)$/                                 { in_arr = 0; next }
+  /^DEFAULT_PRESET=/                               { print; next }
   /^harness_is_supported\(\) \{/                   { in_fn = 1 }
   /^parse_harness_selection\(\) \{/                { in_fn = 1 }
   /^select_harnesses\(\) \{/                       { in_fn = 1 }
   /^run_harness_setup\(\) \{/                      { in_fn = 1 }
+  /^preset_is_supported\(\) \{/                    { in_fn = 1 }
+  /^resolve_config_dir\(\) \{/                     { in_fn = 1 }
+  /^select_preset\(\) \{/                          { in_fn = 1 }
+  /^write_active_preset\(\) \{/                    { in_fn = 1 }
   in_fn                                            { print }
   in_fn && /^\}$/                                  { in_fn = 0 }
 ' "$repo/install.sh")"
@@ -130,4 +139,62 @@ if [ "$got_count" -ne "$want_count" ]; then
   fail "SUPPORTED_HARNESSES has $got_count entries, want $want_count (sync with internal/agentsetup.SupportedHarnesses)"
 fi
 
-echo "OK: install.sh harness selection helpers behave as expected."
+# --- preset_is_supported ---
+
+if ! preset_is_supported "omakase"; then fail "omakase must be supported"; fi
+if ! preset_is_supported "shokunin"; then fail "shokunin must be supported"; fi
+if preset_is_supported "bogus" 2>/dev/null; then fail "bogus must not be supported"; fi
+
+# --- select_preset honors OKT_PRESET ---
+
+got="$(OKT_PRESET=izakaya select_preset 2>/dev/null)"
+assert_equal "$got" "izakaya" "OKT_PRESET env override"
+
+got="$(OKT_PRESET=shokunin select_preset 2>/dev/null)"
+assert_equal "$got" "shokunin" "OKT_PRESET=shokunin honored"
+
+# Unknown OKT_PRESET falls back to the default with a stderr warning.
+got="$(OKT_PRESET=bogus select_preset 2>/dev/null)"
+assert_equal "$got" "omakase" "OKT_PRESET=bogus falls back to omakase"
+err="$(OKT_PRESET=bogus select_preset 2>&1 >/dev/null)"
+case "$err" in
+  *"is not a supported preset"*) ;;
+  *) fail "OKT_PRESET=bogus did not warn on stderr: $err" ;;
+esac
+
+# --- select_preset returns default when no TTY and no env override ---
+
+got="$(unset OKT_PRESET; select_preset </dev/null 2>/dev/null)"
+assert_equal "$got" "omakase" "no TTY + no env → default preset"
+
+# --- resolve_config_dir precedence ---
+
+got="$(OMAKITEN_HOME=/tmp/oh resolve_config_dir)"
+assert_equal "$got" "/tmp/oh/config" "OMAKITEN_HOME wins"
+
+got="$(unset OMAKITEN_HOME; XDG_CONFIG_HOME=/tmp/xdg resolve_config_dir)"
+assert_equal "$got" "/tmp/xdg/omakiten/config" "XDG_CONFIG_HOME wins over default"
+
+got="$(unset OMAKITEN_HOME; unset XDG_CONFIG_HOME; HOME=/tmp/h resolve_config_dir)"
+assert_equal "$got" "/tmp/h/.config/omakiten/config" "default path uses ~/.config/omakiten"
+
+# --- write_active_preset writes .active and creates the dir ---
+
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
+OMAKITEN_HOME="$tmpdir" write_active_preset "kaiseki" >/dev/null
+if [ ! -f "$tmpdir/config/.active" ]; then
+  fail "write_active_preset did not create .active"
+fi
+got="$(cat "$tmpdir/config/.active")"
+assert_equal "$got" "kaiseki.yaml" ".active content"
+
+# --- SUPPORTED_PRESETS contains every official preset ---
+
+want_count=4
+got_count="${#SUPPORTED_PRESETS[@]}"
+if [ "$got_count" -ne "$want_count" ]; then
+  fail "SUPPORTED_PRESETS has $got_count entries, want $want_count (sync with defaults/config/<preset>.yaml)"
+fi
+
+echo "OK: install.sh harness + preset selection helpers behave as expected."

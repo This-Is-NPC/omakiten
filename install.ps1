@@ -20,6 +20,17 @@ $SupportedHarnesses = @(
   "codex"
 )
 
+# Workflow presets the preset prompt offers. Order matters: index 1 is the
+# default selected on empty input. Keep in sync with the bash list in install.sh
+# and with defaults/config/<preset>.yaml.
+$SupportedPresets = @(
+  @{ Name = "omakase";  Desc = "balanced - trunk-based + DORA + small batches" },
+  @{ Name = "izakaya";  Desc = "minimal - lean spike / tracer-bullet" },
+  @{ Name = "kaiseki";  Desc = "formal - staged delivery + decision records + peer review" },
+  @{ Name = "shokunin"; Desc = "max rigor - SRE + dual peer-review + postmortems" }
+)
+$DefaultPreset = "omakase"
+
 function Get-LatestTag {
   $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest"
   return $release.tag_name.TrimStart("v")
@@ -132,6 +143,71 @@ function Select-Harnesses {
   }
 }
 
+function Resolve-ConfigDir {
+  # Mirrors internal/paths/paths.go precedence: OMAKITEN_HOME → XDG_CONFIG_HOME
+  # → user-config (LOCALAPPDATA on Windows via Go's os.UserConfigDir).
+  if ($env:OMAKITEN_HOME) {
+    return (Join-Path $env:OMAKITEN_HOME 'config')
+  }
+  if ($env:XDG_CONFIG_HOME) {
+    return (Join-Path (Join-Path $env:XDG_CONFIG_HOME 'omakiten') 'config')
+  }
+  $appData = if ($env:APPDATA) { $env:APPDATA } else { Join-Path $env:USERPROFILE 'AppData\Roaming' }
+  return (Join-Path (Join-Path $appData 'omakiten') 'config')
+}
+
+function Select-Preset {
+  $names = $SupportedPresets | ForEach-Object { $_.Name }
+  if ($env:OKT_PRESET) {
+    if ($names -contains $env:OKT_PRESET) {
+      return $env:OKT_PRESET
+    }
+    Write-Host ("warn: OKT_PRESET={0} is not supported; falling back to {1}" -f $env:OKT_PRESET, $DefaultPreset) -ForegroundColor DarkYellow
+    return $DefaultPreset
+  }
+  if (-not [Environment]::UserInteractive) {
+    return $DefaultPreset
+  }
+
+  Write-Host ""
+  Write-Host "=> Pick a workflow preset (process discipline level)"
+  for ($i = 0; $i -lt $SupportedPresets.Count; $i++) {
+    $p = $SupportedPresets[$i]
+    $marker = if ($p.Name -eq $DefaultPreset) { "   [default]" } else { "" }
+    Write-Host ("   {0}) {1,-10} - {2}{3}" -f ($i + 1), $p.Name, $p.Desc, $marker)
+  }
+
+  while ($true) {
+    $raw = Read-Host "`n   Enter a number or name (Enter for default)"
+    if (-not $raw) { return $DefaultPreset }
+    $trim = $raw.Trim()
+    if ($trim -match '^\d+$') {
+      $idx = [int]$trim - 1
+      if ($idx -ge 0 -and $idx -lt $SupportedPresets.Count) {
+        return $SupportedPresets[$idx].Name
+      }
+      Write-Host ("   index {0} out of range - try again" -f $trim)
+      continue
+    }
+    $token = $trim.ToLowerInvariant()
+    if ($names -contains $token) {
+      return $token
+    }
+    Write-Host ("   `"{0}`" is not a supported preset - try again" -f $trim)
+  }
+}
+
+function Write-ActivePreset {
+  param([string]$Preset)
+  $configDir = Resolve-ConfigDir
+  if (-not (Test-Path $configDir)) {
+    New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+  }
+  $activePath = Join-Path $configDir '.active'
+  Set-Content -Path $activePath -Value ("{0}.yaml" -f $Preset) -NoNewline
+  Write-Host ("=> Active workflow preset: {0} ({1}\.active)" -f $Preset, $configDir)
+}
+
 function Invoke-HarnessSetup {
   param([string]$OktBin, [System.Collections.Generic.List[string]]$Harnesses)
   if (-not $Harnesses -or $Harnesses.Count -eq 0) { return }
@@ -189,6 +265,9 @@ Install-OktWrapper
 
 $version = & "$InstallDir\okt.exe" --version
 Write-Host "=> Installed $version"
+
+$preset = Select-Preset
+Write-ActivePreset -Preset $preset
 
 $selections = Select-Harnesses
 Invoke-HarnessSetup -OktBin "$InstallDir\okt.exe" -Harnesses $selections
