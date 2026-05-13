@@ -9,20 +9,21 @@ import (
 	"omakiten/defaults"
 )
 
-// LoadKitConfig parses the embedded `defaults/omakiten.yaml` and returns
-// just the Settings block — the canonical defaults the kit ships with
-// the binary. Production code does NOT consult this at runtime: the
-// installer (`EnsureDefaultFiles`) materialises the kit YAML into the
-// user's config root, and from then on the user's file is the runtime
-// source. The validator rejects bundles that omit canonical fields, so
-// any drift between user's file and kit shape surfaces immediately.
+// LoadKitConfig parses the embedded `defaults/config/omakase.yaml` and
+// returns just the Settings block — the canonical defaults the kit ships
+// with the binary. Production code does NOT consult this at runtime: the
+// installer (`EnsureDefaultFiles`) materialises every embedded preset into
+// the user's config root, and from then on the user's selected file is the
+// runtime source. The validator rejects bundles that omit canonical fields,
+// so any drift between the user's file and the kit shape surfaces
+// immediately.
 //
 // Used by:
 //   - `internal/testfixtures` to baseline-merge fixtures so test YAMLs
 //     don't have to repeat the canonical blocks
 //   - `okt config doctor` (future) to compare user vs. kit
 func LoadKitConfig() (Settings, error) {
-	data, err := defaults.FS.ReadFile("omakiten.yaml")
+	data, err := defaults.FS.ReadFile("config/omakase.yaml")
 	if err != nil {
 		return Settings{}, fmt.Errorf("read embedded kit YAML: %w", err)
 	}

@@ -34,3 +34,6 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.12.1
+
+      - name: Docs drift
+        run: go run ./cmd/okt-docs-refresh --root . --check

@@ -26,14 +26,13 @@ func (m Model) priorityByID(id domain.Priority) (config.PriorityDefinition, bool
 	return config.PriorityDefinition{}, false
 }
 
-// priorityLabel returns the human label for a priority id, falling back
-// to the registry-resolved string when the model's table has not yet
-// been populated. Empty when neither source resolves the id.
+// priorityLabel returns the human label for a priority id. Empty when
+// the id is zero or not in the model's priority table.
 func (m Model) priorityLabel(id domain.Priority) string {
 	if def, ok := m.priorityByID(id); ok {
 		return def.Value
 	}
-	return id.Label()
+	return ""
 }
 
 // priorityBadge renders the colored pill badge for a priority id. Color
@@ -69,7 +68,7 @@ func (m Model) severityLabel(id domain.Severity) string {
 	if def, ok := m.severityByID(id); ok {
 		return def.Value
 	}
-	return id.Label()
+	return ""
 }
 
 func (m Model) severityBadge(id domain.Severity) string {
@@ -168,7 +167,7 @@ func (m Model) tasksByBucket() map[string][]domain.Task {
 	tasksByBucket := map[string][]domain.Task{}
 	allowed := priorityAllowSet(m.views.Board.Filter.Priority)
 	for _, task := range m.tasks {
-		if !priorityAllowed(allowed, task.Priority) {
+		if !m.priorityAllowed(allowed, task.Priority) {
 			continue
 		}
 		tasksByBucket[task.BucketKey] = append(tasksByBucket[task.BucketKey], task)

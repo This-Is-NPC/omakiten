@@ -14,6 +14,7 @@ import (
 	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
 	"omakiten/internal/tui/components/notification"
+	"omakiten/internal/testfixtures"
 )
 
 func ptrBool(v bool) *bool { return &v }
@@ -62,7 +63,7 @@ func newNotificationTestModel(t *testing.T) Model {
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
 		Projects:     store,
-		Workflow:     app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,

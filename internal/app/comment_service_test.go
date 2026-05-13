@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/testfixtures"
 )
 
 func TestCommentServiceAdd(t *testing.T) {
@@ -12,7 +13,7 @@ func TestCommentServiceAdd(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskServiceFromStore(store)
+	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
 	task, err := taskService.Add(ctx, project.Context(), "Task", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("Add() error = %v", err)
@@ -63,7 +64,7 @@ func TestCommentServiceList(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskServiceFromStore(store)
+	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
 	task, err := taskService.Add(ctx, project.Context(), "Task", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("Add() error = %v", err)

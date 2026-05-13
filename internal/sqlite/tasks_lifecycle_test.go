@@ -18,7 +18,7 @@ func setupLifecycle(t *testing.T) (context.Context, *Store, domain.ProjectContex
 		t.Fatalf("Open() error = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	bundle := testfixtures.LoadBundle(t, "lifecycle_policy.yaml")
+	bundle, _ := testfixtures.LoadBundle(t, "lifecycle_policy.yaml")
 	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -66,7 +66,7 @@ func TestTaskFilterIncludeArchived(t *testing.T) {
 
 func TestArchiveBypassesTransitionGuardsButHonorsOperationGuards(t *testing.T) {
 	ctx, store, project := setupLifecycle(t)
-	tasks := app.NewTaskServiceFromStore(store)
+	tasks := app.NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
 
 	task, err := store.CreateTask(ctx, project.ID, "Frozen", "", domain.Priority(2), "backlog")
 	if err != nil {
@@ -115,7 +115,7 @@ func TestArchiveBypassesTransitionGuardsButHonorsOperationGuards(t *testing.T) {
 
 func TestDeleteEnforcesPolicyAndCascades(t *testing.T) {
 	ctx, store, project := setupLifecycle(t)
-	tasks := app.NewTaskServiceFromStore(store)
+	tasks := app.NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
 
 	task, err := store.CreateTask(ctx, project.ID, "Doomed", "", domain.Priority(2), "backlog")
 	if err != nil {
@@ -190,8 +190,8 @@ func TestDeleteEnforcesPolicyAndCascades(t *testing.T) {
 
 func TestEditPolicyAndCommentInheritance(t *testing.T) {
 	ctx, store, project := setupLifecycle(t)
-	tasks := app.NewTaskServiceFromStore(store)
-	workflow := app.NewWorkflowServiceFromStore(store)
+	tasks := app.NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
+	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry())
 	comments := app.NewCommentServiceWithWorkflow(store, workflow)
 
 	task, err := store.CreateTask(ctx, project.ID, "Title", "", domain.Priority(2), "backlog")

@@ -1,5 +1,5 @@
 ---
-name: Documentation comment
+name: Comment Documentation
 description: Closing checklist — fills the `#documentation` guard (review → done).
 entity: comment
 default: comment-documentation

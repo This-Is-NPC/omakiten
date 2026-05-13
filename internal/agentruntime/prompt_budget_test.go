@@ -20,11 +20,11 @@ import (
 // alongside any change that grows a prompt past its current budget.
 var promptBudgets = map[string]int{
 	"okt":           2300,
-	"okt-imagine":   2250,
-	"okt-create":    3300,
+	"okt-imagine":   4900,
+	"okt-create":    7600,
 	"okt-resume":    2300,
 	"okt-continue":  2400,
-	"okt-implement": 5150,
+	"okt-implement": 8200,
 	"okt-document":  2700,
 	"okt-config":    3050,
 }
@@ -41,7 +41,7 @@ func TestTemplateBoundCommandsCarryFetchHint(t *testing.T) {
 	ctx := context.Background()
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "data", "omakiten.db")
-	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
 
 	rt, err := Open(ctx, Options{DBPath: dbPath, ConfigPath: configPath, CWD: tmp})
 	if err != nil {
@@ -74,7 +74,7 @@ func TestPromptBudgets(t *testing.T) {
 	ctx := context.Background()
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "data", "omakiten.db")
-	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
 
 	rt, err := Open(ctx, Options{DBPath: dbPath, ConfigPath: configPath, CWD: tmp})
 	if err != nil {

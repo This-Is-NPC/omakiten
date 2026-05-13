@@ -1,0 +1,263 @@
+version: 1
+kit: {id: 103, key: kaiseki, name: Kaiseki Workflow Preset}
+config:
+  output: {json_minified: true, omit_empty: true}
+  context: {default_level: 2, max_tokens: 12000}
+  mcp:
+    recent_comment_limit: 5
+    max_comment_chars: 0
+    include_workflow_in_continue: true
+    cache_prompts: true
+    recent_context_limit: 3
+    next_work_limit: 5
+    similar_task_limit: 5
+  workflow: {active: kaiseki}
+  theme: {active: omakiten}
+  tui:
+    token_badge: {yellow_at: 150, red_at: 400}
+  sqlite: {busy_timeout_ms: 5000}
+  activity_log: {max_rows: 500, max_age_days: 7}
+  solutions: {default_top_limit: 10, max_top_limit: 100}
+  events:
+    default_recent_limit: 50
+    defaults: {log: true, broadcast: true, hook: true}
+  hooks:
+    - on: task.created
+      notification: kitten_informative
+      message: "A new course has been ordered."
+    - on: task.moved
+      notification: kitten_informative
+      message: "The course advances to the next stage."
+    - on: task.edited
+      notification: kitten_informative
+      message: "The chef adjusts the preparation."
+    - on: task.completed
+      notification: kitten_success
+      message: "The course is plated and presented."
+    - on: guard.violated
+      when: { operation: task.delete }
+      notification: kitten_destructive
+      message: "Service does not retract a presented course."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: comment.delete }
+      notification: kitten_destructive
+      message: "The record of service is preserved."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.transition }
+      notification: kitten_blocked
+      message: "The kitchen is not yet ready."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.edit }
+      notification: kitten_blocked
+      message: "The course is sealed for service."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: comment.edit }
+      notification: kitten_blocked
+      message: "Service notes remain as written."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.archive }
+      notification: kitten_blocked
+      message: "Service is not yet complete."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.unarchive }
+      notification: kitten_blocked
+      message: "Completed courses remain in the record."
+      detail_message_field: hint
+    - on: task.removed
+      notification: kitten_destructive
+      message: "Course withdrawn from the menu."
+    - on: comment.removed
+      notification: kitten_destructive
+      message: "Service note retracted."
+    - on: task.archived
+      notification: kitten_archive
+      message: "Course archived in the service record."
+    - on: task.unarchived
+      notification: kitten_archive
+      message: "Course returned to the line."
+    - on: comment
+      when: { author_type: human }
+      notification: kitten_informative
+      message: "The chef receives a note from the dining room."
+    - on: comment
+      when: { author_type: agent }
+      notification: kitten_informative
+      message: "A service assistant files a note."
+    - on: comment.edited
+      notification: kitten_informative
+      message: "Service note revised under watch."
+    - on: tag.added
+      notification: kitten_link
+      message: "A garnish is added to the plate."
+    - on: tag.removed
+      notification: kitten_link
+      message: "A garnish is removed from the plate."
+    - on: dependency.added
+      notification: kitten_link
+      message: "A pairing course has been linked."
+    - on: dependency.removed
+      notification: kitten_link
+      message: "The pairing is dissolved."
+    - on: error.recorded
+      notification: kitten_knowledge
+      message: "A service incident is logged."
+    - on: error.searched
+      notification: kitten_knowledge
+      message: "Reviewing the service ledger."
+    - on: solution.added
+      notification: kitten_knowledge
+      message: "A new technique enters the kitchen."
+    - on: solution.liked
+      notification: kitten_success
+      message: "The head chef endorses the technique."
+    - on: solution.failed
+      notification: kitten_knowledge
+      message: "The technique did not hold."
+    - on: solution.viewed_top
+      notification: kitten_knowledge
+      message: "Consulting the kitchen's signature techniques."
+  search:
+    stopwords: [and, are, for, from, into, the, this, that, with]
+  tag_synonyms:
+    golang: go
+    javascript: js
+    typescript: ts
+    nodejs: node
+    node-js: node
+    postgres: postgresql
+    psql: postgresql
+    mongo: mongodb
+    k8s: kubernetes
+    tf: terraform
+    py: python
+  template_defaults: [task, pr, comment-resume, comment-selfbranch, comment-documentation]
+  priorities:
+    - {id: 1, value: low, color: success}
+    - {id: 2, value: normal, default: true, color: info}
+    - {id: 3, value: high, color: error}
+  severities:
+    - {id: 1, value: info, color: info}
+    - {id: 2, value: warning, default: true, color: warning}
+    - {id: 3, value: error, color: error}
+  views:
+    board:
+      sort: {field: created_at, order: desc}
+      filter: {priority: []}
+    table:
+      sort: {field: created_at, order: desc}
+      filter: {priority: [], bucket: []}
+    graph:
+      sort: {field: id, order: asc}
+    logs:
+      sort: {order: desc}
+      limit: 50
+      filter: {source: []}
+    task_activity:
+      sort: {order: asc}
+personas:
+  - slug: methodical-engineer
+    skills: [staged-delivery, requirements-elicitation, design-documentation, decision-records, acceptance-criteria-writing, implementation, markdown]
+  - slug: product-owner
+    skills: [discovery, user-story-writing, requirements-elicitation, acceptance-criteria-writing, pdca-cycle, five-w-two-h, smart-goals, invest-stories, moscow-prioritization, rice-scoring, non-functional-requirements, markdown]
+  - slug: documentation-agent
+    skills: [documentation, architecture-mapping, requirements-mapping, readme-curation, markdown]
+mcp_commands:
+  global:
+    laws: [template-fidelity, authorize-remote-writes, project-scope-only]
+  okt:
+    persona: methodical-engineer
+  okt-imagine:
+    persona: product-owner
+    laws_disabled: [template-fidelity]
+    templates: [comment-5w2h, comment-smart-success]
+  okt-create:
+    persona: product-owner
+    laws: [requirements-signed-off, acceptance-criteria-required, invest-stories, outcome-over-output, prioritization-recorded, non-functional-explicit]
+    templates: [task-feature, comment-requirements, comment-acceptance, comment-smart-success, comment-moscow, comment-rice-score, comment-non-functional]
+  okt-resume:
+    persona: methodical-engineer
+  okt-continue:
+    persona: methodical-engineer
+  okt-implement:
+    persona: methodical-engineer
+    laws: [design-recorded, decision-record-on-divergence, peer-review-required, conventional-commits, no-silent-behavior-changes]
+    templates: [pull-request, decision-record, design-doc, comment-design-decision]
+  okt-document:
+    persona: documentation-agent
+  okt-config:
+    persona: documentation-agent
+    templates: [config-orientation]
+workflows:
+  - id: 1
+    key: kaiseki
+    name: Kaiseki Workflow
+    defaults:
+      task: {edit: false, delete: false}
+      comment: {edit: false, delete: false}
+    operations:
+      archive:
+        guards:
+          - {type: comments_tagged, tag: documentation, count: 1, hint: "Add a #documentation comment summarizing what shipped before archiving."}
+      delete:
+        guards:
+          - {type: comments_tagged, tag: peer-review, count: 1, hint: "Add a #peer-review approving the deletion before removing the task."}
+    buckets:
+      - id: 1
+        key: requirements
+        name: Requirements
+        position: 1
+        permissions:
+          task: {edit: true, delete: true}
+          comment: {edit: true, delete: true}
+      - id: 2
+        key: planning
+        name: Planning
+        position: 2
+        permissions:
+          task: {edit: true, delete: true}
+          comment: {edit: true, delete: false}
+      - id: 3
+        key: dev
+        name: Development
+        position: 3
+        permissions:
+          comment: {edit: true, delete: true}
+      - {id: 4, key: review, name: Review, position: 4}
+      - {id: 5, key: docs, name: Documentation, position: 5}
+      - {id: 6, key: done, name: Done, position: 6}
+    transitions:
+      - from: 1
+        to: 2
+        guards:
+          - {type: comments_tagged, tag: 5w2h, count: 1, hint: "Add a #5w2h comment walking through the seven elicitation questions (What / Why / Who / When / Where / How / How much) before planning starts."}
+          - {type: comments_tagged, tag: requirements, count: 1, hint: "Add a #requirements comment with the user story; the requester signs off on it before planning starts."}
+          - {type: comments_tagged, tag: acceptance, count: 1, hint: "Add a #acceptance comment with testable criteria the requester and reviewer can verify."}
+      - from: 2
+        to: 3
+        guards:
+          - {type: comments_tagged, tag: self-branch, count: 1, hint: "Add a #self-branch comment naming the branch and working path."}
+          - {type: comments_tagged, tag: design, count: 1, hint: "Add a #design comment linking the design doc, decision record, or RFC that captures the approach before code lands."}
+          - {type: blockers_in, buckets: [done, docs], hint: "Every blocker must be in Done or Documentation before development starts."}
+      - from: 3
+        to: 4
+        guards:
+          - {type: comments_tagged, tag: resume, count: 1, hint: "Add a #resume handoff summarizing what was implemented, decisions made, and any open questions before review."}
+          - {type: comments_tagged, tag: tests-passing, count: 1, hint: "Add a #tests-passing comment with the test command, an output snippet, and the duration."}
+      - from: 4
+        to: 5
+        guards:
+          - {type: comments_tagged, tag: peer-review, count: 1, hint: "Add a #peer-review comment from an independent reviewer (not the author) with verdict and approval scope."}
+      - from: 5
+        to: 6
+        guards:
+          - {type: comments_tagged, tag: documentation, count: 1, hint: "Add a #documentation comment summarizing commits merged, related tags, and confirmation that the task has been reviewed and properly tagged."}
+      - {from: 4, to: 3}
+      - {from: 5, to: 4}
+      - {from: 6, to: 4}
+      - {from: 6, to: 5}

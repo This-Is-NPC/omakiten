@@ -15,6 +15,18 @@ WRAPPER_END="# <<< okt wrapper <<<"
 # used by the test in scripts/installer_select_test.sh.
 SUPPORTED_HARNESSES=("claude-code" "claude-desktop" "opencode" "crush" "github-copilot" "codex")
 
+# Workflow presets the preset prompt offers. Index 1 is the default selected
+# on empty input; SUPPORTED_PRESETS_DESC carries a one-line description per
+# entry shown in the prompt.
+SUPPORTED_PRESETS=("omakase" "izakaya" "kaiseki" "shokunin")
+SUPPORTED_PRESETS_DESC=(
+  "balanced — trunk-based + DORA + small batches"
+  "minimal — lean spike / tracer-bullet"
+  "formal — staged delivery + decision records + peer review"
+  "max rigor — SRE + dual peer-review + postmortems"
+)
+DEFAULT_PRESET="omakase"
+
 get_latest_tag() {
   curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" |
     grep -m1 '"tag_name":' |
@@ -89,6 +101,113 @@ harness_is_supported() {
     fi
   done
   return 1
+}
+
+preset_is_supported() {
+  local candidate="$1" p
+  for p in "${SUPPORTED_PRESETS[@]}"; do
+    if [ "$p" = "$candidate" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# resolve_config_dir prints the absolute path of the directory that holds
+# `<active>.yaml` and `.active`, following the same precedence as
+# internal/paths/paths.go (OMAKITEN_HOME → XDG_CONFIG_HOME → ~/.config).
+resolve_config_dir() {
+  if [ -n "${OMAKITEN_HOME:-}" ]; then
+    printf '%s/config' "$OMAKITEN_HOME"
+    return
+  fi
+  if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+    printf '%s/omakiten/config' "$XDG_CONFIG_HOME"
+    return
+  fi
+  printf '%s/.config/omakiten/config' "${HOME}"
+}
+
+# select_preset prints the chosen preset name (single-line) by reading
+# OKT_PRESET when set, otherwise prompting on /dev/tty. Defaults to omakase
+# on empty input. Silent in non-interactive shells (returns the default).
+select_preset() {
+  if [ -n "${OKT_PRESET:-}" ]; then
+    if preset_is_supported "$OKT_PRESET"; then
+      printf '%s\n' "$OKT_PRESET"
+      return 0
+    fi
+    printf 'warn: OKT_PRESET=%s is not a supported preset; falling back to %s\n' \
+      "$OKT_PRESET" "$DEFAULT_PRESET" >&2
+    printf '%s\n' "$DEFAULT_PRESET"
+    return 0
+  fi
+
+  local input_src=""
+  if [ -t 0 ]; then
+    input_src="/dev/stdin"
+  elif ( exec 3</dev/tty ) 2>/dev/null; then
+    input_src="/dev/tty"
+  else
+    printf '%s\n' "$DEFAULT_PRESET"
+    return 0
+  fi
+
+  printf '\n=> Pick a workflow preset (process discipline level)\n' >&2
+  local i=1
+  for p in "${SUPPORTED_PRESETS[@]}"; do
+    local idx=$((i - 1))
+    local default_marker=""
+    [ "$p" = "$DEFAULT_PRESET" ] && default_marker="   [default]"
+    printf '   %d) %-10s — %s%s\n' "$i" "$p" "${SUPPORTED_PRESETS_DESC[$idx]}" "$default_marker" >&2
+    i=$((i + 1))
+  done
+
+  local raw token idx
+  while true; do
+    printf '\n   Enter a number or name (Enter for default): ' >&2
+    if ! IFS= read -r raw < "$input_src"; then
+      printf '%s\n' "$DEFAULT_PRESET"
+      return 0
+    fi
+    raw="${raw#"${raw%%[![:space:]]*}"}"
+    raw="${raw%"${raw##*[![:space:]]}"}"
+    if [ -z "$raw" ]; then
+      printf '%s\n' "$DEFAULT_PRESET"
+      return 0
+    fi
+    token="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+    case "$token" in
+      ''|*[!0-9]*)
+        if preset_is_supported "$token"; then
+          printf '%s\n' "$token"
+          return 0
+        fi
+        printf '   "%s" is not a supported preset — try again\n' "$raw" >&2
+        ;;
+      *)
+        idx=$((token - 1))
+        if [ "$idx" -ge 0 ] && [ "$idx" -lt ${#SUPPORTED_PRESETS[@]} ]; then
+          printf '%s\n' "${SUPPORTED_PRESETS[$idx]}"
+          return 0
+        fi
+        printf '   index %s out of range — try again\n' "$token" >&2
+        ;;
+    esac
+  done
+}
+
+# write_active_preset writes <preset>.yaml to `<config-dir>/.active`, creating
+# the directory if needed. The yaml file itself is materialized by `okt init`
+# on first invocation from the embedded defaults; this just primes the
+# resolver to pick the right one when okt runs.
+write_active_preset() {
+  local preset="$1"
+  local config_dir
+  config_dir="$(resolve_config_dir)"
+  mkdir -p "$config_dir"
+  printf '%s.yaml\n' "$preset" > "$config_dir/.active"
+  printf '=> Active workflow preset: %s (%s/.active)\n' "$preset" "$config_dir"
 }
 
 # parse_harness_selection reads a free-form selection string (numbers, names,
@@ -274,6 +393,10 @@ main() {
   install_wrapper
 
   echo "=> Installed $("${INSTALL_DIR}/okt" --version)"
+
+  local preset
+  preset="$(select_preset)"
+  write_active_preset "$preset"
 
   local selections
   selections="$(select_harnesses)"

@@ -105,7 +105,7 @@ func TestWorkflowServicePolicyResolutionFromYAML(t *testing.T) {
 				t.Fatalf("sqlite.Open() = %v", err)
 			}
 			t.Cleanup(func() { _ = store.Close() })
-			bundle := testfixtures.LoadBundle(t, c.fixture)
+			bundle, _ := testfixtures.LoadBundle(t, c.fixture)
 			if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
 				t.Fatalf("ImportBundle() = %v", err)
 			}
@@ -113,7 +113,7 @@ func TestWorkflowServicePolicyResolutionFromYAML(t *testing.T) {
 			if err != nil {
 				t.Fatalf("UpsertProject() = %v", err)
 			}
-			workflow := app.NewWorkflowServiceFromStore(store)
+			workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry())
 
 			// Each ask creates a fresh task in the named bucket so the
 			// resolver evaluates the policy for that exact location. We

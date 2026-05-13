@@ -1,5 +1,5 @@
 ---
-name: Resume comment
+name: Comment Resume
 description: Implementation handoff — fills the `#resume` guard (dev → review).
 entity: comment
 default: comment-resume

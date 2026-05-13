@@ -1,0 +1,209 @@
+version: 1
+kit: {id: 102, key: izakaya, name: Izakaya Workflow Preset}
+config:
+  output: {json_minified: true, omit_empty: true}
+  context: {default_level: 2, max_tokens: 12000}
+  mcp:
+    recent_comment_limit: 5
+    max_comment_chars: 0
+    include_workflow_in_continue: true
+    cache_prompts: true
+    recent_context_limit: 3
+    next_work_limit: 5
+    similar_task_limit: 5
+  workflow: {active: izakaya}
+  theme: {active: omakiten}
+  tui:
+    token_badge: {yellow_at: 150, red_at: 400}
+  sqlite: {busy_timeout_ms: 5000}
+  activity_log: {max_rows: 500, max_age_days: 7}
+  solutions: {default_top_limit: 10, max_top_limit: 100}
+  events:
+    default_recent_limit: 50
+    defaults: {log: true, broadcast: true, hook: true}
+  hooks:
+    - on: task.created
+      notification: kitten_informative
+      message: "A new tab opens at the counter."
+    - on: task.moved
+      notification: kitten_informative
+      message: "Order moved down the line."
+    - on: task.edited
+      notification: kitten_informative
+      message: "Order amended at the counter."
+    - on: task.completed
+      notification: kitten_success
+      message: "Tab settled. Cheers."
+    - on: guard.violated
+      when: { operation: task.delete }
+      notification: kitten_destructive
+      message: "Already poured. No undo at this bar."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: comment.delete }
+      notification: kitten_destructive
+      message: "Conversation belongs to the bar."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.transition }
+      notification: kitten_blocked
+      message: "Bouncer says no — wrong door."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.edit }
+      notification: kitten_blocked
+      message: "The chef calls the menu."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: comment.edit }
+      notification: kitten_blocked
+      message: "Bartender keeps the receipt."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.archive }
+      notification: kitten_blocked
+      message: "Last call hasn't been rung."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.unarchive }
+      notification: kitten_blocked
+      message: "Closed orders stay closed."
+      detail_message_field: hint
+    - on: task.removed
+      notification: kitten_destructive
+      message: "Off the menu. Quietly."
+    - on: comment.removed
+      notification: kitten_destructive
+      message: "Tip jar emptied."
+    - on: task.archived
+      notification: kitten_archive
+      message: "Tab on hold for the night."
+    - on: task.unarchived
+      notification: kitten_archive
+      message: "Order back on the rail."
+    - on: comment
+      when: { author_type: human }
+      notification: kitten_informative
+      message: "A patron leans in."
+    - on: comment
+      when: { author_type: agent }
+      notification: kitten_informative
+      message: "Your companion adds a remark."
+    - on: comment.edited
+      notification: kitten_informative
+      message: "Receipt corrected."
+    - on: tag.added
+      notification: kitten_link
+      message: "Sticker on the glass."
+    - on: tag.removed
+      notification: kitten_link
+      message: "Sticker peeled."
+    - on: dependency.added
+      notification: kitten_link
+      message: "Drinks chained — wait for the first."
+    - on: dependency.removed
+      notification: kitten_link
+      message: "Chain broken. Pour freely."
+    - on: error.recorded
+      notification: kitten_knowledge
+      message: "Spilled drink — logged."
+    - on: error.searched
+      notification: kitten_knowledge
+      message: "Checking the bar logs."
+    - on: solution.added
+      notification: kitten_knowledge
+      message: "A new house special enters the menu."
+    - on: solution.liked
+      notification: kitten_success
+      message: "Patron tips the bar."
+    - on: solution.failed
+      notification: kitten_knowledge
+      message: "The recipe didn't land."
+    - on: solution.viewed_top
+      notification: kitten_knowledge
+      message: "Browsing the house specials."
+  search:
+    stopwords: [and, are, for, from, into, the, this, that, with]
+  tag_synonyms:
+    golang: go
+    javascript: js
+    typescript: ts
+    nodejs: node
+    node-js: node
+    postgres: postgresql
+    psql: postgresql
+    mongo: mongodb
+    k8s: kubernetes
+    tf: terraform
+    py: python
+  template_defaults: [task, pr, comment-resume, comment-selfbranch, comment-documentation]
+  priorities:
+    - {id: 1, value: low, color: success}
+    - {id: 2, value: normal, default: true, color: info}
+    - {id: 3, value: high, color: error}
+  severities:
+    - {id: 1, value: info, color: info}
+    - {id: 2, value: warning, default: true, color: warning}
+    - {id: 3, value: error, color: error}
+  views:
+    board:
+      sort: {field: created_at, order: desc}
+      filter: {priority: []}
+    table:
+      sort: {field: created_at, order: desc}
+      filter: {priority: [], bucket: []}
+    graph:
+      sort: {field: id, order: asc}
+    logs:
+      sort: {order: desc}
+      limit: 50
+      filter: {source: []}
+    task_activity:
+      sort: {order: asc}
+personas:
+  - slug: tinkerer
+    skills: [lean-experimentation, tracer-bullet-shipping, time-box-discipline, markdown]
+  - slug: documentation-agent
+    skills: [documentation, architecture-mapping, readme-curation, markdown]
+mcp_commands:
+  global:
+    laws: [template-fidelity, authorize-remote-writes, project-scope-only]
+  okt:
+    persona: tinkerer
+  okt-imagine:
+    persona: tinkerer
+    laws_disabled: [template-fidelity]
+  okt-create:
+    persona: tinkerer
+    laws: [hypothesis-required, yagni-first]
+    templates: [task-spike]
+  okt-resume:
+    persona: tinkerer
+  okt-continue:
+    persona: tinkerer
+  okt-implement:
+    persona: tinkerer
+    laws: [time-boxed-spike, tracer-bullet, conventional-commits]
+    templates: [pull-request]
+  okt-document:
+    persona: documentation-agent
+  okt-config:
+    persona: documentation-agent
+    templates: [config-orientation]
+workflows:
+  - id: 1
+    key: izakaya
+    name: Izakaya Workflow
+    buckets:
+      - {id: 1, key: backlog, name: Backlog, position: 1}
+      - {id: 2, key: dev, name: Development, position: 2}
+      - {id: 3, key: done, name: Done, position: 3}
+    transitions:
+      - from: 1
+        to: 2
+        guards:
+          - {type: comments_tagged, tag: hypothesis, count: 1, hint: "Write the question this spike answers — file a #hypothesis comment with the question, why it matters, the falsifiable signal, and the time-box."}
+      - {from: 2, to: 3}
+      - {from: 3, to: 2}
+      - {from: 2, to: 1}
+      - {from: 3, to: 1}

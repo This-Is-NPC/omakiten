@@ -25,7 +25,7 @@ func TestConfigServiceImport(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	bundle, hash, err := service.Import(ctx, validPath)
+	bundle, hash, _, err := service.Import(ctx, validPath)
 	if err != nil {
 		t.Fatalf("Import() error = %v", err)
 	}
@@ -37,7 +37,7 @@ func TestConfigServiceImport(t *testing.T) {
 	}
 
 	// Missing file -> error
-	_, _, err = service.Import(ctx, filepath.Join(tmp, "missing.yaml"))
+	_, _, _, err = service.Import(ctx, filepath.Join(tmp, "missing.yaml"))
 	if err == nil {
 		t.Fatal("Import() missing file error = nil")
 	}
@@ -47,7 +47,7 @@ func TestConfigServiceImport(t *testing.T) {
 	if err := os.WriteFile(invalidPath, []byte("not: valid: ["), 0644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	_, _, err = service.Import(ctx, invalidPath)
+	_, _, _, err = service.Import(ctx, invalidPath)
 	if err == nil {
 		t.Fatal("Import() invalid yaml error = nil")
 	}

@@ -4,7 +4,7 @@ Notifications are configurable popup cards that paint over the
 Omakiten TUI when a domain event matches a hook. Each notification is
 a **self-contained recipe** — the YAML file declares everything the
 renderer needs (card geometry, optional ASCII animation, position,
-dismiss strategy, message text). `omakiten.yaml` only links events to
+dismiss strategy, message text). The active profile yaml only links events to
 notification slugs.
 
 The mental model: think of each notification file as a reusable visual
@@ -17,9 +17,9 @@ for modularity.
 
 1. A notification lives at `notifications/<slug>.yaml` (default) or
    `notifications/custom/<slug>.yaml` (override). Drop a file in
-   either and it loads at startup — no entry in `omakiten.yaml`.
-2. `omakiten.yaml::config.hooks` links event matches to a notification
-   slug via the `notification: <slug>` field.
+   either and it loads at startup — no entry in the active profile yaml.
+2. The active profile yaml under `config.hooks` links event matches to a
+   notification slug via the `notification: <slug>` field.
 3. The hooks engine runs on the event bus; when a hook matches, the
    action looks up the notification by slug and emits a card.
 
@@ -32,12 +32,15 @@ animation block entirely.
 
 ```
 config/
+  <active>.yaml            # active profile yaml (e.g. omakase.yaml)
+  custom/
+    <profile>.yaml         # user-authored profile overrides
 notifications/
   <slug>.yaml              # default — refreshed on every install sync
   custom/
     <slug>.yaml            # user-authored, never overwritten
 themes/
-omakiten.yaml
+  <key>.yaml               # default themes
 ```
 
 `notifications/custom/<slug>.yaml` overrides any default that shares
@@ -246,7 +249,7 @@ wins on tie-break.** Resolution order:
 
 1. `notification.message` (literal in the notification YAML)
 2. `event.payload[notification.message_field]`
-3. `hook.message` (literal in `omakiten.yaml::config.hooks`)
+3. `hook.message` (literal in the active profile yaml under `config.hooks`)
 4. `event.payload[hook.message_field]`
 5. `event.body` (last-resort fallback)
 
@@ -287,7 +290,7 @@ settle and disappear automatically, while guard/destructive notices can stay a
 little longer and expose `tab details` when the hook provides a detail message.
 Copy any default into `notifications/custom/<your-slug>.yaml`, change `name:` to
 match the new filename, tweak frames, and reference the slug from a new
-`omakiten.yaml::config.hooks` entry.
+`config.hooks` entry in the active profile yaml.
 
 ## Behaviour notes
 

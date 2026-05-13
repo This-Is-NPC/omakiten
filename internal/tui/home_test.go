@@ -13,6 +13,7 @@ import (
 	"omakiten/internal/domain"
 	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
+	"omakiten/internal/testfixtures"
 )
 
 // TestNewModelWithEmptyProjectOpensHome covers AC1/AC14: launching the TUI
@@ -38,7 +39,7 @@ func TestNewModelWithEmptyProjectOpensHome(t *testing.T) {
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
 		Projects:     store,
-		Workflow:     app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
@@ -81,7 +82,7 @@ func TestHomeHidesTabBar(t *testing.T) {
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
 		Projects:     store,
-		Workflow:     app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
@@ -126,7 +127,7 @@ func TestCtrlHReturnsToHome(t *testing.T) {
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
 		Projects:     store,
-		Workflow:     app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
@@ -166,7 +167,7 @@ func TestHomeEnterSelectsProject(t *testing.T) {
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
 		Projects:     store,
-		Workflow:     app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
@@ -211,7 +212,7 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
 		Projects:     store,
-		Workflow:     app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
@@ -259,7 +260,7 @@ func TestHomeRendersProjectTagBadges(t *testing.T) {
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
 		Projects:     store,
-		Workflow:     app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,

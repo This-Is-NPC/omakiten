@@ -19,7 +19,7 @@ func (s *Service) ContinueTask(ctx context.Context, input ContinueTaskInput) (Co
 		return ContinueTaskResponse{}, err
 	}
 
-	tasks, err := app.NewTaskServiceFromStore(s.repo).List(ctx, project, domain.TaskFilter{})
+	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry).List(ctx, project, domain.TaskFilter{})
 	if err != nil {
 		return ContinueTaskResponse{}, err
 	}
@@ -60,7 +60,7 @@ func (s *Service) ContinueTask(ctx context.Context, input ContinueTaskInput) (Co
 
 	return ContinueTaskResponse{
 		Project:        projectSummary(project),
-		Task:           taskSummary(task),
+		Task:           taskSummary(task, s.registry),
 		Workflow:       workflowSum,
 		Dependencies:   dependencySummaries(dependencies),
 		Comments:       s.shapedRecentComments(comments),
@@ -87,11 +87,11 @@ func (s *Service) ListTasks(ctx context.Context, input ListTasksInput) (ListTask
 	if err != nil {
 		return ListTasksResponse{}, err
 	}
-	tasks, err := app.NewTaskServiceFromStore(s.repo).List(ctx, project, domain.TaskFilter{BucketKey: strings.TrimSpace(input.BucketKey)})
+	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry).List(ctx, project, domain.TaskFilter{BucketKey: strings.TrimSpace(input.BucketKey)})
 	if err != nil {
 		return ListTasksResponse{}, err
 	}
-	return ListTasksResponse{Project: projectSummary(project), Tasks: taskSummaries(tasks)}, nil
+	return ListTasksResponse{Project: projectSummary(project), Tasks: taskSummaries(tasks, s.registry)}, nil
 }
 
 func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (CreateTaskResponse, error) {
@@ -116,11 +116,11 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 	}
 
 	if !input.SkipSimilarityCheck && !input.Confirmed {
-		tasks, err := app.NewTaskServiceFromStore(s.repo).List(ctx, project, domain.TaskFilter{})
+		tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry).List(ctx, project, domain.TaskFilter{})
 		if err != nil {
 			return CreateTaskResponse{}, err
 		}
-		similar := similarTasks(title+" "+description, tasks, s.settings.SimilarTaskLimit)
+		similar := similarTasks(title+" "+description, tasks, s.settings.SimilarTaskLimit, s.registry)
 		if len(similar) > 0 {
 			return CreateTaskResponse{
 				Project:      projectSummary(project),
@@ -145,11 +145,11 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 		}
 	}
 
-	task, err := app.NewTaskServiceFromStore(s.repo).Add(ctx, project, title, description, strings.TrimSpace(input.Priority), strings.TrimSpace(input.BucketKey))
+	task, err := app.NewTaskServiceFromStore(s.repo, s.registry).Add(ctx, project, title, description, strings.TrimSpace(input.Priority), strings.TrimSpace(input.BucketKey))
 	if err != nil {
 		return CreateTaskResponse{}, err
 	}
-	summary := taskSummary(task)
+	summary := taskSummary(task, s.registry)
 	return CreateTaskResponse{Project: projectSummary(project), Task: &summary, Template: template}, nil
 }
 
@@ -189,7 +189,7 @@ func (s *Service) EditTask(ctx context.Context, input EditTaskInput) (EditTaskRe
 				"priority must be a non-empty label when provided; omit the field to leave it unchanged",
 				map[string]any{"priority": *input.Priority})
 		}
-		p, ok := domain.PriorityFromLabel(label)
+		p, ok := s.registry.PriorityFromLabel(label)
 		if !ok {
 			return EditTaskResponse{}, domain.NewError(domain.ErrValidation,
 				"unknown priority label; must match a value in config.priorities",
@@ -197,11 +197,11 @@ func (s *Service) EditTask(ctx context.Context, input EditTaskInput) (EditTaskRe
 		}
 		update.Priority = &p
 	}
-	task, err := app.NewTaskServiceFromStore(s.repo).Edit(ctx, project, input.TaskID, update)
+	task, err := app.NewTaskServiceFromStore(s.repo, s.registry).Edit(ctx, project, input.TaskID, update)
 	if err != nil {
 		return EditTaskResponse{}, err
 	}
-	return EditTaskResponse{Project: projectSummary(project), Task: taskSummary(task)}, nil
+	return EditTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry)}, nil
 }
 
 func (s *Service) MoveTask(ctx context.Context, input MoveTaskInput) (MoveTaskResponse, error) {
@@ -209,11 +209,11 @@ func (s *Service) MoveTask(ctx context.Context, input MoveTaskInput) (MoveTaskRe
 	if err != nil {
 		return MoveTaskResponse{}, err
 	}
-	task, err := app.NewTaskServiceFromStore(s.repo).Move(ctx, project, input.TaskID, input.BucketKey)
+	task, err := app.NewTaskServiceFromStore(s.repo, s.registry).Move(ctx, project, input.TaskID, input.BucketKey)
 	if err != nil {
 		return MoveTaskResponse{}, err
 	}
-	return MoveTaskResponse{Project: projectSummary(project), Task: taskSummary(task)}, nil
+	return MoveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry)}, nil
 }
 
 func (s *Service) DeleteTask(ctx context.Context, input DeleteTaskInput) (DeleteTaskResponse, error) {
@@ -234,7 +234,7 @@ func (s *Service) DeleteTask(ctx context.Context, input DeleteTaskInput) (Delete
 			},
 		}, nil
 	}
-	event, err := app.NewTaskServiceFromStore(s.repo).Delete(ctx, project, input.TaskID)
+	event, err := app.NewTaskServiceFromStore(s.repo, s.registry).Delete(ctx, project, input.TaskID)
 	if err != nil {
 		return DeleteTaskResponse{}, err
 	}
@@ -247,11 +247,11 @@ func (s *Service) ArchiveTask(ctx context.Context, input ArchiveTaskInput) (Arch
 	if err != nil {
 		return ArchiveTaskResponse{}, err
 	}
-	task, _, err := app.NewTaskServiceFromStore(s.repo).Archive(ctx, project, input.TaskID)
+	task, _, err := app.NewTaskServiceFromStore(s.repo, s.registry).Archive(ctx, project, input.TaskID)
 	if err != nil {
 		return ArchiveTaskResponse{}, err
 	}
-	return ArchiveTaskResponse{Project: projectSummary(project), Task: taskSummary(task)}, nil
+	return ArchiveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry)}, nil
 }
 
 func (s *Service) UnarchiveTask(ctx context.Context, input ArchiveTaskInput) (ArchiveTaskResponse, error) {
@@ -259,9 +259,9 @@ func (s *Service) UnarchiveTask(ctx context.Context, input ArchiveTaskInput) (Ar
 	if err != nil {
 		return ArchiveTaskResponse{}, err
 	}
-	task, _, err := app.NewTaskServiceFromStore(s.repo).Unarchive(ctx, project, input.TaskID)
+	task, _, err := app.NewTaskServiceFromStore(s.repo, s.registry).Unarchive(ctx, project, input.TaskID)
 	if err != nil {
 		return ArchiveTaskResponse{}, err
 	}
-	return ArchiveTaskResponse{Project: projectSummary(project), Task: taskSummary(task)}, nil
+	return ArchiveTaskResponse{Project: projectSummary(project), Task: taskSummary(task, s.registry)}, nil
 }

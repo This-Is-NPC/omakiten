@@ -30,6 +30,13 @@ fi
 installed_at="$HOME/.local/bin/okt"
 install -Dm755 bin/okt "$installed_at"
 "$PWD/scripts/sync-defaults.sh" "$HOME/.config/omakiten"
+
+# Mirror the curl|bash workflow-preset prompt for the local install flow.
+# OKT_PRESET=<name> skips the prompt; non-interactive shells pick the
+# default (omakase) silently. Writes <preset>.yaml to <config-dir>/.active
+# so the subsequent okt init resolves the chosen preset.
+"$PWD/scripts/preset-select.sh"
+
 "$installed_at" init --name Omakiten --slug omakiten --root "$PWD"
 
 # Catch stale copies of okt that PATH resolves before $HOME/.local/bin —
@@ -126,7 +133,10 @@ run = "go run ./cmd/okt init --name Omakiten --slug omakiten >/dev/null && go ru
 description = "Render every okt-* MCP prompt's resolved markdown to stdout against the dev defaults"
 env = { OMAKITEN_HOME = "dev_env" }
 depends = ["dev:sync"]
-run = "go run ./cmd/okt init --name Omakiten --slug omakiten >/dev/null && go run ./cmd/okt --project omakiten mcp prompts"
+# Pin --config to the canonical omakase preset so the task is immune to stale
+# state under dev_env/config/.active or dev_env/config/custom/ left over from
+# prior runs. dev:sync refreshes the preset before this step.
+run = "go run ./cmd/okt --config dev_env/config/omakase.yaml init --name Omakiten --slug omakiten >/dev/null && go run ./cmd/okt --config dev_env/config/omakase.yaml --project omakiten mcp prompts"
 
 [tasks.lint]
 description = "Run Go linter"
@@ -136,6 +146,14 @@ run = "golangci-lint run"
 description = "Run Go vulnerability scan"
 run = "govulncheck ./..."
 
+[tasks."docs:refresh"]
+description = "Regenerate .docs/_generated/* and rewrite auto-include markers across .docs/ from canonical sources"
+run = "go run ./cmd/okt-docs-refresh --root ."
+
+[tasks."docs:check"]
+description = "Fail if .docs/ would change after a regenerate (CI gate)"
+run = "go run ./cmd/okt-docs-refresh --root . --check"
+
 [tasks.check]
 description = "Run the full verification suite"
-depends = ["test", "lint", "vuln"]
+depends = ["test", "lint", "vuln", "docs:check"]

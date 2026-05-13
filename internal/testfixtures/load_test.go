@@ -50,7 +50,7 @@ workflows:
 	// so we run it in a sub-test and inspect the result via the harness.
 	subT := &capturingT{T: t}
 	defer func() { _ = recover() }()
-	testfixtures.LoadBundleFromAbsPath(subT, path)
+	_, _ = testfixtures.LoadBundleFromAbsPath(subT, path)
 	if !subT.failed {
 		t.Fatal("LoadBundleFromAbsPath accepted a fixture with an unknown key; strict decoding is not active")
 	}

@@ -1,7 +1,7 @@
 # Hooks
 
 Hooks let you wire automation into Omakiten's domain events without
-writing Go. You declare them in `omakiten.yaml::config.hooks`; the
+writing Go. You declare them in the active profile yaml under `config.hooks`; the
 runtime subscribes to the in-process events bus and dispatches the
 matching `do:` action asynchronously.
 
@@ -124,7 +124,7 @@ plus the complete guard/error hint. Detail fields are optional and are ignored
 outside the TUI just like the notification itself.
 
 Every render knob (animation, position, dismiss, message text, card
-size, colors) lives inside the notification YAML — `omakiten.yaml` only
+size, colors) lives inside the notification YAML — the active profile yaml only
 links events to slugs. See [`notifications.md`](notifications.md) for the notification
 schema.
 

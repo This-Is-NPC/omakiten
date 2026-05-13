@@ -144,7 +144,7 @@ func (f *fakeStores) ListTaskActivity(context.Context, int64, int64, string) ([]
 }
 
 func newWorkflowServiceForTest(f *fakeStores) *WorkflowService {
-	return NewWorkflowService(f, f, f, f, f)
+	return NewWorkflowService(f, f, f, f, f, nil)
 }
 
 func TestWorkflowResolveDefaultBucket(t *testing.T) {

@@ -16,6 +16,7 @@ import (
 	"omakiten/internal/paths"
 	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
+	"omakiten/internal/testfixtures"
 )
 
 const minimalThemeYAML = `version: 1
@@ -37,7 +38,7 @@ colors:
 func newPickerModel(t *testing.T) (Model, string) {
 	t.Helper()
 	tmp := t.TempDir()
-	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
 	dbPath := filepath.Join(tmp, "omakiten.db")
 
 	if err := config.SaveFullBundle(configPath, tuiTestBundle(t)); err != nil {
@@ -78,7 +79,7 @@ func newPickerModel(t *testing.T) (Model, string) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:    store,
-		Workflow: app.NewWorkflowServiceFromStore(store), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
+		Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
@@ -153,8 +154,14 @@ func TestThemePickerHotReloadsOnEnter(t *testing.T) {
 func TestConfigPickerListsProfilesExcludingStateFile(t *testing.T) {
 	model, root := newPickerModel(t)
 	// Touch the state file directly so we can confirm the picker filters it.
-	if err := os.WriteFile(filepath.Join(root, "config", paths.ActiveConfigStateFile), []byte("omakiten.yaml\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "config", paths.ActiveConfigStateFile), []byte("omakase.yaml\n"), 0o644); err != nil {
 		t.Fatalf("write state file: %v", err)
+	}
+	// newPickerModel already wrote omakase.yaml at config/; add a second
+	// default preset so the picker has two root-scope options to list
+	// alongside the custom/ entry seeded by the helper.
+	if err := os.WriteFile(filepath.Join(root, "config", "izakaya.yaml"), []byte("# official preset\n"), 0o644); err != nil {
+		t.Fatalf("write izakaya profile: %v", err)
 	}
 
 	model.openConfigPicker()
@@ -166,19 +173,26 @@ func TestConfigPickerListsProfilesExcludingStateFile(t *testing.T) {
 	for i, opt := range model.configPickerOptions {
 		files[i] = opt.Filename
 	}
-	if len(files) != 2 {
-		t.Fatalf("configPickerOptions = %v, want 2 entries (.active filtered)", files)
+	if len(files) != 3 {
+		t.Fatalf("configPickerOptions = %v, want 3 entries (.active filtered)", files)
 	}
-	if files[0] != "omakiten.yaml" {
-		t.Fatalf("first option = %q, want omakiten.yaml (default first)", files[0])
+	// Alphabetical order: defaults first, then custom. No special casing.
+	if files[0] != "izakaya.yaml" {
+		t.Fatalf("first option = %q, want izakaya.yaml", files[0])
 	}
-	if files[1] != "config-experiment.yaml" {
-		t.Fatalf("second option = %q, want config-experiment.yaml", files[1])
+	if files[1] != "omakase.yaml" {
+		t.Fatalf("second option = %q, want omakase.yaml", files[1])
+	}
+	if files[2] != "config-experiment.yaml" {
+		t.Fatalf("third option = %q, want config-experiment.yaml", files[2])
 	}
 	if model.configPickerOptions[0].IsCustom {
 		t.Fatalf("default profile incorrectly tagged as custom")
 	}
-	if !model.configPickerOptions[1].IsCustom {
+	if model.configPickerOptions[1].IsCustom {
+		t.Fatalf("default profile incorrectly tagged as custom")
+	}
+	if !model.configPickerOptions[2].IsCustom {
 		t.Fatalf("user profile under custom/ not tagged as custom")
 	}
 }

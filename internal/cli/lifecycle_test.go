@@ -17,7 +17,7 @@ import (
 func TestCLIDependencyAndLifecycleCommands(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
 	projectRoot := filepath.Join(tmp, "project")
 	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
 		t.Fatalf("MkdirAll(projectRoot) error = %v", err)
@@ -51,6 +51,9 @@ func TestCLIDependencyAndLifecycleCommands(t *testing.T) {
 	}
 
 	// archive / unarchive / delete cycle on task 3 (no remaining dependencies on it).
+	// omakase requires a #documentation comment on the task before archiving
+	// (operations.archive.guards) — drop one in so the operation passes.
+	runCLI(t, dbPath, configPath, "comment", "add", "3", "-b", "shipped", "--tag", "documentation")
 	archived := runCLI(t, dbPath, configPath, "archive", "3")
 	if !strings.Contains(archived, `"state":"archived"`) {
 		t.Fatalf("archive output: %s", archived)

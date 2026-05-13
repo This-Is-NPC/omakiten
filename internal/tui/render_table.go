@@ -98,7 +98,7 @@ func (m Model) renderTable() string {
 	dataRows := make([]string, 0, len(tasks))
 	for _, task := range tasks {
 		marker := m.cursorMarker(selectedID == task.ID)
-		dataRows = append(dataRows, fmt.Sprintf("%s %-4d %-11s %-8s %-5d %-9d %s", marker, task.ID, task.BucketKey, task.Priority, m.dependencyCount(task.ID), m.commentCount(task.ID), truncateText(task.Title, titleWidth)))
+		dataRows = append(dataRows, fmt.Sprintf("%s %-4d %-11s %-8s %-5d %-9d %s", marker, task.ID, task.BucketKey, m.priorityLabel(task.Priority), m.dependencyCount(task.ID), m.commentCount(task.ID), truncateText(task.Title, titleWidth)))
 	}
 
 	rows := []string{
@@ -116,7 +116,7 @@ func (m Model) renderTableCompactWith(tasks []domain.Task) string {
 	dataRows := make([]string, 0, len(tasks))
 	for _, task := range tasks {
 		marker := m.cursorMarker(selectedID == task.ID)
-		prefix := fmt.Sprintf("%s #%d %s %s ", marker, task.ID, task.BucketKey, task.Priority)
+		prefix := fmt.Sprintf("%s #%d %s %s ", marker, task.ID, task.BucketKey, m.priorityLabel(task.Priority))
 		budget := clampInt(width-lipgloss.Width(prefix), 8, width)
 		dataRows = append(dataRows, prefix+truncateText(task.Title, budget))
 	}
@@ -154,14 +154,15 @@ func priorityAllowSet(values []string) map[string]struct{} {
 
 // priorityAllowed checks the priority against the configured filter
 // values (label strings supplied by config.views.{board,table}.filter
-// .priority). Resolves the priority id to its label via the registry
-// before comparison so user-defined priorities (e.g. "urgent") match the
-// strings they typed in YAML, not the underlying integer ids.
-func priorityAllowed(allowed map[string]struct{}, priority domain.Priority) bool {
+// .priority). Resolves the priority id to its label via the model's
+// priority table before comparison so user-defined priorities (e.g.
+// "urgent") match the strings they typed in YAML, not the underlying
+// integer ids.
+func (m Model) priorityAllowed(allowed map[string]struct{}, priority domain.Priority) bool {
 	if allowed == nil {
 		return true
 	}
-	_, ok := allowed[priority.Label()]
+	_, ok := allowed[m.priorityLabel(priority)]
 	return ok
 }
 
@@ -192,7 +193,7 @@ func (m Model) applyTableView() []domain.Task {
 	bucketAllowedSet := bucketAllowSet(m.views.Table.Filter.Bucket)
 	out := make([]domain.Task, 0, len(m.tasks))
 	for _, task := range m.tasks {
-		if !priorityAllowed(prioAllowed, task.Priority) {
+		if !m.priorityAllowed(prioAllowed, task.Priority) {
 			continue
 		}
 		if !bucketAllowed(bucketAllowedSet, task.BucketKey) {

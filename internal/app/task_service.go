@@ -11,13 +11,16 @@ import (
 type TaskService struct {
 	repo     TaskRepository
 	workflow *WorkflowService
+	registry *domain.EnumRegistry
 }
 
 // NewTaskService wires the validation/orchestration layer for tasks. workflow
 // owns the policy bits (default-bucket selection on Add, transition+guards on
 // Move) so the task service stays focused on input validation and delegation.
-func NewTaskService(repo TaskRepository, workflow *WorkflowService) *TaskService {
-	return &TaskService{repo: repo, workflow: workflow}
+// registry must be non-nil: priority label resolution and id validation go
+// through the supplied bundle-scoped EnumRegistry.
+func NewTaskService(repo TaskRepository, workflow *WorkflowService, registry *domain.EnumRegistry) *TaskService {
+	return &TaskService{repo: repo, workflow: workflow, registry: registry}
 }
 
 // CompositeWorkflowStore is the adapter contract a single backing store (in
@@ -34,8 +37,10 @@ type CompositeWorkflowStore interface {
 
 // NewTaskServiceFromStore is the production-path sugar: it wires WorkflowService
 // against the composite store and returns a TaskService ready for use.
-func NewTaskServiceFromStore(store CompositeWorkflowStore) *TaskService {
-	return NewTaskService(store, NewWorkflowServiceFromStore(store))
+// The registry is required and forwarded to both WorkflowService and TaskService
+// so priority lookups use the bundle-scoped tables.
+func NewTaskServiceFromStore(store CompositeWorkflowStore, registry *domain.EnumRegistry) *TaskService {
+	return NewTaskService(store, NewWorkflowServiceFromStore(store, registry), registry)
 }
 
 func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, title, description, priority, bucketKey string) (task domain.Task, err error) {
@@ -55,7 +60,7 @@ func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, ti
 		err = domain.NewError(domain.ErrValidation, "task title is required", nil)
 		return
 	}
-	priorityID, err := resolvePriorityInput(strings.TrimSpace(priority))
+	priorityID, err := s.resolvePriorityInput(strings.TrimSpace(priority))
 	if err != nil {
 		return
 	}
@@ -66,23 +71,27 @@ func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, ti
 
 // resolvePriorityInput accepts the user-supplied priority token (label
 // or empty) and returns the configured id. Empty falls back to the
-// configured default priority; non-empty is resolved via the active
-// priorities registry. Unknown labels error with ErrValidation so the
-// caller surfaces a helpful message instead of silently writing
-// PriorityZero. Lives next to Add/Edit so the input rules stay in one
-// place across both create and update paths.
-func resolvePriorityInput(label string) (domain.Priority, error) {
+// configured default priority; non-empty is resolved via the bundle-scoped
+// registry. Unknown labels error with ErrValidation so the caller surfaces
+// a helpful message instead of silently writing PriorityZero.
+func (s *TaskService) resolvePriorityInput(label string) (domain.Priority, error) {
 	if label == "" {
 		// Caller did not name a priority — defer to the configured
 		// default. Storage layer will substitute it before insert.
 		return domain.PriorityZero, nil
 	}
-	if p, ok := domain.PriorityFromLabel(label); ok {
+	if p, ok := s.registry.PriorityFromLabel(label); ok {
 		return p, nil
 	}
 	return domain.PriorityZero, domain.NewError(domain.ErrValidation,
 		"unknown priority label; must match a value in config.priorities",
 		map[string]any{"priority": label})
+}
+
+// isPriorityRegistered reports whether the given priority id is known in
+// the active table.
+func (s *TaskService) isPriorityRegistered(p domain.Priority) bool {
+	return s.registry.IsPriorityRegistered(p)
 }
 
 func (s *TaskService) List(ctx context.Context, project domain.ProjectContext, filter domain.TaskFilter) (tasks []domain.Task, err error) {
@@ -144,7 +153,7 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 		// re-checks the id is registered so a stale id (priority entry
 		// removed since the caller cached it) is rejected loud rather
 		// than silently passed through to the store.
-		if !update.Priority.IsRegistered() {
+		if !s.isPriorityRegistered(*update.Priority) {
 			err = domain.NewError(domain.ErrValidation,
 				"priority id is not in config.priorities",
 				map[string]any{"priority": int(*update.Priority)})
@@ -229,6 +238,13 @@ func (s *TaskService) Delete(ctx context.Context, project domain.ProjectContext,
 		return
 	}
 
+	// Verify the task exists before evaluating policy and guards — see Archive
+	// for rationale. Reports task_not_found correctly instead of guard_violation
+	// or permission denial for a phantom row.
+	if _, err = s.taskByID(ctx, project, taskID); err != nil {
+		return
+	}
+
 	allowed, hint, err := s.workflow.ResolveBucketPermissions(ctx, project, taskID, EntityTask, PermissionDelete)
 	if err != nil {
 		return
@@ -268,6 +284,13 @@ func (s *TaskService) Archive(ctx context.Context, project domain.ProjectContext
 		return
 	}
 
+	// Verify the task exists before evaluating guards — guards against a
+	// non-existent task would otherwise misreport as guard_violation when the
+	// real failure is task_not_found.
+	if _, err = s.taskByID(ctx, project, taskID); err != nil {
+		return
+	}
+
 	if err = s.workflow.EvaluateOperationGuards(ctx, project.ID, taskID, OperationArchive); err != nil {
 		return
 	}
@@ -297,6 +320,11 @@ func (s *TaskService) Unarchive(ctx context.Context, project domain.ProjectConte
 
 	if taskID <= 0 {
 		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+		return
+	}
+
+	// Verify the task exists before evaluating guards — see Archive for rationale.
+	if _, err = s.taskByID(ctx, project, taskID); err != nil {
 		return
 	}
 

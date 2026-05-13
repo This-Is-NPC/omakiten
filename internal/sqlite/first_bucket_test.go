@@ -17,7 +17,7 @@ func TestWorkflowServiceCreateTaskDefaultsToFirstBucket(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	bundle := testfixtures.LoadBundle(t, "kanban_three_buckets.yaml")
+	bundle, _ := testfixtures.LoadBundle(t, "kanban_three_buckets.yaml")
 	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -27,7 +27,7 @@ func TestWorkflowServiceCreateTaskDefaultsToFirstBucket(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	workflow := app.NewWorkflowServiceFromStore(store)
+	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry())
 	task, err := workflow.CreateTask(ctx, project.ID, "Nova task", "Desc", domain.Priority(2), "")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)

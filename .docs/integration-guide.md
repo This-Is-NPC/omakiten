@@ -14,20 +14,16 @@ If you need the schema reference, the full action contract, or the list of chann
 
 ---
 
-## Step 1 — Locate `omakiten.yaml`
+## Step 1 — Locate the active profile yaml
 
-The config file lives under your config root. Resolve it once and remember it:
+See [`reference/path-resolution.md`](./reference/path-resolution.md) for the full resolver contract — `$OMAKITEN_HOME` / XDG / OS defaults, `.active` resolution, `custom/` shadowing, and discovery fallthrough.
 
 ```bash
-# explicit override wins:           $OMAKITEN_HOME/config/omakiten.yaml
-# otherwise XDG default on Linux:   ~/.config/omakiten/omakiten.yaml
-# macOS:                            ~/Library/Application Support/omakiten/omakiten.yaml
-# Windows:                          %AppData%\omakiten\omakiten.yaml
-
-okt config show > /dev/null   # validates and surfaces the resolved path on errors
+cat "$HOME/.config/omakiten/config/.active"   # prints the active basename (e.g. omakase.yaml)
+okt config validate                            # runs the strict loader against the resolved path
 ```
 
-Open the file in your editor; you will be appending one block.
+Open the active file in your editor; you will be appending one block. If you want your edits to survive `mise run install` / kit refreshes, copy the file into `<config-dir>/custom/<name>.yaml` first.
 
 ---
 

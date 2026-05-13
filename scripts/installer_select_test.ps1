@@ -21,16 +21,24 @@ if ($errors -and $errors.Count -gt 0) {
 $wantedFunctions = @(
     "Resolve-HarnessSelection",
     "Select-Harnesses",
-    "Invoke-HarnessSetup"
+    "Invoke-HarnessSetup",
+    "Resolve-ConfigDir",
+    "Select-Preset",
+    "Write-ActivePreset"
+)
+$wantedVariables = @(
+    '$SupportedHarnesses',
+    '$SupportedPresets',
+    '$DefaultPreset'
 )
 
 $snippets = New-Object System.Collections.Generic.List[string]
 
-# Variable assignment for $SupportedHarnesses
+# Variable assignments for the configuration constants used by the helpers.
 $ast.FindAll({
     param($node)
     $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
-    $node.Left.Extent.Text -eq '$SupportedHarnesses'
+    $wantedVariables -contains $node.Left.Extent.Text
 }, $true) | ForEach-Object { $snippets.Add($_.Extent.Text) | Out-Null }
 
 # Function definitions
@@ -40,8 +48,9 @@ $ast.FindAll({
     $wantedFunctions -contains $node.Name
 }, $true) | ForEach-Object { $snippets.Add($_.Extent.Text) | Out-Null }
 
-if ($snippets.Count -lt ($wantedFunctions.Count + 1)) {
-    Write-Host "FAIL: extracted $($snippets.Count) snippets; expected $($wantedFunctions.Count + 1) (1 var + $($wantedFunctions.Count) functions)"
+$expected = $wantedFunctions.Count + $wantedVariables.Count
+if ($snippets.Count -lt $expected) {
+    Write-Host "FAIL: extracted $($snippets.Count) snippets; expected $expected ($($wantedVariables.Count) vars + $($wantedFunctions.Count) functions)"
     exit 1
 }
 
@@ -135,4 +144,62 @@ if ($SupportedHarnesses.Count -ne $wantCount) {
     exit 1
 }
 
-Write-Host "OK: install.ps1 harness selection helpers behave as expected."
+# --- Select-Preset honors OKT_PRESET ---
+
+$env:OKT_PRESET = "izakaya"
+try {
+    Assert-Equal (Select-Preset) "izakaya" "OKT_PRESET=izakaya honored"
+} finally {
+    Remove-Item Env:OKT_PRESET -ErrorAction SilentlyContinue
+}
+
+$env:OKT_PRESET = "shokunin"
+try {
+    Assert-Equal (Select-Preset) "shokunin" "OKT_PRESET=shokunin honored"
+} finally {
+    Remove-Item Env:OKT_PRESET -ErrorAction SilentlyContinue
+}
+
+$env:OKT_PRESET = "bogus"
+try {
+    Assert-Equal (Select-Preset 6>$null) "omakase" "OKT_PRESET=bogus falls back to default"
+} finally {
+    Remove-Item Env:OKT_PRESET -ErrorAction SilentlyContinue
+}
+
+# --- Resolve-ConfigDir precedence ---
+
+$env:OMAKITEN_HOME = "/tmp/oh"
+try {
+    Assert-Equal (Resolve-ConfigDir) "/tmp/oh/config" "OMAKITEN_HOME wins"
+} finally {
+    Remove-Item Env:OMAKITEN_HOME -ErrorAction SilentlyContinue
+}
+
+# --- Write-ActivePreset writes .active and creates the dir ---
+
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
+$env:OMAKITEN_HOME = $tmp
+try {
+    Write-ActivePreset -Preset "kaiseki" 6>$null
+    $activePath = Join-Path (Join-Path $tmp 'config') '.active'
+    if (-not (Test-Path $activePath)) {
+        Write-Host "FAIL: Write-ActivePreset did not create .active at $activePath"
+        exit 1
+    }
+    Assert-Equal (Get-Content $activePath -Raw) "kaiseki.yaml" ".active content"
+} finally {
+    Remove-Item Env:OMAKITEN_HOME -ErrorAction SilentlyContinue
+    if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
+}
+
+# --- $SupportedPresets count must match defaults/config/<preset>.yaml ---
+
+$wantPresetCount = 4
+if ($SupportedPresets.Count -ne $wantPresetCount) {
+    Write-Host "FAIL: SupportedPresets has $($SupportedPresets.Count) entries, want $wantPresetCount"
+    Write-Host "      (sync with defaults/config/<preset>.yaml)"
+    exit 1
+}
+
+Write-Host "OK: install.ps1 harness + preset selection helpers behave as expected."

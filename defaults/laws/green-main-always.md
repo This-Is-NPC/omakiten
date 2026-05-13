@@ -1,0 +1,5 @@
+---
+name: Green main always
+severity: error
+---
+Never push code that breaks the build or tests on main. Verify locally (or via a pre-push CI run) before pushing. A broken main blocks every other contributor — fix-forward or revert within 10 minutes; do not "investigate later".

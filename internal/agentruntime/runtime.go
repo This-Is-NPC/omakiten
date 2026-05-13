@@ -16,6 +16,7 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
+	"omakiten/internal/domain"
 	"omakiten/internal/events"
 	"omakiten/internal/hooks"
 	"omakiten/internal/hooks/actions"
@@ -50,27 +51,35 @@ type Runtime struct {
 	hooksEngine        *hooks.Engine
 	actionRegistry     *hooks.ActionRegistry
 	notificationAction *actions.NotificationShowAction
+	registry           *domain.EnumRegistry
 }
 
 // Open materializes the runtime: resolves paths, runs config layout
 // migration + default-file seeding, opens the sqlite store, imports the
 // bundle, and wires the agent.Service with template snapshots.
 func Open(ctx context.Context, opts Options) (*Runtime, error) {
-	configPath, err := resolvedConfigPath(opts.ConfigPath)
-	if err != nil {
-		return nil, err
-	}
 	dbPath, err := resolvedDBPath(opts.DBPath)
 	if err != nil {
 		return nil, err
 	}
 
 	cs := configstore.New()
-	rootDir := cs.ConfigRootFromYAMLPath(configPath)
+	rootDir, err := resolvedConfigRoot(opts.ConfigPath)
+	if err != nil {
+		return nil, err
+	}
 	if err := cs.MigrateLayout(rootDir); err != nil {
 		return nil, err
 	}
 	if err := cs.EnsureDefaultFiles(rootDir); err != nil {
+		return nil, err
+	}
+
+	// Resolve configPath AFTER MigrateLayout has had a chance to relocate
+	// renamed kits — otherwise the snapshot points at a just-moved root
+	// copy and Import fails with ENOENT.
+	configPath, err := resolvedConfigPath(opts.ConfigPath)
+	if err != nil {
 		return nil, err
 	}
 
@@ -84,7 +93,7 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 
-	bundle, _, err := app.NewConfigService(store, cs).Import(ctx, configPath)
+	bundle, _, enumRegistry, err := app.NewConfigService(store, cs).Import(ctx, configPath)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -137,8 +146,9 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	engine := hooks.NewEngine(hookEntries, registry, bundle.Config.Events, store)
 	engine.Start(bus)
 
-	rt := &Runtime{store: store, configPath: configPath, dbPath: dbPath, bus: bus, hooksEngine: engine, actionRegistry: registry, notificationAction: notificationAction}
+	rt := &Runtime{store: store, configPath: configPath, dbPath: dbPath, bus: bus, hooksEngine: engine, actionRegistry: registry, notificationAction: notificationAction, registry: enumRegistry}
 	rt.service = agent.NewService(store, agent.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
+	rt.service.SetRegistry(enumRegistry)
 	rt.service.SetTaskTemplateLookup(taskTemplateLookup(bundle))
 	rt.service.SetTemplateCatalog(templateCatalog(bundle))
 	rt.service.SetSkillCatalog(skillCatalog(bundle))
@@ -387,6 +397,22 @@ func resolvedConfigPath(path string) (string, error) {
 		return filepath.Abs(path)
 	}
 	return paths.ConfigFile()
+}
+
+// resolvedConfigRoot mirrors the CLI helper of the same intent: compute the
+// migration root without consulting ActiveConfigFile, so MigrateLayout can
+// run before path resolution. When the agent runtime is invoked with an
+// explicit ConfigPath, root is derived from that path; otherwise from XDG /
+// OMAKITEN_HOME defaults.
+func resolvedConfigRoot(path string) (string, error) {
+	if path != "" {
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return "", err
+		}
+		return config.ConfigRootFromYAMLPath(abs), nil
+	}
+	return paths.ConfigRoot()
 }
 
 func resolvedDBPath(path string) (string, error) {

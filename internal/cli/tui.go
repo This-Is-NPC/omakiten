@@ -65,7 +65,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 	model, err := tui.NewModel(ctx, project, tui.Repositories{
 		Tasks:        rt.store,
 		Projects:     rt.store,
-		Workflow:     app.NewWorkflowServiceFromStore(rt.store),
+		Workflow:     app.NewWorkflowServiceFromStore(rt.store, rt.registry),
 		Comments:     rt.store,
 		Dependencies: rt.store,
 		Entries:      rt.store,

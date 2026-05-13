@@ -10,7 +10,7 @@ Inherited by every subcommand (`internal/cli/root.go:NewRootCommand`):
 
 | Flag | Type | Default | Effect |
 |---|---|---|---|
-| `--config` | string | resolved | Override path to `omakiten.yaml`. Highest precedence over `$OMAKITEN_HOME` and XDG. |
+| `--config` | string | resolved | Override path to the active profile yaml (any `.yaml` under `<config-dir>/` or `<config-dir>/custom/`). Highest precedence over `.active`, `$OMAKITEN_HOME`, and XDG. |
 | `--db` | string | resolved | Override path to the SQLite database. |
 | `--project`, `-p` | string | — | Active project slug. |
 | `--project-id` | int | — | Active project id (numeric). |
@@ -19,7 +19,7 @@ Inherited by every subcommand (`internal/cli/root.go:NewRootCommand`):
 
 **Project resolution order** (`internal/project/resolver.go`): `--project-id` → `--project` → current working directory matching a registered project root.
 
-**Path resolution order** (`internal/paths/paths.go`): `--config`/`--db` flag → `$OMAKITEN_HOME` → `$XDG_CONFIG_HOME`/`$XDG_DATA_HOME` → `~/.config/omakiten` and `~/.local/share/omakiten`.
+**Path resolution** — full contract (precedence, `.active` lookup, `custom/` shadowing, discovery fallthrough, boot order) lives in [`reference/path-resolution.md`](./reference/path-resolution.md). TL;DR precedence: `--config` / `--db` flag → `$OMAKITEN_HOME` → `$XDG_CONFIG_HOME` / `$XDG_DATA_HOME` → `~/.config/omakiten` and `~/.local/share/omakiten`.
 
 ## Environment variables
 
@@ -49,11 +49,35 @@ The TUI sets `agent_model="human"` internally so its activity is filtered out of
 | `--mcp-command` | current executable | Command written into the harness config. |
 | `--mcp-dry-run` | `false` | Preview changes without writing. |
 | `--mcp-force` | `false` | Replace an existing `mcpServers.omakiten` entry. |
+| `--preset` | — | Copy an official workflow preset from `defaults/config/<name>.yaml` into `<root>/.omakiten/config/<name>.yaml` and set `.active` to that basename. Without `--root`, a Git worktree is detected by walking up from `$CWD`; outside Git, `$CWD` is used. |
+| `--preset-force` | `false` | Overwrite an existing `.omakiten` target when applying `--preset`. |
 
 ```sh
 okt init --name Omakiten --slug omakiten --root "$PWD"
 okt init --slug acme --enable-mcp --mcp-harness opencode --mcp-dry-run
+okt init --preset kaiseki --name Acme --slug acme
 ```
+
+Official presets are flat YAML starter files in `defaults/config/`: `omakase.yaml` (the canonical kit; full config + workflow), `izakaya.yaml`, `kaiseki.yaml`, and `shokunin.yaml`. Applying one writes only `.omakiten/config/<preset>.yaml` and points `.omakiten/config/.active` at it; the resolver finds it on the next invocation.
+
+---
+
+## `okt config presets` — list official workflow presets
+
+`internal/cli/config.go`. Returns the bundled preset menu as JSON.
+
+```sh
+okt config presets
+```
+
+Presets:
+
+| Preset | Style |
+|---|---|
+| `omakase` | Chef's choice: balanced backlog -> dev -> review -> done with self-branch, resume, and documentation guards. |
+| `izakaya` | Casual: backlog -> dev -> done, no guards. |
+| `kaiseki` | Multi-course: requirements -> planning -> dev -> review -> docs -> done with ritual guards. |
+| `shokunin` | Artisan: kaiseki plus tests-passing and peer-review checkpoints. |
 
 ---
 
@@ -249,7 +273,7 @@ Runs `config.ValidateBundle` against the supplied YAML (or the resolved one). Re
 
 ```sh
 okt config validate
-okt config validate ./omakiten.yaml
+okt config validate ./omakase.yaml
 ```
 
 ---
@@ -347,7 +371,7 @@ okt law list --scope persona --persona engineer
 
 ## Personas
 
-File-backed under `personas/<slug>.md`. `internal/cli/persona.go`. Wiring (skill refs) lives in `omakiten.yaml`'s `personas:` section.
+File-backed under `personas/<slug>.md`. `internal/cli/persona.go`. Wiring (skill refs) lives in the active profile yaml's `personas:` section.
 
 > `SLUG` arguments accept either the slug or the numeric id.
 
@@ -392,7 +416,7 @@ okt persona edit engineer --skill-slug go --skill-slug cli   # replaces full ski
 
 ### `okt tui` — open the terminal UI
 
-`internal/cli/tui.go`. Loads the active theme (`<root>/themes/<active>.yaml`, with `themes/custom/<active>.yaml` overriding) and starts Bubble Tea in alt-screen mode. Per-project navigation is hierarchical (`internal/tui/state.go`): three top zones — Tasks (board / table / graph), Stats (general / logs), Settings (general / laws / personas / skills / templates / tags) — plus a multi-project Home sentinel reachable via `0` or `ctrl+h`. The CLI plumbs the resolved `omakiten.yaml` path, SQLite path, and `okt` version into the TUI so Settings › General can surface them.
+`internal/cli/tui.go`. Loads the active theme (`<root>/themes/<active>.yaml`, with `themes/custom/<active>.yaml` overriding) and starts Bubble Tea in alt-screen mode. Per-project navigation is hierarchical (`internal/tui/state.go`): three top zones — Tasks (board / table / graph), Stats (general / logs), Settings (general / laws / personas / skills / templates / tags) — plus a multi-project Home sentinel reachable via `0` or `ctrl+h`. The CLI plumbs the resolved active-profile path, SQLite path, and `okt` version into the TUI so Settings › General can surface them.
 
 **Project-resolution behavior on launch:**
 

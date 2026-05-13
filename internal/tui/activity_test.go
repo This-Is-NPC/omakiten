@@ -13,6 +13,7 @@ import (
 	"omakiten/internal/domain"
 	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
+	"omakiten/internal/testfixtures"
 )
 
 func TestActivityCursorMovesAndScrolls(t *testing.T) {
@@ -42,7 +43,7 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:     app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
@@ -102,7 +103,7 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:     app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
@@ -185,7 +186,7 @@ func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:     app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
@@ -233,7 +234,7 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:     app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
@@ -303,7 +304,7 @@ func TestActivityScrollKeepsFocusedCardVisible(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:     app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
@@ -372,7 +373,7 @@ func TestActivityScrollResyncsOnResize(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:     app.NewWorkflowServiceFromStore(store),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,

@@ -38,6 +38,14 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		counter = token.ApproxCounter{}
 	}
 	yellow, red := badge.Effective()
+	priorityPairs := make([]domain.PriorityPair, len(priorities))
+	for i, p := range priorities {
+		priorityPairs[i] = domain.PriorityPair{ID: p.ID, Value: p.Value, Default: p.Default}
+	}
+	severityPairs := make([]domain.SeverityPair, len(severities))
+	for i, s := range severities {
+		severityPairs[i] = domain.SeverityPair{ID: s.ID, Value: s.Value, Default: s.Default}
+	}
 	model := Model{
 		ctx:              ctx,
 		project:          project,
@@ -52,6 +60,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		homePicker:       picker.New(picker.Single),
 		priorities:       priorities,
 		severities:       severities,
+		registry:         domain.NewEnumRegistry(priorityPairs, severityPairs),
 		markdown:         newMarkdownRenderer(tokensFromTheme(theme)),
 		markdownRendered: true,
 		notifications:    notifications.Notifications,
@@ -769,7 +778,7 @@ func (m *Model) refresh() error {
 	views := m.activeViewSettings()
 	m.views = views
 
-	query := app.NewTUIQueryService(m.repos.Tasks, m.repos.Config, m.repos.Dependencies, m.repos.Comments, m.repos.Entries, m.repos.Tags, m.repos.Editor)
+	query := app.NewTUIQueryService(m.repos.Tasks, m.repos.Config, m.repos.Dependencies, m.repos.Comments, m.repos.Entries, m.repos.Tags, m.repos.Editor, m.registry)
 	snap, err := query.Snapshot(m.ctx, m.project, domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order}, app.SnapshotOptions{IncludeArchived: m.includeArchived})
 	if err != nil {
 		return err

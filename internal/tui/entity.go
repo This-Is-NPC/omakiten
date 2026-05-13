@@ -127,7 +127,7 @@ func (m *Model) openEntityCreate(kind entityKind) tea.Cmd {
 		return nil
 	}
 	name := nextScaffoldName(kind, m.snapshot())
-	path, err := scaffoldEntity(m.ctx, kind, m.repos, name)
+	path, err := m.scaffoldEntity(m.ctx, kind, m.repos, name)
 	if err != nil {
 		m.status = err.Error()
 		return nil
@@ -292,7 +292,7 @@ func (m *Model) deleteEntity(kind entityKind, slug string) {
 	var err error
 	switch kind {
 	case entityKindLaw:
-		err = app.NewLawService(m.repos.Config, m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger).Remove(m.ctx, slug)
+		err = app.NewLawService(m.repos.Config, m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger, m.registry).Remove(m.ctx, slug)
 	case entityKindSkill:
 		err = app.NewSkillService(m.repos.Config, m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger).Remove(m.ctx, slug)
 	case entityKindPersona:

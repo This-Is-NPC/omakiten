@@ -76,7 +76,7 @@ func TestMoveTaskEnforcesWorkflow(t *testing.T) {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	workflow := app.NewWorkflowServiceFromStore(store)
+	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry())
 
 	tests := []struct {
 		name    string
@@ -240,7 +240,7 @@ func TestStoreActiveWorkflow(t *testing.T) {
 // production loads from per-entity folders.
 func sqliteTestBundle(t *testing.T) config.Bundle {
 	t.Helper()
-	bundle := testfixtures.LoadBundle(t, "default_three_buckets.yaml")
+	bundle, _ := testfixtures.LoadBundle(t, "default_three_buckets.yaml")
 	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
 	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
 	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}}
@@ -548,7 +548,7 @@ func TestMoveTaskGuardBlockersIn(t *testing.T) {
 	}
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	workflow := app.NewWorkflowServiceFromStore(store)
+	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry())
 
 	blocker, _ := store.CreateTask(ctx, project.ID, "Blocker", "", domain.Priority(2), "backlog")
 	main, _ := store.CreateTask(ctx, project.ID, "Main", "", domain.Priority(2), "backlog")
@@ -597,7 +597,7 @@ func TestMoveTaskGuardBlockersInNoBlockers(t *testing.T) {
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog")
-	workflow := app.NewWorkflowServiceFromStore(store)
+	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry())
 
 	// No blockers — guard passes
 	moved, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
@@ -623,7 +623,7 @@ func TestMoveTaskGuardCommentsMin(t *testing.T) {
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog")
-	workflow := app.NewWorkflowServiceFromStore(store)
+	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry())
 
 	// Guard fails: 0 comments
 	_, err = workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
@@ -668,7 +668,7 @@ func TestMoveTaskNoGuardUnaffected(t *testing.T) {
 	if _, err := store.AddTaskDependency(ctx, project.ID, task.ID, blocker.ID); err != nil {
 		t.Fatalf("AddTaskDependency() error = %v", err)
 	}
-	workflow := app.NewWorkflowServiceFromStore(store)
+	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry())
 
 	// Transition has no guard — move succeeds even with pending blocker
 	moved, err := workflow.MoveTask(ctx, project.Context(), task.ID, "dev")
@@ -694,7 +694,7 @@ func TestMoveTaskGuardCommentsTagged(t *testing.T) {
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog")
-	workflow := app.NewWorkflowServiceFromStore(store)
+	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry())
 
 	// Guard fails: no comments at all
 	_, err = workflow.MoveTask(ctx, project.Context(), task.ID, "dev")

@@ -8,6 +8,7 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/testfixtures"
 )
 
 // fullTransitionBundle wires every consecutive transition (1->2->3) so
@@ -96,7 +97,7 @@ func TestCreateTaskEmitsTaskCreatedEvent(t *testing.T) {
 func TestMoveTaskEmitsTaskMovedAndCompleted(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithFullTransitions(ctx, t)
-	workflow := app.NewWorkflowServiceFromStore(store)
+	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry())
 
 	task, err := store.CreateTask(ctx, project.ID, "to move", "", domain.Priority(2), "backlog")
 	if err != nil {

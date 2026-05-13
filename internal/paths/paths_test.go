@@ -93,16 +93,24 @@ func TestConfigRootDoesNotIncludeConfigSubdir(t *testing.T) {
 	}
 }
 
-func TestActiveConfigFileFallsBackToDefault(t *testing.T) {
+func TestActiveConfigFileDiscoversFirstYAML(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv(HomeEnv, tmp)
 	t.Setenv("XDG_CONFIG_HOME", "")
+
+	configDir := filepath.Join(tmp, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "alpha.yaml"), []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
 
 	got, err := ActiveConfigFile()
 	if err != nil {
 		t.Fatalf("ActiveConfigFile() error = %v", err)
 	}
-	want := filepath.Join(tmp, "config", DefaultConfigFilename)
+	want := filepath.Join(tmp, "config", "alpha.yaml")
 	if got != want {
 		t.Fatalf("ActiveConfigFile() = %q, want %q", got, want)
 	}
@@ -113,6 +121,15 @@ func TestSetActiveConfigPersistsAcrossLookups(t *testing.T) {
 	t.Setenv(HomeEnv, tmp)
 	t.Setenv("XDG_CONFIG_HOME", "")
 
+	configDir := filepath.Join(tmp, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	// Create the yaml the .active state will name — the resolver now
+	// validates existence before returning the named path.
+	if err := os.WriteFile(filepath.Join(configDir, "config-custom-user-001.yaml"), []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
 	if err := SetActiveConfig("config-custom-user-001.yaml"); err != nil {
 		t.Fatalf("SetActiveConfig() error = %v", err)
 	}
@@ -120,14 +137,70 @@ func TestSetActiveConfigPersistsAcrossLookups(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ActiveConfigFile() error = %v", err)
 	}
-	want := filepath.Join(tmp, "config", "config-custom-user-001.yaml")
+	want := filepath.Join(configDir, "config-custom-user-001.yaml")
 	if got != want {
 		t.Fatalf("ActiveConfigFile() = %q, want %q", got, want)
 	}
 
 	// State file is at the expected location for manual inspection.
-	if _, err := os.Stat(filepath.Join(tmp, "config", ActiveConfigStateFile)); err != nil {
+	if _, err := os.Stat(filepath.Join(configDir, ActiveConfigStateFile)); err != nil {
 		t.Fatalf("state file missing: %v", err)
+	}
+}
+
+func TestActiveConfigFileFallsBackWhenActiveNameMissingAtRoot(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv(HomeEnv, tmp)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	configDir := filepath.Join(tmp, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	// .active names a profile that does not exist anywhere; a working
+	// preset lives at the root. The resolver must degrade to discovery
+	// rather than return the stale named path.
+	if err := os.WriteFile(filepath.Join(configDir, "omakase.yaml"), []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := SetActiveConfig("ghost.yaml"); err != nil {
+		t.Fatalf("SetActiveConfig() error = %v", err)
+	}
+
+	got, err := ActiveConfigFile()
+	if err != nil {
+		t.Fatalf("ActiveConfigFile() error = %v", err)
+	}
+	want := filepath.Join(configDir, "omakase.yaml")
+	if got != want {
+		t.Fatalf("ActiveConfigFile() = %q, want %q (discovery should win when .active is stale)", got, want)
+	}
+}
+
+func TestActiveConfigFileFallsBackToCustomWhenStaleAndRootEmpty(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv(HomeEnv, tmp)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	configDir := filepath.Join(tmp, "config")
+	customDir := filepath.Join(configDir, "custom")
+	if err := os.MkdirAll(customDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(customDir, "omakase.yaml"), []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := SetActiveConfig("ghost.yaml"); err != nil {
+		t.Fatalf("SetActiveConfig() error = %v", err)
+	}
+
+	got, err := ActiveConfigFile()
+	if err != nil {
+		t.Fatalf("ActiveConfigFile() error = %v", err)
+	}
+	want := filepath.Join(customDir, "omakase.yaml")
+	if got != want {
+		t.Fatalf("ActiveConfigFile() = %q, want %q (discovery should reach custom/ when root is empty)", got, want)
 	}
 }
 
@@ -237,22 +310,31 @@ func TestDataDirPrecedence(t *testing.T) {
 }
 
 func TestConfigAndDatabaseFileNamesUnderOmakitenHome(t *testing.T) {
-	t.Setenv(HomeEnv, "/srv/omakiten")
+	tmp := t.TempDir()
+	t.Setenv(HomeEnv, tmp)
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("XDG_DATA_HOME", "")
+
+	configDir := filepath.Join(tmp, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "omakase.yaml"), []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
 
 	cfg, err := ConfigFile()
 	if err != nil {
 		t.Fatalf("ConfigFile() error = %v", err)
 	}
-	if want := filepath.Join("/srv/omakiten", "config", "omakiten.yaml"); cfg != want {
+	if want := filepath.Join(tmp, "config", "omakase.yaml"); cfg != want {
 		t.Fatalf("ConfigFile() = %q, want %q", cfg, want)
 	}
 	db, err := DatabaseFile()
 	if err != nil {
 		t.Fatalf("DatabaseFile() error = %v", err)
 	}
-	if want := filepath.Join("/srv/omakiten", "data", "omakiten.db"); db != want {
+	if want := filepath.Join(tmp, "data", "omakiten.db"); db != want {
 		t.Fatalf("DatabaseFile() = %q, want %q", db, want)
 	}
 }

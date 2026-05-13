@@ -3,12 +3,15 @@ package agent
 import "omakiten/internal/domain"
 
 type TaskSummary struct {
-	ID          int64           `json:"id"`
-	Title       string          `json:"title"`
-	Description string          `json:"description,omitempty"`
-	BucketKey   string          `json:"bucket_key,omitempty"`
-	Priority    domain.Priority `json:"priority,omitempty"`
-	State       string          `json:"state,omitempty"`
+	ID          int64  `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+	BucketKey   string `json:"bucket_key,omitempty"`
+	// Priority is the configured priority label resolved via the
+	// bundle-scoped EnumRegistry at projection time. Empty string when
+	// the task's priority id is no longer in the active table.
+	Priority string `json:"priority,omitempty"`
+	State    string `json:"state,omitempty"`
 }
 
 type ContinueTaskInput struct {
@@ -122,8 +125,18 @@ type EditTaskResponse struct {
 	Task    TaskSummary    `json:"task"`
 }
 
-func taskSummary(task domain.Task) TaskSummary {
-	s := TaskSummary{ID: task.ID, Title: task.Title, Description: task.Description, BucketKey: task.BucketKey, Priority: task.Priority}
+// taskSummary projects a domain.Task into the MCP wire shape, resolving the
+// priority label via the supplied registry. registry is nil-safe — Priority
+// is left empty when no registry is available, so consumers can still parse
+// the rest of the shape.
+func taskSummary(task domain.Task, registry *domain.EnumRegistry) TaskSummary {
+	s := TaskSummary{
+		ID:          task.ID,
+		Title:       task.Title,
+		Description: task.Description,
+		BucketKey:   task.BucketKey,
+		Priority:    registry.PriorityLabel(task.Priority),
+	}
 	if task.State != "" && task.State != domain.TaskStateActive {
 		s.State = string(task.State)
 	}

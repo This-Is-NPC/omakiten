@@ -39,6 +39,7 @@ type runtime struct {
 	bus                events.Bus
 	hooksEngine        *hooks.Engine
 	notificationAction *actions.NotificationShowAction
+	registry           *domain.EnumRegistry
 }
 
 func (r *runtime) WithActivityRepo(ctx context.Context) context.Context {
@@ -68,7 +69,7 @@ func (r *runtime) skillService() *app.SkillService {
 
 func (r *runtime) lawService() *app.LawService {
 	store := configstore.New()
-	return app.NewLawService(r.store, r.bundleEditor(), store, store)
+	return app.NewLawService(r.store, r.bundleEditor(), store, store, r.registry)
 }
 
 func (r *runtime) personaService() *app.PersonaService {
@@ -77,7 +78,7 @@ func (r *runtime) personaService() *app.PersonaService {
 }
 
 func (r *runtime) contextService() *app.ContextService {
-	return app.NewContextService(r.store, r.store, r.store, r.store, r.store, r.tokenCounter())
+	return app.NewContextService(r.store, r.store, r.store, r.store, r.store, r.tokenCounter(), r.registry)
 }
 
 func (r *runtime) tokenCounter() token.Counter {
@@ -93,7 +94,7 @@ func NewRootCommand(version string) *cobra.Command {
 
 Path resolution (highest to lowest precedence):
   1. --config / --db flags
-  2. $OMAKITEN_HOME — pins config to <HOME>/config/omakiten.yaml and data to <HOME>/data/omakiten.db
+  2. $OMAKITEN_HOME — pins config to <HOME>/config/<active>.yaml and data to <HOME>/data/omakiten.db
   3. $XDG_CONFIG_HOME / $XDG_DATA_HOME
   4. ~/.config/omakiten and ~/.local/share/omakiten`,
 		Version:       version,
@@ -129,10 +130,6 @@ Path resolution (highest to lowest precedence):
 }
 
 func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*runtime, error) {
-	configPath, err := o.resolvedConfigPath()
-	if err != nil {
-		return nil, err
-	}
 	dbPath, err := o.resolvedDBPath()
 	if err != nil {
 		return nil, err
@@ -140,13 +137,26 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 
 	cs := configstore.New()
 	if materializeConfig {
-		rootDir := cs.ConfigRootFromYAMLPath(configPath)
+		rootDir, err := o.resolvedConfigRoot()
+		if err != nil {
+			return nil, err
+		}
 		if err := cs.MigrateLayout(rootDir); err != nil {
 			return nil, err
 		}
 		if err := cs.EnsureDefaultFiles(rootDir); err != nil {
 			return nil, err
 		}
+	}
+
+	// Resolve configPath AFTER MigrateLayout has had a chance to relocate
+	// renamed kits — otherwise a snapshot taken pre-migration points at
+	// the just-moved root copy and Import fails with ENOENT. Non-materialize
+	// callers (e.g. `okt config validate`) skip migration and accept the raw
+	// resolver output.
+	configPath, err := o.resolvedConfigPath()
+	if err != nil {
+		return nil, err
 	}
 
 	store, err := sqlite.Open(ctx, dbPath)
@@ -161,12 +171,13 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		// (priority/severity) BEFORE writing to SQLite, so the rest
 		// of the CLI invocation sees a fully wired runtime. The
 		// registries live for the duration of the process.
-		bundle, _, err := app.NewConfigService(store, cs).Import(ctx, configPath)
+		bundle, _, enumRegistry, err := app.NewConfigService(store, cs).Import(ctx, configPath)
 		if err != nil {
 			_ = store.Close()
 			return nil, err
 		}
 		emitBundleWarnings(bundle)
+		rt.registry = enumRegistry
 
 		bus := events.NewInProcessBus(bundle.Config.Events)
 		registry := hooks.NewActionRegistry()
@@ -249,6 +260,22 @@ func (o *runtimeOptions) resolvedConfigPath() (string, error) {
 		return filepath.Abs(o.configPath)
 	}
 	return paths.ConfigFile()
+}
+
+// resolvedConfigRoot returns the directory MigrateLayout / EnsureDefaultFiles
+// operate on. Computed without consulting ActiveConfigFile so migration can
+// run before path resolution — otherwise a stale pre-migration configPath
+// would survive into Import. When --config is supplied, root is derived from
+// the flag path; otherwise from the XDG / OMAKITEN_HOME defaults.
+func (o *runtimeOptions) resolvedConfigRoot() (string, error) {
+	if o.configPath != "" {
+		abs, err := filepath.Abs(o.configPath)
+		if err != nil {
+			return "", err
+		}
+		return config.ConfigRootFromYAMLPath(abs), nil
+	}
+	return paths.ConfigRoot()
 }
 
 func (o *runtimeOptions) resolvedDBPath() (string, error) {

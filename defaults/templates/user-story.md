@@ -1,10 +1,11 @@
 ---
 name: User Story
-description: Task scaffold — Description, AC, DoD, Scope, Feasibility.
+description: Task scaffold — Description, AC, DoD, INVEST check, Scope, Feasibility.
 entity: task
 default: task
 laws:
   - template-fidelity
+  - invest-stories
 ---
 ## Description
 As a [role], I want [capability] so that [benefit].
@@ -14,6 +15,16 @@ As a [role], I want [capability] so that [benefit].
 
 ## Definition of done
 - [ ]
+
+## INVEST check
+- [ ] **Independent** — can ship without other unfinished work
+- [ ] **Negotiable** — leaves room for the team to shape the solution
+- [ ] **Valuable** — clear benefit to a real user named above
+- [ ] **Estimable** — the team can size the work
+- [ ] **Small** — fits a sprint or shorter; split if it doesn't
+- [ ] **Testable** — acceptance criteria are verifiable
+
+Flag the failing letters when any check stays unticked; rework the story before filing.
 
 ## Scope
 **In:** -

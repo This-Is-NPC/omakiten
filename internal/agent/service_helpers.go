@@ -34,10 +34,10 @@ func RegisterStopWords(words []string) {
 	activeStopWords.Store(&set)
 }
 
-func taskSummaries(tasks []domain.Task) []TaskSummary {
+func taskSummaries(tasks []domain.Task, registry *domain.EnumRegistry) []TaskSummary {
 	out := make([]TaskSummary, 0, len(tasks))
 	for _, task := range tasks {
-		out = append(out, taskSummary(task))
+		out = append(out, taskSummary(task, registry))
 	}
 	return out
 }
@@ -132,7 +132,7 @@ func bucketCounts(workflow domain.Workflow, tasks []domain.Task) []BucketCount {
 // workflow's final bucket, ordered by id ASC. Same data-driven final-bucket
 // resolution as pendingCount — no hardcoded "done" — so the suggestion
 // list survives a bucket rename.
-func likelyNextWork(workflow domain.Workflow, tasks []domain.Task, limit int) []TaskSummary {
+func likelyNextWork(workflow domain.Workflow, tasks []domain.Task, limit int, registry *domain.EnumRegistry) []TaskSummary {
 	final := workflow.FinalBucketKey()
 	candidates := make([]domain.Task, 0, len(tasks))
 	for _, task := range tasks {
@@ -144,10 +144,10 @@ func likelyNextWork(workflow domain.Workflow, tasks []domain.Task, limit int) []
 	if limit > 0 && len(candidates) > limit {
 		candidates = candidates[:limit]
 	}
-	return taskSummaries(candidates)
+	return taskSummaries(candidates, registry)
 }
 
-func blockedWork(tasks []domain.Task, dependencies []domain.TaskDependency) []TaskSummary {
+func blockedWork(tasks []domain.Task, dependencies []domain.TaskDependency, registry *domain.EnumRegistry) []TaskSummary {
 	blocked := map[int64]struct{}{}
 	for _, dependency := range dependencies {
 		blocked[dependency.TaskID] = struct{}{}
@@ -155,7 +155,7 @@ func blockedWork(tasks []domain.Task, dependencies []domain.TaskDependency) []Ta
 	out := []TaskSummary{}
 	for _, task := range tasks {
 		if _, ok := blocked[task.ID]; ok {
-			out = append(out, taskSummary(task))
+			out = append(out, taskSummary(task, registry))
 		}
 	}
 	return out
@@ -239,7 +239,7 @@ func taskTitleAndDescription(title, description string) (string, string) {
 	return line, description
 }
 
-func similarTasks(query string, tasks []domain.Task, limit int) []TaskSummary {
+func similarTasks(query string, tasks []domain.Task, limit int, registry *domain.EnumRegistry) []TaskSummary {
 	queryWords := wordSet(query)
 	if len(queryWords) == 0 {
 		return nil
@@ -273,7 +273,7 @@ func similarTasks(query string, tasks []domain.Task, limit int) []TaskSummary {
 	}
 	out := make([]TaskSummary, 0, len(matches))
 	for _, match := range matches {
-		out = append(out, taskSummary(match.task))
+		out = append(out, taskSummary(match.task, registry))
 	}
 	return out
 }

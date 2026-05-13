@@ -11,21 +11,17 @@ import (
 	"omakiten/defaults"
 )
 
-// configDefaultFilename mirrors paths.DefaultConfigFilename without forcing a
-// dependency from the config package onto paths. Keep in sync.
-const configDefaultFilename = "omakiten.yaml"
-
 // MigrateLayout normalizes a config root from any prior layout to the current
 // one, idempotently. Layout history:
 //
-//   - v0 (flat, XDG/default mode): omakiten.yaml + entity folders at <root>/.
+//   - v0 (flat, XDG/default mode): *.yaml + entity folders at <root>/.
 //   - v1 (early OMAKITEN_HOME mode): yaml + entity folders all under <root>/config/.
-//   - v2 (current): <root>/config/omakiten.yaml + entity folders at <root>/<kind>/
+//   - v2 (current): <root>/config/*.yaml + entity folders at <root>/<kind>/
 //     with a custom/ subtree under each.
 //
 // Effects on call:
 //
-//   - If <root>/omakiten.yaml exists, move it to <root>/config/omakiten.yaml.
+//   - If <root>/*.yaml exists, move every .yaml into <root>/config/.
 //   - If <root>/config/<kind>/ exists for a known kind, move its contents up to
 //     <root>/<kind>/ (creating the destination if needed).
 //   - For each entity kind, files whose filename does not match an embedded
@@ -56,27 +52,50 @@ func MigrateLayout(rootDir string) error {
 }
 
 func migrateYAML(rootDir string) error {
-	legacy := filepath.Join(rootDir, "omakiten.yaml")
-	current := filepath.Join(rootDir, "config", "omakiten.yaml")
+	legacyDir := rootDir
+	currentDir := filepath.Join(rootDir, "config")
 
-	if _, err := os.Stat(legacy); err != nil {
+	entries, err := os.ReadDir(legacyDir)
+	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
 	}
-	if _, err := os.Stat(current); err == nil {
-		// New location already populated — drop the stale flat copy.
-		return os.Remove(legacy)
-	} else if !os.IsNotExist(err) {
-		return err
+
+	var yamlFiles []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasSuffix(strings.ToLower(name), ".yaml") {
+			yamlFiles = append(yamlFiles, name)
+		}
+	}
+	if len(yamlFiles) == 0 {
+		return nil
 	}
 
-	if err := os.MkdirAll(filepath.Join(rootDir, "config"), 0o755); err != nil {
+	if err := os.MkdirAll(currentDir, 0o755); err != nil {
 		return fmt.Errorf("create config/: %w", err)
 	}
-	if err := os.Rename(legacy, current); err != nil {
-		return fmt.Errorf("move omakiten.yaml: %w", err)
+
+	for _, name := range yamlFiles {
+		legacy := filepath.Join(legacyDir, name)
+		current := filepath.Join(currentDir, name)
+		if _, err := os.Stat(current); err == nil {
+			// New location already populated — drop the stale flat copy.
+			if err := os.Remove(legacy); err != nil {
+				return fmt.Errorf("remove stale %s: %w", legacy, err)
+			}
+			continue
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.Rename(legacy, current); err != nil {
+			return fmt.Errorf("move %s: %w", legacy, err)
+		}
 	}
 	return nil
 }
@@ -182,12 +201,37 @@ func segregateUserCustoms(rootDir string) error {
 
 // migrateLegacyTemplateBinding rewrites the v3 template binding (frontmatter
 // `default: task` on the template file itself) from the v2 binding
-// (`config.templates.task: <slug>` in omakiten.yaml). Idempotent: if the
-// yaml has no legacy key, returns nil. Permissive YAML parse is used here
+// (`config.templates.task: <slug>` in the active yaml). Idempotent: if a
+// yaml has no legacy key, it is skipped. Permissive YAML parse is used here
 // because the strict loader would reject the unknown `templates` field
-// after the schema removal.
+// after the schema removal. The migration runs on every .yaml in config/
+// so that all profiles are cleaned up regardless of which one is active.
 func migrateLegacyTemplateBinding(rootDir string) error {
-	yamlPath := filepath.Join(rootDir, "config", "omakiten.yaml")
+	configDir := filepath.Join(rootDir, "config")
+	entries, err := os.ReadDir(configDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read %s: %w", configDir, err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(strings.ToLower(name), ".yaml") {
+			continue
+		}
+		yamlPath := filepath.Join(configDir, name)
+		if err := migrateLegacyTemplateBindingInFile(rootDir, yamlPath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func migrateLegacyTemplateBindingInFile(rootDir, yamlPath string) error {
 	raw, err := os.ReadFile(yamlPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -369,11 +413,10 @@ func writeDefaultIntoTemplateFrontmatter(path, defaultKind string) error {
 	return WriteAtomic(path, updated)
 }
 
-// segregateUserConfigProfiles relocates yaml profiles other than the
-// canonical default into <config-dir>/custom, mirroring the entity folder
-// convention. The canonical default `omakiten.yaml` stays at the root (it
-// is overwritten by every refresh); state files (`.active`) and any non-yaml
-// content at the root are left untouched.
+// segregateUserConfigProfiles relocates user-authored yaml profiles into
+// <config-dir>/custom, mirroring the entity folder convention. Official config
+// profiles shipped in defaults/config stay at the config root with
+// omakiten.yaml because they are overwritten by default refreshes.
 func segregateUserConfigProfiles(rootDir string) error {
 	configDir := filepath.Join(rootDir, "config")
 	entries, err := os.ReadDir(configDir)
@@ -383,13 +426,17 @@ func segregateUserConfigProfiles(rootDir string) error {
 		}
 		return fmt.Errorf("read %s: %w", configDir, err)
 	}
+	officialProfiles, err := embeddedDefaultFilenames("config")
+	if err != nil {
+		return err
+	}
 	customDir := filepath.Join(configDir, "custom")
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
-		if name == configDefaultFilename {
+		if _, isOfficial := officialProfiles[name]; isOfficial {
 			continue
 		}
 		if !strings.HasSuffix(strings.ToLower(name), ".yaml") {

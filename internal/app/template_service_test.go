@@ -42,7 +42,7 @@ func TestTemplateServiceSetDefaultRewritesFrontmatter(t *testing.T) {
 		t.Fatalf("WriteFile(beta) = %v", err)
 	}
 
-	bundle := testfixtures.LoadBundle(t, "with_project.yaml")
+	bundle, _ := testfixtures.LoadBundle(t, "with_project.yaml")
 	cs := configstore.New()
 	if err := cs.SaveBundle(configPath, bundle); err != nil {
 		t.Fatalf("SaveBundle = %v", err)
@@ -104,7 +104,7 @@ func TestTemplateServiceSetDefaultClears(t *testing.T) {
 		t.Fatalf("WriteFile(only) = %v", err)
 	}
 
-	bundle := testfixtures.LoadBundle(t, "with_project.yaml")
+	bundle, _ := testfixtures.LoadBundle(t, "with_project.yaml")
 	cs := configstore.New()
 	if err := cs.SaveBundle(configPath, bundle); err != nil {
 		t.Fatalf("SaveBundle = %v", err)

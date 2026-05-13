@@ -23,7 +23,13 @@ curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install
 irm https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.ps1 | iex
 ```
 
-The installer asks which AI agents you use and wires Omakiten into each via MCP — see the [MCP Guide](.docs/mcp-guide.md#setup) for the harness list and re-running setup later. Then register your first project: `okt init --name MyProject --slug my-project`.
+The installer asks which AI agents you use and wires Omakiten into each via MCP — see the [MCP Guide](.docs/mcp-guide.md#setup) for the harness list and re-running setup later. It also asks which workflow preset to activate (defaults to `omakase`); pick a different one with `OKT_PRESET=<name>` or via the interactive prompt — see [Workflow Presets](#workflow-presets) below. Then register your first project:
+
+```bash
+okt init --name MyProject --slug my-project
+# or pin a different preset per-project:
+okt init --name MyProject --slug my-project --preset shokunin
+```
 
 ## How you work with it
 
@@ -36,8 +42,8 @@ Eight prompts ship as MCP prompts and work in any harness that supports them. Th
 | Prompt | When to use it |
 |---|---|
 | `/okt` | **Start of a session** loads project identity, active workflow, pending count, and the next-step suggestion so the agent stops guessing what's already happening. |
-| `/okt-imagine` | **Brainstorming before any task exists** the agent grounds itself with project state, asks clarifying questions, and sketches hypotheses. |
-| `/okt-create <description>` | **Creating a task with duplicate detection** the agent first checks for similar/related work and asks to confirm before creating. |
+| `/okt-imagine` | **PLAN phase — discovery before any task exists** the product-owner persona interrogates you via 5W2H (What / Why / Who / When / Where / How / How much), frames success in SMART terms, and surfaces gaps before the task is filed. |
+| `/okt-create <description>` | **PLAN → DO handoff — formalize the imagined work** the agent runs duplicate detection, asks to confirm, then files the task with an INVEST-checked user story and prioritization rationale (MoSCoW / RICE) when alternatives exist. |
 | `/okt-resume` | **Coming back to a project after a pause** surfaces the most relevant work to pick up next, including blocked items and recent handoff context. |
 | `/okt-continue <task_id>` | **Resuming a specific task** pulls its dependencies, comments, workflow position, and recent context in one shot. |
 | `/okt-implement` | **Executing approved work** runs the engineer's implement loop with bounded self-review, conventional commits, and self-report on retried errors. |
@@ -82,6 +88,23 @@ Context dumps are tiered (level 1–3) and capped at a token budget you set. You
 
 Define rules your agent must follow, give it personas with curated skill sets, set up templates for tasks/PRs/comments, declare workflow defaults and per-bucket CRUD policy, and reshape domain enums (priorities ship as a configurable id↔value table) — all in plain YAML and Markdown under your config directory. Edit them, version them, share them with a teammate by copying a folder. → [Configuration Guide](.docs/configuration-guide.md)
 
+### Workflow presets
+
+Four official presets ship under `defaults/config/`. Each one is a different **process discipline** — they do not prescribe architecture, only how the team works through the development cycle.
+
+| Preset | Methodology | When to use |
+|---|---|---|
+| **omakase** | Trunk-based + CI + DORA + TDD + Conventional Commits + Boy-Scout cleanup | The balanced default. Mainstream professional software work. |
+| **izakaya** | Lean Startup + XP Spike + Tracer Bullet + Walking Skeleton | Spikes, prototypes, side-projects. Minimum ceremony. |
+| **kaiseki** | Staged delivery (PMBOK-flavored) with formal sign-offs + decision records + peer review | Planned features in a serious codebase. Architecture-agnostic. |
+| **shokunin** | Site Reliability Engineering + Pre-mortem + Multi-reviewer change control + Blameless postmortem | Regulated environments, irreversible changes, audit-trail-mandatory work. |
+
+The installer asks which one to activate at install time (defaults to omakase). Switch later from the TUI Settings › Config picker, with `okt init --preset <name>` on a new project, or by editing `~/.config/omakiten/config/.active`. List the menu via `okt config presets`.
+
+Every preset's `okt-imagine` interrogates you via 5W2H (What / Why / Who / When / Where / How / How much) so you understand what you're building before any code is planned. Success criteria land in SMART form; priorities (when alternatives exist) record as MoSCoW or RICE. The `okt-*` cycle maps to Plan-Do-Check-Act — see the [Workflow Guide § PDCA mapping](.docs/workflow-guide.md#pdca-mapping--the-cycle-behind-every-preset).
+
+Authoring your own preset is a first-class path. The agent can orient itself on the active configuration layout via the `/okt-config` MCP prompt — frontmatter shapes, wiring, guard kinds, and the naming convention all live in the orientation template the agent fetches via `templates.show config-orientation`. The full picker / fork recipe sits in the [Workflow Guide](.docs/workflow-guide.md).
+
 ### Local-first, by design
 
 Your tasks, comments, dependencies, errors, and fixes live in a SQLite file in your home directory. No account. No telemetry. No cloud.
@@ -97,7 +120,7 @@ The full MCP surface (36 tools, 2 resources, 8 prompts) is documented in the [MC
 **Reference**
 
 - [Architecture & Tech Stack](.docs/architecture.md)
-- [Requirements & Behavior Map](.docs/requirements.md)
+- [Requirements & Behavior Map](.docs/_generated/requirements.md)
 - [Why Omakiten?](.docs/why_omakiten.md)
 
 **User guides**
@@ -106,6 +129,7 @@ The full MCP surface (36 tools, 2 resources, 8 prompts) is documented in the [MC
 - [TUI Guide](.docs/tui-guide.md)
 - [MCP Guide](.docs/mcp-guide.md)
 - [Configuration Guide](.docs/configuration-guide.md)
+- [Workflow Guide — presets and authoring your own](.docs/workflow-guide.md)
 - [Workflow Guards Guide](.docs/guards-guide.md)
 - [Theming Guide](.docs/theming-guide.md)
 - [Data Model Guide](.docs/data-model-guide.md)

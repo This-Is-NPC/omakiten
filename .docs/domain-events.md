@@ -22,7 +22,7 @@ referencing values outside it.
 | `task.created`        | task                    | `Store.CreateTask`                                            | `{bucket}` (priority/title implicit on the task row)           | cli / mcp / tui   | true        |
 | `task.moved`          | task                    | `Store.MoveTask` when bucket changes                          | `{from, to}`                                                   | cli / mcp / tui   | true        |
 | `task.completed`      | task                    | `WorkflowService.MoveTask` into the final bucket              | `{bucket}`                                                     | cli / mcp / tui   | true        |
-| `task.edited`         | task                    | `Store.EmitTaskEditedEvent` after `UpdateTask`                | `{title?,description?,priority?}` each as `{from,to}`          | cli / mcp / tui   | true        |
+| `task.edited`         | task                    | `Store.EmitTaskEditedEvent` after `UpdateTask`                | `{title?,description?,priority?}` each as `{from,to}`; `priority.from`/`priority.to` are integer priority ids (resolve via `EnumRegistry` at the consumer) | cli / mcp / tui   | true        |
 | `task.removed`        | system (project-scoped) | `Store.HardDeleteTask`                                        | `{project_id, task_id, title, bucket_key, state}`              | cli / mcp / tui   | true        |
 | `task.archived`       | task                    | `Store.SetTaskState(archived)`                                | `{from_bucket, to_bucket, from_state, to_state}`               | cli / mcp / tui   | true        |
 | `task.unarchived`     | task                    | `Store.SetTaskState(active)`                                  | `{from_bucket, to_bucket, from_state, to_state}`               | cli / mcp / tui   | true        |
@@ -116,7 +116,7 @@ on whatever value lands in the payload.
 ## Configuration
 
 `config.events` controls per-event-type behaviour. See
-`defaults/omakiten.yaml::config.events` for the canonical block. The
+`defaults/config/omakase.yaml::config.events` for the canonical block. The
 shape:
 
 ```yaml
@@ -177,7 +177,7 @@ that decision inside `hooks.Engine`.
 
 ## Hooks engine
 
-Authors declare hooks in `omakiten.yaml::config.hooks`:
+Authors declare hooks in the active profile yaml under `config.hooks`:
 
 ```yaml
 config:
@@ -210,6 +210,6 @@ The goroutine:
 (missing action, payload non-match, hook channel gated false) do not
 emit it — the event records what happened, not what was tried.
 
-Mutating `omakiten.yaml::config.hooks` requires restarting the app for
+Mutating `config.hooks` in the active profile yaml requires restarting the app for
 changes to take effect; the bundle is read once at startup like every
 other config block.

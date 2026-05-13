@@ -11,7 +11,7 @@ func (s *Service) AddContext(ctx context.Context, input AddContextInput) (Contex
 	if err != nil {
 		return ContextResponse{}, err
 	}
-	entry, err := app.NewContextService(s.repo, s.repo, s.repo, s.repo, s.repo, s.counter).Add(ctx, project, input.Body)
+	entry, err := app.NewContextService(s.repo, s.repo, s.repo, s.repo, s.repo, s.counter, s.registry).Add(ctx, project, input.Body)
 	if err != nil {
 		return ContextResponse{}, err
 	}
@@ -31,7 +31,7 @@ func (s *Service) DumpContext(ctx context.Context, input DumpContextInput) (Dump
 		}
 		level = settings.DefaultLevel
 	}
-	dump, err := app.NewContextService(s.repo, s.repo, s.repo, s.repo, s.repo, s.counter).Dump(ctx, project, level)
+	dump, err := app.NewContextService(s.repo, s.repo, s.repo, s.repo, s.repo, s.counter, s.registry).Dump(ctx, project, level)
 	if err != nil {
 		return DumpContextResponse{}, err
 	}
@@ -42,7 +42,7 @@ func (s *Service) DumpContext(ctx context.Context, input DumpContextInput) (Dump
 		TokenMetrics: dump.TokenMetrics,
 		Context:      contextSnippets(dump.ContextEntries, 0),
 		Workflow:     workflowSummary(dump.Workflow),
-		Tasks:        taskSummaries(dump.Tasks),
+		Tasks:        taskSummaries(dump.Tasks, s.registry),
 		Dependencies: dependencySummaries(dump.Dependencies),
 		Comments:     commentSummaries(dump.Comments),
 	}, nil

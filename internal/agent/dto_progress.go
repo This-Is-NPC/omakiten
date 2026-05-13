@@ -1,17 +1,19 @@
 package agent
 
-import "omakiten/internal/domain"
-
 type RecordProgressInput struct {
 	ProjectSelector
-	TaskID       int64            `json:"task_id,omitempty"`
-	Title        *string          `json:"title,omitempty"`
-	Description  *string          `json:"description,omitempty"`
-	Priority     *domain.Priority `json:"priority,omitempty"`
-	MoveToBucket string           `json:"move_to_bucket,omitempty"`
-	Comment      string           `json:"comment,omitempty"`
-	Context      string           `json:"context,omitempty"`
-	AuthorType   string           `json:"author_type,omitempty"`
+	TaskID       int64   `json:"task_id,omitempty"`
+	Title        *string `json:"title,omitempty"`
+	Description  *string `json:"description,omitempty"`
+	// Priority is the configured priority label (e.g. "high"). nil leaves
+	// the field unchanged. Resolved to a domain id via the bundle-scoped
+	// registry inside RecordProgress so the wire boundary stays free of
+	// domain handles.
+	Priority     *string `json:"priority,omitempty"`
+	MoveToBucket string  `json:"move_to_bucket,omitempty"`
+	Comment      string  `json:"comment,omitempty"`
+	Context      string  `json:"context,omitempty"`
+	AuthorType   string  `json:"author_type,omitempty"`
 }
 
 type RecordProgressResponse struct {

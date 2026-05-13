@@ -1,8 +1,8 @@
 version: 1
 kit:
-  id: 1
-  key: default
-  name: Default Omakiten Kit
+  id: 101
+  key: omakase
+  name: Omakase Workflow Preset
 config:
   output:
     json_minified: true
@@ -23,7 +23,7 @@ config:
     next_work_limit: 5                 # > 0; "likely next work" suggestions
     similar_task_limit: 5              # > 0; similar-task hints on create_intent
   workflow:
-    active: default
+    active: omakase
   theme:
     active: omakiten
   # tui tunes terminal UI presentation. Every field is optional — omit a key
@@ -310,8 +310,8 @@ config:
         order: asc          # asc = chronological | desc = newest first
 workflows:
   - id: 1
-    key: default
-    name: Default Workflow
+    key: omakase
+    name: Omakase Workflow
     # defaults declares the workflow-level fallback for task/comment edit
     # and delete. Resolution order: bucket.permissions → workflow.defaults
     # → implicit `true` (no rule = allow). The default kit ships strict
@@ -325,6 +325,13 @@ workflows:
       comment:
         edit: false
         delete: false
+    operations:
+      archive:
+        guards:
+          - type: comments_tagged
+            tag: documentation
+            count: 1
+            hint: "Add a #documentation comment summarizing what shipped before archiving."
     buckets:
       - id: 1
         key: backlog
@@ -355,10 +362,25 @@ workflows:
         key: review
         name: Review
         position: 3
+        # Allow comment edit during review so the agent can refine the
+        # handoff notes that gate the move to done; task fields stay
+        # locked. Deletes remain disallowed via workflow defaults.
+        permissions:
+          comment:
+            edit: true
       - id: 4
         key: done
         name: Done
         position: 4
+        # Done freezes destructive operations explicitly: neither the
+        # task nor its comments can be deleted once shipped. Inherits
+        # edit: false from workflow defaults. Use the regression
+        # transitions back to review/dev/backlog to reopen work.
+        permissions:
+          task:
+            delete: false
+          comment:
+            delete: false
     transitions:
       - from: 1
         to: 2
@@ -367,6 +389,9 @@ workflows:
             tag: self-branch
             count: 1
             hint: "Before starting, create a dedicated feature branch or git worktree for this task and add a comment tagged #self-branch documenting the branch name and working path."
+          - type: blockers_in
+            buckets: [done]
+            hint: "Every blocker must be in Done before development starts — finish blockers first to keep WIP under control."
       - from: 2
         to: 3
         guards:
@@ -374,6 +399,10 @@ workflows:
             tag: resume
             count: 1
             hint: "Add a comment tagged #resume summarizing what was implemented, decisions made, and any open questions before requesting review."
+          - type: comments_tagged
+            tag: tests-passing
+            count: 1
+            hint: "Add a #tests-passing comment with the test command, an output snippet, and the duration — reviewer must be able to reproduce the evidence."
       - from: 3
         to: 4
         guards:
@@ -381,10 +410,20 @@ workflows:
             tag: documentation
             count: 1
             hint: "Add a comment tagged #documentation summarizing: commits merged (commit IDs), related tags (kebab-case), and confirmation that the task has been reviewed and properly tagged."
+      # Regression transitions — no guards: reopening work is a deliberate
+      # corrective action and shouldn't be gated by the forward checklists.
+      - from: 2
+        to: 1
+      - from: 3
+        to: 1
       - from: 3
         to: 2
       - from: 4
         to: 3
+      - from: 4
+        to: 2
+      - from: 4
+        to: 1
 # skills:, laws: and personas: are optional. When omitted, every .md file in
 # skills/, laws/ and personas/ is loaded automatically — drop a file into the
 # folder and it becomes available. Uncomment a slot to act as a strict allowlist
@@ -401,12 +440,23 @@ workflows:
 personas:
   - slug: engineer
     skills:
+      - trunk-based-development
+      - continuous-integration
+      - test-driven-development
+      - dora-mindset
       - implementation
       - markdown
   - slug: product-owner
     skills:
       - discovery
       - user-story-writing
+      - pdca-cycle
+      - five-w-two-h
+      - smart-goals
+      - invest-stories
+      - moscow-prioritization
+      - rice-scoring
+      - non-functional-requirements
       - markdown
   - slug: documentation-agent
     skills:
@@ -446,10 +496,19 @@ mcp_commands:
     persona: product-owner
     laws_disabled:
       - template-fidelity
+    templates:
+      - comment-5w2h
+      - comment-smart-success
   okt-create:
     persona: product-owner
+    laws:
+      - invest-stories
+      - outcome-over-output
     templates:
       - user-story
+      - task-bugfix
+      - comment-smart-success
+      - comment-moscow
   okt-resume:
     persona: engineer
   okt-continue:
@@ -461,8 +520,14 @@ mcp_commands:
       - no-silent-behavior-changes
       - conventional-commits
       - self-report
+      - green-main-always
+      - small-batches
+      - boy-scout-rule
+      - test-evidence
     templates:
       - pull-request
+      - comment-tests-passing
+      - comment-refactor-drive-by
   okt-document:
     persona: documentation-agent
   okt-config:

@@ -2,7 +2,7 @@
 
 The TUI's appearance is fully driven by a YAML theme file. Themes live in `<config-root>/themes/<key>.yaml`, are loaded by `internal/config/theme_loader.go:LoadTheme`, validated by `internal/config/validator.go:ValidateTheme`, and consumed by `internal/tui/styles.go:newStyles`.
 
-The active theme key is `config.theme.active` in `omakiten.yaml`.
+The active theme key is `config.theme.active` in the active profile yaml.
 
 ## Resolution order
 
@@ -11,7 +11,7 @@ When the TUI starts, the theme path is resolved in this order (`internal/cli/tui
 1. `<config-root>/themes/custom/<active>.yaml` — user override (preferred when present).
 2. `<config-root>/themes/<active>.yaml` — default kit.
 
-`<config-root>` is the directory holding `omakiten.yaml` (typically `~/.config/omakiten/`). The "custom" path lets you tweak a shipped theme — or add your own — without losing changes when defaults are refreshed.
+`<config-root>` is the directory that holds `config/` and the sibling entity folders (typically `~/.config/omakiten/`). The "custom" path lets you tweak a shipped theme — or add your own — without losing changes when defaults are refreshed.
 
 ## File schema
 
@@ -74,7 +74,7 @@ Eight tokens are actually consumed by the TUI today (`internal/tui/styles.go`). 
      warning:    "#FFB347"
      error:      "#FF5544"
    ```
-3. Activate it in `omakiten.yaml`:
+3. Activate it in the active profile yaml:
    ```yaml
    config:
      theme:

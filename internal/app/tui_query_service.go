@@ -37,10 +37,13 @@ type TUIQueryService struct {
 	entries  ContextEntryRepository
 	tags     TagRepository
 	editor   *BundleEditor
+	registry *domain.EnumRegistry
 }
 
-func NewTUIQueryService(tasks TaskRepository, cfg ConfigRepository, deps DependencyRepository, comments CommentRepository, entries ContextEntryRepository, tags TagRepository, editor *BundleEditor) *TUIQueryService {
-	return &TUIQueryService{tasks: tasks, config: cfg, deps: deps, comments: comments, entries: entries, tags: tags, editor: editor}
+// NewTUIQueryService wires the TUI read model. registry is optional — when
+// nil the service falls back to process-global domain registries.
+func NewTUIQueryService(tasks TaskRepository, cfg ConfigRepository, deps DependencyRepository, comments CommentRepository, entries ContextEntryRepository, tags TagRepository, editor *BundleEditor, registry *domain.EnumRegistry) *TUIQueryService {
+	return &TUIQueryService{tasks: tasks, config: cfg, deps: deps, comments: comments, entries: entries, tags: tags, editor: editor, registry: registry}
 }
 
 // SnapshotOptions tunes the TUI snapshot fetch. IncludeArchived flips the
@@ -106,7 +109,7 @@ func (s *TUIQueryService) Snapshot(ctx context.Context, project domain.ProjectCo
 			return snap, err
 		}
 		skills = enrichSkillsFromBundle(skills, bundle)
-		laws = enrichLawsFromBundle(laws, bundle)
+		laws = enrichLawsFromBundle(laws, bundle, s.registry)
 		personas = enrichPersonasFromBundle(personas, bundle)
 		snap.Templates = append([]config.TaskTemplate(nil), bundle.Templates...)
 	}
@@ -182,7 +185,7 @@ func enrichSkillsFromBundle(skills []domain.Skill, bundle config.Bundle) []domai
 	return skills
 }
 
-func enrichLawsFromBundle(laws []domain.Law, bundle config.Bundle) []domain.Law {
+func enrichLawsFromBundle(laws []domain.Law, bundle config.Bundle, registry *domain.EnumRegistry) []domain.Law {
 	bySlug := map[string]config.Law{}
 	for _, law := range bundle.Laws {
 		bySlug[law.Slug] = law
@@ -195,7 +198,7 @@ func enrichLawsFromBundle(laws []domain.Law, bundle config.Bundle) []domain.Law 
 			// configured id so the in-memory shape matches the store.
 			// Unknown labels keep whatever the store returned so the
 			// UI still renders while validator surfaces the typo.
-			if id, ok := domain.SeverityFromLabel(file.Severity); ok {
+			if id, ok := severityFromLabel(file.Severity, registry); ok {
 				laws[index].Severity = id
 			}
 			laws[index].SourcePath = file.SourcePath
@@ -236,4 +239,11 @@ func enrichPersonasFromBundle(personas []domain.Persona, bundle config.Bundle) [
 		}
 	}
 	return personas
+}
+
+// severityFromLabel is the package-level variant used by enrichLawsFromBundle
+// (a pure function with no service receiver). registry is nil-safe: returns
+// SeverityZero, false when no registry is supplied.
+func severityFromLabel(label string, registry *domain.EnumRegistry) (domain.Severity, bool) {
+	return registry.SeverityFromLabel(label)
 }

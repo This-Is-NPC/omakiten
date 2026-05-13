@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"omakiten/internal/activity"
@@ -17,13 +18,14 @@ type ContextService struct {
 	entries      ContextEntryRepository
 	config       ConfigRepository
 	counter      token.Counter
+	registry     *domain.EnumRegistry
 }
 
-func NewContextService(tasks TaskRepository, comments CommentRepository, dependencies DependencyRepository, entries ContextEntryRepository, config ConfigRepository, counter token.Counter) *ContextService {
+func NewContextService(tasks TaskRepository, comments CommentRepository, dependencies DependencyRepository, entries ContextEntryRepository, config ConfigRepository, counter token.Counter, registry *domain.EnumRegistry) *ContextService {
 	if counter == nil {
 		counter = token.ApproxCounter{}
 	}
-	return &ContextService{tasks: tasks, comments: comments, dependencies: dependencies, entries: entries, config: config, counter: counter}
+	return &ContextService{tasks: tasks, comments: comments, dependencies: dependencies, entries: entries, config: config, counter: counter, registry: registry}
 }
 
 func (s *ContextService) Add(ctx context.Context, project domain.ProjectContext, body string) (entry domain.ContextEntry, err error) {
@@ -105,7 +107,7 @@ func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext
 			return dump, err
 		}
 		for _, task := range tasks {
-			if !budget.add(s.counter.Count(taskText(task))) {
+			if !budget.add(s.counter.Count(s.taskText(task))) {
 				break
 			}
 			dump.Tasks = append(dump.Tasks, task)
@@ -140,7 +142,7 @@ func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext
 			return dump, err
 		}
 		for _, law := range laws {
-			if !budget.add(s.counter.Count(law.Key + " " + law.Severity.String() + " " + law.Body)) {
+			if !budget.add(s.counter.Count(law.Key + " " + s.severityText(law.Severity) + " " + law.Body)) {
 				break
 			}
 			dump.Laws = append(dump.Laws, law)
@@ -171,12 +173,26 @@ func (b *contextBudget) add(estimate int) bool {
 	return true
 }
 
-func taskText(task domain.Task) string {
-	// Priority.String() resolves the configured label via the registry
-	// (or the int id when unregistered), keeping context-text token
-	// estimation accurate for both "low" (3 chars) and "high" (4 chars)
-	// labels regardless of which fields the user redefines in YAML.
-	return strings.TrimSpace(task.Title + " " + task.Description + " " + task.BucketKey + " " + task.Priority.String())
+func (s *ContextService) taskText(task domain.Task) string {
+	// Resolve the priority label through the bundle-scoped registry so
+	// token estimation reflects the actual string the renderer ships
+	// ("low" 3 chars vs "high" 4 chars), regardless of user customisation
+	// to config.priorities. Unknown id falls back to the numeric handle.
+	label := s.registry.PriorityLabel(task.Priority)
+	if label == "" {
+		label = strconv.Itoa(int(task.Priority))
+	}
+	return strings.TrimSpace(task.Title + " " + task.Description + " " + task.BucketKey + " " + label)
+}
+
+// severityText resolves the severity label through the bundle-scoped
+// registry, falling back to the numeric id when the entry has been
+// removed from config since the law was loaded.
+func (s *ContextService) severityText(sev domain.Severity) string {
+	if label := s.registry.SeverityLabel(sev); label != "" {
+		return label
+	}
+	return strconv.Itoa(int(sev))
 }
 
 func workflowText(workflow domain.Workflow) string {

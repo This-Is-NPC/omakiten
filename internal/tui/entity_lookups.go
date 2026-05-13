@@ -96,9 +96,24 @@ func slugFromName(value string) string {
 	return strings.Trim(b.String(), "-")
 }
 
+// defaultSeverityID returns the configured default severity from the Model's
+// loaded severities slice, falling back to the midpoint entry or SeverityZero
+// so that law scaffolding never calls the process-global domain registries.
+func (m Model) defaultSeverityID() domain.Severity {
+	for _, s := range m.severities {
+		if s.Default {
+			return domain.Severity(s.ID)
+		}
+	}
+	if len(m.severities) > 0 {
+		return domain.Severity(m.severities[len(m.severities)/2].ID)
+	}
+	return domain.SeverityZero
+}
+
 // scaffoldEntity calls into the appropriate service to create a placeholder
 // entity file and returns its absolute path so the TUI can hand it to $EDITOR.
-func scaffoldEntity(ctx context.Context, kind entityKind, repos Repositories, name string) (string, error) {
+func (m Model) scaffoldEntity(ctx context.Context, kind entityKind, repos Repositories, name string) (string, error) {
 	switch kind {
 	case entityKindSkill:
 		service := app.NewSkillService(repos.Config, repos.Editor, repos.EntityFiles, repos.Slugger)
@@ -108,13 +123,13 @@ func scaffoldEntity(ctx context.Context, kind entityKind, repos Repositories, na
 		}
 		return skill.SourcePath, nil
 	case entityKindLaw:
-		service := app.NewLawService(repos.Config, repos.Editor, repos.EntityFiles, repos.Slugger)
+		service := app.NewLawService(repos.Config, repos.Editor, repos.EntityFiles, repos.Slugger, m.registry)
 		// New laws default to the configured `default: true` severity
 		// (typically "warning"). DefaultSeverity returns SeverityZero
 		// when the registry is empty (uninitialised tests), in which
 		// case the validator on the next bundle import surfaces the
 		// missing severity — better than silently picking a label.
-		severityID := domain.DefaultSeverity()
+		severityID := m.defaultSeverityID()
 		law, err := service.Add(ctx, domain.LawInput{
 			Key:      slugFromName(name),
 			Name:     name,
