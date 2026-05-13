@@ -265,7 +265,10 @@ Trade-off: one extra MCP round-trip on the materialization step (only when the a
 
 ### Per-prompt fixed token cost
 
-Rendered prompt sizes for the default kit (`omakase` preset), measured via `mise run mcp:prompts`. Numbers move with persona body / skill / law / template bindings — adding a law to `mcp_commands.global.laws` adds ~50 tokens to every row. Numbers below reflect the omakase canonical kit after the preset-methodology overhaul (tasks #97 + #98 introduced richer per-discipline bindings).
+<!-- BEGIN include:_generated/prompt-costs.md -->
+<!-- GENERATED snapshot — hand-refreshed via `mise run mcp:prompts` until the dedicated `mcp:prompts:costs` subtask lands. Numbers move with persona body / skill / law / template bindings. -->
+
+# Prompt Costs — omakase canonical kit
 
 | Prompt | Bytes | ~Tokens | Drivers |
 |---|---|---|---|
@@ -278,9 +281,12 @@ Rendered prompt sizes for the default kit (`omakase` preset), measured via `mise
 | `okt-implement` | 6270 | 1570 | engineer + 6 skills + 12 laws (4 globals/inherited + 8 command-level TBD/CI/DORA/TDD) + persona body + 3 templates metadata (JIT) |
 | `okt-create` | 7131 | 1780 | product-owner + 10 skills + 9 laws (3 globals + 6 persona frontmatter + 2 command-level) + persona body + 4 templates metadata (JIT) |
 
-Without JIT, `okt-implement` would carry the full `pull-request` body (~700 extra tokens, putting it past ~2270 tokens). The same logic applies to any user-authored template — bind it via `mcp_commands.<cmd>.templates` and only metadata ships in the prompt.
+Without JIT, `okt-implement` would carry the full `pull-request` body (~700 extra tokens). Templates bound via `mcp_commands.<cmd>.templates` ship only metadata in the prompt and are fetched JIT via `templates.show`.
 
-A regression test (`internal/agentruntime/prompt_budget_test.go`) caps each prompt at current size + ~30% headroom; once a future change pushes a prompt past its budget the test fails and forces a deliberate tradeoff (trim entity bodies, add a JIT optimization, or raise the budget with justification). Current budgets (bytes): okt 2300 · okt-imagine 4900 · okt-create 7600 · okt-resume 2300 · okt-continue 2400 · okt-implement 8200 · okt-document 2700 · okt-config 3050.
+A regression test (`internal/agentruntime/prompt_budget_test.go`) caps each prompt at current size + ~30% headroom. Current budgets (bytes): okt 2300 · okt-imagine 4900 · okt-create 7600 · okt-resume 2300 · okt-continue 2400 · okt-implement 8200 · okt-document 2700 · okt-config 3050.
+<!-- END include -->
+
+A regression test (`internal/agentruntime/prompt_budget_test.go`) enforces the per-prompt byte budgets listed above; once a future change pushes a prompt past its budget the test fails and forces a deliberate tradeoff (trim entity bodies, add a JIT optimization, or raise the budget with justification).
 
 ### Prompt engineering principles applied
 

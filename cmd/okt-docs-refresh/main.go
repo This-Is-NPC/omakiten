@@ -131,9 +131,9 @@ func run(root string, check bool) error {
 
 	generated[".docs/_generated/tag-vocabulary.md"] = renderTagVocabulary(presets)
 
-	// Phase-1 placeholder so the file exists with a stable header; populated by
-	// future `mcp:prompts` integration.
-	generated[".docs/_generated/prompt-costs.md"] = renderPromptCostsPlaceholder()
+	// prompt-costs.md is hand-maintained from `mise run mcp:prompts` output
+	// until a dedicated cost-snapshot subtask lands. Reading on disk so
+	// includes still resolve, but no overwrite here.
 
 	diffs := []string{}
 	for rel, content := range generated {
@@ -467,15 +467,6 @@ func renderTagVocabulary(presets []preset) string {
 		}
 		b.WriteString(fmt.Sprintf("| `#%s` | %s |\n", k, strings.Join(uses, " · ")))
 	}
-	return b.String()
-}
-
-func renderPromptCostsPlaceholder() string {
-	var b strings.Builder
-	b.WriteString(generatedHeader)
-	b.WriteString("\n# Prompt Costs\n\n")
-	b.WriteString("Auto-derived token costs for each `okt-*` MCP prompt under each official preset.\n\n")
-	b.WriteString("_Phase-1 placeholder. Run `mise run mcp:prompts:costs` to refresh once that subtask lands. Until then, see `mise run mcp:prompts` output for the latest values._\n")
 	return b.String()
 }
 
