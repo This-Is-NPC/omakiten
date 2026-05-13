@@ -2,7 +2,9 @@
 
 Guards are policy rules attached to a single workflow **transition**. They run in `app.WorkflowService.MoveTask` after the transition is confirmed allowed (`workflow_invalid_transition` is checked first); the first failing guard short-circuits the move with a coded `guard_violation` error.
 
-Guards live next to transitions in `omakiten.yaml`, are persisted as JSON on the `workflow_transitions` row (`migrations/005_transition_guards.sql`), and are evaluated by `internal/app/workflow_service.go:evaluateGuards`. Validation runs at `okt config validate` time via `internal/config/validator.go:validateWorkflows`.
+Guards live next to transitions in the active profile yaml, are persisted as JSON on the `workflow_transitions` row (`migrations/005_transition_guards.sql`), and are evaluated by `internal/app/workflow_service.go:evaluateGuards`. Validation runs at `okt config validate` time via `internal/config/validator.go:validateWorkflows`.
+
+The same guard shapes also drive **operation policies** (`operations.{archive,delete,unarchive}.guards`) — see [Operation guards](#operation-guards) — and the bucket-level CRUD policy lives under a sibling block ([Bucket permissions](#bucket-permissions)).
 
 ## Where they sit in the move pipeline
 
@@ -127,18 +129,43 @@ Empty/missing `hint` is fine; the error stays terse.
 
 A failed validation rejects `okt config validate` and any bundle import that would re-materialize the SQLite read model.
 
-## Worked example (from `defaults/omakiten.yaml`)
+## Worked example (from `defaults/config/omakase.yaml`)
 
 ```yaml
 workflows:
   - id: 1
-    key: default
-    name: Default Workflow
+    key: omakase
+    name: Omakase Workflow
+    defaults:                        # workflow-level CRUD fallback
+      task:    { edit: false, delete: false }
+      comment: { edit: false, delete: false }
     buckets:
-      - { id: 1, key: backlog, name: Backlog,     position: 1 }
-      - { id: 2, key: dev,     name: Development, position: 2 }
-      - { id: 3, key: review,  name: Review,      position: 3 }
-      - { id: 4, key: done,    name: Done,        position: 4 }
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1
+        permissions:                 # backlog opts in to full edit/delete
+          task:    { edit: true, delete: true }
+          comment: { edit: true, delete: true }
+      - id: 2
+        key: dev
+        name: Development
+        position: 2
+        permissions:                 # dev: comments only
+          comment: { edit: true, delete: true }
+      - id: 3
+        key: review
+        name: Review
+        position: 3
+        permissions:                 # review: comment edit only (no delete)
+          comment: { edit: true }
+      - id: 4
+        key: done
+        name: Done
+        position: 4
+        permissions:                 # done freezes deletion explicitly
+          task:    { delete: false }
+          comment: { delete: false }
     transitions:
       - from: 1
         to: 2
@@ -161,13 +188,16 @@ workflows:
             tag: documentation
             count: 1
             hint: "Add a comment tagged #documentation summarizing: commits merged…"
-      - from: 3
-        to: 2          # review → dev: no guards (kickback path)
-      - from: 4
-        to: 3          # done   → review: no guards (re-open path)
+      # Regression transitions — no guards; reopening is a deliberate corrective action.
+      - { from: 2, to: 1 }    # dev    → backlog
+      - { from: 3, to: 1 }    # review → backlog
+      - { from: 3, to: 2 }    # review → dev
+      - { from: 4, to: 3 }    # done   → review
+      - { from: 4, to: 2 }    # done   → dev
+      - { from: 4, to: 1 }    # done   → backlog
 ```
 
-The pattern: forward transitions carry an evidence-gathering guard (a tag-anchored comment); backward kickback transitions are intentionally guard-free so reviewers can return work without ceremony.
+The pattern: forward transitions carry an evidence-gathering guard (a tag-anchored comment); regression transitions are intentionally guard-free so reviewers can return work without ceremony. Bucket permissions tighten as the task advances — backlog is freely reshaped, dev allows comment maintenance, review only allows comment edits to refine the handoff, done blocks destructive operations completely.
 
 ## Failure shape
 
@@ -202,7 +232,7 @@ The merged response is rendered as one markdown body (Persona → Skills → Law
 ### Wiring location
 
 ```yaml
-# omakiten.yaml
+# active profile yaml
 mcp_commands:
   global:
     laws:
@@ -240,7 +270,7 @@ laws:
 ---
 ```
 
-Persona laws declared in frontmatter merge with persona laws declared in `omakiten.yaml`'s `personas:` block (union, dedup, frontmatter-first). Template frontmatter laws have no wiring counterpart — they live only in the `.md` file.
+Persona laws declared in frontmatter merge with persona laws declared in the active profile yaml's `personas:` block (union, dedup, frontmatter-first). Template frontmatter laws have no wiring counterpart — they live only in the `.md` file.
 
 ### Validation rules (parse-time)
 
@@ -267,6 +297,60 @@ Both tools accept an optional `template_slug` argument. When set, the server res
 - non-empty user body ⇒ user content first, blank line, template body appended.
 
 Unknown slugs surface as a validation error (no silent fallback). Dynamic placeholders are out of scope for this iteration — the materialized body is the literal template text.
+
+## Operation guards
+
+The same three guard shapes (`blockers_in`, `comments_min`, `comments_tagged`) also gate **non-flow operations**: archive, delete, unarchive. They live under `workflows[].operations.<op>.guards[]` and apply globally to the operation regardless of which bucket the task currently sits in.
+
+```yaml
+workflows:
+  - id: 1
+    key: omakase
+    operations:
+      archive:
+        guards:
+          - { type: comments_tagged, tag: documentation, count: 1 }
+      delete:
+        guards:
+          - { type: comments_tagged, tag: peer-review, count: 1, hint: "Get a peer-review tagged comment before deleting." }
+      unarchive: {}                  # no guards
+```
+
+Evaluation lives in `internal/app/task_service.go` (`Archive`, `Delete`, `Unarchive`) — each operation pulls its policy from `domain.Workflow.Operations` and runs `evaluateGuards` with the same first-fail short-circuit.
+
+**Important policy notes:**
+
+- `Archive` flips `state` to `archived` and atomically moves the task into the workflow's **final bucket** (highest `position`). It bypasses bucket `permissions` and transition `guards` — only `operations.archive.guards` apply. Use it to ship rather than to delete.
+- `Delete` is a hard cascade delete (comments, tags, dependencies, events). Bucket `permissions.task.delete` AND `operations.delete.guards` both apply.
+- `Unarchive` flips `state` back to `active` while leaving the bucket untouched. Only `operations.unarchive.guards` apply.
+
+## Bucket permissions
+
+Per-bucket CRUD policy lives under `workflows[].buckets[].permissions` with a workflow-level fallback in `workflows[].defaults`. Resolution walks:
+
+1. `bucket.permissions.<task|comment>.<edit|delete>` — per-bucket override.
+2. `workflows[].defaults.<task|comment>.<edit|delete>` — workflow-level fallback.
+3. Implicit `true` — no rule declared anywhere = allowed.
+
+`comment` inherits from `task` field-by-field at every layer: declaring `task.edit: false` denies edit on **both** task and comments unless `comment.edit` is set explicitly at the same or a deeper layer.
+
+```yaml
+defaults:
+  task:    { edit: false, delete: false }    # workflow-level: deny by default
+  comment: { edit: false, delete: false }
+buckets:
+  - id: 1
+    key: backlog
+    permissions:
+      task:    { edit: true, delete: true }   # backlog: opt in
+      comment: { edit: true, delete: true }
+  - id: 3
+    key: review
+    permissions:
+      comment: { edit: true }                 # review: only comment edit (delete inherits false)
+```
+
+Violations surface as `guard_violation` with `rule: permissions` and a hint quoting the resolved policy. The active operation (`task.edit`, `task.delete`, `comment.edit`, `comment.delete`) lands in the event payload — consumers filter on `(operation, rule)` to distinguish a transition denial from a permission denial.
 
 ## Adding a new guard type
 

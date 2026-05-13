@@ -116,7 +116,7 @@ on whatever value lands in the payload.
 ## Configuration
 
 `config.events` controls per-event-type behaviour. See
-`defaults/omakiten.yaml::config.events` for the canonical block. The
+`defaults/config/omakase.yaml::config.events` for the canonical block. The
 shape:
 
 ```yaml
@@ -177,7 +177,7 @@ that decision inside `hooks.Engine`.
 
 ## Hooks engine
 
-Authors declare hooks in `omakiten.yaml::config.hooks`:
+Authors declare hooks in the active profile yaml under `config.hooks`:
 
 ```yaml
 config:
@@ -210,6 +210,6 @@ The goroutine:
 (missing action, payload non-match, hook channel gated false) do not
 emit it — the event records what happened, not what was tried.
 
-Mutating `omakiten.yaml::config.hooks` requires restarting the app for
+Mutating `config.hooks` in the active profile yaml requires restarting the app for
 changes to take effect; the bundle is read once at startup like every
 other config block.

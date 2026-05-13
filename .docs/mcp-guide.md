@@ -160,7 +160,7 @@ Every tool accepts optional project selector fields where useful: `project_id`, 
 
 ## Prompts
 
-`prompts/list` is built from `agent.CommandNames()`; bindings come from `mcp_commands` in `omakiten.yaml`. Each prompt resolves a persona, the union of bound laws, and any bound templates into a single user message — see the worked example below.
+`prompts/list` is built from `agent.CommandNames()`; bindings come from `mcp_commands` in the active profile yaml. Each prompt resolves a persona, the union of bound laws, and any bound templates into a single user message — see the worked example below.
 
 | Prompt | Intent |
 |---|---|

@@ -155,7 +155,7 @@ The shell tests do **not** depend on Go; they extract helper functions from `ins
 
 ### Test fixtures
 
-Tests construct `config.Bundle` values from real YAML files under each package's `testdata/` directory instead of inline Go literals. This keeps test inputs identical to what the parser sees in production from `defaults/omakiten.yaml` — there is no "works in tests, fails in prod" drift.
+Tests construct `config.Bundle` values from real YAML files under each package's `testdata/` directory instead of inline Go literals. This keeps test inputs identical to what the parser sees in production from `defaults/config/omakase.yaml` — there is no "works in tests, fails in prod" drift.
 
 The single loader entry point lives in `internal/testfixtures`:
 

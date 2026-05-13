@@ -1,15 +1,17 @@
-# How to Configure `omakiten.yaml`
+# How to Configure the Active Profile YAML
 
-`omakiten.yaml` is the canonical write-model: every field below is parsed by `internal/config/loader.go` and validated by `internal/config/validator.go` before being imported into SQLite. YAML decoding uses `KnownFields(true)`, so unknown fields fail loud rather than silently.
+The active profile yaml is the canonical write-model: every field below is parsed by `internal/config/loader.go` and validated by `internal/config/validator.go` before being imported into SQLite. YAML decoding uses `KnownFields(true)`, so unknown fields fail loud rather than silently. The embedded canonical kit ships as `defaults/config/omakase.yaml`; it is materialized into the user's `<config-dir>/` on first run alongside the other official presets (`izakaya.yaml`, `kaiseki.yaml`, `shokunin.yaml`).
 
 The active runtime path is, in precedence (`internal/paths/paths.go`):
 
-1. `--config <path>` flag (CLI/TUI).
-2. `$OMAKITEN_HOME/config/omakiten.yaml`.
-3. `$XDG_CONFIG_HOME/omakiten/config/omakiten.yaml`.
-4. `~/.config/omakiten/config/omakiten.yaml`.
+1. `--config <path>` flag (CLI/TUI/MCP).
+2. `$OMAKITEN_HOME/config/<active>.yaml`.
+3. `$XDG_CONFIG_HOME/omakiten/config/<active>.yaml`.
+4. `~/.config/omakiten/config/<active>.yaml`.
 
-The yaml lives under `<root>/config/`; per-entity folders are siblings of `config/`, not nested inside it. See **Paths and backups** at the bottom for the full layout. The default kit (`defaults/`) is materialized into the entity folders on first run by `configstore.EnsureDefaultFiles`; legacy flat layouts are auto-migrated by `configstore.MigrateLayout`.
+`<active>` is the basename written in `<config-dir>/.active` (a one-line state file). The resolver prefers `<config-dir>/custom/<name>.yaml` over `<config-dir>/<name>.yaml`, so a user-authored override at `custom/` shadows the embedded default. When `.active` is missing, blank, or names a profile that exists in neither location, the resolver falls through to discovery: first alphabetical `.yaml` at the root, then under `custom/`. This degrades cleanly when the canonical kit is renamed or removed across releases.
+
+The yaml lives under `<root>/config/`; per-entity folders are siblings of `config/`, not nested inside it. See **Paths and backups** at the bottom for the full layout. The default kit (`defaults/`) is materialized into the entity folders on first run by `configstore.EnsureDefaultFiles`; legacy flat layouts are auto-migrated by `configstore.MigrateLayout`. The composition roots (`internal/cli/root.go:open`, `internal/agentruntime/runtime.go:Open`) run `MigrateLayout` + `EnsureDefaultFiles` **before** resolving the active yaml, so a profile relocated into `custom/` during the same boot is honored.
 
 ---
 
@@ -92,7 +94,7 @@ config:
 
 | Field | Required | Effect |
 |---|---|---|
-| `active` | yes | Theme key — must match a `themes/<key>.yaml` file. The bundled defaults are `omakiten` and `catppuccin-macchiato`. Custom themes go in `themes/<key>.yaml` next to `omakiten.yaml`. |
+| `active` | yes | Theme key — must match a `themes/<key>.yaml` file. The bundled defaults are `omakiten` and `catppuccin-macchiato`. Custom themes go in `themes/custom/<key>.yaml` (preserved across kit refreshes). |
 
 Theme files are validated separately (`ValidateTheme`): `version: 1`, non-empty `key`, `name`, and `colors`. See `defaults/themes/omakiten.yaml` for the canonical color keys (`background`, `foreground`, `primary`, `secondary`, `success`, `warning`, `error`, `border`, `highlight`).
 
@@ -113,7 +115,7 @@ The TUI's template-default picker offers exactly the kinds in this list.
 
 ### `config.mcp`
 
-Tunes how MCP responses are shaped to fit the agent's context window. **Every field is required** — the validator rejects bundles missing any. The canonical values live in `defaults/omakiten.yaml` (the embedded kit YAML the installer materialises into the user's config root); your local file inherits at install time. Customise by editing values, never by removing fields.
+Tunes how MCP responses are shaped to fit the agent's context window. **Every field is required** — the validator rejects bundles missing any. The canonical values live in `defaults/config/omakase.yaml` (the embedded kit YAML the installer materialises into the user's config root); your local file inherits at install time. Customise by editing values, never by removing fields.
 
 Pointer booleans (`*bool`) require an explicit `true` or `false` — there is no "not declared" state.
 
@@ -141,14 +143,14 @@ config:
 
 #### Validation rules (parse-time)
 
-Every field above is required and validated. Missing or out-of-range values fail loud with messages pointing back at `defaults/omakiten.yaml` so the fix is obvious.
+Every field above is required and validated. Missing or out-of-range values fail loud with messages pointing back at `defaults/config/omakase.yaml` so the fix is obvious.
 
 | Rule | Error message shape |
 |---|---|
-| `recent_comment_limit <= 0` | `config.mcp.recent_comment_limit: must be > 0 (see defaults/omakiten.yaml for canonical values)` |
+| `recent_comment_limit <= 0` | `config.mcp.recent_comment_limit: must be > 0 (see defaults/config/omakase.yaml for canonical values)` |
 | `max_comment_chars < 0` | `config.mcp.max_comment_chars: must be >= 0 (0 = no truncation)` |
-| `include_workflow_in_continue` omitted | `config.mcp.include_workflow_in_continue: required boolean (see defaults/omakiten.yaml)` |
-| `cache_prompts` omitted | `config.mcp.cache_prompts: required boolean (see defaults/omakiten.yaml)` |
+| `include_workflow_in_continue` omitted | `config.mcp.include_workflow_in_continue: required boolean (see defaults/config/omakase.yaml)` |
+| `cache_prompts` omitted | `config.mcp.cache_prompts: required boolean (see defaults/config/omakase.yaml)` |
 | Same shape for `recent_context_limit / next_work_limit / similar_task_limit`. |
 
 #### Worked example — taming a long-lived task
@@ -170,7 +172,7 @@ Cross-reference: `.docs/mcp-guide.md#anatomy-of-an-mcp-command` walks through ho
 
 ### `config.tui`
 
-Tunes terminal UI presentation. **Every field is required** (validator rejects omissions). Canonical values come from `defaults/omakiten.yaml`.
+Tunes terminal UI presentation. **Every field is required** (validator rejects omissions). Canonical values come from `defaults/config/omakase.yaml`.
 
 ```yaml
 config:
@@ -481,7 +483,7 @@ defaults:
 
 The resolver picks the first non-`nil` value walking the chain top-to-bottom. Pointer booleans (`*bool`) distinguish "field omitted" from "explicitly `false`" — omitting `delete` flows to the next layer; writing `delete: false` ends the walk with a deny.
 
-There is no hardcoded "first bucket is special" rule anymore. The default kit (`defaults/omakiten.yaml`) reproduces the legacy semantics declaratively: strict defaults at the workflow level + an explicit opt-in on the `backlog` bucket.
+There is no hardcoded "first bucket is special" rule anymore. The default kit (`defaults/config/omakase.yaml`) reproduces the legacy semantics declaratively: strict defaults at the workflow level + an explicit opt-in on the `backlog` bucket.
 
 ### `workflows[].buckets`
 
@@ -681,7 +683,7 @@ laws:                       # optional — merged with the persona's wiring laws
 Persona body…
 ```
 
-`laws:` declared in the frontmatter is merged with the same persona's `laws:` in the wiring file (union, dedup, frontmatter first). Use this when you want the law binding to live next to the persona authoring file rather than in `omakiten.yaml`.
+`laws:` declared in the frontmatter is merged with the same persona's `laws:` in the wiring file (union, dedup, frontmatter first). Use this when you want the law binding to live next to the persona authoring file rather than in the active profile yaml.
 
 ### `projects`
 
@@ -792,10 +794,10 @@ For each per-entity folder (`skills/`, `laws/`, `personas/`, `templates/`):
 | Two templates claiming the same `(default, project)` | `templates.<a> and templates.<b> both declare default="<kind>" (<scope>)` |
 | Bad view sort/filter | `config.views.<view>.* "<v>" is not one of [...]` |
 | Project laws referencing a non-existent law | `projects.<slug> laws: ref "<slug>" has no matching law file` |
-| Missing/zero `config.sqlite.busy_timeout_ms` | `config.sqlite.busy_timeout_ms: must be > 0 (see defaults/omakiten.yaml)` |
-| Missing/zero `config.activity_log.{max_rows, max_age_days}` | `config.activity_log.max_rows: must be > 0 (see defaults/omakiten.yaml)` |
+| Missing/zero `config.sqlite.busy_timeout_ms` | `config.sqlite.busy_timeout_ms: must be > 0 (see defaults/config/omakase.yaml)` |
+| Missing/zero `config.activity_log.{max_rows, max_age_days}` | `config.activity_log.max_rows: must be > 0 (see defaults/config/omakase.yaml)` |
 | Missing/zero `config.solutions.*` or inverted range | `config.solutions: max_top_limit (<n>) must be >= default_top_limit (<n>)` |
-| Missing/zero `config.events.default_recent_limit` | `config.events.default_recent_limit: must be > 0 (see defaults/omakiten.yaml)` |
+| Missing/zero `config.events.default_recent_limit` | `config.events.default_recent_limit: must be > 0 (see defaults/config/omakase.yaml)` |
 | Empty/uppercase/duplicate `config.search.stopwords` | `config.search.stopwords: entry "X" must be lowercase (matching tokenizer output)` |
 | Empty / self-loop / two-hop `config.tag_synonyms` | `config.tag_synonyms[<key>]: target "<v>" is itself a key (two-hop chains are not resolved)` |
 
@@ -917,7 +919,7 @@ What ships in `defaults/` and is materialized on first run by `configstore.Ensur
 |---|---|---|
 | `project-scope-only` | error | Never mix tasks or context from different projects. |
 | `workflow-enforced` | error | Only move tasks through explicit workflow transitions. |
-| `yaml-is-canonical` | error | Persist changes to laws, workflows, personas, skills, and config in `omakiten.yaml`. |
+| `yaml-is-canonical` | error | Persist changes to laws, workflows, personas, skills, and config in the active profile yaml. |
 | `template-fidelity` | warning | When applying a template, do not invent fields, sections, or claims absent from the body or working context. |
 | `feasibility-gate` | error | Stop before authoring a user story when the request is not implementable in the current state. |
 | `bounded-self-review` | warning | Cap the self-review/fix cycle at three attempts; escalate with root cause and adjustment plan after. |
@@ -929,7 +931,7 @@ What ships in `defaults/` and is materialized on first run by `configstore.Ensur
 
 ### Skills (`defaults/skills/`)
 
-The default kit ships only project-agnostic skills. Stack-specific skills (Go, Python, SQLite, React, etc.) belong in `<root>/skills/custom/<slug>.md` and are wired per-persona in your local `omakiten.yaml`.
+The default kit ships only project-agnostic skills. Stack-specific skills (Go, Python, SQLite, React, etc.) belong in `<root>/skills/custom/<slug>.md` and are wired per-persona in your local active profile yaml.
 
 | Slug | Description |
 |---|---|
@@ -944,7 +946,7 @@ The default kit ships only project-agnostic skills. Stack-specific skills (Go, P
 
 ### Personas (`defaults/personas/`)
 
-| Slug | Description | Skills wired in `defaults/omakiten.yaml` |
+| Slug | Description | Skills wired in `defaults/config/omakase.yaml` |
 |---|---|---|
 | `engineer` | Implementation agent — small increments, self-review, regression awareness, commit discipline. Body in `defaults/personas/engineer.md` carries the implement loop (steps that delegate to laws like `bounded-self-review`, `self-report`, `conventional-commits`, `workflow-enforced`). | `implementation`, `markdown` |
 | `product-owner` | Discovery agent — feasibility, clarifying questions, user stories. | `discovery`, `user-story-writing`, `markdown` |
@@ -969,9 +971,9 @@ The default kit ships only project-agnostic skills. Stack-specific skills (Go, P
 
 See `.docs/theming-guide.md` for the eight color tokens consumed by the TUI.
 
-### Default workflow (`defaults/omakiten.yaml`)
+### Default workflow (`defaults/config/omakase.yaml`)
 
-Single workflow `default` with four buckets — `backlog` → `dev` → `review` → `done` — and tag-anchored guards on every forward edge plus guard-free kickback paths (`review→dev`, `done→review`). Full transitions and guards: see `defaults/omakiten.yaml` or `.docs/guards-guide.md` §"Worked example".
+Single workflow `default` with four buckets — `backlog` → `dev` → `review` → `done` — and tag-anchored guards on every forward edge plus guard-free kickback paths (`review→dev`, `done→review`). Full transitions and guards: see `defaults/config/omakase.yaml` or `.docs/guards-guide.md` §"Worked example".
 
 ---
 
@@ -988,7 +990,10 @@ Single workflow `default` with four buckets — `backlog` → `dev` → `review`
 ```
 <root>/
   config/
-    omakiten.yaml          # active config (or whichever profile .active points to)
+    omakase.yaml           # canonical kit (also a workflow preset)
+    izakaya.yaml           # slim preset — workflow only
+    kaiseki.yaml           # six-stage formal preset
+    shokunin.yaml          # six-stage strict preset
     .active                # one-line state: basename of the active profile (optional)
     custom/                # user-authored profile yamls (preserved across default refresh)
       <profile>.yaml
@@ -1007,9 +1012,12 @@ Single workflow `default` with four buckets — `backlog` → `dev` → `review`
   themes/
     <key>.yaml
     custom/<key>.yaml
+  notifications/
+    <slug>.yaml
+    custom/<slug>.yaml
 ```
 
-Source: `internal/paths/paths.go:ConfigRoot`, `EntityDir`, `EntityCustomDir`, `ActiveConfigFile`. Legacy flat layouts (`<root>/omakiten.yaml` at the root with no `config/` subdir) are tolerated by `ConfigRootFromYAMLPath` and migrated forward by `configstore.MigrateLayout` on next connect.
+Source: `internal/paths/paths.go:ConfigRoot`, `EntityDir`, `EntityCustomDir`, `ActiveConfigFile`. Legacy flat layouts (`<root>/<name>.yaml` at the root with no `config/` subdir) are tolerated by `ConfigRootFromYAMLPath` and migrated forward by `configstore.MigrateLayout` on next connect. `ConfigRootFromYAMLPath` also recognizes `<root>/config/custom/<name>.yaml`, so entity folders resolve correctly when the active profile lives under `custom/`.
 
 ### SQLite database
 
@@ -1027,7 +1035,7 @@ The DB is a single file. Schema migrations are applied transactionally on every 
 
 ### Profiles (advanced)
 
-The resolver supports multiple yaml profiles under `<root>/config/`. The active one is selected by writing its basename into `<root>/config/.active`; `<root>/config/custom/<name>.yaml` is tried before `<root>/config/<name>.yaml`. There is currently **no CLI to switch profiles** — `paths.SetActiveConfig` is the only writer, called from code. Most users will never touch this; the default `omakiten.yaml` is used when `.active` is missing or empty.
+The resolver supports multiple yaml profiles under `<root>/config/`. The active one is selected by writing its basename into `<root>/config/.active`; `<root>/config/custom/<name>.yaml` is tried before `<root>/config/<name>.yaml`. Profile switching today happens via the TUI Settings › Config picker (which calls `paths.SetActiveConfig`); the CLI accepts a per-invocation override via `--config <path>` or by editing `.active` directly. When `.active` is missing, blank, or names a profile that exists in neither location, the resolver falls through to discovery: first alphabetical `.yaml` at the root, then under `custom/` — so a renamed or removed canonical kit degrades to "first available preset" instead of breaking init.
 
 ### Backup
 

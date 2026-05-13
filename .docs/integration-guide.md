@@ -14,20 +14,25 @@ If you need the schema reference, the full action contract, or the list of chann
 
 ---
 
-## Step 1 — Locate `omakiten.yaml`
+## Step 1 — Locate the active profile yaml
 
-The config file lives under your config root. Resolve it once and remember it:
+The config file lives under `<config-dir>/`. Default `<config-dir>` per platform:
 
-```bash
-# explicit override wins:           $OMAKITEN_HOME/config/omakiten.yaml
-# otherwise XDG default on Linux:   ~/.config/omakiten/omakiten.yaml
-# macOS:                            ~/Library/Application Support/omakiten/omakiten.yaml
-# Windows:                          %AppData%\omakiten\omakiten.yaml
-
-okt config show > /dev/null   # validates and surfaces the resolved path on errors
+```
+# explicit override wins:           $OMAKITEN_HOME/config/
+# otherwise XDG default on Linux:   ~/.config/omakiten/config/
+# macOS:                            ~/Library/Application Support/omakiten/config/
+# Windows:                          %AppData%\omakiten\config\
 ```
 
-Open the file in your editor; you will be appending one block.
+The active profile basename is recorded in `<config-dir>/.active` (one line, no path separators). The resolver prefers `<config-dir>/custom/<name>.yaml` over `<config-dir>/<name>.yaml`, so a user-authored override at `custom/` shadows the embedded default. When `.active` is missing or names a vanished profile, the resolver falls through to discovery: first alphabetical `.yaml` at the root, then under `custom/`.
+
+```bash
+cat "$HOME/.config/omakiten/config/.active"   # prints the active basename (e.g. omakase.yaml)
+okt config validate                            # runs the strict loader against the resolved path
+```
+
+Open the active file in your editor; you will be appending one block. If you want your edits to survive `mise run install` / kit refreshes, copy the file into `<config-dir>/custom/<name>.yaml` first.
 
 ---
 

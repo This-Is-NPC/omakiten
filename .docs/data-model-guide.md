@@ -2,7 +2,7 @@
 
 Omakiten persists state in a single SQLite file (default `~/.local/share/omakiten/omakiten.db`, pure-Go driver `modernc.org/sqlite`). The schema is owned by the migration files under `migrations/` and applied transactionally on every connect (`internal/sqlite/store.go:Open`).
 
-> **CQRS-like split.** YAML files (`omakiten.yaml` plus per-entity markdown) are the **write model** and source of truth for config. SQLite is the **read model** — repopulated on every `app.ConfigService.Import`. Operational data (tasks, comments, dependencies, context entries, errors, solutions, events, tags) is **born in SQLite** and has no YAML mirror.
+> **CQRS-like split.** YAML files (the active profile yaml plus per-entity markdown) are the **write model** and source of truth for config. SQLite is the **read model** — repopulated on every `app.ConfigService.Import`. Operational data (tasks, comments, dependencies, context entries, errors, solutions, events, tags) is **born in SQLite** and has no YAML mirror.
 
 ## Migrations
 
@@ -297,7 +297,7 @@ The event row carries every column it might need; unused columns are nullable. T
 
 ### Pruning policy (operations only)
 
-After every successful operation insert, the `operation` rows are pruned synchronously by `internal/sqlite/activity_logs.go:PruneActivityLogs`. Both knobs come from the user's bundle (`config.activity_log.max_rows`, `config.activity_log.max_age_days`) and are wired into the `Store` at composition-root time via `Store.SetActivityLogRetention`. The kit canonical (`defaults/omakiten.yaml`) ships:
+After every successful operation insert, the `operation` rows are pruned synchronously by `internal/sqlite/activity_logs.go:PruneActivityLogs`. Both knobs come from the user's bundle (`config.activity_log.max_rows`, `config.activity_log.max_age_days`) and are wired into the `Store` at composition-root time via `Store.SetActivityLogRetention`. The kit canonical (`defaults/config/omakase.yaml`) ships:
 
 - **Max age**: 7 days (`config.activity_log.max_age_days`).
 - **Max rows**: 500 most-recent (`config.activity_log.max_rows`).

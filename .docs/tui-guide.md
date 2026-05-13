@@ -168,7 +168,7 @@ The TUI's per-second realtime tick is **not** logged — `refreshTickMsg` wraps 
 
 Runtime info card with two stacked bordered tables:
 
-- **Runtime**: `okt version`, `omakiten.yaml` path, SQLite path
+- **Runtime**: `okt version`, active profile yaml path, SQLite path
 - **Project**: active workflow key, bucket keys, active theme
 
 Mutating any of these still goes through dedicated pickers (`t` for theme, `c` for config) which remain reachable from every Settings sub.
@@ -354,7 +354,7 @@ Two consequences worth knowing:
 
 ## Default sort, filter, and limits
 
-Per-view defaults come from `config.views` in `omakiten.yaml` (`Settings.EffectiveViews()`). The TUI seeds itself from these on startup. Allowed values and canonical defaults are documented in `.docs/configuration-guide.md` §"`config.views`".
+Per-view defaults come from `config.views` in the active profile yaml (`Settings.EffectiveViews()`). The TUI seeds itself from these on startup. Allowed values and canonical defaults are documented in `.docs/configuration-guide.md` §"`config.views`".
 
 ## Live refresh
 
@@ -412,4 +412,4 @@ The TUI loads its theme from `<config-root>/themes/<active>.yaml` with `themes/c
 
 Body fields shown in the read-only detail panels (task description, comment body inside the dedicated comment view, and the entity body for laws / personas / skills / templates) render as styled markdown by default. The renderer (`internal/tui/markdown.go`) builds an `ansi.StyleConfig` from the active theme tokens (`primary`, `foreground`, `border`, `secondary`) — switching theme rebuilds the renderer and clears its per-(body, width) cache. Code blocks render as plain mono (no chroma syntax highlight) so they stay aligned with the dev-editorial palette.
 
-Press `M` (capital) inside the task view, comment view, or entity view to toggle between raw and rendered for the rest of the session — useful when you need to copy markdown verbatim or debug formatting. The toggle is session-only; it is not persisted to `omakiten.yaml`. The status badge confirms the active mode (`Markdown rendered` / `Markdown raw`). Editing flows (textareas + `$EDITOR`) are unaffected — they always show raw text.
+Press `M` (capital) inside the task view, comment view, or entity view to toggle between raw and rendered for the rest of the session — useful when you need to copy markdown verbatim or debug formatting. The toggle is session-only; it is not persisted to the active profile yaml. The status badge confirms the active mode (`Markdown rendered` / `Markdown raw`). Editing flows (textareas + `$EDITOR`) are unaffected — they always show raw text.
