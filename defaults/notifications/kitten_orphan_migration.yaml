@@ -40,14 +40,28 @@ bubble:
   tail_side: bottom
 
 # Animation -----------------------------------------------------------
-frame_interval_ms: 1000
+frame_interval_ms: 900
 animation:
   - frame: 0
     value: |2
 
            /\__/\
-          ( o.o  )
-           > ^ <
+          ( o o  )
+          (  ?   )
+
+  - frame: 1
+    value: |2
+
+           /\__/\
+          ( - -  )
+          (  ?   )
+
+  - frame: 2
+    value: |2
+
+           /\__/\
+          ( o o  )
+          (  ?   )
 
 # Bubble text ---------------------------------------------------------
 typing_ms_per_char: 0
