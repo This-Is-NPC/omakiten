@@ -238,6 +238,13 @@ func (s *TaskService) Delete(ctx context.Context, project domain.ProjectContext,
 		return
 	}
 
+	// Verify the task exists before evaluating policy and guards — see Archive
+	// for rationale. Reports task_not_found correctly instead of guard_violation
+	// or permission denial for a phantom row.
+	if _, err = s.taskByID(ctx, project, taskID); err != nil {
+		return
+	}
+
 	allowed, hint, err := s.workflow.ResolveBucketPermissions(ctx, project, taskID, EntityTask, PermissionDelete)
 	if err != nil {
 		return
@@ -277,6 +284,13 @@ func (s *TaskService) Archive(ctx context.Context, project domain.ProjectContext
 		return
 	}
 
+	// Verify the task exists before evaluating guards — guards against a
+	// non-existent task would otherwise misreport as guard_violation when the
+	// real failure is task_not_found.
+	if _, err = s.taskByID(ctx, project, taskID); err != nil {
+		return
+	}
+
 	if err = s.workflow.EvaluateOperationGuards(ctx, project.ID, taskID, OperationArchive); err != nil {
 		return
 	}
@@ -306,6 +320,11 @@ func (s *TaskService) Unarchive(ctx context.Context, project domain.ProjectConte
 
 	if taskID <= 0 {
 		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+		return
+	}
+
+	// Verify the task exists before evaluating guards — see Archive for rationale.
+	if _, err = s.taskByID(ctx, project, taskID); err != nil {
 		return
 	}
 
