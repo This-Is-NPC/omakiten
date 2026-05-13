@@ -126,7 +126,10 @@ run = "go run ./cmd/okt init --name Omakiten --slug omakiten >/dev/null && go ru
 description = "Render every okt-* MCP prompt's resolved markdown to stdout against the dev defaults"
 env = { OMAKITEN_HOME = "dev_env" }
 depends = ["dev:sync"]
-run = "go run ./cmd/okt init --name Omakiten --slug omakiten >/dev/null && go run ./cmd/okt --project omakiten mcp prompts"
+# Pin --config to the canonical omakase preset so the task is immune to stale
+# state under dev_env/config/.active or dev_env/config/custom/ left over from
+# prior runs. dev:sync refreshes the preset before this step.
+run = "go run ./cmd/okt --config dev_env/config/omakase.yaml init --name Omakiten --slug omakiten >/dev/null && go run ./cmd/okt --config dev_env/config/omakase.yaml --project omakiten mcp prompts"
 
 [tasks.lint]
 description = "Run Go linter"
