@@ -1,14 +1,17 @@
 # Identity ------------------------------------------------------------
-name: orphan-migration
+name: kitten_orphan_migration
 description: Prompt after a config swap when tasks would be orphaned by the new workflow's bucket set.
 
 # Geometry ------------------------------------------------------------
 size:
-  width: 62
-  height: 14
+  width: 50
+  height: 25
 
 # Behaviour flags -----------------------------------------------------
-auto_height: true
+# auto_height=false keeps the card pinned to size.width/size.height so the
+# action buttons sit at predictable positions; the other kitten_* cards use
+# the same convention.
+auto_height: false
 padding_inside: true
 footer_visible: true
 footer_position: center

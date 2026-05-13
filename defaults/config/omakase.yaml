@@ -142,7 +142,7 @@ config:
       detail_message_field: hint
     - on: bundle.swapped
       when: { has_orphans: "true" }
-      notification: orphan-migration
+      notification: kitten_orphan_migration
       message: "Tasks orphaned by config swap. Migrate to the new workflow?"
       detail_message_field: orphan_count
     - on: task.removed

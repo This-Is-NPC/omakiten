@@ -209,7 +209,7 @@ config:
   hooks:
     - on: bundle.swapped
       when: { has_orphans: "true" }
-      notification: orphan-migration
+      notification: kitten_orphan_migration
       message_field: orphan_count
       detail_message_field: orphan_count
 ```
@@ -219,7 +219,7 @@ with payload `{from_workflow, to_workflow, orphan_count, has_orphans, groups}`.
 The `when:` filter is a string match — match `true` as `"true"` (quoted) because
 `HookSpec.When` decodes as `map[string]string`. Quote `"false"` the same way.
 
-The matching `notifications/orphan-migration.yaml` declares two interactive
+The matching `notifications/kitten_orphan_migration.yaml` declares two interactive
 action buttons (see `.docs/notifications.md` → "Action buttons"). Pressing
 `m` dispatches `okt workflow orphans --confirm` in-process; pressing `s`
 dismisses without side effects. Both keystrokes emit `confirmation.granted`
