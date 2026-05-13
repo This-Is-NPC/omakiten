@@ -265,22 +265,22 @@ Trade-off: one extra MCP round-trip on the materialization step (only when the a
 
 ### Per-prompt fixed token cost
 
-Rendered prompt sizes for the default kit, measured via `mise run mcp:prompts`. Numbers move with persona body / skill / law / template bindings — adding a law to `mcp_commands.global.laws` adds ~50 tokens to every row.
+Rendered prompt sizes for the default kit (`omakase` preset), measured via `mise run mcp:prompts`. Numbers move with persona body / skill / law / template bindings — adding a law to `mcp_commands.global.laws` adds ~50 tokens to every row. Numbers below reflect the omakase canonical kit after the preset-methodology overhaul (tasks #97 + #98 introduced richer per-discipline bindings).
 
 | Prompt | Bytes | ~Tokens | Drivers |
 |---|---|---|---|
-| `okt-imagine` | 1714 | 430 | product-owner + 3 skills + 4 laws (template-fidelity disabled) |
-| `okt-resume` | 1762 | 440 | engineer + 2 skills + 4 laws + persona body (implement loop) |
-| `okt` | 1778 | 445 | engineer + 2 skills + 4 laws + persona body (implement loop) |
-| `okt-continue` | 1849 | 460 | engineer + 2 skills + 4 laws + persona body (implement loop) |
 | `okt-document` | 2073 | 520 | documentation-agent + 5 skills + 5 laws |
-| `okt-config` | 2332 | 585 | documentation-agent + 5 skills + 5 laws + config-orientation metadata (JIT) |
-| `okt-create` | 2553 | 640 | product-owner + 3 skills + 5 laws + user-story metadata (JIT) |
-| `okt-implement` | 3969 | 990 | engineer + 2 skills + 8 laws + persona body (implement loop) + pull-request metadata (JIT) |
+| `okt-resume` | 2185 | 545 | engineer + 6 skills (TBD/CI/TDD/DORA + implementation/markdown) + 4 laws + persona body (trunk-based loop) |
+| `okt` | 2201 | 550 | engineer + 6 skills + 4 laws + persona body |
+| `okt-continue` | 2272 | 570 | engineer + 6 skills + 4 laws + persona body |
+| `okt-config` | 2367 | 590 | documentation-agent + 5 skills + 5 laws + config-orientation metadata (JIT) |
+| `okt-imagine` | 4439 | 1110 | product-owner + 10 product-discipline skills + 7 laws (template-fidelity disabled) + persona body (5W2H Discovery loop) + 2 templates metadata (JIT) |
+| `okt-implement` | 6270 | 1570 | engineer + 6 skills + 12 laws (4 globals/inherited + 8 command-level TBD/CI/DORA/TDD) + persona body + 3 templates metadata (JIT) |
+| `okt-create` | 7131 | 1780 | product-owner + 10 skills + 9 laws (3 globals + 6 persona frontmatter + 2 command-level) + persona body + 4 templates metadata (JIT) |
 
-Without JIT, `okt-implement` would carry the full `pull-request` body (~700 extra tokens, putting it past 1690). The same logic applies to any user-authored template — bind it via `mcp_commands.<cmd>.templates` and only metadata ships in the prompt.
+Without JIT, `okt-implement` would carry the full `pull-request` body (~700 extra tokens, putting it past ~2270 tokens). The same logic applies to any user-authored template — bind it via `mcp_commands.<cmd>.templates` and only metadata ships in the prompt.
 
-A regression test (`internal/agentruntime/prompt_budget_test.go`) caps each prompt at current size + ~30% headroom; once a future change pushes a prompt past its budget the test fails and forces a deliberate tradeoff (trim entity bodies, add a JIT optimization, or raise the budget with justification).
+A regression test (`internal/agentruntime/prompt_budget_test.go`) caps each prompt at current size + ~30% headroom; once a future change pushes a prompt past its budget the test fails and forces a deliberate tradeoff (trim entity bodies, add a JIT optimization, or raise the budget with justification). Current budgets (bytes): okt 2300 · okt-imagine 4900 · okt-create 7600 · okt-resume 2300 · okt-continue 2400 · okt-implement 8200 · okt-document 2700 · okt-config 3050.
 
 ### Prompt engineering principles applied
 
@@ -308,9 +308,9 @@ For a fresh task this lands at ~400 tokens; for a long-running task with verbose
 
 | Component | Tokens (typical) | Source |
 |---|---|---|
-| `okt-continue` prompt | ~420 | Fixed; `service.ResolveCommand` rendering |
+| `okt-continue` prompt | ~570 | Fixed; `service.ResolveCommand` rendering |
 | `tasks.continue` tool result | 400 – 3000+ | Varies; dominated by `comments[]` body length |
-| **Total per `/okt-continue`** | **~800 – 3500** | |
+| **Total per `/okt-continue`** | **~970 – 3600** | |
 
 ### Tuning context cost
 
@@ -321,7 +321,7 @@ The biggest variable is the tool result, not the prompt. Four knobs in `config.m
 | `recent_comment_limit` (int, default `5`) | Caps the comment-tail length in every checkpoint endpoint. Drop to `3` on tasks with many `#resume` notes. | ~40% of the `comments[]` block |
 | `max_comment_chars` (int, default `0`) | Truncates each comment body past N runes with `…`. Set to ~`500` for a hard floor while keeping the latest exchange readable. | ~50–70% of the `comments[]` block when bodies are long |
 | `include_workflow_in_continue` (`*bool`, default `true`) | Skips the `workflow` block in `tasks.continue`. The agent already has the workflow from the first `/okt` of the session — set `false` to stop re-shipping. | ~150 fixed tokens per call |
-| `cache_prompts` (`*bool`, default `true`) | Emits an Anthropic `cache_control` hint on `prompts/get` content. Aware clients reuse the cached prompt across calls. | ~90% of the prompt (~380 tokens) on subsequent calls within the cache window |
+| `cache_prompts` (`*bool`, default `true`) | Emits an Anthropic `cache_control` hint on `prompts/get` content. Aware clients reuse the cached prompt across calls. | ~90% of the prompt (~510 tokens on okt-continue; up to ~1600 tokens on okt-create) on subsequent calls within the cache window |
 
 The same accounting applies to every prompt — substitute the bound tool's DTO for the variable row above. `comments.list` is intentionally exempt from `max_comment_chars` because it's the explicit "read the full thread" endpoint; truncation would make the call useless.
 
