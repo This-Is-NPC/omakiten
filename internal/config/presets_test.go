@@ -24,6 +24,14 @@ func TestOfficialPresetsCopyAndValidate(t *testing.T) {
 				t.Fatalf("CopyPreset() path = %q, want config/%s", path, wantBase)
 			}
 
+			// Materialize the embedded entity defaults next to the preset.
+			// omakase ships full mcp_commands + persona wiring (it doubles
+			// as the canonical kit), so its refs need matching .md files
+			// to resolve; the other presets work either way.
+			if err := EnsureDefaultFiles(root); err != nil {
+				t.Fatalf("EnsureDefaultFiles() error = %v", err)
+			}
+
 			bundle, err := LoadBundle(path)
 			if err != nil {
 				t.Fatalf("LoadBundle(%s) error = %v", path, err)

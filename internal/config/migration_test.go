@@ -8,7 +8,7 @@ import (
 
 func TestMigrateLayoutMovesYAMLIntoConfigSubdir(t *testing.T) {
 	tmp := t.TempDir()
-	yaml := filepath.Join(tmp, "omakiten.yaml")
+	yaml := filepath.Join(tmp, "omakase.yaml")
 	writeFile(t, yaml, baseConfigHeader)
 
 	if err := MigrateLayout(tmp); err != nil {
@@ -18,7 +18,7 @@ func TestMigrateLayoutMovesYAMLIntoConfigSubdir(t *testing.T) {
 	if _, err := os.Stat(yaml); !os.IsNotExist(err) {
 		t.Fatalf("legacy omakiten.yaml still exists: err=%v", err)
 	}
-	moved := filepath.Join(tmp, "config", "omakiten.yaml")
+	moved := filepath.Join(tmp, "config", "omakase.yaml")
 	if _, err := os.Stat(moved); err != nil {
 		t.Fatalf("config/omakiten.yaml missing after migration: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestMigrateLayoutMovesYAMLIntoConfigSubdir(t *testing.T) {
 func TestMigrateLayoutMovesEntityFoldersOutOfConfig(t *testing.T) {
 	tmp := t.TempDir()
 	// v1 layout: yaml + entity dirs all under <root>/config/.
-	writeFile(t, filepath.Join(tmp, "config", "omakiten.yaml"), baseConfigHeader)
+	writeFile(t, filepath.Join(tmp, "config", "omakase.yaml"), baseConfigHeader)
 	writeFile(t, filepath.Join(tmp, "config", "skills", "implementation.md"), "---\nname: Implementation\n---\nbody\n")
 	writeFile(t, filepath.Join(tmp, "config", "skills", "user-skill.md"), "---\nname: Mine\n---\nbody\n")
 
@@ -47,7 +47,7 @@ func TestMigrateLayoutMovesEntityFoldersOutOfConfig(t *testing.T) {
 
 func TestMigrateLayoutSegregatesUserCustoms(t *testing.T) {
 	tmp := t.TempDir()
-	writeFile(t, filepath.Join(tmp, "config", "omakiten.yaml"), baseConfigHeader)
+	writeFile(t, filepath.Join(tmp, "config", "omakase.yaml"), baseConfigHeader)
 	// `implementation.md` ships in the embedded defaults, so it stays at the root.
 	writeFile(t, filepath.Join(tmp, "skills", "implementation.md"), "---\nname: Implementation\n---\nbody\n")
 	// `user-skill.md` is not in the embed → user-created → must move to custom/.
@@ -70,7 +70,7 @@ func TestMigrateLayoutSegregatesUserCustoms(t *testing.T) {
 
 func TestMigrateLayoutMovesUserConfigProfilesToCustom(t *testing.T) {
 	tmp := t.TempDir()
-	writeFile(t, filepath.Join(tmp, "config", "omakiten.yaml"), baseConfigHeader)
+	writeFile(t, filepath.Join(tmp, "config", "omakase.yaml"), baseConfigHeader)
 	// Official profiles shipped under defaults/config remain default-scope files.
 	writeFile(t, filepath.Join(tmp, "config", "omakase.yaml"), "# official profile\n")
 	// User-authored profile that lived flat under config/.
@@ -80,7 +80,7 @@ func TestMigrateLayoutMovesUserConfigProfilesToCustom(t *testing.T) {
 		t.Fatalf("MigrateLayout() error = %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(tmp, "config", "omakiten.yaml")); err != nil {
+	if _, err := os.Stat(filepath.Join(tmp, "config", "omakase.yaml")); err != nil {
 		t.Fatalf("default omakiten.yaml must stay at config/ root: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(tmp, "config", "omakase.yaml")); err != nil {
@@ -96,7 +96,7 @@ func TestMigrateLayoutMovesUserConfigProfilesToCustom(t *testing.T) {
 
 func TestMigrateLayoutCreatesEmptyConfigCustomDir(t *testing.T) {
 	tmp := t.TempDir()
-	writeFile(t, filepath.Join(tmp, "config", "omakiten.yaml"), baseConfigHeader)
+	writeFile(t, filepath.Join(tmp, "config", "omakase.yaml"), baseConfigHeader)
 
 	if err := MigrateLayout(tmp); err != nil {
 		t.Fatalf("MigrateLayout() error = %v", err)
@@ -108,7 +108,7 @@ func TestMigrateLayoutCreatesEmptyConfigCustomDir(t *testing.T) {
 
 func TestMigrateLayoutIsIdempotent(t *testing.T) {
 	tmp := t.TempDir()
-	writeFile(t, filepath.Join(tmp, "config", "omakiten.yaml"), baseConfigHeader)
+	writeFile(t, filepath.Join(tmp, "config", "omakase.yaml"), baseConfigHeader)
 	writeFile(t, filepath.Join(tmp, "skills", "implementation.md"), "---\nname: Implementation\n---\nbody\n")
 
 	for i := 0; i < 3; i++ {

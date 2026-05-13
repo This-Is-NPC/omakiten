@@ -12,7 +12,7 @@ func TestLoadBundleParsesViewsSection(t *testing.T) {
 	if err := EnsureDefaultFiles(tmp); err != nil {
 		t.Fatalf("EnsureDefaultFiles() = %v", err)
 	}
-	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
 	yaml := `version: 1
 kit:
   id: 1
@@ -128,7 +128,7 @@ func TestLoadBundleParsesKitDefaultFile(t *testing.T) {
 	if err := EnsureDefaultFiles(tmp); err != nil {
 		t.Fatalf("EnsureDefaultFiles() = %v", err)
 	}
-	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
 	bundle, err := LoadBundle(configPath)
 	if err != nil {
 		t.Fatalf("LoadBundle(default kit) = %v — kit YAML must be self-sufficient (no in-code fallback any more)", err)

@@ -23,7 +23,7 @@ import (
 func newEntityModel(t *testing.T) (Model, *sqlite.Store, *app.BundleEditor) {
 	t.Helper()
 	tmp := t.TempDir()
-	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
 	dbPath := filepath.Join(tmp, "omakiten.db")
 
 	if err := config.SaveFullBundle(configPath, tuiTestBundle(t)); err != nil {
@@ -178,7 +178,7 @@ func TestEntityRefreshAfterEditorMessage(t *testing.T) {
 func newEntityModelWithTemplates(t *testing.T) Model {
 	t.Helper()
 	tmp := t.TempDir()
-	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
 	dbPath := filepath.Join(tmp, "omakiten.db")
 
 	bundle := tuiTestBundle(t)

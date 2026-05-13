@@ -8,7 +8,7 @@ import (
 )
 
 func TestCLIConfigPresetsListsMenu(t *testing.T) {
-	output := runCLI(t, filepath.Join(t.TempDir(), "omakiten.db"), filepath.Join(t.TempDir(), "config", "omakiten.yaml"), "config", "presets")
+	output := runCLI(t, filepath.Join(t.TempDir(), "omakiten.db"), filepath.Join(t.TempDir(), "config", "omakase.yaml"), "config", "presets")
 	for _, want := range []string{"omakase", "izakaya", "kaiseki", "shokunin", "Chef's choice"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("config presets output missing %q: %s", want, output)
@@ -19,7 +19,7 @@ func TestCLIConfigPresetsListsMenu(t *testing.T) {
 func TestCLIInitPresetCopiesFlatConfigToGitRoot(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	globalConfigPath := filepath.Join(tmp, "global", "config", "omakiten.yaml")
+	globalConfigPath := filepath.Join(tmp, "global", "config", "omakase.yaml")
 	projectRoot := filepath.Join(tmp, "project")
 	deepDir := filepath.Join(projectRoot, "src", "pkg")
 	if err := os.MkdirAll(filepath.Join(projectRoot, ".git"), 0o755); err != nil {
@@ -100,7 +100,7 @@ func TestCLIPresetWorkflowsEndToEnd(t *testing.T) {
 			}
 			t.Chdir(projectRoot)
 
-			globalConfigPath := filepath.Join(tmp, "global", "config", "omakiten.yaml")
+			globalConfigPath := filepath.Join(tmp, "global", "config", "omakase.yaml")
 			runCLI(t, dbPath, globalConfigPath, "init", "--preset", preset, "--name", preset, "--slug", preset)
 			presetConfigPath := filepath.Join(projectRoot, ".omakiten", "config", preset+".yaml")
 			runCLI(t, dbPath, presetConfigPath, "add", "-t", "Preset task")

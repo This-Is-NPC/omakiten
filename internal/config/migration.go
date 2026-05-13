@@ -11,10 +11,6 @@ import (
 	"omakiten/defaults"
 )
 
-// legacyDefaultFilename is the old hardcoded default config name. Kept for
-// reference during migration but no longer treated as special by the resolver.
-const legacyDefaultFilename = "omakiten.yaml"
-
 // MigrateLayout normalizes a config root from any prior layout to the current
 // one, idempotently. Layout history:
 //

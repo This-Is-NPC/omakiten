@@ -14,7 +14,7 @@ import (
 func TestCLIEntityCommands(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
 	projectRoot := filepath.Join(tmp, "project")
 	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
 		t.Fatalf("MkdirAll(projectRoot) error = %v", err)
@@ -84,7 +84,7 @@ func TestCLIEntityCommands(t *testing.T) {
 func TestCLILawAddRejectsInvalidSeverity(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
 	projectRoot := filepath.Join(tmp, "project")
 	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
@@ -114,7 +114,7 @@ func TestCLILawAddRejectsInvalidSeverity(t *testing.T) {
 func TestCLISkillRemovePrunesPersonaRefs(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
 	projectRoot := filepath.Join(tmp, "project")
 	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
@@ -140,7 +140,7 @@ func TestCLIEditorShellOut(t *testing.T) {
 	}
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
-	configPath := filepath.Join(tmp, "config", "omakiten.yaml")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
 	projectRoot := filepath.Join(tmp, "project")
 	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
