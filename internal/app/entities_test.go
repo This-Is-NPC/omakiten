@@ -355,6 +355,49 @@ func TestPersonaServiceEditNoChange(t *testing.T) {
 	}
 }
 
+func TestBundleEditorSetPathRepointsForSubsequentLoads(t *testing.T) {
+	ctx := context.Background()
+	fixture := newEntitiesFixture(t)
+
+	// Drop a second valid bundle alongside the first one so SetPath has a real
+	// target to repoint at. The editor was already wired to fixture.configPath
+	// via newEntitiesFixture, so this exercise mirrors a config-preset swap.
+	altDir := filepath.Join(filepath.Dir(fixture.configDir), "alt")
+	if err := os.MkdirAll(altDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(alt) error = %v", err)
+	}
+	altPath := filepath.Join(altDir, "omakiten.yaml")
+	altBundle := fixtureBundle(t)
+	altBundle.Skills = append(altBundle.Skills, config.Skill{Slug: "alt-only", Name: "Alt"})
+	if err := config.SaveFullBundle(altPath, altBundle); err != nil {
+		t.Fatalf("SaveFullBundle(alt) error = %v", err)
+	}
+
+	if fixture.editor.Path() != fixture.configPath {
+		t.Fatalf("Path() = %q, want %q", fixture.editor.Path(), fixture.configPath)
+	}
+
+	fixture.editor.SetPath(altPath)
+	if fixture.editor.Path() != altPath {
+		t.Fatalf("Path() after SetPath = %q, want %q", fixture.editor.Path(), altPath)
+	}
+
+	bundle, err := fixture.editor.Load()
+	if err != nil {
+		t.Fatalf("Load() after SetPath error = %v", err)
+	}
+	foundAlt := false
+	for _, s := range bundle.Skills {
+		if s.Slug == "alt-only" {
+			foundAlt = true
+		}
+	}
+	if !foundAlt {
+		t.Fatalf("Load() after SetPath did not return alt bundle; skills=%v", bundle.Skills)
+	}
+	_ = ctx
+}
+
 func TestBundleEditorNilMutator(t *testing.T) {
 	ctx := context.Background()
 	fixture := newEntitiesFixture(t)

@@ -202,6 +202,29 @@ as `hint` for the second page. To customise per event, copy the notification fil
 `notifications/custom/<your-slug>.yaml`, change the slug, and reference it
 from a new hook entry.
 
+### Prompt to migrate orphaned tasks after a config swap
+
+```yaml
+config:
+  hooks:
+    - on: bundle.swapped
+      when: { has_orphans: "true" }
+      notification: kitten_orphan_migration
+      message_field: orphan_count
+      detail_message_field: orphan_count
+```
+
+`bundle.swapped` fires from the TUI hot-reload path (Settings → Config picker)
+with payload `{from_workflow, to_workflow, orphan_count, has_orphans, groups}`.
+The `when:` filter is a string match — match `true` as `"true"` (quoted) because
+`HookSpec.When` decodes as `map[string]string`. Quote `"false"` the same way.
+
+The matching `notifications/kitten_orphan_migration.yaml` declares two interactive
+action buttons (see `.docs/notifications.md` → "Action buttons"). Pressing
+`m` dispatches `okt workflow orphans --confirm` in-process; pressing `s`
+dismisses without side effects. Both keystrokes emit `confirmation.granted`
+with the human author_type so the audit log records who approved the run.
+
 ### Surface every agent comment for 8 seconds
 
 ```yaml

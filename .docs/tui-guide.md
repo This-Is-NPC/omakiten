@@ -176,8 +176,36 @@ Mutating any of these still goes through dedicated pickers (`t` for theme, `c` f
 | Key | Action |
 |---|---|
 | `t` | open theme picker (hot-reload) |
-| `c` | open config picker (restart required) |
+| `c` | open config picker (hot-reload) |
 | `r` | refresh |
+
+#### Config picker hot-reload
+
+Selecting a profile re-imports the new bundle in place: the editor repoints
+at the chosen yaml, the `EnumRegistry`, workflow service, theme/styles/
+markdown, notification catalog, and token-badge thresholds all refresh
+without restarting the program. `paths.SetActiveConfig` is written only after
+the import succeeds, so a validator rejection on the new bundle keeps the
+on-disk `.active` pointing at the previous (working) profile.
+
+When the new workflow drops bucket keys the previous one had, tasks in those
+buckets become orphaned. After the swap commits the TUI emits `bundle.swapped`
+with the orphan preview folded into the payload (`orphan_count`, `has_orphans`,
+`groups`). The hooks engine matches a `when: { has_orphans: "true" }` filter
+and paints the `kitten_orphan_migration` notification:
+
+- `m` Migrate — dispatches `okt workflow orphans --confirm` in-process; tasks
+  rebind to the matching key in the new workflow (preserved) or to the first
+  active bucket (removed).
+- `s` Skip — dismisses without side effect; tasks stay orphaned until the
+  user runs the CLI command later.
+- `esc` Cancel — reverts the swap by re-importing the previous bundle and
+  rewriting `.active`. No commit happens until the user explicitly chooses
+  Migrate or Skip.
+
+Every dispatched action emits `confirmation.granted` with `author_type=human`
+keyed by the active project so the audit log captures the human keystroke
+that authorised the run.
 
 ### Settings › Laws / Personas / Skills
 

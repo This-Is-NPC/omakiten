@@ -134,7 +134,46 @@ dismiss:
   mode: key                        # required; key | timeout | next_status
   keys: [esc, q, enter, " "]       # required when mode=key; optional with timeout for manual close
   after_ms: 8000                   # required when mode=timeout
+
+# Actions (optional — turns the notification into an interactive prompt)
+actions:
+  - key: m                         # single keystroke that fires this action
+    id: migrate                    # stable identifier surfaced to the audit log
+    label: Migrate                 # rendered in the footer next to the keystroke
+    command: ["workflow", "orphans", "--confirm"]  # cobra args run in-process when the key is pressed; omit/empty for a labeled dismiss
+  - key: s
+    id: skip
+    label: Skip                    # no command → behaves like a labeled dismiss
 ```
+
+## Action buttons
+
+When `actions:` is present, the notification turns into a prompt with one
+button per entry. The TUI consumes the action's `key` ahead of any `dismiss.keys`
+entry, emits a `confirmation.granted` event tied to the active project, and
+dispatches `command` in-process through the same cobra root the CLI uses.
+Empty/absent `command` means the action only labels a dismiss path — useful
+for "Skip" / "Cancel" buttons.
+
+Templating: each `command` element runs through `text/template` (Go stdlib)
+with the triggering event's payload exposed as `{{ .Payload.* }}`. Missing
+keys raise a loud error so a typo in YAML fails fast instead of silently
+shipping the wrong arguments. Example: `["workflow", "orphans", "--id={{ .Payload.id }}", "--confirm"]`.
+
+The validator rejects:
+
+- empty `key`, `id`, or `label`,
+- a `key` that duplicates another action in the same notification,
+- an `id` that duplicates another action in the same notification,
+- a `key` that also appears in `dismiss.keys` (actions take priority, but
+  the overlap is ambiguous — clear one side),
+- a `command` whose first element is `tui` or `mcp` (those surfaces need
+  their own terminal and cannot run nested under a hook).
+
+Audit trail: every successful action key emits `confirmation.granted` with
+payload `{notification_slug, action_id, command}` before the command runs.
+The event's `author_type` flows from the TUI context (`human`) so reviewers
+can trace human-approved automation in the activity log.
 
 The validator rejects:
 

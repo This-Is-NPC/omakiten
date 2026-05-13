@@ -302,6 +302,95 @@ func TestValidateNotification_acceptsLiteralMessage(t *testing.T) {
 	}
 }
 
+func TestValidateNotification_actionsHappyPath(t *testing.T) {
+	b := validNotification()
+	b.Actions = []NotificationAction{
+		{Key: "m", ID: "migrate", Label: "Migrate", Command: []string{"workflow", "orphans", "--confirm"}},
+		{Key: "s", ID: "skip", Label: "Skip"},
+	}
+	if err := ValidateNotification(b); err != nil {
+		t.Fatalf("actions happy path failed: %v", err)
+	}
+}
+
+func TestValidateNotification_actionsRejectsDuplicateKey(t *testing.T) {
+	b := validNotification()
+	b.Actions = []NotificationAction{
+		{Key: "m", ID: "a", Label: "A"},
+		{Key: "m", ID: "b", Label: "B"},
+	}
+	if err := ValidateNotification(b); err == nil || !strings.Contains(err.Error(), "duplicates") {
+		t.Fatalf("expected duplicate key error, got %v", err)
+	}
+}
+
+func TestValidateNotification_actionsRejectsDuplicateID(t *testing.T) {
+	b := validNotification()
+	b.Actions = []NotificationAction{
+		{Key: "a", ID: "x", Label: "A"},
+		{Key: "b", ID: "x", Label: "B"},
+	}
+	if err := ValidateNotification(b); err == nil || !strings.Contains(err.Error(), "id") {
+		t.Fatalf("expected duplicate id error, got %v", err)
+	}
+}
+
+func TestValidateNotification_actionsRejectsCollisionWithDismissKey(t *testing.T) {
+	b := validNotification()
+	b.Dismiss = NotificationDismiss{Mode: NotificationDismissModeKey, Keys: []string{"esc", "m"}}
+	b.Actions = []NotificationAction{
+		{Key: "m", ID: "migrate", Label: "Migrate"},
+	}
+	if err := ValidateNotification(b); err == nil || !strings.Contains(err.Error(), "collides") {
+		t.Fatalf("expected dismiss-key collision error, got %v", err)
+	}
+}
+
+func TestValidateNotification_actionsRejectsBlockedCommand(t *testing.T) {
+	for _, blocked := range []string{"tui", "mcp"} {
+		b := validNotification()
+		b.Actions = []NotificationAction{
+			{Key: "x", ID: "x", Label: "X", Command: []string{blocked, "show"}},
+		}
+		err := ValidateNotification(b)
+		if err == nil || !strings.Contains(err.Error(), "reserved") {
+			t.Fatalf("expected reserved-command error for %q, got %v", blocked, err)
+		}
+	}
+}
+
+func TestValidateNotification_actionsAllowEmptyCommand(t *testing.T) {
+	b := validNotification()
+	b.Actions = []NotificationAction{
+		{Key: "s", ID: "skip", Label: "Skip"},
+	}
+	if err := ValidateNotification(b); err != nil {
+		t.Fatalf("dismiss-only label action should pass: %v", err)
+	}
+}
+
+func TestValidateNotification_actionsRequireKeyIDLabel(t *testing.T) {
+	tests := []struct {
+		name   string
+		action NotificationAction
+		want   string
+	}{
+		{"missing key", NotificationAction{ID: "x", Label: "X"}, "key is required"},
+		{"missing id", NotificationAction{Key: "x", Label: "X"}, "id is required"},
+		{"missing label", NotificationAction{Key: "x", ID: "x"}, "label is required"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b := validNotification()
+			b.Actions = []NotificationAction{tc.action}
+			err := ValidateNotification(b)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("got %v, want error containing %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestValidateNotification_errorIncludesNameAndPath(t *testing.T) {
 	b := validNotification()
 	b.SourcePath = "/tmp/kit.yaml"

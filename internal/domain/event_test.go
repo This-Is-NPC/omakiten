@@ -9,6 +9,7 @@ func TestKnownEventTypesCoversCatalog(t *testing.T) {
 		EventTypeCommentRemoved:    {},
 		EventTypeTaskCreated:       {},
 		EventTypeTaskMoved:         {},
+		EventTypeTaskMigrated:      {},
 		EventTypeTaskCompleted:     {},
 		EventTypeTaskEdited:        {},
 		EventTypeTaskRemoved:       {},
@@ -26,7 +27,9 @@ func TestKnownEventTypesCoversCatalog(t *testing.T) {
 		EventTypeSolutionLiked:     {},
 		EventTypeSolutionFailed:    {},
 		EventTypeSolutionViewedTop: {},
-		EventTypeHookExecuted:      {},
+		EventTypeHookExecuted:        {},
+		EventTypeBundleSwapped:       {},
+		EventTypeConfirmationGranted: {},
 	}
 	if len(KnownEventTypes) != len(want) {
 		t.Fatalf("KnownEventTypes len = %d, want %d", len(KnownEventTypes), len(want))

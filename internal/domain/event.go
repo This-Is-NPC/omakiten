@@ -40,6 +40,12 @@ const (
 	// EventTypeTaskMoved fires when a task transitions between buckets.
 	// EntityType=task, Payload={from, to}.
 	EventTypeTaskMoved = "task.moved"
+	// EventTypeTaskMigrated fires when a task is rebinded to a new bucket
+	// because the active workflow changed (preset swap, bucket removed or
+	// renamed). Distinct from task.moved because the trigger is a config
+	// change, not a workflow transition — transition guards are bypassed.
+	// EntityType=task, Payload={from, to, reason}.
+	EventTypeTaskMigrated = "task.migrated"
 	// EventTypeTaskCompleted fires when a task moves into the workflow's
 	// final bucket. Co-emits with task.moved on the same transition.
 	// EntityType=task, Payload={bucket}.
@@ -95,6 +101,23 @@ const (
 	// success, error, duration_ms}.
 	EventTypeHookExecuted = "hook.executed"
 
+	// EventTypeBundleSwapped fires when the active config bundle is
+	// replaced through the TUI hot-reload path (Settings → Config picker).
+	// EntityType=system, Payload={from_workflow, to_workflow,
+	// orphan_count, groups}. The hooks engine uses it to surface
+	// migration prompts when orphan_count > 0.
+	EventTypeBundleSwapped = "bundle.swapped"
+
+	// EventTypeConfirmationGranted fires immediately before the TUI
+	// dispatches a non-empty NotificationAction.Command in response to a
+	// user keystroke. The audit log captures every CLI invocation that
+	// was authorised through an interactive prompt so reviewers can
+	// trace human-approved automation. EntityType=system,
+	// Payload={notification_slug, action_id, command}; author_type
+	// flows from ctx — `human` for the TUI surface, `agent` for any
+	// future MCP-triggered confirmation flow.
+	EventTypeConfirmationGranted = "confirmation.granted"
+
 	// Domain events emitted from the canonical service layer when an
 	// error or solution is recorded, searched, added, liked, etc. Used by
 	// metrics.summary to benchmark agents — which models record vs search
@@ -139,6 +162,7 @@ var KnownEventTypes = []string{
 	EventTypeCommentRemoved,
 	EventTypeTaskCreated,
 	EventTypeTaskMoved,
+	EventTypeTaskMigrated,
 	EventTypeTaskCompleted,
 	EventTypeTaskEdited,
 	EventTypeTaskRemoved,
@@ -157,6 +181,8 @@ var KnownEventTypes = []string{
 	EventTypeSolutionFailed,
 	EventTypeSolutionViewedTop,
 	EventTypeHookExecuted,
+	EventTypeBundleSwapped,
+	EventTypeConfirmationGranted,
 }
 
 // IsKnownEventType reports whether s matches one of KnownEventTypes.

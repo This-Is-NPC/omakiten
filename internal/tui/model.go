@@ -482,6 +482,18 @@ func (m Model) dispatchNotification(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if m.notification != nil && dm.ID == m.notification.ID() {
 			m.notification = nil
 		}
+		m.revertConfigSwap()
+		return m, nil, true
+	}
+	if am, ok := msg.(notification.ActionMsg); ok {
+		if m.notification != nil && am.ID == m.notification.ID() {
+			m.notification = nil
+		}
+		// Explicit action choice means the user accepted the swap; clear
+		// the revert-on-dismiss intent so a later esc on a different
+		// notification doesn't accidentally roll back the active config.
+		m.pendingSwapRevertPath = ""
+		m.handleNotificationAction(am)
 		return m, nil, true
 	}
 	if m.notification == nil {

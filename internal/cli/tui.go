@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -61,7 +62,8 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		return err
 	}
 
-	editor := app.NewBundleEditor(rt.store, configstore.New(), rt.configPath)
+	bundleStore := configstore.New()
+	editor := app.NewBundleEditor(rt.store, bundleStore, rt.configPath)
 	model, err := tui.NewModel(ctx, project, tui.Repositories{
 		Tasks:        rt.store,
 		Projects:     rt.store,
@@ -72,9 +74,23 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		Config:       rt.store,
 		Tags:         rt.store,
 		Editor:       editor,
+		BundleStore:  bundleStore,
+		EntityFiles:  bundleStore,
+		Slugger:      bundleStore,
 		ActivityLogs: rt.store,
 		Events:       rt.store,
 		Metrics:      app.NewMetricsService(rt.store),
+		Orphans:      rt.store,
+		DispatchCommand: func(ctx context.Context, args []string) ([]byte, error) {
+			cmd := NewRootCommand(version)
+			cmd.SetContext(ctx)
+			var buf bytes.Buffer
+			cmd.SetOut(&buf)
+			cmd.SetErr(&buf)
+			cmd.SetArgs(args)
+			err := cmd.Execute()
+			return buf.Bytes(), err
+		},
 		ConfigPath:   rt.configPath,
 		DBPath:       rt.dbPath,
 		Version:      version,

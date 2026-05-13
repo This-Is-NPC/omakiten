@@ -180,6 +180,7 @@ func tools() []ToolDefinition {
 		{Name: "context.add", Description: "Add a project handoff context entry.", InputSchema: objectSchema(map[string]any{"body": stringSchema("Context body")}, []string{"body"})},
 		{Name: "context.dump", Description: "Dump compact project context at level 1, 2, or 3.", InputSchema: objectSchema(map[string]any{"level": integerSchema("Context level: 1, 2, or 3")}, nil)},
 		{Name: "workflow.show", Description: "Show the active workflow buckets and allowed transitions.", InputSchema: selectorSchema()},
+		{Name: "orphans.migrate", Description: "Detect tasks whose bucket was deactivated by a workflow swap and rebind them to the active workflow (matching key when preserved, first bucket otherwise). First call without confirmed=true returns a preview report plus a Confirmation block listing every affected task; retry with confirmed=true to apply the rebind. Empty preview short-circuits to a no-op.", InputSchema: objectSchema(map[string]any{"confirmed": booleanSchema("Required true to apply the rebind; first call returns a preview with affected tasks.")}, nil)},
 		{Name: "progress.record", Description: "Record material agent progress through task edits, comments, context entries, and optional workflow movement.", InputSchema: progressSchema()},
 		{Name: "tags.add", Description: "Add a reusable tag to a task or project. The tag name is normalized to kebab-case and deduplicated automatically.", InputSchema: tagMutationSchema(false)},
 		{Name: "tags.remove", Description: "Remove a tag from a task or project after explicit confirmation.", InputSchema: tagMutationSchema(true)},
@@ -389,6 +390,12 @@ func (a *Adapter) dispatchTool(ctx context.Context, name string, args map[string
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = a.service.ShowWorkflow(ctx, input)
+		}
+	case "orphans.migrate":
+		var input agent.MigrateOrphansInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = a.service.MigrateOrphans(ctx, input)
 		}
 	case "progress.record":
 		var input agent.RecordProgressInput

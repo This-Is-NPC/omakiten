@@ -97,6 +97,66 @@ func ValidateNotification(notification Notification) error {
 		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
 	}
 
+	if err := validateNotificationActions(notification.Actions, notification.Dismiss); err != nil {
+		return wrapNotificationErr(notification.Name, notification.SourcePath, err)
+	}
+
+	return nil
+}
+
+// validateNotificationActions enforces the per-action invariants and the
+// cross-action uniqueness rule on keys. Empty action list is allowed —
+// notifications without interactive buttons keep their dismiss-only
+// behaviour. Commands starting with `tui` or `mcp` are rejected because
+// re-entering those surfaces from a hook would block the running TUI on a
+// nested cobra invocation that cannot run cleanly without its own terminal.
+// Every other command is permitted; destructive ones rely on the receiving
+// command's own `--confirm` flag.
+func validateNotificationActions(actions []NotificationAction, dismiss NotificationDismiss) error {
+	if len(actions) == 0 {
+		return nil
+	}
+	seenKey := map[string]int{}
+	seenID := map[string]int{}
+	dismissKeys := map[string]struct{}{}
+	for _, k := range dismiss.Keys {
+		dismissKeys[k] = struct{}{}
+	}
+	for i, action := range actions {
+		key := strings.TrimSpace(action.Key)
+		if key == "" {
+			return fmt.Errorf("actions[%d].key is required", i)
+		}
+		if prior, dup := seenKey[key]; dup {
+			return fmt.Errorf("actions[%d].key %q duplicates actions[%d].key", i, key, prior)
+		}
+		seenKey[key] = i
+		if _, clash := dismissKeys[key]; clash {
+			return fmt.Errorf("actions[%d].key %q collides with dismiss.keys — actions take priority but the duplicate is ambiguous; remove from one side", i, key)
+		}
+		id := strings.TrimSpace(action.ID)
+		if id == "" {
+			return fmt.Errorf("actions[%d].id is required (stable identifier for the audit log)", i)
+		}
+		if prior, dup := seenID[id]; dup {
+			return fmt.Errorf("actions[%d].id %q duplicates actions[%d].id", i, id, prior)
+		}
+		seenID[id] = i
+		if strings.TrimSpace(action.Label) == "" {
+			return fmt.Errorf("actions[%d].label is required (shown in the notification footer)", i)
+		}
+		if len(action.Command) == 0 {
+			continue
+		}
+		head := strings.TrimSpace(action.Command[0])
+		if head == "" {
+			return fmt.Errorf("actions[%d].command[0] must be a cobra subcommand, got empty string", i)
+		}
+		switch head {
+		case "tui", "mcp":
+			return fmt.Errorf("actions[%d].command[0] %q is reserved — `tui` and `mcp` cannot be dispatched from a hook-driven notification (they require their own terminal)", i, head)
+		}
+	}
 	return nil
 }
 

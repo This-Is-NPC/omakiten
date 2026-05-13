@@ -57,6 +57,15 @@ type Repositories struct {
 	ActivityLogs activity.ActivityLogRepository
 	Events       app.EventRepository
 	Metrics      *app.MetricsService
+	Orphans      app.OrphanRepository
+
+	// DispatchCommand invokes the root cobra command in-process and
+	// returns the JSON envelope it wrote to stdout. Notification actions
+	// rely on it to run CLI commands (e.g. "workflow orphans --confirm")
+	// against the same runtime store the live TUI uses. nil disables the
+	// action-dispatch path; pressing an action key with non-empty Command
+	// becomes a no-op + status hint.
+	DispatchCommand func(ctx context.Context, args []string) ([]byte, error)
 
 	// Runtime metadata surfaced on Settings › General. The TUI itself
 	// does not consume these for routing or persistence; they exist so
@@ -313,6 +322,20 @@ type Model struct {
 	// one is on screen; nil otherwise.
 	notifications map[string]config.Notification
 	notification   *notification.Model
+
+	// pendingSwapRevertPath stores the previous config yaml path when the
+	// active swap produced orphaned tasks. The hooks engine paints an
+	// orphan-migration notification overlay; if the user presses esc to
+	// dismiss it without choosing migrate or skip, the TUI reverts the
+	// swap by re-importing the previous bundle so the user is never left
+	// with a config they did not commit to. Cleared whenever the user
+	// makes an explicit choice (any ActionMsg) or after the revert runs.
+	pendingSwapRevertPath string
+	// suppressNextSwapEmit skips the bundle.swapped emit on the next
+	// reloadBundle call. Used by revertConfigSwap so the revert hop does
+	// not trigger another orphan-migration notification — the revert
+	// itself is the user's cancel intent.
+	suppressNextSwapEmit bool
 }
 
 // inputMode is the modal-input enum: normal navigation, comment-add input

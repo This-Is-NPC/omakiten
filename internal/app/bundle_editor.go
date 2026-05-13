@@ -48,6 +48,15 @@ func (e *BundleEditor) Path() string {
 	return e.path
 }
 
+// SetPath repoints the editor at a different omakiten.yaml. Used by the TUI
+// when the user swaps the active workflow preset and the Model must keep
+// editing through the same editor instance instead of being rebuilt. The
+// caller is responsible for having already re-imported the bundle at the
+// new path; SetPath itself touches no files.
+func (e *BundleEditor) SetPath(path string) {
+	e.path = path
+}
+
 func (e *BundleEditor) ConfigDir() string {
 	return filepath.Dir(e.path)
 }

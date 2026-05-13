@@ -140,6 +140,11 @@ config:
       notification: kitten_blocked
       message: "The seal holds. Wake it properly."
       detail_message_field: hint
+    - on: bundle.swapped
+      when: { has_orphans: "true" }
+      notification: kitten_orphan_migration
+      message: "Tasks orphaned by config swap. Migrate to the new workflow?"
+      detail_message_field: orphan_count
     - on: task.removed
       notification: kitten_destructive
       message: "Ashes logged. The archive approves."

@@ -261,6 +261,25 @@ okt context dump -l 3
 
 No flags. Prints the active workflow's buckets and transitions (`config.workflow.active`).
 
+### `okt workflow orphans` — rebind tasks orphaned by a workflow swap
+
+Tasks that pointed to a bucket the previous active workflow had but the new
+one does not are *orphans*: they still live in the database but no longer
+belong to any active bucket. This command previews them and, on `--confirm`,
+rebinds each one to the matching key in the new workflow (when preserved) or
+to the first active bucket (when the key was removed).
+
+```sh
+okt workflow orphans            # preview only — exits validation_error with the migration plan
+okt workflow orphans --confirm  # apply the rebind; emits task.migrated per task
+okt workflow orphans --dry-run  # equivalent to running without --confirm
+```
+
+The preview envelope details carry the per-group plan (`from_bucket_key →
+to_bucket_key (count)`) plus every affected task id. Empty preview reports
+`applied: false, total: 0` with `ok: true`. Used inside the TUI by the
+orphan-migration notification's `Migrate` button.
+
 ---
 
 ## Config

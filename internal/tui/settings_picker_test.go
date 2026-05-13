@@ -81,6 +81,8 @@ func newPickerModel(t *testing.T) (Model, string) {
 		Tasks:    store,
 		Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
+		Events:  store,
+		Orphans: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -305,10 +307,22 @@ func TestConfigPickerEscRestoresEntityScreenClosed(t *testing.T) {
 	}
 }
 
-func TestConfigPickerPersistsSelectionAndShowsRestartHint(t *testing.T) {
+func TestConfigPickerHotReloadsOnEnter(t *testing.T) {
 	model, root := newPickerModel(t)
 	t.Setenv(paths.HomeEnv, root)
 	t.Setenv("XDG_CONFIG_HOME", "")
+
+	// Overwrite the placeholder experiment file with a real bundle that
+	// flips the active theme, so the hot-reload's visible effect is the
+	// theme key change on the Model.
+	experimentBundle := tuiTestBundle(t)
+	experimentBundle.Kit.Key = "experiment"
+	experimentBundle.Kit.Name = "Experiment"
+	experimentBundle.Config.Theme.Active = "ocean"
+	experimentPath := filepath.Join(root, "config", "custom", "config-experiment.yaml")
+	if err := config.SaveFullBundle(experimentPath, experimentBundle); err != nil {
+		t.Fatalf("SaveFullBundle(experiment) error = %v", err)
+	}
 
 	model = pressRune(t, model, '3')
 	model = pressRune(t, model, 'c')
@@ -316,23 +330,65 @@ func TestConfigPickerPersistsSelectionAndShowsRestartHint(t *testing.T) {
 		t.Fatalf("expected config picker open, got %v", model.entityForm.mode)
 	}
 
-	// Move to the experiment profile and apply.
 	model = pressStringKey(t, model, "down")
 	model = pressKey(t, model, tea.KeyEnter)
 
 	if model.entityForm.mode != entityScreenClosed {
-		t.Fatalf("picker should close after selection, mode = %v", model.entityForm.mode)
+		t.Fatalf("picker should close after successful selection, mode = %v; status=%q", model.entityForm.mode, model.status)
 	}
-	if !strings.Contains(strings.ToLower(model.status), "restart") {
-		t.Fatalf("status should mention restart, got %q", model.status)
+	if strings.Contains(strings.ToLower(model.status), "restart") {
+		t.Fatalf("status must not mention restart after hot-reload, got %q", model.status)
+	}
+	if model.theme.Key != "ocean" {
+		t.Fatalf("model.theme.Key = %q, want ocean (theme not refreshed from new bundle)", model.theme.Key)
+	}
+	if got := filepath.Base(model.repos.Editor.Path()); got != "config-experiment.yaml" {
+		t.Fatalf("editor.Path basename = %q, want config-experiment.yaml", got)
 	}
 	got, err := paths.ActiveConfigFile()
 	if err != nil {
 		t.Fatalf("ActiveConfigFile() error = %v", err)
 	}
-	// User profile lives under custom/, so ActiveConfigFile must resolve there.
 	want := filepath.Join(root, "config", "custom", "config-experiment.yaml")
 	if got != want {
 		t.Fatalf("ActiveConfigFile() = %q, want %q", got, want)
+	}
+}
+
+func TestConfigPickerKeepsStateOnInvalidBundle(t *testing.T) {
+	model, root := newPickerModel(t)
+	t.Setenv(paths.HomeEnv, root)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	originalPath := model.repos.Editor.Path()
+	originalThemeKey := model.theme.Key
+
+	model = pressRune(t, model, '3')
+	model = pressRune(t, model, 'c')
+	if model.entityForm.mode != entityScreenConfigPicker {
+		t.Fatalf("expected config picker open, got %v", model.entityForm.mode)
+	}
+
+	// The experiment file from newPickerModel is "# placeholder\n" — an
+	// invalid bundle. Hot-reload must reject it without mutating state.
+	model = pressStringKey(t, model, "down")
+	model = pressKey(t, model, tea.KeyEnter)
+
+	if model.entityForm.mode != entityScreenConfigPicker {
+		t.Fatalf("picker must stay open on invalid bundle, got mode %v", model.entityForm.mode)
+	}
+	if !strings.Contains(strings.ToLower(model.status), "config switch failed") {
+		t.Fatalf("status should describe the failure, got %q", model.status)
+	}
+	if model.repos.Editor.Path() != originalPath {
+		t.Fatalf("editor.Path changed despite import failure: %q != %q", model.repos.Editor.Path(), originalPath)
+	}
+	if model.theme.Key != originalThemeKey {
+		t.Fatalf("theme.Key changed despite import failure: %q != %q", model.theme.Key, originalThemeKey)
+	}
+	// The .active state file must not be written on failure — otherwise a
+	// next startup would also try to load the broken bundle.
+	if _, err := os.Stat(filepath.Join(root, "config", paths.ActiveConfigStateFile)); err == nil {
+		t.Fatalf(".active was written despite import failure")
 	}
 }

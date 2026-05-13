@@ -4,8 +4,8 @@ description: Sleepy archivist kitten for archived and revived quests.
 
 # Geometry ------------------------------------------------------------
 size:
-  width: 40
-  height: 20
+  width: 50
+  height: 25
 
 # Behaviour flags -----------------------------------------------------
 auto_height: false
