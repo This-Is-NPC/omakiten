@@ -21,7 +21,107 @@ config:
   events:
     default_recent_limit: 50
     defaults: {log: true, broadcast: true, hook: true}
-  hooks: []
+  hooks:
+    - on: task.created
+      notification: kitten_informative
+      message: "A new tab opens at the counter."
+    - on: task.moved
+      notification: kitten_informative
+      message: "Order moved down the line."
+    - on: task.edited
+      notification: kitten_informative
+      message: "Order amended at the counter."
+    - on: task.completed
+      notification: kitten_success
+      message: "Tab settled. Cheers."
+    - on: guard.violated
+      when: { operation: task.delete }
+      notification: kitten_destructive
+      message: "Already poured. No undo at this bar."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: comment.delete }
+      notification: kitten_destructive
+      message: "Conversation belongs to the bar."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.transition }
+      notification: kitten_blocked
+      message: "Bouncer says no — wrong door."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.edit }
+      notification: kitten_blocked
+      message: "The chef calls the menu."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: comment.edit }
+      notification: kitten_blocked
+      message: "Bartender keeps the receipt."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.archive }
+      notification: kitten_blocked
+      message: "Last call hasn't been rung."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.unarchive }
+      notification: kitten_blocked
+      message: "Closed orders stay closed."
+      detail_message_field: hint
+    - on: task.removed
+      notification: kitten_destructive
+      message: "Off the menu. Quietly."
+    - on: comment.removed
+      notification: kitten_destructive
+      message: "Tip jar emptied."
+    - on: task.archived
+      notification: kitten_archive
+      message: "Tab on hold for the night."
+    - on: task.unarchived
+      notification: kitten_archive
+      message: "Order back on the rail."
+    - on: comment
+      when: { author_type: human }
+      notification: kitten_informative
+      message: "A patron leans in."
+    - on: comment
+      when: { author_type: agent }
+      notification: kitten_informative
+      message: "Your companion adds a remark."
+    - on: comment.edited
+      notification: kitten_informative
+      message: "Receipt corrected."
+    - on: tag.added
+      notification: kitten_link
+      message: "Sticker on the glass."
+    - on: tag.removed
+      notification: kitten_link
+      message: "Sticker peeled."
+    - on: dependency.added
+      notification: kitten_link
+      message: "Drinks chained — wait for the first."
+    - on: dependency.removed
+      notification: kitten_link
+      message: "Chain broken. Pour freely."
+    - on: error.recorded
+      notification: kitten_knowledge
+      message: "Spilled drink — logged."
+    - on: error.searched
+      notification: kitten_knowledge
+      message: "Checking the bar logs."
+    - on: solution.added
+      notification: kitten_knowledge
+      message: "A new house special enters the menu."
+    - on: solution.liked
+      notification: kitten_success
+      message: "Patron tips the bar."
+    - on: solution.failed
+      notification: kitten_knowledge
+      message: "The recipe didn't land."
+    - on: solution.viewed_top
+      notification: kitten_knowledge
+      message: "Browsing the house specials."
   search:
     stopwords: [and, are, for, from, into, the, this, that, with]
   tag_synonyms:

@@ -21,7 +21,107 @@ config:
   events:
     default_recent_limit: 50
     defaults: {log: true, broadcast: true, hook: true}
-  hooks: []
+  hooks:
+    - on: task.created
+      notification: kitten_informative
+      message: "A new course has been ordered."
+    - on: task.moved
+      notification: kitten_informative
+      message: "The course advances to the next stage."
+    - on: task.edited
+      notification: kitten_informative
+      message: "The chef adjusts the preparation."
+    - on: task.completed
+      notification: kitten_success
+      message: "The course is plated and presented."
+    - on: guard.violated
+      when: { operation: task.delete }
+      notification: kitten_destructive
+      message: "Service does not retract a presented course."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: comment.delete }
+      notification: kitten_destructive
+      message: "The record of service is preserved."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.transition }
+      notification: kitten_blocked
+      message: "The kitchen is not yet ready."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.edit }
+      notification: kitten_blocked
+      message: "The course is sealed for service."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: comment.edit }
+      notification: kitten_blocked
+      message: "Service notes remain as written."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.archive }
+      notification: kitten_blocked
+      message: "Service is not yet complete."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.unarchive }
+      notification: kitten_blocked
+      message: "Completed courses remain in the record."
+      detail_message_field: hint
+    - on: task.removed
+      notification: kitten_destructive
+      message: "Course withdrawn from the menu."
+    - on: comment.removed
+      notification: kitten_destructive
+      message: "Service note retracted."
+    - on: task.archived
+      notification: kitten_archive
+      message: "Course archived in the service record."
+    - on: task.unarchived
+      notification: kitten_archive
+      message: "Course returned to the line."
+    - on: comment
+      when: { author_type: human }
+      notification: kitten_informative
+      message: "The chef receives a note from the dining room."
+    - on: comment
+      when: { author_type: agent }
+      notification: kitten_informative
+      message: "A service assistant files a note."
+    - on: comment.edited
+      notification: kitten_informative
+      message: "Service note revised under watch."
+    - on: tag.added
+      notification: kitten_link
+      message: "A garnish is added to the plate."
+    - on: tag.removed
+      notification: kitten_link
+      message: "A garnish is removed from the plate."
+    - on: dependency.added
+      notification: kitten_link
+      message: "A pairing course has been linked."
+    - on: dependency.removed
+      notification: kitten_link
+      message: "The pairing is dissolved."
+    - on: error.recorded
+      notification: kitten_knowledge
+      message: "A service incident is logged."
+    - on: error.searched
+      notification: kitten_knowledge
+      message: "Reviewing the service ledger."
+    - on: solution.added
+      notification: kitten_knowledge
+      message: "A new technique enters the kitchen."
+    - on: solution.liked
+      notification: kitten_success
+      message: "The head chef endorses the technique."
+    - on: solution.failed
+      notification: kitten_knowledge
+      message: "The technique did not hold."
+    - on: solution.viewed_top
+      notification: kitten_knowledge
+      message: "Consulting the kitchen's signature techniques."
   search:
     stopwords: [and, are, for, from, into, the, this, that, with]
   tag_synonyms:

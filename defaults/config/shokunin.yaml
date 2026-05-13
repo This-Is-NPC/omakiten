@@ -21,7 +21,107 @@ config:
   events:
     default_recent_limit: 50
     defaults: {log: true, broadcast: true, hook: true}
-  hooks: []
+  hooks:
+    - on: task.created
+      notification: kitten_informative
+      message: "A new specimen logged for inspection."
+    - on: task.moved
+      notification: kitten_informative
+      message: "Specimen advanced to the next station."
+    - on: task.edited
+      notification: kitten_informative
+      message: "Specimen edits recorded under supervision."
+    - on: task.completed
+      notification: kitten_success
+      message: "Specimen approved. Sealed for delivery."
+    - on: guard.violated
+      when: { operation: task.delete }
+      notification: kitten_destructive
+      message: "Destructive action requires sign-off."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: comment.delete }
+      notification: kitten_destructive
+      message: "Audit trail does not permit deletion."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.transition }
+      notification: kitten_blocked
+      message: "Gate refuses passage — check the guard hint."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.edit }
+      notification: kitten_blocked
+      message: "Edit blocked at this station."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: comment.edit }
+      notification: kitten_blocked
+      message: "Append-only trail rejects in-place edits."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.archive }
+      notification: kitten_blocked
+      message: "Archive blocked — conditions not yet met."
+      detail_message_field: hint
+    - on: guard.violated
+      when: { operation: task.unarchive }
+      notification: kitten_blocked
+      message: "Reopen requires reviewer approval."
+      detail_message_field: hint
+    - on: task.removed
+      notification: kitten_destructive
+      message: "Specimen retired with full record."
+    - on: comment.removed
+      notification: kitten_destructive
+      message: "Audit trail entry removed under exception."
+    - on: task.archived
+      notification: kitten_archive
+      message: "Specimen sealed in the vault."
+    - on: task.unarchived
+      notification: kitten_archive
+      message: "Specimen returned to active inspection."
+    - on: comment
+      when: { author_type: human }
+      notification: kitten_informative
+      message: "A signed note enters the record."
+    - on: comment
+      when: { author_type: agent }
+      notification: kitten_informative
+      message: "An automated entry is appended."
+    - on: comment.edited
+      notification: kitten_informative
+      message: "Correction recorded — original retained."
+    - on: tag.added
+      notification: kitten_link
+      message: "Classification updated."
+    - on: tag.removed
+      notification: kitten_link
+      message: "Classification withdrawn."
+    - on: dependency.added
+      notification: kitten_link
+      message: "Upstream dependency declared."
+    - on: dependency.removed
+      notification: kitten_link
+      message: "Dependency rescinded with note."
+    - on: error.recorded
+      notification: kitten_knowledge
+      message: "Defect catalogued for postmortem."
+    - on: error.searched
+      notification: kitten_knowledge
+      message: "Consulting the defect register."
+    - on: solution.added
+      notification: kitten_knowledge
+      message: "Corrective action documented."
+    - on: solution.liked
+      notification: kitten_success
+      message: "Corrective action validated."
+    - on: solution.failed
+      notification: kitten_knowledge
+      message: "Corrective action did not resolve — re-open postmortem."
+    - on: solution.viewed_top
+      notification: kitten_knowledge
+      message: "Reviewing established corrective actions."
   search:
     stopwords: [and, are, for, from, into, the, this, that, with]
   tag_synonyms:
