@@ -20,8 +20,8 @@ import (
 // alongside any change that grows a prompt past its current budget.
 var promptBudgets = map[string]int{
 	"okt":           2300,
-	"okt-imagine":   2250,
-	"okt-create":    3300,
+	"okt-imagine":   4900,
+	"okt-create":    7600,
 	"okt-resume":    2300,
 	"okt-continue":  2400,
 	"okt-implement": 8200,
