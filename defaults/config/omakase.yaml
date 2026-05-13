@@ -450,6 +450,13 @@ personas:
     skills:
       - discovery
       - user-story-writing
+      - pdca-cycle
+      - five-w-two-h
+      - smart-goals
+      - invest-stories
+      - moscow-prioritization
+      - rice-scoring
+      - non-functional-requirements
       - markdown
   - slug: documentation-agent
     skills:
@@ -489,11 +496,19 @@ mcp_commands:
     persona: product-owner
     laws_disabled:
       - template-fidelity
+    templates:
+      - comment-5w2h
+      - comment-smart-success
   okt-create:
     persona: product-owner
+    laws:
+      - invest-stories
+      - outcome-over-output
     templates:
       - user-story
       - task-bugfix
+      - comment-smart-success
+      - comment-moscow
   okt-resume:
     persona: engineer
   okt-continue:

@@ -66,6 +66,7 @@ func TestCLIPresetWorkflowsEndToEnd(t *testing.T) {
 			{"move", "1", "-t", "done"},
 		},
 		"kaiseki": {
+			{"comment", "add", "1", "-b", "5w2h elicitation", "--tag", "5w2h"},
 			{"comment", "add", "1", "-b", "requirements", "--tag", "requirements"},
 			{"comment", "add", "1", "-b", "acceptance criteria", "--tag", "acceptance"},
 			{"move", "1", "-t", "planning"},
@@ -81,6 +82,7 @@ func TestCLIPresetWorkflowsEndToEnd(t *testing.T) {
 			{"move", "1", "-t", "done"},
 		},
 		"shokunin": {
+			{"comment", "add", "1", "-b", "5w2h elicitation", "--tag", "5w2h"},
 			{"comment", "add", "1", "-b", "requirements", "--tag", "requirements"},
 			{"comment", "add", "1", "-b", "acceptance criteria", "--tag", "acceptance"},
 			{"move", "1", "-t", "planning"},

@@ -64,7 +64,7 @@ personas:
   - slug: craftsperson
     skills: [sre-discipline, risk-driven-development, postmortem-authoring, change-management, test-driven-development-strict, static-analysis-discipline, implementation, markdown]
   - slug: product-owner
-    skills: [discovery, user-story-writing, markdown]
+    skills: [discovery, user-story-writing, pdca-cycle, five-w-two-h, smart-goals, invest-stories, moscow-prioritization, rice-scoring, okr-framing, non-functional-requirements, markdown]
   - slug: documentation-agent
     skills: [documentation, architecture-mapping, requirements-mapping, readme-curation, markdown]
 mcp_commands:
@@ -75,10 +75,11 @@ mcp_commands:
   okt-imagine:
     persona: product-owner
     laws_disabled: [template-fidelity]
+    templates: [comment-5w2h, comment-smart-success]
   okt-create:
     persona: product-owner
-    laws: [blast-radius-awareness, error-budget-aware]
-    templates: [task-change-request, comment-requirements, comment-acceptance, comment-risk-assessment]
+    laws: [blast-radius-awareness, error-budget-aware, invest-stories, outcome-over-output, prioritization-recorded, non-functional-explicit]
+    templates: [task-change-request, comment-requirements, comment-acceptance, comment-risk-assessment, comment-smart-success, comment-moscow, comment-rice-score, comment-okr, comment-non-functional]
   okt-resume:
     persona: craftsperson
   okt-continue:
@@ -139,8 +140,9 @@ workflows:
       - from: 1
         to: 2
         guards:
+          - {type: comments_tagged, tag: 5w2h, count: 1, hint: "Add a #5w2h comment walking through the seven elicitation questions (What / Why / Who / When / Where / How / How much) before planning starts."}
           - {type: comments_tagged, tag: requirements, count: 1, hint: "Add a #requirements comment with the user story and acceptance signals before planning starts."}
-          - {type: comments_tagged, tag: acceptance, count: 1, hint: "Add a #acceptance comment with Given/When/Then criteria the domain expert would sign off on."}
+          - {type: comments_tagged, tag: acceptance, count: 1, hint: "Add a #acceptance comment with testable criteria the requester and reviewer can verify."}
       - from: 2
         to: 3
         guards:

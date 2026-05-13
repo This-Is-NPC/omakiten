@@ -36,8 +36,11 @@ var commandActions = map[string]string{
 		"Next: suggest `okt-resume` to scan likely-next work, or `okt-imagine` to explore a new direction.",
 
 	"okt-imagine": "Open discovery — no task exists yet. Ground yourself " +
-		"with `project.overview` and `tasks.list`, ask clarifying questions, and sketch hypotheses freely " +
-		"(template-fidelity is disabled here on purpose). Next: when the shape is clear, suggest `okt-create`.",
+		"with `project.overview` and `tasks.list`, then interrogate the user via 5W2H (What / Why / Who / When / " +
+		"Where / How / How much) — don't accept vague answers. Call `templates.show comment-5w2h` and " +
+		"`templates.show comment-smart-success` to fetch the scaffolds when the user is ready to commit answers; " +
+		"template-fidelity is disabled here so freewheel exploration is fine before the scaffolds land. " +
+		"Frame success in SMART terms before handing off. Next: when the shape is concrete, suggest `okt-create`.",
 
 	"okt-create": "Author the task. Apply feasibility-gate first — " +
 		"infeasible requests stop here with the report, no task created. Otherwise call " +
