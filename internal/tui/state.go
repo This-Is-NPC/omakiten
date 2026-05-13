@@ -57,6 +57,7 @@ type Repositories struct {
 	ActivityLogs activity.ActivityLogRepository
 	Events       app.EventRepository
 	Metrics      *app.MetricsService
+	Orphans      app.OrphanRepository
 
 	// Runtime metadata surfaced on Settings › General. The TUI itself
 	// does not consume these for routing or persistence; they exist so

@@ -79,6 +79,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		ActivityLogs: rt.store,
 		Events:       rt.store,
 		Metrics:      app.NewMetricsService(rt.store),
+		Orphans:      rt.store,
 		ConfigPath:   rt.configPath,
 		DBPath:       rt.dbPath,
 		Version:      version,

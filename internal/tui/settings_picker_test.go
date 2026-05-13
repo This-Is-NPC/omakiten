@@ -81,6 +81,8 @@ func newPickerModel(t *testing.T) (Model, string) {
 		Tasks:    store,
 		Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
+		Events:  store,
+		Orphans: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
