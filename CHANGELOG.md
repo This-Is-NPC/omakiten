@@ -75,6 +75,17 @@
 * **boundary enforcement:** new `internal/arch/arch_test.go` walks the import graph and fails if `internal/domain` reaches into adapters, if `internal/app` imports concrete adapters, or if any leaf adapter references a sibling. A `.golangci.yml` mirrors the rules under `depguard`. CI now runs `go vet`, `go test -race -count=1` and `golangci-lint`.
 * **eliminated `"backlog"` literal in production code:** `internal/cli/add.go --bucket` defaults to `""` (the `WorkflowService` resolves the active workflow's first bucket); the TUI's create form does the same.
 
+## [0.13.0](https://github.com/This-Is-NPC/omakiten/compare/v0.12.0...v0.13.0) (2026-05-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **workflow-presets:** any JSON payload that embedded a domain.Priority or domain.Severity now emits the int id instead of the configured label string. MCP consumers expecting `"priority": "high"` must read from the projected DTO label fields. SQLite event payloads written prior to this change keep their label-string shape; migration 018 drops those legacy rows.
+
+### Features
+
+* **workflow-presets:** four official presets + PDCA-mapped okt-* + docs auto-generation ([#46](https://github.com/This-Is-NPC/omakiten/issues/46)) ([9a1876d](https://github.com/This-Is-NPC/omakiten/commit/9a1876d18db272eb092b86479356f1ce9d14a453))
+
 ## [0.12.0](https://github.com/This-Is-NPC/omakiten/compare/v0.11.0...v0.12.0) (2026-05-10)
 
 
