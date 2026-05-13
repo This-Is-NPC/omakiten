@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -80,6 +81,16 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		Events:       rt.store,
 		Metrics:      app.NewMetricsService(rt.store),
 		Orphans:      rt.store,
+		DispatchCommand: func(ctx context.Context, args []string) ([]byte, error) {
+			cmd := NewRootCommand(version)
+			cmd.SetContext(ctx)
+			var buf bytes.Buffer
+			cmd.SetOut(&buf)
+			cmd.SetErr(&buf)
+			cmd.SetArgs(args)
+			err := cmd.Execute()
+			return buf.Bytes(), err
+		},
 		ConfigPath:   rt.configPath,
 		DBPath:       rt.dbPath,
 		Version:      version,

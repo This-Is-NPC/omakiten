@@ -59,6 +59,14 @@ type Repositories struct {
 	Metrics      *app.MetricsService
 	Orphans      app.OrphanRepository
 
+	// DispatchCommand invokes the root cobra command in-process and
+	// returns the JSON envelope it wrote to stdout. Notification actions
+	// rely on it to run CLI commands (e.g. "workflow orphans --confirm")
+	// against the same runtime store the live TUI uses. nil disables the
+	// action-dispatch path; pressing an action key with non-empty Command
+	// becomes a no-op + status hint.
+	DispatchCommand func(ctx context.Context, args []string) ([]byte, error)
+
 	// Runtime metadata surfaced on Settings › General. The TUI itself
 	// does not consume these for routing or persistence; they exist so
 	// the read-only info card can reflect the active install. Empty

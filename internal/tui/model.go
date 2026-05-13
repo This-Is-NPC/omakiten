@@ -484,6 +484,13 @@ func (m Model) dispatchNotification(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		return m, nil, true
 	}
+	if am, ok := msg.(notification.ActionMsg); ok {
+		if m.notification != nil && am.ID == m.notification.ID() {
+			m.notification = nil
+		}
+		m.handleNotificationAction(am)
+		return m, nil, true
+	}
 	if m.notification == nil {
 		return m, nil, false
 	}
