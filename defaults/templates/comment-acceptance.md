@@ -1,5 +1,5 @@
 ---
-name: Comment — Acceptance criteria
+name: Comment Acceptance
 description: Fills the `#acceptance` guard. Project picks the format — Given/When/Then or any other testable shape.
 entity: comment
 laws:

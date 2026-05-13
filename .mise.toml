@@ -30,6 +30,13 @@ fi
 installed_at="$HOME/.local/bin/okt"
 install -Dm755 bin/okt "$installed_at"
 "$PWD/scripts/sync-defaults.sh" "$HOME/.config/omakiten"
+
+# Mirror the curl|bash workflow-preset prompt for the local install flow.
+# OKT_PRESET=<name> skips the prompt; non-interactive shells pick the
+# default (omakase) silently. Writes <preset>.yaml to <config-dir>/.active
+# so the subsequent okt init resolves the chosen preset.
+"$PWD/scripts/preset-select.sh"
+
 "$installed_at" init --name Omakiten --slug omakiten --root "$PWD"
 
 # Catch stale copies of okt that PATH resolves before $HOME/.local/bin —
