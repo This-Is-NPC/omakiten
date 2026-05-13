@@ -101,6 +101,8 @@ Four official presets ship under `defaults/config/`. Each one is a different **p
 
 The installer asks which one to activate at install time (defaults to omakase). Switch later from the TUI Settings › Config picker, with `okt init --preset <name>` on a new project, or by editing `~/.config/omakiten/config/.active`. List the menu via `okt config presets`.
 
+Every preset's `okt-imagine` interrogates you via 5W2H (What / Why / Who / When / Where / How / How much) so you understand what you're building before any code is planned. Success criteria land in SMART form; priorities (when alternatives exist) record as MoSCoW or RICE. The `okt-*` cycle maps to Plan-Do-Check-Act — see the [Workflow Guide § PDCA mapping](.docs/workflow-guide.md#pdca-mapping--the-cycle-behind-every-preset).
+
 Authoring your own preset is a first-class path. The agent can orient itself on the active configuration layout via the `/okt-config` MCP prompt — frontmatter shapes, wiring, guard kinds, and the naming convention all live in the orientation template the agent fetches via `templates.show config-orientation`. The full picker / fork recipe sits in the [Workflow Guide](.docs/workflow-guide.md).
 
 ### Local-first, by design
