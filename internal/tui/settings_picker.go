@@ -283,21 +283,42 @@ func (m *Model) reloadTheme() error {
 	return nil
 }
 
-// applyConfigSelection persists the user's config-profile choice and shows
-// a restart-required hint. Hot-swapping the active config in place would
-// require rebuilding repos and re-importing the bundle without restarting
-// — out of scope for the current iteration.
+// applyConfigSelection imports the chosen workflow preset in place: it
+// re-imports the new bundle into SQLite, repoints the editor at the new yaml,
+// refreshes every bundle-derived field on the Model (theme, styles, markdown,
+// priorities/severities, registry, notifications, token badge, workflow
+// service), and re-queries the task snapshot. On any failure the DB and the
+// .active state file stay untouched and the error surfaces in m.status so
+// the user can retry without leaving the TUI in a half-applied state.
 func (m *Model) applyConfigSelection() {
 	if m.entityPicker.Cursor < 0 || m.entityPicker.Cursor >= len(m.configPickerOptions) {
 		return
 	}
 	chosen := m.configPickerOptions[m.entityPicker.Cursor].Filename
+	newPath := m.resolveConfigPath(chosen)
+
+	if err := m.reloadBundle(newPath); err != nil {
+		m.status = fmt.Sprintf("Config switch failed (%s): %s", chosen, err.Error())
+		return
+	}
 	if err := paths.SetActiveConfig(chosen); err != nil {
 		m.status = err.Error()
 		return
 	}
 	display := strings.TrimSuffix(chosen, filepath.Ext(chosen))
-	m.closeEntityScreen(fmt.Sprintf("Config switched to %s — restart TUI to apply", display))
+	m.closeEntityScreen(fmt.Sprintf("Config switched to %s", display))
+}
+
+// resolveConfigPath mirrors paths.ActiveConfigFile's custom/<name> →
+// root/<name> resolution without writing `.active`. Used by the swap path so
+// the new bundle can be validated before the on-disk pointer is moved.
+func (m *Model) resolveConfigPath(filename string) string {
+	dir := m.repos.Editor.ConfigDir()
+	customPath := filepath.Join(dir, "custom", filename)
+	if _, err := os.Stat(customPath); err == nil {
+		return customPath
+	}
+	return filepath.Join(dir, filename)
 }
 
 func (m Model) renderThemePicker() string {
@@ -346,7 +367,7 @@ func (m Model) renderConfigPicker() string {
 	}
 	header := []string{
 		m.styles.kicker(fmt.Sprintf("Config profile · active: %s", active)),
-		m.styles.hint.Render("up/down: move · enter: select (restart required) · esc: cancel"),
+		m.styles.hint.Render("up/down: move · enter: apply (hot-reload) · esc: cancel"),
 		"",
 	}
 	return m.renderPickerPanel(header, rows, m.entityPicker.Scroll, m.pickerViewportRows())
