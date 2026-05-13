@@ -272,12 +272,15 @@ func TestReadWiringWithRepoLocal_NoOverlayWhenDirEmpty(t *testing.T) {
 	writeFile(t, dir+"/omakiten.yaml", `version: 1
 kit: {id: 1, key: omakase, name: Omakase}
 `)
-	w, err := readWiringWithRepoLocal(dir+"/omakiten.yaml", "")
+	w, disables, err := readWiringWithRepoLocal(dir+"/omakiten.yaml", "")
 	if err != nil {
 		t.Fatalf("readWiringWithRepoLocal: %v", err)
 	}
 	if w.Version != 1 {
 		t.Fatalf("version = %d", w.Version)
+	}
+	if len(disables.Skills)+len(disables.Laws)+len(disables.Personas)+len(disables.Templates) != 0 {
+		t.Fatalf("disables not empty: %+v", disables)
 	}
 }
 
@@ -287,11 +290,40 @@ func TestReadWiringWithRepoLocal_MissingOverlayFileOK(t *testing.T) {
 	writeFile(t, dir+"/omakiten.yaml", `version: 1
 kit: {id: 1, key: omakase, name: Omakase}
 `)
-	w, err := readWiringWithRepoLocal(dir+"/omakiten.yaml", repoLocal)
+	w, _, err := readWiringWithRepoLocal(dir+"/omakiten.yaml", repoLocal)
 	if err != nil {
 		t.Fatalf("readWiringWithRepoLocal: %v", err)
 	}
 	if w.Kit.Key != "omakase" {
 		t.Fatalf("kit.key = %q", w.Kit.Key)
+	}
+}
+
+func TestReadWiringWithRepoLocal_DisablesPropagate(t *testing.T) {
+	dir := t.TempDir()
+	repoLocal := t.TempDir()
+	writeFile(t, dir+"/omakiten.yaml", `version: 1
+kit: {id: 1, key: omakase, name: Omakase}
+`)
+	writeFile(t, repoLocal+"/omakiten.yaml", `personas_disabled: [agent]
+skills_disabled: [rust]
+laws_disabled: [scope]
+templates_disabled: [user-story]
+`)
+	_, disables, err := readWiringWithRepoLocal(dir+"/omakiten.yaml", repoLocal)
+	if err != nil {
+		t.Fatalf("readWiringWithRepoLocal: %v", err)
+	}
+	if len(disables.Personas) != 1 || disables.Personas[0] != "agent" {
+		t.Fatalf("personas disables wrong: %+v", disables.Personas)
+	}
+	if len(disables.Skills) != 1 || disables.Skills[0] != "rust" {
+		t.Fatalf("skills disables wrong: %+v", disables.Skills)
+	}
+	if len(disables.Laws) != 1 || disables.Laws[0] != "scope" {
+		t.Fatalf("laws disables wrong: %+v", disables.Laws)
+	}
+	if len(disables.Templates) != 1 || disables.Templates[0] != "user-story" {
+		t.Fatalf("templates disables wrong: %+v", disables.Templates)
 	}
 }

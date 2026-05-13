@@ -14,32 +14,54 @@ import (
 // it exists; absence falls through to the global wiring untouched.
 const repoLocalWiringFilename = "omakiten.yaml"
 
+// wiringDisables captures the `*_disabled` removal lists from an overlay
+// so they can be applied beyond the wiring decode — specifically, to
+// also subtract slugs from entity sets that pick fns auto-load when the
+// corresponding wiring slot is absent.
+type wiringDisables struct {
+	Skills    []string
+	Laws      []string
+	Personas  []string
+	Templates []string
+}
+
 // readWiringWithRepoLocal reads the user-global wiring at globalPath and,
 // when repoLocalDir is non-empty and `<repoLocalDir>/omakiten.yaml` exists,
 // merges that overlay into the global wiring by the entry-merge rules
 // documented in mergeWiringMaps. The merged YAML is decoded with strict
 // known-fields so unknown sections in either layer still fail loudly.
-func readWiringWithRepoLocal(globalPath, repoLocalDir string) (wiring, error) {
+// Returns the extracted overlay disables so the loader can also subtract
+// the listed slugs from auto-loaded entity sets (workflows/projects/
+// mcp_commands are already removed at the YAML layer because their
+// wiring slots are always materialised — only skills/laws/personas/
+// templates have an auto-load fallback).
+func readWiringWithRepoLocal(globalPath, repoLocalDir string) (wiring, wiringDisables, error) {
 	baseBytes, err := os.ReadFile(globalPath)
 	if err != nil {
-		return wiring{}, err
+		return wiring{}, wiringDisables{}, err
 	}
 	if repoLocalDir == "" {
-		return decodeWiring(baseBytes)
+		w, err := decodeWiring(baseBytes)
+		return w, wiringDisables{}, err
 	}
 	overlayPath := joinRepoLocalYAML(repoLocalDir)
 	overlayBytes, err := os.ReadFile(overlayPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return decodeWiring(baseBytes)
+			w, err := decodeWiring(baseBytes)
+			return w, wiringDisables{}, err
 		}
-		return wiring{}, fmt.Errorf("read repo-local wiring %s: %w", overlayPath, err)
+		return wiring{}, wiringDisables{}, fmt.Errorf("read repo-local wiring %s: %w", overlayPath, err)
 	}
-	merged, err := mergeWiringYAML(baseBytes, overlayBytes)
+	merged, disables, err := mergeWiringYAMLWithDisables(baseBytes, overlayBytes)
 	if err != nil {
-		return wiring{}, fmt.Errorf("merge repo-local wiring: %w", err)
+		return wiring{}, wiringDisables{}, fmt.Errorf("merge repo-local wiring: %w", err)
 	}
-	return decodeWiring(merged)
+	w, err := decodeWiring(merged)
+	if err != nil {
+		return wiring{}, wiringDisables{}, err
+	}
+	return w, disables, nil
 }
 
 func joinRepoLocalYAML(repoLocalDir string) string {
@@ -59,22 +81,39 @@ func decodeWiring(data []byte) (wiring, error) {
 // mergeWiringYAML parses base and overlay as YAML maps, applies the
 // entry-merge rules in mergeWiringMaps, and re-marshals the result. The
 // returned bytes are intended to be decoded strictly into the `wiring`
-// struct so unknown fields surface even after the merge.
+// struct so unknown fields surface even after the merge. Auto-load
+// disables for skill/law/persona/template are dropped on the floor;
+// callers that need them use mergeWiringYAMLWithDisables instead.
 func mergeWiringYAML(base, overlay []byte) ([]byte, error) {
+	out, _, err := mergeWiringYAMLWithDisables(base, overlay)
+	return out, err
+}
+
+// mergeWiringYAMLWithDisables is mergeWiringYAML that additionally
+// returns the autoload-relevant `*_disabled` lists so the loader can
+// filter entity sets that pick fns would otherwise auto-load when the
+// wiring slot is absent.
+func mergeWiringYAMLWithDisables(base, overlay []byte) ([]byte, wiringDisables, error) {
 	baseMap, err := unmarshalYAMLMap(base)
 	if err != nil {
-		return nil, fmt.Errorf("parse base wiring: %w", err)
+		return nil, wiringDisables{}, fmt.Errorf("parse base wiring: %w", err)
 	}
 	overlayMap, err := unmarshalYAMLMap(overlay)
 	if err != nil {
-		return nil, fmt.Errorf("parse overlay wiring: %w", err)
+		return nil, wiringDisables{}, fmt.Errorf("parse overlay wiring: %w", err)
+	}
+	disables := wiringDisables{
+		Skills:    toStringSlice(overlayMap["skills_disabled"]),
+		Laws:      toStringSlice(overlayMap["laws_disabled"]),
+		Personas:  toStringSlice(overlayMap["personas_disabled"]),
+		Templates: toStringSlice(overlayMap["templates_disabled"]),
 	}
 	merged := mergeWiringMaps(baseMap, overlayMap)
 	out, err := yaml.Marshal(merged)
 	if err != nil {
-		return nil, fmt.Errorf("marshal merged wiring: %w", err)
+		return nil, wiringDisables{}, fmt.Errorf("marshal merged wiring: %w", err)
 	}
-	return out, nil
+	return out, disables, nil
 }
 
 func unmarshalYAMLMap(data []byte) (map[string]any, error) {
