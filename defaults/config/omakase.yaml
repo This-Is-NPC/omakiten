@@ -325,6 +325,13 @@ workflows:
       comment:
         edit: false
         delete: false
+    operations:
+      archive:
+        guards:
+          - type: comments_tagged
+            tag: documentation
+            count: 1
+            hint: "Add a #documentation comment summarizing what shipped before archiving."
     buckets:
       - id: 1
         key: backlog
@@ -382,6 +389,9 @@ workflows:
             tag: self-branch
             count: 1
             hint: "Before starting, create a dedicated feature branch or git worktree for this task and add a comment tagged #self-branch documenting the branch name and working path."
+          - type: blockers_in
+            buckets: [done]
+            hint: "Every blocker must be in Done before development starts — finish blockers first to keep WIP under control."
       - from: 2
         to: 3
         guards:
@@ -389,6 +399,10 @@ workflows:
             tag: resume
             count: 1
             hint: "Add a comment tagged #resume summarizing what was implemented, decisions made, and any open questions before requesting review."
+          - type: comments_tagged
+            tag: tests-passing
+            count: 1
+            hint: "Add a #tests-passing comment with the test command, an output snippet, and the duration — reviewer must be able to reproduce the evidence."
       - from: 3
         to: 4
         guards:
@@ -426,6 +440,10 @@ workflows:
 personas:
   - slug: engineer
     skills:
+      - trunk-based-development
+      - continuous-integration
+      - test-driven-development
+      - dora-mindset
       - implementation
       - markdown
   - slug: product-owner
@@ -475,6 +493,7 @@ mcp_commands:
     persona: product-owner
     templates:
       - user-story
+      - task-bugfix
   okt-resume:
     persona: engineer
   okt-continue:
@@ -486,8 +505,14 @@ mcp_commands:
       - no-silent-behavior-changes
       - conventional-commits
       - self-report
+      - green-main-always
+      - small-batches
+      - boy-scout-rule
+      - test-evidence
     templates:
       - pull-request
+      - comment-tests-passing
+      - comment-refactor-drive-by
   okt-document:
     persona: documentation-agent
   okt-config:

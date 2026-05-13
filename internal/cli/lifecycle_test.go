@@ -51,6 +51,9 @@ func TestCLIDependencyAndLifecycleCommands(t *testing.T) {
 	}
 
 	// archive / unarchive / delete cycle on task 3 (no remaining dependencies on it).
+	// omakase requires a #documentation comment on the task before archiving
+	// (operations.archive.guards) — drop one in so the operation passes.
+	runCLI(t, dbPath, configPath, "comment", "add", "3", "-b", "shipped", "--tag", "documentation")
 	archived := runCLI(t, dbPath, configPath, "archive", "3")
 	if !strings.Contains(archived, `"state":"archived"`) {
 		t.Fatalf("archive output: %s", archived)

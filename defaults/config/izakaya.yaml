@@ -60,6 +60,36 @@ config:
       filter: {source: []}
     task_activity:
       sort: {order: asc}
+personas:
+  - slug: tinkerer
+    skills: [lean-experimentation, tracer-bullet-shipping, time-box-discipline, markdown]
+  - slug: documentation-agent
+    skills: [documentation, architecture-mapping, readme-curation, markdown]
+mcp_commands:
+  global:
+    laws: [template-fidelity, authorize-remote-writes, project-scope-only]
+  okt:
+    persona: tinkerer
+  okt-imagine:
+    persona: tinkerer
+    laws_disabled: [template-fidelity]
+  okt-create:
+    persona: tinkerer
+    laws: [hypothesis-required, yagni-first]
+    templates: [task-spike]
+  okt-resume:
+    persona: tinkerer
+  okt-continue:
+    persona: tinkerer
+  okt-implement:
+    persona: tinkerer
+    laws: [time-boxed-spike, tracer-bullet, conventional-commits]
+    templates: [pull-request]
+  okt-document:
+    persona: documentation-agent
+  okt-config:
+    persona: documentation-agent
+    templates: [config-orientation]
 workflows:
   - id: 1
     key: izakaya
@@ -69,6 +99,11 @@ workflows:
       - {id: 2, key: dev, name: Development, position: 2}
       - {id: 3, key: done, name: Done, position: 3}
     transitions:
-      - {from: 1, to: 2}
+      - from: 1
+        to: 2
+        guards:
+          - {type: comments_tagged, tag: hypothesis, count: 1, hint: "Write the question this spike answers — file a #hypothesis comment with the question, why it matters, the falsifiable signal, and the time-box."}
       - {from: 2, to: 3}
       - {from: 3, to: 2}
+      - {from: 2, to: 1}
+      - {from: 3, to: 1}

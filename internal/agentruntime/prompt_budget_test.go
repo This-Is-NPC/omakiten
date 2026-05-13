@@ -24,7 +24,7 @@ var promptBudgets = map[string]int{
 	"okt-create":    3300,
 	"okt-resume":    2300,
 	"okt-continue":  2400,
-	"okt-implement": 5150,
+	"okt-implement": 8200,
 	"okt-document":  2700,
 	"okt-config":    3050,
 }

@@ -60,6 +60,40 @@ config:
       filter: {source: []}
     task_activity:
       sort: {order: asc}
+personas:
+  - slug: craftsperson
+    skills: [sre-discipline, risk-driven-development, postmortem-authoring, change-management, test-driven-development-strict, static-analysis-discipline, implementation, markdown]
+  - slug: product-owner
+    skills: [discovery, user-story-writing, markdown]
+  - slug: documentation-agent
+    skills: [documentation, architecture-mapping, requirements-mapping, readme-curation, markdown]
+mcp_commands:
+  global:
+    laws: [template-fidelity, authorize-remote-writes, project-scope-only]
+  okt:
+    persona: craftsperson
+  okt-imagine:
+    persona: product-owner
+    laws_disabled: [template-fidelity]
+  okt-create:
+    persona: product-owner
+    laws: [blast-radius-awareness, error-budget-aware]
+    templates: [task-change-request, comment-requirements, comment-acceptance, comment-risk-assessment]
+  okt-resume:
+    persona: craftsperson
+  okt-continue:
+    persona: craftsperson
+  okt-implement:
+    persona: craftsperson
+    laws: [pre-mortem-required, rollback-plan-mandatory, dual-peer-review, coverage-gate, blast-radius-awareness, error-budget-aware, conventional-commits, no-silent-behavior-changes]
+    templates: [pull-request, comment-pre-mortem, comment-rollback-plan, comment-peer-review-strict, comment-tests-passing-strict, comment-risk-assessment, comment-scribe-correction]
+  okt-document:
+    persona: documentation-agent
+    laws: [blameless-postmortem]
+    templates: [comment-postmortem, comment-lessons-learned]
+  okt-config:
+    persona: documentation-agent
+    templates: [config-orientation]
 workflows:
   - id: 1
     key: shokunin
@@ -71,9 +105,13 @@ workflows:
       archive:
         guards:
           - {type: comments_tagged, tag: documentation, count: 1, hint: "Add #documentation before archiving shokunin work."}
+          - {type: comments_tagged, tag: lessons-learned, count: 1, hint: "Add #lessons-learned summarizing what worked / what didn't before archiving."}
       delete:
         guards:
           - {type: comments_tagged, tag: peer-review, count: 1, hint: "Add #peer-review before deleting shokunin work."}
+      unarchive:
+        guards:
+          - {type: comments_tagged, tag: peer-review, count: 1, hint: "Add a #peer-review approving the reopen before unarchiving."}
     buckets:
       - id: 1
         key: requirements
@@ -81,13 +119,13 @@ workflows:
         position: 1
         permissions:
           task: {edit: true, delete: false}
-          comment: {edit: true, delete: true}
+          comment: {edit: true, delete: false}
       - id: 2
         key: planning
         name: Planning
         position: 2
         permissions:
-          comment: {edit: true, delete: true}
+          comment: {edit: true, delete: false}
       - id: 3
         key: dev
         name: Development
@@ -101,24 +139,30 @@ workflows:
       - from: 1
         to: 2
         guards:
-          - {type: comments_tagged, tag: requirements, count: 1, hint: "Add a #requirements comment before planning starts."}
+          - {type: comments_tagged, tag: requirements, count: 1, hint: "Add a #requirements comment with the user story and acceptance signals before planning starts."}
+          - {type: comments_tagged, tag: acceptance, count: 1, hint: "Add a #acceptance comment with Given/When/Then criteria the domain expert would sign off on."}
       - from: 2
         to: 3
         guards:
           - {type: comments_tagged, tag: self-branch, count: 1, hint: "Add a #self-branch comment naming the branch and working path."}
+          - {type: comments_tagged, tag: pre-mortem, count: 1, hint: "Add a #pre-mortem comment naming the top failure modes, detection signals, and mitigations before any code lands."}
+          - {type: comments_tagged, tag: risk-assessment, count: 1, hint: "Add a #risk-assessment naming the risk matrix, blast radius, SLO impact, and residual risk accepted."}
+          - {type: blockers_in, buckets: [done, docs], hint: "Every blocker must be in Done or Documentation before development starts."}
       - from: 3
         to: 4
         guards:
-          - {type: comments_tagged, tag: resume, count: 1, hint: "Add a #resume handoff before review."}
-          - {type: comments_tagged, tag: tests-passing, count: 1, hint: "Add #tests-passing with validation evidence before review."}
+          - {type: comments_tagged, tag: resume, count: 1, hint: "Add a #resume handoff summarizing what was implemented, decisions, and open questions."}
+          - {type: comments_tagged, tag: tests-passing, count: 1, hint: "Add #tests-passing with the coverage delta, test types, and perf regression check."}
+          - {type: comments_tagged, tag: rollback-plan, count: 1, hint: "Add a #rollback-plan with revert steps, post-rollback validation, and comms plan before review."}
       - from: 4
         to: 5
         guards:
-          - {type: comments_tagged, tag: peer-review, count: 1, hint: "Add #peer-review with reviewer approval before documentation."}
+          - {type: comments_tagged, tag: peer-review, count: 2, hint: "Add ≥ 2 distinct #peer-review comments from independent reviewers (not the author). Each carries verdict, approval scope, and reviewed-artifacts checklist."}
       - from: 5
         to: 6
         guards:
-          - {type: comments_tagged, tag: documentation, count: 1, hint: "Add a #documentation comment before closing."}
+          - {type: comments_tagged, tag: documentation, count: 1, hint: "Add a #documentation comment summarizing commits merged, related tags, and confirmation that the task has been reviewed and properly tagged."}
+          - {type: comments_tagged, tag: lessons-learned, count: 1, hint: "Add a #lessons-learned comment naming what worked / what didn't and any process changes proposed."}
       - {from: 4, to: 3}
       - {from: 5, to: 4}
       - {from: 6, to: 4}
