@@ -37,6 +37,15 @@ func NewWorkflowServiceFromStore(store CompositeWorkflowStore, registry *domain.
 	return NewWorkflowService(store, store, store, store, store, registry)
 }
 
+// SetRegistry repoints the service at a fresh EnumRegistry. Used by the TUI
+// after a hot config swap so priority/severity lookups resolve against the
+// new bundle's id↔value tables instead of the previous bundle's stale set.
+// The underlying repositories don't change — they all wrap the same store
+// whose rows the new ImportBundle already overwrote.
+func (s *WorkflowService) SetRegistry(registry *domain.EnumRegistry) {
+	s.registry = registry
+}
+
 // ResolveDefaultBucket returns the key of the first bucket in the active
 // workflow — the bucket new tasks land in when callers do not specify one.
 // Errors with ErrConfigInvalid if the active workflow has no buckets, so
