@@ -70,6 +70,7 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `project.overview` | Implements `/okt`: active project identity, workflow, pending count, recent context, next-step prompt. |
 | `project.resume` | Implements `/okt-resume`: project distribution, likely next work, blocked/dependent work, recent context. |
 | `workflow.show` | Active workflow buckets and allowed transitions. |
+| `orphans.migrate` | Rebind tasks whose bucket was deactivated by a workflow swap. First call without `confirmed=true` returns a preview report + `Confirmation` block listing every affected task; retry with `confirmed=true` to apply the rebind. Empty preview short-circuits to a no-op regardless of the flag. Mirrors the CLI `okt workflow orphans` command. |
 
 ### Tasks
 
