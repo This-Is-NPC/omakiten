@@ -42,6 +42,8 @@ referencing values outside it.
 | `solution.failed`     | solution                | `ConfirmSolution(success=false)`                              | `{error_id, likes}`                                            | mcp (typical)     | true        |
 | `solution.viewed_top` | solution (entity_id=0)  | `ErrorService.ListTopSolutions`                               | `{limit, returned_count}`                                      | mcp (typical)     | true        |
 | `hook.executed`       | system (entity_id=0)    | `hooks.Engine` after `Action.Execute` returns                 | `{hook_index, action, event_type, target_event_id, success, error?, duration_ms}` | system            | true        |
+| `bundle.swapped`      | system (entity_id=0)    | `tui.reloadBundle` after a successful preset swap             | `{from_workflow, to_workflow, orphan_count, has_orphans, groups}` | tui               | true        |
+| `confirmation.granted`| system (entity_id=0)    | `tui.Model.handleNotificationAction` before dispatching a non-empty action command | `{notification_slug, action_id, command}`                       | tui               | true        |
 
 > **Note on `comment`:** the comment row IS user-visible data, not an
 > audit trail. The log gate (`config.events.overrides.comment.log`)
