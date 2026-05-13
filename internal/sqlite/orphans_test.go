@@ -220,6 +220,46 @@ func mustUpsertProject(t *testing.T, store *Store, name, slug, root string) doma
 	return p
 }
 
+// TestPreviewOrphanedTasks_CrossBundleSwap exercises the realistic case where
+// two presets ship as distinct bundles (different kit keys → different
+// bundle rows). Without joining through the active config_bundle the orphan
+// detection would miss every task pointing at the previous bundle's buckets
+// because those rows still carry active=1 — only the bundle row goes
+// inactive on swap.
+func TestPreviewOrphanedTasks_CrossBundleSwap(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	bundleA := bundleWithKeys(t, "preset_a", []string{"docs"}, []int{1})
+	bundleA.Kit.Key = "preset_a"
+	bundleA.Kit.Name = "Preset A"
+	if err := store.ImportBundle(ctx, bundleA, "a.yaml", "h1"); err != nil {
+		t.Fatalf("ImportBundle A: %v", err)
+	}
+	project := mustUpsertProject(t, store, "p", "p", "/p")
+	if _, err := store.CreateTask(ctx, project.ID, "doc work", "", domain.Priority(2), "docs"); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	bundleB := bundleWithKeys(t, "preset_b", []string{"backlog"}, []int{1})
+	bundleB.Kit.Key = "preset_b"
+	bundleB.Kit.Name = "Preset B"
+	if err := store.ImportBundle(ctx, bundleB, "b.yaml", "h2"); err != nil {
+		t.Fatalf("ImportBundle B: %v", err)
+	}
+
+	report, err := store.PreviewOrphanedTasks(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("PreviewOrphanedTasks: %v", err)
+	}
+	if report.Total != 1 {
+		t.Fatalf("Total = %d, want 1; report=%+v", report.Total, report)
+	}
+	if report.Groups[0].FromBucketKey != "docs" || report.Groups[0].ToBucketKey != "backlog" {
+		t.Fatalf("group from→to = %s→%s, want docs→backlog", report.Groups[0].FromBucketKey, report.Groups[0].ToBucketKey)
+	}
+}
+
 // bundleWithKeys returns a copy of sqliteTestBundle whose single workflow has
 // the supplied bucket keys (and matching local IDs). Used to simulate a
 // workflow swap: two calls with disjoint key sets exercise the orphan logic.

@@ -172,7 +172,19 @@ FROM tasks t
 JOIN workflow_buckets wb ON wb.id = t.bucket_id
 WHERE t.project_id = ?
   AND t.state = 'active'
-  AND wb.active = 0
+  AND wb.id NOT IN (
+    SELECT workflow_buckets.id
+    FROM workflow_buckets
+    JOIN workflows ON workflows.id = workflow_buckets.workflow_id
+    JOIN config_bundles ON config_bundles.id = workflows.bundle_id
+    JOIN settings ON settings.bundle_id = config_bundles.id
+      AND settings.key = 'workflow.active'
+      AND settings.value = workflows.key
+      AND settings.active = 1
+    WHERE workflow_buckets.active = 1
+      AND workflows.active = 1
+      AND config_bundles.active = 1
+  )
 ORDER BY t.id
 `, projectID)
 	if err != nil {
