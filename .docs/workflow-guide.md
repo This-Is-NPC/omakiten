@@ -39,6 +39,43 @@ When in doubt, pick **omakase**. It is the canonical kit and the default selecti
 
 ---
 
+## PDCA mapping — the cycle behind every preset
+
+Each preset embodies a different process discipline level, but every preset runs the same underlying cycle: **Plan-Do-Check-Act**, the Shewhart (1939) / Deming quality loop that anchors Total Quality Management and the Toyota Production System. PDCA is universally recognized, easy to teach, and gives users a mental map for every action they take through Omakiten.
+
+The eight `okt-*` commands map to PDCA phases:
+
+| PDCA phase | `okt-*` command | What happens |
+|---|---|---|
+| **PLAN** | `okt-imagine` | Product-owner persona interrogates the user via 5W2H (What / Why / Who / When / Where / How / How much). Define success in SMART terms. Surface assumptions and gaps. Decide if the request is concrete enough to file. |
+| **PLAN → DO** | `okt-create` | Formalize the imagined work as a task. INVEST checklist on the user story. Acceptance criteria. Prioritization (MoSCoW or RICE) when alternatives exist. Non-functional requirements named separately when relevant. |
+| **DO** | task in `dev`, `okt-continue`, early `okt-implement` | Execute the planned increment. Test-first, conventional commits, small batches (the engineering discipline each preset enforces). |
+| **ACT** | mid `okt-implement` | Adjust during execution — drive-by cleanup, decision records on divergence, refactors, escalate when guards block. |
+| **CHECK** | end of `okt-implement` → task in `review` → `done` | Verify the outcome against the SMART success metric defined in PLAN. Peer review. Tests passing. Promote to `done` only when the loop closes. |
+
+`okt-document` and `okt-config` sit outside the main loop — they orient the agent (CHECK-flavored) and read-only.
+
+### What each phase produces
+
+| Phase | Artifacts a user sees at the end of the phase |
+|---|---|
+| PLAN | `#5w2h` comment, `#acceptance` comment, `#smart-success` comment (or `#hypothesis` in izakaya). Task body filled per the chosen `task-*` template. |
+| DO | Code commits (conventional format), branch tagged via `#self-branch` comment, `#design` comment (kaiseki) or `#pre-mortem` + `#risk-assessment` (shokunin). |
+| ACT | Decision records, drive-by refactor comments, ADR-style files at `docs/decisions/` (or the project's preferred location). |
+| CHECK | `#resume` comment, `#tests-passing` comment with evidence, `#peer-review` comment(s), `#documentation` comment, `#lessons-learned` comment (shokunin). |
+
+### Cross-discipline coherence
+
+Three disciplines ride together at the preset's chosen level:
+
+- **Software engineering** (TBD / TDD / SRE / decision records — task #97's contribution) — how code lands.
+- **Product management** (5W2H / SMART / INVEST / MoSCoW / RICE / outcomes — this discipline) — what gets built and why.
+- **Project management** (PDCA cycle awareness, staged delivery, audit trail) — how the work is structured and recorded.
+
+A preset is **coherent** when its engineering rigor matches its product rigor matches its project-management rigor. izakaya keeps all three light (spike); omakase balances all three at mainstream professional level; kaiseki tightens all three with formal stages; shokunin elevates all three with audit-trail integrity and multi-reviewer sign-off.
+
+---
+
 ## 🍻 izakaya — Lean spike, tracer-bullet, walking skeleton
 
 > Hypothesis-driven exploration. Build only what proves the question. Kill, promote, or extend explicitly when the time-box runs out.
