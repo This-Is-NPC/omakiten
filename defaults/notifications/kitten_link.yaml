@@ -4,8 +4,8 @@ description: Watchful kitten for tags, dependencies, and chained side quests.
 
 # Geometry ------------------------------------------------------------
 size:
-  width: 40
-  height: 20
+  width: 50
+  height: 25
 
 # Behaviour flags -----------------------------------------------------
 auto_height: false
