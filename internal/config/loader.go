@@ -22,23 +22,23 @@ func LoadBundle(path string) (Bundle, error) {
 		return Bundle{}, err
 	}
 
-	skills, skillWarn, err := LoadSkills(filepath.Join(rootDir, EntityKindSkill.Folder()))
+	skills, skillWarn, err := LoadSkills(filepath.Join(rootDir, EntityKindSkill.Folder()), "")
 	if err != nil {
 		return Bundle{}, err
 	}
-	laws, lawWarn, err := LoadLaws(filepath.Join(rootDir, EntityKindLaw.Folder()))
+	laws, lawWarn, err := LoadLaws(filepath.Join(rootDir, EntityKindLaw.Folder()), "")
 	if err != nil {
 		return Bundle{}, err
 	}
-	personas, personaWarn, err := LoadPersonas(filepath.Join(rootDir, EntityKindPersona.Folder()))
+	personas, personaWarn, err := LoadPersonas(filepath.Join(rootDir, EntityKindPersona.Folder()), "")
 	if err != nil {
 		return Bundle{}, err
 	}
-	templates, templateWarn, err := LoadTemplates(filepath.Join(rootDir, EntityKindTemplate.Folder()))
+	templates, templateWarn, err := LoadTemplates(filepath.Join(rootDir, EntityKindTemplate.Folder()), "")
 	if err != nil {
 		return Bundle{}, err
 	}
-	notifications, notificationWarn, err := LoadNotifications(filepath.Join(rootDir, "notifications"))
+	notifications, notificationWarn, err := LoadNotifications(filepath.Join(rootDir, "notifications"), "")
 	if err != nil {
 		return Bundle{}, err
 	}

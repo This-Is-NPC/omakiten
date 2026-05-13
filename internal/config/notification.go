@@ -31,8 +31,9 @@ type Notification struct {
 	MessageField    string                   `yaml:"message_field,omitempty" json:"message_field,omitempty"`
 	Actions         []NotificationAction     `yaml:"actions,omitempty" json:"actions,omitempty"`
 
-	SourcePath string `yaml:"-" json:"-"`
-	IsCustom   bool   `yaml:"-" json:"-"`
+	SourcePath  string `yaml:"-" json:"-"`
+	IsCustom    bool   `yaml:"-" json:"-"`
+	IsRepoLocal bool   `yaml:"-" json:"-"`
 }
 
 // NotificationAction is one interactive button surfaced in the notification

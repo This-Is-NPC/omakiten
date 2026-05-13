@@ -34,75 +34,82 @@ func LoadNotification(path string) (Notification, error) {
 	return notification, nil
 }
 
-// LoadNotifications discovers every *.yaml under dir and dir/custom and
-// returns them keyed by Notification.Name. Custom files override defaults
-// that share a name. Returns an empty map when dir is missing — the
-// runtime treats "no notifications" as "no notification hooks available" and the
-// hooks-validator step rejects `notification:` references accordingly.
+// LoadNotifications discovers every *.yaml under defaultDir, defaultDir/custom
+// and an optional repoLocalDir (flat) and returns them keyed by
+// Notification.Name. Layer precedence resolves name collisions:
+// repo-local > custom > default. Returns an empty map when no source
+// contributes files — the runtime treats "no notifications" as "no
+// notification hooks available" and the hooks-validator step rejects
+// `notification:` references accordingly.
 //
 // Default-scope files MUST be valid — a parse or validation error at
-// the default scope is fatal. Custom-scope files are user-owned and
-// may drift from the current schema; loading errors there are
-// surfaced as SourceWarnings instead of failing the whole bundle, so
-// the app stays usable while clearly flagging which custom files
+// the default scope is fatal. Custom-scope and repo-local-scope files
+// are user-owned and may drift from the current schema; loading errors
+// there are surfaced as SourceWarnings instead of failing the whole
+// bundle, so the app stays usable while clearly flagging which files
 // were skipped.
-func LoadNotifications(dir string) (map[string]Notification, []SourceWarning, error) {
-	files, err := listNotificationFiles(dir)
+func LoadNotifications(defaultDir, repoLocalDir string) (map[string]Notification, []SourceWarning, error) {
+	files, err := listNotificationFiles(defaultDir, repoLocalDir)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	byName := map[string]Notification{}
-	seen := map[string]string{}
+	seen := map[string]notificationFile{}
 	var warnings []SourceWarning
 	for _, file := range files {
 		notification, err := LoadNotification(file.Path)
 		if err != nil {
-			if file.IsCustom {
+			if file.Layer != layerDefault {
 				warnings = append(warnings, SourceWarning{
 					Path:    file.Path,
-					Message: fmt.Sprintf("custom notification skipped — file is incompatible with the current schema: %v", err),
+					Message: fmt.Sprintf("notification skipped — file is incompatible with the current schema: %v", err),
 				})
 				continue
 			}
 			return nil, nil, err
 		}
-		notification.IsCustom = file.IsCustom
+		notification.IsCustom = file.Layer == layerCustom
+		notification.IsRepoLocal = file.Layer == layerRepoLocal
 		if previous, dup := seen[notification.Name]; dup {
-			previousIsCustom := byName[notification.Name].IsCustom
-			if previousIsCustom == file.IsCustom {
-				return nil, nil, fmt.Errorf("duplicate notification name %q (also defined in %s)", notification.Name, previous)
+			if previous.Layer == file.Layer {
+				return nil, nil, fmt.Errorf("duplicate notification name %q (also defined in %s)", notification.Name, previous.Path)
 			}
-			// Custom overrides default — only when the new file is
-			// custom AND the existing entry was a default.
-			if !file.IsCustom {
-				continue
-			}
+			// Lower-layer entry already loaded; the new (higher-layer)
+			// file overrides it.
 		}
-		seen[notification.Name] = file.Path
+		seen[notification.Name] = file
 		byName[notification.Name] = notification
 	}
 	return byName, warnings, nil
 }
 
 type notificationFile struct {
-	Path     string
-	IsCustom bool
+	Path  string
+	Layer entityLayer
 }
 
-func listNotificationFiles(dir string) ([]notificationFile, error) {
-	defaults, err := readYAMLFilesIn(dir, false)
+func listNotificationFiles(defaultDir, repoLocalDir string) ([]notificationFile, error) {
+	defaults, err := readYAMLFilesIn(defaultDir, layerDefault)
 	if err != nil {
 		return nil, err
 	}
-	customs, err := readYAMLFilesIn(filepath.Join(dir, "custom"), true)
+	customs, err := readYAMLFilesIn(filepath.Join(defaultDir, "custom"), layerCustom)
 	if err != nil {
 		return nil, err
 	}
-	return append(defaults, customs...), nil
+	files := append(defaults, customs...)
+	if repoLocalDir != "" {
+		repoLocal, err := readYAMLFilesIn(repoLocalDir, layerRepoLocal)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, repoLocal...)
+	}
+	return files, nil
 }
 
-func readYAMLFilesIn(dir string, isCustom bool) ([]notificationFile, error) {
+func readYAMLFilesIn(dir string, layer entityLayer) ([]notificationFile, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -120,7 +127,7 @@ func readYAMLFilesIn(dir string, isCustom bool) ([]notificationFile, error) {
 		if !strings.HasSuffix(lower, ".yaml") && !strings.HasSuffix(lower, ".yml") {
 			continue
 		}
-		files = append(files, notificationFile{Path: filepath.Join(dir, name), IsCustom: isCustom})
+		files = append(files, notificationFile{Path: filepath.Join(dir, name), Layer: layer})
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return files, nil

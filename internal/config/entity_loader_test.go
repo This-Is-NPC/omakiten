@@ -22,7 +22,7 @@ func TestLoadSkillsHappyPath(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "go.md"), "---\nname: Go\ndescription: Go lang\n---\nbody\n")
 	writeFile(t, filepath.Join(dir, "sqlite.md"), "---\nname: SQLite\n---\n")
 
-	skills, warnings, err := LoadSkills(dir)
+	skills, warnings, err := LoadSkills(dir, "")
 	if err != nil {
 		t.Fatalf("LoadSkills() error = %v", err)
 	}
@@ -43,7 +43,7 @@ func TestLoadSkillsHappyPath(t *testing.T) {
 func TestLoadSkillsRejectsMissingName(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "broken.md"), "---\ndescription: no name here\n---\n")
-	_, _, err := LoadSkills(dir)
+	_, _, err := LoadSkills(dir, "")
 	if err == nil {
 		t.Fatalf("LoadSkills() error = nil, want failure")
 	}
@@ -55,7 +55,7 @@ func TestLoadSkillsRejectsMissingName(t *testing.T) {
 func TestLoadSkillsRejectsUnknownField(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "x.md"), "---\nname: X\nbogus_field: 1\n---\n")
-	_, _, err := LoadSkills(dir)
+	_, _, err := LoadSkills(dir, "")
 	if err == nil {
 		t.Fatalf("LoadSkills() error = nil, want failure")
 	}
@@ -64,7 +64,7 @@ func TestLoadSkillsRejectsUnknownField(t *testing.T) {
 func TestLoadSkillsWarnsOnSlugMismatch(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "wrong-name.md"), "---\nname: Different Name\n---\n")
-	_, warnings, err := LoadSkills(dir)
+	_, warnings, err := LoadSkills(dir, "")
 	if err != nil {
 		t.Fatalf("LoadSkills() error = %v", err)
 	}
@@ -79,13 +79,13 @@ func TestLoadSkillsWarnsOnSlugMismatch(t *testing.T) {
 func TestLoadLawsRequiresSeverityAndBody(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "no-severity.md"), "---\nname: X\n---\nbody\n")
-	if _, _, err := LoadLaws(dir); err == nil || !strings.Contains(err.Error(), "severity is required") {
+	if _, _, err := LoadLaws(dir, ""); err == nil || !strings.Contains(err.Error(), "severity is required") {
 		t.Fatalf("LoadLaws() error = %v, want severity is required", err)
 	}
 
 	dir2 := t.TempDir()
 	writeFile(t, filepath.Join(dir2, "no-body.md"), "---\nseverity: error\n---\n   \n")
-	if _, _, err := LoadLaws(dir2); err == nil || !strings.Contains(err.Error(), "body is required") {
+	if _, _, err := LoadLaws(dir2, ""); err == nil || !strings.Contains(err.Error(), "body is required") {
 		t.Fatalf("LoadLaws() error = %v, want body is required", err)
 	}
 }

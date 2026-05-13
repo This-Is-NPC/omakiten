@@ -36,12 +36,13 @@ type templateFrontmatter struct {
 	Laws        []string `yaml:"laws,omitempty"`
 }
 
-// LoadSkills scans dir for *.md files (defaults at root + customs under
-// dir/custom) and parses each one into a Skill. Same-slug pairs are resolved
-// with custom winning, so the user's `<entity>/custom/<slug>.md` overrides any
-// default with the same slug. Returns empty slice when dir does not exist.
-func LoadSkills(dir string) ([]Skill, []SourceWarning, error) {
-	files, err := listEntityFiles(dir)
+// LoadSkills scans defaultDir for *.md files (defaults at root + customs
+// under defaultDir/custom) plus an optional repoLocalDir (flat *.md files
+// authored under the repo's `.omakiten/skills/`). Same-slug collisions
+// resolve by layer precedence: repo-local > custom > default. Returns an
+// empty slice when no source contributes files.
+func LoadSkills(defaultDir, repoLocalDir string) ([]Skill, []SourceWarning, error) {
+	files, err := listEntityFiles(defaultDir, repoLocalDir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -68,9 +69,7 @@ func LoadSkills(dir string) ([]Skill, []SourceWarning, error) {
 		}
 		slug := slugFromFilename(file.Path)
 		if previous, dup := seen[slug]; dup {
-			// Default + custom collision is allowed (custom overrides). Two files
-			// inside the same scope (both default OR both custom) is a real conflict.
-			if previous.IsCustom == file.IsCustom {
+			if previous.Layer == file.Layer {
 				return nil, nil, parseError(file.Path, fmt.Errorf("duplicate skill slug %q (also defined in %s)", slug, previous.Path))
 			}
 		}
@@ -82,12 +81,13 @@ func LoadSkills(dir string) ([]Skill, []SourceWarning, error) {
 			order = append(order, slug)
 		}
 		bySlug[slug] = Skill{
-			Slug:        slug,
-			Name:        meta.Name,
-			Description: meta.Description,
-			Body:        string(body),
-			SourcePath:  file.Path,
-			IsCustom:    file.IsCustom,
+			Slug:         slug,
+			Name:         meta.Name,
+			Description:  meta.Description,
+			Body:         string(body),
+			SourcePath:   file.Path,
+			IsCustom:     file.Layer == layerCustom,
+			IsRepoLocal:  file.Layer == layerRepoLocal,
 		}
 	}
 	skills := make([]Skill, 0, len(order))
@@ -97,8 +97,8 @@ func LoadSkills(dir string) ([]Skill, []SourceWarning, error) {
 	return skills, warnings, nil
 }
 
-func LoadLaws(dir string) ([]Law, []SourceWarning, error) {
-	files, err := listEntityFiles(dir)
+func LoadLaws(defaultDir, repoLocalDir string) ([]Law, []SourceWarning, error) {
+	files, err := listEntityFiles(defaultDir, repoLocalDir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -129,7 +129,7 @@ func LoadLaws(dir string) ([]Law, []SourceWarning, error) {
 		}
 		slug := slugFromFilename(file.Path)
 		if previous, dup := seen[slug]; dup {
-			if previous.IsCustom == file.IsCustom {
+			if previous.Layer == file.Layer {
 				return nil, nil, parseError(file.Path, fmt.Errorf("duplicate law slug %q (also defined in %s)", slug, previous.Path))
 			}
 		}
@@ -140,12 +140,13 @@ func LoadLaws(dir string) ([]Law, []SourceWarning, error) {
 			order = append(order, slug)
 		}
 		bySlug[slug] = Law{
-			Slug:       slug,
-			Name:       meta.Name,
-			Severity:   strings.ToLower(strings.TrimSpace(meta.Severity)),
-			Body:       string(body),
-			SourcePath: file.Path,
-			IsCustom:   file.IsCustom,
+			Slug:         slug,
+			Name:         meta.Name,
+			Severity:     strings.ToLower(strings.TrimSpace(meta.Severity)),
+			Body:         string(body),
+			SourcePath:   file.Path,
+			IsCustom:     file.Layer == layerCustom,
+			IsRepoLocal:  file.Layer == layerRepoLocal,
 		}
 	}
 	laws := make([]Law, 0, len(order))
@@ -155,8 +156,8 @@ func LoadLaws(dir string) ([]Law, []SourceWarning, error) {
 	return laws, warnings, nil
 }
 
-func LoadPersonas(dir string) ([]Persona, []SourceWarning, error) {
-	files, err := listEntityFiles(dir)
+func LoadPersonas(defaultDir, repoLocalDir string) ([]Persona, []SourceWarning, error) {
+	files, err := listEntityFiles(defaultDir, repoLocalDir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -183,7 +184,7 @@ func LoadPersonas(dir string) ([]Persona, []SourceWarning, error) {
 		}
 		slug := slugFromFilename(file.Path)
 		if previous, dup := seen[slug]; dup {
-			if previous.IsCustom == file.IsCustom {
+			if previous.Layer == file.Layer {
 				return nil, nil, parseError(file.Path, fmt.Errorf("duplicate persona slug %q (also defined in %s)", slug, previous.Path))
 			}
 		}
@@ -195,13 +196,14 @@ func LoadPersonas(dir string) ([]Persona, []SourceWarning, error) {
 			order = append(order, slug)
 		}
 		bySlug[slug] = Persona{
-			Slug:        slug,
-			Name:        meta.Name,
-			Description: meta.Description,
-			Body:        string(body),
-			Laws:        append([]string(nil), meta.Laws...),
-			SourcePath:  file.Path,
-			IsCustom:    file.IsCustom,
+			Slug:         slug,
+			Name:         meta.Name,
+			Description:  meta.Description,
+			Body:         string(body),
+			Laws:         append([]string(nil), meta.Laws...),
+			SourcePath:   file.Path,
+			IsCustom:     file.Layer == layerCustom,
+			IsRepoLocal:  file.Layer == layerRepoLocal,
 		}
 	}
 	personas := make([]Persona, 0, len(order))
@@ -211,15 +213,16 @@ func LoadPersonas(dir string) ([]Persona, []SourceWarning, error) {
 	return personas, warnings, nil
 }
 
-// LoadTemplates scans dir (defaults at root + customs in dir/custom) for *.md
-// files and parses each into a TaskTemplate. Custom files override defaults
-// with the same slug. Returns empty slice when dir does not exist.
+// LoadTemplates scans defaultDir (defaults at root + customs in
+// defaultDir/custom) for *.md files, plus an optional repoLocalDir flat
+// folder. Layer precedence resolves slug collisions; repo-local > custom >
+// default. Returns an empty slice when no source contributes files.
 //
 // Templates are not validated structurally — the body is free-form markdown
 // that the agent uses as a scaffold. Frontmatter requires `name`; `description`
 // and `entity` are optional metadata for humans browsing the kit.
-func LoadTemplates(dir string) ([]TaskTemplate, []SourceWarning, error) {
-	files, err := listEntityFiles(dir)
+func LoadTemplates(defaultDir, repoLocalDir string) ([]TaskTemplate, []SourceWarning, error) {
+	files, err := listEntityFiles(defaultDir, repoLocalDir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -246,7 +249,7 @@ func LoadTemplates(dir string) ([]TaskTemplate, []SourceWarning, error) {
 		}
 		slug := slugFromFilename(file.Path)
 		if previous, dup := seen[slug]; dup {
-			if previous.IsCustom == file.IsCustom {
+			if previous.Layer == file.Layer {
 				return nil, nil, parseError(file.Path, fmt.Errorf("duplicate template slug %q (also defined in %s)", slug, previous.Path))
 			}
 		}
@@ -258,16 +261,17 @@ func LoadTemplates(dir string) ([]TaskTemplate, []SourceWarning, error) {
 			order = append(order, slug)
 		}
 		bySlug[slug] = TaskTemplate{
-			Slug:        slug,
-			Name:        meta.Name,
-			Description: meta.Description,
-			Entity:      strings.TrimSpace(meta.Entity),
-			Default:     strings.TrimSpace(meta.Default),
-			ProjectSlug: strings.TrimSpace(meta.Project),
-			Laws:        append([]string(nil), meta.Laws...),
-			Body:        string(body),
-			SourcePath:  file.Path,
-			IsCustom:    file.IsCustom,
+			Slug:         slug,
+			Name:         meta.Name,
+			Description:  meta.Description,
+			Entity:       strings.TrimSpace(meta.Entity),
+			Default:      strings.TrimSpace(meta.Default),
+			ProjectSlug:  strings.TrimSpace(meta.Project),
+			Laws:         append([]string(nil), meta.Laws...),
+			Body:         string(body),
+			SourcePath:   file.Path,
+			IsCustom:     file.Layer == layerCustom,
+			IsRepoLocal:  file.Layer == layerRepoLocal,
 		}
 	}
 	templates := make([]TaskTemplate, 0, len(order))
@@ -277,31 +281,53 @@ func LoadTemplates(dir string) ([]TaskTemplate, []SourceWarning, error) {
 	return templates, warnings, nil
 }
 
-// entityFile pairs a discovered .md path with whether it lives under the
-// `custom/` subtree. Defaults at the entity-folder root carry IsCustom=false;
-// files inside <entity>/custom/ carry IsCustom=true. Slug collisions between
-// defaults and customs are resolved at the loader level, with custom winning.
+// entityLayer identifies which source folder a discovered .md came from.
+// Layer ordering is also precedence ordering: a higher-layer file overrides
+// a lower-layer file with the same slug.
+type entityLayer int
+
+const (
+	layerDefault entityLayer = iota
+	layerCustom
+	layerRepoLocal
+)
+
+// entityFile pairs a discovered .md path with the source layer it came
+// from. Defaults at the entity-folder root use layerDefault; files inside
+// <entity>/custom/ use layerCustom; files inside the repo-local override
+// dir (<repo>/.omakiten/<entity>/) use layerRepoLocal. Slug collisions
+// resolve highest-layer-wins at the loader level.
 type entityFile struct {
-	Path     string
-	IsCustom bool
+	Path  string
+	Layer entityLayer
 }
 
-// listEntityFiles returns one entityFile per `.md` discovered under dir and
-// dir/custom. Defaults are emitted first (sorted), then customs (sorted), so
-// downstream merging can treat the second pass as a slug-keyed override.
-func listEntityFiles(dir string) ([]entityFile, error) {
-	defaults, err := readMDFilesIn(dir, false)
+// listEntityFiles returns one entityFile per `.md` discovered under three
+// optional source dirs, in precedence order: defaultDir (root) →
+// defaultDir/custom → repoLocalDir (flat). repoLocalDir == "" disables the
+// third source. The returned slice is sorted within each layer; downstream
+// merging treats later entries as overrides.
+func listEntityFiles(defaultDir, repoLocalDir string) ([]entityFile, error) {
+	defaults, err := readMDFilesIn(defaultDir, layerDefault)
 	if err != nil {
 		return nil, err
 	}
-	customs, err := readMDFilesIn(filepath.Join(dir, "custom"), true)
+	customs, err := readMDFilesIn(filepath.Join(defaultDir, "custom"), layerCustom)
 	if err != nil {
 		return nil, err
 	}
-	return append(defaults, customs...), nil
+	files := append(defaults, customs...)
+	if repoLocalDir != "" {
+		repoLocal, err := readMDFilesIn(repoLocalDir, layerRepoLocal)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, repoLocal...)
+	}
+	return files, nil
 }
 
-func readMDFilesIn(dir string, isCustom bool) ([]entityFile, error) {
+func readMDFilesIn(dir string, layer entityLayer) ([]entityFile, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -318,7 +344,7 @@ func readMDFilesIn(dir string, isCustom bool) ([]entityFile, error) {
 		if !strings.HasSuffix(strings.ToLower(name), ".md") {
 			continue
 		}
-		files = append(files, entityFile{Path: filepath.Join(dir, name), IsCustom: isCustom})
+		files = append(files, entityFile{Path: filepath.Join(dir, name), Layer: layer})
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return files, nil

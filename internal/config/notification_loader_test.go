@@ -92,7 +92,7 @@ func TestLoadNotifications_discoversDefaultsAndCustoms(t *testing.T) {
 	writeNotificationFile(t, root, "alpha.yaml", strings.Replace(validNotificationYAML, "name: testkit", "name: alpha", 1))
 	writeNotificationFile(t, filepath.Join(root, "custom"), "beta.yaml", strings.Replace(validNotificationYAML, "name: testkit", "name: beta", 1))
 
-	notifications, _, err := LoadNotifications(root)
+	notifications, _, err := LoadNotifications(root, "")
 	if err != nil {
 		t.Fatalf("LoadNotifications: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestLoadNotifications_customOverridesDefault(t *testing.T) {
 	customBody = strings.Replace(customBody, "description: tester", "description: overridden", 1)
 	writeNotificationFile(t, filepath.Join(root, "custom"), "shared.yaml", customBody)
 
-	notifications, _, err := LoadNotifications(root)
+	notifications, _, err := LoadNotifications(root, "")
 	if err != nil {
 		t.Fatalf("LoadNotifications: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestLoadNotifications_customOverridesDefault(t *testing.T) {
 }
 
 func TestLoadNotifications_missingDirOK(t *testing.T) {
-	notifications, _, err := LoadNotifications(filepath.Join(t.TempDir(), "absent"))
+	notifications, _, err := LoadNotifications(filepath.Join(t.TempDir(), "absent"), "")
 	if err != nil {
 		t.Fatalf("missing dir should be fine, got %v", err)
 	}
@@ -155,7 +155,7 @@ func TestLoadNotifications_invalidCustomFileSurfacesWarning(t *testing.T) {
 	writeNotificationFile(t, root, "good.yaml", strings.Replace(validNotificationYAML, "name: testkit", "name: good", 1))
 	writeNotificationFile(t, filepath.Join(root, "custom"), "stale.yaml", "name: stale\nanimations:\n  idle:\n    - frame: 0\n      value: x\n")
 
-	notifications, warnings, err := LoadNotifications(root)
+	notifications, warnings, err := LoadNotifications(root, "")
 	if err != nil {
 		t.Fatalf("invalid custom should not fail load: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestLoadNotifications_invalidCustomFileSurfacesWarning(t *testing.T) {
 func TestLoadNotifications_invalidDefaultFileFails(t *testing.T) {
 	root := t.TempDir()
 	writeNotificationFile(t, root, "broken.yaml", "name: broken\nanimations:\n  idle:\n    - frame: 0\n      value: x\n")
-	_, _, err := LoadNotifications(root)
+	_, _, err := LoadNotifications(root, "")
 	if err == nil {
 		t.Fatalf("expected default-scope failure to be fatal")
 	}
@@ -189,7 +189,7 @@ func TestLoadNotifications_duplicateAtSameScopeFails(t *testing.T) {
 	root := t.TempDir()
 	writeNotificationFile(t, root, "a.yaml", strings.Replace(validNotificationYAML, "name: testkit", "name: dup", 1))
 	writeNotificationFile(t, root, "b.yaml", strings.Replace(validNotificationYAML, "name: testkit", "name: dup", 1))
-	_, _, err := LoadNotifications(root)
+	_, _, err := LoadNotifications(root, "")
 	if err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Fatalf("expected duplicate error, got %v", err)
 	}

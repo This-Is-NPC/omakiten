@@ -536,6 +536,11 @@ func (s Settings) EffectiveViews() ViewSettings { return s.Views }
 
 // Skill is a resolved skill: its frontmatter + body merged with the slug taken
 // from the source filename (without `.md`).
+//
+// IsCustom and IsRepoLocal are mutually exclusive provenance flags. IsCustom
+// means the file lives under the user-global `<entity>/custom/` subtree;
+// IsRepoLocal means it lives under the repo-local `.omakiten/<entity>/`
+// folder discovered by walk-up. Both false → kit default at root.
 type Skill struct {
 	Slug        string `json:"slug"`
 	Name        string `json:"name"`
@@ -543,6 +548,7 @@ type Skill struct {
 	Body        string `json:"body,omitempty"`
 	SourcePath  string `json:"source_path,omitempty"`
 	IsCustom    bool   `json:"is_custom,omitempty"`
+	IsRepoLocal bool   `json:"is_repo_local,omitempty"`
 }
 
 type Persona struct {
@@ -554,6 +560,7 @@ type Persona struct {
 	Laws        []string `json:"laws,omitempty"`
 	SourcePath  string   `json:"source_path,omitempty"`
 	IsCustom    bool     `json:"is_custom,omitempty"`
+	IsRepoLocal bool     `json:"is_repo_local,omitempty"`
 }
 
 type Law struct {
@@ -566,6 +573,7 @@ type Law struct {
 	PersonaSlug string `json:"persona,omitempty"`
 	SourcePath  string `json:"source_path,omitempty"`
 	IsCustom    bool   `json:"is_custom,omitempty"`
+	IsRepoLocal bool   `json:"is_repo_local,omitempty"`
 }
 
 type Project struct {
@@ -595,6 +603,7 @@ type TaskTemplate struct {
 	Body        string   `json:"body,omitempty"`
 	SourcePath  string   `json:"source_path,omitempty"`
 	IsCustom    bool     `json:"is_custom,omitempty"`
+	IsRepoLocal bool     `json:"is_repo_local,omitempty"`
 }
 
 type Workflow struct {
