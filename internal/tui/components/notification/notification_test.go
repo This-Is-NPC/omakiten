@@ -141,6 +141,68 @@ func TestUpdate_timeoutDismiss(t *testing.T) {
 	}
 }
 
+func TestUpdate_actionKeyEmitsActionMsg(t *testing.T) {
+	bud := sampleNotification()
+	bud.Actions = []config.NotificationAction{
+		{Key: "m", ID: "migrate", Label: "Migrate", Command: []string{"workflow", "orphans", "--confirm"}},
+		{Key: "s", ID: "skip", Label: "Skip"},
+	}
+	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "swap?"})
+	next, cmd := m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune("m")}))
+	if cmd == nil {
+		t.Fatalf("expected ActionMsg cmd, got nil")
+	}
+	msg := cmd()
+	got, ok := msg.(ActionMsg)
+	if !ok {
+		t.Fatalf("expected ActionMsg, got %T", msg)
+	}
+	if got.Slug != "kit" || got.ActionID != "migrate" {
+		t.Fatalf("ActionMsg = %+v, want slug=kit id=migrate", got)
+	}
+	if len(got.Command) != 3 || got.Command[0] != "workflow" {
+		t.Fatalf("Command = %v, want [workflow orphans --confirm]", got.Command)
+	}
+	if !next.dismissed {
+		t.Fatalf("firing an action must dismiss the notification")
+	}
+}
+
+func TestUpdate_actionDoesNotInterceptUnmatchedKey(t *testing.T) {
+	bud := sampleNotification()
+	bud.Actions = []config.NotificationAction{
+		{Key: "m", ID: "migrate", Label: "Migrate"},
+	}
+	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "swap?"})
+	_, cmd := m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEsc}))
+	if cmd == nil {
+		t.Fatalf("esc should still dismiss when no action matches")
+	}
+	msg := cmd()
+	if _, ok := msg.(DismissedMsg); !ok {
+		t.Fatalf("esc with actions present must still emit DismissedMsg, got %T", msg)
+	}
+}
+
+func TestUpdate_actionWithEmptyCommandStillDismisses(t *testing.T) {
+	bud := sampleNotification()
+	bud.Actions = []config.NotificationAction{
+		{Key: "s", ID: "skip", Label: "Skip"},
+	}
+	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "swap?"})
+	_, cmd := m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune("s")}))
+	if cmd == nil {
+		t.Fatalf("expected ActionMsg even with empty command")
+	}
+	got, ok := cmd().(ActionMsg)
+	if !ok {
+		t.Fatalf("expected ActionMsg, got %T", cmd())
+	}
+	if got.ActionID != "skip" || len(got.Command) != 0 {
+		t.Fatalf("skip action = %+v, want id=skip and empty Command", got)
+	}
+}
+
 func TestUpdate_timeoutWithKeysCanDismissManually(t *testing.T) {
 	bud := sampleNotification()
 	bud.Dismiss = config.NotificationDismiss{Mode: config.NotificationDismissModeTimeout, Keys: []string{"esc"}, AfterMs: 12000}

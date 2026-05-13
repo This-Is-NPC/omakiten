@@ -59,6 +59,22 @@ type Model struct {
 // notification that was already replaced.
 type DismissedMsg struct{ ID int64 }
 
+// ActionMsg is sent when the user presses a key bound to one of the
+// notification's declared Actions. The Slug names the source notification so
+// the parent can route the action without inspecting Model state; ActionID
+// is the stable identifier authored in YAML (used by the audit log); Command
+// is the cobra args slice the parent should invoke in-process. An empty
+// Command means the action is a labeled dismiss (no side effect).
+//
+// Emitting ActionMsg also dismisses the notification — the contract is "the
+// user chose one option", not "the user chose AND then closes manually".
+type ActionMsg struct {
+	ID       int64
+	Slug     string
+	ActionID string
+	Command  []string
+}
+
 type typingTickMsg struct{ id int64 }
 type frameTickMsg struct{ id int64 }
 type timeoutTickMsg struct{ id int64 }
@@ -176,15 +192,40 @@ func (m Model) handleKey(key tea.KeyMsg) (Model, tea.Cmd) {
 		m.bubble = bubble
 		return m, nil
 	}
-	if m.state == StateSettled && m.dismissKeysEnabled() {
-		for _, k := range m.notification.Dismiss.Keys {
-			if k == keyStr {
-				return m.Dismiss()
+	if m.state == StateSettled {
+		// Actions take priority over dismiss keys: when a user-declared
+		// button shares a key with the dismiss list, the validator already
+		// rejected the YAML, so a single key match here is unambiguous.
+		for _, action := range m.notification.Actions {
+			if action.Key == keyStr {
+				return m.fireAction(action)
+			}
+		}
+		if m.dismissKeysEnabled() {
+			for _, k := range m.notification.Dismiss.Keys {
+				if k == keyStr {
+					return m.Dismiss()
+				}
 			}
 		}
 	}
 	// Consume the key — don't forward to the app underneath.
 	return m, nil
+}
+
+// fireAction marks the notification dismissed and emits ActionMsg carrying the
+// selected button. The parent treats ActionMsg as "user chose this option";
+// dispatching the command + clearing the notification slot live there.
+func (m Model) fireAction(action config.NotificationAction) (Model, tea.Cmd) {
+	if m.dismissed {
+		return m, nil
+	}
+	id := m.id
+	slug := m.notification.Name
+	m.dismissed = true
+	return m, func() tea.Msg {
+		return ActionMsg{ID: id, Slug: slug, ActionID: action.ID, Command: action.Command}
+	}
 }
 
 func (m Model) dismissKeysEnabled() bool {
@@ -537,13 +578,22 @@ func (m Model) renderFooter(innerWidth int) string {
 	if !*m.notification.FooterVisible {
 		return ""
 	}
-	tokens := make([]keyfooter.Token, 0, 2)
+	tokens := make([]keyfooter.Token, 0, 2+len(m.notification.Actions))
 	if m.hasDetailText() {
 		tokens = append(tokens, keyfooter.Token{Key: "tab", Label: "details", Primary: true})
 	}
+	// Action buttons go first when present so the user's primary choices
+	// dominate the footer. The dismiss hint follows so esc still discoverable.
+	for i, action := range m.notification.Actions {
+		tokens = append(tokens, keyfooter.Token{Key: action.Key, Label: action.Label, Primary: i == 0 && !m.hasDetailText()})
+	}
 	if m.dismissKeysEnabled() {
 		if key := footerDismissKey(m.notification.Dismiss.Keys); key != "" {
-			tokens = append(tokens, keyfooter.Token{Key: key, Label: "close", Primary: !m.hasDetailText()})
+			label := "close"
+			if len(m.notification.Actions) > 0 {
+				label = "cancel"
+			}
+			tokens = append(tokens, keyfooter.Token{Key: key, Label: label, Primary: !m.hasDetailText() && len(m.notification.Actions) == 0})
 		}
 	}
 	if len(tokens) == 0 {
