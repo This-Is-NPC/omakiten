@@ -29,9 +29,27 @@ type Notification struct {
 	TypingMsPerChar *int                     `yaml:"typing_ms_per_char" json:"typing_ms_per_char"`
 	Message         string                   `yaml:"message,omitempty" json:"message,omitempty"`
 	MessageField    string                   `yaml:"message_field,omitempty" json:"message_field,omitempty"`
+	Actions         []NotificationAction     `yaml:"actions,omitempty" json:"actions,omitempty"`
 
 	SourcePath string `yaml:"-" json:"-"`
 	IsCustom   bool   `yaml:"-" json:"-"`
+}
+
+// NotificationAction is one interactive button surfaced in the notification
+// footer. When the user presses Key, the notification component emits an
+// ActionMsg carrying ID and Command; the parent Model dispatches Command
+// in-process through the cobra root so the action runs against the same
+// runtime store as the live TUI. Actions with empty Command behave as
+// labeled dismiss shortcuts (used for "Skip" / "Cancel" buttons).
+//
+// Each element of Command is rendered through text/template against the
+// triggering event payload and the active project before invocation, so
+// args like "--project={{.Project.Slug}}" resolve at dispatch time.
+type NotificationAction struct {
+	Key     string   `yaml:"key" json:"key"`
+	ID      string   `yaml:"id" json:"id"`
+	Label   string   `yaml:"label" json:"label"`
+	Command []string `yaml:"command,omitempty" json:"command,omitempty"`
 }
 
 // NotificationDismiss is the close-strategy for the rendered card. Mode
