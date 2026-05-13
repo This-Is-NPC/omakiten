@@ -165,8 +165,8 @@ Every tool accepts optional project selector fields where useful: `project_id`, 
 | Prompt | Intent |
 |---|---|
 | `okt` | Load project overview before continuing work. |
-| `okt-imagine` | Brainstorm freely as a product owner before any task exists. |
-| `okt-create` | Author a task: feasibility check, user story, scope. |
+| `okt-imagine` | PLAN phase — product-owner persona interrogates the user via 5W2H and frames success in SMART terms before any task exists. |
+| `okt-create` | PLAN → DO handoff — author the task with INVEST-checked user story; record prioritization (MoSCoW / RICE) when alternatives exist. |
 | `okt-resume` | Scan likely-next work across the active project. |
 | `okt-continue` | Read a task's checkpoint as an engineer before resuming work. |
 | `okt-implement` | Execute approved engineering work with strict rigor and commit discipline. |

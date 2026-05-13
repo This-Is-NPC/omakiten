@@ -79,8 +79,8 @@ var commandActions = map[string]string{
 // the action text means the MCP adapter can ship a single source of truth.
 var commandDescriptions = map[string]string{
 	"okt":           "Contextualize the agent with active Omakiten project state.",
-	"okt-imagine":   "Brainstorm freely as a product owner before any task exists.",
-	"okt-create":    "Author a task as a product owner: feasibility, user story, and scope.",
+	"okt-imagine":   "PLAN phase — interrogate the user via 5W2H and frame success in SMART terms before any task exists.",
+	"okt-create":    "PLAN → DO handoff — author the task with an INVEST-checked story; record prioritization when alternatives exist.",
 	"okt-resume":    "Scan likely-next work across the active project.",
 	"okt-continue":  "Read a task's checkpoint as an engineer before resuming work.",
 	"okt-implement": "Execute approved engineering work with strict rigor and commit discipline.",

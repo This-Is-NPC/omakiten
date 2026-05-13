@@ -42,8 +42,8 @@ Eight prompts ship as MCP prompts and work in any harness that supports them. Th
 | Prompt | When to use it |
 |---|---|
 | `/okt` | **Start of a session** loads project identity, active workflow, pending count, and the next-step suggestion so the agent stops guessing what's already happening. |
-| `/okt-imagine` | **Brainstorming before any task exists** the agent grounds itself with project state, asks clarifying questions, and sketches hypotheses. |
-| `/okt-create <description>` | **Creating a task with duplicate detection** the agent first checks for similar/related work and asks to confirm before creating. |
+| `/okt-imagine` | **PLAN phase — discovery before any task exists** the product-owner persona interrogates you via 5W2H (What / Why / Who / When / Where / How / How much), frames success in SMART terms, and surfaces gaps before the task is filed. |
+| `/okt-create <description>` | **PLAN → DO handoff — formalize the imagined work** the agent runs duplicate detection, asks to confirm, then files the task with an INVEST-checked user story and prioritization rationale (MoSCoW / RICE) when alternatives exist. |
 | `/okt-resume` | **Coming back to a project after a pause** surfaces the most relevant work to pick up next, including blocked items and recent handoff context. |
 | `/okt-continue <task_id>` | **Resuming a specific task** pulls its dependencies, comments, workflow position, and recent context in one shot. |
 | `/okt-implement` | **Executing approved work** runs the engineer's implement loop with bounded self-review, conventional commits, and self-report on retried errors. |

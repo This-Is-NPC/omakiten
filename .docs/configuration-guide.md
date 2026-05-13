@@ -915,6 +915,8 @@ What ships in `defaults/` and is materialized on first run by `configstore.Ensur
 
 ### Laws (`defaults/laws/`)
 
+Shared globals (bound by every preset's `mcp_commands.global.laws` or persona frontmatter):
+
 | Slug | Severity | What it constrains |
 |---|---|---|
 | `project-scope-only` | error | Never mix tasks or context from different projects. |
@@ -929,9 +931,49 @@ What ships in `defaults/` and is materialized on first run by `configstore.Ensur
 | `authorize-remote-writes` | error | Never push, force-push, or create/edit/merge PRs without explicit user authorization in the current conversation. |
 | `self-report` | error | Record any non-trivial error (>1 fix attempt) via `errors.record` + `solutions.add`; confirm previously applied solutions with `solutions.confirm`. |
 
+Preset-specific engineering laws (bound only by the matching preset):
+
+| Slug | Severity | Preset | What it constrains |
+|---|---|---|---|
+| `hypothesis-required` | error | izakaya | Every spike answers a written question; no spike without it. |
+| `time-boxed-spike` | error | izakaya | Spikes declare a time-box; past the box, kill / promote / extend explicitly. |
+| `yagni-first` | warning | izakaya | Build only what the active hypothesis demands. |
+| `tracer-bullet` | warning | izakaya | Thin end-to-end slice before depth. |
+| `green-main-always` | error | omakase | Pre-push verification; broken main is fixed or reverted within 10 minutes. |
+| `test-evidence` | error | omakase | Behavioral changes ship with reproducible evidence. |
+| `small-batches` | warning | omakase | Prefer many small PRs (<400 LOC) over one large one. |
+| `boy-scout-rule` | warning | omakase | Opportunistic cleanup of touched code, documented as `#refactor-drive-by`. |
+| `requirements-signed-off` | error | kaiseki | Task moves past requirements only after the requester signs off in writing. |
+| `design-recorded` | error | kaiseki | Implementation starts after the design approach is documented. |
+| `decision-record-on-divergence` | error | kaiseki | Significant decisions land in a decision record before code. |
+| `acceptance-criteria-required` | error | kaiseki | Every feature ships with documented acceptance criteria. |
+| `peer-review-required` | error | kaiseki | Min one independent peer review before promotion past review. |
+| `pre-mortem-required` | error | shokunin | Imagine the failure before shipping; `#pre-mortem` filed before code. |
+| `rollback-plan-mandatory` | error | shokunin | Every change carries a documented revert path. |
+| `dual-peer-review` | error | shokunin | Min two independent reviewers; each leaves `#peer-review`. |
+| `coverage-gate` | error | shokunin | Test coverage must not drop; new code ≥ 80% line coverage. |
+| `blameless-postmortem` | error | shokunin | Every incident / near-miss earns a postmortem; "human error" is never a root cause. |
+| `audit-trail-integrity` | error | shokunin | Comments in dev+ are append-only; corrections via `#scribe-correction`. |
+| `error-budget-aware` | warning | shokunin | Reliability-affecting changes cite SLO error-budget consumption. |
+| `blast-radius-awareness` | warning | shokunin | Every change declares its blast radius; classification drives gate severity. |
+
+Product-discipline laws (bound by `product-owner` persona across omakase / kaiseki / shokunin):
+
+| Slug | Severity | What it constrains |
+|---|---|---|
+| `pdca-aware` | warning | Recognize which Plan-Do-Check-Act phase each okt-* fires in; name it for the user. |
+| `5w2h-elicitation` | warning | `okt-imagine` walks the user through What / Why / Who / When / Where / How / How much. |
+| `smart-success` | warning | Tasks carry success criteria that satisfy Specific / Measurable / Achievable / Relevant / Time-bound. |
+| `invest-stories` | warning | Stories satisfy Independent / Negotiable / Valuable / Estimable / Small / Testable. |
+| `outcome-over-output` | warning | Features name the user/business outcome they should produce, not just the artifact. |
+| `prioritization-recorded` | warning | When alternatives exist, record the rationale via MoSCoW or RICE. |
+| `non-functional-explicit` | warning | NFRs documented separately from FRs, each with a target or "not applicable + reason". |
+
 ### Skills (`defaults/skills/`)
 
 The default kit ships only project-agnostic skills. Stack-specific skills (Go, Python, SQLite, React, etc.) belong in `<root>/skills/custom/<slug>.md` and are wired per-persona in your local active profile yaml.
+
+Shared skills:
 
 | Slug | Description |
 |---|---|
@@ -944,23 +986,111 @@ The default kit ships only project-agnostic skills. Stack-specific skills (Go, P
 | `requirements-mapping` | Functional, non-functional, business rules with source-file references. |
 | `readme-curation` | README hygiene — install, usage, examples in sync with the code surface. |
 
+Per-preset engineering skills:
+
+| Slug | Preset | Description |
+|---|---|---|
+| `lean-experimentation` | izakaya | MVP design, falsifiable hypotheses, acceptance signals. |
+| `tracer-bullet-shipping` | izakaya | Walking-skeleton end-to-end first; depth only after the shape is observable. |
+| `time-box-discipline` | izakaya | Declare boxes up front; recognize when to kill / promote / extend. |
+| `trunk-based-development` | omakase | Short-lived branches, feature flags, fast revert. |
+| `continuous-integration` | omakase | Pre-push verification, fix-forward vs revert. |
+| `test-driven-development` | omakase | Red → green → refactor; tests-first; regression test on every bugfix. |
+| `dora-mindset` | omakase | Optimize lead time / deploy freq / MTTR / change failure rate. |
+| `requirements-elicitation` | kaiseki | Stakeholder needs, INVEST-style stories, testable acceptance criteria. |
+| `design-documentation` | kaiseki | Capture the approach in the repo's preferred format before coding. |
+| `decision-records` | kaiseki | When to record a decision; concise context / decision / consequences. |
+| `acceptance-criteria-writing` | kaiseki | Testable acceptance shapes (Given/When/Then or alternatives). |
+| `staged-delivery` | kaiseki | Requirements → planning → dev → review → docs → done with explicit gates. |
+| `sre-discipline` | shokunin | SLI/SLO/error-budget; four golden signals. |
+| `risk-driven-development` | shokunin | Pre-mortem authoring, blast-radius analysis, mitigation-first. |
+| `postmortem-authoring` | shokunin | Blameless 5-whys; timeline (UTC); action items with owners. |
+| `change-management` | shokunin | Approval matrix, sign-off discipline, audit-trail integrity. |
+| `test-driven-development-strict` | shokunin | TDD with coverage-gate awareness and perf regression check. |
+| `static-analysis-discipline` | shokunin | Lint / SAST / SCA / coverage as DoD gates. |
+
+Product-discipline skills (bound by `product-owner` persona across omakase / kaiseki / shokunin):
+
+| Slug | Description |
+|---|---|
+| `pdca-cycle` | Plan-Do-Check-Act phase awareness; name the phase for the user. |
+| `five-w-two-h` | Structured questioning — What / Why / Who / When / Where / How / How much. |
+| `smart-goals` | Specific / Measurable / Achievable / Relevant / Time-bound success criteria. |
+| `invest-stories` | Wake (2003) checklist — Independent / Negotiable / Valuable / Estimable / Small / Testable. |
+| `moscow-prioritization` | Qualitative ranking — Must / Should / Could / Won't. |
+| `rice-scoring` | Quantitative priority — Reach × Impact × Confidence ÷ Effort. |
+| `okr-framing` | Objective + Key Results — outcome-driven goal shape. |
+| `non-functional-requirements` | Quality attributes captured separately from functional requirements. |
+
 ### Personas (`defaults/personas/`)
 
-| Slug | Description | Skills wired in `defaults/config/omakase.yaml` |
+| Slug | Description | Preset that binds it |
 |---|---|---|
-| `engineer` | Implementation agent — small increments, self-review, regression awareness, commit discipline. Body in `defaults/personas/engineer.md` carries the implement loop (steps that delegate to laws like `bounded-self-review`, `self-report`, `conventional-commits`, `workflow-enforced`). | `implementation`, `markdown` |
-| `product-owner` | Discovery agent — feasibility, clarifying questions, user stories. | `discovery`, `user-story-writing`, `markdown` |
-| `documentation-agent` | Documentation curator — keeps narrative artifacts in sync with code. | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
+| `engineer` | Trunk-based contributor — small batches, green main always, test-first, opportunistic cleanup. Body in `defaults/personas/engineer.md` carries the trunk-based loop. | omakase |
+| `tinkerer` | Hypothesis-driven explorer — writes the question first, ships walking-skeleton, kills early. | izakaya |
+| `methodical-engineer` | Staged-delivery contributor — requirements before design, design before code, decisions recorded, peer review mandatory. | kaiseki |
+| `craftsperson` | Regulated-change contributor — pre-mortem, rollback plan, dual sign-off, blameless postmortem. | shokunin |
+| `product-owner` | PLAN-phase persona — interrogates the user via 5W2H, frames success in SMART, hands off only when concrete enough. Body carries the Discovery loop. | omakase, kaiseki, shokunin |
+| `documentation-agent` | Documentation curator — keeps narrative artifacts in sync with code. | all four (utility persona) |
+
+Each preset's `personas:` block in `defaults/config/<preset>.yaml` is the strict allowlist for that preset — entities outside the list still live on disk but are not loaded by that preset.
 
 ### Templates (`defaults/templates/`)
+
+Shared canonical templates (used by every preset that binds them):
 
 | Slug | Default kind | What the body scaffolds |
 |---|---|---|
 | `pull-request` | `pr` | Before/After framing, change log, files updated, validation matrix, deviations, risks/follow-ups, references. |
-| `user-story` | `task` | Description, Acceptance Criteria, Definition of Done, Scope in/out, Feasibility note. |
+| `user-story` | `task` | Description (As a/I want/So that), Acceptance Criteria, Definition of Done, INVEST checklist, Scope in/out, Feasibility note. |
 | `comment-resume` | `comment-resume` | Implementation handoff filling the `#resume` guard (dev → review): Before/After, summary table, files, validation, open questions. |
 | `comment-selfbranch` | `comment-selfbranch` | Branch declaration filling the `#self-branch` guard (backlog → dev): branch name + working path. |
 | `comment-documentation` | `comment-documentation` | Closing checklist filling the `#documentation` guard (review → done): commits merged, tags applied, review confirmation. |
+| `config-orientation` | — (orientation kind) | Map of the configuration layout the `okt-config` MCP prompt loads — path resolution, entity folders, frontmatter shapes, wiring, workflow guard kinds, authoring-your-own walkthrough. |
+
+Per-preset task and decision-record templates (slug-bound via `mcp_commands.<cmd>.templates`):
+
+| Slug | Preset | What the body scaffolds |
+|---|---|---|
+| `task-spike` | izakaya | Hypothesis · Falsifiable signal · Time-box · Discard plan. |
+| `task-bugfix` | omakase | Reproduction · Expected vs actual · Root cause · Fix · Regression test. |
+| `task-feature` | kaiseki | Requirements summary · Approach (architecture-agnostic) · Acceptance criteria · Risks · Out of scope. |
+| `task-change-request` | shokunin | Risk class · SLO impact · Pre-mortem · Rollback strategy · Approval matrix. |
+| `decision-record` | kaiseki, shokunin | Generic Status / Context / Decision / Consequences / Alternatives — project picks the file path. |
+| `design-doc` | kaiseki | Problem · Approach · Trade-offs · Acceptance criteria · Risks · Open questions. |
+
+Engineering-discipline comment templates (slug-bound by the matching preset's `okt-implement` and lifecycle gates):
+
+| Slug | Preset | Fills |
+|---|---|---|
+| `comment-hypothesis` | izakaya | `#hypothesis` guard on backlog→dev. |
+| `comment-discard` | izakaya | Spike closure when the hypothesis failed. |
+| `comment-promote` | izakaya | Spike promotion to real task. |
+| `comment-tests-passing` | omakase | `#tests-passing` guard on dev→review (light shape: command + output + duration). |
+| `comment-tests-passing-strict` | shokunin | `#tests-passing` guard with coverage delta + test types + perf check. |
+| `comment-refactor-drive-by` | omakase | Boy-Scout cleanup that rode along with a feature. |
+| `comment-design-decision` | kaiseki | Inline pointer to a decision record for an architectural divergence. |
+| `comment-pre-mortem` | shokunin | Failure modes / detection signals / mitigations before implementation. |
+| `comment-rollback-plan` | shokunin | Revert steps / post-rollback validation / comms plan. |
+| `comment-peer-review` | kaiseki | Reviewer verdict, approval scope, concerns, confidence. |
+| `comment-peer-review-strict` | shokunin | One of N independent reviewers required by `dual-peer-review`. |
+| `comment-postmortem` | shokunin | Blameless incident writeup — timeline (UTC), 5-whys root cause, action items. |
+| `comment-lessons-learned` | shokunin (and kaiseki via okt-document) | Closing reflection: what worked / what didn't / process changes proposed. |
+| `comment-risk-assessment` | shokunin | Risk matrix · Blast radius · SLO impact · Residual risk accepted. |
+| `comment-scribe-correction` | shokunin | Append-only correction to a prior comment when `audit-trail-integrity` requires it. |
+
+Product-discipline comment templates (bound by `product-owner` on `okt-imagine` / `okt-create`):
+
+| Slug | Fills |
+|---|---|
+| `comment-5w2h` | `#5w2h` guard on requirements→planning (kaiseki/shokunin); also surfaced under omakase `okt-imagine` as a recommendation. Seven sections: What / Why / Who / When / Where / How / How much + Gaps. |
+| `comment-smart-success` | Success criteria in SMART form (Specific / Measurable / Achievable / Relevant / Time-bound + Baseline). |
+| `comment-acceptance` | Acceptance criteria in any testable format (Given/When/Then or alternatives). |
+| `comment-requirements` | User story + acceptance signals + constraints + domain expert sign-off. |
+| `comment-moscow` | MoSCoW prioritization (Must / Should / Could / Won't this iteration). |
+| `comment-rice-score` | RICE scoring table (Reach × Impact × Confidence ÷ Effort) per option. |
+| `comment-okr` | Objective + 2-4 Key Results with baseline/target/timeframe. |
+| `comment-non-functional` | Per-attribute NFR table (Performance / Security / Usability / Observability / Scale / Accessibility / Compliance). |
 
 ### Themes (`defaults/themes/`)
 
