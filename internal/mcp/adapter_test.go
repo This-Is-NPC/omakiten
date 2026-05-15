@@ -892,6 +892,73 @@ func TestAdapterServiceResolverConcurrentRouting(t *testing.T) {
 	}
 }
 
+// TestAdapterDefaultServiceProviderTracksFreshService asserts the
+// fix for the stale-pointer bug: when SetDefaultServiceProvider wires
+// a func, CallTool / ReadResource / GetPrompt must consult it on every
+// call so a runtime that rotates the default service (BundleCache
+// rebuild) does not leave the adapter dispatching against a discarded
+// pointer.
+func TestAdapterDefaultServiceProviderTracksFreshService(t *testing.T) {
+	ctx := context.Background()
+
+	storeA, projectA, _ := newMCPProjectWithBundle(t, ctx, "alpha", mcpTestBundle(t))
+	storeB, projectB, _ := newMCPProjectWithBundle(t, ctx, "bravo", mcpTestBundle(t))
+
+	svcA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID, CWD: filepath.Join(t.TempDir(), "a")})
+	svcA.SetRegistry(testfixtures.CanonicalRegistry())
+	svcB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID, CWD: filepath.Join(t.TempDir(), "b")})
+	svcB.SetRegistry(testfixtures.CanonicalRegistry())
+
+	active := svcA
+	adapter := NewAdapter(svcA)
+	adapter.SetDefaultServiceProvider(func() *agent.Service { return active })
+
+	resA, err := adapter.CallTool(ctx, "project.overview", withModel(nil))
+	if err != nil || resA.IsError {
+		t.Fatalf("CallTool A: err=%v isErr=%v body=%s", err, resA.IsError, snippet(resA))
+	}
+	var bodyA struct {
+		Project struct {
+			Slug string `json:"slug"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal([]byte(resA.Content[0].Text), &bodyA); err != nil {
+		t.Fatalf("decode A: %v", err)
+	}
+	if bodyA.Project.Slug != "alpha" {
+		t.Fatalf("default service A overview slug = %q, want alpha", bodyA.Project.Slug)
+	}
+
+	// Simulate a BundleCache rebuild rotating the default service to
+	// project bravo. The adapter holds a pre-rotation pointer in
+	// a.service; the provider func is the only way it sees the
+	// rotation.
+	active = svcB
+
+	resB, err := adapter.CallTool(ctx, "project.overview", withModel(nil))
+	if err != nil || resB.IsError {
+		t.Fatalf("CallTool B: err=%v isErr=%v body=%s", err, resB.IsError, snippet(resB))
+	}
+	var bodyB struct {
+		Project struct {
+			Slug string `json:"slug"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal([]byte(resB.Content[0].Text), &bodyB); err != nil {
+		t.Fatalf("decode B: %v", err)
+	}
+	if bodyB.Project.Slug != "bravo" {
+		t.Fatalf("rotated default service overview slug = %q, want bravo (stale a.service was used)", bodyB.Project.Slug)
+	}
+}
+
+func snippet(r ToolResult) string {
+	if len(r.Content) == 0 {
+		return ""
+	}
+	return r.Content[0].Text
+}
+
 // newMCPProjectWithBundle imports the supplied bundle into a fresh
 // store, registers a project under slug, and seeds a single backlog
 // task so dispatch tests have something to operate on. Returns the

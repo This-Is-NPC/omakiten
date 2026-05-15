@@ -188,6 +188,11 @@ func agentOptions(opts *runtimeOptions) agentruntime.Options {
 // behaviour.
 func newMCPAdapter(rt *agentruntime.Runtime) *mcp.Adapter {
 	adapter := mcp.NewAdapter(rt.Service())
+	// Provider lookup keeps the default service fresh across cache
+	// rebuilds — without it, a mtime-driven Reload during a long MCP
+	// session would leave the adapter dispatching against a stale
+	// agent.Service pointer.
+	adapter.SetDefaultServiceProvider(rt.Service)
 	adapter.SetActivityLogRepository(rt.Store())
 	adapter.SetServiceResolver(func(ctx context.Context, project string, projectID int64) (*agent.Service, error) {
 		return rt.ResolveServiceForProject(ctx, project, projectID)

@@ -56,9 +56,16 @@ func extractAgentAttribution(args map[string]any) (model, sessionID string, err 
 }
 
 type Adapter struct {
-	service  *agent.Service
-	repo     activity.ActivityLogRepository
-	resolver ServiceResolver
+	// service is the static fallback NewAdapter captured. It is only
+	// consulted when defaultProvider is nil (test paths that never
+	// touch a BundleCache). Production wires defaultProvider via
+	// SetDefaultServiceProvider so cache rebuilds always surface the
+	// fresh service — a stale *agent.Service pointer was the Phase
+	// 3b regression the provider fixes.
+	service         *agent.Service
+	defaultProvider DefaultServiceProvider
+	repo            activity.ActivityLogRepository
+	resolver        ServiceResolver
 }
 
 // ServiceResolver returns the per-project agent.Service that should
@@ -70,8 +77,37 @@ type Adapter struct {
 // an error so resolvers can keep their decision tree shallow.
 type ServiceResolver func(ctx context.Context, project string, projectID int64) (*agent.Service, error)
 
+// DefaultServiceProvider returns the adapter's fallback service on
+// every call. Threaded through SetDefaultServiceProvider so the
+// adapter never caches a *agent.Service pointer that could go stale
+// after a BundleCache rebuild. Returning nil falls back to the static
+// service NewAdapter captured.
+type DefaultServiceProvider func() *agent.Service
+
 func NewAdapter(service *agent.Service) *Adapter {
 	return &Adapter{service: service}
+}
+
+// SetDefaultServiceProvider replaces the static default service with
+// a function the adapter consults on every CallTool / ReadResource.
+// Required for any runtime that mutates the default service after
+// adapter construction (mtime-driven BundleCache rebuilds, explicit
+// Reload). Pass nil to revert to the captured static service.
+func (a *Adapter) SetDefaultServiceProvider(provider DefaultServiceProvider) {
+	a.defaultProvider = provider
+}
+
+// defaultService resolves the adapter's fallback service through the
+// provider when wired, falling back to the static service NewAdapter
+// captured. Returns nil when neither source produced a service —
+// CallTool surfaces that to the caller as a configuration error.
+func (a *Adapter) defaultService() *agent.Service {
+	if a.defaultProvider != nil {
+		if svc := a.defaultProvider(); svc != nil {
+			return svc
+		}
+	}
+	return a.service
 }
 
 func (a *Adapter) SetActivityLogRepository(repo activity.ActivityLogRepository) {
@@ -252,7 +288,8 @@ func Prompts() []PromptDefinition {
 }
 
 func (a *Adapter) CallTool(ctx context.Context, name string, args map[string]any) (ToolResult, error) {
-	if a.service == nil {
+	service := a.defaultService()
+	if service == nil {
 		return ToolResult{}, fmt.Errorf("mcp adapter requires an agent service")
 	}
 
@@ -264,7 +301,6 @@ func (a *Adapter) CallTool(ctx context.Context, name string, args map[string]any
 		return ToolResult{}, err
 	}
 
-	service := a.service
 	if a.resolver != nil {
 		project, projectID := peekProjectArg(args)
 		if resolved, err := a.resolver(ctx, project, projectID); err == nil && resolved != nil {
@@ -551,7 +587,8 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 }
 
 func (a *Adapter) ReadResource(ctx context.Context, uri string) (ToolResult, error) {
-	if a.service == nil {
+	service := a.defaultService()
+	if service == nil {
 		return ToolResult{}, fmt.Errorf("mcp adapter requires an agent service")
 	}
 	// Resource reads are system-internal — no _agent_model validation.
@@ -560,9 +597,9 @@ func (a *Adapter) ReadResource(ctx context.Context, uri string) (ToolResult, err
 	ctx = activity.WithAgent(ctx, "mcp", "resource:"+uri, "", "")
 	switch uri {
 	case "omakiten://project/overview":
-		return a.dispatchTool(ctx, a.service, "project.overview", map[string]any{})
+		return a.dispatchTool(ctx, service, "project.overview", map[string]any{})
 	case "omakiten://workflow/active":
-		return a.dispatchTool(ctx, a.service, "workflow.show", map[string]any{})
+		return a.dispatchTool(ctx, service, "workflow.show", map[string]any{})
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP resource %q", uri)
 	}
@@ -582,7 +619,11 @@ func (a *Adapter) ReadResource(ctx context.Context, uri string) (ToolResult, err
 // risk in always emitting it, but the toggle exists for users who want to
 // observe pre/post caching behavior or work around a buggy client.
 func (a *Adapter) GetPrompt(ctx context.Context, name string, _ map[string]any) (PromptResult, error) {
-	if a == nil || a.service == nil {
+	var service *agent.Service
+	if a != nil {
+		service = a.defaultService()
+	}
+	if service == nil {
 		text := agent.CommandActionFallback(name)
 		if text == "" {
 			return PromptResult{}, fmt.Errorf("unknown MCP prompt %q", name)
@@ -592,7 +633,7 @@ func (a *Adapter) GetPrompt(ctx context.Context, name string, _ map[string]any) 
 		// that cache benefit; clients that don't ignore.
 		return promptResult(text, text, true), nil
 	}
-	resolved, err := a.service.ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
+	resolved, err := service.ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
 	if err != nil {
 		return PromptResult{}, err
 	}
@@ -600,7 +641,7 @@ func (a *Adapter) GetPrompt(ctx context.Context, name string, _ map[string]any) 
 	if description == "" {
 		description = resolved.Action
 	}
-	return promptResult(description, resolved.Markdown, a.service.SettingsCachePrompts()), nil
+	return promptResult(description, resolved.Markdown, service.SettingsCachePrompts()), nil
 }
 
 func promptResult(description, body string, cacheControl bool) PromptResult {
