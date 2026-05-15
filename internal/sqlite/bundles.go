@@ -27,6 +27,14 @@ func (s *Store) ImportBundle(ctx context.Context, bundle config.Bundle, sourcePa
 		s.previousProviders = s.providers.Clone()
 		s.providers.Swap(&bundle)
 	}
+	// Mirror the bundle into the value-typed Snapshot so app services
+	// that already consume Phase 2-bis Snapshot see the rotation in
+	// lockstep with providers. previousSnapshot follows the same
+	// "from the second import onward" gating as previousProviders.
+	if s.snapshot != nil {
+		s.previousSnapshot = s.snapshot
+	}
+	s.snapshot = config.BuildSnapshot(bundle)
 
 	workflowKey := bundle.Config.Workflow.Active
 	if workflowKey == "" && len(bundle.Workflows) > 0 {

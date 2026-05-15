@@ -68,6 +68,13 @@ type Store struct {
 	// reading the active snapshot. Lazily created on first ImportBundle
 	// or via Providers() so tests that never call ImportBundle still
 	// observe a non-nil (empty-bundle) provider set.
+	//
+	// TRANSITIONAL (Phase 2-bis / task #117): the Store-side providers
+	// are scheduled for deletion. Snapshot() returns a value-typed view
+	// of the same bundle; subsequent commits in the chain wire app
+	// services and the agent layer to consume Snapshot directly, then
+	// drop this field together with bundles.go / personas.go /
+	// skills.go / laws.go and the workflow lookup helpers.
 	providers *config.InMemoryProviders
 	// previousProviders captures the snapshot active immediately before
 	// the most recent ImportBundle. OrphanService uses it to resolve the
@@ -76,6 +83,14 @@ type Store struct {
 	// but the previous snapshot still knows what key that id mapped to.
 	// nil until the second ImportBundle of the Store's lifetime.
 	previousProviders *config.InMemoryProviders
+	// snapshot is the value-typed mirror of providers' active bundle,
+	// served via Snapshot() to app services that already consume the
+	// Phase 2-bis Snapshot type. ImportBundle rebuilds both providers
+	// and snapshot from the same Bundle so the two views stay
+	// coherent. previousSnapshot mirrors previousProviders for the
+	// orphan flow.
+	snapshot         *config.Snapshot
+	previousSnapshot *config.Snapshot
 }
 
 // Providers returns the in-memory provider set this Store delegates
@@ -86,6 +101,33 @@ func (s *Store) Providers() *config.InMemoryProviders {
 		s.providers = config.NewInMemoryProviders(config.Bundle{})
 	}
 	return s.providers
+}
+
+// Snapshot returns the value-typed Phase 2-bis Snapshot mirroring the
+// Store's active bundle. Lazily seeded with an empty Snapshot so app
+// services (workflow / context / persona / …) that consume the type at
+// construction still get a non-nil pointer in tests that skip
+// ImportBundle. The pointer is stable until the next ImportBundle
+// (which rotates both providers and snapshot in one call).
+//
+// TRANSITIONAL: this method lives on the Store only until app services
+// stop relying on the Store as the snapshot source. Subsequent commits
+// in the chain wire agentruntime.ProjectRuntime as the per-project
+// origin and delete this accessor together with the legacy providers
+// fields.
+func (s *Store) Snapshot() *config.Snapshot {
+	if s.snapshot == nil {
+		s.snapshot = config.BuildSnapshot(config.Bundle{})
+	}
+	return s.snapshot
+}
+
+// PreviousSnapshot returns the value-typed mirror of the bundle active
+// immediately before the most recent ImportBundle. Used by the orphan
+// flow to resolve task.bucket_id → previous key while the active
+// snapshot already rotated. nil until the second ImportBundle.
+func (s *Store) PreviousSnapshot() *config.Snapshot {
+	return s.previousSnapshot
 }
 
 // SetActivityLogRetention installs the operation-log retention window the

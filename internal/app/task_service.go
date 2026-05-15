@@ -33,6 +33,7 @@ type CompositeWorkflowStore interface {
 	GuardEvaluationRepository
 	TaskRepository
 	EventRepository
+	SnapshotSource
 }
 
 // NewTaskServiceFromStore is the production-path sugar: it wires WorkflowService

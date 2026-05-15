@@ -76,6 +76,7 @@ type Repository interface {
 	app.ErrorRepository
 	app.MetricsRepository
 	app.OrphanRepository
+	app.SnapshotSource
 }
 
 // TaskTemplateLookup returns the active task template scaffold to embed in

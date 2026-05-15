@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"omakiten/internal/config"
@@ -63,6 +64,68 @@ func (f *fakeStores) ActiveWorkflow(context.Context) (domain.Workflow, error) {
 }
 func (f *fakeStores) ContextSettings(context.Context) (domain.ContextSettings, error) {
 	return domain.ContextSettings{}, nil
+}
+
+// Snapshot projects the fake's loose configuration into the value-typed
+// Phase 2-bis Snapshot that WorkflowService consumes via its
+// constructor. The mapping is straightforward: every bucket the fake
+// declares (defaultBucket, bucketsByKey entries, ids referenced in
+// allowedFromTo, currentBucketID) becomes a real config.Bucket so
+// BucketByID / BucketByKey / IsFinalBucket / TransitionAllowed / Guards
+// behave the same as they did when the fake implemented the legacy
+// WorkflowRepository contract. Position == ID so finalBucketID picks
+// the bucket with the largest id — that mirrors the historical
+// finalBucketIDs convention used by these tests.
+func (f *fakeStores) Snapshot() *config.Snapshot {
+	seen := map[int64]bool{}
+	var buckets []config.Bucket
+	add := func(id int64, key string) {
+		if id == 0 || seen[id] {
+			return
+		}
+		seen[id] = true
+		if key == "" {
+			key = fmt.Sprintf("bucket-%d", id)
+		}
+		buckets = append(buckets, config.Bucket{ID: int(id), Key: key, Name: key, Position: int(id)})
+	}
+	if f.defaultBucket != "" {
+		// defaultBucket-only fakes never set ids; surface as id=1 so the
+		// snapshot's bucketByKey / first-bucket lookups still resolve.
+		add(1, f.defaultBucket)
+	}
+	for _, b := range f.bucketsByKey {
+		add(b.ID, b.Key)
+	}
+	for pair := range f.allowedFromTo {
+		add(pair[0], "")
+		add(pair[1], "")
+	}
+	if f.currentBucketID > 0 {
+		add(f.currentBucketID, f.currentBucketKey)
+	}
+	var transitions []config.Transition
+	for pair, allowed := range f.allowedFromTo {
+		if !allowed {
+			continue
+		}
+		guards := f.guards[pair]
+		gs := make([]config.TransitionGuard, 0, len(guards))
+		for _, g := range guards {
+			gs = append(gs, config.TransitionGuard{Type: g.Type, Buckets: g.Buckets, Count: g.Count, Tag: g.Tag, Hint: g.Hint})
+		}
+		transitions = append(transitions, config.Transition{From: int(pair[0]), To: int(pair[1]), Guards: gs})
+	}
+	return config.BuildSnapshot(config.Bundle{
+		Workflows: []config.Workflow{{
+			ID:          1,
+			Key:         "test",
+			Name:        "Test",
+			Buckets:     buckets,
+			Transitions: transitions,
+		}},
+		Config: config.Settings{Workflow: config.WorkflowSettings{Active: "test"}},
+	})
 }
 
 // WorkflowRepository
@@ -144,12 +207,12 @@ func (f *fakeStores) ListTaskActivity(context.Context, int64, int64, string) ([]
 }
 
 func newWorkflowServiceForTest(f *fakeStores) *WorkflowService {
-	return NewWorkflowService(f, f, f, f, f, nil)
+	return NewWorkflowService(f.Snapshot(), f, f, f, f, nil)
 }
 
 func TestWorkflowSetRegistrySwapsLookupTable(t *testing.T) {
 	f := &fakeStores{defaultBucket: "todo"}
-	svc := NewWorkflowService(f, f, f, f, f, nil)
+	svc := NewWorkflowService(f.Snapshot(), f, f, f, f, nil)
 	if svc.registry != nil {
 		t.Fatalf("initial registry = %v, want nil", svc.registry)
 	}

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
 
@@ -14,10 +15,11 @@ import (
 // lands in, whether a move is allowed by the configured transitions, whether
 // the move's guards are satisfied, and whether a move into the final bucket
 // should additionally emit task.completed. The adapter layer (sqlite) only
-// supplies the underlying primitives; nothing about workflow rules lives in
-// the Store any longer.
+// supplies the underlying state primitives (CurrentTaskBucket, TaskState);
+// every config read goes through the immutable per-project Snapshot held
+// here.
 type WorkflowService struct {
-	config   ConfigRepository
+	snap     *config.Snapshot
 	repo     WorkflowRepository
 	guards   GuardEvaluationRepository
 	tasks    TaskRepository
@@ -25,16 +27,35 @@ type WorkflowService struct {
 	registry *domain.EnumRegistry
 }
 
-func NewWorkflowService(config ConfigRepository, workflow WorkflowRepository, guards GuardEvaluationRepository, tasks TaskRepository, events EventRepository, registry *domain.EnumRegistry) *WorkflowService {
-	return &WorkflowService{config: config, repo: workflow, guards: guards, tasks: tasks, events: events, registry: registry}
+// NewWorkflowService wires the workflow service against an immutable
+// per-project Snapshot. The snap pointer is captured here and used for
+// every workflow / bucket / transition / guard lookup; the SQL repo is
+// only consulted for state (CurrentTaskBucket, TaskState). Production
+// code passes the snapshot from agentruntime.ProjectRuntime.Snapshot;
+// tests build one via config.BuildSnapshot.
+func NewWorkflowService(snap *config.Snapshot, workflow WorkflowRepository, guards GuardEvaluationRepository, tasks TaskRepository, events EventRepository, registry *domain.EnumRegistry) *WorkflowService {
+	return &WorkflowService{snap: snap, repo: workflow, guards: guards, tasks: tasks, events: events, registry: registry}
+}
+
+// SnapshotSource exposes the active per-project Snapshot. The SQL
+// Store implements it transitionally — it wraps the in-memory providers
+// it holds today and re-projects them as a Snapshot. Subsequent commits
+// in this chain delete the Store-side providers, and SnapshotSource is
+// satisfied by the agentruntime.ProjectRuntime directly. The interface
+// exists so legacy test fixtures that pass a *sqlite.Store to
+// NewWorkflowServiceFromStore keep compiling through the transition.
+type SnapshotSource interface {
+	Snapshot() *config.Snapshot
 }
 
 // NewWorkflowServiceFromStore is the production-path sugar for callers that
 // hold a single composite store implementing every workflow port (in
-// production: *sqlite.Store). The registry is required and is threaded into
-// the service so priority lookups use the bundle-scoped tables.
+// production: *sqlite.Store). The store must also implement
+// SnapshotSource so the service can capture the per-project Snapshot at
+// construction. The registry is required and is threaded into the
+// service so priority lookups use the bundle-scoped tables.
 func NewWorkflowServiceFromStore(store CompositeWorkflowStore, registry *domain.EnumRegistry) *WorkflowService {
-	return NewWorkflowService(store, store, store, store, store, registry)
+	return NewWorkflowService(store.Snapshot(), store, store, store, store, registry)
 }
 
 // SetRegistry repoints the service at a fresh EnumRegistry. Used by the TUI
@@ -50,11 +71,8 @@ func (s *WorkflowService) SetRegistry(registry *domain.EnumRegistry) {
 // workflow — the bucket new tasks land in when callers do not specify one.
 // Errors with ErrConfigInvalid if the active workflow has no buckets, so
 // upstream callers can default to "" without baking "backlog" into prod.
-func (s *WorkflowService) ResolveDefaultBucket(ctx context.Context) (string, error) {
-	workflow, err := s.config.ActiveWorkflow(ctx)
-	if err != nil {
-		return "", err
-	}
+func (s *WorkflowService) ResolveDefaultBucket(_ context.Context) (string, error) {
+	workflow := s.snap.Workflow()
 	if len(workflow.Buckets) == 0 {
 		return "", domain.NewError(domain.ErrConfigInvalid, "active workflow has no buckets", nil)
 	}
@@ -64,11 +82,8 @@ func (s *WorkflowService) ResolveDefaultBucket(ctx context.Context) (string, err
 // FinalBucketKey returns the key of the highest-position bucket in the active
 // workflow — the destination for archive operations. Errors with
 // ErrConfigInvalid if the active workflow has no buckets.
-func (s *WorkflowService) FinalBucketKey(ctx context.Context) (string, error) {
-	workflow, err := s.config.ActiveWorkflow(ctx)
-	if err != nil {
-		return "", err
-	}
+func (s *WorkflowService) FinalBucketKey(_ context.Context) (string, error) {
+	workflow := s.snap.Workflow()
 	if len(workflow.Buckets) == 0 {
 		return "", domain.NewError(domain.ErrConfigInvalid, "active workflow has no buckets", nil)
 	}
@@ -165,10 +180,7 @@ func (s *WorkflowService) ResolveBucketPermissions(ctx context.Context, project 
 	if err != nil {
 		return false, "", err
 	}
-	workflow, err := s.config.ActiveWorkflow(ctx)
-	if err != nil {
-		return false, "", err
-	}
+	workflow := s.snap.Workflow()
 
 	allowed, allowedBuckets := evaluatePermission(workflow, currentBucketID, entity, operation)
 	if allowed {
@@ -187,10 +199,7 @@ func (s *WorkflowService) ResolveBucketPermissions(ctx context.Context, project 
 // with the first failing guard's hint and counts. Emits guard.violated when
 // a guard fails, tagged with the supplied opPayload (e.g. task.archive).
 func (s *WorkflowService) EvaluateOperationGuards(ctx context.Context, projectID, taskID int64, operation string) error {
-	workflow, err := s.config.ActiveWorkflow(ctx)
-	if err != nil {
-		return err
-	}
+	workflow := s.snap.Workflow()
 	guards := operationGuards(workflow, operation)
 	if len(guards) == 0 {
 		return nil
@@ -294,17 +303,14 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 		return
 	}
 
-	target, err := s.repo.ResolveActiveBucket(ctx, targetBucketKey)
-	if err != nil {
+	target, ok := s.snap.BucketByKey(targetBucketKey)
+	if !ok {
+		err = domain.NewError(domain.ErrBucketNotFound, "bucket not found", map[string]any{"bucket": targetBucketKey})
 		return
 	}
 
 	if currentBucketID != target.ID {
-		var allowed bool
-		allowed, err = s.repo.TransitionAllowed(ctx, currentBucketID, target.ID)
-		if err != nil {
-			return
-		}
+		allowed := s.snap.TransitionAllowed(currentBucketID, target.ID)
 		if !allowed {
 			s.EmitGuardViolated(ctx, project.ID, domain.EventEntityTask, taskID,
 				GuardOperationTaskTransition, GuardRuleTransition,
@@ -324,12 +330,7 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 	}
 
 	if currentBucketID != target.ID {
-		var isFinal bool
-		isFinal, err = s.repo.IsFinalActiveBucket(ctx, target.ID)
-		if err != nil {
-			return
-		}
-		if isFinal {
+		if s.snap.IsFinalBucket(target.ID) {
 			payload := fmt.Sprintf(`{"bucket":%q}`, targetBucketKey)
 			if _, err = s.events.RecordTaskEvent(ctx, project.ID, taskID, domain.EventTypeTaskCompleted, "", payload); err != nil {
 				return
@@ -344,10 +345,7 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 // targetBucketKey carries the user-visible bucket name used in the
 // guard.violated payload's target.to_bucket.
 func (s *WorkflowService) evaluateGuards(ctx context.Context, projectID, taskID, fromBucketID, toBucketID int64, targetBucketKey string) error {
-	guards, err := s.repo.LoadTransitionGuards(ctx, fromBucketID, toBucketID)
-	if err != nil {
-		return err
-	}
+	guards := s.snap.Guards(fromBucketID, toBucketID)
 	target := map[string]any{"task_id": taskID, "from_bucket_id": fromBucketID, "to_bucket_id": toBucketID, "to_bucket": targetBucketKey}
 	return s.runGuards(ctx, projectID, taskID, guards, GuardOperationTaskTransition, target)
 }
