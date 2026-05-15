@@ -31,9 +31,16 @@ func (m Model) renderSettingsGeneral() string {
 	}
 	sort.Strings(bucketKeys)
 
+	configScope := "global"
+	configLocation := m.repos.ConfigPath
+	if m.repos.RepoLocalDir != "" {
+		configScope = "local + global"
+		configLocation = m.repos.RepoLocalDir + " (overlay)\n" + m.repos.ConfigPath
+	}
 	runtimeRows := m.summaryRows("Runtime",
 		[2]string{"okt version", valueOrDash(m.repos.Version)},
-		[2]string{"config", valueOrDash(m.repos.ConfigPath)},
+		[2]string{"scope", valueOrDash(configScope)},
+		[2]string{"config", valueOrDash(configLocation)},
 		[2]string{"database", valueOrDash(m.repos.DBPath)},
 	)
 	projectRows := m.summaryRows("Project",
