@@ -69,7 +69,9 @@ type providerSnapshot struct {
 	bucketByKey      map[string]domain.Bucket
 	finalBucketID    int64
 	transitionsByPair map[transitionKey]transitionEntry
-	operations       domain.WorkflowOperations
+	// operations live on snap.workflow.Operations — duplicating the
+	// field on the snapshot was a buildSnapshot leftover. Operations()
+	// reads through workflow so the snapshot stays single-source.
 
 	personas      []Persona
 	personasBySlug map[string]Persona
@@ -147,7 +149,6 @@ func buildSnapshot(bundle Bundle) *providerSnapshot {
 			}
 			snap.transitionsByPair[transitionKey{from: from.ID, to: to.ID}] = transitionEntry{guards: toDomainGuards(tr.Guards, nil)}
 		}
-		snap.operations = toDomainOperations(wf.Operations, snap.bucketByKey)
 	}
 
 	snap.personas = append(snap.personas, bundle.Personas...)
@@ -311,14 +312,6 @@ func toDomainGuards(in []TransitionGuard, _ map[string]Bucket) []domain.Transiti
 	return out
 }
 
-func toDomainOperations(in WorkflowOperations, _ map[string]domain.Bucket) domain.WorkflowOperations {
-	return domain.WorkflowOperations{
-		Archive:   domain.OperationPolicy{Guards: toDomainGuards(in.Archive.Guards, nil)},
-		Delete:    domain.OperationPolicy{Guards: toDomainGuards(in.Delete.Guards, nil)},
-		Unarchive: domain.OperationPolicy{Guards: toDomainGuards(in.Unarchive.Guards, nil)},
-	}
-}
-
 func toDomainPermission(in *EntityPermission) *domain.EntityPermission {
 	if in == nil {
 		return nil
@@ -388,7 +381,7 @@ func (p *InMemoryProviders) TransitionAllowed(fromID, toID int64) bool {
 }
 
 func (p *InMemoryProviders) Operations() domain.WorkflowOperations {
-	return p.current().operations
+	return p.current().workflow.Operations
 }
 
 // --- PersonaProvider ---
