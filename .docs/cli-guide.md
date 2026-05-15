@@ -295,6 +295,55 @@ okt config validate
 okt config validate ./omakase.yaml
 ```
 
+### `okt config init --scope <global|local> --preset <name> [--force]`
+
+`internal/cli/config_init.go`. Seeds an official preset into either the user-global ConfigRoot or the repo-local `.omakiten/` library.
+
+| Scope | Destination |
+|---|---|
+| `global` | `<config-root>/config/<name>.yaml` + `<config-root>/config/.active` (honours `--config`). |
+| `local` | `<cwd>/.omakiten/config/<name>.yaml` + `<cwd>/.omakiten/config/.active` (literal CWD; no walk-up). |
+
+Idempotence rules at the destination:
+- File missing → atomic write.
+- File present, bytes match the embedded preset → silent no-op (`no_op:true`).
+- File present, bytes diverge, `--force` → atomic overwrite (`overwritten:true`).
+- File present, bytes diverge, TTY without `--force` → prompt `y/N` on stderr; affirmative retries with force.
+- File present, bytes diverge, non-TTY without `--force` → `validation_error` (`config_target_exists`).
+
+### `okt config show --scope <global|local>`
+
+`internal/cli/config_show.go`. Prints the raw active YAML for the chosen scope. Local lookups walk up from CWD; missing discovery returns `validation_error` rather than silently falling back to global.
+
+### `okt config path --scope <global|local>`
+
+`internal/cli/config_show.go`. Prints the directory that owns the chosen scope's config layer: `<config-root>/config` for global, the discovered `.omakiten/` directory for local.
+
+### `okt config why <key> [--layer <global|local>]`
+
+`internal/cli/config_inspect.go`. Walks the chosen layer(s) by dotted YAML key path and reports `{key, value, source, path}`. Without `--layer`, the repo-local library shadows the user-global layer (mirrors the precedence the runtime would apply); missing keys yield `source = "not_set"`.
+
+```sh
+okt config why config.workflow.active
+okt config why personas.craftsperson --layer local
+```
+
+### `okt config diff <left> <right>`
+
+`internal/cli/config_inspect.go`. Compares two YAML sources by structural diff and emits one entry per divergent leaf (`added` / `removed` / `changed`).
+
+Each operand is one of:
+- `global` — the user-global active YAML (honours `--config`).
+- `local` — the active library entry inside the CWD walk-up `.omakiten/`.
+- `local:<path>` — the active library entry inside `<path>/.omakiten/`.
+- any other string → treated as a literal yaml file path.
+
+```sh
+okt config diff local global
+okt config diff local:/repos/a local:/repos/b
+okt config diff ./snapshot.yaml global
+```
+
 ---
 
 ## Skills

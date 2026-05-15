@@ -1206,6 +1206,19 @@ Disables apply after the overlay-merge pass. For skills/laws/personas/templates,
 
 Walk-up starts at the CWD captured by the composition root (`cli.runtime`, `agentruntime.Open`). MCP clients launching `okt mcp` from inside a repo see the layer; clients launching from `$HOME` do not. The diagnostic `okt config validate` deliberately skips the repo-local overlay — its contract is "validate this YAML file in isolation". Sources: `internal/config/repo_local.go:FindRepoLocal`, `internal/config/wiring_merge.go:mergeWiringMaps`, `internal/configstore/configstore.go:NewWithRepoLocal`.
 
+#### Seeding and inspecting the repo-local layer
+
+`okt config init / show / path / why / diff` (see `.docs/cli-guide.md`) all accept `--scope <global|local>` so the same family of inspection commands works against either layer.
+
+- `okt config init --scope local --preset <name>` writes the preset as a library entry under `<cwd>/.omakiten/config/<name>.yaml` and sets `.active`. The literal CWD is used; no walk-up. This is the same layout `okt init --preset` produces, just without the project-DB registration step.
+- `okt config show / path --scope local` walk up from CWD to find `.omakiten/` and report the active library entry (via the `.active` discipline shared with the global layer).
+- `okt config why <key>` consults the repo-local library first (it acts as the highest-precedence layer when present) and falls back to global; `--layer` pins the lookup to one layer.
+- `okt config diff` accepts `global`, `local`, `local:<path>`, or any raw yaml path, so cross-repo / cross-scope comparisons are one command.
+
+The TUI surfaces the discovered scope on `Settings › General`: the `scope` row reads `local + global` and the `config` row names the `.omakiten/` directory when walk-up found one, falling back to `global` otherwise. Source: `internal/tui/render_settings_general.go`.
+
+> Note — `okt config init --scope local` currently writes to the **library** path (`.omakiten/config/<name>.yaml`). Runtime auto-discovery, however, consults the overlay path (`.omakiten/omakiten.yaml`) — they are different files, and a preset seeded via `init` is not auto-activated. Activate it explicitly with `okt --config <path>/.omakiten/config/<name>.yaml`, or copy the file to `<repo>/.omakiten/omakiten.yaml` until the seed-into-overlay path lands as a follow-up task.
+
 ### SQLite database
 
 ```
