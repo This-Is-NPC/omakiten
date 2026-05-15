@@ -80,6 +80,18 @@ type ProjectRuntime struct {
 	// Mtime is the SourcePath's modification time captured at load. A
 	// stat comparison in Resolve drives the rebuild-on-change rule.
 	Mtime time.Time
+	// Snapshot is the immutable per-project view of the loaded bundle.
+	// Every app service consumed by this runtime reads workflow shape,
+	// catalogs, settings, hooks, events and synonyms through this
+	// pointer; the cache's swap on rebuild installs a new pointer and
+	// in-flight readers keep the previous one until they return.
+	Snapshot *config.Snapshot
+	// PreviousSnapshot is the snapshot the runtime carried immediately
+	// before the latest build. Captured into the new entry whenever the
+	// cache rotates so the orphan-detection flow can resolve
+	// task.bucket_id → previous key across the rebuild. nil when the
+	// runtime has only been built once for this project.
+	PreviousSnapshot *config.Snapshot
 }
 
 // BundleCache is the per-project ProjectRuntime registry. Phase 3a
@@ -247,6 +259,13 @@ func (c *BundleCache) rebuild(ctx context.Context, projectID int64, configPath s
 
 	c.mu.Lock()
 	old := c.entries[projectID]
+	// Carry the prior snapshot forward so the orphan flow can resolve
+	// task.bucket_id → previous key across the rebuild. Skip the
+	// carry on the very first build (old == nil) — there is no
+	// useful id↔key mapping to project from a non-existent entry.
+	if old != nil {
+		runtime.PreviousSnapshot = old.Snapshot
+	}
 	c.entries[projectID] = runtime
 	c.mu.Unlock()
 
@@ -308,6 +327,14 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		engine.Start(bus)
 	}
 
+	// Build the per-project Snapshot up front and thread the SAME
+	// pointer into both the agent service and the ProjectRuntime
+	// field. Each rebuild produces a fresh pointer; in-flight calls
+	// that captured the previous pointer continue reading from it
+	// until they return — that is the per-project isolation
+	// contract.
+	snapshot := config.BuildSnapshot(bundle)
+
 	svc := agent.NewService(store, selector)
 	// Phase 2-bis collapses every legacy SetXCatalog / SetSynonyms /
 	// SetStopwords / SetRegistry wiring into one SetSnapshot call.
@@ -316,7 +343,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	// Snapshot at SetSnapshot time. Two projects holding two
 	// snapshots see two independent catalog views; hot-reload
 	// rotates the pointer atomically through cache.Reload.
-	svc.SetSnapshot(store.Snapshot())
+	svc.SetSnapshot(snapshot)
 	svc.SetRegistry(enumRegistry)
 	svc.SetSettings(agent.ServiceSettings{
 		RecentCommentLimit:       bundle.Config.MCP.RecentCommentLimit,
@@ -348,6 +375,9 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		SourcePath:           configPath,
 		LoadedAt:             time.Now(),
 		Mtime:                mtime,
+		Snapshot:             snapshot,
+		// PreviousSnapshot is populated by the cache on rotation —
+		// buildProjectRuntime has no access to the prior entry.
 	}, nil
 }
 

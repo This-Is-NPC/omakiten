@@ -161,6 +161,17 @@ func (r *Runtime) Cache() *BundleCache {
 	return r.cache
 }
 
+// Snapshot returns the active *config.Snapshot for the runtime's
+// default project. Returns nil when the cache has not yet built a
+// runtime for the default project (rare bootstrap window). Callers
+// that need a project-specific snapshot route through Cache().Get(id).
+func (r *Runtime) Snapshot() *config.Snapshot {
+	if pr := r.cache.Get(r.defaultProjectID); pr != nil {
+		return pr.Snapshot
+	}
+	return nil
+}
+
 // ResolveServiceForProject returns the agent.Service the BundleCache
 // has wired for the given project. The lookup is best-effort: when
 // the project slug / id resolve to an entry without a per-project
