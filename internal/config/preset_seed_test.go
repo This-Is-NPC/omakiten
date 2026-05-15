@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestSeedPreset_LocalCreatesAtRepoLocalDir(t *testing.T) {
+func TestSeedPreset_LocalCreatesLibraryEntryAtRepoLocal(t *testing.T) {
 	repoRoot := t.TempDir()
 	res, err := SeedPreset(ScopeLocal, "omakase", false, SeedOptions{LocalRoot: repoRoot})
 	if err != nil {

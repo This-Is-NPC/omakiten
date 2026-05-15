@@ -101,8 +101,8 @@ func resolveScopeRoot(opts *runtimeOptions, scope config.Scope) (string, error) 
 
 // resolveScopeActiveFile returns the active yaml file for the chosen scope.
 // For global it defers to opts.resolvedConfigPath (honours --config). For
-// local it walks up to .omakiten/, then resolves the active yaml inside
-// .omakiten/config/ using the same .active rules as the global layout.
+// local it walks up to .omakiten/ and resolves the active library entry
+// inside .omakiten/config/ via the standard .active discipline.
 func resolveScopeActiveFile(opts *runtimeOptions, scope config.Scope) (string, error) {
 	switch scope {
 	case config.ScopeGlobal:
@@ -115,7 +115,7 @@ func resolveScopeActiveFile(opts *runtimeOptions, scope config.Scope) (string, e
 		configDir := filepath.Join(dir, "config")
 		path, err := paths.ActiveConfigFileInDir(configDir)
 		if err != nil {
-			return "", domain.NewError(domain.ErrValidation, "no active config under repo-local .omakiten/", map[string]any{"dir": configDir, "error": err.Error()})
+			return "", domain.NewError(domain.ErrValidation, "no active library yaml inside repo-local .omakiten/config", map[string]any{"dir": configDir, "error": err.Error()})
 		}
 		return path, nil
 	default:

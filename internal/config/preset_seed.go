@@ -44,13 +44,22 @@ type SeedResult struct {
 // SeedPreset writes the named preset into the directory implied by scope
 // and sets the .active marker so subsequent runtime loads pick it up.
 //
+// Both scopes share the same library layout: <root>/config/<name>.yaml +
+// <root>/config/.active. ScopeGlobal targets ConfigRoot; ScopeLocal targets
+// <repoRoot>/.omakiten/. The library file is invoked at runtime via
+// --config <path>; auto-discovery of the repo-local overlay
+// (<repoRoot>/.omakiten/omakiten.yaml) is a separate code path that this
+// function deliberately does not touch — wholesale-preset overlays would
+// collide with the global wiring on workflow ids, and fixing that needs a
+// merge-rule change in config/wiring_merge.go.
+//
 // Idempotence: when the destination already exists and its bytes match the
 // embedded preset, SeedPreset returns NoOp=true without touching the file.
 // When the bytes diverge and force is false, returns ErrPresetTargetExists
 // so the caller can prompt or fail; when force is true, the file is
 // overwritten atomically.
 func SeedPreset(scope Scope, name string, force bool, opts SeedOptions) (SeedResult, error) {
-	dstRoot, configDir, err := scopeRoots(scope, opts)
+	target, err := scopeTarget(scope, opts, name)
 	if err != nil {
 		return SeedResult{}, err
 	}
@@ -66,61 +75,75 @@ func SeedPreset(scope Scope, name string, force bool, opts SeedOptions) (SeedRes
 		return SeedResult{}, fmt.Errorf("%w: %s", ErrPresetNotFound, name)
 	}
 
-	dstPath := filepath.Join(dstRoot, "config", preset.Name+".yaml")
-	existing, statErr := os.Stat(dstPath)
+	existing, statErr := os.Stat(target.path)
 	switch {
 	case statErr == nil && !existing.IsDir():
-		current, err := os.ReadFile(dstPath)
+		current, err := os.ReadFile(target.path)
 		if err != nil {
-			return SeedResult{}, fmt.Errorf("read existing preset %s: %w", dstPath, err)
+			return SeedResult{}, fmt.Errorf("read existing preset %s: %w", target.path, err)
 		}
 		if bytes.Equal(current, srcData) {
-			if err := paths.SetActiveConfigInDir(configDir, preset.Name+".yaml"); err != nil {
+			if err := target.markActive(preset.Name); err != nil {
 				return SeedResult{}, err
 			}
-			return SeedResult{Preset: preset, Path: dstPath, NoOp: true}, nil
+			return SeedResult{Preset: preset, Path: target.path, NoOp: true}, nil
 		}
 		if !force {
-			return SeedResult{}, fmt.Errorf("%w: %s", ErrPresetTargetExists, dstPath)
+			return SeedResult{}, fmt.Errorf("%w: %s", ErrPresetTargetExists, target.path)
 		}
-		if err := WriteAtomic(dstPath, srcData); err != nil {
-			return SeedResult{}, fmt.Errorf("write preset file %s: %w", dstPath, err)
+		if err := WriteAtomic(target.path, srcData); err != nil {
+			return SeedResult{}, fmt.Errorf("write preset file %s: %w", target.path, err)
 		}
-		if err := paths.SetActiveConfigInDir(configDir, preset.Name+".yaml"); err != nil {
+		if err := target.markActive(preset.Name); err != nil {
 			return SeedResult{}, err
 		}
-		return SeedResult{Preset: preset, Path: dstPath, Overwritten: true}, nil
+		return SeedResult{Preset: preset, Path: target.path, Overwritten: true}, nil
 	case statErr != nil && !os.IsNotExist(statErr):
-		return SeedResult{}, fmt.Errorf("stat preset target %s: %w", dstPath, statErr)
+		return SeedResult{}, fmt.Errorf("stat preset target %s: %w", target.path, statErr)
 	}
 
-	if err := WriteAtomic(dstPath, srcData); err != nil {
-		return SeedResult{}, fmt.Errorf("write preset file %s: %w", dstPath, err)
+	if err := WriteAtomic(target.path, srcData); err != nil {
+		return SeedResult{}, fmt.Errorf("write preset file %s: %w", target.path, err)
 	}
-	if err := paths.SetActiveConfigInDir(configDir, preset.Name+".yaml"); err != nil {
+	if err := target.markActive(preset.Name); err != nil {
 		return SeedResult{}, err
 	}
-	return SeedResult{Preset: preset, Path: dstPath}, nil
+	return SeedResult{Preset: preset, Path: target.path}, nil
 }
 
-// scopeRoots resolves (dstRoot, configDir) for a given scope. dstRoot is the
-// directory CopyPreset / SeedPreset writes <root>/config/<preset>.yaml under;
-// configDir is the absolute path of that config/ subdir, used for .active.
-func scopeRoots(scope Scope, opts SeedOptions) (string, string, error) {
+// seedTarget is the absolute path SeedPreset writes plus an optional
+// .active-marker writer; ScopeLocal returns a no-op writer because the
+// overlay layout has no library to select from.
+type seedTarget struct {
+	path       string
+	markActive func(presetName string) error
+}
+
+func scopeTarget(scope Scope, opts SeedOptions, name string) (seedTarget, error) {
 	switch scope {
 	case ScopeGlobal:
 		if opts.GlobalRoot == "" {
-			return "", "", fmt.Errorf("seed preset: GlobalRoot required for scope %q", scope)
+			return seedTarget{}, fmt.Errorf("seed preset: GlobalRoot required for scope %q", scope)
 		}
-		root := opts.GlobalRoot
-		return root, filepath.Join(root, "config"), nil
+		configDir := filepath.Join(opts.GlobalRoot, "config")
+		return seedTarget{
+			path: filepath.Join(configDir, name+".yaml"),
+			markActive: func(presetName string) error {
+				return paths.SetActiveConfigInDir(configDir, presetName+".yaml")
+			},
+		}, nil
 	case ScopeLocal:
 		if opts.LocalRoot == "" {
-			return "", "", fmt.Errorf("seed preset: LocalRoot required for scope %q", scope)
+			return seedTarget{}, fmt.Errorf("seed preset: LocalRoot required for scope %q", scope)
 		}
-		root := filepath.Join(opts.LocalRoot, RepoLocalDirName)
-		return root, filepath.Join(root, "config"), nil
+		configDir := filepath.Join(opts.LocalRoot, RepoLocalDirName, "config")
+		return seedTarget{
+			path: filepath.Join(configDir, name+".yaml"),
+			markActive: func(presetName string) error {
+				return paths.SetActiveConfigInDir(configDir, presetName+".yaml")
+			},
+		}, nil
 	default:
-		return "", "", fmt.Errorf("seed preset: unknown scope %q", scope)
+		return seedTarget{}, fmt.Errorf("seed preset: unknown scope %q", scope)
 	}
 }

@@ -47,8 +47,8 @@ func TestCLIConfigInitLocalNoWalkUp(t *testing.T) {
 	globalConfig := filepath.Join(tmp, "global", "config", "omakase.yaml")
 
 	// Plant a .omakiten/ at an ancestor so any accidental walk-up would
-	// find it. The CWD-literal contract means the new file must still
-	// land under the CWD, not the ancestor.
+	// find it. The CWD-literal contract means the new library entry must
+	// still land under the CWD, not the ancestor.
 	ancestor := filepath.Join(tmp, "repo")
 	if err := os.MkdirAll(filepath.Join(ancestor, ".omakiten", "config"), 0o755); err != nil {
 		t.Fatalf("MkdirAll(ancestor .omakiten) error = %v", err)
@@ -67,7 +67,7 @@ func TestCLIConfigInitLocalNoWalkUp(t *testing.T) {
 		t.Fatalf("expected file at CWD %s, error = %v", cwdPath, err)
 	}
 	if _, err := os.Stat(ancestorPath); err == nil {
-		t.Fatalf("ancestor .omakiten was written; CWD-literal contract broken")
+		t.Fatalf("ancestor .omakiten/config/izakaya.yaml was written; CWD-literal contract broken")
 	}
 }
 
