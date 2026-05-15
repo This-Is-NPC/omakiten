@@ -6,16 +6,15 @@ import (
 	"omakiten/internal/config"
 )
 
-// init loads the canonical tag-synonym table from the embedded kit YAML
-// so NormalizeTagName resolves "golang" → "go" etc. in this package's
-// tests. Production wires the same map from the user's bundle via
-// agentruntime.Open / cli.runtimeOptions.open.
-func init() {
-	kit := config.MustLoadKitConfig()
-	RegisterTagSynonyms(kit.TagSynonyms)
+// kitSynonyms returns the canonical tag-synonym table from the
+// embedded kit YAML for this package's tests. Production threads the
+// same map per-project via Phase 3f service setters.
+func kitSynonyms() map[string]string {
+	return config.MustLoadKitConfig().TagSynonyms
 }
 
 func TestNormalizeTagName(t *testing.T) {
+	synonyms := kitSynonyms()
 	cases := []struct {
 		input string
 		want  string
@@ -45,11 +44,48 @@ func TestNormalizeTagName(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.input, func(t *testing.T) {
-			got := NormalizeTagName(tc.input)
+			got := NormalizeTagName(tc.input, synonyms)
 			if got != tc.want {
 				t.Errorf("NormalizeTagName(%q) = %q; want %q", tc.input, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestNormalizeTagNamePerProjectSynonyms locks the Phase 3f isolation:
+// two callers passing different synonym tables get different canonical
+// names for the same raw input.
+func TestNormalizeTagNamePerProjectSynonyms(t *testing.T) {
+	projectA := map[string]string{"go": "golang"}
+	projectB := map[string]string{"go": "goroutine"}
+
+	if got := NormalizeTagName("go", projectA); got != "golang" {
+		t.Errorf("project A: NormalizeTagName(go) = %q, want golang", got)
+	}
+	if got := NormalizeTagName("go", projectB); got != "goroutine" {
+		t.Errorf("project B: NormalizeTagName(go) = %q, want goroutine", got)
+	}
+	if got := NormalizeTagName("go", nil); got != "go" {
+		t.Errorf("nil synonyms: NormalizeTagName(go) = %q, want go (no substitution)", got)
+	}
+}
+
+// TestTagServicePerProjectSynonymsIsolation drives the per-service
+// SetSynonyms path that production composition roots wire: two
+// TagService instances running side-by-side normalise the same raw
+// tag name to different canonical names because each carries its
+// project's synonym table.
+func TestTagServicePerProjectSynonymsIsolation(t *testing.T) {
+	svcA := NewTagService(nil)
+	svcA.SetSynonyms(map[string]string{"go": "golang"})
+	svcB := NewTagService(nil)
+	svcB.SetSynonyms(map[string]string{"go": "goroutine"})
+
+	if got := NormalizeTagName("go", svcA.synonyms); got != "golang" {
+		t.Fatalf("svcA: %q want golang", got)
+	}
+	if got := NormalizeTagName("go", svcB.synonyms); got != "goroutine" {
+		t.Fatalf("svcB: %q want goroutine", got)
 	}
 }
 

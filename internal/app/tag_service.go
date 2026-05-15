@@ -16,8 +16,9 @@ const (
 )
 
 type TagService struct {
-	repo   TagRepository
-	events EventRepository
+	repo     TagRepository
+	events   EventRepository
+	synonyms map[string]string
 }
 
 func NewTagService(repo TagRepository) *TagService {
@@ -30,6 +31,14 @@ func NewTagService(repo TagRepository) *TagService {
 // so they cannot break business logic.
 func NewTagServiceWithEvents(repo TagRepository, events EventRepository) *TagService {
 	return &TagService{repo: repo, events: events}
+}
+
+// SetSynonyms installs the per-project tag-synonym table the service
+// passes to NormalizeTagName on every Add/Remove. Phase 3f replaced
+// the previous process-global registry with this per-service field so
+// two projects' synonym tables stay disjoint in the same binary.
+func (s *TagService) SetSynonyms(synonyms map[string]string) {
+	s.synonyms = synonyms
 }
 
 func (s *TagService) emitTagEvent(ctx context.Context, eventType, entityType string, entityID, projectID, tagID int64, tagName string) {
@@ -74,7 +83,7 @@ func (s *TagService) Add(ctx context.Context, project domain.ProjectContext, ent
 		err = domain.NewError(domain.ErrValidation, "tag name is required", nil)
 		return
 	}
-	normalized := NormalizeTagName(tagName)
+	normalized := NormalizeTagName(tagName, s.synonyms)
 	if normalized == "" {
 		err = domain.NewError(domain.ErrValidation, "tag name is invalid after normalization", map[string]any{"input": tagName})
 		return

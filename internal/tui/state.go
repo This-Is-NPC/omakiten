@@ -92,6 +92,22 @@ type Repositories struct {
 	ProjectID int64
 }
 
+// activeSynonyms returns the per-project tag synonym table from the
+// BundleCache entry the runtime installed at boot, or nil when the
+// cache is not wired (tests that bypass the runtime). Used by inline
+// app service constructions in the TUI render paths so
+// NormalizeTagName resolves the project's aliases.
+func (r *Repositories) activeSynonyms() map[string]string {
+	if r.Cache == nil {
+		return nil
+	}
+	pr := r.Cache.Get(r.ProjectID)
+	if pr == nil {
+		return nil
+	}
+	return pr.TagSynonyms
+}
+
 // Model is the root Bubble Tea model for the TUI. It aggregates state that
 // would otherwise be scattered across half a dozen sub-models — most pickers
 // and viewports are now their own components (see internal/tui/components/),

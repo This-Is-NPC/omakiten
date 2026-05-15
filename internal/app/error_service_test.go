@@ -107,6 +107,7 @@ func TestErrorServiceRecordNormalizesTags(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store)
+	service.SetSynonyms(kitSynonyms())
 
 	rec, err := service.Record(ctx, project.Context(), "boom", "ctx", []string{"Go", "golang", "  GOLANG"})
 	if err != nil {

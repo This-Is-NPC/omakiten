@@ -62,14 +62,12 @@ type ProjectRuntime struct {
 	// theme is configured — TUI surfaces fall back to their default
 	// palette.
 	Theme *config.Theme
-	// TagSynonyms is the alias table the app's tag normaliser reads on
-	// every call. Today it is installed process-globally via
-	// app.RegisterTagSynonyms — the field is kept so Phase 3 can flip
-	// the registry into a per-project lookup without changing this
-	// type.
+	// TagSynonyms is the alias table the app's tag normaliser threads
+	// into NormalizeTagName via per-service SetSynonyms (Phase 3f
+	// dropped the process-global registry).
 	TagSynonyms map[string]string
-	// Stopwords is the similar-task ranker's stopword list, mirrored
-	// here for the same reason TagSynonyms is.
+	// Stopwords is the similar-task ranker's stopword list, threaded
+	// into agent.Service via SetStopwords (Phase 3f).
 	Stopwords []string
 	// SourcePath is the absolute path to the omakiten.yaml that
 	// produced this runtime. Used by Reload to stat-detect bundle
@@ -288,6 +286,12 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		SolutionsTopLimitDefault: bundle.Config.Solutions.DefaultTopLimit,
 		SolutionsTopLimitMax:     bundle.Config.Solutions.MaxTopLimit,
 	})
+	// Phase 3f: per-project synonyms + stopwords on the agent.Service.
+	// Service builder helpers (newCommentService / newTagService / ...)
+	// forward s.synonyms into NormalizeTagName so two projects' tables
+	// stay disjoint.
+	svc.SetSynonyms(copyStringMap(bundle.Config.TagSynonyms))
+	svc.SetStopwords(append([]string(nil), bundle.Config.Search.Stopwords...))
 
 	mtime := time.Time{}
 	if info, err := os.Stat(configPath); err == nil {

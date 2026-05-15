@@ -103,6 +103,8 @@ type Service struct {
 	commandCatalog     CommandCatalog
 	settings           ServiceSettings
 	registry           *domain.EnumRegistry
+	stopwords          map[string]bool
+	synonyms           map[string]string
 }
 
 // NewService constructs the agent service with zero-value settings.
@@ -118,6 +120,69 @@ func NewService(repo Repository, selector ProjectSelector) *Service {
 		counter:  token.NewCounter(),
 		// settings are zero-valued; SetSettings wires the actual knobs.
 	}
+}
+
+// SetSynonyms installs the per-project tag-synonym table the wrapped
+// app services (CommentService / ErrorService / TagService) thread
+// into NormalizeTagName. Phase 3f replaced the process-global
+// registry with this per-Service field. Tests that build a Service
+// without going through the runtime can leave this unset; nil means
+// "no substitution applied".
+func (s *Service) SetSynonyms(synonyms map[string]string) {
+	s.synonyms = synonyms
+}
+
+// Synonyms returns the per-project tag-synonym table installed via
+// SetSynonyms. nil when the service was constructed without a runtime
+// composition root that wires it.
+func (s *Service) Synonyms() map[string]string {
+	return s.synonyms
+}
+
+// newCommentService builds an app.CommentService wired with the
+// per-project tag synonyms. Centralises the SetSynonyms call so the
+// dto handler files (service_comments.go / service_progress.go /
+// service_tasks.go) do not repeat the wiring on every inline
+// construction.
+func (s *Service) newCommentService() *app.CommentService {
+	svc := app.NewCommentService(s.repo)
+	svc.SetSynonyms(s.synonyms)
+	return svc
+}
+
+// newCommentServiceWithWorkflow mirrors newCommentService for the
+// edit/remove flows that additionally need workflow policy enforcement.
+func (s *Service) newCommentServiceWithWorkflow(workflow *app.WorkflowService) *app.CommentService {
+	svc := app.NewCommentServiceWithWorkflow(s.repo, workflow)
+	svc.SetSynonyms(s.synonyms)
+	return svc
+}
+
+// newErrorService builds an app.ErrorService wired with the per-project
+// synonyms (and forwards the SolutionsDefaults the caller threads in
+// separately when ListTopSolutions needs the bundle's limits).
+func (s *Service) newErrorService() *app.ErrorService {
+	svc := app.NewErrorService(s.repo)
+	svc.SetSynonyms(s.synonyms)
+	return svc
+}
+
+// newTagService builds an app.TagService (with event emission wired to
+// the same repo, mirroring the existing inline NewTagServiceWithEvents
+// shape) and applies the per-project synonym table.
+func (s *Service) newTagService() *app.TagService {
+	svc := app.NewTagServiceWithEvents(s.repo, s.repo)
+	svc.SetSynonyms(s.synonyms)
+	return svc
+}
+
+// SetStopwords installs the per-project stopword set the similar-task
+// ranker reads from. Phase 3f replaced the process-global registry with
+// this per-Service field so two projects' stopword tables stay
+// disjoint in the same binary. Passing nil disables stopword filtering
+// for this service.
+func (s *Service) SetStopwords(words []string) {
+	s.stopwords = stopwordsTable(words)
 }
 
 // SetProjectSelector replaces the service's default project selector.

@@ -11,6 +11,7 @@ import (
 type CommentService struct {
 	repo     CommentRepository
 	workflow *WorkflowService
+	synonyms map[string]string
 }
 
 func NewCommentService(repo CommentRepository) *CommentService {
@@ -22,6 +23,13 @@ func NewCommentService(repo CommentRepository) *CommentService {
 // tests don't have to thread a workflow stub everywhere.
 func NewCommentServiceWithWorkflow(repo CommentRepository, workflow *WorkflowService) *CommentService {
 	return &CommentService{repo: repo, workflow: workflow}
+}
+
+// SetSynonyms installs the per-project tag-synonym table the service
+// passes to NormalizeTagName when processing comment tags. Phase 3f
+// replaced the process-global registry with this per-service field.
+func (s *CommentService) SetSynonyms(synonyms map[string]string) {
+	s.synonyms = synonyms
 }
 
 func (s *CommentService) Add(ctx context.Context, project domain.ProjectContext, taskID int64, body, authorType string, rawTags []string) (comment domain.Comment, err error) {
@@ -56,7 +64,7 @@ func (s *CommentService) Add(ctx context.Context, project domain.ProjectContext,
 
 	tags := make([]domain.Tag, 0, len(rawTags))
 	for _, raw := range rawTags {
-		name := NormalizeTagName(raw)
+		name := NormalizeTagName(raw, s.synonyms)
 		if name == "" {
 			continue
 		}
@@ -116,7 +124,7 @@ func (s *CommentService) Edit(ctx context.Context, project domain.ProjectContext
 
 	tags := make([]domain.Tag, 0, len(rawTags))
 	for _, raw := range rawTags {
-		name := NormalizeTagName(raw)
+		name := NormalizeTagName(raw, s.synonyms)
 		if name == "" {
 			continue
 		}

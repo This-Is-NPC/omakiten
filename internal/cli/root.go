@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/activity"
-	"omakiten/internal/agent"
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
@@ -100,6 +99,24 @@ func (r *runtime) contextService() *app.ContextService {
 	return app.NewContextService(r.store, r.store, r.store, r.store, r.store, r.tokenCounter(), r.activeRegistry())
 }
 
+// commentService wraps NewCommentService and threads the per-project
+// tag synonyms into the service via SetSynonyms. CLI inline callers
+// use this instead of app.NewCommentService(rt.store) so Phase 3f's
+// per-project lookup flows naturally.
+func (r *runtime) commentService() *app.CommentService {
+	svc := app.NewCommentService(r.store)
+	svc.SetSynonyms(r.activeSynonyms())
+	return svc
+}
+
+// commentServiceWithWorkflow mirrors commentService for the edit /
+// remove flows that need workflow policy enforcement.
+func (r *runtime) commentServiceWithWorkflow(workflow *app.WorkflowService) *app.CommentService {
+	svc := app.NewCommentServiceWithWorkflow(r.store, workflow)
+	svc.SetSynonyms(r.activeSynonyms())
+	return svc
+}
+
 // activeRegistry returns the EnumRegistry from the BundleCache's active
 // ProjectRuntime, falling back to the boot-time registry field for
 // non-cache code paths (tests that skip materializeConfig, the bootstrap
@@ -112,6 +129,21 @@ func (r *runtime) activeRegistry() *domain.EnumRegistry {
 	}
 	return r.registry
 }
+
+// activeSynonyms returns the per-project tag synonym table from the
+// BundleCache. Phase 3f wires this into TagService / CommentService /
+// ErrorService at construction time so NormalizeTagName resolves the
+// active project's aliases rather than a process-global registry.
+// Returns nil when no cache entry exists yet (rare bootstrap window) —
+// callers treat nil as "no substitution" and still kebab-case the
+// input.
+func (r *runtime) activeSynonyms() map[string]string {
+	if pr := r.ProjectRuntime(); pr != nil {
+		return pr.TagSynonyms
+	}
+	return nil
+}
+
 
 func (r *runtime) tokenCounter() token.Counter {
 	return token.NewCounter()
@@ -262,12 +294,12 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 			_ = store.Close()
 			return nil, err
 		}
-		// Tag synonyms + similar-task stopwords flow through process-global
-		// registries the leaf helpers read at every call. Composition root
-		// is the single point that knows the bundle, so the install lives
-		// here.
-		app.RegisterTagSynonyms(bundle.Config.TagSynonyms)
-		agent.RegisterStopWords(bundle.Config.Search.Stopwords)
+		// Phase 3f: tag synonyms + similar-task stopwords live per-service
+		// (no process globals). The CLI threads `rt.activeSynonyms()` into
+		// every service helper that needs them; stopwords are stored on
+		// the cache entry so MCP / agent paths read them directly.
+		_ = bundle.Config.TagSynonyms
+		_ = bundle.Config.Search.Stopwords
 
 		hookEntries := buildHookEntries(bundle.Config.Hooks)
 		engine := hooks.NewEngine(hookEntries, registry, bundle.Config.Events, store)

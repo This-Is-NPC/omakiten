@@ -49,7 +49,7 @@ func (s *Service) ContinueTask(ctx context.Context, input ContinueTaskInput) (Co
 	if err != nil {
 		return ContinueTaskResponse{}, err
 	}
-	comments, err := app.NewCommentService(s.repo).List(ctx, project, input.TaskID)
+	comments, err := s.newCommentService().List(ctx, project, input.TaskID)
 	if err != nil {
 		return ContinueTaskResponse{}, err
 	}
@@ -120,7 +120,7 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 		if err != nil {
 			return CreateTaskResponse{}, err
 		}
-		similar := similarTasks(title+" "+description, tasks, s.settings.SimilarTaskLimit, s.registry)
+		similar := similarTasks(title+" "+description, tasks, s.settings.SimilarTaskLimit, s.registry, s.stopwords)
 		if len(similar) > 0 {
 			return CreateTaskResponse{
 				Project:      projectSummary(project),

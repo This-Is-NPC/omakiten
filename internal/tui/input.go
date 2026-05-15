@@ -135,7 +135,9 @@ func (m *Model) submitInput() {
 			err = domain.NewError(domain.ErrTaskNotFound, "no selected task", nil)
 			break
 		}
-		_, err = app.NewCommentService(m.repos.Comments).Add(m.ctx, m.project, task.ID, input, "human", nil)
+		commentSvc := app.NewCommentService(m.repos.Comments)
+		commentSvc.SetSynonyms(m.repos.activeSynonyms())
+		_, err = commentSvc.Add(m.ctx, m.project, task.ID, input, "human", nil)
 	case modeMove:
 		task, ok := m.selectedTask()
 		if !ok {

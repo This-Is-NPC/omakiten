@@ -3,35 +3,24 @@ package agent
 import (
 	"sort"
 	"strings"
-	"sync/atomic"
 	"unicode"
 
 	"omakiten/internal/domain"
 )
 
-// activeStopWords is the registered stopwords set used by similar-task
-// ranking. Lives as a process-global atomic pointer so leaf helpers
-// (wordSet) can read without thread-bookkeeping; composition root writes
-// it once at startup from config.search.stopwords. Multilingual users
-// extend the list in YAML — no code change needed for PT/ES additions.
-var activeStopWords atomic.Pointer[map[string]bool]
-
-// RegisterStopWords installs the lowercase stopwords set similar-task
-// ranking drops before scoring. Composition root resolves the bundle's
-// config.search.stopwords and writes them here once at startup.
-// Passing nil or an empty slice clears the registry — wordSet then
-// keeps every token, slightly worsening ranking quality but never
-// failing.
-func RegisterStopWords(words []string) {
+// stopwordsTable builds the lowercase set wordSet drops before scoring.
+// Phase 3f replaced the process-global registry with a per-Service
+// field; this helper converts the per-project `config.search.stopwords`
+// slice the runtime resolved into the map lookup wordSet expects.
+func stopwordsTable(words []string) map[string]bool {
 	if len(words) == 0 {
-		activeStopWords.Store(nil)
-		return
+		return nil
 	}
 	set := make(map[string]bool, len(words))
 	for _, w := range words {
 		set[strings.ToLower(strings.TrimSpace(w))] = true
 	}
-	activeStopWords.Store(&set)
+	return set
 }
 
 func taskSummaries(tasks []domain.Task, registry *domain.EnumRegistry) []TaskSummary {
@@ -239,8 +228,8 @@ func taskTitleAndDescription(title, description string) (string, string) {
 	return line, description
 }
 
-func similarTasks(query string, tasks []domain.Task, limit int, registry *domain.EnumRegistry) []TaskSummary {
-	queryWords := wordSet(query)
+func similarTasks(query string, tasks []domain.Task, limit int, registry *domain.EnumRegistry, stops map[string]bool) []TaskSummary {
+	queryWords := wordSet(query, stops)
 	if len(queryWords) == 0 {
 		return nil
 	}
@@ -253,7 +242,7 @@ func similarTasks(query string, tasks []domain.Task, limit int, registry *domain
 	for _, task := range tasks {
 		text := task.Title + " " + task.Description
 		textLower := strings.ToLower(strings.TrimSpace(text))
-		words := wordSet(text)
+		words := wordSet(text, stops)
 		score := overlapScore(queryWords, words)
 		if textLower == queryLower || strings.Contains(textLower, queryLower) || strings.Contains(queryLower, strings.ToLower(task.Title)) {
 			score = 1
@@ -278,15 +267,14 @@ func similarTasks(query string, tasks []domain.Task, limit int, registry *domain
 	return out
 }
 
-func wordSet(value string) map[string]struct{} {
+func wordSet(value string, stops map[string]bool) map[string]struct{} {
 	words := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
-	stops := activeStopWords.Load()
 	out := map[string]struct{}{}
 	for _, word := range words {
 		if len(word) < 3 {
 			continue
 		}
-		if stops != nil && (*stops)[word] {
+		if stops != nil && stops[word] {
 			continue
 		}
 		out[word] = struct{}{}

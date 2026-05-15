@@ -12,6 +12,14 @@ import (
 type ErrorService struct {
 	repo     ErrorRepository
 	defaults SolutionsDefaults
+	synonyms map[string]string
+}
+
+// SetSynonyms installs the per-project tag-synonym table the service
+// passes to NormalizeTagName when processing error tags. Phase 3f
+// replaced the process-global registry with this per-service field.
+func (s *ErrorService) SetSynonyms(synonyms map[string]string) {
+	s.synonyms = synonyms
 }
 
 // SolutionsDefaults mirrors config.SolutionsSettings without forcing the
@@ -71,7 +79,7 @@ func (s *ErrorService) Record(ctx context.Context, project domain.ProjectContext
 		return
 	}
 
-	tags := normalizeTagInputs(rawTags)
+	tags := normalizeTagInputs(rawTags, s.synonyms)
 	record, err = s.repo.RecordError(ctx, project.ID, description, strings.TrimSpace(errContext), tags)
 	if err != nil {
 		return
@@ -101,7 +109,7 @@ func (s *ErrorService) Search(ctx context.Context, project domain.ProjectContext
 
 	tagNames := make([]string, 0, len(rawTags))
 	for _, raw := range rawTags {
-		name := NormalizeTagName(raw)
+		name := NormalizeTagName(raw, s.synonyms)
 		if name != "" {
 			tagNames = append(tagNames, name)
 		}
@@ -229,11 +237,11 @@ func (s *ErrorService) ListTopSolutions(ctx context.Context, project domain.Proj
 	return
 }
 
-func normalizeTagInputs(rawTags []string) []domain.Tag {
+func normalizeTagInputs(rawTags []string, synonyms map[string]string) []domain.Tag {
 	tags := make([]domain.Tag, 0, len(rawTags))
 	seen := map[string]struct{}{}
 	for _, raw := range rawTags {
-		name := NormalizeTagName(raw)
+		name := NormalizeTagName(raw, synonyms)
 		if name == "" {
 			continue
 		}

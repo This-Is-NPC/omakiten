@@ -3,18 +3,13 @@ package agent
 import (
 	"testing"
 
-	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
 
-// init seeds the stopwords registry from the embedded kit so similar-task
-// scoring filters tokens like "the" / "and" in this package's tests.
-// Production wires the same list from the user's bundle via
-// agentruntime.Open / cli.runtimeOptions.open.
-func init() {
-	kit := config.MustLoadKitConfig()
-	RegisterStopWords(kit.Search.Stopwords)
-}
+// Phase 3f dropped the process-global stopwords registry. Tests pass
+// stopword tables to wordSet directly (see TestWordSet); similarTasks
+// tests pass nil because the assertions do not depend on stopword
+// filtering.
 
 func TestContextSnippets(t *testing.T) {
 	entries := []domain.ContextEntry{
@@ -76,36 +71,37 @@ func TestSimilarTasks(t *testing.T) {
 	}
 
 	// Empty query -> no matches
-	if len(similarTasks("", tasks, 5, nil)) != 0 {
+	if len(similarTasks("", tasks, 5, nil, nil)) != 0 {
 		t.Fatal("similarTasks(empty) should return no matches")
 	}
 
 	// Exact match
-	exact := similarTasks("Add MCP agent integration", tasks, 5, nil)
+	exact := similarTasks("Add MCP agent integration", tasks, 5, nil, nil)
 	if len(exact) != 1 || exact[0].ID != 1 {
 		t.Fatalf("similarTasks(exact) = %#v, want task 1", exact)
 	}
 
 	// Substring match
-	sub := similarTasks("MCP", tasks, 5, nil)
+	sub := similarTasks("MCP", tasks, 5, nil, nil)
 	if len(sub) != 1 || sub[0].ID != 1 {
 		t.Fatalf("similarTasks(sub) = %#v, want task 1", sub)
 	}
 
 	// No matches below threshold
-	if len(similarTasks("totally unrelated search query for testing", tasks, 5, nil)) != 0 {
+	if len(similarTasks("totally unrelated search query for testing", tasks, 5, nil, nil)) != 0 {
 		t.Fatal("similarTasks(no match) should return empty")
 	}
 
 	// Limit trimming - use a query that matches nothing perfectly to exercise score path
-	limited := similarTasks("write tests cover code", tasks, 1, nil)
+	limited := similarTasks("write tests cover code", tasks, 1, nil, nil)
 	if len(limited) != 1 {
 		t.Fatalf("similarTasks(limit) len = %d, want 1", len(limited))
 	}
 }
 
 func TestWordSet(t *testing.T) {
-	set := wordSet("Hello world! The quick Brown Fox123")
+	stops := map[string]bool{"the": true}
+	set := wordSet("Hello world! The quick Brown Fox123", stops)
 	if _, ok := set["hello"]; !ok {
 		t.Error("wordSet missing 'hello'")
 	}

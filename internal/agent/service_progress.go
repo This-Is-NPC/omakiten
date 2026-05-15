@@ -51,7 +51,7 @@ func (s *Service) RecordProgress(ctx context.Context, input RecordProgressInput)
 		response.Task = &summary
 	}
 	if strings.TrimSpace(input.Comment) != "" {
-		comment, err := app.NewCommentService(s.repo).Add(ctx, project, input.TaskID, input.Comment, input.AuthorType, nil)
+		comment, err := s.newCommentService().Add(ctx, project, input.TaskID, input.Comment, input.AuthorType, nil)
 		if err != nil {
 			return RecordProgressResponse{}, err
 		}

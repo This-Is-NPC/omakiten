@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 
 	"omakiten/internal/agent"
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/events"
@@ -136,12 +135,11 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	// project for its lifetime (Phase 3a invariant).
 	rt.Service.SetProjectSelector(agent.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
 
-	// Tag synonyms + similar-task stopwords are process-global registries
-	// the consumer packages read at every NormalizeTagName / wordSet call.
-	// The composition root is the single point that knows the bundle, so
-	// installation lives here.
-	app.RegisterTagSynonyms(rt.Bundle.Config.TagSynonyms)
-	agent.RegisterStopWords(rt.Bundle.Config.Search.Stopwords)
+	// Phase 3f: tag synonyms + similar-task stopwords now live on each
+	// service instance (no process globals). Wire the per-project values
+	// from the resolved ProjectRuntime into the agent.Service so future
+	// requests routed through the cache see disjoint tables per project.
+	rt.Service.SetStopwords(rt.Bundle.Config.Search.Stopwords)
 
 	r := &Runtime{
 		store:              store,
