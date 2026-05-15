@@ -16,7 +16,6 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
-	"omakiten/internal/domain"
 	"omakiten/internal/events"
 	"omakiten/internal/hooks"
 	"omakiten/internal/hooks/actions"
@@ -41,17 +40,27 @@ type Options struct {
 
 // Runtime owns the long-lived resources the MCP server needs: the sqlite
 // connection, the resolved paths, and the agent.Service that handlers
-// dispatch through.
+// dispatch through. Phase 3a hoisted the per-bundle resources
+// (service, hooks engine, registry, notification snapshot) into the
+// BundleCache; Runtime keeps thin accessors so consumers do not need
+// to know whether the cache returned an existing entry or built a new
+// one.
 type Runtime struct {
-	store              *sqlite.Store
-	configPath         string
-	dbPath             string
-	service            *agent.Service
-	bus                events.Bus
-	hooksEngine        *hooks.Engine
+	store      *sqlite.Store
+	configPath string
+	dbPath     string
+	bus        events.Bus
+	cache      *BundleCache
+	// defaultProjectID is the cache key the boot path installed the
+	// initial runtime under. Phase 3a always uses 0 (single bundle
+	// process-wide); Phase 3b–3f switch to per-project ids without
+	// touching the rest of this file.
+	defaultProjectID int64
+	// actionRegistry is the same registry the active runtime's engine
+	// reads from. Held on Runtime so external callers (tests, future
+	// MCP plugins) can extend the registry before a reload picks it up.
 	actionRegistry     *hooks.ActionRegistry
 	notificationAction *actions.NotificationShowAction
-	registry           *domain.EnumRegistry
 }
 
 // Open materializes the runtime: resolves paths, runs config layout
@@ -93,37 +102,21 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 
-	bundle, _, enumRegistry, err := app.NewConfigService(store, cs).Import(ctx, configPath)
+	// Peek the bundle once to construct the bus. The bus depends on
+	// the events policy and must outlive every cache rebuild — putting
+	// it inside the BundleCache would force every Reload to reseat
+	// subscribers (TUI panels, hooks engine). Cache rebuilds keep
+	// using this same bus handle.
+	preview, err := config.LoadBundle(configPath)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
 	}
+	bus := events.NewInProcessBus(preview.Config.Events)
 
-	bus := events.NewInProcessBus(bundle.Config.Events)
-	registry := hooks.NewActionRegistry()
-	actions.RegisterBuiltins(registry)
-	notificationAction := actions.NewNotificationShowAction(actions.NotificationBundleSnapshot{Notifications: bundle.Notifications})
-	registry.Register(notificationAction)
-
-	// Re-validate hooks now that the registry is populated so unknown
-	// `do:` names abort startup with a clear error rather than silently
-	// going untriggered.
-	if err := config.ValidateHooks(bundle.Config.Hooks, func(name string) bool {
-		_, ok := registry.Get(name)
-		return ok
-	}, bundle.Notifications); err != nil {
-		_ = store.Close()
-		return nil, err
-	}
-
-	if err := store.ApplyConfig(ctx, sqlite.ConfigKnobs{
-		BusyTimeoutMs:            bundle.Config.SQLite.BusyTimeoutMs,
-		ActivityLogMaxRows:       bundle.Config.ActivityLog.MaxRows,
-		ActivityLogMaxAgeDays:    bundle.Config.ActivityLog.MaxAgeDays,
-		EventsDefaultRecentLimit: bundle.Config.Events.DefaultRecentLimit,
-		EventsPolicy:             bundle.Config.Events,
-		EventBus:                 bus,
-	}); err != nil {
+	cache := NewBundleCache(store, bus, cs)
+	rt, err := cache.Resolve(ctx, opts.ProjectID, configPath)
+	if err != nil {
 		_ = store.Close()
 		return nil, err
 	}
@@ -136,54 +129,44 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 			return nil, err
 		}
 	}
+	// Boot path threads the resolved project selector into the
+	// service. The cache always builds a service with a zero selector;
+	// boot overwrites it once because the runtime is bound to a single
+	// project for its lifetime (Phase 3a invariant).
+	rt.Service.SetProjectSelector(agent.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
 
-	// Note: domain.RegisterPriorities / RegisterSeverities are called
-	// inside ConfigService.Import (above) BEFORE ImportBundle writes
-	// the bundle. No need to re-register here — the registry is
-	// already populated for the rest of the runtime.
-
-	hookEntries := buildHookEntries(bundle.Config.Hooks)
-	engine := hooks.NewEngine(hookEntries, registry, bundle.Config.Events, store)
-	engine.Start(bus)
-
-	rt := &Runtime{store: store, configPath: configPath, dbPath: dbPath, bus: bus, hooksEngine: engine, actionRegistry: registry, notificationAction: notificationAction, registry: enumRegistry}
-	rt.service = agent.NewService(store, agent.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
-	rt.service.SetRegistry(enumRegistry)
-	rt.service.SetTaskTemplateLookup(taskTemplateLookup(bundle))
-	rt.service.SetTemplateCatalog(templateCatalog(bundle))
-	rt.service.SetSkillCatalog(skillCatalog(bundle))
-	rt.service.SetLawCatalog(lawCatalog(bundle))
-	rt.service.SetPersonaCatalog(personaCatalog(bundle))
-	rt.service.SetCommandCatalog(commandCatalog(bundle))
-	// Validator guarantees every MCP field is declared in the loaded
-	// bundle, so direct field access is safe — no Effective* fallback.
-	// The *bool fields are dereferenced here because validator confirmed
-	// they are non-nil.
-	rt.service.SetSettings(agent.ServiceSettings{
-		RecentCommentLimit:       bundle.Config.MCP.RecentCommentLimit,
-		MaxCommentChars:          bundle.Config.MCP.MaxCommentChars,
-		IncludeWorkflow:          *bundle.Config.MCP.IncludeWorkflowInContinue,
-		CachePrompts:             *bundle.Config.MCP.CachePrompts,
-		RecentContextLimit:       bundle.Config.MCP.RecentContextLimit,
-		NextWorkLimit:            bundle.Config.MCP.NextWorkLimit,
-		SimilarTaskLimit:         bundle.Config.MCP.SimilarTaskLimit,
-		SolutionsTopLimitDefault: bundle.Config.Solutions.DefaultTopLimit,
-		SolutionsTopLimitMax:     bundle.Config.Solutions.MaxTopLimit,
-	})
 	// Tag synonyms + similar-task stopwords are process-global registries
 	// the consumer packages read at every NormalizeTagName / wordSet call.
 	// The composition root is the single point that knows the bundle, so
 	// installation lives here.
-	app.RegisterTagSynonyms(bundle.Config.TagSynonyms)
-	agent.RegisterStopWords(bundle.Config.Search.Stopwords)
-	return rt, nil
+	app.RegisterTagSynonyms(rt.Bundle.Config.TagSynonyms)
+	agent.RegisterStopWords(rt.Bundle.Config.Search.Stopwords)
+
+	r := &Runtime{
+		store:              store,
+		configPath:         configPath,
+		dbPath:             dbPath,
+		bus:                bus,
+		cache:              cache,
+		defaultProjectID:   opts.ProjectID,
+		actionRegistry:     rt.ActionRegistry,
+		notificationAction: rt.NotificationAction,
+	}
+	return r, nil
 }
 
 func (r *Runtime) Close() error {
-	if r.hooksEngine != nil {
-		r.hooksEngine.Stop()
+	if pr := r.cache.Get(r.defaultProjectID); pr != nil && pr.HooksEngine != nil {
+		pr.HooksEngine.Stop()
 	}
 	return r.store.Close()
+}
+
+// Cache exposes the BundleCache so consumers (TUI hot-reload, future
+// per-project surfaces) can call Resolve / Reload without going
+// through Runtime first.
+func (r *Runtime) Cache() *BundleCache {
+	return r.cache
 }
 
 // buildHookEntries lifts user-facing HookSpec entries into the
@@ -227,7 +210,10 @@ func (r *Runtime) Bus() events.Bus {
 }
 
 func (r *Runtime) Service() *agent.Service {
-	return r.service
+	if pr := r.cache.Get(r.defaultProjectID); pr != nil {
+		return pr.Service
+	}
+	return nil
 }
 
 func (r *Runtime) Store() *sqlite.Store {

@@ -120,6 +120,15 @@ func NewService(repo Repository, selector ProjectSelector) *Service {
 	}
 }
 
+// SetProjectSelector replaces the service's default project selector.
+// agentruntime constructs the service with a zero selector and calls
+// this once boot has resolved the project from --project/--cwd; this
+// matches the Phase 3a runtime pattern where the BundleCache builds
+// services first and the boot path threads the selector after.
+func (s *Service) SetProjectSelector(selector ProjectSelector) {
+	s.selector = selector
+}
+
 // SetSettings replaces the service's runtime knobs with values from the
 // active bundle. The runtime composition root invokes this exactly once
 // at startup; the values flow from `bundle.Config.MCP.*`. The agent
