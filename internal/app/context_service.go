@@ -21,11 +21,11 @@ type ContextService struct {
 	registry     *domain.EnumRegistry
 }
 
-func NewContextService(tasks TaskRepository, comments CommentRepository, dependencies DependencyRepository, entries ContextEntryRepository, config ConfigRepository, counter token.Counter, registry *domain.EnumRegistry) *ContextService {
+func NewContextService(tasks TaskRepository, comments CommentRepository, dependencies DependencyRepository, entries ContextEntryRepository, cfg ConfigRepository, counter token.Counter, registry *domain.EnumRegistry) *ContextService {
 	if counter == nil {
 		counter = token.ApproxCounter{}
 	}
-	return &ContextService{tasks: tasks, comments: comments, dependencies: dependencies, entries: entries, config: config, counter: counter, registry: registry}
+	return &ContextService{tasks: tasks, comments: comments, dependencies: dependencies, entries: entries, config: cfg, counter: counter, registry: registry}
 }
 
 func (s *ContextService) Add(ctx context.Context, project domain.ProjectContext, body string) (entry domain.ContextEntry, err error) {
@@ -65,10 +65,8 @@ func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext
 		err = domain.NewError(domain.ErrValidation, "context level must be 1, 2, or 3", nil)
 		return
 	}
-	settings, err := s.config.ContextSettings(ctx)
-	if err != nil {
-		return
-	}
+	snap := s.config.Snapshot()
+	settings := snap.ContextSettings()
 	budget := contextBudget{counter: s.counter, maxTokens: settings.MaxTokens}
 
 	taskCount, err := s.tasks.TaskCount(ctx, project.ID)
@@ -94,10 +92,7 @@ func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext
 	}
 
 	if level >= 2 {
-		workflow, err := s.config.ActiveWorkflow(ctx)
-		if err != nil {
-			return dump, err
-		}
+		workflow := snap.Workflow()
 		if budget.add(s.counter.Count(workflowText(workflow))) {
 			dump.Workflow = workflow
 		}
@@ -137,11 +132,7 @@ func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext
 			dump.Comments = append(dump.Comments, comment)
 		}
 
-		laws, err := s.config.ListActiveLaws(ctx)
-		if err != nil {
-			return dump, err
-		}
-		for _, law := range laws {
+		for _, law := range lawsFromSnapshot(snap) {
 			if !budget.add(s.counter.Count(law.Key + " " + s.severityText(law.Severity) + " " + law.Body)) {
 				break
 			}

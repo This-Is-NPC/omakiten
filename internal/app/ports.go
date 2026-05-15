@@ -17,7 +17,29 @@ type ProjectRepository interface {
 	ListProjects(ctx context.Context) ([]domain.Project, error)
 }
 
+// SnapshotSource exposes the active per-project *config.Snapshot. The
+// Phase 2-bis app services capture this pointer at construction time
+// and read every config knob through it; the pointer is stable for the
+// service's lifetime. *sqlite.Store satisfies it transitionally by
+// projecting its in-memory providers through config.BuildSnapshot;
+// agentruntime.ProjectRuntime will become the canonical implementor
+// once the Store stops carrying config.
+type SnapshotSource interface {
+	Snapshot() *config.Snapshot
+}
+
+// ConfigRepository is the legacy port that pre-Phase-2-bis app services
+// went through for every config read. Phase 2-bis migrates the readers
+// to consume *config.Snapshot directly — captured at service
+// construction via the embedded SnapshotSource — so the remaining
+// callers of ListActive* / ActiveWorkflow / ContextSettings are scheduled
+// for removal together with the Store-side providers and the SQL
+// adapters they delegate to. SnapshotSource is embedded here so any
+// existing ConfigRepository implementor (the only one in production is
+// *sqlite.Store) automatically supplies the per-project Snapshot the
+// services now capture.
 type ConfigRepository interface {
+	SnapshotSource
 	ImportBundle(ctx context.Context, bundle config.Bundle, sourcePath, sourceHash string) error
 	ListActiveLaws(ctx context.Context) ([]domain.Law, error)
 	ListActiveSkills(ctx context.Context) ([]domain.Skill, error)

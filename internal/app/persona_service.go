@@ -19,11 +19,47 @@ func NewPersonaService(repo ConfigRepository, editor *BundleEditor, files Entity
 	return &PersonaService{repo: repo, editor: editor, files: files, slugger: slugger}
 }
 
-func (s *PersonaService) List(ctx context.Context) ([]domain.Persona, error) {
-	personas, err := s.repo.ListActivePersonas(ctx)
-	if err != nil {
-		return nil, err
+// personasFromSnapshot projects the config.Persona slice carried on
+// the snapshot into the domain shape consumed by the CLI/TUI/MCP
+// surfaces. Ids are positional (1-based slot in the snapshot's
+// personas list) so callers that round-trip ids within a snapshot get
+// stable references; ids rotate on every bundle import, which mirrors
+// the legacy `personas.local_id` reset behaviour. Skill id refs are
+// resolved against the same snapshot so the persona's SkillIDs
+// reference ids stable within the snapshot.
+func personasFromSnapshot(snap *config.Snapshot) []domain.Persona {
+	personas := snap.Personas()
+	skills := snap.Skills()
+	skillIDBySlug := make(map[string]int64, len(skills))
+	for i, sk := range skills {
+		skillIDBySlug[sk.Slug] = int64(i + 1)
 	}
+	out := make([]domain.Persona, 0, len(personas))
+	for i, p := range personas {
+		skillIDs := make([]int64, 0, len(p.Skills))
+		for _, slug := range p.Skills {
+			if id, ok := skillIDBySlug[slug]; ok {
+				skillIDs = append(skillIDs, id)
+			}
+		}
+		out = append(out, domain.Persona{
+			ID:          int64(i + 1),
+			Key:         p.Slug,
+			Name:        p.Name,
+			Description: p.Description,
+			Body:        p.Body,
+			SkillIDs:    skillIDs,
+			SkillKeys:   append([]string(nil), p.Skills...),
+			LawKeys:     append([]string(nil), p.Laws...),
+			SourcePath:  p.SourcePath,
+			IsCustom:    p.IsCustom,
+		})
+	}
+	return out
+}
+
+func (s *PersonaService) List(_ context.Context) ([]domain.Persona, error) {
+	personas := personasFromSnapshot(s.repo.Snapshot())
 	bundle, err := s.editor.Load()
 	if err != nil {
 		return nil, err
@@ -36,9 +72,9 @@ func (s *PersonaService) List(ctx context.Context) ([]domain.Persona, error) {
 			personas[index].Body = file.Body
 			personas[index].Name = file.Name
 			personas[index].SourcePath = file.SourcePath
-			// Skill keys come from the wiring; the SQLite read joins through
-			// persona_skills which is the authoritative current state so we
-			// keep that one but also mirror file-level law keys.
+			// Skill keys come from the snapshot's persona wiring; the
+			// file-level Laws drive the persona-scoped law refs the
+			// renderer surfaces, so mirror those too.
 			personas[index].LawKeys = append([]string(nil), file.Laws...)
 		}
 		if w, ok := warnings[persona.Key]; ok {
@@ -240,17 +276,14 @@ func (s *PersonaService) Remove(ctx context.Context, slug string) error {
 
 // resolveSkillRefs converts whichever combination of SkillIDs / SkillKeys the
 // caller supplied into a deduped, validated slice of skill slugs.
-func (s *PersonaService) resolveSkillRefs(ctx context.Context, input domain.PersonaInput) ([]string, error) {
+func (s *PersonaService) resolveSkillRefs(_ context.Context, input domain.PersonaInput) ([]string, error) {
 	out := make([]string, 0, len(input.SkillIDs)+len(input.SkillKeys))
 	seen := map[string]struct{}{}
 	if len(input.SkillIDs) > 0 {
-		skills, err := s.repo.ListActiveSkills(ctx)
-		if err != nil {
-			return nil, err
-		}
+		skills := s.repo.Snapshot().Skills()
 		byID := map[int64]string{}
-		for _, skill := range skills {
-			byID[skill.ID] = skill.Key
+		for i, skill := range skills {
+			byID[int64(i+1)] = skill.Slug
 		}
 		for _, id := range input.SkillIDs {
 			key, ok := byID[id]

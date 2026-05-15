@@ -20,14 +20,33 @@ func NewSkillService(repo ConfigRepository, editor *BundleEditor, files EntityFi
 	return &SkillService{repo: repo, editor: editor, files: files, slugger: slugger}
 }
 
-// List returns the active skill set as imported into SQLite. Description, body,
-// and source path are sourced from the on-disk bundle so the response reflects
-// the current state of the .md files rather than the materialized DB.
-func (s *SkillService) List(ctx context.Context) ([]domain.Skill, error) {
-	skills, err := s.repo.ListActiveSkills(ctx)
-	if err != nil {
-		return nil, err
+// skillsFromSnapshot projects the snapshot's config.Skill slice into
+// the domain shape. Ids are positional (1-based) and stable within a
+// snapshot — they rotate on every bundle import, matching the legacy
+// `skills.local_id` semantics.
+func skillsFromSnapshot(snap *config.Snapshot) []domain.Skill {
+	skills := snap.Skills()
+	out := make([]domain.Skill, 0, len(skills))
+	for i, sk := range skills {
+		out = append(out, domain.Skill{
+			ID:          int64(i + 1),
+			Key:         sk.Slug,
+			Name:        sk.Name,
+			Description: sk.Description,
+			Body:        sk.Body,
+			SourcePath:  sk.SourcePath,
+			IsCustom:    sk.IsCustom,
+		})
 	}
+	return out
+}
+
+// List returns the active skill set carried on the per-project Snapshot.
+// Description, body, and source path are overlaid from the on-disk
+// bundle so the response reflects the current state of the .md files —
+// useful when the user edits a skill file between bundle imports.
+func (s *SkillService) List(_ context.Context) ([]domain.Skill, error) {
+	skills := skillsFromSnapshot(s.repo.Snapshot())
 	bundle, err := s.editor.Load()
 	if err != nil {
 		return nil, err

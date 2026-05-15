@@ -37,17 +37,6 @@ func NewWorkflowService(snap *config.Snapshot, workflow WorkflowRepository, guar
 	return &WorkflowService{snap: snap, repo: workflow, guards: guards, tasks: tasks, events: events, registry: registry}
 }
 
-// SnapshotSource exposes the active per-project Snapshot. The SQL
-// Store implements it transitionally — it wraps the in-memory providers
-// it holds today and re-projects them as a Snapshot. Subsequent commits
-// in this chain delete the Store-side providers, and SnapshotSource is
-// satisfied by the agentruntime.ProjectRuntime directly. The interface
-// exists so legacy test fixtures that pass a *sqlite.Store to
-// NewWorkflowServiceFromStore keep compiling through the transition.
-type SnapshotSource interface {
-	Snapshot() *config.Snapshot
-}
-
 // NewWorkflowServiceFromStore is the production-path sugar for callers that
 // hold a single composite store implementing every workflow port (in
 // production: *sqlite.Store). The store must also implement

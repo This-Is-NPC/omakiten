@@ -24,6 +24,34 @@ func NewLawService(repo ConfigRepository, editor *BundleEditor, files EntityFile
 	return &LawService{repo: repo, editor: editor, files: files, slugger: slugger, registry: registry}
 }
 
+// lawsFromSnapshot projects the snapshot's config.Law slice into the
+// domain shape. Ids are positional (1-based) and stable within a
+// snapshot; severity labels are resolved to the snapshot's configured
+// severity ids so the Severity field carries the same int as the
+// legacy SQL adapter produced. Unknown labels resolve to 0 — the
+// validator rejects bundles with bad severities at import time, so 0
+// only appears for laws that survived a bundle without severity
+// validation in tests.
+func lawsFromSnapshot(snap *config.Snapshot) []domain.Law {
+	laws := snap.Laws()
+	out := make([]domain.Law, 0, len(laws))
+	for i, l := range laws {
+		out = append(out, domain.Law{
+			ID:         int64(i + 1),
+			Key:        l.Slug,
+			Name:       l.Name,
+			Severity:   domain.Severity(snap.SeverityIDByLabel(l.Severity)),
+			Body:       l.Body,
+			Scope:      domain.LawScope(l.Scope),
+			ProjectKey: l.ProjectSlug,
+			PersonaKey: l.PersonaSlug,
+			SourcePath: l.SourcePath,
+			IsCustom:   l.IsCustom,
+		})
+	}
+	return out
+}
+
 // LawListFilter narrows the laws returned by List. Empty values mean "any".
 // Phase 2 features (scope/project/persona) leverage these filters.
 type LawListFilter struct {
@@ -36,11 +64,8 @@ func (s *LawService) List(ctx context.Context) ([]domain.Law, error) {
 	return s.ListFiltered(ctx, LawListFilter{})
 }
 
-func (s *LawService) ListFiltered(ctx context.Context, filter LawListFilter) ([]domain.Law, error) {
-	laws, err := s.repo.ListActiveLaws(ctx)
-	if err != nil {
-		return nil, err
-	}
+func (s *LawService) ListFiltered(_ context.Context, filter LawListFilter) ([]domain.Law, error) {
+	laws := lawsFromSnapshot(s.repo.Snapshot())
 	bundle, err := s.editor.Load()
 	if err != nil {
 		return nil, err
