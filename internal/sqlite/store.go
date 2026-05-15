@@ -60,6 +60,32 @@ type Store struct {
 	// broadcast — production wires it from composition root, tests
 	// inherit a nil bus and silently skip the fan-out.
 	bus events.Bus
+	// providers is the in-memory config snapshot the Store delegates
+	// every read-side config query to. Phase 2 of the config refactor
+	// dropped the SQL tables that previously backed these reads
+	// (migration 020); the Store now serves workflow shape, personas,
+	// skills, laws, templates, notifications, and mcp_commands by
+	// reading the active snapshot. Lazily created on first ImportBundle
+	// or via Providers() so tests that never call ImportBundle still
+	// observe a non-nil (empty-bundle) provider set.
+	providers *config.InMemoryProviders
+	// previousProviders captures the snapshot active immediately before
+	// the most recent ImportBundle. OrphanService uses it to resolve the
+	// `from_bucket_key` for orphaned tasks — the bucket_id stored on
+	// tasks references an id that no longer exists in the new bundle,
+	// but the previous snapshot still knows what key that id mapped to.
+	// nil until the second ImportBundle of the Store's lifetime.
+	previousProviders *config.InMemoryProviders
+}
+
+// Providers returns the in-memory provider set this Store delegates
+// config reads to. The pointer is stable for the Store's lifetime;
+// callers that want to seed a different snapshot use ImportBundle.
+func (s *Store) Providers() *config.InMemoryProviders {
+	if s.providers == nil {
+		s.providers = config.NewInMemoryProviders(config.Bundle{})
+	}
+	return s.providers
 }
 
 // SetActivityLogRetention installs the operation-log retention window the

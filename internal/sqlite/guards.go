@@ -10,11 +10,14 @@ import (
 // task that taskID depends on. Used by the blockers_in workflow guard at the
 // app layer to decide which blockers still sit in disallowed buckets.
 func (s *Store) ListTaskBlockerBuckets(ctx context.Context, projectID, taskID int64) ([]domain.TaskBlocker, error) {
+	// `workflow_buckets` was dropped in migration 020; the previous JOIN
+	// resolved bucket key per blocker. We now scan blocker rows with
+	// bucket_id and resolve key via the in-memory provider after the
+	// SQL completes.
 	rows, err := s.db.QueryContext(ctx, `
-SELECT t.id, t.title, COALESCE(wb.key, '') AS bucket_key
+SELECT t.id, t.title, COALESCE(t.bucket_id, 0)
 FROM task_dependencies td
 JOIN tasks t ON t.project_id = td.project_id AND t.id = td.depends_on_task_id
-LEFT JOIN workflow_buckets wb ON wb.id = t.bucket_id AND wb.active = 1
 WHERE td.project_id = ? AND td.task_id = ?
 ORDER BY t.id
 `, projectID, taskID)
@@ -26,9 +29,11 @@ ORDER BY t.id
 	var blockers []domain.TaskBlocker
 	for rows.Next() {
 		var b domain.TaskBlocker
-		if err := rows.Scan(&b.TaskID, &b.Title, &b.BucketKey); err != nil {
+		var bucketID int64
+		if err := rows.Scan(&b.TaskID, &b.Title, &bucketID); err != nil {
 			return nil, err
 		}
+		b.BucketKey = s.bucketKeyByID(bucketID)
 		blockers = append(blockers, b)
 	}
 	return blockers, rows.Err()

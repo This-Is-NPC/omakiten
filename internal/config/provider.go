@@ -48,6 +48,17 @@ func (p *InMemoryProviders) Swap(bundle *Bundle) {
 // current returns the active snapshot. Always non-nil after construction.
 func (p *InMemoryProviders) current() *providerSnapshot { return p.snap.Load() }
 
+// Clone returns an independent provider handle that observes the same
+// snapshot this provider currently exposes. The clone is unaffected by
+// subsequent Swap calls on the original — used by the orphan-detection
+// flow to keep a stable view of the pre-import bundle while the active
+// providers rotate to the new one.
+func (p *InMemoryProviders) Clone() *InMemoryProviders {
+	clone := &InMemoryProviders{}
+	clone.snap.Store(p.current())
+	return clone
+}
+
 // providerSnapshot is the precomputed view of a bundle that every read
 // method consults. Building the snapshot at Swap time means hot paths
 // (task move, guard evaluation, template resolution) never scan slices
@@ -75,6 +86,11 @@ type providerSnapshot struct {
 
 	notifications map[string]Notification
 	mcpCommands   map[string]MCPCommandSpec
+
+	priorities []PriorityDefinition
+	severities []SeverityDefinition
+
+	settings Settings
 }
 
 type transitionKey struct{ from, to int64 }
@@ -164,7 +180,45 @@ func buildSnapshot(bundle Bundle) *providerSnapshot {
 		snap.mcpCommands[k] = c
 	}
 
+	snap.priorities = append(snap.priorities, bundle.Config.Priorities...)
+	snap.severities = append(snap.severities, bundle.Config.Severities...)
+	snap.settings = bundle.Config
+
 	return snap
+}
+
+// Priorities returns the configured priority table from the active
+// bundle. Used by the Store-side enum registry rebuild path.
+func (p *InMemoryProviders) Priorities() []PriorityDefinition {
+	return append([]PriorityDefinition(nil), p.current().priorities...)
+}
+
+// Severities returns the configured severity table from the active
+// bundle. Used by sqlite delegators that resolve label → id.
+func (p *InMemoryProviders) Severities() []SeverityDefinition {
+	return append([]SeverityDefinition(nil), p.current().severities...)
+}
+
+// SeverityIDByLabel resolves a severity label to its configured id.
+// Returns 0 when the label is empty or unknown — callers treat 0 as
+// "label missing" and fall back to the bundle's default severity.
+func (p *InMemoryProviders) SeverityIDByLabel(label string) int {
+	if label == "" {
+		return 0
+	}
+	for _, sev := range p.current().severities {
+		if sev.Value == label {
+			return sev.ID
+		}
+	}
+	return 0
+}
+
+// Settings returns the resolved Settings block from the active bundle.
+// Used by sqlite delegators (ContextSettings) and the composition root
+// to read config knobs without re-parsing the YAML.
+func (p *InMemoryProviders) Settings() Settings {
+	return p.current().settings
 }
 
 // activeWorkflow returns the workflow chosen by `config.workflow.active`,

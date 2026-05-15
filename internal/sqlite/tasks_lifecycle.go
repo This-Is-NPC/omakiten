@@ -27,7 +27,7 @@ func (s *Store) HardDeleteTask(ctx context.Context, projectID, taskID int64) (do
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	task, err := taskByIDTx(ctx, tx, projectID, taskID)
+	task, err := s.taskByIDTx(ctx, tx, projectID, taskID)
 	if err != nil {
 		return domain.Event{}, err
 	}
@@ -94,7 +94,7 @@ func (s *Store) SetTaskState(ctx context.Context, projectID, taskID int64, state
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	prev, err := taskByIDTx(ctx, tx, projectID, taskID)
+	prev, err := s.taskByIDTx(ctx, tx, projectID, taskID)
 	if err != nil {
 		return domain.Task{}, domain.Event{}, err
 	}
@@ -102,7 +102,7 @@ func (s *Store) SetTaskState(ctx context.Context, projectID, taskID int64, state
 	bucketKey := prev.BucketKey
 	bucketArg := any(prev.BucketID)
 	if targetBucketKey != "" && targetBucketKey != prev.BucketKey {
-		targetBucketID, err := activeBucketIDTx(ctx, tx, targetBucketKey)
+		targetBucketID, err := s.activeBucketID(ctx, targetBucketKey)
 		if err != nil {
 			return domain.Task{}, domain.Event{}, err
 		}
@@ -170,20 +170,20 @@ func (s *Store) EmitTaskEditedEvent(ctx context.Context, projectID, taskID int64
 	return s.RecordTaskEvent(ctx, projectID, taskID, domain.EventTypeTaskEdited, "", string(body))
 }
 
-func taskByIDTx(ctx context.Context, tx *sql.Tx, projectID, taskID int64) (domain.Task, error) {
+func (s *Store) taskByIDTx(ctx context.Context, tx *sql.Tx, projectID, taskID int64) (domain.Task, error) {
 	row := tx.QueryRowContext(ctx, `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at
 FROM tasks
-LEFT JOIN workflow_buckets ON workflow_buckets.id = tasks.bucket_id
 WHERE tasks.project_id = ? AND tasks.id = ?
 `, projectID, taskID)
 
 	var task domain.Task
-	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.BucketKey, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt); err != nil {
+	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
 		}
 		return domain.Task{}, err
 	}
+	task.BucketKey = s.bucketKeyByID(task.BucketID)
 	return task, nil
 }

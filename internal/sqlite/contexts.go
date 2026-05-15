@@ -3,7 +3,6 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"strconv"
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
@@ -25,45 +24,21 @@ func kitContextSettings() domain.ContextSettings {
 	}
 }
 
-func (s *Store) ContextSettings(ctx context.Context) (domain.ContextSettings, error) {
-	// Seed from the embedded kit YAML so missing settings rows (rare —
-	// the bootstrap window before ConfigService.Import populates the
-	// settings table) inherit the canonical values without any
-	// hardcoded {2, 12000} pair living in code. Production reaches this
-	// only between sqlite.Open and the first Import; from then on, the
-	// SELECT below overwrites the seed with the user's bundle.
-	settings := kitContextSettings()
-	rows, err := s.db.QueryContext(ctx, `
-SELECT settings.key, settings.value
-FROM settings
-JOIN config_bundles ON config_bundles.id = settings.bundle_id
-WHERE settings.active = 1
-  AND config_bundles.active = 1
-  AND settings.key IN ('context.default_level', 'context.max_tokens')
-ORDER BY config_bundles.id DESC
-`)
-	if err != nil {
-		return domain.ContextSettings{}, err
+func (s *Store) ContextSettings(_ context.Context) (domain.ContextSettings, error) {
+	// The SQL `settings` table was dropped in migration 020; context
+	// values now flow through the in-memory provider snapshot. The kit
+	// canonical (read from the embedded YAML) seeds the bootstrap
+	// window between sqlite.Open and the first ImportBundle so callers
+	// never see a zero-value response.
+	out := kitContextSettings()
+	cfg := s.Providers().Settings()
+	if cfg.Context.DefaultLevel != 0 {
+		out.DefaultLevel = cfg.Context.DefaultLevel
 	}
-	defer func() { _ = rows.Close() }()
-
-	for rows.Next() {
-		var key, value string
-		if err := rows.Scan(&key, &value); err != nil {
-			return domain.ContextSettings{}, err
-		}
-		parsed, err := strconv.Atoi(value)
-		if err != nil {
-			return domain.ContextSettings{}, domain.NewError(domain.ErrConfigInvalid, "context setting must be numeric", map[string]any{"key": key, "value": value})
-		}
-		switch key {
-		case "context.default_level":
-			settings.DefaultLevel = parsed
-		case "context.max_tokens":
-			settings.MaxTokens = parsed
-		}
+	if cfg.Context.MaxTokens != 0 {
+		out.MaxTokens = cfg.Context.MaxTokens
 	}
-	return settings, rows.Err()
+	return out, nil
 }
 
 func (s *Store) AddContextEntry(ctx context.Context, projectID int64, body string, tokenEstimate int) (domain.ContextEntry, error) {

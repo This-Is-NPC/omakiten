@@ -127,6 +127,17 @@ const (
 	// migration prompts when orphan_count > 0.
 	EventTypeBundleSwapped = "bundle.swapped"
 
+	// EventTypeBundleImported fires after ConfigService.Import (or the
+	// hot-reload path) successfully parses a bundle and rotates the
+	// in-memory provider snapshot. EntityType=system, Payload={path,
+	// hash, workflow_key, workflow_count, persona_count, skill_count,
+	// law_count, template_count}. Distinct from bundle.swapped: the
+	// `imported` event records "a fresh bundle reached the runtime"
+	// (source-of-truth flipped), while `swapped` records "an existing
+	// bundle handle was activated" (e.g. project switch). Hooks subscribe
+	// to bundle.imported to react when configuration content changes.
+	EventTypeBundleImported = "bundle.imported"
+
 	// EventTypeConfirmationGranted fires immediately before the TUI
 	// dispatches a non-empty NotificationAction.Command in response to a
 	// user keystroke. The audit log captures every CLI invocation that
@@ -217,6 +228,7 @@ var KnownEventTypes = []string{
 	EventTypeSolutionViewedTop,
 	EventTypeHookExecuted,
 	EventTypeBundleSwapped,
+	EventTypeBundleImported,
 	EventTypeConfirmationGranted,
 	EventTypeCLIToolCall,
 	EventTypeMCPToolCall,

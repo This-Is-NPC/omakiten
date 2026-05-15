@@ -29,6 +29,7 @@ func TestKnownEventTypesCoversCatalog(t *testing.T) {
 		EventTypeSolutionViewedTop: {},
 		EventTypeHookExecuted:        {},
 		EventTypeBundleSwapped:       {},
+		EventTypeBundleImported:      {},
 		EventTypeConfirmationGranted: {},
 		EventTypeCLIToolCall:         {},
 		EventTypeMCPToolCall:         {},

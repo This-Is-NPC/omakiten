@@ -6,26 +6,24 @@ import (
 	"omakiten/internal/domain"
 )
 
+// ListActiveSkills delegates to the in-memory provider snapshot. The
+// SQL `skills` table was dropped in migration 020; ids are now
+// synthesised from the skill's slot in the bundle (positional, 1-based).
+// Stable within a snapshot; rotates on every Swap — mirrors the legacy
+// behaviour where `skills.local_id` reset on every ImportBundle.
 func (s *Store) ListActiveSkills(ctx context.Context) ([]domain.Skill, error) {
-	rows, err := s.db.QueryContext(ctx, `
-SELECT skills.id, skills.key, skills.name
-FROM skills
-JOIN config_bundles ON config_bundles.id = skills.bundle_id
-WHERE skills.active = 1 AND config_bundles.active = 1
-ORDER BY skills.local_id
-`)
-	if err != nil {
-		return nil, err
+	skills := s.Providers().Skills()
+	out := make([]domain.Skill, 0, len(skills))
+	for i, sk := range skills {
+		out = append(out, domain.Skill{
+			ID:          int64(i + 1),
+			Key:         sk.Slug,
+			Name:        sk.Name,
+			Description: sk.Description,
+			Body:        sk.Body,
+			SourcePath:  sk.SourcePath,
+			IsCustom:    sk.IsCustom,
+		})
 	}
-	defer func() { _ = rows.Close() }()
-
-	var skills []domain.Skill
-	for rows.Next() {
-		var skill domain.Skill
-		if err := rows.Scan(&skill.ID, &skill.Key, &skill.Name); err != nil {
-			return nil, err
-		}
-		skills = append(skills, skill)
-	}
-	return skills, rows.Err()
+	return out, nil
 }

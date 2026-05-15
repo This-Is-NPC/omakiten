@@ -72,23 +72,42 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 }
 
 func (s *Store) ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter) ([]domain.Task, error) {
+	// `workflow_buckets` was dropped in migration 020; the join previously
+	// resolved bucket.key for filter and projection. We now resolve
+	// key→id via the in-memory provider before issuing the SQL so the
+	// query stays a pure tasks-table read, and resolve id→key in Go
+	// after the scan.
 	query := `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at
 FROM tasks
-LEFT JOIN workflow_buckets ON workflow_buckets.id = tasks.bucket_id
 WHERE tasks.project_id = ?`
 	args := []any{projectID}
 	if !filter.IncludeArchived {
 		query += " AND tasks.state = 'active'"
 	}
 	if filter.BucketKey != "" {
-		query += " AND workflow_buckets.key = ?"
-		args = append(args, filter.BucketKey)
+		b, ok := s.Providers().BucketByKey(filter.BucketKey)
+		if !ok {
+			// unknown bucket — return empty result rather than error;
+			// matches the pre-migration JOIN semantics (no rows match).
+			return nil, nil
+		}
+		query += " AND tasks.bucket_id = ?"
+		args = append(args, b.ID)
 	}
 	if len(filter.BucketKeys) > 0 {
-		query += " AND workflow_buckets.key IN (" + placeholders(len(filter.BucketKeys)) + ")"
+		ids := make([]int64, 0, len(filter.BucketKeys))
 		for _, key := range filter.BucketKeys {
-			args = append(args, key)
+			if b, ok := s.Providers().BucketByKey(key); ok {
+				ids = append(ids, b.ID)
+			}
+		}
+		if len(ids) == 0 {
+			return nil, nil
+		}
+		query += " AND tasks.bucket_id IN (" + placeholders(len(ids)) + ")"
+		for _, id := range ids {
+			args = append(args, id)
 		}
 	}
 	if len(filter.Priorities) > 0 {
@@ -108,9 +127,10 @@ WHERE tasks.project_id = ?`
 	var tasks []domain.Task
 	for rows.Next() {
 		var task domain.Task
-		if err := rows.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.BucketKey, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt); err != nil {
+		if err := rows.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt); err != nil {
 			return nil, err
 		}
+		task.BucketKey = s.bucketKeyByID(task.BucketID)
 		tasks = append(tasks, task)
 	}
 	return tasks, rows.Err()
@@ -164,15 +184,12 @@ func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBuc
 		return domain.Task{}, err
 	}
 
-	targetBucketID, err := activeBucketIDTx(ctx, tx, targetBucketKey)
+	targetBucketID, err := s.activeBucketID(ctx, targetBucketKey)
 	if err != nil {
 		return domain.Task{}, err
 	}
 
-	currentBucketKey, err := bucketKeyByIDTx(ctx, tx, currentBucketID)
-	if err != nil {
-		return domain.Task{}, err
-	}
+	currentBucketKey := s.bucketKeyByID(currentBucketID)
 
 	row := tx.QueryRowContext(ctx, `
 UPDATE tasks SET bucket_id = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND id = ?
@@ -263,19 +280,19 @@ func scanTask(row *sql.Row, bucketKey string) (domain.Task, error) {
 
 func (s *Store) taskByID(ctx context.Context, projectID, taskID int64) (domain.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at
 FROM tasks
-LEFT JOIN workflow_buckets ON workflow_buckets.id = tasks.bucket_id
 WHERE tasks.project_id = ? AND tasks.id = ?
 `, projectID, taskID)
 
 	var task domain.Task
-	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.BucketKey, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt); err != nil {
+	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
 		}
 		return domain.Task{}, err
 	}
+	task.BucketKey = s.bucketKeyByID(task.BucketID)
 	return task, nil
 }
 

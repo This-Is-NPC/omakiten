@@ -2,96 +2,50 @@ package sqlite
 
 import (
 	"context"
-	"fmt"
 
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
 
+// ListActivePersonas delegates to the in-memory provider snapshot. The
+// SQL `personas` table was dropped in migration 020; ids are now
+// synthesised from the persona's slot in the bundle so older callers
+// that filter by id keep working (the ids are stable within a snapshot
+// but rotate on every Swap, which mirrors the previous behaviour of
+// `personas.local_id` resetting on every ImportBundle).
 func (s *Store) ListActivePersonas(ctx context.Context) ([]domain.Persona, error) {
-	rows, err := s.db.QueryContext(ctx, `
-SELECT personas.id, personas.key, personas.name
-FROM personas
-JOIN config_bundles ON config_bundles.id = personas.bundle_id
-WHERE personas.active = 1 AND config_bundles.active = 1
-ORDER BY personas.local_id
-`)
-	if err != nil {
-		return nil, err
+	personas := s.Providers().Personas()
+	skills := s.Providers().Skills()
+	skillIDBySlug := make(map[string]int64, len(skills))
+	for i, sk := range skills {
+		skillIDBySlug[sk.Slug] = int64(i + 1)
 	}
-	defer func() { _ = rows.Close() }()
-
-	var personas []domain.Persona
-	for rows.Next() {
-		var persona domain.Persona
-		if err := rows.Scan(&persona.ID, &persona.Key, &persona.Name); err != nil {
-			return nil, err
-		}
-		personas = append(personas, persona)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	if len(personas) == 0 {
-		return personas, nil
-	}
-	personaIDs := make([]int64, len(personas))
+	out := make([]domain.Persona, 0, len(personas))
 	for i, p := range personas {
-		personaIDs[i] = p.ID
+		out = append(out, toDomainPersona(p, int64(i+1), skillIDBySlug))
 	}
-	skillsByPersona, err := s.personaSkillsByIDs(ctx, personaIDs)
-	if err != nil {
-		return nil, err
-	}
-	for index := range personas {
-		bundle := skillsByPersona[personas[index].ID]
-		personas[index].SkillIDs = bundle.ids
-		personas[index].SkillKeys = bundle.keys
-	}
-	return personas, nil
+	return out, nil
 }
 
-type personaSkillBundle struct {
-	ids  []int64
-	keys []string
-}
-
-// personaSkillsByIDs replaces the per-persona N+1 with a single query that
-// fans out the join across every persona. The result is grouped server-side
-// (ORDER BY persona_id, local_id) so the in-memory grouping just appends as
-// it walks the rows.
-func (s *Store) personaSkillsByIDs(ctx context.Context, personaIDs []int64) (map[int64]personaSkillBundle, error) {
-	out := map[int64]personaSkillBundle{}
-	if len(personaIDs) == 0 {
-		return out, nil
-	}
-	args := make([]any, len(personaIDs))
-	for i, id := range personaIDs {
-		args[i] = id
-	}
-	query := fmt.Sprintf(`
-SELECT persona_skills.persona_id, skills.id, skills.key
-FROM persona_skills
-JOIN skills ON skills.id = persona_skills.skill_id
-WHERE persona_skills.persona_id IN (%s) AND skills.active = 1
-ORDER BY persona_skills.persona_id, skills.local_id
-`, placeholders(len(personaIDs)))
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-
-	for rows.Next() {
-		var personaID, skillID int64
-		var key string
-		if err := rows.Scan(&personaID, &skillID, &key); err != nil {
-			return nil, err
+func toDomainPersona(p config.Persona, id int64, skillIDBySlug map[string]int64) domain.Persona {
+	skillKeys := append([]string(nil), p.Skills...)
+	lawKeys := append([]string(nil), p.Laws...)
+	skillIDs := make([]int64, 0, len(p.Skills))
+	for _, slug := range p.Skills {
+		if id, ok := skillIDBySlug[slug]; ok {
+			skillIDs = append(skillIDs, id)
 		}
-		bundle := out[personaID]
-		bundle.ids = append(bundle.ids, skillID)
-		bundle.keys = append(bundle.keys, key)
-		out[personaID] = bundle
 	}
-	return out, rows.Err()
+	return domain.Persona{
+		ID:          id,
+		Key:         p.Slug,
+		Name:        p.Name,
+		Description: p.Description,
+		Body:        p.Body,
+		SkillIDs:    skillIDs,
+		SkillKeys:   skillKeys,
+		LawKeys:     lawKeys,
+		SourcePath:  p.SourcePath,
+		IsCustom:    p.IsCustom,
+	}
 }

@@ -28,27 +28,21 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store2.Close() })
 
-	// Sanity: the Phase 1 columns from 002_entities.sql must exist on the
-	// reopened DB.
-	rows, err := store2.db.QueryContext(ctx, "PRAGMA table_info(skills)")
-	if err != nil {
-		t.Fatalf("PRAGMA table_info(skills) error = %v", err)
-	}
-	defer func() { _ = rows.Close() }()
-	cols := map[string]bool{}
-	for rows.Next() {
-		var cid int
-		var name, ctype string
-		var notnull, pk int
-		var dflt any
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			t.Fatalf("Scan() error = %v", err)
+	// Sanity: every config table dropped by migration 020 must stay
+	// dropped on a fresh open. Idempotent runs of the migration set
+	// must converge on the same schema; a regression that re-creates
+	// any of these would let stale rows reappear after a config edit.
+	for _, dropped := range []string{
+		"skills", "personas", "persona_skills", "laws",
+		"workflows", "workflow_buckets", "workflow_transitions",
+		"settings", "config_bundles",
+	} {
+		var count int
+		if err := store2.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name=?`, dropped).Scan(&count); err != nil {
+			t.Fatalf("sqlite_master lookup for %q error = %v", dropped, err)
 		}
-		cols[name] = true
-	}
-	for _, want := range []string{"description", "body", "source_path"} {
-		if !cols[want] {
-			t.Fatalf("skills table missing column %q after reopen", want)
+		if count != 0 {
+			t.Fatalf("dropped config table %q reappeared after migrations re-run", dropped)
 		}
 	}
 }
