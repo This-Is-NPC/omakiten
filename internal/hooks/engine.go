@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"omakiten/internal/config"
@@ -34,7 +35,10 @@ type Engine struct {
 	//   - engine projectID == 0  -> catch-all (legacy single-project)
 	//   - event projectID == 0   -> system event, reaches every engine
 	//   - otherwise              -> engine.projectID must equal event.ProjectID
-	projectID int64
+	// atomic.Int64 so SetProjectID is safe to call from a different
+	// goroutine than dispatch (the composition root sets it before
+	// Start, but the contract should not rely on caller ordering).
+	projectID atomic.Int64
 
 	mu  sync.Mutex
 	sub events.Subscription
@@ -52,9 +56,10 @@ func NewEngine(hooks []Hook, registry *ActionRegistry, settings config.EventsSet
 // calls this once after construction so events targeting other
 // projects skip this engine entirely. Zero disables the filter — the
 // legacy single-project boot path leaves the value at zero and
-// receives every event the bus emits.
+// receives every event the bus emits. Safe to call concurrently with
+// dispatch: projectID is atomic.
 func (e *Engine) SetProjectID(id int64) {
-	e.projectID = id
+	e.projectID.Store(id)
 }
 
 // Start subscribes to the bus. Idempotent: a second call is a no-op
@@ -148,10 +153,11 @@ func (e *Engine) run(parent context.Context, idx int, hook Hook, action Action, 
 // runtimes (engine.projectID == 0) and system events (ev.ProjectID ==
 // 0) keep flowing the way they always have.
 func (e *Engine) matchesProject(ev domain.Event) bool {
-	if e.projectID == 0 || ev.ProjectID == 0 {
+	pid := e.projectID.Load()
+	if pid == 0 || ev.ProjectID == 0 {
 		return true
 	}
-	return e.projectID == ev.ProjectID
+	return pid == ev.ProjectID
 }
 
 func matches(hook Hook, ev domain.Event) bool {

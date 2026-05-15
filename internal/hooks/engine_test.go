@@ -244,6 +244,38 @@ func TestEngineWithZeroProjectIDCatchesAll(t *testing.T) {
 	}
 }
 
+// TestEngineSystemEventReachesScopedEngine pins the second branch of
+// matchesProject: a project-scoped engine still receives events
+// emitted with ProjectID==0 (system events like bundle.swapped /
+// hook.executed). The catch-all rule lives on the event side, not
+// just on the engine side.
+func TestEngineSystemEventReachesScopedEngine(t *testing.T) {
+	bus := events.NewInProcessBus(defaultSettings())
+
+	registry := NewActionRegistry()
+	var wg sync.WaitGroup
+	mu := sync.Mutex{}
+	count := 0
+	registry.Register(signalAction{name: "test", wg: &wg, ran: nil, mu: &mu, counter: &count})
+
+	engine := NewEngine([]Hook{{On: domain.EventTypeBundleSwapped, Do: "test"}}, registry, defaultSettings(), &fakeRecorder{})
+	engine.SetProjectID(42)
+	engine.Start(bus)
+	defer engine.Stop()
+
+	wg.Add(1)
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeBundleSwapped, ProjectID: 0}); err != nil {
+		t.Fatalf("Publish system event: %v", err)
+	}
+	wg.Wait()
+	mu.Lock()
+	got := count
+	mu.Unlock()
+	if got != 1 {
+		t.Fatalf("scoped engine count for system event = %d, want 1 (catch-all on event-side)", got)
+	}
+}
+
 type errorAction struct{ name string }
 
 func (e errorAction) Name() string { return e.name }
