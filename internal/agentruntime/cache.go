@@ -100,6 +100,15 @@ type BundleCache struct {
 	// across projects: the store knows the per-project root from
 	// SourcePath, so the editor is set per-runtime, not per-cache.
 	cs *configstore.Adapter
+
+	// selectorMu guards selector — SetProjectSelector may be called
+	// from the boot path while another goroutine triggers rebuild.
+	selectorMu sync.RWMutex
+	// selector is threaded into every Service the cache builds so a
+	// mtime-driven rebuild does not lose the boot-resolved
+	// project/CWD. Zero value when no selector was installed (rare
+	// boot shapes that resolve project per call).
+	selector agent.ProjectSelector
 }
 
 // NewBundleCache constructs an empty cache. Open seeds the first entry
@@ -111,6 +120,26 @@ func NewBundleCache(store *sqlite.Store, bus events.Bus, cs *configstore.Adapter
 		bus:     bus,
 		cs:      cs,
 	}
+}
+
+// SetProjectSelector installs the project selector every subsequent
+// build (Resolve on miss, Reload, rebuild on mtime change) applies to
+// the constructed agent.Service. Without this, a mtime-triggered
+// rebuild rotates to a service with an empty selector and calls that
+// rely on the boot-resolved project / CWD silently lose context. The
+// composition root calls this once after Open resolves the runtime
+// project; tests that drive the cache directly may leave it unset and
+// build services with a zero selector.
+func (c *BundleCache) SetProjectSelector(selector agent.ProjectSelector) {
+	c.selectorMu.Lock()
+	c.selector = selector
+	c.selectorMu.Unlock()
+}
+
+func (c *BundleCache) projectSelector() agent.ProjectSelector {
+	c.selectorMu.RLock()
+	defer c.selectorMu.RUnlock()
+	return c.selector
 }
 
 // Get returns the cached runtime for projectID without consulting the
@@ -153,6 +182,10 @@ func (c *BundleCache) Resolve(ctx context.Context, projectID int64, configPath s
 		if info.ModTime().Equal(entry.Mtime) {
 			return entry, nil
 		}
+		// Mtime changed — rebuild against the resolved path. Callers
+		// that passed configPath="" still get the correct rebuild
+		// because we route the cached SourcePath through.
+		return c.rebuild(ctx, projectID, path)
 	}
 
 	return c.rebuild(ctx, projectID, configPath)
@@ -169,12 +202,17 @@ func (c *BundleCache) Reload(ctx context.Context, projectID int64, configPath st
 // Install seeds the cache with a runtime that was built outside the
 // cache (e.g. by Open during boot). The Mtime is captured here so the
 // next Resolve can stat-detect changes against the right baseline.
+//
+// Engine.Stop runs after the swap and OUTSIDE the cache mutex —
+// mirrors rebuild's pattern so a slow drain (wg.Wait in Stop) cannot
+// deadlock concurrent Resolves.
 func (c *BundleCache) Install(projectID int64, runtime *ProjectRuntime) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	old, hadOld := c.entries[projectID]
+	old := c.entries[projectID]
 	c.entries[projectID] = runtime
-	if hadOld && old != nil && old.HooksEngine != nil {
+	c.mu.Unlock()
+
+	if old != nil && old.HooksEngine != nil && old != runtime {
 		old.HooksEngine.Stop()
 	}
 }
@@ -202,7 +240,7 @@ func (c *BundleCache) rebuild(ctx context.Context, projectID int64, configPath s
 		return nil, fmt.Errorf("bundle cache: configPath is required for project %d", projectID)
 	}
 
-	runtime, err := buildProjectRuntime(ctx, c.store, c.cs, c.bus, configPath, projectID)
+	runtime, err := buildProjectRuntime(ctx, c.store, c.cs, c.bus, configPath, projectID, c.projectSelector())
 	if err != nil {
 		return nil, err
 	}
@@ -218,19 +256,22 @@ func (c *BundleCache) rebuild(ctx context.Context, projectID int64, configPath s
 	return runtime, nil
 }
 
-// buildProjectRuntime is the single point of bundle inflation. Open
+// BuildProjectRuntime is the single point of bundle inflation. Open
 // uses it for the boot path; BundleCache.rebuild calls it on
-// stat-detected changes and explicit reloads. Keeping the
-// construction here means both code paths produce identical runtimes
-// — diff drift between boot and reload was the bug that motivated
-// the Phase 3a refactor.
+// stat-detected changes and explicit reloads; the CLI composition
+// root reuses it via cache.Resolve so a single construction path
+// produces identical runtimes everywhere — drift between boot and
+// reload was the bug that motivated the Phase 3a refactor.
 //
-// applyStoreKnobs controls whether the freshly-parsed bundle's runtime
-// knobs (busy_timeout, activity-log retention, events policy) are
-// pushed into the Store. Boot passes true; reloads pass true too —
-// the user may have changed any of them in YAML and Phase 3a is
-// supposed to land plumbing without altering observable behaviour.
-func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configstore.Adapter, bus events.Bus, configPath string, projectID int64) (*ProjectRuntime, error) {
+// selector flows into the constructed agent.Service so calls without
+// explicit project arguments still see the boot-resolved project /
+// CWD; pass a zero value when callers always provide selectors per
+// call.
+func BuildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configstore.Adapter, bus events.Bus, configPath string, projectID int64, selector agent.ProjectSelector) (*ProjectRuntime, error) {
+	return buildProjectRuntime(ctx, store, cs, bus, configPath, projectID, selector)
+}
+
+func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configstore.Adapter, bus events.Bus, configPath string, projectID int64, selector agent.ProjectSelector) (*ProjectRuntime, error) {
 	bundle, _, enumRegistry, err := app.NewConfigService(store, cs).Import(ctx, configPath)
 	if err != nil {
 		return nil, err
@@ -267,7 +308,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		engine.Start(bus)
 	}
 
-	svc := agent.NewService(store, agent.ProjectSelector{})
+	svc := agent.NewService(store, selector)
 	svc.SetRegistry(enumRegistry)
 	svc.SetTaskTemplateLookup(taskTemplateLookup(bundle))
 	svc.SetTemplateCatalog(templateCatalog(bundle))

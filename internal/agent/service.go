@@ -194,6 +194,13 @@ func (s *Service) SetProjectSelector(selector ProjectSelector) {
 	s.selector = selector
 }
 
+// Selector returns the service's default ProjectSelector. Exposed for
+// tests that assert the boot-resolved selector survives BundleCache
+// rebuilds.
+func (s *Service) Selector() ProjectSelector {
+	return s.selector
+}
+
 // SetSettings replaces the service's runtime knobs with values from the
 // active bundle. The runtime composition root invokes this exactly once
 // at startup; the values flow from `bundle.Config.MCP.*`. The agent

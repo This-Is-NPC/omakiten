@@ -114,13 +114,6 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 	bus := events.NewInProcessBus(preview.Config.Events)
 
-	cache := NewBundleCache(store, bus, cs)
-	rt, err := cache.Resolve(ctx, opts.ProjectID, configPath)
-	if err != nil {
-		_ = store.Close()
-		return nil, err
-	}
-
 	cwd := opts.CWD
 	if cwd == "" {
 		cwd, err = os.Getwd()
@@ -129,17 +122,17 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 			return nil, err
 		}
 	}
-	// Boot path threads the resolved project selector into the
-	// service. The cache always builds a service with a zero selector;
-	// boot overwrites it once because the runtime is bound to a single
-	// project for its lifetime (Phase 3a invariant).
-	rt.Service.SetProjectSelector(agent.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
-
-	// Phase 3f: tag synonyms + similar-task stopwords now live on each
-	// service instance (no process globals). Wire the per-project values
-	// from the resolved ProjectRuntime into the agent.Service so future
-	// requests routed through the cache see disjoint tables per project.
-	rt.Service.SetStopwords(rt.Bundle.Config.Search.Stopwords)
+	// Cache owns the selector so every rebuild (mtime change, explicit
+	// Reload) constructs services that retain the boot-resolved
+	// project / CWD. SetProjectSelector must precede Resolve so the
+	// initial build picks it up.
+	cache := NewBundleCache(store, bus, cs)
+	cache.SetProjectSelector(agent.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
+	rt, err := cache.Resolve(ctx, opts.ProjectID, configPath)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 
 	r := &Runtime{
 		store:              store,
