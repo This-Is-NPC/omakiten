@@ -38,7 +38,7 @@ func newDeleteCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				event, err := app.NewTaskServiceFromStore(rt.store, rt.registry).Delete(ctx, project, taskID)
+				event, err := app.NewTaskServiceFromStore(rt.store, rt.activeRegistry()).Delete(ctx, project, taskID)
 				if err != nil {
 					return nil, err
 				}
@@ -72,7 +72,7 @@ func newArchiveCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				task, _, err := app.NewTaskServiceFromStore(rt.store, rt.registry).Archive(ctx, project, taskID)
+				task, _, err := app.NewTaskServiceFromStore(rt.store, rt.activeRegistry()).Archive(ctx, project, taskID)
 				if err != nil {
 					return nil, err
 				}
@@ -105,7 +105,7 @@ func newUnarchiveCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				task, _, err := app.NewTaskServiceFromStore(rt.store, rt.registry).Unarchive(ctx, project, taskID)
+				task, _, err := app.NewTaskServiceFromStore(rt.store, rt.activeRegistry()).Unarchive(ctx, project, taskID)
 				if err != nil {
 					return nil, err
 				}

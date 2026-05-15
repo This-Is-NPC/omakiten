@@ -54,7 +54,7 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 					// label fallback covers the human-friendly path.
 					// Both routes funnel through registry validation —
 					// the service layer never sees raw user input.
-					value, err := parsePriority(priority, rt.registry)
+					value, err := parsePriority(priority, rt.activeRegistry())
 					if err != nil {
 						return nil, err
 					}
@@ -64,7 +64,7 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 					update.BucketKey = bucket
 				}
 
-				task, err := app.NewTaskServiceFromStore(rt.store, rt.registry).Edit(ctx, project, taskID, update)
+				task, err := app.NewTaskServiceFromStore(rt.store, rt.activeRegistry()).Edit(ctx, project, taskID, update)
 				if err != nil {
 					return nil, err
 				}

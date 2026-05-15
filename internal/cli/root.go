@@ -11,6 +11,7 @@ import (
 
 	"omakiten/internal/activity"
 	"omakiten/internal/agent"
+	"omakiten/internal/agentruntime"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
@@ -46,6 +47,18 @@ type runtime struct {
 	hooksEngine        *hooks.Engine
 	notificationAction *actions.NotificationShowAction
 	registry           *domain.EnumRegistry
+	// cache is the per-project BundleCache the CLI invocation seeds at
+	// boot. Phase 3c keeps the cache size at 1 for the single-shot CLI
+	// path (one --project per invocation), but exposing the cache lets
+	// MCP-style multi-project surfaces re-resolve through the same
+	// handle as the agentruntime composition root. Subcommands that
+	// want a project-aware bundle call ResolveProjectRuntime.
+	cache *agentruntime.BundleCache
+	// projectID is the cache key for the boot-seeded entry — 0 when no
+	// --project flag was supplied (the default fallback used by every
+	// pre-3c command). ResolveProjectRuntime uses this as the lookup
+	// key when callers do not specify their own.
+	projectID int64
 }
 
 func (r *runtime) WithActivityRepo(ctx context.Context) context.Context {
@@ -75,7 +88,7 @@ func (r *runtime) skillService() *app.SkillService {
 
 func (r *runtime) lawService() *app.LawService {
 	store := configstore.New()
-	return app.NewLawService(r.store, r.bundleEditor(), store, store, r.registry)
+	return app.NewLawService(r.store, r.bundleEditor(), store, store, r.activeRegistry())
 }
 
 func (r *runtime) personaService() *app.PersonaService {
@@ -84,7 +97,20 @@ func (r *runtime) personaService() *app.PersonaService {
 }
 
 func (r *runtime) contextService() *app.ContextService {
-	return app.NewContextService(r.store, r.store, r.store, r.store, r.store, r.tokenCounter(), r.registry)
+	return app.NewContextService(r.store, r.store, r.store, r.store, r.store, r.tokenCounter(), r.activeRegistry())
+}
+
+// activeRegistry returns the EnumRegistry from the BundleCache's active
+// ProjectRuntime, falling back to the boot-time registry field for
+// non-cache code paths (tests that skip materializeConfig, the bootstrap
+// window between sqlite.Open and cache.Install). Centralising the
+// lookup means every service helper goes through the cache transparently
+// without churn at every callsite.
+func (r *runtime) activeRegistry() *domain.EnumRegistry {
+	if pr := r.ProjectRuntime(); pr != nil && pr.EnumRegistry != nil {
+		return pr.EnumRegistry
+	}
+	return r.registry
 }
 
 func (r *runtime) tokenCounter() token.Counter {
@@ -248,9 +274,79 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		engine.Start(bus)
 		rt.bus = bus
 		rt.hooksEngine = engine
+
+		// Phase 3c: seed the BundleCache with the resolved bundle so
+		// subcommands consume the cache uniformly (today's single-shot
+		// CLI fits cache size = 1; future multi-project surfaces add
+		// entries without changing the consumer contract).
+		rt.cache = agentruntime.NewBundleCache(store, bus, cs)
+		rt.projectID = o.projectID
+		bundleCopy := bundle
+		rt.cache.Install(o.projectID, &agentruntime.ProjectRuntime{
+			Bundle:             &bundleCopy,
+			HooksEngine:        engine,
+			ActionRegistry:     registry,
+			NotificationAction: notificationAction,
+			EnumRegistry:       enumRegistry,
+			NotificationSnapshot: actions.NotificationBundleSnapshot{Notifications: bundle.Notifications},
+			TagSynonyms:        copyStringMapCLI(bundle.Config.TagSynonyms),
+			Stopwords:          append([]string(nil), bundle.Config.Search.Stopwords...),
+			SourcePath:         configPath,
+		})
 	}
 
 	return rt, nil
+}
+
+// copyStringMapCLI clones a string→string map. Inlined here to avoid
+// exposing the helper from agentruntime; the function is trivial and
+// stays internal to the CLI composition root.
+func copyStringMapCLI(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+// ResolveProjectRuntime returns the ProjectRuntime for the supplied
+// project selector, consulting the BundleCache the runtime seeded at
+// boot. When selector zero, returns the entry that was Installed for
+// the active --project (or the default 0 key when no flag was
+// supplied). Used by subcommands that want a project-aware bundle
+// handle without re-implementing the cache lookup.
+func (r *runtime) ResolveProjectRuntime(ctx context.Context, projectID int64) (*agentruntime.ProjectRuntime, error) {
+	if r.cache == nil {
+		return nil, fmt.Errorf("cli runtime: bundle cache is not initialised; open() must run with materializeConfig=true")
+	}
+	if projectID == 0 {
+		projectID = r.projectID
+	}
+	if pr := r.cache.Get(projectID); pr != nil {
+		return pr, nil
+	}
+	// Fall back to the boot-seeded entry — Phase 3c does not yet
+	// reparse a different project's bundle from the subcommand surface;
+	// that arrives in Phase 3e/3f. Returning the active entry keeps the
+	// surface uniform for callers.
+	if pr := r.cache.Get(r.projectID); pr != nil {
+		return pr, nil
+	}
+	return nil, fmt.Errorf("cli runtime: no ProjectRuntime cached for project %d", projectID)
+}
+
+// ProjectRuntime returns the active boot-seeded ProjectRuntime. Panics
+// when the runtime was opened with materializeConfig=false (rare boot
+// shape that skips bundle inflation) — callers always reach this from
+// a subcommand that requires a wired runtime.
+func (r *runtime) ProjectRuntime() *agentruntime.ProjectRuntime {
+	if r.cache == nil {
+		return nil
+	}
+	return r.cache.Get(r.projectID)
 }
 
 // buildHookEntries lifts user-facing HookSpec entries into the
