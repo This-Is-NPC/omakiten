@@ -13,22 +13,39 @@ import (
 	"omakiten/internal/paths"
 )
 
-// reloadBundle re-imports the bundle at path, then updates every
-// bundle-derived field on the Model in place. The DB swap (ConfigService.
-// Import) runs first; if it errors nothing on the Model changes so the caller
-// can surface the failure and let the user retry. Once Import succeeds the
-// editor is repointed, the registry is replaced, refresh() re-queries the
-// task snapshot, and a bundle.swapped event is emitted so the hooks engine
-// can react (e.g., surface the orphan-migration notification when the new
+// reloadBundle re-resolves the bundle at path through the BundleCache
+// (Phase 3e) and rewires every bundle-derived field on the Model in
+// place. The cache's Reload performs a provider.Swap + bundle.imported
+// emit — no SQL config-write path is involved. On error nothing on the
+// Model changes so the caller can surface the failure and let the user
+// retry. bundle.swapped continues to fire so the hooks engine can
+// react (e.g., the orphan-migration notification when the new
 // workflow lost buckets the previous one had).
+//
+// Repositories.Cache nil falls back to the legacy ConfigService.Import
+// path so tests that have not been updated keep working. Production
+// always wires the cache via cli/tui.go.
 func (m *Model) reloadBundle(path string) error {
 	fromWorkflow := m.workflow.Key
 	fromPath := m.repos.Editor.Path()
 
-	cfgSvc := app.NewConfigService(m.repos.Config, m.repos.BundleStore)
-	bundle, _, registry, err := cfgSvc.Import(m.ctx, path)
-	if err != nil {
-		return err
+	var bundle config.Bundle
+	var registry *domain.EnumRegistry
+	if m.repos.Cache != nil {
+		pr, err := m.repos.Cache.Reload(m.ctx, m.repos.ProjectID, path)
+		if err != nil {
+			return err
+		}
+		bundle = *pr.Bundle
+		registry = pr.EnumRegistry
+	} else {
+		cfgSvc := app.NewConfigService(m.repos.Config, m.repos.BundleStore)
+		b, _, reg, err := cfgSvc.Import(m.ctx, path)
+		if err != nil {
+			return err
+		}
+		bundle = b
+		registry = reg
 	}
 
 	theme, err := loadActiveTheme(bundle, path)

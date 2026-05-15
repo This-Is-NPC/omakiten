@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/agentruntime"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
@@ -75,6 +76,19 @@ type Repositories struct {
 	DBPath       string
 	Version      string
 	RepoLocalDir string
+
+	// Cache is the per-project BundleCache the runtime seeded at boot.
+	// reloadBundle calls Cache.Reload instead of ConfigService.Import so
+	// hot-reload skips the SQL config-write path (which migration 020
+	// already turned into a no-op anyway). nil falls back to the legacy
+	// ConfigService.Import code path for tests that have not been
+	// updated to thread the cache through.
+	Cache *agentruntime.BundleCache
+	// ProjectID is the cache key the runtime installed the active
+	// ProjectRuntime under. reloadBundle passes it to Cache.Reload so
+	// the rotated snapshot lands on the same key the rest of the model
+	// is reading from.
+	ProjectID int64
 }
 
 // Model is the root Bubble Tea model for the TUI. It aggregates state that
