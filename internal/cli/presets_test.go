@@ -44,6 +44,19 @@ func TestCLIInitPresetCopiesFlatConfigToGitRoot(t *testing.T) {
 		t.Fatalf("preset config = %s, want izakaya", string(data))
 	}
 
+	// Re-running with the same preset and unmodified file is now an idempotent
+	// no-op (SeedPreset compares bytes against the embedded preset).
+	idempotent := runCLI(t, dbPath, globalConfigPath, "init", "--preset", "izakaya", "--name", "Project", "--slug", "project")
+	if !strings.Contains(idempotent, `"no_op":true`) {
+		t.Fatalf("idempotent init output = %s, want preset.no_op:true", idempotent)
+	}
+
+	// Tampering with the preset config divorces it from the embed; a re-init
+	// without --preset-force now hits the legacy validation_error.
+	tamperPath := filepath.Join(projectRoot, ".omakiten", "config", "izakaya.yaml")
+	if err := os.WriteFile(tamperPath, []byte("# tampered\n"), 0o644); err != nil {
+		t.Fatalf("tamper write error = %v", err)
+	}
 	runCLIExpectError(t, dbPath, globalConfigPath, "validation_error", "init", "--preset", "izakaya", "--name", "Project", "--slug", "project")
 	runCLI(t, dbPath, globalConfigPath, "init", "--preset", "omakase", "--preset-force", "--name", "Project", "--slug", "project")
 }

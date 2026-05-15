@@ -12,7 +12,6 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/paths"
 )
 
 func newInitCommand(opts *runtimeOptions) *cobra.Command {
@@ -51,15 +50,17 @@ func newInitCommand(opts *runtimeOptions) *cobra.Command {
 					if root == "" {
 						projectRoot = installRoot
 					}
-					preset, path, err := config.CopyPreset(presetName, filepath.Join(installRoot, ".omakiten"), presetForce)
+					res, err := config.SeedPreset(config.ScopeLocal, presetName, presetForce, config.SeedOptions{LocalRoot: installRoot})
 					if err != nil {
 						return nil, presetCLIError(err)
 					}
-				projectConfigDir := filepath.Join(installRoot, ".omakiten", "config")
-				if err := paths.SetActiveConfigInDir(projectConfigDir, preset.Name+".yaml"); err != nil {
-					return nil, err
-				}
-					presetResult = map[string]any{"name": preset.Name, "title": preset.Title, "path": path, "root": installRoot}
+					presetResult = map[string]any{"name": res.Preset.Name, "title": res.Preset.Title, "path": res.Path, "root": installRoot}
+					if res.NoOp {
+						presetResult["no_op"] = true
+					}
+					if res.Overwritten {
+						presetResult["overwritten"] = true
+					}
 				}
 
 				rt, err := opts.open(ctx, true)
