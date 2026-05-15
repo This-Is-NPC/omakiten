@@ -207,31 +207,19 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	return validateWorkflows(bundle.Workflows, bundle.Config.Workflow.Active)
 }
 
-// validateMCPCommands enforces that every persona/law/template slug referenced
-// inside `mcp_commands` resolves to a loaded entity. Per-command entries may
-// declare `laws:` (added) and `laws_disabled:` (removed from global); both
-// must be slugs of loaded laws. The reserved `global` key only contributes
-// laws — its persona/templates fields are tolerated but unused.
+// validateMCPCommands enforces structural rules inside `mcp_commands`: empty
+// command name and same-slug-in-both-laws-and-laws_disabled are hard errors
+// because they encode a typo / contradiction the user cannot consciously
+// want. Slug refs (persona/templates/laws) are NOT validated here — they
+// are scanned by warnMCPCommandRefs and surfaced as bundle.Warnings so a
+// missing persona or law file does not block the runtime from starting.
 func validateMCPCommands(bundle Bundle, personaSet, lawSet, templateSet map[string]struct{}) error {
+	_ = personaSet
+	_ = lawSet
+	_ = templateSet
 	for name, spec := range bundle.MCPCommands {
 		if strings.TrimSpace(name) == "" {
 			return fmt.Errorf("mcp_commands: empty command name")
-		}
-		if name != MCPCommandsGlobalKey {
-			if persona := strings.TrimSpace(spec.Persona); persona != "" {
-				if _, ok := personaSet[persona]; !ok {
-					return fmt.Errorf("mcp_commands.%s persona: ref %q has no matching persona file", name, persona)
-				}
-			}
-			if err := validateSlugList("mcp_commands."+name+".templates", spec.Templates, templateSet, "template"); err != nil {
-				return err
-			}
-		}
-		if err := validateSlugList("mcp_commands."+name+".laws", spec.Laws, lawSet, "law"); err != nil {
-			return err
-		}
-		if err := validateSlugList("mcp_commands."+name+".laws_disabled", spec.LawsDisabled, lawSet, "law"); err != nil {
-			return err
 		}
 		if name != MCPCommandsGlobalKey {
 			seen := map[string]struct{}{}
@@ -246,6 +234,45 @@ func validateMCPCommands(bundle Bundle, personaSet, lawSet, templateSet map[stri
 		}
 	}
 	return nil
+}
+
+// warnMCPCommandRefs collects soft warnings for every slug inside mcp_commands
+// that has no matching loaded entity. Returns an empty slice on a clean
+// bundle. Called from loader.go after ValidateBundle so the warnings ride
+// along on the loaded bundle without aborting the load.
+func warnMCPCommandRefs(bundle Bundle, personaSet, lawSet, templateSet map[string]struct{}) []SourceWarning {
+	var warns []SourceWarning
+	missingRef := func(scope, kind, slug string) {
+		warns = append(warns, SourceWarning{Slug: slug, Message: fmt.Sprintf("%s: ref %q has no matching %s file", scope, slug, kind)})
+	}
+	for name, spec := range bundle.MCPCommands {
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+		if name != MCPCommandsGlobalKey {
+			if persona := strings.TrimSpace(spec.Persona); persona != "" {
+				if _, ok := personaSet[persona]; !ok {
+					missingRef("mcp_commands."+name+".persona", "persona", persona)
+				}
+			}
+			for _, slug := range spec.Templates {
+				if _, ok := templateSet[slug]; !ok {
+					missingRef("mcp_commands."+name+".templates", "template", slug)
+				}
+			}
+		}
+		for _, slug := range spec.Laws {
+			if _, ok := lawSet[slug]; !ok {
+				missingRef("mcp_commands."+name+".laws", "law", slug)
+			}
+		}
+		for _, slug := range spec.LawsDisabled {
+			if _, ok := lawSet[slug]; !ok {
+				missingRef("mcp_commands."+name+".laws_disabled", "law", slug)
+			}
+		}
+	}
+	return warns
 }
 
 // validateMCPSettings enforces that every MCP-shape knob is declared

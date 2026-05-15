@@ -147,11 +147,20 @@ personas: []
 	writeFile(t, filepath.Join(dir, "skills", "go.md"), "---\nname: Go\n---\n")
 	writeFile(t, filepath.Join(dir, "laws", "scope.md"), "---\nseverity: error\n---\nbody\n")
 
-	_, err := LoadBundle(configPath)
-	if err == nil {
-		t.Fatalf("LoadBundle() error = nil, want dangling-ref failure")
+	bundle, err := LoadBundle(configPath)
+	if err != nil {
+		t.Fatalf("LoadBundle() error = %v, want soft load with warning", err)
 	}
-	if !strings.Contains(err.Error(), "no matching file") {
-		t.Fatalf("LoadBundle() error = %v, want 'no matching file'", err)
+	// Soft validation: dangling refs surface as bundle.Warnings instead of
+	// aborting the load. Users are responsible for their own wiring.
+	found := false
+	for _, w := range bundle.Warnings {
+		if strings.Contains(w.Message, "no matching file") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("LoadBundle() warnings = %v, want a 'no matching file' entry", bundle.Warnings)
 	}
 }

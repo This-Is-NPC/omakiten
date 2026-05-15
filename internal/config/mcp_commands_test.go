@@ -170,12 +170,19 @@ mcp_commands:
     persona: ghost
 `)
 
-	_, err := LoadBundle(configPath)
-	if err == nil {
-		t.Fatal("LoadBundle() error = nil, want dangling-persona failure")
+	bundle, err := LoadBundle(configPath)
+	if err != nil {
+		t.Fatalf("LoadBundle() error = %v, want soft load with warning", err)
 	}
-	if !strings.Contains(err.Error(), "no matching persona file") {
-		t.Fatalf("LoadBundle() error = %v, want 'no matching persona file'", err)
+	found := false
+	for _, w := range bundle.Warnings {
+		if strings.Contains(w.Message, "no matching persona file") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("LoadBundle() warnings = %v, want 'no matching persona file' entry", bundle.Warnings)
 	}
 }
 

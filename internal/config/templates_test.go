@@ -111,7 +111,7 @@ func TestLoadTemplatesAllowlistFilters(t *testing.T) {
 	}
 }
 
-func TestLoadTemplatesListedSlugWithoutFileFails(t *testing.T) {
+func TestLoadTemplatesListedSlugWithoutFileWarns(t *testing.T) {
 	dir := t.TempDir()
 	writeTemplateFixture(t, dir)
 	configPath := filepath.Join(dir, "omakiten.yaml")
@@ -120,12 +120,19 @@ func TestLoadTemplatesListedSlugWithoutFileFails(t *testing.T) {
   - missing-template
 `)
 
-	_, err := LoadBundle(configPath)
-	if err == nil {
-		t.Fatal("LoadBundle() error = nil, want missing-template failure")
+	bundle, err := LoadBundle(configPath)
+	if err != nil {
+		t.Fatalf("LoadBundle() error = %v, want soft load with warning", err)
 	}
-	if !strings.Contains(err.Error(), "missing-template") {
-		t.Fatalf("LoadBundle() error = %v, want missing-template mention", err)
+	found := false
+	for _, w := range bundle.Warnings {
+		if strings.Contains(w.Message, "missing-template") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("LoadBundle() warnings = %v, want missing-template mention", bundle.Warnings)
 	}
 }
 
