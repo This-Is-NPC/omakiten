@@ -60,61 +60,33 @@ type Store struct {
 	// broadcast — production wires it from composition root, tests
 	// inherit a nil bus and silently skip the fan-out.
 	bus events.Bus
-	// providers is the in-memory config snapshot the Store delegates
-	// every read-side config query to. Phase 2 of the config refactor
-	// dropped the SQL tables that previously backed these reads
-	// (migration 020); the Store now serves workflow shape, personas,
-	// skills, laws, templates, notifications, and mcp_commands by
-	// reading the active snapshot. Lazily created on first ImportBundle
-	// or via Providers() so tests that never call ImportBundle still
-	// observe a non-nil (empty-bundle) provider set.
+	// snapshot is the value-typed mirror of the active bundle the
+	// app services read through. ImportBundle rotates the pointer on
+	// every successful ingest; the previous snapshot is captured into
+	// previousSnapshot for the orphan-flow which needs the prior
+	// bucket_id ↔ key mapping to classify orphaned tasks across the
+	// swap.
 	//
-	// TRANSITIONAL (Phase 2-bis / task #117): the Store-side providers
-	// are scheduled for deletion. Snapshot() returns a value-typed view
-	// of the same bundle; subsequent commits in the chain wire app
-	// services and the agent layer to consume Snapshot directly, then
-	// drop this field together with bundles.go / personas.go /
-	// skills.go / laws.go and the workflow lookup helpers.
-	providers *config.InMemoryProviders
-	// previousProviders captures the snapshot active immediately before
-	// the most recent ImportBundle. OrphanService uses it to resolve the
-	// `from_bucket_key` for orphaned tasks — the bucket_id stored on
-	// tasks references an id that no longer exists in the new bundle,
-	// but the previous snapshot still knows what key that id mapped to.
-	// nil until the second ImportBundle of the Store's lifetime.
-	previousProviders *config.InMemoryProviders
-	// snapshot is the value-typed mirror of providers' active bundle,
-	// served via Snapshot() to app services that already consume the
-	// Phase 2-bis Snapshot type. ImportBundle rebuilds both providers
-	// and snapshot from the same Bundle so the two views stay
-	// coherent. previousSnapshot mirrors previousProviders for the
-	// orphan flow.
+	// TRANSITIONAL (Phase 2-bis / task #117): ownership of the
+	// per-project snapshot will move to agentruntime.ProjectRuntime in
+	// a follow-up commit. At that point the Store stops carrying any
+	// config state and the SnapshotSource implementation it currently
+	// satisfies moves to ProjectRuntime.
 	snapshot         *config.Snapshot
 	previousSnapshot *config.Snapshot
 }
 
-// Providers returns the in-memory provider set this Store delegates
-// config reads to. The pointer is stable for the Store's lifetime;
-// callers that want to seed a different snapshot use ImportBundle.
-func (s *Store) Providers() *config.InMemoryProviders {
-	if s.providers == nil {
-		s.providers = config.NewInMemoryProviders(config.Bundle{})
-	}
-	return s.providers
-}
-
 // Snapshot returns the value-typed Phase 2-bis Snapshot mirroring the
 // Store's active bundle. Lazily seeded with an empty Snapshot so app
-// services (workflow / context / persona / …) that consume the type at
-// construction still get a non-nil pointer in tests that skip
-// ImportBundle. The pointer is stable until the next ImportBundle
-// (which rotates both providers and snapshot in one call).
+// services that consume the type at construction still get a non-nil
+// pointer in tests that skip ImportBundle. The pointer is stable until
+// the next ImportBundle.
 //
-// TRANSITIONAL: this method lives on the Store only until app services
-// stop relying on the Store as the snapshot source. Subsequent commits
-// in the chain wire agentruntime.ProjectRuntime as the per-project
-// origin and delete this accessor together with the legacy providers
-// fields.
+// TRANSITIONAL: this method lives on the Store only until
+// agentruntime.ProjectRuntime owns the per-project snapshot. The
+// follow-up commit in this chain moves the SnapshotSource
+// implementation off the Store and onto the per-project runtime; from
+// that point the Store stops touching config entirely.
 func (s *Store) Snapshot() *config.Snapshot {
 	if s.snapshot == nil {
 		s.snapshot = config.BuildSnapshot(config.Bundle{})

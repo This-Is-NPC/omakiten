@@ -8,47 +8,13 @@ import (
 	"omakiten/internal/domain"
 )
 
-// ActiveWorkflow delegates to the in-memory provider snapshot. The SQL
-// workflow tables (`workflows`, `workflow_buckets`, `workflow_transitions`,
-// `transition_guards`) were dropped in migration 020. Returns
-// ErrConfigInvalid when no workflow is loaded — production always loads
-// one via ConfigService.Import before any reader hits this path.
-func (s *Store) ActiveWorkflow(ctx context.Context) (domain.Workflow, error) {
-	wf := s.Providers().Workflow()
-	if wf.Key == "" {
-		return domain.Workflow{}, domain.NewError(domain.ErrConfigInvalid, "active workflow not found", nil)
-	}
-	return wf, nil
-}
-
-// ResolveActiveBucket delegates to the in-memory provider.
-func (s *Store) ResolveActiveBucket(ctx context.Context, key string) (domain.Bucket, error) {
-	b, ok := s.Providers().BucketByKey(key)
-	if !ok {
-		return domain.Bucket{}, domain.NewError(domain.ErrBucketNotFound, "bucket not found", map[string]any{"bucket": key})
-	}
-	return b, nil
-}
-
-// IsFinalActiveBucket delegates to the in-memory provider.
-func (s *Store) IsFinalActiveBucket(ctx context.Context, bucketID int64) (bool, error) {
-	return s.Providers().IsFinalBucket(bucketID), nil
-}
-
-// TransitionAllowed delegates to the in-memory provider.
-func (s *Store) TransitionAllowed(ctx context.Context, fromBucketID, toBucketID int64) (bool, error) {
-	return s.Providers().TransitionAllowed(fromBucketID, toBucketID), nil
-}
-
-// LoadTransitionGuards delegates to the in-memory provider.
-func (s *Store) LoadTransitionGuards(ctx context.Context, fromBucketID, toBucketID int64) ([]domain.TransitionGuard, error) {
-	return s.Providers().Guards(fromBucketID, toBucketID), nil
-}
-
-// CurrentTaskBucket returns the bucket id and key for a task. Reads
-// `tasks` (state), resolves the key via the provider (no JOIN against
-// the dropped `workflow_buckets` table). Returns ErrTaskNotFound when
-// the task is not in the project.
+// CurrentTaskBucket returns the bucket id and key for a task. The bucket
+// id comes from the `tasks` row; the key is resolved through the
+// per-Store Snapshot so renames in the active bundle propagate without a
+// schema migration. Returns ErrTaskNotFound when the task is not in the
+// project; returns ("", nil) when the task carries no bucket assignment
+// (legacy rows pre workflow gating) so callers can fall through to the
+// workflow's default-bucket logic.
 func (s *Store) CurrentTaskBucket(ctx context.Context, projectID, taskID int64) (int64, string, error) {
 	var bucketID int64
 	err := s.db.QueryRowContext(ctx, `
@@ -65,7 +31,7 @@ WHERE t.project_id = ? AND t.id = ?
 	if bucketID == 0 {
 		return 0, "", nil
 	}
-	bucket, ok := s.Providers().BucketByID(bucketID)
+	bucket, ok := s.Snapshot().BucketByID(bucketID)
 	if !ok {
 		return bucketID, "", nil
 	}
@@ -86,11 +52,11 @@ func (s *Store) TaskState(ctx context.Context, projectID, taskID int64) (domain.
 }
 
 // activeBucketID resolves a bucket key to its id via the in-memory
-// provider. Used by both the connection-pool path and the in-tx path —
-// the provider call does not touch the SQL connection so it is safe
+// Snapshot. Used by the connection-pool and in-tx code paths alike —
+// the snapshot read does not touch the SQL connection so it is safe
 // from either context.
 func (s *Store) activeBucketID(_ context.Context, key string) (int64, error) {
-	b, ok := s.Providers().BucketByKey(key)
+	b, ok := s.Snapshot().BucketByKey(key)
 	if !ok {
 		return 0, domain.NewError(domain.ErrBucketNotFound, "bucket not found", map[string]any{"bucket": key})
 	}
@@ -98,14 +64,14 @@ func (s *Store) activeBucketID(_ context.Context, key string) (int64, error) {
 }
 
 // bucketKeyByID resolves a bucket id to its key via the in-memory
-// provider. Returns "" when the id is 0 or the bucket is missing from
+// Snapshot. Returns "" when the id is 0 or the bucket is missing from
 // the snapshot (matches the pre-migration "no rows -> empty key"
 // behaviour the move-event recorder depends on).
 func (s *Store) bucketKeyByID(bucketID int64) string {
 	if bucketID == 0 {
 		return ""
 	}
-	bucket, ok := s.Providers().BucketByID(bucketID)
+	bucket, ok := s.Snapshot().BucketByID(bucketID)
 	if !ok {
 		return ""
 	}

@@ -25,11 +25,7 @@ func (s *Service) DumpContext(ctx context.Context, input DumpContextInput) (Dump
 	}
 	level := input.Level
 	if level == 0 {
-		settings, err := s.repo.ContextSettings(ctx)
-		if err != nil {
-			return DumpContextResponse{}, err
-		}
-		level = settings.DefaultLevel
+		level = s.repo.Snapshot().ContextSettings().DefaultLevel
 	}
 	dump, err := app.NewContextService(s.repo, s.repo, s.repo, s.repo, s.repo, s.counter, s.registry).Dump(ctx, project, level)
 	if err != nil {

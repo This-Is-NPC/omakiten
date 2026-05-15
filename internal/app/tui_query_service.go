@@ -72,11 +72,8 @@ func (s *TUIQueryService) Snapshot(ctx context.Context, project domain.ProjectCo
 	}
 	snap.Tasks = tasks
 
-	workflow, err := s.config.ActiveWorkflow(ctx)
-	if err != nil {
-		return snap, err
-	}
-	snap.Workflow = workflow
+	cfgSnap := s.config.Snapshot()
+	snap.Workflow = cfgSnap.Workflow()
 
 	deps, err := s.deps.ListTaskDependencies(ctx, project.ID, 0)
 	if err != nil {
@@ -90,18 +87,9 @@ func (s *TUIQueryService) Snapshot(ctx context.Context, project domain.ProjectCo
 	}
 	snap.Comments = comments
 
-	laws, err := s.config.ListActiveLaws(ctx)
-	if err != nil {
-		return snap, err
-	}
-	skills, err := s.config.ListActiveSkills(ctx)
-	if err != nil {
-		return snap, err
-	}
-	personas, err := s.config.ListActivePersonas(ctx)
-	if err != nil {
-		return snap, err
-	}
+	laws := lawsFromSnapshot(cfgSnap)
+	skills := skillsFromSnapshot(cfgSnap)
+	personas := personasFromSnapshot(cfgSnap)
 
 	if s.editor != nil {
 		bundle, err := s.editor.Load()
@@ -123,11 +111,7 @@ func (s *TUIQueryService) Snapshot(ctx context.Context, project domain.ProjectCo
 	}
 	snap.Entries = entries
 
-	settings, err := s.config.ContextSettings(ctx)
-	if err != nil {
-		return snap, err
-	}
-	snap.Settings = settings
+	snap.Settings = cfgSnap.ContextSettings()
 
 	if s.tags != nil {
 		allTags, err := s.tags.ListAllTags(ctx)

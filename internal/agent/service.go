@@ -273,10 +273,7 @@ func (s *Service) projectState(ctx context.Context, project domain.ProjectContex
 	if err != nil {
 		return nil, domain.Workflow{}, nil, err
 	}
-	workflow, err := s.repo.ActiveWorkflow(ctx)
-	if err != nil {
-		return nil, domain.Workflow{}, nil, err
-	}
+	workflow := s.repo.Snapshot().Workflow()
 	entries, err := s.repo.ListContextEntries(ctx, project.ID)
 	if err != nil {
 		return nil, domain.Workflow{}, nil, err

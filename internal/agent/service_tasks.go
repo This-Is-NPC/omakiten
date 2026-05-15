@@ -38,11 +38,7 @@ func (s *Service) ContinueTask(ctx context.Context, input ContinueTaskInput) (Co
 	}
 	var workflowSum WorkflowSummary
 	if includeWorkflow {
-		workflow, err := s.repo.ActiveWorkflow(ctx)
-		if err != nil {
-			return ContinueTaskResponse{}, err
-		}
-		workflowSum = workflowSummary(workflow)
+		workflowSum = workflowSummary(s.repo.Snapshot().Workflow())
 	}
 
 	dependencies, err := app.NewDependencyService(s.repo).List(ctx, project, input.TaskID)

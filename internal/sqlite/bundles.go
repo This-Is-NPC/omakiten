@@ -8,29 +8,22 @@ import (
 	"omakiten/internal/domain"
 )
 
-// ImportBundle rotates the in-memory provider snapshot to the given
-// bundle and emits a `bundle.imported` event so hooks can react. Phase
-// 2 of the config refactor dropped every SQL config table (migration
-// 020) — this method writes zero rows beyond the audit event. The
-// sourcePath/sourceHash arguments are recorded in the event payload so
-// downstream readers can still attribute config state to its file of
-// origin.
+// ImportBundle rotates the Store's per-bundle Snapshot pointer and
+// emits a `bundle.imported` event so hooks can react. Phase 2 dropped
+// every SQL config table (migration 020); this method writes zero rows
+// beyond the audit event. The sourcePath/sourceHash arguments are
+// recorded in the event payload so downstream readers can attribute
+// config state to its file of origin.
+//
+// TRANSITIONAL (Phase 2-bis / task #117): the per-project snapshot
+// will move to agentruntime.ProjectRuntime in a follow-up commit. At
+// that point this method narrows to EmitBundleImported (audit-only)
+// and stops mutating Store state.
 func (s *Store) ImportBundle(ctx context.Context, bundle config.Bundle, sourcePath, sourceHash string) error {
-	if s.providers == nil {
-		s.providers = config.NewInMemoryProviders(bundle)
-	} else {
-		// Clone the prior providers BEFORE swap so OrphanService can
-		// resolve task.bucket_id → old key against the previous bundle.
-		// The clone is independent of subsequent Swap calls on the
-		// active providers, which keeps the orphan diff stable even
-		// after the new snapshot is installed.
-		s.previousProviders = s.providers.Clone()
-		s.providers.Swap(&bundle)
-	}
-	// Mirror the bundle into the value-typed Snapshot so app services
-	// that already consume Phase 2-bis Snapshot see the rotation in
-	// lockstep with providers. previousSnapshot follows the same
-	// "from the second import onward" gating as previousProviders.
+	// Capture the outgoing snapshot before rotation so the orphan
+	// classification flow can resolve task.bucket_id → previous key
+	// across the swap. previousSnapshot stays nil through the first
+	// import because the empty seed has no useful id↔key mapping.
 	if s.snapshot != nil {
 		s.previousSnapshot = s.snapshot
 	}

@@ -28,24 +28,19 @@ type SnapshotSource interface {
 	Snapshot() *config.Snapshot
 }
 
-// ConfigRepository is the legacy port that pre-Phase-2-bis app services
-// went through for every config read. Phase 2-bis migrates the readers
-// to consume *config.Snapshot directly — captured at service
-// construction via the embedded SnapshotSource — so the remaining
-// callers of ListActive* / ActiveWorkflow / ContextSettings are scheduled
-// for removal together with the Store-side providers and the SQL
-// adapters they delegate to. SnapshotSource is embedded here so any
-// existing ConfigRepository implementor (the only one in production is
-// *sqlite.Store) automatically supplies the per-project Snapshot the
-// services now capture.
+// ConfigRepository is the residual write-side port for the config flow.
+// Phase 2-bis stripped every read method — workflow shape, persona /
+// skill / law catalogs, context settings — and routed them through the
+// per-project *config.Snapshot via SnapshotSource. What remains is the
+// bundle ingest call ConfigService.Import dispatches after parsing the
+// YAML: the Store writes the audit event and rotates its mirror of the
+// active snapshot. Once ProjectRuntime owns the per-project snapshot
+// (a follow-up in this chain), ImportBundle moves out of the Store and
+// this interface narrows to SnapshotSource alone or disappears
+// entirely.
 type ConfigRepository interface {
 	SnapshotSource
 	ImportBundle(ctx context.Context, bundle config.Bundle, sourcePath, sourceHash string) error
-	ListActiveLaws(ctx context.Context) ([]domain.Law, error)
-	ListActiveSkills(ctx context.Context) ([]domain.Skill, error)
-	ListActivePersonas(ctx context.Context) ([]domain.Persona, error)
-	ActiveWorkflow(ctx context.Context) (domain.Workflow, error)
-	ContextSettings(ctx context.Context) (domain.ContextSettings, error)
 }
 
 // TaskRepository persists task rows. The methods are deliberately policy-free:
@@ -73,14 +68,12 @@ type TaskRepository interface {
 	EmitTaskEditedEvent(ctx context.Context, projectID, taskID int64, before, after domain.Task) (domain.Event, error)
 }
 
-// WorkflowRepository exposes the workflow primitives the app's WorkflowService
-// composes into the move/create policy. Each method is a pure read against the
-// active workflow — no side effects, no policy decisions.
+// WorkflowRepository exposes the state-side primitives the app's
+// WorkflowService composes into the move/create policy. Every workflow
+// shape read (bucket-by-key, transition-allowed, guards, is-final) now
+// flows through the per-project *config.Snapshot the service captures
+// at construction — the SQL adapter only answers state questions.
 type WorkflowRepository interface {
-	ResolveActiveBucket(ctx context.Context, key string) (domain.Bucket, error)
-	IsFinalActiveBucket(ctx context.Context, bucketID int64) (bool, error)
-	TransitionAllowed(ctx context.Context, fromBucketID, toBucketID int64) (bool, error)
-	LoadTransitionGuards(ctx context.Context, fromBucketID, toBucketID int64) ([]domain.TransitionGuard, error)
 	CurrentTaskBucket(ctx context.Context, projectID, taskID int64) (int64, string, error)
 	// TaskState returns the active|archived flag for a task. Used by MoveTask
 	// to reject moves on archived rows and by the guards engine to skip

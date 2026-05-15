@@ -70,8 +70,8 @@ func (m *Model) countPendingTasks(projectID int64) (int, error) {
 	if m.repos.Config == nil {
 		return len(tasks), nil
 	}
-	wf, err := m.repos.Config.ActiveWorkflow(m.ctx)
-	if err != nil || len(wf.Buckets) == 0 {
+	wf := m.repos.Config.Snapshot().Workflow()
+	if len(wf.Buckets) == 0 {
 		return len(tasks), nil
 	}
 	final := wf.Buckets[len(wf.Buckets)-1].Key

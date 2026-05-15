@@ -86,7 +86,7 @@ WHERE tasks.project_id = ?`
 		query += " AND tasks.state = 'active'"
 	}
 	if filter.BucketKey != "" {
-		b, ok := s.Providers().BucketByKey(filter.BucketKey)
+		b, ok := s.Snapshot().BucketByKey(filter.BucketKey)
 		if !ok {
 			// unknown bucket — return empty result rather than error;
 			// matches the pre-migration JOIN semantics (no rows match).
@@ -98,7 +98,7 @@ WHERE tasks.project_id = ?`
 	if len(filter.BucketKeys) > 0 {
 		ids := make([]int64, 0, len(filter.BucketKeys))
 		for _, key := range filter.BucketKeys {
-			if b, ok := s.Providers().BucketByKey(key); ok {
+			if b, ok := s.Snapshot().BucketByKey(key); ok {
 				ids = append(ids, b.ID)
 			}
 		}

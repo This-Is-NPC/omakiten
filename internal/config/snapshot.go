@@ -4,6 +4,141 @@ import (
 	"omakiten/internal/domain"
 )
 
+// transitionKey indexes the snapshot's pair-keyed transition map. Pairs
+// are bucket ids (int64). Workflow shape on the snapshot uses ids so
+// renames are id-stable, which means transition lookup stays correct
+// across a `bucket.key` rename across imports.
+type transitionKey struct{ from, to int64 }
+
+// transitionEntry carries the per-transition state the snapshot pre-builds
+// at BuildSnapshot time. Today it only records the guard list; future
+// per-transition policy (allow_archived?, comment_required?) lives here
+// so the call paths consume one lookup per check.
+type transitionEntry struct {
+	guards []domain.TransitionGuard
+}
+
+// templateDefaultKey indexes the snapshot's "active default scaffold
+// per kind, per project slug" map. project="" means the global default
+// (used when no project-scoped template matches).
+type templateDefaultKey struct{ kind, project string }
+
+// activeWorkflow picks the workflow named in `config.workflow.active`,
+// falling back to the first declared workflow when the setting is empty
+// or names an unknown key. Mirrors the legacy SQL resolution path so
+// existing fixtures behave identically through the migration.
+func activeWorkflow(bundle Bundle) (Workflow, bool) {
+	if len(bundle.Workflows) == 0 {
+		return Workflow{}, false
+	}
+	wanted := bundle.Config.Workflow.Active
+	if wanted == "" {
+		return bundle.Workflows[0], true
+	}
+	for _, wf := range bundle.Workflows {
+		if wf.Key == wanted {
+			return wf, true
+		}
+	}
+	return bundle.Workflows[0], true
+}
+
+// toDomainWorkflow converts the YAML workflow into the runtime
+// representation. Bucket ids carry through as int64; transition pairs
+// resolve from `from`/`to` keys (yaml) to the bucket ids built above.
+func toDomainWorkflow(wf Workflow) domain.Workflow {
+	out := domain.Workflow{
+		ID:   int64(wf.ID),
+		Key:  wf.Key,
+		Name: wf.Name,
+		Operations: domain.WorkflowOperations{
+			Archive:   domain.OperationPolicy{Guards: toDomainGuards(wf.Operations.Archive.Guards, nil)},
+			Delete:    domain.OperationPolicy{Guards: toDomainGuards(wf.Operations.Delete.Guards, nil)},
+			Unarchive: domain.OperationPolicy{Guards: toDomainGuards(wf.Operations.Unarchive.Guards, nil)},
+		},
+	}
+	if wf.Defaults != nil {
+		out.Defaults = &domain.WorkflowDefaults{
+			Task:    toDomainPermission(wf.Defaults.Task),
+			Comment: toDomainPermission(wf.Defaults.Comment),
+		}
+	}
+
+	bucketsByID := map[int]Bucket{}
+	for _, b := range wf.Buckets {
+		bucketsByID[b.ID] = b
+		out.Buckets = append(out.Buckets, domain.Bucket{
+			ID:          int64(b.ID),
+			Key:         b.Key,
+			Name:        b.Name,
+			Position:    b.Position,
+			Permissions: toDomainBucketPerms(b.Permissions),
+		})
+	}
+
+	for _, tr := range wf.Transitions {
+		from, fromOK := bucketsByID[tr.From]
+		to, toOK := bucketsByID[tr.To]
+		if !fromOK || !toOK {
+			continue
+		}
+		out.Transitions = append(out.Transitions, domain.WorkflowTransition{
+			FromBucketID:  int64(from.ID),
+			FromBucketKey: from.Key,
+			ToBucketID:    int64(to.ID),
+			ToBucketKey:   to.Key,
+		})
+	}
+	return out
+}
+
+// toDomainGuards converts the YAML guard list into the runtime guard
+// shape. The optional `keyByName` map is unused today — guards carry
+// their bucket keys directly — but kept on the signature so future
+// guard types that reference bucket ids can resolve them at snapshot
+// time without re-reading the bundle.
+func toDomainGuards(in []TransitionGuard, _ map[string]Bucket) []domain.TransitionGuard {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]domain.TransitionGuard, len(in))
+	for i, g := range in {
+		out[i] = domain.TransitionGuard{
+			Type:    g.Type,
+			Buckets: append([]string(nil), g.Buckets...),
+			Count:   g.Count,
+			Tag:     g.Tag,
+			Hint:    g.Hint,
+		}
+	}
+	return out
+}
+
+func toDomainPermission(in *EntityPermission) *domain.EntityPermission {
+	if in == nil {
+		return nil
+	}
+	return &domain.EntityPermission{Edit: copyBool(in.Edit), Delete: copyBool(in.Delete)}
+}
+
+func toDomainBucketPerms(in *BucketPermissions) *domain.BucketPermissions {
+	if in == nil {
+		return nil
+	}
+	return &domain.BucketPermissions{
+		Task:    toDomainPermission(in.Task),
+		Comment: toDomainPermission(in.Comment),
+	}
+}
+
+func copyBool(b *bool) *bool {
+	if b == nil {
+		return nil
+	}
+	v := *b
+	return &v
+}
+
 // Snapshot is the immutable, value-typed view of a Bundle that every app
 // service consumes at construction time. Building the snapshot inflates
 // the YAML shape into the runtime indexes (bucket-by-id, bucket-by-key,

@@ -84,12 +84,9 @@ func TestConfigServiceImportPopulatesProvidersWithoutSQLConfigTables(t *testing.
 	// per-entity files (`yaml:"-"`) and need a directory walk to land
 	// in the bundle; LoadBundle handles that in production but this
 	// test only writes the central yaml.
-	wf, err := store.ActiveWorkflow(ctx)
-	if err != nil {
-		t.Fatalf("ActiveWorkflow after Import: %v", err)
-	}
+	wf := store.Snapshot().Workflow()
 	if wf.Key == "" || len(wf.Buckets) == 0 {
-		t.Fatalf("ActiveWorkflow returned empty after Import: %+v", wf)
+		t.Fatalf("Snapshot().Workflow() returned empty after Import: %+v", wf)
 	}
 
 	// Settings flow through the snapshot too — the kit fallback only

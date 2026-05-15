@@ -27,11 +27,7 @@ func newWorkflowCommand(opts *runtimeOptions) *cobra.Command {
 				defer rt.close()
 				ctx = rt.WithActivityRepo(ctx)
 
-				workflow, err := rt.store.ActiveWorkflow(ctx)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"workflow": workflow}, nil
+				return map[string]any{"workflow": rt.store.Snapshot().Workflow()}, nil
 			})
 		},
 	}

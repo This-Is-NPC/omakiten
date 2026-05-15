@@ -25,13 +25,15 @@ func kitContextSettings() domain.ContextSettings {
 }
 
 func (s *Store) ContextSettings(_ context.Context) (domain.ContextSettings, error) {
-	// The SQL `settings` table was dropped in migration 020; context
-	// values now flow through the in-memory provider snapshot. The kit
-	// canonical (read from the embedded YAML) seeds the bootstrap
-	// window between sqlite.Open and the first ImportBundle so callers
-	// never see a zero-value response.
+	// The SQL `settings` table was dropped in migration 020 and the
+	// per-project Snapshot now owns the read. The kit canonical (read
+	// from the embedded YAML) seeds the bootstrap window between
+	// sqlite.Open and the first ImportBundle so callers never see a
+	// zero-value response. TRANSITIONAL: ContextSettings remains on
+	// the Store solely to satisfy the legacy ConfigRepository surface;
+	// app.ContextService now reads s.snap.ContextSettings() directly.
 	out := kitContextSettings()
-	cfg := s.Providers().Settings()
+	cfg := s.Snapshot().Settings()
 	if cfg.Context.DefaultLevel != 0 {
 		out.DefaultLevel = cfg.Context.DefaultLevel
 	}

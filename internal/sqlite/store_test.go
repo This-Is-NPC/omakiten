@@ -220,12 +220,9 @@ func TestStoreActiveWorkflow(t *testing.T) {
 	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
-	workflow, err := store.ActiveWorkflow(ctx)
-	if err != nil {
-		t.Fatalf("ActiveWorkflow() error = %v", err)
-	}
+	workflow := store.Snapshot().Workflow()
 	if workflow.Key != "default" {
-		t.Fatalf("ActiveWorkflow().Key = %q, want default", workflow.Key)
+		t.Fatalf("Snapshot().Workflow().Key = %q, want default", workflow.Key)
 	}
 	if len(workflow.Buckets) != 3 {
 		t.Fatalf("ActiveWorkflow().Buckets len = %d, want 3", len(workflow.Buckets))
@@ -325,42 +322,25 @@ func TestStoreListActiveEntities(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 
-	// No bundle imported yet
-	skills, err := store.ListActiveSkills(ctx)
-	if err != nil {
-		t.Fatalf("ListActiveSkills() error = %v", err)
+	// No bundle imported yet — empty Snapshot returns empty slices.
+	snap := store.Snapshot()
+	if len(snap.Skills()) != 0 {
+		t.Fatalf("Snapshot().Skills() len = %d, want 0", len(snap.Skills()))
 	}
-	if len(skills) != 0 {
-		t.Fatalf("ListActiveSkills() len = %d, want 0", len(skills))
+	if len(snap.Personas()) != 0 {
+		t.Fatalf("Snapshot().Personas() len = %d, want 0", len(snap.Personas()))
 	}
-
-	personas, err := store.ListActivePersonas(ctx)
-	if err != nil {
-		t.Fatalf("ListActivePersonas() error = %v", err)
-	}
-	if len(personas) != 0 {
-		t.Fatalf("ListActivePersonas() len = %d, want 0", len(personas))
+	if len(snap.Laws()) != 0 {
+		t.Fatalf("Snapshot().Laws() len = %d, want 0", len(snap.Laws()))
 	}
 
-	laws, err := store.ListActiveLaws(ctx)
-	if err != nil {
-		t.Fatalf("ListActiveLaws() error = %v", err)
-	}
-	if len(laws) != 0 {
-		t.Fatalf("ListActiveLaws() len = %d, want 0", len(laws))
-	}
-
-	// After import
+	// After import the snapshot pointer rotates to reflect the new bundle.
 	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
-
-	skills, err = store.ListActiveSkills(ctx)
-	if err != nil {
-		t.Fatalf("ListActiveSkills() error = %v", err)
-	}
-	if len(skills) != 1 {
-		t.Fatalf("ListActiveSkills() len = %d, want 1", len(skills))
+	snap = store.Snapshot()
+	if len(snap.Skills()) != 1 {
+		t.Fatalf("Snapshot().Skills() len = %d, want 1", len(snap.Skills()))
 	}
 }
 

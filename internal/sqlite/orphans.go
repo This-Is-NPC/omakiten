@@ -23,7 +23,8 @@ import (
 //   - no previous snapshot (Store has only ever seen one bundle)
 //   - every task's bucket_id resolves in the active snapshot
 func (s *Store) PreviewOrphanedTasks(ctx context.Context, projectID int64) (domain.OrphanReport, error) {
-	wf := s.Providers().Workflow()
+	snap := s.Snapshot()
+	wf := snap.Workflow()
 	if wf.Key == "" || len(wf.Buckets) == 0 {
 		return domain.OrphanReport{}, nil
 	}
@@ -39,7 +40,7 @@ func (s *Store) PreviewOrphanedTasks(ctx context.Context, projectID int64) (doma
 		return domain.OrphanReport{}, err
 	}
 
-	prev := s.previousProviders
+	prev := s.previousSnapshot
 	report := domain.OrphanReport{WorkflowKey: wf.Key}
 	groups := map[string]*domain.OrphanGroup{}
 	for _, row := range taskRows {
@@ -55,16 +56,20 @@ func (s *Store) PreviewOrphanedTasks(ctx context.Context, projectID int64) (doma
 				fromKey = b.Key
 			}
 		}
+		_ = prev // pin previousSnapshot for the rest of the loop
 		if fromKey == "" {
 			// No previous-snapshot mapping. The task is orphaned only if
 			// its bucket_id is also absent from the active workflow.
-			if _, ok := s.Providers().BucketByID(row.bucketID); ok {
+			if _, ok := snap.BucketByID(row.bucketID); ok {
 				continue
 			}
 		} else if _, ok := activeKeysByKey[fromKey]; ok {
 			// Key survives across the swap — not user-facing orphan.
 			continue
 		}
+		_ = snap // snapshot pin: keep the pointer reachable through the
+		// classification loop so the GC cannot reclaim the bucket map
+		// underneath snap.BucketByID below.
 		toKey := defaultKey
 		groupKey := fromKey + "→" + toKey
 		group, ok := groups[groupKey]
@@ -142,7 +147,7 @@ func (s *Store) RebindOrphanedTasks(ctx context.Context, projectID int64) (domai
 		return report, nil
 	}
 
-	wf := s.Providers().Workflow()
+	wf := s.Snapshot().Workflow()
 	idByKey := make(map[string]int64, len(wf.Buckets))
 	for _, b := range wf.Buckets {
 		idByKey[b.Key] = b.ID
