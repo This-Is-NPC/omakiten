@@ -55,5 +55,7 @@ func newConfigCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.AddCommand(validate)
 	cmd.AddCommand(presets)
 	cmd.AddCommand(newConfigInitCommand(opts))
+	cmd.AddCommand(newConfigShowCommand(opts))
+	cmd.AddCommand(newConfigPathCommand(opts))
 	return cmd
 }

@@ -91,14 +91,25 @@ func ConfigFile() (string, error) {
 }
 
 // ActiveConfigFile returns the absolute path of the yaml profile currently
-// selected as active. The selection is persisted in <config-dir>/.active —
-// a one-line text file containing the basename of the chosen profile. When
-// the file is missing or blank the resolver scans <config-dir>/ for the
-// first .yaml file (alphabetical order) and falls back to <config-dir>/custom/
-// if none is found at the root. If no .yaml exists anywhere the app errors
-// out — a config file is mandatory.
+// selected as active under the global ConfigDir. Wraps ActiveConfigFileInDir
+// with the standard resolution; see that function for the discovery rules.
+func ActiveConfigFile() (string, error) {
+	dir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return ActiveConfigFileInDir(dir)
+}
+
+// ActiveConfigFileInDir returns the active yaml profile inside an explicit
+// config directory. The selection is persisted in <dir>/.active — a one-line
+// text file containing the basename of the chosen profile. When the file is
+// missing or blank the resolver scans <dir>/ for the first .yaml file
+// (alphabetical order) and falls back to <dir>/custom/ if none is found at
+// the root. If no .yaml exists anywhere the function errors out — a config
+// file is mandatory.
 //
-// User-authored profiles live under <config-dir>/custom/ (mirroring the
+// User-authored profiles live under <dir>/custom/ (mirroring the
 // custom/ convention used by personas, laws, skills, templates, themes); when
 // the active name is explicitly set via .active, the resolver tries that
 // subtree first and only falls back to the config-dir root when nothing
@@ -106,11 +117,7 @@ func ConfigFile() (string, error) {
 // resolver falls through to discovery rather than returning a stale path that
 // would error at open time — so a removed or renamed canonical kit degrades
 // to "first available .yaml" instead of breaking init.
-func ActiveConfigFile() (string, error) {
-	dir, err := ConfigDir()
-	if err != nil {
-		return "", err
-	}
+func ActiveConfigFileInDir(dir string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(dir, ActiveConfigStateFile))
 	if err == nil {
 		if name := strings.TrimSpace(string(data)); name != "" {
@@ -122,15 +129,10 @@ func ActiveConfigFile() (string, error) {
 			if _, statErr := os.Stat(rootPath); statErr == nil {
 				return rootPath, nil
 			}
-			// Named profile missing from both locations — fall through to discovery.
 		}
 	} else if !os.IsNotExist(err) {
 		return "", err
 	}
-	// .active missing, blank, or pointing at a vanished profile —
-	// discover the first .yaml file. Root before custom/. Treat both
-	// "directory missing" and "directory empty of yaml" the same way:
-	// fall through to the next candidate location.
 	if name, err := firstYAMLInDir(dir); err == nil {
 		return filepath.Join(dir, name), nil
 	}
