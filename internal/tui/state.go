@@ -78,11 +78,12 @@ type Repositories struct {
 	RepoLocalDir string
 
 	// Cache is the per-project BundleCache the runtime seeded at boot.
-	// reloadBundle calls Cache.Reload instead of ConfigService.Import so
-	// hot-reload skips the SQL config-write path (which migration 020
-	// already turned into a no-op anyway). nil falls back to the legacy
-	// ConfigService.Import code path for tests that have not been
-	// updated to thread the cache through.
+	// reloadBundle calls Cache.Reload to rotate the in-memory provider
+	// snapshot — Phase 3e dropped the ConfigService.Import fallback so
+	// hot-reload never reaches the SQL config-write path. Required for
+	// any code path that triggers reloadBundle (settings_picker.go,
+	// revertConfigSwap); tests that do not exercise reloadBundle may
+	// leave it nil.
 	Cache *agentruntime.BundleCache
 	// ProjectID is the cache key the runtime installed the active
 	// ProjectRuntime under. reloadBundle passes it to Cache.Reload so

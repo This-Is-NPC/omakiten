@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/paths"
@@ -22,31 +21,24 @@ import (
 // react (e.g., the orphan-migration notification when the new
 // workflow lost buckets the previous one had).
 //
-// Repositories.Cache nil falls back to the legacy ConfigService.Import
-// path so tests that have not been updated keep working. Production
-// always wires the cache via cli/tui.go.
+// Repositories.Cache MUST be wired — Phase 3e dropped the
+// ConfigService.Import fallback so the TUI never reaches the SQL
+// config-write path. Production composition (cli/tui.go) always
+// installs the cache; tests use newPickerModel-style helpers that do
+// the same.
 func (m *Model) reloadBundle(path string) error {
+	if m.repos.Cache == nil {
+		return fmt.Errorf("tui: Repositories.Cache is required for hot-reload (Phase 3e dropped the ConfigService.Import fallback)")
+	}
 	fromWorkflow := m.workflow.Key
 	fromPath := m.repos.Editor.Path()
 
-	var bundle config.Bundle
-	var registry *domain.EnumRegistry
-	if m.repos.Cache != nil {
-		pr, err := m.repos.Cache.Reload(m.ctx, m.repos.ProjectID, path)
-		if err != nil {
-			return err
-		}
-		bundle = *pr.Bundle
-		registry = pr.EnumRegistry
-	} else {
-		cfgSvc := app.NewConfigService(m.repos.Config, m.repos.BundleStore)
-		b, _, reg, err := cfgSvc.Import(m.ctx, path)
-		if err != nil {
-			return err
-		}
-		bundle = b
-		registry = reg
+	pr, err := m.repos.Cache.Reload(m.ctx, m.repos.ProjectID, path)
+	if err != nil {
+		return err
 	}
+	bundle := *pr.Bundle
+	registry := pr.EnumRegistry
 
 	theme, err := loadActiveTheme(bundle, path)
 	if err != nil {
