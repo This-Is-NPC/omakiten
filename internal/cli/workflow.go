@@ -25,8 +25,9 @@ func newWorkflowCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				defer rt.close()
-				ctx = rt.WithActivityRepo(ctx)
-
+				// Workflow read is a pure config lookup served from
+				// the in-memory Snapshot; no activity tracking
+				// needed since nothing touches the DB.
 				return map[string]any{"workflow": rt.store.Snapshot().Workflow()}, nil
 			})
 		},
