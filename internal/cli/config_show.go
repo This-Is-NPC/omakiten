@@ -11,6 +11,7 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/paths"
+	"omakiten/internal/sqlite"
 )
 
 func newConfigShowCommand(opts *runtimeOptions) *cobra.Command {
@@ -19,7 +20,10 @@ func newConfigShowCommand(opts *runtimeOptions) *cobra.Command {
 		Use:   "show",
 		Short: "Print the raw active yaml for the chosen scope",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runJSON(cmd, func(context.Context) (any, error) {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				if err := primeDiscoveryStart(ctx, opts); err != nil {
+					return nil, err
+				}
 				path, err := resolveActiveFileForScope(opts, scope)
 				if err != nil {
 					return nil, err
@@ -43,7 +47,10 @@ func newConfigPathCommand(opts *runtimeOptions) *cobra.Command {
 		Use:   "path",
 		Short: "Print the install root that owns the chosen scope's config layer",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runJSON(cmd, func(context.Context) (any, error) {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				if err := primeDiscoveryStart(ctx, opts); err != nil {
+					return nil, err
+				}
 				root, err := resolveInstallRootForScope(opts, scope)
 				if err != nil {
 					return nil, err
@@ -55,6 +62,44 @@ func newConfigPathCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().StringVar(&scope, "scope", "", "global or local")
 	_ = cmd.MarkFlagRequired("scope")
 	return cmd
+}
+
+// primeDiscoveryStart populates opts.discoveryStart so walk-up honours
+// --project / --project-id when supplied. Subcommands that do not need a
+// full runtime open the DB just long enough to do the project lookup,
+// then close it. Failures fall back to CWD silently so the subcommand can
+// proceed with the user-global resolver when the DB is fresh or the
+// project isn't registered yet.
+func primeDiscoveryStart(ctx context.Context, opts *runtimeOptions) error {
+	if opts.discoveryStart != "" {
+		return nil
+	}
+	if opts.project == "" && opts.projectID == 0 {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		opts.discoveryStart = cwd
+		return nil
+	}
+	dbPath, err := opts.resolvedDBPath()
+	if err != nil {
+		return err
+	}
+	store, err := sqlite.Open(ctx, dbPath)
+	if err != nil {
+		// DB not openable yet — fall back to CWD.
+		cwd, _ := os.Getwd()
+		opts.discoveryStart = cwd
+		return nil
+	}
+	defer func() { _ = store.Close() }()
+	start, err := opts.resolveDiscoveryStart(ctx, store)
+	if err != nil {
+		return err
+	}
+	opts.discoveryStart = start
+	return nil
 }
 
 // resolveInstallRootForScope returns the directory that owns the chosen
@@ -73,16 +118,20 @@ func resolveInstallRootForScope(opts *runtimeOptions, scope string) (string, err
 		}
 		return paths.ConfigRoot()
 	case "local":
-		cwd, err := os.Getwd()
-		if err != nil {
-			return "", err
+		start := opts.discoveryStart
+		if start == "" {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return "", err
+			}
+			start = cwd
 		}
-		dir, ok, err := config.FindRepoLocal(cwd)
+		dir, ok, err := config.FindRepoLocal(start)
 		if err != nil {
 			return "", err
 		}
 		if !ok {
-			return "", domain.NewError(domain.ErrValidation, "no repo-local .omakiten/ found above CWD", map[string]any{"cwd": cwd})
+			return "", domain.NewError(domain.ErrValidation, "no repo-local .omakiten/ found above start dir", map[string]any{"start": start})
 		}
 		return dir, nil
 	default:

@@ -48,6 +48,46 @@ func TestCLIWalkUpStandaloneInstall(t *testing.T) {
 	}
 }
 
+// TestCLIProjectFlagPicksProjectRepoLocal exercises the --project triggers
+// project-root walk-up path: two registered projects with their own
+// .omakiten/, current working directory NOT under either, and --project B
+// must resolve to B's install rather than A's or the global.
+func TestCLIProjectFlagPicksProjectRepoLocal(t *testing.T) {
+	homeDir := t.TempDir()
+	dbPath := filepath.Join(homeDir, "data", "omakiten.db")
+	t.Setenv("OMAKITEN_HOME", homeDir)
+
+	tmp := t.TempDir()
+	projectA := filepath.Join(tmp, "repo-a")
+	projectB := filepath.Join(tmp, "repo-b")
+	for _, p := range []string{projectA, projectB} {
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) = %v", p, err)
+		}
+	}
+
+	// Seed A with omakase + register in DB.
+	t.Chdir(projectA)
+	runCLIWithoutConfig(t, dbPath, "config", "init", "--scope", "local", "--preset", "omakase")
+	runCLIWithoutConfig(t, dbPath, "init", "--name", "Repo A", "--slug", "repo-a", "--root", projectA)
+
+	// Seed B with izakaya + register in DB.
+	t.Chdir(projectB)
+	runCLIWithoutConfig(t, dbPath, "config", "init", "--scope", "local", "--preset", "izakaya")
+	runCLIWithoutConfig(t, dbPath, "init", "--name", "Repo B", "--slug", "repo-b", "--root", projectB)
+
+	// chdir to a third unrelated directory; --project B must still pick
+	// B's .omakiten/ via project.root_path walk-up rather than CWD.
+	t.Chdir(tmp)
+	out := runCLIWithoutConfig(t, dbPath, "--project", "repo-b", "config", "show", "--scope", "local")
+	if !strings.Contains(out, "key: izakaya") {
+		t.Fatalf("--project repo-b output = %s, want izakaya kit", out)
+	}
+	if strings.Contains(out, "key: omakase") {
+		t.Fatalf("--project repo-b leaked into omakase from repo-a")
+	}
+}
+
 // runCLIWithoutConfig mirrors runCLI but does NOT inject --config so the
 // resolver's $OMAKITEN_HOME + walk-up paths run end-to-end.
 func runCLIWithoutConfig(t *testing.T, dbPath string, args ...string) string {

@@ -34,7 +34,10 @@ one (e.g. "is this set in the user-global install even though my repo
 overrides it locally").`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runJSON(cmd, func(context.Context) (any, error) {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				if err := primeDiscoveryStart(ctx, opts); err != nil {
+					return nil, err
+				}
 				key := args[0]
 				layer, err := parseLayer(layerFilter)
 				if err != nil {
@@ -64,7 +67,10 @@ side values. Maps descend recursively; lists / scalars compare by deep
 equality.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runJSON(cmd, func(context.Context) (any, error) {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				if err := primeDiscoveryStart(ctx, opts); err != nil {
+					return nil, err
+				}
 				leftPath, err := resolveDiffSource(opts, args[0])
 				if err != nil {
 					return nil, err
@@ -134,13 +140,17 @@ func resolveWhy(opts *runtimeOptions, key, layerFilter string) (any, error) {
 		return map[string]any{"key": key, "value": value, "source": layerFilter, "path": path}, nil
 	}
 
-	// No filter: resolver decides. Walk up from CWD for .omakiten/; fall
-	// back to global. Matches the runtime's standalone resolution.
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, err
+	// No filter: resolver decides. Walk up from discoveryStart (or CWD)
+	// for .omakiten/; fall back to global. Matches runtime resolution.
+	start := opts.discoveryStart
+	if start == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+		start = cwd
 	}
-	if dir, ok, err := config.FindRepoLocal(cwd); err == nil && ok {
+	if dir, ok, err := config.FindRepoLocal(start); err == nil && ok {
 		path, err := paths.ActiveConfigFileInDir(filepath.Join(dir, "config"))
 		if err == nil {
 			val, found, err := lookupYAMLKey(path, parts)

@@ -439,23 +439,6 @@ func validateTUISettings(t TUISettings) error {
 	return nil
 }
 
-func validateSlugList(section string, slugs []string, set map[string]struct{}, kind string) error {
-	seen := map[string]struct{}{}
-	for _, slug := range slugs {
-		if strings.TrimSpace(slug) == "" {
-			return fmt.Errorf("%s: empty slug", section)
-		}
-		if _, dup := seen[slug]; dup {
-			return fmt.Errorf("%s: duplicate %q", section, slug)
-		}
-		seen[slug] = struct{}{}
-		if _, ok := set[slug]; !ok {
-			return fmt.Errorf("%s: ref %q has no matching %s file", section, slug, kind)
-		}
-	}
-	return nil
-}
-
 // validateScopeUniqueness ensures a single law slug is not declared both as a
 // top-level (global) ref and as a persona/project-scoped ref.
 func validateScopeUniqueness(bundle Bundle) error {

@@ -30,6 +30,11 @@ type runtimeOptions struct {
 	configPath string
 	project    string
 	projectID  int64
+	// discoveryStart is the directory FindRepoLocal walks up from. open()
+	// populates it after resolving --project (project.root_path) or falls
+	// back to CWD. Reset between calls to open(); resolver helpers below
+	// honour it.
+	discoveryStart string
 }
 
 type runtime struct {
@@ -136,44 +141,55 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		return nil, err
 	}
 
-	cs := configstore.New()
-	if materializeConfig {
-		rootDir, err := o.resolvedConfigRoot()
-		if err != nil {
-			return nil, err
-		}
-		if err := cs.MigrateLayout(rootDir); err != nil {
-			return nil, err
-		}
-		if err := cs.EnsureDefaultFiles(rootDir); err != nil {
-			return nil, err
-		}
-	}
-
-	// Resolve configPath AFTER MigrateLayout has had a chance to relocate
-	// renamed kits — otherwise a snapshot taken pre-migration points at
-	// the just-moved root copy and Import fails with ENOENT. Non-materialize
-	// callers (e.g. `okt config validate`) skip migration and accept the raw
-	// resolver output.
-	configPath, err := o.resolvedConfigPath()
-	if err != nil {
-		return nil, err
-	}
-
 	store, err := sqlite.Open(ctx, dbPath)
 	if err != nil {
 		return nil, err
 	}
 
+	// Project-aware discovery: when --project / --project-id is supplied,
+	// walk-up starts at the project's root_path (looked up from the DB)
+	// instead of the CWD. This lets `okt --project B cmd` from CWD=A pick
+	// up B's .omakiten/ even if A also has one. Unresolvable project flags
+	// degrade to CWD-based discovery rather than aborting.
+	o.discoveryStart, err = o.resolveDiscoveryStart(ctx, store)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+
 	repoLocalDir, err := o.discoverRepoLocalRoot()
 	if err != nil {
+		_ = store.Close()
 		return nil, err
 	}
 	if o.configPath != "" {
-		// --config overrides discovery — the TUI badge must reflect what the
-		// runtime is actually loading, not a discovered .omakiten/ that the
-		// flag bypassed.
+		// --config overrides discovery — the TUI badge must reflect what
+		// the runtime is actually loading, not a discovered .omakiten/
+		// that the flag bypassed.
 		repoLocalDir = ""
+	}
+
+	cs := configstore.New()
+	if materializeConfig {
+		rootDir, err := o.resolvedConfigRoot()
+		if err != nil {
+			_ = store.Close()
+			return nil, err
+		}
+		if err := cs.MigrateLayout(rootDir); err != nil {
+			_ = store.Close()
+			return nil, err
+		}
+		if err := cs.EnsureDefaultFiles(rootDir); err != nil {
+			_ = store.Close()
+			return nil, err
+		}
+	}
+
+	configPath, err := o.resolvedConfigPath()
+	if err != nil {
+		_ = store.Close()
+		return nil, err
 	}
 
 	rt := &runtime{store: store, configPath: configPath, dbPath: dbPath, repoLocalDir: repoLocalDir}
@@ -301,23 +317,51 @@ func (o *runtimeOptions) resolvedConfigRoot() (string, error) {
 	return paths.ConfigRoot()
 }
 
-// discoverRepoLocalRoot walks up from the CWD looking for `.omakiten/`. Returns
-// the absolute path of the first hit, or "" when no overlay is found before
-// the walker hits $HOME / the filesystem root. Stat errors are surfaced so
-// callers can decide whether to abort or fall back to the global resolver.
+// discoverRepoLocalRoot walks up from o.discoveryStart looking for
+// `.omakiten/`. Returns the absolute path of the first hit, or "" when no
+// install is found before the walker hits $HOME / the filesystem root.
 //
-// When the user supplies --config explicitly, callers must not consult this
-// helper — the flag is the authoritative override.
+// discoveryStart is populated by open() so the walk respects --project (the
+// project's root_path) when set. When the field is empty (callers that
+// resolve config before open(), e.g. `okt config validate`), the walker
+// falls back to the current working directory.
+//
+// --config explicitly overrides discovery — callers must not consult this
+// helper when the flag is supplied.
 func (o *runtimeOptions) discoverRepoLocalRoot() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
+	start := o.discoveryStart
+	if start == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		start = cwd
 	}
-	dir, ok, err := config.FindRepoLocal(cwd)
+	dir, ok, err := config.FindRepoLocal(start)
 	if err != nil || !ok {
 		return "", err
 	}
 	return dir, nil
+}
+
+// resolveDiscoveryStart returns the directory FindRepoLocal should walk up
+// from. When --project / --project-id is supplied, looks up the project's
+// root_path in the DB and uses it. Anything that prevents the lookup (no
+// such project, store error) falls back to CWD without aborting open() —
+// the user-flag-but-no-project case still gets a working runtime, the
+// project resolution will surface the real error later when the command
+// actually needs the project context.
+func (o *runtimeOptions) resolveDiscoveryStart(ctx context.Context, store app.ProjectRepository) (string, error) {
+	if o.project == "" && o.projectID == 0 {
+		return os.Getwd()
+	}
+	resolver := projectresolver.NewResolver(store)
+	cwd, _ := os.Getwd()
+	project, err := resolver.Resolve(ctx, projectresolver.ResolveOptions{ProjectID: o.projectID, Project: o.project, CWD: cwd})
+	if err != nil || project.RootPath == "" {
+		return cwd, nil
+	}
+	return project.RootPath, nil
 }
 
 func (o *runtimeOptions) resolvedDBPath() (string, error) {
