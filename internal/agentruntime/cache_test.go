@@ -239,6 +239,184 @@ func TestBundleCacheReloadPreservesProjectSelector(t *testing.T) {
 	}
 }
 
+// TestPerProjectIsolation pins the Phase 2-bis core invariant: two
+// ProjectRuntime entries each carry their own *config.Snapshot
+// pointer. Even on the same source bundle, the cache must build a
+// fresh snapshot per entry — pointer aliasing would re-introduce the
+// shared-singleton bug the InMemoryProviders model produced.
+//
+// The agent service captured by each entry reads through SetSnapshot,
+// so distinct *Snapshot pointers guarantee distinct catalog views
+// without any further plumbing. Bucket lookups go through the
+// snapshot directly; this test confirms the snapshot's identity (not
+// just contents) differs across projects.
+func TestPerProjectIsolation(t *testing.T) {
+	ctx := context.Background()
+	rt := openTestRuntime(t)
+	defer func() { _ = rt.Close() }()
+
+	cache := rt.Cache()
+	prA, err := cache.Resolve(ctx, rt.defaultProjectID, rt.configPath)
+	if err != nil {
+		t.Fatalf("Resolve A: %v", err)
+	}
+	prB, err := cache.Resolve(ctx, rt.defaultProjectID+1, rt.configPath)
+	if err != nil {
+		t.Fatalf("Resolve B: %v", err)
+	}
+
+	if prA == prB {
+		t.Fatal("cache returned the same ProjectRuntime for different ids")
+	}
+	if prA.Snapshot == nil || prB.Snapshot == nil {
+		t.Fatal("ProjectRuntime missing Snapshot pointer")
+	}
+	if prA.Snapshot == prB.Snapshot {
+		t.Fatal("per-project Snapshot pointer aliased — workflow / catalogs / synonyms would cross-fire across projects")
+	}
+	if prA.Service == prB.Service {
+		t.Fatal("per-project Service pointer aliased — SetSnapshot would clobber the other project")
+	}
+
+	// Workflow shape is sourced from the same bundle here, so the
+	// content is equivalent — but the lookup must go through the
+	// per-project pointer, never through a shared singleton. Confirm
+	// both snapshots resolve the workflow's first bucket via their
+	// own map (not via the now-deleted Store.Providers()).
+	wfA := prA.Snapshot.Workflow()
+	wfB := prB.Snapshot.Workflow()
+	if len(wfA.Buckets) == 0 || len(wfB.Buckets) == 0 {
+		t.Fatalf("workflow buckets empty: A=%+v B=%+v", wfA.Buckets, wfB.Buckets)
+	}
+	if wfA.Buckets[0].Key != wfB.Buckets[0].Key {
+		t.Fatalf("workflow shape diverged across projects without an explicit reload: A=%q B=%q", wfA.Buckets[0].Key, wfB.Buckets[0].Key)
+	}
+}
+
+// TestHotReloadDoesNotAffectInFlight pins the immutability contract:
+// a caller that captured *Snapshot before Reload continues to read
+// the prior workflow shape after Reload installs a new pointer. The
+// agent service inside that captured runtime holds the old Snapshot,
+// so an in-flight MCP call mid-dispatch never observes a torn view of
+// the bundle.
+//
+// The implementation guarantee comes from Snapshot being an immutable
+// value-typed pointer (no Swap, no atomic field embedded) plus
+// cache.Reload installing a fresh pointer in a new entry rather than
+// mutating the previous entry in place.
+func TestHotReloadDoesNotAffectInFlight(t *testing.T) {
+	ctx := context.Background()
+	rt := openTestRuntime(t)
+	defer func() { _ = rt.Close() }()
+
+	cache := rt.Cache()
+	pre, err := cache.Resolve(ctx, rt.defaultProjectID, rt.configPath)
+	if err != nil {
+		t.Fatalf("Resolve seed: %v", err)
+	}
+	if pre.Snapshot == nil {
+		t.Fatal("seed ProjectRuntime carries nil Snapshot")
+	}
+	capturedSnapshot := pre.Snapshot
+	capturedWorkflowKey := capturedSnapshot.Workflow().Key
+
+	if _, err := cache.Reload(ctx, rt.defaultProjectID, rt.configPath); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+
+	post := cache.Get(rt.defaultProjectID)
+	if post == nil {
+		t.Fatal("Get after Reload returned nil")
+	}
+	if post.Snapshot == capturedSnapshot {
+		t.Fatal("Reload returned same Snapshot pointer; rebuild must install a fresh one")
+	}
+	// Pre-Reload caller's snapshot is still readable and unchanged.
+	if got := capturedSnapshot.Workflow().Key; got != capturedWorkflowKey {
+		t.Fatalf("pre-Reload snapshot mutated by post-Reload activity: got %q, want %q", got, capturedWorkflowKey)
+	}
+	// PreviousSnapshot on the new entry must pin the old pointer so
+	// the orphan flow can resolve task.bucket_id → previous key.
+	if post.PreviousSnapshot != capturedSnapshot {
+		t.Fatalf("cache rotation lost PreviousSnapshot: got %p, want %p", post.PreviousSnapshot, capturedSnapshot)
+	}
+}
+
+// TestConcurrentAgentsDifferentProjects runs many parallel goroutines
+// resolving and reading snapshots for two distinct project ids. Under
+// `-race`, any cross-project mutation of a Snapshot field would
+// surface as a data-race finding. The test does not invoke
+// app.WorkflowService.MoveTask end-to-end (that would require a SQL
+// fixture per project with separate writers and is covered by the
+// integration tests); instead it stresses the cache + snapshot read
+// surface that the per-project isolation invariant depends on.
+func TestConcurrentAgentsDifferentProjects(t *testing.T) {
+	ctx := context.Background()
+	rt := openTestRuntime(t)
+	defer func() { _ = rt.Close() }()
+
+	cache := rt.Cache()
+	if _, err := cache.Resolve(ctx, rt.defaultProjectID, rt.configPath); err != nil {
+		t.Fatalf("seed Resolve A: %v", err)
+	}
+	if _, err := cache.Resolve(ctx, rt.defaultProjectID+1, rt.configPath); err != nil {
+		t.Fatalf("seed Resolve B: %v", err)
+	}
+
+	const readers = 16
+	const iters = 50
+	var wg sync.WaitGroup
+	errs := make(chan error, readers)
+	for i := 0; i < readers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			projectID := rt.defaultProjectID
+			if i%2 == 1 {
+				projectID = rt.defaultProjectID + 1
+			}
+			for j := 0; j < iters; j++ {
+				pr, err := cache.Resolve(ctx, projectID, rt.configPath)
+				if err != nil {
+					errs <- err
+					return
+				}
+				if pr.Snapshot == nil {
+					errs <- &nilSnapshotErr{projectID: projectID}
+					return
+				}
+				// Read every catalog surface so the race detector
+				// inspects the snapshot's internal maps under
+				// concurrent dispatch.
+				_ = pr.Snapshot.Workflow()
+				_ = pr.Snapshot.Personas()
+				_ = pr.Snapshot.Skills()
+				_ = pr.Snapshot.Laws()
+				_ = pr.Snapshot.Templates()
+				_ = pr.Snapshot.MCPCommands()
+				_ = pr.Snapshot.Synonyms()
+				_ = pr.Snapshot.Stopwords()
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent snapshot read error: %v", err)
+		}
+	}
+	if cache.Size() != 2 {
+		t.Fatalf("cache size after concurrent reads = %d, want 2", cache.Size())
+	}
+}
+
+type nilSnapshotErr struct{ projectID int64 }
+
+func (e *nilSnapshotErr) Error() string {
+	return "Snapshot missing on cache entry"
+}
+
 func openTestRuntime(t *testing.T) *Runtime {
 	t.Helper()
 	ctx := context.Background()
