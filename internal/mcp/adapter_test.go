@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"omakiten/internal/agent"
@@ -580,6 +581,344 @@ func TestPeekProjectArg(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestAdapterServiceResolverIsolatesGuards locks the Phase 3b invariant:
+// per-project bundles carry per-project guards. Bundle A puts a
+// comments_min(count=2) guard on backlog→dev; bundle B leaves the
+// same transition unguarded. The same tasks.move call routed to the
+// two services must error in A (no comments yet) and succeed in B —
+// proof that the routing does not collapse to a single workflow shape
+// behind the adapter.
+func TestAdapterServiceResolverIsolatesGuards(t *testing.T) {
+	ctx := context.Background()
+
+	bundleA := mcpTestBundle(t)
+	bundleA.Workflows[0].Transitions = []config.Transition{
+		{From: 1, To: 2, Guards: []config.TransitionGuard{{Type: "comments_min", Count: 2, Hint: "Need 2 comments"}}},
+	}
+	bundleB := mcpTestBundle(t)
+	bundleB.Workflows[0].Transitions = []config.Transition{{From: 1, To: 2}}
+
+	storeA, projectA, taskA := newMCPProjectWithBundle(t, ctx, "alpha", bundleA)
+	storeB, projectB, taskB := newMCPProjectWithBundle(t, ctx, "bravo", bundleB)
+
+	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
+	serviceA.SetRegistry(testfixtures.CanonicalRegistry())
+	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
+	serviceB.SetRegistry(testfixtures.CanonicalRegistry())
+
+	adapter := NewAdapter(serviceA)
+	adapter.SetServiceResolver(func(_ context.Context, project string, _ int64) (*agent.Service, error) {
+		switch project {
+		case "alpha":
+			return serviceA, nil
+		case "bravo":
+			return serviceB, nil
+		}
+		return nil, nil
+	})
+
+	resultA, err := adapter.CallTool(ctx, "tasks.move", withModel(map[string]any{
+		"project":    "alpha",
+		"task_id":    taskA.ID,
+		"bucket_key": "dev",
+	}))
+	if err != nil {
+		t.Fatalf("CallTool alpha: %v", err)
+	}
+	if !resultA.IsError {
+		t.Fatalf("alpha should hit comments_min guard, got: %s", resultA.Content[0].Text)
+	}
+	var failureA map[string]any
+	if err := json.Unmarshal([]byte(resultA.Content[0].Text), &failureA); err != nil {
+		t.Fatalf("alpha payload not JSON: %v", err)
+	}
+	if failureA["code"] != "guard_violation" {
+		t.Fatalf("alpha failure code = %v, want guard_violation; payload=%v", failureA["code"], failureA)
+	}
+
+	resultB, err := adapter.CallTool(ctx, "tasks.move", withModel(map[string]any{
+		"project":    "bravo",
+		"task_id":    taskB.ID,
+		"bucket_key": "dev",
+	}))
+	if err != nil {
+		t.Fatalf("CallTool bravo: %v", err)
+	}
+	if resultB.IsError {
+		t.Fatalf("bravo unguarded move should succeed, got error: %s", resultB.Content[0].Text)
+	}
+}
+
+// TestAdapterServiceResolverIsolatesSettings asserts that each per-project
+// service applies its own ServiceSettings. Both services share the same
+// underlying bundle; only RecentCommentLimit differs. A task with 3
+// comments returns at most 1 comment when routed to service A and all 3
+// when routed to service B.
+func TestAdapterServiceResolverIsolatesSettings(t *testing.T) {
+	ctx := context.Background()
+
+	bundle := mcpTestBundle(t)
+	storeA, projectA, taskA := newMCPProjectWithBundle(t, ctx, "alpha", bundle)
+	storeB, projectB, taskB := newMCPProjectWithBundle(t, ctx, "bravo", bundle)
+
+	for i := 0; i < 3; i++ {
+		if _, err := storeA.AddComment(ctx, projectA.ID, taskA.ID, fmt.Sprintf("c-a-%d", i), "agent", nil); err != nil {
+			t.Fatalf("AddComment alpha #%d: %v", i, err)
+		}
+		if _, err := storeB.AddComment(ctx, projectB.ID, taskB.ID, fmt.Sprintf("c-b-%d", i), "agent", nil); err != nil {
+			t.Fatalf("AddComment bravo #%d: %v", i, err)
+		}
+	}
+
+	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
+	serviceA.SetRegistry(testfixtures.CanonicalRegistry())
+	includeFalse := false
+	serviceA.SetSettings(agent.ServiceSettings{RecentCommentLimit: 1, IncludeWorkflow: false, CachePrompts: false})
+	_ = includeFalse
+
+	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
+	serviceB.SetRegistry(testfixtures.CanonicalRegistry())
+	serviceB.SetSettings(agent.ServiceSettings{RecentCommentLimit: 10, IncludeWorkflow: false, CachePrompts: false})
+
+	adapter := NewAdapter(serviceA)
+	adapter.SetServiceResolver(func(_ context.Context, project string, _ int64) (*agent.Service, error) {
+		switch project {
+		case "alpha":
+			return serviceA, nil
+		case "bravo":
+			return serviceB, nil
+		}
+		return nil, nil
+	})
+
+	got := callContinueAndDecodeCommentCount(t, ctx, adapter, "alpha", taskA.ID)
+	if got != 1 {
+		t.Fatalf("alpha comments returned = %d, want 1 (RecentCommentLimit cap)", got)
+	}
+	got = callContinueAndDecodeCommentCount(t, ctx, adapter, "bravo", taskB.ID)
+	if got != 3 {
+		t.Fatalf("bravo comments returned = %d, want 3 (RecentCommentLimit=10 covers all)", got)
+	}
+}
+
+func callContinueAndDecodeCommentCount(t *testing.T, ctx context.Context, adapter *Adapter, project string, taskID int64) int {
+	t.Helper()
+	result, err := adapter.CallTool(ctx, "tasks.continue", withModel(map[string]any{
+		"project": project,
+		"task_id": taskID,
+	}))
+	if err != nil {
+		t.Fatalf("CallTool tasks.continue (%s): %v", project, err)
+	}
+	if result.IsError {
+		t.Fatalf("tasks.continue (%s) error: %s", project, result.Content[0].Text)
+	}
+	var payload struct {
+		Comments []any `json:"comments"`
+	}
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
+		t.Fatalf("tasks.continue (%s) payload: %v", project, err)
+	}
+	return len(payload.Comments)
+}
+
+// TestAdapterServiceResolverIsolatesTemplateCatalog asserts that
+// templates.list dispatched per-project surfaces only that project's
+// catalog. Each service is wired with a distinct SetTemplateCatalog
+// closure; the response slugs must not bleed across the resolver
+// boundary.
+func TestAdapterServiceResolverIsolatesTemplateCatalog(t *testing.T) {
+	ctx := context.Background()
+
+	storeA, projectA, _ := newMCPProjectWithBundle(t, ctx, "alpha", mcpTestBundle(t))
+	storeB, projectB, _ := newMCPProjectWithBundle(t, ctx, "bravo", mcpTestBundle(t))
+
+	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
+	serviceA.SetRegistry(testfixtures.CanonicalRegistry())
+	serviceA.SetTemplateCatalog(func() []agent.TemplateSummary {
+		return []agent.TemplateSummary{
+			{Slug: "pr-alpha", Name: "PR-A", Default: "pr", Project: "alpha"},
+			{Slug: "task-alpha", Name: "Task-A", Default: "task", Project: "alpha"},
+		}
+	})
+	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
+	serviceB.SetRegistry(testfixtures.CanonicalRegistry())
+	serviceB.SetTemplateCatalog(func() []agent.TemplateSummary {
+		return []agent.TemplateSummary{
+			{Slug: "pr-bravo", Name: "PR-B", Default: "pr", Project: "bravo"},
+		}
+	})
+
+	adapter := NewAdapter(serviceA)
+	adapter.SetServiceResolver(func(_ context.Context, project string, _ int64) (*agent.Service, error) {
+		switch project {
+		case "alpha":
+			return serviceA, nil
+		case "bravo":
+			return serviceB, nil
+		}
+		return nil, nil
+	})
+
+	slugsA := callListTemplates(t, ctx, adapter, "alpha")
+	if !equalUnordered(slugsA, []string{"pr-alpha", "task-alpha"}) {
+		t.Fatalf("alpha templates = %v, want {pr-alpha, task-alpha}", slugsA)
+	}
+	slugsB := callListTemplates(t, ctx, adapter, "bravo")
+	if !equalUnordered(slugsB, []string{"pr-bravo"}) {
+		t.Fatalf("bravo templates = %v, want {pr-bravo}", slugsB)
+	}
+}
+
+// equalUnordered checks slice set-equality. ListTemplates builds its
+// project-scoped + global result from Go maps, so the response order is
+// non-deterministic. Tests assert membership, not order.
+func equalUnordered(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	seen := map[string]int{}
+	for _, s := range got {
+		seen[s]++
+	}
+	for _, s := range want {
+		seen[s]--
+	}
+	for _, count := range seen {
+		if count != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func callListTemplates(t *testing.T, ctx context.Context, adapter *Adapter, project string) []string {
+	t.Helper()
+	result, err := adapter.CallTool(ctx, "templates.list", withModel(map[string]any{"project": project}))
+	if err != nil {
+		t.Fatalf("CallTool templates.list (%s): %v", project, err)
+	}
+	if result.IsError {
+		t.Fatalf("templates.list (%s) error: %s", project, result.Content[0].Text)
+	}
+	var payload struct {
+		Templates []struct {
+			Slug string `json:"slug"`
+		} `json:"templates"`
+	}
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
+		t.Fatalf("templates.list (%s) payload: %v", project, err)
+	}
+	out := make([]string, 0, len(payload.Templates))
+	for _, s := range payload.Templates {
+		out = append(out, s.Slug)
+	}
+	return out
+}
+
+// TestAdapterServiceResolverConcurrentRouting drives N goroutines through
+// CallTool with project= alternating between alpha and bravo. The
+// project.overview payload echoes the project slug, so each goroutine
+// can confirm the routing reached the correct service. -race surfaces
+// any cross-call data corruption that a torn dispatch would introduce.
+func TestAdapterServiceResolverConcurrentRouting(t *testing.T) {
+	ctx := context.Background()
+
+	storeA, projectA, _ := newMCPProjectWithBundle(t, ctx, "alpha", mcpTestBundle(t))
+	storeB, projectB, _ := newMCPProjectWithBundle(t, ctx, "bravo", mcpTestBundle(t))
+
+	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
+	serviceA.SetRegistry(testfixtures.CanonicalRegistry())
+	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
+	serviceB.SetRegistry(testfixtures.CanonicalRegistry())
+
+	adapter := NewAdapter(serviceA)
+	adapter.SetServiceResolver(func(_ context.Context, project string, _ int64) (*agent.Service, error) {
+		switch project {
+		case "alpha":
+			return serviceA, nil
+		case "bravo":
+			return serviceB, nil
+		}
+		return nil, nil
+	})
+
+	const workers = 16
+	const iters = 25
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			project := "alpha"
+			if id%2 == 1 {
+				project = "bravo"
+			}
+			for j := 0; j < iters; j++ {
+				result, err := adapter.CallTool(ctx, "project.overview", withModel(map[string]any{"project": project}))
+				if err != nil {
+					errs <- fmt.Errorf("worker %d iter %d call: %w", id, j, err)
+					return
+				}
+				if result.IsError {
+					errs <- fmt.Errorf("worker %d iter %d error: %s", id, j, result.Content[0].Text)
+					return
+				}
+				var payload struct {
+					Project struct {
+						Slug string `json:"slug"`
+					} `json:"project"`
+				}
+				if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
+					errs <- fmt.Errorf("worker %d iter %d decode: %w", id, j, err)
+					return
+				}
+				if payload.Project.Slug != project {
+					errs <- fmt.Errorf("worker %d iter %d crosstalk: got %q want %q", id, j, payload.Project.Slug, project)
+					return
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent routing failure: %v", err)
+		}
+	}
+}
+
+// newMCPProjectWithBundle imports the supplied bundle into a fresh
+// store, registers a project under slug, and seeds a single backlog
+// task so dispatch tests have something to operate on. Returns the
+// triple every per-project test needs.
+func newMCPProjectWithBundle(t *testing.T, ctx context.Context, slug string, bundle config.Bundle) (*sqlite.Store, domain.Project, domain.Task) {
+	t.Helper()
+	store, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "omakiten.db"))
+	if err != nil {
+		t.Fatalf("Open(%s): %v", slug, err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle(%s): %v", slug, err)
+	}
+	root := filepath.Join(t.TempDir(), slug)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%s): %v", slug, err)
+	}
+	project, err := store.UpsertProject(ctx, slug, slug, root)
+	if err != nil {
+		t.Fatalf("UpsertProject(%s): %v", slug, err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "T-"+slug, "", domain.Priority(2), "backlog")
+	if err != nil {
+		t.Fatalf("CreateTask(%s): %v", slug, err)
+	}
+	return store, project, task
 }
 
 func mcpTestBundle(t *testing.T) config.Bundle {
