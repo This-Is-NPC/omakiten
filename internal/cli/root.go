@@ -36,6 +36,7 @@ type runtime struct {
 	store              *sqlite.Store
 	configPath         string
 	dbPath             string
+	repoLocalDir       string
 	bus                events.Bus
 	hooksEngine        *hooks.Engine
 	notificationAction *actions.NotificationShowAction
@@ -164,7 +165,18 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		return nil, err
 	}
 
-	rt := &runtime{store: store, configPath: configPath, dbPath: dbPath}
+	repoLocalDir, err := o.discoverRepoLocalRoot()
+	if err != nil {
+		return nil, err
+	}
+	if o.configPath != "" {
+		// --config overrides discovery — the TUI badge must reflect what the
+		// runtime is actually loading, not a discovered .omakiten/ that the
+		// flag bypassed.
+		repoLocalDir = ""
+	}
+
+	rt := &runtime{store: store, configPath: configPath, dbPath: dbPath, repoLocalDir: repoLocalDir}
 
 	if materializeConfig {
 		// Import loads + validates + populates the domain registries

@@ -71,9 +71,10 @@ type Repositories struct {
 	// does not consume these for routing or persistence; they exist so
 	// the read-only info card can reflect the active install. Empty
 	// strings are tolerated and rendered as "—".
-	ConfigPath string
-	DBPath     string
-	Version    string
+	ConfigPath   string
+	DBPath       string
+	Version      string
+	RepoLocalDir string
 }
 
 // Model is the root Bubble Tea model for the TUI. It aggregates state that

@@ -340,7 +340,26 @@ func TestSettingsGeneralRendersRuntimeCard(t *testing.T) {
 	model.sub = subSettingsGeneral
 
 	view := ansi.Strip(model.View())
-	for _, want := range []string{"// RUNTIME", "// PROJECT", "// OKT VERSION", "0.9.0-test", "/tmp/omakiten.yaml", "/tmp/omakiten.db", "// THEME", "// WORKFLOW"} {
+	for _, want := range []string{"// RUNTIME", "// PROJECT", "// OKT VERSION", "0.9.0-test", "// SCOPE", "global", "/tmp/omakiten.yaml", "/tmp/omakiten.db", "// THEME", "// WORKFLOW"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("Settings › General missing %q\n%s", want, view)
+		}
+	}
+}
+
+func TestSettingsGeneralScopeBadgeNamesRepoLocalDir(t *testing.T) {
+	model, _, _ := newEntityModel(t)
+	model.repos.Version = "0.9.0-test"
+	model.repos.ConfigPath = "/tmp/myrepo/.omakiten/config/izakaya.yaml"
+	model.repos.DBPath = "/tmp/omakiten.db"
+	model.repos.RepoLocalDir = "/tmp/myrepo/.omakiten"
+	model.width = 200
+	model.height = 40
+	model.top = topSettings
+	model.sub = subSettingsGeneral
+
+	view := ansi.Strip(model.View())
+	for _, want := range []string{"// SCOPE", "local (/tmp/myrepo/.omakiten)"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("Settings › General missing %q\n%s", want, view)
 		}
