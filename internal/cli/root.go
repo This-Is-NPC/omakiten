@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/agent"
 	"omakiten/internal/agentruntime"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
@@ -253,96 +254,44 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 	rt := &runtime{store: store, configPath: configPath, dbPath: dbPath, repoLocalDir: repoLocalDir}
 
 	if materializeConfig {
-		// Import loads + validates + populates the domain registries
-		// (priority/severity) BEFORE writing to SQLite, so the rest
-		// of the CLI invocation sees a fully wired runtime. The
-		// registries live for the duration of the process.
-		bundle, _, enumRegistry, err := app.NewConfigService(store, cs).Import(ctx, configPath)
+		// Single construction path: peek the bundle once for the events
+		// bus seed (the bus must outlive every cache rebuild), then
+		// delegate every other per-bundle wire (registry, hooks
+		// engine, notification snapshot, synonyms, stopwords) to the
+		// shared agentruntime.BuildProjectRuntime via cache.Resolve.
+		// Mirrors the MCP composition root so CLI and MCP cannot
+		// drift on what "boot" produces.
+		preview, err := config.LoadBundle(configPath)
 		if err != nil {
 			_ = store.Close()
 			return nil, err
 		}
-		emitBundleWarnings(bundle)
-		rt.registry = enumRegistry
+		emitBundleWarnings(preview)
 
-		bus := events.NewInProcessBus(bundle.Config.Events)
-		registry := hooks.NewActionRegistry()
-		actions.RegisterBuiltins(registry)
-		notificationAction := actions.NewNotificationShowAction(notificationSnapshotFromBundle(bundle))
-		registry.Register(notificationAction)
-		rt.notificationAction = notificationAction
-		if err := config.ValidateHooks(bundle.Config.Hooks, func(name string) bool {
-			_, ok := registry.Get(name)
-			return ok
-		}, bundle.Notifications); err != nil {
+		cwd, err := os.Getwd()
+		if err != nil {
+			_ = store.Close()
+			return nil, err
+		}
+		bus := events.NewInProcessBus(preview.Config.Events)
+		cache := agentruntime.NewBundleCache(store, bus, cs)
+		cache.SetProjectSelector(agent.ProjectSelector{ProjectID: o.projectID, Project: o.project, CWD: cwd})
+
+		pr, err := cache.Resolve(ctx, o.projectID, configPath)
+		if err != nil {
 			_ = store.Close()
 			return nil, err
 		}
 
-		// Reapply busy_timeout with the user-resolved value, then wire the
-		// activity-log + events knobs into the live Store. Mirrors the
-		// agentruntime composition root — every entry point that opens a
-		// Store from the user's bundle goes through this step.
-		if err := store.ApplyConfig(ctx, sqlite.ConfigKnobs{
-			BusyTimeoutMs:            bundle.Config.SQLite.BusyTimeoutMs,
-			ActivityLogMaxRows:       bundle.Config.ActivityLog.MaxRows,
-			ActivityLogMaxAgeDays:    bundle.Config.ActivityLog.MaxAgeDays,
-			EventsDefaultRecentLimit: bundle.Config.Events.DefaultRecentLimit,
-			EventsPolicy:             bundle.Config.Events,
-			EventBus:                 bus,
-		}); err != nil {
-			_ = store.Close()
-			return nil, err
-		}
-		// Phase 3f: tag synonyms + similar-task stopwords live per-service
-		// (no process globals). The CLI threads `rt.activeSynonyms()` into
-		// every service helper that needs them; stopwords are stored on
-		// the cache entry so MCP / agent paths read them directly.
-		_ = bundle.Config.TagSynonyms
-		_ = bundle.Config.Search.Stopwords
-
-		hookEntries := buildHookEntries(bundle.Config.Hooks)
-		engine := hooks.NewEngine(hookEntries, registry, bundle.Config.Events, store)
-		engine.SetProjectID(o.projectID)
-		engine.Start(bus)
+		rt.registry = pr.EnumRegistry
 		rt.bus = bus
-		rt.hooksEngine = engine
-
-		// Phase 3c: seed the BundleCache with the resolved bundle so
-		// subcommands consume the cache uniformly (today's single-shot
-		// CLI fits cache size = 1; future multi-project surfaces add
-		// entries without changing the consumer contract).
-		rt.cache = agentruntime.NewBundleCache(store, bus, cs)
+		rt.hooksEngine = pr.HooksEngine
+		rt.notificationAction = pr.NotificationAction
+		rt.cache = cache
 		rt.projectID = o.projectID
-		bundleCopy := bundle
-		rt.cache.Install(o.projectID, &agentruntime.ProjectRuntime{
-			Bundle:             &bundleCopy,
-			HooksEngine:        engine,
-			ActionRegistry:     registry,
-			NotificationAction: notificationAction,
-			EnumRegistry:       enumRegistry,
-			NotificationSnapshot: actions.NotificationBundleSnapshot{Notifications: bundle.Notifications},
-			TagSynonyms:        copyStringMapCLI(bundle.Config.TagSynonyms),
-			Stopwords:          append([]string(nil), bundle.Config.Search.Stopwords...),
-			SourcePath:         configPath,
-		})
 	}
 
 	return rt, nil
-}
-
-// copyStringMapCLI clones a string→string map. Inlined here to avoid
-// exposing the helper from agentruntime; the function is trivial and
-// stays internal to the CLI composition root.
-func copyStringMapCLI(in map[string]string) map[string]string {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]string, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
 }
 
 // ResolveProjectRuntime returns the ProjectRuntime for the supplied
@@ -380,36 +329,6 @@ func (r *runtime) ProjectRuntime() *agentruntime.ProjectRuntime {
 		return nil
 	}
 	return r.cache.Get(r.projectID)
-}
-
-// buildHookEntries lifts user-facing HookSpec entries into the
-// engine's hooks.Hook shape. Notification-shape entries (HookSpec.Notification
-// non-empty) are rewritten to call the notification.show action with the
-// slug stashed under actions.NotificationArgSlug. Optional hook-level
-// `message:` / `message_field:` overrides ride along under their
-// own arg keys so the action can fall back to them when the
-// referenced notification YAML does not declare its own message source.
-func buildHookEntries(specs []config.HookSpec) []hooks.Hook {
-	out := make([]hooks.Hook, 0, len(specs))
-	for _, spec := range specs {
-		if spec.Notification != "" {
-			out = append(out, hooks.Hook{
-				On:   spec.On,
-				When: spec.When,
-				Do:   actions.NotificationActionName,
-				Args: map[string]any{
-					actions.NotificationArgSlug:               spec.Notification,
-					actions.NotificationArgMessage:            spec.Message,
-					actions.NotificationArgMessageField:       spec.MessageField,
-					actions.NotificationArgDetailMessage:      spec.DetailMessage,
-					actions.NotificationArgDetailMessageField: spec.DetailMessageField,
-				},
-			})
-			continue
-		}
-		out = append(out, hooks.Hook{On: spec.On, When: spec.When, Do: spec.Do, Args: spec.Args})
-	}
-	return out
 }
 
 func (o *runtimeOptions) resolvedConfigPath() (string, error) {
@@ -523,12 +442,6 @@ func writeError(cmd *cobra.Command, err error) error {
 
 	_ = output.Write(cmd.OutOrStdout(), output.Failure("internal_error", err.Error(), nil))
 	return exitError{code: 1}
-}
-
-// notificationSnapshotFromBundle builds the slim view of the bundle that the
-// notification.show action consults at execute time.
-func notificationSnapshotFromBundle(bundle config.Bundle) actions.NotificationBundleSnapshot {
-	return actions.NotificationBundleSnapshot{Notifications: bundle.Notifications}
 }
 
 // emitBundleWarnings surfaces non-fatal config issues (skipped custom
