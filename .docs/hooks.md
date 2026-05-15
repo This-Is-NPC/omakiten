@@ -23,7 +23,27 @@ config:
 ```
 
 Mutating the block requires an app restart — the bundle is loaded once
-at startup, same as every other config block.
+at startup, same as every other config block. (The TUI hot-reload path
+rebuilds the engine when the active YAML's mtime changes, so an in-app
+edit + save will be picked up by the next event; CLI / MCP processes
+that run as one-shots reload by re-exec.)
+
+### Per-project dispatch
+
+Each `ProjectRuntime` in the `BundleCache` owns its own `hooks.Engine`,
+`ActionRegistry`, and `NotificationShowAction`. Engines filter their
+dispatch by `engine.projectID == event.ProjectID`:
+
+- engine `projectID == 0` (legacy boot, single-project) catches all events.
+- event `ProjectID == 0` (system events like `bundle.swapped`,
+  `hook.executed` written against the system entity) reaches every engine.
+- otherwise the engine reacts only to events scoped to its project.
+
+The consequence: a `mcp.tool_call` hook declared in project A's bundle
+will not fire on tool calls dispatched against project B's service,
+even when both run through the same `okt mcp serve` process. See
+[`mcp-guide.md`](mcp-guide.md#per-project-routing) for how the dispatch
+side decides which project a tool call belongs to.
 
 ### Event matching
 

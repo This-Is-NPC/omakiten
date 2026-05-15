@@ -759,6 +759,14 @@ Validation rejects duplicate slugs in any list, slugs that overlap between `laws
 
 ---
 
+## How config reads work at runtime (in-memory providers + per-project cache)
+
+Phase 2 of the config refactor dropped every SQL config table — workflows, workflow_buckets, workflow_transitions, personas, persona_skills, skills, laws, settings, config_bundles (migration 020). The bundle YAML is the single source of truth; reads land on an in-memory snapshot rotated by `app.ConfigService.Import` → `Store.ImportBundle` → `providers.Swap`. The swap is one `atomic.Pointer` store, so concurrent readers either see the prior bundle or the new one — never a half-built mix.
+
+Phase 3 layered per-project bundles on top: `agentruntime.BundleCache` holds one `*ProjectRuntime` per project id. Each entry aggregates the bundle, an `agent.Service`, a `hooks.Engine`, the action registry, the notification snapshot, the enum registry, the tag synonym table, and the stopword set built from THAT project's YAML. Cache rebuilds happen automatically on mtime change (every Resolve stat-checks the SourcePath) or explicitly via `Reload` (TUI Settings → Config picker). MCP `Adapter.CallTool` peeks `project` / `project_id` from incoming args and routes the dispatch against the matching entry; calls without those args fall back to the default project resolved at boot.
+
+Hot-reload of the active YAML no longer touches SQLite — `cache.Reload` re-parses, runs the validator, calls `providers.Swap`, swaps the engine, and emits `bundle.imported` for audit. Validator rejection leaves the previous snapshot in place.
+
 ## Autoload, custom overrides, and slug rules
 
 For each per-entity folder (`skills/`, `laws/`, `personas/`, `templates/`):
