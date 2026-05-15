@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"omakiten/internal/app"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	projectresolver "omakiten/internal/project"
 	"omakiten/internal/token"
@@ -106,6 +107,14 @@ type Service struct {
 	registry           *domain.EnumRegistry
 	stopwords          map[string]bool
 	synonyms           map[string]string
+	// snapshot is the immutable per-project view of the active bundle.
+	// SetSnapshot installs it and derives every legacy field
+	// (catalogs, synonyms, stopwords, registry) from the snap so
+	// production composition collapses to a single call. The
+	// per-field setters survive as test-only overrides for cases
+	// where callers want to stub one closure without building a
+	// full Bundle/Snapshot pair.
+	snapshot *config.Snapshot
 }
 
 // NewService constructs the agent service with zero-value settings.
@@ -217,6 +226,41 @@ func (s *Service) SetSettings(settings ServiceSettings) {
 // The runtime composition root calls this once at startup after Import.
 func (s *Service) SetRegistry(r *domain.EnumRegistry) {
 	s.registry = r
+}
+
+// SetSnapshot installs the per-project *config.Snapshot the service
+// reads workflow / catalog / synonym / stopword state from. The
+// production composition root (agentruntime.buildProjectRuntime)
+// calls this once per ProjectRuntime; the per-field setters survive
+// for tests that want to stub one closure without building a full
+// Bundle, but the runtime no longer touches them.
+//
+// SetSnapshot also derives every closure-shaped legacy field
+// (taskTemplateLookup / templateCatalog / skillCatalog / lawCatalog /
+// personaCatalog / commandCatalog) from the snapshot and refreshes
+// synonyms / stopwords. The per-field setters are still effective
+// when called *after* SetSnapshot — last-write-wins keeps the test
+// override path working unchanged.
+func (s *Service) SetSnapshot(snap *config.Snapshot) {
+	s.snapshot = snap
+	if snap == nil {
+		return
+	}
+	s.taskTemplateLookup = snapshotTaskTemplateLookup(snap)
+	s.templateCatalog = snapshotTemplateCatalog(snap)
+	s.skillCatalog = snapshotSkillCatalog(snap)
+	s.lawCatalog = snapshotLawCatalog(snap)
+	s.personaCatalog = snapshotPersonaCatalog(snap)
+	s.commandCatalog = snapshotCommandCatalog(snap)
+	s.synonyms = snap.Synonyms()
+	s.stopwords = stopwordsTable(snap.Stopwords())
+}
+
+// Snapshot returns the per-project *config.Snapshot wired via
+// SetSnapshot, or nil when no runtime composition has installed one
+// (e.g. unit tests that drive the service directly).
+func (s *Service) Snapshot() *config.Snapshot {
+	return s.snapshot
 }
 
 // SettingsCachePrompts exposes the cache-prompts toggle for the MCP adapter.

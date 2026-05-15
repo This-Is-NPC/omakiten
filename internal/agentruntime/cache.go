@@ -309,13 +309,15 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	}
 
 	svc := agent.NewService(store, selector)
+	// Phase 2-bis collapses every legacy SetXCatalog / SetSynonyms /
+	// SetStopwords / SetRegistry wiring into one SetSnapshot call.
+	// The agent service derives the catalog closures, synonym table,
+	// stopword set, and bundle-scoped registry from the per-project
+	// Snapshot at SetSnapshot time. Two projects holding two
+	// snapshots see two independent catalog views; hot-reload
+	// rotates the pointer atomically through cache.Reload.
+	svc.SetSnapshot(store.Snapshot())
 	svc.SetRegistry(enumRegistry)
-	svc.SetTaskTemplateLookup(taskTemplateLookup(bundle))
-	svc.SetTemplateCatalog(templateCatalog(bundle))
-	svc.SetSkillCatalog(skillCatalog(bundle))
-	svc.SetLawCatalog(lawCatalog(bundle))
-	svc.SetPersonaCatalog(personaCatalog(bundle))
-	svc.SetCommandCatalog(commandCatalog(bundle))
 	svc.SetSettings(agent.ServiceSettings{
 		RecentCommentLimit:       bundle.Config.MCP.RecentCommentLimit,
 		MaxCommentChars:          bundle.Config.MCP.MaxCommentChars,
@@ -327,12 +329,6 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		SolutionsTopLimitDefault: bundle.Config.Solutions.DefaultTopLimit,
 		SolutionsTopLimitMax:     bundle.Config.Solutions.MaxTopLimit,
 	})
-	// Phase 3f: per-project synonyms + stopwords on the agent.Service.
-	// Service builder helpers (newCommentService / newTagService / ...)
-	// forward s.synonyms into NormalizeTagName so two projects' tables
-	// stay disjoint.
-	svc.SetSynonyms(copyStringMap(bundle.Config.TagSynonyms))
-	svc.SetStopwords(append([]string(nil), bundle.Config.Search.Stopwords...))
 
 	mtime := time.Time{}
 	if info, err := os.Stat(configPath); err == nil {
