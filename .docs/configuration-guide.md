@@ -1138,6 +1138,50 @@ Single workflow `default` with four buckets — `backlog` → `dev` → `review`
 
 Source: `internal/paths/paths.go:ConfigRoot`, `EntityDir`, `EntityCustomDir`, `ActiveConfigFile`. Legacy flat layouts (`<root>/<name>.yaml` at the root with no `config/` subdir) are tolerated by `ConfigRootFromYAMLPath` and migrated forward by `configstore.MigrateLayout` on next connect. `ConfigRootFromYAMLPath` also recognizes `<root>/config/custom/<name>.yaml`, so entity folders resolve correctly when the active profile lives under `custom/`.
 
+### Repo-local `.omakiten/` standalone install
+
+When `.omakiten/` is present at (or above) the current working directory, the runtime treats it as a **complete standalone install** and ignores the user-global ConfigRoot entirely. There is no merge, no overlay, no layered fallback. The only thing that stays global is the SQLite database — `.omakiten/` is config-only.
+
+Discovery: `config.FindRepoLocal(CWD)` walks the parent chain, stopping at the first `.omakiten/`, at `$HOME`, or at the filesystem root. When the walker finds a directory, `runtimeOptions.resolvedConfigRoot` and `resolvedConfigPath` switch to that root for the rest of the process. The `--config` flag overrides discovery — when present, the flag is the authoritative source and the badge reflects "global".
+
+Layout mirrors the user-global root exactly:
+
+```
+<repo>/.omakiten/
+  config/
+    <active>.yaml          # picked preset (or user-authored profile)
+    .active                # one-line state: basename of the active profile
+    custom/                # user-authored profile yamls
+  skills/<slug>.md   + custom/
+  laws/<slug>.md     + custom/
+  personas/<slug>.md + custom/
+  templates/<slug>.md + custom/
+  themes/<key>.yaml  + custom/
+  notifications/<slug>.yaml + custom/
+```
+
+The expected workflow is `okt config init --scope local --preset <name>`: that single call materialises every entity folder via `EnsureDefaultFiles`, copies every shipped preset yaml under `config/`, and points `.active` at the chosen one. The result is a self-contained install — `LoadBundle(<repo>/.omakiten/config/<active>.yaml)` succeeds without any merge step.
+
+Source: `internal/config/repo_local.go:FindRepoLocal`, `internal/config/seed_install.go:SeedInstall`, `internal/cli/root.go:runtimeOptions.discoverRepoLocalRoot`.
+
+### Inspecting the active layer — `okt config <sub>`
+
+| Subcommand | Purpose |
+| --- | --- |
+| `okt config init --scope <global\|local> --preset <name> [--force]` | Materialise a complete install (config + entity folders + preset library) into the chosen scope. `--force` re-copies every embedded shipped file; user `custom/` subtrees are never touched. |
+| `okt config show --scope <global\|local>` | Print the raw bytes of the chosen scope's active yaml. |
+| `okt config path --scope <global\|local>` | Print the install root directory (the ConfigRoot for global, the discovered `.omakiten/` for local). |
+| `okt config why <key> [--layer <global\|local>]` | Walk the active config (or a pinned layer) by dotted YAML key path and report `{key, value, source, path}`. Missing keys return `source = "not_set"`. |
+| `okt config diff <left> <right>` | Structural YAML diff between two sources. Operands accept `global`, `local`, `local:<path>`, or any raw yaml file path. Emits one entry per divergent leaf (`added` / `removed` / `changed`). |
+
+### TUI scope badge
+
+Settings › General shows a `scope` row that reads:
+- `global` — runtime is loading the user-global install.
+- `local (<.omakiten path>)` — runtime is loading a discovered repo-local install.
+
+The badge reflects what the loader actually picked, not the discovery candidates. Using `--config <path>` clears the badge to `global` because the explicit flag bypasses walk-up discovery.
+
 ### SQLite database
 
 ```

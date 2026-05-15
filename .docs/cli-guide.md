@@ -295,6 +295,46 @@ okt config validate
 okt config validate ./omakase.yaml
 ```
 
+### `okt config init --scope <global|local> --preset <name> [--force]`
+
+`internal/cli/config_init.go`. Materialises a **standalone** install of the chosen preset:
+
+| Scope | Destination |
+|---|---|
+| `global` | `paths.ConfigRoot()` (or the parent of `--config`'s yaml). |
+| `local`  | `<cwd>/.omakiten/` (literal CWD; no walk-up). |
+
+Both scopes share `config.SeedInstall` internally, which copies every embedded shipped file (skills, laws, personas, templates, themes, notifications, every preset yaml) and sets `.active` to the chosen preset. `--force` re-copies the shipped files (preserving every `custom/` subtree).
+
+Rerun matrix:
+- Same preset, same files → `no_op:true`.
+- Different preset → flips `.active`, no `no_op`.
+- Tampered shipped file, no force → preserved.
+- Tampered shipped file, `--force` → restored, `refreshed:true`.
+
+### `okt config show --scope <global|local>`
+
+`internal/cli/config_show.go`. Prints the raw bytes of the chosen scope's active yaml. Local walks up from CWD via `config.FindRepoLocal`; missing discovery is a `validation_error` (no silent fallback to global — the standalone semantics make a fallback ambiguous).
+
+### `okt config path --scope <global|local>`
+
+`internal/cli/config_show.go`. Prints the install root directory the layer owns (the `ConfigRoot` for global, the discovered `.omakiten/` for local).
+
+### `okt config why <key> [--layer <global|local>]`
+
+`internal/cli/config_inspect.go`. Walks the active config by dotted YAML key path and reports `{key, value, source, path}`. Without `--layer` the runtime resolver decides — the discovered `.omakiten/` wins over the user-global ConfigRoot. With `--layer` the lookup is pinned to that scope. Missing keys (and missing local installs when `--layer local`) return `source = "not_set"`.
+
+### `okt config diff <left> <right>`
+
+`internal/cli/config_inspect.go`. Structural YAML diff between two sources. Each operand is one of:
+
+- `global` — the user-global active yaml.
+- `local` — the active yaml inside the CWD walk-up `.omakiten/`.
+- `local:<path>` — the active yaml inside `<path>/.omakiten/`.
+- any other string → treated as a literal yaml file path.
+
+Output entries carry `op = added | removed | changed` plus the relevant side values. Maps descend recursively; lists and scalars compare by deep equality.
+
 ---
 
 ## Skills
