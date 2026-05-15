@@ -320,20 +320,23 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		return nil, err
 	}
 
-	hookEntries := buildHookEntries(bundle.Config.Hooks)
-	engine := hooks.NewEngine(hookEntries, registry, bundle.Config.Events, store)
+	// Build the per-project Snapshot before the hooks engine so the
+	// engine reads its hook spec list and event-channel policy from
+	// the same immutable pointer the agent service consumes. Two
+	// projects in the cache hold two engines; each engine's hooks
+	// slice is its own bundle's, never the other's.
+	snapshot := config.BuildSnapshot(bundle)
+	hookEntries := buildHookEntries(snapshot.Hooks())
+	engine := hooks.NewEngine(hookEntries, registry, snapshot.Events(), store)
 	engine.SetProjectID(projectID)
 	if bus != nil {
 		engine.Start(bus)
 	}
 
-	// Build the per-project Snapshot up front and thread the SAME
-	// pointer into both the agent service and the ProjectRuntime
-	// field. Each rebuild produces a fresh pointer; in-flight calls
-	// that captured the previous pointer continue reading from it
-	// until they return — that is the per-project isolation
-	// contract.
-	snapshot := config.BuildSnapshot(bundle)
+	// snapshot is built above before the hooks engine — both surfaces
+	// consume the same immutable per-project pointer. Each rebuild
+	// produces a fresh pointer; in-flight callers that captured the
+	// previous pointer continue reading from it until they return.
 
 	svc := agent.NewService(store, selector)
 	// Phase 2-bis collapses every legacy SetXCatalog / SetSynonyms /
