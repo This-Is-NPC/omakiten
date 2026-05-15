@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -466,6 +467,119 @@ func newMCPTestService(t *testing.T, ctx context.Context) *agent.Service {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 	return agent.NewService(store, agent.ProjectSelector{CWD: root})
+}
+
+// TestAdapterServiceResolverRoutesByProjectArg locks in the Phase 3b
+// invariant: when SetServiceResolver is wired, CallTool peeks the
+// project / project_id args and dispatches against whichever service
+// the resolver hands back. The default service is the fallback for
+// calls without a project arg, and for resolver replies of (nil, nil).
+func TestAdapterServiceResolverRoutesByProjectArg(t *testing.T) {
+	ctx := context.Background()
+
+	storeA, projectA := newMCPProjectFixture(t, ctx, "alpha")
+	storeB, projectB := newMCPProjectFixture(t, ctx, "bravo")
+
+	defaultService := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
+	projectBService := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
+
+	adapter := NewAdapter(defaultService)
+	var observed []string
+	adapter.SetServiceResolver(func(_ context.Context, project string, projectID int64) (*agent.Service, error) {
+		observed = append(observed, fmt.Sprintf("project=%q id=%d", project, projectID))
+		if project == "bravo" || projectID == projectB.ID {
+			return projectBService, nil
+		}
+		return nil, nil
+	})
+
+	// Default routing (no project arg): observed call still happens
+	// (resolver invoked with zero values) but the service stays the
+	// adapter default — projectA.
+	result, err := adapter.CallTool(ctx, "project.overview", withModel(map[string]any{}))
+	if err != nil {
+		t.Fatalf("CallTool default: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("CallTool default returned error: %+v", result)
+	}
+
+	// Explicit project="bravo": resolver returns projectB's service, so
+	// the overview is computed against storeB's tasks (which are
+	// distinct from storeA's).
+	result, err = adapter.CallTool(ctx, "project.overview", withModel(map[string]any{"project": "bravo"}))
+	if err != nil {
+		t.Fatalf("CallTool bravo: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("CallTool bravo returned error: %+v", result)
+	}
+
+	if len(observed) != 2 {
+		t.Fatalf("resolver invoked %d times, want 2: %v", len(observed), observed)
+	}
+	if !strings.Contains(observed[0], `project=""`) {
+		t.Fatalf("first resolver call should observe empty project, got %q", observed[0])
+	}
+	if !strings.Contains(observed[1], `project="bravo"`) {
+		t.Fatalf("second resolver call should observe project=bravo, got %q", observed[1])
+	}
+}
+
+// newMCPProjectFixture builds a self-contained sqlite store + project +
+// task triple keyed by slug. Used by per-project routing tests where
+// two adapters need to point at distinct underlying state.
+func newMCPProjectFixture(t *testing.T, ctx context.Context, slug string) (*sqlite.Store, domain.Project) {
+	t.Helper()
+	store, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "omakiten.db"))
+	if err != nil {
+		t.Fatalf("Open(%s): %v", slug, err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.ImportBundle(ctx, mcpTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle(%s): %v", slug, err)
+	}
+	root := filepath.Join(t.TempDir(), slug)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%s): %v", slug, err)
+	}
+	project, err := store.UpsertProject(ctx, slug, slug, root)
+	if err != nil {
+		t.Fatalf("UpsertProject(%s): %v", slug, err)
+	}
+	if _, err := store.CreateTask(ctx, project.ID, "T-"+slug, "", domain.Priority(2), "backlog"); err != nil {
+		t.Fatalf("CreateTask(%s): %v", slug, err)
+	}
+	return store, project
+}
+
+// TestPeekProjectArg exercises the typed-vs-string handling that JSON
+// decoding can produce for project_id. The MCP protocol uses
+// json.Unmarshal which lands integers as float64; the JSON-RPC layer
+// may also pass json.Number when configured for arbitrary-precision.
+func TestPeekProjectArg(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      map[string]any
+		project   string
+		projectID int64
+	}{
+		{name: "empty", args: map[string]any{}, project: "", projectID: 0},
+		{name: "string project", args: map[string]any{"project": "alpha"}, project: "alpha", projectID: 0},
+		{name: "float64 id", args: map[string]any{"project_id": float64(7)}, project: "", projectID: 7},
+		{name: "int64 id", args: map[string]any{"project_id": int64(9)}, project: "", projectID: 9},
+		{name: "int id", args: map[string]any{"project_id": 11}, project: "", projectID: 11},
+		{name: "json.Number id", args: map[string]any{"project_id": json.Number("13")}, project: "", projectID: 13},
+		{name: "non-string project ignored", args: map[string]any{"project": 42}, project: "", projectID: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			project, id := peekProjectArg(tt.args)
+			if project != tt.project || id != tt.projectID {
+				t.Fatalf("peekProjectArg = (%q, %d), want (%q, %d)", project, id, tt.project, tt.projectID)
+			}
+		})
+	}
 }
 
 func mcpTestBundle(t *testing.T) config.Bundle {

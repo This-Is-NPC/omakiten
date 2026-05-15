@@ -56,9 +56,19 @@ func extractAgentAttribution(args map[string]any) (model, sessionID string, err 
 }
 
 type Adapter struct {
-	service *agent.Service
-	repo    activity.ActivityLogRepository
+	service  *agent.Service
+	repo     activity.ActivityLogRepository
+	resolver ServiceResolver
 }
+
+// ServiceResolver returns the per-project agent.Service that should
+// handle a tool call. Implementations consult the per-process
+// BundleCache (see agentruntime) and return the cached project's
+// service, falling back to the default when project is empty or
+// unresolvable. Returning (nil, nil) means "use the adapter's default
+// service" — the adapter treats it as an idiomatic no-op rather than
+// an error so resolvers can keep their decision tree shallow.
+type ServiceResolver func(ctx context.Context, project string, projectID int64) (*agent.Service, error)
 
 func NewAdapter(service *agent.Service) *Adapter {
 	return &Adapter{service: service}
@@ -66,6 +76,18 @@ func NewAdapter(service *agent.Service) *Adapter {
 
 func (a *Adapter) SetActivityLogRepository(repo activity.ActivityLogRepository) {
 	a.repo = repo
+}
+
+// SetServiceResolver installs the per-project routing function. When
+// present, every CallTool peeks `project` / `project_id` from the
+// incoming args and asks the resolver which agent.Service should
+// handle the call. The default service is used when the resolver is
+// absent, when it returns nil, or when the args do not declare a
+// project — that mirrors the pre-3b single-project behaviour for the
+// installed tests and for clients that have not yet adopted per-project
+// args.
+func (a *Adapter) SetServiceResolver(resolver ServiceResolver) {
+	a.resolver = resolver
 }
 
 type ToolDefinition struct {
@@ -242,8 +264,44 @@ func (a *Adapter) CallTool(ctx context.Context, name string, args map[string]any
 		return ToolResult{}, err
 	}
 
+	service := a.service
+	if a.resolver != nil {
+		project, projectID := peekProjectArg(args)
+		if resolved, err := a.resolver(ctx, project, projectID); err == nil && resolved != nil {
+			service = resolved
+		}
+	}
+
 	ctx = activity.WithAgent(ctx, "mcp", name, agentModel, agentSessionID)
-	return a.dispatchTool(ctx, name, args)
+	return a.dispatchTool(ctx, service, name, args)
+}
+
+// peekProjectArg extracts `project` / `project_id` from an arbitrary
+// tool input WITHOUT consuming them — handlers still decode the same
+// keys via the input struct's embedded ProjectSelector. Numeric values
+// arrive as float64 (json.Unmarshal default) or json.Number; both
+// shapes are accepted.
+func peekProjectArg(args map[string]any) (project string, projectID int64) {
+	if raw, ok := args["project"]; ok {
+		if s, ok := raw.(string); ok {
+			project = s
+		}
+	}
+	if raw, ok := args["project_id"]; ok {
+		switch v := raw.(type) {
+		case float64:
+			projectID = int64(v)
+		case int64:
+			projectID = v
+		case int:
+			projectID = int64(v)
+		case json.Number:
+			if i, err := v.Int64(); err == nil {
+				projectID = i
+			}
+		}
+	}
+	return project, projectID
 }
 
 // dispatchTool runs the bare tool dispatch with the activity context the
@@ -251,7 +309,12 @@ func (a *Adapter) CallTool(ctx context.Context, name string, args map[string]any
 // (ReadResource) can bypass the coercive _agent_model validation — those
 // calls are system-internal, not agent-driven, and shouldn't pollute the
 // per-model metrics with synthetic samples.
-func (a *Adapter) dispatchTool(ctx context.Context, name string, args map[string]any) (ToolResult, error) {
+//
+// The service parameter is resolved by the caller (CallTool peeks the
+// project arg and asks the resolver; ReadResource always uses the
+// default). dispatch itself never reads a.service so per-project
+// routing works without cross-call interference.
+func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name string, args map[string]any) (ToolResult, error) {
 	if a.repo != nil {
 		ctx = activity.WithRepository(ctx, a.repo)
 	}
@@ -263,219 +326,219 @@ func (a *Adapter) dispatchTool(ctx context.Context, name string, args map[string
 		var input agent.OverviewInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.Overview(ctx, input)
+			data, err = service.Overview(ctx, input)
 		}
 	case "project.resume":
 		var input agent.ResumeProjectInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.ResumeProject(ctx, input)
+			data, err = service.ResumeProject(ctx, input)
 		}
 	case "tasks.continue":
 		var input agent.ContinueTaskInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.ContinueTask(ctx, input)
+			data, err = service.ContinueTask(ctx, input)
 		}
 	case "tasks.list":
 		var input agent.ListTasksInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.ListTasks(ctx, input)
+			data, err = service.ListTasks(ctx, input)
 		}
 	case "tasks.create_intent":
 		var input agent.CreateTaskInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.CreateTaskIntent(ctx, input)
+			data, err = service.CreateTaskIntent(ctx, input)
 		}
 	case "tasks.create":
 		var input agent.CreateTaskInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.CreateTask(ctx, input)
+			data, err = service.CreateTask(ctx, input)
 		}
 	case "tasks.move":
 		var input agent.MoveTaskInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.MoveTask(ctx, input)
+			data, err = service.MoveTask(ctx, input)
 		}
 	case "tasks.edit":
 		var input agent.EditTaskInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.EditTask(ctx, input)
+			data, err = service.EditTask(ctx, input)
 		}
 	case "tasks.delete":
 		var input agent.DeleteTaskInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.DeleteTask(ctx, input)
+			data, err = service.DeleteTask(ctx, input)
 		}
 	case "tasks.archive":
 		var input agent.ArchiveTaskInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.ArchiveTask(ctx, input)
+			data, err = service.ArchiveTask(ctx, input)
 		}
 	case "tasks.unarchive":
 		var input agent.ArchiveTaskInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.UnarchiveTask(ctx, input)
+			data, err = service.UnarchiveTask(ctx, input)
 		}
 	case "comments.add":
 		var input agent.AddCommentInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.AddComment(ctx, input)
+			data, err = service.AddComment(ctx, input)
 		}
 	case "comments.list":
 		var input agent.ListCommentsInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.ListComments(ctx, input)
+			data, err = service.ListComments(ctx, input)
 		}
 	case "comments.edit":
 		var input agent.EditCommentInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.EditComment(ctx, input)
+			data, err = service.EditComment(ctx, input)
 		}
 	case "comments.delete":
 		var input agent.DeleteCommentInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.DeleteComment(ctx, input)
+			data, err = service.DeleteComment(ctx, input)
 		}
 	case "task_activity.list":
 		var input agent.ListTaskActivityInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.ListTaskActivity(ctx, input)
+			data, err = service.ListTaskActivity(ctx, input)
 		}
 	case "dependencies.add":
 		var input agent.AddDependencyInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.AddDependency(ctx, input)
+			data, err = service.AddDependency(ctx, input)
 		}
 	case "dependencies.remove":
 		var input agent.RemoveDependencyInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.RemoveDependency(ctx, input)
+			data, err = service.RemoveDependency(ctx, input)
 		}
 	case "dependencies.list":
 		var input agent.ListDependenciesInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.ListDependencies(ctx, input)
+			data, err = service.ListDependencies(ctx, input)
 		}
 	case "context.add":
 		var input agent.AddContextInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.AddContext(ctx, input)
+			data, err = service.AddContext(ctx, input)
 		}
 	case "context.dump":
 		var input agent.DumpContextInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.DumpContext(ctx, input)
+			data, err = service.DumpContext(ctx, input)
 		}
 	case "workflow.show":
 		var input agent.WorkflowInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.ShowWorkflow(ctx, input)
+			data, err = service.ShowWorkflow(ctx, input)
 		}
 	case "orphans.migrate":
 		var input agent.MigrateOrphansInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.MigrateOrphans(ctx, input)
+			data, err = service.MigrateOrphans(ctx, input)
 		}
 	case "progress.record":
 		var input agent.RecordProgressInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.RecordProgress(ctx, input)
+			data, err = service.RecordProgress(ctx, input)
 		}
 	case "tags.add":
 		var input agent.AddTagInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.AddTag(ctx, input)
+			data, err = service.AddTag(ctx, input)
 		}
 	case "tags.remove":
 		var input agent.RemoveTagInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.RemoveTag(ctx, input)
+			data, err = service.RemoveTag(ctx, input)
 		}
 	case "tags.list":
 		var input agent.ListTagsInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.ListTags(ctx, input)
+			data, err = service.ListTags(ctx, input)
 		}
 	case "tags.list_all":
-		data, err = a.service.ListAllTags(ctx)
+		data, err = service.ListAllTags(ctx)
 	case "tags.merge":
 		var input agent.MergeTagsInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.MergeTags(ctx, input)
+			data, err = service.MergeTags(ctx, input)
 		}
 	case "errors.record":
 		var input agent.RecordErrorInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.RecordError(ctx, input)
+			data, err = service.RecordError(ctx, input)
 		}
 	case "errors.search":
 		var input agent.SearchErrorsInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.SearchErrors(ctx, input)
+			data, err = service.SearchErrors(ctx, input)
 		}
 	case "solutions.add":
 		var input agent.AddSolutionInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.AddSolution(ctx, input)
+			data, err = service.AddSolution(ctx, input)
 		}
 	case "solutions.confirm":
 		var input agent.ConfirmSolutionInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.ConfirmSolution(ctx, input)
+			data, err = service.ConfirmSolution(ctx, input)
 		}
 	case "solutions.list_top":
 		var input agent.ListTopSolutionsInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.ListTopSolutions(ctx, input)
+			data, err = service.ListTopSolutions(ctx, input)
 		}
 	case "templates.list":
 		var input agent.ListTemplatesInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.ListTemplates(ctx, input)
+			data, err = service.ListTemplates(ctx, input)
 		}
 	case "templates.show":
 		var input agent.ShowTemplateInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.ShowTemplate(ctx, input)
+			data, err = service.ShowTemplate(ctx, input)
 		}
 	case "metrics.summary":
 		var input agent.MetricsSummaryInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = a.service.MetricsSummary(ctx, input)
+			data, err = service.MetricsSummary(ctx, input)
 		}
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP tool %q", name)
@@ -497,9 +560,9 @@ func (a *Adapter) ReadResource(ctx context.Context, uri string) (ToolResult, err
 	ctx = activity.WithAgent(ctx, "mcp", "resource:"+uri, "", "")
 	switch uri {
 	case "omakiten://project/overview":
-		return a.dispatchTool(ctx, "project.overview", map[string]any{})
+		return a.dispatchTool(ctx, a.service, "project.overview", map[string]any{})
 	case "omakiten://workflow/active":
-		return a.dispatchTool(ctx, "workflow.show", map[string]any{})
+		return a.dispatchTool(ctx, a.service, "workflow.show", map[string]any{})
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP resource %q", uri)
 	}

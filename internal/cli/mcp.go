@@ -47,7 +47,7 @@ func newMCPPromptsCommand(opts *runtimeOptions) *cobra.Command {
 			}
 			defer func() { _ = rt.Close() }()
 
-			adapter := mcp.NewAdapter(rt.Service())
+			adapter := newMCPAdapter(rt)
 
 			names := agent.CommandNames()
 			if len(args) == 1 {
@@ -113,8 +113,7 @@ func newMCPCallCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				defer func() { _ = rt.Close() }()
 
-				adapter := mcp.NewAdapter(rt.Service())
-				adapter.SetActivityLogRepository(rt.Store())
+				adapter := newMCPAdapter(rt)
 				result, err := adapter.CallTool(ctx, args[0], input)
 				if err != nil {
 					return nil, err
@@ -137,8 +136,7 @@ func newMCPServeCommand(opts *runtimeOptions) *cobra.Command {
 				return err
 			}
 			defer func() { _ = rt.Close() }()
-			adapter := mcp.NewAdapter(rt.Service())
-			adapter.SetActivityLogRepository(rt.Store())
+			adapter := newMCPAdapter(rt)
 			return mcp.Serve(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), adapter)
 		},
 	}
@@ -179,4 +177,20 @@ func newMCPSetupCommand() *cobra.Command {
 func agentOptions(opts *runtimeOptions) agentruntime.Options {
 	cwd, _ := os.Getwd()
 	return agentruntime.Options{DBPath: opts.dbPath, ConfigPath: opts.configPath, Project: opts.project, ProjectID: opts.projectID, CWD: cwd}
+}
+
+// newMCPAdapter is the single place that builds a configured MCP
+// adapter for the CLI command surfaces. It wires the per-project
+// ServiceResolver against the runtime's BundleCache so MCP tool calls
+// carrying `project` / `project_id` route to the right ProjectRuntime.
+// Calls without a project arg keep using the default service (the
+// runtime's boot-time selector), matching the pre-3b single-project
+// behaviour.
+func newMCPAdapter(rt *agentruntime.Runtime) *mcp.Adapter {
+	adapter := mcp.NewAdapter(rt.Service())
+	adapter.SetActivityLogRepository(rt.Store())
+	adapter.SetServiceResolver(func(ctx context.Context, project string, projectID int64) (*agent.Service, error) {
+		return rt.ResolveServiceForProject(ctx, project, projectID)
+	})
+	return adapter
 }

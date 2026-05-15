@@ -20,6 +20,7 @@ import (
 	"omakiten/internal/hooks"
 	"omakiten/internal/hooks/actions"
 	"omakiten/internal/paths"
+	project_ "omakiten/internal/project"
 	"omakiten/internal/sqlite"
 )
 
@@ -167,6 +168,43 @@ func (r *Runtime) Close() error {
 // through Runtime first.
 func (r *Runtime) Cache() *BundleCache {
 	return r.cache
+}
+
+// ResolveServiceForProject returns the agent.Service the BundleCache
+// has wired for the given project. The lookup is best-effort: when
+// the project slug / id resolve to an entry without a per-project
+// `.omakiten/` install, or when any step in the resolution chain
+// fails, the function returns (nil, nil) so callers can fall back to
+// the default service without surfacing the discrepancy to the agent
+// caller.
+//
+// Phase 3b uses this from the MCP adapter to route each tool call to
+// the project the caller declared in `project` / `project_id`. Phase
+// 3c+ will extend the same routing to CLI and TUI without touching
+// this method's surface.
+func (r *Runtime) ResolveServiceForProject(ctx context.Context, project string, projectID int64) (*agent.Service, error) {
+	if project == "" && projectID == 0 {
+		return nil, nil
+	}
+	resolved, err := project_.NewResolver(r.store).Resolve(ctx, project_.ResolveOptions{ProjectID: projectID, Project: project})
+	if err != nil || resolved.RootPath == "" {
+		return nil, nil
+	}
+	repoLocal, ok, err := config.FindRepoLocal(resolved.RootPath)
+	if err != nil || !ok {
+		// Project has no per-project install — the default runtime
+		// already serves the right bundle (single-bundle process-wide).
+		return nil, nil
+	}
+	configFile, err := paths.ActiveConfigFileInDir(filepath.Join(repoLocal, "config"))
+	if err != nil || configFile == "" {
+		return nil, nil
+	}
+	pr, err := r.cache.Resolve(ctx, resolved.ID, configFile)
+	if err != nil || pr == nil {
+		return nil, nil
+	}
+	return pr.Service, nil
 }
 
 // buildHookEntries lifts user-facing HookSpec entries into the
