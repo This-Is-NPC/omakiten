@@ -132,17 +132,19 @@ func (r *runtime) activeRegistry() *domain.EnumRegistry {
 }
 
 // activeSynonyms returns the per-project tag synonym table from the
-// BundleCache. Phase 3f wires this into TagService / CommentService /
-// ErrorService at construction time so NormalizeTagName resolves the
-// active project's aliases rather than a process-global registry.
-// Returns nil when no cache entry exists yet (rare bootstrap window) —
-// callers treat nil as "no substitution" and still kebab-case the
-// input.
+// active ProjectRuntime's Snapshot. Phase 3f wires this into
+// TagService / CommentService / ErrorService at construction time so
+// NormalizeTagName resolves the active project's aliases rather than a
+// process-global registry. Phase 2-bis routes the read through
+// pr.Snapshot.Synonyms() so the synonyms always reflect the same
+// immutable bundle view the agent service observes.
+// Returns nil when no cache entry exists yet (rare bootstrap window).
 func (r *runtime) activeSynonyms() map[string]string {
-	if pr := r.ProjectRuntime(); pr != nil {
-		return pr.TagSynonyms
+	pr := r.ProjectRuntime()
+	if pr == nil || pr.Snapshot == nil {
+		return nil
 	}
-	return nil
+	return pr.Snapshot.Synonyms()
 }
 
 

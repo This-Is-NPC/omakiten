@@ -102,10 +102,10 @@ func (r *Repositories) activeSynonyms() map[string]string {
 		return nil
 	}
 	pr := r.Cache.Get(r.ProjectID)
-	if pr == nil {
+	if pr == nil || pr.Snapshot == nil {
 		return nil
 	}
-	return pr.TagSynonyms
+	return pr.Snapshot.Synonyms()
 }
 
 // Model is the root Bubble Tea model for the TUI. It aggregates state that
