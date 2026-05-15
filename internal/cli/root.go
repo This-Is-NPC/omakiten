@@ -271,6 +271,7 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 
 		hookEntries := buildHookEntries(bundle.Config.Hooks)
 		engine := hooks.NewEngine(hookEntries, registry, bundle.Config.Events, store)
+		engine.SetProjectID(o.projectID)
 		engine.Start(bus)
 		rt.bus = bus
 		rt.hooksEngine = engine

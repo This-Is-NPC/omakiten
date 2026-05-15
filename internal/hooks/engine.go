@@ -28,6 +28,13 @@ type Engine struct {
 	registry *ActionRegistry
 	settings config.EventsSettings
 	recorder EventRecorder
+	// projectID scopes which events this engine reacts to. Phase 3d
+	// runs one engine per ProjectRuntime so two projects' hooks never
+	// cross-fire. The filter rules:
+	//   - engine projectID == 0  -> catch-all (legacy single-project)
+	//   - event projectID == 0   -> system event, reaches every engine
+	//   - otherwise              -> engine.projectID must equal event.ProjectID
+	projectID int64
 
 	mu  sync.Mutex
 	sub events.Subscription
@@ -38,6 +45,16 @@ type Engine struct {
 // subscribe to the bus.
 func NewEngine(hooks []Hook, registry *ActionRegistry, settings config.EventsSettings, recorder EventRecorder) *Engine {
 	return &Engine{hooks: hooks, registry: registry, settings: settings, recorder: recorder}
+}
+
+// SetProjectID scopes the engine's dispatch filter to the supplied
+// project id. The composition root (BundleCache.buildProjectRuntime)
+// calls this once after construction so events targeting other
+// projects skip this engine entirely. Zero disables the filter — the
+// legacy single-project boot path leaves the value at zero and
+// receives every event the bus emits.
+func (e *Engine) SetProjectID(id int64) {
+	e.projectID = id
 }
 
 // Start subscribes to the bus. Idempotent: a second call is a no-op
@@ -66,6 +83,9 @@ func (e *Engine) Stop() {
 // dispatch runs on the publisher's goroutine. It walks the configured
 // hooks for matches and spawns a goroutine per match; never blocks.
 func (e *Engine) dispatch(ctx context.Context, ev domain.Event) {
+	if !e.matchesProject(ev) {
+		return
+	}
 	if !e.settings.ResolveHook(ev.EventType) {
 		return
 	}
@@ -121,6 +141,17 @@ func (e *Engine) run(parent context.Context, idx int, hook Hook, action Action, 
 		return
 	}
 	_ = e.recorder.RecordEntityEvent(ctx, domain.EventEntitySystem, 0, ev.ProjectID, domain.EventTypeHookExecuted, string(body))
+}
+
+// matchesProject decides whether the engine should consider the event.
+// Zero on either side opts out of the filter so legacy single-engine
+// runtimes (engine.projectID == 0) and system events (ev.ProjectID ==
+// 0) keep flowing the way they always have.
+func (e *Engine) matchesProject(ev domain.Event) bool {
+	if e.projectID == 0 || ev.ProjectID == 0 {
+		return true
+	}
+	return e.projectID == ev.ProjectID
 }
 
 func matches(hook Hook, ev domain.Event) bool {

@@ -128,7 +128,9 @@ func (c *BundleCache) Get(projectID int64) *ProjectRuntime {
 // configPath argument is honoured only on the first build for a given
 // id (a cached entry remembers its own SourcePath); subsequent calls
 // pass "" to skip the path argument when they only want the cached
-// pointer.
+// pointer. The projectID flows into the constructed engine so its
+// dispatch filter accepts only events scoped to this project (Phase
+// 3d).
 func (c *BundleCache) Resolve(ctx context.Context, projectID int64, configPath string) (*ProjectRuntime, error) {
 	c.mu.RLock()
 	entry := c.entries[projectID]
@@ -202,7 +204,7 @@ func (c *BundleCache) rebuild(ctx context.Context, projectID int64, configPath s
 		return nil, fmt.Errorf("bundle cache: configPath is required for project %d", projectID)
 	}
 
-	runtime, err := buildProjectRuntime(ctx, c.store, c.cs, c.bus, configPath)
+	runtime, err := buildProjectRuntime(ctx, c.store, c.cs, c.bus, configPath, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +232,7 @@ func (c *BundleCache) rebuild(ctx context.Context, projectID int64, configPath s
 // pushed into the Store. Boot passes true; reloads pass true too —
 // the user may have changed any of them in YAML and Phase 3a is
 // supposed to land plumbing without altering observable behaviour.
-func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configstore.Adapter, bus events.Bus, configPath string) (*ProjectRuntime, error) {
+func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configstore.Adapter, bus events.Bus, configPath string, projectID int64) (*ProjectRuntime, error) {
 	bundle, _, enumRegistry, err := app.NewConfigService(store, cs).Import(ctx, configPath)
 	if err != nil {
 		return nil, err
@@ -262,6 +264,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 
 	hookEntries := buildHookEntries(bundle.Config.Hooks)
 	engine := hooks.NewEngine(hookEntries, registry, bundle.Config.Events, store)
+	engine.SetProjectID(projectID)
 	if bus != nil {
 		engine.Start(bus)
 	}
