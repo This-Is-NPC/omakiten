@@ -111,6 +111,21 @@ func ActiveConfigFile() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return ActiveConfigFileInDir(dir)
+}
+
+// ActiveConfigFileInDir resolves the active yaml profile inside an explicit
+// config directory. The selection is persisted in <dir>/.active — a one-line
+// text file containing the basename of the chosen profile. When the file is
+// missing or blank the resolver scans <dir>/ for the first .yaml file
+// (alphabetical order) and falls back to <dir>/custom/ if none is found at
+// the root. If no .yaml exists anywhere this function errors out — the caller
+// needs a real path to open.
+//
+// Mirrors the user-global resolution discipline so a discovered .omakiten/
+// install behaves identically to the global ConfigRoot: same .active rules,
+// same custom/ shadow, same fall-through to discovery on a vanished kit.
+func ActiveConfigFileInDir(dir string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(dir, ActiveConfigStateFile))
 	if err == nil {
 		if name := strings.TrimSpace(string(data)); name != "" {
@@ -122,15 +137,10 @@ func ActiveConfigFile() (string, error) {
 			if _, statErr := os.Stat(rootPath); statErr == nil {
 				return rootPath, nil
 			}
-			// Named profile missing from both locations — fall through to discovery.
 		}
 	} else if !os.IsNotExist(err) {
 		return "", err
 	}
-	// .active missing, blank, or pointing at a vanished profile —
-	// discover the first .yaml file. Root before custom/. Treat both
-	// "directory missing" and "directory empty of yaml" the same way:
-	// fall through to the next candidate location.
 	if name, err := firstYAMLInDir(dir); err == nil {
 		return filepath.Join(dir, name), nil
 	}

@@ -259,14 +259,20 @@ func (o *runtimeOptions) resolvedConfigPath() (string, error) {
 	if o.configPath != "" {
 		return filepath.Abs(o.configPath)
 	}
+	if repoLocal, err := o.discoverRepoLocalRoot(); err != nil {
+		return "", err
+	} else if repoLocal != "" {
+		return paths.ActiveConfigFileInDir(filepath.Join(repoLocal, "config"))
+	}
 	return paths.ConfigFile()
 }
 
 // resolvedConfigRoot returns the directory MigrateLayout / EnsureDefaultFiles
-// operate on. Computed without consulting ActiveConfigFile so migration can
-// run before path resolution — otherwise a stale pre-migration configPath
-// would survive into Import. When --config is supplied, root is derived from
-// the flag path; otherwise from the XDG / OMAKITEN_HOME defaults.
+// operate on. Resolution order:
+//  1. --config flag (root derived from the yaml path).
+//  2. Walk-up `.omakiten/` discovery (becomes the standalone install root —
+//     no merge with the user-global ConfigRoot).
+//  3. XDG / OMAKITEN_HOME default.
 func (o *runtimeOptions) resolvedConfigRoot() (string, error) {
 	if o.configPath != "" {
 		abs, err := filepath.Abs(o.configPath)
@@ -275,7 +281,31 @@ func (o *runtimeOptions) resolvedConfigRoot() (string, error) {
 		}
 		return config.ConfigRootFromYAMLPath(abs), nil
 	}
+	if repoLocal, err := o.discoverRepoLocalRoot(); err != nil {
+		return "", err
+	} else if repoLocal != "" {
+		return repoLocal, nil
+	}
 	return paths.ConfigRoot()
+}
+
+// discoverRepoLocalRoot walks up from the CWD looking for `.omakiten/`. Returns
+// the absolute path of the first hit, or "" when no overlay is found before
+// the walker hits $HOME / the filesystem root. Stat errors are surfaced so
+// callers can decide whether to abort or fall back to the global resolver.
+//
+// When the user supplies --config explicitly, callers must not consult this
+// helper — the flag is the authoritative override.
+func (o *runtimeOptions) discoverRepoLocalRoot() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	dir, ok, err := config.FindRepoLocal(cwd)
+	if err != nil || !ok {
+		return "", err
+	}
+	return dir, nil
 }
 
 func (o *runtimeOptions) resolvedDBPath() (string, error) {
