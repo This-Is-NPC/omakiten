@@ -183,7 +183,7 @@ func (m *Model) armOrConfirmCommentDelete(comment domain.Comment) {
 		// guard.violated when bucket policy rejects the call. Emitting
 		// here too means hooks (notification.show, exec, …) fire even when
 		// the TUI's client-side gate catches the denial first.
-		m.repos.Workflow.EmitGuardViolated(m.ctx, m.project.ID, domain.EventEntityTask, comment.TaskID,
+		m.repos.Workflow.Evaluator().EmitViolated(m.ctx, m.project.ID, domain.EventEntityTask, comment.TaskID,
 			app.GuardOperationCommentDelete, app.GuardRulePermissions, hint,
 			map[string]any{"comment_id": comment.ID, "task_id": comment.TaskID, "entity": app.EntityComment, "operation": app.PermissionDelete})
 		return

@@ -163,16 +163,13 @@ func (s *WorkflowService) ResolveBucketPermissions(ctx context.Context, project 
 	return false, hint, nil
 }
 
-// EvaluateOperationGuards forwards to the evaluator. Kept on WorkflowService
-// because callers (TaskService) compose policy through the workflow seam.
-func (s *WorkflowService) EvaluateOperationGuards(ctx context.Context, projectID, taskID int64, operation string) error {
-	return s.guards.EvaluateOperation(ctx, projectID, taskID, operation)
-}
-
-// EmitGuardViolated forwards to the evaluator. Kept on WorkflowService for
-// the same caller-shape reason as EvaluateOperationGuards.
-func (s *WorkflowService) EmitGuardViolated(ctx context.Context, projectID int64, entityType string, entityID int64, operation, rule, hint string, target map[string]any) {
-	s.guards.EmitViolated(ctx, projectID, entityType, entityID, operation, rule, hint, target)
+// Evaluator returns the per-project guard evaluator the service composes.
+// Callers (TaskService, CommentService, TUI render paths) that need to emit
+// a violation event or evaluate non-transition operation guards go through
+// the evaluator directly instead of widening the WorkflowService surface
+// with forwarder methods that mirror the evaluator API.
+func (s *WorkflowService) Evaluator() *guards.Evaluator {
+	return s.guards
 }
 
 // MoveTask runs the full move policy: resolve current/target buckets, enforce

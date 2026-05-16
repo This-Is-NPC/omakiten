@@ -498,7 +498,7 @@ func (m *Model) armOrConfirmTaskDelete(task domain.Task) {
 		// TaskService.Delete emits at line task_service.go:237 must fire
 		// here too so hooks (notification.show, exec, …) see every guard hit
 		// regardless of which entry point caught it.
-		m.repos.Workflow.EmitGuardViolated(m.ctx, m.project.ID, domain.EventEntityTask, task.ID,
+		m.repos.Workflow.Evaluator().EmitViolated(m.ctx, m.project.ID, domain.EventEntityTask, task.ID,
 			app.GuardOperationTaskDelete, app.GuardRulePermissions, hint,
 			map[string]any{"task_id": task.ID, "entity": app.EntityTask, "operation": app.PermissionDelete})
 		return

@@ -193,7 +193,7 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 			return
 		}
 		if !allowed {
-			s.workflow.EmitGuardViolated(ctx, project.ID, domain.EventEntityTask, taskID,
+			s.workflow.Evaluator().EmitViolated(ctx, project.ID, domain.EventEntityTask, taskID,
 				GuardOperationTaskEdit, GuardRulePermissions, hint,
 				map[string]any{"task_id": taskID, "entity": EntityTask, "operation": PermissionEdit})
 			err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"task_id": taskID, "hint": hint, "entity": EntityTask, "operation": PermissionEdit})
@@ -254,13 +254,13 @@ func (s *TaskService) Delete(ctx context.Context, project domain.ProjectContext,
 		return
 	}
 	if !allowed {
-		s.workflow.EmitGuardViolated(ctx, project.ID, domain.EventEntityTask, taskID,
+		s.workflow.Evaluator().EmitViolated(ctx, project.ID, domain.EventEntityTask, taskID,
 			GuardOperationTaskDelete, GuardRulePermissions, hint,
 			map[string]any{"task_id": taskID, "entity": EntityTask, "operation": PermissionDelete})
 		err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"task_id": taskID, "hint": hint, "entity": EntityTask, "operation": PermissionDelete})
 		return
 	}
-	if err = s.workflow.EvaluateOperationGuards(ctx, project.ID, taskID, OperationDelete); err != nil {
+	if err = s.workflow.Evaluator().EvaluateOperation(ctx, project.ID, taskID, OperationDelete); err != nil {
 		return
 	}
 
@@ -295,7 +295,7 @@ func (s *TaskService) Archive(ctx context.Context, project domain.ProjectContext
 		return
 	}
 
-	if err = s.workflow.EvaluateOperationGuards(ctx, project.ID, taskID, OperationArchive); err != nil {
+	if err = s.workflow.Evaluator().EvaluateOperation(ctx, project.ID, taskID, OperationArchive); err != nil {
 		return
 	}
 
@@ -332,7 +332,7 @@ func (s *TaskService) Unarchive(ctx context.Context, project domain.ProjectConte
 		return
 	}
 
-	if err = s.workflow.EvaluateOperationGuards(ctx, project.ID, taskID, OperationUnarchive); err != nil {
+	if err = s.workflow.Evaluator().EvaluateOperation(ctx, project.ID, taskID, OperationUnarchive); err != nil {
 		return
 	}
 
