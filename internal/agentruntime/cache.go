@@ -297,7 +297,14 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		return nil, err
 	}
 
-	notifSnapshot := actions.NotificationBundleSnapshot{Notifications: bundle.Notifications}
+	// Build the per-project Snapshot up front so every downstream wire —
+	// notification catalog, hooks engine, agent service — reads from the
+	// same immutable pointer. Two projects in the cache hold two
+	// snapshots; nothing in the hot path reaches back into the bundle.
+	snapshot := config.BuildSnapshot(bundle)
+
+	notifSvc := app.NewNotificationService(snapshot)
+	notifSnapshot := notifSvc.BundleSnapshot()
 	registry := hooks.NewActionRegistry()
 	actions.RegisterBuiltins(registry)
 	notificationAction := actions.NewNotificationShowAction(notifSnapshot)
@@ -306,7 +313,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	if err := config.ValidateHooks(bundle.Config.Hooks, func(name string) bool {
 		_, ok := registry.Get(name)
 		return ok
-	}, bundle.Notifications); err != nil {
+	}, snapshot.Notifications()); err != nil {
 		return nil, err
 	}
 
@@ -320,13 +327,6 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	}); err != nil {
 		return nil, err
 	}
-
-	// Build the per-project Snapshot before the hooks engine so the
-	// engine reads its hook spec list and event-channel policy from
-	// the same immutable pointer the agent service consumes. Two
-	// projects in the cache hold two engines; each engine's hooks
-	// slice is its own bundle's, never the other's.
-	snapshot := config.BuildSnapshot(bundle)
 	hookEntries := buildHookEntries(snapshot.Hooks())
 	engine := hooks.NewEngine(hookEntries, registry, snapshot.Events(), store)
 	engine.SetProjectID(projectID)
