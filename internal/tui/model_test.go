@@ -12,19 +12,15 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
 )
 
 
 func TestModelSwitchesViews(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -50,11 +46,7 @@ func TestModelSwitchesViews(t *testing.T) {
 
 func TestModelTableAndGraphShowCounts(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -94,11 +86,7 @@ func TestModelTableAndGraphShowCounts(t *testing.T) {
 
 func TestModelTablesUseWideTerminalSpace(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -171,11 +159,7 @@ func TestModelTablesUseWideTerminalSpace(t *testing.T) {
 
 func TestModelLoadsActivityLogsWhenOpeningLogsView(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -220,11 +204,7 @@ func TestModelLoadsActivityLogsWhenOpeningLogsView(t *testing.T) {
 
 func TestModelRefreshKeyUpdatesActivityLogs(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -271,11 +251,7 @@ func TestModelRefreshKeyUpdatesActivityLogs(t *testing.T) {
 
 func TestModelRealtimeTickRefreshesBoardTasks(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -314,11 +290,7 @@ func TestModelRealtimeTickRefreshesBoardTasks(t *testing.T) {
 
 func TestModelOpensExistingTaskScreen(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -382,11 +354,7 @@ func TestModelOpensExistingTaskScreen(t *testing.T) {
 
 func TestModelAddsMultilineCommentInsideTaskCommentsPanel(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -452,11 +420,7 @@ func TestModelAddsMultilineCommentInsideTaskCommentsPanel(t *testing.T) {
 
 func TestModelCreatesTaskFromDedicatedScreen(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -549,11 +513,7 @@ func TestModelCreatesTaskFromDedicatedScreen(t *testing.T) {
 
 func TestModelEditsTaskAndReturnsToView(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -616,11 +576,7 @@ func TestModelEditsTaskAndReturnsToView(t *testing.T) {
 // the default viewport rows.
 func TestOpenTaskEditCalibratesDescriptionTextarea(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -667,11 +623,7 @@ func TestOpenTaskEditCalibratesDescriptionTextarea(t *testing.T) {
 
 func TestModelSetsTaskBlockersFromPicker(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -737,11 +689,7 @@ func TestModelSetsTaskBlockersFromPicker(t *testing.T) {
 
 func TestModelBoardMoveSurfacesWorkflowBlock(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -794,11 +742,7 @@ func TestModelBoardMoveSurfacesWorkflowBlock(t *testing.T) {
 
 func TestModelTaskViewWrapsLongPropertyTextWithoutBreakingGrid(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -860,11 +804,7 @@ func TestModelTaskViewWrapsLongPropertyTextWithoutBreakingGrid(t *testing.T) {
 
 func TestModelBoardCollapsesToFocusedColumnWhenNarrow(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -911,11 +851,7 @@ func TestModelBoardCollapsesToFocusedColumnWhenNarrow(t *testing.T) {
 
 func TestModelBoardShowsMultipleColumnsWhenTheyFit(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, multiBucketBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -949,11 +885,7 @@ func TestModelBoardShowsMultipleColumnsWhenTheyFit(t *testing.T) {
 
 func TestModelBoardLaneNavigationWrapsAround(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, multiBucketBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -994,11 +926,7 @@ func TestModelBoardLaneNavigationWrapsAround(t *testing.T) {
 // active sub renders its single column at full width.
 func TestModelSettingsLawsRendersOwnColumnWhenNarrow(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -1030,11 +958,7 @@ func TestModelSettingsLawsRendersOwnColumnWhenNarrow(t *testing.T) {
 
 func TestModelHelpDefaultsToCurrentContext(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -1071,11 +995,7 @@ func TestModelHelpDefaultsToCurrentContext(t *testing.T) {
 
 func TestModelCancelsTaskCreateWithoutPersisting(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -1111,11 +1031,7 @@ func TestModelCancelsTaskCreateWithoutPersisting(t *testing.T) {
 // (single sub).
 func TestNavHeaderRendersTopAndSubKickers(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -1166,11 +1082,7 @@ func TestNavHeaderRendersTopAndSubKickers(t *testing.T) {
 // no-op behavior on Settings (single sub).
 func TestSubCycleBindings(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -1216,11 +1128,7 @@ func TestSubCycleBindings(t *testing.T) {
 // presses are silent no-ops (no status flash, no nav change).
 func TestCtrlOPopsBackStack(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -1267,11 +1175,7 @@ func TestCtrlOPopsBackStack(t *testing.T) {
 // growing the chrome to a third row.
 func TestHomeTileEmbeddedInTopStrip(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -1303,11 +1207,7 @@ func TestHomeTileEmbeddedInTopStrip(t *testing.T) {
 // the destructive-action gating the user asked for.
 func TestModelDeletesTaskFromTaskViewWithDoubleD(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -1360,11 +1260,7 @@ func TestModelDeletesTaskFromTaskViewWithDoubleD(t *testing.T) {
 //
 func TestModelBlocksTaskEditOnPressWhenBucketForbids(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	// Default policy: edit allowed only on the workflow's first bucket.
 	// The fixture has backlog → dev; placing the task in dev means edit
@@ -1408,11 +1304,7 @@ func TestModelBlocksTaskEditOnPressWhenBucketForbids(t *testing.T) {
 //
 func TestModelBlocksTaskDeleteArmWhenBucketForbids(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	// Default delete policy is "false everywhere" — every bucket forbids
 	// delete unless explicitly opted in. backlog suffices for the fixture.
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
@@ -1445,11 +1337,7 @@ func TestModelBlocksTaskDeleteArmWhenBucketForbids(t *testing.T) {
 // not committed to.
 func TestModelBoardDoesNotArmDeleteOnD(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -1480,11 +1368,7 @@ func TestModelBoardDoesNotArmDeleteOnD(t *testing.T) {
 // cannot fire after the user moved focus or pressed something unrelated.
 func TestModelCancelsArmedTaskDeleteOnNavigation(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -1526,11 +1410,7 @@ func TestModelCancelsArmedTaskDeleteOnNavigation(t *testing.T) {
 // policy via CommentService.Remove.
 func TestModelDeletesCommentFromCommentScreen(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -1597,11 +1477,7 @@ func TestModelDeletesCommentFromCommentScreen(t *testing.T) {
 // (workflow-aware so bucket policy is enforced).
 func TestModelEditsCommentFromCommentScreen(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)

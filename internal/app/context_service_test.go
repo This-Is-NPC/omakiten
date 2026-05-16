@@ -6,8 +6,8 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
 )
 
@@ -192,13 +192,10 @@ func TestContextBudgetAdd(t *testing.T) {
 	}
 }
 
-func appTestStore(t *testing.T, bundle config.Bundle) (*sqlite.Store, domain.Project) {
+func appTestStore(t *testing.T, bundle config.Bundle) (*snapstore.Store, domain.Project) {
 	t.Helper()
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}

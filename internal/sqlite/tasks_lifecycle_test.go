@@ -10,14 +10,10 @@ import (
 	"omakiten/internal/testfixtures"
 )
 
-func setupLifecycle(t *testing.T) (context.Context, *Store, domain.ProjectContext) {
+func setupLifecycle(t *testing.T) (context.Context, *snapStore, domain.ProjectContext) {
 	t.Helper()
 	ctx := context.Background()
-	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := openSnapStore(t, t.TempDir()+"/omakiten.db")
 	bundle, _ := testfixtures.LoadBundle(t, "lifecycle_policy.yaml")
 	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)

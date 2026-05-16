@@ -6,8 +6,8 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
 // Each scenario file under testdata/policy_*.yaml exercises one slice of
@@ -100,11 +100,7 @@ func TestWorkflowServicePolicyResolutionFromYAML(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.fixture, func(t *testing.T) {
 			ctx := context.Background()
-			store, err := sqlite.Open(ctx, t.TempDir()+"/policy.db")
-			if err != nil {
-				t.Fatalf("sqlite.Open() = %v", err)
-			}
-			t.Cleanup(func() { _ = store.Close() })
+			store := snapstore.Open(t, t.TempDir()+"/policy.db")
 			bundle, _ := testfixtures.LoadBundle(t, c.fixture)
 			if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
 				t.Fatalf("ImportBundle() = %v", err)

@@ -11,11 +11,7 @@ import (
 
 func TestWorkflowServiceCreateTaskDefaultsToFirstBucket(t *testing.T) {
 	ctx := context.Background()
-	store, err := Open(ctx, t.TempDir()+"/test.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := openSnapStore(t, t.TempDir()+"/test.db")
 
 	bundle, _ := testfixtures.LoadBundle(t, "kanban_three_buckets.yaml")
 	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {

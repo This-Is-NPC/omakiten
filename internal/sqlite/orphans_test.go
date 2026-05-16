@@ -200,18 +200,12 @@ func TestPreviewOrphanedTasks_IgnoresArchived(t *testing.T) {
 	}
 }
 
-func newTestStore(t *testing.T) *Store {
+func newTestStore(t *testing.T) *snapStore {
 	t.Helper()
-	ctx := context.Background()
-	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	return store
+	return openSnapStore(t, t.TempDir()+"/omakiten.db")
 }
 
-func mustUpsertProject(t *testing.T, store *Store, name, slug, root string) domain.Project {
+func mustUpsertProject(t *testing.T, store *snapStore, name, slug, root string) domain.Project {
 	t.Helper()
 	p, err := store.UpsertProject(context.Background(), name, slug, root)
 	if err != nil {

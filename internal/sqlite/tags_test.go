@@ -7,14 +7,10 @@ import (
 	"omakiten/internal/domain"
 )
 
-func openTestStore(t *testing.T) *Store {
+func openTestStore(t *testing.T) *snapStore {
 	t.Helper()
 	ctx := context.Background()
-	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := openSnapStore(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}

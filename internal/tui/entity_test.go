@@ -15,12 +15,12 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
-func newEntityModel(t *testing.T) (Model, *sqlite.Store, *app.BundleEditor) {
+func newEntityModel(t *testing.T) (Model, *snapstore.Store, *app.BundleEditor) {
 	t.Helper()
 	tmp := t.TempDir()
 	configPath := filepath.Join(tmp, "config", "omakase.yaml")
@@ -31,11 +31,7 @@ func newEntityModel(t *testing.T) (Model, *sqlite.Store, *app.BundleEditor) {
 	}
 
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, dbPath)
-	if err != nil {
-		t.Fatalf("sqlite.Open() error = %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := snapstore.Open(t, dbPath)
 
 	files := configstore.New()
 	editor := app.NewBundleEditor(files, configPath)
@@ -208,11 +204,7 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 	}
 
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, dbPath)
-	if err != nil {
-		t.Fatalf("sqlite.Open() error = %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := snapstore.Open(t, dbPath)
 
 	files := configstore.New()
 	editor := app.NewBundleEditor(files, configPath)

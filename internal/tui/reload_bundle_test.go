@@ -12,8 +12,8 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/events"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
 )
 
@@ -35,11 +35,7 @@ func TestReloadBundleUsesCacheWhenWired(t *testing.T) {
 	}
 	writeThemeFile(t, filepath.Join(tmp, "themes", "catppuccin.yaml"), "catppuccin", "Catppuccin")
 
-	store, err := sqlite.Open(ctx, dbPath)
-	if err != nil {
-		t.Fatalf("sqlite.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := snapstore.Open(t, dbPath)
 
 	files := configstore.New()
 	editor := app.NewBundleEditor(files, configPath)
@@ -52,7 +48,7 @@ func TestReloadBundleUsesCacheWhenWired(t *testing.T) {
 	}
 
 	bus := events.NewInProcessBus(config.EventsSettings{})
-	cache := agentruntime.NewBundleCache(store, bus, files)
+	cache := agentruntime.NewBundleCache(store.Store, bus, files)
 	if _, err := cache.Resolve(ctx, project.ID, configPath); err != nil {
 		t.Fatalf("cache.Resolve initial: %v", err)
 	}

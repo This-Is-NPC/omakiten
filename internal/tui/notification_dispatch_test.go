@@ -11,10 +11,10 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	hookactions "omakiten/internal/hooks/actions"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
 	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
 func ptrBool(v bool) *bool { return &v }
@@ -28,11 +28,7 @@ func zeroNotificationPadding() *config.NotificationPadding {
 func newNotificationTestModel(t *testing.T) Model {
 	t.Helper()
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle: %v", err)
 	}

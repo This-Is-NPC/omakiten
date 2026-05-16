@@ -10,8 +10,8 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
 func TestOverviewUsesResolvedProjectAndCompactState(t *testing.T) {
@@ -396,7 +396,7 @@ func strPtr(s string) *string { return &s }
 
 type agentFixture struct {
 	ctx      context.Context
-	store    *sqlite.Store
+	store    *snapstore.Store
 	service  *Service
 	projectA domain.Project
 	projectB domain.Project
@@ -475,13 +475,9 @@ func newAgentFixture(t *testing.T) agentFixture {
 	return agentFixture{ctx: ctx, store: store, service: svc, projectA: projectA, projectB: projectB, taskA1: taskA1, taskA2: taskA2, taskB: taskB}
 }
 
-func newAgentStore(t *testing.T, ctx context.Context) *sqlite.Store {
+func newAgentStore(t *testing.T, ctx context.Context) *snapstore.Store {
 	t.Helper()
-	store, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "omakiten.db"))
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
 	if err := store.ImportBundle(ctx, agentTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}

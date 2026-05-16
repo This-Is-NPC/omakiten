@@ -60,46 +60,6 @@ type Store struct {
 	// broadcast — production wires it from composition root, tests
 	// inherit a nil bus and silently skip the fan-out.
 	bus events.Bus
-	// snapshot is the value-typed mirror of the active bundle the
-	// app services read through. ImportBundle rotates the pointer on
-	// every successful ingest; the previous snapshot is captured into
-	// previousSnapshot for the orphan-flow which needs the prior
-	// bucket_id ↔ key mapping to classify orphaned tasks across the
-	// swap.
-	//
-	// TRANSITIONAL (Phase 2-bis / task #117): ownership of the
-	// per-project snapshot will move to agentruntime.ProjectRuntime in
-	// a follow-up commit. At that point the Store stops carrying any
-	// config state and the SnapshotSource implementation it currently
-	// satisfies moves to ProjectRuntime.
-	snapshot         *config.Snapshot
-	previousSnapshot *config.Snapshot
-}
-
-// Snapshot returns the value-typed Phase 2-bis Snapshot mirroring the
-// Store's active bundle. Lazily seeded with an empty Snapshot so app
-// services that consume the type at construction still get a non-nil
-// pointer in tests that skip ImportBundle. The pointer is stable until
-// the next ImportBundle.
-//
-// TRANSITIONAL: this method lives on the Store only until
-// agentruntime.ProjectRuntime owns the per-project snapshot. The
-// follow-up commit in this chain moves the SnapshotSource
-// implementation off the Store and onto the per-project runtime; from
-// that point the Store stops touching config entirely.
-func (s *Store) Snapshot() *config.Snapshot {
-	if s.snapshot == nil {
-		s.snapshot = config.BuildSnapshot(config.Bundle{})
-	}
-	return s.snapshot
-}
-
-// PreviousSnapshot returns the value-typed mirror of the bundle active
-// immediately before the most recent ImportBundle. Used by the orphan
-// flow to resolve task.bucket_id → previous key while the active
-// snapshot already rotated. nil until the second ImportBundle.
-func (s *Store) PreviousSnapshot() *config.Snapshot {
-	return s.previousSnapshot
 }
 
 // SetActivityLogRetention installs the operation-log retention window the

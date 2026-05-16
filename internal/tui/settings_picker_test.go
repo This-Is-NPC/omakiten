@@ -16,9 +16,9 @@ import (
 	"omakiten/internal/configstore"
 	"omakiten/internal/events"
 	"omakiten/internal/paths"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
 const minimalThemeYAML = `version: 1
@@ -63,11 +63,7 @@ func newPickerModel(t *testing.T) (Model, string) {
 	}
 
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, dbPath)
-	if err != nil {
-		t.Fatalf("sqlite.Open() error = %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := snapstore.Open(t, dbPath)
 
 	files := configstore.New()
 	editor := app.NewBundleEditor(files, configPath)
@@ -80,7 +76,7 @@ func newPickerModel(t *testing.T) (Model, string) {
 	}
 
 	bus := events.NewInProcessBus(config.EventsSettings{})
-	cache := agentruntime.NewBundleCache(store, bus, files)
+	cache := agentruntime.NewBundleCache(store.Store, bus, files)
 	if _, err := cache.Resolve(ctx, project.ID, configPath); err != nil {
 		t.Fatalf("cache.Resolve: %v", err)
 	}

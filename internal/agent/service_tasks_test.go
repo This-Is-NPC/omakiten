@@ -9,7 +9,7 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/sqlite"
+	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/testfixtures"
 )
 
@@ -123,11 +123,7 @@ func newAgentFixtureEditLockedToBacklog(t *testing.T) editLockedFixture {
 		}
 	}
 
-	store, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "omakiten.db"))
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
 	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}

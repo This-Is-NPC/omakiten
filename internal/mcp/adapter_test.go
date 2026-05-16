@@ -14,8 +14,8 @@ import (
 	"omakiten/internal/agent"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
 func TestToolsIncludePlannedSurface(t *testing.T) {
@@ -448,11 +448,7 @@ func TestServeHandlesToolsList(t *testing.T) {
 
 func newMCPTestService(t *testing.T, ctx context.Context) *agent.Service {
 	t.Helper()
-	store, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "omakiten.db"))
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
 	if err := store.ImportBundle(ctx, mcpTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -534,13 +530,9 @@ func TestAdapterServiceResolverRoutesByProjectArg(t *testing.T) {
 // newMCPProjectFixture builds a self-contained sqlite store + project +
 // task triple keyed by slug. Used by per-project routing tests where
 // two adapters need to point at distinct underlying state.
-func newMCPProjectFixture(t *testing.T, ctx context.Context, slug string) (*sqlite.Store, domain.Project) {
+func newMCPProjectFixture(t *testing.T, ctx context.Context, slug string) (*snapstore.Store, domain.Project) {
 	t.Helper()
-	store, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "omakiten.db"))
-	if err != nil {
-		t.Fatalf("Open(%s): %v", slug, err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
 	if err := store.ImportBundle(ctx, mcpTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle(%s): %v", slug, err)
 	}
@@ -977,13 +969,9 @@ func snippet(r ToolResult) string {
 // store, registers a project under slug, and seeds a single backlog
 // task so dispatch tests have something to operate on. Returns the
 // triple every per-project test needs.
-func newMCPProjectWithBundle(t *testing.T, ctx context.Context, slug string, bundle config.Bundle) (*sqlite.Store, domain.Project, domain.Task) {
+func newMCPProjectWithBundle(t *testing.T, ctx context.Context, slug string, bundle config.Bundle) (*snapstore.Store, domain.Project, domain.Task) {
 	t.Helper()
-	store, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "omakiten.db"))
-	if err != nil {
-		t.Fatalf("Open(%s): %v", slug, err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
 	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle(%s): %v", slug, err)
 	}

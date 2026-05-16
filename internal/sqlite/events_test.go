@@ -24,13 +24,9 @@ func fullTransitionBundle(t *testing.T) config.Bundle {
 	return b
 }
 
-func openStoreWithFullTransitions(ctx context.Context, t *testing.T) (*Store, domain.Project) {
+func openStoreWithFullTransitions(ctx context.Context, t *testing.T) (*snapStore, domain.Project) {
 	t.Helper()
-	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() = %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := openSnapStore(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, fullTransitionBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}

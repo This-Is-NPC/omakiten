@@ -11,13 +11,13 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
 
 type entitiesFixture struct {
-	store      *sqlite.Store
+	store      *snapstore.Store
 	editor     *app.BundleEditor
 	files      *configstore.Adapter
 	configPath string
@@ -36,11 +36,7 @@ func newEntitiesFixture(t *testing.T) entitiesFixture {
 	}
 
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, dbPath)
-	if err != nil {
-		t.Fatalf("sqlite.Open() error = %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := snapstore.Open(t, dbPath)
 
 	files := configstore.New()
 	editor := app.NewBundleEditor(files, configPath)
@@ -49,9 +45,9 @@ func newEntitiesFixture(t *testing.T) entitiesFixture {
 		t.Fatalf("editor.Apply(seed) error = %v", err)
 	}
 	// Phase 2-bis: BundleEditor no longer writes through to the Store;
-	// surface the resolved bundle's snapshot to the Store so entity
-	// services that read through `store.Snapshot()` (kept transitional
-	// in tests) see the seeded skills / personas / laws.
+	// rotate the SnapStore's snapshot manually so entity services that
+	// read through `store.Snapshot()` (test-only) see the seeded
+	// skills / personas / laws.
 	if err := store.ImportBundle(ctx, resolved, configPath, ""); err != nil {
 		t.Fatalf("store.ImportBundle: %v", err)
 	}
