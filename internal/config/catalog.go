@@ -11,10 +11,12 @@ import (
 // languages.{cli,tui} config fields; Name and Native are display labels
 // for CLI/TUI surfaces that render language pickers.
 type Language struct {
-	Code   string
-	Name   string
-	Native string
-	Keys   map[string]string
+	Code       string
+	Name       string
+	Native     string
+	Keys       map[string]string
+	SourcePath string
+	IsCustom   bool
 }
 
 // Catalog resolves catalog keys against an active language with a
