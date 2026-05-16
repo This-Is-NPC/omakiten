@@ -95,38 +95,6 @@ func (s *ErrorService) Record(ctx context.Context, project domain.ProjectContext
 	return
 }
 
-func (s *ErrorService) Search(ctx context.Context, project domain.ProjectContext, query string, rawTags []string) (records []domain.ErrorRecord, err error) {
-	finish := activity.Track(ctx, "app.ErrorService.Search", project, map[string]any{"query": query, "tags": rawTags})
-	defer func() {
-		status := "ok"
-		errMsg := ""
-		if err != nil {
-			status = "error"
-			errMsg = err.Error()
-		}
-		finish(status, errMsg)
-	}()
-
-	tagNames := make([]string, 0, len(rawTags))
-	for _, raw := range rawTags {
-		name := NormalizeTagName(raw, s.snap.Synonyms())
-		if name != "" {
-			tagNames = append(tagNames, name)
-		}
-	}
-	cleanQuery := strings.TrimSpace(query)
-	records, err = s.repo.SearchErrors(ctx, cleanQuery, tagNames)
-	if err != nil {
-		return
-	}
-	s.emitDomainEvent(ctx, "error", 0, project.ID, domain.EventTypeErrorSearched, map[string]any{
-		"query":        cleanQuery,
-		"tags":         tagNames,
-		"result_count": len(records),
-	})
-	return
-}
-
 func (s *ErrorService) AddSolution(ctx context.Context, project domain.ProjectContext, errorID int64, description, steps string, taskID *int64) (solution domain.Solution, err error) {
 	finish := activity.Track(ctx, "app.ErrorService.AddSolution", project, map[string]any{"error_id": errorID})
 	defer func() {

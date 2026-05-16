@@ -37,7 +37,7 @@ func TestToolsIncludePlannedSurface(t *testing.T) {
 		"workflow.show":       false,
 		"progress.record":     false,
 		"errors.record":       false,
-		"errors.search":       false,
+		"search":              false,
 		"solutions.add":       false,
 		"solutions.confirm":   false,
 		"metrics.summary":     false,
@@ -192,7 +192,7 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		"workflow.show",
 		"progress.record",
 		"errors.record",
-		"errors.search",
+		"search",
 		"solutions.add",
 		"solutions.confirm",
 		"metrics.summary",
@@ -215,8 +215,8 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 			args = map[string]any{"task_id": 1, "comment": "note"}
 		case "errors.record":
 			args = map[string]any{"description": "boom", "tags": []any{"sqlite"}}
-		case "errors.search":
-			args = map[string]any{"tags": []any{"sqlite"}}
+		case "search":
+			args = map[string]any{"query": "sqlite", "entity_types": []any{"error"}}
 		case "solutions.add":
 			args = map[string]any{"error_id": 1, "description": "try X"}
 		case "solutions.confirm":
