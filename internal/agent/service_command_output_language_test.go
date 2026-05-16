@@ -7,16 +7,15 @@ import (
 	"omakiten/internal/config"
 )
 
-// snapshotWithAgentOutputLanguage builds a minimal snapshot whose
-// AgentOutputLanguage returns the supplied directive. The other catalogs
-// stay empty so the composed prompt body collapses to just the action
-// plus (when configured) the trailing output-language directive.
+// snapshotWithAgentOutputLanguage builds a snapshot whose
+// AgentOutputLanguage returns the supplied directive. The rest of the
+// canonical agent test bundle is preserved so test paths that also
+// exercise workflow / task / project plumbing keep working.
 func snapshotWithAgentOutputLanguage(t *testing.T, value string) *config.Snapshot {
 	t.Helper()
-	bundle := config.Bundle{
-		Languages: []config.Language{{Code: "en", Name: "English", Native: "English"}},
-		Config:    config.Settings{Languages: config.LanguageSettings{AgentOutput: value}},
-	}
+	bundle := agentTestBundle(t)
+	bundle.Languages = []config.Language{{Code: "en", Name: "English", Native: "English"}}
+	bundle.Config.Languages = config.LanguageSettings{AgentOutput: value}
 	return config.BuildSnapshot(bundle)
 }
 

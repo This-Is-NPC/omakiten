@@ -75,7 +75,13 @@ func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext
 		return
 	}
 
-	dump = domain.ContextDump{Project: project, Level: level, TaskCount: taskCount, TokenMetrics: domain.TokenMetrics{MaxTokens: settings.MaxTokens}}
+	dump = domain.ContextDump{
+		Project:             project,
+		Level:               level,
+		TaskCount:           taskCount,
+		TokenMetrics:        domain.TokenMetrics{MaxTokens: settings.MaxTokens},
+		AgentOutputLanguage: snap.AgentOutputLanguage(),
+	}
 
 	entries, err := s.entries.ListContextEntries(ctx, project.ID)
 	if err != nil {

@@ -54,14 +54,19 @@ func (s *Service) ContinueTask(ctx context.Context, input ContinueTaskInput) (Co
 		return ContinueTaskResponse{}, err
 	}
 
+	var agentOutputLang string
+	if s.snapshot != nil {
+		agentOutputLang = s.snapshot.AgentOutputLanguage()
+	}
 	return ContinueTaskResponse{
-		Project:        projectSummary(project),
-		Task:           taskSummary(task, s.registry),
-		Workflow:       workflowSum,
-		Dependencies:   dependencySummaries(dependencies),
-		Comments:       s.shapedRecentComments(comments),
-		RecentContext:  contextSnippets(entries, s.settings.RecentContextLimit),
-		NextStepPrompt: fmt.Sprintf("Continue task #%d from this checkpoint, then record material progress with `progress.record`.", task.ID),
+		Project:             projectSummary(project),
+		Task:                taskSummary(task, s.registry),
+		Workflow:            workflowSum,
+		Dependencies:        dependencySummaries(dependencies),
+		Comments:            s.shapedRecentComments(comments),
+		RecentContext:       contextSnippets(entries, s.settings.RecentContextLimit),
+		NextStepPrompt:      fmt.Sprintf("Continue task #%d from this checkpoint, then record material progress with `progress.record`.", task.ID),
+		AgentOutputLanguage: agentOutputLang,
 	}, nil
 }
 
