@@ -220,7 +220,7 @@ solutions: id, error_id (FK), description, steps,
 error_tags: error_id, tag_id          -- cascades on errors delete
 ```
 
-**Cross-project by design.** Errors carry an optional `project_id` (so you can filter), but `errors.search` and `solutions.list_top` are global so prior fixes are reusable across projects (see `.docs/mcp-guide.md` § Tools).
+**Cross-project by design.** Errors carry an optional `project_id` (so you can filter), but the unified `search` tool (with `entity_types=["error"]`) and `solutions.list_top` are global so prior fixes are reusable across projects (see `.docs/mcp-guide.md` § Tools).
 
 `solutions.success` is a tri-state:
 
