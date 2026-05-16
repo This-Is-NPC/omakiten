@@ -14,19 +14,13 @@ package domain
 // and the minimum payload contract; emit it in the canonical service or
 // sqlite layer; document it in `.docs/domain-events.md`.
 const (
-	// EventTypeComment is the legacy event_type for user/agent comments
-	// recorded against a task. Kept as the canonical value to avoid a
-	// destructive rename of historical rows; new code may reference
-	// EventTypeCommentCreated as a forward-compatible alias.
+	// EventTypeComment is the canonical event_type for user/agent
+	// comments recorded against a task. The bare value "comment"
+	// predates the dotted-namespace convention (comment.edited /
+	// comment.removed) but stays as the write value so historical rows
+	// keep matching without a destructive rename.
 	// EntityType=task, Body=comment text, Tags=optional via event_tags.
 	EventTypeComment = "comment"
-	// EventTypeCommentCreated is the forward-compatible alias for
-	// EventTypeComment. Both values denote the same row shape; readers
-	// that switch on event_type should accept either.
-	EventTypeCommentCreated = "comment"
-	// EventTypeCommentLegacy mirrors EventTypeComment for callers that
-	// want the intent-revealing name when filtering historical rows.
-	EventTypeCommentLegacy = "comment"
 	// EventTypeCommentEdited fires when a comment's body or tag set is
 	// updated. EntityType=task, Payload={comment_id, body:{from,to}}.
 	EventTypeCommentEdited = "comment.edited"
@@ -88,10 +82,29 @@ const (
 	// constants. attempted_by mirrors the request's author_type.
 	EventTypeGuardViolated = "guard.violated"
 
-	// EventTypeOperation is the per-call activity log entry written by
-	// activity.Track. Drives the logs view; not surfaced in the activity
-	// feed. EntityType=system, Source/Operation/Status/DurationMs populated.
+	// EventTypeOperation is the legacy per-call activity log entry written
+	// by activity.Track before the source-discriminated split. Retained
+	// only so historic rows and the migration backfill can reference the
+	// pre-019 value; new writes use EventTypeCLIToolCall /
+	// EventTypeMCPToolCall / EventTypeTUIToolCall.
+	//
+	// Deprecated: do not emit. Use ToolCallEventTypeForSource for new code.
 	EventTypeOperation = "operation"
+
+	// EventTypeCLIToolCall is the per-call activity log entry written by
+	// activity.Track for invocations originating in the CLI. Drives the
+	// logs view; not surfaced in the activity feed. EntityType=system.
+	// Payload mirrors the operation columns so hooks can filter via
+	// `when: { tool_name: ..., status: ok }` without reading SQL columns:
+	// Payload={tool_name, source, entrypoint, status, duration_ms,
+	// error_message, args}.
+	EventTypeCLIToolCall = "cli.tool_call"
+	// EventTypeMCPToolCall mirrors EventTypeCLIToolCall for MCP-originated
+	// tool calls. Same payload contract.
+	EventTypeMCPToolCall = "mcp.tool_call"
+	// EventTypeTUIToolCall mirrors EventTypeCLIToolCall for TUI-originated
+	// tool calls. Same payload contract.
+	EventTypeTUIToolCall = "tui.tool_call"
 
 	// EventTypeHookExecuted fires once a hook's action has finished
 	// running (success or failure). Emitted from inside the dispatch
@@ -107,6 +120,17 @@ const (
 	// orphan_count, groups}. The hooks engine uses it to surface
 	// migration prompts when orphan_count > 0.
 	EventTypeBundleSwapped = "bundle.swapped"
+
+	// EventTypeBundleImported fires after ConfigService.Import (or the
+	// hot-reload path) successfully parses a bundle and rotates the
+	// in-memory provider snapshot. EntityType=system, Payload={path,
+	// hash, workflow_key, workflow_count, persona_count, skill_count,
+	// law_count, template_count}. Distinct from bundle.swapped: the
+	// `imported` event records "a fresh bundle reached the runtime"
+	// (source-of-truth flipped), while `swapped` records "an existing
+	// bundle handle was activated" (e.g. project switch). Hooks subscribe
+	// to bundle.imported to react when configuration content changes.
+	EventTypeBundleImported = "bundle.imported"
 
 	// EventTypeConfirmationGranted fires immediately before the TUI
 	// dispatches a non-empty NotificationAction.Command in response to a
@@ -148,14 +172,30 @@ const (
 	EventTypeSolutionViewedTop = "solution.viewed_top"
 )
 
+// ToolCallEventTypeForSource returns the canonical event_type string for
+// the per-call activity log entry written by activity.Track. Returns ""
+// for sources outside the known cli/mcp/tui set so callers can detect a
+// typo before INSERTing a row with a malformed event_type.
+func ToolCallEventTypeForSource(source ActivitySource) string {
+	switch source {
+	case ActivitySourceCLI:
+		return EventTypeCLIToolCall
+	case ActivitySourceMCP:
+		return EventTypeMCPToolCall
+	case ActivitySourceTUI:
+		return EventTypeTUIToolCall
+	}
+	return ""
+}
+
 // KnownEventTypes is the closed set of event_type values the application
 // emits. Used by config validation to reject overrides referencing
 // unknown event types (typo guard) and by tests to assert catalog
 // completeness. Order is informational; consumers must not depend on it.
 //
-// EventTypeOperation is excluded because it is written by activity.Track
-// rather than the domain emit path and is not configurable per-event in
-// `config.events.overrides`.
+// EventTypeOperation is excluded because it is the pre-019 legacy value
+// no longer emitted by activity.Track — the three EventType*ToolCall
+// constants supersede it.
 var KnownEventTypes = []string{
 	EventTypeComment,
 	EventTypeCommentEdited,
@@ -182,7 +222,11 @@ var KnownEventTypes = []string{
 	EventTypeSolutionViewedTop,
 	EventTypeHookExecuted,
 	EventTypeBundleSwapped,
+	EventTypeBundleImported,
 	EventTypeConfirmationGranted,
+	EventTypeCLIToolCall,
+	EventTypeMCPToolCall,
+	EventTypeTUIToolCall,
 }
 
 // IsKnownEventType reports whether s matches one of KnownEventTypes.

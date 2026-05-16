@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
 
@@ -15,21 +16,29 @@ const (
 	TagEntityError   = "error"
 )
 
+// TagService captures an immutable per-project Snapshot at construction. Tag
+// normalisation reads the bundle's synonym table through s.snap.Synonyms() —
+// no setter mutates the service after construction so two projects' tables
+// stay disjoint without any shared pointer.
 type TagService struct {
 	repo   TagRepository
 	events EventRepository
+	snap   *config.Snapshot
 }
 
-func NewTagService(repo TagRepository) *TagService {
-	return &TagService{repo: repo}
+// NewTagService wires the canonical writer without event emission. snap
+// supplies the per-project tag-synonym table; nil disables substitution.
+func NewTagService(repo TagRepository, snap *config.Snapshot) *TagService {
+	return &TagService{repo: repo, snap: snap}
 }
 
 // NewTagServiceWithEvents wires emission of tag.added / tag.removed
 // alongside the canonical write. events may be nil (callers that do not
 // want emission keep using NewTagService); telemetry errors are swallowed
-// so they cannot break business logic.
-func NewTagServiceWithEvents(repo TagRepository, events EventRepository) *TagService {
-	return &TagService{repo: repo, events: events}
+// so they cannot break business logic. snap supplies the per-project
+// tag-synonym table.
+func NewTagServiceWithEvents(repo TagRepository, events EventRepository, snap *config.Snapshot) *TagService {
+	return &TagService{repo: repo, events: events, snap: snap}
 }
 
 func (s *TagService) emitTagEvent(ctx context.Context, eventType, entityType string, entityID, projectID, tagID int64, tagName string) {
@@ -74,7 +83,7 @@ func (s *TagService) Add(ctx context.Context, project domain.ProjectContext, ent
 		err = domain.NewError(domain.ErrValidation, "tag name is required", nil)
 		return
 	}
-	normalized := NormalizeTagName(tagName)
+	normalized := NormalizeTagName(tagName, s.snap.Synonyms())
 	if normalized == "" {
 		err = domain.NewError(domain.ErrValidation, "tag name is invalid after normalization", map[string]any{"input": tagName})
 		return

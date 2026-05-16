@@ -2,49 +2,170 @@ package sqlite
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 
 	"omakiten/internal/domain"
 )
 
-// PreviewOrphanedTasks reports active tasks whose bucket no longer belongs to
-// the active workflow (the bucket row exists but workflow_buckets.active = 0).
-// Read-only: no rebind, no events. When there is no active workflow the report
-// is empty and no error is returned — callers handle "nothing to do".
-func (s *Store) PreviewOrphanedTasks(ctx context.Context, projectID int64) (domain.OrphanReport, error) {
-	workflowKey, targets, defaultKey, err := s.activeWorkflowTargets(ctx)
-	if err != nil {
-		return domain.OrphanReport{}, err
+// isNilResolver returns true when the BucketResolver interface is nil
+// OR when it wraps a typed-nil pointer (the common shape callers get
+// when they assign a nil Snapshot pointer to a BucketResolver slot).
+// Reflection here is fine — the orphan path runs once per workflow
+// swap, not in a hot loop.
+func isNilResolver(r domain.BucketResolver) bool {
+	if r == nil {
+		return true
 	}
-	if defaultKey == "" {
-		return domain.OrphanReport{}, nil
+	v := reflect.ValueOf(r)
+	if v.Kind() == reflect.Pointer && v.IsNil() {
+		return true
 	}
-	orphans, err := s.queryOrphans(ctx, projectID)
-	if err != nil {
-		return domain.OrphanReport{}, err
-	}
-	return buildReport(workflowKey, orphans, targets, defaultKey), nil
+	return false
 }
 
-// RebindOrphanedTasks applies the migration: every active task pointing at an
-// inactive bucket is rebinded to the active workflow's matching key (when the
-// key survives) or to the first active bucket (default). A task.migrated event
-// is emitted per task inside the same transaction. Returns the report of what
-// was applied. No-op when there are no orphans or no active workflow.
+// PreviewOrphanedTasks reports active tasks whose bucket no longer
+// belongs to the active workflow. The SQL `workflow_buckets` table was
+// dropped in migration 020; the implementation now diffs the current
+// in-memory resolver against the previous one (the caller hands the
+// previous-snapshot view through `previous` whenever the cache holds a
+// pre-rotation pointer) — task.bucket_id values that exist in the
+// previous resolver but not in the current one are orphans. When the
+// bucket key survives the swap (renamed id, same key), the task migrates
+// to the new bucket id transparently elsewhere (`bucket_key` preserved)
+// and is not surfaced here.
 //
-// Transition guards are bypassed — the trigger is a config change, not a
-// workflow transition, and the source bucket no longer exists in the active
-// workflow so transition rules cannot apply.
-func (s *Store) RebindOrphanedTasks(ctx context.Context, projectID int64) (domain.OrphanReport, error) {
-	report, err := s.PreviewOrphanedTasks(ctx, projectID)
+// Empty report when:
+//   - no current workflow loaded (resolver nil or workflow has no buckets)
+//   - no previous resolver (caller has only ever seen one bundle)
+//   - every task's bucket_id resolves in the current resolver
+func (s *Store) PreviewOrphanedTasks(ctx context.Context, projectID int64, current, previous domain.BucketResolver) (domain.OrphanReport, error) {
+	if current == nil {
+		return domain.OrphanReport{}, nil
+	}
+	wf := current.Workflow()
+	if wf.Key == "" || len(wf.Buckets) == 0 {
+		return domain.OrphanReport{}, nil
+	}
+
+	activeKeysByKey := map[string]struct{}{}
+	for _, b := range wf.Buckets {
+		activeKeysByKey[b.Key] = struct{}{}
+	}
+	defaultKey := wf.Buckets[0].Key
+
+	taskRows, err := s.queryActiveTasksWithBucket(ctx, projectID)
+	if err != nil {
+		return domain.OrphanReport{}, err
+	}
+
+	report := domain.OrphanReport{WorkflowKey: wf.Key}
+	groups := map[string]*domain.OrphanGroup{}
+	for _, row := range taskRows {
+		// Resolve the bucket key the task was last bound to via the
+		// previous resolver: that view still knows the id↔key mapping
+		// the bucket had when the task was created or last moved. When
+		// no previous resolver exists (first-import path), fall back to
+		// the current resolver — a task whose id resolves in the
+		// current workflow is not orphaned regardless of swaps.
+		fromKey := ""
+		if !isNilResolver(previous) {
+			if b, ok := previous.BucketByID(row.bucketID); ok {
+				fromKey = b.Key
+			}
+		}
+		if fromKey == "" {
+			// No previous-resolver mapping. The task is orphaned only if
+			// its bucket_id is also absent from the current workflow.
+			if _, ok := current.BucketByID(row.bucketID); ok {
+				continue
+			}
+		} else if _, ok := activeKeysByKey[fromKey]; ok {
+			// Key survives across the swap — not user-facing orphan.
+			continue
+		}
+		toKey := defaultKey
+		groupKey := fromKey + "→" + toKey
+		group, ok := groups[groupKey]
+		if !ok {
+			group = &domain.OrphanGroup{FromBucketKey: fromKey, ToBucketKey: toKey}
+			groups[groupKey] = group
+		}
+		group.Tasks = append(group.Tasks, domain.OrphanedTask{
+			TaskID:        row.taskID,
+			Title:         row.title,
+			FromBucketKey: fromKey,
+			ToBucketKey:   toKey,
+		})
+		group.Count++
+	}
+
+	for _, g := range groups {
+		report.Groups = append(report.Groups, *g)
+		report.Total += g.Count
+	}
+	sort.Slice(report.Groups, func(i, j int) bool {
+		if report.Groups[i].FromBucketKey != report.Groups[j].FromBucketKey {
+			return report.Groups[i].FromBucketKey < report.Groups[j].FromBucketKey
+		}
+		return report.Groups[i].ToBucketKey < report.Groups[j].ToBucketKey
+	})
+	return report, nil
+}
+
+// queryActiveTasksWithBucket returns every active task row with its
+// stored bucket_id. The orphan-classification logic runs in Go so the
+// previous-resolver lookup stays close to the diff that drives it.
+func (s *Store) queryActiveTasksWithBucket(ctx context.Context, projectID int64) ([]orphanRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT t.id, t.title, COALESCE(t.bucket_id, 0)
+FROM tasks t
+WHERE t.project_id = ? AND t.state = 'active'
+ORDER BY t.id
+`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []orphanRow
+	for rows.Next() {
+		var row orphanRow
+		if err := rows.Scan(&row.taskID, &row.title, &row.bucketID); err != nil {
+			return nil, err
+		}
+		if row.bucketID == 0 {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+type orphanRow struct {
+	taskID   int64
+	title    string
+	bucketID int64
+}
+
+// RebindOrphanedTasks applies the migration: every active task pointing
+// at an orphaned bucket is rebound to the active workflow's matching
+// key (when the key survives) or to the default (first) bucket. A
+// task.migrated event is emitted per task inside the same transaction.
+func (s *Store) RebindOrphanedTasks(ctx context.Context, projectID int64, current, previous domain.BucketResolver) (domain.OrphanReport, error) {
+	report, err := s.PreviewOrphanedTasks(ctx, projectID, current, previous)
 	if err != nil {
 		return domain.OrphanReport{}, err
 	}
 	if report.Total == 0 {
 		return report, nil
+	}
+
+	wf := current.Workflow()
+	idByKey := make(map[string]int64, len(wf.Buckets))
+	for _, b := range wf.Buckets {
+		idByKey[b.Key] = b.ID
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -53,20 +174,15 @@ func (s *Store) RebindOrphanedTasks(ctx context.Context, projectID int64) (domai
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	targetIDs, err := loadActiveBucketIDsByKey(ctx, tx)
-	if err != nil {
-		return domain.OrphanReport{}, err
-	}
-
 	type emitted struct {
 		event domain.Event
 	}
 	var events []emitted
 
 	for _, group := range report.Groups {
-		toID, ok := targetIDs[group.ToBucketKey]
+		toID, ok := idByKey[group.ToBucketKey]
 		if !ok {
-			return domain.OrphanReport{}, fmt.Errorf("rebind orphaned tasks: target bucket %q not active", group.ToBucketKey)
+			return domain.OrphanReport{}, fmt.Errorf("rebind orphaned tasks: target bucket %q not in active workflow", group.ToBucketKey)
 		}
 		for _, task := range group.Tasks {
 			if _, err := tx.ExecContext(ctx, `
@@ -97,183 +213,4 @@ WHERE project_id = ? AND id = ?
 		s.publishEvent(ctx, e.event)
 	}
 	return report, nil
-}
-
-// activeWorkflowTargets returns the active workflow's key, the set of active
-// bucket keys, and the first/default bucket key (lowest position). When no
-// active workflow exists, defaultKey is "" and callers should treat that as
-// "no migration possible".
-func (s *Store) activeWorkflowTargets(ctx context.Context) (workflowKey string, activeKeys map[string]struct{}, defaultKey string, err error) {
-	row := s.db.QueryRowContext(ctx, `
-SELECT workflows.key
-FROM workflows
-JOIN config_bundles ON config_bundles.id = workflows.bundle_id
-JOIN settings ON settings.bundle_id = config_bundles.id
-  AND settings.key = 'workflow.active'
-  AND settings.value = workflows.key
-  AND settings.active = 1
-WHERE workflows.active = 1 AND config_bundles.active = 1
-ORDER BY config_bundles.id DESC, workflows.id DESC
-LIMIT 1
-`)
-	if err = row.Scan(&workflowKey); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", nil, "", nil
-		}
-		return "", nil, "", err
-	}
-
-	rows, err := s.db.QueryContext(ctx, `
-SELECT workflow_buckets.key
-FROM workflow_buckets
-JOIN workflows ON workflows.id = workflow_buckets.workflow_id
-JOIN config_bundles ON config_bundles.id = workflows.bundle_id
-JOIN settings ON settings.bundle_id = config_bundles.id
-  AND settings.key = 'workflow.active'
-  AND settings.value = workflows.key
-  AND settings.active = 1
-WHERE workflow_buckets.active = 1
-  AND workflows.active = 1
-  AND config_bundles.active = 1
-ORDER BY workflow_buckets.position, workflow_buckets.id
-`)
-	if err != nil {
-		return "", nil, "", err
-	}
-	defer func() { _ = rows.Close() }()
-
-	activeKeys = map[string]struct{}{}
-	for rows.Next() {
-		var key string
-		if err := rows.Scan(&key); err != nil {
-			return "", nil, "", err
-		}
-		if defaultKey == "" {
-			defaultKey = key
-		}
-		activeKeys[key] = struct{}{}
-	}
-	if err := rows.Err(); err != nil {
-		return "", nil, "", err
-	}
-	return workflowKey, activeKeys, defaultKey, nil
-}
-
-type orphanRow struct {
-	taskID  int64
-	title   string
-	oldKey  string
-}
-
-func (s *Store) queryOrphans(ctx context.Context, projectID int64) ([]orphanRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
-SELECT t.id, t.title, wb.key
-FROM tasks t
-JOIN workflow_buckets wb ON wb.id = t.bucket_id
-WHERE t.project_id = ?
-  AND t.state = 'active'
-  AND wb.id NOT IN (
-    SELECT workflow_buckets.id
-    FROM workflow_buckets
-    JOIN workflows ON workflows.id = workflow_buckets.workflow_id
-    JOIN config_bundles ON config_bundles.id = workflows.bundle_id
-    JOIN settings ON settings.bundle_id = config_bundles.id
-      AND settings.key = 'workflow.active'
-      AND settings.value = workflows.key
-      AND settings.active = 1
-    WHERE workflow_buckets.active = 1
-      AND workflows.active = 1
-      AND config_bundles.active = 1
-  )
-ORDER BY t.id
-`, projectID)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-
-	var out []orphanRow
-	for rows.Next() {
-		var row orphanRow
-		if err := rows.Scan(&row.taskID, &row.title, &row.oldKey); err != nil {
-			return nil, err
-		}
-		out = append(out, row)
-	}
-	return out, rows.Err()
-}
-
-func loadActiveBucketIDsByKey(ctx context.Context, tx *sql.Tx) (map[string]int64, error) {
-	rows, err := tx.QueryContext(ctx, `
-SELECT workflow_buckets.key, workflow_buckets.id
-FROM workflow_buckets
-JOIN workflows ON workflows.id = workflow_buckets.workflow_id
-JOIN config_bundles ON config_bundles.id = workflows.bundle_id
-JOIN settings ON settings.bundle_id = config_bundles.id
-  AND settings.key = 'workflow.active'
-  AND settings.value = workflows.key
-  AND settings.active = 1
-WHERE workflow_buckets.active = 1
-  AND workflows.active = 1
-  AND config_bundles.active = 1
-`)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-
-	out := map[string]int64{}
-	for rows.Next() {
-		var key string
-		var id int64
-		if err := rows.Scan(&key, &id); err != nil {
-			return nil, err
-		}
-		out[key] = id
-	}
-	return out, rows.Err()
-}
-
-func buildReport(workflowKey string, orphans []orphanRow, targets map[string]struct{}, defaultKey string) domain.OrphanReport {
-	if len(orphans) == 0 {
-		return domain.OrphanReport{WorkflowKey: workflowKey}
-	}
-
-	byGroup := map[string]*domain.OrphanGroup{}
-	for _, row := range orphans {
-		target := defaultKey
-		if _, ok := targets[row.oldKey]; ok {
-			target = row.oldKey
-		}
-		key := row.oldKey + "→" + target
-		group, ok := byGroup[key]
-		if !ok {
-			group = &domain.OrphanGroup{FromBucketKey: row.oldKey, ToBucketKey: target}
-			byGroup[key] = group
-		}
-		group.Tasks = append(group.Tasks, domain.OrphanedTask{
-			TaskID:        row.taskID,
-			Title:         row.title,
-			FromBucketKey: row.oldKey,
-			ToBucketKey:   target,
-		})
-		group.Count++
-	}
-
-	groups := make([]domain.OrphanGroup, 0, len(byGroup))
-	for _, g := range byGroup {
-		groups = append(groups, *g)
-	}
-	sort.Slice(groups, func(i, j int) bool {
-		if groups[i].FromBucketKey != groups[j].FromBucketKey {
-			return groups[i].FromBucketKey < groups[j].FromBucketKey
-		}
-		return groups[i].ToBucketKey < groups[j].ToBucketKey
-	})
-
-	total := 0
-	for _, g := range groups {
-		total += g.Count
-	}
-	return domain.OrphanReport{WorkflowKey: workflowKey, Groups: groups, Total: total}
 }

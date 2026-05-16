@@ -414,7 +414,7 @@ Heights of `1` service fixed-height surfaces (table rows, log entries, picker ro
 
 - `m.renderScrollWindowSplit(items, heights, offset, viewport)` — wraps `scrollwindow.Slice` with `HintsSplit`, prepends `▲ N above` and appends `▼ N below` rows. Used by the board lanes, settings entity grid, home projects column, activity feed, and (via `sliceScrollRows`) the fixed-height table/logs/graph/picker surfaces.
 - `followScrollWindowSplit(offset, cursor, heights, viewport)` — sync analog. Used by `syncFocusedColumnScroll`, `syncFocusedEntityScroll`, and `syncHomeScroll`.
-- `m.sliceScrollRows(rows, scroll, viewport)` — legacy public API for fixed-height callers. Now a thin wrapper that builds heights of 1s and delegates to `renderScrollWindowSplit`.
+- `m.sliceScrollRows(rows, scroll, viewport)` — public API for fixed-height callers. Thin wrapper that builds heights of 1s and delegates to `renderScrollWindowSplit`.
 - `m.panelViewportRows(panelChrome int)` — terminal-row budget for any panel sitting under the screen chrome. Live-measures the screen header / status line / footer so the budget tracks header changes automatically. Each caller declares only the rows internal to its own panel (border + kicker + separator + any trailing hint).
 - `scrollDataRows(viewport)` — the cursor-tracking adapter for fixed-height surfaces; subtracts the 2 worst-case hint rows so cursor + scroll math agree.
 - `followCursor(scroll, cursor, viewport, total)` — fixed-height cursor follow used by every picker.

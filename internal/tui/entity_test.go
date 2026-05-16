@@ -15,12 +15,13 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/runtimecache"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
-func newEntityModel(t *testing.T) (Model, *sqlite.Store, *app.BundleEditor) {
+func newEntityModel(t *testing.T) (Model, *snapstore.Store, *app.BundleEditor) {
 	t.Helper()
 	tmp := t.TempDir()
 	configPath := filepath.Join(tmp, "config", "omakase.yaml")
@@ -31,16 +32,16 @@ func newEntityModel(t *testing.T) (Model, *sqlite.Store, *app.BundleEditor) {
 	}
 
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, dbPath)
-	if err != nil {
-		t.Fatalf("sqlite.Open() error = %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := snapstore.Open(t, dbPath)
 
 	files := configstore.New()
-	editor := app.NewBundleEditor(store, files, configPath)
-	if _, err := editor.Apply(ctx, nil); err != nil {
+	editor := app.NewBundleEditor(files, configPath)
+	resolved, err := editor.Apply(ctx, nil)
+	if err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
+	}
+	if err := store.ImportBundle(ctx, resolved, configPath, ""); err != nil {
+		t.Fatalf("store.ImportBundle: %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	if err != nil {
@@ -49,7 +50,7 @@ func newEntityModel(t *testing.T) (Model, *sqlite.Store, *app.BundleEditor) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:    store,
-		Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
@@ -151,7 +152,7 @@ func TestEntityRefreshAfterEditorMessage(t *testing.T) {
 
 	// Simulate the editor flow: directly add a skill and dispatch the
 	// editorFinishedMsg the way runExternalEditor would after $EDITOR returns.
-	skillService := app.NewSkillService(model.repos.Config, editor, model.repos.EntityFiles, model.repos.Slugger)
+	skillService := app.NewSkillService(model.repos.activeSnapshot(), editor, model.repos.EntityFiles, model.repos.Slugger)
 	if _, err := skillService.Add(ctx, domain.SkillInput{Key: "tui", Name: "TUI"}); err != nil {
 		t.Fatalf("SkillService.Add() error = %v", err)
 	}
@@ -204,16 +205,16 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 	}
 
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, dbPath)
-	if err != nil {
-		t.Fatalf("sqlite.Open() error = %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := snapstore.Open(t, dbPath)
 
 	files := configstore.New()
-	editor := app.NewBundleEditor(store, files, configPath)
-	if _, err := editor.Apply(ctx, nil); err != nil {
+	editor := app.NewBundleEditor(files, configPath)
+	resolved, err := editor.Apply(ctx, nil)
+	if err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
+	}
+	if err := store.ImportBundle(ctx, resolved, configPath, ""); err != nil {
+		t.Fatalf("store.ImportBundle: %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	if err != nil {
@@ -222,7 +223,7 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:    store,
-		Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
@@ -340,7 +341,26 @@ func TestSettingsGeneralRendersRuntimeCard(t *testing.T) {
 	model.sub = subSettingsGeneral
 
 	view := ansi.Strip(model.View())
-	for _, want := range []string{"// RUNTIME", "// PROJECT", "// OKT VERSION", "0.9.0-test", "/tmp/omakiten.yaml", "/tmp/omakiten.db", "// THEME", "// WORKFLOW"} {
+	for _, want := range []string{"// RUNTIME", "// PROJECT", "// OKT VERSION", "0.9.0-test", "// SCOPE", "global", "/tmp/omakiten.yaml", "/tmp/omakiten.db", "// THEME", "// WORKFLOW"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("Settings › General missing %q\n%s", want, view)
+		}
+	}
+}
+
+func TestSettingsGeneralScopeBadgeNamesRepoLocalDir(t *testing.T) {
+	model, _, _ := newEntityModel(t)
+	model.repos.Version = "0.9.0-test"
+	model.repos.ConfigPath = "/tmp/myrepo/.omakiten/config/izakaya.yaml"
+	model.repos.DBPath = "/tmp/omakiten.db"
+	model.repos.RepoLocalDir = "/tmp/myrepo/.omakiten"
+	model.width = 200
+	model.height = 40
+	model.top = topSettings
+	model.sub = subSettingsGeneral
+
+	view := ansi.Strip(model.View())
+	for _, want := range []string{"// SCOPE", "local (/tmp/myrepo/.omakiten)"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("Settings › General missing %q\n%s", want, view)
 		}
@@ -351,9 +371,8 @@ func TestSettingsTemplatesSubRendersColumn(t *testing.T) {
 	model := newEntityModelWithTemplates(t)
 	model.width = 200
 	model.height = 60
-	// In the T2 layout each entity kind owns its own Settings sub. Driving
-	// to Settings › Templates should land us on a single templates column —
-	// the legacy 5-column grid no longer exists.
+	// Each entity kind owns its own Settings sub. Driving to Settings ›
+	// Templates should land on a single templates column.
 	model.top = topSettings
 	model.sub = subSettingsTemplates
 	model.entityKind = entityKindTemplate
@@ -425,8 +444,11 @@ func TestPersonaPickerToggleAndSave(t *testing.T) {
 	ctx := context.Background()
 
 	// Add a second skill so the picker has two rows to toggle between.
-	if _, err := app.NewSkillService(model.repos.Config, model.repos.Editor, model.repos.EntityFiles, model.repos.Slugger).Add(ctx, domain.SkillInput{Key: "sqlite", Name: "SQLite"}); err != nil {
+	if _, err := app.NewSkillService(model.repos.activeSnapshot(), model.repos.Editor, model.repos.EntityFiles, model.repos.Slugger).Add(ctx, domain.SkillInput{Key: "sqlite", Name: "SQLite"}); err != nil {
 		t.Fatalf("Add(skill) error = %v", err)
+	}
+	if err := runtimecache.RefreshFromEditor(model.repos.Cache, model.repos.ProjectID, model.repos.Editor); err != nil {
+		t.Fatalf("runtimecache.RefreshFromEditor: %v", err)
 	}
 	if err := model.refresh(); err != nil {
 		t.Fatalf("refresh() error = %v", err)

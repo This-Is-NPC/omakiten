@@ -13,14 +13,13 @@ import (
 	"path/filepath"
 
 	"omakiten/internal/agent"
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
-	"omakiten/internal/domain"
 	"omakiten/internal/events"
 	"omakiten/internal/hooks"
 	"omakiten/internal/hooks/actions"
 	"omakiten/internal/paths"
+	project_ "omakiten/internal/project"
 	"omakiten/internal/sqlite"
 )
 
@@ -41,17 +40,27 @@ type Options struct {
 
 // Runtime owns the long-lived resources the MCP server needs: the sqlite
 // connection, the resolved paths, and the agent.Service that handlers
-// dispatch through.
+// dispatch through. Phase 3a hoisted the per-bundle resources
+// (service, hooks engine, registry, notification snapshot) into the
+// BundleCache; Runtime keeps thin accessors so consumers do not need
+// to know whether the cache returned an existing entry or built a new
+// one.
 type Runtime struct {
-	store              *sqlite.Store
-	configPath         string
-	dbPath             string
-	service            *agent.Service
-	bus                events.Bus
-	hooksEngine        *hooks.Engine
+	store      *sqlite.Store
+	configPath string
+	dbPath     string
+	bus        events.Bus
+	cache      *BundleCache
+	// defaultProjectID is the cache key the boot path installed the
+	// initial runtime under. Phase 3a always uses 0 (single bundle
+	// process-wide); Phase 3b–3f switch to per-project ids without
+	// touching the rest of this file.
+	defaultProjectID int64
+	// actionRegistry is the same registry the active runtime's engine
+	// reads from. Held on Runtime so external callers (tests, future
+	// MCP plugins) can extend the registry before a reload picks it up.
 	actionRegistry     *hooks.ActionRegistry
 	notificationAction *actions.NotificationShowAction
-	registry           *domain.EnumRegistry
 }
 
 // Open materializes the runtime: resolves paths, runs config layout
@@ -93,40 +102,17 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		return nil, err
 	}
 
-	bundle, _, enumRegistry, err := app.NewConfigService(store, cs).Import(ctx, configPath)
+	// Peek the bundle once to construct the bus. The bus depends on
+	// the events policy and must outlive every cache rebuild — putting
+	// it inside the BundleCache would force every Reload to reseat
+	// subscribers (TUI panels, hooks engine). Cache rebuilds keep
+	// using this same bus handle.
+	preview, err := config.LoadBundle(configPath)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
 	}
-
-	bus := events.NewInProcessBus(bundle.Config.Events)
-	registry := hooks.NewActionRegistry()
-	actions.RegisterBuiltins(registry)
-	notificationAction := actions.NewNotificationShowAction(actions.NotificationBundleSnapshot{Notifications: bundle.Notifications})
-	registry.Register(notificationAction)
-
-	// Re-validate hooks now that the registry is populated so unknown
-	// `do:` names abort startup with a clear error rather than silently
-	// going untriggered.
-	if err := config.ValidateHooks(bundle.Config.Hooks, func(name string) bool {
-		_, ok := registry.Get(name)
-		return ok
-	}, bundle.Notifications); err != nil {
-		_ = store.Close()
-		return nil, err
-	}
-
-	if err := store.ApplyConfig(ctx, sqlite.ConfigKnobs{
-		BusyTimeoutMs:            bundle.Config.SQLite.BusyTimeoutMs,
-		ActivityLogMaxRows:       bundle.Config.ActivityLog.MaxRows,
-		ActivityLogMaxAgeDays:    bundle.Config.ActivityLog.MaxAgeDays,
-		EventsDefaultRecentLimit: bundle.Config.Events.DefaultRecentLimit,
-		EventsPolicy:             bundle.Config.Events,
-		EventBus:                 bus,
-	}); err != nil {
-		_ = store.Close()
-		return nil, err
-	}
+	bus := events.NewInProcessBus(preview.Config.Events)
 
 	cwd := opts.CWD
 	if cwd == "" {
@@ -136,54 +122,91 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 			return nil, err
 		}
 	}
+	// Cache owns the selector so every rebuild (mtime change, explicit
+	// Reload) constructs services that retain the boot-resolved
+	// project / CWD. SetProjectSelector must precede Resolve so the
+	// initial build picks it up.
+	cache := NewBundleCache(store, bus, cs)
+	cache.SetProjectSelector(agent.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
+	rt, err := cache.Resolve(ctx, opts.ProjectID, configPath)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 
-	// Note: domain.RegisterPriorities / RegisterSeverities are called
-	// inside ConfigService.Import (above) BEFORE ImportBundle writes
-	// the bundle. No need to re-register here — the registry is
-	// already populated for the rest of the runtime.
-
-	hookEntries := buildHookEntries(bundle.Config.Hooks)
-	engine := hooks.NewEngine(hookEntries, registry, bundle.Config.Events, store)
-	engine.Start(bus)
-
-	rt := &Runtime{store: store, configPath: configPath, dbPath: dbPath, bus: bus, hooksEngine: engine, actionRegistry: registry, notificationAction: notificationAction, registry: enumRegistry}
-	rt.service = agent.NewService(store, agent.ProjectSelector{ProjectID: opts.ProjectID, Project: opts.Project, CWD: cwd})
-	rt.service.SetRegistry(enumRegistry)
-	rt.service.SetTaskTemplateLookup(taskTemplateLookup(bundle))
-	rt.service.SetTemplateCatalog(templateCatalog(bundle))
-	rt.service.SetSkillCatalog(skillCatalog(bundle))
-	rt.service.SetLawCatalog(lawCatalog(bundle))
-	rt.service.SetPersonaCatalog(personaCatalog(bundle))
-	rt.service.SetCommandCatalog(commandCatalog(bundle))
-	// Validator guarantees every MCP field is declared in the loaded
-	// bundle, so direct field access is safe — no Effective* fallback.
-	// The *bool fields are dereferenced here because validator confirmed
-	// they are non-nil.
-	rt.service.SetSettings(agent.ServiceSettings{
-		RecentCommentLimit:       bundle.Config.MCP.RecentCommentLimit,
-		MaxCommentChars:          bundle.Config.MCP.MaxCommentChars,
-		IncludeWorkflow:          *bundle.Config.MCP.IncludeWorkflowInContinue,
-		CachePrompts:             *bundle.Config.MCP.CachePrompts,
-		RecentContextLimit:       bundle.Config.MCP.RecentContextLimit,
-		NextWorkLimit:            bundle.Config.MCP.NextWorkLimit,
-		SimilarTaskLimit:         bundle.Config.MCP.SimilarTaskLimit,
-		SolutionsTopLimitDefault: bundle.Config.Solutions.DefaultTopLimit,
-		SolutionsTopLimitMax:     bundle.Config.Solutions.MaxTopLimit,
-	})
-	// Tag synonyms + similar-task stopwords are process-global registries
-	// the consumer packages read at every NormalizeTagName / wordSet call.
-	// The composition root is the single point that knows the bundle, so
-	// installation lives here.
-	app.RegisterTagSynonyms(bundle.Config.TagSynonyms)
-	agent.RegisterStopWords(bundle.Config.Search.Stopwords)
-	return rt, nil
+	r := &Runtime{
+		store:              store,
+		configPath:         configPath,
+		dbPath:             dbPath,
+		bus:                bus,
+		cache:              cache,
+		defaultProjectID:   opts.ProjectID,
+		actionRegistry:     rt.ActionRegistry,
+		notificationAction: rt.NotificationAction,
+	}
+	return r, nil
 }
 
 func (r *Runtime) Close() error {
-	if r.hooksEngine != nil {
-		r.hooksEngine.Stop()
+	if pr := r.cache.Get(r.defaultProjectID); pr != nil && pr.HooksEngine != nil {
+		pr.HooksEngine.Stop()
 	}
 	return r.store.Close()
+}
+
+// Cache exposes the BundleCache so consumers (TUI hot-reload, future
+// per-project surfaces) can call Resolve / Reload without going
+// through Runtime first.
+func (r *Runtime) Cache() *BundleCache {
+	return r.cache
+}
+
+// Snapshot returns the active *config.Snapshot for the runtime's
+// default project. Returns nil when the cache has not yet built a
+// runtime for the default project (rare bootstrap window). Callers
+// that need a project-specific snapshot route through Cache().Get(id).
+func (r *Runtime) Snapshot() *config.Snapshot {
+	if pr := r.cache.Get(r.defaultProjectID); pr != nil {
+		return pr.Snapshot
+	}
+	return nil
+}
+
+// ResolveServiceForProject returns the agent.Service the BundleCache
+// has wired for the given project. The lookup is best-effort: when
+// the project slug / id resolve to an entry without a per-project
+// `.omakiten/` install, or when any step in the resolution chain
+// fails, the function returns (nil, nil) so callers can fall back to
+// the default service without surfacing the discrepancy to the agent
+// caller.
+//
+// Phase 3b uses this from the MCP adapter to route each tool call to
+// the project the caller declared in `project` / `project_id`. Phase
+// 3c+ will extend the same routing to CLI and TUI without touching
+// this method's surface.
+func (r *Runtime) ResolveServiceForProject(ctx context.Context, project string, projectID int64) (*agent.Service, error) {
+	if project == "" && projectID == 0 {
+		return nil, nil
+	}
+	resolved, err := project_.NewResolver(r.store).Resolve(ctx, project_.ResolveOptions{ProjectID: projectID, Project: project})
+	if err != nil || resolved.RootPath == "" {
+		return nil, nil
+	}
+	repoLocal, ok, err := config.FindRepoLocal(resolved.RootPath)
+	if err != nil || !ok {
+		// Project has no per-project install — the default runtime
+		// already serves the right bundle (single-bundle process-wide).
+		return nil, nil
+	}
+	configFile, err := paths.ActiveConfigFileInDir(filepath.Join(repoLocal, "config"))
+	if err != nil || configFile == "" {
+		return nil, nil
+	}
+	pr, err := r.cache.Resolve(ctx, resolved.ID, configFile)
+	if err != nil || pr == nil {
+		return nil, nil
+	}
+	return pr.Service, nil
 }
 
 // buildHookEntries lifts user-facing HookSpec entries into the
@@ -227,7 +250,10 @@ func (r *Runtime) Bus() events.Bus {
 }
 
 func (r *Runtime) Service() *agent.Service {
-	return r.service
+	if pr := r.cache.Get(r.defaultProjectID); pr != nil {
+		return pr.Service
+	}
+	return nil
 }
 
 func (r *Runtime) Store() *sqlite.Store {
@@ -240,156 +266,6 @@ func (r *Runtime) ConfigPath() string {
 
 func (r *Runtime) DBPath() string {
 	return r.dbPath
-}
-
-// templateCatalog snapshots the bundle's templates into the read-only view
-// the MCP catalog endpoints expose. Snapshot at startup is enough — the
-// agent is read-only and would only see drift after a config refresh, which
-// requires restarting the runtime anyway.
-func templateCatalog(bundle config.Bundle) agent.TemplateCatalog {
-	snapshot := make([]agent.TemplateSummary, 0, len(bundle.Templates))
-	for _, t := range bundle.Templates {
-		snapshot = append(snapshot, agent.TemplateSummary{
-			Slug:        t.Slug,
-			Name:        t.Name,
-			Description: t.Description,
-			Entity:      t.Entity,
-			Default:     t.Default,
-			Project:     t.ProjectSlug,
-			Laws:        append([]string(nil), t.Laws...),
-			IsCustom:    t.IsCustom,
-			Body:        t.Body,
-			SourcePath:  t.SourcePath,
-		})
-	}
-	return func() []agent.TemplateSummary {
-		out := make([]agent.TemplateSummary, len(snapshot))
-		copy(out, snapshot)
-		return out
-	}
-}
-
-// taskTemplateLookup captures the bundle at runtime startup and returns a
-// project-aware closure that resolves the active task template scaffold on
-// demand. Project-scoped templates win over global; nil means no template
-// is configured for the kind.
-func taskTemplateLookup(bundle config.Bundle) agent.TaskTemplateLookup {
-	templates := append([]config.TaskTemplate(nil), bundle.Templates...)
-	return func(projectSlug string) *agent.TaskTemplateSummary {
-		var global *config.TaskTemplate
-		for i := range templates {
-			t := &templates[i]
-			if t.Default != "task" {
-				continue
-			}
-			if projectSlug != "" && t.ProjectSlug == projectSlug {
-				return summarizeTaskTemplate(t)
-			}
-			if t.ProjectSlug == "" && global == nil {
-				global = t
-			}
-		}
-		if global == nil {
-			return nil
-		}
-		return summarizeTaskTemplate(global)
-	}
-}
-
-// skillCatalog/lawCatalog/personaCatalog/commandCatalog snapshot the bundle so
-// agent.Service.ResolveCommand can resolve persona, skill, law and per-command
-// bindings without importing internal/config. Snapshots are taken once at
-// startup — same lifetime as templateCatalog — because a bundle reload
-// requires restarting the runtime.
-
-func skillCatalog(bundle config.Bundle) agent.SkillCatalog {
-	snapshot := make([]agent.SkillInfo, 0, len(bundle.Skills))
-	for _, s := range bundle.Skills {
-		snapshot = append(snapshot, agent.SkillInfo{
-			Slug:        s.Slug,
-			Name:        s.Name,
-			Description: s.Description,
-			Body:        s.Body,
-		})
-	}
-	return func() []agent.SkillInfo {
-		out := make([]agent.SkillInfo, len(snapshot))
-		copy(out, snapshot)
-		return out
-	}
-}
-
-func lawCatalog(bundle config.Bundle) agent.LawCatalog {
-	snapshot := make([]agent.LawInfo, 0, len(bundle.Laws))
-	for _, l := range bundle.Laws {
-		snapshot = append(snapshot, agent.LawInfo{
-			Slug:     l.Slug,
-			Name:     l.Name,
-			Severity: l.Severity,
-			Body:     l.Body,
-			Scope:    l.Scope,
-		})
-	}
-	return func() []agent.LawInfo {
-		out := make([]agent.LawInfo, len(snapshot))
-		copy(out, snapshot)
-		return out
-	}
-}
-
-func personaCatalog(bundle config.Bundle) agent.PersonaCatalog {
-	snapshot := make([]agent.PersonaInfo, 0, len(bundle.Personas))
-	for _, p := range bundle.Personas {
-		snapshot = append(snapshot, agent.PersonaInfo{
-			Slug:        p.Slug,
-			Name:        p.Name,
-			Description: p.Description,
-			Body:        p.Body,
-			Skills:      append([]string(nil), p.Skills...),
-			Laws:        append([]string(nil), p.Laws...),
-		})
-	}
-	return func() []agent.PersonaInfo {
-		out := make([]agent.PersonaInfo, len(snapshot))
-		copy(out, snapshot)
-		return out
-	}
-}
-
-func commandCatalog(bundle config.Bundle) agent.CommandCatalog {
-	snapshot := make(map[string]agent.MCPCommandBinding, len(bundle.MCPCommands))
-	for name, spec := range bundle.MCPCommands {
-		snapshot[name] = agent.MCPCommandBinding{
-			Persona:      spec.Persona,
-			Laws:         append([]string(nil), spec.Laws...),
-			LawsDisabled: append([]string(nil), spec.LawsDisabled...),
-			Templates:    append([]string(nil), spec.Templates...),
-		}
-	}
-	return func() map[string]agent.MCPCommandBinding {
-		out := make(map[string]agent.MCPCommandBinding, len(snapshot))
-		for k, v := range snapshot {
-			out[k] = agent.MCPCommandBinding{
-				Persona:      v.Persona,
-				Laws:         append([]string(nil), v.Laws...),
-				LawsDisabled: append([]string(nil), v.LawsDisabled...),
-				Templates:    append([]string(nil), v.Templates...),
-			}
-		}
-		return out
-	}
-}
-
-func summarizeTaskTemplate(t *config.TaskTemplate) *agent.TaskTemplateSummary {
-	if t == nil {
-		return nil
-	}
-	return &agent.TaskTemplateSummary{
-		Slug:        t.Slug,
-		Name:        t.Name,
-		Description: t.Description,
-		Body:        t.Body,
-	}
 }
 
 func resolvedConfigPath(path string) (string, error) {

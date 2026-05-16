@@ -135,14 +135,15 @@ func (m *Model) submitInput() {
 			err = domain.NewError(domain.ErrTaskNotFound, "no selected task", nil)
 			break
 		}
-		_, err = app.NewCommentService(m.repos.Comments).Add(m.ctx, m.project, task.ID, input, "human", nil)
+		commentSvc := app.NewCommentService(m.repos.Comments, m.repos.activeSnapshot())
+		_, err = commentSvc.Add(m.ctx, m.project, task.ID, input, "human", nil)
 	case modeMove:
 		task, ok := m.selectedTask()
 		if !ok {
 			err = domain.NewError(domain.ErrTaskNotFound, "no selected task", nil)
 			break
 		}
-		savedTask, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry).Move(m.ctx, m.project, task.ID, input)
+		savedTask, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry, m.repos.activeSnapshot()).Move(m.ctx, m.project, task.ID, input)
 		selectSavedTask = true
 	}
 
@@ -201,7 +202,7 @@ func (m *Model) moveSelectedToColumn(targetColIdx int) {
 		return
 	}
 	target := m.workflow.Buckets[targetColIdx]
-	if _, err := app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry).Move(m.ctx, m.project, task.ID, target.Key); err != nil {
+	if _, err := app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry, m.repos.activeSnapshot()).Move(m.ctx, m.project, task.ID, target.Key); err != nil {
 		m.status = err.Error()
 		m.moveMode = false
 		return

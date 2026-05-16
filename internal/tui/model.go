@@ -790,7 +790,12 @@ func (m *Model) refresh() error {
 	views := m.activeViewSettings()
 	m.views = views
 
-	query := app.NewTUIQueryService(m.repos.Tasks, m.repos.Config, m.repos.Dependencies, m.repos.Comments, m.repos.Entries, m.repos.Tags, m.repos.Editor, m.registry)
+	// Phase 2-bis routes every per-project view through the BundleCache —
+	// production wires one at boot, tests wire one via
+	// testfixtures/runtimecache.Install. Reads hit r.Cache.Get(r.ProjectID).Snapshot
+	// unconditionally.
+
+	query := app.NewTUIQueryService(m.repos.Tasks, m.repos.activeSnapshot(), m.repos.Dependencies, m.repos.Comments, m.repos.Entries, m.repos.Tags, m.repos.Editor, m.registry)
 	snap, err := query.Snapshot(m.ctx, m.project, domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order}, app.SnapshotOptions{IncludeArchived: m.includeArchived})
 	if err != nil {
 		return err

@@ -11,6 +11,7 @@ import (
 
 	"omakiten/internal/activity"
 	"omakiten/internal/agent"
+	"omakiten/internal/agentruntime"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
@@ -30,16 +31,34 @@ type runtimeOptions struct {
 	configPath string
 	project    string
 	projectID  int64
+	// discoveryStart is the directory FindRepoLocal walks up from. open()
+	// populates it after resolving --project (project.root_path) or falls
+	// back to CWD. Reset between calls to open(); resolver helpers below
+	// honour it.
+	discoveryStart string
 }
 
 type runtime struct {
 	store              *sqlite.Store
 	configPath         string
 	dbPath             string
+	repoLocalDir       string
 	bus                events.Bus
 	hooksEngine        *hooks.Engine
 	notificationAction *actions.NotificationShowAction
 	registry           *domain.EnumRegistry
+	// cache is the per-project BundleCache the CLI invocation seeds at
+	// boot. Phase 3c keeps the cache size at 1 for the single-shot CLI
+	// path (one --project per invocation), but exposing the cache lets
+	// MCP-style multi-project surfaces re-resolve through the same
+	// handle as the agentruntime composition root. Subcommands that
+	// want a project-aware bundle call ResolveProjectRuntime.
+	cache *agentruntime.BundleCache
+	// projectID is the cache key for the boot-seeded entry — 0 when no
+	// --project flag was supplied (the default fallback used by every
+	// pre-3c command). ResolveProjectRuntime uses this as the lookup
+	// key when callers do not specify their own.
+	projectID int64
 }
 
 func (r *runtime) WithActivityRepo(ctx context.Context) context.Context {
@@ -59,27 +78,85 @@ func (r *runtime) close() {
 // bundleEditor builds the editor the way every config-touching service expects
 // it. Centralising this lets the call sites stay one line each.
 func (r *runtime) bundleEditor() *app.BundleEditor {
-	return app.NewBundleEditor(r.store, configstore.New(), r.configPath)
+	return app.NewBundleEditor(configstore.New(), r.configPath)
 }
 
 func (r *runtime) skillService() *app.SkillService {
 	store := configstore.New()
-	return app.NewSkillService(r.store, r.bundleEditor(), store, store)
+	return app.NewSkillService(r.activeSnapshot(), r.bundleEditor(), store, store)
 }
 
 func (r *runtime) lawService() *app.LawService {
 	store := configstore.New()
-	return app.NewLawService(r.store, r.bundleEditor(), store, store, r.registry)
+	return app.NewLawService(r.activeSnapshot(), r.bundleEditor(), store, store, r.activeRegistry())
 }
 
 func (r *runtime) personaService() *app.PersonaService {
 	store := configstore.New()
-	return app.NewPersonaService(r.store, r.bundleEditor(), store, store)
+	return app.NewPersonaService(r.activeSnapshot(), r.bundleEditor(), store, store)
 }
 
 func (r *runtime) contextService() *app.ContextService {
-	return app.NewContextService(r.store, r.store, r.store, r.store, r.store, r.tokenCounter(), r.registry)
+	return app.NewContextService(r.store, r.store, r.store, r.store, r.activeSnapshot(), r.tokenCounter(), r.activeRegistry())
 }
+
+// commentService wraps NewCommentService and captures the per-project
+// Snapshot so NormalizeTagName resolves the bundle's alias table
+// without any post-construction setter call.
+func (r *runtime) commentService() *app.CommentService {
+	return app.NewCommentService(r.store, r.activeSnapshot())
+}
+
+// commentServiceWithWorkflow mirrors commentService for the edit /
+// remove flows that need workflow policy enforcement.
+func (r *runtime) commentServiceWithWorkflow(workflow *app.WorkflowService) *app.CommentService {
+	return app.NewCommentServiceWithWorkflow(r.store, workflow, r.activeSnapshot())
+}
+
+// activeRegistry returns the EnumRegistry from the BundleCache's active
+// ProjectRuntime, falling back to the boot-time registry field for
+// non-cache code paths (tests that skip materializeConfig, the bootstrap
+// window between sqlite.Open and cache.Install). Centralising the
+// lookup means every service helper goes through the cache transparently
+// without churn at every callsite.
+func (r *runtime) activeRegistry() *domain.EnumRegistry {
+	if pr := r.ProjectRuntime(); pr != nil && pr.EnumRegistry != nil {
+		return pr.EnumRegistry
+	}
+	return r.registry
+}
+
+// activeSnapshot returns the per-project *config.Snapshot from the
+// boot-seeded ProjectRuntime. App services constructed inside CLI
+// subcommands capture this pointer once at construction; the same
+// pointer survives the lifetime of the CLI invocation because the cache
+// only rotates on mtime change, which the single-shot CLI does not
+// observe mid-call. Returns nil when no cache entry exists (rare
+// bootstrap window — callers that touch the snapshot must guard).
+func (r *runtime) activeSnapshot() *config.Snapshot {
+	pr := r.ProjectRuntime()
+	if pr == nil {
+		return nil
+	}
+	return pr.Snapshot
+}
+
+// activeWorkflow returns the per-project *app.WorkflowService captured
+// against the boot-seeded ProjectRuntime's Snapshot. Subcommands that
+// need a WorkflowService go through this helper so the cache-built
+// instance is reused — constructing a fresh one per call would bypass
+// the Phase 2-bis Invariant 3 (app services capture *config.Snapshot at
+// construction) and re-introduce per-call allocations. Falls back to a
+// fresh construction only when the cache is absent (rare bootstrap
+// window) so the helper degrades to the pre-cache shape rather than
+// returning nil.
+func (r *runtime) activeWorkflow() *app.WorkflowService {
+	if pr := r.ProjectRuntime(); pr != nil && pr.Workflow != nil {
+		return pr.Workflow
+	}
+	return app.NewWorkflowServiceFromStore(r.store, r.activeRegistry(), r.activeSnapshot())
+}
+
 
 func (r *runtime) tokenCounter() token.Counter {
 	return token.NewCounter()
@@ -135,138 +212,155 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		return nil, err
 	}
 
-	cs := configstore.New()
-	if materializeConfig {
-		rootDir, err := o.resolvedConfigRoot()
-		if err != nil {
-			return nil, err
-		}
-		if err := cs.MigrateLayout(rootDir); err != nil {
-			return nil, err
-		}
-		if err := cs.EnsureDefaultFiles(rootDir); err != nil {
-			return nil, err
-		}
-	}
-
-	// Resolve configPath AFTER MigrateLayout has had a chance to relocate
-	// renamed kits — otherwise a snapshot taken pre-migration points at
-	// the just-moved root copy and Import fails with ENOENT. Non-materialize
-	// callers (e.g. `okt config validate`) skip migration and accept the raw
-	// resolver output.
-	configPath, err := o.resolvedConfigPath()
-	if err != nil {
-		return nil, err
-	}
-
 	store, err := sqlite.Open(ctx, dbPath)
 	if err != nil {
 		return nil, err
 	}
 
-	rt := &runtime{store: store, configPath: configPath, dbPath: dbPath}
+	// Project-aware discovery: when --project / --project-id is supplied,
+	// walk-up starts at the project's root_path (looked up from the DB)
+	// instead of the CWD. This lets `okt --project B cmd` from CWD=A pick
+	// up B's .omakiten/ even if A also has one. Unresolvable project flags
+	// degrade to CWD-based discovery rather than aborting.
+	o.discoveryStart, err = o.resolveDiscoveryStart(ctx, store)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 
+	repoLocalDir, err := o.discoverRepoLocalRoot()
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	if o.configPath != "" {
+		// --config overrides discovery — the TUI badge must reflect what
+		// the runtime is actually loading, not a discovered .omakiten/
+		// that the flag bypassed.
+		repoLocalDir = ""
+	}
+
+	cs := configstore.New()
 	if materializeConfig {
-		// Import loads + validates + populates the domain registries
-		// (priority/severity) BEFORE writing to SQLite, so the rest
-		// of the CLI invocation sees a fully wired runtime. The
-		// registries live for the duration of the process.
-		bundle, _, enumRegistry, err := app.NewConfigService(store, cs).Import(ctx, configPath)
+		rootDir, err := o.resolvedConfigRoot()
 		if err != nil {
 			_ = store.Close()
 			return nil, err
 		}
-		emitBundleWarnings(bundle)
-		rt.registry = enumRegistry
+		if err := cs.MigrateLayout(rootDir); err != nil {
+			_ = store.Close()
+			return nil, err
+		}
+		if err := cs.EnsureDefaultFiles(rootDir); err != nil {
+			_ = store.Close()
+			return nil, err
+		}
+	}
 
-		bus := events.NewInProcessBus(bundle.Config.Events)
-		registry := hooks.NewActionRegistry()
-		actions.RegisterBuiltins(registry)
-		notificationAction := actions.NewNotificationShowAction(notificationSnapshotFromBundle(bundle))
-		registry.Register(notificationAction)
-		rt.notificationAction = notificationAction
-		if err := config.ValidateHooks(bundle.Config.Hooks, func(name string) bool {
-			_, ok := registry.Get(name)
-			return ok
-		}, bundle.Notifications); err != nil {
+	configPath, err := o.resolvedConfigPath()
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+
+	rt := &runtime{store: store, configPath: configPath, dbPath: dbPath, repoLocalDir: repoLocalDir}
+
+	if materializeConfig {
+		// Single construction path: peek the bundle once for the events
+		// bus seed (the bus must outlive every cache rebuild), then
+		// delegate every other per-bundle wire (registry, hooks
+		// engine, notification snapshot, synonyms, stopwords) to the
+		// shared agentruntime.BuildProjectRuntime via cache.Resolve.
+		// Mirrors the MCP composition root so CLI and MCP cannot
+		// drift on what "boot" produces.
+		preview, err := config.LoadBundle(configPath)
+		if err != nil {
+			_ = store.Close()
+			return nil, err
+		}
+		emitBundleWarnings(preview)
+
+		cwd, err := os.Getwd()
+		if err != nil {
+			_ = store.Close()
+			return nil, err
+		}
+		bus := events.NewInProcessBus(preview.Config.Events)
+		cache := agentruntime.NewBundleCache(store, bus, cs)
+		cache.SetProjectSelector(agent.ProjectSelector{ProjectID: o.projectID, Project: o.project, CWD: cwd})
+
+		pr, err := cache.Resolve(ctx, o.projectID, configPath)
+		if err != nil {
 			_ = store.Close()
 			return nil, err
 		}
 
-		// Reapply busy_timeout with the user-resolved value, then wire the
-		// activity-log + events knobs into the live Store. Mirrors the
-		// agentruntime composition root — every entry point that opens a
-		// Store from the user's bundle goes through this step.
-		if err := store.ApplyConfig(ctx, sqlite.ConfigKnobs{
-			BusyTimeoutMs:            bundle.Config.SQLite.BusyTimeoutMs,
-			ActivityLogMaxRows:       bundle.Config.ActivityLog.MaxRows,
-			ActivityLogMaxAgeDays:    bundle.Config.ActivityLog.MaxAgeDays,
-			EventsDefaultRecentLimit: bundle.Config.Events.DefaultRecentLimit,
-			EventsPolicy:             bundle.Config.Events,
-			EventBus:                 bus,
-		}); err != nil {
-			_ = store.Close()
-			return nil, err
-		}
-		// Tag synonyms + similar-task stopwords flow through process-global
-		// registries the leaf helpers read at every call. Composition root
-		// is the single point that knows the bundle, so the install lives
-		// here.
-		app.RegisterTagSynonyms(bundle.Config.TagSynonyms)
-		agent.RegisterStopWords(bundle.Config.Search.Stopwords)
-
-		hookEntries := buildHookEntries(bundle.Config.Hooks)
-		engine := hooks.NewEngine(hookEntries, registry, bundle.Config.Events, store)
-		engine.Start(bus)
+		rt.registry = pr.EnumRegistry
 		rt.bus = bus
-		rt.hooksEngine = engine
+		rt.hooksEngine = pr.HooksEngine
+		rt.notificationAction = pr.NotificationAction
+		rt.cache = cache
+		rt.projectID = o.projectID
 	}
 
 	return rt, nil
 }
 
-// buildHookEntries lifts user-facing HookSpec entries into the
-// engine's hooks.Hook shape. Notification-shape entries (HookSpec.Notification
-// non-empty) are rewritten to call the notification.show action with the
-// slug stashed under actions.NotificationArgSlug. Optional hook-level
-// `message:` / `message_field:` overrides ride along under their
-// own arg keys so the action can fall back to them when the
-// referenced notification YAML does not declare its own message source.
-func buildHookEntries(specs []config.HookSpec) []hooks.Hook {
-	out := make([]hooks.Hook, 0, len(specs))
-	for _, spec := range specs {
-		if spec.Notification != "" {
-			out = append(out, hooks.Hook{
-				On:   spec.On,
-				When: spec.When,
-				Do:   actions.NotificationActionName,
-				Args: map[string]any{
-					actions.NotificationArgSlug:               spec.Notification,
-					actions.NotificationArgMessage:            spec.Message,
-					actions.NotificationArgMessageField:       spec.MessageField,
-					actions.NotificationArgDetailMessage:      spec.DetailMessage,
-					actions.NotificationArgDetailMessageField: spec.DetailMessageField,
-				},
-			})
-			continue
-		}
-		out = append(out, hooks.Hook{On: spec.On, When: spec.When, Do: spec.Do, Args: spec.Args})
+// ResolveProjectRuntime returns the ProjectRuntime for the supplied
+// project selector, consulting the BundleCache the runtime seeded at
+// boot. When selector zero, returns the entry that was Installed for
+// the active --project (or the default 0 key when no flag was
+// supplied). Used by subcommands that want a project-aware bundle
+// handle without re-implementing the cache lookup.
+func (r *runtime) ResolveProjectRuntime(ctx context.Context, projectID int64) (*agentruntime.ProjectRuntime, error) {
+	if r.cache == nil {
+		return nil, fmt.Errorf("cli runtime: bundle cache is not initialised; open() must run with materializeConfig=true")
 	}
-	return out
+	if projectID == 0 {
+		projectID = r.projectID
+	}
+	if pr := r.cache.Get(projectID); pr != nil {
+		return pr, nil
+	}
+	// Fall back to the boot-seeded entry — Phase 3c does not yet
+	// reparse a different project's bundle from the subcommand surface;
+	// that arrives in Phase 3e/3f. Returning the active entry keeps the
+	// surface uniform for callers.
+	if pr := r.cache.Get(r.projectID); pr != nil {
+		return pr, nil
+	}
+	return nil, fmt.Errorf("cli runtime: no ProjectRuntime cached for project %d", projectID)
+}
+
+// ProjectRuntime returns the active boot-seeded ProjectRuntime. Panics
+// when the runtime was opened with materializeConfig=false (rare boot
+// shape that skips bundle inflation) — callers always reach this from
+// a subcommand that requires a wired runtime.
+func (r *runtime) ProjectRuntime() *agentruntime.ProjectRuntime {
+	if r.cache == nil {
+		return nil
+	}
+	return r.cache.Get(r.projectID)
 }
 
 func (o *runtimeOptions) resolvedConfigPath() (string, error) {
 	if o.configPath != "" {
 		return filepath.Abs(o.configPath)
 	}
+	if repoLocal, err := o.discoverRepoLocalRoot(); err != nil {
+		return "", err
+	} else if repoLocal != "" {
+		return paths.ActiveConfigFileInDir(filepath.Join(repoLocal, "config"))
+	}
 	return paths.ConfigFile()
 }
 
 // resolvedConfigRoot returns the directory MigrateLayout / EnsureDefaultFiles
-// operate on. Computed without consulting ActiveConfigFile so migration can
-// run before path resolution — otherwise a stale pre-migration configPath
-// would survive into Import. When --config is supplied, root is derived from
-// the flag path; otherwise from the XDG / OMAKITEN_HOME defaults.
+// operate on. Resolution order:
+//  1. --config flag (root derived from the yaml path).
+//  2. Walk-up `.omakiten/` discovery (becomes the standalone install root —
+//     no merge with the user-global ConfigRoot).
+//  3. XDG / OMAKITEN_HOME default.
 func (o *runtimeOptions) resolvedConfigRoot() (string, error) {
 	if o.configPath != "" {
 		abs, err := filepath.Abs(o.configPath)
@@ -275,7 +369,59 @@ func (o *runtimeOptions) resolvedConfigRoot() (string, error) {
 		}
 		return config.ConfigRootFromYAMLPath(abs), nil
 	}
+	if repoLocal, err := o.discoverRepoLocalRoot(); err != nil {
+		return "", err
+	} else if repoLocal != "" {
+		return repoLocal, nil
+	}
 	return paths.ConfigRoot()
+}
+
+// discoverRepoLocalRoot walks up from o.discoveryStart looking for
+// `.omakiten/`. Returns the absolute path of the first hit, or "" when no
+// install is found before the walker hits $HOME / the filesystem root.
+//
+// discoveryStart is populated by open() so the walk respects --project (the
+// project's root_path) when set. When the field is empty (callers that
+// resolve config before open(), e.g. `okt config validate`), the walker
+// falls back to the current working directory.
+//
+// --config explicitly overrides discovery — callers must not consult this
+// helper when the flag is supplied.
+func (o *runtimeOptions) discoverRepoLocalRoot() (string, error) {
+	start := o.discoveryStart
+	if start == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		start = cwd
+	}
+	dir, ok, err := config.FindRepoLocal(start)
+	if err != nil || !ok {
+		return "", err
+	}
+	return dir, nil
+}
+
+// resolveDiscoveryStart returns the directory FindRepoLocal should walk up
+// from. When --project / --project-id is supplied, looks up the project's
+// root_path in the DB and uses it. Anything that prevents the lookup (no
+// such project, store error) falls back to CWD without aborting open() —
+// the user-flag-but-no-project case still gets a working runtime, the
+// project resolution will surface the real error later when the command
+// actually needs the project context.
+func (o *runtimeOptions) resolveDiscoveryStart(ctx context.Context, store app.ProjectRepository) (string, error) {
+	if o.project == "" && o.projectID == 0 {
+		return os.Getwd()
+	}
+	resolver := projectresolver.NewResolver(store)
+	cwd, _ := os.Getwd()
+	project, err := resolver.Resolve(ctx, projectresolver.ResolveOptions{ProjectID: o.projectID, Project: o.project, CWD: cwd})
+	if err != nil || project.RootPath == "" {
+		return cwd, nil
+	}
+	return project.RootPath, nil
 }
 
 func (o *runtimeOptions) resolvedDBPath() (string, error) {
@@ -308,12 +454,6 @@ func writeError(cmd *cobra.Command, err error) error {
 
 	_ = output.Write(cmd.OutOrStdout(), output.Failure("internal_error", err.Error(), nil))
 	return exitError{code: 1}
-}
-
-// notificationSnapshotFromBundle builds the slim view of the bundle that the
-// notification.show action consults at execute time.
-func notificationSnapshotFromBundle(bundle config.Bundle) actions.NotificationBundleSnapshot {
-	return actions.NotificationBundleSnapshot{Notifications: bundle.Notifications}
 }
 
 // emitBundleWarnings surfaces non-fatal config issues (skipped custom

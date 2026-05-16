@@ -8,10 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
 func TestOverviewUsesResolvedProjectAndCompactState(t *testing.T) {
@@ -45,6 +46,7 @@ func TestUnregisteredProjectReturnsAgentGuidance(t *testing.T) {
 		t.Fatalf("MkdirAll(outside) error = %v", err)
 	}
 	service := NewService(store, ProjectSelector{CWD: outside})
+	service.SetSnapshot(store.Snapshot())
 
 	_, err := service.Overview(ctx, OverviewInput{})
 	if err == nil {
@@ -395,7 +397,7 @@ func strPtr(s string) *string { return &s }
 
 type agentFixture struct {
 	ctx      context.Context
-	store    *sqlite.Store
+	store    *snapstore.Store
 	service  *Service
 	projectA domain.Project
 	projectB domain.Project
@@ -426,15 +428,15 @@ func newAgentFixture(t *testing.T) agentFixture {
 	if err != nil {
 		t.Fatalf("UpsertProject(B) error = %v", err)
 	}
-	taskA1, err := store.CreateTask(ctx, projectA.ID, "Add MCP agent integration", "Expose Omakiten state to AI harnesses", domain.Priority(2), "backlog")
+	taskA1, err := store.CreateTask(ctx, projectA.ID, "Add MCP agent integration", "Expose Omakiten state to AI harnesses", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(A1) error = %v", err)
 	}
-	taskA2, err := store.CreateTask(ctx, projectA.ID, "Write agent tests", "Cover project isolation", domain.Priority(2), "backlog")
+	taskA2, err := store.CreateTask(ctx, projectA.ID, "Write agent tests", "Cover project isolation", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(A2) error = %v", err)
 	}
-	taskB, err := store.CreateTask(ctx, projectB.ID, "Other project task", "Must never leak", domain.Priority(2), "backlog")
+	taskB, err := store.CreateTask(ctx, projectB.ID, "Other project task", "Must never leak", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(B) error = %v", err)
 	}
@@ -460,7 +462,8 @@ func newAgentFixture(t *testing.T) agentFixture {
 	// guarantees these values in production; mirroring them keeps
 	// behavioural parity in tests.
 	svc := NewService(store, ProjectSelector{CWD: rootA})
-	svc.SetRegistry(testfixtures.CanonicalRegistry())
+	svc.SetSnapshot(store.Snapshot())
+	svc.SetOrphanService(app.NewOrphanService(store, store.Snapshot(), nil))
 	svc.SetSettings(ServiceSettings{
 		RecentCommentLimit: 5,
 		MaxCommentChars:    0,
@@ -473,13 +476,9 @@ func newAgentFixture(t *testing.T) agentFixture {
 	return agentFixture{ctx: ctx, store: store, service: svc, projectA: projectA, projectB: projectB, taskA1: taskA1, taskA2: taskA2, taskB: taskB}
 }
 
-func newAgentStore(t *testing.T, ctx context.Context) *sqlite.Store {
+func newAgentStore(t *testing.T, ctx context.Context) *snapstore.Store {
 	t.Helper()
-	store, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "omakiten.db"))
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
 	if err := store.ImportBundle(ctx, agentTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}

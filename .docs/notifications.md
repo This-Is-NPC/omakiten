@@ -276,7 +276,7 @@ config:
 ```
 
 Each hook entry uses **either** `notification: <slug>` or
-`do: <action>` + `args:` (legacy exec/noop). Mixing both shapes in
+`do: <action>` + `args:` (exec/noop dispatch). Mixing both shapes in
 the same entry fails validation. Unknown slugs fail at `LoadBundle`.
 
 ### Message resolution

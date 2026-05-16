@@ -17,49 +17,52 @@ type ProjectRepository interface {
 	ListProjects(ctx context.Context) ([]domain.Project, error)
 }
 
-type ConfigRepository interface {
-	ImportBundle(ctx context.Context, bundle config.Bundle, sourcePath, sourceHash string) error
-	ListActiveLaws(ctx context.Context) ([]domain.Law, error)
-	ListActiveSkills(ctx context.Context) ([]domain.Skill, error)
-	ListActivePersonas(ctx context.Context) ([]domain.Persona, error)
-	ActiveWorkflow(ctx context.Context) (domain.Workflow, error)
-	ContextSettings(ctx context.Context) (domain.ContextSettings, error)
+// SnapshotSource exposes the active per-project *config.Snapshot. The
+// Phase 2-bis app services capture this pointer at construction time
+// and read every config knob through it; the pointer is stable for the
+// service's lifetime. *sqlite.Store satisfies it transitionally by
+// projecting its in-memory providers through config.BuildSnapshot;
+// agentruntime.ProjectRuntime will become the canonical implementor
+// once the Store stops carrying config.
+type SnapshotSource interface {
+	Snapshot() *config.Snapshot
 }
 
 // TaskRepository persists task rows. The methods are deliberately policy-free:
 // CreateTask requires a non-empty bucket key (default-bucket selection lives in
 // app.WorkflowService) and MoveTask is a pure persist + task.moved emission
 // (transition allowed?, guards, and task.completed-on-final live in
-// app.WorkflowService too).
+// app.WorkflowService too). Every method that needs to translate
+// bucket key↔id reads through a caller-supplied domain.BucketResolver
+// so the adapter never imports the config package.
 type TaskRepository interface {
-	CreateTask(ctx context.Context, projectID int64, title, description string, priority domain.Priority, bucketKey string) (domain.Task, error)
-	ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter) ([]domain.Task, error)
-	MoveTask(ctx context.Context, projectID, taskID int64, targetBucketKey string) (domain.Task, error)
-	UpdateTask(ctx context.Context, projectID, taskID int64, update domain.TaskUpdate) (domain.Task, error)
+	CreateTask(ctx context.Context, projectID int64, title, description string, priority domain.Priority, bucketKey string, buckets domain.BucketResolver) (domain.Task, error)
+	ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter, buckets domain.BucketResolver) ([]domain.Task, error)
+	MoveTask(ctx context.Context, projectID, taskID int64, targetBucketKey string, buckets domain.BucketResolver) (domain.Task, error)
+	UpdateTask(ctx context.Context, projectID, taskID int64, update domain.TaskUpdate, buckets domain.BucketResolver) (domain.Task, error)
 	TaskCount(ctx context.Context, projectID int64) (int64, error)
 	// HardDeleteTask removes a task and its dependent rows (events, event_tags,
 	// task_dependencies, task_tags) and emits a task.removed system event with
 	// a snapshot payload. Bucket policy/operation guards are enforced at the
 	// service layer; the repository performs the cascade unconditionally.
-	HardDeleteTask(ctx context.Context, projectID, taskID int64) (domain.Event, error)
+	HardDeleteTask(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (domain.Event, error)
 	// SetTaskState flips active|archived. When targetBucketKey is non-empty
 	// the row also moves into that bucket atomically (used by archive). Emits
 	// task.archived / task.unarchived in the same transaction.
-	SetTaskState(ctx context.Context, projectID, taskID int64, state domain.TaskState, targetBucketKey string) (domain.Task, domain.Event, error)
+	SetTaskState(ctx context.Context, projectID, taskID int64, state domain.TaskState, targetBucketKey string, buckets domain.BucketResolver) (domain.Task, domain.Event, error)
 	// EmitTaskEditedEvent records a task.edited row with a payload describing
 	// the changed fields. Service layer calls it after a successful UpdateTask.
 	EmitTaskEditedEvent(ctx context.Context, projectID, taskID int64, before, after domain.Task) (domain.Event, error)
 }
 
-// WorkflowRepository exposes the workflow primitives the app's WorkflowService
-// composes into the move/create policy. Each method is a pure read against the
-// active workflow — no side effects, no policy decisions.
+// WorkflowRepository exposes the state-side primitives the app's
+// WorkflowService composes into the move/create policy. Every workflow
+// shape read (bucket-by-key, transition-allowed, guards, is-final) now
+// flows through the per-project *config.Snapshot the service captures
+// at construction — the SQL adapter only answers state questions, and
+// resolves bucket key↔id through the caller-supplied BucketResolver.
 type WorkflowRepository interface {
-	ResolveActiveBucket(ctx context.Context, key string) (domain.Bucket, error)
-	IsFinalActiveBucket(ctx context.Context, bucketID int64) (bool, error)
-	TransitionAllowed(ctx context.Context, fromBucketID, toBucketID int64) (bool, error)
-	LoadTransitionGuards(ctx context.Context, fromBucketID, toBucketID int64) ([]domain.TransitionGuard, error)
-	CurrentTaskBucket(ctx context.Context, projectID, taskID int64) (int64, string, error)
+	CurrentTaskBucket(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (int64, string, error)
 	// TaskState returns the active|archived flag for a task. Used by MoveTask
 	// to reject moves on archived rows and by the guards engine to skip
 	// transition-guard evaluation when the task sits in the archived lane.
@@ -70,7 +73,7 @@ type WorkflowRepository interface {
 // need. Split from WorkflowRepository so guard evaluation can be stubbed
 // independently in tests.
 type GuardEvaluationRepository interface {
-	ListTaskBlockerBuckets(ctx context.Context, projectID, taskID int64) ([]domain.TaskBlocker, error)
+	ListTaskBlockerBuckets(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) ([]domain.TaskBlocker, error)
 	CountTaskComments(ctx context.Context, projectID, taskID int64) (int, error)
 	CountTaskCommentsTagged(ctx context.Context, projectID, taskID int64, tagName string) (int, error)
 }

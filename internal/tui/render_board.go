@@ -149,8 +149,8 @@ func boardScrollPageStep(m *Model) int {
 }
 
 // boardLayout holds the per-render geometry for the kanban board so columns
-// and cards can grow with the available terminal width instead of being pinned
-// to the legacy fixed constants.
+// and cards grow with the available terminal width instead of being pinned
+// to fixed constants.
 type boardLayout struct {
 	columnInner      int // kanban column inner content width (passed to Width())
 	cardWidth        int // card.Width() — content width of each card box

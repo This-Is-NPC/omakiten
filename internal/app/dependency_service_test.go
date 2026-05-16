@@ -13,7 +13,7 @@ func TestDependencyServiceAdd(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
+	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "", "backlog")
 	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "", "backlog")
 	taskC, _ := taskService.Add(ctx, project.Context(), "C", "", "", "backlog")
@@ -71,7 +71,7 @@ func TestDependencyServiceRemove(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
+	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "", "backlog")
 	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "", "backlog")
 
@@ -96,7 +96,7 @@ func TestDependencyServiceSyncBlockers(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
+	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 	main, _ := taskService.Add(ctx, project.Context(), "main", "", "", "backlog")
 	a, _ := taskService.Add(ctx, project.Context(), "a", "", "", "backlog")
 	b, _ := taskService.Add(ctx, project.Context(), "b", "", "", "backlog")
@@ -149,7 +149,7 @@ func TestDependencyServiceList(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
+	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 	taskA, _ := taskService.Add(ctx, project.Context(), "A", "", "", "backlog")
 	taskB, _ := taskService.Add(ctx, project.Context(), "B", "", "", "backlog")
 

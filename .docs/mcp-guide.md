@@ -346,6 +346,17 @@ Domain errors are mapped to compact coded failures with next-step guidance (`int
 
 `config_invalid`, `project_not_found`, `project_ambiguous`, `task_not_found`, `workflow_invalid_transition`, `bucket_not_found`, `dependency_invalid`, `validation_error`, `law_not_found`, `skill_not_found`, `persona_not_found`, `skill_referenced`, `editor_failed`, `tag_not_found`, `tag_conflict`, `guard_violation`, `error_not_found`, `solution_not_found`.
 
+## Per-project routing
+
+Every tool input may carry `project` (slug) or `project_id` (integer) — both are declared on the `selectorProperties` schema and accepted on every tool that exposes a selector. The MCP adapter `peekProjectArg`s these before dispatch, asks the runtime's `ServiceResolver` to look up the matching `*ProjectRuntime` from the `BundleCache`, and dispatches the call against that project's `agent.Service`. Calls without either field fall back to the adapter's default service (the boot-resolved project).
+
+Implications:
+
+- N agents may target N different projects through the same `okt mcp serve` process. Each call resolves an isolated `agent.Service`, hooks engine, action registry, notification snapshot, theme, tag synonyms, and stopwords — bundles do not cross-talk.
+- A project without a `.omakiten/` install falls through to the default service (single-bundle behaviour). To upgrade a project to its own bundle, run `okt config init --scope local` inside its repo root.
+- Cache rebuilds (mtime change on the on-disk YAML, explicit `cache.Reload` from the TUI) rotate the underlying `agent.Service`. The adapter's `DefaultServiceProvider` consults the runtime on every call so dispatch never lands on a stale pointer.
+- Hooks fire only when the engine's `projectID` matches the event's `ProjectID`, with zero on either side opting out (system events reach every engine; engines built before a project resolves catch all). Two projects' hook entries never cross-fire.
+
 ## Scope Controls
 
 - All reads and writes resolve one active `ProjectContext` at intent entry, except for the explicitly cross-project tools listed above (`tags.list_all`, `errors.*`, `solutions.*`, `templates.list`).

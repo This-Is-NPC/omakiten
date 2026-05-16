@@ -10,13 +10,15 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"omakiten/internal/agentruntime"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
+	"omakiten/internal/events"
 	"omakiten/internal/paths"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
 const minimalThemeYAML = `version: 1
@@ -61,14 +63,10 @@ func newPickerModel(t *testing.T) (Model, string) {
 	}
 
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, dbPath)
-	if err != nil {
-		t.Fatalf("sqlite.Open() error = %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := snapstore.Open(t, dbPath)
 
 	files := configstore.New()
-	editor := app.NewBundleEditor(store, files, configPath)
+	editor := app.NewBundleEditor(files, configPath)
 	if _, err := editor.Apply(ctx, nil); err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
 	}
@@ -77,12 +75,20 @@ func newPickerModel(t *testing.T) (Model, string) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
+	bus := events.NewInProcessBus(config.EventsSettings{})
+	cache := agentruntime.NewBundleCache(store.Store, bus, files)
+	if _, err := cache.Resolve(ctx, project.ID, configPath); err != nil {
+		t.Fatalf("cache.Resolve: %v", err)
+	}
+
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:    store,
-		Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
+		Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
-		Events:  store,
-		Orphans: store,
+		Events:    store,
+		Orphans:   store,
+		Cache:     cache,
+		ProjectID: project.ID,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)

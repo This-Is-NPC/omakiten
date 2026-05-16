@@ -242,19 +242,14 @@ func TestLawBodiesCarryFewShotExamples(t *testing.T) {
 // flow (the implement loop) silently drops out of the prompt.
 func TestResolveCommandRendersPersonaBody(t *testing.T) {
 	fixture := newAgentFixture(t)
-	wireBindingFixtures(t, fixture)
 	const marker = "PERSONA_BODY_MARKER_xyz"
-	fixture.service.SetPersonaCatalog(func() []PersonaInfo {
-		return []PersonaInfo{
-			{
-				Slug:        "backend-agent",
-				Name:        "Backend Agent",
-				Description: "Backend-focused agent.",
-				Body:        "Loop step 1.\n" + marker + "\nLoop step 3.",
-				Skills:      []string{"go"},
-				Laws:        []string{"project-scope-only"},
-			},
-		}
+	wireBindingFixturesWithPersona(t, fixture, PersonaInfo{
+		Slug:        "backend-agent",
+		Name:        "Backend Agent",
+		Description: "Backend-focused agent.",
+		Body:        "Loop step 1.\n" + marker + "\nLoop step 3.",
+		Skills:      []string{"go"},
+		Laws:        []string{"project-scope-only"},
 	})
 
 	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-implement"})
@@ -322,55 +317,44 @@ func TestResolveCommandWithoutCatalogsReturnsAction(t *testing.T) {
 
 func wireBindingFixtures(t *testing.T, fixture agentFixture) {
 	t.Helper()
-	fixture.service.SetSkillCatalog(func() []SkillInfo {
-		return []SkillInfo{
-			{Slug: "go", Name: "Go", Description: "Idiomatic Go.", Body: "Go body."},
-			{Slug: "sqlite", Name: "SQLite", Body: "SQLite body."},
-		}
+	wireBindingFixturesWithPersona(t, fixture, PersonaInfo{
+		Slug:        "backend-agent",
+		Name:        "Backend Agent",
+		Description: "Backend-focused agent.",
+		Skills:      []string{"go"},
+		Laws:        []string{"project-scope-only"},
 	})
-	fixture.service.SetLawCatalog(func() []LawInfo {
-		return []LawInfo{
-			// Body deliberately mirrors the production shape: directive paragraph
-			// followed by Bad:/Good: examples. The few-shot test asserts the
-			// markers are forwarded verbatim through ResolveCommand's renderer,
-			// so any future compression that strips them surfaces here.
-			{Slug: "template-fidelity", Name: "Template fidelity", Severity: "warning", Body: "Do not invent fields.\n\nBad: wrote `Closes #40`.\nGood: left References blank."},
-			{Slug: "project-scope-only", Name: "Project scope only", Severity: "error", Body: "Never mix projects."},
-		}
-	})
-	fixture.service.SetPersonaCatalog(func() []PersonaInfo {
-		return []PersonaInfo{
-			{
-				Slug:        "backend-agent",
-				Name:        "Backend Agent",
-				Description: "Backend-focused agent.",
-				Body:        "",
-				Skills:      []string{"go"},
-				Laws:        []string{"project-scope-only"},
-			},
-		}
-	})
-	fixture.service.SetTemplateCatalog(func() []TemplateSummary {
-		return []TemplateSummary{
-			{Slug: "pull-request", Name: "Pull Request", Default: "pr", Body: "## Before\n## After\n", Laws: []string{"template-fidelity"}},
-		}
-	})
-	fixture.service.SetCommandCatalog(func() map[string]MCPCommandBinding {
-		return map[string]MCPCommandBinding{
-			MCPCommandsGlobalKey: {Laws: []string{"template-fidelity"}},
-			"okt": {
-				Persona: "backend-agent",
-			},
-			"okt-implement": {
-				Persona:   "backend-agent",
-				Templates: []string{"pull-request"},
-			},
-			"okt-imagine": {
-				Persona:      "backend-agent",
-				LawsDisabled: []string{"template-fidelity"},
-			},
-		}
-	})
+}
+
+// wireBindingFixturesWithPersona swaps the persona that wireBindingFixtures
+// installs without touching the rest of the catalog wiring. Used by the
+// few tests that want to vary the persona body (e.g. the Loop-step
+// rendering test) while keeping the standard skills/laws/templates/
+// commands stable.
+func wireBindingFixturesWithPersona(t *testing.T, fixture agentFixture, persona PersonaInfo) {
+	t.Helper()
+	skills := []SkillInfo{
+		{Slug: "go", Name: "Go", Description: "Idiomatic Go.", Body: "Go body."},
+		{Slug: "sqlite", Name: "SQLite", Body: "SQLite body."},
+	}
+	laws := []LawInfo{
+		// Body deliberately mirrors the production shape: directive paragraph
+		// followed by Bad:/Good: examples. The few-shot test asserts the
+		// markers are forwarded verbatim through ResolveCommand's renderer,
+		// so any future compression that strips them surfaces here.
+		{Slug: "template-fidelity", Name: "Template fidelity", Severity: "warning", Body: "Do not invent fields.\n\nBad: wrote `Closes #40`.\nGood: left References blank."},
+		{Slug: "project-scope-only", Name: "Project scope only", Severity: "error", Body: "Never mix projects."},
+	}
+	templates := []TemplateSummary{
+		{Slug: "pull-request", Name: "Pull Request", Default: "pr", Body: "## Before\n## After\n", Laws: []string{"template-fidelity"}},
+	}
+	commands := map[string]MCPCommandBinding{
+		MCPCommandsGlobalKey: {Laws: []string{"template-fidelity"}},
+		"okt":                {Persona: "backend-agent"},
+		"okt-implement":      {Persona: "backend-agent", Templates: []string{"pull-request"}},
+		"okt-imagine":        {Persona: "backend-agent", LawsDisabled: []string{"template-fidelity"}},
+	}
+	fixture.service.SetSnapshot(snapshotWithEntities(t, skills, laws, []PersonaInfo{persona}, templates, commands))
 }
 
 func equalStringSlices(a, b []string) bool {
@@ -391,11 +375,9 @@ func equalStringSlices(a, b []string) bool {
 // stays first, template body is appended after a blank line.
 func TestCreateTaskWithTemplateSlugMergesBody(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetTemplateCatalog(func() []TemplateSummary {
-		return []TemplateSummary{
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
 			{Slug: "user-story", Name: "Story", Default: "task", Body: "**User Story**\n\nAs a [role]..."},
-		}
-	})
+		}))
 
 	resp, err := fixture.service.CreateTask(fixture.ctx, CreateTaskInput{
 		Title:        "Brand new direction",
@@ -421,7 +403,7 @@ func TestCreateTaskWithTemplateSlugMergesBody(t *testing.T) {
 // passing a bad slug is a programming error, not something to paper over.
 func TestCreateTaskWithUnknownTemplateSlugFails(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetTemplateCatalog(func() []TemplateSummary { return nil })
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, nil))
 
 	_, err := fixture.service.CreateTask(fixture.ctx, CreateTaskInput{
 		Title:        "Brand new",
@@ -438,11 +420,9 @@ func TestCreateTaskWithUnknownTemplateSlugFails(t *testing.T) {
 // bodies without dynamic placeholder support.
 func TestAddCommentTemplateSlugMergesBody(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetTemplateCatalog(func() []TemplateSummary {
-		return []TemplateSummary{
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
 			{Slug: "comment-resume", Name: "Resume", Default: "comment-resume", Body: "## What changed\n## Open questions"},
-		}
-	})
+		}))
 
 	resp, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
 		TaskID:       fixture.taskA1.ID,

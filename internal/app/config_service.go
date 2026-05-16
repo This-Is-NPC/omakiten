@@ -10,12 +10,15 @@ import (
 )
 
 type ConfigService struct {
-	repo   ConfigRepository
 	bundle BundleStore
 }
 
-func NewConfigService(repo ConfigRepository, bundle BundleStore) *ConfigService {
-	return &ConfigService{repo: repo, bundle: bundle}
+// NewConfigService wires the read-only config parser. Import only loads
+// and parses the bundle; per-project rebuild is driven by
+// BundleCache.Reload triggered by the bundle's mtime change, never by a
+// Store-side write.
+func NewConfigService(bundle BundleStore) *ConfigService {
+	return &ConfigService{bundle: bundle}
 }
 
 func (s *ConfigService) Import(ctx context.Context, path string) (bundle config.Bundle, hash string, registry *domain.EnumRegistry, err error) {
@@ -45,14 +48,8 @@ func (s *ConfigService) Import(ctx context.Context, path string) (bundle config.
 	// Build an instance-scoped EnumRegistry from the bundle's priority +
 	// severity tables. Returned to the caller so each surface (CLI, TUI,
 	// MCP agent) threads the registry into the services it constructs;
-	// no process-global state is touched. The SQLite layer builds its own
-	// registry from the bundle directly (see sqlite/bundles.go
-	// buildRegistryFromBundle) for the law import path.
+	// no process-global state is touched.
 	registry = enumRegistryFromBundle(bundle)
-
-	if err = s.repo.ImportBundle(ctx, bundle, path, hash); err != nil {
-		return
-	}
 
 	return
 }

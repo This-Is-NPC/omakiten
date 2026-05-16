@@ -498,7 +498,7 @@ func (m *Model) armOrConfirmTaskDelete(task domain.Task) {
 		// TaskService.Delete emits at line task_service.go:237 must fire
 		// here too so hooks (notification.show, exec, …) see every guard hit
 		// regardless of which entry point caught it.
-		m.repos.Workflow.EmitGuardViolated(m.ctx, m.project.ID, domain.EventEntityTask, task.ID,
+		m.repos.Workflow.Evaluator().EmitViolated(m.ctx, m.project.ID, domain.EventEntityTask, task.ID,
 			app.GuardOperationTaskDelete, app.GuardRulePermissions, hint,
 			map[string]any{"task_id": task.ID, "entity": app.EntityTask, "operation": app.PermissionDelete})
 		return
@@ -515,7 +515,7 @@ func (m *Model) armOrConfirmTaskDelete(task domain.Task) {
 // can retry intentionally rather than re-confirming a stale arm.
 func (m *Model) executeTaskDelete(taskID int64) {
 	m.taskDeletePendingID = 0
-		if _, err := app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry).Delete(m.ctx, m.project, taskID); err != nil {
+		if _, err := app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry, m.repos.activeSnapshot()).Delete(m.ctx, m.project, taskID); err != nil {
 		m.status = err.Error()
 		return
 	}
@@ -546,7 +546,7 @@ func (m *Model) saveTaskForm() {
 		// id, so we map it back through priorityLabel to keep the
 		// service signature uniform across surfaces.
 		label := m.priorityLabel(m.taskPriority)
-		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry).Add(m.ctx, m.project, title, description, label, "")
+		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry, m.repos.activeSnapshot()).Add(m.ctx, m.project, title, description, label, "")
 	case taskScreenEdit:
 		current, ok := m.activeTask()
 		if !ok {
@@ -558,7 +558,7 @@ func (m *Model) saveTaskForm() {
 			p := m.taskPriority
 			update.Priority = &p
 		}
-		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry).Edit(m.ctx, m.project, current.ID, update)
+		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry, m.repos.activeSnapshot()).Edit(m.ctx, m.project, current.ID, update)
 	default:
 		return
 	}

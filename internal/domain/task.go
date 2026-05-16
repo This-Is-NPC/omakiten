@@ -58,7 +58,7 @@ type Task struct {
 
 // TaskSort drives the ORDER BY clause applied by ListTasks. Field is one of
 // "id", "title", "priority", "created_at"; Order is "asc" or "desc". An empty
-// Field falls back to id ascending — the legacy default.
+// Field falls back to id ascending — the default ordering for unsorted lists.
 type TaskSort struct {
 	Field string
 	Order string

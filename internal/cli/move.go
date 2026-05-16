@@ -35,7 +35,7 @@ func newMoveCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 
-				task, err := app.NewTaskServiceFromStore(rt.store, rt.registry).Move(ctx, project, taskID, to)
+				task, err := app.NewTaskServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot()).Move(ctx, project, taskID, to)
 				if err != nil {
 					return nil, err
 				}

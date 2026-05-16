@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/agentruntime"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
@@ -48,7 +49,6 @@ type Repositories struct {
 	Comments     app.CommentRepository
 	Dependencies app.DependencyRepository
 	Entries      app.ContextEntryRepository
-	Config       app.ConfigRepository
 	Tags         app.TagRepository
 	Editor       *app.BundleEditor
 	BundleStore  app.BundleStore
@@ -71,9 +71,58 @@ type Repositories struct {
 	// does not consume these for routing or persistence; they exist so
 	// the read-only info card can reflect the active install. Empty
 	// strings are tolerated and rendered as "—".
-	ConfigPath string
-	DBPath     string
-	Version    string
+	ConfigPath   string
+	DBPath       string
+	Version      string
+	RepoLocalDir string
+
+	// Cache is the per-project BundleCache the runtime seeded at boot.
+	// reloadBundle calls Cache.Reload to rotate the in-memory provider
+	// snapshot — Phase 3e dropped the ConfigService.Import fallback so
+	// hot-reload never reaches the SQL config-write path. Required for
+	// any code path that triggers reloadBundle or reads
+	// activeSnapshot/activePreviousSnapshot; Phase 2-bis dropped the
+	// Repositories.Snapshot test-only escape hatch, so tests now wire
+	// a real cache via testfixtures/runtimecache.Install instead of
+	// plugging a snapshot pointer here directly.
+	Cache *agentruntime.BundleCache
+	// ProjectID is the cache key the runtime installed the active
+	// ProjectRuntime under. reloadBundle passes it to Cache.Reload so
+	// the rotated snapshot lands on the same key the rest of the model
+	// is reading from.
+	ProjectID int64
+}
+
+// activeSnapshot returns the per-project *config.Snapshot from the
+// BundleCache entry the runtime installed at boot. TUI inline service
+// constructions capture this pointer at the moment of dispatch; the
+// cache rotates a fresh pointer on each rebuild, so subsequent calls
+// see the new snapshot through the same accessor. Returns nil when the
+// cache is not wired (rare test paths that bypass the runtime
+// composition root).
+func (r *Repositories) activeSnapshot() *config.Snapshot {
+	if r.Cache == nil {
+		return nil
+	}
+	pr := r.Cache.Get(r.ProjectID)
+	if pr == nil {
+		return nil
+	}
+	return pr.Snapshot
+}
+
+// activePreviousSnapshot returns the bundle view captured immediately
+// before the latest cache rotation. Only the orphan-rebind flow reads
+// it; nil when the cache has only seen one bundle for this project.
+func (r *Repositories) activePreviousSnapshot() *config.Snapshot {
+	if r.Cache == nil {
+		return nil
+	}
+	pr := r.Cache.Get(r.ProjectID)
+	if pr == nil {
+		return nil
+	}
+	return pr.PreviousSnapshot
 }
 
 // Model is the root Bubble Tea model for the TUI. It aggregates state that
@@ -550,11 +599,6 @@ func (m *Model) popHistory() bool {
 	m.syncEntityKindFromSub()
 	return true
 }
-
-// (T3 retired the legacy left/right flat cycle — `cycleLegacyView` and
-// `legacyNavOrder` are gone. AC9 from T1 / T2 only required behavior
-// preservation across the refactor; T3 explicitly drops it so left and
-// right are unambiguously within-view bindings everywhere.)
 
 // refreshTickMsg drives the realtime refresh loop — emitted every second
 // while the user is on a "live" view (board, table, etc.) and not editing.

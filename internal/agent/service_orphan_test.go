@@ -3,6 +3,7 @@ package agent
 import (
 	"testing"
 
+	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
@@ -30,7 +31,7 @@ func TestMigrateOrphans_NoOpReturnsEmptyReport(t *testing.T) {
 func TestMigrateOrphans_RequiresConfirmationOnFirstCall(t *testing.T) {
 	fx := newAgentFixture(t)
 
-	devTask, err := fx.store.CreateTask(fx.ctx, fx.projectA.ID, "dev task", "", domain.Priority(2), "dev")
+	devTask, err := fx.store.CreateTask(fx.ctx, fx.projectA.ID, "dev task", "", domain.Priority(2), "dev", fx.store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -53,7 +54,7 @@ func TestMigrateOrphans_RequiresConfirmationOnFirstCall(t *testing.T) {
 		t.Fatalf("Report.Total = 0; expected orphans; report=%+v", resp.Report)
 	}
 
-	tasks, err := fx.store.ListTasks(fx.ctx, fx.projectA.ID, domain.TaskFilter{})
+	tasks, err := fx.store.ListTasks(fx.ctx, fx.projectA.ID, domain.TaskFilter{}, fx.store.Snapshot())
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
@@ -67,7 +68,7 @@ func TestMigrateOrphans_RequiresConfirmationOnFirstCall(t *testing.T) {
 func TestMigrateOrphans_ConfirmedAppliesAndReports(t *testing.T) {
 	fx := newAgentFixture(t)
 
-	if _, err := fx.store.CreateTask(fx.ctx, fx.projectA.ID, "dev task", "", domain.Priority(2), "dev"); err != nil {
+	if _, err := fx.store.CreateTask(fx.ctx, fx.projectA.ID, "dev task", "", domain.Priority(2), "dev", fx.store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	removeDevBucket(t, fx)
@@ -86,7 +87,7 @@ func TestMigrateOrphans_ConfirmedAppliesAndReports(t *testing.T) {
 		t.Fatalf("Report.Total = 0; expected migration; report=%+v", resp.Report)
 	}
 
-	tasks, err := fx.store.ListTasks(fx.ctx, fx.projectA.ID, domain.TaskFilter{})
+	tasks, err := fx.store.ListTasks(fx.ctx, fx.projectA.ID, domain.TaskFilter{}, fx.store.Snapshot())
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
@@ -104,8 +105,13 @@ func TestMigrateOrphans_ConfirmedAppliesAndReports(t *testing.T) {
 // removeDevBucket re-imports the agent fixture's bundle minus the "dev" bucket
 // so any task pointing to dev becomes an orphan. Reuses local_ids 1 and 3 to
 // avoid the UNIQUE(workflow_id, key) collision the importer would otherwise hit.
+// The agent service's snapshot pointer + injected orphan service are rotated
+// to mirror the Store — production wires this through agentruntime.BundleCache;
+// tests stitch the rotation by hand because they drive Service.SetSnapshot /
+// Service.SetOrphanService directly.
 func removeDevBucket(t *testing.T, fx agentFixture) {
 	t.Helper()
+	previous := fx.store.Snapshot()
 	bundle := agentTestBundle(t)
 	wf := bundle.Workflows[0]
 	wf.Buckets = []config.Bucket{
@@ -117,4 +123,7 @@ func removeDevBucket(t *testing.T, fx agentFixture) {
 	if err := fx.store.ImportBundle(fx.ctx, bundle, "test.yaml", "h2"); err != nil {
 		t.Fatalf("ImportBundle(remove dev): %v", err)
 	}
+	current := fx.store.Snapshot()
+	fx.service.SetSnapshot(current)
+	fx.service.SetOrphanService(app.NewOrphanService(fx.store, current, previous))
 }

@@ -26,22 +26,20 @@ const (
 )
 
 // BundleEditor coordinates atomic mutations across the omakiten.yaml wiring
-// file and per-entity .md files. Every Apply that succeeds re-imports the
-// resulting bundle into the materialized SQLite store, so callers never need to
-// touch the store directly to keep it in sync.
+// file and per-entity .md files. Apply returns the freshly re-loaded
+// bundle; downstream rotation (BundleCache.Reload) is driven separately
+// by mtime changes the editor's writes cause.
 //
-// The editor depends on a BundleStore port (load/save/hash/atomic-write) and
-// the ConfigRepository (re-import). It deliberately does not import file I/O
-// helpers from `internal/config` directly so the hexagonal direction stays
-// inward.
+// The editor depends on a BundleStore port (load/save/hash/atomic-write).
+// It deliberately does not import file I/O helpers from `internal/config`
+// directly so the hexagonal direction stays inward.
 type BundleEditor struct {
-	repo   ConfigRepository
 	bundle BundleStore
 	path   string
 }
 
-func NewBundleEditor(repo ConfigRepository, bundle BundleStore, path string) *BundleEditor {
-	return &BundleEditor{repo: repo, bundle: bundle, path: path}
+func NewBundleEditor(bundle BundleStore, path string) *BundleEditor {
+	return &BundleEditor{bundle: bundle, path: path}
 }
 
 func (e *BundleEditor) Path() string {
@@ -78,8 +76,9 @@ func (e *BundleEditor) Load() (config.Bundle, error) {
 	return bundle, nil
 }
 
-// Apply is the legacy single-callback signature retained for callers that only
-// touch the wiring file. It delegates to ApplyWithFiles.
+// Apply is the wiring-only signature for callers that mutate the bundle
+// in place without producing entity files. It delegates to ApplyWithFiles
+// with a nil FileOp slice.
 func (e *BundleEditor) Apply(ctx context.Context, mutate func(*config.Bundle) error) (config.Bundle, error) {
 	return e.ApplyWithFiles(ctx, mutate, nil)
 }
@@ -125,23 +124,17 @@ func (e *BundleEditor) ApplyWithFiles(ctx context.Context, mutate func(*config.B
 		return config.Bundle{}, configError(e.path, err)
 	}
 
-	// Re-load from disk so that the freshly written wiring + entity files round
-	// trip through the validator before being imported.
+	// Re-load from disk so the freshly written wiring + entity files round
+	// trip through the validator before the caller observes them. Phase
+	// 2-bis dropped the Store-side re-import: downstream rotation is
+	// driven by BundleCache.Reload on mtime change, so the editor's job
+	// ends at validated bytes on disk.
 	resolved, err := e.bundle.LoadBundle(e.path)
 	if err != nil {
 		_ = journal.restore()
 		return config.Bundle{}, configError(e.path, err)
 	}
-
-	hash, err := e.bundle.HashFile(e.path)
-	if err != nil {
-		_ = journal.restore()
-		return config.Bundle{}, configError(e.path, err)
-	}
-	if err := e.repo.ImportBundle(ctx, resolved, e.path, hash); err != nil {
-		_ = journal.restore()
-		return config.Bundle{}, err
-	}
+	_ = ctx
 	return resolved, nil
 }
 

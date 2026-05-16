@@ -11,7 +11,7 @@ func (s *Service) AddContext(ctx context.Context, input AddContextInput) (Contex
 	if err != nil {
 		return ContextResponse{}, err
 	}
-	entry, err := app.NewContextService(s.repo, s.repo, s.repo, s.repo, s.repo, s.counter, s.registry).Add(ctx, project, input.Body)
+	entry, err := app.NewContextService(s.repo, s.repo, s.repo, s.repo, s.snapshot, s.counter, s.registry).Add(ctx, project, input.Body)
 	if err != nil {
 		return ContextResponse{}, err
 	}
@@ -25,13 +25,9 @@ func (s *Service) DumpContext(ctx context.Context, input DumpContextInput) (Dump
 	}
 	level := input.Level
 	if level == 0 {
-		settings, err := s.repo.ContextSettings(ctx)
-		if err != nil {
-			return DumpContextResponse{}, err
-		}
-		level = settings.DefaultLevel
+		level = s.snapshot.ContextSettings().DefaultLevel
 	}
-	dump, err := app.NewContextService(s.repo, s.repo, s.repo, s.repo, s.repo, s.counter, s.registry).Dump(ctx, project, level)
+	dump, err := app.NewContextService(s.repo, s.repo, s.repo, s.repo, s.snapshot, s.counter, s.registry).Dump(ctx, project, level)
 	if err != nil {
 		return DumpContextResponse{}, err
 	}

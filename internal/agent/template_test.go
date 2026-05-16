@@ -12,13 +12,11 @@ import (
 
 func TestCreateTaskIncludesActiveTemplate(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetTaskTemplateLookup(func(projectSlug string) *TaskTemplateSummary {
-		return &TaskTemplateSummary{
+	fixture.service.SetSnapshot(snapshotWithTaskTemplate(t, "", TaskTemplateSummary{
 			Slug: "task-default",
 			Name: "Default",
 			Body: "**User Story**\n\nComo X.",
-		}
-	})
+		}))
 
 	resp, err := fixture.service.CreateTask(fixture.ctx, CreateTaskInput{Title: "Brand new direction", Description: "Unrelated"})
 	if err != nil {
@@ -37,9 +35,7 @@ func TestCreateTaskIncludesActiveTemplate(t *testing.T) {
 
 func TestCreateTaskIntentIncludesTemplateOnSimilarityFork(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetTaskTemplateLookup(func(projectSlug string) *TaskTemplateSummary {
-		return &TaskTemplateSummary{Slug: "task-default", Body: "scaffold"}
-	})
+	fixture.service.SetSnapshot(snapshotWithTaskTemplate(t, "", TaskTemplateSummary{Slug: "task-default", Body: "scaffold"}))
 
 	// Title/description matching an existing fixture task triggers the
 	// confirmation fork — template must still be returned so the agent has
@@ -58,7 +54,8 @@ func TestCreateTaskIntentIncludesTemplateOnSimilarityFork(t *testing.T) {
 
 func TestCreateTaskWithoutTemplateLookupOmitsField(t *testing.T) {
 	fixture := newAgentFixture(t)
-	// No SetTaskTemplateLookup call.
+	// No task-template installed on the snapshot — the response must
+	// omit Template entirely.
 
 	resp, err := fixture.service.CreateTask(fixture.ctx, CreateTaskInput{Title: "Some unique work", Description: "x"})
 	if err != nil {
@@ -71,12 +68,10 @@ func TestCreateTaskWithoutTemplateLookupOmitsField(t *testing.T) {
 
 func TestListTemplatesReturnsCatalog(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetTemplateCatalog(func() []TemplateSummary {
-		return []TemplateSummary{
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
 			{Slug: "task-default", Name: "Default", Default: "task", Body: "scaffold"},
 			{Slug: "pr-default", Name: "PR", Default: "pr", IsCustom: true, Body: "checklist"},
-		}
-	})
+		}))
 
 	resp, err := fixture.service.ListTemplates(fixture.ctx, ListTemplatesInput{})
 	if err != nil {
@@ -111,13 +106,11 @@ func TestListTemplatesReturnsCatalog(t *testing.T) {
 
 func TestListTemplatesResolvesProjectScopedOverridesServerSide(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetTemplateCatalog(func() []TemplateSummary {
-		return []TemplateSummary{
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
 			{Slug: "pull-request", Name: "Global PR", Default: "pr"},
 			{Slug: "pr-concise", Name: "Concise", Default: "pr", Project: "omakiten", IsCustom: true},
 			{Slug: "user-story", Name: "Story", Default: "task"},
-		}
-	})
+		}))
 
 	// Project-aware request for kind=pr returns ONLY the project-scoped
 	// override — global is dropped server-side so the agent does not have
@@ -165,11 +158,9 @@ func TestListTemplatesResolvesProjectScopedOverridesServerSide(t *testing.T) {
 
 func TestShowTemplateReturnsBody(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetTemplateCatalog(func() []TemplateSummary {
-		return []TemplateSummary{
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
 			{Slug: "task-default", Name: "Default", Default: "task", Body: "scaffold"},
-		}
-	})
+		}))
 
 	resp, err := fixture.service.ShowTemplate(fixture.ctx, ShowTemplateInput{Slug: "task-default"})
 	if err != nil {
@@ -199,7 +190,7 @@ func shadowCatalog() func() []TemplateSummary {
 
 func TestShowTemplateRejectsShadowedSlug(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetTemplateCatalog(shadowCatalog())
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, shadowCatalog()()))
 
 	_, err := fixture.service.ShowTemplate(fixture.ctx, ShowTemplateInput{Slug: "pull-request"})
 	if err == nil {
@@ -222,7 +213,7 @@ func TestShowTemplateRejectsShadowedSlug(t *testing.T) {
 
 func TestShowTemplateReturnsProjectScopedSlug(t *testing.T) {
 	fixture := newAgentFixture(t)
-	fixture.service.SetTemplateCatalog(shadowCatalog())
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, shadowCatalog()()))
 
 	resp, err := fixture.service.ShowTemplate(fixture.ctx, ShowTemplateInput{Slug: "pr-concise"})
 	if err != nil {
@@ -237,11 +228,9 @@ func TestShowTemplateReturnsGlobalWhenNoOverride(t *testing.T) {
 	fixture := newAgentFixture(t)
 	// Catalog has only a global "user-story" — no project-a override, so the
 	// shadow check must fall through.
-	fixture.service.SetTemplateCatalog(func() []TemplateSummary {
-		return []TemplateSummary{
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
 			{Slug: "user-story", Name: "User Story", Default: "task", Body: "task scaffold"},
-		}
-	})
+		}))
 
 	resp, err := fixture.service.ShowTemplate(fixture.ctx, ShowTemplateInput{Slug: "user-story"})
 	if err != nil {
@@ -256,7 +245,7 @@ func TestShowTemplateAllowsShadowedSlugWithoutProjectContext(t *testing.T) {
 	// Service whose default selector points at a directory outside any
 	// registered project root → resolveProject returns ErrProjectNotFound, but
 	// because the failure came from CWD/default (not an explicit project_id /
-	// project) the call tolerates it and falls back to the legacy slug lookup.
+	// project) the call tolerates it and falls back to the slug-only lookup.
 	ctx := context.Background()
 	store := newAgentStore(t, ctx)
 	outside := filepath.Join(t.TempDir(), "outside")
@@ -264,7 +253,8 @@ func TestShowTemplateAllowsShadowedSlugWithoutProjectContext(t *testing.T) {
 		t.Fatalf("MkdirAll(outside) error = %v", err)
 	}
 	service := NewService(store, ProjectSelector{CWD: outside})
-	service.SetTemplateCatalog(shadowCatalog())
+	service.SetSnapshot(store.Snapshot())
+	service.SetSnapshot(snapshotWithTemplates(t, shadowCatalog()()))
 
 	resp, err := service.ShowTemplate(ctx, ShowTemplateInput{Slug: "pull-request"})
 	if err != nil {
@@ -279,7 +269,7 @@ func TestShowTemplateRejectsExplicitMissingProject(t *testing.T) {
 	// AC #5: an explicit project slug that does not resolve must propagate
 	// ErrProjectNotFound rather than silently fall back to global lookup.
 	fixture := newAgentFixture(t)
-	fixture.service.SetTemplateCatalog(shadowCatalog())
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, shadowCatalog()()))
 
 	_, err := fixture.service.ShowTemplate(fixture.ctx, ShowTemplateInput{
 		ProjectSelector: ProjectSelector{Project: "no-such-project"},

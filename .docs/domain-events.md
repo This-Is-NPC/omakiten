@@ -5,8 +5,12 @@ Omakiten persists every state-changing operation as a row in the unified
 
 - **Activity feed** — `entity_type='task'` rows render in the per-task
   activity column (TUI / MCP `tasks.continue`).
-- **Logs view** — `event_type='operation'` rows are the per-call activity
-  log written by `activity.Track`.
+- **Logs view** — `event_type='cli.tool_call'` / `'mcp.tool_call'` /
+  `'tui.tool_call'` rows are the per-call activity log written by
+  `activity.Track`. The legacy `'operation'` value was renamed in
+  migration 019 so hooks can subscribe per-source (`on: mcp.tool_call`)
+  and filter on payload fields (`when: { tool_name: tasks.create }`)
+  without reading SQL columns.
 - **Domain audit / metrics** — every other event_type (task.*, comment,
   comment.*, tag.*, dependency.*, guard.*, error.*, solution.*) is what
   this guide catalogs.
@@ -42,8 +46,12 @@ referencing values outside it.
 | `solution.failed`     | solution                | `ConfirmSolution(success=false)`                              | `{error_id, likes}`                                            | mcp (typical)     | true        |
 | `solution.viewed_top` | solution (entity_id=0)  | `ErrorService.ListTopSolutions`                               | `{limit, returned_count}`                                      | mcp (typical)     | true        |
 | `hook.executed`       | system (entity_id=0)    | `hooks.Engine` after `Action.Execute` returns                 | `{hook_index, action, event_type, target_event_id, success, error?, duration_ms}` | system            | true        |
+| `bundle.imported`     | system (entity_id=0)    | `agentruntime.buildProjectRuntime` composes the payload and calls `Store.RecordEntityEvent` after `config.BuildSnapshot` materialises the per-project Snapshot | `{path, hash, workflow_key, workflow_count, persona_count, skill_count, law_count, template_count}` | system            | true        |
 | `bundle.swapped`      | system (entity_id=0)    | `tui.reloadBundle` after a successful preset swap             | `{from_workflow, to_workflow, orphan_count, has_orphans, groups}` | tui               | true        |
 | `confirmation.granted`| system (entity_id=0)    | `tui.Model.handleNotificationAction` before dispatching a non-empty action command | `{notification_slug, action_id, command}`                       | tui               | true        |
+| `cli.tool_call`       | system (entity_id=0)    | `activity.Track` from any CLI invocation, recorded post-Finish | `{tool_name, source, entrypoint, status, duration_ms, error_message, args}` | cli               | true        |
+| `mcp.tool_call`       | system (entity_id=0)    | `activity.Track` from any MCP `tools/call`, recorded post-Finish | `{tool_name, source, entrypoint, status, duration_ms, error_message, args}` | mcp               | true        |
+| `tui.tool_call`       | system (entity_id=0)    | `activity.Track` from any TUI-driven service call, recorded post-Finish | `{tool_name, source, entrypoint, status, duration_ms, error_message, args}` | tui               | true        |
 
 > **Note on `comment`:** the comment row IS user-visible data, not an
 > audit trail. The log gate (`config.events.overrides.comment.log`)
@@ -63,8 +71,11 @@ fill different subsets:
 - `author_type` — `human` | `agent`; populated for comments.
 - `source`, `entrypoint`, `agent_model`, `agent_session_id` — set by
   `RecordEntityEvent` from the request context (`activity.WithAgent`).
-- `operation`, `status`, `duration_ms` — only for
-  `event_type='operation'` rows written by `activity.Track`.
+- `operation`, `status`, `duration_ms` — only for the
+  `<source>.tool_call` rows written by `activity.Track`. The same
+  values are mirrored into `payload.tool_name` / `payload.status` /
+  `payload.duration_ms` so hook `when:` filters work without reading
+  SQL columns.
 
 Payload contracts are documented above per event type. Today the runtime
 treats payload as opaque JSON — no per-event schema validation. Consumers
@@ -86,6 +97,39 @@ are expected to honor the contracts; future work may add typed decoders.
 ships canonical values via `app.GuardOperation*` and `app.GuardRule*`
 constants, but custom guards can supply any string and consumers filter
 on whatever value lands in the payload.
+
+### Payload contract: `<source>.tool_call`
+
+```json
+{
+  "tool_name":     "tasks.create",
+  "source":        "cli | mcp | tui",
+  "entrypoint":    "tools/call",
+  "status":        "running | ok | error",
+  "duration_ms":   42,
+  "error_message": "",
+  "args":          { "title": "Hello" }
+}
+```
+
+`tool_name` / `source` / `entrypoint` / `status` / `duration_ms` /
+`error_message` mirror the discrete `events` columns of the same name —
+metrics queries hit the indexed columns for speed, hooks read the
+payload via `when:` filters. `args` carries the raw tool arguments
+passed in (preserving caller key order). The event is emitted on the
+bus only at `FinishActivityLog`, after status is final, so hooks can
+match on the outcome:
+
+```yaml
+hooks:
+  - on: mcp.tool_call
+    when:
+      tool_name: tasks.create
+      status: ok
+    do: exec
+    args:
+      argv: ["notify-send", "task created via MCP"]
+```
 
 ## Naming convention
 

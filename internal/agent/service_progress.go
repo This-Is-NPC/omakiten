@@ -43,7 +43,7 @@ func (s *Service) RecordProgress(ctx context.Context, input RecordProgressInput)
 			}
 			update.Priority = &p
 		}
-		task, err := app.NewTaskServiceFromStore(s.repo, s.registry).Edit(ctx, project, input.TaskID, update)
+		task, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Edit(ctx, project, input.TaskID, update)
 		if err != nil {
 			return RecordProgressResponse{}, err
 		}
@@ -51,7 +51,7 @@ func (s *Service) RecordProgress(ctx context.Context, input RecordProgressInput)
 		response.Task = &summary
 	}
 	if strings.TrimSpace(input.Comment) != "" {
-		comment, err := app.NewCommentService(s.repo).Add(ctx, project, input.TaskID, input.Comment, input.AuthorType, nil)
+		comment, err := s.newCommentService().Add(ctx, project, input.TaskID, input.Comment, input.AuthorType, nil)
 		if err != nil {
 			return RecordProgressResponse{}, err
 		}
@@ -59,7 +59,7 @@ func (s *Service) RecordProgress(ctx context.Context, input RecordProgressInput)
 		response.Comment = &summary
 	}
 	if strings.TrimSpace(input.Context) != "" {
-		entry, err := app.NewContextService(s.repo, s.repo, s.repo, s.repo, s.repo, s.counter, s.registry).Add(ctx, project, input.Context)
+		entry, err := app.NewContextService(s.repo, s.repo, s.repo, s.repo, s.snapshot, s.counter, s.registry).Add(ctx, project, input.Context)
 		if err != nil {
 			return RecordProgressResponse{}, err
 		}

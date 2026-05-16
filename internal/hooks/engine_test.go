@@ -43,18 +43,24 @@ func (r *fakeRecorder) get() []recordedEvent {
 }
 
 type signalAction struct {
-	name string
-	wg   *sync.WaitGroup
-	err  error
-	ran  *bool
-	mu   *sync.Mutex
+	name    string
+	wg      *sync.WaitGroup
+	err     error
+	ran     *bool
+	mu      *sync.Mutex
+	counter *int
 }
 
 func (s signalAction) Name() string { return s.name }
 
 func (s signalAction) Execute(_ context.Context, _ domain.Event, _ map[string]any) error {
 	s.mu.Lock()
-	*s.ran = true
+	if s.ran != nil {
+		*s.ran = true
+	}
+	if s.counter != nil {
+		*s.counter++
+	}
 	s.mu.Unlock()
 	if s.wg != nil {
 		s.wg.Done()
@@ -142,6 +148,132 @@ func TestEngineSkipsWhenHookGateClosed(t *testing.T) {
 	}
 	if len(rec.get()) != 0 {
 		t.Fatalf("events recorded despite hook gate=false: %v", rec.get())
+	}
+}
+
+// TestEngineFiltersByProjectID asserts the Phase 3d isolation rule: an
+// engine scoped to project A must never dispatch on an event scoped to
+// project B. The catch-all zero-id mode is also covered — both
+// engines reach the same bus, but only the project-A engine reacts to
+// the project-A event, only the project-B engine reacts to the
+// project-B event, and a system event (projectID==0) reaches both.
+func TestEngineFiltersByProjectID(t *testing.T) {
+	bus := events.NewInProcessBus(defaultSettings())
+
+	var aWG, bWG sync.WaitGroup
+	aMu, bMu := sync.Mutex{}, sync.Mutex{}
+	aRan, bRan := false, false
+
+	regA := NewActionRegistry()
+	regA.Register(signalAction{name: "test", wg: &aWG, ran: &aRan, mu: &aMu})
+	regB := NewActionRegistry()
+	regB.Register(signalAction{name: "test", wg: &bWG, ran: &bRan, mu: &bMu})
+
+	engineA := NewEngine([]Hook{{On: domain.EventTypeTaskCreated, Do: "test"}}, regA, defaultSettings(), &fakeRecorder{})
+	engineA.SetProjectID(1)
+	engineA.Start(bus)
+	defer engineA.Stop()
+
+	engineB := NewEngine([]Hook{{On: domain.EventTypeTaskCreated, Do: "test"}}, regB, defaultSettings(), &fakeRecorder{})
+	engineB.SetProjectID(2)
+	engineB.Start(bus)
+	defer engineB.Stop()
+
+	// Event for project A: only engineA should fire.
+	aWG.Add(1)
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated, ProjectID: 1}); err != nil {
+		t.Fatalf("Publish A: %v", err)
+	}
+	aWG.Wait()
+	time.Sleep(20 * time.Millisecond) // give B a chance to mis-fire
+	bMu.Lock()
+	if bRan {
+		bMu.Unlock()
+		t.Fatal("engineB fired on project-A event — cross-talk")
+	}
+	bMu.Unlock()
+
+	// Reset, then send project-B event.
+	aMu.Lock()
+	aRan = false
+	aMu.Unlock()
+	bWG.Add(1)
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated, ProjectID: 2}); err != nil {
+		t.Fatalf("Publish B: %v", err)
+	}
+	bWG.Wait()
+	time.Sleep(20 * time.Millisecond)
+	aMu.Lock()
+	if aRan {
+		aMu.Unlock()
+		t.Fatal("engineA fired on project-B event — cross-talk")
+	}
+	aMu.Unlock()
+}
+
+// TestEngineWithZeroProjectIDCatchesAll asserts the backward-compat
+// rule: a project-unscoped engine (the bootstrap window before the
+// composition root resolved a project id) keeps seeing every event
+// regardless of its ProjectID.
+func TestEngineWithZeroProjectIDCatchesAll(t *testing.T) {
+	bus := events.NewInProcessBus(defaultSettings())
+
+	registry := NewActionRegistry()
+	var wg sync.WaitGroup
+	wg.Add(2)
+	mu := sync.Mutex{}
+	count := 0
+	registry.Register(signalAction{name: "test", wg: &wg, ran: nil, mu: &mu, counter: &count})
+
+	engine := NewEngine([]Hook{{On: domain.EventTypeTaskCreated, Do: "test"}}, registry, defaultSettings(), &fakeRecorder{})
+	// projectID left at zero — catch-all
+	engine.Start(bus)
+	defer engine.Stop()
+
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated, ProjectID: 1}); err != nil {
+		t.Fatalf("Publish 1: %v", err)
+	}
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated, ProjectID: 2}); err != nil {
+		t.Fatalf("Publish 2: %v", err)
+	}
+	wg.Wait()
+	mu.Lock()
+	got := count
+	mu.Unlock()
+	if got != 2 {
+		t.Fatalf("catch-all engine count = %d, want 2", got)
+	}
+}
+
+// TestEngineSystemEventReachesScopedEngine pins the second branch of
+// matchesProject: a project-scoped engine still receives events
+// emitted with ProjectID==0 (system events like bundle.swapped /
+// hook.executed). The catch-all rule lives on the event side, not
+// just on the engine side.
+func TestEngineSystemEventReachesScopedEngine(t *testing.T) {
+	bus := events.NewInProcessBus(defaultSettings())
+
+	registry := NewActionRegistry()
+	var wg sync.WaitGroup
+	mu := sync.Mutex{}
+	count := 0
+	registry.Register(signalAction{name: "test", wg: &wg, ran: nil, mu: &mu, counter: &count})
+
+	engine := NewEngine([]Hook{{On: domain.EventTypeBundleSwapped, Do: "test"}}, registry, defaultSettings(), &fakeRecorder{})
+	engine.SetProjectID(42)
+	engine.Start(bus)
+	defer engine.Stop()
+
+	wg.Add(1)
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeBundleSwapped, ProjectID: 0}); err != nil {
+		t.Fatalf("Publish system event: %v", err)
+	}
+	wg.Wait()
+	mu.Lock()
+	got := count
+	mu.Unlock()
+	if got != 1 {
+		t.Fatalf("scoped engine count for system event = %d, want 1 (catch-all on event-side)", got)
 	}
 }
 

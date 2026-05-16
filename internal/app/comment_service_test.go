@@ -13,13 +13,13 @@ func TestCommentServiceAdd(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
+	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 	task, err := taskService.Add(ctx, project.Context(), "Task", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}
 
-	service := NewCommentService(store)
+	service := NewCommentService(store, store.Snapshot())
 
 	_, err = service.Add(ctx, project.Context(), 0, "body", "human", nil)
 	if err == nil {
@@ -64,13 +64,13 @@ func TestCommentServiceList(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
+	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 	task, err := taskService.Add(ctx, project.Context(), "Task", "", "", "backlog")
 	if err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}
 
-	service := NewCommentService(store)
+	service := NewCommentService(store, store.Snapshot())
 	if _, err := service.Add(ctx, project.Context(), task.ID, "A", "human", nil); err != nil {
 		t.Fatalf("Add(A) error = %v", err)
 	}

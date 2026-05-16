@@ -64,9 +64,13 @@ func LoadBundle(path string) (Bundle, error) {
 	bundle.Projects = pickProjects(wired.Projects)
 	bundle.MCPCommands = wired.MCPCommands
 
-	if err := assertRefsResolve(wired, skills, laws, personas, templates); err != nil {
-		return Bundle{}, err
-	}
+	bundle.Warnings = append(bundle.Warnings, warnDanglingRefs(wired, skills, laws, personas, templates)...)
+	bundle.Warnings = append(bundle.Warnings, warnMCPCommandRefs(
+		bundle,
+		slugSet(loadedPersonaSlugs(personas)),
+		slugSet(loadedLawSlugs(laws)),
+		slugSet(loadedTemplateSlugs(templates)),
+	)...)
 	if err := ValidateBundle(bundle, skills, laws, personas, templates); err != nil {
 		return Bundle{}, err
 	}

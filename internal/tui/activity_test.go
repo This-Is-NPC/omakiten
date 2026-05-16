@@ -11,18 +11,15 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/runtimecache"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
 func TestActivityCursorMovesAndScrolls(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}
@@ -30,7 +27,7 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "with comments", "", domain.Priority(2), "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "with comments", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -43,12 +40,12 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
-		Config:       store,
+		
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
@@ -77,11 +74,7 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 
 func TestActivityEnterOpensCommentScreen(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}
@@ -89,7 +82,7 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "long body", "", domain.Priority(2), "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "long body", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -103,12 +96,12 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
-		Config:       store,
+		
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
@@ -168,11 +161,7 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 
 func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}
@@ -180,18 +169,18 @@ func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "no comments", "", domain.Priority(2), "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "no comments", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
-		Config:       store,
+		
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
@@ -212,11 +201,7 @@ func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
 
 func TestTabTogglesTaskFocus(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}
@@ -224,7 +209,7 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "with comment", "", domain.Priority(2), "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "with comment", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -234,12 +219,12 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
-		Config:       store,
+		
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
@@ -278,11 +263,7 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 // asserting on activityScroll directly.
 func TestActivityScrollKeepsFocusedCardVisible(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}
@@ -290,7 +271,7 @@ func TestActivityScrollKeepsFocusedCardVisible(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "lots of activity", "", domain.Priority(2), "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "lots of activity", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -304,12 +285,12 @@ func TestActivityScrollKeepsFocusedCardVisible(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
-		Config:       store,
+		
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
@@ -347,11 +328,7 @@ func TestActivityScrollKeepsFocusedCardVisible(t *testing.T) {
 // the old viewport and the focused card slides off-screen.
 func TestActivityScrollResyncsOnResize(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() = %v", err)
 	}
@@ -359,7 +336,7 @@ func TestActivityScrollResyncsOnResize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "resize repro", "", domain.Priority(2), "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "resize repro", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -373,12 +350,12 @@ func TestActivityScrollResyncsOnResize(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
-		Config:       store,
+		
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)

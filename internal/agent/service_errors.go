@@ -11,7 +11,7 @@ func (s *Service) RecordError(ctx context.Context, input RecordErrorInput) (Erro
 	if err != nil {
 		return ErrorRecordResponse{}, err
 	}
-	record, err := app.NewErrorService(s.repo).Record(ctx, project, input.Description, input.Context, input.Tags)
+	record, err := s.newErrorService().Record(ctx, project, input.Description, input.Context, input.Tags)
 	if err != nil {
 		return ErrorRecordResponse{}, err
 	}
@@ -23,7 +23,7 @@ func (s *Service) SearchErrors(ctx context.Context, input SearchErrorsInput) (Se
 	if err != nil {
 		return SearchErrorsResponse{}, err
 	}
-	records, err := app.NewErrorService(s.repo).Search(ctx, project, input.Query, input.Tags)
+	records, err := s.newErrorService().Search(ctx, project, input.Query, input.Tags)
 	if err != nil {
 		return SearchErrorsResponse{}, err
 	}
@@ -44,7 +44,7 @@ func (s *Service) AddSolution(ctx context.Context, input AddSolutionInput) (Solu
 		v := input.TaskID
 		taskID = &v
 	}
-	solution, err := app.NewErrorService(s.repo).AddSolution(ctx, project, input.ErrorID, input.Description, input.Steps, taskID)
+	solution, err := s.newErrorService().AddSolution(ctx, project, input.ErrorID, input.Description, input.Steps, taskID)
 	if err != nil {
 		return SolutionResponse{}, err
 	}
@@ -56,7 +56,7 @@ func (s *Service) ConfirmSolution(ctx context.Context, input ConfirmSolutionInpu
 	if err != nil {
 		return SolutionResponse{}, err
 	}
-	solution, err := app.NewErrorService(s.repo).ConfirmSolution(ctx, project, input.SolutionID, input.Success)
+	solution, err := s.newErrorService().ConfirmSolution(ctx, project, input.SolutionID, input.Success)
 	if err != nil {
 		return SolutionResponse{}, err
 	}
@@ -68,7 +68,7 @@ func (s *Service) ListTopSolutions(ctx context.Context, input ListTopSolutionsIn
 	if err != nil {
 		return TopSolutionsResponse{}, err
 	}
-	es := app.NewErrorService(s.repo)
+	es := s.newErrorService()
 	es.SetSolutionsDefaults(app.SolutionsDefaults{
 		TopLimitDefault: s.settings.SolutionsTopLimitDefault,
 		TopLimitMax:     s.settings.SolutionsTopLimitMax,

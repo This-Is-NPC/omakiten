@@ -16,14 +16,24 @@ import (
 // default-binding mutations. The TUI used to inline the frontmatter rewrite
 // + sibling-clearing logic into its picker; centralizing it here keeps the
 // transactional sequence (snapshot → mutate → apply) close to the
-// BundleEditor and gives the behavior an isolated test surface.
+// BundleEditor and gives the behavior an isolated test surface. snap is
+// the per-project Snapshot captured at construction so callers that need
+// to read template metadata (default binding by kind, lookup by slug)
+// without round-tripping through editor.Load can do so against the same
+// immutable view the rest of the app sees.
 type TemplateService struct {
+	snap   *config.Snapshot
 	editor *BundleEditor
 	files  EntityFileWriter
 }
 
-func NewTemplateService(editor *BundleEditor, files EntityFileWriter) *TemplateService {
-	return &TemplateService{editor: editor, files: files}
+// NewTemplateService wires the template-binding service against an
+// immutable per-project Snapshot. snap is required; tests that drive
+// disk-only flows may pass nil but production composition always supplies
+// the ProjectRuntime.Snapshot pointer so the service shares the same
+// view as Persona/Skill/Law/Workflow.
+func NewTemplateService(snap *config.Snapshot, editor *BundleEditor, files EntityFileWriter) *TemplateService {
+	return &TemplateService{snap: snap, editor: editor, files: files}
 }
 
 // SetDefault writes `default: <kind>` (and `project: <projectSlug>` when

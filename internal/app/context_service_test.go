@@ -6,8 +6,8 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/token"
 )
 
@@ -16,21 +16,21 @@ func TestContextServiceDumpLevels(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	taskA, err := store.CreateTask(ctx, project.ID, "A", "Build A", domain.Priority(2), "backlog")
+	taskA, err := store.CreateTask(ctx, project.ID, "A", "Build A", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(A) error = %v", err)
 	}
-	taskB, err := store.CreateTask(ctx, project.ID, "B", "Build B", domain.Priority(2), "backlog")
+	taskB, err := store.CreateTask(ctx, project.ID, "B", "Build B", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(B) error = %v", err)
 	}
 	if _, err := NewDependencyService(store).Add(ctx, project.Context(), taskB.ID, taskA.ID); err != nil {
 		t.Fatalf("Dependency Add() error = %v", err)
 	}
-	if _, err := NewCommentService(store).Add(ctx, project.Context(), taskA.ID, "Useful note", "human", nil); err != nil {
+	if _, err := NewCommentService(store, store.Snapshot()).Add(ctx, project.Context(), taskA.ID, "Useful note", "human", nil); err != nil {
 		t.Fatalf("Comment Add() error = %v", err)
 	}
-	service := NewContextService(store, store, store, store, store, token.ApproxCounter{}, testfixtures.CanonicalRegistry())
+	service := NewContextService(store, store, store, store, store.Snapshot(), token.ApproxCounter{}, testfixtures.CanonicalRegistry())
 	if _, err := service.Add(ctx, project.Context(), "Handoff context"); err != nil {
 		t.Fatalf("Context Add() error = %v", err)
 	}
@@ -71,7 +71,7 @@ func TestContextServiceDumpRespectsTokenBudget(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1))
 	defer func() { _ = store.Close() }()
 
-	service := NewContextService(store, store, store, store, store, token.ApproxCounter{}, testfixtures.CanonicalRegistry())
+	service := NewContextService(store, store, store, store, store.Snapshot(), token.ApproxCounter{}, testfixtures.CanonicalRegistry())
 	if _, err := service.Add(ctx, project.Context(), "too many words"); err != nil {
 		t.Fatalf("Context Add() error = %v", err)
 	}
@@ -92,7 +92,7 @@ func TestContextServiceAddValidates(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewContextService(store, store, store, store, store, token.ApproxCounter{}, testfixtures.CanonicalRegistry())
+	service := NewContextService(store, store, store, store, store.Snapshot(), token.ApproxCounter{}, testfixtures.CanonicalRegistry())
 	_, err := service.Add(ctx, project.Context(), "")
 	if err == nil {
 		t.Fatal("Add() error = nil, want validation error")
@@ -111,7 +111,7 @@ func TestContextServiceDumpInvalidLevel(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewContextService(store, store, store, store, store, token.ApproxCounter{}, testfixtures.CanonicalRegistry())
+	service := NewContextService(store, store, store, store, store.Snapshot(), token.ApproxCounter{}, testfixtures.CanonicalRegistry())
 	_, err := service.Dump(ctx, project.Context(), 0)
 	if err == nil {
 		t.Fatal("Dump(level 0) error = nil")
@@ -130,7 +130,7 @@ func TestContextServiceDumpUnlimitedBudget(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 0))
 	defer func() { _ = store.Close() }()
 
-	service := NewContextService(store, store, store, store, store, token.ApproxCounter{}, testfixtures.CanonicalRegistry())
+	service := NewContextService(store, store, store, store, store.Snapshot(), token.ApproxCounter{}, testfixtures.CanonicalRegistry())
 	if _, err := service.Add(ctx, project.Context(), "some context entry"); err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}
@@ -192,13 +192,10 @@ func TestContextBudgetAdd(t *testing.T) {
 	}
 }
 
-func appTestStore(t *testing.T, bundle config.Bundle) (*sqlite.Store, domain.Project) {
+func appTestStore(t *testing.T, bundle config.Bundle) (*snapstore.Store, domain.Project) {
 	t.Helper()
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}

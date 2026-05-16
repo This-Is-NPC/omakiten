@@ -10,28 +10,49 @@ import (
 )
 
 type SkillService struct {
-	repo    ConfigRepository
+	snap    *config.Snapshot
 	editor  *BundleEditor
 	files   EntityFileWriter
 	slugger Slugifier
 }
 
-func NewSkillService(repo ConfigRepository, editor *BundleEditor, files EntityFileWriter, slugger Slugifier) *SkillService {
-	return &SkillService{repo: repo, editor: editor, files: files, slugger: slugger}
+func NewSkillService(snap *config.Snapshot, editor *BundleEditor, files EntityFileWriter, slugger Slugifier) *SkillService {
+	return &SkillService{snap: snap, editor: editor, files: files, slugger: slugger}
 }
 
-// List returns the active skill set as imported into SQLite. Description, body,
-// and source path are sourced from the on-disk bundle so the response reflects
-// the current state of the .md files rather than the materialized DB.
-func (s *SkillService) List(ctx context.Context) ([]domain.Skill, error) {
-	skills, err := s.repo.ListActiveSkills(ctx)
-	if err != nil {
-		return nil, err
+// skillsFromSnapshot projects the snapshot's config.Skill slice into
+// the domain shape. Ids are positional (1-based) and stable within a
+// snapshot; they rotate on every bundle import, so cross-rebuild
+// callers must key by slug rather than by id.
+func skillsFromSnapshot(snap *config.Snapshot) []domain.Skill {
+	skills := snap.Skills()
+	out := make([]domain.Skill, 0, len(skills))
+	for i, sk := range skills {
+		out = append(out, domain.Skill{
+			ID:          int64(i + 1),
+			Key:         sk.Slug,
+			Name:        sk.Name,
+			Description: sk.Description,
+			Body:        sk.Body,
+			SourcePath:  sk.SourcePath,
+			IsCustom:    sk.IsCustom,
+		})
 	}
+	return out
+}
+
+// List returns the active skill set carried on the per-project Snapshot.
+// Description, body, and source path are overlaid from the on-disk
+// bundle so the response reflects the current state of the .md files —
+// useful when the user edits a skill file between bundle imports.
+// Always projects from the freshly-loaded bundle so a write-followed-by-read
+// inside the same service instance sees the just-persisted state.
+func (s *SkillService) List(_ context.Context) ([]domain.Skill, error) {
 	bundle, err := s.editor.Load()
 	if err != nil {
 		return nil, err
 	}
+	skills := skillsFromSnapshot(config.BuildSnapshot(bundle))
 	bySlug := indexSkills(bundle.Skills)
 	warnings := warningIndex(bundle.Warnings)
 	for index, skill := range skills {
@@ -140,7 +161,10 @@ func (s *SkillService) Edit(ctx context.Context, slug string, update domain.Skil
 
 	path := current.SourcePath
 	if path == "" {
-		// Fallback for legacy callers that didn't get an enriched SourcePath.
+		// Inline-only skills (declared directly in the bundle YAML
+		// without a backing .md) have no on-disk path on the snapshot.
+		// Derive the conventional file path so the write lands beside
+		// the other entity files.
 		path = s.files.EntityFilePath(s.editor.RootDir(), config.EntityKindSkill, slug)
 	}
 	bytes, err := s.files.SkillFileBytes(skill)

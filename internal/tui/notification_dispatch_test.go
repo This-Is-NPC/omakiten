@@ -11,10 +11,11 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	hookactions "omakiten/internal/hooks/actions"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
 	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/runtimecache"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
 func ptrBool(v bool) *bool { return &v }
@@ -28,11 +29,7 @@ func zeroNotificationPadding() *config.NotificationPadding {
 func newNotificationTestModel(t *testing.T) Model {
 	t.Helper()
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle: %v", err)
 	}
@@ -63,11 +60,11 @@ func newNotificationTestModel(t *testing.T) Model {
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
 		Projects:     store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
-		Config:       store,
+		
 		Tags:         store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, binding)
 	if err != nil {

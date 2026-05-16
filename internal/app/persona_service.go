@@ -9,25 +9,67 @@ import (
 )
 
 type PersonaService struct {
-	repo    ConfigRepository
+	snap    *config.Snapshot
 	editor  *BundleEditor
 	files   EntityFileWriter
 	slugger Slugifier
 }
 
-func NewPersonaService(repo ConfigRepository, editor *BundleEditor, files EntityFileWriter, slugger Slugifier) *PersonaService {
-	return &PersonaService{repo: repo, editor: editor, files: files, slugger: slugger}
+func NewPersonaService(snap *config.Snapshot, editor *BundleEditor, files EntityFileWriter, slugger Slugifier) *PersonaService {
+	return &PersonaService{snap: snap, editor: editor, files: files, slugger: slugger}
 }
 
-func (s *PersonaService) List(ctx context.Context) ([]domain.Persona, error) {
-	personas, err := s.repo.ListActivePersonas(ctx)
-	if err != nil {
-		return nil, err
+// personasFromSnapshot projects the config.Persona slice carried on
+// the snapshot into the domain shape consumed by the CLI/TUI/MCP
+// surfaces. Ids are positional (1-based slot in the snapshot's
+// personas list) so callers that round-trip ids within a snapshot get
+// stable references; ids rotate on every bundle import — callers
+// that need cross-rebuild stability must key by slug, not by id.
+// Skill id refs resolve against the same snapshot so the persona's
+// SkillIDs are stable within the snapshot.
+func personasFromSnapshot(snap *config.Snapshot) []domain.Persona {
+	personas := snap.Personas()
+	skills := snap.Skills()
+	skillIDBySlug := make(map[string]int64, len(skills))
+	for i, sk := range skills {
+		skillIDBySlug[sk.Slug] = int64(i + 1)
 	}
+	out := make([]domain.Persona, 0, len(personas))
+	for i, p := range personas {
+		skillIDs := make([]int64, 0, len(p.Skills))
+		for _, slug := range p.Skills {
+			if id, ok := skillIDBySlug[slug]; ok {
+				skillIDs = append(skillIDs, id)
+			}
+		}
+		out = append(out, domain.Persona{
+			ID:          int64(i + 1),
+			Key:         p.Slug,
+			Name:        p.Name,
+			Description: p.Description,
+			Body:        p.Body,
+			SkillIDs:    skillIDs,
+			SkillKeys:   append([]string(nil), p.Skills...),
+			LawKeys:     append([]string(nil), p.Laws...),
+			SourcePath:  p.SourcePath,
+			IsCustom:    p.IsCustom,
+		})
+	}
+	return out
+}
+
+func (s *PersonaService) List(_ context.Context) ([]domain.Persona, error) {
 	bundle, err := s.editor.Load()
 	if err != nil {
 		return nil, err
 	}
+	// Always project from the on-disk bundle so a write-followed-by-read
+	// inside the same service instance (Add then Edit/Show) reflects the
+	// just-persisted state. The ctor-captured s.snap is still authoritative
+	// for read-only fields (skill ids in resolveSkillRefs) where stable
+	// positional ids matter; the listing path needs disk freshness.
+	snap := config.BuildSnapshot(bundle)
+	personas := personasFromSnapshot(snap)
 	bySlug := indexPersonas(bundle.Personas)
 	warnings := warningIndex(bundle.Warnings)
 	for index, persona := range personas {
@@ -36,9 +78,6 @@ func (s *PersonaService) List(ctx context.Context) ([]domain.Persona, error) {
 			personas[index].Body = file.Body
 			personas[index].Name = file.Name
 			personas[index].SourcePath = file.SourcePath
-			// Skill keys come from the wiring; the SQLite read joins through
-			// persona_skills which is the authoritative current state so we
-			// keep that one but also mirror file-level law keys.
 			personas[index].LawKeys = append([]string(nil), file.Laws...)
 		}
 		if w, ok := warnings[persona.Key]; ok {
@@ -240,17 +279,14 @@ func (s *PersonaService) Remove(ctx context.Context, slug string) error {
 
 // resolveSkillRefs converts whichever combination of SkillIDs / SkillKeys the
 // caller supplied into a deduped, validated slice of skill slugs.
-func (s *PersonaService) resolveSkillRefs(ctx context.Context, input domain.PersonaInput) ([]string, error) {
+func (s *PersonaService) resolveSkillRefs(_ context.Context, input domain.PersonaInput) ([]string, error) {
 	out := make([]string, 0, len(input.SkillIDs)+len(input.SkillKeys))
 	seen := map[string]struct{}{}
 	if len(input.SkillIDs) > 0 {
-		skills, err := s.repo.ListActiveSkills(ctx)
-		if err != nil {
-			return nil, err
-		}
+		skills := s.snap.Skills()
 		byID := map[int64]string{}
-		for _, skill := range skills {
-			byID[skill.ID] = skill.Key
+		for i, skill := range skills {
+			byID[int64(i+1)] = skill.Slug
 		}
 		for _, id := range input.SkillIDs {
 			key, ok := byID[id]

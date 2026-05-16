@@ -3,68 +3,9 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"strconv"
 
-	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
-
-// kitContextSettings reads the canonical context block from the embedded
-// kit YAML. Used as the seed in ContextSettings before the SELECT
-// possibly overrides per-key. Falls back to {1, 0} if the embedded YAML
-// is unparseable so the binary keeps booting and the validator's later
-// pass surfaces the real failure.
-func kitContextSettings() domain.ContextSettings {
-	cfg, err := config.LoadKitConfig()
-	if err != nil {
-		return domain.ContextSettings{DefaultLevel: 1, MaxTokens: 0}
-	}
-	return domain.ContextSettings{
-		DefaultLevel: cfg.Context.DefaultLevel,
-		MaxTokens:    cfg.Context.MaxTokens,
-	}
-}
-
-func (s *Store) ContextSettings(ctx context.Context) (domain.ContextSettings, error) {
-	// Seed from the embedded kit YAML so missing settings rows (rare —
-	// the bootstrap window before ConfigService.Import populates the
-	// settings table) inherit the canonical values without any
-	// hardcoded {2, 12000} pair living in code. Production reaches this
-	// only between sqlite.Open and the first Import; from then on, the
-	// SELECT below overwrites the seed with the user's bundle.
-	settings := kitContextSettings()
-	rows, err := s.db.QueryContext(ctx, `
-SELECT settings.key, settings.value
-FROM settings
-JOIN config_bundles ON config_bundles.id = settings.bundle_id
-WHERE settings.active = 1
-  AND config_bundles.active = 1
-  AND settings.key IN ('context.default_level', 'context.max_tokens')
-ORDER BY config_bundles.id DESC
-`)
-	if err != nil {
-		return domain.ContextSettings{}, err
-	}
-	defer func() { _ = rows.Close() }()
-
-	for rows.Next() {
-		var key, value string
-		if err := rows.Scan(&key, &value); err != nil {
-			return domain.ContextSettings{}, err
-		}
-		parsed, err := strconv.Atoi(value)
-		if err != nil {
-			return domain.ContextSettings{}, domain.NewError(domain.ErrConfigInvalid, "context setting must be numeric", map[string]any{"key": key, "value": value})
-		}
-		switch key {
-		case "context.default_level":
-			settings.DefaultLevel = parsed
-		case "context.max_tokens":
-			settings.MaxTokens = parsed
-		}
-	}
-	return settings, rows.Err()
-}
 
 func (s *Store) AddContextEntry(ctx context.Context, projectID int64, body string, tokenEstimate int) (domain.ContextEntry, error) {
 	row := s.db.QueryRowContext(ctx, `

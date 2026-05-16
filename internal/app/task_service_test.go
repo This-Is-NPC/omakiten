@@ -14,7 +14,7 @@ func TestTaskServiceAdd(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
 	_, err := service.Add(ctx, project.Context(), "", "", "", "")
 	if err == nil {
@@ -59,7 +59,7 @@ func TestTaskServiceList(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 	if _, err := service.Add(ctx, project.Context(), "A", "", "", "backlog"); err != nil {
 		t.Fatalf("Add(A) error = %v", err)
 	}
@@ -89,7 +89,7 @@ func TestTaskServiceMove(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
 	_, err := service.Move(ctx, project.Context(), 0, "dev")
 	if err == nil {
@@ -122,7 +122,7 @@ func TestTaskServiceEdit(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
 	_, err := service.Edit(ctx, project.Context(), 0, domain.TaskUpdate{})
 	if err == nil {

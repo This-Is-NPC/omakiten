@@ -6,8 +6,8 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
 // Each scenario file under testdata/policy_*.yaml exercises one slice of
@@ -100,11 +100,7 @@ func TestWorkflowServicePolicyResolutionFromYAML(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.fixture, func(t *testing.T) {
 			ctx := context.Background()
-			store, err := sqlite.Open(ctx, t.TempDir()+"/policy.db")
-			if err != nil {
-				t.Fatalf("sqlite.Open() = %v", err)
-			}
-			t.Cleanup(func() { _ = store.Close() })
+			store := snapstore.Open(t, t.TempDir()+"/policy.db")
 			bundle, _ := testfixtures.LoadBundle(t, c.fixture)
 			if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
 				t.Fatalf("ImportBundle() = %v", err)
@@ -113,14 +109,14 @@ func TestWorkflowServicePolicyResolutionFromYAML(t *testing.T) {
 			if err != nil {
 				t.Fatalf("UpsertProject() = %v", err)
 			}
-			workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry())
+			workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
 			// Each ask creates a fresh task in the named bucket so the
 			// resolver evaluates the policy for that exact location. We
 			// delete the task between asks to keep the workflow state clean
 			// — otherwise transition guards would interfere on later asks.
 			for _, a := range c.asks {
-				task, err := store.CreateTask(ctx, project.ID, "probe", "", domain.Priority(2), a.bucket)
+				task, err := store.CreateTask(ctx, project.ID, "probe", "", domain.Priority(2), a.bucket, store.Snapshot())
 				if err != nil {
 					t.Fatalf("CreateTask(%s) = %v", a.bucket, err)
 				}
@@ -131,7 +127,7 @@ func TestWorkflowServicePolicyResolutionFromYAML(t *testing.T) {
 				if allowed != a.want {
 					t.Errorf("ResolveBucketPermissions(%s, %s, %s) = %v (hint %q), want %v", a.bucket, a.entity, a.operation, allowed, hint, a.want)
 				}
-				if _, err := store.HardDeleteTask(ctx, project.ID, task.ID); err != nil {
+				if _, err := store.HardDeleteTask(ctx, project.ID, task.ID, store.Snapshot()); err != nil {
 					t.Fatalf("HardDeleteTask(%d) = %v", task.ID, err)
 				}
 			}

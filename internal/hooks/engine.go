@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"omakiten/internal/config"
@@ -28,6 +29,16 @@ type Engine struct {
 	registry *ActionRegistry
 	settings config.EventsSettings
 	recorder EventRecorder
+	// projectID scopes which events this engine reacts to. Phase 3d
+	// runs one engine per ProjectRuntime so two projects' hooks never
+	// cross-fire. The filter rules:
+	//   - engine projectID == 0  -> catch-all (bootstrap / tests)
+	//   - event projectID == 0   -> system event, reaches every engine
+	//   - otherwise              -> engine.projectID must equal event.ProjectID
+	// atomic.Int64 so SetProjectID is safe to call from a different
+	// goroutine than dispatch (the composition root sets it before
+	// Start, but the contract should not rely on caller ordering).
+	projectID atomic.Int64
 
 	mu  sync.Mutex
 	sub events.Subscription
@@ -38,6 +49,17 @@ type Engine struct {
 // subscribe to the bus.
 func NewEngine(hooks []Hook, registry *ActionRegistry, settings config.EventsSettings, recorder EventRecorder) *Engine {
 	return &Engine{hooks: hooks, registry: registry, settings: settings, recorder: recorder}
+}
+
+// SetProjectID scopes the engine's dispatch filter to the supplied
+// project id. The composition root (BundleCache.buildProjectRuntime)
+// calls this once after construction so events targeting other
+// projects skip this engine entirely. Zero disables the filter —
+// engines built before the composition root resolves a project id
+// (bootstrap window, tests) keep receiving every event the bus emits.
+// Safe to call concurrently with dispatch: projectID is atomic.
+func (e *Engine) SetProjectID(id int64) {
+	e.projectID.Store(id)
 }
 
 // Start subscribes to the bus. Idempotent: a second call is a no-op
@@ -66,6 +88,9 @@ func (e *Engine) Stop() {
 // dispatch runs on the publisher's goroutine. It walks the configured
 // hooks for matches and spawns a goroutine per match; never blocks.
 func (e *Engine) dispatch(ctx context.Context, ev domain.Event) {
+	if !e.matchesProject(ev) {
+		return
+	}
 	if !e.settings.ResolveHook(ev.EventType) {
 		return
 	}
@@ -121,6 +146,23 @@ func (e *Engine) run(parent context.Context, idx int, hook Hook, action Action, 
 		return
 	}
 	_ = e.recorder.RecordEntityEvent(ctx, domain.EventEntitySystem, 0, ev.ProjectID, domain.EventTypeHookExecuted, string(body))
+}
+
+// matchesProject decides whether the engine should consider the event.
+// Phase 3 scopes one engine per ProjectRuntime, so a non-zero
+// engine.projectID is the per-project filter and a non-zero
+// ev.ProjectID identifies the event's owner. Zero on either side opts
+// out of the filter so system events (ev.ProjectID == 0 — e.g.
+// bundle.swapped, hook.executed) reach every engine and engines built
+// for cross-project dispatch (engine.projectID == 0 — used by tests
+// and the bootstrap window before a project resolves) keep receiving
+// everything.
+func (e *Engine) matchesProject(ev domain.Event) bool {
+	pid := e.projectID.Load()
+	if pid == 0 || ev.ProjectID == 0 {
+		return true
+	}
+	return pid == ev.ProjectID
 }
 
 func matches(hook Hook, ev domain.Event) bool {

@@ -20,7 +20,7 @@ func (s *Service) AddComment(ctx context.Context, input AddCommentInput) (Commen
 		}
 		body = merged
 	}
-	comment, err := app.NewCommentService(s.repo).Add(ctx, project, input.TaskID, body, input.AuthorType, input.Tags)
+	comment, err := s.newCommentService().Add(ctx, project, input.TaskID, body, input.AuthorType, input.Tags)
 	if err != nil {
 		return CommentResponse{}, err
 	}
@@ -32,8 +32,8 @@ func (s *Service) EditComment(ctx context.Context, input EditCommentInput) (Comm
 	if err != nil {
 		return CommentResponse{}, err
 	}
-	workflow := app.NewWorkflowServiceFromStore(s.repo, s.registry)
-	comment, err := app.NewCommentServiceWithWorkflow(s.repo, workflow).Edit(ctx, project, input.CommentID, input.Body, input.Tags)
+	workflow := s.workflow
+	comment, err := s.newCommentServiceWithWorkflow(workflow).Edit(ctx, project, input.CommentID, input.Body, input.Tags)
 	if err != nil {
 		return CommentResponse{}, err
 	}
@@ -57,8 +57,8 @@ func (s *Service) DeleteComment(ctx context.Context, input DeleteCommentInput) (
 			},
 		}, nil
 	}
-	workflow := app.NewWorkflowServiceFromStore(s.repo, s.registry)
-	event, err := app.NewCommentServiceWithWorkflow(s.repo, workflow).Remove(ctx, project, input.CommentID)
+	workflow := s.workflow
+	event, err := s.newCommentServiceWithWorkflow(workflow).Remove(ctx, project, input.CommentID)
 	if err != nil {
 		return DeleteCommentResponse{}, err
 	}
@@ -71,7 +71,7 @@ func (s *Service) ListComments(ctx context.Context, input ListCommentsInput) (Co
 	if err != nil {
 		return CommentsResponse{}, err
 	}
-	comments, err := app.NewCommentService(s.repo).List(ctx, project, input.TaskID)
+	comments, err := s.newCommentService().List(ctx, project, input.TaskID)
 	if err != nil {
 		return CommentsResponse{}, err
 	}

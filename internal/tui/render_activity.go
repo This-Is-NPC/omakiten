@@ -154,7 +154,7 @@ func (m Model) renderSystemEventCard(ev domain.Event, focused bool) string {
 	return style.Render(body)
 }
 
-// eventToComment narrows a comment-typed Event back into the legacy Comment
+// eventToComment narrows a comment-typed Event back into the Comment
 // shape that renderCommentCard expects. Lets the comment renderer stay
 // untouched while the activity feed funnels through Event.
 func eventToComment(ev domain.Event) domain.Comment {

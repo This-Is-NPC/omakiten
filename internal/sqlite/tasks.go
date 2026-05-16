@@ -14,13 +14,14 @@ import (
 // task.created event in the same transaction. The bucket key must be
 // non-empty — default-bucket selection is an app-layer concern (see
 // app.WorkflowService.ResolveDefaultBucket); the store enforces only the
-// foreign-key existence of the bucket in the active workflow.
-func (s *Store) CreateTask(ctx context.Context, projectID int64, title, description string, priority domain.Priority, bucketKey string) (domain.Task, error) {
+// foreign-key existence of the bucket in the active workflow via the
+// caller-supplied BucketResolver.
+func (s *Store) CreateTask(ctx context.Context, projectID int64, title, description string, priority domain.Priority, bucketKey string, buckets domain.BucketResolver) (domain.Task, error) {
 	if bucketKey == "" {
 		return domain.Task{}, domain.NewError(domain.ErrValidation, "bucket key is required", nil)
 	}
 
-	bucketID, err := s.activeBucketID(ctx, bucketKey)
+	bucketID, err := s.activeBucketID(ctx, bucketKey, buckets)
 	if err != nil {
 		return domain.Task{}, err
 	}
@@ -71,24 +72,52 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 	return task, nil
 }
 
-func (s *Store) ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter) ([]domain.Task, error) {
+func (s *Store) ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter, buckets domain.BucketResolver) ([]domain.Task, error) {
+	// `workflow_buckets` was dropped in migration 020; the join previously
+	// resolved bucket.key for filter and projection. We now resolve
+	// key→id via the caller-supplied resolver before issuing the SQL so
+	// the query stays a pure tasks-table read, and resolve id→key in Go
+	// after the scan. When buckets is nil any filter that needs a
+	// resolver short-circuits to an empty result and the post-scan key
+	// resolution returns empty strings — matches the pre-migration JOIN
+	// semantics for orphaned rows.
 	query := `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at
 FROM tasks
-LEFT JOIN workflow_buckets ON workflow_buckets.id = tasks.bucket_id
 WHERE tasks.project_id = ?`
 	args := []any{projectID}
 	if !filter.IncludeArchived {
 		query += " AND tasks.state = 'active'"
 	}
 	if filter.BucketKey != "" {
-		query += " AND workflow_buckets.key = ?"
-		args = append(args, filter.BucketKey)
+		if isNilResolver(buckets) {
+			return nil, nil
+		}
+		b, ok := buckets.BucketByKey(filter.BucketKey)
+		if !ok {
+			// unknown bucket — return empty result rather than error;
+			// matches the pre-migration JOIN semantics (no rows match).
+			return nil, nil
+		}
+		query += " AND tasks.bucket_id = ?"
+		args = append(args, b.ID)
 	}
 	if len(filter.BucketKeys) > 0 {
-		query += " AND workflow_buckets.key IN (" + placeholders(len(filter.BucketKeys)) + ")"
+		if isNilResolver(buckets) {
+			return nil, nil
+		}
+		ids := make([]int64, 0, len(filter.BucketKeys))
 		for _, key := range filter.BucketKeys {
-			args = append(args, key)
+			if b, ok := buckets.BucketByKey(key); ok {
+				ids = append(ids, b.ID)
+			}
+		}
+		if len(ids) == 0 {
+			return nil, nil
+		}
+		query += " AND tasks.bucket_id IN (" + placeholders(len(ids)) + ")"
+		for _, id := range ids {
+			args = append(args, id)
 		}
 	}
 	if len(filter.Priorities) > 0 {
@@ -108,9 +137,10 @@ WHERE tasks.project_id = ?`
 	var tasks []domain.Task
 	for rows.Next() {
 		var task domain.Task
-		if err := rows.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.BucketKey, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt); err != nil {
+		if err := rows.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt); err != nil {
 			return nil, err
 		}
+		task.BucketKey = s.bucketKeyByID(task.BucketID, buckets)
 		tasks = append(tasks, task)
 	}
 	return tasks, rows.Err()
@@ -119,7 +149,7 @@ WHERE tasks.project_id = ?`
 // taskOrderClause maps a TaskSort to a literal ORDER BY fragment. We never
 // interpolate Field/Order directly into SQL — they are validated against a
 // fixed allowlist here, and unknown values silently fall back to "tasks.id"
-// to keep the legacy ordering as the safe default.
+// as the safe default ordering.
 func taskOrderClause(sort domain.TaskSort) string {
 	column := "tasks.id"
 	switch sort.Field {
@@ -149,7 +179,7 @@ func taskOrderClause(sort domain.TaskSort) string {
 // changes. Workflow policy (transition allowed?, guards, task.completed on
 // final bucket) lives in app.WorkflowService — this method does not enforce
 // any of those rules so the adapter stays decision-free.
-func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBucketKey string) (domain.Task, error) {
+func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBucketKey string, buckets domain.BucketResolver) (domain.Task, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.Task{}, err
@@ -164,15 +194,12 @@ func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBuc
 		return domain.Task{}, err
 	}
 
-	targetBucketID, err := activeBucketIDTx(ctx, tx, targetBucketKey)
+	targetBucketID, err := s.activeBucketID(ctx, targetBucketKey, buckets)
 	if err != nil {
 		return domain.Task{}, err
 	}
 
-	currentBucketKey, err := bucketKeyByIDTx(ctx, tx, currentBucketID)
-	if err != nil {
-		return domain.Task{}, err
-	}
+	currentBucketKey := s.bucketKeyByID(currentBucketID, buckets)
 
 	row := tx.QueryRowContext(ctx, `
 UPDATE tasks SET bucket_id = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND id = ?
@@ -207,7 +234,7 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 	return task, nil
 }
 
-func (s *Store) UpdateTask(ctx context.Context, projectID, taskID int64, update domain.TaskUpdate) (domain.Task, error) {
+func (s *Store) UpdateTask(ctx context.Context, projectID, taskID int64, update domain.TaskUpdate, buckets domain.BucketResolver) (domain.Task, error) {
 	sets := []string{}
 	args := []any{}
 	if update.Title != nil {
@@ -238,7 +265,7 @@ func (s *Store) UpdateTask(ctx context.Context, projectID, taskID int64, update 
 		}
 	}
 
-	return s.taskByID(ctx, projectID, taskID)
+	return s.taskByID(ctx, projectID, taskID, buckets)
 }
 
 func (s *Store) TaskCount(ctx context.Context, projectID int64) (int64, error) {
@@ -261,21 +288,21 @@ func scanTask(row *sql.Row, bucketKey string) (domain.Task, error) {
 	return task, nil
 }
 
-func (s *Store) taskByID(ctx context.Context, projectID, taskID int64) (domain.Task, error) {
+func (s *Store) taskByID(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (domain.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), COALESCE(workflow_buckets.key, ''), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at
 FROM tasks
-LEFT JOIN workflow_buckets ON workflow_buckets.id = tasks.bucket_id
 WHERE tasks.project_id = ? AND tasks.id = ?
 `, projectID, taskID)
 
 	var task domain.Task
-	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.BucketKey, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt); err != nil {
+	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
 		}
 		return domain.Task{}, err
 	}
+	task.BucketKey = s.bucketKeyByID(task.BucketID, buckets)
 	return task, nil
 }
 

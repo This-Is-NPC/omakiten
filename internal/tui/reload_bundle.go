@@ -7,31 +7,44 @@ import (
 	"path/filepath"
 	"strings"
 
-	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/paths"
 )
 
-// reloadBundle re-imports the bundle at path, then updates every
-// bundle-derived field on the Model in place. The DB swap (ConfigService.
-// Import) runs first; if it errors nothing on the Model changes so the caller
-// can surface the failure and let the user retry. Once Import succeeds the
-// editor is repointed, the registry is replaced, refresh() re-queries the
-// task snapshot, and a bundle.swapped event is emitted so the hooks engine
-// can react (e.g., surface the orphan-migration notification when the new
-// workflow lost buckets the previous one had).
+// reloadBundle re-resolves the bundle at path through the BundleCache
+// (Phase 3e) and rewires every bundle-derived field on the Model in
+// place. The cache's Reload builds a fresh per-project Snapshot,
+// records the bundle.imported audit event (audit-only — no
+// Store-side rotation), and swaps the ProjectRuntime entry so
+// in-flight callers
+// keep the previous pointer. On error nothing on the Model changes
+// so the caller can surface the failure and let the user retry.
+// bundle.swapped continues to fire so the hooks engine can react
+// (e.g., the orphan-migration notification when the new workflow
+// lost buckets the previous one had).
+//
+// Repositories.Cache MUST be wired — Phase 3e dropped the
+// ConfigService.Import fallback so the TUI never reaches the SQL
+// config-write path. Production composition (cli/tui.go) always
+// installs the cache; tests use newPickerModel-style helpers that do
+// the same.
 func (m *Model) reloadBundle(path string) error {
+	if m.repos.Cache == nil {
+		return fmt.Errorf("tui: Repositories.Cache is required for hot-reload (Phase 3e dropped the ConfigService.Import fallback)")
+	}
 	fromWorkflow := m.workflow.Key
 	fromPath := m.repos.Editor.Path()
 
-	cfgSvc := app.NewConfigService(m.repos.Config, m.repos.BundleStore)
-	bundle, _, registry, err := cfgSvc.Import(m.ctx, path)
+	pr, err := m.repos.Cache.Reload(m.ctx, m.repos.ProjectID, path)
 	if err != nil {
 		return err
 	}
+	snap := pr.Snapshot
+	settings := snap.Settings()
+	registry := pr.EnumRegistry
 
-	theme, err := loadActiveTheme(bundle, path)
+	theme, err := loadActiveTheme(settings.Theme.Active, path)
 	if err != nil {
 		return err
 	}
@@ -40,12 +53,18 @@ func (m *Model) reloadBundle(path string) error {
 	m.theme = theme
 	m.styles = newStyles(theme)
 	m.markdown = newMarkdownRenderer(tokensFromTheme(theme))
-	m.priorities = append([]config.PriorityDefinition(nil), bundle.Config.EffectivePriorities()...)
-	m.severities = append([]config.SeverityDefinition(nil), bundle.Config.EffectiveSeverities()...)
+	m.priorities = snap.Priorities()
+	m.severities = snap.Severities()
 	m.registry = registry
-	m.repos.Workflow.SetRegistry(registry)
-	m.notifications = bundle.Notifications
-	m.tokenBadgeYellow, m.tokenBadgeRed = bundle.Config.TUI.TokenBadge.Effective()
+	// Phase 2-bis Round-2 deleted WorkflowService.SetRegistry — the
+	// service captures its Snapshot at construction and mutating it via
+	// a setter would re-introduce the shared-pointer drift the refactor
+	// removed. The cache rebuild produced a fresh WorkflowService bound
+	// to the rotated Snapshot; swap the long-lived TUI reference at the
+	// same point the rest of the snapshot-derived state rotates.
+	m.repos.Workflow = pr.Workflow
+	m.notifications = snap.Notifications()
+	m.tokenBadgeYellow, m.tokenBadgeRed = settings.TUI.TokenBadge.Effective()
 
 	if err := m.refresh(); err != nil {
 		return err
@@ -65,7 +84,7 @@ func (m *Model) reloadBundle(path string) error {
 // reverts the swap. Failures are swallowed: the swap itself already
 // succeeded, and a missing event must not crash the TUI mid-render.
 func (m *Model) emitBundleSwapped(fromKey, toKey, fromPath string) {
-	report, err := m.repos.Orphans.PreviewOrphanedTasks(m.ctx, m.project.ID)
+	report, err := m.repos.Orphans.PreviewOrphanedTasks(m.ctx, m.project.ID, m.repos.activeSnapshot(), m.repos.activePreviousSnapshot())
 	if err != nil {
 		// Preview failed but the swap already committed. Best we can do
 		// is surface the partial state — emit the event with zero orphans
@@ -122,12 +141,11 @@ func (m *Model) revertConfigSwap() {
 	m.status = fmt.Sprintf("Config swap cancelled — restored %s", display)
 }
 
-// loadActiveTheme resolves the theme yaml referenced by bundle.Config.Theme.
-// Active and parses it. Mirrors the CLI's loadActiveThemeFromBundle so the TUI
-// can revalidate the theme without depending on cli/.
-func loadActiveTheme(bundle config.Bundle, configPath string) (config.Theme, error) {
+// loadActiveTheme resolves the theme yaml referenced by the snapshot's
+// active theme name. Mirrors the CLI's loadActiveThemeFromBundle so the
+// TUI can revalidate the theme without depending on cli/.
+func loadActiveTheme(active string, configPath string) (config.Theme, error) {
 	root := config.ConfigRootFromYAMLPath(configPath)
-	active := bundle.Config.Theme.Active
 	customPath := filepath.Join(root, "themes", "custom", active+".yaml")
 	defaultPath := filepath.Join(root, "themes", active+".yaml")
 	themePath := defaultPath

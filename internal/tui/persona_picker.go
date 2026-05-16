@@ -115,11 +115,14 @@ func (m *Model) savePersonaPicker() {
 			slugs = append(slugs, skill.Key)
 		}
 	}
-	service := app.NewPersonaService(m.repos.Config, m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger)
+	service := app.NewPersonaService(m.repos.activeSnapshot(), m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger)
 	keys := slugs
 	if _, err := service.Edit(m.ctx, m.entityForm.slug, domain.PersonaUpdate{SkillKeys: &keys}); err != nil {
 		m.status = err.Error()
 		return
+	}
+	if resolved, lerr := m.repos.Editor.Load(); lerr == nil {
+		m.rotateSnapshotAfterEdit(resolved)
 	}
 	if err := m.refresh(); err != nil {
 		m.status = err.Error()

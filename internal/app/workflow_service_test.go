@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
+	"omakiten/internal/app/guards"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
@@ -42,27 +44,65 @@ type recordedEvent struct {
 	payload   string
 }
 
-// ConfigRepository
-func (f *fakeStores) ImportBundle(context.Context, config.Bundle, string, string) error {
-	return nil
-}
-func (f *fakeStores) ListActiveLaws(context.Context) ([]domain.Law, error) {
-	return nil, nil
-}
-func (f *fakeStores) ListActiveSkills(context.Context) ([]domain.Skill, error) {
-	return nil, nil
-}
-func (f *fakeStores) ListActivePersonas(context.Context) ([]domain.Persona, error) {
-	return nil, nil
-}
-func (f *fakeStores) ActiveWorkflow(context.Context) (domain.Workflow, error) {
-	if f.defaultBucket == "" {
-		return domain.Workflow{}, nil
+// Snapshot projects the fake's loose configuration into the value-typed
+// Phase 2-bis Snapshot that WorkflowService consumes via its
+// constructor. The mapping is straightforward: every bucket the fake
+// declares (defaultBucket, bucketsByKey entries, ids referenced in
+// allowedFromTo, currentBucketID) becomes a real config.Bucket so
+// BucketByID / BucketByKey / IsFinalBucket / TransitionAllowed / Guards
+// behave the same as the production composition root expects.
+// Position == ID so finalBucketID picks the bucket with the largest id —
+// the convention these tests already encoded via finalBucketIDs.
+func (f *fakeStores) Snapshot() *config.Snapshot {
+	seen := map[int64]bool{}
+	var buckets []config.Bucket
+	add := func(id int64, key string) {
+		if id == 0 || seen[id] {
+			return
+		}
+		seen[id] = true
+		if key == "" {
+			key = fmt.Sprintf("bucket-%d", id)
+		}
+		buckets = append(buckets, config.Bucket{ID: int(id), Key: key, Name: key, Position: int(id)})
 	}
-	return domain.Workflow{Buckets: []domain.Bucket{{Key: f.defaultBucket}}}, nil
-}
-func (f *fakeStores) ContextSettings(context.Context) (domain.ContextSettings, error) {
-	return domain.ContextSettings{}, nil
+	if f.defaultBucket != "" {
+		// defaultBucket-only fakes never set ids; surface as id=1 so the
+		// snapshot's bucketByKey / first-bucket lookups still resolve.
+		add(1, f.defaultBucket)
+	}
+	for _, b := range f.bucketsByKey {
+		add(b.ID, b.Key)
+	}
+	for pair := range f.allowedFromTo {
+		add(pair[0], "")
+		add(pair[1], "")
+	}
+	if f.currentBucketID > 0 {
+		add(f.currentBucketID, f.currentBucketKey)
+	}
+	var transitions []config.Transition
+	for pair, allowed := range f.allowedFromTo {
+		if !allowed {
+			continue
+		}
+		guards := f.guards[pair]
+		gs := make([]config.TransitionGuard, 0, len(guards))
+		for _, g := range guards {
+			gs = append(gs, config.TransitionGuard{Type: g.Type, Buckets: g.Buckets, Count: g.Count, Tag: g.Tag, Hint: g.Hint})
+		}
+		transitions = append(transitions, config.Transition{From: int(pair[0]), To: int(pair[1]), Guards: gs})
+	}
+	return config.BuildSnapshot(config.Bundle{
+		Workflows: []config.Workflow{{
+			ID:          1,
+			Key:         "test",
+			Name:        "Test",
+			Buckets:     buckets,
+			Transitions: transitions,
+		}},
+		Config: config.Settings{Workflow: config.WorkflowSettings{Active: "test"}},
+	})
 }
 
 // WorkflowRepository
@@ -81,7 +121,7 @@ func (f *fakeStores) TransitionAllowed(_ context.Context, from, to int64) (bool,
 func (f *fakeStores) LoadTransitionGuards(_ context.Context, from, to int64) ([]domain.TransitionGuard, error) {
 	return f.guards[[2]int64{from, to}], nil
 }
-func (f *fakeStores) CurrentTaskBucket(context.Context, int64, int64) (int64, string, error) {
+func (f *fakeStores) CurrentTaskBucket(context.Context, int64, int64, domain.BucketResolver) (int64, string, error) {
 	return f.currentBucketID, f.currentBucketKey, f.currentBucketErr
 }
 func (f *fakeStores) TaskState(context.Context, int64, int64) (domain.TaskState, error) {
@@ -92,7 +132,7 @@ func (f *fakeStores) TaskState(context.Context, int64, int64) (domain.TaskState,
 }
 
 // GuardEvaluationRepository
-func (f *fakeStores) ListTaskBlockerBuckets(_ context.Context, _, taskID int64) ([]domain.TaskBlocker, error) {
+func (f *fakeStores) ListTaskBlockerBuckets(_ context.Context, _, taskID int64, _ domain.BucketResolver) ([]domain.TaskBlocker, error) {
 	return f.blockerLists[taskID], nil
 }
 func (f *fakeStores) CountTaskComments(context.Context, int64, int64) (int, error) {
@@ -103,27 +143,27 @@ func (f *fakeStores) CountTaskCommentsTagged(_ context.Context, _, _ int64, tag 
 }
 
 // TaskRepository
-func (f *fakeStores) CreateTask(_ context.Context, _ int64, _, _ string, _ domain.Priority, _ string) (domain.Task, error) {
+func (f *fakeStores) CreateTask(_ context.Context, _ int64, _, _ string, _ domain.Priority, _ string, _ domain.BucketResolver) (domain.Task, error) {
 	f.createCalls++
 	return f.createResp, f.createErr
 }
-func (f *fakeStores) ListTasks(context.Context, int64, domain.TaskFilter) ([]domain.Task, error) {
+func (f *fakeStores) ListTasks(context.Context, int64, domain.TaskFilter, domain.BucketResolver) ([]domain.Task, error) {
 	return nil, nil
 }
-func (f *fakeStores) MoveTask(context.Context, int64, int64, string) (domain.Task, error) {
+func (f *fakeStores) MoveTask(context.Context, int64, int64, string, domain.BucketResolver) (domain.Task, error) {
 	f.moveCalls++
 	return f.moveResp, f.moveErr
 }
-func (f *fakeStores) UpdateTask(context.Context, int64, int64, domain.TaskUpdate) (domain.Task, error) {
+func (f *fakeStores) UpdateTask(context.Context, int64, int64, domain.TaskUpdate, domain.BucketResolver) (domain.Task, error) {
 	return domain.Task{}, nil
 }
 func (f *fakeStores) TaskCount(context.Context, int64) (int64, error) {
 	return 0, nil
 }
-func (f *fakeStores) HardDeleteTask(context.Context, int64, int64) (domain.Event, error) {
+func (f *fakeStores) HardDeleteTask(context.Context, int64, int64, domain.BucketResolver) (domain.Event, error) {
 	return domain.Event{}, nil
 }
-func (f *fakeStores) SetTaskState(context.Context, int64, int64, domain.TaskState, string) (domain.Task, domain.Event, error) {
+func (f *fakeStores) SetTaskState(context.Context, int64, int64, domain.TaskState, string, domain.BucketResolver) (domain.Task, domain.Event, error) {
 	return domain.Task{}, domain.Event{}, nil
 }
 func (f *fakeStores) EmitTaskEditedEvent(context.Context, int64, int64, domain.Task, domain.Task) (domain.Event, error) {
@@ -144,23 +184,9 @@ func (f *fakeStores) ListTaskActivity(context.Context, int64, int64, string) ([]
 }
 
 func newWorkflowServiceForTest(f *fakeStores) *WorkflowService {
-	return NewWorkflowService(f, f, f, f, f, nil)
-}
-
-func TestWorkflowSetRegistrySwapsLookupTable(t *testing.T) {
-	f := &fakeStores{defaultBucket: "todo"}
-	svc := NewWorkflowService(f, f, f, f, f, nil)
-	if svc.registry != nil {
-		t.Fatalf("initial registry = %v, want nil", svc.registry)
-	}
-	fresh := domain.NewEnumRegistry(
-		[]domain.PriorityPair{{ID: 1, Value: "low"}, {ID: 2, Value: "normal"}, {ID: 3, Value: "high"}},
-		[]domain.SeverityPair{{ID: 1, Value: "info"}},
-	)
-	svc.SetRegistry(fresh)
-	if svc.registry != fresh {
-		t.Fatalf("SetRegistry did not repoint registry pointer")
-	}
+	snap := f.Snapshot()
+	evaluator := guards.NewGuardEvaluator(snap, f, f)
+	return NewWorkflowService(snap, f, evaluator, f, f, nil)
 }
 
 func TestWorkflowResolveDefaultBucket(t *testing.T) {

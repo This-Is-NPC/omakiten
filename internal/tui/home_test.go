@@ -11,9 +11,10 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/runtimecache"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
 // TestNewModelWithEmptyProjectOpensHome covers AC1/AC14: launching the TUI
@@ -21,11 +22,7 @@ import (
 // instead of erroring.
 func TestNewModelWithEmptyProjectOpensHome(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -39,11 +36,11 @@ func TestNewModelWithEmptyProjectOpensHome(t *testing.T) {
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
 		Projects:     store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
-		Config:       store,
+		
 		Tags:         store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
@@ -67,11 +64,7 @@ func TestNewModelWithEmptyProjectOpensHome(t *testing.T) {
 // reads as chromeless.
 func TestHomeHidesTabBar(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -82,11 +75,11 @@ func TestHomeHidesTabBar(t *testing.T) {
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
 		Projects:     store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
-		Config:       store,
+		
 		Tags:         store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
@@ -108,11 +101,7 @@ func TestHomeHidesTabBar(t *testing.T) {
 // from any per-project view.
 func TestCtrlHReturnsToHome(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -120,18 +109,18 @@ func TestCtrlHReturnsToHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
 		Projects:     store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
-		Config:       store,
+		
 		Tags:         store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
@@ -152,11 +141,7 @@ func TestCtrlHReturnsToHome(t *testing.T) {
 // home card switches the model to the chosen project and lands on Board.
 func TestHomeEnterSelectsProject(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -167,11 +152,11 @@ func TestHomeEnterSelectsProject(t *testing.T) {
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
 		Projects:     store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
-		Config:       store,
+		
 		Tags:         store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
@@ -197,11 +182,7 @@ func TestHomeEnterSelectsProject(t *testing.T) {
 // the model is already on viewHome, so home-side handling is required.
 func TestCtrlHOnHomeReloads(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -212,11 +193,11 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
 		Projects:     store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
-		Config:       store,
+		
 		Tags:         store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
@@ -237,11 +218,7 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 // on the Home cards, reusing the chip component.
 func TestHomeRendersProjectTagBadges(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
 	}
@@ -260,11 +237,11 @@ func TestHomeRendersProjectTagBadges(t *testing.T) {
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
 		Projects:     store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
-		Config:       store,
+		
 		Tags:         store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {

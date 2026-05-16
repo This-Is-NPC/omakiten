@@ -63,15 +63,16 @@ func (m *Model) loadHome() error {
 // in the workflow's final bucket. Falls back to TaskCount when the workflow
 // is unavailable so the badge still surfaces "open work" in some form.
 func (m *Model) countPendingTasks(projectID int64) (int, error) {
-	tasks, err := m.repos.Tasks.ListTasks(m.ctx, projectID, domain.TaskFilter{})
+	snap := m.repos.activeSnapshot()
+	tasks, err := m.repos.Tasks.ListTasks(m.ctx, projectID, domain.TaskFilter{}, snap)
 	if err != nil {
 		return 0, err
 	}
-	if m.repos.Config == nil {
+	if snap == nil {
 		return len(tasks), nil
 	}
-	wf, err := m.repos.Config.ActiveWorkflow(m.ctx)
-	if err != nil || len(wf.Buckets) == 0 {
+	wf := snap.Workflow()
+	if len(wf.Buckets) == 0 {
 		return len(tasks), nil
 	}
 	final := wf.Buckets[len(wf.Buckets)-1].Key

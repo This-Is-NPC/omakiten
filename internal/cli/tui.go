@@ -63,15 +63,14 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 	}
 
 	bundleStore := configstore.New()
-	editor := app.NewBundleEditor(rt.store, bundleStore, rt.configPath)
+	editor := app.NewBundleEditor(bundleStore, rt.configPath)
 	model, err := tui.NewModel(ctx, project, tui.Repositories{
 		Tasks:        rt.store,
 		Projects:     rt.store,
-		Workflow:     app.NewWorkflowServiceFromStore(rt.store, rt.registry),
+		Workflow:     app.NewWorkflowServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot()),
 		Comments:     rt.store,
 		Dependencies: rt.store,
 		Entries:      rt.store,
-		Config:       rt.store,
 		Tags:         rt.store,
 		Editor:       editor,
 		BundleStore:  bundleStore,
@@ -94,6 +93,9 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		ConfigPath:   rt.configPath,
 		DBPath:       rt.dbPath,
 		Version:      version,
+		RepoLocalDir: rt.repoLocalDir,
+		Cache:        rt.cache,
+		ProjectID:    rt.projectID,
 	}, theme, token.NewCounter(), bundle.Config.TUI.TokenBadge, bundle.Config.EffectivePriorities(), bundle.Config.EffectiveSeverities(), tui.NotificationBinding{
 		Notifications: bundle.Notifications,
 	})

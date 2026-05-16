@@ -2,9 +2,11 @@ package sqlite
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"omakiten/internal/domain"
+	"omakiten/migrations"
 )
 
 func TestActivityLogCRUD(t *testing.T) {
@@ -202,6 +204,166 @@ func TestActivityLogPruneKeepsNewest(t *testing.T) {
 	}
 	if len(logs) != 3 {
 		t.Fatalf("ListActivityLogs() len = %d, want 3", len(logs))
+	}
+}
+
+// TestBeginActivityLogWritesCanonicalEventType locks the contract that
+// post-#109 writes emit `<source>.tool_call` event_types and stash the
+// hook-customizable mirror fields in payload. Pre-019 rows used
+// `event_type='operation'` and a raw args payload; hooks could not
+// `when:` filter on tool_name/source without reading SQL columns.
+func TestBeginActivityLogWritesCanonicalEventType(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	id, err := store.BeginActivityLog(ctx, domain.ActivityLog{
+		Source:        domain.ActivitySourceMCP,
+		Entrypoint:    "tools/call",
+		Operation:     "tasks.create",
+		ProjectID:     1,
+		ProjectSlug:   "test",
+		ArgumentsJSON: `{"title":"Hello"}`,
+		Status:        "running",
+	})
+	if err != nil {
+		t.Fatalf("BeginActivityLog() error = %v", err)
+	}
+
+	var eventType, payload string
+	if err := store.db.QueryRowContext(ctx, "SELECT event_type, payload FROM events WHERE id = ?", id).Scan(&eventType, &payload); err != nil {
+		t.Fatalf("read row error = %v", err)
+	}
+	if eventType != domain.EventTypeMCPToolCall {
+		t.Fatalf("event_type = %q, want %q", eventType, domain.EventTypeMCPToolCall)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
+		t.Fatalf("payload not JSON: %v (raw=%q)", err, payload)
+	}
+	if decoded["tool_name"] != "tasks.create" {
+		t.Fatalf("payload.tool_name = %v, want tasks.create", decoded["tool_name"])
+	}
+	if decoded["source"] != "mcp" {
+		t.Fatalf("payload.source = %v, want mcp", decoded["source"])
+	}
+	if decoded["entrypoint"] != "tools/call" {
+		t.Fatalf("payload.entrypoint = %v, want tools/call", decoded["entrypoint"])
+	}
+	if decoded["status"] != "running" {
+		t.Fatalf("payload.status = %v, want running", decoded["status"])
+	}
+	args, ok := decoded["args"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload.args not object: %T", decoded["args"])
+	}
+	if args["title"] != "Hello" {
+		t.Fatalf("payload.args.title = %v, want Hello", args["title"])
+	}
+
+	// Finish: payload mirror keys must update alongside the columns so
+	// hooks subscribed to mcp.tool_call can match `when: { status: ok }`.
+	if err := store.FinishActivityLog(ctx, id, "ok", 123, ""); err != nil {
+		t.Fatalf("FinishActivityLog() error = %v", err)
+	}
+	if err := store.db.QueryRowContext(ctx, "SELECT payload FROM events WHERE id = ?", id).Scan(&payload); err != nil {
+		t.Fatalf("read row after finish error = %v", err)
+	}
+	if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
+		t.Fatalf("payload not JSON after finish: %v", err)
+	}
+	if decoded["status"] != "ok" {
+		t.Fatalf("payload.status after finish = %v, want ok", decoded["status"])
+	}
+	if int(decoded["duration_ms"].(float64)) != 123 {
+		t.Fatalf("payload.duration_ms after finish = %v, want 123", decoded["duration_ms"])
+	}
+}
+
+// TestMigration019RenamesLegacyOperationRows confirms the migration
+// backfill renames pre-#109 operation rows to the source-discriminated
+// `<source>.tool_call` vocabulary and enriches the payload with mirror
+// keys so hook `when:` filters can match without reading SQL columns.
+// Simulated by inserting legacy-shape rows AFTER the migration has run
+// and re-executing the migration SQL — the UPDATEs are idempotent.
+func TestMigration019RenamesLegacyOperationRows(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, t.TempDir()+"/omakiten.db")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	// Seed three legacy rows directly — one per source — using the
+	// pre-019 event_type and raw arguments payload.
+	for _, seed := range []struct {
+		source, op, args string
+	}{
+		{"cli", "okt.task.list", `{"limit":10}`},
+		{"mcp", "tasks.create", `{"title":"Hi"}`},
+		{"tui", "tui.refresh", ``},
+	} {
+		if _, err := store.db.ExecContext(ctx, `
+INSERT INTO events(entity_type, project_id, event_type, payload, source, entrypoint, operation, status, duration_ms, error_message)
+VALUES ('system', 1, 'operation', ?, ?, '', ?, 'ok', 5, '')
+`, seed.args, seed.source, seed.op); err != nil {
+			t.Fatalf("seed insert error = %v", err)
+		}
+	}
+
+	data, err := migrations.FS.ReadFile("019_unify_tool_call_events.sql")
+	if err != nil {
+		t.Fatalf("read migration error = %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, string(data)); err != nil {
+		t.Fatalf("rerun migration 019 error = %v", err)
+	}
+
+	rows, err := store.db.QueryContext(ctx, "SELECT source, event_type, payload FROM events WHERE entity_type = 'system' AND event_type LIKE '%.tool_call' ORDER BY id ASC")
+	if err != nil {
+		t.Fatalf("read migrated rows = %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	want := map[string]struct {
+		eventType string
+		toolName  string
+	}{
+		"cli": {domain.EventTypeCLIToolCall, "okt.task.list"},
+		"mcp": {domain.EventTypeMCPToolCall, "tasks.create"},
+		"tui": {domain.EventTypeTUIToolCall, "tui.refresh"},
+	}
+	seen := 0
+	for rows.Next() {
+		var source, eventType, payload string
+		if err := rows.Scan(&source, &eventType, &payload); err != nil {
+			t.Fatalf("scan = %v", err)
+		}
+		expect, ok := want[source]
+		if !ok {
+			t.Fatalf("unexpected source %q", source)
+		}
+		if eventType != expect.eventType {
+			t.Fatalf("source %q event_type = %q, want %q", source, eventType, expect.eventType)
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
+			t.Fatalf("source %q payload not JSON: %v (raw=%q)", source, err, payload)
+		}
+		if decoded["tool_name"] != expect.toolName {
+			t.Fatalf("source %q payload.tool_name = %v, want %q", source, decoded["tool_name"], expect.toolName)
+		}
+		if decoded["source"] != source {
+			t.Fatalf("source %q payload.source = %v, want %q", source, decoded["source"], source)
+		}
+		seen++
+	}
+	if seen != 3 {
+		t.Fatalf("migrated rows = %d, want 3", seen)
 	}
 }
 

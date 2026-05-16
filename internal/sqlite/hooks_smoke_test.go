@@ -51,7 +51,7 @@ func TestStoreHookExecutedSmoke(t *testing.T) {
 	defer engine.Stop()
 
 	// Trigger a real task.created emit through the Store.
-	if _, err := store.CreateTask(ctx, project.ID, "smoke", "", domain.Priority(2), "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "smoke", "", domain.Priority(2), "backlog", store.snap()); err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
 
@@ -128,7 +128,7 @@ func TestStoreHookGateClosedSkipsDispatch(t *testing.T) {
 	engine.Start(bus)
 	defer engine.Stop()
 
-	if _, err := store.CreateTask(ctx, project.ID, "smoke", "", domain.Priority(2), "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "smoke", "", domain.Priority(2), "backlog", store.snap()); err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -147,4 +147,86 @@ func (testAction) Name() string { return "test" }
 func (a testAction) Execute(_ context.Context, _ domain.Event, _ map[string]any) error {
 	a.ran.Store("test", true)
 	return nil
+}
+
+// TestActivityLogFinishFiresToolCallHook is the regression for the
+// Phase 1 contract that hooks can subscribe to `mcp.tool_call` (or
+// cli/tui) and filter on payload fields populated by FinishActivityLog.
+// Pre-#109 the activity log path bypassed the events bus entirely so
+// hooks never fired on tool calls; pre-019 the event_type catch-all
+// `operation` could not be subscribed to per-source.
+func TestActivityLogFinishFiresToolCallHook(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openStoreWithProject(ctx, t)
+	tru := true
+	settings := config.EventsSettings{
+		Defaults: config.EventChannelSettings{Log: &tru, Broadcast: &tru, Hook: &tru},
+	}
+	store.SetEventsPolicy(settings)
+	bus := events.NewInProcessBus(settings)
+	store.SetEventBus(bus)
+
+	registry := hooks.NewActionRegistry()
+	var ran sync.Map
+	registry.Register(testAction{ran: &ran})
+	hookEntries := []hooks.Hook{
+		{
+			On:   domain.EventTypeMCPToolCall,
+			When: map[string]string{"tool_name": "tasks.create"},
+			Do:   "test",
+		},
+		{
+			On:   domain.EventTypeMCPToolCall,
+			When: map[string]string{"tool_name": "tasks.delete"},
+			Do:   "test",
+		},
+	}
+	engine := hooks.NewEngine(hookEntries, registry, settings, store)
+	engine.Start(bus)
+	defer engine.Stop()
+
+	id, err := store.BeginActivityLog(ctx, domain.ActivityLog{
+		Source:        domain.ActivitySourceMCP,
+		Entrypoint:    "tools/call",
+		Operation:     "tasks.create",
+		ProjectID:     1,
+		ArgumentsJSON: `{"title":"Hi"}`,
+		Status:        "running",
+	})
+	if err != nil {
+		t.Fatalf("BeginActivityLog = %v", err)
+	}
+	if err := store.FinishActivityLog(ctx, id, "ok", 42, ""); err != nil {
+		t.Fatalf("FinishActivityLog = %v", err)
+	}
+
+	// Wait for the matching hook to land.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := ran.Load("test"); ok {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, ok := ran.Load("test"); !ok {
+		t.Fatalf("matching hook (tool_name=tasks.create) never fired")
+	}
+
+	// The non-matching hook (tool_name=tasks.delete) should NOT have
+	// dispatched the action; both hooks share the action key so we
+	// instead assert via hook.executed event count: exactly one
+	// hook.executed for the match, zero for the miss.
+	deadline = time.Now().Add(1 * time.Second)
+	var executed []domain.Event
+	for time.Now().Before(deadline) {
+		got, _ := store.ListRecentEvents(ctx, domain.EventTypeHookExecuted, 10)
+		if len(got) >= 1 {
+			executed = got
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(executed) != 1 {
+		t.Fatalf("hook.executed count = %d, want 1 (the tasks.delete hook must not match)", len(executed))
+	}
 }

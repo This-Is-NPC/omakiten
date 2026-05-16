@@ -183,7 +183,7 @@ func (m *Model) armOrConfirmCommentDelete(comment domain.Comment) {
 		// guard.violated when bucket policy rejects the call. Emitting
 		// here too means hooks (notification.show, exec, …) fire even when
 		// the TUI's client-side gate catches the denial first.
-		m.repos.Workflow.EmitGuardViolated(m.ctx, m.project.ID, domain.EventEntityTask, comment.TaskID,
+		m.repos.Workflow.Evaluator().EmitViolated(m.ctx, m.project.ID, domain.EventEntityTask, comment.TaskID,
 			app.GuardOperationCommentDelete, app.GuardRulePermissions, hint,
 			map[string]any{"comment_id": comment.ID, "task_id": comment.TaskID, "entity": app.EntityComment, "operation": app.PermissionDelete})
 		return
@@ -203,7 +203,8 @@ func (m *Model) armOrConfirmCommentDelete(comment domain.Comment) {
 // success via a status-string sniff.
 func (m *Model) executeCommentDelete(commentID int64) {
 	m.commentDeletePendingID = 0
-	if _, err := app.NewCommentServiceWithWorkflow(m.repos.Comments, m.repos.Workflow).Remove(m.ctx, m.project, commentID); err != nil {
+	deleteSvc := app.NewCommentServiceWithWorkflow(m.repos.Comments, m.repos.Workflow, m.repos.activeSnapshot())
+	if _, err := deleteSvc.Remove(m.ctx, m.project, commentID); err != nil {
 		m.status = err.Error()
 		return
 	}
@@ -390,7 +391,8 @@ func (m *Model) saveCommentEdit() {
 	for i, t := range existing.Tags {
 		tagNames[i] = t.Name
 	}
-	if _, err := app.NewCommentServiceWithWorkflow(m.repos.Comments, m.repos.Workflow).Edit(m.ctx, m.project, m.commentEditID, body, tagNames); err != nil {
+	editSvc := app.NewCommentServiceWithWorkflow(m.repos.Comments, m.repos.Workflow, m.repos.activeSnapshot())
+	if _, err := editSvc.Edit(m.ctx, m.project, m.commentEditID, body, tagNames); err != nil {
 		m.status = err.Error()
 		return
 	}

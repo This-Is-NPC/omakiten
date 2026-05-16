@@ -44,8 +44,41 @@ func TestCLIInitPresetCopiesFlatConfigToGitRoot(t *testing.T) {
 		t.Fatalf("preset config = %s, want izakaya", string(data))
 	}
 
-	runCLIExpectError(t, dbPath, globalConfigPath, "validation_error", "init", "--preset", "izakaya", "--name", "Project", "--slug", "project")
-	runCLI(t, dbPath, globalConfigPath, "init", "--preset", "omakase", "--preset-force", "--name", "Project", "--slug", "project")
+	// Re-running with the same preset is idempotent — SeedInstall keeps
+	// the .active marker pointing at izakaya and returns no_op:true.
+	rerun := runCLI(t, dbPath, globalConfigPath, "init", "--preset", "izakaya", "--name", "Project", "--slug", "project")
+	if !strings.Contains(rerun, `"no_op":true`) {
+		t.Fatalf("idempotent rerun = %s, want preset.no_op:true", rerun)
+	}
+
+	// Switching to a different preset flips .active without --preset-force;
+	// the embedded shipped files are already in place from the first seed.
+	switched := runCLI(t, dbPath, globalConfigPath, "init", "--preset", "omakase", "--name", "Project", "--slug", "project")
+	if !strings.Contains(switched, `"name":"omakase"`) || strings.Contains(switched, `"no_op":true`) {
+		t.Fatalf("preset switch = %s, want active omakase without no_op", switched)
+	}
+	activePath := filepath.Join(projectRoot, ".omakiten", "config", ".active")
+	active, err := os.ReadFile(activePath)
+	if err != nil {
+		t.Fatalf("ReadFile(.active) error = %v", err)
+	}
+	if got := strings.TrimSpace(string(active)); got != "omakase.yaml" {
+		t.Fatalf(".active = %q, want omakase.yaml after switch", got)
+	}
+
+	// --preset-force restores embedded shipped files even after tampering;
+	// the response includes refreshed:true so callers can flag it.
+	tamper := filepath.Join(projectRoot, ".omakiten", "skills", "markdown.md")
+	if err := os.WriteFile(tamper, []byte("# tampered\n"), 0o644); err != nil {
+		t.Fatalf("tamper write = %v", err)
+	}
+	forced := runCLI(t, dbPath, globalConfigPath, "init", "--preset", "omakase", "--preset-force", "--name", "Project", "--slug", "project")
+	if !strings.Contains(forced, `"refreshed":true`) {
+		t.Fatalf("forced rerun = %s, want refreshed:true", forced)
+	}
+	if got, _ := os.ReadFile(tamper); string(got) == "# tampered\n" {
+		t.Fatalf("--preset-force did not restore tampered file")
+	}
 }
 
 func TestCLIPresetWorkflowsEndToEnd(t *testing.T) {

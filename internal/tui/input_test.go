@@ -10,9 +10,10 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/runtimecache"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
 // TestModeMoveInputCursorAndWordJump exercises the modeMove textinput
@@ -23,11 +24,7 @@ import (
 // round-trips through TaskService.Move into a real workflow transition.
 func TestModeMoveInputCursorAndWordJump(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -36,11 +33,11 @@ func TestModeMoveInputCursorAndWordJump(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Move me", "", domain.Priority(2), "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Move me", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -100,7 +97,7 @@ func TestModeMoveInputCursorAndWordJump(t *testing.T) {
 	if got.mode != modeNormal {
 		t.Fatalf("after enter: mode = %v, want modeNormal", got.mode)
 	}
-	tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{})
+	tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{}, store.Snapshot())
 	if err != nil {
 		t.Fatalf("ListTasks() error = %v", err)
 	}
@@ -116,11 +113,7 @@ func TestModeMoveInputCursorAndWordJump(t *testing.T) {
 // flow (no shim) still composes mid-string correctly via cursor moves.
 func TestModeCommentInputCursorEditsExistingText(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -129,12 +122,12 @@ func TestModeCommentInputCursorEditsExistingText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Subject", "", domain.Priority(2), "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Subject", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -177,11 +170,7 @@ func TestModeCommentInputCursorEditsExistingText(t *testing.T) {
 // "multi-line cursor" capability called out in AC4.
 func TestModeCommentEditInputMultilineCursor(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -190,7 +179,7 @@ func TestModeCommentEditInputMultilineCursor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -200,7 +189,7 @@ func TestModeCommentEditInputMultilineCursor(t *testing.T) {
 		t.Fatalf("AddComment() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()), Events: store, ActivityLogs: store, Tags: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store, Tags: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -279,11 +268,7 @@ func TestModeCommentEditInputMultilineCursor(t *testing.T) {
 // commentInputWidth() minus formMultiline padding.
 func TestBeginInputModeCommentCalibratesTextarea(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -292,11 +277,11 @@ func TestBeginInputModeCommentCalibratesTextarea(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Subject", "", domain.Priority(2), "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Subject", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -329,11 +314,7 @@ func TestBeginInputModeCommentCalibratesTextarea(t *testing.T) {
 // width is commentEditScreenOuterWidth instead of commentInputWidth.
 func TestOpenCommentEditCalibratesTextarea(t *testing.T) {
 	ctx := context.Background()
-	store, err := sqlite.Open(ctx, t.TempDir()+"/omakiten.db")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = store.Close() }()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 
 	if err := store.ImportBundle(ctx, tuiPermissiveBundle(t), "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle() error = %v", err)
@@ -342,7 +323,7 @@ func TestOpenCommentEditCalibratesTextarea(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -350,7 +331,7 @@ func TestOpenCommentEditCalibratesTextarea(t *testing.T) {
 		t.Fatalf("AddComment() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Config: store, Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()), Events: store, ActivityLogs: store, Tags: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store, Tags: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}

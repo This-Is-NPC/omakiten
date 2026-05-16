@@ -159,7 +159,7 @@ func TestLoadBundleExtraFilesAreNotErrorsWhenAllowlistPartial(t *testing.T) {
 	}
 }
 
-func TestLoadBundleListedSlugWithoutFileIsError(t *testing.T) {
+func TestLoadBundleListedSlugWithoutFileWarns(t *testing.T) {
 	dir := t.TempDir()
 	writeAutoloadFixture(t, dir)
 	configPath := filepath.Join(dir, "omakiten.yaml")
@@ -168,12 +168,19 @@ func TestLoadBundleListedSlugWithoutFileIsError(t *testing.T) {
   - missing-skill
 `)
 
-	_, err := LoadBundle(configPath)
-	if err == nil {
-		t.Fatal("LoadBundle() error = nil, want dangling-ref failure")
+	bundle, err := LoadBundle(configPath)
+	if err != nil {
+		t.Fatalf("LoadBundle() error = %v, want soft load with warning", err)
 	}
-	if !strings.Contains(err.Error(), "missing-skill") {
-		t.Fatalf("LoadBundle() error = %v, want mention of missing-skill", err)
+	found := false
+	for _, w := range bundle.Warnings {
+		if strings.Contains(w.Message, "missing-skill") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("LoadBundle() warnings = %v, want mention of missing-skill", bundle.Warnings)
 	}
 }
 

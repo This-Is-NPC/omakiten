@@ -7,9 +7,6 @@ func (s *Service) ShowWorkflow(ctx context.Context, input WorkflowInput) (Workfl
 	if err != nil {
 		return WorkflowResponse{}, err
 	}
-	workflow, err := s.repo.ActiveWorkflow(ctx)
-	if err != nil {
-		return WorkflowResponse{}, err
-	}
+	workflow := s.snapshot.Workflow()
 	return WorkflowResponse{Project: projectSummary(project), Workflow: workflowSummary(workflow)}, nil
 }

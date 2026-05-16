@@ -231,7 +231,7 @@ Omitting the block keeps the canonical kit (`{1=low, 2=normal default, 3=high}`)
 
 #### How the runtime wires it
 
-`app.ConfigService.Import` (called from both composition roots — `internal/cli/root.go` and `internal/agentruntime/runtime.go`) returns a `*domain.EnumRegistry` alongside the bundle, between `LoadBundle` (validate) and `ImportBundle` (write). Composition roots inject the registry into every service that resolves labels (`TaskService`, `LawService`, `WorkflowService`, `TUIQueryService`, `ConfigService`, `ContextService`, agent `Service`); the TUI Model builds its own copy from the priorities/severities slices it already receives. There are no process-global enum tables — every lookup goes through the injected registry via `registry.PriorityLabel(id)`, `registry.PriorityFromLabel("high")`, `registry.DefaultPriority()`, etc. JSON wire format of `domain.Priority` / `domain.Severity` is the raw int id (no `MarshalJSON`); label projection happens at DTO boundaries (e.g. `agent.TaskSummary.Priority` is the label string). Tests construct a fresh registry via `testfixtures.CanonicalRegistry()` and thread it through service constructors.
+`app.ConfigService.Import` (called from both composition roots — `internal/cli/root.go` and `internal/agentruntime/runtime.go`) returns a `*domain.EnumRegistry` alongside the bundle, between `LoadBundle` (validate) and `config.BuildSnapshot` (materialise the immutable per-project snapshot). Composition roots inject the registry into every service that resolves labels (`TaskService`, `LawService`, `WorkflowService`, `TUIQueryService`, `ConfigService`, `ContextService`, agent `Service`); the TUI Model builds its own copy from the priorities/severities slices it already receives. There are no process-global enum tables — every lookup goes through the injected registry via `registry.PriorityLabel(id)`, `registry.PriorityFromLabel("high")`, `registry.DefaultPriority()`, etc. JSON wire format of `domain.Priority` / `domain.Severity` is the raw int id (no `MarshalJSON`); label projection happens at DTO boundaries (e.g. `agent.TaskSummary.Priority` is the label string). Tests construct a fresh registry via `testfixtures.CanonicalRegistry()` and thread it through service constructors.
 
 #### Worked example — adding an "urgent" priority
 
@@ -483,7 +483,7 @@ defaults:
 
 The resolver picks the first non-`nil` value walking the chain top-to-bottom. Pointer booleans (`*bool`) distinguish "field omitted" from "explicitly `false`" — omitting `delete` flows to the next layer; writing `delete: false` ends the walk with a deny.
 
-There is no hardcoded "first bucket is special" rule anymore. The default kit (`defaults/config/omakase.yaml`) reproduces the legacy semantics declaratively: strict defaults at the workflow level + an explicit opt-in on the `backlog` bucket.
+There is no hardcoded "first bucket is special" rule anymore. The default kit (`defaults/config/omakase.yaml`) declares the equivalent shape explicitly: strict defaults at the workflow level + an opt-in on the `backlog` bucket.
 
 ### `workflows[].buckets`
 
@@ -726,7 +726,7 @@ Template defaulting rules (`Bundle.TemplateByDefault`, `validateTemplateDefaults
 - `project: <slug>` scopes the default to one project; otherwise it is the global default.
 - Project-scoped wins over global when both exist for the same kind.
 - At most one template per `(default, project)` pair.
-- The same precedence is enforced at read time: `templates.show <global-slug>` from inside a project that shadows the same `default` kind hard-rejects with `validation_error`, naming the active project-scoped slug. Outside any registered project the legacy slug-only lookup is preserved. See `.docs/mcp-guide.md` §Templates.
+- The same precedence is enforced at read time: `templates.show <global-slug>` from inside a project that shadows the same `default` kind hard-rejects with `validation_error`, naming the active project-scoped slug. Outside any registered project the slug-only lookup is preserved. See `.docs/mcp-guide.md` §Templates.
 
 Frontmatter `laws:` travels with the template — every law slug must resolve to a loaded law file. When the template is bound to an MCP command via `mcp_commands.<name>.templates`, these laws are folded into the command's effective law set so commands without a dedicated entry (e.g. PR creation flowing through `gh pr create`) still inherit the right guardrails when the template is shown via `templates.show`.
 
@@ -758,6 +758,14 @@ Binds each `okt-*` MCP prompt to the persona, laws, and templates the agent rece
 Validation rejects duplicate slugs in any list, slugs that overlap between `laws` and `laws_disabled`, and any reference that does not match a loaded entity.
 
 ---
+
+## How config reads work at runtime (in-memory providers + per-project cache)
+
+Phase 2 of the config refactor dropped every SQL config table — workflows, workflow_buckets, workflow_transitions, personas, persona_skills, skills, laws, settings, config_bundles (migration 020). Phase 2-bis then stripped every config-side method from the SQL adapter so `*sqlite.Store` carries zero `config.Bundle` / `config.Snapshot` references in production. The bundle YAML is the single source of truth; reads land on an immutable `*config.Snapshot` materialised by `config.BuildSnapshot(bundle)`. Every app service captures the `*config.Snapshot` pointer at construction; the pointer never mutates after build, so concurrent readers always see a consistent shape — hot-reload installs a new pointer in a new `*ProjectRuntime` entry rather than mutating the live one.
+
+Phase 3 layered per-project bundles on top: `agentruntime.BundleCache` holds one `*ProjectRuntime` per project id. Each entry aggregates the per-project `*config.Snapshot`, an `agent.Service` (which holds the same Snapshot via `SetSnapshot`), a `hooks.Engine`, the action registry, the notification snapshot, and the enum registry built from THAT project's YAML. Cache rebuilds happen automatically on mtime change (every Resolve stat-checks the SourcePath) or explicitly via `Reload` (TUI Settings → Config picker). MCP `Adapter.CallTool` peeks `project` / `project_id` from incoming args and routes the dispatch against the matching entry; calls without those args fall back to the default project resolved at boot.
+
+Hot-reload of the active YAML no longer touches SQLite — `cache.Reload` re-parses, runs the validator, calls `config.BuildSnapshot`, installs the fresh `*ProjectRuntime` (carrying the new Snapshot pointer plus the previous one for the orphan flow), stops the prior engine, and emits `bundle.imported` for audit via `Store.RecordEntityEvent` from the composition root. In-flight callers that captured the prior Snapshot pointer keep reading the old shape until they release it. Validator rejection leaves the previous entry in place.
 
 ## Autoload, custom overrides, and slug rules
 
@@ -1137,6 +1145,50 @@ Single workflow `default` with four buckets — `backlog` → `dev` → `review`
 ```
 
 Source: `internal/paths/paths.go:ConfigRoot`, `EntityDir`, `EntityCustomDir`, `ActiveConfigFile`. Legacy flat layouts (`<root>/<name>.yaml` at the root with no `config/` subdir) are tolerated by `ConfigRootFromYAMLPath` and migrated forward by `configstore.MigrateLayout` on next connect. `ConfigRootFromYAMLPath` also recognizes `<root>/config/custom/<name>.yaml`, so entity folders resolve correctly when the active profile lives under `custom/`.
+
+### Repo-local `.omakiten/` standalone install
+
+When `.omakiten/` is present at (or above) the current working directory, the runtime treats it as a **complete standalone install** and ignores the user-global ConfigRoot entirely. There is no merge, no overlay, no layered fallback. The only thing that stays global is the SQLite database — `.omakiten/` is config-only.
+
+Discovery: `config.FindRepoLocal(CWD)` walks the parent chain, stopping at the first `.omakiten/`, at `$HOME`, or at the filesystem root. When the walker finds a directory, `runtimeOptions.resolvedConfigRoot` and `resolvedConfigPath` switch to that root for the rest of the process. The `--config` flag overrides discovery — when present, the flag is the authoritative source and the badge reflects "global".
+
+Layout mirrors the user-global root exactly:
+
+```
+<repo>/.omakiten/
+  config/
+    <active>.yaml          # picked preset (or user-authored profile)
+    .active                # one-line state: basename of the active profile
+    custom/                # user-authored profile yamls
+  skills/<slug>.md   + custom/
+  laws/<slug>.md     + custom/
+  personas/<slug>.md + custom/
+  templates/<slug>.md + custom/
+  themes/<key>.yaml  + custom/
+  notifications/<slug>.yaml + custom/
+```
+
+The expected workflow is `okt config init --scope local --preset <name>`: that single call materialises every entity folder via `EnsureDefaultFiles`, copies every shipped preset yaml under `config/`, and points `.active` at the chosen one. The result is a self-contained install — `LoadBundle(<repo>/.omakiten/config/<active>.yaml)` succeeds without any merge step.
+
+Source: `internal/config/repo_local.go:FindRepoLocal`, `internal/config/seed_install.go:SeedInstall`, `internal/cli/root.go:runtimeOptions.discoverRepoLocalRoot`.
+
+### Inspecting the active layer — `okt config <sub>`
+
+| Subcommand | Purpose |
+| --- | --- |
+| `okt config init --scope <global\|local> --preset <name> [--force]` | Materialise a complete install (config + entity folders + preset library) into the chosen scope. `--force` re-copies every embedded shipped file; user `custom/` subtrees are never touched. |
+| `okt config show --scope <global\|local>` | Print the raw bytes of the chosen scope's active yaml. |
+| `okt config path --scope <global\|local>` | Print the install root directory (the ConfigRoot for global, the discovered `.omakiten/` for local). |
+| `okt config why <key> [--layer <global\|local>]` | Walk the active config (or a pinned layer) by dotted YAML key path and report `{key, value, source, path}`. Missing keys return `source = "not_set"`. |
+| `okt config diff <left> <right>` | Structural YAML diff between two sources. Operands accept `global`, `local`, `local:<path>`, or any raw yaml file path. Emits one entry per divergent leaf (`added` / `removed` / `changed`). |
+
+### TUI scope badge
+
+Settings › General shows a `scope` row that reads:
+- `global` — runtime is loading the user-global install.
+- `local (<.omakiten path>)` — runtime is loading a discovered repo-local install.
+
+The badge reflects what the loader actually picked, not the discovery candidates. Using `--config <path>` clears the badge to `global` because the explicit flag bypasses walk-up discovery.
 
 ### SQLite database
 

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"omakiten/internal/app"
+	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/sqlite"
 	"omakiten/internal/testfixtures"
@@ -54,13 +55,13 @@ func TestTemplateServiceSetDefaultRewritesFrontmatter(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	editor := app.NewBundleEditor(store, cs, configPath)
+	editor := app.NewBundleEditor(cs, configPath)
 	// Seed-import so subsequent ApplyWithFiles round-trips succeed.
 	if _, err := editor.Apply(ctx, nil); err != nil {
 		t.Fatalf("editor.Apply(seed) = %v", err)
 	}
 
-	svc := app.NewTemplateService(editor, cs)
+	svc := app.NewTemplateService(config.BuildSnapshot(bundle), editor, cs)
 	if err := svc.SetDefault(ctx, "beta", "task", "demo"); err != nil {
 		t.Fatalf("SetDefault(beta) = %v", err)
 	}
@@ -115,12 +116,12 @@ func TestTemplateServiceSetDefaultClears(t *testing.T) {
 		t.Fatalf("sqlite.Open = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	editor := app.NewBundleEditor(store, cs, configPath)
+	editor := app.NewBundleEditor(cs, configPath)
 	if _, err := editor.Apply(ctx, nil); err != nil {
 		t.Fatalf("editor.Apply(seed) = %v", err)
 	}
 
-	svc := app.NewTemplateService(editor, cs)
+	svc := app.NewTemplateService(config.BuildSnapshot(bundle), editor, cs)
 	if err := svc.SetDefault(ctx, "only", "", ""); err != nil {
 		t.Fatalf("SetDefault(clear) = %v", err)
 	}

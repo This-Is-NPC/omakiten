@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"omakiten/internal/app"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	projectresolver "omakiten/internal/project"
 	"omakiten/internal/token"
@@ -64,7 +65,6 @@ type ServiceSettings struct {
 
 type Repository interface {
 	app.ProjectRepository
-	app.ConfigRepository
 	app.TaskRepository
 	app.WorkflowRepository
 	app.GuardEvaluationRepository
@@ -103,6 +103,29 @@ type Service struct {
 	commandCatalog     CommandCatalog
 	settings           ServiceSettings
 	registry           *domain.EnumRegistry
+	stopwords          map[string]bool
+	synonyms           map[string]string
+	// snapshot is the immutable per-project view of the active bundle.
+	// SetSnapshot installs it and derives every derived field
+	// (catalogs, synonyms, stopwords, registry) from the snap so
+	// production composition collapses to a single call. The
+	// per-field setters survive as test-only overrides for cases
+	// where callers want to stub one closure without building a
+	// full Bundle/Snapshot pair.
+	snapshot *config.Snapshot
+	// workflow is the per-project app.WorkflowService captured against
+	// the installed Snapshot. SetSnapshot derives it once so the
+	// comment edit/remove paths reuse the same instance instead of
+	// allocating a fresh service per call — Phase 2-bis Invariant 3
+	// (app services capture *config.Snapshot at construction) applied
+	// to the agent layer.
+	workflow *app.WorkflowService
+	// orphanSvc is the pre-built orphan service injected by the runtime
+	// composition root. The runtime knows both the current and previous
+	// snapshot at rotation time, so it builds the OrphanService with
+	// both pointers and hands it in via SetOrphanService — the agent
+	// service no longer carries a previousSnapshot pointer of its own.
+	orphanSvc *app.OrphanService
 }
 
 // NewService constructs the agent service with zero-value settings.
@@ -120,6 +143,57 @@ func NewService(repo Repository, selector ProjectSelector) *Service {
 	}
 }
 
+// Synonyms returns the per-project tag-synonym table derived from the
+// installed Snapshot. nil when the service was constructed without a
+// runtime composition root that wires it via SetSnapshot.
+func (s *Service) Synonyms() map[string]string {
+	return s.synonyms
+}
+
+// newCommentService builds an app.CommentService wired with the
+// per-project Snapshot so NormalizeTagName resolves the bundle's
+// alias table without any post-construction setter call.
+func (s *Service) newCommentService() *app.CommentService {
+	return app.NewCommentService(s.repo, s.snapshot)
+}
+
+// newCommentServiceWithWorkflow mirrors newCommentService for the
+// edit/remove flows that additionally need workflow policy enforcement.
+func (s *Service) newCommentServiceWithWorkflow(workflow *app.WorkflowService) *app.CommentService {
+	return app.NewCommentServiceWithWorkflow(s.repo, workflow, s.snapshot)
+}
+
+// newErrorService builds an app.ErrorService wired with the per-project
+// Snapshot. Solutions defaults still flow through the agent service's
+// SetSolutionsDefaults pathway because the limits live on
+// ServiceSettings rather than the Snapshot.
+func (s *Service) newErrorService() *app.ErrorService {
+	return app.NewErrorService(s.repo, s.snapshot)
+}
+
+// newTagService builds an app.TagService (with event emission wired to
+// the same repo, mirroring the existing inline NewTagServiceWithEvents
+// shape) and captures the per-project Snapshot for synonym lookups.
+func (s *Service) newTagService() *app.TagService {
+	return app.NewTagServiceWithEvents(s.repo, s.repo, s.snapshot)
+}
+
+// SetProjectSelector replaces the service's default project selector.
+// agentruntime constructs the service with a zero selector and calls
+// this once boot has resolved the project from --project/--cwd; this
+// matches the Phase 3a runtime pattern where the BundleCache builds
+// services first and the boot path threads the selector after.
+func (s *Service) SetProjectSelector(selector ProjectSelector) {
+	s.selector = selector
+}
+
+// Selector returns the service's default ProjectSelector. Exposed for
+// tests that assert the boot-resolved selector survives BundleCache
+// rebuilds.
+func (s *Service) Selector() ProjectSelector {
+	return s.selector
+}
+
 // SetSettings replaces the service's runtime knobs with values from the
 // active bundle. The runtime composition root invokes this exactly once
 // at startup; the values flow from `bundle.Config.MCP.*`. The agent
@@ -130,11 +204,55 @@ func (s *Service) SetSettings(settings ServiceSettings) {
 	s.settings = settings
 }
 
-// SetRegistry wires the enum registry so priority/severity label lookups
-// use the user-configured values rather than the deprecated global methods.
-// The runtime composition root calls this once at startup after Import.
-func (s *Service) SetRegistry(r *domain.EnumRegistry) {
-	s.registry = r
+// SetSnapshot installs the per-project *config.Snapshot the service
+// reads workflow / catalog / synonym / stopword / registry state from.
+// The production composition root (agentruntime.buildProjectRuntime)
+// calls this once per ProjectRuntime, and Phase 2-bis Round-2 made it
+// the SOLE wiring entry point: every per-field SetXCatalog /
+// SetSynonyms / SetStopwords / SetRegistry setter was deleted because
+// their state is fully derivable from the snapshot. Tests that want
+// to stub catalogs build a Snapshot via the snapshotWith* helpers and
+// pass it here.
+//
+// SetSnapshot derives every closure-shaped field
+// (taskTemplateLookup / templateCatalog / skillCatalog / lawCatalog /
+// personaCatalog / commandCatalog) plus the synonyms map, the stopwords
+// set, and the bundle-scoped EnumRegistry. Two projects holding two
+// snapshots see two independent catalog views; cache.Reload rotates the
+// pointer atomically through a fresh ProjectRuntime.
+func (s *Service) SetSnapshot(snap *config.Snapshot) {
+	s.snapshot = snap
+	if snap == nil {
+		s.workflow = nil
+		return
+	}
+	s.taskTemplateLookup = snapshotTaskTemplateLookup(snap)
+	s.templateCatalog = snapshotTemplateCatalog(snap)
+	s.skillCatalog = snapshotSkillCatalog(snap)
+	s.lawCatalog = snapshotLawCatalog(snap)
+	s.personaCatalog = snapshotPersonaCatalog(snap)
+	s.commandCatalog = snapshotCommandCatalog(snap)
+	s.synonyms = snap.Synonyms()
+	s.stopwords = stopwordsTable(snap.Stopwords())
+	s.registry = snap.Registry()
+	s.workflow = app.NewWorkflowServiceFromStore(s.repo, s.registry, snap)
+}
+
+// Snapshot returns the per-project *config.Snapshot wired via
+// SetSnapshot, or nil when no runtime composition has installed one
+// (e.g. unit tests that drive the service directly).
+func (s *Service) Snapshot() *config.Snapshot {
+	return s.snapshot
+}
+
+// SetOrphanService installs the pre-built orphan service that knows the
+// current and previous per-project Snapshot pair. The runtime composition
+// root (agentruntime.buildProjectRuntime / BundleCache.rebuild) is the
+// single caller — it owns both snapshot pointers across cache rotations
+// so the agent service does not have to. nil is permitted for tests that
+// do not exercise the orphan flow.
+func (s *Service) SetOrphanService(svc *app.OrphanService) {
+	s.orphanSvc = svc
 }
 
 // SettingsCachePrompts exposes the cache-prompts toggle for the MCP adapter.
@@ -142,34 +260,6 @@ func (s *Service) SetRegistry(r *domain.EnumRegistry) {
 // so the adapter calls this when stamping `cache_control` hints.
 func (s *Service) SettingsCachePrompts() bool {
 	return s.settings.CachePrompts
-}
-
-// SetTaskTemplateLookup wires the active task template provider. The runtime
-// calls this after constructing the service so that CreateTask responses can
-// embed the configured scaffold.
-func (s *Service) SetTaskTemplateLookup(lookup TaskTemplateLookup) {
-	s.taskTemplateLookup = lookup
-}
-
-// SetTemplateCatalog wires the read-only catalog used by templates.list and
-// templates.show. Without it the service still works but the MCP query
-// endpoints return empty payloads.
-func (s *Service) SetTemplateCatalog(catalog TemplateCatalog) {
-	s.templateCatalog = catalog
-}
-
-// SetSkillCatalog, SetLawCatalog, SetPersonaCatalog and SetCommandCatalog wire
-// the lookups ResolveCommand needs to assemble a prompt response. When any of
-// them is missing, ResolveCommand still answers with whatever bindings can be
-// resolved — empty catalogs degrade to a bare action prompt rather than an
-// error so older runtimes that haven't been updated keep working.
-func (s *Service) SetSkillCatalog(catalog SkillCatalog) { s.skillCatalog = catalog }
-func (s *Service) SetLawCatalog(catalog LawCatalog)     { s.lawCatalog = catalog }
-func (s *Service) SetPersonaCatalog(catalog PersonaCatalog) {
-	s.personaCatalog = catalog
-}
-func (s *Service) SetCommandCatalog(catalog CommandCatalog) {
-	s.commandCatalog = catalog
 }
 
 func (s *Service) resolveProject(ctx context.Context, selector ProjectSelector) (domain.ProjectContext, error) {
@@ -187,14 +277,11 @@ func (s *Service) resolveProject(ctx context.Context, selector ProjectSelector) 
 }
 
 func (s *Service) projectState(ctx context.Context, project domain.ProjectContext) ([]domain.Task, domain.Workflow, []domain.ContextEntry, error) {
-	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry).List(ctx, project, domain.TaskFilter{})
+	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).List(ctx, project, domain.TaskFilter{})
 	if err != nil {
 		return nil, domain.Workflow{}, nil, err
 	}
-	workflow, err := s.repo.ActiveWorkflow(ctx)
-	if err != nil {
-		return nil, domain.Workflow{}, nil, err
-	}
+	workflow := s.snapshot.Workflow()
 	entries, err := s.repo.ListContextEntries(ctx, project.ID)
 	if err != nil {
 		return nil, domain.Workflow{}, nil, err

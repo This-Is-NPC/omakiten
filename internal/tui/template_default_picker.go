@@ -172,5 +172,5 @@ func (m Model) renderTemplateDefaultPicker() string {
 // here; they were promoted into internal/app/template_service.go so the
 // behavior has its own test surface and the TUI stays free of bundle I/O.
 func (m *Model) applyTemplateDefault(slug, kind, projectSlug string) error {
-	return app.NewTemplateService(m.repos.Editor, m.repos.EntityFiles).SetDefault(m.ctx, slug, kind, projectSlug)
+	return app.NewTemplateService(m.repos.activeSnapshot(), m.repos.Editor, m.repos.EntityFiles).SetDefault(m.ctx, slug, kind, projectSlug)
 }
