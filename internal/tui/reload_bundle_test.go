@@ -42,7 +42,7 @@ func TestReloadBundleUsesCacheWhenWired(t *testing.T) {
 	t.Cleanup(func() { _ = store.Close() })
 
 	files := configstore.New()
-	editor := app.NewBundleEditor(store, files, configPath)
+	editor := app.NewBundleEditor(files, configPath)
 	if _, err := editor.Apply(ctx, nil); err != nil {
 		t.Fatalf("editor.Apply: %v", err)
 	}
@@ -63,11 +63,11 @@ func TestReloadBundleUsesCacheWhenWired(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()),
+		Snapshot: store.Snapshot(), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
-		Config:       store,
+		
 		Editor:       editor,
 		BundleStore:  files,
 		EntityFiles:  files,

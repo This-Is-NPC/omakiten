@@ -464,10 +464,12 @@ func newMCPTestService(t *testing.T, ctx context.Context) *agent.Service {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	return agent.NewService(store, agent.ProjectSelector{CWD: root})
+	svc := agent.NewService(store, agent.ProjectSelector{CWD: root})
+	svc.SetSnapshot(store.Snapshot())
+	return svc
 }
 
 // TestAdapterServiceResolverRoutesByProjectArg locks in the Phase 3b
@@ -482,7 +484,9 @@ func TestAdapterServiceResolverRoutesByProjectArg(t *testing.T) {
 	storeB, projectB := newMCPProjectFixture(t, ctx, "bravo")
 
 	defaultService := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
+	defaultService.SetSnapshot(storeA.Snapshot())
 	projectBService := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
+	projectBService.SetSnapshot(storeB.Snapshot())
 
 	adapter := NewAdapter(defaultService)
 	var observed []string
@@ -548,7 +552,7 @@ func newMCPProjectFixture(t *testing.T, ctx context.Context, slug string) (*sqli
 	if err != nil {
 		t.Fatalf("UpsertProject(%s): %v", slug, err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "T-"+slug, "", domain.Priority(2), "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "T-"+slug, "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask(%s): %v", slug, err)
 	}
 	return store, project
@@ -604,8 +608,10 @@ func TestAdapterServiceResolverIsolatesGuards(t *testing.T) {
 	storeB, projectB, taskB := newMCPProjectWithBundle(t, ctx, "bravo", bundleB)
 
 	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
+	serviceA.SetSnapshot(storeA.Snapshot())
 	serviceA.SetRegistry(testfixtures.CanonicalRegistry())
 	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
+	serviceB.SetSnapshot(storeB.Snapshot())
 	serviceB.SetRegistry(testfixtures.CanonicalRegistry())
 
 	adapter := NewAdapter(serviceA)
@@ -673,12 +679,14 @@ func TestAdapterServiceResolverIsolatesSettings(t *testing.T) {
 	}
 
 	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
+	serviceA.SetSnapshot(storeA.Snapshot())
 	serviceA.SetRegistry(testfixtures.CanonicalRegistry())
 	includeFalse := false
 	serviceA.SetSettings(agent.ServiceSettings{RecentCommentLimit: 1, IncludeWorkflow: false, CachePrompts: false})
 	_ = includeFalse
 
 	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
+	serviceB.SetSnapshot(storeB.Snapshot())
 	serviceB.SetRegistry(testfixtures.CanonicalRegistry())
 	serviceB.SetSettings(agent.ServiceSettings{RecentCommentLimit: 10, IncludeWorkflow: false, CachePrompts: false})
 
@@ -736,6 +744,7 @@ func TestAdapterServiceResolverIsolatesTemplateCatalog(t *testing.T) {
 	storeB, projectB, _ := newMCPProjectWithBundle(t, ctx, "bravo", mcpTestBundle(t))
 
 	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
+	serviceA.SetSnapshot(storeA.Snapshot())
 	serviceA.SetRegistry(testfixtures.CanonicalRegistry())
 	serviceA.SetTemplateCatalog(func() []agent.TemplateSummary {
 		return []agent.TemplateSummary{
@@ -744,6 +753,7 @@ func TestAdapterServiceResolverIsolatesTemplateCatalog(t *testing.T) {
 		}
 	})
 	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
+	serviceB.SetSnapshot(storeB.Snapshot())
 	serviceB.SetRegistry(testfixtures.CanonicalRegistry())
 	serviceB.SetTemplateCatalog(func() []agent.TemplateSummary {
 		return []agent.TemplateSummary{
@@ -830,8 +840,10 @@ func TestAdapterServiceResolverConcurrentRouting(t *testing.T) {
 	storeB, projectB, _ := newMCPProjectWithBundle(t, ctx, "bravo", mcpTestBundle(t))
 
 	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
+	serviceA.SetSnapshot(storeA.Snapshot())
 	serviceA.SetRegistry(testfixtures.CanonicalRegistry())
 	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
+	serviceB.SetSnapshot(storeB.Snapshot())
 	serviceB.SetRegistry(testfixtures.CanonicalRegistry())
 
 	adapter := NewAdapter(serviceA)
@@ -905,8 +917,10 @@ func TestAdapterDefaultServiceProviderTracksFreshService(t *testing.T) {
 	storeB, projectB, _ := newMCPProjectWithBundle(t, ctx, "bravo", mcpTestBundle(t))
 
 	svcA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID, CWD: filepath.Join(t.TempDir(), "a")})
+	svcA.SetSnapshot(storeA.Snapshot())
 	svcA.SetRegistry(testfixtures.CanonicalRegistry())
 	svcB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID, CWD: filepath.Join(t.TempDir(), "b")})
+	svcB.SetSnapshot(storeB.Snapshot())
 	svcB.SetRegistry(testfixtures.CanonicalRegistry())
 
 	active := svcA
@@ -981,7 +995,7 @@ func newMCPProjectWithBundle(t *testing.T, ctx context.Context, slug string, bun
 	if err != nil {
 		t.Fatalf("UpsertProject(%s): %v", slug, err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "T-"+slug, "", domain.Priority(2), "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "T-"+slug, "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(%s): %v", slug, err)
 	}

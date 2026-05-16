@@ -31,7 +31,7 @@ type TUISnapshot struct {
 // per-port plumbing and gives the read pipeline a single test seam.
 type TUIQueryService struct {
 	tasks    TaskRepository
-	config   ConfigRepository
+	snap     *config.Snapshot
 	deps     DependencyRepository
 	comments CommentRepository
 	entries  ContextEntryRepository
@@ -42,8 +42,8 @@ type TUIQueryService struct {
 
 // NewTUIQueryService wires the TUI read model. registry is optional — when
 // nil the service falls back to process-global domain registries.
-func NewTUIQueryService(tasks TaskRepository, cfg ConfigRepository, deps DependencyRepository, comments CommentRepository, entries ContextEntryRepository, tags TagRepository, editor *BundleEditor, registry *domain.EnumRegistry) *TUIQueryService {
-	return &TUIQueryService{tasks: tasks, config: cfg, deps: deps, comments: comments, entries: entries, tags: tags, editor: editor, registry: registry}
+func NewTUIQueryService(tasks TaskRepository, snap *config.Snapshot, deps DependencyRepository, comments CommentRepository, entries ContextEntryRepository, tags TagRepository, editor *BundleEditor, registry *domain.EnumRegistry) *TUIQueryService {
+	return &TUIQueryService{tasks: tasks, snap: snap, deps: deps, comments: comments, entries: entries, tags: tags, editor: editor, registry: registry}
 }
 
 // SnapshotOptions tunes the TUI snapshot fetch. IncludeArchived flips the
@@ -66,14 +66,16 @@ func (s *TUIQueryService) Snapshot(ctx context.Context, project domain.ProjectCo
 		options = opts[0]
 	}
 
-	tasks, err := s.tasks.ListTasks(ctx, project.ID, domain.TaskFilter{Sort: sort, IncludeArchived: options.IncludeArchived})
+	tasks, err := s.tasks.ListTasks(ctx, project.ID, domain.TaskFilter{Sort: sort, IncludeArchived: options.IncludeArchived}, s.snap)
 	if err != nil {
 		return snap, err
 	}
 	snap.Tasks = tasks
 
-	cfgSnap := s.config.Snapshot()
-	snap.Workflow = cfgSnap.Workflow()
+	cfgSnap := s.snap
+	if cfgSnap != nil {
+		snap.Workflow = cfgSnap.Workflow()
+	}
 
 	deps, err := s.deps.ListTaskDependencies(ctx, project.ID, 0)
 	if err != nil {
@@ -87,23 +89,25 @@ func (s *TUIQueryService) Snapshot(ctx context.Context, project domain.ProjectCo
 	}
 	snap.Comments = comments
 
-	laws := lawsFromSnapshot(cfgSnap)
-	skills := skillsFromSnapshot(cfgSnap)
-	personas := personasFromSnapshot(cfgSnap)
+	if cfgSnap != nil {
+		laws := lawsFromSnapshot(cfgSnap)
+		skills := skillsFromSnapshot(cfgSnap)
+		personas := personasFromSnapshot(cfgSnap)
 
-	if s.editor != nil {
-		bundle, err := s.editor.Load()
-		if err != nil {
-			return snap, err
+		if s.editor != nil {
+			bundle, err := s.editor.Load()
+			if err != nil {
+				return snap, err
+			}
+			skills = enrichSkillsFromBundle(skills, bundle)
+			laws = enrichLawsFromBundle(laws, bundle, s.registry)
+			personas = enrichPersonasFromBundle(personas, bundle)
+			snap.Templates = append([]config.TaskTemplate(nil), bundle.Templates...)
 		}
-		skills = enrichSkillsFromBundle(skills, bundle)
-		laws = enrichLawsFromBundle(laws, bundle, s.registry)
-		personas = enrichPersonasFromBundle(personas, bundle)
-		snap.Templates = append([]config.TaskTemplate(nil), bundle.Templates...)
+		snap.Laws = laws
+		snap.Skills = skills
+		snap.Personas = personas
 	}
-	snap.Laws = laws
-	snap.Skills = skills
-	snap.Personas = personas
 
 	entries, err := s.entries.ListContextEntries(ctx, project.ID)
 	if err != nil {
@@ -111,7 +115,9 @@ func (s *TUIQueryService) Snapshot(ctx context.Context, project domain.ProjectCo
 	}
 	snap.Entries = entries
 
-	snap.Settings = cfgSnap.ContextSettings()
+	if cfgSnap != nil {
+		snap.Settings = cfgSnap.ContextSettings()
+	}
 
 	if s.tags != nil {
 		allTags, err := s.tags.ListAllTags(ctx)

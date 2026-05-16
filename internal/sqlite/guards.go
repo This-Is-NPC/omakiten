@@ -9,7 +9,7 @@ import (
 // ListTaskBlockerBuckets returns the (id, title, bucket_key) triples for every
 // task that taskID depends on. Used by the blockers_in workflow guard at the
 // app layer to decide which blockers still sit in disallowed buckets.
-func (s *Store) ListTaskBlockerBuckets(ctx context.Context, projectID, taskID int64) ([]domain.TaskBlocker, error) {
+func (s *Store) ListTaskBlockerBuckets(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) ([]domain.TaskBlocker, error) {
 	// `workflow_buckets` was dropped in migration 020; the previous JOIN
 	// resolved bucket key per blocker. We now scan blocker rows with
 	// bucket_id and resolve key via the in-memory provider after the
@@ -33,7 +33,7 @@ ORDER BY t.id
 		if err := rows.Scan(&b.TaskID, &b.Title, &bucketID); err != nil {
 			return nil, err
 		}
-		b.BucketKey = s.bucketKeyByID(bucketID)
+		b.BucketKey = s.bucketKeyByID(bucketID, buckets)
 		blockers = append(blockers, b)
 	}
 	return blockers, rows.Err()

@@ -32,7 +32,7 @@ func (s *Service) EditComment(ctx context.Context, input EditCommentInput) (Comm
 	if err != nil {
 		return CommentResponse{}, err
 	}
-	workflow := app.NewWorkflowServiceFromStore(s.repo, s.registry)
+	workflow := app.NewWorkflowServiceFromStore(s.repo, s.registry, s.snapshot)
 	comment, err := s.newCommentServiceWithWorkflow(workflow).Edit(ctx, project, input.CommentID, input.Body, input.Tags)
 	if err != nil {
 		return CommentResponse{}, err
@@ -57,7 +57,7 @@ func (s *Service) DeleteComment(ctx context.Context, input DeleteCommentInput) (
 			},
 		}, nil
 	}
-	workflow := app.NewWorkflowServiceFromStore(s.repo, s.registry)
+	workflow := app.NewWorkflowServiceFromStore(s.repo, s.registry, s.snapshot)
 	event, err := s.newCommentServiceWithWorkflow(workflow).Remove(ctx, project, input.CommentID)
 	if err != nil {
 		return DeleteCommentResponse{}, err

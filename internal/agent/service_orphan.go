@@ -21,7 +21,7 @@ func (s *Service) MigrateOrphans(ctx context.Context, input MigrateOrphansInput)
 		return MigrateOrphansResponse{}, err
 	}
 
-	svc := app.NewOrphanService(s.repo)
+	svc := app.NewOrphanService(s.repo, s.snapshot, s.previousSnapshot)
 	preview, err := svc.Preview(ctx, project)
 	if err != nil {
 		return MigrateOrphansResponse{}, err

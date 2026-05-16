@@ -70,7 +70,7 @@ func newPickerModel(t *testing.T) (Model, string) {
 	t.Cleanup(func() { _ = store.Close() })
 
 	files := configstore.New()
-	editor := app.NewBundleEditor(store, files, configPath)
+	editor := app.NewBundleEditor(files, configPath)
 	if _, err := editor.Apply(ctx, nil); err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
 	}
@@ -87,7 +87,7 @@ func newPickerModel(t *testing.T) (Model, string) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:    store,
-		Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
+		Snapshot: store.Snapshot(), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
 		Events:    store,
 		Orphans:   store,

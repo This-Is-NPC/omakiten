@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
 
@@ -12,15 +13,18 @@ type TaskService struct {
 	repo     TaskRepository
 	workflow *WorkflowService
 	registry *domain.EnumRegistry
+	snap     *config.Snapshot
 }
 
 // NewTaskService wires the validation/orchestration layer for tasks. workflow
 // owns the policy bits (default-bucket selection on Add, transition+guards on
 // Move) so the task service stays focused on input validation and delegation.
 // registry must be non-nil: priority label resolution and id validation go
-// through the supplied bundle-scoped EnumRegistry.
-func NewTaskService(repo TaskRepository, workflow *WorkflowService, registry *domain.EnumRegistry) *TaskService {
-	return &TaskService{repo: repo, workflow: workflow, registry: registry}
+// through the supplied bundle-scoped EnumRegistry. snap is the per-project
+// view the repo methods read bucket key↔id through; tests that drive
+// state-only flows may pass nil.
+func NewTaskService(repo TaskRepository, workflow *WorkflowService, registry *domain.EnumRegistry, snap *config.Snapshot) *TaskService {
+	return &TaskService{repo: repo, workflow: workflow, registry: registry, snap: snap}
 }
 
 // CompositeWorkflowStore is the adapter contract a single backing store (in
@@ -28,20 +32,19 @@ func NewTaskService(repo TaskRepository, workflow *WorkflowService, registry *do
 // its embedded workflow service. Defining the composite here lets callers
 // avoid passing the same adapter five times.
 type CompositeWorkflowStore interface {
-	ConfigRepository
 	WorkflowRepository
 	GuardEvaluationRepository
 	TaskRepository
 	EventRepository
-	SnapshotSource
 }
 
 // NewTaskServiceFromStore is the production-path sugar: it wires WorkflowService
 // against the composite store and returns a TaskService ready for use.
 // The registry is required and forwarded to both WorkflowService and TaskService
-// so priority lookups use the bundle-scoped tables.
-func NewTaskServiceFromStore(store CompositeWorkflowStore, registry *domain.EnumRegistry) *TaskService {
-	return NewTaskService(store, NewWorkflowServiceFromStore(store, registry), registry)
+// so priority lookups use the bundle-scoped tables. snap is the per-project
+// view threaded into both services for bucket resolution.
+func NewTaskServiceFromStore(store CompositeWorkflowStore, registry *domain.EnumRegistry, snap *config.Snapshot) *TaskService {
+	return NewTaskService(store, NewWorkflowServiceFromStore(store, registry, snap), registry, snap)
 }
 
 func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, title, description, priority, bucketKey string) (task domain.Task, err error) {
@@ -107,7 +110,7 @@ func (s *TaskService) List(ctx context.Context, project domain.ProjectContext, f
 		finish(status, errMsg)
 	}()
 
-	tasks, err = s.repo.ListTasks(ctx, project.ID, filter)
+	tasks, err = s.repo.ListTasks(ctx, project.ID, filter, s.snap)
 	return
 }
 
@@ -205,7 +208,7 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 		}
 	}
 	if hasFieldEdit {
-		task, err = s.repo.UpdateTask(ctx, project.ID, taskID, update)
+		task, err = s.repo.UpdateTask(ctx, project.ID, taskID, update, s.snap)
 		if err != nil {
 			return
 		}
@@ -261,7 +264,7 @@ func (s *TaskService) Delete(ctx context.Context, project domain.ProjectContext,
 		return
 	}
 
-	event, err = s.repo.HardDeleteTask(ctx, project.ID, taskID)
+	event, err = s.repo.HardDeleteTask(ctx, project.ID, taskID, s.snap)
 	return
 }
 
@@ -301,7 +304,7 @@ func (s *TaskService) Archive(ctx context.Context, project domain.ProjectContext
 		return
 	}
 
-	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateArchived, finalBucket)
+	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateArchived, finalBucket, s.snap)
 	return
 }
 
@@ -333,12 +336,12 @@ func (s *TaskService) Unarchive(ctx context.Context, project domain.ProjectConte
 		return
 	}
 
-	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateActive, "")
+	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateActive, "", s.snap)
 	return
 }
 
 func (s *TaskService) taskByID(ctx context.Context, project domain.ProjectContext, taskID int64) (domain.Task, error) {
-	tasks, err := s.repo.ListTasks(ctx, project.ID, domain.TaskFilter{IncludeArchived: true})
+	tasks, err := s.repo.ListTasks(ctx, project.ID, domain.TaskFilter{IncludeArchived: true}, s.snap)
 	if err != nil {
 		return domain.Task{}, err
 	}

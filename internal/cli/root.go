@@ -78,26 +78,26 @@ func (r *runtime) close() {
 // bundleEditor builds the editor the way every config-touching service expects
 // it. Centralising this lets the call sites stay one line each.
 func (r *runtime) bundleEditor() *app.BundleEditor {
-	return app.NewBundleEditor(r.store, configstore.New(), r.configPath)
+	return app.NewBundleEditor(configstore.New(), r.configPath)
 }
 
 func (r *runtime) skillService() *app.SkillService {
 	store := configstore.New()
-	return app.NewSkillService(r.store, r.bundleEditor(), store, store)
+	return app.NewSkillService(r.activeSnapshot(), r.bundleEditor(), store, store)
 }
 
 func (r *runtime) lawService() *app.LawService {
 	store := configstore.New()
-	return app.NewLawService(r.store, r.bundleEditor(), store, store, r.activeRegistry())
+	return app.NewLawService(r.activeSnapshot(), r.bundleEditor(), store, store, r.activeRegistry())
 }
 
 func (r *runtime) personaService() *app.PersonaService {
 	store := configstore.New()
-	return app.NewPersonaService(r.store, r.bundleEditor(), store, store)
+	return app.NewPersonaService(r.activeSnapshot(), r.bundleEditor(), store, store)
 }
 
 func (r *runtime) contextService() *app.ContextService {
-	return app.NewContextService(r.store, r.store, r.store, r.store, r.store, r.tokenCounter(), r.activeRegistry())
+	return app.NewContextService(r.store, r.store, r.store, r.store, r.activeSnapshot(), r.tokenCounter(), r.activeRegistry())
 }
 
 // commentService wraps NewCommentService and threads the per-project
@@ -145,6 +145,21 @@ func (r *runtime) activeSynonyms() map[string]string {
 		return nil
 	}
 	return pr.Snapshot.Synonyms()
+}
+
+// activeSnapshot returns the per-project *config.Snapshot from the
+// boot-seeded ProjectRuntime. App services constructed inside CLI
+// subcommands capture this pointer once at construction; the same
+// pointer survives the lifetime of the CLI invocation because the cache
+// only rotates on mtime change, which the single-shot CLI does not
+// observe mid-call. Returns nil when no cache entry exists (rare
+// bootstrap window — callers that touch the snapshot must guard).
+func (r *runtime) activeSnapshot() *config.Snapshot {
+	pr := r.ProjectRuntime()
+	if pr == nil {
+		return nil
+	}
+	return pr.Snapshot
 }
 
 

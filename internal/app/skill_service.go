@@ -10,14 +10,14 @@ import (
 )
 
 type SkillService struct {
-	repo    ConfigRepository
+	snap    *config.Snapshot
 	editor  *BundleEditor
 	files   EntityFileWriter
 	slugger Slugifier
 }
 
-func NewSkillService(repo ConfigRepository, editor *BundleEditor, files EntityFileWriter, slugger Slugifier) *SkillService {
-	return &SkillService{repo: repo, editor: editor, files: files, slugger: slugger}
+func NewSkillService(snap *config.Snapshot, editor *BundleEditor, files EntityFileWriter, slugger Slugifier) *SkillService {
+	return &SkillService{snap: snap, editor: editor, files: files, slugger: slugger}
 }
 
 // skillsFromSnapshot projects the snapshot's config.Skill slice into
@@ -45,12 +45,14 @@ func skillsFromSnapshot(snap *config.Snapshot) []domain.Skill {
 // Description, body, and source path are overlaid from the on-disk
 // bundle so the response reflects the current state of the .md files —
 // useful when the user edits a skill file between bundle imports.
+// Always projects from the freshly-loaded bundle so a write-followed-by-read
+// inside the same service instance sees the just-persisted state.
 func (s *SkillService) List(_ context.Context) ([]domain.Skill, error) {
-	skills := skillsFromSnapshot(s.repo.Snapshot())
 	bundle, err := s.editor.Load()
 	if err != nil {
 		return nil, err
 	}
+	skills := skillsFromSnapshot(config.BuildSnapshot(bundle))
 	bySlug := indexSkills(bundle.Skills)
 	warnings := warningIndex(bundle.Warnings)
 	for index, skill := range skills {

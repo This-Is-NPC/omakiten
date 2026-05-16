@@ -20,14 +20,14 @@ import (
 // for the depends_on_task_id column, so we delete those rows manually before
 // the task. Events have no FK to tasks at all (entity_id is opaque), so we
 // delete those manually too.
-func (s *Store) HardDeleteTask(ctx context.Context, projectID, taskID int64) (domain.Event, error) {
+func (s *Store) HardDeleteTask(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (domain.Event, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.Event{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	task, err := s.taskByIDTx(ctx, tx, projectID, taskID)
+	task, err := s.taskByIDTx(ctx, tx, projectID, taskID, buckets)
 	if err != nil {
 		return domain.Event{}, err
 	}
@@ -83,7 +83,7 @@ RETURNING id, entity_type, COALESCE(entity_id, 0), project_id, event_type, body,
 // (used by archive to move into the final 'done' bucket atomically).
 // MoveTask events are NOT emitted for the archive-side bucket change — the
 // task.archived event already records the destination bucket in its payload.
-func (s *Store) SetTaskState(ctx context.Context, projectID, taskID int64, state domain.TaskState, targetBucketKey string) (domain.Task, domain.Event, error) {
+func (s *Store) SetTaskState(ctx context.Context, projectID, taskID int64, state domain.TaskState, targetBucketKey string, buckets domain.BucketResolver) (domain.Task, domain.Event, error) {
 	if state != domain.TaskStateActive && state != domain.TaskStateArchived {
 		return domain.Task{}, domain.Event{}, domain.NewError(domain.ErrValidation, "invalid task state", map[string]any{"state": string(state)})
 	}
@@ -94,7 +94,7 @@ func (s *Store) SetTaskState(ctx context.Context, projectID, taskID int64, state
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	prev, err := s.taskByIDTx(ctx, tx, projectID, taskID)
+	prev, err := s.taskByIDTx(ctx, tx, projectID, taskID, buckets)
 	if err != nil {
 		return domain.Task{}, domain.Event{}, err
 	}
@@ -102,7 +102,7 @@ func (s *Store) SetTaskState(ctx context.Context, projectID, taskID int64, state
 	bucketKey := prev.BucketKey
 	bucketArg := any(prev.BucketID)
 	if targetBucketKey != "" && targetBucketKey != prev.BucketKey {
-		targetBucketID, err := s.activeBucketID(ctx, targetBucketKey)
+		targetBucketID, err := s.activeBucketID(ctx, targetBucketKey, buckets)
 		if err != nil {
 			return domain.Task{}, domain.Event{}, err
 		}
@@ -170,7 +170,7 @@ func (s *Store) EmitTaskEditedEvent(ctx context.Context, projectID, taskID int64
 	return s.RecordTaskEvent(ctx, projectID, taskID, domain.EventTypeTaskEdited, "", string(body))
 }
 
-func (s *Store) taskByIDTx(ctx context.Context, tx *sql.Tx, projectID, taskID int64) (domain.Task, error) {
+func (s *Store) taskByIDTx(ctx context.Context, tx *sql.Tx, projectID, taskID int64, buckets domain.BucketResolver) (domain.Task, error) {
 	row := tx.QueryRowContext(ctx, `
 SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at
 FROM tasks
@@ -184,6 +184,6 @@ WHERE tasks.project_id = ? AND tasks.id = ?
 		}
 		return domain.Task{}, err
 	}
-	task.BucketKey = s.bucketKeyByID(task.BucketID)
+	task.BucketKey = s.bucketKeyByID(task.BucketID, buckets)
 	return task, nil
 }

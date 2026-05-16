@@ -17,11 +17,11 @@ func TestPreviewOrphanedTasks_NoOrphans(t *testing.T) {
 		t.Fatalf("ImportBundle: %v", err)
 	}
 	project := mustUpsertProject(t, store, "p", "p", "/p")
-	if _, err := store.CreateTask(ctx, project.ID, "T1", "", domain.Priority(2), "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "T1", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
-	report, err := store.PreviewOrphanedTasks(ctx, project.ID)
+	report, err := store.PreviewOrphanedTasks(ctx, project.ID, store.Snapshot(), store.PreviousSnapshot())
 	if err != nil {
 		t.Fatalf("PreviewOrphanedTasks: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestPreviewOrphanedTasks_MissingKeyMapsToDefault(t *testing.T) {
 		t.Fatalf("ImportBundle A: %v", err)
 	}
 	project := mustUpsertProject(t, store, "p", "p", "/p")
-	docsTask, err := store.CreateTask(ctx, project.ID, "doc task", "", domain.Priority(2), "docs")
+	docsTask, err := store.CreateTask(ctx, project.ID, "doc task", "", domain.Priority(2), "docs", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestPreviewOrphanedTasks_MissingKeyMapsToDefault(t *testing.T) {
 		t.Fatalf("ImportBundle B: %v", err)
 	}
 
-	report, err := store.PreviewOrphanedTasks(ctx, project.ID)
+	report, err := store.PreviewOrphanedTasks(ctx, project.ID, store.Snapshot(), store.PreviousSnapshot())
 	if err != nil {
 		t.Fatalf("PreviewOrphanedTasks: %v", err)
 	}
@@ -77,10 +77,10 @@ func TestPreviewOrphanedTasks_PreservedKeyNotOrphan(t *testing.T) {
 		t.Fatalf("ImportBundle A: %v", err)
 	}
 	project := mustUpsertProject(t, store, "p", "p", "/p")
-	if _, err := store.CreateTask(ctx, project.ID, "alive", "", domain.Priority(2), "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "alive", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask backlog: %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "doomed", "", domain.Priority(2), "docs"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "doomed", "", domain.Priority(2), "docs", store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask docs: %v", err)
 	}
 
@@ -88,7 +88,7 @@ func TestPreviewOrphanedTasks_PreservedKeyNotOrphan(t *testing.T) {
 		t.Fatalf("ImportBundle B: %v", err)
 	}
 
-	report, err := store.PreviewOrphanedTasks(ctx, project.ID)
+	report, err := store.PreviewOrphanedTasks(ctx, project.ID, store.Snapshot(), store.PreviousSnapshot())
 	if err != nil {
 		t.Fatalf("PreviewOrphanedTasks: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestRebindOrphanedTasks_UpdatesBucketAndEmitsEvent(t *testing.T) {
 		t.Fatalf("ImportBundle A: %v", err)
 	}
 	project := mustUpsertProject(t, store, "p", "p", "/p")
-	task, err := store.CreateTask(ctx, project.ID, "doc", "", domain.Priority(2), "docs")
+	task, err := store.CreateTask(ctx, project.ID, "doc", "", domain.Priority(2), "docs", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestRebindOrphanedTasks_UpdatesBucketAndEmitsEvent(t *testing.T) {
 		t.Fatalf("ImportBundle B: %v", err)
 	}
 
-	report, err := store.RebindOrphanedTasks(ctx, project.ID)
+	report, err := store.RebindOrphanedTasks(ctx, project.ID, store.Snapshot(), store.PreviousSnapshot())
 	if err != nil {
 		t.Fatalf("RebindOrphanedTasks: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestRebindOrphanedTasks_UpdatesBucketAndEmitsEvent(t *testing.T) {
 		t.Fatalf("Total = %d, want 1", report.Total)
 	}
 
-	tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{})
+	tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{}, store.Snapshot())
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestRebindOrphanedTasks_NoOpWhenEmpty(t *testing.T) {
 	}
 	project := mustUpsertProject(t, store, "p", "p", "/p")
 
-	report, err := store.RebindOrphanedTasks(ctx, project.ID)
+	report, err := store.RebindOrphanedTasks(ctx, project.ID, store.Snapshot(), store.PreviousSnapshot())
 	if err != nil {
 		t.Fatalf("RebindOrphanedTasks: %v", err)
 	}
@@ -179,11 +179,11 @@ func TestPreviewOrphanedTasks_IgnoresArchived(t *testing.T) {
 		t.Fatalf("ImportBundle A: %v", err)
 	}
 	project := mustUpsertProject(t, store, "p", "p", "/p")
-	task, err := store.CreateTask(ctx, project.ID, "archived doc", "", domain.Priority(2), "docs")
+	task, err := store.CreateTask(ctx, project.ID, "archived doc", "", domain.Priority(2), "docs", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
-	if _, _, err := store.SetTaskState(ctx, project.ID, task.ID, domain.TaskStateArchived, ""); err != nil {
+	if _, _, err := store.SetTaskState(ctx, project.ID, task.ID, domain.TaskStateArchived, "", store.Snapshot()); err != nil {
 		t.Fatalf("SetTaskState: %v", err)
 	}
 
@@ -191,7 +191,7 @@ func TestPreviewOrphanedTasks_IgnoresArchived(t *testing.T) {
 		t.Fatalf("ImportBundle B: %v", err)
 	}
 
-	report, err := store.PreviewOrphanedTasks(ctx, project.ID)
+	report, err := store.PreviewOrphanedTasks(ctx, project.ID, store.Snapshot(), store.PreviousSnapshot())
 	if err != nil {
 		t.Fatalf("PreviewOrphanedTasks: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestPreviewOrphanedTasks_CrossBundleSwap(t *testing.T) {
 		t.Fatalf("ImportBundle A: %v", err)
 	}
 	project := mustUpsertProject(t, store, "p", "p", "/p")
-	if _, err := store.CreateTask(ctx, project.ID, "doc work", "", domain.Priority(2), "docs"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "doc work", "", domain.Priority(2), "docs", store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
@@ -248,7 +248,7 @@ func TestPreviewOrphanedTasks_CrossBundleSwap(t *testing.T) {
 		t.Fatalf("ImportBundle B: %v", err)
 	}
 
-	report, err := store.PreviewOrphanedTasks(ctx, project.ID)
+	report, err := store.PreviewOrphanedTasks(ctx, project.ID, store.Snapshot(), store.PreviousSnapshot())
 	if err != nil {
 		t.Fatalf("PreviewOrphanedTasks: %v", err)
 	}

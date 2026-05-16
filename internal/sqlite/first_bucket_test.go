@@ -27,7 +27,7 @@ func TestWorkflowServiceCreateTaskDefaultsToFirstBucket(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry())
+	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 	task, err := workflow.CreateTask(ctx, project.ID, "Nova task", "Desc", domain.Priority(2), "")
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)

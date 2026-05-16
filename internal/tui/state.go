@@ -49,7 +49,6 @@ type Repositories struct {
 	Comments     app.CommentRepository
 	Dependencies app.DependencyRepository
 	Entries      app.ContextEntryRepository
-	Config       app.ConfigRepository
 	Tags         app.TagRepository
 	Editor       *app.BundleEditor
 	BundleStore  app.BundleStore
@@ -90,6 +89,13 @@ type Repositories struct {
 	// the rotated snapshot lands on the same key the rest of the model
 	// is reading from.
 	ProjectID int64
+	// Snapshot is the test-friendly override the TUI consults when the
+	// BundleCache is not wired. Production never sets this — the cache
+	// is the source of truth — but unit tests that drive the model
+	// without going through agentruntime can plug a snapshot here so
+	// the read-side helpers (TUIQueryService, render-home pending
+	// counts) see the same per-project view production would.
+	Snapshot *config.Snapshot
 }
 
 // activeSynonyms returns the per-project tag synonym table from the
@@ -98,14 +104,40 @@ type Repositories struct {
 // app service constructions in the TUI render paths so
 // NormalizeTagName resolves the project's aliases.
 func (r *Repositories) activeSynonyms() map[string]string {
+	if snap := r.activeSnapshot(); snap != nil {
+		return snap.Synonyms()
+	}
+	return nil
+}
+
+// activeSnapshot returns the per-project *config.Snapshot from the
+// BundleCache entry the runtime installed at boot. TUI inline service
+// constructions capture this pointer at the moment of dispatch; the
+// cache rotates a fresh pointer on each rebuild, so subsequent calls
+// see the new snapshot through the same accessor. Returns nil when the
+// cache is not wired (rare test paths that bypass the runtime
+// composition root).
+func (r *Repositories) activeSnapshot() *config.Snapshot {
+	if r.Cache != nil {
+		if pr := r.Cache.Get(r.ProjectID); pr != nil {
+			return pr.Snapshot
+		}
+	}
+	return r.Snapshot
+}
+
+// activePreviousSnapshot returns the bundle view captured immediately
+// before the latest cache rotation. Only the orphan-rebind flow reads
+// it; nil when the cache has only seen one bundle for this project.
+func (r *Repositories) activePreviousSnapshot() *config.Snapshot {
 	if r.Cache == nil {
 		return nil
 	}
 	pr := r.Cache.Get(r.ProjectID)
-	if pr == nil || pr.Snapshot == nil {
+	if pr == nil {
 		return nil
 	}
-	return pr.Snapshot.Synonyms()
+	return pr.PreviousSnapshot
 }
 
 // Model is the root Bubble Tea model for the TUI. It aggregates state that

@@ -19,7 +19,7 @@ func (s *Service) ContinueTask(ctx context.Context, input ContinueTaskInput) (Co
 		return ContinueTaskResponse{}, err
 	}
 
-	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry).List(ctx, project, domain.TaskFilter{})
+	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).List(ctx, project, domain.TaskFilter{})
 	if err != nil {
 		return ContinueTaskResponse{}, err
 	}
@@ -38,7 +38,7 @@ func (s *Service) ContinueTask(ctx context.Context, input ContinueTaskInput) (Co
 	}
 	var workflowSum WorkflowSummary
 	if includeWorkflow {
-		workflowSum = workflowSummary(s.repo.Snapshot().Workflow())
+		workflowSum = workflowSummary(s.snapshot.Workflow())
 	}
 
 	dependencies, err := app.NewDependencyService(s.repo).List(ctx, project, input.TaskID)
@@ -83,7 +83,7 @@ func (s *Service) ListTasks(ctx context.Context, input ListTasksInput) (ListTask
 	if err != nil {
 		return ListTasksResponse{}, err
 	}
-	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry).List(ctx, project, domain.TaskFilter{BucketKey: strings.TrimSpace(input.BucketKey)})
+	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).List(ctx, project, domain.TaskFilter{BucketKey: strings.TrimSpace(input.BucketKey)})
 	if err != nil {
 		return ListTasksResponse{}, err
 	}
@@ -112,7 +112,7 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 	}
 
 	if !input.SkipSimilarityCheck && !input.Confirmed {
-		tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry).List(ctx, project, domain.TaskFilter{})
+		tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).List(ctx, project, domain.TaskFilter{})
 		if err != nil {
 			return CreateTaskResponse{}, err
 		}
@@ -141,7 +141,7 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 		}
 	}
 
-	task, err := app.NewTaskServiceFromStore(s.repo, s.registry).Add(ctx, project, title, description, strings.TrimSpace(input.Priority), strings.TrimSpace(input.BucketKey))
+	task, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Add(ctx, project, title, description, strings.TrimSpace(input.Priority), strings.TrimSpace(input.BucketKey))
 	if err != nil {
 		return CreateTaskResponse{}, err
 	}
@@ -193,7 +193,7 @@ func (s *Service) EditTask(ctx context.Context, input EditTaskInput) (EditTaskRe
 		}
 		update.Priority = &p
 	}
-	task, err := app.NewTaskServiceFromStore(s.repo, s.registry).Edit(ctx, project, input.TaskID, update)
+	task, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Edit(ctx, project, input.TaskID, update)
 	if err != nil {
 		return EditTaskResponse{}, err
 	}
@@ -205,7 +205,7 @@ func (s *Service) MoveTask(ctx context.Context, input MoveTaskInput) (MoveTaskRe
 	if err != nil {
 		return MoveTaskResponse{}, err
 	}
-	task, err := app.NewTaskServiceFromStore(s.repo, s.registry).Move(ctx, project, input.TaskID, input.BucketKey)
+	task, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Move(ctx, project, input.TaskID, input.BucketKey)
 	if err != nil {
 		return MoveTaskResponse{}, err
 	}
@@ -230,7 +230,7 @@ func (s *Service) DeleteTask(ctx context.Context, input DeleteTaskInput) (Delete
 			},
 		}, nil
 	}
-	event, err := app.NewTaskServiceFromStore(s.repo, s.registry).Delete(ctx, project, input.TaskID)
+	event, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Delete(ctx, project, input.TaskID)
 	if err != nil {
 		return DeleteTaskResponse{}, err
 	}
@@ -243,7 +243,7 @@ func (s *Service) ArchiveTask(ctx context.Context, input ArchiveTaskInput) (Arch
 	if err != nil {
 		return ArchiveTaskResponse{}, err
 	}
-	task, _, err := app.NewTaskServiceFromStore(s.repo, s.registry).Archive(ctx, project, input.TaskID)
+	task, _, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Archive(ctx, project, input.TaskID)
 	if err != nil {
 		return ArchiveTaskResponse{}, err
 	}
@@ -255,7 +255,7 @@ func (s *Service) UnarchiveTask(ctx context.Context, input ArchiveTaskInput) (Ar
 	if err != nil {
 		return ArchiveTaskResponse{}, err
 	}
-	task, _, err := app.NewTaskServiceFromStore(s.repo, s.registry).Unarchive(ctx, project, input.TaskID)
+	task, _, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Unarchive(ctx, project, input.TaskID)
 	if err != nil {
 		return ArchiveTaskResponse{}, err
 	}

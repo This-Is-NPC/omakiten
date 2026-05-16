@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/app"
+	"omakiten/internal/config"
 	"omakiten/internal/tui/components/detailscreen"
 )
 
@@ -237,18 +238,23 @@ func (m Model) entitySourcePath(kind entityKind, slug string) string {
 // updateEntityScreen handles input while a detail view or persona picker is
 // open. Returns whether handling consumed the message and any cmd to dispatch.
 
-// handleEditorFinished is the post-editor callback. Re-imports the bundle and
-// refreshes the model state so the freshly written file is reflected.
+// handleEditorFinished is the post-editor callback. Reloads the bundle
+// through the editor, rotates the per-project Snapshot (in production
+// the BundleCache.Reload path; in tests the inline override on
+// Repositories.Snapshot), and refreshes model state so the freshly
+// written file is reflected.
 func (m *Model) handleEditorFinished(msg editorFinishedMsg) {
 	if msg.err != nil {
 		m.status = "Editor: " + msg.err.Error()
 		return
 	}
 	if m.repos.Editor != nil {
-		if _, err := m.repos.Editor.Apply(m.ctx, nil); err != nil {
+		resolved, err := m.repos.Editor.Apply(m.ctx, nil)
+		if err != nil {
 			m.status = err.Error()
 			return
 		}
+		m.rotateSnapshotAfterEdit(resolved)
 	}
 	if err := m.refresh(); err != nil {
 		m.status = err.Error()
@@ -284,6 +290,24 @@ func (m *Model) requestEntityDelete(kind entityKind, slug string) {
 	m.status = fmt.Sprintf("Confirm delete %s %q. Press d again to remove it; esc cancels.", strings.ToLower(kind.String()), slug)
 }
 
+// rotateSnapshotAfterEdit advances the per-project Snapshot the TUI
+// reads through after the BundleEditor wrote new bytes to disk. In
+// production this defers to BundleCache.Reload so every reader of the
+// per-project view sees the rotation atomically. When no cache is
+// wired (unit tests that drive the model directly), rebuild the
+// snapshot inline from the resolved bundle so model.refresh() picks
+// up the change. Errors from Reload are surfaced via m.status — they
+// are otherwise non-fatal: the on-disk file already reflects the edit.
+func (m *Model) rotateSnapshotAfterEdit(resolved config.Bundle) {
+	if m.repos.Cache != nil {
+		if _, err := m.repos.Cache.Reload(m.ctx, m.repos.ProjectID, ""); err != nil {
+			m.status = err.Error()
+		}
+		return
+	}
+	m.repos.Snapshot = config.BuildSnapshot(resolved)
+}
+
 func (m *Model) deleteEntity(kind entityKind, slug string) {
 	if m.repos.Editor == nil {
 		m.status = "Editor not available"
@@ -292,15 +316,20 @@ func (m *Model) deleteEntity(kind entityKind, slug string) {
 	var err error
 	switch kind {
 	case entityKindLaw:
-		err = app.NewLawService(m.repos.Config, m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger, m.registry).Remove(m.ctx, slug)
+		err = app.NewLawService(m.repos.activeSnapshot(), m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger, m.registry).Remove(m.ctx, slug)
 	case entityKindSkill:
-		err = app.NewSkillService(m.repos.Config, m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger).Remove(m.ctx, slug)
+		err = app.NewSkillService(m.repos.activeSnapshot(), m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger).Remove(m.ctx, slug)
 	case entityKindPersona:
-		err = app.NewPersonaService(m.repos.Config, m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger).Remove(m.ctx, slug)
+		err = app.NewPersonaService(m.repos.activeSnapshot(), m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger).Remove(m.ctx, slug)
 	}
 	if err != nil {
 		m.status = err.Error()
 		return
+	}
+	if m.repos.Editor != nil {
+		if resolved, lerr := m.repos.Editor.Load(); lerr == nil {
+			m.rotateSnapshotAfterEdit(resolved)
+		}
 	}
 	m.clearDeletePrompt("")
 	if refreshErr := m.refresh(); refreshErr != nil {

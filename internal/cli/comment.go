@@ -106,7 +106,7 @@ func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				workflow := app.NewWorkflowServiceFromStore(rt.store, rt.activeRegistry())
+				workflow := app.NewWorkflowServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot())
 				comment, err := rt.commentServiceWithWorkflow(workflow).Edit(ctx, project, commentID, editBody, editTags)
 				if err != nil {
 					return nil, err
@@ -144,7 +144,7 @@ func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				workflow := app.NewWorkflowServiceFromStore(rt.store, rt.activeRegistry())
+				workflow := app.NewWorkflowServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot())
 				event, err := rt.commentServiceWithWorkflow(workflow).Remove(ctx, project, commentID)
 				if err != nil {
 					return nil, err

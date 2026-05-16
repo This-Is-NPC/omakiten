@@ -38,9 +38,13 @@ func newEntityModel(t *testing.T) (Model, *sqlite.Store, *app.BundleEditor) {
 	t.Cleanup(func() { _ = store.Close() })
 
 	files := configstore.New()
-	editor := app.NewBundleEditor(store, files, configPath)
-	if _, err := editor.Apply(ctx, nil); err != nil {
+	editor := app.NewBundleEditor(files, configPath)
+	resolved, err := editor.Apply(ctx, nil)
+	if err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
+	}
+	if err := store.ImportBundle(ctx, resolved, configPath, ""); err != nil {
+		t.Fatalf("store.ImportBundle: %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	if err != nil {
@@ -49,7 +53,7 @@ func newEntityModel(t *testing.T) (Model, *sqlite.Store, *app.BundleEditor) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:    store,
-		Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
+		Snapshot: store.Snapshot(), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
@@ -151,7 +155,7 @@ func TestEntityRefreshAfterEditorMessage(t *testing.T) {
 
 	// Simulate the editor flow: directly add a skill and dispatch the
 	// editorFinishedMsg the way runExternalEditor would after $EDITOR returns.
-	skillService := app.NewSkillService(model.repos.Config, editor, model.repos.EntityFiles, model.repos.Slugger)
+	skillService := app.NewSkillService(model.repos.activeSnapshot(), editor, model.repos.EntityFiles, model.repos.Slugger)
 	if _, err := skillService.Add(ctx, domain.SkillInput{Key: "tui", Name: "TUI"}); err != nil {
 		t.Fatalf("SkillService.Add() error = %v", err)
 	}
@@ -211,9 +215,13 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 	t.Cleanup(func() { _ = store.Close() })
 
 	files := configstore.New()
-	editor := app.NewBundleEditor(store, files, configPath)
-	if _, err := editor.Apply(ctx, nil); err != nil {
+	editor := app.NewBundleEditor(files, configPath)
+	resolved, err := editor.Apply(ctx, nil)
+	if err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
+	}
+	if err := store.ImportBundle(ctx, resolved, configPath, ""); err != nil {
+		t.Fatalf("store.ImportBundle: %v", err)
 	}
 	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	if err != nil {
@@ -222,7 +230,7 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:    store,
-		Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry()), Comments: store, Dependencies: store, Entries: store, Config: store, Editor: editor,
+		Snapshot: store.Snapshot(), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
@@ -444,7 +452,7 @@ func TestPersonaPickerToggleAndSave(t *testing.T) {
 	ctx := context.Background()
 
 	// Add a second skill so the picker has two rows to toggle between.
-	if _, err := app.NewSkillService(model.repos.Config, model.repos.Editor, model.repos.EntityFiles, model.repos.Slugger).Add(ctx, domain.SkillInput{Key: "sqlite", Name: "SQLite"}); err != nil {
+	if _, err := app.NewSkillService(model.repos.activeSnapshot(), model.repos.Editor, model.repos.EntityFiles, model.repos.Slugger).Add(ctx, domain.SkillInput{Key: "sqlite", Name: "SQLite"}); err != nil {
 		t.Fatalf("Add(skill) error = %v", err)
 	}
 	if err := model.refresh(); err != nil {

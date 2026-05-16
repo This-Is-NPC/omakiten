@@ -17,19 +17,19 @@ type stubOrphanRepo struct {
 	rebindCalls  int
 }
 
-func (s *stubOrphanRepo) PreviewOrphanedTasks(_ context.Context, _ int64) (domain.OrphanReport, error) {
+func (s *stubOrphanRepo) PreviewOrphanedTasks(_ context.Context, _ int64, _ domain.BucketResolver, _ domain.BucketResolver) (domain.OrphanReport, error) {
 	s.previewCalls++
 	return s.preview, s.previewErr
 }
 
-func (s *stubOrphanRepo) RebindOrphanedTasks(_ context.Context, _ int64) (domain.OrphanReport, error) {
+func (s *stubOrphanRepo) RebindOrphanedTasks(_ context.Context, _ int64, _ domain.BucketResolver, _ domain.BucketResolver) (domain.OrphanReport, error) {
 	s.rebindCalls++
 	return s.rebind, s.rebindErr
 }
 
 func TestOrphanService_PreviewDelegates(t *testing.T) {
 	repo := &stubOrphanRepo{preview: domain.OrphanReport{Total: 3, WorkflowKey: "omakase"}}
-	svc := NewOrphanService(repo)
+	svc := NewOrphanService(repo, nil, nil)
 
 	got, err := svc.Preview(context.Background(), domain.ProjectContext{ID: 1})
 	if err != nil {
@@ -45,7 +45,7 @@ func TestOrphanService_PreviewDelegates(t *testing.T) {
 
 func TestOrphanService_MigrateDelegates(t *testing.T) {
 	repo := &stubOrphanRepo{rebind: domain.OrphanReport{Total: 2}}
-	svc := NewOrphanService(repo)
+	svc := NewOrphanService(repo, nil, nil)
 
 	got, err := svc.Migrate(context.Background(), domain.ProjectContext{ID: 1})
 	if err != nil {
@@ -61,7 +61,7 @@ func TestOrphanService_MigrateDelegates(t *testing.T) {
 
 func TestOrphanService_PreviewPropagatesError(t *testing.T) {
 	repo := &stubOrphanRepo{previewErr: errors.New("boom")}
-	svc := NewOrphanService(repo)
+	svc := NewOrphanService(repo, nil, nil)
 	if _, err := svc.Preview(context.Background(), domain.ProjectContext{ID: 1}); err == nil {
 		t.Fatal("expected error, got nil")
 	}

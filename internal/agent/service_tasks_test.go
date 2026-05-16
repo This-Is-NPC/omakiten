@@ -140,12 +140,13 @@ func newAgentFixtureEditLockedToBacklog(t *testing.T) editLockedFixture {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Seed", "Seed task", domain.Priority(2), "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Seed", "Seed task", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
 	svc := NewService(store, ProjectSelector{CWD: root})
+	svc.SetSnapshot(store.Snapshot())
 	svc.SetSettings(ServiceSettings{
 		RecentCommentLimit: 5,
 		IncludeWorkflow:    true,

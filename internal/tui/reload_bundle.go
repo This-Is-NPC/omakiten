@@ -74,7 +74,7 @@ func (m *Model) reloadBundle(path string) error {
 // reverts the swap. Failures are swallowed: the swap itself already
 // succeeded, and a missing event must not crash the TUI mid-render.
 func (m *Model) emitBundleSwapped(fromKey, toKey, fromPath string) {
-	report, err := m.repos.Orphans.PreviewOrphanedTasks(m.ctx, m.project.ID)
+	report, err := m.repos.Orphans.PreviewOrphanedTasks(m.ctx, m.project.ID, m.repos.activeSnapshot(), m.repos.activePreviousSnapshot())
 	if err != nil {
 		// Preview failed but the swap already committed. Best we can do
 		// is surface the partial state — emit the event with zero orphans

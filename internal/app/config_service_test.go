@@ -8,15 +8,14 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 )
 
 func TestConfigServiceImport(t *testing.T) {
 	ctx := context.Background()
-	store, _ := appTestStore(t, appTestBundle(t, 1000))
-	defer func() { _ = store.Close() }()
 
-	service := NewConfigService(store, configstore.New())
+	service := NewConfigService(configstore.New())
 
 	tmp := t.TempDir()
 	validPath := filepath.Join(tmp, "omakiten.yaml")
@@ -53,20 +52,17 @@ func TestConfigServiceImport(t *testing.T) {
 	}
 }
 
-// TestConfigServiceImportPopulatesProvidersWithoutSQLConfigTables
-// asserts that the Phase 2 in-memory refactor (task #110) made
-// ConfigService.Import a pure provider Swap on the SQL side: every
-// config table the import path previously populated is now dropped
-// (migration 020). The test imports a bundle and then checks that the
-// provider snapshot serves the workflow, personas, and laws —
-// the data must come from the snapshot because the SQL tables that
-// used to back the reads no longer exist.
-func TestConfigServiceImportPopulatesProvidersWithoutSQLConfigTables(t *testing.T) {
+// TestConfigServiceImportReturnsParsedBundleAndRegistry asserts that
+// Import is now a pure read: it parses the YAML, builds the
+// instance-scoped EnumRegistry, and returns both. Phase 2-bis dropped
+// the Store write-back; downstream rotation is driven by
+// BundleCache.Reload on mtime change. The returned Snapshot, built
+// from the bundle, serves the workflow shape without touching the SQL
+// adapter.
+func TestConfigServiceImportReturnsParsedBundleAndRegistry(t *testing.T) {
 	ctx := context.Background()
-	store, _ := appTestStore(t, appTestBundle(t, 1000))
-	defer func() { _ = store.Close() }()
 
-	service := NewConfigService(store, configstore.New())
+	service := NewConfigService(configstore.New())
 
 	tmp := t.TempDir()
 	cfgPath := filepath.Join(tmp, "omakiten.yaml")
@@ -74,29 +70,21 @@ func TestConfigServiceImportPopulatesProvidersWithoutSQLConfigTables(t *testing.
 	if err := os.WriteFile(cfgPath, data, 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	if _, _, _, err := service.Import(ctx, cfgPath); err != nil {
+	bundle, _, registry, err := service.Import(ctx, cfgPath)
+	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
-
-	// Workflow shape is the easiest provider surface to assert from
-	// inside this test — it lives inside omakiten.yaml so the marshal
-	// round-trip carries it through. Personas / skills / laws live in
-	// per-entity files (`yaml:"-"`) and need a directory walk to land
-	// in the bundle; LoadBundle handles that in production but this
-	// test only writes the central yaml.
-	wf := store.Snapshot().Workflow()
+	if registry == nil {
+		t.Fatal("Import: registry is nil; Import must build the EnumRegistry from the bundle")
+	}
+	snap := config.BuildSnapshot(bundle)
+	wf := snap.Workflow()
 	if wf.Key == "" || len(wf.Buckets) == 0 {
 		t.Fatalf("Snapshot().Workflow() returned empty after Import: %+v", wf)
 	}
 
-	// Settings flow through the snapshot too — the kit fallback only
-	// kicks in when the value is zero, so this confirms the in-memory
-	// path is the one supplying the answer.
-	settings, err := store.ContextSettings(ctx)
-	if err != nil {
-		t.Fatalf("ContextSettings: %v", err)
-	}
+	settings := snap.ContextSettings()
 	if settings.MaxTokens != 1000 {
-		t.Fatalf("ContextSettings.MaxTokens = %d, want 1000 (provider populated from bundle)", settings.MaxTokens)
+		t.Fatalf("Snapshot().ContextSettings().MaxTokens = %d, want 1000", settings.MaxTokens)
 	}
 }

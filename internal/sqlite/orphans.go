@@ -3,28 +3,48 @@ package sqlite
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sort"
 
 	"omakiten/internal/domain"
 )
 
+// isNilResolver returns true when the BucketResolver interface is nil
+// OR when it wraps a typed-nil pointer (the common shape callers get
+// when they assign a nil *config.Snapshot to a BucketResolver slot).
+// Reflection here is fine — the orphan path runs once per workflow
+// swap, not in a hot loop.
+func isNilResolver(r domain.BucketResolver) bool {
+	if r == nil {
+		return true
+	}
+	v := reflect.ValueOf(r)
+	if v.Kind() == reflect.Pointer && v.IsNil() {
+		return true
+	}
+	return false
+}
+
 // PreviewOrphanedTasks reports active tasks whose bucket no longer
 // belongs to the active workflow. The SQL `workflow_buckets` table was
-// dropped in migration 020; the implementation now diffs the active
-// in-memory provider snapshot against the previous one (captured on
-// ImportBundle) — task.bucket_id values that exist in the previous
-// snapshot but not in the active one are orphans. When the bucket key
-// survives the swap (renamed id, same key), the task migrates to the
-// new bucket id transparently elsewhere (`bucket_key` preserved) and is
-// not surfaced here.
+// dropped in migration 020; the implementation now diffs the current
+// in-memory resolver against the previous one (the caller hands the
+// previous-snapshot view through `previous` whenever the cache holds a
+// pre-rotation pointer) — task.bucket_id values that exist in the
+// previous resolver but not in the current one are orphans. When the
+// bucket key survives the swap (renamed id, same key), the task migrates
+// to the new bucket id transparently elsewhere (`bucket_key` preserved)
+// and is not surfaced here.
 //
 // Empty report when:
-//   - no active workflow loaded (provider returns zero workflow)
-//   - no previous snapshot (Store has only ever seen one bundle)
-//   - every task's bucket_id resolves in the active snapshot
-func (s *Store) PreviewOrphanedTasks(ctx context.Context, projectID int64) (domain.OrphanReport, error) {
-	snap := s.Snapshot()
-	wf := snap.Workflow()
+//   - no current workflow loaded (resolver nil or workflow has no buckets)
+//   - no previous resolver (caller has only ever seen one bundle)
+//   - every task's bucket_id resolves in the current resolver
+func (s *Store) PreviewOrphanedTasks(ctx context.Context, projectID int64, current, previous domain.BucketResolver) (domain.OrphanReport, error) {
+	if current == nil {
+		return domain.OrphanReport{}, nil
+	}
+	wf := current.Workflow()
 	if wf.Key == "" || len(wf.Buckets) == 0 {
 		return domain.OrphanReport{}, nil
 	}
@@ -40,36 +60,31 @@ func (s *Store) PreviewOrphanedTasks(ctx context.Context, projectID int64) (doma
 		return domain.OrphanReport{}, err
 	}
 
-	prev := s.previousSnapshot
 	report := domain.OrphanReport{WorkflowKey: wf.Key}
 	groups := map[string]*domain.OrphanGroup{}
 	for _, row := range taskRows {
 		// Resolve the bucket key the task was last bound to via the
-		// previous-snapshot view: that snapshot still knows the id↔key
-		// mapping the bucket had when the task was created or last
-		// moved. When no previous snapshot exists (first-import path),
-		// fall back to the active snapshot — a task whose id resolves
-		// in the active workflow is not orphaned regardless of swaps.
+		// previous resolver: that view still knows the id↔key mapping
+		// the bucket had when the task was created or last moved. When
+		// no previous resolver exists (first-import path), fall back to
+		// the current resolver — a task whose id resolves in the
+		// current workflow is not orphaned regardless of swaps.
 		fromKey := ""
-		if prev != nil {
-			if b, ok := prev.BucketByID(row.bucketID); ok {
+		if !isNilResolver(previous) {
+			if b, ok := previous.BucketByID(row.bucketID); ok {
 				fromKey = b.Key
 			}
 		}
-		_ = prev // pin previousSnapshot for the rest of the loop
 		if fromKey == "" {
-			// No previous-snapshot mapping. The task is orphaned only if
-			// its bucket_id is also absent from the active workflow.
-			if _, ok := snap.BucketByID(row.bucketID); ok {
+			// No previous-resolver mapping. The task is orphaned only if
+			// its bucket_id is also absent from the current workflow.
+			if _, ok := current.BucketByID(row.bucketID); ok {
 				continue
 			}
 		} else if _, ok := activeKeysByKey[fromKey]; ok {
 			// Key survives across the swap — not user-facing orphan.
 			continue
 		}
-		_ = snap // snapshot pin: keep the pointer reachable through the
-		// classification loop so the GC cannot reclaim the bucket map
-		// underneath snap.BucketByID below.
 		toKey := defaultKey
 		groupKey := fromKey + "→" + toKey
 		group, ok := groups[groupKey]
@@ -101,7 +116,7 @@ func (s *Store) PreviewOrphanedTasks(ctx context.Context, projectID int64) (doma
 
 // queryActiveTasksWithBucket returns every active task row with its
 // stored bucket_id. The orphan-classification logic runs in Go so the
-// previous-snapshot lookup stays close to the diff that drives it.
+// previous-resolver lookup stays close to the diff that drives it.
 func (s *Store) queryActiveTasksWithBucket(ctx context.Context, projectID int64) ([]orphanRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT t.id, t.title, COALESCE(t.bucket_id, 0)
@@ -138,8 +153,8 @@ type orphanRow struct {
 // at an orphaned bucket is rebound to the active workflow's matching
 // key (when the key survives) or to the default (first) bucket. A
 // task.migrated event is emitted per task inside the same transaction.
-func (s *Store) RebindOrphanedTasks(ctx context.Context, projectID int64) (domain.OrphanReport, error) {
-	report, err := s.PreviewOrphanedTasks(ctx, projectID)
+func (s *Store) RebindOrphanedTasks(ctx context.Context, projectID int64, current, previous domain.BucketResolver) (domain.OrphanReport, error) {
+	report, err := s.PreviewOrphanedTasks(ctx, projectID, current, previous)
 	if err != nil {
 		return domain.OrphanReport{}, err
 	}
@@ -147,7 +162,7 @@ func (s *Store) RebindOrphanedTasks(ctx context.Context, projectID int64) (domai
 		return report, nil
 	}
 
-	wf := s.Snapshot().Workflow()
+	wf := current.Workflow()
 	idByKey := make(map[string]int64, len(wf.Buckets))
 	for _, b := range wf.Buckets {
 		idByKey[b.Key] = b.ID

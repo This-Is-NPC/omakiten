@@ -32,22 +32,22 @@ func setupLifecycle(t *testing.T) (context.Context, *Store, domain.ProjectContex
 func TestTaskFilterIncludeArchived(t *testing.T) {
 	ctx, store, project := setupLifecycle(t)
 
-	keep, err := store.CreateTask(ctx, project.ID, "Active", "", domain.Priority(2), "backlog")
+	keep, err := store.CreateTask(ctx, project.ID, "Active", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(active) = %v", err)
 	}
 	if keep.State != domain.TaskStateActive {
 		t.Fatalf("default state = %q, want active", keep.State)
 	}
-	archived, err := store.CreateTask(ctx, project.ID, "Archive me", "", domain.Priority(2), "backlog")
+	archived, err := store.CreateTask(ctx, project.ID, "Archive me", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(archive) = %v", err)
 	}
-	if _, _, err := store.SetTaskState(ctx, project.ID, archived.ID, domain.TaskStateArchived, "done"); err != nil {
+	if _, _, err := store.SetTaskState(ctx, project.ID, archived.ID, domain.TaskStateArchived, "done", store.Snapshot()); err != nil {
 		t.Fatalf("SetTaskState() = %v", err)
 	}
 
-	listed, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{})
+	listed, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{}, store.Snapshot())
 	if err != nil {
 		t.Fatalf("ListTasks() = %v", err)
 	}
@@ -55,7 +55,7 @@ func TestTaskFilterIncludeArchived(t *testing.T) {
 		t.Fatalf("default filter included archived: %+v", listed)
 	}
 
-	all, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{IncludeArchived: true})
+	all, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{IncludeArchived: true}, store.Snapshot())
 	if err != nil {
 		t.Fatalf("ListTasks(IncludeArchived) = %v", err)
 	}
@@ -66,9 +66,9 @@ func TestTaskFilterIncludeArchived(t *testing.T) {
 
 func TestArchiveBypassesTransitionGuardsButHonorsOperationGuards(t *testing.T) {
 	ctx, store, project := setupLifecycle(t)
-	tasks := app.NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
+	tasks := app.NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
-	task, err := store.CreateTask(ctx, project.ID, "Frozen", "", domain.Priority(2), "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Frozen", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
@@ -115,9 +115,9 @@ func TestArchiveBypassesTransitionGuardsButHonorsOperationGuards(t *testing.T) {
 
 func TestDeleteEnforcesPolicyAndCascades(t *testing.T) {
 	ctx, store, project := setupLifecycle(t)
-	tasks := app.NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
+	tasks := app.NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
-	task, err := store.CreateTask(ctx, project.ID, "Doomed", "", domain.Priority(2), "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Doomed", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
@@ -133,15 +133,15 @@ func TestDeleteEnforcesPolicyAndCascades(t *testing.T) {
 	}
 
 	// Move to done so policy permits delete.
-	if _, err := store.MoveTask(ctx, project.ID, task.ID, "dev"); err != nil {
+	if _, err := store.MoveTask(ctx, project.ID, task.ID, "dev", store.Snapshot()); err != nil {
 		t.Fatalf("MoveTask = %v", err)
 	}
-	if _, err := store.MoveTask(ctx, project.ID, task.ID, "done"); err != nil {
+	if _, err := store.MoveTask(ctx, project.ID, task.ID, "done", store.Snapshot()); err != nil {
 		t.Fatalf("MoveTask = %v", err)
 	}
 
 	// Add a comment + dependency to verify cascade.
-	other, err := store.CreateTask(ctx, project.ID, "Other", "", domain.Priority(2), "backlog")
+	other, err := store.CreateTask(ctx, project.ID, "Other", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(other) = %v", err)
 	}
@@ -190,11 +190,11 @@ func TestDeleteEnforcesPolicyAndCascades(t *testing.T) {
 
 func TestEditPolicyAndCommentInheritance(t *testing.T) {
 	ctx, store, project := setupLifecycle(t)
-	tasks := app.NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry())
-	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry())
+	tasks := app.NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 	comments := app.NewCommentServiceWithWorkflow(store, workflow)
 
-	task, err := store.CreateTask(ctx, project.ID, "Title", "", domain.Priority(2), "backlog")
+	task, err := store.CreateTask(ctx, project.ID, "Title", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
@@ -211,7 +211,7 @@ func TestEditPolicyAndCommentInheritance(t *testing.T) {
 	}
 
 	// Move to dev: task.edit=false, comment inherits but overrides delete=true.
-	if _, err := store.MoveTask(ctx, project.ID, task.ID, "dev"); err != nil {
+	if _, err := store.MoveTask(ctx, project.ID, task.ID, "dev", store.Snapshot()); err != nil {
 		t.Fatalf("MoveTask = %v", err)
 	}
 

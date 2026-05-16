@@ -64,7 +64,7 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 					update.BucketKey = bucket
 				}
 
-				task, err := app.NewTaskServiceFromStore(rt.store, rt.activeRegistry()).Edit(ctx, project, taskID, update)
+				task, err := app.NewTaskServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot()).Edit(ctx, project, taskID, update)
 				if err != nil {
 					return nil, err
 				}

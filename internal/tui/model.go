@@ -790,7 +790,19 @@ func (m *Model) refresh() error {
 	views := m.activeViewSettings()
 	m.views = views
 
-	query := app.NewTUIQueryService(m.repos.Tasks, m.repos.Config, m.repos.Dependencies, m.repos.Comments, m.repos.Entries, m.repos.Tags, m.repos.Editor, m.registry)
+	// Phase 2-bis: BundleEditor writes only land on disk; the
+	// per-project Snapshot rotates through BundleCache.Reload in
+	// production. Tests that drive the model without wiring a cache
+	// still expect refresh() to reflect just-written bundle bytes —
+	// rebuild the snapshot from the editor's current view here so the
+	// downstream TUIQueryService picks up the latest entities.
+	if m.repos.Cache == nil && m.repos.Editor != nil {
+		if resolved, err := m.repos.Editor.Load(); err == nil {
+			m.repos.Snapshot = config.BuildSnapshot(resolved)
+		}
+	}
+
+	query := app.NewTUIQueryService(m.repos.Tasks, m.repos.activeSnapshot(), m.repos.Dependencies, m.repos.Comments, m.repos.Entries, m.repos.Tags, m.repos.Editor, m.registry)
 	snap, err := query.Snapshot(m.ctx, m.project, domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order}, app.SnapshotOptions{IncludeArchived: m.includeArchived})
 	if err != nil {
 		return err

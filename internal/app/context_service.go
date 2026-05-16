@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
 )
@@ -16,16 +17,16 @@ type ContextService struct {
 	comments     CommentRepository
 	dependencies DependencyRepository
 	entries      ContextEntryRepository
-	config       ConfigRepository
+	snap         *config.Snapshot
 	counter      token.Counter
 	registry     *domain.EnumRegistry
 }
 
-func NewContextService(tasks TaskRepository, comments CommentRepository, dependencies DependencyRepository, entries ContextEntryRepository, cfg ConfigRepository, counter token.Counter, registry *domain.EnumRegistry) *ContextService {
+func NewContextService(tasks TaskRepository, comments CommentRepository, dependencies DependencyRepository, entries ContextEntryRepository, snap *config.Snapshot, counter token.Counter, registry *domain.EnumRegistry) *ContextService {
 	if counter == nil {
 		counter = token.ApproxCounter{}
 	}
-	return &ContextService{tasks: tasks, comments: comments, dependencies: dependencies, entries: entries, config: cfg, counter: counter, registry: registry}
+	return &ContextService{tasks: tasks, comments: comments, dependencies: dependencies, entries: entries, snap: snap, counter: counter, registry: registry}
 }
 
 func (s *ContextService) Add(ctx context.Context, project domain.ProjectContext, body string) (entry domain.ContextEntry, err error) {
@@ -65,7 +66,7 @@ func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext
 		err = domain.NewError(domain.ErrValidation, "context level must be 1, 2, or 3", nil)
 		return
 	}
-	snap := s.config.Snapshot()
+	snap := s.snap
 	settings := snap.ContextSettings()
 	budget := contextBudget{counter: s.counter, maxTokens: settings.MaxTokens}
 
@@ -97,7 +98,7 @@ func (s *ContextService) Dump(ctx context.Context, project domain.ProjectContext
 			dump.Workflow = workflow
 		}
 
-		tasks, err := s.tasks.ListTasks(ctx, project.ID, domain.TaskFilter{})
+		tasks, err := s.tasks.ListTasks(ctx, project.ID, domain.TaskFilter{}, s.snap)
 		if err != nil {
 			return dump, err
 		}

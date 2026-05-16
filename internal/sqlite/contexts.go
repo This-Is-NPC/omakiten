@@ -4,44 +4,8 @@ import (
 	"context"
 	"database/sql"
 
-	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
-
-// kitContextSettings reads the canonical context block from the embedded
-// kit YAML. Used as the seed in ContextSettings before the SELECT
-// possibly overrides per-key. Falls back to {1, 0} if the embedded YAML
-// is unparseable so the binary keeps booting and the validator's later
-// pass surfaces the real failure.
-func kitContextSettings() domain.ContextSettings {
-	cfg, err := config.LoadKitConfig()
-	if err != nil {
-		return domain.ContextSettings{DefaultLevel: 1, MaxTokens: 0}
-	}
-	return domain.ContextSettings{
-		DefaultLevel: cfg.Context.DefaultLevel,
-		MaxTokens:    cfg.Context.MaxTokens,
-	}
-}
-
-func (s *Store) ContextSettings(_ context.Context) (domain.ContextSettings, error) {
-	// The SQL `settings` table was dropped in migration 020 and the
-	// per-project Snapshot now owns the read. The kit canonical (read
-	// from the embedded YAML) seeds the bootstrap window between
-	// sqlite.Open and the first ImportBundle so callers never see a
-	// zero-value response. TRANSITIONAL: ContextSettings remains on
-	// the Store solely to satisfy the legacy ConfigRepository surface;
-	// app.ContextService now reads s.snap.ContextSettings() directly.
-	out := kitContextSettings()
-	cfg := s.Snapshot().Settings()
-	if cfg.Context.DefaultLevel != 0 {
-		out.DefaultLevel = cfg.Context.DefaultLevel
-	}
-	if cfg.Context.MaxTokens != 0 {
-		out.MaxTokens = cfg.Context.MaxTokens
-	}
-	return out, nil
-}
 
 func (s *Store) AddContextEntry(ctx context.Context, projectID int64, body string, tokenEstimate int) (domain.ContextEntry, error) {
 	row := s.db.QueryRowContext(ctx, `

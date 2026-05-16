@@ -39,12 +39,11 @@ func NewWorkflowService(snap *config.Snapshot, workflow WorkflowRepository, guar
 
 // NewWorkflowServiceFromStore is the production-path sugar for callers that
 // hold a single composite store implementing every workflow port (in
-// production: *sqlite.Store). The store must also implement
-// SnapshotSource so the service can capture the per-project Snapshot at
-// construction. The registry is required and is threaded into the
+// production: *sqlite.Store). snap is the per-project Snapshot captured
+// at construction; the registry is required and is threaded into the
 // service so priority lookups use the bundle-scoped tables.
-func NewWorkflowServiceFromStore(store CompositeWorkflowStore, registry *domain.EnumRegistry) *WorkflowService {
-	return NewWorkflowService(store.Snapshot(), store, store, store, store, registry)
+func NewWorkflowServiceFromStore(store CompositeWorkflowStore, registry *domain.EnumRegistry, snap *config.Snapshot) *WorkflowService {
+	return NewWorkflowService(snap, store, store, store, store, registry)
 }
 
 // SetRegistry repoints the service at a fresh EnumRegistry. Used by the TUI
@@ -107,7 +106,7 @@ func (s *WorkflowService) CreateTask(ctx context.Context, projectID int64, title
 	if priority == domain.PriorityZero {
 		priority = s.defaultPriority()
 	}
-	return s.tasks.CreateTask(ctx, projectID, title, description, priority, bucketKey)
+	return s.tasks.CreateTask(ctx, projectID, title, description, priority, bucketKey, s.snap)
 }
 
 // OperationArchive / OperationDelete / OperationUnarchive label the
@@ -165,7 +164,7 @@ const (
 // at every layer when unset. There is no hardcoded "first bucket is
 // special" rule — every constraint lives in the YAML.
 func (s *WorkflowService) ResolveBucketPermissions(ctx context.Context, project domain.ProjectContext, taskID int64, entity, operation string) (bool, string, error) {
-	currentBucketID, currentBucketKey, err := s.repo.CurrentTaskBucket(ctx, project.ID, taskID)
+	currentBucketID, currentBucketKey, err := s.repo.CurrentTaskBucket(ctx, project.ID, taskID, s.snap)
 	if err != nil {
 		return false, "", err
 	}
@@ -287,7 +286,7 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 		return
 	}
 
-	currentBucketID, _, err := s.repo.CurrentTaskBucket(ctx, project.ID, taskID)
+	currentBucketID, _, err := s.repo.CurrentTaskBucket(ctx, project.ID, taskID, s.snap)
 	if err != nil {
 		return
 	}
@@ -313,7 +312,7 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 		}
 	}
 
-	task, err = s.tasks.MoveTask(ctx, project.ID, taskID, targetBucketKey)
+	task, err = s.tasks.MoveTask(ctx, project.ID, taskID, targetBucketKey, s.snap)
 	if err != nil {
 		return
 	}
@@ -453,7 +452,7 @@ func operationGuards(workflow domain.Workflow, operation string) []domain.Transi
 }
 
 func (s *WorkflowService) checkBlockersIn(ctx context.Context, projectID, taskID int64, allowedKeys []string, hint, operation string, target map[string]any) error {
-	blockers, err := s.guards.ListTaskBlockerBuckets(ctx, projectID, taskID)
+	blockers, err := s.guards.ListTaskBlockerBuckets(ctx, projectID, taskID, s.snap)
 	if err != nil {
 		return err
 	}

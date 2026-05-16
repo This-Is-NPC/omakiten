@@ -28,7 +28,7 @@ func newWorkflowCommand(opts *runtimeOptions) *cobra.Command {
 				// Workflow read is a pure config lookup served from
 				// the in-memory Snapshot; no activity tracking
 				// needed since nothing touches the DB.
-				return map[string]any{"workflow": rt.store.Snapshot().Workflow()}, nil
+				return map[string]any{"workflow": rt.activeSnapshot().Workflow()}, nil
 			})
 		},
 	}
@@ -67,7 +67,11 @@ to running without --confirm.`,
 					return nil, err
 				}
 
-				svc := app.NewOrphanService(rt.store)
+				pr, err := rt.ResolveProjectRuntime(ctx, project.ID)
+				if err != nil {
+					return nil, err
+				}
+				svc := app.NewOrphanService(rt.store, pr.Snapshot, pr.PreviousSnapshot)
 				preview, err := svc.Preview(ctx, project)
 				if err != nil {
 					return nil, err

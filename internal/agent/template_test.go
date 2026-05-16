@@ -264,6 +264,7 @@ func TestShowTemplateAllowsShadowedSlugWithoutProjectContext(t *testing.T) {
 		t.Fatalf("MkdirAll(outside) error = %v", err)
 	}
 	service := NewService(store, ProjectSelector{CWD: outside})
+	service.SetSnapshot(store.Snapshot())
 	service.SetTemplateCatalog(shadowCatalog())
 
 	resp, err := service.ShowTemplate(ctx, ShowTemplateInput{Slug: "pull-request"})

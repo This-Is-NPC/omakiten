@@ -63,15 +63,14 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 	}
 
 	bundleStore := configstore.New()
-	editor := app.NewBundleEditor(rt.store, bundleStore, rt.configPath)
+	editor := app.NewBundleEditor(bundleStore, rt.configPath)
 	model, err := tui.NewModel(ctx, project, tui.Repositories{
 		Tasks:        rt.store,
 		Projects:     rt.store,
-		Workflow:     app.NewWorkflowServiceFromStore(rt.store, rt.activeRegistry()),
+		Workflow:     app.NewWorkflowServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot()),
 		Comments:     rt.store,
 		Dependencies: rt.store,
 		Entries:      rt.store,
-		Config:       rt.store,
 		Tags:         rt.store,
 		Editor:       editor,
 		BundleStore:  bundleStore,

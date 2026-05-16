@@ -65,7 +65,6 @@ type ServiceSettings struct {
 
 type Repository interface {
 	app.ProjectRepository
-	app.ConfigRepository
 	app.TaskRepository
 	app.WorkflowRepository
 	app.GuardEvaluationRepository
@@ -77,7 +76,6 @@ type Repository interface {
 	app.ErrorRepository
 	app.MetricsRepository
 	app.OrphanRepository
-	app.SnapshotSource
 }
 
 // TaskTemplateLookup returns the active task template scaffold to embed in
@@ -115,6 +113,12 @@ type Service struct {
 	// where callers want to stub one closure without building a
 	// full Bundle/Snapshot pair.
 	snapshot *config.Snapshot
+	// previousSnapshot is the bundle view captured immediately before
+	// the latest cache rotation. The orphan-rebind flow uses it to
+	// resolve task.bucket_id → previous key across the swap.
+	// SetPreviousSnapshot installs it; nil when the runtime has only
+	// seen one bundle for this project.
+	previousSnapshot *config.Snapshot
 }
 
 // NewService constructs the agent service with zero-value settings.
@@ -263,6 +267,13 @@ func (s *Service) Snapshot() *config.Snapshot {
 	return s.snapshot
 }
 
+// SetPreviousSnapshot installs the bundle view captured immediately
+// before the latest cache rotation. Only the orphan-rebind flow uses
+// it; nil when the runtime has only seen one bundle for this project.
+func (s *Service) SetPreviousSnapshot(snap *config.Snapshot) {
+	s.previousSnapshot = snap
+}
+
 // SettingsCachePrompts exposes the cache-prompts toggle for the MCP adapter.
 // The agent service does not reach across packages to render PromptResult,
 // so the adapter calls this when stamping `cache_control` hints.
@@ -313,11 +324,11 @@ func (s *Service) resolveProject(ctx context.Context, selector ProjectSelector) 
 }
 
 func (s *Service) projectState(ctx context.Context, project domain.ProjectContext) ([]domain.Task, domain.Workflow, []domain.ContextEntry, error) {
-	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry).List(ctx, project, domain.TaskFilter{})
+	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).List(ctx, project, domain.TaskFilter{})
 	if err != nil {
 		return nil, domain.Workflow{}, nil, err
 	}
-	workflow := s.repo.Snapshot().Workflow()
+	workflow := s.snapshot.Workflow()
 	entries, err := s.repo.ListContextEntries(ctx, project.ID)
 	if err != nil {
 		return nil, domain.Workflow{}, nil, err

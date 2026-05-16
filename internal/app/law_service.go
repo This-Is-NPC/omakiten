@@ -9,7 +9,7 @@ import (
 )
 
 type LawService struct {
-	repo     ConfigRepository
+	snap     *config.Snapshot
 	editor   *BundleEditor
 	files    EntityFileWriter
 	slugger  Slugifier
@@ -20,8 +20,8 @@ type LawService struct {
 // the service resolves severity labels and ids exclusively through the
 // supplied EnumRegistry so each call site operates against the bundle that
 // was actually loaded, free of process-global state.
-func NewLawService(repo ConfigRepository, editor *BundleEditor, files EntityFileWriter, slugger Slugifier, registry *domain.EnumRegistry) *LawService {
-	return &LawService{repo: repo, editor: editor, files: files, slugger: slugger, registry: registry}
+func NewLawService(snap *config.Snapshot, editor *BundleEditor, files EntityFileWriter, slugger Slugifier, registry *domain.EnumRegistry) *LawService {
+	return &LawService{snap: snap, editor: editor, files: files, slugger: slugger, registry: registry}
 }
 
 // lawsFromSnapshot projects the snapshot's config.Law slice into the
@@ -65,11 +65,11 @@ func (s *LawService) List(ctx context.Context) ([]domain.Law, error) {
 }
 
 func (s *LawService) ListFiltered(_ context.Context, filter LawListFilter) ([]domain.Law, error) {
-	laws := lawsFromSnapshot(s.repo.Snapshot())
 	bundle, err := s.editor.Load()
 	if err != nil {
 		return nil, err
 	}
+	laws := lawsFromSnapshot(config.BuildSnapshot(bundle))
 	bySlug := indexLaws(bundle.Laws)
 	warnings := warningIndex(bundle.Warnings)
 	out := make([]domain.Law, 0, len(laws))

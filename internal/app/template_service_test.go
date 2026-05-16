@@ -54,7 +54,7 @@ func TestTemplateServiceSetDefaultRewritesFrontmatter(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	editor := app.NewBundleEditor(store, cs, configPath)
+	editor := app.NewBundleEditor(cs, configPath)
 	// Seed-import so subsequent ApplyWithFiles round-trips succeed.
 	if _, err := editor.Apply(ctx, nil); err != nil {
 		t.Fatalf("editor.Apply(seed) = %v", err)
@@ -115,7 +115,7 @@ func TestTemplateServiceSetDefaultClears(t *testing.T) {
 		t.Fatalf("sqlite.Open = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	editor := app.NewBundleEditor(store, cs, configPath)
+	editor := app.NewBundleEditor(cs, configPath)
 	if _, err := editor.Apply(ctx, nil); err != nil {
 		t.Fatalf("editor.Apply(seed) = %v", err)
 	}

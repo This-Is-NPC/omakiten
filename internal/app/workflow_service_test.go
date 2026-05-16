@@ -43,29 +43,6 @@ type recordedEvent struct {
 	payload   string
 }
 
-// ConfigRepository
-func (f *fakeStores) ImportBundle(context.Context, config.Bundle, string, string) error {
-	return nil
-}
-func (f *fakeStores) ListActiveLaws(context.Context) ([]domain.Law, error) {
-	return nil, nil
-}
-func (f *fakeStores) ListActiveSkills(context.Context) ([]domain.Skill, error) {
-	return nil, nil
-}
-func (f *fakeStores) ListActivePersonas(context.Context) ([]domain.Persona, error) {
-	return nil, nil
-}
-func (f *fakeStores) ActiveWorkflow(context.Context) (domain.Workflow, error) {
-	if f.defaultBucket == "" {
-		return domain.Workflow{}, nil
-	}
-	return domain.Workflow{Buckets: []domain.Bucket{{Key: f.defaultBucket}}}, nil
-}
-func (f *fakeStores) ContextSettings(context.Context) (domain.ContextSettings, error) {
-	return domain.ContextSettings{}, nil
-}
-
 // Snapshot projects the fake's loose configuration into the value-typed
 // Phase 2-bis Snapshot that WorkflowService consumes via its
 // constructor. The mapping is straightforward: every bucket the fake
@@ -144,7 +121,7 @@ func (f *fakeStores) TransitionAllowed(_ context.Context, from, to int64) (bool,
 func (f *fakeStores) LoadTransitionGuards(_ context.Context, from, to int64) ([]domain.TransitionGuard, error) {
 	return f.guards[[2]int64{from, to}], nil
 }
-func (f *fakeStores) CurrentTaskBucket(context.Context, int64, int64) (int64, string, error) {
+func (f *fakeStores) CurrentTaskBucket(context.Context, int64, int64, domain.BucketResolver) (int64, string, error) {
 	return f.currentBucketID, f.currentBucketKey, f.currentBucketErr
 }
 func (f *fakeStores) TaskState(context.Context, int64, int64) (domain.TaskState, error) {
@@ -155,7 +132,7 @@ func (f *fakeStores) TaskState(context.Context, int64, int64) (domain.TaskState,
 }
 
 // GuardEvaluationRepository
-func (f *fakeStores) ListTaskBlockerBuckets(_ context.Context, _, taskID int64) ([]domain.TaskBlocker, error) {
+func (f *fakeStores) ListTaskBlockerBuckets(_ context.Context, _, taskID int64, _ domain.BucketResolver) ([]domain.TaskBlocker, error) {
 	return f.blockerLists[taskID], nil
 }
 func (f *fakeStores) CountTaskComments(context.Context, int64, int64) (int, error) {
@@ -166,27 +143,27 @@ func (f *fakeStores) CountTaskCommentsTagged(_ context.Context, _, _ int64, tag 
 }
 
 // TaskRepository
-func (f *fakeStores) CreateTask(_ context.Context, _ int64, _, _ string, _ domain.Priority, _ string) (domain.Task, error) {
+func (f *fakeStores) CreateTask(_ context.Context, _ int64, _, _ string, _ domain.Priority, _ string, _ domain.BucketResolver) (domain.Task, error) {
 	f.createCalls++
 	return f.createResp, f.createErr
 }
-func (f *fakeStores) ListTasks(context.Context, int64, domain.TaskFilter) ([]domain.Task, error) {
+func (f *fakeStores) ListTasks(context.Context, int64, domain.TaskFilter, domain.BucketResolver) ([]domain.Task, error) {
 	return nil, nil
 }
-func (f *fakeStores) MoveTask(context.Context, int64, int64, string) (domain.Task, error) {
+func (f *fakeStores) MoveTask(context.Context, int64, int64, string, domain.BucketResolver) (domain.Task, error) {
 	f.moveCalls++
 	return f.moveResp, f.moveErr
 }
-func (f *fakeStores) UpdateTask(context.Context, int64, int64, domain.TaskUpdate) (domain.Task, error) {
+func (f *fakeStores) UpdateTask(context.Context, int64, int64, domain.TaskUpdate, domain.BucketResolver) (domain.Task, error) {
 	return domain.Task{}, nil
 }
 func (f *fakeStores) TaskCount(context.Context, int64) (int64, error) {
 	return 0, nil
 }
-func (f *fakeStores) HardDeleteTask(context.Context, int64, int64) (domain.Event, error) {
+func (f *fakeStores) HardDeleteTask(context.Context, int64, int64, domain.BucketResolver) (domain.Event, error) {
 	return domain.Event{}, nil
 }
-func (f *fakeStores) SetTaskState(context.Context, int64, int64, domain.TaskState, string) (domain.Task, domain.Event, error) {
+func (f *fakeStores) SetTaskState(context.Context, int64, int64, domain.TaskState, string, domain.BucketResolver) (domain.Task, domain.Event, error) {
 	return domain.Task{}, domain.Event{}, nil
 }
 func (f *fakeStores) EmitTaskEditedEvent(context.Context, int64, int64, domain.Task, domain.Task) (domain.Event, error) {

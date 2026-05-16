@@ -265,6 +265,7 @@ func (c *BundleCache) rebuild(ctx context.Context, projectID int64, configPath s
 	// useful id↔key mapping to project from a non-existent entry.
 	if old != nil {
 		runtime.PreviousSnapshot = old.Snapshot
+		runtime.Service.SetPreviousSnapshot(old.Snapshot)
 	}
 	c.entries[projectID] = runtime
 	c.mu.Unlock()
@@ -291,7 +292,7 @@ func BuildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 }
 
 func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configstore.Adapter, bus events.Bus, configPath string, projectID int64, selector agent.ProjectSelector) (*ProjectRuntime, error) {
-	bundle, _, enumRegistry, err := app.NewConfigService(store, cs).Import(ctx, configPath)
+	bundle, _, enumRegistry, err := app.NewConfigService(cs).Import(ctx, configPath)
 	if err != nil {
 		return nil, err
 	}

@@ -45,6 +45,7 @@ func TestUnregisteredProjectReturnsAgentGuidance(t *testing.T) {
 		t.Fatalf("MkdirAll(outside) error = %v", err)
 	}
 	service := NewService(store, ProjectSelector{CWD: outside})
+	service.SetSnapshot(store.Snapshot())
 
 	_, err := service.Overview(ctx, OverviewInput{})
 	if err == nil {
@@ -426,15 +427,15 @@ func newAgentFixture(t *testing.T) agentFixture {
 	if err != nil {
 		t.Fatalf("UpsertProject(B) error = %v", err)
 	}
-	taskA1, err := store.CreateTask(ctx, projectA.ID, "Add MCP agent integration", "Expose Omakiten state to AI harnesses", domain.Priority(2), "backlog")
+	taskA1, err := store.CreateTask(ctx, projectA.ID, "Add MCP agent integration", "Expose Omakiten state to AI harnesses", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(A1) error = %v", err)
 	}
-	taskA2, err := store.CreateTask(ctx, projectA.ID, "Write agent tests", "Cover project isolation", domain.Priority(2), "backlog")
+	taskA2, err := store.CreateTask(ctx, projectA.ID, "Write agent tests", "Cover project isolation", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(A2) error = %v", err)
 	}
-	taskB, err := store.CreateTask(ctx, projectB.ID, "Other project task", "Must never leak", domain.Priority(2), "backlog")
+	taskB, err := store.CreateTask(ctx, projectB.ID, "Other project task", "Must never leak", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(B) error = %v", err)
 	}
@@ -460,6 +461,7 @@ func newAgentFixture(t *testing.T) agentFixture {
 	// guarantees these values in production; mirroring them keeps
 	// behavioural parity in tests.
 	svc := NewService(store, ProjectSelector{CWD: rootA})
+	svc.SetSnapshot(store.Snapshot())
 	svc.SetRegistry(testfixtures.CanonicalRegistry())
 	svc.SetSettings(ServiceSettings{
 		RecentCommentLimit: 5,

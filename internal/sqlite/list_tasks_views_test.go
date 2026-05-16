@@ -22,7 +22,7 @@ func TestListTasksHonorsSortField(t *testing.T) {
 		{"alpha", 1},
 		{"bravo", 2},
 	} {
-		if _, err := store.CreateTask(ctx, project.ID, tc.title, "", tc.priority, "backlog"); err != nil {
+		if _, err := store.CreateTask(ctx, project.ID, tc.title, "", tc.priority, "backlog", store.Snapshot()); err != nil {
 			t.Fatalf("CreateTask(%s) = %v", tc.title, err)
 		}
 	}
@@ -42,7 +42,7 @@ func TestListTasksHonorsSortField(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{Sort: tc.sort})
+			tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{Sort: tc.sort}, store.Snapshot())
 			if err != nil {
 				t.Fatalf("ListTasks() = %v", err)
 			}
@@ -70,14 +70,14 @@ func TestListTasksHonorsPriorityFilter(t *testing.T) {
 		{"bravo", 2},
 		{"charlie", 3},
 	} {
-		if _, err := store.CreateTask(ctx, project.ID, tc.title, "", tc.priority, "backlog"); err != nil {
+		if _, err := store.CreateTask(ctx, project.ID, tc.title, "", tc.priority, "backlog", store.Snapshot()); err != nil {
 			t.Fatalf("CreateTask(%s) = %v", tc.title, err)
 		}
 	}
 
 	tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{
 		Priorities: []domain.Priority{3, 1},
-	})
+	}, store.Snapshot())
 	if err != nil {
 		t.Fatalf("ListTasks() = %v", err)
 	}
@@ -95,18 +95,18 @@ func TestListTasksHonorsBucketKeysFilter(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithProject(ctx, t)
 
-	a, err := store.CreateTask(ctx, project.ID, "alpha", "", domain.Priority(2), "backlog")
+	a, err := store.CreateTask(ctx, project.ID, "alpha", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(alpha) = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "bravo", "", domain.Priority(2), "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "bravo", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask(bravo) = %v", err)
 	}
-	if _, err := store.MoveTask(ctx, project.ID, a.ID, "dev"); err != nil {
+	if _, err := store.MoveTask(ctx, project.ID, a.ID, "dev", store.Snapshot()); err != nil {
 		t.Fatalf("MoveTask(alpha->dev) = %v", err)
 	}
 
-	tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{BucketKeys: []string{"dev"}})
+	tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{BucketKeys: []string{"dev"}}, store.Snapshot())
 	if err != nil {
 		t.Fatalf("ListTasks() = %v", err)
 	}
@@ -119,11 +119,11 @@ func TestListTasksReturnsCreatedAt(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithProject(ctx, t)
 
-	if _, err := store.CreateTask(ctx, project.ID, "task", "", domain.Priority(2), "backlog"); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "task", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
 
-	tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{})
+	tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{}, store.Snapshot())
 	if err != nil {
 		t.Fatalf("ListTasks() = %v", err)
 	}
