@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
 
@@ -19,15 +20,18 @@ type OrphanRepository interface {
 
 type OrphanService struct {
 	repo     OrphanRepository
-	current  domain.BucketResolver
-	previous domain.BucketResolver
+	current  *config.Snapshot
+	previous *config.Snapshot
 }
 
 // NewOrphanService wires the orphan service with the current and previous
-// per-project bucket resolvers. The previous resolver may be nil when
-// the runtime has only seen one bundle for the project — the
-// implementation degrades to "no orphans" in that case.
-func NewOrphanService(repo OrphanRepository, current, previous domain.BucketResolver) *OrphanService {
+// per-project Snapshot pointers. previous may be nil when the runtime has
+// only seen one bundle for the project — the implementation degrades to
+// "no orphans" in that case. The Snapshot type satisfies
+// domain.BucketResolver, so the repository contract is unchanged; the
+// service-side parameters carry the concrete *config.Snapshot type the
+// Phase 2-bis spec mandates.
+func NewOrphanService(repo OrphanRepository, current, previous *config.Snapshot) *OrphanService {
 	return &OrphanService{repo: repo, current: current, previous: previous}
 }
 
