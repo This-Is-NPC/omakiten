@@ -80,22 +80,17 @@ type Repositories struct {
 	// reloadBundle calls Cache.Reload to rotate the in-memory provider
 	// snapshot — Phase 3e dropped the ConfigService.Import fallback so
 	// hot-reload never reaches the SQL config-write path. Required for
-	// any code path that triggers reloadBundle (settings_picker.go,
-	// revertConfigSwap); tests that do not exercise reloadBundle may
-	// leave it nil.
+	// any code path that triggers reloadBundle or reads
+	// activeSnapshot/activePreviousSnapshot; Phase 2-bis dropped the
+	// Repositories.Snapshot test-only escape hatch, so tests now wire
+	// a real cache via testfixtures/runtimecache.Install instead of
+	// plugging a snapshot pointer here directly.
 	Cache *agentruntime.BundleCache
 	// ProjectID is the cache key the runtime installed the active
 	// ProjectRuntime under. reloadBundle passes it to Cache.Reload so
 	// the rotated snapshot lands on the same key the rest of the model
 	// is reading from.
 	ProjectID int64
-	// Snapshot is the test-friendly override the TUI consults when the
-	// BundleCache is not wired. Production never sets this — the cache
-	// is the source of truth — but unit tests that drive the model
-	// without going through agentruntime can plug a snapshot here so
-	// the read-side helpers (TUIQueryService, render-home pending
-	// counts) see the same per-project view production would.
-	Snapshot *config.Snapshot
 }
 
 // activeSynonyms returns the per-project tag synonym table from the
@@ -118,12 +113,14 @@ func (r *Repositories) activeSynonyms() map[string]string {
 // cache is not wired (rare test paths that bypass the runtime
 // composition root).
 func (r *Repositories) activeSnapshot() *config.Snapshot {
-	if r.Cache != nil {
-		if pr := r.Cache.Get(r.ProjectID); pr != nil {
-			return pr.Snapshot
-		}
+	if r.Cache == nil {
+		return nil
 	}
-	return r.Snapshot
+	pr := r.Cache.Get(r.ProjectID)
+	if pr == nil {
+		return nil
+	}
+	return pr.Snapshot
 }
 
 // activePreviousSnapshot returns the bundle view captured immediately

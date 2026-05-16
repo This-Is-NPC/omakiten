@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"omakiten/internal/agentruntime"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/tui/components/detailscreen"
@@ -293,19 +294,21 @@ func (m *Model) requestEntityDelete(kind entityKind, slug string) {
 // rotateSnapshotAfterEdit advances the per-project Snapshot the TUI
 // reads through after the BundleEditor wrote new bytes to disk. In
 // production this defers to BundleCache.Reload so every reader of the
-// per-project view sees the rotation atomically. When no cache is
-// wired (unit tests that drive the model directly), rebuild the
-// snapshot inline from the resolved bundle so model.refresh() picks
-// up the change. Errors from Reload are surfaced via m.status — they
-// are otherwise non-fatal: the on-disk file already reflects the edit.
+// per-project view sees the rotation atomically. Phase 2-bis dropped the
+// Repositories.Snapshot escape hatch — tests now wire a real cache via
+// testfixtures/runtimecache.Install, so reads always flow through
+// r.Cache.Get(r.ProjectID).Snapshot. When Reload cannot run (test caches
+// constructed without store/configstore/bus), fall back to re-installing
+// the cache entry with a snapshot rebuilt from the supplied bundle so
+// the test path converges on the same accessor production uses.
 func (m *Model) rotateSnapshotAfterEdit(resolved config.Bundle) {
-	if m.repos.Cache != nil {
-		if _, err := m.repos.Cache.Reload(m.ctx, m.repos.ProjectID, ""); err != nil {
-			m.status = err.Error()
-		}
+	if m.repos.Cache == nil {
 		return
 	}
-	m.repos.Snapshot = config.BuildSnapshot(resolved)
+	if _, err := m.repos.Cache.Reload(m.ctx, m.repos.ProjectID, ""); err == nil {
+		return
+	}
+	m.repos.Cache.Install(m.repos.ProjectID, &agentruntime.ProjectRuntime{Snapshot: config.BuildSnapshot(resolved)})
 }
 
 func (m *Model) deleteEntity(kind entityKind, slug string) {

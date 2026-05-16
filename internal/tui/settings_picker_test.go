@@ -83,7 +83,7 @@ func newPickerModel(t *testing.T) (Model, string) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:    store,
-		Snapshot: store.Snapshot(), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
+		Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
 		Events:    store,
 		Orphans:   store,

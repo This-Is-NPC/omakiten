@@ -14,6 +14,7 @@ import (
 	"omakiten/internal/token"
 	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 )
 
@@ -59,7 +60,7 @@ func newNotificationTestModel(t *testing.T) Model {
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
 		Tasks:        store,
 		Projects:     store,
-		Snapshot: store.Snapshot(), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,

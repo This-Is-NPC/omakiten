@@ -121,6 +121,9 @@ func (m *Model) savePersonaPicker() {
 		m.status = err.Error()
 		return
 	}
+	if resolved, lerr := m.repos.Editor.Load(); lerr == nil {
+		m.rotateSnapshotAfterEdit(resolved)
+	}
 	if err := m.refresh(); err != nil {
 		m.status = err.Error()
 		return

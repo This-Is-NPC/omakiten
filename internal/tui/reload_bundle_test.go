@@ -59,11 +59,11 @@ func TestReloadBundleUsesCacheWhenWired(t *testing.T) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Snapshot: store.Snapshot(), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
-		
+
 		Editor:       editor,
 		BundleStore:  files,
 		EntityFiles:  files,

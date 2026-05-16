@@ -17,6 +17,7 @@ import (
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
 )
 
@@ -49,7 +50,7 @@ func newEntityModel(t *testing.T) (Model, *snapstore.Store, *app.BundleEditor) {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:    store,
-		Snapshot: store.Snapshot(), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
@@ -222,7 +223,7 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:    store,
-		Snapshot: store.Snapshot(), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
@@ -446,6 +447,9 @@ func TestPersonaPickerToggleAndSave(t *testing.T) {
 	// Add a second skill so the picker has two rows to toggle between.
 	if _, err := app.NewSkillService(model.repos.activeSnapshot(), model.repos.Editor, model.repos.EntityFiles, model.repos.Slugger).Add(ctx, domain.SkillInput{Key: "sqlite", Name: "SQLite"}); err != nil {
 		t.Fatalf("Add(skill) error = %v", err)
+	}
+	if err := runtimecache.RefreshFromEditor(model.repos.Cache, model.repos.ProjectID, model.repos.Editor); err != nil {
+		t.Fatalf("runtimecache.RefreshFromEditor: %v", err)
 	}
 	if err := model.refresh(); err != nil {
 		t.Fatalf("refresh() error = %v", err)
