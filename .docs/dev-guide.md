@@ -106,6 +106,10 @@ Both `internal/cli/root.go` and `internal/agentruntime/runtime.go` reach the sam
 
 `ConfigService.Import` no longer writes SQL config tables (migration 020 dropped them) and no longer touches the SQL adapter at all (Phase 2-bis). The method reduces to LoadBundle + HashFile, returning `(bundle, hash, *domain.EnumRegistry)`; the composition root then calls `config.BuildSnapshot(bundle)` to materialise the per-project Snapshot and emits `bundle.imported` via `Store.RecordEntityEvent`. Anything that needs to react to a bundle change subscribes to `bundle.imported` on the in-process bus. See [configuration-guide.md § How config reads work at runtime](configuration-guide.md#how-config-reads-work-at-runtime-in-memory-providers--per-project-cache) for the full data flow.
 
+### Migration 020 / 021 — `tasks.bucket_id` rebind
+
+Migration 020 dropped every SQL config table; before the drops it now rewrites `tasks.bucket_id` from the SQL-era `workflow_buckets.id` (autoincrement PK) to `workflow_buckets.local_id` (the YAML-declared id the post-migration `Snapshot` indexes by). Without that rewrite, tasks point at integers `Snapshot.BucketByID` cannot resolve and every view renders empty. Migration `021_rebind_orphan_buckets.sql` is the pure-SQL recovery for databases that applied the pre-rebind shape of 020: it walks the `events` table for each task's latest `task.moved` / `task.created` payload, extracts the bucket key, and maps onto the canonical preset id via a `CASE` covering every shipped preset key. Tasks with no recoverable event land in bucket id 1; users reorganise via TUI / CLI. Idempotent on fresh installs whose `bucket_id` is already in the canonical YAML range.
+
 
 ## Local Workflows
 
