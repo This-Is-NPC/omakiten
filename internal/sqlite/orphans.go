@@ -11,7 +11,7 @@ import (
 
 // isNilResolver returns true when the BucketResolver interface is nil
 // OR when it wraps a typed-nil pointer (the common shape callers get
-// when they assign a nil *config.Snapshot to a BucketResolver slot).
+// when they assign a nil Snapshot pointer to a BucketResolver slot).
 // Reflection here is fine — the orphan path runs once per workflow
 // swap, not in a hot loop.
 func isNilResolver(r domain.BucketResolver) bool {

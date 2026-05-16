@@ -14,7 +14,7 @@ type ConfigService struct {
 }
 
 // NewConfigService wires the read-only config parser. Phase 2-bis removed
-// the ConfigRepository write side — the bundle is just loaded + parsed;
+// the legacy write side — the bundle is just loaded + parsed;
 // per-project rebuild is driven by BundleCache.Reload triggered by the
 // bundle's mtime change, not by any Store-side write.
 func NewConfigService(bundle BundleStore) *ConfigService {
