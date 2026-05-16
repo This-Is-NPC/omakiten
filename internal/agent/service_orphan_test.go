@@ -3,6 +3,7 @@ package agent
 import (
 	"testing"
 
+	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
@@ -104,9 +105,10 @@ func TestMigrateOrphans_ConfirmedAppliesAndReports(t *testing.T) {
 // removeDevBucket re-imports the agent fixture's bundle minus the "dev" bucket
 // so any task pointing to dev becomes an orphan. Reuses local_ids 1 and 3 to
 // avoid the UNIQUE(workflow_id, key) collision the importer would otherwise hit.
-// The agent service's snapshot pointers are rotated to mirror the Store —
-// production wires this through agentruntime.BundleCache; tests stitch the
-// rotation by hand because they drive Service.SetSnapshot directly.
+// The agent service's snapshot pointer + injected orphan service are rotated
+// to mirror the Store — production wires this through agentruntime.BundleCache;
+// tests stitch the rotation by hand because they drive Service.SetSnapshot /
+// Service.SetOrphanService directly.
 func removeDevBucket(t *testing.T, fx agentFixture) {
 	t.Helper()
 	previous := fx.store.Snapshot()
@@ -121,6 +123,7 @@ func removeDevBucket(t *testing.T, fx agentFixture) {
 	if err := fx.store.ImportBundle(fx.ctx, bundle, "test.yaml", "h2"); err != nil {
 		t.Fatalf("ImportBundle(remove dev): %v", err)
 	}
-	fx.service.SetPreviousSnapshot(previous)
-	fx.service.SetSnapshot(fx.store.Snapshot())
+	current := fx.store.Snapshot()
+	fx.service.SetSnapshot(current)
+	fx.service.SetOrphanService(app.NewOrphanService(fx.store, current, previous))
 }

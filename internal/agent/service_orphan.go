@@ -3,8 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-
-	"omakiten/internal/app"
 )
 
 // MigrateOrphans previews or applies the orphan-task rebind for the active
@@ -15,14 +13,23 @@ import (
 //
 // When the preview report is empty the operation is a no-op regardless of
 // the confirmed flag — there is nothing to mutate and nothing to confirm.
+//
+// The orphan service is injected by the runtime composition root via
+// SetOrphanService; it carries the current + previous Snapshot pair the
+// rebind needs to resolve task.bucket_id → previous key across a swap.
+// Tests that do not wire one will trip the explicit error rather than
+// silently exercising a half-built service.
 func (s *Service) MigrateOrphans(ctx context.Context, input MigrateOrphansInput) (MigrateOrphansResponse, error) {
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
 		return MigrateOrphansResponse{}, err
 	}
 
-	svc := app.NewOrphanService(s.repo, s.snapshot, s.previousSnapshot)
-	preview, err := svc.Preview(ctx, project)
+	if s.orphanSvc == nil {
+		return MigrateOrphansResponse{}, fmt.Errorf("agent: orphan service not installed (call Service.SetOrphanService during runtime composition)")
+	}
+
+	preview, err := s.orphanSvc.Preview(ctx, project)
 	if err != nil {
 		return MigrateOrphansResponse{}, err
 	}
@@ -53,7 +60,7 @@ func (s *Service) MigrateOrphans(ctx context.Context, input MigrateOrphansInput)
 		}, nil
 	}
 
-	applied, err := svc.Migrate(ctx, project)
+	applied, err := s.orphanSvc.Migrate(ctx, project)
 	if err != nil {
 		return MigrateOrphansResponse{}, err
 	}

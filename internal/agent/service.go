@@ -113,12 +113,12 @@ type Service struct {
 	// where callers want to stub one closure without building a
 	// full Bundle/Snapshot pair.
 	snapshot *config.Snapshot
-	// previousSnapshot is the bundle view captured immediately before
-	// the latest cache rotation. The orphan-rebind flow uses it to
-	// resolve task.bucket_id → previous key across the swap.
-	// SetPreviousSnapshot installs it; nil when the runtime has only
-	// seen one bundle for this project.
-	previousSnapshot *config.Snapshot
+	// orphanSvc is the pre-built orphan service injected by the runtime
+	// composition root. The runtime knows both the current and previous
+	// snapshot at rotation time, so it builds the OrphanService with
+	// both pointers and hands it in via SetOrphanService — the agent
+	// service no longer carries a previousSnapshot pointer of its own.
+	orphanSvc *app.OrphanService
 }
 
 // NewService constructs the agent service with zero-value settings.
@@ -267,11 +267,14 @@ func (s *Service) Snapshot() *config.Snapshot {
 	return s.snapshot
 }
 
-// SetPreviousSnapshot installs the bundle view captured immediately
-// before the latest cache rotation. Only the orphan-rebind flow uses
-// it; nil when the runtime has only seen one bundle for this project.
-func (s *Service) SetPreviousSnapshot(snap *config.Snapshot) {
-	s.previousSnapshot = snap
+// SetOrphanService installs the pre-built orphan service that knows the
+// current and previous per-project Snapshot pair. The runtime composition
+// root (agentruntime.buildProjectRuntime / BundleCache.rebuild) is the
+// single caller — it owns both snapshot pointers across cache rotations
+// so the agent service does not have to. nil is permitted for tests that
+// do not exercise the orphan flow.
+func (s *Service) SetOrphanService(svc *app.OrphanService) {
+	s.orphanSvc = svc
 }
 
 // SettingsCachePrompts exposes the cache-prompts toggle for the MCP adapter.

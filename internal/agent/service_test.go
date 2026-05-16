@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/testfixtures"
@@ -462,6 +463,7 @@ func newAgentFixture(t *testing.T) agentFixture {
 	// behavioural parity in tests.
 	svc := NewService(store, ProjectSelector{CWD: rootA})
 	svc.SetSnapshot(store.Snapshot())
+	svc.SetOrphanService(app.NewOrphanService(store, store.Snapshot(), nil))
 	svc.SetRegistry(testfixtures.CanonicalRegistry())
 	svc.SetSettings(ServiceSettings{
 		RecentCommentLimit: 5,

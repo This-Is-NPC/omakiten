@@ -265,7 +265,11 @@ func (c *BundleCache) rebuild(ctx context.Context, projectID int64, configPath s
 	// useful id↔key mapping to project from a non-existent entry.
 	if old != nil {
 		runtime.PreviousSnapshot = old.Snapshot
-		runtime.Service.SetPreviousSnapshot(old.Snapshot)
+		// Re-inject the orphan service with both snapshot pointers
+		// in hand. buildProjectRuntime injected one with prev=nil
+		// because the prior entry is only visible inside the cache;
+		// the rotation overwrites it with the rebind-capable view.
+		runtime.Service.SetOrphanService(app.NewOrphanService(c.store, runtime.Snapshot, runtime.PreviousSnapshot))
 	}
 	c.entries[projectID] = runtime
 	c.mu.Unlock()
@@ -349,6 +353,10 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	// rotates the pointer atomically through cache.Reload.
 	svc.SetSnapshot(snapshot)
 	svc.SetRegistry(enumRegistry)
+	// Inject the orphan service with prev=nil — the cache rotation
+	// overrides this with a rebind-capable view (current+previous
+	// snapshots) when the runtime is replacing an earlier entry.
+	svc.SetOrphanService(app.NewOrphanService(store, snapshot, nil))
 	svc.SetSettings(agent.ServiceSettings{
 		RecentCommentLimit:       bundle.Config.MCP.RecentCommentLimit,
 		MaxCommentChars:          bundle.Config.MCP.MaxCommentChars,
