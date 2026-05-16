@@ -1,5 +1,5 @@
 // okt-docs-refresh regenerates auto-derivable documentation from the canonical
-// sources under defaults/. Run via `mise run docs:refresh`. See .docs/AUTHORING.md.
+// sources under defaults/. Run via `mise run docs:refresh`. See .docs/internal/AUTHORING.md.
 package main
 
 import (
@@ -158,7 +158,7 @@ func run(root string, check bool) error {
 
 	if check && len(diffs) > 0 {
 		sort.Strings(diffs)
-		return fmt.Errorf("docs drift detected in:\n  - %s\nrun `mise run docs:refresh` and commit the result. See .docs/AUTHORING.md", strings.Join(diffs, "\n  - "))
+		return fmt.Errorf("docs drift detected in:\n  - %s\nrun `mise run docs:refresh` and commit the result. See .docs/internal/AUTHORING.md", strings.Join(diffs, "\n  - "))
 	}
 	return nil
 }

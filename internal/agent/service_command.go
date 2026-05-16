@@ -63,8 +63,8 @@ var commandActions = map[string]string{
 		"Next: suggest the user add a `#resume` comment via `comments.add` " +
 		"(template_slug=`comment-resume`) and move the task to review.",
 
-	"okt-document": "Survey `.docs/architecture.md`, " +
-		"`.docs/requirements.md`, `README.md`, `CONTRIBUTING.md`, and other top-level docs. List drift " +
+	"okt-document": "Survey `.docs/internal/architecture.md`, " +
+		"`.docs/_generated/requirements.md`, `README.md`, `CONTRIBUTING.md`, and other top-level docs. List drift " +
 		"items with file references and suggested wording — do not edit in place. " +
 		"Next: if material work is needed, suggest `okt-create` to spin up a documentation task.",
 

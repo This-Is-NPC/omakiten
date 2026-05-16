@@ -17,14 +17,21 @@ to the shared-singleton model the migration retired.
 - The Snapshot is built once per bundle import; mutation flows through
   `BundleCache` producing a fresh pointer on rebuild, not by Swap on the
   existing one.
-- App services capture the pointer at construction (`SetSnapshot` on
-  the agent service; `repo.Snapshot()` per call for the file-CRUD
-  services). N projects in the cache ⇒ N independent snapshots ⇒ zero
-  cross-project leakage on hot paths.
-- The SQL adapter (`*sqlite.Store`) is back to "tasks, comments, events,
-  tags, dependencies, errors, solutions, context_entries, activity_logs"
-  — the only bundle-aware surface is `EmitBundleImported`, which records
-  the audit event and writes nothing else.
+- App services capture the pointer at construction (the agent service
+  via `SetSnapshot`; every file-CRUD service through its constructor).
+  Hot-reload returns a brand-new `*ProjectRuntime` with rebuilt services
+  bound to the rotated Snapshot — callers do not re-fetch per call. N
+  projects in the cache ⇒ N independent snapshots ⇒ zero cross-project
+  leakage on hot paths.
+- The SQL adapter (`*sqlite.Store`) is back to operational state only:
+  `tasks`, `events` (with `event_tags`), `task_dependencies`, `tags`
+  (with `task_tags` / `project_tags` / `error_tags`), `errors`,
+  `solutions`, `context_entries`. Migration 009 folded `comments` and
+  `activity_logs` into `events`; migration 020 dropped every config
+  table. The Store carries no bundle field — the only bundle-aware
+  emission is `Store.RecordEntityEvent(..., EventTypeBundleImported, ...)`
+  called by `agentruntime.buildProjectRuntime` after a successful
+  `BuildSnapshot`, recording the audit event and writing nothing else.
 
 ## Layer diagram
 
@@ -69,24 +76,29 @@ to the shared-singleton model the migration retired.
 
 ## Invariants
 
-The migration enforces five invariants. Code reviews on this area
+The migration enforces six invariants. Code reviews on this area
 should reject changes that break any of them.
 
 1. **Store = SQL adapter, period.** No `config.Bundle`,
-   `config.Snapshot`, `config.Providers` field on the Store. The
-   only bundle-aware surface left on `*sqlite.Store` is
-   `EmitBundleImported(ctx, bundle, path, hash)` — audit-only, never
-   mutates Store state. Snapshot ownership lives on
+   `config.Snapshot`, `config.Providers` field on the Store. There is no
+   bundle-aware method on `*sqlite.Store` — the `bundle.imported` audit
+   event is recorded through the generic `Store.RecordEntityEvent(ctx,
+   EventEntitySystem, 0, 0, EventTypeBundleImported, payloadJSON)`
+   helper from `agentruntime.buildProjectRuntime`, so the Store never
+   special-cases bundle ingestion. Snapshot ownership lives on
    `agentruntime.ProjectRuntime`.
 2. **Snapshot is immutable.** No `Swap`, no `atomic.Pointer` embedded,
    no `Set*` mutator. Mutation produces a new pointer; the old one
    keeps serving in-flight callers.
 3. **App services receive `*config.Snapshot` at construction.**
-   `WorkflowService` captures it once and reads through `s.snap.X`.
-   File-CRUD services (`PersonaService`, `SkillService`, `LawService`,
-   `ContextService`) re-fetch via `s.repo.Snapshot()` per call because
-   they themselves mutate the bundle on disk; the fresh fetch picks up
-   the post-import snapshot the editor just installed.
+   `WorkflowService`, `PersonaService`, `SkillService`, `LawService`,
+   `ContextService` all capture the pointer once on construction and
+   read through `s.snap.X`. The cache rebuilds the per-project services
+   when the bundle changes — a hot-reload returns a fresh
+   `*ProjectRuntime` with new service instances bound to the new
+   Snapshot, so callers reaching the cache after a reload see the new
+   shape while in-flight callers continue to read the previous pointer
+   until they release it.
 4. **Per-project = `ProjectRuntime` carries its own Snapshot.**
    `BundleCache.Resolve` returns the per-project entry; `Reload`
    produces a new entry with a fresh Snapshot and rotates

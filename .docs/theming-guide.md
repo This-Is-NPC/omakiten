@@ -6,7 +6,7 @@ The active theme key is `config.theme.active` in the active profile yaml.
 
 ## Resolution order
 
-When the TUI starts, the theme path is resolved in this order (`internal/cli/tui.go:loadActiveTheme`):
+When the TUI starts, the theme path is resolved in this order (`internal/cli/tui.go:loadActiveThemeFromBundle`):
 
 1. `<config-root>/themes/custom/<active>.yaml` — user override (preferred when present).
 2. `<config-root>/themes/<active>.yaml` — default kit.
@@ -86,7 +86,7 @@ Eight tokens are actually consumed by the TUI today (`internal/tui/styles.go`). 
    okt --project <slug> tui
    ```
 
-If the theme YAML is invalid, the TUI exits with `config_invalid` and the path of the offending file in the error details (`internal/cli/tui.go:loadActiveTheme`).
+If the theme YAML is invalid, the TUI exits with `config_invalid` and the path of the offending file in the error details (`internal/cli/tui.go:loadActiveThemeFromBundle`).
 
 ## Overriding a shipped theme
 

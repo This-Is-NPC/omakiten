@@ -45,6 +45,27 @@ Every entity directory (`config/`, `laws/`, `skills/`, `personas/`, `templates/`
 
 Rationale: `mise run install` (and `okt config sync`) overwrites the root copy of every kit-shipped entity. The `custom/` copy is never touched. Users who fork a default copy its file to `custom/` first; agents respect the override transparently.
 
+## <a id="repo-local-layout"></a>Project-local layout (`.omakiten/`)
+
+When a project commits its own `.omakiten/` directory at the repo root (or anywhere up the path tree under `$HOME`), `config.FindRepoLocal` resolves that directory as `<root>` for every invocation made from inside that tree. The internal shape mirrors the user-global root verbatim — `config/`, `laws/`, `skills/`, `personas/`, `templates/`, `themes/`, each with its own `custom/` shadow folder:
+
+```
+<repo>/.omakiten/
+├── config/
+│   ├── .active
+│   ├── omakase.yaml
+│   └── custom/
+├── laws/
+│   ├── <slug>.md
+│   └── custom/<slug>.md
+├── skills/...
+├── personas/...
+├── templates/...
+└── themes/...
+```
+
+This is the per-project install — pinned config, pinned entity overrides, version-controlled with the code. The SQLite database stays at the user-global path (`~/.local/share/omakiten/omakiten.db` or the `$XDG_DATA_HOME` / `$OMAKITEN_HOME` equivalents); only the read side is repo-local. Walk-up discovery stops at `$HOME` and the filesystem root, so the feature opt-in is precise: no `.omakiten/` in the path tree → fall through to the global resolver. See [`path-resolution.md` § Project-local `.omakiten/`](./path-resolution.md#repo-local).
+
 ## <a id="dev-env-layout"></a>Dev-env layout (`dev_env/`)
 
 The local development workflow mirrors the production root under `dev_env/`:
@@ -64,5 +85,5 @@ The local development workflow mirrors the production root under `dev_env/`:
 ## See also
 
 - [`reference/path-resolution.md`](./path-resolution.md) — how Omakiten finds `<root>` and the active profile.
-- [`AUTHORING.md`](../AUTHORING.md) — `_generated/` rule and atom-map for docs under `.docs/`.
+- [`AUTHORING.md`](../internal/AUTHORING.md) — `_generated/` rule and atom-map for docs under `.docs/`.
 - [`configuration-guide.md`](../configuration-guide.md) — yaml field reference.

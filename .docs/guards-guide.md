@@ -2,20 +2,20 @@
 
 Guards are policy rules attached to a single workflow **transition**. They run in `app.WorkflowService.MoveTask` after the transition is confirmed allowed (`workflow_invalid_transition` is checked first); the first failing guard short-circuits the move with a coded `guard_violation` error.
 
-Guards live next to transitions in the active profile yaml, are persisted as JSON on the `workflow_transitions` row (`migrations/005_transition_guards.sql`), and are evaluated by `internal/app/workflow_service.go:evaluateGuards`. Validation runs at `okt config validate` time via `internal/config/validator.go:validateWorkflows`.
+Guards live next to transitions in the active profile yaml and are evaluated by `internal/app/guards/evaluator.go` (`Evaluator.EvaluateTransition` / `EvaluateOperation`, dispatched per-guard-type via `runGuards`) against the in-memory `*config.Snapshot` rebuilt on every bundle import. Migration 005 originally persisted the JSON on the `workflow_transitions` row; migration 020 dropped that table along with every other config table, so guards are now read directly from YAML via the Snapshot — there is no SQL mirror. Validation runs at `okt config validate` time via `internal/config/validator.go:validateWorkflows`.
 
 The same guard shapes also drive **operation policies** (`operations.{archive,delete,unarchive}.guards`) — see [Operation guards](#operation-guards) — and the bucket-level CRUD policy lives under a sibling block ([Bucket permissions](#bucket-permissions)).
 
 ## Where they sit in the move pipeline
 
-`app.WorkflowService.MoveTask` runs in this order (`internal/app/workflow_service.go:76`):
+`app.WorkflowService.MoveTask` runs in this order (`internal/app/workflow_service.go:179`):
 
 1. Validate input (`task_id > 0`, target bucket non-empty).
 2. Resolve current bucket via `WorkflowRepository.CurrentTaskBucket`.
-3. Resolve target bucket via `WorkflowRepository.ResolveActiveBucket`.
+3. Resolve target bucket via the captured per-project Snapshot (`s.snap.BucketByKey`) — workflow shape lives in memory post-020, no repository round-trip.
 4. If `current != target`:
-   1. **Transition allowed?** → `WorkflowRepository.TransitionAllowed`. Fails with `workflow_invalid_transition`.
-   2. **Guards** → `evaluateGuards` (this doc). First failure returns `guard_violation` and the move never persists.
+   1. **Transition allowed?** → `Snapshot.TransitionAllowed`. Fails with `workflow_invalid_transition`.
+   2. **Guards** → `guards.Evaluator.EvaluateTransition` (this doc; implementation in `internal/app/guards/evaluator.go`). First failure returns `guard_violation` and the move never persists.
 5. Persist via `TaskRepository.MoveTask` (records `task.moved`).
 6. If the destination is the workflow's final bucket, additionally emit `task.completed`.
 
@@ -354,7 +354,7 @@ Violations surface as `guard_violation` with `rule: permissions` and a hint quot
 
 ## Adding a new guard type
 
-1. Add the case to the `evaluateGuards` switch in `internal/app/workflow_service.go`.
+1. Add the case to the `runGuards` switch in `internal/app/guards/evaluator.go`.
 2. Add the corresponding count/list method to `app.GuardEvaluationRepository` (`internal/app/ports.go`) and implement it in `internal/sqlite/guards.go`.
 3. Extend `validateWorkflows` (`internal/config/validator.go`) so unknown payloads are rejected at validation time.
 4. Add tests in `internal/app/workflow_service_test.go` covering pass, fail, and hint passthrough.

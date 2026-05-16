@@ -1,6 +1,6 @@
 # Developer Guide
 
-This guide is for people working **on** Omakiten — building, testing, and releasing the project. End-user docs live in [README.md](../README.md) and the other `.docs/` guides.
+This guide is for people working **on** Omakiten — building, testing, and releasing the project. End-user docs live in [README.md](../../README.md) and the other `.docs/` guides.
 
 ## Getting Started
 
@@ -50,7 +50,9 @@ Every task is defined in `.mise.toml` at the repo root. Run with `mise run <name
 | `test` | `go test ./...`. |
 | `lint` | `golangci-lint run` against `.golangci.yml`. |
 | `vuln` | `govulncheck ./...`. |
-| `check` | **PR gate.** Depends on `test`, `lint`, `vuln`. |
+| `check` | **PR gate.** Depends on `test`, `lint`, `vuln`, `docs:check`. |
+| `docs:refresh` | Runs `go run ./cmd/okt-docs-refresh --root .` to regenerate every embed-fed `.docs/_generated/` page from the live bundle. |
+| `docs:check` | Same binary with `--check` — exits non-zero on drift; the CI gate runs this. |
 
 ### Install & local state
 
@@ -63,7 +65,9 @@ Every task is defined in `.mise.toml` at the repo root. Run with `mise run <name
 | `uninstall` | Removes `~/.local/bin/okt` and the shell wrapper. **Does not** touch config or data. |
 | `purge` | Wipes `~/.config/omakiten` and `~/.local/share/omakiten`. Use after `uninstall` for a fresh-machine simulation. |
 | `dev:sync` | Mirrors `defaults/` into `dev_env/` (overwrites root, leaves `dev_env/custom/`). |
-| `tui` | Runs the TUI against an isolated `dev_env/` (`OMAKITEN_HOME=dev_env`) — useful for trying changes without touching your real Omakiten state. |
+| `dev:install` | `dev:sync` + builds `bin/okt` and runs `okt init` against the dev-env so the binary works against `OMAKITEN_HOME=dev_env` without touching real state. |
+| `tui` | Runs the TUI against an isolated `dev_env/` (`OMAKITEN_HOME=dev_env`) — useful for trying changes without touching your real Omakiten state. Depends on `dev:install`. |
+| `mcp:prompts` | Resolves every `okt-*` MCP prompt against the dev-env bundle and prints the composed markdown — handy for previewing what an agent receives without an MCP client. Depends on `dev:sync`. |
 
 ### Selecting MCP harnesses non-interactively
 
@@ -80,31 +84,41 @@ In headless contexts (CI, no `/dev/tty`) the prompt is skipped silently — no h
 ## Project Layout
 
 ```
-cmd/okt/                 main entry point
+cmd/                     entry points (okt, okt-docs-refresh, …)
 internal/
   domain/                pure types (no adapter imports)
   app/                   application services, ports
   agent/                 protocol-neutral agent intent layer
-  agentruntime/          composition root (DB, config, paths)
-  agentsetup/            MCP harness writer (claude, opencode, crush, copilot, codex)
+  agentruntime/          composition root (DB, config, paths, BundleCache)
+  agentsetup/            MCP harness writer (claude-code, claude-desktop, opencode, crush, github-copilot, codex)
   cli/                   cobra commands (delegates to app)
   mcp/                   MCP adapter (delegates to agent.Service)
   tui/                   bubbletea terminal UI
-  sqlite/                sqlite-backed adapters
-  configstore/           filesystem-backed config adapter
+  sqlite/                sqlite-backed operational adapter (state only post-020)
+  configstore/           filesystem-backed config adapter (bundle YAML + entity .md)
+  config/                bundle types, loader, validator, snapshot, repo-local discovery
+  activity/              context-bound tool-call tracker (events/operation rows)
   arch/                  hexagonal-boundary enforcement test
+  events/                in-process event bus
+  graph/                 dependency cycle/DAG helpers
+  hooks/                 hooks engine + actions registry
+  output/                CLI/MCP response envelopes
+  paths/                 ConfigRoot / data-root resolver
+  project/               active-project resolver
+  testfixtures/          shared YAML-loader for tests
+  token/                 token estimation
 defaults/                ships into ~/.config/omakiten on first run
-migrations/              SQLite schema migrations
+migrations/              SQLite schema migrations (001 … 021)
 scripts/                 install / uninstall / wrapper helpers + tests
 ```
 
-Architecture rules are enforced in two places — see [architecture.md](architecture.md) and [CONTRIBUTING.md § Architecture boundaries](../CONTRIBUTING.md#architecture-boundaries-enforced) for the rules in plain English. Run `go test ./internal/arch/...` after structural changes.
+Architecture rules are enforced in two places — see [architecture.md](architecture.md) and [CONTRIBUTING.md § Architecture boundaries](../../CONTRIBUTING.md#architecture-boundaries-enforced) for the rules in plain English. Run `go test ./internal/arch/...` after structural changes.
 
 ### Composition roots and the BundleCache
 
 Both `internal/cli/root.go` and `internal/agentruntime/runtime.go` reach the same shape: parse the bundle once to seed the events bus, then call `agentruntime.NewBundleCache(...).SetProjectSelector(...)` + `cache.Resolve(ctx, projectID, configPath)`. `BundleCache` builds and caches one `*ProjectRuntime` per project id; the `BuildProjectRuntime` helper inside `internal/agentruntime/cache.go` is the single inflation path so boot, MCP per-project routing, CLI subcommands, and the TUI hot-reload all produce identical runtimes — divergence between code paths was the regression Phase 3a was designed to prevent.
 
-`ConfigService.Import` no longer writes SQL config tables (migration 020 dropped them) and no longer touches the SQL adapter at all (Phase 2-bis). The method reduces to LoadBundle + HashFile, returning `(bundle, hash, *domain.EnumRegistry)`; the composition root then calls `config.BuildSnapshot(bundle)` to materialise the per-project Snapshot and emits `bundle.imported` via `Store.RecordEntityEvent`. Anything that needs to react to a bundle change subscribes to `bundle.imported` on the in-process bus. See [configuration-guide.md § How config reads work at runtime](configuration-guide.md#how-config-reads-work-at-runtime-in-memory-providers--per-project-cache) for the full data flow.
+`ConfigService.Import` no longer writes SQL config tables (migration 020 dropped them) and no longer touches the SQL adapter at all (Phase 2-bis). The method reduces to LoadBundle + HashFile, returning `(bundle, hash, *domain.EnumRegistry)`; the composition root then calls `config.BuildSnapshot(bundle)` to materialise the per-project Snapshot and emits `bundle.imported` via `Store.RecordEntityEvent`. Anything that needs to react to a bundle change subscribes to `bundle.imported` on the in-process bus. See [configuration-guide.md § How config reads work at runtime](../configuration-guide.md#how-config-reads-work-at-runtime-in-memory-providers--per-project-cache) for the full data flow.
 
 ### Migration 020 / 021 — `tasks.bucket_id` rebind
 
@@ -198,10 +212,66 @@ go tool cover -func=/tmp/coverage.out | tail -1
 
 ## Conventions
 
-- **Commit format:** [Conventional Commits](https://www.conventionalcommits.org/) in English. One intent per commit. Details in [CONTRIBUTING.md](../CONTRIBUTING.md#commit-standards).
+- **Commit format:** [Conventional Commits](https://www.conventionalcommits.org/) in English. One intent per commit. Details in [CONTRIBUTING.md](../../CONTRIBUTING.md#commit-standards).
 - **Branch naming:** `feature/<short-name>` or `fix/<short-name>`, kebab-case.
-- **CHANGELOG:** notable user-visible changes go under `## Unreleased` in [CHANGELOG.md](../CHANGELOG.md). `release-please` rewrites the version headings on release — never edit them by hand.
+- **CHANGELOG:** notable user-visible changes go under `## Unreleased` in [CHANGELOG.md](../../CHANGELOG.md). `release-please` rewrites the version headings on release — never edit them by hand.
 - **Docs:** end-user behaviour lives under `.docs/<topic>-guide.md`. When you change something a guide describes, update it in the same PR.
+
+## Continuous Integration
+
+CI lives in `.github/workflows/`. Two workflows share the `name: CI` and the `build-test` job name so branch protection rules only ever need to require one check.
+
+| File | Trigger paths | What it does |
+|---|---|---|
+| `ci.yml` | `paths-ignore: ["**.md", ".docs/**", "CHANGELOG.md"]` | Full Go pipeline — build, vet, race-tested `go test`, `golangci-lint`, `okt-docs-refresh --check`. |
+| `ci-docs.yml` | `paths: ["**.md", ".docs/**", "CHANGELOG.md"]` | Always-pass companion. Posts the `build-test` check without spinning the Go toolchain for doc-only diffs. |
+
+The two filters partition every PR diff:
+
+- **Go-only diff** — only `ci.yml` runs; doc-companion is filtered out. One `build-test` check, real result.
+- **Doc-only diff** — only `ci-docs.yml` runs; main is filtered out. One `build-test` check, always green, completes in seconds.
+- **Mixed diff** — both run. Both post `build-test`; branch protection blocks unless both pass (i.e. the real Go pipeline must pass).
+
+### Cancel-on-push
+
+`ci.yml` declares:
+
+```yaml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+```
+
+A new push to the same PR branch automatically cancels any in-flight run. Stale runs on superseded SHAs no longer waste runner minutes or block the queue.
+
+### Build cache
+
+`ci.yml` manages the Go cache explicitly instead of relying on `setup-go@v5`'s built-in cache, so the build-output cache (`~/.cache/go-build`) is preserved alongside the module cache:
+
+```yaml
+- name: Set up Go
+  uses: actions/setup-go@v5
+  with:
+    go-version: "1.25"
+    check-latest: true
+    cache: false             # managed below
+
+- name: Cache Go build & module cache
+  uses: actions/cache@v4
+  with:
+    path: |
+      ~/.cache/go-build
+      ~/go/pkg/mod
+    key: ${{ runner.os }}-go-1.25-${{ hashFiles('go.sum') }}
+    restore-keys: |
+      ${{ runner.os }}-go-1.25-
+```
+
+The primary key invalidates whenever `go.sum` moves; the `restore-keys` fallback lets a cold key still hydrate from the most recent partial match, so an isolated dependency bump does not force a full rebuild from source. The Go build cache is itself content-addressed, so stale entries for changed source files are ignored automatically.
+
+### Editing the workflows
+
+When tightening or relaxing the doc-path filters in `ci.yml`, mirror the change in `ci-docs.yml` — the two `paths`/`paths-ignore` lists must remain exact complements. A drift means doc-only diffs would either skip CI entirely (no check posted, branch protection blocks) or trigger both workflows on the same files (duplicate green checks but no Go validation).
 
 ## Releasing
 
@@ -239,7 +309,7 @@ The repo enforces hexagonal boundaries via `depguard` rules in `.golangci.yml` m
 
 ## Where to go next
 
-- [README.md](../README.md) — the user-facing entry point.
+- [README.md](../../README.md) — the user-facing entry point.
 - [architecture.md](architecture.md) — hexagonal layout and adapter rules.
-- [_generated/requirements.md](_generated/requirements.md) — behavioural map of the implemented surface (regenerated by `/document`).
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — the canonical contributor checklist (commit standards, project knowledge base, workflow updates).
+- [_generated/requirements.md](../_generated/requirements.md) — behavioural map of the implemented surface (regenerated by `/document`).
+- [CONTRIBUTING.md](../../CONTRIBUTING.md) — the canonical contributor checklist (commit standards, project knowledge base, workflow updates).

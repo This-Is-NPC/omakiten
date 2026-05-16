@@ -28,7 +28,7 @@ Single contract for editing this repo's documentation. If a change to docs feels
 ### Pattern 1 — anchor link (default; ~80% of cases)
 
 ```markdown
-The kaiseki preset enforces [requirements signed off](./reference/entity-frontmatter.md#requirements-signed-off) before code starts.
+The kaiseki preset enforces [requirements signed off](../reference/entity-frontmatter.md#requirements-signed-off) before code starts.
 ```
 
 Renders in any markdown viewer. Anchor breakage is caught by the `markdown-link-check` lint (when wired in CI).
@@ -57,7 +57,7 @@ Valid `kind` values: `laws`, `skills`, `personas`, `templates`.
 
 ### Pattern 4 — central glossary lookup
 
-`explanation/mental-models.md` defines each model once with a stable anchor. Every other doc cites `[INVEST](./explanation/mental-models.md#invest)`.
+`explanation/mental-models.md` defines each model once with a stable anchor. Every other doc cites `[INVEST](../explanation/mental-models.md#invest)`.
 
 ## CI gate
 

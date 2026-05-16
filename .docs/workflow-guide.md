@@ -360,7 +360,7 @@ requirements ──▶ planning ──▶ dev ──▶ review ──▶ docs �
 
 | Transition | Guards |
 |---|---|
-| requirements → planning | `comments_tagged: requirements` · `comments_tagged: acceptance` |
+| requirements → planning | `comments_tagged: 5w2h` · `comments_tagged: requirements` · `comments_tagged: acceptance` |
 | planning → dev | `comments_tagged: self-branch` · `comments_tagged: design` · `blockers_in: [done, docs]` |
 | dev → review | `comments_tagged: resume` · `comments_tagged: tests-passing` |
 | review → docs | `comments_tagged: peer-review` |
@@ -496,7 +496,7 @@ All `comment.delete` is denied workflow-wide — audit trail must survive. Corre
 
 | Transition | Guards |
 |---|---|
-| requirements → planning | `comments_tagged: requirements` · `comments_tagged: acceptance` |
+| requirements → planning | `comments_tagged: 5w2h` · `comments_tagged: requirements` · `comments_tagged: acceptance` |
 | planning → dev | `comments_tagged: self-branch` · `comments_tagged: pre-mortem` · `comments_tagged: risk-assessment` · `blockers_in: [done, docs]` |
 | dev → review | `comments_tagged: resume` · `comments_tagged: tests-passing` · `comments_tagged: rollback-plan` |
 | review → docs | `comments_tagged: peer-review count=2` |
@@ -711,5 +711,5 @@ Every cited work lives in [`reference/bibliography.md`](./reference/bibliography
 - [`configuration-guide.md`](configuration-guide.md) — every yaml field, semantics, validation rules.
 - [`guards-guide.md`](guards-guide.md) — guard kinds, evaluation order, permissions resolution, operation guards.
 - [`mcp-guide.md`](mcp-guide.md) — MCP tool surface, prompt anatomy, token costs.
-- [`data-model-guide.md`](data-model-guide.md) — SQLite schema and migration history.
+- [`data-model-guide.md`](internal/data-model-guide.md) — SQLite schema and migration history.
 - [`domain-events.md`](domain-events.md) — `events` table catalog and payload contracts.
