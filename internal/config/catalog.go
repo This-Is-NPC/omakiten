@@ -5,6 +5,20 @@ import (
 	"strings"
 )
 
+// Surface enumerates the catalog read paths so a single Snapshot can
+// hand out independent catalogs per delivery layer. CLI drives cobra
+// help/usage chrome; TUI drives terminal-UI labels and screens. New
+// surfaces (notifications, MCP) reuse one of these today rather than
+// adding fragmentation.
+type Surface int
+
+const (
+	// SurfaceCLI selects the catalog resolved against languages.cli.
+	SurfaceCLI Surface = iota
+	// SurfaceTUI selects the catalog resolved against languages.tui.
+	SurfaceTUI
+)
+
 // Language describes one localized string pack discovered by the bundle
 // loader (bundled in defaults/languages or user-authored under
 // <root>/languages/custom). The Code is the lookup key used by the

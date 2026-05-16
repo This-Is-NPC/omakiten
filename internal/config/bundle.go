@@ -17,6 +17,7 @@ type Bundle struct {
 	Projects      []Project                 `yaml:"-" json:"projects,omitempty"`
 	MCPCommands   map[string]MCPCommandSpec `yaml:"-" json:"mcp_commands,omitempty"`
 	Notifications map[string]Notification   `yaml:"-" json:"notifications,omitempty"`
+	Languages     []Language                `yaml:"-" json:"languages,omitempty"`
 	Warnings      []SourceWarning           `yaml:"-" json:"warnings,omitempty"`
 }
 

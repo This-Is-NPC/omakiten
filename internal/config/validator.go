@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"omakiten/internal/domain"
@@ -113,6 +114,9 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 		return err
 	}
 	if err := validateSeverities(bundle.Config.Severities); err != nil {
+		return err
+	}
+	if err := validateLanguageSettings(bundle.Config.Languages, bundle.Languages); err != nil {
 		return err
 	}
 	if len(bundle.Config.TemplateDefaults) == 0 {
@@ -908,4 +912,51 @@ func containsString(haystack []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// validateLanguageSettings rejects unknown codes for config.languages.cli
+// and config.languages.tui. agent_output stays free-form per task #82
+// §9 — it is a directive consumed by the agent, not a catalog lookup,
+// so any non-empty string is accepted.
+//
+// Empty cli/tui values pass through: EffectiveLanguages defaults them
+// to "en" which itself is validated against the loaded catalog. So a
+// missing bundled en pack is the failure surface when nothing else is
+// configured — the validator points at the missing code, not at the
+// empty config.
+func validateLanguageSettings(ls LanguageSettings, loaded []Language) error {
+	// When no languages are loaded at all (test bundles, legacy installs
+	// pre-i18n materialization), skip validation entirely. The Catalog
+	// degrades gracefully: missing keys return the key literal. Fresh
+	// installs materialize defaults/languages/en.yaml so this branch is
+	// the exception, not the norm.
+	if len(loaded) == 0 {
+		return nil
+	}
+	available := make(map[string]struct{}, len(loaded))
+	codes := make([]string, 0, len(loaded))
+	for _, lang := range loaded {
+		available[lang.Code] = struct{}{}
+		codes = append(codes, lang.Code)
+	}
+	sort.Strings(codes)
+	check := func(field, value string) error {
+		resolved := strings.TrimSpace(value)
+		if resolved == "" {
+			resolved = "en"
+		}
+		if _, ok := available[resolved]; ok {
+			return nil
+		}
+		return fmt.Errorf("config.languages.%s: %q is not a loaded language code; available: %s", field, resolved, strings.Join(codes, ", "))
+	}
+	if err := check("cli", ls.CLI); err != nil {
+		return err
+	}
+	if err := check("tui", ls.TUI); err != nil {
+		return err
+	}
+	// agent_output is free-form by design; any value (including empty) is
+	// accepted. Composer skips the directive line when empty.
+	return nil
 }
