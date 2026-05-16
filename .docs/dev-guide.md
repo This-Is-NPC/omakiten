@@ -203,6 +203,62 @@ go tool cover -func=/tmp/coverage.out | tail -1
 - **CHANGELOG:** notable user-visible changes go under `## Unreleased` in [CHANGELOG.md](../CHANGELOG.md). `release-please` rewrites the version headings on release — never edit them by hand.
 - **Docs:** end-user behaviour lives under `.docs/<topic>-guide.md`. When you change something a guide describes, update it in the same PR.
 
+## Continuous Integration
+
+CI lives in `.github/workflows/`. Two workflows share the `name: CI` and the `build-test` job name so branch protection rules only ever need to require one check.
+
+| File | Trigger paths | What it does |
+|---|---|---|
+| `ci.yml` | `paths-ignore: ["**.md", ".docs/**", "CHANGELOG.md"]` | Full Go pipeline — build, vet, race-tested `go test`, `golangci-lint`, `okt-docs-refresh --check`. |
+| `ci-docs.yml` | `paths: ["**.md", ".docs/**", "CHANGELOG.md"]` | Always-pass companion. Posts the `build-test` check without spinning the Go toolchain for doc-only diffs. |
+
+The two filters partition every PR diff:
+
+- **Go-only diff** — only `ci.yml` runs; doc-companion is filtered out. One `build-test` check, real result.
+- **Doc-only diff** — only `ci-docs.yml` runs; main is filtered out. One `build-test` check, always green, completes in seconds.
+- **Mixed diff** — both run. Both post `build-test`; branch protection blocks unless both pass (i.e. the real Go pipeline must pass).
+
+### Cancel-on-push
+
+`ci.yml` declares:
+
+```yaml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+```
+
+A new push to the same PR branch automatically cancels any in-flight run. Stale runs on superseded SHAs no longer waste runner minutes or block the queue.
+
+### Build cache
+
+`ci.yml` manages the Go cache explicitly instead of relying on `setup-go@v5`'s built-in cache, so the build-output cache (`~/.cache/go-build`) is preserved alongside the module cache:
+
+```yaml
+- name: Set up Go
+  uses: actions/setup-go@v5
+  with:
+    go-version: "1.25"
+    check-latest: true
+    cache: false             # managed below
+
+- name: Cache Go build & module cache
+  uses: actions/cache@v4
+  with:
+    path: |
+      ~/.cache/go-build
+      ~/go/pkg/mod
+    key: ${{ runner.os }}-go-1.25-${{ hashFiles('go.sum') }}
+    restore-keys: |
+      ${{ runner.os }}-go-1.25-
+```
+
+The primary key invalidates whenever `go.sum` moves; the `restore-keys` fallback lets a cold key still hydrate from the most recent partial match, so an isolated dependency bump does not force a full rebuild from source. The Go build cache is itself content-addressed, so stale entries for changed source files are ignored automatically.
+
+### Editing the workflows
+
+When tightening or relaxing the doc-path filters in `ci.yml`, mirror the change in `ci-docs.yml` — the two `paths`/`paths-ignore` lists must remain exact complements. A drift means doc-only diffs would either skip CI entirely (no check posted, branch protection blocks) or trigger both workflows on the same files (duplicate green checks but no Go validation).
+
 ## Releasing
 
 Releases are automated by [release-please](https://github.com/googleapis/release-please) (see `release-please-config.json` and `.release-please-manifest.json`). The release PR is generated from Conventional Commit messages on `master`:

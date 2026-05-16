@@ -88,7 +88,8 @@ Not applicable — local-first single-user CLI/TUI/MCP tool with no authn or aut
 ## Infrastructure
 
 - **GitHub Actions workflows** (`.github/workflows/`):
-  - `ci.yml` — triggered by `pull_request` against `master`. Runs `go build`, `go vet`, `go test -race -count=1`, and `golangci-lint` (v2.12.1) on Go 1.25.
+  - `ci.yml` — triggered by `pull_request` against `master`, filtered via `paths-ignore: ["**.md", ".docs/**", "CHANGELOG.md"]` so doc-only diffs skip it. Declares a `concurrency` group (`${{ github.workflow }}-${{ github.ref }}`, `cancel-in-progress: true`) so a follow-up push to the same PR ref cancels the in-flight run. Caches `~/.cache/go-build` + `~/go/pkg/mod` via `actions/cache@v4` keyed by `runner.os + go version + hashFiles('go.sum')` with a partial-match `restore-keys` fallback (`setup-go@v5` is configured with `cache: false` so the explicit step owns the cache shape). Runs `go build`, `go vet`, `go test -race -count=1`, `golangci-lint` (v2.12.1) and the `okt-docs-refresh --check` drift gate on Go 1.25.
+  - `ci-docs.yml` — companion of `ci.yml`. Same `name: CI`, same job id `build-test`, complementary `paths: ["**.md", ".docs/**", "CHANGELOG.md"]` filter, body is a single `echo` step that always exits 0. Posts the `build-test` status check for doc-only diffs so a branch-protection rule requiring `build-test` stays green without spinning the Go pipeline. Mixed diffs trigger both workflows; both must report `build-test` green.
   - `release.yml` — triggered by `pull_request: closed` against `master`. Runs `release-please-action` to manage Release PRs and tags; on a created release, runs `goreleaser-action` (v6, GoReleaser v2) to publish artifacts.
 - **No Dockerfile / container orchestration**: distribution is via `goreleaser`-built binaries plus `install.sh` / `install.ps1`.
 - **Local toolchain**: `.mise.toml` pins Go 1.25.9, `golangci-lint`, and `govulncheck`.
