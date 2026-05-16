@@ -482,29 +482,28 @@ func (s *Snapshot) Settings() Settings {
 	return s.settings
 }
 
-// Synonyms returns a fresh copy of the configured tag synonym map
-// (alias → canonical). Nil when the receiver is nil or the bundle
-// declares no synonyms — app services that capture a *Snapshot at
-// construction can call this without an explicit nil check.
+// Synonyms returns the configured tag-synonym map (alias → canonical).
+// Snapshot is immutable, so callers receive the underlying map by
+// reference — must not mutate. Nil when the receiver is nil or the
+// bundle declares no synonyms; callers can call without a nil check.
+// The shared-reference path is the tag-normalize hot path
+// (NormalizeTagName fires per tag per comment / error / task), so the
+// previous defensive copy was a per-call allocation no caller needed.
 func (s *Snapshot) Synonyms() map[string]string {
 	if s == nil || len(s.settings.TagSynonyms) == 0 {
 		return nil
 	}
-	out := make(map[string]string, len(s.settings.TagSynonyms))
-	for k, v := range s.settings.TagSynonyms {
-		out[k] = v
-	}
-	return out
+	return s.settings.TagSynonyms
 }
 
-// Stopwords returns a fresh copy of the configured search stopword
-// list. The slice carries the lowercase tokens the similar-task ranker
-// drops before scoring overlap. Nil when the receiver is nil.
+// Stopwords returns the configured search-stopword list. Snapshot is
+// immutable, so callers receive the underlying slice by reference —
+// must not mutate. Nil when the receiver is nil.
 func (s *Snapshot) Stopwords() []string {
 	if s == nil {
 		return nil
 	}
-	return append([]string(nil), s.settings.Search.Stopwords...)
+	return s.settings.Search.Stopwords
 }
 
 // Hooks returns a fresh copy of the configured hook list. The
