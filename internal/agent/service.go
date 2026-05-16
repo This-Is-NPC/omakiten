@@ -281,34 +281,6 @@ func (s *Service) SettingsCachePrompts() bool {
 	return s.settings.CachePrompts
 }
 
-// SetTaskTemplateLookup wires the active task template provider. The runtime
-// calls this after constructing the service so that CreateTask responses can
-// embed the configured scaffold.
-func (s *Service) SetTaskTemplateLookup(lookup TaskTemplateLookup) {
-	s.taskTemplateLookup = lookup
-}
-
-// SetTemplateCatalog wires the read-only catalog used by templates.list and
-// templates.show. Without it the service still works but the MCP query
-// endpoints return empty payloads.
-func (s *Service) SetTemplateCatalog(catalog TemplateCatalog) {
-	s.templateCatalog = catalog
-}
-
-// SetSkillCatalog, SetLawCatalog, SetPersonaCatalog and SetCommandCatalog wire
-// the lookups ResolveCommand needs to assemble a prompt response. When any of
-// them is missing, ResolveCommand still answers with whatever bindings can be
-// resolved — empty catalogs degrade to a bare action prompt rather than an
-// error so older runtimes that haven't been updated keep working.
-func (s *Service) SetSkillCatalog(catalog SkillCatalog) { s.skillCatalog = catalog }
-func (s *Service) SetLawCatalog(catalog LawCatalog)     { s.lawCatalog = catalog }
-func (s *Service) SetPersonaCatalog(catalog PersonaCatalog) {
-	s.personaCatalog = catalog
-}
-func (s *Service) SetCommandCatalog(catalog CommandCatalog) {
-	s.commandCatalog = catalog
-}
-
 func (s *Service) resolveProject(ctx context.Context, selector ProjectSelector) (domain.ProjectContext, error) {
 	effective := s.selector
 	if selector.ProjectID > 0 || strings.TrimSpace(selector.Project) != "" || strings.TrimSpace(selector.CWD) != "" {

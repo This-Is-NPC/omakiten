@@ -732,26 +732,25 @@ func callContinueAndDecodeCommentCount(t *testing.T, ctx context.Context, adapte
 func TestAdapterServiceResolverIsolatesTemplateCatalog(t *testing.T) {
 	ctx := context.Background()
 
-	storeA, projectA, _ := newMCPProjectWithBundle(t, ctx, "alpha", mcpTestBundle(t))
-	storeB, projectB, _ := newMCPProjectWithBundle(t, ctx, "bravo", mcpTestBundle(t))
+	bundleA := mcpTestBundle(t)
+	bundleA.Templates = []config.TaskTemplate{
+		{Slug: "pr-alpha", Name: "PR-A", Default: "pr", ProjectSlug: "alpha"},
+		{Slug: "task-alpha", Name: "Task-A", Default: "task", ProjectSlug: "alpha"},
+	}
+	bundleB := mcpTestBundle(t)
+	bundleB.Templates = []config.TaskTemplate{
+		{Slug: "pr-bravo", Name: "PR-B", Default: "pr", ProjectSlug: "bravo"},
+	}
+
+	storeA, projectA, _ := newMCPProjectWithBundle(t, ctx, "alpha", bundleA)
+	storeB, projectB, _ := newMCPProjectWithBundle(t, ctx, "bravo", bundleB)
 
 	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
 	serviceA.SetSnapshot(storeA.Snapshot())
 	serviceA.SetRegistry(testfixtures.CanonicalRegistry())
-	serviceA.SetTemplateCatalog(func() []agent.TemplateSummary {
-		return []agent.TemplateSummary{
-			{Slug: "pr-alpha", Name: "PR-A", Default: "pr", Project: "alpha"},
-			{Slug: "task-alpha", Name: "Task-A", Default: "task", Project: "alpha"},
-		}
-	})
 	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
 	serviceB.SetSnapshot(storeB.Snapshot())
 	serviceB.SetRegistry(testfixtures.CanonicalRegistry())
-	serviceB.SetTemplateCatalog(func() []agent.TemplateSummary {
-		return []agent.TemplateSummary{
-			{Slug: "pr-bravo", Name: "PR-B", Default: "pr", Project: "bravo"},
-		}
-	})
 
 	adapter := NewAdapter(serviceA)
 	adapter.SetServiceResolver(func(_ context.Context, project string, _ int64) (*agent.Service, error) {
