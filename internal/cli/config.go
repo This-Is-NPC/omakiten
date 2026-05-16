@@ -59,5 +59,6 @@ func newConfigCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.AddCommand(newConfigPathCommand(opts))
 	cmd.AddCommand(newConfigWhyCommand(opts))
 	cmd.AddCommand(newConfigDiffCommand(opts))
+	cmd.AddCommand(newConfigLanguageCommand(opts))
 	return cmd
 }

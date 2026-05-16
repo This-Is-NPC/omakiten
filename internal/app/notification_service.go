@@ -36,5 +36,14 @@ func NewNotificationService(snap *config.Snapshot) *NotificationService {
 // same view every other service holds; the returned map is a defensive
 // copy owned by the snapshot, safe to hand to the action registry.
 func (s *NotificationService) BundleSnapshot() actions.NotificationBundleSnapshot {
-	return actions.NotificationBundleSnapshot{Notifications: s.snap.Notifications()}
+	return actions.NotificationBundleSnapshot{
+		Notifications: s.snap.Notifications(),
+		// Notifications share the CLI surface catalog — they are delivery
+		// chrome, not TUI content, even when rendered inside the TUI.
+		// Per task #82 §15-§17, the action calls Catalog.Resolve on the
+		// rendered message + detail text so bundled presets can move
+		// their hook copy into the language catalog without changing
+		// the YAML schema.
+		Catalog: s.snap.Catalog(config.SurfaceCLI),
+	}
 }

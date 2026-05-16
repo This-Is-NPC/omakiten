@@ -42,8 +42,13 @@ type NotificationSender interface {
 }
 
 // NotificationBundleSnapshot is the loaded notification catalog keyed by slug.
+// Catalog is optional — when non-nil, Execute expands `${{intl:KEY}}`
+// tokens inside the resolved message + detail text against it so users
+// (and bundled presets) can keep notification copy in the language
+// catalog instead of hardcoding it in each preset's hook entries.
 type NotificationBundleSnapshot struct {
 	Notifications map[string]config.Notification
+	Catalog       *config.Catalog
 }
 
 // NotificationShowAction resolves a configured notification and emits the
@@ -105,6 +110,12 @@ func (a *NotificationShowAction) Execute(_ context.Context, ev domain.Event, arg
 		return err
 	}
 	detailText := ResolveOptionalNotificationMessage(ev, detailMessage, detailField)
+	if snapshot.Catalog != nil {
+		text = snapshot.Catalog.Resolve(text)
+		if detailText != "" {
+			detailText = snapshot.Catalog.Resolve(detailText)
+		}
+	}
 
 	// Render every action's Command through text/template so users can wire
 	// args like "--project={{.Project.Slug}}" or "--id={{.Payload.id}}".
