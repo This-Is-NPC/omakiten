@@ -82,76 +82,13 @@ func TestRecordErrorWithoutProject(t *testing.T) {
 	}
 }
 
-func TestSearchErrorsByTagIntersection(t *testing.T) {
-	ctx := context.Background()
-	store := openTestStore(t)
-
-	projectA, _ := store.UpsertProject(ctx, "A", "a", "/work/a")
-	projectB, _ := store.UpsertProject(ctx, "B", "b", "/work/b")
-
-	// Error in project A tagged sqlite + fk
-	errA, _ := store.RecordError(ctx, projectA.ID, "FK violation in A", "", []domain.Tag{{Name: "sqlite", Label: "Sqlite"}, {Name: "fk", Label: "Fk"}})
-	// Error in project B tagged sqlite + index
-	errB, _ := store.RecordError(ctx, projectB.ID, "missing index in B", "", []domain.Tag{{Name: "sqlite", Label: "Sqlite"}, {Name: "index", Label: "Index"}})
-	// Unrelated error tagged go
-	errGo, _ := store.RecordError(ctx, projectA.ID, "go panic", "", []domain.Tag{{Name: "go", Label: "Go"}})
-
-	results, err := store.SearchErrors(ctx, "", []string{"sqlite"})
-	if err != nil {
-		t.Fatalf("SearchErrors() error = %v", err)
-	}
-
-	ids := map[int64]bool{}
-	for _, r := range results {
-		ids[r.ID] = true
-	}
-	if !ids[errA.ID] || !ids[errB.ID] {
-		t.Fatalf("SearchErrors(sqlite) missing cross-project errors: got %v", ids)
-	}
-	if ids[errGo.ID] {
-		t.Fatalf("SearchErrors(sqlite) returned unrelated error %d", errGo.ID)
-	}
-}
-
-func TestSearchErrorsByQueryText(t *testing.T) {
-	ctx := context.Background()
-	store := openTestStore(t)
-
-	project, _ := store.UpsertProject(ctx, "P", "p", "/work/p")
-	hit, _ := store.RecordError(ctx, project.ID, "FOREIGN KEY constraint failed", "details", nil)
-	miss, _ := store.RecordError(ctx, project.ID, "unrelated error", "", nil)
-
-	results, err := store.SearchErrors(ctx, "FOREIGN KEY", nil)
-	if err != nil {
-		t.Fatalf("SearchErrors() error = %v", err)
-	}
-	if len(results) != 1 || results[0].ID != hit.ID {
-		t.Fatalf("SearchErrors() = %+v, want only %d", results, hit.ID)
-	}
-
-	// case-insensitive substring should match the lower-case query against the
-	// stored text via LIKE — sqlite default LIKE is case-insensitive for ASCII.
-	results, _ = store.SearchErrors(ctx, "foreign", nil)
-	if len(results) != 1 {
-		t.Fatalf("SearchErrors(case) = %+v", results)
-	}
-	_ = miss
-}
-
-func TestAddSolutionAndRanking(t *testing.T) {
+func TestAddSolutionRecordsSuccessState(t *testing.T) {
 	ctx := context.Background()
 	store := openTestStore(t)
 
 	project, _ := store.UpsertProject(ctx, "P", "p", "/work/p")
 	rec, _ := store.RecordError(ctx, project.ID, "boom", "", []domain.Tag{{Name: "boom", Label: "Boom"}})
 
-	// failed older solution
-	oldFail, _ := store.AddSolution(ctx, rec.ID, "old failed", "", nil)
-	if _, err := store.ConfirmSolution(ctx, oldFail.ID, false); err != nil {
-		t.Fatalf("ConfirmSolution(false) error = %v", err)
-	}
-
-	// succeeded newer solution
 	winner, _ := store.AddSolution(ctx, rec.ID, "winner", "do X", nil)
 	winnerConfirmed, err := store.ConfirmSolution(ctx, winner.ID, true)
 	if err != nil {
@@ -160,33 +97,20 @@ func TestAddSolutionAndRanking(t *testing.T) {
 	if winnerConfirmed.Success == nil || !*winnerConfirmed.Success {
 		t.Fatalf("ConfirmSolution(true) Success = %v", winnerConfirmed.Success)
 	}
+	if winnerConfirmed.Likes != 1 {
+		t.Fatalf("ConfirmSolution(true) Likes = %d, want 1", winnerConfirmed.Likes)
+	}
 
-	// untried solution (success=NULL)
-	untried, _ := store.AddSolution(ctx, rec.ID, "untried hypothesis", "", nil)
-
-	results, err := store.SearchErrors(ctx, "", []string{"boom"})
+	loser, _ := store.AddSolution(ctx, rec.ID, "loser", "do Y", nil)
+	loserConfirmed, err := store.ConfirmSolution(ctx, loser.ID, false)
 	if err != nil {
-		t.Fatalf("SearchErrors() error = %v", err)
+		t.Fatalf("ConfirmSolution(false) error = %v", err)
 	}
-	if len(results) != 1 {
-		t.Fatalf("SearchErrors() len = %d, want 1", len(results))
+	if loserConfirmed.Success == nil || *loserConfirmed.Success {
+		t.Fatalf("ConfirmSolution(false) Success = %v, want pointer to false", loserConfirmed.Success)
 	}
-	sols := results[0].Solutions
-	if len(sols) != 3 {
-		t.Fatalf("Solutions len = %d, want 3", len(sols))
-	}
-	if sols[0].ID != winner.ID {
-		t.Fatalf("Solutions[0] = %d, want winner %d (success=true must rank first)", sols[0].ID, winner.ID)
-	}
-	// position 1 is the untried (NULL); position 2 is the failed.
-	if sols[1].ID != untried.ID {
-		t.Fatalf("Solutions[1] = %d, want untried %d (NULL outranks success=false)", sols[1].ID, untried.ID)
-	}
-	if sols[2].ID != oldFail.ID {
-		t.Fatalf("Solutions[2] = %d, want oldFail %d", sols[2].ID, oldFail.ID)
-	}
-	if sols[2].Success == nil || *sols[2].Success {
-		t.Fatalf("Solutions[2].Success = %v, want pointer to false", sols[2].Success)
+	if loserConfirmed.Likes != 0 {
+		t.Fatalf("ConfirmSolution(false) Likes = %d, want 0", loserConfirmed.Likes)
 	}
 }
 
@@ -318,51 +242,6 @@ func TestConfirmSolutionIncrementsLikesOnSuccess(t *testing.T) {
 	}
 	if confirmed.Likes != 2 {
 		t.Fatalf("ConfirmSolution(false) Likes = %d, want 2 (unchanged)", confirmed.Likes)
-	}
-}
-
-func TestSearchErrorsRanksSolutionsByLikes(t *testing.T) {
-	ctx := context.Background()
-	store := openTestStore(t)
-
-	rec, _ := store.RecordError(ctx, 0, "boom", "", []domain.Tag{{Name: "boom", Label: "Boom"}})
-
-	// Two successful solutions; the one we confirm twice should rank above
-	// the one confirmed once even though both have success=true.
-	hot, _ := store.AddSolution(ctx, rec.ID, "hot", "", nil)
-	warm, _ := store.AddSolution(ctx, rec.ID, "warm", "", nil)
-	if _, err := store.ConfirmSolution(ctx, warm.ID, true); err != nil {
-		t.Fatalf("ConfirmSolution(warm) error = %v", err)
-	}
-	if _, err := store.ConfirmSolution(ctx, hot.ID, true); err != nil {
-		t.Fatalf("ConfirmSolution(hot 1) error = %v", err)
-	}
-	if _, err := store.ConfirmSolution(ctx, hot.ID, true); err != nil {
-		t.Fatalf("ConfirmSolution(hot 2) error = %v", err)
-	}
-
-	results, err := store.SearchErrors(ctx, "", []string{"boom"})
-	if err != nil {
-		t.Fatalf("SearchErrors() error = %v", err)
-	}
-	if len(results) != 1 {
-		t.Fatalf("SearchErrors() len = %d, want 1", len(results))
-	}
-	sols := results[0].Solutions
-	if len(sols) != 2 {
-		t.Fatalf("Solutions len = %d, want 2", len(sols))
-	}
-	if sols[0].ID != hot.ID {
-		t.Fatalf("Solutions[0] = %d (likes=%d), want hot %d (likes=%d)", sols[0].ID, sols[0].Likes, hot.ID, sols[0].Likes)
-	}
-	if sols[0].Likes != 2 {
-		t.Fatalf("Solutions[0].Likes = %d, want 2", sols[0].Likes)
-	}
-	if sols[1].ID != warm.ID {
-		t.Fatalf("Solutions[1] = %d, want warm %d", sols[1].ID, warm.ID)
-	}
-	if sols[1].Likes != 1 {
-		t.Fatalf("Solutions[1].Likes = %d, want 1", sols[1].Likes)
 	}
 }
 

@@ -126,10 +126,17 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | Tool | Purpose |
 |---|---|
 | `errors.record` | Records a development-time error with optional context and tags. |
-| `errors.search` | Searches errors by tag intersection and/or description text; returns nested solutions ranked by success then recency. |
 | `solutions.add` | Attaches a candidate solution to an error. |
 | `solutions.confirm` | Marks a solution success/failure; `success=true` increments its like counter. |
 | `solutions.list_top` | Lists the top-N most-liked solutions globally. |
+
+> **Breaking change (0.16):** `errors.search` was removed in favour of the unified `search` tool below. The equivalent call is `search(query, entity_types=["error"])`. The unified call still emits the legacy `error.searched` domain event (with `"unified": true` in the payload) so `metrics.summary` keeps producing the search-before-record ratio per model.
+
+### Search (unified FTS5 across content entities)
+
+| Tool | Purpose |
+|---|---|
+| `search` | Full-text search across `task`, `comment`, `error`, `solution`, and `context` entities using SQLite FTS5. Required `query` is an FTS5 MATCH expression (phrase, prefix*, NEAR, AND/OR/NOT — see [sqlite.org/fts5.html](https://sqlite.org/fts5.html)). Optional `entity_types` restricts the kinds returned (omit or pass an empty list to cover all five). Optional `project` / `project_id` scopes the index to one project; omit both for the cross-project view. Archived tasks (`state='archived'`) are filtered out automatically. Each hit ships `entity_type`, `id`, `score` (negated BM25 so higher is better), `snippet` (matching content with `<mark>…</mark>` highlights), and `project_id`. Capped at 200 hits per call. |
 
 ### Templates (read-only)
 

@@ -130,7 +130,6 @@ type TagRepository interface {
 
 type ErrorRepository interface {
 	RecordError(ctx context.Context, projectID int64, description, context string, tags []domain.Tag) (domain.ErrorRecord, error)
-	SearchErrors(ctx context.Context, query string, tagNames []string) ([]domain.ErrorRecord, error)
 	AddSolution(ctx context.Context, errorID int64, description, steps string, taskID *int64) (domain.Solution, error)
 	ConfirmSolution(ctx context.Context, solutionID int64, success bool) (domain.Solution, error)
 	ListTopSolutions(ctx context.Context, limit int) ([]domain.Solution, error)
@@ -147,6 +146,19 @@ type ErrorRepository interface {
 // behave (do they search before recording? do their solutions get liked?).
 type MetricsRepository interface {
 	AgentMetricsSummary(ctx context.Context, period string, projectID int64) ([]domain.AgentMetrics, string, error)
+}
+
+// SearchRepository exposes the unified FTS5 index that spans tasks,
+// comments, errors, solutions, and context entries. The adapter
+// implements ranking (BM25), snippet rendering, and the implicit
+// `tasks.state='active'` filter; the service layer validates input and
+// resolves the project filter into a numeric id.
+type SearchRepository interface {
+	// Search runs the FTS5 MATCH expression against `search_index` and
+	// returns hits ordered by descending score. projectID == 0 disables
+	// the project filter (cross-project). entityTypes restricts the row
+	// set; an empty slice means "all five types".
+	Search(ctx context.Context, query string, projectID int64, entityTypes []domain.SearchEntityType, limit int) ([]domain.SearchHit, error)
 }
 
 // BundleStore is the adapter port for reading/writing the bundled config and

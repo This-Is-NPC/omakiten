@@ -246,7 +246,7 @@ func tools() []ToolDefinition {
 		{Name: "tags.list_all", Description: "List all tags across all projects with usage counts.", InputSchema: objectSchema(map[string]any{}, nil)},
 		{Name: "tags.merge", Description: "Merge a source tag into a target tag, reassigning all references and deleting the source.", InputSchema: objectSchema(map[string]any{"source_tag_id": integerSchema("Source tag id to merge from (will be deleted)"), "target_tag_id": integerSchema("Target tag id to merge into (canonical)")}, []string{"source_tag_id", "target_tag_id"})},
 		{Name: "errors.record", Description: "Record an error encountered during development with optional context and tags. Errors and their solutions are visible cross-project so the agent can reuse prior fixes.", InputSchema: recordErrorSchema()},
-		{Name: "errors.search", Description: "Search errors by tag intersection and/or description text. Returns errors with nested solutions ranked by success then recency. Search is cross-project.", InputSchema: searchErrorsSchema()},
+		{Name: "search", Description: "Full-text search across tasks, comments, errors, solutions, and context entries using SQLite FTS5. Returns BM25-ranked hits with snippets (<mark>...</mark> highlights). Optional `entity_types` filter restricts the indexed kinds; omit `project`/`project_id` for a cross-project view. Archived tasks are filtered out automatically. Replaces the legacy `errors.search` tool — equivalent call: search(query, entity_types=[\"error\"]).", InputSchema: searchSchema()},
 		{Name: "solutions.add", Description: "Attach a candidate solution to an error. Multiple solutions per error are supported.", InputSchema: addSolutionSchema()},
 		{Name: "solutions.confirm", Description: "Confirm whether a solution worked. success=true marks it as the recommended fix and increments its like counter; success=false marks it as known-bad so the agent does not retry it without new context.", InputSchema: confirmSolutionSchema()},
 		{Name: "solutions.list_top", Description: "List the top N most-liked solutions globally (cross-project). Useful to surface validated fixes and audit recurring patterns. Likes are incremented only by solutions.confirm(success=true).", InputSchema: listTopSolutionsSchema()},
@@ -534,11 +534,11 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		if err == nil {
 			data, err = service.RecordError(ctx, input)
 		}
-	case "errors.search":
-		var input agent.SearchErrorsInput
+	case "search":
+		var input agent.SearchInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = service.SearchErrors(ctx, input)
+			data, err = service.Search(ctx, input)
 		}
 	case "solutions.add":
 		var input agent.AddSolutionInput
@@ -784,11 +784,11 @@ func recordErrorSchema() map[string]any {
 	return objectSchema(props, []string{"description"})
 }
 
-func searchErrorsSchema() map[string]any {
+func searchSchema() map[string]any {
 	props := selectorProperties()
-	props["query"] = stringSchema("Optional substring matched against error description and context")
-	props["tags"] = arrayStringSchema("Optional tag names; results match errors carrying ANY of these tags")
-	return objectSchema(props, nil)
+	props["query"] = stringSchema("FTS5 MATCH expression — phrase, prefix*, NEAR, AND/OR/NOT supported (see sqlite.org/fts5.html). Required.")
+	props["entity_types"] = arrayStringSchema("Optional restriction to a subset of entity types. Allowed: task, comment, error, solution, context. Empty or omitted indexes all five.")
+	return objectSchema(props, []string{"query"})
 }
 
 func addSolutionSchema() map[string]any {

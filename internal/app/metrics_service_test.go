@@ -12,13 +12,15 @@ func TestMetricsServiceSummaryAggregatesPerModel(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	errService := NewErrorService(store, store.Snapshot())
+	searchService := NewSearchService(store, store)
 
 	// Two distinct models, distinct sessions.
 	ctxOpus := activity.WithAgent(context.Background(), "mcp", "errors_record", "claude-opus-4-7", "sess-opus")
 	ctxSonnet := activity.WithAgent(context.Background(), "mcp", "errors_record", "claude-sonnet-4-6", "sess-sonnet")
 
-	// Opus: search first, then record. Add a solution and like it.
-	if _, err := errService.Search(ctxOpus, project.Context(), "fk", []string{}); err != nil {
+	// Opus: search first (cross-entity, error scope), then record.
+	// Add a solution and like it.
+	if _, err := searchService.Search(ctxOpus, project.Context(), "fk", []string{"error"}); err != nil {
 		t.Fatalf("Search error = %v", err)
 	}
 	rec, err := errService.Record(ctxOpus, project.Context(), "FK violation", "", nil)

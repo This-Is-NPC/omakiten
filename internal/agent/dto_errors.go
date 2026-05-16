@@ -13,12 +13,6 @@ type RecordErrorInput struct {
 	Tags        []string `json:"tags,omitempty"`
 }
 
-type SearchErrorsInput struct {
-	ProjectSelector
-	Query string   `json:"query,omitempty"`
-	Tags  []string `json:"tags,omitempty"`
-}
-
 type AddSolutionInput struct {
 	ProjectSelector
 	ErrorID     int64  `json:"error_id"`
@@ -67,11 +61,6 @@ type SolutionSummary struct {
 type ErrorRecordResponse struct {
 	Project ProjectSummary `json:"project"`
 	Error   ErrorSummary   `json:"error"`
-}
-
-type SearchErrorsResponse struct {
-	Project ProjectSummary `json:"project"`
-	Errors  []ErrorSummary `json:"errors"`
 }
 
 type SolutionResponse struct {

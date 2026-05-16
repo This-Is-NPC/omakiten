@@ -23,8 +23,9 @@ func TestErrorServiceEmitsAttributedDomainEvents(t *testing.T) {
 	}
 	assertLatestEvent(t, store, domain.EventTypeErrorRecorded, "error", rec.ID, "claude-opus-4-7", "sess-42")
 
-	if _, err := service.Search(ctx, project.Context(), "FK", []string{"sqlite"}); err != nil {
-		t.Fatalf("Search() error = %v", err)
+	searchSvc := NewSearchService(store, store)
+	if _, err := searchSvc.Search(ctx, project.Context(), "FK", []string{"error"}); err != nil {
+		t.Fatalf("SearchService.Search() error = %v", err)
 	}
 	searchEv := assertLatestEvent(t, store, domain.EventTypeErrorSearched, "error", 0, "claude-opus-4-7", "sess-42")
 	if !strings.Contains(searchEv.Payload, `"result_count":1`) {
@@ -128,29 +129,6 @@ func TestErrorServiceRecordNormalizesTags(t *testing.T) {
 	}
 }
 
-func TestErrorServiceSearchByTag(t *testing.T) {
-	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
-	defer func() { _ = store.Close() }()
-
-	service := NewErrorService(store, store.Snapshot())
-
-	if _, err := service.Record(ctx, project.Context(), "FK error", "", []string{"sqlite", "fk"}); err != nil {
-		t.Fatalf("Record() error = %v", err)
-	}
-	if _, err := service.Record(ctx, project.Context(), "panic", "", []string{"go"}); err != nil {
-		t.Fatalf("Record() error = %v", err)
-	}
-
-	results, err := service.Search(ctx, project.Context(), "", []string{"sqlite"})
-	if err != nil {
-		t.Fatalf("Search() error = %v", err)
-	}
-	if len(results) != 1 || results[0].Description != "FK error" {
-		t.Fatalf("Search(sqlite) = %+v, want only FK error", results)
-	}
-}
-
 func TestErrorServiceAddSolutionValidates(t *testing.T) {
 	ctx := context.Background()
 	store, project := appTestStore(t, appTestBundle(t, 1000))
@@ -178,6 +156,7 @@ func TestErrorServiceConfirmSolutionRanks(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store, store.Snapshot())
+	service.SetSolutionsDefaults(SolutionsDefaults{TopLimitDefault: 10, TopLimitMax: 100})
 	rec, _ := service.Record(ctx, project.Context(), "boom", "", []string{"boom"})
 
 	loser, _ := service.AddSolution(ctx, project.Context(), rec.ID, "loser", "", nil)
@@ -190,16 +169,12 @@ func TestErrorServiceConfirmSolutionRanks(t *testing.T) {
 		t.Fatalf("ConfirmSolution(winner) error = %v", err)
 	}
 
-	results, err := service.Search(ctx, project.Context(), "", []string{"boom"})
+	top, err := service.ListTopSolutions(ctx, project.Context(), 10)
 	if err != nil {
-		t.Fatalf("Search() error = %v", err)
+		t.Fatalf("ListTopSolutions() error = %v", err)
 	}
-	if len(results) != 1 {
-		t.Fatalf("Search() len = %d", len(results))
-	}
-	sols := results[0].Solutions
-	if len(sols) != 2 || sols[0].ID != winner.ID {
-		t.Fatalf("Solutions = %+v, want winner first", sols)
+	if len(top) == 0 || top[0].ID != winner.ID {
+		t.Fatalf("ListTopSolutions()[0] = %+v, want winner (%d) first", top, winner.ID)
 	}
 }
 
@@ -259,34 +234,6 @@ func TestErrorServiceListTopSolutionsClampsLimit(t *testing.T) {
 	}
 	if len(top) != 3 {
 		t.Fatalf("ListTopSolutions(9999) len = %d, want 3", len(top))
-	}
-}
-
-func TestErrorServiceCrossProjectSearch(t *testing.T) {
-	ctx := context.Background()
-	store, projectA := appTestStore(t, appTestBundle(t, 1000))
-	defer func() { _ = store.Close() }()
-
-	projectB, err := store.UpsertProject(ctx, "B", "b", "/work/b")
-	if err != nil {
-		t.Fatalf("UpsertProject(B) error = %v", err)
-	}
-
-	service := NewErrorService(store, store.Snapshot())
-	if _, err := service.Record(ctx, projectA.Context(), "shared issue in A", "", []string{"shared"}); err != nil {
-		t.Fatalf("Record(A) error = %v", err)
-	}
-	if _, err := service.Record(ctx, projectB.Context(), "shared issue in B", "", []string{"shared"}); err != nil {
-		t.Fatalf("Record(B) error = %v", err)
-	}
-
-	// Search from project A's context — must still see B's error
-	results, err := service.Search(ctx, projectA.Context(), "", []string{"shared"})
-	if err != nil {
-		t.Fatalf("Search() error = %v", err)
-	}
-	if len(results) != 2 {
-		t.Fatalf("Search(shared) len = %d, want 2 (cross-project)", len(results))
 	}
 }
 

@@ -18,22 +18,6 @@ func (s *Service) RecordError(ctx context.Context, input RecordErrorInput) (Erro
 	return ErrorRecordResponse{Project: projectSummary(project), Error: errorSummary(record)}, nil
 }
 
-func (s *Service) SearchErrors(ctx context.Context, input SearchErrorsInput) (SearchErrorsResponse, error) {
-	project, err := s.resolveProject(ctx, input.ProjectSelector)
-	if err != nil {
-		return SearchErrorsResponse{}, err
-	}
-	records, err := s.newErrorService().Search(ctx, project, input.Query, input.Tags)
-	if err != nil {
-		return SearchErrorsResponse{}, err
-	}
-	out := make([]ErrorSummary, 0, len(records))
-	for _, r := range records {
-		out = append(out, errorSummary(r))
-	}
-	return SearchErrorsResponse{Project: projectSummary(project), Errors: out}, nil
-}
-
 func (s *Service) AddSolution(ctx context.Context, input AddSolutionInput) (SolutionResponse, error) {
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
