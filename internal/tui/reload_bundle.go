@@ -14,12 +14,14 @@ import (
 
 // reloadBundle re-resolves the bundle at path through the BundleCache
 // (Phase 3e) and rewires every bundle-derived field on the Model in
-// place. The cache's Reload performs a provider.Swap + bundle.imported
-// emit — no SQL config-write path is involved. On error nothing on the
-// Model changes so the caller can surface the failure and let the user
-// retry. bundle.swapped continues to fire so the hooks engine can
-// react (e.g., the orphan-migration notification when the new
-// workflow lost buckets the previous one had).
+// place. The cache's Reload builds a fresh per-project Snapshot,
+// fires Store.EmitBundleImported (audit-only — no Store-side
+// rotation), and swaps the ProjectRuntime entry so in-flight callers
+// keep the previous pointer. On error nothing on the Model changes
+// so the caller can surface the failure and let the user retry.
+// bundle.swapped continues to fire so the hooks engine can react
+// (e.g., the orphan-migration notification when the new workflow
+// lost buckets the previous one had).
 //
 // Repositories.Cache MUST be wired — Phase 3e dropped the
 // ConfigService.Import fallback so the TUI never reaches the SQL

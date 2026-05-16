@@ -23,7 +23,8 @@ to the shared-singleton model the migration retired.
   cross-project leakage on hot paths.
 - The SQL adapter (`*sqlite.Store`) is back to "tasks, comments, events,
   tags, dependencies, errors, solutions, context_entries, activity_logs"
-  — no config knowledge beyond a transitional `Snapshot()` accessor.
+  — the only bundle-aware surface is `EmitBundleImported`, which records
+  the audit event and writes nothing else.
 
 ## Layer diagram
 
@@ -73,9 +74,10 @@ should reject changes that break any of them.
 
 1. **Store = SQL adapter, period.** No `config.Bundle`,
    `config.Snapshot`, `config.Providers` field on the Store. The
-   transitional `Store.Snapshot()` accessor returns the value last
-   passed to `ImportBundle`; it lives there only until ImportBundle
-   moves out of the Store.
+   only bundle-aware surface left on `*sqlite.Store` is
+   `EmitBundleImported(ctx, bundle, path, hash)` — audit-only, never
+   mutates Store state. Snapshot ownership lives on
+   `agentruntime.ProjectRuntime`.
 2. **Snapshot is immutable.** No `Swap`, no `atomic.Pointer` embedded,
    no `Set*` mutator. Mutation produces a new pointer; the old one
    keeps serving in-flight callers.
@@ -183,9 +185,9 @@ type ConfigRepository interface {
 ```
 
 Why it breaks: the interface declares methods nothing calls. Correct
-shape: the interface narrows to the methods still in use (today:
-`SnapshotSource` + `ImportBundle`), or disappears entirely once
-ProjectRuntime takes over ImportBundle.
+shape: the interface disappears entirely once ProjectRuntime owns the
+snapshot and `Store.EmitBundleImported` carries the audit
+side-effect.
 
 ## Appendix — #110 drift retrospective
 
@@ -220,9 +222,10 @@ What #117 fixed:
 - App services receive `*Snapshot` at construction (or fetch
   per-call) — captured *before* the dispatch happens.
 - Store loses `Providers()`, `previousProviders`, `providersImported`,
-  `providersMu`, `Providers()`, `PreviousProviders()`. The transitional
-  `Snapshot()` accessor stays only until `ProjectRuntime` takes over
-  `ImportBundle`.
+  `providersMu`, `Providers()`, `PreviousProviders()`, `Snapshot()`,
+  `PreviousSnapshot()`, and `ImportBundle`. `ProjectRuntime` owns the
+  snapshot pair; `Store.EmitBundleImported` remains as the audit-only
+  surface for hooks subscribed to bundle.imported.
 - BundleCache produces a fresh Snapshot per Reload; the new entry's
   `PreviousSnapshot` pins the prior pointer for the orphan flow.
 - New tests pin per-project isolation, hot-reload safety, and
