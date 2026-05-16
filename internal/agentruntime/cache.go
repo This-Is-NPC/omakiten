@@ -332,6 +332,11 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 
 	notifSvc := app.NewNotificationService(snapshot)
 	notifSnapshot := notifSvc.BundleSnapshot()
+	// The CLI surface catalog handles notification chrome expansion
+	// (${{intl:KEY}} tokens). Set here at the composition root because the
+	// app layer is constrained by the i18n arch boundary from naming
+	// config.SurfaceCLI directly.
+	notifSnapshot.Catalog = snapshot.Catalog(config.SurfaceCLI)
 	registry := hooks.NewActionRegistry()
 	actions.RegisterBuiltins(registry)
 	notificationAction := actions.NewNotificationShowAction(notifSnapshot)

@@ -38,12 +38,13 @@ func NewNotificationService(snap *config.Snapshot) *NotificationService {
 func (s *NotificationService) BundleSnapshot() actions.NotificationBundleSnapshot {
 	return actions.NotificationBundleSnapshot{
 		Notifications: s.snap.Notifications(),
-		// Notifications share the CLI surface catalog — they are delivery
-		// chrome, not TUI content, even when rendered inside the TUI.
-		// Per task #82 §15-§17, the action calls Catalog.Resolve on the
-		// rendered message + detail text so bundled presets can move
-		// their hook copy into the language catalog without changing
-		// the YAML schema.
-		Catalog: s.snap.Catalog(config.SurfaceCLI),
+		// Per task #82 §15-§17, the notification action expands
+		// ${{intl:KEY}} tokens against the catalog so bundled presets can
+		// move their hook copy into the language catalog. The
+		// composition root in agentruntime is the place that picks the
+		// concrete surface — naming SurfaceCLI here would couple app to
+		// the catalog type system, which the arch test forbids. The
+		// composition root sets Catalog after constructing the snapshot.
+		Catalog: nil,
 	}
 }
