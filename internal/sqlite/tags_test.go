@@ -7,13 +7,10 @@ import (
 	"omakiten/internal/domain"
 )
 
-func openTestStore(t *testing.T) *snapStore {
+func openTestStore(t *testing.T) *storeFixture {
 	t.Helper()
-	ctx := context.Background()
-	store := openSnapStore(t, t.TempDir()+"/omakiten.db")
-	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
-		t.Fatalf("ImportBundle() error = %v", err)
-	}
+	store := openStoreFixture(t, t.TempDir()+"/omakiten.db")
+	store.applyBundle(sqliteTestBundle(t))
 	return store
 }
 
@@ -50,7 +47,7 @@ func TestListAllTags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -93,7 +90,7 @@ func TestAddRemoveListTaskTags(t *testing.T) {
 	store := openTestStore(t)
 
 	project, _ := store.UpsertProject(ctx, "P", "p", "/work/p")
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot())
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.snap())
 
 	goTag, _ := store.FindOrCreateTag(ctx, "go", "Go")
 
@@ -130,8 +127,8 @@ func TestListTaskTagsByProject(t *testing.T) {
 	store := openTestStore(t)
 
 	project, _ := store.UpsertProject(ctx, "P", "p", "/work/p")
-	taskA, _ := store.CreateTask(ctx, project.ID, "A", "", domain.Priority(2), "backlog", store.Snapshot())
-	taskB, _ := store.CreateTask(ctx, project.ID, "B", "", domain.Priority(2), "backlog", store.Snapshot())
+	taskA, _ := store.CreateTask(ctx, project.ID, "A", "", domain.Priority(2), "backlog", store.snap())
+	taskB, _ := store.CreateTask(ctx, project.ID, "B", "", domain.Priority(2), "backlog", store.snap())
 
 	goTag, _ := store.FindOrCreateTag(ctx, "go", "Go")
 	tsTag, _ := store.FindOrCreateTag(ctx, "ts", "Ts")
@@ -157,7 +154,7 @@ func TestMergeTags(t *testing.T) {
 	store := openTestStore(t)
 
 	project, _ := store.UpsertProject(ctx, "P", "p", "/work/p")
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot())
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.snap())
 
 	goTag, _ := store.FindOrCreateTag(ctx, "go", "Go")
 	golangTag, _ := store.FindOrCreateTag(ctx, "golang-alias", "Golang alias")
@@ -192,7 +189,7 @@ func TestDeleteOrphanTags(t *testing.T) {
 	store := openTestStore(t)
 
 	project, _ := store.UpsertProject(ctx, "P", "p", "/work/p")
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot())
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.snap())
 
 	goTag, _ := store.FindOrCreateTag(ctx, "go", "Go")
 	orphan1, _ := store.FindOrCreateTag(ctx, "orphan1", "Orphan1")

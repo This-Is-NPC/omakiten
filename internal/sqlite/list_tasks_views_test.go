@@ -22,7 +22,7 @@ func TestListTasksHonorsSortField(t *testing.T) {
 		{"alpha", 1},
 		{"bravo", 2},
 	} {
-		if _, err := store.CreateTask(ctx, project.ID, tc.title, "", tc.priority, "backlog", store.Snapshot()); err != nil {
+		if _, err := store.CreateTask(ctx, project.ID, tc.title, "", tc.priority, "backlog", store.snap()); err != nil {
 			t.Fatalf("CreateTask(%s) = %v", tc.title, err)
 		}
 	}
@@ -42,7 +42,7 @@ func TestListTasksHonorsSortField(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{Sort: tc.sort}, store.Snapshot())
+			tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{Sort: tc.sort}, store.snap())
 			if err != nil {
 				t.Fatalf("ListTasks() = %v", err)
 			}
@@ -70,14 +70,14 @@ func TestListTasksHonorsPriorityFilter(t *testing.T) {
 		{"bravo", 2},
 		{"charlie", 3},
 	} {
-		if _, err := store.CreateTask(ctx, project.ID, tc.title, "", tc.priority, "backlog", store.Snapshot()); err != nil {
+		if _, err := store.CreateTask(ctx, project.ID, tc.title, "", tc.priority, "backlog", store.snap()); err != nil {
 			t.Fatalf("CreateTask(%s) = %v", tc.title, err)
 		}
 	}
 
 	tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{
 		Priorities: []domain.Priority{3, 1},
-	}, store.Snapshot())
+	}, store.snap())
 	if err != nil {
 		t.Fatalf("ListTasks() = %v", err)
 	}
@@ -95,18 +95,18 @@ func TestListTasksHonorsBucketKeysFilter(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithProject(ctx, t)
 
-	a, err := store.CreateTask(ctx, project.ID, "alpha", "", domain.Priority(2), "backlog", store.Snapshot())
+	a, err := store.CreateTask(ctx, project.ID, "alpha", "", domain.Priority(2), "backlog", store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask(alpha) = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "bravo", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "bravo", "", domain.Priority(2), "backlog", store.snap()); err != nil {
 		t.Fatalf("CreateTask(bravo) = %v", err)
 	}
-	if _, err := store.MoveTask(ctx, project.ID, a.ID, "dev", store.Snapshot()); err != nil {
+	if _, err := store.MoveTask(ctx, project.ID, a.ID, "dev", store.snap()); err != nil {
 		t.Fatalf("MoveTask(alpha->dev) = %v", err)
 	}
 
-	tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{BucketKeys: []string{"dev"}}, store.Snapshot())
+	tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{BucketKeys: []string{"dev"}}, store.snap())
 	if err != nil {
 		t.Fatalf("ListTasks() = %v", err)
 	}
@@ -119,11 +119,11 @@ func TestListTasksReturnsCreatedAt(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithProject(ctx, t)
 
-	if _, err := store.CreateTask(ctx, project.ID, "task", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "task", "", domain.Priority(2), "backlog", store.snap()); err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
 
-	tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{}, store.Snapshot())
+	tasks, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{}, store.snap())
 	if err != nil {
 		t.Fatalf("ListTasks() = %v", err)
 	}
@@ -135,12 +135,10 @@ func TestListTasksReturnsCreatedAt(t *testing.T) {
 	}
 }
 
-func openStoreWithProject(ctx context.Context, t *testing.T) (*snapStore, domain.Project) {
+func openStoreWithProject(ctx context.Context, t *testing.T) (*storeFixture, domain.Project) {
 	t.Helper()
-	store := openSnapStore(t, t.TempDir()+"/omakiten.db")
-	if err := store.ImportBundle(ctx, sqliteTestBundle(t), "test.yaml", "hash"); err != nil {
-		t.Fatalf("ImportBundle() = %v", err)
-	}
+	store := openStoreFixture(t, t.TempDir()+"/omakiten.db")
+	store.applyBundle(sqliteTestBundle(t))
 	project, err := store.UpsertProject(ctx, "Test", "test", t.TempDir())
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
