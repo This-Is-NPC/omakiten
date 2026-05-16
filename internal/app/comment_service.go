@@ -5,31 +5,35 @@ import (
 	"strings"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
 
+// CommentService captures an immutable per-project Snapshot at construction.
+// Tag normalization reads the bundle's synonym table through s.snap.Synonyms()
+// — no setter mutates the service after construction so two projects' tables
+// stay disjoint without any shared pointer between their CommentService
+// instances.
 type CommentService struct {
 	repo     CommentRepository
 	workflow *WorkflowService
-	synonyms map[string]string
+	snap     *config.Snapshot
 }
 
-func NewCommentService(repo CommentRepository) *CommentService {
-	return &CommentService{repo: repo}
+// NewCommentService wires the read-only flows (Add / List). snap supplies the
+// per-project tag-synonym table NormalizeTagName consults; nil disables
+// substitution for tests that do not exercise synonyms.
+func NewCommentService(repo CommentRepository, snap *config.Snapshot) *CommentService {
+	return &CommentService{repo: repo, snap: snap}
 }
 
 // NewCommentServiceWithWorkflow wires policy enforcement on Edit/Remove. The
 // plain NewCommentService stays for read-only callers (Add/List) so existing
-// tests don't have to thread a workflow stub everywhere.
-func NewCommentServiceWithWorkflow(repo CommentRepository, workflow *WorkflowService) *CommentService {
-	return &CommentService{repo: repo, workflow: workflow}
-}
-
-// SetSynonyms installs the per-project tag-synonym table the service
-// passes to NormalizeTagName when processing comment tags. Phase 3f
-// replaced the process-global registry with this per-service field.
-func (s *CommentService) SetSynonyms(synonyms map[string]string) {
-	s.synonyms = synonyms
+// tests don't have to thread a workflow stub everywhere. snap carries the
+// per-project synonym table; production composition passes the same pointer
+// the workflow service captured.
+func NewCommentServiceWithWorkflow(repo CommentRepository, workflow *WorkflowService, snap *config.Snapshot) *CommentService {
+	return &CommentService{repo: repo, workflow: workflow, snap: snap}
 }
 
 func (s *CommentService) Add(ctx context.Context, project domain.ProjectContext, taskID int64, body, authorType string, rawTags []string) (comment domain.Comment, err error) {
@@ -64,7 +68,7 @@ func (s *CommentService) Add(ctx context.Context, project domain.ProjectContext,
 
 	tags := make([]domain.Tag, 0, len(rawTags))
 	for _, raw := range rawTags {
-		name := NormalizeTagName(raw, s.synonyms)
+		name := NormalizeTagName(raw, s.snap.Synonyms())
 		if name == "" {
 			continue
 		}
@@ -124,7 +128,7 @@ func (s *CommentService) Edit(ctx context.Context, project domain.ProjectContext
 
 	tags := make([]domain.Tag, 0, len(rawTags))
 	for _, raw := range rawTags {
-		name := NormalizeTagName(raw, s.synonyms)
+		name := NormalizeTagName(raw, s.snap.Synonyms())
 		if name == "" {
 			continue
 		}

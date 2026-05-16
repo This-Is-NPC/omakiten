@@ -203,8 +203,7 @@ func (m *Model) armOrConfirmCommentDelete(comment domain.Comment) {
 // success via a status-string sniff.
 func (m *Model) executeCommentDelete(commentID int64) {
 	m.commentDeletePendingID = 0
-	deleteSvc := app.NewCommentServiceWithWorkflow(m.repos.Comments, m.repos.Workflow)
-	deleteSvc.SetSynonyms(m.repos.activeSynonyms())
+	deleteSvc := app.NewCommentServiceWithWorkflow(m.repos.Comments, m.repos.Workflow, m.repos.activeSnapshot())
 	if _, err := deleteSvc.Remove(m.ctx, m.project, commentID); err != nil {
 		m.status = err.Error()
 		return
@@ -392,8 +391,7 @@ func (m *Model) saveCommentEdit() {
 	for i, t := range existing.Tags {
 		tagNames[i] = t.Name
 	}
-	editSvc := app.NewCommentServiceWithWorkflow(m.repos.Comments, m.repos.Workflow)
-	editSvc.SetSynonyms(m.repos.activeSynonyms())
+	editSvc := app.NewCommentServiceWithWorkflow(m.repos.Comments, m.repos.Workflow, m.repos.activeSnapshot())
 	if _, err := editSvc.Edit(m.ctx, m.project, m.commentEditID, body, tagNames); err != nil {
 		m.status = err.Error()
 		return

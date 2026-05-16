@@ -136,67 +136,39 @@ func NewService(repo Repository, selector ProjectSelector) *Service {
 	}
 }
 
-// SetSynonyms installs the per-project tag-synonym table the wrapped
-// app services (CommentService / ErrorService / TagService) thread
-// into NormalizeTagName. Phase 3f replaced the process-global
-// registry with this per-Service field. Tests that build a Service
-// without going through the runtime can leave this unset; nil means
-// "no substitution applied".
-func (s *Service) SetSynonyms(synonyms map[string]string) {
-	s.synonyms = synonyms
-}
-
-// Synonyms returns the per-project tag-synonym table installed via
-// SetSynonyms. nil when the service was constructed without a runtime
-// composition root that wires it.
+// Synonyms returns the per-project tag-synonym table derived from the
+// installed Snapshot. nil when the service was constructed without a
+// runtime composition root that wires it via SetSnapshot.
 func (s *Service) Synonyms() map[string]string {
 	return s.synonyms
 }
 
 // newCommentService builds an app.CommentService wired with the
-// per-project tag synonyms. Centralises the SetSynonyms call so the
-// dto handler files (service_comments.go / service_progress.go /
-// service_tasks.go) do not repeat the wiring on every inline
-// construction.
+// per-project Snapshot so NormalizeTagName resolves the bundle's
+// alias table without any post-construction setter call.
 func (s *Service) newCommentService() *app.CommentService {
-	svc := app.NewCommentService(s.repo)
-	svc.SetSynonyms(s.synonyms)
-	return svc
+	return app.NewCommentService(s.repo, s.snapshot)
 }
 
 // newCommentServiceWithWorkflow mirrors newCommentService for the
 // edit/remove flows that additionally need workflow policy enforcement.
 func (s *Service) newCommentServiceWithWorkflow(workflow *app.WorkflowService) *app.CommentService {
-	svc := app.NewCommentServiceWithWorkflow(s.repo, workflow)
-	svc.SetSynonyms(s.synonyms)
-	return svc
+	return app.NewCommentServiceWithWorkflow(s.repo, workflow, s.snapshot)
 }
 
 // newErrorService builds an app.ErrorService wired with the per-project
-// synonyms (and forwards the SolutionsDefaults the caller threads in
-// separately when ListTopSolutions needs the bundle's limits).
+// Snapshot. Solutions defaults still flow through the agent service's
+// SetSolutionsDefaults pathway because the limits live on
+// ServiceSettings rather than the Snapshot.
 func (s *Service) newErrorService() *app.ErrorService {
-	svc := app.NewErrorService(s.repo)
-	svc.SetSynonyms(s.synonyms)
-	return svc
+	return app.NewErrorService(s.repo, s.snapshot)
 }
 
 // newTagService builds an app.TagService (with event emission wired to
 // the same repo, mirroring the existing inline NewTagServiceWithEvents
-// shape) and applies the per-project synonym table.
+// shape) and captures the per-project Snapshot for synonym lookups.
 func (s *Service) newTagService() *app.TagService {
-	svc := app.NewTagServiceWithEvents(s.repo, s.repo)
-	svc.SetSynonyms(s.synonyms)
-	return svc
-}
-
-// SetStopwords installs the per-project stopword set the similar-task
-// ranker reads from. Phase 3f replaced the process-global registry with
-// this per-Service field so two projects' stopword tables stay
-// disjoint in the same binary. Passing nil disables stopword filtering
-// for this service.
-func (s *Service) SetStopwords(words []string) {
-	s.stopwords = stopwordsTable(words)
+	return app.NewTagServiceWithEvents(s.repo, s.repo, s.snapshot)
 }
 
 // SetProjectSelector replaces the service's default project selector.
@@ -225,26 +197,21 @@ func (s *Service) SetSettings(settings ServiceSettings) {
 	s.settings = settings
 }
 
-// SetRegistry wires the enum registry so priority/severity label lookups
-// use the user-configured values rather than the deprecated global methods.
-// The runtime composition root calls this once at startup after Import.
-func (s *Service) SetRegistry(r *domain.EnumRegistry) {
-	s.registry = r
-}
-
 // SetSnapshot installs the per-project *config.Snapshot the service
-// reads workflow / catalog / synonym / stopword state from. The
-// production composition root (agentruntime.buildProjectRuntime)
-// calls this once per ProjectRuntime; the per-field setters survive
-// for tests that want to stub one closure without building a full
-// Bundle, but the runtime no longer touches them.
+// reads workflow / catalog / synonym / stopword / registry state from.
+// The production composition root (agentruntime.buildProjectRuntime)
+// calls this once per ProjectRuntime, and Phase 2-bis Round-2 made it
+// the SOLE wiring entry point: every legacy SetXCatalog / SetSynonyms /
+// SetStopwords / SetRegistry setter was deleted because their state is
+// fully derivable from the snapshot. Tests that want to stub catalogs
+// build a Snapshot via the snapshotWith* helpers and pass it here.
 //
-// SetSnapshot also derives every closure-shaped legacy field
+// SetSnapshot derives every closure-shaped field
 // (taskTemplateLookup / templateCatalog / skillCatalog / lawCatalog /
-// personaCatalog / commandCatalog) from the snapshot and refreshes
-// synonyms / stopwords. The per-field setters are still effective
-// when called *after* SetSnapshot — last-write-wins keeps the test
-// override path working unchanged.
+// personaCatalog / commandCatalog) plus the synonyms map, the stopwords
+// set, and the bundle-scoped EnumRegistry. Two projects holding two
+// snapshots see two independent catalog views; cache.Reload rotates the
+// pointer atomically through a fresh ProjectRuntime.
 func (s *Service) SetSnapshot(snap *config.Snapshot) {
 	s.snapshot = snap
 	if snap == nil {
@@ -258,6 +225,7 @@ func (s *Service) SetSnapshot(snap *config.Snapshot) {
 	s.commandCatalog = snapshotCommandCatalog(snap)
 	s.synonyms = snap.Synonyms()
 	s.stopwords = stopwordsTable(snap.Stopwords())
+	s.registry = snap.Registry()
 }
 
 // Snapshot returns the per-project *config.Snapshot wired via

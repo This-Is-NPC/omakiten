@@ -62,13 +62,6 @@ type ProjectRuntime struct {
 	// theme is configured — TUI surfaces fall back to their default
 	// palette.
 	Theme *config.Theme
-	// TagSynonyms is the alias table the app's tag normaliser threads
-	// into NormalizeTagName via per-service SetSynonyms (Phase 3f
-	// dropped the process-global registry).
-	TagSynonyms map[string]string
-	// Stopwords is the similar-task ranker's stopword list, threaded
-	// into agent.Service via SetStopwords (Phase 3f).
-	Stopwords []string
 	// SourcePath is the absolute path to the omakiten.yaml that
 	// produced this runtime. Used by Reload to stat-detect bundle
 	// changes.
@@ -92,6 +85,13 @@ type ProjectRuntime struct {
 	// task.bucket_id → previous key across the rebuild. nil when the
 	// runtime has only been built once for this project.
 	PreviousSnapshot *config.Snapshot
+	// Workflow is the per-project app.WorkflowService captured against
+	// this runtime's Snapshot. TUI / CLI surfaces that hold a long-lived
+	// workflow reference (e.g. tui.Repositories.Workflow) read this
+	// pointer on Reload so the rotation rebuilds the service rather than
+	// mutating it through a setter — the immutability invariant the
+	// Phase 2-bis Round-2 spec requires.
+	Workflow *app.WorkflowService
 }
 
 // BundleCache is the per-project ProjectRuntime registry. Phase 3a
@@ -344,15 +344,14 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	// previous pointer continue reading from it until they return.
 
 	svc := agent.NewService(store, selector)
-	// Phase 2-bis collapses every legacy SetXCatalog / SetSynonyms /
-	// SetStopwords / SetRegistry wiring into one SetSnapshot call.
-	// The agent service derives the catalog closures, synonym table,
-	// stopword set, and bundle-scoped registry from the per-project
-	// Snapshot at SetSnapshot time. Two projects holding two
-	// snapshots see two independent catalog views; hot-reload
+	// Phase 2-bis Round-2 collapses every legacy SetXCatalog /
+	// SetSynonyms / SetStopwords / SetRegistry wiring into one
+	// SetSnapshot call. The agent service derives the catalog closures,
+	// synonym table, stopword set, and bundle-scoped EnumRegistry from
+	// the per-project Snapshot at SetSnapshot time. Two projects holding
+	// two snapshots see two independent catalog views; hot-reload
 	// rotates the pointer atomically through cache.Reload.
 	svc.SetSnapshot(snapshot)
-	svc.SetRegistry(enumRegistry)
 	// Inject the orphan service with prev=nil — the cache rotation
 	// overrides this with a rebind-capable view (current+previous
 	// snapshots) when the runtime is replacing an earlier entry.
@@ -382,24 +381,13 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		NotificationAction:   notificationAction,
 		EnumRegistry:         enumRegistry,
 		NotificationSnapshot: notifSnapshot,
-		TagSynonyms:          copyStringMap(bundle.Config.TagSynonyms),
-		Stopwords:            append([]string(nil), bundle.Config.Search.Stopwords...),
 		SourcePath:           configPath,
 		LoadedAt:             time.Now(),
 		Mtime:                mtime,
 		Snapshot:             snapshot,
+		Workflow:             app.NewWorkflowServiceFromStore(store, snapshot.Registry(), snapshot),
 		// PreviousSnapshot is populated by the cache on rotation —
 		// buildProjectRuntime has no access to the prior entry.
 	}, nil
 }
 
-func copyStringMap(in map[string]string) map[string]string {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]string, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}

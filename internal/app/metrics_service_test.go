@@ -11,7 +11,7 @@ func TestMetricsServiceSummaryAggregatesPerModel(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	errService := NewErrorService(store)
+	errService := NewErrorService(store, store.Snapshot())
 
 	// Two distinct models, distinct sessions.
 	ctxOpus := activity.WithAgent(context.Background(), "mcp", "errors_record", "claude-opus-4-7", "sess-opus")

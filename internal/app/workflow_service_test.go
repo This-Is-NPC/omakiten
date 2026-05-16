@@ -190,24 +190,6 @@ func newWorkflowServiceForTest(f *fakeStores) *WorkflowService {
 	return NewWorkflowService(snap, f, evaluator, f, f, nil)
 }
 
-func TestWorkflowSetRegistrySwapsLookupTable(t *testing.T) {
-	f := &fakeStores{defaultBucket: "todo"}
-	snap := f.Snapshot()
-	evaluator := guards.NewGuardEvaluator(snap, f, f)
-	svc := NewWorkflowService(snap, f, evaluator, f, f, nil)
-	if svc.registry != nil {
-		t.Fatalf("initial registry = %v, want nil", svc.registry)
-	}
-	fresh := domain.NewEnumRegistry(
-		[]domain.PriorityPair{{ID: 1, Value: "low"}, {ID: 2, Value: "normal"}, {ID: 3, Value: "high"}},
-		[]domain.SeverityPair{{ID: 1, Value: "info"}},
-	)
-	svc.SetRegistry(fresh)
-	if svc.registry != fresh {
-		t.Fatalf("SetRegistry did not repoint registry pointer")
-	}
-}
-
 func TestWorkflowResolveDefaultBucket(t *testing.T) {
 	f := &fakeStores{defaultBucket: "todo"}
 	svc := newWorkflowServiceForTest(f)

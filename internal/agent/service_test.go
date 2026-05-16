@@ -464,7 +464,6 @@ func newAgentFixture(t *testing.T) agentFixture {
 	svc := NewService(store, ProjectSelector{CWD: rootA})
 	svc.SetSnapshot(store.Snapshot())
 	svc.SetOrphanService(app.NewOrphanService(store, store.Snapshot(), nil))
-	svc.SetRegistry(testfixtures.CanonicalRegistry())
 	svc.SetSettings(ServiceSettings{
 		RecentCommentLimit: 5,
 		MaxCommentChars:    0,

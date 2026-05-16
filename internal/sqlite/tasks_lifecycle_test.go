@@ -188,7 +188,7 @@ func TestEditPolicyAndCommentInheritance(t *testing.T) {
 	ctx, store, project := setupLifecycle(t)
 	tasks := app.NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
-	comments := app.NewCommentServiceWithWorkflow(store, workflow)
+	comments := app.NewCommentServiceWithWorkflow(store, workflow, store.Snapshot())
 
 	task, err := store.CreateTask(ctx, project.ID, "Title", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {

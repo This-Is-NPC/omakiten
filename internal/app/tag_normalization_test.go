@@ -70,21 +70,22 @@ func TestNormalizeTagNamePerProjectSynonyms(t *testing.T) {
 	}
 }
 
-// TestTagServicePerProjectSynonymsIsolation drives the per-service
-// SetSynonyms path that production composition roots wire: two
-// TagService instances running side-by-side normalise the same raw
-// tag name to different canonical names because each carries its
-// project's synonym table.
+// TestTagServicePerProjectSynonymsIsolation drives the constructor-injected
+// Snapshot path that production composition roots wire: two TagService
+// instances running side-by-side normalise the same raw tag name to
+// different canonical names because each captures its project's
+// Snapshot at construction. Phase 2-bis Round-2 deleted SetSynonyms —
+// the synonym table flows through *config.Snapshot exclusively.
 func TestTagServicePerProjectSynonymsIsolation(t *testing.T) {
-	svcA := NewTagService(nil)
-	svcA.SetSynonyms(map[string]string{"go": "golang"})
-	svcB := NewTagService(nil)
-	svcB.SetSynonyms(map[string]string{"go": "goroutine"})
+	bundleA := config.Bundle{Config: config.Settings{TagSynonyms: map[string]string{"go": "golang"}}}
+	bundleB := config.Bundle{Config: config.Settings{TagSynonyms: map[string]string{"go": "goroutine"}}}
+	svcA := NewTagService(nil, config.BuildSnapshot(bundleA))
+	svcB := NewTagService(nil, config.BuildSnapshot(bundleB))
 
-	if got := NormalizeTagName("go", svcA.synonyms); got != "golang" {
+	if got := NormalizeTagName("go", svcA.snap.Synonyms()); got != "golang" {
 		t.Fatalf("svcA: %q want golang", got)
 	}
-	if got := NormalizeTagName("go", svcB.synonyms); got != "goroutine" {
+	if got := NormalizeTagName("go", svcB.snap.Synonyms()); got != "goroutine" {
 		t.Fatalf("svcB: %q want goroutine", got)
 	}
 }

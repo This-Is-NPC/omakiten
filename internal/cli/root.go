@@ -100,22 +100,17 @@ func (r *runtime) contextService() *app.ContextService {
 	return app.NewContextService(r.store, r.store, r.store, r.store, r.activeSnapshot(), r.tokenCounter(), r.activeRegistry())
 }
 
-// commentService wraps NewCommentService and threads the per-project
-// tag synonyms into the service via SetSynonyms. CLI inline callers
-// use this instead of app.NewCommentService(rt.store) so Phase 3f's
-// per-project lookup flows naturally.
+// commentService wraps NewCommentService and captures the per-project
+// Snapshot so NormalizeTagName resolves the bundle's alias table
+// without any post-construction setter call.
 func (r *runtime) commentService() *app.CommentService {
-	svc := app.NewCommentService(r.store)
-	svc.SetSynonyms(r.activeSynonyms())
-	return svc
+	return app.NewCommentService(r.store, r.activeSnapshot())
 }
 
 // commentServiceWithWorkflow mirrors commentService for the edit /
 // remove flows that need workflow policy enforcement.
 func (r *runtime) commentServiceWithWorkflow(workflow *app.WorkflowService) *app.CommentService {
-	svc := app.NewCommentServiceWithWorkflow(r.store, workflow)
-	svc.SetSynonyms(r.activeSynonyms())
-	return svc
+	return app.NewCommentServiceWithWorkflow(r.store, workflow, r.activeSnapshot())
 }
 
 // activeRegistry returns the EnumRegistry from the BundleCache's active
@@ -129,22 +124,6 @@ func (r *runtime) activeRegistry() *domain.EnumRegistry {
 		return pr.EnumRegistry
 	}
 	return r.registry
-}
-
-// activeSynonyms returns the per-project tag synonym table from the
-// active ProjectRuntime's Snapshot. Phase 3f wires this into
-// TagService / CommentService / ErrorService at construction time so
-// NormalizeTagName resolves the active project's aliases rather than a
-// process-global registry. Phase 2-bis routes the read through
-// pr.Snapshot.Synonyms() so the synonyms always reflect the same
-// immutable bundle view the agent service observes.
-// Returns nil when no cache entry exists yet (rare bootstrap window).
-func (r *runtime) activeSynonyms() map[string]string {
-	pr := r.ProjectRuntime()
-	if pr == nil || pr.Snapshot == nil {
-		return nil
-	}
-	return pr.Snapshot.Synonyms()
 }
 
 // activeSnapshot returns the per-project *config.Snapshot from the

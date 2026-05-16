@@ -19,7 +19,7 @@ func TestCommentServiceAdd(t *testing.T) {
 		t.Fatalf("Add() error = %v", err)
 	}
 
-	service := NewCommentService(store)
+	service := NewCommentService(store, store.Snapshot())
 
 	_, err = service.Add(ctx, project.Context(), 0, "body", "human", nil)
 	if err == nil {
@@ -70,7 +70,7 @@ func TestCommentServiceList(t *testing.T) {
 		t.Fatalf("Add() error = %v", err)
 	}
 
-	service := NewCommentService(store)
+	service := NewCommentService(store, store.Snapshot())
 	if _, err := service.Add(ctx, project.Context(), task.ID, "A", "human", nil); err != nil {
 		t.Fatalf("Add(A) error = %v", err)
 	}

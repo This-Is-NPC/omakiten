@@ -6,20 +6,17 @@ import (
 	"strings"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
 
+// ErrorService captures an immutable per-project Snapshot at construction.
+// Tag normalisation on Record / Search reads the synonym table through
+// s.snap.Synonyms(); no setter mutates the service after construction.
 type ErrorService struct {
 	repo     ErrorRepository
 	defaults SolutionsDefaults
-	synonyms map[string]string
-}
-
-// SetSynonyms installs the per-project tag-synonym table the service
-// passes to NormalizeTagName when processing error tags. Phase 3f
-// replaced the process-global registry with this per-service field.
-func (s *ErrorService) SetSynonyms(synonyms map[string]string) {
-	s.synonyms = synonyms
+	snap     *config.Snapshot
 }
 
 // SolutionsDefaults mirrors config.SolutionsSettings without forcing the
@@ -37,8 +34,11 @@ type SolutionsDefaults struct {
 	TopLimitMax int
 }
 
-func NewErrorService(repo ErrorRepository) *ErrorService {
-	return &ErrorService{repo: repo}
+// NewErrorService wires the error / solution flows. snap supplies the
+// per-project tag-synonym table consulted by Record and Search; nil
+// disables substitution for tests that do not exercise tag normalisation.
+func NewErrorService(repo ErrorRepository, snap *config.Snapshot) *ErrorService {
+	return &ErrorService{repo: repo, snap: snap}
 }
 
 // SetSolutionsDefaults installs the limits used by ListTopSolutions.
@@ -79,7 +79,7 @@ func (s *ErrorService) Record(ctx context.Context, project domain.ProjectContext
 		return
 	}
 
-	tags := normalizeTagInputs(rawTags, s.synonyms)
+	tags := normalizeTagInputs(rawTags, s.snap.Synonyms())
 	record, err = s.repo.RecordError(ctx, project.ID, description, strings.TrimSpace(errContext), tags)
 	if err != nil {
 		return
@@ -109,7 +109,7 @@ func (s *ErrorService) Search(ctx context.Context, project domain.ProjectContext
 
 	tagNames := make([]string, 0, len(rawTags))
 	for _, raw := range rawTags {
-		name := NormalizeTagName(raw, s.synonyms)
+		name := NormalizeTagName(raw, s.snap.Synonyms())
 		if name != "" {
 			tagNames = append(tagNames, name)
 		}

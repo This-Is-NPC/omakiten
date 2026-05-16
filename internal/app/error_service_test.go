@@ -14,7 +14,7 @@ func TestErrorServiceEmitsAttributedDomainEvents(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewErrorService(store)
+	service := NewErrorService(store, store.Snapshot())
 	service.SetSolutionsDefaults(SolutionsDefaults{TopLimitDefault: 10, TopLimitMax: 100})
 
 	rec, err := service.Record(ctx, project.Context(), "FK violation", "during migration", []string{"sqlite"})
@@ -92,7 +92,7 @@ func TestErrorServiceRecordValidatesDescription(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewErrorService(store)
+	service := NewErrorService(store, store.Snapshot())
 
 	_, err := service.Record(ctx, project.Context(), "  ", "", nil)
 	if err == nil {
@@ -106,8 +106,15 @@ func TestErrorServiceRecordNormalizesTags(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewErrorService(store)
-	service.SetSynonyms(kitSynonyms())
+	// Rotate the store's snapshot to one that carries the kit's tag-synonym
+	// table before constructing the service so NormalizeTagName resolves the
+	// "Go" / "golang" aliases to the canonical "go" without any setter call.
+	bundle := appTestBundle(t, 1000)
+	bundle.Config.TagSynonyms = kitSynonyms()
+	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle: %v", err)
+	}
+	service := NewErrorService(store, store.Snapshot())
 
 	rec, err := service.Record(ctx, project.Context(), "boom", "ctx", []string{"Go", "golang", "  GOLANG"})
 	if err != nil {
@@ -126,7 +133,7 @@ func TestErrorServiceSearchByTag(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewErrorService(store)
+	service := NewErrorService(store, store.Snapshot())
 
 	if _, err := service.Record(ctx, project.Context(), "FK error", "", []string{"sqlite", "fk"}); err != nil {
 		t.Fatalf("Record() error = %v", err)
@@ -149,7 +156,7 @@ func TestErrorServiceAddSolutionValidates(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewErrorService(store)
+	service := NewErrorService(store, store.Snapshot())
 
 	_, err := service.AddSolution(ctx, project.Context(), 0, "fix", "", nil)
 	if err == nil {
@@ -170,7 +177,7 @@ func TestErrorServiceConfirmSolutionRanks(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewErrorService(store)
+	service := NewErrorService(store, store.Snapshot())
 	rec, _ := service.Record(ctx, project.Context(), "boom", "", []string{"boom"})
 
 	loser, _ := service.AddSolution(ctx, project.Context(), rec.ID, "loser", "", nil)
@@ -201,7 +208,7 @@ func TestErrorServiceListTopSolutionsRanksByLikes(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewErrorService(store)
+	service := NewErrorService(store, store.Snapshot())
 	service.SetSolutionsDefaults(SolutionsDefaults{TopLimitDefault: 10, TopLimitMax: 100})
 	rec, _ := service.Record(ctx, project.Context(), "boom", "", nil)
 
@@ -234,7 +241,7 @@ func TestErrorServiceListTopSolutionsClampsLimit(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	service := NewErrorService(store)
+	service := NewErrorService(store, store.Snapshot())
 	service.SetSolutionsDefaults(SolutionsDefaults{TopLimitDefault: 10, TopLimitMax: 100})
 	rec, _ := service.Record(ctx, project.Context(), "boom", "", nil)
 	for i := 0; i < 3; i++ {
@@ -265,7 +272,7 @@ func TestErrorServiceCrossProjectSearch(t *testing.T) {
 		t.Fatalf("UpsertProject(B) error = %v", err)
 	}
 
-	service := NewErrorService(store)
+	service := NewErrorService(store, store.Snapshot())
 	if _, err := service.Record(ctx, projectA.Context(), "shared issue in A", "", []string{"shared"}); err != nil {
 		t.Fatalf("Record(A) error = %v", err)
 	}
@@ -288,8 +295,8 @@ func TestErrorServiceTagEntityIntegration(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	tagService := NewTagService(store)
-	errService := NewErrorService(store)
+	tagService := NewTagService(store, store.Snapshot())
+	errService := NewErrorService(store, store.Snapshot())
 
 	rec, _ := errService.Record(ctx, project.Context(), "boom", "", nil)
 
@@ -324,7 +331,7 @@ func TestErrorServiceTagEntityRequiresEntityID(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	tagService := NewTagService(store)
+	tagService := NewTagService(store, store.Snapshot())
 	_, err := tagService.Add(ctx, project.Context(), TagEntityError, 0, "x")
 	if err == nil {
 		t.Fatal("TagService.Add(error, 0) error = nil")

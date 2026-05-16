@@ -601,10 +601,8 @@ func TestAdapterServiceResolverIsolatesGuards(t *testing.T) {
 
 	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
 	serviceA.SetSnapshot(storeA.Snapshot())
-	serviceA.SetRegistry(testfixtures.CanonicalRegistry())
 	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
 	serviceB.SetSnapshot(storeB.Snapshot())
-	serviceB.SetRegistry(testfixtures.CanonicalRegistry())
 
 	adapter := NewAdapter(serviceA)
 	adapter.SetServiceResolver(func(_ context.Context, project string, _ int64) (*agent.Service, error) {
@@ -672,14 +670,12 @@ func TestAdapterServiceResolverIsolatesSettings(t *testing.T) {
 
 	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
 	serviceA.SetSnapshot(storeA.Snapshot())
-	serviceA.SetRegistry(testfixtures.CanonicalRegistry())
 	includeFalse := false
 	serviceA.SetSettings(agent.ServiceSettings{RecentCommentLimit: 1, IncludeWorkflow: false, CachePrompts: false})
 	_ = includeFalse
 
 	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
 	serviceB.SetSnapshot(storeB.Snapshot())
-	serviceB.SetRegistry(testfixtures.CanonicalRegistry())
 	serviceB.SetSettings(agent.ServiceSettings{RecentCommentLimit: 10, IncludeWorkflow: false, CachePrompts: false})
 
 	adapter := NewAdapter(serviceA)
@@ -747,10 +743,8 @@ func TestAdapterServiceResolverIsolatesTemplateCatalog(t *testing.T) {
 
 	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
 	serviceA.SetSnapshot(storeA.Snapshot())
-	serviceA.SetRegistry(testfixtures.CanonicalRegistry())
 	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
 	serviceB.SetSnapshot(storeB.Snapshot())
-	serviceB.SetRegistry(testfixtures.CanonicalRegistry())
 
 	adapter := NewAdapter(serviceA)
 	adapter.SetServiceResolver(func(_ context.Context, project string, _ int64) (*agent.Service, error) {
@@ -832,10 +826,8 @@ func TestAdapterServiceResolverConcurrentRouting(t *testing.T) {
 
 	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
 	serviceA.SetSnapshot(storeA.Snapshot())
-	serviceA.SetRegistry(testfixtures.CanonicalRegistry())
 	serviceB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID})
 	serviceB.SetSnapshot(storeB.Snapshot())
-	serviceB.SetRegistry(testfixtures.CanonicalRegistry())
 
 	adapter := NewAdapter(serviceA)
 	adapter.SetServiceResolver(func(_ context.Context, project string, _ int64) (*agent.Service, error) {
@@ -909,10 +901,8 @@ func TestAdapterDefaultServiceProviderTracksFreshService(t *testing.T) {
 
 	svcA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID, CWD: filepath.Join(t.TempDir(), "a")})
 	svcA.SetSnapshot(storeA.Snapshot())
-	svcA.SetRegistry(testfixtures.CanonicalRegistry())
 	svcB := agent.NewService(storeB, agent.ProjectSelector{ProjectID: projectB.ID, CWD: filepath.Join(t.TempDir(), "b")})
 	svcB.SetSnapshot(storeB.Snapshot())
-	svcB.SetRegistry(testfixtures.CanonicalRegistry())
 
 	active := svcA
 	adapter := NewAdapter(svcA)

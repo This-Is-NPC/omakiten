@@ -52,7 +52,13 @@ func (m *Model) reloadBundle(path string) error {
 	m.priorities = append([]config.PriorityDefinition(nil), bundle.Config.EffectivePriorities()...)
 	m.severities = append([]config.SeverityDefinition(nil), bundle.Config.EffectiveSeverities()...)
 	m.registry = registry
-	m.repos.Workflow.SetRegistry(registry)
+	// Phase 2-bis Round-2 deleted WorkflowService.SetRegistry — the
+	// service captures its Snapshot at construction and mutating it via
+	// a setter would re-introduce the shared-pointer drift the refactor
+	// removed. The cache rebuild produced a fresh WorkflowService bound
+	// to the rotated Snapshot; swap the long-lived TUI reference at the
+	// same point the rest of the snapshot-derived state rotates.
+	m.repos.Workflow = pr.Workflow
 	m.notifications = bundle.Notifications
 	m.tokenBadgeYellow, m.tokenBadgeRed = bundle.Config.TUI.TokenBadge.Effective()
 

@@ -93,18 +93,6 @@ type Repositories struct {
 	ProjectID int64
 }
 
-// activeSynonyms returns the per-project tag synonym table from the
-// BundleCache entry the runtime installed at boot, or nil when the
-// cache is not wired (tests that bypass the runtime). Used by inline
-// app service constructions in the TUI render paths so
-// NormalizeTagName resolves the project's aliases.
-func (r *Repositories) activeSynonyms() map[string]string {
-	if snap := r.activeSnapshot(); snap != nil {
-		return snap.Synonyms()
-	}
-	return nil
-}
-
 // activeSnapshot returns the per-project *config.Snapshot from the
 // BundleCache entry the runtime installed at boot. TUI inline service
 // constructions capture this pointer at the moment of dispatch; the
