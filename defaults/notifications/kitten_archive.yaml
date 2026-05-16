@@ -1,6 +1,6 @@
 # Identity ------------------------------------------------------------
 name: kitten_archive
-description: Sleepy archivist kitten for archived and revived quests.
+description: "${{intl:notifications.kitten_archive.description}}"
 
 # Geometry ------------------------------------------------------------
 size:

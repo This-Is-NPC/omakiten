@@ -1,6 +1,6 @@
 # Identity ------------------------------------------------------------
 name: kitten_blocked
-description: Stern kitten guardian for blocked workflow operations.
+description: "${{intl:notifications.kitten_blocked.description}}"
 
 # Geometry ------------------------------------------------------------
 size:

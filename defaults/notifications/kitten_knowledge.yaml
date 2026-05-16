@@ -1,6 +1,6 @@
 # Identity ------------------------------------------------------------
 name: kitten_knowledge
-description: Arcane kitten keeper for errors, searches, and solution lore.
+description: "${{intl:notifications.kitten_knowledge.description}}"
 
 # Geometry ------------------------------------------------------------
 size:

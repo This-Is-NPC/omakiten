@@ -1,6 +1,6 @@
 # Identity ------------------------------------------------------------
 name: kitten_destructive
-description: Compact kitten with X-eyes for destructive delete/remove events.
+description: "${{intl:notifications.kitten_destructive.description}}"
 
 # Geometry ------------------------------------------------------------
 size:

@@ -1,0 +1,10 @@
+{
+  "kitten_archive": "Sleepy archivist kitten for archived and revived quests.",
+  "kitten_blocked": "Stern kitten guardian for blocked workflow operations.",
+  "kitten_destructive": "Compact kitten with X-eyes for destructive delete/remove events.",
+  "kitten_informative": "Calm kitten for workflow updates and routine messages.",
+  "kitten_knowledge": "Arcane kitten keeper for errors, searches, and solution lore.",
+  "kitten_link": "Watchful kitten for tags, dependencies, and chained side quests.",
+  "kitten_orphan_migration": "Prompt after a config swap when tasks would be orphaned by the new workflow's bucket set.",
+  "kitten_success": "Proud kitten guardian for completed rituals and blessed fixes."
+}
