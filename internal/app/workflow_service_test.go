@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"omakiten/internal/app/guards"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
@@ -184,12 +185,16 @@ func (f *fakeStores) ListTaskActivity(context.Context, int64, int64, string) ([]
 }
 
 func newWorkflowServiceForTest(f *fakeStores) *WorkflowService {
-	return NewWorkflowService(f.Snapshot(), f, f, f, f, nil)
+	snap := f.Snapshot()
+	evaluator := guards.NewGuardEvaluator(snap, f, f)
+	return NewWorkflowService(snap, f, evaluator, f, f, nil)
 }
 
 func TestWorkflowSetRegistrySwapsLookupTable(t *testing.T) {
 	f := &fakeStores{defaultBucket: "todo"}
-	svc := NewWorkflowService(f.Snapshot(), f, f, f, f, nil)
+	snap := f.Snapshot()
+	evaluator := guards.NewGuardEvaluator(snap, f, f)
+	svc := NewWorkflowService(snap, f, evaluator, f, f, nil)
 	if svc.registry != nil {
 		t.Fatalf("initial registry = %v, want nil", svc.registry)
 	}

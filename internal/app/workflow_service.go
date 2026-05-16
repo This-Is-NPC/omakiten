@@ -2,11 +2,11 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/app/guards"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
@@ -17,40 +17,42 @@ import (
 // should additionally emit task.completed. The adapter layer (sqlite) only
 // supplies the underlying state primitives (CurrentTaskBucket, TaskState);
 // every config read goes through the immutable per-project Snapshot held
-// here.
+// here. Guard evaluation is delegated to the guards.Evaluator captured at
+// construction.
 type WorkflowService struct {
 	snap     *config.Snapshot
 	repo     WorkflowRepository
-	guards   GuardEvaluationRepository
+	guards   *guards.Evaluator
 	tasks    TaskRepository
 	events   EventRepository
 	registry *domain.EnumRegistry
 }
 
 // NewWorkflowService wires the workflow service against an immutable
-// per-project Snapshot. The snap pointer is captured here and used for
-// every workflow / bucket / transition / guard lookup; the SQL repo is
-// only consulted for state (CurrentTaskBucket, TaskState). Production
-// code passes the snapshot from agentruntime.ProjectRuntime.Snapshot;
-// tests build one via config.BuildSnapshot.
-func NewWorkflowService(snap *config.Snapshot, workflow WorkflowRepository, guards GuardEvaluationRepository, tasks TaskRepository, events EventRepository, registry *domain.EnumRegistry) *WorkflowService {
-	return &WorkflowService{snap: snap, repo: workflow, guards: guards, tasks: tasks, events: events, registry: registry}
+// per-project Snapshot and a guard evaluator. The snap pointer is captured
+// here and used for every workflow / bucket / transition lookup; guard
+// evaluation flows through the supplied evaluator (whose own snap pointer
+// must be the same instance). The SQL repo is only consulted for state
+// (CurrentTaskBucket, TaskState).
+func NewWorkflowService(snap *config.Snapshot, workflow WorkflowRepository, evaluator *guards.Evaluator, tasks TaskRepository, events EventRepository, registry *domain.EnumRegistry) *WorkflowService {
+	return &WorkflowService{snap: snap, repo: workflow, guards: evaluator, tasks: tasks, events: events, registry: registry}
 }
 
 // NewWorkflowServiceFromStore is the production-path sugar for callers that
 // hold a single composite store implementing every workflow port (in
 // production: *sqlite.Store). snap is the per-project Snapshot captured
 // at construction; the registry is required and is threaded into the
-// service so priority lookups use the bundle-scoped tables.
+// service so priority lookups use the bundle-scoped tables. The guard
+// evaluator is built from the same composite so every component shares
+// one snap pointer.
 func NewWorkflowServiceFromStore(store CompositeWorkflowStore, registry *domain.EnumRegistry, snap *config.Snapshot) *WorkflowService {
-	return NewWorkflowService(snap, store, store, store, store, registry)
+	evaluator := guards.NewGuardEvaluator(snap, store, store)
+	return NewWorkflowService(snap, store, evaluator, store, store, registry)
 }
 
 // SetRegistry repoints the service at a fresh EnumRegistry. Used by the TUI
 // after a hot config swap so priority/severity lookups resolve against the
 // new bundle's id↔value tables instead of the previous bundle's stale set.
-// The underlying repositories don't change — they all wrap the same store
-// whose rows the new ImportBundle already overwrote.
 func (s *WorkflowService) SetRegistry(registry *domain.EnumRegistry) {
 	s.registry = registry
 }
@@ -96,13 +98,6 @@ func (s *WorkflowService) CreateTask(ctx context.Context, projectID int64, title
 		}
 		bucketKey = key
 	}
-	// Resolve "no priority specified" to the configured `default: true`
-	// id BEFORE reaching the store. Without this, PriorityZero falls
-	// through to the SQL column DEFAULT (the canonical kit's id 2 =
-	// "normal") and ignores user customisations to config.priorities.
-	// registry.DefaultPriority returns PriorityZero when the registry
-	// has no entries (uninitialised tests), in which case the store's
-	// SQL DEFAULT keeps acting as the safety net.
 	if priority == domain.PriorityZero {
 		priority = s.defaultPriority()
 	}
@@ -114,22 +109,22 @@ func (s *WorkflowService) CreateTask(ctx context.Context, projectID int64, title
 // service. Symbolic constants instead of bare strings so callers and the
 // workflow Operations field cannot drift.
 const (
-	OperationArchive   = "archive"
-	OperationDelete    = "delete"
-	OperationUnarchive = "unarchive"
+	OperationArchive   = guards.OperationArchive
+	OperationDelete    = guards.OperationDelete
+	OperationUnarchive = guards.OperationUnarchive
 )
 
 // GuardOperation* are the canonical free-form `operation` payload values
 // emitted with guard.violated events. Consumers filter on these strings;
 // the catalog stays fixed so log grouping/aggregation is stable.
 const (
-	GuardOperationTaskTransition = "task.transition"
-	GuardOperationTaskArchive    = "task.archive"
-	GuardOperationTaskUnarchive  = "task.unarchive"
-	GuardOperationTaskEdit       = "task.edit"
-	GuardOperationTaskDelete     = "task.delete"
-	GuardOperationCommentEdit    = "comment.edit"
-	GuardOperationCommentDelete  = "comment.delete"
+	GuardOperationTaskTransition = guards.OperationTaskTransition
+	GuardOperationTaskArchive    = guards.OperationTaskArchive
+	GuardOperationTaskUnarchive  = guards.OperationTaskUnarchive
+	GuardOperationTaskEdit       = guards.OperationTaskEdit
+	GuardOperationTaskDelete     = guards.OperationTaskDelete
+	GuardOperationCommentEdit    = guards.OperationCommentEdit
+	GuardOperationCommentDelete  = guards.OperationCommentDelete
 )
 
 // GuardRule* are the canonical free-form `rule` payload values emitted
@@ -137,8 +132,8 @@ const (
 // so consumers can join with workflow YAML; permission denials use
 // "permissions" so they are easy to bucket.
 const (
-	GuardRuleTransition  = "transition_not_allowed"
-	GuardRulePermissions = "permissions"
+	GuardRuleTransition  = guards.RuleTransition
+	GuardRulePermissions = guards.RulePermissions
 )
 
 // EntityTask / EntityComment are the entity classes ResolveBucketPermissions
@@ -158,11 +153,7 @@ const (
 // ResolveBucketPermissions tells the caller whether (entity, operation) is
 // allowed in the bucket the task currently sits in. Returns a descriptive
 // hint when the answer is "no", listing buckets where the operation IS
-// permitted so the agent can suggest a remediation. Resolution chain is
-// fully data-driven: bucket.permissions → workflow.defaults → implicit
-// `true` (no rule = allow). Comment fields inherit from task field-by-field
-// at every layer when unset. There is no hardcoded "first bucket is
-// special" rule — every constraint lives in the YAML.
+// permitted so the agent can suggest a remediation.
 func (s *WorkflowService) ResolveBucketPermissions(ctx context.Context, project domain.ProjectContext, taskID int64, entity, operation string) (bool, string, error) {
 	currentBucketID, currentBucketKey, err := s.repo.CurrentTaskBucket(ctx, project.ID, taskID, s.snap)
 	if err != nil {
@@ -179,82 +170,22 @@ func (s *WorkflowService) ResolveBucketPermissions(ctx context.Context, project 
 	return false, hint, nil
 }
 
-// EvaluateOperationGuards runs every guard declared on
-// `workflows[].operations.<operation>.guards` against the named task. Reuses
-// the same comments_tagged / comments_min / blockers_in evaluator as
-// transition guards so adding a guard type benefits both code paths at once.
-// Returns nil when no guards are violated; otherwise a domain.ErrGuardViolation
-// with the first failing guard's hint and counts. Emits guard.violated when
-// a guard fails, tagged with the supplied opPayload (e.g. task.archive).
+// EvaluateOperationGuards forwards to the evaluator. Kept on WorkflowService
+// because callers (TaskService) compose policy through the workflow seam.
 func (s *WorkflowService) EvaluateOperationGuards(ctx context.Context, projectID, taskID int64, operation string) error {
-	workflow := s.snap.Workflow()
-	guards := operationGuards(workflow, operation)
-	if len(guards) == 0 {
-		return nil
-	}
-	opPayload := operationPayloadName(operation)
-	return s.runGuards(ctx, projectID, taskID, guards, opPayload)
+	return s.guards.EvaluateOperation(ctx, projectID, taskID, operation)
 }
 
-// EmitGuardViolated records a guard.violated domain event. operation and
-// rule are free-form strings — call sites pick the values that name the
-// operation precisely. target carries identifiers (task_id, comment_id,
-// from_bucket, to_bucket). attempted_by is derived from the request
-// source: mcp -> "agent", anything else -> "user". Telemetry must not
-// break business logic; emission errors are swallowed.
+// EmitGuardViolated forwards to the evaluator. Kept on WorkflowService for
+// the same caller-shape reason as EvaluateOperationGuards.
 func (s *WorkflowService) EmitGuardViolated(ctx context.Context, projectID int64, entityType string, entityID int64, operation, rule, hint string, target map[string]any) {
-	if s.events == nil {
-		return
-	}
-	if target == nil {
-		target = map[string]any{}
-	}
-	body, err := json.Marshal(map[string]any{
-		"operation":    operation,
-		"rule":         rule,
-		"hint":         hint,
-		"target":       target,
-		"attempted_by": guardAttemptedBy(ctx),
-	})
-	if err != nil {
-		return
-	}
-	_ = s.events.RecordEntityEvent(ctx, entityType, entityID, projectID, domain.EventTypeGuardViolated, string(body))
-}
-
-// guardAttemptedBy derives the attempted_by tag from the request source.
-// MCP traffic is agent-driven; CLI/TUI are treated as user-driven.
-func guardAttemptedBy(ctx context.Context) string {
-	source, _, _, _, _ := activity.FromContext(ctx)
-	if source == "mcp" {
-		return "agent"
-	}
-	return "user"
-}
-
-// operationPayloadName maps the internal Operation* constant to the
-// canonical free-form `operation` payload value used in guard.violated.
-func operationPayloadName(operation string) string {
-	switch operation {
-	case OperationArchive:
-		return GuardOperationTaskArchive
-	case OperationDelete:
-		return GuardOperationTaskDelete
-	case OperationUnarchive:
-		return GuardOperationTaskUnarchive
-	}
-	return operation
+	s.guards.EmitViolated(ctx, projectID, entityType, entityID, operation, rule, hint, target)
 }
 
 // MoveTask runs the full move policy: resolve current/target buckets, enforce
 // the configured transition + guards, persist the move via TaskRepository
 // (which records task.moved), then conditionally emit task.completed when the
 // destination is the workflow's final bucket. Returns the persisted task.
-//
-// Atomicity note: the policy checks happen outside the persistence
-// transaction because the underlying ports are coarse-grained. In a
-// single-user CLI/TUI workload that is fine — there are no concurrent writers
-// that could change the relevant state between check and write.
 func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectContext, taskID int64, targetBucketKey string) (task domain.Task, err error) {
 	finish := activity.Track(ctx, "app.WorkflowService.MoveTask", project, map[string]any{"task_id": taskID, "bucket": targetBucketKey})
 	defer func() {
@@ -300,14 +231,14 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 	if currentBucketID != target.ID {
 		allowed := s.snap.TransitionAllowed(currentBucketID, target.ID)
 		if !allowed {
-			s.EmitGuardViolated(ctx, project.ID, domain.EventEntityTask, taskID,
+			s.guards.EmitViolated(ctx, project.ID, domain.EventEntityTask, taskID,
 				GuardOperationTaskTransition, GuardRuleTransition,
 				"transition not allowed",
 				map[string]any{"task_id": taskID, "from_bucket_id": currentBucketID, "to_bucket_id": target.ID, "to_bucket": targetBucketKey})
 			err = domain.NewError(domain.ErrWorkflowInvalidTransition, "transition not allowed", map[string]any{"task_id": taskID, "from": currentBucketID, "to": target.ID})
 			return
 		}
-		if err = s.evaluateGuards(ctx, project.ID, taskID, currentBucketID, target.ID, targetBucketKey); err != nil {
+		if err = s.guards.EvaluateTransition(ctx, project.ID, taskID, currentBucketID, target.ID, targetBucketKey); err != nil {
 			return
 		}
 	}
@@ -328,51 +259,11 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 	return
 }
 
-// evaluateGuards runs each guard attached to the (from, to) transition.
-// Order follows declaration order; the first violation short-circuits.
-// targetBucketKey carries the user-visible bucket name used in the
-// guard.violated payload's target.to_bucket.
-func (s *WorkflowService) evaluateGuards(ctx context.Context, projectID, taskID, fromBucketID, toBucketID int64, targetBucketKey string) error {
-	guards := s.snap.Guards(fromBucketID, toBucketID)
-	target := map[string]any{"task_id": taskID, "from_bucket_id": fromBucketID, "to_bucket_id": toBucketID, "to_bucket": targetBucketKey}
-	return s.runGuards(ctx, projectID, taskID, guards, GuardOperationTaskTransition, target)
-}
-
-// runGuards is the shared evaluator. Both transition guards and operation
-// guards (archive/delete/unarchive) feed through here so a new guard type
-// only needs one switch arm. operation labels the call site for the
-// guard.violated payload; defaultTarget carries call-site-specific
-// identifiers and is overridden per check when needed.
-func (s *WorkflowService) runGuards(ctx context.Context, projectID, taskID int64, guards []domain.TransitionGuard, operation string, defaultTarget ...map[string]any) error {
-	target := map[string]any{"task_id": taskID}
-	if len(defaultTarget) > 0 && defaultTarget[0] != nil {
-		target = defaultTarget[0]
-	}
-	for _, guard := range guards {
-		switch guard.Type {
-		case "blockers_in":
-			if err := s.checkBlockersIn(ctx, projectID, taskID, guard.Buckets, guard.Hint, operation, target); err != nil {
-				return err
-			}
-		case "comments_min":
-			if err := s.checkCommentsMin(ctx, projectID, taskID, guard.Count, guard.Hint, operation, target); err != nil {
-				return err
-			}
-		case "comments_tagged":
-			if err := s.checkCommentsTagged(ctx, projectID, taskID, guard.Tag, guard.Count, guard.Hint, operation, target); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 // evaluatePermission resolves bucket policy without hitting the database.
 // Returns (allowed, otherBucketKeysWhereAllowed) so the caller can compose a
 // hint that tells the user where the action IS permitted. Resolution is
 // fully data-driven: bucket overrides → workflow.defaults → implicit
-// `true` (no rule = allow). There is no hardcoded "first bucket is
-// special" rule — that lives in the YAML now.
+// `true` (no rule = allow).
 func evaluatePermission(workflow domain.Workflow, currentBucketID int64, entity, operation string) (bool, []string) {
 	if len(workflow.Buckets) == 0 {
 		return false, nil
@@ -437,85 +328,6 @@ func buildPermissionHint(entity, operation, currentBucketKey string, allowedBuck
 		return fmt.Sprintf("policy: %s.%s is not permitted in bucket %q (no bucket allows it; declare workflows[].buckets[].permissions.%s.%s)", entity, operation, currentBucketKey, entity, operation)
 	}
 	return fmt.Sprintf("policy: %s.%s is not permitted in bucket %q. Move the task to one of: %s — then retry.", entity, operation, currentBucketKey, strings.Join(allowedBuckets, ", "))
-}
-
-func operationGuards(workflow domain.Workflow, operation string) []domain.TransitionGuard {
-	switch operation {
-	case OperationArchive:
-		return workflow.Operations.Archive.Guards
-	case OperationDelete:
-		return workflow.Operations.Delete.Guards
-	case OperationUnarchive:
-		return workflow.Operations.Unarchive.Guards
-	}
-	return nil
-}
-
-func (s *WorkflowService) checkBlockersIn(ctx context.Context, projectID, taskID int64, allowedKeys []string, hint, operation string, target map[string]any) error {
-	blockers, err := s.guards.ListTaskBlockerBuckets(ctx, projectID, taskID, s.snap)
-	if err != nil {
-		return err
-	}
-	allowed := make(map[string]struct{}, len(allowedKeys))
-	for _, k := range allowedKeys {
-		allowed[k] = struct{}{}
-	}
-	var pending []string
-	for _, b := range blockers {
-		if _, ok := allowed[b.BucketKey]; !ok {
-			pending = append(pending, fmt.Sprintf("#%d %q (in %q)", b.TaskID, b.Title, b.BucketKey))
-		}
-	}
-	if len(pending) == 0 {
-		return nil
-	}
-	msg := "blockers_in guard: pending blockers: " + strings.Join(pending, ", ")
-	details := map[string]any{"pending_blockers": pending}
-	if hint != "" {
-		msg += ". Hint: " + hint
-		details["hint"] = hint
-	}
-	s.EmitGuardViolated(ctx, projectID, domain.EventEntityTask, taskID, operation, "blockers_in", msg, target)
-	return domain.NewError(domain.ErrGuardViolation, msg, details)
-}
-
-func (s *WorkflowService) checkCommentsMin(ctx context.Context, projectID, taskID int64, minCount int, hint, operation string, target map[string]any) error {
-	count, err := s.guards.CountTaskComments(ctx, projectID, taskID)
-	if err != nil {
-		return err
-	}
-	if count >= minCount {
-		return nil
-	}
-	msg := fmt.Sprintf("comments_min guard: task has %d comment(s); transition requires at least %d", count, minCount)
-	details := map[string]any{"count": count, "required": minCount}
-	if hint != "" {
-		msg += ". Hint: " + hint
-		details["hint"] = hint
-	}
-	s.EmitGuardViolated(ctx, projectID, domain.EventEntityTask, taskID, operation, "comments_min", msg, target)
-	return domain.NewError(domain.ErrGuardViolation, msg, details)
-}
-
-func (s *WorkflowService) checkCommentsTagged(ctx context.Context, projectID, taskID int64, tag string, minCount int, hint, operation string, target map[string]any) error {
-	if minCount < 1 {
-		minCount = 1
-	}
-	count, err := s.guards.CountTaskCommentsTagged(ctx, projectID, taskID, tag)
-	if err != nil {
-		return err
-	}
-	if count >= minCount {
-		return nil
-	}
-	msg := fmt.Sprintf("comments_tagged guard: task has %d comment(s) tagged %q; transition requires at least %d", count, tag, minCount)
-	details := map[string]any{"count": count, "required": minCount, "tag": tag}
-	if hint != "" {
-		msg += ". Hint: " + hint
-		details["hint"] = hint
-	}
-	s.EmitGuardViolated(ctx, projectID, domain.EventEntityTask, taskID, operation, "comments_tagged", msg, target)
-	return domain.NewError(domain.ErrGuardViolation, msg, details)
 }
 
 // defaultPriority returns the configured default priority id via the
