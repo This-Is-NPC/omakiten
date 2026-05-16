@@ -2,6 +2,7 @@ package agentruntime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
@@ -302,11 +303,27 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	}
 	// Emit the bundle.imported audit event so hooks subscribed to
 	// configuration content changes continue to fire after Round-2
-	// retired Store.ImportBundle. Failure to record the audit row is
-	// non-fatal — the snapshot still loads and the runtime still
-	// boots — so the runtime composition root logs nothing and
-	// proceeds even when telemetry gating drops the event.
-	_ = store.EmitBundleImported(ctx, bundle, configPath, bundleHash)
+	// retired Store.ImportBundle. Payload is composed here at the
+	// composition root because the SQL adapter must remain free of
+	// config.Bundle references (Phase 2-bis gate 2). Failure to
+	// record the audit row is non-fatal — the snapshot still loads
+	// and the runtime still boots — so callers proceed even when
+	// telemetry gating drops the event.
+	workflowKey := bundle.Config.Workflow.Active
+	if workflowKey == "" && len(bundle.Workflows) > 0 {
+		workflowKey = bundle.Workflows[0].Key
+	}
+	auditPayload, _ := json.Marshal(map[string]any{
+		"path":           configPath,
+		"hash":           bundleHash,
+		"workflow_key":   workflowKey,
+		"workflow_count": len(bundle.Workflows),
+		"persona_count":  len(bundle.Personas),
+		"skill_count":    len(bundle.Skills),
+		"law_count":      len(bundle.Laws),
+		"template_count": len(bundle.Templates),
+	})
+	_ = store.RecordEntityEvent(ctx, domain.EventEntitySystem, 0, 0, domain.EventTypeBundleImported, string(auditPayload))
 
 	// Build the per-project Snapshot up front so every downstream wire —
 	// notification catalog, hooks engine, agent service — reads from the

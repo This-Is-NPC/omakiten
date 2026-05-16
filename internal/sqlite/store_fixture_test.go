@@ -56,8 +56,8 @@ func (s *storeFixture) prev() *config.Snapshot {
 // applyBundle rotates the fixture's snapshot pair: the prior current
 // becomes previous and a fresh snapshot is built from the supplied
 // bundle. Returns no error — the helper writes nothing to SQLite.
-// Callers that need to emit the bundle.imported audit event should
-// invoke s.Store.EmitBundleImported separately.
+// Tests that need the bundle.imported audit row should call
+// s.Store.RecordEntityEvent with their own composed payload.
 func (s *storeFixture) applyBundle(bundle config.Bundle) {
 	next := config.BuildSnapshot(bundle)
 	s.mu.Lock()

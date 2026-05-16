@@ -15,8 +15,9 @@ import (
 // reloadBundle re-resolves the bundle at path through the BundleCache
 // (Phase 3e) and rewires every bundle-derived field on the Model in
 // place. The cache's Reload builds a fresh per-project Snapshot,
-// fires Store.EmitBundleImported (audit-only — no Store-side
-// rotation), and swaps the ProjectRuntime entry so in-flight callers
+// records the bundle.imported audit event (audit-only — no
+// Store-side rotation), and swaps the ProjectRuntime entry so
+// in-flight callers
 // keep the previous pointer. On error nothing on the Model changes
 // so the caller can surface the failure and let the user retry.
 // bundle.swapped continues to fire so the hooks engine can react
