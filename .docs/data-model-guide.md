@@ -2,7 +2,7 @@
 
 Omakiten persists state in a single SQLite file (default `~/.local/share/omakiten/omakiten.db`, pure-Go driver `modernc.org/sqlite`). The schema is owned by the migration files under `migrations/` and applied transactionally on every connect (`internal/sqlite/store.go:Open`).
 
-> **CQRS-like split.** YAML files (the active profile yaml plus per-entity markdown) are the **write model** and source of truth for config. SQLite is the **read model** — repopulated on every `app.ConfigService.Import`. Operational data (tasks, comments, dependencies, context entries, errors, solutions, events, tags) is **born in SQLite** and has no YAML mirror.
+> **CQRS-like split — post Phase 2-bis.** YAML files (the active profile yaml plus per-entity markdown) are the **only** source of truth for config. SQLite is **operational data only** — tasks, comments, dependencies, context entries, tags, errors, solutions, and the unified events log. Migration 020 dropped every config table from the database; the runtime now resolves workflows, buckets, personas, skills, laws, and templates from an in-memory `config.Snapshot` rebuilt on every `ConfigService.Import` (see `.docs/configuration-guide.md` § In-memory providers).
 
 ## Migrations
 
@@ -11,21 +11,44 @@ Schema versions are tracked in `schema_migrations(version)`. Each numbered file 
 | File | What it adds |
 |---|---|
 | `001_initial.sql` | Core tables: `projects`, `config_bundles`, `settings`, `skills`, `personas`, `persona_skills`, `laws`, `workflows`, `workflow_buckets`, `workflow_transitions`, `tasks`, `comments`, `task_dependencies`, `context_entries`. |
-| `002_entities.sql` | Adds `description` / `body` / `source_path` to entity tables; introduces law `scope` (`global`/`project`/`persona`) with `project_id` / `persona_id` references; adds `tasks.workdir` / `tasks.branch`. |
+| `002_entities.sql` | Adds `description` / `body` / `source_path` to entity tables; introduces law `scope` (`global`/`project`/`persona`) with `project_id` / `persona_id` references; adds `tasks.workdir` / `tasks.branch` (both later removed in 017). |
 | `003_activity_logs.sql` | `activity_logs` table for operational telemetry (since absorbed into `events`). |
 | `004_tags.sql` | `tags`, `task_tags`, `project_tags` join tables. |
-| `005_transition_guards.sql` | `workflow_transitions.guards_json` column (JSON-encoded guard list). |
-| `006_comment_tags.sql` | `comment_tags` join table (since absorbed into `event_tags`). |
+| `005_transition_guards.sql` | `workflow_transitions.guards_json` column (later dropped with the table in 020). |
+| `006_comment_tags.sql` | `comment_tags` join table (later absorbed into `event_tags`). |
 | `007_errors.sql` | `errors`, `solutions`, `error_tags`. Errors and solutions are intentionally **cross-project**. |
 | `008_solution_likes.sql` | `solutions.likes` counter, incremented by `solutions.confirm(success=true)`. |
 | `009_events.sql` | Unified `events` table; migrates `comments` and `activity_logs` into it; rekeys `comment_tags` as `event_tags`; **drops** `comments`, `comment_tags`, `activity_logs`. |
 | `010_agent_attribution.sql` | Adds `agent_model` (NOT NULL DEFAULT '') and nullable `agent_session_id` to `events`, `errors`, and `solutions`; adds `source` / `entrypoint` to `errors` / `solutions`; creates `idx_events_agent_type(agent_model, event_type, created_at)` for the per-model benchmark queries. Existing rows are not backfilled — the domain-event timeline starts at this migration. |
+| `011_purge_tui_summary_pollution.sql` | One-shot delete of legacy `operation` rows written by the TUI Stats tick before `activity.WithoutTracking` wrapped the refresh context. Bounded the activity log so legitimate CLI / MCP entries could no longer be evicted by the per-second poll. |
+| `012_task_state.sql` | Adds `tasks.state TEXT NOT NULL DEFAULT 'active' CHECK ('active','archived')` and `idx_tasks_project_state(project_id, state)`. Archive bypasses bucket policy / transition guards but still respects `operations.archive.guards`. |
+| `013_bucket_permissions_operations.sql` | Adds `workflow_buckets.permissions_json` (per-bucket CRUD policy for tasks and comments) and `workflows.operations_json` (per-workflow archive/delete/unarchive guards). Both later dropped with the tables in 020 — policy now lives in the YAML and the in-memory Snapshot. |
+| `014_workflow_defaults.sql` | Adds `workflows.defaults_json` for task/comment edit/delete defaults at the workflow level. Also dropped with the table in 020. |
+| `015_priority_id.sql` | Converts `tasks.priority` (TEXT enum `low`/`normal`/`high`) into `tasks.priority_id` (INTEGER referencing the in-bundle `config.priorities` table). Backfill encodes the canonical `1=low`, `2=normal`, `3=high` mapping; subsequent renames in YAML never rewrite the integer ids. |
+| `016_severity_id.sql` | Same shape as 015 for `laws.severity` → `laws.severity_id` (`1=info`, `2=warning`, `3=error`). The `laws` table itself was dropped in 020; the severity id is now read from frontmatter at bundle import time. |
+| `017_drop_priority_severity_defaults.sql` | Rebuilds `tasks` and `laws` to drop the `DEFAULT 2` clauses on `priority_id` / `severity_id` (the SQL default obscured the principle that the canonical default lives in `defaults/omakiten.yaml`). The `tasks` rebuild also drops the unused `workdir` / `branch` columns added in 002. |
+| `018_drop_legacy_event_payloads.sql` | Deletes pre-refactor rows for `task.created`, `task.edited`, `task.removed`, `task.archived`, `task.unarchived`. Their payloads embedded label strings via a process-global registry, but the new wire shape emits the raw int id — purging avoids forcing every reader to accept both shapes. |
+| `019_unify_tool_call_events.sql` | Renames every `event_type='operation'` row to `cli.tool_call` / `mcp.tool_call` / `tui.tool_call` based on `source`. Enriches `payload` with `{tool_name, source, entrypoint, status, duration_ms, error_message, args}` so hooks can match without reading SQL columns. The legacy operation columns stay populated so `metrics.summary` keeps using its column-backed index. |
+| `020_drop_config_tables.sql` | **The Phase 2-bis breaking migration.** Drops `config_bundles`, `settings`, `skills`, `personas`, `persona_skills`, `laws`, `workflows`, `workflow_buckets`, `workflow_transitions`. Before the drop, rewrites `tasks.bucket_id` from the SQL-era `workflow_buckets.id` (autoincrement PK) to `workflow_buckets.local_id` (the YAML-declared bucket id the post-migration `Snapshot` indexes by) so existing tasks still resolve to a real bucket. Rebuilds `tasks` to drop the FK pointing at `workflow_buckets`; `bucket_id` is now a plain `INTEGER`. |
+| `021_rebind_orphan_buckets.sql` | Pure-SQL recovery for databases that applied an earlier version of 020 missing the bucket rebind. Walks `events` for each task's latest `task.moved` (fallback `task.created`) payload, extracts the bucket key, and maps onto the canonical preset bucket id via a `CASE` covering every shipped preset key. Tasks with no recoverable event land in bucket id 1. Idempotent on already-rebound databases. |
 
-After 009, three tables that older code referenced (`comments`, `comment_tags`, `activity_logs`) **no longer exist** — every reader/writer goes through `events` (see "The unified events table" below).
+After 009, three tables that older code referenced (`comments`, `comment_tags`, `activity_logs`) **no longer exist** — every reader/writer goes through `events` (see "The unified events table" below). After 020, nine more tables (`config_bundles`, `settings`, `skills`, `personas`, `persona_skills`, `laws`, `workflows`, `workflow_buckets`, `workflow_transitions`) are also gone — config is YAML-only.
 
-## Top-level relationships
+## Current schema (post-021)
 
-The diagram below reflects the **post-migration-009** schema — i.e. `comments`, `comment_tags`, and `activity_logs` are gone, absorbed into the unified `events` table. Crow's-foot reads as: `||--o{` is one-to-many; pure-junction tables (`*_tags`, `persona_skills`, `task_dependencies`) sit between the two entities they link.
+The live schema contains exactly nine tables of operational state plus `schema_migrations`:
+
+```
+schema_migrations      tags
+projects               task_tags
+tasks                  project_tags
+task_dependencies      error_tags
+context_entries        event_tags
+errors                 events
+solutions
+```
+
+The diagram below reflects that shape. Crow's-foot reads as: `||--o{` is one-to-many; pure-junction tables (`*_tags`, `task_dependencies`) sit between the two entities they link.
 
 ```mermaid
 erDiagram
@@ -35,64 +58,13 @@ erDiagram
         text root_path "UNIQUE"
         text name
     }
-    CONFIG_BUNDLES {
-        int  id PK
-        text key "UNIQUE"
-        text source_hash
-        int  active
-    }
-    SETTINGS {
-        int  id PK
-        int  bundle_id FK
-        text key
-        text value
-    }
-    SKILLS {
-        int  id PK
-        int  bundle_id FK
-        text key
-    }
-    PERSONAS {
-        int  id PK
-        int  bundle_id FK
-        text key
-    }
-    PERSONA_SKILLS {
-        int persona_id FK
-        int skill_id FK
-    }
-    LAWS {
-        int  id PK
-        int  bundle_id FK
-        text key
-        text scope "global|project|persona"
-        int  project_id FK "nullable"
-        int  persona_id FK "nullable"
-    }
-    WORKFLOWS {
-        int  id PK
-        int  bundle_id FK
-        text key
-    }
-    WORKFLOW_BUCKETS {
-        int  id PK
-        int  workflow_id FK
-        text key
-        int  position
-    }
-    WORKFLOW_TRANSITIONS {
-        int  id PK
-        int  workflow_id FK
-        int  from_bucket_id FK
-        int  to_bucket_id FK
-        text guards_json
-    }
     TASKS {
         int  id PK
         int  project_id FK
-        int  bucket_id FK "nullable"
+        int  bucket_id "nullable, resolved via Snapshot"
         text title
-        text priority "low|normal|high"
+        int  priority_id "config.priorities id"
+        text state "active|archived"
     }
     TASK_DEPENDENCIES {
         int project_id FK
@@ -122,12 +94,14 @@ erDiagram
         int  id PK
         int  project_id FK "nullable"
         text description
+        text agent_model
     }
     SOLUTIONS {
         int  id PK
         int  error_id FK
         int  success "NULL|0|1"
         int  likes
+        text agent_model
     }
     ERROR_TAGS {
         int error_id FK
@@ -135,38 +109,23 @@ erDiagram
     }
     EVENTS {
         int  id PK
-        text entity_type "task|system"
+        text entity_type "task|system|project|error|solution"
         int  entity_id "nullable"
         int  project_id FK "nullable"
-        text event_type "comment|task.created|task.moved|task.completed|operation"
+        text event_type
+        text payload "JSON"
+        text agent_model
     }
     EVENT_TAGS {
         int event_id FK
         int tag_id FK
     }
 
-    PROJECTS ||--o{ TASKS : owns
+    PROJECTS ||--o{ TASKS           : owns
     PROJECTS ||--o{ CONTEXT_ENTRIES : owns
-    PROJECTS ||--o{ ERRORS : "optional scope"
-    PROJECTS ||--o{ PROJECT_TAGS : "tagged via"
-    PROJECTS ||--o{ LAWS : "scope=project"
-    PROJECTS ||--o{ EVENTS : "optional scope"
-
-    CONFIG_BUNDLES ||--o{ SETTINGS : holds
-    CONFIG_BUNDLES ||--o{ SKILLS : holds
-    CONFIG_BUNDLES ||--o{ PERSONAS : holds
-    CONFIG_BUNDLES ||--o{ LAWS : holds
-    CONFIG_BUNDLES ||--o{ WORKFLOWS : holds
-
-    PERSONAS ||--o{ PERSONA_SKILLS : "wires"
-    SKILLS   ||--o{ PERSONA_SKILLS : "wired by"
-    PERSONAS ||--o{ LAWS : "scope=persona"
-
-    WORKFLOWS        ||--o{ WORKFLOW_BUCKETS     : contains
-    WORKFLOWS        ||--o{ WORKFLOW_TRANSITIONS : contains
-    WORKFLOW_BUCKETS ||--o{ WORKFLOW_TRANSITIONS : "from"
-    WORKFLOW_BUCKETS ||--o{ WORKFLOW_TRANSITIONS : "to"
-    WORKFLOW_BUCKETS ||--o{ TASKS                : "lands in"
+    PROJECTS ||--o{ ERRORS          : "optional scope"
+    PROJECTS ||--o{ PROJECT_TAGS    : "tagged via"
+    PROJECTS ||--o{ EVENTS          : "optional scope"
 
     TASKS ||--o{ TASK_DEPENDENCIES : "blocked by"
     TASKS ||--o{ TASK_DEPENDENCIES : "blocker of"
@@ -184,44 +143,48 @@ erDiagram
     EVENTS ||--o{ EVENT_TAGS : "tagged via"
 ```
 
-A few caveats the diagram cannot express compactly:
+A few invariants the diagram cannot express compactly:
 
 - **Project-scope invariant** for tasks: `tasks(project_id, id)` is a composite unique key, and `task_dependencies` uses dual composite FKs into it — this is what guarantees a dependency can never cross projects.
 - **Cycle prevention** for `task_dependencies` is enforced in software (`internal/graph/dependency.go:HasCycle`), not by the schema.
-- **Law scope is exclusive**: `(scope, project_id, persona_id)` is conceptually a tagged union — only one of `project_id` / `persona_id` is populated per row, depending on `scope`.
-- **`events` is a discriminated log**: `(entity_type, event_type)` selects the row's role (see "The unified events table" below). `entity_id` is the task id when `entity_type='task'`, and is `NULL` for `entity_type='system'`.
+- **`tasks.bucket_id`** is an unconstrained `INTEGER` post-020 — there is no FK to a buckets table because no buckets table exists. The application resolves it against the per-project `config.Snapshot.BucketByID` built from YAML on every bundle import. An id Snapshot cannot resolve marks the row as an **orphan** and surfaces through `app.OrphanRepository.PreviewOrphanedTasks` / `RebindOrphanedTasks` (see `.docs/configuration-guide.md` § Orphan-task migration).
+- **`tasks.priority_id`** is similarly unconstrained at the SQL layer. Validation is the bundle validator's job: every `priority_id` written must match an entry in `config.priorities`. Renaming a priority label is a YAML edit; the integer id stored on tasks does not change.
+- **`events` is a discriminated log**: `(entity_type, event_type)` selects the row's role (see "The unified events table" below). `entity_id` is the task / error / solution id when the entity type names a row, and is `NULL` for `entity_type='system'`.
 - **`solutions.success`** is a tri-state (`NULL` = untried, `0` = known-bad, `1` = known-good); `1` is the only state that increments `likes`.
 
 ## Tables
 
 ### `projects`
 
-`id INT PK`, `name`, `slug UNIQUE`, `root_path UNIQUE`, `description`, `created_at`, `updated_at`, `archived_at?`.
+`id INT PK`, `name`, `slug UNIQUE`, `root_path UNIQUE`, `created_at`, `updated_at`, `archived_at?`.
 
-The active project is resolved by id, slug, or by matching `root_path` to the current working directory (`internal/project/resolver.go`).
-
-### `config_bundles`
-
-`id`, `key UNIQUE`, `name`, `version`, `scope ('global'|'project')`, `project_id?`, `source_path`, `source_hash`, `active`. The hash detects YAML drift on re-import.
-
-### `settings`
-
-`bundle_id`, `key`, `value`. Flattened key/value pairs (e.g. `workflow.active`, `theme.active`, `context.default_level`).
-
-### `skills`, `personas`, `laws`, `workflows`, `workflow_buckets`, `workflow_transitions`
-
-Bundle-scoped config tables. Each carries a `local_id` (the YAML id) and a `key` (slug), both unique within a bundle. `active=1` filters out anything no longer referenced by the current bundle.
-
-- `laws.scope` is one of `global`, `project`, or `persona`. `project_id` and `persona_id` are populated only for the matching scope.
-- `workflow_transitions.guards_json` is a JSON array following `domain.TransitionGuard` (see `.docs/guards-guide.md`).
+The active project is resolved by id, slug, or by matching `root_path` to the current working directory (`internal/project/resolver.go`). When a project's `root_path` carries a `.omakiten/` directory, the runtime uses that repo-local SQLite file in place of the global one (`internal/agentruntime/runtime.go`).
 
 ### `tasks`
 
-`id`, `project_id`, `bucket_id?`, `title`, `description`, `priority CHECK ('low','normal','high')`, `created_at`, `updated_at`, `completed_at?`, `workdir`, `branch`, `UNIQUE(project_id, id)`.
+Post-017 / post-020 column shape:
+
+```
+id           INTEGER PRIMARY KEY AUTOINCREMENT
+project_id   INTEGER NOT NULL REFERENCES projects(id)
+bucket_id    INTEGER                     -- no FK; resolved via Snapshot
+title        TEXT    NOT NULL
+description  TEXT    NOT NULL DEFAULT ''
+priority_id  INTEGER NOT NULL            -- references config.priorities[*].id
+state        TEXT    NOT NULL DEFAULT 'active'
+                     CHECK (state IN ('active','archived'))
+created_at   TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+updated_at   TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+completed_at TEXT
+UNIQUE(project_id, id)
+```
 
 The `UNIQUE(project_id, id)` shape is what lets `task_dependencies` use a composite foreign key to enforce that **dependencies cannot cross projects**.
 
-Index: `idx_tasks_project_bucket(project_id, bucket_id)`.
+Indexes:
+
+- `idx_tasks_project_bucket(project_id, bucket_id)` — feeds bucket-filtered list views (board, table).
+- `idx_tasks_project_state(project_id, state)` — feeds the archived-tasks toggle (`TaskFilter.IncludeArchived`).
 
 ### `task_dependencies`
 
@@ -235,14 +198,14 @@ Index: `idx_tasks_project_bucket(project_id, bucket_id)`.
 
 `id`, `name UNIQUE` (kebab-case-normalized via `app.NormalizeTagName`), `label`, `created_at`.
 
-Three join tables attach tags:
+Four join tables attach tags:
 
-| Join | Reference |
-|---|---|
-| `task_tags` | `(project_id, task_id, tag_id)` |
-| `project_tags` | `(project_id, tag_id)` |
-| `error_tags` | `(error_id, tag_id)` |
-| `event_tags` | `(event_id, tag_id)` — used to tag comments (which are events) |
+| Join | Reference | Scope |
+|---|---|---|
+| `task_tags` | `(project_id, task_id, tag_id)` | task ↔ tag |
+| `project_tags` | `(project_id, tag_id)` | project ↔ tag |
+| `error_tags` | `(error_id, tag_id)` | error ↔ tag (cross-project) |
+| `event_tags` | `(event_id, tag_id)` | event ↔ tag — used to tag comments (which are events) |
 
 `tags.merge` reassigns rows from one tag id to another and deletes the source. Orphan tag cleanup is exposed via `TagRepository.DeleteOrphanTags`.
 
@@ -251,13 +214,13 @@ Three join tables attach tags:
 ```
 errors:    id, description, context, project_id?, created_at,
            source, entrypoint, agent_model, agent_session_id?
-solutions: id, error_id (FK), description, steps, success NULL|0|1, task_id?,
-           tried_at?, created_at, likes,
+solutions: id, error_id (FK), description, steps,
+           success NULL|0|1, task_id?, tried_at?, created_at, likes,
            source, entrypoint, agent_model, agent_session_id?
-error_tags: error_id, tag_id
+error_tags: error_id, tag_id          -- cascades on errors delete
 ```
 
-**Cross-project by design.** Errors carry an optional `project_id` (so you can filter), but `errors.search` and `solutions.list_top` are global so prior fixes are reusable across projects (see `.docs/mcp-guide.md` §Tools).
+**Cross-project by design.** Errors carry an optional `project_id` (so you can filter), but `errors.search` and `solutions.list_top` are global so prior fixes are reusable across projects (see `.docs/mcp-guide.md` § Tools).
 
 `solutions.success` is a tri-state:
 
@@ -276,35 +239,50 @@ After migration 009, **comments**, **task lifecycle events**, **operational tele
 | `entity_type` | `event_type` | `entity_id` | Use |
 |---|---|---|---|
 | `task` | `comment` | task id | Comment authored by a human or agent. `body` carries the comment text; `author_type` is `'human'`/`'agent'`. |
-| `task` | `task.created` | task id | Emitted in the same transaction as `tasks` insert. |
-| `task` | `task.moved` | task id | Emitted by the task repo when bucket changes. |
-| `task` | `task.completed` | task id | Emitted by `app.WorkflowService.MoveTask` when the destination bucket is the workflow's final bucket (`payload.bucket` set). |
-| `system` | `operation` | (null) | Operational telemetry from `activity.Track`: `source` (`cli`/`tui`/`mcp`), `entrypoint`, `operation`, `status`, `duration_ms`, `error_message`. |
-| `error` | `error.recorded` | error id | Emitted by `app.ErrorService.Record` after a successful insert. `payload` carries `tags` and `has_context`. |
-| `error` | `error.searched` | (null) | Emitted by `app.ErrorService.Search`; `payload` carries `query`, `tags`, and `result_count`. |
-| `solution` | `solution.added` | solution id | Emitted by `app.ErrorService.AddSolution`. |
-| `solution` | `solution.liked` | solution id | Emitted by `app.ErrorService.ConfirmSolution(success=true)` (also bumps `solutions.likes`). |
-| `solution` | `solution.failed` | solution id | Emitted by `app.ErrorService.ConfirmSolution(success=false)`. |
-| `solution` | `solution.viewed_top` | (null) | Emitted by `app.ErrorService.ListTopSolutions`; `payload` carries `limit` and `returned_count`. |
+| `task` | `comment.edited` | task id | Comment body or tag set updated. `payload={comment_id, body:{from,to}}`. |
+| `task` | `comment.removed` | task id | Comment hard-deleted. `payload={comment_id, author_type, body}`. |
+| `task` | `task.created` | task id | Emitted in the same transaction as the `tasks` insert. `payload={title, bucket, priority}`. |
+| `task` | `task.moved` | task id | Emitted by the task repo when `bucket_id` changes via a transition. `payload={from, to}`. |
+| `task` | `task.migrated` | task id | Emitted when a task is rebound by a workflow swap (preset change, bucket removed/renamed). Distinct from `task.moved` because transition guards are bypassed. `payload={from, to, reason}`. |
+| `task` | `task.completed` | task id | Emitted by `app.WorkflowService.MoveTask` when the destination bucket is the workflow's final bucket. `payload={bucket}`. |
+| `task` | `task.edited` | task id | Mutable fields changed. `payload={fields:{<field>:{from,to}}}`. |
+| `task` | `task.removed` | task id | Task hard-deleted. `payload={title, bucket, priority}`. |
+| `task` | `task.archived` | task id | Task moved to `state='archived'`. `payload={bucket}`. |
+| `task` | `task.unarchived` | task id | Previously-archived task restored to `active`. `payload={bucket}`. |
+| `task`/`project`/`error` | `tag.added` / `tag.removed` | entity id | Tag attached/detached. `payload={entity_type, entity_id, tag_id, tag_name}`. |
+| `task` | `dependency.added` / `dependency.removed` | dependent task id | Dependency edge insert/delete. `payload={depends_on_task_id}`. |
+| `task`/`comment` | `guard.violated` | task/comment id per `payload.target` | Any operation rejected by a configured guard. `payload={operation, rule, hint, target, attempted_by}` — `operation` and `rule` are free-form strings supplied by the call site. |
+| `system` | `cli.tool_call` / `mcp.tool_call` / `tui.tool_call` | (null) | Per-call activity log entry written by `activity.Track`. `payload={tool_name, source, entrypoint, status, duration_ms, error_message, args}` mirrors the operation columns so hooks can filter without reading SQL columns. Source-discriminated since migration 019; the legacy `operation` event_type is deprecated and no longer emitted. |
+| `system` | `hook.executed` | (null) | Hook action finished (success or failure). `payload={hook_index, action, event_type, target_event_id, success, error, duration_ms}`. |
+| `system` | `bundle.swapped` | (null) | Active config bundle replaced via the TUI hot-reload path. `payload={from_workflow, to_workflow, orphan_count, groups}`. |
+| `system` | `bundle.imported` | (null) | A fresh bundle reached the runtime (source-of-truth flipped). `payload={path, hash, workflow_key, workflow_count, persona_count, skill_count, law_count, template_count}`. |
+| `system` | `confirmation.granted` | (null) | TUI dispatched a non-empty `NotificationAction.Command` in response to a user keystroke. `payload={notification_slug, action_id, command}`. |
+| `error` | `error.recorded` | error id | `app.ErrorService.Record` persisted a new error row. `payload={tags, has_context}`. |
+| `error` | `error.searched` | (null) | `app.ErrorService.Search` ran. `payload={query, tags, result_count}`. |
+| `solution` | `solution.added` | solution id | `app.ErrorService.AddSolution` persisted a candidate. `payload={error_id}`. |
+| `solution` | `solution.confirmed` | solution id | `ConfirmSolution` ran (regardless of outcome). Co-emits with `solution.liked` or `solution.failed`. `payload={error_id, success, likes}`. |
+| `solution` | `solution.liked` | solution id | `ConfirmSolution(success=true)`. `payload={error_id, likes}`. |
+| `solution` | `solution.failed` | solution id | `ConfirmSolution(success=false)`. `payload={error_id, likes}`. |
+| `solution` | `solution.viewed_top` | (null) | `ListTopSolutions` ran. `payload={limit, returned_count}`. |
 
-Constants are defined in `internal/domain/event.go`. `agent_model` and `agent_session_id` are populated from the request context on every domain event (and on `operation` rows after migration 010). `metrics.summary` aggregates these rows by `agent_model` to benchmark agent behaviour.
+The canonical event-type vocabulary is the `EventType*` constants in `internal/domain/event.go`; the closed set lives in `domain.KnownEventTypes` (consumed by config validation to reject hook overrides referencing typos). `agent_model` and `agent_session_id` are populated from the request context on every domain event (and on every `*.tool_call` row). `metrics.summary` aggregates these rows by `agent_model` to benchmark agent behaviour.
 
-The event row carries every column it might need; unused columns are nullable. Three indexes:
+The `events` row carries every column it might need; unused columns are nullable. Three indexes:
 
 - `idx_events_entity(entity_type, entity_id, created_at)` — feeds the per-task activity feed (`task_activity.list` MCP tool, the TUI's activity column, `internal/sqlite/events.go:ListTaskActivity`).
 - `idx_events_type_started(event_type, created_at)` — feeds the operational logs view (`internal/sqlite/activity_logs.go:ListActivityLogs`) and the synchronous pruner.
 - `idx_events_agent_type(agent_model, event_type, created_at)` — feeds the `metrics.summary` aggregation queries (`internal/sqlite/metrics.go:AgentMetricsSummary`).
 
-### Pruning policy (operations only)
+### Pruning policy (`*.tool_call` only)
 
-After every successful operation insert, the `operation` rows are pruned synchronously by `internal/sqlite/activity_logs.go:PruneActivityLogs`. Both knobs come from the user's bundle (`config.activity_log.max_rows`, `config.activity_log.max_age_days`) and are wired into the `Store` at composition-root time via `Store.SetActivityLogRetention`. The kit canonical (`defaults/config/omakase.yaml`) ships:
+After every successful `*.tool_call` insert, those rows are pruned synchronously by `internal/sqlite/activity_logs.go:PruneActivityLogs`. Both knobs come from the user's bundle (`config.activity_log.max_rows`, `config.activity_log.max_age_days`) and are wired into the `Store` at composition-root time via `Store.SetActivityLogRetention`. The kit canonical (`defaults/config/omakase.yaml`) ships:
 
 - **Max age**: 7 days (`config.activity_log.max_age_days`).
 - **Max rows**: 500 most-recent (`config.activity_log.max_rows`).
 
 Both fields are validator-required (> 0) — disabling retention is not a supported mode.
 
-**Comments and task lifecycle events are not pruned** — they are durable history. Pruning is scoped to `event_type='operation'`.
+**Comments, task lifecycle, domain, and system events are not pruned** — they are durable history. Pruning is scoped to the tool-call entries.
 
 ### Reader / writer cheat-sheet
 
@@ -312,9 +290,24 @@ Both fields are validator-required (> 0) — disabling retention is not a suppor
 |---|---|---|
 | `comments.list` (CLI/MCP/TUI) | `entity_type='task' AND event_type='comment'` ordered ascending by id | `internal/sqlite/comments.go:ListComments` |
 | `task_activity.list` MCP tool, TUI activity column | `entity_type='task'` ordered chronologically (asc default, desc optional) | `internal/sqlite/events.go:ListTaskActivity` |
-| Logs view (TUI), `okt mcp call` history | `event_type='operation'` ordered desc | `internal/sqlite/activity_logs.go:ListActivityLogs` |
+| Logs view (TUI), `okt mcp call` history | `event_type IN ('cli.tool_call','mcp.tool_call','tui.tool_call')` ordered desc; legacy `operation` rows still surface for back-compat | `internal/sqlite/activity_logs.go:ListActivityLogs` |
 | Guard `comments_min` | `count(*) WHERE entity_type='task' AND event_type='comment' AND entity_id=?` | `internal/sqlite/guards.go:CountTaskComments` |
 | Guard `comments_tagged` | join `events` ⨝ `event_tags` ⨝ `tags` filtered by tag name | `internal/sqlite/guards.go:CountTaskCommentsTagged` |
+| `metrics.summary` | `events` grouped by `agent_model`, `event_type`, filtered on the agent-type index | `internal/sqlite/metrics.go:AgentMetricsSummary` |
+
+## Bucket and priority resolution
+
+`tasks.bucket_id` and `tasks.priority_id` are integer references into per-project YAML data, not SQL FKs.
+
+- **Bucket id → bucket key**: `config.Snapshot.BucketByID(id)` (`internal/config/snapshot.go`). The Snapshot is rebuilt from `config.Bundle.Workflows[*].Buckets[*]` on every `ConfigService.Import` (or hot-reload via `Repositories.Cache.Reload`). The bucket's stable id is the YAML-declared `local_id` (the canonical ids `1=backlog`, `2=dev`, `3=review`, `4=done` for `omakase`; other presets carry their own).
+- **Priority id → priority label**: resolved through the `*domain.EnumRegistry` returned by `ConfigService.Import` and injected into every service that needs labels (`TaskService`, `WorkflowService`, `TUIQueryService`, `ContextService`, agent `Service`). The on-the-wire JSON shape is the raw int id — label projection happens at the DTO boundary so different surfaces (TUI, CLI table, MCP DTO) can resolve to different shapes if they want.
+
+A task pointing at a `bucket_id` the active Snapshot cannot resolve is an **orphan**. Orphans surface through `app.OrphanRepository`:
+
+- `PreviewOrphanedTasks` — read-only count + per-task preview (used by the TUI hot-reload prompt).
+- `RebindOrphanedTasks` — in-tx rebind to the same key in the new workflow (preserved) or to the first active bucket (removed), emitting `task.migrated` per task.
+
+The same rebind primitive is reached from the CLI (`okt workflow orphans --confirm`) and the MCP (`orphans.migrate` tool, two-phase confirmation) — `internal/sqlite/orphans.go`, `internal/app/orphan_service.go`, `internal/cli/workflow.go`, `internal/agent/service_orphan.go`.
 
 ## Project-scope invariant
 
@@ -333,7 +326,8 @@ The driver is pure Go (`modernc.org/sqlite`), so the binary builds without CGo.
 
 ## Where to learn more
 
-- Migration sources: `migrations/001_initial.sql` … `migrations/010_agent_attribution.sql`.
-- Domain types behind every row: `internal/domain/`.
-- Adapter implementations: `internal/sqlite/` (one file per concern after the recent split — `tasks.go`, `comments.go`, `dependencies.go`, `events.go`, `tags.go`, `errors.go`, `metrics.go`, `workflows.go`, `bundles.go`, `activity_logs.go`, `guards.go`, `contexts.go`, `personas.go`, `laws.go`, `skills.go`, `projects.go`, `store.go`).
+- Migration sources: `migrations/001_initial.sql` … `migrations/021_rebind_orphan_buckets.sql`.
+- Domain types behind every row: `internal/domain/` (`task.go`, `event.go`, `tag.go`, `error_record.go`, `context.go`, `priority_test.go`, `severity_test.go`).
+- Adapter implementations: `internal/sqlite/` (one file per concern — `tasks.go`, `tasks_lifecycle.go` (archive/unarchive/remove), `comments.go`, `dependencies.go`, `events.go`, `tags.go`, `errors.go`, `metrics.go`, `bucket_resolver.go`, `activity_logs.go`, `guards.go`, `contexts.go`, `orphans.go`, `projects.go`, `store.go`).
 - App-level ports the adapter satisfies: `internal/app/ports.go`.
+- The in-memory side: `.docs/configuration-guide.md` § How config reads work at runtime; `internal/config/snapshot.go`, `internal/agentruntime/cache.go`.
