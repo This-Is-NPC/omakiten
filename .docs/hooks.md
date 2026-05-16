@@ -34,7 +34,7 @@ Each `ProjectRuntime` in the `BundleCache` owns its own `hooks.Engine`,
 `ActionRegistry`, and `NotificationShowAction`. Engines filter their
 dispatch by `engine.projectID == event.ProjectID`:
 
-- engine `projectID == 0` (legacy boot, single-project) catches all events.
+- engine `projectID == 0` (bootstrap window before a project resolves, or tests) catches all events.
 - event `ProjectID == 0` (system events like `bundle.swapped`,
   `hook.executed` written against the system entity) reaches every engine.
 - otherwise the engine reacts only to events scoped to its project.

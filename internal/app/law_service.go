@@ -26,12 +26,11 @@ func NewLawService(snap *config.Snapshot, editor *BundleEditor, files EntityFile
 
 // lawsFromSnapshot projects the snapshot's config.Law slice into the
 // domain shape. Ids are positional (1-based) and stable within a
-// snapshot; severity labels are resolved to the snapshot's configured
-// severity ids so the Severity field carries the same int as the
-// legacy SQL adapter produced. Unknown labels resolve to 0 — the
-// validator rejects bundles with bad severities at import time, so 0
-// only appears for laws that survived a bundle without severity
-// validation in tests.
+// snapshot; severity labels resolve against the snapshot's configured
+// severity table so the Severity field carries the matching int id.
+// Unknown labels resolve to 0 — the validator rejects bundles with
+// bad severities at import time, so 0 only appears for laws that
+// survived a bundle without severity validation in tests.
 func lawsFromSnapshot(snap *config.Snapshot) []domain.Law {
 	laws := snap.Laws()
 	out := make([]domain.Law, 0, len(laws))
@@ -193,12 +192,12 @@ func (s *LawService) Edit(ctx context.Context, slug string, update domain.LawUpd
 	}
 
 	law := config.Law{
-		Slug:     slug,
-		Name:     current.Name,
+		Slug: slug,
+		Name: current.Name,
 		// config.Law.Severity is the YAML/frontmatter label string;
 		// translate from the in-memory id back to the configured label
 		// so the rewritten file reads naturally.
-			Severity: s.severityLabel(current.Severity),
+		Severity: s.severityLabel(current.Severity),
 		Body:     current.Body,
 	}
 	changed := false

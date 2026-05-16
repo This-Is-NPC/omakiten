@@ -141,6 +141,22 @@ func (r *runtime) activeSnapshot() *config.Snapshot {
 	return pr.Snapshot
 }
 
+// activeWorkflow returns the per-project *app.WorkflowService captured
+// against the boot-seeded ProjectRuntime's Snapshot. Subcommands that
+// need a WorkflowService go through this helper so the cache-built
+// instance is reused — constructing a fresh one per call would bypass
+// the Phase 2-bis Invariant 3 (app services capture *config.Snapshot at
+// construction) and re-introduce per-call allocations. Falls back to a
+// fresh construction only when the cache is absent (rare bootstrap
+// window) so the helper degrades to the pre-cache shape rather than
+// returning nil.
+func (r *runtime) activeWorkflow() *app.WorkflowService {
+	if pr := r.ProjectRuntime(); pr != nil && pr.Workflow != nil {
+		return pr.Workflow
+	}
+	return app.NewWorkflowServiceFromStore(r.store, r.activeRegistry(), r.activeSnapshot())
+}
+
 
 func (r *runtime) tokenCounter() token.Counter {
 	return token.NewCounter()

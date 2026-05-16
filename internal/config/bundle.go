@@ -341,8 +341,8 @@ type SolutionsSettings struct {
 //
 // Two mutually-exclusive shapes are supported:
 //
-//   - action shape:  on + when + do + args (legacy exec/noop dispatch)
-//   - notification shape:   on + when + notification:<slug> (per-event notification card)
+//   - action shape:        on + when + do + args  (exec/noop dispatch)
+//   - notification shape:  on + when + notification:<slug>  (per-event notification card)
 //
 // In notification shape the hook MAY also carry Message or MessageField as a
 // fallback the action consults when the referenced notification YAML did

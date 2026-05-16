@@ -14,19 +14,13 @@ package domain
 // and the minimum payload contract; emit it in the canonical service or
 // sqlite layer; document it in `.docs/domain-events.md`.
 const (
-	// EventTypeComment is the legacy event_type for user/agent comments
-	// recorded against a task. Kept as the canonical value to avoid a
-	// destructive rename of historical rows; new code may reference
-	// EventTypeCommentCreated as a forward-compatible alias.
+	// EventTypeComment is the canonical event_type for user/agent
+	// comments recorded against a task. The bare value "comment"
+	// predates the dotted-namespace convention (comment.edited /
+	// comment.removed) but stays as the write value so historical rows
+	// keep matching without a destructive rename.
 	// EntityType=task, Body=comment text, Tags=optional via event_tags.
 	EventTypeComment = "comment"
-	// EventTypeCommentCreated is the forward-compatible alias for
-	// EventTypeComment. Both values denote the same row shape; readers
-	// that switch on event_type should accept either.
-	EventTypeCommentCreated = "comment"
-	// EventTypeCommentLegacy mirrors EventTypeComment for callers that
-	// want the intent-revealing name when filtering historical rows.
-	EventTypeCommentLegacy = "comment"
 	// EventTypeCommentEdited fires when a comment's body or tag set is
 	// updated. EntityType=task, Payload={comment_id, body:{from,to}}.
 	EventTypeCommentEdited = "comment.edited"

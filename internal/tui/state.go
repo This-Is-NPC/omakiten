@@ -600,11 +600,6 @@ func (m *Model) popHistory() bool {
 	return true
 }
 
-// (T3 retired the legacy left/right flat cycle — `cycleLegacyView` and
-// `legacyNavOrder` are gone. AC9 from T1 / T2 only required behavior
-// preservation across the refactor; T3 explicitly drops it so left and
-// right are unambiguously within-view bindings everywhere.)
-
 // refreshTickMsg drives the realtime refresh loop — emitted every second
 // while the user is on a "live" view (board, table, etc.) and not editing.
 // shouldRealtimeRefresh decides whether to honor each tick.

@@ -76,8 +76,9 @@ func (e *BundleEditor) Load() (config.Bundle, error) {
 	return bundle, nil
 }
 
-// Apply is the legacy single-callback signature retained for callers that only
-// touch the wiring file. It delegates to ApplyWithFiles.
+// Apply is the wiring-only signature for callers that mutate the bundle
+// in place without producing entity files. It delegates to ApplyWithFiles
+// with a nil FileOp slice.
 func (e *BundleEditor) Apply(ctx context.Context, mutate func(*config.Bundle) error) (config.Bundle, error) {
 	return e.ApplyWithFiles(ctx, mutate, nil)
 }

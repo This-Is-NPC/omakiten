@@ -26,15 +26,14 @@ import (
 // add per-project entries without touching consumer code.
 //
 // The fields are documented from the consumer's perspective: callers
-// that need to read the bundle take Bundle; callers that need to
-// dispatch MCP/CLI calls take Service; the hooks engine, the audit
-// registry, and the notification snapshot are owned per runtime so a
-// reload can stop the old engine cleanly before the new one starts.
+// that need to read config go through Snapshot (immutable, per-project);
+// callers that need to dispatch MCP/CLI calls take Service; the hooks
+// engine, the audit registry, and the notification snapshot are owned
+// per runtime so a reload can stop the old engine cleanly before the
+// new one starts. The raw config.Bundle is intentionally not exposed —
+// Phase 2-bis Invariant 1 keeps every consumer reading through Snapshot
+// so the Store/Bundle reverse-coupling cannot creep back in.
 type ProjectRuntime struct {
-	// Bundle is the resolved config snapshot. Pointer so the cache can
-	// hand the same value to several readers without copying the
-	// ~30-field struct.
-	Bundle *config.Bundle
 	// Service is the agent service wired against the bundle's
 	// catalogs, lookups, and settings. Stateless aside from the
 	// snapshots it captures at construction.
@@ -368,7 +367,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	// previous pointer continue reading from it until they return.
 
 	svc := agent.NewService(store, selector)
-	// Phase 2-bis Round-2 collapses every legacy SetXCatalog /
+	// Phase 2-bis Round-2 collapses every per-field SetXCatalog /
 	// SetSynonyms / SetStopwords / SetRegistry wiring into one
 	// SetSnapshot call. The agent service derives the catalog closures,
 	// synonym table, stopword set, and bundle-scoped EnumRegistry from
@@ -398,7 +397,6 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	}
 
 	return &ProjectRuntime{
-		Bundle:               &bundle,
 		Service:              svc,
 		HooksEngine:          engine,
 		ActionRegistry:       registry,

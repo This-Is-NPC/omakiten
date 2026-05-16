@@ -6,7 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
 	"omakiten/internal/domain"
 )
 
@@ -106,7 +105,7 @@ func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				workflow := app.NewWorkflowServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot())
+				workflow := rt.activeWorkflow()
 				comment, err := rt.commentServiceWithWorkflow(workflow).Edit(ctx, project, commentID, editBody, editTags)
 				if err != nil {
 					return nil, err
@@ -144,7 +143,7 @@ func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				workflow := app.NewWorkflowServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot())
+				workflow := rt.activeWorkflow()
 				event, err := rt.commentServiceWithWorkflow(workflow).Remove(ctx, project, commentID)
 				if err != nil {
 					return nil, err

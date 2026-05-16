@@ -98,6 +98,17 @@ should reject changes that break any of them.
    themselves are read-only after construction. Guards of project A
    never consult guards of project B; the snapshot pointer A captured
    reaches only A's guards.
+6. **Snapshot accessors return defensive copies — except for the
+   hot-path readers `Synonyms()` and `Stopwords()`, which return the
+   underlying map/slice by reference.** The tag-normalize path
+   (`NormalizeTagName` fires per tag per comment / error / task) and
+   the search-stopword filter cannot afford a per-call allocation, so
+   `BuildSnapshot` materialises one map and one slice the snapshot
+   owns and every caller reads through. Contract: **callers must not
+   mutate the returned map/slice.** A future caller that needs to
+   mutate copies first. Snapshot itself remains immutable — the shared
+   pointers are read-only views, not editable handles. Documented on
+   the accessor godoc in `internal/config/snapshot.go`.
 
 ## Anti-patterns
 

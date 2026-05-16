@@ -67,15 +67,6 @@ func TestIsKnownEventType(t *testing.T) {
 	}
 }
 
-func TestCommentAliasesAreEqual(t *testing.T) {
-	if EventTypeCommentCreated != EventTypeComment {
-		t.Fatalf("EventTypeCommentCreated = %q, want alias of %q", EventTypeCommentCreated, EventTypeComment)
-	}
-	if EventTypeCommentLegacy != EventTypeComment {
-		t.Fatalf("EventTypeCommentLegacy = %q, want alias of %q", EventTypeCommentLegacy, EventTypeComment)
-	}
-}
-
 func TestToolCallEventTypeForSource(t *testing.T) {
 	cases := []struct {
 		in   ActivitySource

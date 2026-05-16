@@ -106,13 +106,20 @@ type Service struct {
 	stopwords          map[string]bool
 	synonyms           map[string]string
 	// snapshot is the immutable per-project view of the active bundle.
-	// SetSnapshot installs it and derives every legacy field
+	// SetSnapshot installs it and derives every derived field
 	// (catalogs, synonyms, stopwords, registry) from the snap so
 	// production composition collapses to a single call. The
 	// per-field setters survive as test-only overrides for cases
 	// where callers want to stub one closure without building a
 	// full Bundle/Snapshot pair.
 	snapshot *config.Snapshot
+	// workflow is the per-project app.WorkflowService captured against
+	// the installed Snapshot. SetSnapshot derives it once so the
+	// comment edit/remove paths reuse the same instance instead of
+	// allocating a fresh service per call — Phase 2-bis Invariant 3
+	// (app services capture *config.Snapshot at construction) applied
+	// to the agent layer.
+	workflow *app.WorkflowService
 	// orphanSvc is the pre-built orphan service injected by the runtime
 	// composition root. The runtime knows both the current and previous
 	// snapshot at rotation time, so it builds the OrphanService with
@@ -201,10 +208,11 @@ func (s *Service) SetSettings(settings ServiceSettings) {
 // reads workflow / catalog / synonym / stopword / registry state from.
 // The production composition root (agentruntime.buildProjectRuntime)
 // calls this once per ProjectRuntime, and Phase 2-bis Round-2 made it
-// the SOLE wiring entry point: every legacy SetXCatalog / SetSynonyms /
-// SetStopwords / SetRegistry setter was deleted because their state is
-// fully derivable from the snapshot. Tests that want to stub catalogs
-// build a Snapshot via the snapshotWith* helpers and pass it here.
+// the SOLE wiring entry point: every per-field SetXCatalog /
+// SetSynonyms / SetStopwords / SetRegistry setter was deleted because
+// their state is fully derivable from the snapshot. Tests that want
+// to stub catalogs build a Snapshot via the snapshotWith* helpers and
+// pass it here.
 //
 // SetSnapshot derives every closure-shaped field
 // (taskTemplateLookup / templateCatalog / skillCatalog / lawCatalog /
@@ -215,6 +223,7 @@ func (s *Service) SetSettings(settings ServiceSettings) {
 func (s *Service) SetSnapshot(snap *config.Snapshot) {
 	s.snapshot = snap
 	if snap == nil {
+		s.workflow = nil
 		return
 	}
 	s.taskTemplateLookup = snapshotTaskTemplateLookup(snap)
@@ -226,6 +235,7 @@ func (s *Service) SetSnapshot(snap *config.Snapshot) {
 	s.synonyms = snap.Synonyms()
 	s.stopwords = stopwordsTable(snap.Stopwords())
 	s.registry = snap.Registry()
+	s.workflow = app.NewWorkflowServiceFromStore(s.repo, s.registry, snap)
 }
 
 // Snapshot returns the per-project *config.Snapshot wired via

@@ -23,10 +23,10 @@ func NewPersonaService(snap *config.Snapshot, editor *BundleEditor, files Entity
 // the snapshot into the domain shape consumed by the CLI/TUI/MCP
 // surfaces. Ids are positional (1-based slot in the snapshot's
 // personas list) so callers that round-trip ids within a snapshot get
-// stable references; ids rotate on every bundle import, which mirrors
-// the legacy `personas.local_id` reset behaviour. Skill id refs are
-// resolved against the same snapshot so the persona's SkillIDs
-// reference ids stable within the snapshot.
+// stable references; ids rotate on every bundle import — callers
+// that need cross-rebuild stability must key by slug, not by id.
+// Skill id refs resolve against the same snapshot so the persona's
+// SkillIDs are stable within the snapshot.
 func personasFromSnapshot(snap *config.Snapshot) []domain.Persona {
 	personas := snap.Personas()
 	skills := snap.Skills()

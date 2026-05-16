@@ -12,7 +12,7 @@ func TestListTasksHonorsSortField(t *testing.T) {
 	store, project := openStoreWithProject(ctx, t)
 
 	// Create three tasks with deliberately non-id-sorted titles so sort
-	// behaviour is observable beyond the legacy "by id ascending" path.
+	// behaviour is observable beyond the default "by id ascending" path.
 	// Priority ids match the canonical kit: 1=low, 2=normal, 3=high.
 	for _, tc := range []struct {
 		title    string

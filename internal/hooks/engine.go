@@ -32,7 +32,7 @@ type Engine struct {
 	// projectID scopes which events this engine reacts to. Phase 3d
 	// runs one engine per ProjectRuntime so two projects' hooks never
 	// cross-fire. The filter rules:
-	//   - engine projectID == 0  -> catch-all (legacy single-project)
+	//   - engine projectID == 0  -> catch-all (bootstrap / tests)
 	//   - event projectID == 0   -> system event, reaches every engine
 	//   - otherwise              -> engine.projectID must equal event.ProjectID
 	// atomic.Int64 so SetProjectID is safe to call from a different
@@ -54,10 +54,10 @@ func NewEngine(hooks []Hook, registry *ActionRegistry, settings config.EventsSet
 // SetProjectID scopes the engine's dispatch filter to the supplied
 // project id. The composition root (BundleCache.buildProjectRuntime)
 // calls this once after construction so events targeting other
-// projects skip this engine entirely. Zero disables the filter — the
-// legacy single-project boot path leaves the value at zero and
-// receives every event the bus emits. Safe to call concurrently with
-// dispatch: projectID is atomic.
+// projects skip this engine entirely. Zero disables the filter —
+// engines built before the composition root resolves a project id
+// (bootstrap window, tests) keep receiving every event the bus emits.
+// Safe to call concurrently with dispatch: projectID is atomic.
 func (e *Engine) SetProjectID(id int64) {
 	e.projectID.Store(id)
 }
@@ -149,9 +149,14 @@ func (e *Engine) run(parent context.Context, idx int, hook Hook, action Action, 
 }
 
 // matchesProject decides whether the engine should consider the event.
-// Zero on either side opts out of the filter so legacy single-engine
-// runtimes (engine.projectID == 0) and system events (ev.ProjectID ==
-// 0) keep flowing the way they always have.
+// Phase 3 scopes one engine per ProjectRuntime, so a non-zero
+// engine.projectID is the per-project filter and a non-zero
+// ev.ProjectID identifies the event's owner. Zero on either side opts
+// out of the filter so system events (ev.ProjectID == 0 — e.g.
+// bundle.swapped, hook.executed) reach every engine and engines built
+// for cross-project dispatch (engine.projectID == 0 — used by tests
+// and the bootstrap window before a project resolves) keep receiving
+// everything.
 func (e *Engine) matchesProject(ev domain.Event) bool {
 	pid := e.projectID.Load()
 	if pid == 0 || ev.ProjectID == 0 {

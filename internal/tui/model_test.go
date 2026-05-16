@@ -1611,10 +1611,10 @@ func pressBackspace(t *testing.T, model Model, count int) Model {
 }
 
 // tuiTestBundle loads the default 2-bucket workflow used by most TUI
-// tests. testdata/default_workflow.yaml carries strict defaults + a
-// backlog opt-in that mirrors the legacy "edit only on first bucket"
-// semantics. Skills/Personas/Laws are wired in Go because config.Bundle
-// marks those fields `yaml:"-"`.
+// tests. testdata/default_workflow.yaml carries strict defaults plus a
+// backlog opt-in so editing is allowed only on the first bucket.
+// Skills/Personas/Laws are wired in Go because config.Bundle marks
+// those fields `yaml:"-"`.
 func tuiTestBundle(t *testing.T) config.Bundle {
 	t.Helper()
 	bundle, _ := testfixtures.LoadBundle(t, "default_workflow.yaml")

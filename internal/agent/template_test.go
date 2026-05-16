@@ -245,7 +245,7 @@ func TestShowTemplateAllowsShadowedSlugWithoutProjectContext(t *testing.T) {
 	// Service whose default selector points at a directory outside any
 	// registered project root → resolveProject returns ErrProjectNotFound, but
 	// because the failure came from CWD/default (not an explicit project_id /
-	// project) the call tolerates it and falls back to the legacy slug lookup.
+	// project) the call tolerates it and falls back to the slug-only lookup.
 	ctx := context.Background()
 	store := newAgentStore(t, ctx)
 	outside := filepath.Join(t.TempDir(), "outside")

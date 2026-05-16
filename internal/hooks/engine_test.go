@@ -153,7 +153,7 @@ func TestEngineSkipsWhenHookGateClosed(t *testing.T) {
 
 // TestEngineFiltersByProjectID asserts the Phase 3d isolation rule: an
 // engine scoped to project A must never dispatch on an event scoped to
-// project B. The catch-all zero-id legacy mode is also covered — both
+// project B. The catch-all zero-id mode is also covered — both
 // engines reach the same bus, but only the project-A engine reacts to
 // the project-A event, only the project-B engine reacts to the
 // project-B event, and a system event (projectID==0) reaches both.
@@ -212,8 +212,9 @@ func TestEngineFiltersByProjectID(t *testing.T) {
 }
 
 // TestEngineWithZeroProjectIDCatchesAll asserts the backward-compat
-// rule: a project-unscoped engine (the legacy single-project boot
-// path) keeps seeing every event regardless of its ProjectID.
+// rule: a project-unscoped engine (the bootstrap window before the
+// composition root resolved a project id) keeps seeing every event
+// regardless of its ProjectID.
 func TestEngineWithZeroProjectIDCatchesAll(t *testing.T) {
 	bus := events.NewInProcessBus(defaultSettings())
 
@@ -225,7 +226,7 @@ func TestEngineWithZeroProjectIDCatchesAll(t *testing.T) {
 	registry.Register(signalAction{name: "test", wg: &wg, ran: nil, mu: &mu, counter: &count})
 
 	engine := NewEngine([]Hook{{On: domain.EventTypeTaskCreated, Do: "test"}}, registry, defaultSettings(), &fakeRecorder{})
-	// projectID left at zero — legacy catch-all
+	// projectID left at zero — catch-all
 	engine.Start(bus)
 	defer engine.Stop()
 

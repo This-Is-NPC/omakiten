@@ -16,8 +16,8 @@ type HookActionResolver func(name string) bool
 // ValidateHooks runs the hooks block through the catalog + ref
 // checks. Each entry is one of two mutually-exclusive shapes:
 //
-//   - action:   on + when + do + args (legacy exec/noop dispatch)
-//   - notification:    on + when + notification:<slug>  (notification card)
+//   - action:        on + when + do + args  (exec/noop dispatch)
+//   - notification:  on + when + notification:<slug>  (notification card)
 //
 // `do:` must name a registered action; `notification:` must resolve to a
 // loaded notification. on/event_type must be a known event type. Empty

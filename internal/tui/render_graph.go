@@ -132,7 +132,7 @@ func (m Model) renderGraph() string {
 
 // graphRootLess turns the graph view sort config into a comparator the DAG
 // builder can use. Returns nil when the config is at its default (id asc),
-// so the legacy ordering path stays untouched for users who never touch
+// so the default ordering path stays untouched for users who never touch
 // the views section.
 func (m Model) graphRootLess() func(a, b domain.Task) bool {
 	// Validator guarantees both fields are set in the loaded bundle;

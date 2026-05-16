@@ -40,10 +40,11 @@ func (m *Model) reloadBundle(path string) error {
 	if err != nil {
 		return err
 	}
-	bundle := *pr.Bundle
+	snap := pr.Snapshot
+	settings := snap.Settings()
 	registry := pr.EnumRegistry
 
-	theme, err := loadActiveTheme(bundle, path)
+	theme, err := loadActiveTheme(settings.Theme.Active, path)
 	if err != nil {
 		return err
 	}
@@ -52,8 +53,8 @@ func (m *Model) reloadBundle(path string) error {
 	m.theme = theme
 	m.styles = newStyles(theme)
 	m.markdown = newMarkdownRenderer(tokensFromTheme(theme))
-	m.priorities = append([]config.PriorityDefinition(nil), bundle.Config.EffectivePriorities()...)
-	m.severities = append([]config.SeverityDefinition(nil), bundle.Config.EffectiveSeverities()...)
+	m.priorities = snap.Priorities()
+	m.severities = snap.Severities()
 	m.registry = registry
 	// Phase 2-bis Round-2 deleted WorkflowService.SetRegistry — the
 	// service captures its Snapshot at construction and mutating it via
@@ -62,8 +63,8 @@ func (m *Model) reloadBundle(path string) error {
 	// to the rotated Snapshot; swap the long-lived TUI reference at the
 	// same point the rest of the snapshot-derived state rotates.
 	m.repos.Workflow = pr.Workflow
-	m.notifications = bundle.Notifications
-	m.tokenBadgeYellow, m.tokenBadgeRed = bundle.Config.TUI.TokenBadge.Effective()
+	m.notifications = snap.Notifications()
+	m.tokenBadgeYellow, m.tokenBadgeRed = settings.TUI.TokenBadge.Effective()
 
 	if err := m.refresh(); err != nil {
 		return err
@@ -140,12 +141,11 @@ func (m *Model) revertConfigSwap() {
 	m.status = fmt.Sprintf("Config swap cancelled — restored %s", display)
 }
 
-// loadActiveTheme resolves the theme yaml referenced by bundle.Config.Theme.
-// Active and parses it. Mirrors the CLI's loadActiveThemeFromBundle so the TUI
-// can revalidate the theme without depending on cli/.
-func loadActiveTheme(bundle config.Bundle, configPath string) (config.Theme, error) {
+// loadActiveTheme resolves the theme yaml referenced by the snapshot's
+// active theme name. Mirrors the CLI's loadActiveThemeFromBundle so the
+// TUI can revalidate the theme without depending on cli/.
+func loadActiveTheme(active string, configPath string) (config.Theme, error) {
 	root := config.ConfigRootFromYAMLPath(configPath)
-	active := bundle.Config.Theme.Active
 	customPath := filepath.Join(root, "themes", "custom", active+".yaml")
 	defaultPath := filepath.Join(root, "themes", active+".yaml")
 	themePath := defaultPath

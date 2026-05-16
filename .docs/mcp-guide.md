@@ -355,7 +355,7 @@ Implications:
 - N agents may target N different projects through the same `okt mcp serve` process. Each call resolves an isolated `agent.Service`, hooks engine, action registry, notification snapshot, theme, tag synonyms, and stopwords — bundles do not cross-talk.
 - A project without a `.omakiten/` install falls through to the default service (single-bundle behaviour). To upgrade a project to its own bundle, run `okt config init --scope local` inside its repo root.
 - Cache rebuilds (mtime change on the on-disk YAML, explicit `cache.Reload` from the TUI) rotate the underlying `agent.Service`. The adapter's `DefaultServiceProvider` consults the runtime on every call so dispatch never lands on a stale pointer.
-- Hooks fire only when the engine's `projectID` matches the event's `ProjectID`, with zero on either side opting out (system events reach every engine, the legacy single-project boot path catches all). Two projects' hook entries never cross-fire.
+- Hooks fire only when the engine's `projectID` matches the event's `ProjectID`, with zero on either side opting out (system events reach every engine; engines built before a project resolves catch all). Two projects' hook entries never cross-fire.
 
 ## Scope Controls
 

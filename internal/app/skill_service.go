@@ -22,8 +22,8 @@ func NewSkillService(snap *config.Snapshot, editor *BundleEditor, files EntityFi
 
 // skillsFromSnapshot projects the snapshot's config.Skill slice into
 // the domain shape. Ids are positional (1-based) and stable within a
-// snapshot — they rotate on every bundle import, matching the legacy
-// `skills.local_id` semantics.
+// snapshot; they rotate on every bundle import, so cross-rebuild
+// callers must key by slug rather than by id.
 func skillsFromSnapshot(snap *config.Snapshot) []domain.Skill {
 	skills := snap.Skills()
 	out := make([]domain.Skill, 0, len(skills))
@@ -161,7 +161,10 @@ func (s *SkillService) Edit(ctx context.Context, slug string, update domain.Skil
 
 	path := current.SourcePath
 	if path == "" {
-		// Fallback for legacy callers that didn't get an enriched SourcePath.
+		// Inline-only skills (declared directly in the bundle YAML
+		// without a backing .md) have no on-disk path on the snapshot.
+		// Derive the conventional file path so the write lands beside
+		// the other entity files.
 		path = s.files.EntityFilePath(s.editor.RootDir(), config.EntityKindSkill, slug)
 	}
 	bytes, err := s.files.SkillFileBytes(skill)

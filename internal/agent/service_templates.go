@@ -74,7 +74,7 @@ func (s *Service) ListTemplates(_ context.Context, input ListTemplatesInput) (Li
 // by a project-scoped override of the same default kind. The rejection message
 // names the active slug so the agent can re-call without a clarification
 // round-trip — same pattern as the _agent_model coercion. Calls outside any
-// registered project (no resolution) preserve the legacy slug-only lookup so
+// registered project (no resolution) fall back to the slug-only lookup so
 // `okt mcp tools` discovery and CLI debug calls keep working.
 func (s *Service) ShowTemplate(ctx context.Context, input ShowTemplateInput) (ShowTemplateResponse, error) {
 	slug := strings.TrimSpace(input.Slug)

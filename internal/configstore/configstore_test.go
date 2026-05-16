@@ -34,9 +34,9 @@ func TestAdapterBundleRoundTrip(t *testing.T) {
 	adapter := New()
 	bundle, _ := testfixtures.LoadBundle(t, "default.yaml")
 	// Skills is yaml:"-" so the YAML cannot supply it. Wire the in-memory
-	// value here so SaveBundle has the same payload the legacy inline
-	// bundle had — adapter.SaveBundle ignores it for the YAML write but
-	// downstream callers may inspect the in-memory shape.
+	// value here so SaveBundle has the full payload — adapter.SaveBundle
+	// ignores Skills for the YAML write, but downstream callers may
+	// inspect the in-memory shape.
 	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go", Description: "Go skill."}}
 	if err := adapter.SaveBundle(configPath, bundle); err != nil {
 		t.Fatalf("SaveBundle = %v", err)

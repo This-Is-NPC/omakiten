@@ -371,9 +371,8 @@ func TestSettingsTemplatesSubRendersColumn(t *testing.T) {
 	model := newEntityModelWithTemplates(t)
 	model.width = 200
 	model.height = 60
-	// In the T2 layout each entity kind owns its own Settings sub. Driving
-	// to Settings › Templates should land us on a single templates column —
-	// the legacy 5-column grid no longer exists.
+	// Each entity kind owns its own Settings sub. Driving to Settings ›
+	// Templates should land on a single templates column.
 	model.top = topSettings
 	model.sub = subSettingsTemplates
 	model.entityKind = entityKindTemplate

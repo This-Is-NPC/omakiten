@@ -50,10 +50,9 @@ type recordedEvent struct {
 // declares (defaultBucket, bucketsByKey entries, ids referenced in
 // allowedFromTo, currentBucketID) becomes a real config.Bucket so
 // BucketByID / BucketByKey / IsFinalBucket / TransitionAllowed / Guards
-// behave the same as they did when the fake implemented the legacy
-// WorkflowRepository contract. Position == ID so finalBucketID picks
-// the bucket with the largest id — that mirrors the historical
-// finalBucketIDs convention used by these tests.
+// behave the same as the production composition root expects.
+// Position == ID so finalBucketID picks the bucket with the largest id —
+// the convention these tests already encoded via finalBucketIDs.
 func (f *fakeStores) Snapshot() *config.Snapshot {
 	seen := map[int64]bool{}
 	var buckets []config.Bucket

@@ -26,7 +26,7 @@ func buildDAGLines(deps []domain.TaskDependency, tasks []domain.Task) []dagLine 
 }
 
 // buildDAGLinesSorted is buildDAGLines with a custom root ordering. When less
-// is nil, roots are ordered by ascending task id (the legacy default). The TUI
+// is nil, roots are ordered by ascending task id (the default). The TUI
 // view layer passes a comparator built from `config.views.graph.sort` so the
 // graph respects the user's preference.
 func buildDAGLinesSorted(deps []domain.TaskDependency, tasks []domain.Task, less func(a, b domain.Task) bool) []dagLine {

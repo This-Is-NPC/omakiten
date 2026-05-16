@@ -25,8 +25,8 @@ type templateDefaultKey struct{ kind, project string }
 
 // activeWorkflow picks the workflow named in `config.workflow.active`,
 // falling back to the first declared workflow when the setting is empty
-// or names an unknown key. Mirrors the legacy SQL resolution path so
-// existing fixtures behave identically through the migration.
+// or names an unknown key. The fallback keeps single-workflow bundles
+// usable without forcing the author to set `workflow.active` explicitly.
 func activeWorkflow(bundle Bundle) (Workflow, bool) {
 	if len(bundle.Workflows) == 0 {
 		return Workflow{}, false

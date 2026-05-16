@@ -149,7 +149,7 @@ WHERE tasks.project_id = ?`
 // taskOrderClause maps a TaskSort to a literal ORDER BY fragment. We never
 // interpolate Field/Order directly into SQL — they are validated against a
 // fixed allowlist here, and unknown values silently fall back to "tasks.id"
-// to keep the legacy ordering as the safe default.
+// as the safe default ordering.
 func taskOrderClause(sort domain.TaskSort) string {
 	column := "tasks.id"
 	switch sort.Field {
