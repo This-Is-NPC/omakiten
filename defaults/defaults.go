@@ -4,5 +4,5 @@ import "embed"
 
 // FS contains the shareable default kit and themes shipped with the binary.
 //
-//go:embed config/*.yaml themes/*.yaml skills/*.md laws/*.md personas/*.md templates/*.md notifications/*.yaml
+//go:embed config/*.yaml themes/*.yaml skills/*.md laws/*.md personas/*.md templates/*.md notifications/*.yaml languages/*.yaml
 var FS embed.FS
