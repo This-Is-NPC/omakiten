@@ -85,5 +85,5 @@ The local development workflow mirrors the production root under `dev_env/`:
 ## See also
 
 - [`reference/path-resolution.md`](./path-resolution.md) — how Omakiten finds `<root>` and the active profile.
-- [`AUTHORING.md`](../AUTHORING.md) — `_generated/` rule and atom-map for docs under `.docs/`.
+- [`AUTHORING.md`](../internal/AUTHORING.md) — `_generated/` rule and atom-map for docs under `.docs/`.
 - [`configuration-guide.md`](../configuration-guide.md) — yaml field reference.

@@ -279,5 +279,5 @@ For deeper detail, fetch the matching guide:
 - `.docs/configuration-guide.md` — every yaml field, semantics, validation rules.
 - `.docs/guards-guide.md` — guard kinds, evaluation order, MCP-prompt guardrails.
 - `.docs/mcp-guide.md` — MCP tool surface, prompt anatomy, token costs.
-- `.docs/data-model-guide.md` — SQLite schema and migration history.
+- `.docs/internal/data-model-guide.md` — SQLite schema and migration history.
 - `.docs/domain-events.md` — `events` table catalog and payload contracts.

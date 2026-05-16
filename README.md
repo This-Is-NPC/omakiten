@@ -117,12 +117,6 @@ The full MCP surface (36 tools, 2 resources, 8 prompts) is documented in the [MC
 
 ## Documentation
 
-**Reference**
-
-- [Architecture & Tech Stack](.docs/architecture.md)
-- [Requirements & Behavior Map](.docs/_generated/requirements.md)
-- [Why Omakiten?](.docs/why_omakiten.md)
-
 **User guides**
 
 - [CLI Guide](.docs/cli-guide.md)
@@ -132,11 +126,19 @@ The full MCP surface (36 tools, 2 resources, 8 prompts) is documented in the [MC
 - [Workflow Guide — presets and authoring your own](.docs/workflow-guide.md)
 - [Workflow Guards Guide](.docs/guards-guide.md)
 - [Theming Guide](.docs/theming-guide.md)
-- [Data Model Guide](.docs/data-model-guide.md)
 - [Domain Events Catalog](.docs/domain-events.md)
 - [Hooks Engine](.docs/hooks.md)
 - [Notifications](.docs/notifications.md)
-- [Integration Guide — wiring hooks](.docs/integration-guide.md)
+- [Why Omakiten?](.docs/why_omakiten.md)
+
+**Contributors / internals**
+
+- [Architecture & Tech Stack](.docs/internal/architecture.md)
+- [Developer Guide](.docs/internal/dev-guide.md)
+- [Data Model Guide](.docs/internal/data-model-guide.md)
+- [Integration Guide — wiring hooks](.docs/internal/integration-guide.md)
+- [Per-project Snapshot architecture](.docs/internal/per-project-snapshot.md)
+- [Requirements & Behavior Map](.docs/_generated/requirements.md)
 
 **Project**
 

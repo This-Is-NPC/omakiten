@@ -711,5 +711,5 @@ Every cited work lives in [`reference/bibliography.md`](./reference/bibliography
 - [`configuration-guide.md`](configuration-guide.md) — every yaml field, semantics, validation rules.
 - [`guards-guide.md`](guards-guide.md) — guard kinds, evaluation order, permissions resolution, operation guards.
 - [`mcp-guide.md`](mcp-guide.md) — MCP tool surface, prompt anatomy, token costs.
-- [`data-model-guide.md`](data-model-guide.md) — SQLite schema and migration history.
+- [`data-model-guide.md`](internal/data-model-guide.md) — SQLite schema and migration history.
 - [`domain-events.md`](domain-events.md) — `events` table catalog and payload contracts.

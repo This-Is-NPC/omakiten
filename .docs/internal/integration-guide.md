@@ -1,14 +1,14 @@
 # Integration Guide — wiring hooks into your workflow
 
-This guide walks you from "I have Omakiten installed" to "a script of mine runs every time event X happens" without writing Go. Hooks subscribe to Omakiten's domain events and dispatch a configured action; the canonical action ships in the kit (`exec`) so anything you can run in a shell can react to a task move, a comment, a guard violation, or any other event in [`domain-events.md`](domain-events.md).
+This guide walks you from "I have Omakiten installed" to "a script of mine runs every time event X happens" without writing Go. Hooks subscribe to Omakiten's domain events and dispatch a configured action; the canonical action ships in the kit (`exec`) so anything you can run in a shell can react to a task move, a comment, a guard violation, or any other event in [`domain-events.md`](../domain-events.md).
 
-If you need the schema reference, the full action contract, or the list of channel gates, see [`hooks.md`](hooks.md). This document is the hands-on path; it points back at the reference for the details you do not need to read first.
+If you need the schema reference, the full action contract, or the list of channel gates, see [`hooks.md`](../hooks.md). This document is the hands-on path; it points back at the reference for the details you do not need to read first.
 
 ---
 
 ## Prerequisites
 
-- Omakiten installed and at least one project registered. If `okt --version` works and `okt project list` shows your project, you are ready. New install? Follow the [README quickstart](../README.md#install).
+- Omakiten installed and at least one project registered. If `okt --version` works and `okt project list` shows your project, you are ready. New install? Follow the [README quickstart](../../README.md#install).
 - A shell (bash / zsh / fish — anything that can read a line from stdin).
 - `jq` — used by every example below to read the JSON event payload from stdin. Optional; you can substitute any JSON parser.
 
@@ -16,7 +16,7 @@ If you need the schema reference, the full action contract, or the list of chann
 
 ## Step 1 — Locate the active profile yaml
 
-See [`reference/path-resolution.md`](./reference/path-resolution.md) for the full resolver contract — `$OMAKITEN_HOME` / XDG / OS defaults, `.active` resolution, `custom/` shadowing, and discovery fallthrough.
+See [`reference/path-resolution.md`](../reference/path-resolution.md) for the full resolver contract — `$OMAKITEN_HOME` / XDG / OS defaults, `.active` resolution, `custom/` shadowing, and discovery fallthrough.
 
 ```bash
 cat "$HOME/.config/omakiten/config/.active"   # prints the active basename (e.g. omakase.yaml)
@@ -44,7 +44,7 @@ config:
 
 Notes:
 
-- `on:` must be one of the event types in [`domain-events.md`](domain-events.md). Typos fail at startup with a `validation_error` pointing at the bad value, so you cannot configure a hook that silently never fires.
+- `on:` must be one of the event types in [`domain-events.md`](../domain-events.md). Typos fail at startup with a `validation_error` pointing at the bad value, so you cannot configure a hook that silently never fires.
 - `argv` is taken **literally**. No shell expansion — write the absolute path of your script there, not `~/scripts/...`.
 - `timeout_ms` is the deadline for your script. Default is `30000` (30 s); shorter is better for hot-path events.
 
@@ -197,7 +197,7 @@ You can comment the YAML block out, or you can shut the channel gate at `config.
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| `okt config show` rejects the bundle with `validation_error` and a path like `config.hooks[0].on` | Event type typo — must match a string in [`domain-events.md`](domain-events.md) | Copy the event name verbatim from the catalog |
+| `okt config show` rejects the bundle with `validation_error` and a path like `config.hooks[0].on` | Event type typo — must match a string in [`domain-events.md`](../domain-events.md) | Copy the event name verbatim from the catalog |
 | Hook never fires; nothing in `hook.executed` | (a) Channel gate closed (`config.events.channels.<event_type>.hook` is `false`); (b) `when:` rules out every event; (c) you forgot to restart after editing the YAML | Check the gate first via `okt config show`; `when:` accepts only top-level payload keys; restart the running runtime |
 | `hook.executed.success = false`, `error: "exec /path/foo failed: …"` | Script exited non-zero or could not run | Run the script manually with the same JSON on stdin: `echo '{}' \| /path/foo` |
 | `hook.executed.error: "exec … timed out after 3s"` | Script crossed `timeout_ms` | Lengthen the timeout, or move the slow part into a background job your script kicks off and returns from |
@@ -214,6 +214,6 @@ You can comment the YAML block out, or you can shut the channel gate at `config.
 
 ## Where to read next
 
-- [`hooks.md`](hooks.md) — schema reference, channel-gate semantics, action contract, and the dispatch lifecycle.
-- [`domain-events.md`](domain-events.md) — full event catalog with payload shapes you can match on.
-- [`configuration-guide.md`](configuration-guide.md) — the surrounding YAML blocks (`config.events.channels`, `config.activity_log`, etc.) that interact with hook dispatch and persistence.
+- [`hooks.md`](../hooks.md) — schema reference, channel-gate semantics, action contract, and the dispatch lifecycle.
+- [`domain-events.md`](../domain-events.md) — full event catalog with payload shapes you can match on.
+- [`configuration-guide.md`](../configuration-guide.md) — the surrounding YAML blocks (`config.events.channels`, `config.activity_log`, etc.) that interact with hook dispatch and persistence.

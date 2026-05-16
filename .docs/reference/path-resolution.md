@@ -85,6 +85,6 @@ Anywhere else returns an error — the file must live under a recognized `config
 
 ## See also
 
-- [`integration-guide.md`](../integration-guide.md) — wiring hooks against a resolved profile.
+- [`integration-guide.md`](../internal/integration-guide.md) — wiring hooks against a resolved profile.
 - [`configuration-guide.md`](../configuration-guide.md) — yaml field reference.
 - `internal/paths/paths.go`, `internal/config/repo_local.go` (project-local discovery), and `internal/config/loader.go` — implementation.
