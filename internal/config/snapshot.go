@@ -187,6 +187,8 @@ type Snapshot struct {
 	priorities []PriorityDefinition
 	severities []SeverityDefinition
 
+	registry *domain.EnumRegistry
+
 	settings Settings
 }
 
@@ -264,8 +266,25 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 	snap.priorities = append(snap.priorities, bundle.Config.Priorities...)
 	snap.severities = append(snap.severities, bundle.Config.Severities...)
 	snap.settings = bundle.Config
+	snap.registry = buildEnumRegistry(bundle)
 
 	return snap
+}
+
+// buildEnumRegistry inflates the bundle's priority/severity tables into the
+// per-project EnumRegistry. Built once at BuildSnapshot time so every app
+// service that resolves priority or severity labels reads through the same
+// immutable instance — no separate registry plumbing escapes the snapshot.
+func buildEnumRegistry(bundle Bundle) *domain.EnumRegistry {
+	priorityPairs := make([]domain.PriorityPair, len(bundle.Config.Priorities))
+	for i, p := range bundle.Config.Priorities {
+		priorityPairs[i] = domain.PriorityPair{ID: p.ID, Value: p.Value, Default: p.Default}
+	}
+	severityPairs := make([]domain.SeverityPair, len(bundle.Config.Severities))
+	for i, s := range bundle.Config.Severities {
+		severityPairs[i] = domain.SeverityPair{ID: s.ID, Value: s.Value, Default: s.Default}
+	}
+	return domain.NewEnumRegistry(priorityPairs, severityPairs)
 }
 
 // Workflow returns the active workflow with its inflated buckets and
@@ -464,9 +483,11 @@ func (s *Snapshot) Settings() Settings {
 }
 
 // Synonyms returns a fresh copy of the configured tag synonym map
-// (alias → canonical). Nil when the bundle declares no synonyms.
+// (alias → canonical). Nil when the receiver is nil or the bundle
+// declares no synonyms — app services that capture a *Snapshot at
+// construction can call this without an explicit nil check.
 func (s *Snapshot) Synonyms() map[string]string {
-	if len(s.settings.TagSynonyms) == 0 {
+	if s == nil || len(s.settings.TagSynonyms) == 0 {
 		return nil
 	}
 	out := make(map[string]string, len(s.settings.TagSynonyms))
@@ -478,8 +499,11 @@ func (s *Snapshot) Synonyms() map[string]string {
 
 // Stopwords returns a fresh copy of the configured search stopword
 // list. The slice carries the lowercase tokens the similar-task ranker
-// drops before scoring overlap.
+// drops before scoring overlap. Nil when the receiver is nil.
 func (s *Snapshot) Stopwords() []string {
+	if s == nil {
+		return nil
+	}
 	return append([]string(nil), s.settings.Search.Stopwords...)
 }
 
@@ -495,6 +519,14 @@ func (s *Snapshot) Hooks() []HookSpec {
 // log/broadcast/hook gating.
 func (s *Snapshot) Events() EventsSettings {
 	return s.settings.Events
+}
+
+// Registry returns the per-project EnumRegistry built at BuildSnapshot time
+// from the bundle's priority and severity tables. App services that resolve
+// priority or severity labels read through this single instance — there is
+// no separate registry pointer threaded alongside the snapshot.
+func (s *Snapshot) Registry() *domain.EnumRegistry {
+	return s.registry
 }
 
 // ContextSettings returns the resolved context-window block. Used by
