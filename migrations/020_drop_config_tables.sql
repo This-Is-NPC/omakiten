@@ -11,15 +11,33 @@
 -- Templates and notifications never had SQL tables — they live in the
 -- bundle entirely. tasks.bucket_id keeps its INTEGER storage so the
 -- task row can still reference a bucket by id, but the FK pointing at
--- workflow_buckets is removed: the provider snapshot resolves the
--- id↔key mapping post-migration. Backfill is intentionally a no-op —
--- the bundle YAML is the canonical source, and users are advised to
--- back up the `.db` before upgrading (documented in `.docs/`).
+-- workflow_buckets is removed: the per-project Snapshot built from
+-- YAML resolves bucket lookups going forward.
+--
+-- ID rebind: tasks.bucket_id holds the SQL-era workflow_buckets.id
+-- (the autoincrement PK assigned by past imports), a value the
+-- post-drop Snapshot will not know about. The fix is self-contained
+-- in SQL: workflow_buckets.local_id stores the bundle-declared bucket
+-- id — the same id the YAML resolves to and the Snapshot indexes by.
+-- Rewriting `tasks.bucket_id ← workflow_buckets.local_id WHERE
+-- workflow_buckets.id = tasks.bucket_id` snaps every task onto the
+-- value Snapshot.BucketByID will find post-migration. Tasks that
+-- already pointed at an unknown bucket (orphan rows from earlier
+-- workflow swaps) are left untouched and surface through the standard
+-- orphan-migration flow on the next workflow rebuild.
 --
 -- The migration touches FK-bearing rows so we defer FK checks for the
 -- duration; SQLite enforces them at COMMIT instead of per-statement.
 
 PRAGMA defer_foreign_keys = ON;
+
+-- ----- tasks.bucket_id rebind: SQL pk → YAML-declared local_id -----
+-- Run before the workflow_buckets drop so the join is still available.
+UPDATE tasks
+   SET bucket_id = (
+        SELECT local_id FROM workflow_buckets WHERE workflow_buckets.id = tasks.bucket_id
+   )
+ WHERE bucket_id IN (SELECT id FROM workflow_buckets);
 
 -- ----- tasks rebuild: drop FK to workflow_buckets -----
 -- The FK is the only blocker preventing workflow_buckets from being
