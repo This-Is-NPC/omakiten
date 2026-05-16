@@ -296,10 +296,17 @@ func BuildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 }
 
 func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configstore.Adapter, bus events.Bus, configPath string, projectID int64, selector agent.ProjectSelector) (*ProjectRuntime, error) {
-	bundle, _, enumRegistry, err := app.NewConfigService(cs).Import(ctx, configPath)
+	bundle, bundleHash, enumRegistry, err := app.NewConfigService(cs).Import(ctx, configPath)
 	if err != nil {
 		return nil, err
 	}
+	// Emit the bundle.imported audit event so hooks subscribed to
+	// configuration content changes continue to fire after Round-2
+	// retired Store.ImportBundle. Failure to record the audit row is
+	// non-fatal — the snapshot still loads and the runtime still
+	// boots — so the runtime composition root logs nothing and
+	// proceeds even when telemetry gating drops the event.
+	_ = store.EmitBundleImported(ctx, bundle, configPath, bundleHash)
 
 	// Build the per-project Snapshot up front so every downstream wire —
 	// notification catalog, hooks engine, agent service — reads from the
