@@ -368,12 +368,12 @@ Pressing `e` on the comment-view overlay flips the **same overlay** into a dedic
 |---|---|
 | `↑ ↓` · `j k` | move (auto-scrolls) |
 | `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
-| `enter` | apply (theme: hot-reload; config: restart required; default: clears prior owner) |
+| `enter` | apply (theme: hot-reload; config: hot-reload via `BundleCache.Reload`; default: clears prior owner) |
 | `esc` | cancel |
 
 ## File-backed editing — the `$EDITOR` shellout
 
-For skills, laws, personas, and templates, "new" and "edit" actions in **Settings** shell out to the resolved editor (`$EDITOR` → `$VISUAL` → `nano`, in that order; `internal/app/editor.go:ResolveEditor`). When the editor exits successfully, the bundle is re-imported through `app.BundleEditor.Apply` so the SQLite read-model reflects the on-disk change.
+For skills, laws, personas, and templates, "new" and "edit" actions in **Settings** shell out to the resolved editor (`$EDITOR` → `$VISUAL` → `nano`, in that order; `internal/app/editor.go:ResolveEditor`). When the editor exits successfully, the bundle is re-imported through `app.BundleEditor.Apply` so the in-memory `*config.Snapshot` (and the per-project `ProjectRuntime` cache entry) reflect the on-disk change — migration 020 removed the SQL config mirror, so no rows are written by the reimport beyond the `bundle.imported` audit event.
 
 Two consequences worth knowing:
 

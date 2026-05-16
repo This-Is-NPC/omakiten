@@ -1,6 +1,6 @@
 # How to Configure the Active Profile YAML
 
-The active profile yaml is the canonical write-model: every field below is parsed by `internal/config/loader.go` and validated by `internal/config/validator.go` before being imported into SQLite. YAML decoding uses `KnownFields(true)`, so unknown fields fail loud rather than silently. The embedded canonical kit ships as `defaults/config/omakase.yaml`; it is materialized into the user's `<config-dir>/` on first run alongside the other official presets (`izakaya.yaml`, `kaiseki.yaml`, `shokunin.yaml`).
+The active profile yaml is the canonical source of truth: every field below is parsed by `internal/config/loader.go` and validated by `internal/config/validator.go`, then `config.BuildSnapshot(bundle)` materialises the immutable `*config.Snapshot` every app service reads through. Migration 020 dropped every SQL config table; the runtime no longer mirrors the bundle into SQLite — only the `bundle.imported` audit event is recorded. YAML decoding uses `KnownFields(true)`, so unknown fields fail loud rather than silently. The embedded canonical kit ships as `defaults/config/omakase.yaml`; it is materialized into the user's `<config-dir>/` on first run alongside the other official presets (`izakaya.yaml`, `kaiseki.yaml`, `shokunin.yaml`).
 
 The active runtime path is, in precedence (`internal/paths/paths.go`):
 
@@ -263,7 +263,7 @@ To rename `"high"` to `"critical"` instead, change only the `value:` on entry id
 
 ### `config.severities`
 
-Configurable id↔value table for law severities. Same shape and contract as `config.priorities` — code references the integer id (`tasks.severity_id` after migration 016 for laws is stored similarly), renderers (TUI badge, MCP `severity` field, JSON marshaling) resolve the human label via this table at the boundary. Renaming a label is a single YAML edit; existing law rows keep their stored `severity_id` so nothing breaks at the data layer.
+Configurable id↔value table for law severities. Same shape and contract as `config.priorities` — code references the integer id, and renderers (TUI badge, MCP `severity` field, JSON marshaling) resolve the human label via this table at the boundary. Migration 016 briefly persisted `laws.severity_id` in SQL, but migration 020 dropped the `laws` table along with every other config table — severities now live on law frontmatter (`severity: <label>`) and the bundle loader resolves the label to its integer id at parse time. Renaming a label is a single YAML edit; existing in-memory law entries pick up the new label on the next bundle reload.
 
 ```yaml
 config:
@@ -289,7 +289,7 @@ config:
 
 Validator rules: positive unique ids, non-empty unique values, ≤1 default, ascending id order. Errors mirror the priority validator's shape (`config.severities: id 2 declared twice...`).
 
-Adding a `{id: 4, value: blocker, color: error}` entry makes `severity: blocker` a valid frontmatter value; no code change needed. Renaming `"error"` to `"critical"` updates how the badge is rendered for every existing law on the next read — `severity_id` storage absorbs the change.
+Adding a `{id: 4, value: blocker, color: error}` entry makes `severity: blocker` a valid frontmatter value; no code change needed. Renaming `"error"` to `"critical"` updates the badge for every law on the next bundle reload — the frontmatter `severity:` field is re-resolved against the active registry on every load.
 
 ### `config.views`
 

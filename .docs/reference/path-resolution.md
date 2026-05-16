@@ -1,15 +1,16 @@
 # Path Resolution
 
-Canonical write-up of how Omakiten finds its config root, the active yaml profile, and entity overrides. Implementation in `internal/paths/paths.go`.
+Canonical write-up of how Omakiten finds its config root, the active yaml profile, and entity overrides. Implementation in `internal/paths/paths.go` and `internal/config/repo_local.go` (walk-up discovery of `.omakiten/`).
 
 ## ConfigRoot precedence
 
 In order, first match wins:
 
 1. **`--config <path>` flag** (CLI-level) — pin to a specific yaml file. Skips resolver entirely; the directory containing the file is treated as `<root>/config/`.
-2. **<a id="omakiten-home"></a>`$OMAKITEN_HOME`** env var — pins config + data + entity overrides under one directory. Layout: `$OMAKITEN_HOME/{config,data}/...` plus entity folders as siblings.
-3. **`$XDG_CONFIG_HOME`** env var — `$XDG_CONFIG_HOME/omakiten`.
-4. **OS default** — `~/.config/omakiten` (Linux / macOS); equivalent under Windows.
+2. **<a id="repo-local"></a>Project-local `.omakiten/`** — `config.FindRepoLocal(startDir)` walks up from the current working directory (CLI / MCP) or the project's `root_path` (`agentruntime.Open`) looking for a `.omakiten/` directory. When found, that directory becomes `<root>` for this invocation — full config + entity layout, distinct per project, committed alongside the repo. The walk stops at `$HOME` and at the filesystem root, so accidental hits in unrelated parents are not picked up. SQLite data stays at the user-global path; only the config side is repo-local.
+3. **<a id="omakiten-home"></a>`$OMAKITEN_HOME`** env var — pins config + data + entity overrides under one directory. Layout: `$OMAKITEN_HOME/{config,data}/...` plus entity folders as siblings.
+4. **`$XDG_CONFIG_HOME`** env var — `$XDG_CONFIG_HOME/omakiten`.
+5. **OS default** — `~/.config/omakiten` (Linux / macOS); equivalent under Windows.
 
 ## `<root>` layout
 
@@ -86,4 +87,4 @@ Anywhere else returns an error — the file must live under a recognized `config
 
 - [`integration-guide.md`](../integration-guide.md) — wiring hooks against a resolved profile.
 - [`configuration-guide.md`](../configuration-guide.md) — yaml field reference.
-- `internal/paths/paths.go` and `internal/config/loader.go` — implementation.
+- `internal/paths/paths.go`, `internal/config/repo_local.go` (project-local discovery), and `internal/config/loader.go` — implementation.
