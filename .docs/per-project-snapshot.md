@@ -234,3 +234,60 @@ moving the methods *out of the Store* yields config in-memory inside
 a SQL adapter — a hybrid with neither invariant's benefit. The actual
 win (per-project isolation, concurrency safety) only materialises when
 both invariants hold together.
+
+## Appendix — #117 drift-closed addendum
+
+A self-review after the initial close discovered seven additional
+deviations from the spec letter. They are listed here so the next
+reader can trace what was fixed and why each fix was structurally
+forced (not "cosmetic"):
+
+1. **GuardEvaluator extracted into `internal/app/guards/`.** Spec
+   commit 2 named the package and the `NewGuardEvaluator(snap, repo,
+   events)` constructor. The transition / operation guard logic
+   moved wholesale out of `WorkflowService`; the service composes
+   the evaluator and forwards facade methods
+   (`EmitGuardViolated`, `EvaluateOperationGuards`) so existing
+   callers (TaskService, CommentService, TUI render paths) keep
+   their call shape.
+2. **`NewTemplateService` captures `*config.Snapshot`.** Spec
+   commit 3 lists `template_service` alongside the other
+   Snapshot-consuming services. The field is currently unused at
+   the write sites but keeps the API symmetric for future read-back
+   paths.
+3. **`NotificationService` consumes `Snapshot`.** Spec commit 3
+   also names `notification_service`. The runtime composition root
+   used to read `bundle.Notifications` directly; routing the read
+   through the new service closes the last `bundle.*` read in the
+   hot wiring path and keeps notification rotation in lockstep with
+   `cache.Reload`.
+4. **`NewOrphanService` takes `*config.Snapshot` directly.** Spec
+   commit 3 mandates the concrete type rather than the looser
+   `domain.BucketResolver` interface. Snapshot already satisfies
+   the resolver shape, so the repository contract was unchanged.
+5. **`SetPreviousSnapshot` dropped.** Spec commit 5 lists exactly
+   one snapshot setter on `agent.Service`. The previous snapshot
+   belongs on `ProjectRuntime`, not on the service. The runtime
+   composition root now builds the OrphanService with both snapshot
+   pointers and injects it via `SetOrphanService` — one setter
+   swapped for another, but the new shape carries a fully-wired app
+   service (the pattern spec commit 5 called "builders pass it to
+   app services") instead of a raw state pointer.
+6. **`Repositories.Snapshot` test override removed.** Spec commit 8
+   routes every per-project view through `rt.Snapshot()`. The TUI
+   field was a test-only escape hatch — the precise pattern the
+   drift retrospective called out as load-bearing. Tests now wire a
+   real `BundleCache` via `testfixtures/runtimecache.Install`;
+   `rotateSnapshotAfterEdit` falls back to `cache.Install` when
+   `cache.Reload` cannot run (test caches built without
+   store/configstore/bus) so the cache remains the single source of
+   truth in tests too.
+7. **`internal/sqlite/workflows.go` ≤ 80 LOC.** Spec acceptance
+   criterion. The two pure bucket-key/id resolver helpers that
+   touched no state moved into `internal/sqlite/bucket_resolver.go`;
+   workflows.go drops to 55 LOC carrying only state primitives.
+
+Net surface change: zero new public setters (one added, one
+deleted), zero new public types beyond the spec-named `guards`
+package and `NotificationService`. Every `bundle.*` read in the
+runtime composition root now flows through the Snapshot pointer.
