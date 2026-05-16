@@ -36,7 +36,7 @@ After 009, three tables that older code referenced (`comments`, `comment_tags`, 
 
 ## Current schema (post-021)
 
-The live schema contains exactly nine tables of operational state plus `schema_migrations`:
+The live schema contains twelve tables of operational state plus `schema_migrations`:
 
 ```
 schema_migrations      tags

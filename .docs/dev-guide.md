@@ -50,7 +50,9 @@ Every task is defined in `.mise.toml` at the repo root. Run with `mise run <name
 | `test` | `go test ./...`. |
 | `lint` | `golangci-lint run` against `.golangci.yml`. |
 | `vuln` | `govulncheck ./...`. |
-| `check` | **PR gate.** Depends on `test`, `lint`, `vuln`. |
+| `check` | **PR gate.** Depends on `test`, `lint`, `vuln`, `docs:check`. |
+| `docs:refresh` | Runs `go run ./cmd/okt-docs-refresh --root .` to regenerate every embed-fed `.docs/_generated/` page from the live bundle. |
+| `docs:check` | Same binary with `--check` — exits non-zero on drift; the CI gate runs this. |
 
 ### Install & local state
 
@@ -63,7 +65,9 @@ Every task is defined in `.mise.toml` at the repo root. Run with `mise run <name
 | `uninstall` | Removes `~/.local/bin/okt` and the shell wrapper. **Does not** touch config or data. |
 | `purge` | Wipes `~/.config/omakiten` and `~/.local/share/omakiten`. Use after `uninstall` for a fresh-machine simulation. |
 | `dev:sync` | Mirrors `defaults/` into `dev_env/` (overwrites root, leaves `dev_env/custom/`). |
-| `tui` | Runs the TUI against an isolated `dev_env/` (`OMAKITEN_HOME=dev_env`) — useful for trying changes without touching your real Omakiten state. |
+| `dev:install` | `dev:sync` + builds `bin/okt` and runs `okt init` against the dev-env so the binary works against `OMAKITEN_HOME=dev_env` without touching real state. |
+| `tui` | Runs the TUI against an isolated `dev_env/` (`OMAKITEN_HOME=dev_env`) — useful for trying changes without touching your real Omakiten state. Depends on `dev:install`. |
+| `mcp:prompts` | Resolves every `okt-*` MCP prompt against the dev-env bundle and prints the composed markdown — handy for previewing what an agent receives without an MCP client. Depends on `dev:sync`. |
 
 ### Selecting MCP harnesses non-interactively
 
@@ -80,21 +84,31 @@ In headless contexts (CI, no `/dev/tty`) the prompt is skipped silently — no h
 ## Project Layout
 
 ```
-cmd/okt/                 main entry point
+cmd/                     entry points (okt, okt-docs-refresh, …)
 internal/
   domain/                pure types (no adapter imports)
   app/                   application services, ports
   agent/                 protocol-neutral agent intent layer
-  agentruntime/          composition root (DB, config, paths)
-  agentsetup/            MCP harness writer (claude, opencode, crush, copilot, codex)
+  agentruntime/          composition root (DB, config, paths, BundleCache)
+  agentsetup/            MCP harness writer (claude-code, claude-desktop, opencode, crush, github-copilot, codex)
   cli/                   cobra commands (delegates to app)
   mcp/                   MCP adapter (delegates to agent.Service)
   tui/                   bubbletea terminal UI
-  sqlite/                sqlite-backed adapters
-  configstore/           filesystem-backed config adapter
+  sqlite/                sqlite-backed operational adapter (state only post-020)
+  configstore/           filesystem-backed config adapter (bundle YAML + entity .md)
+  config/                bundle types, loader, validator, snapshot, repo-local discovery
+  activity/              context-bound tool-call tracker (events/operation rows)
   arch/                  hexagonal-boundary enforcement test
+  events/                in-process event bus
+  graph/                 dependency cycle/DAG helpers
+  hooks/                 hooks engine + actions registry
+  output/                CLI/MCP response envelopes
+  paths/                 ConfigRoot / data-root resolver
+  project/               active-project resolver
+  testfixtures/          shared YAML-loader for tests
+  token/                 token estimation
 defaults/                ships into ~/.config/omakiten on first run
-migrations/              SQLite schema migrations
+migrations/              SQLite schema migrations (001 … 021)
 scripts/                 install / uninstall / wrapper helpers + tests
 ```
 
