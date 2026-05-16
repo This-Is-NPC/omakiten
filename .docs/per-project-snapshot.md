@@ -291,3 +291,49 @@ Net surface change: zero new public setters (one added, one
 deleted), zero new public types beyond the spec-named `guards`
 package and `NotificationService`. Every `bundle.*` read in the
 runtime composition root now flows through the Snapshot pointer.
+
+## Appendix — Round-2 drift-closed
+
+A second self-review (review round 2) flagged three remaining
+violations of the spec letter on `SetXxx` methods that survived the
+first close as "test escape hatches" — the exact rationale the #110
+retrospective called out as load-bearing. Round-2 deleted them and
+folds the closures back into `SetSnapshot`:
+
+1. **`agent.Service.SetSynonyms` / `SetStopwords` / `SetRegistry`
+   deleted.** Spec commit 5 listed all three for deletion under the
+   "tudo deriva de Snapshot" rule. `Snapshot` now carries a
+   pre-built `*domain.EnumRegistry` (built once at `BuildSnapshot`
+   from the bundle's priority + severity tables). `SetSnapshot`
+   derives the registry along with the catalog closures, synonym
+   table, and stopword set — production composition collapses to a
+   single call.
+2. **`app.WorkflowService.SetRegistry` deleted.** Hot-reload no
+   longer mutates the long-lived service through a setter; the cache
+   rebuild produces a fresh `*WorkflowService` bound to the rotated
+   Snapshot (stored on `ProjectRuntime.Workflow`) and `reloadBundle`
+   swaps the TUI pointer at the same moment the rest of the
+   snapshot-derived state rotates.
+3. **`CommentService` / `TagService` / `ErrorService.SetSynonyms`
+   deleted.** Constructors take `*config.Snapshot` directly; the
+   services read `snap.Synonyms()` lazily. Two projects holding two
+   snapshots get two synonym tables without any post-construction
+   plumbing.
+
+A fourth deviation — `TestConcurrentAgentsDifferentProjects`
+exercising only snapshot map reads rather than real
+`WorkflowService.MoveTask` cross-project — was closed by a new test
+in `internal/app/guard_isolation_test.go`. Two snapshots over the
+same workflow shape diverge on the guard list (A carries a
+`comments_min` guard with count=99 that always trips; B carries
+none); 64 goroutines per project run `MoveTask` in parallel under
+`-race` and assert that every A call fails with `ErrGuardViolation`
+while every B call succeeds. If A's guard list bled into B's
+evaluator, every B call would also fail — the assertion would catch
+the leak before the race detector even ran.
+
+Net Round-2 surface change: three public setters deleted (zero
+added), one new constructor parameter (`*config.Snapshot`) on three
+already-snap-adjacent services, one new field on `ProjectRuntime`
+(`Workflow`). No production caller threads any setter outside the
+single `SetSnapshot` entry point.
