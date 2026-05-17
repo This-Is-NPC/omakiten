@@ -115,7 +115,7 @@ func (m Model) updateTemplateDefaultPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	m.entityPicker, cmd = m.entityPicker.Update(msg, rowCount, scrollDataRows(m.pickerViewportRows()))
 	switch m.entityPicker.LastEvent() {
 	case picker.EventCancel:
-		m.closeEntityScreen("Default picker cancelled")
+		m.closeEntityScreen(m.t("tui.status.default_picker_cancelled"))
 	case picker.EventSelect:
 		if m.entityPicker.Cursor < 0 || m.entityPicker.Cursor >= rowCount {
 			return m, cmd

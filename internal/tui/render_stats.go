@@ -37,7 +37,7 @@ func (m Model) statsPeriodIdx() int {
 
 func (m Model) renderStats() string {
 	if m.repos.Metrics == nil {
-		return m.renderPanel("Metrics repository not available.")
+		return m.renderPanel(m.t("tui.empty.metrics_unavailable"))
 	}
 
 	// Top block: project Totals + Tokens as two bordered tables. Lives

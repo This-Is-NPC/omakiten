@@ -471,7 +471,7 @@ func (m *Model) saveBlockerPicker() {
 		m.status = err.Error()
 		return
 	}
-	m.closeBlockerPicker("Blockers saved")
+	m.closeBlockerPicker(m.t("tui.status.blockers_saved"))
 }
 
 // armOrConfirmTaskDelete is the arm-then-confirm gate for hard task deletion.
@@ -582,7 +582,7 @@ func (m Model) renderTaskScreen() string {
 	}
 	switch m.taskScreen {
 	case taskScreenCreate:
-		return m.renderTaskForm("New task")
+		return m.renderTaskForm(m.t("tui.kicker.new_task"))
 	case taskScreenEdit:
 		// Mirrors the comment-edit kicker pattern (`Edit comment · #N`)
 		// so both write surfaces read as the same shape.
@@ -597,7 +597,7 @@ func (m Model) renderTaskScreen() string {
 func (m Model) renderTaskView() string {
 	task, ok := m.activeTask()
 	if !ok {
-		return m.renderPanel("Task not found. Refresh with r or return to the board.")
+		return m.renderPanel(m.t("tui.empty.task_not_found_refresh"))
 	}
 	blockers := m.blockersForTask(task.ID)
 

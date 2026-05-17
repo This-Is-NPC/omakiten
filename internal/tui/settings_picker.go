@@ -200,7 +200,7 @@ func (m Model) updateThemePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.entityPicker, cmd = m.entityPicker.Update(msg, len(m.themePickerOptions), scrollDataRows(m.pickerViewportRows()))
 	switch m.entityPicker.LastEvent() {
 	case picker.EventCancel:
-		m.closeEntityScreen("Theme picker cancelled")
+		m.closeEntityScreen(m.t("tui.status.theme_picker_cancelled"))
 	case picker.EventSelect:
 		// Evaluate the side-effecting call before reading m for the return
 		// tuple — Go does not specify the order of non-function operands

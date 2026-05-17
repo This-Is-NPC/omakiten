@@ -90,7 +90,7 @@ func (m Model) logsViewportRows() int {
 
 func (m Model) renderLogs() string {
 	if m.repos.ActivityLogs == nil {
-		return m.renderPanel("Activity logging is not available for this project.")
+		return m.renderPanel(m.t("tui.empty.activity_logging_unavailable"))
 	}
 	if len(m.logs) == 0 {
 		return m.renderPanel(m.t("tui.empty.logs"))

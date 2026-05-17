@@ -86,7 +86,7 @@ func newDependRemoveCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().Int64VarP(&on, "on", "i", 0, "dependency task id")
+	cmd.Flags().Int64VarP(&on, "on", "i", 0, opts.t("cli.depend.flag.on"))
 	_ = cmd.MarkFlagRequired("on")
 	return cmd
 }
