@@ -23,7 +23,19 @@ curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install
 irm https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.ps1 | iex
 ```
 
-The installer asks which AI agents you use and wires Omakiten into each via MCP — see the [MCP Guide](.docs/mcp-guide.md#setup) for the harness list and re-running setup later. It also asks which workflow preset to activate (defaults to `omakase`); pick a different one with `OKT_PRESET=<name>` or via the interactive prompt — see [Workflow Presets](#workflow-presets) below. Then register your first project:
+After downloading the binary the installer hands off to `okt setup`, an arrow-key bubbletea picker that walks you through CLI language → TUI language → agent output language → workflow preset → MCP harnesses. Re-run any time with `okt setup --update` to revisit your choices; existing rc-file wrapper and `omakiten.yaml` settings are preserved.
+
+For headless installs (CI, Dockerfile, dotfiles) pre-supply the five inputs and the picker stays silent:
+
+| Env var          | Skips the picker for             |
+|------------------|----------------------------------|
+| `OKT_CLI_LANG`   | CLI language (e.g. `en`, `pt-br`) |
+| `OKT_TUI_LANG`   | TUI language (defaults to CLI)    |
+| `OKT_AGENT_LANG` | Agent output language (free-form) |
+| `OKT_PRESET`     | Workflow preset (default `omakase`) |
+| `OKT_HARNESSES`  | MCP harnesses (CSV of names or indices; `0` skips harness setup) |
+
+See the [MCP Guide](.docs/mcp-guide.md#setup) for the harness list and [Workflow Presets](#workflow-presets) for preset semantics. Then register your first project:
 
 ```bash
 okt init --name MyProject --slug my-project

@@ -20,7 +20,7 @@ go build -ldflags "-X main.version=${version}" -o bin/okt ./cmd/okt
 '''
 
 [tasks.install]
-description = "Build and install okt locally, then initialize production-like user state"
+description = "Build and install okt locally, then run `okt setup` for production-like user state"
 depends = ["build"]
 run = '''
 if [ -z "${HOME:-}" ]; then
@@ -30,14 +30,6 @@ fi
 installed_at="$HOME/.local/bin/okt"
 install -Dm755 bin/okt "$installed_at"
 "$PWD/scripts/sync-defaults.sh" "$HOME/.config/omakiten"
-
-# Mirror the curl|bash workflow-preset prompt for the local install flow.
-# OKT_PRESET=<name> skips the prompt; non-interactive shells pick the
-# default (omakase) silently. Writes <preset>.yaml to <config-dir>/.active
-# so the subsequent okt init resolves the chosen preset.
-"$PWD/scripts/preset-select.sh"
-
-"$installed_at" init --name Omakiten --slug omakiten --root "$PWD"
 
 # Catch stale copies of okt that PATH resolves before $HOME/.local/bin —
 # typically left over from a previous `go install ./cmd/okt`. Without this
@@ -50,16 +42,13 @@ if [ -n "$on_path" ] && [ "$on_path" != "$installed_at" ]; then
   printf '       e.g. rm %s\n\n' "$on_path" >&2
 fi
 
-# Install (or refresh) the okt() shell wrapper that lets `okt tui`
-# cd the parent shell into the project chosen on the Home screen.
-# Idempotent — safe to re-run on every `mise run install`.
-"$PWD/scripts/install-wrapper.sh"
+# Run `okt setup` to bind preset + shell-rc wrapper + MCP harnesses in
+# one shot. Honours every OKT_* env var the curl|bash installer
+# documents; an interactive shell still drops into the bubbletea picker
+# for any input left unsupplied.
+"$installed_at" setup
 
-# Mirror the curl|bash interactive prompt: offer to wire up MCP for any
-# of the supported AI agents (codex, claude-code, opencode, crush,
-# github-copilot, claude-desktop). Skipped silently in headless shells;
-# OKT_HARNESSES=name1,name2 pre-selects without prompting.
-"$PWD/scripts/harness-select.sh" "$installed_at"
+"$installed_at" init --name Omakiten --slug omakiten --root "$PWD"
 '''
 
 [tasks."dev:sync"]
@@ -71,9 +60,9 @@ mkdir -p dev_env
 
 [tasks."dev:install"]
 description = "Simulate a fresh omakiten install into dev_env/ — sync defaults, then pin .active to a stock preset so the resolver never falls back to a stale custom/<name>.yaml"
-env = { OMAKITEN_HOME = "dev_env", OKT_PRESET = "omakase" }
-depends = ["dev:sync"]
-run = '"$PWD/scripts/preset-select.sh"'
+env = { OMAKITEN_HOME = "dev_env", OKT_PRESET = "omakase", OKT_CLI_LANG = "en", OKT_TUI_LANG = "en", OKT_AGENT_LANG = "en", OKT_HARNESSES = "0" }
+depends = ["dev:sync", "build"]
+run = '"$PWD/bin/okt" setup --skip-wrapper --skip-harnesses'
 
 [tasks."install:mcp:claude"]
 description = "Install Omakiten MCP server into Claude Code config"

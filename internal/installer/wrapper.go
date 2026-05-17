@@ -20,10 +20,10 @@ const (
 )
 
 // wrapperBody is the literal okt() shell function written between the
-// sentinels. Keep in sync with install.sh's install_wrapper_into and
-// scripts/install-wrapper.sh — wrapper_idempotency_test.sh re-runs the
-// install and counts sentinels, so any drift here without matching the
-// shell writer will surface as a duplicate-block failure.
+// sentinels. The bash and PowerShell installer wrappers only ever
+// write this block via the Go installer now — scripts/wrapper_idempotency_test.sh
+// builds the binary and re-runs `okt setup` against a seeded rc to
+// confirm a second install lands the same bytes.
 const wrapperBody = `# Auto-installed by omakiten. Lets ` + "`okt tui`" + ` cd the parent shell
 # into the project chosen on the Home screen when the TUI exits.
 # Remove with the bundled uninstall.sh; do not edit by hand.

@@ -58,7 +58,7 @@ Every task is defined in `.mise.toml` at the repo root. Run with `mise run <name
 
 | Task | What it does |
 |---|---|
-| `install` | `build` → installs `bin/okt` to `$HOME/.local/bin/okt`, syncs `defaults/` into `$HOME/.config/omakiten`, runs `okt init` against the repo, installs the `okt()` shell wrapper, and runs the same interactive MCP-harness multi-select that `curl|bash` users get (via `scripts/harness-select.sh`). |
+| `install` | `build` → installs `bin/okt` to `$HOME/.local/bin/okt`, syncs `defaults/` into `$HOME/.config/omakiten`, then runs `okt setup` (the same bubbletea picker `curl\|bash` users get; honours every `OKT_*` env var). Finishes with `okt init` against the repo. |
 | `install:mcp:claude` | `build` → wires the local `bin/okt` into Claude Code's MCP config (`~/.claude.json`). |
 | `install:mcp:claude-desktop` | Same, for Claude Desktop. |
 | `install:mcp:opencode` | Same, for OpenCode. |
@@ -297,11 +297,11 @@ WARN: PATH resolves okt to /home/you/go/bin/okt, not /home/you/.local/bin/okt.
 
 Fix: delete the stale binary or reorder PATH so `$HOME/.local/bin` precedes `$GOPATH/bin`.
 
-### The interactive prompt didn't appear in `mise run install`
+### The interactive picker didn't appear in `mise run install`
 
 Two possible causes:
-1. `OKT_HARNESSES` is set in your environment — the env override skips the prompt and pre-selects whatever it names.
-2. You're in a non-interactive shell (no controlling terminal). `scripts/harness-select.sh` skips silently in that case. To force it, run interactively or set `OKT_HARNESSES` explicitly.
+1. One or more `OKT_*` env vars are set in your environment — each var skips its own picker screen, and when all five are set (`OKT_CLI_LANG`, `OKT_TUI_LANG`, `OKT_AGENT_LANG`, `OKT_PRESET`, `OKT_HARNESSES`) `okt setup` runs headlessly.
+2. You're in a non-interactive shell (no controlling terminal). `okt setup` falls back to the env-var contract and surfaces a `validation_error` if any input is still missing. To force the picker, run interactively or pre-supply the values.
 
 ### `golangci-lint` complains about an import that `go vet` accepts
 
