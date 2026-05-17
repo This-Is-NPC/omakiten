@@ -63,6 +63,7 @@ func (m *Model) reloadBundle(path string) error {
 	// to the rotated Snapshot; swap the long-lived TUI reference at the
 	// same point the rest of the snapshot-derived state rotates.
 	m.repos.Workflow = pr.Workflow
+	m.repos.Catalog = snap.Catalog(config.SurfaceTUI)
 	m.notifications = snap.Notifications()
 	m.tokenBadgeYellow, m.tokenBadgeRed = settings.TUI.TokenBadge.Effective()
 
