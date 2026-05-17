@@ -373,16 +373,16 @@ func (m Model) renderHomeEmptyHint() string {
 func (m Model) homeFooterTokens() []footerToken {
 	if len(m.homeProjects) == 0 {
 		return []footerToken{
-			{key: "q", label: "quit"},
-			helpToken(),
+			{key: "q", label: m.t("tui.footer.quit")},
+			m.helpToken(),
 		}
 	}
 	return []footerToken{
-		{key: "enter", label: "open", primary: true},
-		{key: "up/down", label: "move"},
-		{key: "ctrl+h", label: "refresh"},
-		{key: "q", label: "quit"},
-		helpToken(),
+		{key: "enter", label: m.t("tui.footer.open"), primary: true},
+		{key: "up/down", label: m.t("tui.footer.move")},
+		{key: "ctrl+h", label: m.t("tui.footer.refresh")},
+		{key: "q", label: m.t("tui.footer.quit")},
+		m.helpToken(),
 	}
 }
 
