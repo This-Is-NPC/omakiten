@@ -47,7 +47,7 @@ func newConfigCommand(opts *runtimeOptions) *cobra.Command {
 		Short: opts.t("cli.config.presets.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(context.Context) (any, error) {
-				return map[string]any{"presets": config.ListPresets()}, nil
+				return map[string]any{"presets": resolvedPresets(opts)}, nil
 			})
 		},
 	}
@@ -61,4 +61,21 @@ func newConfigCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.AddCommand(newConfigDiffCommand(opts))
 	cmd.AddCommand(newConfigLanguageCommand(opts))
 	return cmd
+}
+
+// resolvedPresets decorates each bundled preset with its catalog-resolved
+// title and description. The Preset struct itself stays language-free
+// (see task #82 §13) so JSON output is built here at the CLI boundary
+// where the catalog is in scope.
+func resolvedPresets(opts *runtimeOptions) []map[string]string {
+	presets := config.ListPresets()
+	out := make([]map[string]string, len(presets))
+	for i, p := range presets {
+		out[i] = map[string]string{
+			"name":        p.Name,
+			"title":       opts.t("cli.preset." + p.Name + ".title"),
+			"description": opts.t("cli.preset." + p.Name + ".description"),
+		}
+	}
+	return out
 }

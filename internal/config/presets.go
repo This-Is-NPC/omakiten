@@ -16,17 +16,19 @@ var (
 )
 
 // Preset describes one official workflow starter file bundled with Omakiten.
+// Per task #82 §13, the human-facing title and description are resolved
+// through `Snapshot.Catalog(CLI)` keys `cli.preset.<name>.{title,description}`
+// at render time. The struct stays language-free so the config package
+// never carries English literals.
 type Preset struct {
-	Name        string `json:"name"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
+	Name string `json:"name"`
 }
 
 var officialPresets = []Preset{
-	{Name: "omakase", Title: "Chef's choice", Description: "Balanced workflow with self-branch, resume, and documentation guards."},
-	{Name: "izakaya", Title: "Casual", Description: "Backlog -> dev -> done with no guards. Good for spikes and personal projects."},
-	{Name: "kaiseki", Title: "Multi-course", Description: "Adds requirements, planning, and docs columns with strict transition guards."},
-	{Name: "shokunin", Title: "Artisan", Description: "Kaiseki plus tests-passing and peer-review checkpoints for maximum traceability."},
+	{Name: "omakase"},
+	{Name: "izakaya"},
+	{Name: "kaiseki"},
+	{Name: "shokunin"},
 }
 
 // ListPresets returns the official presets in menu order.

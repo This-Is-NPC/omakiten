@@ -40,7 +40,7 @@ func newConfigInitCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				res, err := config.SeedInstall(root, presetName, force)
 				if err != nil {
-					return nil, presetCLIError(err)
+					return nil, presetCLIError(opts, err)
 				}
 				langSummary, err := applyLanguageSelections(cmd, res.Path, languagePromptInputs{
 					CLILangSet:   cliLangSet,

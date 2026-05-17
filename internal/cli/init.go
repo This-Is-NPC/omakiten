@@ -53,7 +53,7 @@ func newInitCommand(opts *runtimeOptions) *cobra.Command {
 					repoLocalRoot := filepath.Join(installRoot, config.RepoLocalDirName)
 					res, err := config.SeedInstall(repoLocalRoot, presetName, presetForce)
 					if err != nil {
-						return nil, presetCLIError(err)
+						return nil, presetCLIError(opts, err)
 					}
 					presetResult = map[string]any{"name": res.PresetName, "path": res.Path, "root": installRoot}
 					if res.NoOp {
@@ -106,9 +106,9 @@ func newInitCommand(opts *runtimeOptions) *cobra.Command {
 	return cmd
 }
 
-func presetCLIError(err error) error {
+func presetCLIError(opts *runtimeOptions, err error) error {
 	if errors.Is(err, config.ErrPresetNotFound) {
-		return domain.NewError(domain.ErrValidation, t("cli.err.unknown_workflow_preset"), map[string]any{"available": config.ListPresets()})
+		return domain.NewError(domain.ErrValidation, t("cli.err.unknown_workflow_preset"), map[string]any{"available": resolvedPresets(opts)})
 	}
 	if errors.Is(err, config.ErrPresetTargetExists) {
 		return domain.NewError(domain.ErrValidation, t("cli.err.repo_local_already_exists"), nil)
