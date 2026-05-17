@@ -35,7 +35,7 @@ For headless installs (CI, Dockerfile, dotfiles) pre-supply the five inputs and 
 | `OKT_PRESET`     | Workflow preset (default `omakase`) |
 | `OKT_HARNESSES`  | MCP harnesses (CSV of names or indices; `0` skips harness setup) |
 
-See the [MCP Guide](.docs/mcp-guide.md#setup) for the harness list and [Workflow Presets](#workflow-presets) for preset semantics. Then register your first project:
+See the [MCP Guide](.docs/mcp-guide.md#setup) for the harness list and [Workflow Presets](#workflow-presets) for preset semantics. Bundled languages auto-appear in the picker; add another with the [Languages Guide](.docs/languages-guide.md). Then register your first project:
 
 ```bash
 okt init --name MyProject --slug my-project
@@ -138,6 +138,7 @@ The full MCP surface (36 tools, 2 resources, 8 prompts) is documented in the [MC
 - [Workflow Guide — presets and authoring your own](.docs/workflow-guide.md)
 - [Workflow Guards Guide](.docs/guards-guide.md)
 - [Theming Guide](.docs/theming-guide.md)
+- [Languages Guide — adding a bundled pack](.docs/languages-guide.md)
 - [Domain Events Catalog](.docs/domain-events.md)
 - [Hooks Engine](.docs/hooks.md)
 - [Notifications](.docs/notifications.md)
