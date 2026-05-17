@@ -14,9 +14,9 @@ func (m Model) renderHelp() string {
 	}
 	commentKeys := newCommentInputBindings()
 	commentInputHelpRows := []binding{
-		{commentKeys.Save.Help().Key, commentKeys.Save.Help().Desc},
-		{commentKeys.InsertNewline.Help().Key, commentKeys.InsertNewline.Help().Desc},
-		{commentKeys.Cancel.Help().Key, commentKeys.Cancel.Help().Desc},
+		{commentKeys.Save.Help().Key, m.t("tui.keys.save_comment_desc")},
+		{commentKeys.InsertNewline.Help().Key, m.t("tui.keys.insert_newline_desc")},
+		{commentKeys.Cancel.Help().Key, m.t("tui.keys.cancel_desc")},
 	}
 	groups := []group{
 		{"global", m.t("tui.help.global.title"), []binding{

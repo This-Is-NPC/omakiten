@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"omakiten/internal/domain"
@@ -132,7 +133,7 @@ func (m Model) activityRowsForRender(events []domain.Event) []string {
 // no author header, single-line label + timestamp. Boxed (vs. the previous
 // borderless variant) so the activity column stays visually consistent.
 func (m Model) renderSystemEventCard(ev domain.Event, focused bool) string {
-	label := systemEventLabel(ev)
+	label := m.systemEventLabel(ev)
 	timestamp := strings.TrimSpace(ev.CreatedAt)
 	width := m.commentCardContentWidth()
 	if width < 8 {
@@ -173,30 +174,30 @@ func eventToComment(ev domain.Event) domain.Comment {
 // the payload's `from`/`to`/`bucket` fields. Falls back to the bare event
 // type when payload is missing or malformed — defensive because old rows
 // that pre-date the migration carry an empty payload string.
-func systemEventLabel(ev domain.Event) string {
+func (m Model) systemEventLabel(ev domain.Event) string {
 	switch ev.EventType {
 	case domain.EventTypeTaskCreated:
 		bucket := payloadField(ev.Payload, "bucket")
 		if bucket != "" {
-			return "task created in " + bucket
+			return fmt.Sprintf(m.t("tui.event.task_created_in_fmt"), bucket)
 		}
-		return "task created"
+		return m.t("tui.event.task_created")
 	case domain.EventTypeTaskMoved:
 		from := payloadField(ev.Payload, "from")
 		to := payloadField(ev.Payload, "to")
 		if from != "" && to != "" {
-			return "task moved " + from + " → " + to
+			return fmt.Sprintf(m.t("tui.event.task_moved_from_to_fmt"), from, to)
 		}
 		if to != "" {
-			return "task moved to " + to
+			return fmt.Sprintf(m.t("tui.event.task_moved_to_fmt"), to)
 		}
-		return "task moved"
+		return m.t("tui.event.task_moved")
 	case domain.EventTypeTaskCompleted:
 		bucket := payloadField(ev.Payload, "bucket")
 		if bucket != "" {
-			return "task completed in " + bucket
+			return fmt.Sprintf(m.t("tui.event.task_completed_in_fmt"), bucket)
 		}
-		return "task completed"
+		return m.t("tui.event.task_completed")
 	}
 	return ev.EventType
 }
