@@ -25,7 +25,7 @@ import (
 func newTUICommand(opts *runtimeOptions, version string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "tui",
-		Short: "Open the terminal UI",
+		Short: opts.t("cli.tui.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runTUI(cmd.Context(), opts, version)
 		},

@@ -19,7 +19,7 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "edit TASK_ID",
-		Short: "Edit a task in the active project",
+		Short: opts.t("cli.task.edit.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -73,9 +73,9 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&title, "title", "t", "", "task title")
-	cmd.Flags().StringVarP(&description, "description", "d", "", "task description")
-	cmd.Flags().StringVar(&priority, "priority", "", "task priority: low, normal, or high")
-	cmd.Flags().StringVarP(&bucket, "bucket", "b", "", "target bucket key")
+	cmd.Flags().StringVarP(&title, "title", "t", "", opts.t("cli.task.edit.flag.title"))
+	cmd.Flags().StringVarP(&description, "description", "d", "", opts.t("cli.task.edit.flag.description"))
+	cmd.Flags().StringVar(&priority, "priority", "", opts.t("cli.task.edit.flag.priority"))
+	cmd.Flags().StringVarP(&bucket, "bucket", "b", "", opts.t("cli.task.edit.flag.bucket"))
 	return cmd
 }

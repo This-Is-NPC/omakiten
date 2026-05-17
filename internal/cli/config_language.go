@@ -21,16 +21,8 @@ const (
 func newConfigLanguageCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "language",
-		Short: "Manage the active language for CLI help, TUI labels, and the agent output directive",
-		Long: `Read and write config.languages.{cli,tui,agent_output} in the active
-omakiten.yaml. languages.cli and languages.tui are validated against
-the language packs discovered under languages/; languages.agent_output
-is free-form and forwarded verbatim to the MCP prompt composer.
-
-The default target is the resolved omakiten.yaml (repo-local
-.omakiten/ when present, otherwise the user-global ConfigRoot). Use
---global on set/reset to pin the write to the user-global file
-regardless of repo-local presence.`,
+		Short: opts.t("cli.config.language.short"),
+		Long: opts.t("cli.config.language.long"),
 	}
 	cmd.AddCommand(newConfigLanguageShowCommand(opts))
 	cmd.AddCommand(newConfigLanguageSetCommand(opts))
@@ -41,7 +33,7 @@ regardless of repo-local presence.`,
 func newConfigLanguageShowCommand(opts *runtimeOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "show",
-		Short: "Print the active language settings and the discovered language packs",
+		Short: opts.t("cli.config.language.show.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(_ context.Context) (any, error) {
 				path, bundle, err := loadActiveBundle(opts)
@@ -90,16 +82,8 @@ func newConfigLanguageSetCommand(opts *runtimeOptions) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "set",
-		Short: "Set one or more language settings in the active omakiten.yaml",
-		Long: `Examples:
-  okt config language set --cli pt-br
-  okt config language set --tui en --agent "Português (Brasil)"
-  okt config language set --agent "" --global
-
-At least one of --cli, --tui, or --agent must be provided. --cli and
---tui validate against the language codes discovered under languages/.
---agent accepts any non-empty string (or "" to clear). --global pins
-the write to the user-global omakiten.yaml.`,
+		Short: opts.t("cli.config.language.set.short"),
+		Long: opts.t("cli.config.language.set.long"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cliSet := cmd.Flags().Changed("cli")
 			tuiSet := cmd.Flags().Changed("tui")
@@ -143,10 +127,10 @@ the write to the user-global omakiten.yaml.`,
 			})
 		},
 	}
-	cmd.Flags().StringVar(&cli, "cli", "", "language code for CLI help and usage strings")
-	cmd.Flags().StringVar(&tui, "tui", "", "language code for TUI labels and screens")
-	cmd.Flags().StringVar(&agent, "agent", "", "free-form agent output language directive (use \"\" to clear)")
-	cmd.Flags().BoolVar(&global, "global", false, "pin the write to the user-global omakiten.yaml regardless of repo-local presence")
+	cmd.Flags().StringVar(&cli, "cli", "", opts.t("cli.config.language.set.flag.cli"))
+	cmd.Flags().StringVar(&tui, "tui", "", opts.t("cli.config.language.set.flag.tui"))
+	cmd.Flags().StringVar(&agent, "agent", "", opts.t("cli.config.language.set.flag.agent"))
+	cmd.Flags().BoolVar(&global, "global", false, opts.t("cli.config.language.set.flag.global"))
 	return cmd
 }
 
@@ -154,7 +138,7 @@ func newConfigLanguageResetCommand(opts *runtimeOptions) *cobra.Command {
 	var global bool
 	cmd := &cobra.Command{
 		Use:   "reset",
-		Short: "Remove the languages block from the active omakiten.yaml (defaults apply)",
+		Short: opts.t("cli.config.language.reset.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				path, err := writeTargetPath(opts, global)
@@ -179,7 +163,7 @@ func newConfigLanguageResetCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().BoolVar(&global, "global", false, "pin the reset to the user-global omakiten.yaml regardless of repo-local presence")
+	cmd.Flags().BoolVar(&global, "global", false, opts.t("cli.config.language.reset.flag.global"))
 	return cmd
 }
 

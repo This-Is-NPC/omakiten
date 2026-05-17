@@ -36,6 +36,20 @@ type runtimeOptions struct {
 	// back to CWD. Reset between calls to open(); resolver helpers below
 	// honour it.
 	discoveryStart string
+	// catalog is the i18n catalog the CLI uses to resolve every Short,
+	// Long, flag usage and user-facing error string. Built once by
+	// NewRootCommand via bootstrapCatalog and shared across every
+	// subcommand constructor — Catalog.Get is safe on a nil receiver
+	// (returns the key literal) so subcommands never need to guard.
+	catalog *config.Catalog
+}
+
+// t returns the localized string for key. Centralizes the catalog read
+// at the CLI boundary so command constructors stay one short call per
+// literal: `Short: opts.t("cli.task.add.short")` instead of inlining
+// nil checks and namespace fallbacks per call.
+func (o *runtimeOptions) t(key string) string {
+	return o.catalog.Get(key)
 }
 
 type runtime struct {
@@ -163,26 +177,20 @@ func (r *runtime) tokenCounter() token.Counter {
 }
 
 func NewRootCommand(version string) *cobra.Command {
-	opts := &runtimeOptions{}
+	opts := &runtimeOptions{catalog: bootstrapCatalog(config.SurfaceCLI)}
 	cmd := &cobra.Command{
-		Use:   "okt",
-		Short: "Opinionated checkpoints for AI-driven development",
-		Long: `okt drives Omakiten from the command line and TUI.
-
-Path resolution (highest to lowest precedence):
-  1. --config / --db flags
-  2. $OMAKITEN_HOME — pins config to <HOME>/config/<active>.yaml and data to <HOME>/data/omakiten.db
-  3. $XDG_CONFIG_HOME / $XDG_DATA_HOME
-  4. ~/.config/omakiten and ~/.local/share/omakiten`,
+		Use:           "okt",
+		Short:         opts.t("cli.root.short"),
+		Long:          opts.t("cli.root.long"),
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 
-	cmd.PersistentFlags().StringVar(&opts.dbPath, "db", "", "SQLite database path (overrides $OMAKITEN_HOME and XDG)")
-	cmd.PersistentFlags().StringVar(&opts.configPath, "config", "", "omakiten.yaml path (overrides $OMAKITEN_HOME and XDG)")
-	cmd.PersistentFlags().StringVarP(&opts.project, "project", "p", "", "project slug")
-	cmd.PersistentFlags().Int64Var(&opts.projectID, "project-id", 0, "project id")
+	cmd.PersistentFlags().StringVar(&opts.dbPath, "db", "", opts.t("cli.root.flag.db"))
+	cmd.PersistentFlags().StringVar(&opts.configPath, "config", "", opts.t("cli.root.flag.config"))
+	cmd.PersistentFlags().StringVarP(&opts.project, "project", "p", "", opts.t("cli.root.flag.project"))
+	cmd.PersistentFlags().Int64Var(&opts.projectID, "project-id", 0, opts.t("cli.root.flag.project-id"))
 
 	cmd.AddCommand(newInitCommand(opts))
 	cmd.AddCommand(newAddCommand(opts))

@@ -12,7 +12,7 @@ import (
 func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "comment",
-		Short: "Manage task comments",
+		Short: opts.t("cli.comment.short"),
 	}
 
 	var body string
@@ -20,7 +20,7 @@ func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 	var tags []string
 	add := &cobra.Command{
 		Use:   "add TASK_ID",
-		Short: "Add a task comment",
+		Short: opts.t("cli.comment.add.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -47,14 +47,14 @@ func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	add.Flags().StringVarP(&body, "body", "b", "", "comment body")
-	add.Flags().StringVarP(&author, "author", "a", "human", "author type: human or agent")
-	add.Flags().StringArrayVarP(&tags, "tag", "T", nil, "tag name (repeatable)")
+	add.Flags().StringVarP(&body, "body", "b", "", opts.t("cli.comment.add.flag.body"))
+	add.Flags().StringVarP(&author, "author", "a", "human", opts.t("cli.comment.add.flag.author"))
+	add.Flags().StringArrayVarP(&tags, "tag", "T", nil, opts.t("cli.comment.add.flag.tag"))
 	_ = add.MarkFlagRequired("body")
 
 	list := &cobra.Command{
 		Use:   "list TASK_ID",
-		Short: "List task comments",
+		Short: opts.t("cli.comment.list.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -86,7 +86,7 @@ func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 	var editTags []string
 	edit := &cobra.Command{
 		Use:   "edit COMMENT_ID",
-		Short: "Edit a comment body and replace its tags (subject to bucket policy)",
+		Short: opts.t("cli.comment.edit.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -114,14 +114,14 @@ func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	edit.Flags().StringVarP(&editBody, "body", "b", "", "new comment body")
-	edit.Flags().StringArrayVarP(&editTags, "tag", "T", nil, "tag name (repeatable; replaces all existing tags)")
+	edit.Flags().StringVarP(&editBody, "body", "b", "", opts.t("cli.comment.edit.flag.body"))
+	edit.Flags().StringArrayVarP(&editTags, "tag", "T", nil, opts.t("cli.comment.edit.flag.tag"))
 	_ = edit.MarkFlagRequired("body")
 
 	var deleteConfirmed bool
 	del := &cobra.Command{
 		Use:   "delete COMMENT_ID",
-		Short: "Hard-delete a comment (subject to bucket policy)",
+		Short: opts.t("cli.comment.delete.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -152,7 +152,7 @@ func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	del.Flags().BoolVar(&deleteConfirmed, "confirm", false, "required: confirm the destructive delete")
+	del.Flags().BoolVar(&deleteConfirmed, "confirm", false, opts.t("cli.comment.delete.flag.confirm"))
 
 	cmd.AddCommand(add)
 	cmd.AddCommand(list)

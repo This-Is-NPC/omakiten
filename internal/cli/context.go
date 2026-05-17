@@ -9,13 +9,13 @@ import (
 func newContextCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "context",
-		Short: "Inspect project context for handoff",
+		Short: opts.t("cli.context.short"),
 	}
 
 	var body string
 	add := &cobra.Command{
 		Use:   "add",
-		Short: "Add a project handoff context entry",
+		Short: opts.t("cli.context.add.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				rt, err := opts.open(ctx, true)
@@ -38,13 +38,13 @@ func newContextCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	add.Flags().StringVarP(&body, "body", "b", "", "context body")
+	add.Flags().StringVarP(&body, "body", "b", "", opts.t("cli.context.add.flag.body"))
 	_ = add.MarkFlagRequired("body")
 
 	var level int
 	dump := &cobra.Command{
 		Use:   "dump",
-		Short: "Dump progressive context for agents",
+		Short: opts.t("cli.context.dump.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				rt, err := opts.open(ctx, true)
@@ -63,7 +63,7 @@ func newContextCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	dump.Flags().IntVarP(&level, "level", "l", 2, "context detail level: 1, 2, or 3")
+	dump.Flags().IntVarP(&level, "level", "l", 2, opts.t("cli.context.dump.flag.level"))
 
 	cmd.AddCommand(add)
 	cmd.AddCommand(dump)

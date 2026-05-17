@@ -21,17 +21,8 @@ func newConfigWhyCommand(opts *runtimeOptions) *cobra.Command {
 	var layerFilter string
 	cmd := &cobra.Command{
 		Use:   "why <key>",
-		Short: "Report the value at a dotted YAML key path in the active config",
-		Long: `Walk the active config (or a chosen layer) by dotted YAML key
-and report {key, value, path, source}. Without --layer the resolver
-picks the install that the runtime would use: the discovered .omakiten/
-when present, otherwise the user-global ConfigRoot.
-
-The standalone model means there is no merge, so a value at any key
-comes from exactly one install. --layer pins the lookup to "global" or
-"local" so callers can verify a specific layer rather than the resolved
-one (e.g. "is this set in the user-global install even though my repo
-overrides it locally").`,
+		Short: opts.t("cli.config.path.short"),
+		Long: opts.t("cli.config.path.long"),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -47,24 +38,15 @@ overrides it locally").`,
 			})
 		},
 	}
-	cmd.Flags().StringVar(&layerFilter, "layer", "", "pin the lookup to one layer: global or local (default = whatever the resolver would pick)")
+	cmd.Flags().StringVar(&layerFilter, "layer", "", opts.t("cli.config.path.flag.layer"))
 	return cmd
 }
 
 func newConfigDiffCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "diff <left> <right>",
-		Short: "Diff two config sources by structural YAML comparison",
-		Long: `Compare two YAML config sources and emit one entry per divergent
-leaf. Each operand is one of:
-  global              - the user-global active yaml
-  local               - the active yaml inside the CWD walk-up .omakiten/
-  local:<path>        - the active yaml inside <path>/.omakiten/
-  <path/to/file.yaml> - any yaml file on disk
-
-Output entries carry op = added | removed | changed plus the relevant
-side values. Maps descend recursively; lists / scalars compare by deep
-equality.`,
+		Short: opts.t("cli.config.diff.short"),
+		Long: opts.t("cli.config.diff.long"),
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {

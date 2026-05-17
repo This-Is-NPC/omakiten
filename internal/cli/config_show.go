@@ -18,7 +18,7 @@ func newConfigShowCommand(opts *runtimeOptions) *cobra.Command {
 	var scope string
 	cmd := &cobra.Command{
 		Use:   "show",
-		Short: "Print the raw active yaml for the chosen scope",
+		Short: opts.t("cli.config.show.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				if err := primeDiscoveryStart(ctx, opts); err != nil {
@@ -36,7 +36,7 @@ func newConfigShowCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&scope, "scope", "", "global or local")
+	cmd.Flags().StringVar(&scope, "scope", "", opts.t("cli.config.show.flag.scope"))
 	_ = cmd.MarkFlagRequired("scope")
 	return cmd
 }
@@ -45,7 +45,7 @@ func newConfigPathCommand(opts *runtimeOptions) *cobra.Command {
 	var scope string
 	cmd := &cobra.Command{
 		Use:   "path",
-		Short: "Print the install root that owns the chosen scope's config layer",
+		Short: opts.t("cli.config.why.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				if err := primeDiscoveryStart(ctx, opts); err != nil {
@@ -59,7 +59,7 @@ func newConfigPathCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&scope, "scope", "", "global or local")
+	cmd.Flags().StringVar(&scope, "scope", "", opts.t("cli.config.why.flag.scope"))
 	_ = cmd.MarkFlagRequired("scope")
 	return cmd
 }

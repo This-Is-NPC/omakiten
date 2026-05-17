@@ -27,36 +27,8 @@ func newConfigInitCommand(opts *runtimeOptions) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Materialise an official preset into the user-global or repo-local install",
-		Long: `Seed a standalone config install rooted in the chosen scope.
-
-  --scope global  →  paths.ConfigRoot() (or --config's parent).
-                     Existing user install; rerun is idempotent.
-
-  --scope local   →  <cwd>/.omakiten (literal CWD, no walk-up).
-                     A complete install — config/<preset>.yaml plus every
-                     entity folder — so the runtime can load it without any
-                     merge with the user-global layer. The walk-up resolver
-                     picks this up automatically on subsequent okt calls
-                     from inside the repo.
-
-Behaviour matrix:
-  - File missing            → atomic write.
-  - Same preset, same files → no_op:true (silent success).
-  - Different preset        → flips .active to the new preset.
-  - Tampered shipped files  → preserved unless --force.
-  - --force                 → re-copies every embedded shipped file
-                              (skills, laws, personas, templates, themes,
-                              notifications, every preset yaml).
-                              custom/ subtrees are never touched.
-
-Language selection:
-  --cli-lang, --tui-lang, --agent-lang skip the interactive prompts
-  for each surface and write the value directly into the seeded
-  omakiten.yaml's languages block. --cli-lang and --tui-lang must
-  match a bundled language code (en, pt-br, ...); --agent-lang is
-  free-form. When no flag is supplied, init prompts on the TTY (or
-  leaves the surface at its default when stdin is non-interactive).`,
+		Short: opts.t("cli.config.init.short"),
+		Long: opts.t("cli.config.init.long"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cliLangSet := cmd.Flags().Changed("cli-lang")
 			tuiLangSet := cmd.Flags().Changed("tui-lang")
@@ -102,12 +74,12 @@ Language selection:
 			})
 		},
 	}
-	cmd.Flags().StringVar(&scopeFlag, "scope", "", "config layer to seed: global or local")
-	cmd.Flags().StringVar(&presetName, "preset", "", "official workflow preset to seed")
-	cmd.Flags().BoolVar(&force, "force", false, "re-copy embedded shipped files (skills, laws, personas, etc.) — custom/ is never touched")
-	cmd.Flags().StringVar(&cliLang, "cli-lang", "", "language code for CLI help and usage strings (skips the interactive prompt)")
-	cmd.Flags().StringVar(&tuiLang, "tui-lang", "", "language code for TUI labels and screens (skips the interactive prompt)")
-	cmd.Flags().StringVar(&agentLang, "agent-lang", "", "free-form agent-output language directive (skips the interactive prompt)")
+	cmd.Flags().StringVar(&scopeFlag, "scope", "", opts.t("cli.config.init.flag.scope"))
+	cmd.Flags().StringVar(&presetName, "preset", "", opts.t("cli.config.init.flag.preset"))
+	cmd.Flags().BoolVar(&force, "force", false, opts.t("cli.config.init.flag.force"))
+	cmd.Flags().StringVar(&cliLang, "cli-lang", "", opts.t("cli.config.init.flag.cli-lang"))
+	cmd.Flags().StringVar(&tuiLang, "tui-lang", "", opts.t("cli.config.init.flag.tui-lang"))
+	cmd.Flags().StringVar(&agentLang, "agent-lang", "", opts.t("cli.config.init.flag.agent-lang"))
 	_ = cmd.MarkFlagRequired("scope")
 	_ = cmd.MarkFlagRequired("preset")
 	return cmd

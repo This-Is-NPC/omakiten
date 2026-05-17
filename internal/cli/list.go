@@ -14,7 +14,7 @@ func newListCommand(opts *runtimeOptions) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List tasks from the active project",
+		Short: opts.t("cli.task.list.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				rt, err := opts.open(ctx, true)
@@ -38,6 +38,6 @@ func newListCommand(opts *runtimeOptions) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&bucket, "bucket", "b", "", "bucket key")
+	cmd.Flags().StringVarP(&bucket, "bucket", "b", "", opts.t("cli.task.list.flag.bucket"))
 	return cmd
 }

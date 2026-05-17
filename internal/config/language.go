@@ -8,7 +8,36 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"omakiten/defaults"
 )
+
+// LoadBundledLanguage reads defaults/languages/<code>.yaml from the
+// embed FS. Used by the early-boot CLI bootstrap path that needs a
+// usable Catalog before the on-disk install is materialized; the
+// returned Language carries SourcePath="" because the bytes never
+// touch the filesystem. Strict YAML decoding still applies, so an
+// embed corruption surfaces during init rather than at first call.
+func LoadBundledLanguage(code string) (Language, error) {
+	raw, err := defaults.FS.ReadFile(filepath.ToSlash(filepath.Join("languages", code+".yaml")))
+	if err != nil {
+		return Language{}, fmt.Errorf("read bundled languages/%s.yaml: %w", code, err)
+	}
+	var lf languageFile
+	if err := decodeLanguageStrict(raw, &lf); err != nil {
+		return Language{}, parseError(filepath.Join("languages", code+".yaml"), err)
+	}
+	keys := lf.Keys
+	if keys == nil {
+		keys = map[string]string{}
+	}
+	return Language{
+		Code:   strings.TrimSpace(lf.Code),
+		Name:   strings.TrimSpace(lf.Name),
+		Native: strings.TrimSpace(lf.Native),
+		Keys:   keys,
+	}, nil
+}
 
 // languageFile mirrors the on-disk YAML shape of a Language entity. Kept
 // separate from Language so loader concerns (yaml tags, strict decode)

@@ -12,12 +12,12 @@ import (
 func newWorkflowCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "workflow",
-		Short: "Inspect workflow configuration",
+		Short: opts.t("cli.workflow.short"),
 	}
 
 	show := &cobra.Command{
 		Use:   "show",
-		Short: "Show the active workflow",
+		Short: opts.t("cli.workflow.show.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				rt, err := opts.open(ctx, true)
@@ -44,15 +44,8 @@ func newWorkflowOrphansCommand(opts *runtimeOptions) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "orphans",
-		Short: "Preview or rebind tasks whose bucket was deactivated by a workflow swap",
-		Long: `Tasks that pointed to a workflow bucket which no longer exists after a
-preset switch or omakiten.yaml edit are orphans. By default this command
-prints the migration plan (which tasks would rebind to which bucket) and
-exits non-zero so nothing is mutated.
-
-Pass --confirm to apply the rebind. Each migrated task emits a
-task.migrated event with from/to/reason payload. --dry-run is equivalent
-to running without --confirm.`,
+		Short: opts.t("cli.workflow.orphan.short"),
+		Long: opts.t("cli.workflow.orphan.long"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				rt, err := opts.open(ctx, true)
@@ -99,7 +92,7 @@ to running without --confirm.`,
 		},
 	}
 
-	cmd.Flags().BoolVar(&confirm, "confirm", false, "apply the rebind; without this flag the command prints the plan and exits")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the migration plan without applying (default when --confirm is absent)")
+	cmd.Flags().BoolVar(&confirm, "confirm", false, opts.t("cli.workflow.orphan.flag.confirm"))
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, opts.t("cli.workflow.orphan.flag.dry-run"))
 	return cmd
 }

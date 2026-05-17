@@ -2,6 +2,246 @@ code: pt-br
 name: Portuguese (Brazil)
 native: Português (Brasil)
 keys:
+  cli.root.short: "Opinionated checkpoints for AI-driven development"
+  cli.root.long: |-
+    okt drives Omakiten from the command line and TUI.
+
+    Path resolution (highest to lowest precedence):
+      1. --config / --db flags
+      2. $OMAKITEN_HOME — pins config to <HOME>/config/<active>.yaml and data to <HOME>/data/omakiten.db
+      3. $XDG_CONFIG_HOME / $XDG_DATA_HOME
+      4. ~/.config/omakiten and ~/.local/share/omakiten
+  cli.root.flag.db: "SQLite database path (overrides $OMAKITEN_HOME and XDG)"
+  cli.root.flag.config: "omakiten.yaml path (overrides $OMAKITEN_HOME and XDG)"
+  cli.root.flag.project: "project slug"
+  cli.root.flag.project-id: "project id"
+  cli.task.add.short: "Create a task in the active project"
+  cli.task.edit.short: "Edit a task in the active project"
+  cli.task.list.short: "List tasks from the active project"
+  cli.task.move.short: "Move a task through an allowed workflow transition"
+  cli.task.delete.short: "Hard-delete a task (cascade) — subject to bucket policy and operations.delete.guards"
+  cli.task.archive.short: "Archive a task (state=archived, moves into the workflow's final bucket)"
+  cli.task.unarchive.short: "Restore an archived task (state=active)"
+  cli.init.short: "Register the current project in the global database"
+  cli.tui.short: "Open the terminal UI"
+  cli.comment.short: "Manage task comments"
+  cli.comment.add.short: "Add a task comment"
+  cli.comment.list.short: "List task comments"
+  cli.comment.edit.short: "Edit a comment body and replace its tags (subject to bucket policy)"
+  cli.comment.delete.short: "Hard-delete a comment (subject to bucket policy)"
+  cli.context.short: "Inspect project context for handoff"
+  cli.context.add.short: "Add a project handoff context entry"
+  cli.context.dump.short: "Dump progressive context for agents"
+  cli.depend.short: "Manage task dependencies"
+  cli.depend.add.short: "Add a task dependency"
+  cli.depend.remove.short: "Remove a task dependency"
+  cli.depend.list.short: "List dependencies for a task"
+  cli.config.short: "Manage the canonical omakiten.yaml bundle"
+  cli.config.validate.short: "Validate an omakiten.yaml file"
+  cli.config.presets.short: "List official workflow presets"
+  cli.config.init.short: "Materialise an official preset into the user-global or repo-local install"
+  cli.config.path.short: "Report the value at a dotted YAML key path in the active config"
+  cli.config.diff.short: "Diff two config sources by structural YAML comparison"
+  cli.config.show.short: "Print the raw active yaml for the chosen scope"
+  cli.config.why.short: "Print the install root that owns the chosen scope's config layer"
+  cli.config.language.short: "Manage the active language for CLI help, TUI labels, and the agent output directive"
+  cli.config.language.show.short: "Print the active language settings and the discovered language packs"
+  cli.config.language.set.short: "Set one or more language settings in the active omakiten.yaml"
+  cli.config.language.reset.short: "Remove the languages block from the active omakiten.yaml (defaults apply)"
+  cli.law.short: "Manage agent laws (file-backed under laws/)"
+  cli.law.list.short: "List active laws (filterable by scope/project/persona)"
+  cli.law.show.short: "Show a law (frontmatter + body)"
+  cli.law.add.short: "Add a law (writes laws/<slug>.md and opens $EDITOR if body omitted)"
+  cli.law.edit.short: "Edit a law (opens $EDITOR by default; flags override frontmatter/body)"
+  cli.law.remove.short: "Remove a law (deletes file + prunes refs)"
+  cli.skill.short: "Manage skills (technical tags, file-backed under skills/)"
+  cli.skill.list.short: "List active skills"
+  cli.skill.show.short: "Show a skill (frontmatter + body)"
+  cli.skill.add.short: "Add a skill (writes skills/<slug>.md and opens $EDITOR)"
+  cli.skill.edit.short: "Edit a skill (opens $EDITOR by default; flags override frontmatter)"
+  cli.skill.remove.short: "Remove a skill (deletes file + prunes refs)"
+  cli.persona.short: "Manage personas (file-backed under personas/)"
+  cli.persona.list.short: "List active personas"
+  cli.persona.show.short: "Show a persona (frontmatter + body + skill refs)"
+  cli.persona.add.short: "Add a persona (writes personas/<slug>.md and opens $EDITOR)"
+  cli.persona.edit.short: "Edit a persona (opens $EDITOR by default; flags override)"
+  cli.persona.remove.short: "Remove a persona (deletes file + prunes refs)"
+  cli.mcp.short: "Expose Omakiten agent intents through MCP"
+  cli.mcp.prompt.short: "Render resolved okt-* prompt markdown to stdout"
+  cli.mcp.tools.short: "List Omakiten MCP tool definitions"
+  cli.mcp.call.short: "Call an Omakiten MCP tool with a JSON input object"
+  cli.mcp.serve.short: "Run the Omakiten MCP stdio server"
+  cli.mcp.install.short: "Configure Omakiten MCP server in an AI harness"
+  cli.workflow.short: "Inspect workflow configuration"
+  cli.workflow.show.short: "Show the active workflow"
+  cli.workflow.orphan.short: "Preview or rebind tasks whose bucket was deactivated by a workflow swap"
+  cli.config.init.long: |-
+    Seed a standalone config install rooted in the chosen scope.
+
+      --scope global  →  paths.ConfigRoot() (or --config's parent).
+                         Existing user install; rerun is idempotent.
+
+      --scope local   →  <cwd>/.omakiten (literal CWD, no walk-up).
+                         A complete install — config/<preset>.yaml plus every
+                         entity folder — so the runtime can load it without any
+                         merge with the user-global layer. The walk-up resolver
+                         picks this up automatically on subsequent okt calls
+                         from inside the repo.
+
+    Behaviour matrix:
+      - File missing            → atomic write.
+      - Same preset, same files → no_op:true (silent success).
+      - Different preset        → flips .active to the new preset.
+      - Tampered shipped files  → preserved unless --force.
+      - --force                 → re-copies every embedded shipped file
+                                  (skills, laws, personas, templates, themes,
+                                  notifications, every preset yaml).
+                                  custom/ subtrees are never touched.
+
+    Language selection:
+      --cli-lang, --tui-lang, --agent-lang skip the interactive prompts
+      for each surface and write the value directly into the seeded
+      omakiten.yaml's languages block. --cli-lang and --tui-lang must
+      match a bundled language code (en, pt-br, ...); --agent-lang is
+      free-form. When no flag is supplied, init prompts on the TTY (or
+      leaves the surface at its default when stdin is non-interactive).
+  cli.config.path.long: |-
+    Walk the active config (or a chosen layer) by dotted YAML key
+    and report {key, value, path, source}. Without --layer the resolver
+    picks the install that the runtime would use: the discovered .omakiten/
+    when present, otherwise the user-global ConfigRoot.
+
+    The standalone model means there is no merge, so a value at any key
+    comes from exactly one install. --layer pins the lookup to "global" or
+    "local" so callers can verify a specific layer rather than the resolved
+    one (e.g. "is this set in the user-global install even though my repo
+    overrides it locally").
+  cli.config.diff.long: |-
+    Compare two YAML config sources and emit one entry per divergent
+    leaf. Each operand is one of:
+      global              - the user-global active yaml
+      local               - the active yaml inside the CWD walk-up .omakiten/
+      local:<path>        - the active yaml inside <path>/.omakiten/
+      <path/to/file.yaml> - any yaml file on disk
+
+    Output entries carry op = added | removed | changed plus the relevant
+    side values. Maps descend recursively; lists / scalars compare by deep
+    equality.
+  cli.config.language.long: |-
+    Read and write config.languages.{cli,tui,agent_output} in the active
+    omakiten.yaml. languages.cli and languages.tui are validated against
+    the language packs discovered under languages/; languages.agent_output
+    is free-form and forwarded verbatim to the MCP prompt composer.
+
+    The default target is the resolved omakiten.yaml (repo-local
+    .omakiten/ when present, otherwise the user-global ConfigRoot). Use
+    --global on set/reset to pin the write to the user-global file
+    regardless of repo-local presence.
+  cli.config.language.set.long: |-
+    Examples:
+      okt config language set --cli pt-br
+      okt config language set --tui en --agent "Português (Brasil)"
+      okt config language set --agent "" --global
+
+    At least one of --cli, --tui, or --agent must be provided. --cli and
+    --tui validate against the language codes discovered under languages/.
+    --agent accepts any non-empty string (or "" to clear). --global pins
+    the write to the user-global omakiten.yaml.
+  cli.mcp.install.long: "Writes the Omakiten MCP server configuration to the harness config file (e.g. Claude Desktop or OpenCode)."
+  cli.workflow.orphan.long: |-
+    Tasks that pointed to a workflow bucket which no longer exists after a
+    preset switch or omakiten.yaml edit are orphans. By default this command
+    prints the migration plan (which tasks would rebind to which bucket) and
+    exits non-zero so nothing is mutated.
+
+    Pass --confirm to apply the rebind. Each migrated task emits a
+    task.migrated event with from/to/reason payload. --dry-run is equivalent
+    to running without --confirm.
+  cli.task.add.flag.title: "task title"
+  cli.task.add.flag.description: "task description"
+  cli.task.add.flag.bucket: "bucket key (defaults to the active workflow's first bucket)"
+  cli.task.edit.flag.title: "task title"
+  cli.task.edit.flag.description: "task description"
+  cli.task.edit.flag.priority: "task priority: low, normal, or high"
+  cli.task.edit.flag.bucket: "target bucket key"
+  cli.task.list.flag.bucket: "bucket key"
+  cli.task.move.flag.to: "target bucket key"
+  cli.task.delete.flag.confirm: "required: confirm the destructive delete"
+  cli.comment.add.flag.body: "comment body"
+  cli.comment.add.flag.author: "author type: human or agent"
+  cli.comment.add.flag.tag: "tag name (repeatable)"
+  cli.comment.edit.flag.body: "new comment body"
+  cli.comment.edit.flag.tag: "tag name (repeatable; replaces all existing tags)"
+  cli.comment.delete.flag.confirm: "required: confirm the destructive delete"
+  cli.context.add.flag.body: "context body"
+  cli.context.dump.flag.level: "context detail level: 1, 2, or 3"
+  cli.depend.flag.on: "dependency task id"
+  cli.init.flag.name: "project name"
+  cli.init.flag.slug: "project slug"
+  cli.init.flag.root: "project root path"
+  cli.init.flag.enable-mcp: "enable global MCP agent access for a supported harness"
+  cli.init.flag.mcp-harness: "MCP harness to configure"
+  cli.init.flag.mcp-config: "MCP harness config path"
+  cli.init.flag.mcp-command: "command path written to the harness MCP config"
+  cli.init.flag.mcp-dry-run: "preview MCP harness config changes without writing"
+  cli.init.flag.mcp-force: "replace an existing Omakiten MCP harness entry"
+  cli.init.flag.preset: "official workflow preset to copy into .omakiten/config/<preset>.yaml and activate"
+  cli.init.flag.preset-force: "overwrite an existing .omakiten preset config"
+  cli.config.init.flag.scope: "config layer to seed: global or local"
+  cli.config.init.flag.preset: "official workflow preset to seed"
+  cli.config.init.flag.force: "re-copy embedded shipped files (skills, laws, personas, etc.) — custom/ is never touched"
+  cli.config.init.flag.cli-lang: "language code for CLI help and usage strings (skips the interactive prompt)"
+  cli.config.init.flag.tui-lang: "language code for TUI labels and screens (skips the interactive prompt)"
+  cli.config.init.flag.agent-lang: "free-form agent-output language directive (skips the interactive prompt)"
+  cli.config.path.flag.layer: "pin the lookup to one layer: global or local (default = whatever the resolver would pick)"
+  cli.config.show.flag.scope: "global or local"
+  cli.config.why.flag.scope: "global or local"
+  cli.config.language.set.flag.cli: "language code for CLI help and usage strings"
+  cli.config.language.set.flag.tui: "language code for TUI labels and screens"
+  cli.config.language.set.flag.agent: "free-form agent output language directive (use \"\" to clear)"
+  cli.config.language.set.flag.global: "pin the write to the user-global omakiten.yaml regardless of repo-local presence"
+  cli.config.language.reset.flag.global: "pin the reset to the user-global omakiten.yaml regardless of repo-local presence"
+  cli.law.list.flag.scope: "filter by scope: global, project, or persona"
+  cli.law.list.flag.project: "filter by project slug"
+  cli.law.list.flag.persona: "filter by persona slug"
+  cli.law.add.flag.key: "law slug"
+  cli.law.add.flag.name: "law display name (optional)"
+  cli.law.add.flag.severity: "info, warning, or error"
+  cli.law.add.flag.body: "law body (placeholder used if empty + $EDITOR opens)"
+  cli.law.add.flag.scope: "global, project, or persona"
+  cli.law.add.flag.project: "project slug (required when --scope=project)"
+  cli.law.add.flag.persona: "persona slug (required when --scope=persona)"
+  cli.law.add.flag.no-edit: "skip opening $EDITOR after creating the scaffold"
+  cli.law.edit.flag.name: "rewrite law display name"
+  cli.law.edit.flag.severity: "rewrite severity"
+  cli.law.edit.flag.body: "rewrite law body"
+  cli.law.edit.flag.no-edit: "do not open $EDITOR (only apply flag-driven updates)"
+  cli.skill.add.flag.key: "skill slug (defaults to slugify(--name))"
+  cli.skill.add.flag.name: "skill display name"
+  cli.skill.add.flag.description: "short description"
+  cli.skill.add.flag.no-edit: "skip opening $EDITOR after creating the scaffold"
+  cli.skill.edit.flag.name: "rewrite skill display name"
+  cli.skill.edit.flag.description: "rewrite skill description"
+  cli.skill.edit.flag.no-edit: "do not open $EDITOR (only apply flag-driven updates)"
+  cli.persona.add.flag.key: "persona slug (defaults to slugify(--name))"
+  cli.persona.add.flag.name: "persona display name"
+  cli.persona.add.flag.description: "short description"
+  cli.persona.add.flag.skill: "skill ids (repeatable, e.g. -s 1 -s 2)"
+  cli.persona.add.flag.skill-slug: "skill slugs (repeatable)"
+  cli.persona.add.flag.no-edit: "skip opening $EDITOR after creating the scaffold"
+  cli.persona.edit.flag.name: "rewrite persona display name"
+  cli.persona.edit.flag.description: "rewrite persona description"
+  cli.persona.edit.flag.skill: "skill ids (replaces existing set)"
+  cli.persona.edit.flag.skill-slug: "skill slugs (replaces existing set)"
+  cli.persona.edit.flag.no-edit: "do not open $EDITOR (only apply flag-driven updates)"
+  cli.mcp.call.flag.input: "JSON input object"
+  cli.mcp.install.flag.harness: "Target harness (%s)"
+  cli.mcp.install.flag.config-path: "Path to harness config file (default: harness default)"
+  cli.mcp.install.flag.command: "Command to run omakiten (default: current executable)"
+  cli.mcp.install.flag.dry-run: "Preview changes without writing"
+  cli.mcp.install.flag.force: "Overwrite existing Omakiten MCP config"
+  cli.workflow.orphan.flag.confirm: "apply the rebind; without this flag the command prints the plan and exits"
+  cli.workflow.orphan.flag.dry-run: "print the migration plan without applying (default when --confirm is absent)"
   notifications.izakaya.task_created.message: "Nova comanda aberta no balcão."
   notifications.izakaya.task_moved.message: "Pedido seguiu para a próxima etapa."
   notifications.izakaya.task_edited.message: "Pedido ajustado no balcão."

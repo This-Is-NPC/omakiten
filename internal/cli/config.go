@@ -13,12 +13,12 @@ import (
 func newConfigCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Manage the canonical omakiten.yaml bundle",
+		Short: opts.t("cli.config.short"),
 	}
 
 	validate := &cobra.Command{
 		Use:   "validate [path]",
-		Short: "Validate an omakiten.yaml file",
+		Short: opts.t("cli.config.validate.short"),
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(context.Context) (any, error) {
@@ -44,7 +44,7 @@ func newConfigCommand(opts *runtimeOptions) *cobra.Command {
 
 	presets := &cobra.Command{
 		Use:   "presets",
-		Short: "List official workflow presets",
+		Short: opts.t("cli.config.presets.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(context.Context) (any, error) {
 				return map[string]any{"presets": config.ListPresets()}, nil
