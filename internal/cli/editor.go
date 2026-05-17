@@ -54,7 +54,7 @@ func runEditorCommand(path string) error {
 func resolveSkillSlug(ctx context.Context, service *app.SkillService, raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return "", domain.NewError(domain.ErrValidation, "skill slug is required", nil)
+		return "", domain.NewError(domain.ErrValidation, t("cli.err.skill_slug_required"), nil)
 	}
 	if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
 		skills, err := service.List(ctx)
@@ -66,10 +66,10 @@ func resolveSkillSlug(ctx context.Context, service *app.SkillService, raw string
 				return skill.Key, nil
 			}
 		}
-		return "", domain.NewError(domain.ErrSkillNotFound, "skill not found", map[string]any{"id": id})
+		return "", domain.NewError(domain.ErrSkillNotFound, t("cli.err.skill_not_found"), map[string]any{"id": id})
 	}
 	if config.Slugify(raw) != raw {
-		return "", domain.NewError(domain.ErrValidation, "skill slug must be lowercase, hyphenated", map[string]any{"slug": raw})
+		return "", domain.NewError(domain.ErrValidation, t("cli.err.skill_slug_bad_format"), map[string]any{"slug": raw})
 	}
 	return raw, nil
 }
@@ -77,7 +77,7 @@ func resolveSkillSlug(ctx context.Context, service *app.SkillService, raw string
 func resolveLawSlug(ctx context.Context, service *app.LawService, raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return "", domain.NewError(domain.ErrValidation, "law slug is required", nil)
+		return "", domain.NewError(domain.ErrValidation, t("cli.err.law_slug_required"), nil)
 	}
 	if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
 		laws, err := service.List(ctx)
@@ -89,10 +89,10 @@ func resolveLawSlug(ctx context.Context, service *app.LawService, raw string) (s
 				return law.Key, nil
 			}
 		}
-		return "", domain.NewError(domain.ErrLawNotFound, "law not found", map[string]any{"id": id})
+		return "", domain.NewError(domain.ErrLawNotFound, t("cli.err.law_not_found"), map[string]any{"id": id})
 	}
 	if config.Slugify(raw) != raw {
-		return "", domain.NewError(domain.ErrValidation, "law slug must be lowercase, hyphenated", map[string]any{"slug": raw})
+		return "", domain.NewError(domain.ErrValidation, t("cli.err.law_slug_bad_format"), map[string]any{"slug": raw})
 	}
 	return raw, nil
 }
@@ -100,7 +100,7 @@ func resolveLawSlug(ctx context.Context, service *app.LawService, raw string) (s
 func resolvePersonaSlug(ctx context.Context, service *app.PersonaService, raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return "", domain.NewError(domain.ErrValidation, "persona slug is required", nil)
+		return "", domain.NewError(domain.ErrValidation, t("cli.err.persona_slug_required"), nil)
 	}
 	if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
 		personas, err := service.List(ctx)
@@ -112,10 +112,10 @@ func resolvePersonaSlug(ctx context.Context, service *app.PersonaService, raw st
 				return persona.Key, nil
 			}
 		}
-		return "", domain.NewError(domain.ErrPersonaNotFound, "persona not found", map[string]any{"id": id})
+		return "", domain.NewError(domain.ErrPersonaNotFound, t("cli.err.persona_not_found"), map[string]any{"id": id})
 	}
 	if config.Slugify(raw) != raw {
-		return "", domain.NewError(domain.ErrValidation, "persona slug must be lowercase, hyphenated", map[string]any{"slug": raw})
+		return "", domain.NewError(domain.ErrValidation, t("cli.err.persona_slug_bad_format"), map[string]any{"slug": raw})
 	}
 	return raw, nil
 }

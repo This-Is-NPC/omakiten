@@ -177,7 +177,8 @@ func (r *runtime) tokenCounter() token.Counter {
 }
 
 func NewRootCommand(version string) *cobra.Command {
-	opts := &runtimeOptions{catalog: bootstrapCatalog(config.SurfaceCLI)}
+	ensurePkgCatalog()
+	opts := &runtimeOptions{catalog: pkgCatalog}
 	cmd := &cobra.Command{
 		Use:           "okt",
 		Short:         opts.t("cli.root.short"),
@@ -473,13 +474,13 @@ func emitBundleWarnings(bundle config.Bundle) {
 	for _, w := range bundle.Warnings {
 		switch {
 		case w.Path != "" && w.Slug != "":
-			fmt.Fprintf(os.Stderr, "warning: %s [%s]: %s\n", w.Path, w.Slug, w.Message)
+			fmt.Fprintf(os.Stderr, t("cli.print.warn_path_slug"), w.Path, w.Slug, w.Message)
 		case w.Path != "":
-			fmt.Fprintf(os.Stderr, "warning: %s: %s\n", w.Path, w.Message)
+			fmt.Fprintf(os.Stderr, t("cli.print.warn_path"), w.Path, w.Message)
 		case w.Slug != "":
-			fmt.Fprintf(os.Stderr, "warning: [%s]: %s\n", w.Slug, w.Message)
+			fmt.Fprintf(os.Stderr, t("cli.print.warn_slug"), w.Slug, w.Message)
 		default:
-			fmt.Fprintf(os.Stderr, "warning: %s\n", w.Message)
+			fmt.Fprintf(os.Stderr, t("cli.print.warn_message"), w.Message)
 		}
 	}
 }

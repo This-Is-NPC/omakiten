@@ -18,7 +18,7 @@ func parsePriority(input string, registry *domain.EnumRegistry) (domain.Priority
 		p := domain.Priority(id)
 		if !registry.IsPriorityRegistered(p) {
 			return domain.PriorityZero, domain.NewError(domain.ErrValidation,
-				"priority id is not in config.priorities",
+				t("cli.err.priority_id_not_configured"),
 				map[string]any{"priority": id})
 		}
 		return p, nil
@@ -27,7 +27,7 @@ func parsePriority(input string, registry *domain.EnumRegistry) (domain.Priority
 		return p, nil
 	}
 	return domain.PriorityZero, domain.NewError(domain.ErrValidation,
-		"unknown priority; must match an id or value in config.priorities",
+		t("cli.err.priority_unknown"),
 		map[string]any{"priority": input})
 }
 
@@ -38,7 +38,7 @@ func parseSeverity(input string, registry *domain.EnumRegistry) (domain.Severity
 		s := domain.Severity(id)
 		if !registry.IsSeverityRegistered(s) {
 			return domain.SeverityZero, domain.NewError(domain.ErrValidation,
-				"severity id is not in config.severities",
+				t("cli.err.severity_id_not_configured"),
 				map[string]any{"severity": id})
 		}
 		return s, nil
@@ -47,6 +47,6 @@ func parseSeverity(input string, registry *domain.EnumRegistry) (domain.Severity
 		return s, nil
 	}
 	return domain.SeverityZero, domain.NewError(domain.ErrValidation,
-		"unknown severity; must match an id or value in config.severities",
+		t("cli.err.severity_unknown"),
 		map[string]any{"severity": input})
 }

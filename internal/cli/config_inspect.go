@@ -85,7 +85,7 @@ func parseLayer(raw string) (string, error) {
 	case "", "global", "local":
 		return raw, nil
 	default:
-		return "", domain.NewError(domain.ErrValidation, "invalid --layer (want global or local)", map[string]any{"layer": raw})
+		return "", domain.NewError(domain.ErrValidation, t("cli.err.invalid_layer"), map[string]any{"layer": raw})
 	}
 }
 
@@ -187,15 +187,15 @@ func resolveDiffSource(opts *runtimeOptions, spec string) (string, error) {
 	case strings.HasPrefix(spec, "local:"):
 		root := strings.TrimPrefix(spec, "local:")
 		if root == "" {
-			return "", domain.NewError(domain.ErrValidation, "local:<path> requires a non-empty path", map[string]any{"spec": spec})
+			return "", domain.NewError(domain.ErrValidation, t("cli.err.diff_local_requires_path"), map[string]any{"spec": spec})
 		}
 		repoLocalDir := filepath.Join(root, config.RepoLocalDirName)
 		if info, err := os.Stat(repoLocalDir); err != nil || !info.IsDir() {
-			return "", domain.NewError(domain.ErrValidation, "no .omakiten/ at supplied path", map[string]any{"path": repoLocalDir})
+			return "", domain.NewError(domain.ErrValidation, t("cli.err.diff_no_omakiten_at_path"), map[string]any{"path": repoLocalDir})
 		}
 		path, err := paths.ActiveConfigFileInDir(filepath.Join(repoLocalDir, "config"))
 		if err != nil {
-			return "", domain.NewError(domain.ErrValidation, "no active yaml inside supplied .omakiten/config", map[string]any{"path": repoLocalDir, "error": err.Error()})
+			return "", domain.NewError(domain.ErrValidation, t("cli.err.diff_no_active_yaml"), map[string]any{"path": repoLocalDir, "error": err.Error()})
 		}
 		return path, nil
 	default:
@@ -204,7 +204,7 @@ func resolveDiffSource(opts *runtimeOptions, spec string) (string, error) {
 			return "", err
 		}
 		if info, err := os.Stat(abs); err != nil || info.IsDir() {
-			return "", domain.NewError(domain.ErrValidation, "diff source not a readable file", map[string]any{"path": abs})
+			return "", domain.NewError(domain.ErrValidation, t("cli.err.diff_source_unreadable"), map[string]any{"path": abs})
 		}
 		return abs, nil
 	}

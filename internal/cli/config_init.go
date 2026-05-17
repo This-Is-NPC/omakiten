@@ -110,7 +110,7 @@ type languagePromptInputs struct {
 func applyLanguageSelections(cmd *cobra.Command, configPath string, inputs languagePromptInputs) (map[string]any, error) {
 	bundle, err := config.LoadBundle(configPath)
 	if err != nil {
-		return nil, domain.NewError(domain.ErrConfigInvalid, "init seeded config is invalid", map[string]any{"path": configPath, "error": fmt.Sprint(err)})
+		return nil, domain.NewError(domain.ErrConfigInvalid, t("cli.err.init_seeded_config_invalid"), map[string]any{"path": configPath, "error": fmt.Sprint(err)})
 	}
 	available := availableLanguageCodes(bundle.Languages)
 	defaults := bundle.Config.Languages
@@ -119,7 +119,7 @@ func applyLanguageSelections(cmd *cobra.Command, configPath string, inputs langu
 	if inputs.CLILangSet {
 		next.CLI = strings.TrimSpace(inputs.CLILang)
 	} else if isInteractive(cmd) {
-		choice, err := promptLanguageCode(cmd, "CLI language", available, defaults.CLI)
+		choice, err := promptLanguageCode(cmd, t("cli.print.prompt_label.cli"), available, defaults.CLI)
 		if err != nil {
 			return nil, err
 		}
@@ -128,7 +128,7 @@ func applyLanguageSelections(cmd *cobra.Command, configPath string, inputs langu
 	if inputs.TUILangSet {
 		next.TUI = strings.TrimSpace(inputs.TUILang)
 	} else if isInteractive(cmd) {
-		choice, err := promptLanguageCode(cmd, "TUI language", available, defaults.TUI)
+		choice, err := promptLanguageCode(cmd, t("cli.print.prompt_label.tui"), available, defaults.TUI)
 		if err != nil {
 			return nil, err
 		}
@@ -137,7 +137,7 @@ func applyLanguageSelections(cmd *cobra.Command, configPath string, inputs langu
 	if inputs.AgentLangSet {
 		next.AgentOutput = strings.TrimSpace(inputs.AgentLang)
 	} else if isInteractive(cmd) {
-		choice, err := promptFreeForm(cmd, "Agent output language (free-form, blank to skip)", defaults.AgentOutput)
+		choice, err := promptFreeForm(cmd, t("cli.print.prompt_label.agent"), defaults.AgentOutput)
 		if err != nil {
 			return nil, err
 		}
@@ -184,7 +184,7 @@ func validateInitLanguageChoice(flag, value string, available []string) error {
 			return nil
 		}
 	}
-	return domain.NewError(domain.ErrValidation, fmt.Sprintf("--%s %q is not a loaded language code", flag, v), map[string]any{"available": available})
+	return domain.NewError(domain.ErrValidation, fmt.Sprintf(t("cli.err.unknown_language_code"), flag, v), map[string]any{"available": available})
 }
 
 // isInteractive reports whether the command should issue TTY prompts.
@@ -216,7 +216,7 @@ func promptLanguageCode(cmd *cobra.Command, label string, available []string, fa
 		def = "en"
 	}
 	for {
-		fmt.Fprintf(out, "%s [%s] (default %s): ", label, strings.Join(available, ", "), def)
+		fmt.Fprintf(out, t("cli.print.prompt_with_options"), label, strings.Join(available, ", "), def)
 		line, err := reader.ReadString('\n')
 		if err != nil && err != io.EOF {
 			return "", err
@@ -230,7 +230,7 @@ func promptLanguageCode(cmd *cobra.Command, label string, available []string, fa
 				return choice, nil
 			}
 		}
-		fmt.Fprintf(out, "  unknown code %q — pick one of %s\n", choice, strings.Join(available, ", "))
+		fmt.Fprintf(out, t("cli.print.prompt_unknown_code"), choice, strings.Join(available, ", "))
 	}
 }
 
@@ -243,9 +243,9 @@ func promptFreeForm(cmd *cobra.Command, label, fallback string) (string, error) 
 	def := fallback
 	defLabel := def
 	if defLabel == "" {
-		defLabel = "<none>"
+		defLabel = t("cli.print.prompt_freeform_none")
 	}
-	fmt.Fprintf(out, "%s (default %s): ", label, defLabel)
+	fmt.Fprintf(out, t("cli.print.prompt_freeform"), label, defLabel)
 	line, err := reader.ReadString('\n')
 	if err != nil && err != io.EOF {
 		return "", err
@@ -280,7 +280,7 @@ func resolveScopeRoot(opts *runtimeOptions, scope string) (string, error) {
 		}
 		return filepath.Join(cwd, config.RepoLocalDirName), nil
 	default:
-		return "", domain.NewError(domain.ErrValidation, "invalid --scope (want global or local)", map[string]any{"scope": scope})
+		return "", domain.NewError(domain.ErrValidation, t("cli.err.invalid_scope"), map[string]any{"scope": scope})
 	}
 }
 

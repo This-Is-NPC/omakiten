@@ -75,7 +75,7 @@ func newWorkflowOrphansCommand(opts *runtimeOptions) *cobra.Command {
 
 				if dryRun || !confirm {
 					return nil, domain.NewError(domain.ErrValidation,
-						"orphans migration requires --confirm; re-run with --confirm to apply",
+						opts.t("cli.err.orphans_requires_confirm"),
 						map[string]any{
 							"project": project.Slug,
 							"report":  preview,

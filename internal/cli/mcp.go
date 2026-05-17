@@ -67,7 +67,7 @@ func newMCPPromptsCommand(opts *runtimeOptions) *cobra.Command {
 					return fmt.Errorf("prompt %s returned no messages", name)
 				}
 				body := result.Messages[0].Content.Text
-				fmt.Fprintf(out, "# %s — %d bytes / %d runes\n\n%s\n", name, len(body), runeCount(body), body)
+				fmt.Fprintf(out, opts.t("cli.print.prompt_render"), name, len(body), runeCount(body), body)
 			}
 			return nil
 		},

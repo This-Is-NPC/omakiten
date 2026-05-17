@@ -61,7 +61,7 @@ func newConfigLanguageShowCommand(opts *runtimeOptions) *cobra.Command {
 						"tui":          eff.TUI,
 						"agent_output": eff.AgentOutput,
 					},
-					"agent_output_note": "free-form; not validated against the loaded catalog",
+					"agent_output_note": opts.t("cli.print.agent_output_note"),
 					"available":         available,
 				}, nil
 			})
@@ -90,7 +90,7 @@ func newConfigLanguageSetCommand(opts *runtimeOptions) *cobra.Command {
 			agentSet = cmd.Flags().Changed("agent")
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				if !cliSet && !tuiSet && !agentSet {
-					return nil, domain.NewError(domain.ErrValidation, "at least one of --cli, --tui, --agent must be supplied", nil)
+					return nil, domain.NewError(domain.ErrValidation, opts.t("cli.err.language_set_no_flags"), nil)
 				}
 				path, err := writeTargetPath(opts, global)
 				if err != nil {
@@ -98,7 +98,7 @@ func newConfigLanguageSetCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				bundle, err := config.LoadBundle(path)
 				if err != nil {
-					return nil, domain.NewError(domain.ErrConfigInvalid, "config is invalid", map[string]any{"path": path, "error": fmt.Sprint(err)})
+					return nil, domain.NewError(domain.ErrConfigInvalid, opts.t("cli.err.config_invalid"), map[string]any{"path": path, "error": fmt.Sprint(err)})
 				}
 				next := bundle.Config.Languages
 				if cliSet {
@@ -147,7 +147,7 @@ func newConfigLanguageResetCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				bundle, err := config.LoadBundle(path)
 				if err != nil {
-					return nil, domain.NewError(domain.ErrConfigInvalid, "config is invalid", map[string]any{"path": path, "error": fmt.Sprint(err)})
+					return nil, domain.NewError(domain.ErrConfigInvalid, opts.t("cli.err.config_invalid"), map[string]any{"path": path, "error": fmt.Sprint(err)})
 				}
 				bundle.Config.Languages = config.LanguageSettings{}
 				if err := config.SaveBundle(path, bundle); err != nil {
@@ -178,7 +178,7 @@ func loadActiveBundle(opts *runtimeOptions) (string, config.Bundle, error) {
 	}
 	bundle, err := config.LoadBundle(path)
 	if err != nil {
-		return path, config.Bundle{}, domain.NewError(domain.ErrConfigInvalid, "config is invalid", map[string]any{"path": path, "error": fmt.Sprint(err)})
+		return path, config.Bundle{}, domain.NewError(domain.ErrConfigInvalid, opts.t("cli.err.config_invalid"), map[string]any{"path": path, "error": fmt.Sprint(err)})
 	}
 	return path, bundle, nil
 }
@@ -220,7 +220,7 @@ func validateLanguageWriteIntent(bundle config.Bundle, cliSet, tuiSet bool) erro
 		if _, ok := available[v]; ok {
 			return nil
 		}
-		return domain.NewError(domain.ErrValidation, fmt.Sprintf("--%s %q is not a loaded language code", field, v), map[string]any{"available": codes})
+		return domain.NewError(domain.ErrValidation, fmt.Sprintf(t("cli.err.unknown_language_code"), field, v), map[string]any{"available": codes})
 	}
 	if cliSet {
 		if err := check("cli", bundle.Config.Languages.CLI); err != nil {

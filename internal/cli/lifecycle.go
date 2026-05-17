@@ -25,7 +25,7 @@ func newDeleteCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				if !confirmed {
-					return nil, domain.NewError(domain.ErrValidation, "task delete requires --confirm to acknowledge the destructive cascade", map[string]any{"task_id": taskID, "hint": "consider okt archive instead for a reversible alternative"})
+					return nil, domain.NewError(domain.ErrValidation, opts.t("cli.err.task_delete_requires_confirm"), map[string]any{"task_id": taskID, "hint": "consider okt archive instead for a reversible alternative"})
 				}
 				rt, err := opts.open(ctx, true)
 				if err != nil {

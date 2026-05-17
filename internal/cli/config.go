@@ -35,7 +35,7 @@ func newConfigCommand(opts *runtimeOptions) *cobra.Command {
 
 				bundle, err := config.LoadBundle(path)
 				if err != nil {
-					return nil, domain.NewError(domain.ErrConfigInvalid, "config is invalid", map[string]any{"path": path, "error": fmt.Sprint(err)})
+					return nil, domain.NewError(domain.ErrConfigInvalid, t("cli.err.config_invalid"), map[string]any{"path": path, "error": fmt.Sprint(err)})
 				}
 				return map[string]any{"path": path, "kit": bundle.Kit}, nil
 			})

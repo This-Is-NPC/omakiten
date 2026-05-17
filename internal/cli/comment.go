@@ -130,7 +130,7 @@ func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				if !deleteConfirmed {
-					return nil, domain.NewError(domain.ErrValidation, "comment delete requires --confirm to acknowledge the destructive operation", map[string]any{"comment_id": commentID})
+					return nil, domain.NewError(domain.ErrValidation, opts.t("cli.err.comment_delete_requires_confirm"), map[string]any{"comment_id": commentID})
 				}
 				rt, err := opts.open(ctx, true)
 				if err != nil {
@@ -164,7 +164,7 @@ func newCommentCommand(opts *runtimeOptions) *cobra.Command {
 func parseTaskID(value string) (int64, error) {
 	taskID, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
-		return 0, domain.NewError(domain.ErrValidation, "task id must be numeric", map[string]any{"value": value})
+		return 0, domain.NewError(domain.ErrValidation, t("cli.err.task_id_not_numeric"), map[string]any{"value": value})
 	}
 	return taskID, nil
 }

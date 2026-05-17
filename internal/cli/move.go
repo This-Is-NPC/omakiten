@@ -21,7 +21,7 @@ func newMoveCommand(opts *runtimeOptions) *cobra.Command {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				taskID, err := strconv.ParseInt(args[0], 10, 64)
 				if err != nil {
-					return nil, domain.NewError(domain.ErrValidation, "task id must be numeric", map[string]any{"value": args[0]})
+					return nil, domain.NewError(domain.ErrValidation, opts.t("cli.err.task_id_not_numeric"), map[string]any{"value": args[0]})
 				}
 
 				rt, err := opts.open(ctx, true)

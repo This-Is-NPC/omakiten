@@ -55,7 +55,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 	}
 	bundle, err := config.LoadBundle(rt.configPath)
 	if err != nil {
-		return domain.NewError(domain.ErrConfigInvalid, "config is invalid", map[string]any{"path": rt.configPath, "error": fmt.Sprint(err)})
+		return domain.NewError(domain.ErrConfigInvalid, t("cli.err.config_invalid"), map[string]any{"path": rt.configPath, "error": fmt.Sprint(err)})
 	}
 	theme, err := loadActiveThemeFromBundle(bundle, rt.configPath)
 	if err != nil {
@@ -180,7 +180,7 @@ func loadActiveThemeFromBundle(bundle config.Bundle, configPath string) (config.
 	}
 	theme, err := config.LoadTheme(themePath)
 	if err != nil {
-		return config.Theme{}, domain.NewError(domain.ErrConfigInvalid, "theme is invalid", map[string]any{"path": themePath, "error": fmt.Sprint(err)})
+		return config.Theme{}, domain.NewError(domain.ErrConfigInvalid, t("cli.err.theme_invalid"), map[string]any{"path": themePath, "error": fmt.Sprint(err)})
 	}
 	return theme, nil
 }

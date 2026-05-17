@@ -108,10 +108,10 @@ func newInitCommand(opts *runtimeOptions) *cobra.Command {
 
 func presetCLIError(err error) error {
 	if errors.Is(err, config.ErrPresetNotFound) {
-		return domain.NewError(domain.ErrValidation, "unknown workflow preset", map[string]any{"available": config.ListPresets()})
+		return domain.NewError(domain.ErrValidation, t("cli.err.unknown_workflow_preset"), map[string]any{"available": config.ListPresets()})
 	}
 	if errors.Is(err, config.ErrPresetTargetExists) {
-		return domain.NewError(domain.ErrValidation, "repo-local .omakiten already exists; pass --preset-force to overwrite", nil)
+		return domain.NewError(domain.ErrValidation, t("cli.err.repo_local_already_exists"), nil)
 	}
 	return err
 }
