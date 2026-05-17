@@ -267,6 +267,12 @@ type Model struct {
 	// resolve labels/ids against this bundle instead of the deprecated
 	// process-global tables.
 	registry *domain.EnumRegistry
+	// languages is the resolved per-surface language selection from the
+	// active bundle, with EffectiveLanguages defaults applied (CLI/TUI
+	// fall back to "en"; AgentOutput stays empty when unset). Populated
+	// by reloadBundle so Settings › General can render the three rows
+	// without re-reading the snapshot at render time.
+	languages config.LanguageSettings
 	themePickerOptions  []themeOption
 	configPickerOptions []configOption
 	entries             []domain.ContextEntry

@@ -65,6 +65,7 @@ func (m *Model) reloadBundle(path string) error {
 	m.repos.Workflow = pr.Workflow
 	m.repos.Catalog = snap.Catalog(config.SurfaceTUI)
 	m.notifications = snap.Notifications()
+	m.languages = settings.EffectiveLanguages()
 	m.tokenBadgeYellow, m.tokenBadgeRed = settings.TUI.TokenBadge.Effective()
 
 	if err := m.refresh(); err != nil {

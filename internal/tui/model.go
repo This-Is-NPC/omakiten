@@ -813,6 +813,9 @@ func (m *Model) refresh() error {
 	m.tags = snap.AllTags
 	m.taskTagsMap = snap.TaskTagsByID
 	m.metrics = m.computeMetrics(snap.Settings.MaxTokens)
+	if bundleSnap := m.repos.activeSnapshot(); bundleSnap != nil {
+		m.languages = bundleSnap.Settings().EffectiveLanguages()
+	}
 	m.clampSelection()
 	m.clampCardIdx()
 	m.clampEntityCursor()

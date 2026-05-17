@@ -46,6 +46,9 @@ func (m Model) renderSettingsGeneral() string {
 		[2]string{m.t("tui.settings.project.workflow"), valueOrDash(m.workflow.Key)},
 		[2]string{m.t("tui.settings.project.buckets"), valueOrDash(strings.Join(bucketKeys, ", "))},
 		[2]string{m.t("tui.settings.project.theme"), valueOrDash(m.theme.Key)},
+		[2]string{m.t("tui.settings.project.lang_cli"), valueOrDash(m.languages.CLI)},
+		[2]string{m.t("tui.settings.project.lang_tui"), valueOrDash(m.languages.TUI)},
+		[2]string{m.t("tui.settings.project.lang_agent_output"), valueOrDash(m.languages.AgentOutput)},
 	)
 
 	body := m.renderSummaryTables(summaryTablesOpts{
