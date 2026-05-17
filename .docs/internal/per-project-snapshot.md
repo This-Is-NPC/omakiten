@@ -28,16 +28,19 @@ to the shared-singleton model the migration retired.
   (with `task_tags` / `project_tags` / `error_tags`), `errors`,
   `solutions`, `context_entries`. Migration 009 folded `comments` and
   `activity_logs` into `events`; migration 020 dropped every config
-  table. The Store carries no bundle field — the only bundle-aware
-  emission is `Store.RecordEntityEvent(..., EventTypeBundleImported, ...)`
-  called by `agentruntime.buildProjectRuntime` after a successful
+  table; migration 022 adds the FTS5 `search_index` virtual table behind
+  the unified `search` MCP tool — populated by triggers off the base
+  tables, no bundle reads required. The Store carries no bundle field —
+  the only bundle-aware emission is
+  `Store.RecordEntityEvent(..., EventTypeBundleImported, ...)`
+  called by `agentruntime.buildProjectRuntime` before
   `BuildSnapshot`, recording the audit event and writing nothing else.
 
 ## Layer diagram
 
 ```
                   ┌──────────────────────────────┐
-                  │     omakiten.yaml (disk)     │
+                  │     omakase.yaml (disk)      │
                   └──────────────┬───────────────┘
                                  │ LoadBundle
                                  ▼
