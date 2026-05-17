@@ -26,9 +26,17 @@ Canonical directory tree for an Omakiten installation. Anchored sections — lin
 ├── templates/                    same shape
 │   ├── <slug>.md
 │   └── custom/<slug>.md
-└── themes/                       same shape
-    ├── <slug>.md
-    └── custom/<slug>.md
+├── themes/                       same shape
+│   ├── <slug>.md
+│   └── custom/<slug>.md
+├── notifications/                kit notification cards (kitten_*, plus preset
+│   ├── <slug>.yaml               personas) — referenced from `config.hooks`;
+│   └── custom/<slug>.yaml        same custom/ shadowing as the other folders.
+└── languages/                    bundled CLI/TUI language packs (one yaml per
+    ├── <code>.yaml               BCP-47 code; 21 today: en, es, pt-br, jp, fr,
+    └── custom/<code>.yaml        de, ru, zh-cn, ko, ar, hi, mr, tr, it, pl, nl,
+                                  da, fi, no, sv, uk). Custom packs live under
+                                  `custom/` and shadow same-coded bundled packs.
 ```
 
 Data — the SQLite database that backs every project — lives under a parallel root rather than alongside `config/`:
@@ -41,7 +49,7 @@ $XDG_DATA_HOME/omakiten/omakiten.db    (when XDG_DATA_HOME is set)
 
 ## <a id="custom-shadowing"></a>`custom/` shadowing
 
-Every entity directory (`config/`, `laws/`, `skills/`, `personas/`, `templates/`, `themes/`) has a `custom/` subdirectory. For each slug, `custom/` always wins.
+Every entity directory (`config/`, `laws/`, `skills/`, `personas/`, `templates/`, `themes/`, `notifications/`, `languages/`) has a `custom/` subdirectory. For each slug or language code, `custom/` always wins.
 
 Rationale: `mise run install` (and `okt config sync`) overwrites the root copy of every kit-shipped entity. The `custom/` copy is never touched. Users who fork a default copy its file to `custom/` first; agents respect the override transparently.
 
