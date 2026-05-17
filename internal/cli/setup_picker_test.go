@@ -17,7 +17,7 @@ func keyMsg(r rune) tea.KeyMsg {
 func enterMsg() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyEnter} }
 func ctrlCMsg() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyCtrlC} }
 func downMsg() tea.KeyMsg  { return tea.KeyMsg{Type: tea.KeyDown} }
-func spaceMsg() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeySpace} }
+func tabMsg() tea.KeyMsg   { return tea.KeyMsg{Type: tea.KeyTab} }
 
 func stepThrough(t *testing.T, m setupPickerModel, msgs ...tea.Msg) setupPickerModel {
 	t.Helper()
@@ -96,7 +96,9 @@ func TestSetupPicker_HappyPath(t *testing.T) {
 		t.Fatalf("Preset: got %q want omakase", m.inputs.Preset)
 	}
 
-	// Harness — toggle claude-code and opencode then enter.
+	// Harness — toggle claude-code and opencode with enter, then submit
+	// with tab. enter toggles a row in/out of the selection; tab
+	// finalises and quits the program.
 	supported := installer.SupportedHarnesses()
 	want := []string{}
 	for _, name := range []string{"claude-code", "opencode"} {
@@ -108,18 +110,18 @@ func TestSetupPicker_HappyPath(t *testing.T) {
 				for m.harnessCursor > i {
 					m = stepThrough(t, m, tea.KeyMsg{Type: tea.KeyUp})
 				}
-				m = stepThrough(t, m, spaceMsg())
+				m = stepThrough(t, m, enterMsg())
 				want = append(want, name)
 				break
 			}
 		}
 	}
-	m = stepThrough(t, m, enterMsg())
+	m = stepThrough(t, m, tabMsg())
 	if !m.done {
-		t.Fatalf("model should be done after harness enter")
+		t.Fatalf("model should be done after tab confirm")
 	}
 	if !m.inputs.HarnessesSet {
-		t.Fatalf("HarnessesSet must flip after enter")
+		t.Fatalf("HarnessesSet must flip after tab")
 	}
 	if strings.Join(m.inputs.Harnesses, ",") != strings.Join(want, ",") {
 		t.Fatalf("Harnesses: got %v want %v", m.inputs.Harnesses, want)

@@ -862,7 +862,7 @@ keys:
   cli.setup.picker.preset.title: "Select your workflow preset"
   cli.setup.picker.harness.title: "Configure MCP harnesses"
   cli.setup.picker.hint.nav: "↑/↓ navigate · enter confirm · ctrl+c quit"
-  cli.setup.picker.hint.multi: "↑/↓ navigate · space toggle · enter confirm · ctrl+c quit"
+  cli.setup.picker.hint.multi: "↑/↓ navigate · enter toggle · tab confirm · ctrl+c quit"
   cli.setup.picker.hint.input: "type to edit · enter confirm (empty ok) · ctrl+c quit"
   cli.setup.picker.aborted: "setup aborted; nothing written"
   cli.setup.picker.no_tty: "interactive picker needs a TTY; supply OKT_CLI_LANG, OKT_TUI_LANG, OKT_AGENT_LANG, OKT_PRESET, OKT_HARNESSES (or matching --flags) for headless install"

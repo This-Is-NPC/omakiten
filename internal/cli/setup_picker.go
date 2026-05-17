@@ -278,9 +278,9 @@ func (m setupPickerModel) updateHarness(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.harnessCursor = 0
 	case "end", "G":
 		m.harnessCursor = rows - 1
-	case " ", "space":
-		m.harnessChosen[m.harnessCursor] = !m.harnessChosen[m.harnessCursor]
 	case "enter":
+		m.harnessChosen[m.harnessCursor] = !m.harnessChosen[m.harnessCursor]
+	case "tab":
 		var chosen []string
 		for i, name := range m.harnesses {
 			if m.harnessChosen[i] {
