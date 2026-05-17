@@ -83,9 +83,9 @@ func (m Model) renderTable() string {
 	tasks := m.applyTableView()
 	if len(tasks) == 0 {
 		if len(m.tasks) == 0 {
-			return m.renderPanel("No tasks yet. Press n to create one.")
+			return m.renderPanel(m.t("tui.empty.table_no_tasks"))
 		}
-		return m.renderPanel("No tasks match the configured table filter.")
+		return m.renderPanel(m.t("tui.empty.table_filtered"))
 	}
 	if m.availableWidth() < 74 {
 		return m.renderTableCompactWith(tasks)

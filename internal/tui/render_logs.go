@@ -93,7 +93,7 @@ func (m Model) renderLogs() string {
 		return m.renderPanel("Activity logging is not available for this project.")
 	}
 	if len(m.logs) == 0 {
-		return m.renderPanel("No activity yet. Use the CLI, TUI, or MCP to interact with Omakiten.")
+		return m.renderPanel(m.t("tui.empty.logs"))
 	}
 
 	summary := m.renderLogsSummaryTables()

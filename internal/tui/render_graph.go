@@ -98,7 +98,7 @@ func (m Model) renderGraph() string {
 		content := m.styles.hintBox.Width(m.hintBoxWidth()).Render(strings.Join([]string{
 			m.styles.kickerCount("Dependency graph", 0),
 			"",
-			m.styles.hint.Render("No task dependencies yet."),
+			m.styles.hint.Render(m.t("tui.empty.graph_no_deps")),
 			m.styles.hint.Render("Use ") + m.styles.hintAccent.Render("okt depend add TASK -i BLOCKER") + m.styles.hint.Render(" to define blocked_by edges."),
 		}, "\n"))
 		return "\n" + indentBlock(content, 2)

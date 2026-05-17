@@ -263,7 +263,7 @@ func (m *Model) syncBoardColScroll() {
 
 func (m Model) renderBoard() string {
 	if len(m.workflow.Buckets) == 0 {
-		return m.renderPanel("No workflow buckets. Add buckets in the active workflow config.")
+		return m.renderPanel(m.t("tui.empty.board_no_buckets"))
 	}
 
 	tasksByBucket := m.tasksByBucket()
@@ -426,7 +426,7 @@ func (m Model) renderTaskBadges(task domain.Task, maxWidth int) string {
 
 func (m Model) renderEmptyBoardHint() string {
 	lines := []string{
-		m.styles.hintAccent.Render("No tasks yet."),
+		m.styles.hintAccent.Render(m.t("tui.empty.board_no_tasks")),
 		"",
 		m.styles.hint.Render("Press ") + m.styles.hintAccent.Render("n") + m.styles.hint.Render(" to create the first task, or use the CLI:"),
 		m.styles.hint.Render("  okt add -t \"Implement the next slice\""),

@@ -119,7 +119,7 @@ func (m Model) renderStatsModelPanel() string {
 	}
 
 	if len(summary.ByModel) == 0 {
-		rows = append(rows, m.styles.hint.Render("No agent activity recorded yet for this period."))
+		rows = append(rows, m.styles.hint.Render(m.t("tui.empty.stats")))
 	} else {
 		t := summary.Total
 		searchPct := "—"

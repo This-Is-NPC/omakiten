@@ -159,7 +159,7 @@ func (m Model) renderEntityView() string {
 		}
 		skills := strings.Join(persona.SkillKeys, ", ")
 		if skills == "" {
-			skills = m.styles.hint.Render("none")
+			skills = m.styles.hint.Render(m.t("tui.empty.none"))
 		}
 		dataRows = []detailRow{
 			{label: "Slug", value: persona.Key},
@@ -177,9 +177,9 @@ func (m Model) renderEntityView() string {
 		}
 		entity := template.Entity
 		if entity == "" {
-			entity = m.styles.hint.Render("none")
+			entity = m.styles.hint.Render(m.t("tui.empty.none"))
 		}
-		defaultLabel := m.styles.hint.Render("none")
+		defaultLabel := m.styles.hint.Render(m.t("tui.empty.none"))
 		if template.Default != "" {
 			text := template.Default
 			if template.ProjectSlug != "" {
@@ -203,7 +203,7 @@ func (m Model) renderEntityView() string {
 
 	bodyText := m.renderBodyMarkdown(body, valueWidth)
 	if strings.TrimSpace(bodyText) == "" {
-		bodyText = m.styles.hint.Render("Empty body")
+		bodyText = m.styles.hint.Render(m.t("tui.empty.body"))
 	}
 
 	screen := m.entityView.Reset(valueWidth).Custom(header)

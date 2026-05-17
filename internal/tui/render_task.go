@@ -650,7 +650,7 @@ func (m Model) renderTaskView() string {
 		Row("Tags", tagLine).
 		KickerCount("Blockers", len(blockers))
 	if len(blockers) == 0 {
-		detail = detail.Span(m.styles.hint.Render("No blockers. Press b to add one."))
+		detail = detail.Span(m.styles.hint.Render(m.t("tui.empty.blockers")))
 	} else {
 		for _, blocker := range blockers {
 			detail = detail.Span(m.renderTaskReference(blocker))
@@ -658,7 +658,7 @@ func (m Model) renderTaskView() string {
 	}
 	detail = detail.Kicker("Description")
 	if strings.TrimSpace(task.Description) == "" {
-		detail = detail.Span(m.styles.hint.Render("No description"))
+		detail = detail.Span(m.styles.hint.Render(m.t("tui.empty.task_no_description")))
 	} else {
 		detail = detail.Span(m.renderBodyMarkdown(task.Description, valueWidth))
 	}
@@ -743,7 +743,7 @@ func (m Model) renderBlockerPicker() string {
 	}
 	candidates := m.blockerPickerCandidates()
 	if len(candidates) == 0 {
-		empty := []string{m.styles.hint.Render("No other tasks are available to block this task.")}
+		empty := []string{m.styles.hint.Render(m.t("tui.empty.blocker_picker"))}
 		return m.renderPickerPanel(header, empty, 0, 0)
 	}
 

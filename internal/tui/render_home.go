@@ -241,7 +241,7 @@ func (m Model) renderHome() string {
 	}
 
 	if len(m.homeProjects) == 0 {
-		lines = append(lines, m.styles.empty.Width(columnInner).Render("no projects"))
+		lines = append(lines, m.styles.empty.Width(columnInner).Render(m.t("tui.empty.home_no_projects")))
 		body := m.styles.kanbanColumn.Width(columnInner).Render(strings.Join(lines, "\n"))
 		return "\n" + indentBlock(body, 2) + "\n\n" + indentBlock(m.renderHomeEmptyHint(), 2)
 	}
@@ -356,7 +356,7 @@ func truncatePath(path string, width int) string {
 
 func (m Model) renderHomeEmptyHint() string {
 	lines := []string{
-		m.styles.hintAccent.Render("No projects registered."),
+		m.styles.hintAccent.Render(m.t("tui.empty.home_no_projects_full")),
 		"",
 		m.styles.hint.Render("Register one with:"),
 		m.styles.hint.Render("  okt init --name MyProject --slug my-project"),

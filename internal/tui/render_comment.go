@@ -29,7 +29,7 @@ func (m Model) renderCommentScreen() string {
 		notFound := []string{
 			m.styles.kicker(fmt.Sprintf("Comment · #%d", m.commentScreenID)),
 			"",
-			m.styles.hint.Render("Comment not found. Press esc to return."),
+			m.styles.hint.Render(m.t("tui.empty.comment_not_found")),
 		}
 		return m.renderPanel(strings.Join(notFound, "\n"))
 	}
