@@ -43,7 +43,7 @@ func (m *Model) openThemePicker() {
 		return
 	}
 	if len(options) == 0 {
-		m.status = "No themes found"
+		m.status = m.t("tui.status.no_themes_found")
 		return
 	}
 	cursor := 0
@@ -58,7 +58,7 @@ func (m *Model) openThemePicker() {
 	m.entityForm = entityForm{mode: entityScreenThemePicker}
 	m.entityPicker = picker.New(picker.Single)
 	m.entityPicker.Cursor = cursor
-	m.status = "Theme picker"
+	m.status = m.t("tui.status.theme_picker")
 }
 
 func (m *Model) openConfigPicker() {
@@ -68,7 +68,7 @@ func (m *Model) openConfigPicker() {
 		return
 	}
 	if len(options) == 0 {
-		m.status = "No config profiles found"
+		m.status = m.t("tui.status.no_config_profiles")
 		return
 	}
 	active := filepath.Base(m.repos.Editor.Path())
@@ -84,7 +84,7 @@ func (m *Model) openConfigPicker() {
 	m.entityForm = entityForm{mode: entityScreenConfigPicker}
 	m.entityPicker = picker.New(picker.Single)
 	m.entityPicker.Cursor = cursor
-	m.status = "Config picker"
+	m.status = m.t("tui.status.config_picker")
 }
 
 // discoverThemes scans <root>/themes (defaults) + <root>/themes/custom for

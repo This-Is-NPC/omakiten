@@ -26,7 +26,7 @@ func (o defaultPickerOption) label() string {
 
 func (m *Model) openTemplateDefaultPickerForSelected() {
 	if m.entityCount(entityKindTemplate) == 0 {
-		m.status = "No template selected"
+		m.status = m.t("tui.status.no_template_selected")
 		return
 	}
 	cursor := m.selectedEntityIndex(entityKindTemplate)
@@ -40,11 +40,11 @@ func (m *Model) openTemplateDefaultPickerForSelected() {
 func (m *Model) openTemplateDefaultPicker(slug string) {
 	template, ok := m.findTemplateBySlug(slug)
 	if !ok {
-		m.status = "Template not found"
+		m.status = m.t("tui.status.template_not_found")
 		return
 	}
 	if m.project.Slug == "" {
-		m.status = "TUI must be opened inside a project to assign a template default"
+		m.status = m.t("tui.status.template_picker_needs_project")
 		return
 	}
 
@@ -59,7 +59,7 @@ func (m *Model) openTemplateDefaultPicker(slug string) {
 	}
 	m.entityPicker = picker.New(picker.Single)
 	m.entityPicker.Cursor = cursor
-	m.status = "Default picker"
+	m.status = m.t("tui.status.default_picker")
 }
 
 // buildTemplateDefaultOptions enumerates the kinds the user can claim from

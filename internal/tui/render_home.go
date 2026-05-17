@@ -96,7 +96,7 @@ func (m *Model) handleHomeKey(msg tea.KeyMsg) {
 		if err := m.loadHome(); err != nil {
 			m.status = err.Error()
 		} else {
-			m.status = "Refreshed"
+			m.status = m.t("tui.status.refreshed")
 		}
 		return
 	}

@@ -34,7 +34,7 @@ func (m Model) updateEntityScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.openEntityEditor(m.entityForm.kind, m.entityForm.slug)
 	case "d":
 		if m.entityForm.kind == entityKindTemplate {
-			m.status = "Templates auto-load — remove the .md file from templates/ and refresh"
+			m.status = m.t("tui.status.template_remove_hint")
 			return m, nil
 		}
 		m.requestEntityDelete(m.entityForm.kind, m.entityForm.slug)
@@ -53,7 +53,7 @@ func (m Model) updateEntityScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if err := m.refresh(); err != nil {
 			m.status = err.Error()
 		} else {
-			m.status = "Refreshed"
+			m.status = m.t("tui.status.refreshed")
 		}
 	case "M":
 		m.clearDeletePrompt("")

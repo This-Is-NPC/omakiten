@@ -20,9 +20,9 @@ func (m *Model) handleBoardKey(msg tea.KeyMsg) {
 		if _, ok := m.selectedTask(); ok {
 			m.moveMode = !m.moveMode
 			if m.moveMode {
-				m.status = "Move mode: left/right moves the selected task"
+				m.status = m.t("tui.status.move_mode_active")
 			} else {
-				m.status = "Move cancelled"
+				m.status = m.t("tui.status.move_cancelled")
 			}
 		}
 	case "left", "h":

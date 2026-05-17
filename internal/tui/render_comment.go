@@ -375,11 +375,11 @@ func (m *Model) updateCommentEditScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) saveCommentEdit() {
 	body := strings.TrimSpace(m.commentInput.Value())
 	if body == "" {
-		m.status = "Input is required"
+		m.status = m.t("tui.status.input_required")
 		return
 	}
 	if m.commentEditID <= 0 {
-		m.status = "no comment selected"
+		m.status = m.t("tui.status.no_comment_selected")
 		return
 	}
 	existing, err := m.findCommentByID(m.commentEditID)
@@ -406,7 +406,7 @@ func (m *Model) saveCommentEdit() {
 			return
 		}
 	}
-	m.status = "Saved"
+	m.status = m.t("tui.status.saved")
 	m.exitCommentEditMode()
 }
 
@@ -414,7 +414,7 @@ func (m *Model) saveCommentEdit() {
 // detail view. The comment screen overlay stays open so the user lands
 // back on the same card they were reading.
 func (m *Model) cancelCommentEdit() {
-	m.status = "Cancelled"
+	m.status = m.t("tui.status.cancelled")
 	m.exitCommentEditMode()
 }
 

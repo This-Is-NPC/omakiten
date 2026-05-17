@@ -66,7 +66,7 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if err := m.refresh(); err != nil {
 				m.status = err.Error()
 			} else {
-				m.status = "Refreshed"
+				m.status = m.t("tui.status.refreshed")
 			}
 		case "M":
 			m.toggleMarkdownRendered()
@@ -237,7 +237,7 @@ func (m *Model) openTaskCreate() {
 	m.taskPriority = m.defaultPriorityID()
 	m.taskField = taskFieldTitle
 	m.applyTaskFieldFocus()
-	m.status = "New task"
+	m.status = m.t("tui.status.new_task")
 	m.moveMode = false
 }
 
@@ -330,7 +330,7 @@ func (m *Model) openTaskEdit(task domain.Task) {
 	m.taskPriority = task.Priority
 	m.taskField = taskFieldTitle
 	m.applyTaskFieldFocus()
-	m.status = "Editing task"
+	m.status = m.t("tui.status.editing_task")
 	m.moveMode = false
 }
 
@@ -532,7 +532,7 @@ func (m *Model) executeTaskDelete(taskID int64) {
 func (m *Model) saveTaskForm() {
 	title := strings.TrimSpace(m.taskTitleInput.Value())
 	if title == "" {
-		m.status = "Task title is required"
+		m.status = m.t("tui.status.task_title_required")
 		return
 	}
 	description := strings.TrimSpace(m.taskDescriptionInput.Value())
@@ -573,7 +573,7 @@ func (m *Model) saveTaskForm() {
 	if m.selectTaskByID(task.ID) {
 		m.openTaskView(task)
 	}
-	m.status = "Saved"
+	m.status = m.t("tui.status.saved")
 }
 
 func (m Model) renderTaskScreen() string {

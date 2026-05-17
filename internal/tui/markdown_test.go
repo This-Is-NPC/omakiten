@@ -149,7 +149,7 @@ func TestRenderBodyMarkdown_EmptyShortCircuits(t *testing.T) {
 }
 
 func TestToggleMarkdownRendered_FlipsAndStatus(t *testing.T) {
-	m := Model{markdownRendered: true}
+	m := Model{markdownRendered: true, repos: Repositories{Catalog: newTestCatalog(t)}}
 	m.toggleMarkdownRendered()
 	if m.markdownRendered {
 		t.Error("expected markdownRendered=false after toggle")
