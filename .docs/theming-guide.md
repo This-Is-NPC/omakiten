@@ -57,6 +57,23 @@ Eight tokens are actually consumed by the TUI today (`internal/tui/styles.go`). 
 
 `background` and `highlight` are unused by the current renderer. Including them is harmless and keeps your theme forward-compatible if/when they are wired up.
 
+## Markdown rendering palette (4-token subset)
+
+Task descriptions, comment bodies, and entity files render through `glamour` when the user toggles markdown on (default in the entity views, toggled with `M` everywhere else). `buildMarkdownStyle` in `internal/tui/markdown.go` maps **four** tokens onto the `glamour.ansi.StyleConfig`:
+
+| Token | Markdown role |
+|---|---|
+| `primary` | Headings (H1–H6) and link color, bold + underlined links. |
+| `foreground` | Body text, emph, strong, list items, table cells, code (inline + fenced). |
+| `border` | Horizontal rule (`─`), list `·` glyphs, enumeration `.` glyphs. |
+| `secondary` | Block quotes (with a `│ ` indent token). |
+
+The other tokens (`success`/`warning`/`error`/`badge_fg`) do **not** participate in markdown — they only drive TUI chrome (badges, token-budget pills).
+
+### Chroma is intentionally off
+
+Fenced code blocks render in the **foreground color only**, with no chroma syntax highlighting. The dev-editorial design language (see `internal/tui/markdown.go::buildMarkdownStyle` comment) calls for plain foreground code, `·` bullets, and a `─` rule so the body feels uniform with the rest of the TUI. If you author a theme expecting `glamour`'s default chroma styles, your code blocks will look monochrome on purpose — there is no theme knob to switch chroma back on. The same trade-off is noted in the [TUI Guide](tui-guide.md#markdown-rendering).
+
 ## Authoring a theme
 
 1. Pick a key in kebab-case (e.g. `my-theme`).
