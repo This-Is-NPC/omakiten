@@ -63,7 +63,7 @@ OKT_CLI_LANG=pt-br OKT_TUI_LANG=pt-br OKT_PRESET=omakase OKT_HARNESSES=0 \
 | `--slug` | — | Project slug (kebab-case key). |
 | `--root` | `$CWD` | Project root path used for CWD-based resolution. |
 | `--enable-mcp` | `false` | Also configure an MCP harness entry. |
-| `--mcp-harness` | `claude-code` | One of `claude-code`, `claude-desktop`, `opencode` (`internal/agentsetup/setup.go`). |
+| `--mcp-harness` | `claude-code` | One of `claude-code`, `claude-desktop`, `opencode`, `crush`, `github-copilot`, `codex` (`internal/agentsetup/setup.go::SupportedHarnesses`). |
 | `--mcp-config` | harness default | Override the harness config-file path. |
 | `--mcp-command` | current executable | Command written into the harness config. |
 | `--mcp-dry-run` | `false` | Preview changes without writing. |
@@ -138,7 +138,7 @@ okt list -b review
 |---|---|
 | `--title`, `-t` | Rewrite title. |
 | `--description`, `-d` | Rewrite description. |
-| `--priority` | `low`, `normal`, or `high` (`internal/config/validator.go:allowedPriorities`). |
+| `--priority` | Priority label or numeric id. Resolved against the active bundle via `parsePriority` (`internal/cli/enums.go`) → `*domain.EnumRegistry`. Out-of-the-box labels: `low`, `normal`, `high` from `config.priorities` in `defaults/config/omakase.yaml`; rename them by editing the YAML, no code change required. |
 | `--bucket`, `-b` | Re-bucket through the workflow service (transition + guards still enforced). |
 
 ```sh
@@ -544,7 +544,7 @@ Writes the `omakiten` MCP server entry into a harness config file (`internal/age
 
 | Flag | Default | Effect |
 |---|---|---|
-| `--harness` | `claude-code` | One of `claude-code`, `claude-desktop`, `opencode`. |
+| `--harness` | `claude-code` | One of `claude-code`, `claude-desktop`, `opencode`, `crush`, `github-copilot`, `codex` (`internal/agentsetup/setup.go::SupportedHarnesses`). |
 | `--config-path` | harness default | Override the harness config-file path. |
 | `--command` | current executable | Command written into the harness config. |
 | `--dry-run` | `false` | Preview changes without writing. |
@@ -553,9 +553,12 @@ Writes the `omakiten` MCP server entry into a harness config file (`internal/age
 ```sh
 okt mcp tools
 okt mcp call tasks.list --input '{"bucket_key":"dev"}'
+okt mcp call search --input '{"query":"sqlite race","entity_types":["error","solution"]}'
 okt mcp setup --harness opencode --dry-run
 okt mcp serve   # invoked by the harness, not by hand
 ```
+
+`okt mcp call search` is the CLI handle for the unified FTS5 surface (`internal/app/search_service.go`); it returns BM25-ranked hits with `<mark>...</mark>` snippets across tasks, comments, errors, solutions, and context entries. Pass `entity_types: []` (or omit the key) for an all-five sweep — the legacy `errors.search` MCP tool was retired alongside it.
 
 The full set of MCP tools, resources, and prompts is documented in `.docs/mcp-guide.md`.
 
