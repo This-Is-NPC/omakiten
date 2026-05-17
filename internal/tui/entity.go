@@ -404,6 +404,6 @@ func (m *Model) deleteTagByName(name string) {
 		return
 	}
 	if n > 0 {
-		m.status = fmt.Sprintf("Tag %q deleted", name)
+		m.status = fmt.Sprintf(m.t("tui.status.tag_deleted_fmt"), name)
 	}
 }

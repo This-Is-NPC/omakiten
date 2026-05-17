@@ -135,9 +135,9 @@ func (m Model) renderEntityView() string {
 		// used.
 		badge := m.severityStyle(law.Severity).Render(m.severityLabel(law.Severity))
 		dataRows = []detailRow{
-			{label: "Slug", value: law.Key},
-			{label: "Severity", value: badge},
-			{label: "Source", value: law.SourcePath},
+			{label: m.t("tui.row.slug"), value: law.Key},
+			{label: m.t("tui.row.severity"), value: badge},
+			{label: m.t("tui.row.source"), value: law.SourcePath},
 		}
 		body = law.Body
 	case entityKindSkill:
@@ -146,10 +146,10 @@ func (m Model) renderEntityView() string {
 			return m.renderPanel("Skill not found")
 		}
 		dataRows = []detailRow{
-			{label: "Slug", value: skill.Key},
-			{label: "Name", value: skill.Name},
-			{label: "Description", value: skill.Description},
-			{label: "Source", value: skill.SourcePath},
+			{label: m.t("tui.row.slug"), value: skill.Key},
+			{label: m.t("tui.row.name"), value: skill.Name},
+			{label: m.t("tui.row.description"), value: skill.Description},
+			{label: m.t("tui.row.source"), value: skill.SourcePath},
 		}
 		body = skill.Body
 	case entityKindPersona:
@@ -162,14 +162,14 @@ func (m Model) renderEntityView() string {
 			skills = m.styles.hint.Render(m.t("tui.empty.none"))
 		}
 		dataRows = []detailRow{
-			{label: "Slug", value: persona.Key},
-			{label: "Name", value: persona.Name},
-			{label: "Description", value: persona.Description},
-			{label: "Skills", value: skills},
-			{label: "Source", value: persona.SourcePath},
+			{label: m.t("tui.row.slug"), value: persona.Key},
+			{label: m.t("tui.row.name"), value: persona.Name},
+			{label: m.t("tui.row.description"), value: persona.Description},
+			{label: m.t("tui.row.skills"), value: skills},
+			{label: m.t("tui.row.source"), value: persona.SourcePath},
 		}
 		body = persona.Body
-		extraSpannedRows = []string{m.styles.hint.Render("p: open skill picker")}
+		extraSpannedRows = []string{m.styles.hint.Render(m.t("tui.entity_screen.persona_skill_pick"))}
 	case entityKindTemplate:
 		template, ok := m.findTemplateBySlug(m.entityForm.slug)
 		if !ok {
@@ -190,15 +190,15 @@ func (m Model) renderEntityView() string {
 			defaultLabel = m.styles.badgeInfo.Render(strings.ToUpper(text))
 		}
 		dataRows = []detailRow{
-			{label: "Slug", value: template.Slug},
-			{label: "Name", value: template.Name},
-			{label: "Description", value: template.Description},
-			{label: "Entity", value: entity},
-			{label: "Default", value: defaultLabel},
-			{label: "Source", value: template.SourcePath},
+			{label: m.t("tui.row.slug"), value: template.Slug},
+			{label: m.t("tui.row.name"), value: template.Name},
+			{label: m.t("tui.row.description"), value: template.Description},
+			{label: m.t("tui.row.entity"), value: entity},
+			{label: m.t("tui.row.default"), value: defaultLabel},
+			{label: m.t("tui.row.source"), value: template.SourcePath},
 		}
 		body = template.Body
-		extraSpannedRows = []string{m.styles.hint.Render("a: assign default kind")}
+		extraSpannedRows = []string{m.styles.hint.Render(m.t("tui.entity_screen.template_set_default"))}
 	}
 
 	bodyText := m.renderBodyMarkdown(body, valueWidth)
@@ -210,7 +210,7 @@ func (m Model) renderEntityView() string {
 	for _, row := range dataRows {
 		screen = screen.Row(row.label, row.value)
 	}
-	screen = screen.Kicker("Body").Span(bodyText)
+	screen = screen.Kicker(m.t("tui.kicker.body")).Span(bodyText)
 	for _, row := range extraSpannedRows {
 		screen = screen.Span(row)
 	}

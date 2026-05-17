@@ -130,9 +130,9 @@ func (m Model) updateTemplateDefaultPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			return m, cmd
 		}
 		if chosen.Kind == "" {
-			m.closeEntityScreen(fmt.Sprintf("Template %s · default cleared", m.entityForm.slug))
+			m.closeEntityScreen(fmt.Sprintf(m.t("tui.status.template_default_cleared_fmt"), m.entityForm.slug))
 		} else {
-			m.closeEntityScreen(fmt.Sprintf("Template %s · default %q for project %s", m.entityForm.slug, chosen.Kind, m.project.Slug))
+			m.closeEntityScreen(fmt.Sprintf(m.t("tui.status.template_default_set_fmt"), m.entityForm.slug, chosen.Kind, m.project.Slug))
 		}
 	}
 	return m, cmd
@@ -160,8 +160,8 @@ func (m Model) renderTemplateDefaultPicker() string {
 		rows = append(rows, fmt.Sprintf("%s %s %s", marker, dot, opt.label()))
 	}
 	header := []string{
-		m.styles.kicker(fmt.Sprintf("Default kind · template %s · project %s", m.entityForm.slug, m.project.Slug)),
-		m.styles.hint.Render("up/down: move · enter: assign for this project (clears prior owner) · esc: cancel"),
+		m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.default_kind_fmt"), m.entityForm.slug, m.project.Slug)),
+		m.styles.hint.Render(m.t("tui.picker.hint.template_default")),
 		"",
 	}
 	return m.renderPickerPanel(header, rows, m.entityPicker.Scroll, m.pickerViewportRows())

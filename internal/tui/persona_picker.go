@@ -179,8 +179,8 @@ func (m Model) renderPersonaPicker() string {
 	dataRows = append(dataRows, fmt.Sprintf("%s + create new skill (opens $EDITOR)", addMarker))
 
 	header := []string{
-		m.styles.kicker(fmt.Sprintf("Skills for persona · %s", persona.Key)),
-		m.styles.hint.Render("up/down: move · space: toggle · enter on '+ create new': new skill · ctrl+s: save · esc: cancel"),
+		m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.skills_for_persona_fmt"), persona.Key)),
+		m.styles.hint.Render(m.t("tui.picker.hint.skills_persona")),
 		"",
 	}
 	return m.renderPickerPanel(header, dataRows, m.entityPicker.Scroll, m.pickerViewportRows())

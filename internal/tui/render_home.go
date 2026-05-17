@@ -358,10 +358,10 @@ func (m Model) renderHomeEmptyHint() string {
 	lines := []string{
 		m.styles.hintAccent.Render(m.t("tui.empty.home_no_projects_full")),
 		"",
-		m.styles.hint.Render("Register one with:"),
+		m.styles.hint.Render(m.t("tui.home.register_with")),
 		m.styles.hint.Render("  okt init --name MyProject --slug my-project"),
 		"",
-		m.styles.hint.Render("Then re-open ") + m.styles.hintAccent.Render("okt tui") + m.styles.hint.Render("."),
+		m.styles.hint.Render(m.t("tui.home.then_reopen_prefix")) + m.styles.hintAccent.Render(m.t("tui.home.okt_tui_cmd")) + m.styles.hint.Render(m.t("tui.home.then_reopen_suffix")),
 	}
 	return m.styles.hintBox.Width(m.hintBoxWidth()).Render(strings.Join(lines, "\n"))
 }

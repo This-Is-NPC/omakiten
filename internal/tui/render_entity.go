@@ -47,7 +47,7 @@ func (m Model) renderEntityCellWithViewport(kind entityKind, viewport int, conte
 	}
 
 	if count == 0 {
-		lines = append(lines, m.styles.empty.Render("empty"))
+		lines = append(lines, m.styles.empty.Render(m.t("tui.board.empty")))
 		return strings.Join(lines, "\n")
 	}
 
@@ -125,11 +125,11 @@ func (m Model) renderEntityCellWithViewport(kind entityKind, viewport int, conte
 		cardsBelow = 0
 	}
 	if cardsAbove > 0 {
-		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▲ %d above", cardsAbove)))
+		lines = append(lines, m.styles.hint.Render(fmt.Sprintf(m.t("tui.scroll.above_fmt"), cardsAbove)))
 	}
 	lines = append(lines, rowText[rowOffset:end]...)
 	if cardsBelow > 0 {
-		lines = append(lines, m.styles.hint.Render(fmt.Sprintf("▼ %d below", cardsBelow)))
+		lines = append(lines, m.styles.hint.Render(fmt.Sprintf(m.t("tui.scroll.below_fmt"), cardsBelow)))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -291,7 +291,7 @@ func wrapBadges(badges []string, maxWidth int) string {
 // weight as other scope-style badges so the user can scan a column for
 // user-owned overrides at a glance.
 func (m Model) customBadge() string {
-	return m.styles.badgeInfo.Render("CUSTOM")
+	return m.styles.badgeInfo.Render(m.t("tui.badge.custom"))
 }
 
 func (m Model) renderLawBadges(index int) []string {
@@ -306,12 +306,12 @@ func (m Model) renderLawBadges(index int) []string {
 	}
 
 	// Scope badge
-	scope := "GLOBAL"
+	scope := m.t("tui.badge.global")
 	switch law.Scope {
 	case domain.LawScopeProject:
-		scope = "PROJECT"
+		scope = m.t("tui.badge.project")
 	case domain.LawScopePersona:
-		scope = "PERSONA"
+		scope = m.t("tui.badge.persona")
 	}
 	badges = append(badges, m.styles.badgeScope.Render(scope))
 
@@ -321,7 +321,7 @@ func (m Model) renderLawBadges(index int) []string {
 	badges = append(badges, m.tokenBadge(tokens))
 
 	if strings.TrimSpace(law.Warning) != "" {
-		badges = append(badges, m.styles.badgeFix.Render("FIX"))
+		badges = append(badges, m.styles.badgeFix.Render(m.t("tui.badge.fix")))
 	}
 	if law.IsCustom {
 		badges = append(badges, m.customBadge())
@@ -337,7 +337,7 @@ func (m Model) renderPersonaBadges(index int) []string {
 	tokens := m.counter.Count(persona.Description)
 	badges := []string{m.tokenBadge(tokens)}
 	if strings.TrimSpace(persona.Warning) != "" {
-		badges = append(badges, m.styles.badgeFix.Render("FIX"))
+		badges = append(badges, m.styles.badgeFix.Render(m.t("tui.badge.fix")))
 	}
 	if persona.IsCustom {
 		badges = append(badges, m.customBadge())
@@ -353,7 +353,7 @@ func (m Model) renderSkillBadges(index int) []string {
 	tokens := m.counter.Count(skill.Body)
 	badges := []string{m.tokenBadge(tokens)}
 	if strings.TrimSpace(skill.Warning) != "" {
-		badges = append(badges, m.styles.badgeFix.Render("FIX"))
+		badges = append(badges, m.styles.badgeFix.Render(m.t("tui.badge.fix")))
 	}
 	if skill.IsCustom {
 		badges = append(badges, m.customBadge())
@@ -369,7 +369,7 @@ func (m Model) renderTemplateBadges(index int) []string {
 	// Project-scoped defaults include the project slug so the user can
 	// distinguish them from the global default at a glance.
 	if template.Default != "" {
-		label := "DEFAULT:" + strings.ToUpper(template.Default)
+		label := m.t("tui.badge.default_prefix") + ":" + strings.ToUpper(template.Default)
 		if template.ProjectSlug != "" {
 			label += "·" + strings.ToUpper(template.ProjectSlug)
 		}
@@ -382,7 +382,7 @@ func (m Model) renderTemplateBadges(index int) []string {
 }
 
 func (m Model) tokenBadge(tokens int) string {
-	label := fmt.Sprintf("TOKENS:%d", tokens)
+	label := fmt.Sprintf(m.t("tui.badge.tokens_fmt"), tokens)
 	switch {
 	case tokens > m.tokenBadgeRed:
 		return m.styles.badgeTokenRed.Render(label)
@@ -411,7 +411,7 @@ func (m Model) entityCardLabel(kind entityKind, index int) string {
 
 func (m Model) renderTagBadges(index int) []string {
 	tag := m.tags[index]
-	label := fmt.Sprintf("USE:%d", tag.UsageCount)
+	label := fmt.Sprintf(m.t("tui.badge.use_fmt"), tag.UsageCount)
 	var badge string
 	if tag.UsageCount == 0 {
 		badge = m.styles.badgeHigh.Render(label)

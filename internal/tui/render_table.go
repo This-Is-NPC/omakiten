@@ -102,8 +102,8 @@ func (m Model) renderTable() string {
 	}
 
 	rows := []string{
-		m.styles.kickerCount("Tasks", len(tasks)),
-		m.styles.info.Render("// ID   BUCKET      PRI      DEPS  COMMENTS  TITLE"),
+		m.styles.kickerCount(m.t("tui.kicker.tasks"), len(tasks)),
+		m.styles.info.Render(m.t("tui.table.header")),
 		m.hRule(contentWidth),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.tableScroll, m.tableViewportRows())...)
@@ -121,7 +121,7 @@ func (m Model) renderTableCompactWith(tasks []domain.Task) string {
 		dataRows = append(dataRows, prefix+truncateText(task.Title, budget))
 	}
 	rows := []string{
-		m.styles.kickerCount("Tasks", len(tasks)),
+		m.styles.kickerCount(m.t("tui.kicker.tasks"), len(tasks)),
 		m.hRule(width),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.tableScroll, m.tableViewportRows())...)

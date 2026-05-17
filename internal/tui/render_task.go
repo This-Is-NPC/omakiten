@@ -586,7 +586,7 @@ func (m Model) renderTaskScreen() string {
 	case taskScreenEdit:
 		// Mirrors the comment-edit kicker pattern (`Edit comment · #N`)
 		// so both write surfaces read as the same shape.
-		return m.renderTaskForm(fmt.Sprintf("Edit task · #%d", m.taskID))
+		return m.renderTaskForm(fmt.Sprintf(m.t("tui.kicker.edit_task_fmt"), m.taskID))
 	case taskScreenView:
 		return m.renderTaskView()
 	default:
@@ -611,9 +611,9 @@ func (m Model) renderTaskView() string {
 		tagLine = strings.Join(tagNames, " · ")
 	}
 
-	taskKicker := m.styles.kicker(fmt.Sprintf("Task · #%d", task.ID))
+	taskKicker := m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.task_fmt"), task.ID))
 	if m.taskFocus == taskFocusForm {
-		taskKicker = m.styles.kickerFocused(fmt.Sprintf("Task · #%d", task.ID))
+		taskKicker = m.styles.kickerFocused(fmt.Sprintf(m.t("tui.kicker.task_fmt"), task.ID))
 	}
 
 	commentsCellText := m.renderTaskCommentsCell(task.ID)
@@ -643,12 +643,12 @@ func (m Model) renderTaskView() string {
 
 	detail := m.taskView.Reset(valueWidth).
 		Custom(taskKicker).
-		Row("Title", task.Title).
-		Row("Bucket", task.BucketKey).
-		Row("Priority", m.priorityLabel(task.Priority)).
-		Row("Comments", fmt.Sprintf("%d", m.commentCount(task.ID))).
-		Row("Tags", tagLine).
-		KickerCount("Blockers", len(blockers))
+		Row(m.t("tui.row.title"), task.Title).
+		Row(m.t("tui.row.bucket"), task.BucketKey).
+		Row(m.t("tui.row.priority"), m.priorityLabel(task.Priority)).
+		Row(m.t("tui.row.comments"), fmt.Sprintf("%d", m.commentCount(task.ID))).
+		Row(m.t("tui.row.tags"), tagLine).
+		KickerCount(m.t("tui.row.blockers"), len(blockers))
 	if len(blockers) == 0 {
 		detail = detail.Span(m.styles.hint.Render(m.t("tui.empty.blockers")))
 	} else {
@@ -656,7 +656,7 @@ func (m Model) renderTaskView() string {
 			detail = detail.Span(m.renderTaskReference(blocker))
 		}
 	}
-	detail = detail.Kicker("Description")
+	detail = detail.Kicker(m.t("tui.kicker.description"))
 	if strings.TrimSpace(task.Description) == "" {
 		detail = detail.Span(m.styles.hint.Render(m.t("tui.empty.task_no_description")))
 	} else {
@@ -735,10 +735,10 @@ func (m Model) renderBlockerPicker() string {
 	}
 
 	header := []string{
-		m.styles.kicker(fmt.Sprintf("Blockers · #%d", task.ID)),
-		m.styles.hint.Render("up/down: move · space: toggle · ctrl+s: save · esc: cancel"),
+		m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.blockers_fmt"), task.ID)),
+		m.styles.hint.Render(m.t("tui.picker.hint.blockers")),
 		"",
-		m.styles.metaRow("Task", task.Title, metaRowLabelWidth),
+		m.styles.metaRow(m.t("tui.row.task"), task.Title, metaRowLabelWidth),
 		"",
 	}
 	candidates := m.blockerPickerCandidates()

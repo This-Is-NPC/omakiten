@@ -212,7 +212,7 @@ func (m *Model) moveSelectedToColumn(targetColIdx int) {
 	if err := m.refresh(); err != nil {
 		m.status = err.Error()
 	} else {
-		m.status = fmt.Sprintf("Moved #%d to %s", task.ID, target.Key)
+		m.status = fmt.Sprintf(m.t("tui.status.task_moved_fmt"), task.ID, target.Key)
 	}
 	m.selectTaskByID(task.ID)
 	m.syncFocusedColumnScroll()

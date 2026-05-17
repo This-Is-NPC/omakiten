@@ -12,9 +12,9 @@ import (
 func (m Model) renderTaskCommentsCell(taskID int64) string {
 	events := m.activityForTaskInView(taskID)
 
-	header := m.styles.kickerCount("Activity", len(events))
+	header := m.styles.kickerCount(m.t("tui.kicker.activity"), len(events))
 	if m.taskFocus == taskFocusActivity {
-		header = m.styles.kickerCountFocused("Activity", len(events))
+		header = m.styles.kickerCountFocused(m.t("tui.kicker.activity"), len(events))
 	}
 	lines := []string{header}
 

@@ -27,7 +27,7 @@ func (m Model) renderCommentScreen() string {
 	comment, ok := m.activeComment()
 	if !ok {
 		notFound := []string{
-			m.styles.kicker(fmt.Sprintf("Comment · #%d", m.commentScreenID)),
+			m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.comment_fmt"), m.commentScreenID)),
 			"",
 			m.styles.hint.Render(m.t("tui.empty.comment_not_found")),
 		}
@@ -56,17 +56,17 @@ func (m Model) renderCommentScreen() string {
 	}
 
 	screen := m.commentScreen.Reset(valueWidth).
-		Custom(m.styles.kicker(fmt.Sprintf("Comment · #%d", comment.ID))).
-		Row("Task", fmt.Sprintf("#%d", comment.TaskID)).
-		Row("Author", strings.TrimSpace(comment.AuthorType)).
-		Row("When", strings.TrimSpace(comment.CreatedAt))
+		Custom(m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.comment_fmt"), comment.ID))).
+		Row(m.t("tui.row.task"), fmt.Sprintf("#%d", comment.TaskID)).
+		Row(m.t("tui.row.author"), strings.TrimSpace(comment.AuthorType)).
+		Row(m.t("tui.row.when"), strings.TrimSpace(comment.CreatedAt))
 	if tagLine != "" {
-		screen = screen.Row("Tags", tagLine)
+		screen = screen.Row(m.t("tui.row.tags"), tagLine)
 	}
-	screen = screen.Kicker("Body")
+	screen = screen.Kicker(m.t("tui.kicker.body"))
 	body := strings.TrimSpace(comment.Body)
 	if body == "" {
-		screen = screen.Span(m.styles.hint.Render("empty comment"))
+		screen = screen.Span(m.styles.hint.Render(m.t("tui.comment.empty")))
 	} else {
 		// Pass the whole body as a single spanned row so gridtable.Render
 		// wraps it inline; emitting one row per line would draw a horizontal
@@ -222,7 +222,7 @@ func (m *Model) executeCommentDelete(commentID int64) {
 	if m.commentScreenOpen && m.commentScreenID == commentID {
 		m.closeCommentScreen()
 	}
-	m.status = fmt.Sprintf("Deleted comment #%d", commentID)
+	m.status = fmt.Sprintf(m.t("tui.status.comment_deleted_fmt"), commentID)
 }
 
 // openCommentEdit pivots the active comment overlay into edit mode: same
@@ -268,7 +268,7 @@ func (m *Model) openCommentEdit(comment domain.Comment) {
 	)
 	m.commentInput.CursorEnd()
 	m.commentInput.Focus()
-	m.status = fmt.Sprintf("Editing comment #%d", comment.ID)
+	m.status = fmt.Sprintf(m.t("tui.status.comment_editing_fmt"), comment.ID)
 	m.moveMode = false
 }
 
@@ -337,7 +337,7 @@ func (m Model) renderCommentEditScreen(comment domain.Comment) string {
 	)
 
 	lines := []string{
-		m.styles.kicker(fmt.Sprintf("Edit comment · #%d", comment.ID)),
+		m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.edit_comment_fmt"), comment.ID)),
 		m.formHint(m.t("tui.form.hint.ctrl_s_saves"), m.t("tui.form.hint.alt_newline"), m.t("tui.form.hint.esc_cancels")),
 		"",
 		field,
@@ -428,7 +428,7 @@ func (m *Model) exitCommentEditMode() {
 
 func (m Model) renderCommentInput() string {
 	lines := []string{
-		m.styles.kicker("New comment"),
+		m.styles.kicker(m.t("tui.kicker.new_comment")),
 		m.formHint(m.t("tui.form.hint.enter_saves"), m.t("tui.form.hint.alt_newline"), m.t("tui.form.hint.esc_cancels")),
 	}
 	if m.status != "" && m.status != "Comment body" {
@@ -455,7 +455,7 @@ func (m Model) renderCommentCardSelected(comment domain.Comment, focused bool) s
 	contentWidth := m.commentCardContentWidth()
 	body := strings.TrimSpace(comment.Body)
 	if body == "" {
-		body = m.styles.hint.Render("empty comment")
+		body = m.styles.hint.Render(m.t("tui.comment.empty"))
 	} else {
 		body = m.cappedCommentBody(comment.ID, body, contentWidth)
 	}
