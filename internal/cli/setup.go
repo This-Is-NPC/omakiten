@@ -15,18 +15,22 @@ import (
 )
 
 // setupInputs collects the five user-controllable values the picker
-// would normally resolve from screens. The headless path fills the
-// struct from env vars + flags; the upcoming bubbletea path will fill
-// it from picker results. Both paths feed runSetup so the side-effects
-// (yaml write, .active marker, rc wrapper, harness configuration)
-// stay in one place.
+// resolves from screens. The headless path fills the struct from env
+// vars + flags; the interactive path fills it from picker results.
+// Both paths feed runSetup so the side-effects (yaml write, .active
+// marker, rc wrapper, harness configuration) stay in one place.
+//
+// The *Set booleans distinguish "the user supplied an explicit empty
+// value" from "the user did not supply this input at all". Without
+// them the picker cannot tell whether an empty agent-lang means
+// "leave blank" (skip prompt) or "ask me".
 type setupInputs struct {
-	CLILang     string
-	TUILang     string
-	AgentLang   string
+	CLILang      string
+	TUILang      string
+	AgentLang    string
 	AgentLangSet bool
-	Preset      string
-	Harnesses   []string
+	Preset       string
+	Harnesses    []string
 	HarnessesSet bool
 }
 
@@ -48,13 +52,15 @@ func newSetupCommand(opts *runtimeOptions) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			agentSet := cmd.Flags().Changed("agent-lang") || envSet("OKT_AGENT_LANG")
 			harnessSet := cmd.Flags().Changed("harnesses") || envSet("OKT_HARNESSES")
+			presetSet := cmd.Flags().Changed("preset") || envSet("OKT_PRESET")
 
-			inputs, err := resolveSetupInputs(cmd, setupFlagValues{
+			inputs, needs, err := resolveSetupInputs(cmd, setupFlagValues{
 				CLILang:      cliLang,
 				TUILang:      tuiLang,
 				AgentLang:    agentLang,
 				AgentLangSet: agentSet,
 				Preset:       presetName,
+				PresetSet:    presetSet,
 				HarnessesCSV: harnessesCSV,
 				HarnessesSet: harnessSet,
 			})
@@ -63,7 +69,11 @@ func newSetupCommand(opts *runtimeOptions) *cobra.Command {
 			}
 
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				return runSetup(ctx, opts, inputs, runSetupOptions{Update: update, SkipWrapper: skipWrapper})
+				finalInputs, err := runSetupPicker(ctx, inputs, needs)
+				if err != nil {
+					return nil, err
+				}
+				return runSetup(ctx, opts, finalInputs, runSetupOptions{Update: update, SkipWrapper: skipWrapper})
 			})
 		},
 	}
@@ -85,22 +95,44 @@ type setupFlagValues struct {
 	AgentLang    string
 	AgentLangSet bool
 	Preset       string
+	PresetSet    bool
 	HarnessesCSV string
 	HarnessesSet bool
 }
 
-// resolveSetupInputs collapses flags + env vars into setupInputs.
-// Flag values win over env vars (cobra has already filled the flag
-// fields with the user-supplied or default values; cmd.Flags().Changed
-// is the only way to tell explicit `--cli-lang en` from "user didn't
-// pass this flag, use the env var if set"). The interactive picker is
-// deferred to a follow-up commit — for now, any missing input
-// triggers a coded error pointing the user at the env vars / flags.
-func resolveSetupInputs(cmd *cobra.Command, flags setupFlagValues) (setupInputs, error) {
+// resolveSetupInputs collapses flags + env vars into a partial
+// setupInputs plus a pickerNeeds mask. Each `OKT_*` env var (or the
+// matching flag) flips its bit to false in the mask so the interactive
+// picker collapses screens whose value was already supplied. The
+// surrounding cobra RunE feeds the partial into runSetupPicker, which
+// either returns the partial unchanged (every input present) or
+// drives the bubbletea program to fill in the gaps.
+//
+// The TUI-lang default ("if user supplied CLI but not TUI, the TUI
+// defaults to the CLI choice") still lives here so the headless path
+// preserves the existing contract — picker callers see TUILang
+// pre-populated from CLI and adjust if they want.
+func resolveSetupInputs(cmd *cobra.Command, flags setupFlagValues) (setupInputs, pickerNeeds, error) {
 	inputs := setupInputs{}
+	needs := pickerNeeds{}
 
-	inputs.CLILang = firstNonEmpty(flagOrEnv(cmd, "cli-lang", flags.CLILang, "OKT_CLI_LANG"), "")
-	inputs.TUILang = firstNonEmpty(flagOrEnv(cmd, "tui-lang", flags.TUILang, "OKT_TUI_LANG"), inputs.CLILang)
+	cliRaw := flagOrEnv(cmd, "cli-lang", flags.CLILang, "OKT_CLI_LANG")
+	if cliRaw != "" {
+		inputs.CLILang = cliRaw
+	} else {
+		needs.CLILang = true
+	}
+
+	tuiRaw := flagOrEnv(cmd, "tui-lang", flags.TUILang, "OKT_TUI_LANG")
+	if tuiRaw != "" {
+		inputs.TUILang = tuiRaw
+	} else if !needs.CLILang {
+		// Headless contract: CLI supplied, TUI omitted → mirror CLI so
+		// the user does not have to set two env vars in CI.
+		inputs.TUILang = inputs.CLILang
+	} else {
+		needs.TUILang = true
+	}
 
 	if flags.AgentLangSet {
 		if cmd.Flags().Changed("agent-lang") {
@@ -109,18 +141,24 @@ func resolveSetupInputs(cmd *cobra.Command, flags setupFlagValues) (setupInputs,
 			inputs.AgentLang = strings.TrimSpace(os.Getenv("OKT_AGENT_LANG"))
 		}
 		inputs.AgentLangSet = true
+	} else {
+		needs.Agent = true
 	}
 
 	rawPreset := flagOrEnv(cmd, "preset", flags.Preset, "OKT_PRESET")
-	resolvedPreset, fellback := installer.ResolvePreset(rawPreset)
-	if fellback && rawPreset != "" {
-		// Warn but do not fail — install.sh's select_preset prints the
-		// same line on unknown OKT_PRESET= and continues with the
-		// default; preserving that contract avoids breaking pinned
-		// curl|bash invocations that misspelled the preset name.
-		fmt.Fprintf(cmd.ErrOrStderr(), t("cli.setup.warn.unknown_preset")+"\n", rawPreset, installer.DefaultPreset)
+	if flags.PresetSet || rawPreset != "" {
+		resolvedPreset, fellback := installer.ResolvePreset(rawPreset)
+		if fellback && rawPreset != "" {
+			// Warn but do not fail — install.sh's select_preset prints
+			// the same line on unknown OKT_PRESET= and continues with
+			// the default; preserving that contract avoids breaking
+			// pinned curl|bash invocations that misspelled the name.
+			fmt.Fprintf(cmd.ErrOrStderr(), t("cli.setup.warn.unknown_preset")+"\n", rawPreset, installer.DefaultPreset)
+		}
+		inputs.Preset = resolvedPreset
+	} else {
+		needs.Preset = true
 	}
-	inputs.Preset = resolvedPreset
 
 	if flags.HarnessesSet {
 		raw := flagOrEnv(cmd, "harnesses", flags.HarnessesCSV, "OKT_HARNESSES")
@@ -139,17 +177,11 @@ func resolveSetupInputs(cmd *cobra.Command, flags setupFlagValues) (setupInputs,
 			inputs.Harnesses = nil
 		}
 		inputs.HarnessesSet = true
+	} else {
+		needs.Harness = true
 	}
 
-	if inputs.CLILang == "" || inputs.TUILang == "" || !inputs.AgentLangSet || !inputs.HarnessesSet {
-		return setupInputs{}, domain.NewError(domain.ErrValidation, t("cli.setup.short")+": interactive picker not yet wired; supply env vars (OKT_CLI_LANG/OKT_TUI_LANG/OKT_AGENT_LANG/OKT_PRESET/OKT_HARNESSES) or flags (--cli-lang/--tui-lang/--agent-lang/--preset/--harnesses) on this invocation", map[string]any{
-			"cli_lang_set":   inputs.CLILang != "",
-			"tui_lang_set":   inputs.TUILang != "",
-			"agent_lang_set": inputs.AgentLangSet,
-			"harnesses_set":  inputs.HarnessesSet,
-		})
-	}
-	return inputs, nil
+	return inputs, needs, nil
 }
 
 type runSetupOptions struct {
