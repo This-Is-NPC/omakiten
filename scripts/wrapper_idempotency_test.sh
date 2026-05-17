@@ -1,74 +1,75 @@
 #!/usr/bin/env bash
-# Validates that install.sh's install_wrapper_into is idempotent and that
-# uninstall.sh's remove_wrapper_from inverts the install cleanly.
+# Validates that `okt setup`'s rc-file wrapper writer is idempotent and
+# that uninstall.sh's `remove_wrapper_from` inverts the install cleanly
+# — the sentinels are byte-identical across the Go writer
+# (internal/installer.WrapperBegin/End) and the bash uninstaller, so a
+# round-trip through both paths must leave the rc file in its original
+# state.
 #
 # Run with: bash scripts/wrapper_idempotency_test.sh
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-tmp_rc=$(mktemp)
-trap 'rm -f "$tmp_rc" "$tmp_rc.bak"' EXIT
 
-# Seed the rc file with some pre-existing content so we can verify removal
-# is surgical (does not touch unrelated lines).
-cat > "$tmp_rc" <<'EOF'
+tmproot="$(mktemp -d)"
+trap 'rm -rf "$tmproot"' EXIT
+
+bin="$tmproot/okt"
+( cd "$repo" && go build -o "$bin" ./cmd/okt )
+
+home="$tmproot/home"
+mkdir -p "$home"
+rc="$home/.bashrc"
+
+# Seed the rc with unrelated content so we can verify surgical removal.
+cat > "$rc" <<'EOF'
 # user content above
 export FOO=bar
 EOF
-cp "$tmp_rc" "$tmp_rc.bak"
+orig="$(cat "$rc")"
 
-# Source install.sh in a way that exposes the wrapper helpers without
-# triggering main(): wrap with a sentinel so the script's "main \"$@\""
-# tail does not run. Rather than parsing, source under a guard env var
-# the script does not set and dispatch only to the helper we want.
-source_helpers() {
-  # Extract install_wrapper_into + WRAPPER_BEGIN/END definitions only.
-  awk '
-    /^WRAPPER_(BEGIN|END)=/ { print; next }
-    /^install_wrapper_into\(\) \{/ { in_fn = 1 }
-    in_fn { print }
-    in_fn && /^\}$/ { in_fn = 0 }
-  ' "$repo/install.sh"
+run_setup() {
+  HOME="$home" OMAKITEN_HOME="$home/oh" XDG_CONFIG_HOME="" \
+    "$bin" setup --skip-harnesses \
+    --cli-lang=en --tui-lang=en --agent-lang=en --preset=omakase --harnesses=0 \
+    >/dev/null
 }
 
-eval "$(source_helpers)"
-
-install_wrapper_into "$tmp_rc"
-first_count=$(grep -cF "$WRAPPER_BEGIN" "$tmp_rc")
+run_setup
+first_count=$(grep -cF "# >>> okt wrapper >>>" "$rc")
 if [ "$first_count" -ne 1 ]; then
   echo "FAIL: after first install, sentinel count = $first_count (want 1)" >&2
   exit 1
 fi
 
-install_wrapper_into "$tmp_rc"
-second_count=$(grep -cF "$WRAPPER_BEGIN" "$tmp_rc")
+run_setup
+second_count=$(grep -cF "# >>> okt wrapper >>>" "$rc")
 if [ "$second_count" -ne 1 ]; then
   echo "FAIL: re-install added duplicate sentinels (count = $second_count)" >&2
   exit 1
 fi
 
-# Verify uninstall removes the block and leaves the original content intact.
-source_uninstall() {
-  awk '
-    /^WRAPPER_(BEGIN|END)=/ { print; next }
-    /^remove_wrapper_from\(\) \{/ { in_fn = 1 }
-    in_fn { print }
-    in_fn && /^\}$/ { in_fn = 0 }
-  ' "$repo/uninstall.sh"
-}
-eval "$(source_uninstall)"
+# Verify the original user content is still present byte-for-byte.
+if ! grep -qx 'export FOO=bar' "$rc"; then
+  echo "FAIL: wrapper install clobbered unrelated content" >&2
+  exit 1
+fi
 
-remove_wrapper_from "$tmp_rc"
-if grep -qF "$WRAPPER_BEGIN" "$tmp_rc"; then
+# uninstall.sh removes the block using sentinels byte-identical with the
+# Go writer — pin HOME so it targets the seeded rc instead of the
+# developer's actual ~/.bashrc.
+HOME="$home" bash "$repo/uninstall.sh" >/dev/null
+
+if grep -qF "# >>> okt wrapper >>>" "$rc"; then
   echo "FAIL: uninstall left sentinels in the rc file" >&2
   exit 1
 fi
-if ! grep -qx 'export FOO=bar' "$tmp_rc"; then
+if ! grep -qx 'export FOO=bar' "$rc"; then
   echo "FAIL: uninstall removed unrelated content" >&2
   exit 1
 fi
 
 # Re-running uninstall is a no-op (no sentinels left).
-remove_wrapper_from "$tmp_rc"
+HOME="$home" bash "$repo/uninstall.sh" >/dev/null
 
-echo "OK: install_wrapper_into is idempotent; remove_wrapper_from is surgical."
+echo "OK: okt setup wrapper writer is idempotent; uninstall.sh is surgical."

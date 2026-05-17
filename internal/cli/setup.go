@@ -36,13 +36,14 @@ type setupInputs struct {
 
 func newSetupCommand(opts *runtimeOptions) *cobra.Command {
 	var (
-		update      bool
-		cliLang     string
-		tuiLang     string
-		agentLang   string
-		presetName  string
-		harnessesCSV string
-		skipWrapper bool
+		update        bool
+		cliLang       string
+		tuiLang       string
+		agentLang     string
+		presetName    string
+		harnessesCSV  string
+		skipWrapper   bool
+		skipHarnesses bool
 	)
 
 	cmd := &cobra.Command{
@@ -73,7 +74,7 @@ func newSetupCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				return runSetup(ctx, opts, finalInputs, runSetupOptions{Update: update, SkipWrapper: skipWrapper})
+				return runSetup(ctx, opts, finalInputs, runSetupOptions{Update: update, SkipWrapper: skipWrapper, SkipHarnesses: skipHarnesses})
 			})
 		},
 	}
@@ -85,6 +86,7 @@ func newSetupCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().StringVar(&presetName, "preset", "", opts.t("cli.setup.flag.preset"))
 	cmd.Flags().StringVar(&harnessesCSV, "harnesses", "", opts.t("cli.setup.flag.harnesses"))
 	cmd.Flags().BoolVar(&skipWrapper, "skip-wrapper", false, opts.t("cli.setup.flag.skip-wrapper"))
+	cmd.Flags().BoolVar(&skipHarnesses, "skip-harnesses", false, opts.t("cli.setup.flag.skip-harnesses"))
 
 	return cmd
 }
@@ -185,8 +187,9 @@ func resolveSetupInputs(cmd *cobra.Command, flags setupFlagValues) (setupInputs,
 }
 
 type runSetupOptions struct {
-	Update      bool
-	SkipWrapper bool
+	Update        bool
+	SkipWrapper   bool
+	SkipHarnesses bool
 }
 
 // runSetup applies the resolved inputs to the user-global install
@@ -253,7 +256,8 @@ func runSetup(ctx context.Context, opts *runtimeOptions, inputs setupInputs, run
 		result["wrapper"] = map[string]any{"installed_into": installedInto}
 	}
 
-	if len(inputs.Harnesses) > 0 {
+	result["harnesses_planned"] = inputs.Harnesses
+	if len(inputs.Harnesses) > 0 && !runOpts.SkipHarnesses {
 		oktBin, err := os.Executable()
 		if err != nil {
 			oktBin = "okt"

@@ -1,205 +1,132 @@
 #!/usr/bin/env pwsh
-# Validates install.ps1's harness selection helpers using AST-driven extraction
-# (avoids running the install.ps1 main flow, which downloads a release).
+# Smoke-tests `okt setup` headless env-var path on Windows. Mirror of
+# scripts/installer_select_test.sh; the interactive picker itself is
+# covered by internal/cli/setup_picker_test.go.
 #
 # Run with: pwsh -NoProfile -File scripts/installer_select_test.ps1
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$installScript = Join-Path $repoRoot "install.ps1"
+$tmproot = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $tmproot -Force | Out-Null
+try {
+    $bin = Join-Path $tmproot "okt.exe"
+    Push-Location $repoRoot
+    try {
+        & go build -o $bin ./cmd/okt
+        if ($LASTEXITCODE -ne 0) { throw "go build failed: $LASTEXITCODE" }
+    } finally {
+        Pop-Location
+    }
 
-$tokens = $null
-$errors = $null
-$ast = [System.Management.Automation.Language.Parser]::ParseFile($installScript, [ref]$tokens, [ref]$errors)
-if ($errors -and $errors.Count -gt 0) {
-    Write-Host "FAIL: install.ps1 has parse errors:"
-    $errors | ForEach-Object { Write-Host "  $($_.Message)" }
-    exit 1
-}
+    function Invoke-Setup {
+        param([hashtable]$Env)
+        $home = Join-Path $tmproot ("case-" + [System.Guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Path $home -Force | Out-Null
+        $oh = Join-Path $home "oh"
+        $stderrFile = Join-Path $home "stderr.txt"
+        $envVars = @{
+            HOME              = $home
+            USERPROFILE       = $home
+            OMAKITEN_HOME     = $oh
+            XDG_CONFIG_HOME   = ""
+        }
+        foreach ($k in $Env.Keys) { $envVars[$k] = $Env[$k] }
+        $saved = @{}
+        foreach ($k in $envVars.Keys) {
+            $saved[$k] = [Environment]::GetEnvironmentVariable($k, "Process")
+            [Environment]::SetEnvironmentVariable($k, $envVars[$k], "Process")
+        }
+        try {
+            $stdout = & $bin setup --skip-wrapper --skip-harnesses 2>$stderrFile
+            return $stdout
+        } finally {
+            foreach ($k in $saved.Keys) {
+                [Environment]::SetEnvironmentVariable($k, $saved[$k], "Process")
+            }
+        }
+    }
 
-# Extract: $SupportedHarnesses assignment + helper function definitions.
-$wantedFunctions = @(
-    "Resolve-HarnessSelection",
-    "Select-Harnesses",
-    "Invoke-HarnessSetup",
-    "Resolve-ConfigDir",
-    "Select-Preset",
-    "Write-ActivePreset"
-)
-$wantedVariables = @(
-    '$SupportedHarnesses',
-    '$SupportedPresets',
-    '$DefaultPreset'
-)
+    function Json-Get {
+        param([string]$Path, [string]$Json)
+        $obj = $Json | ConvertFrom-Json
+        $cur = $obj.data
+        foreach ($p in $Path.Split('.')) {
+            if ($null -eq $cur) { return $null }
+            $cur = $cur.$p
+        }
+        return $cur
+    }
 
-$snippets = New-Object System.Collections.Generic.List[string]
+    function Assert-EnvelopeOk {
+        param([string]$Label, [string]$Json)
+        $obj = $Json | ConvertFrom-Json
+        if (-not $obj.ok) {
+            Write-Host "FAIL: $Label — envelope.ok = $($obj.ok)"
+            Write-Host "  json: $Json"
+            exit 1
+        }
+    }
 
-# Variable assignments for the configuration constants used by the helpers.
-$ast.FindAll({
-    param($node)
-    $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
-    $wantedVariables -contains $node.Left.Extent.Text
-}, $true) | ForEach-Object { $snippets.Add($_.Extent.Text) | Out-Null }
+    function Assert-Equal {
+        param($Got, $Want, [string]$Label)
+        if ("$Got" -ne "$Want") {
+            Write-Host "FAIL: $Label"
+            Write-Host "  got:  $Got"
+            Write-Host "  want: $Want"
+            exit 1
+        }
+    }
 
-# Function definitions
-$ast.FindAll({
-    param($node)
-    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-    $wantedFunctions -contains $node.Name
-}, $true) | ForEach-Object { $snippets.Add($_.Extent.Text) | Out-Null }
+    # --- env-var driven harness selection ---
 
-$expected = $wantedFunctions.Count + $wantedVariables.Count
-if ($snippets.Count -lt $expected) {
-    Write-Host "FAIL: extracted $($snippets.Count) snippets; expected $expected ($($wantedVariables.Count) vars + $($wantedFunctions.Count) functions)"
-    exit 1
-}
+    $base = @{
+        OKT_CLI_LANG   = "en"
+        OKT_TUI_LANG   = "en"
+        OKT_AGENT_LANG = "en"
+        OKT_PRESET     = "omakase"
+    }
 
-Invoke-Expression ($snippets -join "`n")
+    $out = Invoke-Setup ($base + @{ OKT_HARNESSES = "claude-code,opencode" })
+    Assert-EnvelopeOk "harnesses csv (names)" $out
+    Assert-Equal ((Json-Get "harnesses_planned" $out) -join ",") "claude-code,opencode" "harnesses_planned (names)"
 
-function Assert-Equal {
-    param([string]$Got, [string]$Want, [string]$Label)
-    if ($Got -ne $Want) {
-        Write-Host "FAIL: $Label"
-        Write-Host "  got:  '$Got'"
-        Write-Host "  want: '$Want'"
+    $out = Invoke-Setup ($base + @{ OKT_HARNESSES = "1,3" })
+    Assert-EnvelopeOk "harnesses csv (indexes)" $out
+    Assert-Equal ((Json-Get "harnesses_planned" $out) -join ",") "claude-code,opencode" "indexes resolve to canonical names"
+
+    $out = Invoke-Setup ($base + @{ OKT_HARNESSES = "0" })
+    Assert-EnvelopeOk "harnesses skip sentinel" $out
+    $planned = Json-Get "harnesses_planned" $out
+    if ($planned -ne $null -and $planned.Count -ne 0) {
+        Write-Host "FAIL: skip sentinel must clear harness list (got $planned)"
         exit 1
     }
-}
 
-# --- Resolve-HarnessSelection: shape ---
-# Resolve-HarnessSelection returns @{Harnesses=List[string]; Status=string}.
-# Status is one of: ok | invalid | skip | empty (drives the retry loop).
+    # --- preset resolution ---
 
-function Get-Selection {
-    param([string]$Raw)
-    $r = Resolve-HarnessSelection -Raw $Raw 6>$null
-    return ($r.Harnesses) -join "|"
-}
+    $out = Invoke-Setup ($base + @{ OKT_PRESET = "izakaya"; OKT_HARNESSES = "0" })
+    Assert-EnvelopeOk "preset izakaya" $out
+    Assert-Equal (Json-Get "preset.name" $out) "izakaya" "OKT_PRESET=izakaya wins"
 
-function Get-Status {
-    param([string]$Raw)
-    return (Resolve-HarnessSelection -Raw $Raw 6>$null).Status
-}
+    $out = Invoke-Setup ($base + @{ OKT_PRESET = "bogus"; OKT_HARNESSES = "0" })
+    Assert-EnvelopeOk "preset fallback" $out
+    Assert-Equal (Json-Get "preset.name" $out) "omakase" "unknown OKT_PRESET falls back to omakase"
 
-Assert-Equal (Get-Selection "1,3,5") "claude-code|opencode|github-copilot" "numeric comma list"
-Assert-Equal (Get-Selection "1 3 5") "claude-code|opencode|github-copilot" "numeric space list"
-Assert-Equal (Get-Selection "claude-code,codex") "claude-code|codex" "name comma list"
-Assert-Equal (Get-Selection "1 codex") "claude-code|codex" "mixed numeric and name"
-Assert-Equal (Get-Selection "") "" "empty input"
-Assert-Equal (Get-Selection "99 bogus claude-code") "claude-code" "invalid tokens skipped, valid kept"
-Assert-Equal (Get-Selection "1,bogus") "claude-code" "partial-valid input keeps valid"
+    # --- language resolution ---
 
-# --- Resolve-HarnessSelection: status drives the retry loop ---
-
-Assert-Equal (Get-Status "1,3,5")     "ok"      "status ok on full-valid input"
-Assert-Equal (Get-Status "1,bogus")   "ok"      "status ok on partial-valid input"
-Assert-Equal (Get-Status "")          "empty"   "status empty on blank input"
-Assert-Equal (Get-Status "   ")       "empty"   "status empty on whitespace-only input"
-Assert-Equal (Get-Status "bogus")     "invalid" "status invalid when no token matched"
-Assert-Equal (Get-Status "99")        "invalid" "status invalid on out-of-range numeric"
-Assert-Equal (Get-Status "0")         "skip"    "status skip on '0'"
-Assert-Equal (Get-Status "skip")      "skip"    "status skip on 'skip'"
-Assert-Equal (Get-Status "Skip")      "skip"    "status skip on 'Skip' (case-insensitive)"
-Assert-Equal (Get-Status "NONE")      "skip"    "status skip on 'NONE' (case-insensitive)"
-Assert-Equal (Get-Status "1,0")       "skip"    "skip wins over a valid token"
-Assert-Equal (Get-Status "bogus,skip") "skip"   "skip wins over invalid tokens"
-
-# Skip status must produce an empty Harnesses list.
-Assert-Equal (Get-Selection "1,0") "" "'1,0' yields no harnesses (skip wins)"
-Assert-Equal (Get-Selection "skip") "" "'skip' yields no harnesses"
-
-# --- Select-Harnesses honors OKT_HARNESSES ---
-
-$env:OKT_HARNESSES = "claude-code,opencode"
-try {
-    $got = (Select-Harnesses) -join "|"
-    Assert-Equal $got "claude-code|opencode" "OKT_HARNESSES env override"
-} finally {
-    Remove-Item Env:OKT_HARNESSES -ErrorAction SilentlyContinue
-}
-
-$env:OKT_HARNESSES = "crush`tcodex, ,"
-try {
-    $got = (Select-Harnesses) -join "|"
-    Assert-Equal $got "crush|codex" "OKT_HARNESSES tolerates mixed separators"
-} finally {
-    Remove-Item Env:OKT_HARNESSES -ErrorAction SilentlyContinue
-}
-
-# OKT_HARNESSES with skip sentinel yields nothing (env-override path obeys skip).
-$env:OKT_HARNESSES = "1,0"
-try {
-    $got = (Select-Harnesses) -join "|"
-    Assert-Equal $got "" "OKT_HARNESSES with '0' honors skip"
-} finally {
-    Remove-Item Env:OKT_HARNESSES -ErrorAction SilentlyContinue
-}
-
-# --- $SupportedHarnesses count must match agentsetup.SupportedHarnesses ---
-
-$wantCount = 6
-if ($SupportedHarnesses.Count -ne $wantCount) {
-    Write-Host "FAIL: SupportedHarnesses has $($SupportedHarnesses.Count) entries, want $wantCount"
-    Write-Host "      (sync with internal/agentsetup.SupportedHarnesses)"
-    exit 1
-}
-
-# --- Select-Preset honors OKT_PRESET ---
-
-$env:OKT_PRESET = "izakaya"
-try {
-    Assert-Equal (Select-Preset) "izakaya" "OKT_PRESET=izakaya honored"
-} finally {
-    Remove-Item Env:OKT_PRESET -ErrorAction SilentlyContinue
-}
-
-$env:OKT_PRESET = "shokunin"
-try {
-    Assert-Equal (Select-Preset) "shokunin" "OKT_PRESET=shokunin honored"
-} finally {
-    Remove-Item Env:OKT_PRESET -ErrorAction SilentlyContinue
-}
-
-$env:OKT_PRESET = "bogus"
-try {
-    Assert-Equal (Select-Preset 6>$null) "omakase" "OKT_PRESET=bogus falls back to default"
-} finally {
-    Remove-Item Env:OKT_PRESET -ErrorAction SilentlyContinue
-}
-
-# --- Resolve-ConfigDir precedence ---
-
-$env:OMAKITEN_HOME = "/tmp/oh"
-try {
-    Assert-Equal (Resolve-ConfigDir) "/tmp/oh/config" "OMAKITEN_HOME wins"
-} finally {
-    Remove-Item Env:OMAKITEN_HOME -ErrorAction SilentlyContinue
-}
-
-# --- Write-ActivePreset writes .active and creates the dir ---
-
-$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
-$env:OMAKITEN_HOME = $tmp
-try {
-    Write-ActivePreset -Preset "kaiseki" 6>$null
-    $activePath = Join-Path (Join-Path $tmp 'config') '.active'
-    if (-not (Test-Path $activePath)) {
-        Write-Host "FAIL: Write-ActivePreset did not create .active at $activePath"
-        exit 1
+    $out = Invoke-Setup @{
+        OKT_CLI_LANG   = "pt-br"
+        OKT_TUI_LANG   = "pt-br"
+        OKT_AGENT_LANG = "Portugues"
+        OKT_PRESET     = "omakase"
+        OKT_HARNESSES  = "0"
     }
-    Assert-Equal (Get-Content $activePath -Raw) "kaiseki.yaml" ".active content"
+    Assert-EnvelopeOk "pt-br languages" $out
+    Assert-Equal (Json-Get "languages.cli" $out) "pt-br" "languages.cli = pt-br"
+    Assert-Equal (Json-Get "languages.tui" $out) "pt-br" "languages.tui = pt-br"
+
+    Write-Host "OK: okt setup headless env-var path behaves as expected."
 } finally {
-    Remove-Item Env:OMAKITEN_HOME -ErrorAction SilentlyContinue
-    if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
+    if (Test-Path $tmproot) { Remove-Item -Recurse -Force $tmproot }
 }
-
-# --- $SupportedPresets count must match defaults/config/<preset>.yaml ---
-
-$wantPresetCount = 4
-if ($SupportedPresets.Count -ne $wantPresetCount) {
-    Write-Host "FAIL: SupportedPresets has $($SupportedPresets.Count) entries, want $wantPresetCount"
-    Write-Host "      (sync with defaults/config/<preset>.yaml)"
-    exit 1
-}
-
-Write-Host "OK: install.ps1 harness + preset selection helpers behave as expected."

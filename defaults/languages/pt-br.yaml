@@ -845,6 +845,7 @@ keys:
   cli.setup.flag.preset: "pula o seletor de preset definindo o nome escolhido (mesma forma de OKT_PRESET=)"
   cli.setup.flag.harnesses: "pula o multi-seletor de harnesses com um CSV de nomes (mesma forma de OKT_HARNESSES=)"
   cli.setup.flag.skip-wrapper: "não grava o bloco wrapper okt() no rc do shell (útil quando o usuário gerencia o rc via dotfiles)"
+  cli.setup.flag.skip-harnesses: "resolve as entradas de harness mas não invoca `okt mcp setup` (usado pelos testes shell + smoke dry-run)"
   cli.setup.status.preset_written: "=> Preset de workflow ativo: %s (%s/.active)"
   cli.setup.status.wrapper_written: "=> Wrapper okt() instalado em: %s"
   cli.setup.status.wrapper_skipped: "=> Pulando instalação do wrapper: nenhum ~/.bashrc ou ~/.zshrc encontrado"
