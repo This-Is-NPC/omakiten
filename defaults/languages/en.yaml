@@ -145,6 +145,11 @@ keys:
     .omakiten/ when present, otherwise the user-global ConfigRoot). Use
     --global on set/reset to pin the write to the user-global file
     regardless of repo-local presence.
+
+    Writes trigger a BundleCache.Reload so subsequent okt invocations and
+    long-running tools (TUI, MCP server) observe the new selection. The
+    current CLI process and any already-running CLI invocation are not
+    retroactively updated; only subsequent invocations pick up the change.
   cli.config.language.set.long: |-
     Examples:
       okt config language set --cli pt-br
