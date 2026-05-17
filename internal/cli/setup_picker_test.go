@@ -45,9 +45,23 @@ func TestSetupPicker_HappyPath(t *testing.T) {
 		t.Fatalf("step: got %v want stepLang", m.step)
 	}
 
-	// Lang — bundled order alphabetical: en (0), pt-br (1). Down + enter
-	// → pt-br for both CLI and TUI.
-	m = stepThrough(t, m, downMsg(), enterMsg())
+	// Lang — bundled order is alphabetical by code; find pt-br
+	// dynamically so adding a new bundled language pack does not break
+	// the test by shifting cursor indices.
+	ptBRIdx := -1
+	for i, l := range m.langs {
+		if l.Code == "pt-br" {
+			ptBRIdx = i
+			break
+		}
+	}
+	if ptBRIdx < 0 {
+		t.Fatalf("pt-br not in bundled language options: %+v", m.langs)
+	}
+	for i := 0; i < ptBRIdx; i++ {
+		m = stepThrough(t, m, downMsg())
+	}
+	m = stepThrough(t, m, enterMsg())
 	if m.step != stepAgentLang {
 		t.Fatalf("after lang confirm: step %v want stepAgentLang", m.step)
 	}
