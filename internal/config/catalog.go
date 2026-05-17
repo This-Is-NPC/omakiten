@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"regexp"
 	"strings"
 )
@@ -68,6 +69,7 @@ func (c *Catalog) Get(key string) string {
 			return v
 		}
 	}
+	slog.Debug("catalog: key missing from active and baseline; returning key literal", "key", key)
 	return key
 }
 
@@ -89,11 +91,15 @@ func (c *Catalog) Resolve(s string) string {
 	}
 	matches := tokenPattern.FindAllStringSubmatchIndex(s, -1)
 	if len(matches) == 0 {
+		if strings.Contains(s, "${{") {
+			slog.Debug("catalog: malformed token left verbatim", "input", s)
+		}
 		return s
 	}
 	var b strings.Builder
 	b.Grow(len(s))
 	last := 0
+	matchedRanges := make([][2]int, 0, len(matches))
 	for _, m := range matches {
 		fullStart, fullEnd := m[0], m[1]
 		b.WriteString(s[last:fullStart])
@@ -106,10 +112,35 @@ func (c *Catalog) Resolve(s string) string {
 		case namespace == "intl":
 			b.WriteString(c.Get(key))
 		default:
+			slog.Debug("catalog: unknown token namespace left verbatim", "namespace", namespace, "key", key)
 			b.WriteString(s[fullStart:fullEnd])
 		}
 		last = fullEnd
+		matchedRanges = append(matchedRanges, [2]int{fullStart, fullEnd})
 	}
 	b.WriteString(s[last:])
+	logMalformedTokensOutsideMatches(s, matchedRanges)
 	return b.String()
+}
+
+// logMalformedTokensOutsideMatches scans regions of s that the token
+// regex did not consume and emits a debug log line per leftover `${{`
+// occurrence. AC §7 mandates malformed tokens (`${{intl:`,
+// `${{intl:foo`, `${{intl:}}`) are recorded at debug level even when
+// the surrounding string contained well-formed tokens that resolved.
+func logMalformedTokensOutsideMatches(s string, matched [][2]int) {
+	cursor := 0
+	for _, m := range matched {
+		segment := s[cursor:m[0]]
+		if strings.Contains(segment, "${{") {
+			slog.Debug("catalog: malformed token left verbatim", "fragment", segment)
+		}
+		cursor = m[1]
+	}
+	if cursor < len(s) {
+		tail := s[cursor:]
+		if strings.Contains(tail, "${{") {
+			slog.Debug("catalog: malformed token left verbatim", "fragment", tail)
+		}
+	}
 }

@@ -1,6 +1,27 @@
 package config
 
-import "testing"
+import (
+	"bytes"
+	"log/slog"
+	"strings"
+	"testing"
+)
+
+// captureCatalogDebugLogs swaps slog.Default for a buffer-backed
+// debug-level handler for the duration of the test. Returns the
+// buffer so tests can assert which skip/miss reasons were logged.
+// AC §7 mandates malformed tokens and unknown namespaces emit a
+// debug-level log; the edge case for missing keys requires the
+// same on the Get fallback path.
+func captureCatalogDebugLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	handler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
+	prev := slog.Default()
+	slog.SetDefault(slog.New(handler))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
 
 func newTestCatalog(active, baseline map[string]string) *Catalog {
 	var act, base *Language
@@ -165,5 +186,48 @@ func TestCatalog_Resolve_escapeMixedWithLiveToken(t *testing.T) {
 	want := "escaped ${{intl:x.y}} and live ZZZ"
 	if got != want {
 		t.Fatalf("Resolve: got %q, want %q", got, want)
+	}
+}
+
+func TestCatalog_Get_missingKeyLogsDebug(t *testing.T) {
+	buf := captureCatalogDebugLogs(t)
+	c := newTestCatalog(map[string]string{}, map[string]string{})
+	_ = c.Get("cli.nope")
+	out := buf.String()
+	if !strings.Contains(out, "key missing") || !strings.Contains(out, "cli.nope") {
+		t.Fatalf("expected debug log for missing key, got %q", out)
+	}
+}
+
+func TestCatalog_Resolve_unknownNamespaceLogsDebug(t *testing.T) {
+	buf := captureCatalogDebugLogs(t)
+	c := newTestCatalog(nil, map[string]string{})
+	_ = c.Resolve("${{env:HOME}}")
+	out := buf.String()
+	if !strings.Contains(out, "unknown token namespace") || !strings.Contains(out, "env") {
+		t.Fatalf("expected debug log for unknown namespace, got %q", out)
+	}
+}
+
+func TestCatalog_Resolve_malformedTokenLogsDebug(t *testing.T) {
+	buf := captureCatalogDebugLogs(t)
+	c := newTestCatalog(nil, map[string]string{})
+	_ = c.Resolve("${{intl:")
+	out := buf.String()
+	if !strings.Contains(out, "malformed token") {
+		t.Fatalf("expected debug log for malformed token, got %q", out)
+	}
+}
+
+func TestCatalog_Resolve_malformedAlongsideValidLogsDebug(t *testing.T) {
+	buf := captureCatalogDebugLogs(t)
+	c := newTestCatalog(nil, map[string]string{"a.b": "alpha"})
+	got := c.Resolve("${{intl:a.b}} and ${{intl:")
+	if !strings.HasPrefix(got, "alpha and ${{intl:") {
+		t.Fatalf("Resolve mixed valid+malformed: got %q", got)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "malformed token") {
+		t.Fatalf("expected debug log for trailing malformed token, got %q", out)
 	}
 }
