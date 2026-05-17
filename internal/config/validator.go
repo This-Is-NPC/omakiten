@@ -941,12 +941,22 @@ func validateLanguageSettings(ls LanguageSettings, loaded []Language) error {
 	}
 	sort.Strings(codes)
 	check := func(field, value string) error {
-		resolved := strings.TrimSpace(value)
+		raw := strings.TrimSpace(value)
+		resolved := raw
+		defaulted := false
 		if resolved == "" {
 			resolved = "en"
+			defaulted = true
 		}
 		if _, ok := available[resolved]; ok {
 			return nil
+		}
+		// Defaulted values come from an unset config field — surface that
+		// in the error so the user does not chase a literal they never
+		// typed. The bare-field-name form mirrors the explicit case so
+		// downstream parsers still see config.languages.<field>.
+		if defaulted {
+			return fmt.Errorf("config.languages.%s: field unset and default language %q is not loaded; available: %s", field, resolved, strings.Join(codes, ", "))
 		}
 		return fmt.Errorf("config.languages.%s: %q is not a loaded language code; available: %s", field, resolved, strings.Join(codes, ", "))
 	}
