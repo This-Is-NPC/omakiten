@@ -116,6 +116,7 @@ func (m Model) renderHelp() string {
 			{", · /", m.t("tui.help.settings_general.prev_next_sub")},
 			{"t", m.t("tui.help.settings_general.theme_picker")},
 			{"c", m.t("tui.help.settings_general.config_picker")},
+			{"e", m.t("tui.help.settings_general.edit_config")},
 			{"r", m.t("tui.help.settings_general.refresh")},
 		}},
 		{"settings_entity", m.t("tui.help.settings_entity.title"), []binding{

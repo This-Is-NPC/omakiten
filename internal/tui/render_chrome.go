@@ -365,6 +365,7 @@ func (m Model) footerTokens() []footerToken {
 		return []footerToken{
 			{key: "t", label: m.t("tui.footer.theme"), primary: true},
 			{key: "c", label: m.t("tui.footer.config"), primary: true},
+			{key: "e", label: m.t("tui.footer.edit"), primary: true},
 			{key: "r", label: m.t("tui.footer.refresh")},
 			{key: "tab", label: m.t("tui.footer.zones")},
 			{key: ",//", label: m.t("tui.footer.subs")},

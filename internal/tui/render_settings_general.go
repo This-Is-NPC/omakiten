@@ -60,13 +60,22 @@ func (m Model) renderSettingsGeneral() string {
 // handleSettingsGeneralKey routes keypresses while Settings › General is
 // active. The view itself is read-only; only the global theme/config
 // pickers remain reachable from here so the user can still hot-swap
-// themes and pick a config profile without leaving Settings.
+// themes and pick a config profile without leaving Settings. `e` shells
+// out to $EDITOR against the active omakiten.yaml so the user can edit
+// the wiring file directly; on return the bundle is re-imported through
+// the same handleEditorFinished path the entity edits use.
 func (m *Model) handleSettingsGeneralKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "t":
 		m.openThemePicker()
 	case "c":
 		m.openConfigPicker()
+	case "e":
+		if m.repos.Editor == nil {
+			m.status = m.t("tui.status.editor_unavailable")
+			return nil
+		}
+		return runExternalEditor(m.repos.Editor.Path())
 	}
 	return nil
 }
