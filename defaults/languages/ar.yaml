@@ -2,1642 +2,870 @@ code: ar
 name: Arabic
 native: العربية
 keys:
-  # TODO(translate): cli.root.short
-  cli.root.short: "Opinionated checkpoints for AI-driven development"
-  # TODO(translate): cli.root.long
+  cli.root.short: "نقاط تحقّق ذات رأي للتطوير المدفوع بالذكاء الاصطناعي"
   cli.root.long: |-
-    okt drives Omakiten from the command line and TUI.
+    okt يُشغّل Omakiten من سطر الأوامر وواجهة TUI.
 
-    Path resolution (highest to lowest precedence):
-      1. --config / --db flags
-      2. $OMAKITEN_HOME — pins config to <HOME>/config/<active>.yaml and data to <HOME>/data/omakiten.db
+    ترتيب حلّ المسارات (من الأعلى أولوية إلى الأدنى):
+      1. أعلام --config / --db
+      2. $OMAKITEN_HOME — يثبّت ملف الإعدادات على <HOME>/config/<active>.yaml والبيانات على <HOME>/data/omakiten.db
       3. $XDG_CONFIG_HOME / $XDG_DATA_HOME
-      4. ~/.config/omakiten and ~/.local/share/omakiten
-  # TODO(translate): cli.root.flag.db
-  cli.root.flag.db: "SQLite database path (overrides $OMAKITEN_HOME and XDG)"
-  # TODO(translate): cli.root.flag.config
-  cli.root.flag.config: "omakiten.yaml path (overrides $OMAKITEN_HOME and XDG)"
-  # TODO(translate): cli.root.flag.project
-  cli.root.flag.project: "project slug"
-  # TODO(translate): cli.root.flag.project-id
-  cli.root.flag.project-id: "project id"
-  # TODO(translate): cli.task.add.short
-  cli.task.add.short: "Create a task in the active project"
-  # TODO(translate): cli.task.edit.short
-  cli.task.edit.short: "Edit a task in the active project"
-  # TODO(translate): cli.task.list.short
-  cli.task.list.short: "List tasks from the active project"
-  # TODO(translate): cli.task.move.short
-  cli.task.move.short: "Move a task through an allowed workflow transition"
-  # TODO(translate): cli.task.delete.short
-  cli.task.delete.short: "Hard-delete a task (cascade) — subject to bucket policy and operations.delete.guards"
-  # TODO(translate): cli.task.archive.short
-  cli.task.archive.short: "Archive a task (state=archived, moves into the workflow's final bucket)"
-  # TODO(translate): cli.task.unarchive.short
-  cli.task.unarchive.short: "Restore an archived task (state=active)"
-  # TODO(translate): cli.init.short
-  cli.init.short: "Register the current project in the global database"
-  # TODO(translate): cli.tui.short
-  cli.tui.short: "Open the terminal UI"
-  # TODO(translate): cli.comment.short
-  cli.comment.short: "Manage task comments"
-  # TODO(translate): cli.comment.add.short
-  cli.comment.add.short: "Add a task comment"
-  # TODO(translate): cli.comment.list.short
-  cli.comment.list.short: "List task comments"
-  # TODO(translate): cli.comment.edit.short
-  cli.comment.edit.short: "Edit a comment body and replace its tags (subject to bucket policy)"
-  # TODO(translate): cli.comment.delete.short
-  cli.comment.delete.short: "Hard-delete a comment (subject to bucket policy)"
-  # TODO(translate): cli.context.short
-  cli.context.short: "Inspect project context for handoff"
-  # TODO(translate): cli.context.add.short
-  cli.context.add.short: "Add a project handoff context entry"
-  # TODO(translate): cli.context.dump.short
-  cli.context.dump.short: "Dump progressive context for agents"
-  # TODO(translate): cli.depend.short
-  cli.depend.short: "Manage task dependencies"
-  # TODO(translate): cli.depend.add.short
-  cli.depend.add.short: "Add a task dependency"
-  # TODO(translate): cli.depend.remove.short
-  cli.depend.remove.short: "Remove a task dependency"
-  # TODO(translate): cli.depend.list.short
-  cli.depend.list.short: "List dependencies for a task"
-  # TODO(translate): cli.config.short
-  cli.config.short: "Manage the canonical omakiten.yaml bundle"
-  # TODO(translate): cli.config.validate.short
-  cli.config.validate.short: "Validate an omakiten.yaml file"
-  # TODO(translate): cli.config.presets.short
-  cli.config.presets.short: "List official workflow presets"
-  # TODO(translate): cli.preset.omakase.title
-  cli.preset.omakase.title: "Chef's choice"
-  # TODO(translate): cli.preset.omakase.description
-  cli.preset.omakase.description: "Balanced workflow with self-branch, resume, and documentation guards."
-  # TODO(translate): cli.preset.izakaya.title
-  cli.preset.izakaya.title: "Casual"
-  # TODO(translate): cli.preset.izakaya.description
-  cli.preset.izakaya.description: "Backlog -> dev -> done with no guards. Good for spikes and personal projects."
-  # TODO(translate): cli.preset.kaiseki.title
-  cli.preset.kaiseki.title: "Multi-course"
-  # TODO(translate): cli.preset.kaiseki.description
-  cli.preset.kaiseki.description: "Adds requirements, planning, and docs columns with strict transition guards."
-  # TODO(translate): cli.preset.shokunin.title
-  cli.preset.shokunin.title: "Artisan"
-  # TODO(translate): cli.preset.shokunin.description
-  cli.preset.shokunin.description: "Kaiseki plus tests-passing and peer-review checkpoints for maximum traceability."
-  # TODO(translate): cli.config.init.short
-  cli.config.init.short: "Materialise an official preset into the user-global or repo-local install"
-  # TODO(translate): cli.config.path.short
-  cli.config.path.short: "Report the value at a dotted YAML key path in the active config"
-  # TODO(translate): cli.config.diff.short
-  cli.config.diff.short: "Diff two config sources by structural YAML comparison"
-  # TODO(translate): cli.config.show.short
-  cli.config.show.short: "Print the raw active yaml for the chosen scope"
-  # TODO(translate): cli.config.why.short
-  cli.config.why.short: "Print the install root that owns the chosen scope's config layer"
-  # TODO(translate): cli.config.language.short
-  cli.config.language.short: "Manage the active language for CLI help, TUI labels, and the agent output directive"
-  # TODO(translate): cli.config.language.show.short
-  cli.config.language.show.short: "Print the active language settings and the discovered language packs"
-  # TODO(translate): cli.config.language.set.short
-  cli.config.language.set.short: "Set one or more language settings in the active omakiten.yaml"
-  # TODO(translate): cli.config.language.reset.short
-  cli.config.language.reset.short: "Remove the languages block from the active omakiten.yaml (defaults apply)"
-  # TODO(translate): cli.law.short
-  cli.law.short: "Manage agent laws (file-backed under laws/)"
-  # TODO(translate): cli.law.list.short
-  cli.law.list.short: "List active laws (filterable by scope/project/persona)"
-  # TODO(translate): cli.law.show.short
-  cli.law.show.short: "Show a law (frontmatter + body)"
-  # TODO(translate): cli.law.add.short
-  cli.law.add.short: "Add a law (writes laws/<slug>.md and opens $EDITOR if body omitted)"
-  # TODO(translate): cli.law.edit.short
-  cli.law.edit.short: "Edit a law (opens $EDITOR by default; flags override frontmatter/body)"
-  # TODO(translate): cli.law.remove.short
-  cli.law.remove.short: "Remove a law (deletes file + prunes refs)"
-  # TODO(translate): cli.skill.short
-  cli.skill.short: "Manage skills (technical tags, file-backed under skills/)"
-  # TODO(translate): cli.skill.list.short
-  cli.skill.list.short: "List active skills"
-  # TODO(translate): cli.skill.show.short
-  cli.skill.show.short: "Show a skill (frontmatter + body)"
-  # TODO(translate): cli.skill.add.short
-  cli.skill.add.short: "Add a skill (writes skills/<slug>.md and opens $EDITOR)"
-  # TODO(translate): cli.skill.edit.short
-  cli.skill.edit.short: "Edit a skill (opens $EDITOR by default; flags override frontmatter)"
-  # TODO(translate): cli.skill.remove.short
-  cli.skill.remove.short: "Remove a skill (deletes file + prunes refs)"
-  # TODO(translate): cli.persona.short
-  cli.persona.short: "Manage personas (file-backed under personas/)"
-  # TODO(translate): cli.persona.list.short
-  cli.persona.list.short: "List active personas"
-  # TODO(translate): cli.persona.show.short
-  cli.persona.show.short: "Show a persona (frontmatter + body + skill refs)"
-  # TODO(translate): cli.persona.add.short
-  cli.persona.add.short: "Add a persona (writes personas/<slug>.md and opens $EDITOR)"
-  # TODO(translate): cli.persona.edit.short
-  cli.persona.edit.short: "Edit a persona (opens $EDITOR by default; flags override)"
-  # TODO(translate): cli.persona.remove.short
-  cli.persona.remove.short: "Remove a persona (deletes file + prunes refs)"
-  # TODO(translate): cli.mcp.short
-  cli.mcp.short: "Expose Omakiten agent intents through MCP"
-  # TODO(translate): cli.mcp.prompt.short
-  cli.mcp.prompt.short: "Render resolved okt-* prompt markdown to stdout"
-  # TODO(translate): cli.mcp.tools.short
-  cli.mcp.tools.short: "List Omakiten MCP tool definitions"
-  # TODO(translate): cli.mcp.call.short
-  cli.mcp.call.short: "Call an Omakiten MCP tool with a JSON input object"
-  # TODO(translate): cli.mcp.serve.short
-  cli.mcp.serve.short: "Run the Omakiten MCP stdio server"
-  # TODO(translate): cli.mcp.install.short
-  cli.mcp.install.short: "Configure Omakiten MCP server in an AI harness"
-  # TODO(translate): cli.workflow.short
-  cli.workflow.short: "Inspect workflow configuration"
-  # TODO(translate): cli.workflow.show.short
-  cli.workflow.show.short: "Show the active workflow"
-  # TODO(translate): cli.workflow.orphan.short
-  cli.workflow.orphan.short: "Preview or rebind tasks whose bucket was deactivated by a workflow swap"
-  # TODO(translate): cli.config.init.long
+      4. ~/.config/omakiten و ~/.local/share/omakiten
+  cli.root.flag.db: "مسار قاعدة بيانات SQLite (يتجاوز $OMAKITEN_HOME و XDG)"
+  cli.root.flag.config: "مسار omakiten.yaml (يتجاوز $OMAKITEN_HOME و XDG)"
+  cli.root.flag.project: "slug المشروع"
+  cli.root.flag.project-id: "معرّف المشروع"
+  cli.task.add.short: "إنشاء task في المشروع النشط"
+  cli.task.edit.short: "تحرير task في المشروع النشط"
+  cli.task.list.short: "عرض قائمة tasks المشروع النشط"
+  cli.task.move.short: "نقل task عبر انتقال workflow مسموح به"
+  cli.task.delete.short: "حذف task نهائيًا (cascade) — خاضع لسياسة bucket و operations.delete.guards"
+  cli.task.archive.short: "أرشفة task (state=archived، تنتقل إلى bucket النهائي في workflow)"
+  cli.task.unarchive.short: "استعادة task مؤرشفة (state=active)"
+  cli.init.short: "تسجيل المشروع الحالي في قاعدة البيانات العامة"
+  cli.tui.short: "فتح واجهة الطرفية TUI"
+  cli.comment.short: "إدارة comments الخاصة بـ tasks"
+  cli.comment.add.short: "إضافة comment إلى task"
+  cli.comment.list.short: "عرض comments الـ task"
+  cli.comment.edit.short: "تحرير نص comment واستبدال tags الخاصة به (خاضع لسياسة bucket)"
+  cli.comment.delete.short: "حذف comment نهائيًا (خاضع لسياسة bucket)"
+  cli.context.short: "فحص سياق المشروع لتسليم العمل"
+  cli.context.add.short: "إضافة مدخل سياق تسليم للمشروع"
+  cli.context.dump.short: "تفريغ سياق تدريجي للوكلاء agents"
+  cli.depend.short: "إدارة تبعيات tasks"
+  cli.depend.add.short: "إضافة تبعية task"
+  cli.depend.remove.short: "إزالة تبعية task"
+  cli.depend.list.short: "عرض تبعيات task"
+  cli.config.short: "إدارة حزمة omakiten.yaml الرسمية"
+  cli.config.validate.short: "التحقّق من ملف omakiten.yaml"
+  cli.config.presets.short: "عرض قائمة preset الرسمية لـ workflow"
+  cli.preset.omakase.title: "اختيار الطاهي"
+  cli.preset.omakase.description: "workflow متوازن مع self-branch وresume وحراسات guards للتوثيق."
+  cli.preset.izakaya.title: "غير رسمي"
+  cli.preset.izakaya.description: "Backlog -> dev -> done بدون guards. مناسب للتجارب السريعة والمشاريع الشخصية."
+  cli.preset.kaiseki.title: "متعدد المراحل"
+  cli.preset.kaiseki.description: "يضيف أعمدة requirements وplanning وdocs مع guards انتقال صارمة."
+  cli.preset.shokunin.title: "حِرَفي"
+  cli.preset.shokunin.description: "Kaiseki مع نقاط تحقّق tests-passing وpeer-review لأقصى قابلية تتبّع."
+  cli.config.init.short: "تنزيل preset رسمي في تثبيت user-global أو repo-local"
+  cli.config.path.short: "إظهار القيمة عند مسار مفتاح YAML منقّط في الإعدادات النشطة"
+  cli.config.diff.short: "مقارنة مصدري إعدادات عبر مقارنة YAML بنيوية"
+  cli.config.show.short: "طباعة الـ yaml النشط الخام للـ scope المختار"
+  cli.config.why.short: "طباعة جذر التثبيت الذي يملك طبقة إعدادات scope المختار"
+  cli.config.language.short: "إدارة اللغة النشطة لمساعدة CLI وتسميات TUI وتوجيه إخراج agent"
+  cli.config.language.show.short: "طباعة إعدادات اللغة النشطة وقوائم حِزم اللغات المكتشفة"
+  cli.config.language.set.short: "ضبط واحد أو أكثر من إعدادات اللغة في omakiten.yaml النشط"
+  cli.config.language.reset.short: "إزالة كتلة languages من omakiten.yaml النشط (تُطبَّق القيم الافتراضية)"
+  cli.law.short: "إدارة laws الخاصة بـ agents (ملفّات تحت laws/)"
+  cli.law.list.short: "عرض laws النشطة (قابلة للتصفية حسب scope/المشروع/persona)"
+  cli.law.show.short: "عرض law (frontmatter + المتن)"
+  cli.law.add.short: "إضافة law (يكتب laws/<slug>.md ويفتح $EDITOR عند حذف المتن)"
+  cli.law.edit.short: "تحرير law (يفتح $EDITOR افتراضيًا؛ الأعلام تتجاوز frontmatter/المتن)"
+  cli.law.remove.short: "إزالة law (يحذف الملف + ينظّف المراجع)"
+  cli.skill.short: "إدارة skills (tags تقنية، ملفّات تحت skills/)"
+  cli.skill.list.short: "عرض skills النشطة"
+  cli.skill.show.short: "عرض skill (frontmatter + المتن)"
+  cli.skill.add.short: "إضافة skill (يكتب skills/<slug>.md ويفتح $EDITOR)"
+  cli.skill.edit.short: "تحرير skill (يفتح $EDITOR افتراضيًا؛ الأعلام تتجاوز frontmatter)"
+  cli.skill.remove.short: "إزالة skill (يحذف الملف + ينظّف المراجع)"
+  cli.persona.short: "إدارة personas (ملفّات تحت personas/)"
+  cli.persona.list.short: "عرض personas النشطة"
+  cli.persona.show.short: "عرض persona (frontmatter + المتن + مراجع skill)"
+  cli.persona.add.short: "إضافة persona (يكتب personas/<slug>.md ويفتح $EDITOR)"
+  cli.persona.edit.short: "تحرير persona (يفتح $EDITOR افتراضيًا؛ الأعلام تتجاوز)"
+  cli.persona.remove.short: "إزالة persona (يحذف الملف + ينظّف المراجع)"
+  cli.mcp.short: "إتاحة نوايا agent الخاصة بـ Omakiten عبر MCP"
+  cli.mcp.prompt.short: "عرض markdown المُحلَّل لموجّه okt-* على stdout"
+  cli.mcp.tools.short: "عرض تعريفات أدوات MCP الخاصة بـ Omakiten"
+  cli.mcp.call.short: "استدعاء أداة MCP الخاصة بـ Omakiten بكائن JSON كمدخل"
+  cli.mcp.serve.short: "تشغيل خادم MCP الخاص بـ Omakiten عبر stdio"
+  cli.mcp.install.short: "تهيئة خادم MCP الخاص بـ Omakiten داخل harness ذكاء اصطناعي"
+  cli.workflow.short: "فحص إعدادات workflow"
+  cli.workflow.show.short: "عرض workflow النشط"
+  cli.workflow.orphan.short: "معاينة أو إعادة ربط tasks التي تعطّل bucket الخاص بها بسبب تبديل workflow"
   cli.config.init.long: |-
-    Seed a standalone config install rooted in the chosen scope.
+    إنشاء تثبيت إعدادات مستقل متجذّر في scope المختار.
 
-      --scope global  →  paths.ConfigRoot() (or --config's parent).
-                         Existing user install; rerun is idempotent.
+      --scope global  →  paths.ConfigRoot() (أو المجلد الأب لـ --config).
+                         تثبيت مستخدم قائم؛ إعادة التشغيل لا تترك أثرًا جانبيًا.
 
-      --scope local   →  <cwd>/.omakiten (literal CWD, no walk-up).
-                         A complete install — config/<preset>.yaml plus every
-                         entity folder — so the runtime can load it without any
-                         merge with the user-global layer. The walk-up resolver
-                         picks this up automatically on subsequent okt calls
-                         from inside the repo.
+      --scope local   →  <cwd>/.omakiten (CWD حرفيًا، بدون تتبّع للأعلى).
+                         تثبيت كامل — config/<preset>.yaml بالإضافة إلى كل
+                         مجلد كيان — حتى يستطيع وقت التشغيل تحميله دون أي
+                         دمج مع طبقة user-global. يلتقطه محلّل تتبّع المسار
+                         تلقائيًا في الاستدعاءات اللاحقة لـ okt من داخل
+                         المستودع.
 
-    Behaviour matrix:
-      - File missing            → atomic write.
-      - Same preset, same files → no_op:true (silent success).
-      - Different preset        → flips .active to the new preset.
-      - Tampered shipped files  → preserved unless --force.
-      - --force                 → re-copies every embedded shipped file
-                                  (skills, laws, personas, templates, themes,
-                                  notifications, every preset yaml).
-                                  custom/ subtrees are never touched.
+    مصفوفة السلوك:
+      - الملف غير موجود        → كتابة ذرّية.
+      - نفس preset، نفس الملفّات → no_op:true (نجاح صامت).
+      - preset مختلف           → يُحوِّل .active إلى الـ preset الجديد.
+      - ملفّات شحن مُعدَّلة     → تُحفظ ما لم يُمرَّر --force.
+      - --force                → يُعيد نسخ كل ملفّ شحن مُضمَّن
+                                  (skills، laws، personas، templates، themes،
+                                  notifications، وكل preset yaml).
+                                  مجلّدات custom/ لا تُمَسّ أبدًا.
 
-    Language selection:
-      --cli-lang, --tui-lang, --agent-lang skip the interactive prompts
-      for each surface and write the value directly into the seeded
-      omakiten.yaml's languages block. --cli-lang and --tui-lang must
-      match a bundled language code (en, pt-br, ...); --agent-lang is
-      free-form. When no flag is supplied, init prompts on the TTY (or
-      leaves the surface at its default when stdin is non-interactive).
-  # TODO(translate): cli.config.path.long
+    اختيار اللغة:
+      --cli-lang و --tui-lang و --agent-lang تتخطّى المطالبات التفاعلية
+      لكل سطح وتكتب القيمة مباشرة في كتلة languages داخل omakiten.yaml
+      المُهيّأ. يجب أن يطابق --cli-lang و --tui-lang رمز لغة مُضمَّن
+      (en، pt-br، …)؛ بينما --agent-lang حقل حر. عندما لا يُمرَّر علم،
+      تطلب init الإدخال عبر TTY (أو تترك السطح على قيمته الافتراضية حين
+      يكون stdin غير تفاعلي).
   cli.config.path.long: |-
-    Walk the active config (or a chosen layer) by dotted YAML key
-    and report {key, value, path, source}. Without --layer the resolver
-    picks the install that the runtime would use: the discovered .omakiten/
-    when present, otherwise the user-global ConfigRoot.
+    تتبّع الإعدادات النشطة (أو طبقة محدّدة) عبر مفتاح YAML منقّط
+    وأعد {key, value, path, source}. بدون --layer يختار المحلّل
+    التثبيت الذي سيستخدمه وقت التشغيل: .omakiten/ المكتشف
+    إن وُجد، وإلّا ConfigRoot الخاص بـ user-global.
 
-    The standalone model means there is no merge, so a value at any key
-    comes from exactly one install. --layer pins the lookup to "global" or
-    "local" so callers can verify a specific layer rather than the resolved
-    one (e.g. "is this set in the user-global install even though my repo
-    overrides it locally").
-  # TODO(translate): cli.config.diff.long
+    النموذج المستقل يعني عدم وجود دمج، لذا تأتي القيمة عند أي مفتاح
+    من تثبيت واحد بالضبط. --layer يثبّت البحث على "global" أو
+    "local" لتمكين المستدعين من التحقّق من طبقة معيّنة بدلًا من المُحلَّلة
+    (مثلًا "هل هذه القيمة مضبوطة في تثبيت user-global رغم أن مستودعي
+    يتجاوزها محليًّا").
   cli.config.diff.long: |-
-    Compare two YAML config sources and emit one entry per divergent
-    leaf. Each operand is one of:
-      global              - the user-global active yaml
-      local               - the active yaml inside the CWD walk-up .omakiten/
-      local:<path>        - the active yaml inside <path>/.omakiten/
-      <path/to/file.yaml> - any yaml file on disk
+    مقارنة مصدري إعدادات YAML وإصدار مدخل لكل ورقة متباينة.
+    كل طرف هو واحد ممّا يلي:
+      global              - yaml النشط من user-global
+      local               - yaml النشط داخل .omakiten/ المكتشف عبر تتبّع المسار من CWD
+      local:<path>        - yaml النشط داخل <path>/.omakiten/
+      <path/to/file.yaml> - أي ملف yaml على القرص
 
-    Output entries carry op = added | removed | changed plus the relevant
-    side values. Maps descend recursively; lists / scalars compare by deep
-    equality.
-  # TODO(translate): cli.config.language.long
+    تحمل المدخلات op = added | removed | changed إلى جانب قيم
+    الجانب المعني. تنزل الخرائط تكراريًا؛ والقوائم/الموازين تُقارَن
+    بالمساواة العميقة.
   cli.config.language.long: |-
-    Read and write config.languages.{cli,tui,agent_output} in the active
-    omakiten.yaml. languages.cli and languages.tui are validated against
-    the language packs discovered under languages/; languages.agent_output
-    is free-form and forwarded verbatim to the MCP prompt composer.
+    قراءة وكتابة config.languages.{cli,tui,agent_output} في omakiten.yaml
+    النشط. languages.cli و languages.tui يُتحقَّق منهما مقابل حِزم
+    اللغات المكتشفة تحت languages/؛ بينما languages.agent_output حقل
+    حر يُمرَّر حرفيًّا إلى مُركِّب موجّهات MCP.
 
-    The default target is the resolved omakiten.yaml (repo-local
-    .omakiten/ when present, otherwise the user-global ConfigRoot). Use
-    --global on set/reset to pin the write to the user-global file
-    regardless of repo-local presence.
+    الهدف الافتراضي هو omakiten.yaml المُحلَّل (.omakiten/ المحلي للمستودع
+    إن وُجد، وإلّا ConfigRoot الخاص بـ user-global). استخدم --global على
+    set/reset لتثبيت الكتابة على ملف user-global بصرف النظر عن وجود
+    repo-local.
 
-    Writes trigger a BundleCache.Reload so subsequent okt invocations and
-    long-running tools (TUI, MCP server) observe the new selection. The
-    current CLI process and any already-running CLI invocation are not
-    retroactively updated; only subsequent invocations pick up the change.
-  # TODO(translate): cli.config.language.set.long
+    تُحفّز عمليات الكتابة BundleCache.Reload بحيث ترصد الاستدعاءات
+    اللاحقة لـ okt والأدوات طويلة العمر (TUI، خادم MCP) الاختيار
+    الجديد. عملية CLI الحالية وأي استدعاء CLI يعمل بالفعل لا
+    يُحدَّثان بأثر رجعي؛ فقط الاستدعاءات اللاحقة تلتقط التغيير.
   cli.config.language.set.long: |-
-    Examples:
+    أمثلة:
       okt config language set --cli pt-br
       okt config language set --tui en --agent "Português (Brasil)"
       okt config language set --agent "" --global
 
-    At least one of --cli, --tui, or --agent must be provided. --cli and
-    --tui validate against the language codes discovered under languages/.
-    --agent accepts any non-empty string (or "" to clear). --global pins
-    the write to the user-global omakiten.yaml.
-  # TODO(translate): cli.mcp.install.long
-  cli.mcp.install.long: "Writes the Omakiten MCP server configuration to the harness config file (e.g. Claude Desktop or OpenCode)."
-  # TODO(translate): cli.workflow.orphan.long
+    يجب توفير واحد على الأقل من --cli أو --tui أو --agent. يُتحقَّق
+    من --cli و --tui مقابل رموز اللغات المكتشفة تحت languages/.
+    --agent يقبل أي نص غير فارغ (أو "" لإفراغه). --global يثبّت
+    الكتابة على omakiten.yaml الخاص بـ user-global.
+  cli.mcp.install.long: "يكتب إعدادات خادم MCP الخاص بـ Omakiten إلى ملف إعدادات harness (مثل Claude Desktop أو OpenCode)."
   cli.workflow.orphan.long: |-
-    Tasks that pointed to a workflow bucket which no longer exists after a
-    preset switch or omakiten.yaml edit are orphans. By default this command
-    prints the migration plan (which tasks would rebind to which bucket) and
-    exits non-zero so nothing is mutated.
+    tasks التي كانت تشير إلى bucket في workflow لم يعد موجودًا بعد
+    تبديل preset أو تعديل omakiten.yaml تُعدّ أيتامًا. افتراضيًّا
+    يطبع هذا الأمر خطّة الترحيل (أيّ tasks ستُعاد ربطها بأيّ bucket)
+    ويخرج بحالة غير صفرية حتى لا يُعدَّل شيء.
 
-    Pass --confirm to apply the rebind. Each migrated task emits a
-    task.migrated event with from/to/reason payload. --dry-run is equivalent
-    to running without --confirm.
-  # TODO(translate): cli.task.add.flag.title
-  cli.task.add.flag.title: "task title"
-  # TODO(translate): cli.task.add.flag.description
-  cli.task.add.flag.description: "task description"
-  # TODO(translate): cli.task.add.flag.bucket
-  cli.task.add.flag.bucket: "bucket key (defaults to the active workflow's first bucket)"
-  # TODO(translate): cli.task.edit.flag.title
-  cli.task.edit.flag.title: "task title"
-  # TODO(translate): cli.task.edit.flag.description
-  cli.task.edit.flag.description: "task description"
-  # TODO(translate): cli.task.edit.flag.priority
-  cli.task.edit.flag.priority: "task priority: low, normal, or high"
-  # TODO(translate): cli.task.edit.flag.bucket
-  cli.task.edit.flag.bucket: "target bucket key"
-  # TODO(translate): cli.task.list.flag.bucket
-  cli.task.list.flag.bucket: "bucket key"
-  # TODO(translate): cli.task.move.flag.to
-  cli.task.move.flag.to: "target bucket key"
-  # TODO(translate): cli.task.delete.flag.confirm
-  cli.task.delete.flag.confirm: "required: confirm the destructive delete"
-  # TODO(translate): cli.comment.add.flag.body
-  cli.comment.add.flag.body: "comment body"
-  # TODO(translate): cli.comment.add.flag.author
-  cli.comment.add.flag.author: "author type: human or agent"
-  # TODO(translate): cli.comment.add.flag.tag
-  cli.comment.add.flag.tag: "tag name (repeatable)"
-  # TODO(translate): cli.comment.edit.flag.body
-  cli.comment.edit.flag.body: "new comment body"
-  # TODO(translate): cli.comment.edit.flag.tag
-  cli.comment.edit.flag.tag: "tag name (repeatable; replaces all existing tags)"
-  # TODO(translate): cli.comment.delete.flag.confirm
-  cli.comment.delete.flag.confirm: "required: confirm the destructive delete"
-  # TODO(translate): cli.context.add.flag.body
-  cli.context.add.flag.body: "context body"
-  # TODO(translate): cli.context.dump.flag.level
-  cli.context.dump.flag.level: "context detail level: 1, 2, or 3"
-  # TODO(translate): cli.depend.flag.on
-  cli.depend.flag.on: "dependency task id"
-  # TODO(translate): cli.init.flag.name
-  cli.init.flag.name: "project name"
-  # TODO(translate): cli.init.flag.slug
-  cli.init.flag.slug: "project slug"
-  # TODO(translate): cli.init.flag.root
-  cli.init.flag.root: "project root path"
-  # TODO(translate): cli.init.flag.enable-mcp
-  cli.init.flag.enable-mcp: "enable global MCP agent access for a supported harness"
-  # TODO(translate): cli.init.flag.mcp-harness
-  cli.init.flag.mcp-harness: "MCP harness to configure"
-  # TODO(translate): cli.init.flag.mcp-config
-  cli.init.flag.mcp-config: "MCP harness config path"
-  # TODO(translate): cli.init.flag.mcp-command
-  cli.init.flag.mcp-command: "command path written to the harness MCP config"
-  # TODO(translate): cli.init.flag.mcp-dry-run
-  cli.init.flag.mcp-dry-run: "preview MCP harness config changes without writing"
-  # TODO(translate): cli.init.flag.mcp-force
-  cli.init.flag.mcp-force: "replace an existing Omakiten MCP harness entry"
-  # TODO(translate): cli.init.flag.preset
-  cli.init.flag.preset: "official workflow preset to copy into .omakiten/config/<preset>.yaml and activate"
-  # TODO(translate): cli.init.flag.preset-force
-  cli.init.flag.preset-force: "overwrite an existing .omakiten preset config"
-  # TODO(translate): cli.config.init.flag.scope
-  cli.config.init.flag.scope: "config layer to seed: global or local"
-  # TODO(translate): cli.config.init.flag.preset
-  cli.config.init.flag.preset: "official workflow preset to seed"
-  # TODO(translate): cli.config.init.flag.force
-  cli.config.init.flag.force: "re-copy embedded shipped files (skills, laws, personas, etc.) — custom/ is never touched"
-  # TODO(translate): cli.config.init.flag.cli-lang
-  cli.config.init.flag.cli-lang: "language code for CLI help and usage strings (skips the interactive prompt)"
-  # TODO(translate): cli.config.init.flag.tui-lang
-  cli.config.init.flag.tui-lang: "language code for TUI labels and screens (skips the interactive prompt)"
-  # TODO(translate): cli.config.init.flag.agent-lang
-  cli.config.init.flag.agent-lang: "free-form agent-output language directive (skips the interactive prompt)"
-  # TODO(translate): cli.config.path.flag.layer
-  cli.config.path.flag.layer: "pin the lookup to one layer: global or local (default = whatever the resolver would pick)"
-  # TODO(translate): cli.config.show.flag.scope
-  cli.config.show.flag.scope: "global or local"
-  # TODO(translate): cli.config.why.flag.scope
-  cli.config.why.flag.scope: "global or local"
-  # TODO(translate): cli.config.language.set.flag.cli
-  cli.config.language.set.flag.cli: "language code for CLI help and usage strings"
-  # TODO(translate): cli.config.language.set.flag.tui
-  cli.config.language.set.flag.tui: "language code for TUI labels and screens"
-  # TODO(translate): cli.config.language.set.flag.agent
-  cli.config.language.set.flag.agent: "free-form agent output language directive (use \"\" to clear)"
-  # TODO(translate): cli.config.language.set.flag.global
-  cli.config.language.set.flag.global: "pin the write to the user-global omakiten.yaml regardless of repo-local presence"
-  # TODO(translate): cli.config.language.reset.flag.global
-  cli.config.language.reset.flag.global: "pin the reset to the user-global omakiten.yaml regardless of repo-local presence"
-  # TODO(translate): cli.law.list.flag.scope
-  cli.law.list.flag.scope: "filter by scope: global, project, or persona"
-  # TODO(translate): cli.law.list.flag.project
-  cli.law.list.flag.project: "filter by project slug"
-  # TODO(translate): cli.law.list.flag.persona
-  cli.law.list.flag.persona: "filter by persona slug"
-  # TODO(translate): cli.law.add.flag.key
-  cli.law.add.flag.key: "law slug"
-  # TODO(translate): cli.law.add.flag.name
-  cli.law.add.flag.name: "law display name (optional)"
-  # TODO(translate): cli.law.add.flag.severity
-  cli.law.add.flag.severity: "info, warning, or error"
-  # TODO(translate): cli.law.add.flag.body
-  cli.law.add.flag.body: "law body (placeholder used if empty + $EDITOR opens)"
-  # TODO(translate): cli.law.add.flag.scope
-  cli.law.add.flag.scope: "global, project, or persona"
-  # TODO(translate): cli.law.add.flag.project
-  cli.law.add.flag.project: "project slug (required when --scope=project)"
-  # TODO(translate): cli.law.add.flag.persona
-  cli.law.add.flag.persona: "persona slug (required when --scope=persona)"
-  # TODO(translate): cli.law.add.flag.no-edit
-  cli.law.add.flag.no-edit: "skip opening $EDITOR after creating the scaffold"
-  # TODO(translate): cli.law.edit.flag.name
-  cli.law.edit.flag.name: "rewrite law display name"
-  # TODO(translate): cli.law.edit.flag.severity
-  cli.law.edit.flag.severity: "rewrite severity"
-  # TODO(translate): cli.law.edit.flag.body
-  cli.law.edit.flag.body: "rewrite law body"
-  # TODO(translate): cli.law.edit.flag.no-edit
-  cli.law.edit.flag.no-edit: "do not open $EDITOR (only apply flag-driven updates)"
-  # TODO(translate): cli.skill.add.flag.key
-  cli.skill.add.flag.key: "skill slug (defaults to slugify(--name))"
-  # TODO(translate): cli.skill.add.flag.name
-  cli.skill.add.flag.name: "skill display name"
-  # TODO(translate): cli.skill.add.flag.description
-  cli.skill.add.flag.description: "short description"
-  # TODO(translate): cli.skill.add.flag.no-edit
-  cli.skill.add.flag.no-edit: "skip opening $EDITOR after creating the scaffold"
-  # TODO(translate): cli.skill.edit.flag.name
-  cli.skill.edit.flag.name: "rewrite skill display name"
-  # TODO(translate): cli.skill.edit.flag.description
-  cli.skill.edit.flag.description: "rewrite skill description"
-  # TODO(translate): cli.skill.edit.flag.no-edit
-  cli.skill.edit.flag.no-edit: "do not open $EDITOR (only apply flag-driven updates)"
-  # TODO(translate): cli.persona.add.flag.key
-  cli.persona.add.flag.key: "persona slug (defaults to slugify(--name))"
-  # TODO(translate): cli.persona.add.flag.name
-  cli.persona.add.flag.name: "persona display name"
-  # TODO(translate): cli.persona.add.flag.description
-  cli.persona.add.flag.description: "short description"
-  # TODO(translate): cli.persona.add.flag.skill
-  cli.persona.add.flag.skill: "skill ids (repeatable, e.g. -s 1 -s 2)"
-  # TODO(translate): cli.persona.add.flag.skill-slug
-  cli.persona.add.flag.skill-slug: "skill slugs (repeatable)"
-  # TODO(translate): cli.persona.add.flag.no-edit
-  cli.persona.add.flag.no-edit: "skip opening $EDITOR after creating the scaffold"
-  # TODO(translate): cli.persona.edit.flag.name
-  cli.persona.edit.flag.name: "rewrite persona display name"
-  # TODO(translate): cli.persona.edit.flag.description
-  cli.persona.edit.flag.description: "rewrite persona description"
-  # TODO(translate): cli.persona.edit.flag.skill
-  cli.persona.edit.flag.skill: "skill ids (replaces existing set)"
-  # TODO(translate): cli.persona.edit.flag.skill-slug
-  cli.persona.edit.flag.skill-slug: "skill slugs (replaces existing set)"
-  # TODO(translate): cli.persona.edit.flag.no-edit
-  cli.persona.edit.flag.no-edit: "do not open $EDITOR (only apply flag-driven updates)"
-  # TODO(translate): cli.mcp.call.flag.input
-  cli.mcp.call.flag.input: "JSON input object"
-  # TODO(translate): cli.mcp.install.flag.harness
-  cli.mcp.install.flag.harness: "Target harness (%s)"
-  # TODO(translate): cli.mcp.install.flag.config-path
-  cli.mcp.install.flag.config-path: "Path to harness config file (default: harness default)"
-  # TODO(translate): cli.mcp.install.flag.command
-  cli.mcp.install.flag.command: "Command to run omakiten (default: current executable)"
-  # TODO(translate): cli.mcp.install.flag.dry-run
-  cli.mcp.install.flag.dry-run: "Preview changes without writing"
-  # TODO(translate): cli.mcp.install.flag.force
-  cli.mcp.install.flag.force: "Overwrite existing Omakiten MCP config"
-  # TODO(translate): cli.workflow.orphan.flag.confirm
-  cli.workflow.orphan.flag.confirm: "apply the rebind; without this flag the command prints the plan and exits"
-  # TODO(translate): cli.workflow.orphan.flag.dry-run
-  cli.workflow.orphan.flag.dry-run: "print the migration plan without applying (default when --confirm is absent)"
-  # TODO(translate): cli.err.config_invalid
-  cli.err.config_invalid: "config is invalid"
-  # TODO(translate): cli.err.config_unreadable
-  cli.err.config_unreadable: "config file not readable"
-  # TODO(translate): cli.err.init_seeded_config_invalid
-  cli.err.init_seeded_config_invalid: "init seeded config is invalid"
-  # TODO(translate): cli.err.invalid_scope
-  cli.err.invalid_scope: "invalid --scope (want global or local)"
-  # TODO(translate): cli.err.invalid_layer
-  cli.err.invalid_layer: "invalid --layer (want global or local)"
-  # TODO(translate): cli.err.no_repo_local_above
-  cli.err.no_repo_local_above: "no repo-local .omakiten/ found above start dir"
-  # TODO(translate): cli.err.diff_local_requires_path
-  cli.err.diff_local_requires_path: "local:<path> requires a non-empty path"
-  # TODO(translate): cli.err.diff_no_omakiten_at_path
-  cli.err.diff_no_omakiten_at_path: "no .omakiten/ at supplied path"
-  # TODO(translate): cli.err.diff_no_active_yaml
-  cli.err.diff_no_active_yaml: "no active yaml inside supplied .omakiten/config"
-  # TODO(translate): cli.err.diff_source_unreadable
-  cli.err.diff_source_unreadable: "diff source not a readable file"
-  # TODO(translate): cli.err.language_set_no_flags
-  cli.err.language_set_no_flags: "at least one of --cli, --tui, --agent must be supplied"
-  # TODO(translate): cli.err.unknown_language_code
-  cli.err.unknown_language_code: "--%s %q is not a loaded language code"
-  # TODO(translate): cli.err.task_id_not_numeric
-  cli.err.task_id_not_numeric: "task id must be numeric"
-  # TODO(translate): cli.err.task_delete_requires_confirm
-  cli.err.task_delete_requires_confirm: "task delete requires --confirm to acknowledge the destructive cascade"
-  # TODO(translate): cli.err.comment_delete_requires_confirm
-  cli.err.comment_delete_requires_confirm: "comment delete requires --confirm to acknowledge the destructive operation"
-  # TODO(translate): cli.err.orphans_requires_confirm
-  cli.err.orphans_requires_confirm: "orphans migration requires --confirm; re-run with --confirm to apply"
-  # TODO(translate): cli.err.unknown_workflow_preset
-  cli.err.unknown_workflow_preset: "unknown workflow preset"
-  # TODO(translate): cli.err.repo_local_already_exists
-  cli.err.repo_local_already_exists: "repo-local .omakiten already exists; pass --preset-force to overwrite"
-  # TODO(translate): cli.err.theme_invalid
-  cli.err.theme_invalid: "theme is invalid"
-  # TODO(translate): cli.err.priority_id_not_configured
-  cli.err.priority_id_not_configured: "priority id is not in config.priorities"
-  # TODO(translate): cli.err.priority_unknown
-  cli.err.priority_unknown: "unknown priority; must match an id or value in config.priorities"
-  # TODO(translate): cli.err.severity_id_not_configured
-  cli.err.severity_id_not_configured: "severity id is not in config.severities"
-  # TODO(translate): cli.err.severity_unknown
-  cli.err.severity_unknown: "unknown severity; must match an id or value in config.severities"
-  # TODO(translate): cli.err.skill_slug_required
-  cli.err.skill_slug_required: "skill slug is required"
-  # TODO(translate): cli.err.skill_not_found
-  cli.err.skill_not_found: "skill not found"
-  # TODO(translate): cli.err.skill_slug_bad_format
-  cli.err.skill_slug_bad_format: "skill slug must be lowercase, hyphenated"
-  # TODO(translate): cli.err.law_slug_required
-  cli.err.law_slug_required: "law slug is required"
-  # TODO(translate): cli.err.law_not_found
-  cli.err.law_not_found: "law not found"
-  # TODO(translate): cli.err.law_slug_bad_format
-  cli.err.law_slug_bad_format: "law slug must be lowercase, hyphenated"
-  # TODO(translate): cli.err.persona_slug_required
-  cli.err.persona_slug_required: "persona slug is required"
-  # TODO(translate): cli.err.persona_not_found
-  cli.err.persona_not_found: "persona not found"
-  # TODO(translate): cli.err.persona_slug_bad_format
-  cli.err.persona_slug_bad_format: "persona slug must be lowercase, hyphenated"
-  # TODO(translate): cli.print.warn_path_slug
-  cli.print.warn_path_slug: "warning: %s [%s]: %s\n"
-  # TODO(translate): cli.print.warn_path
-  cli.print.warn_path: "warning: %s: %s\n"
-  # TODO(translate): cli.print.warn_slug
-  cli.print.warn_slug: "warning: [%s]: %s\n"
-  # TODO(translate): cli.print.warn_message
-  cli.print.warn_message: "warning: %s\n"
-  # TODO(translate): cli.print.prompt_with_options
-  cli.print.prompt_with_options: "%s [%s] (default %s): "
-  # TODO(translate): cli.print.prompt_unknown_code
-  cli.print.prompt_unknown_code: "  unknown code %q — pick one of %s\n"
-  # TODO(translate): cli.print.prompt_freeform
-  cli.print.prompt_freeform: "%s (default %s): "
-  # TODO(translate): cli.print.prompt_freeform_none
-  cli.print.prompt_freeform_none: "<none>"
-  # TODO(translate): cli.print.prompt_label.cli
-  cli.print.prompt_label.cli: "CLI language"
-  # TODO(translate): cli.print.prompt_label.tui
-  cli.print.prompt_label.tui: "TUI language"
-  # TODO(translate): cli.print.prompt_label.agent
-  cli.print.prompt_label.agent: "Agent output language (free-form, blank to skip)"
-  # TODO(translate): cli.print.prompt_render
-  cli.print.prompt_render: "# %s — %d bytes / %d runes\n\n%s\n"
-  # TODO(translate): cli.print.agent_output_note
-  cli.print.agent_output_note: "free-form; not validated against the loaded catalog"
-  # TODO(translate): tui.empty.activity
-  tui.empty.activity: "No activity yet."
-  # TODO(translate): tui.empty.activity_hint
-  tui.empty.activity_hint: "Press c to add a comment."
-  # TODO(translate): tui.empty.board_no_buckets
-  tui.empty.board_no_buckets: "No workflow buckets. Add buckets in the active workflow config."
-  # TODO(translate): tui.empty.board_no_tasks
-  tui.empty.board_no_tasks: "No tasks yet."
-  # TODO(translate): tui.empty.graph_no_deps
-  tui.empty.graph_no_deps: "No task dependencies yet."
-  # TODO(translate): tui.empty.home_no_projects
-  tui.empty.home_no_projects: "no projects"
-  # TODO(translate): tui.empty.home_no_projects_full
-  tui.empty.home_no_projects_full: "No projects registered."
-  # TODO(translate): tui.empty.logs
-  tui.empty.logs: "No activity yet. Use the CLI, TUI, or MCP to interact with Omakiten."
-  # TODO(translate): tui.empty.stats
-  tui.empty.stats: "No agent activity recorded yet for this period."
-  # TODO(translate): tui.empty.table_no_tasks
-  tui.empty.table_no_tasks: "No tasks yet. Press n to create one."
-  # TODO(translate): tui.empty.table_filtered
-  tui.empty.table_filtered: "No tasks match the configured table filter."
-  # TODO(translate): tui.empty.blockers
-  tui.empty.blockers: "No blockers. Press b to add one."
-  # TODO(translate): tui.empty.task_no_description
-  tui.empty.task_no_description: "No description"
-  # TODO(translate): tui.empty.blocker_picker
-  tui.empty.blocker_picker: "No other tasks are available to block this task."
-  # TODO(translate): tui.empty.comment_not_found
-  tui.empty.comment_not_found: "Comment not found. Press esc to return."
-  # TODO(translate): tui.empty.none
-  tui.empty.none: "none"
-  # TODO(translate): tui.empty.body
-  tui.empty.body: "Empty body"
-  # TODO(translate): tui.footer.help
-  tui.footer.help: "help"
-  # TODO(translate): tui.footer.back
-  tui.footer.back: "back"
-  # TODO(translate): tui.footer.cancel
-  tui.footer.cancel: "cancel"
-  # TODO(translate): tui.footer.save
-  tui.footer.save: "save"
-  # TODO(translate): tui.footer.save_comment
-  tui.footer.save_comment: "save comment"
-  # TODO(translate): tui.footer.newline
-  tui.footer.newline: "newline"
-  # TODO(translate): tui.footer.toggle
-  tui.footer.toggle: "toggle"
-  # TODO(translate): tui.footer.toggle_blocker
-  tui.footer.toggle_blocker: "toggle blocker"
-  # TODO(translate): tui.footer.move
-  tui.footer.move: "move"
-  # TODO(translate): tui.footer.scroll
-  tui.footer.scroll: "scroll"
-  # TODO(translate): tui.footer.page
-  tui.footer.page: "page"
-  # TODO(translate): tui.footer.edit
-  tui.footer.edit: "edit"
-  # TODO(translate): tui.footer.edit_in_editor
-  tui.footer.edit_in_editor: "edit in $EDITOR"
-  # TODO(translate): tui.footer.arm_delete
-  tui.footer.arm_delete: "arm delete"
-  # TODO(translate): tui.footer.confirm_delete
-  tui.footer.confirm_delete: "confirm delete"
-  # TODO(translate): tui.footer.arm_delete_orphan
-  tui.footer.arm_delete_orphan: "arm delete (orphan)"
-  # TODO(translate): tui.footer.delete_all_orphans
-  tui.footer.delete_all_orphans: "delete all orphans"
-  # TODO(translate): tui.footer.comment
+    مرّر --confirm لتطبيق إعادة الربط. كل task مُرحَّلة تُصدر حدث
+    task.migrated بحمولة from/to/reason. --dry-run مكافئ للتشغيل
+    دون --confirm.
+  cli.task.add.flag.title: "عنوان task"
+  cli.task.add.flag.description: "وصف task"
+  cli.task.add.flag.bucket: "مفتاح bucket (افتراضيًّا أوّل bucket في workflow النشط)"
+  cli.task.edit.flag.title: "عنوان task"
+  cli.task.edit.flag.description: "وصف task"
+  cli.task.edit.flag.priority: "أولوية task: low أو normal أو high"
+  cli.task.edit.flag.bucket: "مفتاح bucket الهدف"
+  cli.task.list.flag.bucket: "مفتاح bucket"
+  cli.task.move.flag.to: "مفتاح bucket الهدف"
+  cli.task.delete.flag.confirm: "مطلوب: تأكيد الحذف المُدمِّر"
+  cli.comment.add.flag.body: "نص comment"
+  cli.comment.add.flag.author: "نوع المؤلّف: human أو agent"
+  cli.comment.add.flag.tag: "اسم tag (قابل للتكرار)"
+  cli.comment.edit.flag.body: "نص comment الجديد"
+  cli.comment.edit.flag.tag: "اسم tag (قابل للتكرار؛ يستبدل كل tags الحالية)"
+  cli.comment.delete.flag.confirm: "مطلوب: تأكيد الحذف المُدمِّر"
+  cli.context.add.flag.body: "نص السياق"
+  cli.context.dump.flag.level: "مستوى تفصيل السياق: 1 أو 2 أو 3"
+  cli.depend.flag.on: "معرّف task المتوقَّف عليها"
+  cli.init.flag.name: "اسم المشروع"
+  cli.init.flag.slug: "slug المشروع"
+  cli.init.flag.root: "مسار جذر المشروع"
+  cli.init.flag.enable-mcp: "تفعيل وصول agent عبر MCP العام لـ harness مدعومة"
+  cli.init.flag.mcp-harness: "harness MCP المراد تهيئته"
+  cli.init.flag.mcp-config: "مسار ملف إعدادات harness MCP"
+  cli.init.flag.mcp-command: "مسار الأمر المكتوب في إعدادات harness MCP"
+  cli.init.flag.mcp-dry-run: "معاينة تغييرات إعدادات harness MCP دون كتابة"
+  cli.init.flag.mcp-force: "استبدال مدخل Omakiten MCP موجود في harness"
+  cli.init.flag.preset: "preset workflow رسمي يُنسخ إلى .omakiten/config/<preset>.yaml ويُفعَّل"
+  cli.init.flag.preset-force: "الكتابة فوق إعدادات preset موجودة في .omakiten"
+  cli.config.init.flag.scope: "طبقة الإعدادات المراد تهيئتها: global أو local"
+  cli.config.init.flag.preset: "preset workflow الرسمي المراد تهيئته"
+  cli.config.init.flag.force: "إعادة نسخ ملفّات الشحن المضمّنة (skills، laws، personas، إلخ.) — مجلّدات custom/ لا تُمَسّ أبدًا"
+  cli.config.init.flag.cli-lang: "رمز اللغة لمساعدة CLI ونصوص الاستخدام (يتخطّى المطالبة التفاعلية)"
+  cli.config.init.flag.tui-lang: "رمز اللغة لتسميات وشاشات TUI (يتخطّى المطالبة التفاعلية)"
+  cli.config.init.flag.agent-lang: "توجيه لغة إخراج agent (نص حر، يتخطّى المطالبة التفاعلية)"
+  cli.config.path.flag.layer: "تثبيت البحث على طبقة واحدة: global أو local (الافتراضي = ما سيختاره المحلّل)"
+  cli.config.show.flag.scope: "global أو local"
+  cli.config.why.flag.scope: "global أو local"
+  cli.config.language.set.flag.cli: "رمز اللغة لمساعدة CLI ونصوص الاستخدام"
+  cli.config.language.set.flag.tui: "رمز اللغة لتسميات وشاشات TUI"
+  cli.config.language.set.flag.agent: "توجيه لغة إخراج agent (نص حر، استخدم \"\" لإفراغها)"
+  cli.config.language.set.flag.global: "تثبيت الكتابة على omakiten.yaml الخاص بـ user-global بصرف النظر عن وجود repo-local"
+  cli.config.language.reset.flag.global: "تثبيت إعادة الضبط على omakiten.yaml الخاص بـ user-global بصرف النظر عن وجود repo-local"
+  cli.law.list.flag.scope: "تصفية حسب scope: global أو project أو persona"
+  cli.law.list.flag.project: "تصفية حسب slug المشروع"
+  cli.law.list.flag.persona: "تصفية حسب slug persona"
+  cli.law.add.flag.key: "slug law"
+  cli.law.add.flag.name: "اسم العرض لـ law (اختياري)"
+  cli.law.add.flag.severity: "info أو warning أو error"
+  cli.law.add.flag.body: "متن law (يُستخدم نائب عند الفراغ + يُفتح $EDITOR)"
+  cli.law.add.flag.scope: "global أو project أو persona"
+  cli.law.add.flag.project: "slug المشروع (مطلوب عند --scope=project)"
+  cli.law.add.flag.persona: "slug persona (مطلوب عند --scope=persona)"
+  cli.law.add.flag.no-edit: "تخطّي فتح $EDITOR بعد إنشاء الهيكل"
+  cli.law.edit.flag.name: "إعادة كتابة اسم العرض لـ law"
+  cli.law.edit.flag.severity: "إعادة كتابة severity"
+  cli.law.edit.flag.body: "إعادة كتابة متن law"
+  cli.law.edit.flag.no-edit: "عدم فتح $EDITOR (تطبيق التحديثات المدفوعة بالأعلام فقط)"
+  cli.skill.add.flag.key: "slug skill (افتراضيًّا slugify(--name))"
+  cli.skill.add.flag.name: "اسم العرض لـ skill"
+  cli.skill.add.flag.description: "وصف قصير"
+  cli.skill.add.flag.no-edit: "تخطّي فتح $EDITOR بعد إنشاء الهيكل"
+  cli.skill.edit.flag.name: "إعادة كتابة اسم العرض لـ skill"
+  cli.skill.edit.flag.description: "إعادة كتابة وصف skill"
+  cli.skill.edit.flag.no-edit: "عدم فتح $EDITOR (تطبيق التحديثات المدفوعة بالأعلام فقط)"
+  cli.persona.add.flag.key: "slug persona (افتراضيًّا slugify(--name))"
+  cli.persona.add.flag.name: "اسم العرض لـ persona"
+  cli.persona.add.flag.description: "وصف قصير"
+  cli.persona.add.flag.skill: "معرّفات skill (قابلة للتكرار، مثلًا -s 1 -s 2)"
+  cli.persona.add.flag.skill-slug: "slugs لـ skill (قابلة للتكرار)"
+  cli.persona.add.flag.no-edit: "تخطّي فتح $EDITOR بعد إنشاء الهيكل"
+  cli.persona.edit.flag.name: "إعادة كتابة اسم العرض لـ persona"
+  cli.persona.edit.flag.description: "إعادة كتابة وصف persona"
+  cli.persona.edit.flag.skill: "معرّفات skill (تستبدل المجموعة الحالية)"
+  cli.persona.edit.flag.skill-slug: "slugs لـ skill (تستبدل المجموعة الحالية)"
+  cli.persona.edit.flag.no-edit: "عدم فتح $EDITOR (تطبيق التحديثات المدفوعة بالأعلام فقط)"
+  cli.mcp.call.flag.input: "كائن JSON كمدخل"
+  cli.mcp.install.flag.harness: "harness الهدف (%s)"
+  cli.mcp.install.flag.config-path: "مسار ملف إعدادات harness (افتراضيًّا: افتراضي harness)"
+  cli.mcp.install.flag.command: "الأمر المستخدم لتشغيل omakiten (افتراضيًّا: التنفيذي الحالي)"
+  cli.mcp.install.flag.dry-run: "معاينة التغييرات دون كتابة"
+  cli.mcp.install.flag.force: "الكتابة فوق إعدادات Omakiten MCP الموجودة"
+  cli.workflow.orphan.flag.confirm: "تطبيق إعادة الربط؛ بدون هذا العلم يطبع الأمر الخطّة ويخرج"
+  cli.workflow.orphan.flag.dry-run: "طباعة خطّة الترحيل دون تطبيق (الافتراضي عند غياب --confirm)"
+  cli.err.config_invalid: "الإعدادات غير صالحة"
+  cli.err.config_unreadable: "ملف الإعدادات غير قابل للقراءة"
+  cli.err.init_seeded_config_invalid: "إعدادات init المُهيّأة غير صالحة"
+  cli.err.invalid_scope: "‎--scope غير صالح (يجب أن يكون global أو local)"
+  cli.err.invalid_layer: "‎--layer غير صالح (يجب أن يكون global أو local)"
+  cli.err.no_repo_local_above: "لم يُعثر على .omakiten/ خاص بالمستودع فوق دليل البدء"
+  cli.err.diff_local_requires_path: "local:<path> يتطلّب مسارًا غير فارغ"
+  cli.err.diff_no_omakiten_at_path: "لا يوجد .omakiten/ في المسار المُعطى"
+  cli.err.diff_no_active_yaml: "لا يوجد yaml نشط داخل .omakiten/config المُعطى"
+  cli.err.diff_source_unreadable: "مصدر diff ليس ملفًا قابلًا للقراءة"
+  cli.err.language_set_no_flags: "يجب توفير واحد على الأقل من --cli أو --tui أو --agent"
+  cli.err.unknown_language_code: "‎--%s %q ليس رمز لغة محمَّل"
+  cli.err.task_id_not_numeric: "معرّف task يجب أن يكون رقميًّا"
+  cli.err.task_delete_requires_confirm: "حذف task يتطلّب --confirm للإقرار بالـ cascade المُدمِّر"
+  cli.err.comment_delete_requires_confirm: "حذف comment يتطلّب --confirm للإقرار بالعملية المُدمِّرة"
+  cli.err.orphans_requires_confirm: "ترحيل الأيتام يتطلّب --confirm؛ أعد التشغيل بـ --confirm للتطبيق"
+  cli.err.unknown_workflow_preset: "preset workflow غير معروف"
+  cli.err.repo_local_already_exists: ".omakiten خاص بالمستودع موجود بالفعل؛ مرّر --preset-force للكتابة فوقه"
+  cli.err.theme_invalid: "السمة غير صالحة"
+  cli.err.priority_id_not_configured: "معرّف الأولوية غير موجود في config.priorities"
+  cli.err.priority_unknown: "أولوية غير معروفة؛ يجب أن تطابق id أو قيمة في config.priorities"
+  cli.err.severity_id_not_configured: "معرّف severity غير موجود في config.severities"
+  cli.err.severity_unknown: "severity غير معروفة؛ يجب أن تطابق id أو قيمة في config.severities"
+  cli.err.skill_slug_required: "slug skill مطلوب"
+  cli.err.skill_not_found: "لم يُعثر على skill"
+  cli.err.skill_slug_bad_format: "slug skill يجب أن يكون أحرفًا صغيرة مفصولة بشرطات"
+  cli.err.law_slug_required: "slug law مطلوب"
+  cli.err.law_not_found: "لم يُعثر على law"
+  cli.err.law_slug_bad_format: "slug law يجب أن يكون أحرفًا صغيرة مفصولة بشرطات"
+  cli.err.persona_slug_required: "slug persona مطلوب"
+  cli.err.persona_not_found: "لم يُعثر على persona"
+  cli.err.persona_slug_bad_format: "slug persona يجب أن يكون أحرفًا صغيرة مفصولة بشرطات"
+  cli.print.warn_path_slug: "تحذير: %s [%s]: %s\n"
+  cli.print.warn_path: "تحذير: %s: %s\n"
+  cli.print.warn_slug: "تحذير: [%s]: %s\n"
+  cli.print.warn_message: "تحذير: %s\n"
+  cli.print.prompt_with_options: "%s [%s] (الافتراضي %s): "
+  cli.print.prompt_unknown_code: "  رمز غير معروف %q — اختر واحدًا من %s\n"
+  cli.print.prompt_freeform: "%s (الافتراضي %s): "
+  cli.print.prompt_freeform_none: "<لا شيء>"
+  cli.print.prompt_label.cli: "لغة CLI"
+  cli.print.prompt_label.tui: "لغة TUI"
+  cli.print.prompt_label.agent: "لغة إخراج agent (نص حر، اتركها فارغة للتخطّي)"
+  cli.print.prompt_render: "# %s — %d بايت / %d محرف\n\n%s\n"
+  cli.print.agent_output_note: "نص حر؛ لا يُتحقَّق منه مقابل الفهرس المحمَّل"
+  tui.empty.activity: "لا يوجد نشاط بعد."
+  tui.empty.activity_hint: "اضغط c لإضافة comment."
+  tui.empty.board_no_buckets: "لا توجد buckets في workflow. أضف buckets في إعدادات workflow النشط."
+  tui.empty.board_no_tasks: "لا توجد tasks بعد."
+  tui.empty.graph_no_deps: "لا توجد تبعيات tasks بعد."
+  tui.empty.home_no_projects: "لا توجد مشاريع"
+  tui.empty.home_no_projects_full: "لا توجد مشاريع مسجّلة."
+  tui.empty.logs: "لا يوجد نشاط بعد. استخدم CLI أو TUI أو MCP للتفاعل مع Omakiten."
+  tui.empty.stats: "لم يُسجَّل نشاط agent بعد لهذه الفترة."
+  tui.empty.table_no_tasks: "لا توجد tasks بعد. اضغط n لإنشاء واحدة."
+  tui.empty.table_filtered: "لا توجد tasks مطابقة لمرشّح الجدول المُهيّأ."
+  tui.empty.blockers: "لا توجد blockers. اضغط b لإضافة واحدة."
+  tui.empty.task_no_description: "لا يوجد وصف"
+  tui.empty.blocker_picker: "لا توجد tasks أخرى متاحة لحجب هذه الـ task."
+  tui.empty.comment_not_found: "لم يُعثر على comment. اضغط esc للعودة."
+  tui.empty.none: "لا شيء"
+  tui.empty.body: "متن فارغ"
+  tui.footer.help: "مساعدة"
+  tui.footer.back: "رجوع"
+  tui.footer.cancel: "إلغاء"
+  tui.footer.save: "حفظ"
+  tui.footer.save_comment: "حفظ comment"
+  tui.footer.newline: "سطر جديد"
+  tui.footer.toggle: "تبديل"
+  tui.footer.toggle_blocker: "تبديل blocker"
+  tui.footer.move: "نقل"
+  tui.footer.scroll: "تمرير"
+  tui.footer.page: "صفحة"
+  tui.footer.edit: "تحرير"
+  tui.footer.edit_in_editor: "تحرير في $EDITOR"
+  tui.footer.arm_delete: "تسليح الحذف"
+  tui.footer.confirm_delete: "تأكيد الحذف"
+  tui.footer.arm_delete_orphan: "تسليح الحذف (يتيم)"
+  tui.footer.delete_all_orphans: "حذف كل الأيتام"
   tui.footer.comment: "comment"
-  # TODO(translate): tui.footer.focus
-  tui.footer.focus: "focus"
-  # TODO(translate): tui.footer.blockers
+  tui.footer.focus: "تركيز"
   tui.footer.blockers: "blockers"
-  # TODO(translate): tui.footer.open_comment_activity
-  tui.footer.open_comment_activity: "open comment (activity)"
-  # TODO(translate): tui.footer.refresh
-  tui.footer.refresh: "refresh"
-  # TODO(translate): tui.footer.create
-  tui.footer.create: "create"
-  # TODO(translate): tui.footer.field
-  tui.footer.field: "field"
-  # TODO(translate): tui.footer.priority
-  tui.footer.priority: "priority"
-  # TODO(translate): tui.footer.skills_persona
+  tui.footer.open_comment_activity: "فتح comment (النشاط)"
+  tui.footer.refresh: "تحديث"
+  tui.footer.create: "إنشاء"
+  tui.footer.field: "حقل"
+  tui.footer.priority: "أولوية"
   tui.footer.skills_persona: "skills (persona)"
-  # TODO(translate): tui.footer.new_skill_on_plus
-  tui.footer.new_skill_on_plus: "on '+': new skill"
-  # TODO(translate): tui.footer.apply_hot_reload
-  tui.footer.apply_hot_reload: "apply (hot-reload)"
-  # TODO(translate): tui.footer.select_restart_required
-  tui.footer.select_restart_required: "select (restart required)"
-  # TODO(translate): tui.footer.assign_clears_prior_owner
-  tui.footer.assign_clears_prior_owner: "assign (clears prior owner)"
-  # TODO(translate): tui.footer.move_task_to_lane
-  tui.footer.move_task_to_lane: "move task to lane"
-  # TODO(translate): tui.footer.quit
-  tui.footer.quit: "quit"
-  # TODO(translate): tui.footer.open
-  tui.footer.open: "open"
-  # TODO(translate): tui.footer.new
-  tui.footer.new: "new"
-  # TODO(translate): tui.footer.lanes
-  tui.footer.lanes: "lanes"
-  # TODO(translate): tui.footer.tasks
+  tui.footer.new_skill_on_plus: "عند '+': skill جديدة"
+  tui.footer.apply_hot_reload: "تطبيق (hot-reload)"
+  tui.footer.select_restart_required: "اختيار (يتطلّب إعادة تشغيل)"
+  tui.footer.assign_clears_prior_owner: "تعيين (يمسح المالك السابق)"
+  tui.footer.move_task_to_lane: "نقل task إلى مسار"
+  tui.footer.quit: "خروج"
+  tui.footer.open: "فتح"
+  tui.footer.new: "جديد"
+  tui.footer.lanes: "مسارات"
   tui.footer.tasks: "tasks"
-  # TODO(translate): tui.footer.zones
-  tui.footer.zones: "zones"
-  # TODO(translate): tui.footer.subs
-  tui.footer.subs: "subs"
-  # TODO(translate): tui.footer.theme
-  tui.footer.theme: "theme"
-  # TODO(translate): tui.footer.config
-  tui.footer.config: "config"
-  # TODO(translate): tui.footer.select
-  tui.footer.select: "select"
-  # TODO(translate): tui.footer.default
-  tui.footer.default: "default"
-  # TODO(translate): tui.footer.top_bottom
-  tui.footer.top_bottom: "top/bottom"
-  # TODO(translate): tui.footer.select_row
-  tui.footer.select_row: "select row"
-  # TODO(translate): tui.footer.period_7d_30d_all
-  tui.footer.period_7d_30d_all: "period (7d / 30d / all)"
-  # TODO(translate): tui.confirm.entity_delete_fmt
-  tui.confirm.entity_delete_fmt: "Confirm delete %s %q. Press d again to remove it; esc cancels."
-  # TODO(translate): tui.confirm.tag_delete_fmt
-  tui.confirm.tag_delete_fmt: "Confirm delete tag %q. Press d again to remove; esc cancels."
-  # TODO(translate): tui.confirm.comment_delete_fmt
-  tui.confirm.comment_delete_fmt: "Confirm delete comment #%d. Press d again; esc cancels."
-  # TODO(translate): tui.confirm.task_delete_fmt
-  tui.confirm.task_delete_fmt: "Confirm delete task #%d %q. Press d again; esc cancels."
-  # TODO(translate): tui.status.task_deleted_fmt
-  tui.status.task_deleted_fmt: "Deleted task #%d"
-  # TODO(translate): tui.status.orphan_tags_deleted_fmt
-  tui.status.orphan_tags_deleted_fmt: "%d orphan tag(s) deleted"
-  # TODO(translate): tui.status.tag_in_use_fmt
-  tui.status.tag_in_use_fmt: "Tag %q is in use (%d references) — cannot delete"
-  # TODO(translate): tui.status.task_not_found
-  tui.status.task_not_found: "Task not found. Press esc to return."
-  # TODO(translate): tui.form.hint.ctrl_s_saves
-  tui.form.hint.ctrl_s_saves: "ctrl+s saves"
-  # TODO(translate): tui.form.hint.enter_saves
-  tui.form.hint.enter_saves: "enter saves"
-  # TODO(translate): tui.form.hint.alt_newline
-  tui.form.hint.alt_newline: "alt+enter/shift+enter newline"
-  # TODO(translate): tui.form.hint.esc_cancels
-  tui.form.hint.esc_cancels: "esc cancels"
-  # TODO(translate): tui.form.hint.tab_switches_field
-  tui.form.hint.tab_switches_field: "tab switches field"
-  # TODO(translate): tui.form.hint.priority_cycle
-  tui.form.hint.priority_cycle: "←/→ cycles priority"
-  # TODO(translate): tui.help.title_current
-  tui.help.title_current: "Keybindings · current context"
-  # TODO(translate): tui.help.title_all
-  tui.help.title_all: "Keybindings · all contexts"
-  # TODO(translate): tui.help.toggle_scope
-  tui.help.toggle_scope: "press a to toggle scope"
-  # TODO(translate): tui.help.footer
-  tui.help.footer: "j/k pgup/pgdn g/G scroll · a all/current · ?/esc/q close help"
-  # TODO(translate): tui.help.global.title
-  tui.help.global.title: "Global"
-  # TODO(translate): tui.help.global.close_help
-  tui.help.global.close_help: "close this overlay"
-  # TODO(translate): tui.help.global.toggle_all
-  tui.help.global.toggle_all: "toggle all bindings"
-  # TODO(translate): tui.help.global.quit
-  tui.help.global.quit: "quit"
-  # TODO(translate): tui.help.global.cycle_zones
-  tui.help.global.cycle_zones: "cycle zones (Tasks · Stats · Settings)"
-  # TODO(translate): tui.help.global.jump_zone
-  tui.help.global.jump_zone: "jump to zone (Tasks · Stats · Settings)"
-  # TODO(translate): tui.help.global.prev_next_sub
-  tui.help.global.prev_next_sub: "previous · next sub-menu inside the current zone"
-  # TODO(translate): tui.help.global.back_home
-  tui.help.global.back_home: "back to multi-project home"
-  # TODO(translate): tui.help.global.refresh
-  tui.help.global.refresh: "refresh"
-  # TODO(translate): tui.help.home.title
-  tui.help.home.title: "Home"
-  # TODO(translate): tui.help.home.move_project
-  tui.help.home.move_project: "move project selection"
-  # TODO(translate): tui.help.home.scroll_halfpage
-  tui.help.home.scroll_halfpage: "scroll by half page"
-  # TODO(translate): tui.help.home.first_last_project
-  tui.help.home.first_last_project: "first / last project"
-  # TODO(translate): tui.help.home.open_project
-  tui.help.home.open_project: "open project (loads board)"
-  # TODO(translate): tui.help.home.reload
-  tui.help.home.reload: "reload home (refresh tags / counts)"
-  # TODO(translate): tui.help.home.quit
-  tui.help.home.quit: "quit"
-  # TODO(translate): tui.help.tasks_board.title
-  tui.help.tasks_board.title: "Tasks · board lens"
-  # TODO(translate): tui.help.tasks_board.navigate
-  tui.help.tasks_board.navigate: "navigate lanes and tasks (auto-scrolls column)"
-  # TODO(translate): tui.help.tasks_board.scroll_column
-  tui.help.tasks_board.scroll_column: "scroll focused column by page"
-  # TODO(translate): tui.help.tasks_board.first_last_card
-  tui.help.tasks_board.first_last_card: "first / last card in column"
-  # TODO(translate): tui.help.tasks_board.open_task
-  tui.help.tasks_board.open_task: "open task (delete/edit live inside task view)"
-  # TODO(translate): tui.help.tasks_board.new_task
-  tui.help.tasks_board.new_task: "new task"
-  # TODO(translate): tui.help.tasks_board.edit_task
-  tui.help.tasks_board.edit_task: "edit task"
-  # TODO(translate): tui.help.tasks_board.add_comment
-  tui.help.tasks_board.add_comment: "add comment"
-  # TODO(translate): tui.help.tasks_board.move_task
-  tui.help.tasks_board.move_task: "move task between lanes"
-  # TODO(translate): tui.help.tasks_board.toggle_archived
-  tui.help.tasks_board.toggle_archived: "toggle archived tasks visibility"
-  # TODO(translate): tui.help.tasks_table.title
-  tui.help.tasks_table.title: "Tasks · table lens"
-  # TODO(translate): tui.help.tasks_table.select_task
-  tui.help.tasks_table.select_task: "select task (auto-scrolls)"
-  # TODO(translate): tui.help.tasks_table.scroll_halfpage
-  tui.help.tasks_table.scroll_halfpage: "scroll by half page"
-  # TODO(translate): tui.help.tasks_table.first_last_task
-  tui.help.tasks_table.first_last_task: "first / last task"
-  # TODO(translate): tui.help.tasks_table.open_task
-  tui.help.tasks_table.open_task: "open task (delete/edit live inside task view)"
-  # TODO(translate): tui.help.tasks_table.new_task
-  tui.help.tasks_table.new_task: "new task"
-  # TODO(translate): tui.help.tasks_table.edit_task
-  tui.help.tasks_table.edit_task: "edit task"
-  # TODO(translate): tui.help.tasks_table.move_bucket
-  tui.help.tasks_table.move_bucket: "move by bucket key"
-  # TODO(translate): tui.help.tasks_table.toggle_archived
-  tui.help.tasks_table.toggle_archived: "toggle archived tasks visibility"
-  # TODO(translate): tui.help.tasks_graph.title
-  tui.help.tasks_graph.title: "Tasks · graph lens"
-  # TODO(translate): tui.help.tasks_graph.switch_view
-  tui.help.tasks_graph.switch_view: "switch view"
-  # TODO(translate): tui.help.tasks_graph.move_cursor
-  tui.help.tasks_graph.move_cursor: "move cursor"
-  # TODO(translate): tui.help.tasks_graph.open_task
-  tui.help.tasks_graph.open_task: "open task"
-  # TODO(translate): tui.help.tasks_graph.scroll_halfpage
-  tui.help.tasks_graph.scroll_halfpage: "scroll by half page"
-  # TODO(translate): tui.help.tasks_graph.jump_top_bottom
-  tui.help.tasks_graph.jump_top_bottom: "jump to top / bottom"
-  # TODO(translate): tui.help.task_view.title
-  tui.help.task_view.title: "Task view"
-  # TODO(translate): tui.help.task_view.switch_focus
-  tui.help.task_view.switch_focus: "switch focus (form ⇄ activity)"
-  # TODO(translate): tui.help.task_view.scroll_or_navigate
-  tui.help.task_view.scroll_or_navigate: "scroll description (form) · navigate cards (activity)"
-  # TODO(translate): tui.help.task_view.navigate_activity
-  tui.help.task_view.navigate_activity: "navigate activity cards (any focus)"
-  # TODO(translate): tui.help.task_view.open_comment
-  tui.help.task_view.open_comment: "open focused comment in detail view (activity)"
-  # TODO(translate): tui.help.task_view.scroll_halfpage
-  tui.help.task_view.scroll_halfpage: "scroll by half page"
-  # TODO(translate): tui.help.task_view.jump_top_bottom
-  tui.help.task_view.jump_top_bottom: "jump to top / bottom"
-  # TODO(translate): tui.help.task_view.edit_task
-  tui.help.task_view.edit_task: "edit task"
-  # TODO(translate): tui.help.task_view.edit_blockers
-  tui.help.task_view.edit_blockers: "edit blockers"
-  # TODO(translate): tui.help.task_view.add_comment
-  tui.help.task_view.add_comment: "add comment"
-  # TODO(translate): tui.help.task_view.move
-  tui.help.task_view.move: "move"
-  # TODO(translate): tui.help.task_view.toggle_markdown
-  tui.help.task_view.toggle_markdown: "toggle markdown render (raw ⇄ rendered)"
-  # TODO(translate): tui.help.task_view.arm_delete
-  tui.help.task_view.arm_delete: "arm delete task (form focus), then confirm"
-  # TODO(translate): tui.help.task_view.back_board
-  tui.help.task_view.back_board: "back to board"
-  # TODO(translate): tui.help.comment_view.title
-  tui.help.comment_view.title: "Comment view"
-  # TODO(translate): tui.help.comment_view.scroll_body
-  tui.help.comment_view.scroll_body: "scroll body"
-  # TODO(translate): tui.help.comment_view.scroll_halfpage
-  tui.help.comment_view.scroll_halfpage: "scroll by half page"
-  # TODO(translate): tui.help.comment_view.jump_top_bottom
-  tui.help.comment_view.jump_top_bottom: "jump to top / bottom"
-  # TODO(translate): tui.help.comment_view.edit_body
-  tui.help.comment_view.edit_body: "edit comment body"
-  # TODO(translate): tui.help.comment_view.toggle_markdown
-  tui.help.comment_view.toggle_markdown: "toggle markdown render (raw ⇄ rendered)"
-  # TODO(translate): tui.help.comment_view.arm_delete
-  tui.help.comment_view.arm_delete: "arm delete comment, then confirm"
-  # TODO(translate): tui.help.comment_view.back_task
-  tui.help.comment_view.back_task: "back to task view"
-  # TODO(translate): tui.help.comment_input.title
-  tui.help.comment_input.title: "Comment input"
-  # TODO(translate): tui.help.comment_edit.title
-  tui.help.comment_edit.title: "Comment edit"
-  # TODO(translate): tui.help.comment_edit.save
-  tui.help.comment_edit.save: "save the rewritten body"
-  # TODO(translate): tui.help.comment_edit.newline
-  tui.help.comment_edit.newline: "insert newline"
-  # TODO(translate): tui.help.comment_edit.cancel
-  tui.help.comment_edit.cancel: "cancel — return to comment view"
-  # TODO(translate): tui.help.comment_edit.caret
-  tui.help.comment_edit.caret: "navigate caret"
-  # TODO(translate): tui.help.task_form.title
-  tui.help.task_form.title: "Task form"
-  # TODO(translate): tui.help.task_form.switch_field
-  tui.help.task_form.switch_field: "switch field"
-  # TODO(translate): tui.help.task_form.change_priority
-  tui.help.task_form.change_priority: "change priority"
-  # TODO(translate): tui.help.task_form.edit_blockers
-  tui.help.task_form.edit_blockers: "edit blockers when editing an existing task"
-  # TODO(translate): tui.help.task_form.newline
-  tui.help.task_form.newline: "newline in description"
-  # TODO(translate): tui.help.task_form.save
-  tui.help.task_form.save: "save"
-  # TODO(translate): tui.help.task_form.cancel
-  tui.help.task_form.cancel: "cancel"
-  # TODO(translate): tui.help.blocker_picker.title
-  tui.help.blocker_picker.title: "Blocker picker"
-  # TODO(translate): tui.help.blocker_picker.move
-  tui.help.blocker_picker.move: "move (auto-scrolls)"
-  # TODO(translate): tui.help.blocker_picker.scroll_halfpage
-  tui.help.blocker_picker.scroll_halfpage: "scroll by half page"
-  # TODO(translate): tui.help.blocker_picker.first_last_candidate
-  tui.help.blocker_picker.first_last_candidate: "first / last candidate"
-  # TODO(translate): tui.help.blocker_picker.toggle
-  tui.help.blocker_picker.toggle: "toggle blocker"
-  # TODO(translate): tui.help.blocker_picker.save
-  tui.help.blocker_picker.save: "save"
-  # TODO(translate): tui.help.blocker_picker.cancel
-  tui.help.blocker_picker.cancel: "cancel"
-  # TODO(translate): tui.help.settings_general.title
-  tui.help.settings_general.title: "Settings · general"
-  # TODO(translate): tui.help.settings_general.prev_next_sub
-  tui.help.settings_general.prev_next_sub: "previous · next sub (general → laws → personas → …)"
-  # TODO(translate): tui.help.settings_general.theme_picker
-  tui.help.settings_general.theme_picker: "theme picker (hot-reload)"
-  # TODO(translate): tui.help.settings_general.config_picker
-  tui.help.settings_general.config_picker: "config picker (restart required)"
-  # TODO(translate): tui.help.settings_general.edit_config
-  tui.help.settings_general.edit_config: "edit omakiten.yaml in $EDITOR"
-  # TODO(translate): tui.help.settings_general.refresh
-  tui.help.settings_general.refresh: "refresh"
-  # TODO(translate): tui.help.settings_entity.title
-  tui.help.settings_entity.title: "Settings · entity (laws / personas / skills / templates)"
-  # TODO(translate): tui.help.settings_entity.prev_next_sub
-  tui.help.settings_entity.prev_next_sub: "previous · next sub"
-  # TODO(translate): tui.help.settings_entity.select
-  tui.help.settings_entity.select: "select entity (auto-scrolls)"
-  # TODO(translate): tui.help.settings_entity.scroll_halfpage
-  tui.help.settings_entity.scroll_halfpage: "scroll by half page"
-  # TODO(translate): tui.help.settings_entity.first_last
-  tui.help.settings_entity.first_last: "first / last entry"
-  # TODO(translate): tui.help.settings_entity.open_detail
-  tui.help.settings_entity.open_detail: "open detail"
-  # TODO(translate): tui.help.settings_entity.new_entity
-  tui.help.settings_entity.new_entity: "new entity"
-  # TODO(translate): tui.help.settings_entity.edit_in_editor
-  tui.help.settings_entity.edit_in_editor: "edit in $EDITOR"
-  # TODO(translate): tui.help.settings_entity.arm_delete
-  tui.help.settings_entity.arm_delete: "arm delete, then confirm"
-  # TODO(translate): tui.help.settings_entity.skill_picker
-  tui.help.settings_entity.skill_picker: "skill picker (persona)"
-  # TODO(translate): tui.help.settings_entity.set_default
-  tui.help.settings_entity.set_default: "set as default (template)"
-  # TODO(translate): tui.help.settings_entity.theme_or_config_picker
-  tui.help.settings_entity.theme_or_config_picker: "theme picker · config picker"
-  # TODO(translate): tui.help.settings_tags.title
+  tui.footer.zones: "مناطق"
+  tui.footer.subs: "فرعية"
+  tui.footer.theme: "سمة"
+  tui.footer.config: "إعدادات"
+  tui.footer.select: "اختيار"
+  tui.footer.default: "افتراضي"
+  tui.footer.top_bottom: "أعلى/أسفل"
+  tui.footer.select_row: "اختيار صف"
+  tui.footer.period_7d_30d_all: "الفترة (7d / 30d / all)"
+  tui.confirm.entity_delete_fmt: "تأكيد حذف %s %q. اضغط d مرّة أخرى للحذف؛ esc يُلغي."
+  tui.confirm.tag_delete_fmt: "تأكيد حذف tag %q. اضغط d مرّة أخرى للحذف؛ esc يُلغي."
+  tui.confirm.comment_delete_fmt: "تأكيد حذف comment #%d. اضغط d مرّة أخرى؛ esc يُلغي."
+  tui.confirm.task_delete_fmt: "تأكيد حذف task #%d %q. اضغط d مرّة أخرى؛ esc يُلغي."
+  tui.status.task_deleted_fmt: "تم حذف task #%d"
+  tui.status.orphan_tags_deleted_fmt: "تم حذف %d tag(s) يتيمة"
+  tui.status.tag_in_use_fmt: "tag %q قيد الاستخدام (%d مرجع) — لا يمكن الحذف"
+  tui.status.task_not_found: "لم يُعثر على task. اضغط esc للعودة."
+  tui.form.hint.ctrl_s_saves: "ctrl+s يحفظ"
+  tui.form.hint.enter_saves: "enter يحفظ"
+  tui.form.hint.alt_newline: "alt+enter/shift+enter سطر جديد"
+  tui.form.hint.esc_cancels: "esc يُلغي"
+  tui.form.hint.tab_switches_field: "tab يبدّل الحقل"
+  tui.form.hint.priority_cycle: "←/→ يدوّر الأولوية"
+  tui.help.title_current: "اختصارات المفاتيح · السياق الحالي"
+  tui.help.title_all: "اختصارات المفاتيح · جميع السياقات"
+  tui.help.toggle_scope: "اضغط a لتبديل scope"
+  tui.help.footer: "j/k pgup/pgdn g/G تمرير · a الكل/الحالي · ?/esc/q إغلاق المساعدة"
+  tui.help.global.title: "عام"
+  tui.help.global.close_help: "إغلاق هذه الطبقة"
+  tui.help.global.toggle_all: "تبديل كل الارتباطات"
+  tui.help.global.quit: "خروج"
+  tui.help.global.cycle_zones: "تدوير المناطق (Tasks · Stats · Settings)"
+  tui.help.global.jump_zone: "القفز إلى منطقة (Tasks · Stats · Settings)"
+  tui.help.global.prev_next_sub: "السابق · التالي من القائمة الفرعية داخل المنطقة الحالية"
+  tui.help.global.back_home: "العودة إلى الصفحة الرئيسية متعدّدة المشاريع"
+  tui.help.global.refresh: "تحديث"
+  tui.help.home.title: "الرئيسية"
+  tui.help.home.move_project: "تحريك اختيار المشروع"
+  tui.help.home.scroll_halfpage: "تمرير بنصف صفحة"
+  tui.help.home.first_last_project: "أول / آخر مشروع"
+  tui.help.home.open_project: "فتح المشروع (يُحمّل اللوحة)"
+  tui.help.home.reload: "إعادة تحميل الرئيسية (تحديث tags / الإحصاءات)"
+  tui.help.home.quit: "خروج"
+  tui.help.tasks_board.title: "Tasks · عدسة اللوحة"
+  tui.help.tasks_board.navigate: "تنقّل في المسارات و tasks (تمرير تلقائي للعمود)"
+  tui.help.tasks_board.scroll_column: "تمرير العمود المُركَّز عليه صفحة"
+  tui.help.tasks_board.first_last_card: "أول / آخر بطاقة في العمود"
+  tui.help.tasks_board.open_task: "فتح task (الحذف/التحرير داخل عرض task)"
+  tui.help.tasks_board.new_task: "task جديدة"
+  tui.help.tasks_board.edit_task: "تحرير task"
+  tui.help.tasks_board.add_comment: "إضافة comment"
+  tui.help.tasks_board.move_task: "نقل task بين المسارات"
+  tui.help.tasks_board.toggle_archived: "تبديل ظهور tasks المؤرشفة"
+  tui.help.tasks_table.title: "Tasks · عدسة الجدول"
+  tui.help.tasks_table.select_task: "اختيار task (تمرير تلقائي)"
+  tui.help.tasks_table.scroll_halfpage: "تمرير بنصف صفحة"
+  tui.help.tasks_table.first_last_task: "أول / آخر task"
+  tui.help.tasks_table.open_task: "فتح task (الحذف/التحرير داخل عرض task)"
+  tui.help.tasks_table.new_task: "task جديدة"
+  tui.help.tasks_table.edit_task: "تحرير task"
+  tui.help.tasks_table.move_bucket: "نقل عبر مفتاح bucket"
+  tui.help.tasks_table.toggle_archived: "تبديل ظهور tasks المؤرشفة"
+  tui.help.tasks_graph.title: "Tasks · عدسة الرسم البياني"
+  tui.help.tasks_graph.switch_view: "تبديل العرض"
+  tui.help.tasks_graph.move_cursor: "تحريك المؤشّر"
+  tui.help.tasks_graph.open_task: "فتح task"
+  tui.help.tasks_graph.scroll_halfpage: "تمرير بنصف صفحة"
+  tui.help.tasks_graph.jump_top_bottom: "القفز إلى الأعلى / الأسفل"
+  tui.help.task_view.title: "عرض task"
+  tui.help.task_view.switch_focus: "تبديل التركيز (نموذج ⇄ نشاط)"
+  tui.help.task_view.scroll_or_navigate: "تمرير الوصف (نموذج) · تنقّل في البطاقات (نشاط)"
+  tui.help.task_view.navigate_activity: "تنقّل في بطاقات النشاط (أي تركيز)"
+  tui.help.task_view.open_comment: "فتح comment المُركَّز عليه في عرض تفصيلي (نشاط)"
+  tui.help.task_view.scroll_halfpage: "تمرير بنصف صفحة"
+  tui.help.task_view.jump_top_bottom: "القفز إلى الأعلى / الأسفل"
+  tui.help.task_view.edit_task: "تحرير task"
+  tui.help.task_view.edit_blockers: "تحرير blockers"
+  tui.help.task_view.add_comment: "إضافة comment"
+  tui.help.task_view.move: "نقل"
+  tui.help.task_view.toggle_markdown: "تبديل عرض markdown (خام ⇄ مُصاغ)"
+  tui.help.task_view.arm_delete: "تسليح حذف task (تركيز النموذج)، ثم التأكيد"
+  tui.help.task_view.back_board: "العودة إلى اللوحة"
+  tui.help.comment_view.title: "عرض comment"
+  tui.help.comment_view.scroll_body: "تمرير المتن"
+  tui.help.comment_view.scroll_halfpage: "تمرير بنصف صفحة"
+  tui.help.comment_view.jump_top_bottom: "القفز إلى الأعلى / الأسفل"
+  tui.help.comment_view.edit_body: "تحرير متن comment"
+  tui.help.comment_view.toggle_markdown: "تبديل عرض markdown (خام ⇄ مُصاغ)"
+  tui.help.comment_view.arm_delete: "تسليح حذف comment، ثم التأكيد"
+  tui.help.comment_view.back_task: "العودة إلى عرض task"
+  tui.help.comment_input.title: "إدخال comment"
+  tui.help.comment_edit.title: "تحرير comment"
+  tui.help.comment_edit.save: "حفظ المتن المُعاد كتابته"
+  tui.help.comment_edit.newline: "إدراج سطر جديد"
+  tui.help.comment_edit.cancel: "إلغاء — العودة إلى عرض comment"
+  tui.help.comment_edit.caret: "تنقّل المؤشّر"
+  tui.help.task_form.title: "نموذج task"
+  tui.help.task_form.switch_field: "تبديل الحقل"
+  tui.help.task_form.change_priority: "تغيير الأولوية"
+  tui.help.task_form.edit_blockers: "تحرير blockers عند تحرير task موجودة"
+  tui.help.task_form.newline: "سطر جديد في الوصف"
+  tui.help.task_form.save: "حفظ"
+  tui.help.task_form.cancel: "إلغاء"
+  tui.help.blocker_picker.title: "مُنتقي blocker"
+  tui.help.blocker_picker.move: "نقل (تمرير تلقائي)"
+  tui.help.blocker_picker.scroll_halfpage: "تمرير بنصف صفحة"
+  tui.help.blocker_picker.first_last_candidate: "أول / آخر مرشّح"
+  tui.help.blocker_picker.toggle: "تبديل blocker"
+  tui.help.blocker_picker.save: "حفظ"
+  tui.help.blocker_picker.cancel: "إلغاء"
+  tui.help.settings_general.title: "Settings · عام"
+  tui.help.settings_general.prev_next_sub: "السابق · التالي من الفرعية (general → laws → personas → …)"
+  tui.help.settings_general.theme_picker: "مُنتقي السمة (hot-reload)"
+  tui.help.settings_general.config_picker: "مُنتقي الإعدادات (يتطلّب إعادة تشغيل)"
+  tui.help.settings_general.edit_config: "تحرير omakiten.yaml في $EDITOR"
+  tui.help.settings_general.refresh: "تحديث"
+  tui.help.settings_entity.title: "Settings · كيان (laws / personas / skills / templates)"
+  tui.help.settings_entity.prev_next_sub: "السابق · التالي من الفرعية"
+  tui.help.settings_entity.select: "اختيار كيان (تمرير تلقائي)"
+  tui.help.settings_entity.scroll_halfpage: "تمرير بنصف صفحة"
+  tui.help.settings_entity.first_last: "أول / آخر مدخل"
+  tui.help.settings_entity.open_detail: "فتح التفاصيل"
+  tui.help.settings_entity.new_entity: "كيان جديد"
+  tui.help.settings_entity.edit_in_editor: "تحرير في $EDITOR"
+  tui.help.settings_entity.arm_delete: "تسليح الحذف، ثم التأكيد"
+  tui.help.settings_entity.skill_picker: "مُنتقي skill (persona)"
+  tui.help.settings_entity.set_default: "ضبط كافتراضي (template)"
+  tui.help.settings_entity.theme_or_config_picker: "مُنتقي السمة · مُنتقي الإعدادات"
   tui.help.settings_tags.title: "Settings · tags"
-  # TODO(translate): tui.help.settings_tags.prev_next_sub
-  tui.help.settings_tags.prev_next_sub: "previous · next sub"
-  # TODO(translate): tui.help.settings_tags.select_tag
-  tui.help.settings_tags.select_tag: "select tag"
-  # TODO(translate): tui.help.settings_tags.arm_delete
-  tui.help.settings_tags.arm_delete: "arm delete (orphan only)"
-  # TODO(translate): tui.help.settings_tags.delete_all
-  tui.help.settings_tags.delete_all: "delete every orphan tag"
-  # TODO(translate): tui.help.settings_tags.theme_or_config_picker
-  tui.help.settings_tags.theme_or_config_picker: "theme picker · config picker"
-  # TODO(translate): tui.help.entity_view.title
-  tui.help.entity_view.title: "Entity view"
-  # TODO(translate): tui.help.entity_view.scroll_body
-  tui.help.entity_view.scroll_body: "scroll body"
-  # TODO(translate): tui.help.entity_view.scroll_halfpage
-  tui.help.entity_view.scroll_halfpage: "scroll by half page"
-  # TODO(translate): tui.help.entity_view.jump_top_bottom
-  tui.help.entity_view.jump_top_bottom: "jump to top / bottom"
-  # TODO(translate): tui.help.entity_view.edit
-  tui.help.entity_view.edit: "edit (opens $EDITOR)"
-  # TODO(translate): tui.help.entity_view.toggle_markdown
-  tui.help.entity_view.toggle_markdown: "toggle markdown render (raw ⇄ rendered)"
-  # TODO(translate): tui.help.entity_view.arm_delete
-  tui.help.entity_view.arm_delete: "arm delete, then confirm"
-  # TODO(translate): tui.help.entity_view.skill_picker
-  tui.help.entity_view.skill_picker: "skill picker (persona)"
-  # TODO(translate): tui.help.entity_view.back_or_cancel
-  tui.help.entity_view.back_or_cancel: "back, or cancel pending delete"
-  # TODO(translate): tui.help.skill_picker.title
-  tui.help.skill_picker.title: "Skill picker"
-  # TODO(translate): tui.help.skill_picker.move
-  tui.help.skill_picker.move: "move (auto-scrolls)"
-  # TODO(translate): tui.help.skill_picker.scroll_halfpage
-  tui.help.skill_picker.scroll_halfpage: "scroll by half page"
-  # TODO(translate): tui.help.skill_picker.first_last_row
-  tui.help.skill_picker.first_last_row: "first / last row"
-  # TODO(translate): tui.help.skill_picker.toggle
-  tui.help.skill_picker.toggle: "toggle"
-  # TODO(translate): tui.help.skill_picker.scaffold_new
-  tui.help.skill_picker.scaffold_new: "scaffold new skill"
-  # TODO(translate): tui.help.skill_picker.save
-  tui.help.skill_picker.save: "save"
-  # TODO(translate): tui.help.skill_picker.cancel
-  tui.help.skill_picker.cancel: "cancel"
-  # TODO(translate): tui.help.stats_logs.title
-  tui.help.stats_logs.title: "Stats · logs"
-  # TODO(translate): tui.help.stats_logs.switch_view
-  tui.help.stats_logs.switch_view: "switch view"
-  # TODO(translate): tui.help.stats_logs.select_row
-  tui.help.stats_logs.select_row: "select row (auto-scrolls)"
-  # TODO(translate): tui.help.stats_logs.scroll_halfpage
-  tui.help.stats_logs.scroll_halfpage: "scroll by half page"
-  # TODO(translate): tui.help.stats_logs.first_last_row
-  tui.help.stats_logs.first_last_row: "first / last row"
-  # TODO(translate): tui.help.stats_logs.refresh
-  tui.help.stats_logs.refresh: "refresh"
-  # TODO(translate): tui.help.stats_general.title
-  tui.help.stats_general.title: "Stats · general"
-  # TODO(translate): tui.help.stats_general.cycle_period
-  tui.help.stats_general.cycle_period: "cycle period (7d / 30d / all)"
-  # TODO(translate): tui.help.stats_general.refresh
-  tui.help.stats_general.refresh: "refresh"
-  # TODO(translate): tui.kicker.activity
-  tui.kicker.activity: "Activity"
-  # TODO(translate): tui.kicker.dependency_graph
-  tui.kicker.dependency_graph: "Dependency graph"
-  # TODO(translate): tui.kicker.tasks
+  tui.help.settings_tags.prev_next_sub: "السابق · التالي من الفرعية"
+  tui.help.settings_tags.select_tag: "اختيار tag"
+  tui.help.settings_tags.arm_delete: "تسليح الحذف (يتيمة فقط)"
+  tui.help.settings_tags.delete_all: "حذف كل tag يتيمة"
+  tui.help.settings_tags.theme_or_config_picker: "مُنتقي السمة · مُنتقي الإعدادات"
+  tui.help.entity_view.title: "عرض الكيان"
+  tui.help.entity_view.scroll_body: "تمرير المتن"
+  tui.help.entity_view.scroll_halfpage: "تمرير بنصف صفحة"
+  tui.help.entity_view.jump_top_bottom: "القفز إلى الأعلى / الأسفل"
+  tui.help.entity_view.edit: "تحرير (يفتح $EDITOR)"
+  tui.help.entity_view.toggle_markdown: "تبديل عرض markdown (خام ⇄ مُصاغ)"
+  tui.help.entity_view.arm_delete: "تسليح الحذف، ثم التأكيد"
+  tui.help.entity_view.skill_picker: "مُنتقي skill (persona)"
+  tui.help.entity_view.back_or_cancel: "رجوع، أو إلغاء حذف معلّق"
+  tui.help.skill_picker.title: "مُنتقي skill"
+  tui.help.skill_picker.move: "نقل (تمرير تلقائي)"
+  tui.help.skill_picker.scroll_halfpage: "تمرير بنصف صفحة"
+  tui.help.skill_picker.first_last_row: "أول / آخر صف"
+  tui.help.skill_picker.toggle: "تبديل"
+  tui.help.skill_picker.scaffold_new: "هيكلة skill جديدة"
+  tui.help.skill_picker.save: "حفظ"
+  tui.help.skill_picker.cancel: "إلغاء"
+  tui.help.stats_logs.title: "Stats · سجلّات"
+  tui.help.stats_logs.switch_view: "تبديل العرض"
+  tui.help.stats_logs.select_row: "اختيار صف (تمرير تلقائي)"
+  tui.help.stats_logs.scroll_halfpage: "تمرير بنصف صفحة"
+  tui.help.stats_logs.first_last_row: "أول / آخر صف"
+  tui.help.stats_logs.refresh: "تحديث"
+  tui.help.stats_general.title: "Stats · عام"
+  tui.help.stats_general.cycle_period: "تدوير الفترة (7d / 30d / all)"
+  tui.help.stats_general.refresh: "تحديث"
+  tui.kicker.activity: "النشاط"
+  tui.kicker.dependency_graph: "الرسم البياني للتبعيات"
   tui.kicker.tasks: "Tasks"
-  # TODO(translate): tui.kicker.stats
   tui.kicker.stats: "Stats"
-  # TODO(translate): tui.kicker.body
-  tui.kicker.body: "Body"
-  # TODO(translate): tui.kicker.description
-  tui.kicker.description: "Description"
-  # TODO(translate): tui.kicker.new_comment
-  tui.kicker.new_comment: "New comment"
-  # TODO(translate): tui.kicker.comment_fmt
-  tui.kicker.comment_fmt: "Comment · #%d"
-  # TODO(translate): tui.kicker.edit_comment_fmt
-  tui.kicker.edit_comment_fmt: "Edit comment · #%d"
-  # TODO(translate): tui.kicker.task_fmt
-  tui.kicker.task_fmt: "Task · #%d"
-  # TODO(translate): tui.kicker.edit_task_fmt
-  tui.kicker.edit_task_fmt: "Edit task · #%d"
-  # TODO(translate): tui.kicker.blockers_fmt
-  tui.kicker.blockers_fmt: "Blockers · #%d"
-  # TODO(translate): tui.kicker.skills_for_persona_fmt
-  tui.kicker.skills_for_persona_fmt: "Skills for persona · %s"
-  # TODO(translate): tui.kicker.theme_current_fmt
-  tui.kicker.theme_current_fmt: "Theme · current: %s"
-  # TODO(translate): tui.kicker.config_active_fmt
-  tui.kicker.config_active_fmt: "Config profile · active: %s"
-  # TODO(translate): tui.kicker.default_kind_fmt
-  tui.kicker.default_kind_fmt: "Default kind · template %s · project %s"
-  # TODO(translate): tui.row.task
-  tui.row.task: "Task"
-  # TODO(translate): tui.row.author
-  tui.row.author: "Author"
-  # TODO(translate): tui.row.when
-  tui.row.when: "When"
-  # TODO(translate): tui.row.title
-  tui.row.title: "Title"
-  # TODO(translate): tui.row.bucket
-  tui.row.bucket: "Bucket"
-  # TODO(translate): tui.row.priority
-  tui.row.priority: "Priority"
-  # TODO(translate): tui.row.comments
-  tui.row.comments: "Comments"
-  # TODO(translate): tui.row.tags
-  tui.row.tags: "Tags"
-  # TODO(translate): tui.row.slug
-  tui.row.slug: "Slug"
-  # TODO(translate): tui.row.severity
-  tui.row.severity: "Severity"
-  # TODO(translate): tui.row.source
-  tui.row.source: "Source"
-  # TODO(translate): tui.row.name
-  tui.row.name: "Name"
-  # TODO(translate): tui.row.description
-  tui.row.description: "Description"
-  # TODO(translate): tui.row.skills
-  tui.row.skills: "Skills"
-  # TODO(translate): tui.row.entity
-  tui.row.entity: "Entity"
-  # TODO(translate): tui.row.default
-  tui.row.default: "Default"
-  # TODO(translate): tui.row.blockers
-  tui.row.blockers: "Blockers"
-  # TODO(translate): tui.stat.tasks
+  tui.kicker.body: "المتن"
+  tui.kicker.description: "الوصف"
+  tui.kicker.new_comment: "comment جديد"
+  tui.kicker.comment_fmt: "comment · #%d"
+  tui.kicker.edit_comment_fmt: "تحرير comment · #%d"
+  tui.kicker.task_fmt: "task · #%d"
+  tui.kicker.edit_task_fmt: "تحرير task · #%d"
+  tui.kicker.blockers_fmt: "blockers · #%d"
+  tui.kicker.skills_for_persona_fmt: "skills لـ persona · %s"
+  tui.kicker.theme_current_fmt: "السمة · الحالية: %s"
+  tui.kicker.config_active_fmt: "ملف إعدادات · النشط: %s"
+  tui.kicker.default_kind_fmt: "النوع الافتراضي · template %s · مشروع %s"
+  tui.row.task: "task"
+  tui.row.author: "المؤلّف"
+  tui.row.when: "متى"
+  tui.row.title: "العنوان"
+  tui.row.bucket: "bucket"
+  tui.row.priority: "الأولوية"
+  tui.row.comments: "comments"
+  tui.row.tags: "tags"
+  tui.row.slug: "slug"
+  tui.row.severity: "severity"
+  tui.row.source: "المصدر"
+  tui.row.name: "الاسم"
+  tui.row.description: "الوصف"
+  tui.row.skills: "skills"
+  tui.row.entity: "الكيان"
+  tui.row.default: "افتراضي"
+  tui.row.blockers: "blockers"
   tui.stat.tasks: "tasks"
-  # TODO(translate): tui.stat.comments
   tui.stat.comments: "comments"
-  # TODO(translate): tui.stat.context
-  tui.stat.context: "context"
-  # TODO(translate): tui.stat.tags
+  tui.stat.context: "السياق"
   tui.stat.tags: "tags"
-  # TODO(translate): tui.stat.estimated
-  tui.stat.estimated: "estimated"
-  # TODO(translate): tui.stat.max
-  tui.stat.max: "max"
-  # TODO(translate): tui.stat.since_fmt
-  tui.stat.since_fmt: "since %s"
-  # TODO(translate): tui.stat.error_badge
+  tui.stat.estimated: "مُقدَّر"
+  tui.stat.max: "الأقصى"
+  tui.stat.since_fmt: "منذ %s"
   tui.stat.error_badge: "[ERROR]"
-  # TODO(translate): tui.stat.budget_exceeded
-  tui.stat.budget_exceeded: "budget exceeded"
-  # TODO(translate): tui.log.total
-  tui.log.total: "total"
-  # TODO(translate): tui.log.ok
+  tui.stat.budget_exceeded: "تجاوز الميزانية"
+  tui.log.total: "الإجمالي"
   tui.log.ok: "ok"
-  # TODO(translate): tui.log.error
   tui.log.error: "error"
-  # TODO(translate): tui.log.running
-  tui.log.running: "running"
-  # TODO(translate): tui.log.cli
+  tui.log.running: "قيد التشغيل"
   tui.log.cli: "cli"
-  # TODO(translate): tui.log.mcp
   tui.log.mcp: "mcp"
-  # TODO(translate): tui.log.tui
   tui.log.tui: "tui"
-  # TODO(translate): tui.log.operation_col
   tui.log.operation_col: "OPERATION"
-  # TODO(translate): tui.log.project_col
   tui.log.project_col: "PROJECT"
-  # TODO(translate): tui.log.refresh_hint
-  tui.log.refresh_hint: "r refresh · full arguments appear on wider terminals"
-  # TODO(translate): tui.log.tui_refresh_note
-  tui.log.tui_refresh_note: "Only app service calls are logged. TUI refreshes and direct reads are not shown."
-  # TODO(translate): tui.badge.custom
+  tui.log.refresh_hint: "r للتحديث · الوسائط الكاملة تظهر على طرفيات أعرض"
+  tui.log.tui_refresh_note: "تُسجَّل فقط استدعاءات خدمة التطبيق. تحديثات TUI والقراءات المباشرة لا تظهر."
   tui.badge.custom: "CUSTOM"
-  # TODO(translate): tui.badge.fix
   tui.badge.fix: "FIX"
-  # TODO(translate): tui.badge.blocker
   tui.badge.blocker: "BLOCKER"
-  # TODO(translate): tui.badge.blockers
   tui.badge.blockers: "BLOCKERS"
-  # TODO(translate): tui.badge.comment
   tui.badge.comment: "COMMENT"
-  # TODO(translate): tui.badge.comments
   tui.badge.comments: "COMMENTS"
-  # TODO(translate): tui.badge.tokens_fmt
   tui.badge.tokens_fmt: "TOKENS:%d"
-  # TODO(translate): tui.badge.use_fmt
   tui.badge.use_fmt: "USE:%d"
-  # TODO(translate): tui.status.comment_deleted_fmt
-  tui.status.comment_deleted_fmt: "Deleted comment #%d"
-  # TODO(translate): tui.status.comment_editing_fmt
-  tui.status.comment_editing_fmt: "Editing comment #%d"
-  # TODO(translate): tui.status.tag_deleted_fmt
-  tui.status.tag_deleted_fmt: "Tag %q deleted"
-  # TODO(translate): tui.status.theme_switched_fmt
-  tui.status.theme_switched_fmt: "Theme switched to %s"
-  # TODO(translate): tui.status.config_switched_fmt
-  tui.status.config_switched_fmt: "Config switched to %s"
-  # TODO(translate): tui.status.config_switch_failed_fmt
-  tui.status.config_switch_failed_fmt: "Config switch failed (%s): %s"
-  # TODO(translate): tui.status.template_default_cleared_fmt
-  tui.status.template_default_cleared_fmt: "Template %s · default cleared"
-  # TODO(translate): tui.status.template_default_set_fmt
-  tui.status.template_default_set_fmt: "Template %s · default %q for project %s"
-  # TODO(translate): tui.status.task_moved_fmt
-  tui.status.task_moved_fmt: "Moved #%d to %s"
-  # TODO(translate): tui.picker.hint.theme
-  tui.picker.hint.theme: "up/down: move · enter: apply (hot-reload) · esc: cancel"
-  # TODO(translate): tui.picker.hint.skills_persona
-  tui.picker.hint.skills_persona: "up/down: move · space: toggle · enter on '+ create new': new skill · ctrl+s: save · esc: cancel"
-  # TODO(translate): tui.picker.hint.template_default
-  tui.picker.hint.template_default: "up/down: move · enter: assign for this project (clears prior owner) · esc: cancel"
-  # TODO(translate): tui.picker.hint.blockers
-  tui.picker.hint.blockers: "up/down: move · space: toggle · ctrl+s: save · esc: cancel"
-  # TODO(translate): tui.settings.general_hint
-  tui.settings.general_hint: "read-only · t (theme) / c (config) to switch · e to edit omakiten.yaml in $EDITOR"
-  # TODO(translate): tui.entity_screen.persona_skill_pick
-  tui.entity_screen.persona_skill_pick: "p: open skill picker"
-  # TODO(translate): tui.entity_screen.template_set_default
-  tui.entity_screen.template_set_default: "a: assign default kind"
-  # TODO(translate): tui.board.empty_press_n
-  tui.board.empty_press_n: "Press "
-  # TODO(translate): tui.board.empty_to_create
-  tui.board.empty_to_create: " to create the first task, or use the CLI:"
-  # TODO(translate): tui.board.empty_cli_example
+  tui.status.comment_deleted_fmt: "تم حذف comment #%d"
+  tui.status.comment_editing_fmt: "تحرير comment #%d"
+  tui.status.tag_deleted_fmt: "tag %q محذوفة"
+  tui.status.theme_switched_fmt: "تم تبديل السمة إلى %s"
+  tui.status.config_switched_fmt: "تم تبديل الإعدادات إلى %s"
+  tui.status.config_switch_failed_fmt: "فشل تبديل الإعدادات (%s): %s"
+  tui.status.template_default_cleared_fmt: "template %s · تم مسح الافتراضي"
+  tui.status.template_default_set_fmt: "template %s · افتراضي %q للمشروع %s"
+  tui.status.task_moved_fmt: "تم نقل #%d إلى %s"
+  tui.picker.hint.theme: "up/down: نقل · enter: تطبيق (hot-reload) · esc: إلغاء"
+  tui.picker.hint.skills_persona: "up/down: نقل · space: تبديل · enter على '+ create new': skill جديدة · ctrl+s: حفظ · esc: إلغاء"
+  tui.picker.hint.template_default: "up/down: نقل · enter: تعيين لهذا المشروع (يمسح المالك السابق) · esc: إلغاء"
+  tui.picker.hint.blockers: "up/down: نقل · space: تبديل · ctrl+s: حفظ · esc: إلغاء"
+  tui.settings.general_hint: "للقراءة فقط · t (السمة) / c (الإعدادات) للتبديل · e لتحرير omakiten.yaml في $EDITOR"
+  tui.entity_screen.persona_skill_pick: "p: فتح مُنتقي skill"
+  tui.entity_screen.template_set_default: "a: تعيين النوع الافتراضي"
+  tui.board.empty_press_n: "اضغط "
+  tui.board.empty_to_create: " لإنشاء أوّل task، أو استخدم CLI:"
   tui.board.empty_cli_example: "  okt add -t \"Implement the next slice\""
-  # TODO(translate): tui.board.empty_inline_move
-  tui.board.empty_inline_move: " move  "
-  # TODO(translate): tui.board.empty_inline_open
-  tui.board.empty_inline_open: " open  "
-  # TODO(translate): tui.board.empty_inline_comment
+  tui.board.empty_inline_move: " نقل  "
+  tui.board.empty_inline_open: " فتح  "
   tui.board.empty_inline_comment: " comment"
-  # TODO(translate): tui.board.empty
-  tui.board.empty: "empty"
-  # TODO(translate): tui.board.lanes_hint_fmt
-  tui.board.lanes_hint_fmt: "lanes %d–%d / %d · left/right scrolls"
-  # TODO(translate): tui.comment.empty
-  tui.comment.empty: "empty comment"
-  # TODO(translate): tui.graph.use_okt_depend
-  tui.graph.use_okt_depend: "Use "
-  # TODO(translate): tui.graph.depend_cmd
+  tui.board.empty: "فارغ"
+  tui.board.lanes_hint_fmt: "المسارات %d–%d / %d · left/right للتمرير"
+  tui.comment.empty: "comment فارغ"
+  tui.graph.use_okt_depend: "استخدم "
   tui.graph.depend_cmd: "okt depend add TASK -i BLOCKER"
-  # TODO(translate): tui.graph.depend_suffix
-  tui.graph.depend_suffix: " to define blocked_by edges."
-  # TODO(translate): tui.home.register_with
-  tui.home.register_with: "Register one with:"
-  # TODO(translate): tui.home.then_reopen_prefix
-  tui.home.then_reopen_prefix: "Then re-open "
-  # TODO(translate): tui.home.then_reopen_suffix
+  tui.graph.depend_suffix: " لتعريف حواف blocked_by."
+  tui.home.register_with: "سجّل واحدًا باستخدام:"
+  tui.home.then_reopen_prefix: "ثم أعد فتح "
   tui.home.then_reopen_suffix: "."
-  # TODO(translate): tui.home.okt_tui_cmd
   tui.home.okt_tui_cmd: "okt tui"
-  # TODO(translate): tui.kicker.status
-  tui.kicker.status: "Status"
-  # TODO(translate): tui.kicker.sources
-  tui.kicker.sources: "Sources"
-  # TODO(translate): tui.kicker.runtime
-  tui.kicker.runtime: "Runtime"
-  # TODO(translate): tui.kicker.project
-  tui.kicker.project: "Project"
-  # TODO(translate): tui.log.column_header_fmt
+  tui.kicker.status: "الحالة"
+  tui.kicker.sources: "المصادر"
+  tui.kicker.runtime: "وقت التشغيل"
+  tui.kicker.project: "المشروع"
   tui.log.column_header_fmt: "// TIME        SRC  %-*s %-*s STATUS  MS   ARGS"
-  # TODO(translate): tui.settings.runtime.version
-  tui.settings.runtime.version: "okt version"
-  # TODO(translate): tui.settings.runtime.scope
+  tui.settings.runtime.version: "إصدار okt"
   tui.settings.runtime.scope: "scope"
-  # TODO(translate): tui.settings.runtime.config
-  tui.settings.runtime.config: "config"
-  # TODO(translate): tui.settings.runtime.database
-  tui.settings.runtime.database: "database"
-  # TODO(translate): tui.settings.runtime.scope_global
+  tui.settings.runtime.config: "الإعدادات"
+  tui.settings.runtime.database: "قاعدة البيانات"
   tui.settings.runtime.scope_global: "global"
-  # TODO(translate): tui.settings.runtime.scope_local_fmt
   tui.settings.runtime.scope_local_fmt: "local (%s)"
-  # TODO(translate): tui.settings.project.workflow
   tui.settings.project.workflow: "workflow"
-  # TODO(translate): tui.settings.project.buckets
   tui.settings.project.buckets: "buckets"
-  # TODO(translate): tui.settings.project.theme
-  tui.settings.project.theme: "theme"
-  # TODO(translate): tui.settings.runtime.lang_cli
-  tui.settings.runtime.lang_cli: "cli language"
-  # TODO(translate): tui.settings.runtime.lang_tui
-  tui.settings.runtime.lang_tui: "tui language"
-  # TODO(translate): tui.settings.runtime.lang_agent_output
-  tui.settings.runtime.lang_agent_output: "agent output"
-  # TODO(translate): tui.kicker.totals
-  tui.kicker.totals: "Totals"
-  # TODO(translate): tui.kicker.tokens
-  tui.kicker.tokens: "Tokens"
-  # TODO(translate): tui.stat.total_row_label
-  tui.stat.total_row_label: "total"
-  # TODO(translate): tui.stat.column.errors
+  tui.settings.project.theme: "السمة"
+  tui.settings.runtime.lang_cli: "لغة cli"
+  tui.settings.runtime.lang_tui: "لغة tui"
+  tui.settings.runtime.lang_agent_output: "إخراج agent"
+  tui.kicker.totals: "الإجماليات"
+  tui.kicker.tokens: "الرموز"
+  tui.stat.total_row_label: "الإجمالي"
   tui.stat.column.errors: "ERRORS"
-  # TODO(translate): tui.stat.column.searches
   tui.stat.column.searches: "SEARCHES"
-  # TODO(translate): tui.stat.column.search_pct
   tui.stat.column.search_pct: "SEARCH%"
-  # TODO(translate): tui.stat.column.sol
   tui.stat.column.sol: "SOL"
-  # TODO(translate): tui.stat.column.like_pct
   tui.stat.column.like_pct: "LIKE%"
-  # TODO(translate): tui.stat.column.model
   tui.stat.column.model: "MODEL"
-  # TODO(translate): tui.table.header
   tui.table.header: "// ID   BUCKET      PRI      DEPS  COMMENTS  TITLE"
-  # TODO(translate): tui.status.config_picker_cancelled
-  tui.status.config_picker_cancelled: "Config picker cancelled"
-  # TODO(translate): tui.badge.global
+  tui.status.config_picker_cancelled: "تم إلغاء مُنتقي الإعدادات"
   tui.badge.global: "GLOBAL"
-  # TODO(translate): tui.badge.project
   tui.badge.project: "PROJECT"
-  # TODO(translate): tui.badge.persona
   tui.badge.persona: "PERSONA"
-  # TODO(translate): tui.badge.default_prefix
   tui.badge.default_prefix: "DEFAULT"
-  # TODO(translate): tui.scroll.above_fmt
-  tui.scroll.above_fmt: "▲ %d above"
-  # TODO(translate): tui.scroll.below_fmt
-  tui.scroll.below_fmt: "▼ %d below"
-  # TODO(translate): tui.status.notification_fmt
-  tui.status.notification_fmt: "Notification %q · %s"
-  # TODO(translate): tui.status.notification_skipped_fmt
-  tui.status.notification_skipped_fmt: "Notification action %q skipped — no command dispatcher wired"
-  # TODO(translate): tui.status.notification_output_unparsable_fmt
-  tui.status.notification_output_unparsable_fmt: "Notification action %q output unparsable: %v"
-  # TODO(translate): tui.status.notification_action_applied_fmt
-  tui.status.notification_action_applied_fmt: "Action %q applied via %s"
-  # TODO(translate): tui.status.tasks_migrated_fmt
-  tui.status.tasks_migrated_fmt: "Migrated %d task(s)"
-  # TODO(translate): tui.status.config_swap_cancel_failed_fmt
-  tui.status.config_swap_cancel_failed_fmt: "Config swap cancel failed: %v"
-  # TODO(translate): tui.status.config_swap_cancelled_fmt
-  tui.status.config_swap_cancelled_fmt: "Config swap cancelled — restored %s"
-  # TODO(translate): tui.status.delete_cancelled
-  tui.status.delete_cancelled: "Delete cancelled"
-  # TODO(translate): tui.empty.law_not_found
-  tui.empty.law_not_found: "Law not found"
-  # TODO(translate): tui.empty.skill_not_found
-  tui.empty.skill_not_found: "Skill not found"
-  # TODO(translate): tui.empty.persona_not_found
-  tui.empty.persona_not_found: "Persona not found"
-  # TODO(translate): tui.empty.template_not_found
-  tui.empty.template_not_found: "Template not found"
-  # TODO(translate): tui.input.comment_body
-  tui.input.comment_body: "Comment body"
-  # TODO(translate): tui.input.target_bucket_key
-  tui.input.target_bucket_key: "Target bucket key"
-  # TODO(translate): tui.event.task_created_in_fmt
-  tui.event.task_created_in_fmt: "task created in %s"
-  # TODO(translate): tui.event.task_created
-  tui.event.task_created: "task created"
-  # TODO(translate): tui.event.task_moved_from_to_fmt
-  tui.event.task_moved_from_to_fmt: "task moved %s → %s"
-  # TODO(translate): tui.event.task_moved_to_fmt
-  tui.event.task_moved_to_fmt: "task moved to %s"
-  # TODO(translate): tui.event.task_moved
-  tui.event.task_moved: "task moved"
-  # TODO(translate): tui.event.task_completed_in_fmt
-  tui.event.task_completed_in_fmt: "task completed in %s"
-  # TODO(translate): tui.event.task_completed
-  tui.event.task_completed: "task completed"
-  # TODO(translate): tui.keys.save_comment_desc
-  tui.keys.save_comment_desc: "save comment (new) · save edit (existing)"
-  # TODO(translate): tui.keys.insert_newline_desc
-  tui.keys.insert_newline_desc: "insert newline"
-  # TODO(translate): tui.keys.cancel_desc
-  tui.keys.cancel_desc: "cancel"
-  # TODO(translate): tui.keys.submit_bucket_desc
-  tui.keys.submit_bucket_desc: "submit target bucket key"
-  # TODO(translate): tui.empty.activity_logging_unavailable
-  tui.empty.activity_logging_unavailable: "Activity logging is not available for this project."
-  # TODO(translate): tui.empty.metrics_unavailable
-  tui.empty.metrics_unavailable: "Metrics repository not available."
-  # TODO(translate): tui.empty.task_not_found_refresh
-  tui.empty.task_not_found_refresh: "Task not found. Refresh with r or return to the board."
-  # TODO(translate): tui.status.blockers_saved
-  tui.status.blockers_saved: "Blockers saved"
-  # TODO(translate): tui.status.theme_picker_cancelled
-  tui.status.theme_picker_cancelled: "Theme picker cancelled"
-  # TODO(translate): tui.status.default_picker_cancelled
-  tui.status.default_picker_cancelled: "Default picker cancelled"
-  # TODO(translate): tui.kicker.new_task
-  tui.kicker.new_task: "New task"
-  # TODO(translate): tui.status.template_add_hint
-  tui.status.template_add_hint: "Templates auto-load — add a .md file to templates/ and refresh"
-  # TODO(translate): tui.status.template_remove_hint
-  tui.status.template_remove_hint: "Templates auto-load — remove the .md file from templates/ and refresh"
-  # TODO(translate): tui.status.nothing_to_open
-  tui.status.nothing_to_open: "Nothing to open"
-  # TODO(translate): tui.status.editor_unavailable
-  tui.status.editor_unavailable: "Editor not available"
-  # TODO(translate): tui.status.nothing_to_edit
-  tui.status.nothing_to_edit: "Nothing to edit"
-  # TODO(translate): tui.status.source_path_missing
-  tui.status.source_path_missing: "Source path missing"
-  # TODO(translate): tui.status.editor_error_fmt
-  tui.status.editor_error_fmt: "Editor: %s"
-  # TODO(translate): tui.status.saved
-  tui.status.saved: "Saved"
-  # TODO(translate): tui.status.nothing_to_delete
-  tui.status.nothing_to_delete: "Nothing to delete"
-  # TODO(translate): tui.status.deleted
-  tui.status.deleted: "Deleted"
-  # TODO(translate): tui.status.tag_repo_unavailable
-  tui.status.tag_repo_unavailable: "Tag repository not available"
-  # TODO(translate): tui.status.no_orphan_tags
-  tui.status.no_orphan_tags: "No orphan tags found"
-  # TODO(translate): tui.status.refreshed
-  tui.status.refreshed: "Refreshed"
-  # TODO(translate): tui.status.cancelled
-  tui.status.cancelled: "Cancelled"
-  # TODO(translate): tui.status.input_required
-  tui.status.input_required: "Input is required"
-  # TODO(translate): tui.status.no_target_column
-  tui.status.no_target_column: "No target column"
-  # TODO(translate): tui.status.no_selected_task
-  tui.status.no_selected_task: "No selected task"
-  # TODO(translate): tui.status.markdown_rendered
-  tui.status.markdown_rendered: "Markdown rendered"
-  # TODO(translate): tui.status.markdown_raw
-  tui.status.markdown_raw: "Markdown raw"
-  # TODO(translate): tui.status.persona_not_found
-  tui.status.persona_not_found: "Persona not found"
-  # TODO(translate): tui.status.skill_picker
-  tui.status.skill_picker: "Skill picker"
-  # TODO(translate): tui.status.no_persona_selected
-  tui.status.no_persona_selected: "No persona selected"
-  # TODO(translate): tui.status.move_mode_active
-  tui.status.move_mode_active: "Move mode: left/right moves the selected task"
-  # TODO(translate): tui.status.move_cancelled
-  tui.status.move_cancelled: "Move cancelled"
-  # TODO(translate): tui.status.no_comment_selected
-  tui.status.no_comment_selected: "no comment selected"
-  # TODO(translate): tui.status.showing_archived
-  tui.status.showing_archived: "Showing archived tasks"
-  # TODO(translate): tui.status.hiding_archived
-  tui.status.hiding_archived: "Hiding archived tasks"
-  # TODO(translate): tui.status.new_task
-  tui.status.new_task: "New task"
-  # TODO(translate): tui.status.editing_task
-  tui.status.editing_task: "Editing task"
-  # TODO(translate): tui.status.task_title_required
-  tui.status.task_title_required: "Task title is required"
-  # TODO(translate): tui.status.no_themes_found
-  tui.status.no_themes_found: "No themes found"
-  # TODO(translate): tui.status.theme_picker
-  tui.status.theme_picker: "Theme picker"
-  # TODO(translate): tui.status.no_config_profiles
-  tui.status.no_config_profiles: "No config profiles found"
-  # TODO(translate): tui.status.config_picker
-  tui.status.config_picker: "Config picker"
-  # TODO(translate): tui.status.no_template_selected
-  tui.status.no_template_selected: "No template selected"
-  # TODO(translate): tui.status.template_not_found
-  tui.status.template_not_found: "Template not found"
-  # TODO(translate): tui.status.template_picker_needs_project
-  tui.status.template_picker_needs_project: "TUI must be opened inside a project to assign a template default"
-  # TODO(translate): tui.status.default_picker
-  tui.status.default_picker: "Default picker"
-  # TODO(translate): notifications.izakaya.task_created.message
-  notifications.izakaya.task_created.message: "A new tab opens at the counter."
-  # TODO(translate): notifications.izakaya.task_moved.message
-  notifications.izakaya.task_moved.message: "Order moved down the line."
-  # TODO(translate): notifications.izakaya.task_edited.message
-  notifications.izakaya.task_edited.message: "Order amended at the counter."
-  # TODO(translate): notifications.izakaya.task_completed.message
-  notifications.izakaya.task_completed.message: "Tab settled. Cheers."
-  # TODO(translate): notifications.izakaya.guard_task_delete.message
-  notifications.izakaya.guard_task_delete.message: "Already poured. No undo at this bar."
-  # TODO(translate): notifications.izakaya.guard_comment_delete.message
-  notifications.izakaya.guard_comment_delete.message: "Conversation belongs to the bar."
-  # TODO(translate): notifications.izakaya.guard_task_transition.message
-  notifications.izakaya.guard_task_transition.message: "Bouncer says no — wrong door."
-  # TODO(translate): notifications.izakaya.guard_task_edit.message
-  notifications.izakaya.guard_task_edit.message: "The chef calls the menu."
-  # TODO(translate): notifications.izakaya.guard_comment_edit.message
-  notifications.izakaya.guard_comment_edit.message: "Bartender keeps the receipt."
-  # TODO(translate): notifications.izakaya.guard_task_archive.message
-  notifications.izakaya.guard_task_archive.message: "Last call hasn't been rung."
-  # TODO(translate): notifications.izakaya.guard_task_unarchive.message
-  notifications.izakaya.guard_task_unarchive.message: "Closed orders stay closed."
-  # TODO(translate): notifications.izakaya.task_removed.message
-  notifications.izakaya.task_removed.message: "Off the menu. Quietly."
-  # TODO(translate): notifications.izakaya.comment_removed.message
-  notifications.izakaya.comment_removed.message: "Tip jar emptied."
-  # TODO(translate): notifications.izakaya.task_archived.message
-  notifications.izakaya.task_archived.message: "Tab on hold for the night."
-  # TODO(translate): notifications.izakaya.task_unarchived.message
-  notifications.izakaya.task_unarchived.message: "Order back on the rail."
-  # TODO(translate): notifications.izakaya.comment_added_human.message
-  notifications.izakaya.comment_added_human.message: "A patron leans in."
-  # TODO(translate): notifications.izakaya.comment_added_agent.message
-  notifications.izakaya.comment_added_agent.message: "Your companion adds a remark."
-  # TODO(translate): notifications.izakaya.comment_edited.message
-  notifications.izakaya.comment_edited.message: "Receipt corrected."
-  # TODO(translate): notifications.izakaya.tag_added.message
-  notifications.izakaya.tag_added.message: "Sticker on the glass."
-  # TODO(translate): notifications.izakaya.tag_removed.message
-  notifications.izakaya.tag_removed.message: "Sticker peeled."
-  # TODO(translate): notifications.izakaya.dependency_added.message
-  notifications.izakaya.dependency_added.message: "Drinks chained — wait for the first."
-  # TODO(translate): notifications.izakaya.dependency_removed.message
-  notifications.izakaya.dependency_removed.message: "Chain broken. Pour freely."
-  # TODO(translate): notifications.izakaya.error_recorded.message
-  notifications.izakaya.error_recorded.message: "Spilled drink — logged."
-  # TODO(translate): notifications.izakaya.error_searched.message
-  notifications.izakaya.error_searched.message: "Checking the bar logs."
-  # TODO(translate): notifications.izakaya.solution_added.message
-  notifications.izakaya.solution_added.message: "A new house special enters the menu."
-  # TODO(translate): notifications.izakaya.solution_liked.message
-  notifications.izakaya.solution_liked.message: "Patron tips the bar."
-  # TODO(translate): notifications.izakaya.solution_failed.message
-  notifications.izakaya.solution_failed.message: "The recipe didn't land."
-  # TODO(translate): notifications.izakaya.solution_viewed_top.message
-  notifications.izakaya.solution_viewed_top.message: "Browsing the house specials."
-  # TODO(translate): notifications.kaiseki.task_created.message
-  notifications.kaiseki.task_created.message: "A new course has been ordered."
-  # TODO(translate): notifications.kaiseki.task_moved.message
-  notifications.kaiseki.task_moved.message: "The course advances to the next stage."
-  # TODO(translate): notifications.kaiseki.task_edited.message
-  notifications.kaiseki.task_edited.message: "The chef adjusts the preparation."
-  # TODO(translate): notifications.kaiseki.task_completed.message
-  notifications.kaiseki.task_completed.message: "The course is plated and presented."
-  # TODO(translate): notifications.kaiseki.guard_task_delete.message
-  notifications.kaiseki.guard_task_delete.message: "Service does not retract a presented course."
-  # TODO(translate): notifications.kaiseki.guard_comment_delete.message
-  notifications.kaiseki.guard_comment_delete.message: "The record of service is preserved."
-  # TODO(translate): notifications.kaiseki.guard_task_transition.message
-  notifications.kaiseki.guard_task_transition.message: "The kitchen is not yet ready."
-  # TODO(translate): notifications.kaiseki.guard_task_edit.message
-  notifications.kaiseki.guard_task_edit.message: "The course is sealed for service."
-  # TODO(translate): notifications.kaiseki.guard_comment_edit.message
-  notifications.kaiseki.guard_comment_edit.message: "Service notes remain as written."
-  # TODO(translate): notifications.kaiseki.guard_task_archive.message
-  notifications.kaiseki.guard_task_archive.message: "Service is not yet complete."
-  # TODO(translate): notifications.kaiseki.guard_task_unarchive.message
-  notifications.kaiseki.guard_task_unarchive.message: "Completed courses remain in the record."
-  # TODO(translate): notifications.kaiseki.task_removed.message
-  notifications.kaiseki.task_removed.message: "Course withdrawn from the menu."
-  # TODO(translate): notifications.kaiseki.comment_removed.message
-  notifications.kaiseki.comment_removed.message: "Service note retracted."
-  # TODO(translate): notifications.kaiseki.task_archived.message
-  notifications.kaiseki.task_archived.message: "Course archived in the service record."
-  # TODO(translate): notifications.kaiseki.task_unarchived.message
-  notifications.kaiseki.task_unarchived.message: "Course returned to the line."
-  # TODO(translate): notifications.kaiseki.comment_added_human.message
-  notifications.kaiseki.comment_added_human.message: "The chef receives a note from the dining room."
-  # TODO(translate): notifications.kaiseki.comment_added_agent.message
-  notifications.kaiseki.comment_added_agent.message: "A service assistant files a note."
-  # TODO(translate): notifications.kaiseki.comment_edited.message
-  notifications.kaiseki.comment_edited.message: "Service note revised under watch."
-  # TODO(translate): notifications.kaiseki.tag_added.message
-  notifications.kaiseki.tag_added.message: "A garnish is added to the plate."
-  # TODO(translate): notifications.kaiseki.tag_removed.message
-  notifications.kaiseki.tag_removed.message: "A garnish is removed from the plate."
-  # TODO(translate): notifications.kaiseki.dependency_added.message
-  notifications.kaiseki.dependency_added.message: "A pairing course has been linked."
-  # TODO(translate): notifications.kaiseki.dependency_removed.message
-  notifications.kaiseki.dependency_removed.message: "The pairing is dissolved."
-  # TODO(translate): notifications.kaiseki.error_recorded.message
-  notifications.kaiseki.error_recorded.message: "A service incident is logged."
-  # TODO(translate): notifications.kaiseki.error_searched.message
-  notifications.kaiseki.error_searched.message: "Reviewing the service ledger."
-  # TODO(translate): notifications.kaiseki.solution_added.message
-  notifications.kaiseki.solution_added.message: "A new technique enters the kitchen."
-  # TODO(translate): notifications.kaiseki.solution_liked.message
-  notifications.kaiseki.solution_liked.message: "The head chef endorses the technique."
-  # TODO(translate): notifications.kaiseki.solution_failed.message
-  notifications.kaiseki.solution_failed.message: "The technique did not hold."
-  # TODO(translate): notifications.kaiseki.solution_viewed_top.message
-  notifications.kaiseki.solution_viewed_top.message: "Consulting the kitchen's signature techniques."
-  # TODO(translate): notifications.omakase.task_created.message
-  notifications.omakase.task_created.message: "A new quest has appeared."
-  # TODO(translate): notifications.omakase.task_moved.message
-  notifications.omakase.task_moved.message: "Fast travel complete."
-  # TODO(translate): notifications.omakase.task_edited.message
-  notifications.omakase.task_edited.message: "The scroll has been amended under supervision."
-  # TODO(translate): notifications.omakase.task_completed.message
-  notifications.omakase.task_completed.message: "Achievement unlocked: task complete."
-  # TODO(translate): notifications.omakase.guard_task_delete.message
-  notifications.omakase.guard_task_delete.message: "Trying to burn the quest log? Adorable."
-  # TODO(translate): notifications.omakase.guard_comment_delete.message
-  notifications.omakase.guard_comment_delete.message: "Witness tampering? Bold move."
-  # TODO(translate): notifications.omakase.guard_task_transition.message
-  notifications.omakase.guard_task_transition.message: "You shall not pass."
-  # TODO(translate): notifications.omakase.guard_task_edit.message
-  notifications.omakase.guard_task_edit.message: "The council has denied this edit."
-  # TODO(translate): notifications.omakase.guard_comment_edit.message
-  notifications.omakase.guard_comment_edit.message: "The scribe's quill has been confiscated."
-  # TODO(translate): notifications.omakase.guard_task_archive.message
-  notifications.omakase.guard_task_archive.message: "Not so fast, vault dweller."
-  # TODO(translate): notifications.omakase.guard_task_unarchive.message
-  notifications.omakase.guard_task_unarchive.message: "The seal holds. Wake it properly."
-  # TODO(translate): notifications.omakase.bundle_swapped_orphans.message
-  notifications.omakase.bundle_swapped_orphans.message: "Tasks orphaned by config swap. Migrate to the new workflow?"
-  # TODO(translate): notifications.omakase.task_removed.message
-  notifications.omakase.task_removed.message: "Ashes logged. The archive approves."
-  # TODO(translate): notifications.omakase.comment_removed.message
-  notifications.omakase.comment_removed.message: "The witness has left the material plane."
-  # TODO(translate): notifications.omakase.task_archived.message
-  notifications.omakase.task_archived.message: "The quest sleeps in the vault."
-  # TODO(translate): notifications.omakase.task_unarchived.message
-  notifications.omakase.task_unarchived.message: "The ancient quest awakens."
-  # TODO(translate): notifications.omakase.comment_added_human.message
-  notifications.omakase.comment_added_human.message: "A raven arrives with testimony."
-  # TODO(translate): notifications.omakase.comment_added_agent.message
-  notifications.omakase.comment_added_agent.message: "Your companion filed a note with the guild."
-  # TODO(translate): notifications.omakase.comment_edited.message
-  notifications.omakase.comment_edited.message: "The scribe corrected the record under watch."
-  # TODO(translate): notifications.omakase.tag_added.message
-  notifications.omakase.tag_added.message: "A rune has been etched onto the quest."
-  # TODO(translate): notifications.omakase.tag_removed.message
-  notifications.omakase.tag_removed.message: "The rune fades. The record remains."
-  # TODO(translate): notifications.omakase.dependency_added.message
-  notifications.omakase.dependency_added.message: "A new side quest is chained."
-  # TODO(translate): notifications.omakase.dependency_removed.message
-  notifications.omakase.dependency_removed.message: "The chain has been broken."
-  # TODO(translate): notifications.omakase.error_recorded.message
-  notifications.omakase.error_recorded.message: "A wild bug enters the bestiary."
-  # TODO(translate): notifications.omakase.error_searched.message
-  notifications.omakase.error_searched.message: "Consulting the forbidden archives."
-  # TODO(translate): notifications.omakase.solution_added.message
-  notifications.omakase.solution_added.message: "A new spell enters the grimoire."
-  # TODO(translate): notifications.omakase.solution_liked.message
-  notifications.omakase.solution_liked.message: "The party gains inspiration."
-  # TODO(translate): notifications.omakase.solution_failed.message
-  notifications.omakase.solution_failed.message: "The princess is in another castle."
-  # TODO(translate): notifications.omakase.solution_viewed_top.message
-  notifications.omakase.solution_viewed_top.message: "Opening the hall of proven spells."
-  # TODO(translate): notifications.shokunin.task_created.message
-  notifications.shokunin.task_created.message: "A new specimen logged for inspection."
-  # TODO(translate): notifications.shokunin.task_moved.message
-  notifications.shokunin.task_moved.message: "Specimen advanced to the next station."
-  # TODO(translate): notifications.shokunin.task_edited.message
-  notifications.shokunin.task_edited.message: "Specimen edits recorded under supervision."
-  # TODO(translate): notifications.shokunin.task_completed.message
-  notifications.shokunin.task_completed.message: "Specimen approved. Sealed for delivery."
-  # TODO(translate): notifications.shokunin.guard_task_delete.message
-  notifications.shokunin.guard_task_delete.message: "Destructive action requires sign-off."
-  # TODO(translate): notifications.shokunin.guard_comment_delete.message
-  notifications.shokunin.guard_comment_delete.message: "Audit trail does not permit deletion."
-  # TODO(translate): notifications.shokunin.guard_task_transition.message
-  notifications.shokunin.guard_task_transition.message: "Gate refuses passage — check the guard hint."
-  # TODO(translate): notifications.shokunin.guard_task_edit.message
-  notifications.shokunin.guard_task_edit.message: "Edit blocked at this station."
-  # TODO(translate): notifications.shokunin.guard_comment_edit.message
-  notifications.shokunin.guard_comment_edit.message: "Append-only trail rejects in-place edits."
-  # TODO(translate): notifications.shokunin.guard_task_archive.message
-  notifications.shokunin.guard_task_archive.message: "Archive blocked — conditions not yet met."
-  # TODO(translate): notifications.shokunin.guard_task_unarchive.message
-  notifications.shokunin.guard_task_unarchive.message: "Reopen requires reviewer approval."
-  # TODO(translate): notifications.shokunin.task_removed.message
-  notifications.shokunin.task_removed.message: "Specimen retired with full record."
-  # TODO(translate): notifications.shokunin.comment_removed.message
-  notifications.shokunin.comment_removed.message: "Audit trail entry removed under exception."
-  # TODO(translate): notifications.shokunin.task_archived.message
-  notifications.shokunin.task_archived.message: "Specimen sealed in the vault."
-  # TODO(translate): notifications.shokunin.task_unarchived.message
-  notifications.shokunin.task_unarchived.message: "Specimen returned to active inspection."
-  # TODO(translate): notifications.shokunin.comment_added_human.message
-  notifications.shokunin.comment_added_human.message: "A signed note enters the record."
-  # TODO(translate): notifications.shokunin.comment_added_agent.message
-  notifications.shokunin.comment_added_agent.message: "An automated entry is appended."
-  # TODO(translate): notifications.shokunin.comment_edited.message
-  notifications.shokunin.comment_edited.message: "Correction recorded — original retained."
-  # TODO(translate): notifications.shokunin.tag_added.message
-  notifications.shokunin.tag_added.message: "Classification updated."
-  # TODO(translate): notifications.shokunin.tag_removed.message
-  notifications.shokunin.tag_removed.message: "Classification withdrawn."
-  # TODO(translate): notifications.shokunin.dependency_added.message
-  notifications.shokunin.dependency_added.message: "Upstream dependency declared."
-  # TODO(translate): notifications.shokunin.dependency_removed.message
-  notifications.shokunin.dependency_removed.message: "Dependency rescinded with note."
-  # TODO(translate): notifications.shokunin.error_recorded.message
-  notifications.shokunin.error_recorded.message: "Defect catalogued for postmortem."
-  # TODO(translate): notifications.shokunin.error_searched.message
-  notifications.shokunin.error_searched.message: "Consulting the defect register."
-  # TODO(translate): notifications.shokunin.solution_added.message
-  notifications.shokunin.solution_added.message: "Corrective action documented."
-  # TODO(translate): notifications.shokunin.solution_liked.message
-  notifications.shokunin.solution_liked.message: "Corrective action validated."
-  # TODO(translate): notifications.shokunin.solution_failed.message
-  notifications.shokunin.solution_failed.message: "Corrective action did not resolve — re-open postmortem."
-  # TODO(translate): notifications.shokunin.solution_viewed_top.message
-  notifications.shokunin.solution_viewed_top.message: "Reviewing established corrective actions."
-  # TODO(translate): notifications.kitten_archive.description
-  notifications.kitten_archive.description: "Sleepy archivist kitten for archived and revived quests."
-  # TODO(translate): notifications.kitten_blocked.description
-  notifications.kitten_blocked.description: "Stern kitten guardian for blocked workflow operations."
-  # TODO(translate): notifications.kitten_destructive.description
-  notifications.kitten_destructive.description: "Compact kitten with X-eyes for destructive delete/remove events."
-  # TODO(translate): notifications.kitten_informative.description
-  notifications.kitten_informative.description: "Calm kitten for workflow updates and routine messages."
-  # TODO(translate): notifications.kitten_knowledge.description
-  notifications.kitten_knowledge.description: "Arcane kitten keeper for errors, searches, and solution lore."
-  # TODO(translate): notifications.kitten_link.description
-  notifications.kitten_link.description: "Watchful kitten for tags, dependencies, and chained side quests."
-  # TODO(translate): notifications.kitten_orphan_migration.description
-  notifications.kitten_orphan_migration.description: "Prompt after a config swap when tasks would be orphaned by the new workflow's bucket set."
-  # TODO(translate): notifications.kitten_success.description
-  notifications.kitten_success.description: "Proud kitten guardian for completed rituals and blessed fixes."
-  # TODO(translate): cli.setup.short
-  cli.setup.short: "Run the first-run setup picker (language → preset → MCP harness)"
-  # TODO(translate): cli.setup.long
+  tui.scroll.above_fmt: "▲ %d في الأعلى"
+  tui.scroll.below_fmt: "▼ %d في الأسفل"
+  tui.status.notification_fmt: "إشعار %q · %s"
+  tui.status.notification_skipped_fmt: "تم تخطّي إجراء الإشعار %q — لا يوجد موزّع أوامر موصول"
+  tui.status.notification_output_unparsable_fmt: "مخرجات إجراء الإشعار %q غير قابلة للتحليل: %v"
+  tui.status.notification_action_applied_fmt: "تم تطبيق الإجراء %q عبر %s"
+  tui.status.tasks_migrated_fmt: "تم ترحيل %d task(s)"
+  tui.status.config_swap_cancel_failed_fmt: "فشل إلغاء تبديل الإعدادات: %v"
+  tui.status.config_swap_cancelled_fmt: "تم إلغاء تبديل الإعدادات — تمت استعادة %s"
+  tui.status.delete_cancelled: "تم إلغاء الحذف"
+  tui.empty.law_not_found: "لم يُعثر على law"
+  tui.empty.skill_not_found: "لم يُعثر على skill"
+  tui.empty.persona_not_found: "لم يُعثر على persona"
+  tui.empty.template_not_found: "لم يُعثر على template"
+  tui.input.comment_body: "متن comment"
+  tui.input.target_bucket_key: "مفتاح bucket الهدف"
+  tui.event.task_created_in_fmt: "تم إنشاء task في %s"
+  tui.event.task_created: "تم إنشاء task"
+  tui.event.task_moved_from_to_fmt: "تم نقل task %s → %s"
+  tui.event.task_moved_to_fmt: "تم نقل task إلى %s"
+  tui.event.task_moved: "تم نقل task"
+  tui.event.task_completed_in_fmt: "تم إكمال task في %s"
+  tui.event.task_completed: "تم إكمال task"
+  tui.keys.save_comment_desc: "حفظ comment (جديد) · حفظ التحرير (موجود)"
+  tui.keys.insert_newline_desc: "إدراج سطر جديد"
+  tui.keys.cancel_desc: "إلغاء"
+  tui.keys.submit_bucket_desc: "إرسال مفتاح bucket الهدف"
+  tui.empty.activity_logging_unavailable: "تسجيل النشاط غير متاح لهذا المشروع."
+  tui.empty.metrics_unavailable: "مستودع المقاييس غير متاح."
+  tui.empty.task_not_found_refresh: "لم يُعثر على task. حدِّث بـ r أو عُد إلى اللوحة."
+  tui.status.blockers_saved: "تم حفظ blockers"
+  tui.status.theme_picker_cancelled: "تم إلغاء مُنتقي السمة"
+  tui.status.default_picker_cancelled: "تم إلغاء مُنتقي الافتراضي"
+  tui.kicker.new_task: "task جديدة"
+  tui.status.template_add_hint: "templates تُحمَّل تلقائيًّا — أضف ملف .md إلى templates/ ثم حدِّث"
+  tui.status.template_remove_hint: "templates تُحمَّل تلقائيًّا — احذف ملف .md من templates/ ثم حدِّث"
+  tui.status.nothing_to_open: "لا شيء لفتحه"
+  tui.status.editor_unavailable: "المحرّر غير متاح"
+  tui.status.nothing_to_edit: "لا شيء لتحريره"
+  tui.status.source_path_missing: "مسار المصدر مفقود"
+  tui.status.editor_error_fmt: "المحرّر: %s"
+  tui.status.saved: "تم الحفظ"
+  tui.status.nothing_to_delete: "لا شيء لحذفه"
+  tui.status.deleted: "تم الحذف"
+  tui.status.tag_repo_unavailable: "مستودع tag غير متاح"
+  tui.status.no_orphan_tags: "لم يُعثر على tags يتيمة"
+  tui.status.refreshed: "تم التحديث"
+  tui.status.cancelled: "تم الإلغاء"
+  tui.status.input_required: "الإدخال مطلوب"
+  tui.status.no_target_column: "لا يوجد عمود هدف"
+  tui.status.no_selected_task: "لا توجد task مختارة"
+  tui.status.markdown_rendered: "markdown مُصاغ"
+  tui.status.markdown_raw: "markdown خام"
+  tui.status.persona_not_found: "لم يُعثر على persona"
+  tui.status.skill_picker: "مُنتقي skill"
+  tui.status.no_persona_selected: "لم تُحدَّد persona"
+  tui.status.move_mode_active: "وضع النقل: left/right ينقل الـ task المختارة"
+  tui.status.move_cancelled: "تم إلغاء النقل"
+  tui.status.no_comment_selected: "لم يُحدَّد comment"
+  tui.status.showing_archived: "إظهار tasks المؤرشفة"
+  tui.status.hiding_archived: "إخفاء tasks المؤرشفة"
+  tui.status.new_task: "task جديدة"
+  tui.status.editing_task: "تحرير task"
+  tui.status.task_title_required: "عنوان task مطلوب"
+  tui.status.no_themes_found: "لم يُعثر على سمات"
+  tui.status.theme_picker: "مُنتقي السمة"
+  tui.status.no_config_profiles: "لم يُعثر على ملفّات إعدادات"
+  tui.status.config_picker: "مُنتقي الإعدادات"
+  tui.status.no_template_selected: "لم يُحدَّد template"
+  tui.status.template_not_found: "لم يُعثر على template"
+  tui.status.template_picker_needs_project: "يجب فتح TUI داخل مشروع لتعيين template افتراضية"
+  tui.status.default_picker: "مُنتقي الافتراضي"
+  notifications.izakaya.task_created.message: "فاتورة جديدة تُفتح عند المنضدة."
+  notifications.izakaya.task_moved.message: "الطلبيّة سرت مع الصفّ."
+  notifications.izakaya.task_edited.message: "الطلبيّة عُدِّلت عند المنضدة."
+  notifications.izakaya.task_completed.message: "الفاتورة سُوّيت. صحّتين."
+  notifications.izakaya.guard_task_delete.message: "الكأس انسكب. لا تراجع في هذا البار."
+  notifications.izakaya.guard_comment_delete.message: "الحديث ملك للحانة."
+  notifications.izakaya.guard_task_transition.message: "الحارس يقول لا — الباب الخطأ."
+  notifications.izakaya.guard_task_edit.message: "الطاهي هو من يقرّر القائمة."
+  notifications.izakaya.guard_comment_edit.message: "الساقي يحتفظ بالإيصال."
+  notifications.izakaya.guard_task_archive.message: "النداء الأخير لم يُقرع بعد."
+  notifications.izakaya.guard_task_unarchive.message: "الطلبيّات المُغلقة تبقى مُغلقة."
+  notifications.izakaya.task_removed.message: "خارج القائمة. بهدوء."
+  notifications.izakaya.comment_removed.message: "صندوق الإكراميات أُفرغ."
+  notifications.izakaya.task_archived.message: "الفاتورة مُعلَّقة لهذه الليلة."
+  notifications.izakaya.task_unarchived.message: "الطلبيّة عادت إلى الطاولة."
+  notifications.izakaya.comment_added_human.message: "زبون يميل ليتكلّم."
+  notifications.izakaya.comment_added_agent.message: "رفيقك يُضيف تعليقًا."
+  notifications.izakaya.comment_edited.message: "الإيصال صُحِّح."
+  notifications.izakaya.tag_added.message: "ملصق على الكأس."
+  notifications.izakaya.tag_removed.message: "الملصق نُزع."
+  notifications.izakaya.dependency_added.message: "الكؤوس مُربوطة — انتظر الأولى."
+  notifications.izakaya.dependency_removed.message: "السلسلة انفكّت. اسكب بحرّية."
+  notifications.izakaya.error_recorded.message: "كأس مُراق — سُجّل."
+  notifications.izakaya.error_searched.message: "أتفقّد سجلّات البار."
+  notifications.izakaya.solution_added.message: "وصفة بيت جديدة تدخل القائمة."
+  notifications.izakaya.solution_liked.message: "زبون يكرم البار."
+  notifications.izakaya.solution_failed.message: "الوصفة لم تُعجب أحدًا."
+  notifications.izakaya.solution_viewed_top.message: "أتصفّح وصفات البيت."
+  notifications.kaiseki.task_created.message: "تمّ طلب طبق جديد."
+  notifications.kaiseki.task_moved.message: "الطبق يتقدّم إلى المرحلة التالية."
+  notifications.kaiseki.task_edited.message: "الطاهي يُعدّل التحضير."
+  notifications.kaiseki.task_completed.message: "الطبق طُوي في الصحن وقُدِّم."
+  notifications.kaiseki.guard_task_delete.message: "الخدمة لا تسحب طبقًا مُقدَّمًا."
+  notifications.kaiseki.guard_comment_delete.message: "سجلّ الخدمة محفوظ."
+  notifications.kaiseki.guard_task_transition.message: "المطبخ لم يستعدّ بعد."
+  notifications.kaiseki.guard_task_edit.message: "الطبق مختوم للخدمة."
+  notifications.kaiseki.guard_comment_edit.message: "ملاحظات الخدمة تبقى كما كُتبت."
+  notifications.kaiseki.guard_task_archive.message: "الخدمة لم تكتمل بعد."
+  notifications.kaiseki.guard_task_unarchive.message: "الأطباق المُكتملة تبقى في السجلّ."
+  notifications.kaiseki.task_removed.message: "الطبق سُحب من القائمة."
+  notifications.kaiseki.comment_removed.message: "ملاحظة الخدمة سُحبت."
+  notifications.kaiseki.task_archived.message: "الطبق أُرشف في سجلّ الخدمة."
+  notifications.kaiseki.task_unarchived.message: "الطبق عاد إلى الخطّ."
+  notifications.kaiseki.comment_added_human.message: "الطاهي يتلقّى ملاحظة من قاعة الطعام."
+  notifications.kaiseki.comment_added_agent.message: "مساعد خدمة يُسجّل ملاحظة."
+  notifications.kaiseki.comment_edited.message: "ملاحظة الخدمة نُقّحت تحت الإشراف."
+  notifications.kaiseki.tag_added.message: "زينة أُضيفت إلى الطبق."
+  notifications.kaiseki.tag_removed.message: "زينة أُزيلت من الطبق."
+  notifications.kaiseki.dependency_added.message: "طبق مُقترن جرى ربطه."
+  notifications.kaiseki.dependency_removed.message: "الاقتران فُكّ."
+  notifications.kaiseki.error_recorded.message: "حادثة خدمة سُجّلت."
+  notifications.kaiseki.error_searched.message: "أُراجع دفتر الخدمة."
+  notifications.kaiseki.solution_added.message: "تقنية جديدة تدخل المطبخ."
+  notifications.kaiseki.solution_liked.message: "رئيس الطهاة يُصادق على التقنية."
+  notifications.kaiseki.solution_failed.message: "التقنية لم تثبت."
+  notifications.kaiseki.solution_viewed_top.message: "أتفقّد تقنيات المطبخ المميّزة."
+  notifications.omakase.task_created.message: "مهمّة جديدة ظهرت في سجلّ المهامّ."
+  notifications.omakase.task_moved.message: "السفر السريع اكتمل."
+  notifications.omakase.task_edited.message: "اللفافة عُدِّلت تحت الإشراف."
+  notifications.omakase.task_completed.message: "إنجاز مفتوح: المهمّة اكتملت."
+  notifications.omakase.guard_task_delete.message: "تحاول حرق سجلّ المهامّ؟ ظريف."
+  notifications.omakase.guard_comment_delete.message: "العبث بالشهود؟ خطوة جريئة."
+  notifications.omakase.guard_task_transition.message: "لن تعبر من هنا."
+  notifications.omakase.guard_task_edit.message: "المجلس رفض هذا التحرير."
+  notifications.omakase.guard_comment_edit.message: "ريشة الناسخ صُودرت."
+  notifications.omakase.guard_task_archive.message: "ليس بهذه السرعة يا ساكن القبو."
+  notifications.omakase.guard_task_unarchive.message: "الختم يصمد. أيقظها كما يجب."
+  notifications.omakase.bundle_swapped_orphans.message: "tasks تيتّمت بسبب تبديل الإعدادات. هل تُرحَّل إلى workflow الجديد؟"
+  notifications.omakase.task_removed.message: "الرماد سُجّل. الأرشيف يوافق."
+  notifications.omakase.comment_removed.message: "الشاهد غادر المستوى المادّي."
+  notifications.omakase.task_archived.message: "المهمّة تنام في القبو."
+  notifications.omakase.task_unarchived.message: "المهمّة القديمة تستيقظ."
+  notifications.omakase.comment_added_human.message: "غُراب يصل حاملًا شهادة."
+  notifications.omakase.comment_added_agent.message: "رفيقك سجّل ملاحظة في النقابة."
+  notifications.omakase.comment_edited.message: "الناسخ صحّح السجلّ تحت الإشراف."
+  notifications.omakase.tag_added.message: "رمز سحري نُقش على المهمّة."
+  notifications.omakase.tag_removed.message: "الرمز يخفت. السجلّ يبقى."
+  notifications.omakase.dependency_added.message: "مهمّة جانبية جديدة سُلسلت."
+  notifications.omakase.dependency_removed.message: "السلسلة كُسرت."
+  notifications.omakase.error_recorded.message: "علّة برّية تدخل دفتر الكائنات."
+  notifications.omakase.error_searched.message: "أستشير المحفوظات المحظورة."
+  notifications.omakase.solution_added.message: "تعويذة جديدة تدخل الكتاب السحري."
+  notifications.omakase.solution_liked.message: "الفرقة تكتسب إلهامًا."
+  notifications.omakase.solution_failed.message: "الأميرة في قلعة أخرى."
+  notifications.omakase.solution_viewed_top.message: "أفتح قاعة التعاويذ المُثبتة."
+  notifications.shokunin.task_created.message: "عيّنة جديدة سُجّلت للتفتيش."
+  notifications.shokunin.task_moved.message: "العيّنة تقدّمت إلى المحطّة التالية."
+  notifications.shokunin.task_edited.message: "تعديلات العيّنة سُجّلت تحت الإشراف."
+  notifications.shokunin.task_completed.message: "العيّنة اعتُمدت. خُتمت للتسليم."
+  notifications.shokunin.guard_task_delete.message: "الإجراء المُدمِّر يتطلّب توقيعًا."
+  notifications.shokunin.guard_comment_delete.message: "سجلّ التدقيق لا يسمح بالحذف."
+  notifications.shokunin.guard_task_transition.message: "البوّابة ترفض المرور — راجع تلميح الحارس."
+  notifications.shokunin.guard_task_edit.message: "التحرير محجوب عند هذه المحطّة."
+  notifications.shokunin.guard_comment_edit.message: "السجلّ بالإضافة فقط يرفض التحرير الموضعي."
+  notifications.shokunin.guard_task_archive.message: "الأرشفة محجوبة — الشروط لم تتحقّق بعد."
+  notifications.shokunin.guard_task_unarchive.message: "إعادة الفتح تتطلّب موافقة مراجع."
+  notifications.shokunin.task_removed.message: "العيّنة أُحيلت للتقاعد بسجلّ كامل."
+  notifications.shokunin.comment_removed.message: "مدخل سجلّ التدقيق أُزيل استثناءً."
+  notifications.shokunin.task_archived.message: "العيّنة خُتمت في القبو."
+  notifications.shokunin.task_unarchived.message: "العيّنة عادت إلى التفتيش النشط."
+  notifications.shokunin.comment_added_human.message: "ملاحظة موقّعة تدخل السجلّ."
+  notifications.shokunin.comment_added_agent.message: "مدخل آلي يُضاف إلى السجلّ."
+  notifications.shokunin.comment_edited.message: "تصحيح مُسجَّل — الأصل محفوظ."
+  notifications.shokunin.tag_added.message: "التصنيف حُدِّث."
+  notifications.shokunin.tag_removed.message: "التصنيف سُحب."
+  notifications.shokunin.dependency_added.message: "تبعية أمامية مُعلَنة."
+  notifications.shokunin.dependency_removed.message: "تبعية مفسوخة مع ملاحظة."
+  notifications.shokunin.error_recorded.message: "عيب مفهرس للمراجعة اللاحقة."
+  notifications.shokunin.error_searched.message: "أستشير سجلّ العيوب."
+  notifications.shokunin.solution_added.message: "إجراء تصحيحي موثّق."
+  notifications.shokunin.solution_liked.message: "الإجراء التصحيحي مُعتمد."
+  notifications.shokunin.solution_failed.message: "الإجراء التصحيحي لم يحلّ المشكلة — أعد فتح المراجعة اللاحقة."
+  notifications.shokunin.solution_viewed_top.message: "أراجع الإجراءات التصحيحية المُعتمدة."
+  notifications.kitten_archive.description: "هريرة أرشيفية نعسانة للمهامّ المؤرشفة والمُحياة."
+  notifications.kitten_blocked.description: "هريرة حارسة صارمة لعمليات workflow المحجوبة."
+  notifications.kitten_destructive.description: "هريرة صغيرة بعينَي X لأحداث الحذف/الإزالة المُدمِّرة."
+  notifications.kitten_informative.description: "هريرة هادئة لتحديثات workflow والرسائل الروتينية."
+  notifications.kitten_knowledge.description: "هريرة حافظة للأسرار من أجل الأخطاء والبحوث وعلوم الحلول."
+  notifications.kitten_link.description: "هريرة يقظة لأجل tags والتبعيات والمهامّ الجانبية المتسلسلة."
+  notifications.kitten_orphan_migration.description: "تظهر بعد تبديل الإعدادات حين تيتّم tasks بسبب مجموعة buckets الجديدة في workflow."
+  notifications.kitten_success.description: "هريرة حارسة فخورة للطقوس المُكتملة والإصلاحات المُباركة."
+  cli.setup.short: "تشغيل مُنتقي الإعداد الأوّل (اللغة → preset → harness MCP)"
   cli.setup.long: |-
-    okt setup is the post-install picker the curl|bash installer drops you into.
+    okt setup هو مُنتقي ما بعد التثبيت الذي يُسقطك فيه مُثبِّت curl|bash.
 
-    It walks language selection (CLI / TUI / agent-output), preset selection,
-    and MCP-harness configuration in a single bubbletea program, then writes
-    the okt() shell-rc wrapper. Re-run with --update to revisit choices.
+    يمشي عبر اختيار اللغة (CLI / TUI / agent-output)، واختيار preset،
+    وتهيئة harness الخاص بـ MCP في برنامج bubbletea واحد، ثم يكتب
+    غلاف okt() الخاص بـ shell-rc. أعد التشغيل بـ --update لمراجعة الخيارات.
 
-    Headless / non-interactive shells skip every screen the matching env var
-    fills: OKT_CLI_LANG, OKT_TUI_LANG, OKT_AGENT_LANG, OKT_PRESET, OKT_HARNESSES.
-  # TODO(translate): cli.setup.flag.update
-  cli.setup.flag.update: "re-run the picker with current values prefilled (idempotent against existing rc + omakiten.yaml)"
-  # TODO(translate): cli.setup.flag.cli-lang
-  cli.setup.flag.cli-lang: "skip the CLI-language picker by setting the chosen code (same shape as OKT_CLI_LANG=)"
-  # TODO(translate): cli.setup.flag.tui-lang
-  cli.setup.flag.tui-lang: "skip the TUI-language picker by setting the chosen code (same shape as OKT_TUI_LANG=)"
-  # TODO(translate): cli.setup.flag.agent-lang
-  cli.setup.flag.agent-lang: "skip the agent-output language prompt by setting the chosen free-form value"
-  # TODO(translate): cli.setup.flag.preset
-  cli.setup.flag.preset: "skip the preset picker by setting the chosen preset name (same shape as OKT_PRESET=)"
-  # TODO(translate): cli.setup.flag.harnesses
-  cli.setup.flag.harnesses: "skip the harness multi-select with a CSV of harness names (same shape as OKT_HARNESSES=)"
-  # TODO(translate): cli.setup.flag.skip-wrapper
-  cli.setup.flag.skip-wrapper: "do not write the okt() shell-rc wrapper block (useful when the user manages their rc files via dotfiles)"
-  # TODO(translate): cli.setup.flag.skip-harnesses
-  cli.setup.flag.skip-harnesses: "resolve harness inputs but do not invoke `okt mcp setup` (used by shell tests + dry-run smoke checks)"
-  # TODO(translate): cli.setup.status.preset_written
-  cli.setup.status.preset_written: "=> Active workflow preset: %s (%s/.active)"
-  # TODO(translate): cli.setup.status.wrapper_written
-  cli.setup.status.wrapper_written: "=> Installed okt() shell wrapper into: %s"
-  # TODO(translate): cli.setup.status.wrapper_skipped
-  cli.setup.status.wrapper_skipped: "=> Skipping shell-wrapper install: no ~/.bashrc or ~/.zshrc found"
-  # TODO(translate): cli.setup.status.harness_configured
-  cli.setup.status.harness_configured: "=> Configuring MCP for %s"
-  # TODO(translate): cli.setup.status.harness_failed
-  cli.setup.status.harness_failed: "   (skipped %s, exit %d — re-run manually: %s mcp setup --harness %s --force)"
-  # TODO(translate): cli.setup.status.complete
-  cli.setup.status.complete: "=> Run 'okt --help' to get started"
-  # TODO(translate): cli.setup.warn.unknown_preset
-  cli.setup.warn.unknown_preset: "warn: OKT_PRESET=%s is not a supported preset; falling back to %s"
-  # TODO(translate): cli.setup.warn.unknown_harness
-  cli.setup.warn.unknown_harness: "warn: ignoring unknown harness %q"
-  # TODO(translate): cli.setup.warn.harness_index_oor
-  cli.setup.warn.harness_index_oor: "warn: index %s out of range"
-  # TODO(translate): cli.setup.picker.lang.cli.title
-  cli.setup.picker.lang.cli.title: "Select your CLI language"
-  # TODO(translate): cli.setup.picker.lang.tui.title
-  cli.setup.picker.lang.tui.title: "Select your TUI language"
-  # TODO(translate): cli.setup.picker.agent.title
-  cli.setup.picker.agent.title: "Agent output language (free-form text, e.g. \"English\" or \"Português (Brasil)\")"
-  # TODO(translate): cli.setup.picker.agent.placeholder
+    الأصداف الخالية من الواجهة / غير التفاعلية تتخطّى كل شاشة يملؤها
+    متغيّر البيئة المطابق: OKT_CLI_LANG و OKT_TUI_LANG و OKT_AGENT_LANG و OKT_PRESET و OKT_HARNESSES.
+  cli.setup.flag.update: "إعادة تشغيل المُنتقي بالقيم الحالية مُعبَّأة مسبقًا (لا يترك أثرًا جانبيًا مقابل rc الموجود + omakiten.yaml)"
+  cli.setup.flag.cli-lang: "تخطّي مُنتقي لغة CLI بضبط الرمز المختار (نفس شكل OKT_CLI_LANG=)"
+  cli.setup.flag.tui-lang: "تخطّي مُنتقي لغة TUI بضبط الرمز المختار (نفس شكل OKT_TUI_LANG=)"
+  cli.setup.flag.agent-lang: "تخطّي مطالبة لغة إخراج agent بضبط القيمة الحرّة المختارة"
+  cli.setup.flag.preset: "تخطّي مُنتقي preset بضبط اسم preset المختار (نفس شكل OKT_PRESET=)"
+  cli.setup.flag.harnesses: "تخطّي اختيار harness المتعدّد بقائمة CSV من أسماء harness (نفس شكل OKT_HARNESSES=)"
+  cli.setup.flag.skip-wrapper: "عدم كتابة كتلة غلاف okt() الخاصة بـ shell-rc (مفيد عندما يدير المستخدم ملفّات rc عبر dotfiles)"
+  cli.setup.flag.skip-harnesses: "حلّ مدخلات harness دون استدعاء `okt mcp setup` (يستخدمه اختبار الصدفة + فحوصات dry-run)"
+  cli.setup.status.preset_written: "=> preset workflow النشط: %s (%s/.active)"
+  cli.setup.status.wrapper_written: "=> تم تثبيت غلاف okt() الخاص بالصدفة في: %s"
+  cli.setup.status.wrapper_skipped: "=> تخطّي تثبيت غلاف الصدفة: لم يُعثر على ~/.bashrc أو ~/.zshrc"
+  cli.setup.status.harness_configured: "=> تهيئة MCP لأجل %s"
+  cli.setup.status.harness_failed: "   (تم تخطّي %s، خروج %d — أعد التشغيل يدويًّا: %s mcp setup --harness %s --force)"
+  cli.setup.status.complete: "=> شغّل 'okt --help' للبدء"
+  cli.setup.warn.unknown_preset: "تحذير: OKT_PRESET=%s ليس preset مدعومًا؛ التراجع إلى %s"
+  cli.setup.warn.unknown_harness: "تحذير: تجاهل harness غير معروف %q"
+  cli.setup.warn.harness_index_oor: "تحذير: الفهرس %s خارج النطاق"
+  cli.setup.picker.lang.cli.title: "اختر لغة CLI"
+  cli.setup.picker.lang.tui.title: "اختر لغة TUI"
+  cli.setup.picker.agent.title: "لغة إخراج agent (نص حر، مثلًا \"English\" أو \"Português (Brasil)\")"
   cli.setup.picker.agent.placeholder: "en"
-  # TODO(translate): cli.setup.picker.preset.title
-  cli.setup.picker.preset.title: "Select your workflow preset"
-  # TODO(translate): cli.setup.picker.harness.title
-  cli.setup.picker.harness.title: "Configure MCP harnesses"
-  # TODO(translate): cli.setup.picker.hint.nav
-  cli.setup.picker.hint.nav: "↑/↓ navigate · enter confirm · ctrl+c quit"
-  # TODO(translate): cli.setup.picker.hint.multi
-  cli.setup.picker.hint.multi: "↑/↓ navigate · enter toggle · tab confirm · ctrl+c quit"
-  # TODO(translate): cli.setup.picker.hint.input
-  cli.setup.picker.hint.input: "type to edit · enter confirm (empty ok) · ctrl+c quit"
-  # TODO(translate): cli.setup.picker.aborted
-  cli.setup.picker.aborted: "setup aborted; nothing written"
-  # TODO(translate): cli.setup.picker.no_tty
-  cli.setup.picker.no_tty: "interactive picker needs a TTY; supply OKT_CLI_LANG, OKT_TUI_LANG, OKT_AGENT_LANG, OKT_PRESET, OKT_HARNESSES (or matching --flags) for headless install"
+  cli.setup.picker.preset.title: "اختر preset workflow"
+  cli.setup.picker.harness.title: "تهيئة harness الخاص بـ MCP"
+  cli.setup.picker.hint.nav: "↑/↓ تنقّل · enter تأكيد · ctrl+c خروج"
+  cli.setup.picker.hint.multi: "↑/↓ تنقّل · enter تبديل · tab تأكيد · ctrl+c خروج"
+  cli.setup.picker.hint.input: "اكتب للتحرير · enter للتأكيد (الفراغ مقبول) · ctrl+c خروج"
+  cli.setup.picker.aborted: "تم إجهاض الإعداد؛ لم يُكتب شيء"
+  cli.setup.picker.no_tty: "المُنتقي التفاعلي يحتاج TTY؛ مرّر OKT_CLI_LANG و OKT_TUI_LANG و OKT_AGENT_LANG و OKT_PRESET و OKT_HARNESSES (أو --flags مطابقة) للتثبيت بدون واجهة"
