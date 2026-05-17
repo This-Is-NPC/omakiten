@@ -828,3 +828,29 @@ keys:
   notifications.kitten_link.description: "Watchful kitten for tags, dependencies, and chained side quests."
   notifications.kitten_orphan_migration.description: "Prompt after a config swap when tasks would be orphaned by the new workflow's bucket set."
   notifications.kitten_success.description: "Proud kitten guardian for completed rituals and blessed fixes."
+  cli.setup.short: "Run the first-run setup picker (language → preset → MCP harness)"
+  cli.setup.long: |-
+    okt setup is the post-install picker the curl|bash installer drops you into.
+
+    It walks language selection (CLI / TUI / agent-output), preset selection,
+    and MCP-harness configuration in a single bubbletea program, then writes
+    the okt() shell-rc wrapper. Re-run with --update to revisit choices.
+
+    Headless / non-interactive shells skip every screen the matching env var
+    fills: OKT_CLI_LANG, OKT_TUI_LANG, OKT_AGENT_LANG, OKT_PRESET, OKT_HARNESSES.
+  cli.setup.flag.update: "re-run the picker with current values prefilled (idempotent against existing rc + omakiten.yaml)"
+  cli.setup.flag.cli-lang: "skip the CLI-language picker by setting the chosen code (same shape as OKT_CLI_LANG=)"
+  cli.setup.flag.tui-lang: "skip the TUI-language picker by setting the chosen code (same shape as OKT_TUI_LANG=)"
+  cli.setup.flag.agent-lang: "skip the agent-output language prompt by setting the chosen free-form value"
+  cli.setup.flag.preset: "skip the preset picker by setting the chosen preset name (same shape as OKT_PRESET=)"
+  cli.setup.flag.harnesses: "skip the harness multi-select with a CSV of harness names (same shape as OKT_HARNESSES=)"
+  cli.setup.flag.skip-wrapper: "do not write the okt() shell-rc wrapper block (useful when the user manages their rc files via dotfiles)"
+  cli.setup.status.preset_written: "=> Active workflow preset: %s (%s/.active)"
+  cli.setup.status.wrapper_written: "=> Installed okt() shell wrapper into: %s"
+  cli.setup.status.wrapper_skipped: "=> Skipping shell-wrapper install: no ~/.bashrc or ~/.zshrc found"
+  cli.setup.status.harness_configured: "=> Configuring MCP for %s"
+  cli.setup.status.harness_failed: "   (skipped %s, exit %d — re-run manually: %s mcp setup --harness %s --force)"
+  cli.setup.status.complete: "=> Run 'okt --help' to get started"
+  cli.setup.warn.unknown_preset: "warn: OKT_PRESET=%s is not a supported preset; falling back to %s"
+  cli.setup.warn.unknown_harness: "warn: ignoring unknown harness %q"
+  cli.setup.warn.harness_index_oor: "warn: index %s out of range"
