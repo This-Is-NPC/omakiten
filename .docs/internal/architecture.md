@@ -38,6 +38,7 @@
 | `internal/cli/` | Cobra command tree (CLI composition root); JSON I/O wiring; project resolution |
 | `internal/tui/` | Bubble Tea TUI: hierarchical zones (Tasks / Stats / Settings) plus a multi-project Home sentinel; sub-menus per zone (`state.go:topID`, `subID`, `topOrder`, `subsByTop`) + reusable components under `components/` |
 | `internal/app/` | Application services + ports; workflow policy, bundle editing, dependency sync, template defaulting, read-model fan-out |
+| `internal/app/guards/` | Per-project guard `Evaluator`: `EvaluateTransition`, `EvaluateOperation`, `EmitViolated`, and the three built-in `check…` implementations (`blockers_in`, `comments_min`, `comments_tagged`); split out of `workflow_service.go` so transition / operation / permission denials share one emit path |
 | `internal/domain/` | Pure entities, value types, and coded errors |
 | `internal/config/` | Canonical YAML bundle schema, frontmatter parsing, entity-file rendering, validators |
 | `internal/configstore/` | Right-side adapter that wraps `internal/config` I/O behind the `app.BundleStore` and `app.EntityFileWriter` ports |
@@ -54,7 +55,7 @@
 | `internal/activity/` | Context-scoped observability: `activity.Track`, `WithRepository`, `WithSource` |
 | `internal/arch/` | Architecture-boundary test (`arch_test.go`) |
 | `internal/testfixtures/` | Shared test helper that loads `config.Bundle` values from per-package `testdata/*.yaml` so test inputs flow through the production parser; convention is documented in [`dev-guide.md` § Test fixtures](dev-guide.md#test-fixtures) |
-| `defaults/` | Embedded default kit assets (laws, skills, personas, templates, themes, notifications, official preset yamls under `config/` — `omakase.yaml` is the canonical kit) |
+| `defaults/` | Embedded default kit assets (laws, skills, personas, templates, themes, notifications, official preset yamls under `config/` — `omakase.yaml` is the canonical kit) plus `defaults/languages/<code>.yaml` (21 bundled CLI/TUI language packs auto-discovered by the installer picker) |
 | `migrations/` | Embedded SQL schema migrations (001–022; latest: `022_search_index.sql` — creates the unified FTS5 `search_index` virtual table over tasks, comments (rows on `events`), errors, solutions, and context entries, with triggers and a one-time backfill, replacing the legacy per-table `errors.search` path with a single `search` MCP tool) |
 | `dev_env/` | Local TUI/dev runtime state (`mise tui`) |
 | `.docs/` | Documentation, templates, personal notes |
