@@ -1,35 +1,13 @@
+# install.ps1 — fetch okt.exe, write the PowerShell-profile wrapper,
+# then exec `okt setup` for the bubbletea picker / env-var headless path.
+
 $ErrorActionPreference = "Stop"
 
 $Repo = "This-Is-NPC/omakiten"
 $InstallDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { "$env:LOCALAPPDATA\Programs\okt" }
-
-# Sentinels delimit the okt() PowerShell wrapper block in $PROFILE. Must
-# match uninstall.ps1 byte-for-byte.
+# Sentinels byte-identical with internal/installer.WrapperBegin/End.
 $WrapperBegin = "# >>> okt wrapper >>>"
 $WrapperEnd = "# <<< okt wrapper <<<"
-
-# Harnesses the multi-select prompt offers. Order matters: the prompt
-# numbers options 1..N in this order. Keep in sync with the bash list
-# in install.sh and with internal/agentsetup.SupportedHarnesses.
-$SupportedHarnesses = @(
-  "claude-code",
-  "claude-desktop",
-  "opencode",
-  "crush",
-  "github-copilot",
-  "codex"
-)
-
-# Workflow presets the preset prompt offers. Order matters: index 1 is the
-# default selected on empty input. Keep in sync with the bash list in install.sh
-# and with defaults/config/<preset>.yaml.
-$SupportedPresets = @(
-  @{ Name = "omakase";  Desc = "balanced - trunk-based + DORA + small batches" },
-  @{ Name = "izakaya";  Desc = "minimal - lean spike / tracer-bullet" },
-  @{ Name = "kaiseki";  Desc = "formal - staged delivery + decision records + peer review" },
-  @{ Name = "shokunin"; Desc = "max rigor - SRE + dual peer-review + postmortems" }
-)
-$DefaultPreset = "omakase"
 
 function Get-LatestTag {
   $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest"
@@ -53,6 +31,39 @@ function Add-ToPath {
   }
 }
 
+function Install-OktWrapper {
+  $profilePath = $PROFILE.CurrentUserAllHosts
+  if (-not (Test-Path $profilePath)) {
+    New-Item -ItemType File -Path $profilePath -Force | Out-Null
+  }
+  $block = @"
+$WrapperBegin
+# Auto-installed by omakiten. Lets `okt tui` cd the parent shell into the
+# project chosen on the Home screen when the TUI exits.
+function okt {
+    `$cdFile = if (`$env:OKT_CD_FILE) { `$env:OKT_CD_FILE } elseif (`$env:XDG_RUNTIME_DIR) { Join-Path `$env:XDG_RUNTIME_DIR 'okt-cd' } else { Join-Path `$env:TEMP 'okt-cd' }
+    if (Test-Path `$cdFile) { Remove-Item `$cdFile -Force -ErrorAction SilentlyContinue }
+    & okt.exe @args
+    `$rc = `$LASTEXITCODE
+    if (Test-Path `$cdFile) {
+        `$target = (Get-Content `$cdFile -TotalCount 1).Trim()
+        Remove-Item `$cdFile -Force -ErrorAction SilentlyContinue
+        if (`$target -and (Test-Path `$target -PathType Container)) { Set-Location `$target }
+    }
+    return `$rc
+}
+$WrapperEnd
+"@
+  $existing = if (Test-Path $profilePath) { Get-Content $profilePath -Raw } else { "" }
+  if ($existing -match [regex]::Escape($WrapperBegin)) {
+    $pattern = [regex]::Escape($WrapperBegin) + "[\s\S]*?" + [regex]::Escape($WrapperEnd)
+    Set-Content -Path $profilePath -Value ([regex]::Replace($existing, $pattern, $block)) -NoNewline
+  } else {
+    Add-Content -Path $profilePath -Value "`n$block"
+  }
+  Write-Host "=> Installed okt() wrapper into $profilePath"
+}
+
 $tag = if ($env:VERSION) { $env:VERSION } else { Get-LatestTag }
 $arch = Get-Arch
 $asset = "okt_Windows_${arch}.zip"
@@ -71,205 +82,15 @@ Copy-Item -Path "$tmpdir\okt.exe" -Destination "$InstallDir\okt.exe" -Force
 Remove-Item -Recurse -Force $tmpdir
 
 Add-ToPath -Dir $InstallDir
-
-function Resolve-HarnessSelection {
-  param([string]$Raw)
-  # Returns a PSCustomObject with .Harnesses (List[string]) and .Status:
-  #   "ok"      — at least one valid harness was selected
-  #   "invalid" — input had tokens but none matched a harness
-  #   "skip"    — input contained 0 / skip / none → user chose to skip
-  #   "empty"   — input was blank
-  $result = New-Object System.Collections.Generic.List[string]
-  $emptyResult = New-Object System.Collections.Generic.List[string]
-  if (-not $Raw) {
-    return [PSCustomObject]@{ Harnesses = $result; Status = "empty" }
-  }
-  $tokens = [regex]::Split($Raw.Trim(), '[,\s]+') | Where-Object { $_ -ne '' }
-  if (-not $tokens) {
-    return [PSCustomObject]@{ Harnesses = $result; Status = "empty" }
-  }
-  $hadValid = $false
-  foreach ($token in $tokens) {
-    $lower = $token.ToLowerInvariant()
-    if ($lower -in @("0", "skip", "none")) {
-      return [PSCustomObject]@{ Harnesses = $emptyResult; Status = "skip" }
-    }
-    if ($token -match '^\d+$') {
-      $idx = [int]$token - 1
-      if ($idx -ge 0 -and $idx -lt $SupportedHarnesses.Count) {
-        $result.Add($SupportedHarnesses[$idx]) | Out-Null
-        $hadValid = $true
-      } else {
-        Write-Host "warn: index $token out of range" -ForegroundColor DarkYellow
-      }
-    } elseif ($SupportedHarnesses -contains $token) {
-      $result.Add($token) | Out-Null
-      $hadValid = $true
-    } else {
-      Write-Host "warn: ignoring unknown harness `"$token`"" -ForegroundColor DarkYellow
-    }
-  }
-  $status = if ($hadValid) { "ok" } else { "invalid" }
-  return [PSCustomObject]@{ Harnesses = $result; Status = $status }
-}
-
-function Select-Harnesses {
-  if ($env:OKT_HARNESSES) {
-    return (Resolve-HarnessSelection -Raw $env:OKT_HARNESSES).Harnesses
-  }
-  if (-not [Environment]::UserInteractive) {
-    return New-Object System.Collections.Generic.List[string]
-  }
-
-  Write-Host ""
-  Write-Host "=> Wire up MCP for your AI agents (optional)"
-  for ($i = 0; $i -lt $SupportedHarnesses.Count; $i++) {
-    Write-Host ("   {0}) {1}" -f ($i + 1), $SupportedHarnesses[$i])
-  }
-  Write-Host "   0) skip"
-
-  # Loop until the user picks at least one valid harness or asks to skip.
-  # Empty input or all-invalid input just re-prompts — only "0" / "skip" /
-  # "none" exits without configuring anything.
-  while ($true) {
-    $raw = Read-Host "`n   Enter numbers (e.g. 1,3,5) or names, or 0 to skip"
-    $res = Resolve-HarnessSelection -Raw $raw
-    switch ($res.Status) {
-      "ok"      { return $res.Harnesses }
-      "skip"    { return $res.Harnesses }
-      "empty"   { Write-Host "   please enter at least one number/name, or 0 to skip" }
-      "invalid" { Write-Host "   none of those matched a harness — try again, or 0 to skip" }
-    }
-  }
-}
-
-function Resolve-ConfigDir {
-  # Mirrors internal/paths/paths.go precedence: OMAKITEN_HOME → XDG_CONFIG_HOME
-  # → user-config (LOCALAPPDATA on Windows via Go's os.UserConfigDir).
-  if ($env:OMAKITEN_HOME) {
-    return (Join-Path $env:OMAKITEN_HOME 'config')
-  }
-  if ($env:XDG_CONFIG_HOME) {
-    return (Join-Path (Join-Path $env:XDG_CONFIG_HOME 'omakiten') 'config')
-  }
-  $appData = if ($env:APPDATA) { $env:APPDATA } else { Join-Path $env:USERPROFILE 'AppData\Roaming' }
-  return (Join-Path (Join-Path $appData 'omakiten') 'config')
-}
-
-function Select-Preset {
-  $names = $SupportedPresets | ForEach-Object { $_.Name }
-  if ($env:OKT_PRESET) {
-    if ($names -contains $env:OKT_PRESET) {
-      return $env:OKT_PRESET
-    }
-    Write-Host ("warn: OKT_PRESET={0} is not supported; falling back to {1}" -f $env:OKT_PRESET, $DefaultPreset) -ForegroundColor DarkYellow
-    return $DefaultPreset
-  }
-  if (-not [Environment]::UserInteractive) {
-    return $DefaultPreset
-  }
-
-  Write-Host ""
-  Write-Host "=> Pick a workflow preset (process discipline level)"
-  for ($i = 0; $i -lt $SupportedPresets.Count; $i++) {
-    $p = $SupportedPresets[$i]
-    $marker = if ($p.Name -eq $DefaultPreset) { "   [default]" } else { "" }
-    Write-Host ("   {0}) {1,-10} - {2}{3}" -f ($i + 1), $p.Name, $p.Desc, $marker)
-  }
-
-  while ($true) {
-    $raw = Read-Host "`n   Enter a number or name (Enter for default)"
-    if (-not $raw) { return $DefaultPreset }
-    $trim = $raw.Trim()
-    if ($trim -match '^\d+$') {
-      $idx = [int]$trim - 1
-      if ($idx -ge 0 -and $idx -lt $SupportedPresets.Count) {
-        return $SupportedPresets[$idx].Name
-      }
-      Write-Host ("   index {0} out of range - try again" -f $trim)
-      continue
-    }
-    $token = $trim.ToLowerInvariant()
-    if ($names -contains $token) {
-      return $token
-    }
-    Write-Host ("   `"{0}`" is not a supported preset - try again" -f $trim)
-  }
-}
-
-function Write-ActivePreset {
-  param([string]$Preset)
-  $configDir = Resolve-ConfigDir
-  if (-not (Test-Path $configDir)) {
-    New-Item -ItemType Directory -Path $configDir -Force | Out-Null
-  }
-  $activePath = Join-Path $configDir '.active'
-  Set-Content -Path $activePath -Value ("{0}.yaml" -f $Preset) -NoNewline
-  Write-Host ("=> Active workflow preset: {0} ({1}\.active)" -f $Preset, $configDir)
-}
-
-function Invoke-HarnessSetup {
-  param([string]$OktBin, [System.Collections.Generic.List[string]]$Harnesses)
-  if (-not $Harnesses -or $Harnesses.Count -eq 0) { return }
-  foreach ($h in $Harnesses) {
-    Write-Host "=> Configuring MCP for $h"
-    & $OktBin mcp setup --harness $h --force 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-      Write-Host ("   (skipped {0}, exit {1} - re-run manually: {2} mcp setup --harness {0} --force)" `
-        -f $h, $LASTEXITCODE, $OktBin)
-    }
-  }
-}
-
-function Install-OktWrapper {
-  $profilePath = $PROFILE.CurrentUserAllHosts
-  if (-not (Test-Path $profilePath)) {
-    New-Item -ItemType File -Path $profilePath -Force | Out-Null
-  }
-
-  $block = @"
-$WrapperBegin
-# Auto-installed by omakiten. Lets `okt tui` cd the parent shell into the
-# project chosen on the Home screen when the TUI exits.
-# Remove with the bundled uninstall.ps1; do not edit by hand.
-function okt {
-    `$cdFile = if (`$env:OKT_CD_FILE) { `$env:OKT_CD_FILE } elseif (`$env:XDG_RUNTIME_DIR) { Join-Path `$env:XDG_RUNTIME_DIR 'okt-cd' } else { Join-Path `$env:TEMP 'okt-cd' }
-    if (Test-Path `$cdFile) { Remove-Item `$cdFile -Force -ErrorAction SilentlyContinue }
-    & okt.exe @args
-    `$rc = `$LASTEXITCODE
-    if (Test-Path `$cdFile) {
-        `$target = (Get-Content `$cdFile -TotalCount 1).Trim()
-        Remove-Item `$cdFile -Force -ErrorAction SilentlyContinue
-        if (`$target -and (Test-Path `$target -PathType Container)) {
-            Set-Location `$target
-        }
-    }
-    return `$rc
-}
-$WrapperEnd
-"@
-
-  $existing = if (Test-Path $profilePath) { Get-Content $profilePath -Raw } else { "" }
-  if ($existing -match [regex]::Escape($WrapperBegin)) {
-    $pattern = [regex]::Escape($WrapperBegin) + "[\s\S]*?" + [regex]::Escape($WrapperEnd)
-    $updated = [regex]::Replace($existing, $pattern, $block)
-    Set-Content -Path $profilePath -Value $updated -NoNewline
-  } else {
-    Add-Content -Path $profilePath -Value "`n$block"
-  }
-  Write-Host "=> Installed okt() wrapper into $profilePath"
-  Write-Host "   Open a new PowerShell session to enable cd-on-exit."
-}
-
 Install-OktWrapper
 
 $version = & "$InstallDir\okt.exe" --version
 Write-Host "=> Installed $version"
 
-$preset = Select-Preset
-Write-ActivePreset -Preset $preset
-
-$selections = Select-Harnesses
-Invoke-HarnessSetup -OktBin "$InstallDir\okt.exe" -Harnesses $selections
+# `--skip-wrapper` because Install-OktWrapper already wrote the PS profile.
+& "$InstallDir\okt.exe" setup --skip-wrapper
+if ($LASTEXITCODE -ne 0) {
+  throw "okt setup failed with exit code $LASTEXITCODE"
+}
 
 Write-Host "=> Run 'okt --help' to get started"
