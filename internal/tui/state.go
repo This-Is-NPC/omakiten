@@ -91,6 +91,25 @@ type Repositories struct {
 	// the rotated snapshot lands on the same key the rest of the model
 	// is reading from.
 	ProjectID int64
+
+	// Catalog is the TUI-surface i18n catalog the model consults via
+	// Model.t for every render literal (labels, empty states, help
+	// bindings, status messages). nil-safe: Catalog.Get on a nil
+	// receiver returns the key verbatim so test fixtures that omit
+	// this field still produce deterministic output without exploding.
+	// Production wire-up routes rt.Snapshot().Catalog(SurfaceTUI) into
+	// this field at composition time so the renderer follows the user's
+	// configured TUI language without touching the snapshot directly.
+	Catalog *config.Catalog
+}
+
+// t resolves the catalog key for the active TUI language. nil-safe via
+// Catalog.Get's nil-receiver fallback to key literal, so tests that
+// build a Model without populating Repositories.Catalog still produce
+// stable strings (the key acts as the fallback render). Production
+// passes a non-nil catalog so this returns localized chrome.
+func (m Model) t(key string) string {
+	return m.repos.Catalog.Get(key)
 }
 
 // activeSnapshot returns the per-project *config.Snapshot from the

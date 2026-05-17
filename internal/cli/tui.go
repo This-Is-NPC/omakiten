@@ -96,6 +96,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		RepoLocalDir: rt.repoLocalDir,
 		Cache:        rt.cache,
 		ProjectID:    rt.projectID,
+		Catalog:      rt.activeSnapshot().Catalog(config.SurfaceTUI),
 	}, theme, token.NewCounter(), bundle.Config.TUI.TokenBadge, bundle.Config.EffectivePriorities(), bundle.Config.EffectiveSeverities(), tui.NotificationBinding{
 		Notifications: bundle.Notifications,
 	})

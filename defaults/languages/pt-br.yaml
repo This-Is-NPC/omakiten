@@ -287,6 +287,8 @@ keys:
   cli.print.prompt_label.agent: "Agent output language (free-form, blank to skip)"
   cli.print.prompt_render: "# %s — %d bytes / %d runes\n\n%s\n"
   cli.print.agent_output_note: "free-form; not validated against the loaded catalog"
+  tui.empty.activity: "No activity yet."
+  tui.empty.activity_hint: "Press c to add a comment."
   notifications.izakaya.task_created.message: "Nova comanda aberta no balcão."
   notifications.izakaya.task_moved.message: "Pedido seguiu para a próxima etapa."
   notifications.izakaya.task_edited.message: "Pedido ajustado no balcão."

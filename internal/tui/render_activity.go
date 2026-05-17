@@ -19,7 +19,7 @@ func (m Model) renderTaskCommentsCell(taskID int64) string {
 	lines := []string{header}
 
 	if len(events) == 0 {
-		lines = append(lines, "", m.styles.hint.Render("No activity yet."), m.styles.hint.Render("Press c to add a comment."))
+		lines = append(lines, "", m.styles.hint.Render(m.t("tui.empty.activity")), m.styles.hint.Render(m.t("tui.empty.activity_hint")))
 	} else {
 		cards := m.activityRowsForRender(events)
 		// Build the full activity body as a flat line list so pagination is
