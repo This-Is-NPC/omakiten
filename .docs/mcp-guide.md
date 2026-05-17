@@ -53,7 +53,7 @@ Resolves each `okt-*` prompt through the running agent service (using your activ
 
 ## Tools
 
-The full surface is the source of truth in `internal/mcp/adapter.go:ListTools`. Currently 37 tools, grouped below.
+The full surface is the source of truth in `internal/mcp/adapter.go::Tools` (the public entry; the inner `tools()` returns the literal table). Currently 37 tools, grouped below.
 
 ### Required `_agent_model` on every call
 
@@ -94,7 +94,7 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `comments.list` | Lists task comments. |
 | `comments.edit` | Rewrites a comment's body and replaces its tags. Subject to bucket `permissions.comment.edit` (inherits from `permissions.task.edit` when no comment block is declared). |
 | `comments.delete` | Hard-deletes a comment. Subject to bucket `permissions.comment.delete` (same inheritance rule). Requires `confirmed=true`. |
-| `task_activity.list` | Unified chronological feed for a task (comments + system events such as `task.created`, `task.moved`, `task.completed`, `task.archived`, `task.removed`, `comment.edited`, `comment.removed`); supports `order=asc\|desc`. |
+| `task_activity.list` | Unified chronological feed for a task (comments + system events such as `task.created`, `task.moved`, `task.completed`, `task.archived`, `task.unarchived`, `task.migrated`, `task.removed`, `comment.edited`, `comment.removed`); supports `order=asc\|desc`. |
 
 ### Dependencies
 
