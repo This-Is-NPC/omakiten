@@ -208,7 +208,7 @@ func runSetup(ctx context.Context, opts *runtimeOptions, inputs setupInputs, run
 	if err != nil {
 		return nil, err
 	}
-	seedRes, err := config.SeedInstall(rootDir, inputs.Preset, false)
+	seedRes, err := config.SeedInstall(rootDir, inputs.Preset, runOpts.Update)
 	if err != nil {
 		return nil, presetCLIError(opts, err)
 	}

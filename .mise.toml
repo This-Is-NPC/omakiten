@@ -42,11 +42,15 @@ if [ -n "$on_path" ] && [ "$on_path" != "$installed_at" ]; then
   printf '       e.g. rm %s\n\n' "$on_path" >&2
 fi
 
-# Run `okt setup` to bind preset + shell-rc wrapper + MCP harnesses in
-# one shot. Honours every OKT_* env var the curl|bash installer
-# documents; an interactive shell still drops into the bubbletea picker
-# for any input left unsupplied.
-"$installed_at" setup
+# Run `okt setup --update` to bind preset + shell-rc wrapper + MCP
+# harnesses in one shot. --update force-refreshes shipped defaults
+# (skills, laws, personas, templates, themes, notifications, language
+# packs) so repeat `mise run install` runs pick up edits under
+# defaults/ instead of silently keeping the pre-install copy on disk.
+# Honours every OKT_* env var the curl|bash installer documents; an
+# interactive shell still drops into the bubbletea picker for any
+# input left unsupplied.
+"$installed_at" setup --update
 
 "$installed_at" init --name Omakiten --slug omakiten --root "$PWD"
 '''
