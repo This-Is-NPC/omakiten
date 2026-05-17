@@ -20,9 +20,9 @@ func (m *Model) handleBoardKey(msg tea.KeyMsg) {
 		if _, ok := m.selectedTask(); ok {
 			m.moveMode = !m.moveMode
 			if m.moveMode {
-				m.status = "Move mode: left/right moves the selected task"
+				m.status = m.t("tui.status.move_mode_active")
 			} else {
-				m.status = "Move cancelled"
+				m.status = m.t("tui.status.move_cancelled")
 			}
 		}
 	case "left", "h":
@@ -263,7 +263,7 @@ func (m *Model) syncBoardColScroll() {
 
 func (m Model) renderBoard() string {
 	if len(m.workflow.Buckets) == 0 {
-		return m.renderPanel("No workflow buckets. Add buckets in the active workflow config.")
+		return m.renderPanel(m.t("tui.empty.board_no_buckets"))
 	}
 
 	tasksByBucket := m.tasksByBucket()
@@ -321,7 +321,7 @@ func (m Model) renderBoard() string {
 	if cap < n {
 		// Surface a hint listing the off-screen lanes so the user knows
 		// left/right keeps scrolling beyond the visible window.
-		hint := fmt.Sprintf("lanes %d–%d / %d · left/right scrolls", start+1, end, n)
+		hint := fmt.Sprintf(m.t("tui.board.lanes_hint_fmt"), start+1, end, n)
 		sb.WriteString("\n  " + m.styles.hint.Render(hint))
 	}
 	if totalTasks == 0 {
@@ -343,7 +343,7 @@ func (m Model) renderKanbanCell(bucket domain.Bucket, tasks []domain.Task, focus
 	}
 
 	if len(tasks) == 0 {
-		lines = append(lines, emptyStyle.Render("empty"))
+		lines = append(lines, emptyStyle.Render(m.t("tui.board.empty")))
 		return strings.Join(lines, "\n")
 	}
 
@@ -415,10 +415,10 @@ func (m Model) renderTaskBadges(task domain.Task, maxWidth int) string {
 		badges = append(badges, badge)
 	}
 	if deps := m.dependencyCount(task.ID); deps > 0 {
-		badges = append(badges, m.styles.badgeBlocker.Render(fmt.Sprintf("%d %s", deps, plural(deps, "BLOCKER", "BLOCKERS"))))
+		badges = append(badges, m.styles.badgeBlocker.Render(fmt.Sprintf("%d %s", deps, plural(deps, m.t("tui.badge.blocker"), m.t("tui.badge.blockers")))))
 	}
 	if cmts := m.commentCount(task.ID); cmts > 0 {
-		badges = append(badges, m.styles.badgeComment.Render(fmt.Sprintf("%d %s", cmts, plural(cmts, "COMMENT", "COMMENTS"))))
+		badges = append(badges, m.styles.badgeComment.Render(fmt.Sprintf("%d %s", cmts, plural(cmts, m.t("tui.badge.comment"), m.t("tui.badge.comments")))))
 	}
 
 	return wrapBadges(badges, maxWidth)
@@ -426,12 +426,12 @@ func (m Model) renderTaskBadges(task domain.Task, maxWidth int) string {
 
 func (m Model) renderEmptyBoardHint() string {
 	lines := []string{
-		m.styles.hintAccent.Render("No tasks yet."),
+		m.styles.hintAccent.Render(m.t("tui.empty.board_no_tasks")),
 		"",
-		m.styles.hint.Render("Press ") + m.styles.hintAccent.Render("n") + m.styles.hint.Render(" to create the first task, or use the CLI:"),
-		m.styles.hint.Render("  okt add -t \"Implement the next slice\""),
+		m.styles.hint.Render(m.t("tui.board.empty_press_n")) + m.styles.hintAccent.Render("n") + m.styles.hint.Render(m.t("tui.board.empty_to_create")),
+		m.styles.hint.Render(m.t("tui.board.empty_cli_example")),
 		"",
-		m.styles.hintAccent.Render("m") + m.styles.hint.Render(" move  ") + m.styles.hintAccent.Render("enter") + m.styles.hint.Render(" open  ") + m.styles.hintAccent.Render("c") + m.styles.hint.Render(" comment"),
+		m.styles.hintAccent.Render("m") + m.styles.hint.Render(m.t("tui.board.empty_inline_move")) + m.styles.hintAccent.Render("enter") + m.styles.hint.Render(m.t("tui.board.empty_inline_open")) + m.styles.hintAccent.Render("c") + m.styles.hint.Render(m.t("tui.board.empty_inline_comment")),
 	}
 	return m.styles.hintBox.Width(m.hintBoxWidth()).Render(strings.Join(lines, "\n"))
 }

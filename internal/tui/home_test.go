@@ -197,8 +197,9 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
-		
+
 		Tags:         store,
+		Catalog:      newTestCatalog(t),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)

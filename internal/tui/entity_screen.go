@@ -25,7 +25,7 @@ func (m Model) updateEntityScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "esc":
 		if m.deletePending {
-			m.clearDeletePrompt("Delete cancelled")
+			m.clearDeletePrompt(m.t("tui.status.delete_cancelled"))
 			return m, nil
 		}
 		m.closeEntityScreen("")
@@ -34,7 +34,7 @@ func (m Model) updateEntityScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.openEntityEditor(m.entityForm.kind, m.entityForm.slug)
 	case "d":
 		if m.entityForm.kind == entityKindTemplate {
-			m.status = "Templates auto-load — remove the .md file from templates/ and refresh"
+			m.status = m.t("tui.status.template_remove_hint")
 			return m, nil
 		}
 		m.requestEntityDelete(m.entityForm.kind, m.entityForm.slug)
@@ -53,7 +53,7 @@ func (m Model) updateEntityScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if err := m.refresh(); err != nil {
 			m.status = err.Error()
 		} else {
-			m.status = "Refreshed"
+			m.status = m.t("tui.status.refreshed")
 		}
 	case "M":
 		m.clearDeletePrompt("")
@@ -126,7 +126,7 @@ func (m Model) renderEntityView() string {
 	case entityKindLaw:
 		law, ok := m.findLawBySlug(m.entityForm.slug)
 		if !ok {
-			return m.renderPanel("Law not found")
+			return m.renderPanel(m.t("tui.empty.law_not_found"))
 		}
 		// Severity badge: style comes from config-driven color token
 		// (severityStyle reads m.severities[].color); label comes from
@@ -135,51 +135,51 @@ func (m Model) renderEntityView() string {
 		// used.
 		badge := m.severityStyle(law.Severity).Render(m.severityLabel(law.Severity))
 		dataRows = []detailRow{
-			{label: "Slug", value: law.Key},
-			{label: "Severity", value: badge},
-			{label: "Source", value: law.SourcePath},
+			{label: m.t("tui.row.slug"), value: law.Key},
+			{label: m.t("tui.row.severity"), value: badge},
+			{label: m.t("tui.row.source"), value: law.SourcePath},
 		}
 		body = law.Body
 	case entityKindSkill:
 		skill, ok := m.findSkillBySlug(m.entityForm.slug)
 		if !ok {
-			return m.renderPanel("Skill not found")
+			return m.renderPanel(m.t("tui.empty.skill_not_found"))
 		}
 		dataRows = []detailRow{
-			{label: "Slug", value: skill.Key},
-			{label: "Name", value: skill.Name},
-			{label: "Description", value: skill.Description},
-			{label: "Source", value: skill.SourcePath},
+			{label: m.t("tui.row.slug"), value: skill.Key},
+			{label: m.t("tui.row.name"), value: skill.Name},
+			{label: m.t("tui.row.description"), value: skill.Description},
+			{label: m.t("tui.row.source"), value: skill.SourcePath},
 		}
 		body = skill.Body
 	case entityKindPersona:
 		persona, ok := m.findPersonaBySlug(m.entityForm.slug)
 		if !ok {
-			return m.renderPanel("Persona not found")
+			return m.renderPanel(m.t("tui.empty.persona_not_found"))
 		}
 		skills := strings.Join(persona.SkillKeys, ", ")
 		if skills == "" {
-			skills = m.styles.hint.Render("none")
+			skills = m.styles.hint.Render(m.t("tui.empty.none"))
 		}
 		dataRows = []detailRow{
-			{label: "Slug", value: persona.Key},
-			{label: "Name", value: persona.Name},
-			{label: "Description", value: persona.Description},
-			{label: "Skills", value: skills},
-			{label: "Source", value: persona.SourcePath},
+			{label: m.t("tui.row.slug"), value: persona.Key},
+			{label: m.t("tui.row.name"), value: persona.Name},
+			{label: m.t("tui.row.description"), value: persona.Description},
+			{label: m.t("tui.row.skills"), value: skills},
+			{label: m.t("tui.row.source"), value: persona.SourcePath},
 		}
 		body = persona.Body
-		extraSpannedRows = []string{m.styles.hint.Render("p: open skill picker")}
+		extraSpannedRows = []string{m.styles.hint.Render(m.t("tui.entity_screen.persona_skill_pick"))}
 	case entityKindTemplate:
 		template, ok := m.findTemplateBySlug(m.entityForm.slug)
 		if !ok {
-			return m.renderPanel("Template not found")
+			return m.renderPanel(m.t("tui.empty.template_not_found"))
 		}
 		entity := template.Entity
 		if entity == "" {
-			entity = m.styles.hint.Render("none")
+			entity = m.styles.hint.Render(m.t("tui.empty.none"))
 		}
-		defaultLabel := m.styles.hint.Render("none")
+		defaultLabel := m.styles.hint.Render(m.t("tui.empty.none"))
 		if template.Default != "" {
 			text := template.Default
 			if template.ProjectSlug != "" {
@@ -190,27 +190,27 @@ func (m Model) renderEntityView() string {
 			defaultLabel = m.styles.badgeInfo.Render(strings.ToUpper(text))
 		}
 		dataRows = []detailRow{
-			{label: "Slug", value: template.Slug},
-			{label: "Name", value: template.Name},
-			{label: "Description", value: template.Description},
-			{label: "Entity", value: entity},
-			{label: "Default", value: defaultLabel},
-			{label: "Source", value: template.SourcePath},
+			{label: m.t("tui.row.slug"), value: template.Slug},
+			{label: m.t("tui.row.name"), value: template.Name},
+			{label: m.t("tui.row.description"), value: template.Description},
+			{label: m.t("tui.row.entity"), value: entity},
+			{label: m.t("tui.row.default"), value: defaultLabel},
+			{label: m.t("tui.row.source"), value: template.SourcePath},
 		}
 		body = template.Body
-		extraSpannedRows = []string{m.styles.hint.Render("a: assign default kind")}
+		extraSpannedRows = []string{m.styles.hint.Render(m.t("tui.entity_screen.template_set_default"))}
 	}
 
 	bodyText := m.renderBodyMarkdown(body, valueWidth)
 	if strings.TrimSpace(bodyText) == "" {
-		bodyText = m.styles.hint.Render("Empty body")
+		bodyText = m.styles.hint.Render(m.t("tui.empty.body"))
 	}
 
 	screen := m.entityView.Reset(valueWidth).Custom(header)
 	for _, row := range dataRows {
 		screen = screen.Row(row.label, row.value)
 	}
-	screen = screen.Kicker("Body").Span(bodyText)
+	screen = screen.Kicker(m.t("tui.kicker.body")).Span(bodyText)
 	for _, row := range extraSpannedRows {
 		screen = screen.Span(row)
 	}

@@ -15,13 +15,13 @@ func newMoveCommand(opts *runtimeOptions) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "move TASK_ID --to BUCKET",
-		Short: "Move a task through an allowed workflow transition",
+		Short: opts.t("cli.task.move.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				taskID, err := strconv.ParseInt(args[0], 10, 64)
 				if err != nil {
-					return nil, domain.NewError(domain.ErrValidation, "task id must be numeric", map[string]any{"value": args[0]})
+					return nil, domain.NewError(domain.ErrValidation, opts.t("cli.err.task_id_not_numeric"), map[string]any{"value": args[0]})
 				}
 
 				rt, err := opts.open(ctx, true)
@@ -44,7 +44,7 @@ func newMoveCommand(opts *runtimeOptions) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&to, "to", "t", "", "target bucket key")
+	cmd.Flags().StringVarP(&to, "to", "t", "", opts.t("cli.task.move.flag.to"))
 	_ = cmd.MarkFlagRequired("to")
 	return cmd
 }

@@ -11,7 +11,7 @@ import (
 func newDependCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "depend",
-		Short: "Manage task dependencies",
+		Short: opts.t("cli.depend.short"),
 	}
 
 	cmd.AddCommand(newDependAddCommand(opts))
@@ -24,7 +24,7 @@ func newDependAddCommand(opts *runtimeOptions) *cobra.Command {
 	var on int64
 	cmd := &cobra.Command{
 		Use:   "add TASK_ID --on DEPENDS_ON_TASK_ID",
-		Short: "Add a task dependency",
+		Short: opts.t("cli.depend.add.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -51,7 +51,7 @@ func newDependAddCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().Int64VarP(&on, "on", "i", 0, "dependency task id")
+	cmd.Flags().Int64VarP(&on, "on", "i", 0, opts.t("cli.depend.flag.on"))
 	_ = cmd.MarkFlagRequired("on")
 	return cmd
 }
@@ -60,7 +60,7 @@ func newDependRemoveCommand(opts *runtimeOptions) *cobra.Command {
 	var on int64
 	cmd := &cobra.Command{
 		Use:   "remove TASK_ID --on DEPENDS_ON_TASK_ID",
-		Short: "Remove a task dependency",
+		Short: opts.t("cli.depend.remove.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -86,7 +86,7 @@ func newDependRemoveCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().Int64VarP(&on, "on", "i", 0, "dependency task id")
+	cmd.Flags().Int64VarP(&on, "on", "i", 0, opts.t("cli.depend.flag.on"))
 	_ = cmd.MarkFlagRequired("on")
 	return cmd
 }
@@ -94,7 +94,7 @@ func newDependRemoveCommand(opts *runtimeOptions) *cobra.Command {
 func newDependListCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list TASK_ID",
-		Short: "List dependencies for a task",
+		Short: opts.t("cli.depend.list.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {

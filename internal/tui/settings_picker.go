@@ -43,7 +43,7 @@ func (m *Model) openThemePicker() {
 		return
 	}
 	if len(options) == 0 {
-		m.status = "No themes found"
+		m.status = m.t("tui.status.no_themes_found")
 		return
 	}
 	cursor := 0
@@ -58,7 +58,7 @@ func (m *Model) openThemePicker() {
 	m.entityForm = entityForm{mode: entityScreenThemePicker}
 	m.entityPicker = picker.New(picker.Single)
 	m.entityPicker.Cursor = cursor
-	m.status = "Theme picker"
+	m.status = m.t("tui.status.theme_picker")
 }
 
 func (m *Model) openConfigPicker() {
@@ -68,7 +68,7 @@ func (m *Model) openConfigPicker() {
 		return
 	}
 	if len(options) == 0 {
-		m.status = "No config profiles found"
+		m.status = m.t("tui.status.no_config_profiles")
 		return
 	}
 	active := filepath.Base(m.repos.Editor.Path())
@@ -84,7 +84,7 @@ func (m *Model) openConfigPicker() {
 	m.entityForm = entityForm{mode: entityScreenConfigPicker}
 	m.entityPicker = picker.New(picker.Single)
 	m.entityPicker.Cursor = cursor
-	m.status = "Config picker"
+	m.status = m.t("tui.status.config_picker")
 }
 
 // discoverThemes scans <root>/themes (defaults) + <root>/themes/custom for
@@ -200,7 +200,7 @@ func (m Model) updateThemePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.entityPicker, cmd = m.entityPicker.Update(msg, len(m.themePickerOptions), scrollDataRows(m.pickerViewportRows()))
 	switch m.entityPicker.LastEvent() {
 	case picker.EventCancel:
-		m.closeEntityScreen("Theme picker cancelled")
+		m.closeEntityScreen(m.t("tui.status.theme_picker_cancelled"))
 	case picker.EventSelect:
 		// Evaluate the side-effecting call before reading m for the return
 		// tuple — Go does not specify the order of non-function operands
@@ -234,7 +234,7 @@ func (m *Model) applyThemeSelection() tea.Cmd {
 		m.status = err.Error()
 		return nil
 	}
-	m.closeEntityScreen(fmt.Sprintf("Theme switched to %s", chosen))
+	m.closeEntityScreen(fmt.Sprintf(m.t("tui.status.theme_switched_fmt"), chosen))
 	return nil
 }
 
@@ -246,7 +246,7 @@ func (m Model) updateConfigPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.entityPicker, cmd = m.entityPicker.Update(msg, len(m.configPickerOptions), scrollDataRows(m.pickerViewportRows()))
 	switch m.entityPicker.LastEvent() {
 	case picker.EventCancel:
-		m.closeEntityScreen("Config picker cancelled")
+		m.closeEntityScreen(m.t("tui.status.config_picker_cancelled"))
 	case picker.EventSelect:
 		m.applyConfigSelection()
 	}
@@ -298,7 +298,7 @@ func (m *Model) applyConfigSelection() {
 	newPath := m.resolveConfigPath(chosen)
 
 	if err := m.reloadBundle(newPath); err != nil {
-		m.status = fmt.Sprintf("Config switch failed (%s): %s", chosen, err.Error())
+		m.status = fmt.Sprintf(m.t("tui.status.config_switch_failed_fmt"), chosen, err.Error())
 		return
 	}
 	if err := paths.SetActiveConfig(chosen); err != nil {
@@ -306,7 +306,7 @@ func (m *Model) applyConfigSelection() {
 		return
 	}
 	display := strings.TrimSuffix(chosen, filepath.Ext(chosen))
-	m.closeEntityScreen(fmt.Sprintf("Config switched to %s", display))
+	m.closeEntityScreen(fmt.Sprintf(m.t("tui.status.config_switched_fmt"), display))
 }
 
 // resolveConfigPath mirrors paths.ActiveConfigFile's custom/<name> →
@@ -338,13 +338,13 @@ func (m Model) renderThemePicker() string {
 			row += "  " + m.styles.hint.Render(opt.Slug)
 		}
 		if opt.IsCustom {
-			row += " " + m.styles.badgeInfo.Render("CUSTOM")
+			row += " " + m.styles.badgeInfo.Render(m.t("tui.badge.custom"))
 		}
 		rows = append(rows, row)
 	}
 	header := []string{
-		m.styles.kicker(fmt.Sprintf("Theme · current: %s", m.theme.Key)),
-		m.styles.hint.Render("up/down: move · enter: apply (hot-reload) · esc: cancel"),
+		m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.theme_current_fmt"), m.theme.Key)),
+		m.styles.hint.Render(m.t("tui.picker.hint.theme")),
 		"",
 	}
 	return m.renderPickerPanel(header, rows, m.entityPicker.Scroll, m.pickerViewportRows())
@@ -361,13 +361,13 @@ func (m Model) renderConfigPicker() string {
 		}
 		row := fmt.Sprintf("%s %s %s  %s", marker, dot, opt.Display, m.styles.hint.Render(opt.Filename))
 		if opt.IsCustom {
-			row += " " + m.styles.badgeInfo.Render("CUSTOM")
+			row += " " + m.styles.badgeInfo.Render(m.t("tui.badge.custom"))
 		}
 		rows = append(rows, row)
 	}
 	header := []string{
-		m.styles.kicker(fmt.Sprintf("Config profile · active: %s", active)),
-		m.styles.hint.Render("up/down: move · enter: apply (hot-reload) · esc: cancel"),
+		m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.config_active_fmt"), active)),
+		m.styles.hint.Render(m.t("tui.picker.hint.theme")),
 		"",
 	}
 	return m.renderPickerPanel(header, rows, m.entityPicker.Scroll, m.pickerViewportRows())

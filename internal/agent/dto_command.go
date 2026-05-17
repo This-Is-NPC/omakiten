@@ -78,6 +78,12 @@ type ResolveCommandResponse struct {
 	Templates   []TemplateInfo `json:"templates,omitempty"`
 	Action      string         `json:"action"`
 	Markdown    string         `json:"markdown"`
+	// AgentOutputLanguage carries the raw configured agent-output
+	// language string (config.languages.agent_output). When non-empty,
+	// renderCommandMarkdown appends a trailing "**Output language:** X"
+	// line so the agent honors it for commits, docs, code comments,
+	// and PR bodies. Empty means no directive is appended.
+	AgentOutputLanguage string `json:"agent_output_language,omitempty"`
 }
 
 // MCPCommandsGlobalKey mirrors config.MCPCommandsGlobalKey on the agent side.

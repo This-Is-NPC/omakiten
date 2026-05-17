@@ -51,7 +51,7 @@ func newEntityModel(t *testing.T) (Model, *snapstore.Store, *app.BundleEditor) {
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:    store,
 		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
-		BundleStore: files, EntityFiles: files, Slugger: files,
+		BundleStore: files, EntityFiles: files, Slugger: files, Catalog: newTestCatalog(t),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -224,7 +224,7 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:    store,
 		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
-		BundleStore: files, EntityFiles: files, Slugger: files,
+		BundleStore: files, EntityFiles: files, Slugger: files, Catalog: newTestCatalog(t),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)

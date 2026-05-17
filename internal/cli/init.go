@@ -29,7 +29,7 @@ func newInitCommand(opts *runtimeOptions) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Register the current project in the global database",
+		Short: opts.t("cli.init.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				projectRoot := root
@@ -53,7 +53,7 @@ func newInitCommand(opts *runtimeOptions) *cobra.Command {
 					repoLocalRoot := filepath.Join(installRoot, config.RepoLocalDirName)
 					res, err := config.SeedInstall(repoLocalRoot, presetName, presetForce)
 					if err != nil {
-						return nil, presetCLIError(err)
+						return nil, presetCLIError(opts, err)
 					}
 					presetResult = map[string]any{"name": res.PresetName, "path": res.Path, "root": installRoot}
 					if res.NoOp {
@@ -92,26 +92,26 @@ func newInitCommand(opts *runtimeOptions) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "project name")
-	cmd.Flags().StringVar(&slug, "slug", "", "project slug")
-	cmd.Flags().StringVar(&root, "root", "", "project root path")
-	cmd.Flags().BoolVar(&enableMCP, "enable-mcp", false, "enable global MCP agent access for a supported harness")
-	cmd.Flags().StringVar(&mcpHarness, "mcp-harness", agentsetup.ClaudeCodeHarness, "MCP harness to configure")
-	cmd.Flags().StringVar(&mcpConfigPath, "mcp-config", "", "MCP harness config path")
-	cmd.Flags().StringVar(&mcpCommand, "mcp-command", "", "command path written to the harness MCP config")
-	cmd.Flags().BoolVar(&mcpDryRun, "mcp-dry-run", false, "preview MCP harness config changes without writing")
-	cmd.Flags().BoolVar(&mcpForce, "mcp-force", false, "replace an existing Omakiten MCP harness entry")
-	cmd.Flags().StringVar(&presetName, "preset", "", "official workflow preset to copy into .omakiten/config/<preset>.yaml and activate")
-	cmd.Flags().BoolVar(&presetForce, "preset-force", false, "overwrite an existing .omakiten preset config")
+	cmd.Flags().StringVar(&name, "name", "", opts.t("cli.init.flag.name"))
+	cmd.Flags().StringVar(&slug, "slug", "", opts.t("cli.init.flag.slug"))
+	cmd.Flags().StringVar(&root, "root", "", opts.t("cli.init.flag.root"))
+	cmd.Flags().BoolVar(&enableMCP, "enable-mcp", false, opts.t("cli.init.flag.enable-mcp"))
+	cmd.Flags().StringVar(&mcpHarness, "mcp-harness", agentsetup.ClaudeCodeHarness, opts.t("cli.init.flag.mcp-harness"))
+	cmd.Flags().StringVar(&mcpConfigPath, "mcp-config", "", opts.t("cli.init.flag.mcp-config"))
+	cmd.Flags().StringVar(&mcpCommand, "mcp-command", "", opts.t("cli.init.flag.mcp-command"))
+	cmd.Flags().BoolVar(&mcpDryRun, "mcp-dry-run", false, opts.t("cli.init.flag.mcp-dry-run"))
+	cmd.Flags().BoolVar(&mcpForce, "mcp-force", false, opts.t("cli.init.flag.mcp-force"))
+	cmd.Flags().StringVar(&presetName, "preset", "", opts.t("cli.init.flag.preset"))
+	cmd.Flags().BoolVar(&presetForce, "preset-force", false, opts.t("cli.init.flag.preset-force"))
 	return cmd
 }
 
-func presetCLIError(err error) error {
+func presetCLIError(opts *runtimeOptions, err error) error {
 	if errors.Is(err, config.ErrPresetNotFound) {
-		return domain.NewError(domain.ErrValidation, "unknown workflow preset", map[string]any{"available": config.ListPresets()})
+		return domain.NewError(domain.ErrValidation, t("cli.err.unknown_workflow_preset"), map[string]any{"available": resolvedPresets(opts)})
 	}
 	if errors.Is(err, config.ErrPresetTargetExists) {
-		return domain.NewError(domain.ErrValidation, "repo-local .omakiten already exists; pass --preset-force to overwrite", nil)
+		return domain.NewError(domain.ErrValidation, t("cli.err.repo_local_already_exists"), nil)
 	}
 	return err
 }

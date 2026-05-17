@@ -32,6 +32,11 @@ type ContinueTaskResponse struct {
 	Comments       []CommentSummary    `json:"comments,omitempty"`
 	RecentContext  []ContextSnippet    `json:"recent_context,omitempty"`
 	NextStepPrompt string              `json:"next_step_prompt"`
+	// AgentOutputLanguage carries config.languages.agent_output verbatim
+	// so the agent can introspect the directive without re-reading the
+	// composed MCP prompt. Empty when unset — consumers treat empty as
+	// "no directive in effect".
+	AgentOutputLanguage string `json:"agent_output_language,omitempty"`
 }
 
 type ListTasksInput struct {

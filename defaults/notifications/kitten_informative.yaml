@@ -1,6 +1,6 @@
 # Identity ------------------------------------------------------------
 name: kitten_informative
-description: Calm kitten for workflow updates and routine messages.
+description: "${{intl:notifications.kitten_informative.description}}"
 
 # Geometry ------------------------------------------------------------
 size:

@@ -201,7 +201,9 @@ func toKeyFooterTokens(tokens []footerToken) []keyfooter.Token {
 // helpToken returns the `?` token used at the trailing edge of every
 // surface that has the help overlay reachable. Centralised so the
 // `?` always appears last and never accidentally becomes a primary.
-func helpToken() footerToken { return footerToken{key: "?", label: "help"} }
+func (m Model) helpToken() footerToken {
+	return footerToken{key: "?", label: m.t("tui.footer.help")}
+}
 
 // escToken standardises the verbal of the Esc binding across overlays.
 // Every "go back" / "close overlay" / "cancel modal" footer renders it
@@ -209,7 +211,9 @@ func helpToken() footerToken { return footerToken{key: "?", label: "help"} }
 // shortcut between surfaces. Pickers that explicitly *cancel* (vs.
 // step back) keep their own `esc cancel` token because the action is
 // destructive on save state.
-func escBack() footerToken { return footerToken{key: "esc", label: "back"} }
+func (m Model) escBack() footerToken {
+	return footerToken{key: "esc", label: m.t("tui.footer.back")}
+}
 
 // footerTokens returns the keybinding hint for the active surface as
 // a structured list. Order encodes priority: the most relevant action
@@ -218,240 +222,241 @@ func (m Model) footerTokens() []footerToken {
 	switch {
 	case m.isEmbeddedCommentInput():
 		return []footerToken{
-			{key: "enter", label: "save comment", primary: true},
-			{key: "alt+enter/shift+enter", label: "newline"},
-			{key: "esc", label: "cancel"},
+			{key: "enter", label: m.t("tui.footer.save_comment"), primary: true},
+			{key: "alt+enter/shift+enter", label: m.t("tui.footer.newline")},
+			{key: "esc", label: m.t("tui.footer.cancel")},
 		}
 	case m.blockerPickerOpen:
 		return []footerToken{
-			{key: "space", label: "toggle blocker", primary: true},
-			{key: "ctrl+s", label: "save", primary: true},
-			{key: "up/down", label: "move"},
-			{key: "pgup/pgdn", label: "scroll"},
-			{key: "esc", label: "cancel"},
+			{key: "space", label: m.t("tui.footer.toggle_blocker"), primary: true},
+			{key: "ctrl+s", label: m.t("tui.footer.save"), primary: true},
+			{key: "up/down", label: m.t("tui.footer.move")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.scroll")},
+			{key: "esc", label: m.t("tui.footer.cancel")},
 		}
 	case m.mode != modeNormal:
 		return []footerToken{
-			{key: "enter", label: "save", primary: true},
-			{key: "esc", label: "cancel"},
-			{key: "ctrl+c", label: "quit"},
+			{key: "enter", label: m.t("tui.footer.save"), primary: true},
+			{key: "esc", label: m.t("tui.footer.cancel")},
+			{key: "ctrl+c", label: m.t("tui.footer.quit")},
 		}
 	case m.commentScreenOpen && m.commentScreenEditing:
 		return []footerToken{
-			{key: "ctrl+s", label: "save", primary: true},
-			{key: "alt+enter", label: "newline"},
-			{key: "esc", label: "cancel"},
-			helpToken(),
+			{key: "ctrl+s", label: m.t("tui.footer.save"), primary: true},
+			{key: "alt+enter", label: m.t("tui.footer.newline")},
+			{key: "esc", label: m.t("tui.footer.cancel")},
+			m.helpToken(),
 		}
 	case m.commentScreenOpen:
-		deleteLabel := "arm delete"
+		deleteLabel := m.t("tui.footer.arm_delete")
 		if m.commentDeletePendingID != 0 {
-			deleteLabel = "confirm delete"
+			deleteLabel = m.t("tui.footer.confirm_delete")
 		}
 		return []footerToken{
-			{key: "e", label: "edit", primary: true},
+			{key: "e", label: m.t("tui.footer.edit"), primary: true},
 			{key: "d", label: deleteLabel, primary: m.commentDeletePendingID != 0},
-			{key: "j/k", label: "scroll"},
-			{key: "pgup/pgdn", label: "page"},
-			{key: "g/G", label: "top/bottom"},
-			escBack(),
-			helpToken(),
+			{key: "j/k", label: m.t("tui.footer.scroll")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
+			{key: "g/G", label: m.t("tui.footer.top_bottom")},
+			m.escBack(),
+			m.helpToken(),
 		}
 	case m.taskScreen == taskScreenView:
-		deleteLabel := "arm delete"
+		deleteLabel := m.t("tui.footer.arm_delete")
 		if m.taskDeletePendingID != 0 {
-			deleteLabel = "confirm delete"
+			deleteLabel = m.t("tui.footer.confirm_delete")
 		}
 		return []footerToken{
-			{key: "e", label: "edit", primary: true},
-			{key: "c", label: "comment", primary: true},
-			{key: "m", label: "move", primary: true},
-			{key: "tab", label: "focus"},
-			{key: "j/k", label: "scroll"},
-			{key: "b", label: "blockers"},
+			{key: "e", label: m.t("tui.footer.edit"), primary: true},
+			{key: "c", label: m.t("tui.footer.comment"), primary: true},
+			{key: "m", label: m.t("tui.footer.move"), primary: true},
+			{key: "tab", label: m.t("tui.footer.focus")},
+			{key: "j/k", label: m.t("tui.footer.scroll")},
+			{key: "b", label: m.t("tui.footer.blockers")},
 			{key: "d", label: deleteLabel, primary: m.taskDeletePendingID != 0},
-			{key: "enter", label: "open comment (activity)"},
-			{key: "r", label: "refresh"},
-			escBack(),
-			helpToken(),
+			{key: "enter", label: m.t("tui.footer.open_comment_activity")},
+			{key: "r", label: m.t("tui.footer.refresh")},
+			m.escBack(),
+			m.helpToken(),
 		}
 	case m.taskScreen == taskScreenCreate:
 		return []footerToken{
-			{key: "ctrl+s", label: "create", primary: true},
-			{key: "tab", label: "field"},
-			{key: "←/→", label: "priority"},
-			{key: "esc", label: "cancel"},
+			{key: "ctrl+s", label: m.t("tui.footer.create"), primary: true},
+			{key: "tab", label: m.t("tui.footer.field")},
+			{key: "←/→", label: m.t("tui.footer.priority")},
+			{key: "esc", label: m.t("tui.footer.cancel")},
 		}
 	case m.taskScreen == taskScreenEdit:
 		return []footerToken{
-			{key: "ctrl+s", label: "save", primary: true},
-			{key: "ctrl+b", label: "blockers", primary: true},
-			{key: "tab", label: "field"},
-			{key: "←/→", label: "priority"},
-			escBack(),
+			{key: "ctrl+s", label: m.t("tui.footer.save"), primary: true},
+			{key: "ctrl+b", label: m.t("tui.footer.blockers"), primary: true},
+			{key: "tab", label: m.t("tui.footer.field")},
+			{key: "←/→", label: m.t("tui.footer.priority")},
+			m.escBack(),
 		}
 	case m.entityScreen == entityScreenView && m.deletePending:
 		return []footerToken{
-			{key: "d", label: "confirm delete", primary: true},
-			{key: "esc", label: "cancel"},
-			{key: "q", label: "quit"},
+			{key: "d", label: m.t("tui.footer.confirm_delete"), primary: true},
+			{key: "esc", label: m.t("tui.footer.cancel")},
+			{key: "q", label: m.t("tui.footer.quit")},
 		}
 	case m.entityScreen == entityScreenView:
 		return []footerToken{
-			{key: "e", label: "edit in $EDITOR", primary: true},
-			{key: "d", label: "arm delete"},
-			{key: "p", label: "skills (persona)"},
-			{key: "j/k", label: "scroll"},
-			{key: "r", label: "refresh"},
-			escBack(),
+			{key: "e", label: m.t("tui.footer.edit_in_editor"), primary: true},
+			{key: "d", label: m.t("tui.footer.arm_delete")},
+			{key: "p", label: m.t("tui.footer.skills_persona")},
+			{key: "j/k", label: m.t("tui.footer.scroll")},
+			{key: "r", label: m.t("tui.footer.refresh")},
+			m.escBack(),
 		}
 	case m.entityScreen == entityScreenSkillPicker:
 		return []footerToken{
-			{key: "space", label: "toggle", primary: true},
-			{key: "enter", label: "on '+': new skill", primary: true},
-			{key: "ctrl+s", label: "save", primary: true},
-			{key: "up/down", label: "move"},
-			{key: "pgup/pgdn", label: "scroll"},
-			{key: "esc", label: "cancel"},
+			{key: "space", label: m.t("tui.footer.toggle"), primary: true},
+			{key: "enter", label: m.t("tui.footer.new_skill_on_plus"), primary: true},
+			{key: "ctrl+s", label: m.t("tui.footer.save"), primary: true},
+			{key: "up/down", label: m.t("tui.footer.move")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.scroll")},
+			{key: "esc", label: m.t("tui.footer.cancel")},
 		}
 	case m.entityScreen == entityScreenThemePicker:
 		return []footerToken{
-			{key: "enter", label: "apply (hot-reload)", primary: true},
-			{key: "up/down", label: "move"},
-			{key: "pgup/pgdn", label: "scroll"},
-			{key: "esc", label: "cancel"},
+			{key: "enter", label: m.t("tui.footer.apply_hot_reload"), primary: true},
+			{key: "up/down", label: m.t("tui.footer.move")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.scroll")},
+			{key: "esc", label: m.t("tui.footer.cancel")},
 		}
 	case m.entityScreen == entityScreenConfigPicker:
 		return []footerToken{
-			{key: "enter", label: "select (restart required)", primary: true},
-			{key: "up/down", label: "move"},
-			{key: "pgup/pgdn", label: "scroll"},
-			{key: "esc", label: "cancel"},
+			{key: "enter", label: m.t("tui.footer.select_restart_required"), primary: true},
+			{key: "up/down", label: m.t("tui.footer.move")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.scroll")},
+			{key: "esc", label: m.t("tui.footer.cancel")},
 		}
 	case m.entityScreen == entityScreenDefaultPicker:
 		return []footerToken{
-			{key: "enter", label: "assign (clears prior owner)", primary: true},
-			{key: "up/down", label: "move"},
-			{key: "pgup/pgdn", label: "scroll"},
-			{key: "esc", label: "cancel"},
+			{key: "enter", label: m.t("tui.footer.assign_clears_prior_owner"), primary: true},
+			{key: "up/down", label: m.t("tui.footer.move")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.scroll")},
+			{key: "esc", label: m.t("tui.footer.cancel")},
 		}
 	case m.moveMode:
 		return []footerToken{
-			{key: "left/right", label: "move task to lane", primary: true},
-			{key: "esc", label: "cancel"},
-			{key: "q", label: "quit"},
+			{key: "left/right", label: m.t("tui.footer.move_task_to_lane"), primary: true},
+			{key: "esc", label: m.t("tui.footer.cancel")},
+			{key: "q", label: m.t("tui.footer.quit")},
 		}
 	case m.onHome():
 		return m.homeFooterTokens()
 	case m.sub == subBoard:
 		return []footerToken{
-			{key: "enter", label: "open", primary: true},
-			{key: "n", label: "new", primary: true},
-			{key: "m", label: "move", primary: true},
-			{key: "left/right", label: "lanes"},
-			{key: "up/down", label: "tasks"},
-			{key: "pgup/pgdn", label: "scroll"},
-			{key: "e", label: "edit"},
-			{key: "tab", label: "zones"},
-			{key: ",//", label: "subs"},
-			{key: "ctrl+o", label: "back"},
-			helpToken(),
+			{key: "enter", label: m.t("tui.footer.open"), primary: true},
+			{key: "n", label: m.t("tui.footer.new"), primary: true},
+			{key: "m", label: m.t("tui.footer.move"), primary: true},
+			{key: "left/right", label: m.t("tui.footer.lanes")},
+			{key: "up/down", label: m.t("tui.footer.tasks")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.scroll")},
+			{key: "e", label: m.t("tui.footer.edit")},
+			{key: "tab", label: m.t("tui.footer.zones")},
+			{key: ",//", label: m.t("tui.footer.subs")},
+			{key: "ctrl+o", label: m.t("tui.footer.back")},
+			m.helpToken(),
 		}
 	case m.sub == subSettingsGeneral:
 		return []footerToken{
-			{key: "t", label: "theme", primary: true},
-			{key: "c", label: "config", primary: true},
-			{key: "r", label: "refresh"},
-			{key: "tab", label: "zones"},
-			{key: ",//", label: "subs"},
-			{key: "ctrl+o", label: "back"},
-			helpToken(),
+			{key: "t", label: m.t("tui.footer.theme"), primary: true},
+			{key: "c", label: m.t("tui.footer.config"), primary: true},
+			{key: "e", label: m.t("tui.footer.edit"), primary: true},
+			{key: "r", label: m.t("tui.footer.refresh")},
+			{key: "tab", label: m.t("tui.footer.zones")},
+			{key: ",//", label: m.t("tui.footer.subs")},
+			{key: "ctrl+o", label: m.t("tui.footer.back")},
+			m.helpToken(),
 		}
 	case m.sub == subSettingsTags && m.deletePending:
 		return []footerToken{
-			{key: "d", label: "confirm delete", primary: true},
-			{key: "esc", label: "cancel"},
+			{key: "d", label: m.t("tui.footer.confirm_delete"), primary: true},
+			{key: "esc", label: m.t("tui.footer.cancel")},
 		}
 	case m.sub == subSettingsTags:
 		return []footerToken{
-			{key: "d", label: "arm delete (orphan)", primary: true},
-			{key: "D", label: "delete all orphans", primary: true},
-			{key: "up/down", label: "select"},
-			{key: "t", label: "theme"},
-			{key: "c", label: "config"},
-			{key: "tab", label: "zones"},
-			{key: ",//", label: "subs"},
-			helpToken(),
+			{key: "d", label: m.t("tui.footer.arm_delete_orphan"), primary: true},
+			{key: "D", label: m.t("tui.footer.delete_all_orphans"), primary: true},
+			{key: "up/down", label: m.t("tui.footer.select")},
+			{key: "t", label: m.t("tui.footer.theme")},
+			{key: "c", label: m.t("tui.footer.config")},
+			{key: "tab", label: m.t("tui.footer.zones")},
+			{key: ",//", label: m.t("tui.footer.subs")},
+			m.helpToken(),
 		}
 	case m.sub == subSettingsTemplates:
 		return []footerToken{
-			{key: "enter", label: "open", primary: true},
-			{key: "a", label: "default", primary: true},
-			{key: "up/down", label: "select"},
-			{key: "t", label: "theme"},
-			{key: "c", label: "config"},
-			{key: "tab", label: "zones"},
-			{key: ",//", label: "subs"},
-			helpToken(),
+			{key: "enter", label: m.t("tui.footer.open"), primary: true},
+			{key: "a", label: m.t("tui.footer.default"), primary: true},
+			{key: "up/down", label: m.t("tui.footer.select")},
+			{key: "t", label: m.t("tui.footer.theme")},
+			{key: "c", label: m.t("tui.footer.config")},
+			{key: "tab", label: m.t("tui.footer.zones")},
+			{key: ",//", label: m.t("tui.footer.subs")},
+			m.helpToken(),
 		}
 	case (m.sub == subSettingsLaws || m.sub == subSettingsPersonas || m.sub == subSettingsSkills) && m.deletePending:
 		return []footerToken{
-			{key: "d", label: "confirm delete", primary: true},
-			{key: "esc", label: "cancel"},
+			{key: "d", label: m.t("tui.footer.confirm_delete"), primary: true},
+			{key: "esc", label: m.t("tui.footer.cancel")},
 		}
 	case m.sub == subSettingsLaws || m.sub == subSettingsPersonas || m.sub == subSettingsSkills:
 		return []footerToken{
-			{key: "enter", label: "open", primary: true},
-			{key: "n", label: "new", primary: true},
-			{key: "e", label: "edit", primary: true},
-			{key: "d", label: "arm delete"},
-			{key: "p", label: "skills (persona)"},
-			{key: "up/down", label: "select"},
-			{key: "t", label: "theme"},
-			{key: "c", label: "config"},
-			{key: "tab", label: "zones"},
-			{key: ",//", label: "subs"},
-			helpToken(),
+			{key: "enter", label: m.t("tui.footer.open"), primary: true},
+			{key: "n", label: m.t("tui.footer.new"), primary: true},
+			{key: "e", label: m.t("tui.footer.edit"), primary: true},
+			{key: "d", label: m.t("tui.footer.arm_delete")},
+			{key: "p", label: m.t("tui.footer.skills_persona")},
+			{key: "up/down", label: m.t("tui.footer.select")},
+			{key: "t", label: m.t("tui.footer.theme")},
+			{key: "c", label: m.t("tui.footer.config")},
+			{key: "tab", label: m.t("tui.footer.zones")},
+			{key: ",//", label: m.t("tui.footer.subs")},
+			m.helpToken(),
 		}
 	case m.sub == subStatsLogs:
 		return []footerToken{
-			{key: "up/down", label: "select row", primary: true},
-			{key: "r", label: "refresh", primary: true},
-			{key: "pgup/pgdn", label: "scroll"},
-			{key: "g/G", label: "top/bottom"},
-			{key: "tab", label: "zones"},
-			{key: ",//", label: "subs"},
-			helpToken(),
+			{key: "up/down", label: m.t("tui.footer.select_row"), primary: true},
+			{key: "r", label: m.t("tui.footer.refresh"), primary: true},
+			{key: "pgup/pgdn", label: m.t("tui.footer.scroll")},
+			{key: "g/G", label: m.t("tui.footer.top_bottom")},
+			{key: "tab", label: m.t("tui.footer.zones")},
+			{key: ",//", label: m.t("tui.footer.subs")},
+			m.helpToken(),
 		}
 	case m.sub == subStatsGeneral:
 		return []footerToken{
-			{key: "←/→", label: "period (7d / 30d / all)", primary: true},
-			{key: "r", label: "refresh"},
-			{key: "tab", label: "zones"},
-			{key: ",//", label: "subs"},
-			helpToken(),
+			{key: "←/→", label: m.t("tui.footer.period_7d_30d_all"), primary: true},
+			{key: "r", label: m.t("tui.footer.refresh")},
+			{key: "tab", label: m.t("tui.footer.zones")},
+			{key: ",//", label: m.t("tui.footer.subs")},
+			m.helpToken(),
 		}
 	case m.sub == subGraph:
 		return []footerToken{
-			{key: "enter", label: "open", primary: true},
-			{key: "j/k", label: "move"},
-			{key: "pgup/pgdn", label: "scroll"},
-			{key: "g/G", label: "top/bottom"},
-			{key: "tab", label: "zones"},
-			{key: ",//", label: "subs"},
-			helpToken(),
+			{key: "enter", label: m.t("tui.footer.open"), primary: true},
+			{key: "j/k", label: m.t("tui.footer.move")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.scroll")},
+			{key: "g/G", label: m.t("tui.footer.top_bottom")},
+			{key: "tab", label: m.t("tui.footer.zones")},
+			{key: ",//", label: m.t("tui.footer.subs")},
+			m.helpToken(),
 		}
 	default:
 		return []footerToken{
-			{key: "enter", label: "open", primary: true},
-			{key: "n", label: "new", primary: true},
-			{key: "m", label: "move", primary: true},
-			{key: "up/down", label: "select"},
-			{key: "pgup/pgdn", label: "scroll"},
-			{key: "g/G", label: "top/bottom"},
-			{key: "tab", label: "zones"},
-			{key: ",//", label: "subs"},
-			helpToken(),
+			{key: "enter", label: m.t("tui.footer.open"), primary: true},
+			{key: "n", label: m.t("tui.footer.new"), primary: true},
+			{key: "m", label: m.t("tui.footer.move"), primary: true},
+			{key: "up/down", label: m.t("tui.footer.select")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.scroll")},
+			{key: "g/G", label: m.t("tui.footer.top_bottom")},
+			{key: "tab", label: m.t("tui.footer.zones")},
+			{key: ",//", label: m.t("tui.footer.subs")},
+			m.helpToken(),
 		}
 	}
 }

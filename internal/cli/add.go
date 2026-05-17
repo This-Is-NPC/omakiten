@@ -15,7 +15,7 @@ func newAddCommand(opts *runtimeOptions) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "add",
-		Short: "Create a task in the active project",
+		Short: opts.t("cli.task.add.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				rt, err := opts.open(ctx, true)
@@ -39,8 +39,8 @@ func newAddCommand(opts *runtimeOptions) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&title, "title", "t", "", "task title")
-	cmd.Flags().StringVarP(&description, "description", "d", "", "task description")
-	cmd.Flags().StringVarP(&bucket, "bucket", "b", "", "bucket key (defaults to the active workflow's first bucket)")
+	cmd.Flags().StringVarP(&title, "title", "t", "", opts.t("cli.task.add.flag.title"))
+	cmd.Flags().StringVarP(&description, "description", "d", "", opts.t("cli.task.add.flag.description"))
+	cmd.Flags().StringVarP(&bucket, "bucket", "b", "", opts.t("cli.task.add.flag.bucket"))
 	return cmd
 }

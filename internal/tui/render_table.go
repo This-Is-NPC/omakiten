@@ -55,7 +55,7 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 		}
 	case "m":
 		if _, ok := m.selectedTask(); ok {
-			m.beginInput(modeMove, "Target bucket key", "")
+			m.beginInput(modeMove, m.t("tui.input.target_bucket_key"), "")
 		}
 	}
 }
@@ -83,9 +83,9 @@ func (m Model) renderTable() string {
 	tasks := m.applyTableView()
 	if len(tasks) == 0 {
 		if len(m.tasks) == 0 {
-			return m.renderPanel("No tasks yet. Press n to create one.")
+			return m.renderPanel(m.t("tui.empty.table_no_tasks"))
 		}
-		return m.renderPanel("No tasks match the configured table filter.")
+		return m.renderPanel(m.t("tui.empty.table_filtered"))
 	}
 	if m.availableWidth() < 74 {
 		return m.renderTableCompactWith(tasks)
@@ -102,8 +102,8 @@ func (m Model) renderTable() string {
 	}
 
 	rows := []string{
-		m.styles.kickerCount("Tasks", len(tasks)),
-		m.styles.info.Render("// ID   BUCKET      PRI      DEPS  COMMENTS  TITLE"),
+		m.styles.kickerCount(m.t("tui.kicker.tasks"), len(tasks)),
+		m.styles.info.Render(m.t("tui.table.header")),
 		m.hRule(contentWidth),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.tableScroll, m.tableViewportRows())...)
@@ -121,7 +121,7 @@ func (m Model) renderTableCompactWith(tasks []domain.Task) string {
 		dataRows = append(dataRows, prefix+truncateText(task.Title, budget))
 	}
 	rows := []string{
-		m.styles.kickerCount("Tasks", len(tasks)),
+		m.styles.kickerCount(m.t("tui.kicker.tasks"), len(tasks)),
 		m.hRule(width),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.tableScroll, m.tableViewportRows())...)

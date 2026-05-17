@@ -187,6 +187,12 @@ type Snapshot struct {
 	priorities []PriorityDefinition
 	severities []SeverityDefinition
 
+	languages       []Language
+	languagesByCode map[string]Language
+	catalogCLI      *Catalog
+	catalogTUI      *Catalog
+	agentOutputLang string
+
 	registry *domain.EnumRegistry
 
 	settings Settings
@@ -208,6 +214,7 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 		templatesByDefault: map[templateDefaultKey]TaskTemplate{},
 		notifications:      map[string]Notification{},
 		mcpCommands:        map[string]MCPCommandSpec{},
+		languagesByCode:    map[string]Language{},
 	}
 
 	if wf, ok := activeWorkflow(bundle); ok {
@@ -268,7 +275,40 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 	snap.settings = bundle.Config
 	snap.registry = buildEnumRegistry(bundle)
 
+	snap.languages = append(snap.languages, bundle.Languages...)
+	for _, lang := range bundle.Languages {
+		snap.languagesByCode[lang.Code] = lang
+	}
+	eff := bundle.Config.EffectiveLanguages()
+	baseline := snap.lookupLanguage("en")
+	snap.catalogCLI = buildSurfaceCatalog(snap.languagesByCode, eff.CLI, baseline)
+	snap.catalogTUI = buildSurfaceCatalog(snap.languagesByCode, eff.TUI, baseline)
+	snap.agentOutputLang = eff.AgentOutput
+
 	return snap
+}
+
+// lookupLanguage returns the Language with code or nil. Used by the
+// catalog builder to grab the baseline ("en") pointer once so both
+// surface catalogs share the same fallback.
+func (s *Snapshot) lookupLanguage(code string) *Language {
+	if lang, ok := s.languagesByCode[code]; ok {
+		return &lang
+	}
+	return nil
+}
+
+// buildSurfaceCatalog resolves the configured language for one surface
+// into a Catalog. Unknown configured codes still produce a usable
+// Catalog: active stays nil so every Get falls through to the baseline.
+// Baseline may also be nil when no en pack is shipped, in which case
+// Get falls through to the key literal.
+func buildSurfaceCatalog(byCode map[string]Language, code string, baseline *Language) *Catalog {
+	var active *Language
+	if lang, ok := byCode[code]; ok {
+		active = &lang
+	}
+	return NewCatalog(active, baseline)
 }
 
 // buildEnumRegistry inflates the bundle's priority/severity tables into the
@@ -390,6 +430,45 @@ func (s *Snapshot) LawBySlug(slug string) (Law, bool) {
 // fresh copy.
 func (s *Snapshot) Templates() []TaskTemplate {
 	return append([]TaskTemplate(nil), s.templates...)
+}
+
+// Languages returns every Language discovered by the loader (bundled +
+// custom, dedup by code with custom winning). The slice is a fresh
+// copy in deterministic code-ascending order so callers may sort,
+// filter, or mutate without disturbing the snapshot.
+func (s *Snapshot) Languages() []Language {
+	return append([]Language(nil), s.languages...)
+}
+
+// LanguageByCode resolves a Language by its lowercase code. ok=false
+// when no Language with that code is loaded — callers may then fall
+// back to the en baseline or surface a "not found" error.
+func (s *Snapshot) LanguageByCode(code string) (Language, bool) {
+	v, ok := s.languagesByCode[code]
+	return v, ok
+}
+
+// Catalog returns the resolved Catalog for the given Surface. The
+// returned pointer is stable for the lifetime of the snapshot and is
+// safe for concurrent reads. Callers must not retain it across a
+// BundleCache.Reload — fetch a fresh Catalog from the new Snapshot.
+func (s *Snapshot) Catalog(surface Surface) *Catalog {
+	switch surface {
+	case SurfaceTUI:
+		return s.catalogTUI
+	default:
+		return s.catalogCLI
+	}
+}
+
+// AgentOutputLanguage returns the raw configured agent-output language
+// string. Empty when the user has not selected one — the MCP composer
+// then skips the trailing "**Output language:** ..." directive entirely.
+// Free-form by design: any non-empty string is honored verbatim because
+// the agent interprets the directive against its own language training,
+// not the discovered catalog.
+func (s *Snapshot) AgentOutputLanguage() string {
+	return s.agentOutputLang
 }
 
 // TemplateBySlug resolves a template by slug.

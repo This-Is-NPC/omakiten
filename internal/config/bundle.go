@@ -17,6 +17,7 @@ type Bundle struct {
 	Projects      []Project                 `yaml:"-" json:"projects,omitempty"`
 	MCPCommands   map[string]MCPCommandSpec `yaml:"-" json:"mcp_commands,omitempty"`
 	Notifications map[string]Notification   `yaml:"-" json:"notifications,omitempty"`
+	Languages     []Language                `yaml:"-" json:"languages,omitempty"`
 	Warnings      []SourceWarning           `yaml:"-" json:"warnings,omitempty"`
 }
 
@@ -134,6 +135,42 @@ type Settings struct {
 	// frontmatter parsers resolve labels via lookup, renamer edits a
 	// single line in YAML. Required — see Priorities.
 	Severities []SeverityDefinition `yaml:"severities,omitempty" json:"severities,omitempty"`
+	// Languages picks the active language code per surface. CLI and TUI
+	// resolve against discovered languages/<code>.yaml files; AgentOutput
+	// is a free-form directive surfaced into the MCP prompt composer
+	// and is not validated against the catalog. See EffectiveLanguages
+	// for defaults (en for CLI/TUI, empty for AgentOutput).
+	Languages LanguageSettings `yaml:"languages,omitempty" json:"languages,omitempty"`
+}
+
+// LanguageSettings holds the three independent surface language codes.
+// CLI drives help/usage chrome and CLI-owned errors. TUI drives every
+// terminal-UI label and screen. AgentOutput is a free-form string
+// (e.g. "English", "pt-br", "Português (Brasil)") appended to the MCP
+// composer prompt as the trailing "Output language" directive; the
+// agent honors it based on its own training rather than any catalog
+// lookup, so any non-empty string is accepted at validation time.
+type LanguageSettings struct {
+	CLI         string `yaml:"cli,omitempty" json:"cli,omitempty"`
+	TUI         string `yaml:"tui,omitempty" json:"tui,omitempty"`
+	AgentOutput string `yaml:"agent_output,omitempty" json:"agent_output,omitempty"`
+}
+
+// EffectiveLanguages returns the resolved LanguageSettings with
+// defaults applied: CLI and TUI fall back to "en"; AgentOutput stays
+// empty when unset so the MCP composer skips the trailing directive
+// line entirely. Field-by-field defaulting matches the project-local /
+// user-global override semantics from #51 where each setting falls
+// back independently if not supplied by the more specific layer.
+func (s Settings) EffectiveLanguages() LanguageSettings {
+	eff := s.Languages
+	if eff.CLI == "" {
+		eff.CLI = "en"
+	}
+	if eff.TUI == "" {
+		eff.TUI = "en"
+	}
+	return eff
 }
 
 // SeverityDefinition is one row of the configurable law-severity table.

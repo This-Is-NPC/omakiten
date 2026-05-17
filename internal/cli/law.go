@@ -12,7 +12,7 @@ import (
 func newLawCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "law",
-		Short: "Manage agent laws (file-backed under laws/)",
+		Short: opts.t("cli.law.short"),
 	}
 	cmd.AddCommand(newLawListCommand(opts))
 	cmd.AddCommand(newLawShowCommand(opts))
@@ -26,7 +26,7 @@ func newLawListCommand(opts *runtimeOptions) *cobra.Command {
 	var scope, project, persona string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List active laws (filterable by scope/project/persona)",
+		Short: opts.t("cli.law.list.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				rt, err := opts.open(ctx, true)
@@ -44,16 +44,16 @@ func newLawListCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&scope, "scope", "", "filter by scope: global, project, or persona")
-	cmd.Flags().StringVar(&project, "project", "", "filter by project slug")
-	cmd.Flags().StringVar(&persona, "persona", "", "filter by persona slug")
+	cmd.Flags().StringVar(&scope, "scope", "", opts.t("cli.law.list.flag.scope"))
+	cmd.Flags().StringVar(&project, "project", "", opts.t("cli.law.list.flag.project"))
+	cmd.Flags().StringVar(&persona, "persona", "", opts.t("cli.law.list.flag.persona"))
 	return cmd
 }
 
 func newLawShowCommand(opts *runtimeOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "show SLUG",
-		Short: "Show a law (frontmatter + body)",
+		Short: opts.t("cli.law.show.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -78,7 +78,7 @@ func newLawAddCommand(opts *runtimeOptions) *cobra.Command {
 	var noEdit bool
 	cmd := &cobra.Command{
 		Use:   "add",
-		Short: "Add a law (writes laws/<slug>.md and opens $EDITOR if body omitted)",
+		Short: opts.t("cli.law.add.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				rt, err := opts.open(ctx, true)
@@ -120,14 +120,14 @@ func newLawAddCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVarP(&key, "key", "k", "", "law slug")
-	cmd.Flags().StringVarP(&name, "name", "n", "", "law display name (optional)")
-	cmd.Flags().StringVarP(&severity, "severity", "s", "error", "info, warning, or error")
-	cmd.Flags().StringVarP(&body, "body", "b", "", "law body (placeholder used if empty + $EDITOR opens)")
-	cmd.Flags().StringVar(&scope, "scope", "global", "global, project, or persona")
-	cmd.Flags().StringVar(&project, "project", "", "project slug (required when --scope=project)")
-	cmd.Flags().StringVar(&persona, "persona", "", "persona slug (required when --scope=persona)")
-	cmd.Flags().BoolVar(&noEdit, "no-edit", false, "skip opening $EDITOR after creating the scaffold")
+	cmd.Flags().StringVarP(&key, "key", "k", "", opts.t("cli.law.add.flag.key"))
+	cmd.Flags().StringVarP(&name, "name", "n", "", opts.t("cli.law.add.flag.name"))
+	cmd.Flags().StringVarP(&severity, "severity", "s", "error", opts.t("cli.law.add.flag.severity"))
+	cmd.Flags().StringVarP(&body, "body", "b", "", opts.t("cli.law.add.flag.body"))
+	cmd.Flags().StringVar(&scope, "scope", "global", opts.t("cli.law.add.flag.scope"))
+	cmd.Flags().StringVar(&project, "project", "", opts.t("cli.law.add.flag.project"))
+	cmd.Flags().StringVar(&persona, "persona", "", opts.t("cli.law.add.flag.persona"))
+	cmd.Flags().BoolVar(&noEdit, "no-edit", false, opts.t("cli.law.add.flag.no-edit"))
 	_ = cmd.MarkFlagRequired("key")
 	return cmd
 }
@@ -137,7 +137,7 @@ func newLawEditCommand(opts *runtimeOptions) *cobra.Command {
 	var noEdit bool
 	cmd := &cobra.Command{
 		Use:   "edit SLUG",
-		Short: "Edit a law (opens $EDITOR by default; flags override frontmatter/body)",
+		Short: opts.t("cli.law.edit.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -188,17 +188,17 @@ func newLawEditCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVarP(&name, "name", "n", "", "rewrite law display name")
-	cmd.Flags().StringVarP(&severity, "severity", "s", "", "rewrite severity")
-	cmd.Flags().StringVarP(&body, "body", "b", "", "rewrite law body")
-	cmd.Flags().BoolVar(&noEdit, "no-edit", false, "do not open $EDITOR (only apply flag-driven updates)")
+	cmd.Flags().StringVarP(&name, "name", "n", "", opts.t("cli.law.edit.flag.name"))
+	cmd.Flags().StringVarP(&severity, "severity", "s", "", opts.t("cli.law.edit.flag.severity"))
+	cmd.Flags().StringVarP(&body, "body", "b", "", opts.t("cli.law.edit.flag.body"))
+	cmd.Flags().BoolVar(&noEdit, "no-edit", false, opts.t("cli.law.edit.flag.no-edit"))
 	return cmd
 }
 
 func newLawRemoveCommand(opts *runtimeOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "remove SLUG",
-		Short: "Remove a law (deletes file + prunes refs)",
+		Short: opts.t("cli.law.remove.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {

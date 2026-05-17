@@ -11,6 +11,11 @@ type ContextDump struct {
 	Dependencies   []TaskDependency `json:"dependencies,omitempty"`
 	Comments       []Comment        `json:"comments,omitempty"`
 	Laws           []Law            `json:"laws,omitempty"`
+	// AgentOutputLanguage mirrors config.languages.agent_output verbatim
+	// so agents can introspect the directive without re-parsing the
+	// composed MCP prompt. Empty when the user has not configured a
+	// value — consumers treat empty as "no directive in effect".
+	AgentOutputLanguage string `json:"agent_output_language,omitempty"`
 }
 
 type ContextEntry struct {

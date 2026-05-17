@@ -18,7 +18,7 @@ func newConfigShowCommand(opts *runtimeOptions) *cobra.Command {
 	var scope string
 	cmd := &cobra.Command{
 		Use:   "show",
-		Short: "Print the raw active yaml for the chosen scope",
+		Short: opts.t("cli.config.show.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				if err := primeDiscoveryStart(ctx, opts); err != nil {
@@ -30,13 +30,13 @@ func newConfigShowCommand(opts *runtimeOptions) *cobra.Command {
 				}
 				data, err := os.ReadFile(path)
 				if err != nil {
-					return nil, domain.NewError(domain.ErrValidation, "config file not readable", map[string]any{"path": path, "error": err.Error()})
+					return nil, domain.NewError(domain.ErrValidation, opts.t("cli.err.config_unreadable"), map[string]any{"path": path, "error": err.Error()})
 				}
 				return map[string]any{"scope": scope, "path": path, "content": string(data)}, nil
 			})
 		},
 	}
-	cmd.Flags().StringVar(&scope, "scope", "", "global or local")
+	cmd.Flags().StringVar(&scope, "scope", "", opts.t("cli.config.show.flag.scope"))
 	_ = cmd.MarkFlagRequired("scope")
 	return cmd
 }
@@ -45,7 +45,7 @@ func newConfigPathCommand(opts *runtimeOptions) *cobra.Command {
 	var scope string
 	cmd := &cobra.Command{
 		Use:   "path",
-		Short: "Print the install root that owns the chosen scope's config layer",
+		Short: opts.t("cli.config.why.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				if err := primeDiscoveryStart(ctx, opts); err != nil {
@@ -59,7 +59,7 @@ func newConfigPathCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&scope, "scope", "", "global or local")
+	cmd.Flags().StringVar(&scope, "scope", "", opts.t("cli.config.why.flag.scope"))
 	_ = cmd.MarkFlagRequired("scope")
 	return cmd
 }
@@ -131,11 +131,11 @@ func resolveInstallRootForScope(opts *runtimeOptions, scope string) (string, err
 			return "", err
 		}
 		if !ok {
-			return "", domain.NewError(domain.ErrValidation, "no repo-local .omakiten/ found above start dir", map[string]any{"start": start})
+			return "", domain.NewError(domain.ErrValidation, t("cli.err.no_repo_local_above"), map[string]any{"start": start})
 		}
 		return dir, nil
 	default:
-		return "", domain.NewError(domain.ErrValidation, "invalid --scope (want global or local)", map[string]any{"scope": scope})
+		return "", domain.NewError(domain.ErrValidation, t("cli.err.invalid_scope"), map[string]any{"scope": scope})
 	}
 }
 

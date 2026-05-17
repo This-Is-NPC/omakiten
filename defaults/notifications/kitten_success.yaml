@@ -1,6 +1,6 @@
 # Identity ------------------------------------------------------------
 name: kitten_success
-description: Proud kitten guardian for completed rituals and blessed fixes.
+description: "${{intl:notifications.kitten_success.description}}"
 
 # Geometry ------------------------------------------------------------
 size:

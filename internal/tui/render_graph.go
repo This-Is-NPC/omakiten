@@ -96,10 +96,10 @@ func (m Model) graphViewportRows() int {
 func (m Model) renderGraph() string {
 	if len(m.dependencies) == 0 {
 		content := m.styles.hintBox.Width(m.hintBoxWidth()).Render(strings.Join([]string{
-			m.styles.kickerCount("Dependency graph", 0),
+			m.styles.kickerCount(m.t("tui.kicker.dependency_graph"), 0),
 			"",
-			m.styles.hint.Render("No task dependencies yet."),
-			m.styles.hint.Render("Use ") + m.styles.hintAccent.Render("okt depend add TASK -i BLOCKER") + m.styles.hint.Render(" to define blocked_by edges."),
+			m.styles.hint.Render(m.t("tui.empty.graph_no_deps")),
+			m.styles.hint.Render(m.t("tui.graph.use_okt_depend")) + m.styles.hintAccent.Render(m.t("tui.graph.depend_cmd")) + m.styles.hint.Render(m.t("tui.graph.depend_suffix")),
 		}, "\n"))
 		return "\n" + indentBlock(content, 2)
 	}
@@ -123,7 +123,7 @@ func (m Model) renderGraph() string {
 	}
 
 	rows := []string{
-		m.styles.kickerCount("Dependency graph", len(m.dependencies)),
+		m.styles.kickerCount(m.t("tui.kicker.dependency_graph"), len(m.dependencies)),
 		"",
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.graphScroll, m.graphViewportRows())...)

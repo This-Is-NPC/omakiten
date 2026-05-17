@@ -63,6 +63,7 @@ func (m *Model) reloadBundle(path string) error {
 	// to the rotated Snapshot; swap the long-lived TUI reference at the
 	// same point the rest of the snapshot-derived state rotates.
 	m.repos.Workflow = pr.Workflow
+	m.repos.Catalog = snap.Catalog(config.SurfaceTUI)
 	m.notifications = snap.Notifications()
 	m.tokenBadgeYellow, m.tokenBadgeRed = settings.TUI.TokenBadge.Effective()
 
@@ -129,7 +130,7 @@ func (m *Model) revertConfigSwap() {
 	m.pendingSwapRevertPath = ""
 	m.suppressNextSwapEmit = true
 	if err := m.reloadBundle(path); err != nil {
-		m.status = fmt.Sprintf("Config swap cancel failed: %v", err)
+		m.status = fmt.Sprintf(m.t("tui.status.config_swap_cancel_failed_fmt"), err)
 		return
 	}
 	base := filepath.Base(path)
@@ -138,7 +139,7 @@ func (m *Model) revertConfigSwap() {
 		return
 	}
 	display := strings.TrimSuffix(base, filepath.Ext(base))
-	m.status = fmt.Sprintf("Config swap cancelled — restored %s", display)
+	m.status = fmt.Sprintf(m.t("tui.status.config_swap_cancelled_fmt"), display)
 }
 
 // loadActiveTheme resolves the theme yaml referenced by the snapshot's

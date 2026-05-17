@@ -11,7 +11,7 @@ import (
 func newSkillCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "skill",
-		Short: "Manage skills (technical tags, file-backed under skills/)",
+		Short: opts.t("cli.skill.short"),
 	}
 
 	cmd.AddCommand(newSkillListCommand(opts))
@@ -25,7 +25,7 @@ func newSkillCommand(opts *runtimeOptions) *cobra.Command {
 func newSkillListCommand(opts *runtimeOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List active skills",
+		Short: opts.t("cli.skill.list.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				rt, err := opts.open(ctx, true)
@@ -48,7 +48,7 @@ func newSkillListCommand(opts *runtimeOptions) *cobra.Command {
 func newSkillShowCommand(opts *runtimeOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "show SLUG",
-		Short: "Show a skill (frontmatter + body)",
+		Short: opts.t("cli.skill.show.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -73,7 +73,7 @@ func newSkillAddCommand(opts *runtimeOptions) *cobra.Command {
 	var noEdit bool
 	cmd := &cobra.Command{
 		Use:   "add",
-		Short: "Add a skill (writes skills/<slug>.md and opens $EDITOR)",
+		Short: opts.t("cli.skill.add.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				rt, err := opts.open(ctx, true)
@@ -100,10 +100,10 @@ func newSkillAddCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVarP(&key, "key", "k", "", "skill slug (defaults to slugify(--name))")
-	cmd.Flags().StringVarP(&name, "name", "n", "", "skill display name")
-	cmd.Flags().StringVarP(&description, "description", "d", "", "short description")
-	cmd.Flags().BoolVar(&noEdit, "no-edit", false, "skip opening $EDITOR after creating the scaffold")
+	cmd.Flags().StringVarP(&key, "key", "k", "", opts.t("cli.skill.add.flag.key"))
+	cmd.Flags().StringVarP(&name, "name", "n", "", opts.t("cli.skill.add.flag.name"))
+	cmd.Flags().StringVarP(&description, "description", "d", "", opts.t("cli.skill.add.flag.description"))
+	cmd.Flags().BoolVar(&noEdit, "no-edit", false, opts.t("cli.skill.add.flag.no-edit"))
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }
@@ -113,7 +113,7 @@ func newSkillEditCommand(opts *runtimeOptions) *cobra.Command {
 	var noEdit bool
 	cmd := &cobra.Command{
 		Use:   "edit SLUG",
-		Short: "Edit a skill (opens $EDITOR by default; flags override frontmatter)",
+		Short: opts.t("cli.skill.edit.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -157,16 +157,16 @@ func newSkillEditCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVarP(&name, "name", "n", "", "rewrite skill display name")
-	cmd.Flags().StringVarP(&description, "description", "d", "", "rewrite skill description")
-	cmd.Flags().BoolVar(&noEdit, "no-edit", false, "do not open $EDITOR (only apply flag-driven updates)")
+	cmd.Flags().StringVarP(&name, "name", "n", "", opts.t("cli.skill.edit.flag.name"))
+	cmd.Flags().StringVarP(&description, "description", "d", "", opts.t("cli.skill.edit.flag.description"))
+	cmd.Flags().BoolVar(&noEdit, "no-edit", false, opts.t("cli.skill.edit.flag.no-edit"))
 	return cmd
 }
 
 func newSkillRemoveCommand(opts *runtimeOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "remove SLUG",
-		Short: "Remove a skill (deletes file + prunes refs)",
+		Short: opts.t("cli.skill.remove.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {

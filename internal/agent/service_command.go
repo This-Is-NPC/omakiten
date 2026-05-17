@@ -172,6 +172,9 @@ func (s *Service) ResolveCommand(_ context.Context, input ResolveCommandInput) (
 	}
 
 	resp.Laws = effectiveLaws(globalSpec, spec, resp.Persona, resp.Templates, laws)
+	if s.snapshot != nil {
+		resp.AgentOutputLanguage = s.snapshot.AgentOutputLanguage()
+	}
 	resp.Markdown = renderCommandMarkdown(resp)
 	return resp, nil
 }
@@ -402,6 +405,14 @@ func renderCommandMarkdown(resp ResolveCommandResponse) string {
 
 	openSection("## Action")
 	fmt.Fprintf(&b, "%s\n", resp.Action)
+
+	// Trailing output-language directive: byte-stable per session so the
+	// Anthropic prompt cache hit rate stays high. Skipped entirely when
+	// the user has not configured config.languages.agent_output — no
+	// blank line, no marker, no observable change to existing prompts.
+	if lang := strings.TrimSpace(resp.AgentOutputLanguage); lang != "" {
+		fmt.Fprintf(&b, "\n**Output language:** %s\n", lang)
+	}
 	return b.String()
 }
 

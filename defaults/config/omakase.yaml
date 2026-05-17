@@ -95,109 +95,109 @@ config:
   hooks:
     - on: task.created
       notification: kitten_informative
-      message: "A new quest has appeared."
+      message: "${{intl:notifications.omakase.task_created.message}}"
     - on: task.moved
       notification: kitten_informative
-      message: "Fast travel complete."
+      message: "${{intl:notifications.omakase.task_moved.message}}"
     - on: task.edited
       notification: kitten_informative
-      message: "The scroll has been amended under supervision."
+      message: "${{intl:notifications.omakase.task_edited.message}}"
     - on: task.completed
       notification: kitten_success
-      message: "Achievement unlocked: task complete."
+      message: "${{intl:notifications.omakase.task_completed.message}}"
     - on: guard.violated
       when: { operation: task.delete }
       notification: kitten_destructive
-      message: "Trying to burn the quest log? Adorable."
+      message: "${{intl:notifications.omakase.guard_task_delete.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: comment.delete }
       notification: kitten_destructive
-      message: "Witness tampering? Bold move."
+      message: "${{intl:notifications.omakase.guard_comment_delete.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: task.transition }
       notification: kitten_blocked
-      message: "You shall not pass."
+      message: "${{intl:notifications.omakase.guard_task_transition.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: task.edit }
       notification: kitten_blocked
-      message: "The council has denied this edit."
+      message: "${{intl:notifications.omakase.guard_task_edit.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: comment.edit }
       notification: kitten_blocked
-      message: "The scribe's quill has been confiscated."
+      message: "${{intl:notifications.omakase.guard_comment_edit.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: task.archive }
       notification: kitten_blocked
-      message: "Not so fast, vault dweller."
+      message: "${{intl:notifications.omakase.guard_task_archive.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: task.unarchive }
       notification: kitten_blocked
-      message: "The seal holds. Wake it properly."
+      message: "${{intl:notifications.omakase.guard_task_unarchive.message}}"
       detail_message_field: hint
     - on: bundle.swapped
       when: { has_orphans: "true" }
       notification: kitten_orphan_migration
-      message: "Tasks orphaned by config swap. Migrate to the new workflow?"
+      message: "${{intl:notifications.omakase.bundle_swapped_orphans.message}}"
       detail_message_field: orphan_count
     - on: task.removed
       notification: kitten_destructive
-      message: "Ashes logged. The archive approves."
+      message: "${{intl:notifications.omakase.task_removed.message}}"
     - on: comment.removed
       notification: kitten_destructive
-      message: "The witness has left the material plane."
+      message: "${{intl:notifications.omakase.comment_removed.message}}"
     - on: task.archived
       notification: kitten_archive
-      message: "The quest sleeps in the vault."
+      message: "${{intl:notifications.omakase.task_archived.message}}"
     - on: task.unarchived
       notification: kitten_archive
-      message: "The ancient quest awakens."
+      message: "${{intl:notifications.omakase.task_unarchived.message}}"
     - on: comment
       when: { author_type: human }
       notification: kitten_informative
-      message: "A raven arrives with testimony."
+      message: "${{intl:notifications.omakase.comment_added_human.message}}"
     - on: comment
       when: { author_type: agent }
       notification: kitten_informative
-      message: "Your companion filed a note with the guild."
+      message: "${{intl:notifications.omakase.comment_added_agent.message}}"
     - on: comment.edited
       notification: kitten_informative
-      message: "The scribe corrected the record under watch."
+      message: "${{intl:notifications.omakase.comment_edited.message}}"
     - on: tag.added
       notification: kitten_link
-      message: "A rune has been etched onto the quest."
+      message: "${{intl:notifications.omakase.tag_added.message}}"
     - on: tag.removed
       notification: kitten_link
-      message: "The rune fades. The record remains."
+      message: "${{intl:notifications.omakase.tag_removed.message}}"
     - on: dependency.added
       notification: kitten_link
-      message: "A new side quest is chained."
+      message: "${{intl:notifications.omakase.dependency_added.message}}"
     - on: dependency.removed
       notification: kitten_link
-      message: "The chain has been broken."
+      message: "${{intl:notifications.omakase.dependency_removed.message}}"
     - on: error.recorded
       notification: kitten_knowledge
-      message: "A wild bug enters the bestiary."
+      message: "${{intl:notifications.omakase.error_recorded.message}}"
     - on: error.searched
       notification: kitten_knowledge
-      message: "Consulting the forbidden archives."
+      message: "${{intl:notifications.omakase.error_searched.message}}"
     - on: solution.added
       notification: kitten_knowledge
-      message: "A new spell enters the grimoire."
+      message: "${{intl:notifications.omakase.solution_added.message}}"
     - on: solution.liked
       notification: kitten_success
-      message: "The party gains inspiration."
+      message: "${{intl:notifications.omakase.solution_liked.message}}"
     - on: solution.failed
       notification: kitten_knowledge
-      message: "The princess is in another castle."
+      message: "${{intl:notifications.omakase.solution_failed.message}}"
     - on: solution.viewed_top
       notification: kitten_knowledge
-      message: "Opening the hall of proven spells."
+      message: "${{intl:notifications.omakase.solution_viewed_top.message}}"
   # search tunes the heuristics shared across agent-side text ranking
   # (similar-task hints in tasks.create_intent, query overlap scoring).
   # stopwords is the lowercase token list dropped before scoring; add

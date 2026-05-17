@@ -18,13 +18,13 @@ import (
 func newMCPCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcp",
-		Short: "Expose Omakiten agent intents through MCP",
+		Short: opts.t("cli.mcp.short"),
 	}
 
-	cmd.AddCommand(newMCPToolsCommand())
+	cmd.AddCommand(newMCPToolsCommand(opts))
 	cmd.AddCommand(newMCPCallCommand(opts))
 	cmd.AddCommand(newMCPServeCommand(opts))
-	cmd.AddCommand(newMCPSetupCommand())
+	cmd.AddCommand(newMCPSetupCommand(opts))
 	cmd.AddCommand(newMCPPromptsCommand(opts))
 	return cmd
 }
@@ -37,7 +37,7 @@ func newMCPCommand(opts *runtimeOptions) *cobra.Command {
 func newMCPPromptsCommand(opts *runtimeOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "prompts [name]",
-		Short: "Render resolved okt-* prompt markdown to stdout",
+		Short: opts.t("cli.mcp.prompt.short"),
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -67,7 +67,7 @@ func newMCPPromptsCommand(opts *runtimeOptions) *cobra.Command {
 					return fmt.Errorf("prompt %s returned no messages", name)
 				}
 				body := result.Messages[0].Content.Text
-				fmt.Fprintf(out, "# %s — %d bytes / %d runes\n\n%s\n", name, len(body), runeCount(body), body)
+				fmt.Fprintf(out, opts.t("cli.print.prompt_render"), name, len(body), runeCount(body), body)
 			}
 			return nil
 		},
@@ -82,10 +82,10 @@ func runeCount(s string) int {
 	return n
 }
 
-func newMCPToolsCommand() *cobra.Command {
+func newMCPToolsCommand(opts *runtimeOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "tools",
-		Short: "List Omakiten MCP tool definitions",
+		Short: opts.t("cli.mcp.tools.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return writeSuccess(cmd, map[string]any{"tools": mcp.Tools(), "resources": mcp.Resources(), "prompts": mcp.Prompts()})
 		},
@@ -96,7 +96,7 @@ func newMCPCallCommand(opts *runtimeOptions) *cobra.Command {
 	var inputJSON string
 	cmd := &cobra.Command{
 		Use:   "call TOOL_NAME",
-		Short: "Call an Omakiten MCP tool with a JSON input object",
+		Short: opts.t("cli.mcp.call.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -122,14 +122,14 @@ func newMCPCallCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&inputJSON, "input", "", "JSON input object")
+	cmd.Flags().StringVar(&inputJSON, "input", "", opts.t("cli.mcp.call.flag.input"))
 	return cmd
 }
 
 func newMCPServeCommand(opts *runtimeOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "serve",
-		Short: "Run the Omakiten MCP stdio server",
+		Short: opts.t("cli.mcp.serve.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			rt, err := agentruntime.Open(cmd.Context(), agentOptions(opts))
 			if err != nil {
@@ -142,14 +142,14 @@ func newMCPServeCommand(opts *runtimeOptions) *cobra.Command {
 	}
 }
 
-func newMCPSetupCommand() *cobra.Command {
+func newMCPSetupCommand(opts *runtimeOptions) *cobra.Command {
 	var harness, configPath, command string
 	var dryRun, force bool
 
 	cmd := &cobra.Command{
 		Use:   "setup",
-		Short: "Configure Omakiten MCP server in an AI harness",
-		Long:  "Writes the Omakiten MCP server configuration to the harness config file (e.g. Claude Desktop or OpenCode).",
+		Short: opts.t("cli.mcp.install.short"),
+		Long:  opts.t("cli.mcp.install.long"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			result, err := agentsetup.Setup(agentsetup.Options{
 				Harness:    harness,
@@ -165,11 +165,11 @@ func newMCPSetupCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&harness, "harness", agentsetup.ClaudeCodeHarness, "Target harness ("+strings.Join(agentsetup.SupportedHarnesses(), ", ")+")")
-	cmd.Flags().StringVar(&configPath, "config-path", "", "Path to harness config file (default: harness default)")
-	cmd.Flags().StringVar(&command, "command", "", "Command to run omakiten (default: current executable)")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview changes without writing")
-	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing Omakiten MCP config")
+	cmd.Flags().StringVar(&harness, "harness", agentsetup.ClaudeCodeHarness, fmt.Sprintf(opts.t("cli.mcp.install.flag.harness"), strings.Join(agentsetup.SupportedHarnesses(), ", ")))
+	cmd.Flags().StringVar(&configPath, "config-path", "", opts.t("cli.mcp.install.flag.config-path"))
+	cmd.Flags().StringVar(&command, "command", "", opts.t("cli.mcp.install.flag.command"))
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, opts.t("cli.mcp.install.flag.dry-run"))
+	cmd.Flags().BoolVar(&force, "force", false, opts.t("cli.mcp.install.flag.force"))
 
 	return cmd
 }

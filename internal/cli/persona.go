@@ -11,7 +11,7 @@ import (
 func newPersonaCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "persona",
-		Short: "Manage personas (file-backed under personas/)",
+		Short: opts.t("cli.persona.short"),
 	}
 	cmd.AddCommand(newPersonaListCommand(opts))
 	cmd.AddCommand(newPersonaShowCommand(opts))
@@ -24,7 +24,7 @@ func newPersonaCommand(opts *runtimeOptions) *cobra.Command {
 func newPersonaListCommand(opts *runtimeOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List active personas",
+		Short: opts.t("cli.persona.list.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				rt, err := opts.open(ctx, true)
@@ -46,7 +46,7 @@ func newPersonaListCommand(opts *runtimeOptions) *cobra.Command {
 func newPersonaShowCommand(opts *runtimeOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "show SLUG",
-		Short: "Show a persona (frontmatter + body + skill refs)",
+		Short: opts.t("cli.persona.show.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -73,7 +73,7 @@ func newPersonaAddCommand(opts *runtimeOptions) *cobra.Command {
 	var noEdit bool
 	cmd := &cobra.Command{
 		Use:   "add",
-		Short: "Add a persona (writes personas/<slug>.md and opens $EDITOR)",
+		Short: opts.t("cli.persona.add.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				rt, err := opts.open(ctx, true)
@@ -106,12 +106,12 @@ func newPersonaAddCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVarP(&key, "key", "k", "", "persona slug (defaults to slugify(--name))")
-	cmd.Flags().StringVarP(&name, "name", "n", "", "persona display name")
-	cmd.Flags().StringVarP(&description, "description", "d", "", "short description")
-	cmd.Flags().Int64SliceVarP(&skillIDs, "skill", "s", nil, "skill ids (repeatable, e.g. -s 1 -s 2)")
-	cmd.Flags().StringSliceVar(&skillSlugs, "skill-slug", nil, "skill slugs (repeatable)")
-	cmd.Flags().BoolVar(&noEdit, "no-edit", false, "skip opening $EDITOR after creating the scaffold")
+	cmd.Flags().StringVarP(&key, "key", "k", "", opts.t("cli.persona.add.flag.key"))
+	cmd.Flags().StringVarP(&name, "name", "n", "", opts.t("cli.persona.add.flag.name"))
+	cmd.Flags().StringVarP(&description, "description", "d", "", opts.t("cli.persona.add.flag.description"))
+	cmd.Flags().Int64SliceVarP(&skillIDs, "skill", "s", nil, opts.t("cli.persona.add.flag.skill"))
+	cmd.Flags().StringSliceVar(&skillSlugs, "skill-slug", nil, opts.t("cli.persona.add.flag.skill-slug"))
+	cmd.Flags().BoolVar(&noEdit, "no-edit", false, opts.t("cli.persona.add.flag.no-edit"))
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }
@@ -123,7 +123,7 @@ func newPersonaEditCommand(opts *runtimeOptions) *cobra.Command {
 	var noEdit bool
 	cmd := &cobra.Command{
 		Use:   "edit SLUG",
-		Short: "Edit a persona (opens $EDITOR by default; flags override)",
+		Short: opts.t("cli.persona.edit.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -175,18 +175,18 @@ func newPersonaEditCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVarP(&name, "name", "n", "", "rewrite persona display name")
-	cmd.Flags().StringVarP(&description, "description", "d", "", "rewrite persona description")
-	cmd.Flags().Int64SliceVarP(&skillIDs, "skill", "s", nil, "skill ids (replaces existing set)")
-	cmd.Flags().StringSliceVar(&skillSlugs, "skill-slug", nil, "skill slugs (replaces existing set)")
-	cmd.Flags().BoolVar(&noEdit, "no-edit", false, "do not open $EDITOR (only apply flag-driven updates)")
+	cmd.Flags().StringVarP(&name, "name", "n", "", opts.t("cli.persona.edit.flag.name"))
+	cmd.Flags().StringVarP(&description, "description", "d", "", opts.t("cli.persona.edit.flag.description"))
+	cmd.Flags().Int64SliceVarP(&skillIDs, "skill", "s", nil, opts.t("cli.persona.edit.flag.skill"))
+	cmd.Flags().StringSliceVar(&skillSlugs, "skill-slug", nil, opts.t("cli.persona.edit.flag.skill-slug"))
+	cmd.Flags().BoolVar(&noEdit, "no-edit", false, opts.t("cli.persona.edit.flag.no-edit"))
 	return cmd
 }
 
 func newPersonaRemoveCommand(opts *runtimeOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "remove SLUG",
-		Short: "Remove a persona (deletes file + prunes refs)",
+		Short: opts.t("cli.persona.remove.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {

@@ -102,7 +102,7 @@ func (m *Model) cancelInput() {
 	m.commentEditID = 0
 	m.commentInput = newCommentInput()
 	m.moveInput = newMoveInput()
-	m.status = "Cancelled"
+	m.status = m.t("tui.status.cancelled")
 	// Closing the embedded comment input restores the full activityViewportLines
 	// budget; re-sync so the focused card is positioned against the new height.
 	m.syncActivityScrollToCursor()
@@ -121,7 +121,7 @@ func (m *Model) submitInput() {
 		input = strings.TrimSpace(m.moveInput.Value())
 	}
 	if input == "" {
-		m.status = "Input is required"
+		m.status = m.t("tui.status.input_required")
 		return
 	}
 
@@ -162,7 +162,7 @@ func (m *Model) submitInput() {
 		if selectSavedTask && m.selectTaskByID(savedTask.ID) {
 			m.taskID = savedTask.ID
 		}
-		m.status = "Saved"
+		m.status = m.t("tui.status.saved")
 	}
 	if m.taskID > 0 && m.taskScreen == taskScreenView {
 		if err := m.refreshTaskActivity(m.taskID); err != nil {
@@ -193,12 +193,12 @@ func (m Model) findCommentByID(commentID int64) (domain.Comment, error) {
 // active; the column index is resolved via the workflow's bucket list.
 func (m *Model) moveSelectedToColumn(targetColIdx int) {
 	if targetColIdx < 0 || targetColIdx >= len(m.workflow.Buckets) {
-		m.status = "No target column"
+		m.status = m.t("tui.status.no_target_column")
 		return
 	}
 	task, ok := m.selectedTask()
 	if !ok {
-		m.status = "No selected task"
+		m.status = m.t("tui.status.no_selected_task")
 		return
 	}
 	target := m.workflow.Buckets[targetColIdx]
@@ -212,7 +212,7 @@ func (m *Model) moveSelectedToColumn(targetColIdx int) {
 	if err := m.refresh(); err != nil {
 		m.status = err.Error()
 	} else {
-		m.status = fmt.Sprintf("Moved #%d to %s", task.ID, target.Key)
+		m.status = fmt.Sprintf(m.t("tui.status.task_moved_fmt"), task.ID, target.Key)
 	}
 	m.selectTaskByID(task.ID)
 	m.syncFocusedColumnScroll()

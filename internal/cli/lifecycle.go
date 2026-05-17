@@ -16,7 +16,7 @@ func newDeleteCommand(opts *runtimeOptions) *cobra.Command {
 	var confirmed bool
 	cmd := &cobra.Command{
 		Use:   "delete TASK_ID",
-		Short: "Hard-delete a task (cascade) — subject to bucket policy and operations.delete.guards",
+		Short: opts.t("cli.task.delete.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -25,7 +25,7 @@ func newDeleteCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 				if !confirmed {
-					return nil, domain.NewError(domain.ErrValidation, "task delete requires --confirm to acknowledge the destructive cascade", map[string]any{"task_id": taskID, "hint": "consider okt archive instead for a reversible alternative"})
+					return nil, domain.NewError(domain.ErrValidation, opts.t("cli.err.task_delete_requires_confirm"), map[string]any{"task_id": taskID, "hint": "consider okt archive instead for a reversible alternative"})
 				}
 				rt, err := opts.open(ctx, true)
 				if err != nil {
@@ -46,14 +46,14 @@ func newDeleteCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().BoolVar(&confirmed, "confirm", false, "required: confirm the destructive delete")
+	cmd.Flags().BoolVar(&confirmed, "confirm", false, opts.t("cli.task.delete.flag.confirm"))
 	return cmd
 }
 
 func newArchiveCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "archive TASK_ID",
-		Short: "Archive a task (state=archived, moves into the workflow's final bucket)",
+		Short: opts.t("cli.task.archive.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -86,7 +86,7 @@ func newArchiveCommand(opts *runtimeOptions) *cobra.Command {
 func newUnarchiveCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "unarchive TASK_ID",
-		Short: "Restore an archived task (state=active)",
+		Short: opts.t("cli.task.unarchive.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {

@@ -90,10 +90,10 @@ func (m Model) logsViewportRows() int {
 
 func (m Model) renderLogs() string {
 	if m.repos.ActivityLogs == nil {
-		return m.renderPanel("Activity logging is not available for this project.")
+		return m.renderPanel(m.t("tui.empty.activity_logging_unavailable"))
 	}
 	if len(m.logs) == 0 {
-		return m.renderPanel("No activity yet. Use the CLI, TUI, or MCP to interact with Omakiten.")
+		return m.renderPanel(m.t("tui.empty.logs"))
 	}
 
 	summary := m.renderLogsSummaryTables()
@@ -116,16 +116,16 @@ func (m Model) renderLogs() string {
 func (m Model) renderLogsSummaryTables() string {
 	stats := m.logsStats
 
-	statusRows := m.summaryRows("Status",
-		[2]string{"total", fmt.Sprintf("%d", stats.Total)},
-		[2]string{"ok", fmt.Sprintf("%d", stats.Ok)},
-		[2]string{"error", fmt.Sprintf("%d", stats.Error)},
-		[2]string{"running", fmt.Sprintf("%d", stats.Running)},
+	statusRows := m.summaryRows(m.t("tui.kicker.status"),
+		[2]string{m.t("tui.log.total"), fmt.Sprintf("%d", stats.Total)},
+		[2]string{m.t("tui.log.ok"), fmt.Sprintf("%d", stats.Ok)},
+		[2]string{m.t("tui.log.error"), fmt.Sprintf("%d", stats.Error)},
+		[2]string{m.t("tui.log.running"), fmt.Sprintf("%d", stats.Running)},
 	)
-	sourceRows := m.summaryRows("Sources",
-		[2]string{"cli", fmt.Sprintf("%d", stats.CLI)},
-		[2]string{"mcp", fmt.Sprintf("%d", stats.MCP)},
-		[2]string{"tui", fmt.Sprintf("%d", stats.TUI)},
+	sourceRows := m.summaryRows(m.t("tui.kicker.sources"),
+		[2]string{m.t("tui.log.cli"), fmt.Sprintf("%d", stats.CLI)},
+		[2]string{m.t("tui.log.mcp"), fmt.Sprintf("%d", stats.MCP)},
+		[2]string{m.t("tui.log.tui"), fmt.Sprintf("%d", stats.TUI)},
 	)
 
 	return m.renderSummaryTables(summaryTablesOpts{
@@ -173,12 +173,12 @@ func (m Model) renderLogsWidePanel() string {
 	}
 
 	rows := []string{
-		m.styles.kickerCount("Activity", limit),
-		m.styles.info.Render(fmt.Sprintf("// TIME        SRC  %-*s %-*s STATUS  MS   ARGS", logOperationWidth, "OPERATION", logProjectWidth, "PROJECT")),
+		m.styles.kickerCount(m.t("tui.kicker.activity"), limit),
+		m.styles.info.Render(fmt.Sprintf(m.t("tui.log.column_header_fmt"), logOperationWidth, m.t("tui.log.operation_col"), logProjectWidth, m.t("tui.log.project_col"))),
 		m.hRule(contentWidth),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.logsScroll, m.logsViewportRows())...)
-	rows = append(rows, "", m.styles.hint.Render("Only app service calls are logged. TUI refreshes and direct reads are not shown."))
+	rows = append(rows, "", m.styles.hint.Render(m.t("tui.log.tui_refresh_note")))
 
 	return m.styles.panel.Render(strings.Join(rows, "\n"))
 }
@@ -221,10 +221,10 @@ func (m Model) renderLogsCompactPanel() string {
 		dataRows = append(dataRows, prefix+truncateText(log.Operation, budget))
 	}
 	rows := []string{
-		m.styles.kickerCount("Activity", limit),
+		m.styles.kickerCount(m.t("tui.kicker.activity"), limit),
 		m.hRule(width),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.logsScroll, m.logsViewportRows())...)
-	rows = append(rows, "", m.styles.hint.Render("r refresh · full arguments appear on wider terminals"))
+	rows = append(rows, "", m.styles.hint.Render(m.t("tui.log.refresh_hint")))
 	return m.styles.panel.Render(strings.Join(rows, "\n"))
 }

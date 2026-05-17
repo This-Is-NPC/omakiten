@@ -223,9 +223,9 @@ func buildMarkdownStyle(t markdownTokens) ansi.StyleConfig {
 func (m *Model) toggleMarkdownRendered() {
 	m.markdownRendered = !m.markdownRendered
 	if m.markdownRendered {
-		m.status = "Markdown rendered"
+		m.status = m.t("tui.status.markdown_rendered")
 	} else {
-		m.status = "Markdown raw"
+		m.status = m.t("tui.status.markdown_raw")
 	}
 }
 

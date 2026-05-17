@@ -24,7 +24,7 @@ func (m *Model) handleConfigKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc":
 		if m.deletePending {
-			m.clearDeletePrompt("Delete cancelled")
+			m.clearDeletePrompt(m.t("tui.status.delete_cancelled"))
 		}
 	case "up", "k":
 		m.clearDeletePrompt("")
@@ -45,7 +45,7 @@ func (m *Model) handleConfigKey(msg tea.KeyMsg) tea.Cmd {
 	case "n":
 		m.clearDeletePrompt("")
 		if m.entityKind == entityKindTemplate {
-			m.status = "Templates auto-load — add a .md file to templates/ and refresh"
+			m.status = m.t("tui.status.template_add_hint")
 		} else if m.entityKind != entityKindTag {
 			return m.openEntityCreate(m.entityKind)
 		}
@@ -59,7 +59,7 @@ func (m *Model) handleConfigKey(msg tea.KeyMsg) tea.Cmd {
 		case entityKindTag:
 			m.requestSelectedTagDelete()
 		case entityKindTemplate:
-			m.status = "Templates auto-load — remove the .md file from templates/ and refresh"
+			m.status = m.t("tui.status.template_remove_hint")
 		default:
 			m.requestSelectedEntityDelete()
 		}
@@ -106,7 +106,7 @@ func (m *Model) moveEntityCursor(delta int) {
 
 func (m *Model) openSelectedEntityView() {
 	if m.entityCount(m.entityKind) == 0 {
-		m.status = "Nothing to open"
+		m.status = m.t("tui.status.nothing_to_open")
 		return
 	}
 	cursor := m.selectedEntityIndex(m.entityKind)
@@ -125,7 +125,7 @@ func (m *Model) openSelectedEntityView() {
 // on return.
 func (m *Model) openEntityCreate(kind entityKind) tea.Cmd {
 	if m.repos.Editor == nil {
-		m.status = "Editor not available"
+		m.status = m.t("tui.status.editor_unavailable")
 		return nil
 	}
 	name := nextScaffoldName(kind, m.snapshot())
@@ -145,7 +145,7 @@ func (m *Model) snapshot() Model { return *m }
 
 func (m *Model) openSelectedEntityEdit() tea.Cmd {
 	if m.entityCount(m.entityKind) == 0 {
-		m.status = "Nothing to edit"
+		m.status = m.t("tui.status.nothing_to_edit")
 		return nil
 	}
 	cursor := m.selectedEntityIndex(m.entityKind)
@@ -159,7 +159,7 @@ func (m *Model) openSelectedEntityEdit() tea.Cmd {
 func (m *Model) openEntityEditor(kind entityKind, slug string) tea.Cmd {
 	path := m.entitySourcePath(kind, slug)
 	if path == "" {
-		m.status = "Source path missing"
+		m.status = m.t("tui.status.source_path_missing")
 		return nil
 	}
 	return runExternalEditor(path)
@@ -246,7 +246,7 @@ func (m Model) entitySourcePath(kind entityKind, slug string) string {
 // written file is reflected.
 func (m *Model) handleEditorFinished(msg editorFinishedMsg) {
 	if msg.err != nil {
-		m.status = "Editor: " + msg.err.Error()
+		m.status = fmt.Sprintf(m.t("tui.status.editor_error_fmt"), msg.err.Error())
 		return
 	}
 	if m.repos.Editor != nil {
@@ -261,12 +261,12 @@ func (m *Model) handleEditorFinished(msg editorFinishedMsg) {
 		m.status = err.Error()
 		return
 	}
-	m.status = "Saved"
+	m.status = m.t("tui.status.saved")
 }
 
 func (m *Model) requestSelectedEntityDelete() {
 	if m.entityCount(m.entityKind) == 0 {
-		m.status = "Nothing to delete"
+		m.status = m.t("tui.status.nothing_to_delete")
 		return
 	}
 	cursor := m.selectedEntityIndex(m.entityKind)
@@ -288,7 +288,7 @@ func (m *Model) requestEntityDelete(kind entityKind, slug string) {
 	m.deletePending = true
 	m.deleteKind = kind
 	m.deleteSlug = slug
-	m.status = fmt.Sprintf("Confirm delete %s %q. Press d again to remove it; esc cancels.", strings.ToLower(kind.String()), slug)
+	m.status = fmt.Sprintf(m.t("tui.confirm.entity_delete_fmt"), strings.ToLower(kind.String()), slug)
 }
 
 // rotateSnapshotAfterEdit advances the per-project Snapshot the TUI
@@ -313,7 +313,7 @@ func (m *Model) rotateSnapshotAfterEdit(resolved config.Bundle) {
 
 func (m *Model) deleteEntity(kind entityKind, slug string) {
 	if m.repos.Editor == nil {
-		m.status = "Editor not available"
+		m.status = m.t("tui.status.editor_unavailable")
 		return
 	}
 	var err error
@@ -340,15 +340,15 @@ func (m *Model) deleteEntity(kind entityKind, slug string) {
 		return
 	}
 	if m.entityScreen == entityScreenView && m.entityForm.slug == slug {
-		m.closeEntityScreen("Deleted")
+		m.closeEntityScreen(m.t("tui.status.deleted"))
 		return
 	}
-	m.status = "Deleted"
+	m.status = m.t("tui.status.deleted")
 }
 
 func (m *Model) deleteOrphanTags() {
 	if m.repos.Tags == nil {
-		m.status = "Tag repository not available"
+		m.status = m.t("tui.status.tag_repo_unavailable")
 		return
 	}
 	n, err := m.repos.Tags.DeleteOrphanTags(m.ctx)
@@ -361,21 +361,21 @@ func (m *Model) deleteOrphanTags() {
 		return
 	}
 	if n == 0 {
-		m.status = "No orphan tags found"
+		m.status = m.t("tui.status.no_orphan_tags")
 	} else {
-		m.status = fmt.Sprintf("%d orphan tag(s) deleted", n)
+		m.status = fmt.Sprintf(m.t("tui.status.orphan_tags_deleted_fmt"), n)
 	}
 }
 
 func (m *Model) requestSelectedTagDelete() {
 	if m.repos.Tags == nil || len(m.tags) == 0 {
-		m.status = "Nothing to delete"
+		m.status = m.t("tui.status.nothing_to_delete")
 		return
 	}
 	cursor := m.selectedEntityIndex(entityKindTag)
 	tag := m.tags[cursor]
 	if tag.UsageCount > 0 {
-		m.status = fmt.Sprintf("Tag %q is in use (%d references) — cannot delete", tag.Label, tag.UsageCount)
+		m.status = fmt.Sprintf(m.t("tui.status.tag_in_use_fmt"), tag.Label, tag.UsageCount)
 		return
 	}
 	if m.deletePending && m.deleteKind == entityKindTag && m.deleteSlug == tag.Name {
@@ -385,12 +385,12 @@ func (m *Model) requestSelectedTagDelete() {
 	m.deletePending = true
 	m.deleteKind = entityKindTag
 	m.deleteSlug = tag.Name
-	m.status = fmt.Sprintf("Confirm delete tag %q. Press d again to remove; esc cancels.", tag.Label)
+	m.status = fmt.Sprintf(m.t("tui.confirm.tag_delete_fmt"), tag.Label)
 }
 
 func (m *Model) deleteTagByName(name string) {
 	if m.repos.Tags == nil {
-		m.status = "Tag repository not available"
+		m.status = m.t("tui.status.tag_repo_unavailable")
 		return
 	}
 	n, err := m.repos.Tags.DeleteOrphanTags(m.ctx)
@@ -404,6 +404,6 @@ func (m *Model) deleteTagByName(name string) {
 		return
 	}
 	if n > 0 {
-		m.status = fmt.Sprintf("Tag %q deleted", name)
+		m.status = fmt.Sprintf(m.t("tui.status.tag_deleted_fmt"), name)
 	}
 }

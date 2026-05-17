@@ -18,7 +18,7 @@ import (
 func (m *Model) openPersonaPicker(slug string) {
 	persona, ok := m.findPersonaBySlug(slug)
 	if !ok {
-		m.status = "Persona not found"
+		m.status = m.t("tui.status.persona_not_found")
 		return
 	}
 	checks := map[string]bool{}
@@ -33,12 +33,12 @@ func (m *Model) openPersonaPicker(slug string) {
 		pickerChecks: checks,
 	}
 	m.entityPicker = picker.New(picker.Multi)
-	m.status = "Skill picker"
+	m.status = m.t("tui.status.skill_picker")
 }
 
 func (m *Model) openPersonaPickerForSelected() {
 	if m.entityCount(entityKindPersona) == 0 {
-		m.status = "No persona selected"
+		m.status = m.t("tui.status.no_persona_selected")
 		return
 	}
 	cursor := m.selectedEntityIndex(entityKindPersona)
@@ -106,7 +106,7 @@ func (m Model) pickerViewportRows() int {
 // touching the persona body file. Selection is the set of checked rows.
 func (m *Model) savePersonaPicker() {
 	if m.repos.Editor == nil {
-		m.status = "Editor not available"
+		m.status = m.t("tui.status.editor_unavailable")
 		return
 	}
 	slugs := make([]string, 0, len(m.entityForm.pickerChecks))
@@ -129,7 +129,7 @@ func (m *Model) savePersonaPicker() {
 		return
 	}
 	m.openSelectedEntityViewForSlug(entityKindPersona, m.entityForm.slug)
-	m.status = "Saved"
+	m.status = m.t("tui.status.saved")
 }
 
 // scaffoldNewSkillFromPicker creates a placeholder skill, opens $EDITOR
@@ -179,8 +179,8 @@ func (m Model) renderPersonaPicker() string {
 	dataRows = append(dataRows, fmt.Sprintf("%s + create new skill (opens $EDITOR)", addMarker))
 
 	header := []string{
-		m.styles.kicker(fmt.Sprintf("Skills for persona · %s", persona.Key)),
-		m.styles.hint.Render("up/down: move · space: toggle · enter on '+ create new': new skill · ctrl+s: save · esc: cancel"),
+		m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.skills_for_persona_fmt"), persona.Key)),
+		m.styles.hint.Render(m.t("tui.picker.hint.skills_persona")),
 		"",
 	}
 	return m.renderPickerPanel(header, dataRows, m.entityPicker.Scroll, m.pickerViewportRows())

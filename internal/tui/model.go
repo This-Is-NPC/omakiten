@@ -702,14 +702,14 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 			return false
 		}
 		if _, ok := m.selectedTask(); ok {
-			m.beginInput(modeComment, "Comment body", "")
+			m.beginInput(modeComment, m.t("tui.input.comment_body"), "")
 		}
 		return true
 	case "r":
 		if err := m.refreshCurrentView(); err != nil {
 			m.status = err.Error()
 		} else {
-			m.status = "Refreshed"
+			m.status = m.t("tui.status.refreshed")
 		}
 		return true
 	case "A":
@@ -720,9 +720,9 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		if err := m.refreshCurrentView(); err != nil {
 			m.status = err.Error()
 		} else if m.includeArchived {
-			m.status = "Showing archived tasks"
+			m.status = m.t("tui.status.showing_archived")
 		} else {
-			m.status = "Hiding archived tasks"
+			m.status = m.t("tui.status.hiding_archived")
 		}
 		return true
 	}

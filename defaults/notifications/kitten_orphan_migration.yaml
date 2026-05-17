@@ -1,6 +1,6 @@
 # Identity ------------------------------------------------------------
 name: kitten_orphan_migration
-description: Prompt after a config swap when tasks would be orphaned by the new workflow's bucket set.
+description: "${{intl:notifications.kitten_orphan_migration.description}}"
 
 # Geometry ------------------------------------------------------------
 size:

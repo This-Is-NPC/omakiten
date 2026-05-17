@@ -42,13 +42,18 @@ func LoadBundle(path string) (Bundle, error) {
 	if err != nil {
 		return Bundle{}, err
 	}
+	languages, languageWarn, err := LoadLanguages(filepath.Join(rootDir, "languages"))
+	if err != nil {
+		return Bundle{}, err
+	}
 
 	bundle := Bundle{
-		Version:   wired.Version,
-		Kit:       wired.Kit,
-		Config:    wired.Config,
-		Workflows: wired.Workflows,
-		Notifications:   notifications,
+		Version:       wired.Version,
+		Kit:           wired.Kit,
+		Config:        wired.Config,
+		Workflows:     wired.Workflows,
+		Notifications: notifications,
+		Languages:     languages,
 	}
 
 	bundle.Warnings = append(bundle.Warnings, skillWarn...)
@@ -56,6 +61,7 @@ func LoadBundle(path string) (Bundle, error) {
 	bundle.Warnings = append(bundle.Warnings, personaWarn...)
 	bundle.Warnings = append(bundle.Warnings, templateWarn...)
 	bundle.Warnings = append(bundle.Warnings, notificationWarn...)
+	bundle.Warnings = append(bundle.Warnings, languageWarn...)
 
 	bundle.Skills = pickSkills(skills, wired.Skills)
 	bundle.Laws = pickLaws(laws, wired.Laws, wired.Personas, wired.Projects)

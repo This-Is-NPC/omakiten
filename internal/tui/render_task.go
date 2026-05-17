@@ -43,11 +43,11 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case "c":
 			if _, ok := m.activeTask(); ok {
-				m.beginInput(modeComment, "Comment body", "")
+				m.beginInput(modeComment, m.t("tui.input.comment_body"), "")
 			}
 		case "m":
 			if _, ok := m.activeTask(); ok {
-				m.beginInput(modeMove, "Target bucket key", "")
+				m.beginInput(modeMove, m.t("tui.input.target_bucket_key"), "")
 			}
 		case "d":
 			// Task delete only fires when the form column owns focus —
@@ -66,7 +66,7 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if err := m.refresh(); err != nil {
 				m.status = err.Error()
 			} else {
-				m.status = "Refreshed"
+				m.status = m.t("tui.status.refreshed")
 			}
 		case "M":
 			m.toggleMarkdownRendered()
@@ -120,11 +120,11 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return *m, tea.Quit
 	case "esc":
 		if m.taskScreen == taskScreenCreate {
-			m.closeTaskScreen("Cancelled")
+			m.closeTaskScreen(m.t("tui.status.cancelled"))
 		} else if task, ok := m.activeTask(); ok {
 			m.openTaskView(task)
 		} else {
-			m.closeTaskScreen("Cancelled")
+			m.closeTaskScreen(m.t("tui.status.cancelled"))
 		}
 		return *m, nil
 	case "ctrl+s":
@@ -180,7 +180,7 @@ func (m *Model) updateBlockerPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch m.blockerPicker.LastEvent() {
 	case picker.EventCancel:
-		m.closeBlockerPicker("Cancelled")
+		m.closeBlockerPicker(m.t("tui.status.cancelled"))
 	case picker.EventSelect:
 		m.saveBlockerPicker()
 	case picker.EventToggle:
@@ -237,7 +237,7 @@ func (m *Model) openTaskCreate() {
 	m.taskPriority = m.defaultPriorityID()
 	m.taskField = taskFieldTitle
 	m.applyTaskFieldFocus()
-	m.status = "New task"
+	m.status = m.t("tui.status.new_task")
 	m.moveMode = false
 }
 
@@ -330,7 +330,7 @@ func (m *Model) openTaskEdit(task domain.Task) {
 	m.taskPriority = task.Priority
 	m.taskField = taskFieldTitle
 	m.applyTaskFieldFocus()
-	m.status = "Editing task"
+	m.status = m.t("tui.status.editing_task")
 	m.moveMode = false
 }
 
@@ -471,7 +471,7 @@ func (m *Model) saveBlockerPicker() {
 		m.status = err.Error()
 		return
 	}
-	m.closeBlockerPicker("Blockers saved")
+	m.closeBlockerPicker(m.t("tui.status.blockers_saved"))
 }
 
 // armOrConfirmTaskDelete is the arm-then-confirm gate for hard task deletion.
@@ -505,7 +505,7 @@ func (m *Model) armOrConfirmTaskDelete(task domain.Task) {
 	}
 	m.taskDeletePendingID = task.ID
 	m.commentDeletePendingID = 0
-	m.status = fmt.Sprintf("Confirm delete task #%d %q. Press d again; esc cancels.", task.ID, task.Title)
+	m.status = fmt.Sprintf(m.t("tui.confirm.task_delete_fmt"), task.ID, task.Title)
 }
 
 // executeTaskDelete runs the TaskService.Delete call and reconciles UI state
@@ -526,13 +526,13 @@ func (m *Model) executeTaskDelete(taskID int64) {
 		m.status = err.Error()
 		return
 	}
-	m.status = fmt.Sprintf("Deleted task #%d", taskID)
+	m.status = fmt.Sprintf(m.t("tui.status.task_deleted_fmt"), taskID)
 }
 
 func (m *Model) saveTaskForm() {
 	title := strings.TrimSpace(m.taskTitleInput.Value())
 	if title == "" {
-		m.status = "Task title is required"
+		m.status = m.t("tui.status.task_title_required")
 		return
 	}
 	description := strings.TrimSpace(m.taskDescriptionInput.Value())
@@ -573,7 +573,7 @@ func (m *Model) saveTaskForm() {
 	if m.selectTaskByID(task.ID) {
 		m.openTaskView(task)
 	}
-	m.status = "Saved"
+	m.status = m.t("tui.status.saved")
 }
 
 func (m Model) renderTaskScreen() string {
@@ -582,11 +582,11 @@ func (m Model) renderTaskScreen() string {
 	}
 	switch m.taskScreen {
 	case taskScreenCreate:
-		return m.renderTaskForm("New task")
+		return m.renderTaskForm(m.t("tui.kicker.new_task"))
 	case taskScreenEdit:
 		// Mirrors the comment-edit kicker pattern (`Edit comment · #N`)
 		// so both write surfaces read as the same shape.
-		return m.renderTaskForm(fmt.Sprintf("Edit task · #%d", m.taskID))
+		return m.renderTaskForm(fmt.Sprintf(m.t("tui.kicker.edit_task_fmt"), m.taskID))
 	case taskScreenView:
 		return m.renderTaskView()
 	default:
@@ -597,7 +597,7 @@ func (m Model) renderTaskScreen() string {
 func (m Model) renderTaskView() string {
 	task, ok := m.activeTask()
 	if !ok {
-		return m.renderPanel("Task not found. Refresh with r or return to the board.")
+		return m.renderPanel(m.t("tui.empty.task_not_found_refresh"))
 	}
 	blockers := m.blockersForTask(task.ID)
 
@@ -611,9 +611,9 @@ func (m Model) renderTaskView() string {
 		tagLine = strings.Join(tagNames, " · ")
 	}
 
-	taskKicker := m.styles.kicker(fmt.Sprintf("Task · #%d", task.ID))
+	taskKicker := m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.task_fmt"), task.ID))
 	if m.taskFocus == taskFocusForm {
-		taskKicker = m.styles.kickerFocused(fmt.Sprintf("Task · #%d", task.ID))
+		taskKicker = m.styles.kickerFocused(fmt.Sprintf(m.t("tui.kicker.task_fmt"), task.ID))
 	}
 
 	commentsCellText := m.renderTaskCommentsCell(task.ID)
@@ -643,22 +643,22 @@ func (m Model) renderTaskView() string {
 
 	detail := m.taskView.Reset(valueWidth).
 		Custom(taskKicker).
-		Row("Title", task.Title).
-		Row("Bucket", task.BucketKey).
-		Row("Priority", m.priorityLabel(task.Priority)).
-		Row("Comments", fmt.Sprintf("%d", m.commentCount(task.ID))).
-		Row("Tags", tagLine).
-		KickerCount("Blockers", len(blockers))
+		Row(m.t("tui.row.title"), task.Title).
+		Row(m.t("tui.row.bucket"), task.BucketKey).
+		Row(m.t("tui.row.priority"), m.priorityLabel(task.Priority)).
+		Row(m.t("tui.row.comments"), fmt.Sprintf("%d", m.commentCount(task.ID))).
+		Row(m.t("tui.row.tags"), tagLine).
+		KickerCount(m.t("tui.row.blockers"), len(blockers))
 	if len(blockers) == 0 {
-		detail = detail.Span(m.styles.hint.Render("No blockers. Press b to add one."))
+		detail = detail.Span(m.styles.hint.Render(m.t("tui.empty.blockers")))
 	} else {
 		for _, blocker := range blockers {
 			detail = detail.Span(m.renderTaskReference(blocker))
 		}
 	}
-	detail = detail.Kicker("Description")
+	detail = detail.Kicker(m.t("tui.kicker.description"))
 	if strings.TrimSpace(task.Description) == "" {
-		detail = detail.Span(m.styles.hint.Render("No description"))
+		detail = detail.Span(m.styles.hint.Render(m.t("tui.empty.task_no_description")))
 	} else {
 		detail = detail.Span(m.renderBodyMarkdown(task.Description, valueWidth))
 	}
@@ -731,19 +731,19 @@ func (m Model) renderTaskReference(task domain.Task) string {
 func (m Model) renderBlockerPicker() string {
 	task, ok := m.taskByID(m.blockerPickerTaskID)
 	if !ok {
-		return m.renderPanel("Task not found. Press esc to return.")
+		return m.renderPanel(m.t("tui.status.task_not_found"))
 	}
 
 	header := []string{
-		m.styles.kicker(fmt.Sprintf("Blockers · #%d", task.ID)),
-		m.styles.hint.Render("up/down: move · space: toggle · ctrl+s: save · esc: cancel"),
+		m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.blockers_fmt"), task.ID)),
+		m.styles.hint.Render(m.t("tui.picker.hint.blockers")),
 		"",
-		m.styles.metaRow("Task", task.Title, metaRowLabelWidth),
+		m.styles.metaRow(m.t("tui.row.task"), task.Title, metaRowLabelWidth),
 		"",
 	}
 	candidates := m.blockerPickerCandidates()
 	if len(candidates) == 0 {
-		empty := []string{m.styles.hint.Render("No other tasks are available to block this task.")}
+		empty := []string{m.styles.hint.Render(m.t("tui.empty.blocker_picker"))}
 		return m.renderPickerPanel(header, empty, 0, 0)
 	}
 
@@ -766,7 +766,7 @@ func (m Model) renderTaskForm(title string) string {
 	descriptionField := m.renderTaskDescriptionField(width)
 	lines := []string{
 		m.styles.kicker(title),
-		m.formHint("ctrl+s saves", "tab switches field", "←/→ cycles priority", "esc cancels"),
+		m.formHint(m.t("tui.form.hint.ctrl_s_saves"), m.t("tui.form.hint.tab_switches_field"), m.t("tui.form.hint.priority_cycle"), m.t("tui.form.hint.esc_cancels")),
 		"",
 		m.renderTaskFormLabel(taskFieldTitle, "Title"),
 		titleField,

@@ -1,9 +1,14 @@
 package cli
 
 import (
+	"bufio"
 	"context"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -16,32 +21,18 @@ func newConfigInitCommand(opts *runtimeOptions) *cobra.Command {
 	var scopeFlag string
 	var presetName string
 	var force bool
+	var cliLang string
+	var tuiLang string
+	var agentLang string
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Materialise an official preset into the user-global or repo-local install",
-		Long: `Seed a standalone config install rooted in the chosen scope.
-
-  --scope global  →  paths.ConfigRoot() (or --config's parent).
-                     Existing user install; rerun is idempotent.
-
-  --scope local   →  <cwd>/.omakiten (literal CWD, no walk-up).
-                     A complete install — config/<preset>.yaml plus every
-                     entity folder — so the runtime can load it without any
-                     merge with the user-global layer. The walk-up resolver
-                     picks this up automatically on subsequent okt calls
-                     from inside the repo.
-
-Behaviour matrix:
-  - File missing            → atomic write.
-  - Same preset, same files → no_op:true (silent success).
-  - Different preset        → flips .active to the new preset.
-  - Tampered shipped files  → preserved unless --force.
-  - --force                 → re-copies every embedded shipped file
-                              (skills, laws, personas, templates, themes,
-                              notifications, every preset yaml).
-                              custom/ subtrees are never touched.`,
+		Short: opts.t("cli.config.init.short"),
+		Long: opts.t("cli.config.init.long"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			cliLangSet := cmd.Flags().Changed("cli-lang")
+			tuiLangSet := cmd.Flags().Changed("tui-lang")
+			agentLangSet := cmd.Flags().Changed("agent-lang")
 			return runJSON(cmd, func(context.Context) (any, error) {
 				root, err := resolveScopeRoot(opts, scopeFlag)
 				if err != nil {
@@ -49,7 +40,18 @@ Behaviour matrix:
 				}
 				res, err := config.SeedInstall(root, presetName, force)
 				if err != nil {
-					return nil, presetCLIError(err)
+					return nil, presetCLIError(opts, err)
+				}
+				langSummary, err := applyLanguageSelections(cmd, res.Path, languagePromptInputs{
+					CLILangSet:   cliLangSet,
+					CLILang:      cliLang,
+					TUILangSet:   tuiLangSet,
+					TUILang:      tuiLang,
+					AgentLangSet: agentLangSet,
+					AgentLang:    agentLang,
+				})
+				if err != nil {
+					return nil, err
 				}
 				payload := map[string]any{
 					"scope": scopeFlag,
@@ -65,16 +67,194 @@ Behaviour matrix:
 				if res.Refreshed {
 					payload["refreshed"] = true
 				}
+				if langSummary != nil {
+					payload["languages"] = langSummary
+				}
 				return payload, nil
 			})
 		},
 	}
-	cmd.Flags().StringVar(&scopeFlag, "scope", "", "config layer to seed: global or local")
-	cmd.Flags().StringVar(&presetName, "preset", "", "official workflow preset to seed")
-	cmd.Flags().BoolVar(&force, "force", false, "re-copy embedded shipped files (skills, laws, personas, etc.) — custom/ is never touched")
+	cmd.Flags().StringVar(&scopeFlag, "scope", "", opts.t("cli.config.init.flag.scope"))
+	cmd.Flags().StringVar(&presetName, "preset", "", opts.t("cli.config.init.flag.preset"))
+	cmd.Flags().BoolVar(&force, "force", false, opts.t("cli.config.init.flag.force"))
+	cmd.Flags().StringVar(&cliLang, "cli-lang", "", opts.t("cli.config.init.flag.cli-lang"))
+	cmd.Flags().StringVar(&tuiLang, "tui-lang", "", opts.t("cli.config.init.flag.tui-lang"))
+	cmd.Flags().StringVar(&agentLang, "agent-lang", "", opts.t("cli.config.init.flag.agent-lang"))
 	_ = cmd.MarkFlagRequired("scope")
 	_ = cmd.MarkFlagRequired("preset")
 	return cmd
+}
+
+// languagePromptInputs carries the flag values the init RunE collected
+// from cobra into applyLanguageSelections. Bool fields capture whether
+// the user supplied the flag at all so empty values can be told apart
+// from omitted ones — `--agent-lang ""` is a legitimate explicit
+// clear, while omitting the flag leaves the surface at its current
+// configured value (or invokes the TTY prompt).
+type languagePromptInputs struct {
+	CLILangSet   bool
+	CLILang      string
+	TUILangSet   bool
+	TUILang      string
+	AgentLangSet bool
+	AgentLang    string
+}
+
+// applyLanguageSelections loads the freshly-seeded omakiten.yaml,
+// resolves the desired per-surface language values from the supplied
+// flags (or, when missing on an interactive TTY, prompts the user),
+// validates CLI/TUI codes against the discovered language packs, and
+// rewrites the file with the new languages block. Returns a summary
+// map for the JSON payload so callers can confirm which values
+// actually landed. Returns nil when no change is needed.
+func applyLanguageSelections(cmd *cobra.Command, configPath string, inputs languagePromptInputs) (map[string]any, error) {
+	bundle, err := config.LoadBundle(configPath)
+	if err != nil {
+		return nil, domain.NewError(domain.ErrConfigInvalid, t("cli.err.init_seeded_config_invalid"), map[string]any{"path": configPath, "error": fmt.Sprint(err)})
+	}
+	available := availableLanguageCodes(bundle.Languages)
+	defaults := bundle.Config.Languages
+	next := defaults
+
+	if inputs.CLILangSet {
+		next.CLI = strings.TrimSpace(inputs.CLILang)
+	} else if isInteractive(cmd) {
+		choice, err := promptLanguageCode(cmd, t("cli.print.prompt_label.cli"), available, defaults.CLI)
+		if err != nil {
+			return nil, err
+		}
+		next.CLI = choice
+	}
+	if inputs.TUILangSet {
+		next.TUI = strings.TrimSpace(inputs.TUILang)
+	} else if isInteractive(cmd) {
+		choice, err := promptLanguageCode(cmd, t("cli.print.prompt_label.tui"), available, defaults.TUI)
+		if err != nil {
+			return nil, err
+		}
+		next.TUI = choice
+	}
+	if inputs.AgentLangSet {
+		next.AgentOutput = strings.TrimSpace(inputs.AgentLang)
+	} else if isInteractive(cmd) {
+		choice, err := promptFreeForm(cmd, t("cli.print.prompt_label.agent"), defaults.AgentOutput)
+		if err != nil {
+			return nil, err
+		}
+		next.AgentOutput = choice
+	}
+
+	if next == defaults {
+		return nil, nil
+	}
+	bundle.Config.Languages = next
+
+	if err := validateInitLanguageChoice("cli-lang", next.CLI, available); err != nil {
+		return nil, err
+	}
+	if err := validateInitLanguageChoice("tui-lang", next.TUI, available); err != nil {
+		return nil, err
+	}
+	if err := config.SaveBundle(configPath, bundle); err != nil {
+		return nil, fmt.Errorf("save %s: %w", configPath, err)
+	}
+	return map[string]any{
+		"cli":          next.CLI,
+		"tui":          next.TUI,
+		"agent_output": next.AgentOutput,
+	}, nil
+}
+
+func availableLanguageCodes(langs []config.Language) []string {
+	out := make([]string, 0, len(langs))
+	for _, lang := range langs {
+		out = append(out, lang.Code)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func validateInitLanguageChoice(flag, value string, available []string) error {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return nil
+	}
+	for _, code := range available {
+		if code == v {
+			return nil
+		}
+	}
+	return domain.NewError(domain.ErrValidation, fmt.Sprintf(t("cli.err.unknown_language_code"), flag, v), map[string]any{"available": available})
+}
+
+// isInteractive reports whether the command should issue TTY prompts.
+// True only when (a) the cobra command still writes to os.Stdout
+// (tests always SetOut to a buffer, so this turns prompts off in the
+// test harness) and (b) stdin is attached to a character device. Both
+// gates together mean "real terminal session, not a piped script and
+// not a captured-output test run".
+func isInteractive(cmd *cobra.Command) bool {
+	if cmd.OutOrStdout() != os.Stdout {
+		return false
+	}
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return stat.Mode()&os.ModeCharDevice != 0
+}
+
+// promptLanguageCode prints the available codes and reads one from
+// stdin, defaulting to fallback when the user submits an empty line.
+// Loops until the entry matches an available code so the seeded
+// omakiten.yaml never lands with an invalid value.
+func promptLanguageCode(cmd *cobra.Command, label string, available []string, fallback string) (string, error) {
+	reader := bufio.NewReader(cmd.InOrStdin())
+	out := cmd.OutOrStdout()
+	def := fallback
+	if def == "" {
+		def = "en"
+	}
+	for {
+		fmt.Fprintf(out, t("cli.print.prompt_with_options"), label, strings.Join(available, ", "), def)
+		line, err := reader.ReadString('\n')
+		if err != nil && err != io.EOF {
+			return "", err
+		}
+		choice := strings.TrimSpace(line)
+		if choice == "" {
+			return def, nil
+		}
+		for _, code := range available {
+			if code == choice {
+				return choice, nil
+			}
+		}
+		fmt.Fprintf(out, t("cli.print.prompt_unknown_code"), choice, strings.Join(available, ", "))
+	}
+}
+
+// promptFreeForm reads any text from stdin, defaulting to fallback
+// when the user submits an empty line. Used for languages.agent_output
+// which is a directive consumed by the agent, not a catalog key.
+func promptFreeForm(cmd *cobra.Command, label, fallback string) (string, error) {
+	reader := bufio.NewReader(cmd.InOrStdin())
+	out := cmd.OutOrStdout()
+	def := fallback
+	defLabel := def
+	if defLabel == "" {
+		defLabel = t("cli.print.prompt_freeform_none")
+	}
+	fmt.Fprintf(out, t("cli.print.prompt_freeform"), label, defLabel)
+	line, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	choice := strings.TrimSpace(line)
+	if choice == "" {
+		return def, nil
+	}
+	return choice, nil
 }
 
 // resolveScopeRoot returns the directory SeedInstall should populate for the
@@ -100,7 +280,7 @@ func resolveScopeRoot(opts *runtimeOptions, scope string) (string, error) {
 		}
 		return filepath.Join(cwd, config.RepoLocalDirName), nil
 	default:
-		return "", domain.NewError(domain.ErrValidation, "invalid --scope (want global or local)", map[string]any{"scope": scope})
+		return "", domain.NewError(domain.ErrValidation, t("cli.err.invalid_scope"), map[string]any{"scope": scope})
 	}
 }
 

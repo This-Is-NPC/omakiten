@@ -37,7 +37,7 @@ func (m Model) statsPeriodIdx() int {
 
 func (m Model) renderStats() string {
 	if m.repos.Metrics == nil {
-		return m.renderPanel("Metrics repository not available.")
+		return m.renderPanel(m.t("tui.empty.metrics_unavailable"))
 	}
 
 	// Top block: project Totals + Tokens as two bordered tables. Lives
@@ -84,16 +84,16 @@ func (m Model) renderStatsModelPanel() string {
 
 	sepLine := m.hRule(contentWidth)
 	header := fmt.Sprintf("%-*s %*s %*s %*s %*s %*s",
-		modelW, "MODEL",
-		countW, "ERRORS",
-		countW, "SEARCHES",
-		ratioW, "SEARCH%",
-		countW, "SOL",
-		likeW, "LIKE%",
+		modelW, m.t("tui.stat.column.model"),
+		countW, m.t("tui.stat.column.errors"),
+		countW, m.t("tui.stat.column.searches"),
+		ratioW, m.t("tui.stat.column.search_pct"),
+		countW, m.t("tui.stat.column.sol"),
+		likeW, m.t("tui.stat.column.like_pct"),
 	)
 
 	rows := []string{
-		m.styles.kicker("Stats") + "  " + periodPicker,
+		m.styles.kicker(m.t("tui.kicker.stats")) + "  " + periodPicker,
 		m.styles.info.Render(header),
 		sepLine,
 	}
@@ -119,7 +119,7 @@ func (m Model) renderStatsModelPanel() string {
 	}
 
 	if len(summary.ByModel) == 0 {
-		rows = append(rows, m.styles.hint.Render("No agent activity recorded yet for this period."))
+		rows = append(rows, m.styles.hint.Render(m.t("tui.empty.stats")))
 	} else {
 		t := summary.Total
 		searchPct := "—"
@@ -131,7 +131,7 @@ func (m Model) renderStatsModelPanel() string {
 			likePct = fmt.Sprintf("%.0f%%", t.LikeRate*100)
 		}
 		totalRow := fmt.Sprintf("%-*s %*d %*d %*s %*d %*s",
-			modelW, "total",
+			modelW, m.t("tui.stat.total_row_label"),
 			countW, t.ErrorsRecorded,
 			countW, t.ErrorsSearched,
 			ratioW, searchPct,
@@ -142,7 +142,7 @@ func (m Model) renderStatsModelPanel() string {
 	}
 
 	if summary.Since != "" {
-		rows = append(rows, "", m.styles.hint.Render("since "+summary.Since))
+		rows = append(rows, "", m.styles.hint.Render(fmt.Sprintf(m.t("tui.stat.since_fmt"), summary.Since)))
 	}
 
 	return m.styles.panel.Render(strings.Join(rows, "\n"))
@@ -157,18 +157,18 @@ func (m Model) renderStatsModelPanel() string {
 // wide enough; otherwise stacked, with a single combined table as the
 // narrow-terminal fallback.
 func (m Model) renderStatsBudgetTables() string {
-	totalsRows := m.summaryRows("Totals",
-		[2]string{"tasks", fmt.Sprintf("%d", len(m.tasks))},
-		[2]string{"comments", fmt.Sprintf("%d", len(m.comments))},
-		[2]string{"context", fmt.Sprintf("%d", len(m.entries))},
-		[2]string{"tags", fmt.Sprintf("%d", len(m.tags))},
+	totalsRows := m.summaryRows(m.t("tui.kicker.totals"),
+		[2]string{m.t("tui.stat.tasks"), fmt.Sprintf("%d", len(m.tasks))},
+		[2]string{m.t("tui.stat.comments"), fmt.Sprintf("%d", len(m.comments))},
+		[2]string{m.t("tui.stat.context"), fmt.Sprintf("%d", len(m.entries))},
+		[2]string{m.t("tui.stat.tags"), fmt.Sprintf("%d", len(m.tags))},
 	)
-	tokensRows := m.summaryRows("Tokens",
-		[2]string{"estimated", fmt.Sprintf("%d", m.metrics.EstimatedTotal)},
-		[2]string{"max", fmt.Sprintf("%d", m.metrics.MaxTokens)},
+	tokensRows := m.summaryRows(m.t("tui.kicker.tokens"),
+		[2]string{m.t("tui.stat.estimated"), fmt.Sprintf("%d", m.metrics.EstimatedTotal)},
+		[2]string{m.t("tui.stat.max"), fmt.Sprintf("%d", m.metrics.MaxTokens)},
 	)
 	if m.metrics.Truncated {
-		tokensRows = append(tokensRows, []string{m.styles.error.Render("[ERROR]"), m.styles.error.Render("budget exceeded")})
+		tokensRows = append(tokensRows, []string{m.styles.error.Render(m.t("tui.stat.error_badge")), m.styles.error.Render(m.t("tui.stat.budget_exceeded"))})
 	}
 
 	return m.renderSummaryTables(summaryTablesOpts{

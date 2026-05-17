@@ -25,7 +25,7 @@ import (
 func newTUICommand(opts *runtimeOptions, version string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "tui",
-		Short: "Open the terminal UI",
+		Short: opts.t("cli.tui.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runTUI(cmd.Context(), opts, version)
 		},
@@ -55,7 +55,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 	}
 	bundle, err := config.LoadBundle(rt.configPath)
 	if err != nil {
-		return domain.NewError(domain.ErrConfigInvalid, "config is invalid", map[string]any{"path": rt.configPath, "error": fmt.Sprint(err)})
+		return domain.NewError(domain.ErrConfigInvalid, t("cli.err.config_invalid"), map[string]any{"path": rt.configPath, "error": fmt.Sprint(err)})
 	}
 	theme, err := loadActiveThemeFromBundle(bundle, rt.configPath)
 	if err != nil {
@@ -96,6 +96,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		RepoLocalDir: rt.repoLocalDir,
 		Cache:        rt.cache,
 		ProjectID:    rt.projectID,
+		Catalog:      rt.activeSnapshot().Catalog(config.SurfaceTUI),
 	}, theme, token.NewCounter(), bundle.Config.TUI.TokenBadge, bundle.Config.EffectivePriorities(), bundle.Config.EffectiveSeverities(), tui.NotificationBinding{
 		Notifications: bundle.Notifications,
 	})
@@ -180,7 +181,7 @@ func loadActiveThemeFromBundle(bundle config.Bundle, configPath string) (config.
 	}
 	theme, err := config.LoadTheme(themePath)
 	if err != nil {
-		return config.Theme{}, domain.NewError(domain.ErrConfigInvalid, "theme is invalid", map[string]any{"path": themePath, "error": fmt.Sprint(err)})
+		return config.Theme{}, domain.NewError(domain.ErrConfigInvalid, t("cli.err.theme_invalid"), map[string]any{"path": themePath, "error": fmt.Sprint(err)})
 	}
 	return theme, nil
 }

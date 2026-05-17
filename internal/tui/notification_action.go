@@ -20,11 +20,11 @@ import (
 // human keystroke that authorised the run.
 func (m *Model) handleNotificationAction(action notification.ActionMsg) {
 	if len(action.Command) == 0 {
-		m.status = fmt.Sprintf("Notification %q · %s", action.Slug, action.ActionID)
+		m.status = fmt.Sprintf(m.t("tui.status.notification_fmt"), action.Slug, action.ActionID)
 		return
 	}
 	if m.repos.DispatchCommand == nil {
-		m.status = fmt.Sprintf("Notification action %q skipped — no command dispatcher wired", action.ActionID)
+		m.status = fmt.Sprintf(m.t("tui.status.notification_skipped_fmt"), action.ActionID)
 		return
 	}
 
@@ -37,7 +37,7 @@ func (m *Model) handleNotificationAction(action notification.ActionMsg) {
 		// Cobra completed but emitted output we cannot read as the
 		// standard envelope — surface the raw error so the user can
 		// diagnose without leaving the TUI.
-		m.status = fmt.Sprintf("Notification action %q output unparsable: %v", action.ActionID, parseErr)
+		m.status = fmt.Sprintf(m.t("tui.status.notification_output_unparsable_fmt"), action.ActionID, parseErr)
 	case !envelope.OK:
 		code := envelope.Code
 		if code == "" {
@@ -45,7 +45,7 @@ func (m *Model) handleNotificationAction(action notification.ActionMsg) {
 		}
 		m.status = fmt.Sprintf("%s: %s", code, envelope.Message)
 	default:
-		m.status = notificationActionStatus(action, envelope)
+		m.status = m.notificationActionStatus(action, envelope)
 		if err := m.refresh(); err != nil {
 			m.status = err.Error()
 		}
@@ -105,14 +105,14 @@ func parseLastEnvelope(raw []byte) (output.Envelope, error) {
 // notificationActionStatus picks the user-facing status line for a successful
 // action. Falls back to a generic summary when the command's envelope data
 // does not surface a friendly message field.
-func notificationActionStatus(action notification.ActionMsg, envelope output.Envelope) string {
-	if msg, ok := envelopeMessage(envelope); ok {
+func (m Model) notificationActionStatus(action notification.ActionMsg, envelope output.Envelope) string {
+	if msg, ok := m.envelopeMessage(envelope); ok {
 		return msg
 	}
-	return fmt.Sprintf("Action %q applied via %s", action.ActionID, strings.Join(action.Command, " "))
+	return fmt.Sprintf(m.t("tui.status.notification_action_applied_fmt"), action.ActionID, strings.Join(action.Command, " "))
 }
 
-func envelopeMessage(envelope output.Envelope) (string, bool) {
+func (m Model) envelopeMessage(envelope output.Envelope) (string, bool) {
 	data, ok := envelope.Data.(map[string]any)
 	if !ok {
 		return "", false
@@ -122,7 +122,7 @@ func envelopeMessage(envelope output.Envelope) (string, bool) {
 	}
 	if report, ok := data["report"].(map[string]any); ok {
 		if total, ok := report["total"].(float64); ok && total > 0 {
-			return fmt.Sprintf("Migrated %d task(s)", int(total)), true
+			return fmt.Sprintf(m.t("tui.status.tasks_migrated_fmt"), int(total)), true
 		}
 	}
 	return "", false

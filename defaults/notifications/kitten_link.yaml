@@ -1,6 +1,6 @@
 # Identity ------------------------------------------------------------
 name: kitten_link
-description: Watchful kitten for tags, dependencies, and chained side quests.
+description: "${{intl:notifications.kitten_link.description}}"
 
 # Geometry ------------------------------------------------------------
 size:

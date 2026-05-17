@@ -24,104 +24,104 @@ config:
   hooks:
     - on: task.created
       notification: kitten_informative
-      message: "A new course has been ordered."
+      message: "${{intl:notifications.kaiseki.task_created.message}}"
     - on: task.moved
       notification: kitten_informative
-      message: "The course advances to the next stage."
+      message: "${{intl:notifications.kaiseki.task_moved.message}}"
     - on: task.edited
       notification: kitten_informative
-      message: "The chef adjusts the preparation."
+      message: "${{intl:notifications.kaiseki.task_edited.message}}"
     - on: task.completed
       notification: kitten_success
-      message: "The course is plated and presented."
+      message: "${{intl:notifications.kaiseki.task_completed.message}}"
     - on: guard.violated
       when: { operation: task.delete }
       notification: kitten_destructive
-      message: "Service does not retract a presented course."
+      message: "${{intl:notifications.kaiseki.guard_task_delete.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: comment.delete }
       notification: kitten_destructive
-      message: "The record of service is preserved."
+      message: "${{intl:notifications.kaiseki.guard_comment_delete.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: task.transition }
       notification: kitten_blocked
-      message: "The kitchen is not yet ready."
+      message: "${{intl:notifications.kaiseki.guard_task_transition.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: task.edit }
       notification: kitten_blocked
-      message: "The course is sealed for service."
+      message: "${{intl:notifications.kaiseki.guard_task_edit.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: comment.edit }
       notification: kitten_blocked
-      message: "Service notes remain as written."
+      message: "${{intl:notifications.kaiseki.guard_comment_edit.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: task.archive }
       notification: kitten_blocked
-      message: "Service is not yet complete."
+      message: "${{intl:notifications.kaiseki.guard_task_archive.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: task.unarchive }
       notification: kitten_blocked
-      message: "Completed courses remain in the record."
+      message: "${{intl:notifications.kaiseki.guard_task_unarchive.message}}"
       detail_message_field: hint
     - on: task.removed
       notification: kitten_destructive
-      message: "Course withdrawn from the menu."
+      message: "${{intl:notifications.kaiseki.task_removed.message}}"
     - on: comment.removed
       notification: kitten_destructive
-      message: "Service note retracted."
+      message: "${{intl:notifications.kaiseki.comment_removed.message}}"
     - on: task.archived
       notification: kitten_archive
-      message: "Course archived in the service record."
+      message: "${{intl:notifications.kaiseki.task_archived.message}}"
     - on: task.unarchived
       notification: kitten_archive
-      message: "Course returned to the line."
+      message: "${{intl:notifications.kaiseki.task_unarchived.message}}"
     - on: comment
       when: { author_type: human }
       notification: kitten_informative
-      message: "The chef receives a note from the dining room."
+      message: "${{intl:notifications.kaiseki.comment_added_human.message}}"
     - on: comment
       when: { author_type: agent }
       notification: kitten_informative
-      message: "A service assistant files a note."
+      message: "${{intl:notifications.kaiseki.comment_added_agent.message}}"
     - on: comment.edited
       notification: kitten_informative
-      message: "Service note revised under watch."
+      message: "${{intl:notifications.kaiseki.comment_edited.message}}"
     - on: tag.added
       notification: kitten_link
-      message: "A garnish is added to the plate."
+      message: "${{intl:notifications.kaiseki.tag_added.message}}"
     - on: tag.removed
       notification: kitten_link
-      message: "A garnish is removed from the plate."
+      message: "${{intl:notifications.kaiseki.tag_removed.message}}"
     - on: dependency.added
       notification: kitten_link
-      message: "A pairing course has been linked."
+      message: "${{intl:notifications.kaiseki.dependency_added.message}}"
     - on: dependency.removed
       notification: kitten_link
-      message: "The pairing is dissolved."
+      message: "${{intl:notifications.kaiseki.dependency_removed.message}}"
     - on: error.recorded
       notification: kitten_knowledge
-      message: "A service incident is logged."
+      message: "${{intl:notifications.kaiseki.error_recorded.message}}"
     - on: error.searched
       notification: kitten_knowledge
-      message: "Reviewing the service ledger."
+      message: "${{intl:notifications.kaiseki.error_searched.message}}"
     - on: solution.added
       notification: kitten_knowledge
-      message: "A new technique enters the kitchen."
+      message: "${{intl:notifications.kaiseki.solution_added.message}}"
     - on: solution.liked
       notification: kitten_success
-      message: "The head chef endorses the technique."
+      message: "${{intl:notifications.kaiseki.solution_liked.message}}"
     - on: solution.failed
       notification: kitten_knowledge
-      message: "The technique did not hold."
+      message: "${{intl:notifications.kaiseki.solution_failed.message}}"
     - on: solution.viewed_top
       notification: kitten_knowledge
-      message: "Consulting the kitchen's signature techniques."
+      message: "${{intl:notifications.kaiseki.solution_viewed_top.message}}"
   search:
     stopwords: [and, are, for, from, into, the, this, that, with]
   tag_synonyms:

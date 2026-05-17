@@ -36,5 +36,15 @@ func NewNotificationService(snap *config.Snapshot) *NotificationService {
 // same view every other service holds; the returned map is a defensive
 // copy owned by the snapshot, safe to hand to the action registry.
 func (s *NotificationService) BundleSnapshot() actions.NotificationBundleSnapshot {
-	return actions.NotificationBundleSnapshot{Notifications: s.snap.Notifications()}
+	return actions.NotificationBundleSnapshot{
+		Notifications: s.snap.Notifications(),
+		// Per task #82 §15-§17, the notification action expands
+		// ${{intl:KEY}} tokens against the catalog so bundled presets can
+		// move their hook copy into the language catalog. The
+		// composition root in agentruntime is the place that picks the
+		// concrete surface — naming SurfaceCLI here would couple app to
+		// the catalog type system, which the arch test forbids. The
+		// composition root sets Catalog after constructing the snapshot.
+		Catalog: nil,
+	}
 }

@@ -96,7 +96,7 @@ func (m *Model) handleHomeKey(msg tea.KeyMsg) {
 		if err := m.loadHome(); err != nil {
 			m.status = err.Error()
 		} else {
-			m.status = "Refreshed"
+			m.status = m.t("tui.status.refreshed")
 		}
 		return
 	}
@@ -241,7 +241,7 @@ func (m Model) renderHome() string {
 	}
 
 	if len(m.homeProjects) == 0 {
-		lines = append(lines, m.styles.empty.Width(columnInner).Render("no projects"))
+		lines = append(lines, m.styles.empty.Width(columnInner).Render(m.t("tui.empty.home_no_projects")))
 		body := m.styles.kanbanColumn.Width(columnInner).Render(strings.Join(lines, "\n"))
 		return "\n" + indentBlock(body, 2) + "\n\n" + indentBlock(m.renderHomeEmptyHint(), 2)
 	}
@@ -356,12 +356,12 @@ func truncatePath(path string, width int) string {
 
 func (m Model) renderHomeEmptyHint() string {
 	lines := []string{
-		m.styles.hintAccent.Render("No projects registered."),
+		m.styles.hintAccent.Render(m.t("tui.empty.home_no_projects_full")),
 		"",
-		m.styles.hint.Render("Register one with:"),
+		m.styles.hint.Render(m.t("tui.home.register_with")),
 		m.styles.hint.Render("  okt init --name MyProject --slug my-project"),
 		"",
-		m.styles.hint.Render("Then re-open ") + m.styles.hintAccent.Render("okt tui") + m.styles.hint.Render("."),
+		m.styles.hint.Render(m.t("tui.home.then_reopen_prefix")) + m.styles.hintAccent.Render(m.t("tui.home.okt_tui_cmd")) + m.styles.hint.Render(m.t("tui.home.then_reopen_suffix")),
 	}
 	return m.styles.hintBox.Width(m.hintBoxWidth()).Render(strings.Join(lines, "\n"))
 }
@@ -373,16 +373,16 @@ func (m Model) renderHomeEmptyHint() string {
 func (m Model) homeFooterTokens() []footerToken {
 	if len(m.homeProjects) == 0 {
 		return []footerToken{
-			{key: "q", label: "quit"},
-			helpToken(),
+			{key: "q", label: m.t("tui.footer.quit")},
+			m.helpToken(),
 		}
 	}
 	return []footerToken{
-		{key: "enter", label: "open", primary: true},
-		{key: "up/down", label: "move"},
-		{key: "ctrl+h", label: "refresh"},
-		{key: "q", label: "quit"},
-		helpToken(),
+		{key: "enter", label: m.t("tui.footer.open"), primary: true},
+		{key: "up/down", label: m.t("tui.footer.move")},
+		{key: "ctrl+h", label: m.t("tui.footer.refresh")},
+		{key: "q", label: m.t("tui.footer.quit")},
+		m.helpToken(),
 	}
 }
 
