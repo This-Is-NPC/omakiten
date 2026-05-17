@@ -1,200 +1,107 @@
 #!/usr/bin/env bash
-# Validates install.sh's harness selection helpers:
-#   - parse_harness_selection accepts numbers, names, and mixed input
-#   - parse_harness_selection rejects out-of-range indices and unknown names
-#   - select_harnesses honors OKT_HARNESSES without prompting
-#   - select_harnesses is silent when no TTY and no env override
+# Smoke-tests `okt setup` headless env-var path. The interactive picker
+# is exercised by internal/cli/setup_picker_test.go (model-level Update);
+# this script covers the cobra wiring that turns OKT_* / --flag values
+# into the JSON envelope downstream tooling depends on.
+#
+# Builds okt once into a tmpdir, then invokes `okt setup` with various
+# env-var combinations under `--skip-wrapper --skip-harnesses` so the
+# process never mutates the host's rc files or runs `okt mcp setup`.
 #
 # Run with: bash scripts/installer_select_test.sh
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Source only the helper functions and the SUPPORTED_HARNESSES global out of
-# install.sh. We avoid the awk-extraction approach used by
-# wrapper_idempotency_test.sh because the helpers reference each other; a
-# guard env var lets install.sh's main() bail out at the very end.
-helpers="$(awk '
-  /^SUPPORTED_HARNESSES=/                          { print; next }
-  /^SUPPORTED_PRESETS=/                            { print; next }
-  /^SUPPORTED_PRESETS_DESC=/                       { in_arr = 1 }
-  in_arr                                           { print }
-  in_arr && /^\)$/                                 { in_arr = 0; next }
-  /^DEFAULT_PRESET=/                               { print; next }
-  /^harness_is_supported\(\) \{/                   { in_fn = 1 }
-  /^parse_harness_selection\(\) \{/                { in_fn = 1 }
-  /^select_harnesses\(\) \{/                       { in_fn = 1 }
-  /^run_harness_setup\(\) \{/                      { in_fn = 1 }
-  /^preset_is_supported\(\) \{/                    { in_fn = 1 }
-  /^resolve_config_dir\(\) \{/                     { in_fn = 1 }
-  /^select_preset\(\) \{/                          { in_fn = 1 }
-  /^write_active_preset\(\) \{/                    { in_fn = 1 }
-  in_fn                                            { print }
-  in_fn && /^\}$/                                  { in_fn = 0 }
-' "$repo/install.sh")"
+tmproot="$(mktemp -d)"
+trap 'rm -rf "$tmproot"' EXIT
 
-eval "$helpers"
+bin="$tmproot/okt"
+( cd "$repo" && go build -o "$bin" ./cmd/okt )
 
-fail() {
-  echo "FAIL: $1" >&2
-  exit 1
+fail() { echo "FAIL: $1" >&2; exit 1; }
+
+# run_setup invokes `okt setup --skip-wrapper --skip-harnesses` with the
+# caller's env, pinning OMAKITEN_HOME + HOME under a per-call tmpdir so
+# each assertion lands in an isolated config root.
+run_setup() {
+  local home; home="$(mktemp -d "$tmproot/case.XXXXXX")"
+  HOME="$home" OMAKITEN_HOME="$home/oh" XDG_CONFIG_HOME="" \
+    "$bin" setup --skip-wrapper --skip-harnesses "$@" 2>"$home/stderr"
+}
+
+json_get() {
+  # Tiny jq-free key extractor. Echoes the JSON value (numbers, strings,
+  # bare arrays) for the dotted path under `.data`. Good enough for the
+  # smoke shapes this test asserts on.
+  local path="$1" json="$2"
+  python3 -c "import json,sys; d=json.loads(sys.argv[1]).get('data',{}); cur=d
+for p in sys.argv[2].split('.'):
+    cur = cur.get(p) if isinstance(cur, dict) else None
+print(json.dumps(cur))" "$json" "$path"
+}
+
+assert_envelope_ok() {
+  local label="$1" json="$2"
+  local ok
+  ok="$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('ok'))" "$json")"
+  if [ "$ok" != "True" ]; then
+    printf 'FAIL: %s — envelope.ok = %s\n  json: %s\n' "$label" "$ok" "$json" >&2
+    exit 1
+  fi
 }
 
 assert_equal() {
   local got="$1" want="$2" label="$3"
   if [ "$got" != "$want" ]; then
-    printf 'FAIL: %s\n  got:  %q\n  want: %q\n' "$label" "$got" "$want" >&2
+    printf 'FAIL: %s\n  got:  %s\n  want: %s\n' "$label" "$got" "$want" >&2
     exit 1
   fi
 }
 
-# --- parse_harness_selection: stdout shape ---
+# --- env-var driven harness selection ---
 
-got="$(parse_harness_selection "1,3,5" 2>/dev/null)"
-assert_equal "$got" $'claude-code\nopencode\ngithub-copilot' "numeric comma list"
+out="$(OKT_CLI_LANG=en OKT_TUI_LANG=en OKT_AGENT_LANG=en OKT_PRESET=omakase \
+       OKT_HARNESSES="claude-code,opencode" run_setup)"
+assert_envelope_ok "harnesses csv (names)" "$out"
+assert_equal "$(json_get harnesses_planned "$out")" '["claude-code", "opencode"]' "harnesses_planned echoes selection"
 
-got="$(parse_harness_selection "1 3 5" 2>/dev/null)"
-assert_equal "$got" $'claude-code\nopencode\ngithub-copilot' "numeric space list"
+out="$(OKT_CLI_LANG=en OKT_TUI_LANG=en OKT_AGENT_LANG=en OKT_PRESET=omakase \
+       OKT_HARNESSES="1,3" run_setup)"
+assert_envelope_ok "harnesses csv (indexes)" "$out"
+assert_equal "$(json_get harnesses_planned "$out")" '["claude-code", "opencode"]' "indexes resolve to canonical names"
 
-got="$(parse_harness_selection "claude-code,codex" 2>/dev/null)"
-assert_equal "$got" $'claude-code\ncodex' "name comma list"
+out="$(OKT_CLI_LANG=en OKT_TUI_LANG=en OKT_AGENT_LANG=en OKT_PRESET=omakase \
+       OKT_HARNESSES="0" run_setup)"
+assert_envelope_ok "harnesses skip sentinel" "$out"
+assert_equal "$(json_get harnesses_planned "$out")" 'null' "skip sentinel clears harness list"
 
-got="$(parse_harness_selection "1 codex" 2>/dev/null)"
-assert_equal "$got" $'claude-code\ncodex' "mixed numeric and name"
+# --- preset resolution ---
 
-got="$(parse_harness_selection "1,bogus" 2>/dev/null)"
-assert_equal "$got" "claude-code" "partial-valid input emits the valid harness"
+out="$(OKT_CLI_LANG=en OKT_TUI_LANG=en OKT_AGENT_LANG=en OKT_PRESET=izakaya OKT_HARNESSES=0 run_setup)"
+assert_envelope_ok "preset izakaya" "$out"
+got="$(json_get preset.name "$out")"
+assert_equal "$got" '"izakaya"' "OKT_PRESET=izakaya wins"
 
-# `|| true` is needed for the cases below: parse_harness_selection now exits
-# non-zero on empty / all-invalid input to drive the retry loop in
-# select_harnesses, and `var=$(cmd)` propagates that under `set -e`.
-got="$(parse_harness_selection "" 2>/dev/null || true)"
-assert_equal "$got" "" "empty input emits nothing"
+# Unknown preset falls back to omakase with a stderr warn line (the
+# warning lands in the per-call stderr file inside the case tmpdir; we
+# only assert on the envelope here — install.sh's bash contract was the
+# same: warn, fall back, exit 0).
+out="$(OKT_CLI_LANG=en OKT_TUI_LANG=en OKT_AGENT_LANG=en OKT_PRESET=bogus OKT_HARNESSES=0 run_setup)"
+assert_envelope_ok "preset fallback" "$out"
+assert_equal "$(json_get preset.name "$out")" '"omakase"' "unknown OKT_PRESET falls back to omakase"
 
-got="$(parse_harness_selection "99" 2>/dev/null || true)"
-assert_equal "$got" "" "out-of-range index emits no harness"
-err="$(parse_harness_selection "99" 2>&1 >/dev/null || true)"
-case "$err" in
-  *"out of range"*) ;;
-  *) fail "out-of-range index did not warn on stderr: $err" ;;
-esac
+# --- language resolution ---
 
-got="$(parse_harness_selection "bogus" 2>/dev/null || true)"
-assert_equal "$got" "" "unknown name emits no harness"
-err="$(parse_harness_selection "bogus" 2>&1 >/dev/null || true)"
-case "$err" in
-  *"ignoring unknown harness"*) ;;
-  *) fail "unknown harness did not warn on stderr: $err" ;;
-esac
+out="$(OKT_CLI_LANG=pt-br OKT_TUI_LANG=pt-br OKT_AGENT_LANG="Português (Brasil)" \
+       OKT_PRESET=omakase OKT_HARNESSES=0 run_setup)"
+assert_envelope_ok "pt-br languages" "$out"
+assert_equal "$(json_get languages.cli "$out")" '"pt-br"' "languages.cli = pt-br"
+assert_equal "$(json_get languages.tui "$out")" '"pt-br"' "languages.tui = pt-br"
 
-# --- parse_harness_selection: exit codes drive the retry loop ---
+# CLI supplied, TUI omitted → TUI mirrors CLI (headless contract).
+out="$(unset OKT_TUI_LANG; OKT_CLI_LANG=en OKT_AGENT_LANG=en OKT_PRESET=omakase OKT_HARNESSES=0 run_setup)"
+assert_envelope_ok "TUI mirrors CLI when only OKT_CLI_LANG set" "$out"
+assert_equal "$(json_get languages.tui "$out")" '"en"' "TUI defaults to CLI choice"
 
-assert_rc() {
-  local raw="$1" want_rc="$2" label="$3"
-  local got_rc=0
-  parse_harness_selection "$raw" >/dev/null 2>&1 || got_rc=$?
-  if [ "$got_rc" -ne "$want_rc" ]; then
-    fail "$label — exit $got_rc, want $want_rc"
-  fi
-}
-
-assert_rc "1,3,5"          0 "rc 0 on full-valid input"
-assert_rc "1,bogus"        0 "rc 0 on partial-valid input"
-assert_rc ""               3 "rc 3 on empty input"
-assert_rc "   "            3 "rc 3 on whitespace-only input"
-assert_rc "bogus"          1 "rc 1 on tokens with zero matches"
-assert_rc "99"             1 "rc 1 on out-of-range numeric"
-assert_rc "0"              2 "rc 2 on '0' (skip sentinel)"
-assert_rc "skip"           2 "rc 2 on 'skip'"
-assert_rc "Skip"           2 "rc 2 on 'Skip' (case-insensitive)"
-assert_rc "NONE"           2 "rc 2 on 'NONE' (case-insensitive)"
-assert_rc "1,0"            2 "rc 2 — skip wins over a valid token in the same input"
-assert_rc "bogus,skip"     2 "rc 2 — skip wins over invalid tokens"
-
-# Skip sentinel must not leak any harness on stdout.
-got="$(parse_harness_selection "1,0" 2>/dev/null || true)"
-assert_equal "$got" "" "'1,0' emits nothing on stdout (skip wins)"
-got="$(parse_harness_selection "skip" 2>/dev/null || true)"
-assert_equal "$got" "" "'skip' emits nothing on stdout"
-
-# --- select_harnesses honors OKT_HARNESSES ---
-
-OKT_HARNESSES="claude-code,opencode" got="$(select_harnesses 2>/dev/null)"
-assert_equal "$got" $'claude-code\nopencode' "OKT_HARNESSES env override"
-
-# OKT_HARNESSES with junk separators
-OKT_HARNESSES=$'crush\tcodex,, ,' got="$(select_harnesses 2>/dev/null)"
-assert_equal "$got" $'crush\ncodex' "OKT_HARNESSES tolerates junk separators"
-
-# --- select_harnesses silent when no TTY and no env override ---
-
-got="$(unset OKT_HARNESSES; select_harnesses </dev/null 2>/dev/null)"
-assert_equal "$got" "" "no TTY + no env → no output"
-
-# --- SUPPORTED_HARNESSES contains every harness Setup recognises ---
-
-want_count=6
-got_count="${#SUPPORTED_HARNESSES[@]}"
-if [ "$got_count" -ne "$want_count" ]; then
-  fail "SUPPORTED_HARNESSES has $got_count entries, want $want_count (sync with internal/agentsetup.SupportedHarnesses)"
-fi
-
-# --- preset_is_supported ---
-
-if ! preset_is_supported "omakase"; then fail "omakase must be supported"; fi
-if ! preset_is_supported "shokunin"; then fail "shokunin must be supported"; fi
-if preset_is_supported "bogus" 2>/dev/null; then fail "bogus must not be supported"; fi
-
-# --- select_preset honors OKT_PRESET ---
-
-got="$(OKT_PRESET=izakaya select_preset 2>/dev/null)"
-assert_equal "$got" "izakaya" "OKT_PRESET env override"
-
-got="$(OKT_PRESET=shokunin select_preset 2>/dev/null)"
-assert_equal "$got" "shokunin" "OKT_PRESET=shokunin honored"
-
-# Unknown OKT_PRESET falls back to the default with a stderr warning.
-got="$(OKT_PRESET=bogus select_preset 2>/dev/null)"
-assert_equal "$got" "omakase" "OKT_PRESET=bogus falls back to omakase"
-err="$(OKT_PRESET=bogus select_preset 2>&1 >/dev/null)"
-case "$err" in
-  *"is not a supported preset"*) ;;
-  *) fail "OKT_PRESET=bogus did not warn on stderr: $err" ;;
-esac
-
-# --- select_preset returns default when no TTY and no env override ---
-
-got="$(unset OKT_PRESET; select_preset </dev/null 2>/dev/null)"
-assert_equal "$got" "omakase" "no TTY + no env → default preset"
-
-# --- resolve_config_dir precedence ---
-
-got="$(OMAKITEN_HOME=/tmp/oh resolve_config_dir)"
-assert_equal "$got" "/tmp/oh/config" "OMAKITEN_HOME wins"
-
-got="$(unset OMAKITEN_HOME; XDG_CONFIG_HOME=/tmp/xdg resolve_config_dir)"
-assert_equal "$got" "/tmp/xdg/omakiten/config" "XDG_CONFIG_HOME wins over default"
-
-got="$(unset OMAKITEN_HOME; unset XDG_CONFIG_HOME; HOME=/tmp/h resolve_config_dir)"
-assert_equal "$got" "/tmp/h/.config/omakiten/config" "default path uses ~/.config/omakiten"
-
-# --- write_active_preset writes .active and creates the dir ---
-
-tmpdir="$(mktemp -d)"
-trap 'rm -rf "$tmpdir"' EXIT
-OMAKITEN_HOME="$tmpdir" write_active_preset "kaiseki" >/dev/null
-if [ ! -f "$tmpdir/config/.active" ]; then
-  fail "write_active_preset did not create .active"
-fi
-got="$(cat "$tmpdir/config/.active")"
-assert_equal "$got" "kaiseki.yaml" ".active content"
-
-# --- SUPPORTED_PRESETS contains every official preset ---
-
-want_count=4
-got_count="${#SUPPORTED_PRESETS[@]}"
-if [ "$got_count" -ne "$want_count" ]; then
-  fail "SUPPORTED_PRESETS has $got_count entries, want $want_count (sync with defaults/config/<preset>.yaml)"
-fi
-
-echo "OK: install.sh harness + preset selection helpers behave as expected."
+echo "OK: okt setup headless env-var path behaves as expected."
