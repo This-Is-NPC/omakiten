@@ -28,11 +28,22 @@ func (m Model) summaryRows(title string, fields ...[2]string) [][]string {
 // table when the panel is too narrow for even one stacked table at the
 // requested width — Stats/Logs use this to avoid clipping. Settings
 // keeps tables separate and only narrows the value column.
+//
+// Auto switches the label/value sizing from the opts constants to a
+// scan of the supplied rows: label column expands to the widest
+// rendered kicker (so multi-word kickers like `// CLI LANGUAGE` never
+// wrap and lose their ANSI styling on the dropped continuation line),
+// and the value column expands to fill the remaining panel width (so a
+// 47-char config path no longer wraps its last character to a new
+// line on a 70-column panel). opts.LabelWidth / opts.ValueWidth are
+// treated as minimums in Auto mode so the layout never gets narrower
+// than the previously-hardcoded constants.
 type summaryTablesOpts struct {
 	LabelWidth  int
 	ValueWidth  int
 	SideBySide  bool
 	MergeNarrow bool
+	Auto        bool
 }
 
 // renderSummaryTables draws multiple key-value summary tables behind a
@@ -40,8 +51,24 @@ type summaryTablesOpts struct {
 // via summaryRows) ready for gridtable.Render.
 func (m Model) renderSummaryTables(opts summaryTablesOpts, tables ...[][]string) string {
 	const gap = 2
-	tableWidth := 1 + opts.LabelWidth + 1 + opts.ValueWidth + 1
-	widths := []int{opts.LabelWidth, opts.ValueWidth}
+
+	labelW := opts.LabelWidth
+	valueW := opts.ValueWidth
+	if opts.Auto {
+		scanned := maxLabelVisibleWidth(tables)
+		if scanned > labelW {
+			labelW = scanned
+		}
+		// 3 border columns ("│" + "│" + "│") sit between/around the two
+		// data cells inside a single table; subtract them so the value
+		// cell consumes the rest of the panel width.
+		if room := m.availableWidth() - labelW - 3; room > valueW {
+			valueW = room
+		}
+	}
+
+	tableWidth := 1 + labelW + 1 + valueW + 1
+	widths := []int{labelW, valueW}
 
 	n := len(tables)
 	if opts.SideBySide && n > 1 && m.availableWidth() >= tableWidth*n+gap*(n-1) {
@@ -63,8 +90,8 @@ func (m Model) renderSummaryTables(opts summaryTablesOpts, tables ...[][]string)
 		return strings.Join(parts, "\n\n")
 	}
 
-	valueW := clampInt(m.availableWidth()-opts.LabelWidth-3, 8, opts.ValueWidth)
-	narrowWidths := []int{opts.LabelWidth, valueW}
+	narrowValueW := clampInt(m.availableWidth()-labelW-3, 8, valueW)
+	narrowWidths := []int{labelW, narrowValueW}
 	if opts.MergeNarrow {
 		var all [][]string
 		for _, rows := range tables {
@@ -77,4 +104,23 @@ func (m Model) renderSummaryTables(opts summaryTablesOpts, tables ...[][]string)
 		parts[i] = gridtable.Render(rows, narrowWidths, m.styles.border)
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+// maxLabelVisibleWidth scans the first cell of every two-column row
+// across all supplied tables and returns the widest rendered label.
+// Single-cell rows are spanned headers/footers — they do not bound the
+// label column. Returns 0 when no qualifying rows exist.
+func maxLabelVisibleWidth(tables [][][]string) int {
+	max := 0
+	for _, rows := range tables {
+		for _, row := range rows {
+			if len(row) < 2 {
+				continue
+			}
+			if w := lipgloss.Width(row[0]); w > max {
+				max = w
+			}
+		}
+	}
+	return max
 }

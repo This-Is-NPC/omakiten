@@ -132,7 +132,14 @@ func (m Model) LastEvent() viewport.Event { return m.Viewport.LastEvent() }
 // border paints the grid borders and the panel-internal vertical bars;
 // hint paints the "▲ N above · ▼ N below · j/k pgup/pgdn g/G" footer.
 func (m Model) View(viewportHeight int, border, hint lipgloss.Style) string {
-	rendered := gridtable.Render(m.rows, []int{m.labelW, m.valueW}, border)
+	// Expand the label column to the widest rendered kicker so multi-word
+	// labels like `// COMENTÁRIOS` (translated rows) never wrap and drop
+	// the ANSI continuation styling on the second line. Total width is
+	// preserved — the value column absorbs the extra width back so the
+	// outer panel layout (computed by the caller against LabelWidth +
+	// valueW) does not shift.
+	labelW, valueW := autoSizeColumns(m.rows, m.labelW, m.valueW)
+	rendered := gridtable.Render(m.rows, []int{labelW, valueW}, border)
 	if viewportHeight <= 0 {
 		return rendered
 	}
@@ -142,6 +149,34 @@ func (m Model) View(viewportHeight int, border, hint lipgloss.Style) string {
 	}
 	// Overflow: reserve one line for the footer indicator.
 	return m.Viewport.View(lines, viewportHeight-1, hint)
+}
+
+// autoSizeColumns returns the (labelW, valueW) pair to render with.
+// labelW grows to fit the widest two-cell row's label; valueW shrinks
+// by the same delta so the table's outer footprint stays at
+// (defaultLabelW + defaultValueW). Single-cell spanned rows are ignored
+// when measuring labels.
+func autoSizeColumns(rows [][]string, defaultLabelW, defaultValueW int) (int, int) {
+	max := 0
+	for _, row := range rows {
+		if len(row) < 2 {
+			continue
+		}
+		if w := lipgloss.Width(row[0]); w > max {
+			max = w
+		}
+	}
+	if max <= defaultLabelW {
+		return defaultLabelW, defaultValueW
+	}
+	grow := max - defaultLabelW
+	if grow >= defaultValueW {
+		// Pathological: would shrink value to 0. Cap growth so the value
+		// column keeps at least 1 character of room and let gridtable's
+		// wrapping handle the over-long label.
+		grow = defaultValueW - 1
+	}
+	return defaultLabelW + grow, defaultValueW - grow
 }
 
 // kicker / kickerCount / labelCell — small style-rendering helpers kept

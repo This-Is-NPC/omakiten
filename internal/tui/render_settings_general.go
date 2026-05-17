@@ -54,6 +54,7 @@ func (m Model) renderSettingsGeneral() string {
 	body := m.renderSummaryTables(summaryTablesOpts{
 		LabelWidth: 14,
 		ValueWidth: 46,
+		Auto:       true,
 	}, runtimeRows, projectRows)
 
 	hint := m.styles.hint.Render(m.t("tui.settings.general_hint"))
