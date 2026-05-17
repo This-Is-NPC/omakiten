@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -17,6 +18,7 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/installer"
+	"omakiten/internal/paths"
 )
 
 // setupStep identifies which screen the picker is currently rendering.
@@ -486,10 +488,29 @@ func indexOfPreset(presets []presetOption, name string) int {
 	return -1
 }
 
-// loadBundledLanguageOptions enumerates every `<code>.yaml` shipped
-// under defaults/languages and returns one langOption per pack, sorted
-// by code for deterministic ordering.
+// loadBundledLanguageOptions enumerates every language pack the picker
+// should offer: the bundled `<code>.yaml` files shipped under
+// defaults/languages plus any user-authored custom packs at
+// `<ConfigRoot>/languages/custom/<code>.yaml`. Custom packs win on a
+// code collision (same precedence rule as `config.LoadLanguages` at
+// runtime).
+//
+// Bundled lookup goes through the embed FS so the picker works on a
+// fresh install where nothing has been materialized to disk yet. The
+// custom lookup is best-effort: a missing dir or a bad YAML emits a
+// stderr warning and skips the entry rather than aborting the picker,
+// because a broken custom pack should not prevent the user from
+// completing the install with the bundled defaults.
 func loadBundledLanguageOptions() ([]langOption, error) {
+	bundled, err := loadEmbedLanguageOptions()
+	if err != nil {
+		return nil, err
+	}
+	customs := loadCustomLanguageOptions()
+	return mergeLanguageOptions(bundled, customs), nil
+}
+
+func loadEmbedLanguageOptions() ([]langOption, error) {
 	entries, err := defaults.FS.ReadDir("languages")
 	if err != nil {
 		return nil, fmt.Errorf("read bundled languages: %w", err)
@@ -512,16 +533,93 @@ func loadBundledLanguageOptions() ([]langOption, error) {
 		if err != nil {
 			return nil, err
 		}
-		native := lang.Native
-		if native == "" {
-			native = lang.Name
-		}
-		if native == "" {
-			native = code
-		}
-		out = append(out, langOption{Code: code, Native: native})
+		out = append(out, langOption{Code: code, Native: nativeLabel(lang.Native, lang.Name, code)})
 	}
 	return out, nil
+}
+
+// loadCustomLanguageOptions reads user-authored packs from
+// `<ConfigRoot>/languages/custom/`. Returns nil (no error) when the
+// directory is missing — that is the expected state on a fresh install
+// before `EnsureDefaultFiles` runs. Per-file decode errors print a
+// warning and skip the entry.
+func loadCustomLanguageOptions() []langOption {
+	root, err := paths.ConfigRoot()
+	if err != nil {
+		return nil
+	}
+	dir := filepath.Join(root, "languages", "custom")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	type minLang struct {
+		Code   string `yaml:"code"`
+		Name   string `yaml:"name"`
+		Native string `yaml:"native"`
+	}
+	var out []langOption
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		lower := strings.ToLower(name)
+		if !strings.HasSuffix(lower, ".yaml") && !strings.HasSuffix(lower, ".yml") {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warn: skip %s: %v\n", path, err)
+			continue
+		}
+		var lf minLang
+		if err := yaml.Unmarshal(raw, &lf); err != nil {
+			fmt.Fprintf(os.Stderr, "warn: skip %s: %v\n", path, err)
+			continue
+		}
+		code := strings.TrimSpace(lf.Code)
+		if code == "" || code != strings.ToLower(code) {
+			fmt.Fprintf(os.Stderr, "warn: skip %s: invalid code %q\n", path, lf.Code)
+			continue
+		}
+		out = append(out, langOption{Code: code, Native: nativeLabel(lf.Native, lf.Name, code)})
+	}
+	return out
+}
+
+// mergeLanguageOptions merges bundled + custom slices, custom-wins on
+// matching codes, and returns the result sorted alphabetically by code
+// for deterministic picker order.
+func mergeLanguageOptions(bundled, customs []langOption) []langOption {
+	byCode := make(map[string]langOption, len(bundled)+len(customs))
+	for _, b := range bundled {
+		byCode[b.Code] = b
+	}
+	for _, c := range customs {
+		byCode[c.Code] = c
+	}
+	codes := make([]string, 0, len(byCode))
+	for code := range byCode {
+		codes = append(codes, code)
+	}
+	sort.Strings(codes)
+	out := make([]langOption, 0, len(codes))
+	for _, code := range codes {
+		out = append(out, byCode[code])
+	}
+	return out
+}
+
+func nativeLabel(native, name, code string) string {
+	if v := strings.TrimSpace(native); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(name); v != "" {
+		return v
+	}
+	return code
 }
 
 // loadBundledTheme reads defaults/themes/omakiten.yaml from the embed

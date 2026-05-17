@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -206,6 +208,73 @@ func TestSetupPicker_HeadlessNoTTY(t *testing.T) {
 	if !strings.Contains(err.Error(), "TTY") && !strings.Contains(err.Error(), "tty") {
 		t.Fatalf("expected TTY-related message, got %q", err.Error())
 	}
+}
+
+// TestSetupPicker_IncludesCustomLanguages asserts a user-authored
+// language pack at <ConfigRoot>/languages/custom/<code>.yaml shows up
+// in the picker alongside the bundled defaults. This is the
+// `okt setup --update` story: the install picker re-reads custom packs
+// each invocation so a new language pack the user dropped in since the
+// last setup becomes selectable without rebuilding the binary.
+func TestSetupPicker_IncludesCustomLanguages(t *testing.T) {
+	root := t.TempDir()
+	customDir := filepath.Join(root, "languages", "custom")
+	if err := os.MkdirAll(customDir, 0o755); err != nil {
+		t.Fatalf("mkdir custom: %v", err)
+	}
+	yamlBody := "code: xx\nname: TestLang\nnative: TestNative\nkeys: {}\n"
+	if err := os.WriteFile(filepath.Join(customDir, "xx.yaml"), []byte(yamlBody), 0o644); err != nil {
+		t.Fatalf("write custom yaml: %v", err)
+	}
+	t.Setenv("OMAKITEN_HOME", root)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	needs := pickerNeeds{Lang: true, Agent: true, Preset: true, Harness: true}
+	m, err := newSetupPickerModel(setupInputs{}, needs)
+	if err != nil {
+		t.Fatalf("newSetupPickerModel: %v", err)
+	}
+	found := false
+	for _, l := range m.langs {
+		if l.Code == "xx" && l.Native == "TestNative" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("custom language 'xx' not in picker rows: %+v", m.langs)
+	}
+}
+
+// TestSetupPicker_CustomOverridesBundled — same code in custom replaces
+// the bundled Native label.
+func TestSetupPicker_CustomOverridesBundled(t *testing.T) {
+	root := t.TempDir()
+	customDir := filepath.Join(root, "languages", "custom")
+	if err := os.MkdirAll(customDir, 0o755); err != nil {
+		t.Fatalf("mkdir custom: %v", err)
+	}
+	yamlBody := "code: en\nname: English-Override\nnative: OverrideNative\nkeys: {}\n"
+	if err := os.WriteFile(filepath.Join(customDir, "en.yaml"), []byte(yamlBody), 0o644); err != nil {
+		t.Fatalf("write custom yaml: %v", err)
+	}
+	t.Setenv("OMAKITEN_HOME", root)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	needs := pickerNeeds{Lang: true, Agent: true, Preset: true, Harness: true}
+	m, err := newSetupPickerModel(setupInputs{}, needs)
+	if err != nil {
+		t.Fatalf("newSetupPickerModel: %v", err)
+	}
+	for _, l := range m.langs {
+		if l.Code == "en" {
+			if l.Native != "OverrideNative" {
+				t.Fatalf("en native: got %q want OverrideNative (custom must override bundled)", l.Native)
+			}
+			return
+		}
+	}
+	t.Fatalf("en code not present in picker")
 }
 
 // TestSetupPicker_PresetTitlesLocalized asserts the preset rows use the
