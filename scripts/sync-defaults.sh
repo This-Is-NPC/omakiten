@@ -39,7 +39,7 @@ if [ -d "$defaults_dir/config" ]; then
   done
 fi
 
-for sub in skills laws personas templates themes notifications; do
+for sub in skills laws personas templates themes notifications languages; do
   src_dir="$defaults_dir/$sub"
   dst_dir="$target_root/$sub"
   mkdir -p "$dst_dir/custom"
