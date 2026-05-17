@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -230,7 +231,7 @@ func TestSetupPicker_HeadlessNoTTY(t *testing.T) {
 		t.Skip("stdin is a TTY; this test exercises the headless branch")
 	}
 	needs := pickerNeeds{CLILang: true, TUILang: true, Agent: true, Preset: true, Harness: true}
-	_, err := runSetupPicker(nil, setupInputs{}, needs)
+	_, err := runSetupPicker(context.Background(), setupInputs{}, needs)
 	if err == nil {
 		t.Fatalf("expected validation error, got nil")
 	}

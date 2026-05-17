@@ -215,12 +215,9 @@ func (m setupPickerModel) updateCLILang(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if lang, err := config.LoadBundledLanguage(chosen); err == nil {
 			m.cliCatalog = &lang
 		}
-		// If the TUI cursor still sits on the original default, bring it
-		// forward to the CLI choice so the next picker pre-selects the
-		// matching row (matches AC §3.2: "TUI default = CLI choice").
-		if !m.needs.CLILang {
-			// shouldn't reach here, but guard anyway
-		}
+		// Pull the TUI cursor onto the CLI choice so the next picker
+		// pre-selects the matching row (matches AC §3.2: "TUI default
+		// = CLI choice").
 		m.tuiCursor = indexOfLangCode(m.langs, firstNonEmpty(m.inputs.TUILang, chosen))
 		return m.transition(stepTUILang), nil
 	}
