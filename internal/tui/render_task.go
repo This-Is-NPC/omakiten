@@ -43,11 +43,11 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case "c":
 			if _, ok := m.activeTask(); ok {
-				m.beginInput(modeComment, "Comment body", "")
+				m.beginInput(modeComment, m.t("tui.input.comment_body"), "")
 			}
 		case "m":
 			if _, ok := m.activeTask(); ok {
-				m.beginInput(modeMove, "Target bucket key", "")
+				m.beginInput(modeMove, m.t("tui.input.target_bucket_key"), "")
 			}
 		case "d":
 			// Task delete only fires when the form column owns focus —
@@ -120,11 +120,11 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return *m, tea.Quit
 	case "esc":
 		if m.taskScreen == taskScreenCreate {
-			m.closeTaskScreen("Cancelled")
+			m.closeTaskScreen(m.t("tui.status.cancelled"))
 		} else if task, ok := m.activeTask(); ok {
 			m.openTaskView(task)
 		} else {
-			m.closeTaskScreen("Cancelled")
+			m.closeTaskScreen(m.t("tui.status.cancelled"))
 		}
 		return *m, nil
 	case "ctrl+s":
@@ -180,7 +180,7 @@ func (m *Model) updateBlockerPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch m.blockerPicker.LastEvent() {
 	case picker.EventCancel:
-		m.closeBlockerPicker("Cancelled")
+		m.closeBlockerPicker(m.t("tui.status.cancelled"))
 	case picker.EventSelect:
 		m.saveBlockerPicker()
 	case picker.EventToggle:

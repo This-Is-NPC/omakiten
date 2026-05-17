@@ -25,7 +25,7 @@ func (m Model) updateEntityScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "esc":
 		if m.deletePending {
-			m.clearDeletePrompt("Delete cancelled")
+			m.clearDeletePrompt(m.t("tui.status.delete_cancelled"))
 			return m, nil
 		}
 		m.closeEntityScreen("")
@@ -126,7 +126,7 @@ func (m Model) renderEntityView() string {
 	case entityKindLaw:
 		law, ok := m.findLawBySlug(m.entityForm.slug)
 		if !ok {
-			return m.renderPanel("Law not found")
+			return m.renderPanel(m.t("tui.empty.law_not_found"))
 		}
 		// Severity badge: style comes from config-driven color token
 		// (severityStyle reads m.severities[].color); label comes from
@@ -143,7 +143,7 @@ func (m Model) renderEntityView() string {
 	case entityKindSkill:
 		skill, ok := m.findSkillBySlug(m.entityForm.slug)
 		if !ok {
-			return m.renderPanel("Skill not found")
+			return m.renderPanel(m.t("tui.empty.skill_not_found"))
 		}
 		dataRows = []detailRow{
 			{label: m.t("tui.row.slug"), value: skill.Key},
@@ -155,7 +155,7 @@ func (m Model) renderEntityView() string {
 	case entityKindPersona:
 		persona, ok := m.findPersonaBySlug(m.entityForm.slug)
 		if !ok {
-			return m.renderPanel("Persona not found")
+			return m.renderPanel(m.t("tui.empty.persona_not_found"))
 		}
 		skills := strings.Join(persona.SkillKeys, ", ")
 		if skills == "" {
@@ -173,7 +173,7 @@ func (m Model) renderEntityView() string {
 	case entityKindTemplate:
 		template, ok := m.findTemplateBySlug(m.entityForm.slug)
 		if !ok {
-			return m.renderPanel("Template not found")
+			return m.renderPanel(m.t("tui.empty.template_not_found"))
 		}
 		entity := template.Entity
 		if entity == "" {

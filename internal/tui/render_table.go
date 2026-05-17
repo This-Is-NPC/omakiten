@@ -55,7 +55,7 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 		}
 	case "m":
 		if _, ok := m.selectedTask(); ok {
-			m.beginInput(modeMove, "Target bucket key", "")
+			m.beginInput(modeMove, m.t("tui.input.target_bucket_key"), "")
 		}
 	}
 }

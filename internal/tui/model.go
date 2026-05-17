@@ -702,7 +702,7 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 			return false
 		}
 		if _, ok := m.selectedTask(); ok {
-			m.beginInput(modeComment, "Comment body", "")
+			m.beginInput(modeComment, m.t("tui.input.comment_body"), "")
 		}
 		return true
 	case "r":

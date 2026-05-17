@@ -24,7 +24,7 @@ func (m *Model) handleConfigKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc":
 		if m.deletePending {
-			m.clearDeletePrompt("Delete cancelled")
+			m.clearDeletePrompt(m.t("tui.status.delete_cancelled"))
 		}
 	case "up", "k":
 		m.clearDeletePrompt("")

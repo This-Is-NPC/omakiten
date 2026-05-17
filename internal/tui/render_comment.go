@@ -431,7 +431,7 @@ func (m Model) renderCommentInput() string {
 		m.styles.kicker(m.t("tui.kicker.new_comment")),
 		m.formHint(m.t("tui.form.hint.enter_saves"), m.t("tui.form.hint.alt_newline"), m.t("tui.form.hint.esc_cancels")),
 	}
-	if m.status != "" && m.status != "Comment body" {
+	if m.status != "" && m.status != m.t("tui.input.comment_body") {
 		lines = append(lines, m.styles.statusBadge(m.status))
 	}
 	lines = append(lines, multilineform.Render(
