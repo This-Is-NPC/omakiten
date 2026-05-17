@@ -104,7 +104,7 @@ the write to the user-global omakiten.yaml.`,
 			cliSet := cmd.Flags().Changed("cli")
 			tuiSet := cmd.Flags().Changed("tui")
 			agentSet = cmd.Flags().Changed("agent")
-			return runJSON(cmd, func(_ context.Context) (any, error) {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				if !cliSet && !tuiSet && !agentSet {
 					return nil, domain.NewError(domain.ErrValidation, "at least one of --cli, --tui, --agent must be supplied", nil)
 				}
@@ -133,6 +133,9 @@ the write to the user-global omakiten.yaml.`,
 				if err := config.SaveBundle(path, bundle); err != nil {
 					return nil, fmt.Errorf("save %s: %w", path, err)
 				}
+				if err := reloadActiveBundle(ctx, opts); err != nil {
+					return nil, err
+				}
 				return map[string]any{
 					"path":      path,
 					"languages": settingsToMap(next),
@@ -153,7 +156,7 @@ func newConfigLanguageResetCommand(opts *runtimeOptions) *cobra.Command {
 		Use:   "reset",
 		Short: "Remove the languages block from the active omakiten.yaml (defaults apply)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runJSON(cmd, func(_ context.Context) (any, error) {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				path, err := writeTargetPath(opts, global)
 				if err != nil {
 					return nil, err
@@ -165,6 +168,9 @@ func newConfigLanguageResetCommand(opts *runtimeOptions) *cobra.Command {
 				bundle.Config.Languages = config.LanguageSettings{}
 				if err := config.SaveBundle(path, bundle); err != nil {
 					return nil, fmt.Errorf("save %s: %w", path, err)
+				}
+				if err := reloadActiveBundle(ctx, opts); err != nil {
+					return nil, err
 				}
 				return map[string]any{
 					"path":      path,
@@ -243,6 +249,35 @@ func validateLanguageWriteIntent(bundle config.Bundle, cliSet, tuiSet bool) erro
 		}
 	}
 	// agent_output is free-form per AC §9 — no validation here.
+	return nil
+}
+
+// reloadActiveBundle honors AC §25: after a successful write the
+// command rebuilds the runtime's BundleCache entry so anything sharing
+// the cache (TUI started in-process, future MCP server embedded in the
+// same process tree) observes the new selection without restart. For a
+// short-lived CLI invocation the rebuild also doubles as a post-write
+// validation pass — a broken bundle that somehow round-trips SaveBundle
+// would surface here before the command returns success.
+//
+// The cache rebuilds against rt.configPath (the runtime's own boot
+// source), not the write target: when --global is supplied inside a
+// repo with .omakiten/, the active cache still holds repo-local and
+// re-parsing global would replace the wrong entry. Other long-running
+// consumers pick up changes through BundleCache.Resolve's mtime check
+// against their own source path, which the atomic write naturally bumps.
+func reloadActiveBundle(ctx context.Context, opts *runtimeOptions) error {
+	rt, err := opts.open(ctx, true)
+	if err != nil {
+		return fmt.Errorf("reload bundle: %w", err)
+	}
+	defer rt.close()
+	if rt.cache == nil {
+		return nil
+	}
+	if _, err := rt.cache.Reload(ctx, rt.projectID, rt.configPath); err != nil {
+		return fmt.Errorf("reload bundle: %w", err)
+	}
 	return nil
 }
 
