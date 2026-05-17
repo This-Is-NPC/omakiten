@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"sync"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -103,13 +104,44 @@ type Repositories struct {
 	Catalog *config.Catalog
 }
 
-// t resolves the catalog key for the active TUI language. nil-safe via
-// Catalog.Get's nil-receiver fallback to key literal, so tests that
-// build a Model without populating Repositories.Catalog still produce
-// stable strings (the key acts as the fallback render). Production
-// passes a non-nil catalog so this returns localized chrome.
+// t resolves the catalog key for the active TUI language. Production
+// passes a non-nil Repositories.Catalog from rt.Snapshot().Catalog(...),
+// so the active TUI pack drives every rendered literal. Tests typically
+// build a Model without populating the field; in that case t falls back
+// to a package-level singleton catalog backed by the bundled English
+// pack so renderers still emit human-readable strings (instead of the
+// raw catalog key literal, which would force every test that asserts
+// on a label to thread its own catalog wiring). Catalog.Get is also
+// nil-safe at the bottom of both chains, so a load failure produces
+// the key literal rather than a panic.
 func (m Model) t(key string) string {
-	return m.repos.Catalog.Get(key)
+	if m.repos.Catalog != nil {
+		return m.repos.Catalog.Get(key)
+	}
+	return pkgTUICatalog().Get(key)
+}
+
+var (
+	pkgTUICatalogPtr  *config.Catalog
+	pkgTUICatalogOnce sync.Once
+)
+
+// pkgTUICatalog returns a lazily-initialized Catalog wrapping the
+// bundled English language pack. Used as the fallback resolver for
+// Model.t when Repositories.Catalog is nil (test paths). The bundled
+// pack always ships in the binary's embed FS so the load cannot fail
+// at runtime under normal conditions; if it does, the returned
+// *Catalog is nil and Catalog.Get's nil-receiver chain preserves the
+// key-literal fallback.
+func pkgTUICatalog() *config.Catalog {
+	pkgTUICatalogOnce.Do(func() {
+		baseline, err := config.LoadBundledLanguage("en")
+		if err != nil {
+			return
+		}
+		pkgTUICatalogPtr = config.NewCatalog(&baseline, &baseline)
+	})
+	return pkgTUICatalogPtr
 }
 
 // activeSnapshot returns the per-project *config.Snapshot from the

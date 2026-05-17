@@ -190,7 +190,7 @@ func (m *Model) armOrConfirmCommentDelete(comment domain.Comment) {
 	}
 	m.commentDeletePendingID = comment.ID
 	m.taskDeletePendingID = 0
-	m.status = fmt.Sprintf("Confirm delete comment #%d. Press d again; esc cancels.", comment.ID)
+	m.status = fmt.Sprintf(m.t("tui.confirm.comment_delete_fmt"), comment.ID)
 }
 
 // executeCommentDelete runs the CommentService.Remove call (workflow-aware so
@@ -338,7 +338,7 @@ func (m Model) renderCommentEditScreen(comment domain.Comment) string {
 
 	lines := []string{
 		m.styles.kicker(fmt.Sprintf("Edit comment · #%d", comment.ID)),
-		m.formHint("ctrl+s saves", "alt+enter/shift+enter newline", "esc cancels"),
+		m.formHint(m.t("tui.form.hint.ctrl_s_saves"), m.t("tui.form.hint.alt_newline"), m.t("tui.form.hint.esc_cancels")),
 		"",
 		field,
 	}
@@ -429,7 +429,7 @@ func (m *Model) exitCommentEditMode() {
 func (m Model) renderCommentInput() string {
 	lines := []string{
 		m.styles.kicker("New comment"),
-		m.formHint("enter saves", "alt+enter/shift+enter newline", "esc cancels"),
+		m.formHint(m.t("tui.form.hint.enter_saves"), m.t("tui.form.hint.alt_newline"), m.t("tui.form.hint.esc_cancels")),
 	}
 	if m.status != "" && m.status != "Comment body" {
 		lines = append(lines, m.styles.statusBadge(m.status))

@@ -288,7 +288,7 @@ func (m *Model) requestEntityDelete(kind entityKind, slug string) {
 	m.deletePending = true
 	m.deleteKind = kind
 	m.deleteSlug = slug
-	m.status = fmt.Sprintf("Confirm delete %s %q. Press d again to remove it; esc cancels.", strings.ToLower(kind.String()), slug)
+	m.status = fmt.Sprintf(m.t("tui.confirm.entity_delete_fmt"), strings.ToLower(kind.String()), slug)
 }
 
 // rotateSnapshotAfterEdit advances the per-project Snapshot the TUI
@@ -363,7 +363,7 @@ func (m *Model) deleteOrphanTags() {
 	if n == 0 {
 		m.status = m.t("tui.status.no_orphan_tags")
 	} else {
-		m.status = fmt.Sprintf("%d orphan tag(s) deleted", n)
+		m.status = fmt.Sprintf(m.t("tui.status.orphan_tags_deleted_fmt"), n)
 	}
 }
 
@@ -375,7 +375,7 @@ func (m *Model) requestSelectedTagDelete() {
 	cursor := m.selectedEntityIndex(entityKindTag)
 	tag := m.tags[cursor]
 	if tag.UsageCount > 0 {
-		m.status = fmt.Sprintf("Tag %q is in use (%d references) — cannot delete", tag.Label, tag.UsageCount)
+		m.status = fmt.Sprintf(m.t("tui.status.tag_in_use_fmt"), tag.Label, tag.UsageCount)
 		return
 	}
 	if m.deletePending && m.deleteKind == entityKindTag && m.deleteSlug == tag.Name {
@@ -385,7 +385,7 @@ func (m *Model) requestSelectedTagDelete() {
 	m.deletePending = true
 	m.deleteKind = entityKindTag
 	m.deleteSlug = tag.Name
-	m.status = fmt.Sprintf("Confirm delete tag %q. Press d again to remove; esc cancels.", tag.Label)
+	m.status = fmt.Sprintf(m.t("tui.confirm.tag_delete_fmt"), tag.Label)
 }
 
 func (m *Model) deleteTagByName(name string) {

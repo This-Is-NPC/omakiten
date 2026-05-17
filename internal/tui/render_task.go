@@ -505,7 +505,7 @@ func (m *Model) armOrConfirmTaskDelete(task domain.Task) {
 	}
 	m.taskDeletePendingID = task.ID
 	m.commentDeletePendingID = 0
-	m.status = fmt.Sprintf("Confirm delete task #%d %q. Press d again; esc cancels.", task.ID, task.Title)
+	m.status = fmt.Sprintf(m.t("tui.confirm.task_delete_fmt"), task.ID, task.Title)
 }
 
 // executeTaskDelete runs the TaskService.Delete call and reconciles UI state
@@ -526,7 +526,7 @@ func (m *Model) executeTaskDelete(taskID int64) {
 		m.status = err.Error()
 		return
 	}
-	m.status = fmt.Sprintf("Deleted task #%d", taskID)
+	m.status = fmt.Sprintf(m.t("tui.status.task_deleted_fmt"), taskID)
 }
 
 func (m *Model) saveTaskForm() {
@@ -731,7 +731,7 @@ func (m Model) renderTaskReference(task domain.Task) string {
 func (m Model) renderBlockerPicker() string {
 	task, ok := m.taskByID(m.blockerPickerTaskID)
 	if !ok {
-		return m.renderPanel("Task not found. Press esc to return.")
+		return m.renderPanel(m.t("tui.status.task_not_found"))
 	}
 
 	header := []string{
@@ -766,7 +766,7 @@ func (m Model) renderTaskForm(title string) string {
 	descriptionField := m.renderTaskDescriptionField(width)
 	lines := []string{
 		m.styles.kicker(title),
-		m.formHint("ctrl+s saves", "tab switches field", "←/→ cycles priority", "esc cancels"),
+		m.formHint(m.t("tui.form.hint.ctrl_s_saves"), m.t("tui.form.hint.tab_switches_field"), m.t("tui.form.hint.priority_cycle"), m.t("tui.form.hint.esc_cancels")),
 		"",
 		m.renderTaskFormLabel(taskFieldTitle, "Title"),
 		titleField,
