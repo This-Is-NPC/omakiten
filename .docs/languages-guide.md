@@ -4,7 +4,7 @@ This guide walks a contributor through shipping a new bundled language pack so i
 
 ## What ships today
 
-Thirteen packs live under `defaults/languages/`:
+Twenty-one packs live under `defaults/languages/`:
 
 ```
 defaults/languages/
@@ -17,17 +17,25 @@ defaults/languages/
   ru.yaml           # Russian
   zh-cn.yaml        # Chinese (Simplified)
   ko.yaml           # Korean
-  ar.yaml           # Arabic — scaffolded, translation in progress
-  hi.yaml           # Hindi — scaffolded, translation in progress
-  mr.yaml           # Marathi — scaffolded, translation in progress
-  tr.yaml           # Turkish — scaffolded, translation in progress
+  ar.yaml           # Arabic
+  hi.yaml           # Hindi
+  mr.yaml           # Marathi
+  tr.yaml           # Turkish
+  it.yaml           # Italian
+  pl.yaml           # Polish
+  nl.yaml           # Dutch
+  da.yaml           # Danish
+  fi.yaml           # Finnish
+  no.yaml           # Norwegian
+  sv.yaml           # Swedish
+  uk.yaml           # Ukrainian
 ```
 
 The CLI/TUI surface picks the active pack via `config.languages.{cli,tui}` in the active `omakiten.yaml`. Whatever language codes the installer sees under `defaults/languages/` at build time appear automatically in the `okt setup` picker and pass `okt config language set --cli <code>` validation — there is no allowlist to update.
 
-Packs marked *scaffolded, translation in progress* carry English fallback values on every key (the parity test passes; the runtime serves English for those keys until a follow-up PR replaces each value). Open a follow-up PR translating any subset — the [smoke recipe](#end-to-end-smoke-recipe) below shows how to verify locally.
+Every bundled pack ships fully translated for the CLI surface; longer TUI strings and notification voice may still lean on the English fallback in a few keys, which is acceptable per the parity rule (parity is structural, not content). A follow-up PR replacing those fallbacks is always welcome — the [smoke recipe](#end-to-end-smoke-recipe) below shows how to verify locally.
 
-Codes commonly requested but **not yet bundled** at the time of writing: `it` (Italian), `pl` (Polish), `vi` (Vietnamese), `zh-tw` (Chinese, Traditional). PRs for any of them are welcome; pick whichever matters to you and open one per language.
+Codes commonly requested but **not yet bundled** at the time of writing: `vi` (Vietnamese), `zh-tw` (Chinese, Traditional). PRs for any of them are welcome; pick whichever matters to you and open one per language.
 
 ## Filename convention
 
@@ -171,16 +179,16 @@ Step 3 fails loudly with `--%s %q is not a loaded language code` if the file is 
 
 `scripts/sync-defaults.sh` includes `languages` in its sync loop, so `mise run install` refreshes the bundled packs in the user-global install on every dev run.
 
-## Worked example — adding Italian
+## Worked example — adding Vietnamese
 
 ```sh
-scripts/new-language-pack.sh it Italiano Italian
-# → defaults/languages/it.yaml created with TODO markers on every value.
+scripts/new-language-pack.sh vi "Tiếng Việt" Vietnamese
+# → defaults/languages/vi.yaml created with TODO markers on every value.
 
 # Translate as much as you can. Commit per logical surface (CLI / TUI / notifications)
 # to keep diffs reviewable.
-git add defaults/languages/it.yaml
-git commit -m "feat(i18n): bundle Italian (it) — CLI surface translated, TUI + notifications pending"
+git add defaults/languages/vi.yaml
+git commit -m "feat(i18n): bundle Vietnamese (vi) — CLI surface translated, TUI + notifications pending"
 
 # Re-run check before pushing.
 mise run check
