@@ -9,7 +9,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/term"
+	"gopkg.in/yaml.v3"
 
 	"omakiten/defaults"
 	"omakiten/internal/config"
@@ -19,14 +21,18 @@ import (
 
 // setupStep identifies which screen the picker is currently rendering.
 // Steps are advanced one at a time so a partially-supplied set of env
-// vars (e.g. CLI lang set, TUI lang missing) lets the picker skip past
-// the screens whose value is already known. stepDone is the terminal
-// state that triggers tea.Quit.
+// vars (e.g. preset set, harness missing) lets the picker skip past
+// screens whose value is already known. stepDone is the terminal state
+// that triggers tea.Quit.
+//
+// CLI + TUI language share a single picker (stepLang): the per-surface
+// split is a configuration knob inside omakiten.yaml the user can flip
+// later via `okt config language`; the install picker keeps the flow
+// short by writing both fields to the same code.
 type setupStep int
 
 const (
-	stepCLILang setupStep = iota
-	stepTUILang
+	stepLang setupStep = iota
 	stepAgentLang
 	stepPreset
 	stepHarness
@@ -38,16 +44,15 @@ const (
 // to false so the step transition skips that screen entirely. Mirrors
 // AC §8: each OKT_* env var collapses its own picker screen.
 type pickerNeeds struct {
-	CLILang bool
-	TUILang bool
+	Lang    bool
 	Agent   bool
 	Preset  bool
 	Harness bool
 }
 
-// langOption is one row in the CLI/TUI language pickers. Code is the
-// bundled language slug (en, pt-br); Native is the in-language label
-// rendered alongside the code.
+// langOption is one row in the language picker. Code is the bundled
+// language slug (en, pt-br); Native is the in-language label rendered
+// alongside the code.
 type langOption struct {
 	Code   string
 	Native string
@@ -63,35 +68,47 @@ type presetOption struct {
 	Description string
 }
 
+// setupStyles bundles the lipgloss styles the picker views render
+// against. Built once from the bundled omakiten theme so the install
+// surface matches the rest of the TUI rather than rendering as
+// undecorated gray text.
+type setupStyles struct {
+	title    lipgloss.Style
+	row      lipgloss.Style
+	rowFocus lipgloss.Style
+	marker   lipgloss.Style
+	hint     lipgloss.Style
+	desc     lipgloss.Style
+	box      lipgloss.Style
+	boxOn    lipgloss.Style
+}
+
 // setupPickerModel is the bubbletea program backing the interactive
 // `okt setup`. It is decoupled from the cobra command so unit tests can
-// feed tea.KeyMsg values into Update without spinning up a tea.Program
-// — the round-trip teatest pattern would need a PTY this codebase does
-// not have a dependency for, so we test the model functionally
-// (keystroke in → state out) and reserve the program launch for the
-// production code path.
+// feed tea.KeyMsg values into Update without spinning up a tea.Program.
 type setupPickerModel struct {
 	step  setupStep
 	needs pickerNeeds
 
 	inputs setupInputs
 
-	langs       []langOption
-	langCursor  int
-	tuiCursor   int
-	agentInput  textinput.Model
-	presets     []presetOption
-	presetCursor int
-	harnesses    []string
+	langs         []langOption
+	langCursor    int
+	agentInput    textinput.Model
+	presets       []presetOption
+	presetCursor  int
+	harnesses     []string
 	harnessCursor int
 	harnessChosen map[int]bool
 
-	// cliCatalog carries the bundled Language pack matching inputs.CLILang
-	// — resolved as soon as step 0 confirms (or skipped via env var). The
-	// keys map drives the titles + hints for screens 2-5. nil before
-	// resolution; the View falls back to English via the package catalog
-	// when the lookup misses.
+	// cliCatalog carries the bundled Language pack matching the chosen
+	// language — resolved as soon as the lang step confirms (or eagerly
+	// when env vars pre-fill it). Drives titles + hints for screens 2-5.
+	// nil before resolution; the View falls back to the package catalog
+	// (English by default) when the lookup misses.
 	cliCatalog *config.Language
+
+	styles setupStyles
 
 	aborted bool
 	done    bool
@@ -99,13 +116,7 @@ type setupPickerModel struct {
 
 // newSetupPickerModel constructs the bubbletea model with the rows
 // needed for every screen pre-loaded so Update can route a key to the
-// right slice without re-reading the embed FS mid-frame. Callers pass
-// the partially-resolved inputs + a needs mask so already-supplied
-// values short-circuit the corresponding screens.
-//
-// If inputs.CLILang is already non-empty (env var path), the chosen
-// language's catalog is loaded eagerly so screens 2-5 render localized
-// labels from the very first frame.
+// right slice without re-reading the embed FS mid-frame.
 func newSetupPickerModel(inputs setupInputs, needs pickerNeeds) (setupPickerModel, error) {
 	langs, err := loadBundledLanguageOptions()
 	if err != nil {
@@ -115,35 +126,33 @@ func newSetupPickerModel(inputs setupInputs, needs pickerNeeds) (setupPickerMode
 		return setupPickerModel{}, domain.NewError(domain.ErrConfigInvalid, "no bundled languages available", nil)
 	}
 
+	theme, _ := loadBundledTheme()
+
 	model := setupPickerModel{
-		step:          stepCLILang,
+		step:          stepLang,
 		needs:         needs,
 		inputs:        inputs,
 		langs:         langs,
 		harnesses:     installer.SupportedHarnesses(),
 		harnessChosen: map[int]bool{},
+		styles:        newSetupStyles(theme),
 	}
 
-	model.langCursor = indexOfLangCode(langs, inputs.CLILang)
-	model.tuiCursor = indexOfLangCode(langs, firstNonEmpty(inputs.TUILang, inputs.CLILang))
+	model.langCursor = indexOfLangCode(langs, firstNonEmpty(inputs.CLILang, inputs.TUILang))
 
 	model.agentInput = textinput.New()
 	model.agentInput.Prompt = "› "
 	model.agentInput.CharLimit = 64
 	model.agentInput.Width = 32
+	model.agentInput.PromptStyle = model.styles.marker
+	model.agentInput.TextStyle = model.styles.rowFocus
 
-	// If the CLI lang is already known we can preload the catalog now so
-	// the preset picker renders titles/descriptions in the chosen lang
-	// the first time the user lands there.
 	if inputs.CLILang != "" {
 		if lang, err := config.LoadBundledLanguage(inputs.CLILang); err == nil {
 			model.cliCatalog = &lang
 		}
 	}
 
-	// Pre-fill harness selections from inputs so re-runs of --update can
-	// show the user their existing choices with the cursor on the first
-	// already-checked row.
 	for i, name := range model.harnesses {
 		for _, selected := range inputs.Harnesses {
 			if selected == name {
@@ -156,30 +165,21 @@ func newSetupPickerModel(inputs setupInputs, needs pickerNeeds) (setupPickerMode
 	return model, nil
 }
 
-// Init satisfies tea.Model. We do not start the textinput cursor blink
-// here because Init is called once at program start, before the user
-// has navigated to the agent-lang screen; Update fires Cursor.BlinkCmd
-// on the actual transition into stepAgentLang so we do not waste a
-// frame ticking a hidden cursor on screens 1, 4, 5.
+// Init satisfies tea.Model.
 func (m setupPickerModel) Init() tea.Cmd { return nil }
 
-// Update routes the incoming message to the active step's handler and
-// returns the next model + cmd. Ctrl+C wins everywhere so users can
-// always bail out before any side-effect.
+// Update routes the incoming message to the active step's handler.
+// Ctrl+C wins everywhere so users can always bail out before any
+// side-effect.
 func (m setupPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok {
-		switch key.Type {
-		case tea.KeyCtrlC:
-			m.aborted = true
-			return m, tea.Quit
-		}
+	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyCtrlC {
+		m.aborted = true
+		return m, tea.Quit
 	}
 
 	switch m.step {
-	case stepCLILang:
-		return m.updateCLILang(msg)
-	case stepTUILang:
-		return m.updateTUILang(msg)
+	case stepLang:
+		return m.updateLang(msg)
 	case stepAgentLang:
 		return m.updateAgentLang(msg)
 	case stepPreset:
@@ -190,7 +190,7 @@ func (m setupPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m setupPickerModel) updateCLILang(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m setupPickerModel) updateLang(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
@@ -212,53 +212,21 @@ func (m setupPickerModel) updateCLILang(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "enter":
 		chosen := m.langs[m.langCursor].Code
 		m.inputs.CLILang = chosen
+		m.inputs.TUILang = chosen
 		if lang, err := config.LoadBundledLanguage(chosen); err == nil {
 			m.cliCatalog = &lang
 		}
-		// Pull the TUI cursor onto the CLI choice so the next picker
-		// pre-selects the matching row (matches AC §3.2: "TUI default
-		// = CLI choice").
-		m.tuiCursor = indexOfLangCode(m.langs, firstNonEmpty(m.inputs.TUILang, chosen))
-		return m.transition(stepTUILang), nil
-	}
-	return m, nil
-}
-
-func (m setupPickerModel) updateTUILang(msg tea.Msg) (tea.Model, tea.Cmd) {
-	key, ok := msg.(tea.KeyMsg)
-	if !ok {
-		return m, nil
-	}
-	rows := len(m.langs)
-	switch key.String() {
-	case "up", "k":
-		if m.tuiCursor > 0 {
-			m.tuiCursor--
-		}
-	case "down", "j":
-		if m.tuiCursor < rows-1 {
-			m.tuiCursor++
-		}
-	case "home", "g":
-		m.tuiCursor = 0
-	case "end", "G":
-		m.tuiCursor = rows - 1
-	case "enter":
-		m.inputs.TUILang = m.langs[m.tuiCursor].Code
 		return m.transition(stepAgentLang), nil
 	}
 	return m, nil
 }
 
 func (m setupPickerModel) updateAgentLang(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok {
-		switch key.Type {
-		case tea.KeyEnter:
-			m.inputs.AgentLang = strings.TrimSpace(m.agentInput.Value())
-			m.inputs.AgentLangSet = true
-			m.preparePresets()
-			return m.transition(stepPreset), nil
-		}
+	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyEnter {
+		m.inputs.AgentLang = strings.TrimSpace(m.agentInput.Value())
+		m.inputs.AgentLangSet = true
+		m.preparePresets()
+		return m.transition(stepPreset), nil
 	}
 	var cmd tea.Cmd
 	m.agentInput, cmd = m.agentInput.Update(msg)
@@ -327,9 +295,6 @@ func (m setupPickerModel) updateHarness(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// transition moves to next; skips screens whose value was already
-// supplied via env var / flag (needs.* == false) so headless overrides
-// collapse the corresponding pickers without flicker.
 func (m setupPickerModel) transition(next setupStep) setupPickerModel {
 	m.step = next
 	m.advancePastResolved()
@@ -338,19 +303,12 @@ func (m setupPickerModel) transition(next setupStep) setupPickerModel {
 
 // advancePastResolved walks forward through any step whose value is
 // already known. If every remaining step is resolved we land on
-// stepDone and the surrounding tea.Program loop tears down. The agent
-// textinput cursor starts blinking on entry into stepAgentLang via a
-// Focus() so the cursor is visible the first frame.
+// stepDone and the surrounding tea.Program loop tears down.
 func (m *setupPickerModel) advancePastResolved() {
 	for {
 		switch m.step {
-		case stepCLILang:
-			if m.needs.CLILang {
-				return
-			}
-			m.step = stepTUILang
-		case stepTUILang:
-			if m.needs.TUILang {
+		case stepLang:
+			if m.needs.Lang {
 				return
 			}
 			m.step = stepAgentLang
@@ -379,8 +337,8 @@ func (m *setupPickerModel) advancePastResolved() {
 }
 
 // preparePresets resolves the four bundled presets' title + description
-// against the chosen CLI catalog. Falls back to the bundled en pack on a
-// missing key so a partial / custom language pack still renders
+// against the chosen CLI catalog. Falls back to the bundled en pack on
+// a missing key so a partial / custom language pack still renders
 // reasonable rows instead of bare slugs.
 func (m *setupPickerModel) preparePresets() {
 	if len(m.presets) > 0 {
@@ -389,12 +347,10 @@ func (m *setupPickerModel) preparePresets() {
 	names := installer.SupportedPresets()
 	out := make([]presetOption, 0, len(names))
 	for _, n := range names {
-		titleKey := fmt.Sprintf("cli.preset.%s.title", n)
-		descKey := fmt.Sprintf("cli.preset.%s.description", n)
 		out = append(out, presetOption{
 			Name:        n,
-			Title:       m.translate(titleKey),
-			Description: m.translate(descKey),
+			Title:       m.translate(fmt.Sprintf("cli.preset.%s.title", n)),
+			Description: m.translate(fmt.Sprintf("cli.preset.%s.description", n)),
 		})
 	}
 	m.presets = out
@@ -403,10 +359,6 @@ func (m *setupPickerModel) preparePresets() {
 	}
 }
 
-// translate resolves key against the chosen CLI catalog, falling back
-// to the package-level catalog (English by default) and finally to the
-// bare key. Used for screen titles / hints after step 0 so the labels
-// match the user's freshly-picked language.
 func (m setupPickerModel) translate(key string) string {
 	if m.cliCatalog != nil {
 		if v, ok := m.cliCatalog.Keys[key]; ok && v != "" {
@@ -416,78 +368,96 @@ func (m setupPickerModel) translate(key string) string {
 	return t(key)
 }
 
-// View renders the active screen. Layout is intentionally low-frills —
-// the picker runs inside the install pipe (`curl … | bash`) where the
-// host terminal may not support animations cleanly, so we stay with
-// vanilla ANSI: title, blank line, rows, blank line, hint.
+// View renders the active screen. The language screen renders only the
+// rows + ctrl+c footer — no title — because the user has no catalog
+// active yet and additional English chrome would not help the
+// non-English caller pick a language. Subsequent screens carry a title
+// + hint resolved through the chosen catalog.
 func (m setupPickerModel) View() string {
 	switch m.step {
-	case stepCLILang:
-		return renderListView("Select your CLI language", "↑/↓ navigate · enter confirm · ctrl+c quit", langRows(m.langs, m.langCursor))
-	case stepTUILang:
-		return renderListView(m.translate("cli.setup.picker.lang.tui.title"), m.translate("cli.setup.picker.hint.nav"), langRows(m.langs, m.tuiCursor))
+	case stepLang:
+		return m.renderListView("", "ctrl+c quit", langRows(m.langs, m.langCursor, m.styles))
 	case stepAgentLang:
 		m.agentInput.Placeholder = m.translate("cli.setup.picker.agent.placeholder")
-		return renderInputView(m.translate("cli.setup.picker.agent.title"), m.translate("cli.setup.picker.hint.input"), m.agentInput.View())
+		return m.renderInputView(m.translate("cli.setup.picker.agent.title"), m.translate("cli.setup.picker.hint.input"), m.agentInput.View())
 	case stepPreset:
-		return renderListView(m.translate("cli.setup.picker.preset.title"), m.translate("cli.setup.picker.hint.nav"), presetRows(m.presets, m.presetCursor))
+		return m.renderListView(m.translate("cli.setup.picker.preset.title"), m.translate("cli.setup.picker.hint.nav"), presetRows(m.presets, m.presetCursor, m.styles))
 	case stepHarness:
-		return renderListView(m.translate("cli.setup.picker.harness.title"), m.translate("cli.setup.picker.hint.multi"), harnessRows(m.harnesses, m.harnessChosen, m.harnessCursor))
+		return m.renderListView(m.translate("cli.setup.picker.harness.title"), m.translate("cli.setup.picker.hint.multi"), harnessRows(m.harnesses, m.harnessChosen, m.harnessCursor, m.styles))
 	}
 	return ""
 }
 
-func renderListView(title, hint string, rows []string) string {
+func (m setupPickerModel) renderListView(title, hint string, rows []string) string {
 	var b strings.Builder
-	b.WriteString("\n// " + title + "\n\n")
+	b.WriteString("\n")
+	if title != "" {
+		b.WriteString(m.styles.title.Render(title))
+		b.WriteString("\n\n")
+	}
 	for _, row := range rows {
 		b.WriteString(row + "\n")
 	}
-	b.WriteString("\n" + hint + "\n")
+	b.WriteString("\n")
+	b.WriteString(m.styles.hint.Render(hint))
+	b.WriteString("\n")
 	return b.String()
 }
 
-func renderInputView(title, hint, field string) string {
-	return "\n// " + title + "\n\n  " + field + "\n\n" + hint + "\n"
+func (m setupPickerModel) renderInputView(title, hint, field string) string {
+	var b strings.Builder
+	b.WriteString("\n")
+	b.WriteString(m.styles.title.Render(title))
+	b.WriteString("\n\n  ")
+	b.WriteString(field)
+	b.WriteString("\n\n")
+	b.WriteString(m.styles.hint.Render(hint))
+	b.WriteString("\n")
+	return b.String()
 }
 
-func langRows(langs []langOption, cursor int) []string {
+func langRows(langs []langOption, cursor int, st setupStyles) []string {
 	out := make([]string, 0, len(langs))
 	for i, l := range langs {
-		marker := "  "
+		label := fmt.Sprintf("%s (%s)", l.Native, l.Code)
 		if i == cursor {
-			marker = "› "
+			out = append(out, st.marker.Render("› ")+st.rowFocus.Render(label))
+		} else {
+			out = append(out, "  "+st.row.Render(label))
 		}
-		out = append(out, fmt.Sprintf("%s%s (%s)", marker, l.Native, l.Code))
 	}
 	return out
 }
 
-func presetRows(presets []presetOption, cursor int) []string {
-	out := make([]string, 0, len(presets))
+func presetRows(presets []presetOption, cursor int, st setupStyles) []string {
+	out := make([]string, 0, len(presets)*2)
 	for i, p := range presets {
-		marker := "  "
+		header := fmt.Sprintf("%-10s  %s", p.Name, p.Title)
 		if i == cursor {
-			marker = "› "
+			out = append(out, st.marker.Render("› ")+st.rowFocus.Render(header))
+		} else {
+			out = append(out, "  "+st.row.Render(header))
 		}
-		out = append(out, fmt.Sprintf("%s%-10s  %s", marker, p.Name, p.Title))
-		out = append(out, "    "+p.Description)
+		out = append(out, "    "+st.desc.Render(p.Description))
 	}
 	return out
 }
 
-func harnessRows(harnesses []string, chosen map[int]bool, cursor int) []string {
+func harnessRows(harnesses []string, chosen map[int]bool, cursor int, st setupStyles) []string {
 	out := make([]string, 0, len(harnesses))
 	for i, name := range harnesses {
-		marker := "  "
-		if i == cursor {
-			marker = "› "
-		}
 		box := "[ ]"
+		boxStyle := st.box
 		if chosen[i] {
 			box = "[x]"
+			boxStyle = st.boxOn
 		}
-		out = append(out, fmt.Sprintf("%s%s %s", marker, box, name))
+		label := boxStyle.Render(box) + " " + name
+		if i == cursor {
+			out = append(out, st.marker.Render("› ")+st.rowFocus.Render(label))
+		} else {
+			out = append(out, "  "+st.row.Render(label))
+		}
 	}
 	return out
 }
@@ -516,11 +486,9 @@ func indexOfPreset(presets []presetOption, name string) int {
 	return -1
 }
 
-// loadBundledLanguageOptions enumerates every `<code>.yaml` shipped under
-// defaults/languages and returns one langOption per pack, sorted by code
-// for deterministic ordering. The picker uses this rather than
-// config.LoadLanguages because the latter wants an on-disk install root
-// that does not yet exist on a fresh `curl|bash` run.
+// loadBundledLanguageOptions enumerates every `<code>.yaml` shipped
+// under defaults/languages and returns one langOption per pack, sorted
+// by code for deterministic ordering.
 func loadBundledLanguageOptions() ([]langOption, error) {
 	entries, err := defaults.FS.ReadDir("languages")
 	if err != nil {
@@ -556,23 +524,58 @@ func loadBundledLanguageOptions() ([]langOption, error) {
 	return out, nil
 }
 
+// loadBundledTheme reads defaults/themes/omakiten.yaml from the embed
+// FS. The installer runs before the user has any on-disk config, so the
+// bundled default theme is the only palette available.
+func loadBundledTheme() (config.Theme, error) {
+	raw, err := defaults.FS.ReadFile("themes/omakiten.yaml")
+	if err != nil {
+		return config.Theme{}, err
+	}
+	var theme config.Theme
+	if err := yaml.Unmarshal(raw, &theme); err != nil {
+		return config.Theme{}, err
+	}
+	return theme, nil
+}
+
+// newSetupStyles builds the lipgloss style set from the theme palette.
+// A nil/empty Colors map yields styles with the empty color, which
+// lipgloss treats as "inherit terminal default" — safe fallback when
+// the embed FS read fails for some reason (e.g. someone strips
+// themes/* from the binary).
+func newSetupStyles(theme config.Theme) setupStyles {
+	primary := lipgloss.Color(theme.Colors["primary"])
+	fg := lipgloss.Color(theme.Colors["foreground"])
+	secondary := lipgloss.Color(theme.Colors["secondary"])
+	success := lipgloss.Color(theme.Colors["success"])
+	border := lipgloss.Color(theme.Colors["border"])
+	return setupStyles{
+		title:    lipgloss.NewStyle().Bold(true).Foreground(primary),
+		row:      lipgloss.NewStyle().Foreground(fg),
+		rowFocus: lipgloss.NewStyle().Bold(true).Foreground(primary),
+		marker:   lipgloss.NewStyle().Bold(true).Foreground(primary),
+		hint:     lipgloss.NewStyle().Foreground(secondary),
+		desc:     lipgloss.NewStyle().Foreground(secondary),
+		box:      lipgloss.NewStyle().Foreground(border),
+		boxOn:    lipgloss.NewStyle().Bold(true).Foreground(success),
+	}
+}
+
 // runSetupPicker launches the bubbletea program when at least one
-// picker screen needs the user's input. Returns the populated inputs on
-// success, a coded ErrCanceled-style error on ctrl+c, or a
-// validation_error when stdin is not a TTY (the caller is meant to fall
-// back to the headless contract in that case — env vars / flags must
-// cover every needed input).
+// picker screen needs the user's input. Returns the populated inputs
+// on success, a coded error on ctrl+c, or a validation_error when
+// stdin is not a TTY.
 func runSetupPicker(ctx context.Context, inputs setupInputs, needs pickerNeeds) (setupInputs, error) {
 	if !pickerNeeded(needs) {
 		return inputs, nil
 	}
 	if !stdinIsTTY() {
 		return setupInputs{}, domain.NewError(domain.ErrValidation, t("cli.setup.picker.no_tty"), map[string]any{
-			"cli_lang_needed": needs.CLILang,
-			"tui_lang_needed": needs.TUILang,
-			"agent_needed":    needs.Agent,
-			"preset_needed":   needs.Preset,
-			"harness_needed":  needs.Harness,
+			"lang_needed":    needs.Lang,
+			"agent_needed":   needs.Agent,
+			"preset_needed":  needs.Preset,
+			"harness_needed": needs.Harness,
 		})
 	}
 	model, err := newSetupPickerModel(inputs, needs)
@@ -585,17 +588,14 @@ func runSetupPicker(ctx context.Context, inputs setupInputs, needs pickerNeeds) 
 		return setupInputs{}, fmt.Errorf("run setup picker: %w", err)
 	}
 	result := final.(setupPickerModel)
-	if result.aborted {
-		return setupInputs{}, domain.NewError(domain.ErrValidation, t("cli.setup.picker.aborted"), nil)
-	}
-	if !result.done {
+	if result.aborted || !result.done {
 		return setupInputs{}, domain.NewError(domain.ErrValidation, t("cli.setup.picker.aborted"), nil)
 	}
 	return result.inputs, nil
 }
 
 func pickerNeeded(n pickerNeeds) bool {
-	return n.CLILang || n.TUILang || n.Agent || n.Preset || n.Harness
+	return n.Lang || n.Agent || n.Preset || n.Harness
 }
 
 func stdinIsTTY() bool {

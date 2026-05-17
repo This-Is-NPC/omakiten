@@ -10,8 +10,6 @@ import (
 	"omakiten/internal/installer"
 )
 
-// keyMsg builds a tea.KeyMsg from a printable rune so tests can read
-// like "press 'j' then enter" without binding to specific key constants.
 func keyMsg(r rune) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
 }
@@ -21,10 +19,6 @@ func ctrlCMsg() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyCtrlC} }
 func downMsg() tea.KeyMsg  { return tea.KeyMsg{Type: tea.KeyDown} }
 func spaceMsg() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeySpace} }
 
-// stepThrough feeds messages one at a time so test assertions can
-// inspect the model state between every keystroke; matches how the tea
-// runtime would dispatch them but stays synchronous so tests do not
-// have to spin a real program loop.
 func stepThrough(t *testing.T, m setupPickerModel, msgs ...tea.Msg) setupPickerModel {
 	t.Helper()
 	for _, msg := range msgs {
@@ -34,53 +28,35 @@ func stepThrough(t *testing.T, m setupPickerModel, msgs ...tea.Msg) setupPickerM
 	return m
 }
 
-// TestSetupPicker_HappyPath drives a fresh install through every screen
-// (CLI=pt-br → TUI=pt-br → agent="Português (Brasil)" → preset=omakase →
+// TestSetupPicker_HappyPath drives a fresh install through every
+// screen (lang=pt-br → agent="Portugues" → preset=omakase →
 // harnesses=claude-code+opencode), then asserts the resulting inputs
-// match what runSetup would receive. This is the AC §12 "happy path"
-// scenario the task contract calls out for teatest coverage; we drive
-// the model functionally instead of via a real PTY because the project
-// has no teatest dependency and the model's Update is the same code
-// the tea.Program would dispatch.
+// match what runSetup would receive. Language is one screen now — CLI
+// and TUI share the same picker per UX feedback.
 func TestSetupPicker_HappyPath(t *testing.T) {
-	needs := pickerNeeds{CLILang: true, TUILang: true, Agent: true, Preset: true, Harness: true}
+	needs := pickerNeeds{Lang: true, Agent: true, Preset: true, Harness: true}
 	m, err := newSetupPickerModel(setupInputs{}, needs)
 	if err != nil {
 		t.Fatalf("newSetupPickerModel: %v", err)
 	}
-	if m.step != stepCLILang {
-		t.Fatalf("step: got %v want stepCLILang", m.step)
+	if m.step != stepLang {
+		t.Fatalf("step: got %v want stepLang", m.step)
 	}
 
-	// CLI lang — bundled order is alphabetical: en (0), pt-br (1). Press
-	// down then enter to pick pt-br.
+	// Lang — bundled order alphabetical: en (0), pt-br (1). Down + enter
+	// → pt-br for both CLI and TUI.
 	m = stepThrough(t, m, downMsg(), enterMsg())
-	if m.step != stepTUILang {
-		t.Fatalf("after CLI confirm: step %v want stepTUILang", m.step)
+	if m.step != stepAgentLang {
+		t.Fatalf("after lang confirm: step %v want stepAgentLang", m.step)
 	}
-	if m.inputs.CLILang != "pt-br" {
-		t.Fatalf("CLILang: got %q want pt-br", m.inputs.CLILang)
+	if m.inputs.CLILang != "pt-br" || m.inputs.TUILang != "pt-br" {
+		t.Fatalf("languages: got cli=%q tui=%q want both pt-br", m.inputs.CLILang, m.inputs.TUILang)
 	}
 	if m.cliCatalog == nil || m.cliCatalog.Code != "pt-br" {
 		t.Fatalf("cliCatalog not loaded for pt-br: %+v", m.cliCatalog)
 	}
-	// TUI cursor should pre-select pt-br (same as CLI).
-	if m.tuiCursor != 1 {
-		t.Fatalf("TUI cursor: got %d want 1 (pt-br)", m.tuiCursor)
-	}
 
-	// TUI lang — accept default (pt-br).
-	m = stepThrough(t, m, enterMsg())
-	if m.step != stepAgentLang {
-		t.Fatalf("after TUI confirm: step %v want stepAgentLang", m.step)
-	}
-	if m.inputs.TUILang != "pt-br" {
-		t.Fatalf("TUILang: got %q want pt-br", m.inputs.TUILang)
-	}
-
-	// Agent lang — type "Portugues" and enter (agent input mirrors the
-	// runes; we keep ASCII here so the test does not depend on the
-	// terminal's input encoding).
+	// Agent lang — type "Portugues" and enter.
 	m = stepThrough(t, m,
 		keyMsg('P'), keyMsg('o'), keyMsg('r'), keyMsg('t'), keyMsg('u'), keyMsg('g'), keyMsg('u'), keyMsg('e'), keyMsg('s'),
 		enterMsg(),
@@ -98,9 +74,7 @@ func TestSetupPicker_HappyPath(t *testing.T) {
 		t.Fatalf("presets should be populated by transition into stepPreset")
 	}
 
-	// Preset — first row is omakase (alphabetical preset order would
-	// place it second; we depend on installer.SupportedPresets() ordering
-	// which is config.ListPresets ordering).
+	// Preset — move cursor to omakase then enter.
 	presetIdx := -1
 	for i, p := range m.presets {
 		if p.Name == "omakase" {
@@ -122,7 +96,7 @@ func TestSetupPicker_HappyPath(t *testing.T) {
 		t.Fatalf("Preset: got %q want omakase", m.inputs.Preset)
 	}
 
-	// Harness — toggle claude-code (index 0) and opencode then enter.
+	// Harness — toggle claude-code and opencode then enter.
 	supported := installer.SupportedHarnesses()
 	want := []string{}
 	for _, name := range []string{"claude-code", "opencode"} {
@@ -152,16 +126,14 @@ func TestSetupPicker_HappyPath(t *testing.T) {
 	}
 }
 
-// TestSetupPicker_CancelMidFlow asserts ctrl+c at any step aborts the
-// model with no side-effect-bound inputs.
 func TestSetupPicker_CancelMidFlow(t *testing.T) {
-	needs := pickerNeeds{CLILang: true, TUILang: true, Agent: true, Preset: true, Harness: true}
+	needs := pickerNeeds{Lang: true, Agent: true, Preset: true, Harness: true}
 	m, err := newSetupPickerModel(setupInputs{}, needs)
 	if err != nil {
 		t.Fatalf("newSetupPickerModel: %v", err)
 	}
 	m = stepThrough(t, m, downMsg(), enterMsg()) // pick pt-br
-	if m.step != stepTUILang {
+	if m.step != stepAgentLang {
 		t.Fatalf("setup precondition failed: step %v", m.step)
 	}
 	next, cmd := m.Update(ctrlCMsg())
@@ -177,9 +149,9 @@ func TestSetupPicker_CancelMidFlow(t *testing.T) {
 	}
 }
 
-// TestSetupPicker_SkipsResolvedSteps proves that env-supplied inputs
-// collapse their pickers — supply CLI/TUI/agent up front and the model
-// starts at stepPreset directly, mirroring AC §8's per-screen skip.
+// TestSetupPicker_SkipsResolvedSteps proves env-supplied inputs collapse
+// their pickers — supply lang/agent up front and the model starts at
+// stepPreset directly.
 func TestSetupPicker_SkipsResolvedSteps(t *testing.T) {
 	needs := pickerNeeds{Preset: true, Harness: true}
 	m, err := newSetupPickerModel(setupInputs{
@@ -202,7 +174,6 @@ func TestSetupPicker_SkipsResolvedSteps(t *testing.T) {
 	}
 }
 
-// TestSetupPicker_AllResolved exits immediately when nothing is needed.
 func TestSetupPicker_AllResolved(t *testing.T) {
 	m, err := newSetupPickerModel(setupInputs{
 		CLILang:      "en",
@@ -221,16 +192,11 @@ func TestSetupPicker_AllResolved(t *testing.T) {
 	}
 }
 
-// TestSetupPicker_HeadlessNoTTY exercises runSetupPicker's no-TTY guard:
-// when stdin is not a terminal and at least one input is missing, it
-// must return a validation error pointing the caller at the env-var
-// surface rather than blocking on a tea.Program that has no input to
-// read.
 func TestSetupPicker_HeadlessNoTTY(t *testing.T) {
 	if stdinIsTTY() {
 		t.Skip("stdin is a TTY; this test exercises the headless branch")
 	}
-	needs := pickerNeeds{CLILang: true, TUILang: true, Agent: true, Preset: true, Harness: true}
+	needs := pickerNeeds{Lang: true, Agent: true, Preset: true, Harness: true}
 	_, err := runSetupPicker(context.Background(), setupInputs{}, needs)
 	if err == nil {
 		t.Fatalf("expected validation error, got nil")
@@ -241,18 +207,15 @@ func TestSetupPicker_HeadlessNoTTY(t *testing.T) {
 }
 
 // TestSetupPicker_PresetTitlesLocalized asserts the preset rows use the
-// chosen CLI catalog (so a pt-br pick renders pt-br titles), guarding
-// AC §3.4 — preset titles + descriptions resolved through the catalog
-// the user just picked.
+// chosen CLI catalog (so a pt-br pick renders pt-br titles).
 func TestSetupPicker_PresetTitlesLocalized(t *testing.T) {
-	m, err := newSetupPickerModel(setupInputs{CLILang: "pt-br"}, pickerNeeds{TUILang: true, Agent: true, Preset: true, Harness: true})
+	m, err := newSetupPickerModel(setupInputs{CLILang: "pt-br"}, pickerNeeds{Agent: true, Preset: true, Harness: true})
 	if err != nil {
 		t.Fatalf("newSetupPickerModel: %v", err)
 	}
 	if m.cliCatalog == nil {
 		t.Fatalf("cliCatalog should be preloaded for pt-br")
 	}
-	// Force a transition through agent step so presets get populated.
 	m.preparePresets()
 	var omakase presetOption
 	for _, p := range m.presets {

@@ -118,22 +118,26 @@ func resolveSetupInputs(cmd *cobra.Command, flags setupFlagValues) (setupInputs,
 	inputs := setupInputs{}
 	needs := pickerNeeds{}
 
+	// CLI + TUI share a single picker screen on install; the per-surface
+	// split lives in omakiten.yaml so the user can override later via
+	// `okt config language`. If either env var is set we treat both as
+	// resolved (CLILang takes precedence; TUILang mirrors it when only
+	// CLI is set, and vice versa).
 	cliRaw := flagOrEnv(cmd, "cli-lang", flags.CLILang, "OKT_CLI_LANG")
-	if cliRaw != "" {
-		inputs.CLILang = cliRaw
-	} else {
-		needs.CLILang = true
-	}
-
 	tuiRaw := flagOrEnv(cmd, "tui-lang", flags.TUILang, "OKT_TUI_LANG")
-	if tuiRaw != "" {
+	switch {
+	case cliRaw != "":
+		inputs.CLILang = cliRaw
+		if tuiRaw != "" {
+			inputs.TUILang = tuiRaw
+		} else {
+			inputs.TUILang = cliRaw
+		}
+	case tuiRaw != "":
+		inputs.CLILang = tuiRaw
 		inputs.TUILang = tuiRaw
-	} else if !needs.CLILang {
-		// Headless contract: CLI supplied, TUI omitted → mirror CLI so
-		// the user does not have to set two env vars in CI.
-		inputs.TUILang = inputs.CLILang
-	} else {
-		needs.TUILang = true
+	default:
+		needs.Lang = true
 	}
 
 	if flags.AgentLangSet {
