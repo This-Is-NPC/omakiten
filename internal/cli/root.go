@@ -211,6 +211,7 @@ func NewRootCommand(version string) *cobra.Command {
 	cmd.AddCommand(newPersonaCommand(opts))
 	cmd.AddCommand(newTUICommand(opts, version))
 	cmd.AddCommand(newMCPCommand(opts))
+	cmd.AddCommand(newSetupCommand(opts))
 
 	return cmd
 }
