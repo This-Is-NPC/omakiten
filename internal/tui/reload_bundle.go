@@ -129,7 +129,7 @@ func (m *Model) revertConfigSwap() {
 	m.pendingSwapRevertPath = ""
 	m.suppressNextSwapEmit = true
 	if err := m.reloadBundle(path); err != nil {
-		m.status = fmt.Sprintf("Config swap cancel failed: %v", err)
+		m.status = fmt.Sprintf(m.t("tui.status.config_swap_cancel_failed_fmt"), err)
 		return
 	}
 	base := filepath.Base(path)
@@ -138,7 +138,7 @@ func (m *Model) revertConfigSwap() {
 		return
 	}
 	display := strings.TrimSuffix(base, filepath.Ext(base))
-	m.status = fmt.Sprintf("Config swap cancelled — restored %s", display)
+	m.status = fmt.Sprintf(m.t("tui.status.config_swap_cancelled_fmt"), display)
 }
 
 // loadActiveTheme resolves the theme yaml referenced by the snapshot's
