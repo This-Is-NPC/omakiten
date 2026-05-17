@@ -32,14 +32,15 @@ func (s *Service) DumpContext(ctx context.Context, input DumpContextInput) (Dump
 		return DumpContextResponse{}, err
 	}
 	return DumpContextResponse{
-		Project:      projectSummary(project),
-		Level:        dump.Level,
-		TaskCount:    dump.TaskCount,
-		TokenMetrics: dump.TokenMetrics,
-		Context:      contextSnippets(dump.ContextEntries, 0),
-		Workflow:     workflowSummary(dump.Workflow),
-		Tasks:        taskSummaries(dump.Tasks, s.registry),
-		Dependencies: dependencySummaries(dump.Dependencies),
-		Comments:     commentSummaries(dump.Comments),
+		Project:             projectSummary(project),
+		Level:               dump.Level,
+		TaskCount:           dump.TaskCount,
+		TokenMetrics:        dump.TokenMetrics,
+		Context:             contextSnippets(dump.ContextEntries, 0),
+		Workflow:            workflowSummary(dump.Workflow),
+		Tasks:               taskSummaries(dump.Tasks, s.registry),
+		Dependencies:        dependencySummaries(dump.Dependencies),
+		Comments:            commentSummaries(dump.Comments),
+		AgentOutputLanguage: dump.AgentOutputLanguage,
 	}, nil
 }

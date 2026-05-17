@@ -24,15 +24,16 @@ type DumpContextInput struct {
 }
 
 type DumpContextResponse struct {
-	Project      ProjectSummary      `json:"project"`
-	Level        int                 `json:"level"`
-	TaskCount    int64               `json:"task_count"`
-	TokenMetrics domain.TokenMetrics `json:"token_metrics"`
-	Context      []ContextSnippet    `json:"context_entries,omitempty"`
-	Workflow     WorkflowSummary     `json:"workflow,omitempty"`
-	Tasks        []TaskSummary       `json:"tasks,omitempty"`
-	Dependencies []DependencySummary `json:"dependencies,omitempty"`
-	Comments     []CommentSummary    `json:"comments,omitempty"`
+	Project             ProjectSummary      `json:"project"`
+	Level               int                 `json:"level"`
+	TaskCount           int64               `json:"task_count"`
+	TokenMetrics        domain.TokenMetrics `json:"token_metrics"`
+	Context             []ContextSnippet    `json:"context_entries,omitempty"`
+	Workflow            WorkflowSummary     `json:"workflow,omitempty"`
+	Tasks               []TaskSummary       `json:"tasks,omitempty"`
+	Dependencies        []DependencySummary `json:"dependencies,omitempty"`
+	Comments            []CommentSummary    `json:"comments,omitempty"`
+	AgentOutputLanguage string              `json:"agent_output_language,omitempty"`
 }
 
 func contextSnippet(entry domain.ContextEntry) ContextSnippet {
