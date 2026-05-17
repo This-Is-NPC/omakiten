@@ -9,8 +9,8 @@ import (
 func (m Model) renderHelp() string {
 	type binding struct{ key, desc string }
 	type group struct {
-		title    string
-		bindings []binding
+		key, title string
+		bindings   []binding
 	}
 	commentKeys := newCommentInputBindings()
 	commentInputHelpRows := []binding{
@@ -19,165 +19,165 @@ func (m Model) renderHelp() string {
 		{commentKeys.Cancel.Help().Key, commentKeys.Cancel.Help().Desc},
 	}
 	groups := []group{
-		{"Global", []binding{
-			{"?", "close this overlay"},
-			{"a", "toggle all bindings"},
-			{"q · ctrl+c", "quit"},
-			{"tab · shift+tab", "cycle zones (Tasks · Stats · Settings)"},
-			{"1 · 2 · 3", "jump to zone (Tasks · Stats · Settings)"},
-			{", · /", "previous · next sub-menu inside the current zone"},
-			{"0 · ctrl+h", "back to multi-project home"},
-			{"r", "refresh"},
+		{"global", m.t("tui.help.global.title"), []binding{
+			{"?", m.t("tui.help.global.close_help")},
+			{"a", m.t("tui.help.global.toggle_all")},
+			{"q · ctrl+c", m.t("tui.help.global.quit")},
+			{"tab · shift+tab", m.t("tui.help.global.cycle_zones")},
+			{"1 · 2 · 3", m.t("tui.help.global.jump_zone")},
+			{", · /", m.t("tui.help.global.prev_next_sub")},
+			{"0 · ctrl+h", m.t("tui.help.global.back_home")},
+			{"r", m.t("tui.help.global.refresh")},
 		}},
-		{"Home", []binding{
-			{"↑ ↓ · j k", "move project selection"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "first / last project"},
-			{"enter", "open project (loads board)"},
-			{"ctrl+h", "reload home (refresh tags / counts)"},
-			{"q · ctrl+c", "quit"},
+		{"home", m.t("tui.help.home.title"), []binding{
+			{"↑ ↓ · j k", m.t("tui.help.home.move_project")},
+			{"pgup · pgdn · ctrl+u · ctrl+d", m.t("tui.help.home.scroll_halfpage")},
+			{"g · G", m.t("tui.help.home.first_last_project")},
+			{"enter", m.t("tui.help.home.open_project")},
+			{"ctrl+h", m.t("tui.help.home.reload")},
+			{"q · ctrl+c", m.t("tui.help.home.quit")},
 		}},
-		{"Tasks · board lens", []binding{
-			{"← ↑ ↓ → · h j k l", "navigate lanes and tasks (auto-scrolls column)"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll focused column by page"},
-			{"g · G", "first / last card in column"},
-			{"enter", "open task (delete/edit live inside task view)"},
-			{"n", "new task"},
-			{"e", "edit task"},
-			{"c", "add comment"},
-			{"m", "move task between lanes"},
-			{"A", "toggle archived tasks visibility"},
+		{"tasks_board", m.t("tui.help.tasks_board.title"), []binding{
+			{"← ↑ ↓ → · h j k l", m.t("tui.help.tasks_board.navigate")},
+			{"pgup · pgdn · ctrl+u · ctrl+d", m.t("tui.help.tasks_board.scroll_column")},
+			{"g · G", m.t("tui.help.tasks_board.first_last_card")},
+			{"enter", m.t("tui.help.tasks_board.open_task")},
+			{"n", m.t("tui.help.tasks_board.new_task")},
+			{"e", m.t("tui.help.tasks_board.edit_task")},
+			{"c", m.t("tui.help.tasks_board.add_comment")},
+			{"m", m.t("tui.help.tasks_board.move_task")},
+			{"A", m.t("tui.help.tasks_board.toggle_archived")},
 		}},
-		{"Tasks · table lens", []binding{
-			{"↑ ↓ · j k", "select task (auto-scrolls)"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "first / last task"},
-			{"enter", "open task (delete/edit live inside task view)"},
-			{"n", "new task"},
-			{"e", "edit task"},
-			{"m", "move by bucket key"},
-			{"A", "toggle archived tasks visibility"},
+		{"tasks_table", m.t("tui.help.tasks_table.title"), []binding{
+			{"↑ ↓ · j k", m.t("tui.help.tasks_table.select_task")},
+			{"pgup · pgdn · ctrl+u · ctrl+d", m.t("tui.help.tasks_table.scroll_halfpage")},
+			{"g · G", m.t("tui.help.tasks_table.first_last_task")},
+			{"enter", m.t("tui.help.tasks_table.open_task")},
+			{"n", m.t("tui.help.tasks_table.new_task")},
+			{"e", m.t("tui.help.tasks_table.edit_task")},
+			{"m", m.t("tui.help.tasks_table.move_bucket")},
+			{"A", m.t("tui.help.tasks_table.toggle_archived")},
 		}},
-		{"Tasks · graph lens", []binding{
-			{"← →", "switch view"},
-			{"↑ ↓ · j k", "move cursor"},
-			{"enter", "open task"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "jump to top / bottom"},
+		{"tasks_graph", m.t("tui.help.tasks_graph.title"), []binding{
+			{"← →", m.t("tui.help.tasks_graph.switch_view")},
+			{"↑ ↓ · j k", m.t("tui.help.tasks_graph.move_cursor")},
+			{"enter", m.t("tui.help.tasks_graph.open_task")},
+			{"pgup · pgdn · ctrl+u · ctrl+d", m.t("tui.help.tasks_graph.scroll_halfpage")},
+			{"g · G", m.t("tui.help.tasks_graph.jump_top_bottom")},
 		}},
-		{"Task view", []binding{
-			{"tab · shift+tab", "switch focus (form ⇄ activity)"},
-			{"↑ ↓ · j k", "scroll description (form) · navigate cards (activity)"},
-			{"J · K", "navigate activity cards (any focus)"},
-			{"enter", "open focused comment in detail view (activity)"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "jump to top / bottom"},
-			{"e", "edit task"},
-			{"b", "edit blockers"},
-			{"c", "add comment"},
-			{"m", "move"},
-			{"M", "toggle markdown render (raw ⇄ rendered)"},
-			{"d · d", "arm delete task (form focus), then confirm"},
-			{"esc", "back to board"},
+		{"task_view", m.t("tui.help.task_view.title"), []binding{
+			{"tab · shift+tab", m.t("tui.help.task_view.switch_focus")},
+			{"↑ ↓ · j k", m.t("tui.help.task_view.scroll_or_navigate")},
+			{"J · K", m.t("tui.help.task_view.navigate_activity")},
+			{"enter", m.t("tui.help.task_view.open_comment")},
+			{"pgup · pgdn · ctrl+u · ctrl+d", m.t("tui.help.task_view.scroll_halfpage")},
+			{"g · G", m.t("tui.help.task_view.jump_top_bottom")},
+			{"e", m.t("tui.help.task_view.edit_task")},
+			{"b", m.t("tui.help.task_view.edit_blockers")},
+			{"c", m.t("tui.help.task_view.add_comment")},
+			{"m", m.t("tui.help.task_view.move")},
+			{"M", m.t("tui.help.task_view.toggle_markdown")},
+			{"d · d", m.t("tui.help.task_view.arm_delete")},
+			{"esc", m.t("tui.help.task_view.back_board")},
 		}},
-		{"Comment view", []binding{
-			{"↑ ↓ · j k", "scroll body"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "jump to top / bottom"},
-			{"e", "edit comment body"},
-			{"M", "toggle markdown render (raw ⇄ rendered)"},
-			{"d · d", "arm delete comment, then confirm"},
-			{"esc", "back to task view"},
+		{"comment_view", m.t("tui.help.comment_view.title"), []binding{
+			{"↑ ↓ · j k", m.t("tui.help.comment_view.scroll_body")},
+			{"pgup · pgdn · ctrl+u · ctrl+d", m.t("tui.help.comment_view.scroll_halfpage")},
+			{"g · G", m.t("tui.help.comment_view.jump_top_bottom")},
+			{"e", m.t("tui.help.comment_view.edit_body")},
+			{"M", m.t("tui.help.comment_view.toggle_markdown")},
+			{"d · d", m.t("tui.help.comment_view.arm_delete")},
+			{"esc", m.t("tui.help.comment_view.back_task")},
 		}},
-		{"Comment input", commentInputHelpRows},
-		{"Comment edit", []binding{
-			{"ctrl+s", "save the rewritten body"},
-			{"alt+enter · shift+enter", "insert newline"},
-			{"esc", "cancel — return to comment view"},
-			{"arrows · home · end", "navigate caret"},
+		{"comment_input", m.t("tui.help.comment_input.title"), commentInputHelpRows},
+		{"comment_edit", m.t("tui.help.comment_edit.title"), []binding{
+			{"ctrl+s", m.t("tui.help.comment_edit.save")},
+			{"alt+enter · shift+enter", m.t("tui.help.comment_edit.newline")},
+			{"esc", m.t("tui.help.comment_edit.cancel")},
+			{"arrows · home · end", m.t("tui.help.comment_edit.caret")},
 		}},
-		{"Task form", []binding{
-			{"tab", "switch field"},
-			{"← → · h l", "change priority"},
-			{"ctrl+b", "edit blockers when editing an existing task"},
-			{"enter · alt+enter · shift+enter", "newline in description"},
-			{"ctrl+s", "save"},
-			{"esc", "cancel"},
+		{"task_form", m.t("tui.help.task_form.title"), []binding{
+			{"tab", m.t("tui.help.task_form.switch_field")},
+			{"← → · h l", m.t("tui.help.task_form.change_priority")},
+			{"ctrl+b", m.t("tui.help.task_form.edit_blockers")},
+			{"enter · alt+enter · shift+enter", m.t("tui.help.task_form.newline")},
+			{"ctrl+s", m.t("tui.help.task_form.save")},
+			{"esc", m.t("tui.help.task_form.cancel")},
 		}},
-		{"Blocker picker", []binding{
-			{"↑ ↓ · j k", "move (auto-scrolls)"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "first / last candidate"},
-			{"space", "toggle blocker"},
-			{"ctrl+s", "save"},
-			{"esc", "cancel"},
+		{"blocker_picker", m.t("tui.help.blocker_picker.title"), []binding{
+			{"↑ ↓ · j k", m.t("tui.help.blocker_picker.move")},
+			{"pgup · pgdn · ctrl+u · ctrl+d", m.t("tui.help.blocker_picker.scroll_halfpage")},
+			{"g · G", m.t("tui.help.blocker_picker.first_last_candidate")},
+			{"space", m.t("tui.help.blocker_picker.toggle")},
+			{"ctrl+s", m.t("tui.help.blocker_picker.save")},
+			{"esc", m.t("tui.help.blocker_picker.cancel")},
 		}},
-		{"Settings · general", []binding{
-			{", · /", "previous · next sub (general → laws → personas → …)"},
-			{"t", "theme picker (hot-reload)"},
-			{"c", "config picker (restart required)"},
-			{"r", "refresh"},
+		{"settings_general", m.t("tui.help.settings_general.title"), []binding{
+			{", · /", m.t("tui.help.settings_general.prev_next_sub")},
+			{"t", m.t("tui.help.settings_general.theme_picker")},
+			{"c", m.t("tui.help.settings_general.config_picker")},
+			{"r", m.t("tui.help.settings_general.refresh")},
 		}},
-		{"Settings · entity (laws / personas / skills / templates)", []binding{
-			{", · /", "previous · next sub"},
-			{"↑ ↓ · j k", "select entity (auto-scrolls)"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "first / last entry"},
-			{"enter", "open detail"},
-			{"n", "new entity"},
-			{"e", "edit in $EDITOR"},
-			{"d · d", "arm delete, then confirm"},
-			{"p", "skill picker (persona)"},
-			{"a", "set as default (template)"},
-			{"t · c", "theme picker · config picker"},
+		{"settings_entity", m.t("tui.help.settings_entity.title"), []binding{
+			{", · /", m.t("tui.help.settings_entity.prev_next_sub")},
+			{"↑ ↓ · j k", m.t("tui.help.settings_entity.select")},
+			{"pgup · pgdn · ctrl+u · ctrl+d", m.t("tui.help.settings_entity.scroll_halfpage")},
+			{"g · G", m.t("tui.help.settings_entity.first_last")},
+			{"enter", m.t("tui.help.settings_entity.open_detail")},
+			{"n", m.t("tui.help.settings_entity.new_entity")},
+			{"e", m.t("tui.help.settings_entity.edit_in_editor")},
+			{"d · d", m.t("tui.help.settings_entity.arm_delete")},
+			{"p", m.t("tui.help.settings_entity.skill_picker")},
+			{"a", m.t("tui.help.settings_entity.set_default")},
+			{"t · c", m.t("tui.help.settings_entity.theme_or_config_picker")},
 		}},
-		{"Settings · tags", []binding{
-			{", · /", "previous · next sub"},
-			{"↑ ↓ · j k", "select tag"},
-			{"d", "arm delete (orphan only)"},
-			{"D", "delete every orphan tag"},
-			{"t · c", "theme picker · config picker"},
+		{"settings_tags", m.t("tui.help.settings_tags.title"), []binding{
+			{", · /", m.t("tui.help.settings_tags.prev_next_sub")},
+			{"↑ ↓ · j k", m.t("tui.help.settings_tags.select_tag")},
+			{"d", m.t("tui.help.settings_tags.arm_delete")},
+			{"D", m.t("tui.help.settings_tags.delete_all")},
+			{"t · c", m.t("tui.help.settings_tags.theme_or_config_picker")},
 		}},
-		{"Entity view", []binding{
-			{"↑ ↓ · j k", "scroll body"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "jump to top / bottom"},
-			{"e", "edit (opens $EDITOR)"},
-			{"M", "toggle markdown render (raw ⇄ rendered)"},
-			{"d · d", "arm delete, then confirm"},
-			{"p", "skill picker (persona)"},
-			{"esc", "back, or cancel pending delete"},
+		{"entity_view", m.t("tui.help.entity_view.title"), []binding{
+			{"↑ ↓ · j k", m.t("tui.help.entity_view.scroll_body")},
+			{"pgup · pgdn · ctrl+u · ctrl+d", m.t("tui.help.entity_view.scroll_halfpage")},
+			{"g · G", m.t("tui.help.entity_view.jump_top_bottom")},
+			{"e", m.t("tui.help.entity_view.edit")},
+			{"M", m.t("tui.help.entity_view.toggle_markdown")},
+			{"d · d", m.t("tui.help.entity_view.arm_delete")},
+			{"p", m.t("tui.help.entity_view.skill_picker")},
+			{"esc", m.t("tui.help.entity_view.back_or_cancel")},
 		}},
-		{"Skill picker", []binding{
-			{"↑ ↓ · j k", "move (auto-scrolls)"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "first / last row"},
-			{"space", "toggle"},
-			{"enter on '+ create new'", "scaffold new skill"},
-			{"ctrl+s", "save"},
-			{"esc", "cancel"},
+		{"skill_picker", m.t("tui.help.skill_picker.title"), []binding{
+			{"↑ ↓ · j k", m.t("tui.help.skill_picker.move")},
+			{"pgup · pgdn · ctrl+u · ctrl+d", m.t("tui.help.skill_picker.scroll_halfpage")},
+			{"g · G", m.t("tui.help.skill_picker.first_last_row")},
+			{"space", m.t("tui.help.skill_picker.toggle")},
+			{"enter on '+ create new'", m.t("tui.help.skill_picker.scaffold_new")},
+			{"ctrl+s", m.t("tui.help.skill_picker.save")},
+			{"esc", m.t("tui.help.skill_picker.cancel")},
 		}},
-		{"Stats · logs", []binding{
-			{"← →", "switch view"},
-			{"↑ ↓ · j k", "select row (auto-scrolls)"},
-			{"pgup · pgdn · ctrl+u · ctrl+d", "scroll by half page"},
-			{"g · G", "first / last row"},
-			{"r", "refresh"},
+		{"stats_logs", m.t("tui.help.stats_logs.title"), []binding{
+			{"← →", m.t("tui.help.stats_logs.switch_view")},
+			{"↑ ↓ · j k", m.t("tui.help.stats_logs.select_row")},
+			{"pgup · pgdn · ctrl+u · ctrl+d", m.t("tui.help.stats_logs.scroll_halfpage")},
+			{"g · G", m.t("tui.help.stats_logs.first_last_row")},
+			{"r", m.t("tui.help.stats_logs.refresh")},
 		}},
-		{"Stats · general", []binding{
-			{"← →", "cycle period (7d / 30d / all)"},
-			{"r", "refresh"},
+		{"stats_general", m.t("tui.help.stats_general.title"), []binding{
+			{"← →", m.t("tui.help.stats_general.cycle_period")},
+			{"r", m.t("tui.help.stats_general.refresh")},
 		}},
 	}
 
 	if !m.helpAll {
-		wanted := map[string]bool{"Global": true}
-		for _, title := range m.currentHelpTitles() {
-			wanted[title] = true
+		wanted := map[string]bool{"global": true}
+		for _, key := range m.currentHelpTitles() {
+			wanted[key] = true
 		}
 		filtered := make([]group, 0, len(wanted))
 		for _, g := range groups {
-			if wanted[g.title] {
+			if wanted[g.key] {
 				filtered = append(filtered, g)
 			}
 		}
@@ -186,11 +186,11 @@ func (m Model) renderHelp() string {
 
 	const keyW = 34
 	var lines []string
-	title := "Keybindings · current context"
+	title := m.t("tui.help.title_current")
 	if m.helpAll {
-		title = "Keybindings · all contexts"
+		title = m.t("tui.help.title_all")
 	}
-	lines = append(lines, m.styles.kicker(title), m.styles.hint.Render("press a to toggle scope"), "")
+	lines = append(lines, m.styles.kicker(title), m.styles.hint.Render(m.t("tui.help.toggle_scope")), "")
 	for _, g := range groups {
 		lines = append(lines, m.styles.kicker(g.title))
 		lines = append(lines, m.hRule(keyW+24))
@@ -228,46 +228,49 @@ func (m Model) helpViewportRows() int {
 }
 
 func (m Model) renderHelpFooter() string {
-	return indentBlock(m.styles.footer.Render("j/k pgup/pgdn g/G scroll · a all/current · ?/esc/q close help"), 2)
+	return indentBlock(m.styles.footer.Render(m.t("tui.help.footer")), 2)
 }
 
+// currentHelpTitles returns the catalog-keyed group ids for the active
+// surface. Group ids are stable identifiers used by the help filter, so
+// localized title changes do not break the current-context filter.
 func (m Model) currentHelpTitles() []string {
 	switch {
 	case m.isEmbeddedCommentInput():
-		return []string{"Comment input"}
+		return []string{"comment_input"}
 	case m.blockerPickerOpen:
-		return []string{"Blocker picker"}
+		return []string{"blocker_picker"}
 	case m.commentScreenOpen && m.commentScreenEditing:
-		return []string{"Comment edit"}
+		return []string{"comment_edit"}
 	case m.commentScreenOpen:
-		return []string{"Comment view"}
+		return []string{"comment_view"}
 	case m.taskScreen == taskScreenCreate || m.taskScreen == taskScreenEdit:
-		return []string{"Task form"}
+		return []string{"task_form"}
 	case m.taskScreen == taskScreenView:
-		return []string{"Task view"}
+		return []string{"task_view"}
 	case m.entityScreen == entityScreenSkillPicker:
-		return []string{"Skill picker"}
+		return []string{"skill_picker"}
 	case m.entityScreen == entityScreenView:
-		return []string{"Entity view"}
+		return []string{"entity_view"}
 	case m.onHome():
-		return []string{"Home"}
+		return []string{"home"}
 	case m.sub == subBoard:
-		return []string{"Tasks · board lens"}
+		return []string{"tasks_board"}
 	case m.sub == subTable:
-		return []string{"Tasks · table lens"}
+		return []string{"tasks_table"}
 	case m.sub == subGraph:
-		return []string{"Tasks · graph lens"}
+		return []string{"tasks_graph"}
 	case m.sub == subSettingsGeneral:
-		return []string{"Settings · general"}
+		return []string{"settings_general"}
 	case m.sub == subSettingsTags:
-		return []string{"Settings · tags"}
+		return []string{"settings_tags"}
 	case m.sub == subSettingsLaws || m.sub == subSettingsPersonas || m.sub == subSettingsSkills || m.sub == subSettingsTemplates:
-		return []string{"Settings · entity (laws / personas / skills / templates)"}
+		return []string{"settings_entity"}
 	case m.sub == subStatsLogs:
-		return []string{"Stats · logs"}
+		return []string{"stats_logs"}
 	case m.sub == subStatsGeneral:
-		return []string{"Stats · general"}
+		return []string{"stats_general"}
 	default:
-		return []string{"Tasks · board lens"}
+		return []string{"tasks_board"}
 	}
 }
