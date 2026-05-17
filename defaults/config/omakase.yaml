@@ -95,109 +95,109 @@ config:
   hooks:
     - on: task.created
       notification: kitten_informative
-      message: "${{intl:notifications.omakase.000.message}}"
+      message: "${{intl:notifications.omakase.task_created.message}}"
     - on: task.moved
       notification: kitten_informative
-      message: "${{intl:notifications.omakase.001.message}}"
+      message: "${{intl:notifications.omakase.task_moved.message}}"
     - on: task.edited
       notification: kitten_informative
-      message: "${{intl:notifications.omakase.002.message}}"
+      message: "${{intl:notifications.omakase.task_edited.message}}"
     - on: task.completed
       notification: kitten_success
-      message: "${{intl:notifications.omakase.003.message}}"
+      message: "${{intl:notifications.omakase.task_completed.message}}"
     - on: guard.violated
       when: { operation: task.delete }
       notification: kitten_destructive
-      message: "${{intl:notifications.omakase.004.message}}"
+      message: "${{intl:notifications.omakase.guard_task_delete.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: comment.delete }
       notification: kitten_destructive
-      message: "${{intl:notifications.omakase.005.message}}"
+      message: "${{intl:notifications.omakase.guard_comment_delete.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: task.transition }
       notification: kitten_blocked
-      message: "${{intl:notifications.omakase.006.message}}"
+      message: "${{intl:notifications.omakase.guard_task_transition.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: task.edit }
       notification: kitten_blocked
-      message: "${{intl:notifications.omakase.007.message}}"
+      message: "${{intl:notifications.omakase.guard_task_edit.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: comment.edit }
       notification: kitten_blocked
-      message: "${{intl:notifications.omakase.008.message}}"
+      message: "${{intl:notifications.omakase.guard_comment_edit.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: task.archive }
       notification: kitten_blocked
-      message: "${{intl:notifications.omakase.009.message}}"
+      message: "${{intl:notifications.omakase.guard_task_archive.message}}"
       detail_message_field: hint
     - on: guard.violated
       when: { operation: task.unarchive }
       notification: kitten_blocked
-      message: "${{intl:notifications.omakase.010.message}}"
+      message: "${{intl:notifications.omakase.guard_task_unarchive.message}}"
       detail_message_field: hint
     - on: bundle.swapped
       when: { has_orphans: "true" }
       notification: kitten_orphan_migration
-      message: "${{intl:notifications.omakase.011.message}}"
+      message: "${{intl:notifications.omakase.bundle_swapped_orphans.message}}"
       detail_message_field: orphan_count
     - on: task.removed
       notification: kitten_destructive
-      message: "${{intl:notifications.omakase.012.message}}"
+      message: "${{intl:notifications.omakase.task_removed.message}}"
     - on: comment.removed
       notification: kitten_destructive
-      message: "${{intl:notifications.omakase.013.message}}"
+      message: "${{intl:notifications.omakase.comment_removed.message}}"
     - on: task.archived
       notification: kitten_archive
-      message: "${{intl:notifications.omakase.014.message}}"
+      message: "${{intl:notifications.omakase.task_archived.message}}"
     - on: task.unarchived
       notification: kitten_archive
-      message: "${{intl:notifications.omakase.015.message}}"
+      message: "${{intl:notifications.omakase.task_unarchived.message}}"
     - on: comment
       when: { author_type: human }
       notification: kitten_informative
-      message: "${{intl:notifications.omakase.016.message}}"
+      message: "${{intl:notifications.omakase.comment_added_human.message}}"
     - on: comment
       when: { author_type: agent }
       notification: kitten_informative
-      message: "${{intl:notifications.omakase.017.message}}"
+      message: "${{intl:notifications.omakase.comment_added_agent.message}}"
     - on: comment.edited
       notification: kitten_informative
-      message: "${{intl:notifications.omakase.018.message}}"
+      message: "${{intl:notifications.omakase.comment_edited.message}}"
     - on: tag.added
       notification: kitten_link
-      message: "${{intl:notifications.omakase.019.message}}"
+      message: "${{intl:notifications.omakase.tag_added.message}}"
     - on: tag.removed
       notification: kitten_link
-      message: "${{intl:notifications.omakase.020.message}}"
+      message: "${{intl:notifications.omakase.tag_removed.message}}"
     - on: dependency.added
       notification: kitten_link
-      message: "${{intl:notifications.omakase.021.message}}"
+      message: "${{intl:notifications.omakase.dependency_added.message}}"
     - on: dependency.removed
       notification: kitten_link
-      message: "${{intl:notifications.omakase.022.message}}"
+      message: "${{intl:notifications.omakase.dependency_removed.message}}"
     - on: error.recorded
       notification: kitten_knowledge
-      message: "${{intl:notifications.omakase.023.message}}"
+      message: "${{intl:notifications.omakase.error_recorded.message}}"
     - on: error.searched
       notification: kitten_knowledge
-      message: "${{intl:notifications.omakase.024.message}}"
+      message: "${{intl:notifications.omakase.error_searched.message}}"
     - on: solution.added
       notification: kitten_knowledge
-      message: "${{intl:notifications.omakase.025.message}}"
+      message: "${{intl:notifications.omakase.solution_added.message}}"
     - on: solution.liked
       notification: kitten_success
-      message: "${{intl:notifications.omakase.026.message}}"
+      message: "${{intl:notifications.omakase.solution_liked.message}}"
     - on: solution.failed
       notification: kitten_knowledge
-      message: "${{intl:notifications.omakase.027.message}}"
+      message: "${{intl:notifications.omakase.solution_failed.message}}"
     - on: solution.viewed_top
       notification: kitten_knowledge
-      message: "${{intl:notifications.omakase.028.message}}"
+      message: "${{intl:notifications.omakase.solution_viewed_top.message}}"
   # search tunes the heuristics shared across agent-side text ranking
   # (similar-task hints in tasks.create_intent, query overlap scoring).
   # stopwords is the lowercase token list dropped before scoring; add
