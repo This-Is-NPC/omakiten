@@ -136,6 +136,59 @@ func TestCLISetupHeadless_MissingEnvErrors(t *testing.T) {
 	}
 }
 
+// TestCLISetupHeadless_UpdateRefreshesShipped guards the fix for the
+// stale-language-pack class of bug: with --update, runSetup must call
+// SeedInstall(force=true) so RefreshDefaultFiles overwrites shipped
+// files that an earlier install left on disk. Without --update the
+// previous-install copy survives (the documented idempotency
+// contract).
+func TestCLISetupHeadless_UpdateRefreshesShipped(t *testing.T) {
+	configHome := t.TempDir()
+	rcHome := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "omakiten.db")
+
+	t.Setenv("OMAKITEN_HOME", configHome)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", rcHome)
+	t.Setenv("OKT_CLI_LANG", "en")
+	t.Setenv("OKT_TUI_LANG", "en")
+	t.Setenv("OKT_AGENT_LANG", "")
+	t.Setenv("OKT_PRESET", "omakase")
+	t.Setenv("OKT_HARNESSES", "skip")
+	t.Chdir(t.TempDir())
+
+	// First install materialises shipped files into the config root.
+	runCLI(t, dbPath, "", "setup", "--skip-wrapper")
+
+	// Tamper a shipped language pack the way a stale on-disk copy from
+	// a previous release would diverge from defaults/languages/en.yaml.
+	// The replacement is intentionally a valid pack (loader rejects
+	// missing name/code) so the re-run hits the refresh code path, not
+	// a config_invalid abort.
+	tampered := filepath.Join(configHome, "languages", "en.yaml")
+	if err := os.WriteFile(tampered, []byte("code: en\nname: TAMPERED\nnative: English\nkeys: {}\n"), 0o644); err != nil {
+		t.Fatalf("tamper: %v", err)
+	}
+
+	// Re-run without --update — idempotency contract preserves the
+	// tampered file (EnsureDefaultFiles skips existing).
+	runCLI(t, dbPath, "", "setup", "--skip-wrapper")
+	if got := readFile(t, tampered); !strings.Contains(got, "TAMPERED") {
+		t.Fatalf("re-run without --update should preserve tampered pack; got %q", got)
+	}
+
+	// --update must restore the embedded copy by routing through
+	// RefreshDefaultFiles.
+	runCLI(t, dbPath, "", "setup", "--update", "--skip-wrapper")
+	got := readFile(t, tampered)
+	if strings.Contains(got, "TAMPERED") {
+		t.Fatalf("--update should restore shipped pack; tampered marker still present")
+	}
+	if !strings.Contains(got, "code: en") {
+		t.Fatalf("--update wrote unexpected content: %q", got[:min(len(got), 200)])
+	}
+}
+
 // TestCLISetupHeadless_SkipWrapper proves --skip-wrapper short-circuits
 // the rc-file mutation entirely — useful for dotfile-managed setups.
 func TestCLISetupHeadless_SkipWrapper(t *testing.T) {
