@@ -110,11 +110,16 @@ func (s *Store) SetTaskState(ctx context.Context, projectID, taskID int64, state
 		bucketKey = targetBucketKey
 	}
 
+	// Same completed_at rule as MoveTask: archive into the final bucket
+	// stamps the timestamp; unarchive out of it clears. Active vs archived
+	// state does not gate the column — bucket membership does.
+	isFinal := boolToInt(buckets.Workflow().FinalBucketKey() == bucketKey)
 	row := tx.QueryRowContext(ctx, `
-UPDATE tasks SET state = ?, bucket_id = ?, updated_at = CURRENT_TIMESTAMP
+UPDATE tasks SET state = ?, bucket_id = ?, updated_at = CURRENT_TIMESTAMP,
+  completed_at = CASE WHEN ? = 1 THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE NULL END
 WHERE project_id = ? AND id = ?
 RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at
-`, string(state), bucketArg, projectID, taskID)
+`, string(state), bucketArg, isFinal, projectID, taskID)
 	task, err := scanTask(row, bucketKey)
 	if err != nil {
 		return domain.Task{}, domain.Event{}, err

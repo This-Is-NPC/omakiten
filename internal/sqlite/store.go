@@ -288,3 +288,15 @@ func placeholders(n int) string {
 	}
 	return strings.Repeat("?,", n-1) + "?"
 }
+
+// boolToInt projects a Go bool into the 0/1 form SQLite expects for
+// CASE-WHEN bind parameters. Inline `if b { 1 } else { 0 }` literals are
+// short but appear in several writer paths (completed_at gating, future
+// plan/assignment toggles) — the helper keeps the call-sites readable
+// and the conversion in one place.
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}

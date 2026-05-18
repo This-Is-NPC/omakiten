@@ -201,10 +201,17 @@ func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBuc
 
 	currentBucketKey := s.bucketKeyByID(currentBucketID, buckets)
 
+	// completed_at tracks the task's stay in the workflow's terminal
+	// bucket: COALESCE preserves the existing timestamp when the target
+	// already is final (no-op moves keep the original completion moment),
+	// and the ELSE NULL branch clears the column on any move out.
+	isFinal := boolToInt(buckets.Workflow().FinalBucketKey() == targetBucketKey)
 	row := tx.QueryRowContext(ctx, `
-UPDATE tasks SET bucket_id = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND id = ?
+UPDATE tasks SET bucket_id = ?, updated_at = CURRENT_TIMESTAMP,
+  completed_at = CASE WHEN ? = 1 THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE NULL END
+WHERE project_id = ? AND id = ?
 RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at
-`, targetBucketID, projectID, taskID)
+`, targetBucketID, isFinal, projectID, taskID)
 
 	task, err := scanTask(row, targetBucketKey)
 	if err != nil {

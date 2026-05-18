@@ -2,8 +2,10 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
@@ -179,6 +181,89 @@ func TestDeleteEnforcesPolicyAndCascades(t *testing.T) {
 	}
 	if len(deps) != 0 {
 		t.Fatalf("dependency for deleted task survived: %+v", deps)
+	}
+}
+
+func TestCompletedAtTracksFinalBucketTransitions(t *testing.T) {
+	ctx, store, project := setupLifecycle(t)
+
+	task, err := store.CreateTask(ctx, project.ID, "Track me", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask = %v", err)
+	}
+
+	readCompletedAt := func() sql.NullString {
+		t.Helper()
+		var got sql.NullString
+		row := store.db.QueryRowContext(ctx, "SELECT completed_at FROM tasks WHERE project_id = ? AND id = ?", project.ID, task.ID)
+		if err := row.Scan(&got); err != nil {
+			t.Fatalf("scan completed_at: %v", err)
+		}
+		return got
+	}
+
+	if got := readCompletedAt(); got.Valid {
+		t.Fatalf("fresh backlog task completed_at = %q, want NULL", got.String)
+	}
+
+	if _, err := store.MoveTask(ctx, project.ID, task.ID, "dev", store.snap()); err != nil {
+		t.Fatalf("MoveTask(dev) = %v", err)
+	}
+	if got := readCompletedAt(); got.Valid {
+		t.Fatalf("dev completed_at = %q, want NULL", got.String)
+	}
+
+	if _, err := store.MoveTask(ctx, project.ID, task.ID, "done", store.snap()); err != nil {
+		t.Fatalf("MoveTask(done) = %v", err)
+	}
+	first := readCompletedAt()
+	if !first.Valid || first.String == "" {
+		t.Fatalf("done completed_at = %+v, want non-NULL", first)
+	}
+
+	if _, err := store.MoveTask(ctx, project.ID, task.ID, "dev", store.snap()); err != nil {
+		t.Fatalf("MoveTask(dev back) = %v", err)
+	}
+	if got := readCompletedAt(); got.Valid {
+		t.Fatalf("re-opened dev completed_at = %q, want NULL", got.String)
+	}
+
+	// Sleep so the next CURRENT_TIMESTAMP can differ from `first` (SQLite
+	// resolution is 1s). Without this, "new completion overwrites" is
+	// indistinguishable from "old timestamp preserved" in fast tests.
+	time.Sleep(1100 * time.Millisecond)
+
+	if _, err := store.MoveTask(ctx, project.ID, task.ID, "done", store.snap()); err != nil {
+		t.Fatalf("MoveTask(done again) = %v", err)
+	}
+	second := readCompletedAt()
+	if !second.Valid {
+		t.Fatalf("re-completed completed_at = NULL, want non-NULL")
+	}
+	if second.String <= first.String {
+		t.Fatalf("re-completed completed_at = %q, want strictly after first %q", second.String, first.String)
+	}
+}
+
+func TestCompletedAtSetOnArchiveIntoFinalBucket(t *testing.T) {
+	ctx, store, project := setupLifecycle(t)
+
+	task, err := store.CreateTask(ctx, project.ID, "Archive me", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask = %v", err)
+	}
+
+	if _, _, err := store.SetTaskState(ctx, project.ID, task.ID, domain.TaskStateArchived, "done", store.snap()); err != nil {
+		t.Fatalf("SetTaskState archive = %v", err)
+	}
+
+	var completedAt sql.NullString
+	row := store.db.QueryRowContext(ctx, "SELECT completed_at FROM tasks WHERE project_id = ? AND id = ?", project.ID, task.ID)
+	if err := row.Scan(&completedAt); err != nil {
+		t.Fatalf("scan completed_at: %v", err)
+	}
+	if !completedAt.Valid || completedAt.String == "" {
+		t.Fatalf("archived-into-done completed_at = %+v, want non-NULL", completedAt)
 	}
 }
 
