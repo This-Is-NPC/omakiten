@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# pre-push — refresh the `local-check` commit status for every ref
+# being pushed, so `master` branch protection has a fresh result to
+# gate the merge on.
+#
+# Enable for this clone with:
+#   git config core.hooksPath scripts/hooks
+#
+# Skip with OKT_SKIP_LOCAL_CHECK=1 (e.g. release-please bot pushes).
+
+set -euo pipefail
+
+if [[ "${OKT_SKIP_LOCAL_CHECK:-0}" == 1 ]]; then
+  exit 0
+fi
+
+repo_root="$(git rev-parse --show-toplevel)"
+script="$repo_root/scripts/local-check.sh"
+if [[ ! -x "$script" ]]; then
+  printf 'pre-push: %s missing or not executable\n' "$script" >&2
+  exit 1
+fi
+
+zero="0000000000000000000000000000000000000000"
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [[ "$local_sha" == "$zero" ]]; then
+    continue
+  fi
+  OKT_LOCAL_CHECK_SHA="$local_sha" "$script"
+done

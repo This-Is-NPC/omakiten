@@ -60,7 +60,7 @@ Before starting a new workflow cycle, check if the upstream repository has newer
 - `govulncheck` for vulnerability scanning.
 - `gofmt` for formatting.
 
-Use `mise run check` (= `test` + `lint` + `vuln`) before sending a PR. Individual tasks are documented in `.mise.toml`.
+Use `mise run check` (= `test` + `lint` + `vuln` + `docs:check`) before sending a PR. The pre-push hook at `scripts/hooks/pre-push` runs this for you and posts a `local-check` commit status that `master` branch protection requires — enable it on a fresh clone with `git config core.hooksPath scripts/hooks`. Individual tasks are documented in `.mise.toml`; see [Merge gate](.docs/internal/dev-guide.md#merge-gate) for the full flow.
 
 ### Architecture boundaries (enforced)
 
