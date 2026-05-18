@@ -383,6 +383,101 @@ func TestActivityScrollResyncsOnResize(t *testing.T) {
 	}
 }
 
+// TestActivityJAfterPageScrollDoesNotSnapBack reproduces the bug filed as
+// task #125: pgdown is documented to scroll the activity body independently
+// of the cursor, but the first subsequent j re-synced the scroll to the
+// (still-at-the-top) cursor, throwing away the user's page-scroll work.
+// After the fix, j snaps the cursor to the first visible card and keeps the
+// viewport anchored there so navigation continues from where the user is
+// looking — not from a stale offset behind the scroll.
+func TestActivityJAfterPageScrollDoesNotSnapBack(t *testing.T) {
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "page-scroll repro", "", domain.Priority(2), "backlog", store.Snapshot())
+	if err != nil {
+		t.Fatalf("CreateTask() = %v", err)
+	}
+	const total = 30
+	for i := 0; i < total; i++ {
+		body := fmt.Sprintf("page-marker-%02d", i)
+		if _, err := store.AddComment(ctx, project.ID, task.ID, body, "human", nil); err != nil {
+			t.Fatalf("AddComment(%d) = %v", i, err)
+		}
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Events:       store,
+
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() = %v", err)
+	}
+	model.height = 30
+	model.width = 160
+
+	// Open task, Tab into activity column. Cursor lands on first card.
+	got := pressKey(t, model, tea.KeyEnter)
+	got = pressKey(t, got, tea.KeyTab)
+	if got.activityCursor != 0 {
+		t.Fatalf("activityCursor after Tab = %d, want 0", got.activityCursor)
+	}
+
+	// pgdown twice — enough to push the original cursor out of view.
+	got = pressKey(t, got, tea.KeyPgDown)
+	got = pressKey(t, got, tea.KeyPgDown)
+	scrollAfterPage := got.activityScroll
+	if scrollAfterPage == 0 {
+		t.Fatalf("pgdown did not advance activityScroll: still 0 after 2 pgdown presses")
+	}
+
+	// Capture which card is visible at the top of the viewport before j.
+	events := got.activityForTaskInView(got.taskID)
+	cards := got.activityRowsForRender(events)
+	ranges := cardLineRanges(cards)
+	firstVisible := -1
+	for i, r := range ranges {
+		if r.start >= got.activityScroll {
+			firstVisible = i
+			break
+		}
+	}
+	if firstVisible <= 0 {
+		t.Fatalf("expected pgdown to push first-visible card past index 0, got %d", firstVisible)
+	}
+
+	// j after pgdown. Bug: scroll snaps back to cardTop[1] (top of feed),
+	// throwing away the user's pgdown. Fix: cursor anchors to first
+	// visible card, scroll stays put.
+	got = pressRune(t, got, 'j')
+	if got.activityScroll < scrollAfterPage {
+		t.Fatalf("j after pgdown regressed activityScroll: was %d, now %d (snap-back bug)", scrollAfterPage, got.activityScroll)
+	}
+	if got.activityCursor < firstVisible {
+		t.Fatalf("activityCursor after j = %d, want >= %d (first card visible after pgdown)", got.activityCursor, firstVisible)
+	}
+
+	// The card that's now focused must render inside the visible viewport
+	// — that's the user-facing contract: navigation always lands on
+	// something visible.
+	focused := events[got.activityCursor]
+	body := stripANSI(got.View())
+	if !strings.Contains(body, focused.Body) {
+		t.Fatalf("focused card %q hidden after j-following-pgdown.\n--- view ---\n%s", focused.Body, body)
+	}
+}
+
 func TestActivityPanelGrowsWithAvailableWidth(t *testing.T) {
 	// Skip NewModel — its refresh path needs a fully wired repo set. We only
 	// exercise pure sizing math, so a zero-value Model with width set is enough.

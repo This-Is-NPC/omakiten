@@ -278,6 +278,13 @@ func (m *Model) toggleTaskFocus() {
 // auto-scrolls so the focused card stays inside the viewport. Wraps from
 // "no selection" (-1) to the first or last card depending on direction so a
 // single keypress always lands on a real row.
+//
+// When pgup/pgdn has scrolled the cursor off-screen (the cursor is decoupled
+// from the body scroll by design), the next j/k anchors the cursor to the
+// first/last visible card instead of applying delta blindly. Without this,
+// syncActivityScrollToCursor would snap the viewport back to the old cursor
+// position and throw away the user's page-scroll work — the symptom filed as
+// "activity column navigation snaps back after pgdown".
 func (m *Model) moveActivityCursor(delta int) {
 	rows := len(m.activityForTaskInView(m.taskID))
 	if rows == 0 {
@@ -290,17 +297,59 @@ func (m *Model) moveActivityCursor(delta int) {
 		} else {
 			m.activityCursor = rows - 1
 		}
-	} else {
-		next := m.activityCursor + delta
-		if next < 0 {
-			next = 0
-		}
-		if next >= rows {
-			next = rows - 1
-		}
-		m.activityCursor = next
+		m.syncActivityScrollToCursor()
+		return
 	}
+	if first, last, ok := m.visibleActivityCardRange(); ok && (m.activityCursor < first || m.activityCursor > last) {
+		if delta > 0 {
+			m.activityCursor = first
+		} else {
+			m.activityCursor = last
+		}
+		m.syncActivityScrollToCursor()
+		return
+	}
+	next := m.activityCursor + delta
+	if next < 0 {
+		next = 0
+	}
+	if next >= rows {
+		next = rows - 1
+	}
+	m.activityCursor = next
 	m.syncActivityScrollToCursor()
+}
+
+// visibleActivityCardRange returns the inclusive [first, last] card indices
+// whose start line falls inside the current activity viewport window. ok=false
+// when the feed is empty or no card start sits in the visible band (a tall
+// card whose top scrolled past the viewport edge counts as out of range —
+// callers can still anchor onto neighbours).
+func (m Model) visibleActivityCardRange() (int, int, bool) {
+	events := m.activityForTaskInView(m.taskID)
+	if len(events) == 0 {
+		return 0, 0, false
+	}
+	ranges := cardLineRanges(m.activityRowsForRender(events))
+	viewport := m.activityViewportLines()
+	if viewport <= 0 {
+		return 0, 0, false
+	}
+	top := m.activityScroll
+	bottom := m.activityScroll + viewport
+	first, last := -1, -1
+	for i, r := range ranges {
+		if r.start >= top && r.start < bottom {
+			if first < 0 {
+				first = i
+			}
+			last = i
+		}
+	}
+	if first < 0 {
+		return 0, 0, false
+	}
+	return first, last, true
 }
 
 // syncActivityScrollToCursor positions activityScroll (a LINE offset, not
