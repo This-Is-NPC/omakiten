@@ -59,6 +59,7 @@ type Repositories struct {
 	Events       app.EventRepository
 	Metrics      *app.MetricsService
 	Orphans      app.OrphanRepository
+	Plans        app.PlanRepository
 
 	// DispatchCommand invokes the root cobra command in-process and
 	// returns the JSON envelope it wrote to stdout. Notification actions
@@ -391,6 +392,33 @@ type Model struct {
 	graphScroll int
 	graphCursor int
 
+	// plans holds the project's plan rollups for the Tasks › plans sub-tab
+	// list view. Populated by refresh() via PlanService.ListRollups.
+	// planCursor / planScroll mirror the table view's selection +
+	// follow-cursor pair so j/k feels uniform across sub-tabs.
+	plans      []app.PlanRollup
+	planCursor int
+	planScroll int
+
+	// planNetworkOpen flips when the user presses enter on a row in the
+	// plans list view — it swaps the renderer from the list view to the
+	// column-per-wave network diagram. esc / `q` flips back.
+	planNetworkOpen        bool
+	planNetworkShow        app.PlanShow
+	planNetworkWaveCursor  int
+	planNetworkTaskCursor  int
+	// planNetworkColScroll mirrors boardColScroll for the wave columns:
+	// horizontal slide offset when the wave count exceeds the
+	// per-screen capacity. planNetworkScroll mirrors boardScroll —
+	// per-wave vertical scroll so a single wave with many tasks does
+	// not push the diagram off the bottom of the panel.
+	planNetworkColScroll int
+	planNetworkScroll    map[int64]int
+	// planGoalEditingID names the plan whose goal_body is open in the
+	// modePlanGoal textarea overlay. Non-zero while the overlay is
+	// active; reset to 0 on submit / cancel.
+	planGoalEditingID int64
+
 	// statsSummary caches the last-fetched metrics summary. statsPeriod
 	// holds the active filter ("7d", "30d", "all"); refreshed on view entry
 	// and on period change via ←/→.
@@ -454,6 +482,11 @@ const (
 	modeNormal inputMode = iota
 	modeComment
 	modeMove
+	// modePlanGoal is the in-TUI plan goal_body editor — multi-line
+	// textarea bound to the focused plan. Reuses commentInput as the
+	// underlying bubbles textarea so a single resize / cursor path
+	// covers every multi-line modal in the TUI.
+	modePlanGoal
 )
 
 // taskScreenMode tracks the sub-surface of the task detail view stack:
@@ -513,6 +546,7 @@ const (
 	subBoard subID = iota
 	subTable
 	subGraph
+	subPlans
 	subStatsGeneral
 	subStatsLogs
 	subSettingsGeneral
@@ -530,7 +564,7 @@ var topOrder = []topID{topTasks, topStats, topSettings}
 // subsByTop lists the subs each top exposes, in render and cycle order.
 // The sub strip is suppressed when the active top has only one sub.
 var subsByTop = map[topID][]subID{
-	topTasks:    {subBoard, subTable, subGraph},
+	topTasks:    {subBoard, subTable, subGraph, subPlans},
 	topStats:    {subStatsGeneral, subStatsLogs},
 	topSettings: {subSettingsGeneral, subSettingsLaws, subSettingsPersonas, subSettingsSkills, subSettingsTemplates, subSettingsTags},
 }
@@ -545,6 +579,7 @@ var subLabels = map[subID]string{
 	subBoard:             "board",
 	subTable:             "table",
 	subGraph:             "graph",
+	subPlans:             "plans",
 	subStatsGeneral:      "general",
 	subStatsLogs:         "logs",
 	subSettingsGeneral:   "general",

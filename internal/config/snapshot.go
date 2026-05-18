@@ -471,6 +471,18 @@ func (s *Snapshot) AgentOutputLanguage() string {
 	return s.agentOutputLang
 }
 
+// ResolveGuardHint expands `${{intl:KEY}}` tokens inside a guard hint
+// string against the CLI catalog. Exposed as a string-in / string-out
+// projection so the guards evaluator (internal/app/guards) can resolve
+// hints without naming Catalog/Surface — see
+// internal/arch/i18n_boundary_test.go. Empty input returns empty.
+func (s *Snapshot) ResolveGuardHint(hint string) string {
+	if hint == "" {
+		return ""
+	}
+	return s.Catalog(SurfaceCLI).Resolve(hint)
+}
+
 // TemplateBySlug resolves a template by slug.
 func (s *Snapshot) TemplateBySlug(slug string) (TaskTemplate, bool) {
 	v, ok := s.templatesBySlug[slug]

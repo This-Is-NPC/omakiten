@@ -100,6 +100,10 @@ Context dumps are tiered (level 1–3) and capped at a token budget you set. You
 
 **21 bundled language packs** — Arabic, Chinese (zh-cn), Danish, Dutch, English, Finnish, French, German, Hindi, Italian, Japanese, Korean, Marathi, Norwegian, Polish, Portuguese (Brazil), Russian, Spanish, Swedish, Turkish, Ukrainian. CLI, TUI, and agent-output language are chosen *independently* at install — read your terminal in English, browse the board in Portuguese, tell the agent to reply in Japanese. Missing your locale? `scripts/new-language-pack.sh <code> <native> <name>` scaffolds a TODO-marked pack the parity test keeps honest. → [Languages Guide](.docs/languages-guide.md)
 
+### WBS-style plans with atomic claim
+
+Group tasks into ordered **waves** under a plan, then let two-to-four agents fan out without racing. `plans.claim_next` is an atomic SQLite write — `BEGIN IMMEDIATE` serialises concurrent claims so the same task can never be picked twice, and the claiming agent's identity lands on `tasks.assigned_to` for free. A `wave_gate` guard keeps wave `N+1` blocked until wave `N` fully closes, so a fan-out cannot accidentally jump ahead. The TUI surfaces it as a column-per-wave network diagram next to the board / table / graph views. → [Workflow Guide § Plans](.docs/workflow-guide.md#plans--multi-agent-fan-out)
+
 ### Observable by design
 
 Every meaningful state change emits a typed domain event (`task.created`, `task.moved`, `error.recorded`, `guard.violated`, …). A YAML-driven hooks engine subscribes to those events and runs configurable async actions; **notification cards** turn the same stream into pop-up feedback inside the TUI, with short message, optional tab-detail, and timeout dismissal. The MCP `metrics.summary` tool reduces the event log into a per-AI-model dashboard — errors recorded, errors searched, solution like-rate, search-before-record ratio — over a `7d`, `30d`, or `all` window. → [Domain Events Catalog](.docs/domain-events.md) · [Hooks Engine](.docs/hooks.md) · [Notifications](.docs/notifications.md)
@@ -131,11 +135,11 @@ Authoring your own preset is a first-class path. The agent orients itself on the
 
 ## When you want to see it
 
-`okt tui` opens a terminal UI organised into three zones — **Tasks** (board / table / graph), **Stats** (per-model benchmark / activity logs), **Settings** (runtime info / entity browser) — same data the CLI and MCP layers see, just visual. Task descriptions, comment bodies, and entity files render as styled markdown by default; press `M` to toggle raw. Editing config files in another tab hot-reloads the running TUI and prompts you through orphan-task migration if the new workflow's buckets changed.
+`okt tui` opens a terminal UI organised into three zones — **Tasks** (board / table / graph / plans), **Stats** (per-model benchmark / activity logs), **Settings** (runtime info / entity browser) — same data the CLI and MCP layers see, just visual. Task descriptions, comment bodies, and entity files render as styled markdown by default; press `M` to toggle raw. Editing config files in another tab hot-reloads the running TUI and prompts you through orphan-task migration if the new workflow's buckets changed.
 
 Run it outside a project and it opens a multi-project home — pick one, work on it, and your shell `cd`s into that project's folder when you exit. → [TUI Guide](.docs/tui-guide.md)
 
-The full MCP surface (37 tools, 2 resources, 8 prompts) is documented in the [MCP Guide](.docs/mcp-guide.md).
+The full MCP surface (44 tools, 2 resources, 8 prompts) is documented in the [MCP Guide](.docs/mcp-guide.md).
 
 ## Documentation
 

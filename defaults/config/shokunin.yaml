@@ -49,6 +49,12 @@ config:
       notification: kitten_blocked
       message: "${{intl:notifications.shokunin.guard_task_transition.message}}"
       detail_message_field: hint
+    # Plan-aware specialisation — see omakase.yaml for the rationale.
+    - on: guard.violated
+      when: { operation: task.transition, rule: wave_gate }
+      notification: kitten_blocked
+      message: "${{intl:notifications.shokunin.guard_wave_gate.message}}"
+      detail_message_field: hint
     - on: guard.violated
       when: { operation: task.edit }
       notification: kitten_blocked
@@ -250,6 +256,7 @@ workflows:
           - {type: comments_tagged, tag: pre-mortem, count: 1, hint: "Add a #pre-mortem comment naming the top failure modes, detection signals, and mitigations before any code lands."}
           - {type: comments_tagged, tag: risk-assessment, count: 1, hint: "Add a #risk-assessment naming the risk matrix, blast radius, SLO impact, and residual risk accepted."}
           - {type: blockers_in, buckets: [done, docs], hint: "Every blocker must be in Done or Documentation before development starts."}
+          - {type: wave_gate, hint: "${{intl:guard.wave_gate.hint}}"}
       - from: 3
         to: 4
         guards:

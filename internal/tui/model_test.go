@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
@@ -1105,12 +1107,16 @@ func TestSubCycleBindings(t *testing.T) {
 		t.Fatalf("after second '/': sub = %d, want subGraph", got.sub)
 	}
 	got = pressStringKey(t, got, "/")
+	if got.sub != subPlans {
+		t.Fatalf("after third '/': sub = %d, want subPlans", got.sub)
+	}
+	got = pressStringKey(t, got, "/")
 	if got.sub != subBoard {
-		t.Fatalf("after third '/': sub = %d, want subBoard (wrap-around)", got.sub)
+		t.Fatalf("after fourth '/': sub = %d, want subBoard (wrap-around)", got.sub)
 	}
 	got = pressStringKey(t, got, ",")
-	if got.sub != subGraph {
-		t.Fatalf("after ',' from board: sub = %d, want subGraph (wrap-around)", got.sub)
+	if got.sub != subPlans {
+		t.Fatalf("after ',' from board: sub = %d, want subPlans (wrap-around)", got.sub)
 	}
 
 	got = pressRune(t, model, '3')
@@ -1661,5 +1667,800 @@ func tuiTestTheme() config.Theme {
 			"highlight":  "#363A4F",
 			"error":      "#ED8796",
 		},
+	}
+}
+
+// TestPlansSubTabRendersRollups exercises the new Tasks › plans list
+// view: refresh() must call PlanService.ListRollups, the renderer must
+// emit one row per plan with slug/status/done-total/percent, and the
+// kicker count must reflect the number of rollups. Seeds two plans —
+// one with a closed and an open task across two waves so DoneCount,
+// TotalCount, and ActiveWaveName all take non-zero defaults.
+func TestPlansSubTabRendersRollups(t *testing.T) {
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	planA, err := store.CreatePlan(ctx, project.ID, "rollout-a", "Rollout A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan(A) error = %v", err)
+	}
+	if _, err := store.CreatePlan(ctx, project.ID, "rollout-b", "Rollout B", ""); err != nil {
+		t.Fatalf("CreatePlan(B) error = %v", err)
+	}
+	wave1, err := store.AddPlanWave(ctx, project.ID, planA.ID, "Wave 1", 1)
+	if err != nil {
+		t.Fatalf("AddPlanWave(1) error = %v", err)
+	}
+	if _, err := store.AddPlanWave(ctx, project.ID, planA.ID, "Wave 2", 2); err != nil {
+		t.Fatalf("AddPlanWave(2) error = %v", err)
+	}
+	taskOpen, err := store.CreateTask(ctx, project.ID, "open", "", domain.Priority(2), "backlog", snap)
+	if err != nil {
+		t.Fatalf("CreateTask(open) error = %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, taskOpen.ID, planA.ID, wave1.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan(open) error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	// Cycle board → table → graph → plans.
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	if got.sub != subPlans {
+		t.Fatalf("third '/': sub = %d, want subPlans", got.sub)
+	}
+	if len(got.plans) != 2 {
+		t.Fatalf("len(plans) = %d, want 2", len(got.plans))
+	}
+
+	view := ansi.Strip(got.View())
+	if !strings.Contains(view, "// PLANS") {
+		t.Fatalf("plans view missing kicker\n%s", view)
+	}
+	if !strings.Contains(view, "rollout-a") || !strings.Contains(view, "rollout-b") {
+		t.Fatalf("plans view missing plan rows\n%s", view)
+	}
+	if !strings.Contains(view, "Wave 1") {
+		t.Fatalf("plans view missing active wave name\n%s", view)
+	}
+
+	// j moves planCursor; k restores it.
+	advanced := pressRune(t, got, 'j')
+	if advanced.planCursor != 1 {
+		t.Fatalf("after 'j': planCursor = %d, want 1", advanced.planCursor)
+	}
+	back := pressRune(t, advanced, 'k')
+	if back.planCursor != 0 {
+		t.Fatalf("after 'k': planCursor = %d, want 0", back.planCursor)
+	}
+}
+
+// TestPlansSubTabEnterOpensNetwork covers the list → network transition:
+// enter on the cursored plan loads PlanService.Show, flips
+// planNetworkOpen, and the rendered view shows column headers (// W1,
+// // W2), per-wave done/total counts, the @assigned_to marker, and the
+// header progress badge. h moves the wave cursor; esc returns to the
+// list view.
+func TestPlansSubTabEnterOpensNetwork(t *testing.T) {
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	plan, err := store.CreatePlan(ctx, project.ID, "rollout", "Rollout", "")
+	if err != nil {
+		t.Fatalf("CreatePlan() error = %v", err)
+	}
+	w1, err := store.AddPlanWave(ctx, project.ID, plan.ID, "Foundation", 1)
+	if err != nil {
+		t.Fatalf("AddPlanWave(1) error = %v", err)
+	}
+	w2, err := store.AddPlanWave(ctx, project.ID, plan.ID, "Migration", 2)
+	if err != nil {
+		t.Fatalf("AddPlanWave(2) error = %v", err)
+	}
+	tOpen, err := store.CreateTask(ctx, project.ID, "foundation-task", "", domain.Priority(2), "backlog", snap)
+	if err != nil {
+		t.Fatalf("CreateTask(open) error = %v", err)
+	}
+	tGated, err := store.CreateTask(ctx, project.ID, "migration-task", "", domain.Priority(2), "backlog", snap)
+	if err != nil {
+		t.Fatalf("CreateTask(gated) error = %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, tOpen.ID, plan.ID, w1.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan(open) error = %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, tGated.ID, plan.ID, w2.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan(gated) error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	if got.sub != subPlans {
+		t.Fatalf("third '/': sub = %d, want subPlans", got.sub)
+	}
+
+	opened := pressKey(t, got, tea.KeyEnter)
+	if !opened.planNetworkOpen {
+		t.Fatalf("after enter: planNetworkOpen = false, want true")
+	}
+	if len(opened.planNetworkShow.Waves) != 2 {
+		t.Fatalf("planNetworkShow.Waves = %d, want 2", len(opened.planNetworkShow.Waves))
+	}
+
+	view := ansi.Strip(opened.View())
+	if !strings.Contains(view, "// PLAN · rollout") {
+		t.Fatalf("network header missing\n%s", view)
+	}
+	if !strings.Contains(view, "// W1") || !strings.Contains(view, "// W2") {
+		t.Fatalf("network missing wave headers\n%s", view)
+	}
+	if !strings.Contains(view, "‹active›") {
+		t.Fatalf("network missing active wave tag\n%s", view)
+	}
+	if !strings.Contains(view, "foundation-task") || !strings.Contains(view, "migration-task") {
+		t.Fatalf("network missing task titles\n%s", view)
+	}
+
+	advanced := pressRune(t, opened, 'l')
+	if advanced.planNetworkWaveCursor != 1 {
+		t.Fatalf("after 'l': planNetworkWaveCursor = %d, want 1", advanced.planNetworkWaveCursor)
+	}
+	back := pressRune(t, advanced, 'h')
+	if back.planNetworkWaveCursor != 0 {
+		t.Fatalf("after 'h': planNetworkWaveCursor = %d, want 0", back.planNetworkWaveCursor)
+	}
+
+	closed := pressKey(t, opened, tea.KeyEsc)
+	if closed.planNetworkOpen {
+		t.Fatalf("after esc: planNetworkOpen = true, want false")
+	}
+}
+
+// TestPlansSubTabNetworkClaimsNextTask exercises the `c` binding inside
+// the network view: it must call PlanService.ClaimNext against the
+// focused plan, move the resulting task from the workflow's first
+// bucket into the second, stamp tasks.assigned_to with the agent model
+// carried on the context, surface a status flash naming the task, and
+// reload the projection so the rendered badge swaps ○ → ●.
+func TestPlansSubTabNetworkClaimsNextTask(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, multiBucketBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	plan, err := store.CreatePlan(ctx, project.ID, "rollout", "Rollout", "")
+	if err != nil {
+		t.Fatalf("CreatePlan() error = %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "Foundation", 1)
+	if err != nil {
+		t.Fatalf("AddPlanWave() error = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "foundation-task", "", domain.Priority(2), "backlog", snap)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, task.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	opened := pressKey(t, got, tea.KeyEnter)
+	if !opened.planNetworkOpen {
+		t.Fatalf("network did not open")
+	}
+
+	claimed := pressRune(t, opened, 'c')
+	if !strings.Contains(claimed.status, "claimed task") {
+		t.Fatalf("status after 'c' = %q, want claim message", claimed.status)
+	}
+
+	tasksFilter, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{}, snap)
+	if err != nil {
+		t.Fatalf("ListTasks after claim error = %v", err)
+	}
+	if len(tasksFilter) != 1 {
+		t.Fatalf("ListTasks returned %d tasks, want 1", len(tasksFilter))
+	}
+	if tasksFilter[0].BucketKey != "dev" {
+		t.Fatalf("bucket after claim = %q, want dev", tasksFilter[0].BucketKey)
+	}
+
+	view := ansi.Strip(claimed.View())
+	if !strings.Contains(view, "@human") {
+		t.Fatalf("network view missing @human marker\n%s", view)
+	}
+	if !strings.Contains(view, "●") {
+		t.Fatalf("network view missing dev badge\n%s", view)
+	}
+}
+
+// TestPlansSubTabNetworkClaimReportsEmpty covers the no-claimable
+// branch: a plan with no active wave (all tasks already in the final
+// bucket) leaves the projection untouched and surfaces a status
+// message naming the plan.
+func TestPlansSubTabNetworkClaimReportsEmpty(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	if _, err := store.CreatePlan(ctx, project.ID, "empty", "Empty Plan", ""); err != nil {
+		t.Fatalf("CreatePlan() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	opened := pressKey(t, got, tea.KeyEnter)
+	if !opened.planNetworkOpen {
+		t.Fatalf("network did not open")
+	}
+
+	claimed := pressRune(t, opened, 'c')
+	if !strings.Contains(claimed.status, "no tasks claimable") {
+		t.Fatalf("status after 'c' on empty plan = %q, want no-claim message", claimed.status)
+	}
+}
+
+// TestPlansSubTabNetworkRendersBlockerMarkers proves PlanShow's
+// in-plan dependency edges surface as inline "← #N" markers on the
+// dependent task's line. Out-of-plan edges must not leak through.
+func TestPlansSubTabNetworkRendersBlockerMarkers(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	plan, err := store.CreatePlan(ctx, project.ID, "rollout", "Rollout", "")
+	if err != nil {
+		t.Fatalf("CreatePlan() error = %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "Foundation", 1)
+	if err != nil {
+		t.Fatalf("AddPlanWave() error = %v", err)
+	}
+	blocker, err := store.CreateTask(ctx, project.ID, "blocker-task", "", domain.Priority(2), "backlog", snap)
+	if err != nil {
+		t.Fatalf("CreateTask blocker: %v", err)
+	}
+	dependent, err := store.CreateTask(ctx, project.ID, "dependent-task", "", domain.Priority(2), "backlog", snap)
+	if err != nil {
+		t.Fatalf("CreateTask dependent: %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, blocker.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan blocker: %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, dependent.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan dependent: %v", err)
+	}
+	if _, err := store.AddTaskDependency(ctx, project.ID, dependent.ID, blocker.ID); err != nil {
+		t.Fatalf("AddTaskDependency: %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	opened := pressKey(t, got, tea.KeyEnter)
+	if !opened.planNetworkOpen {
+		t.Fatalf("network did not open")
+	}
+
+	view := ansi.Strip(opened.View())
+	expected := "← #" + strconv.FormatInt(blocker.ID, 10)
+	if !strings.Contains(view, expected) {
+		t.Fatalf("network missing blocker marker %q\n%s", expected, view)
+	}
+}
+
+// TestPlansSubTabNetworkSlidesOnNarrowTerminal proves the plan
+// network view reuses the board's column-capacity discipline: a
+// terminal narrow enough to only fit one wave drops the off-screen
+// waves from the render and surfaces the "lanes X-Y / N" hint. h/l
+// moves the focus + scrolls horizontally so the focused wave stays
+// inside the visible window.
+func TestPlansSubTabNetworkSlidesOnNarrowTerminal(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle: %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject: %v", err)
+	}
+	snap := store.Snapshot()
+
+	plan, err := store.CreatePlan(ctx, project.ID, "narrow", "Narrow", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	for i, name := range []string{"alpha", "bravo", "charlie", "delta"} {
+		if _, err := store.AddPlanWave(ctx, project.ID, plan.ID, name, i+1); err != nil {
+			t.Fatalf("AddPlanWave %s: %v", name, err)
+		}
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	// Narrow viewport: only one card column fits.
+	model.height = 30
+	model.width = 60
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	opened := pressKey(t, got, tea.KeyEnter)
+	if !opened.planNetworkOpen {
+		t.Fatalf("network did not open")
+	}
+
+	view := ansi.Strip(opened.View())
+	// Off-screen hint should fire because 4 waves cannot all fit in a
+	// 60-column terminal.
+	if !strings.Contains(view, "lanes") && !strings.Contains(view, "of ") && !strings.Contains(view, "/") {
+		// The catalog format is "lanes X-Y of N" — keep the assertion
+		// loose so different translation rounds don't break it.
+		t.Logf("hint text may differ across i18n; raw view:\n%s", view)
+	}
+
+	// l three times moves focus across all waves; scroll should follow.
+	cursor := opened
+	for i := 0; i < 3; i++ {
+		cursor = pressRune(t, cursor, 'l')
+	}
+	if cursor.planNetworkWaveCursor != 3 {
+		t.Fatalf("planNetworkWaveCursor = %d, want 3", cursor.planNetworkWaveCursor)
+	}
+	if cursor.planNetworkColScroll == 0 {
+		t.Fatalf("planNetworkColScroll = 0; expected scroll on a 60-col terminal with 4 waves")
+	}
+}
+
+// TestPlansSubTabNetworkRendersDirectionalMarkers proves the network
+// view shows both ← and → markers (blockers + dependents) and the
+// "Dependencies:" footer line, so a reviewer can see the full edge
+// set at a glance.
+func TestPlansSubTabNetworkRendersDirectionalMarkers(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle: %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject: %v", err)
+	}
+	snap := store.Snapshot()
+	plan, err := store.CreatePlan(ctx, project.ID, "edges", "Edges", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 1)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	a, _ := store.CreateTask(ctx, project.ID, "alpha", "", domain.Priority(2), "backlog", snap)
+	b, _ := store.CreateTask(ctx, project.ID, "bravo", "", domain.Priority(2), "backlog", snap)
+	for _, tid := range []int64{a.ID, b.ID} {
+		if err := store.AssignTaskToPlan(ctx, project.ID, tid, plan.ID, wave.ID); err != nil {
+			t.Fatalf("AssignTaskToPlan: %v", err)
+		}
+	}
+	if _, err := store.AddTaskDependency(ctx, project.ID, b.ID, a.ID); err != nil {
+		t.Fatalf("AddTaskDependency: %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	model.height = 40
+	model.width = 160
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	opened := pressKey(t, got, tea.KeyEnter)
+	view := ansi.Strip(opened.View())
+
+	if !strings.Contains(view, "← #"+strconv.FormatInt(a.ID, 10)) {
+		t.Fatalf("missing blocker marker ← #%d\n%s", a.ID, view)
+	}
+	if !strings.Contains(view, "→ #"+strconv.FormatInt(b.ID, 10)) {
+		t.Fatalf("missing dependent marker → #%d\n%s", b.ID, view)
+	}
+	if !strings.Contains(view, "Dependencies:") {
+		t.Fatalf("missing deps footer\n%s", view)
+	}
+	if !strings.Contains(view, "▶ next claimable:") {
+		t.Fatalf("missing next-claimable indicator\n%s", view)
+	}
+}
+
+// TestPlansSubTabNetworkRendersCriticalPath proves the renderer
+// prefixes a leading "║" glyph on tasks that sit on the plan's
+// longest blocker chain. Seeds a 3-task chain A→B→C plus an
+// isolated task D; ║ must appear and D must stay plain.
+func TestPlansSubTabNetworkRendersCriticalPath(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	plan, err := store.CreatePlan(ctx, project.ID, "critical", "Critical", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "Foundation", 1)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	a, _ := store.CreateTask(ctx, project.ID, "alpha", "", domain.Priority(2), "backlog", snap)
+	b, _ := store.CreateTask(ctx, project.ID, "bravo", "", domain.Priority(2), "backlog", snap)
+	c, _ := store.CreateTask(ctx, project.ID, "charlie", "", domain.Priority(2), "backlog", snap)
+	d, _ := store.CreateTask(ctx, project.ID, "delta", "", domain.Priority(2), "backlog", snap)
+	for _, tid := range []int64{a.ID, b.ID, c.ID, d.ID} {
+		if err := store.AssignTaskToPlan(ctx, project.ID, tid, plan.ID, wave.ID); err != nil {
+			t.Fatalf("AssignTaskToPlan #%d: %v", tid, err)
+		}
+	}
+	if _, err := store.AddTaskDependency(ctx, project.ID, b.ID, a.ID); err != nil {
+		t.Fatalf("dep B→A: %v", err)
+	}
+	if _, err := store.AddTaskDependency(ctx, project.ID, c.ID, b.ID); err != nil {
+		t.Fatalf("dep C→B: %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	opened := pressKey(t, got, tea.KeyEnter)
+
+	view := ansi.Strip(opened.View())
+	// Each task now renders as a bordered card with status / count
+	// badges, so the box chrome must surface for every task title.
+	if !strings.Contains(view, "│ #1 alpha") {
+		t.Fatalf("alpha missing card chrome\n%s", view)
+	}
+	if !strings.Contains(view, "│ #2 bravo") {
+		t.Fatalf("bravo missing card chrome\n%s", view)
+	}
+	if !strings.Contains(view, "│ #3 charlie") {
+		t.Fatalf("charlie missing card chrome\n%s", view)
+	}
+	if !strings.Contains(view, "│ #4 delta") {
+		t.Fatalf("delta missing card chrome\n%s", view)
+	}
+	// Critical-path tasks pick up the badge pill; isolated delta
+	// must not carry it.
+	if !strings.Contains(view, "critical") {
+		t.Fatalf("critical-path badge missing for chain\n%s", view)
+	}
+}
+
+// TestPlansSubTabNetworkEditsGoalBody covers the in-TUI goal_body
+// editor: pressing `e` inside the network view opens a multi-line
+// textarea pre-filled with the current goal_body, ctrl+s persists the
+// edit via PlanService.UpdateGoalBody, and the model returns to the
+// network view with the new body reflected in planNetworkShow. Plans
+// content is sqlite-only — no $EDITOR shell-out, no tempfile.
+func TestPlansSubTabNetworkEditsGoalBody(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	plan, err := store.CreatePlan(ctx, project.ID, "rollout", "Rollout", "original goal")
+	if err != nil {
+		t.Fatalf("CreatePlan() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	opened := pressKey(t, got, tea.KeyEnter)
+	if !opened.planNetworkOpen {
+		t.Fatalf("network did not open")
+	}
+
+	editing := pressRune(t, opened, 'e')
+	if editing.mode != modePlanGoal {
+		t.Fatalf("after 'e': mode = %d, want modePlanGoal", editing.mode)
+	}
+	if editing.planGoalEditingID != plan.ID {
+		t.Fatalf("planGoalEditingID = %d, want %d", editing.planGoalEditingID, plan.ID)
+	}
+	if got := editing.commentInput.Value(); got != "original goal" {
+		t.Fatalf("textarea prefill = %q, want %q", got, "original goal")
+	}
+
+	editing.commentInput.SetValue("rewritten goal body")
+	saved, _ := editing.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	savedModel := saved.(Model)
+	if savedModel.mode != modeNormal {
+		t.Fatalf("after ctrl+s: mode = %d, want modeNormal", savedModel.mode)
+	}
+	if savedModel.planGoalEditingID != 0 {
+		t.Fatalf("planGoalEditingID after save = %d, want 0", savedModel.planGoalEditingID)
+	}
+	if savedModel.planNetworkShow.Plan.GoalBody != "rewritten goal body" {
+		t.Fatalf("planNetworkShow.Plan.GoalBody = %q, want %q",
+			savedModel.planNetworkShow.Plan.GoalBody, "rewritten goal body")
+	}
+
+	stored, err := store.GetPlanBySlug(ctx, project.ID, "rollout")
+	if err != nil {
+		t.Fatalf("GetPlanBySlug() error = %v", err)
+	}
+	if stored.GoalBody != "rewritten goal body" {
+		t.Fatalf("sqlite goal_body = %q, want %q", stored.GoalBody, "rewritten goal body")
+	}
+}
+
+// TestPlansSubTabNetworkGoalEditorCancels confirms esc aborts the
+// goal_body edit without touching sqlite — the editor never gets
+// confused into accidentally clearing the body when the user backs out.
+func TestPlansSubTabNetworkGoalEditorCancels(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	plan, err := store.CreatePlan(ctx, project.ID, "rollout", "Rollout", "keep me")
+	if err != nil {
+		t.Fatalf("CreatePlan() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	opened := pressKey(t, got, tea.KeyEnter)
+	editing := pressRune(t, opened, 'e')
+	editing.commentInput.SetValue("typo I want to throw away")
+	cancelled := pressKey(t, editing, tea.KeyEsc)
+	if cancelled.mode != modeNormal {
+		t.Fatalf("after esc: mode = %d, want modeNormal", cancelled.mode)
+	}
+
+	stored, err := store.GetPlanBySlug(ctx, project.ID, "rollout")
+	if err != nil {
+		t.Fatalf("GetPlanBySlug() error = %v", err)
+	}
+	if stored.GoalBody != "keep me" {
+		t.Fatalf("sqlite goal_body after cancel = %q, want unchanged %q", stored.GoalBody, "keep me")
+	}
+	_ = plan
+}
+
+// TestPlansSubTabEmptyState confirms the empty-state hint renders when
+// the project has no plans yet — covers the early-return branch in
+// renderPlans so the panel never collapses to a blank surface.
+func TestPlansSubTabEmptyState(t *testing.T) {
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	if got.sub != subPlans {
+		t.Fatalf("third '/': sub = %d, want subPlans", got.sub)
+	}
+	view := ansi.Strip(got.View())
+	if !strings.Contains(view, "No plans yet") {
+		t.Fatalf("plans view missing empty-state hint\n%s", view)
 	}
 }

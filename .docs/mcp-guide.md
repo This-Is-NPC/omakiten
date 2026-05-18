@@ -53,7 +53,7 @@ Resolves each `okt-*` prompt through the running agent service (using your activ
 
 ## Tools
 
-The full surface is the source of truth in `internal/mcp/adapter.go::Tools` (the public entry; the inner `tools()` returns the literal table). Currently 37 tools, grouped below.
+The full surface is the source of truth in `internal/mcp/adapter.go::Tools` (the public entry; the inner `tools()` returns the literal table). Currently 44 tools, grouped below.
 
 ### Required `_agent_model` on every call
 
@@ -85,6 +85,20 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `tasks.delete` | Hard-deletes a task with cascade (comments, tags, dependencies, events). Subject to bucket `permissions.task.delete` and `operations.delete.guards`. Requires `confirmed=true`. |
 | `tasks.archive` | Flips `state=archived` and moves the task to the workflow's final bucket. Bypasses bucket policy and transition guards but respects `operations.archive.guards`. |
 | `tasks.unarchive` | Restores `state=active` while leaving the bucket untouched. Respects `operations.unarchive.guards` if declared. |
+
+### Plans (WBS-style multi-agent orchestration)
+
+| Tool | Purpose |
+|---|---|
+| `plans.create` | Create a plan in the active project (`slug`, `name`, optional `goal_body` markdown). Emits `plan.created`. |
+| `plans.list` | List every plan in the active project as a rollup: slug, name, status, done/total task counts, percentage, active wave id/name. |
+| `plans.show` | Return one plan with its waves, tasks per wave, percentage, active wave, and the set of currently claimable tasks. Read-only. |
+| `plans.add_wave` | Append a wave to a plan. Pass `position=0` (or omit) to auto-assign the next slot, or a positive integer to insert at that position. Emits `plan.wave_added`. |
+| `plans.assign_task` | Attach an existing task to `(plan_id, wave_id)`. Idempotent re-assign within the same plan. |
+| `plans.continue` | Agent-tailored projection of a plan — overview formatted for an agent picking up work. Overlaps `plans.show` in content; tuned for context-window economy. |
+| `plans.claim_next` | Atomically reserve the next unblocked task in the active wave: `BEGIN IMMEDIATE` → SELECT next-claimable-in-active-wave → UPDATE bucket to `dev` + SET `assigned_to` to the caller's `_agent_model` in the same transaction. Returns the claimed task or `{claimed: false}` when nothing is available. Two concurrent `claim_next` calls serialise at the SQLite write lock; the loser re-evaluates and either claims the next task or returns empty. Agents must never move tasks manually inside a plan — always go through `claim_next`. |
+
+`plans.claim_next` requires `_agent_model` like every tool, but the value is also written to `tasks.assigned_to` as the claimant identity. Recovery from a crashed agent is human-driven: `okt assign <id> ""` clears the assignment, or `okt move <id> backlog` clears it via the transition-out hook. v1 explicitly does NOT auto-reclaim.
 
 ### Comments & activity
 

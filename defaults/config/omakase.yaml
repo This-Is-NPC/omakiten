@@ -120,6 +120,18 @@ config:
       notification: kitten_blocked
       message: "${{intl:notifications.omakase.guard_task_transition.message}}"
       detail_message_field: hint
+    # Plan-aware specialisation of the transition card — when the
+    # blocking rule is the wave_gate guard, fire a plan-themed card
+    # with the same kitten so a wave_gate block reads as a plan
+    # event, not a generic transition refusal. Both hooks match,
+    # which is fine: the notification slot is single, so the
+    # later-dispatched (plan) card wins on screen. Order matters
+    # here — the generic hook stays first so it loses the race.
+    - on: guard.violated
+      when: { operation: task.transition, rule: wave_gate }
+      notification: kitten_blocked
+      message: "${{intl:notifications.omakase.guard_wave_gate.message}}"
+      detail_message_field: hint
     - on: guard.violated
       when: { operation: task.edit }
       notification: kitten_blocked
@@ -397,6 +409,8 @@ workflows:
           - type: blockers_in
             buckets: [done]
             hint: "Every blocker must be in Done before development starts — finish blockers first to keep WIP under control."
+          - type: wave_gate
+            hint: "${{intl:guard.wave_gate.hint}}"
       - from: 2
         to: 3
         guards:

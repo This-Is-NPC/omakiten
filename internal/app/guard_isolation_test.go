@@ -185,6 +185,9 @@ func (r *isolationRepo) CountTaskComments(context.Context, int64, int64) (int, e
 func (r *isolationRepo) CountTaskCommentsTagged(_ context.Context, _, _ int64, tag string) (int, error) {
 	return r.taggedFn(tag), nil
 }
+func (r *isolationRepo) CountPriorWavesPending(context.Context, int64, int64, domain.BucketResolver) (int, error) {
+	return 0, nil
+}
 
 // TaskRepository — only MoveTask is exercised; the other methods are unused
 // on the MoveTask path and return zero values.
@@ -212,6 +215,9 @@ func (r *isolationRepo) SetTaskState(context.Context, int64, int64, domain.TaskS
 }
 func (r *isolationRepo) EmitTaskEditedEvent(context.Context, int64, int64, domain.Task, domain.Task) (domain.Event, error) {
 	return domain.Event{}, nil
+}
+func (r *isolationRepo) AssignTask(context.Context, int64, int64, string, string, domain.BucketResolver) (domain.Task, domain.Event, error) {
+	return domain.Task{}, domain.Event{}, nil
 }
 
 // EventRepository — task.completed emission noop; the move target isn't the
@@ -242,6 +248,9 @@ func (nilGuardRepo) CountTaskComments(context.Context, int64, int64) (int, error
 	return 0, nil
 }
 func (nilGuardRepo) CountTaskCommentsTagged(context.Context, int64, int64, string) (int, error) {
+	return 0, nil
+}
+func (nilGuardRepo) CountPriorWavesPending(context.Context, int64, int64, domain.BucketResolver) (int, error) {
 	return 0, nil
 }
 

@@ -110,7 +110,7 @@ Maximum permissiveness — spikes need to reshape freely.
 
 | Transition | Guards |
 |---|---|
-| backlog → dev | `comments_tagged: hypothesis count=1` |
+| backlog → dev | `comments_tagged: hypothesis count=1` · `wave_gate` |
 | dev → done | — |
 | dev → backlog | — |
 | done → dev | — |
@@ -161,7 +161,7 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 
 | From | To | Guards |
 |---|---|---|
-| `backlog` | `dev` | `#hypothesis`×1 |
+| `backlog` | `dev` | `#hypothesis`×1 · `wave_gate` |
 | `dev` | `done` | — |
 | `done` | `dev` | — |
 | `dev` | `backlog` | — |
@@ -231,7 +231,7 @@ backlog ──▶ dev ──▶ review ──▶ done
 
 | Transition | Guards |
 |---|---|
-| backlog → dev | `comments_tagged: self-branch count=1` · `blockers_in: [done]` |
+| backlog → dev | `comments_tagged: self-branch count=1` · `blockers_in: [done]` · `wave_gate` |
 | dev → review | `comments_tagged: resume count=1` · `comments_tagged: tests-passing count=1` |
 | review → done | `comments_tagged: documentation count=1` |
 | regressions (6 paths) | — |
@@ -288,7 +288,7 @@ Auto-derived from `defaults/config/omakase.yaml`.
 
 | From | To | Guards |
 |---|---|---|
-| `backlog` | `dev` | `#self-branch`×1 · blockers in `done` |
+| `backlog` | `dev` | `#self-branch`×1 · blockers in `done` · `wave_gate` |
 | `dev` | `review` | `#resume`×1 · `#tests-passing`×1 |
 | `review` | `done` | `#documentation`×1 |
 | `dev` | `backlog` | — |
@@ -361,7 +361,7 @@ requirements ──▶ planning ──▶ dev ──▶ review ──▶ docs �
 | Transition | Guards |
 |---|---|
 | requirements → planning | `comments_tagged: 5w2h` · `comments_tagged: requirements` · `comments_tagged: acceptance` |
-| planning → dev | `comments_tagged: self-branch` · `comments_tagged: design` · `blockers_in: [done, docs]` |
+| planning → dev | `comments_tagged: self-branch` · `comments_tagged: design` · `blockers_in: [done, docs]` · `wave_gate` |
 | dev → review | `comments_tagged: resume` · `comments_tagged: tests-passing` |
 | review → docs | `comments_tagged: peer-review` |
 | docs → done | `comments_tagged: documentation` |
@@ -421,7 +421,7 @@ Auto-derived from `defaults/config/kaiseki.yaml`.
 | From | To | Guards |
 |---|---|---|
 | `requirements` | `planning` | `#5w2h`×1 · `#requirements`×1 · `#acceptance`×1 |
-| `planning` | `dev` | `#self-branch`×1 · `#design`×1 · blockers in `done`,`docs` |
+| `planning` | `dev` | `#self-branch`×1 · `#design`×1 · blockers in `done`,`docs` · `wave_gate` |
 | `dev` | `review` | `#resume`×1 · `#tests-passing`×1 |
 | `review` | `docs` | `#peer-review`×1 |
 | `docs` | `done` | `#documentation`×1 |
@@ -497,7 +497,7 @@ All `comment.delete` is denied workflow-wide — audit trail must survive. Corre
 | Transition | Guards |
 |---|---|
 | requirements → planning | `comments_tagged: 5w2h` · `comments_tagged: requirements` · `comments_tagged: acceptance` |
-| planning → dev | `comments_tagged: self-branch` · `comments_tagged: pre-mortem` · `comments_tagged: risk-assessment` · `blockers_in: [done, docs]` |
+| planning → dev | `comments_tagged: self-branch` · `comments_tagged: pre-mortem` · `comments_tagged: risk-assessment` · `blockers_in: [done, docs]` · `wave_gate` |
 | dev → review | `comments_tagged: resume` · `comments_tagged: tests-passing` · `comments_tagged: rollback-plan` |
 | review → docs | `comments_tagged: peer-review count=2` |
 | docs → done | `comments_tagged: documentation` · `comments_tagged: lessons-learned` |
@@ -558,7 +558,7 @@ Auto-derived from `defaults/config/shokunin.yaml`.
 | From | To | Guards |
 |---|---|---|
 | `requirements` | `planning` | `#5w2h`×1 · `#requirements`×1 · `#acceptance`×1 |
-| `planning` | `dev` | `#self-branch`×1 · `#pre-mortem`×1 · `#risk-assessment`×1 · blockers in `done`,`docs` |
+| `planning` | `dev` | `#self-branch`×1 · `#pre-mortem`×1 · `#risk-assessment`×1 · blockers in `done`,`docs` · `wave_gate` |
 | `dev` | `review` | `#resume`×1 · `#tests-passing`×1 · `#rollback-plan`×1 |
 | `review` | `docs` | `#peer-review`×2 |
 | `docs` | `done` | `#documentation`×1 · `#lessons-learned`×1 |
@@ -603,6 +603,7 @@ echo my-shokunin.yaml > ~/.config/omakiten/config/.active
 | Pre-mortem (`#pre-mortem`) | — | — | — | ✅ |
 | Risk assessment (`#risk-assessment`) | — | — | — | ✅ |
 | Blockers cleared (`blockers_in`) | — | ✅ | ✅ | ✅ |
+| Wave gating (`wave_gate`) | ✅ | ✅ | ✅ | ✅ |
 | Resume handoff (`#resume`) | — | ✅ | ✅ | ✅ |
 | Test evidence (`#tests-passing`) | — | ✅ | ✅ | ✅ |
 | Rollback plan (`#rollback-plan`) | — | — | — | ✅ |
@@ -615,6 +616,56 @@ echo my-shokunin.yaml > ~/.config/omakiten/config/.active
 | Comment trail preserved (delete denied) | — | dev+ | planning+ | requirements+ |
 
 Each level adds one or more layers of discipline without removing the previous ones.
+
+---
+
+## Plans — multi-agent fan-out
+
+Plans sit **on top of** the active workflow, not inside it. A plan groups child tasks into ordered **waves** so that two to four AI agents can fan out across the same goal without racing each other. The workflow shape (bucket cycle, transition guards, permissions) is unchanged — plans add a coordination layer.
+
+### The wave-gate rule
+
+Tasks inside the same wave run in parallel. Wave `N+1` is blocked until wave `N` is fully closed. The rule is enforced by the `wave_gate` guard (`internal/app/guards/evaluator.go:checkWaveGate`) registered alongside `blockers_in`, `comments_min`, and `comments_tagged` — see [Guards Guide § `wave_gate`](./guards-guide.md#wave_gate).
+
+The four official presets all wire `wave_gate` onto the transition that enters `dev`:
+
+| Preset | Transition |
+|---|---|
+| izakaya | `backlog → dev` |
+| omakase | `backlog → dev` |
+| kaiseki | `planning → dev` |
+| shokunin | `planning → dev` |
+
+Tasks not attached to a plan (`wave_id IS NULL`) pass the guard as a no-op, so the new guard is safe in every existing preset.
+
+### Atomic claim — `plans.claim_next`
+
+`plans.claim_next` is the only correct way for an agent to acquire work inside a plan. The MCP tool wraps a single SQLite write transaction:
+
+1. `BEGIN IMMEDIATE` — serialises against any concurrent claim attempt.
+2. `SELECT` the next unblocked task in the active wave (no prior-wave pending, no dependency in flight).
+3. `UPDATE tasks SET bucket_id=<dev>, assigned_to=<caller _agent_model>` in the same transaction.
+4. Commit. Returns the claimed task or `{claimed: false}`.
+
+Two concurrent calls land on the same write lock; the loser retries the SELECT and either claims a different task or returns empty. No double-claim is possible. The CLI handle (`okt plan claim <slug>`) hits the same primitive.
+
+Agents should **never** call `tasks.move` to enter a plan task into `dev` — always go through `plans.claim_next`. Manual moves bypass the assignment write and leave the activity log inconsistent with the plan's progress view.
+
+### Recovery from a crashed claim
+
+`tasks.assigned_to` stays set if the claiming agent crashes mid-task. Recovery is deliberately human-driven:
+
+- `okt assign <task_id>` (no `WHO`) clears the assignment.
+- `okt move <task_id> backlog` clears it via the transition-out hook.
+
+v1 does not auto-reclaim — silent reclaim would hide real-world agent failures. A v2 path is on the roadmap.
+
+### Surfaces
+
+- **MCP**: 7 tools under `plans.*` (`create`, `list`, `show`, `add_wave`, `assign_task`, `continue`, `claim_next`). See [MCP Guide § Plans](./mcp-guide.md#plans-wbs-style-multi-agent-orchestration).
+- **CLI**: `okt plan create|list|show|wave-add|assign|claim` and the orthogonal `okt assign <task_id> [who]` for free-text assignment outside the plan flow. See [CLI Guide § Plans](./cli-guide.md#plans).
+- **TUI**: a fourth sub-tab under `01 // TASKS` — list view first, then a column-per-wave network diagram per plan. See [TUI Guide § Tasks › Plans](./tui-guide.md#tasks--plans).
+- **Search**: `plans.goal_body` is indexed in the unified FTS5 `search_index` so cross-project `search` finds plans by name or any phrase in the goal markdown.
 
 ---
 
@@ -674,7 +725,7 @@ The validator rejects:
 
 - Missing required config blocks (mcp / views / priorities / severities / etc.)
 - Dangling refs in `mcp_commands` (persona / law / template slug not found)
-- Unknown guard types (only `comments_tagged`, `comments_min`, `blockers_in`)
+- Unknown guard types (only `comments_tagged`, `comments_min`, `blockers_in`, `wave_gate`)
 - Permissions referencing buckets that do not exist
 - Duplicate ids / values in priorities / severities / buckets
 

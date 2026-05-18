@@ -141,6 +141,9 @@ func (f *fakeStores) CountTaskComments(context.Context, int64, int64) (int, erro
 func (f *fakeStores) CountTaskCommentsTagged(_ context.Context, _, _ int64, tag string) (int, error) {
 	return f.taggedCount[tag], nil
 }
+func (f *fakeStores) CountPriorWavesPending(context.Context, int64, int64, domain.BucketResolver) (int, error) {
+	return 0, nil
+}
 
 // TaskRepository
 func (f *fakeStores) CreateTask(_ context.Context, _ int64, _, _ string, _ domain.Priority, _ string, _ domain.BucketResolver) (domain.Task, error) {
@@ -168,6 +171,9 @@ func (f *fakeStores) SetTaskState(context.Context, int64, int64, domain.TaskStat
 }
 func (f *fakeStores) EmitTaskEditedEvent(context.Context, int64, int64, domain.Task, domain.Task) (domain.Event, error) {
 	return domain.Event{}, nil
+}
+func (f *fakeStores) AssignTask(context.Context, int64, int64, string, string, domain.BucketResolver) (domain.Task, domain.Event, error) {
+	return domain.Task{}, domain.Event{}, nil
 }
 
 // EventRepository
@@ -300,6 +306,32 @@ func TestWorkflowMoveTaskEmitsCompletedOnFinalBucket(t *testing.T) {
 	}
 }
 
+// TestWorkflowMoveTaskInvokesPlanFinalizerOnFinalBucket pins the SMART
+// rule "Plan auto-transitions to done when the last task closes": when
+// a move lands in the workflow's final bucket and a PlanFinalizer is
+// attached, MoveTask invokes it. Non-final moves and unwired finalisers
+// stay no-ops so non-plan tasks behave identically to today.
+func TestWorkflowMoveTaskInvokesPlanFinalizerOnFinalBucket(t *testing.T) {
+	f := &fakeStores{
+		bucketsByKey:    map[string]domain.Bucket{"done": {ID: 3, Key: "done"}},
+		allowedFromTo:   map[[2]int64]bool{{2, 3}: true},
+		finalBucketIDs:  map[int64]bool{3: true},
+		currentBucketID: 2,
+		moveResp:        domain.Task{ID: 5, BucketKey: "done"},
+	}
+	pf := &fakePlanFinalizer{}
+	svc := newWorkflowServiceForTest(f).WithPlanFinalizer(pf)
+	if _, err := svc.MoveTask(context.Background(), domain.ProjectContext{ID: 1}, 5, "done"); err != nil {
+		t.Fatalf("MoveTask = %v", err)
+	}
+	if pf.calls != 1 {
+		t.Fatalf("plan finaliser invocations = %d, want 1", pf.calls)
+	}
+	if pf.lastTaskID != 5 {
+		t.Fatalf("plan finaliser last taskID = %d, want 5", pf.lastTaskID)
+	}
+}
+
 func TestWorkflowMoveTaskBlockersInGuard(t *testing.T) {
 	f := &fakeStores{
 		bucketsByKey:  map[string]domain.Bucket{"dev": {ID: 2, Key: "dev"}},
@@ -366,4 +398,18 @@ func TestWorkflowMoveTaskCommentsTaggedGuard(t *testing.T) {
 	if !errors.As(err, &coded) || coded.Code != domain.ErrGuardViolation {
 		t.Fatalf("err = %v, want guard_violation", err)
 	}
+}
+
+// fakePlanFinalizer captures MaybeFinalizePlanForTask invocations so
+// tests can assert WorkflowService.MoveTask wires the finaliser only
+// when a task lands in the final bucket.
+type fakePlanFinalizer struct {
+	calls      int
+	lastTaskID int64
+}
+
+func (f *fakePlanFinalizer) MaybeFinalizePlanForTask(_ context.Context, _ int64, taskID int64, _ domain.BucketResolver) (bool, error) {
+	f.calls++
+	f.lastTaskID = taskID
+	return false, nil
 }

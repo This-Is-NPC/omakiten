@@ -57,6 +57,30 @@ const (
 	// restored. EntityType=task, Payload={bucket}.
 	EventTypeTaskUnarchived = "task.unarchived"
 
+	// EventTypePlanCreated fires when a plan row is inserted.
+	// EntityType=plan, Payload={slug, name, project_id}.
+	EventTypePlanCreated = "plan.created"
+	// EventTypePlanWaveAdded fires when a wave is appended to a plan.
+	// EntityType=plan, Payload={wave_id, name, position}.
+	EventTypePlanWaveAdded = "plan.wave_added"
+	// EventTypePlanGoalEdited fires when a plan's goal_body is rewritten
+	// via plans.update_goal_body. EntityType=plan, Payload={length}.
+	EventTypePlanGoalEdited = "plan.goal_edited"
+	// EventTypePlanDone fires when a plan auto-transitions to status=done
+	// (every child task in a terminal bucket). EntityType=plan, Payload={}.
+	EventTypePlanDone = "plan.done"
+	// EventTypePlanAbandoned fires when a plan is explicitly aborted.
+	// EntityType=plan, Payload={reason?}.
+	EventTypePlanAbandoned = "plan.abandoned"
+	// EventTypeTaskAssigned fires when tasks.assigned_to is set to a
+	// non-empty value (via plans.claim_next or `okt task assign`).
+	// EntityType=task, Payload={assignee, source}.
+	EventTypeTaskAssigned = "task.assigned"
+	// EventTypeTaskUnassigned fires when tasks.assigned_to is cleared,
+	// either explicitly or as a side effect of leaving the dev bucket.
+	// EntityType=task, Payload={former_assignee}.
+	EventTypeTaskUnassigned = "task.unassigned"
+
 	// EventTypeTagAdded fires when a tag is attached to an entity.
 	// EntityType=task|project|comment|error per Payload.entity_type.
 	// Payload={entity_type, entity_id, tag_id, tag_name}.
@@ -208,6 +232,12 @@ var KnownEventTypes = []string{
 	EventTypeTaskRemoved,
 	EventTypeTaskArchived,
 	EventTypeTaskUnarchived,
+	EventTypeTaskAssigned,
+	EventTypeTaskUnassigned,
+	EventTypePlanCreated,
+	EventTypePlanWaveAdded,
+	EventTypePlanDone,
+	EventTypePlanAbandoned,
 	EventTypeTagAdded,
 	EventTypeTagRemoved,
 	EventTypeDependencyAdded,
@@ -253,6 +283,10 @@ const (
 	EventEntityError = "error"
 	// EventEntitySolution scopes events tied to a solution row.
 	EventEntitySolution = "solution"
+	// EventEntityPlan scopes events tied to a plan row (entity_id is the
+	// plan id). Wave events also land under this entity scope — the wave
+	// id travels in the payload because the activity feed groups by plan.
+	EventEntityPlan = "plan"
 )
 
 // Event is the row shape of the unified events log. Different event_types

@@ -253,6 +253,13 @@ func tools() []ToolDefinition {
 		{Name: "templates.list", Description: "List every loaded template (slug, name, default kind, project scope, custom flag). Read-only; templates are authored by the user — the agent never modifies template bindings.", InputSchema: objectSchema(map[string]any{"kind": stringSchema("Optional default-kind filter (e.g. \"task\")"), "project": stringSchema("Optional project slug to scope project-bound templates"), "include_body": booleanSchema("Set true to include the template body in each entry; default omits it for compact responses")}, nil)},
 		{Name: "metrics.summary", Description: "Aggregate per-AI-model behaviour over a period: errors recorded, errors searched, solutions added, like rate, and search-before-record ratio. Use to benchmark whether different agents research existing context before recording new errors. Requires that callers pass _agent_model on every tool call (now coercive).", InputSchema: objectSchema(map[string]any{"period": stringSchema("Time window: \"7d\", \"30d\" (default), or \"all\""), "project_id": integerSchema("Optional registered project id; omit for cross-project view")}, nil)},
 		{Name: "templates.show", Description: "Return one template by slug, including its full body. Read-only. Hard-rejects (validation_error) when the requested slug is a global template that is shadowed by a project-scoped override in the active project — the rejection's details name the active slug so callers can re-call directly.", InputSchema: showTemplateSchema()},
+		{Name: "plans.create", Description: "Create a WBS-style plan that groups child tasks in ordered waves. Slug must be unique within the project; goal_body is markdown describing the plan's intent and acceptance criteria. Emits plan.created.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (kebab-case recommended); unique per project"), "name": stringSchema("Human-readable plan name"), "goal_body": stringSchema("Optional markdown body describing the plan goal and acceptance criteria")}, []string{"slug", "name"})},
+		{Name: "plans.list", Description: "List every plan in the active project, ordered by creation. Goal bodies are omitted from list entries — call plans.show to fetch one with its full body.", InputSchema: selectorSchema()},
+		{Name: "plans.show", Description: "Return one plan with its waves, tasks per wave, per-wave and overall done/total counts, integer percent, and the active wave id (lowest-position wave with pending work). Archived tasks are filtered out of the counts but stay in the wave's tasks list.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug")}, []string{"slug"})},
+		{Name: "plans.add_wave", Description: "Append a wave to a plan (position=0 auto-assigns after the current highest position; explicit position>0 inserts at that slot and rejects on collision). Identify the plan by slug or plan_id; supply at least one. Emits plan.wave_added.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "name": stringSchema("Wave name (human-readable)"), "position": integerSchema("Optional 1-based wave position; omit or 0 to append after the current highest")}, []string{"name"})},
+		{Name: "plans.assign_task", Description: "Attach an existing task to a (plan, wave). Identify the plan by slug or plan_id; supply at least one. Cross-plan / cross-project wave references are rejected.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to attach"), "slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "wave_id": integerSchema("Wave id; must belong to the named plan")}, []string{"task_id", "wave_id"})},
+		{Name: "plans.claim_next", Description: "Atomically reserve the next unblocked task in the plan's active wave (lowest-position wave with pending tasks). Moves the task from the first bucket to the second (typically backlog → dev), stamps tasks.assigned_to with the caller's _agent_model, and emits task.moved + task.assigned. Returns claimed=false (no task) when every wave is fully done or no first-bucket tasks remain. Concurrency-safe via BEGIN IMMEDIATE on a pinned connection.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)")}, nil)},
+		{Name: "plans.continue", Description: "Agent-tailored projection of a plan: returns the same aggregate plans.show emits (full plan + waves + done/total + active wave) plus a non-mutating preview of the task plans.claim_next would reserve next. Use before plans.claim_next so an agent can inspect goal_body, the wave layout, and the candidate task before committing to a claim.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug")}, []string{"slug"})},
 	}
 }
 
@@ -575,6 +582,48 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = service.MetricsSummary(ctx, input)
+		}
+	case "plans.create":
+		var input agent.CreatePlanInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.CreatePlan(ctx, input)
+		}
+	case "plans.list":
+		var input agent.ListPlansInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.ListPlans(ctx, input)
+		}
+	case "plans.show":
+		var input agent.ShowPlanInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.ShowPlan(ctx, input)
+		}
+	case "plans.add_wave":
+		var input agent.AddPlanWaveInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.AddPlanWave(ctx, input)
+		}
+	case "plans.assign_task":
+		var input agent.AssignPlanTaskInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.AssignPlanTask(ctx, input)
+		}
+	case "plans.claim_next":
+		var input agent.ClaimNextPlanTaskInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.ClaimNextPlanTask(ctx, input)
+		}
+	case "plans.continue":
+		var input agent.ContinuePlanInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.ContinuePlan(ctx, input)
 		}
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP tool %q", name)

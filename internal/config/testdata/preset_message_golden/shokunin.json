@@ -6,6 +6,7 @@
   "Destructive action requires sign-off.",
   "Audit trail does not permit deletion.",
   "Gate refuses passage — check the guard hint.",
+  "Earlier wave still on the bench. Hold this one until those are sealed.",
   "Edit blocked at this station.",
   "Append-only trail rejects in-place edits.",
   "Archive blocked — conditions not yet met.",

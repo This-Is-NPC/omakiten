@@ -20,12 +20,23 @@ import (
 // here. Guard evaluation is delegated to the guards.Evaluator captured at
 // construction.
 type WorkflowService struct {
-	snap     *config.Snapshot
-	repo     WorkflowRepository
-	guards   *guards.Evaluator
-	tasks    TaskRepository
-	events   EventRepository
-	registry *domain.EnumRegistry
+	snap          *config.Snapshot
+	repo          WorkflowRepository
+	guards        *guards.Evaluator
+	tasks         TaskRepository
+	events        EventRepository
+	registry      *domain.EnumRegistry
+	planFinalizer PlanFinalizer
+}
+
+// WithPlanFinalizer attaches the optional PlanFinalizer hook called after
+// a task moves into the workflow's final bucket. Production wiring goes
+// through NewWorkflowServiceFromStore (type-asserts the composite store
+// against PlanFinalizer); tests can stub or skip it without touching the
+// existing fakes. Returns the receiver so callers can chain.
+func (s *WorkflowService) WithPlanFinalizer(pf PlanFinalizer) *WorkflowService {
+	s.planFinalizer = pf
+	return s
 }
 
 // NewWorkflowService wires the workflow service against an immutable
@@ -47,7 +58,11 @@ func NewWorkflowService(snap *config.Snapshot, workflow WorkflowRepository, eval
 // one snap pointer.
 func NewWorkflowServiceFromStore(store CompositeWorkflowStore, registry *domain.EnumRegistry, snap *config.Snapshot) *WorkflowService {
 	evaluator := guards.NewGuardEvaluator(snap, store, store)
-	return NewWorkflowService(snap, store, evaluator, store, store, registry)
+	svc := NewWorkflowService(snap, store, evaluator, store, store, registry)
+	if pf, ok := store.(PlanFinalizer); ok {
+		svc.WithPlanFinalizer(pf)
+	}
+	return svc
 }
 
 // ResolveDefaultBucket returns the key of the first bucket in the active
@@ -243,6 +258,16 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 			payload := fmt.Sprintf(`{"bucket":%q}`, targetBucketKey)
 			if _, err = s.events.RecordTaskEvent(ctx, project.ID, taskID, domain.EventTypeTaskCompleted, "", payload); err != nil {
 				return
+			}
+			// Plan auto-done: when the task that just landed in the
+			// terminal bucket was the last pending one in its plan,
+			// transition the plan to status='done' and emit
+			// plan.done. Non-plan tasks are a no-op; finaliser
+			// failures are swallowed because plan finalisation is
+			// recomputable on the next terminal move — losing the
+			// audit signal beats blocking a legitimate move.
+			if s.planFinalizer != nil {
+				_, _ = s.planFinalizer.MaybeFinalizePlanForTask(ctx, project.ID, taskID, s.snap)
 			}
 		}
 	}

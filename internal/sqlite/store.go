@@ -46,6 +46,14 @@ func kitBusyTimeoutMs() int {
 type Store struct {
 	db *sql.DB
 
+	// busyTimeoutMs is the resolved PRAGMA busy_timeout in milliseconds —
+	// the value Open applied to the first pool connection plus any later
+	// override committed through ApplyConfig. Per-connection PRAGMAs
+	// firing from outside Open's loop (ClaimNextPlanTask reapplies on
+	// pinned conns the pool hands out cold) read this field so concurrent
+	// callers honour the user's config instead of falling back to the
+	// kit default.
+	busyTimeoutMs         int
 	activityLogMaxRows    int
 	activityLogMaxAgeDays int
 	eventsDefaultRecentLimit int
@@ -140,6 +148,7 @@ func (s *Store) ApplyConfig(ctx context.Context, k ConfigKnobs) error {
 		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout = %d", k.BusyTimeoutMs)); err != nil {
 			return fmt.Errorf("apply busy_timeout: %w", err)
 		}
+		s.busyTimeoutMs = k.BusyTimeoutMs
 	}
 	s.SetActivityLogRetention(k.ActivityLogMaxRows, k.ActivityLogMaxAgeDays)
 	s.SetEventsRecentLimit(k.EventsDefaultRecentLimit)
@@ -201,6 +210,7 @@ func OpenWithOptions(ctx context.Context, path string, opts Options) (*Store, er
 		// never runs without a busy_timeout configured.
 		busyTimeout = kitBusyTimeoutMs()
 	}
+	store.busyTimeoutMs = busyTimeout
 	// PRAGMAs run per-connection in SQLite, so they have to fire on every conn
 	// the pool hands out — not just once at Open. journal_mode=WAL is the
 	// outlier (it persists to the database header), but setting it here is
@@ -287,4 +297,16 @@ func placeholders(n int) string {
 		return ""
 	}
 	return strings.Repeat("?,", n-1) + "?"
+}
+
+// boolToInt projects a Go bool into the 0/1 form SQLite expects for
+// CASE-WHEN bind parameters. Inline `if b { 1 } else { 0 }` literals are
+// short but appear in several writer paths (completed_at gating, future
+// plan/assignment toggles) — the helper keeps the call-sites readable
+// and the conversion in one place.
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

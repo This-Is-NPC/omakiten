@@ -53,6 +53,13 @@ type TaskRepository interface {
 	// EmitTaskEditedEvent records a task.edited row with a payload describing
 	// the changed fields. Service layer calls it after a successful UpdateTask.
 	EmitTaskEditedEvent(ctx context.Context, projectID, taskID int64, before, after domain.Task) (domain.Event, error)
+	// AssignTask sets tasks.assigned_to to the trimmed value (empty string
+	// clears the column to NULL) and emits task.assigned / task.unassigned
+	// in the same transaction. No-ops when the new assignee equals the
+	// current one (no event emitted). source labels the call site
+	// ("cli.assign", "plans.claim_next", etc.) so consumers can attribute
+	// the change in the payload.
+	AssignTask(ctx context.Context, projectID, taskID int64, assignee, source string, buckets domain.BucketResolver) (domain.Task, domain.Event, error)
 }
 
 // WorkflowRepository exposes the state-side primitives the app's
@@ -76,6 +83,7 @@ type GuardEvaluationRepository interface {
 	ListTaskBlockerBuckets(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) ([]domain.TaskBlocker, error)
 	CountTaskComments(ctx context.Context, projectID, taskID int64) (int, error)
 	CountTaskCommentsTagged(ctx context.Context, projectID, taskID int64, tagName string) (int, error)
+	CountPriorWavesPending(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (int, error)
 }
 
 type CommentRepository interface {
@@ -159,6 +167,63 @@ type SearchRepository interface {
 	// the project filter (cross-project). entityTypes restricts the row
 	// set; an empty slice means "all five types".
 	Search(ctx context.Context, query string, projectID int64, entityTypes []domain.SearchEntityType, limit int) ([]domain.SearchHit, error)
+}
+
+// PlanRepository persists plans, waves, and task↔plan attachment. Plans
+// are scoped per project; every method takes projectID and rejects rows
+// belonging to a different project via the ErrPlanNotFound /
+// ErrPlanWaveNotFound codes instead of leaking data across snapshots.
+//
+// Only the methods the current slice of MCP wiring needs live here; the
+// add-wave / assign-task / claim-next surfaces land alongside their
+// respective tool dispatches.
+type PlanRepository interface {
+	CreatePlan(ctx context.Context, projectID int64, slug, name, goalBody string) (domain.Plan, error)
+	GetPlanBySlug(ctx context.Context, projectID int64, slug string) (domain.Plan, error)
+	GetPlanByID(ctx context.Context, projectID, planID int64) (domain.Plan, error)
+	ListPlans(ctx context.Context, projectID int64) ([]domain.Plan, error)
+	UpdatePlanGoalBody(ctx context.Context, projectID, planID int64, goalBody string) (domain.Plan, error)
+	AddPlanWave(ctx context.Context, projectID, planID int64, name string, position int) (domain.PlanWave, error)
+	ListPlanWaves(ctx context.Context, projectID, planID int64) ([]domain.PlanWave, error)
+	ListPlanTasks(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) ([]domain.PlanTaskRow, error)
+	AssignTaskToPlan(ctx context.Context, projectID, taskID, planID, waveID int64) error
+	// ClaimNextPlanTask atomically picks the next unblocked task in the
+	// plan's active wave (lowest-position wave with pending tasks),
+	// moves it from the workflow's first bucket into the second
+	// ("dev"), and stamps tasks.assigned_to with the caller's
+	// _agent_model (resolved from ctx). Returns (task, true) on a
+	// successful claim, (zero, false) when no task is claimable, or
+	// (zero, false, err) on storage failures. Race safety comes from
+	// BEGIN IMMEDIATE on a pinned connection — concurrent claims
+	// serialise behind the write lock.
+	ClaimNextPlanTask(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) (domain.Task, bool, error)
+	// PeekNextClaimable returns the next task plans.claim_next would
+	// reserve, without mutating anything. Powers plans.continue so a
+	// downstream agent can preview the candidate.
+	PeekNextClaimable(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) (domain.PlanTaskRow, bool, error)
+	// ListPlanTaskDependencies returns task→task edges where both
+	// endpoints belong to the same plan; powers the network
+	// diagram's in-plan arrows.
+	ListPlanTaskDependencies(ctx context.Context, projectID, planID int64) ([]domain.TaskDependency, error)
+	// MaybeFinalizePlanForTask transitions the task's owning plan to
+	// status='done' when every other task in the plan already sits in
+	// the workflow's final bucket. No-op when the task has no plan,
+	// the plan is already terminal, or pending tasks remain. Returns
+	// (true, nil) when the plan was finalised. Called from
+	// WorkflowService.MoveTask after a successful move into the
+	// final bucket.
+	MaybeFinalizePlanForTask(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (bool, error)
+}
+
+// PlanFinalizer is the narrow port WorkflowService consults after a task
+// moves into the workflow's final bucket: if the task belongs to a plan
+// and was the last pending one, the plan transitions to status='done'.
+// Defined separately from PlanRepository so the workflow layer does not
+// have to drag the full repository surface in just to call one method —
+// the production store satisfies both, the type assertion in
+// NewWorkflowServiceFromStore wires it up.
+type PlanFinalizer interface {
+	MaybeFinalizePlanForTask(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (bool, error)
 }
 
 // BundleStore is the adapter port for reading/writing the bundled config and

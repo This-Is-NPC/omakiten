@@ -24,7 +24,7 @@ func (m *Model) beginInput(mode inputMode, status, prefill string) {
 	m.status = status
 	m.moveMode = false
 	switch mode {
-	case modeComment:
+	case modeComment, modePlanGoal:
 		m.commentInput = newCommentInput()
 		m.commentInput.SetValue(prefill)
 		// Calibrate the persistent textarea geometry BEFORE CursorEnd so
@@ -65,13 +65,20 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
 		return m, tea.Quit
 	}
-	if m.mode == modeComment {
+	if m.mode == modeComment || m.mode == modePlanGoal {
 		bindings := newCommentInputBindings()
 		switch {
 		case key.Matches(msg, bindings.Cancel):
 			m.cancelInput()
 			return m, nil
-		case key.Matches(msg, bindings.Save):
+		case m.mode == modePlanGoal && msg.String() == "ctrl+s":
+			// Plan goal body is a full-panel multi-line editor; Enter
+			// stays bound to "insert newline" so markdown lists and
+			// paragraphs land naturally. Save is ctrl+s instead — same
+			// keystroke as the dedicated comment-edit overlay.
+			m.submitInput()
+			return m, nil
+		case m.mode == modeComment && key.Matches(msg, bindings.Save):
 			m.submitInput()
 			return m, nil
 		}
@@ -100,6 +107,7 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) cancelInput() {
 	m.mode = modeNormal
 	m.commentEditID = 0
+	m.planGoalEditingID = 0
 	m.commentInput = newCommentInput()
 	m.moveInput = newMoveInput()
 	m.status = m.t("tui.status.cancelled")
@@ -115,14 +123,20 @@ func (m *Model) cancelInput() {
 // model returns to normal navigation regardless of outcome.
 func (m *Model) submitInput() {
 	var input string
-	if m.mode == modeComment {
-		input = strings.TrimSpace(m.commentInput.Value())
-	} else {
+	switch m.mode {
+	case modeComment, modePlanGoal:
+		input = m.commentInput.Value()
+	default:
 		input = strings.TrimSpace(m.moveInput.Value())
 	}
-	if input == "" {
-		m.status = m.t("tui.status.input_required")
-		return
+	// modePlanGoal accepts an empty body (a deliberate clear), so the
+	// input-required guard only fires for the other modal flavours.
+	if m.mode != modePlanGoal {
+		input = strings.TrimSpace(input)
+		if input == "" {
+			m.status = m.t("tui.status.input_required")
+			return
+		}
 	}
 
 	var savedTask domain.Task
@@ -145,12 +159,20 @@ func (m *Model) submitInput() {
 		}
 		savedTask, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry, m.repos.activeSnapshot()).Move(m.ctx, m.project, task.ID, input)
 		selectSavedTask = true
+	case modePlanGoal:
+		if m.repos.Plans == nil || m.planGoalEditingID == 0 {
+			err = domain.NewError(domain.ErrValidation, "plan goal editor has no target plan", nil)
+			break
+		}
+		planSvc := app.NewPlanServiceWithSnapshot(m.repos.Plans, m.repos.activeSnapshot())
+		_, err = planSvc.UpdateGoalBody(m.ctx, m.project, m.planGoalEditingID, input)
 	}
 
 	if err != nil {
 		m.status = err.Error()
 		m.mode = modeNormal
 		m.commentEditID = 0
+		m.planGoalEditingID = 0
 		m.commentInput = newCommentInput()
 		m.moveInput = newMoveInput()
 		m.syncActivityScrollToCursor()
@@ -164,6 +186,9 @@ func (m *Model) submitInput() {
 		}
 		m.status = m.t("tui.status.saved")
 	}
+	if m.mode == modePlanGoal {
+		m.reloadPlanNetwork()
+	}
 	if m.taskID > 0 && m.taskScreen == taskScreenView {
 		if err := m.refreshTaskActivity(m.taskID); err != nil {
 			m.status = err.Error()
@@ -171,6 +196,7 @@ func (m *Model) submitInput() {
 	}
 	m.mode = modeNormal
 	m.commentEditID = 0
+	m.planGoalEditingID = 0
 	m.commentInput = newCommentInput()
 	m.moveInput = newMoveInput()
 	m.syncActivityScrollToCursor()

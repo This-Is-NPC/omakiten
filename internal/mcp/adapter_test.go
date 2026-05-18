@@ -196,6 +196,13 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		"solutions.add",
 		"solutions.confirm",
 		"metrics.summary",
+		"plans.create",
+		"plans.list",
+		"plans.show",
+		"plans.add_wave",
+		"plans.assign_task",
+		"plans.claim_next",
+		"plans.continue",
 	}
 
 	for _, name := range tools {
@@ -221,6 +228,18 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 			args = map[string]any{"error_id": 1, "description": "try X"}
 		case "solutions.confirm":
 			args = map[string]any{"solution_id": 1, "success": true}
+		case "plans.create":
+			args = map[string]any{"slug": "demo-plan-" + name, "name": "Demo"}
+		case "plans.show":
+			args = map[string]any{"slug": "demo-plan-plans.create"}
+		case "plans.add_wave":
+			args = map[string]any{"slug": "demo-plan-plans.create", "name": "wave"}
+		case "plans.assign_task":
+			args = map[string]any{"task_id": 1, "slug": "demo-plan-plans.create", "wave_id": 1}
+		case "plans.claim_next":
+			args = map[string]any{"slug": "demo-plan-plans.create"}
+		case "plans.continue":
+			args = map[string]any{"slug": "demo-plan-plans.create"}
 		}
 		_, err := adapter.CallTool(ctx, name, withModel(args))
 		if err != nil {

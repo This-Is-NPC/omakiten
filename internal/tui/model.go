@@ -196,6 +196,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.handleListKey(msg)
 		case subGraph:
 			m.handleGraphKey(msg)
+		case subPlans:
+			if m.planNetworkOpen {
+				m.handlePlanNetworkKey(msg)
+			} else {
+				m.handlePlansKey(msg)
+			}
 		case subStatsGeneral:
 			m.handleStatsKey(msg)
 		case subStatsLogs:
@@ -444,7 +450,7 @@ func (m Model) renderView() string {
 	if m.helpOpen {
 		return clampViewToHeight(m.height, m.renderHeader(), m.renderHelp(), m.renderHelpFooter())
 	}
-	if m.mode != modeNormal && !m.isEmbeddedCommentInput() {
+	if m.mode != modeNormal && !m.isEmbeddedCommentInput() && !m.isFullPanelTextareaInput() {
 		return clampViewToHeight(m.height, m.renderHeader(), m.renderInput(), m.renderCurrentView(), m.renderFooter())
 	}
 
@@ -454,6 +460,14 @@ func (m Model) renderView() string {
 	}
 	parts = append(parts, m.renderCurrentView(), m.renderFooter())
 	return clampViewToHeight(m.height, parts...)
+}
+
+// isFullPanelTextareaInput is true while a modal owns the whole main
+// panel (not a single-line top-bar input). The plan goal editor is one
+// such mode — it renders the textarea inside renderPlanNetwork, so the
+// chrome must NOT also stack renderInput above it.
+func (m Model) isFullPanelTextareaInput() bool {
+	return m.mode == modePlanGoal
 }
 
 // dispatchNotification routes notification-related messages to the live notification
@@ -684,13 +698,13 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		m.moveMode = false
 		return true
 	case "n":
-		if m.top != topTasks {
+		if m.top != topTasks || m.inPlanNetwork() {
 			return false
 		}
 		m.openTaskCreate()
 		return true
 	case "e":
-		if m.top != topTasks {
+		if m.top != topTasks || m.inPlanNetwork() {
 			return false
 		}
 		if task, ok := m.selectedTask(); ok {
@@ -698,7 +712,7 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		}
 		return true
 	case "c":
-		if m.top != topTasks {
+		if m.top != topTasks || m.inPlanNetwork() {
 			return false
 		}
 		if _, ok := m.selectedTask(); ok {
@@ -706,6 +720,9 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		}
 		return true
 	case "r":
+		if m.inPlanNetwork() {
+			return false
+		}
 		if err := m.refreshCurrentView(); err != nil {
 			m.status = err.Error()
 		} else {
@@ -727,6 +744,16 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		return true
 	}
 	return false
+}
+
+// inPlanNetwork returns true when the user has drilled into the plans
+// sub-tab's column-per-wave network view. Used by handleCommonKey to
+// release `c`/`e`/`n`/`r` so the network handler can rebind them
+// (claim, future edit-goal, future add-task-to-wave, plan-show reload)
+// without colliding with the task-centric bindings that normally win
+// across sub-tabs.
+func (m *Model) inPlanNetwork() bool {
+	return m.sub == subPlans && m.planNetworkOpen
 }
 
 // cycleTop advances the active top by delta positions (positive forward,
@@ -816,11 +843,38 @@ func (m *Model) refresh() error {
 	if bundleSnap := m.repos.activeSnapshot(); bundleSnap != nil {
 		m.languages = bundleSnap.Settings().EffectiveLanguages()
 	}
+	if m.repos.Plans != nil {
+		// Plans sub-tab is best-effort: a query failure stays out of the
+		// refresh return value so an unrelated sub-tab (board/table/graph)
+		// still loads. The plans renderer shows the cached slice or the
+		// empty-state hint when m.plans is nil.
+		planSvc := app.NewPlanServiceWithSnapshot(m.repos.Plans, m.repos.activeSnapshot())
+		if rollups, err := planSvc.ListRollups(m.ctx, m.project); err == nil {
+			m.plans = rollups
+		}
+	}
+	m.clampPlanCursor()
 	m.clampSelection()
 	m.clampCardIdx()
 	m.clampEntityCursor()
 	m.syncSelectedFromBoard()
 	return nil
+}
+
+// clampPlanCursor keeps planCursor inside the [0, len(plans)-1] window
+// after refresh trims the rollup slice. Mirrors the clamp helpers around
+// it so a deleted plan does not leave the cursor pointing past the end.
+func (m *Model) clampPlanCursor() {
+	if m.planCursor < 0 {
+		m.planCursor = 0
+	}
+	if m.planCursor >= len(m.plans) {
+		if len(m.plans) == 0 {
+			m.planCursor = 0
+		} else {
+			m.planCursor = len(m.plans) - 1
+		}
+	}
 }
 
 func (m Model) computeMetrics(maxTokens int) domain.TokenMetrics {
