@@ -140,6 +140,11 @@ func (s *Store) SetTaskState(ctx context.Context, projectID, taskID int64, state
 		return domain.Task{}, domain.Event{}, err
 	}
 
+	var prevAssignedTo sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT assigned_to FROM tasks WHERE project_id = ? AND id = ?`, projectID, taskID).Scan(&prevAssignedTo); err != nil {
+		return domain.Task{}, domain.Event{}, err
+	}
+
 	bucketKey := prev.BucketKey
 	bucketArg := any(prev.BucketID)
 	if targetBucketKey != "" && targetBucketKey != prev.BucketKey {
@@ -153,14 +158,17 @@ func (s *Store) SetTaskState(ctx context.Context, projectID, taskID int64, state
 
 	// Same completed_at rule as MoveTask: archive into the final bucket
 	// stamps the timestamp; unarchive out of it clears. Active vs archived
-	// state does not gate the column — bucket membership does.
+	// state does not gate the column — bucket membership does. assigned_to
+	// follows the same release-on-bucket-change rule MoveTask applies, so
+	// archiving a claimed task drops the assignment cleanly.
 	isFinal := boolToInt(buckets.Workflow().FinalBucketKey() == bucketKey)
 	row := tx.QueryRowContext(ctx, `
 UPDATE tasks SET state = ?, bucket_id = ?, updated_at = CURRENT_TIMESTAMP,
-  completed_at = CASE WHEN ? = 1 THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE NULL END
+  completed_at = CASE WHEN ? = 1 THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE NULL END,
+  assigned_to  = CASE WHEN bucket_id != ? THEN NULL ELSE assigned_to END
 WHERE project_id = ? AND id = ?
 RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at
-`, string(state), bucketArg, isFinal, projectID, taskID)
+`, string(state), bucketArg, isFinal, bucketArg, projectID, taskID)
 	task, err := scanTask(row, bucketKey)
 	if err != nil {
 		return domain.Task{}, domain.Event{}, err
@@ -189,10 +197,27 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 		event = domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: eventType, Payload: string(payload)}
 	}
 
+	var unassignEv domain.Event
+	if prev.BucketID != 0 && prev.BucketKey != bucketKey && prevAssignedTo.Valid && prevAssignedTo.String != "" {
+		unassignPayload := fmt.Sprintf(`{"former_assignee":%q,"source":%q}`, prevAssignedTo.String, "task."+string(state))
+		if s.shouldLogEvent(domain.EventTypeTaskUnassigned) {
+			var err error
+			unassignEv, err = insertEntityEvent(ctx, tx, domain.EventEntityTask, taskID, projectID, domain.EventTypeTaskUnassigned, unassignPayload)
+			if err != nil {
+				return domain.Task{}, domain.Event{}, err
+			}
+		} else {
+			unassignEv = domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: domain.EventTypeTaskUnassigned, Payload: unassignPayload}
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return domain.Task{}, domain.Event{}, err
 	}
 	s.publishEvent(ctx, event)
+	if unassignEv.EventType != "" {
+		s.publishEvent(ctx, unassignEv)
+	}
 	return task, event, nil
 }
 

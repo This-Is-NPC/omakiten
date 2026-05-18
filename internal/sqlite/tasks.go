@@ -187,7 +187,8 @@ func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBuc
 	defer func() { _ = tx.Rollback() }()
 
 	var currentBucketID int64
-	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(bucket_id, 0) FROM tasks WHERE project_id = ? AND id = ?", projectID, taskID).Scan(&currentBucketID); err != nil {
+	var prevAssignedTo sql.NullString
+	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(bucket_id, 0), assigned_to FROM tasks WHERE project_id = ? AND id = ?", projectID, taskID).Scan(&currentBucketID, &prevAssignedTo); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
 		}
@@ -205,13 +206,22 @@ func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBuc
 	// bucket: COALESCE preserves the existing timestamp when the target
 	// already is final (no-op moves keep the original completion moment),
 	// and the ELSE NULL branch clears the column on any move out.
+	//
+	// assigned_to clears whenever the bucket changes: claim ownership is
+	// scoped to "currently being worked on" — any move (forward to review,
+	// backward to backlog, sideways via re-claim) releases the assignment
+	// so the next plans.claim_next sees a clean slot. The CASE WHEN bucket_id
+	// != ? expression reads the OLD bucket_id (SQLite evaluates UPDATE
+	// RHS against pre-mutation values), so the comparison is "old bucket
+	// != target".
 	isFinal := boolToInt(buckets.Workflow().FinalBucketKey() == targetBucketKey)
 	row := tx.QueryRowContext(ctx, `
 UPDATE tasks SET bucket_id = ?, updated_at = CURRENT_TIMESTAMP,
-  completed_at = CASE WHEN ? = 1 THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE NULL END
+  completed_at = CASE WHEN ? = 1 THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE NULL END,
+  assigned_to  = CASE WHEN bucket_id != ? THEN NULL ELSE assigned_to END
 WHERE project_id = ? AND id = ?
 RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at
-`, targetBucketID, isFinal, projectID, taskID)
+`, targetBucketID, isFinal, targetBucketID, projectID, taskID)
 
 	task, err := scanTask(row, targetBucketKey)
 	if err != nil {
@@ -219,6 +229,7 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 	}
 
 	var moveEv domain.Event
+	var unassignEv domain.Event
 	if currentBucketID != targetBucketID {
 		movePayload := fmt.Sprintf(`{"from":%q,"to":%q}`, currentBucketKey, targetBucketKey)
 		if s.shouldLogEvent(domain.EventTypeTaskMoved) {
@@ -230,6 +241,18 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 		} else {
 			moveEv = domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: domain.EventTypeTaskMoved, Payload: movePayload}
 		}
+		if prevAssignedTo.Valid && prevAssignedTo.String != "" {
+			unassignPayload := fmt.Sprintf(`{"former_assignee":%q,"source":"task.moved"}`, prevAssignedTo.String)
+			if s.shouldLogEvent(domain.EventTypeTaskUnassigned) {
+				var err error
+				unassignEv, err = insertEntityEvent(ctx, tx, domain.EventEntityTask, taskID, projectID, domain.EventTypeTaskUnassigned, unassignPayload)
+				if err != nil {
+					return domain.Task{}, err
+				}
+			} else {
+				unassignEv = domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: domain.EventTypeTaskUnassigned, Payload: unassignPayload}
+			}
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -237,6 +260,9 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 	}
 	if moveEv.EventType != "" {
 		s.publishEvent(ctx, moveEv)
+	}
+	if unassignEv.EventType != "" {
+		s.publishEvent(ctx, unassignEv)
 	}
 	return task, nil
 }
