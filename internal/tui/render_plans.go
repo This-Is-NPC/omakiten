@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"omakiten/internal/app"
 )
 
 // handlePlansKey drives the Tasks › plans sub-tab list view. j/k move
@@ -48,11 +50,57 @@ func (m *Model) handlePlansKey(msg tea.KeyMsg) {
 			m.planCursor = len(m.plans) - 1
 			m.syncPlansScroll()
 		}
+	case "enter":
+		m.openPlanNetwork()
 	case "r":
 		if err := m.refreshPreservingTaskSelection(); err != nil {
 			m.status = err.Error()
 		}
 	}
+}
+
+// openPlanNetwork loads the cursored plan's full PlanShow projection and
+// flips planNetworkOpen. Failure leaves the list view in place and surfaces
+// the error in the status line; renderPlans stays responsible for the
+// fallback render in that case. No-op when the plan list is empty so a
+// stray enter from an unpopulated project does not erase the empty-state
+// hint.
+func (m *Model) openPlanNetwork() {
+	if m.planCursor < 0 || m.planCursor >= len(m.plans) {
+		return
+	}
+	if m.repos.Plans == nil {
+		return
+	}
+	planSvc := app.NewPlanServiceWithSnapshot(m.repos.Plans, m.repos.activeSnapshot())
+	slug := m.plans[m.planCursor].Plan.Slug
+	show, err := planSvc.Show(m.ctx, m.project, slug)
+	if err != nil {
+		m.status = err.Error()
+		return
+	}
+	m.planNetworkShow = show
+	m.planNetworkOpen = true
+	m.planNetworkWaveCursor = 0
+	m.planNetworkTaskCursor = 0
+	if show.ActiveWaveID > 0 {
+		for i, w := range show.Waves {
+			if w.Wave.ID == show.ActiveWaveID {
+				m.planNetworkWaveCursor = i
+				break
+			}
+		}
+	}
+}
+
+// closePlanNetwork flips the renderer back to the plans list view and
+// drops the cached PlanShow projection so the next open re-fetches fresh
+// counts (avoid stale done/total after a claim or move).
+func (m *Model) closePlanNetwork() {
+	m.planNetworkOpen = false
+	m.planNetworkShow = app.PlanShow{}
+	m.planNetworkWaveCursor = 0
+	m.planNetworkTaskCursor = 0
 }
 
 // syncPlansScroll keeps planScroll aligned so the cursor stays in view —

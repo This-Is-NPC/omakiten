@@ -400,6 +400,14 @@ type Model struct {
 	planCursor int
 	planScroll int
 
+	// planNetworkOpen flips when the user presses enter on a row in the
+	// plans list view — it swaps the renderer from the list view to the
+	// column-per-wave network diagram. esc / `q` flips back.
+	planNetworkOpen        bool
+	planNetworkShow        app.PlanShow
+	planNetworkWaveCursor  int
+	planNetworkTaskCursor  int
+
 	// statsSummary caches the last-fetched metrics summary. statsPeriod
 	// holds the active filter ("7d", "30d", "all"); refreshed on view entry
 	// and on period change via ←/→.

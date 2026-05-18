@@ -197,7 +197,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case subGraph:
 			m.handleGraphKey(msg)
 		case subPlans:
-			m.handlePlansKey(msg)
+			if m.planNetworkOpen {
+				m.handlePlanNetworkKey(msg)
+			} else {
+				m.handlePlansKey(msg)
+			}
 		case subStatsGeneral:
 			m.handleStatsKey(msg)
 		case subStatsLogs:

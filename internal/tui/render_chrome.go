@@ -137,6 +137,9 @@ func (m Model) renderCurrentView() string {
 	case subGraph:
 		return m.renderGraph()
 	case subPlans:
+		if m.planNetworkOpen {
+			return m.renderPlanNetwork()
+		}
 		return m.renderPlans()
 	case subStatsGeneral:
 		return m.renderStats()

@@ -1756,6 +1756,110 @@ func TestPlansSubTabRendersRollups(t *testing.T) {
 	}
 }
 
+// TestPlansSubTabEnterOpensNetwork covers the list → network transition:
+// enter on the cursored plan loads PlanService.Show, flips
+// planNetworkOpen, and the rendered view shows column headers (// W1,
+// // W2), per-wave done/total counts, the @assigned_to marker, and the
+// header progress badge. h moves the wave cursor; esc returns to the
+// list view.
+func TestPlansSubTabEnterOpensNetwork(t *testing.T) {
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	plan, err := store.CreatePlan(ctx, project.ID, "rollout", "Rollout", "")
+	if err != nil {
+		t.Fatalf("CreatePlan() error = %v", err)
+	}
+	w1, err := store.AddPlanWave(ctx, project.ID, plan.ID, "Foundation", 1)
+	if err != nil {
+		t.Fatalf("AddPlanWave(1) error = %v", err)
+	}
+	w2, err := store.AddPlanWave(ctx, project.ID, plan.ID, "Migration", 2)
+	if err != nil {
+		t.Fatalf("AddPlanWave(2) error = %v", err)
+	}
+	tOpen, err := store.CreateTask(ctx, project.ID, "foundation-task", "", domain.Priority(2), "backlog", snap)
+	if err != nil {
+		t.Fatalf("CreateTask(open) error = %v", err)
+	}
+	tGated, err := store.CreateTask(ctx, project.ID, "migration-task", "", domain.Priority(2), "backlog", snap)
+	if err != nil {
+		t.Fatalf("CreateTask(gated) error = %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, tOpen.ID, plan.ID, w1.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan(open) error = %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, tGated.ID, plan.ID, w2.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan(gated) error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	if got.sub != subPlans {
+		t.Fatalf("third '/': sub = %d, want subPlans", got.sub)
+	}
+
+	opened := pressKey(t, got, tea.KeyEnter)
+	if !opened.planNetworkOpen {
+		t.Fatalf("after enter: planNetworkOpen = false, want true")
+	}
+	if len(opened.planNetworkShow.Waves) != 2 {
+		t.Fatalf("planNetworkShow.Waves = %d, want 2", len(opened.planNetworkShow.Waves))
+	}
+
+	view := ansi.Strip(opened.View())
+	if !strings.Contains(view, "// PLAN · rollout") {
+		t.Fatalf("network header missing\n%s", view)
+	}
+	if !strings.Contains(view, "// W1") || !strings.Contains(view, "// W2") {
+		t.Fatalf("network missing wave headers\n%s", view)
+	}
+	if !strings.Contains(view, "‹active›") {
+		t.Fatalf("network missing active wave tag\n%s", view)
+	}
+	if !strings.Contains(view, "foundation-task") || !strings.Contains(view, "migration-task") {
+		t.Fatalf("network missing task titles\n%s", view)
+	}
+
+	advanced := pressRune(t, opened, 'l')
+	if advanced.planNetworkWaveCursor != 1 {
+		t.Fatalf("after 'l': planNetworkWaveCursor = %d, want 1", advanced.planNetworkWaveCursor)
+	}
+	back := pressRune(t, advanced, 'h')
+	if back.planNetworkWaveCursor != 0 {
+		t.Fatalf("after 'h': planNetworkWaveCursor = %d, want 0", back.planNetworkWaveCursor)
+	}
+
+	closed := pressKey(t, opened, tea.KeyEsc)
+	if closed.planNetworkOpen {
+		t.Fatalf("after esc: planNetworkOpen = true, want false")
+	}
+}
+
 // TestPlansSubTabEmptyState confirms the empty-state hint renders when
 // the project has no plans yet — covers the early-return branch in
 // renderPlans so the panel never collapses to a blank surface.
