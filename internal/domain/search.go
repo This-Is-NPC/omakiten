@@ -12,6 +12,7 @@ const (
 	SearchEntityError    SearchEntityType = "error"
 	SearchEntitySolution SearchEntityType = "solution"
 	SearchEntityContext  SearchEntityType = "context"
+	SearchEntityPlan     SearchEntityType = "plan"
 )
 
 // AllSearchEntityTypes is the canonical set of entity types the FTS5
@@ -24,14 +25,15 @@ func AllSearchEntityTypes() []SearchEntityType {
 		SearchEntityError,
 		SearchEntitySolution,
 		SearchEntityContext,
+		SearchEntityPlan,
 	}
 }
 
 // IsValidSearchEntityType reports whether the supplied value matches one
-// of the five indexed entity types.
+// of the six indexed entity types.
 func IsValidSearchEntityType(value string) bool {
 	switch SearchEntityType(value) {
-	case SearchEntityTask, SearchEntityComment, SearchEntityError, SearchEntitySolution, SearchEntityContext:
+	case SearchEntityTask, SearchEntityComment, SearchEntityError, SearchEntitySolution, SearchEntityContext, SearchEntityPlan:
 		return true
 	}
 	return false

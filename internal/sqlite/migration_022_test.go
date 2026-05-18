@@ -27,11 +27,11 @@ func TestMigration022SearchIndexCreates(t *testing.T) {
 	).Scan(&trigCount); err != nil {
 		t.Fatalf("count triggers: %v", err)
 	}
-	// 15 sync triggers (5 tables × INSERT/UPDATE/DELETE) plus the
+	// 18 sync triggers (6 tables × INSERT/UPDATE/DELETE) plus the
 	// defensive `search_index_comments_au_demote` cleanup trigger that
 	// drops stale rows when an event's `event_type` is mutated away
-	// from 'comment'.
-	if trigCount != 16 {
-		t.Fatalf("trigger count = %d, want 16", trigCount)
+	// from 'comment'. Plans were added in migration 024.
+	if trigCount != 19 {
+		t.Fatalf("trigger count = %d, want 19", trigCount)
 	}
 }
