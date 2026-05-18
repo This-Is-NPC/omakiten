@@ -15,8 +15,8 @@ $tmproot = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid()
 New-Item -ItemType Directory -Path $tmproot -Force | Out-Null
 
 try {
-    $home = Join-Path $tmproot "home"
-    New-Item -ItemType Directory -Path $home -Force | Out-Null
+    $tmpHome = Join-Path $tmproot "home"
+    New-Item -ItemType Directory -Path $tmpHome -Force | Out-Null
 
     $isWin = $false
     if (Get-Variable -Name IsWindows -ErrorAction SilentlyContinue) { $isWin = $IsWindows }
@@ -27,7 +27,7 @@ try {
         exit 0
     }
 
-    $profilePath = Join-Path $home "Documents\PowerShell\profile.ps1"
+    $profilePath = Join-Path $tmpHome "Documents\PowerShell\profile.ps1"
     $profileDir = Split-Path -Parent $profilePath
     New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
     Set-Content -Path $profilePath -Value "# user content above`n`$env:FOO = 'bar'`n" -NoNewline
@@ -45,9 +45,9 @@ try {
 
     function Invoke-Setup {
         $envVars = @{
-            HOME            = $home
-            USERPROFILE     = $home
-            OMAKITEN_HOME   = (Join-Path $home "oh")
+            HOME            = $tmpHome
+            USERPROFILE     = $tmpHome
+            OMAKITEN_HOME   = (Join-Path $tmpHome "oh")
             XDG_CONFIG_HOME = ""
             OKT_CLI_LANG    = "en"
             OKT_TUI_LANG    = "en"
@@ -106,8 +106,8 @@ try {
         HOME        = [Environment]::GetEnvironmentVariable("HOME", "Process")
         USERPROFILE = [Environment]::GetEnvironmentVariable("USERPROFILE", "Process")
     }
-    [Environment]::SetEnvironmentVariable("HOME", $home, "Process")
-    [Environment]::SetEnvironmentVariable("USERPROFILE", $home, "Process")
+    [Environment]::SetEnvironmentVariable("HOME", $tmpHome, "Process")
+    [Environment]::SetEnvironmentVariable("USERPROFILE", $tmpHome, "Process")
     try {
         & pwsh -NoProfile -File (Join-Path $repoRoot "uninstall.ps1") | Out-Null
     } finally {
