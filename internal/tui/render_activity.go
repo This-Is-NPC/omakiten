@@ -416,9 +416,9 @@ func (m *Model) syncActivityScrollToCursor() {
 }
 
 // activityViewportLines is the maximum number of LINES the activity column
-// renders before pagination kicks in. Sized to fully consume the outer
+// renders before pagination kicks in. Sized to consume the outer
 // `taskViewportHeight` budget so the column grows with the terminal — the
-// previous static chrome=12 left ~4 unused rows on every height because it
+// previous static chrome=12 left ~3 unused rows on every height because it
 // double-counted the screen header/footer the outer viewport already owns.
 //
 // The reserved chrome rows inside the panel are:
@@ -427,6 +427,9 @@ func (m *Model) syncActivityScrollToCursor() {
 //   - 2 for the screen footer (separator + keybindings)
 //   - 1 each for the activity panel's box top + bottom border
 //   - 1 for the kicker row ("// ACTIVITY · N") inside the panel
+//   - 1 trailing margin so the bottom border is never the last row written
+//     to the alt-screen (terminals that reserve a row for the cursor or a
+//     status line otherwise clip the border)
 //   - 1 extra when m.status renders an inline badge row
 //   - 9 extra when an embedded comment input is open (header + 5 input
 //     rows + hint + padding)
@@ -434,7 +437,7 @@ func (m Model) activityViewportLines() int {
 	if m.height <= 0 {
 		return 12
 	}
-	chrome := 8
+	chrome := 9
 	if m.status != "" {
 		chrome++
 	}

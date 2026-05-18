@@ -582,14 +582,31 @@ func TestActivityPanelFitsTerminalHeight(t *testing.T) {
 		model.height = h
 		model.width = 160
 
+		// Scenario A: just Tab. Cursor lands on first card, scroll=0.
+		// Bottom border must still fit even when scroll has 100+ lines
+		// below — this is the configuration in the user's screenshot
+		// where the box bottom did not render.
 		got := pressKey(t, model, tea.KeyEnter)
 		got = pressKey(t, got, tea.KeyTab)
+		viewTop := stripANSI(got.View())
+		linesTop := strings.Split(viewTop, "\n")
+		if len(linesTop) > h {
+			t.Errorf("h=%d top: View() rendered %d lines, must not exceed terminal height", h, len(linesTop))
+		}
+		hasBottom := false
+		for _, line := range linesTop {
+			if strings.Contains(line, "└") && strings.Contains(line, "┘") {
+				hasBottom = true
+				break
+			}
+		}
+		if !hasBottom {
+			t.Errorf("h=%d top: bottom border missing with cursor=0 (▼ below state)\n--- view ---\n%s", h, viewTop)
+		}
+
+		// Scenario B: G + j×31 → cursor on last card.
 		got = pressRune(t, got, 'G')
-		// j after G must keep the focused card AND the panel bottom border
-		// visible — this is the scenario from the user screenshot.
 		got = pressRune(t, got, 'j')
-		// Walk cursor to the very last event so the focused card sits at
-		// the bottom of the viewport — the symptom the user filmed.
 		for n := 0; n < 30; n++ {
 			got = pressRune(t, got, 'j')
 		}
@@ -610,6 +627,19 @@ func TestActivityPanelFitsTerminalHeight(t *testing.T) {
 		}
 		if !hasBottomBorder {
 			t.Errorf("h=%d: activity panel bottom border ('└...┘') missing from rendered view — clipped\n--- view ---\n%s", h, view)
+		}
+		// Bottom border must sit ABOVE the footer; if it's on the final
+		// rendered row, terminals that reserve a trailing cursor row will
+		// clip it. We assert at least one footer line lives after the
+		// border in the rendered output.
+		lastBorderIdx := -1
+		for i, line := range lines {
+			if strings.Contains(line, "└") && strings.Contains(line, "┘") {
+				lastBorderIdx = i
+			}
+		}
+		if lastBorderIdx == len(lines)-1 {
+			t.Errorf("h=%d: bottom border is the last rendered row (line %d/%d). Add chrome margin so footer follows.\n--- view ---\n%s", h, lastBorderIdx, len(lines), view)
 		}
 	}
 }
