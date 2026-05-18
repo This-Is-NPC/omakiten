@@ -440,3 +440,69 @@ func TestAddCommentTemplateSlugMergesBody(t *testing.T) {
 		t.Fatalf("comment body should embed template body, got %q", resp.Comment.Body)
 	}
 }
+
+// TestCreateTaskWithTemplateSlugSkipsDuplicateScaffold pins the dedupe
+// behavior in mergeUserBodyWithTemplate. When the agent fetches a template,
+// fills its sections, and then passes both the filled body AND the same
+// template_slug, the merge must detect the structural overlap and skip the
+// append — otherwise every `## …` section ends up duplicated, once with the
+// agent-filled content and once with the raw placeholder scaffold.
+func TestCreateTaskWithTemplateSlugSkipsDuplicateScaffold(t *testing.T) {
+	fixture := newAgentFixture(t)
+	scaffold := "## Description\n\nAs a [role], I want [capability].\n\n## Acceptance criteria\n\n1.\n\n## Definition of done\n\n- [ ] tests pass"
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
+			{Slug: "user-story", Name: "Story", Default: "task", Body: scaffold},
+		}))
+
+	filled := "## Description\n\nAs a developer, I want template dedupe.\n\n## Acceptance criteria\n\n1. filled scaffold is not duplicated.\n\n## Definition of done\n\n- [ ] regression test green"
+
+	resp, err := fixture.service.CreateTask(fixture.ctx, CreateTaskInput{
+		Title:        "Story",
+		Description:  filled,
+		TemplateSlug: "user-story",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if resp.Task == nil {
+		t.Fatal("CreateTask().Task = nil")
+	}
+	if resp.Task.Description != filled {
+		t.Fatalf("merged description should equal filled scaffold verbatim, got %q", resp.Task.Description)
+	}
+	if strings.Contains(resp.Task.Description, "As a [role]") {
+		t.Fatalf("merged description should not embed raw scaffold placeholder, got %q", resp.Task.Description)
+	}
+	if strings.Count(resp.Task.Description, "## Description") != 1 {
+		t.Fatalf("merged description should not duplicate the ## Description heading, got %q", resp.Task.Description)
+	}
+}
+
+// TestAddCommentTemplateSlugSkipsDuplicateScaffold mirrors the task surface
+// test on the comment path — same dedupe contract, same regression risk
+// because both surfaces flow through mergeUserBodyWithTemplate.
+func TestAddCommentTemplateSlugSkipsDuplicateScaffold(t *testing.T) {
+	fixture := newAgentFixture(t)
+	scaffold := "## What changed\n\n- [ ] entry\n\n## Open questions\n\n- [ ] question"
+	fixture.service.SetSnapshot(snapshotWithTemplates(t, []TemplateSummary{
+			{Slug: "comment-resume", Name: "Resume", Default: "comment-resume", Body: scaffold},
+		}))
+
+	filled := "## What changed\n\n- migrated tests.\n\n## Open questions\n\n- none."
+
+	resp, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		TaskID:       fixture.taskA1.ID,
+		Body:         filled,
+		AuthorType:   "agent",
+		TemplateSlug: "comment-resume",
+	})
+	if err != nil {
+		t.Fatalf("AddComment() error = %v", err)
+	}
+	if resp.Comment.Body != filled {
+		t.Fatalf("comment body should equal filled scaffold verbatim, got %q", resp.Comment.Body)
+	}
+	if strings.Count(resp.Comment.Body, "## What changed") != 1 {
+		t.Fatalf("comment body should not duplicate the ## What changed heading, got %q", resp.Comment.Body)
+	}
+}
