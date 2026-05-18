@@ -176,6 +176,30 @@ func (m Model) renderPlanNetwork() string {
 	colCount := len(show.Waves)
 	colInner := planNetworkColumnWidth(contentWidth, colCount)
 
+	// Pre-compute card heights and per-task vertical extents per wave so
+	// the inter-wave gutter router can anchor edges on the right
+	// midline regardless of how many content lines each card carries.
+	cardHeights := make(map[int64]int)
+	for _, wv := range show.Waves {
+		for _, t := range wv.Tasks {
+			cardHeights[t.TaskID] = planNetworkCardHeight(t, blockers, dependents)
+		}
+	}
+	waveExtents := make([]map[int64]planNetworkBoxExtent, len(show.Waves))
+	for i, wv := range show.Waves {
+		waveExtents[i] = planNetworkBoxRows(wv, cardHeights)
+	}
+	waveToIdx := make(map[int64]int, len(show.Waves))
+	for i, wv := range show.Waves {
+		waveToIdx[wv.Wave.ID] = i
+	}
+	taskToWave := make(map[int64]int64)
+	for _, wv := range show.Waves {
+		for _, t := range wv.Tasks {
+			taskToWave[t.TaskID] = wv.Wave.ID
+		}
+	}
+
 	cells := make([]string, 0, colCount)
 	for i, wv := range show.Waves {
 		focused := i == m.planNetworkWaveCursor
@@ -186,11 +210,29 @@ func (m Model) renderPlanNetwork() string {
 		cells = append(cells, m.renderPlanNetworkColumn(wv, focused, cursorIdx, colInner, wv.Wave.ID == activeWaveID, wv.Wave.ID, activeWaveID, finalBucket, blockers, dependents, criticalPath, nextClaimableID))
 	}
 
+	// Compute the joined block's row count so each gutter is sized to
+	// match the tallest neighbouring column. lipgloss.JoinHorizontal
+	// auto-pads shorter columns with blank rows, so picking max works.
+	totalRows := 0
+	for _, c := range cells {
+		if h := strings.Count(c, "\n") + 1; h > totalRows {
+			totalRows = h
+		}
+	}
+
+	// Build inter-wave gutter strings carrying cross-wave edges.
+	const gutterWidth = 6
+	gutters := make([][]string, colCount-1)
+	for gi := 0; gi < colCount-1; gi++ {
+		edges := planNetworkCrossWaveEdges(show.Dependencies, gi, taskToWave, waveToIdx, waveExtents)
+		gutters[gi] = renderPlanNetworkGutter(gutterWidth, totalRows, edges)
+	}
+
 	var parts []string
 	for i, c := range cells {
 		parts = append(parts, c)
 		if i < len(cells)-1 {
-			parts = append(parts, " ")
+			parts = append(parts, m.styles.hintAccent.Render(strings.Join(gutters[i], "\n")))
 		}
 	}
 	board := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
@@ -212,6 +254,240 @@ func (m Model) renderPlanNetwork() string {
 		sb.WriteString(m.styles.hintAccent.Render(fmt.Sprintf("▶ next claimable: #%d", nextClaimableID)))
 	}
 	return sb.String()
+}
+
+// planNetworkCrossWaveEdges filters PlanShow.Dependencies down to the
+// edges that cross the gutter between adjacent waves gutterIdx and
+// gutterIdx+1. Each returned edge carries the rendered source row
+// (in the left wave column) and destination row (in the right wave
+// column) of the connected cards' midlines, so the gutter router
+// can draw the arrow directly.
+func planNetworkCrossWaveEdges(deps []domain.TaskDependency, gutterIdx int, taskToWave map[int64]int64, waveToIdx map[int64]int, extents []map[int64]planNetworkBoxExtent) []planNetworkGutterEdge {
+	if len(deps) == 0 {
+		return nil
+	}
+	var out []planNetworkGutterEdge
+	for _, d := range deps {
+		srcWave, ok := taskToWave[d.DependsOnTaskID]
+		if !ok {
+			continue
+		}
+		dstWave, ok := taskToWave[d.TaskID]
+		if !ok {
+			continue
+		}
+		srcIdx, sok := waveToIdx[srcWave]
+		dstIdx, dok := waveToIdx[dstWave]
+		if !sok || !dok {
+			continue
+		}
+		// Only edges whose source sits in the left wave of THIS
+		// gutter (srcIdx == gutterIdx) and destination sits in the
+		// right wave (dstIdx == gutterIdx+1) belong here. Edges that
+		// skip a wave column are tracked separately (out of scope for
+		// the single-gutter MVP — they fall back to the inline
+		// markers).
+		if srcIdx != gutterIdx || dstIdx != gutterIdx+1 {
+			continue
+		}
+		srcRow, ok := extents[srcIdx][d.DependsOnTaskID]
+		if !ok {
+			continue
+		}
+		dstRow, ok := extents[dstIdx][d.TaskID]
+		if !ok {
+			continue
+		}
+		out = append(out, planNetworkGutterEdge{SrcY: srcRow.Mid, DstY: dstRow.Mid})
+	}
+	return out
+}
+
+// planNetworkBoxRows computes per-task vertical extents inside a
+// rendered wave column: returns each task's top row, mid row, and
+// bottom row (0-indexed from the top of the column). Used by the
+// edge-routing helper to anchor arrows on card midlines without
+// re-measuring every renderer call. headerRows = 2 (kicker +
+// separator) and each card is 1 (top border) + N content + 1
+// (bottom border), with no inter-card spacer because the cards stack
+// flush.
+func planNetworkBoxRows(wv app.PlanWaveView, cardHeights map[int64]int) map[int64]planNetworkBoxExtent {
+	out := make(map[int64]planNetworkBoxExtent, len(wv.Tasks))
+	y := 2 // header + separator rows
+	for _, t := range wv.Tasks {
+		h := cardHeights[t.TaskID]
+		if h < 3 {
+			h = 3
+		}
+		out[t.TaskID] = planNetworkBoxExtent{Top: y, Mid: y + h/2, Bottom: y + h - 1}
+		y += h
+	}
+	return out
+}
+
+// planNetworkBoxExtent records the rendered top / middle / bottom
+// row of one task card so the gutter router can anchor edges on the
+// card's midline (centred regardless of how many content lines the
+// card carries).
+type planNetworkBoxExtent struct {
+	Top    int
+	Mid    int
+	Bottom int
+}
+
+// planNetworkCardHeight measures the rendered height of a task's
+// card in rows: 2 border rows + the same content lines
+// renderPlanNetworkCard produces (head + optional @assignee + optional
+// ← blockers + optional → dependents). The helper stays decoupled
+// from the renderer so the gutter router can call it without holding a
+// Model receiver.
+func planNetworkCardHeight(t domain.PlanTaskRow, blockers, dependents map[int64][]int64) int {
+	content := 1 // head line
+	if t.AssignedTo != "" {
+		content++
+	}
+	if ids, ok := blockers[t.TaskID]; ok && len(ids) > 0 {
+		content++
+	}
+	if ids, ok := dependents[t.TaskID]; ok && len(ids) > 0 {
+		content++
+	}
+	return content + 2 // top + bottom borders
+}
+
+// renderPlanNetworkGutter draws the inter-wave gutter content as a
+// height-row slice of strings where each cross-wave dependency
+// surfaces as a horizontal line + bend + arrow. Source rows are the
+// source card's midline; destination rows are the destination card's
+// midline. The router writes into a small char grid sized
+// (gutterWidth, totalRows) and folds box-drawing junctions on
+// overlap.
+func renderPlanNetworkGutter(gutterWidth, totalRows int, edges []planNetworkGutterEdge) []string {
+	if gutterWidth <= 0 || totalRows <= 0 {
+		return nil
+	}
+	cells := make([][]uint8, totalRows)
+	for i := range cells {
+		cells[i] = make([]uint8, gutterWidth)
+	}
+
+	setDir := func(x, y int, dir uint8) {
+		if x < 0 || x >= gutterWidth || y < 0 || y >= totalRows {
+			return
+		}
+		cells[y][x] |= dir
+	}
+
+	for _, e := range edges {
+		// Route: horizontal across top half of gutter at srcY, vertical
+		// turn at midX, horizontal across bottom half at dstY.
+		midX := gutterWidth / 2
+		// horizontal: srcY 0..midX
+		for x := 0; x <= midX; x++ {
+			setDir(x, e.SrcY, dirE)
+			if x > 0 {
+				setDir(x, e.SrcY, dirW)
+			}
+		}
+		// vertical along midX between srcY and dstY (inclusive)
+		lo, hi := e.SrcY, e.DstY
+		if lo > hi {
+			lo, hi = hi, lo
+		}
+		for y := lo; y <= hi; y++ {
+			setDir(midX, y, dirN|dirS)
+		}
+		// fix endpoints of the vertical (no overshoot)
+		if e.SrcY < e.DstY {
+			cells[e.SrcY][midX] = cells[e.SrcY][midX] &^ dirN
+			cells[e.DstY][midX] = cells[e.DstY][midX] &^ dirS
+		} else if e.SrcY > e.DstY {
+			cells[e.SrcY][midX] = cells[e.SrcY][midX] &^ dirS
+			cells[e.DstY][midX] = cells[e.DstY][midX] &^ dirN
+		}
+		// horizontal: dstY midX..gutterWidth-1
+		for x := midX; x < gutterWidth; x++ {
+			setDir(x, e.DstY, dirE)
+			if x > midX {
+				setDir(x, e.DstY, dirW)
+			}
+		}
+		// final arrow head at the last column
+		cells[e.DstY][gutterWidth-1] |= dirArrow
+	}
+
+	out := make([]string, totalRows)
+	for y := 0; y < totalRows; y++ {
+		var sb strings.Builder
+		for x := 0; x < gutterWidth; x++ {
+			sb.WriteRune(planNetworkJunction(cells[y][x]))
+		}
+		out[y] = sb.String()
+	}
+	return out
+}
+
+// Direction flags for the char-grid cell. The grid stores a bitmask
+// per cell so overlapping edges fold into the right junction glyph
+// at render time.
+const (
+	dirN     uint8 = 1 << 0
+	dirS     uint8 = 1 << 1
+	dirE     uint8 = 1 << 2
+	dirW     uint8 = 1 << 3
+	dirArrow uint8 = 1 << 4
+)
+
+// planNetworkJunction picks the box-drawing glyph for a given
+// direction-flag bitmask. The 16 NSEW cases plus the explicit
+// arrowhead flag cover every junction the router emits.
+func planNetworkJunction(bits uint8) rune {
+	if bits&dirArrow != 0 {
+		return '→'
+	}
+	switch bits & (dirN | dirS | dirE | dirW) {
+	case 0:
+		return ' '
+	case dirN:
+		return '╵'
+	case dirS:
+		return '╷'
+	case dirN | dirS:
+		return '│'
+	case dirE:
+		return '╶'
+	case dirW:
+		return '╴'
+	case dirE | dirW:
+		return '─'
+	case dirN | dirE:
+		return '└'
+	case dirN | dirW:
+		return '┘'
+	case dirS | dirE:
+		return '┌'
+	case dirS | dirW:
+		return '┐'
+	case dirN | dirS | dirE:
+		return '├'
+	case dirN | dirS | dirW:
+		return '┤'
+	case dirN | dirE | dirW:
+		return '┴'
+	case dirS | dirE | dirW:
+		return '┬'
+	case dirN | dirS | dirE | dirW:
+		return '┼'
+	}
+	return ' '
+}
+
+// planNetworkGutterEdge identifies one cross-wave edge by row indices
+// inside the joined column block (already resolved to the actual
+// rendered row of the source and destination card midlines).
+type planNetworkGutterEdge struct {
+	SrcY int
+	DstY int
 }
 
 // planNetworkPeekNextClaimable wraps the PlanRepository peek so the
@@ -292,11 +568,12 @@ func planNetworkColumnWidth(contentWidth, colCount int) int {
 }
 
 // renderPlanNetworkColumn renders a single wave column: header (name +
-// per-wave done/total), a separator rule, then one row per task. The
-// focused-wave header uses the accent style so cursor focus is visible
-// even when no individual task carries the cursor. blockers maps every
-// dependent task id to its sorted blocker list so each task line can
-// suffix a "← #N #M" marker without re-scanning PlanShow.Dependencies.
+// per-wave done/total), a separator rule, then one bordered card per
+// task. Cards reuse the board's chrome (m.styles.card / cardSelected)
+// so the network view inherits the project's design language without a
+// new style token. Intra-plan blockers / dependents surface inline on
+// the card body; cross-wave routing lives in the inter-wave gutters
+// produced by renderPlanNetworkGutter, not here.
 func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursorIdx, width int, isActive bool, waveID, activeWaveID int64, finalBucket string, blockers, dependents map[int64][]int64, criticalPath map[int64]bool, nextClaimableID int64) string {
 	headerStyle := m.styles.muted
 	if focused {
@@ -319,49 +596,63 @@ func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursor
 	if len(wv.Tasks) == 0 {
 		rows = append(rows, m.styles.empty.Width(width).Render(m.t("tui.plans.network.empty_wave")))
 	}
+	// Card chrome (NormalBorder + Padding(0, 1)) reserves 2 cols for
+	// borders and 2 for padding, so the content width is width-4.
+	cardContent := width - 4
+	if cardContent < 8 {
+		cardContent = 8
+	}
 	for i, t := range wv.Tasks {
-		badge := planNetworkStatusBadge(t, waveID, activeWaveID, finalBucket)
-		marker := m.cursorMarker(focused && i == cursorIdx)
-		assignee := ""
-		if t.AssignedTo != "" {
-			assignee = " @" + t.AssignedTo
-		}
-		blockerMarker := ""
-		if ids, ok := blockers[t.TaskID]; ok && len(ids) > 0 {
-			parts := make([]string, len(ids))
-			for j, id := range ids {
-				parts[j] = fmt.Sprintf("#%d", id)
-			}
-			blockerMarker = " ← " + strings.Join(parts, " ")
-		}
-		dependentMarker := ""
-		if ids, ok := dependents[t.TaskID]; ok && len(ids) > 0 {
-			parts := make([]string, len(ids))
-			for j, id := range ids {
-				parts[j] = fmt.Sprintf("#%d", id)
-			}
-			dependentMarker = " → " + strings.Join(parts, " ")
-		}
-		title := fmt.Sprintf("%s %s #%d %s%s%s%s",
-			marker, badge, t.TaskID, t.Title, assignee, blockerMarker, dependentMarker,
-		)
-		rendered := truncateText(title, width)
-		// Prefix decorations: ▶ on the next-claimable candidate, ║ on
-		// every critical-path row. When both apply the next-claimable
-		// glyph wins the leading slot so a reviewer sees the actionable
-		// hint first; ║ still announces the chain via the accent style
-		// on the rest of the line.
-		switch {
-		case t.TaskID == nextClaimableID && criticalPath[t.TaskID]:
-			rendered = m.styles.hintAccent.Render("▶ ") + m.styles.hintAccent.Render(rendered)
-		case t.TaskID == nextClaimableID:
-			rendered = m.styles.hintAccent.Render("▶ ") + rendered
-		case criticalPath[t.TaskID]:
-			rendered = m.styles.hintAccent.Render("║ ") + rendered
-		}
-		rows = append(rows, rendered)
+		card := m.renderPlanNetworkCard(t, waveID, activeWaveID, finalBucket, focused && i == cursorIdx, blockers, dependents, criticalPath, nextClaimableID, width, cardContent)
+		rows = append(rows, card)
 	}
 	return strings.Join(rows, "\n")
+}
+
+// renderPlanNetworkCard renders a single task as a bordered card —
+// same chrome as renderCard on the board, with the network view's
+// status badge + critical-path / next-claimable border accents.
+func (m Model) renderPlanNetworkCard(t domain.PlanTaskRow, waveID, activeWaveID int64, finalBucket string, selected bool, blockers, dependents map[int64][]int64, criticalPath map[int64]bool, nextClaimableID int64, boxWidth, contentWidth int) string {
+	badge := planNetworkStatusBadge(t, waveID, activeWaveID, finalBucket)
+	// First line: badge + id + title.
+	headLine := fmt.Sprintf("%s #%d %s", badge, t.TaskID, t.Title)
+	lines := []string{truncateText(headLine, contentWidth)}
+
+	if t.AssignedTo != "" {
+		lines = append(lines, truncateText("@"+t.AssignedTo, contentWidth))
+	}
+	if ids, ok := blockers[t.TaskID]; ok && len(ids) > 0 {
+		parts := make([]string, len(ids))
+		for j, id := range ids {
+			parts[j] = fmt.Sprintf("#%d", id)
+		}
+		lines = append(lines, truncateText("← "+strings.Join(parts, " "), contentWidth))
+	}
+	if ids, ok := dependents[t.TaskID]; ok && len(ids) > 0 {
+		parts := make([]string, len(ids))
+		for j, id := range ids {
+			parts[j] = fmt.Sprintf("#%d", id)
+		}
+		lines = append(lines, truncateText("→ "+strings.Join(parts, " "), contentWidth))
+	}
+
+	body := strings.Join(lines, "\n")
+
+	// Border accent priority: cursor selection > next-claimable
+	// > critical-path > default. The card already uses NormalBorder
+	// with the project's neutral foreground; we override BorderForeground
+	// (not the full style) so padding + width stay consistent.
+	style := m.styles.card.Width(boxWidth)
+	switch {
+	case selected:
+		style = m.styles.cardSelected.Width(boxWidth)
+	case t.TaskID == nextClaimableID, criticalPath[t.TaskID]:
+		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
+	}
+	if t.State == domain.TaskStateArchived {
+		style = m.styles.archivedCard.Width(boxWidth)
+	}
+	return style.Render(body)
 }
 
 // renderPlanGoalEditor draws the modePlanGoal overlay: a full-panel

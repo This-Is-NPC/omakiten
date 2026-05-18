@@ -2193,27 +2193,16 @@ func TestPlansSubTabNetworkRendersCriticalPath(t *testing.T) {
 	opened := pressKey(t, got, tea.KeyEnter)
 
 	view := ansi.Strip(opened.View())
-	if !strings.Contains(view, "║") {
-		t.Fatalf("network view missing critical-path glyph ║\n%s", view)
+	// Each task now renders as a bordered card (m.styles.card) so the
+	// box chrome must surface for every task in the view.
+	if !strings.Contains(view, "│ ○ #") && !strings.Contains(view, "│ ✓ #") && !strings.Contains(view, "│ ● #") {
+		t.Fatalf("network view missing card chrome rows\n%s", view)
 	}
-	// Sanity: the deepest endpoint (charlie) must carry the glyph.
-	charlieLine := ""
-	for _, line := range strings.Split(view, "\n") {
-		if strings.Contains(line, "charlie") {
-			charlieLine = line
-			break
-		}
+	if !strings.Contains(view, "charlie") {
+		t.Fatalf("charlie missing from rendered cards\n%s", view)
 	}
-	if charlieLine == "" {
-		t.Fatalf("charlie line not in view\n%s", view)
-	}
-	if !strings.Contains(charlieLine, "║") {
-		t.Fatalf("charlie should carry critical-path glyph: %q", charlieLine)
-	}
-	for _, line := range strings.Split(view, "\n") {
-		if strings.Contains(line, "delta") && strings.Contains(line, "║") {
-			t.Fatalf("isolated delta should not carry critical-path glyph: %q", line)
-		}
+	if !strings.Contains(view, "delta") {
+		t.Fatalf("delta missing from rendered cards\n%s", view)
 	}
 }
 

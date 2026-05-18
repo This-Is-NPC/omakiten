@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"omakiten/internal/domain"
@@ -100,5 +101,73 @@ func TestPlanNetworkDepsFooterFormatsLine(t *testing.T) {
 func TestPlanNetworkDepsFooterEmpty(t *testing.T) {
 	if got := planNetworkDepsFooter(nil); got != "" {
 		t.Fatalf("footer = %q, want empty", got)
+	}
+}
+
+// TestPlanNetworkGutterDrawsHorizontalArrow proves the gutter router
+// emits a horizontal line + arrow head for a single cross-wave
+// dependency where source and destination cards share the same row.
+func TestPlanNetworkGutterDrawsHorizontalArrow(t *testing.T) {
+	rows := renderPlanNetworkGutter(6, 5, []planNetworkGutterEdge{{SrcY: 2, DstY: 2}})
+	if len(rows) != 5 {
+		t.Fatalf("rows = %d, want 5", len(rows))
+	}
+	// Row 2 should carry the horizontal line ending in an arrow head.
+	if !strings.Contains(rows[2], "─") {
+		t.Fatalf("row 2 missing horizontal line: %q", rows[2])
+	}
+	if !strings.Contains(rows[2], "→") {
+		t.Fatalf("row 2 missing arrow head: %q", rows[2])
+	}
+	// Other rows should be blank.
+	for i, r := range rows {
+		if i == 2 {
+			continue
+		}
+		if strings.TrimSpace(r) != "" {
+			t.Fatalf("row %d non-blank for single edge: %q", i, r)
+		}
+	}
+}
+
+// TestPlanNetworkGutterRoutesBend confirms the router draws a
+// horizontal-vertical-horizontal path with ┐/┘/┌/└ bends when the
+// source and destination cards do not share a row.
+func TestPlanNetworkGutterRoutesBend(t *testing.T) {
+	rows := renderPlanNetworkGutter(6, 6, []planNetworkGutterEdge{{SrcY: 1, DstY: 4}})
+	joined := strings.Join(rows, "\n")
+	// Bend glyphs surface: descending (left turn ┐ + right turn └)
+	// or the equivalents depending on midX placement. Assert at
+	// least one of the descending corners is rendered.
+	if !strings.ContainsAny(joined, "┐└┌┘") {
+		t.Fatalf("router did not emit any bend glyph:\n%s", joined)
+	}
+	if !strings.Contains(joined, "│") {
+		t.Fatalf("router did not emit vertical segment:\n%s", joined)
+	}
+	if !strings.Contains(joined, "→") {
+		t.Fatalf("router did not emit arrow head:\n%s", joined)
+	}
+}
+
+// TestPlanNetworkJunctionCoversFourWay confirms the junction table
+// renders the 4-way crossing (├ ┤ ┴ ┬ ┼) for overlapping edges.
+func TestPlanNetworkJunctionCoversFourWay(t *testing.T) {
+	cases := map[uint8]rune{
+		dirN | dirS:                       '│',
+		dirE | dirW:                       '─',
+		dirS | dirE:                       '┌',
+		dirN | dirE:                       '└',
+		dirN | dirS | dirE:                '├',
+		dirN | dirS | dirW:                '┤',
+		dirN | dirE | dirW:                '┴',
+		dirS | dirE | dirW:                '┬',
+		dirN | dirS | dirE | dirW:         '┼',
+		dirArrow:                          '→',
+	}
+	for bits, want := range cases {
+		if got := planNetworkJunction(bits); got != want {
+			t.Errorf("junction(%08b) = %q, want %q", bits, got, want)
+		}
 	}
 }
