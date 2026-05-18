@@ -61,7 +61,7 @@ The header renders a single chrome with two rows of tiles:
 
 | Top | Subs | Renderer family |
 |---|---|---|
-| `01 // TASKS` | `board` · `table` · `graph` | `render_board.go`, `render_table.go`, `render_graph.go` |
+| `01 // TASKS` | `board` · `table` · `graph` · `plans` | `render_board.go`, `render_table.go`, `render_graph.go`, `render_plans.go`, `render_plan_network.go` |
 | `02 // STATS` | `general` · `logs` | `render_stats.go`, `render_logs.go` |
 | `03 // SETTINGS` | `general` · `laws` · `personas` · `skills` · `templates` · `tags` | `render_settings_general.go`, `render_config.go` (wraps `render_entity.go`) |
 | `00 // HOME` (sentinel) | — | `render_home.go` |
@@ -139,6 +139,53 @@ The `primary` flag identifies the focal verb(s) of the surface (e.g. `enter open
 | `enter` | open task |
 | `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
 | `g` · `G` | jump to top / bottom |
+
+### Tasks › Plans
+
+The fourth Tasks sub-tab surfaces WBS-style plans (`render_plans.go`, `render_plan_network.go`). It is the in-TUI counterpart to the MCP `plans.*` tools and the `okt plan ...` CLI surface.
+
+The sub opens to a **list view** first; pressing `enter` on a plan opens the **network diagram** for that plan. `esc` returns to the list.
+
+**List view** — one row per plan in the active project:
+
+| Column | Source |
+|---|---|
+| slug | `plans.slug` |
+| status | `active` / `done` / `abandoned` |
+| done / total | child-task counts from `PlanService.ListRollups` |
+| percent | `done_count / total_count` |
+| name | `plans.name` |
+| active wave | name of the first wave with unfinished tasks |
+
+| Key | Action |
+|---|---|
+| `↑ ↓` · `j k` | select plan (auto-scrolls) |
+| `pgup` · `pgdn` · `home` · `end` | scroll / jump |
+| `enter` | open network view for the selected plan |
+| `r` | refresh |
+
+Empty state renders a hint when the active project has no plans.
+
+**Network diagram** — column-per-wave layout (`lipgloss.JoinHorizontal`):
+
+- Header line: `// PLAN · <slug> · done/total · percent` plus a keymap hint.
+- One column per wave in `position` order; wave headers carry the wave name and a `‹active›` marker on the first unfinished wave.
+- Tasks stack vertically inside their wave column.
+- Per-task status badge: `✓` done · `●` dev · `○` ready · `⊘` gated (wave_gate violation).
+- `@<assigned_to>` inline marker when `tasks.assigned_to` is non-NULL.
+- The wave-gate edge is invisible by design (the guard enforces it server-side); only explicit dependency arrows render between tasks.
+
+| Key | Action |
+|---|---|
+| `h` · `l` | move wave focus |
+| `j` · `k` | move task focus inside the focused wave |
+| `enter` · `o` | open the focused task in the standard task detail screen |
+| `r` | refetch plan via `PlanService.Show` |
+| `esc` · `q` | back to the list |
+
+The `c` (claim next) binding is reserved but not wired in the current scaffold — the TUI claim-identity convention is still open (see `feat/plans` notes). When wired, claiming from the TUI will stamp `assigned_to="human"` via `WithAgent("tui","tui","human","")` so the activity log distinguishes human claims from agent claims.
+
+`goal_body` edits go through an in-TUI textarea (consistent with the rest of the SQLite-backed entity surfaces); plans never shell out to `$EDITOR`.
 
 ### Stats › General
 

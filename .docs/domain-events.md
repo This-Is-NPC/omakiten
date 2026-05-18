@@ -34,6 +34,13 @@ referencing values outside it.
 | `comment`             | task                    | `Store.AddComment` (raw insert; this row IS the comment data) | comment body in `body` column; `Tags` via `event_tags`         | cli / mcp / tui   | true (data; gating not honored — see note) |
 | `comment.edited`      | task                    | `Store.UpdateComment`                                         | `{comment_id, body:{from,to}?}`                                | cli / mcp / tui   | true        |
 | `comment.removed`     | task                    | `Store.DeleteComment`                                         | `{comment_id, author_type, body}`                              | cli / mcp / tui   | true        |
+| `task.assigned`       | task                    | `TaskService.Assign` with non-empty `who`, or `PlanService.ClaimNext` on the claiming agent | `{task_id, assigned_to}`                                       | cli / mcp / tui   | true        |
+| `task.unassigned`     | task                    | `TaskService.Assign` with empty `who`, or transition OUT of `dev` clears the field | `{task_id, prior_assigned_to}`                                | cli / mcp / tui   | true        |
+| `plan.created`        | plan                    | `PlanService.Create`                                          | `{plan_id, slug, name}`                                        | cli / mcp / tui   | true        |
+| `plan.wave_added`     | plan                    | `PlanService.AddWave`                                         | `{plan_id, wave_id, name, position}`                           | cli / mcp / tui   | true        |
+| `plan.goal_edited`    | plan                    | `PlanService.EditGoalBody`                                    | `{plan_id, body:{from,to}}`                                    | cli / mcp / tui   | true        |
+| `plan.done`           | plan                    | Auto-emitted when the last child task closes (terminal bucket) | `{plan_id, slug}`                                              | system            | true        |
+| `plan.abandoned`      | plan                    | Explicit `PlanService.Abandon`                                | `{plan_id, slug}`                                              | cli / mcp / tui   | true        |
 | `tag.added`           | task / project / error  | `TagService.Add`                                              | `{entity_type, entity_id, tag_id, tag_name}`                   | cli / mcp / tui   | **false**   |
 | `tag.removed`         | task / project / error  | `TagService.Remove`                                           | `{entity_type, entity_id, tag_id, tag_name}`                   | cli / mcp / tui   | **false**   |
 | `dependency.added`    | task (the dependent)    | `DependencyService.Add`                                       | `{depends_on_task_id}`                                         | cli / mcp / tui   | true        |
@@ -87,7 +94,7 @@ are expected to honor the contracts; future work may add typed decoders.
 ```json
 {
   "operation":   "<task.transition | task.archive | task.delete | task.unarchive | task.edit | comment.edit | comment.delete>",
-  "rule":        "<transition_not_allowed | permissions | blockers_in | comments_min | comments_tagged | (any user-defined guard.Type)>",
+  "rule":        "<transition_not_allowed | permissions | blockers_in | comments_min | comments_tagged | wave_gate | (any user-defined guard.Type)>",
   "hint":        "<rendered guard message — same string returned in domain.ErrGuardViolation.Message>",
   "target":      { "task_id": 123, "from_bucket": "review", "to_bucket": "done" },
   "attempted_by": "user | agent"

@@ -24,7 +24,7 @@ Self-moves (current == target) skip both the transition check and guard evaluati
 
 ## Guard types
 
-Three types are supported. Anything else is rejected at validation time with `unknown guard type`.
+Four types are supported. Anything else is rejected at validation time with `unknown guard type`.
 
 ### `blockers_in`
 
@@ -92,6 +92,26 @@ Asserts that the task has at least `count` comments carrying a specific tag. The
 
 Tag matching is exact-name and case-sensitive — names are kebab-cased on insert (`internal/app/tag_normalization.go:NormalizeTagName`), so always reference them in kebab-case from the YAML.
 
+### `wave_gate`
+
+Asserts that every task in earlier waves of the same plan currently sits in the workflow's final bucket (terminal). Lets a workflow gate a wave so its tasks cannot enter `dev` while a prior wave is still in flight.
+
+```yaml
+- type: wave_gate
+  hint: "Wait for the previous wave to finish before starting this one."  # optional
+```
+
+No fields beyond `type` and `hint`. The wave order is read from `plan_waves.position`; the pending count is derived per-task by joining the task's `wave_id` against earlier-positioned siblings in the same plan.
+
+**Evaluation** (`internal/app/guards/evaluator.go:checkWaveGate`):
+
+- Resolves the task's plan/wave via `GuardEvaluationRepository.CountPriorWavesPending`.
+- Returns `0` (no-op pass) when the task has no `wave_id` — the guard is safe to wire into existing presets without affecting legacy tasks.
+- Otherwise counts tasks in waves with `position < currentWave.position` whose `bucket_id` is not the workflow's final bucket.
+- Fails with `guard_violation`, `rule="wave_gate"`, and `details.pending = N` when any prior-wave task is still in flight.
+
+The wave-gate edges themselves are not rendered in the network diagram (`internal/tui/plan_network.go`) — the guard is invisible by design so the diagram stays focused on intra/cross-wave dependency arrows.
+
 ## Multiple guards on the same transition
 
 Guards are stored and evaluated in declaration order. The **first** violation short-circuits and is the one returned to the user; later guards do not run. Pick the order that gives the most actionable error first.
@@ -127,6 +147,7 @@ Empty/missing `hint` is fine; the error stays terse.
 | `comments_min.count < 1` | `workflows.<wf> guard comments_min: count must be >= 1` |
 | `comments_tagged.tag` empty | `workflows.<wf> guard comments_tagged: tag is required` |
 | `comments_tagged.count < 1` | `workflows.<wf> guard comments_tagged: count must be >= 1` |
+| `wave_gate` carries extra fields | rejected — only `hint` is configurable; pending count is derived |
 
 A failed validation rejects `okt config validate` and any bundle import that would re-materialize the SQLite read model.
 

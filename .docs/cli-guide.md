@@ -179,6 +179,22 @@ okt archive 42
 okt unarchive 42
 ```
 
+### `okt assign TASK_ID [WHO]` — set or clear the task assignee
+
+`internal/cli/assign.go`. Calls `app.TaskService.Assign`. Sets the free-text `tasks.assigned_to` column. Omitting `WHO` (or passing an empty string) clears the assignment back to NULL — the documented recovery path when a claiming agent crashes without finishing.
+
+| Position | Required | Effect |
+|---|---|---|
+| `TASK_ID` | yes | Numeric task id. |
+| `WHO` | no | Free-text claimant (`claude-opus-4-7`, `gabriel`, `tui`, …). Empty = clear. |
+
+```sh
+okt assign 42 claude-opus-4-7      # claim
+okt assign 42                       # clear (recovery)
+```
+
+Emits `task.assigned` when set, `task.unassigned` when cleared. Listed at the top level (not under `okt task`) to match the existing flat surface (`okt move`, `okt edit`, `okt archive`, …).
+
 ---
 
 ## Comments
@@ -244,6 +260,47 @@ okt depend add 42 --on 41
 okt depend list 42
 okt depend remove 42 --on 41
 ```
+
+---
+
+## Plans
+
+`internal/cli/plan.go`. WBS-style orchestration: a plan groups child tasks into ordered waves and feeds the multi-agent claim flow exposed via MCP. Project-scoped — every call resolves against the active project (`--project` / `--project-id` / CWD).
+
+### `okt plan create SLUG --name NAME [--goal-body BODY]`
+
+Creates a plan in the active project. `slug` is required (kebab-case, unique per project); `--name` is required; `--goal-body` (`-g`) accepts a markdown string for the goal + acceptance criteria. Emits `plan.created`.
+
+### `okt plan list`
+
+Lists every plan in the active project with rollups (status, done/total tasks, percentage, active wave).
+
+### `okt plan show SLUG`
+
+Returns the full plan: waves, tasks per wave, percentage, active wave, claimable tasks. Read-only.
+
+### `okt plan wave-add SLUG NAME [--position N]`
+
+Appends a wave to the plan. `--position` defaults to `0` (auto-assign the next slot); pass a positive integer to insert at that position. Emits `plan.wave_added`.
+
+### `okt plan assign SLUG WAVE_ID TASK_ID`
+
+Attaches an existing task to `(plan, wave)`. Re-assigning within the same plan is idempotent.
+
+### `okt plan claim SLUG`
+
+Atomically reserves the next unblocked task in the plan's active wave. The CLI form is the human-driven counterpart to the MCP `plans.claim_next` tool: it inherits the same `BEGIN IMMEDIATE` serialisation and stamps `tasks.assigned_to` with the resolved agent identity (`OMAKITEN_AGENT_MODEL`, falling back to empty when unset). Returns `{claimed: false}` when nothing is currently claimable.
+
+```sh
+okt plan create plans-v1 --name "Plans rollout" --goal-body "Land WBS in 3 waves"
+okt plan wave-add plans-v1 "Schema"
+okt plan wave-add plans-v1 "MCP surface"
+okt plan assign plans-v1 1 42
+okt plan show plans-v1
+OMAKITEN_AGENT_MODEL=claude-opus-4-7 okt plan claim plans-v1
+```
+
+To clear an abandoned claim, run `okt assign <task_id>` (no `WHO`) or move the task back to `backlog`.
 
 ---
 
