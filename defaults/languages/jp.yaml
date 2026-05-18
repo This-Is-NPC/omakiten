@@ -901,3 +901,9 @@ keys:
   cli.plan.wave_add.flag.position: "Wave position (1-based); 0 appends after the current highest"
   cli.plan.assign.short: "Attach an existing task to a (plan, wave)"
   cli.plan.claim.short: "Atomically claim the next unblocked task in the plan's active wave (requires OMAKITEN_AGENT_MODEL)"
+
+  # Plans — wave_gate-specific notification copy (TODO translate).
+  notifications.omakase.guard_wave_gate.message: "Earlier wave still scouting. The party must regroup first."
+  notifications.shokunin.guard_wave_gate.message: "Earlier wave still on the bench. Hold this one until those are sealed."
+  notifications.izakaya.guard_wave_gate.message: "Last round's tab isn't closed yet — sit tight."
+  notifications.kaiseki.guard_wave_gate.message: "The previous course must finish before the next is plated."

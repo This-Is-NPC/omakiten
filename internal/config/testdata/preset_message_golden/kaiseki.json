@@ -6,6 +6,7 @@
   "Service does not retract a presented course.",
   "The record of service is preserved.",
   "The kitchen is not yet ready.",
+  "The previous course must finish before the next is plated.",
   "The course is sealed for service.",
   "Service notes remain as written.",
   "Service is not yet complete.",
