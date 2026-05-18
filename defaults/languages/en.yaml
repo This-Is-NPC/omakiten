@@ -906,3 +906,8 @@ keys:
   tui.plans.goal.hint.ctrl_s: "ctrl+s saves"
   tui.plans.goal.hint.alt_newline: "alt+enter newline"
   tui.plans.goal.hint.esc_cancel: "esc cancels"
+
+  # guard.* — hint strings surfaced in guard.violated payloads. Configurable
+  # via the preset's `hint:` field; presets reference these keys through
+  # `${{intl:guard.<rule>.hint}}` substitution.
+  guard.wave_gate.hint: "Wait for the previous wave to finish — earlier-wave tasks in the same plan must reach Done before this one starts."

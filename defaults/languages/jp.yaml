@@ -909,3 +909,6 @@ keys:
   notifications.shokunin.guard_wave_gate.message: "前の wave がまだ作業台にあります。 封印されるまで待機。"
   notifications.izakaya.guard_wave_gate.message: "前の一杯がまだ残っています — 少々お待ちを。"
   notifications.kaiseki.guard_wave_gate.message: "前の一品が終わってから次をお出しします。"
+
+  # guard.* — hint strings surfaced in guard.violated payloads.
+  guard.wave_gate.hint: "前の wave が完了するまで待ってください — 同じ plan の前 wave の tasks が Done に達してからこれを開始してください。"

@@ -909,3 +909,6 @@ keys:
   notifications.shokunin.guard_wave_gate.message: "मागील wave अद्याप कार्यपीठावर. मुद्रांकित होईपर्यंत थांबा."
   notifications.izakaya.guard_wave_gate.message: "मागील फेरी अद्याप बंद नाही — थांबा."
   notifications.kaiseki.guard_wave_gate.message: "पुढील देण्यापूर्वी मागील पदार्थ संपावा."
+
+  # guard.* — hint strings surfaced in guard.violated payloads.
+  guard.wave_gate.hint: "मागील wave संपण्याची प्रतीक्षा करा — याच plan मधील आधीच्या waves च्या tasks ही सुरू होण्यापूर्वी Done पर्यंत पोहोचाव्यात."

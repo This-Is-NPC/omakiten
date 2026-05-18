@@ -910,3 +910,6 @@ keys:
   notifications.shokunin.guard_wave_gate.message: "पिछली wave अभी कार्यपीठ पर है। मुहर लगने तक प्रतीक्षा करें।"
   notifications.izakaya.guard_wave_gate.message: "पिछला दौर अभी बंद नहीं — ज़रा रुकें।"
   notifications.kaiseki.guard_wave_gate.message: "अगला परोसने से पहले पिछला कोर्स पूरा होना चाहिए।"
+
+  # guard.* — hint strings surfaced in guard.violated payloads.
+  guard.wave_gate.hint: "पिछली wave के समाप्त होने की प्रतीक्षा करें — इस plan में पिछली waves की tasks को इसके शुरू होने से पहले Done तक पहुँचना चाहिए।"

@@ -912,3 +912,6 @@ keys:
   notifications.shokunin.guard_wave_gate.message: "Forrige wave er stadig på bænken. Vent til de er forseglet."
   notifications.izakaya.guard_wave_gate.message: "Sidste runde er ikke lukket endnu — vent lidt."
   notifications.kaiseki.guard_wave_gate.message: "Forrige ret skal afsluttes, før den næste anrettes."
+
+  # guard.* — hint strings surfaced in guard.violated payloads.
+  guard.wave_gate.hint: "Vent på, at den foregående wave afsluttes — tasks fra tidligere waves i samme plan skal nå Done, før denne starter."

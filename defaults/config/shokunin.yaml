@@ -256,7 +256,7 @@ workflows:
           - {type: comments_tagged, tag: pre-mortem, count: 1, hint: "Add a #pre-mortem comment naming the top failure modes, detection signals, and mitigations before any code lands."}
           - {type: comments_tagged, tag: risk-assessment, count: 1, hint: "Add a #risk-assessment naming the risk matrix, blast radius, SLO impact, and residual risk accepted."}
           - {type: blockers_in, buckets: [done, docs], hint: "Every blocker must be in Done or Documentation before development starts."}
-          - {type: wave_gate, hint: "Wait for the previous wave to finish — earlier-wave tasks in the same plan must reach Done before this one starts."}
+          - {type: wave_gate, hint: "${{intl:guard.wave_gate.hint}}"}
       - from: 3
         to: 4
         guards:

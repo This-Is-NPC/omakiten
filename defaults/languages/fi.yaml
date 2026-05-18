@@ -910,3 +910,6 @@ keys:
   notifications.shokunin.guard_wave_gate.message: "Edellinen wave vielä työpöydällä. Odota kunnes ne on sinetöity."
   notifications.izakaya.guard_wave_gate.message: "Edellinen kierros vielä auki — odota hetki."
   notifications.kaiseki.guard_wave_gate.message: "Edellinen ruokalaji on lopetettava ennen seuraavaa."
+
+  # guard.* — hint strings surfaced in guard.violated payloads.
+  guard.wave_gate.hint: "Odota, että edellinen wave valmistuu — saman planin aiempien wavejen taskien on saavutettava Done, ennen kuin tämä alkaa."

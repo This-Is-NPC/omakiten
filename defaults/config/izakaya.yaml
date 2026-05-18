@@ -209,7 +209,7 @@ workflows:
         to: 2
         guards:
           - {type: comments_tagged, tag: hypothesis, count: 1, hint: "Write the question this spike answers — file a #hypothesis comment with the question, why it matters, the falsifiable signal, and the time-box."}
-          - {type: wave_gate, hint: "Wait for the previous wave to finish — earlier-wave tasks in the same plan must reach Done before this one starts."}
+          - {type: wave_gate, hint: "${{intl:guard.wave_gate.hint}}"}
       - {from: 2, to: 3}
       - {from: 3, to: 2}
       - {from: 2, to: 1}

@@ -250,7 +250,7 @@ workflows:
           - {type: comments_tagged, tag: self-branch, count: 1, hint: "Add a #self-branch comment naming the branch and working path."}
           - {type: comments_tagged, tag: design, count: 1, hint: "Add a #design comment linking the design doc, decision record, or RFC that captures the approach before code lands."}
           - {type: blockers_in, buckets: [done, docs], hint: "Every blocker must be in Done or Documentation before development starts."}
-          - {type: wave_gate, hint: "Wait for the previous wave to finish — earlier-wave tasks in the same plan must reach Done before this one starts."}
+          - {type: wave_gate, hint: "${{intl:guard.wave_gate.hint}}"}
       - from: 3
         to: 4
         guards:

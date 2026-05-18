@@ -910,3 +910,6 @@ keys:
   notifications.shokunin.guard_wave_gate.message: "Vorige wave nog op de werkbank. Wacht tot ze verzegeld zijn."
   notifications.izakaya.guard_wave_gate.message: "De vorige ronde is nog niet afgesloten — even wachten."
   notifications.kaiseki.guard_wave_gate.message: "De vorige gang moet eerst klaar zijn voordat de volgende geserveerd wordt."
+
+  # guard.* — hint strings surfaced in guard.violated payloads.
+  guard.wave_gate.hint: "Wacht tot de vorige wave klaar is — tasks van eerdere waves in hetzelfde plan moeten Done bereiken voordat deze begint."

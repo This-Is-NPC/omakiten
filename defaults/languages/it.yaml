@@ -913,3 +913,6 @@ keys:
   notifications.shokunin.guard_wave_gate.message: "Wave precedente ancora sul banco. Aspetta finché non sono sigillate."
   notifications.izakaya.guard_wave_gate.message: "Il giro precedente non è ancora chiuso — pazienta."
   notifications.kaiseki.guard_wave_gate.message: "Il piatto precedente deve finire prima di servire il prossimo."
+
+  # guard.* — hint strings surfaced in guard.violated payloads.
+  guard.wave_gate.hint: "Aspetta che la wave precedente finisca — le task delle wave precedenti nello stesso plan devono raggiungere Done prima che questa inizi."

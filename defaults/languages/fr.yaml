@@ -913,3 +913,6 @@ keys:
   notifications.shokunin.guard_wave_gate.message: "La wave précédente est encore sur l'établi. Patientez avant celle-ci."
   notifications.izakaya.guard_wave_gate.message: "La tournée précédente n'est pas réglée — patientez."
   notifications.kaiseki.guard_wave_gate.message: "Le service précédent doit s'achever avant le suivant."
+
+  # guard.* — hint strings surfaced in guard.violated payloads.
+  guard.wave_gate.hint: "Attendez la fin de la wave précédente — les tasks des waves antérieures du même plan doivent atteindre Done avant que celle-ci ne commence."

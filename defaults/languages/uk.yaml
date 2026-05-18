@@ -911,3 +911,6 @@ keys:
   notifications.shokunin.guard_wave_gate.message: "Попередня wave ще на верстаті. Зачекайте, доки запечатаються."
   notifications.izakaya.guard_wave_gate.message: "Попередній раунд ще не закрито — зачекай."
   notifications.kaiseki.guard_wave_gate.message: "Попередня страва має завершитись перед наступною."
+
+  # guard.* — hint strings surfaced in guard.violated payloads.
+  guard.wave_gate.hint: "Зачекайте на завершення попередньої wave — tasks попередніх waves у тому ж plan мають досягти Done перед початком цієї."

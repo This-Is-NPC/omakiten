@@ -914,3 +914,6 @@ keys:
   notifications.shokunin.guard_wave_gate.message: "La wave anterior aún en el banco. Espera hasta que estén selladas."
   notifications.izakaya.guard_wave_gate.message: "La última ronda no se ha cerrado — espera un momento."
   notifications.kaiseki.guard_wave_gate.message: "El plato anterior debe terminar antes de servir el siguiente."
+
+  # guard.* — hint strings surfaced in guard.violated payloads.
+  guard.wave_gate.hint: "Espera a que la wave anterior termine — las tasks de waves anteriores en el mismo plan deben llegar a Done antes de que esta empiece."

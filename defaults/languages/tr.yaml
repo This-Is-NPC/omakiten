@@ -911,3 +911,6 @@ keys:
   notifications.shokunin.guard_wave_gate.message: "Önceki wave hâlâ tezgâhta. Mühürlenene dek bekle."
   notifications.izakaya.guard_wave_gate.message: "Önceki tur henüz kapanmadı — biraz bekle."
   notifications.kaiseki.guard_wave_gate.message: "Bir sonraki sunulmadan önce önceki yemek bitmeli."
+
+  # guard.* — hint strings surfaced in guard.violated payloads.
+  guard.wave_gate.hint: "Önceki wave'in bitmesini bekleyin — aynı plan içindeki önceki wave taskları bu başlamadan önce Done'a ulaşmalıdır."

@@ -902,3 +902,6 @@ keys:
   notifications.shokunin.guard_wave_gate.message: "前一个 wave 仍在台上。 等其封缄再说。"
   notifications.izakaya.guard_wave_gate.message: "上一轮还没结账 — 稍等。"
   notifications.kaiseki.guard_wave_gate.message: "上一道菜结束后才能呈下一道。"
+
+  # guard.* — hint strings surfaced in guard.violated payloads.
+  guard.wave_gate.hint: "等待前一个 wave 结束 — 同一个 plan 中前面 wave 的 tasks 必须到达 Done，这个才能开始。"

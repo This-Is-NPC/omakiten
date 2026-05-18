@@ -910,3 +910,6 @@ keys:
   notifications.shokunin.guard_wave_gate.message: "Poprzednia wave wciąż na stole. Poczekaj aż zostanie zapieczętowana."
   notifications.izakaya.guard_wave_gate.message: "Poprzednia kolejka jeszcze nie zamknięta — poczekaj."
   notifications.kaiseki.guard_wave_gate.message: "Poprzednie danie musi się skończyć przed następnym."
+
+  # guard.* — hint strings surfaced in guard.violated payloads.
+  guard.wave_gate.hint: "Poczekaj na zakończenie poprzedniej wave — taski z wcześniejszych waves w tym samym plan muszą osiągnąć Done, zanim ta się rozpocznie."

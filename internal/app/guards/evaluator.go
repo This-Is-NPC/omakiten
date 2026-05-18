@@ -175,26 +175,39 @@ func (e *Evaluator) runGuards(ctx context.Context, projectID, taskID int64, spec
 		target = defaultTarget
 	}
 	for _, guard := range specs {
+		hint := e.resolveHint(guard.Hint)
 		switch guard.Type {
 		case "blockers_in":
-			if err := e.checkBlockersIn(ctx, projectID, taskID, guard.Buckets, guard.Hint, operation, target); err != nil {
+			if err := e.checkBlockersIn(ctx, projectID, taskID, guard.Buckets, hint, operation, target); err != nil {
 				return err
 			}
 		case "comments_min":
-			if err := e.checkCommentsMin(ctx, projectID, taskID, guard.Count, guard.Hint, operation, target); err != nil {
+			if err := e.checkCommentsMin(ctx, projectID, taskID, guard.Count, hint, operation, target); err != nil {
 				return err
 			}
 		case "comments_tagged":
-			if err := e.checkCommentsTagged(ctx, projectID, taskID, guard.Tag, guard.Count, guard.Hint, operation, target); err != nil {
+			if err := e.checkCommentsTagged(ctx, projectID, taskID, guard.Tag, guard.Count, hint, operation, target); err != nil {
 				return err
 			}
 		case "wave_gate":
-			if err := e.checkWaveGate(ctx, projectID, taskID, guard.Hint, operation, target); err != nil {
+			if err := e.checkWaveGate(ctx, projectID, taskID, hint, operation, target); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// resolveHint expands `${{intl:KEY}}` tokens in guard hint strings via the
+// Snapshot's catalog projection so presets can keep hint copy in the
+// language catalog instead of hardcoding it in each YAML entry. The
+// inner-layer accessor `ResolveGuardHint` shields this package from
+// catalog/surface types (see internal/arch/i18n_boundary_test.go).
+func (e *Evaluator) resolveHint(hint string) string {
+	if hint == "" {
+		return ""
+	}
+	return e.snap.ResolveGuardHint(hint)
 }
 
 func (e *Evaluator) checkWaveGate(ctx context.Context, projectID, taskID int64, hint, operation string, target map[string]any) error {

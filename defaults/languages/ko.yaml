@@ -907,3 +907,6 @@ keys:
   notifications.shokunin.guard_wave_gate.message: "이전 wave 가 아직 작업대에 있음. 봉인될 때까지 대기."
   notifications.izakaya.guard_wave_gate.message: "이전 라운드가 아직 닫히지 않음 — 잠시 기다리세요."
   notifications.kaiseki.guard_wave_gate.message: "다음 코스를 내기 전에 이전 코스가 끝나야 합니다."
+
+  # guard.* — hint strings surfaced in guard.violated payloads.
+  guard.wave_gate.hint: "이전 wave가 완료될 때까지 기다리세요 — 같은 plan의 이전 wave tasks가 Done에 도달해야 이것을 시작할 수 있습니다."
