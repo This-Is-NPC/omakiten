@@ -40,7 +40,7 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 
 | From | To | Guards |
 |---|---|---|
-| `backlog` | `dev` | `#hypothesis`×1 |
+| `backlog` | `dev` | `#hypothesis`×1 · `wave_gate` |
 | `dev` | `done` | — |
 | `done` | `dev` | — |
 | `dev` | `backlog` | — |

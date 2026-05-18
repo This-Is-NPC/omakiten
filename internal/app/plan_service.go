@@ -138,20 +138,20 @@ func (s *PlanService) AddWave(ctx context.Context, project domain.ProjectContext
 // workflow's final bucket; ActiveWaveID is 0 when every wave is done
 // (or when the plan has no waves yet).
 type PlanShow struct {
-	Plan         domain.Plan
-	Waves        []PlanWaveView
-	DoneCount    int
-	TotalCount   int
-	ActiveWaveID int64
+	Plan         domain.Plan    `json:"plan"`
+	Waves        []PlanWaveView `json:"waves"`
+	DoneCount    int            `json:"done_count"`
+	TotalCount   int            `json:"total_count"`
+	ActiveWaveID int64          `json:"active_wave_id,omitempty"`
 }
 
 // PlanWaveView pairs a wave with its tasks and per-wave done/total
 // counts. Used by the TUI network diagram and by MCP plans.show.
 type PlanWaveView struct {
-	Wave       domain.PlanWave
-	Tasks      []domain.PlanTaskRow
-	DoneCount  int
-	TotalCount int
+	Wave       domain.PlanWave      `json:"wave"`
+	Tasks      []domain.PlanTaskRow `json:"tasks,omitempty"`
+	DoneCount  int                  `json:"done_count"`
+	TotalCount int                  `json:"total_count"`
 }
 
 // Show resolves a plan by slug and folds its waves + tasks into a single

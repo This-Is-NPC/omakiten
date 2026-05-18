@@ -161,7 +161,7 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 
 | From | To | Guards |
 |---|---|---|
-| `backlog` | `dev` | `#hypothesis`×1 |
+| `backlog` | `dev` | `#hypothesis`×1 · `wave_gate` |
 | `dev` | `done` | — |
 | `done` | `dev` | — |
 | `dev` | `backlog` | — |
@@ -288,7 +288,7 @@ Auto-derived from `defaults/config/omakase.yaml`.
 
 | From | To | Guards |
 |---|---|---|
-| `backlog` | `dev` | `#self-branch`×1 · blockers in `done` |
+| `backlog` | `dev` | `#self-branch`×1 · blockers in `done` · `wave_gate` |
 | `dev` | `review` | `#resume`×1 · `#tests-passing`×1 |
 | `review` | `done` | `#documentation`×1 |
 | `dev` | `backlog` | — |
@@ -421,7 +421,7 @@ Auto-derived from `defaults/config/kaiseki.yaml`.
 | From | To | Guards |
 |---|---|---|
 | `requirements` | `planning` | `#5w2h`×1 · `#requirements`×1 · `#acceptance`×1 |
-| `planning` | `dev` | `#self-branch`×1 · `#design`×1 · blockers in `done`,`docs` |
+| `planning` | `dev` | `#self-branch`×1 · `#design`×1 · blockers in `done`,`docs` · `wave_gate` |
 | `dev` | `review` | `#resume`×1 · `#tests-passing`×1 |
 | `review` | `docs` | `#peer-review`×1 |
 | `docs` | `done` | `#documentation`×1 |
@@ -558,7 +558,7 @@ Auto-derived from `defaults/config/shokunin.yaml`.
 | From | To | Guards |
 |---|---|---|
 | `requirements` | `planning` | `#5w2h`×1 · `#requirements`×1 · `#acceptance`×1 |
-| `planning` | `dev` | `#self-branch`×1 · `#pre-mortem`×1 · `#risk-assessment`×1 · blockers in `done`,`docs` |
+| `planning` | `dev` | `#self-branch`×1 · `#pre-mortem`×1 · `#risk-assessment`×1 · blockers in `done`,`docs` · `wave_gate` |
 | `dev` | `review` | `#resume`×1 · `#tests-passing`×1 · `#rollback-plan`×1 |
 | `review` | `docs` | `#peer-review`×2 |
 | `docs` | `done` | `#documentation`×1 · `#lessons-learned`×1 |

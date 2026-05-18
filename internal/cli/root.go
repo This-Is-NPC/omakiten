@@ -203,6 +203,7 @@ func NewRootCommand(version string) *cobra.Command {
 	cmd.AddCommand(newUnarchiveCommand(opts))
 	cmd.AddCommand(newCommentCommand(opts))
 	cmd.AddCommand(newDependCommand(opts))
+	cmd.AddCommand(newPlanCommand(opts))
 	cmd.AddCommand(newContextCommand(opts))
 	cmd.AddCommand(newWorkflowCommand(opts))
 	cmd.AddCommand(newConfigCommand(opts))
