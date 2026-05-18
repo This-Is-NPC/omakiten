@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -97,6 +99,95 @@ func TestSetupHarnesses_EmptyNamesIsNoOp(t *testing.T) {
 	results := SetupHarnesses(context.Background(), "/nonexistent/okt", nil)
 	if len(results) != 0 {
 		t.Fatalf("expected empty result slice, got %v", results)
+	}
+}
+
+// TestPowerShellProfileTargets_PerOS pins the per-OS resolution that
+// WritePowerShellWrappers depends on. The Windows shape carries both
+// the modern PS 7 path and the legacy PS 5.1 path in that order; other
+// platforms ship the cross-platform PS 7 path only.
+func TestPowerShellProfileTargets_PerOS(t *testing.T) {
+	got := PowerShellProfileTargets("")
+	if got != nil {
+		t.Fatalf("empty home should return nil targets, got %v", got)
+	}
+
+	got = PowerShellProfileTargets("/tmp/h")
+	if runtime.GOOS == "windows" {
+		want := []string{
+			filepath.Join("/tmp/h", "Documents", "PowerShell", "profile.ps1"),
+			filepath.Join("/tmp/h", "Documents", "WindowsPowerShell", "profile.ps1"),
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("windows targets: got %v want %v", got, want)
+		}
+		return
+	}
+	want := []string{filepath.Join("/tmp/h", ".config", "powershell", "profile.ps1")}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("non-windows targets: got %v want %v", got, want)
+	}
+}
+
+// TestWritePowerShellWrappers_TouchIfExistsOnPosix asserts the
+// non-Windows behaviour: the writer only lands the wrapper into a PS
+// profile that already exists, never materialising a new
+// `~/.config/powershell/` for users who don't run PS.
+func TestWritePowerShellWrappers_TouchIfExistsOnPosix(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("posix-only path; the Windows test forces the first target")
+	}
+	home := t.TempDir()
+	installed, err := WritePowerShellWrappers(home)
+	if err != nil {
+		t.Fatalf("WritePowerShellWrappers (no profile): %v", err)
+	}
+	if installed != nil {
+		t.Fatalf("expected no install when profile missing, got %v", installed)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "powershell", "profile.ps1")); err == nil {
+		t.Fatalf("WritePowerShellWrappers materialised profile.ps1 on a posix host")
+	}
+
+	// Seed the canonical profile and re-run — the writer should land
+	// the block in place.
+	profile := filepath.Join(home, ".config", "powershell", "profile.ps1")
+	if err := os.MkdirAll(filepath.Dir(profile), 0o755); err != nil {
+		t.Fatalf("mkdir for profile: %v", err)
+	}
+	if err := os.WriteFile(profile, []byte("# seeded\n"), 0o644); err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+	installed, err = WritePowerShellWrappers(home)
+	if err != nil {
+		t.Fatalf("WritePowerShellWrappers (seeded): %v", err)
+	}
+	if !reflect.DeepEqual(installed, []string{profile}) {
+		t.Fatalf("installed: got %v want %v", installed, []string{profile})
+	}
+	got, err := os.ReadFile(profile)
+	if err != nil {
+		t.Fatalf("read profile: %v", err)
+	}
+	if !strings.Contains(string(got), WrapperBegin) {
+		t.Fatalf("profile missing begin sentinel after install: %s", got)
+	}
+	if !strings.Contains(string(got), "# seeded") {
+		t.Fatalf("install dropped seeded content: %s", got)
+	}
+}
+
+// TestWritePowerShellWrappers_EmptyHomeReturnsNothing mirrors the
+// matching bash-side test — an empty HOME must produce a no-op result
+// without erroring so callers can safely thread `os.UserHomeDir()`'s
+// nil-on-error path through.
+func TestWritePowerShellWrappers_EmptyHomeReturnsNothing(t *testing.T) {
+	installed, err := WritePowerShellWrappers("")
+	if err != nil {
+		t.Fatalf("WritePowerShellWrappers on empty HOME: %v", err)
+	}
+	if installed != nil {
+		t.Fatalf("expected nil installed list on empty HOME, got %v", installed)
 	}
 }
 

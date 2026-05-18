@@ -142,6 +142,94 @@ func TestRemoveWrapper_MissingFile(t *testing.T) {
 	}
 }
 
+// TestPowerShellWrapperBlockSentinels mirrors TestWrapperBlockSentinels
+// for the PS flavour: sentinels stay byte-identical with the bash
+// block so a single uninstaller regex strips either rc shape, and the
+// block opens with the begin sentinel + LF / closes with LF + end so
+// install.ps1's prior Add-Content / Set-Content shape is preserved.
+func TestPowerShellWrapperBlockSentinels(t *testing.T) {
+	block := PowerShellWrapperBlock()
+	if !strings.HasPrefix(block, WrapperBegin+"\n") {
+		t.Fatalf("PowerShellWrapperBlock must start with begin sentinel + LF; got %q", block[:len(WrapperBegin)+8])
+	}
+	if !strings.HasSuffix(block, "\n"+WrapperEnd) {
+		t.Fatalf("PowerShellWrapperBlock must end with LF + end sentinel; got tail %q", block[len(block)-len(WrapperEnd)-1:])
+	}
+	if !strings.Contains(block, "function okt {") {
+		t.Fatalf("PowerShellWrapperBlock missing function declaration: %s", block)
+	}
+	// Bash function form must not appear in the PS block — they are
+	// rendered into the same sentinel range but never both at once.
+	if strings.Contains(block, "okt() {") {
+		t.Fatalf("PowerShellWrapperBlock leaked bash function form: %s", block)
+	}
+}
+
+// TestInstallPowerShellWrapper_Idempotent re-runs the install against a
+// seeded profile and asserts the swap produced a single sentinel
+// region (no duplicate blocks) and that surrounding content survives.
+// Mirror of TestInstallWrapper_Idempotent for the PS path.
+func TestInstallPowerShellWrapper_Idempotent(t *testing.T) {
+	profile := filepath.Join(t.TempDir(), "profile.ps1")
+	const seed = "# user content above\n$env:FOO = 'bar'\n"
+	if err := os.WriteFile(profile, []byte(seed), 0o644); err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+
+	if err := InstallPowerShellWrapper(profile); err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+	first, err := os.ReadFile(profile)
+	if err != nil {
+		t.Fatalf("read after first install: %v", err)
+	}
+	if got := strings.Count(string(first), WrapperBegin); got != 1 {
+		t.Fatalf("first install: want 1 begin sentinel, got %d", got)
+	}
+	if !strings.Contains(string(first), "$env:FOO = 'bar'") {
+		t.Fatalf("first install dropped seeded content: %s", first)
+	}
+	if !strings.Contains(string(first), "function okt {") {
+		t.Fatalf("first install missing PS function: %s", first)
+	}
+
+	if err := InstallPowerShellWrapper(profile); err != nil {
+		t.Fatalf("second install: %v", err)
+	}
+	second, err := os.ReadFile(profile)
+	if err != nil {
+		t.Fatalf("read after second install: %v", err)
+	}
+	if got := strings.Count(string(second), WrapperBegin); got != 1 {
+		t.Fatalf("re-install duplicated the block: got %d sentinels", got)
+	}
+	if string(first) != string(second) {
+		t.Fatalf("idempotent install diverged:\n--- first ---\n%s\n--- second ---\n%s", first, second)
+	}
+}
+
+// TestInstallPowerShellWrapper_CreatesMissingProfile pins
+// install.ps1's `New-Item -ItemType File -Force` behaviour for the
+// fresh-Windows-install case where `$PROFILE.CurrentUserAllHosts` does
+// not exist yet. The Go writer must materialise the file (and any
+// missing parent dirs) on demand.
+func TestInstallPowerShellWrapper_CreatesMissingProfile(t *testing.T) {
+	profile := filepath.Join(t.TempDir(), "Documents", "PowerShell", "profile.ps1")
+	if err := InstallPowerShellWrapper(profile); err != nil {
+		t.Fatalf("InstallPowerShellWrapper on missing path: %v", err)
+	}
+	got, err := os.ReadFile(profile)
+	if err != nil {
+		t.Fatalf("read profile: %v", err)
+	}
+	if !strings.Contains(string(got), WrapperBegin) {
+		t.Fatalf("created profile missing begin sentinel: %s", got)
+	}
+	if strings.Count(string(got), WrapperBegin) != 1 {
+		t.Fatalf("expected one begin sentinel, got %d", strings.Count(string(got), WrapperBegin))
+	}
+}
+
 // TestInstallWrapper_PreservesCRLF guards the rare case where a user
 // edited their rc file on Windows and the sentinel line carries CRLF
 // rather than LF. The swap path must preserve whichever terminator

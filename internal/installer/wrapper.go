@@ -20,10 +20,11 @@ const (
 )
 
 // wrapperBody is the literal okt() shell function written between the
-// sentinels. The bash and PowerShell installer wrappers only ever
-// write this block via the Go installer now — scripts/wrapper_idempotency_test.sh
-// builds the binary and re-runs `okt setup` against a seeded rc to
-// confirm a second install lands the same bytes.
+// sentinels for bash/zsh rc files. Both bash and PowerShell wrappers
+// only ever land via the Go installer now — scripts/wrapper_idempotency_test.sh
+// and scripts/wrapper_idempotency_test.ps1 build the binary and re-run
+// `okt setup` against a seeded rc/profile to confirm a second install
+// lands the same bytes.
 const wrapperBody = `# Auto-installed by omakiten. Lets ` + "`okt tui`" + ` cd the parent shell
 # into the project chosen on the Home screen when the TUI exits.
 # Remove with the bundled uninstall.sh; do not edit by hand.
@@ -46,8 +47,30 @@ okt() {
   return $rc
 }`
 
-// WrapperBlock returns the full sentinel-wrapped block (without a
-// trailing newline) the installer writes into the rc file. Exported so
+// powerShellWrapperBody is the PowerShell counterpart of wrapperBody.
+// Sentinels stay byte-identical so a single uninstaller regex strips
+// either flavour; the function calls `okt.exe` explicitly to bypass the
+// wrapping function (PowerShell's `command` builtin is the bash-only
+// idiom, so an explicit `.exe` is the portable way to disambiguate
+// here).
+const powerShellWrapperBody = `# Auto-installed by omakiten. Lets ` + "`okt tui`" + ` cd the parent shell
+# into the project chosen on the Home screen when the TUI exits.
+# Remove with the bundled uninstall.ps1; do not edit by hand.
+function okt {
+    $cdFile = if ($env:OKT_CD_FILE) { $env:OKT_CD_FILE } elseif ($env:XDG_RUNTIME_DIR) { Join-Path $env:XDG_RUNTIME_DIR 'okt-cd' } else { Join-Path $env:TEMP 'okt-cd' }
+    if (Test-Path $cdFile) { Remove-Item $cdFile -Force -ErrorAction SilentlyContinue }
+    & okt.exe @args
+    $rc = $LASTEXITCODE
+    if (Test-Path $cdFile) {
+        $target = (Get-Content $cdFile -TotalCount 1).Trim()
+        Remove-Item $cdFile -Force -ErrorAction SilentlyContinue
+        if ($target -and (Test-Path $target -PathType Container)) { Set-Location $target }
+    }
+    return $rc
+}`
+
+// WrapperBlock returns the full sentinel-wrapped bash/zsh block (without
+// a trailing newline) the installer writes into rc files. Exported so
 // callers can preview the bytes for a `--dry-run` mode or for tests
 // that need to assert on the wrapper contents without filesystem
 // involvement.
@@ -55,11 +78,35 @@ func WrapperBlock() string {
 	return WrapperBegin + "\n" + wrapperBody + "\n" + WrapperEnd
 }
 
-// InstallWrapper writes (or replaces) the wrapper block in rcPath. The
-// behaviour mirrors install.sh's install_wrapper_into:
-//   - if the file does not exist, it is created with the block
-//     prefixed by a single blank-line separator (so a freshly-created
-//     rc starts with one leading "\n");
+// PowerShellWrapperBlock returns the sentinel-wrapped PowerShell block
+// the installer writes into `$PROFILE.CurrentUserAllHosts`. The block
+// shares its sentinels with WrapperBlock so the uninstaller scrubs
+// either flavour with the same regex.
+func PowerShellWrapperBlock() string {
+	return WrapperBegin + "\n" + powerShellWrapperBody + "\n" + WrapperEnd
+}
+
+// InstallWrapper writes (or replaces) the bash/zsh wrapper block in
+// rcPath. Behaviour mirrors install.sh's install_wrapper_into; see
+// installBlockInto for the shared swap-or-append semantics.
+func InstallWrapper(rcPath string) error {
+	return installBlockInto(rcPath, WrapperBlock())
+}
+
+// InstallPowerShellWrapper writes (or replaces) the PowerShell wrapper
+// block in profilePath (typically `$PROFILE.CurrentUserAllHosts`). It
+// shares the swap-in-place / append-with-separator behaviour of
+// InstallWrapper so the on-disk shape stays consistent across flavours
+// and a single uninstaller pattern keeps working.
+func InstallPowerShellWrapper(profilePath string) error {
+	return installBlockInto(profilePath, PowerShellWrapperBlock())
+}
+
+// installBlockInto is the shared writer used by InstallWrapper and
+// InstallPowerShellWrapper:
+//   - if the file does not exist, it is created (parent dirs included)
+//     with the block prefixed by a single blank-line separator (so a
+//     freshly-created file starts with one leading "\n");
 //   - if the file lacks the sentinel, append the block prefixed by a
 //     blank line (matching the bash `printf '\n%s\n' "$block" >> "$rc"`
 //     idiom);
@@ -68,11 +115,10 @@ func WrapperBlock() string {
 //     WrapperEnd is replaced by the new block, surrounding content
 //     stays byte-identical.
 //
-// The function is idempotent: re-running on the same file produces the
-// same bytes (assuming wrapperBody is unchanged), which is the
-// invariant scripts/wrapper_idempotency_test.sh exercises against both
-// install.sh and this Go writer.
-func InstallWrapper(rcPath string) error {
+// The function is idempotent against itself: re-running with the same
+// block produces the same bytes, which is the invariant the
+// scripts/wrapper_idempotency_test.{sh,ps1} fixtures exercise.
+func installBlockInto(rcPath, block string) error {
 	if rcPath == "" {
 		return fmt.Errorf("installer: empty rc path")
 	}
@@ -81,20 +127,14 @@ func InstallWrapper(rcPath string) error {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("read %s: %w", rcPath, err)
 		}
-		// Create the parent dir on demand — rc files normally live in
-		// $HOME so the dir exists, but tests pin paths under a tmpdir
-		// that may not have been MkdirAll'd by the caller.
 		if err := os.MkdirAll(filepath.Dir(rcPath), 0o755); err != nil {
 			return fmt.Errorf("mkdir for %s: %w", rcPath, err)
 		}
 		existing = nil
 	}
 
-	block := WrapperBlock()
 	updated, replaced := replaceBlock(existing, block)
 	if !replaced {
-		// Match install.sh's `printf '\n%s\n' "$block" >> "$rc"` — one
-		// blank-line separator before the block, one newline after.
 		var buf bytes.Buffer
 		buf.Write(existing)
 		buf.WriteByte('\n')
