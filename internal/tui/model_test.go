@@ -2064,6 +2064,74 @@ func TestPlansSubTabNetworkRendersBlockerMarkers(t *testing.T) {
 	}
 }
 
+// TestPlansSubTabNetworkRendersDirectionalMarkers proves the network
+// view shows both ← and → markers (blockers + dependents) and the
+// "Dependencies:" footer line, so a reviewer can see the full edge
+// set at a glance.
+func TestPlansSubTabNetworkRendersDirectionalMarkers(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle: %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject: %v", err)
+	}
+	snap := store.Snapshot()
+	plan, err := store.CreatePlan(ctx, project.ID, "edges", "Edges", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 1)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	a, _ := store.CreateTask(ctx, project.ID, "alpha", "", domain.Priority(2), "backlog", snap)
+	b, _ := store.CreateTask(ctx, project.ID, "bravo", "", domain.Priority(2), "backlog", snap)
+	for _, tid := range []int64{a.ID, b.ID} {
+		if err := store.AssignTaskToPlan(ctx, project.ID, tid, plan.ID, wave.ID); err != nil {
+			t.Fatalf("AssignTaskToPlan: %v", err)
+		}
+	}
+	if _, err := store.AddTaskDependency(ctx, project.ID, b.ID, a.ID); err != nil {
+		t.Fatalf("AddTaskDependency: %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	model.height = 40
+	model.width = 160
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	opened := pressKey(t, got, tea.KeyEnter)
+	view := ansi.Strip(opened.View())
+
+	if !strings.Contains(view, "← #"+strconv.FormatInt(a.ID, 10)) {
+		t.Fatalf("missing blocker marker ← #%d\n%s", a.ID, view)
+	}
+	if !strings.Contains(view, "→ #"+strconv.FormatInt(b.ID, 10)) {
+		t.Fatalf("missing dependent marker → #%d\n%s", b.ID, view)
+	}
+	if !strings.Contains(view, "Dependencies:") {
+		t.Fatalf("missing deps footer\n%s", view)
+	}
+	if !strings.Contains(view, "▶ next claimable:") {
+		t.Fatalf("missing next-claimable indicator\n%s", view)
+	}
+}
+
 // TestPlansSubTabNetworkRendersCriticalPath proves the renderer
 // prefixes a leading "║" glyph on tasks that sit on the plan's
 // longest blocker chain. Seeds a 3-task chain A→B→C plus an

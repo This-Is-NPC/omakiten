@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/app"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/multilineform"
 )
@@ -162,11 +164,13 @@ func (m Model) renderPlanNetwork() string {
 	activeWaveID := show.ActiveWaveID
 
 	blockers := planNetworkBlockerIndex(show.Dependencies)
+	dependents := planNetworkDependentIndex(show.Dependencies)
 	allTasks := make([]domain.PlanTaskRow, 0)
 	for _, wv := range show.Waves {
 		allTasks = append(allTasks, wv.Tasks...)
 	}
 	criticalPath := planNetworkCriticalPath(show.Dependencies, allTasks)
+	nextClaimableID := planNetworkPeekNextClaimable(m.repos.Plans, m.ctx, m.project, show.Plan.ID, m.repos.activeSnapshot())
 
 	contentWidth := m.availableWidth() - 4
 	colCount := len(show.Waves)
@@ -179,7 +183,7 @@ func (m Model) renderPlanNetwork() string {
 		if focused {
 			cursorIdx = m.planNetworkTaskCursor
 		}
-		cells = append(cells, m.renderPlanNetworkColumn(wv, focused, cursorIdx, colInner, wv.Wave.ID == activeWaveID, wv.Wave.ID, activeWaveID, finalBucket, blockers, criticalPath))
+		cells = append(cells, m.renderPlanNetworkColumn(wv, focused, cursorIdx, colInner, wv.Wave.ID == activeWaveID, wv.Wave.ID, activeWaveID, finalBucket, blockers, dependents, criticalPath, nextClaimableID))
 	}
 
 	var parts []string
@@ -199,6 +203,63 @@ func (m Model) renderPlanNetwork() string {
 	sb.WriteString(indentBlock(m.styles.hintAccent.Render(header), 2))
 	sb.WriteString("\n\n")
 	sb.WriteString(indentBlock(board, 2))
+	if footer := planNetworkDepsFooter(show.Dependencies); footer != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(indentBlock(m.styles.muted.Render(footer), 2))
+	}
+	if nextClaimableID != 0 {
+		sb.WriteString("\n  ")
+		sb.WriteString(m.styles.hintAccent.Render(fmt.Sprintf("▶ next claimable: #%d", nextClaimableID)))
+	}
+	return sb.String()
+}
+
+// planNetworkPeekNextClaimable wraps the PlanRepository peek so the
+// renderer can highlight the candidate ClaimNext would reserve next.
+// Returns 0 when no candidate is available (or any repo / snap error)
+// so a failed peek never blocks the render.
+func planNetworkPeekNextClaimable(repo app.PlanRepository, ctx context.Context, project domain.ProjectContext, planID int64, snap *config.Snapshot) int64 {
+	if repo == nil || snap == nil || planID == 0 {
+		return 0
+	}
+	row, ok, err := repo.PeekNextClaimable(ctx, project.ID, planID, snap)
+	if err != nil || !ok {
+		return 0
+	}
+	return row.TaskID
+}
+
+// planNetworkDepsFooter renders the cross-task edge summary shown
+// under the diagram: "Dependencies: #A→#B,#C  #D→#E". Tasks are
+// ordered by dependent id; blockers per dependent stay sorted asc so
+// the line reads the same on every refresh.
+func planNetworkDepsFooter(deps []domain.TaskDependency) string {
+	if len(deps) == 0 {
+		return ""
+	}
+	bytask := map[int64][]int64{}
+	for _, d := range deps {
+		bytask[d.TaskID] = append(bytask[d.TaskID], d.DependsOnTaskID)
+	}
+	keys := make([]int64, 0, len(bytask))
+	for k := range bytask {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+
+	var sb strings.Builder
+	sb.WriteString("Dependencies: ")
+	for i, k := range keys {
+		if i > 0 {
+			sb.WriteString("  ")
+		}
+		sort.Slice(bytask[k], func(a, b int) bool { return bytask[k][a] < bytask[k][b] })
+		parts := make([]string, len(bytask[k]))
+		for j, b := range bytask[k] {
+			parts[j] = fmt.Sprintf("#%d", b)
+		}
+		fmt.Fprintf(&sb, "#%d→%s", k, strings.Join(parts, ","))
+	}
 	return sb.String()
 }
 
@@ -220,8 +281,12 @@ func planNetworkColumnWidth(contentWidth, colCount int) int {
 	if w < 12 {
 		return 12
 	}
-	if w > 36 {
-		return 36
+	// Cap at 56 columns so a very wide terminal does not stretch each
+	// card to the point of looking sparse, but a moderately wide one
+	// still has room for "○ #NN longer-task-title @assignee ← #N #M
+	// → #M #N" without truncating mid-marker.
+	if w > 56 {
+		return 56
 	}
 	return w
 }
@@ -232,7 +297,7 @@ func planNetworkColumnWidth(contentWidth, colCount int) int {
 // even when no individual task carries the cursor. blockers maps every
 // dependent task id to its sorted blocker list so each task line can
 // suffix a "← #N #M" marker without re-scanning PlanShow.Dependencies.
-func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursorIdx, width int, isActive bool, waveID, activeWaveID int64, finalBucket string, blockers map[int64][]int64, criticalPath map[int64]bool) string {
+func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursorIdx, width int, isActive bool, waveID, activeWaveID int64, finalBucket string, blockers, dependents map[int64][]int64, criticalPath map[int64]bool, nextClaimableID int64) string {
 	headerStyle := m.styles.muted
 	if focused {
 		headerStyle = m.styles.hintAccent
@@ -269,14 +334,29 @@ func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursor
 			}
 			blockerMarker = " ← " + strings.Join(parts, " ")
 		}
-		title := fmt.Sprintf("%s %s #%d %s%s%s",
-			marker, badge, t.TaskID, t.Title, assignee, blockerMarker,
+		dependentMarker := ""
+		if ids, ok := dependents[t.TaskID]; ok && len(ids) > 0 {
+			parts := make([]string, len(ids))
+			for j, id := range ids {
+				parts[j] = fmt.Sprintf("#%d", id)
+			}
+			dependentMarker = " → " + strings.Join(parts, " ")
+		}
+		title := fmt.Sprintf("%s %s #%d %s%s%s%s",
+			marker, badge, t.TaskID, t.Title, assignee, blockerMarker, dependentMarker,
 		)
 		rendered := truncateText(title, width)
-		if criticalPath[t.TaskID] {
-			// Critical-path rows get a leading double-rule glyph plus
-			// the accent style. Subtle by design — the user already
-			// has cursor/active markers competing for attention.
+		// Prefix decorations: ▶ on the next-claimable candidate, ║ on
+		// every critical-path row. When both apply the next-claimable
+		// glyph wins the leading slot so a reviewer sees the actionable
+		// hint first; ║ still announces the chain via the accent style
+		// on the rest of the line.
+		switch {
+		case t.TaskID == nextClaimableID && criticalPath[t.TaskID]:
+			rendered = m.styles.hintAccent.Render("▶ ") + m.styles.hintAccent.Render(rendered)
+		case t.TaskID == nextClaimableID:
+			rendered = m.styles.hintAccent.Render("▶ ") + rendered
+		case criticalPath[t.TaskID]:
 			rendered = m.styles.hintAccent.Render("║ ") + rendered
 		}
 		rows = append(rows, rendered)
@@ -400,6 +480,25 @@ func planNetworkBlockerIndex(deps []domain.TaskDependency) map[int64][]int64 {
 	out := make(map[int64][]int64, len(deps))
 	for _, d := range deps {
 		out[d.TaskID] = append(out[d.TaskID], d.DependsOnTaskID)
+	}
+	for k := range out {
+		sort.Slice(out[k], func(i, j int) bool { return out[k][i] < out[k][j] })
+	}
+	return out
+}
+
+// planNetworkDependentIndex inverts the dependency slice: blocker→
+// [dependent ids]. The renderer uses this to suffix "→ #N #M" on
+// every task that BLOCKS something else, complementing the
+// "← #N" blocker marker so a reviewer sees both sides of every edge
+// from one line.
+func planNetworkDependentIndex(deps []domain.TaskDependency) map[int64][]int64 {
+	if len(deps) == 0 {
+		return nil
+	}
+	out := make(map[int64][]int64, len(deps))
+	for _, d := range deps {
+		out[d.DependsOnTaskID] = append(out[d.DependsOnTaskID], d.TaskID)
 	}
 	for k := range out {
 		sort.Slice(out[k], func(i, j int) bool { return out[k][i] < out[k][j] })

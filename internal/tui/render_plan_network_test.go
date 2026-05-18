@@ -57,3 +57,48 @@ func TestPlanNetworkCriticalPathSurvivesCycle(t *testing.T) {
 	}
 	_ = planNetworkCriticalPath(deps, tasks)
 }
+
+// TestPlanNetworkDependentIndexInvertsEdges proves the dependent
+// lookup inverts the edge direction so the renderer can suffix
+// "→ #N" on the blocker side without rescanning the slice per row.
+func TestPlanNetworkDependentIndexInvertsEdges(t *testing.T) {
+	deps := []domain.TaskDependency{
+		{TaskID: 2, DependsOnTaskID: 1}, // 1 blocks 2
+		{TaskID: 3, DependsOnTaskID: 1}, // 1 blocks 3
+		{TaskID: 4, DependsOnTaskID: 2}, // 2 blocks 4
+	}
+	got := planNetworkDependentIndex(deps)
+	if len(got[1]) != 2 || got[1][0] != 2 || got[1][1] != 3 {
+		t.Fatalf("dependents[1] = %v, want [2 3]", got[1])
+	}
+	if len(got[2]) != 1 || got[2][0] != 4 {
+		t.Fatalf("dependents[2] = %v, want [4]", got[2])
+	}
+	if _, ok := got[4]; ok {
+		t.Fatalf("dependents[4] should not exist (4 is a leaf)")
+	}
+}
+
+// TestPlanNetworkDepsFooterFormatsLine confirms the footer reads
+// "Dependencies: #A→#B,#C  #D→#E" with stable ordering across
+// refreshes.
+func TestPlanNetworkDepsFooterFormatsLine(t *testing.T) {
+	deps := []domain.TaskDependency{
+		{TaskID: 3, DependsOnTaskID: 1},
+		{TaskID: 3, DependsOnTaskID: 2},
+		{TaskID: 4, DependsOnTaskID: 3},
+	}
+	got := planNetworkDepsFooter(deps)
+	want := "Dependencies: #3→#1,#2  #4→#3"
+	if got != want {
+		t.Fatalf("footer = %q, want %q", got, want)
+	}
+}
+
+// TestPlanNetworkDepsFooterEmpty confirms zero-dep plans return an
+// empty string so the renderer can skip writing the footer line.
+func TestPlanNetworkDepsFooterEmpty(t *testing.T) {
+	if got := planNetworkDepsFooter(nil); got != "" {
+		t.Fatalf("footer = %q, want empty", got)
+	}
+}

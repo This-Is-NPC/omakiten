@@ -129,6 +129,12 @@ depends = ["dev:install"]
 raw = true
 run = "go run ./cmd/okt init --name Omakiten --slug omakiten >/dev/null && go run ./cmd/okt --project omakiten tui"
 
+[tasks."tui:bare"]
+description = "Open the TUI against existing dev_env/ state — skips dev:install so a previously-set preset / pre-seeded data survives. Use after seeding fixtures (e.g. the plans showcase script)."
+env = { OMAKITEN_HOME = "dev_env" }
+raw = true
+run = "go run ./cmd/okt --project omakiten tui"
+
 [tasks."mcp:prompts"]
 description = "Render every okt-* MCP prompt's resolved markdown to stdout against the dev defaults"
 env = { OMAKITEN_HOME = "dev_env" }
