@@ -31,20 +31,24 @@ func (m *Model) handlePlanNetworkKey(msg tea.KeyMsg) {
 		if m.planNetworkWaveCursor > 0 {
 			m.planNetworkWaveCursor--
 			m.planNetworkTaskCursor = 0
+			m.syncPlanNetworkColScroll()
 		}
 	case "right", "l":
 		if m.planNetworkWaveCursor < len(m.planNetworkShow.Waves)-1 {
 			m.planNetworkWaveCursor++
 			m.planNetworkTaskCursor = 0
+			m.syncPlanNetworkColScroll()
 		}
 	case "up", "k":
 		if tasks := m.planNetworkCurrentTasks(); m.planNetworkTaskCursor > 0 && len(tasks) > 0 {
 			m.planNetworkTaskCursor--
+			m.syncPlanNetworkVScroll()
 		}
 	case "down", "j":
 		tasks := m.planNetworkCurrentTasks()
 		if m.planNetworkTaskCursor < len(tasks)-1 {
 			m.planNetworkTaskCursor++
+			m.syncPlanNetworkVScroll()
 		}
 	case "o", "enter":
 		tasks := m.planNetworkCurrentTasks()
@@ -129,6 +133,60 @@ func (m *Model) claimNextInPlanNetwork() {
 	m.reloadPlanNetwork()
 }
 
+// syncPlanNetworkColScroll mirrors syncBoardColScroll: keeps the
+// horizontal slide aligned so the focused wave stays inside the
+// per-screen capacity window. Called from h/l so a narrow terminal
+// scrolls automatically as the user navigates the wave cursor.
+func (m *Model) syncPlanNetworkColScroll() {
+	n := len(m.planNetworkShow.Waves)
+	if n == 0 {
+		m.planNetworkColScroll = 0
+		return
+	}
+	layout := m.computeBoardLayout(n)
+	cap := m.boardColumnCapacity(layout)
+	focused := clampInt(m.planNetworkWaveCursor, 0, n-1)
+	m.planNetworkColScroll = scrollIntoView(m.planNetworkColScroll, focused, n, cap)
+}
+
+// syncPlanNetworkVScroll mirrors syncBoardScroll: per-wave vertical
+// scroll so the focused task stays inside the panel's row budget
+// when a wave carries more cards than fit.
+func (m *Model) syncPlanNetworkVScroll() {
+	tasks := m.planNetworkCurrentTasks()
+	if len(tasks) == 0 || m.planNetworkWaveCursor < 0 || m.planNetworkWaveCursor >= len(m.planNetworkShow.Waves) {
+		return
+	}
+	viewport := m.planNetworkViewportRows()
+	if viewport <= 0 {
+		return
+	}
+	if m.planNetworkScroll == nil {
+		m.planNetworkScroll = map[int64]int{}
+	}
+	blockers := planNetworkBlockerIndex(m.planNetworkShow.Dependencies)
+	dependents := planNetworkDependentIndex(m.planNetworkShow.Dependencies)
+	heights := make([]int, len(tasks))
+	for i, t := range tasks {
+		// 2 border rows + content lines (mirrors renderPlanNetworkCard
+		// extras: title + optional @assignee + ← / → lines + badge row).
+		c := 1
+		if t.AssignedTo != "" {
+			c++
+		}
+		if len(blockers[t.TaskID]) > 0 {
+			c++
+		}
+		if len(dependents[t.TaskID]) > 0 {
+			c++
+		}
+		c++ // badge row
+		heights[i] = c + 2
+	}
+	waveID := m.planNetworkShow.Waves[m.planNetworkWaveCursor].Wave.ID
+	m.planNetworkScroll[waveID] = followScrollWindowSplit(m.planNetworkScroll[waveID], m.planNetworkTaskCursor, heights, viewport)
+}
+
 // planNetworkCurrentTasks returns the active task slice for the focused
 // wave; nil when the wave cursor is out of range or the wave has no
 // tasks. Archived rows stay in the slice so the network view mirrors the
@@ -172,9 +230,13 @@ func (m Model) renderPlanNetwork() string {
 	criticalPath := planNetworkCriticalPath(show.Dependencies, allTasks)
 	nextClaimableID := planNetworkPeekNextClaimable(m.repos.Plans, m.ctx, m.project, show.Plan.ID, m.repos.activeSnapshot())
 
-	contentWidth := m.availableWidth() - 4
 	colCount := len(show.Waves)
-	colInner := planNetworkColumnWidth(contentWidth, colCount)
+	// Reuse the board's layout helper so plan cards inherit the same
+	// min/max card-width clamp + per-column geometry as the kanban
+	// surface. Two surfaces, one width-discipline → no drift between
+	// `// board` and `// plans` when the user resizes the terminal.
+	layout := m.computeBoardLayout(colCount)
+	colInner := layout.columnInner
 
 	// Pre-compute card heights and per-task vertical extents per wave so
 	// the inter-wave gutter router can anchor edges on the right
@@ -200,14 +262,29 @@ func (m Model) renderPlanNetwork() string {
 		}
 	}
 
-	cells := make([]string, 0, colCount)
-	for i, wv := range show.Waves {
-		focused := i == m.planNetworkWaveCursor
+	// Horizontal slide: reuse the board's column-capacity helper +
+	// scrollIntoView so a narrow terminal carrying 5 waves behaves
+	// the same as a narrow terminal carrying 5 buckets.
+	cap := m.boardColumnCapacity(layout)
+	if cap > colCount {
+		cap = colCount
+	}
+	focused := clampInt(m.planNetworkWaveCursor, 0, colCount-1)
+	start := scrollIntoView(m.planNetworkColScroll, focused, colCount, cap)
+	end := start + cap
+	if end > colCount {
+		end = colCount
+	}
+
+	cells := make([]string, 0, end-start)
+	for i := start; i < end; i++ {
+		wv := show.Waves[i]
+		isFocused := i == m.planNetworkWaveCursor
 		cursorIdx := -1
-		if focused {
+		if isFocused {
 			cursorIdx = m.planNetworkTaskCursor
 		}
-		cells = append(cells, m.renderPlanNetworkColumn(wv, focused, cursorIdx, colInner, wv.Wave.ID == activeWaveID, wv.Wave.ID, activeWaveID, finalBucket, blockers, dependents, criticalPath, nextClaimableID))
+		cells = append(cells, m.renderPlanNetworkColumn(wv, isFocused, cursorIdx, colInner, wv.Wave.ID == activeWaveID, wv.Wave.ID, activeWaveID, finalBucket, blockers, dependents, criticalPath, nextClaimableID, layout))
 	}
 
 	// Compute the joined block's row count so each gutter is sized to
@@ -220,12 +297,15 @@ func (m Model) renderPlanNetwork() string {
 		}
 	}
 
-	// Build inter-wave gutter strings carrying cross-wave edges.
+	// Build inter-wave gutter strings carrying cross-wave edges. Only
+	// the gutters between waves currently in the visible window are
+	// drawn; off-screen waves contribute their edges to the off-screen
+	// hint instead.
 	const gutterWidth = 6
-	gutters := make([][]string, colCount-1)
-	for gi := 0; gi < colCount-1; gi++ {
+	gutters := make([][]string, 0, end-start-1)
+	for gi := start; gi < end-1; gi++ {
 		edges := planNetworkCrossWaveEdges(show.Dependencies, gi, taskToWave, waveToIdx, waveExtents)
-		gutters[gi] = renderPlanNetworkGutter(gutterWidth, totalRows, edges)
+		gutters = append(gutters, renderPlanNetworkGutter(gutterWidth, totalRows, edges))
 	}
 
 	var parts []string
@@ -245,6 +325,12 @@ func (m Model) renderPlanNetwork() string {
 	sb.WriteString(indentBlock(m.styles.hintAccent.Render(header), 2))
 	sb.WriteString("\n\n")
 	sb.WriteString(indentBlock(board, 2))
+	if cap < colCount {
+		// Mirror renderBoard's lanes_hint: show user the visible window
+		// vs total so the hidden waves are not silently dropped.
+		hint := fmt.Sprintf(m.t("tui.board.lanes_hint_fmt"), start+1, end, colCount)
+		sb.WriteString("\n  " + m.styles.hint.Render(hint))
+	}
 	if footer := planNetworkDepsFooter(show.Dependencies); footer != "" {
 		sb.WriteString("\n\n")
 		sb.WriteString(indentBlock(m.styles.muted.Render(footer), 2))
@@ -539,34 +625,6 @@ func planNetworkDepsFooter(deps []domain.TaskDependency) string {
 	return sb.String()
 }
 
-// planNetworkColumnWidth divides the available row width across the
-// wave columns with a 12-char floor so badges + slug + assignee still
-// fit on the narrowest viable terminal. Each column also reserves one
-// column of horizontal gutter when more than one wave renders, matching
-// the kanban board's spacer convention.
-func planNetworkColumnWidth(contentWidth, colCount int) int {
-	if colCount <= 0 {
-		return 12
-	}
-	gutters := colCount - 1
-	if gutters < 0 {
-		gutters = 0
-	}
-	usable := contentWidth - gutters
-	w := usable / colCount
-	if w < 12 {
-		return 12
-	}
-	// Cap at 56 columns so a very wide terminal does not stretch each
-	// card to the point of looking sparse, but a moderately wide one
-	// still has room for "○ #NN longer-task-title @assignee ← #N #M
-	// → #M #N" without truncating mid-marker.
-	if w > 56 {
-		return 56
-	}
-	return w
-}
-
 // renderPlanNetworkColumn renders a single wave column: header (name +
 // per-wave done/total), a separator rule, then one bordered card per
 // task. Cards reuse the board's chrome (m.styles.card / cardSelected)
@@ -574,7 +632,7 @@ func planNetworkColumnWidth(contentWidth, colCount int) int {
 // new style token. Intra-plan blockers / dependents surface inline on
 // the card body; cross-wave routing lives in the inter-wave gutters
 // produced by renderPlanNetworkGutter, not here.
-func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursorIdx, width int, isActive bool, waveID, activeWaveID int64, finalBucket string, blockers, dependents map[int64][]int64, criticalPath map[int64]bool, nextClaimableID int64) string {
+func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursorIdx, width int, isActive bool, waveID, activeWaveID int64, finalBucket string, blockers, dependents map[int64][]int64, criticalPath map[int64]bool, nextClaimableID int64, layout boardLayout) string {
 	headerStyle := m.styles.muted
 	if focused {
 		headerStyle = m.styles.hintAccent
@@ -596,17 +654,32 @@ func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursor
 	if len(wv.Tasks) == 0 {
 		rows = append(rows, m.styles.empty.Width(width).Render(m.t("tui.plans.network.empty_wave")))
 	}
-	// Card chrome (NormalBorder + Padding(0, 1)) reserves 2 cols for
-	// borders and 2 for padding, so the content width is width-4.
-	cardContent := width - 4
-	if cardContent < 8 {
-		cardContent = 8
-	}
+	// Render every card up front so the (optional) vertical scroll
+	// helper sees real heights — mirrors renderKanbanCell.
+	rendered := make([]string, len(wv.Tasks))
+	heights := make([]int, len(wv.Tasks))
 	for i, t := range wv.Tasks {
-		card := m.renderPlanNetworkCard(t, waveID, activeWaveID, finalBucket, focused && i == cursorIdx, blockers, dependents, criticalPath, nextClaimableID, width, cardContent)
-		rows = append(rows, card)
+		rendered[i] = m.renderPlanNetworkCard(t, waveID, activeWaveID, finalBucket, focused && i == cursorIdx, blockers, dependents, criticalPath, nextClaimableID, layout.cardWidth, layout.cardContentWidth)
+		heights[i] = strings.Count(rendered[i], "\n") + 1
 	}
+	viewport := m.planNetworkViewportRows()
+	if viewport <= 0 {
+		rows = append(rows, rendered...)
+		return strings.Join(rows, "\n")
+	}
+	offset := m.planNetworkScroll[wv.Wave.ID]
+	rows = append(rows, m.renderScrollWindowSplit(rendered, heights, offset, viewport)...)
 	return strings.Join(rows, "\n")
+}
+
+// planNetworkViewportRows mirrors boardViewportRows for the plan
+// network surface. Per-column chrome inside renderPlanNetworkColumn
+// is 2 lines (wave header + rule), and the screen chrome around the
+// board (kicker + blank + footer hints) eats roughly the same budget
+// as the kanban board, so reuse the same chrome=4 constant for
+// consistency between the two views.
+func (m Model) planNetworkViewportRows() int {
+	return m.panelViewportRows(6)
 }
 
 // renderPlanNetworkCard renders a single task through the shared

@@ -407,6 +407,13 @@ type Model struct {
 	planNetworkShow        app.PlanShow
 	planNetworkWaveCursor  int
 	planNetworkTaskCursor  int
+	// planNetworkColScroll mirrors boardColScroll for the wave columns:
+	// horizontal slide offset when the wave count exceeds the
+	// per-screen capacity. planNetworkScroll mirrors boardScroll —
+	// per-wave vertical scroll so a single wave with many tasks does
+	// not push the diagram off the bottom of the panel.
+	planNetworkColScroll int
+	planNetworkScroll    map[int64]int
 	// planGoalEditingID names the plan whose goal_body is open in the
 	// modePlanGoal textarea overlay. Non-zero while the overlay is
 	// active; reset to 0 on submit / cancel.

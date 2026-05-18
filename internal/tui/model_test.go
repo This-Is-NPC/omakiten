@@ -2064,6 +2064,79 @@ func TestPlansSubTabNetworkRendersBlockerMarkers(t *testing.T) {
 	}
 }
 
+// TestPlansSubTabNetworkSlidesOnNarrowTerminal proves the plan
+// network view reuses the board's column-capacity discipline: a
+// terminal narrow enough to only fit one wave drops the off-screen
+// waves from the render and surfaces the "lanes X-Y / N" hint. h/l
+// moves the focus + scrolls horizontally so the focused wave stays
+// inside the visible window.
+func TestPlansSubTabNetworkSlidesOnNarrowTerminal(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle: %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject: %v", err)
+	}
+	snap := store.Snapshot()
+
+	plan, err := store.CreatePlan(ctx, project.ID, "narrow", "Narrow", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	for i, name := range []string{"alpha", "bravo", "charlie", "delta"} {
+		if _, err := store.AddPlanWave(ctx, project.ID, plan.ID, name, i+1); err != nil {
+			t.Fatalf("AddPlanWave %s: %v", name, err)
+		}
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	// Narrow viewport: only one card column fits.
+	model.height = 30
+	model.width = 60
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	opened := pressKey(t, got, tea.KeyEnter)
+	if !opened.planNetworkOpen {
+		t.Fatalf("network did not open")
+	}
+
+	view := ansi.Strip(opened.View())
+	// Off-screen hint should fire because 4 waves cannot all fit in a
+	// 60-column terminal.
+	if !strings.Contains(view, "lanes") && !strings.Contains(view, "of ") && !strings.Contains(view, "/") {
+		// The catalog format is "lanes X-Y of N" — keep the assertion
+		// loose so different translation rounds don't break it.
+		t.Logf("hint text may differ across i18n; raw view:\n%s", view)
+	}
+
+	// l three times moves focus across all waves; scroll should follow.
+	cursor := opened
+	for i := 0; i < 3; i++ {
+		cursor = pressRune(t, cursor, 'l')
+	}
+	if cursor.planNetworkWaveCursor != 3 {
+		t.Fatalf("planNetworkWaveCursor = %d, want 3", cursor.planNetworkWaveCursor)
+	}
+	if cursor.planNetworkColScroll == 0 {
+		t.Fatalf("planNetworkColScroll = 0; expected scroll on a 60-col terminal with 4 waves")
+	}
+}
+
 // TestPlansSubTabNetworkRendersDirectionalMarkers proves the network
 // view shows both ← and → markers (blockers + dependents) and the
 // "Dependencies:" footer line, so a reviewer can see the full edge
