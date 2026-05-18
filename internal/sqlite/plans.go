@@ -662,7 +662,13 @@ WHERE project_id = ? AND id = ?
 		return domain.Task{}, false, err
 	}
 
-	// 4. Emit task.moved + task.assigned in the same transaction.
+	// 4. Emit task.moved + task.assigned in the same transaction. When
+	//    the destination is the workflow's final bucket (2-bucket
+	//    workflows where dev == final), also emit task.completed so the
+	//    event stream stays consistent with WorkflowService.MoveTask —
+	//    hooks engine and metrics.summary depend on task.completed
+	//    firing for every terminal-bucket transition.
+	landsInFinal := dev.Key == final.Key
 	movePayload := fmt.Sprintf(`{"from":%q,"to":%q}`, first.Key, dev.Key)
 	if _, err := insertTaskEvent(ctx, conn, projectID, taskID, domain.EventTypeTaskMoved, "", movePayload); err != nil {
 		return domain.Task{}, false, err
@@ -671,12 +677,28 @@ WHERE project_id = ? AND id = ?
 	if _, err := insertEntityEvent(ctx, conn, domain.EventEntityTask, taskID, projectID, domain.EventTypeTaskAssigned, string(assignPayload)); err != nil {
 		return domain.Task{}, false, err
 	}
+	if landsInFinal {
+		completedPayload := fmt.Sprintf(`{"bucket":%q}`, dev.Key)
+		if _, err := insertTaskEvent(ctx, conn, projectID, taskID, domain.EventTypeTaskCompleted, "", completedPayload); err != nil {
+			return domain.Task{}, false, err
+		}
+	}
 
 	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
 		return domain.Task{}, false, err
 	}
 	committed = true
 	closeConn()
+
+	// Plan auto-done mirrors WorkflowService.MoveTask: when the claim
+	// landed in the final bucket and was the last pending task in its
+	// plan, transition the plan to status='done' and emit plan.done.
+	// Failures are swallowed because plan finalisation is recomputable
+	// on the next terminal move — losing the audit signal beats blocking
+	// a legitimate claim.
+	if landsInFinal {
+		_, _ = s.MaybeFinalizePlanForTask(ctx, projectID, taskID, buckets)
+	}
 
 	task, err := s.taskByID(ctx, projectID, taskID, buckets)
 	if err != nil {

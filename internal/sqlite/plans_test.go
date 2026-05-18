@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -744,6 +745,129 @@ func TestMaybeFinalizePlanForTaskTransitionsWhenLastTaskCloses(t *testing.T) {
 	}
 	if finalized {
 		t.Fatal("second finalise call should be no-op")
+	}
+}
+
+// setupTwoBucketPlans installs a workflow whose only two buckets are
+// `backlog` (first) and `done` (final). ClaimNextPlanTask resolves
+// `dev` to "the bucket immediately above first by position" — with
+// just two buckets that resolves to the final bucket, so a claim lands
+// directly in the terminal bucket. Used by the landsInFinal-branch
+// tests to pin the task.completed + plan auto-done behaviour.
+func setupTwoBucketPlans(t *testing.T) (context.Context, *storeFixture, domain.ProjectContext) {
+	t.Helper()
+	ctx := context.Background()
+	store := openStoreFixture(t, t.TempDir()+"/omakiten.db")
+	store.applyBundle(bundleWithKeys(t, "default", []string{"backlog", "done"}, []int{1, 2}))
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject: %v", err)
+	}
+	return ctx, store, project.Context()
+}
+
+// TestClaimNextPlanTaskEmitsTaskCompletedWhenDevIsFinal pins the SMART
+// invariant "every transition into the workflow's final bucket emits
+// task.completed". When `claim_next` runs against a 2-bucket workflow
+// (dev == final) it must emit task.moved + task.assigned + task.completed
+// in the same transaction so hooks engine and metrics.summary see the
+// terminal-bucket signal even on the atomic-claim fast path.
+func TestClaimNextPlanTaskEmitsTaskCompletedWhenDevIsFinal(t *testing.T) {
+	ctx, store, project := setupTwoBucketPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 0)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "Direct-terminal", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, task.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan: %v", err)
+	}
+
+	ctxClaim := activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
+	claimed, ok, err := store.ClaimNextPlanTask(ctxClaim, project.ID, plan.ID, store.snap())
+	if err != nil || !ok {
+		t.Fatalf("ClaimNextPlanTask: ok=%v err=%v", ok, err)
+	}
+	if claimed.BucketKey != "done" {
+		t.Fatalf("claim bucket = %q, want done (dev resolves to final in 2-bucket workflow)", claimed.BucketKey)
+	}
+
+	var completedAt sql.NullString
+	if err := store.db.QueryRowContext(ctx, `SELECT completed_at FROM tasks WHERE id = ?`, claimed.ID).Scan(&completedAt); err != nil {
+		t.Fatalf("read completed_at: %v", err)
+	}
+	if !completedAt.Valid || completedAt.String == "" {
+		t.Fatal("completed_at not stamped after claim into final bucket")
+	}
+
+	events, err := store.ListRecentEvents(ctx, domain.EventTypeTaskCompleted, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents task.completed: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("task.completed events = %d, want 1", len(events))
+	}
+	if events[0].EntityID != claimed.ID {
+		t.Fatalf("task.completed entity_id = %d, want %d", events[0].EntityID, claimed.ID)
+	}
+	if !strings.Contains(events[0].Payload, `"bucket":"done"`) {
+		t.Fatalf("task.completed payload = %q, want bucket=done", events[0].Payload)
+	}
+}
+
+// TestClaimNextPlanTaskFinalizesPlanOnTerminalClaim pins the SMART rule
+// "plan auto-transitions to done when the last task closes" for the
+// atomic-claim path. With a single-task plan in a 2-bucket workflow,
+// the claim lands the task in the final bucket and must trigger plan
+// finalisation (status='done', completed_at stamped, plan.done emitted)
+// post-commit just like WorkflowService.MoveTask does.
+func TestClaimNextPlanTaskFinalizesPlanOnTerminalClaim(t *testing.T) {
+	ctx, store, project := setupTwoBucketPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 0)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "Last", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, task.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan: %v", err)
+	}
+
+	ctxClaim := activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
+	if _, ok, err := store.ClaimNextPlanTask(ctxClaim, project.ID, plan.ID, store.snap()); err != nil || !ok {
+		t.Fatalf("ClaimNextPlanTask: ok=%v err=%v", ok, err)
+	}
+
+	got, err := store.GetPlanByID(ctx, project.ID, plan.ID)
+	if err != nil {
+		t.Fatalf("GetPlanByID: %v", err)
+	}
+	if got.Status != "done" {
+		t.Fatalf("plan status = %q, want done after terminal claim", got.Status)
+	}
+	if got.CompletedAt == "" {
+		t.Fatal("plan completed_at not stamped after terminal claim")
+	}
+
+	events, err := store.ListRecentEvents(ctx, domain.EventTypePlanDone, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents plan.done: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("plan.done events = %d, want 1", len(events))
 	}
 }
 
