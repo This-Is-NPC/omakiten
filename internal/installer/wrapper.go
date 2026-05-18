@@ -94,10 +94,12 @@ func InstallWrapper(rcPath string) error {
 }
 
 // InstallPowerShellWrapper writes (or replaces) the PowerShell wrapper
-// block in profilePath (typically `$PROFILE.CurrentUserAllHosts`). It
-// shares the swap-in-place / append-with-separator behaviour of
-// InstallWrapper so the on-disk shape stays consistent across flavours
-// and a single uninstaller pattern keeps working.
+// block in profilePath (a PS host AllHosts profile — typically one of
+// the paths PowerShellProfileTargets returns: `Documents\PowerShell\
+// profile.ps1` for PS 7 or `Documents\WindowsPowerShell\profile.ps1`
+// for PS 5.1). It shares the swap-in-place / append-with-separator
+// behaviour of InstallWrapper so the on-disk shape stays consistent
+// across flavours and a single uninstaller pattern keeps working.
 func InstallPowerShellWrapper(profilePath string) error {
 	return installBlockInto(profilePath, PowerShellWrapperBlock())
 }

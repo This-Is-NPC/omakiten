@@ -86,13 +86,20 @@ func WriteWrappers(home string) ([]string, error) {
 	return installed, nil
 }
 
-// PowerShellProfileTargets is the ordered set of
-// `$PROFILE.CurrentUserAllHosts` paths the installer considers for the
-// PowerShell-flavoured wrapper. Windows-only because the wrapper body
-// shells into `okt.exe`, the binary name only Windows ships; PS-on-Linux
-// users are served by the bash wrapper. Order matches modern → legacy:
-// PS 7 (`Documents\PowerShell\profile.ps1`) first, PS 5.1
+// PowerShellProfileTargets is the ordered set of PowerShell AllHosts
+// profile paths the installer considers for the PowerShell-flavoured
+// wrapper. Windows-only because the wrapper body shells into `okt.exe`,
+// the binary name only Windows ships; PS-on-Linux users are served by
+// the bash wrapper. Order matches modern → legacy: PS 7
+// (`Documents\PowerShell\profile.ps1`) first, PS 5.1
 // (`Documents\WindowsPowerShell\profile.ps1`) second.
+//
+// Note: `$PROFILE.CurrentUserAllHosts` is the runtime variable for the
+// CURRENTLY hosting PS version only; this function returns both PS host
+// AllHosts paths so a single `okt setup` invocation covers a box where
+// both PS 7 and PS 5.1 are in use. uninstall.ps1 mirrors the same pair
+// (see Remove-OktWrapperFrom) so the install/uninstall surfaces stay
+// symmetric.
 //
 // install.ps1 historically wrote the wrapper via PowerShell itself
 // against `$PROFILE.CurrentUserAllHosts`; porting that here lets the
