@@ -876,7 +876,7 @@ keys:
 
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "अभी कोई plan नहीं। बनाएं: `okt plan create <slug> --name \"...\"`."
-  tui.plans.list.header: "  slug             status    पूर्ण/कुल    %    नाम ‹सक्रिय wave›"
+  tui.plans.list.header: "// SLUG             STATUS    पूर्ण/कुल    %    नाम ‹सक्रिय WAVE›"
   tui.plans.list.active_wave_missing: "—"
   tui.plans.network.no_waves_fmt: "अभी कोई wave नहीं। जोड़ें: `okt plan wave-add %s \"<wave-name>\"`."
   tui.plans.network.header_fmt: "// PLAN · %s · %d/%d · %d%%"
@@ -884,7 +884,7 @@ keys:
   tui.plans.network.wave_header_fmt: "// W%d %s · %d/%d"
   tui.plans.network.active_tag: " ‹सक्रिय›"
   tui.plans.network.empty_wave: "खाली"
-  tui.plans.kicker: "// PLANS"
+  tui.plans.kicker: "Plans"
   tui.plans.status.claim_success_fmt: "plans.claim_next: task #%d %q आरक्षित"
   tui.plans.status.claim_empty_fmt: "plans.claim_next: %q में कोई उपलब्ध task नहीं"
   tui.plans.goal.kicker_fmt: "// PLAN GOAL · %s"

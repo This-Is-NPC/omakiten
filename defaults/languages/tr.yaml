@@ -877,7 +877,7 @@ keys:
 
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "Henüz plan yok. Oluşturmak için: `okt plan create <slug> --name \"...\"`."
-  tui.plans.list.header: "  slug             status    biten/toplam   %   ad ‹aktif wave›"
+  tui.plans.list.header: "// SLUG             STATUS    BITEN/TOPLAM   %   AD ‹AKTIF WAVE›"
   tui.plans.list.active_wave_missing: "—"
   tui.plans.network.no_waves_fmt: "Henüz wave yok. Eklemek için: `okt plan wave-add %s \"<wave-name>\"`."
   tui.plans.network.header_fmt: "// PLAN · %s · %d/%d · %d%%"
@@ -885,7 +885,7 @@ keys:
   tui.plans.network.wave_header_fmt: "// W%d %s · %d/%d"
   tui.plans.network.active_tag: " ‹aktif›"
   tui.plans.network.empty_wave: "boş"
-  tui.plans.kicker: "// PLANS"
+  tui.plans.kicker: "Plans"
   tui.plans.status.claim_success_fmt: "plans.claim_next: task #%d %q ayırtıldı"
   tui.plans.status.claim_empty_fmt: "plans.claim_next: %q içinde uygun task yok"
   tui.plans.goal.kicker_fmt: "// PLAN GOAL · %s"

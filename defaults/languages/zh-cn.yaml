@@ -868,7 +868,7 @@ keys:
 
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "暂无 plan。 使用 `okt plan create <slug> --name \"...\"` 创建。"
-  tui.plans.list.header: "  slug             status    完成/合计   %    名称 ‹活动 wave›"
+  tui.plans.list.header: "// SLUG             STATUS    完成/合计   %    名称 ‹活动 WAVE›"
   tui.plans.list.active_wave_missing: "—"
   tui.plans.network.no_waves_fmt: "暂无 wave。 使用 `okt plan wave-add %s \"<wave-name>\"` 添加。"
   tui.plans.network.header_fmt: "// PLAN · %s · %d/%d · %d%%"
@@ -876,7 +876,7 @@ keys:
   tui.plans.network.wave_header_fmt: "// W%d %s · %d/%d"
   tui.plans.network.active_tag: " ‹活动›"
   tui.plans.network.empty_wave: "空"
-  tui.plans.kicker: "// PLANS"
+  tui.plans.kicker: "Plans"
   tui.plans.status.claim_success_fmt: "plans.claim_next: 已认领 task #%d %q"
   tui.plans.status.claim_empty_fmt: "plans.claim_next: %q 中没有可认领的 task"
   tui.plans.goal.kicker_fmt: "// PLAN GOAL · %s"

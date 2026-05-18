@@ -890,7 +890,7 @@ keys:
 
   # Plans — Tasks › plans sub-tab (list + network diagram + goal editor).
   tui.plans.list.empty: "No plans yet. Create one with `okt plan create <slug> --name \"...\"`."
-  tui.plans.list.header: "  slug             status    done/total   %    name ‹active wave›"
+  tui.plans.list.header: "// SLUG             STATUS    DONE/TOTAL   %    NAME ‹ACTIVE WAVE›"
   tui.plans.list.active_wave_missing: "—"
   tui.plans.network.no_waves_fmt: "No waves yet. Add one with `okt plan wave-add %s \"<wave-name>\"`."
   tui.plans.network.header_fmt: "// PLAN · %s · %d/%d · %d%%"
@@ -898,7 +898,7 @@ keys:
   tui.plans.network.wave_header_fmt: "// W%d %s · %d/%d"
   tui.plans.network.active_tag: " ‹active›"
   tui.plans.network.empty_wave: "empty"
-  tui.plans.kicker: "// PLANS"
+  tui.plans.kicker: "Plans"
   tui.plans.status.claim_success_fmt: "plans.claim_next: claimed task #%d %q"
   tui.plans.status.claim_empty_fmt: "plans.claim_next: no tasks claimable in %q"
   tui.plans.goal.kicker_fmt: "// PLAN GOAL · %s"

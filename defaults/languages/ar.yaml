@@ -874,7 +874,7 @@ keys:
 
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "لا يوجد plans بعد. أنشئ واحدًا بـ `okt plan create <slug> --name \"...\"`."
-  tui.plans.list.header: "  slug             status    تم/الإجمالي  %    الاسم ‹wave نشطة›"
+  tui.plans.list.header: "// SLUG             STATUS    تم/الإجمالي  %    الاسم ‹WAVE نشطة›"
   tui.plans.list.active_wave_missing: "—"
   tui.plans.network.no_waves_fmt: "لا توجد waves بعد. أضف واحدة بـ `okt plan wave-add %s \"<wave-name>\"`."
   tui.plans.network.header_fmt: "// PLAN · %s · %d/%d · %d%%"
@@ -882,7 +882,7 @@ keys:
   tui.plans.network.wave_header_fmt: "// W%d %s · %d/%d"
   tui.plans.network.active_tag: " ‹نشطة›"
   tui.plans.network.empty_wave: "فارغة"
-  tui.plans.kicker: "// PLANS"
+  tui.plans.kicker: "Plans"
   tui.plans.status.claim_success_fmt: "plans.claim_next: تم حجز task #%d %q"
   tui.plans.status.claim_empty_fmt: "plans.claim_next: لا توجد task متاحة في %q"
   tui.plans.goal.kicker_fmt: "// PLAN GOAL · %s"

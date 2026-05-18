@@ -876,7 +876,7 @@ keys:
 
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "Brak plans. Utwórz: `okt plan create <slug> --name \"...\"`."
-  tui.plans.list.header: "  slug             status    zrobione/razem  %  nazwa ‹aktywna wave›"
+  tui.plans.list.header: "// SLUG             STATUS    ZROBIONE/RAZEM  %  NAZWA ‹AKTYWNA WAVE›"
   tui.plans.list.active_wave_missing: "—"
   tui.plans.network.no_waves_fmt: "Brak waves. Dodaj: `okt plan wave-add %s \"<wave-name>\"`."
   tui.plans.network.header_fmt: "// PLAN · %s · %d/%d · %d%%"
@@ -884,7 +884,7 @@ keys:
   tui.plans.network.wave_header_fmt: "// W%d %s · %d/%d"
   tui.plans.network.active_tag: " ‹aktywna›"
   tui.plans.network.empty_wave: "pusta"
-  tui.plans.kicker: "// PLANS"
+  tui.plans.kicker: "Plans"
   tui.plans.status.claim_success_fmt: "plans.claim_next: task #%d %q zarezerwowany"
   tui.plans.status.claim_empty_fmt: "plans.claim_next: brak dostępnych task w %q"
   tui.plans.goal.kicker_fmt: "// PLAN GOAL · %s"

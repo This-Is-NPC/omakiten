@@ -873,7 +873,7 @@ keys:
 
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "아직 plan 없음. `okt plan create <slug> --name \"...\"` 로 생성하세요."
-  tui.plans.list.header: "  slug             status    완료/전체   %    이름 ‹활성 wave›"
+  tui.plans.list.header: "// SLUG             STATUS    완료/전체   %    이름 ‹활성 WAVE›"
   tui.plans.list.active_wave_missing: "—"
   tui.plans.network.no_waves_fmt: "아직 wave 없음. `okt plan wave-add %s \"<wave-name>\"` 로 추가하세요."
   tui.plans.network.header_fmt: "// PLAN · %s · %d/%d · %d%%"
@@ -881,7 +881,7 @@ keys:
   tui.plans.network.wave_header_fmt: "// W%d %s · %d/%d"
   tui.plans.network.active_tag: " ‹활성›"
   tui.plans.network.empty_wave: "비어 있음"
-  tui.plans.kicker: "// PLANS"
+  tui.plans.kicker: "Plans"
   tui.plans.status.claim_success_fmt: "plans.claim_next: task #%d %q 확보됨"
   tui.plans.status.claim_empty_fmt: "plans.claim_next: %q 에서 사용 가능한 task 없음"
   tui.plans.goal.kicker_fmt: "// PLAN GOAL · %s"

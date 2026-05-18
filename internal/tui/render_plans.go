@@ -122,7 +122,7 @@ func (m Model) plansViewportRows() int {
 // project has no plans yet.
 func (m Model) renderPlans() string {
 	if len(m.plans) == 0 {
-		return m.renderPanel(m.t("tui.plans.kicker") + "\n\n" + m.t("tui.plans.list.empty"))
+		return m.renderPanel(m.styles.kicker(m.t("tui.plans.kicker")) + "\n\n" + m.t("tui.plans.list.empty"))
 	}
 
 	contentWidth := m.availableWidth() - 4
