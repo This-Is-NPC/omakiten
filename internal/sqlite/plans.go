@@ -199,6 +199,38 @@ RETURNING id, plan_id, name, position
 	return wave, nil
 }
 
+// ListPlanTasks returns every task attached to a plan, ordered by
+// (wave_position, task_id) so the network-diagram renderer can stream
+// columns left-to-right without an extra sort. BucketKey is resolved in
+// Go via the supplied BucketResolver — the SQL stays a pure tasks-table
+// read for cache friendliness and to keep migration 020's
+// "no workflow_buckets join" invariant intact.
+func (s *Store) ListPlanTasks(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) ([]domain.PlanTaskRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT t.id, COALESCE(t.wave_id, 0), t.title, COALESCE(t.bucket_id, 0), t.state, COALESCE(t.assigned_to, '')
+FROM tasks t
+LEFT JOIN plan_waves w ON w.id = t.wave_id
+WHERE t.project_id = ? AND t.plan_id = ?
+ORDER BY COALESCE(w.position, 1<<30) ASC, t.id ASC
+`, projectID, planID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []domain.PlanTaskRow
+	for rows.Next() {
+		var row domain.PlanTaskRow
+		var bucketID int64
+		if err := rows.Scan(&row.TaskID, &row.WaveID, &row.Title, &bucketID, &row.State, &row.AssignedTo); err != nil {
+			return nil, err
+		}
+		row.BucketKey = s.bucketKeyByID(bucketID, buckets)
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
 // ListPlanWaves returns every wave for a plan ordered by position so the
 // network diagram can stream columns left-to-right without an extra sort.
 func (s *Store) ListPlanWaves(ctx context.Context, projectID, planID int64) ([]domain.PlanWave, error) {

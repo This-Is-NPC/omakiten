@@ -174,6 +174,9 @@ type PlanRepository interface {
 	GetPlanBySlug(ctx context.Context, projectID int64, slug string) (domain.Plan, error)
 	GetPlanByID(ctx context.Context, projectID, planID int64) (domain.Plan, error)
 	ListPlans(ctx context.Context, projectID int64) ([]domain.Plan, error)
+	AddPlanWave(ctx context.Context, projectID, planID int64, name string, position int) (domain.PlanWave, error)
+	ListPlanWaves(ctx context.Context, projectID, planID int64) ([]domain.PlanWave, error)
+	ListPlanTasks(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) ([]domain.PlanTaskRow, error)
 }
 
 // BundleStore is the adapter port for reading/writing the bundled config and

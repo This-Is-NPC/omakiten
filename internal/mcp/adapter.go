@@ -254,7 +254,9 @@ func tools() []ToolDefinition {
 		{Name: "metrics.summary", Description: "Aggregate per-AI-model behaviour over a period: errors recorded, errors searched, solutions added, like rate, and search-before-record ratio. Use to benchmark whether different agents research existing context before recording new errors. Requires that callers pass _agent_model on every tool call (now coercive).", InputSchema: objectSchema(map[string]any{"period": stringSchema("Time window: \"7d\", \"30d\" (default), or \"all\""), "project_id": integerSchema("Optional registered project id; omit for cross-project view")}, nil)},
 		{Name: "templates.show", Description: "Return one template by slug, including its full body. Read-only. Hard-rejects (validation_error) when the requested slug is a global template that is shadowed by a project-scoped override in the active project — the rejection's details name the active slug so callers can re-call directly.", InputSchema: showTemplateSchema()},
 		{Name: "plans.create", Description: "Create a WBS-style plan that groups child tasks in ordered waves. Slug must be unique within the project; goal_body is markdown describing the plan's intent and acceptance criteria. Emits plan.created.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (kebab-case recommended); unique per project"), "name": stringSchema("Human-readable plan name"), "goal_body": stringSchema("Optional markdown body describing the plan goal and acceptance criteria")}, []string{"slug", "name"})},
-		{Name: "plans.list", Description: "List every plan in the active project, ordered by creation. Goal bodies are omitted from list entries — call plans.show (forthcoming) to fetch one with its full body.", InputSchema: selectorSchema()},
+		{Name: "plans.list", Description: "List every plan in the active project, ordered by creation. Goal bodies are omitted from list entries — call plans.show to fetch one with its full body.", InputSchema: selectorSchema()},
+		{Name: "plans.show", Description: "Return one plan with its waves, tasks per wave, per-wave and overall done/total counts, integer percent, and the active wave id (lowest-position wave with pending work). Archived tasks are filtered out of the counts but stay in the wave's tasks list.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug")}, []string{"slug"})},
+		{Name: "plans.add_wave", Description: "Append a wave to a plan (position=0 auto-assigns after the current highest position; explicit position>0 inserts at that slot and rejects on collision). Identify the plan by slug or plan_id; supply at least one. Emits plan.wave_added.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "name": stringSchema("Wave name (human-readable)"), "position": integerSchema("Optional 1-based wave position; omit or 0 to append after the current highest")}, []string{"name"})},
 	}
 }
 
@@ -589,6 +591,18 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = service.ListPlans(ctx, input)
+		}
+	case "plans.show":
+		var input agent.ShowPlanInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.ShowPlan(ctx, input)
+		}
+	case "plans.add_wave":
+		var input agent.AddPlanWaveInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.AddPlanWave(ctx, input)
 		}
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP tool %q", name)

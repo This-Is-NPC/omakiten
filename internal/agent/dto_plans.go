@@ -37,6 +37,61 @@ type ListPlansResponse struct {
 	Plans   []PlanSummary  `json:"plans"`
 }
 
+type ShowPlanInput struct {
+	ProjectSelector
+	Slug string `json:"slug"`
+}
+
+type ShowPlanResponse struct {
+	Project      ProjectSummary  `json:"project"`
+	Plan         PlanSummary     `json:"plan"`
+	Waves        []PlanWaveView  `json:"waves"`
+	DoneCount    int             `json:"done_count"`
+	TotalCount   int             `json:"total_count"`
+	Percent      int             `json:"percent"`
+	ActiveWaveID int64           `json:"active_wave_id,omitempty"`
+}
+
+// PlanWaveView pairs a wave with its task list and per-wave counts.
+// Tasks carry the bucket_key, state, and assignee shipped over the
+// wire so the consumer can render them without a follow-up lookup.
+type PlanWaveView struct {
+	ID         int64         `json:"id"`
+	Name       string        `json:"name"`
+	Position   int           `json:"position"`
+	Tasks      []PlanTaskRow `json:"tasks,omitempty"`
+	DoneCount  int           `json:"done_count"`
+	TotalCount int           `json:"total_count"`
+}
+
+type PlanTaskRow struct {
+	TaskID     int64  `json:"task_id"`
+	Title      string `json:"title"`
+	BucketKey  string `json:"bucket_key,omitempty"`
+	State      string `json:"state,omitempty"`
+	AssignedTo string `json:"assigned_to,omitempty"`
+}
+
+type AddPlanWaveInput struct {
+	ProjectSelector
+	PlanID   int64  `json:"plan_id"`
+	Slug     string `json:"slug,omitempty"`
+	Name     string `json:"name"`
+	Position int    `json:"position,omitempty"`
+}
+
+type AddPlanWaveResponse struct {
+	Project ProjectSummary `json:"project"`
+	Wave    PlanWaveSummary `json:"wave"`
+}
+
+type PlanWaveSummary struct {
+	ID       int64  `json:"id"`
+	PlanID   int64  `json:"plan_id"`
+	Name     string `json:"name"`
+	Position int    `json:"position"`
+}
+
 // planSummary projects a domain.Plan into the MCP wire shape, keeping
 // the goal body intact so the show / create responses can echo it back.
 // List responses zero the field before sending to keep payloads compact.

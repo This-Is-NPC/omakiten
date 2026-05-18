@@ -198,6 +198,8 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		"metrics.summary",
 		"plans.create",
 		"plans.list",
+		"plans.show",
+		"plans.add_wave",
 	}
 
 	for _, name := range tools {
@@ -225,6 +227,10 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 			args = map[string]any{"solution_id": 1, "success": true}
 		case "plans.create":
 			args = map[string]any{"slug": "demo-plan-" + name, "name": "Demo"}
+		case "plans.show":
+			args = map[string]any{"slug": "demo-plan-plans.create"}
+		case "plans.add_wave":
+			args = map[string]any{"slug": "demo-plan-plans.create", "name": "wave"}
 		}
 		_, err := adapter.CallTool(ctx, name, withModel(args))
 		if err != nil {

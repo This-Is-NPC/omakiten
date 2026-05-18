@@ -41,3 +41,18 @@ type PlanWave struct {
 	Name     string `json:"name"`
 	Position int    `json:"position"`
 }
+
+// PlanTaskRow is the projection ListPlanTasks returns: enough to render
+// the network diagram and compute done / total counts, without dragging
+// the full domain.Task (which the plan view never needs description,
+// priority, or created_at for). WaveID may be 0 when the task carries a
+// plan_id but its wave_id was cleared via a wave deletion (cannot happen
+// today because wave deletion is not exposed; reserved for future use).
+type PlanTaskRow struct {
+	TaskID     int64     `json:"task_id"`
+	WaveID     int64     `json:"wave_id"`
+	Title      string    `json:"title"`
+	BucketKey  string    `json:"bucket_key"`
+	State      TaskState `json:"state"`
+	AssignedTo string    `json:"assigned_to,omitempty"`
+}
