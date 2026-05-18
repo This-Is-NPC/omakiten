@@ -22,11 +22,12 @@ try {
     if (Get-Variable -Name IsWindows -ErrorAction SilentlyContinue) { $isWin = $IsWindows }
     else { $isWin = $true } # PS 5.1: Windows-only
 
-    if ($isWin) {
-        $profilePath = Join-Path $home "Documents\PowerShell\profile.ps1"
-    } else {
-        $profilePath = Join-Path $home ".config/powershell/profile.ps1"
+    if (-not $isWin) {
+        Write-Host "SKIP: PowerShell wrapper writer is Windows-only (bash wrapper covers POSIX)"
+        exit 0
     }
+
+    $profilePath = Join-Path $home "Documents\PowerShell\profile.ps1"
     $profileDir = Split-Path -Parent $profilePath
     New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
     Set-Content -Path $profilePath -Value "# user content above`n`$env:FOO = 'bar'`n" -NoNewline

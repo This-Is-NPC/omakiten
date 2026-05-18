@@ -88,44 +88,37 @@ func WriteWrappers(home string) ([]string, error) {
 
 // PowerShellProfileTargets is the ordered set of
 // `$PROFILE.CurrentUserAllHosts` paths the installer considers for the
-// PowerShell-flavoured wrapper. Order matches modern → legacy:
-//   - Windows: PS 7 (`Documents\PowerShell\profile.ps1`) first, PS 5.1
-//     (`Documents\WindowsPowerShell\profile.ps1`) second.
-//   - other OSes: PS 7 cross-platform (`~/.config/powershell/profile.ps1`).
+// PowerShell-flavoured wrapper. Windows-only because the wrapper body
+// shells into `okt.exe`, the binary name only Windows ships; PS-on-Linux
+// users are served by the bash wrapper. Order matches modern → legacy:
+// PS 7 (`Documents\PowerShell\profile.ps1`) first, PS 5.1
+// (`Documents\WindowsPowerShell\profile.ps1`) second.
 //
 // install.ps1 historically wrote the wrapper via PowerShell itself
 // against `$PROFILE.CurrentUserAllHosts`; porting that here lets the
 // Go installer own both flavours and removes the duplicate sentinel /
 // wrapper-body literal that lived in install.ps1.
 func PowerShellProfileTargets(home string) []string {
-	if home == "" {
+	if home == "" || runtime.GOOS != "windows" {
 		return nil
 	}
-	if runtime.GOOS == "windows" {
-		return []string{
-			filepath.Join(home, "Documents", "PowerShell", "profile.ps1"),
-			filepath.Join(home, "Documents", "WindowsPowerShell", "profile.ps1"),
-		}
-	}
 	return []string{
-		filepath.Join(home, ".config", "powershell", "profile.ps1"),
+		filepath.Join(home, "Documents", "PowerShell", "profile.ps1"),
+		filepath.Join(home, "Documents", "WindowsPowerShell", "profile.ps1"),
 	}
 }
 
 // WritePowerShellWrappers installs the PS-flavoured okt() function
-// into the user's PowerShell profile(s).
+// into the user's PowerShell profile(s) on Windows. The canonical PS 7
+// profile (first entry of PowerShellProfileTargets) is always written —
+// parent directories are created on demand to match install.ps1's
+// `New-Item -ItemType File -Force` behaviour against
+// `$PROFILE.CurrentUserAllHosts`. The legacy PS 5.1 profile is touched
+// only when it already exists so we do not materialise an unexpected
+// `WindowsPowerShell\` folder for a user who only runs PS 7.
 //
-// Windows: the canonical PS 7 profile (first entry of
-// PowerShellProfileTargets) is always written — parent directories are
-// created on demand to match install.ps1's `New-Item -ItemType File
-// -Force` behaviour against `$PROFILE.CurrentUserAllHosts`. The legacy
-// PS 5.1 profile is touched only when it already exists so we do not
-// materialise an unexpected `WindowsPowerShell\` folder for a user who
-// only runs PS 7.
-//
-// Non-Windows: PowerShell on Linux/macOS is opt-in, so touch the cross
-// platform profile only when it already exists; we do not want to
-// create `~/.config/powershell/` for users who do not run PS.
+// Non-Windows hosts get nothing — PowerShellProfileTargets returns nil
+// and the function is a no-op.
 //
 // Returns the absolute profile paths the wrapper landed in so the
 // caller can echo `installed_into[*]` alongside the bash result.
@@ -136,12 +129,11 @@ func WritePowerShellWrappers(home string) ([]string, error) {
 	}
 	var installed []string
 	for i, p := range targets {
-		// First Windows target is the canonical fresh-install path —
+		// First target is the canonical fresh-install path —
 		// install.ps1 used to create the profile file outright on a
 		// fresh box; preserve that contract so curl|iwr installs land a
 		// working wrapper without a second manual step.
-		force := runtime.GOOS == "windows" && i == 0
-		if !force {
+		if i > 0 {
 			if _, err := os.Stat(p); err != nil {
 				if errors.Is(err, os.ErrNotExist) {
 					continue
