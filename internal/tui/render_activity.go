@@ -415,38 +415,52 @@ func (m *Model) syncActivityScrollToCursor() {
 	m.activityScroll = scroll
 }
 
+// Chrome budget consumed by every rendered row of the task detail screen
+// outside the activity panel's slice. activityChromeBase aggregates the
+// fixed-cost rows present on every render; the optional surcharges are
+// added on top when their feature renders.
+const (
+	// activityChromeBase: screen header (2) + leading blank
+	// applyTaskViewScroll prepends (1) + screen footer separator +
+	// keybindings (2) + activity panel top + bottom border (2) + kicker
+	// row inside the panel (1) + trailing margin so the bottom border is
+	// never the last row written to the alt-screen (1) = 9.
+	activityChromeBase = 9
+	// activityChromeStatus: extra row consumed when m.status renders an
+	// inline badge above the content.
+	activityChromeStatus = 1
+	// activityChromeEmbeddedInput: extra rows consumed by the embedded
+	// comment input (header + 5 input rows + hint + padding).
+	activityChromeEmbeddedInput = 9
+	// activityViewportMinLines is the floor enforced on the computed slice
+	// so the panel never collapses to a single card on a short terminal.
+	activityViewportMinLines = 6
+	// activityViewportFallbackLines is what we return when m.height has
+	// not yet been initialised (program just started, no WindowSizeMsg
+	// received yet) — large enough to render a few cards without flashing
+	// an empty panel on first paint.
+	activityViewportFallbackLines = 12
+)
+
 // activityViewportLines is the maximum number of LINES the activity column
 // renders before pagination kicks in. Sized to consume the outer
 // `taskViewportHeight` budget so the column grows with the terminal — the
 // previous static chrome=12 left ~3 unused rows on every height because it
 // double-counted the screen header/footer the outer viewport already owns.
-//
-// The reserved chrome rows inside the panel are:
-//   - 2 for the screen header (renderHeader)
-//   - 1 for the leading blank applyTaskViewScroll prepends
-//   - 2 for the screen footer (separator + keybindings)
-//   - 1 each for the activity panel's box top + bottom border
-//   - 1 for the kicker row ("// ACTIVITY · N") inside the panel
-//   - 1 trailing margin so the bottom border is never the last row written
-//     to the alt-screen (terminals that reserve a row for the cursor or a
-//     status line otherwise clip the border)
-//   - 1 extra when m.status renders an inline badge row
-//   - 9 extra when an embedded comment input is open (header + 5 input
-//     rows + hint + padding)
 func (m Model) activityViewportLines() int {
 	if m.height <= 0 {
-		return 12
+		return activityViewportFallbackLines
 	}
-	chrome := 9
+	chrome := activityChromeBase
 	if m.status != "" {
-		chrome++
+		chrome += activityChromeStatus
 	}
 	if m.isEmbeddedCommentInput() {
-		chrome += 9
+		chrome += activityChromeEmbeddedInput
 	}
 	rows := m.height - chrome
-	if rows < 6 {
-		rows = 6
+	if rows < activityViewportMinLines {
+		rows = activityViewportMinLines
 	}
 	return rows
 }
