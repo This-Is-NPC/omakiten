@@ -228,9 +228,10 @@ func (m *Model) scrollActivityLines(delta int) {
 	m.clampActivityScroll()
 }
 
-// clampActivityScroll keeps activityScroll inside [0, total - viewport].
+// clampActivityScroll keeps activityScroll inside [0, activityMaxScroll()].
 // Computes total by re-rendering cards, which is cheap and avoids the
-// caller having to thread the body length through.
+// caller having to thread the body length through. See activityMaxScroll
+// for the off-by-one explanation around the split-hint reservation.
 func (m *Model) clampActivityScroll() {
 	events := m.activityForTaskInView(m.taskID)
 	body := flattenActivityCards(m.activityRowsForRender(events))
@@ -239,13 +240,30 @@ func (m *Model) clampActivityScroll() {
 		m.activityScroll = 0
 		return
 	}
-	maxScroll := len(body) - viewport
+	maxScroll := activityMaxScroll(len(body), viewport)
 	if m.activityScroll < 0 {
 		m.activityScroll = 0
 	}
 	if m.activityScroll > maxScroll {
 		m.activityScroll = maxScroll
 	}
+}
+
+// activityMaxScroll is the largest offset that still renders the last body
+// line inside the activity viewport given the split-hint reservation
+// renderScrollWindowSplit applies. When offset > 0 the renderer steals
+// scrollwindow.AboveHintRows(HintsSplit) rows for the "▲ N above" hint;
+// we add them back so the last line stays reachable — without this G /
+// sustained pgdown left the final card's tail cropped behind a "▼ N below"
+// that lied about still-reachable rows. Floored at 0 — callers should
+// early-return when the body fits without scroll, but defending here
+// keeps the helper composable.
+func activityMaxScroll(bodyLen, viewport int) int {
+	bound := bodyLen - viewport + scrollwindow.AboveHintRows(scrollwindow.HintsSplit)
+	if bound < 0 {
+		return 0
+	}
+	return bound
 }
 
 // toggleTaskFocus flips which column inside the task detail screen owns
@@ -278,6 +296,16 @@ func (m *Model) toggleTaskFocus() {
 // auto-scrolls so the focused card stays inside the viewport. Wraps from
 // "no selection" (-1) to the first or last card depending on direction so a
 // single keypress always lands on a real row.
+//
+// When pgup/pgdn has scrolled the cursor off-screen (the cursor is decoupled
+// from the body scroll by design), the next j/k anchors the cursor to the
+// visible edge nearest its current position — first if the cursor sits
+// above the viewport, last if below — regardless of the delta sign. Without
+// this anchor, syncActivityScrollToCursor would snap the viewport back to
+// the old cursor position and throw away the user's page-scroll work (the
+// symptom filed as "activity column navigation snaps back after pgdown");
+// gating on direction instead would jump the cursor BACKWARD on a "next"
+// key when it sat below the viewport.
 func (m *Model) moveActivityCursor(delta int) {
 	rows := len(m.activityForTaskInView(m.taskID))
 	if rows == 0 {
@@ -290,17 +318,59 @@ func (m *Model) moveActivityCursor(delta int) {
 		} else {
 			m.activityCursor = rows - 1
 		}
-	} else {
-		next := m.activityCursor + delta
-		if next < 0 {
-			next = 0
-		}
-		if next >= rows {
-			next = rows - 1
-		}
-		m.activityCursor = next
+		m.syncActivityScrollToCursor()
+		return
 	}
+	if first, last, ok := m.visibleActivityCardRange(); ok && (m.activityCursor < first || m.activityCursor > last) {
+		if m.activityCursor < first {
+			m.activityCursor = first
+		} else {
+			m.activityCursor = last
+		}
+		m.syncActivityScrollToCursor()
+		return
+	}
+	next := m.activityCursor + delta
+	if next < 0 {
+		next = 0
+	}
+	if next >= rows {
+		next = rows - 1
+	}
+	m.activityCursor = next
 	m.syncActivityScrollToCursor()
+}
+
+// visibleActivityCardRange returns the inclusive [first, last] card indices
+// whose start line falls inside the current activity viewport window. ok=false
+// when the feed is empty or no card start sits in the visible band (a tall
+// card whose top scrolled past the viewport edge counts as out of range —
+// callers can still anchor onto neighbours).
+func (m Model) visibleActivityCardRange() (int, int, bool) {
+	events := m.activityForTaskInView(m.taskID)
+	if len(events) == 0 {
+		return 0, 0, false
+	}
+	ranges := cardLineRanges(m.activityRowsForRender(events))
+	viewport := m.activityViewportLines()
+	if viewport <= 0 {
+		return 0, 0, false
+	}
+	top := m.activityScroll
+	bottom := m.activityScroll + viewport
+	first, last := -1, -1
+	for i, r := range ranges {
+		if r.start >= top && r.start < bottom {
+			if first < 0 {
+				first = i
+			}
+			last = i
+		}
+	}
+	if first < 0 {
+		return 0, 0, false
+	}
+	return first, last, true
 }
 
 // syncActivityScrollToCursor positions activityScroll (a LINE offset, not
@@ -341,31 +411,58 @@ func (m *Model) syncActivityScrollToCursor() {
 	if scroll < 0 {
 		scroll = 0
 	}
-	if maxScroll := len(body) - viewport; scroll > maxScroll {
+	if maxScroll := activityMaxScroll(len(body), viewport); scroll > maxScroll {
 		scroll = maxScroll
 	}
 	m.activityScroll = scroll
 }
 
+// Chrome budget consumed by every rendered row of the task detail screen
+// outside the activity panel's slice. activityChromeBase aggregates the
+// fixed-cost rows present on every render; the optional surcharges are
+// added on top when their feature renders.
+const (
+	// activityChromeBase: screen header (2) + leading blank
+	// applyTaskViewScroll prepends (1) + screen footer separator +
+	// keybindings (2) + activity panel top + bottom border (2) + kicker
+	// row inside the panel (1) + trailing margin so the bottom border is
+	// never the last row written to the alt-screen (1) = 9.
+	activityChromeBase = 9
+	// activityChromeStatus: extra row consumed when m.status renders an
+	// inline badge above the content.
+	activityChromeStatus = 1
+	// activityChromeEmbeddedInput: extra rows consumed by the embedded
+	// comment input (header + 5 input rows + hint + padding).
+	activityChromeEmbeddedInput = 9
+	// activityViewportMinLines is the floor enforced on the computed slice
+	// so the panel never collapses to a single card on a short terminal.
+	activityViewportMinLines = 6
+	// activityViewportFallbackLines is what we return when m.height has
+	// not yet been initialised (program just started, no WindowSizeMsg
+	// received yet) — large enough to render a few cards without flashing
+	// an empty panel on first paint.
+	activityViewportFallbackLines = 12
+)
+
 // activityViewportLines is the maximum number of LINES the activity column
-// renders before pagination kicks in. Big enough to use most of the screen
-// (so the column matches the form column visually) but with a chrome budget
-// reserved for the screen header, footer, panel borders, and the embedded
-// comment input row.
+// renders before pagination kicks in. Sized to consume the outer
+// `taskViewportHeight` budget so the column grows with the terminal — the
+// previous static chrome=12 left ~3 unused rows on every height because it
+// double-counted the screen header/footer the outer viewport already owns.
 func (m Model) activityViewportLines() int {
 	if m.height <= 0 {
-		return 12
+		return activityViewportFallbackLines
 	}
-	chrome := 12
+	chrome := activityChromeBase
+	if m.status != "" {
+		chrome += activityChromeStatus
+	}
 	if m.isEmbeddedCommentInput() {
-		// Reserve room for the comment input box (header + 5 input rows + 1
-		// hint = ~7 lines). Without this the input gets pushed off-screen
-		// when the activity column happens to be full.
-		chrome += 9
+		chrome += activityChromeEmbeddedInput
 	}
 	rows := m.height - chrome
-	if rows < 6 {
-		rows = 6
+	if rows < activityViewportMinLines {
+		rows = activityViewportMinLines
 	}
 	return rows
 }

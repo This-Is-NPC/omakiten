@@ -173,6 +173,18 @@ func TestFollowClampsOutOfRange(t *testing.T) {
 	}
 }
 
+func TestAboveHintRowsByMode(t *testing.T) {
+	if got := AboveHintRows(HintsSplit); got != 1 {
+		t.Fatalf("AboveHintRows(HintsSplit) = %d, want 1", got)
+	}
+	if got := AboveHintRows(HintsCombined); got != 1 {
+		t.Fatalf("AboveHintRows(HintsCombined) = %d, want 1", got)
+	}
+	if got := AboveHintRows(HintsNone); got != 0 {
+		t.Fatalf("AboveHintRows(HintsNone) = %d, want 0", got)
+	}
+}
+
 func TestAboveBelowHelpers(t *testing.T) {
 	if got := Above(7); got != 7 {
 		t.Fatalf("Above(7) = %d, want 7", got)
