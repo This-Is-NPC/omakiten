@@ -228,9 +228,14 @@ func (m *Model) scrollActivityLines(delta int) {
 	m.clampActivityScroll()
 }
 
-// clampActivityScroll keeps activityScroll inside [0, total - viewport].
-// Computes total by re-rendering cards, which is cheap and avoids the
-// caller having to thread the body length through.
+// clampActivityScroll keeps activityScroll inside [0, max], where max is
+// the offset that keeps the LAST body line visible inside the scrollwindow
+// budget. The +1 accounts for the row renderScrollWindowSplit reserves
+// for the "▲ N above" hint whenever offset > 0 — without it, G / sustained
+// pgdown left the final card's tail cropped behind a "▼ N below" that
+// lied about still-reachable rows. Computes total by re-rendering cards,
+// which is cheap and avoids the caller having to thread the body length
+// through.
 func (m *Model) clampActivityScroll() {
 	events := m.activityForTaskInView(m.taskID)
 	body := flattenActivityCards(m.activityRowsForRender(events))
@@ -239,13 +244,27 @@ func (m *Model) clampActivityScroll() {
 		m.activityScroll = 0
 		return
 	}
-	maxScroll := len(body) - viewport
+	maxScroll := activityMaxScroll(len(body), viewport)
 	if m.activityScroll < 0 {
 		m.activityScroll = 0
 	}
 	if m.activityScroll > maxScroll {
 		m.activityScroll = maxScroll
 	}
+}
+
+// activityMaxScroll is the largest offset that still renders the last body
+// line inside the activity viewport given the split-hint reservation
+// renderScrollWindowSplit applies. When offset > 0 the renderer eats one
+// row for the "▲ N above" hint; the +1 compensates so the last line is
+// reachable. Floored at 0 — callers should early-return when the body
+// fits without scroll, but defending here keeps the helper composable.
+func activityMaxScroll(bodyLen, viewport int) int {
+	max := bodyLen - viewport + 1
+	if max < 0 {
+		return 0
+	}
+	return max
 }
 
 // toggleTaskFocus flips which column inside the task detail screen owns
@@ -390,26 +409,36 @@ func (m *Model) syncActivityScrollToCursor() {
 	if scroll < 0 {
 		scroll = 0
 	}
-	if maxScroll := len(body) - viewport; scroll > maxScroll {
+	if maxScroll := activityMaxScroll(len(body), viewport); scroll > maxScroll {
 		scroll = maxScroll
 	}
 	m.activityScroll = scroll
 }
 
 // activityViewportLines is the maximum number of LINES the activity column
-// renders before pagination kicks in. Big enough to use most of the screen
-// (so the column matches the form column visually) but with a chrome budget
-// reserved for the screen header, footer, panel borders, and the embedded
-// comment input row.
+// renders before pagination kicks in. Sized to fully consume the outer
+// `taskViewportHeight` budget so the column grows with the terminal — the
+// previous static chrome=12 left ~4 unused rows on every height because it
+// double-counted the screen header/footer the outer viewport already owns.
+//
+// The reserved chrome rows inside the panel are:
+//   - 2 for the screen header (renderHeader)
+//   - 1 for the leading blank applyTaskViewScroll prepends
+//   - 2 for the screen footer (separator + keybindings)
+//   - 1 each for the activity panel's box top + bottom border
+//   - 1 for the kicker row ("// ACTIVITY · N") inside the panel
+//   - 1 extra when m.status renders an inline badge row
+//   - 9 extra when an embedded comment input is open (header + 5 input
+//     rows + hint + padding)
 func (m Model) activityViewportLines() int {
 	if m.height <= 0 {
 		return 12
 	}
-	chrome := 12
+	chrome := 8
+	if m.status != "" {
+		chrome++
+	}
 	if m.isEmbeddedCommentInput() {
-		// Reserve room for the comment input box (header + 5 input rows + 1
-		// hint = ~7 lines). Without this the input gets pushed off-screen
-		// when the activity column happens to be full.
 		chrome += 9
 	}
 	rows := m.height - chrome

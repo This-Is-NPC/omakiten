@@ -478,6 +478,66 @@ func TestActivityJAfterPageScrollDoesNotSnapBack(t *testing.T) {
 	}
 }
 
+// TestActivityLastCardReachableAtEndScroll is the symptom the user filed
+// with the screenshot for task #125: G (or sustained pgdown / j-to-last)
+// must leave the LAST event card's last line visible. The pre-fix
+// `maxScroll = len(body) - viewport` ignored the row that
+// renderScrollWindowSplit reserves for the "▲ N above" hint when scrolled
+// past the top — that 1-row deficit cropped the tail of the bottom card
+// so the focused border framed empty space while "▼ 2 below" lied about
+// nothing being there to reach.
+func TestActivityLastCardReachableAtEndScroll(t *testing.T) {
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "lots of activity", "", domain.Priority(2), "backlog", store.Snapshot())
+	if err != nil {
+		t.Fatalf("CreateTask() = %v", err)
+	}
+	const total = 24
+	var lastBody string
+	for i := 0; i < total; i++ {
+		body := fmt.Sprintf("end-marker-%02d", i)
+		lastBody = body
+		if _, err := store.AddComment(ctx, project.ID, task.ID, body, "human", nil); err != nil {
+			t.Fatalf("AddComment(%d) = %v", i, err)
+		}
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Events:       store,
+
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() = %v", err)
+	}
+	model.height = 35
+	model.width = 160
+
+	got := pressKey(t, model, tea.KeyEnter)
+	got = pressKey(t, got, tea.KeyTab)
+
+	// G jumps activityScroll to the sentinel; clampActivityScroll then
+	// must leave the last card reachable inside the viewport budget.
+	got = pressRune(t, got, 'G')
+
+	body := stripANSI(got.View())
+	if !strings.Contains(body, lastBody) {
+		t.Fatalf("last event body %q missing after G; activityScroll=%d\n--- view ---\n%s", lastBody, got.activityScroll, body)
+	}
+}
+
 func TestActivityPanelGrowsWithAvailableWidth(t *testing.T) {
 	// Skip NewModel — its refresh path needs a fully wired repo set. We only
 	// exercise pure sizing math, so a zero-value Model with width set is enough.
