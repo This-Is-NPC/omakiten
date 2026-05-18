@@ -87,6 +87,12 @@ func (m Model) renderTaskCard(spec taskCardSpec) string {
 	// archived is the next-strongest visual signal because the user
 	// opted in via the A toggle and expects them dimmed; accent is
 	// only a hint, so it loses to both. Default is the neutral border.
+	//
+	// Accent uses `info` (secondary token / muted teal) — NOT primary —
+	// so the critical-path / next-claimable hint stays visually distinct
+	// from `cardSelected` (primary green + Bold). Painting accent with
+	// primary would collide with the selection border and hide the
+	// cursor under the accent ring.
 	style := m.styles.card.Width(spec.BoxWidth)
 	switch {
 	case spec.Selected:
@@ -94,7 +100,7 @@ func (m Model) renderTaskCard(spec taskCardSpec) string {
 	case spec.Archived:
 		style = m.styles.archivedCard.Width(spec.BoxWidth)
 	case spec.Accent:
-		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
+		style = style.BorderForeground(m.styles.info.GetForeground())
 	}
 	return style.Render(strings.Join(lines, "\n"))
 }
