@@ -419,6 +419,71 @@ func TestClaimNextPlanTaskIsAtomicUnderConcurrency(t *testing.T) {
 	}
 }
 
+func TestCountPriorWavesPending(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	w1, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 0)
+	if err != nil {
+		t.Fatalf("AddPlanWave 1: %v", err)
+	}
+	w2, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-two", 0)
+	if err != nil {
+		t.Fatalf("AddPlanWave 2: %v", err)
+	}
+
+	t1, err := store.CreateTask(ctx, project.ID, "T1", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask 1: %v", err)
+	}
+	t2, err := store.CreateTask(ctx, project.ID, "T2", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask 2: %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, t1.ID, plan.ID, w1.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan 1: %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, t2.ID, plan.ID, w2.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan 2: %v", err)
+	}
+
+	// t2 sits in wave 2; t1 is still pending in wave 1 → wave_gate=1.
+	count, err := store.CountPriorWavesPending(ctx, project.ID, t2.ID, store.snap())
+	if err != nil {
+		t.Fatalf("CountPriorWavesPending: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("count = %d, want 1 (wave-1 still pending)", count)
+	}
+
+	// Move t1 to done → wave 1 empty → wave_gate clears.
+	if _, err := store.MoveTask(ctx, project.ID, t1.ID, "done", store.snap()); err != nil {
+		t.Fatalf("MoveTask t1: %v", err)
+	}
+	count, err = store.CountPriorWavesPending(ctx, project.ID, t2.ID, store.snap())
+	if err != nil {
+		t.Fatalf("CountPriorWavesPending after done: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("count = %d, want 0 after prior wave done", count)
+	}
+
+	// Standalone task (no plan/wave) → guard is a no-op (count=0).
+	bare, err := store.CreateTask(ctx, project.ID, "Bare", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask bare: %v", err)
+	}
+	count, err = store.CountPriorWavesPending(ctx, project.ID, bare.ID, store.snap())
+	if err != nil {
+		t.Fatalf("CountPriorWavesPending bare: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("count for non-plan task = %d, want 0", count)
+	}
+}
+
 func TestGetPlanByIDScopesByProject(t *testing.T) {
 	ctx, store, project := setupPlans(t)
 	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")

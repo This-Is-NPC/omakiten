@@ -509,6 +509,45 @@ WHERE project_id = ? AND id = ?
 	return task, true, nil
 }
 
+// CountPriorWavesPending returns the count of tasks in earlier waves of
+// the same plan that are still pending (not in the workflow's final
+// bucket and not archived). The wave_gate guard uses this to block a
+// task's transition until every prior wave finishes. Returns 0 — a
+// safe no-op — when the task is not attached to any wave or when no
+// final bucket is resolvable.
+//
+// Implementation uses a CTE to capture the current task's (plan_id,
+// wave_position); the outer query joins through that anchor so non-
+// plan tasks (cur is empty) naturally fall through to COUNT = 0.
+func (s *Store) CountPriorWavesPending(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (int, error) {
+	if buckets == nil {
+		return 0, nil
+	}
+	finalKey := buckets.Workflow().FinalBucketKey()
+	finalBucket, ok := buckets.BucketByKey(finalKey)
+	if !ok {
+		return 0, nil
+	}
+	var count int
+	err := s.db.QueryRowContext(ctx, `
+WITH cur AS (
+  SELECT t.plan_id AS plan_id, w.position AS position
+  FROM tasks t
+  JOIN plan_waves w ON w.id = t.wave_id
+  WHERE t.project_id = ? AND t.id = ?
+)
+SELECT COUNT(1)
+FROM tasks pt
+JOIN plan_waves pw ON pw.id = pt.wave_id
+JOIN cur ON cur.plan_id = pt.plan_id AND pw.position < cur.position
+WHERE pt.state = 'active' AND COALESCE(pt.bucket_id, 0) <> ?
+`, projectID, taskID, finalBucket.ID).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 // insertEntityEvent persists a non-task domain event in the caller's
 // transaction. Mirrors insertTaskEvent for plan/wave entities so callers
 // keep emission in the same atomic block as the mutation that triggered it.

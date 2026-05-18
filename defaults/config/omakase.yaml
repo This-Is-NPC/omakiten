@@ -397,6 +397,8 @@ workflows:
           - type: blockers_in
             buckets: [done]
             hint: "Every blocker must be in Done before development starts — finish blockers first to keep WIP under control."
+          - type: wave_gate
+            hint: "Wait for the previous wave to finish — tasks in earlier waves of the same plan must reach Done before this one starts."
       - from: 2
         to: 3
         guards:

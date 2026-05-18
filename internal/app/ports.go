@@ -76,6 +76,7 @@ type GuardEvaluationRepository interface {
 	ListTaskBlockerBuckets(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) ([]domain.TaskBlocker, error)
 	CountTaskComments(ctx context.Context, projectID, taskID int64) (int, error)
 	CountTaskCommentsTagged(ctx context.Context, projectID, taskID int64, tagName string) (int, error)
+	CountPriorWavesPending(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (int, error)
 }
 
 type CommentRepository interface {

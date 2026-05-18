@@ -750,6 +750,11 @@ func validateGuards(workflowKey, scope string, guards []TransitionGuard, bucketK
 			if guard.Count < 1 {
 				return fmt.Errorf("workflows.%s %s guard comments_tagged: count must be >= 1", workflowKey, scope)
 			}
+		case "wave_gate":
+			// wave_gate has no extra fields — pending count is derived
+			// from the task's wave + plan and the workflow's final
+			// bucket. The hint string is optional and validated by the
+			// shared TransitionGuard shape, not here.
 		default:
 			return fmt.Errorf("workflows.%s %s: unknown guard type %q", workflowKey, scope, guard.Type)
 		}

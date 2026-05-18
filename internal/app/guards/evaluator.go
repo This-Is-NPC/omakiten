@@ -52,6 +52,11 @@ type Repository interface {
 	ListTaskBlockerBuckets(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) ([]domain.TaskBlocker, error)
 	CountTaskComments(ctx context.Context, projectID, taskID int64) (int, error)
 	CountTaskCommentsTagged(ctx context.Context, projectID, taskID int64, tagName string) (int, error)
+	// CountPriorWavesPending counts tasks in earlier waves of the same
+	// plan that are not yet in the workflow's final bucket. Returns 0
+	// when the task has no wave attachment so the wave_gate guard is a
+	// silent no-op for non-plan tasks.
+	CountPriorWavesPending(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (int, error)
 }
 
 // EventSink records guard.violated domain events. Telemetry only — emission
@@ -183,9 +188,31 @@ func (e *Evaluator) runGuards(ctx context.Context, projectID, taskID int64, spec
 			if err := e.checkCommentsTagged(ctx, projectID, taskID, guard.Tag, guard.Count, guard.Hint, operation, target); err != nil {
 				return err
 			}
+		case "wave_gate":
+			if err := e.checkWaveGate(ctx, projectID, taskID, guard.Hint, operation, target); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+func (e *Evaluator) checkWaveGate(ctx context.Context, projectID, taskID int64, hint, operation string, target map[string]any) error {
+	pending, err := e.repo.CountPriorWavesPending(ctx, projectID, taskID, e.snap)
+	if err != nil {
+		return err
+	}
+	if pending == 0 {
+		return nil
+	}
+	msg := fmt.Sprintf("wave_gate guard: %d task(s) pending in prior waves of the same plan", pending)
+	details := map[string]any{"pending": pending}
+	if hint != "" {
+		msg += ". Hint: " + hint
+		details["hint"] = hint
+	}
+	e.EmitViolated(ctx, projectID, domain.EventEntityTask, taskID, operation, "wave_gate", msg, target)
+	return domain.NewError(domain.ErrGuardViolation, msg, details)
 }
 
 func (e *Evaluator) checkBlockersIn(ctx context.Context, projectID, taskID int64, allowedKeys []string, hint, operation string, target map[string]any) error {

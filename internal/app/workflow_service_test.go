@@ -141,6 +141,9 @@ func (f *fakeStores) CountTaskComments(context.Context, int64, int64) (int, erro
 func (f *fakeStores) CountTaskCommentsTagged(_ context.Context, _, _ int64, tag string) (int, error) {
 	return f.taggedCount[tag], nil
 }
+func (f *fakeStores) CountPriorWavesPending(context.Context, int64, int64, domain.BucketResolver) (int, error) {
+	return 0, nil
+}
 
 // TaskRepository
 func (f *fakeStores) CreateTask(_ context.Context, _ int64, _, _ string, _ domain.Priority, _ string, _ domain.BucketResolver) (domain.Task, error) {
