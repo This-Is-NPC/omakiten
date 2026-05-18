@@ -161,6 +161,21 @@ type SearchRepository interface {
 	Search(ctx context.Context, query string, projectID int64, entityTypes []domain.SearchEntityType, limit int) ([]domain.SearchHit, error)
 }
 
+// PlanRepository persists plans, waves, and task↔plan attachment. Plans
+// are scoped per project; every method takes projectID and rejects rows
+// belonging to a different project via the ErrPlanNotFound /
+// ErrPlanWaveNotFound codes instead of leaking data across snapshots.
+//
+// Only the methods the current slice of MCP wiring needs live here; the
+// add-wave / assign-task / claim-next surfaces land alongside their
+// respective tool dispatches.
+type PlanRepository interface {
+	CreatePlan(ctx context.Context, projectID int64, slug, name, goalBody string) (domain.Plan, error)
+	GetPlanBySlug(ctx context.Context, projectID int64, slug string) (domain.Plan, error)
+	GetPlanByID(ctx context.Context, projectID, planID int64) (domain.Plan, error)
+	ListPlans(ctx context.Context, projectID int64) ([]domain.Plan, error)
+}
+
 // BundleStore is the adapter port for reading/writing the bundled config and
 // the generic atomic-write helper. The app layer talks to this instead of
 // reaching into `internal/config`'s I/O functions directly so that the

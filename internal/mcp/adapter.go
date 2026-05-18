@@ -253,6 +253,8 @@ func tools() []ToolDefinition {
 		{Name: "templates.list", Description: "List every loaded template (slug, name, default kind, project scope, custom flag). Read-only; templates are authored by the user — the agent never modifies template bindings.", InputSchema: objectSchema(map[string]any{"kind": stringSchema("Optional default-kind filter (e.g. \"task\")"), "project": stringSchema("Optional project slug to scope project-bound templates"), "include_body": booleanSchema("Set true to include the template body in each entry; default omits it for compact responses")}, nil)},
 		{Name: "metrics.summary", Description: "Aggregate per-AI-model behaviour over a period: errors recorded, errors searched, solutions added, like rate, and search-before-record ratio. Use to benchmark whether different agents research existing context before recording new errors. Requires that callers pass _agent_model on every tool call (now coercive).", InputSchema: objectSchema(map[string]any{"period": stringSchema("Time window: \"7d\", \"30d\" (default), or \"all\""), "project_id": integerSchema("Optional registered project id; omit for cross-project view")}, nil)},
 		{Name: "templates.show", Description: "Return one template by slug, including its full body. Read-only. Hard-rejects (validation_error) when the requested slug is a global template that is shadowed by a project-scoped override in the active project — the rejection's details name the active slug so callers can re-call directly.", InputSchema: showTemplateSchema()},
+		{Name: "plans.create", Description: "Create a WBS-style plan that groups child tasks in ordered waves. Slug must be unique within the project; goal_body is markdown describing the plan's intent and acceptance criteria. Emits plan.created.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (kebab-case recommended); unique per project"), "name": stringSchema("Human-readable plan name"), "goal_body": stringSchema("Optional markdown body describing the plan goal and acceptance criteria")}, []string{"slug", "name"})},
+		{Name: "plans.list", Description: "List every plan in the active project, ordered by creation. Goal bodies are omitted from list entries — call plans.show (forthcoming) to fetch one with its full body.", InputSchema: selectorSchema()},
 	}
 }
 
@@ -575,6 +577,18 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = service.MetricsSummary(ctx, input)
+		}
+	case "plans.create":
+		var input agent.CreatePlanInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.CreatePlan(ctx, input)
+		}
+	case "plans.list":
+		var input agent.ListPlansInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.ListPlans(ctx, input)
 		}
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP tool %q", name)
