@@ -609,50 +609,89 @@ func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursor
 	return strings.Join(rows, "\n")
 }
 
-// renderPlanNetworkCard renders a single task as a bordered card —
-// same chrome as renderCard on the board, with the network view's
-// status badge + critical-path / next-claimable border accents.
+// renderPlanNetworkCard renders a single task through the shared
+// renderTaskCard helper so the plan network view inherits the same
+// bordered-pill chrome the board uses. Plan-specific badges (status,
+// blockers, dependents, next-claimable hint) and the @assigned
+// extra line are built here and passed in as taskCardSpec fields —
+// no surface-specific layout escapes into the helper.
 func (m Model) renderPlanNetworkCard(t domain.PlanTaskRow, waveID, activeWaveID int64, finalBucket string, selected bool, blockers, dependents map[int64][]int64, criticalPath map[int64]bool, nextClaimableID int64, boxWidth, contentWidth int) string {
-	badge := planNetworkStatusBadge(t, waveID, activeWaveID, finalBucket)
-	// First line: badge + id + title.
-	headLine := fmt.Sprintf("%s #%d %s", badge, t.TaskID, t.Title)
-	lines := []string{truncateText(headLine, contentWidth)}
-
+	var extras []string
 	if t.AssignedTo != "" {
-		lines = append(lines, truncateText("@"+t.AssignedTo, contentWidth))
+		extras = append(extras, "@"+t.AssignedTo)
 	}
-	if ids, ok := blockers[t.TaskID]; ok && len(ids) > 0 {
+	if ids := blockers[t.TaskID]; len(ids) > 0 {
 		parts := make([]string, len(ids))
-		for j, id := range ids {
-			parts[j] = fmt.Sprintf("#%d", id)
+		for i, id := range ids {
+			parts[i] = fmt.Sprintf("#%d", id)
 		}
-		lines = append(lines, truncateText("← "+strings.Join(parts, " "), contentWidth))
+		extras = append(extras, "← "+strings.Join(parts, " "))
 	}
-	if ids, ok := dependents[t.TaskID]; ok && len(ids) > 0 {
+	if ids := dependents[t.TaskID]; len(ids) > 0 {
 		parts := make([]string, len(ids))
-		for j, id := range ids {
-			parts[j] = fmt.Sprintf("#%d", id)
+		for i, id := range ids {
+			parts[i] = fmt.Sprintf("#%d", id)
 		}
-		lines = append(lines, truncateText("→ "+strings.Join(parts, " "), contentWidth))
+		extras = append(extras, "→ "+strings.Join(parts, " "))
 	}
+	return m.renderTaskCard(taskCardSpec{
+		ID:         t.TaskID,
+		Title:      t.Title,
+		ExtraLines: extras,
+		Badges:     m.planCardBadges(t, waveID, activeWaveID, finalBucket, blockers, dependents, criticalPath, nextClaimableID),
+		Selected:   selected,
+		Archived:   t.State == domain.TaskStateArchived,
+		Accent:     t.TaskID == nextClaimableID || criticalPath[t.TaskID],
+		BoxWidth:   boxWidth,
+		InnerWidth: contentWidth,
+	})
+}
 
-	body := strings.Join(lines, "\n")
+// planCardBadges builds the plan-specific badge slice rendered into
+// each card. Order is intentional: status (most informative), then
+// next-claimable / critical-path flags (actionable hints), then the
+// count badges (blockers, dependents, comments). wrapBadges inside
+// renderTaskCard reflows them if the row overflows the inner width.
+func (m Model) planCardBadges(t domain.PlanTaskRow, waveID, activeWaveID int64, finalBucket string, blockers, dependents map[int64][]int64, criticalPath map[int64]bool, nextClaimableID int64) []string {
+	var badges []string
+	badges = append(badges, m.planStatusBadgePill(t, waveID, activeWaveID, finalBucket))
+	if t.TaskID == nextClaimableID {
+		badges = append(badges, m.styles.badgeInfo.Render("next"))
+	}
+	if criticalPath[t.TaskID] {
+		badges = append(badges, m.styles.badgeTokenYellow.Render("critical"))
+	}
+	if n := len(blockers[t.TaskID]); n > 0 {
+		badges = append(badges, m.styles.badgeBlocker.Render(fmt.Sprintf("%d %s", n, plural(n, m.t("tui.badge.blocker"), m.t("tui.badge.blockers")))))
+	}
+	if n := len(dependents[t.TaskID]); n > 0 {
+		badges = append(badges, m.styles.badgeScope.Render(fmt.Sprintf("%d %s", n, plural(n, "dependent", "dependents"))))
+	}
+	if cmts := m.commentCount(t.TaskID); cmts > 0 {
+		badges = append(badges, m.styles.badgeComment.Render(fmt.Sprintf("%d %s", cmts, plural(cmts, m.t("tui.badge.comment"), m.t("tui.badge.comments")))))
+	}
+	return badges
+}
 
-	// Border accent priority: cursor selection > next-claimable
-	// > critical-path > default. The card already uses NormalBorder
-	// with the project's neutral foreground; we override BorderForeground
-	// (not the full style) so padding + width stay consistent.
-	style := m.styles.card.Width(boxWidth)
+// planStatusBadgePill maps the four task states (done / dev / ready
+// / gated) onto coloured pills so the card surfaces status as a
+// real badge instead of a glyph buried in the title row.
+//
+// - done   → badgeNormal (success / green)
+// - dev    → badgeInfo   (secondary / accent)
+// - gated  → badgeBlocker (warning / yellow)
+// - ready  → badgeComment (border / neutral)
+func (m Model) planStatusBadgePill(t domain.PlanTaskRow, waveID, activeWaveID int64, finalBucket string) string {
 	switch {
-	case selected:
-		style = m.styles.cardSelected.Width(boxWidth)
-	case t.TaskID == nextClaimableID, criticalPath[t.TaskID]:
-		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
+	case finalBucket != "" && t.BucketKey == finalBucket:
+		return m.styles.badgeNormal.Render("✓ done")
+	case t.BucketKey == "dev":
+		return m.styles.badgeInfo.Render("● dev")
+	case activeWaveID != 0 && waveID != activeWaveID:
+		return m.styles.badgeBlocker.Render("⊘ gated")
+	default:
+		return m.styles.badgeComment.Render("○ ready")
 	}
-	if t.State == domain.TaskStateArchived {
-		style = m.styles.archivedCard.Width(boxWidth)
-	}
-	return style.Render(body)
 }
 
 // renderPlanGoalEditor draws the modePlanGoal overlay: a full-panel
@@ -797,22 +836,3 @@ func planNetworkDependentIndex(deps []domain.TaskDependency) map[int64][]int64 {
 	return out
 }
 
-// planNetworkStatusBadge maps a task row onto the four-state badge the
-// network view advertises: ✓ done · ● dev · ○ ready · ⊘ gated. Gated
-// fires only when the task's wave sits past the plan's active wave —
-// the wave_gate guard's exact semantics.
-func planNetworkStatusBadge(t domain.PlanTaskRow, waveID, activeWaveID int64, finalBucket string) string {
-	if finalBucket != "" && t.BucketKey == finalBucket {
-		return "✓"
-	}
-	if t.BucketKey == "dev" {
-		return "●"
-	}
-	if activeWaveID != 0 && waveID != activeWaveID {
-		// Heuristic: any non-done task whose wave is not the active wave
-		// must be in a later wave (earlier waves are fully done, by the
-		// definition of active wave in PlanService.composeShow).
-		return "⊘"
-	}
-	return "○"
-}

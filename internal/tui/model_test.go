@@ -2193,16 +2193,24 @@ func TestPlansSubTabNetworkRendersCriticalPath(t *testing.T) {
 	opened := pressKey(t, got, tea.KeyEnter)
 
 	view := ansi.Strip(opened.View())
-	// Each task now renders as a bordered card (m.styles.card) so the
-	// box chrome must surface for every task in the view.
-	if !strings.Contains(view, "│ ○ #") && !strings.Contains(view, "│ ✓ #") && !strings.Contains(view, "│ ● #") {
-		t.Fatalf("network view missing card chrome rows\n%s", view)
+	// Each task now renders as a bordered card with status / count
+	// badges, so the box chrome must surface for every task title.
+	if !strings.Contains(view, "│ #1 alpha") {
+		t.Fatalf("alpha missing card chrome\n%s", view)
 	}
-	if !strings.Contains(view, "charlie") {
-		t.Fatalf("charlie missing from rendered cards\n%s", view)
+	if !strings.Contains(view, "│ #2 bravo") {
+		t.Fatalf("bravo missing card chrome\n%s", view)
 	}
-	if !strings.Contains(view, "delta") {
-		t.Fatalf("delta missing from rendered cards\n%s", view)
+	if !strings.Contains(view, "│ #3 charlie") {
+		t.Fatalf("charlie missing card chrome\n%s", view)
+	}
+	if !strings.Contains(view, "│ #4 delta") {
+		t.Fatalf("delta missing card chrome\n%s", view)
+	}
+	// Critical-path tasks pick up the badge pill; isolated delta
+	// must not carry it.
+	if !strings.Contains(view, "critical") {
+		t.Fatalf("critical-path badge missing for chain\n%s", view)
 	}
 }
 

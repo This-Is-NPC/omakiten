@@ -368,49 +368,23 @@ func (m Model) renderKanbanCell(bucket domain.Bucket, tasks []domain.Task, focus
 }
 
 func (m Model) renderCard(task domain.Task, selected bool, layout boardLayout) string {
-	prefix := fmt.Sprintf("#%d ", task.ID)
-	prefixWidth := lipgloss.Width(prefix)
-
-	firstWidth := layout.cardContentWidth - prefixWidth
-	restWidth := layout.cardContentWidth - prefixWidth
-	if firstWidth < 1 {
-		firstWidth = 1
-	}
-	if restWidth < 1 {
-		restWidth = 1
-	}
-
-	wrapped := wrapWords(task.Title, firstWidth, restWidth)
-	lines := make([]string, 0, len(wrapped)+1)
-	for i, part := range wrapped {
-		if i == 0 {
-			lines = append(lines, prefix+part)
-		} else {
-			lines = append(lines, strings.Repeat(" ", prefixWidth)+part)
-		}
-	}
-
-	if badgeLine := m.renderTaskBadges(task, layout.cardContentWidth); badgeLine != "" {
-		lines = append(lines, badgeLine)
-	}
-
-	style := m.styles.card.Width(layout.cardWidth)
-	if selected {
-		style = m.styles.cardSelected.Width(layout.cardWidth)
-	}
-	if task.State == domain.TaskStateArchived {
-		style = m.styles.archivedCard.Width(layout.cardWidth)
-	}
-	return style.Render(strings.Join(lines, "\n"))
+	return m.renderTaskCard(taskCardSpec{
+		ID:         task.ID,
+		Title:      task.Title,
+		Badges:     m.taskBoardBadges(task),
+		Selected:   selected,
+		Archived:   task.State == domain.TaskStateArchived,
+		BoxWidth:   layout.cardWidth,
+		InnerWidth: layout.cardContentWidth,
+	})
 }
 
-// renderTaskBadges builds a line of colored badges for a task: priority,
-// blocker count, and comment count. Each badge is rendered as a filled pill
-// using Lipgloss background colors. wrapBadges breaks badges onto a new line
-// whenever the next would overflow maxWidth so every badge stays visible.
-func (m Model) renderTaskBadges(task domain.Task, maxWidth int) string {
+// taskBoardBadges builds the badge slice the board's kanban card has
+// always carried: priority, blocker count, comment count. Pulled out
+// of renderCard so the new shared renderTaskCard helper stays free
+// of board-specific badge selection.
+func (m Model) taskBoardBadges(task domain.Task) []string {
 	var badges []string
-
 	if badge := m.priorityBadge(task.Priority); badge != "" {
 		badges = append(badges, badge)
 	}
@@ -420,8 +394,7 @@ func (m Model) renderTaskBadges(task domain.Task, maxWidth int) string {
 	if cmts := m.commentCount(task.ID); cmts > 0 {
 		badges = append(badges, m.styles.badgeComment.Render(fmt.Sprintf("%d %s", cmts, plural(cmts, m.t("tui.badge.comment"), m.t("tui.badge.comments")))))
 	}
-
-	return wrapBadges(badges, maxWidth)
+	return badges
 }
 
 func (m Model) renderEmptyBoardHint() string {
