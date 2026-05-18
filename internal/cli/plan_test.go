@@ -56,6 +56,32 @@ func TestCLIPlanLifecycle(t *testing.T) {
 	}
 }
 
+func TestCLIAssignSetsAndClearsAssignee(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	projectRoot := filepath.Join(tmp, "project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Chdir(projectRoot)
+
+	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
+	runCLI(t, dbPath, configPath, "add", "-t", "T1")
+
+	// Set assignee via `okt assign 1 alice` → emits task.assigned.
+	setOut := runCLI(t, dbPath, configPath, "assign", "1", "alice")
+	if !strings.Contains(setOut, `"event_type":"task.assigned"`) {
+		t.Fatalf("set output should carry task.assigned: %s", setOut)
+	}
+
+	// Clear via `okt assign 1` (no WHO) → emits task.unassigned.
+	clearOut := runCLI(t, dbPath, configPath, "assign", "1")
+	if !strings.Contains(clearOut, `"event_type":"task.unassigned"`) {
+		t.Fatalf("clear output should carry task.unassigned: %s", clearOut)
+	}
+}
+
 func TestCLIPlanClaimRequiresAgentModel(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")

@@ -197,6 +197,7 @@ func NewRootCommand(version string) *cobra.Command {
 	cmd.AddCommand(newAddCommand(opts))
 	cmd.AddCommand(newListCommand(opts))
 	cmd.AddCommand(newMoveCommand(opts))
+	cmd.AddCommand(newAssignCommand(opts))
 	cmd.AddCommand(newEditCommand(opts))
 	cmd.AddCommand(newDeleteCommand(opts))
 	cmd.AddCommand(newArchiveCommand(opts))
