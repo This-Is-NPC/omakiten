@@ -162,6 +162,11 @@ func (m Model) renderPlanNetwork() string {
 	activeWaveID := show.ActiveWaveID
 
 	blockers := planNetworkBlockerIndex(show.Dependencies)
+	allTasks := make([]domain.PlanTaskRow, 0)
+	for _, wv := range show.Waves {
+		allTasks = append(allTasks, wv.Tasks...)
+	}
+	criticalPath := planNetworkCriticalPath(show.Dependencies, allTasks)
 
 	contentWidth := m.availableWidth() - 4
 	colCount := len(show.Waves)
@@ -174,7 +179,7 @@ func (m Model) renderPlanNetwork() string {
 		if focused {
 			cursorIdx = m.planNetworkTaskCursor
 		}
-		cells = append(cells, m.renderPlanNetworkColumn(wv, focused, cursorIdx, colInner, wv.Wave.ID == activeWaveID, wv.Wave.ID, activeWaveID, finalBucket, blockers))
+		cells = append(cells, m.renderPlanNetworkColumn(wv, focused, cursorIdx, colInner, wv.Wave.ID == activeWaveID, wv.Wave.ID, activeWaveID, finalBucket, blockers, criticalPath))
 	}
 
 	var parts []string
@@ -227,7 +232,7 @@ func planNetworkColumnWidth(contentWidth, colCount int) int {
 // even when no individual task carries the cursor. blockers maps every
 // dependent task id to its sorted blocker list so each task line can
 // suffix a "← #N #M" marker without re-scanning PlanShow.Dependencies.
-func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursorIdx, width int, isActive bool, waveID, activeWaveID int64, finalBucket string, blockers map[int64][]int64) string {
+func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursorIdx, width int, isActive bool, waveID, activeWaveID int64, finalBucket string, blockers map[int64][]int64, criticalPath map[int64]bool) string {
 	headerStyle := m.styles.muted
 	if focused {
 		headerStyle = m.styles.hintAccent
@@ -267,7 +272,14 @@ func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursor
 		title := fmt.Sprintf("%s %s #%d %s%s%s",
 			marker, badge, t.TaskID, t.Title, assignee, blockerMarker,
 		)
-		rows = append(rows, truncateText(title, width))
+		rendered := truncateText(title, width)
+		if criticalPath[t.TaskID] {
+			// Critical-path rows get a leading double-rule glyph plus
+			// the accent style. Subtle by design — the user already
+			// has cursor/active markers competing for attention.
+			rendered = m.styles.hintAccent.Render("║ ") + rendered
+		}
+		rows = append(rows, rendered)
 	}
 	return strings.Join(rows, "\n")
 }
@@ -300,6 +312,81 @@ func (m Model) renderPlanGoalEditor() string {
 		field,
 	}
 	return m.renderPanel(strings.Join(lines, "\n"))
+}
+
+// planNetworkCriticalPath returns the set of task ids on the longest
+// blocker chain inside the plan. Tasks are scored by the depth of
+// their longest blocker chain (memoised DFS over the dependency
+// graph); the deepest task and every blocker reachable from it form
+// the critical path. Returns nil when the plan has fewer than two
+// chained tasks (no chain → no path worth highlighting). Ties on the
+// deepest endpoint break by lowest task id for stable rendering.
+func planNetworkCriticalPath(deps []domain.TaskDependency, tasks []domain.PlanTaskRow) map[int64]bool {
+	if len(deps) == 0 || len(tasks) == 0 {
+		return nil
+	}
+	blockers := map[int64][]int64{}
+	for _, d := range deps {
+		blockers[d.TaskID] = append(blockers[d.TaskID], d.DependsOnTaskID)
+	}
+
+	memoDepth := map[int64]int{}
+	var depth func(id int64, seen map[int64]bool) int
+	depth = func(id int64, seen map[int64]bool) int {
+		if d, ok := memoDepth[id]; ok {
+			return d
+		}
+		if seen[id] {
+			// Cycle guard: dependency cycles are invalid by design, but
+			// the helper must not infinite-loop if one slips through.
+			return 0
+		}
+		seen[id] = true
+		best := 0
+		for _, b := range blockers[id] {
+			if d := depth(b, seen); d+1 > best {
+				best = d + 1
+			}
+		}
+		delete(seen, id)
+		memoDepth[id] = best
+		return best
+	}
+
+	bestID := int64(0)
+	bestDepth := 0
+	for _, t := range tasks {
+		d := depth(t.TaskID, map[int64]bool{})
+		if d > bestDepth || (d == bestDepth && bestID == 0) || (d == bestDepth && t.TaskID < bestID) {
+			bestID = t.TaskID
+			bestDepth = d
+		}
+	}
+	if bestDepth == 0 {
+		return nil
+	}
+
+	path := map[int64]bool{bestID: true}
+	current := bestID
+	for {
+		next := int64(0)
+		bestSubDepth := -1
+		for _, b := range blockers[current] {
+			d := memoDepth[b]
+			if d > bestSubDepth || (d == bestSubDepth && (next == 0 || b < next)) {
+				next = b
+				bestSubDepth = d
+			}
+		}
+		// Stop on no-blocker leaf OR when the walk revisits a node
+		// (cycle in the dep graph would otherwise loop forever).
+		if next == 0 || path[next] {
+			break
+		}
+		path[next] = true
+		current = next
+	}
+	return path
 }
 
 // planNetworkBlockerIndex folds the in-plan dependency slice into a
