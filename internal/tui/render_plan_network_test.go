@@ -116,7 +116,7 @@ func TestPlanNetworkGutterDrawsHorizontalArrow(t *testing.T) {
 	if !strings.Contains(rows[2], "─") {
 		t.Fatalf("row 2 missing horizontal line: %q", rows[2])
 	}
-	if !strings.Contains(rows[2], "→") {
+	if !strings.Contains(rows[2], "►") {
 		t.Fatalf("row 2 missing arrow head: %q", rows[2])
 	}
 	// Other rows should be blank.
@@ -145,7 +145,7 @@ func TestPlanNetworkGutterRoutesBend(t *testing.T) {
 	if !strings.Contains(joined, "│") {
 		t.Fatalf("router did not emit vertical segment:\n%s", joined)
 	}
-	if !strings.Contains(joined, "→") {
+	if !strings.Contains(joined, "►") {
 		t.Fatalf("router did not emit arrow head:\n%s", joined)
 	}
 }
@@ -163,11 +163,51 @@ func TestPlanNetworkJunctionCoversFourWay(t *testing.T) {
 		dirN | dirE | dirW:                '┴',
 		dirS | dirE | dirW:                '┬',
 		dirN | dirS | dirE | dirW:         '┼',
-		dirArrow:                          '→',
+		dirArrow:                          '►',
 	}
 	for bits, want := range cases {
 		if got := planNetworkJunction(bits); got != want {
 			t.Errorf("junction(%08b) = %q, want %q", bits, got, want)
 		}
+	}
+}
+
+// TestPlanNetworkSkipEdgesFiltersAdjacentAndIntra confirms the
+// helper returns only edges that span 2+ wave boundaries; adjacent
+// (gutter-routed) and intra-wave edges are excluded because they
+// have their own surfaces.
+func TestPlanNetworkSkipEdgesFiltersAdjacentAndIntra(t *testing.T) {
+	taskToWave := map[int64]int64{
+		10: 100, // task 10 in wave W1
+		20: 200, // task 20 in wave W2
+		30: 300, // task 30 in wave W3
+		11: 100, // task 11 in wave W1
+	}
+	waveToIdx := map[int64]int{100: 0, 200: 1, 300: 2}
+	deps := []domain.TaskDependency{
+		{TaskID: 11, DependsOnTaskID: 10}, // intra W1 — skip
+		{TaskID: 20, DependsOnTaskID: 10}, // adjacent W1→W2 — skip
+		{TaskID: 30, DependsOnTaskID: 10}, // skip W1→W3 — KEEP
+	}
+	got := planNetworkSkipEdges(deps, taskToWave, waveToIdx)
+	if len(got) != 1 {
+		t.Fatalf("skip edges = %d, want 1: %+v", len(got), got)
+	}
+	if got[0].SrcIdx != 0 || got[0].DstIdx != 2 || got[0].SrcTaskID != 10 || got[0].DstTaskID != 30 {
+		t.Fatalf("unexpected skip edge: %+v", got[0])
+	}
+}
+
+// TestPlanNetworkSkipEdgesEmptyOnNoSkips verifies the helper returns
+// nil when every edge is adjacent or intra-wave, so the backplane
+// band stays unrendered (zero visual cost when there's no signal).
+func TestPlanNetworkSkipEdgesEmptyOnNoSkips(t *testing.T) {
+	taskToWave := map[int64]int64{10: 100, 20: 200}
+	waveToIdx := map[int64]int{100: 0, 200: 1}
+	deps := []domain.TaskDependency{
+		{TaskID: 20, DependsOnTaskID: 10}, // adjacent — not a skip
+	}
+	if got := planNetworkSkipEdges(deps, taskToWave, waveToIdx); len(got) != 0 {
+		t.Fatalf("skip edges = %+v, want empty on no-skip plan", got)
 	}
 }
