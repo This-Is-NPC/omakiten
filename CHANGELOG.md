@@ -82,6 +82,13 @@
 * **boundary enforcement:** new `internal/arch/arch_test.go` walks the import graph and fails if `internal/domain` reaches into adapters, if `internal/app` imports concrete adapters, or if any leaf adapter references a sibling. A `.golangci.yml` mirrors the rules under `depguard`. CI now runs `go vet`, `go test -race -count=1` and `golangci-lint`.
 * **eliminated `"backlog"` literal in production code:** `internal/cli/add.go --bucket` defaults to `""` (the `WorkflowService` resolves the active workflow's first bucket); the TUI's create form does the same.
 
+## [0.18.2](https://github.com/This-Is-NPC/omakiten/compare/v0.18.1...v0.18.2) (2026-05-18)
+
+
+### Bug Fixes
+
+* **agent:** dedupe template merge when scaffold already filled ([#65](https://github.com/This-Is-NPC/omakiten/issues/65)) ([4567439](https://github.com/This-Is-NPC/omakiten/commit/456743911931d901c7c3bc74b203e0b98a64bcce))
+
 ## [0.18.1](https://github.com/This-Is-NPC/omakiten/compare/v0.18.0...v0.18.1) (2026-05-18)
 
 
