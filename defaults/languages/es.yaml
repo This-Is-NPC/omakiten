@@ -894,3 +894,15 @@ keys:
   tui.plans.goal.hint.ctrl_s: "ctrl+s saves"
   tui.plans.goal.hint.alt_newline: "alt+enter newline"
   tui.plans.goal.hint.esc_cancel: "esc cancels"
+
+  # okt plan — CLI tree (TODO translate).
+  cli.plan.short: "Manage WBS-style implementation plans and their waves"
+  cli.plan.create.short: "Create a plan in the active project"
+  cli.plan.create.flag.name: "Plan name (human-readable)"
+  cli.plan.create.flag.goal_body: "Optional markdown goal / acceptance body"
+  cli.plan.list.short: "List plans in the active project"
+  cli.plan.show.short: "Show a plan with its waves, tasks per wave, and done/total counts"
+  cli.plan.wave_add.short: "Append a wave to a plan (auto-position) or insert at --position"
+  cli.plan.wave_add.flag.position: "Wave position (1-based); 0 appends after the current highest"
+  cli.plan.assign.short: "Attach an existing task to a (plan, wave)"
+  cli.plan.claim.short: "Atomically claim the next unblocked task in the plan's active wave (requires OMAKITEN_AGENT_MODEL)"

@@ -12,14 +12,11 @@ import (
 
 // newPlanCommand assembles the `okt plan ...` subcommand tree. Plans
 // group child tasks into ordered waves and feed the multi-agent claim
-// flow exposed at MCP (plans.claim_next). All CLI strings are inline
-// English in this slice; the i18n key catalog migration ships in a
-// follow-up so the language-pack parity test stays green without
-// touching the 21 bundled packs in this slice.
+// flow exposed at MCP (plans.claim_next).
 func newPlanCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "plan",
-		Short: "Manage WBS-style implementation plans and their waves",
+		Short: opts.t("cli.plan.short"),
 	}
 	cmd.AddCommand(newPlanCreateCommand(opts))
 	cmd.AddCommand(newPlanListCommand(opts))
@@ -35,7 +32,7 @@ func newPlanCreateCommand(opts *runtimeOptions) *cobra.Command {
 	var goalBody string
 	cmd := &cobra.Command{
 		Use:   "create SLUG --name NAME",
-		Short: "Create a plan in the active project",
+		Short: opts.t("cli.plan.create.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -58,8 +55,8 @@ func newPlanCreateCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVarP(&name, "name", "n", "", "Plan name (human-readable)")
-	cmd.Flags().StringVarP(&goalBody, "goal-body", "g", "", "Optional markdown goal / acceptance body")
+	cmd.Flags().StringVarP(&name, "name", "n", "", opts.t("cli.plan.create.flag.name"))
+	cmd.Flags().StringVarP(&goalBody, "goal-body", "g", "", opts.t("cli.plan.create.flag.goal_body"))
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }
@@ -67,7 +64,7 @@ func newPlanCreateCommand(opts *runtimeOptions) *cobra.Command {
 func newPlanListCommand(opts *runtimeOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List plans in the active project",
+		Short: opts.t("cli.plan.list.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
 				rt, err := opts.open(ctx, true)
@@ -94,7 +91,7 @@ func newPlanListCommand(opts *runtimeOptions) *cobra.Command {
 func newPlanShowCommand(opts *runtimeOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "show SLUG",
-		Short: "Show a plan with its waves, tasks per wave, and done/total counts",
+		Short: opts.t("cli.plan.show.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -123,7 +120,7 @@ func newPlanWaveAddCommand(opts *runtimeOptions) *cobra.Command {
 	var position int
 	cmd := &cobra.Command{
 		Use:   "wave-add SLUG NAME",
-		Short: "Append a wave to a plan (auto-position) or insert at --position",
+		Short: opts.t("cli.plan.wave_add.short"),
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -151,14 +148,14 @@ func newPlanWaveAddCommand(opts *runtimeOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().IntVar(&position, "position", 0, "Wave position (1-based); 0 appends after the current highest")
+	cmd.Flags().IntVar(&position, "position", 0, opts.t("cli.plan.wave_add.flag.position"))
 	return cmd
 }
 
 func newPlanAssignCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "assign SLUG WAVE_ID TASK_ID",
-		Short: "Attach an existing task to a (plan, wave)",
+		Short: opts.t("cli.plan.assign.short"),
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
@@ -199,7 +196,7 @@ func newPlanAssignCommand(opts *runtimeOptions) *cobra.Command {
 func newPlanClaimCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "claim SLUG",
-		Short: "Atomically claim the next unblocked task in the plan's active wave (requires OMAKITEN_AGENT_MODEL)",
+		Short: opts.t("cli.plan.claim.short"),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
