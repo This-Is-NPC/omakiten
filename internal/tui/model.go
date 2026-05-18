@@ -196,6 +196,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.handleListKey(msg)
 		case subGraph:
 			m.handleGraphKey(msg)
+		case subPlans:
+			m.handlePlansKey(msg)
 		case subStatsGeneral:
 			m.handleStatsKey(msg)
 		case subStatsLogs:
@@ -816,11 +818,38 @@ func (m *Model) refresh() error {
 	if bundleSnap := m.repos.activeSnapshot(); bundleSnap != nil {
 		m.languages = bundleSnap.Settings().EffectiveLanguages()
 	}
+	if m.repos.Plans != nil {
+		// Plans sub-tab is best-effort: a query failure stays out of the
+		// refresh return value so an unrelated sub-tab (board/table/graph)
+		// still loads. The plans renderer shows the cached slice or the
+		// empty-state hint when m.plans is nil.
+		planSvc := app.NewPlanServiceWithSnapshot(m.repos.Plans, m.repos.activeSnapshot())
+		if rollups, err := planSvc.ListRollups(m.ctx, m.project); err == nil {
+			m.plans = rollups
+		}
+	}
+	m.clampPlanCursor()
 	m.clampSelection()
 	m.clampCardIdx()
 	m.clampEntityCursor()
 	m.syncSelectedFromBoard()
 	return nil
+}
+
+// clampPlanCursor keeps planCursor inside the [0, len(plans)-1] window
+// after refresh trims the rollup slice. Mirrors the clamp helpers around
+// it so a deleted plan does not leave the cursor pointing past the end.
+func (m *Model) clampPlanCursor() {
+	if m.planCursor < 0 {
+		m.planCursor = 0
+	}
+	if m.planCursor >= len(m.plans) {
+		if len(m.plans) == 0 {
+			m.planCursor = 0
+		} else {
+			m.planCursor = len(m.plans) - 1
+		}
+	}
 }
 
 func (m Model) computeMetrics(maxTokens int) domain.TokenMetrics {

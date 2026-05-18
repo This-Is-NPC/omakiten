@@ -154,6 +154,19 @@ type PlanWaveView struct {
 	TotalCount int                  `json:"total_count"`
 }
 
+// PlanRollup is the lightweight per-plan projection the TUI list view
+// consumes — slug/name/status from domain.Plan plus the aggregated
+// done/total counters and the active wave's display name. Waves and
+// per-task detail stay out of this projection so callers do not pay
+// the per-task scan cost for a one-line row.
+type PlanRollup struct {
+	Plan           domain.Plan `json:"plan"`
+	DoneCount      int         `json:"done_count"`
+	TotalCount     int         `json:"total_count"`
+	ActiveWaveID   int64       `json:"active_wave_id,omitempty"`
+	ActiveWaveName string      `json:"active_wave_name,omitempty"`
+}
+
 // Show resolves a plan by slug and folds its waves + tasks into a single
 // projection ready for MCP / TUI rendering. ErrPlanNotFound bubbles when
 // the slug is missing in the active project. Archived tasks are filtered
@@ -176,6 +189,14 @@ func (s *PlanService) Show(ctx context.Context, project domain.ProjectContext, s
 	if err != nil {
 		return PlanShow{}, err
 	}
+	return s.composeShow(ctx, project, plan)
+}
+
+// composeShow folds a resolved plan with its waves and tasks into the
+// aggregated PlanShow projection. Extracted so List-style callers
+// (PlanService.ListRollups) can reuse the wave-aggregation logic without
+// the slug round-trip Show pays.
+func (s *PlanService) composeShow(ctx context.Context, project domain.ProjectContext, plan domain.Plan) (PlanShow, error) {
 	waves, err := s.repo.ListPlanWaves(ctx, project.ID, plan.ID)
 	if err != nil {
 		return PlanShow{}, err
@@ -195,6 +216,7 @@ func (s *PlanService) Show(ctx context.Context, project domain.ProjectContext, s
 		tasksByWave[t.WaveID] = append(tasksByWave[t.WaveID], t)
 	}
 
+	show := PlanShow{Plan: plan}
 	views := make([]PlanWaveView, 0, len(waves))
 	for _, w := range waves {
 		view := PlanWaveView{Wave: w, Tasks: tasksByWave[w.ID]}
@@ -219,7 +241,53 @@ func (s *PlanService) Show(ctx context.Context, project domain.ProjectContext, s
 		}
 	}
 
-	show.Plan = plan
 	show.Waves = views
 	return show, nil
+}
+
+// ListRollups returns one PlanRollup per plan in the project — the
+// lightweight projection the TUI list view consumes. Internally folds
+// the same wave-aggregation logic as Show so done/total counts and the
+// active-wave selection agree across surfaces. Requires a snapshot-bound
+// PlanService (same constraint as Show): without one, the final-bucket
+// resolver is empty and DoneCount is always 0.
+func (s *PlanService) ListRollups(ctx context.Context, project domain.ProjectContext) (rollups []PlanRollup, err error) {
+	finish := activity.Track(ctx, "app.PlanService.ListRollups", project, nil)
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	plans, err := s.repo.ListPlans(ctx, project.ID)
+	if err != nil {
+		return nil, err
+	}
+	rollups = make([]PlanRollup, 0, len(plans))
+	for _, p := range plans {
+		show, err := s.composeShow(ctx, project, p)
+		if err != nil {
+			return nil, err
+		}
+		rollup := PlanRollup{
+			Plan:         show.Plan,
+			DoneCount:    show.DoneCount,
+			TotalCount:   show.TotalCount,
+			ActiveWaveID: show.ActiveWaveID,
+		}
+		if rollup.ActiveWaveID != 0 {
+			for _, v := range show.Waves {
+				if v.Wave.ID == rollup.ActiveWaveID {
+					rollup.ActiveWaveName = v.Wave.Name
+					break
+				}
+			}
+		}
+		rollups = append(rollups, rollup)
+	}
+	return rollups, nil
 }

@@ -1105,12 +1105,16 @@ func TestSubCycleBindings(t *testing.T) {
 		t.Fatalf("after second '/': sub = %d, want subGraph", got.sub)
 	}
 	got = pressStringKey(t, got, "/")
+	if got.sub != subPlans {
+		t.Fatalf("after third '/': sub = %d, want subPlans", got.sub)
+	}
+	got = pressStringKey(t, got, "/")
 	if got.sub != subBoard {
-		t.Fatalf("after third '/': sub = %d, want subBoard (wrap-around)", got.sub)
+		t.Fatalf("after fourth '/': sub = %d, want subBoard (wrap-around)", got.sub)
 	}
 	got = pressStringKey(t, got, ",")
-	if got.sub != subGraph {
-		t.Fatalf("after ',' from board: sub = %d, want subGraph (wrap-around)", got.sub)
+	if got.sub != subPlans {
+		t.Fatalf("after ',' from board: sub = %d, want subPlans (wrap-around)", got.sub)
 	}
 
 	got = pressRune(t, model, '3')
@@ -1661,5 +1665,135 @@ func tuiTestTheme() config.Theme {
 			"highlight":  "#363A4F",
 			"error":      "#ED8796",
 		},
+	}
+}
+
+// TestPlansSubTabRendersRollups exercises the new Tasks › plans list
+// view: refresh() must call PlanService.ListRollups, the renderer must
+// emit one row per plan with slug/status/done-total/percent, and the
+// kicker count must reflect the number of rollups. Seeds two plans —
+// one with a closed and an open task across two waves so DoneCount,
+// TotalCount, and ActiveWaveName all take non-zero defaults.
+func TestPlansSubTabRendersRollups(t *testing.T) {
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	planA, err := store.CreatePlan(ctx, project.ID, "rollout-a", "Rollout A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan(A) error = %v", err)
+	}
+	if _, err := store.CreatePlan(ctx, project.ID, "rollout-b", "Rollout B", ""); err != nil {
+		t.Fatalf("CreatePlan(B) error = %v", err)
+	}
+	wave1, err := store.AddPlanWave(ctx, project.ID, planA.ID, "Wave 1", 1)
+	if err != nil {
+		t.Fatalf("AddPlanWave(1) error = %v", err)
+	}
+	if _, err := store.AddPlanWave(ctx, project.ID, planA.ID, "Wave 2", 2); err != nil {
+		t.Fatalf("AddPlanWave(2) error = %v", err)
+	}
+	taskOpen, err := store.CreateTask(ctx, project.ID, "open", "", domain.Priority(2), "backlog", snap)
+	if err != nil {
+		t.Fatalf("CreateTask(open) error = %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, taskOpen.ID, planA.ID, wave1.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan(open) error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	// Cycle board → table → graph → plans.
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	if got.sub != subPlans {
+		t.Fatalf("third '/': sub = %d, want subPlans", got.sub)
+	}
+	if len(got.plans) != 2 {
+		t.Fatalf("len(plans) = %d, want 2", len(got.plans))
+	}
+
+	view := ansi.Strip(got.View())
+	if !strings.Contains(view, "// PLANS") {
+		t.Fatalf("plans view missing kicker\n%s", view)
+	}
+	if !strings.Contains(view, "rollout-a") || !strings.Contains(view, "rollout-b") {
+		t.Fatalf("plans view missing plan rows\n%s", view)
+	}
+	if !strings.Contains(view, "Wave 1") {
+		t.Fatalf("plans view missing active wave name\n%s", view)
+	}
+
+	// j moves planCursor; k restores it.
+	advanced := pressRune(t, got, 'j')
+	if advanced.planCursor != 1 {
+		t.Fatalf("after 'j': planCursor = %d, want 1", advanced.planCursor)
+	}
+	back := pressRune(t, advanced, 'k')
+	if back.planCursor != 0 {
+		t.Fatalf("after 'k': planCursor = %d, want 0", back.planCursor)
+	}
+}
+
+// TestPlansSubTabEmptyState confirms the empty-state hint renders when
+// the project has no plans yet — covers the early-return branch in
+// renderPlans so the panel never collapses to a blank surface.
+func TestPlansSubTabEmptyState(t *testing.T) {
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	if got.sub != subPlans {
+		t.Fatalf("third '/': sub = %d, want subPlans", got.sub)
+	}
+	view := ansi.Strip(got.View())
+	if !strings.Contains(view, "No plans yet") {
+		t.Fatalf("plans view missing empty-state hint\n%s", view)
 	}
 }

@@ -136,6 +136,8 @@ func (m Model) renderCurrentView() string {
 		return m.renderTable()
 	case subGraph:
 		return m.renderGraph()
+	case subPlans:
+		return m.renderPlans()
 	case subStatsGeneral:
 		return m.renderStats()
 	case subStatsLogs:
