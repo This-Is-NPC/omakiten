@@ -22,6 +22,8 @@ keys:
   cli.task.delete.short: "Bir task'ı kalıcı sil (cascade) — bucket politikasına ve operations.delete.guards'a tabidir"
   cli.task.archive.short: "Bir task'ı arşivle (state=archived, workflow'un son bucket'ına taşır)"
   cli.task.unarchive.short: "Arşivlenmiş bir task'ı geri yükle (state=active)"
+  cli.task.assign.short: "Bir task'i serbest-metin sahibine atar (boş WHO atamayı temizler)"
+  cli.task.assign.long: "tasks.assigned_to'yu verilen WHO'ya ayarlar ve task.assigned yayar. Sütunu temizlemek ve task.unassigned yaymak için boş bir WHO geçin (veya atlayın) — claim eden agent bitirmeden çöken task için kurtarma yolu. dev'den manuel move'lar da assigned_to'yu otomatik olarak temizler."
   cli.init.short: "Aktif projeyi global veritabanında kaydet"
   cli.tui.short: "Terminal arayüzünü aç"
   cli.comment.short: "Task comment'lerini yönet"

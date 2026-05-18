@@ -22,6 +22,8 @@ keys:
   cli.task.delete.short: "Verwijder een task definitief (cascade) — onderhevig aan bucket policy en operations.delete.guards"
   cli.task.archive.short: "Archiveer een task (state=archived, verplaatst naar de laatste bucket van de workflow)"
   cli.task.unarchive.short: "Herstel een gearchiveerde task (state=active)"
+  cli.task.assign.short: "Wijst een task toe aan een free-text eigenaar (lege WHO wist de toewijzing)"
+  cli.task.assign.long: "Zet tasks.assigned_to op de opgegeven WHO en zendt task.assigned uit. Geef een lege WHO (of laat weg) om de kolom te wissen en task.unassigned uit te zenden — het herstelpad voor een task waarvan de claimende agent crashte zonder af te ronden. Handmatige moves uit dev wissen ook assigned_to automatisch."
   cli.init.short: "Registreer het huidige project in de globale database"
   cli.tui.short: "Open de terminal-UI"
   cli.comment.short: "Beheer comments van tasks"

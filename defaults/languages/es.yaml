@@ -22,6 +22,8 @@ keys:
   cli.task.delete.short: "Elimina una task de forma destructiva (cascade) — sujeto a bucket policy y operations.delete.guards"
   cli.task.archive.short: "Archiva una task (state=archived, mueve al bucket final del workflow)"
   cli.task.unarchive.short: "Restaura una task archivada (state=active)"
+  cli.task.assign.short: "Asigna una task a un dueño de texto libre (WHO vacío limpia la asignación)"
+  cli.task.assign.long: "Establece tasks.assigned_to al WHO suministrado y emite task.assigned. Pasa un WHO vacío (u omítelo) para limpiar la columna y emitir task.unassigned — el camino de recuperación para una task cuyo agente reclamante se cayó sin terminar. Los movimientos manuales fuera de dev también limpian assigned_to automáticamente."
   cli.init.short: "Registra el proyecto actual en la base de datos global"
   cli.tui.short: "Abre la interfaz de terminal"
   cli.comment.short: "Gestiona comentarios de tasks"

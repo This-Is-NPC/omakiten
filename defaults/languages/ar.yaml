@@ -22,6 +22,8 @@ keys:
   cli.task.delete.short: "حذف task نهائيًا (cascade) — خاضع لسياسة bucket و operations.delete.guards"
   cli.task.archive.short: "أرشفة task (state=archived، تنتقل إلى bucket النهائي في workflow)"
   cli.task.unarchive.short: "استعادة task مؤرشفة (state=active)"
+  cli.task.assign.short: "تعيين task لمالك نصي حر (WHO فارغ يمسح التعيين)"
+  cli.task.assign.long: "يضبط tasks.assigned_to إلى WHO المعطى ويُصدر task.assigned. مرّر WHO فارغ (أو احذفه) لمسح العمود وإصدار task.unassigned — مسار الاسترداد لـ task يتعطل وكيله المُطالِب دون إنهاء. النقلات اليدوية خارج dev تمسح assigned_to تلقائيًا أيضًا."
   cli.init.short: "تسجيل المشروع الحالي في قاعدة البيانات العامة"
   cli.tui.short: "فتح واجهة الطرفية TUI"
   cli.comment.short: "إدارة comments الخاصة بـ tasks"

@@ -22,6 +22,8 @@ keys:
   cli.task.delete.short: "Hård-radera en task (cascade) — styrs av bucket policy och operations.delete.guards"
   cli.task.archive.short: "Arkivera en task (state=archived, flyttas till workflowens sista bucket)"
   cli.task.unarchive.short: "Återställ en arkiverad task (state=active)"
+  cli.task.assign.short: "Tilldelar en task till en fri-text ägare (tom WHO rensar tilldelningen)"
+  cli.task.assign.long: "Sätter tasks.assigned_to till angiven WHO och skickar ut task.assigned. Skicka en tom WHO (eller utelämna) för att rensa kolumnen och skicka ut task.unassigned — återhämtningsvägen för en task vars krävande agent kraschade utan att slutföra. Manuella moves ut ur dev rensar också assigned_to automatiskt."
   cli.init.short: "Registrera det aktuella projektet i den globala databasen"
   cli.tui.short: "Öppna terminal-UI"
   cli.comment.short: "Hantera task-comments"

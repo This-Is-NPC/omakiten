@@ -22,6 +22,8 @@ keys:
   cli.task.delete.short: "Hard-delete a task (cascade) — subject to bucket policy and operations.delete.guards"
   cli.task.archive.short: "Archive a task (state=archived, moves into the workflow's final bucket)"
   cli.task.unarchive.short: "Restore an archived task (state=active)"
+  cli.task.assign.short: "Assign a task to a free-text owner (empty WHO clears the assignment)"
+  cli.task.assign.long: "Sets tasks.assigned_to to the supplied WHO and emits task.assigned. Pass an empty WHO (or omit it) to clear the column and emit task.unassigned — the recovery path for a task whose claiming agent crashed without finishing. Manual moves out of dev also clear assigned_to automatically."
   cli.init.short: "Register the current project in the global database"
   cli.tui.short: "Open the terminal UI"
   cli.comment.short: "Manage task comments"

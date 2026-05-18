@@ -22,6 +22,8 @@ keys:
   cli.task.delete.short: "task を破壊的に削除 (cascade) — bucket policy と operations.delete.guards に従う"
   cli.task.archive.short: "task をアーカイブ (state=archived、workflow の最終 bucket に移動)"
   cli.task.unarchive.short: "アーカイブされた task を復元 (state=active)"
+  cli.task.assign.short: "task をフリーテキストのオーナーに割り当て (空の WHO は割り当てをクリア)"
+  cli.task.assign.long: "tasks.assigned_to を指定された WHO に設定し task.assigned を発行します。空の WHO (または省略) を渡すと列をクリアして task.unassigned を発行します — claim 中の agent が完了せずクラッシュした task の回復経路。dev からの手動 move も自動的に assigned_to をクリアします。"
   cli.init.short: "現在のプロジェクトをグローバル DB に登録"
   cli.tui.short: "ターミナル UI を開く"
   cli.comment.short: "task の comment を管理"

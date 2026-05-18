@@ -22,6 +22,8 @@ keys:
   cli.task.delete.short: "task को हार्ड-डिलीट करें (cascade) — bucket नीति और operations.delete.guards के अधीन"
   cli.task.archive.short: "task को आर्काइव करें (state=archived, workflow के अंतिम bucket में जाता है)"
   cli.task.unarchive.short: "आर्काइव किए गए task को बहाल करें (state=active)"
+  cli.task.assign.short: "एक task को मुक्त-पाठ owner को सौंपें (खाली WHO असाइनमेंट हटाता है)"
+  cli.task.assign.long: "tasks.assigned_to को दिए गए WHO पर सेट करता है और task.assigned जारी करता है। कॉलम साफ करने और task.unassigned जारी करने के लिए खाली WHO दें (या छोड़ दें) — task के लिए रिकवरी पथ जिसका claim करने वाला agent पूरा किए बिना crash हो गया। dev से बाहर मैनुअल move भी स्वचालित रूप से assigned_to को साफ करते हैं।"
   cli.init.short: "वर्तमान project को ग्लोबल डेटाबेस में पंजीकृत करें"
   cli.tui.short: "टर्मिनल UI खोलें"
   cli.comment.short: "task comment प्रबंधित करें"

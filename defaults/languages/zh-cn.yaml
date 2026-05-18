@@ -22,6 +22,8 @@ keys:
   cli.task.delete.short: "破坏性删除 task (cascade) — 受 bucket policy 和 operations.delete.guards 约束"
   cli.task.archive.short: "归档 task (state=archived,移到 workflow 的最终 bucket)"
   cli.task.unarchive.short: "恢复已归档的 task (state=active)"
+  cli.task.assign.short: "将 task 分配给自由文本 owner（空 WHO 清除分配）"
+  cli.task.assign.long: "将 tasks.assigned_to 设置为给定的 WHO 并发出 task.assigned。传递空 WHO（或省略）以清除列并发出 task.unassigned — 对于 claim 它的 agent 在未完成前崩溃的 task 的恢复路径。从 dev 手动 move 出也会自动清除 assigned_to。"
   cli.init.short: "将当前项目注册到全局数据库"
   cli.tui.short: "打开终端 UI"
   cli.comment.short: "管理 task 评论"

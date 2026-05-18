@@ -22,6 +22,8 @@ keys:
   cli.task.delete.short: "Удалить task деструктивно (cascade) — подчиняется bucket policy и operations.delete.guards"
   cli.task.archive.short: "Архивировать task (state=archived, перемещает в финальный bucket workflow)"
   cli.task.unarchive.short: "Восстановить архивированную task (state=active)"
+  cli.task.assign.short: "Назначает task свободному текстовому владельцу (пустой WHO очищает назначение)"
+  cli.task.assign.long: "Устанавливает tasks.assigned_to в указанный WHO и испускает task.assigned. Передайте пустой WHO (или опустите его) чтобы очистить столбец и испустить task.unassigned — путь восстановления для task чей claim-агент упал не завершив. Ручные move из dev также автоматически очищают assigned_to."
   cli.init.short: "Зарегистрировать текущий проект в глобальной БД"
   cli.tui.short: "Открыть терминальный UI"
   cli.comment.short: "Управление комментариями task"

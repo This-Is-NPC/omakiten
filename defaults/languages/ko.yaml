@@ -22,6 +22,8 @@ keys:
   cli.task.delete.short: "task 를 파괴적으로 삭제 (cascade) — bucket policy 와 operations.delete.guards 의 적용 대상"
   cli.task.archive.short: "task 를 아카이브 (state=archived, workflow 의 최종 bucket 으로 이동)"
   cli.task.unarchive.short: "아카이브된 task 복원 (state=active)"
+  cli.task.assign.short: "task 를 free-text owner 에게 할당 (WHO 비우면 할당 제거)"
+  cli.task.assign.long: "tasks.assigned_to 를 지정한 WHO 로 설정하고 task.assigned 를 발행합니다. WHO 를 비워서 (또는 생략) 열을 비우고 task.unassigned 를 발행합니다 — claim 한 agent 가 완료 없이 crash 한 task 의 복구 경로. dev 밖으로의 수동 move 도 assigned_to 를 자동으로 비웁니다."
   cli.init.short: "현재 프로젝트를 글로벌 DB에 등록"
   cli.tui.short: "터미널 UI 열기"
   cli.comment.short: "task 댓글 관리"

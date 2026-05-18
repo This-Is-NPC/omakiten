@@ -22,6 +22,8 @@ keys:
   cli.task.delete.short: "Poista task pysyvästi (cascade) — bucket-politiikan ja operations.delete.guardsin alainen"
   cli.task.archive.short: "Arkistoi task (state=archived, siirtyy workflow'n viimeiseen bucketiin)"
   cli.task.unarchive.short: "Palauta arkistoitu task (state=active)"
+  cli.task.assign.short: "Antaa task:in vapaatekstiselle omistajalle (tyhjä WHO tyhjentää tehtävänannon)"
+  cli.task.assign.long: "Asettaa tasks.assigned_to-arvon annetuksi WHO:ksi ja lähettää task.assigned-tapahtuman. Anna tyhjä WHO (tai jätä pois) tyhjentääksesi sarakkeen ja lähettääksesi task.unassigned-tapahtuman — palautuspolku task:lle, jonka vaativa agentti kaatui ennen valmistumista. Manuaaliset siirrot pois dev:stä tyhjentävät myös assigned_to:n automaattisesti."
   cli.init.short: "Rekisteröi nykyinen projekti globaaliin tietokantaan"
   cli.tui.short: "Avaa terminaali-UI"
   cli.comment.short: "Hallinnoi taskin commentteja"
