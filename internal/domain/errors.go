@@ -23,6 +23,9 @@ const (
 	ErrGuardViolation            ErrorCode = "guard_violation"
 	ErrErrorNotFound             ErrorCode = "error_not_found"
 	ErrSolutionNotFound          ErrorCode = "solution_not_found"
+	ErrPlanNotFound              ErrorCode = "plan_not_found"
+	ErrPlanSlugConflict          ErrorCode = "plan_slug_conflict"
+	ErrPlanWaveNotFound          ErrorCode = "plan_wave_not_found"
 )
 
 type CodedError struct {
