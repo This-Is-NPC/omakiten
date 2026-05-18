@@ -53,6 +53,13 @@ type TaskRepository interface {
 	// EmitTaskEditedEvent records a task.edited row with a payload describing
 	// the changed fields. Service layer calls it after a successful UpdateTask.
 	EmitTaskEditedEvent(ctx context.Context, projectID, taskID int64, before, after domain.Task) (domain.Event, error)
+	// AssignTask sets tasks.assigned_to to the trimmed value (empty string
+	// clears the column to NULL) and emits task.assigned / task.unassigned
+	// in the same transaction. No-ops when the new assignee equals the
+	// current one (no event emitted). source labels the call site
+	// ("cli.assign", "plans.claim_next", etc.) so consumers can attribute
+	// the change in the payload.
+	AssignTask(ctx context.Context, projectID, taskID int64, assignee, source string, buckets domain.BucketResolver) (domain.Task, domain.Event, error)
 }
 
 // WorkflowRepository exposes the state-side primitives the app's
@@ -198,6 +205,25 @@ type PlanRepository interface {
 	// endpoints belong to the same plan; powers the network
 	// diagram's in-plan arrows.
 	ListPlanTaskDependencies(ctx context.Context, projectID, planID int64) ([]domain.TaskDependency, error)
+	// MaybeFinalizePlanForTask transitions the task's owning plan to
+	// status='done' when every other task in the plan already sits in
+	// the workflow's final bucket. No-op when the task has no plan,
+	// the plan is already terminal, or pending tasks remain. Returns
+	// (true, nil) when the plan was finalised. Called from
+	// WorkflowService.MoveTask after a successful move into the
+	// final bucket.
+	MaybeFinalizePlanForTask(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (bool, error)
+}
+
+// PlanFinalizer is the narrow port WorkflowService consults after a task
+// moves into the workflow's final bucket: if the task belongs to a plan
+// and was the last pending one, the plan transitions to status='done'.
+// Defined separately from PlanRepository so the workflow layer does not
+// have to drag the full repository surface in just to call one method —
+// the production store satisfies both, the type assertion in
+// NewWorkflowServiceFromStore wires it up.
+type PlanFinalizer interface {
+	MaybeFinalizePlanForTask(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (bool, error)
 }
 
 // BundleStore is the adapter port for reading/writing the bundled config and

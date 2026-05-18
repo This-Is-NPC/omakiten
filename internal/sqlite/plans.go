@@ -678,6 +678,172 @@ WHERE project_id = ? AND id = ?
 	return task, true, nil
 }
 
+// AssignTask sets tasks.assigned_to and emits task.assigned (non-empty
+// new assignee) or task.unassigned (empty new assignee) in the same
+// transaction. When the new value matches the existing one the call
+// is a no-op (zero Event returned, no event emitted) so repeated
+// idempotent writes do not spam the activity feed.
+//
+// source labels the call site ("cli.assign", "plans.claim_next",
+// "task.moved") so downstream consumers can attribute the change.
+func (s *Store) AssignTask(ctx context.Context, projectID, taskID int64, assignee, source string, buckets domain.BucketResolver) (domain.Task, domain.Event, error) {
+	assignee = strings.TrimSpace(assignee)
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Task{}, domain.Event{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var prev sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT assigned_to FROM tasks WHERE project_id = ? AND id = ?`, projectID, taskID).Scan(&prev); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Task{}, domain.Event{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project",
+				map[string]any{"task_id": taskID, "project_id": projectID})
+		}
+		return domain.Task{}, domain.Event{}, err
+	}
+	prevStr := ""
+	if prev.Valid {
+		prevStr = prev.String
+	}
+
+	if prevStr == assignee {
+		task, terr := s.taskByIDTx(ctx, tx, projectID, taskID, buckets)
+		if terr != nil {
+			return domain.Task{}, domain.Event{}, terr
+		}
+		if err := tx.Commit(); err != nil {
+			return domain.Task{}, domain.Event{}, err
+		}
+		return task, domain.Event{}, nil
+	}
+
+	var newVal any
+	if assignee != "" {
+		newVal = assignee
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE tasks SET assigned_to = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND id = ?`, newVal, projectID, taskID); err != nil {
+		return domain.Task{}, domain.Event{}, err
+	}
+
+	var eventType string
+	var payload []byte
+	if assignee == "" {
+		eventType = domain.EventTypeTaskUnassigned
+		payload, _ = json.Marshal(map[string]any{"former_assignee": prevStr, "source": source})
+	} else {
+		eventType = domain.EventTypeTaskAssigned
+		payload, _ = json.Marshal(map[string]any{"assignee": assignee, "source": source})
+	}
+	ev, err := insertEntityEvent(ctx, tx, domain.EventEntityTask, taskID, projectID, eventType, string(payload))
+	if err != nil {
+		return domain.Task{}, domain.Event{}, err
+	}
+
+	task, err := s.taskByIDTx(ctx, tx, projectID, taskID, buckets)
+	if err != nil {
+		return domain.Task{}, domain.Event{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.Task{}, domain.Event{}, err
+	}
+	s.publishEvent(ctx, ev)
+	return task, ev, nil
+}
+
+// MaybeFinalizePlanForTask transitions the task's owning plan to
+// status='done' (with completed_at stamped) when every other task in
+// the same plan already sits in the workflow's final bucket. Returns
+// (true, nil) when the plan was finalised on this call; (false, nil)
+// when the task has no plan, the plan is already done/abandoned, the
+// plan has no active tasks (degenerate empty plan), or pending tasks
+// remain in non-final buckets. Emits plan.done on a successful
+// transition.
+//
+// Called from WorkflowService.MoveTask after a task lands in the
+// final bucket. Recompute-on-write keeps the invariant cheap and
+// recoverable: a crash between MoveTask's commit and this call simply
+// defers the finalisation to the next task that closes — the count
+// query is naturally idempotent and the UPDATE is gated by
+// `status = 'active'` so concurrent finalisers cannot double-emit.
+func (s *Store) MaybeFinalizePlanForTask(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (bool, error) {
+	if buckets == nil {
+		return false, nil
+	}
+	finalKey := buckets.Workflow().FinalBucketKey()
+	finalBucket, ok := buckets.BucketByKey(finalKey)
+	if !ok {
+		return false, nil
+	}
+
+	var planID sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `SELECT plan_id FROM tasks WHERE project_id = ? AND id = ?`, projectID, taskID).Scan(&planID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !planID.Valid {
+		return false, nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var status string
+	if err := tx.QueryRowContext(ctx, `SELECT status FROM plans WHERE id = ? AND project_id = ?`, planID.Int64, projectID).Scan(&status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	if status != "active" {
+		return false, nil
+	}
+
+	var active, pending int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM tasks WHERE plan_id = ? AND project_id = ? AND state = 'active'`, planID.Int64, projectID).Scan(&active); err != nil {
+		return false, err
+	}
+	if active == 0 {
+		return false, nil
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM tasks WHERE plan_id = ? AND project_id = ? AND state = 'active' AND COALESCE(bucket_id, 0) <> ?`, planID.Int64, projectID, finalBucket.ID).Scan(&pending); err != nil {
+		return false, err
+	}
+	if pending > 0 {
+		return false, nil
+	}
+
+	res, err := tx.ExecContext(ctx, `UPDATE plans SET status = 'done', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'active'`, planID.Int64)
+	if err != nil {
+		return false, err
+	}
+	changed, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if changed == 0 {
+		// Lost a race against another finaliser — already transitioned.
+		return false, nil
+	}
+
+	payload, _ := json.Marshal(map[string]any{"total": active})
+	ev, err := insertEntityEvent(ctx, tx, domain.EventEntityPlan, planID.Int64, projectID, domain.EventTypePlanDone, string(payload))
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	s.publishEvent(ctx, ev)
+	return true, nil
+}
+
 // CountPriorWavesPending returns the count of tasks in earlier waves of
 // the same plan that are still pending (not in the workflow's final
 // bucket and not archived). The wave_gate guard uses this to block a

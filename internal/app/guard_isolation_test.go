@@ -216,6 +216,9 @@ func (r *isolationRepo) SetTaskState(context.Context, int64, int64, domain.TaskS
 func (r *isolationRepo) EmitTaskEditedEvent(context.Context, int64, int64, domain.Task, domain.Task) (domain.Event, error) {
 	return domain.Event{}, nil
 }
+func (r *isolationRepo) AssignTask(context.Context, int64, int64, string, string, domain.BucketResolver) (domain.Task, domain.Event, error) {
+	return domain.Task{}, domain.Event{}, nil
+}
 
 // EventRepository — task.completed emission noop; the move target isn't the
 // final bucket in this fixture, so MoveTask never reaches RecordTaskEvent.

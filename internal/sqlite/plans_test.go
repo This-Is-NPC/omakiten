@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"sync"
 	"testing"
@@ -601,6 +602,200 @@ func TestCountPriorWavesPending(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("count for non-plan task = %d, want 0", count)
+	}
+}
+
+// TestMoveTaskClearsAssignedToOnBucketChange pins the SMART/Scope rule
+// "tasks.assigned_to is cleared on transition out of dev" — a claim's
+// ownership lives only as long as the task sits in the working bucket.
+// The repo emits task.unassigned in the same transaction as task.moved
+// so dashboards see both signals atomically.
+func TestMoveTaskClearsAssignedToOnBucketChange(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 0)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "Claimable", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, task.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan: %v", err)
+	}
+
+	ctxClaim := activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
+	claimed, ok, err := store.ClaimNextPlanTask(ctxClaim, project.ID, plan.ID, store.snap())
+	if err != nil || !ok {
+		t.Fatalf("ClaimNextPlanTask: ok=%v err=%v", ok, err)
+	}
+
+	// Verify assigned_to is set after claim.
+	var assignee sql.NullString
+	if err := store.db.QueryRowContext(ctx, `SELECT assigned_to FROM tasks WHERE id = ?`, claimed.ID).Scan(&assignee); err != nil {
+		t.Fatalf("read assigned_to post-claim: %v", err)
+	}
+	if !assignee.Valid || assignee.String != "claude-opus-4-7" {
+		t.Fatalf("post-claim assigned_to = %v, want claude-opus-4-7", assignee)
+	}
+
+	// Move out of dev → back to backlog. Should clear assigned_to.
+	if _, err := store.MoveTask(ctx, project.ID, claimed.ID, "backlog", store.snap()); err != nil {
+		t.Fatalf("MoveTask back to backlog: %v", err)
+	}
+	if err := store.db.QueryRowContext(ctx, `SELECT assigned_to FROM tasks WHERE id = ?`, claimed.ID).Scan(&assignee); err != nil {
+		t.Fatalf("read assigned_to post-move: %v", err)
+	}
+	if assignee.Valid && assignee.String != "" {
+		t.Fatalf("post-move assigned_to = %q, want NULL/empty", assignee.String)
+	}
+
+	// task.unassigned event must have been emitted.
+	events, err := store.ListRecentEvents(ctx, domain.EventTypeTaskUnassigned, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents: %v", err)
+	}
+	if len(events) == 0 {
+		t.Fatal("no task.unassigned event emitted on bucket change")
+	}
+}
+
+// TestMaybeFinalizePlanForTaskTransitionsWhenLastTaskCloses pins the
+// SMART rule "Plan auto-transitions to done when the last task closes".
+// Two-task plan: completing the first task is a no-op; completing the
+// second triggers plan.done with status='done' and completed_at stamped.
+func TestMaybeFinalizePlanForTaskTransitionsWhenLastTaskCloses(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 0)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	t1, err := store.CreateTask(ctx, project.ID, "T1", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask t1: %v", err)
+	}
+	t2, err := store.CreateTask(ctx, project.ID, "T2", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask t2: %v", err)
+	}
+	for _, id := range []int64{t1.ID, t2.ID} {
+		if err := store.AssignTaskToPlan(ctx, project.ID, id, plan.ID, wave.ID); err != nil {
+			t.Fatalf("AssignTaskToPlan %d: %v", id, err)
+		}
+	}
+
+	final := store.snap().Workflow().FinalBucketKey()
+
+	// Move t1 to final; plan stays active (t2 still pending).
+	if _, err := store.MoveTask(ctx, project.ID, t1.ID, final, store.snap()); err != nil {
+		t.Fatalf("MoveTask t1 final: %v", err)
+	}
+	finalized, err := store.MaybeFinalizePlanForTask(ctx, project.ID, t1.ID, store.snap())
+	if err != nil {
+		t.Fatalf("MaybeFinalizePlanForTask t1: %v", err)
+	}
+	if finalized {
+		t.Fatal("plan should NOT finalise while t2 still pending")
+	}
+
+	// Move t2 to final → plan auto-done.
+	if _, err := store.MoveTask(ctx, project.ID, t2.ID, final, store.snap()); err != nil {
+		t.Fatalf("MoveTask t2 final: %v", err)
+	}
+	finalized, err = store.MaybeFinalizePlanForTask(ctx, project.ID, t2.ID, store.snap())
+	if err != nil {
+		t.Fatalf("MaybeFinalizePlanForTask t2: %v", err)
+	}
+	if !finalized {
+		t.Fatal("plan should finalise after last task closed")
+	}
+
+	got, err := store.GetPlanByID(ctx, project.ID, plan.ID)
+	if err != nil {
+		t.Fatalf("GetPlanByID: %v", err)
+	}
+	if got.Status != "done" {
+		t.Fatalf("plan status = %q, want done", got.Status)
+	}
+	if got.CompletedAt == "" {
+		t.Fatal("plan completed_at not stamped")
+	}
+
+	events, err := store.ListRecentEvents(ctx, domain.EventTypePlanDone, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents plan.done: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("plan.done events = %d, want 1", len(events))
+	}
+
+	// Idempotent: second call is a no-op.
+	finalized, err = store.MaybeFinalizePlanForTask(ctx, project.ID, t2.ID, store.snap())
+	if err != nil {
+		t.Fatalf("MaybeFinalizePlanForTask idempotent: %v", err)
+	}
+	if finalized {
+		t.Fatal("second finalise call should be no-op")
+	}
+}
+
+// TestAssignTaskSetsThenClearsAssignee verifies the AssignTask repo
+// method handles both directions (set → empty=clear) and emits
+// task.assigned / task.unassigned accordingly. Same-value call is a no-op.
+func TestAssignTaskSetsThenClearsAssignee(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	task, err := store.CreateTask(ctx, project.ID, "Assignable", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	// Set assignee.
+	_, ev, err := store.AssignTask(ctx, project.ID, task.ID, "human-alice", "cli.assign", store.snap())
+	if err != nil {
+		t.Fatalf("AssignTask set: %v", err)
+	}
+	if ev.EventType != domain.EventTypeTaskAssigned {
+		t.Fatalf("set event = %q, want task.assigned", ev.EventType)
+	}
+
+	var assignee sql.NullString
+	if err := store.db.QueryRowContext(ctx, `SELECT assigned_to FROM tasks WHERE id = ?`, task.ID).Scan(&assignee); err != nil {
+		t.Fatalf("read assigned_to: %v", err)
+	}
+	if !assignee.Valid || assignee.String != "human-alice" {
+		t.Fatalf("assigned_to = %v, want human-alice", assignee)
+	}
+
+	// Same-value call → no-op (zero event).
+	_, ev, err = store.AssignTask(ctx, project.ID, task.ID, "human-alice", "cli.assign", store.snap())
+	if err != nil {
+		t.Fatalf("AssignTask idempotent: %v", err)
+	}
+	if ev.EventType != "" {
+		t.Fatalf("idempotent call emitted event %q, want zero", ev.EventType)
+	}
+
+	// Clear via empty assignee.
+	_, ev, err = store.AssignTask(ctx, project.ID, task.ID, "", "cli.assign", store.snap())
+	if err != nil {
+		t.Fatalf("AssignTask clear: %v", err)
+	}
+	if ev.EventType != domain.EventTypeTaskUnassigned {
+		t.Fatalf("clear event = %q, want task.unassigned", ev.EventType)
+	}
+	if err := store.db.QueryRowContext(ctx, `SELECT assigned_to FROM tasks WHERE id = ?`, task.ID).Scan(&assignee); err != nil {
+		t.Fatalf("read assigned_to post-clear: %v", err)
+	}
+	if assignee.Valid && assignee.String != "" {
+		t.Fatalf("post-clear assigned_to = %q, want NULL/empty", assignee.String)
 	}
 }
 

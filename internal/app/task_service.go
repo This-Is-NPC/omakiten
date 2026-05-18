@@ -308,6 +308,32 @@ func (s *TaskService) Archive(ctx context.Context, project domain.ProjectContext
 	return
 }
 
+// Assign sets the task's free-text assignee (tasks.assigned_to) to the
+// trimmed argument. An empty assignee clears the column to NULL — the
+// recovery path for tasks whose claiming agent crashed without finishing.
+// Emits task.assigned (non-empty) or task.unassigned (empty) in the same
+// transaction as the UPDATE. No-op when the new value matches the current
+// one; the returned Event is zero in that case.
+func (s *TaskService) Assign(ctx context.Context, project domain.ProjectContext, taskID int64, assignee string) (task domain.Task, event domain.Event, err error) {
+	finish := activity.Track(ctx, "app.TaskService.Assign", project, map[string]any{"task_id": taskID, "assignee": strings.TrimSpace(assignee)})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	if taskID <= 0 {
+		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+		return
+	}
+	task, event, err = s.repo.AssignTask(ctx, project.ID, taskID, assignee, "cli.assign", s.snap)
+	return
+}
+
 // Unarchive restores an archived task to active state, leaving its bucket
 // untouched. Respects operations.unarchive.guards if declared.
 func (s *TaskService) Unarchive(ctx context.Context, project domain.ProjectContext, taskID int64) (task domain.Task, event domain.Event, err error) {
