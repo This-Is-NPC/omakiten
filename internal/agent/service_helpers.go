@@ -170,9 +170,12 @@ func truncateBody(body string, maxChars int) string {
 // and merges its body with the user-supplied body. When the user body is
 // empty, the template body wins outright; when it is non-empty, the user
 // content stays first and the template body is appended after a blank line so
-// the user's intent is not overwritten. Unknown slugs surface as a validation
-// error rather than silently degrading. Returns the merged body, the resolved
-// template summary, and an error.
+// the user's intent is not overwritten. The append is skipped when the user
+// body already follows the template's `## ` heading structure — that signals
+// the caller pre-filled the scaffold and re-appending would duplicate every
+// section. Unknown slugs surface as a validation error rather than silently
+// degrading. Returns the merged body, the resolved template summary, and an
+// error.
 //
 // `kind` is just an enum tag used in error messages — "task" or "comment".
 func (s *Service) applyTemplateBody(slug, body, kind string) (string, *TaskTemplateSummary, error) {
@@ -207,9 +210,47 @@ func mergeUserBodyWithTemplate(userBody, templateBody string) string {
 		return template
 	case template == "":
 		return user
-	default:
-		return user + "\n\n" + template
 	}
+	if userBodyFollowsTemplateStructure(user, template) {
+		return user
+	}
+	return user + "\n\n" + template
+}
+
+// userBodyFollowsTemplateStructure detects a pre-filled scaffold so the merge
+// skips the append. Heuristic: every `## ` top-level heading in templateBody
+// appears verbatim as a line in userBody. Triggered by the agent flow
+// `templates.show` → fill sections → `create_intent` with the same
+// template_slug, which would otherwise concatenate the filled body and the
+// raw scaffold and produce duplicate sections. Returns false when the
+// template carries no `## ` headings — the dedupe heuristic only applies to
+// section-structured templates.
+func userBodyFollowsTemplateStructure(userBody, templateBody string) bool {
+	headings := h2Headings(templateBody)
+	if len(headings) == 0 {
+		return false
+	}
+	userHeadings := map[string]struct{}{}
+	for _, h := range h2Headings(userBody) {
+		userHeadings[h] = struct{}{}
+	}
+	for _, h := range headings {
+		if _, ok := userHeadings[h]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func h2Headings(body string) []string {
+	out := []string{}
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimRight(line, " \t\r")
+		if strings.HasPrefix(trimmed, "## ") {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 func taskTitleAndDescription(title, description string) (string, string) {
