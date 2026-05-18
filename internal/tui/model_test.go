@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -1989,6 +1990,77 @@ func TestPlansSubTabNetworkClaimReportsEmpty(t *testing.T) {
 	claimed := pressRune(t, opened, 'c')
 	if !strings.Contains(claimed.status, "no tasks claimable") {
 		t.Fatalf("status after 'c' on empty plan = %q, want no-claim message", claimed.status)
+	}
+}
+
+// TestPlansSubTabNetworkRendersBlockerMarkers proves PlanShow's
+// in-plan dependency edges surface as inline "← #N" markers on the
+// dependent task's line. Out-of-plan edges must not leak through.
+func TestPlansSubTabNetworkRendersBlockerMarkers(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	plan, err := store.CreatePlan(ctx, project.ID, "rollout", "Rollout", "")
+	if err != nil {
+		t.Fatalf("CreatePlan() error = %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "Foundation", 1)
+	if err != nil {
+		t.Fatalf("AddPlanWave() error = %v", err)
+	}
+	blocker, err := store.CreateTask(ctx, project.ID, "blocker-task", "", domain.Priority(2), "backlog", snap)
+	if err != nil {
+		t.Fatalf("CreateTask blocker: %v", err)
+	}
+	dependent, err := store.CreateTask(ctx, project.ID, "dependent-task", "", domain.Priority(2), "backlog", snap)
+	if err != nil {
+		t.Fatalf("CreateTask dependent: %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, blocker.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan blocker: %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, dependent.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan dependent: %v", err)
+	}
+	if _, err := store.AddTaskDependency(ctx, project.ID, dependent.ID, blocker.ID); err != nil {
+		t.Fatalf("AddTaskDependency: %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	opened := pressKey(t, got, tea.KeyEnter)
+	if !opened.planNetworkOpen {
+		t.Fatalf("network did not open")
+	}
+
+	view := ansi.Strip(opened.View())
+	expected := "← #" + strconv.FormatInt(blocker.ID, 10)
+	if !strings.Contains(view, expected) {
+		t.Fatalf("network missing blocker marker %q\n%s", expected, view)
 	}
 }
 

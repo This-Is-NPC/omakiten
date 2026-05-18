@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -140,8 +141,9 @@ func (m Model) planNetworkCurrentTasks() []domain.PlanTaskRow {
 // renderPlanNetwork draws the column-per-wave layout. Each wave is its
 // own vertical stack of cards laid out via lipgloss.JoinHorizontal so
 // horizontal order matches wave position. Status badges, the @assigned
-// marker, and the active-wave highlight are derived from PlanShow alone
-// — dependency arrows and the critical-path highlight stay deferred.
+// marker, the active-wave highlight, and inline blocker markers
+// (← #N #M) all come straight from PlanShow — full edge routing across
+// columns and the critical-path highlight stay deferred.
 func (m Model) renderPlanNetwork() string {
 	if m.mode == modePlanGoal {
 		return m.renderPlanGoalEditor()
@@ -159,6 +161,8 @@ func (m Model) renderPlanNetwork() string {
 	}
 	activeWaveID := show.ActiveWaveID
 
+	blockers := planNetworkBlockerIndex(show.Dependencies)
+
 	contentWidth := m.availableWidth() - 4
 	colCount := len(show.Waves)
 	colInner := planNetworkColumnWidth(contentWidth, colCount)
@@ -170,7 +174,7 @@ func (m Model) renderPlanNetwork() string {
 		if focused {
 			cursorIdx = m.planNetworkTaskCursor
 		}
-		cells = append(cells, m.renderPlanNetworkColumn(wv, focused, cursorIdx, colInner, wv.Wave.ID == activeWaveID, wv.Wave.ID, activeWaveID, finalBucket))
+		cells = append(cells, m.renderPlanNetworkColumn(wv, focused, cursorIdx, colInner, wv.Wave.ID == activeWaveID, wv.Wave.ID, activeWaveID, finalBucket, blockers))
 	}
 
 	var parts []string
@@ -220,8 +224,10 @@ func planNetworkColumnWidth(contentWidth, colCount int) int {
 // renderPlanNetworkColumn renders a single wave column: header (name +
 // per-wave done/total), a separator rule, then one row per task. The
 // focused-wave header uses the accent style so cursor focus is visible
-// even when no individual task carries the cursor.
-func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursorIdx, width int, isActive bool, waveID, activeWaveID int64, finalBucket string) string {
+// even when no individual task carries the cursor. blockers maps every
+// dependent task id to its sorted blocker list so each task line can
+// suffix a "← #N #M" marker without re-scanning PlanShow.Dependencies.
+func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursorIdx, width int, isActive bool, waveID, activeWaveID int64, finalBucket string, blockers map[int64][]int64) string {
 	headerStyle := m.styles.muted
 	if focused {
 		headerStyle = m.styles.hintAccent
@@ -250,8 +256,16 @@ func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursor
 		if t.AssignedTo != "" {
 			assignee = " @" + t.AssignedTo
 		}
-		title := fmt.Sprintf("%s %s #%d %s%s",
-			marker, badge, t.TaskID, t.Title, assignee,
+		blockerMarker := ""
+		if ids, ok := blockers[t.TaskID]; ok && len(ids) > 0 {
+			parts := make([]string, len(ids))
+			for j, id := range ids {
+				parts[j] = fmt.Sprintf("#%d", id)
+			}
+			blockerMarker = " ← " + strings.Join(parts, " ")
+		}
+		title := fmt.Sprintf("%s %s #%d %s%s%s",
+			marker, badge, t.TaskID, t.Title, assignee, blockerMarker,
 		)
 		rows = append(rows, truncateText(title, width))
 	}
@@ -286,6 +300,24 @@ func (m Model) renderPlanGoalEditor() string {
 		field,
 	}
 	return m.renderPanel(strings.Join(lines, "\n"))
+}
+
+// planNetworkBlockerIndex folds the in-plan dependency slice into a
+// dependent→[blocker ids] lookup so each task row can render its
+// blockers in O(1). Each value slice is sorted ascending for stable
+// markers across refreshes.
+func planNetworkBlockerIndex(deps []domain.TaskDependency) map[int64][]int64 {
+	if len(deps) == 0 {
+		return nil
+	}
+	out := make(map[int64][]int64, len(deps))
+	for _, d := range deps {
+		out[d.TaskID] = append(out[d.TaskID], d.DependsOnTaskID)
+	}
+	for k := range out {
+		sort.Slice(out[k], func(i, j int) bool { return out[k][i] < out[k][j] })
+	}
+	return out
 }
 
 // planNetworkStatusBadge maps a task row onto the four-state badge the

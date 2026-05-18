@@ -263,6 +263,59 @@ func TestClaimNextPlanTaskMovesTaskAndStampsAssignee(t *testing.T) {
 	}
 }
 
+// TestListPlanTaskDependenciesFiltersToInPlanEdges proves the new
+// repo method only returns edges where BOTH endpoints belong to the
+// queried plan. Cross-plan or unattached-task edges are filtered out
+// so the network renderer never draws arrows that point off-canvas.
+func TestListPlanTaskDependenciesFiltersToInPlanEdges(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "deps", "Deps", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 0)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	a, err := store.CreateTask(ctx, project.ID, "A", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask A: %v", err)
+	}
+	b, err := store.CreateTask(ctx, project.ID, "B", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask B: %v", err)
+	}
+	outsider, err := store.CreateTask(ctx, project.ID, "outsider", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask outsider: %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, a.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan A: %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, b.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan B: %v", err)
+	}
+
+	// In-plan edge B → A (B depends on A) and out-of-plan edge A → outsider.
+	if _, err := store.AddTaskDependency(ctx, project.ID, b.ID, a.ID); err != nil {
+		t.Fatalf("AddTaskDependency in-plan: %v", err)
+	}
+	if _, err := store.AddTaskDependency(ctx, project.ID, a.ID, outsider.ID); err != nil {
+		t.Fatalf("AddTaskDependency out-of-plan: %v", err)
+	}
+
+	deps, err := store.ListPlanTaskDependencies(ctx, project.ID, plan.ID)
+	if err != nil {
+		t.Fatalf("ListPlanTaskDependencies: %v", err)
+	}
+	if len(deps) != 1 {
+		t.Fatalf("deps len = %d, want 1 (in-plan only): %+v", len(deps), deps)
+	}
+	if deps[0].TaskID != b.ID || deps[0].DependsOnTaskID != a.ID {
+		t.Fatalf("dep = %+v, want B(%d) → A(%d)", deps[0], b.ID, a.ID)
+	}
+}
+
 // TestPeekNextClaimableMatchesClaimWithoutMutating proves the new
 // peek helper returns the same candidate ClaimNext would pick, but
 // without moving the task or stamping assigned_to. A follow-up

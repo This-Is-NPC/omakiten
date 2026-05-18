@@ -175,13 +175,16 @@ func (s *PlanService) AddWave(ctx context.Context, project domain.ProjectContext
 // PlanShow is the aggregated view PlanService.Show returns. The active
 // wave is the lowest-position wave whose tasks are not all in the
 // workflow's final bucket; ActiveWaveID is 0 when every wave is done
-// (or when the plan has no waves yet).
+// (or when the plan has no waves yet). Dependencies enumerates the
+// in-plan task→task edges (both endpoints belong to this plan) so the
+// network renderer can draw blocker markers without a follow-up query.
 type PlanShow struct {
-	Plan         domain.Plan    `json:"plan"`
-	Waves        []PlanWaveView `json:"waves"`
-	DoneCount    int            `json:"done_count"`
-	TotalCount   int            `json:"total_count"`
-	ActiveWaveID int64          `json:"active_wave_id,omitempty"`
+	Plan         domain.Plan              `json:"plan"`
+	Waves        []PlanWaveView           `json:"waves"`
+	DoneCount    int                      `json:"done_count"`
+	TotalCount   int                      `json:"total_count"`
+	ActiveWaveID int64                    `json:"active_wave_id,omitempty"`
+	Dependencies []domain.TaskDependency  `json:"dependencies,omitempty"`
 }
 
 // PlanWaveView pairs a wave with its tasks and per-wave done/total
@@ -281,6 +284,11 @@ func (s *PlanService) composeShow(ctx context.Context, project domain.ProjectCon
 	}
 
 	show.Waves = views
+
+	if deps, depErr := s.repo.ListPlanTaskDependencies(ctx, project.ID, plan.ID); depErr == nil {
+		show.Dependencies = deps
+	}
+
 	return show, nil
 }
 

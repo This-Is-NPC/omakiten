@@ -194,6 +194,10 @@ type PlanRepository interface {
 	// reserve, without mutating anything. Powers plans.continue so a
 	// downstream agent can preview the candidate.
 	PeekNextClaimable(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) (domain.PlanTaskRow, bool, error)
+	// ListPlanTaskDependencies returns task→task edges where both
+	// endpoints belong to the same plan; powers the network
+	// diagram's in-plan arrows.
+	ListPlanTaskDependencies(ctx context.Context, projectID, planID int64) ([]domain.TaskDependency, error)
 }
 
 // BundleStore is the adapter port for reading/writing the bundled config and

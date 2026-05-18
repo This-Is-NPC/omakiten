@@ -170,6 +170,49 @@ RETURNING id, project_id, slug, name, goal_body, status, created_at, updated_at,
 	return plan, nil
 }
 
+// ListPlanTaskDependencies returns dependency edges where both
+// endpoints (task_id and depends_on_task_id) belong to the same plan.
+// Cross-plan or out-of-plan edges are filtered out so the network
+// diagram only draws in-plan arrows. Ordered by (task_id,
+// depends_on_task_id) for stable rendering across refreshes.
+func (s *Store) ListPlanTaskDependencies(ctx context.Context, projectID, planID int64) ([]domain.TaskDependency, error) {
+	var ownerProjectID int64
+	if err := s.db.QueryRowContext(ctx, `SELECT project_id FROM plans WHERE id = ?`, planID).Scan(&ownerProjectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.NewError(domain.ErrPlanNotFound, "plan not found",
+				map[string]any{"plan_id": planID})
+		}
+		return nil, err
+	}
+	if ownerProjectID != projectID {
+		return nil, domain.NewError(domain.ErrPlanNotFound, "plan not found in active project",
+			map[string]any{"plan_id": planID, "project_id": projectID})
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT d.project_id, d.task_id, d.depends_on_task_id
+FROM task_dependencies d
+JOIN tasks t  ON t.id  = d.task_id           AND t.plan_id  = ?
+JOIN tasks tb ON tb.id = d.depends_on_task_id AND tb.plan_id = ?
+WHERE d.project_id = ?
+ORDER BY d.task_id, d.depends_on_task_id
+`, planID, planID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var deps []domain.TaskDependency
+	for rows.Next() {
+		var dep domain.TaskDependency
+		if err := rows.Scan(&dep.ProjectID, &dep.TaskID, &dep.DependsOnTaskID); err != nil {
+			return nil, err
+		}
+		deps = append(deps, dep)
+	}
+	return deps, rows.Err()
+}
+
 // PeekNextClaimable returns the next task plans.claim_next would
 // reserve, without mutating anything. Powers plans.continue so an
 // agent picking up work can preview the candidate before committing
