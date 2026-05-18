@@ -170,6 +170,86 @@ RETURNING id, project_id, slug, name, goal_body, status, created_at, updated_at,
 	return plan, nil
 }
 
+// PeekNextClaimable returns the next task plans.claim_next would
+// reserve, without mutating anything. Powers plans.continue so an
+// agent picking up work can preview the candidate before committing
+// the claim. Resolves the active wave by the same rule ClaimNext uses
+// (lowest-position wave with any pending task) and picks the
+// lowest-id unassigned task still sitting in the workflow's first
+// bucket. Returns (zero, false, nil) when nothing is claimable.
+func (s *Store) PeekNextClaimable(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) (domain.PlanTaskRow, bool, error) {
+	workflow := buckets.Workflow()
+	if len(workflow.Buckets) < 2 {
+		return domain.PlanTaskRow{}, false, domain.NewError(domain.ErrConfigInvalid,
+			"plans.peek_next_claimable requires a workflow with at least 2 buckets",
+			map[string]any{"plan_id": planID, "bucket_count": len(workflow.Buckets)})
+	}
+	first := workflow.Buckets[0]
+	final := workflow.Buckets[0]
+	for _, b := range workflow.Buckets {
+		if b.Position < first.Position {
+			first = b
+		}
+		if b.Position > final.Position {
+			final = b
+		}
+	}
+
+	var ownerProjectID int64
+	if err := s.db.QueryRowContext(ctx, `SELECT project_id FROM plans WHERE id = ?`, planID).Scan(&ownerProjectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.PlanTaskRow{}, false, domain.NewError(domain.ErrPlanNotFound, "plan not found",
+				map[string]any{"plan_id": planID})
+		}
+		return domain.PlanTaskRow{}, false, err
+	}
+	if ownerProjectID != projectID {
+		return domain.PlanTaskRow{}, false, domain.NewError(domain.ErrPlanNotFound, "plan not found in active project",
+			map[string]any{"plan_id": planID, "project_id": projectID})
+	}
+
+	var activeWavePos sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `
+SELECT MIN(w.position)
+FROM plan_waves w
+WHERE w.plan_id = ?
+  AND EXISTS (
+    SELECT 1 FROM tasks t
+    WHERE t.wave_id = w.id
+      AND t.state = 'active'
+      AND COALESCE(t.bucket_id, 0) <> ?
+  )
+`, planID, final.ID).Scan(&activeWavePos); err != nil {
+		return domain.PlanTaskRow{}, false, err
+	}
+	if !activeWavePos.Valid {
+		return domain.PlanTaskRow{}, false, nil
+	}
+
+	var row domain.PlanTaskRow
+	var bucketID int64
+	err := s.db.QueryRowContext(ctx, `
+SELECT t.id, COALESCE(t.wave_id, 0), t.title, COALESCE(t.bucket_id, 0), t.state, COALESCE(t.assigned_to, '')
+FROM tasks t
+JOIN plan_waves w ON w.id = t.wave_id
+WHERE t.plan_id = ?
+  AND w.position = ?
+  AND t.state = 'active'
+  AND COALESCE(t.bucket_id, 0) = ?
+  AND (t.assigned_to IS NULL OR t.assigned_to = '')
+ORDER BY t.id ASC
+LIMIT 1
+`, planID, activeWavePos.Int64, first.ID).Scan(&row.TaskID, &row.WaveID, &row.Title, &bucketID, &row.State, &row.AssignedTo)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.PlanTaskRow{}, false, nil
+	}
+	if err != nil {
+		return domain.PlanTaskRow{}, false, err
+	}
+	row.BucketKey = s.bucketKeyByID(bucketID, buckets)
+	return row, true, nil
+}
+
 // AddPlanWave appends (position=0 / negative) or inserts (position>0) a wave
 // onto a plan. When position is non-positive the wave lands after the
 // current highest position; explicit positions are honoured verbatim and

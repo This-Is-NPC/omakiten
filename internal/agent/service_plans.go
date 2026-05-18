@@ -113,6 +113,48 @@ func (s *Service) ShowPlan(ctx context.Context, input ShowPlanInput) (ShowPlanRe
 	}, nil
 }
 
+// ContinuePlan returns the agent-tailored projection: ShowPlan's
+// aggregate plus a non-mutating preview of the next claimable task.
+// Agents picking up work call this before plans.claim_next so they can
+// inspect the goal_body and the candidate task without committing to
+// the claim.
+func (s *Service) ContinuePlan(ctx context.Context, input ContinuePlanInput) (ContinuePlanResponse, error) {
+	show, err := s.ShowPlan(ctx, ShowPlanInput(input))
+	if err != nil {
+		return ContinuePlanResponse{}, err
+	}
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return ContinuePlanResponse{}, err
+	}
+	resp := ContinuePlanResponse{
+		Project:      show.Project,
+		Plan:         show.Plan,
+		Waves:        show.Waves,
+		DoneCount:    show.DoneCount,
+		TotalCount:   show.TotalCount,
+		Percent:      show.Percent,
+		ActiveWaveID: show.ActiveWaveID,
+	}
+	row, ok, err := s.newPlanService().PeekNextClaimable(ctx, project, show.Plan.ID)
+	if err != nil {
+		return ContinuePlanResponse{}, err
+	}
+	if ok {
+		preview := PlanTaskRow{
+			TaskID:     row.TaskID,
+			Title:      row.Title,
+			BucketKey:  row.BucketKey,
+			AssignedTo: row.AssignedTo,
+		}
+		if row.State != "" && row.State != "active" {
+			preview.State = string(row.State)
+		}
+		resp.NextClaimable = &preview
+	}
+	return resp, nil
+}
+
 // AssignPlanTask attaches an existing task to a plan + wave. The plan
 // is identified by slug or plan_id (slug wins when both supplied);
 // wave_id is taken verbatim — supplying a wave from a different plan

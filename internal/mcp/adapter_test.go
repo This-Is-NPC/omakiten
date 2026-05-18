@@ -202,6 +202,7 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		"plans.add_wave",
 		"plans.assign_task",
 		"plans.claim_next",
+		"plans.continue",
 	}
 
 	for _, name := range tools {
@@ -236,6 +237,8 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		case "plans.assign_task":
 			args = map[string]any{"task_id": 1, "slug": "demo-plan-plans.create", "wave_id": 1}
 		case "plans.claim_next":
+			args = map[string]any{"slug": "demo-plan-plans.create"}
+		case "plans.continue":
 			args = map[string]any{"slug": "demo-plan-plans.create"}
 		}
 		_, err := adapter.CallTool(ctx, name, withModel(args))

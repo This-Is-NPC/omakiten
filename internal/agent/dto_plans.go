@@ -123,6 +123,28 @@ type ClaimNextPlanTaskResponse struct {
 	Task    *TaskSummary   `json:"task,omitempty"`
 }
 
+// ContinuePlanInput identifies the plan an agent wants to resume.
+type ContinuePlanInput struct {
+	ProjectSelector
+	Slug string `json:"slug"`
+}
+
+// ContinuePlanResponse is the agent-tailored projection: every field
+// from ShowPlanResponse plus a non-mutating preview of the task
+// plans.claim_next would reserve next (NextClaimable). Lets the agent
+// inspect goal_body, the wave layout, and the candidate task before
+// committing to a claim.
+type ContinuePlanResponse struct {
+	Project       ProjectSummary  `json:"project"`
+	Plan          PlanSummary     `json:"plan"`
+	Waves         []PlanWaveView  `json:"waves"`
+	DoneCount     int             `json:"done_count"`
+	TotalCount    int             `json:"total_count"`
+	Percent       int             `json:"percent"`
+	ActiveWaveID  int64           `json:"active_wave_id,omitempty"`
+	NextClaimable *PlanTaskRow    `json:"next_claimable,omitempty"`
+}
+
 // planSummary projects a domain.Plan into the MCP wire shape, keeping
 // the goal body intact so the show / create responses can echo it back.
 // List responses zero the field before sending to keep payloads compact.

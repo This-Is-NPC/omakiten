@@ -190,6 +190,10 @@ type PlanRepository interface {
 	// BEGIN IMMEDIATE on a pinned connection — concurrent claims
 	// serialise behind the write lock.
 	ClaimNextPlanTask(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) (domain.Task, bool, error)
+	// PeekNextClaimable returns the next task plans.claim_next would
+	// reserve, without mutating anything. Powers plans.continue so a
+	// downstream agent can preview the candidate.
+	PeekNextClaimable(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) (domain.PlanTaskRow, bool, error)
 }
 
 // BundleStore is the adapter port for reading/writing the bundled config and

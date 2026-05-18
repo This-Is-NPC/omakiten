@@ -134,6 +134,27 @@ func (s *PlanService) UpdateGoalBody(ctx context.Context, project domain.Project
 	return
 }
 
+// PeekNextClaimable returns the next task plans.claim_next would
+// reserve, without mutating anything. Snapshot-bound: requires the
+// same BucketResolver ClaimNext depends on.
+func (s *PlanService) PeekNextClaimable(ctx context.Context, project domain.ProjectContext, planID int64) (row domain.PlanTaskRow, ok bool, err error) {
+	finish := activity.Track(ctx, "app.PlanService.PeekNextClaimable", project, map[string]any{"plan_id": planID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+	if s.snap == nil {
+		return domain.PlanTaskRow{}, false, domain.NewError(domain.ErrConfigInvalid,
+			"plans.peek_next_claimable requires a snapshot-bound PlanService", nil)
+	}
+	return s.repo.PeekNextClaimable(ctx, project.ID, planID, s.snap)
+}
+
 // AddWave appends a wave to a plan. Position 0 (or negative) auto-assigns
 // after the current highest position. The repo emits plan.wave_added.
 func (s *PlanService) AddWave(ctx context.Context, project domain.ProjectContext, planID int64, name string, position int) (wave domain.PlanWave, err error) {

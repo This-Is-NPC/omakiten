@@ -247,3 +247,73 @@ func TestShowPlanComputesProgressAcrossWaves(t *testing.T) {
 		t.Fatalf("ActiveWaveID = %d, want wave 1 (%d) — still has pending work", show.ActiveWaveID, w1.Wave.ID)
 	}
 }
+
+// TestContinuePlanPreviewsNextClaimable proves ContinuePlan returns
+// the show projection AND the next task plans.claim_next would
+// reserve, without mutating anything. After the preview the candidate
+// task must still be in the first bucket with no assigned_to.
+func TestContinuePlanPreviewsNextClaimable(t *testing.T) {
+	fixture := newAgentFixture(t)
+
+	plan, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "resume", Name: "Resume", GoalBody: "Pick me up"})
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "first"})
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	task, err := fixture.store.CreateTask(fixture.ctx, fixture.projectA.ID, "claimable", "", domain.Priority(2), "backlog", fixture.store.Snapshot())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if err := fixture.store.AssignTaskToPlan(fixture.ctx, fixture.projectA.ID, task.ID, plan.Plan.ID, wave.Wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan: %v", err)
+	}
+
+	resp, err := fixture.service.ContinuePlan(fixture.ctx, ContinuePlanInput{Slug: "resume"})
+	if err != nil {
+		t.Fatalf("ContinuePlan: %v", err)
+	}
+	if resp.Plan.GoalBody != "Pick me up" {
+		t.Fatalf("ContinuePlan goal_body = %q, want %q", resp.Plan.GoalBody, "Pick me up")
+	}
+	if resp.NextClaimable == nil {
+		t.Fatalf("ContinuePlan NextClaimable = nil, want preview of task #%d", task.ID)
+	}
+	if resp.NextClaimable.TaskID != task.ID {
+		t.Fatalf("NextClaimable.TaskID = %d, want %d", resp.NextClaimable.TaskID, task.ID)
+	}
+	if resp.NextClaimable.AssignedTo != "" {
+		t.Fatalf("NextClaimable.AssignedTo = %q, want empty (peek must not assign)", resp.NextClaimable.AssignedTo)
+	}
+
+	// Sanity: peek did not mutate. plans.claim_next on the same plan
+	// must still hand back the same task id.
+	claimCtx := activity.WithAgent(fixture.ctx, "mcp", "plans.claim_next", "claude-test", "")
+	claim, err := fixture.service.ClaimNextPlanTask(claimCtx, ClaimNextPlanTaskInput{Slug: "resume"})
+	if err != nil {
+		t.Fatalf("ClaimNextPlanTask after peek: %v", err)
+	}
+	if !claim.Claimed || claim.Task == nil || claim.Task.ID != task.ID {
+		t.Fatalf("post-peek claim = %+v, want claimed=true task=%d", claim, task.ID)
+	}
+}
+
+// TestContinuePlanNoCandidate returns NextClaimable=nil when every
+// wave is fully done (or the active wave has no first-bucket tasks).
+func TestContinuePlanNoCandidate(t *testing.T) {
+	fixture := newAgentFixture(t)
+
+	if _, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "empty", Name: "Empty"}); err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+
+	resp, err := fixture.service.ContinuePlan(fixture.ctx, ContinuePlanInput{Slug: "empty"})
+	if err != nil {
+		t.Fatalf("ContinuePlan: %v", err)
+	}
+	if resp.NextClaimable != nil {
+		t.Fatalf("NextClaimable = %+v, want nil on empty plan", resp.NextClaimable)
+	}
+}

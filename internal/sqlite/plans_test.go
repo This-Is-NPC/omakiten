@@ -263,6 +263,73 @@ func TestClaimNextPlanTaskMovesTaskAndStampsAssignee(t *testing.T) {
 	}
 }
 
+// TestPeekNextClaimableMatchesClaimWithoutMutating proves the new
+// peek helper returns the same candidate ClaimNext would pick, but
+// without moving the task or stamping assigned_to. A follow-up
+// claim must still pick up the same task — peek is read-only.
+func TestPeekNextClaimableMatchesClaimWithoutMutating(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-peek", "Peek", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 0)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "Pick me", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, task.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan: %v", err)
+	}
+
+	row, ok, err := store.PeekNextClaimable(ctx, project.ID, plan.ID, store.snap())
+	if err != nil {
+		t.Fatalf("PeekNextClaimable: %v", err)
+	}
+	if !ok || row.TaskID != task.ID {
+		t.Fatalf("PeekNextClaimable = (%+v, %v), want preview of task %d", row, ok, task.ID)
+	}
+	if row.AssignedTo != "" {
+		t.Fatalf("preview assigned_to = %q, want empty (peek must not assign)", row.AssignedTo)
+	}
+
+	// Confirm the task row in sqlite still untouched: bucket=first,
+	// assigned_to empty. ClaimNext on the same plan still picks it.
+	var bucketID int64
+	var assignedTo string
+	if err := store.db.QueryRowContext(ctx, `SELECT COALESCE(bucket_id,0), COALESCE(assigned_to,'') FROM tasks WHERE id = ?`, task.ID).Scan(&bucketID, &assignedTo); err != nil {
+		t.Fatalf("scan task: %v", err)
+	}
+	if assignedTo != "" {
+		t.Fatalf("post-peek assigned_to = %q, want empty", assignedTo)
+	}
+	if bucketID != store.snap().Workflow().Buckets[0].ID {
+		t.Fatalf("post-peek bucket_id = %d, want first bucket %d", bucketID, store.snap().Workflow().Buckets[0].ID)
+	}
+
+	ctx = activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
+	claimed, ok, err := store.ClaimNextPlanTask(ctx, project.ID, plan.ID, store.snap())
+	if err != nil {
+		t.Fatalf("ClaimNextPlanTask after peek: %v", err)
+	}
+	if !ok || claimed.ID != task.ID {
+		t.Fatalf("post-peek claim = (%+v, %v), want claim of task %d", claimed, ok, task.ID)
+	}
+
+	// Subsequent peek returns (zero, false) — task is now in dev with
+	// a non-empty assigned_to, so no first-bucket candidate remains.
+	post, ok, err := store.PeekNextClaimable(ctx, project.ID, plan.ID, store.snap())
+	if err != nil {
+		t.Fatalf("post-claim PeekNextClaimable: %v", err)
+	}
+	if ok || post.TaskID != 0 {
+		t.Fatalf("post-claim peek = (%+v, %v), want empty", post, ok)
+	}
+}
+
 func TestClaimNextPlanTaskRequiresAgentModel(t *testing.T) {
 	ctx, store, project := setupPlans(t)
 	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
