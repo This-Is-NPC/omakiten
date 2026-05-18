@@ -747,6 +747,40 @@ func TestMaybeFinalizePlanForTaskTransitionsWhenLastTaskCloses(t *testing.T) {
 	}
 }
 
+// TestStoreBusyTimeoutTracksConfiguredValue pins the regression that
+// ClaimNextPlanTask's per-connection PRAGMA reapply must honour the
+// user-configured busy_timeout. The Store captures the resolved value at
+// Open time and refreshes it on every ApplyConfig call that supplies a
+// positive override. A zero override leaves the existing value intact —
+// the canonical value never silently downgrades to the kit default after
+// the user has chosen a custom one.
+func TestStoreBusyTimeoutTracksConfiguredValue(t *testing.T) {
+	ctx := context.Background()
+	path := t.TempDir() + "/omakiten.db"
+	store, err := OpenWithOptions(ctx, path, Options{BusyTimeoutMs: 7777})
+	if err != nil {
+		t.Fatalf("OpenWithOptions: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if store.busyTimeoutMs != 7777 {
+		t.Fatalf("after Open: busyTimeoutMs = %d, want 7777", store.busyTimeoutMs)
+	}
+
+	if err := store.ApplyConfig(ctx, ConfigKnobs{BusyTimeoutMs: 9999}); err != nil {
+		t.Fatalf("ApplyConfig 9999: %v", err)
+	}
+	if store.busyTimeoutMs != 9999 {
+		t.Fatalf("after ApplyConfig override: busyTimeoutMs = %d, want 9999", store.busyTimeoutMs)
+	}
+
+	if err := store.ApplyConfig(ctx, ConfigKnobs{BusyTimeoutMs: 0}); err != nil {
+		t.Fatalf("ApplyConfig 0: %v", err)
+	}
+	if store.busyTimeoutMs != 9999 {
+		t.Fatalf("after zero ApplyConfig: busyTimeoutMs = %d, want 9999 preserved", store.busyTimeoutMs)
+	}
+}
+
 // TestAssignTaskSetsThenClearsAssignee verifies the AssignTask repo
 // method handles both directions (set → empty=clear) and emits
 // task.assigned / task.unassigned accordingly. Same-value call is a no-op.

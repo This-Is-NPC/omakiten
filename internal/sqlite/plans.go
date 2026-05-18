@@ -580,7 +580,14 @@ func (s *Store) ClaimNextPlanTask(ctx context.Context, projectID, planID int64, 
 	// PRAGMA busy_timeout is per-connection in SQLite; the pool may hand
 	// us a connection that bypassed Open's pragma sweep. Re-apply so
 	// concurrent claims wait on SQLITE_BUSY instead of erroring out.
-	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout = %d", kitBusyTimeoutMs())); err != nil {
+	// Honours the resolved value from Open / ApplyConfig — falling back
+	// to the kit canonical only when neither path captured one (legacy
+	// test fixtures that build a Store struct literal bypass both).
+	busyTimeoutMs := s.busyTimeoutMs
+	if busyTimeoutMs <= 0 {
+		busyTimeoutMs = kitBusyTimeoutMs()
+	}
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout = %d", busyTimeoutMs)); err != nil {
 		return domain.Task{}, false, fmt.Errorf("apply busy_timeout: %w", err)
 	}
 	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
