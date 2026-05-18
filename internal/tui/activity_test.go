@@ -383,14 +383,15 @@ func TestActivityScrollResyncsOnResize(t *testing.T) {
 	}
 }
 
-// TestActivityJAfterPageScrollDoesNotSnapBack reproduces the bug filed as
-// task #125: pgdown is documented to scroll the activity body independently
-// of the cursor, but the first subsequent j re-synced the scroll to the
-// (still-at-the-top) cursor, throwing away the user's page-scroll work.
-// After the fix, j snaps the cursor to the first visible card and keeps the
-// viewport anchored there so navigation continues from where the user is
-// looking — not from a stale offset behind the scroll.
-func TestActivityJAfterPageScrollDoesNotSnapBack(t *testing.T) {
+// newActivityTestModel seeds a project + task + N human comments and
+// returns a Model wired with the standard test theme / counters at the
+// given terminal height. bodyFn produces the comment body for index i so
+// callers can encode positional markers (e.g. "page-marker-03") used to
+// assert what is or isn't on screen. The returned `bodies` slice mirrors
+// the seed order so callers can address `bodies[0]` and `bodies[len-1]`
+// without re-querying the store.
+func newActivityTestModel(t *testing.T, height, commentCount int, bodyFn func(int) string) (Model, []string) {
+	t.Helper()
 	ctx := context.Background()
 	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
@@ -400,32 +401,47 @@ func TestActivityJAfterPageScrollDoesNotSnapBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "page-scroll repro", "", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "activity-test", "", domain.Priority(2), "backlog", store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
-	const total = 30
-	for i := 0; i < total; i++ {
-		body := fmt.Sprintf("page-marker-%02d", i)
+	bodies := make([]string, commentCount)
+	for i := 0; i < commentCount; i++ {
+		body := bodyFn(i)
+		bodies[i] = body
 		if _, err := store.AddComment(ctx, project.ID, task.ID, body, "human", nil); err != nil {
 			t.Fatalf("AddComment(%d) = %v", i, err)
 		}
 	}
-
+	cfg := config.MustLoadKitConfig()
 	model, err := NewModel(ctx, project.Context(), Repositories{
 		Tasks:        store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
-
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, cfg.Priorities, cfg.Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
 	}
-	model.height = 30
+	model.height = height
 	model.width = 160
+	return model, bodies
+}
+
+// TestActivityJAfterPageScrollDoesNotSnapBack reproduces the bug filed as
+// task #125: pgdown is documented to scroll the activity body independently
+// of the cursor, but the first subsequent j re-synced the scroll to the
+// (still-at-the-top) cursor, throwing away the user's page-scroll work.
+// After the fix, j snaps the cursor to the first visible card and keeps the
+// viewport anchored there so navigation continues from where the user is
+// looking — not from a stale offset behind the scroll.
+func TestActivityJAfterPageScrollDoesNotSnapBack(t *testing.T) {
+	model, _ := newActivityTestModel(t, 30, 30, func(i int) string {
+		return fmt.Sprintf("page-marker-%02d", i)
+	})
 
 	// Open task, Tab into activity column. Cursor lands on first card.
 	got := pressKey(t, model, tea.KeyEnter)
@@ -478,6 +494,72 @@ func TestActivityJAfterPageScrollDoesNotSnapBack(t *testing.T) {
 	}
 }
 
+// TestActivityJAfterPageUpFromBottomAnchorsToLastVisible exercises the
+// mirror of the snap-back fix: when the cursor sits at the END of the
+// feed and the user pgup'd far enough to push that cursor BELOW the
+// viewport, the next j must anchor to the last visible card (not the
+// first), otherwise the cursor jumps backward on a "next" key. The
+// previous direction-gated anchor (`if delta > 0: cursor = first`)
+// would have moved the focus to the top of the viewport — the wrong
+// direction for j.
+func TestActivityJAfterPageUpFromBottomAnchorsToLastVisible(t *testing.T) {
+	const total = 30
+	model, _ := newActivityTestModel(t, 30, total, func(i int) string {
+		return fmt.Sprintf("page-marker-%02d", i)
+	})
+
+	got := pressKey(t, model, tea.KeyEnter)
+	got = pressKey(t, got, tea.KeyTab)
+
+	// Walk the cursor to the last card with j; sync follows so the
+	// viewport sits near max scroll.
+	for i := 0; i < total-1; i++ {
+		got = pressRune(t, got, 'j')
+	}
+	if got.activityCursor != total-1 {
+		t.Fatalf("activityCursor after j×%d = %d, want %d", total-1, got.activityCursor, total-1)
+	}
+	scrollAtBottom := got.activityScroll
+
+	// pgup repeatedly until cursor falls past the bottom of the viewport
+	// — the body keeps scrolling up while the cursor stays pinned at the
+	// last card.
+	for i := 0; i < 4; i++ {
+		got = pressKey(t, got, tea.KeyPgUp)
+	}
+	first, last, ok := got.visibleActivityCardRange()
+	if !ok {
+		t.Fatalf("visibleActivityCardRange returned ok=false; cannot reproduce scenario")
+	}
+	if got.activityCursor <= last {
+		t.Fatalf("pgup did not push cursor below viewport: cursor=%d last-visible=%d", got.activityCursor, last)
+	}
+	scrollAfterPgup := got.activityScroll
+	if scrollAfterPgup >= scrollAtBottom {
+		t.Fatalf("pgup did not reduce activityScroll: was %d, still %d", scrollAtBottom, scrollAfterPgup)
+	}
+
+	// j with cursor below viewport. Pre-fix: anchored to `first` (jumped
+	// the cursor backward by many cards on a "next" key). Post-fix:
+	// anchors to `last`, keeping cursor near where the user is looking
+	// without retreating to the top of the viewport.
+	got = pressRune(t, got, 'j')
+	if got.activityCursor != last {
+		t.Fatalf("j after pgup-from-bottom: activityCursor = %d, want %d (last visible card)", got.activityCursor, last)
+	}
+	if got.activityCursor == first && first != last {
+		t.Fatalf("j after pgup-from-bottom landed on FIRST visible (%d) — backward jump on next-key", first)
+	}
+	// The fix is "don't snap back to where cursor=29 left the scroll".
+	// Follow may still nudge scroll a few rows to bring the focused
+	// card's tail into view (that's intentional UX), but it must stay
+	// well clear of the pre-pgup max — otherwise the user's page-scroll
+	// progress was thrown away.
+	if got.activityScroll >= scrollAtBottom {
+		t.Fatalf("j after pgup-from-bottom snap-back: scroll regressed to %d (≥ pre-pgup %d)", got.activityScroll, scrollAtBottom)
+	}
+}
+
 // TestActivityLastCardReachableAtEndScroll is the symptom the user filed
 // with the screenshot for task #125: G (or sustained pgdown / j-to-last)
 // must leave the LAST event card's last line visible. The pre-fix
@@ -487,43 +569,10 @@ func TestActivityJAfterPageScrollDoesNotSnapBack(t *testing.T) {
 // so the focused border framed empty space while "▼ 2 below" lied about
 // nothing being there to reach.
 func TestActivityLastCardReachableAtEndScroll(t *testing.T) {
-	ctx := context.Background()
-	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
-	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
-		t.Fatalf("ImportBundle() = %v", err)
-	}
-	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	if err != nil {
-		t.Fatalf("UpsertProject() = %v", err)
-	}
-	task, err := store.CreateTask(ctx, project.ID, "lots of activity", "", domain.Priority(2), "backlog", store.Snapshot())
-	if err != nil {
-		t.Fatalf("CreateTask() = %v", err)
-	}
-	const total = 24
-	var lastBody string
-	for i := 0; i < total; i++ {
-		body := fmt.Sprintf("end-marker-%02d", i)
-		lastBody = body
-		if _, err := store.AddComment(ctx, project.ID, task.ID, body, "human", nil); err != nil {
-			t.Fatalf("AddComment(%d) = %v", i, err)
-		}
-	}
-
-	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:        store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
-		Comments:     store,
-		Dependencies: store,
-		Entries:      store,
-		Events:       store,
-
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
-	if err != nil {
-		t.Fatalf("NewModel() = %v", err)
-	}
-	model.height = 35
-	model.width = 160
+	model, bodies := newActivityTestModel(t, 35, 24, func(i int) string {
+		return fmt.Sprintf("end-marker-%02d", i)
+	})
+	lastBody := bodies[len(bodies)-1]
 
 	got := pressKey(t, model, tea.KeyEnter)
 	got = pressKey(t, got, tea.KeyTab)
@@ -546,37 +595,9 @@ func TestActivityLastCardReachableAtEndScroll(t *testing.T) {
 // the focused last card) gets clipped — symptom is the activity column
 // looking unbordered at the bottom.
 func TestActivityPanelFitsTerminalHeight(t *testing.T) {
-	ctx := context.Background()
-	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
-	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
-		t.Fatalf("ImportBundle() = %v", err)
-	}
-	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	if err != nil {
-		t.Fatalf("UpsertProject() = %v", err)
-	}
-	task, err := store.CreateTask(ctx, project.ID, "fit-terminal repro", "", domain.Priority(2), "backlog", store.Snapshot())
-	if err != nil {
-		t.Fatalf("CreateTask() = %v", err)
-	}
-	for i := 0; i < 24; i++ {
-		if _, err := store.AddComment(ctx, project.ID, task.ID, fmt.Sprintf("fit-%02d", i), "human", nil); err != nil {
-			t.Fatalf("AddComment(%d) = %v", i, err)
-		}
-	}
-
-	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:        store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
-		Comments:     store,
-		Dependencies: store,
-		Entries:      store,
-		Events:       store,
-
-	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
-	if err != nil {
-		t.Fatalf("NewModel() = %v", err)
-	}
+	model, _ := newActivityTestModel(t, 30, 24, func(i int) string {
+		return fmt.Sprintf("fit-%02d", i)
+	})
 
 	for _, h := range []int{30, 35, 45, 60} {
 		model.height = h

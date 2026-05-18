@@ -228,14 +228,10 @@ func (m *Model) scrollActivityLines(delta int) {
 	m.clampActivityScroll()
 }
 
-// clampActivityScroll keeps activityScroll inside [0, max], where max is
-// the offset that keeps the LAST body line visible inside the scrollwindow
-// budget. The +1 accounts for the row renderScrollWindowSplit reserves
-// for the "▲ N above" hint whenever offset > 0 — without it, G / sustained
-// pgdown left the final card's tail cropped behind a "▼ N below" that
-// lied about still-reachable rows. Computes total by re-rendering cards,
-// which is cheap and avoids the caller having to thread the body length
-// through.
+// clampActivityScroll keeps activityScroll inside [0, activityMaxScroll()].
+// Computes total by re-rendering cards, which is cheap and avoids the
+// caller having to thread the body length through. See activityMaxScroll
+// for the off-by-one explanation around the split-hint reservation.
 func (m *Model) clampActivityScroll() {
 	events := m.activityForTaskInView(m.taskID)
 	body := flattenActivityCards(m.activityRowsForRender(events))
@@ -255,16 +251,19 @@ func (m *Model) clampActivityScroll() {
 
 // activityMaxScroll is the largest offset that still renders the last body
 // line inside the activity viewport given the split-hint reservation
-// renderScrollWindowSplit applies. When offset > 0 the renderer eats one
-// row for the "▲ N above" hint; the +1 compensates so the last line is
-// reachable. Floored at 0 — callers should early-return when the body
-// fits without scroll, but defending here keeps the helper composable.
+// renderScrollWindowSplit applies. When offset > 0 the renderer steals
+// scrollwindow.AboveHintRows(HintsSplit) rows for the "▲ N above" hint;
+// we add them back so the last line stays reachable — without this G /
+// sustained pgdown left the final card's tail cropped behind a "▼ N below"
+// that lied about still-reachable rows. Floored at 0 — callers should
+// early-return when the body fits without scroll, but defending here
+// keeps the helper composable.
 func activityMaxScroll(bodyLen, viewport int) int {
-	max := bodyLen - viewport + 1
-	if max < 0 {
+	bound := bodyLen - viewport + scrollwindow.AboveHintRows(scrollwindow.HintsSplit)
+	if bound < 0 {
 		return 0
 	}
-	return max
+	return bound
 }
 
 // toggleTaskFocus flips which column inside the task detail screen owns
@@ -300,10 +299,13 @@ func (m *Model) toggleTaskFocus() {
 //
 // When pgup/pgdn has scrolled the cursor off-screen (the cursor is decoupled
 // from the body scroll by design), the next j/k anchors the cursor to the
-// first/last visible card instead of applying delta blindly. Without this,
-// syncActivityScrollToCursor would snap the viewport back to the old cursor
-// position and throw away the user's page-scroll work — the symptom filed as
-// "activity column navigation snaps back after pgdown".
+// visible edge nearest its current position — first if the cursor sits
+// above the viewport, last if below — regardless of the delta sign. Without
+// this anchor, syncActivityScrollToCursor would snap the viewport back to
+// the old cursor position and throw away the user's page-scroll work (the
+// symptom filed as "activity column navigation snaps back after pgdown");
+// gating on direction instead would jump the cursor BACKWARD on a "next"
+// key when it sat below the viewport.
 func (m *Model) moveActivityCursor(delta int) {
 	rows := len(m.activityForTaskInView(m.taskID))
 	if rows == 0 {
@@ -320,7 +322,7 @@ func (m *Model) moveActivityCursor(delta int) {
 		return
 	}
 	if first, last, ok := m.visibleActivityCardRange(); ok && (m.activityCursor < first || m.activityCursor > last) {
-		if delta > 0 {
+		if m.activityCursor < first {
 			m.activityCursor = first
 		} else {
 			m.activityCursor = last

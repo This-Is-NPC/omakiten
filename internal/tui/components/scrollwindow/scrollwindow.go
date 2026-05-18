@@ -134,6 +134,23 @@ func Follow(offset, cursor int, heights []int, viewport int, mode HintMode) int 
 	return offset
 }
 
+// AboveHintRows is the upper bound of terminal rows the mode can spend
+// on the "▲ N above" indicator inside the viewport once offset > 0.
+// Callers computing max-scroll bounds use this to add back the row the
+// renderer will steal at the bottom of scroll — without it the last
+// content line lands behind the "▼ N below" hint and stays unreachable.
+//
+// Returned as a static upper bound (not the dynamic per-(offset,end,total)
+// reservation hintReserve computes) so callers can pre-size without
+// knowing the live scroll state.
+func AboveHintRows(mode HintMode) int {
+	switch mode {
+	case HintsSplit, HintsCombined:
+		return 1
+	}
+	return 0
+}
+
 // Above reports the item count hidden above offset. Convenience for
 // callers building "▲ N above" hint strings without re-deriving the
 // number from the slice they already have.
