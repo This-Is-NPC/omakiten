@@ -285,9 +285,11 @@ func (s *PlanService) composeShow(ctx context.Context, project domain.ProjectCon
 
 	show.Waves = views
 
-	if deps, depErr := s.repo.ListPlanTaskDependencies(ctx, project.ID, plan.ID); depErr == nil {
-		show.Dependencies = deps
+	deps, err := s.repo.ListPlanTaskDependencies(ctx, project.ID, plan.ID)
+	if err != nil {
+		return PlanShow{}, err
 	}
+	show.Dependencies = deps
 
 	return show, nil
 }
