@@ -245,6 +245,64 @@ func TestCompletedAtTracksFinalBucketTransitions(t *testing.T) {
 	}
 }
 
+func TestBackfillTaskCompletedAtFillsOnlyDoneRows(t *testing.T) {
+	ctx, store, project := setupLifecycle(t)
+
+	// Two tasks: one will land in done with NULL completed_at (legacy
+	// shape from before the wiring slice), the other stays in backlog.
+	doneTask, err := store.CreateTask(ctx, project.ID, "Done", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask done: %v", err)
+	}
+	backlogTask, err := store.CreateTask(ctx, project.ID, "Pending", "", domain.Priority(2), "backlog", store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask pending: %v", err)
+	}
+
+	// Move first to done, then null completed_at directly to simulate
+	// the pre-slice-1 legacy state.
+	if _, err := store.MoveTask(ctx, project.ID, doneTask.ID, "dev", store.snap()); err != nil {
+		t.Fatalf("MoveTask dev: %v", err)
+	}
+	if _, err := store.MoveTask(ctx, project.ID, doneTask.ID, "done", store.snap()); err != nil {
+		t.Fatalf("MoveTask done: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `UPDATE tasks SET completed_at = NULL WHERE id = ?`, doneTask.ID); err != nil {
+		t.Fatalf("null completed_at: %v", err)
+	}
+
+	rows, err := store.BackfillTaskCompletedAt(ctx, project.ID, store.snap())
+	if err != nil {
+		t.Fatalf("BackfillTaskCompletedAt: %v", err)
+	}
+	if rows != 1 {
+		t.Fatalf("rows updated = %d, want 1 (only the done-bucket task)", rows)
+	}
+
+	var doneTS, backlogTS sql.NullString
+	if err := store.db.QueryRowContext(ctx, `SELECT completed_at FROM tasks WHERE id = ?`, doneTask.ID).Scan(&doneTS); err != nil {
+		t.Fatalf("scan done: %v", err)
+	}
+	if !doneTS.Valid {
+		t.Fatalf("done completed_at = NULL after backfill")
+	}
+	if err := store.db.QueryRowContext(ctx, `SELECT completed_at FROM tasks WHERE id = ?`, backlogTask.ID).Scan(&backlogTS); err != nil {
+		t.Fatalf("scan backlog: %v", err)
+	}
+	if backlogTS.Valid {
+		t.Fatalf("backlog completed_at = %q, want NULL", backlogTS.String)
+	}
+
+	// Re-run is idempotent: zero rows updated.
+	rows, err = store.BackfillTaskCompletedAt(ctx, project.ID, store.snap())
+	if err != nil {
+		t.Fatalf("BackfillTaskCompletedAt #2: %v", err)
+	}
+	if rows != 0 {
+		t.Fatalf("idempotent re-run rows = %d, want 0", rows)
+	}
+}
+
 func TestCompletedAtSetOnArchiveIntoFinalBucket(t *testing.T) {
 	ctx, store, project := setupLifecycle(t)
 

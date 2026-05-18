@@ -384,6 +384,11 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	// overrides this with a rebind-capable view (current+previous
 	// snapshots) when the runtime is replacing an earlier entry.
 	svc.SetOrphanService(app.NewOrphanService(store, snapshot, nil))
+	// Best-effort backfill: populate tasks.completed_at for historical
+	// done-bucket rows missing the timestamp. Idempotent — subsequent
+	// builds find no rows to update. Errors are swallowed so a hot
+	// transient (FK lock, etc.) cannot block runtime composition.
+	_, _ = store.BackfillTaskCompletedAt(ctx, projectID, snapshot)
 	svc.SetSettings(agent.ServiceSettings{
 		RecentCommentLimit:       bundle.Config.MCP.RecentCommentLimit,
 		MaxCommentChars:          bundle.Config.MCP.MaxCommentChars,
