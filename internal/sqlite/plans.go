@@ -124,6 +124,52 @@ FROM plans WHERE project_id = ? ORDER BY id ASC
 	return plans, rows.Err()
 }
 
+// UpdatePlanGoalBody rewrites the plan's goal_body column and bumps
+// updated_at. Returns ErrPlanNotFound when the plan id belongs to a
+// different project or does not exist; emits plan.goal_edited so
+// metrics.summary and the hooks engine see the edit.
+func (s *Store) UpdatePlanGoalBody(ctx context.Context, projectID, planID int64, goalBody string) (domain.Plan, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Plan{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var ownerProjectID int64
+	if err := tx.QueryRowContext(ctx, `SELECT project_id FROM plans WHERE id = ?`, planID).Scan(&ownerProjectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Plan{}, domain.NewError(domain.ErrPlanNotFound, "plan not found",
+				map[string]any{"plan_id": planID})
+		}
+		return domain.Plan{}, err
+	}
+	if ownerProjectID != projectID {
+		return domain.Plan{}, domain.NewError(domain.ErrPlanNotFound, "plan not found in active project",
+			map[string]any{"plan_id": planID, "project_id": projectID})
+	}
+
+	row := tx.QueryRowContext(ctx, `
+UPDATE plans SET goal_body = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at
+`, goalBody, planID)
+	plan, err := scanPlan(row)
+	if err != nil {
+		return domain.Plan{}, err
+	}
+
+	payload, _ := json.Marshal(map[string]any{"length": len(goalBody)})
+	ev, err := insertEntityEvent(ctx, tx, domain.EventEntityPlan, planID, projectID, domain.EventTypePlanGoalEdited, string(payload))
+	if err != nil {
+		return domain.Plan{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.Plan{}, err
+	}
+	s.publishEvent(ctx, ev)
+	return plan, nil
+}
+
 // AddPlanWave appends (position=0 / negative) or inserts (position>0) a wave
 // onto a plan. When position is non-positive the wave lands after the
 // current highest position; explicit positions are honoured verbatim and

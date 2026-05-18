@@ -407,6 +407,10 @@ type Model struct {
 	planNetworkShow        app.PlanShow
 	planNetworkWaveCursor  int
 	planNetworkTaskCursor  int
+	// planGoalEditingID names the plan whose goal_body is open in the
+	// modePlanGoal textarea overlay. Non-zero while the overlay is
+	// active; reset to 0 on submit / cancel.
+	planGoalEditingID int64
 
 	// statsSummary caches the last-fetched metrics summary. statsPeriod
 	// holds the active filter ("7d", "30d", "all"); refreshed on view entry
@@ -471,6 +475,11 @@ const (
 	modeNormal inputMode = iota
 	modeComment
 	modeMove
+	// modePlanGoal is the in-TUI plan goal_body editor — multi-line
+	// textarea bound to the focused plan. Reuses commentInput as the
+	// underlying bubbles textarea so a single resize / cursor path
+	// covers every multi-line modal in the TUI.
+	modePlanGoal
 )
 
 // taskScreenMode tracks the sub-surface of the task detail view stack:

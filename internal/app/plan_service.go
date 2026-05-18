@@ -116,6 +116,24 @@ func (s *PlanService) ClaimNext(ctx context.Context, project domain.ProjectConte
 	return s.repo.ClaimNextPlanTask(ctx, project.ID, planID, s.snap)
 }
 
+// UpdateGoalBody rewrites the plan's goal_body column. The repo emits
+// plan.goal_edited so downstream surfaces (FTS5 search, metrics) see
+// the edit on the next refresh.
+func (s *PlanService) UpdateGoalBody(ctx context.Context, project domain.ProjectContext, planID int64, goalBody string) (plan domain.Plan, err error) {
+	finish := activity.Track(ctx, "app.PlanService.UpdateGoalBody", project, map[string]any{"plan_id": planID, "length": len(goalBody)})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+	plan, err = s.repo.UpdatePlanGoalBody(ctx, project.ID, planID, goalBody)
+	return
+}
+
 // AddWave appends a wave to a plan. Position 0 (or negative) auto-assigns
 // after the current highest position. The repo emits plan.wave_added.
 func (s *PlanService) AddWave(ctx context.Context, project domain.ProjectContext, planID int64, name string, position int) (wave domain.PlanWave, err error) {

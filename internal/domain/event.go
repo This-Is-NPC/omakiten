@@ -63,6 +63,9 @@ const (
 	// EventTypePlanWaveAdded fires when a wave is appended to a plan.
 	// EntityType=plan, Payload={wave_id, name, position}.
 	EventTypePlanWaveAdded = "plan.wave_added"
+	// EventTypePlanGoalEdited fires when a plan's goal_body is rewritten
+	// via plans.update_goal_body. EntityType=plan, Payload={length}.
+	EventTypePlanGoalEdited = "plan.goal_edited"
 	// EventTypePlanDone fires when a plan auto-transitions to status=done
 	// (every child task in a terminal bucket). EntityType=plan, Payload={}.
 	EventTypePlanDone = "plan.done"

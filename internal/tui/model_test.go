@@ -1992,6 +1992,142 @@ func TestPlansSubTabNetworkClaimReportsEmpty(t *testing.T) {
 	}
 }
 
+// TestPlansSubTabNetworkEditsGoalBody covers the in-TUI goal_body
+// editor: pressing `e` inside the network view opens a multi-line
+// textarea pre-filled with the current goal_body, ctrl+s persists the
+// edit via PlanService.UpdateGoalBody, and the model returns to the
+// network view with the new body reflected in planNetworkShow. Plans
+// content is sqlite-only — no $EDITOR shell-out, no tempfile.
+func TestPlansSubTabNetworkEditsGoalBody(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	plan, err := store.CreatePlan(ctx, project.ID, "rollout", "Rollout", "original goal")
+	if err != nil {
+		t.Fatalf("CreatePlan() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	opened := pressKey(t, got, tea.KeyEnter)
+	if !opened.planNetworkOpen {
+		t.Fatalf("network did not open")
+	}
+
+	editing := pressRune(t, opened, 'e')
+	if editing.mode != modePlanGoal {
+		t.Fatalf("after 'e': mode = %d, want modePlanGoal", editing.mode)
+	}
+	if editing.planGoalEditingID != plan.ID {
+		t.Fatalf("planGoalEditingID = %d, want %d", editing.planGoalEditingID, plan.ID)
+	}
+	if got := editing.commentInput.Value(); got != "original goal" {
+		t.Fatalf("textarea prefill = %q, want %q", got, "original goal")
+	}
+
+	editing.commentInput.SetValue("rewritten goal body")
+	saved, _ := editing.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	savedModel := saved.(Model)
+	if savedModel.mode != modeNormal {
+		t.Fatalf("after ctrl+s: mode = %d, want modeNormal", savedModel.mode)
+	}
+	if savedModel.planGoalEditingID != 0 {
+		t.Fatalf("planGoalEditingID after save = %d, want 0", savedModel.planGoalEditingID)
+	}
+	if savedModel.planNetworkShow.Plan.GoalBody != "rewritten goal body" {
+		t.Fatalf("planNetworkShow.Plan.GoalBody = %q, want %q",
+			savedModel.planNetworkShow.Plan.GoalBody, "rewritten goal body")
+	}
+
+	stored, err := store.GetPlanBySlug(ctx, project.ID, "rollout")
+	if err != nil {
+		t.Fatalf("GetPlanBySlug() error = %v", err)
+	}
+	if stored.GoalBody != "rewritten goal body" {
+		t.Fatalf("sqlite goal_body = %q, want %q", stored.GoalBody, "rewritten goal body")
+	}
+}
+
+// TestPlansSubTabNetworkGoalEditorCancels confirms esc aborts the
+// goal_body edit without touching sqlite — the editor never gets
+// confused into accidentally clearing the body when the user backs out.
+func TestPlansSubTabNetworkGoalEditorCancels(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	plan, err := store.CreatePlan(ctx, project.ID, "rollout", "Rollout", "keep me")
+	if err != nil {
+		t.Fatalf("CreatePlan() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	opened := pressKey(t, got, tea.KeyEnter)
+	editing := pressRune(t, opened, 'e')
+	editing.commentInput.SetValue("typo I want to throw away")
+	cancelled := pressKey(t, editing, tea.KeyEsc)
+	if cancelled.mode != modeNormal {
+		t.Fatalf("after esc: mode = %d, want modeNormal", cancelled.mode)
+	}
+
+	stored, err := store.GetPlanBySlug(ctx, project.ID, "rollout")
+	if err != nil {
+		t.Fatalf("GetPlanBySlug() error = %v", err)
+	}
+	if stored.GoalBody != "keep me" {
+		t.Fatalf("sqlite goal_body after cancel = %q, want unchanged %q", stored.GoalBody, "keep me")
+	}
+	_ = plan
+}
+
 // TestPlansSubTabEmptyState confirms the empty-state hint renders when
 // the project has no plans yet — covers the early-return branch in
 // renderPlans so the panel never collapses to a blank surface.

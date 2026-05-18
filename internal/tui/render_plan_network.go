@@ -9,6 +9,7 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/multilineform"
 )
 
 // handlePlanNetworkKey drives navigation inside the column-per-wave
@@ -58,7 +59,25 @@ func (m *Model) handlePlanNetworkKey(msg tea.KeyMsg) {
 		m.reloadPlanNetwork()
 	case "c":
 		m.claimNextInPlanNetwork()
+	case "e":
+		m.openPlanGoalEditor()
 	}
+}
+
+// openPlanGoalEditor flips the model into modePlanGoal, pre-filling
+// the bubbles textarea with the focused plan's current goal_body. The
+// editor is sqlite-backed end-to-end (no tempfile / no $EDITOR shell-
+// out) — submit hits PlanService.UpdateGoalBody and reloadPlanNetwork
+// refreshes the projection so the next render reflects the new body.
+func (m *Model) openPlanGoalEditor() {
+	if m.planNetworkShow.Plan.ID == 0 {
+		return
+	}
+	m.planGoalEditingID = m.planNetworkShow.Plan.ID
+	m.beginInput(modePlanGoal,
+		fmt.Sprintf("plan goal · %s · ctrl+s save · esc cancel", m.planNetworkShow.Plan.Slug),
+		m.planNetworkShow.Plan.GoalBody,
+	)
 }
 
 // reloadPlanNetwork re-fetches the focused plan's projection so
@@ -124,6 +143,9 @@ func (m Model) planNetworkCurrentTasks() []domain.PlanTaskRow {
 // marker, and the active-wave highlight are derived from PlanShow alone
 // — dependency arrows and the critical-path highlight stay deferred.
 func (m Model) renderPlanNetwork() string {
+	if m.mode == modePlanGoal {
+		return m.renderPlanGoalEditor()
+	}
 	show := m.planNetworkShow
 	if len(show.Waves) == 0 {
 		return m.renderPanel(fmt.Sprintf("// PLAN · %s\n\nNo waves yet. Add one with `okt plan wave-add %s \"<wave-name>\"`.", show.Plan.Slug, show.Plan.Slug))
@@ -234,6 +256,36 @@ func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursor
 		rows = append(rows, truncateText(title, width))
 	}
 	return strings.Join(rows, "\n")
+}
+
+// renderPlanGoalEditor draws the modePlanGoal overlay: a full-panel
+// textarea pre-filled with the focused plan's goal_body, plus a kicker
+// + key hint above it. The textarea content is sqlite-backed via
+// PlanService.UpdateGoalBody; no tempfile / no $EDITOR shell-out.
+func (m Model) renderPlanGoalEditor() string {
+	width := m.availableWidth() - 6
+	if width < 32 {
+		width = 32
+	}
+	innerHeight := m.height - 12
+	if innerHeight < 6 {
+		innerHeight = 6
+	}
+
+	field := multilineform.Render(
+		m.commentInput,
+		width,
+		innerHeight,
+		true,
+		m.styles.multilineFormTheme(),
+	)
+	lines := []string{
+		m.styles.hintAccent.Render(fmt.Sprintf("// PLAN GOAL · %s", m.planNetworkShow.Plan.Slug)),
+		m.formHint("ctrl+s saves", "alt+enter newline", "esc cancels"),
+		"",
+		field,
+	}
+	return m.renderPanel(strings.Join(lines, "\n"))
 }
 
 // planNetworkStatusBadge maps a task row onto the four-state badge the

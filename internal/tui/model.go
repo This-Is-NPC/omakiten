@@ -450,7 +450,7 @@ func (m Model) renderView() string {
 	if m.helpOpen {
 		return clampViewToHeight(m.height, m.renderHeader(), m.renderHelp(), m.renderHelpFooter())
 	}
-	if m.mode != modeNormal && !m.isEmbeddedCommentInput() {
+	if m.mode != modeNormal && !m.isEmbeddedCommentInput() && !m.isFullPanelTextareaInput() {
 		return clampViewToHeight(m.height, m.renderHeader(), m.renderInput(), m.renderCurrentView(), m.renderFooter())
 	}
 
@@ -460,6 +460,14 @@ func (m Model) renderView() string {
 	}
 	parts = append(parts, m.renderCurrentView(), m.renderFooter())
 	return clampViewToHeight(m.height, parts...)
+}
+
+// isFullPanelTextareaInput is true while a modal owns the whole main
+// panel (not a single-line top-bar input). The plan goal editor is one
+// such mode — it renders the textarea inside renderPlanNetwork, so the
+// chrome must NOT also stack renderInput above it.
+func (m Model) isFullPanelTextareaInput() bool {
+	return m.mode == modePlanGoal
 }
 
 // dispatchNotification routes notification-related messages to the live notification
