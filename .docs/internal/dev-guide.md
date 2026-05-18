@@ -6,7 +6,8 @@ This guide is for people working **on** Omakiten — building, testing, and rele
 
 ### Prerequisites
 
-- [mise-en-place](https://mise.jdx.dev/) — pins the Go toolchain, `golangci-lint`, and `govulncheck` at the exact versions CI uses. `mise install` reads `.mise.toml` and provisions everything.
+- [mise-en-place](https://mise.jdx.dev/) — pins the Go toolchain, `golangci-lint`, and `govulncheck` at the exact versions the merge gate uses. `mise install` reads `.mise.toml` and provisions everything.
+- [GitHub CLI (`gh`)](https://cli.github.com/) — `scripts/local-check.sh` calls `gh api` to post the merge-gate commit status; `gh auth login` once is enough.
 
 ### Clone and verify
 
@@ -14,10 +15,11 @@ This guide is for people working **on** Omakiten — building, testing, and rele
 git clone https://github.com/This-Is-NPC/omakiten
 cd omakiten
 mise install              # provisions Go 1.25.x, golangci-lint, govulncheck
-mise run check            # full verification: tests + lint + vuln
+git config core.hooksPath scripts/hooks   # wire pre-push merge gate
+mise run check            # full verification: tests + lint + vuln + docs:check
 ```
 
-`mise run check` is the gate every PR must pass — green here means CI will go green too.
+`mise run check` is the gate every PR must pass — see [Merge gate](#merge-gate) for how the pre-push hook posts the result to GitHub.
 
 ### First local install (optional)
 
@@ -221,61 +223,71 @@ go tool cover -func=/tmp/coverage.out | tail -1
 - **CHANGELOG:** notable user-visible changes go under `## Unreleased` in [CHANGELOG.md](../../CHANGELOG.md). `release-please` rewrites the version headings on release — never edit them by hand.
 - **Docs:** end-user behaviour lives under `.docs/<topic>-guide.md`. When you change something a guide describes, update it in the same PR.
 
-## Continuous Integration
+## Merge gate
 
-CI lives in `.github/workflows/`. Two workflows share the `name: CI` and the `build-test` job name so branch protection rules only ever need to require one check.
+As of [#TBD], the project runs its merge gate locally instead of on GitHub Actions. The two former workflows (`ci.yml` and the `ci-docs.yml` companion) are gone; the gate is now `scripts/local-check.sh` driven by a tracked pre-push hook.
 
-| File | Trigger paths | What it does |
-|---|---|---|
-| `ci.yml` | `paths-ignore: ["**.md", ".docs/**", "CHANGELOG.md"]` | Full Go pipeline — build, vet, race-tested `go test`, `golangci-lint`, `okt-docs-refresh --check`. |
-| `ci-docs.yml` | `paths: ["**.md", ".docs/**", "CHANGELOG.md"]` | Always-pass companion. Posts the `build-test` check without spinning the Go toolchain for doc-only diffs. |
+### How it works
 
-The two filters partition every PR diff:
+1. `scripts/hooks/pre-push` fires for every `git push`. For each non-deletion ref, it invokes `scripts/local-check.sh --pre-push` with the pushed SHA.
+2. In `--pre-push` mode the script runs `mise run check` (`test` + `lint` + `vuln` + `docs:check`) synchronously — a red check aborts the push.
+3. On green, the script spawns a detached background poller (`setsid nohup …`) that waits up to 60 seconds for the SHA to be reachable on `origin` (`gh api repos/<slug>/commits/<sha>`), then posts the final `success` status via `gh api -X POST repos/<slug>/statuses/<sha>`. This indirection is required because `git push` uploads the commit *after* the hook returns; posting in the hook itself hits HTTP 422 (`No commit found for SHA`).
+4. For manual reruns (e.g. when the hook was skipped or the background post timed out), invoke `scripts/local-check.sh` directly — the default foreground mode posts `pending` → `success`/`failure` against the already-pushed SHA.
+5. `master` branch protection requires `local-check` to be `success` for the PR's HEAD SHA before the merge button enables.
 
-- **Go-only diff** — only `ci.yml` runs; doc-companion is filtered out. One `build-test` check, real result.
-- **Doc-only diff** — only `ci-docs.yml` runs; main is filtered out. One `build-test` check, always green, completes in seconds.
-- **Mixed diff** — both run. Both post `build-test`; branch protection blocks unless both pass (i.e. the real Go pipeline must pass).
+### Enabling for a fresh clone
 
-### Cancel-on-push
-
-`ci.yml` declares:
-
-```yaml
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+```bash
+git config core.hooksPath scripts/hooks
+gh auth status              # ensure gh CLI is authenticated
 ```
 
-A new push to the same PR branch automatically cancels any in-flight run. Stale runs on superseded SHAs no longer waste runner minutes or block the queue.
+`core.hooksPath` is per-clone (not committed); set it once after cloning. Skipping it disables the gate locally, which means `git push` will hand off a SHA with no `local-check` status — branch protection will refuse to merge it until the script is rerun manually.
 
-### Build cache
+To intentionally skip the gate on a push (e.g. release-please bot, force-push of WIP to a personal branch):
 
-`ci.yml` manages the Go cache explicitly instead of relying on `setup-go@v5`'s built-in cache, so the build-output cache (`~/.cache/go-build`) is preserved alongside the module cache:
-
-```yaml
-- name: Set up Go
-  uses: actions/setup-go@v5
-  with:
-    go-version: "1.25"
-    check-latest: true
-    cache: false             # managed below
-
-- name: Cache Go build & module cache
-  uses: actions/cache@v4
-  with:
-    path: |
-      ~/.cache/go-build
-      ~/go/pkg/mod
-    key: ${{ runner.os }}-go-1.25-${{ hashFiles('go.sum') }}
-    restore-keys: |
-      ${{ runner.os }}-go-1.25-
+```bash
+OKT_SKIP_LOCAL_CHECK=1 git push
 ```
 
-The primary key invalidates whenever `go.sum` moves; the `restore-keys` fallback lets a cold key still hydrate from the most recent partial match, so an isolated dependency bump does not force a full rebuild from source. The Go build cache is itself content-addressed, so stale entries for changed source files are ignored automatically.
+### Re-running by hand
 
-### Editing the workflows
+If the hook was skipped, the background poll timed out, or you just want to refresh the status:
 
-When tightening or relaxing the doc-path filters in `ci.yml`, mirror the change in `ci-docs.yml` — the two `paths`/`paths-ignore` lists must remain exact complements. A drift means doc-only diffs would either skip CI entirely (no check posted, branch protection blocks) or trigger both workflows on the same files (duplicate green checks but no Go validation).
+```bash
+scripts/local-check.sh                              # full run for HEAD (SHA must be on origin)
+scripts/local-check.sh --sha=<sha>                  # full run for a specific SHA
+scripts/local-check.sh --post-only --state=success  # skip the check, just stamp the status
+scripts/local-check.sh --dry-run                    # print API calls, do not POST
+```
+
+The script is idempotent: re-running on the same SHA simply overwrites the latest status of the `local-check` context.
+
+### Branch protection setup
+
+The maintainer applies the policy via `gh api`. To re-apply (e.g. after the repo is recreated):
+
+```bash
+gh api -X PUT repos/This-Is-NPC/omakiten/branches/master/protection \
+  --input - <<'JSON'
+{
+  "required_status_checks": { "strict": true, "contexts": ["local-check"] },
+  "enforce_admins": false,
+  "required_pull_request_reviews": null,
+  "restrictions": null
+}
+JSON
+```
+
+`enforce_admins=false` keeps an emergency override for the solo maintainer; flip to `true` if collaborators are added.
+
+### Why no hosted CI
+
+The only workflow that remains in `.github/workflows/` is `release.yml` (release-please + asset builds). The merge gate moved local for three reasons:
+
+- `mise run check` already covers the same surface (build + vet via `go test`, race-tested unit tests, `golangci-lint`, `govulncheck`, docs drift) and runs in seconds on the maintainer's box instead of minutes on a hosted runner.
+- The old `ci-docs.yml` companion existed only to satisfy the required `build-test` check on doc-only PRs. A locally-posted status removes the need for that workaround entirely.
+- Solo maintainer: cross-platform matrix isn't a constraint today. If a second contributor or a Windows/macOS regression appears, restore a thin `ci.yml` matrix alongside the local gate.
 
 ## Releasing
 
