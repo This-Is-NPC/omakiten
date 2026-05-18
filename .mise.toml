@@ -126,6 +126,7 @@ rm -rf "$HOME/.config/omakiten" "$HOME/.local/share/omakiten"
 description = "Start the Omakiten TUI with local dev state under dev_env/"
 env = { OMAKITEN_HOME = "dev_env" }
 depends = ["dev:install"]
+raw = true
 run = "go run ./cmd/okt init --name Omakiten --slug omakiten >/dev/null && go run ./cmd/okt --project omakiten tui"
 
 [tasks."mcp:prompts"]
