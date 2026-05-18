@@ -78,6 +78,14 @@
 * **boundary enforcement:** new `internal/arch/arch_test.go` walks the import graph and fails if `internal/domain` reaches into adapters, if `internal/app` imports concrete adapters, or if any leaf adapter references a sibling. A `.golangci.yml` mirrors the rules under `depguard`. CI now runs `go vet`, `go test -race -count=1` and `golangci-lint`.
 * **eliminated `"backlog"` literal in production code:** `internal/cli/add.go --bucket` defaults to `""` (the `WorkflowService` resolves the active workflow's first bucket); the TUI's create form does the same.
 
+## [0.17.0](https://github.com/This-Is-NPC/omakiten/compare/v0.16.0...v0.17.0) (2026-05-18)
+
+
+### Features
+
+* **i18n:** contributor guide + scaffold helper + 12 bundled language packs ([#59](https://github.com/This-Is-NPC/omakiten/issues/59)) ([a759dbc](https://github.com/This-Is-NPC/omakiten/commit/a759dbcdfdd93f64035976e2b9b6a12840f32062))
+* **installer:** bubbletea picker UI + language-first flow for okt setup ([#57](https://github.com/This-Is-NPC/omakiten/issues/57)) ([37e1bc0](https://github.com/This-Is-NPC/omakiten/commit/37e1bc02c01089d2e2f195387365035f3091ad19))
+
 ## [0.16.0](https://github.com/This-Is-NPC/omakiten/compare/v0.15.0...v0.16.0) (2026-05-16)
 
 
