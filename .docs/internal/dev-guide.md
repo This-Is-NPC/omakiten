@@ -229,10 +229,11 @@ As of [#TBD], the project runs its merge gate locally instead of on GitHub Actio
 
 ### How it works
 
-1. `scripts/hooks/pre-push` fires for every `git push`. For each non-deletion ref, it invokes `scripts/local-check.sh` with the pushed SHA.
-2. `local-check.sh` posts a `pending` commit status (`context=local-check`) to the SHA via `gh api repos/<owner>/<repo>/statuses/<sha>`, then runs `mise run check` (`test` + `lint` + `vuln` + `docs:check`).
-3. On exit it posts the final state: `success` or `failure`. Status messages include the wall-clock duration so a stale run is easy to spot.
-4. `master` branch protection requires `local-check` to be `success` for the PR's HEAD SHA before the merge button enables.
+1. `scripts/hooks/pre-push` fires for every `git push`. For each non-deletion ref, it invokes `scripts/local-check.sh --pre-push` with the pushed SHA.
+2. In `--pre-push` mode the script runs `mise run check` (`test` + `lint` + `vuln` + `docs:check`) synchronously — a red check aborts the push.
+3. On green, the script spawns a detached background poller (`setsid nohup …`) that waits up to 60 seconds for the SHA to be reachable on `origin` (`gh api repos/<slug>/commits/<sha>`), then posts the final `success` status via `gh api -X POST repos/<slug>/statuses/<sha>`. This indirection is required because `git push` uploads the commit *after* the hook returns; posting in the hook itself hits HTTP 422 (`No commit found for SHA`).
+4. For manual reruns (e.g. when the hook was skipped or the background post timed out), invoke `scripts/local-check.sh` directly — the default foreground mode posts `pending` → `success`/`failure` against the already-pushed SHA.
+5. `master` branch protection requires `local-check` to be `success` for the PR's HEAD SHA before the merge button enables.
 
 ### Enabling for a fresh clone
 
@@ -251,12 +252,13 @@ OKT_SKIP_LOCAL_CHECK=1 git push
 
 ### Re-running by hand
 
-If a hook run was aborted, or you want to refresh the status without pushing:
+If the hook was skipped, the background poll timed out, or you just want to refresh the status:
 
 ```bash
-scripts/local-check.sh                 # uses HEAD
-scripts/local-check.sh --sha=<sha>     # override
-scripts/local-check.sh --dry-run       # print payload, do not POST
+scripts/local-check.sh                              # full run for HEAD (SHA must be on origin)
+scripts/local-check.sh --sha=<sha>                  # full run for a specific SHA
+scripts/local-check.sh --post-only --state=success  # skip the check, just stamp the status
+scripts/local-check.sh --dry-run                    # print API calls, do not POST
 ```
 
 The script is idempotent: re-running on the same SHA simply overwrites the latest status of the `local-check` context.

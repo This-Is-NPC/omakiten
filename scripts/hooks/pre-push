@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# pre-push — refresh the `local-check` commit status for every ref
-# being pushed, so `master` branch protection has a fresh result to
-# gate the merge on.
+# pre-push — gate `git push` on `mise run check` and refresh the
+# `local-check` commit status that `master` branch protection requires.
+#
+# Because `git push` uploads the commit AFTER this hook returns, the
+# script runs the check synchronously (so a red check aborts the push)
+# and then background-posts the status once GitHub can see the SHA.
 #
 # Enable for this clone with:
 #   git config core.hooksPath scripts/hooks
@@ -26,5 +29,5 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   if [[ "$local_sha" == "$zero" ]]; then
     continue
   fi
-  OKT_LOCAL_CHECK_SHA="$local_sha" "$script"
+  OKT_LOCAL_CHECK_SHA="$local_sha" "$script" --pre-push
 done
