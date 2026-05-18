@@ -75,7 +75,7 @@ func (m *Model) openPlanGoalEditor() {
 	}
 	m.planGoalEditingID = m.planNetworkShow.Plan.ID
 	m.beginInput(modePlanGoal,
-		fmt.Sprintf("plan goal · %s · ctrl+s save · esc cancel", m.planNetworkShow.Plan.Slug),
+		fmt.Sprintf(m.t("tui.plans.goal.status_fmt"), m.planNetworkShow.Plan.Slug),
 		m.planNetworkShow.Plan.GoalBody,
 	)
 }
@@ -119,10 +119,10 @@ func (m *Model) claimNextInPlanNetwork() {
 		return
 	}
 	if !claimed {
-		m.status = fmt.Sprintf("plans.claim_next: no tasks claimable in %q", m.planNetworkShow.Plan.Slug)
+		m.status = fmt.Sprintf(m.t("tui.plans.status.claim_empty_fmt"), m.planNetworkShow.Plan.Slug)
 		return
 	}
-	m.status = fmt.Sprintf("plans.claim_next: claimed task #%d %q", task.ID, task.Title)
+	m.status = fmt.Sprintf(m.t("tui.plans.status.claim_success_fmt"), task.ID, task.Title)
 	m.reloadPlanNetwork()
 }
 
@@ -148,7 +148,9 @@ func (m Model) renderPlanNetwork() string {
 	}
 	show := m.planNetworkShow
 	if len(show.Waves) == 0 {
-		return m.renderPanel(fmt.Sprintf("// PLAN · %s\n\nNo waves yet. Add one with `okt plan wave-add %s \"<wave-name>\"`.", show.Plan.Slug, show.Plan.Slug))
+		header := fmt.Sprintf(m.t("tui.plans.network.header_fmt"), show.Plan.Slug, 0, 0, 0)
+		body := fmt.Sprintf(m.t("tui.plans.network.no_waves_fmt"), show.Plan.Slug)
+		return m.renderPanel(header + "\n\n" + body)
 	}
 
 	finalBucket := ""
@@ -181,8 +183,7 @@ func (m Model) renderPlanNetwork() string {
 	board := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
 
 	pct := planPercent(show.DoneCount, show.TotalCount)
-	header := fmt.Sprintf("// PLAN · %s · %d/%d · %d%%   (esc back · h/l wave · j/k task · o open · r refresh)",
-		show.Plan.Slug, show.DoneCount, show.TotalCount, pct)
+	header := fmt.Sprintf(m.t("tui.plans.network.header_fmt"), show.Plan.Slug, show.DoneCount, show.TotalCount, pct) + "   " + m.t("tui.plans.network.keymap")
 
 	var sb strings.Builder
 	sb.WriteString("\n")
@@ -227,21 +228,20 @@ func (m Model) renderPlanNetworkColumn(wv app.PlanWaveView, focused bool, cursor
 	}
 	tag := ""
 	if isActive {
-		tag = " ‹active›"
+		tag = m.t("tui.plans.network.active_tag")
 	}
-	header := fmt.Sprintf("// W%d %s · %d/%d%s",
+	header := fmt.Sprintf(m.t("tui.plans.network.wave_header_fmt"),
 		wv.Wave.Position,
 		truncateText(wv.Wave.Name, width-12),
 		wv.DoneCount, wv.TotalCount,
-		tag,
-	)
+	) + tag
 	rows := []string{
 		headerStyle.Render(truncateText(header, width)),
 		m.styles.separator.Render(strings.Repeat("─", width)),
 	}
 
 	if len(wv.Tasks) == 0 {
-		rows = append(rows, m.styles.empty.Width(width).Render("empty"))
+		rows = append(rows, m.styles.empty.Width(width).Render(m.t("tui.plans.network.empty_wave")))
 	}
 	for i, t := range wv.Tasks {
 		badge := planNetworkStatusBadge(t, waveID, activeWaveID, finalBucket)
@@ -280,8 +280,8 @@ func (m Model) renderPlanGoalEditor() string {
 		m.styles.multilineFormTheme(),
 	)
 	lines := []string{
-		m.styles.hintAccent.Render(fmt.Sprintf("// PLAN GOAL · %s", m.planNetworkShow.Plan.Slug)),
-		m.formHint("ctrl+s saves", "alt+enter newline", "esc cancels"),
+		m.styles.hintAccent.Render(fmt.Sprintf(m.t("tui.plans.goal.kicker_fmt"), m.planNetworkShow.Plan.Slug)),
+		m.formHint(m.t("tui.plans.goal.hint.ctrl_s"), m.t("tui.plans.goal.hint.alt_newline"), m.t("tui.plans.goal.hint.esc_cancel")),
 		"",
 		field,
 	}

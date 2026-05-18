@@ -122,7 +122,7 @@ func (m Model) plansViewportRows() int {
 // project has no plans yet.
 func (m Model) renderPlans() string {
 	if len(m.plans) == 0 {
-		return m.renderPanel("// PLANS\n\nNo plans yet. Create one with `okt plan create <slug> --name \"...\"`.")
+		return m.renderPanel(m.t("tui.plans.kicker") + "\n\n" + m.t("tui.plans.list.empty"))
 	}
 
 	contentWidth := m.availableWidth() - 4
@@ -132,13 +132,14 @@ func (m Model) renderPlans() string {
 		nameWidth = 12
 	}
 
+	missingActive := m.t("tui.plans.list.active_wave_missing")
 	dataRows := make([]string, 0, len(m.plans))
 	for idx, r := range m.plans {
 		marker := m.cursorMarker(idx == m.planCursor)
 		pct := planPercent(r.DoneCount, r.TotalCount)
 		active := r.ActiveWaveName
 		if active == "" {
-			active = "—"
+			active = missingActive
 		}
 		dataRows = append(dataRows,
 			fmt.Sprintf("%s %-16s %-7s %5d/%-3d %4d%%  %s",
@@ -153,8 +154,8 @@ func (m Model) renderPlans() string {
 	}
 
 	rows := []string{
-		m.styles.kickerCount("// PLANS", len(m.plans)),
-		m.styles.info.Render("  slug             status    done/total   %    name ‹active wave›"),
+		m.styles.kickerCount(m.t("tui.plans.kicker"), len(m.plans)),
+		m.styles.info.Render(m.t("tui.plans.list.header")),
 		m.hRule(contentWidth),
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.planScroll, m.plansViewportRows())...)
