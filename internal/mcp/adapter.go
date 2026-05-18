@@ -257,6 +257,8 @@ func tools() []ToolDefinition {
 		{Name: "plans.list", Description: "List every plan in the active project, ordered by creation. Goal bodies are omitted from list entries — call plans.show to fetch one with its full body.", InputSchema: selectorSchema()},
 		{Name: "plans.show", Description: "Return one plan with its waves, tasks per wave, per-wave and overall done/total counts, integer percent, and the active wave id (lowest-position wave with pending work). Archived tasks are filtered out of the counts but stay in the wave's tasks list.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug")}, []string{"slug"})},
 		{Name: "plans.add_wave", Description: "Append a wave to a plan (position=0 auto-assigns after the current highest position; explicit position>0 inserts at that slot and rejects on collision). Identify the plan by slug or plan_id; supply at least one. Emits plan.wave_added.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "name": stringSchema("Wave name (human-readable)"), "position": integerSchema("Optional 1-based wave position; omit or 0 to append after the current highest")}, []string{"name"})},
+		{Name: "plans.assign_task", Description: "Attach an existing task to a (plan, wave). Identify the plan by slug or plan_id; supply at least one. Cross-plan / cross-project wave references are rejected.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to attach"), "slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "wave_id": integerSchema("Wave id; must belong to the named plan")}, []string{"task_id", "wave_id"})},
+		{Name: "plans.claim_next", Description: "Atomically reserve the next unblocked task in the plan's active wave (lowest-position wave with pending tasks). Moves the task from the first bucket to the second (typically backlog → dev), stamps tasks.assigned_to with the caller's _agent_model, and emits task.moved + task.assigned. Returns claimed=false (no task) when every wave is fully done or no first-bucket tasks remain. Concurrency-safe via BEGIN IMMEDIATE on a pinned connection.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)")}, nil)},
 	}
 }
 
@@ -603,6 +605,18 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = service.AddPlanWave(ctx, input)
+		}
+	case "plans.assign_task":
+		var input agent.AssignPlanTaskInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.AssignPlanTask(ctx, input)
+		}
+	case "plans.claim_next":
+		var input agent.ClaimNextPlanTaskInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.ClaimNextPlanTask(ctx, input)
 		}
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP tool %q", name)

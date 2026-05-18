@@ -73,6 +73,49 @@ func (s *PlanService) GetBySlug(ctx context.Context, project domain.ProjectConte
 	return s.repo.GetPlanBySlug(ctx, project.ID, strings.TrimSpace(slug))
 }
 
+// AssignTask attaches an existing task to a (plan, wave). The repo
+// rejects cross-project / cross-plan mismatches via ErrPlanNotFound /
+// ErrPlanWaveNotFound; no events emit on plan/wave linkage (per slice 3
+// design — wave membership shows up indirectly through task.moved when
+// the task transitions).
+func (s *PlanService) AssignTask(ctx context.Context, project domain.ProjectContext, taskID, planID, waveID int64) (err error) {
+	finish := activity.Track(ctx, "app.PlanService.AssignTask", project, map[string]any{"task_id": taskID, "plan_id": planID, "wave_id": waveID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+	return s.repo.AssignTaskToPlan(ctx, project.ID, taskID, planID, waveID)
+}
+
+// ClaimNext is the atomic-claim primitive: serialised behind SQLite's
+// reserved write lock, picks the next unblocked task in the plan's
+// active wave and marks it claimed by the caller's _agent_model.
+// Returns (task, true) on a successful claim, (zero, false) when no
+// task is claimable. The Snapshot captured by NewPlanServiceWithSnapshot
+// supplies the BucketResolver.
+func (s *PlanService) ClaimNext(ctx context.Context, project domain.ProjectContext, planID int64) (task domain.Task, claimed bool, err error) {
+	finish := activity.Track(ctx, "app.PlanService.ClaimNext", project, map[string]any{"plan_id": planID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+	if s.snap == nil {
+		return domain.Task{}, false, domain.NewError(domain.ErrConfigInvalid,
+			"plans.claim_next requires a snapshot-bound PlanService", nil)
+	}
+	return s.repo.ClaimNextPlanTask(ctx, project.ID, planID, s.snap)
+}
+
 // AddWave appends a wave to a plan. Position 0 (or negative) auto-assigns
 // after the current highest position. The repo emits plan.wave_added.
 func (s *PlanService) AddWave(ctx context.Context, project domain.ProjectContext, planID int64, name string, position int) (wave domain.PlanWave, err error) {

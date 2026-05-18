@@ -177,6 +177,17 @@ type PlanRepository interface {
 	AddPlanWave(ctx context.Context, projectID, planID int64, name string, position int) (domain.PlanWave, error)
 	ListPlanWaves(ctx context.Context, projectID, planID int64) ([]domain.PlanWave, error)
 	ListPlanTasks(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) ([]domain.PlanTaskRow, error)
+	AssignTaskToPlan(ctx context.Context, projectID, taskID, planID, waveID int64) error
+	// ClaimNextPlanTask atomically picks the next unblocked task in the
+	// plan's active wave (lowest-position wave with pending tasks),
+	// moves it from the workflow's first bucket into the second
+	// ("dev"), and stamps tasks.assigned_to with the caller's
+	// _agent_model (resolved from ctx). Returns (task, true) on a
+	// successful claim, (zero, false) when no task is claimable, or
+	// (zero, false, err) on storage failures. Race safety comes from
+	// BEGIN IMMEDIATE on a pinned connection — concurrent claims
+	// serialise behind the write lock.
+	ClaimNextPlanTask(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) (domain.Task, bool, error)
 }
 
 // BundleStore is the adapter port for reading/writing the bundled config and

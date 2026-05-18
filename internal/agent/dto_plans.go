@@ -92,6 +92,37 @@ type PlanWaveSummary struct {
 	Position int    `json:"position"`
 }
 
+type AssignPlanTaskInput struct {
+	ProjectSelector
+	TaskID int64  `json:"task_id"`
+	PlanID int64  `json:"plan_id,omitempty"`
+	Slug   string `json:"slug,omitempty"`
+	WaveID int64  `json:"wave_id"`
+}
+
+type AssignPlanTaskResponse struct {
+	Project ProjectSummary `json:"project"`
+	TaskID  int64          `json:"task_id"`
+	PlanID  int64          `json:"plan_id"`
+	WaveID  int64          `json:"wave_id"`
+}
+
+type ClaimNextPlanTaskInput struct {
+	ProjectSelector
+	PlanID int64  `json:"plan_id,omitempty"`
+	Slug   string `json:"slug,omitempty"`
+}
+
+// ClaimNextPlanTaskResponse: Claimed is false when no task was available
+// (every wave fully done OR active wave has no first-bucket tasks left).
+// When Claimed=true the Task field carries the post-claim row (bucket
+// already moved into the destination, assigned_to set to the agent).
+type ClaimNextPlanTaskResponse struct {
+	Project ProjectSummary `json:"project"`
+	Claimed bool           `json:"claimed"`
+	Task    *TaskSummary   `json:"task,omitempty"`
+}
+
 // planSummary projects a domain.Plan into the MCP wire shape, keeping
 // the goal body intact so the show / create responses can echo it back.
 // List responses zero the field before sending to keep payloads compact.

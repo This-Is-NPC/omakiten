@@ -323,6 +323,192 @@ WHERE project_id = ? AND id = ?
 	return tx.Commit()
 }
 
+// ClaimNextPlanTask atomically reserves the next claimable task in a
+// plan. The transaction is opened with BEGIN IMMEDIATE on a pinned
+// *sql.Conn so concurrent claims serialise behind SQLite's reserved
+// write lock — each waiter re-evaluates the SELECT after the prior
+// commit, so the loser sees `assigned_to` already set on the candidate
+// and either picks the next free task or returns (zero, false) when
+// the wave is fully claimed.
+//
+// The "active wave" is the lowest-position wave that still has any
+// task whose bucket is not the workflow's final bucket — implicitly
+// enforces wave gating (wave N+1 cannot be claimed while wave N has
+// pending tasks). Wave-gate guard config wired into manual moves is
+// orthogonal; this method is its own gate.
+//
+// Side effects (all in the same transaction):
+//   - tasks.bucket_id moves from the workflow's first bucket to the
+//     second (typically backlog → dev). Tasks already past the first
+//     bucket are skipped — they're considered actively worked on.
+//   - tasks.assigned_to is set to the agent model resolved from ctx.
+//   - tasks.completed_at follows the same CASE rule as MoveTask so a
+//     workflow with only one non-final bucket stays consistent.
+//   - task.moved and task.assigned events emit in the same tx.
+func (s *Store) ClaimNextPlanTask(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) (domain.Task, bool, error) {
+	_, _, agentModel, _ := agentAttribution(ctx)
+	agentModel = strings.TrimSpace(agentModel)
+	if agentModel == "" {
+		return domain.Task{}, false, domain.NewError(domain.ErrValidation,
+			"plans.claim_next requires _agent_model in the request context",
+			map[string]any{"plan_id": planID})
+	}
+
+	workflow := buckets.Workflow()
+	if len(workflow.Buckets) < 2 {
+		return domain.Task{}, false, domain.NewError(domain.ErrConfigInvalid,
+			"plans.claim_next requires a workflow with at least 2 buckets",
+			map[string]any{"plan_id": planID, "bucket_count": len(workflow.Buckets)})
+	}
+
+	first := workflow.Buckets[0]
+	dev := workflow.Buckets[0]
+	final := workflow.Buckets[0]
+	for _, b := range workflow.Buckets {
+		if b.Position < first.Position {
+			first = b
+		}
+		if b.Position > final.Position {
+			final = b
+		}
+	}
+	// dev = bucket immediately above first by position.
+	devSet := false
+	for _, b := range workflow.Buckets {
+		if b.Position <= first.Position {
+			continue
+		}
+		if !devSet || b.Position < dev.Position {
+			dev = b
+			devSet = true
+		}
+	}
+	if !devSet {
+		return domain.Task{}, false, domain.NewError(domain.ErrConfigInvalid,
+			"plans.claim_next could not resolve a destination bucket",
+			map[string]any{"plan_id": planID})
+	}
+
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return domain.Task{}, false, err
+	}
+	connClosed := false
+	closeConn := func() {
+		if connClosed {
+			return
+		}
+		connClosed = true
+		_ = conn.Close()
+	}
+	// Pool has MaxOpenConns=4; the final taskByID lookup needs its own
+	// pool slot, so the pinned conn MUST be released before that call —
+	// otherwise N>4 concurrent claims deadlock all holders against the
+	// post-commit reader. closeConn enforces release-once semantics so
+	// the happy path and every error path agree.
+	defer closeConn()
+
+	// PRAGMA busy_timeout is per-connection in SQLite; the pool may hand
+	// us a connection that bypassed Open's pragma sweep. Re-apply so
+	// concurrent claims wait on SQLITE_BUSY instead of erroring out.
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout = %d", kitBusyTimeoutMs())); err != nil {
+		return domain.Task{}, false, fmt.Errorf("apply busy_timeout: %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return domain.Task{}, false, fmt.Errorf("begin immediate: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed && !connClosed {
+			_, _ = conn.ExecContext(ctx, "ROLLBACK")
+		}
+	}()
+
+	// 1. Locate the active wave: lowest position with any task NOT in
+	//    the workflow's final bucket. NULL → nothing to claim.
+	var activeWavePos sql.NullInt64
+	if err := conn.QueryRowContext(ctx, `
+SELECT MIN(w.position)
+FROM plan_waves w
+WHERE w.plan_id = ?
+  AND EXISTS (
+    SELECT 1 FROM tasks t
+    WHERE t.wave_id = w.id
+      AND t.state = 'active'
+      AND COALESCE(t.bucket_id, 0) <> ?
+  )
+`, planID, final.ID).Scan(&activeWavePos); err != nil {
+		return domain.Task{}, false, err
+	}
+	if !activeWavePos.Valid {
+		if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+			return domain.Task{}, false, err
+		}
+		committed = true
+		closeConn()
+		return domain.Task{}, false, nil
+	}
+
+	// 2. Pick the lowest-id unassigned task in that wave still sitting
+	//    in the first bucket.
+	var taskID int64
+	err = conn.QueryRowContext(ctx, `
+SELECT t.id
+FROM tasks t
+JOIN plan_waves w ON w.id = t.wave_id
+WHERE t.plan_id = ?
+  AND w.position = ?
+  AND t.state = 'active'
+  AND COALESCE(t.bucket_id, 0) = ?
+  AND (t.assigned_to IS NULL OR t.assigned_to = '')
+ORDER BY t.id ASC
+LIMIT 1
+`, planID, activeWavePos.Int64, first.ID).Scan(&taskID)
+	if errors.Is(err, sql.ErrNoRows) {
+		if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+			return domain.Task{}, false, err
+		}
+		committed = true
+		closeConn()
+		return domain.Task{}, false, nil
+	}
+	if err != nil {
+		return domain.Task{}, false, err
+	}
+
+	// 3. Move + assign in one UPDATE.
+	if _, err := conn.ExecContext(ctx, `
+UPDATE tasks
+SET bucket_id = ?, assigned_to = ?, updated_at = CURRENT_TIMESTAMP,
+    completed_at = CASE WHEN ? = 1 THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE NULL END
+WHERE project_id = ? AND id = ?
+`, dev.ID, agentModel, boolToInt(dev.Key == final.Key), projectID, taskID); err != nil {
+		return domain.Task{}, false, err
+	}
+
+	// 4. Emit task.moved + task.assigned in the same transaction.
+	movePayload := fmt.Sprintf(`{"from":%q,"to":%q}`, first.Key, dev.Key)
+	if _, err := insertTaskEvent(ctx, conn, projectID, taskID, domain.EventTypeTaskMoved, "", movePayload); err != nil {
+		return domain.Task{}, false, err
+	}
+	assignPayload, _ := json.Marshal(map[string]any{"assignee": agentModel, "source": "plans.claim_next"})
+	if _, err := insertEntityEvent(ctx, conn, domain.EventEntityTask, taskID, projectID, domain.EventTypeTaskAssigned, string(assignPayload)); err != nil {
+		return domain.Task{}, false, err
+	}
+
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return domain.Task{}, false, err
+	}
+	committed = true
+	closeConn()
+
+	task, err := s.taskByID(ctx, projectID, taskID, buckets)
+	if err != nil {
+		return domain.Task{}, false, err
+	}
+	return task, true, nil
+}
+
 // insertEntityEvent persists a non-task domain event in the caller's
 // transaction. Mirrors insertTaskEvent for plan/wave entities so callers
 // keep emission in the same atomic block as the mutation that triggered it.

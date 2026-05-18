@@ -3,8 +3,59 @@ package agent
 import (
 	"testing"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/domain"
 )
+
+func TestAssignAndClaimPlanTaskRoundTrip(t *testing.T) {
+	fixture := newAgentFixture(t)
+
+	plan, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "race", Name: "Race"})
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "wave-one"})
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+
+	// AssignPlanTask via slug — attach project A's existing task.
+	if _, err := fixture.service.AssignPlanTask(fixture.ctx, AssignPlanTaskInput{
+		TaskID: fixture.taskA1.ID,
+		Slug:   "race",
+		WaveID: wave.Wave.ID,
+	}); err != nil {
+		t.Fatalf("AssignPlanTask: %v", err)
+	}
+
+	// Claim — must succeed and stamp assignee.
+	ctxModel := activity.WithAgent(fixture.ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
+	resp, err := fixture.service.ClaimNextPlanTask(ctxModel, ClaimNextPlanTaskInput{Slug: "race"})
+	if err != nil {
+		t.Fatalf("ClaimNextPlanTask: %v", err)
+	}
+	if !resp.Claimed || resp.Task == nil || resp.Task.ID != fixture.taskA1.ID {
+		t.Fatalf("claim response = %+v, want claim of task %d", resp, fixture.taskA1.ID)
+	}
+	if resp.Task.BucketKey != "dev" {
+		t.Fatalf("claim bucket = %q, want dev", resp.Task.BucketKey)
+	}
+
+	// Second call → nothing claimable (only one task, already claimed).
+	resp2, err := fixture.service.ClaimNextPlanTask(ctxModel, ClaimNextPlanTaskInput{Slug: "race"})
+	if err != nil {
+		t.Fatalf("ClaimNextPlanTask second: %v", err)
+	}
+	if resp2.Claimed {
+		t.Fatalf("second claim = %+v, want claimed=false", resp2)
+	}
+}
+
+func TestAssignPlanTaskRejectsMissingPlanIdentifier(t *testing.T) {
+	fixture := newAgentFixture(t)
+	_, err := fixture.service.AssignPlanTask(fixture.ctx, AssignPlanTaskInput{TaskID: fixture.taskA1.ID, WaveID: 1})
+	assertCodedError(t, err, domain.ErrValidation)
+}
 
 // moveTaskToBucket walks the workflow buckets in ascending position
 // order, calling repo.MoveTask once per hop until the target is

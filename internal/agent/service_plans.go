@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"omakiten/internal/app"
+	"omakiten/internal/domain"
 )
 
 // newPlanService composes the per-project app.PlanService. Mirrors the
@@ -110,6 +111,73 @@ func (s *Service) ShowPlan(ctx context.Context, input ShowPlanInput) (ShowPlanRe
 		Percent:      percent,
 		ActiveWaveID: show.ActiveWaveID,
 	}, nil
+}
+
+// AssignPlanTask attaches an existing task to a plan + wave. The plan
+// is identified by slug or plan_id (slug wins when both supplied);
+// wave_id is taken verbatim — supplying a wave from a different plan
+// fails with ErrPlanWaveNotFound.
+func (s *Service) AssignPlanTask(ctx context.Context, input AssignPlanTaskInput) (AssignPlanTaskResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return AssignPlanTaskResponse{}, err
+	}
+	planID := input.PlanID
+	if input.Slug != "" {
+		plan, err := s.newPlanService().GetBySlug(ctx, project, input.Slug)
+		if err != nil {
+			return AssignPlanTaskResponse{}, err
+		}
+		planID = plan.ID
+	}
+	if planID == 0 {
+		return AssignPlanTaskResponse{}, domain.NewError(domain.ErrValidation, "plan id or slug is required", nil)
+	}
+	if input.WaveID == 0 {
+		return AssignPlanTaskResponse{}, domain.NewError(domain.ErrValidation, "wave_id is required", nil)
+	}
+	if input.TaskID == 0 {
+		return AssignPlanTaskResponse{}, domain.NewError(domain.ErrValidation, "task_id is required", nil)
+	}
+	if err := s.newPlanService().AssignTask(ctx, project, input.TaskID, planID, input.WaveID); err != nil {
+		return AssignPlanTaskResponse{}, err
+	}
+	return AssignPlanTaskResponse{
+		Project: projectSummary(project),
+		TaskID:  input.TaskID,
+		PlanID:  planID,
+		WaveID:  input.WaveID,
+	}, nil
+}
+
+// ClaimNextPlanTask runs the atomic claim primitive. Returns Claimed=false
+// (and no Task) when nothing is claimable in the plan's active wave.
+func (s *Service) ClaimNextPlanTask(ctx context.Context, input ClaimNextPlanTaskInput) (ClaimNextPlanTaskResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return ClaimNextPlanTaskResponse{}, err
+	}
+	planID := input.PlanID
+	if input.Slug != "" {
+		plan, err := s.newPlanService().GetBySlug(ctx, project, input.Slug)
+		if err != nil {
+			return ClaimNextPlanTaskResponse{}, err
+		}
+		planID = plan.ID
+	}
+	if planID == 0 {
+		return ClaimNextPlanTaskResponse{}, domain.NewError(domain.ErrValidation, "plan id or slug is required", nil)
+	}
+	task, claimed, err := s.newPlanService().ClaimNext(ctx, project, planID)
+	if err != nil {
+		return ClaimNextPlanTaskResponse{}, err
+	}
+	resp := ClaimNextPlanTaskResponse{Project: projectSummary(project), Claimed: claimed}
+	if claimed {
+		summary := taskSummary(task, s.registry)
+		resp.Task = &summary
+	}
+	return resp, nil
 }
 
 // AddPlanWave appends (position=0) or inserts (position>0) a wave onto
