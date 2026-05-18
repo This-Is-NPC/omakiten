@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"omakiten/internal/activity"
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
@@ -1857,6 +1858,137 @@ func TestPlansSubTabEnterOpensNetwork(t *testing.T) {
 	closed := pressKey(t, opened, tea.KeyEsc)
 	if closed.planNetworkOpen {
 		t.Fatalf("after esc: planNetworkOpen = true, want false")
+	}
+}
+
+// TestPlansSubTabNetworkClaimsNextTask exercises the `c` binding inside
+// the network view: it must call PlanService.ClaimNext against the
+// focused plan, move the resulting task from the workflow's first
+// bucket into the second, stamp tasks.assigned_to with the agent model
+// carried on the context, surface a status flash naming the task, and
+// reload the projection so the rendered badge swaps ○ → ●.
+func TestPlansSubTabNetworkClaimsNextTask(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, multiBucketBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	plan, err := store.CreatePlan(ctx, project.ID, "rollout", "Rollout", "")
+	if err != nil {
+		t.Fatalf("CreatePlan() error = %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "Foundation", 1)
+	if err != nil {
+		t.Fatalf("AddPlanWave() error = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "foundation-task", "", domain.Priority(2), "backlog", snap)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, task.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	opened := pressKey(t, got, tea.KeyEnter)
+	if !opened.planNetworkOpen {
+		t.Fatalf("network did not open")
+	}
+
+	claimed := pressRune(t, opened, 'c')
+	if !strings.Contains(claimed.status, "claimed task") {
+		t.Fatalf("status after 'c' = %q, want claim message", claimed.status)
+	}
+
+	tasksFilter, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{}, snap)
+	if err != nil {
+		t.Fatalf("ListTasks after claim error = %v", err)
+	}
+	if len(tasksFilter) != 1 {
+		t.Fatalf("ListTasks returned %d tasks, want 1", len(tasksFilter))
+	}
+	if tasksFilter[0].BucketKey != "dev" {
+		t.Fatalf("bucket after claim = %q, want dev", tasksFilter[0].BucketKey)
+	}
+
+	view := ansi.Strip(claimed.View())
+	if !strings.Contains(view, "@human") {
+		t.Fatalf("network view missing @human marker\n%s", view)
+	}
+	if !strings.Contains(view, "●") {
+		t.Fatalf("network view missing dev badge\n%s", view)
+	}
+}
+
+// TestPlansSubTabNetworkClaimReportsEmpty covers the no-claimable
+// branch: a plan with no active wave (all tasks already in the final
+// bucket) leaves the projection untouched and surfaces a status
+// message naming the plan.
+func TestPlansSubTabNetworkClaimReportsEmpty(t *testing.T) {
+	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+	snap := store.Snapshot()
+
+	if _, err := store.CreatePlan(ctx, project.ID, "empty", "Empty Plan", ""); err != nil {
+		t.Fatalf("CreatePlan() error = %v", err)
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Plans:        store,
+		Cache:        runtimecache.Install(0, snap),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.height = 40
+	model.width = 160
+
+	got := pressStringKey(t, model, "/")
+	got = pressStringKey(t, got, "/")
+	got = pressStringKey(t, got, "/")
+	opened := pressKey(t, got, tea.KeyEnter)
+	if !opened.planNetworkOpen {
+		t.Fatalf("network did not open")
+	}
+
+	claimed := pressRune(t, opened, 'c')
+	if !strings.Contains(claimed.status, "no tasks claimable") {
+		t.Fatalf("status after 'c' on empty plan = %q, want no-claim message", claimed.status)
 	}
 }
 

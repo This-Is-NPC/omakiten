@@ -20,7 +20,7 @@ import (
 // follow-up slices.
 func (m *Model) handlePlanNetworkKey(msg tea.KeyMsg) {
 	switch msg.String() {
-	case "esc", "q":
+	case "esc":
 		m.closePlanNetwork()
 		return
 	case "left", "h":
@@ -52,25 +52,59 @@ func (m *Model) handlePlanNetworkKey(msg tea.KeyMsg) {
 			m.openTaskView(task)
 		}
 	case "r":
-		// Re-fetch the focused plan's projection so per-task buckets and
-		// done/total counters reflect any moves that happened since open.
-		if m.repos.Plans == nil || m.planNetworkShow.Plan.Slug == "" {
-			return
-		}
-		planSvc := app.NewPlanServiceWithSnapshot(m.repos.Plans, m.repos.activeSnapshot())
-		show, err := planSvc.Show(m.ctx, m.project, m.planNetworkShow.Plan.Slug)
-		if err != nil {
+		if err := m.refreshCurrentView(); err != nil {
 			m.status = err.Error()
-			return
 		}
-		m.planNetworkShow = show
-		if m.planNetworkWaveCursor >= len(show.Waves) {
-			m.planNetworkWaveCursor = 0
-		}
-		if m.planNetworkTaskCursor >= len(m.planNetworkCurrentTasks()) {
-			m.planNetworkTaskCursor = 0
-		}
+		m.reloadPlanNetwork()
+	case "c":
+		m.claimNextInPlanNetwork()
 	}
+}
+
+// reloadPlanNetwork re-fetches the focused plan's projection so
+// per-task buckets and done/total counters reflect any moves that
+// happened since open. Reused by the `r` binding and by claimNext after
+// a successful claim.
+func (m *Model) reloadPlanNetwork() {
+	if m.repos.Plans == nil || m.planNetworkShow.Plan.Slug == "" {
+		return
+	}
+	planSvc := app.NewPlanServiceWithSnapshot(m.repos.Plans, m.repos.activeSnapshot())
+	show, err := planSvc.Show(m.ctx, m.project, m.planNetworkShow.Plan.Slug)
+	if err != nil {
+		m.status = err.Error()
+		return
+	}
+	m.planNetworkShow = show
+	if m.planNetworkWaveCursor >= len(show.Waves) {
+		m.planNetworkWaveCursor = 0
+	}
+	if m.planNetworkTaskCursor >= len(m.planNetworkCurrentTasks()) {
+		m.planNetworkTaskCursor = 0
+	}
+}
+
+// claimNextInPlanNetwork drives the `c` binding: invoke
+// PlanService.ClaimNext against the focused plan, then reflect the
+// outcome in the status line and reload the projection on success so
+// the freshly-claimed task moves from ○ to ● and picks up its
+// @assigned_to marker without the user needing to press `r`.
+func (m *Model) claimNextInPlanNetwork() {
+	if m.repos.Plans == nil || m.planNetworkShow.Plan.ID == 0 {
+		return
+	}
+	planSvc := app.NewPlanServiceWithSnapshot(m.repos.Plans, m.repos.activeSnapshot())
+	task, claimed, err := planSvc.ClaimNext(m.ctx, m.project, m.planNetworkShow.Plan.ID)
+	if err != nil {
+		m.status = err.Error()
+		return
+	}
+	if !claimed {
+		m.status = fmt.Sprintf("plans.claim_next: no tasks claimable in %q", m.planNetworkShow.Plan.Slug)
+		return
+	}
+	m.status = fmt.Sprintf("plans.claim_next: claimed task #%d %q", task.ID, task.Title)
+	m.reloadPlanNetwork()
 }
 
 // planNetworkCurrentTasks returns the active task slice for the focused

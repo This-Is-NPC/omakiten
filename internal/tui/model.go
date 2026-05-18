@@ -690,13 +690,13 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		m.moveMode = false
 		return true
 	case "n":
-		if m.top != topTasks {
+		if m.top != topTasks || m.inPlanNetwork() {
 			return false
 		}
 		m.openTaskCreate()
 		return true
 	case "e":
-		if m.top != topTasks {
+		if m.top != topTasks || m.inPlanNetwork() {
 			return false
 		}
 		if task, ok := m.selectedTask(); ok {
@@ -704,7 +704,7 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		}
 		return true
 	case "c":
-		if m.top != topTasks {
+		if m.top != topTasks || m.inPlanNetwork() {
 			return false
 		}
 		if _, ok := m.selectedTask(); ok {
@@ -712,6 +712,9 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		}
 		return true
 	case "r":
+		if m.inPlanNetwork() {
+			return false
+		}
 		if err := m.refreshCurrentView(); err != nil {
 			m.status = err.Error()
 		} else {
@@ -733,6 +736,16 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		return true
 	}
 	return false
+}
+
+// inPlanNetwork returns true when the user has drilled into the plans
+// sub-tab's column-per-wave network view. Used by handleCommonKey to
+// release `c`/`e`/`n`/`r` so the network handler can rebind them
+// (claim, future edit-goal, future add-task-to-wave, plan-show reload)
+// without colliding with the task-centric bindings that normally win
+// across sub-tabs.
+func (m *Model) inPlanNetwork() bool {
+	return m.sub == subPlans && m.planNetworkOpen
 }
 
 // cycleTop advances the active top by delta positions (positive forward,
