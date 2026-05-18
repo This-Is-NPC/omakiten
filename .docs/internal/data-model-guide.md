@@ -31,12 +31,13 @@ Schema versions are tracked in `schema_migrations(version)`. Each numbered file 
 | `019_unify_tool_call_events.sql` | Renames every `event_type='operation'` row to `cli.tool_call` / `mcp.tool_call` / `tui.tool_call` based on `source`. Enriches `payload` with `{tool_name, source, entrypoint, status, duration_ms, error_message, args}` so hooks can match without reading SQL columns. The legacy operation columns stay populated so `metrics.summary` keeps using its column-backed index. |
 | `020_drop_config_tables.sql` | **The Phase 2-bis breaking migration.** Drops `config_bundles`, `settings`, `skills`, `personas`, `persona_skills`, `laws`, `workflows`, `workflow_buckets`, `workflow_transitions`. Before the drop, rewrites `tasks.bucket_id` from the SQL-era `workflow_buckets.id` (autoincrement PK) to `workflow_buckets.local_id` (the YAML-declared bucket id the post-migration `Snapshot` indexes by) so existing tasks still resolve to a real bucket. Rebuilds `tasks` to drop the FK pointing at `workflow_buckets`; `bucket_id` is now a plain `INTEGER`. |
 | `021_rebind_orphan_buckets.sql` | Pure-SQL recovery for databases that applied an earlier version of 020 missing the bucket rebind. Walks `events` for each task's latest `task.moved` (fallback `task.created`) payload, extracts the bucket key, and maps onto the canonical preset bucket id via a `CASE` covering every shipped preset key. Tasks with no recoverable event land in bucket id 1. Idempotent on already-rebound databases. |
+| `022_search_index.sql` | Creates the unified FTS5 virtual table `search_index(content, entity_type UNINDEXED, entity_id UNINDEXED, project_id UNINDEXED)` with tokenizer `porter unicode61` and seeds it from the live rows: tasks (title + description), comments (the `events` rows where `event_type='comment'`), errors (description + context), solutions (description + steps), and context entries. Triggers keep the index in sync on insert / update / delete; `solutions` rows derive `project_id` via `errors.error_id`. Backs the unified `search` MCP tool that replaced the legacy `errors.search` path. |
 
-After 009, three tables that older code referenced (`comments`, `comment_tags`, `activity_logs`) **no longer exist** — every reader/writer goes through `events` (see "The unified events table" below). After 020, nine more tables (`config_bundles`, `settings`, `skills`, `personas`, `persona_skills`, `laws`, `workflows`, `workflow_buckets`, `workflow_transitions`) are also gone — config is YAML-only.
+After 009, three tables that older code referenced (`comments`, `comment_tags`, `activity_logs`) **no longer exist** — every reader/writer goes through `events` (see "The unified events table" below). After 020, nine more tables (`config_bundles`, `settings`, `skills`, `personas`, `persona_skills`, `laws`, `workflows`, `workflow_buckets`, `workflow_transitions`) are also gone — config is YAML-only. Migration 022 adds the FTS5 virtual table `search_index`, which is not a base table — it does not show up in the table count below, but every row inserted into `tasks`, `events` (comments), `errors`, `solutions`, or `context_entries` is mirrored into it by trigger.
 
-## Current schema (post-021)
+## Current schema (post-022)
 
-The live schema contains twelve tables of operational state plus `schema_migrations`:
+The live schema contains twelve base tables of operational state plus `schema_migrations` and the `search_index` FTS5 virtual table:
 
 ```
 schema_migrations      tags
@@ -45,7 +46,7 @@ tasks                  project_tags
 task_dependencies      error_tags
 context_entries        event_tags
 errors                 events
-solutions
+solutions              search_index (FTS5 virtual)
 ```
 
 The diagram below reflects that shape. Crow's-foot reads as: `||--o{` is one-to-many; pure-junction tables (`*_tags`, `task_dependencies`) sit between the two entities they link.
@@ -258,7 +259,7 @@ After migration 009, **comments**, **task lifecycle events**, **operational tele
 | `system` | `bundle.imported` | (null) | A fresh bundle reached the runtime (source-of-truth flipped). `payload={path, hash, workflow_key, workflow_count, persona_count, skill_count, law_count, template_count}`. |
 | `system` | `confirmation.granted` | (null) | TUI dispatched a non-empty `NotificationAction.Command` in response to a user keystroke. `payload={notification_slug, action_id, command}`. |
 | `error` | `error.recorded` | error id | `app.ErrorService.Record` persisted a new error row. `payload={tags, has_context}`. |
-| `error` | `error.searched` | (null) | `app.ErrorService.Search` ran. `payload={query, tags, result_count}`. |
+| `error` | `error.searched` | (null) | `app.SearchService.Search` ran (unified FTS5 across tasks / comments / errors / solutions / context entries). `payload={query, entity_types, result_count, unified}`. |
 | `solution` | `solution.added` | solution id | `app.ErrorService.AddSolution` persisted a candidate. `payload={error_id}`. |
 | `solution` | `solution.confirmed` | solution id | `ConfirmSolution` ran (regardless of outcome). Co-emits with `solution.liked` or `solution.failed`. `payload={error_id, success, likes}`. |
 | `solution` | `solution.liked` | solution id | `ConfirmSolution(success=true)`. `payload={error_id, likes}`. |
@@ -326,7 +327,7 @@ The driver is pure Go (`modernc.org/sqlite`), so the binary builds without CGo.
 
 ## Where to learn more
 
-- Migration sources: `migrations/001_initial.sql` … `migrations/021_rebind_orphan_buckets.sql`.
+- Migration sources: `migrations/001_initial.sql` … `migrations/022_search_index.sql`.
 - Domain types behind every row: `internal/domain/` (`task.go`, `event.go`, `tag.go`, `error_record.go`, `context.go`, `priority_test.go`, `severity_test.go`).
 - Adapter implementations: `internal/sqlite/` (one file per concern — `tasks.go`, `tasks_lifecycle.go` (archive/unarchive/remove), `comments.go`, `dependencies.go`, `events.go`, `tags.go`, `errors.go`, `metrics.go`, `bucket_resolver.go`, `activity_logs.go`, `guards.go`, `contexts.go`, `orphans.go`, `projects.go`, `store.go`).
 - App-level ports the adapter satisfies: `internal/app/ports.go`.

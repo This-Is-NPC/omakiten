@@ -11,13 +11,14 @@ The same guard shapes also drive **operation policies** (`operations.{archive,de
 `app.WorkflowService.MoveTask` runs in this order (`internal/app/workflow_service.go:179`):
 
 1. Validate input (`task_id > 0`, target bucket non-empty).
-2. Resolve current bucket via `WorkflowRepository.CurrentTaskBucket`.
-3. Resolve target bucket via the captured per-project Snapshot (`s.snap.BucketByKey`) — workflow shape lives in memory post-020, no repository round-trip.
-4. If `current != target`:
+2. Load `tasks.state`; reject archived tasks with `validation_error "task is archived; unarchive before moving"` (the `tasks.unarchive` MCP tool, `okt task unarchive <id>` CLI, or TUI un-archive lift the gate). Archived tasks never reach the workflow flow — `Archive`/`Unarchive` live on `task_service.go` and have their own guard slot.
+3. Resolve current bucket via `WorkflowRepository.CurrentTaskBucket`.
+4. Resolve target bucket via the captured per-project Snapshot (`s.snap.BucketByKey`) — workflow shape lives in memory post-020, no repository round-trip.
+5. If `current != target`:
    1. **Transition allowed?** → `Snapshot.TransitionAllowed`. Fails with `workflow_invalid_transition`.
    2. **Guards** → `guards.Evaluator.EvaluateTransition` (this doc; implementation in `internal/app/guards/evaluator.go`). First failure returns `guard_violation` and the move never persists.
-5. Persist via `TaskRepository.MoveTask` (records `task.moved`).
-6. If the destination is the workflow's final bucket, additionally emit `task.completed`.
+6. Persist via `TaskRepository.MoveTask` (records `task.moved`).
+7. If the destination is the workflow's final bucket, additionally emit `task.completed`.
 
 Self-moves (current == target) skip both the transition check and guard evaluation. Same-bucket "moves" are no-ops by design.
 
@@ -35,7 +36,7 @@ Asserts that every task this task depends on currently sits in one of `buckets`.
   hint: "Move blockers to Done first."   # optional, surfaced verbatim in the error
 ```
 
-**Evaluation** (`workflow_service.go:checkBlockersIn`):
+**Evaluation** (`internal/app/guards/evaluator.go:checkBlockersIn`):
 
 - Loads dependency rows via `GuardEvaluationRepository.ListTaskBlockerBuckets` (`internal/sqlite/guards.go`).
 - Builds the allowed-key set from `buckets`.
@@ -65,7 +66,7 @@ Asserts that the task has at least `count` comments — any author, any tag.
   hint: "Leave a status note before moving forward."  # optional
 ```
 
-**Evaluation** (`workflow_service.go:checkCommentsMin`):
+**Evaluation** (`internal/app/guards/evaluator.go:checkCommentsMin`):
 
 - Loads the count via `GuardEvaluationRepository.CountTaskComments` (`internal/sqlite/guards.go`).
 - Passes when `count(comments) >= count`.
@@ -82,7 +83,7 @@ Asserts that the task has at least `count` comments carrying a specific tag. The
   hint: "Add a #resume note summarizing what was implemented."  # optional
 ```
 
-**Evaluation** (`workflow_service.go:checkCommentsTagged`):
+**Evaluation** (`internal/app/guards/evaluator.go:checkCommentsTagged`):
 
 - Loads the tagged-count via `GuardEvaluationRepository.CountTaskCommentsTagged` (`internal/sqlite/guards.go`).
 - Passes when `count(distinct comments tagged tag) >= count`.
@@ -316,7 +317,7 @@ workflows:
       unarchive: {}                  # no guards
 ```
 
-Evaluation lives in `internal/app/task_service.go` (`Archive`, `Delete`, `Unarchive`) — each operation pulls its policy from `domain.Workflow.Operations` and runs `evaluateGuards` with the same first-fail short-circuit.
+Evaluation entry point lives in `internal/app/task_service.go` (`Archive`, `Delete`, `Unarchive`) — each operation calls `s.workflow.Evaluator().EvaluateOperation(ctx, projectID, taskID, OperationKey, op.Guards)` on the per-project `Evaluator`. The evaluator (`internal/app/guards/evaluator.go::EvaluateOperation`) walks the guards in declaration order and applies the same first-fail short-circuit as transitions.
 
 **Important policy notes:**
 
@@ -326,13 +327,23 @@ Evaluation lives in `internal/app/task_service.go` (`Archive`, `Delete`, `Unarch
 
 ## Bucket permissions
 
-Per-bucket CRUD policy lives under `workflows[].buckets[].permissions` with a workflow-level fallback in `workflows[].defaults`. Resolution walks:
+Per-bucket CRUD policy lives under `workflows[].buckets[].permissions` with a workflow-level fallback in `workflows[].defaults`. The resolver lives in `internal/domain/workflow.go` (`Bucket.ResolveTaskPermission` / `Bucket.ResolveCommentPermission`); it walks pointer candidates in priority order and returns the first non-nil value, with implicit `true` when every candidate is nil.
 
-1. `bucket.permissions.<task|comment>.<edit|delete>` — per-bucket override.
-2. `workflows[].defaults.<task|comment>.<edit|delete>` — workflow-level fallback.
+**Task** (`(edit, delete)`):
+
+1. `bucket.permissions.task.<edit|delete>` — per-bucket override.
+2. `workflows[].defaults.task.<edit|delete>` — workflow-level fallback.
 3. Implicit `true` — no rule declared anywhere = allowed.
 
-`comment` inherits from `task` field-by-field at every layer: declaring `task.edit: false` denies edit on **both** task and comments unless `comment.edit` is set explicitly at the same or a deeper layer.
+**Comment** (`(edit, delete)`) inherits from task field-by-field at every layer, so the chain is four steps long:
+
+1. `bucket.permissions.comment.<edit|delete>` — per-bucket comment override.
+2. `bucket.permissions.task.<edit|delete>` — same bucket's task field (comment inherits from task at the bucket layer).
+3. `workflows[].defaults.comment.<edit|delete>` — workflow-level comment fallback.
+4. `workflows[].defaults.task.<edit|delete>` — workflow-level task fallback (comment inherits from task at the defaults layer).
+5. Implicit `true` — no rule declared anywhere = allowed.
+
+Declaring `task.edit: false` therefore denies edit on **both** task and comments unless `comment.edit` is set explicitly at the same or a deeper layer.
 
 ```yaml
 defaults:

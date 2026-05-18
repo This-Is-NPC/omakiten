@@ -22,11 +22,12 @@ version: 1
 kit: { id, key, name }
 config: { … }
 workflows: [ … ]
-skills:    [ <slug>, … ]    # optional allowlist
-laws:      [ <slug>, … ]    # optional allowlist
-templates: [ <slug>, … ]    # optional allowlist
-personas:  [ { slug, skills?, laws? }, … ]
-projects:  [ { slug, name, description?, laws? }, … ]
+skills:       [ <slug>, … ]    # optional allowlist
+laws:         [ <slug>, … ]    # optional allowlist
+templates:    [ <slug>, … ]    # optional allowlist
+personas:     [ { slug, skills?, laws? }, … ]
+projects:     [ { slug, name, description?, laws? }, … ]
+mcp_commands: { <slug>: { persona?, laws?, laws_disabled?, templates? } }
 ```
 
 | Field | Type | Required | Notes |
@@ -38,14 +39,17 @@ projects:  [ { slug, name, description?, laws? }, … ]
 | `skills` / `laws` / `templates` | list of slug strings | no | Strict allowlist when present; **autoload** otherwise. |
 | `personas` | list of `PersonaWiring` | no | Persona wiring (skill/law refs); body lives in `personas/<slug>.md`. |
 | `projects` | list of `ProjectWiring` | no | Declarative project wiring; the runtime project list is in SQLite. |
+| `mcp_commands` | map | no | Binds `okt-*` MCP prompts to a persona, laws, and templates. See **`mcp_commands`**. |
+
+Two additional inputs are loaded from sibling folders rather than `omakiten.yaml` top-level keys: `notifications/<slug>.yaml` (kit-wide notification cards referenced from `config.hooks`) and `languages/<code>.yaml` (CLI/TUI language packs picked via `config.languages.{cli,tui}`). They appear on the in-memory `Bundle` as `Notifications` and `Languages`, are validated alongside the YAML, and ship under `defaults/notifications/` and `defaults/languages/`.
 
 ### `kit`
 
 ```yaml
 kit:
-  id: 1               # int, > 0, required
-  key: default        # string, required
-  name: Default Omakiten Kit   # string, required
+  id: 101                       # int, > 0, required
+  key: omakase                  # string, required
+  name: Omakase Workflow Preset # string, required
 ```
 
 `kit` identifies the bundle distribution. All three fields are required (`requireKitFields` → `requireIDKeyName`).
@@ -63,7 +67,7 @@ config:
     default_level: 2          # int, 1..3
     max_tokens:    12000      # int, >= 0
   workflow:
-    active: default           # string, required; must match workflows[].key
+    active: omakase           # string, required; must match workflows[].key
   theme:
     active: omakiten          # string, required; must match a themes/<key>.yaml file
   template_defaults: [task, pr, comment-resume, comment-selfbranch]
@@ -443,8 +447,8 @@ The runtime applies one substitution; `golang` → `go` works, but if you also d
 ```yaml
 workflows:
   - id: 1
-    key: default
-    name: Default Workflow
+    key: omakase
+    name: Omakase Workflow
     defaults: { … }    # optional — see workflow defaults
     buckets: [ … ]
     transitions: [ … ]
@@ -819,14 +823,14 @@ All errors are returned as plain Go errors in CLI flows (rendered through the JS
 version: 1
 
 kit:
-  id: 1
-  key: default
-  name: Default Omakiten Kit
+  id: 101
+  key: omakase
+  name: Omakase Workflow Preset
 
 config:
   output:    { json_minified: true, omit_empty: true }
   context:   { default_level: 2, max_tokens: 12000 }
-  workflow:  { active: default }
+  workflow:  { active: omakase }
   theme:     { active: omakiten }
   template_defaults: [task, pr, comment-resume, comment-selfbranch]
   views:
@@ -842,8 +846,8 @@ config:
 
 workflows:
   - id: 1
-    key: default
-    name: Default Workflow
+    key: omakase
+    name: Omakase Workflow
     defaults:
       task:    { edit: false, delete: false }    # workflow-level baseline — buckets opt in
       comment: { edit: false, delete: false }

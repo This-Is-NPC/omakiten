@@ -29,8 +29,27 @@ Inherited by every subcommand (`internal/cli/root.go:NewRootCommand`):
 | `OMAKITEN_AGENT_MODEL` | Identifies the agent driving CLI calls; denormalized on every write (`events`, `errors`, `solutions`) and surfaced by `metrics.summary` / TUI Stats. Empty string is allowed and marks the call as non-benchmarked. |
 | `OMAKITEN_AGENT_SESSION_ID` | Optional opaque session id; lets `metrics.summary`'s `search_before_record_ratio` correlate searches to records within a session. |
 | `OKT_CD_FILE` · `XDG_RUNTIME_DIR` · `TMPDIR` | Resolution chain for the TUI `cd-on-exit` handshake file (see `okt tui` below). |
+| `OKT_CLI_LANG` · `OKT_TUI_LANG` · `OKT_AGENT_LANG` | Skip the matching `okt setup` picker screen by pre-supplying the chosen value. `OKT_CLI_LANG` and `OKT_TUI_LANG` validate against bundled packs under `defaults/languages/`; `OKT_AGENT_LANG` is free-form. |
+| `OKT_PRESET` · `OKT_HARNESSES` | Skip the preset and harness picker screens (`omakase` / CSV of harness names; `0` disables harness setup). |
 
 The TUI sets `agent_model="human"` internally so its activity is filtered out of the per-model benchmark; it does not consult `OMAKITEN_AGENT_MODEL`.
+
+---
+
+## `okt setup` — post-install picker
+
+`internal/cli/setup.go`. The bubbletea picker the curl-bash installer hands off to. Walks CLI language → TUI language → agent output language → workflow preset → MCP harnesses in one program, then writes the `okt()` shell-rc wrapper. Re-run with `--update` to revisit choices; existing rc-wrapper and `omakiten.yaml` settings are preserved.
+
+The language pickers enumerate `defaults/languages/` at boot via `defaults.FS.ReadDir("languages")` — every bundled YAML auto-appears, with no allowlist to update. Adding a new pack ships as a doc-only PR on top of `defaults/languages/<code>.yaml`; see the [Languages Guide](./languages-guide.md) for the filename convention, header fields, parity rule, and the `scripts/new-language-pack.sh` scaffold.
+
+Each picker screen is skipped when the matching env var or flag is set (`OKT_CLI_LANG` / `--cli-lang`, `OKT_TUI_LANG` / `--tui-lang`, `OKT_AGENT_LANG` / `--agent-lang`, `OKT_PRESET` / `--preset`, `OKT_HARNESSES` / `--harnesses`). Useful in CI, Dockerfiles, and dotfiles bootstrap.
+
+```sh
+okt setup                                    # interactive — needs a TTY
+okt setup --update                           # re-prompt with current values prefilled
+OKT_CLI_LANG=pt-br OKT_TUI_LANG=pt-br OKT_PRESET=omakase OKT_HARNESSES=0 \
+  okt setup --skip-wrapper --skip-harnesses  # headless smoke (no rc-file write, no harness call)
+```
 
 ---
 
@@ -44,7 +63,7 @@ The TUI sets `agent_model="human"` internally so its activity is filtered out of
 | `--slug` | — | Project slug (kebab-case key). |
 | `--root` | `$CWD` | Project root path used for CWD-based resolution. |
 | `--enable-mcp` | `false` | Also configure an MCP harness entry. |
-| `--mcp-harness` | `claude-code` | One of `claude-code`, `claude-desktop`, `opencode` (`internal/agentsetup/setup.go`). |
+| `--mcp-harness` | `claude-code` | One of `claude-code`, `claude-desktop`, `opencode`, `crush`, `github-copilot`, `codex` (`internal/agentsetup/setup.go::SupportedHarnesses`). |
 | `--mcp-config` | harness default | Override the harness config-file path. |
 | `--mcp-command` | current executable | Command written into the harness config. |
 | `--mcp-dry-run` | `false` | Preview changes without writing. |
@@ -119,7 +138,7 @@ okt list -b review
 |---|---|
 | `--title`, `-t` | Rewrite title. |
 | `--description`, `-d` | Rewrite description. |
-| `--priority` | `low`, `normal`, or `high` (`internal/config/validator.go:allowedPriorities`). |
+| `--priority` | Priority label or numeric id. Resolved against the active bundle via `parsePriority` (`internal/cli/enums.go`) → `*domain.EnumRegistry`. Out-of-the-box labels: `low`, `normal`, `high` from `config.priorities` in `defaults/config/omakase.yaml`; rename them by editing the YAML, no code change required. |
 | `--bucket`, `-b` | Re-bucket through the workflow service (transition + guards still enforced). |
 
 ```sh
@@ -525,7 +544,7 @@ Writes the `omakiten` MCP server entry into a harness config file (`internal/age
 
 | Flag | Default | Effect |
 |---|---|---|
-| `--harness` | `claude-code` | One of `claude-code`, `claude-desktop`, `opencode`. |
+| `--harness` | `claude-code` | One of `claude-code`, `claude-desktop`, `opencode`, `crush`, `github-copilot`, `codex` (`internal/agentsetup/setup.go::SupportedHarnesses`). |
 | `--config-path` | harness default | Override the harness config-file path. |
 | `--command` | current executable | Command written into the harness config. |
 | `--dry-run` | `false` | Preview changes without writing. |
@@ -534,9 +553,12 @@ Writes the `omakiten` MCP server entry into a harness config file (`internal/age
 ```sh
 okt mcp tools
 okt mcp call tasks.list --input '{"bucket_key":"dev"}'
+okt mcp call search --input '{"query":"sqlite race","entity_types":["error","solution"]}'
 okt mcp setup --harness opencode --dry-run
 okt mcp serve   # invoked by the harness, not by hand
 ```
+
+`okt mcp call search` is the CLI handle for the unified FTS5 surface (`internal/app/search_service.go`); it returns BM25-ranked hits with `<mark>...</mark>` snippets across tasks, comments, errors, solutions, and context entries. Pass `entity_types: []` (or omit the key) for an all-five sweep — the legacy `errors.search` MCP tool was retired alongside it.
 
 The full set of MCP tools, resources, and prompts is documented in `.docs/mcp-guide.md`.
 

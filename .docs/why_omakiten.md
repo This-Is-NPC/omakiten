@@ -31,9 +31,13 @@ Omakiten is designed to solve that gap.
 
 - Source of truth: tasks, dependencies, workflow state, and context are stored locally and consistently.
 - Checkpoint: humans and agents can resume from a known state.
-- Guardrails: invalid workflow actions are blocked with clear errors.
-- Token economy: agent-facing output is structured, compact, and predictable.
-- Customization: workflows, laws, personas, skills, and config are shareable through YAML.
+- Guardrails: invalid workflow actions are blocked with clear errors. Per-bucket CRUD policy and operation guards apply to delete/archive too, not only to transitions.
+- Memory: a unified FTS5 `search` index covers tasks, comments, errors, solutions, and handoff context across every project on the machine — agents stop re-discovering the same fix.
+- Speaks your language: 21 bundled CLI/TUI language packs; CLI, TUI, and agent-output language are picked independently at install (`okt setup`) and switchable later (`okt config language set`).
+- Observable by design: every meaningful state change emits a typed domain event; a YAML hooks engine fires async actions and notification cards; `metrics.summary` benchmarks agent behaviour per model over a chosen window.
+- Token economy: agent-facing output is structured, compact, and predictable; context dumps are tiered (level 1–3) and capped at a token budget you set.
+- Customization: workflows, laws, personas, skills, templates, themes, notifications, and language packs are shareable through YAML/Markdown — edit them, version them, copy a folder to a teammate.
+- Local-first: every byte of state lives in a SQLite file under your home directory (or `.omakiten/` at the repo root). No account, no telemetry, no cloud.
 
 ## Positioning
 
@@ -58,4 +62,6 @@ okt tui
 okt list -b dev
 okt context dump --level=2
 okt move 42 --to done
+okt mcp call search --input '{"query":"sqlite race","entity_types":["error","solution"]}'
+okt mcp call metrics.summary --input '{"period":"30d"}'
 ```

@@ -102,13 +102,14 @@ If nothing landed, jump to [Troubleshooting](#troubleshooting).
 
 ## Step 5 — Confirm the engine saw the hook
 
-Every dispatch emits a `hook.executed` row through the events store regardless of success. Inspect the recent ones:
+Every dispatch emits a `hook.executed` row through the events store regardless of success. There is no MCP tool that lists raw events by `event_type`; query the SQLite log directly:
 
 ```bash
-okt mcp call events.list_recent --input '{"event_type":"hook.executed","limit":5,"_agent_model":"local"}'
+sqlite3 "$HOME/.local/share/omakiten/omakiten.db" \
+  "SELECT created_at, payload FROM events WHERE event_type = 'hook.executed' ORDER BY id DESC LIMIT 5;"
 ```
 
-The payload tells you which hook fired (`hook_index`), which event triggered it (`target_event_id`), the configured action (`action`), the duration (`duration_ms`), and on failure the captured error (`error`). Use this to tell "the script ran but exited non-zero" apart from "the engine never reached the script".
+(swap the DB path for `<project-root>/.omakiten/omakiten.db` when the project is repo-local). The payload tells you which hook fired (`hook_index`), which event triggered it (`target_event_id`), the configured action (`action`), the duration (`duration_ms`), and on failure the captured error (`error`). Use this to tell "the script ran but exited non-zero" apart from "the engine never reached the script".
 
 ---
 

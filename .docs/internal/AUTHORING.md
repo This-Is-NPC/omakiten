@@ -14,6 +14,9 @@ Single contract for editing this repo's documentation. If a change to docs feels
 | Atom | Canonical home | Where it surfaces (auto) |
 |---|---|---|
 | Law / skill / persona / template description | `defaults/<kind>/<slug>.md` frontmatter | `.docs/_generated/entities-<kind>.md` |
+| Theme colors and TUI palette | `defaults/themes/<slug>.yaml` | linked from `.docs/theming-guide.md` |
+| Notification card definitions (kitten_*, etc.) | `defaults/notifications/<slug>.yaml` | linked from `.docs/notifications.md` |
+| Bundled language packs (21 CLI/TUI locales) | `defaults/languages/<code>.yaml` | linked from `.docs/languages-guide.md`; parity test enforces key set |
 | Per-preset wiring (personas allowlist, mcp_commands, workflow guards) | `defaults/config/<preset>.yaml` | `.docs/_generated/presets-<preset>.md` |
 | Tag vocabulary (`#self-branch`, `#resume`, `#5w2h`, etc.) | walked from `comments_tagged.tag` in preset yamls | `.docs/_generated/tag-vocabulary.md` |
 | Bibliography citations (Beck, Cockburn, Cagan, Klein, …) | `.docs/reference/bibliography.md` | linked by anchor |
@@ -28,7 +31,7 @@ Single contract for editing this repo's documentation. If a change to docs feels
 ### Pattern 1 — anchor link (default; ~80% of cases)
 
 ```markdown
-The kaiseki preset enforces [requirements signed off](../reference/entity-frontmatter.md#requirements-signed-off) before code starts.
+The omakase preset uses the [`comments_tagged`](../guards-guide.md#comments_tagged) guard to require a `#review` comment before leaving `dev`.
 ```
 
 Renders in any markdown viewer. Anchor breakage is caught by the `markdown-link-check` lint (when wired in CI).
@@ -76,6 +79,17 @@ Runs as part of `mise run check` and as a step in `.github/workflows/ci.yml`. Fa
 5. Run `mise run check` — lint, vet, tests, and the docs-drift gate must all stay green.
 
 Three hand-edited files total: the entity, the preset yaml, the CHANGELOG line. Everything else regenerates.
+
+## Workflow for adding a bundled language pack
+
+Languages do not slot into the law/skill/persona/template recipe because each pack is a flat key/value YAML (no frontmatter, no preset wiring) and the file count is much larger.
+
+1. `scripts/new-language-pack.sh <code> "<native>" "<English name>"` — scaffolds `defaults/languages/<code>.yaml` with TODO markers on every value; the English baseline is preserved so the parity test passes from the first commit.
+2. Translate values, preferably one logical surface per commit (CLI → TUI → notifications). The fixed primitives (`workflow`, `bucket`, `task`, `comment`, …) stay in English per [Languages Guide § Preserve primitives in ASCII](../languages-guide.md#preserve-primitives-in-ascii).
+3. Add one line to `CHANGELOG.md` per language under `## [Unreleased]`.
+4. Run `mise run check` — the parity test (`internal/config/language_pack_parity_test.go`) catches missing or extra keys.
+
+No code change needed: the installer picker auto-discovers anything under `defaults/languages/`. Custom (non-bundled) packs go in `~/.config/omakiten/languages/custom/<code>.yaml` instead. Full contract in the [Languages Guide](../languages-guide.md).
 
 ## Token / size budgets (kept for reuse in entity bodies)
 

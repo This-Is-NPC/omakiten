@@ -97,6 +97,7 @@ internal/
   sqlite/                sqlite-backed operational adapter (state only post-020)
   configstore/           filesystem-backed config adapter (bundle YAML + entity .md)
   config/                bundle types, loader, validator, snapshot, repo-local discovery
+  app/guards/            per-project guard Evaluator (transitions + operations + permissions)
   activity/              context-bound tool-call tracker (events/operation rows)
   arch/                  hexagonal-boundary enforcement test
   events/                in-process event bus
@@ -108,7 +109,10 @@ internal/
   testfixtures/          shared YAML-loader for tests
   token/                 token estimation
 defaults/                ships into ~/.config/omakiten on first run
-migrations/              SQLite schema migrations (001 … 021)
+  config/                official presets (omakase / izakaya / kaiseki / shokunin)
+  languages/             21 bundled CLI/TUI language packs (en / pt-br / jp / …)
+  themes/, notifications/, skills/, laws/, personas/, templates/
+migrations/              SQLite schema migrations (001 … 022; 022 adds FTS5 `search_index`)
 scripts/                 install / uninstall / wrapper helpers + tests
 ```
 

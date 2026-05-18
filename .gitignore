@@ -39,6 +39,9 @@ dev_env/
 tmp/
 *.tmp
 
+# Stray test-runner caches (not used by this Go repo, but blocked just in case)
+.pytest_cache/
+
 # >>> assisted_workflow >>>
 .workflow
 .opencode
