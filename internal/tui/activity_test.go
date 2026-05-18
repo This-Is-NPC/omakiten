@@ -538,6 +538,82 @@ func TestActivityLastCardReachableAtEndScroll(t *testing.T) {
 	}
 }
 
+// TestActivityPanelFitsTerminalHeight asserts the activity panel's bottom
+// border lands inside the terminal viewport. The chrome budget in
+// activityViewportLines must leave room for: screen header + leading
+// blank + panel borders + kicker + footer + the "\n" applyTaskViewScroll
+// prepends. If the budget is off by even one row the bottom border (or
+// the focused last card) gets clipped — symptom is the activity column
+// looking unbordered at the bottom.
+func TestActivityPanelFitsTerminalHeight(t *testing.T) {
+	ctx := context.Background()
+	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() = %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "fit-terminal repro", "", domain.Priority(2), "backlog", store.Snapshot())
+	if err != nil {
+		t.Fatalf("CreateTask() = %v", err)
+	}
+	for i := 0; i < 24; i++ {
+		if _, err := store.AddComment(ctx, project.ID, task.ID, fmt.Sprintf("fit-%02d", i), "human", nil); err != nil {
+			t.Fatalf("AddComment(%d) = %v", i, err)
+		}
+	}
+
+	model, err := NewModel(ctx, project.Context(), Repositories{
+		Tasks:        store,
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Events:       store,
+
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() = %v", err)
+	}
+
+	for _, h := range []int{30, 35, 45, 60} {
+		model.height = h
+		model.width = 160
+
+		got := pressKey(t, model, tea.KeyEnter)
+		got = pressKey(t, got, tea.KeyTab)
+		got = pressRune(t, got, 'G')
+		// j after G must keep the focused card AND the panel bottom border
+		// visible — this is the scenario from the user screenshot.
+		got = pressRune(t, got, 'j')
+		// Walk cursor to the very last event so the focused card sits at
+		// the bottom of the viewport — the symptom the user filmed.
+		for n := 0; n < 30; n++ {
+			got = pressRune(t, got, 'j')
+		}
+
+		view := stripANSI(got.View())
+		lines := strings.Split(view, "\n")
+		if len(lines) > h {
+			t.Errorf("h=%d: View() rendered %d lines, must not exceed terminal height", h, len(lines))
+		}
+		// Activity box bottom border must land inside the rendered output,
+		// not clipped by clampViewToHeight.
+		hasBottomBorder := false
+		for _, line := range lines {
+			if strings.Contains(line, "└") && strings.Contains(line, "┘") {
+				hasBottomBorder = true
+				break
+			}
+		}
+		if !hasBottomBorder {
+			t.Errorf("h=%d: activity panel bottom border ('└...┘') missing from rendered view — clipped\n--- view ---\n%s", h, view)
+		}
+	}
+}
+
 func TestActivityPanelGrowsWithAvailableWidth(t *testing.T) {
 	// Skip NewModel — its refresh path needs a fully wired repo set. We only
 	// exercise pure sizing math, so a zero-value Model with width set is enough.
