@@ -41,7 +41,6 @@
 
 * **search:** `errors.search` MCP tool removed. Equivalent call: `search(query, entity_types=["error"])`.
 * **MCP `errors.search` removed — replaced by unified `search` tool:** the per-entity FTS for errors is gone. A new MCP tool `search(query, project?, entity_types?)` indexes five content entities (`task`, `comment`, `error`, `solution`, `context`) via a single SQLite FTS5 virtual table created by migration `022_search_index.sql`. Each hit returns `{entity_type, id, score, snippet, project_id}` ordered by descending BM25; `snippet` wraps matching tokens with `<mark>…</mark>` markers. Equivalent call: `search(query, entity_types=["error"])` — the unified handler still emits the legacy `error.searched` domain event (now with `"unified": true` in the payload) so `metrics.summary` keeps producing the search-before-record ratio per model. Optional `entity_types` (empty = all five) restricts the scope; archived tasks (`state='archived'`) are filtered automatically; omitting `project` / `project_id` gives the cross-project view. Storage side: 15 sync triggers (3 per source: tasks, events-comments, errors, solutions, context_entries) keep the index hot; solutions derive `project_id` via `errors.project_id` subquery because the `solutions` table has no direct project column; the `comments` triggers fire on `events WHERE event_type='comment'` because migration 009 folded comments into the unified events log. Migration code: replace any `errors.search(query, tags)` call with `search(query, entity_types=["error"])`; tag-intersection filtering is no longer exposed by the search surface (tag listings remain available via `tags.*`).
-* **canonical kit renamed — `defaults/config/omakiten.yaml` → `defaults/config/omakase.yaml`:** the embedded canonical kit moves into `omakase.yaml` and adopts the preset identity (`kit.key: omakase`, `kit.name: "Omakase Workflow Preset"`, `workflows[0].key/name: omakase/Omakase Workflow`, `config.workflow.active: omakase`). `LoadKitConfig` now reads `config/omakase.yaml` from the embed; partial test fixtures continue to baseline-merge against the canonical via `testfixtures.LoadBundle`. Existing installs are migrated forward automatically — see "boot fix" below. The legacy `defaults/config/omakiten.yaml` is removed.
 
 ### Features
 
@@ -77,6 +76,7 @@
 ### ⚠ BREAKING CHANGES
 
 * **workflow-presets:** any JSON payload that embedded a domain.Priority or domain.Severity now emits the int id instead of the configured label string. MCP consumers expecting `"priority": "high"` must read from the projected DTO label fields. SQLite event payloads written prior to this change keep their label-string shape; migration 018 drops those legacy rows.
+* **canonical kit renamed — `defaults/omakiten.yaml` → `defaults/config/omakase.yaml`:** the embedded canonical kit moves into `omakase.yaml` and adopts the preset identity (`kit.key: omakase`, `kit.name: "Omakase Workflow Preset"`, `workflows[0].key/name: omakase/Omakase Workflow`, `config.workflow.active: omakase`). `LoadKitConfig` now reads `config/omakase.yaml` from the embed; partial test fixtures continue to baseline-merge against the canonical via `testfixtures.LoadBundle`. Existing installs are migrated forward automatically — see the `boot — honor .active` fix shipped in 0.15.0 for the side-effect cleanup. The legacy `defaults/omakiten.yaml` is removed.
 
 ### Features
 
@@ -156,7 +156,6 @@
 
 ### TUI internals
 
-* **components:** introduce `internal/tui/components/{viewport,picker,detailscreen}` sub-packages — Bubble Tea sub-models that own cursor + scroll state for the surfaces previously tracked as flat fields on the root `Model`. No user-facing behaviour change; visual output, key bindings and screen contracts are preserved exactly. The sub-packages have standalone unit tests so the components can evolve independently of the screens that embed them.
 * **modal text inputs adopt `bubbles/textinput`, `bubbles/textarea`, `bubbles/key.Binding`:** `modeMove` (move task by bucket key) drives a `bubbles/textinput.Model` so cursor / word-jump / kill-line / paste work natively; comment add (`modeComment`) and the dedicated comment edit overlay still use `bubbles/textarea.Model` but the prior `isNewlineModifier` shim is gone — `KeyMap.InsertNewline` is rebound to `shift+enter / alt+enter / ctrl+j` so a bare Enter is unambiguously "save" inside the comment modal (and also accepts plain Enter for newlines in the task description, where `ctrl+s` is the save key). `internal/tui/keys.go` declares `commentInputBindings` / `moveInputBindings` records via `key.Binding`; the same records drive both `updateInput` and the help-overlay's "Comment input" group, so help text and active handlers cannot drift apart. `bubbles` is now a direct dependency in `go.mod`. Fixed-height task title field and the move modal also got the same caret-visibility fix as the textareas (see below).
 * **dedicated comment edit overlay (replaces inline edit):** pressing `e` on the comment-detail view now flips the same overlay into a full-screen edit form (kicker · hint · bordered textarea · footer), matching the task-edit form's UX. `ctrl+s` saves through `CommentService.Edit` (workflow-aware; tags survive the round-trip); `esc` cancels back to the read-only view. The previous flow that closed the overlay and reused the inline activity-column input is gone — the `modeCommentEdit` enum value is removed entirely; editing state lives on a single `commentScreenEditing` flag. The comment edit textarea inner height is bounded by `min(preferredCap=16, taskViewportHeight/2)` and clamped against the surrounding chrome so the form never overshoots the terminal.
 * **textarea cursor visibility:** `Cursor.Style` is set to `Foreground(primary)` on every modal textarea (and textinput) so the bubbles reverse-pass renders a primary-colored block instead of an empty inverted cell. Textareas additionally clear `FocusedStyle.CursorLine.Background` so the line background no longer swallows the cursor cell — fixes the regression where the task description had no visible caret. Lock test in `internal/tui/cursor_visibility_test.go` asserts the rendered SGR sequence (`\x1b[7;38;2;<rgb>m`) so future style tweaks can't silently regress.
@@ -220,13 +219,9 @@
 * **tui home:** running `okt tui` outside a registered project (no `--project` / `--project-id`, CWD does not match any `root_path`) now opens a multi-project Home Screen instead of erroring. The Home renders every project as a card in the same visual language as a board column, with tags from `project_tags` displayed as filled-pill badges. Navigation: `↑/↓` select, `enter` opens the project's Board. The new global `ctrl+h` binding returns to the Home from any per-project view; the per-view tab bar is suppressed while on Home (Home is outside the `tab` rotation).
 * **tui cd-on-exit:** the TUI now writes the absolute root path of the most recently opened project to a small handshake file (`$OKT_CD_FILE` → `$XDG_RUNTIME_DIR/okt-cd` → `$TMPDIR/okt-cd-$UID`) when it exits. `install.sh` and `install.ps1` install an `okt()` shell-wrapper function (bash, zsh, PowerShell) delimited by sentinels (`# >>> okt wrapper >>>` / `# <<< okt wrapper <<<`) that reads the file and `cd`s the parent shell into the project. Running the bare binary works exactly as before — only the post-exit `cd` is silently absent. New `uninstall.sh` / `uninstall.ps1` companions remove the sentinel-wrapped block surgically and leave unrelated rc-file content intact.
 
-## [0.6.0](https://github.com/This-Is-NPC/omakiten/compare/v0.5.0...v0.6.0) (2026-05-06)
+### TUI internals
 
-
-### Features
-
-* **activity:** add task activity feed ([#21](https://github.com/This-Is-NPC/omakiten/issues/21)) ([acb0e49](https://github.com/This-Is-NPC/omakiten/commit/acb0e499744aff9a037a01e41efd8a53b966fc3a))
-* **views:** sort and filter configuration across all views ([#19](https://github.com/This-Is-NPC/omakiten/issues/19)) ([40ad4fd](https://github.com/This-Is-NPC/omakiten/commit/40ad4fdaa2c94cf699ca44f0605d1cefb1de37f0))
+* **components:** introduce `internal/tui/components/{viewport,picker,detailscreen}` sub-packages — Bubble Tea sub-models that own cursor + scroll state for the surfaces previously tracked as flat fields on the root `Model`. No user-facing behaviour change; visual output, key bindings and screen contracts are preserved exactly. The sub-packages have standalone unit tests so the components can evolve independently of the screens that embed them.
 
 ### Architecture internals
 
@@ -237,6 +232,14 @@
 * **TUI orchestration → app:** the dependency-set diff (`saveBlockerPicker`), template default frontmatter rewrite, and the read fan-out for the refresh tick all moved into `app.DependencyService.SyncBlockers`, `app.TemplateService.SetDefault`, and `app.TUIQueryService.Snapshot`. The TUI's `refresh()` shrunk from ~80 lines to ~25; `internal/tui/entity.go` lost its `config` and `domain` imports as a result.
 * **boundary enforcement:** new `internal/arch/arch_test.go` walks the import graph and fails if `internal/domain` reaches into adapters, if `internal/app` imports concrete adapters, or if any leaf adapter references a sibling. A `.golangci.yml` mirrors the rules under `depguard`. CI now runs `go vet`, `go test -race -count=1` and `golangci-lint`.
 * **eliminated `"backlog"` literal in production code:** `internal/cli/add.go --bucket` defaults to `""` (the `WorkflowService` resolves the active workflow's first bucket); the TUI's create form does the same.
+
+## [0.6.0](https://github.com/This-Is-NPC/omakiten/compare/v0.5.0...v0.6.0) (2026-05-06)
+
+
+### Features
+
+* **activity:** add task activity feed ([#21](https://github.com/This-Is-NPC/omakiten/issues/21)) ([acb0e49](https://github.com/This-Is-NPC/omakiten/commit/acb0e499744aff9a037a01e41efd8a53b966fc3a))
+* **views:** sort and filter configuration across all views ([#19](https://github.com/This-Is-NPC/omakiten/issues/19)) ([40ad4fd](https://github.com/This-Is-NPC/omakiten/commit/40ad4fdaa2c94cf699ca44f0605d1cefb1de37f0))
 
 ## [0.5.0](https://github.com/This-Is-NPC/omakiten/compare/v0.4.0...v0.5.0) (2026-05-06)
 
