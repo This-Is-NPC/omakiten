@@ -257,7 +257,14 @@ func runSetup(ctx context.Context, opts *runtimeOptions, inputs setupInputs, run
 		if err != nil {
 			return nil, err
 		}
-		result["wrapper"] = map[string]any{"installed_into": installedInto}
+		psInstalledInto, err := installer.WritePowerShellWrappers(home)
+		if err != nil {
+			return nil, err
+		}
+		result["wrapper"] = map[string]any{
+			"installed_into":            installedInto,
+			"powershell_installed_into": psInstalledInto,
+		}
 	}
 
 	result["harnesses_planned"] = inputs.Harnesses
