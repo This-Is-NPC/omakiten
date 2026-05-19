@@ -66,14 +66,17 @@ func TestPlanNetworkCriticalPathSurvivesCycle(t *testing.T) {
 
 // TestPlanNetworkDepsFooterFormatsLine confirms the footer reads
 // "Dependencies: #A→#B,#C  #D→#E" with stable ordering across
-// refreshes.
+// refreshes. The prefix comes from the i18n catalog so the test
+// uses the bundled en baseline (no Repositories.Catalog set on the
+// zero-value Model).
 func TestPlanNetworkDepsFooterFormatsLine(t *testing.T) {
+	m := Model{}
 	deps := []domain.TaskDependency{
 		{TaskID: 3, DependsOnTaskID: 1},
 		{TaskID: 3, DependsOnTaskID: 2},
 		{TaskID: 4, DependsOnTaskID: 3},
 	}
-	got := planNetworkDepsFooter(deps)
+	got := m.planNetworkDepsFooter(deps)
 	want := "Dependencies: #3→#1,#2  #4→#3"
 	if got != want {
 		t.Fatalf("footer = %q, want %q", got, want)
@@ -83,7 +86,8 @@ func TestPlanNetworkDepsFooterFormatsLine(t *testing.T) {
 // TestPlanNetworkDepsFooterEmpty confirms zero-dep plans return an
 // empty string so the renderer can skip writing the footer line.
 func TestPlanNetworkDepsFooterEmpty(t *testing.T) {
-	if got := planNetworkDepsFooter(nil); got != "" {
+	m := Model{}
+	if got := m.planNetworkDepsFooter(nil); got != "" {
 		t.Fatalf("footer = %q, want empty", got)
 	}
 }
@@ -350,6 +354,25 @@ func TestRenderPlanNetworkLaneArmCrossesActivePassThrough(t *testing.T) {
 	}
 }
 
+// TestRenderPlanNetworkLaneSourceAndDestinationSameRow proves a row
+// that is BOTH a source for one filament AND a destination for
+// another paints both glyphs at their respective lanes and resolves
+// the trailing slot to `►` (destination wins over source — the
+// arrowhead is the more informative marker when both apply).
+func TestRenderPlanNetworkLaneSourceAndDestinationSameRow(t *testing.T) {
+	m := Model{styles: newStyles(config.Theme{})}
+	filaments := []planNetworkFilament{
+		{SrcRow: 0, DstRows: []int{2}, Lane: 0}, // arrives at row 2
+		{SrcRow: 2, DstRows: []int{4}, Lane: 1}, // departs at row 2
+	}
+	laneCount := 2
+
+	out := stripStyle(m.renderPlanNetworkLane(2, filaments, laneCount))
+	if out != "└┌►" {
+		t.Fatalf("row 2 = %q, want %q (└ at lane 0 + ┌ at lane 1 + ► trailing)", out, "└┌►")
+	}
+}
+
 // TestRenderPlanNetworkWaveHeaderLaneAlignment proves wave header
 // rows receive the same lane prefix as task rows. A filament passing
 // through a wave header must paint │ at the header row at the same
@@ -387,20 +410,19 @@ func TestRenderPlanNetworkWaveHeaderLaneAlignment(t *testing.T) {
 func TestRenderPlanNetworkSeparatorJunctions(t *testing.T) {
 	m := Model{styles: newStyles(config.Theme{})}
 	layout := planNetworkTableLayout{Title: 4, Bucket: 4, Deps: 4}
-	const noRow = -1
 
 	cases := []struct {
-		name        string
-		above, below int
-		wantSuffix  string
+		name         string
+		above, below planNetworkRowKind
+		wantSuffix   string
 	}{
-		{"top→wave", noRow, int(planRowWaveHeader), "────────────┐"},
-		{"top→task", noRow, int(planRowTaskCard), "────┬────┬────┐"},
-		{"wave→task", int(planRowWaveHeader), int(planRowTaskCard), "────┬────┬────┤"},
-		{"task→wave", int(planRowTaskCard), int(planRowWaveHeader), "────┴────┴────┤"},
-		{"task→task", int(planRowTaskCard), int(planRowTaskCard), "────┼────┼────┤"},
-		{"task→bottom", int(planRowTaskCard), noRow, "────┴────┴────┘"},
-		{"wave→bottom", int(planRowWaveHeader), noRow, "────────────┘"},
+		{"top→wave", planRowNone, planRowWaveHeader, "────────────┐"},
+		{"top→task", planRowNone, planRowTaskCard, "────┬────┬────┐"},
+		{"wave→task", planRowWaveHeader, planRowTaskCard, "────┬────┬────┤"},
+		{"task→wave", planRowTaskCard, planRowWaveHeader, "────┴────┴────┤"},
+		{"task→task", planRowTaskCard, planRowTaskCard, "────┼────┼────┤"},
+		{"task→bottom", planRowTaskCard, planRowNone, "────┴────┴────┘"},
+		{"wave→bottom", planRowWaveHeader, planRowNone, "────────────┘"},
 	}
 	for _, c := range cases {
 		got := stripStyle(m.renderPlanNetworkSeparator(c.above, c.below, layout, "", ""))
@@ -448,25 +470,60 @@ func TestRenderPlanNetworkWaveHeaderFullWidth(t *testing.T) {
 	}
 }
 
-// TestPlanRowStateBadgePrecedence pins the order in which the
-// state badge selector resolves (done > gated > blocked >
-// in-progress > next > ready).
-func TestPlanRowStateBadgePrecedence(t *testing.T) {
+// TestPlanNetworkRowStateBadgePrecedence pins the order in which the
+// state badge selector resolves:
+//
+//   done > gated > in-progress > blocked > assigned > next > ready
+//
+// The split between in-progress / assigned exists because claim only
+// stamps assigned_to nowadays — it never moves the bucket. An
+// "assigned" task may still sit in backlog waiting for its preset
+// guards (e.g. omakase's self-branch comment); an "in-progress" task
+// already left the first bucket and is in the working pipeline.
+func TestPlanNetworkRowStateBadgePrecedence(t *testing.T) {
 	m := Model{styles: newStyles(config.Theme{})}
 	cases := []struct {
 		name string
 		row  planNetworkRow
 		want string
 	}{
-		{"done beats all", planNetworkRow{Kind: planRowTaskCard, FinalBucket: true, Gated: true, BlockerCount: 3, IsNext: true}, "done"},
-		{"gated beats blocked", planNetworkRow{Kind: planRowTaskCard, Gated: true, BlockerCount: 2}, "gated"},
-		{"blocked beats in-progress", planNetworkRow{Kind: planRowTaskCard, BlockerCount: 1, Task: domain.PlanTaskRow{AssignedTo: "x"}}, "blocked"},
-		{"in-progress beats next", planNetworkRow{Kind: planRowTaskCard, Task: domain.PlanTaskRow{AssignedTo: "x"}, IsNext: true}, "in-progress"},
+		{"done beats all", planNetworkRow{Kind: planRowTaskCard, FinalBucket: true, Gated: true, InProgress: true, BlockerCount: 3, IsNext: true}, "done"},
+		{"gated beats in-progress", planNetworkRow{Kind: planRowTaskCard, Gated: true, InProgress: true, BlockerCount: 2}, "gated"},
+		{"in-progress beats blocked", planNetworkRow{Kind: planRowTaskCard, InProgress: true, BlockerCount: 1}, "in-progress"},
+		{"in-progress beats assigned", planNetworkRow{Kind: planRowTaskCard, InProgress: true, Task: domain.PlanTaskRow{AssignedTo: "x"}}, "in-progress"},
+		{"blocked beats assigned", planNetworkRow{Kind: planRowTaskCard, BlockerCount: 1, Task: domain.PlanTaskRow{AssignedTo: "x"}}, "blocked"},
+		{"assigned beats next", planNetworkRow{Kind: planRowTaskCard, Task: domain.PlanTaskRow{AssignedTo: "x"}, IsNext: true}, "assigned"},
 		{"next beats ready", planNetworkRow{Kind: planRowTaskCard, IsNext: true}, "▶next"},
 		{"ready default", planNetworkRow{Kind: planRowTaskCard}, "ready"},
 	}
 	for _, c := range cases {
-		got, _ := m.planRowStateBadge(c.row)
+		got, _ := m.planNetworkRowStateBadge(c.row)
+		if got != c.want {
+			t.Fatalf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// TestPlanNetworkRowStatusGlyphSharesFlags pins the status glyph to
+// the same FinalBucket / Gated flags that drive the state badge —
+// no hardcoded bucket-key lookups (the previous "dev → ●" path was
+// dropped). Every non-done / non-gated row collapses to ○ and the
+// inline badge disambiguates downstream.
+func TestPlanNetworkRowStatusGlyphSharesFlags(t *testing.T) {
+	m := Model{styles: newStyles(config.Theme{})}
+	cases := []struct {
+		name string
+		row  planNetworkRow
+		want string
+	}{
+		{"done", planNetworkRow{Kind: planRowTaskCard, FinalBucket: true}, "✓"},
+		{"gated", planNetworkRow{Kind: planRowTaskCard, Gated: true}, "⊘"},
+		{"dev bucket no longer maps to ●", planNetworkRow{Kind: planRowTaskCard, Task: domain.PlanTaskRow{BucketKey: "dev"}}, "○"},
+		{"blocked falls through to ○", planNetworkRow{Kind: planRowTaskCard, BlockerCount: 2}, "○"},
+		{"ready default", planNetworkRow{Kind: planRowTaskCard}, "○"},
+	}
+	for _, c := range cases {
+		got, _ := m.planNetworkRowStatusGlyph(c.row)
 		if got != c.want {
 			t.Fatalf("%s: got %q, want %q", c.name, got, c.want)
 		}
@@ -526,14 +583,11 @@ func TestPlanNetworkCrossWaveIndicesFiltersIntraEdges(t *testing.T) {
 		{TaskID: 11, DependsOnTaskID: 10}, // intra W1 — excluded
 		{TaskID: 20, DependsOnTaskID: 10}, // cross W1→W2 — kept
 	}
-	blockers, dependents := planNetworkCrossWaveIndices(deps, waves)
+	blockers := planNetworkCrossWaveIndices(deps, waves)
 	if len(blockers[20]) != 1 || blockers[20][0] != 10 {
 		t.Fatalf("blockers[20] = %v, want [10]", blockers[20])
 	}
 	if _, ok := blockers[11]; ok {
 		t.Fatalf("intra-wave edge leaked into cross-wave blockers: %+v", blockers)
-	}
-	if len(dependents[10]) != 1 || dependents[10][0] != 20 {
-		t.Fatalf("dependents[10] = %v, want [20]", dependents[10])
 	}
 }

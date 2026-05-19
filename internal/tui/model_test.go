@@ -1867,12 +1867,12 @@ func TestPlansSubTabEnterOpensNetwork(t *testing.T) {
 }
 
 // TestPlansSubTabNetworkClaimsNextTask exercises the `c` binding inside
-// the network view: it must call PlanService.ClaimNext against the
-// focused plan, move the resulting task from the workflow's first
-// bucket into the second, stamp tasks.assigned_to with the agent model
-// carried on the context, surface a status flash naming the task, and
-// reload the projection so the rendered badge swaps ○ → ●.
-func TestPlansSubTabNetworkClaimsNextTask(t *testing.T) {
+// the network view: it must open the assignee text input for the
+// focused task without touching the bucket, accept a typed assignee,
+// stamp tasks.assigned_to on submit, and reload the projection so the
+// in-progress badge surfaces — all while leaving the bucket guard
+// (omakase self-branch comment for backlog → dev) authoritative.
+func TestPlansSubTabNetworkAssignOpensInputAndStampsAssignee(t *testing.T) {
 	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
 	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, multiBucketBundle(t), "test.yaml", "hash"); err != nil {
@@ -1922,29 +1922,51 @@ func TestPlansSubTabNetworkClaimsNextTask(t *testing.T) {
 	if !opened.planNetworkOpen {
 		t.Fatalf("network did not open")
 	}
+	// Cursor sits on the wave header by default; step once so the
+	// task row is focused before triggering the assign modal.
+	opened = pressRune(t, opened, 'j')
 
-	claimed := pressRune(t, opened, 'c')
-	if !strings.Contains(claimed.status, "claimed task") {
-		t.Fatalf("status after 'c' = %q, want claim message", claimed.status)
+	editing := pressRune(t, opened, 'c')
+	if editing.mode != modePlanAssign {
+		t.Fatalf("after 'c' mode = %v, want modePlanAssign (text input open)", editing.mode)
+	}
+	if editing.planAssignTaskID != task.ID {
+		t.Fatalf("planAssignTaskID = %d, want %d (cursor row task)", editing.planAssignTaskID, task.ID)
+	}
+
+	typed := editing
+	for _, r := range "alice" {
+		typed = pressRune(t, typed, r)
+	}
+	submitted := pressKey(t, typed, tea.KeyEnter)
+	if submitted.mode != modeNormal {
+		t.Fatalf("after submit mode = %v, want modeNormal", submitted.mode)
 	}
 
 	tasksFilter, err := store.ListTasks(ctx, project.ID, domain.TaskFilter{}, snap)
 	if err != nil {
-		t.Fatalf("ListTasks after claim error = %v", err)
+		t.Fatalf("ListTasks after assign: %v", err)
 	}
 	if len(tasksFilter) != 1 {
 		t.Fatalf("ListTasks returned %d tasks, want 1", len(tasksFilter))
 	}
-	if tasksFilter[0].BucketKey != "dev" {
-		t.Fatalf("bucket after claim = %q, want dev", tasksFilter[0].BucketKey)
+	if tasksFilter[0].BucketKey != "backlog" {
+		t.Fatalf("bucket after assign = %q, want backlog (assign must NOT move the task)", tasksFilter[0].BucketKey)
 	}
 
-	view := ansi.Strip(claimed.View())
-	if !strings.Contains(view, "@human") {
-		t.Fatalf("network view missing @human marker\n%s", view)
+	view := ansi.Strip(submitted.View())
+	if !strings.Contains(view, "@alice") {
+		t.Fatalf("network view missing @alice marker\n%s", view)
 	}
-	if !strings.Contains(view, "●") {
-		t.Fatalf("network view missing dev badge\n%s", view)
+	// Task stays in the first bucket (backlog) — assign no longer moves
+	// it, so the badge must read `assigned` (claimed, not started), NOT
+	// `in-progress` (which is reserved for tasks already past the first
+	// bucket).
+	if !strings.Contains(view, "assigned") {
+		t.Fatalf("network view missing `assigned` badge after assign\n%s", view)
+	}
+	if strings.Contains(view, "in-progress") {
+		t.Fatalf("network view should NOT show `in-progress` for a backlog-staying assignment\n%s", view)
 	}
 }
 
@@ -1992,8 +2014,11 @@ func TestPlansSubTabNetworkClaimReportsEmpty(t *testing.T) {
 	}
 
 	claimed := pressRune(t, opened, 'c')
-	if !strings.Contains(claimed.status, "no tasks claimable") {
-		t.Fatalf("status after 'c' on empty plan = %q, want no-claim message", claimed.status)
+	if !strings.Contains(claimed.status, "no task selected") {
+		t.Fatalf("status after 'c' on empty plan = %q, want no-task-selected message", claimed.status)
+	}
+	if claimed.mode == modePlanAssign {
+		t.Fatalf("modePlanAssign opened on empty plan; the input must not engage when there is no task to assign")
 	}
 }
 

@@ -143,7 +143,7 @@ func (m *Model) handlePlanNetworkKey(msg tea.KeyMsg) {
 		}
 		m.reloadPlanNetwork()
 	case "c":
-		m.claimNextInPlanNetwork()
+		m.openPlanAssignEditor()
 	case "e":
 		m.openPlanGoalEditor()
 	}
@@ -221,27 +221,32 @@ func (m *Model) reloadPlanNetwork() {
 	m.syncPlanNetworkScroll(rows)
 }
 
-// claimNextInPlanNetwork drives the `c` binding: invoke
-// PlanService.ClaimNext against the focused plan, then reflect the
-// outcome in the status line and reload the projection on success so
-// the freshly-claimed task moves from ○ to ● and picks up its
-// @assigned_to marker without the user needing to press `r`.
-func (m *Model) claimNextInPlanNetwork() {
-	if m.repos.Plans == nil || m.planNetworkShow.Plan.ID == 0 {
+// openPlanAssignEditor drives the `c` binding: opens the single-line
+// assignee input pre-targeted at the task under the cursor. The
+// previous implementation called PlanService.ClaimNext, which moved
+// the task into the next bucket as part of the claim — that bypassed
+// the preset's bucket guards (omakase requires a self-branch comment
+// before backlog → dev). The new flow only writes assigned_to;
+// bucket transitions stay manual via the board's move binding.
+func (m *Model) openPlanAssignEditor() {
+	if m.repos.Tasks == nil || m.planNetworkShow.Plan.ID == 0 {
 		return
 	}
-	planSvc := app.NewPlanServiceWithSnapshot(m.repos.Plans, m.repos.activeSnapshot())
-	task, claimed, err := planSvc.ClaimNext(m.ctx, m.project, m.planNetworkShow.Plan.ID)
-	if err != nil {
-		m.status = err.Error()
+	rows := m.planNetworkBuildRows()
+	if m.planNetworkCursor < 0 || m.planNetworkCursor >= len(rows) {
+		m.status = m.t("tui.plans.status.assign_no_task")
 		return
 	}
-	if !claimed {
-		m.status = fmt.Sprintf(m.t("tui.plans.status.claim_empty_fmt"), m.planNetworkShow.Plan.Slug)
+	row := rows[m.planNetworkCursor]
+	if row.Kind != planRowTaskCard || row.Task.TaskID == 0 {
+		m.status = m.t("tui.plans.status.assign_no_task")
 		return
 	}
-	m.status = fmt.Sprintf(m.t("tui.plans.status.claim_success_fmt"), task.ID, task.Title)
-	m.reloadPlanNetwork()
+	m.planAssignTaskID = row.Task.TaskID
+	m.beginInput(modePlanAssign,
+		fmt.Sprintf(m.t("tui.plans.assign.status_fmt"), row.Task.TaskID),
+		row.Task.AssignedTo,
+	)
 }
 
 // syncPlanNetworkScroll keeps planNetworkScroll aligned so the cursor
@@ -290,6 +295,10 @@ type planNetworkRowKind uint8
 const (
 	planRowWaveHeader planNetworkRowKind = iota
 	planRowTaskCard
+	// planRowNone is a sentinel kind used by renderPlanNetworkSeparator
+	// to mean "no row on this side" — i.e. the table's top border
+	// (no row above) or bottom border (no row below).
+	planRowNone
 )
 
 // planNetworkRow is one rendered line in the outline. The renderer
@@ -319,28 +328,54 @@ type planNetworkRow struct {
 	IntraBlockers []int64 // intra-wave blockers that are NOT the rail parent
 	CrossBlockers []int64 // cross-wave blockers (annotated inline)
 	FinalBucket   bool    // task lives in the workflow's final bucket
-	DevBucket     bool
+	InProgress    bool    // task lives between first and final bucket (working pipeline)
 	Gated         bool
 }
 
-// planNetworkBuildRows projects PlanShow into the flat row list the
-// renderer walks. Collapsed waves emit only a header row. Expanded
-// waves emit their header followed by one row per task, ordered by
-// the intra-wave rail tree (roots in input order; children DFS pre-
-// order under their first-id parent).
-func (m Model) planNetworkBuildRows() []planNetworkRow {
+// planNetworkBuild bundles the projected row list with the auxiliary
+// indices the renderer needs (cross-wave blockers for filament
+// routing + the current next-claimable id for the footer hint).
+// Building everything in one pass means the renderer never has to
+// re-walk the dependency slice or hit the repo a second time.
+type planNetworkBuild struct {
+	Rows            []planNetworkRow
+	CrossBlockers   map[int64][]int64
+	NextClaimableID int64
+}
+
+// planNetworkBuildData projects PlanShow into the flat row list the
+// renderer walks AND the auxiliary indices it consumes. Collapsed
+// waves emit only a header row. Expanded waves emit their header
+// followed by one row per task, ordered by the intra-wave rail tree
+// (roots in input order; children DFS pre-order under their first-id
+// parent).
+func (m Model) planNetworkBuildData() planNetworkBuild {
 	show := m.planNetworkShow
 	if len(show.Waves) == 0 {
-		return nil
+		return planNetworkBuild{}
 	}
 	finalBucket := ""
+	firstBucket := ""
 	if snap := m.repos.activeSnapshot(); snap != nil {
-		finalBucket = snap.Workflow().FinalBucketKey()
+		wf := snap.Workflow()
+		finalBucket = wf.FinalBucketKey()
+		// First bucket = lowest-position bucket in the workflow. Tasks
+		// living in this bucket are "not yet started" — used by the
+		// state-badge precedence to distinguish `assigned` (claimed
+		// but still in first bucket) from `in-progress` (already in
+		// a working bucket downstream).
+		firstPos := 0
+		for _, b := range wf.Buckets {
+			if firstBucket == "" || b.Position < firstPos {
+				firstBucket = b.Key
+				firstPos = b.Position
+			}
+		}
 	}
 	activeWaveID := show.ActiveWaveID
 
-	intraBlockers, _ := planNetworkIntraWaveIndices(show.Dependencies, show.Waves)
-	crossBlockers, _ := planNetworkCrossWaveIndices(show.Dependencies, show.Waves)
+	intraBlockers := planNetworkIntraWaveIndices(show.Dependencies, show.Waves)
+	crossBlockers := planNetworkCrossWaveIndices(show.Dependencies, show.Waves)
 
 	allTasks := make([]domain.PlanTaskRow, 0)
 	for _, wv := range show.Waves {
@@ -390,12 +425,23 @@ func (m Model) planNetworkBuildRows() []planNetworkRow {
 				IntraBlockers: planNetworkExcludeID(intraBlockers[t.TaskID], parentID),
 				CrossBlockers: crossBlockers[t.TaskID],
 				FinalBucket:   finalBucket != "" && t.BucketKey == finalBucket,
-				DevBucket:     t.BucketKey == "dev",
+				InProgress:    finalBucket != "" && firstBucket != "" && t.BucketKey != finalBucket && t.BucketKey != firstBucket,
 				Gated:         activeWaveID != 0 && wv.Wave.ID != activeWaveID,
 			})
 		}
 	}
-	return rows
+	return planNetworkBuild{
+		Rows:            rows,
+		CrossBlockers:   crossBlockers,
+		NextClaimableID: nextClaimableID,
+	}
+}
+
+// planNetworkBuildRows is the row-only shim used by the input
+// handlers — they never need the auxiliary indices, only the row
+// slice for cursor clamps and kind checks.
+func (m Model) planNetworkBuildRows() []planNetworkRow {
+	return m.planNetworkBuildData().Rows
 }
 
 // planNetworkWaveRails records the rendered shape of one wave: tasks
@@ -705,11 +751,11 @@ func (m Model) renderPlanNetwork() string {
 		return m.renderPanel(header + "\n\n" + body)
 	}
 
-	rows := m.planNetworkBuildRows()
-	nextClaimableID := planNetworkPeekNextClaimable(m.repos.Plans, m.ctx, m.project, show.Plan.ID, m.repos.activeSnapshot())
+	build := m.planNetworkBuildData()
+	rows := build.Rows
+	nextClaimableID := build.NextClaimableID
 
-	crossBlockers, _ := planNetworkCrossWaveIndices(show.Dependencies, show.Waves)
-	filaments, laneCount := planNetworkBuildFilaments(rows, crossBlockers)
+	filaments, laneCount := planNetworkBuildFilaments(rows, build.CrossBlockers)
 
 	cursorPad := "  "
 	emptyLane := ""
@@ -728,15 +774,13 @@ func (m Model) renderPlanNetwork() string {
 	measured := m.planNetworkMeasureTitle(rows, 10, 14)
 	layout := planNetworkBuildTable(budget, measured)
 
-	const noRow = -1
-
 	// Static top chrome — top border, column header, sep below
 	// header. Never scrolls, so column labels stay anchored.
 	var topChrome []string
-	topChrome = append(topChrome, m.renderPlanNetworkSeparator(noRow, int(planRowTaskCard), layout, cursorPad, emptyLane))
+	topChrome = append(topChrome, m.renderPlanNetworkSeparator(planRowNone, planRowTaskCard, layout, cursorPad, emptyLane))
 	topChrome = append(topChrome, m.renderPlanNetworkHeaderRow(layout, cursorPad, emptyLane))
 	if len(rows) > 0 {
-		topChrome = append(topChrome, m.renderPlanNetworkSeparator(int(planRowTaskCard), int(rows[0].Kind), layout, cursorPad, emptyLane))
+		topChrome = append(topChrome, m.renderPlanNetworkSeparator(planRowTaskCard, rows[0].Kind, layout, cursorPad, emptyLane))
 	}
 
 	// Data rows — one content line, plus a transition separator
@@ -754,7 +798,7 @@ func (m Model) renderPlanNetwork() string {
 			// separator. Consecutive same-kind rows stack tight (tasks
 			// separated visually by the dashed title fill).
 			contLane := m.renderPlanNetworkLaneContinuation(i, filaments, laneCount)
-			sep := m.renderPlanNetworkSeparator(int(row.Kind), int(rows[i+1].Kind), layout, cursorPad, contLane)
+			sep := m.renderPlanNetworkSeparator(row.Kind, rows[i+1].Kind, layout, cursorPad, contLane)
 			line = line + "\n" + sep
 		}
 		rendered[i] = line
@@ -762,9 +806,9 @@ func (m Model) renderPlanNetwork() string {
 
 	var bottomChrome string
 	if len(rows) > 0 {
-		bottomChrome = m.renderPlanNetworkSeparator(int(rows[len(rows)-1].Kind), noRow, layout, cursorPad, emptyLane)
+		bottomChrome = m.renderPlanNetworkSeparator(rows[len(rows)-1].Kind, planRowNone, layout, cursorPad, emptyLane)
 	} else {
-		bottomChrome = m.renderPlanNetworkSeparator(noRow, noRow, layout, cursorPad, emptyLane)
+		bottomChrome = m.renderPlanNetworkSeparator(planRowNone, planRowNone, layout, cursorPad, emptyLane)
 	}
 
 	viewport := m.planNetworkBodyViewportRows()
@@ -790,13 +834,13 @@ func (m Model) renderPlanNetwork() string {
 	sb.WriteString("\n\n")
 	sb.WriteString(indentBlock(tableBlock, 2))
 
-	if footer := planNetworkDepsFooter(show.Dependencies); footer != "" {
+	if footer := m.planNetworkDepsFooter(show.Dependencies); footer != "" {
 		sb.WriteString("\n\n")
 		sb.WriteString(indentBlock(m.styles.muted.Render(footer), 2))
 	}
 	if nextClaimableID != 0 {
 		sb.WriteString("\n  ")
-		sb.WriteString(m.styles.hintAccent.Render(fmt.Sprintf("▶ next claimable: #%d", nextClaimableID)))
+		sb.WriteString(m.styles.hintAccent.Render(fmt.Sprintf(m.t("tui.plans.network.next_claimable_fmt"), nextClaimableID)))
 	}
 	return sb.String()
 }
@@ -813,8 +857,16 @@ type planNetworkTableLayout struct {
 }
 
 // Total returns the table's interior width (excluding the right
-// border character).
-func (l planNetworkTableLayout) Total() int { return l.Title + l.Bucket + l.Deps + 2 }
+// border character). Narrow terminals can collapse the Deps column
+// to zero width, in which case only one inner separator survives;
+// the wave-header row uses this to span the full table.
+func (l planNetworkTableLayout) Total() int {
+	innerSeps := 2
+	if l.Deps <= 0 {
+		innerSeps = 1
+	}
+	return l.Title + l.Bucket + l.Deps + innerSeps
+}
 
 // planNetworkBuildTable allocates column widths given the available
 // width budget AND the measured longest row content. Title hugs the
@@ -871,7 +923,7 @@ func (m Model) planNetworkMeasureTitle(rows []planNetworkRow, bucketW, depsW int
 		case planRowTaskCard:
 			railW := lipgloss.Width(r.Rail)
 			glyphW := 2 // glyph + space
-			badge, _ := m.planRowStateBadge(r)
+			badge, _ := m.planNetworkRowStateBadge(r)
 			badgeW := 0
 			if badge != "" {
 				badgeW = lipgloss.Width(badge) + 1
@@ -889,7 +941,7 @@ func (m Model) planNetworkMeasureTitle(rows []planNetworkRow, bucketW, depsW int
 			if r.Collapsed {
 				glyph = "▶"
 			}
-			text := fmt.Sprintf("%s W%d %s · %d/%d", glyph, r.WavePos, strings.ToUpper(r.WaveName), r.WaveDone, r.WaveTotal)
+			text := fmt.Sprintf(m.t("tui.plans.network.wave_glyph_header_fmt"), glyph, r.WavePos, strings.ToUpper(r.WaveName), r.WaveDone, r.WaveTotal)
 			if r.WaveActive {
 				text += " " + m.t("tui.plans.network.active_tag")
 			}
@@ -902,36 +954,57 @@ func (m Model) planNetworkMeasureTitle(rows []planNetworkRow, bucketW, depsW int
 	return maxW
 }
 
-// planRowStateBadge returns the inline state badge for a task row,
-// chosen by precedence (done > gated > blocked > in-progress > next
-// > ready). The badge sits just after the status glyph in the Title
-// cell so a horizontal scan reveals the state without reading the
-// title text. Wave header rows return ("", _).
-func (m Model) planRowStateBadge(row planNetworkRow) (string, lipgloss.Style) {
+// planNetworkRowStateBadge returns the inline state badge for a task
+// row, chosen by precedence:
+//
+//   done > gated > in-progress > blocked > assigned > next > ready
+//
+// Rationale per slot:
+//   - done           — bucket is the workflow's final position.
+//   - gated          — wave is not the plan's active wave.
+//   - in-progress    — bucket is BETWEEN first and final (e.g. dev,
+//                      review). State of fact: work is in flight.
+//                      Wins over blocked so a blocker added mid-flight
+//                      does not visually erase the in-flight status.
+//   - blocked        — task still in the first bucket with an
+//                      unfinished blocker chain.
+//   - assigned       — task still in the first bucket but has a
+//                      named owner. Differentiates "claimed,
+//                      waiting to start" from in-flight work.
+//   - next           — next-claimable hint, no owner yet.
+//   - ready          — default.
+//
+// The badge sits just after the status glyph in the Title cell so a
+// horizontal scan reveals the state without reading the title text.
+// Wave header rows return ("", _). Badge text comes from the i18n
+// catalog (tui.plans.network.badge.*).
+func (m Model) planNetworkRowStateBadge(row planNetworkRow) (string, lipgloss.Style) {
 	if row.Kind != planRowTaskCard {
 		return "", lipgloss.Style{}
 	}
 	switch {
 	case row.FinalBucket:
-		return "done", m.styles.success
+		return m.t("tui.plans.network.badge.done"), m.styles.success
 	case row.Gated:
-		return "gated", m.styles.muted
+		return m.t("tui.plans.network.badge.gated"), m.styles.muted
+	case row.InProgress:
+		return m.t("tui.plans.network.badge.in_progress"), m.styles.badgeInfo
 	case row.BlockerCount > 0:
-		return "blocked", m.styles.badgeBlocker
+		return m.t("tui.plans.network.badge.blocked"), m.styles.badgeBlocker
 	case row.Task.AssignedTo != "":
-		return "in-progress", m.styles.badgeInfo
+		return m.t("tui.plans.network.badge.assigned"), m.styles.badgeInfo
 	case row.IsNext:
-		return "▶next", m.styles.hintAccent
+		return m.t("tui.plans.network.badge.next"), m.styles.hintAccent
 	default:
-		return "ready", m.styles.success
+		return m.t("tui.plans.network.badge.ready"), m.styles.success
 	}
 }
 
-// planRowDepsCell collects the dependency ids surfaced for this row.
-// Intra-wave non-rail blockers prefix with `←`; cross-wave blockers
-// not covered by a filament prefix with `←W`. Returns the empty
-// string when there are no deps to surface.
-func planRowDepsCell(row planNetworkRow, suppressedCrossIDs map[int64]bool) string {
+// planNetworkRowDepsCell collects the dependency ids surfaced for
+// this row. Intra-wave non-rail blockers prefix with `←`; cross-wave
+// blockers not covered by a filament prefix with `←W`. Returns the
+// empty string when there are no deps to surface.
+func planNetworkRowDepsCell(row planNetworkRow, suppressedCrossIDs map[int64]bool) string {
 	var parts []string
 	for _, id := range row.IntraBlockers {
 		parts = append(parts, fmt.Sprintf("←#%d", id))
@@ -998,7 +1071,7 @@ func (m Model) renderPlanNetworkRowBody(row planNetworkRow, selected bool, laneP
 		if row.Collapsed {
 			glyph = "▶"
 		}
-		text := fmt.Sprintf("%s W%d %s · %d/%d", glyph, row.WavePos, strings.ToUpper(row.WaveName), row.WaveDone, row.WaveTotal)
+		text := fmt.Sprintf(m.t("tui.plans.network.wave_glyph_header_fmt"), glyph, row.WavePos, strings.ToUpper(row.WaveName), row.WaveDone, row.WaveTotal)
 		if row.WaveActive {
 			text += " " + m.t("tui.plans.network.active_tag")
 		}
@@ -1010,8 +1083,8 @@ func (m Model) renderPlanNetworkRowBody(row planNetworkRow, selected bool, laneP
 		return cursor + lanePrimary + style.Render(padCell(text, layout.Total())) + border
 
 	case planRowTaskCard:
-		statusGlyph, statusStyle := m.planRowStatusGlyph(row)
-		badgeText, badgeStyle := m.planRowStateBadge(row)
+		statusGlyph, statusStyle := m.planNetworkRowStatusGlyph(row)
+		badgeText, badgeStyle := m.planNetworkRowStateBadge(row)
 		rail := ""
 		if row.Rail != "" {
 			rail = m.styles.hint.Render(row.Rail)
@@ -1039,7 +1112,10 @@ func (m Model) renderPlanNetworkRowBody(row planNetworkRow, selected bool, laneP
 		bucketCell := truncateText(row.Task.BucketKey, layout.Bucket)
 		bucketStyled := m.styles.muted.Render(padCell(bucketCell, layout.Bucket))
 
-		depsCell := truncateText(planRowDepsCell(row, suppressedCrossIDs), layout.Deps)
+		if layout.Deps <= 0 {
+			return cursor + lanePrimary + titleCell + border + bucketStyled + border
+		}
+		depsCell := truncateText(planNetworkRowDepsCell(row, suppressedCrossIDs), layout.Deps)
 		depsStyled := m.styles.hint.Render(padCell(depsCell, layout.Deps))
 
 		return cursor + lanePrimary + titleCell + border + bucketStyled + border + depsStyled + border
@@ -1066,12 +1142,17 @@ func planNetworkRowHeights(rows []planNetworkRow) []int {
 // renderPlanNetworkHeaderRow draws the static column-header line at
 // the top of the bordered table. The header sits above the first
 // data row and is fixed chrome — it never scrolls, so the column
-// labels stay visible regardless of cursor position.
+// labels stay visible regardless of cursor position. Narrow
+// terminals may zero the Deps column; the helper drops its label
+// and trailing border in that case.
 func (m Model) renderPlanNetworkHeaderRow(layout planNetworkTableLayout, cursorPad, lane string) string {
 	border := m.styles.hint.Render("│")
-	title := m.styles.hintAccent.Render(padCell(" TITLE", layout.Title))
-	bucket := m.styles.hintAccent.Render(padCell(" BUCKET", layout.Bucket))
-	deps := m.styles.hintAccent.Render(padCell(" DEPS", layout.Deps))
+	title := m.styles.hintAccent.Render(padCell(m.t("tui.plans.network.column.title"), layout.Title))
+	bucket := m.styles.hintAccent.Render(padCell(m.t("tui.plans.network.column.bucket"), layout.Bucket))
+	if layout.Deps <= 0 {
+		return cursorPad + lane + title + border + bucket + border
+	}
+	deps := m.styles.hintAccent.Render(padCell(m.t("tui.plans.network.column.deps"), layout.Deps))
 	return cursorPad + lane + title + border + bucket + border + deps + border
 }
 
@@ -1102,15 +1183,11 @@ func (m Model) renderPlanNetworkLaneContinuation(rowIdx int, filaments []planNet
 // the rows above and below the separator: a wave-header row has no
 // inner column separators, a task row does, so the separator must
 // open / close / cross the inner verticals as the layout changes.
-//
-// aboveKind / belowKind use the same kind tags as planNetworkRow;
-// pass -1 (or any value outside the planNetworkRowKind range) when
-// the separator is the table's top (no row above) or bottom (no
-// row below).
-func (m Model) renderPlanNetworkSeparator(aboveKind, belowKind int, layout planNetworkTableLayout, cursorPad, lane string) string {
-	const noRow = -1
-	aboveHasCols := aboveKind == int(planRowTaskCard)
-	belowHasCols := belowKind == int(planRowTaskCard)
+// Pass planRowNone for the side that has no row (top / bottom of
+// the table).
+func (m Model) renderPlanNetworkSeparator(above, below planNetworkRowKind, layout planNetworkTableLayout, cursorPad, lane string) string {
+	aboveHasCols := above == planRowTaskCard
+	belowHasCols := below == planRowTaskCard
 
 	mid := "─"
 	leftSeg := strings.Repeat(mid, layout.Title)
@@ -1119,7 +1196,7 @@ func (m Model) renderPlanNetworkSeparator(aboveKind, belowKind int, layout planN
 
 	var firstJunction, secondJunction, rightCorner string
 	switch {
-	case aboveKind == noRow:
+	case above == planRowNone:
 		// Top border.
 		rightCorner = "┐"
 		if belowHasCols {
@@ -1129,7 +1206,7 @@ func (m Model) renderPlanNetworkSeparator(aboveKind, belowKind int, layout planN
 			firstJunction = mid
 			secondJunction = mid
 		}
-	case belowKind == noRow:
+	case below == planRowNone:
 		// Bottom border.
 		rightCorner = "┘"
 		if aboveHasCols {
@@ -1156,7 +1233,15 @@ func (m Model) renderPlanNetworkSeparator(aboveKind, belowKind int, layout planN
 			secondJunction = mid
 		}
 	}
-	sep := leftSeg + firstJunction + bucketSeg + secondJunction + depsSeg + rightCorner
+	// Narrow-terminal fallback collapses the Deps column to zero
+	// width; skip its segment + junction so the right border doesn't
+	// double up with the bucket separator.
+	var sep string
+	if layout.Deps > 0 {
+		sep = leftSeg + firstJunction + bucketSeg + secondJunction + depsSeg + rightCorner
+	} else {
+		sep = leftSeg + firstJunction + bucketSeg + rightCorner
+	}
 	return cursorPad + lane + m.styles.hint.Render(sep)
 }
 
@@ -1240,15 +1325,16 @@ func (m Model) renderPlanNetworkLane(rowIdx int, filaments []planNetworkFilament
 	return m.styles.muted.Render(strings.Join(cells, "") + trailing)
 }
 
-// planRowStatusGlyph maps the task's bucket / wave-gating state onto
-// a status glyph + style. The four cases parallel the prior status
-// badge palette but stay terse so the row fits in one terminal line.
-func (m Model) planRowStatusGlyph(row planNetworkRow) (string, lipgloss.Style) {
+// planNetworkRowStatusGlyph maps the row's semantic flags onto a
+// status glyph + style. Done and gated rows are distinct (✓ / ⊘);
+// every other state collapses to ○ — the parallel inline state badge
+// disambiguates blocked / in-progress / next / ready in text. Sharing
+// FinalBucket / Gated with planNetworkRowStateBadge keeps both surfaces
+// driven by the same flags (no hardcoded bucket-key lookups).
+func (m Model) planNetworkRowStatusGlyph(row planNetworkRow) (string, lipgloss.Style) {
 	switch {
 	case row.FinalBucket:
 		return "✓", m.styles.success
-	case row.DevBucket:
-		return "●", m.styles.info
 	case row.Gated:
 		return "⊘", m.styles.muted
 	default:
@@ -1256,57 +1342,33 @@ func (m Model) planRowStatusGlyph(row planNetworkRow) (string, lipgloss.Style) {
 	}
 }
 
-// planRowAnnotations renders the inline blocker markers per task.
-// Intra-wave non-rail blockers get "← #N" (the rail parent edge is
-
-
 // ===========================================================================
 // Cross-wave + intra-wave dep indices (shared with renderer + filaments).
 // ===========================================================================
 
-// planNetworkIntraWaveIndices restricts the dependency slice to edges
-// whose source AND destination tasks live in the same wave. The
-// renderer's rail tree consumes the blocker map; the dependent map is
-// returned but not currently used (kept for callers that may want to
-// surface `→ #M` markers in future).
-func planNetworkIntraWaveIndices(deps []domain.TaskDependency, waves []app.PlanWaveView) (map[int64][]int64, map[int64][]int64) {
-	if len(deps) == 0 || len(waves) == 0 {
-		return nil, nil
-	}
-	taskToWave := make(map[int64]int64, len(deps))
-	for _, wv := range waves {
-		for _, t := range wv.Tasks {
-			taskToWave[t.TaskID] = wv.Wave.ID
-		}
-	}
-	blockers := map[int64][]int64{}
-	dependents := map[int64][]int64{}
-	for _, d := range deps {
-		srcWave, sok := taskToWave[d.DependsOnTaskID]
-		dstWave, dok := taskToWave[d.TaskID]
-		if !sok || !dok || srcWave != dstWave {
-			continue
-		}
-		blockers[d.TaskID] = append(blockers[d.TaskID], d.DependsOnTaskID)
-		dependents[d.DependsOnTaskID] = append(dependents[d.DependsOnTaskID], d.TaskID)
-	}
-	for k := range blockers {
-		sort.Slice(blockers[k], func(i, j int) bool { return blockers[k][i] < blockers[k][j] })
-	}
-	for k := range dependents {
-		sort.Slice(dependents[k], func(i, j int) bool { return dependents[k][i] < dependents[k][j] })
-	}
-	return blockers, dependents
+// planNetworkIntraWaveIndices returns the blocker map for dependency
+// edges whose source AND destination tasks live in the same wave.
+// The renderer's rail tree consumes it.
+func planNetworkIntraWaveIndices(deps []domain.TaskDependency, waves []app.PlanWaveView) map[int64][]int64 {
+	return planNetworkWaveScopedBlockers(deps, waves, true)
 }
 
-// planNetworkCrossWaveIndices is the inverse of planNetworkIntraWaveIndices:
-// it returns the blocker / dependent maps for dependencies that
-// CROSS wave boundaries. The renderer surfaces these as `←W` / `→W`
-// inline annotations; the filament router uses them to draw left-
-// margin vertical traces.
-func planNetworkCrossWaveIndices(deps []domain.TaskDependency, waves []app.PlanWaveView) (map[int64][]int64, map[int64][]int64) {
+// planNetworkCrossWaveIndices returns the blocker map for dependency
+// edges that CROSS wave boundaries. The renderer surfaces these as
+// `←W` inline annotations; the filament router uses them to draw
+// left-margin vertical traces.
+func planNetworkCrossWaveIndices(deps []domain.TaskDependency, waves []app.PlanWaveView) map[int64][]int64 {
+	return planNetworkWaveScopedBlockers(deps, waves, false)
+}
+
+// planNetworkWaveScopedBlockers shares the wave-membership walk
+// between the intra- and cross-wave index helpers. sameWave=true
+// keeps edges within a wave; sameWave=false keeps the ones that
+// cross. Blocker lists sort ascending so renders read identically
+// across refreshes.
+func planNetworkWaveScopedBlockers(deps []domain.TaskDependency, waves []app.PlanWaveView, sameWave bool) map[int64][]int64 {
 	if len(deps) == 0 || len(waves) == 0 {
-		return nil, nil
+		return nil
 	}
 	taskToWave := make(map[int64]int64, len(deps))
 	for _, wv := range waves {
@@ -1315,23 +1377,21 @@ func planNetworkCrossWaveIndices(deps []domain.TaskDependency, waves []app.PlanW
 		}
 	}
 	blockers := map[int64][]int64{}
-	dependents := map[int64][]int64{}
 	for _, d := range deps {
 		srcWave, sok := taskToWave[d.DependsOnTaskID]
 		dstWave, dok := taskToWave[d.TaskID]
-		if !sok || !dok || srcWave == dstWave {
+		if !sok || !dok {
+			continue
+		}
+		if (srcWave == dstWave) != sameWave {
 			continue
 		}
 		blockers[d.TaskID] = append(blockers[d.TaskID], d.DependsOnTaskID)
-		dependents[d.DependsOnTaskID] = append(dependents[d.DependsOnTaskID], d.TaskID)
 	}
 	for k := range blockers {
 		sort.Slice(blockers[k], func(i, j int) bool { return blockers[k][i] < blockers[k][j] })
 	}
-	for k := range dependents {
-		sort.Slice(dependents[k], func(i, j int) bool { return dependents[k][i] < dependents[k][j] })
-	}
-	return blockers, dependents
+	return blockers
 }
 
 // ===========================================================================
@@ -1357,8 +1417,10 @@ func planNetworkPeekNextClaimable(repo app.PlanRepository, ctx context.Context, 
 // planNetworkDepsFooter renders the cross-task edge summary shown
 // under the outline: "Dependencies: #A→#B,#C  #D→#E". Tasks are
 // ordered by dependent id; blockers per dependent stay sorted asc so
-// the line reads the same on every refresh.
-func planNetworkDepsFooter(deps []domain.TaskDependency) string {
+// the line reads the same on every refresh. Attached to Model so the
+// localized prefix flows through the same catalog as the rest of the
+// surface.
+func (m Model) planNetworkDepsFooter(deps []domain.TaskDependency) string {
 	if len(deps) == 0 {
 		return ""
 	}
@@ -1373,7 +1435,7 @@ func planNetworkDepsFooter(deps []domain.TaskDependency) string {
 	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 
 	var sb strings.Builder
-	sb.WriteString("Dependencies: ")
+	sb.WriteString(m.t("tui.plans.network.deps_footer_prefix"))
 	for i, k := range keys {
 		if i > 0 {
 			sb.WriteString("  ")

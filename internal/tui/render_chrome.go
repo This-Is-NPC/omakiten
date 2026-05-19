@@ -352,6 +352,20 @@ func (m Model) footerTokens() []footerToken {
 		}
 	case m.onHome():
 		return m.homeFooterTokens()
+	case m.sub == subPlans && m.planNetworkOpen:
+		return []footerToken{
+			{key: "c", label: m.t("tui.footer.assign"), primary: true},
+			{key: "e", label: m.t("tui.footer.edit_goal"), primary: true},
+			{key: "enter", label: m.t("tui.footer.open"), primary: true},
+			{key: "j/k", label: m.t("tui.footer.move")},
+			{key: "space", label: m.t("tui.footer.toggle_wave")},
+			{key: "h/l", label: m.t("tui.footer.collapse_expand")},
+			{key: "g/G", label: m.t("tui.footer.top_bottom")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
+			{key: "r", label: m.t("tui.footer.refresh")},
+			m.escBack(),
+			m.helpToken(),
+		}
 	case m.sub == subBoard:
 		return []footerToken{
 			{key: "enter", label: m.t("tui.footer.open"), primary: true},

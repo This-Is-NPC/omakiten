@@ -108,6 +108,7 @@ func (m *Model) cancelInput() {
 	m.mode = modeNormal
 	m.commentEditID = 0
 	m.planGoalEditingID = 0
+	m.planAssignTaskID = 0
 	m.commentInput = newCommentInput()
 	m.moveInput = newMoveInput()
 	m.status = m.t("tui.status.cancelled")
@@ -166,6 +167,13 @@ func (m *Model) submitInput() {
 		}
 		planSvc := app.NewPlanServiceWithSnapshot(m.repos.Plans, m.repos.activeSnapshot())
 		_, err = planSvc.UpdateGoalBody(m.ctx, m.project, m.planGoalEditingID, input)
+	case modePlanAssign:
+		if m.repos.Tasks == nil || m.planAssignTaskID == 0 {
+			err = domain.NewError(domain.ErrValidation, "plan assignee editor has no target task", nil)
+			break
+		}
+		taskSvc := app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry, m.repos.activeSnapshot())
+		_, _, err = taskSvc.Assign(m.ctx, m.project, m.planAssignTaskID, input)
 	}
 
 	if err != nil {
@@ -173,6 +181,7 @@ func (m *Model) submitInput() {
 		m.mode = modeNormal
 		m.commentEditID = 0
 		m.planGoalEditingID = 0
+		m.planAssignTaskID = 0
 		m.commentInput = newCommentInput()
 		m.moveInput = newMoveInput()
 		m.syncActivityScrollToCursor()
@@ -186,7 +195,7 @@ func (m *Model) submitInput() {
 		}
 		m.status = m.t("tui.status.saved")
 	}
-	if m.mode == modePlanGoal {
+	if m.mode == modePlanGoal || m.mode == modePlanAssign {
 		m.reloadPlanNetwork()
 	}
 	if m.taskID > 0 && m.taskScreen == taskScreenView {
@@ -197,6 +206,7 @@ func (m *Model) submitInput() {
 	m.mode = modeNormal
 	m.commentEditID = 0
 	m.planGoalEditingID = 0
+	m.planAssignTaskID = 0
 	m.commentInput = newCommentInput()
 	m.moveInput = newMoveInput()
 	m.syncActivityScrollToCursor()
