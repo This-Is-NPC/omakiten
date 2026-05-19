@@ -492,28 +492,31 @@ WHERE project_id = ? AND id = ?
 	return tx.Commit()
 }
 
-// ClaimNextPlanTask atomically reserves the next claimable task in a
-// plan. The transaction is opened with BEGIN IMMEDIATE on a pinned
-// *sql.Conn so concurrent claims serialise behind SQLite's reserved
-// write lock — each waiter re-evaluates the SELECT after the prior
-// commit, so the loser sees `assigned_to` already set on the candidate
-// and either picks the next free task or returns (zero, false) when
-// the wave is fully claimed.
+// ClaimNextPlanTask atomically claims ownership of the next unassigned
+// task in a plan's active wave by setting tasks.assigned_to to the
+// caller's _agent_model. The transaction is opened with BEGIN IMMEDIATE
+// on a pinned *sql.Conn so concurrent claims serialise behind SQLite's
+// reserved write lock — each waiter re-evaluates the SELECT after the
+// prior commit, so the loser sees `assigned_to` already set on the
+// candidate and either picks the next free task or returns (zero, false)
+// when the wave is fully claimed.
 //
-// The "active wave" is the lowest-position wave that still has any
-// task whose bucket is not the workflow's final bucket — implicitly
-// enforces wave gating (wave N+1 cannot be claimed while wave N has
-// pending tasks). Wave-gate guard config wired into manual moves is
-// orthogonal; this method is its own gate.
+// The "active wave" is the lowest-position wave that still has any task
+// whose bucket is not the workflow's final bucket — implicitly enforces
+// wave gating (wave N+1 cannot be claimed while wave N has pending
+// tasks). Wave-gate guard config wired into manual moves is orthogonal;
+// this method is its own gate.
 //
 // Side effects (all in the same transaction):
-//   - tasks.bucket_id moves from the workflow's first bucket to the
-//     second (typically backlog → dev). Tasks already past the first
-//     bucket are skipped — they're considered actively worked on.
 //   - tasks.assigned_to is set to the agent model resolved from ctx.
-//   - tasks.completed_at follows the same CASE rule as MoveTask so a
-//     workflow with only one non-final bucket stays consistent.
-//   - task.moved and task.assigned events emit in the same tx.
+//   - task.assigned event emits.
+//
+// Bucket movement is intentionally NOT part of the claim: each preset
+// owns its bucket-transition rules (omakase, for instance, requires a
+// self-branch comment before backlog → dev), and ClaimNext used to
+// bypass those guards by stamping the destination bucket inline. The
+// caller now performs the move via WorkflowService.MoveTask once the
+// preset-defined preconditions are met.
 func (s *Store) ClaimNextPlanTask(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) (domain.Task, bool, error) {
 	_, _, agentModel, _ := agentAttribution(ctx)
 	agentModel = strings.TrimSpace(agentModel)
@@ -524,14 +527,12 @@ func (s *Store) ClaimNextPlanTask(ctx context.Context, projectID, planID int64, 
 	}
 
 	workflow := buckets.Workflow()
-	if len(workflow.Buckets) < 2 {
+	if len(workflow.Buckets) == 0 {
 		return domain.Task{}, false, domain.NewError(domain.ErrConfigInvalid,
-			"plans.claim_next requires a workflow with at least 2 buckets",
+			"plans.claim_next requires a workflow with at least 1 bucket",
 			map[string]any{"plan_id": planID, "bucket_count": len(workflow.Buckets)})
 	}
-
 	first := workflow.Buckets[0]
-	dev := workflow.Buckets[0]
 	final := workflow.Buckets[0]
 	for _, b := range workflow.Buckets {
 		if b.Position < first.Position {
@@ -540,22 +541,6 @@ func (s *Store) ClaimNextPlanTask(ctx context.Context, projectID, planID int64, 
 		if b.Position > final.Position {
 			final = b
 		}
-	}
-	// dev = bucket immediately above first by position.
-	devSet := false
-	for _, b := range workflow.Buckets {
-		if b.Position <= first.Position {
-			continue
-		}
-		if !devSet || b.Position < dev.Position {
-			dev = b
-			devSet = true
-		}
-	}
-	if !devSet {
-		return domain.Task{}, false, domain.NewError(domain.ErrConfigInvalid,
-			"plans.claim_next could not resolve a destination bucket",
-			map[string]any{"plan_id": planID})
 	}
 
 	conn, err := s.db.Conn(ctx)
@@ -580,9 +565,6 @@ func (s *Store) ClaimNextPlanTask(ctx context.Context, projectID, planID int64, 
 	// PRAGMA busy_timeout is per-connection in SQLite; the pool may hand
 	// us a connection that bypassed Open's pragma sweep. Re-apply so
 	// concurrent claims wait on SQLITE_BUSY instead of erroring out.
-	// Honours the resolved value from Open / ApplyConfig — falling back
-	// to the kit canonical only when neither path captured one (legacy
-	// test fixtures that build a Store struct literal bypass both).
 	busyTimeoutMs := s.busyTimeoutMs
 	if busyTimeoutMs <= 0 {
 		busyTimeoutMs = kitBusyTimeoutMs()
@@ -626,7 +608,8 @@ WHERE w.plan_id = ?
 	}
 
 	// 2. Pick the lowest-id unassigned task in that wave still sitting
-	//    in the first bucket.
+	//    in the first bucket (claim only the entry point; tasks already
+	//    in flight on another bucket are not "next").
 	var taskID int64
 	err = conn.QueryRowContext(ctx, `
 SELECT t.id
@@ -652,36 +635,21 @@ LIMIT 1
 		return domain.Task{}, false, err
 	}
 
-	// 3. Move + assign in one UPDATE.
+	// 3. Assign only — no bucket transition. Preset guards on the
+	//    bucket move remain authoritative; the caller is responsible
+	//    for the subsequent WorkflowService.MoveTask once those guards
+	//    are satisfied.
 	if _, err := conn.ExecContext(ctx, `
 UPDATE tasks
-SET bucket_id = ?, assigned_to = ?, updated_at = CURRENT_TIMESTAMP,
-    completed_at = CASE WHEN ? = 1 THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE NULL END
+SET assigned_to = ?, updated_at = CURRENT_TIMESTAMP
 WHERE project_id = ? AND id = ?
-`, dev.ID, agentModel, boolToInt(dev.Key == final.Key), projectID, taskID); err != nil {
+`, agentModel, projectID, taskID); err != nil {
 		return domain.Task{}, false, err
 	}
 
-	// 4. Emit task.moved + task.assigned in the same transaction. When
-	//    the destination is the workflow's final bucket (2-bucket
-	//    workflows where dev == final), also emit task.completed so the
-	//    event stream stays consistent with WorkflowService.MoveTask —
-	//    hooks engine and metrics.summary depend on task.completed
-	//    firing for every terminal-bucket transition.
-	landsInFinal := dev.Key == final.Key
-	movePayload := fmt.Sprintf(`{"from":%q,"to":%q}`, first.Key, dev.Key)
-	if _, err := insertTaskEvent(ctx, conn, projectID, taskID, domain.EventTypeTaskMoved, "", movePayload); err != nil {
-		return domain.Task{}, false, err
-	}
 	assignPayload, _ := json.Marshal(map[string]any{"assignee": agentModel, "source": "plans.claim_next"})
 	if _, err := insertEntityEvent(ctx, conn, domain.EventEntityTask, taskID, projectID, domain.EventTypeTaskAssigned, string(assignPayload)); err != nil {
 		return domain.Task{}, false, err
-	}
-	if landsInFinal {
-		completedPayload := fmt.Sprintf(`{"bucket":%q}`, dev.Key)
-		if _, err := insertTaskEvent(ctx, conn, projectID, taskID, domain.EventTypeTaskCompleted, "", completedPayload); err != nil {
-			return domain.Task{}, false, err
-		}
 	}
 
 	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
@@ -689,16 +657,6 @@ WHERE project_id = ? AND id = ?
 	}
 	committed = true
 	closeConn()
-
-	// Plan auto-done mirrors WorkflowService.MoveTask: when the claim
-	// landed in the final bucket and was the last pending task in its
-	// plan, transition the plan to status='done' and emit plan.done.
-	// Failures are swallowed because plan finalisation is recomputable
-	// on the next terminal move — losing the audit signal beats blocking
-	// a legitimate claim.
-	if landsInFinal {
-		_, _ = s.MaybeFinalizePlanForTask(ctx, projectID, taskID, buckets)
-	}
 
 	task, err := s.taskByID(ctx, projectID, taskID, buckets)
 	if err != nil {
