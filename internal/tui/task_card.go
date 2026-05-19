@@ -52,6 +52,15 @@ type taskCardSpec struct {
 // inside — the helper itself stays content-agnostic.
 func (m Model) renderTaskCard(spec taskCardSpec) string {
 	prefix := fmt.Sprintf("#%d ", spec.ID)
+	// Cursor chevron prepended on selected cards so the focused card
+	// reads as the cursor target even when the primary-green
+	// cardSelected border has to compete with adjacent accent rings
+	// (next-claimable, critical-path) for the eye. Lipgloss measures
+	// visual width on the styled string, so wrapWords math stays
+	// honest about the prefix footprint.
+	if spec.Selected {
+		prefix = m.styles.marker.Render("›") + " " + prefix
+	}
 	prefixWidth := lipgloss.Width(prefix)
 
 	firstWidth := spec.InnerWidth - prefixWidth
