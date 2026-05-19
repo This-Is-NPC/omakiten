@@ -402,18 +402,26 @@ type Model struct {
 
 	// planNetworkOpen flips when the user presses enter on a row in the
 	// plans list view — it swaps the renderer from the list view to the
-	// column-per-wave network diagram. esc / `q` flips back.
-	planNetworkOpen        bool
-	planNetworkShow        app.PlanShow
-	planNetworkWaveCursor  int
-	planNetworkTaskCursor  int
-	// planNetworkColScroll mirrors boardColScroll for the wave columns:
-	// horizontal slide offset when the wave count exceeds the
-	// per-screen capacity. planNetworkScroll mirrors boardScroll —
-	// per-wave vertical scroll so a single wave with many tasks does
-	// not push the diagram off the bottom of the panel.
-	planNetworkColScroll int
-	planNetworkScroll    map[int64]int
+	// rails+filaments outline. esc / `q` flips back.
+	planNetworkOpen bool
+	planNetworkShow app.PlanShow
+	// planNetworkCursor is the linear cursor into the flat row
+	// projection (planNetworkBuildRows). It walks BOTH wave-header
+	// rows AND task rows so the user can space-toggle a wave without
+	// first leaving the task list. j/k advance by one row; the next
+	// row is whatever the projection emitted next, so a collapsed
+	// wave header is followed immediately by the next wave header.
+	planNetworkCursor int
+	// planNetworkScroll is the vertical scroll offset into the same
+	// flat row list. A single int (not per-wave) because the outline
+	// is rendered into one viewport — there is no per-wave bucket
+	// scroll any more.
+	planNetworkScroll int
+	// planNetworkCollapsed records which waves are folded down to a
+	// single header row. Default state is expanded (entries missing
+	// from the map render expanded). Toggled with `space` on the
+	// focused wave header.
+	planNetworkCollapsed map[int64]bool
 	// planGoalEditingID names the plan whose goal_body is open in the
 	// modePlanGoal textarea overlay. Non-zero while the overlay is
 	// active; reset to 0 on submit / cancel.

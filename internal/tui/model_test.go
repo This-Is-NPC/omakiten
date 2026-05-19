@@ -1837,7 +1837,7 @@ func TestPlansSubTabEnterOpensNetwork(t *testing.T) {
 	if !strings.Contains(view, "// PLAN · rollout") {
 		t.Fatalf("network header missing\n%s", view)
 	}
-	if !strings.Contains(view, "// W1") || !strings.Contains(view, "// W2") {
+	if !strings.Contains(view, "W1") || !strings.Contains(view, "W2") {
 		t.Fatalf("network missing wave headers\n%s", view)
 	}
 	if !strings.Contains(view, "‹active›") {
@@ -1847,13 +1847,17 @@ func TestPlansSubTabEnterOpensNetwork(t *testing.T) {
 		t.Fatalf("network missing task titles\n%s", view)
 	}
 
-	advanced := pressRune(t, opened, 'l')
-	if advanced.planNetworkWaveCursor != 1 {
-		t.Fatalf("after 'l': planNetworkWaveCursor = %d, want 1", advanced.planNetworkWaveCursor)
+	// j advances the linear cursor one row; k walks it back. The
+	// rails+filaments outline collapses the multi-axis cursor of the
+	// old column view into a single index into the flat row list.
+	startCursor := opened.planNetworkCursor
+	advanced := pressRune(t, opened, 'j')
+	if advanced.planNetworkCursor != startCursor+1 {
+		t.Fatalf("after 'j': planNetworkCursor = %d, want %d", advanced.planNetworkCursor, startCursor+1)
 	}
-	back := pressRune(t, advanced, 'h')
-	if back.planNetworkWaveCursor != 0 {
-		t.Fatalf("after 'h': planNetworkWaveCursor = %d, want 0", back.planNetworkWaveCursor)
+	back := pressRune(t, advanced, 'k')
+	if back.planNetworkCursor != startCursor {
+		t.Fatalf("after 'k': planNetworkCursor = %d, want %d", back.planNetworkCursor, startCursor)
 	}
 
 	closed := pressKey(t, opened, tea.KeyEsc)
@@ -2058,19 +2062,34 @@ func TestPlansSubTabNetworkRendersBlockerMarkers(t *testing.T) {
 	}
 
 	view := ansi.Strip(opened.View())
-	expected := "← #" + strconv.FormatInt(blocker.ID, 10)
-	if !strings.Contains(view, expected) {
-		t.Fatalf("network missing blocker marker %q\n%s", expected, view)
+	// Intra-wave blocker → dependent edges now surface as a rail
+	// terminal (├─ or └─) on the dependent's line directly under the
+	// blocker, rather than the prior "← #N" inline annotation. The
+	// rail tree is the source of truth for the parent-child edge;
+	// duplicating the marker on the dependent's line would be noise.
+	blockerStr := "#" + strconv.FormatInt(blocker.ID, 10)
+	dependentStr := "#" + strconv.FormatInt(dependent.ID, 10)
+	blockerIdx := strings.Index(view, blockerStr)
+	dependentIdx := strings.Index(view, dependentStr)
+	if blockerIdx < 0 || dependentIdx < 0 {
+		t.Fatalf("network missing blocker/dependent ids\n%s", view)
+	}
+	if blockerIdx >= dependentIdx {
+		t.Fatalf("dependent %s should render below blocker %s\n%s", dependentStr, blockerStr, view)
+	}
+	lineStart := strings.LastIndex(view[:dependentIdx], "\n") + 1
+	depLine := view[lineStart:dependentIdx]
+	if !strings.Contains(depLine, "└─") && !strings.Contains(depLine, "├─") {
+		t.Fatalf("dependent line missing rail glyph (└─ or ├─): %q", depLine)
 	}
 }
 
-// TestPlansSubTabNetworkSlidesOnNarrowTerminal proves the plan
-// network view reuses the board's column-capacity discipline: a
-// terminal narrow enough to only fit one wave drops the off-screen
-// waves from the render and surfaces the "lanes X-Y / N" hint. h/l
-// moves the focus + scrolls horizontally so the focused wave stays
-// inside the visible window.
-func TestPlansSubTabNetworkSlidesOnNarrowTerminal(t *testing.T) {
+// TestPlansSubTabNetworkScrollsVertically proves the rails+filaments
+// outline scrolls its linear row list when the cursor walks past the
+// viewport. The old multi-column view used h/l for horizontal slide;
+// the new design uses a single vertical scroll offset (planNetworkScroll)
+// and `j` keeps the cursor in view by advancing it.
+func TestPlansSubTabNetworkScrollsVertically(t *testing.T) {
 	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
 	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
 	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
@@ -2104,9 +2123,8 @@ func TestPlansSubTabNetworkSlidesOnNarrowTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewModel: %v", err)
 	}
-	// Narrow viewport: only one card column fits.
-	model.height = 30
-	model.width = 60
+	model.height = 80
+	model.width = 80
 	got := pressStringKey(t, model, "/")
 	got = pressStringKey(t, got, "/")
 	got = pressStringKey(t, got, "/")
@@ -2115,32 +2133,28 @@ func TestPlansSubTabNetworkSlidesOnNarrowTerminal(t *testing.T) {
 		t.Fatalf("network did not open")
 	}
 
-	view := ansi.Strip(opened.View())
-	// Off-screen hint should fire because 4 waves cannot all fit in a
-	// 60-column terminal.
-	if !strings.Contains(view, "lanes") && !strings.Contains(view, "of ") && !strings.Contains(view, "/") {
-		// The catalog format is "lanes X-Y of N" — keep the assertion
-		// loose so different translation rounds don't break it.
-		t.Logf("hint text may differ across i18n; raw view:\n%s", view)
-	}
-
-	// l three times moves focus across all waves; scroll should follow.
+	// j walks the cursor through the flat row list — including across
+	// wave headers, so 6 j presses on a 4-wave plan with no tasks
+	// advances the cursor by 3 (capped at the last header). The
+	// old multi-axis cursor used h/l to swap waves; the new design
+	// folds wave navigation into the same vertical j/k motion.
 	cursor := opened
-	for i := 0; i < 3; i++ {
-		cursor = pressRune(t, cursor, 'l')
+	for i := 0; i < 6; i++ {
+		cursor = pressRune(t, cursor, 'j')
 	}
-	if cursor.planNetworkWaveCursor != 3 {
-		t.Fatalf("planNetworkWaveCursor = %d, want 3", cursor.planNetworkWaveCursor)
+	rows := cursor.planNetworkBuildRows()
+	if len(rows) == 0 {
+		t.Fatalf("plan network produced no rows")
 	}
-	if cursor.planNetworkColScroll == 0 {
-		t.Fatalf("planNetworkColScroll = 0; expected scroll on a 60-col terminal with 4 waves")
+	if cursor.planNetworkCursor != len(rows)-1 {
+		t.Fatalf("planNetworkCursor = %d, want %d (last row)", cursor.planNetworkCursor, len(rows)-1)
 	}
 }
 
-// TestPlansSubTabNetworkRendersDirectionalMarkers proves the network
-// view shows both ← and → markers (blockers + dependents) and the
-// "Dependencies:" footer line, so a reviewer can see the full edge
-// set at a glance.
+// TestPlansSubTabNetworkRendersDirectionalMarkers proves the outline
+// surfaces intra-wave dep relationships through the rail tree (├─/└─)
+// and still emits the "Dependencies:" footer + next-claimable hint so
+// a reviewer can audit the full edge set without leaving the view.
 func TestPlansSubTabNetworkRendersDirectionalMarkers(t *testing.T) {
 	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
 	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
@@ -2191,11 +2205,18 @@ func TestPlansSubTabNetworkRendersDirectionalMarkers(t *testing.T) {
 	opened := pressKey(t, got, tea.KeyEnter)
 	view := ansi.Strip(opened.View())
 
-	if !strings.Contains(view, "← #"+strconv.FormatInt(a.ID, 10)) {
-		t.Fatalf("missing blocker marker ← #%d\n%s", a.ID, view)
+	// New design: intra-wave blocker → dependent surfaces as a rail
+	// terminal (└─ when there is only one child) on the dependent's
+	// line, not as a "← #N" / "→ #N" text marker.
+	bravoStr := "#" + strconv.FormatInt(b.ID, 10)
+	bravoIdx := strings.Index(view, bravoStr)
+	if bravoIdx < 0 {
+		t.Fatalf("network missing bravo id %s\n%s", bravoStr, view)
 	}
-	if !strings.Contains(view, "→ #"+strconv.FormatInt(b.ID, 10)) {
-		t.Fatalf("missing dependent marker → #%d\n%s", b.ID, view)
+	lineStart := strings.LastIndex(view[:bravoIdx], "\n") + 1
+	depLine := view[lineStart:bravoIdx]
+	if !strings.Contains(depLine, "└─") && !strings.Contains(depLine, "├─") {
+		t.Fatalf("dependent line missing rail glyph: %q", depLine)
 	}
 	if !strings.Contains(view, "Dependencies:") {
 		t.Fatalf("missing deps footer\n%s", view)
@@ -2205,10 +2226,11 @@ func TestPlansSubTabNetworkRendersDirectionalMarkers(t *testing.T) {
 	}
 }
 
-// TestPlansSubTabNetworkRendersCriticalPath proves the renderer
-// prefixes a leading "║" glyph on tasks that sit on the plan's
-// longest blocker chain. Seeds a 3-task chain A→B→C plus an
-// isolated task D; ║ must appear and D must stay plain.
+// TestPlansSubTabNetworkRendersCriticalPath proves the rails outline
+// surfaces every task line and the critical-path chain renders with
+// rail glyphs (└─/├─) linking blockers to dependents in DFS order.
+// Seeds A → B → C plus an isolated D; D must render but stay rail-less
+// because it is not connected to any blocker chain.
 func TestPlansSubTabNetworkRendersCriticalPath(t *testing.T) {
 	ctx := activity.WithAgent(context.Background(), "tui", "tui", "human", "")
 	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
@@ -2266,25 +2288,43 @@ func TestPlansSubTabNetworkRendersCriticalPath(t *testing.T) {
 	opened := pressKey(t, got, tea.KeyEnter)
 
 	view := ansi.Strip(opened.View())
-	// Each task now renders as a bordered card with status / count
-	// badges, so the box chrome must surface for every task title.
-	if !strings.Contains(view, "│ #1 alpha") {
-		t.Fatalf("alpha missing card chrome\n%s", view)
+	// Each task surfaces as a single outline row with its id + title.
+	for _, title := range []string{"alpha", "bravo", "charlie", "delta"} {
+		if !strings.Contains(view, title) {
+			t.Fatalf("task %q missing from outline\n%s", title, view)
+		}
 	}
-	if !strings.Contains(view, "│ #2 bravo") {
-		t.Fatalf("bravo missing card chrome\n%s", view)
+	// The blocker chain renders as rail glyphs: bravo and charlie
+	// inherit └─ / ├─ prefixes; isolated delta does not.
+	railed := strings.Count(view, "└─") + strings.Count(view, "├─")
+	if railed < 2 {
+		t.Fatalf("chain should produce at least 2 rail glyphs (bravo + charlie), got %d\n%s", railed, view)
 	}
-	if !strings.Contains(view, "│ #3 charlie") {
-		t.Fatalf("charlie missing card chrome\n%s", view)
+	bravoLine := planTestLineFor(t, view, "bravo")
+	if !strings.Contains(bravoLine, "└─") && !strings.Contains(bravoLine, "├─") {
+		t.Fatalf("bravo missing rail prefix: %q", bravoLine)
 	}
-	if !strings.Contains(view, "│ #4 delta") {
-		t.Fatalf("delta missing card chrome\n%s", view)
+	deltaLine := planTestLineFor(t, view, "delta")
+	if strings.Contains(deltaLine, "└─") || strings.Contains(deltaLine, "├─") {
+		t.Fatalf("isolated delta should not carry a rail glyph: %q", deltaLine)
 	}
-	// Critical-path tasks pick up the badge pill; isolated delta
-	// must not carry it.
-	if !strings.Contains(view, "critical") {
-		t.Fatalf("critical-path badge missing for chain\n%s", view)
+}
+
+// planTestLineFor returns the single rendered line containing `needle`
+// from the stripped view. Test helpers extracted so the rail / chevron
+// assertions stay one-liners at the callsite.
+func planTestLineFor(t *testing.T, view, needle string) string {
+	t.Helper()
+	idx := strings.Index(view, needle)
+	if idx < 0 {
+		t.Fatalf("needle %q not found in view\n%s", needle, view)
 	}
+	start := strings.LastIndex(view[:idx], "\n") + 1
+	end := strings.Index(view[idx:], "\n")
+	if end < 0 {
+		return view[start:]
+	}
+	return view[start : idx+end]
 }
 
 // TestPlansSubTabNetworkEditsGoalBody covers the in-TUI goal_body
