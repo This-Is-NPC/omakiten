@@ -233,6 +233,39 @@ func TestRunUninstall_PurgeDataFailureSurfacesCodedError(t *testing.T) {
 	}
 }
 
+// TestRunUninstall_CancelledContextAborts pins the ctx gate: if the
+// caller cancels before runUninstall fires, the function returns
+// ctx.Err() before any filesystem mutation. Prevents a half-applied
+// uninstall when the user sigints between picker accept and apply.
+func TestRunUninstall_CancelledContextAborts(t *testing.T) {
+	home := seedFakeInstall(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := runUninstall(ctx, uninstallInputs{PurgeData: true, PurgeConfig: true})
+	if err == nil {
+		t.Fatalf("expected context.Canceled error")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error: got %v want context.Canceled", err)
+	}
+
+	// Filesystem must be untouched: binary, wrapper, data, config all
+	// still present because the ctx gate fired before any removal.
+	bin := lifecycle.BinaryPath(home)
+	if _, err := os.Stat(bin); err != nil {
+		t.Fatalf("binary removed despite cancelled ctx: %v", err)
+	}
+	bashrc, _ := os.ReadFile(filepath.Join(home, ".bashrc"))
+	if !bytes.Contains(bashrc, []byte(installer.WrapperBegin)) {
+		t.Fatalf("wrapper removed despite cancelled ctx")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".data", "omakiten")); err != nil {
+		t.Fatalf("data dir removed despite cancelled ctx: %v", err)
+	}
+}
+
 // seedFakeInstall stands up a HOME-scoped fake install: binary at
 // $HOME/.local/bin/okt, wrapper block in $HOME/.bashrc, data dir
 // under XDG_DATA_HOME, config root under XDG_CONFIG_HOME. Returns

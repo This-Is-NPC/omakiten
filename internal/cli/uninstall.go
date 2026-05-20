@@ -86,16 +86,29 @@ func resolveUninstallInputs(ctx context.Context, inputs uninstallInputs, explici
 // uninstall_completed even when nothing was on disk to remove — the
 // per-target booleans in the payload tell the caller which steps
 // were no-ops.
-func runUninstall(_ context.Context, inputs uninstallInputs) (any, error) {
+//
+// ctx is checked between every filesystem-mutating step so a cancelled
+// parent (sigint mid-purge, JSON envelope timeout) aborts before the
+// next irreversible delete fires. The lifecycle helpers themselves are
+// not ctx-aware (os.RemoveAll has no cancellation contract); the gate
+// here is best-effort but covers the common case of a user hitting
+// ctrl+c after the picker accepts.
+func runUninstall(ctx context.Context, inputs uninstallInputs) (any, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
 	binaryPath := lifecycle.BinaryPath(home)
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	binaryRemoved, err := lifecycle.RemoveBinary(binaryPath)
 	if err != nil {
 		return nil, domain.NewError(domain.ErrUninstallFailed, err.Error(), map[string]any{"binary": binaryPath})
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	wrappersRemoved, err := lifecycle.RemoveAllWrappers(home)
 	if err != nil {
@@ -110,6 +123,9 @@ func runUninstall(_ context.Context, inputs uninstallInputs) (any, error) {
 	}
 
 	if inputs.PurgeData {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		path, removed, err := lifecycle.PurgeDataDir()
 		if err != nil {
 			return nil, domain.NewError(domain.ErrUninstallFailed, err.Error(), map[string]any{"data_dir": path})
@@ -118,6 +134,9 @@ func runUninstall(_ context.Context, inputs uninstallInputs) (any, error) {
 		result["data_removed"] = removed
 	}
 	if inputs.PurgeConfig {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		path, removed, err := lifecycle.PurgeConfigRoot()
 		if err != nil {
 			return nil, domain.NewError(domain.ErrUninstallFailed, err.Error(), map[string]any{"config_root": path})
