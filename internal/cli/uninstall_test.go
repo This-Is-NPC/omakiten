@@ -1,13 +1,17 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"omakiten/internal/domain"
 	"omakiten/internal/installer"
 	"omakiten/internal/lifecycle"
 	"omakiten/internal/paths"
@@ -22,7 +26,10 @@ func TestRunUninstall_DefaultPreservesDataAndConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runUninstall: %v", err)
 	}
-	payload := res.(map[string]any)
+	payload, ok := res.(map[string]any)
+	if !ok {
+		t.Fatalf("payload type: got %T want map[string]any", res)
+	}
 	if payload["code"] != "uninstall_completed" {
 		t.Fatalf("code: got %v want uninstall_completed", payload["code"])
 	}
@@ -46,7 +53,7 @@ func TestRunUninstall_DefaultPreservesDataAndConfig(t *testing.T) {
 		t.Fatalf("binary still present at %s: %v", bin, err)
 	}
 	bashrc, _ := os.ReadFile(filepath.Join(home, ".bashrc"))
-	if bytesContains(bashrc, installer.WrapperBegin) {
+	if bytes.Contains(bashrc, []byte(installer.WrapperBegin)) {
 		t.Fatalf("wrapper still in bashrc: %s", bashrc)
 	}
 	dataDB := filepath.Join(home, ".data", "omakiten", "omakiten.db")
@@ -68,7 +75,10 @@ func TestRunUninstall_PurgeRemovesEverything(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runUninstall: %v", err)
 	}
-	payload := res.(map[string]any)
+	payload, ok := res.(map[string]any)
+	if !ok {
+		t.Fatalf("payload type: got %T want map[string]any", res)
+	}
 	if payload["data_removed"] != true {
 		t.Fatalf("data_removed: got %v want true", payload["data_removed"])
 	}
@@ -101,7 +111,10 @@ func TestRunUninstall_MissingBinaryStillCompletes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runUninstall: %v", err)
 	}
-	payload := res.(map[string]any)
+	payload, ok := res.(map[string]any)
+	if !ok {
+		t.Fatalf("payload type: got %T want map[string]any", res)
+	}
 	if payload["code"] != "uninstall_completed" {
 		t.Fatalf("code: got %v want uninstall_completed", payload["code"])
 	}
@@ -119,18 +132,15 @@ func TestUninstallPicker_TogglesPurgeData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newUninstallPickerModel: %v", err)
 	}
-	keys := []string{"down", "down", "enter", "y"}
 	var current tea.Model = model
-	for _, k := range keys {
-		current, _ = current.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)})
-	}
-	// "down" + "enter" aren't runes — re-send via dedicated KeyMsg.
-	current = model
 	current, _ = current.Update(tea.KeyMsg{Type: tea.KeyDown})
 	current, _ = current.Update(tea.KeyMsg{Type: tea.KeyDown})
 	current, _ = current.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	current, _ = current.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
-	final := current.(uninstallPickerModel)
+	final, ok := current.(uninstallPickerModel)
+	if !ok {
+		t.Fatalf("final model type: got %T want uninstallPickerModel", current)
+	}
 	if !final.done {
 		t.Fatalf("picker did not signal done after y")
 	}
@@ -153,12 +163,73 @@ func TestUninstallPicker_CtrlCAborts(t *testing.T) {
 		t.Fatalf("newUninstallPickerModel: %v", err)
 	}
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	final := updated.(uninstallPickerModel)
+	final, ok := updated.(uninstallPickerModel)
+	if !ok {
+		t.Fatalf("final model type: got %T want uninstallPickerModel", updated)
+	}
 	if !final.aborted {
 		t.Fatalf("expected aborted=true after ctrl+c")
 	}
 	if final.done {
 		t.Fatalf("done should stay false on abort")
+	}
+}
+
+// TestResolveUninstallInputs_NoTTYNoFlags pins the headless-without-
+// flags failure: when nothing on the command-line resolves the purge
+// intent and stdin is not a TTY, the JSON envelope must surface a
+// validation_error instead of opening a bubbletea picker that would
+// hang on the closed input.
+func TestResolveUninstallInputs_NoTTYNoFlags(t *testing.T) {
+	_, err := resolveUninstallInputs(context.Background(), uninstallInputs{}, false)
+	if err == nil {
+		t.Fatalf("expected validation_error when no flags + no TTY")
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrValidation {
+		t.Fatalf("error code: got %v want ErrValidation", err)
+	}
+}
+
+// TestResolveUninstallInputs_ExplicitBypassesPicker covers the
+// happy headless path: any explicit flag (including --yes) returns
+// the inputs verbatim without touching the picker.
+func TestResolveUninstallInputs_ExplicitBypassesPicker(t *testing.T) {
+	got, err := resolveUninstallInputs(context.Background(), uninstallInputs{PurgeData: true}, true)
+	if err != nil {
+		t.Fatalf("resolveUninstallInputs: %v", err)
+	}
+	if !got.PurgeData || got.PurgeConfig {
+		t.Fatalf("inputs: got %+v want PurgeData=true PurgeConfig=false", got)
+	}
+}
+
+// TestRunUninstall_PurgeDataFailureSurfacesCodedError simulates a
+// read-only data directory: PurgeDataDir hits an os.RemoveAll error
+// and the failure must be reported as ErrUninstallFailed with the
+// data_dir payload populated.
+func TestRunUninstall_PurgeDataFailureSurfacesCodedError(t *testing.T) {
+	if goruntime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("chmod-based read-only directories don't gate root or windows ACLs")
+	}
+	home := seedFakeInstall(t)
+
+	dataDir := filepath.Join(home, ".data", "omakiten")
+	// 0o500 on the parent prevents removal of children; restore on
+	// cleanup so t.TempDir's own cleanup can finish.
+	parent := filepath.Dir(dataDir)
+	if err := os.Chmod(parent, 0o500); err != nil {
+		t.Fatalf("chmod parent: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+
+	_, err := runUninstall(context.Background(), uninstallInputs{PurgeData: true})
+	if err == nil {
+		t.Fatalf("expected error from read-only data dir")
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrUninstallFailed {
+		t.Fatalf("error: got %v want ErrUninstallFailed", err)
 	}
 }
 
@@ -209,16 +280,4 @@ func seedFakeInstall(t *testing.T) string {
 	}
 
 	return home
-}
-
-func bytesContains(haystack []byte, needle string) bool {
-	if len(needle) == 0 {
-		return true
-	}
-	for i := 0; i+len(needle) <= len(haystack); i++ {
-		if string(haystack[i:i+len(needle)]) == needle {
-			return true
-		}
-	}
-	return false
 }

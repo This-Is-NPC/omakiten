@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"omakiten/internal/installer"
@@ -103,7 +104,7 @@ func TestRemoveAllWrappers_StripsBashAndZsh(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", rc, err)
 		}
-		if contains := string(body); containsSubstring(contains, installer.WrapperBegin) {
+		if contains := string(body); strings.Contains(contains, installer.WrapperBegin) {
 			t.Fatalf("wrapper still present in %s: %q", rc, contains)
 		}
 	}
@@ -257,11 +258,3 @@ func TestFormatBytes_Buckets(t *testing.T) {
 	}
 }
 
-func containsSubstring(haystack, needle string) bool {
-	for i := 0; i+len(needle) <= len(haystack); i++ {
-		if haystack[i:i+len(needle)] == needle {
-			return true
-		}
-	}
-	return false
-}

@@ -283,7 +283,10 @@ func runUninstallPicker(ctx context.Context, inputs uninstallInputs) (uninstallI
 	if err != nil {
 		return uninstallInputs{}, fmt.Errorf("run uninstall picker: %w", err)
 	}
-	result := final.(uninstallPickerModel)
+	result, ok := final.(uninstallPickerModel)
+	if !ok {
+		return uninstallInputs{}, fmt.Errorf("uninstall picker returned unexpected model type %T", final)
+	}
 	if result.aborted || !result.done {
 		return uninstallInputs{}, domain.NewError(domain.ErrValidation, t("cli.uninstall.picker.aborted"), nil)
 	}
@@ -322,6 +325,7 @@ func probeDir(kind probeKind) (string, int64, error) {
 			return path, 0, err
 		}
 		return path, size, nil
+	default:
+		panic(fmt.Sprintf("uninstall: unknown probeKind %d", kind))
 	}
-	return "", 0, nil
 }

@@ -55,14 +55,19 @@ OKT_CLI_LANG=pt-br OKT_TUI_LANG=pt-br OKT_PRESET=omakase OKT_HARNESSES=0 \
 
 ## `okt update` — fetch latest release and swap the binary
 
-`internal/cli/update.go`. The in-binary counterpart of the curl|bash refresh path. Resolves the running binary via `os.Executable`, queries `https://api.github.com/repos/This-Is-NPC/omakiten/releases/latest`, downloads the matching asset (`okt_<OS>_<arch>.tar.gz` on POSIX, `.zip` on Windows), and atomically replaces the binary with a sibling temp file + rename.
+`internal/cli/update.go`. The in-binary counterpart of the curl|bash refresh path. Resolves the running binary via `os.Executable`, queries `https://api.github.com/repos/This-Is-NPC/omakiten/releases/latest`, downloads the matching asset (`okt_<OS>_<arch>.tar.gz` on POSIX, `.zip` on Windows), verifies its SHA256 against `checksums.txt` from the same release, extracts the `okt` entry from the archive, and atomically replaces the binary with a sibling temp file + rename.
 
 | Flag | Default | Effect |
 |---|---|---|
 | `--check` | `false` | Dry-run: print `current=<v> latest=<v> action=<noop\|upgrade>` and exit without writing. |
 | `--yes`, `-y` | `false` | Skip the confirmation prompt for non-interactive callers. |
 
-JSON envelope codes (under `data.code`): `update_completed`, `update_not_required`, `update_failed`, `validation_error` (raised when no TTY is available and neither `--yes` nor `--check` was passed).
+JSON envelope codes (under `data.code`):
+- `update_available` — `--check` saw a newer tag; nothing written.
+- `update_not_required` — current matches latest (both `--check` and apply paths).
+- `update_completed` — swap applied successfully.
+- `update_failed` — any failure across fetch / checksum / download / extract / swap.
+- `validation_error` — dev build (no version baked in), no TTY without `--yes`, or user declined the confirmation prompt.
 
 ```sh
 okt update --check                  # report only — exits 0 on both upgrade-available and noop

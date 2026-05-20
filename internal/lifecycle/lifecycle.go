@@ -244,16 +244,21 @@ func DirSize(root string) (int64, error) {
 
 // FormatBytes renders n as a human-readable size string suitable for
 // picker display. Uses binary units (KiB/MiB/GiB) to match `du -h`.
+// Values beyond the largest suffix are clamped to the top unit so
+// pathological data dirs (>= 1 PiB) still render rather than panic.
 func FormatBytes(n int64) string {
 	const unit = 1024
 	if n < unit {
 		return fmt.Sprintf("%d B", n)
 	}
+	suffixes := []string{"KiB", "MiB", "GiB", "TiB", "PiB", "EiB"}
 	div, exp := int64(unit), 0
 	for x := n / unit; x >= unit; x /= unit {
 		div *= unit
 		exp++
 	}
-	suffix := []string{"KiB", "MiB", "GiB", "TiB"}[exp]
-	return fmt.Sprintf("%.1f %s", float64(n)/float64(div), suffix)
+	if exp >= len(suffixes) {
+		exp = len(suffixes) - 1
+	}
+	return fmt.Sprintf("%.1f %s", float64(n)/float64(div), suffixes[exp])
 }
