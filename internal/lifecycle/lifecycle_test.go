@@ -141,6 +141,46 @@ func TestRemoveAllWrappers_NoOpOnFilesWithoutSentinel(t *testing.T) {
 	}
 }
 
+// TestRemoveAllWrappers_AbortsOnReadOnlyRC pins the surface contract:
+// when an rc file carries the okt wrapper sentinel but its parent is
+// read-only (so WriteFile cannot rewrite it), RemoveAllWrappers
+// aborts and surfaces the error rather than silently skipping. This
+// is the path that warns a user their .bashrc is locked instead of
+// reporting a fake success.
+func TestRemoveAllWrappers_AbortsOnReadOnlyRC(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("chmod-based read-only directories don't gate root or windows ACLs")
+	}
+	home := t.TempDir()
+	bashrc := filepath.Join(home, ".bashrc")
+	if err := os.WriteFile(bashrc, []byte("# user content\n"), 0o644); err != nil {
+		t.Fatalf("seed bash: %v", err)
+	}
+	if err := installer.InstallWrapper(bashrc); err != nil {
+		t.Fatalf("install wrapper: %v", err)
+	}
+
+	// 0o400 on the file itself blocks the O_TRUNC|O_WRONLY open inside
+	// os.WriteFile that installer.RemoveWrapper uses to rewrite the rc.
+	// Directory perms stay normal so t.TempDir cleanup can still unlink
+	// the file after chmod is restored.
+	if err := os.Chmod(bashrc, 0o400); err != nil {
+		t.Fatalf("chmod bashrc: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(bashrc, 0o644) })
+
+	removed, err := RemoveAllWrappers(home)
+	if err == nil {
+		t.Fatalf("expected error on read-only home, got removed=%v", removed)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("removed slice should be empty on abort, got %v", removed)
+	}
+	if !strings.Contains(err.Error(), "write") && !strings.Contains(err.Error(), "permission") {
+		t.Fatalf("error should mention write/permission failure: %v", err)
+	}
+}
+
 func TestPurgeDataDir_RemovesExisting(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv(paths.HomeEnv, home)
