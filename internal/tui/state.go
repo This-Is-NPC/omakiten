@@ -288,6 +288,13 @@ type Model struct {
 	entityCursors map[entityKind]int
 	entityScroll  map[entityKind]int
 	entityScreen  entityScreenMode
+
+	// settingsGeneralScroll is the first-visible body row in the
+	// Settings › General sub-tab. The view is read-only — no cursor —
+	// so the offset is the only state; clampSettingsGeneralScroll keeps
+	// it inside the body bounds at render time so a leftover offset from
+	// a wider terminal does not strand the user past the new last row.
+	settingsGeneralScroll int
 	entityForm       entityForm
 	deletePending    bool
 	deleteKind       entityKind

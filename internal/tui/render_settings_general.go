@@ -18,7 +18,27 @@ import (
 // theme keys. Mutating any of these still goes through the dedicated
 // pickers (`t` for theme, `c` for config) which remain reachable from
 // every Settings sub.
+//
+// The body is wrapped in `sliceScrollRows` against `m.settingsGeneralScroll`
+// so the user can `j`/`k`/`PgUp`/`PgDn`/`g`/`G` through the tables when the
+// terminal is shorter than the rendered content — the sibling sub-tabs
+// already scrolled, so General was the only Settings dead-end.
 func (m Model) renderSettingsGeneral() string {
+	body := m.renderSettingsGeneralBody()
+	hint := m.styles.hint.Render(m.t("tui.settings.general_hint"))
+
+	bodyLines := strings.Split(body, "\n")
+	viewport := m.settingsGeneralViewportRows()
+	offset := clampSettingsGeneralScroll(m.settingsGeneralScroll, len(bodyLines), viewport)
+	visible := m.sliceScrollRows(bodyLines, offset, viewport)
+	return "\n" + indentBlock(strings.Join(visible, "\n")+"\n\n"+hint, 2)
+}
+
+// renderSettingsGeneralBody builds the Runtime + Project summary tables
+// as a single rendered block. Extracted so the key handler can measure
+// the body height for scroll clamping without re-running the renderer's
+// scroll wrapper.
+func (m Model) renderSettingsGeneralBody() string {
 	valueOrDash := func(value string) string {
 		if value == "" {
 			return m.styles.hint.Render("—")
@@ -51,14 +71,43 @@ func (m Model) renderSettingsGeneral() string {
 		[2]string{m.t("tui.settings.project.theme"), valueOrDash(m.theme.Key)},
 	)
 
-	body := m.renderSummaryTables(summaryTablesOpts{
+	return m.renderSummaryTables(summaryTablesOpts{
 		LabelWidth: 14,
 		ValueWidth: 46,
 		Auto:       true,
 	}, runtimeRows, projectRows)
+}
 
-	hint := m.styles.hint.Render(m.t("tui.settings.general_hint"))
-	return "\n" + indentBlock(body+"\n\n"+hint, 2)
+// settingsGeneralViewportRows is the data-row budget for the General
+// body. The panel chrome below the body is two lines (blank separator +
+// hint row); `panelViewportRows` already accounts for screen header /
+// status / leading blank / footer, so passing 2 here yields the rows
+// `sliceScrollRows` may spend on body + indicator hints.
+func (m Model) settingsGeneralViewportRows() int {
+	return m.panelViewportRows(2)
+}
+
+// clampSettingsGeneralScroll keeps `offset` inside the body bounds given
+// the viewport budget. `sliceScrollRows` reserves up to two rows for the
+// "▲ N above" / "▼ N below" hints, so the data window is `viewport - 2`;
+// the max useful offset is `total - dataRows` (further would strand the
+// user past the last data line). Returns 0 when the entire body fits.
+func clampSettingsGeneralScroll(offset, total, viewport int) int {
+	if viewport <= 0 {
+		return 0
+	}
+	dataRows := scrollDataRows(viewport)
+	if total <= dataRows {
+		return 0
+	}
+	max := total - dataRows
+	if offset > max {
+		return max
+	}
+	if offset < 0 {
+		return 0
+	}
+	return offset
 }
 
 // handleSettingsGeneralKey routes keypresses while Settings › General is
@@ -68,6 +117,12 @@ func (m Model) renderSettingsGeneral() string {
 // out to $EDITOR against the active omakiten.yaml so the user can edit
 // the wiring file directly; on return the bundle is re-imported through
 // the same handleEditorFinished path the entity edits use.
+//
+// `j`/`k`/`PgUp`/`PgDn`/`g`/`G` scroll the body when the rendered
+// summary block is taller than the available viewport — the sibling
+// Settings sub-tabs already scrolled, so this binding closes the
+// general-only dead-end. Scroll is offset-only (no cursor) since the
+// view is read-only.
 func (m *Model) handleSettingsGeneralKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "t":
@@ -80,6 +135,55 @@ func (m *Model) handleSettingsGeneralKey(msg tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		return runExternalEditor(m.repos.Editor.Path())
+	case "down", "j":
+		m.settingsGeneralScroll++
+		m.syncSettingsGeneralScroll()
+	case "up", "k":
+		m.settingsGeneralScroll--
+		m.syncSettingsGeneralScroll()
+	case "pgdown", "ctrl+d":
+		m.settingsGeneralScroll += taskViewPageStep(m.settingsGeneralViewportRows())
+		m.syncSettingsGeneralScroll()
+	case "pgup", "ctrl+u":
+		m.settingsGeneralScroll -= taskViewPageStep(m.settingsGeneralViewportRows())
+		m.syncSettingsGeneralScroll()
+	case "home", "g":
+		m.settingsGeneralScroll = 0
+	case "end", "G":
+		m.settingsGeneralScroll = m.maxSettingsGeneralScroll()
 	}
 	return nil
+}
+
+// syncSettingsGeneralScroll re-clamps the stored offset against the
+// current body / viewport sizes — `clampSettingsGeneralScroll` runs at
+// render time too, but persisting the clamped value keeps the next
+// `j`/`k`/`pgdown` press relative to the visible window instead of a
+// stranded "ghost" offset past the last row.
+func (m *Model) syncSettingsGeneralScroll() {
+	body := m.renderSettingsGeneralBody()
+	total := strings.Count(body, "\n") + 1
+	m.settingsGeneralScroll = clampSettingsGeneralScroll(
+		m.settingsGeneralScroll,
+		total,
+		m.settingsGeneralViewportRows(),
+	)
+}
+
+// maxSettingsGeneralScroll returns the offset that puts the last body
+// row at the bottom of the viewport — used by `G`/`end` so the jump-to-
+// end key lands on the same row as if the user had paged all the way
+// down.
+func (m Model) maxSettingsGeneralScroll() int {
+	body := m.renderSettingsGeneralBody()
+	total := strings.Count(body, "\n") + 1
+	viewport := m.settingsGeneralViewportRows()
+	if viewport <= 0 {
+		return 0
+	}
+	dataRows := scrollDataRows(viewport)
+	if total <= dataRows {
+		return 0
+	}
+	return total - dataRows
 }
