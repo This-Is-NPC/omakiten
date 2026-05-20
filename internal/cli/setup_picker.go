@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/paginator"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -112,6 +113,13 @@ type setupPickerModel struct {
 
 	styles setupStyles
 
+	// activeOrder is the ordered slice of needs-active steps. Drives the
+	// step indicator count and the back-navigation chain: env-collapsed
+	// steps are excluded so esc/pgup skips them rather than landing on a
+	// pre-resolved screen.
+	activeOrder []setupStep
+	pager       paginator.Model
+
 	aborted bool
 	done    bool
 }
@@ -130,6 +138,13 @@ func newSetupPickerModel(inputs setupInputs, needs pickerNeeds) (setupPickerMode
 
 	theme, _ := loadBundledTheme()
 
+	activeOrder := computeActiveOrder(needs)
+	pager := paginator.New()
+	pager.Type = paginator.Arabic
+	pager.PerPage = 1
+	pager.ArabicFormat = "step %d/%d"
+	pager.TotalPages = len(activeOrder)
+
 	model := setupPickerModel{
 		step:          stepLang,
 		needs:         needs,
@@ -138,6 +153,8 @@ func newSetupPickerModel(inputs setupInputs, needs pickerNeeds) (setupPickerMode
 		harnesses:     installer.SupportedHarnesses(),
 		harnessChosen: map[int]bool{},
 		styles:        newSetupStyles(theme),
+		activeOrder:   activeOrder,
+		pager:         pager,
 	}
 
 	model.langCursor = indexOfLangCode(langs, firstNonEmpty(inputs.CLILang, inputs.TUILang))
@@ -164,7 +181,29 @@ func newSetupPickerModel(inputs setupInputs, needs pickerNeeds) (setupPickerMode
 	}
 
 	model.advancePastResolved()
+	model = model.syncedPager()
 	return model, nil
+}
+
+// computeActiveOrder returns the ordered slice of steps the user must
+// actually answer — env-supplied or flag-supplied inputs collapse their
+// step out of the list. Drives both the step indicator denominator and
+// the back-nav chain so prev hops skip resolved screens.
+func computeActiveOrder(n pickerNeeds) []setupStep {
+	out := make([]setupStep, 0, 4)
+	if n.Lang {
+		out = append(out, stepLang)
+	}
+	if n.Agent {
+		out = append(out, stepAgentLang)
+	}
+	if n.Preset {
+		out = append(out, stepPreset)
+	}
+	if n.Harness {
+		out = append(out, stepHarness)
+	}
+	return out
 }
 
 // Init satisfies tea.Model.
@@ -197,6 +236,9 @@ func (m setupPickerModel) updateLang(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	if isPrevListKey(key.String()) {
+		return m.goPrev(), nil
+	}
 	rows := len(m.langs)
 	switch key.String() {
 	case "up", "k":
@@ -224,11 +266,20 @@ func (m setupPickerModel) updateLang(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m setupPickerModel) updateAgentLang(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyEnter {
-		m.inputs.AgentLang = strings.TrimSpace(m.agentInput.Value())
-		m.inputs.AgentLangSet = true
-		m.preparePresets()
-		return m.transition(stepPreset), nil
+	if key, ok := msg.(tea.KeyMsg); ok {
+		// Only esc/pgup intercept on this screen — `left` and `h` are
+		// legitimate text-editing input the user might type into the
+		// agent-language name (e.g. "Hindi"), so passing them through to
+		// the textinput keeps the field usable.
+		if isPrevInputKey(key.String()) {
+			return m.goPrev(), nil
+		}
+		if key.Type == tea.KeyEnter {
+			m.inputs.AgentLang = strings.TrimSpace(m.agentInput.Value())
+			m.inputs.AgentLangSet = true
+			m.preparePresets()
+			return m.transition(stepPreset), nil
+		}
 	}
 	var cmd tea.Cmd
 	m.agentInput, cmd = m.agentInput.Update(msg)
@@ -239,6 +290,9 @@ func (m setupPickerModel) updatePreset(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
+	}
+	if isPrevListKey(key.String()) {
+		return m.goPrev(), nil
 	}
 	rows := len(m.presets)
 	switch key.String() {
@@ -265,6 +319,9 @@ func (m setupPickerModel) updateHarness(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
+	}
+	if isPrevListKey(key.String()) {
+		return m.goPrev(), nil
 	}
 	rows := len(m.harnesses)
 	switch key.String() {
@@ -300,7 +357,74 @@ func (m setupPickerModel) updateHarness(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m setupPickerModel) transition(next setupStep) setupPickerModel {
 	m.step = next
 	m.advancePastResolved()
+	return m.syncedPager()
+}
+
+// goPrev moves the picker back to the previous needs-active step.
+// No-op when the current step is the first active one or is not part of
+// the active chain (e.g. stepDone). Re-focuses the agent textinput when
+// landing back on it so the cursor blinks and the field accepts keys.
+func (m setupPickerModel) goPrev() setupPickerModel {
+	idx := m.activeIndex()
+	if idx <= 0 {
+		return m
+	}
+	m.step = m.activeOrder[idx-1]
+	if m.step == stepAgentLang {
+		m.agentInput.Focus()
+	}
+	return m.syncedPager()
+}
+
+// activeIndex returns the position of the current step within
+// activeOrder, or -1 if the step has been resolved out (terminal
+// stepDone, or any step whose needs.* flag was false at construction).
+func (m setupPickerModel) activeIndex() int {
+	for i, s := range m.activeOrder {
+		if s == m.step {
+			return i
+		}
+	}
+	return -1
+}
+
+// syncedPager returns m with paginator.Page pointed at the current
+// active step so the rendered "step N/M" matches the screen the user
+// is looking at. Leaves the page alone when the step is not in
+// activeOrder (e.g. stepDone) — the View short-circuits in those
+// states so the stale page never renders.
+func (m setupPickerModel) syncedPager() setupPickerModel {
+	if idx := m.activeIndex(); idx >= 0 {
+		m.pager.Page = idx
+	}
 	return m
+}
+
+// isPrevListKey reports whether a key should trigger back-navigation
+// on a list-style step (lang, preset, harness). Matches the TUI's
+// de-facto convention: esc is the universal cancel/back; left/h are
+// the directional back-step used by render_board / render_stats /
+// render_plan_network; pgup is the multi-page scroll-back used by the
+// activity panel and viewport component.
+func isPrevListKey(s string) bool {
+	switch s {
+	case "esc", "left", "h", "pgup":
+		return true
+	}
+	return false
+}
+
+// isPrevInputKey is the textinput-screen variant of isPrevListKey:
+// left/h are stripped because they are legitimate text-editing input
+// the user might type into the agent-language field (e.g. "Hindi" or a
+// cursor-left motion). Only esc and pgup remain — neither is a typable
+// glyph, so the agent textinput never sees a back-key collision.
+func isPrevInputKey(s string) bool {
+	switch s {
+	case "esc", "pgup":
+		return true
+	}
+	return false
 }
 
 // advancePastResolved walks forward through any step whose value is
@@ -378,21 +502,45 @@ func (m setupPickerModel) translate(key string) string {
 func (m setupPickerModel) View() string {
 	switch m.step {
 	case stepLang:
-		return m.renderListView("", "ctrl+c quit", langRows(m.langs, m.langCursor, m.styles))
+		return m.renderListView("", "ctrl+c quit"+m.backHint(), langRows(m.langs, m.langCursor, m.styles))
 	case stepAgentLang:
 		m.agentInput.Placeholder = m.translate("cli.setup.picker.agent.placeholder")
-		return m.renderInputView(m.translate("cli.setup.picker.agent.title"), m.translate("cli.setup.picker.hint.input"), m.agentInput.View())
+		return m.renderInputView(m.translate("cli.setup.picker.agent.title"), m.translate("cli.setup.picker.hint.input")+m.backHint(), m.agentInput.View())
 	case stepPreset:
-		return m.renderListView(m.translate("cli.setup.picker.preset.title"), m.translate("cli.setup.picker.hint.nav"), presetRows(m.presets, m.presetCursor, m.styles))
+		return m.renderListView(m.translate("cli.setup.picker.preset.title"), m.translate("cli.setup.picker.hint.nav")+m.backHint(), presetRows(m.presets, m.presetCursor, m.styles))
 	case stepHarness:
-		return m.renderListView(m.translate("cli.setup.picker.harness.title"), m.translate("cli.setup.picker.hint.multi"), harnessRows(m.harnesses, m.harnessChosen, m.harnessCursor, m.styles))
+		return m.renderListView(m.translate("cli.setup.picker.harness.title"), m.translate("cli.setup.picker.hint.multi")+m.backHint(), harnessRows(m.harnesses, m.harnessChosen, m.harnessCursor, m.styles))
 	}
 	return ""
+}
+
+// backHint appends a discoverability hint to the footer once the user
+// has at least one screen to go back to. Stays silent on the first
+// active step where esc is a no-op so users do not learn a key that
+// does nothing.
+func (m setupPickerModel) backHint() string {
+	if m.activeIndex() > 0 {
+		return " · esc back"
+	}
+	return ""
+}
+
+// stepIndicator renders the paginator's "step N/M" using the hint
+// style. Returns "" when the active chain has fewer than two steps —
+// a 1/1 indicator would just be visual noise.
+func (m setupPickerModel) stepIndicator() string {
+	if len(m.activeOrder) < 2 || m.activeIndex() < 0 {
+		return ""
+	}
+	return m.styles.hint.Render(m.pager.View())
 }
 
 func (m setupPickerModel) renderListView(title, hint string, rows []string) string {
 	var b strings.Builder
 	b.WriteString("\n")
+	if ind := m.stepIndicator(); ind != "" {
+		b.WriteString("  " + ind + "\n\n")
+	}
 	if title != "" {
 		b.WriteString(m.styles.title.Render(title))
 		b.WriteString("\n\n")
@@ -409,6 +557,9 @@ func (m setupPickerModel) renderListView(title, hint string, rows []string) stri
 func (m setupPickerModel) renderInputView(title, hint, field string) string {
 	var b strings.Builder
 	b.WriteString("\n")
+	if ind := m.stepIndicator(); ind != "" {
+		b.WriteString("  " + ind + "\n\n")
+	}
 	b.WriteString(m.styles.title.Render(title))
 	b.WriteString("\n\n  ")
 	b.WriteString(field)
