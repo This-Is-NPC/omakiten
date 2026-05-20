@@ -124,6 +124,38 @@ func RemoveAllWrappers(home string) ([]string, error) {
 	return removed, nil
 }
 
+// PreviewDataDir returns the data directory path + whether it exists
+// on disk without modifying anything. The picker uses this pair to
+// render the size line ("data dir  /home/u/.local/share/omakiten  (8.2 MiB)")
+// before the user toggles the purge checkbox.
+func PreviewDataDir() (path string, exists bool, err error) {
+	dir, err := paths.DataDir()
+	if err != nil {
+		return "", false, err
+	}
+	return dir, dirExists(dir), nil
+}
+
+// PreviewConfigRoot is the config-root counterpart of PreviewDataDir.
+func PreviewConfigRoot() (path string, exists bool, err error) {
+	dir, err := paths.ConfigRoot()
+	if err != nil {
+		return "", false, err
+	}
+	return dir, dirExists(dir), nil
+}
+
+func dirExists(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return false
+	}
+	return info.IsDir()
+}
+
 // PurgeDataDir removes the entire data directory (paths.DataDir() —
 // `$XDG_DATA_HOME/omakiten` or `~/.local/share/omakiten` by default).
 // Returns the path scrubbed and whether anything existed.

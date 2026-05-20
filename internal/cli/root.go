@@ -214,6 +214,8 @@ func NewRootCommand(version string) *cobra.Command {
 	cmd.AddCommand(newTUICommand(opts, version))
 	cmd.AddCommand(newMCPCommand(opts))
 	cmd.AddCommand(newSetupCommand(opts))
+	cmd.AddCommand(newUninstallCommand(opts))
+	cmd.AddCommand(newUpdateCommand(opts))
 
 	return cmd
 }

@@ -26,6 +26,8 @@ const (
 	ErrPlanNotFound              ErrorCode = "plan_not_found"
 	ErrPlanSlugConflict          ErrorCode = "plan_slug_conflict"
 	ErrPlanWaveNotFound          ErrorCode = "plan_wave_not_found"
+	ErrUninstallFailed           ErrorCode = "uninstall_failed"
+	ErrUpdateFailed              ErrorCode = "update_failed"
 )
 
 type CodedError struct {
