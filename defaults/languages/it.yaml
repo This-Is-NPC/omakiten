@@ -935,3 +935,43 @@ keys:
 
   # guard.* — hint strings surfaced in guard.violated payloads.
   guard.wave_gate.hint: "Aspetta che la wave precedente finisca — le task delle wave precedenti nello stesso plan devono raggiungere Done prima che questa inizi."
+  # guard.common.* — hints shared across presets. Per-preset override via
+  # the preset-scoped namespace (guard.<preset>.<stage>.<rule>...) when copy diverges.
+  guard.common.archive.comments_tagged.documentation.hint: "Aggiungi un commento #documentation che riassuma cosa è stato consegnato prima di archiviare."
+  guard.common.planning.comments_tagged.5w2h.hint: "Aggiungi un commento #5w2h che percorra le sette domande di elicitazione (Cosa / Perché / Chi / Quando / Dove / Come / Quanto) prima di iniziare il planning."
+  guard.common.planning.comments_tagged.acceptance.hint: "Aggiungi un commento #acceptance con criteri testabili che il richiedente e il revisore possano verificare."
+  guard.common.dev.comments_tagged.self_branch.hint: "Aggiungi un commento #self-branch indicando la branch e il percorso di lavoro."
+  guard.common.dev.blockers_in.hint: "Ogni blocker deve essere in Done o Documentation prima dell'inizio dello sviluppo."
+  guard.common.done.comments_tagged.documentation.hint: "Aggiungi un commento #documentation che riassuma commit merged, tag correlati, e la conferma che la task è stata revisionata e correttamente taggata."
+
+  # guard.omakase.* — preset-scoped hints for the Omakase workflow.
+  guard.omakase.dev.comments_tagged.self_branch.hint: "Prima di iniziare, crea una feature branch o git worktree dedicata a questa task e aggiungi un commento taggato #self-branch documentando il nome della branch e il percorso di lavoro."
+  guard.omakase.dev.blockers_in.hint: "Ogni blocker deve essere in Done prima dell'inizio dello sviluppo — finisci prima i blocker per tenere il WIP sotto controllo."
+  guard.omakase.review.comments_tagged.resume.hint: "Aggiungi un commento taggato #resume che riassuma quanto implementato, decisioni prese, e qualsiasi questione aperta prima di richiedere il review."
+  guard.omakase.review.comments_tagged.tests_passing.hint: "Aggiungi un commento #tests-passing con il comando di test, un estratto di output, e la durata — il revisore deve poter riprodurre l'evidenza."
+  guard.omakase.done.comments_tagged.documentation.hint: "Aggiungi un commento taggato #documentation che riassuma: commit merged (commit IDs), tag correlati (kebab-case), e conferma che la task è stata revisionata e correttamente taggata."
+
+  # guard.izakaya.* — preset-scoped hints for the Izakaya workflow.
+  guard.izakaya.dev.comments_tagged.hypothesis.hint: "Scrivi la domanda a cui questo spike risponde — apri un commento #hypothesis con la domanda, perché conta, il segnale falsificabile, e il time-box."
+
+  # guard.kaiseki.* — preset-scoped hints for the Kaiseki workflow.
+  guard.kaiseki.delete.comments_tagged.peer_review.hint: "Aggiungi un #peer-review che approvi la cancellazione prima di rimuovere la task."
+  guard.kaiseki.planning.comments_tagged.requirements.hint: "Aggiungi un commento #requirements con la user story; il richiedente la firma prima dell'inizio del planning."
+  guard.kaiseki.dev.comments_tagged.design.hint: "Aggiungi un commento #design che colleghi il design doc, decision record, o RFC che cattura l'approccio prima che entri codice."
+  guard.kaiseki.review.comments_tagged.resume.hint: "Aggiungi un handoff #resume che riassuma quanto implementato, decisioni prese, e qualsiasi questione aperta prima del review."
+  guard.kaiseki.review.comments_tagged.tests_passing.hint: "Aggiungi un commento #tests-passing con il comando di test, un estratto di output, e la durata."
+  guard.kaiseki.docs.comments_tagged.peer_review.hint: "Aggiungi un commento #peer-review da un revisore indipendente (non l'autore) con verdetto e ambito di approvazione."
+
+  # guard.shokunin.* — preset-scoped hints for the Shokunin workflow.
+  guard.shokunin.archive.comments_tagged.documentation.hint: "Aggiungi #documentation prima di archiviare il lavoro shokunin."
+  guard.shokunin.archive.comments_tagged.lessons_learned.hint: "Aggiungi #lessons-learned riassumendo cosa ha funzionato / cosa no prima dell'archiviazione."
+  guard.shokunin.delete.comments_tagged.peer_review.hint: "Aggiungi #peer-review prima di cancellare il lavoro shokunin."
+  guard.shokunin.unarchive.comments_tagged.peer_review.hint: "Aggiungi un #peer-review che approvi la riapertura prima del disarchivio."
+  guard.shokunin.planning.comments_tagged.requirements.hint: "Aggiungi un commento #requirements con la user story e segnali di accettazione prima dell'inizio del planning."
+  guard.shokunin.dev.comments_tagged.pre_mortem.hint: "Aggiungi un commento #pre-mortem che nomini i principali modi di fallimento, segnali di rilevamento, e mitigazioni prima che entri codice."
+  guard.shokunin.dev.comments_tagged.risk_assessment.hint: "Aggiungi un #risk-assessment che nomini la matrice di rischio, blast radius, impatto SLO, e rischio residuo accettato."
+  guard.shokunin.review.comments_tagged.resume.hint: "Aggiungi un handoff #resume che riassuma quanto implementato, decisioni, e questioni aperte."
+  guard.shokunin.review.comments_tagged.tests_passing.hint: "Aggiungi #tests-passing con il delta di copertura, tipi di test, e controllo di regressione delle performance."
+  guard.shokunin.review.comments_tagged.rollback_plan.hint: "Aggiungi un #rollback-plan con passi di revert, validazione post-rollback, e piano di comunicazione prima del review."
+  guard.shokunin.docs.comments_tagged.peer_review.hint: "Aggiungi ≥ 2 commenti #peer-review distinti da revisori indipendenti (non l'autore). Ciascuno porta verdetto, ambito di approvazione, e checklist degli artefatti revisionati."
+  guard.shokunin.done.comments_tagged.lessons_learned.hint: "Aggiungi un commento #lessons-learned che nomini cosa ha funzionato / cosa no e qualsiasi cambio di processo proposto."

@@ -930,3 +930,43 @@ keys:
 
   # guard.* — hint strings surfaced in guard.violated payloads.
   guard.wave_gate.hint: "انتظر انتهاء wave السابقة — يجب أن تصل tasks waves السابقة في نفس plan إلى Done قبل بدء هذه."
+  # guard.common.* — hints shared across presets. Per-preset override via
+  # the preset-scoped namespace (guard.<preset>.<stage>.<rule>...) when copy diverges.
+  guard.common.archive.comments_tagged.documentation.hint: "أضف تعليق #documentation يلخص ما تم تسليمه قبل الأرشفة."
+  guard.common.planning.comments_tagged.5w2h.hint: "أضف تعليق #5w2h يمر بأسئلة الاستنباط السبعة (ماذا / لماذا / من / متى / أين / كيف / كم) قبل بدء planning."
+  guard.common.planning.comments_tagged.acceptance.hint: "أضف تعليق #acceptance بمعايير قابلة للاختبار يمكن للطالب والـ reviewer التحقق منها."
+  guard.common.dev.comments_tagged.self_branch.hint: "أضف تعليق #self-branch يسمي الـ branch ومسار العمل."
+  guard.common.dev.blockers_in.hint: "يجب أن يكون كل blocker في Done أو Documentation قبل بدء التطوير."
+  guard.common.done.comments_tagged.documentation.hint: "أضف تعليق #documentation يلخص merged commits، الـ tags ذات الصلة، وتأكيد أن الـ task تمت مراجعتها وتم وضع الـ tags بشكل صحيح."
+
+  # guard.omakase.* — preset-scoped hints for the Omakase workflow.
+  guard.omakase.dev.comments_tagged.self_branch.hint: "قبل البدء، أنشئ feature branch أو git worktree مخصصاً لهذه الـ task وأضف تعليقاً موسوماً بـ #self-branch يوثق اسم الـ branch ومسار العمل."
+  guard.omakase.dev.blockers_in.hint: "يجب أن يكون كل blocker في Done قبل بدء التطوير — أنهِ blockers أولاً للحفاظ على WIP تحت السيطرة."
+  guard.omakase.review.comments_tagged.resume.hint: "أضف تعليقاً موسوماً بـ #resume يلخص ما تم تنفيذه، القرارات المتخذة، وأي أسئلة مفتوحة قبل طلب الـ review."
+  guard.omakase.review.comments_tagged.tests_passing.hint: "أضف تعليق #tests-passing مع أمر الاختبار، مقتطف من الـ output، والمدة — يجب أن يتمكن الـ reviewer من إعادة إنتاج الدليل."
+  guard.omakase.done.comments_tagged.documentation.hint: "أضف تعليقاً موسوماً بـ #documentation يلخص: merged commits (commit IDs)، الـ tags ذات الصلة (kebab-case)، وتأكيد أن الـ task تمت مراجعتها وتم وضع الـ tags بشكل صحيح."
+
+  # guard.izakaya.* — preset-scoped hints for the Izakaya workflow.
+  guard.izakaya.dev.comments_tagged.hypothesis.hint: "اكتب السؤال الذي يجيب عنه هذا الـ spike — افتح تعليق #hypothesis مع السؤال، لماذا يهم، الإشارة القابلة للتفنيد، والـ time-box."
+
+  # guard.kaiseki.* — preset-scoped hints for the Kaiseki workflow.
+  guard.kaiseki.delete.comments_tagged.peer_review.hint: "أضف #peer-review يوافق على الحذف قبل إزالة الـ task."
+  guard.kaiseki.planning.comments_tagged.requirements.hint: "أضف تعليق #requirements مع user story؛ يوقّع عليه الطالب قبل بدء planning."
+  guard.kaiseki.dev.comments_tagged.design.hint: "أضف تعليق #design يربط design doc، decision record، أو RFC الذي يلتقط النهج قبل نزول الكود."
+  guard.kaiseki.review.comments_tagged.resume.hint: "أضف handoff #resume يلخص ما تم تنفيذه، القرارات المتخذة، وأي أسئلة مفتوحة قبل الـ review."
+  guard.kaiseki.review.comments_tagged.tests_passing.hint: "أضف تعليق #tests-passing مع أمر الاختبار، مقتطف من الـ output، والمدة."
+  guard.kaiseki.docs.comments_tagged.peer_review.hint: "أضف تعليق #peer-review من مراجع مستقل (ليس المؤلف) مع الحكم ونطاق الموافقة."
+
+  # guard.shokunin.* — preset-scoped hints for the Shokunin workflow.
+  guard.shokunin.archive.comments_tagged.documentation.hint: "أضف #documentation قبل أرشفة عمل shokunin."
+  guard.shokunin.archive.comments_tagged.lessons_learned.hint: "أضف #lessons-learned يلخص ما نجح / ما لم ينجح قبل الأرشفة."
+  guard.shokunin.delete.comments_tagged.peer_review.hint: "أضف #peer-review قبل حذف عمل shokunin."
+  guard.shokunin.unarchive.comments_tagged.peer_review.hint: "أضف #peer-review يوافق على إعادة الفتح قبل إلغاء الأرشفة."
+  guard.shokunin.planning.comments_tagged.requirements.hint: "أضف تعليق #requirements مع user story وإشارات القبول قبل بدء planning."
+  guard.shokunin.dev.comments_tagged.pre_mortem.hint: "أضف تعليق #pre-mortem يسمي أوضاع الفشل الرئيسية، إشارات الكشف، والتخفيفات قبل نزول الكود."
+  guard.shokunin.dev.comments_tagged.risk_assessment.hint: "أضف #risk-assessment يسمي مصفوفة المخاطر، blast radius، تأثير SLO، والمخاطر المتبقية المقبولة."
+  guard.shokunin.review.comments_tagged.resume.hint: "أضف handoff #resume يلخص ما تم تنفيذه، القرارات، والأسئلة المفتوحة."
+  guard.shokunin.review.comments_tagged.tests_passing.hint: "أضف #tests-passing مع دلتا coverage، أنواع الاختبارات، وفحص انحدار الأداء."
+  guard.shokunin.review.comments_tagged.rollback_plan.hint: "أضف #rollback-plan مع خطوات الـ revert، التحقق بعد rollback، وخطة التواصل قبل الـ review."
+  guard.shokunin.docs.comments_tagged.peer_review.hint: "أضف ≥ 2 تعليقات #peer-review متميزة من مراجعين مستقلين (ليس المؤلف). كل منها يحمل الحكم، نطاق الموافقة، وقائمة التحقق من الأعمال المراجَعة."
+  guard.shokunin.done.comments_tagged.lessons_learned.hint: "أضف تعليق #lessons-learned يسمي ما نجح / ما لم ينجح وأي تغييرات مقترحة في العملية."
