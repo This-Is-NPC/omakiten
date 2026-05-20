@@ -197,6 +197,7 @@ type Snapshot struct {
 
 	settings Settings
 	theme    Theme
+	themeErr error
 }
 
 // BuildSnapshot inflates a Bundle into the immutable Snapshot. Construct
@@ -276,6 +277,7 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 	snap.settings = bundle.Config
 	snap.registry = buildEnumRegistry(bundle)
 	snap.theme = cloneTheme(bundle.ActiveTheme)
+	snap.themeErr = bundle.ActiveThemeErr
 
 	snap.languages = append(snap.languages, bundle.Languages...)
 	for _, lang := range bundle.Languages {
@@ -577,10 +579,9 @@ func (s *Snapshot) Settings() Settings {
 
 // Theme returns the active theme tokens resolved by LoadBundle. Returned
 // by value with a fresh Colors map so callers (style builders, markdown
-// renderers) can read without disturbing other readers; a zero-Theme
-// (Name == "") signals that the bundle could not load the active token
-// set — TUI surfaces translate that into ErrConfigInvalid, CLI surfaces
-// that never render the TUI keep working with no Theme reference.
+// renderers) can read without disturbing other readers. When the loader
+// could not resolve the active slug Theme returns a zero-Theme; callers
+// that need a live theme check ThemeError() and surface ErrConfigInvalid.
 //
 // Replaces the per-callsite themes/<slug>.yaml disk read used before the
 // Phase 2-bis Theme-via-Snapshot closure. Hot-reload now consumes the
@@ -589,17 +590,28 @@ func (s *Snapshot) Theme() Theme {
 	return cloneTheme(s.theme)
 }
 
+// ThemeError returns the failure captured by LoadBundle while resolving
+// the active theme, or nil when the theme loaded cleanly or no theme was
+// requested. The error wraps the underlying loader error via fmt.Errorf
+// %w so callers may errors.Is(..., os.ErrNotExist) and the rendered
+// message names both candidate paths the loader considered.
+func (s *Snapshot) ThemeError() error {
+	return s.themeErr
+}
+
 // cloneTheme returns a deep copy of t so callers cannot mutate the
 // snapshot's internal Colors map by writing into the returned value.
 func cloneTheme(t Theme) Theme {
 	if len(t.Colors) == 0 {
-		return Theme{Version: t.Version, Key: t.Key, Name: t.Name}
+		t.Colors = nil
+		return t
 	}
 	colors := make(map[string]string, len(t.Colors))
 	for k, v := range t.Colors {
 		colors[k] = v
 	}
-	return Theme{Version: t.Version, Key: t.Key, Name: t.Name, Colors: colors}
+	t.Colors = colors
+	return t
 }
 
 // Synonyms returns the configured tag-synonym map (alias → canonical).

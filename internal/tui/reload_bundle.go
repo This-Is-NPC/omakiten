@@ -43,10 +43,13 @@ func (m *Model) reloadBundle(path string) error {
 	settings := snap.Settings()
 	registry := pr.EnumRegistry
 
-	theme := snap.Theme()
-	if theme.Name == "" {
-		return domain.NewError(domain.ErrConfigInvalid, "active theme failed to load", map[string]any{"active": settings.Theme.Active, "path": path})
+	if err := snap.ThemeError(); err != nil {
+		return domain.NewError(domain.ErrConfigInvalid, m.t("cli.err.theme_invalid"), map[string]any{
+			"active": settings.Theme.Active,
+			"error":  err.Error(),
+		})
 	}
+	theme := snap.Theme()
 
 	m.repos.Editor.SetPath(path)
 	m.theme = theme

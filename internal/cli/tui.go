@@ -57,10 +57,14 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 	if err != nil {
 		return domain.NewError(domain.ErrConfigInvalid, t("cli.err.config_invalid"), map[string]any{"path": rt.configPath, "error": fmt.Sprint(err)})
 	}
-	theme := rt.activeSnapshot().Theme()
-	if theme.Name == "" {
-		return domain.NewError(domain.ErrConfigInvalid, t("cli.err.theme_invalid"), map[string]any{"active": bundle.Config.Theme.Active})
+	snap := rt.activeSnapshot()
+	if err := snap.ThemeError(); err != nil {
+		return domain.NewError(domain.ErrConfigInvalid, t("cli.err.theme_invalid"), map[string]any{
+			"active": bundle.Config.Theme.Active,
+			"error":  err.Error(),
+		})
 	}
+	theme := snap.Theme()
 
 	bundleStore := configstore.New()
 	editor := app.NewBundleEditor(bundleStore, rt.configPath)

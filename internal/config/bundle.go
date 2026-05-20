@@ -20,12 +20,14 @@ type Bundle struct {
 	Languages     []Language                `yaml:"-" json:"languages,omitempty"`
 	// ActiveTheme is the theme resolved by LoadBundle from
 	// themes/<Config.Theme.Active>.yaml (custom→default precedence). When
-	// the YAML is missing or invalid the loader degrades to a zero-Theme +
-	// a SourceWarning so CLI commands that never render the TUI continue
-	// to load. Consumers that need a populated theme (TUI boot, hot reload)
-	// check `ActiveTheme.Name == ""` and surface ErrConfigInvalid.
-	ActiveTheme Theme           `yaml:"-" json:"active_theme,omitempty"`
-	Warnings    []SourceWarning `yaml:"-" json:"warnings,omitempty"`
+	// the loader cannot resolve the active slug the field is left as a
+	// zero-Theme and ActiveThemeErr carries the underlying failure so CLI
+	// commands that never render the TUI continue to load while TUI boot
+	// and hot reload can surface ErrConfigInvalid through
+	// Snapshot.ThemeError().
+	ActiveTheme    Theme           `yaml:"-" json:"active_theme"`
+	ActiveThemeErr error           `yaml:"-" json:"-"`
+	Warnings       []SourceWarning `yaml:"-" json:"warnings,omitempty"`
 }
 
 // TemplateByDefault resolves the template that should be used as the active

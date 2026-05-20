@@ -1,8 +1,10 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -157,6 +159,9 @@ func TestLoadBundlePopulatesActiveTheme(t *testing.T) {
 	if bundle.ActiveTheme.Name == "" {
 		t.Fatalf("LoadBundle: ActiveTheme.Name = \"\", want populated from themes/<active>.yaml")
 	}
+	if bundle.ActiveThemeErr != nil {
+		t.Fatalf("LoadBundle(happy path): ActiveThemeErr = %v, want nil", bundle.ActiveThemeErr)
+	}
 	if bundle.Config.Theme.Active == "" {
 		t.Fatal("test fixture issue: bundle.Config.Theme.Active is empty; precondition for the case")
 	}
@@ -184,6 +189,15 @@ func TestLoadBundlePopulatesActiveTheme(t *testing.T) {
 	}
 	if bundle2.ActiveTheme.Name != "" {
 		t.Fatalf("LoadBundle(theme missing): ActiveTheme = %+v, want zero-Theme", bundle2.ActiveTheme)
+	}
+	if bundle2.ActiveThemeErr == nil {
+		t.Fatal("LoadBundle(theme missing): ActiveThemeErr = nil, want non-nil")
+	}
+	if !errors.Is(bundle2.ActiveThemeErr, os.ErrNotExist) {
+		t.Fatalf("LoadBundle(theme missing): ActiveThemeErr = %v, want wraps os.ErrNotExist", bundle2.ActiveThemeErr)
+	}
+	if msg := bundle2.ActiveThemeErr.Error(); !strings.Contains(msg, "custom=") || !strings.Contains(msg, "default=") {
+		t.Fatalf("LoadBundle(theme missing): ActiveThemeErr message %q does not name both candidate paths", msg)
 	}
 	var sawWarning bool
 	for _, w := range bundle2.Warnings {

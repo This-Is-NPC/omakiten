@@ -51,13 +51,14 @@ func LoadBundle(path string) (Bundle, error) {
 	theme, themePath, themeErr := resolveActiveTheme(rootDir, wired.Config.Theme.Active)
 
 	bundle := Bundle{
-		Version:       wired.Version,
-		Kit:           wired.Kit,
-		Config:        wired.Config,
-		Workflows:     wired.Workflows,
-		Notifications: notifications,
-		Languages:     languages,
-		ActiveTheme:   theme,
+		Version:        wired.Version,
+		Kit:            wired.Kit,
+		Config:         wired.Config,
+		Workflows:      wired.Workflows,
+		Notifications:  notifications,
+		Languages:      languages,
+		ActiveTheme:    theme,
+		ActiveThemeErr: themeErr,
 	}
 
 	if themeErr != nil {
