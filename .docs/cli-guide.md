@@ -53,6 +53,58 @@ OKT_CLI_LANG=pt-br OKT_TUI_LANG=pt-br OKT_PRESET=omakase OKT_HARNESSES=0 \
 
 ---
 
+## `okt update` — fetch latest release and swap the binary
+
+`internal/cli/update.go`. The in-binary counterpart of the curl|bash refresh path. Resolves the running binary via `os.Executable`, queries `https://api.github.com/repos/This-Is-NPC/omakiten/releases/latest`, downloads the matching asset (`okt_<OS>_<arch>.tar.gz` on POSIX, `.zip` on Windows), verifies its SHA256 against `checksums.txt` from the same release, extracts the `okt` entry from the archive, and atomically replaces the binary with a sibling temp file + rename.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--check` | `false` | Dry-run: print `current=<v> latest=<v> action=<noop\|upgrade>` and exit without writing. |
+| `--yes`, `-y` | `false` | Skip the confirmation prompt for non-interactive callers. |
+
+JSON envelope codes (under `data.code`):
+- `update_available` — `--check` saw a newer tag; nothing written.
+- `update_not_required` — current matches latest (both `--check` and apply paths).
+- `update_completed` — swap applied successfully.
+- `update_failed` — any failure across fetch / checksum / download / extract / swap.
+- `validation_error` — dev build (no version baked in), no TTY without `--yes`, or user declined the confirmation prompt.
+
+```sh
+okt update --check                  # report only — exits 0 on both upgrade-available and noop
+okt update --yes                    # apply non-interactively
+okt update                          # interactive y/n confirmation (needs a TTY)
+```
+
+Windows holds the EXE handle for any process running the binary, so the atomic swap can't replace it in place during a self-update. The current cut targets POSIX user-local installs (`$HOME/.local/bin/okt`); Windows callers should grab the new tarball manually until the `.exe.old` swap-on-exit lands in a follow-up.
+
+---
+
+## `okt uninstall` — remove the binary and shell-rc wrapper
+
+`internal/cli/uninstall.go`. The in-binary counterpart of `uninstall.sh` / `uninstall.ps1`. Removes the binary at `$INSTALL_DIR` (defaults to `~/.local/bin` on POSIX, `%LOCALAPPDATA%\Programs\okt` on Windows) and strips the `okt()` wrapper block from every rc/profile target the installer wrote into (`.bashrc`, `.zshrc`, `Documents\PowerShell\profile.ps1`, `Documents\WindowsPowerShell\profile.ps1`).
+
+Local state — the SQLite DB under `$XDG_DATA_HOME/omakiten` and the active yaml profile + entity folders under `$XDG_CONFIG_HOME/omakiten` — is preserved by default. Purge flags opt back into deletion; the picker shows each target's on-disk size and a `THIS CANNOT BE UNDONE` line before toggling either checkbox.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--yes`, `-y` | `false` | Skip the picker and apply the resolved flag set non-interactively. |
+| `--purge-data` | `false` | Also delete `$XDG_DATA_HOME/omakiten` (SQLite DB + WAL/SHM). Irreversible. |
+| `--purge-config` | `false` | Also delete `$XDG_CONFIG_HOME/omakiten` (active yaml + entity folders). Irreversible. |
+| `--purge` | `false` | Shorthand for `--purge-data --purge-config`. |
+
+JSON envelope codes (under `data.code`): `uninstall_completed`, `uninstall_failed`, `validation_error`.
+
+```sh
+okt uninstall                       # interactive picker (needs a TTY)
+okt uninstall --yes                 # remove binary + wrappers, keep data + config
+okt uninstall --yes --purge         # remove everything — DB, config, binary, wrappers
+okt uninstall --yes --purge-data    # keep config, drop the SQLite database
+```
+
+The bundled `uninstall.sh` / `uninstall.ps1` scripts stay in the repo for the bootstrap-failure case (the user never finished `okt setup`, so there's no binary to invoke). Both surfaces share `internal/lifecycle/*` primitives, so the rc-file scrub matches byte-for-byte across them.
+
+---
+
 ## `okt init` — register the current project
 
 `internal/cli/init.go`. Inserts a project row in the global SQLite DB (`UpsertProject`); optionally writes the MCP harness config.

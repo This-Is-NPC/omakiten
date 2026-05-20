@@ -878,6 +878,62 @@ keys:
   cli.setup.picker.aborted: "setup निरस्त; कुछ नहीं लिखा गया"
   cli.setup.picker.no_tty: "इंटरैक्टिव पिकर को TTY चाहिए; हेडलेस इंस्टॉल के लिए OKT_CLI_LANG, OKT_TUI_LANG, OKT_AGENT_LANG, OKT_PRESET, OKT_HARNESSES (या मिलते --flag) प्रदान करें"
 
+# okt uninstall — in-binary counterpart of uninstall.sh / uninstall.ps1.
+  cli.uninstall.short: "Remove the installed okt binary and shell-rc wrapper (data + config preserved by default)"
+  cli.uninstall.long: |-
+    Remove the binary the installer wrote to $INSTALL_DIR (defaults to
+    ~/.local/bin on POSIX and %LOCALAPPDATA%Programsokt on Windows) and
+    strip the okt() wrapper block from every rc/profile target.
+
+    Local state is preserved unless explicitly opted-out via --purge-data
+    (SQLite DB under $XDG_DATA_HOME/omakiten) or --purge-config (active
+    yaml profile + entity folders under $XDG_CONFIG_HOME/omakiten).
+    --purge is shorthand for both.
+
+    Without flags on a TTY the picker shows what would be deleted with
+    sizes and asks per purge target. --yes skips the picker entirely.
+  cli.uninstall.flag.yes: "skip the interactive picker and apply the resolved flag set non-interactively"
+  cli.uninstall.flag.purge-data: "also delete $XDG_DATA_HOME/omakiten (SQLite DB + WAL/SHM) — irreversible"
+  cli.uninstall.flag.purge-config: "also delete $XDG_CONFIG_HOME/omakiten (active yaml + entity folders) — irreversible"
+  cli.uninstall.flag.purge: "shorthand for --purge-data + --purge-config — irreversible"
+  cli.uninstall.picker.title: "Uninstall okt"
+  cli.uninstall.picker.hint: "↑/↓ navigate · enter toggle · y apply · ctrl+c quit"
+  cli.uninstall.picker.warn: "THIS CANNOT BE UNDONE"
+  cli.uninstall.picker.binary: "binary  %s"
+  cli.uninstall.picker.wrappers: "shell wrappers (rc/profile blocks)"
+  cli.uninstall.picker.data: "data dir  %s  (%s)"
+  cli.uninstall.picker.config: "config dir  %s  (%s)"
+  cli.uninstall.picker.no_tty: "interactive picker needs a TTY; pass --yes (plus optional --purge-* flags) for headless uninstall"
+  cli.uninstall.picker.aborted: "uninstall aborted; nothing removed"
+
+  # okt update — in-binary counterpart of the curl|bash installer for refresh.
+  cli.update.short: "Fetch the latest okt release and atomically swap the installed binary"
+  cli.update.long: |-
+    Detect the running binary's path (os.Executable), query the GitHub
+    releases API for the latest tag, download the matching asset, and
+    atomically replace the binary on disk. The current process exits
+    after the swap; the next invocation runs the new version.
+
+    --check prints `current=<v> latest=<v> action=<noop|upgrade>` and
+    exits 0 without writing. --yes skips the confirmation prompt for
+    non-interactive callers.
+  cli.update.flag.yes: "skip the confirmation prompt and apply the upgrade non-interactively"
+  cli.update.flag.check: "report current vs. latest and exit without writing"
+  cli.update.picker.title: "Update okt"
+  cli.update.picker.line: "current=%s  →  latest=%s"
+  cli.update.picker.hint: "y apply · n cancel · ctrl+c quit"
+  cli.update.picker.no_tty: "interactive confirmation needs a TTY; pass --yes for headless update or --check for a dry-run report"
+  cli.update.picker.aborted: "update aborted; binary unchanged"
+  cli.update.err.fetch_latest: "fetch latest release tag: %s"
+  cli.update.err.download_asset: "download asset %s: %s"
+  cli.update.err.swap_binary: "atomic swap of %s: %s"
+  cli.update.err.unsupported_platform: "no published asset for %s/%s"
+  cli.update.err.extract_asset: "extract %s from archive: %s"
+  cli.update.err.fetch_checksum: "fetch release checksums: %s"
+  cli.update.err.checksum_mismatch: "checksum mismatch: expected %s got %s"
+  cli.update.err.asset_too_large: "asset %s exceeds %d-byte size cap"
+  cli.update.err.windows_unsupported: "okt update not yet supported on Windows; reinstall via install.ps1"
+  cli.update.err.dev_build: "this is a dev build; rebuild from source or install a release"
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "अभी कोई plan नहीं। बनाएं: `okt plan create <slug> --name \"...\"`."
   tui.plans.list.header: "// SLUG             STATUS    पूर्ण/कुल    %    नाम ‹सक्रिय WAVE›"
