@@ -933,6 +933,7 @@ keys:
   cli.update.err.extract_asset: "extract %s from archive: %s"
   cli.update.err.fetch_checksum: "fetch release checksums: %s"
   cli.update.err.checksum_mismatch: "checksum mismatch: expected %s got %s"
+  cli.update.err.asset_too_large: "asset %s exceeds %d-byte size cap"
   cli.update.err.windows_unsupported: "okt update not yet supported on Windows; reinstall via install.ps1"
   cli.update.err.dev_build: "this is a dev build; rebuild from source or install a release"
 

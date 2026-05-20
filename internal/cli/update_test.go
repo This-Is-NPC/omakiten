@@ -478,6 +478,50 @@ func TestUpdateConfirm_DeclineOnN(t *testing.T) {
 	}
 }
 
+// TestRunUpdate_AssetTooLargeAborts pins the download size cap. A
+// compromised CDN or MITM that streams a payload above maxAssetSize
+// must be rejected with a coded ErrUpdateFailed before the SHA256
+// verify step (which would itself buffer the entire body in memory).
+// The fake downloader returns maxAssetSize+1 bytes of garbage so the
+// LimitReader trips before checksum compare runs.
+func TestRunUpdate_AssetTooLargeAborts(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("posix archive shape")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "okt")
+	if err := os.WriteFile(bin, []byte("OLD"), 0o755); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	oversized := bytes.Repeat([]byte{0x42}, int(maxAssetSize)+1)
+	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	if err != nil {
+		t.Fatalf("assetName: %v", err)
+	}
+	c := updateClient{
+		Fetcher: stubFetcher{Tag: "0.20.0"},
+		Downloader: stubDownloader{Assets: map[string][]byte{
+			asset: oversized,
+		}},
+		Current:    "0.19.0",
+		BinaryPath: bin,
+	}
+	_, err = runUpdate(context.Background(), c, updateInputs{Yes: true})
+	if err == nil {
+		t.Fatalf("expected size-cap error")
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrUpdateFailed {
+		t.Fatalf("error: got %v want ErrUpdateFailed", err)
+	}
+	if !strings.Contains(coded.Message, "size cap") {
+		t.Fatalf("message should mention size cap: %q", coded.Message)
+	}
+	if got, _ := os.ReadFile(bin); string(got) != "OLD" {
+		t.Fatalf("binary mutated on size-cap rejection: %q", string(got))
+	}
+}
+
 func TestAtomicSwap_OverwritesAndChmods(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "okt")

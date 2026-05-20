@@ -27,6 +27,14 @@ import (
 // AssetDownloader interfaces instead of rewiring the repo string.
 const updateRepo = "This-Is-NPC/omakiten"
 
+// maxAssetSize caps the per-asset download body so a compromised CDN
+// or MITM cannot OOM the host by streaming an arbitrarily large
+// payload before the SHA256 verify step runs. The published release
+// archives sit comfortably below 50 MiB; the 256 MiB ceiling leaves
+// generous headroom for future bundled assets while still rejecting
+// pathological payloads.
+const maxAssetSize int64 = 256 << 20
+
 // currentGOOS is goruntime.GOOS at process start. Kept as a package
 // var so update_test.go can swap it (e.g. force "windows") without
 // running on a real Windows host.
@@ -174,9 +182,12 @@ func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, e
 	}
 	defer body.Close()
 
-	archiveBytes, err := io.ReadAll(body)
+	archiveBytes, err := io.ReadAll(io.LimitReader(body, maxAssetSize+1))
 	if err != nil {
 		return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.download_asset"), asset, err.Error()), nil)
+	}
+	if int64(len(archiveBytes)) > maxAssetSize {
+		return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.asset_too_large"), asset, maxAssetSize), nil)
 	}
 	gotSum := fmt.Sprintf("%x", sha256.Sum256(archiveBytes))
 	if !strings.EqualFold(gotSum, expectedSum) {
