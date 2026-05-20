@@ -208,7 +208,7 @@ workflows:
       - from: 1
         to: 2
         guards:
-          - {type: comments_tagged, tag: hypothesis, count: 1, hint: "Write the question this spike answers — file a #hypothesis comment with the question, why it matters, the falsifiable signal, and the time-box."}
+          - {type: comments_tagged, tag: hypothesis, count: 1, hint: "${{intl:guard.izakaya.dev.comments_tagged.hypothesis.hint}}"}
           - {type: wave_gate, hint: "${{intl:guard.wave_gate.hint}}"}
       - {from: 2, to: 3}
       - {from: 3, to: 2}
