@@ -166,24 +166,29 @@ The sub opens to a **list view** first; pressing `enter` on a plan opens the **n
 
 Empty state renders a hint when the active project has no plans.
 
-**Network diagram** — column-per-wave layout (`lipgloss.JoinHorizontal`):
+**Network diagram** — linear-cursor outline (one row per wave header + one row per task) rendered in a bordered table:
 
 - Header line: `// PLAN · <slug> · done/total · percent` plus a keymap hint.
-- One column per wave in `position` order; wave headers carry the wave name and a `‹active›` marker on the first unfinished wave.
-- Tasks stack vertically inside their wave column.
-- Per-task status badge: `✓` done · `●` dev · `○` ready · `⊘` gated (wave_gate violation).
-- `@<assigned_to>` inline marker when `tasks.assigned_to` is non-NULL.
-- The wave-gate edge is invisible by design (the guard enforces it server-side); only explicit dependency arrows render between tasks.
+- Wave headers (`▼` expanded / `▶` collapsed) plus the `‹active›` marker on the first unfinished wave; every header anchors to the same screen column regardless of cross-wave filaments passing through.
+- Tasks render under their wave as a `git log`-style rail (`├─` / `└─` / `│`) in DFS pre-order over intra-wave parents (input order preserved within sibling groups).
+- Cross-wave dependencies surface as left-margin filaments — one lane per source task; the lane terminates with `└─►` on the destination row.
+- Bordered table cells: `Title │ Bucket │ Deps`. Title flexes, Bucket is 10c, Deps is 14c (dropped on narrow terminals).
+- Per-task inline state badge with semantic precedence: `done > gated > in-progress > blocked > assigned > ▶next > ready`. Glyphs: `✓` final-bucket · `⊘` gated · `○` default. `in-progress` = bucket between first and final (a workflow-shape fact, not derived from `assigned_to`).
+- `@<assigned_to>` inline next to the task title when `tasks.assigned_to` is non-NULL.
 
 | Key | Action |
 |---|---|
-| `h` · `l` | move wave focus |
-| `j` · `k` | move task focus inside the focused wave |
-| `enter` · `o` | open the focused task in the standard task detail screen |
+| `j` · `k` | move the linear cursor (walks wave headers + task rows uniformly) |
+| `h` · `l` | collapse / expand the wave under the cursor |
+| `space` | toggle the wave under the cursor |
+| `g` · `G` · `pgup` · `pgdn` | top / bottom / page |
+| `enter` · `o` | open the focused task; on a wave header, acts as `space` |
+| `c` | open the single-line assignee editor for the focused task (see below) |
+| `e` | open the in-TUI `goal_body` editor for the plan |
 | `r` | refetch plan via `PlanService.Show` |
 | `esc` · `q` | back to the list |
 
-The `c` (claim next) binding is reserved but not wired in the current scaffold — the TUI claim-identity convention is still open (see `feat/plans` notes). When wired, claiming from the TUI will stamp `assigned_to="human"` via `WithAgent("tui","tui","human","")` so the activity log distinguishes human claims from agent claims.
+The `c` binding opens a single-line input pre-filled with the focused task's current assignee and calls `app.TaskService.Assign` on submit (empty input clears the assignee). The TUI explicitly does NOT auto-claim via `PlanService.ClaimNext`: bucket transitions still flow through `WorkflowService.MoveTask` so preset guards (e.g. omakase's self-branch-comment requirement on `backlog → dev`) remain authoritative. The TUI runs under `WithAgent("tui","tui","human","")` so the activity log distinguishes human assignments from agent claims.
 
 `goal_body` edits go through an in-TUI textarea (consistent with the rest of the SQLite-backed entity surfaces); plans never shell out to `$EDITOR`.
 
