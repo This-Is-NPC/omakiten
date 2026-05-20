@@ -161,14 +161,29 @@ type boardLayout struct {
 
 func (m Model) computeBoardLayout(n int) boardLayout {
 	const (
-		minColumnInner = 28
-		maxColumnInner = 44
+		minColumnInner       = 28
+		maxColumnInner       = 44
+		preferredColumnInner = 32
 	)
 	available := m.availableWidth()
-	colOnScreen := minColumnInner + 2
-	if n > 0 {
-		colOnScreen = (available - (n - 1)) / n
+	if n <= 0 {
+		n = 1
 	}
+	// Capacity-first sizing: pick the largest visible-column count
+	// whose per-column width still meets `preferredColumnInner`. When
+	// the wave / bucket count exceeds that capacity, h-scroll engages
+	// instead of shrinking every card below the readable threshold.
+	// Plan view (8+ waves on a 240-col terminal) was the user-reported
+	// regression — squeezed columns truncated card content mid-word.
+	preferredOnScreen := preferredColumnInner + 2
+	capacity := (available + 1) / (preferredOnScreen + 1)
+	if capacity < 1 {
+		capacity = 1
+	}
+	if capacity > n {
+		capacity = n
+	}
+	colOnScreen := (available - (capacity - 1)) / capacity
 	columnInner := colOnScreen - 2
 	if columnInner < minColumnInner {
 		columnInner = minColumnInner
@@ -337,17 +352,7 @@ func (m Model) renderKanbanCell(bucket domain.Bucket, tasks []domain.Task, focus
 		headerStyle = m.styles.muted
 	}
 	headerText := fmt.Sprintf("// %s · %d", strings.ToUpper(bucket.Name), len(tasks))
-	lines := []string{
-		headerStyle.Render(headerText),
-		m.hRule(layout.columnInner),
-	}
 
-	if len(tasks) == 0 {
-		lines = append(lines, emptyStyle.Render(m.t("tui.board.empty")))
-		return strings.Join(lines, "\n")
-	}
-
-	// Render every card first so we know the real rendered height of each one.
 	rendered := make([]string, len(tasks))
 	heights := make([]int, len(tasks))
 	for i, task := range tasks {
@@ -355,16 +360,15 @@ func (m Model) renderKanbanCell(bucket domain.Bucket, tasks []domain.Task, focus
 		heights[i] = strings.Count(rendered[i], "\n") + 1
 	}
 
-	viewport := layout.viewportRows
-	if viewport <= 0 {
-		// Height unknown — render everything; the terminal will scroll natively.
-		lines = append(lines, rendered...)
-		return strings.Join(lines, "\n")
-	}
-
-	offset := m.boardScroll[bucket.Key]
-	lines = append(lines, m.renderScrollWindowSplit(rendered, heights, offset, viewport)...)
-	return strings.Join(lines, "\n")
+	return m.renderColumnFrame(columnSpec{
+		Header:       headerStyle.Render(headerText),
+		Rule:         m.hRule(layout.columnInner),
+		EmptyLine:    emptyStyle.Render(m.t("tui.board.empty")),
+		Cards:        rendered,
+		CardHeights:  heights,
+		ScrollOffset: m.boardScroll[bucket.Key],
+		Viewport:     layout.viewportRows,
+	})
 }
 
 func (m Model) renderCard(task domain.Task, selected bool, layout boardLayout) string {

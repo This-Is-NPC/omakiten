@@ -402,22 +402,37 @@ type Model struct {
 
 	// planNetworkOpen flips when the user presses enter on a row in the
 	// plans list view — it swaps the renderer from the list view to the
-	// column-per-wave network diagram. esc / `q` flips back.
-	planNetworkOpen        bool
-	planNetworkShow        app.PlanShow
-	planNetworkWaveCursor  int
-	planNetworkTaskCursor  int
-	// planNetworkColScroll mirrors boardColScroll for the wave columns:
-	// horizontal slide offset when the wave count exceeds the
-	// per-screen capacity. planNetworkScroll mirrors boardScroll —
-	// per-wave vertical scroll so a single wave with many tasks does
-	// not push the diagram off the bottom of the panel.
-	planNetworkColScroll int
-	planNetworkScroll    map[int64]int
+	// rails+filaments outline. esc / `q` flips back.
+	planNetworkOpen bool
+	planNetworkShow app.PlanShow
+	// planNetworkCursor is the linear cursor into the flat row
+	// projection (planNetworkBuildRows). It walks BOTH wave-header
+	// rows AND task rows so the user can space-toggle a wave without
+	// first leaving the task list. j/k advance by one row; the next
+	// row is whatever the projection emitted next, so a collapsed
+	// wave header is followed immediately by the next wave header.
+	planNetworkCursor int
+	// planNetworkScroll is the vertical scroll offset into the same
+	// flat row list. A single int (not per-wave) because the outline
+	// is rendered into one viewport — there is no per-wave bucket
+	// scroll any more.
+	planNetworkScroll int
+	// planNetworkCollapsed records which waves are folded down to a
+	// single header row. Default state is expanded (entries missing
+	// from the map render expanded). Toggled with `space` on the
+	// focused wave header.
+	planNetworkCollapsed map[int64]bool
 	// planGoalEditingID names the plan whose goal_body is open in the
 	// modePlanGoal textarea overlay. Non-zero while the overlay is
 	// active; reset to 0 on submit / cancel.
 	planGoalEditingID int64
+	// planAssignTaskID names the task whose assignee is being typed in
+	// the modePlanAssign single-line input. Captured at `c` press
+	// time (cursor row) so the row the user saw when they triggered
+	// the modal is the one that gets the write — toggling waves or
+	// scrolling under the input does not move the target. Reset to 0
+	// on submit / cancel.
+	planAssignTaskID int64
 
 	// statsSummary caches the last-fetched metrics summary. statsPeriod
 	// holds the active filter ("7d", "30d", "all"); refreshed on view entry
@@ -487,6 +502,13 @@ const (
 	// underlying bubbles textarea so a single resize / cursor path
 	// covers every multi-line modal in the TUI.
 	modePlanGoal
+	// modePlanAssign is the in-TUI assignee editor for the task
+	// focused in the plan-network outline. Single-line input on the
+	// shared modal bar (reuses moveInput) — submit calls
+	// TaskService.Assign on the captured planAssignTaskID. The claim
+	// binding (`c`) NEVER moves the task between buckets; bucket
+	// transitions remain governed by the preset's own move guards.
+	modePlanAssign
 )
 
 // taskScreenMode tracks the sub-surface of the task detail view stack:

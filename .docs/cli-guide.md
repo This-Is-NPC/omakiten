@@ -289,7 +289,7 @@ Attaches an existing task to `(plan, wave)`. Re-assigning within the same plan i
 
 ### `okt plan claim SLUG`
 
-Atomically reserves the next unblocked task in the plan's active wave. The CLI form is the human-driven counterpart to the MCP `plans.claim_next` tool: it inherits the same `BEGIN IMMEDIATE` serialisation and stamps `tasks.assigned_to` with the resolved agent identity (`OMAKITEN_AGENT_MODEL`, falling back to empty when unset). Returns `{claimed: false}` when nothing is currently claimable.
+Atomically reserves the next unblocked task in the plan's active wave by stamping `tasks.assigned_to` with the resolved agent identity (`OMAKITEN_AGENT_MODEL`, falling back to empty when unset). The CLI form is the human-driven counterpart to the MCP `plans.claim_next` tool and inherits the same `BEGIN IMMEDIATE` serialisation. **The bucket is not moved** — the claim is ownership-only, so the workflow's first bucket stays the task's bucket. Returns `{claimed: false}` when nothing is currently claimable.
 
 ```sh
 okt plan create plans-v1 --name "Plans rollout" --goal-body "Land WBS in 3 waves"
@@ -298,7 +298,11 @@ okt plan wave-add plans-v1 "MCP surface"
 okt plan assign plans-v1 1 42
 okt plan show plans-v1
 OMAKITEN_AGENT_MODEL=claude-opus-4-7 okt plan claim plans-v1
+# Then move the claimed task through the workflow, honouring preset guards:
+okt move 42 dev
 ```
+
+The bucket transition is a separate `okt move` (or MCP `tasks.move`) call so preset-defined guards on the bucket transition stay authoritative — for example, omakase requires a self-branch comment before `backlog → dev`, and `claim` does not bypass it.
 
 To clear an abandoned claim, run `okt assign <task_id>` (no `WHO`) or move the task back to `backlog`.
 

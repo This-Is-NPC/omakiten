@@ -26,6 +26,7 @@ func truncateText(s string, max int) string {
 	return string(runes[:max-1]) + "…"
 }
 
+
 // wrapWords breaks s into lines where the first line is constrained to firstWidth
 // and subsequent lines to restWidth. It tries to keep whole words.
 func wrapWords(s string, firstWidth, restWidth int) []string {
@@ -142,6 +143,19 @@ func (m Model) cursorMarker(selected bool) string {
 		return m.styles.marker.Render(selectionMarker)
 	}
 	return normalMarker
+}
+
+// cursorChevron returns "› " accent-styled when `selected`, else the
+// empty string. Used by card- and table-style surfaces whose cursor
+// is the chevron glyph (board task cards, plan network rows). Caller
+// pads with two spaces when the surface keeps a fixed cursor column
+// regardless of selection state (table rows); card surfaces leave
+// the unselected case empty so the title gets the freed width.
+func (m Model) cursorChevron(selected bool) string {
+	if !selected {
+		return ""
+	}
+	return m.styles.marker.Render("›") + " "
 }
 
 // renderPickerPanel is the canonical assembly for any "kicker + hint +

@@ -81,12 +81,17 @@ func (m *Model) openPlanNetwork() {
 	}
 	m.planNetworkShow = show
 	m.planNetworkOpen = true
-	m.planNetworkWaveCursor = 0
-	m.planNetworkTaskCursor = 0
+	m.planNetworkCursor = 0
+	m.planNetworkScroll = 0
+	m.planNetworkCollapsed = map[int64]bool{}
+	// Land the cursor on the active wave's header when one exists so
+	// the user sees the live frontier first. Falls back to row 0
+	// (first wave header) on plans without an active wave.
 	if show.ActiveWaveID > 0 {
-		for i, w := range show.Waves {
-			if w.Wave.ID == show.ActiveWaveID {
-				m.planNetworkWaveCursor = i
+		rows := m.planNetworkBuildRows()
+		for i, row := range rows {
+			if row.Kind == planRowWaveHeader && row.WaveID == show.ActiveWaveID {
+				m.planNetworkCursor = i
 				break
 			}
 		}
@@ -95,12 +100,14 @@ func (m *Model) openPlanNetwork() {
 
 // closePlanNetwork flips the renderer back to the plans list view and
 // drops the cached PlanShow projection so the next open re-fetches fresh
-// counts (avoid stale done/total after a claim or move).
+// counts (avoid stale done/total after a claim or move). Collapsed
+// state resets too so the next open starts with every wave expanded.
 func (m *Model) closePlanNetwork() {
 	m.planNetworkOpen = false
 	m.planNetworkShow = app.PlanShow{}
-	m.planNetworkWaveCursor = 0
-	m.planNetworkTaskCursor = 0
+	m.planNetworkCursor = 0
+	m.planNetworkScroll = 0
+	m.planNetworkCollapsed = nil
 }
 
 // syncPlansScroll keeps planScroll aligned so the cursor stays in view —

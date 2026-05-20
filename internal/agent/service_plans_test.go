@@ -37,8 +37,8 @@ func TestAssignAndClaimPlanTaskRoundTrip(t *testing.T) {
 	if !resp.Claimed || resp.Task == nil || resp.Task.ID != fixture.taskA1.ID {
 		t.Fatalf("claim response = %+v, want claim of task %d", resp, fixture.taskA1.ID)
 	}
-	if resp.Task.BucketKey != "dev" {
-		t.Fatalf("claim bucket = %q, want dev", resp.Task.BucketKey)
+	if resp.Task.BucketKey != "backlog" {
+		t.Fatalf("claim bucket = %q, want backlog (claim no longer moves the task)", resp.Task.BucketKey)
 	}
 
 	// Second call → nothing claimable (only one task, already claimed).

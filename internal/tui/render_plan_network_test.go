@@ -4,8 +4,14 @@ import (
 	"strings"
 	"testing"
 
+	"omakiten/internal/app"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 )
+
+// stripStyle drops lipgloss SGR sequences from rendered output so
+// tests can assert against the underlying glyph stream.
+func stripStyle(s string) string { return stripANSI(s) }
 
 // TestPlanNetworkCriticalPathPicksLongestChain proves the helper
 // identifies the deepest blocker chain (A → B → C) and excludes
@@ -38,7 +44,7 @@ func TestPlanNetworkCriticalPathPicksLongestChain(t *testing.T) {
 }
 
 // TestPlanNetworkCriticalPathNilWhenNoDeps confirms zero-dep plans
-// return a nil set so the renderer skips the ║ glyph entirely.
+// return a nil set so the renderer skips the accent border entirely.
 func TestPlanNetworkCriticalPathNilWhenNoDeps(t *testing.T) {
 	tasks := []domain.PlanTaskRow{{TaskID: 1}, {TaskID: 2}}
 	if path := planNetworkCriticalPath(nil, tasks); path != nil {
@@ -48,8 +54,7 @@ func TestPlanNetworkCriticalPathNilWhenNoDeps(t *testing.T) {
 
 // TestPlanNetworkCriticalPathSurvivesCycle proves the cycle guard
 // prevents infinite recursion when an accidentally-circular
-// dependency slips through (DB constraints normally block this; the
-// helper still must not panic).
+// dependency slips through.
 func TestPlanNetworkCriticalPathSurvivesCycle(t *testing.T) {
 	tasks := []domain.PlanTaskRow{{TaskID: 1}, {TaskID: 2}}
 	deps := []domain.TaskDependency{
@@ -59,37 +64,19 @@ func TestPlanNetworkCriticalPathSurvivesCycle(t *testing.T) {
 	_ = planNetworkCriticalPath(deps, tasks)
 }
 
-// TestPlanNetworkDependentIndexInvertsEdges proves the dependent
-// lookup inverts the edge direction so the renderer can suffix
-// "→ #N" on the blocker side without rescanning the slice per row.
-func TestPlanNetworkDependentIndexInvertsEdges(t *testing.T) {
-	deps := []domain.TaskDependency{
-		{TaskID: 2, DependsOnTaskID: 1}, // 1 blocks 2
-		{TaskID: 3, DependsOnTaskID: 1}, // 1 blocks 3
-		{TaskID: 4, DependsOnTaskID: 2}, // 2 blocks 4
-	}
-	got := planNetworkDependentIndex(deps)
-	if len(got[1]) != 2 || got[1][0] != 2 || got[1][1] != 3 {
-		t.Fatalf("dependents[1] = %v, want [2 3]", got[1])
-	}
-	if len(got[2]) != 1 || got[2][0] != 4 {
-		t.Fatalf("dependents[2] = %v, want [4]", got[2])
-	}
-	if _, ok := got[4]; ok {
-		t.Fatalf("dependents[4] should not exist (4 is a leaf)")
-	}
-}
-
 // TestPlanNetworkDepsFooterFormatsLine confirms the footer reads
 // "Dependencies: #A→#B,#C  #D→#E" with stable ordering across
-// refreshes.
+// refreshes. The prefix comes from the i18n catalog so the test
+// uses the bundled en baseline (no Repositories.Catalog set on the
+// zero-value Model).
 func TestPlanNetworkDepsFooterFormatsLine(t *testing.T) {
+	m := Model{}
 	deps := []domain.TaskDependency{
 		{TaskID: 3, DependsOnTaskID: 1},
 		{TaskID: 3, DependsOnTaskID: 2},
 		{TaskID: 4, DependsOnTaskID: 3},
 	}
-	got := planNetworkDepsFooter(deps)
+	got := m.planNetworkDepsFooter(deps)
 	want := "Dependencies: #3→#1,#2  #4→#3"
 	if got != want {
 		t.Fatalf("footer = %q, want %q", got, want)
@@ -99,115 +86,508 @@ func TestPlanNetworkDepsFooterFormatsLine(t *testing.T) {
 // TestPlanNetworkDepsFooterEmpty confirms zero-dep plans return an
 // empty string so the renderer can skip writing the footer line.
 func TestPlanNetworkDepsFooterEmpty(t *testing.T) {
-	if got := planNetworkDepsFooter(nil); got != "" {
+	m := Model{}
+	if got := m.planNetworkDepsFooter(nil); got != "" {
 		t.Fatalf("footer = %q, want empty", got)
 	}
 }
 
-// TestPlanNetworkGutterDrawsHorizontalArrow proves the gutter router
-// emits a horizontal line + arrow head for a single cross-wave
-// dependency where source and destination cards share the same row.
-func TestPlanNetworkGutterDrawsHorizontalArrow(t *testing.T) {
-	rows := renderPlanNetworkGutter(6, 5, []planNetworkGutterEdge{{SrcY: 2, DstY: 2}})
-	if len(rows) != 5 {
-		t.Fatalf("rows = %d, want 5", len(rows))
+// TestPlanNetworkBuildRailsDFSPreOrder proves the DFS pre-order rail
+// builder:
+//   - tasks render in input order (NOT readiness-sorted)
+//   - intra-wave parent → child rails render as ├─/└─ INSIDE the row
+//     body, with │ continuations on intervening sibling rows.
+func TestPlanNetworkBuildRailsDFSPreOrder(t *testing.T) {
+	wv := app.PlanWaveView{
+		Tasks: []domain.PlanTaskRow{
+			{TaskID: 1, Title: "root-a"},
+			{TaskID: 2, Title: "child-of-1"},
+			{TaskID: 3, Title: "child-of-1"},
+			{TaskID: 4, Title: "grandchild-of-2"},
+			{TaskID: 5, Title: "root-b"},
+		},
 	}
-	// Row 2 should carry the horizontal line ending in an arrow head.
-	if !strings.Contains(rows[2], "─") {
-		t.Fatalf("row 2 missing horizontal line: %q", rows[2])
+	intraBlockers := map[int64][]int64{
+		2: {1},
+		3: {1},
+		4: {2},
 	}
-	if !strings.Contains(rows[2], "►") {
-		t.Fatalf("row 2 missing arrow head: %q", rows[2])
+	layout := planNetworkBuildRails(wv, intraBlockers)
+	if len(layout.OrderedIdx) != 5 {
+		t.Fatalf("ordered = %d, want 5", len(layout.OrderedIdx))
 	}
-	// Other rows should be blank.
-	for i, r := range rows {
-		if i == 2 {
-			continue
+	// DFS pre-order: 1 → 2 → 4 → 3 → 5. The branch under #1 fully
+	// expands before #5 (the sibling root) appears.
+	want := []struct {
+		taskID   int64
+		parentID int64
+		railHas  string
+	}{
+		{1, 0, ""},
+		{2, 1, "├─"},
+		{4, 2, "└─"},
+		{3, 1, "└─"},
+		{5, 0, ""},
+	}
+	for pos, w := range want {
+		gotID := wv.Tasks[layout.OrderedIdx[pos]].TaskID
+		gotParent := layout.ParentByPos[pos]
+		if gotID != w.taskID || gotParent != w.parentID {
+			t.Fatalf("layout[%d] = (task=%d parent=%d), want (task=%d parent=%d)",
+				pos, gotID, gotParent, w.taskID, w.parentID)
 		}
-		if strings.TrimSpace(r) != "" {
-			t.Fatalf("row %d non-blank for single edge: %q", i, r)
-		}
-	}
-}
-
-// TestPlanNetworkGutterRoutesBend confirms the router draws a
-// horizontal-vertical-horizontal path with ┐/┘/┌/└ bends when the
-// source and destination cards do not share a row.
-func TestPlanNetworkGutterRoutesBend(t *testing.T) {
-	rows := renderPlanNetworkGutter(6, 6, []planNetworkGutterEdge{{SrcY: 1, DstY: 4}})
-	joined := strings.Join(rows, "\n")
-	// Bend glyphs surface: descending (left turn ┐ + right turn └)
-	// or the equivalents depending on midX placement. Assert at
-	// least one of the descending corners is rendered.
-	if !strings.ContainsAny(joined, "┐└┌┘") {
-		t.Fatalf("router did not emit any bend glyph:\n%s", joined)
-	}
-	if !strings.Contains(joined, "│") {
-		t.Fatalf("router did not emit vertical segment:\n%s", joined)
-	}
-	if !strings.Contains(joined, "►") {
-		t.Fatalf("router did not emit arrow head:\n%s", joined)
-	}
-}
-
-// TestPlanNetworkJunctionCoversFourWay confirms the junction table
-// renders the 4-way crossing (├ ┤ ┴ ┬ ┼) for overlapping edges.
-func TestPlanNetworkJunctionCoversFourWay(t *testing.T) {
-	cases := map[uint8]rune{
-		dirN | dirS:                       '│',
-		dirE | dirW:                       '─',
-		dirS | dirE:                       '┌',
-		dirN | dirE:                       '└',
-		dirN | dirS | dirE:                '├',
-		dirN | dirS | dirW:                '┤',
-		dirN | dirE | dirW:                '┴',
-		dirS | dirE | dirW:                '┬',
-		dirN | dirS | dirE | dirW:         '┼',
-		dirArrow:                          '►',
-	}
-	for bits, want := range cases {
-		if got := planNetworkJunction(bits); got != want {
-			t.Errorf("junction(%08b) = %q, want %q", bits, got, want)
+		if w.railHas != "" && !strings.Contains(layout.Rails[pos], w.railHas) {
+			t.Fatalf("rail[#%d] = %q, want contains %q", gotID, layout.Rails[pos], w.railHas)
 		}
 	}
 }
 
-// TestPlanNetworkSkipEdgesFiltersAdjacentAndIntra confirms the
-// helper returns only edges that span 2+ wave boundaries; adjacent
-// (gutter-routed) and intra-wave edges are excluded because they
-// have their own surfaces.
-func TestPlanNetworkSkipEdgesFiltersAdjacentAndIntra(t *testing.T) {
-	taskToWave := map[int64]int64{
-		10: 100, // task 10 in wave W1
-		20: 200, // task 20 in wave W2
-		30: 300, // task 30 in wave W3
-		11: 100, // task 11 in wave W1
+// TestPlanNetworkBuildRailsRejectsTopologicalReorder pins the design
+// decision: even when a later root would be "more ready" than an
+// earlier task with children, the rail builder keeps input order.
+// The previously-attempted topological reorder is not allowed to
+// return.
+func TestPlanNetworkBuildRailsRejectsTopologicalReorder(t *testing.T) {
+	wv := app.PlanWaveView{
+		Tasks: []domain.PlanTaskRow{
+			{TaskID: 10, Title: "blocked-by-nothing"},
+			{TaskID: 20, Title: "blocks-30"},
+			{TaskID: 30, Title: "blocked-by-20"},
+			{TaskID: 40, Title: "blocked-by-nothing-too"},
+		},
 	}
-	waveToIdx := map[int64]int{100: 0, 200: 1, 300: 2}
+	intraBlockers := map[int64][]int64{30: {20}}
+	layout := planNetworkBuildRails(wv, intraBlockers)
+	wantOrder := []int64{10, 20, 30, 40}
+	for pos, want := range wantOrder {
+		gotID := wv.Tasks[layout.OrderedIdx[pos]].TaskID
+		if gotID != want {
+			t.Fatalf("rails ordered[%d] = #%d, want #%d (input order, NOT readiness)", pos, gotID, want)
+		}
+	}
+}
+
+// TestPlanNetworkBuildFilamentsGreedyLanes proves overlapping
+// cross-wave sources allocate distinct lanes. Two sources whose
+// destination ranges overlap must land in lanes 0 and 1; a third
+// source whose range starts after the first lane has freed
+// collapses back to lane 0.
+func TestPlanNetworkBuildFilamentsGreedyLanes(t *testing.T) {
+	rows := []planNetworkRow{
+		{Kind: planRowTaskCard, Task: domain.PlanTaskRow{TaskID: 1}}, // 0
+		{Kind: planRowTaskCard, Task: domain.PlanTaskRow{TaskID: 2}}, // 1
+		{Kind: planRowTaskCard, Task: domain.PlanTaskRow{TaskID: 3}}, // 2 — dst of #1
+		{Kind: planRowTaskCard, Task: domain.PlanTaskRow{TaskID: 4}}, // 3 — dst of #2
+		{Kind: planRowTaskCard, Task: domain.PlanTaskRow{TaskID: 5}}, // 4 — src
+		{Kind: planRowTaskCard, Task: domain.PlanTaskRow{TaskID: 6}}, // 5 — dst of #5
+	}
+	cross := map[int64][]int64{
+		3: {1},
+		4: {2},
+		6: {5},
+	}
+	filaments, laneCount := planNetworkBuildFilaments(rows, cross)
+	if laneCount != 2 {
+		t.Fatalf("laneCount = %d, want 2", laneCount)
+	}
+	bySrc := map[int]planNetworkFilament{}
+	for _, f := range filaments {
+		bySrc[f.SrcRow] = f
+	}
+	if bySrc[0].Lane != 0 {
+		t.Fatalf("filament from #1 (row 0) lane = %d, want 0", bySrc[0].Lane)
+	}
+	if bySrc[1].Lane != 1 {
+		t.Fatalf("filament from #2 (row 1) lane = %d, want 1 (overlaps lane 0)", bySrc[1].Lane)
+	}
+	if bySrc[4].Lane != 0 {
+		t.Fatalf("filament from #5 (row 4) lane = %d, want 0 (lane 0 freed after row 2)", bySrc[4].Lane)
+	}
+}
+
+// TestPlanNetworkBuildFilamentsHubReusesLane proves ONE source with
+// N dependents collapses to ONE lane, not N. A hub task #1 blocking
+// #2, #3, #4 emits a single filament with three destination rows;
+// the lane count is 1.
+func TestPlanNetworkBuildFilamentsHubReusesLane(t *testing.T) {
+	rows := []planNetworkRow{
+		{Kind: planRowTaskCard, Task: domain.PlanTaskRow{TaskID: 1}}, // 0 — hub src
+		{Kind: planRowTaskCard, Task: domain.PlanTaskRow{TaskID: 2}}, // 1 — dst
+		{Kind: planRowTaskCard, Task: domain.PlanTaskRow{TaskID: 3}}, // 2 — dst
+		{Kind: planRowTaskCard, Task: domain.PlanTaskRow{TaskID: 4}}, // 3 — dst
+	}
+	cross := map[int64][]int64{
+		2: {1},
+		3: {1},
+		4: {2, 1}, // #4 depends on hub AND on #2
+	}
+	filaments, laneCount := planNetworkBuildFilaments(rows, cross)
+	if laneCount != 2 {
+		t.Fatalf("laneCount = %d, want 2 (hub reuse + #2's single edge to #4)", laneCount)
+	}
+	var hub planNetworkFilament
+	found := false
+	for _, f := range filaments {
+		if f.SrcRow == 0 {
+			hub = f
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("hub filament missing from %+v", filaments)
+	}
+	if len(hub.DstRows) != 3 || hub.DstRows[0] != 1 || hub.DstRows[1] != 2 || hub.DstRows[2] != 3 {
+		t.Fatalf("hub DstRows = %v, want [1 2 3] (lane reused for all 3 dependents)", hub.DstRows)
+	}
+}
+
+// TestPlanNetworkBuildFilamentsDropsCollapsedSource proves cross-wave
+// edges whose source row is missing (e.g. its wave is collapsed) are
+// dropped from the filament list. The destination still surfaces the
+// blocker as `←W #N` text via the regular annotation path.
+func TestPlanNetworkBuildFilamentsDropsCollapsedSource(t *testing.T) {
+	rows := []planNetworkRow{
+		{Kind: planRowWaveHeader, WaveID: 1},
+		// no #1 task card — wave 1 is collapsed
+		{Kind: planRowWaveHeader, WaveID: 2},
+		{Kind: planRowTaskCard, Task: domain.PlanTaskRow{TaskID: 2}},
+	}
+	cross := map[int64][]int64{2: {1}}
+	filaments, laneCount := planNetworkBuildFilaments(rows, cross)
+	if laneCount != 0 || len(filaments) != 0 {
+		t.Fatalf("filaments = %v laneCount = %d, want empty (source row missing)", filaments, laneCount)
+	}
+}
+
+// TestRenderPlanNetworkLaneGlyphs proves the lane renderer paints
+// ┌─ at source, │ on pass-through rows, ├─► at intermediate dsts,
+// └─► at final dst, and pads other lanes / trailing slots with
+// spaces.
+func TestRenderPlanNetworkLaneGlyphs(t *testing.T) {
+	m := Model{styles: newStyles(config.Theme{})}
+	filaments := []planNetworkFilament{{SrcRow: 0, DstRows: []int{2, 3}, Lane: 0}}
+	laneCount := 1
+
+	src := stripStyle(m.renderPlanNetworkLane(0, filaments, laneCount))
+	if src != "┌─" {
+		t.Fatalf("source lane = %q, want %q (arm extends to body)", src, "┌─")
+	}
+	mid := stripStyle(m.renderPlanNetworkLane(1, filaments, laneCount))
+	if mid != "│ " {
+		t.Fatalf("pass-through lane = %q, want %q", mid, "│ ")
+	}
+	tee := stripStyle(m.renderPlanNetworkLane(2, filaments, laneCount))
+	if tee != "├►" {
+		t.Fatalf("intermediate dst lane = %q, want %q", tee, "├►")
+	}
+	dst := stripStyle(m.renderPlanNetworkLane(3, filaments, laneCount))
+	if dst != "└►" {
+		t.Fatalf("final dst lane = %q, want %q", dst, "└►")
+	}
+	empty := stripStyle(m.renderPlanNetworkLane(5, filaments, laneCount))
+	if empty != "  " {
+		t.Fatalf("empty lane row = %q, want %q (2 spaces)", empty, "  ")
+	}
+	zero := m.renderPlanNetworkLane(0, nil, 0)
+	if zero != "" {
+		t.Fatalf("zero lanes = %q, want empty string", zero)
+	}
+}
+
+// TestRenderPlanNetworkLaneHorizontalArmCrossesPassThrough proves
+// the horizontal arm from a source/dst lane paints `┼` over an
+// unrelated lane's pass-through vertical, and reaches the trailing
+// slot with `─` (source) or `►` (dst).
+func TestRenderPlanNetworkLaneHorizontalArmCrossesPassThrough(t *testing.T) {
+	m := Model{styles: newStyles(config.Theme{})}
+	filaments := []planNetworkFilament{
+		{SrcRow: 0, DstRows: []int{6}, Lane: 0}, // long lane 0
+		{SrcRow: 2, DstRows: []int{4}, Lane: 1}, // shorter lane 1
+	}
+	laneCount := 2
+
+	// Row 2 is source of filament 1 (lane 1); filament 0 (lane 0) is
+	// mid-flight here. Source arm at lane 1 has no inner cells to
+	// the right, so trailing carries `─`. Lane 0 stays `│`.
+	srcRow := stripStyle(m.renderPlanNetworkLane(2, filaments, laneCount))
+	if srcRow != "│┌─" {
+		t.Fatalf("row 2 = %q, want %q (pass-through │ + source ┌ + arm)", srcRow, "│┌─")
+	}
+
+	// Row 4 is dst of filament 1 (lane 1); filament 0 still mid-flight.
+	dstRow := stripStyle(m.renderPlanNetworkLane(4, filaments, laneCount))
+	if dstRow != "│└►" {
+		t.Fatalf("row 4 = %q, want %q (pass-through │ + └ + ►)", dstRow, "│└►")
+	}
+
+	// Row 6 is dst of filament 0 (lane 0). Arm crosses lane 1 — but
+	// at row 6 lane 1 is finished (ended at row 4), so col 1 has been
+	// freed. Arm paints `─` not `┼`.
+	dstAcross := stripStyle(m.renderPlanNetworkLane(6, filaments, laneCount))
+	if dstAcross != "└─►" {
+		t.Fatalf("row 6 = %q, want %q (└ + arm + ►)", dstAcross, "└─►")
+	}
+}
+
+// TestRenderPlanNetworkLaneArmCrossesActivePassThrough proves a
+// horizontal arm crossing an active pass-through `│` from a
+// different (longer) lane renders the junction glyph `┼`.
+func TestRenderPlanNetworkLaneArmCrossesActivePassThrough(t *testing.T) {
+	m := Model{styles: newStyles(config.Theme{})}
+	filaments := []planNetworkFilament{
+		{SrcRow: 0, DstRows: []int{8}, Lane: 1}, // very long lane 1
+		{SrcRow: 2, DstRows: []int{4}, Lane: 0}, // shorter lane 0
+	}
+	laneCount := 2
+
+	// Row 2 = source of filament 1 at lane 0. Arm at lane 0+1=1
+	// crosses filament 0's pass-through `│` — should render `┼`.
+	out := stripStyle(m.renderPlanNetworkLane(2, filaments, laneCount))
+	if out != "┌┼─" {
+		t.Fatalf("row 2 = %q, want %q (┌ + ┼ crossing + arm)", out, "┌┼─")
+	}
+
+	// Row 4 = dst of filament 1 at lane 0. Same crossing pattern.
+	dst := stripStyle(m.renderPlanNetworkLane(4, filaments, laneCount))
+	if dst != "└┼►" {
+		t.Fatalf("row 4 = %q, want %q (└ + ┼ crossing + ►)", dst, "└┼►")
+	}
+}
+
+// TestRenderPlanNetworkLaneSourceAndDestinationSameRow proves a row
+// that is BOTH a source for one filament AND a destination for
+// another paints both glyphs at their respective lanes and resolves
+// the trailing slot to `►` (destination wins over source — the
+// arrowhead is the more informative marker when both apply).
+func TestRenderPlanNetworkLaneSourceAndDestinationSameRow(t *testing.T) {
+	m := Model{styles: newStyles(config.Theme{})}
+	filaments := []planNetworkFilament{
+		{SrcRow: 0, DstRows: []int{2}, Lane: 0}, // arrives at row 2
+		{SrcRow: 2, DstRows: []int{4}, Lane: 1}, // departs at row 2
+	}
+	laneCount := 2
+
+	out := stripStyle(m.renderPlanNetworkLane(2, filaments, laneCount))
+	if out != "└┌►" {
+		t.Fatalf("row 2 = %q, want %q (└ at lane 0 + ┌ at lane 1 + ► trailing)", out, "└┌►")
+	}
+}
+
+// TestRenderPlanNetworkWaveHeaderLaneAlignment proves wave header
+// rows receive the same lane prefix as task rows. A filament passing
+// through a wave header must paint │ at the header row at the same
+// column as on intervening task rows — no wave nests under another.
+func TestRenderPlanNetworkWaveHeaderLaneAlignment(t *testing.T) {
+	m := Model{styles: newStyles(config.Theme{})}
+	filaments := []planNetworkFilament{{SrcRow: 0, DstRows: []int{4}, Lane: 0}}
+	headerRow := planNetworkRow{
+		Kind: planRowWaveHeader, WavePos: 2, WaveName: "phase",
+		WaveDone: 0, WaveTotal: 3,
+	}
+	taskRow := planNetworkRow{
+		Kind: planRowTaskCard,
+		Task: domain.PlanTaskRow{TaskID: 99, Title: "t"},
+	}
+	layout := planNetworkTableLayout{Title: 30, Bucket: 8, Deps: 10}
+
+	headerPrimary := m.renderPlanNetworkLane(2, filaments, 1)
+	taskPrimary := m.renderPlanNetworkLane(3, filaments, 1)
+
+	headerOut := stripStyle(m.renderPlanNetworkRowBody(headerRow, false, headerPrimary, nil, layout))
+	taskOut := stripStyle(m.renderPlanNetworkRowBody(taskRow, false, taskPrimary, nil, layout))
+
+	if !strings.HasPrefix(headerOut, "  │ ") {
+		t.Fatalf("wave header row = %q, want it to start with cursor pad + lane │ (no nesting)", headerOut)
+	}
+	if !strings.HasPrefix(taskOut, "  │ ") {
+		t.Fatalf("task row = %q, want same lane prefix as wave header", taskOut)
+	}
+}
+
+// TestRenderPlanNetworkSeparatorJunctions proves the separator
+// builder emits the correct junction characters at the four row
+// transitions plus the top / bottom borders.
+func TestRenderPlanNetworkSeparatorJunctions(t *testing.T) {
+	m := Model{styles: newStyles(config.Theme{})}
+	layout := planNetworkTableLayout{Title: 4, Bucket: 4, Deps: 4}
+
+	cases := []struct {
+		name         string
+		above, below planNetworkRowKind
+		wantSuffix   string
+	}{
+		{"top→wave", planRowNone, planRowWaveHeader, "────────────┐"},
+		{"top→task", planRowNone, planRowTaskCard, "────┬────┬────┐"},
+		{"wave→task", planRowWaveHeader, planRowTaskCard, "────┬────┬────┤"},
+		{"task→wave", planRowTaskCard, planRowWaveHeader, "────┴────┴────┤"},
+		{"task→task", planRowTaskCard, planRowTaskCard, "────┼────┼────┤"},
+		{"task→bottom", planRowTaskCard, planRowNone, "────┴────┴────┘"},
+		{"wave→bottom", planRowWaveHeader, planRowNone, "────────────┘"},
+	}
+	for _, c := range cases {
+		got := stripStyle(m.renderPlanNetworkSeparator(c.above, c.below, layout, "", ""))
+		if !strings.HasSuffix(got, c.wantSuffix) {
+			t.Fatalf("%s sep = %q, want suffix %q", c.name, got, c.wantSuffix)
+		}
+	}
+}
+
+// TestRenderPlanNetworkTaskRowHasThreeCells proves a task row
+// renders with exactly two inner `│` separators (Title │ Bucket │
+// Deps │) and ends with a right border `│`.
+func TestRenderPlanNetworkTaskRowHasThreeCells(t *testing.T) {
+	m := Model{styles: newStyles(config.Theme{})}
+	layout := planNetworkTableLayout{Title: 30, Bucket: 8, Deps: 10}
+	row := planNetworkRow{
+		Kind: planRowTaskCard,
+		Task: domain.PlanTaskRow{TaskID: 99, Title: "hello", BucketKey: "dev"},
+	}
+	plain := stripStyle(m.renderPlanNetworkRowBody(row, false, "", nil, layout))
+	if strings.Count(plain, "│") != 3 {
+		t.Fatalf("task row = %q, want exactly 3 │ separators (2 inner + 1 right)", plain)
+	}
+	if !strings.HasSuffix(plain, "│") {
+		t.Fatalf("task row missing right border: %q", plain)
+	}
+}
+
+// TestRenderPlanNetworkWaveHeaderFullWidth proves a wave header
+// row carries NO inner `│` separators — its single cell spans the
+// full table interior — and still closes with the right border.
+func TestRenderPlanNetworkWaveHeaderFullWidth(t *testing.T) {
+	m := Model{styles: newStyles(config.Theme{})}
+	layout := planNetworkTableLayout{Title: 30, Bucket: 8, Deps: 10}
+	row := planNetworkRow{
+		Kind: planRowWaveHeader, WavePos: 1, WaveName: "phase",
+		WaveDone: 1, WaveTotal: 3,
+	}
+	plain := stripStyle(m.renderPlanNetworkRowBody(row, false, "", nil, layout))
+	if strings.Count(plain, "│") != 1 {
+		t.Fatalf("wave header = %q, want exactly 1 │ (right border only, no inner separators)", plain)
+	}
+	if !strings.HasSuffix(plain, "│") {
+		t.Fatalf("wave header missing right border: %q", plain)
+	}
+}
+
+// TestPlanNetworkRowStateBadgePrecedence pins the order in which the
+// state badge selector resolves:
+//
+//   done > gated > in-progress > blocked > assigned > next > ready
+//
+// The split between in-progress / assigned exists because claim only
+// stamps assigned_to nowadays — it never moves the bucket. An
+// "assigned" task may still sit in backlog waiting for its preset
+// guards (e.g. omakase's self-branch comment); an "in-progress" task
+// already left the first bucket and is in the working pipeline.
+func TestPlanNetworkRowStateBadgePrecedence(t *testing.T) {
+	m := Model{styles: newStyles(config.Theme{})}
+	cases := []struct {
+		name string
+		row  planNetworkRow
+		want string
+	}{
+		{"done beats all", planNetworkRow{Kind: planRowTaskCard, FinalBucket: true, Gated: true, InProgress: true, BlockerCount: 3, IsNext: true}, "done"},
+		{"gated beats in-progress", planNetworkRow{Kind: planRowTaskCard, Gated: true, InProgress: true, BlockerCount: 2}, "gated"},
+		{"in-progress beats blocked", planNetworkRow{Kind: planRowTaskCard, InProgress: true, BlockerCount: 1}, "in-progress"},
+		{"in-progress beats assigned", planNetworkRow{Kind: planRowTaskCard, InProgress: true, Task: domain.PlanTaskRow{AssignedTo: "x"}}, "in-progress"},
+		{"blocked beats assigned", planNetworkRow{Kind: planRowTaskCard, BlockerCount: 1, Task: domain.PlanTaskRow{AssignedTo: "x"}}, "blocked"},
+		{"assigned beats next", planNetworkRow{Kind: planRowTaskCard, Task: domain.PlanTaskRow{AssignedTo: "x"}, IsNext: true}, "assigned"},
+		{"next beats ready", planNetworkRow{Kind: planRowTaskCard, IsNext: true}, "▶next"},
+		{"ready default", planNetworkRow{Kind: planRowTaskCard}, "ready"},
+	}
+	for _, c := range cases {
+		got, _ := m.planNetworkRowStateBadge(c.row)
+		if got != c.want {
+			t.Fatalf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// TestPlanNetworkRowStatusGlyphSharesFlags pins the status glyph to
+// the same FinalBucket / Gated flags that drive the state badge —
+// no hardcoded bucket-key lookups (the previous "dev → ●" path was
+// dropped). Every non-done / non-gated row collapses to ○ and the
+// inline badge disambiguates downstream.
+func TestPlanNetworkRowStatusGlyphSharesFlags(t *testing.T) {
+	m := Model{styles: newStyles(config.Theme{})}
+	cases := []struct {
+		name string
+		row  planNetworkRow
+		want string
+	}{
+		{"done", planNetworkRow{Kind: planRowTaskCard, FinalBucket: true}, "✓"},
+		{"gated", planNetworkRow{Kind: planRowTaskCard, Gated: true}, "⊘"},
+		{"dev bucket no longer maps to ●", planNetworkRow{Kind: planRowTaskCard, Task: domain.PlanTaskRow{BucketKey: "dev"}}, "○"},
+		{"blocked falls through to ○", planNetworkRow{Kind: planRowTaskCard, BlockerCount: 2}, "○"},
+		{"ready default", planNetworkRow{Kind: planRowTaskCard}, "○"},
+	}
+	for _, c := range cases {
+		got, _ := m.planNetworkRowStatusGlyph(c.row)
+		if got != c.want {
+			t.Fatalf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// TestRenderPlanNetworkTaskRowShowsBucketCell proves the Bucket
+// column carries the task's raw bucket key (no hardcoded mapping)
+// and skips the value when the task is in the workflow's final
+// bucket (done already implied by the state badge + glyph).
+func TestRenderPlanNetworkTaskRowShowsBucketCell(t *testing.T) {
+	m := Model{styles: newStyles(config.Theme{})}
+	layout := planNetworkTableLayout{Title: 30, Bucket: 8, Deps: 10}
+	row := planNetworkRow{
+		Kind: planRowTaskCard,
+		Task: domain.PlanTaskRow{TaskID: 1, Title: "x", BucketKey: "review"},
+	}
+	plain := stripStyle(m.renderPlanNetworkRowBody(row, false, "", nil, layout))
+	if !strings.Contains(plain, "review") {
+		t.Fatalf("expected bucket cell to contain %q, got %q", "review", plain)
+	}
+
+	doneRow := planNetworkRow{
+		Kind:        planRowTaskCard,
+		FinalBucket: true,
+		Task:        domain.PlanTaskRow{TaskID: 1, Title: "x", BucketKey: "done"},
+	}
+	donePlain := stripStyle(m.renderPlanNetworkRowBody(doneRow, false, "", nil, layout))
+	if !strings.Contains(donePlain, "done") {
+		t.Fatalf("done row must still show bucket value, got %q", donePlain)
+	}
+}
+
+// TestPlanNetworkExcludeIDStripsRailParent proves the helper drops
+// the rail-parent id from the inline-annotation list so the same
+// blocker doesn't surface twice (rail glyph + "← #N").
+func TestPlanNetworkExcludeIDStripsRailParent(t *testing.T) {
+	got := planNetworkExcludeID([]int64{1, 2, 3}, 2)
+	if len(got) != 2 || got[0] != 1 || got[1] != 3 {
+		t.Fatalf("excludeID = %v, want [1 3]", got)
+	}
+	if untouched := planNetworkExcludeID([]int64{1, 2, 3}, 0); len(untouched) != 3 {
+		t.Fatalf("excludeID with zero parent should return slice unchanged, got %v", untouched)
+	}
+}
+
+// TestPlanNetworkCrossWaveIndicesFiltersIntraEdges confirms the helper
+// returns only edges whose source and destination tasks live in
+// different waves. Intra-wave edges are excluded because the rail
+// tree already surfaces them.
+func TestPlanNetworkCrossWaveIndicesFiltersIntraEdges(t *testing.T) {
+	waves := []app.PlanWaveView{
+		{Wave: domain.PlanWave{ID: 100}, Tasks: []domain.PlanTaskRow{{TaskID: 10}, {TaskID: 11}}},
+		{Wave: domain.PlanWave{ID: 200}, Tasks: []domain.PlanTaskRow{{TaskID: 20}}},
+	}
 	deps := []domain.TaskDependency{
-		{TaskID: 11, DependsOnTaskID: 10}, // intra W1 — skip
-		{TaskID: 20, DependsOnTaskID: 10}, // adjacent W1→W2 — skip
-		{TaskID: 30, DependsOnTaskID: 10}, // skip W1→W3 — KEEP
+		{TaskID: 11, DependsOnTaskID: 10}, // intra W1 — excluded
+		{TaskID: 20, DependsOnTaskID: 10}, // cross W1→W2 — kept
 	}
-	got := planNetworkSkipEdges(deps, taskToWave, waveToIdx)
-	if len(got) != 1 {
-		t.Fatalf("skip edges = %d, want 1: %+v", len(got), got)
+	blockers := planNetworkCrossWaveIndices(deps, waves)
+	if len(blockers[20]) != 1 || blockers[20][0] != 10 {
+		t.Fatalf("blockers[20] = %v, want [10]", blockers[20])
 	}
-	if got[0].SrcIdx != 0 || got[0].DstIdx != 2 || got[0].SrcTaskID != 10 || got[0].DstTaskID != 30 {
-		t.Fatalf("unexpected skip edge: %+v", got[0])
-	}
-}
-
-// TestPlanNetworkSkipEdgesEmptyOnNoSkips verifies the helper returns
-// nil when every edge is adjacent or intra-wave, so the backplane
-// band stays unrendered (zero visual cost when there's no signal).
-func TestPlanNetworkSkipEdgesEmptyOnNoSkips(t *testing.T) {
-	taskToWave := map[int64]int64{10: 100, 20: 200}
-	waveToIdx := map[int64]int{100: 0, 200: 1}
-	deps := []domain.TaskDependency{
-		{TaskID: 20, DependsOnTaskID: 10}, // adjacent — not a skip
-	}
-	if got := planNetworkSkipEdges(deps, taskToWave, waveToIdx); len(got) != 0 {
-		t.Fatalf("skip edges = %+v, want empty on no-skip plan", got)
+	if _, ok := blockers[11]; ok {
+		t.Fatalf("intra-wave edge leaked into cross-wave blockers: %+v", blockers)
 	}
 }

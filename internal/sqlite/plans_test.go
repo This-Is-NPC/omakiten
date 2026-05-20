@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"strings"
 	"sync"
 	"testing"
 
@@ -217,7 +216,12 @@ func TestClaimNextPlanTaskReturnsEmptyWhenNothingClaimable(t *testing.T) {
 	}
 }
 
-func TestClaimNextPlanTaskMovesTaskAndStampsAssignee(t *testing.T) {
+// TestClaimNextPlanTaskStampsAssigneeWithoutMovingBucket pins the new
+// contract: claim only sets assigned_to; bucket stays put so the
+// preset's bucket guards (e.g. omakase's self-branch comment for
+// backlog → dev) remain authoritative. A second call on the same plan
+// returns empty because the first task is no longer "unassigned".
+func TestClaimNextPlanTaskStampsAssigneeWithoutMovingBucket(t *testing.T) {
 	ctx, store, project := setupPlans(t)
 	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
 	if err != nil {
@@ -243,8 +247,8 @@ func TestClaimNextPlanTaskMovesTaskAndStampsAssignee(t *testing.T) {
 	if !ok || claimed.ID != task.ID {
 		t.Fatalf("ClaimNextPlanTask = (%+v, %v), want claim of task %d", claimed, ok, task.ID)
 	}
-	if claimed.BucketKey != "dev" {
-		t.Fatalf("claimed bucket = %q, want dev", claimed.BucketKey)
+	if claimed.BucketKey != "backlog" {
+		t.Fatalf("claimed bucket = %q, want backlog (claim must NOT move the task)", claimed.BucketKey)
 	}
 
 	var assignedTo string
@@ -255,13 +259,29 @@ func TestClaimNextPlanTaskMovesTaskAndStampsAssignee(t *testing.T) {
 		t.Fatalf("assigned_to = %q, want claude-opus-4-7", assignedTo)
 	}
 
-	// Second call → nothing left.
+	// No task.moved event should have been emitted for the claim — the
+	// task did not change buckets. assigned event must be present.
+	var movedCount, assignedCount int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE entity_type = 'task' AND entity_id = ? AND event_type = ?`, task.ID, domain.EventTypeTaskMoved).Scan(&movedCount); err != nil {
+		t.Fatalf("count task.moved events: %v", err)
+	}
+	if movedCount != 0 {
+		t.Fatalf("task.moved emitted %d times after claim, want 0 (claim does not move buckets)", movedCount)
+	}
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE entity_type = 'task' AND entity_id = ? AND event_type = ?`, task.ID, domain.EventTypeTaskAssigned).Scan(&assignedCount); err != nil {
+		t.Fatalf("count task.assigned events: %v", err)
+	}
+	if assignedCount != 1 {
+		t.Fatalf("task.assigned emitted %d times, want 1", assignedCount)
+	}
+
+	// Second call → nothing left (first task no longer unassigned).
 	_, ok, err = store.ClaimNextPlanTask(ctx, project.ID, plan.ID, store.snap())
 	if err != nil {
 		t.Fatalf("ClaimNextPlanTask second: %v", err)
 	}
 	if ok {
-		t.Fatal("second claim succeeded; expected empty")
+		t.Fatal("second claim succeeded; expected empty (already-claimed task is no longer candidate)")
 	}
 }
 
@@ -607,10 +627,11 @@ func TestCountPriorWavesPending(t *testing.T) {
 }
 
 // TestMoveTaskClearsAssignedToOnBucketChange pins the SMART/Scope rule
-// "tasks.assigned_to is cleared on transition out of dev" — a claim's
-// ownership lives only as long as the task sits in the working bucket.
-// The repo emits task.unassigned in the same transaction as task.moved
-// so dashboards see both signals atomically.
+// "tasks.assigned_to is cleared on every bucket transition" — claim
+// ownership is scoped to "currently in this bucket". Once the task
+// leaves the bucket it was claimed in, the next claim cycle must see a
+// clean slot. Emits task.unassigned in the same transaction as
+// task.moved so dashboards see both signals atomically.
 func TestMoveTaskClearsAssignedToOnBucketChange(t *testing.T) {
 	ctx, store, project := setupPlans(t)
 	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
@@ -629,13 +650,13 @@ func TestMoveTaskClearsAssignedToOnBucketChange(t *testing.T) {
 		t.Fatalf("AssignTaskToPlan: %v", err)
 	}
 
+	// Claim populates assigned_to without moving the bucket — task stays in backlog.
 	ctxClaim := activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
 	claimed, ok, err := store.ClaimNextPlanTask(ctxClaim, project.ID, plan.ID, store.snap())
 	if err != nil || !ok {
 		t.Fatalf("ClaimNextPlanTask: ok=%v err=%v", ok, err)
 	}
 
-	// Verify assigned_to is set after claim.
 	var assignee sql.NullString
 	if err := store.db.QueryRowContext(ctx, `SELECT assigned_to FROM tasks WHERE id = ?`, claimed.ID).Scan(&assignee); err != nil {
 		t.Fatalf("read assigned_to post-claim: %v", err)
@@ -644,9 +665,9 @@ func TestMoveTaskClearsAssignedToOnBucketChange(t *testing.T) {
 		t.Fatalf("post-claim assigned_to = %v, want claude-opus-4-7", assignee)
 	}
 
-	// Move out of dev → back to backlog. Should clear assigned_to.
-	if _, err := store.MoveTask(ctx, project.ID, claimed.ID, "backlog", store.snap()); err != nil {
-		t.Fatalf("MoveTask back to backlog: %v", err)
+	// Move backlog → dev (any bucket change). Should clear assigned_to.
+	if _, err := store.MoveTask(ctx, project.ID, claimed.ID, "dev", store.snap()); err != nil {
+		t.Fatalf("MoveTask backlog → dev: %v", err)
 	}
 	if err := store.db.QueryRowContext(ctx, `SELECT assigned_to FROM tasks WHERE id = ?`, claimed.ID).Scan(&assignee); err != nil {
 		t.Fatalf("read assigned_to post-move: %v", err)
@@ -766,13 +787,13 @@ func setupTwoBucketPlans(t *testing.T) (context.Context, *storeFixture, domain.P
 	return ctx, store, project.Context()
 }
 
-// TestClaimNextPlanTaskEmitsTaskCompletedWhenDevIsFinal pins the SMART
-// invariant "every transition into the workflow's final bucket emits
-// task.completed". When `claim_next` runs against a 2-bucket workflow
-// (dev == final) it must emit task.moved + task.assigned + task.completed
-// in the same transaction so hooks engine and metrics.summary see the
-// terminal-bucket signal even on the atomic-claim fast path.
-func TestClaimNextPlanTaskEmitsTaskCompletedWhenDevIsFinal(t *testing.T) {
+// TestClaimNextPlanTaskNeverCompletesEvenInTwoBucketWorkflow pins the
+// new contract: ClaimNext only assigns. Even in a 2-bucket workflow
+// (backlog → done) the claim does not move the task into the final
+// bucket and therefore never emits task.completed. The bucket
+// transition into done remains the responsibility of
+// WorkflowService.MoveTask, which honours the preset's guards.
+func TestClaimNextPlanTaskNeverCompletesEvenInTwoBucketWorkflow(t *testing.T) {
 	ctx, store, project := setupTwoBucketPlans(t)
 	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
 	if err != nil {
@@ -795,79 +816,39 @@ func TestClaimNextPlanTaskEmitsTaskCompletedWhenDevIsFinal(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("ClaimNextPlanTask: ok=%v err=%v", ok, err)
 	}
-	if claimed.BucketKey != "done" {
-		t.Fatalf("claim bucket = %q, want done (dev resolves to final in 2-bucket workflow)", claimed.BucketKey)
+	if claimed.BucketKey != "backlog" {
+		t.Fatalf("claim bucket = %q, want backlog (claim must NOT auto-complete the task)", claimed.BucketKey)
 	}
 
 	var completedAt sql.NullString
 	if err := store.db.QueryRowContext(ctx, `SELECT completed_at FROM tasks WHERE id = ?`, claimed.ID).Scan(&completedAt); err != nil {
 		t.Fatalf("read completed_at: %v", err)
 	}
-	if !completedAt.Valid || completedAt.String == "" {
-		t.Fatal("completed_at not stamped after claim into final bucket")
+	if completedAt.Valid && completedAt.String != "" {
+		t.Fatalf("completed_at = %q, want unset (claim does not complete)", completedAt.String)
 	}
 
-	events, err := store.ListRecentEvents(ctx, domain.EventTypeTaskCompleted, 10)
+	completedEvents, err := store.ListRecentEvents(ctx, domain.EventTypeTaskCompleted, 10)
 	if err != nil {
 		t.Fatalf("ListRecentEvents task.completed: %v", err)
 	}
-	if len(events) != 1 {
-		t.Fatalf("task.completed events = %d, want 1", len(events))
+	if len(completedEvents) != 0 {
+		t.Fatalf("task.completed events = %d, want 0 (claim no longer transitions to final bucket)", len(completedEvents))
 	}
-	if events[0].EntityID != claimed.ID {
-		t.Fatalf("task.completed entity_id = %d, want %d", events[0].EntityID, claimed.ID)
-	}
-	if !strings.Contains(events[0].Payload, `"bucket":"done"`) {
-		t.Fatalf("task.completed payload = %q, want bucket=done", events[0].Payload)
-	}
-}
-
-// TestClaimNextPlanTaskFinalizesPlanOnTerminalClaim pins the SMART rule
-// "plan auto-transitions to done when the last task closes" for the
-// atomic-claim path. With a single-task plan in a 2-bucket workflow,
-// the claim lands the task in the final bucket and must trigger plan
-// finalisation (status='done', completed_at stamped, plan.done emitted)
-// post-commit just like WorkflowService.MoveTask does.
-func TestClaimNextPlanTaskFinalizesPlanOnTerminalClaim(t *testing.T) {
-	ctx, store, project := setupTwoBucketPlans(t)
-	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
-	if err != nil {
-		t.Fatalf("CreatePlan: %v", err)
-	}
-	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 0)
-	if err != nil {
-		t.Fatalf("AddPlanWave: %v", err)
-	}
-	task, err := store.CreateTask(ctx, project.ID, "Last", "", domain.Priority(2), "backlog", store.snap())
-	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
-	}
-	if err := store.AssignTaskToPlan(ctx, project.ID, task.ID, plan.ID, wave.ID); err != nil {
-		t.Fatalf("AssignTaskToPlan: %v", err)
-	}
-
-	ctxClaim := activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
-	if _, ok, err := store.ClaimNextPlanTask(ctxClaim, project.ID, plan.ID, store.snap()); err != nil || !ok {
-		t.Fatalf("ClaimNextPlanTask: ok=%v err=%v", ok, err)
-	}
-
-	got, err := store.GetPlanByID(ctx, project.ID, plan.ID)
-	if err != nil {
-		t.Fatalf("GetPlanByID: %v", err)
-	}
-	if got.Status != "done" {
-		t.Fatalf("plan status = %q, want done after terminal claim", got.Status)
-	}
-	if got.CompletedAt == "" {
-		t.Fatal("plan completed_at not stamped after terminal claim")
-	}
-
-	events, err := store.ListRecentEvents(ctx, domain.EventTypePlanDone, 10)
+	planDoneEvents, err := store.ListRecentEvents(ctx, domain.EventTypePlanDone, 10)
 	if err != nil {
 		t.Fatalf("ListRecentEvents plan.done: %v", err)
 	}
-	if len(events) != 1 {
-		t.Fatalf("plan.done events = %d, want 1", len(events))
+	if len(planDoneEvents) != 0 {
+		t.Fatalf("plan.done events = %d, want 0 (no terminal move on claim path)", len(planDoneEvents))
+	}
+
+	gotPlan, err := store.GetPlanByID(ctx, project.ID, plan.ID)
+	if err != nil {
+		t.Fatalf("GetPlanByID: %v", err)
+	}
+	if gotPlan.Status == "done" {
+		t.Fatalf("plan status = %q, want still-active (claim alone must not finalise a plan)", gotPlan.Status)
 	}
 }
 
