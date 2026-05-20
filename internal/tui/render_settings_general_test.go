@@ -97,6 +97,70 @@ func TestSettingsGeneralEndJumpsToBottom(t *testing.T) {
 	}
 }
 
+// TestSettingsGeneralPageDownAdvancesByViewportStep asserts pgdown
+// scrolls by `taskViewPageStep(viewport)` and that pgup returns to the
+// origin. Keeps the page-step bindings from silently regressing — the
+// integration test only exercises `j`, so a typo in the pgdown/pgup
+// arms of `handleSettingsGeneralKey` would otherwise go unnoticed.
+func TestSettingsGeneralPageDownAdvancesByViewportStep(t *testing.T) {
+	m := &Model{
+		styles:    newStyles(config.Theme{}),
+		width:     120,
+		height:    20,
+		top:       topSettings,
+		sub:       subSettingsGeneral,
+		project:   domain.ProjectContext{Slug: "test-project"},
+		theme:     config.Theme{Key: "marker-theme-row"},
+		workflow:  domain.Workflow{Key: "test-wf", Buckets: []domain.Bucket{{Key: "backlog"}, {Key: "dev"}, {Key: "review"}, {Key: "done"}}},
+		languages: config.LanguageSettings{CLI: "en", TUI: "en"},
+	}
+
+	step := taskViewPageStep(m.settingsGeneralViewportRows())
+	if step <= 0 {
+		t.Fatalf("page step = %d; fixture too small to exercise pgdown", step)
+	}
+
+	m.handleSettingsGeneralKey(tea.KeyMsg{Type: tea.KeyPgDown})
+	if m.settingsGeneralScroll != step {
+		t.Fatalf("after pgdown: scroll = %d, want %d", m.settingsGeneralScroll, step)
+	}
+
+	m.handleSettingsGeneralKey(tea.KeyMsg{Type: tea.KeyPgUp})
+	if m.settingsGeneralScroll != 0 {
+		t.Fatalf("after pgup: scroll = %d, want 0", m.settingsGeneralScroll)
+	}
+}
+
+// TestSettingsGeneralEndIsNoOpWhenBodyFits guards the invariant that
+// `G` does nothing when the entire body already fits in the viewport —
+// otherwise the user would see the scroll hints appear on a screen that
+// has no content hidden, which would be a confusing affordance.
+func TestSettingsGeneralEndIsNoOpWhenBodyFits(t *testing.T) {
+	m := &Model{
+		styles:    newStyles(config.Theme{}),
+		width:     120,
+		height:    200,
+		top:       topSettings,
+		sub:       subSettingsGeneral,
+		project:   domain.ProjectContext{Slug: "test-project"},
+		theme:     config.Theme{Key: "marker-theme-row"},
+		workflow:  domain.Workflow{Key: "test-wf", Buckets: []domain.Bucket{{Key: "backlog"}, {Key: "dev"}, {Key: "review"}, {Key: "done"}}},
+		languages: config.LanguageSettings{CLI: "en", TUI: "en"},
+	}
+
+	body := m.renderSettingsGeneralBody()
+	bodyLines := strings.Count(body, "\n") + 1
+	viewport := m.settingsGeneralViewportRows()
+	if bodyLines > viewport {
+		t.Fatalf("fixture overflows: bodyLines=%d viewport=%d — pick a taller height", bodyLines, viewport)
+	}
+
+	m.handleSettingsGeneralKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	if m.settingsGeneralScroll != 0 {
+		t.Fatalf("expected `G` to be a no-op when body fits; got scroll = %d", m.settingsGeneralScroll)
+	}
+}
+
 // TestClampSettingsGeneralScroll locks the boundary behavior of the
 // shared clamp helper — the renderer relies on it to keep a leftover
 // offset from a wider terminal from stranding the user past the new
