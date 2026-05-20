@@ -343,13 +343,31 @@ type planNetworkBuild struct {
 	NextClaimableID int64
 }
 
+// planNetworkBuildOpts toggles the optional projections inside
+// planNetworkBuildData. Key handlers only need the row skeleton
+// (Kind / WaveID / len) for cursor + scroll math, so they skip the
+// SQL peek + the critical-path DFS to keep navigation O(rows) instead
+// of O(rows + 1 query). Render leaves both opts at their zero value
+// so the full surface still renders the next-claimable hint and the
+// critical-path accent.
+type planNetworkBuildOpts struct {
+	// SkipPeek drops the PeekNextClaimable SQL call. The resulting
+	// build carries NextClaimableID == 0; IsNext on every row will be
+	// false. Safe for handler-side row counting.
+	SkipPeek bool
+	// SkipCritical drops the critical-path DFS. IsCritical on every
+	// row will be false. Safe for handler-side row counting.
+	SkipCritical bool
+}
+
 // planNetworkBuildData projects PlanShow into the flat row list the
 // renderer walks AND the auxiliary indices it consumes. Collapsed
 // waves emit only a header row. Expanded waves emit their header
 // followed by one row per task, ordered by the intra-wave rail tree
 // (roots in input order; children DFS pre-order under their first-id
-// parent).
-func (m Model) planNetworkBuildData() planNetworkBuild {
+// parent). Pass a non-zero opts to skip projections handlers don't
+// need; render passes the zero value to get the full surface.
+func (m Model) planNetworkBuildData(opts planNetworkBuildOpts) planNetworkBuild {
 	show := m.planNetworkShow
 	if len(show.Waves) == 0 {
 		return planNetworkBuild{}
@@ -377,12 +395,18 @@ func (m Model) planNetworkBuildData() planNetworkBuild {
 	intraBlockers := planNetworkIntraWaveIndices(show.Dependencies, show.Waves)
 	crossBlockers := planNetworkCrossWaveIndices(show.Dependencies, show.Waves)
 
-	allTasks := make([]domain.PlanTaskRow, 0)
-	for _, wv := range show.Waves {
-		allTasks = append(allTasks, wv.Tasks...)
+	var criticalPath map[int64]bool
+	if !opts.SkipCritical {
+		allTasks := make([]domain.PlanTaskRow, 0)
+		for _, wv := range show.Waves {
+			allTasks = append(allTasks, wv.Tasks...)
+		}
+		criticalPath = planNetworkCriticalPath(show.Dependencies, allTasks)
 	}
-	criticalPath := planNetworkCriticalPath(show.Dependencies, allTasks)
-	nextClaimableID := planNetworkPeekNextClaimable(m.repos.Plans, m.ctx, m.project, show.Plan.ID, m.repos.activeSnapshot())
+	var nextClaimableID int64
+	if !opts.SkipPeek {
+		nextClaimableID = planNetworkPeekNextClaimable(m.repos.Plans, m.ctx, m.project, show.Plan.ID, m.repos.activeSnapshot())
+	}
 
 	var rows []planNetworkRow
 	for waveIdx, wv := range show.Waves {
@@ -439,9 +463,11 @@ func (m Model) planNetworkBuildData() planNetworkBuild {
 
 // planNetworkBuildRows is the row-only shim used by the input
 // handlers — they never need the auxiliary indices, only the row
-// slice for cursor clamps and kind checks.
+// slice for cursor clamps and kind checks. Skips the SQL peek + the
+// critical-path DFS so the projection stays cheap on every keystroke
+// (the full projection runs once per render in renderPlanNetwork).
 func (m Model) planNetworkBuildRows() []planNetworkRow {
-	return m.planNetworkBuildData().Rows
+	return m.planNetworkBuildData(planNetworkBuildOpts{SkipPeek: true, SkipCritical: true}).Rows
 }
 
 // planNetworkWaveRails records the rendered shape of one wave: tasks
@@ -751,7 +777,7 @@ func (m Model) renderPlanNetwork() string {
 		return m.renderPanel(header + "\n\n" + body)
 	}
 
-	build := m.planNetworkBuildData()
+	build := m.planNetworkBuildData(planNetworkBuildOpts{})
 	rows := build.Rows
 	nextClaimableID := build.NextClaimableID
 
@@ -1040,15 +1066,8 @@ func (m Model) padCellDashed(s string, width int) string {
 		return s
 	}
 	remaining := width - w
-	chars := make([]byte, remaining)
-	for i := 0; i < remaining; i++ {
-		if i%2 == 0 {
-			chars[i] = ' '
-		} else {
-			chars[i] = '-'
-		}
-	}
-	return s + m.styles.muted.Render(string(chars))
+	pad := strings.Repeat(" -", (remaining+1)/2)[:remaining]
+	return s + m.styles.muted.Render(pad)
 }
 
 // renderPlanNetworkRowBody renders one row of the bordered task
@@ -1059,9 +1078,9 @@ func (m Model) padCellDashed(s string, width int) string {
 // caller appends a transition separator below this row only when
 // the next row is a different kind.
 func (m Model) renderPlanNetworkRowBody(row planNetworkRow, selected bool, lanePrimary string, suppressedCrossIDs map[int64]bool, layout planNetworkTableLayout) string {
-	cursor := "  "
-	if selected {
-		cursor = m.styles.marker.Render("›") + " "
+	cursor := m.cursorChevron(selected)
+	if cursor == "" {
+		cursor = "  "
 	}
 	border := m.styles.hint.Render("│")
 

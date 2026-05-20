@@ -145,6 +145,19 @@ func (m Model) cursorMarker(selected bool) string {
 	return normalMarker
 }
 
+// cursorChevron returns "› " accent-styled when `selected`, else the
+// empty string. Used by card- and table-style surfaces whose cursor
+// is the chevron glyph (board task cards, plan network rows). Caller
+// pads with two spaces when the surface keeps a fixed cursor column
+// regardless of selection state (table rows); card surfaces leave
+// the unselected case empty so the title gets the freed width.
+func (m Model) cursorChevron(selected bool) string {
+	if !selected {
+		return ""
+	}
+	return m.styles.marker.Render("›") + " "
+}
+
 // renderPickerPanel is the canonical assembly for any "kicker + hint +
 // optional meta + horizontal rule + scrollable list, all wrapped in
 // the standard panel" surface. The picker shape — used by the persona /
