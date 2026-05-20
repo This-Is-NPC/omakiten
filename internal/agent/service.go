@@ -209,12 +209,10 @@ func (s *Service) SetSettings(settings ServiceSettings) {
 // SetSnapshot installs the per-project *config.Snapshot the service
 // reads workflow / catalog / synonym / stopword / registry state from.
 // The production composition root (agentruntime.buildProjectRuntime)
-// calls this once per ProjectRuntime, and Phase 2-bis Round-2 made it
-// the SOLE wiring entry point: every per-field SetXCatalog /
-// SetSynonyms / SetStopwords / SetRegistry setter was deleted because
-// their state is fully derivable from the snapshot. Tests that want
-// to stub catalogs build a Snapshot via the snapshotWith* helpers and
-// pass it here.
+// calls this once per ProjectRuntime; it is the sole wiring entry point
+// because every per-field state is derivable from the snapshot. Tests
+// that want to stub catalogs build a Snapshot via the snapshotWith*
+// helpers and pass it here.
 //
 // SetSnapshot derives every closure-shaped field
 // (taskTemplateLookup / templateCatalog / skillCatalog / lawCatalog /

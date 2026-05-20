@@ -74,8 +74,8 @@ func TestNormalizeTagNamePerProjectSynonyms(t *testing.T) {
 // Snapshot path that production composition roots wire: two TagService
 // instances running side-by-side normalise the same raw tag name to
 // different canonical names because each captures its project's
-// Snapshot at construction. Phase 2-bis Round-2 deleted SetSynonyms —
-// the synonym table flows through *config.Snapshot exclusively.
+// Snapshot at construction. The synonym table flows through
+// *config.Snapshot exclusively — there is no mutable setter to drift.
 func TestTagServicePerProjectSynonymsIsolation(t *testing.T) {
 	bundleA := config.Bundle{Config: config.Settings{TagSynonyms: map[string]string{"go": "golang"}}}
 	bundleB := config.Bundle{Config: config.Settings{TagSynonyms: map[string]string{"go": "goroutine"}}}

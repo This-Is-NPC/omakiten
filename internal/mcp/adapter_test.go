@@ -741,8 +741,8 @@ func callContinueAndDecodeCommentCount(t *testing.T, ctx context.Context, adapte
 
 // TestAdapterServiceResolverIsolatesTemplateCatalog asserts that
 // templates.list dispatched per-project surfaces only that project's
-// catalog. Each service is wired with a distinct SetTemplateCatalog
-// closure; the response slugs must not bleed across the resolver
+// catalog. Each service is wired with a distinct *config.Snapshot via
+// SetSnapshot; the response slugs must not bleed across the resolver
 // boundary.
 func TestAdapterServiceResolverIsolatesTemplateCatalog(t *testing.T) {
 	ctx := context.Background()
