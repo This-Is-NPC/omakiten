@@ -144,9 +144,6 @@ func newSetupPickerModel(inputs setupInputs, needs pickerNeeds) (setupPickerMode
 	pager.PerPage = 1
 	pager.ArabicFormat = "step %d/%d"
 	pager.TotalPages = len(activeOrder)
-	if pager.TotalPages < 1 {
-		pager.TotalPages = 1
-	}
 
 	model := setupPickerModel{
 		step:          stepLang,
@@ -184,7 +181,7 @@ func newSetupPickerModel(inputs setupInputs, needs pickerNeeds) (setupPickerMode
 	}
 
 	model.advancePastResolved()
-	model.syncPager()
+	model = model.syncedPager()
 	return model, nil
 }
 
@@ -360,8 +357,7 @@ func (m setupPickerModel) updateHarness(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m setupPickerModel) transition(next setupStep) setupPickerModel {
 	m.step = next
 	m.advancePastResolved()
-	m.syncPager()
-	return m
+	return m.syncedPager()
 }
 
 // goPrev moves the picker back to the previous needs-active step.
@@ -377,8 +373,7 @@ func (m setupPickerModel) goPrev() setupPickerModel {
 	if m.step == stepAgentLang {
 		m.agentInput.Focus()
 	}
-	m.syncPager()
-	return m
+	return m.syncedPager()
 }
 
 // activeIndex returns the position of the current step within
@@ -393,17 +388,24 @@ func (m setupPickerModel) activeIndex() int {
 	return -1
 }
 
-// syncPager points the paginator at the current active index so the
-// rendered "step N/M" matches the screen the user is looking at. Leaves
-// the page alone when the step is not in activeOrder (e.g. stepDone) —
-// the View short-circuits in those states so the stale page never
-// renders.
-func (m *setupPickerModel) syncPager() {
+// syncedPager returns m with paginator.Page pointed at the current
+// active step so the rendered "step N/M" matches the screen the user
+// is looking at. Leaves the page alone when the step is not in
+// activeOrder (e.g. stepDone) — the View short-circuits in those
+// states so the stale page never renders.
+func (m setupPickerModel) syncedPager() setupPickerModel {
 	if idx := m.activeIndex(); idx >= 0 {
 		m.pager.Page = idx
 	}
+	return m
 }
 
+// isPrevListKey reports whether a key should trigger back-navigation
+// on a list-style step (lang, preset, harness). Matches the TUI's
+// de-facto convention: esc is the universal cancel/back; left/h are
+// the directional back-step used by render_board / render_stats /
+// render_plan_network; pgup is the multi-page scroll-back used by the
+// activity panel and viewport component.
 func isPrevListKey(s string) bool {
 	switch s {
 	case "esc", "left", "h", "pgup":
@@ -412,6 +414,11 @@ func isPrevListKey(s string) bool {
 	return false
 }
 
+// isPrevInputKey is the textinput-screen variant of isPrevListKey:
+// left/h are stripped because they are legitimate text-editing input
+// the user might type into the agent-language field (e.g. "Hindi" or a
+// cursor-left motion). Only esc and pgup remain — neither is a typable
+// glyph, so the agent textinput never sees a back-key collision.
 func isPrevInputKey(s string) bool {
 	switch s {
 	case "esc", "pgup":

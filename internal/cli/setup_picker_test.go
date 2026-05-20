@@ -592,6 +592,80 @@ func TestSetupPicker_PrevKeyVariants(t *testing.T) {
 	}
 }
 
+// TestSetupPicker_BackHintGating — backHint() returns "" on the first
+// active step (esc is a no-op there, advertising it would teach a dead
+// key) and the " · esc back" suffix on every later step.
+func TestSetupPicker_BackHintGating(t *testing.T) {
+	m, err := newSetupPickerModel(setupInputs{}, pickerNeeds{Lang: true, Agent: true, Preset: true, Harness: true})
+	if err != nil {
+		t.Fatalf("newSetupPickerModel: %v", err)
+	}
+	if got := m.backHint(); got != "" {
+		t.Fatalf("first step backHint: got %q want empty", got)
+	}
+	m = stepThrough(t, m, enterMsg())
+	if got := m.backHint(); got == "" {
+		t.Fatalf("post-advance backHint: got empty want non-empty")
+	}
+	// Walk back to first step — hint must disappear again.
+	m = stepThrough(t, m, escMsg())
+	if m.step != stepLang {
+		t.Fatalf("setup precondition: want stepLang got %v", m.step)
+	}
+	if got := m.backHint(); got != "" {
+		t.Fatalf("after returning to first step backHint: got %q want empty", got)
+	}
+}
+
+// TestSetupPicker_ViewRendersStepIndicator — the rendered View output
+// must contain the literal "step N/M" produced by the paginator. Guards
+// against a regression where ArabicFormat is dropped, the paginator
+// View() output changes shape, or stepIndicator stops being wired into
+// renderListView / renderInputView.
+func TestSetupPicker_ViewRendersStepIndicator(t *testing.T) {
+	m, err := newSetupPickerModel(setupInputs{}, pickerNeeds{Lang: true, Agent: true, Preset: true, Harness: true})
+	if err != nil {
+		t.Fatalf("newSetupPickerModel: %v", err)
+	}
+	if got := m.View(); !strings.Contains(got, "step 1/4") {
+		t.Fatalf("lang view: missing 'step 1/4' indicator\n%s", got)
+	}
+	m = stepThrough(t, m, enterMsg()) // → agent (input view)
+	if got := m.View(); !strings.Contains(got, "step 2/4") {
+		t.Fatalf("agent view: missing 'step 2/4' indicator\n%s", got)
+	}
+	m = stepThrough(t, m, enterMsg()) // → preset
+	if got := m.View(); !strings.Contains(got, "step 3/4") {
+		t.Fatalf("preset view: missing 'step 3/4' indicator\n%s", got)
+	}
+	m = stepThrough(t, m, enterMsg()) // → harness
+	if got := m.View(); !strings.Contains(got, "step 4/4") {
+		t.Fatalf("harness view: missing 'step 4/4' indicator\n%s", got)
+	}
+}
+
+// TestSetupPicker_StepIndicatorHiddenForSingleStep — when only one
+// step is active a "step 1/1" indicator is visual noise; stepIndicator
+// must return empty and the View must not contain "step".
+func TestSetupPicker_StepIndicatorHiddenForSingleStep(t *testing.T) {
+	m, err := newSetupPickerModel(setupInputs{
+		CLILang: "en", TUILang: "en", AgentLang: "English", AgentLangSet: true,
+		Preset: "omakase",
+	}, pickerNeeds{Harness: true})
+	if err != nil {
+		t.Fatalf("newSetupPickerModel: %v", err)
+	}
+	if m.step != stepHarness {
+		t.Fatalf("setup precondition: want stepHarness got %v", m.step)
+	}
+	if got := m.stepIndicator(); got != "" {
+		t.Fatalf("single-step stepIndicator: got %q want empty", got)
+	}
+	if got := m.View(); strings.Contains(got, "step ") {
+		t.Fatalf("single-step view must not render indicator:\n%s", got)
+	}
+}
+
 // TestSetupPicker_PresetTitlesLocalized asserts the preset rows use the
 // chosen CLI catalog (so a pt-br pick renders pt-br titles).
 func TestSetupPicker_PresetTitlesLocalized(t *testing.T) {
