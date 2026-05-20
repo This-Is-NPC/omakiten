@@ -386,7 +386,7 @@ func (m Model) footerTokens() []footerToken {
 			{key: "c", label: m.t("tui.footer.config"), primary: true},
 			{key: "e", label: m.t("tui.footer.edit"), primary: true},
 			{key: "j/k", label: m.t("tui.footer.scroll")},
-			{key: "pgup/pgdn", label: m.t("tui.footer.scroll")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
 			{key: "g/G", label: m.t("tui.footer.top_bottom")},
 			{key: "r", label: m.t("tui.footer.refresh")},
 			{key: "tab", label: m.t("tui.footer.zones")},
