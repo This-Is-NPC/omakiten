@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -47,6 +48,8 @@ func LoadBundle(path string) (Bundle, error) {
 		return Bundle{}, err
 	}
 
+	theme, themePath, themeErr := resolveActiveTheme(rootDir, wired.Config.Theme.Active)
+
 	bundle := Bundle{
 		Version:       wired.Version,
 		Kit:           wired.Kit,
@@ -54,6 +57,14 @@ func LoadBundle(path string) (Bundle, error) {
 		Workflows:     wired.Workflows,
 		Notifications: notifications,
 		Languages:     languages,
+		ActiveTheme:   theme,
+	}
+
+	if themeErr != nil {
+		bundle.Warnings = append(bundle.Warnings, SourceWarning{
+			Path:    themePath,
+			Message: fmt.Sprintf("active theme %q not loadable: %v", wired.Config.Theme.Active, themeErr),
+		})
 	}
 
 	bundle.Warnings = append(bundle.Warnings, skillWarn...)

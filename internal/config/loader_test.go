@@ -135,3 +135,64 @@ func TestLoadThemeMissing(t *testing.T) {
 		t.Fatal("LoadTheme(missing) error = nil")
 	}
 }
+
+// TestLoadBundlePopulatesActiveTheme pins the new contract: LoadBundle
+// resolves themes/<active>.yaml (custom→default precedence) during the
+// bundle assembly so downstream consumers read tokens through
+// Snapshot.Theme() instead of re-opening the YAML at every hot-reload.
+// On the happy path the theme tokens are populated; on a missing or
+// invalid theme the loader degrades to a zero-Theme + a SourceWarning so
+// CLI commands that never render the TUI continue to work.
+func TestLoadBundlePopulatesActiveTheme(t *testing.T) {
+	tmp := t.TempDir()
+	if err := EnsureDefaultFiles(tmp); err != nil {
+		t.Fatalf("EnsureDefaultFiles() error = %v", err)
+	}
+	yamlPath := filepath.Join(tmp, "config", "omakase.yaml")
+
+	bundle, err := LoadBundle(yamlPath)
+	if err != nil {
+		t.Fatalf("LoadBundle(happy path) error = %v", err)
+	}
+	if bundle.ActiveTheme.Name == "" {
+		t.Fatalf("LoadBundle: ActiveTheme.Name = \"\", want populated from themes/<active>.yaml")
+	}
+	if bundle.Config.Theme.Active == "" {
+		t.Fatal("test fixture issue: bundle.Config.Theme.Active is empty; precondition for the case")
+	}
+
+	for _, w := range bundle.Warnings {
+		if w.Path != "" && filepath.Base(filepath.Dir(w.Path)) == "themes" {
+			t.Fatalf("LoadBundle(happy path): unexpected theme warning %+v", w)
+		}
+	}
+
+	// Now break the theme: remove every themes/<active>*.yaml file so
+	// the loader can no longer resolve the active token set, and assert
+	// the loader returns (Bundle, nil) with a zero-Theme + a warning.
+	active := bundle.Config.Theme.Active
+	for _, candidate := range []string{
+		filepath.Join(tmp, "themes", "custom", active+".yaml"),
+		filepath.Join(tmp, "themes", active+".yaml"),
+	} {
+		_ = os.Remove(candidate)
+	}
+
+	bundle2, err := LoadBundle(yamlPath)
+	if err != nil {
+		t.Fatalf("LoadBundle(theme missing) error = %v, want nil (degraded path)", err)
+	}
+	if bundle2.ActiveTheme.Name != "" {
+		t.Fatalf("LoadBundle(theme missing): ActiveTheme = %+v, want zero-Theme", bundle2.ActiveTheme)
+	}
+	var sawWarning bool
+	for _, w := range bundle2.Warnings {
+		if filepath.Base(filepath.Dir(w.Path)) == "themes" || filepath.Base(filepath.Dir(filepath.Dir(w.Path))) == "themes" {
+			sawWarning = true
+			break
+		}
+	}
+	if !sawWarning {
+		t.Fatalf("LoadBundle(theme missing): no themes-scoped warning in %+v", bundle2.Warnings)
+	}
+}

@@ -87,6 +87,48 @@ func TestSnapshotPerBundleIsolation(t *testing.T) {
 	}
 }
 
+// TestSnapshotExposesActiveTheme pins the contract introduced by the
+// Phase 2-bis Theme-via-Snapshot closure: BuildSnapshot copies the
+// resolved Theme from the Bundle so the TUI hot-reload + first-boot
+// paths read tokens through `snap.Theme()` instead of re-opening the
+// themes/<slug>.yaml file on every Reload. Two snapshots built from
+// distinct bundles carry distinct themes; a bundle that ships an empty
+// ActiveTheme produces a zero-Theme on the snapshot (callers that need
+// a live theme detect that and surface ErrConfigInvalid themselves).
+func TestSnapshotExposesActiveTheme(t *testing.T) {
+	bundle := newTwoBucketBundle("alpha", "beta")
+	bundle.ActiveTheme = Theme{
+		Version: 1,
+		Key:     "omacon",
+		Name:    "Omacon",
+		Colors:  map[string]string{"accent": "#ff5fa2"},
+	}
+	snap := BuildSnapshot(bundle)
+
+	got := snap.Theme()
+	if got.Key != "omacon" || got.Name != "Omacon" {
+		t.Fatalf("snap.Theme() = %+v, want key=omacon name=Omacon", got)
+	}
+	if got.Colors["accent"] != "#ff5fa2" {
+		t.Fatalf("snap.Theme().Colors[accent] = %q, want #ff5fa2", got.Colors["accent"])
+	}
+
+	// Mutating the bundle after BuildSnapshot must not leak into the
+	// snapshot (matches the immutability contract the rest of the
+	// snapshot fields already honor).
+	bundle.ActiveTheme.Colors["accent"] = "MUTATED"
+	if snap.Theme().Colors["accent"] == "MUTATED" {
+		t.Fatal("snapshot leaked post-Build mutation of Bundle.ActiveTheme.Colors")
+	}
+
+	// Empty ActiveTheme yields zero-Theme on the accessor.
+	emptyBundle := newTwoBucketBundle("alpha", "beta")
+	emptySnap := BuildSnapshot(emptyBundle)
+	if emptySnap.Theme().Name != "" {
+		t.Fatalf("zero-ActiveTheme: snap.Theme().Name = %q, want \"\"", emptySnap.Theme().Name)
+	}
+}
+
 func newTwoBucketBundle(firstKey, secondKey string) Bundle {
 	return Bundle{
 		Workflows: []Workflow{{

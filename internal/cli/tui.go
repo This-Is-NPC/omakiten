@@ -57,9 +57,9 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 	if err != nil {
 		return domain.NewError(domain.ErrConfigInvalid, t("cli.err.config_invalid"), map[string]any{"path": rt.configPath, "error": fmt.Sprint(err)})
 	}
-	theme, err := loadActiveThemeFromBundle(bundle, rt.configPath)
-	if err != nil {
-		return err
+	theme := rt.activeSnapshot().Theme()
+	if theme.Name == "" {
+		return domain.NewError(domain.ErrConfigInvalid, t("cli.err.theme_invalid"), map[string]any{"active": bundle.Config.Theme.Active})
 	}
 
 	bundleStore := configstore.New()
@@ -168,21 +168,3 @@ func oktCDPath() string {
 	return filepath.Join(tmp, "okt-cd-"+strconv.Itoa(os.Getuid()))
 }
 
-func loadActiveThemeFromBundle(bundle config.Bundle, configPath string) (config.Theme, error) {
-	root := config.ConfigRootFromYAMLPath(configPath)
-	active := bundle.Config.Theme.Active
-	// Resolution order: <root>/themes/custom/<slug>.yaml (user override) →
-	// <root>/themes/<slug>.yaml (default). The custom path lets users tweak the
-	// shipped theme or add new ones without losing them on default refresh.
-	customPath := filepath.Join(root, "themes", "custom", active+".yaml")
-	defaultPath := filepath.Join(root, "themes", active+".yaml")
-	themePath := defaultPath
-	if _, err := os.Stat(customPath); err == nil {
-		themePath = customPath
-	}
-	theme, err := config.LoadTheme(themePath)
-	if err != nil {
-		return config.Theme{}, domain.NewError(domain.ErrConfigInvalid, t("cli.err.theme_invalid"), map[string]any{"path": themePath, "error": fmt.Sprint(err)})
-	}
-	return theme, nil
-}

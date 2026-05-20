@@ -18,7 +18,14 @@ type Bundle struct {
 	MCPCommands   map[string]MCPCommandSpec `yaml:"-" json:"mcp_commands,omitempty"`
 	Notifications map[string]Notification   `yaml:"-" json:"notifications,omitempty"`
 	Languages     []Language                `yaml:"-" json:"languages,omitempty"`
-	Warnings      []SourceWarning           `yaml:"-" json:"warnings,omitempty"`
+	// ActiveTheme is the theme resolved by LoadBundle from
+	// themes/<Config.Theme.Active>.yaml (custom→default precedence). When
+	// the YAML is missing or invalid the loader degrades to a zero-Theme +
+	// a SourceWarning so CLI commands that never render the TUI continue
+	// to load. Consumers that need a populated theme (TUI boot, hot reload)
+	// check `ActiveTheme.Name == ""` and surface ErrConfigInvalid.
+	ActiveTheme Theme           `yaml:"-" json:"active_theme,omitempty"`
+	Warnings    []SourceWarning `yaml:"-" json:"warnings,omitempty"`
 }
 
 // TemplateByDefault resolves the template that should be used as the active
