@@ -20,6 +20,8 @@ func enterMsg() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyEnter} }
 func ctrlCMsg() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyCtrlC} }
 func downMsg() tea.KeyMsg  { return tea.KeyMsg{Type: tea.KeyDown} }
 func tabMsg() tea.KeyMsg   { return tea.KeyMsg{Type: tea.KeyTab} }
+func escMsg() tea.KeyMsg   { return tea.KeyMsg{Type: tea.KeyEsc} }
+func pgupMsg() tea.KeyMsg  { return tea.KeyMsg{Type: tea.KeyPgUp} }
 
 func stepThrough(t *testing.T, m setupPickerModel, msgs ...tea.Msg) setupPickerModel {
 	t.Helper()
@@ -289,6 +291,305 @@ func TestSetupPicker_CustomOverridesBundled(t *testing.T) {
 		}
 	}
 	t.Fatalf("en code not present in picker")
+}
+
+// TestSetupPicker_PrevFromEachStep — esc on any non-first active step
+// returns the picker to the previous active step. Covers AC §6(a).
+func TestSetupPicker_PrevFromEachStep(t *testing.T) {
+	needs := pickerNeeds{Lang: true, Agent: true, Preset: true, Harness: true}
+	m, err := newSetupPickerModel(setupInputs{}, needs)
+	if err != nil {
+		t.Fatalf("newSetupPickerModel: %v", err)
+	}
+
+	// stepLang → stepAgentLang, then esc → stepLang
+	m = stepThrough(t, m, enterMsg())
+	if m.step != stepAgentLang {
+		t.Fatalf("want stepAgentLang got %v", m.step)
+	}
+	m = stepThrough(t, m, escMsg())
+	if m.step != stepLang {
+		t.Fatalf("esc from agent: want stepLang got %v", m.step)
+	}
+
+	// stepLang → agent → preset, then esc → agent
+	m = stepThrough(t, m, enterMsg(), enterMsg())
+	if m.step != stepPreset {
+		t.Fatalf("want stepPreset got %v", m.step)
+	}
+	m = stepThrough(t, m, escMsg())
+	if m.step != stepAgentLang {
+		t.Fatalf("esc from preset: want stepAgentLang got %v", m.step)
+	}
+	if !m.agentInput.Focused() {
+		t.Fatalf("agentInput must re-focus after prev to stepAgentLang")
+	}
+
+	// agent → preset → harness, then esc → preset
+	m = stepThrough(t, m, enterMsg(), enterMsg())
+	if m.step != stepHarness {
+		t.Fatalf("want stepHarness got %v", m.step)
+	}
+	m = stepThrough(t, m, escMsg())
+	if m.step != stepPreset {
+		t.Fatalf("esc from harness: want stepPreset got %v", m.step)
+	}
+}
+
+// TestSetupPicker_PrevSkipsEnvCollapsed — when agent step is supplied
+// up front, esc from preset must skip past it back to stepLang.
+// Covers AC §6(b).
+func TestSetupPicker_PrevSkipsEnvCollapsed(t *testing.T) {
+	needs := pickerNeeds{Lang: true, Preset: true, Harness: true}
+	m, err := newSetupPickerModel(setupInputs{
+		AgentLang:    "English",
+		AgentLangSet: true,
+	}, needs)
+	if err != nil {
+		t.Fatalf("newSetupPickerModel: %v", err)
+	}
+	if m.step != stepLang {
+		t.Fatalf("want stepLang got %v", m.step)
+	}
+	m = stepThrough(t, m, enterMsg())
+	if m.step != stepPreset {
+		t.Fatalf("post-lang must skip collapsed agent: want stepPreset got %v", m.step)
+	}
+	m = stepThrough(t, m, escMsg())
+	if m.step != stepLang {
+		t.Fatalf("prev must skip collapsed agent: want stepLang got %v", m.step)
+	}
+}
+
+// TestSetupPicker_ValuesPreservedAcrossPrev — choices entered before
+// the user backs up survive the round trip. Covers AC §6(c).
+func TestSetupPicker_ValuesPreservedAcrossPrev(t *testing.T) {
+	needs := pickerNeeds{Lang: true, Agent: true, Preset: true, Harness: true}
+	m, err := newSetupPickerModel(setupInputs{}, needs)
+	if err != nil {
+		t.Fatalf("newSetupPickerModel: %v", err)
+	}
+	// Move lang cursor off zero, confirm.
+	m = stepThrough(t, m, downMsg(), enterMsg())
+	wantLangCursor := m.langCursor
+	if wantLangCursor == 0 {
+		t.Fatalf("test setup: bundled langs need at least 2 entries")
+	}
+	// Type agent name, confirm to land on preset.
+	m = stepThrough(t, m, keyMsg('P'), keyMsg('t'), enterMsg())
+	if m.step != stepPreset {
+		t.Fatalf("want stepPreset got %v", m.step)
+	}
+	// Move preset cursor.
+	if len(m.presets) > 1 {
+		m = stepThrough(t, m, downMsg())
+	}
+	wantPresetCursor := m.presetCursor
+
+	// esc all the way back to lang, then walk forward.
+	m = stepThrough(t, m, escMsg())
+	if m.step != stepAgentLang {
+		t.Fatalf("want stepAgentLang got %v", m.step)
+	}
+	if m.agentInput.Value() != "Pt" {
+		t.Fatalf("agentInput value lost: %q", m.agentInput.Value())
+	}
+	if !m.agentInput.Focused() {
+		t.Fatalf("agentInput must re-focus on prev landing")
+	}
+	m = stepThrough(t, m, escMsg())
+	if m.step != stepLang {
+		t.Fatalf("want stepLang got %v", m.step)
+	}
+	if m.langCursor != wantLangCursor {
+		t.Fatalf("langCursor lost: got %d want %d", m.langCursor, wantLangCursor)
+	}
+
+	// Forward through the chain — agent text and preset cursor must
+	// survive the round-trip.
+	m = stepThrough(t, m, enterMsg())
+	if m.agentInput.Value() != "Pt" {
+		t.Fatalf("agentInput value lost on re-entry: %q", m.agentInput.Value())
+	}
+	m = stepThrough(t, m, enterMsg())
+	if m.step != stepPreset {
+		t.Fatalf("want stepPreset got %v", m.step)
+	}
+	if m.presetCursor != wantPresetCursor {
+		t.Fatalf("presetCursor lost: got %d want %d", m.presetCursor, wantPresetCursor)
+	}
+
+	// Move forward to harness, toggle one, esc back, return, confirm
+	// harnessChosen survived.
+	m = stepThrough(t, m, enterMsg())
+	if m.step != stepHarness {
+		t.Fatalf("want stepHarness got %v", m.step)
+	}
+	m = stepThrough(t, m, enterMsg()) // toggle row 0
+	if !m.harnessChosen[0] {
+		t.Fatalf("harnessChosen[0] should be true after enter")
+	}
+	wantCursor := m.harnessCursor
+	m = stepThrough(t, m, escMsg())
+	if m.step != stepPreset {
+		t.Fatalf("esc from harness: want stepPreset got %v", m.step)
+	}
+	m = stepThrough(t, m, enterMsg())
+	if m.step != stepHarness {
+		t.Fatalf("re-entry: want stepHarness got %v", m.step)
+	}
+	if !m.harnessChosen[0] {
+		t.Fatalf("harnessChosen lost on round trip")
+	}
+	if m.harnessCursor != wantCursor {
+		t.Fatalf("harnessCursor lost: got %d want %d", m.harnessCursor, wantCursor)
+	}
+}
+
+// TestSetupPicker_PrevNoOpOnFirstStep — esc on the first active step
+// must not quit or panic. Covers AC §6(d).
+func TestSetupPicker_PrevNoOpOnFirstStep(t *testing.T) {
+	needs := pickerNeeds{Lang: true, Agent: true, Preset: true, Harness: true}
+	m, err := newSetupPickerModel(setupInputs{}, needs)
+	if err != nil {
+		t.Fatalf("newSetupPickerModel: %v", err)
+	}
+	next, cmd := m.Update(escMsg())
+	m = next.(setupPickerModel)
+	if cmd != nil {
+		t.Fatalf("esc on first step must not return a cmd")
+	}
+	if m.aborted {
+		t.Fatalf("esc on first step must not abort")
+	}
+	if m.done {
+		t.Fatalf("esc on first step must not complete")
+	}
+	if m.step != stepLang {
+		t.Fatalf("step must stay at stepLang, got %v", m.step)
+	}
+
+	// Same check on a needs={Preset:true,Harness:true} model — preset is
+	// the first active step there, esc must be a no-op.
+	m2, err := newSetupPickerModel(setupInputs{
+		CLILang: "en", TUILang: "en", AgentLang: "English", AgentLangSet: true,
+	}, pickerNeeds{Preset: true, Harness: true})
+	if err != nil {
+		t.Fatalf("newSetupPickerModel: %v", err)
+	}
+	next2, cmd2 := m2.Update(escMsg())
+	m2 = next2.(setupPickerModel)
+	if cmd2 != nil || m2.aborted || m2.step != stepPreset {
+		t.Fatalf("esc on first active step (preset) must no-op: step=%v aborted=%v cmd!=nil=%v", m2.step, m2.aborted, cmd2 != nil)
+	}
+}
+
+// TestSetupPicker_StepIndicatorCount — paginator TotalPages tracks the
+// count of needs-active steps; advancing changes the rendered page.
+// Covers AC §6(e).
+func TestSetupPicker_StepIndicatorCount(t *testing.T) {
+	cases := []struct {
+		name  string
+		needs pickerNeeds
+		want  int
+	}{
+		{"all four", pickerNeeds{Lang: true, Agent: true, Preset: true, Harness: true}, 4},
+		{"preset+harness", pickerNeeds{Preset: true, Harness: true}, 2},
+		{"lang+harness", pickerNeeds{Lang: true, Harness: true}, 2},
+		{"agent only", pickerNeeds{Agent: true}, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, err := newSetupPickerModel(setupInputs{
+				CLILang: "en", TUILang: "en", AgentLang: "English", AgentLangSet: true,
+				Preset: "omakase",
+			}, tc.needs)
+			if err != nil {
+				t.Fatalf("newSetupPickerModel: %v", err)
+			}
+			if m.pager.TotalPages != tc.want {
+				t.Fatalf("TotalPages: got %d want %d", m.pager.TotalPages, tc.want)
+			}
+			if len(m.activeOrder) != tc.want {
+				t.Fatalf("activeOrder len: got %d want %d", len(m.activeOrder), tc.want)
+			}
+		})
+	}
+
+	// Walk a full picker — page should track the active index after
+	// every transition.
+	m, err := newSetupPickerModel(setupInputs{}, pickerNeeds{Lang: true, Agent: true, Preset: true, Harness: true})
+	if err != nil {
+		t.Fatalf("newSetupPickerModel: %v", err)
+	}
+	if m.pager.Page != 0 {
+		t.Fatalf("start page: got %d want 0", m.pager.Page)
+	}
+	m = stepThrough(t, m, enterMsg())
+	if m.pager.Page != 1 {
+		t.Fatalf("after lang confirm: got %d want 1", m.pager.Page)
+	}
+	m = stepThrough(t, m, enterMsg())
+	if m.pager.Page != 2 {
+		t.Fatalf("after agent confirm: got %d want 2", m.pager.Page)
+	}
+	m = stepThrough(t, m, escMsg())
+	if m.pager.Page != 1 {
+		t.Fatalf("after esc: got %d want 1", m.pager.Page)
+	}
+}
+
+// TestSetupPicker_PrevKeyVariants — esc, pgup, left, h all trigger
+// prev on list steps; only esc and pgup trigger on the agent textinput
+// (left/h are reserved for text editing).
+func TestSetupPicker_PrevKeyVariants(t *testing.T) {
+	listKeys := []tea.KeyMsg{
+		escMsg(),
+		pgupMsg(),
+		{Type: tea.KeyLeft},
+		{Type: tea.KeyRunes, Runes: []rune{'h'}},
+	}
+	for _, k := range listKeys {
+		t.Run("preset/"+k.String(), func(t *testing.T) {
+			m, err := newSetupPickerModel(setupInputs{
+				CLILang: "en", TUILang: "en", AgentLang: "English", AgentLangSet: true,
+			}, pickerNeeds{Preset: true, Harness: true})
+			if err != nil {
+				t.Fatalf("newSetupPickerModel: %v", err)
+			}
+			m = stepThrough(t, m, enterMsg()) // advance to harness
+			if m.step != stepHarness {
+				t.Fatalf("setup precondition: want stepHarness got %v", m.step)
+			}
+			m = stepThrough(t, m, k)
+			if m.step != stepPreset {
+				t.Fatalf("key %q: want stepPreset got %v", k.String(), m.step)
+			}
+		})
+	}
+
+	// Agent step — pgup goes back, 'h' is text input.
+	m, err := newSetupPickerModel(setupInputs{}, pickerNeeds{Lang: true, Agent: true, Preset: true, Harness: true})
+	if err != nil {
+		t.Fatalf("newSetupPickerModel: %v", err)
+	}
+	m = stepThrough(t, m, enterMsg()) // → stepAgentLang
+	if m.step != stepAgentLang {
+		t.Fatalf("want stepAgentLang got %v", m.step)
+	}
+	// Type 'h' — must stay on agent step and append to text.
+	m = stepThrough(t, m, keyMsg('h'))
+	if m.step != stepAgentLang {
+		t.Fatalf("'h' must not back out of agent step: got %v", m.step)
+	}
+	if m.agentInput.Value() != "h" {
+		t.Fatalf("'h' must reach textinput: got %q", m.agentInput.Value())
+	}
+	// pgup — must back out.
+	m = stepThrough(t, m, pgupMsg())
+	if m.step != stepLang {
+		t.Fatalf("pgup on agent: want stepLang got %v", m.step)
+	}
 }
 
 // TestSetupPicker_PresetTitlesLocalized asserts the preset rows use the
