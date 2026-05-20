@@ -156,15 +156,17 @@ func (s *Store) SetTaskState(ctx context.Context, projectID, taskID int64, state
 		bucketKey = targetBucketKey
 	}
 
-	// Same completed_at rule as MoveTask: archive into the final bucket
-	// stamps the timestamp; unarchive out of it clears. Active vs archived
-	// state does not gate the column — bucket membership does. assigned_to
-	// follows the same release-on-bucket-change rule MoveTask applies, so
-	// archiving a claimed task drops the assignment cleanly.
+	// Same first-stamp-wins completed_at rule as MoveTask: archiving into
+	// the final bucket records the moment the task first crossed the finish
+	// line (COALESCE), and any move out preserves the existing timestamp
+	// (ELSE completed_at). Active vs archived state does not gate the column —
+	// bucket membership does. assigned_to follows the same release-on-bucket-
+	// change rule MoveTask applies, so archiving a claimed task drops the
+	// assignment cleanly.
 	isFinal := boolToInt(buckets.Workflow().FinalBucketKey() == bucketKey)
 	row := tx.QueryRowContext(ctx, `
 UPDATE tasks SET state = ?, bucket_id = ?, updated_at = CURRENT_TIMESTAMP,
-  completed_at = CASE WHEN ? = 1 THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE NULL END,
+  completed_at = CASE WHEN ? = 1 THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE completed_at END,
   assigned_to  = CASE WHEN bucket_id != ? THEN NULL ELSE assigned_to END
 WHERE project_id = ? AND id = ?
 RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at

@@ -224,13 +224,17 @@ func TestCompletedAtTracksFinalBucketTransitions(t *testing.T) {
 	if _, err := store.MoveTask(ctx, project.ID, task.ID, "dev", store.snap()); err != nil {
 		t.Fatalf("MoveTask(dev back) = %v", err)
 	}
-	if got := readCompletedAt(); got.Valid {
-		t.Fatalf("re-opened dev completed_at = %q, want NULL", got.String)
+	bounced := readCompletedAt()
+	if !bounced.Valid {
+		t.Fatalf("bounced-out completed_at = NULL, want preserved %q (first-stamp-wins)", first.String)
+	}
+	if bounced.String != first.String {
+		t.Fatalf("bounced-out completed_at = %q, want %q (timestamp must survive the bounce)", bounced.String, first.String)
 	}
 
-	// Sleep so the next CURRENT_TIMESTAMP can differ from `first` (SQLite
-	// resolution is 1s). Without this, "new completion overwrites" is
-	// indistinguishable from "old timestamp preserved" in fast tests.
+	// Sleep so a fresh CURRENT_TIMESTAMP would differ from `first` (SQLite
+	// resolution is 1s). The assertion below proves the second completion
+	// keeps the original timestamp instead of stamping a new one.
 	time.Sleep(1100 * time.Millisecond)
 
 	if _, err := store.MoveTask(ctx, project.ID, task.ID, "done", store.snap()); err != nil {
@@ -238,10 +242,10 @@ func TestCompletedAtTracksFinalBucketTransitions(t *testing.T) {
 	}
 	second := readCompletedAt()
 	if !second.Valid {
-		t.Fatalf("re-completed completed_at = NULL, want non-NULL")
+		t.Fatalf("re-completed completed_at = NULL, want %q", first.String)
 	}
-	if second.String <= first.String {
-		t.Fatalf("re-completed completed_at = %q, want strictly after first %q", second.String, first.String)
+	if second.String != first.String {
+		t.Fatalf("re-completed completed_at = %q, want %q (first-stamp wins; re-entering done must not overwrite)", second.String, first.String)
 	}
 }
 
