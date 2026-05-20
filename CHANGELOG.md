@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.19.0](https://github.com/This-Is-NPC/omakiten/compare/v0.18.2...v0.19.0) (2026-05-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **tui,plans:** PlanService.ClaimNext / plans.claim_next MCP tool no longer move the task between buckets. Callers that relied on the side-effect must invoke WorkflowService.MoveTask explicitly after the claim succeeds.
+
+### Features
+
+* **tui,plans:** linear-cursor plan-network outline + ownership-only claim ([#68](https://github.com/This-Is-NPC/omakiten/issues/68)) ([34abbc4](https://github.com/This-Is-NPC/omakiten/commit/34abbc436bd4ebee900b1cb73965a96f4a5dccba))
+
 ## [0.18.2](https://github.com/This-Is-NPC/omakiten/compare/v0.18.1...v0.18.2) (2026-05-18)
 
 
