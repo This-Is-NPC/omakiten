@@ -202,10 +202,13 @@ func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBuc
 
 	currentBucketKey := s.bucketKeyByID(currentBucketID, buckets)
 
-	// completed_at tracks the task's stay in the workflow's terminal
-	// bucket: COALESCE preserves the existing timestamp when the target
-	// already is final (no-op moves keep the original completion moment),
-	// and the ELSE NULL branch clears the column on any move out.
+	// completed_at records the first time the task reached the workflow's
+	// terminal bucket. First-stamp wins: COALESCE stamps the column on the
+	// initial entry into the final bucket, and the ELSE branch preserves
+	// the existing value on any move out. Reopening a done task and moving
+	// it back to done does not overwrite the original timestamp — cycle-time
+	// metrics, retros, and plan auto-finalization keep reading the moment
+	// the work first crossed the finish line.
 	//
 	// assigned_to clears whenever the bucket changes: claim ownership is
 	// scoped to "currently being worked on" — any move (forward to review,
@@ -217,7 +220,7 @@ func (s *Store) MoveTask(ctx context.Context, projectID, taskID int64, targetBuc
 	isFinal := boolToInt(buckets.Workflow().FinalBucketKey() == targetBucketKey)
 	row := tx.QueryRowContext(ctx, `
 UPDATE tasks SET bucket_id = ?, updated_at = CURRENT_TIMESTAMP,
-  completed_at = CASE WHEN ? = 1 THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE NULL END,
+  completed_at = CASE WHEN ? = 1 THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE completed_at END,
   assigned_to  = CASE WHEN bucket_id != ? THEN NULL ELSE assigned_to END
 WHERE project_id = ? AND id = ?
 RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at
