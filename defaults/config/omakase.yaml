@@ -348,7 +348,7 @@ workflows:
           - type: comments_tagged
             tag: documentation
             count: 1
-            hint: "${{intl:guard.omakase.archive.comments_tagged.documentation.hint}}"
+            hint: "${{intl:guard.common.archive.comments_tagged.documentation.hint}}"
     buckets:
       - id: 1
         key: backlog

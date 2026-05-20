@@ -209,7 +209,7 @@ workflows:
     operations:
       archive:
         guards:
-          - {type: comments_tagged, tag: documentation, count: 1, hint: "${{intl:guard.kaiseki.archive.comments_tagged.documentation.hint}}"}
+          - {type: comments_tagged, tag: documentation, count: 1, hint: "${{intl:guard.common.archive.comments_tagged.documentation.hint}}"}
       delete:
         guards:
           - {type: comments_tagged, tag: peer-review, count: 1, hint: "${{intl:guard.kaiseki.delete.comments_tagged.peer_review.hint}}"}
@@ -241,15 +241,15 @@ workflows:
       - from: 1
         to: 2
         guards:
-          - {type: comments_tagged, tag: 5w2h, count: 1, hint: "${{intl:guard.kaiseki.planning.comments_tagged.5w2h.hint}}"}
+          - {type: comments_tagged, tag: 5w2h, count: 1, hint: "${{intl:guard.common.planning.comments_tagged.5w2h.hint}}"}
           - {type: comments_tagged, tag: requirements, count: 1, hint: "${{intl:guard.kaiseki.planning.comments_tagged.requirements.hint}}"}
-          - {type: comments_tagged, tag: acceptance, count: 1, hint: "${{intl:guard.kaiseki.planning.comments_tagged.acceptance.hint}}"}
+          - {type: comments_tagged, tag: acceptance, count: 1, hint: "${{intl:guard.common.planning.comments_tagged.acceptance.hint}}"}
       - from: 2
         to: 3
         guards:
-          - {type: comments_tagged, tag: self-branch, count: 1, hint: "${{intl:guard.kaiseki.dev.comments_tagged.self_branch.hint}}"}
+          - {type: comments_tagged, tag: self-branch, count: 1, hint: "${{intl:guard.common.dev.comments_tagged.self_branch.hint}}"}
           - {type: comments_tagged, tag: design, count: 1, hint: "${{intl:guard.kaiseki.dev.comments_tagged.design.hint}}"}
-          - {type: blockers_in, buckets: [done, docs], hint: "${{intl:guard.kaiseki.dev.blockers_in.hint}}"}
+          - {type: blockers_in, buckets: [done, docs], hint: "${{intl:guard.common.dev.blockers_in.hint}}"}
           - {type: wave_gate, hint: "${{intl:guard.wave_gate.hint}}"}
       - from: 3
         to: 4
@@ -263,7 +263,7 @@ workflows:
       - from: 5
         to: 6
         guards:
-          - {type: comments_tagged, tag: documentation, count: 1, hint: "${{intl:guard.kaiseki.done.comments_tagged.documentation.hint}}"}
+          - {type: comments_tagged, tag: documentation, count: 1, hint: "${{intl:guard.common.done.comments_tagged.documentation.hint}}"}
       - {from: 4, to: 3}
       - {from: 5, to: 4}
       - {from: 6, to: 4}
