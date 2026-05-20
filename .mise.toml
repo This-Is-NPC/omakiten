@@ -108,8 +108,17 @@ if [ -z "${HOME:-}" ]; then
   printf 'HOME is not set\n' >&2
   exit 1
 fi
-rm -f "$HOME/.local/bin/okt"
-"$PWD/scripts/uninstall-wrapper.sh"
+# Prefer the in-binary `okt uninstall --yes` when the binary is on disk —
+# it shares lifecycle primitives with install.sh so the wrapper scrub
+# matches byte-for-byte. Falls back to the legacy script for the
+# bootstrap-failure case (no binary present yet).
+installed_at="$HOME/.local/bin/okt"
+if [ -x "$installed_at" ]; then
+  "$installed_at" uninstall --yes
+else
+  rm -f "$installed_at"
+  "$PWD/scripts/uninstall-wrapper.sh"
+fi
 '''
 
 [tasks.purge]

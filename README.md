@@ -47,6 +47,19 @@ okt init --name MyProject --slug my-project --preset shokunin
 
 Projects can also keep their config beside the code — drop a `.omakiten/config/<preset>.yaml` at the repo root and Omakiten loads that bundle while you're inside the tree. Snapshot, hot-reload, and orphan-task migration are isolated per-project so two repos never see each other's workflow.
 
+### Update and uninstall
+
+The binary self-services its own lifecycle — no need to re-pipe the installer for refreshes or remember the bundled shell scripts:
+
+```bash
+okt update --check               # report current vs. latest, no write
+okt update --yes                 # download + atomically swap the binary
+okt uninstall --yes              # remove binary + okt() wrapper, keep DB and config
+okt uninstall --yes --purge      # nuke everything, including data and config
+```
+
+Both commands fall through to an interactive picker when invoked without flags on a TTY (cf. `okt uninstall` checkbox flow with on-disk size hints and a `THIS CANNOT BE UNDONE` line). See [`.docs/cli-guide.md`](./.docs/cli-guide.md#okt-update--fetch-latest-release-and-swap-the-binary) for the full flag tables, JSON envelope codes, and the Windows EXE-in-use caveat.
+
 ## How you work with it
 
 Once connected, two modes coexist: **canonical slash prompts** for the most common moves, and **natural-language requests** the agent translates into MCP tool calls.
