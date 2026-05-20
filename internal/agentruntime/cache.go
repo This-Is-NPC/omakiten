@@ -372,13 +372,12 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	// previous pointer continue reading from it until they return.
 
 	svc := agent.NewService(store, selector)
-	// Phase 2-bis Round-2 collapses every per-field SetXCatalog /
-	// SetSynonyms / SetStopwords / SetRegistry wiring into one
-	// SetSnapshot call. The agent service derives the catalog closures,
-	// synonym table, stopword set, and bundle-scoped EnumRegistry from
-	// the per-project Snapshot at SetSnapshot time. Two projects holding
-	// two snapshots see two independent catalog views; hot-reload
-	// rotates the pointer atomically through cache.Reload.
+	// SetSnapshot is the single wiring entry point: the agent service
+	// derives the catalog closures, synonym table, stopword set, and
+	// bundle-scoped EnumRegistry from the per-project Snapshot in one
+	// pass. Two projects holding two snapshots see two independent
+	// catalog views; hot-reload rotates the pointer atomically through
+	// cache.Reload.
 	svc.SetSnapshot(snapshot)
 	// Inject the orphan service with prev=nil — the cache rotation
 	// overrides this with a rebind-capable view (current+previous

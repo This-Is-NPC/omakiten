@@ -1,7 +1,11 @@
 package config
 
 import (
+	"errors"
+	"fmt"
+	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"omakiten/internal/domain"
@@ -84,6 +88,73 @@ func TestSnapshotPerBundleIsolation(t *testing.T) {
 	}
 	if got := bucketKeys(snapB.Workflow()); !reflect.DeepEqual(got, wantB) {
 		t.Fatalf("snap B buckets = %v, want %v", got, wantB)
+	}
+}
+
+// TestSnapshotExposesActiveTheme pins the contract introduced by the
+// Phase 2-bis Theme-via-Snapshot closure: BuildSnapshot copies the
+// resolved Theme from the Bundle so the TUI hot-reload + first-boot
+// paths read tokens through `snap.Theme()` instead of re-opening the
+// themes/<slug>.yaml file on every Reload. Two snapshots built from
+// distinct bundles carry distinct themes; a bundle that ships an empty
+// ActiveTheme produces a zero-Theme on the snapshot. The bundle's
+// theme-load error mirrors onto Snapshot.ThemeError() so TUI/CLI surfaces
+// distinguish "no theme requested" from "active theme failed to load"
+// without inspecting Bundle.Warnings.
+func TestSnapshotExposesActiveTheme(t *testing.T) {
+	bundle := newTwoBucketBundle("alpha", "beta")
+	bundle.ActiveTheme = Theme{
+		Version: 1,
+		Key:     "omacon",
+		Name:    "Omacon",
+		Colors:  map[string]string{"accent": "#ff5fa2"},
+	}
+	snap := BuildSnapshot(bundle)
+
+	got := snap.Theme()
+	if got.Key != "omacon" || got.Name != "Omacon" {
+		t.Fatalf("snap.Theme() = %+v, want key=omacon name=Omacon", got)
+	}
+	if got.Colors["accent"] != "#ff5fa2" {
+		t.Fatalf("snap.Theme().Colors[accent] = %q, want #ff5fa2", got.Colors["accent"])
+	}
+	if err := snap.ThemeError(); err != nil {
+		t.Fatalf("snap.ThemeError() on populated bundle = %v, want nil", err)
+	}
+
+	// Mutating the bundle after BuildSnapshot must not leak into the
+	// snapshot (matches the immutability contract the rest of the
+	// snapshot fields already honor).
+	bundle.ActiveTheme.Colors["accent"] = "MUTATED"
+	if snap.Theme().Colors["accent"] == "MUTATED" {
+		t.Fatal("snapshot leaked post-Build mutation of Bundle.ActiveTheme.Colors")
+	}
+
+	// Empty ActiveTheme yields zero-Theme on the accessor.
+	emptyBundle := newTwoBucketBundle("alpha", "beta")
+	emptySnap := BuildSnapshot(emptyBundle)
+	if emptySnap.Theme().Name != "" {
+		t.Fatalf("zero-ActiveTheme: snap.Theme().Name = %q, want \"\"", emptySnap.Theme().Name)
+	}
+	if err := emptySnap.ThemeError(); err != nil {
+		t.Fatalf("zero-ActiveTheme: snap.ThemeError() = %v, want nil (no theme requested)", err)
+	}
+
+	// A bundle that carries a non-nil ActiveThemeErr mirrors that error
+	// onto the snapshot so TUI/CLI can surface ErrConfigInvalid without
+	// re-scanning bundle.Warnings.
+	failingBundle := newTwoBucketBundle("alpha", "beta")
+	failingBundle.ActiveThemeErr = fmt.Errorf("resolve theme (custom=/x/custom/foo.yaml default=/x/foo.yaml): %w", os.ErrNotExist)
+	failingSnap := BuildSnapshot(failingBundle)
+	err := failingSnap.ThemeError()
+	if err == nil {
+		t.Fatal("failing bundle: snap.ThemeError() = nil, want non-nil")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failing bundle: snap.ThemeError() = %v, want wraps os.ErrNotExist", err)
+	}
+	if !strings.Contains(err.Error(), "custom=") || !strings.Contains(err.Error(), "default=") {
+		t.Fatalf("failing bundle: snap.ThemeError() message %q does not name both candidate paths", err.Error())
 	}
 }
 

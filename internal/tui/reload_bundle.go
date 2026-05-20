@@ -3,7 +3,6 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -44,10 +43,13 @@ func (m *Model) reloadBundle(path string) error {
 	settings := snap.Settings()
 	registry := pr.EnumRegistry
 
-	theme, err := loadActiveTheme(settings.Theme.Active, path)
-	if err != nil {
-		return err
+	if err := snap.ThemeError(); err != nil {
+		return domain.NewError(domain.ErrConfigInvalid, m.t("cli.err.theme_invalid"), map[string]any{
+			"active": settings.Theme.Active,
+			"error":  err.Error(),
+		})
 	}
+	theme := snap.Theme()
 
 	m.repos.Editor.SetPath(path)
 	m.theme = theme
@@ -143,20 +145,3 @@ func (m *Model) revertConfigSwap() {
 	m.status = fmt.Sprintf(m.t("tui.status.config_swap_cancelled_fmt"), display)
 }
 
-// loadActiveTheme resolves the theme yaml referenced by the snapshot's
-// active theme name. Mirrors the CLI's loadActiveThemeFromBundle so the
-// TUI can revalidate the theme without depending on cli/.
-func loadActiveTheme(active string, configPath string) (config.Theme, error) {
-	root := config.ConfigRootFromYAMLPath(configPath)
-	customPath := filepath.Join(root, "themes", "custom", active+".yaml")
-	defaultPath := filepath.Join(root, "themes", active+".yaml")
-	themePath := defaultPath
-	if _, err := os.Stat(customPath); err == nil {
-		themePath = customPath
-	}
-	theme, err := config.LoadTheme(themePath)
-	if err != nil {
-		return config.Theme{}, domain.NewError(domain.ErrConfigInvalid, "theme is invalid", map[string]any{"path": themePath, "error": fmt.Sprint(err)})
-	}
-	return theme, nil
-}

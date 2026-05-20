@@ -60,9 +60,9 @@ func snapshotWithTaskTemplate(t *testing.T, projectSlug string, scaffold TaskTem
 
 // snapshotWithEntities builds a snapshot whose Skills(), Laws(),
 // Personas(), MCPCommands() reflect the supplied inline values. Empty
-// slices/maps are tolerated and produce an empty catalog of that
-// kind. Used by tests that drove the per-field SetXCatalog setters
-// independently.
+// slices/maps are tolerated and produce an empty catalog of that kind.
+// Used by tests that exercise one catalog axis at a time without having
+// to rebuild the full canonical fixture.
 func snapshotWithEntities(
 	t *testing.T,
 	skills []SkillInfo,
