@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"omakiten/internal/config"
 	"strings"
 	"testing"
@@ -17,6 +18,18 @@ import (
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/tui/components/notification"
 )
+
+// busyCheckpointer always fails Checkpoint with a pinned error so the
+// TUI delete flow's auditWarn write path is exercised.
+type busyCheckpointer struct {
+	err   error
+	calls int
+}
+
+func (b *busyCheckpointer) Checkpoint(context.Context) error {
+	b.calls++
+	return b.err
+}
 
 // TestNewModelWithEmptyProjectOpensHome covers AC1/AC14: launching the TUI
 // without a resolvable project must land on the multi-project Home view
@@ -466,6 +479,68 @@ func TestHomeProjectDeleteOverlayEscClears(t *testing.T) {
 	}
 	if _, err := store.FindProjectByID(ctx, doomed.ID); err != nil {
 		t.Fatalf("project removed despite esc dismissal: %v", err)
+	}
+}
+
+// TestHomeProjectDeleteSurfacesAuditWarn pins #191 review finding 7959:
+// audit-trail warnings emitted from ProjectService.Delete (checkpoint
+// failure, payload marshal failure, audit emission failure) must land
+// on the TUI status surface rather than os.Stderr — stderr writes
+// leak under the bubbletea alt-screen render. Drives a forced
+// Checkpoint failure through the status-driven delete path and
+// asserts the warning text appears appended to m.status alongside
+// the success line.
+func TestHomeProjectDeleteSurfacesAuditWarn(t *testing.T) {
+	ctx := context.Background()
+	dbDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	store := snapstore.Open(t, dbDir+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle: %v", err)
+	}
+	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
+	if err != nil {
+		t.Fatalf("UpsertProject(doomed): %v", err)
+	}
+
+	cp := &busyCheckpointer{err: errors.New("SQLITE_BUSY: foreign writer holds the WAL")}
+
+	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+		Tasks:        store,
+		Projects:     store,
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Tags:         store,
+		Events:       store,
+		Checkpointer: cp,
+		DBPath:       dbDir + "/omakiten.db",
+		Catalog:      newTestCatalog(t),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+
+	// Empty NotificationBinding forces the status-driven fallback;
+	// two `d` presses arm then confirm.
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	updated, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	final := updated.(Model)
+
+	if cp.calls != 1 {
+		t.Fatalf("Checkpointer.Checkpoint calls = %d, want 1", cp.calls)
+	}
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err == nil {
+		t.Fatalf("project still present after confirm; auditWarn fix must not abort the cascade")
+	}
+	if !strings.Contains(final.status, "wal_checkpoint") {
+		t.Fatalf("status missing checkpoint warning; auditWarn must land on m.status not stderr.\nstatus = %q", final.status)
+	}
+	if !strings.Contains(final.status, "doomed") {
+		t.Fatalf("status missing project slug — success line dropped?\nstatus = %q", final.status)
 	}
 }
 

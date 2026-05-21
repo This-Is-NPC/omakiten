@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -403,9 +404,12 @@ func (m *Model) armOrConfirmHomeProjectDelete(project domain.Project) {
 	// Second-press fallback path: an existing pending id means the
 	// overlay could not be shown on the first press, so the
 	// status-driven gate is active. Honour the second `d` press by
-	// firing the delete directly.
+	// firing the delete directly with the arm-time counters snapshot.
 	if m.homeProjectDeletePendingID == project.ID {
-		m.executeHomeProjectDelete(project)
+		counters := m.homeProjectDeletePendingCounters
+		m.homeProjectDeletePendingID = 0
+		m.homeProjectDeletePendingCounters = domain.ProjectDeleteCounters{}
+		m.executeHomeProjectDelete(project, counters)
 		return
 	}
 	notif, ok := m.notifications["home-project-delete-confirm"]
@@ -464,37 +468,36 @@ func (m *Model) handleHomeProjectDeleteAction(action notification.ActionMsg) {
 	if project.ID == 0 {
 		return
 	}
-	m.executeHomeProjectDeleteWithCounters(project, pendingCounters)
+	m.executeHomeProjectDelete(project, pendingCounters)
 }
 
-// executeHomeProjectDelete is the status-driven fallback entry point
-// (second-press path). It re-reads the arm-time counters from the
-// pending state — by the time we reach here armOrConfirmHomeProjectDelete
-// has already populated homeProjectDeletePendingCounters.
-func (m *Model) executeHomeProjectDelete(project domain.Project) {
-	counters := m.homeProjectDeletePendingCounters
-	m.homeProjectDeletePendingID = 0
-	m.homeProjectDeletePendingCounters = domain.ProjectDeleteCounters{}
-	m.executeHomeProjectDeleteWithCounters(project, counters)
-}
-
-// executeHomeProjectDeleteWithCounters wires the same
-// ProjectService.Delete the CLI uses against the active TUI store + a
-// freshly constructed BackupService, threading the arm-time counters
-// snapshot through to avoid a second ProjectDeleteCounts round-trip.
-// The snapshot lands under StateDir/backups/ with the configured
-// retention. On success the Home read-model is reloaded (the row
-// disappears) and the backup path surfaces in the status badge so the
-// user knows where the recovery artefact lives. Failure leaves the
-// project intact and surfaces the underlying error.
-func (m *Model) executeHomeProjectDeleteWithCounters(project domain.Project, counters domain.ProjectDeleteCounters) {
+// executeHomeProjectDelete wires the same ProjectService.Delete the
+// CLI uses against the active TUI store + a freshly constructed
+// BackupService, threading the arm-time counters snapshot through to
+// avoid a second ProjectDeleteCounts round-trip. The snapshot lands
+// under StateDir/backups/ with the configured retention. On success
+// the Home read-model is reloaded (the row disappears) and the backup
+// path surfaces in the status badge so the user knows where the
+// recovery artefact lives. Failure leaves the project intact and
+// surfaces the underlying error.
+//
+// auditWarn is captured into a local buffer (never stderr — the
+// bubbletea alt-screen lives on stdout and stderr writes leak under
+// the render). Anything the service logs (checkpoint failure, audit
+// emission failure, payload marshal failure) is appended to m.status
+// alongside the success line so the operator still sees the
+// discrepancy without a corrupted draw frame.
+func (m *Model) executeHomeProjectDelete(project domain.Project, counters domain.ProjectDeleteCounters) {
 	var pruneWarn error
 	backup, err := m.buildHomeBackupService(func(perr error) { pruneWarn = perr })
 	if err != nil {
 		m.status = err.Error()
 		return
 	}
-	svc := app.NewProjectService(m.repos.Projects, backup, m.repos.Events).WithCheckpointer(m.repos.Checkpointer)
+	var auditBuf bytes.Buffer
+	svc := app.NewProjectService(m.repos.Projects, backup, m.repos.Events).
+		WithCheckpointer(m.repos.Checkpointer).
+		SetAuditWarnWriter(&auditBuf)
 	result, err := svc.Delete(m.ctx, project.ID, counters)
 	if err != nil {
 		m.status = err.Error()
@@ -512,6 +515,9 @@ func (m *Model) executeHomeProjectDeleteWithCounters(project domain.Project, cou
 		// corrupt the bubbletea render) so the status surface is the
 		// only channel the operator can observe.
 		m.status += " · " + fmt.Sprintf(m.t("cli.db.backup.prune_warn_fmt"), pruneWarn.Error())
+	}
+	if audit := strings.TrimSpace(auditBuf.String()); audit != "" {
+		m.status += " · " + audit
 	}
 }
 
