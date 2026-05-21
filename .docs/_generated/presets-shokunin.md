@@ -9,6 +9,7 @@ Auto-derived from `defaults/config/shokunin.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `check-runner` | `test-driven-development-strict`, `static-analysis-discipline`, `coverage-analysis`, `regression-detection`, `markdown` |
 | `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
 | `commit-author` | `conventional-commits-spec`, `markdown` |
 | `craftsperson` | `sre-discipline`, `risk-driven-development`, `postmortem-authoring`, `change-management`, `test-driven-development-strict`, `static-analysis-discipline`, `implementation`, `markdown` |
@@ -24,6 +25,7 @@ Auto-derived from `defaults/config/shokunin.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes`, +`project-scope-only` | — |
 | `okt` | craftsperson | — | — |
+| `okt-check` | check-runner | +`coverage-gate`, +`regression-required`, +`dual-signal-required` | `comment-check-report` |
 | `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by`, +`link-task-comments` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | craftsperson | — | — |

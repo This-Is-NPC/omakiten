@@ -9,6 +9,7 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `check-runner` | `test-driven-development`, `static-analysis-discipline`, `coverage-analysis`, `regression-detection`, `markdown` |
 | `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
 | `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `readme-curation`, `markdown` |
@@ -23,6 +24,7 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes`, +`project-scope-only` | — |
 | `okt` | tinkerer | — | — |
+| `okt-check` | check-runner | +`time-boxed-check`, +`accept-yellow` | `comment-check-report` |
 | `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | tinkerer | — | — |

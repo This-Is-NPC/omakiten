@@ -12,6 +12,7 @@ Auto-derived from `defaults/skills/*.md` frontmatter.
 | `code-smells` | Fowler/Beck smell catalog — long function, large class, feature envy, primitive obsession, shotgun surgery, divergent change. |
 | `continuous-integration` | Pre-push verification, CI as source of truth for green, fix-forward vs revert decision discipline. |
 | `conventional-commits-spec` | Conventional Commits 1.0.0 grammar — type(scope): subject, body, footers, breaking-change markers. |
+| `coverage-analysis` | Coverage thresholds — line vs branch — and the justified-gap pattern for accepting documented gaps. |
 | `decision-records` | When to record a decision; concise context / decision / consequences; discoverable filenames and links. |
 | `design-documentation` | Capture the approach in the repo's preferred format (decision record / RFC / design doc) before coding. |
 | `discovery` | Feasibility analysis, clarifying questions, scope boundaries, surfacing hidden constraints before code. |
@@ -30,6 +31,7 @@ Auto-derived from `defaults/skills/*.md` frontmatter.
 | `postmortem-authoring` | Blameless 5-whys, timeline reconstruction (UTC), action items with owners and due dates. |
 | `readme-curation` | Keeps install, usage, and examples in sync with the actual code surface. |
 | `refactoring-catalog` | Fowler 'Refactoring' (1999, 2nd ed. 2018) named refactorings — Extract, Inline, Move, Rename, Replace Conditional with Polymorphism, etc. |
+| `regression-detection` | git bisect (Linus Torvalds, 2005) + characterization tests (Feathers 2004) for catching and pinning regressions on legacy paths. |
 | `requirements-elicitation` | Gather needs from stakeholders; INVEST-style user stories; testable acceptance criteria; documented sign-off. |
 | `requirements-mapping` | Extracts functional, non-functional, and business rules with source-file references. |
 | `rice-scoring` | Quantitative priority — Reach × Impact × Confidence ÷ Effort. Use when comparing across teams or quarters. |

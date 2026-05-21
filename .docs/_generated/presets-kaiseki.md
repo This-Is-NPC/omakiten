@@ -9,6 +9,7 @@ Auto-derived from `defaults/config/kaiseki.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `check-runner` | `test-driven-development`, `static-analysis-discipline`, `coverage-analysis`, `regression-detection`, `markdown` |
 | `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
 | `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
@@ -24,6 +25,7 @@ Auto-derived from `defaults/config/kaiseki.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes`, +`project-scope-only` | — |
 | `okt` | methodical-engineer | — | — |
+| `okt-check` | check-runner | +`requirements-coverage-check`, +`decision-record-on-gap` | `comment-check-report` |
 | `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by`, +`link-decision-record` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | methodical-engineer | — | — |

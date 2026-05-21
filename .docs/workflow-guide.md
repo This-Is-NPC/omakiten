@@ -130,6 +130,7 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `check-runner` | `test-driven-development`, `static-analysis-discipline`, `coverage-analysis`, `regression-detection`, `markdown` |
 | `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
 | `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `readme-curation`, `markdown` |
@@ -144,6 +145,7 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes`, +`project-scope-only` | — |
 | `okt` | tinkerer | — | — |
+| `okt-check` | check-runner | +`time-boxed-check`, +`accept-yellow` | `comment-check-report` |
 | `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | tinkerer | — | — |
@@ -254,6 +256,7 @@ Auto-derived from `defaults/config/omakase.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `check-runner` | `test-driven-development`, `static-analysis-discipline`, `coverage-analysis`, `regression-detection`, `markdown` |
 | `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
 | `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
@@ -269,6 +272,7 @@ Auto-derived from `defaults/config/omakase.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes` | — |
 | `okt` | engineer | — | — |
+| `okt-check` | check-runner | +`findings-actionable`, +`severity-tagged` | `comment-check-report` |
 | `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by`, +`scope-from-paths` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | engineer | — | — |
@@ -389,6 +393,7 @@ Auto-derived from `defaults/config/kaiseki.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `check-runner` | `test-driven-development`, `static-analysis-discipline`, `coverage-analysis`, `regression-detection`, `markdown` |
 | `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
 | `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
@@ -404,6 +409,7 @@ Auto-derived from `defaults/config/kaiseki.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes`, +`project-scope-only` | — |
 | `okt` | methodical-engineer | — | — |
+| `okt-check` | check-runner | +`requirements-coverage-check`, +`decision-record-on-gap` | `comment-check-report` |
 | `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by`, +`link-decision-record` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | methodical-engineer | — | — |
@@ -529,6 +535,7 @@ Auto-derived from `defaults/config/shokunin.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `check-runner` | `test-driven-development-strict`, `static-analysis-discipline`, `coverage-analysis`, `regression-detection`, `markdown` |
 | `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
 | `commit-author` | `conventional-commits-spec`, `markdown` |
 | `craftsperson` | `sre-discipline`, `risk-driven-development`, `postmortem-authoring`, `change-management`, `test-driven-development-strict`, `static-analysis-discipline`, `implementation`, `markdown` |
@@ -544,6 +551,7 @@ Auto-derived from `defaults/config/shokunin.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes`, +`project-scope-only` | — |
 | `okt` | craftsperson | — | — |
+| `okt-check` | check-runner | +`coverage-gate`, +`regression-required`, +`dual-signal-required` | `comment-check-report` |
 | `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by`, +`link-task-comments` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | craftsperson | — | — |

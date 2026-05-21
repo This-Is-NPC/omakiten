@@ -8,6 +8,7 @@ Auto-derived from `defaults/templates/*.md` frontmatter.
 |---|---|---|---|
 | `comment-5w2h` | comment | — | Structured elicitation — answer the seven questions. Surface gaps explicitly when no answer is yet known. |
 | `comment-acceptance` | comment | — | Fills the `#acceptance` guard. Project picks the format — Given/When/Then or any other testable shape. |
+| `comment-check-report` | comment | — | Tabular pass/fail report emitted by okt-check; one row per discovered target. |
 | `comment-design-decision` | comment | — | Inline pointer to a decision record introduced by the change. Format is the project's convention. |
 | `comment-discard` | comment | — | Closes a spike that did not confirm its hypothesis. Records the lesson and the cost saved. |
 | `comment-documentation` | comment | comment-documentation | Closing checklist — fills the `#documentation` guard (review → done). |
