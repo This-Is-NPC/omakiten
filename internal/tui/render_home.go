@@ -117,6 +117,7 @@ func (m *Model) handleHomeKey(msg tea.KeyMsg) {
 	// confirm a delete that targeted a different card.
 	if m.homeProjectDeletePendingID != 0 {
 		m.homeProjectDeletePendingID = 0
+		m.homeProjectDeletePendingCounters = domain.ProjectDeleteCounters{}
 	}
 	rowCount := len(m.homeProjects)
 	// Picker uses viewport for pgup/pgdn step + cursor scroll bounds in
@@ -409,17 +410,26 @@ func (m *Model) armOrConfirmHomeProjectDelete(project domain.Project) {
 	}
 	notif, ok := m.notifications["home-project-delete-confirm"]
 	if !ok {
+		// Degraded status-driven gate: still resolve counters so the
+		// second-press execute can hand them to ProjectService.Delete
+		// without re-querying. On failure fall through with zero
+		// counters; Delete tolerates the zero value (it only uses
+		// counters for the audit payload).
+		counters, _ := m.repos.Projects.ProjectDeleteCounts(m.ctx, project.ID)
 		m.homeProjectDeletePendingID = project.ID
+		m.homeProjectDeletePendingCounters = counters
 		m.status = fmt.Sprintf(m.t("tui.confirm.home_project_delete_fmt"), project.Name)
 		return
 	}
 	counters, err := m.repos.Projects.ProjectDeleteCounts(m.ctx, project.ID)
 	if err != nil {
 		m.homeProjectDeletePendingID = project.ID
+		m.homeProjectDeletePendingCounters = domain.ProjectDeleteCounters{}
 		m.status = fmt.Sprintf(m.t("tui.confirm.home_project_delete_fmt"), project.Name)
 		return
 	}
 	m.homeProjectDeletePendingID = project.ID
+	m.homeProjectDeletePendingCounters = counters
 	title := fmt.Sprintf(m.t("tui.notification.project_delete.title_fmt"), project.Name)
 	body := fmt.Sprintf(m.t("tui.notification.project_delete.body_fmt"),
 		counters.Tasks, counters.Comments, counters.Plans, counters.Tags, counters.ActivityLogEntries)
@@ -438,7 +448,9 @@ func (m *Model) armOrConfirmHomeProjectDelete(project domain.Project) {
 // "cancel") clears the pending state without side effects.
 func (m *Model) handleHomeProjectDeleteAction(action notification.ActionMsg) {
 	pendingID := m.homeProjectDeletePendingID
+	pendingCounters := m.homeProjectDeletePendingCounters
 	m.homeProjectDeletePendingID = 0
+	m.homeProjectDeletePendingCounters = domain.ProjectDeleteCounters{}
 	if action.ActionID != "confirm" || pendingID == 0 {
 		return
 	}
@@ -452,25 +464,37 @@ func (m *Model) handleHomeProjectDeleteAction(action notification.ActionMsg) {
 	if project.ID == 0 {
 		return
 	}
-	m.executeHomeProjectDelete(project)
+	m.executeHomeProjectDeleteWithCounters(project, pendingCounters)
 }
 
-// executeHomeProjectDelete wires the same ProjectService.Delete the
-// CLI uses against the active TUI store + a freshly constructed
-// BackupService. The snapshot lands under StateDir/backups/ with the
-// configured retention. On success the Home read-model is reloaded
-// (the row disappears) and the backup path surfaces in the status
-// badge so the user knows where the recovery artefact lives. Failure
-// leaves the project intact and surfaces the underlying error.
+// executeHomeProjectDelete is the status-driven fallback entry point
+// (second-press path). It re-reads the arm-time counters from the
+// pending state — by the time we reach here armOrConfirmHomeProjectDelete
+// has already populated homeProjectDeletePendingCounters.
 func (m *Model) executeHomeProjectDelete(project domain.Project) {
+	counters := m.homeProjectDeletePendingCounters
 	m.homeProjectDeletePendingID = 0
+	m.homeProjectDeletePendingCounters = domain.ProjectDeleteCounters{}
+	m.executeHomeProjectDeleteWithCounters(project, counters)
+}
+
+// executeHomeProjectDeleteWithCounters wires the same
+// ProjectService.Delete the CLI uses against the active TUI store + a
+// freshly constructed BackupService, threading the arm-time counters
+// snapshot through to avoid a second ProjectDeleteCounts round-trip.
+// The snapshot lands under StateDir/backups/ with the configured
+// retention. On success the Home read-model is reloaded (the row
+// disappears) and the backup path surfaces in the status badge so the
+// user knows where the recovery artefact lives. Failure leaves the
+// project intact and surfaces the underlying error.
+func (m *Model) executeHomeProjectDeleteWithCounters(project domain.Project, counters domain.ProjectDeleteCounters) {
 	backup, err := m.buildHomeBackupService()
 	if err != nil {
 		m.status = err.Error()
 		return
 	}
 	svc := app.NewProjectService(m.repos.Projects, backup, m.repos.Events)
-	result, err := svc.Delete(m.ctx, project.ID)
+	result, err := svc.Delete(m.ctx, project.ID, counters)
 	if err != nil {
 		m.status = err.Error()
 		return

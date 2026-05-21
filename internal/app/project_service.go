@@ -101,28 +101,32 @@ type ProjectDeleteResult struct {
 //
 //  1. Resolve the project (load slug/name for the payload + error
 //     reporting).
-//  2. Collect counters for the audit payload + the caller's prompt.
-//  3. Run BackupService — backup failure aborts before any rows are
+//  2. Run BackupService — backup failure aborts before any rows are
 //     touched. The user retries once the underlying issue is fixed.
-//  4. Cascade-delete via the repository (events for the project come
+//  3. Cascade-delete via the repository (events for the project come
 //     out in the same transaction; FK CASCADE handles every other
 //     dependent row).
-//  5. Emit project.removed with slug/name/counters/backup_path.
+//  4. Emit project.removed with the caller-provided counters
+//     snapshot + slug/name/backup_path.
+//
+// counters is the pre-delete row-count snapshot the caller resolved
+// to render the prompt/overlay. Threading it through here removes the
+// duplicate ProjectDeleteCounts round-trip the destructive flow used
+// to issue (once for the prompt, once for the audit payload). Pass
+// the zero-value when no prompt was rendered — callers that only
+// need the side effect can fetch counters via ProjectDeleteCounts and
+// pass them in.
 //
 // Returns ErrValidation when the service was constructed without a
 // BackupRunner — the destructive flow refuses to run without the
 // safety net.
-func (s *ProjectService) Delete(ctx context.Context, projectID int64) (ProjectDeleteResult, error) {
+func (s *ProjectService) Delete(ctx context.Context, projectID int64, counters domain.ProjectDeleteCounters) (ProjectDeleteResult, error) {
 	if s.backup == nil {
 		return ProjectDeleteResult{}, domain.NewError(domain.ErrValidation, "project delete requires a BackupRunner (composition root must inject one)", nil)
 	}
 	project, err := s.repo.FindProjectByID(ctx, projectID)
 	if err != nil {
 		return ProjectDeleteResult{}, err
-	}
-	counters, err := s.repo.ProjectDeleteCounts(ctx, projectID)
-	if err != nil {
-		return ProjectDeleteResult{}, fmt.Errorf("resolve project counters: %w", err)
 	}
 
 	backupPath, err := s.backup.Run(ctx)

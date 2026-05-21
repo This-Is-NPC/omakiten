@@ -330,6 +330,11 @@ type Model struct {
 	// prefers an overlay but the codebase precedent (task delete +
 	// orphan rebind revert) is the simpler, well-tested gate.
 	homeProjectDeletePendingID int64
+	// homeProjectDeletePendingCounters captures the per-table snapshot
+	// resolved at arm-time so executeHomeProjectDelete can hand it to
+	// ProjectService.Delete without a second round-trip. Zeroed when
+	// pendingID clears.
+	homeProjectDeletePendingCounters domain.ProjectDeleteCounters
 	// lastProjectRoot is the root_path of the last project the user opened
 	// during the session. CLI-side cd-on-exit reads this after program.Run()
 	// returns so the parent shell wrapper can `cd` into the project.

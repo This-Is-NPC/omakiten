@@ -111,7 +111,11 @@ func TestProjectServiceDelete_HappyPath(t *testing.T) {
 	events := &fakeEventRecorder{}
 	svc := NewProjectService(store, backup, events)
 
-	result, err := svc.Delete(ctx, project.ID)
+	counters, err := store.ProjectDeleteCounts(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("ProjectDeleteCounts: %v", err)
+	}
+	result, err := svc.Delete(ctx, project.ID, counters)
 	if err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
@@ -147,7 +151,7 @@ func TestProjectServiceDelete_BackupFailureAbortsDelete(t *testing.T) {
 	events := &fakeEventRecorder{}
 	svc := NewProjectService(store, backup, events)
 
-	_, err := svc.Delete(ctx, project.ID)
+	_, err := svc.Delete(ctx, project.ID, domain.ProjectDeleteCounters{})
 	if err == nil {
 		t.Fatalf("Delete() error = nil, want backup failure")
 	}
@@ -170,8 +174,47 @@ func TestProjectServiceDelete_RequiresBackupRunner(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	svc := NewProjectService(store, nil, nil)
-	if _, err := svc.Delete(ctx, project.ID); err == nil {
+	if _, err := svc.Delete(ctx, project.ID, domain.ProjectDeleteCounters{}); err == nil {
 		t.Fatalf("Delete() with nil backup error = nil, want validation error")
+	}
+}
+
+// countingRepo wraps a ProjectRepository to count ProjectDeleteCounts
+// calls. Used to pin the contract that Delete does not re-query the
+// counters it accepts from the caller — the regression guard for the
+// duplicate round-trip review finding (#191 comment 7946).
+type countingRepo struct {
+	ProjectRepository
+	countCalls int
+}
+
+func (c *countingRepo) ProjectDeleteCounts(ctx context.Context, projectID int64) (domain.ProjectDeleteCounters, error) {
+	c.countCalls++
+	return c.ProjectRepository.ProjectDeleteCounts(ctx, projectID)
+}
+
+func TestProjectServiceDelete_AcceptsCounterSnapshotWithoutRequery(t *testing.T) {
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(t, 1000))
+	defer func() { _ = store.Close() }()
+
+	counters, err := store.ProjectDeleteCounts(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("ProjectDeleteCounts: %v", err)
+	}
+	repo := &countingRepo{ProjectRepository: store}
+	backup := &fakeBackup{path: "/var/state/omakiten/backups/snap.db"}
+	events := &fakeEventRecorder{}
+
+	svc := NewProjectService(repo, backup, events)
+	if _, err := svc.Delete(ctx, project.ID, counters); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if repo.countCalls != 0 {
+		t.Fatalf("ProjectDeleteCounts calls inside Delete = %d, want 0 (caller-provided counters used)", repo.countCalls)
+	}
+	if len(events.calls) != 1 {
+		t.Fatalf("audit emissions = %d, want 1", len(events.calls))
 	}
 }
 

@@ -501,6 +501,7 @@ func (m Model) dispatchNotification(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		// a stray ActionMsg arriving from a re-spawn would still hit the
 		// "execute" path with the original target.
 		m.homeProjectDeletePendingID = 0
+		m.homeProjectDeletePendingCounters = domain.ProjectDeleteCounters{}
 		m.revertConfigSwap()
 		return m, nil, true
 	}
