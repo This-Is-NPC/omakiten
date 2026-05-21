@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -15,6 +17,12 @@ type ProjectService struct {
 	repo   ProjectRepository
 	backup BackupRunner
 	events EventRecorder
+	// auditWarn receives warnings about audit-trail emission failures
+	// (json.Marshal or RecordEntityEvent errors that happen AFTER the
+	// destructive transaction committed). Defaults to os.Stderr so the
+	// audit gap stays visible to operators; tests inject io.Discard to
+	// keep output deterministic.
+	auditWarn io.Writer
 }
 
 // NewProjectService constructs the service against a ProjectRepository
@@ -26,7 +34,19 @@ type ProjectService struct {
 // invariant "every destructive flow writes a snapshot first" is
 // enforced at the API boundary rather than in the caller's wiring.
 func NewProjectService(repo ProjectRepository, backup BackupRunner, events EventRecorder) *ProjectService {
-	return &ProjectService{repo: repo, backup: backup, events: events}
+	return &ProjectService{repo: repo, backup: backup, events: events, auditWarn: os.Stderr}
+}
+
+// SetAuditWarnWriter overrides the writer that receives post-commit
+// audit-trail emission warnings. Production wiring keeps the os.Stderr
+// default so operators see audit gaps; tests pass io.Discard to keep
+// the test runner clean. Returns the service for fluent wiring.
+func (s *ProjectService) SetAuditWarnWriter(w io.Writer) *ProjectService {
+	if w == nil {
+		w = io.Discard
+	}
+	s.auditWarn = w
+	return s
 }
 
 func (s *ProjectService) Init(ctx context.Context, name, slug, rootPath string) (project domain.Project, err error) {
@@ -115,15 +135,7 @@ func (s *ProjectService) Delete(ctx context.Context, projectID int64) (ProjectDe
 	}
 
 	if s.events != nil {
-		payload, marshalErr := json.Marshal(map[string]any{
-			"slug":        project.Slug,
-			"name":        project.Name,
-			"counters":    counters,
-			"backup_path": backupPath,
-		})
-		if marshalErr == nil {
-			_ = s.events.RecordEntityEvent(ctx, domain.EventEntityProject, project.ID, 0, domain.EventTypeProjectRemoved, string(payload))
-		}
+		s.recordProjectRemoved(ctx, project, counters, backupPath)
 	}
 
 	return ProjectDeleteResult{
@@ -132,6 +144,29 @@ func (s *ProjectService) Delete(ctx context.Context, projectID int64) (ProjectDe
 		BackupPath: backupPath,
 		EventType:  domain.EventTypeProjectRemoved,
 	}, nil
+}
+
+// recordProjectRemoved marshals the project.removed payload and writes
+// the audit row. Failures at either step (json.Marshal returning an
+// error, or RecordEntityEvent rejecting the row) are surfaced on
+// s.auditWarn so operators see the audit gap — the destructive
+// transaction already committed, so the rollback ship has sailed; the
+// only remediation is logging the discrepancy so reconciliation work
+// can backfill the event manually.
+func (s *ProjectService) recordProjectRemoved(ctx context.Context, project domain.Project, counters domain.ProjectDeleteCounters, backupPath string) {
+	payload, marshalErr := json.Marshal(map[string]any{
+		"slug":        project.Slug,
+		"name":        project.Name,
+		"counters":    counters,
+		"backup_path": backupPath,
+	})
+	if marshalErr != nil {
+		fmt.Fprintf(s.auditWarn, "warning: project.removed payload marshal failed for project_id=%d slug=%q: %s\n", project.ID, project.Slug, marshalErr.Error())
+		return
+	}
+	if err := s.events.RecordEntityEvent(ctx, domain.EventEntityProject, project.ID, 0, domain.EventTypeProjectRemoved, string(payload)); err != nil {
+		fmt.Fprintf(s.auditWarn, "warning: project.removed audit emission failed for project_id=%d slug=%q: %s\n", project.ID, project.Slug, err.Error())
+	}
 }
 
 func normalizeSlug(value string) string {

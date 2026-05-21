@@ -10,9 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/app"
-	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/paths"
 )
 
 func newProjectsCommand(opts *runtimeOptions) *cobra.Command {
@@ -69,7 +67,10 @@ func runProjectsDelete(ctx context.Context, cmd *cobra.Command, opts *runtimeOpt
 		}
 	}
 
-	backup := buildBackupService(rt.dbPath, cmd, opts)
+	backup, err := buildCLIBackupService(cmd, opts, rt.dbPath, true)
+	if err != nil {
+		return nil, err
+	}
 	svc := app.NewProjectService(rt.store, backup, rt.store)
 	result, err := svc.Delete(ctx, project.ID)
 	if err != nil {
@@ -123,26 +124,3 @@ func promptDeleteConfirmation(cmd *cobra.Command, opts *runtimeOptions, project 
 	return nil
 }
 
-// buildBackupService wires the same BackupService the standalone
-// `okt db backup` command uses. Sharing one constructor keeps the
-// snapshot directory + retention contract identical across every
-// destructive flow.
-func buildBackupService(dbPath string, cmd *cobra.Command, opts *runtimeOptions) *app.BackupService {
-	destDir, err := paths.BackupDir()
-	if err != nil {
-		destDir = ""
-	}
-	retention := 0
-	if configPath, err := opts.resolvedConfigPath(); err == nil {
-		if bundle, err := config.LoadBundle(configPath); err == nil {
-			retention = bundle.Config.Backup.RetentionCount
-		}
-	}
-	return app.NewBackupService(app.BackupOptions{
-		SourcePath:      dbPath,
-		DestDir:         destDir,
-		Retention:       retention,
-		Stderr:          cmd.ErrOrStderr(),
-		PruneWarnFormat: opts.t("cli.db.backup.prune_warn_fmt"),
-	})
-}

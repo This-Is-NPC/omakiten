@@ -9,8 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/app"
-	"omakiten/internal/config"
-	"omakiten/internal/paths"
 )
 
 func newDBCommand(opts *runtimeOptions) *cobra.Command {
@@ -43,13 +41,16 @@ func newDBBackupCommand(opts *runtimeOptions) *cobra.Command {
 // config paths. The store is intentionally left unopened — the snapshot
 // is a plain file copy and opening a sibling SQLite handle here would
 // race with a concurrent TUI write. The bundle is loaded via
-// LoadBundle directly so the retention knob threads through without a
-// runtime/cache spin-up.
+// buildCLIBackupService so the retention knob threads through without a
+// runtime/cache spin-up; the standalone command runs in soft-strict
+// mode so a partially-migrated config does not block recovery.
 //
 // When --out is supplied the snapshot is written to that exact path
-// (parent dirs created as needed) and the prune pass is skipped — the
-// user pinned the destination, so retention rotation against the
-// default state directory does not apply.
+// (parent dirs created as needed with 0o700 to match the default
+// BackupDir perm — DB snapshots carry every project's data and must
+// not relax permissions because the user picked a path) and the prune
+// pass is skipped — the user pinned the destination, so retention
+// rotation against the default state directory does not apply.
 func runDBBackup(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, out string) (any, error) {
 	dbPath, err := opts.resolvedDBPath()
 	if err != nil {
@@ -61,7 +62,7 @@ func runDBBackup(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, 
 		if err != nil {
 			return nil, err
 		}
-		if err := os.MkdirAll(filepath.Dir(finalPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(finalPath), 0o700); err != nil {
 			return nil, fmt.Errorf("backup --out parent: %w", err)
 		}
 		if _, err := os.Stat(dbPath); err != nil {
@@ -75,43 +76,15 @@ func runDBBackup(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, 
 		return map[string]any{"path": finalPath, "pruned": false}, nil
 	}
 
-	destDir, err := paths.BackupDir()
+	svc, err := buildCLIBackupService(cmd, opts, dbPath, false)
 	if err != nil {
 		return nil, err
 	}
-	retention, err := resolveBackupRetention(opts)
-	if err != nil {
-		return nil, err
-	}
-	svc := app.NewBackupService(app.BackupOptions{
-		SourcePath:      dbPath,
-		DestDir:         destDir,
-		Retention:       retention,
-		Stderr:          cmd.ErrOrStderr(),
-		PruneWarnFormat: opts.t("cli.db.backup.prune_warn_fmt"),
-	})
 	finalPath, err := svc.Run(ctx)
 	if err != nil {
 		return nil, err
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(), opts.t("cli.db.backup.success_fmt")+"\n", finalPath)
+	retention, _ := resolveBackupRetention(opts)
 	return map[string]any{"path": finalPath, "pruned": true, "retention": retention}, nil
-}
-
-// resolveBackupRetention reads settings.backup.retention_count from
-// the active config bundle. Falls back to 0 (no-prune) when the bundle
-// cannot be loaded — preserves the snapshot itself rather than
-// failing the command when a stale or partially-migrated config
-// would otherwise block recovery work. A real misconfiguration is
-// caught by `okt config validate`.
-func resolveBackupRetention(opts *runtimeOptions) (int, error) {
-	configPath, err := opts.resolvedConfigPath()
-	if err != nil {
-		return 0, nil
-	}
-	bundle, err := config.LoadBundle(configPath)
-	if err != nil {
-		return 0, nil
-	}
-	return bundle.Config.Backup.RetentionCount, nil
 }

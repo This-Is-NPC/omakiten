@@ -14,27 +14,29 @@ import (
 // BackupService writes a rolling snapshot of the SQLite database file
 // to a configured directory and auto-prunes older snapshots so the
 // directory stays bounded. Same routine is invoked by the standalone
-// `okt db backup` CLI command, and (in later PRs) by every destructive
-// command that runs an auto-backup before mutating state — keeping one
+// `okt db backup` CLI command, and by every destructive command that
+// runs an auto-backup before mutating state — keeping one
 // implementation prevents the prune contract from drifting per caller.
 //
 // The copy is intentionally a plain file read+write+rename rather than
 // a sqlite-level VACUUM INTO. The simple shape mirrors AC #3 of task
-// #191 and avoids opening a sibling connection that would race with a
-// concurrently running TUI; a true online snapshot is deferred to a
-// follow-up if the WAL drift becomes observable in practice.
+// #191; callers that share the live DB with an open *sqlite.Store
+// (TUI Home delete, CLI projects delete) should run
+// `PRAGMA wal_checkpoint(TRUNCATE)` on that store before invoking Run
+// so the snapshot reflects every committed transaction. A true online
+// snapshot via VACUUM INTO is deferred until the WAL drift becomes
+// observable in practice.
 type BackupService struct {
-	sourcePath  string
-	destDir     string
-	retention   int
-	now         func() time.Time
-	stderr      io.Writer
-	pruneFormat string
+	sourcePath string
+	destDir    string
+	retention  int
+	now        func() time.Time
+	pruneWarn  func(error)
 }
 
 // BackupOptions bundles every input NewBackupService consumes so the
 // constructor stays one positional argument and callers (CLI bootstrap,
-// future ProjectService.Delete) can leave optional knobs at their
+// ProjectService.Delete) can leave optional knobs at their
 // zero-value defaults.
 type BackupOptions struct {
 	// SourcePath is the absolute path of the live SQLite database file.
@@ -49,22 +51,21 @@ type BackupOptions struct {
 	// Now is the clock used for the snapshot filename. nil falls back to
 	// time.Now — tests pin a deterministic value.
 	Now func() time.Time
-	// Stderr is where prune warnings are written. nil falls back to
-	// os.Stderr — production wires the cobra command's ErrOrStderr.
-	Stderr io.Writer
-	// PruneWarnFormat is the Printf-style format Run uses when a
-	// prune pass fails after a successful backup. Carries exactly one
-	// `%s` substitution (the underlying error). Empty falls back to
-	// the literal "prune skipped: %s" — production wires the
-	// localized `cli.db.backup.prune_warn_fmt` catalog entry so the
-	// stderr line follows the user's CLI language.
-	PruneWarnFormat string
+	// PruneWarn is invoked when a prune pass fails after a successful
+	// snapshot write. The snapshot itself is already on disk, so prune
+	// failures never abort Run — callers route the error to the
+	// surface that matches their UX (CLI: localized stderr line; TUI:
+	// status badge; tests: capture). nil disables the notification —
+	// the prune error is silently dropped. Keeping i18n on the caller
+	// side removes the format-string mismatch risk that a Printf
+	// template inside the service would carry.
+	PruneWarn func(error)
 }
 
 // NewBackupService returns a BackupService ready to Run. The returned
 // pointer is safe to call from a single goroutine per invocation;
 // concurrent Run calls are not synchronised because every snapshot
-// uses a fresh, distinct destination filename (utc-iso second
+// uses a fresh, distinct destination filename (utc-iso nanosecond
 // granularity) and the prune pass operates on a directory listing
 // taken at call time.
 func NewBackupService(opts BackupOptions) *BackupService {
@@ -72,21 +73,12 @@ func NewBackupService(opts BackupOptions) *BackupService {
 	if now == nil {
 		now = time.Now
 	}
-	stderr := opts.Stderr
-	if stderr == nil {
-		stderr = os.Stderr
-	}
-	pruneFormat := opts.PruneWarnFormat
-	if pruneFormat == "" {
-		pruneFormat = "prune skipped: %s"
-	}
 	return &BackupService{
-		sourcePath:  opts.SourcePath,
-		destDir:     opts.DestDir,
-		retention:   opts.Retention,
-		now:         now,
-		stderr:      stderr,
-		pruneFormat: pruneFormat,
+		sourcePath: opts.SourcePath,
+		destDir:    opts.DestDir,
+		retention:  opts.Retention,
+		now:        now,
+		pruneWarn:  opts.PruneWarn,
 	}
 }
 
@@ -95,17 +87,22 @@ func NewBackupService(opts BackupOptions) *BackupService {
 // user drops in the backup dir (a manual `cp prod.db .`, a Time
 // Machine artifact, anything not matching this exact pattern) survive
 // every retention pass. The trailing `.db` is required so renaming a
-// snapshot to mark it "keep" reliably opts it out of prune.
-var backupFilenamePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z\.db$`)
+// snapshot to mark it "keep" reliably opts it out of prune. The
+// nanosecond suffix is optional so snapshots written by prior
+// (second-granularity) versions still match.
+var backupFilenamePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(\.\d{9})?Z\.db$`)
 
 // Run copies sourcePath into destDir as a new snapshot and triggers a
 // prune pass. The destination filename is `<utc-iso>.db` with the ISO
-// 8601 second component using `-` separators (cross-platform: Windows
-// rejects `:` in filenames). On a copy failure mid-write the temporary
-// file is removed so the destination never contains a partial
-// snapshot. Prune failures are surfaced as stderr warnings and do not
-// fail Run (AC #44) — the snapshot itself is already on disk and the
-// caller's "backup → <path>" status remains accurate.
+// 8601 second + nanosecond components using `-` separators (cross-platform:
+// Windows rejects `:` in filenames). Nanosecond granularity prevents
+// rapid back-to-back invocations (e.g. delete + update in the same
+// second) from colliding on the destination name and silently
+// overwriting the earlier snapshot. On a copy failure mid-write the
+// temporary file is removed so the destination never contains a partial
+// snapshot. Prune failures are routed to the configured PruneWarn
+// callback and do not fail Run — the snapshot itself is already on
+// disk and the caller's "backup → <path>" status remains accurate.
 func (s *BackupService) Run(ctx context.Context) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -117,7 +114,7 @@ func (s *BackupService) Run(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("backup dest dir: %w", err)
 	}
 
-	stamp := s.now().UTC().Format("2006-01-02T15-04-05Z")
+	stamp := s.now().UTC().Format("2006-01-02T15-04-05.000000000Z")
 	finalPath := filepath.Join(s.destDir, stamp+".db")
 	tmpPath := finalPath + ".tmp"
 
@@ -125,8 +122,8 @@ func (s *BackupService) Run(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	if err := s.pruneBackups(); err != nil {
-		fmt.Fprintf(s.stderr, s.pruneFormat+"\n", err.Error())
+	if err := s.pruneBackups(); err != nil && s.pruneWarn != nil {
+		s.pruneWarn(err)
 	}
 	return finalPath, nil
 }

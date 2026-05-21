@@ -18,41 +18,24 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
-	"omakiten/internal/app"
-	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/lifecycle"
-	"omakiten/internal/paths"
 )
 
-// updateBackupForOpts constructs the pre-swap BackupService using
-// the same path + retention contract as `okt db backup`. Lookup
-// failures degrade gracefully — when the config bundle cannot be
-// loaded the retention falls back to 0 (no prune) and the backup
-// still runs; when the path package cannot resolve the backup dir
-// the call returns an error so the caller can disable the hook.
+// updateBackupForOpts constructs the pre-swap BackupService through
+// the shared buildCLIBackupService helper in strict mode — the
+// auto-backup is non-optional per #191 AC #36 / #39 so any failure to
+// resolve the backup dir or load the bundle aborts the update before
+// the swap. Callers must propagate the error to the JSON envelope so
+// the user sees the underlying cause; silent bypass to `client.Backup
+// = nil` (the pre-fix shape) would let the destructive flow run
+// without its safety net.
 func updateBackupForOpts(cmd *cobra.Command, opts *runtimeOptions) (updateBackupRunner, error) {
 	dbPath, err := opts.resolvedDBPath()
 	if err != nil {
 		return nil, err
 	}
-	destDir, err := paths.BackupDir()
-	if err != nil {
-		return nil, err
-	}
-	retention := 0
-	if configPath, err := opts.resolvedConfigPath(); err == nil {
-		if bundle, err := config.LoadBundle(configPath); err == nil {
-			retention = bundle.Config.Backup.RetentionCount
-		}
-	}
-	return app.NewBackupService(app.BackupOptions{
-		SourcePath:      dbPath,
-		DestDir:         destDir,
-		Retention:       retention,
-		Stderr:          cmd.ErrOrStderr(),
-		PruneWarnFormat: opts.t("cli.db.backup.prune_warn_fmt"),
-	}), nil
+	return buildCLIBackupService(cmd, opts, dbPath, true)
 }
 
 // updateRepo is the GitHub repository the in-binary updater polls
@@ -136,9 +119,11 @@ func newUpdateCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				if backup, berr := updateBackupForOpts(cmd, opts); berr == nil {
-					client.Backup = backup
+				backup, berr := updateBackupForOpts(cmd, opts)
+				if berr != nil {
+					return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.backup_failed_fmt"), berr.Error()), nil)
 				}
+				client.Backup = backup
 				return runUpdate(ctx, client, updateInputs{Check: check, Yes: yes})
 			})
 		},

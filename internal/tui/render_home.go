@@ -482,10 +482,13 @@ func (m *Model) executeHomeProjectDelete(project domain.Project) {
 	m.status = fmt.Sprintf(m.t("tui.status.project_deleted_fmt"), result.Project.Slug, result.BackupPath)
 }
 
-// buildHomeBackupService constructs a BackupService against the
-// TUI's resolved DB path + the active snapshot's retention setting.
-// Returns an error when the paths package cannot resolve the backup
-// directory (rare; surfaces as a status hint rather than panicking).
+// buildHomeBackupService constructs a BackupService against the TUI's
+// resolved DB path + the active snapshot's retention setting. Returns
+// an error when the paths package cannot resolve the backup directory
+// (rare; surfaces as a status hint rather than panicking). PruneWarn is
+// left nil — the TUI cannot safely write to stderr (would corrupt the
+// bubbletea render) and prune failures are rare enough that swallowing
+// the warning is acceptable until a TUI-side status surface lands.
 func (m *Model) buildHomeBackupService() (app.BackupRunner, error) {
 	destDir, err := paths.BackupDir()
 	if err != nil {

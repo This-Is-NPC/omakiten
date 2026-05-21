@@ -29,7 +29,7 @@ func TestBackupService_Run_WritesSnapshotWithExpectedNameAndContent(t *testing.T
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	wantName := "2026-05-21T14-30-45Z.db"
+	wantName := "2026-05-21T14-30-45.000000000Z.db"
 	if filepath.Base(path) != wantName {
 		t.Fatalf("Run() basename = %q, want %q", filepath.Base(path), wantName)
 	}
@@ -39,6 +39,78 @@ func TestBackupService_Run_WritesSnapshotWithExpectedNameAndContent(t *testing.T
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("snapshot content mismatch: got %q, want %q", got, want)
+	}
+}
+
+// TestBackupService_Run_NoCollisionWithinSameSecond pins two Run() calls
+// to the same wall-clock second with distinct nanosecond components and
+// asserts both snapshots survive on disk. The pre-fix filename used
+// second granularity, so the second Run would silently os.Rename over
+// the first — a regression guard for the destructive-flow safety net.
+func TestBackupService_Run_NoCollisionWithinSameSecond(t *testing.T) {
+	tmp := t.TempDir()
+	srcPath := filepath.Join(tmp, "omakiten.db")
+	if err := os.WriteFile(srcPath, []byte("body"), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	destDir := filepath.Join(tmp, "backups")
+	sameSecond := time.Date(2026, 5, 21, 14, 30, 45, 0, time.UTC)
+
+	for i, nanos := range []int{1, 2} {
+		nanos := nanos
+		ts := sameSecond.Add(time.Duration(nanos) * time.Nanosecond)
+		svc := NewBackupService(BackupOptions{
+			SourcePath: srcPath,
+			DestDir:    destDir,
+			Now:        func() time.Time { return ts },
+		})
+		if _, err := svc.Run(context.Background()); err != nil {
+			t.Fatalf("Run() #%d error = %v", i, err)
+		}
+	}
+
+	entries, err := os.ReadDir(destDir)
+	if err != nil {
+		t.Fatalf("list dest: %v", err)
+	}
+	dbCount := 0
+	for _, entry := range entries {
+		if filepath.Ext(entry.Name()) == ".db" {
+			dbCount++
+		}
+	}
+	if dbCount != 2 {
+		t.Fatalf("dest .db entries = %d, want 2 (nano granularity prevents collision)", dbCount)
+	}
+}
+
+// TestBackupService_Run_PruneWarnNotInvokedOnSuccess pins the contract
+// that PruneWarn is reserved for failures; a clean prune pass must not
+// fire the callback. Guards against accidental "log every prune"
+// regressions that would noise up the CLI stderr or TUI status bar.
+func TestBackupService_Run_PruneWarnNotInvokedOnSuccess(t *testing.T) {
+	tmp := t.TempDir()
+	srcPath := filepath.Join(tmp, "omakiten.db")
+	if err := os.WriteFile(srcPath, []byte("body"), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	destDir := filepath.Join(tmp, "backups")
+	captured := 0
+	for i := 0; i < 3; i++ {
+		i := i
+		svc := NewBackupService(BackupOptions{
+			SourcePath: srcPath,
+			DestDir:    destDir,
+			Retention:  1,
+			Now:        func() time.Time { return time.Date(2026, 5, 21, 10, i, 0, 0, time.UTC) },
+			PruneWarn:  func(error) { captured++ },
+		})
+		if _, err := svc.Run(context.Background()); err != nil {
+			t.Fatalf("Run() #%d error = %v", i, err)
+		}
+	}
+	if captured != 0 {
+		t.Fatalf("PruneWarn invoked %d times on successful prune passes; want 0", captured)
 	}
 }
 
