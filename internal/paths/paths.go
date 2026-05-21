@@ -243,3 +243,34 @@ func DatabaseFile() (string, error) {
 	}
 	return filepath.Join(dir, "omakiten.db"), nil
 }
+
+// StateDir returns the directory Omakiten owns under XDG_STATE_HOME.
+// Used for ephemeral / recoverable artifacts (today: db backups) that
+// belong neither in the user-edited config tree nor in the canonical
+// data tree where the live DB lives. Resolution mirrors DataDir:
+// $OMAKITEN_HOME takes precedence, then $XDG_STATE_HOME, then the
+// per-OS default ~/.local/state/omakiten.
+func StateDir() (string, error) {
+	if base := os.Getenv(HomeEnv); base != "" {
+		return filepath.Join(base, "state"), nil
+	}
+	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
+		return filepath.Join(dir, AppName), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".local", "state", AppName), nil
+}
+
+// BackupDir returns the directory `okt db backup` (and every destructive
+// command that runs an auto-backup) writes snapshots into. Lives under
+// StateDir/backups/ so the live DB tree stays untouched.
+func BackupDir() (string, error) {
+	dir, err := StateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "backups"), nil
+}

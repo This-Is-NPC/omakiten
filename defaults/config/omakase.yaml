@@ -57,6 +57,16 @@ config:
   solutions:
     default_top_limit: 10
     max_top_limit: 100
+  # backup tunes the rolling DB snapshot written under
+  # $XDG_STATE_HOME/omakiten/backups/ by `okt db backup` and every
+  # destructive command that runs an auto-backup before mutating state
+  # (delete project, update binary). retention_count caps the number of
+  # snapshots kept on disk: after each successful write the directory
+  # is pruned to the N most-recent files. Set to 0 to disable pruning
+  # (snapshots accumulate indefinitely — power users who manage
+  # rotation out-of-band).
+  backup:
+    retention_count: 5
   # events tunes the per-event-type domain log:
   #   default_recent_limit — Store.ListRecentEvents fallback when <=0.
   #   defaults — channel policy applied to every known event type.

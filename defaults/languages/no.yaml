@@ -41,6 +41,23 @@ keys:
   cli.config.short: "Administrer den kanoniske omakiten.yaml-pakken"
   cli.config.validate.short: "Validér en omakiten.yaml-fil"
   cli.config.presets.short: "List offisielle workflow-presets"
+  cli.db.short: "Database lifecycle utilities (backup, snapshot, restore — sysadmin ops)"
+  cli.db.backup.short: "Write a snapshot of the live SQLite database to the rolling backups directory"
+  cli.db.backup.long: |-
+    Copy the active SQLite database to a timestamped snapshot under
+    $XDG_STATE_HOME/omakiten/backups/ (default ~/.local/state/omakiten/backups/)
+    and prune older snapshots according to settings.backup.retention_count.
+
+    The copy is atomic: the destination only appears once the body has
+    been written and renamed into place. A previous partial copy never
+    survives a failure.
+
+    --out pins the snapshot path explicitly (parent directories are
+    created as needed). When --out is supplied the retention prune
+    pass is skipped — the user owns the rotation policy outside the
+    default state directory.
+  cli.db.backup.flag.out: "write the snapshot to this explicit file path (skips retention prune)"
+  cli.db.backup.success_fmt: "backup written to %s"
   cli.preset.omakase.title: "Kokkens valg"
   cli.preset.omakase.description: "Balansert workflow med self-branch, resume og dokumentasjons-guards."
   cli.preset.izakaya.title: "Avslappet"

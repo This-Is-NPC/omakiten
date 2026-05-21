@@ -94,6 +94,9 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	if err := validateSolutionsSettings(bundle.Config.Solutions); err != nil {
 		return err
 	}
+	if err := validateBackupSettings(bundle.Config.Backup); err != nil {
+		return err
+	}
 	if err := validateEventsSettings(bundle.Config.Events); err != nil {
 		return err
 	}
@@ -345,6 +348,17 @@ func validateSolutionsSettings(s SolutionsSettings) error {
 	}
 	if s.MaxTopLimit < s.DefaultTopLimit {
 		return fmt.Errorf("config.solutions: max_top_limit (%d) must be >= default_top_limit (%d)", s.MaxTopLimit, s.DefaultTopLimit)
+	}
+	return nil
+}
+
+// validateBackupSettings enforces non-negative RetentionCount. Zero is
+// legal and means "no prune" — power users keeping snapshots manually
+// opt out without touching files. Negative values are rejected since
+// they have no defined semantic and would mask a config typo.
+func validateBackupSettings(s BackupSettings) error {
+	if s.RetentionCount < 0 {
+		return fmt.Errorf("config.backup.retention_count: must be >= 0 (0 disables prune)")
 	}
 	return nil
 }
