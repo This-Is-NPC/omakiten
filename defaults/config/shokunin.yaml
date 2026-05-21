@@ -175,6 +175,8 @@ personas:
     skills: [documentation, architecture-mapping, requirements-mapping, readme-curation, markdown]
   - slug: commit-author
     skills: [conventional-commits-spec, markdown]
+  - slug: code-reviewer
+    skills: [refactoring-catalog, code-smells, solid-principles, legacy-seams, security-review-lens, markdown]
 mcp_commands:
   global:
     laws: [template-fidelity, authorize-remote-writes, project-scope-only]
@@ -206,6 +208,10 @@ mcp_commands:
   okt-commit:
     persona: commit-author
     laws: [conventional-commits, no-coauthored-by, link-task-comments]
+  okt-review:
+    persona: code-reviewer
+    laws: [dual-review-required, coverage-gate-check, pre-mortem-aware]
+    templates: [comment-review-findings, comment-refactor-opportunities]
 workflows:
   - id: 1
     key: shokunin

@@ -173,6 +173,8 @@ personas:
     skills: [documentation, architecture-mapping, readme-curation, markdown]
   - slug: commit-author
     skills: [conventional-commits-spec, markdown]
+  - slug: code-reviewer
+    skills: [refactoring-catalog, code-smells, solid-principles, legacy-seams, security-review-lens, markdown]
 mcp_commands:
   global:
     laws: [template-fidelity, authorize-remote-writes, project-scope-only]
@@ -201,6 +203,10 @@ mcp_commands:
   okt-commit:
     persona: commit-author
     laws: [conventional-commits, no-coauthored-by]
+  okt-review:
+    persona: code-reviewer
+    laws: [time-boxed-review, tracer-debt-acceptable]
+    templates: [comment-review-findings, comment-refactor-opportunities]
 workflows:
   - id: 1
     key: izakaya

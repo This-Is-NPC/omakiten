@@ -488,6 +488,14 @@ personas:
     skills:
       - conventional-commits-spec
       - markdown
+  - slug: code-reviewer
+    skills:
+      - refactoring-catalog
+      - code-smells
+      - solid-principles
+      - legacy-seams
+      - security-review-lens
+      - markdown
 # mcp_commands binds each `okt-*` MCP prompt to a persona, a set of laws, and a
 # set of templates. The reserved `global:` entry declares laws inherited by
 # every command. Per-command entries can add `laws:` or opt out of inherited
@@ -510,6 +518,9 @@ personas:
 #   user has a concrete edit in mind.
 #   okt-commit is parallel — drafts Conventional Commits for user-authored
 #   edits made outside the okt-implement loop; never auto-pushes.
+#   okt-review is parallel — walks the diff with a Fowler/Beck/Martin/
+#   Feathers lens; surfaces findings + refactor opportunities; read-only
+#   (suggests okt-implement to apply fixes).
 mcp_commands:
   global:
     laws:
@@ -565,3 +576,12 @@ mcp_commands:
       - conventional-commits
       - no-coauthored-by
       - scope-from-paths
+  okt-review:
+    persona: code-reviewer
+    laws:
+      - findings-actionable
+      - no-praise-pad
+      - severity-tagged
+    templates:
+      - comment-review-findings
+      - comment-refactor-opportunities

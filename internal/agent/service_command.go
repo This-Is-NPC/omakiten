@@ -27,6 +27,9 @@ import (
 //	okt-commit is parallel: drafts Conventional Commits for user-authored
 //	edits made outside the `okt-implement` loop; never auto-pushes — the
 //	human owns publication.
+//	okt-review is parallel: walks the diff through a Fowler/Beck/Martin/
+//	Feathers lens; surfaces findings + refactor opportunities; read-only,
+//	suggests `okt-implement` to apply fixes.
 // Action texts deliberately stop short of repeating constraints already
 // declared inline in `## Laws` or role-specific flow already declared in the
 // persona body. Each one names the canonical tool and ends with a REST-style
@@ -84,6 +87,15 @@ var commandActions = map[string]string{
 		"optional 72-column body that explains the \"why\" the diff does not. Surface every draft to the user " +
 		"before invoking `git commit` via Bash. Never `git push` — the human owns publication. " +
 		"Next: when the working tree is clean, suggest the user `git push` when ready.",
+
+	"okt-review": "Walk the diff with the loaded lens. Run `git diff <base>..HEAD` (default base `main`; use " +
+		"staged when explicit) and read every hunk before writing findings. Order the pass correctness → " +
+		"security → smells → refactor opportunities → scalability/performance. Cite methodology by name when " +
+		"applicable (`Extract Function — Fowler`, `Feature Envy — Fowler/Beck`, `Sprout Method — Feathers`, " +
+		"`OCP — Martin`). Tag every finding by severity (`error` / `warning` / `info`). Call " +
+		"`templates.show comment-review-findings` and `templates.show comment-refactor-opportunities` for " +
+		"the scaffolds, then post the filled comments on the task. Read-only — never edit files, never run " +
+		"`git commit`. Next: when findings need fixes, suggest `okt-implement` with the finding ids.",
 }
 
 // commandDescriptions match the prompts/list metadata. Keeping them next to
@@ -98,6 +110,7 @@ var commandDescriptions = map[string]string{
 	"okt-document":  "Survey project documentation for drift and propose updates.",
 	"okt-config":    "Orient the agent on the active Omakiten config layout before edits.",
 	"okt-commit":    "Draft Conventional Commits for the working tree without pushing.",
+	"okt-review":    "Walk the diff through Fowler/Beck/Martin/Feathers lens and surface findings + refactor opportunities.",
 }
 
 // CommandNames returns the canonical, ordered list of `okt-*` prompts the MCP
@@ -114,6 +127,7 @@ func CommandNames() []string {
 		"okt-document",
 		"okt-config",
 		"okt-commit",
+		"okt-review",
 	}
 }
 
