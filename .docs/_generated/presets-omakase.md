@@ -9,6 +9,9 @@ Auto-derived from `defaults/config/omakase.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `check-runner` | `test-driven-development`, `static-analysis-discipline`, `coverage-analysis`, `regression-detection`, `markdown` |
+| `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
+| `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
 | `engineer` | `trunk-based-development`, `continuous-integration`, `test-driven-development`, `dora-mindset`, `implementation`, `markdown` |
 | `product-owner` | `discovery`, `user-story-writing`, `pdca-cycle`, `five-w-two-h`, `smart-goals`, `invest-stories`, `moscow-prioritization`, `rice-scoring`, `non-functional-requirements`, `markdown` |
@@ -22,6 +25,8 @@ Auto-derived from `defaults/config/omakase.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes` | — |
 | `okt` | engineer | — | — |
+| `okt-check` | check-runner | +`findings-actionable`, +`severity-tagged` | `comment-check-report` |
+| `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by`, +`scope-from-paths` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | engineer | — | — |
 | `okt-create` | product-owner | +`invest-stories`, +`outcome-over-output` | `user-story`, `task-bugfix`, `comment-smart-success`, `comment-moscow` |
@@ -29,6 +34,7 @@ Auto-derived from `defaults/config/omakase.yaml`.
 | `okt-imagine` | product-owner | -`template-fidelity` | `comment-5w2h`, `comment-smart-success` |
 | `okt-implement` | engineer | +`bounded-self-review`, +`no-silent-behavior-changes`, +`conventional-commits`, +`self-report`, +`green-main-always`, +`small-batches`, +`boy-scout-rule`, +`test-evidence` | `pull-request`, `comment-tests-passing`, `comment-refactor-drive-by` |
 | `okt-resume` | engineer | — | — |
+| `okt-review` | code-reviewer | +`findings-actionable`, +`no-praise-pad`, +`severity-tagged` | `comment-review-findings`, `comment-refactor-opportunities` |
 
 <!-- END SECTION -->
 

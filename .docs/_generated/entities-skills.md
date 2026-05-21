@@ -9,7 +9,10 @@ Auto-derived from `defaults/skills/*.md` frontmatter.
 | `acceptance-criteria-writing` | Testable acceptance shapes (Given/When/Then or alternatives); criteria the requester and reviewer can verify. |
 | `architecture-mapping` | Tech stack, dependencies, design patterns, infrastructure, code metrics with measurable references. |
 | `change-management` | Approval matrix, sign-off discipline, audit-trail integrity, regulated-environment habits. |
+| `code-smells` | Fowler/Beck smell catalog — long function, large class, feature envy, primitive obsession, shotgun surgery, divergent change. |
 | `continuous-integration` | Pre-push verification, CI as source of truth for green, fix-forward vs revert decision discipline. |
+| `conventional-commits-spec` | Conventional Commits 1.0.0 grammar — type(scope): subject, body, footers, breaking-change markers. |
+| `coverage-analysis` | Coverage thresholds — line vs branch — and the justified-gap pattern for accepting documented gaps. |
 | `decision-records` | When to record a decision; concise context / decision / consequences; discoverable filenames and links. |
 | `design-documentation` | Capture the approach in the repo's preferred format (decision record / RFC / design doc) before coding. |
 | `discovery` | Feasibility analysis, clarifying questions, scope boundaries, surfacing hidden constraints before code. |
@@ -19,6 +22,7 @@ Auto-derived from `defaults/skills/*.md` frontmatter.
 | `implementation` | Small coherent increments, tests for new and impacted behavior, regression analysis, bounded self-review. |
 | `invest-stories` | Wake (2003) checklist — Independent / Negotiable / Valuable / Estimable / Small / Testable. Flag missing letters. |
 | `lean-experimentation` | MVP design, falsifiable hypotheses, acceptance signals, build-measure-learn loops over polish. |
+| `legacy-seams` | Feathers 'Working Effectively with Legacy Code' (2004) — seams, characterization tests, Sprout Method/Class. |
 | `markdown` | Frontmatter, tables, code fences, mermaid; renders correctly in GitHub and editor previews. |
 | `moscow-prioritization` | Qualitative ranking — Must / Should / Could / Won't (this iteration). Record rationale per item. |
 | `non-functional-requirements` | Quality attributes — performance, security, usability, observability, scale, accessibility, compliance — captured separately from FRs. |
@@ -26,11 +30,15 @@ Auto-derived from `defaults/skills/*.md` frontmatter.
 | `pdca-cycle` | Plan-Do-Check-Act awareness — recognize which phase each okt-* command represents and name it for the user. |
 | `postmortem-authoring` | Blameless 5-whys, timeline reconstruction (UTC), action items with owners and due dates. |
 | `readme-curation` | Keeps install, usage, and examples in sync with the actual code surface. |
+| `refactoring-catalog` | Fowler 'Refactoring' (1999, 2nd ed. 2018) named refactorings — Extract, Inline, Move, Rename, Replace Conditional with Polymorphism, etc. |
+| `regression-detection` | git bisect (Linus Torvalds, 2005) + characterization tests (Feathers 2004) for catching and pinning regressions on legacy paths. |
 | `requirements-elicitation` | Gather needs from stakeholders; INVEST-style user stories; testable acceptance criteria; documented sign-off. |
 | `requirements-mapping` | Extracts functional, non-functional, and business rules with source-file references. |
 | `rice-scoring` | Quantitative priority — Reach × Impact × Confidence ÷ Effort. Use when comparing across teams or quarters. |
 | `risk-driven-development` | Pre-mortem authoring, blast-radius analysis, irreversibility classification, mitigation-first design. |
+| `security-review-lens` | OWASP-aligned review prompts for diff-level security findings — injection, authn/z, secrets, deserialisation, supply chain. |
 | `smart-goals` | Specific / Measurable / Achievable / Relevant / Time-bound success criteria; turn intent into a verifiable signal. |
+| `solid-principles` | Robert C. Martin's SOLID — Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion. |
 | `sre-discipline` | SLI / SLO / error-budget thinking; four golden signals (latency, traffic, errors, saturation). |
 | `staged-delivery` | Move through requirements → planning → dev → review → docs → done with explicit gates and recorded handoffs. |
 | `static-analysis-discipline` | Lint / security (SAST) / coverage / SCA gates as part of Definition of Done; no merge with new warnings. |

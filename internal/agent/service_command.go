@@ -24,6 +24,15 @@ import (
 //	okt-config is parallel: orients the agent on the config layout so it can
 //	answer edit questions without guessing; suggests `okt-implement` when the
 //	user has a concrete edit in mind.
+//	okt-commit is parallel: drafts Conventional Commits for user-authored
+//	edits made outside the `okt-implement` loop; never auto-pushes — the
+//	human owns publication.
+//	okt-review is parallel: walks the diff through a Fowler/Beck/Martin/
+//	Feathers lens; surfaces findings + refactor opportunities; read-only,
+//	suggests `okt-implement` to apply fixes.
+//	okt-check is parallel: discovers test/lint/audit targets, runs them
+//	via Bash, emits a tabular pass/fail report; read-only, suggests
+//	`okt-implement` for fixes or `okt-review` for triage.
 // Action texts deliberately stop short of repeating constraints already
 // declared inline in `## Laws` or role-specific flow already declared in the
 // persona body. Each one names the canonical tool and ends with a REST-style
@@ -73,6 +82,32 @@ var commandActions = map[string]string{
 		"workflow guard kinds. Read it fully before answering any config-edit question — do not guess. " +
 		"Next: if the user has a concrete edit in mind, suggest `okt-implement` with the change scoped to " +
 		"`omakiten.yaml` or the relevant entity file.",
+
+	"okt-commit": "Draft Conventional Commits for the working tree. Read `git status` and `git diff --cached` " +
+		"(fall back to unstaged changes when nothing is staged). Group hunks into one intent per commit; split " +
+		"mixed trees via non-interactive staging (`git add <path>` / `git restore --staged <path>`). Derive the " +
+		"scope from the touched paths. Draft `<type>(<scope>): <subject>` (≤50 chars, imperative) plus an " +
+		"optional 72-column body that explains the \"why\" the diff does not. Surface every draft to the user " +
+		"before invoking `git commit` via Bash. Never `git push` — the human owns publication. " +
+		"Next: when the working tree is clean, suggest the user `git push` when ready.",
+
+	"okt-review": "Walk the diff with the loaded lens. Run `git diff <base>..HEAD` (default base `main`; use " +
+		"staged when explicit) and read every hunk before writing findings. Order the pass correctness → " +
+		"security → smells → refactor opportunities → scalability/performance. Cite methodology by name when " +
+		"applicable (`Extract Function — Fowler`, `Feature Envy — Fowler/Beck`, `Sprout Method — Feathers`, " +
+		"`OCP — Martin`). Tag every finding by severity (`error` / `warning` / `info`). Call " +
+		"`templates.show comment-review-findings` and `templates.show comment-refactor-opportunities` for " +
+		"the scaffolds, then post the filled comments on the task. Read-only — never edit files, never run " +
+		"`git commit`. Next: when findings need fixes, suggest `okt-implement` with the finding ids.",
+
+	"okt-check": "Run the project's check targets. Discover them via `mise tasks` first; fall back to " +
+		"`npm run`, `make -qp`, `package.json > scripts`, or the repo's `CONTRIBUTING.md` — stop at the " +
+		"first hit, do not guess. Invoke each target via Bash, capture stdout/stderr/exit code. Call " +
+		"`templates.show comment-check-report` for the scaffold, then fill it — one row per target with " +
+		"status (`pass` / `fail` / `skip` / `yellow`) and a one-line failing tail. Quote the last ≤10 " +
+		"lines of stderr verbatim per failed target; never summarize errors. Read-only — never apply fixes, " +
+		"never re-run after editing. Next: failures route to `okt-implement` with the target name + tail; " +
+		"smell-level findings route to `okt-review` for triage.",
 }
 
 // commandDescriptions match the prompts/list metadata. Keeping them next to
@@ -86,6 +121,9 @@ var commandDescriptions = map[string]string{
 	"okt-implement": "Execute approved engineering work with strict rigor and commit discipline.",
 	"okt-document":  "Survey project documentation for drift and propose updates.",
 	"okt-config":    "Orient the agent on the active Omakiten config layout before edits.",
+	"okt-commit":    "Draft Conventional Commits for the working tree without pushing.",
+	"okt-review":    "Walk the diff through Fowler/Beck/Martin/Feathers lens and surface findings + refactor opportunities.",
+	"okt-check":     "Run discovered test/lint targets and report pass/fail in a tabular comment.",
 }
 
 // CommandNames returns the canonical, ordered list of `okt-*` prompts the MCP
@@ -101,6 +139,9 @@ func CommandNames() []string {
 		"okt-implement",
 		"okt-document",
 		"okt-config",
+		"okt-commit",
+		"okt-review",
+		"okt-check",
 	}
 }
 

@@ -8,6 +8,7 @@ Auto-derived from `defaults/templates/*.md` frontmatter.
 |---|---|---|---|
 | `comment-5w2h` | comment | — | Structured elicitation — answer the seven questions. Surface gaps explicitly when no answer is yet known. |
 | `comment-acceptance` | comment | — | Fills the `#acceptance` guard. Project picks the format — Given/When/Then or any other testable shape. |
+| `comment-check-report` | comment | — | Tabular pass/fail report emitted by okt-check; one row per discovered target. |
 | `comment-design-decision` | comment | — | Inline pointer to a decision record introduced by the change. Format is the project's convention. |
 | `comment-discard` | comment | — | Closes a spike that did not confirm its hypothesis. Records the lesson and the cost saved. |
 | `comment-documentation` | comment | comment-documentation | Closing checklist — fills the `#documentation` guard (review → done). |
@@ -22,8 +23,10 @@ Auto-derived from `defaults/templates/*.md` frontmatter.
 | `comment-pre-mortem` | comment | — | Fills the `#pre-mortem` guard before implementation. Imagine the change has already failed. |
 | `comment-promote` | comment | — | Promotes a confirmed spike to real work. Names the production gaps that remain. |
 | `comment-refactor-drive-by` | comment | — | Documents an opportunistic Boy-Scout cleanup that rode along with a feature or fix. |
+| `comment-refactor-opportunities` | comment | — | Fowler-named refactor opportunities surfaced by okt-review; each row cites the methodology and the target. |
 | `comment-requirements` | comment | — | User story + acceptance signals for the `#requirements` guard (requirements → planning). |
 | `comment-resume` | comment | comment-resume | Implementation handoff — fills the `#resume` guard (dev → review). |
+| `comment-review-findings` | comment | — | Diff-walk findings emitted by okt-review; one row per finding, severity-tagged. |
 | `comment-rice-score` | comment | — | Quantitative priority — Reach × Impact × Confidence ÷ Effort, with computed score per option. |
 | `comment-risk-assessment` | comment | — | Fills the `#risk-assessment` guard. Names top risks, mitigations, and residual risk accepted. |
 | `comment-rollback-plan` | comment | — | Fills the `#rollback-plan` requirement before review. Names the path back to safety. |

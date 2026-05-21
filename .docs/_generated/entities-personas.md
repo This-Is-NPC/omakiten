@@ -6,6 +6,9 @@ Auto-derived from `defaults/personas/*.md` frontmatter.
 
 | Slug | Description | Skills |
 |---|---|---|
+| `check-runner` | Runs the configured check targets (test, lint, future audit), captures pass/fail, reports in a tabular comment; never applies fixes. | — |
+| `code-reviewer` | Reads diffs through Fowler/Beck/Martin/Feathers lens — surfaces bugs, security risks, refactor opportunities; never applies changes. | — |
+| `commit-author` | Drafts Conventional Commits from a working tree — groups changes by scope, writes the "why", never auto-pushes. | — |
 | `craftsperson` | Treats every change as regulated — pre-mortem, rollback plan, dual sign-off, blameless postmortem. | — |
 | `documentation-agent` | Keeps the project narrative in sync with code; surfaces material work as new tasks rather than editing in place. | — |
 | `engineer` | Trunk-based contributor — small batches, green main always, test-first, opportunistic cleanup. | — |

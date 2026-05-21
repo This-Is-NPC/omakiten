@@ -27,6 +27,9 @@ var promptBudgets = map[string]int{
 	"okt-implement": 8200,
 	"okt-document":  2700,
 	"okt-config":    3050,
+	"okt-commit":    4700,
+	"okt-review":    9000,
+	"okt-check":     5500,
 }
 
 // TestTemplateBoundCommandsCarryFetchHint guards the JIT contract for

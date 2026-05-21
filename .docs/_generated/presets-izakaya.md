@@ -9,6 +9,9 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `check-runner` | `test-driven-development`, `static-analysis-discipline`, `coverage-analysis`, `regression-detection`, `markdown` |
+| `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
+| `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `readme-curation`, `markdown` |
 | `tinkerer` | `lean-experimentation`, `tracer-bullet-shipping`, `time-box-discipline`, `markdown` |
 
@@ -21,6 +24,8 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes`, +`project-scope-only` | — |
 | `okt` | tinkerer | — | — |
+| `okt-check` | check-runner | +`time-boxed-check`, +`accept-yellow` | `comment-check-report` |
+| `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | tinkerer | — | — |
 | `okt-create` | tinkerer | +`hypothesis-required`, +`yagni-first` | `task-spike` |
@@ -28,6 +33,7 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 | `okt-imagine` | tinkerer | -`template-fidelity` | — |
 | `okt-implement` | tinkerer | +`time-boxed-spike`, +`tracer-bullet`, +`conventional-commits` | `pull-request` |
 | `okt-resume` | tinkerer | — | — |
+| `okt-review` | code-reviewer | +`time-boxed-review`, +`tracer-debt-acceptable` | `comment-review-findings`, `comment-refactor-opportunities` |
 
 <!-- END SECTION -->
 
