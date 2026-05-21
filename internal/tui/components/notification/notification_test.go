@@ -43,6 +43,22 @@ func zeroNotificationPadding() *config.NotificationPadding {
 	return &config.NotificationPadding{Top: intPtr(0), Right: intPtr(0), Bottom: intPtr(0), Left: intPtr(0)}
 }
 
+// sampleCatalog wires the footer-label keys the notification renderer
+// consults (`notifications.footer.{details,close,cancel}`) so tests can
+// assert against resolved English copy instead of the raw `${{intl:...}}`
+// tokens that survive when no catalog is wired.
+func sampleCatalog() *config.Catalog {
+	lang := &config.Language{
+		Code: "en",
+		Keys: map[string]string{
+			"notifications.footer.details": "details",
+			"notifications.footer.close":   "close",
+			"notifications.footer.cancel":  "cancel",
+		},
+	}
+	return config.NewCatalog(lang, lang)
+}
+
 func sampleTheme() config.Theme {
 	return config.Theme{
 		Version: 1,
@@ -273,7 +289,7 @@ func TestUpdate_tabWithoutDetailIsNoop(t *testing.T) {
 func TestRenderFooter_detailAdvertisesTab(t *testing.T) {
 	bud := sampleNotification()
 	bud.FooterVisible = boolPtr(true)
-	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "short", DetailText: "full"})
+	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "short", DetailText: "full", Catalog: sampleCatalog()})
 	footer := ansi.Strip(m.renderFooter(40))
 	if !strings.Contains(footer, "tab details") {
 		t.Fatalf("footer = %q, want tab details hint", footer)
@@ -284,7 +300,7 @@ func TestRenderFooter_respectsFooterPosition(t *testing.T) {
 	bud := sampleNotification()
 	bud.FooterVisible = boolPtr(true)
 	bud.FooterPosition = config.NotificationFooterRight
-	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "short"})
+	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "short", Catalog: sampleCatalog()})
 	footer := ansi.Strip(m.renderFooter(16))
 	if footer != "       esc close" {
 		t.Fatalf("footer = %q, want right-aligned close hint", footer)
@@ -295,10 +311,37 @@ func TestRenderFooter_timeoutWithKeysShowsCloseHint(t *testing.T) {
 	bud := sampleNotification()
 	bud.FooterVisible = boolPtr(true)
 	bud.Dismiss = config.NotificationDismiss{Mode: config.NotificationDismissModeTimeout, Keys: []string{"esc"}, AfterMs: 12000}
-	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "short"})
+	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "short", Catalog: sampleCatalog()})
 	footer := ansi.Strip(m.renderFooter(20))
 	if !strings.Contains(footer, "esc close") {
 		t.Fatalf("footer = %q, want close hint", footer)
+	}
+}
+
+// TestRenderFooter_resolvesActionLabelIntlToken pins the policy that
+// notification config files reference only catalog keys; action labels
+// authored as `${{intl:KEY}}` MUST resolve to the catalog value at
+// render time so YAMLs never carry literal copy.
+func TestRenderFooter_resolvesActionLabelIntlToken(t *testing.T) {
+	bud := sampleNotification()
+	bud.FooterVisible = boolPtr(true)
+	bud.Actions = []config.NotificationAction{
+		{Key: "m", ID: "migrate", Label: "${{intl:test.action.migrate}}"},
+	}
+	lang := &config.Language{Code: "en", Keys: map[string]string{
+		"test.action.migrate":           "Migrate",
+		"notifications.footer.cancel":   "cancel",
+		"notifications.footer.close":    "close",
+		"notifications.footer.details":  "details",
+	}}
+	catalog := config.NewCatalog(lang, lang)
+	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "short", Catalog: catalog})
+	footer := ansi.Strip(m.renderFooter(40))
+	if !strings.Contains(footer, "m Migrate") {
+		t.Fatalf("footer = %q, want resolved action label 'm Migrate'", footer)
+	}
+	if strings.Contains(footer, "${{intl:") {
+		t.Fatalf("footer leaked unresolved intl token: %q", footer)
 	}
 }
 

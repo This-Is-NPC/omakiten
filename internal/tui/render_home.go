@@ -441,6 +441,7 @@ func (m *Model) armOrConfirmHomeProjectDelete(project domain.Project) {
 		Notification: notif,
 		Theme:        m.theme,
 		Text:         title + "\n\n" + body,
+		Catalog:      m.repos.Catalog,
 	})
 	m.notification = &bm
 }

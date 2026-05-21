@@ -488,6 +488,7 @@ func (m Model) dispatchNotification(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			Theme:        m.theme,
 			Text:         showMsg.Text,
 			DetailText:   showMsg.DetailText,
+			Catalog:      m.repos.Catalog,
 		})
 		m.notification = &bm
 		return m, cmd, true
