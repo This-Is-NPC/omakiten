@@ -177,6 +177,8 @@ personas:
     skills: [conventional-commits-spec, markdown]
   - slug: code-reviewer
     skills: [refactoring-catalog, code-smells, solid-principles, legacy-seams, security-review-lens, markdown]
+  - slug: check-runner
+    skills: [test-driven-development-strict, static-analysis-discipline, coverage-analysis, regression-detection, markdown]
 mcp_commands:
   global:
     laws: [template-fidelity, authorize-remote-writes, project-scope-only]
@@ -212,6 +214,10 @@ mcp_commands:
     persona: code-reviewer
     laws: [dual-review-required, coverage-gate-check, pre-mortem-aware]
     templates: [comment-review-findings, comment-refactor-opportunities]
+  okt-check:
+    persona: check-runner
+    laws: [coverage-gate, regression-required, dual-signal-required]
+    templates: [comment-check-report]
 workflows:
   - id: 1
     key: shokunin

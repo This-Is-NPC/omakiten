@@ -30,6 +30,9 @@ import (
 //	okt-review is parallel: walks the diff through a Fowler/Beck/Martin/
 //	Feathers lens; surfaces findings + refactor opportunities; read-only,
 //	suggests `okt-implement` to apply fixes.
+//	okt-check is parallel: discovers test/lint/audit targets, runs them
+//	via Bash, emits a tabular pass/fail report; read-only, suggests
+//	`okt-implement` for fixes or `okt-review` for triage.
 // Action texts deliberately stop short of repeating constraints already
 // declared inline in `## Laws` or role-specific flow already declared in the
 // persona body. Each one names the canonical tool and ends with a REST-style
@@ -96,6 +99,15 @@ var commandActions = map[string]string{
 		"`templates.show comment-review-findings` and `templates.show comment-refactor-opportunities` for " +
 		"the scaffolds, then post the filled comments on the task. Read-only — never edit files, never run " +
 		"`git commit`. Next: when findings need fixes, suggest `okt-implement` with the finding ids.",
+
+	"okt-check": "Run the project's check targets. Discover them via `mise tasks` first; fall back to " +
+		"`npm run`, `make -qp`, `package.json > scripts`, or the repo's `CONTRIBUTING.md` — stop at the " +
+		"first hit, do not guess. Invoke each target via Bash, capture stdout/stderr/exit code. Call " +
+		"`templates.show comment-check-report` for the scaffold, then fill it — one row per target with " +
+		"status (`pass` / `fail` / `skip` / `yellow`) and a one-line failing tail. Quote the last ≤10 " +
+		"lines of stderr verbatim per failed target; never summarize errors. Read-only — never apply fixes, " +
+		"never re-run after editing. Next: failures route to `okt-implement` with the target name + tail; " +
+		"smell-level findings route to `okt-review` for triage.",
 }
 
 // commandDescriptions match the prompts/list metadata. Keeping them next to
@@ -111,6 +123,7 @@ var commandDescriptions = map[string]string{
 	"okt-config":    "Orient the agent on the active Omakiten config layout before edits.",
 	"okt-commit":    "Draft Conventional Commits for the working tree without pushing.",
 	"okt-review":    "Walk the diff through Fowler/Beck/Martin/Feathers lens and surface findings + refactor opportunities.",
+	"okt-check":     "Run discovered test/lint targets and report pass/fail in a tabular comment.",
 }
 
 // CommandNames returns the canonical, ordered list of `okt-*` prompts the MCP
@@ -128,6 +141,7 @@ func CommandNames() []string {
 		"okt-config",
 		"okt-commit",
 		"okt-review",
+		"okt-check",
 	}
 }
 

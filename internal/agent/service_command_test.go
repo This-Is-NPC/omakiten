@@ -106,6 +106,7 @@ func TestResolveCommandRestHandoffsPresent(t *testing.T) {
 		"okt-config":    {"templates.show", "config-orientation", "okt-implement"},
 		"okt-commit":    {"git push"},
 		"okt-review":    {"okt-implement"},
+		"okt-check":     {"okt-implement"},
 	}
 	for name, hints := range expectedHandoffs {
 		text := CommandActionFallback(name)

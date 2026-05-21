@@ -496,6 +496,13 @@ personas:
       - legacy-seams
       - security-review-lens
       - markdown
+  - slug: check-runner
+    skills:
+      - test-driven-development
+      - static-analysis-discipline
+      - coverage-analysis
+      - regression-detection
+      - markdown
 # mcp_commands binds each `okt-*` MCP prompt to a persona, a set of laws, and a
 # set of templates. The reserved `global:` entry declares laws inherited by
 # every command. Per-command entries can add `laws:` or opt out of inherited
@@ -521,6 +528,9 @@ personas:
 #   okt-review is parallel — walks the diff with a Fowler/Beck/Martin/
 #   Feathers lens; surfaces findings + refactor opportunities; read-only
 #   (suggests okt-implement to apply fixes).
+#   okt-check is parallel — discovers test/lint/audit targets, runs them,
+#   emits a tabular pass/fail report; read-only (suggests okt-implement
+#   for fixes or okt-review for triage).
 mcp_commands:
   global:
     laws:
@@ -585,3 +595,10 @@ mcp_commands:
     templates:
       - comment-review-findings
       - comment-refactor-opportunities
+  okt-check:
+    persona: check-runner
+    laws:
+      - findings-actionable
+      - severity-tagged
+    templates:
+      - comment-check-report
