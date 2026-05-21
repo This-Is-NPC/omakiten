@@ -952,7 +952,10 @@ Auto-derived from `defaults/laws/*.md` frontmatter.
 | `green-main-always` | error | Never push code that breaks the build or tests on main. Verify locally (or via a pre-push CI run) before pushing. A broken main blocks every other contributor — fix-forward or revert within 10 minutes; do not "investigate later". |
 | `hypothesis-required` | error | Every spike answers a written question. The hypothesis lives on the task body or in a `#hypothesis` comment before any code is written. If the question can't be stated in one sentence with a falsifiable signal, the spike isn't ready — it is wandering. |
 | `invest-stories` | warning | User stories satisfy INVEST: Independent (can ship alone), Negotiable (room for the team to shape it), Valuable (clear benefit to a real user), Estimable (team can size it), Small (fits in a sprint or shorter), Testable (acceptance criteria are verifiable). Flag the missing letters when the story falls short. |
+| `link-decision-record` | warning | When the change implements or diverges from a decision recorded in the repo (decision record, RFC, design doc), link it from the commit body as `Refs: <path>` (e.g. `Refs: docs/decisions/0042-replace-sqlite-driver.md`). The commit becomes the bridge between the recorded rationale and the diff that realises it. |
+| `link-task-comments` | warning | When the change carries audit-trail comments on its Omakiten task — `#pre-mortem`, `#rollback-plan`, `#risk-assessment`, `#tests-passing`, `#peer-review` — reference them in the commit body as `Refs: task #<id> (#<tag>)`. Reviewers and future maintainers reading `git log` then have a single hop back to the rationale. |
 | `no-assumptions` | warning | Every claim must be traceable to code, configuration, or explicit user input. When info missing: ask, mark `[assumption]` with the guess explicit, or `[user-provided]` when the user said so without code backing. Never invent versions, file paths, or business rules to fill a section. |
+| `no-coauthored-by` | error | Never attribute a commit to an AI agent. No `Co-Authored-By: <model>` trailer, no `Generated with <tool>` footer, no model name in trailer or body. The human running the session is the author. No opt-out. Human `Co-Authored-By` trailers require explicit user request in this conversation. |
 | `no-silent-behavior-changes` | error | Every behavioral change ships with explicit evidence: a failing-then-passing test, a `#resume` comment naming the change, or a commit message calling it out. Incidental shifts inside a refactor are still behavior changes — document them. |
 | `non-functional-explicit` | warning | Functional and non-functional requirements live in separate sections. NFRs cover performance, security, usability, observability, scale, accessibility, and compliance — each named with a target or marked "not applicable + reason". Burying NFRs inside the user story or treating "make it fast" as a requirement hides the real constraints. |
 | `outcome-over-output` | warning | A feature is not "shipped" because the code merged; it is shipped when the targeted outcome moves. Every task names the user or business outcome it should produce, not just the artifact it produces. If you can't state the expected outcome, the work isn't ready to start. |
@@ -963,6 +966,7 @@ Auto-derived from `defaults/laws/*.md` frontmatter.
 | `project-scope-only` | error | Never mix tasks or context from different projects. |
 | `requirements-signed-off` | error | A task moves past requirements only after the requester signs off in writing on the user story, the acceptance criteria, and the non-functional constraints. "Signed off" means a comment from the requester naming the agreement; verbal nods or chat reactions do not survive review and do not count. |
 | `rollback-plan-mandatory` | error | Every change ships with a rollback plan: revert steps, validation post-rollback, comms plan. Non-trivial rollbacks (multi-step migrations, schema or data shape changes) require explicit reviewer sign-off on the strategy. |
+| `scope-from-paths` | warning | Derive the commit scope from the touched paths — the package, directory, or feature slug that owns the change. Vague catch-alls (`misc`, `update`, `chore`, `stuff`) hide intent and break `git log --grep` triage. |
 | `self-report` | error | Record any error that needed more than one fix attempt — the second attempt is the trigger. Call `errors.record` (one-line description, context, specific tags) and `solutions.add` against the returned id with the resolution that worked. Use `solutions.confirm` when applying a previously recorded solution found via `search(query, entity_types=["error"])`. |
 | `small-batches` | warning | Prefer many small PRs (<400 LOC diff) over one large PR. Small batches review faster, revert cheaper, ship sooner, and shrink the blast radius of a regression. Optimizes the DORA lead-time and change-failure-rate metrics simultaneously. |
 | `smart-success` | warning | Every task carries a success definition that satisfies SMART — Specific outcome, Measurable signal, Achievable given the constraints, Relevant to the stated goal, Time-bound for re-evaluation. "Improve things" is not SMART; "p95 latency under 200ms on the canonical workload by end of sprint" is. |
@@ -992,6 +996,7 @@ Auto-derived from `defaults/skills/*.md` frontmatter.
 | `architecture-mapping` | Tech stack, dependencies, design patterns, infrastructure, code metrics with measurable references. |
 | `change-management` | Approval matrix, sign-off discipline, audit-trail integrity, regulated-environment habits. |
 | `continuous-integration` | Pre-push verification, CI as source of truth for green, fix-forward vs revert decision discipline. |
+| `conventional-commits-spec` | Conventional Commits 1.0.0 grammar — type(scope): subject, body, footers, breaking-change markers. |
 | `decision-records` | When to record a decision; concise context / decision / consequences; discoverable filenames and links. |
 | `design-documentation` | Capture the approach in the repo's preferred format (decision record / RFC / design doc) before coding. |
 | `discovery` | Feasibility analysis, clarifying questions, scope boundaries, surfacing hidden constraints before code. |
@@ -1035,6 +1040,7 @@ Auto-derived from `defaults/personas/*.md` frontmatter.
 
 | Slug | Description | Skills |
 |---|---|---|
+| `commit-author` | Drafts Conventional Commits from a working tree — groups changes by scope, writes the "why", never auto-pushes. | — |
 | `craftsperson` | Treats every change as regulated — pre-mortem, rollback plan, dual sign-off, blameless postmortem. | — |
 | `documentation-agent` | Keeps the project narrative in sync with code; surfaces material work as new tasks rather than editing in place. | — |
 | `engineer` | Trunk-based contributor — small batches, green main always, test-first, opportunistic cleanup. | — |

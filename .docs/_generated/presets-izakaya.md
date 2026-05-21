@@ -9,6 +9,7 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `readme-curation`, `markdown` |
 | `tinkerer` | `lean-experimentation`, `tracer-bullet-shipping`, `time-box-discipline`, `markdown` |
 
@@ -21,6 +22,7 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes`, +`project-scope-only` | — |
 | `okt` | tinkerer | — | — |
+| `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | tinkerer | — | — |
 | `okt-create` | tinkerer | +`hypothesis-required`, +`yagni-first` | `task-spike` |

@@ -9,6 +9,7 @@ Auto-derived from `defaults/config/omakase.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
 | `engineer` | `trunk-based-development`, `continuous-integration`, `test-driven-development`, `dora-mindset`, `implementation`, `markdown` |
 | `product-owner` | `discovery`, `user-story-writing`, `pdca-cycle`, `five-w-two-h`, `smart-goals`, `invest-stories`, `moscow-prioritization`, `rice-scoring`, `non-functional-requirements`, `markdown` |
@@ -22,6 +23,7 @@ Auto-derived from `defaults/config/omakase.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes` | — |
 | `okt` | engineer | — | — |
+| `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by`, +`scope-from-paths` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | engineer | — | — |
 | `okt-create` | product-owner | +`invest-stories`, +`outcome-over-output` | `user-story`, `task-bugfix`, `comment-smart-success`, `comment-moscow` |

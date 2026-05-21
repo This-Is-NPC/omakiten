@@ -10,6 +10,7 @@ Auto-derived from `defaults/skills/*.md` frontmatter.
 | `architecture-mapping` | Tech stack, dependencies, design patterns, infrastructure, code metrics with measurable references. |
 | `change-management` | Approval matrix, sign-off discipline, audit-trail integrity, regulated-environment habits. |
 | `continuous-integration` | Pre-push verification, CI as source of truth for green, fix-forward vs revert decision discipline. |
+| `conventional-commits-spec` | Conventional Commits 1.0.0 grammar — type(scope): subject, body, footers, breaking-change markers. |
 | `decision-records` | When to record a decision; concise context / decision / consequences; discoverable filenames and links. |
 | `design-documentation` | Capture the approach in the repo's preferred format (decision record / RFC / design doc) before coding. |
 | `discovery` | Feasibility analysis, clarifying questions, scope boundaries, surfacing hidden constraints before code. |

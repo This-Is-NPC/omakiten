@@ -130,6 +130,7 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `readme-curation`, `markdown` |
 | `tinkerer` | `lean-experimentation`, `tracer-bullet-shipping`, `time-box-discipline`, `markdown` |
 
@@ -142,6 +143,7 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes`, +`project-scope-only` | — |
 | `okt` | tinkerer | — | — |
+| `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | tinkerer | — | — |
 | `okt-create` | tinkerer | +`hypothesis-required`, +`yagni-first` | `task-spike` |
@@ -250,6 +252,7 @@ Auto-derived from `defaults/config/omakase.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
 | `engineer` | `trunk-based-development`, `continuous-integration`, `test-driven-development`, `dora-mindset`, `implementation`, `markdown` |
 | `product-owner` | `discovery`, `user-story-writing`, `pdca-cycle`, `five-w-two-h`, `smart-goals`, `invest-stories`, `moscow-prioritization`, `rice-scoring`, `non-functional-requirements`, `markdown` |
@@ -263,6 +266,7 @@ Auto-derived from `defaults/config/omakase.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes` | — |
 | `okt` | engineer | — | — |
+| `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by`, +`scope-from-paths` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | engineer | — | — |
 | `okt-create` | product-owner | +`invest-stories`, +`outcome-over-output` | `user-story`, `task-bugfix`, `comment-smart-success`, `comment-moscow` |
@@ -381,6 +385,7 @@ Auto-derived from `defaults/config/kaiseki.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
 | `methodical-engineer` | `staged-delivery`, `requirements-elicitation`, `design-documentation`, `decision-records`, `acceptance-criteria-writing`, `implementation`, `markdown` |
 | `product-owner` | `discovery`, `user-story-writing`, `requirements-elicitation`, `acceptance-criteria-writing`, `pdca-cycle`, `five-w-two-h`, `smart-goals`, `invest-stories`, `moscow-prioritization`, `rice-scoring`, `non-functional-requirements`, `markdown` |
@@ -394,6 +399,7 @@ Auto-derived from `defaults/config/kaiseki.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes`, +`project-scope-only` | — |
 | `okt` | methodical-engineer | — | — |
+| `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by`, +`link-decision-record` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | methodical-engineer | — | — |
 | `okt-create` | product-owner | +`requirements-signed-off`, +`acceptance-criteria-required`, +`invest-stories`, +`outcome-over-output`, +`prioritization-recorded`, +`non-functional-explicit` | `task-feature`, `comment-requirements`, `comment-acceptance`, `comment-smart-success`, `comment-moscow`, `comment-rice-score`, `comment-non-functional` |
@@ -517,6 +523,7 @@ Auto-derived from `defaults/config/shokunin.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `commit-author` | `conventional-commits-spec`, `markdown` |
 | `craftsperson` | `sre-discipline`, `risk-driven-development`, `postmortem-authoring`, `change-management`, `test-driven-development-strict`, `static-analysis-discipline`, `implementation`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
 | `product-owner` | `discovery`, `user-story-writing`, `pdca-cycle`, `five-w-two-h`, `smart-goals`, `invest-stories`, `moscow-prioritization`, `rice-scoring`, `okr-framing`, `non-functional-requirements`, `markdown` |
@@ -530,6 +537,7 @@ Auto-derived from `defaults/config/shokunin.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes`, +`project-scope-only` | — |
 | `okt` | craftsperson | — | — |
+| `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by`, +`link-task-comments` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | craftsperson | — | — |
 | `okt-create` | product-owner | +`blast-radius-awareness`, +`error-budget-aware`, +`invest-stories`, +`outcome-over-output`, +`prioritization-recorded`, +`non-functional-explicit` | `task-change-request`, `comment-requirements`, `comment-acceptance`, `comment-risk-assessment`, `comment-smart-success`, `comment-moscow`, `comment-rice-score`, `comment-okr`, `comment-non-functional` |

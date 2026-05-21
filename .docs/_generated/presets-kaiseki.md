@@ -9,6 +9,7 @@ Auto-derived from `defaults/config/kaiseki.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
 | `methodical-engineer` | `staged-delivery`, `requirements-elicitation`, `design-documentation`, `decision-records`, `acceptance-criteria-writing`, `implementation`, `markdown` |
 | `product-owner` | `discovery`, `user-story-writing`, `requirements-elicitation`, `acceptance-criteria-writing`, `pdca-cycle`, `five-w-two-h`, `smart-goals`, `invest-stories`, `moscow-prioritization`, `rice-scoring`, `non-functional-requirements`, `markdown` |
@@ -22,6 +23,7 @@ Auto-derived from `defaults/config/kaiseki.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes`, +`project-scope-only` | — |
 | `okt` | methodical-engineer | — | — |
+| `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by`, +`link-decision-record` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | methodical-engineer | — | — |
 | `okt-create` | product-owner | +`requirements-signed-off`, +`acceptance-criteria-required`, +`invest-stories`, +`outcome-over-output`, +`prioritization-recorded`, +`non-functional-explicit` | `task-feature`, `comment-requirements`, `comment-acceptance`, `comment-smart-success`, `comment-moscow`, `comment-rice-score`, `comment-non-functional` |

@@ -9,6 +9,7 @@ Auto-derived from `defaults/config/shokunin.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `commit-author` | `conventional-commits-spec`, `markdown` |
 | `craftsperson` | `sre-discipline`, `risk-driven-development`, `postmortem-authoring`, `change-management`, `test-driven-development-strict`, `static-analysis-discipline`, `implementation`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
 | `product-owner` | `discovery`, `user-story-writing`, `pdca-cycle`, `five-w-two-h`, `smart-goals`, `invest-stories`, `moscow-prioritization`, `rice-scoring`, `okr-framing`, `non-functional-requirements`, `markdown` |
@@ -22,6 +23,7 @@ Auto-derived from `defaults/config/shokunin.yaml`.
 |---|---|---|---|
 | `global` | — | +`template-fidelity`, +`authorize-remote-writes`, +`project-scope-only` | — |
 | `okt` | craftsperson | — | — |
+| `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by`, +`link-task-comments` | — |
 | `okt-config` | documentation-agent | — | `config-orientation` |
 | `okt-continue` | craftsperson | — | — |
 | `okt-create` | product-owner | +`blast-radius-awareness`, +`error-budget-aware`, +`invest-stories`, +`outcome-over-output`, +`prioritization-recorded`, +`non-functional-explicit` | `task-change-request`, `comment-requirements`, `comment-acceptance`, `comment-risk-assessment`, `comment-smart-success`, `comment-moscow`, `comment-rice-score`, `comment-okr`, `comment-non-functional` |
