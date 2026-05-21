@@ -9,6 +9,7 @@ Auto-derived from `defaults/config/shokunin.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
 | `commit-author` | `conventional-commits-spec`, `markdown` |
 | `craftsperson` | `sre-discipline`, `risk-driven-development`, `postmortem-authoring`, `change-management`, `test-driven-development-strict`, `static-analysis-discipline`, `implementation`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
@@ -31,6 +32,7 @@ Auto-derived from `defaults/config/shokunin.yaml`.
 | `okt-imagine` | product-owner | -`template-fidelity` | `comment-5w2h`, `comment-smart-success` |
 | `okt-implement` | craftsperson | +`pre-mortem-required`, +`rollback-plan-mandatory`, +`dual-peer-review`, +`coverage-gate`, +`blast-radius-awareness`, +`error-budget-aware`, +`conventional-commits`, +`no-silent-behavior-changes` | `pull-request`, `comment-pre-mortem`, `comment-rollback-plan`, `comment-peer-review-strict`, `comment-tests-passing-strict`, `comment-risk-assessment`, `comment-scribe-correction` |
 | `okt-resume` | craftsperson | — | — |
+| `okt-review` | code-reviewer | +`dual-review-required`, +`coverage-gate-check`, +`pre-mortem-aware` | `comment-review-findings`, `comment-refactor-opportunities` |
 
 <!-- END SECTION -->
 

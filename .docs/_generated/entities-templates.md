@@ -22,8 +22,10 @@ Auto-derived from `defaults/templates/*.md` frontmatter.
 | `comment-pre-mortem` | comment | — | Fills the `#pre-mortem` guard before implementation. Imagine the change has already failed. |
 | `comment-promote` | comment | — | Promotes a confirmed spike to real work. Names the production gaps that remain. |
 | `comment-refactor-drive-by` | comment | — | Documents an opportunistic Boy-Scout cleanup that rode along with a feature or fix. |
+| `comment-refactor-opportunities` | comment | — | Fowler-named refactor opportunities surfaced by okt-review; each row cites the methodology and the target. |
 | `comment-requirements` | comment | — | User story + acceptance signals for the `#requirements` guard (requirements → planning). |
 | `comment-resume` | comment | comment-resume | Implementation handoff — fills the `#resume` guard (dev → review). |
+| `comment-review-findings` | comment | — | Diff-walk findings emitted by okt-review; one row per finding, severity-tagged. |
 | `comment-rice-score` | comment | — | Quantitative priority — Reach × Impact × Confidence ÷ Effort, with computed score per option. |
 | `comment-risk-assessment` | comment | — | Fills the `#risk-assessment` guard. Names top risks, mitigations, and residual risk accepted. |
 | `comment-rollback-plan` | comment | — | Fills the `#rollback-plan` requirement before review. Names the path back to safety. |

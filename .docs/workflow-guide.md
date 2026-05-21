@@ -130,6 +130,7 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
 | `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `readme-curation`, `markdown` |
 | `tinkerer` | `lean-experimentation`, `tracer-bullet-shipping`, `time-box-discipline`, `markdown` |
@@ -151,6 +152,7 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 | `okt-imagine` | tinkerer | -`template-fidelity` | — |
 | `okt-implement` | tinkerer | +`time-boxed-spike`, +`tracer-bullet`, +`conventional-commits` | `pull-request` |
 | `okt-resume` | tinkerer | — | — |
+| `okt-review` | code-reviewer | +`time-boxed-review`, +`tracer-debt-acceptable` | `comment-review-findings`, `comment-refactor-opportunities` |
 
 <!-- END SECTION -->
 
@@ -252,6 +254,7 @@ Auto-derived from `defaults/config/omakase.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
 | `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
 | `engineer` | `trunk-based-development`, `continuous-integration`, `test-driven-development`, `dora-mindset`, `implementation`, `markdown` |
@@ -274,6 +277,7 @@ Auto-derived from `defaults/config/omakase.yaml`.
 | `okt-imagine` | product-owner | -`template-fidelity` | `comment-5w2h`, `comment-smart-success` |
 | `okt-implement` | engineer | +`bounded-self-review`, +`no-silent-behavior-changes`, +`conventional-commits`, +`self-report`, +`green-main-always`, +`small-batches`, +`boy-scout-rule`, +`test-evidence` | `pull-request`, `comment-tests-passing`, `comment-refactor-drive-by` |
 | `okt-resume` | engineer | — | — |
+| `okt-review` | code-reviewer | +`findings-actionable`, +`no-praise-pad`, +`severity-tagged` | `comment-review-findings`, `comment-refactor-opportunities` |
 
 <!-- END SECTION -->
 
@@ -385,6 +389,7 @@ Auto-derived from `defaults/config/kaiseki.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
 | `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
 | `methodical-engineer` | `staged-delivery`, `requirements-elicitation`, `design-documentation`, `decision-records`, `acceptance-criteria-writing`, `implementation`, `markdown` |
@@ -407,6 +412,7 @@ Auto-derived from `defaults/config/kaiseki.yaml`.
 | `okt-imagine` | product-owner | -`template-fidelity` | `comment-5w2h`, `comment-smart-success` |
 | `okt-implement` | methodical-engineer | +`design-recorded`, +`decision-record-on-divergence`, +`peer-review-required`, +`conventional-commits`, +`no-silent-behavior-changes` | `pull-request`, `decision-record`, `design-doc`, `comment-design-decision` |
 | `okt-resume` | methodical-engineer | — | — |
+| `okt-review` | code-reviewer | +`design-recorded-check`, +`decision-record-on-divergence` | `comment-review-findings`, `comment-refactor-opportunities` |
 
 <!-- END SECTION -->
 
@@ -523,6 +529,7 @@ Auto-derived from `defaults/config/shokunin.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
 | `commit-author` | `conventional-commits-spec`, `markdown` |
 | `craftsperson` | `sre-discipline`, `risk-driven-development`, `postmortem-authoring`, `change-management`, `test-driven-development-strict`, `static-analysis-discipline`, `implementation`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
@@ -545,6 +552,7 @@ Auto-derived from `defaults/config/shokunin.yaml`.
 | `okt-imagine` | product-owner | -`template-fidelity` | `comment-5w2h`, `comment-smart-success` |
 | `okt-implement` | craftsperson | +`pre-mortem-required`, +`rollback-plan-mandatory`, +`dual-peer-review`, +`coverage-gate`, +`blast-radius-awareness`, +`error-budget-aware`, +`conventional-commits`, +`no-silent-behavior-changes` | `pull-request`, `comment-pre-mortem`, `comment-rollback-plan`, `comment-peer-review-strict`, `comment-tests-passing-strict`, `comment-risk-assessment`, `comment-scribe-correction` |
 | `okt-resume` | craftsperson | — | — |
+| `okt-review` | code-reviewer | +`dual-review-required`, +`coverage-gate-check`, +`pre-mortem-aware` | `comment-review-findings`, `comment-refactor-opportunities` |
 
 <!-- END SECTION -->
 

@@ -9,6 +9,7 @@ Auto-derived from `defaults/config/kaiseki.yaml`.
 
 | Persona | Skills |
 |---|---|
+| `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
 | `commit-author` | `conventional-commits-spec`, `markdown` |
 | `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
 | `methodical-engineer` | `staged-delivery`, `requirements-elicitation`, `design-documentation`, `decision-records`, `acceptance-criteria-writing`, `implementation`, `markdown` |
@@ -31,6 +32,7 @@ Auto-derived from `defaults/config/kaiseki.yaml`.
 | `okt-imagine` | product-owner | -`template-fidelity` | `comment-5w2h`, `comment-smart-success` |
 | `okt-implement` | methodical-engineer | +`design-recorded`, +`decision-record-on-divergence`, +`peer-review-required`, +`conventional-commits`, +`no-silent-behavior-changes` | `pull-request`, `decision-record`, `design-doc`, `comment-design-decision` |
 | `okt-resume` | methodical-engineer | — | — |
+| `okt-review` | code-reviewer | +`design-recorded-check`, +`decision-record-on-divergence` | `comment-review-findings`, `comment-refactor-opportunities` |
 
 <!-- END SECTION -->
 
