@@ -522,6 +522,95 @@ func TestRunUpdate_AssetTooLargeAborts(t *testing.T) {
 	}
 }
 
+// recordingBackupFactory captures how many times the factory was
+// invoked and lets the test pin a resolution error. Used to assert the
+// `--check` / noop short-circuits never resolve the backup wiring
+// (regression guard: pre-fix, an unresolvable BackupDir aborted
+// `okt update --check` because wiring happened eagerly in RunE).
+type recordingBackupFactory struct {
+	runner updateBackupRunner
+	err    error
+	calls  int
+}
+
+func (r *recordingBackupFactory) build(context.Context) (updateBackupRunner, error) {
+	r.calls++
+	return r.runner, r.err
+}
+
+func TestRunUpdate_CheckSkipsBackupFactory(t *testing.T) {
+	factory := &recordingBackupFactory{err: errors.New("paths.BackupDir: state home unwritable")}
+	c := updateClient{
+		Fetcher:       stubFetcher{Tag: "0.20.0"},
+		Current:       "0.19.0",
+		BackupFactory: factory.build,
+	}
+	res, err := runUpdate(context.Background(), c, updateInputs{Check: true})
+	if err != nil {
+		t.Fatalf("runUpdate(--check) error = %v, want nil even when backup factory would error", err)
+	}
+	if factory.calls != 0 {
+		t.Fatalf("BackupFactory invoked %d times on --check; want 0 (no swap → no snapshot needed)", factory.calls)
+	}
+	payload, _ := res.(map[string]any)
+	if payload["code"] != "update_available" {
+		t.Fatalf("code: got %v want update_available", payload["code"])
+	}
+}
+
+func TestRunUpdate_NoopSkipsBackupFactory(t *testing.T) {
+	factory := &recordingBackupFactory{err: errors.New("BackupDir unresolvable")}
+	c := updateClient{
+		Fetcher:       stubFetcher{Tag: "0.19.0"},
+		Current:       "0.19.0",
+		BackupFactory: factory.build,
+	}
+	if _, err := runUpdate(context.Background(), c, updateInputs{Yes: true}); err != nil {
+		t.Fatalf("runUpdate(noop) error = %v, want nil — noop path must not resolve backup", err)
+	}
+	if factory.calls != 0 {
+		t.Fatalf("BackupFactory invoked %d times on noop; want 0", factory.calls)
+	}
+}
+
+func TestRunUpdate_BackupFactoryErrorAbortsSwap(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("posix archive shape")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "okt")
+	if err := os.WriteFile(bin, []byte("OLD"), 0o755); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	archive := tarGzWith(t, map[string][]byte{"okt": []byte("NEW")})
+	asset, err := assetName(goruntime.GOOS, goruntime.GOARCH)
+	if err != nil {
+		t.Fatalf("assetName: %v", err)
+	}
+	factory := &recordingBackupFactory{err: errors.New("mkdir state home: permission denied")}
+	c := updateClient{
+		Fetcher:       stubFetcher{Tag: "0.20.0"},
+		Downloader:    stubDownloader{Assets: map[string][]byte{asset: archive}},
+		Current:       "0.19.0",
+		BinaryPath:    bin,
+		BackupFactory: factory.build,
+	}
+	_, err = runUpdate(context.Background(), c, updateInputs{Yes: true})
+	if err == nil {
+		t.Fatalf("expected backup-factory error to abort the swap")
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrUpdateFailed {
+		t.Fatalf("error: got %v want ErrUpdateFailed", err)
+	}
+	if factory.calls != 1 {
+		t.Fatalf("BackupFactory calls = %d, want 1 (swap path resolves once)", factory.calls)
+	}
+	if got, _ := os.ReadFile(bin); string(got) != "OLD" {
+		t.Fatalf("binary mutated after backup-factory failure: %q", string(got))
+	}
+}
+
 func TestAtomicSwap_OverwritesAndChmods(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "okt")

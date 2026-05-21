@@ -85,13 +85,18 @@ type updateClient struct {
 	// os.Executable(); tests override to point at a tmp file so
 	// assertions can read the post-swap bytes.
 	BinaryPath string
-	// Backup is the safety-net snapshot runner invoked between the
-	// download confirmation and the irreversible binary swap. Nil
-	// disables the auto-backup (tests that don't exercise the safety
-	// net path pass nil); production wires
-	// app.NewBackupService against the runtime DB so an aborted
-	// upgrade leaves a recovery artefact on disk.
+	// Backup is a direct backup runner injection. Production wires
+	// BackupFactory instead so resolution happens lazily past the
+	// --check / noop short-circuits. Kept for direct tests that
+	// exercise the swap path without going through a factory.
 	Backup updateBackupRunner
+	// BackupFactory resolves the pre-swap backup runner only when
+	// the swap path is actually about to fire. Wired by RunE so an
+	// unresolvable BackupDir (or unloadable bundle) does not abort
+	// `okt update --check` and `okt update` on a current binary
+	// (noop) — both paths skip the binary swap and therefore do not
+	// need a recovery snapshot. nil falls back to Backup.
+	BackupFactory func(ctx context.Context) (updateBackupRunner, error)
 }
 
 // updateBackupRunner is the narrow port runUpdate uses to invoke the
@@ -119,11 +124,9 @@ func newUpdateCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				backup, berr := updateBackupForOpts(cmd, opts)
-				if berr != nil {
-					return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.backup_failed_fmt"), berr.Error()), nil)
+				client.BackupFactory = func(_ context.Context) (updateBackupRunner, error) {
+					return updateBackupForOpts(cmd, opts)
 				}
-				client.Backup = backup
 				return runUpdate(ctx, client, updateInputs{Check: check, Yes: yes})
 			})
 		},
@@ -209,9 +212,22 @@ func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, e
 	// underlying issue is fixed. Pre-network ordering avoids the race
 	// where the new binary has already landed on disk but the backup
 	// pass is still running.
+	//
+	// BackupFactory resolves lazily — only this path needs the
+	// snapshot, so `okt update --check` and the noop fast path skip
+	// the factory entirely. An unresolvable BackupDir on those
+	// read-only paths no longer aborts the command (regression fix).
+	backupRunner := c.Backup
+	if c.BackupFactory != nil {
+		runner, factoryErr := c.BackupFactory(ctx)
+		if factoryErr != nil {
+			return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.backup_failed_fmt"), factoryErr.Error()), nil)
+		}
+		backupRunner = runner
+	}
 	var backupPath string
-	if c.Backup != nil {
-		path, err := c.Backup.Run(ctx)
+	if backupRunner != nil {
+		path, err := backupRunner.Run(ctx)
 		if err != nil {
 			return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.backup_failed_fmt"), err.Error()), nil)
 		}
