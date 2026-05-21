@@ -23,30 +23,31 @@ import (
 // fallback the spec calls for — a partially-migrated config should not
 // block recovery work — and emits a stderr warning naming the cause so
 // the user still sees that retention defaulted to zero.
-func buildCLIBackupService(cmd *cobra.Command, opts *runtimeOptions, dbPath string, strict bool) (*app.BackupService, error) {
+func buildCLIBackupService(cmd *cobra.Command, opts *runtimeOptions, dbPath string, strict bool) (*app.BackupService, int, error) {
 	destDir, err := paths.BackupDir()
 	if err != nil {
-		return nil, fmt.Errorf("resolve backup dir: %w", err)
+		return nil, 0, fmt.Errorf("resolve backup dir: %w", err)
 	}
 
 	retention, rerr := resolveBackupRetention(opts)
 	if rerr != nil {
 		if strict {
-			return nil, fmt.Errorf("resolve backup retention: %w", rerr)
+			return nil, 0, fmt.Errorf("resolve backup retention: %w", rerr)
 		}
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: backup retention defaulted to 0 (%s)\n", rerr.Error())
 	}
 
 	stderr := cmd.ErrOrStderr()
 	warnFormat := opts.t("cli.db.backup.prune_warn_fmt")
-	return app.NewBackupService(app.BackupOptions{
+	svc := app.NewBackupService(app.BackupOptions{
 		SourcePath: dbPath,
 		DestDir:    destDir,
 		Retention:  retention,
 		PruneWarn: func(pruneErr error) {
 			fmt.Fprintf(stderr, warnFormat+"\n", pruneErr.Error())
 		},
-	}), nil
+	})
+	return svc, retention, nil
 }
 
 // resolveBackupRetention reads settings.backup.retention_count from the

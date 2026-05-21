@@ -67,7 +67,7 @@ func runProjectsDelete(ctx context.Context, cmd *cobra.Command, opts *runtimeOpt
 		}
 	}
 
-	backup, err := buildCLIBackupService(cmd, opts, rt.dbPath, true)
+	backup, _, err := buildCLIBackupService(cmd, opts, rt.dbPath, true)
 	if err != nil {
 		return nil, err
 	}

@@ -76,7 +76,7 @@ func runDBBackup(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, 
 		return map[string]any{"path": finalPath, "pruned": false}, nil
 	}
 
-	svc, err := buildCLIBackupService(cmd, opts, dbPath, false)
+	svc, retention, err := buildCLIBackupService(cmd, opts, dbPath, false)
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +85,5 @@ func runDBBackup(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, 
 		return nil, err
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(), opts.t("cli.db.backup.success_fmt")+"\n", finalPath)
-	retention, _ := resolveBackupRetention(opts)
 	return map[string]any{"path": finalPath, "pruned": true, "retention": retention}, nil
 }

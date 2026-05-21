@@ -35,7 +35,11 @@ func updateBackupForOpts(cmd *cobra.Command, opts *runtimeOptions) (updateBackup
 	if err != nil {
 		return nil, err
 	}
-	return buildCLIBackupService(cmd, opts, dbPath, true)
+	svc, _, err := buildCLIBackupService(cmd, opts, dbPath, true)
+	if err != nil {
+		return nil, err
+	}
+	return svc, nil
 }
 
 // updateRepo is the GitHub repository the in-binary updater polls
