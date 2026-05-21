@@ -15,10 +15,18 @@ import (
 )
 
 // notificationShape mirrors the slice of bundled notification YAMLs
-// needed for the parity check — just the slug-keyed description.
+// needed for the parity check — slug-keyed description plus the action
+// labels the footer renderer surfaces.
 type notificationShape struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
+	Name        string                `yaml:"name"`
+	Description string                `yaml:"description"`
+	Actions     []notificationActionShape `yaml:"actions"`
+}
+
+type notificationActionShape struct {
+	Key   string `yaml:"key"`
+	ID    string `yaml:"id"`
+	Label string `yaml:"label"`
 }
 
 // TestNotificationDescriptionsParity asserts that resolving every
@@ -100,6 +108,82 @@ func TestNotificationDescriptionsAllUseTokens(t *testing.T) {
 		}
 		if !strings.HasPrefix(parsed.Description, "${{intl:") {
 			t.Errorf("notification %s description %q is not an intl token", entry.Name(), parsed.Description)
+		}
+	}
+}
+
+// TestNotificationActionLabelsAllUseTokens enforces that every bundled
+// notification action label is an `${{intl:KEY}}` token, not an inline
+// literal. The notification component resolves labels through the
+// catalog at render time (Options.Catalog); a hardcoded label would
+// bypass the catalog and surface the same literal in every locale —
+// the exact regression that landed `${{intl:notifications.home-
+// project-delete-confirm.confirm_label}}` on the Home delete overlay
+// before the resolver wiring shipped.
+func TestNotificationActionLabelsAllUseTokens(t *testing.T) {
+	entries, err := fs.ReadDir(defaults.FS, "notifications")
+	if err != nil {
+		t.Fatalf("read bundled notifications: %v", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+		raw, err := defaults.FS.ReadFile(filepath.ToSlash(filepath.Join("notifications", entry.Name())))
+		if err != nil {
+			t.Fatalf("read %s: %v", entry.Name(), err)
+		}
+		var parsed notificationShape
+		if err := yaml.Unmarshal(raw, &parsed); err != nil {
+			t.Fatalf("unmarshal %s: %v", entry.Name(), err)
+		}
+		for _, action := range parsed.Actions {
+			if !strings.HasPrefix(action.Label, "${{intl:") {
+				t.Errorf("notification %s action %q label %q is not an intl token; config files must reference catalog keys only", entry.Name(), action.ID, action.Label)
+			}
+		}
+	}
+}
+
+// TestNotificationActionLabelsResolveAgainstEnCatalog asserts that
+// every `${{intl:KEY}}` action label in the bundled notifications
+// resolves to a non-literal string in the en catalog — i.e. the key
+// exists in defaults/languages/en.yaml. Without this guard a renamed
+// or typo'd key would silently fall through Catalog.Get's "return the
+// key literal" path and surface the raw key in the footer.
+func TestNotificationActionLabelsResolveAgainstEnCatalog(t *testing.T) {
+	enLang := loadBundledLanguage(t, "en")
+	catalog := NewCatalog(&enLang, &enLang)
+
+	entries, err := fs.ReadDir(defaults.FS, "notifications")
+	if err != nil {
+		t.Fatalf("read bundled notifications: %v", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+		raw, err := defaults.FS.ReadFile(filepath.ToSlash(filepath.Join("notifications", entry.Name())))
+		if err != nil {
+			t.Fatalf("read %s: %v", entry.Name(), err)
+		}
+		var parsed notificationShape
+		if err := yaml.Unmarshal(raw, &parsed); err != nil {
+			t.Fatalf("unmarshal %s: %v", entry.Name(), err)
+		}
+		for _, action := range parsed.Actions {
+			resolved := catalog.Resolve(action.Label)
+			if strings.Contains(resolved, "${{intl:") {
+				t.Errorf("notification %s action %q label %q failed to resolve (token survived) — missing catalog entry", entry.Name(), action.ID, action.Label)
+				continue
+			}
+			// Catalog.Get's missing-key fallback returns the bare key
+			// literal (e.g. "notifications.foo.bar"). Detect that by
+			// checking the resolved value equals the inner key text.
+			inner := strings.TrimSuffix(strings.TrimPrefix(action.Label, "${{intl:"), "}}")
+			if resolved == inner {
+				t.Errorf("notification %s action %q label %q resolved to the bare key — missing catalog entry in defaults/languages/en.yaml", entry.Name(), action.ID, action.Label)
+			}
 		}
 	}
 }
