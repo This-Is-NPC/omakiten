@@ -319,6 +319,17 @@ type Model struct {
 	homeProjectTags    map[int64][]domain.Tag
 	homeProjectPending map[int64]int
 	homePicker         picker.Model
+	// homeProjectDeletePendingID arms the destructive Home delete gate.
+	// First `d` press records the highlighted project's id and surfaces
+	// a confirmation hint in the status badge; second `d` on the same
+	// project runs ProjectService.Delete (with auto-backup). esc on
+	// Home (or any other key) clears the arm so the user cannot
+	// accidentally confirm a delete after moving the cursor onto a
+	// different project. Mirrors the task-delete arm-then-confirm
+	// shape rather than spinning up a notification overlay — the spec
+	// prefers an overlay but the codebase precedent (task delete +
+	// orphan rebind revert) is the simpler, well-tested gate.
+	homeProjectDeletePendingID int64
 	// lastProjectRoot is the root_path of the last project the user opened
 	// during the session. CLI-side cd-on-exit reads this after program.Run()
 	// returns so the parent shell wrapper can `cd` into the project.

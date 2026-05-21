@@ -215,6 +215,72 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 	}
 }
 
+// TestHomeProjectDeleteArmThenConfirm covers PR3 of #191: the
+// destructive Home delete gate arms on the first `d` (status shows the
+// confirmation hint, project still in DB) and fires the cascade on
+// the second `d` (project gone, status shows the backup path).
+func TestHomeProjectDeleteArmThenConfirm(t *testing.T) {
+	ctx := context.Background()
+	dbDir := t.TempDir()
+	stateDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateDir)
+
+	store := snapstore.Open(t, dbDir+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
+	if err != nil {
+		t.Fatalf("UpsertProject(doomed) error = %v", err)
+	}
+	if _, err := store.UpsertProject(ctx, "Survivor", "survivor", "/work/survivor"); err != nil {
+		t.Fatalf("UpsertProject(survivor) error = %v", err)
+	}
+
+	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+		Tasks:        store,
+		Projects:     store,
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Tags:         store,
+		Events:       store,
+		DBPath:       dbDir + "/omakiten.db",
+		Catalog:      newTestCatalog(t),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	// First `d` arms the gate but does not delete.
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	armed := updated.(Model)
+	if armed.homeProjectDeletePendingID == 0 {
+		t.Fatalf("first `d` did not arm home delete gate")
+	}
+	if armed.homeProjectDeletePendingID != doomed.ID {
+		t.Fatalf("pending id = %d, want %d (cursor on first card)", armed.homeProjectDeletePendingID, doomed.ID)
+	}
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err != nil {
+		t.Fatalf("project gone after arm-only press: %v", err)
+	}
+
+	// Second `d` confirms; the cascade fires and the project is gone.
+	updated, _ = armed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	deleted := updated.(Model)
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err == nil {
+		t.Fatalf("project still present after confirm")
+	}
+	if deleted.homeProjectDeletePendingID != 0 {
+		t.Fatalf("pending id = %d after confirm, want 0", deleted.homeProjectDeletePendingID)
+	}
+	if !strings.Contains(deleted.status, "doomed") || !strings.Contains(deleted.status, "backup") {
+		t.Fatalf("post-delete status = %q, want project slug + backup mention", deleted.status)
+	}
+}
+
 // TestHomeRendersProjectTagBadges covers AC4: project_tags become the badges
 // on the Home cards, reusing the chip component.
 func TestHomeRendersProjectTagBadges(t *testing.T) {

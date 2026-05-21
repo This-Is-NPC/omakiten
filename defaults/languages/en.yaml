@@ -411,7 +411,11 @@ keys:
   tui.confirm.tag_delete_fmt: "Confirm delete tag %q. Press d again to remove; esc cancels."
   tui.confirm.comment_delete_fmt: "Confirm delete comment #%d. Press d again; esc cancels."
   tui.confirm.task_delete_fmt: "Confirm delete task #%d %q. Press d again; esc cancels."
+  tui.confirm.home_project_delete_fmt: "Confirm delete project %q (cascade tasks, plans, errors). Press d again; esc cancels. A backup snapshot is written first."
   tui.status.task_deleted_fmt: "Deleted task #%d"
+  tui.status.project_deleted_fmt: "Project %q deleted · backup → %s"
+  tui.footer.delete_project: "delete project"
+  tui.footer.confirm_delete_project: "confirm delete · esc cancels"
   tui.status.orphan_tags_deleted_fmt: "%d orphan tag(s) deleted"
   tui.status.tag_in_use_fmt: "Tag %q is in use (%d references) — cannot delete"
   tui.status.task_not_found: "Task not found. Press esc to return."
@@ -933,6 +937,11 @@ keys:
 
     Without flags on a TTY the picker shows what would be deleted with
     sizes and asks per purge target. --yes skips the picker entirely.
+
+    No automatic backup. Run `okt db backup` first if you want a
+    snapshot of the SQLite DB before purging — uninstall removes
+    user-owned data by intent, so the safety net is opt-in via the
+    standalone backup command.
   cli.uninstall.flag.yes: "skip the interactive picker and apply the resolved flag set non-interactively"
   cli.uninstall.flag.purge-data: "also delete $XDG_DATA_HOME/omakiten (SQLite DB + WAL/SHM) — irreversible"
   cli.uninstall.flag.purge-config: "also delete $XDG_CONFIG_HOME/omakiten (active yaml + entity folders) — irreversible"
@@ -975,6 +984,7 @@ keys:
   cli.update.err.asset_too_large: "asset %s exceeds %d-byte size cap"
   cli.update.err.windows_unsupported: "okt update not yet supported on Windows; reinstall via install.ps1"
   cli.update.err.dev_build: "this is a dev build; rebuild from source or install a release"
+  cli.update.err.backup_failed_fmt: "pre-swap backup failed: %s; binary unchanged"
 
   # okt plan — CLI tree (create, list, show, wave-add, assign, claim).
   cli.plan.short: "Manage WBS-style implementation plans and their waves"

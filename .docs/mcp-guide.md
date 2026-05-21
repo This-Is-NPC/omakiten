@@ -2,6 +2,8 @@
 
 Omakiten exposes a protocol-neutral agent intent layer in `internal/agent` and an MCP adapter in `internal/mcp`. The adapter maps MCP tools, resources, and prompts to the same `internal/app` services used by the CLI and TUI; it does not shell out to `okt` and does not duplicate workflow or project-scope rules.
 
+A small set of operations are deliberately CLI/TUI-only — see [surface-policy.md](surface-policy.md) for the criteria and the current restrictions (`projects.delete`, `db.backup`, `update`, `uninstall`, `setup`).
+
 ## Setup
 
 Users can opt in from project initialization:

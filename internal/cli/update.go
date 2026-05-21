@@ -18,9 +18,41 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	"omakiten/internal/app"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/lifecycle"
+	"omakiten/internal/paths"
 )
+
+// updateBackupForOpts constructs the pre-swap BackupService using
+// the same path + retention contract as `okt db backup`. Lookup
+// failures degrade gracefully — when the config bundle cannot be
+// loaded the retention falls back to 0 (no prune) and the backup
+// still runs; when the path package cannot resolve the backup dir
+// the call returns an error so the caller can disable the hook.
+func updateBackupForOpts(cmd *cobra.Command, opts *runtimeOptions) (updateBackupRunner, error) {
+	dbPath, err := opts.resolvedDBPath()
+	if err != nil {
+		return nil, err
+	}
+	destDir, err := paths.BackupDir()
+	if err != nil {
+		return nil, err
+	}
+	retention := 0
+	if configPath, err := opts.resolvedConfigPath(); err == nil {
+		if bundle, err := config.LoadBundle(configPath); err == nil {
+			retention = bundle.Config.Backup.RetentionCount
+		}
+	}
+	return app.NewBackupService(app.BackupOptions{
+		SourcePath: dbPath,
+		DestDir:    destDir,
+		Retention:  retention,
+		Stderr:     cmd.ErrOrStderr(),
+	}), nil
+}
 
 // updateRepo is the GitHub repository the in-binary updater polls
 // for release tags. Constant — tests stub the LatestFetcher /
@@ -69,6 +101,22 @@ type updateClient struct {
 	// os.Executable(); tests override to point at a tmp file so
 	// assertions can read the post-swap bytes.
 	BinaryPath string
+	// Backup is the safety-net snapshot runner invoked between the
+	// download confirmation and the irreversible binary swap. Nil
+	// disables the auto-backup (tests that don't exercise the safety
+	// net path pass nil); production wires
+	// app.NewBackupService against the runtime DB so an aborted
+	// upgrade leaves a recovery artefact on disk.
+	Backup updateBackupRunner
+}
+
+// updateBackupRunner is the narrow port runUpdate uses to invoke the
+// pre-swap snapshot. Local alias for app.BackupRunner so this file
+// does not depend on the app package directly (the cli already
+// imports app elsewhere, but the narrow alias keeps the test wiring
+// terse).
+type updateBackupRunner interface {
+	Run(ctx context.Context) (string, error)
 }
 
 func newUpdateCommand(opts *runtimeOptions) *cobra.Command {
@@ -86,6 +134,9 @@ func newUpdateCommand(opts *runtimeOptions) *cobra.Command {
 				client, err := defaultUpdateClient(cmd.Root().Version)
 				if err != nil {
 					return nil, err
+				}
+				if backup, berr := updateBackupForOpts(cmd, opts); berr == nil {
+					client.Backup = backup
 				}
 				return runUpdate(ctx, client, updateInputs{Check: check, Yes: yes})
 			})
@@ -166,6 +217,21 @@ func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, e
 		}
 	}
 
+	// Pre-swap snapshot: write a recovery .db under StateDir/backups
+	// BEFORE any network IO. Backup failure aborts the update so the
+	// running binary stays intact and the user retries once the
+	// underlying issue is fixed. Pre-network ordering avoids the race
+	// where the new binary has already landed on disk but the backup
+	// pass is still running.
+	var backupPath string
+	if c.Backup != nil {
+		path, err := c.Backup.Run(ctx)
+		if err != nil {
+			return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.backup_failed_fmt"), err.Error()), nil)
+		}
+		backupPath = path
+	}
+
 	asset, err := assetName(currentGOOS, goruntime.GOARCH)
 	if err != nil {
 		return nil, domain.NewError(domain.ErrUpdateFailed, err.Error(), nil)
@@ -210,6 +276,7 @@ func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, e
 		"action":      action,
 		"applied":     true,
 		"binary_path": c.BinaryPath,
+		"backup_path": backupPath,
 	}, nil
 }
 

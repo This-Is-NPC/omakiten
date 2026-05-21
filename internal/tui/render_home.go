@@ -7,7 +7,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"omakiten/internal/app"
 	"omakiten/internal/domain"
+	"omakiten/internal/paths"
 	"omakiten/internal/tui/components/picker"
 )
 
@@ -99,6 +101,21 @@ func (m *Model) handleHomeKey(msg tea.KeyMsg) {
 			m.status = m.t("tui.status.refreshed")
 		}
 		return
+	}
+	// Destructive delete gate: lowercase `d` arms the highlighted
+	// card; a second press on the same card fires the cascade. esc
+	// (handled by the picker below as EventCancel) clears the arm.
+	// Routed before the picker so `d` is consumed instead of bubbling
+	// into the picker's filter/search handlers.
+	if msg.String() == "d" && len(m.homeProjects) > 0 {
+		project := m.homeProjects[m.homePicker.Cursor]
+		m.armOrConfirmHomeProjectDelete(project)
+		return
+	}
+	// Any other key clears a pending delete so cursor moves cannot
+	// confirm a delete that targeted a different card.
+	if m.homeProjectDeletePendingID != 0 {
+		m.homeProjectDeletePendingID = 0
 	}
 	rowCount := len(m.homeProjects)
 	// Picker uses viewport for pgup/pgdn step + cursor scroll bounds in
@@ -366,6 +383,70 @@ func (m Model) renderHomeEmptyHint() string {
 	return m.styles.hintBox.Width(m.hintBoxWidth()).Render(strings.Join(lines, "\n"))
 }
 
+// armOrConfirmHomeProjectDelete is the arm-then-confirm gate for the
+// Home destructive delete. First press records the project id +
+// surfaces a confirmation hint via status badge; second press on the
+// same project runs executeHomeProjectDelete. Mirrors the task-delete
+// shape so muscle memory carries from board → Home.
+func (m *Model) armOrConfirmHomeProjectDelete(project domain.Project) {
+	if project.ID <= 0 {
+		return
+	}
+	if m.homeProjectDeletePendingID == project.ID {
+		m.executeHomeProjectDelete(project)
+		return
+	}
+	m.homeProjectDeletePendingID = project.ID
+	m.status = fmt.Sprintf(m.t("tui.confirm.home_project_delete_fmt"), project.Name)
+}
+
+// executeHomeProjectDelete wires the same ProjectService.Delete the
+// CLI uses against the active TUI store + a freshly constructed
+// BackupService. The snapshot lands under StateDir/backups/ with the
+// configured retention. On success the Home read-model is reloaded
+// (the row disappears) and the backup path surfaces in the status
+// badge so the user knows where the recovery artefact lives. Failure
+// leaves the project intact and surfaces the underlying error.
+func (m *Model) executeHomeProjectDelete(project domain.Project) {
+	m.homeProjectDeletePendingID = 0
+	backup, err := m.buildHomeBackupService()
+	if err != nil {
+		m.status = err.Error()
+		return
+	}
+	svc := app.NewProjectService(m.repos.Projects, backup, m.repos.Events)
+	result, err := svc.Delete(m.ctx, project.ID)
+	if err != nil {
+		m.status = err.Error()
+		return
+	}
+	if err := m.loadHome(); err != nil {
+		m.status = err.Error()
+		return
+	}
+	m.status = fmt.Sprintf(m.t("tui.status.project_deleted_fmt"), result.Project.Slug, result.BackupPath)
+}
+
+// buildHomeBackupService constructs a BackupService against the
+// TUI's resolved DB path + the active snapshot's retention setting.
+// Returns an error when the paths package cannot resolve the backup
+// directory (rare; surfaces as a status hint rather than panicking).
+func (m *Model) buildHomeBackupService() (app.BackupRunner, error) {
+	destDir, err := paths.BackupDir()
+	if err != nil {
+		return nil, err
+	}
+	retention := 0
+	if snap := m.repos.activeSnapshot(); snap != nil {
+		retention = snap.Settings().Backup.RetentionCount
+	}
+	return app.NewBackupService(app.BackupOptions{
+		SourcePath: m.repos.DBPath,
+		DestDir:    destDir,
+		Retention:  retention,
+	}), nil
+}
+
 // homeFooterTokens returns the footer hint shown while on Home as the
 // structured token list `renderFooter` expects. Kept inline (not in
 // render_chrome) so the Home-specific keymap lives next to the rest
@@ -377,13 +458,21 @@ func (m Model) homeFooterTokens() []footerToken {
 			m.helpToken(),
 		}
 	}
-	return []footerToken{
+	tokens := []footerToken{
 		{key: "enter", label: m.t("tui.footer.open"), primary: true},
 		{key: "up/down", label: m.t("tui.footer.move")},
-		{key: "ctrl+h", label: m.t("tui.footer.refresh")},
-		{key: "q", label: m.t("tui.footer.quit")},
-		m.helpToken(),
 	}
+	if m.homeProjectDeletePendingID != 0 {
+		tokens = append(tokens, footerToken{key: "d", label: m.t("tui.footer.confirm_delete_project"), primary: true})
+	} else {
+		tokens = append(tokens, footerToken{key: "d", label: m.t("tui.footer.delete_project")})
+	}
+	tokens = append(tokens,
+		footerToken{key: "ctrl+h", label: m.t("tui.footer.refresh")},
+		footerToken{key: "q", label: m.t("tui.footer.quit")},
+		m.helpToken(),
+	)
+	return tokens
 }
 
 // homeHeaderTitle renders the chromeless Home title used by render_chrome

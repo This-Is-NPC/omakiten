@@ -412,6 +412,10 @@ keys:
   tui.confirm.comment_delete_fmt: "comment #%d の削除を確認。もう一度 d、esc でキャンセル。"
   tui.confirm.task_delete_fmt: "task #%d %q の削除を確認。もう一度 d、esc でキャンセル。"
   tui.status.task_deleted_fmt: "task #%d を削除"
+  tui.confirm.home_project_delete_fmt: "Confirm delete project %q (cascade tasks, plans, errors). Press d again; esc cancels. A backup snapshot is written first."
+  tui.status.project_deleted_fmt: "Project %q deleted · backup → %s"
+  tui.footer.delete_project: "delete project"
+  tui.footer.confirm_delete_project: "confirm delete · esc cancels"
   tui.status.orphan_tags_deleted_fmt: "孤児 tag %d 件を削除"
   tui.status.tag_in_use_fmt: "tag %q は使用中 (%d 参照) — 削除できません"
   tui.status.task_not_found: "task が見つかりません。esc で戻る。"
@@ -923,6 +927,12 @@ keys:
     ~/.local/bin on POSIX and %LOCALAPPDATA%Programsokt on Windows) and
     strip the okt() wrapper block from every rc/profile target.
 
+
+    No automatic backup. Run `okt db backup` first if you want a
+    snapshot of the SQLite DB before purging — uninstall removes
+    user-owned data by intent, so the safety net is opt-in via the
+    standalone backup command.
+
     Local state is preserved unless explicitly opted-out via --purge-data
     (SQLite DB under $XDG_DATA_HOME/omakiten) or --purge-config (active
     yaml profile + entity folders under $XDG_CONFIG_HOME/omakiten).
@@ -972,6 +982,7 @@ keys:
   cli.update.err.asset_too_large: "asset %s exceeds %d-byte size cap"
   cli.update.err.windows_unsupported: "okt update not yet supported on Windows; reinstall via install.ps1"
   cli.update.err.dev_build: "this is a dev build; rebuild from source or install a release"
+  cli.update.err.backup_failed_fmt: "pre-swap backup failed: %s; binary unchanged"
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "plan はまだありません。 `okt plan create <slug> --name \"...\"` で作成してください。"
   tui.plans.list.header: "// SLUG             STATUS    完了/合計   %    名前 ‹アクティブ WAVE›"

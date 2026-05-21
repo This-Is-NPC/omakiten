@@ -413,6 +413,10 @@ keys:
   tui.confirm.comment_delete_fmt: "Vahvista commentin #%d poisto. Paina d uudelleen; esc peruuttaa."
   tui.confirm.task_delete_fmt: "Vahvista taskin #%d %q poisto. Paina d uudelleen; esc peruuttaa."
   tui.status.task_deleted_fmt: "Poistettu task #%d"
+  tui.confirm.home_project_delete_fmt: "Confirm delete project %q (cascade tasks, plans, errors). Press d again; esc cancels. A backup snapshot is written first."
+  tui.status.project_deleted_fmt: "Project %q deleted · backup → %s"
+  tui.footer.delete_project: "delete project"
+  tui.footer.confirm_delete_project: "confirm delete · esc cancels"
   tui.status.orphan_tags_deleted_fmt: "%d orpoa tagia poistettu"
   tui.status.tag_in_use_fmt: "Tag %q on käytössä (%d viittausta) — ei voi poistaa"
   tui.status.task_not_found: "Taskia ei löydy. Paina esc palataksesi."
@@ -924,6 +928,12 @@ keys:
     ~/.local/bin on POSIX and %LOCALAPPDATA%Programsokt on Windows) and
     strip the okt() wrapper block from every rc/profile target.
 
+
+    No automatic backup. Run `okt db backup` first if you want a
+    snapshot of the SQLite DB before purging — uninstall removes
+    user-owned data by intent, so the safety net is opt-in via the
+    standalone backup command.
+
     Local state is preserved unless explicitly opted-out via --purge-data
     (SQLite DB under $XDG_DATA_HOME/omakiten) or --purge-config (active
     yaml profile + entity folders under $XDG_CONFIG_HOME/omakiten).
@@ -973,6 +983,7 @@ keys:
   cli.update.err.asset_too_large: "asset %s exceeds %d-byte size cap"
   cli.update.err.windows_unsupported: "okt update not yet supported on Windows; reinstall via install.ps1"
   cli.update.err.dev_build: "this is a dev build; rebuild from source or install a release"
+  cli.update.err.backup_failed_fmt: "pre-swap backup failed: %s; binary unchanged"
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "Ei vielä plans:eja. Luo yksi: `okt plan create <slug> --name \"...\"`."
   tui.plans.list.header: "// SLUG             STATUS    VALMIS/YHT.   %    NIMI ‹AKTIIVINEN WAVE›"

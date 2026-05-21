@@ -410,6 +410,10 @@ keys:
   tui.confirm.comment_delete_fmt: "댓글 #%d delete 확인. 다시 d 를 누르세요; esc 로 취소."
   tui.confirm.task_delete_fmt: "task #%d %q delete 확인. 다시 d 를 누르세요; esc 로 취소."
   tui.status.task_deleted_fmt: "task #%d 삭제됨"
+  tui.confirm.home_project_delete_fmt: "Confirm delete project %q (cascade tasks, plans, errors). Press d again; esc cancels. A backup snapshot is written first."
+  tui.status.project_deleted_fmt: "Project %q deleted · backup → %s"
+  tui.footer.delete_project: "delete project"
+  tui.footer.confirm_delete_project: "confirm delete · esc cancels"
   tui.status.orphan_tags_deleted_fmt: "%d 개의 고아 tag 삭제됨"
   tui.status.tag_in_use_fmt: "tag %q 사용 중(%d 참조) — 삭제할 수 없음"
   tui.status.task_not_found: "task 를 찾을 수 없음. 돌아가려면 esc 를 누르세요."
@@ -921,6 +925,12 @@ keys:
     ~/.local/bin on POSIX and %LOCALAPPDATA%Programsokt on Windows) and
     strip the okt() wrapper block from every rc/profile target.
 
+
+    No automatic backup. Run `okt db backup` first if you want a
+    snapshot of the SQLite DB before purging — uninstall removes
+    user-owned data by intent, so the safety net is opt-in via the
+    standalone backup command.
+
     Local state is preserved unless explicitly opted-out via --purge-data
     (SQLite DB under $XDG_DATA_HOME/omakiten) or --purge-config (active
     yaml profile + entity folders under $XDG_CONFIG_HOME/omakiten).
@@ -970,6 +980,7 @@ keys:
   cli.update.err.asset_too_large: "asset %s exceeds %d-byte size cap"
   cli.update.err.windows_unsupported: "okt update not yet supported on Windows; reinstall via install.ps1"
   cli.update.err.dev_build: "this is a dev build; rebuild from source or install a release"
+  cli.update.err.backup_failed_fmt: "pre-swap backup failed: %s; binary unchanged"
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "아직 plan 없음. `okt plan create <slug> --name \"...\"` 로 생성하세요."
   tui.plans.list.header: "// SLUG             STATUS    완료/전체   %    이름 ‹활성 WAVE›"
