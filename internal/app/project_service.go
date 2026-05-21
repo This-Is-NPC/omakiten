@@ -113,12 +113,16 @@ type ProjectDeleteResult struct {
 //
 //  1. Resolve the project (load slug/name for the payload + error
 //     reporting).
-//  2. Run BackupService — backup failure aborts before any rows are
+//  2. Checkpoint the live WAL (best-effort, when a Checkpointer was
+//     attached) so committed frames from this process land in the
+//     main .db file the snapshot copies. Checkpoint failure is logged
+//     via auditWarn and the flow continues.
+//  3. Run BackupService — backup failure aborts before any rows are
 //     touched. The user retries once the underlying issue is fixed.
-//  3. Cascade-delete via the repository (events for the project come
+//  4. Cascade-delete via the repository (events for the project come
 //     out in the same transaction; FK CASCADE handles every other
 //     dependent row).
-//  4. Emit project.removed with the caller-provided counters
+//  5. Emit project.removed with the caller-provided counters
 //     snapshot + slug/name/backup_path.
 //
 // counters is the pre-delete row-count snapshot the caller resolved
