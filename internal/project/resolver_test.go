@@ -70,3 +70,11 @@ func (f fakeProjectRepo) FindProjectsContainingPath(context.Context, string) ([]
 func (f fakeProjectRepo) ListProjects(context.Context) ([]domain.Project, error) {
 	return nil, nil
 }
+
+func (f fakeProjectRepo) ProjectDeleteCounts(context.Context, int64) (domain.ProjectDeleteCounters, error) {
+	return domain.ProjectDeleteCounters{}, nil
+}
+
+func (f fakeProjectRepo) DeleteProject(context.Context, int64) error {
+	return nil
+}

@@ -17,6 +17,7 @@ func TestKnownEventTypesCoversCatalog(t *testing.T) {
 		EventTypeTaskUnarchived:    {},
 		EventTypeTaskAssigned:      {},
 		EventTypeTaskUnassigned:    {},
+		EventTypeProjectRemoved:    {},
 		EventTypePlanCreated:       {},
 		EventTypePlanWaveAdded:     {},
 		EventTypePlanDone:          {},

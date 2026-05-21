@@ -71,7 +71,7 @@ func newInitCommand(opts *runtimeOptions) *cobra.Command {
 				defer rt.close()
 				ctx = rt.WithActivityRepo(ctx)
 
-				project, err := app.NewProjectService(rt.store).Init(ctx, name, slug, projectRoot)
+				project, err := app.NewProjectService(rt.store, nil, nil).Init(ctx, name, slug, projectRoot)
 				if err != nil {
 					return nil, err
 				}

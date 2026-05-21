@@ -15,6 +15,36 @@ type ProjectRepository interface {
 	// ListProjects returns every non-archived project ordered by name.
 	// Used by the TUI Home view to render the multi-project picker.
 	ListProjects(ctx context.Context) ([]domain.Project, error)
+	// ProjectDeleteCounts resolves the per-table row count snapshot
+	// rendered to the user before a destructive Delete (counters
+	// surface in the CLI prompt + TUI confirmation overlay). Counters
+	// are point-in-time; concurrent writes between this read and the
+	// subsequent DeleteProject call are accepted — the reported
+	// numbers are an estimate, not a contract.
+	ProjectDeleteCounts(ctx context.Context, projectID int64) (domain.ProjectDeleteCounters, error)
+	// DeleteProject hard-deletes a project row and every cascading
+	// dependent row (tasks → task_tags / task_dependencies, plans →
+	// plan_waves, errors → solutions / error_tags, project_tags,
+	// context_entries) in a single transaction. Project-scoped event
+	// rows (activity log, comments, task system events with
+	// project_id set) are explicitly removed because events has no FK
+	// to projects — leaving them would orphan the activity feed.
+	DeleteProject(ctx context.Context, projectID int64) error
+}
+
+// BackupRunner is the narrow port ProjectService uses to capture a
+// pre-delete snapshot. *app.BackupService satisfies it; tests pass a
+// fake that records the call or returns a pinned error to exercise
+// the "backup failure aborts delete" invariant.
+type BackupRunner interface {
+	Run(ctx context.Context) (string, error)
+}
+
+// EventRecorder is the narrow port ProjectService uses to emit the
+// project.removed audit event after a successful delete. *sqlite.Store
+// satisfies it via RecordEntityEvent.
+type EventRecorder interface {
+	RecordEntityEvent(ctx context.Context, entityType string, entityID int64, projectID int64, eventType string, payload string) error
 }
 
 // SnapshotSource exposes the active per-project *config.Snapshot. The

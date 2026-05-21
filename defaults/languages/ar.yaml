@@ -41,6 +41,28 @@ keys:
   cli.config.short: "إدارة حزمة omakiten.yaml الرسمية"
   cli.config.validate.short: "التحقّق من ملف omakiten.yaml"
   cli.config.presets.short: "عرض قائمة preset الرسمية لـ workflow"
+  cli.projects.short: "Project lifecycle utilities (delete — destructive ops)"
+  cli.projects.delete.short: "Hard-delete a registered project and every dependent row (irreversible)"
+  cli.projects.delete.long: |-
+    Resolve the project by numeric id or slug, write a recovery
+    snapshot to the rolling backups directory, then cascade-delete
+    every dependent row (tasks, comments, plans, tag attachments,
+    context entries, errors, activity log).
+
+    Backup failure aborts the delete before anything is touched.
+    Filesystem state under <root_path>/.omakiten/ is preserved —
+    only DB rows are removed.
+
+    Without --yes the command prints counters and prompts for
+    confirmation; piping without --yes errors out instead of
+    blocking on stdin.
+  cli.projects.delete.flag.yes: "skip the interactive confirmation and apply the delete non-interactively"
+  cli.projects.delete.counters_fmt: "tasks: %d · comments: %d · plans: %d · tags: %d · activity: %d entries"
+  cli.projects.delete.prompt: "delete project %q? [y/N]:"
+  cli.projects.delete.success_fmt: "project %q deleted · backup → %s"
+  cli.projects.delete.err.no_tty: "interactive confirmation required; pass --yes to skip"
+  cli.projects.delete.err.aborted: "delete aborted; nothing removed"
+  cli.projects.delete.err.not_found: "project not found"
   cli.db.short: "Database lifecycle utilities (backup, snapshot, restore — sysadmin ops)"
   cli.db.backup.short: "Write a snapshot of the live SQLite database to the rolling backups directory"
   cli.db.backup.long: |-
