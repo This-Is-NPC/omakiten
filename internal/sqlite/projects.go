@@ -97,21 +97,23 @@ func (s *Store) scanProject(row *sql.Row) (domain.Project, error) {
 // sees in the prompt is what was on disk at prompt time", not a hard
 // guarantee that the delete operates on exactly those rows.
 func (s *Store) ProjectDeleteCounts(ctx context.Context, projectID int64) (domain.ProjectDeleteCounters, error) {
+	const query = `
+		SELECT
+			(SELECT COUNT(*) FROM tasks         WHERE project_id = ?1),
+			(SELECT COUNT(*) FROM events        WHERE project_id = ?1 AND event_type = 'comment'),
+			(SELECT COUNT(*) FROM plans         WHERE project_id = ?1),
+			(SELECT COUNT(*) FROM project_tags  WHERE project_id = ?1),
+			(SELECT COUNT(*) FROM events        WHERE project_id = ?1 AND event_type IN ('operation', 'cli.tool_call', 'mcp.tool_call', 'tui.tool_call'))
+	`
 	var counters domain.ProjectDeleteCounters
-	queries := []struct {
-		into  *int
-		query string
-	}{
-		{&counters.Tasks, `SELECT COUNT(*) FROM tasks WHERE project_id = ?`},
-		{&counters.Comments, `SELECT COUNT(*) FROM events WHERE project_id = ? AND event_type = 'comment'`},
-		{&counters.Plans, `SELECT COUNT(*) FROM plans WHERE project_id = ?`},
-		{&counters.Tags, `SELECT COUNT(*) FROM project_tags WHERE project_id = ?`},
-		{&counters.ActivityLogEntries, `SELECT COUNT(*) FROM events WHERE project_id = ? AND event_type IN ('operation', 'cli.tool_call', 'mcp.tool_call', 'tui.tool_call')`},
-	}
-	for _, q := range queries {
-		if err := s.db.QueryRowContext(ctx, q.query, projectID).Scan(q.into); err != nil {
-			return domain.ProjectDeleteCounters{}, err
-		}
+	if err := s.db.QueryRowContext(ctx, query, projectID).Scan(
+		&counters.Tasks,
+		&counters.Comments,
+		&counters.Plans,
+		&counters.Tags,
+		&counters.ActivityLogEntries,
+	); err != nil {
+		return domain.ProjectDeleteCounters{}, err
 	}
 	return counters, nil
 }
