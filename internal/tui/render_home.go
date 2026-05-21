@@ -488,7 +488,8 @@ func (m *Model) executeHomeProjectDelete(project domain.Project) {
 // user knows where the recovery artefact lives. Failure leaves the
 // project intact and surfaces the underlying error.
 func (m *Model) executeHomeProjectDeleteWithCounters(project domain.Project, counters domain.ProjectDeleteCounters) {
-	backup, err := m.buildHomeBackupService()
+	var pruneWarn error
+	backup, err := m.buildHomeBackupService(func(perr error) { pruneWarn = perr })
 	if err != nil {
 		m.status = err.Error()
 		return
@@ -504,16 +505,24 @@ func (m *Model) executeHomeProjectDeleteWithCounters(project domain.Project, cou
 		return
 	}
 	m.status = fmt.Sprintf(m.t("tui.status.project_deleted_fmt"), result.Project.Slug, result.BackupPath)
+	if pruneWarn != nil {
+		// Append the prune warning so the operator still sees the
+		// snapshot landed AND knows the rotation pass left old
+		// snapshots behind. The TUI cannot write to stderr (it would
+		// corrupt the bubbletea render) so the status surface is the
+		// only channel the operator can observe.
+		m.status += " · " + fmt.Sprintf(m.t("cli.db.backup.prune_warn_fmt"), pruneWarn.Error())
+	}
 }
 
 // buildHomeBackupService constructs a BackupService against the TUI's
 // resolved DB path + the active snapshot's retention setting. Returns
 // an error when the paths package cannot resolve the backup directory
-// (rare; surfaces as a status hint rather than panicking). PruneWarn is
-// left nil — the TUI cannot safely write to stderr (would corrupt the
-// bubbletea render) and prune failures are rare enough that swallowing
-// the warning is acceptable until a TUI-side status surface lands.
-func (m *Model) buildHomeBackupService() (app.BackupRunner, error) {
+// (rare; surfaces as a status hint rather than panicking). pruneWarn
+// receives any failure from the post-snapshot prune pass so the caller
+// can surface it through the TUI status surface — stderr is unsafe
+// while bubbletea is rendering.
+func (m *Model) buildHomeBackupService(pruneWarn func(error)) (app.BackupRunner, error) {
 	destDir, err := paths.BackupDir()
 	if err != nil {
 		return nil, err
@@ -526,6 +535,7 @@ func (m *Model) buildHomeBackupService() (app.BackupRunner, error) {
 		SourcePath: m.repos.DBPath,
 		DestDir:    destDir,
 		Retention:  retention,
+		PruneWarn:  pruneWarn,
 	}), nil
 }
 

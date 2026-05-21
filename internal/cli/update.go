@@ -225,7 +225,10 @@ func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, e
 	if c.BackupFactory != nil {
 		runner, factoryErr := c.BackupFactory(ctx)
 		if factoryErr != nil {
-			return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.backup_failed_fmt"), factoryErr.Error()), nil)
+			return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.backup_failed_fmt"), factoryErr.Error()), map[string]any{
+				"reason": "backup_failed",
+				"cause":  factoryErr.Error(),
+			})
 		}
 		backupRunner = runner
 	}
@@ -233,7 +236,10 @@ func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, e
 	if backupRunner != nil {
 		path, err := backupRunner.Run(ctx)
 		if err != nil {
-			return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.backup_failed_fmt"), err.Error()), nil)
+			return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.backup_failed_fmt"), err.Error()), map[string]any{
+				"reason": "backup_failed",
+				"cause":  err.Error(),
+			})
 		}
 		backupPath = path
 	}
