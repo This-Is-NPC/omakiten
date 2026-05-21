@@ -495,6 +495,19 @@ func (m *Model) executeHomeProjectDelete(project domain.Project, counters domain
 		m.status = err.Error()
 		return
 	}
+	// Degraded-path re-query: arm-time counter resolution swallows
+	// errors (armOrConfirmHomeProjectDelete:415-433) so a transient
+	// SQLite hiccup lands a zero-value counter snapshot here. Without
+	// the re-query the project.removed audit payload would claim
+	// "deleted empty project" for a project with thousands of rows.
+	// One extra round-trip on a rare branch is cheaper than an audit
+	// lie. A genuinely empty project re-resolves to the same zeros,
+	// so the value is correct either way.
+	if counters == (domain.ProjectDeleteCounters{}) {
+		if requeried, qerr := m.repos.Projects.ProjectDeleteCounts(m.ctx, project.ID); qerr == nil {
+			counters = requeried
+		}
+	}
 	var auditBuf bytes.Buffer
 	svc := app.NewProjectService(m.repos.Projects, backup, m.repos.Events).
 		WithCheckpointer(m.repos.Checkpointer).

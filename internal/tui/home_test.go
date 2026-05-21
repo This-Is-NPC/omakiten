@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"omakiten/internal/config"
 	"strings"
@@ -29,6 +30,50 @@ type busyCheckpointer struct {
 func (b *busyCheckpointer) Checkpoint(context.Context) error {
 	b.calls++
 	return b.err
+}
+
+// firstCountsFailRepo wraps a ProjectRepository and fails the first
+// ProjectDeleteCounts call (mirroring a transient SQLite hiccup at
+// arm-time); subsequent calls delegate to the real repo so the
+// re-query path lands the actual counts.
+type firstCountsFailRepo struct {
+	app.ProjectRepository
+	calls int
+}
+
+func (r *firstCountsFailRepo) ProjectDeleteCounts(ctx context.Context, projectID int64) (domain.ProjectDeleteCounters, error) {
+	r.calls++
+	if r.calls == 1 {
+		return domain.ProjectDeleteCounters{}, errors.New("transient sqlite hiccup")
+	}
+	return r.ProjectRepository.ProjectDeleteCounts(ctx, projectID)
+}
+
+// recordingEvents captures every RecordEntityEvent payload so tests
+// can assert the audit truthfulness of post-commit emissions. Other
+// methods delegate to the embedded EventRepository (the real store).
+type recordingEvents struct {
+	app.EventRepository
+	calls []recordingEventCall
+}
+
+type recordingEventCall struct {
+	EntityType string
+	EntityID   int64
+	ProjectID  int64
+	EventType  string
+	Payload    string
+}
+
+func (r *recordingEvents) RecordEntityEvent(ctx context.Context, entityType string, entityID int64, projectID int64, eventType string, payload string) error {
+	r.calls = append(r.calls, recordingEventCall{
+		EntityType: entityType,
+		EntityID:   entityID,
+		ProjectID:  projectID,
+		EventType:  eventType,
+		Payload:    payload,
+	})
+	return r.EventRepository.RecordEntityEvent(ctx, entityType, entityID, projectID, eventType, payload)
 }
 
 // TestNewModelWithEmptyProjectOpensHome covers AC1/AC14: launching the TUI
@@ -698,6 +743,91 @@ func TestHomeProjectDeleteOverlayPathSurfacesAuditWarn(t *testing.T) {
 	}
 	if !strings.Contains(final.status, "doomed") {
 		t.Fatalf("status missing project slug — success line dropped?\nstatus = %q", final.status)
+	}
+}
+
+// TestHomeProjectDeleteRequeriesZeroCountersForAuditTruth pins the
+// degraded-path fix: when arm-time ProjectDeleteCounts fails (transient
+// SQLite hiccup), armOrConfirmHomeProjectDelete stashes the zero value
+// and the user proceeds via second press. Without the re-query, the
+// project.removed audit payload claims "deleted empty project" for a
+// project carrying real rows. The re-query inside executeHomeProjectDelete
+// pays one extra round-trip on the rare degraded branch and the audit
+// reflects the actual pre-delete state.
+func TestHomeProjectDeleteRequeriesZeroCountersForAuditTruth(t *testing.T) {
+	ctx := context.Background()
+	dbDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	store := snapstore.Open(t, dbDir+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle: %v", err)
+	}
+	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
+	if err != nil {
+		t.Fatalf("UpsertProject(doomed): %v", err)
+	}
+	// Three tasks so a real ProjectDeleteCounts call returns
+	// Tasks: 3 — distinguishable from the zero-value claim under the
+	// degraded path.
+	for i := 0; i < 3; i++ {
+		if _, err := store.CreateTask(ctx, doomed.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+			t.Fatalf("CreateTask(%d): %v", i, err)
+		}
+	}
+
+	wrappedRepo := &firstCountsFailRepo{ProjectRepository: store}
+	recorder := &recordingEvents{EventRepository: store}
+
+	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+		Tasks:        store,
+		Projects:     wrappedRepo,
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Tags:         store,
+		Events:       recorder,
+		DBPath:       dbDir + "/omakiten.db",
+		Catalog:      newTestCatalog(t),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+
+	// First `d`: arm time. wrappedRepo errors the first call → zeros
+	// stashed in pending counters. Second `d`: execute path detects
+	// zero-value counters and re-queries; second call succeeds (real
+	// counts).
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	_, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err == nil {
+		t.Fatalf("project still present after second press")
+	}
+	if wrappedRepo.calls < 2 {
+		t.Fatalf("ProjectDeleteCounts calls = %d, want >= 2 (arm-time + execute-time re-query)", wrappedRepo.calls)
+	}
+
+	var removed *recordingEventCall
+	for i := range recorder.calls {
+		if recorder.calls[i].EventType == domain.EventTypeProjectRemoved {
+			removed = &recorder.calls[i]
+			break
+		}
+	}
+	if removed == nil {
+		t.Fatalf("project.removed event not recorded; calls = %+v", recorder.calls)
+	}
+	var payload struct {
+		Counters domain.ProjectDeleteCounters `json:"counters"`
+	}
+	if err := json.Unmarshal([]byte(removed.Payload), &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.Counters.Tasks != 3 {
+		t.Fatalf("audit payload counters.Tasks = %d, want 3 — degraded re-query did not land", payload.Counters.Tasks)
 	}
 }
 
