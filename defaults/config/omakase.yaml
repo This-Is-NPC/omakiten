@@ -484,6 +484,10 @@ personas:
       - requirements-mapping
       - readme-curation
       - markdown
+  - slug: commit-author
+    skills:
+      - conventional-commits-spec
+      - markdown
 # mcp_commands binds each `okt-*` MCP prompt to a persona, a set of laws, and a
 # set of templates. The reserved `global:` entry declares laws inherited by
 # every command. Per-command entries can add `laws:` or opt out of inherited
@@ -504,6 +508,8 @@ personas:
 #   okt-config is parallel — orients the agent on the config layout so it can
 #   answer edit questions without guessing; suggests okt-implement when the
 #   user has a concrete edit in mind.
+#   okt-commit is parallel — drafts Conventional Commits for user-authored
+#   edits made outside the okt-implement loop; never auto-pushes.
 mcp_commands:
   global:
     laws:
@@ -553,3 +559,9 @@ mcp_commands:
     persona: documentation-agent
     templates:
       - config-orientation
+  okt-commit:
+    persona: commit-author
+    laws:
+      - conventional-commits
+      - no-coauthored-by
+      - scope-from-paths

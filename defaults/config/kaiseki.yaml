@@ -173,6 +173,8 @@ personas:
     skills: [discovery, user-story-writing, requirements-elicitation, acceptance-criteria-writing, pdca-cycle, five-w-two-h, smart-goals, invest-stories, moscow-prioritization, rice-scoring, non-functional-requirements, markdown]
   - slug: documentation-agent
     skills: [documentation, architecture-mapping, requirements-mapping, readme-curation, markdown]
+  - slug: commit-author
+    skills: [conventional-commits-spec, markdown]
 mcp_commands:
   global:
     laws: [template-fidelity, authorize-remote-writes, project-scope-only]
@@ -199,6 +201,9 @@ mcp_commands:
   okt-config:
     persona: documentation-agent
     templates: [config-orientation]
+  okt-commit:
+    persona: commit-author
+    laws: [conventional-commits, no-coauthored-by, link-decision-record]
 workflows:
   - id: 1
     key: kaiseki

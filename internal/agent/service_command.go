@@ -24,6 +24,9 @@ import (
 //	okt-config is parallel: orients the agent on the config layout so it can
 //	answer edit questions without guessing; suggests `okt-implement` when the
 //	user has a concrete edit in mind.
+//	okt-commit is parallel: drafts Conventional Commits for user-authored
+//	edits made outside the `okt-implement` loop; never auto-pushes — the
+//	human owns publication.
 // Action texts deliberately stop short of repeating constraints already
 // declared inline in `## Laws` or role-specific flow already declared in the
 // persona body. Each one names the canonical tool and ends with a REST-style
@@ -73,6 +76,14 @@ var commandActions = map[string]string{
 		"workflow guard kinds. Read it fully before answering any config-edit question — do not guess. " +
 		"Next: if the user has a concrete edit in mind, suggest `okt-implement` with the change scoped to " +
 		"`omakiten.yaml` or the relevant entity file.",
+
+	"okt-commit": "Draft Conventional Commits for the working tree. Read `git status` and `git diff --cached` " +
+		"(fall back to unstaged changes when nothing is staged). Group hunks into one intent per commit; split " +
+		"mixed trees via non-interactive staging (`git add <path>` / `git restore --staged <path>`). Derive the " +
+		"scope from the touched paths. Draft `<type>(<scope>): <subject>` (≤50 chars, imperative) plus an " +
+		"optional 72-column body that explains the \"why\" the diff does not. Surface every draft to the user " +
+		"before invoking `git commit` via Bash. Never `git push` — the human owns publication. " +
+		"Next: when the working tree is clean, suggest the user `git push` when ready.",
 }
 
 // commandDescriptions match the prompts/list metadata. Keeping them next to
@@ -86,6 +97,7 @@ var commandDescriptions = map[string]string{
 	"okt-implement": "Execute approved engineering work with strict rigor and commit discipline.",
 	"okt-document":  "Survey project documentation for drift and propose updates.",
 	"okt-config":    "Orient the agent on the active Omakiten config layout before edits.",
+	"okt-commit":    "Draft Conventional Commits for the working tree without pushing.",
 }
 
 // CommandNames returns the canonical, ordered list of `okt-*` prompts the MCP
@@ -101,6 +113,7 @@ func CommandNames() []string {
 		"okt-implement",
 		"okt-document",
 		"okt-config",
+		"okt-commit",
 	}
 }
 

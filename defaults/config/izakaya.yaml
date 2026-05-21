@@ -171,6 +171,8 @@ personas:
     skills: [lean-experimentation, tracer-bullet-shipping, time-box-discipline, markdown]
   - slug: documentation-agent
     skills: [documentation, architecture-mapping, readme-curation, markdown]
+  - slug: commit-author
+    skills: [conventional-commits-spec, markdown]
 mcp_commands:
   global:
     laws: [template-fidelity, authorize-remote-writes, project-scope-only]
@@ -196,6 +198,9 @@ mcp_commands:
   okt-config:
     persona: documentation-agent
     templates: [config-orientation]
+  okt-commit:
+    persona: commit-author
+    laws: [conventional-commits, no-coauthored-by]
 workflows:
   - id: 1
     key: izakaya
