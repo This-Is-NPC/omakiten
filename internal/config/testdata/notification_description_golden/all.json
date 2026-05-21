@@ -1,4 +1,5 @@
 {
+  "home-project-delete-confirm": "Confirm a destructive project delete with one keystroke; shows pre-resolved row counters so the user sees the blast radius.",
   "kitten_archive": "Sleepy archivist kitten for archived and revived quests.",
   "kitten_blocked": "Stern kitten guardian for blocked workflow operations.",
   "kitten_destructive": "Compact kitten with X-eyes for destructive delete/remove events.",

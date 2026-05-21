@@ -139,9 +139,10 @@ func buildBackupService(dbPath string, cmd *cobra.Command, opts *runtimeOptions)
 		}
 	}
 	return app.NewBackupService(app.BackupOptions{
-		SourcePath: dbPath,
-		DestDir:    destDir,
-		Retention:  retention,
-		Stderr:     cmd.ErrOrStderr(),
+		SourcePath:      dbPath,
+		DestDir:         destDir,
+		Retention:       retention,
+		Stderr:          cmd.ErrOrStderr(),
+		PruneWarnFormat: opts.t("cli.db.backup.prune_warn_fmt"),
 	})
 }

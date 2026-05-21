@@ -15,6 +15,7 @@ import (
 	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
+	"omakiten/internal/tui/components/notification"
 )
 
 // TestNewModelWithEmptyProjectOpensHome covers AC1/AC14: launching the TUI
@@ -278,6 +279,193 @@ func TestHomeProjectDeleteArmThenConfirm(t *testing.T) {
 	}
 	if !strings.Contains(deleted.status, "doomed") || !strings.Contains(deleted.status, "backup") {
 		t.Fatalf("post-delete status = %q, want project slug + backup mention", deleted.status)
+	}
+}
+
+// TestHomeProjectDeleteOverlayConfirm exercises the notification-overlay
+// path (PR3 #191 §E): `d` shows the home-project-delete-confirm card
+// with pre-resolved counters, `D` action fires the cascade in-process,
+// `esc` dismisses without touching state. Mirrors the YAML wiring with
+// an inline Notification struct so the test stays hermetic.
+func TestHomeProjectDeleteOverlayConfirm(t *testing.T) {
+	ctx := context.Background()
+	dbDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	store := snapstore.Open(t, dbDir+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+
+	notif := config.Notification{
+		Name:            "home-project-delete-confirm",
+		Size:            config.NotificationSize{Width: 60, Height: 12},
+		Background:      "transparent",
+		FrameIntervalMs: 100,
+		Style:           config.NotificationStyleRounded,
+		Border:          config.NotificationBorder{Visible: ptrBool(true), Width: 1, Color: "#ff0000"},
+		Animation:       []config.NotificationFrame{{Frame: 0, Value: ""}},
+		Bubble:          config.NotificationBubble{TailSide: config.NotificationTailBottom},
+		Padding:         zeroNotificationPadding(),
+		AutoHeight:      ptrBool(false),
+		PaddingInside:   ptrBool(true),
+		FooterVisible:   ptrBool(true),
+		Position:        config.NotificationPositionCenter,
+		Dismiss:         config.NotificationDismiss{Mode: config.NotificationDismissModeKey, Keys: []string{"esc"}},
+		TypingMsPerChar: ptrInt(0),
+		Actions: []config.NotificationAction{
+			{Key: "D", ID: "confirm", Label: "Delete"},
+		},
+	}
+	binding := NotificationBinding{Notifications: map[string]config.Notification{notif.Name: notif}}
+
+	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+		Tasks:        store,
+		Projects:     store,
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Tags:         store,
+		Events:       store,
+		DBPath:       dbDir + "/omakiten.db",
+		Catalog:      newTestCatalog(t),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, binding)
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.width = 80
+	model.height = 24
+
+	// First `d` shows the overlay; project still on disk.
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	armed := updated.(Model)
+	if armed.notification == nil {
+		t.Fatalf("first `d` did not spawn the home-project-delete-confirm overlay")
+	}
+	if armed.homeProjectDeletePendingID != doomed.ID {
+		t.Fatalf("pending id = %d, want %d", armed.homeProjectDeletePendingID, doomed.ID)
+	}
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err != nil {
+		t.Fatalf("project gone after overlay show: %v", err)
+	}
+
+	// `D` (uppercase) on a settled notification returns a Cmd whose
+	// payload is the notification.ActionMsg the parent dispatches in
+	// the next tick. Mirror bubbletea's runtime: invoke the Cmd, then
+	// feed the resulting msg back through Update.
+	_, cmd := armed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'D'}})
+	if cmd == nil {
+		t.Fatalf("D on settled overlay returned no Cmd")
+	}
+	actionMsg := cmd()
+	if _, ok := actionMsg.(notification.ActionMsg); !ok {
+		t.Fatalf("Cmd produced %T, want notification.ActionMsg", actionMsg)
+	}
+	updated, _ = armed.Update(actionMsg)
+	deleted := updated.(Model)
+	if deleted.notification != nil {
+		t.Fatalf("notification still set after confirm action")
+	}
+	if deleted.homeProjectDeletePendingID != 0 {
+		t.Fatalf("pending id = %d after confirm, want 0", deleted.homeProjectDeletePendingID)
+	}
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err == nil {
+		t.Fatalf("project still present after overlay confirm")
+	}
+}
+
+// TestHomeProjectDeleteOverlayEscClears verifies that esc inside the
+// overlay clears both the notification slot and the pending project
+// state (so a later `d` on a different card does not confirm a stale
+// delete).
+func TestHomeProjectDeleteOverlayEscClears(t *testing.T) {
+	ctx := context.Background()
+	dbDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	store := snapstore.Open(t, dbDir+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+
+	notif := config.Notification{
+		Name:            "home-project-delete-confirm",
+		Size:            config.NotificationSize{Width: 60, Height: 12},
+		Background:      "transparent",
+		FrameIntervalMs: 100,
+		Style:           config.NotificationStyleRounded,
+		Border:          config.NotificationBorder{Visible: ptrBool(true), Width: 1, Color: "#ff0000"},
+		Animation:       []config.NotificationFrame{{Frame: 0, Value: ""}},
+		Bubble:          config.NotificationBubble{TailSide: config.NotificationTailBottom},
+		Padding:         zeroNotificationPadding(),
+		AutoHeight:      ptrBool(false),
+		PaddingInside:   ptrBool(true),
+		FooterVisible:   ptrBool(true),
+		Position:        config.NotificationPositionCenter,
+		Dismiss:         config.NotificationDismiss{Mode: config.NotificationDismissModeKey, Keys: []string{"esc"}},
+		TypingMsPerChar: ptrInt(0),
+		Actions: []config.NotificationAction{
+			{Key: "D", ID: "confirm", Label: "Delete"},
+		},
+	}
+	binding := NotificationBinding{Notifications: map[string]config.Notification{notif.Name: notif}}
+
+	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+		Tasks:        store,
+		Projects:     store,
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Tags:         store,
+		Events:       store,
+		DBPath:       dbDir + "/omakiten.db",
+		Catalog:      newTestCatalog(t),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, binding)
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.width = 80
+	model.height = 24
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	armed := updated.(Model)
+	if armed.notification == nil {
+		t.Fatalf("overlay did not spawn")
+	}
+
+	// esc on the overlay fires DismissedMsg (per the YAML's
+	// dismiss.keys list). dispatchNotification clears both the
+	// notification slot and the pending project id.
+	_, cmd := armed.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Fatalf("esc on settled overlay returned no Cmd")
+	}
+	dismissMsg := cmd()
+	if _, ok := dismissMsg.(notification.DismissedMsg); !ok {
+		t.Fatalf("Cmd produced %T, want notification.DismissedMsg", dismissMsg)
+	}
+	updated, _ = armed.Update(dismissMsg)
+	cancelled := updated.(Model)
+	if cancelled.notification != nil {
+		t.Fatalf("notification still set after esc")
+	}
+	if cancelled.homeProjectDeletePendingID != 0 {
+		t.Fatalf("pending id = %d after esc, want 0", cancelled.homeProjectDeletePendingID)
+	}
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err != nil {
+		t.Fatalf("project removed despite esc dismissal: %v", err)
 	}
 }
 

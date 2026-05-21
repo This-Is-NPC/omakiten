@@ -10,6 +10,7 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
 	"omakiten/internal/paths"
+	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/picker"
 )
 
@@ -383,21 +384,75 @@ func (m Model) renderHomeEmptyHint() string {
 	return m.styles.hintBox.Width(m.hintBoxWidth()).Render(strings.Join(lines, "\n"))
 }
 
-// armOrConfirmHomeProjectDelete is the arm-then-confirm gate for the
-// Home destructive delete. First press records the project id +
-// surfaces a confirmation hint via status badge; second press on the
-// same project runs executeHomeProjectDelete. Mirrors the task-delete
-// shape so muscle memory carries from board → Home.
+// armOrConfirmHomeProjectDelete fires the destructive Home delete
+// confirmation overlay. The first press looks up the
+// `home-project-delete-confirm` notification, resolves counters for
+// the highlighted project, and shows the card with the body
+// pre-rendered. Pressing the overlay's `D` action runs the cascade
+// (handled by handleHomeProjectDeleteAction); pressing esc dismisses.
+//
+// Degraded fallback: when the notification YAML cannot be loaded (no
+// bundle / stripped install) OR counter resolution fails, the gate
+// reverts to the status-driven arm-then-confirm shape so the
+// destructive flow stays available without the overlay.
 func (m *Model) armOrConfirmHomeProjectDelete(project domain.Project) {
 	if project.ID <= 0 {
 		return
 	}
+	// Second-press fallback path: an existing pending id means the
+	// overlay could not be shown on the first press, so the
+	// status-driven gate is active. Honour the second `d` press by
+	// firing the delete directly.
 	if m.homeProjectDeletePendingID == project.ID {
 		m.executeHomeProjectDelete(project)
 		return
 	}
+	notif, ok := m.notifications["home-project-delete-confirm"]
+	if !ok {
+		m.homeProjectDeletePendingID = project.ID
+		m.status = fmt.Sprintf(m.t("tui.confirm.home_project_delete_fmt"), project.Name)
+		return
+	}
+	counters, err := m.repos.Projects.ProjectDeleteCounts(m.ctx, project.ID)
+	if err != nil {
+		m.homeProjectDeletePendingID = project.ID
+		m.status = fmt.Sprintf(m.t("tui.confirm.home_project_delete_fmt"), project.Name)
+		return
+	}
 	m.homeProjectDeletePendingID = project.ID
-	m.status = fmt.Sprintf(m.t("tui.confirm.home_project_delete_fmt"), project.Name)
+	title := fmt.Sprintf(m.t("tui.notification.project_delete.title_fmt"), project.Name)
+	body := fmt.Sprintf(m.t("tui.notification.project_delete.body_fmt"),
+		counters.Tasks, counters.Comments, counters.Plans, counters.Tags, counters.ActivityLogEntries)
+	bm, _ := notification.New(notification.Options{
+		Notification: notif,
+		Theme:        m.theme,
+		Text:         title + "\n\n" + body,
+	})
+	m.notification = &bm
+}
+
+// handleHomeProjectDeleteAction is the slug-routed counterpart of
+// handleNotificationAction for the home-project-delete-confirm
+// overlay. The "confirm" action id fires ProjectService.Delete
+// against the still-armed project; any other id (today: only
+// "cancel") clears the pending state without side effects.
+func (m *Model) handleHomeProjectDeleteAction(action notification.ActionMsg) {
+	pendingID := m.homeProjectDeletePendingID
+	m.homeProjectDeletePendingID = 0
+	if action.ActionID != "confirm" || pendingID == 0 {
+		return
+	}
+	var project domain.Project
+	for _, p := range m.homeProjects {
+		if p.ID == pendingID {
+			project = p
+			break
+		}
+	}
+	if project.ID == 0 {
+		return
+	}
+	m.executeHomeProjectDelete(project)
 }
 
 // executeHomeProjectDelete wires the same ProjectService.Delete the

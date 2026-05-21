@@ -1,0 +1,76 @@
+# Identity ------------------------------------------------------------
+name: home-project-delete-confirm
+description: "${{intl:notifications.home-project-delete-confirm.description}}"
+
+# Geometry ------------------------------------------------------------
+size:
+  width: 60
+  height: 12
+
+# Behaviour flags -----------------------------------------------------
+auto_height: false
+padding_inside: true
+footer_visible: true
+footer_position: center
+
+# Background + chrome -------------------------------------------------
+background: transparent
+style: rounded
+border:
+  visible: true
+  width: 1
+  color: $theme.error
+  background: transparent
+
+# Inner padding -------------------------------------------------------
+padding:
+  top: 1
+  right: 2
+  bottom: 1
+  left: 2
+
+# Placement on the terminal grid -------------------------------------
+position: center
+
+# Bubble + tail -------------------------------------------------------
+bubble:
+  tail_side: bottom
+
+# Animation -----------------------------------------------------------
+# Single static frame — the validator requires at least one entry but
+# the destructive-confirmation card stays still so the user reads the
+# counters instead of tracking a mascot loop.
+frame_interval_ms: 900
+animation:
+  - frame: 0
+    value: |2
+
+      DELETE PROJECT
+
+typing_ms_per_char: 0
+
+# Dismiss -------------------------------------------------------------
+# esc dismisses without firing the destructive action; the cancel
+# action below shares the binding so the footer surfaces both labels.
+dismiss:
+  mode: key
+  keys: [esc]
+
+# Actions -------------------------------------------------------------
+# `D` (uppercase) confirms — the upper-case key is deliberate so a
+# stray lowercase `d` outside the overlay (which fires the arm gate
+# on the Home card grid) cannot land inside the overlay and double-
+# fire the confirmation. `command` is left empty: the TUI intercepts
+# the ActionMsg by slug and invokes ProjectService.Delete in-process
+# so the snapshot uses the same store handle the live TUI already
+# holds (avoids the DispatchCommand path that re-opens the SQLite
+# file under a fresh runtime).
+#
+# esc dismisses via the dismiss.keys block above (not registered here
+# as an action because the validator rejects key collisions between
+# the two; the dismissed path clears the pending project id in
+# dispatchNotification, so the cancellation behaviour is identical).
+actions:
+  - key: D
+    id: confirm
+    label: "${{intl:notifications.home-project-delete-confirm.confirm_label}}"

@@ -496,6 +496,11 @@ func (m Model) dispatchNotification(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if m.notification != nil && dm.ID == m.notification.ID() {
 			m.notification = nil
 		}
+		// esc on the home-project-delete-confirm overlay must clear the
+		// pending project id as well as the notification slot — otherwise
+		// a stray ActionMsg arriving from a re-spawn would still hit the
+		// "execute" path with the original target.
+		m.homeProjectDeletePendingID = 0
 		m.revertConfigSwap()
 		return m, nil, true
 	}
@@ -507,6 +512,15 @@ func (m Model) dispatchNotification(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		// the revert-on-dismiss intent so a later esc on a different
 		// notification doesn't accidentally roll back the active config.
 		m.pendingSwapRevertPath = ""
+		// Home project-delete overlay: the YAML carries no Command (no
+		// DispatchCommand re-open of the SQLite handle); the action is
+		// routed through the same ProjectService.Delete the second-`d`
+		// fallback uses so the TUI's already-open store handle stays
+		// authoritative.
+		if am.Slug == "home-project-delete-confirm" {
+			m.handleHomeProjectDeleteAction(am)
+			return m, nil, true
+		}
 		m.handleNotificationAction(am)
 		return m, nil, true
 	}

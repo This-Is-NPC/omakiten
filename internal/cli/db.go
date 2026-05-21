@@ -84,10 +84,11 @@ func runDBBackup(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, 
 		return nil, err
 	}
 	svc := app.NewBackupService(app.BackupOptions{
-		SourcePath: dbPath,
-		DestDir:    destDir,
-		Retention:  retention,
-		Stderr:     cmd.ErrOrStderr(),
+		SourcePath:      dbPath,
+		DestDir:         destDir,
+		Retention:       retention,
+		Stderr:          cmd.ErrOrStderr(),
+		PruneWarnFormat: opts.t("cli.db.backup.prune_warn_fmt"),
 	})
 	finalPath, err := svc.Run(ctx)
 	if err != nil {

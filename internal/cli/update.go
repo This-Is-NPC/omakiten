@@ -47,10 +47,11 @@ func updateBackupForOpts(cmd *cobra.Command, opts *runtimeOptions) (updateBackup
 		}
 	}
 	return app.NewBackupService(app.BackupOptions{
-		SourcePath: dbPath,
-		DestDir:    destDir,
-		Retention:  retention,
-		Stderr:     cmd.ErrOrStderr(),
+		SourcePath:      dbPath,
+		DestDir:         destDir,
+		Retention:       retention,
+		Stderr:          cmd.ErrOrStderr(),
+		PruneWarnFormat: opts.t("cli.db.backup.prune_warn_fmt"),
 	}), nil
 }
 

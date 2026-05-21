@@ -29,6 +29,7 @@ type BackupService struct {
 	retention   int
 	now         func() time.Time
 	stderr      io.Writer
+	pruneFormat string
 }
 
 // BackupOptions bundles every input NewBackupService consumes so the
@@ -51,6 +52,13 @@ type BackupOptions struct {
 	// Stderr is where prune warnings are written. nil falls back to
 	// os.Stderr — production wires the cobra command's ErrOrStderr.
 	Stderr io.Writer
+	// PruneWarnFormat is the Printf-style format Run uses when a
+	// prune pass fails after a successful backup. Carries exactly one
+	// `%s` substitution (the underlying error). Empty falls back to
+	// the literal "prune skipped: %s" — production wires the
+	// localized `cli.db.backup.prune_warn_fmt` catalog entry so the
+	// stderr line follows the user's CLI language.
+	PruneWarnFormat string
 }
 
 // NewBackupService returns a BackupService ready to Run. The returned
@@ -68,12 +76,17 @@ func NewBackupService(opts BackupOptions) *BackupService {
 	if stderr == nil {
 		stderr = os.Stderr
 	}
+	pruneFormat := opts.PruneWarnFormat
+	if pruneFormat == "" {
+		pruneFormat = "prune skipped: %s"
+	}
 	return &BackupService{
-		sourcePath: opts.SourcePath,
-		destDir:    opts.DestDir,
-		retention:  opts.Retention,
-		now:        now,
-		stderr:     stderr,
+		sourcePath:  opts.SourcePath,
+		destDir:     opts.DestDir,
+		retention:   opts.Retention,
+		now:         now,
+		stderr:      stderr,
+		pruneFormat: pruneFormat,
 	}
 }
 
@@ -113,7 +126,7 @@ func (s *BackupService) Run(ctx context.Context) (string, error) {
 	}
 
 	if err := s.pruneBackups(); err != nil {
-		fmt.Fprintf(s.stderr, "prune skipped: %v\n", err)
+		fmt.Fprintf(s.stderr, s.pruneFormat+"\n", err.Error())
 	}
 	return finalPath, nil
 }
