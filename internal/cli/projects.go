@@ -71,7 +71,7 @@ func runProjectsDelete(ctx context.Context, cmd *cobra.Command, opts *runtimeOpt
 	if err != nil {
 		return nil, err
 	}
-	svc := app.NewProjectService(rt.store, backup, rt.store)
+	svc := app.NewProjectService(rt.store, backup, rt.store).WithCheckpointer(rt.store)
 	result, err := svc.Delete(ctx, project.ID, counters)
 	if err != nil {
 		return nil, err

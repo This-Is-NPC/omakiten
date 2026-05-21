@@ -493,7 +493,7 @@ func (m *Model) executeHomeProjectDeleteWithCounters(project domain.Project, cou
 		m.status = err.Error()
 		return
 	}
-	svc := app.NewProjectService(m.repos.Projects, backup, m.repos.Events)
+	svc := app.NewProjectService(m.repos.Projects, backup, m.repos.Events).WithCheckpointer(m.repos.Checkpointer)
 	result, err := svc.Delete(m.ctx, project.ID, counters)
 	if err != nil {
 		m.status = err.Error()

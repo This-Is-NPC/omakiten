@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"omakiten/internal/domain"
@@ -176,6 +177,92 @@ func TestProjectServiceDelete_RequiresBackupRunner(t *testing.T) {
 	svc := NewProjectService(store, nil, nil)
 	if _, err := svc.Delete(ctx, project.ID, domain.ProjectDeleteCounters{}); err == nil {
 		t.Fatalf("Delete() with nil backup error = nil, want validation error")
+	}
+}
+
+// fakeCheckpointer records every Checkpoint call and lets tests pin
+// an error. Used to assert ProjectService.Delete invokes the
+// Checkpointer BEFORE BackupService.Run so the snapshot reflects
+// every committed WAL frame this process wrote.
+type fakeCheckpointer struct {
+	calls int
+	err   error
+}
+
+func (f *fakeCheckpointer) Checkpoint(context.Context) error {
+	f.calls++
+	return f.err
+}
+
+// orderingBackup records the call order against a shared ledger so a
+// test can pin "checkpoint happened before backup".
+type orderingBackup struct {
+	ledger *[]string
+	path   string
+}
+
+func (o *orderingBackup) Run(context.Context) (string, error) {
+	*o.ledger = append(*o.ledger, "backup")
+	return o.path, nil
+}
+
+type orderingCheckpointer struct {
+	ledger *[]string
+}
+
+func (o *orderingCheckpointer) Checkpoint(context.Context) error {
+	*o.ledger = append(*o.ledger, "checkpoint")
+	return nil
+}
+
+func TestProjectServiceDelete_RunsCheckpointBeforeBackup(t *testing.T) {
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(t, 1000))
+	defer func() { _ = store.Close() }()
+
+	counters, err := store.ProjectDeleteCounts(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("ProjectDeleteCounts: %v", err)
+	}
+	ledger := make([]string, 0, 2)
+	svc := NewProjectService(store, &orderingBackup{ledger: &ledger, path: "/tmp/snap.db"}, &fakeEventRecorder{}).
+		WithCheckpointer(&orderingCheckpointer{ledger: &ledger})
+
+	if _, err := svc.Delete(ctx, project.ID, counters); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if len(ledger) != 2 || ledger[0] != "checkpoint" || ledger[1] != "backup" {
+		t.Fatalf("call order = %v, want [checkpoint backup] (WAL must land in main DB before file copy)", ledger)
+	}
+}
+
+func TestProjectServiceDelete_ContinuesWhenCheckpointFails(t *testing.T) {
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(t, 1000))
+	defer func() { _ = store.Close() }()
+
+	counters, err := store.ProjectDeleteCounts(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("ProjectDeleteCounts: %v", err)
+	}
+	cp := &fakeCheckpointer{err: errors.New("SQLITE_BUSY: foreign writer holds the WAL")}
+	backup := &fakeBackup{path: "/var/state/snap.db"}
+	svc := NewProjectService(store, backup, &fakeEventRecorder{}).
+		SetAuditWarnWriter(io.Discard).
+		WithCheckpointer(cp)
+
+	result, err := svc.Delete(ctx, project.ID, counters)
+	if err != nil {
+		t.Fatalf("Delete error = %v, want nil — checkpoint failure must not abort the destructive flow", err)
+	}
+	if cp.calls != 1 {
+		t.Fatalf("Checkpoint calls = %d, want 1", cp.calls)
+	}
+	if backup.calls != 1 {
+		t.Fatalf("backup invoked = %d, want 1 — best-effort checkpoint must still let snapshot run", backup.calls)
+	}
+	if result.BackupPath == "" {
+		t.Fatalf("BackupPath empty after best-effort checkpoint failure")
 	}
 }
 

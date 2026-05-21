@@ -20,12 +20,17 @@ import (
 //
 // The copy is intentionally a plain file read+write+rename rather than
 // a sqlite-level VACUUM INTO. The simple shape mirrors AC #3 of task
-// #191; callers that share the live DB with an open *sqlite.Store
-// (TUI Home delete, CLI projects delete) should run
-// `PRAGMA wal_checkpoint(TRUNCATE)` on that store before invoking Run
-// so the snapshot reflects every committed transaction. A true online
-// snapshot via VACUUM INTO is deferred until the WAL drift becomes
-// observable in practice.
+// #191. The destructive-flow callers (ProjectService.Delete + CLI
+// projects delete + TUI Home delete) honour the matching contract on
+// their side: they invoke a Checkpointer (PRAGMA wal_checkpoint
+// TRUNCATE) on the live *sqlite.Store before Run so committed WAL
+// frames land in the main .db file the snapshot copies. Standalone
+// callers (`okt db backup`, `okt update` pre-swap) have no live store
+// handle in-process; their snapshots reflect the on-disk DB+WAL pair
+// at the instant of the copy — concurrent writers from another
+// process may leave uncommitted frames in WAL. A true online snapshot
+// via VACUUM INTO is deferred until the WAL drift becomes observable
+// in practice.
 type BackupService struct {
 	sourcePath string
 	destDir    string

@@ -40,6 +40,16 @@ type BackupRunner interface {
 	Run(ctx context.Context) (string, error)
 }
 
+// Checkpointer is the narrow port destructive flows invoke right
+// before BackupService.Run so the on-disk .db file reflects every
+// committed WAL frame from this process. *sqlite.Store satisfies it
+// via Checkpoint(ctx). Optional collaborator — ProjectService skips
+// the checkpoint when nil, matching the standalone `okt db backup`
+// flow that has no live store handle to checkpoint.
+type Checkpointer interface {
+	Checkpoint(ctx context.Context) error
+}
+
 // EventRecorder is the narrow port ProjectService uses to emit the
 // project.removed audit event after a successful delete. *sqlite.Store
 // satisfies it via RecordEntityEvent.

@@ -14,9 +14,10 @@ import (
 )
 
 type ProjectService struct {
-	repo   ProjectRepository
-	backup BackupRunner
-	events EventRecorder
+	repo         ProjectRepository
+	backup       BackupRunner
+	events       EventRecorder
+	checkpointer Checkpointer
 	// auditWarn receives warnings about audit-trail emission failures
 	// (json.Marshal or RecordEntityEvent errors that happen AFTER the
 	// destructive transaction committed). Defaults to os.Stderr so the
@@ -46,6 +47,17 @@ func (s *ProjectService) SetAuditWarnWriter(w io.Writer) *ProjectService {
 		w = io.Discard
 	}
 	s.auditWarn = w
+	return s
+}
+
+// WithCheckpointer attaches a Checkpointer the service invokes
+// immediately before BackupService.Run, so the on-disk .db copy
+// reflects every committed WAL frame from this process. Returns the
+// service for fluent wiring. Pass nil from callers that have no live
+// store handle (e.g. the standalone CLI flows that only compose
+// BackupService directly).
+func (s *ProjectService) WithCheckpointer(c Checkpointer) *ProjectService {
+	s.checkpointer = c
 	return s
 }
 
@@ -127,6 +139,18 @@ func (s *ProjectService) Delete(ctx context.Context, projectID int64, counters d
 	project, err := s.repo.FindProjectByID(ctx, projectID)
 	if err != nil {
 		return ProjectDeleteResult{}, err
+	}
+
+	// Checkpoint the WAL before the snapshot so every committed
+	// transaction from this process lands in the main .db file the
+	// BackupService will copy. Best-effort — a checkpoint failure
+	// (typically SQLITE_BUSY under concurrent writers) is logged and
+	// the snapshot continues; the file copy still reflects the
+	// on-disk DB+WAL pair at that instant.
+	if s.checkpointer != nil {
+		if cerr := s.checkpointer.Checkpoint(ctx); cerr != nil {
+			fmt.Fprintf(s.auditWarn, "warning: wal_checkpoint before backup failed for project_id=%d: %s\n", projectID, cerr.Error())
+		}
 	}
 
 	backupPath, err := s.backup.Run(ctx)
