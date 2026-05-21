@@ -501,10 +501,12 @@ func (m *Model) executeHomeProjectDelete(project domain.Project, counters domain
 	result, err := svc.Delete(m.ctx, project.ID, counters)
 	if err != nil {
 		m.status = err.Error()
+		drainAuditWarn(&m.status, &auditBuf)
 		return
 	}
 	if err := m.loadHome(); err != nil {
 		m.status = err.Error()
+		drainAuditWarn(&m.status, &auditBuf)
 		return
 	}
 	m.status = fmt.Sprintf(m.t("tui.status.project_deleted_fmt"), result.Project.Slug, result.BackupPath)
@@ -516,9 +518,38 @@ func (m *Model) executeHomeProjectDelete(project domain.Project, counters domain
 		// only channel the operator can observe.
 		m.status += " · " + fmt.Sprintf(m.t("cli.db.backup.prune_warn_fmt"), pruneWarn.Error())
 	}
-	if audit := strings.TrimSpace(auditBuf.String()); audit != "" {
-		m.status += " · " + audit
+	drainAuditWarn(&m.status, &auditBuf)
+}
+
+// drainAuditWarn appends any audit-warning lines captured in buf to
+// status, joined with " · " so the single-line status surface stays
+// intact. ProjectService.Delete writes each warning via fmt.Fprintf
+// with a "\n" terminator, and a single Delete can emit up to three
+// (checkpoint failure, payload marshal failure, audit emission
+// failure). Splitting on "\n" folds the multi-line buffer onto one
+// status row instead of letting embedded newlines fracture the
+// bubbletea render. No-op when the buffer is empty.
+func drainAuditWarn(status *string, buf *bytes.Buffer) {
+	audit := strings.TrimSpace(buf.String())
+	if audit == "" {
+		return
 	}
+	parts := strings.Split(audit, "\n")
+	cleaned := parts[:0]
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			cleaned = append(cleaned, t)
+		}
+	}
+	if len(cleaned) == 0 {
+		return
+	}
+	joined := strings.Join(cleaned, " · ")
+	if *status == "" {
+		*status = joined
+		return
+	}
+	*status += " · " + joined
 }
 
 // buildHomeBackupService constructs a BackupService against the TUI's

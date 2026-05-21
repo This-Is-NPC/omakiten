@@ -544,6 +544,163 @@ func TestHomeProjectDeleteSurfacesAuditWarn(t *testing.T) {
 	}
 }
 
+// TestHomeProjectDeleteAuditWarnSurvivesBackupFailure pins #191 review
+// finding (warning): when ProjectService.Delete fires its checkpoint
+// auditWarn write but the subsequent BackupService.Run fails, the TUI
+// must NOT discard the buffered warning. Without the drainAuditWarn
+// fix, the early-return at executeHomeProjectDelete overwrites
+// m.status with the backup error and the WAL-drift signal disappears.
+// Drives a forced checkpoint failure + a forced backup failure (bogus
+// DBPath); asserts m.status carries both signals.
+func TestHomeProjectDeleteAuditWarnSurvivesBackupFailure(t *testing.T) {
+	ctx := context.Background()
+	dbDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	store := snapstore.Open(t, dbDir+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle: %v", err)
+	}
+	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
+	if err != nil {
+		t.Fatalf("UpsertProject(doomed): %v", err)
+	}
+
+	cp := &busyCheckpointer{err: errors.New("SQLITE_BUSY: foreign writer holds the WAL")}
+
+	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+		Tasks:        store,
+		Projects:     store,
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Tags:         store,
+		Events:       store,
+		Checkpointer: cp,
+		// Bogus DBPath — buildHomeBackupService threads it into
+		// BackupService.SourcePath; os.Stat fails inside Run.
+		DBPath:  dbDir + "/does-not-exist.db",
+		Catalog: newTestCatalog(t),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	updated, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	final := updated.(Model)
+
+	if cp.calls != 1 {
+		t.Fatalf("Checkpointer.Checkpoint calls = %d, want 1 (must fire before backup)", cp.calls)
+	}
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err != nil {
+		t.Fatalf("project gone despite aborted backup: %v", err)
+	}
+	if !strings.Contains(final.status, "backup") {
+		t.Fatalf("status missing backup-failure signal.\nstatus = %q", final.status)
+	}
+	if !strings.Contains(final.status, "wal_checkpoint") {
+		t.Fatalf("status missing checkpoint warning — audit buffer was dropped on the backup-error early return.\nstatus = %q", final.status)
+	}
+}
+
+// TestHomeProjectDeleteOverlayPathSurfacesAuditWarn pins #191 review
+// finding (info): the overlay branch of executeHomeProjectDelete shares
+// the same auditWarn wiring as the status-driven branch; both must land
+// the warning on m.status. Mirrors the overlay-confirm fixture with a
+// busyCheckpointer so the audit write path fires under the action
+// dispatch.
+func TestHomeProjectDeleteOverlayPathSurfacesAuditWarn(t *testing.T) {
+	ctx := context.Background()
+	dbDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	store := snapstore.Open(t, dbDir+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle: %v", err)
+	}
+	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
+	if err != nil {
+		t.Fatalf("UpsertProject(doomed): %v", err)
+	}
+
+	cp := &busyCheckpointer{err: errors.New("SQLITE_BUSY: foreign writer holds the WAL")}
+
+	notif := config.Notification{
+		Name:            "home-project-delete-confirm",
+		Size:            config.NotificationSize{Width: 60, Height: 12},
+		Background:      "transparent",
+		FrameIntervalMs: 100,
+		Style:           config.NotificationStyleRounded,
+		Border:          config.NotificationBorder{Visible: ptrBool(true), Width: 1, Color: "#ff0000"},
+		Animation:       []config.NotificationFrame{{Frame: 0, Value: ""}},
+		Bubble:          config.NotificationBubble{TailSide: config.NotificationTailBottom},
+		Padding:         zeroNotificationPadding(),
+		AutoHeight:      ptrBool(false),
+		PaddingInside:   ptrBool(true),
+		FooterVisible:   ptrBool(true),
+		Position:        config.NotificationPositionCenter,
+		Dismiss:         config.NotificationDismiss{Mode: config.NotificationDismissModeKey, Keys: []string{"esc"}},
+		TypingMsPerChar: ptrInt(0),
+		Actions: []config.NotificationAction{
+			{Key: "D", ID: "confirm", Label: "Delete"},
+		},
+	}
+	binding := NotificationBinding{Notifications: map[string]config.Notification{notif.Name: notif}}
+
+	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+		Tasks:        store,
+		Projects:     store,
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Tags:         store,
+		Events:       store,
+		Checkpointer: cp,
+		DBPath:       dbDir + "/omakiten.db",
+		Catalog:      newTestCatalog(t),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, binding)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	model.width = 80
+	model.height = 24
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	armed := updated.(Model)
+	if armed.notification == nil {
+		t.Fatalf("overlay did not spawn")
+	}
+
+	_, cmd := armed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'D'}})
+	if cmd == nil {
+		t.Fatalf("D on settled overlay returned no Cmd")
+	}
+	actionMsg := cmd()
+	if _, ok := actionMsg.(notification.ActionMsg); !ok {
+		t.Fatalf("Cmd produced %T, want notification.ActionMsg", actionMsg)
+	}
+	updated, _ = armed.Update(actionMsg)
+	final := updated.(Model)
+
+	if cp.calls != 1 {
+		t.Fatalf("Checkpointer.Checkpoint calls = %d, want 1", cp.calls)
+	}
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err == nil {
+		t.Fatalf("project still present after overlay confirm")
+	}
+	if !strings.Contains(final.status, "wal_checkpoint") {
+		t.Fatalf("status missing checkpoint warning on the overlay path.\nstatus = %q", final.status)
+	}
+	if !strings.Contains(final.status, "doomed") {
+		t.Fatalf("status missing project slug — success line dropped?\nstatus = %q", final.status)
+	}
+}
+
 // TestHomeRendersProjectTagBadges covers AC4: project_tags become the badges
 // on the Home cards, reusing the chip component.
 func TestHomeRendersProjectTagBadges(t *testing.T) {
