@@ -88,7 +88,17 @@ func (s *Service) ListTasks(ctx context.Context, input ListTasksInput) (ListTask
 	if err != nil {
 		return ListTasksResponse{}, err
 	}
-	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).List(ctx, project, domain.TaskFilter{BucketKey: strings.TrimSpace(input.BucketKey)})
+	filter := domain.TaskFilter{BucketKey: strings.TrimSpace(input.BucketKey)}
+	if input.ParentID != nil {
+		inner := *input.ParentID
+		if inner == nil {
+			filter.ParentMode = domain.ParentRoots
+		} else {
+			filter.ParentMode = domain.ParentChildren
+			filter.ParentValue = *inner
+		}
+	}
+	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).List(ctx, project, filter)
 	if err != nil {
 		return ListTasksResponse{}, err
 	}
@@ -146,7 +156,13 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 		}
 	}
 
-	task, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Add(ctx, project, title, description, strings.TrimSpace(input.Priority), strings.TrimSpace(input.BucketKey))
+	taskService := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot)
+	var task domain.Task
+	if input.ParentID != nil {
+		task, err = taskService.AddSub(ctx, project, *input.ParentID, title, description, strings.TrimSpace(input.Priority), strings.TrimSpace(input.BucketKey))
+	} else {
+		task, err = taskService.Add(ctx, project, title, description, strings.TrimSpace(input.Priority), strings.TrimSpace(input.BucketKey))
+	}
 	if err != nil {
 		return CreateTaskResponse{}, err
 	}
@@ -197,6 +213,10 @@ func (s *Service) EditTask(ctx context.Context, input EditTaskInput) (EditTaskRe
 				map[string]any{"priority": label})
 		}
 		update.Priority = &p
+	}
+	if input.ParentID != nil {
+		update.ChangeParent = true
+		update.NewParentID = *input.ParentID
 	}
 	task, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Edit(ctx, project, input.TaskID, update)
 	if err != nil {

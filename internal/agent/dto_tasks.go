@@ -12,6 +12,9 @@ type TaskSummary struct {
 	// the task's priority id is no longer in the active table.
 	Priority string `json:"priority,omitempty"`
 	State    string `json:"state,omitempty"`
+	// ParentID names the task this row is a sub-task of. nil for root
+	// tasks; consumers serialize null in JSON.
+	ParentID *int64 `json:"parent_id,omitempty"`
 }
 
 type ContinueTaskInput struct {
@@ -42,6 +45,14 @@ type ContinueTaskResponse struct {
 type ListTasksInput struct {
 	ProjectSelector
 	BucketKey string `json:"bucket_key,omitempty"`
+	// ParentID scopes the list by tasks.parent_id with three states:
+	//   omitted    → no filter (every task surfaces).
+	//   nil literal → roots only (parent_id IS NULL).
+	//   value      → direct children of that id.
+	// Encoded as a Go **int64 so the JSON-RPC marshaller can distinguish
+	// "absent" from "null" — the outer pointer is non-nil exactly when
+	// the caller supplied the field, regardless of value.
+	ParentID **int64 `json:"parent_id,omitempty"`
 }
 
 type ListTasksResponse struct {
@@ -58,6 +69,10 @@ type CreateTaskInput struct {
 	Confirmed           bool   `json:"confirmed,omitempty"`
 	SkipSimilarityCheck bool   `json:"skip_similarity_check,omitempty"`
 	TemplateSlug        string `json:"template_slug,omitempty"`
+	// ParentID attaches the new task as a sub-task of the given id. nil
+	// (the default) creates a root task. The handler validates that the
+	// parent exists in the same project before writing.
+	ParentID *int64 `json:"parent_id,omitempty"`
 }
 
 type CreateTaskResponse struct {
@@ -123,6 +138,12 @@ type EditTaskInput struct {
 	Title       *string `json:"title,omitempty"`
 	Description *string `json:"description,omitempty"`
 	Priority    *string `json:"priority,omitempty"`
+	// ParentID re-parents the task. Tri-state encoding:
+	//   omitted    → leave parent_id untouched.
+	//   nil literal → clear parent_id (the task becomes a root).
+	//   value      → set parent_id to that id; anti-cycle is enforced.
+	// **int64 so JSON-RPC distinguishes "absent" from "null".
+	ParentID **int64 `json:"parent_id,omitempty"`
 }
 
 type EditTaskResponse struct {
@@ -141,6 +162,7 @@ func taskSummary(task domain.Task, registry *domain.EnumRegistry) TaskSummary {
 		Description: task.Description,
 		BucketKey:   task.BucketKey,
 		Priority:    registry.PriorityLabel(task.Priority),
+		ParentID:    task.ParentID,
 	}
 	if task.State != "" && task.State != domain.TaskStateActive {
 		s.State = string(task.State)
