@@ -627,6 +627,8 @@ keys:
   tui.badge.blockers: "阻塞"
   tui.badge.comment: "评论"
   tui.badge.comments: "评论"
+  tui.badge.subtask: "sub-task"
+  tui.badge.subtasks: "sub-tasks"
   tui.badge.tokens_fmt: "TOKENS:%d"
   tui.badge.use_fmt: "使用:%d"
   tui.status.comment_deleted_fmt: "已删除评论 #%d"

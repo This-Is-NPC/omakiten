@@ -636,6 +636,8 @@ keys:
   tui.badge.blockers: "блокеры"
   tui.badge.comment: "комментарий"
   tui.badge.comments: "комментарии"
+  tui.badge.subtask: "sub-task"
+  tui.badge.subtasks: "sub-tasks"
   tui.badge.tokens_fmt: "TOKENS:%d"
   tui.badge.use_fmt: "ИСП:%d"
   tui.status.comment_deleted_fmt: "Комментарий #%d удалён"

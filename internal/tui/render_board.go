@@ -398,6 +398,9 @@ func (m Model) taskBoardBadges(task domain.Task) []string {
 	if cmts := m.commentCount(task.ID); cmts > 0 {
 		badges = append(badges, m.styles.badgeComment.Render(fmt.Sprintf("%d %s", cmts, plural(cmts, m.t("tui.badge.comment"), m.t("tui.badge.comments")))))
 	}
+	if subs := m.subtaskCount(task.ID); subs > 0 {
+		badges = append(badges, m.styles.badgeSubtask.Render(fmt.Sprintf("%d %s", subs, plural(subs, m.t("tui.badge.subtask"), m.t("tui.badge.subtasks")))))
+	}
 	return badges
 }
 

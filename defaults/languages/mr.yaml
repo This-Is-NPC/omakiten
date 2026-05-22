@@ -633,6 +633,8 @@ keys:
   tui.badge.blockers: "ब्लॉकर्स"
   tui.badge.comment: "टिप्पणी"
   tui.badge.comments: "टिप्पण्या"
+  tui.badge.subtask: "sub-task"
+  tui.badge.subtasks: "sub-tasks"
   tui.badge.tokens_fmt: "TOKENS:%d"
   tui.badge.use_fmt: "USE:%d"
   tui.status.comment_deleted_fmt: "comment #%d डिलीट केले"

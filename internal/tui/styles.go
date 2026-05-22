@@ -166,6 +166,7 @@ type styles struct {
 	badgeLow         lipgloss.Style
 	badgeBlocker     lipgloss.Style
 	badgeComment     lipgloss.Style
+	badgeSubtask     lipgloss.Style
 	badgeInfo        lipgloss.Style
 	badgeScope       lipgloss.Style
 	badgeFix         lipgloss.Style
@@ -249,6 +250,10 @@ func newStyles(theme config.Theme) styles {
 		badgeLow:         lipgloss.NewStyle().Background(secondary).Foreground(badgeFg).Padding(0, 1).Bold(true),
 		badgeBlocker:     lipgloss.NewStyle().Background(warning).Foreground(badgeFg).Padding(0, 1).Bold(true),
 		badgeComment:     lipgloss.NewStyle().Background(border).Foreground(foreground).Padding(0, 1).Bold(true),
+		// badgeSubtask uses the neutral secondary tone — sub-tasks are
+		// structure, not alarm, so it deliberately diverges from
+		// badgeBlocker's warning colour.
+		badgeSubtask:     lipgloss.NewStyle().Background(secondary).Foreground(badgeFg).Padding(0, 1).Bold(true),
 		badgeInfo:        lipgloss.NewStyle().Background(secondary).Foreground(badgeFg).Padding(0, 1).Bold(true),
 		badgeScope:       lipgloss.NewStyle().Background(border).Foreground(foreground).Padding(0, 1).Bold(true),
 		badgeFix:         lipgloss.NewStyle().Background(warning).Foreground(badgeFg).Padding(0, 1).Bold(true),

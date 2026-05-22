@@ -162,11 +162,17 @@ func (m Model) taskByID(taskID int64) (domain.Task, bool) {
 
 // tasksByBucket groups m.tasks by bucket key after applying the board
 // view's priority filter. Used by both the kanban renderer and the cursor
-// math (tasksInCurrentBucket reads from this).
+// math (tasksInCurrentBucket reads from this). Sub-tasks (rows with a
+// non-nil ParentID) are hidden so the kanban columns stay focused on
+// root work — the detail view's sub-tasks panel is the canonical place
+// to inspect a parent's children.
 func (m Model) tasksByBucket() map[string][]domain.Task {
 	tasksByBucket := map[string][]domain.Task{}
 	allowed := priorityAllowSet(m.views.Board.Filter.Priority)
 	for _, task := range m.tasks {
+		if task.IsSubTask() {
+			continue
+		}
 		if !m.priorityAllowed(allowed, task.Priority) {
 			continue
 		}
@@ -286,6 +292,20 @@ func (m Model) blockersForTask(taskID int64) []domain.Task {
 
 func (m Model) commentCount(taskID int64) int {
 	return len(m.commentsForTask(taskID))
+}
+
+// subtaskCount returns the number of direct children of taskID in the
+// loaded model snapshot. Cheap O(n) scan over m.tasks — the typical
+// project has at most a few thousand tasks, well below any threshold
+// that would justify a per-card index.
+func (m Model) subtaskCount(taskID int64) int {
+	count := 0
+	for _, task := range m.tasks {
+		if task.ParentID != nil && *task.ParentID == taskID {
+			count++
+		}
+	}
+	return count
 }
 
 func (m Model) tagsForTask(taskID int64) []domain.Tag {

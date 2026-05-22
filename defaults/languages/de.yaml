@@ -640,6 +640,8 @@ keys:
   tui.badge.blockers: "blocker"
   tui.badge.comment: "kommentar"
   tui.badge.comments: "kommentare"
+  tui.badge.subtask: "sub-task"
+  tui.badge.subtasks: "sub-tasks"
   tui.badge.tokens_fmt: "TOKENS:%d"
   tui.badge.use_fmt: "NUTZUNG:%d"
   tui.status.comment_deleted_fmt: "Kommentar #%d gelöscht"

@@ -634,6 +634,8 @@ keys:
   tui.badge.blockers: "engeller"
   tui.badge.comment: "yorum"
   tui.badge.comments: "yorumlar"
+  tui.badge.subtask: "sub-task"
+  tui.badge.subtasks: "sub-tasks"
   tui.badge.tokens_fmt: "TOKEN:%d"
   tui.badge.use_fmt: "KULL:%d"
   tui.status.comment_deleted_fmt: "Comment silindi #%d"

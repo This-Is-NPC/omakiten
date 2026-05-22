@@ -631,6 +631,8 @@ keys:
   tui.badge.blockers: "차단"
   tui.badge.comment: "댓글"
   tui.badge.comments: "댓글"
+  tui.badge.subtask: "sub-task"
+  tui.badge.subtasks: "sub-tasks"
   tui.badge.tokens_fmt: "TOKENS:%d"
   tui.badge.use_fmt: "사용:%d"
   tui.status.comment_deleted_fmt: "댓글 #%d 삭제됨"

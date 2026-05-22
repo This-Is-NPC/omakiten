@@ -633,6 +633,8 @@ keys:
   tui.badge.blockers: "حواجب"
   tui.badge.comment: "تعليق"
   tui.badge.comments: "تعليقات"
+  tui.badge.subtask: "sub-task"
+  tui.badge.subtasks: "sub-tasks"
   tui.badge.tokens_fmt: "TOKENS:%d"
   tui.badge.use_fmt: "USE:%d"
   tui.status.comment_deleted_fmt: "تم حذف comment #%d"
