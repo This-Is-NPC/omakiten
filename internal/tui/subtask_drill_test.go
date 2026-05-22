@@ -146,26 +146,53 @@ func TestPopTaskViewStackHandlesDeletedAncestor(t *testing.T) {
 }
 
 func TestTaskBreadcrumbTrailFormatsAncestors(t *testing.T) {
-	m := Model{styles: newStyles(config.Theme{})}
+	// Root task with no parent: empty breadcrumb.
+	root := domain.Task{ID: 1, Title: "root", BucketKey: "backlog"}
+	m := Model{styles: newStyles(config.Theme{}), tasks: []domain.Task{root}}
+	m.taskID = root.ID
 	if got := m.taskBreadcrumbTrail(); got != "" {
-		t.Fatalf("empty stack breadcrumb = %q, want \"\"", got)
+		t.Fatalf("root task breadcrumb = %q, want \"\"", got)
 	}
-	m.taskViewStack = []int64{1, 2, 3}
+
+	// Three-level chain 1 → 2 → 3. Breadcrumb on #3 mentions both
+	// parent #2 and grandparent #1.
+	t2 := domain.Task{ID: 2, Title: "level 2", BucketKey: "backlog", ParentID: ptrInt64(1)}
+	t3 := domain.Task{ID: 3, Title: "level 3", BucketKey: "backlog", ParentID: ptrInt64(2)}
+	m.tasks = []domain.Task{root, t2, t3}
+	m.taskID = t3.ID
 	got := stripANSI(m.taskBreadcrumbTrail())
-	if !strings.Contains(got, "#3") || !strings.Contains(got, "#2") || !strings.Contains(got, "#1") {
-		t.Fatalf("breadcrumb %q must mention all 3 ancestors", got)
+	for _, want := range []string{"#1", "#2"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("breadcrumb %q must mention %s", got, want)
+		}
+	}
+	if strings.Contains(got, "#3") {
+		t.Fatalf("breadcrumb %q must not mention the active task id #3", got)
 	}
 	if !strings.Contains(got, "←") {
 		t.Fatalf("breadcrumb %q must use ← separator", got)
 	}
-	m.taskViewStack = []int64{1, 2, 3, 4, 5, 6}
+
+	// Six-level chain: breadcrumb caps at 3 ancestors with a leading "…".
+	chain := []domain.Task{
+		{ID: 1, Title: "1"},
+		{ID: 2, Title: "2", ParentID: ptrInt64(1)},
+		{ID: 3, Title: "3", ParentID: ptrInt64(2)},
+		{ID: 4, Title: "4", ParentID: ptrInt64(3)},
+		{ID: 5, Title: "5", ParentID: ptrInt64(4)},
+		{ID: 6, Title: "6", ParentID: ptrInt64(5)},
+		{ID: 7, Title: "7", ParentID: ptrInt64(6)},
+	}
+	m.tasks = chain
+	m.taskID = 7
 	got = stripANSI(m.taskBreadcrumbTrail())
 	if !strings.Contains(got, "…") {
 		t.Fatalf("breadcrumb %q must elide with … when depth > 3", got)
 	}
-	// Trimming keeps only the last 3 ancestors visible (4,5,6).
-	if !strings.Contains(got, "#6") || !strings.Contains(got, "#5") || !strings.Contains(got, "#4") {
-		t.Fatalf("breadcrumb %q must show last 3 ancestors (4,5,6)", got)
+	for _, want := range []string{"#6", "#5", "#4"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("breadcrumb %q must show last 3 ancestors (4,5,6) — missing %s", got, want)
+		}
 	}
 }
 

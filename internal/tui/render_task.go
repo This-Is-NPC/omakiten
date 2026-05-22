@@ -1027,24 +1027,47 @@ func (m Model) renderSubtasksPanel(children []domain.Task, layout taskViewLayout
 	return m.styles.kanbanColumnSized(layout.subtasksInner, 0).Render(body)
 }
 
-// taskBreadcrumbTrail formats the drill-down ancestor chain for display
-// next to the task kicker. Returns "" for top-level views (no stack).
-// Truncates to the last 3 ancestors with a leading ellipsis so deep
-// trees do not push the kicker off-screen.
+// taskBreadcrumbTrail formats the ancestor chain (parent → grandparent
+// → …) for display next to the task kicker. Derived from each task's
+// ParentID via taskByID — independent of the drill back-stack so the
+// breadcrumb stays consistent regardless of how the user arrived (plan
+// view, board, table, or drill from a parent). Truncated to the last
+// three ancestors with a leading "…" when the tree is deeper so the
+// kicker never pushes off-screen.
+//
+// The back-stack (taskViewStack) still owns "esc returns to parent"
+// — see popTaskViewStack. They are intentionally separate: one
+// represents the task tree, the other the navigation history.
 func (m Model) taskBreadcrumbTrail() string {
-	if len(m.taskViewStack) == 0 {
+	task, ok := m.activeTask()
+	if !ok || task.ParentID == nil {
 		return ""
 	}
-	max := 3
-	stack := m.taskViewStack
-	prefix := ""
-	if len(stack) > max {
-		prefix = "… "
-		stack = stack[len(stack)-max:]
+	const maxAncestors = 3
+	ancestors := make([]int64, 0, maxAncestors+1)
+	cursor := task.ParentID
+	guard := 32 // defensive: bail out long before cycle protection in storage matters
+	for cursor != nil && guard > 0 {
+		ancestors = append(ancestors, *cursor)
+		parent, ok := m.taskByID(*cursor)
+		if !ok {
+			break
+		}
+		cursor = parent.ParentID
+		guard--
 	}
-	parts := make([]string, 0, len(stack))
-	for i := len(stack) - 1; i >= 0; i-- {
-		parts = append(parts, fmt.Sprintf("#%d", stack[i]))
+	if len(ancestors) == 0 {
+		return ""
+	}
+	prefix := ""
+	visible := ancestors
+	if len(visible) > maxAncestors {
+		prefix = "… "
+		visible = visible[:maxAncestors]
+	}
+	parts := make([]string, 0, len(visible))
+	for _, id := range visible {
+		parts = append(parts, fmt.Sprintf("#%d", id))
 	}
 	return m.styles.hint.Render(prefix + "← " + strings.Join(parts, " ← "))
 }
