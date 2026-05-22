@@ -54,7 +54,7 @@ Auto-derived from `defaults/config/omakase.yaml`.
 | From | To | Guards |
 |---|---|---|
 | `backlog` | `dev` | `#self-branch`×1 · blockers in `done` · `wave_gate` |
-| `dev` | `review` | `#resume`×1 · `#tests-passing`×1 |
+| `dev` | `review` | `#resume`×1 · `#tests-passing`×1 · `subtasks_complete` |
 | `review` | `done` | `#documentation`×1 |
 | `dev` | `backlog` | — |
 | `review` | `backlog` | — |

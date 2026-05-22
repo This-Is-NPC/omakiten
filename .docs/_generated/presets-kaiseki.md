@@ -56,9 +56,9 @@ Auto-derived from `defaults/config/kaiseki.yaml`.
 |---|---|---|
 | `requirements` | `planning` | `#5w2h`×1 · `#requirements`×1 · `#acceptance`×1 |
 | `planning` | `dev` | `#self-branch`×1 · `#design`×1 · blockers in `done`,`docs` · `wave_gate` |
-| `dev` | `review` | `#resume`×1 · `#tests-passing`×1 |
+| `dev` | `review` | `#resume`×1 · `#tests-passing`×1 · `subtasks_complete` |
 | `review` | `docs` | `#peer-review`×1 |
-| `docs` | `done` | `#documentation`×1 |
+| `docs` | `done` | `#documentation`×1 · `subtasks_complete` |
 | `review` | `dev` | — |
 | `docs` | `review` | — |
 | `done` | `review` | — |
