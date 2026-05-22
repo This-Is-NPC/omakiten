@@ -373,9 +373,39 @@ type Model struct {
 	// navigation moves it; the scroll offset auto-follows.
 	activityCursor int
 	// taskFocus tracks which column inside the task detail screen owns
-	// navigation keys. Default: form/details column. Tab toggles to the
-	// activity column so j/k navigate cards instead of scrolling description.
+	// navigation keys. Default: form/details column. Tab rotates through
+	// form → sub-tasks (when present) → activity so j/k applies to the
+	// section the user just jumped to, instead of always scrolling the
+	// description and forcing modal switches per surface.
 	taskFocus taskScreenFocus
+
+	// subtaskCursor is the index into directChildren(taskID) for the
+	// sub-tasks pane cursor. -1 means "no selection"; rotating focus
+	// into the pane clamps it to 0 so the first card always reads as
+	// the cursor target.
+	subtaskCursor int
+	// subtaskScroll mirrors activityScroll: line offset into the
+	// scroll-window of pre-rendered sub-task cards. Auto-follows the
+	// cursor via syncSubtaskScrollToCursor.
+	subtaskScroll int
+
+	// taskViewStack records ancestor task IDs the user drilled in from
+	// (via Enter on a sub-task card). Esc pops back to the most recent
+	// ancestor instead of jumping straight to the board, so parent
+	// context survives N-level drilling. Empty means "current task was
+	// opened from a list view; esc closes the detail screen".
+	taskViewStack []int64
+
+	// descriptionScreenOpen is the modal "description detail" overlay
+	// layered on top of taskScreenView. Long descriptions overflow the
+	// form column, so `f` opens this dedicated full-width screen where
+	// the markdown can scroll freely. esc returns to the task detail
+	// view with focus preserved.
+	descriptionScreenOpen bool
+	// descriptionScreen owns the scroll offset for the dedicated
+	// description overlay; reset via detailscreen.New on each open so
+	// prior scroll state never leaks across tasks.
+	descriptionScreen detailscreen.Model
 
 	// commentScreenOpen is the modal "comment detail" view layered on top of
 	// taskScreenView. Long comments overflow the activity column, so Enter on
@@ -565,6 +595,7 @@ type taskScreenFocus int
 
 const (
 	taskFocusForm taskScreenFocus = iota
+	taskFocusSubtasks
 	taskFocusActivity
 )
 

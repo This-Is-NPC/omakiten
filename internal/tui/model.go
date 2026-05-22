@@ -179,6 +179,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.commentScreenOpen {
 			return m.updateCommentScreen(msg)
 		}
+		if m.descriptionScreenOpen {
+			return m.updateDescriptionScreen(msg)
+		}
 		if m.taskScreen != taskScreenClosed {
 			return m.updateTaskScreen(msg)
 		}

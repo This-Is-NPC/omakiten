@@ -120,6 +120,9 @@ func (m Model) renderCurrentView() string {
 	if m.commentScreenOpen {
 		return m.renderCommentScreen()
 	}
+	if m.descriptionScreenOpen {
+		return m.renderDescriptionScreen()
+	}
 	if m.taskScreen != taskScreenClosed {
 		return m.renderTaskScreen()
 	}
@@ -252,6 +255,15 @@ func (m Model) footerTokens() []footerToken {
 			{key: "esc", label: m.t("tui.footer.cancel")},
 			m.helpToken(),
 		}
+	case m.descriptionScreenOpen:
+		return []footerToken{
+			{key: "f/esc", label: m.t("tui.footer.close_focus"), primary: true},
+			{key: "j/k", label: m.t("tui.footer.scroll")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
+			{key: "g/G", label: m.t("tui.footer.top_bottom")},
+			{key: "M", label: m.t("tui.footer.toggle_markdown")},
+			m.helpToken(),
+		}
 	case m.commentScreenOpen:
 		deleteLabel := m.t("tui.footer.arm_delete")
 		if m.commentDeletePendingID != 0 {
@@ -271,18 +283,30 @@ func (m Model) footerTokens() []footerToken {
 		if m.taskDeletePendingID != 0 {
 			deleteLabel = m.t("tui.footer.confirm_delete")
 		}
+		enterLabel := m.t("tui.footer.enter_zone_action")
+		switch m.taskFocus {
+		case taskFocusActivity:
+			enterLabel = m.t("tui.footer.open_comment_activity")
+		case taskFocusSubtasks:
+			enterLabel = m.t("tui.footer.open_subtask")
+		}
+		escLabel := m.escBack()
+		if len(m.taskViewStack) > 0 {
+			escLabel = footerToken{key: "esc", label: m.t("tui.footer.back_parent")}
+		}
 		return []footerToken{
 			{key: "e", label: m.t("tui.footer.edit"), primary: true},
 			{key: "n", label: m.t("tui.footer.sub_task"), primary: true},
+			{key: "f", label: m.t("tui.footer.focus_description"), primary: true},
 			{key: "c", label: m.t("tui.footer.comment"), primary: true},
 			{key: "m", label: m.t("tui.footer.move"), primary: true},
-			{key: "tab", label: m.t("tui.footer.focus")},
+			{key: "tab", label: m.t("tui.footer.zone")},
 			{key: "j/k", label: m.t("tui.footer.scroll")},
 			{key: "b", label: m.t("tui.footer.blockers")},
 			{key: "d", label: deleteLabel, primary: m.taskDeletePendingID != 0},
-			{key: "enter", label: m.t("tui.footer.open_comment_activity")},
+			{key: "enter", label: enterLabel},
 			{key: "r", label: m.t("tui.footer.refresh")},
-			m.escBack(),
+			escLabel,
 			m.helpToken(),
 		}
 	case m.taskScreen == taskScreenCreate:

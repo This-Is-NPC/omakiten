@@ -781,7 +781,12 @@ func TestModelTaskViewWrapsLongPropertyTextWithoutBreakingGrid(t *testing.T) {
 	if start == -1 {
 		t.Fatalf("task view grid top border not found\n%s", plain)
 	}
-	for i := len(lines) - 1; i > start; i-- {
+	// Scan forward from the form column's top border to the first
+	// closing └┘ row — that bounds the form column box. The detail
+	// view now stacks a sub-tasks pane below the form, so the older
+	// "last └┘ in the output" probe wandered into a different box
+	// and asserted against blank separator rows in between.
+	for i := start + 1; i < len(lines); i++ {
 		if strings.Contains(lines[i], "└") && strings.Contains(lines[i], "┘") {
 			end = i
 			break
