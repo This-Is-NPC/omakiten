@@ -126,6 +126,7 @@ type Settings struct {
 	SQLite           SQLiteSettings      `yaml:"sqlite,omitempty" json:"sqlite,omitempty"`
 	ActivityLog      ActivityLogSettings `yaml:"activity_log,omitempty" json:"activity_log,omitempty"`
 	Solutions        SolutionsSettings   `yaml:"solutions,omitempty" json:"solutions,omitempty"`
+	Backup           BackupSettings      `yaml:"backup,omitempty" json:"backup,omitempty"`
 	Events           EventsSettings      `yaml:"events,omitempty" json:"events,omitempty"`
 	Search           SearchSettings      `yaml:"search,omitempty" json:"search,omitempty"`
 	Hooks            []HookSpec          `yaml:"hooks,omitempty" json:"hooks,omitempty"`
@@ -378,6 +379,21 @@ type SolutionsSettings struct {
 	// MaxTopLimit caps caller-supplied limits. Required; >=
 	// DefaultTopLimit so the validator catches inverted ranges.
 	MaxTopLimit int `yaml:"max_top_limit" json:"max_top_limit"`
+}
+
+// BackupSettings tunes the rolling DB snapshot the `okt db backup`
+// command (and every destructive command that runs an auto-backup
+// before mutating state) writes under StateDir/backups/. RetentionCount
+// is the count cap pruneBackups enforces after each successful write:
+// the N most-recent snapshots are kept, older ones deleted. The cap is
+// best-effort — a prune failure never aborts the backup itself (the
+// .db is already on disk). RetentionCount <= 0 disables pruning so
+// power users keeping snapshots out-of-band can opt out without
+// touching files.
+type BackupSettings struct {
+	// RetentionCount caps the count of snapshots BackupDir keeps after
+	// a successful write. Validator requires >= 0; zero disables prune.
+	RetentionCount int `yaml:"retention_count" json:"retention_count"`
 }
 
 // HookSpec is one entry of `config.hooks`. Mirrors hooks.Hook so the

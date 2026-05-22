@@ -41,6 +41,45 @@ keys:
   cli.config.short: "Zarządzaj kanonicznym pakietem omakiten.yaml"
   cli.config.validate.short: "Zwaliduj plik omakiten.yaml"
   cli.config.presets.short: "Wyświetl oficjalne presets workflow"
+  cli.projects.short: "Project lifecycle utilities (delete — destructive ops)"
+  cli.projects.delete.short: "Hard-delete a registered project and every dependent row (irreversible)"
+  cli.projects.delete.long: |-
+    Resolve the project by numeric id or slug, write a recovery
+    snapshot to the rolling backups directory, then cascade-delete
+    every dependent row (tasks, comments, plans, tag attachments,
+    context entries, errors, activity log).
+
+    Backup failure aborts the delete before anything is touched.
+    Filesystem state under <root_path>/.omakiten/ is preserved —
+    only DB rows are removed.
+
+    Without --yes the command prints counters and prompts for
+    confirmation; piping without --yes errors out instead of
+    blocking on stdin.
+  cli.projects.delete.flag.yes: "skip the interactive confirmation and apply the delete non-interactively"
+  cli.projects.delete.counters_fmt: "tasks: %d · comments: %d · plans: %d · tags: %d · activity: %d entries"
+  cli.projects.delete.prompt: "delete project %q? [y/N]:"
+  cli.projects.delete.success_fmt: "project %q deleted · backup → %s"
+  cli.projects.delete.err.no_tty: "interactive confirmation required; pass --yes to skip"
+  cli.projects.delete.err.aborted: "delete aborted; nothing removed"
+  cli.projects.delete.err.not_found: "project not found"
+  cli.db.short: "Database lifecycle utilities (backup, snapshot, restore — sysadmin ops)"
+  cli.db.backup.short: "Write a snapshot of the live SQLite database to the rolling backups directory"
+  cli.db.backup.long: |-
+    Copy the active SQLite database to a timestamped snapshot under
+    $XDG_STATE_HOME/omakiten/backups/ (default ~/.local/state/omakiten/backups/)
+    and prune older snapshots according to settings.backup.retention_count.
+
+    The copy is atomic: the destination only appears once the body has
+    been written and renamed into place. A previous partial copy never
+    survives a failure.
+
+    --out pins the snapshot path explicitly (parent directories are
+    created as needed). When --out is supplied the retention prune
+    pass is skipped — the user owns the rotation policy outside the
+    default state directory.
+  cli.db.backup.flag.out: "write the snapshot to this explicit file path (skips retention prune)"
+  cli.db.backup.success_fmt: "backup written to %s"
   cli.preset.omakase.title: "Wybór szefa kuchni"
   cli.preset.omakase.description: "Zrównoważony workflow z guards dla self-branch, resume oraz dokumentacji."
   cli.preset.izakaya.title: "Swobodny"
@@ -373,6 +412,22 @@ keys:
   tui.confirm.comment_delete_fmt: "Potwierdź usunięcie comment #%d. Naciśnij d ponownie; esc anuluje."
   tui.confirm.task_delete_fmt: "Potwierdź usunięcie task #%d %q. Naciśnij d ponownie; esc anuluje."
   tui.status.task_deleted_fmt: "Usunięto task #%d"
+  tui.confirm.home_project_delete_fmt: "Confirm delete project %q (cascade tasks, plans, errors). Press d again; esc cancels. A backup snapshot is written first."
+  tui.notification.project_delete.title_fmt: "Delete project %q?"
+  tui.notification.project_delete.body_fmt: "Tasks: %d · Comments: %d · Plans: %d · Tags: %d · Activity log: %d entries. All permanently removed. Backup will be written to ~/.local/state/omakiten/backups/."
+  notifications.home-project-delete-confirm.description: "Confirm a destructive project delete with one keystroke; shows pre-resolved row counters so the user sees the blast radius."
+  notifications.home-project-delete-confirm.confirm_label: "Delete"
+  notifications.home-project-delete-confirm.cancel_label: "Cancel"
+  notifications.footer.details: "details"
+  notifications.footer.close: "close"
+  notifications.footer.cancel: "cancel"
+  notifications.kitten_orphan_migration.migrate_label: "Migrate"
+  notifications.kitten_orphan_migration.skip_label: "Skip"
+  cli.db.backup.prune_warn_fmt: "prune skipped: %s"
+  tui.status.project_deleted_fmt: "Project %q deleted · backup → %s"
+  tui.status.deleting_project_fmt: "Deleting project %q..."
+  tui.footer.delete_project: "delete project"
+  tui.footer.confirm_delete_project: "confirm delete · esc cancels"
   tui.status.orphan_tags_deleted_fmt: "Usunięto %d osieroconych tag(s)"
   tui.status.tag_in_use_fmt: "Tag %q jest w użyciu (%d referencji) — nie można usunąć"
   tui.status.task_not_found: "Nie znaleziono task. Naciśnij esc, aby wrócić."
@@ -885,6 +940,12 @@ keys:
     ~/.local/bin on POSIX and %LOCALAPPDATA%Programsokt on Windows) and
     strip the okt() wrapper block from every rc/profile target.
 
+
+    No automatic backup. Run `okt db backup` first if you want a
+    snapshot of the SQLite DB before purging — uninstall removes
+    user-owned data by intent, so the safety net is opt-in via the
+    standalone backup command.
+
     Local state is preserved unless explicitly opted-out via --purge-data
     (SQLite DB under $XDG_DATA_HOME/omakiten) or --purge-config (active
     yaml profile + entity folders under $XDG_CONFIG_HOME/omakiten).
@@ -934,6 +995,7 @@ keys:
   cli.update.err.asset_too_large: "asset %s exceeds %d-byte size cap"
   cli.update.err.windows_unsupported: "okt update not yet supported on Windows; reinstall via install.ps1"
   cli.update.err.dev_build: "this is a dev build; rebuild from source or install a release"
+  cli.update.err.backup_failed_fmt: "pre-swap backup failed: %s; binary unchanged"
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "Brak plans. Utwórz: `okt plan create <slug> --name \"...\"`."
   tui.plans.list.header: "// SLUG             STATUS    ZROBIONE/RAZEM  %  NAZWA ‹AKTYWNA WAVE›"

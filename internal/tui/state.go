@@ -60,6 +60,11 @@ type Repositories struct {
 	Metrics      *app.MetricsService
 	Orphans      app.OrphanRepository
 	Plans        app.PlanRepository
+	// Checkpointer is invoked right before a destructive snapshot
+	// (project delete) so the live SQLite WAL frames land in the
+	// main .db file the BackupService will copy. Optional — when
+	// nil, destructive flows still snapshot (best-effort).
+	Checkpointer app.Checkpointer
 
 	// DispatchCommand invokes the root cobra command in-process and
 	// returns the JSON envelope it wrote to stdout. Notification actions
@@ -319,6 +324,22 @@ type Model struct {
 	homeProjectTags    map[int64][]domain.Tag
 	homeProjectPending map[int64]int
 	homePicker         picker.Model
+	// homeProjectDeletePendingID arms the destructive Home delete gate.
+	// First `d` press records the highlighted project's id and surfaces
+	// a confirmation hint in the status badge; second `d` on the same
+	// project runs ProjectService.Delete (with auto-backup). esc on
+	// Home (or any other key) clears the arm so the user cannot
+	// accidentally confirm a delete after moving the cursor onto a
+	// different project. Mirrors the task-delete arm-then-confirm
+	// shape rather than spinning up a notification overlay — the spec
+	// prefers an overlay but the codebase precedent (task delete +
+	// orphan rebind revert) is the simpler, well-tested gate.
+	homeProjectDeletePendingID int64
+	// homeProjectDeletePendingCounters captures the per-table snapshot
+	// resolved at arm-time so executeHomeProjectDelete can hand it to
+	// ProjectService.Delete without a second round-trip. Zeroed when
+	// pendingID clears.
+	homeProjectDeletePendingCounters domain.ProjectDeleteCounters
 	// lastProjectRoot is the root_path of the last project the user opened
 	// during the session. CLI-side cd-on-exit reads this after program.Run()
 	// returns so the parent shell wrapper can `cd` into the project.

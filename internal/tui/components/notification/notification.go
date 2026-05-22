@@ -27,12 +27,18 @@ const (
 // Options is the input to New. Notification carries every render+behaviour
 // knob (size, border, animation, position, dismiss, typing speed);
 // Text is the resolved bubble copy. Theme drives the colour resolver
-// at every View() so a runtime theme switch repaints the card.
+// at every View() so a runtime theme switch repaints the card. Catalog
+// resolves `${{intl:KEY}}` tokens declared in Notification.Actions[].Label
+// and the dismiss-footer labels — composition root passes the active TUI
+// catalog so notification YAMLs carry catalog keys rather than hardcoded
+// strings (policy: config files only reference keys; copy lives in
+// defaults/languages/*.yaml).
 type Options struct {
 	Notification config.Notification
 	Theme        config.Theme
 	Text         string
 	DetailText   string
+	Catalog      *config.Catalog
 }
 
 // Model owns the running notification notification. The parent typically
@@ -51,6 +57,7 @@ type Model struct {
 	bubble       viewport.Model
 	id           int64 // tick generation; replaced notifications get a new id
 	dismissed    bool
+	catalog      *config.Catalog
 }
 
 // DismissedMsg is sent when the notification should be removed by the parent.
@@ -103,6 +110,7 @@ func New(opts Options) (Model, tea.Cmd) {
 		detailText:   opts.DetailText,
 		bubble:       viewport.New(),
 		id:           id,
+		catalog:      opts.Catalog,
 	}
 	if *m.notification.TypingMsPerChar <= 0 {
 		m.cursor = utf8.RuneCountInString(m.currentText())
@@ -115,6 +123,16 @@ func New(opts Options) (Model, tea.Cmd) {
 		cmds = append(cmds, m.timeoutCmd())
 	}
 	return m, tea.Batch(cmds...)
+}
+
+// resolve expands `${{intl:KEY}}` tokens against the configured catalog.
+// nil catalog returns the input unchanged so tests can pass literal
+// labels without wiring the bundle.
+func (m Model) resolve(s string) string {
+	if m.catalog == nil {
+		return s
+	}
+	return m.catalog.Resolve(s)
 }
 
 // ID returns the session id assigned at New; useful for parents that
@@ -580,20 +598,20 @@ func (m Model) renderFooter(innerWidth int) string {
 	}
 	tokens := make([]keyfooter.Token, 0, 2+len(m.notification.Actions))
 	if m.hasDetailText() {
-		tokens = append(tokens, keyfooter.Token{Key: "tab", Label: "details", Primary: true})
+		tokens = append(tokens, keyfooter.Token{Key: "tab", Label: m.resolve("${{intl:notifications.footer.details}}"), Primary: true})
 	}
 	// Action buttons go first when present so the user's primary choices
 	// dominate the footer. The dismiss hint follows so esc still discoverable.
 	for i, action := range m.notification.Actions {
-		tokens = append(tokens, keyfooter.Token{Key: action.Key, Label: action.Label, Primary: i == 0 && !m.hasDetailText()})
+		tokens = append(tokens, keyfooter.Token{Key: action.Key, Label: m.resolve(action.Label), Primary: i == 0 && !m.hasDetailText()})
 	}
 	if m.dismissKeysEnabled() {
 		if key := footerDismissKey(m.notification.Dismiss.Keys); key != "" {
-			label := "close"
+			labelKey := "${{intl:notifications.footer.close}}"
 			if len(m.notification.Actions) > 0 {
-				label = "cancel"
+				labelKey = "${{intl:notifications.footer.cancel}}"
 			}
-			tokens = append(tokens, keyfooter.Token{Key: key, Label: label, Primary: !m.hasDetailText() && len(m.notification.Actions) == 0})
+			tokens = append(tokens, keyfooter.Token{Key: key, Label: m.resolve(labelKey), Primary: !m.hasDetailText() && len(m.notification.Actions) == 0})
 		}
 	}
 	if len(tokens) == 0 {

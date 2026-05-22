@@ -1,13 +1,17 @@
 package tui
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"omakiten/internal/app"
 	"omakiten/internal/domain"
+	"omakiten/internal/paths"
+	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/picker"
 )
 
@@ -91,14 +95,29 @@ func (m *Model) countPendingTasks(projectID int64) (int, error) {
 // in handleCommonKey only fires on per-project views, which Home isn't).
 // Navigation is delegated to the picker component; enter on a highlighted
 // card selects a project and switches the model to its Board.
-func (m *Model) handleHomeKey(msg tea.KeyMsg) {
+func (m *Model) handleHomeKey(msg tea.KeyMsg) tea.Cmd {
 	if msg.String() == "ctrl+h" {
 		if err := m.loadHome(); err != nil {
 			m.status = err.Error()
 		} else {
 			m.status = m.t("tui.status.refreshed")
 		}
-		return
+		return nil
+	}
+	// Destructive delete gate: lowercase `d` arms the highlighted
+	// card; a second press on the same card fires the cascade. esc
+	// (handled by the picker below as EventCancel) clears the arm.
+	// Routed before the picker so `d` is consumed instead of bubbling
+	// into the picker's filter/search handlers.
+	if msg.String() == "d" && len(m.homeProjects) > 0 {
+		project := m.homeProjects[m.homePicker.Cursor]
+		return m.armOrConfirmHomeProjectDelete(project)
+	}
+	// Any other key clears a pending delete so cursor moves cannot
+	// confirm a delete that targeted a different card.
+	if m.homeProjectDeletePendingID != 0 {
+		m.homeProjectDeletePendingID = 0
+		m.homeProjectDeletePendingCounters = domain.ProjectDeleteCounters{}
 	}
 	rowCount := len(m.homeProjects)
 	// Picker uses viewport for pgup/pgdn step + cursor scroll bounds in
@@ -118,7 +137,7 @@ func (m *Model) handleHomeKey(msg tea.KeyMsg) {
 	switch m.homePicker.LastEvent() {
 	case picker.EventSelect:
 		if rowCount == 0 {
-			return
+			return nil
 		}
 		project := m.homeProjects[m.homePicker.Cursor]
 		if err := m.selectHomeProject(project); err != nil {
@@ -128,6 +147,7 @@ func (m *Model) handleHomeKey(msg tea.KeyMsg) {
 		// Esc on Home is a no-op — quitting requires explicit q/ctrl+c so
 		// the user does not accidentally drop out of the TUI.
 	}
+	return nil
 }
 
 // selectHomeProject swaps the active project context, reloads the
@@ -366,6 +386,253 @@ func (m Model) renderHomeEmptyHint() string {
 	return m.styles.hintBox.Width(m.hintBoxWidth()).Render(strings.Join(lines, "\n"))
 }
 
+// armOrConfirmHomeProjectDelete fires the destructive Home delete
+// confirmation overlay. The first press looks up the
+// `home-project-delete-confirm` notification, resolves counters for
+// the highlighted project, and shows the card with the body
+// pre-rendered. Pressing the overlay's `D` action runs the cascade
+// (handled by handleHomeProjectDeleteAction); pressing esc dismisses.
+//
+// Degraded fallback: when the notification YAML cannot be loaded (no
+// bundle / stripped install) OR counter resolution fails, the gate
+// reverts to the status-driven arm-then-confirm shape so the
+// destructive flow stays available without the overlay.
+func (m *Model) armOrConfirmHomeProjectDelete(project domain.Project) tea.Cmd {
+	if project.ID <= 0 {
+		return nil
+	}
+	// Second-press fallback path: an existing pending id means the
+	// overlay could not be shown on the first press, so the
+	// status-driven gate is active. Honour the second `d` press by
+	// firing the delete directly with the arm-time counters snapshot.
+	if m.homeProjectDeletePendingID == project.ID {
+		counters := m.homeProjectDeletePendingCounters
+		m.homeProjectDeletePendingID = 0
+		m.homeProjectDeletePendingCounters = domain.ProjectDeleteCounters{}
+		return m.executeHomeProjectDelete(project, counters)
+	}
+	notif, ok := m.notifications["home-project-delete-confirm"]
+	if !ok {
+		// Degraded status-driven gate: still resolve counters so the
+		// second-press execute can hand them to ProjectService.Delete
+		// without re-querying. On failure fall through with zero
+		// counters; Delete tolerates the zero value (it only uses
+		// counters for the audit payload).
+		counters, _ := m.repos.Projects.ProjectDeleteCounts(m.ctx, project.ID)
+		m.homeProjectDeletePendingID = project.ID
+		m.homeProjectDeletePendingCounters = counters
+		m.status = fmt.Sprintf(m.t("tui.confirm.home_project_delete_fmt"), project.Name)
+		return nil
+	}
+	counters, err := m.repos.Projects.ProjectDeleteCounts(m.ctx, project.ID)
+	if err != nil {
+		m.homeProjectDeletePendingID = project.ID
+		m.homeProjectDeletePendingCounters = domain.ProjectDeleteCounters{}
+		m.status = fmt.Sprintf(m.t("tui.confirm.home_project_delete_fmt"), project.Name)
+		return nil
+	}
+	m.homeProjectDeletePendingID = project.ID
+	m.homeProjectDeletePendingCounters = counters
+	title := fmt.Sprintf(m.t("tui.notification.project_delete.title_fmt"), project.Name)
+	body := fmt.Sprintf(m.t("tui.notification.project_delete.body_fmt"),
+		counters.Tasks, counters.Comments, counters.Plans, counters.Tags, counters.ActivityLogEntries)
+	bm, _ := notification.New(notification.Options{
+		Notification: notif,
+		Theme:        m.theme,
+		Text:         title + "\n\n" + body,
+		Catalog:      m.repos.Catalog,
+	})
+	m.notification = &bm
+	return nil
+}
+
+// handleHomeProjectDeleteAction is the slug-routed counterpart of
+// handleNotificationAction for the home-project-delete-confirm
+// overlay. The "confirm" action id fires ProjectService.Delete
+// against the still-armed project; any other id (today: only
+// "cancel") clears the pending state without side effects. Returns
+// the tea.Cmd that drives the (asynchronous) delete so the bubbletea
+// runtime can schedule the IO off the Update goroutine — the
+// destructive flow's checkpoint + backup + cascade transaction can
+// take seconds on contended SQLite handles, and running it inline in
+// Update freezes the entire TUI render loop until it returns.
+func (m *Model) handleHomeProjectDeleteAction(action notification.ActionMsg) tea.Cmd {
+	pendingID := m.homeProjectDeletePendingID
+	pendingCounters := m.homeProjectDeletePendingCounters
+	m.homeProjectDeletePendingID = 0
+	m.homeProjectDeletePendingCounters = domain.ProjectDeleteCounters{}
+	if action.ActionID != "confirm" || pendingID == 0 {
+		return nil
+	}
+	var project domain.Project
+	for _, p := range m.homeProjects {
+		if p.ID == pendingID {
+			project = p
+			break
+		}
+	}
+	if project.ID == 0 {
+		return nil
+	}
+	return m.executeHomeProjectDelete(project, pendingCounters)
+}
+
+// homeProjectDeleteResultMsg carries the outcome of the asynchronous
+// ProjectService.Delete invocation back to the bubbletea Update loop.
+// The destructive sequence (checkpoint → backup file copy → cascade
+// transaction → audit emission) can block for seconds on contended
+// SQLite handles, so executeHomeProjectDelete returns a tea.Cmd that
+// runs the work off the Update goroutine and emits this message once
+// the call returns. Update folds the result into m.status + reloads
+// the Home read-model.
+type homeProjectDeleteResultMsg struct {
+	project   domain.Project
+	result    app.ProjectDeleteResult
+	err       error
+	audit     string
+	pruneWarn error
+}
+
+// executeHomeProjectDelete prepares the destructive cascade and
+// returns the tea.Cmd that runs it asynchronously. Synchronous prep
+// (backup service construction + degraded-path counter re-query)
+// stays on the Update goroutine because both touch m.repos directly;
+// the long-running steps (checkpoint, file copy, transaction) move
+// inside the returned Cmd so the bubbletea render loop keeps
+// drawing while ProjectService.Delete runs.
+//
+// auditWarn is captured into a local buffer (never stderr — the
+// bubbletea alt-screen lives on stdout and stderr writes leak under
+// the render). Anything the service logs (checkpoint failure, audit
+// emission failure, payload marshal failure) lands on m.status via
+// the result handler so the operator still sees the discrepancy
+// without a corrupted draw frame.
+func (m *Model) executeHomeProjectDelete(project domain.Project, counters domain.ProjectDeleteCounters) tea.Cmd {
+	var pruneWarn error
+	backup, err := m.buildHomeBackupService(func(perr error) { pruneWarn = perr })
+	if err != nil {
+		m.status = err.Error()
+		return nil
+	}
+	// Degraded-path re-query: arm-time counter resolution swallows
+	// errors (armOrConfirmHomeProjectDelete:415-433) so a transient
+	// SQLite hiccup lands a zero-value counter snapshot here. Without
+	// the re-query the project.removed audit payload would claim
+	// "deleted empty project" for a project with thousands of rows.
+	// One extra round-trip on a rare branch is cheaper than an audit
+	// lie. A genuinely empty project re-resolves to the same zeros,
+	// so the value is correct either way.
+	if counters == (domain.ProjectDeleteCounters{}) {
+		if requeried, qerr := m.repos.Projects.ProjectDeleteCounts(m.ctx, project.ID); qerr == nil {
+			counters = requeried
+		}
+	}
+	// Render an immediate "deleting…" hint so the user sees the press
+	// landed before the IO completes; the final status replaces this
+	// on result.
+	m.status = fmt.Sprintf(m.t("tui.status.deleting_project_fmt"), project.Name)
+
+	ctx := m.ctx
+	repos := m.repos
+	return func() tea.Msg {
+		var auditBuf bytes.Buffer
+		svc := app.NewProjectService(repos.Projects, backup, repos.Events).
+			WithCheckpointer(repos.Checkpointer).
+			SetAuditWarnWriter(&auditBuf)
+		result, err := svc.Delete(ctx, project.ID, counters)
+		return homeProjectDeleteResultMsg{
+			project:   project,
+			result:    result,
+			err:       err,
+			audit:     auditBuf.String(),
+			pruneWarn: pruneWarn,
+		}
+	}
+}
+
+// handleHomeProjectDeleteResult folds the asynchronous delete outcome
+// into m.status and the Home read-model. Mirrors the legacy
+// synchronous tail of executeHomeProjectDelete (status formatting +
+// prune warning append + audit drain) so the user-visible surface
+// stays identical; only the threading model changed.
+func (m *Model) handleHomeProjectDeleteResult(msg homeProjectDeleteResultMsg) {
+	if msg.err != nil {
+		m.status = msg.err.Error()
+		drainAuditString(&m.status, msg.audit)
+		return
+	}
+	if err := m.loadHome(); err != nil {
+		m.status = err.Error()
+		drainAuditString(&m.status, msg.audit)
+		return
+	}
+	m.status = fmt.Sprintf(m.t("tui.status.project_deleted_fmt"), msg.result.Project.Slug, msg.result.BackupPath)
+	if msg.pruneWarn != nil {
+		// Append the prune warning so the operator still sees the
+		// snapshot landed AND knows the rotation pass left old
+		// snapshots behind. The TUI cannot write to stderr (it would
+		// corrupt the bubbletea render) so the status surface is the
+		// only channel the operator can observe.
+		m.status += " · " + fmt.Sprintf(m.t("cli.db.backup.prune_warn_fmt"), msg.pruneWarn.Error())
+	}
+	drainAuditString(&m.status, msg.audit)
+}
+
+// drainAuditString appends any audit-warning lines captured in audit
+// to status, joined with " · " so the single-line status surface
+// stays intact. ProjectService.Delete writes each warning via
+// fmt.Fprintf with a "\n" terminator, and a single Delete can emit
+// up to three (checkpoint failure, payload marshal failure, audit
+// emission failure). Splitting on "\n" folds the multi-line buffer
+// onto one status row instead of letting embedded newlines fracture
+// the bubbletea render. No-op when audit is empty.
+func drainAuditString(status *string, audit string) {
+	audit = strings.TrimSpace(audit)
+	if audit == "" {
+		return
+	}
+	parts := strings.Split(audit, "\n")
+	cleaned := parts[:0]
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			cleaned = append(cleaned, t)
+		}
+	}
+	if len(cleaned) == 0 {
+		return
+	}
+	joined := strings.Join(cleaned, " · ")
+	if *status == "" {
+		*status = joined
+		return
+	}
+	*status += " · " + joined
+}
+
+// buildHomeBackupService constructs a BackupService against the TUI's
+// resolved DB path + the active snapshot's retention setting. Returns
+// an error when the paths package cannot resolve the backup directory
+// (rare; surfaces as a status hint rather than panicking). pruneWarn
+// receives any failure from the post-snapshot prune pass so the caller
+// can surface it through the TUI status surface — stderr is unsafe
+// while bubbletea is rendering.
+func (m *Model) buildHomeBackupService(pruneWarn func(error)) (app.BackupRunner, error) {
+	destDir, err := paths.BackupDir()
+	if err != nil {
+		return nil, err
+	}
+	retention := 0
+	if snap := m.repos.activeSnapshot(); snap != nil {
+		retention = snap.Settings().Backup.RetentionCount
+	}
+	return app.NewBackupService(app.BackupOptions{
+		SourcePath: m.repos.DBPath,
+		DestDir:    destDir,
+		Retention:  retention,
+		PruneWarn:  pruneWarn,
+	}), nil
+}
+
 // homeFooterTokens returns the footer hint shown while on Home as the
 // structured token list `renderFooter` expects. Kept inline (not in
 // render_chrome) so the Home-specific keymap lives next to the rest
@@ -377,13 +644,21 @@ func (m Model) homeFooterTokens() []footerToken {
 			m.helpToken(),
 		}
 	}
-	return []footerToken{
+	tokens := []footerToken{
 		{key: "enter", label: m.t("tui.footer.open"), primary: true},
 		{key: "up/down", label: m.t("tui.footer.move")},
-		{key: "ctrl+h", label: m.t("tui.footer.refresh")},
-		{key: "q", label: m.t("tui.footer.quit")},
-		m.helpToken(),
 	}
+	if m.homeProjectDeletePendingID != 0 {
+		tokens = append(tokens, footerToken{key: "d", label: m.t("tui.footer.confirm_delete_project"), primary: true})
+	} else {
+		tokens = append(tokens, footerToken{key: "d", label: m.t("tui.footer.delete_project")})
+	}
+	tokens = append(tokens,
+		footerToken{key: "ctrl+h", label: m.t("tui.footer.refresh")},
+		footerToken{key: "q", label: m.t("tui.footer.quit")},
+		m.helpToken(),
+	)
+	return tokens
 }
 
 // homeHeaderTitle renders the chromeless Home title used by render_chrome

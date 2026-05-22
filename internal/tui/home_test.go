@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"omakiten/internal/config"
 	"strings"
 	"testing"
@@ -15,7 +17,84 @@ import (
 	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
+	"omakiten/internal/tui/components/notification"
 )
+
+// pumpAsync drives any tea.Cmd the model returned through to its
+// terminal Msg (and any cascaded Cmds it produces) by folding each
+// emitted Msg back into Update. Used by the async Home delete tests
+// where ProjectService.Delete now runs off the Update goroutine via
+// a returned Cmd — the test driver has to simulate the bubbletea
+// runtime's "run Cmd → feed Msg back" loop to land the result.
+func pumpAsync(t *testing.T, m Model, cmd tea.Cmd) Model {
+	t.Helper()
+	for cmd != nil {
+		msg := cmd()
+		if msg == nil {
+			return m
+		}
+		next, nextCmd := m.Update(msg)
+		m = next.(Model)
+		cmd = nextCmd
+	}
+	return m
+}
+
+// busyCheckpointer always fails Checkpoint with a pinned error so the
+// TUI delete flow's auditWarn write path is exercised.
+type busyCheckpointer struct {
+	err   error
+	calls int
+}
+
+func (b *busyCheckpointer) Checkpoint(context.Context) error {
+	b.calls++
+	return b.err
+}
+
+// firstCountsFailRepo wraps a ProjectRepository and fails the first
+// ProjectDeleteCounts call (mirroring a transient SQLite hiccup at
+// arm-time); subsequent calls delegate to the real repo so the
+// re-query path lands the actual counts.
+type firstCountsFailRepo struct {
+	app.ProjectRepository
+	calls int
+}
+
+func (r *firstCountsFailRepo) ProjectDeleteCounts(ctx context.Context, projectID int64) (domain.ProjectDeleteCounters, error) {
+	r.calls++
+	if r.calls == 1 {
+		return domain.ProjectDeleteCounters{}, errors.New("transient sqlite hiccup")
+	}
+	return r.ProjectRepository.ProjectDeleteCounts(ctx, projectID)
+}
+
+// recordingEvents captures every RecordEntityEvent payload so tests
+// can assert the audit truthfulness of post-commit emissions. Other
+// methods delegate to the embedded EventRepository (the real store).
+type recordingEvents struct {
+	app.EventRepository
+	calls []recordingEventCall
+}
+
+type recordingEventCall struct {
+	EntityType string
+	EntityID   int64
+	ProjectID  int64
+	EventType  string
+	Payload    string
+}
+
+func (r *recordingEvents) RecordEntityEvent(ctx context.Context, entityType string, entityID int64, projectID int64, eventType string, payload string) error {
+	r.calls = append(r.calls, recordingEventCall{
+		EntityType: entityType,
+		EntityID:   entityID,
+		ProjectID:  projectID,
+		EventType:  eventType,
+		Payload:    payload,
+	})
+	return r.EventRepository.RecordEntityEvent(ctx, entityType, entityID, projectID, eventType, payload)
+}
 
 // TestNewModelWithEmptyProjectOpensHome covers AC1/AC14: launching the TUI
 // without a resolvable project must land on the multi-project Home view
@@ -212,6 +291,569 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 	}
 	if got.status != "Refreshed" {
 		t.Fatalf("status = %q, want %q", got.status, "Refreshed")
+	}
+}
+
+// TestHomeProjectDeleteArmThenConfirm covers PR3 of #191: the
+// destructive Home delete gate arms on the first `d` (status shows the
+// confirmation hint, project still in DB) and fires the cascade on
+// the second `d` (project gone, status shows the backup path).
+func TestHomeProjectDeleteArmThenConfirm(t *testing.T) {
+	ctx := context.Background()
+	dbDir := t.TempDir()
+	stateDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateDir)
+
+	store := snapstore.Open(t, dbDir+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
+	if err != nil {
+		t.Fatalf("UpsertProject(doomed) error = %v", err)
+	}
+	if _, err := store.UpsertProject(ctx, "Survivor", "survivor", "/work/survivor"); err != nil {
+		t.Fatalf("UpsertProject(survivor) error = %v", err)
+	}
+
+	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+		Tasks:        store,
+		Projects:     store,
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Tags:         store,
+		Events:       store,
+		DBPath:       dbDir + "/omakiten.db",
+		Catalog:      newTestCatalog(t),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+
+	// First `d` arms the gate but does not delete.
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	armed := updated.(Model)
+	if armed.homeProjectDeletePendingID == 0 {
+		t.Fatalf("first `d` did not arm home delete gate")
+	}
+	if armed.homeProjectDeletePendingID != doomed.ID {
+		t.Fatalf("pending id = %d, want %d (cursor on first card)", armed.homeProjectDeletePendingID, doomed.ID)
+	}
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err != nil {
+		t.Fatalf("project gone after arm-only press: %v", err)
+	}
+
+	// Second `d` confirms; the cascade fires and the project is gone.
+	updated, cmd := armed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	deleted := pumpAsync(t, updated.(Model), cmd)
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err == nil {
+		t.Fatalf("project still present after confirm")
+	}
+	if deleted.homeProjectDeletePendingID != 0 {
+		t.Fatalf("pending id = %d after confirm, want 0", deleted.homeProjectDeletePendingID)
+	}
+	if !strings.Contains(deleted.status, "doomed") || !strings.Contains(deleted.status, "backup") {
+		t.Fatalf("post-delete status = %q, want project slug + backup mention", deleted.status)
+	}
+}
+
+// TestHomeProjectDeleteOverlayConfirm exercises the notification-overlay
+// path (PR3 #191 §E): `d` shows the home-project-delete-confirm card
+// with pre-resolved counters, `D` action fires the cascade in-process,
+// `esc` dismisses without touching state. Mirrors the YAML wiring with
+// an inline Notification struct so the test stays hermetic.
+func TestHomeProjectDeleteOverlayConfirm(t *testing.T) {
+	ctx := context.Background()
+	dbDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	store := snapstore.Open(t, dbDir+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+
+	notif := config.Notification{
+		Name:            "home-project-delete-confirm",
+		Size:            config.NotificationSize{Width: 60, Height: 12},
+		Background:      "transparent",
+		FrameIntervalMs: 100,
+		Style:           config.NotificationStyleRounded,
+		Border:          config.NotificationBorder{Visible: ptrBool(true), Width: 1, Color: "#ff0000"},
+		Animation:       []config.NotificationFrame{{Frame: 0, Value: ""}},
+		Bubble:          config.NotificationBubble{TailSide: config.NotificationTailBottom},
+		Padding:         zeroNotificationPadding(),
+		AutoHeight:      ptrBool(false),
+		PaddingInside:   ptrBool(true),
+		FooterVisible:   ptrBool(true),
+		Position:        config.NotificationPositionCenter,
+		Dismiss:         config.NotificationDismiss{Mode: config.NotificationDismissModeKey, Keys: []string{"esc"}},
+		TypingMsPerChar: ptrInt(0),
+		Actions: []config.NotificationAction{
+			{Key: "D", ID: "confirm", Label: "Delete"},
+		},
+	}
+	binding := NotificationBinding{Notifications: map[string]config.Notification{notif.Name: notif}}
+
+	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+		Tasks:        store,
+		Projects:     store,
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Tags:         store,
+		Events:       store,
+		DBPath:       dbDir + "/omakiten.db",
+		Catalog:      newTestCatalog(t),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, binding)
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.width = 80
+	model.height = 24
+
+	// First `d` shows the overlay; project still on disk.
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	armed := updated.(Model)
+	if armed.notification == nil {
+		t.Fatalf("first `d` did not spawn the home-project-delete-confirm overlay")
+	}
+	if armed.homeProjectDeletePendingID != doomed.ID {
+		t.Fatalf("pending id = %d, want %d", armed.homeProjectDeletePendingID, doomed.ID)
+	}
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err != nil {
+		t.Fatalf("project gone after overlay show: %v", err)
+	}
+
+	// `D` (uppercase) on a settled notification returns a Cmd whose
+	// payload is the notification.ActionMsg the parent dispatches in
+	// the next tick. Mirror bubbletea's runtime: invoke the Cmd, then
+	// feed the resulting msg back through Update. The action handler
+	// itself returns the async delete Cmd, so pumpAsync drives the
+	// whole chain to the terminal result.
+	_, cmd := armed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'D'}})
+	if cmd == nil {
+		t.Fatalf("D on settled overlay returned no Cmd")
+	}
+	actionMsg := cmd()
+	if _, ok := actionMsg.(notification.ActionMsg); !ok {
+		t.Fatalf("Cmd produced %T, want notification.ActionMsg", actionMsg)
+	}
+	updated, actionCmd := armed.Update(actionMsg)
+	deleted := pumpAsync(t, updated.(Model), actionCmd)
+	if deleted.notification != nil {
+		t.Fatalf("notification still set after confirm action")
+	}
+	if deleted.homeProjectDeletePendingID != 0 {
+		t.Fatalf("pending id = %d after confirm, want 0", deleted.homeProjectDeletePendingID)
+	}
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err == nil {
+		t.Fatalf("project still present after overlay confirm")
+	}
+}
+
+// TestHomeProjectDeleteOverlayEscClears verifies that esc inside the
+// overlay clears both the notification slot and the pending project
+// state (so a later `d` on a different card does not confirm a stale
+// delete).
+func TestHomeProjectDeleteOverlayEscClears(t *testing.T) {
+	ctx := context.Background()
+	dbDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	store := snapstore.Open(t, dbDir+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() error = %v", err)
+	}
+	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
+	if err != nil {
+		t.Fatalf("UpsertProject() error = %v", err)
+	}
+
+	notif := config.Notification{
+		Name:            "home-project-delete-confirm",
+		Size:            config.NotificationSize{Width: 60, Height: 12},
+		Background:      "transparent",
+		FrameIntervalMs: 100,
+		Style:           config.NotificationStyleRounded,
+		Border:          config.NotificationBorder{Visible: ptrBool(true), Width: 1, Color: "#ff0000"},
+		Animation:       []config.NotificationFrame{{Frame: 0, Value: ""}},
+		Bubble:          config.NotificationBubble{TailSide: config.NotificationTailBottom},
+		Padding:         zeroNotificationPadding(),
+		AutoHeight:      ptrBool(false),
+		PaddingInside:   ptrBool(true),
+		FooterVisible:   ptrBool(true),
+		Position:        config.NotificationPositionCenter,
+		Dismiss:         config.NotificationDismiss{Mode: config.NotificationDismissModeKey, Keys: []string{"esc"}},
+		TypingMsPerChar: ptrInt(0),
+		Actions: []config.NotificationAction{
+			{Key: "D", ID: "confirm", Label: "Delete"},
+		},
+	}
+	binding := NotificationBinding{Notifications: map[string]config.Notification{notif.Name: notif}}
+
+	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+		Tasks:        store,
+		Projects:     store,
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Tags:         store,
+		Events:       store,
+		DBPath:       dbDir + "/omakiten.db",
+		Catalog:      newTestCatalog(t),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, binding)
+	if err != nil {
+		t.Fatalf("NewModel() error = %v", err)
+	}
+	model.width = 80
+	model.height = 24
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	armed := updated.(Model)
+	if armed.notification == nil {
+		t.Fatalf("overlay did not spawn")
+	}
+
+	// esc on the overlay fires DismissedMsg (per the YAML's
+	// dismiss.keys list). dispatchNotification clears both the
+	// notification slot and the pending project id.
+	_, cmd := armed.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Fatalf("esc on settled overlay returned no Cmd")
+	}
+	dismissMsg := cmd()
+	if _, ok := dismissMsg.(notification.DismissedMsg); !ok {
+		t.Fatalf("Cmd produced %T, want notification.DismissedMsg", dismissMsg)
+	}
+	updated, _ = armed.Update(dismissMsg)
+	cancelled := updated.(Model)
+	if cancelled.notification != nil {
+		t.Fatalf("notification still set after esc")
+	}
+	if cancelled.homeProjectDeletePendingID != 0 {
+		t.Fatalf("pending id = %d after esc, want 0", cancelled.homeProjectDeletePendingID)
+	}
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err != nil {
+		t.Fatalf("project removed despite esc dismissal: %v", err)
+	}
+}
+
+// TestHomeProjectDeleteSurfacesAuditWarn pins #191 review finding 7959:
+// audit-trail warnings emitted from ProjectService.Delete (checkpoint
+// failure, payload marshal failure, audit emission failure) must land
+// on the TUI status surface rather than os.Stderr — stderr writes
+// leak under the bubbletea alt-screen render. Drives a forced
+// Checkpoint failure through the status-driven delete path and
+// asserts the warning text appears appended to m.status alongside
+// the success line.
+func TestHomeProjectDeleteSurfacesAuditWarn(t *testing.T) {
+	ctx := context.Background()
+	dbDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	store := snapstore.Open(t, dbDir+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle: %v", err)
+	}
+	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
+	if err != nil {
+		t.Fatalf("UpsertProject(doomed): %v", err)
+	}
+
+	cp := &busyCheckpointer{err: errors.New("SQLITE_BUSY: foreign writer holds the WAL")}
+
+	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+		Tasks:        store,
+		Projects:     store,
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Tags:         store,
+		Events:       store,
+		Checkpointer: cp,
+		DBPath:       dbDir + "/omakiten.db",
+		Catalog:      newTestCatalog(t),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+
+	// Empty NotificationBinding forces the status-driven fallback;
+	// two `d` presses arm then confirm. The second press now returns
+	// an async Cmd — pumpAsync drives the result Msg back through
+	// Update to land the final status.
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	updated, cmd := updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	final := pumpAsync(t, updated.(Model), cmd)
+
+	if cp.calls != 1 {
+		t.Fatalf("Checkpointer.Checkpoint calls = %d, want 1", cp.calls)
+	}
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err == nil {
+		t.Fatalf("project still present after confirm; auditWarn fix must not abort the cascade")
+	}
+	if !strings.Contains(final.status, "wal_checkpoint") {
+		t.Fatalf("status missing checkpoint warning; auditWarn must land on m.status not stderr.\nstatus = %q", final.status)
+	}
+	if !strings.Contains(final.status, "doomed") {
+		t.Fatalf("status missing project slug — success line dropped?\nstatus = %q", final.status)
+	}
+}
+
+// TestHomeProjectDeleteAuditWarnSurvivesBackupFailure pins #191 review
+// finding (warning): when ProjectService.Delete fires its checkpoint
+// auditWarn write but the subsequent BackupService.Run fails, the TUI
+// must NOT discard the buffered warning. Without the drainAuditWarn
+// fix, the early-return at executeHomeProjectDelete overwrites
+// m.status with the backup error and the WAL-drift signal disappears.
+// Drives a forced checkpoint failure + a forced backup failure (bogus
+// DBPath); asserts m.status carries both signals.
+func TestHomeProjectDeleteAuditWarnSurvivesBackupFailure(t *testing.T) {
+	ctx := context.Background()
+	dbDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	store := snapstore.Open(t, dbDir+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle: %v", err)
+	}
+	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
+	if err != nil {
+		t.Fatalf("UpsertProject(doomed): %v", err)
+	}
+
+	cp := &busyCheckpointer{err: errors.New("SQLITE_BUSY: foreign writer holds the WAL")}
+
+	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+		Tasks:        store,
+		Projects:     store,
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Tags:         store,
+		Events:       store,
+		Checkpointer: cp,
+		// Bogus DBPath — buildHomeBackupService threads it into
+		// BackupService.SourcePath; os.Stat fails inside Run.
+		DBPath:  dbDir + "/does-not-exist.db",
+		Catalog: newTestCatalog(t),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	updated, cmd := updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	final := pumpAsync(t, updated.(Model), cmd)
+
+	if cp.calls != 1 {
+		t.Fatalf("Checkpointer.Checkpoint calls = %d, want 1 (must fire before backup)", cp.calls)
+	}
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err != nil {
+		t.Fatalf("project gone despite aborted backup: %v", err)
+	}
+	if !strings.Contains(final.status, "backup") {
+		t.Fatalf("status missing backup-failure signal.\nstatus = %q", final.status)
+	}
+	if !strings.Contains(final.status, "wal_checkpoint") {
+		t.Fatalf("status missing checkpoint warning — audit buffer was dropped on the backup-error early return.\nstatus = %q", final.status)
+	}
+}
+
+// TestHomeProjectDeleteOverlayPathSurfacesAuditWarn pins #191 review
+// finding (info): the overlay branch of executeHomeProjectDelete shares
+// the same auditWarn wiring as the status-driven branch; both must land
+// the warning on m.status. Mirrors the overlay-confirm fixture with a
+// busyCheckpointer so the audit write path fires under the action
+// dispatch.
+func TestHomeProjectDeleteOverlayPathSurfacesAuditWarn(t *testing.T) {
+	ctx := context.Background()
+	dbDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	store := snapstore.Open(t, dbDir+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle: %v", err)
+	}
+	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
+	if err != nil {
+		t.Fatalf("UpsertProject(doomed): %v", err)
+	}
+
+	cp := &busyCheckpointer{err: errors.New("SQLITE_BUSY: foreign writer holds the WAL")}
+
+	notif := config.Notification{
+		Name:            "home-project-delete-confirm",
+		Size:            config.NotificationSize{Width: 60, Height: 12},
+		Background:      "transparent",
+		FrameIntervalMs: 100,
+		Style:           config.NotificationStyleRounded,
+		Border:          config.NotificationBorder{Visible: ptrBool(true), Width: 1, Color: "#ff0000"},
+		Animation:       []config.NotificationFrame{{Frame: 0, Value: ""}},
+		Bubble:          config.NotificationBubble{TailSide: config.NotificationTailBottom},
+		Padding:         zeroNotificationPadding(),
+		AutoHeight:      ptrBool(false),
+		PaddingInside:   ptrBool(true),
+		FooterVisible:   ptrBool(true),
+		Position:        config.NotificationPositionCenter,
+		Dismiss:         config.NotificationDismiss{Mode: config.NotificationDismissModeKey, Keys: []string{"esc"}},
+		TypingMsPerChar: ptrInt(0),
+		Actions: []config.NotificationAction{
+			{Key: "D", ID: "confirm", Label: "Delete"},
+		},
+	}
+	binding := NotificationBinding{Notifications: map[string]config.Notification{notif.Name: notif}}
+
+	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+		Tasks:        store,
+		Projects:     store,
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Tags:         store,
+		Events:       store,
+		Checkpointer: cp,
+		DBPath:       dbDir + "/omakiten.db",
+		Catalog:      newTestCatalog(t),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, binding)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	model.width = 80
+	model.height = 24
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	armed := updated.(Model)
+	if armed.notification == nil {
+		t.Fatalf("overlay did not spawn")
+	}
+
+	_, cmd := armed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'D'}})
+	if cmd == nil {
+		t.Fatalf("D on settled overlay returned no Cmd")
+	}
+	actionMsg := cmd()
+	if _, ok := actionMsg.(notification.ActionMsg); !ok {
+		t.Fatalf("Cmd produced %T, want notification.ActionMsg", actionMsg)
+	}
+	updated, actionCmd := armed.Update(actionMsg)
+	final := pumpAsync(t, updated.(Model), actionCmd)
+
+	if cp.calls != 1 {
+		t.Fatalf("Checkpointer.Checkpoint calls = %d, want 1", cp.calls)
+	}
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err == nil {
+		t.Fatalf("project still present after overlay confirm")
+	}
+	if !strings.Contains(final.status, "wal_checkpoint") {
+		t.Fatalf("status missing checkpoint warning on the overlay path.\nstatus = %q", final.status)
+	}
+	if !strings.Contains(final.status, "doomed") {
+		t.Fatalf("status missing project slug — success line dropped?\nstatus = %q", final.status)
+	}
+}
+
+// TestHomeProjectDeleteRequeriesZeroCountersForAuditTruth pins the
+// degraded-path fix: when arm-time ProjectDeleteCounts fails (transient
+// SQLite hiccup), armOrConfirmHomeProjectDelete stashes the zero value
+// and the user proceeds via second press. Without the re-query, the
+// project.removed audit payload claims "deleted empty project" for a
+// project carrying real rows. The re-query inside executeHomeProjectDelete
+// pays one extra round-trip on the rare degraded branch and the audit
+// reflects the actual pre-delete state.
+func TestHomeProjectDeleteRequeriesZeroCountersForAuditTruth(t *testing.T) {
+	ctx := context.Background()
+	dbDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	store := snapstore.Open(t, dbDir+"/omakiten.db")
+	if err := store.ImportBundle(ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle: %v", err)
+	}
+	doomed, err := store.UpsertProject(ctx, "Doomed", "doomed", "/work/doomed")
+	if err != nil {
+		t.Fatalf("UpsertProject(doomed): %v", err)
+	}
+	// Three tasks so a real ProjectDeleteCounts call returns
+	// Tasks: 3 — distinguishable from the zero-value claim under the
+	// degraded path.
+	for i := 0; i < 3; i++ {
+		if _, err := store.CreateTask(ctx, doomed.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+			t.Fatalf("CreateTask(%d): %v", i, err)
+		}
+	}
+
+	wrappedRepo := &firstCountsFailRepo{ProjectRepository: store}
+	recorder := &recordingEvents{EventRepository: store}
+
+	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
+		Tasks:        store,
+		Projects:     wrappedRepo,
+		Cache:        runtimecache.Install(0, store.Snapshot()),
+		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Comments:     store,
+		Dependencies: store,
+		Entries:      store,
+		Tags:         store,
+		Events:       recorder,
+		DBPath:       dbDir + "/omakiten.db",
+		Catalog:      newTestCatalog(t),
+	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+
+	// First `d`: arm time. wrappedRepo errors the first call → zeros
+	// stashed in pending counters. Second `d`: execute path detects
+	// zero-value counters and re-queries; second call succeeds (real
+	// counts). pumpAsync drives the async delete Cmd through to the
+	// result Msg so the recorder captures the post-commit payload.
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	updated, cmd := updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	_ = pumpAsync(t, updated.(Model), cmd)
+
+	if _, err := store.FindProjectByID(ctx, doomed.ID); err == nil {
+		t.Fatalf("project still present after second press")
+	}
+	if wrappedRepo.calls < 2 {
+		t.Fatalf("ProjectDeleteCounts calls = %d, want >= 2 (arm-time + execute-time re-query)", wrappedRepo.calls)
+	}
+
+	var removed *recordingEventCall
+	for i := range recorder.calls {
+		if recorder.calls[i].EventType == domain.EventTypeProjectRemoved {
+			removed = &recorder.calls[i]
+			break
+		}
+	}
+	if removed == nil {
+		t.Fatalf("project.removed event not recorded; calls = %+v", recorder.calls)
+	}
+	var payload struct {
+		Counters domain.ProjectDeleteCounters `json:"counters"`
+	}
+	if err := json.Unmarshal([]byte(removed.Payload), &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.Counters.Tasks != 3 {
+		t.Fatalf("audit payload counters.Tasks = %d, want 3 — degraded re-query did not land", payload.Counters.Tasks)
 	}
 }
 

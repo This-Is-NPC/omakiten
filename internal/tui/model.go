@@ -107,6 +107,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, cmd
 	}
 	switch msg := msg.(type) {
+	case homeProjectDeleteResultMsg:
+		// Asynchronous tail of the Home delete flow — folds the
+		// ProjectService.Delete outcome into m.status + reloads the
+		// read-model. Running on the main goroutine is fine: the
+		// Delete itself already ran on a worker via the tea.Cmd
+		// returned by executeHomeProjectDelete; what reaches here is
+		// the result envelope, not the blocking IO.
+		m.handleHomeProjectDeleteResult(msg)
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -182,8 +191,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if m.onHome() {
-			m.handleHomeKey(msg)
-			return m, nil
+			cmd := m.handleHomeKey(msg)
+			return m, cmd
 		}
 		if m.handleCommonKey(msg) {
 			m.refreshAfterViewChange(prevNav)
@@ -488,6 +497,7 @@ func (m Model) dispatchNotification(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			Theme:        m.theme,
 			Text:         showMsg.Text,
 			DetailText:   showMsg.DetailText,
+			Catalog:      m.repos.Catalog,
 		})
 		m.notification = &bm
 		return m, cmd, true
@@ -496,6 +506,12 @@ func (m Model) dispatchNotification(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if m.notification != nil && dm.ID == m.notification.ID() {
 			m.notification = nil
 		}
+		// esc on the home-project-delete-confirm overlay must clear the
+		// pending project id as well as the notification slot — otherwise
+		// a stray ActionMsg arriving from a re-spawn would still hit the
+		// "execute" path with the original target.
+		m.homeProjectDeletePendingID = 0
+		m.homeProjectDeletePendingCounters = domain.ProjectDeleteCounters{}
 		m.revertConfigSwap()
 		return m, nil, true
 	}
@@ -507,6 +523,15 @@ func (m Model) dispatchNotification(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		// the revert-on-dismiss intent so a later esc on a different
 		// notification doesn't accidentally roll back the active config.
 		m.pendingSwapRevertPath = ""
+		// Home project-delete overlay: the YAML carries no Command (no
+		// DispatchCommand re-open of the SQLite handle); the action is
+		// routed through the same ProjectService.Delete the second-`d`
+		// fallback uses so the TUI's already-open store handle stays
+		// authoritative.
+		if am.Slug == "home-project-delete-confirm" {
+			cmd := m.handleHomeProjectDeleteAction(am)
+			return m, cmd, true
+		}
 		m.handleNotificationAction(am)
 		return m, nil, true
 	}

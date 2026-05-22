@@ -22,6 +22,26 @@ import (
 	"omakiten/internal/lifecycle"
 )
 
+// updateBackupForOpts constructs the pre-swap BackupService through
+// the shared buildCLIBackupService helper in strict mode — the
+// auto-backup is non-optional per #191 AC #36 / #39 so any failure to
+// resolve the backup dir or load the bundle aborts the update before
+// the swap. Callers must propagate the error to the JSON envelope so
+// the user sees the underlying cause; silent bypass to `client.Backup
+// = nil` (the pre-fix shape) would let the destructive flow run
+// without its safety net.
+func updateBackupForOpts(cmd *cobra.Command, opts *runtimeOptions) (updateBackupRunner, error) {
+	dbPath, err := opts.resolvedDBPath()
+	if err != nil {
+		return nil, err
+	}
+	svc, _, err := buildCLIBackupService(cmd, opts, dbPath, true)
+	if err != nil {
+		return nil, err
+	}
+	return svc, nil
+}
+
 // updateRepo is the GitHub repository the in-binary updater polls
 // for release tags. Constant — tests stub the LatestFetcher /
 // AssetDownloader interfaces instead of rewiring the repo string.
@@ -69,6 +89,27 @@ type updateClient struct {
 	// os.Executable(); tests override to point at a tmp file so
 	// assertions can read the post-swap bytes.
 	BinaryPath string
+	// Backup is a direct backup runner injection. Production wires
+	// BackupFactory instead so resolution happens lazily past the
+	// --check / noop short-circuits. Kept for direct tests that
+	// exercise the swap path without going through a factory.
+	Backup updateBackupRunner
+	// BackupFactory resolves the pre-swap backup runner only when
+	// the swap path is actually about to fire. Wired by RunE so an
+	// unresolvable BackupDir (or unloadable bundle) does not abort
+	// `okt update --check` and `okt update` on a current binary
+	// (noop) — both paths skip the binary swap and therefore do not
+	// need a recovery snapshot. nil falls back to Backup.
+	BackupFactory func(ctx context.Context) (updateBackupRunner, error)
+}
+
+// updateBackupRunner is the narrow port runUpdate uses to invoke the
+// pre-swap snapshot. Local alias for app.BackupRunner so this file
+// does not depend on the app package directly (the cli already
+// imports app elsewhere, but the narrow alias keeps the test wiring
+// terse).
+type updateBackupRunner interface {
+	Run(ctx context.Context) (string, error)
 }
 
 func newUpdateCommand(opts *runtimeOptions) *cobra.Command {
@@ -86,6 +127,9 @@ func newUpdateCommand(opts *runtimeOptions) *cobra.Command {
 				client, err := defaultUpdateClient(cmd.Root().Version)
 				if err != nil {
 					return nil, err
+				}
+				client.BackupFactory = func(_ context.Context) (updateBackupRunner, error) {
+					return updateBackupForOpts(cmd, opts)
 				}
 				return runUpdate(ctx, client, updateInputs{Check: check, Yes: yes})
 			})
@@ -166,6 +210,40 @@ func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, e
 		}
 	}
 
+	// Pre-swap snapshot: write a recovery .db under StateDir/backups
+	// BEFORE any network IO. Backup failure aborts the update so the
+	// running binary stays intact and the user retries once the
+	// underlying issue is fixed. Pre-network ordering avoids the race
+	// where the new binary has already landed on disk but the backup
+	// pass is still running.
+	//
+	// BackupFactory resolves lazily — only this path needs the
+	// snapshot, so `okt update --check` and the noop fast path skip
+	// the factory entirely. An unresolvable BackupDir on those
+	// read-only paths no longer aborts the command (regression fix).
+	backupRunner := c.Backup
+	if c.BackupFactory != nil {
+		runner, factoryErr := c.BackupFactory(ctx)
+		if factoryErr != nil {
+			return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.backup_failed_fmt"), factoryErr.Error()), map[string]any{
+				"reason": "backup_failed",
+				"cause":  factoryErr.Error(),
+			})
+		}
+		backupRunner = runner
+	}
+	var backupPath string
+	if backupRunner != nil {
+		path, err := backupRunner.Run(ctx)
+		if err != nil {
+			return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.backup_failed_fmt"), err.Error()), map[string]any{
+				"reason": "backup_failed",
+				"cause":  err.Error(),
+			})
+		}
+		backupPath = path
+	}
+
 	asset, err := assetName(currentGOOS, goruntime.GOARCH)
 	if err != nil {
 		return nil, domain.NewError(domain.ErrUpdateFailed, err.Error(), nil)
@@ -210,6 +288,7 @@ func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, e
 		"action":      action,
 		"applied":     true,
 		"binary_path": c.BinaryPath,
+		"backup_path": backupPath,
 	}, nil
 }
 

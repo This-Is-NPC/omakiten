@@ -83,8 +83,8 @@ dismiss:
 actions:
   - key: m
     id: migrate
-    label: Migrate
+    label: "${{intl:notifications.kitten_orphan_migration.migrate_label}}"
     command: ["workflow", "orphans", "--confirm"]
   - key: s
     id: skip
-    label: Skip
+    label: "${{intl:notifications.kitten_orphan_migration.skip_label}}"

@@ -1259,6 +1259,22 @@ cp -a "${OMAKITEN_HOME:+$OMAKITEN_HOME/data}${OMAKITEN_HOME:-$HOME/.local/share/
 
 The DB file can be copied while `okt` is not running; for a hot backup use SQLite's `.backup` command or `VACUUM INTO`. There is no concurrent multi-writer story — the tool is single-user, single-process by design.
 
+#### Rolling snapshots — `okt db backup`
+
+The in-binary `okt db backup` writes the live SQLite file to a timestamped snapshot under `$XDG_STATE_HOME/omakiten/backups/<utc-iso>.db` (defaults to `~/.local/state/omakiten/backups/`). The copy is atomic (tmp + rename) and prunes older snapshots according to `settings.backup.retention_count`:
+
+```yaml
+settings:
+  backup:
+    retention_count: 5   # keep the 5 newest snapshots; 0 disables prune
+```
+
+Every destructive command — `okt projects delete`, `okt update`, the TUI Home `d`+`d` confirm — runs the same routine before mutating state. Backup failure aborts the destructive flow with a coded error; the snapshot is the recovery artefact you reach for if the cascade went further than expected. `okt uninstall` does NOT auto-backup (uninstall removes user-owned data by intent); run `okt db backup` first if you want a snapshot to keep.
+
+The strict snapshot filename pattern (`<yyyy-mm-dd>T<hh-mm-ss>Z.db`) means manual `.db` files you drop in the same directory are ignored by the prune pass — only files matching the pattern are rotated.
+
+This complements the surface policy: destructive ops live on CLI + TUI but not MCP. See [surface-policy.md](surface-policy.md) for the full table and criteria.
+
 ### Resetting
 
 `mise run purge` removes both `~/.config/omakiten` and `~/.local/share/omakiten` (`.mise.toml`). Re-run `okt init` to reseed defaults. Customs under `<entity>/custom/` are also removed by purge — back them up first if you care.

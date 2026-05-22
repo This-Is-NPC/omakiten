@@ -57,6 +57,15 @@ const (
 	// restored. EntityType=task, Payload={bucket}.
 	EventTypeTaskUnarchived = "task.unarchived"
 
+	// EventTypeProjectRemoved fires when ProjectService.Delete removes
+	// a project row (and cascades its dependent data). EntityType=
+	// project, Payload={slug, name, counters{tasks, comments, plans,
+	// tags, activity_log_entries}, backup_path}. The backup_path is
+	// the snapshot the destructive flow wrote before the delete, so
+	// audit consumers can correlate the event with the recovery
+	// artefact.
+	EventTypeProjectRemoved = "project.removed"
+
 	// EventTypePlanCreated fires when a plan row is inserted.
 	// EntityType=plan, Payload={slug, name, project_id}.
 	EventTypePlanCreated = "plan.created"
@@ -234,6 +243,7 @@ var KnownEventTypes = []string{
 	EventTypeTaskUnarchived,
 	EventTypeTaskAssigned,
 	EventTypeTaskUnassigned,
+	EventTypeProjectRemoved,
 	EventTypePlanCreated,
 	EventTypePlanWaveAdded,
 	EventTypePlanDone,

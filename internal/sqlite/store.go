@@ -238,6 +238,31 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// Checkpoint forces every committed WAL frame to land in the main
+// database file via `PRAGMA wal_checkpoint(TRUNCATE)`. Callers that
+// snapshot the .db file (BackupService) invoke this before the copy
+// so the snapshot reflects every committed transaction this process
+// wrote — without the checkpoint the WAL sidecar carries the latest
+// rows and the .db copy misses them.
+//
+// TRUNCATE mode merges the WAL into the main file and resets the WAL
+// to size zero. Returns the underlying SQLite error untouched so the
+// caller can decide how to react; the destructive flows treat
+// checkpoint failure as best-effort (logged via auditWarn) rather
+// than abort because the snapshot still captures the on-disk state.
+//
+// Cross-process WAL frames written by another `okt` process holding a
+// connection to the same DB cannot be guaranteed to land — SQLite may
+// return SQLITE_BUSY when foreign writers are active. The contract
+// here is "every commit from THIS process lands in main"; concurrent
+// writers from another process remain a best-effort case.
+func (s *Store) Checkpoint(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Store) applyMigrations(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"); err != nil {
 		return err
