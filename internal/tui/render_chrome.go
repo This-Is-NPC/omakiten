@@ -273,6 +273,7 @@ func (m Model) footerTokens() []footerToken {
 		}
 		return []footerToken{
 			{key: "e", label: m.t("tui.footer.edit"), primary: true},
+			{key: "n", label: m.t("tui.footer.sub_task"), primary: true},
 			{key: "c", label: m.t("tui.footer.comment"), primary: true},
 			{key: "m", label: m.t("tui.footer.move"), primary: true},
 			{key: "tab", label: m.t("tui.footer.focus")},

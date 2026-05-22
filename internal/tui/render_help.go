@@ -73,6 +73,7 @@ func (m Model) renderHelp() string {
 			{"pgup · pgdn · ctrl+u · ctrl+d", m.t("tui.help.task_view.scroll_halfpage")},
 			{"g · G", m.t("tui.help.task_view.jump_top_bottom")},
 			{"e", m.t("tui.help.task_view.edit_task")},
+			{"n", m.t("tui.help.task_view.new_subtask")},
 			{"b", m.t("tui.help.task_view.edit_blockers")},
 			{"c", m.t("tui.help.task_view.add_comment")},
 			{"m", m.t("tui.help.task_view.move")},

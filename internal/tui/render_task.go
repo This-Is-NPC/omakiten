@@ -37,6 +37,10 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if task, ok := m.activeTask(); ok {
 				m.openTaskEdit(task)
 			}
+		case "n":
+			if task, ok := m.activeTask(); ok {
+				m.openSubTaskCreate(task)
+			}
 		case "b":
 			if _, ok := m.activeTask(); ok {
 				m.openBlockerPicker()
@@ -228,6 +232,7 @@ func (m Model) blockerPickerCandidates() []domain.Task {
 func (m *Model) openTaskCreate() {
 	m.taskScreen = taskScreenCreate
 	m.taskID = 0
+	m.taskCreateParentID = nil
 	m.taskTitleInput = newTaskTitleInput()
 	m.taskDescriptionInput = newTaskDescriptionInput()
 	m.resizeTaskDescriptionInput()
@@ -239,6 +244,17 @@ func (m *Model) openTaskCreate() {
 	m.applyTaskFieldFocus()
 	m.status = m.t("tui.status.new_task")
 	m.moveMode = false
+}
+
+// openSubTaskCreate boots the create form pre-attached to a parent.
+// Triggered by `n` from inside the detail view; the parent FK is held
+// in taskCreateParentID, surfaced as a breadcrumb in the form header,
+// and routed through TaskService.AddSub on save.
+func (m *Model) openSubTaskCreate(parent domain.Task) {
+	m.openTaskCreate()
+	parentID := parent.ID
+	m.taskCreateParentID = &parentID
+	m.status = fmt.Sprintf(m.t("tui.status.new_subtask_fmt"), parent.ID, parent.Title)
 }
 
 // defaultPriorityID returns the id flagged `default: true` in the active
@@ -357,6 +373,7 @@ func (m *Model) closeTaskScreen(status string) {
 	m.blockerPickerChecks = nil
 	m.taskScreen = taskScreenClosed
 	m.taskID = 0
+	m.taskCreateParentID = nil
 	m.taskTitleInput = newTaskTitleInput()
 	m.taskDescriptionInput = newTaskDescriptionInput()
 	m.taskPriority = domain.PriorityZero
@@ -546,7 +563,12 @@ func (m *Model) saveTaskForm() {
 		// id, so we map it back through priorityLabel to keep the
 		// service signature uniform across surfaces.
 		label := m.priorityLabel(m.taskPriority)
-		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry, m.repos.activeSnapshot()).Add(m.ctx, m.project, title, description, label, "")
+		taskService := app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry, m.repos.activeSnapshot())
+		if m.taskCreateParentID != nil {
+			task, err = taskService.AddSub(m.ctx, m.project, *m.taskCreateParentID, title, description, label, "")
+		} else {
+			task, err = taskService.Add(m.ctx, m.project, title, description, label, "")
+		}
 	case taskScreenEdit:
 		current, ok := m.activeTask()
 		if !ok {
@@ -582,7 +604,13 @@ func (m Model) renderTaskScreen() string {
 	}
 	switch m.taskScreen {
 	case taskScreenCreate:
-		return m.renderTaskForm(m.t("tui.kicker.new_task"))
+		title := m.t("tui.kicker.new_task")
+		if m.taskCreateParentID != nil {
+			if parent, ok := m.taskByID(*m.taskCreateParentID); ok {
+				title = fmt.Sprintf(m.t("tui.kicker.new_subtask_fmt"), parent.ID, parent.Title)
+			}
+		}
+		return m.renderTaskForm(title)
 	case taskScreenEdit:
 		// Mirrors the comment-edit kicker pattern (`Edit comment · #N`)
 		// so both write surfaces read as the same shape.

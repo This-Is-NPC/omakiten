@@ -224,6 +224,13 @@ type Model struct {
 
 	taskScreen taskScreenMode
 	taskID     int64
+	// taskCreateParentID names the parent task when the create form was
+	// opened as a sub-task (key `n` from inside the detail view). nil
+	// means "create a root task"; non-nil triggers the AddSub branch in
+	// saveTaskForm and renders the parent breadcrumb in the form header.
+	// Reset on every closeTaskScreen so the next root-create cannot
+	// inherit a stale FK.
+	taskCreateParentID *int64
 	// taskTitleInput / taskDescriptionInput own caret state and inline text
 	// editing for the create/edit form. Replacing the prior `taskTitle` /
 	// `taskDescription` strings with bubbles components fixed the "no
