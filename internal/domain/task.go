@@ -54,6 +54,18 @@ type Task struct {
 	Priority    Priority  `json:"priority"`
 	State       TaskState `json:"state,omitempty"`
 	CreatedAt   string    `json:"created_at,omitempty"`
+	// ParentID points at the task this row is a sub-task of, or nil for
+	// root tasks. The board hides non-roots; transitions still flow
+	// through the same workflow as the parent, but the subtasks_complete
+	// guard reads this column to gate parent promotion on child status.
+	ParentID *int64 `json:"parent_id,omitempty"`
+}
+
+// IsSubTask reports whether the task is attached to a parent. Root tasks
+// (ParentID nil) return false; any non-nil pointer — including a pointer
+// to zero, which the DB does not produce — returns true.
+func (t Task) IsSubTask() bool {
+	return t.ParentID != nil
 }
 
 // TaskSort drives the ORDER BY clause applied by ListTasks. Field is one of
