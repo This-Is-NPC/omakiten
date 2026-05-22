@@ -684,6 +684,16 @@ func (m Model) renderTaskView() string {
 			detail = detail.Span(m.renderTaskReference(blocker))
 		}
 	}
+	children := m.directChildren(task.ID)
+	detail = detail.KickerCount(m.t("tui.row.sub_tasks"), len(children))
+	if len(children) == 0 {
+		detail = detail.Span(m.styles.hint.Render(m.t("tui.empty.sub_tasks")))
+	} else {
+		finalKey := m.workflow.FinalBucketKey()
+		for _, child := range children {
+			detail = detail.Span(m.renderSubtaskReference(child, finalKey))
+		}
+	}
 	detail = detail.Kicker(m.t("tui.kicker.description"))
 	if strings.TrimSpace(task.Description) == "" {
 		detail = detail.Span(m.styles.hint.Render(m.t("tui.empty.task_no_description")))
@@ -754,6 +764,22 @@ func (m Model) applyTaskViewScroll(content string) string {
 func (m Model) renderTaskReference(task domain.Task) string {
 	meta := m.styles.hint.Render(fmt.Sprintf("%s · %s", task.BucketKey, m.priorityLabel(task.Priority)))
 	return m.styles.hintAccent.Render(fmt.Sprintf("#%d", task.ID)) + " " + task.Title + "  " + meta
+}
+
+// renderSubtaskReference is the sub-tasks panel's per-row formatter:
+// checkbox cue for done/open status, id chip, title, then a muted
+// bucket suffix when the child is not yet in the final bucket so the
+// reader knows where it sits in the workflow.
+func (m Model) renderSubtaskReference(task domain.Task, finalKey string) string {
+	box := "[ ]"
+	if task.BucketKey == finalKey {
+		box = "[x]"
+	}
+	prefix := m.styles.hint.Render(box) + " " + m.styles.hintAccent.Render(fmt.Sprintf("#%d", task.ID)) + " " + task.Title
+	if task.BucketKey == finalKey {
+		return prefix
+	}
+	return prefix + "  " + m.styles.hint.Render(task.BucketKey)
 }
 
 func (m Model) renderBlockerPicker() string {
