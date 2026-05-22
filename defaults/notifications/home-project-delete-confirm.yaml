@@ -5,7 +5,7 @@ description: "${{intl:notifications.home-project-delete-confirm.description}}"
 # Geometry ------------------------------------------------------------
 size:
   width: 60
-  height: 12
+  height: 30
 
 # Behaviour flags -----------------------------------------------------
 auto_height: false
