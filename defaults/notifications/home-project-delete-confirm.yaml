@@ -57,20 +57,24 @@ dismiss:
   keys: [esc]
 
 # Actions -------------------------------------------------------------
-# `D` (uppercase) confirms — the upper-case key is deliberate so a
-# stray lowercase `d` outside the overlay (which fires the arm gate
-# on the Home card grid) cannot land inside the overlay and double-
-# fire the confirmation. `command` is left empty: the TUI intercepts
-# the ActionMsg by slug and invokes ProjectService.Delete in-process
-# so the snapshot uses the same store handle the live TUI already
-# holds (avoids the DispatchCommand path that re-opens the SQLite
-# file under a fresh runtime).
+# `d` confirms — same key the user pressed to arm the overlay on the
+# Home card grid, so the confirmation is reflexive (press d to arm,
+# press d again to commit). The overlay consumes every key while it
+# owns the screen (dispatchNotification routes through
+# notification.Update), so a stray `d` cannot leak into the home view
+# while the card is up; no key-case discrimination needed.
+#
+# `command` is left empty: the TUI intercepts the ActionMsg by slug
+# and invokes ProjectService.Delete in-process so the snapshot uses
+# the same store handle the live TUI already holds (avoids the
+# DispatchCommand path that re-opens the SQLite file under a fresh
+# runtime).
 #
 # esc dismisses via the dismiss.keys block above (not registered here
 # as an action because the validator rejects key collisions between
 # the two; the dismissed path clears the pending project id in
 # dispatchNotification, so the cancellation behaviour is identical).
 actions:
-  - key: D
+  - key: d
     id: confirm
     label: "${{intl:notifications.home-project-delete-confirm.confirm_label}}"
