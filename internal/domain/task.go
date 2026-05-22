@@ -85,13 +85,42 @@ type TaskFilter struct {
 	// into seeing archived tasks. Defaults to false: every list view (board,
 	// table, graph, logs, MCP) hides archived rows unless the toggle is on.
 	IncludeArchived bool
+	// ParentMode scopes the list by tasks.parent_id. The zero value
+	// disables the filter (every task surfaces). Board callers set
+	// ParentRoots to hide sub-tasks; the detail-view sub-tasks panel
+	// sets ParentChildren with ParentValue=parent.ID.
+	ParentMode  ParentFilterMode
+	ParentValue int64
 }
+
+// ParentFilterMode selects how TaskFilter restricts on tasks.parent_id.
+// Defined as a named uint8 so the zero value (ParentAny) preserves the
+// pre-sub-task behaviour of every existing caller that doesn't touch
+// the new field.
+type ParentFilterMode uint8
+
+const (
+	// ParentAny applies no parent_id filter (zero value).
+	ParentAny ParentFilterMode = iota
+	// ParentRoots restricts to tasks.parent_id IS NULL — used by the
+	// board so sub-tasks don't pollute the kanban columns.
+	ParentRoots
+	// ParentChildren restricts to tasks.parent_id = ParentValue — used
+	// by the detail-view sub-tasks panel and any direct-children read.
+	ParentChildren
+)
 
 type TaskUpdate struct {
 	Title       *string
 	Description *string
 	Priority    *Priority
 	BucketKey   string
+	// ChangeParent flags this update as a re-parent. When true,
+	// NewParentID names the desired value: nil clears to root and a
+	// non-nil value sets the FK. The flag distinguishes "don't touch
+	// parent_id" (the zero value) from "set parent_id to nil".
+	ChangeParent bool
+	NewParentID  *int64
 }
 
 type Comment struct {

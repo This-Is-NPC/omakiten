@@ -188,6 +188,9 @@ func (r *isolationRepo) CountTaskCommentsTagged(_ context.Context, _, _ int64, t
 func (r *isolationRepo) CountPriorWavesPending(context.Context, int64, int64, domain.BucketResolver) (int, error) {
 	return 0, nil
 }
+func (r *isolationRepo) FirstChildNotInBucket(context.Context, int64, int64, int64, domain.BucketResolver) (domain.Task, bool, error) {
+	return domain.Task{}, false, nil
+}
 
 // TaskRepository — only MoveTask is exercised; the other methods are unused
 // on the MoveTask path and return zero values.
@@ -218,6 +221,21 @@ func (r *isolationRepo) EmitTaskEditedEvent(context.Context, int64, int64, domai
 }
 func (r *isolationRepo) AssignTask(context.Context, int64, int64, string, string, domain.BucketResolver) (domain.Task, domain.Event, error) {
 	return domain.Task{}, domain.Event{}, nil
+}
+func (r *isolationRepo) SetTaskParent(context.Context, int64, int64, *int64) error {
+	return nil
+}
+func (r *isolationRepo) IsDescendantOf(context.Context, int64, int64, int64) (bool, error) {
+	return false, nil
+}
+func (r *isolationRepo) ListDirectChildren(context.Context, int64, int64, domain.BucketResolver) ([]domain.Task, error) {
+	return nil, nil
+}
+func (r *isolationRepo) CountDirectChildren(context.Context, int64, int64) (int, error) {
+	return 0, nil
+}
+func (r *isolationRepo) CountDescendants(context.Context, int64, int64) (int, error) {
+	return 0, nil
 }
 
 // EventRepository — task.completed emission noop; the move target isn't the
@@ -252,6 +270,9 @@ func (nilGuardRepo) CountTaskCommentsTagged(context.Context, int64, int64, strin
 }
 func (nilGuardRepo) CountPriorWavesPending(context.Context, int64, int64, domain.BucketResolver) (int, error) {
 	return 0, nil
+}
+func (nilGuardRepo) FirstChildNotInBucket(context.Context, int64, int64, int64, domain.BucketResolver) (domain.Task, bool, error) {
+	return domain.Task{}, false, nil
 }
 
 // nilEventSink discards every guard.violated emission. The test asserts

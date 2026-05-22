@@ -126,6 +126,13 @@ WHERE tasks.project_id = ?`
 			args = append(args, int(p))
 		}
 	}
+	switch filter.ParentMode {
+	case domain.ParentRoots:
+		query += " AND tasks.parent_id IS NULL"
+	case domain.ParentChildren:
+		query += " AND tasks.parent_id = ?"
+		args = append(args, filter.ParentValue)
+	}
 	query += " ORDER BY " + taskOrderClause(filter.Sort)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)

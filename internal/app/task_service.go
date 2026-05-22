@@ -73,6 +73,43 @@ func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, ti
 	return
 }
 
+// AddSub creates a task and attaches it to parentID as a sub-task in a
+// single service call. The parent must belong to the same project; the
+// guard against self-parent / non-existent parent fires in the storage
+// layer's SetTaskParent. Anti-cycle is unnecessary for fresh rows —
+// they have no descendants yet — so no IsDescendantOf check runs here.
+func (s *TaskService) AddSub(ctx context.Context, project domain.ProjectContext, parentID int64, title, description, priority, bucketKey string) (task domain.Task, err error) {
+	finish := activity.Track(ctx, "app.TaskService.AddSub", project, map[string]any{"title": title, "parent_id": parentID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	if parentID <= 0 {
+		err = domain.NewError(domain.ErrValidation, "parent_id must be positive", map[string]any{"parent_id": parentID})
+		return
+	}
+	if _, err = s.taskByID(ctx, project, parentID); err != nil {
+		return
+	}
+
+	task, err = s.Add(ctx, project, title, description, priority, bucketKey)
+	if err != nil {
+		return
+	}
+	pid := parentID
+	if err = s.repo.SetTaskParent(ctx, project.ID, task.ID, &pid); err != nil {
+		return
+	}
+	task.ParentID = &pid
+	return
+}
+
 // resolvePriorityInput accepts the user-supplied priority token (label
 // or empty) and returns the configured id. Empty falls back to the
 // configured default priority; non-empty is resolved via the bundle-scoped
@@ -170,6 +207,9 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 	if update.BucketKey != "" {
 		changed = true
 	}
+	if update.ChangeParent {
+		changed = true
+	}
 	if !changed {
 		err = domain.NewError(domain.ErrValidation, "at least one task update is required", nil)
 		return
@@ -217,8 +257,46 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 			return
 		}
 	}
+	if update.ChangeParent {
+		if err = s.applyParentChange(ctx, project, taskID, update.NewParentID); err != nil {
+			return
+		}
+		if task.ID == 0 {
+			task, err = s.taskByID(ctx, project, taskID)
+			if err != nil {
+				return
+			}
+		} else {
+			task.ParentID = update.NewParentID
+		}
+	}
 
 	return
+}
+
+// applyParentChange validates a re-parent request against the cycle
+// invariant ("T.parent = P is unsafe iff P descends from T") and writes
+// the column. parentID nil clears parent_id (the task becomes a root).
+func (s *TaskService) applyParentChange(ctx context.Context, project domain.ProjectContext, taskID int64, parentID *int64) error {
+	if parentID == nil {
+		return s.repo.SetTaskParent(ctx, project.ID, taskID, nil)
+	}
+	if *parentID == taskID {
+		return domain.NewError(domain.ErrValidation, "task cannot be its own parent", map[string]any{"task_id": taskID})
+	}
+	if _, err := s.taskByID(ctx, project, *parentID); err != nil {
+		return err
+	}
+	cycle, err := s.repo.IsDescendantOf(ctx, project.ID, *parentID, taskID)
+	if err != nil {
+		return err
+	}
+	if cycle {
+		return domain.NewError(domain.ErrValidation,
+			"re-parent would create a cycle: target parent is already a descendant of this task",
+			map[string]any{"task_id": taskID, "parent_id": *parentID})
+	}
+	return s.repo.SetTaskParent(ctx, project.ID, taskID, parentID)
 }
 
 // Delete enforces the bucket-level task.delete policy and any

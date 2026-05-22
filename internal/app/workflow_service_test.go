@@ -144,6 +144,9 @@ func (f *fakeStores) CountTaskCommentsTagged(_ context.Context, _, _ int64, tag 
 func (f *fakeStores) CountPriorWavesPending(context.Context, int64, int64, domain.BucketResolver) (int, error) {
 	return 0, nil
 }
+func (f *fakeStores) FirstChildNotInBucket(context.Context, int64, int64, int64, domain.BucketResolver) (domain.Task, bool, error) {
+	return domain.Task{}, false, nil
+}
 
 // TaskRepository
 func (f *fakeStores) CreateTask(_ context.Context, _ int64, _, _ string, _ domain.Priority, _ string, _ domain.BucketResolver) (domain.Task, error) {
@@ -174,6 +177,21 @@ func (f *fakeStores) EmitTaskEditedEvent(context.Context, int64, int64, domain.T
 }
 func (f *fakeStores) AssignTask(context.Context, int64, int64, string, string, domain.BucketResolver) (domain.Task, domain.Event, error) {
 	return domain.Task{}, domain.Event{}, nil
+}
+func (f *fakeStores) SetTaskParent(context.Context, int64, int64, *int64) error {
+	return nil
+}
+func (f *fakeStores) IsDescendantOf(context.Context, int64, int64, int64) (bool, error) {
+	return false, nil
+}
+func (f *fakeStores) ListDirectChildren(context.Context, int64, int64, domain.BucketResolver) ([]domain.Task, error) {
+	return nil, nil
+}
+func (f *fakeStores) CountDirectChildren(context.Context, int64, int64) (int, error) {
+	return 0, nil
+}
+func (f *fakeStores) CountDescendants(context.Context, int64, int64) (int, error) {
+	return 0, nil
 }
 
 // EventRepository
