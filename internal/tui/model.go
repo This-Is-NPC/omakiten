@@ -107,6 +107,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, cmd
 	}
 	switch msg := msg.(type) {
+	case homeProjectDeleteResultMsg:
+		// Asynchronous tail of the Home delete flow — folds the
+		// ProjectService.Delete outcome into m.status + reloads the
+		// read-model. Running on the main goroutine is fine: the
+		// Delete itself already ran on a worker via the tea.Cmd
+		// returned by executeHomeProjectDelete; what reaches here is
+		// the result envelope, not the blocking IO.
+		m.handleHomeProjectDeleteResult(msg)
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -182,8 +191,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if m.onHome() {
-			m.handleHomeKey(msg)
-			return m, nil
+			cmd := m.handleHomeKey(msg)
+			return m, cmd
 		}
 		if m.handleCommonKey(msg) {
 			m.refreshAfterViewChange(prevNav)
@@ -520,8 +529,8 @@ func (m Model) dispatchNotification(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		// fallback uses so the TUI's already-open store handle stays
 		// authoritative.
 		if am.Slug == "home-project-delete-confirm" {
-			m.handleHomeProjectDeleteAction(am)
-			return m, nil, true
+			cmd := m.handleHomeProjectDeleteAction(am)
+			return m, cmd, true
 		}
 		m.handleNotificationAction(am)
 		return m, nil, true

@@ -425,6 +425,7 @@ keys:
   cli.db.backup.prune_warn_fmt: "prune skipped: %s"
   tui.status.task_deleted_fmt: "Deleted task #%d"
   tui.status.project_deleted_fmt: "Project %q deleted · backup → %s"
+  tui.status.deleting_project_fmt: "Deleting project %q..."
   tui.footer.delete_project: "delete project"
   tui.footer.confirm_delete_project: "confirm delete · esc cancels"
   tui.status.orphan_tags_deleted_fmt: "%d orphan tag(s) deleted"

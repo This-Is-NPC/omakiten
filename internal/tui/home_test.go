@@ -20,6 +20,26 @@ import (
 	"omakiten/internal/tui/components/notification"
 )
 
+// pumpAsync drives any tea.Cmd the model returned through to its
+// terminal Msg (and any cascaded Cmds it produces) by folding each
+// emitted Msg back into Update. Used by the async Home delete tests
+// where ProjectService.Delete now runs off the Update goroutine via
+// a returned Cmd — the test driver has to simulate the bubbletea
+// runtime's "run Cmd → feed Msg back" loop to land the result.
+func pumpAsync(t *testing.T, m Model, cmd tea.Cmd) Model {
+	t.Helper()
+	for cmd != nil {
+		msg := cmd()
+		if msg == nil {
+			return m
+		}
+		next, nextCmd := m.Update(msg)
+		m = next.(Model)
+		cmd = nextCmd
+	}
+	return m
+}
+
 // busyCheckpointer always fails Checkpoint with a pinned error so the
 // TUI delete flow's auditWarn write path is exercised.
 type busyCheckpointer struct {
@@ -327,8 +347,8 @@ func TestHomeProjectDeleteArmThenConfirm(t *testing.T) {
 	}
 
 	// Second `d` confirms; the cascade fires and the project is gone.
-	updated, _ = armed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	deleted := updated.(Model)
+	updated, cmd := armed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	deleted := pumpAsync(t, updated.(Model), cmd)
 	if _, err := store.FindProjectByID(ctx, doomed.ID); err == nil {
 		t.Fatalf("project still present after confirm")
 	}
@@ -416,7 +436,9 @@ func TestHomeProjectDeleteOverlayConfirm(t *testing.T) {
 	// `D` (uppercase) on a settled notification returns a Cmd whose
 	// payload is the notification.ActionMsg the parent dispatches in
 	// the next tick. Mirror bubbletea's runtime: invoke the Cmd, then
-	// feed the resulting msg back through Update.
+	// feed the resulting msg back through Update. The action handler
+	// itself returns the async delete Cmd, so pumpAsync drives the
+	// whole chain to the terminal result.
 	_, cmd := armed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'D'}})
 	if cmd == nil {
 		t.Fatalf("D on settled overlay returned no Cmd")
@@ -425,8 +447,8 @@ func TestHomeProjectDeleteOverlayConfirm(t *testing.T) {
 	if _, ok := actionMsg.(notification.ActionMsg); !ok {
 		t.Fatalf("Cmd produced %T, want notification.ActionMsg", actionMsg)
 	}
-	updated, _ = armed.Update(actionMsg)
-	deleted := updated.(Model)
+	updated, actionCmd := armed.Update(actionMsg)
+	deleted := pumpAsync(t, updated.(Model), actionCmd)
 	if deleted.notification != nil {
 		t.Fatalf("notification still set after confirm action")
 	}
@@ -570,10 +592,12 @@ func TestHomeProjectDeleteSurfacesAuditWarn(t *testing.T) {
 	}
 
 	// Empty NotificationBinding forces the status-driven fallback;
-	// two `d` presses arm then confirm.
+	// two `d` presses arm then confirm. The second press now returns
+	// an async Cmd — pumpAsync drives the result Msg back through
+	// Update to land the final status.
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	updated, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	final := updated.(Model)
+	updated, cmd := updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	final := pumpAsync(t, updated.(Model), cmd)
 
 	if cp.calls != 1 {
 		t.Fatalf("Checkpointer.Checkpoint calls = %d, want 1", cp.calls)
@@ -634,8 +658,8 @@ func TestHomeProjectDeleteAuditWarnSurvivesBackupFailure(t *testing.T) {
 	}
 
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	updated, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	final := updated.(Model)
+	updated, cmd := updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	final := pumpAsync(t, updated.(Model), cmd)
 
 	if cp.calls != 1 {
 		t.Fatalf("Checkpointer.Checkpoint calls = %d, want 1 (must fire before backup)", cp.calls)
@@ -729,8 +753,8 @@ func TestHomeProjectDeleteOverlayPathSurfacesAuditWarn(t *testing.T) {
 	if _, ok := actionMsg.(notification.ActionMsg); !ok {
 		t.Fatalf("Cmd produced %T, want notification.ActionMsg", actionMsg)
 	}
-	updated, _ = armed.Update(actionMsg)
-	final := updated.(Model)
+	updated, actionCmd := armed.Update(actionMsg)
+	final := pumpAsync(t, updated.(Model), actionCmd)
 
 	if cp.calls != 1 {
 		t.Fatalf("Checkpointer.Checkpoint calls = %d, want 1", cp.calls)
@@ -799,9 +823,11 @@ func TestHomeProjectDeleteRequeriesZeroCountersForAuditTruth(t *testing.T) {
 	// First `d`: arm time. wrappedRepo errors the first call → zeros
 	// stashed in pending counters. Second `d`: execute path detects
 	// zero-value counters and re-queries; second call succeeds (real
-	// counts).
+	// counts). pumpAsync drives the async delete Cmd through to the
+	// result Msg so the recorder captures the post-commit payload.
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	_, _ = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	updated, cmd := updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	_ = pumpAsync(t, updated.(Model), cmd)
 
 	if _, err := store.FindProjectByID(ctx, doomed.ID); err == nil {
 		t.Fatalf("project still present after second press")

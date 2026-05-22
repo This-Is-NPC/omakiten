@@ -426,6 +426,7 @@ keys:
   notifications.kitten_orphan_migration.skip_label: "Skip"
   cli.db.backup.prune_warn_fmt: "prune skipped: %s"
   tui.status.project_deleted_fmt: "Project %q deleted · backup → %s"
+  tui.status.deleting_project_fmt: "Deleting project %q..."
   tui.footer.delete_project: "delete project"
   tui.footer.confirm_delete_project: "confirm delete · esc cancels"
   tui.status.orphan_tags_deleted_fmt: "%d orpoa tagia poistettu"
