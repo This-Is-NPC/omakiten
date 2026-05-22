@@ -281,6 +281,7 @@ workflows:
           - {type: comments_tagged, tag: resume, count: 1, hint: "${{intl:guard.shokunin.review.comments_tagged.resume.hint}}"}
           - {type: comments_tagged, tag: tests-passing, count: 1, hint: "${{intl:guard.shokunin.review.comments_tagged.tests_passing.hint}}"}
           - {type: comments_tagged, tag: rollback-plan, count: 1, hint: "${{intl:guard.shokunin.review.comments_tagged.rollback_plan.hint}}"}
+          - {type: subtasks_complete, hint: "${{intl:guard.subtasks_complete.hint}}"}
       - from: 4
         to: 5
         guards:

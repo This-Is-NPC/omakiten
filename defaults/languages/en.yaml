@@ -1057,6 +1057,7 @@ keys:
   # via the preset's `hint:` field; presets reference these keys through
   # `${{intl:guard.<rule>.hint}}` substitution.
   guard.wave_gate.hint: "Wait for the previous wave to finish — earlier-wave tasks in the same plan must reach Done before this one starts."
+  guard.subtasks_complete.hint: "Move every direct sub-task into the final bucket before promoting the parent."
   # guard.common.* — hints shared across presets. Per-preset override via
   # the preset-scoped namespace (guard.<preset>.<stage>.<rule>...) when copy diverges.
   guard.common.archive.comments_tagged.documentation.hint: "Add a #documentation comment summarizing what shipped before archiving."

@@ -769,6 +769,10 @@ func validateGuards(workflowKey, scope string, guards []TransitionGuard, bucketK
 			// from the task's wave + plan and the workflow's final
 			// bucket. The hint string is optional and validated by the
 			// shared TransitionGuard shape, not here.
+		case "subtasks_complete":
+			// subtasks_complete has no extra fields either — the guard
+			// reads tasks.parent_id and the workflow's final bucket
+			// directly. Hint is optional like the others.
 		default:
 			return fmt.Errorf("workflows.%s %s: unknown guard type %q", workflowKey, scope, guard.Type)
 		}

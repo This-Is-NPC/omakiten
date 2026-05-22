@@ -1050,6 +1050,7 @@ keys:
 
   # guard.* — hint strings surfaced in guard.violated payloads.
   guard.wave_gate.hint: "Poczekaj na zakończenie poprzedniej wave — taski z wcześniejszych waves w tym samym plan muszą osiągnąć Done, zanim ta się rozpocznie."
+  guard.subtasks_complete.hint: "Move every direct sub-task into the final bucket before promoting the parent."
   # guard.common.* — hints shared across presets. Per-preset override via
   # the preset-scoped namespace (guard.<preset>.<stage>.<rule>...) when copy diverges.
   guard.common.archive.comments_tagged.documentation.hint: "Dodaj komentarz #documentation podsumowujący, co zostało dostarczone, przed archiwizacją."

@@ -57,6 +57,13 @@ type Repository interface {
 	// when the task has no wave attachment so the wave_gate guard is a
 	// silent no-op for non-plan tasks.
 	CountPriorWavesPending(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (int, error)
+	// FirstChildNotInBucket gates the subtasks_complete guard. Returns
+	// the first direct child whose bucket_id != finalBucketID, ordered
+	// by id; the boolean reports whether a child still blocks. Walking
+	// only direct children is intentional — deeper levels gate their
+	// own promotions, so the parent's guard fires exactly when the
+	// immediate sub-tasks are still open.
+	FirstChildNotInBucket(ctx context.Context, projectID, parentID, finalBucketID int64, buckets domain.BucketResolver) (domain.Task, bool, error)
 }
 
 // EventSink records guard.violated domain events. Telemetry only — emission
@@ -193,6 +200,10 @@ func (e *Evaluator) runGuards(ctx context.Context, projectID, taskID int64, spec
 			if err := e.checkWaveGate(ctx, projectID, taskID, hint, operation, target); err != nil {
 				return err
 			}
+		case "subtasks_complete":
+			if err := e.checkSubtasksComplete(ctx, projectID, taskID, hint, operation, target); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -225,6 +236,41 @@ func (e *Evaluator) checkWaveGate(ctx context.Context, projectID, taskID int64, 
 		details["hint"] = hint
 	}
 	e.EmitViolated(ctx, projectID, domain.EventEntityTask, taskID, operation, "wave_gate", msg, target)
+	return domain.NewError(domain.ErrGuardViolation, msg, details)
+}
+
+func (e *Evaluator) checkSubtasksComplete(ctx context.Context, projectID, taskID int64, hint, operation string, target map[string]any) error {
+	// The final bucket comes from the per-project workflow snapshot —
+	// every preset that wires this guard inherits the same notion of
+	// "done" the rest of the engine uses (FinalBucketKey).
+	finalKey := e.snap.Workflow().FinalBucketKey()
+	finalBucket, ok := e.snap.BucketByKey(finalKey)
+	if !ok {
+		// Workflow without a final bucket cannot evaluate completeness;
+		// treat as satisfied so misconfigured presets don't lock every
+		// transition out.
+		return nil
+	}
+	open, found, err := e.repo.FirstChildNotInBucket(ctx, projectID, taskID, finalBucket.ID, e.snap)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+	msg := fmt.Sprintf("subtasks_complete guard: subtask #%d %q is in %q, not %q",
+		open.ID, open.Title, open.BucketKey, finalKey)
+	details := map[string]any{
+		"open_subtask_id":     open.ID,
+		"open_subtask_title":  open.Title,
+		"open_subtask_bucket": open.BucketKey,
+		"final_bucket":        finalKey,
+	}
+	if hint != "" {
+		msg += ". Hint: " + hint
+		details["hint"] = hint
+	}
+	e.EmitViolated(ctx, projectID, domain.EventEntityTask, taskID, operation, "subtasks_complete", msg, target)
 	return domain.NewError(domain.ErrGuardViolation, msg, details)
 }
 
