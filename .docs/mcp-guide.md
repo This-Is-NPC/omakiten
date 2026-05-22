@@ -79,11 +79,11 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | Tool | Purpose |
 |---|---|
 | `tasks.continue` | Implements `/okt-continue #<id>`: task details, dependencies, comments, workflow, context. |
-| `tasks.list` | Lists active project tasks with optional bucket filter. |
-| `tasks.create_intent` | Implements `/okt-create <description>` with similar-task detection and confirmation gate. |
-| `tasks.create` | Direct task creation equivalent to `okt add`. |
-| `tasks.move` | Moves a task through allowed workflow transitions. |
-| `tasks.edit` | Edits a task's title, description, and/or priority. At least one of the three optional fields must be provided. Subject to bucket `permissions.task.edit` — the default kit allows edits only in the planning bucket; bucket moves go through `tasks.move` so the activity log distinguishes the two intents. |
+| `tasks.list` | Lists active project tasks. Optional `bucket_key` scopes by workflow bucket. Optional `parent_id` scopes by sub-task relationship: omit for no filter, pass `null` to return roots only (`parent_id IS NULL`), pass an integer to return direct children of that task id. |
+| `tasks.create_intent` | Implements `/okt-create <description>` with similar-task detection and confirmation gate. Accepts optional `parent_id` to attach the new task as a sub-task in the same call; the parent must belong to the active project. |
+| `tasks.create` | Direct task creation equivalent to `okt add`. Accepts optional `parent_id` to create a sub-task in one call. |
+| `tasks.move` | Moves a task through allowed workflow transitions. Subject to the `subtasks_complete` guard where wired — promotion is rejected while any direct child sits outside the workflow's final bucket. |
+| `tasks.edit` | Edits a task's title, description, priority, and/or parent. `parent_id` uses a tri-state: omit to leave the column untouched, pass `null` to clear the FK (the task becomes a root), pass an integer to re-parent under that id. Re-parents that would create a cycle (target parent already descends from this task) are rejected with `validation`. At least one of the four optional fields must be provided. Subject to bucket `permissions.task.edit`; bucket moves still go through `tasks.move`. |
 | `tasks.delete` | Hard-deletes a task with cascade (comments, tags, dependencies, events). Subject to bucket `permissions.task.delete` and `operations.delete.guards`. Requires `confirmed=true`. |
 | `tasks.archive` | Flips `state=archived` and moves the task to the workflow's final bucket. Bypasses bucket policy and transition guards but respects `operations.archive.guards`. |
 | `tasks.unarchive` | Restores `state=active` while leaving the bucket untouched. Respects `operations.unarchive.guards` if declared. |
