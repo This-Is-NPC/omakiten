@@ -518,6 +518,15 @@ type Model struct {
 	// on submit / cancel.
 	planAssignTaskID int64
 
+	// activityCardsCache memoises activityRowsForRender so the three
+	// scroll-math hot paths (clampActivityScroll, syncActivityScroll-
+	// ToCursor, visibleActivityCardRange) plus the renderTaskComments-
+	// Cell view pass share a single render per keystroke instead of
+	// rebuilding the lipgloss-styled comment / system-event cards on
+	// each call. Keyed on (taskID, cursor, commentCardWidth, per-event
+	// id+type+bodyLen).
+	activityCardsCache activityCardsCacheEntry
+
 	// planNetworkRowsCache memoises planNetworkBuildRows() across the
 	// 11 invocation sites in handlePlanNetworkKey (j/k/h/l/space/pgup/
 	// pgdn/g/G/enter all rebuild for cursor / scroll math). Keyed on

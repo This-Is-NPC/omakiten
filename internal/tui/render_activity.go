@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"strings"
 
 	"omakiten/internal/domain"
@@ -110,12 +112,27 @@ func (m Model) activityForTaskInView(taskID int64) []domain.Event {
 	return out
 }
 
-// activityRowsForRender renders each event card up front so pagination and
-// overflow accounting work on a stable list. Comments reuse the existing
-// commentCard (author + body + tags); system events use the same border color
-// as comments so the activity column reads as one cohesive stack. The focused
-// card (activityCursor) gets an accent border so card navigation is discoverable.
+// activityRowsForRender returns the rendered event card slice for the
+// activity panel. The hot path on a keystroke previously called this
+// from clampActivityScroll, visibleActivityCardRange,
+// syncActivityScrollToCursor AND the renderTaskCommentsCell view pass
+// — every call walked every event through renderCommentCardSelected
+// or renderSystemEventCard (lipgloss border + body wrap). The result
+// is now memoised on m.activityCardsCache; the value receiver reads
+// from the cache when the fingerprint matches, otherwise it builds
+// fresh cards but cannot persist them. *Model handlers that need to
+// repopulate the cache call cachedActivityRowsForRender below.
 func (m Model) activityRowsForRender(events []domain.Event) []string {
+	if m.activityCardsCache.valid && m.activityCardsCache.key == m.activityRowsForRenderKey(events) {
+		return m.activityCardsCache.cards
+	}
+	return m.activityRowsForRenderUncached(events)
+}
+
+// activityRowsForRenderUncached is the underlying renderer the cache
+// short-circuits when warm. Kept separate so the cache hit path is a
+// pure map read with zero card-render work.
+func (m Model) activityRowsForRenderUncached(events []domain.Event) []string {
 	rows := make([]string, 0, len(events))
 	for i, ev := range events {
 		focused := i == m.activityCursor
@@ -127,6 +144,58 @@ func (m Model) activityRowsForRender(events []domain.Event) []string {
 	}
 	return rows
 }
+
+// cachedActivityRowsForRender is the *Model variant of
+// activityRowsForRender that writes back into the per-model cache.
+// Hot-path handlers (clampActivityScroll, syncActivityScrollToCursor,
+// visibleActivityCardRange via moveActivityCursor) call this so the
+// subsequent value-receiver render path inside renderTaskCommentsCell
+// hits a warm cache.
+func (m *Model) cachedActivityRowsForRender(events []domain.Event) []string {
+	key := m.activityRowsForRenderKey(events)
+	if m.activityCardsCache.valid && m.activityCardsCache.key == key {
+		return m.activityCardsCache.cards
+	}
+	cards := m.activityRowsForRenderUncached(events)
+	m.activityCardsCache = activityCardsCacheEntry{valid: true, key: key, cards: cards}
+	return cards
+}
+
+// activityRowsForRenderKey fingerprints the inputs activityRowsForRender
+// depends on: focused task id, cursor (changes the focused-card accent
+// border), commentCard content width (changes wrap), and per-event id
+// + type + body length. The body length is a cheap proxy that catches
+// edit-in-place mutations without hashing the full body string.
+func (m Model) activityRowsForRenderKey(events []domain.Event) uint64 {
+	h := fnv.New64a()
+	var buf [8]byte
+	binary.LittleEndian.PutUint64(buf[:], uint64(m.taskID))
+	h.Write(buf[:])
+	binary.LittleEndian.PutUint64(buf[:], uint64(m.activityCursor))
+	h.Write(buf[:])
+	binary.LittleEndian.PutUint64(buf[:], uint64(m.commentCardWidth()))
+	h.Write(buf[:])
+	for _, ev := range events {
+		binary.LittleEndian.PutUint64(buf[:], uint64(ev.ID))
+		h.Write(buf[:])
+		h.Write([]byte(ev.EventType))
+		h.Write([]byte{0})
+		binary.LittleEndian.PutUint64(buf[:], uint64(len(ev.Body)))
+		h.Write(buf[:])
+	}
+	return h.Sum64()
+}
+
+// activityCardsCacheEntry is the memoised projection of
+// activityRowsForRender; lives on the Model so a fresh value copy
+// from the Bubbletea event loop carries the cache forward into the
+// next render.
+type activityCardsCacheEntry struct {
+	valid bool
+	key   uint64
+	cards []string
+}
+
 
 // renderSystemEventCard formats task.created/moved/completed in a card that
 // matches the comment card geometry but reads as metadata: dimmer border,
@@ -234,7 +303,7 @@ func (m *Model) scrollActivityLines(delta int) {
 // for the off-by-one explanation around the split-hint reservation.
 func (m *Model) clampActivityScroll() {
 	events := m.activityForTaskInView(m.taskID)
-	body := flattenActivityCards(m.activityRowsForRender(events))
+	body := flattenActivityCards(m.cachedActivityRowsForRender(events))
 	viewport := m.activityViewportLines()
 	if viewport <= 0 || len(body) <= viewport {
 		m.activityScroll = 0
@@ -430,7 +499,7 @@ func (m *Model) syncActivityScrollToCursor() {
 	if m.activityCursor >= len(events) {
 		return
 	}
-	cards := m.activityRowsForRender(events)
+	cards := m.cachedActivityRowsForRender(events)
 	body := flattenActivityCards(cards)
 	ranges := cardLineRanges(cards)
 	viewport := m.activityViewportLines()
