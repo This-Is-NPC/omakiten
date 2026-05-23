@@ -519,6 +519,15 @@ type Model struct {
 	// on submit / cancel.
 	planAssignTaskID int64
 
+	// tokenCountCache memoises m.counter.Count(body) per content hash so
+	// computeMetrics does not re-tokenise every law / persona / comment
+	// body on every refresh. Bodies are stable until the user edits one;
+	// the cache only grows for new bodies. Cleared on theme reload via
+	// the same hook that drops the markdown caches (themes do not affect
+	// token counts, so theme-reload clearing is conservative — the cache
+	// stays warm across normal refresh ticks).
+	tokenCountCache map[uint64]int
+
 	// cachedTasksByBucket memoises tasksByBucket() so the board renderer
 	// + every cursor handler that calls tasksInCurrentBucket share one
 	// filter+group pass per refresh. Invalidated whenever m.tasks /

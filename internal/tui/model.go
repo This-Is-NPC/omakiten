@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	fnv64a "hash/fnv"
 	"reflect"
 	"strings"
 	"sync"
@@ -74,6 +75,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		cardSelectedStyleByWidth: map[int]lipgloss.Style{},
 		archivedCardStyleByWidth: map[int]lipgloss.Style{},
 		inputStyleByWidth:        map[int]lipgloss.Style{},
+		tokenCountCache:          map[uint64]int{},
 	}
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()
@@ -1094,14 +1096,44 @@ func (m Model) computeMetrics(maxTokens int) domain.TokenMetrics {
 		total += entry.TokenEstimate
 	}
 	for _, law := range m.laws {
-		total += m.counter.Count(law.Key + " " + law.Body)
+		total += m.countTokens(law.Key + " " + law.Body)
 	}
 	for _, persona := range m.personas {
 		// Persona descriptions count toward the budget; skill bodies do not.
-		total += m.counter.Count(persona.Description)
+		total += m.countTokens(persona.Description)
 	}
 	for _, comment := range m.comments {
-		total += m.counter.Count(comment.Body)
+		total += m.countTokens(comment.Body)
 	}
 	return domain.TokenMetrics{EstimatedTotal: total, MaxTokens: maxTokens, Truncated: maxTokens > 0 && total > maxTokens}
+}
+
+// countTokens looks the body's token count up in m.tokenCountCache (key
+// = fnv64a hash) and falls through to m.counter.Count on a miss. A nil
+// cache (uninitialised model in tests) degrades to a direct counter
+// call so the helper stays safe to call from value-receiver paths.
+func (m Model) countTokens(body string) int {
+	if body == "" {
+		return 0
+	}
+	if m.tokenCountCache == nil {
+		return m.counter.Count(body)
+	}
+	key := fnv64aString(body)
+	if cached, ok := m.tokenCountCache[key]; ok {
+		return cached
+	}
+	count := m.counter.Count(body)
+	m.tokenCountCache[key] = count
+	return count
+}
+
+// fnv64aString fingerprints body for the token cache key. Collisions
+// inside a single TUI session are statistically negligible against
+// 64-bit space; on collision the worst case is two bodies sharing a
+// stale count, which a future fresh body insert overwrites.
+func fnv64aString(body string) uint64 {
+	h := fnv64a.New64a()
+	h.Write([]byte(body))
+	return h.Sum64()
 }
