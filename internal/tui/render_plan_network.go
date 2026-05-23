@@ -2,7 +2,9 @@ package tui
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
+	"hash/fnv"
 	"sort"
 	"strings"
 
@@ -214,6 +216,7 @@ func (m *Model) reloadPlanNetwork() {
 		return
 	}
 	m.planNetworkShow = show
+	m.invalidatePlanNetworkRowsCache()
 	rows := m.planNetworkBuildRows()
 	if m.planNetworkCursor >= len(rows) {
 		m.planNetworkCursor = 0
@@ -466,8 +469,83 @@ func (m Model) planNetworkBuildData(opts planNetworkBuildOpts) planNetworkBuild 
 // slice for cursor clamps and kind checks. Skips the SQL peek + the
 // critical-path DFS so the projection stays cheap on every keystroke
 // (the full projection runs once per render in renderPlanNetwork).
-func (m Model) planNetworkBuildRows() []planNetworkRow {
-	return m.planNetworkBuildData(planNetworkBuildOpts{SkipPeek: true, SkipCritical: true}).Rows
+//
+// Caches the result on (planID, collapsedMap, per-task id+bucket) so
+// the 11 invocation sites across handlePlanNetworkKey (j/k/h/l/space/
+// pgup/pgdn/g/G/enter, plus reloadPlanNetwork + togglePlanWaveAtCursor)
+// only rebuild when one of those changes — every other call short-
+// circuits to the cached slice. Pointer receiver so the cache writes
+// back into the model.
+func (m *Model) planNetworkBuildRows() []planNetworkRow {
+	key := m.planNetworkRowsCacheKey()
+	if m.planNetworkRowsCache.valid && m.planNetworkRowsCache.key == key {
+		return m.planNetworkRowsCache.rows
+	}
+	rows := m.planNetworkBuildData(planNetworkBuildOpts{SkipPeek: true, SkipCritical: true}).Rows
+	m.planNetworkRowsCache = planNetworkRowsCacheEntry{
+		valid: true,
+		key:   key,
+		rows:  rows,
+	}
+	return rows
+}
+
+// planNetworkRowsCacheEntry holds the cached row projection plus the
+// fingerprint that produced it. valid stays false until the first
+// build so a fresh model never hands out a stale empty slice.
+type planNetworkRowsCacheEntry struct {
+	valid bool
+	key   uint64
+	rows  []planNetworkRow
+}
+
+// planNetworkRowsCacheKey fingerprints the inputs planNetworkBuildRows
+// depends on: the focused plan id, the collapse state of every wave,
+// and each task's (id, bucketKey) inside every wave. Bucket key is
+// included because the row's IsCritical / InProgress / FinalBucket
+// flags downstream of the cached projection vary with it.
+func (m Model) planNetworkRowsCacheKey() uint64 {
+	h := fnv.New64a()
+	var buf [8]byte
+	binary.LittleEndian.PutUint64(buf[:], uint64(m.planNetworkShow.Plan.ID))
+	h.Write(buf[:])
+
+	collapsedKeys := make([]int64, 0, len(m.planNetworkCollapsed))
+	for k := range m.planNetworkCollapsed {
+		collapsedKeys = append(collapsedKeys, k)
+	}
+	sort.Slice(collapsedKeys, func(i, j int) bool { return collapsedKeys[i] < collapsedKeys[j] })
+	for _, k := range collapsedKeys {
+		binary.LittleEndian.PutUint64(buf[:], uint64(k))
+		h.Write(buf[:])
+		if m.planNetworkCollapsed[k] {
+			h.Write([]byte{1})
+		} else {
+			h.Write([]byte{0})
+		}
+	}
+
+	for _, wv := range m.planNetworkShow.Waves {
+		binary.LittleEndian.PutUint64(buf[:], uint64(wv.Wave.ID))
+		h.Write(buf[:])
+		for _, t := range wv.Tasks {
+			binary.LittleEndian.PutUint64(buf[:], uint64(t.TaskID))
+			h.Write(buf[:])
+			h.Write([]byte(t.BucketKey))
+			h.Write([]byte{0})
+		}
+	}
+	return h.Sum64()
+}
+
+// invalidatePlanNetworkRowsCache drops the memoised projection so the
+// next planNetworkBuildRows call rebuilds. Used by mutation paths
+// (assign, edit) whose effect on the rows would not be visible via
+// the cache key alone — the cache key covers structural inputs, but
+// some mutation paths (assignee write, bucket move outside the row
+// projection) still want a fresh build after they finish.
+func (m *Model) invalidatePlanNetworkRowsCache() {
+	m.planNetworkRowsCache.valid = false
 }
 
 // planNetworkWaveRails records the rendered shape of one wave: tasks

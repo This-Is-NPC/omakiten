@@ -518,6 +518,14 @@ type Model struct {
 	// on submit / cancel.
 	planAssignTaskID int64
 
+	// planNetworkRowsCache memoises planNetworkBuildRows() across the
+	// 11 invocation sites in handlePlanNetworkKey (j/k/h/l/space/pgup/
+	// pgdn/g/G/enter all rebuild for cursor / scroll math). Keyed on
+	// (planID, collapsedMap, per-task id+bucket) so any state change
+	// that affects the projection bumps the key; identical inputs
+	// short-circuit to the cached slice without re-running the DFS.
+	planNetworkRowsCache planNetworkRowsCacheEntry
+
 	// statsSummary caches the last-fetched metrics summary. statsPeriod
 	// holds the active filter ("7d", "30d", "all"); refreshed on view entry
 	// and on period change via ←/→.
