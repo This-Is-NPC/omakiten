@@ -2,7 +2,9 @@ package tui
 
 import (
 	"context"
+	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -109,6 +111,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, cmd
 	}
 	switch msg := msg.(type) {
+	case refreshAfterViewChangeMsg:
+		if msg.err != nil {
+			m.status = msg.err.Error()
+			return m, nil
+		}
+		m.applyRefreshAfterViewChange(msg)
+		return m, nil
 	case homeProjectDeleteResultMsg:
 		// Asynchronous tail of the Home delete flow — folds the
 		// ProjectService.Delete outcome into m.status + reloads the
@@ -200,8 +209,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		if m.handleCommonKey(msg) {
-			m.refreshAfterViewChange(prevNav)
-			return m, nil
+			return m, m.refreshAfterViewChangeCmd(prevNav)
 		}
 		switch m.sub {
 		case subBoard:
@@ -230,8 +238,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-	m.refreshAfterViewChange(prevNav)
-	return m, nil
+	return m, m.refreshAfterViewChangeCmd(prevNav)
 }
 
 // newTaskTitleInput is the canonical textinput config for the task title
@@ -340,12 +347,156 @@ func (m Model) shouldRealtimeRefresh() bool {
 	return !m.helpOpen && m.mode == modeNormal && m.taskScreen == taskScreenClosed && m.entityScreen == entityScreenClosed && !m.moveMode
 }
 
-func (m *Model) refreshAfterViewChange(prev navState) {
+// refreshAfterViewChangeCmd reacts to a sub-tab nav transition. Light
+// routes (home, stats, logs) keep running on the Update goroutine
+// because their workloads are bounded; the board / table / graph /
+// plans routes hand the heavy read pipeline (TUIQueryService.Snapshot
+// + PlanService.ListRollups) off to a worker via tea.Cmd so a keystroke
+// returns immediately. The previous view stays rendered until the
+// resulting refreshAfterViewChangeMsg lands and the Update handler
+// folds the loaded slices into the model.
+func (m *Model) refreshAfterViewChangeCmd(prev navState) tea.Cmd {
 	if m.top == prev.top && m.sub == prev.sub {
+		return nil
+	}
+	if m.onHome() {
+		if err := m.loadHome(); err != nil {
+			m.status = err.Error()
+		}
+		return nil
+	}
+	if m.top == topStats && m.sub == subStatsLogs {
+		if err := m.refreshActivityLogs(); err != nil {
+			m.status = err.Error()
+		}
+		return nil
+	}
+	if m.top == topStats && m.sub == subStatsGeneral {
+		if err := m.refreshStats(); err != nil {
+			m.status = err.Error()
+		}
+		return nil
+	}
+	return m.refreshHeavyAfterViewChangeCmd()
+}
+
+// viewChangeRefreshRegistry tracks the function pointer of each cmd
+// produced by refreshHeavyAfterViewChangeCmd so test helpers can
+// distinguish the async view-change refresh from every other cmd a key
+// dispatch returns (write IO, picker pickup, tick reschedule) without
+// having to execute the cmd to inspect its message type. Production
+// code never reads this map.
+var viewChangeRefreshRegistry sync.Map
+
+func registerViewChangeRefreshCmd(cmd tea.Cmd) {
+	if cmd == nil {
 		return
 	}
-	if err := m.refreshCurrentView(); err != nil {
-		m.status = err.Error()
+	viewChangeRefreshRegistry.Store(reflect.ValueOf(cmd).Pointer(), struct{}{})
+}
+
+func isViewChangeRefreshCmd(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	_, ok := viewChangeRefreshRegistry.Load(reflect.ValueOf(cmd).Pointer())
+	return ok
+}
+
+// refreshHeavyAfterViewChangeCmd captures every input the worker needs
+// (snapshot pointer, ctx, project, sort, services) on the main goroutine
+// and returns a tea.Cmd whose closure runs the read pipeline. The result
+// message carries the loaded TUISnapshot plus the optional plan rollups
+// and resolved languages so the fold path is pure assignment — no fresh
+// IO on the Update goroutine.
+func (m *Model) refreshHeavyAfterViewChangeCmd() tea.Cmd {
+	var preservedTaskID int64
+	if task, ok := m.selectedTask(); ok {
+		preservedTaskID = task.ID
+	}
+	views := m.activeViewSettings()
+	m.views = views
+	cfgSnap := m.repos.activeSnapshot()
+	query := app.NewTUIQueryService(m.repos.Tasks, cfgSnap, m.repos.Dependencies, m.repos.Comments, m.repos.Entries, m.repos.Tags)
+	var plansSvc *app.PlanService
+	if m.repos.Plans != nil {
+		plansSvc = app.NewPlanServiceWithSnapshot(m.repos.Plans, cfgSnap)
+	}
+	langs := m.languages
+	if cfgSnap != nil {
+		langs = cfgSnap.Settings().EffectiveLanguages()
+	}
+	ctx := m.ctx
+	project := m.project
+	sort := domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order}
+	archived := m.includeArchived
+	cmd := tea.Cmd(func() tea.Msg {
+		result := refreshAfterViewChangeMsg{preservedTaskID: preservedTaskID, langs: langs}
+		s, err := query.Snapshot(ctx, project, sort, app.SnapshotOptions{IncludeArchived: archived})
+		if err != nil {
+			result.err = err
+			return result
+		}
+		result.snap = s
+		result.snapValid = true
+		if plansSvc != nil {
+			if rollups, perr := plansSvc.ListRollups(ctx, project); perr == nil {
+				result.plans = rollups
+				result.plansValid = true
+			}
+		}
+		return result
+	})
+	registerViewChangeRefreshCmd(cmd)
+	return cmd
+}
+
+// refreshAfterViewChangeMsg is the worker-to-main envelope for the
+// async view-change refresh. snapValid / plansValid disambiguate "empty
+// slice because the project has none" from "the worker did not load
+// this kind of data" — the fold path only overwrites m.plans when the
+// worker actually queried it.
+type refreshAfterViewChangeMsg struct {
+	snap            app.TUISnapshot
+	snapValid       bool
+	plans           []app.PlanRollup
+	plansValid      bool
+	langs           config.LanguageSettings
+	preservedTaskID int64
+	err             error
+}
+
+// applyRefreshAfterViewChange folds the worker's result into the model.
+// Pure assignment — no IO — so it is safe to run on the Update
+// goroutine even when the worker is still running a subsequent tick.
+func (m *Model) applyRefreshAfterViewChange(r refreshAfterViewChangeMsg) {
+	if !r.snapValid {
+		return
+	}
+	snap := r.snap
+	m.tasks = snap.Tasks
+	m.workflow = snap.Workflow
+	m.dependencies = snap.Dependencies
+	m.comments = snap.Comments
+	m.laws = snap.Laws
+	m.skills = snap.Skills
+	m.personas = snap.Personas
+	m.templates = snap.Templates
+	m.entries = snap.Entries
+	m.tags = snap.AllTags
+	m.taskTagsMap = snap.TaskTagsByID
+	m.metrics = m.computeMetrics(snap.Settings.MaxTokens)
+	m.languages = r.langs
+	if r.plansValid {
+		m.plans = r.plans
+	}
+	m.clampPlanCursor()
+	m.clampSelection()
+	m.clampCardIdx()
+	m.clampEntityCursor()
+	m.syncSelectedFromBoard()
+	if r.preservedTaskID > 0 {
+		m.selectTaskByID(r.preservedTaskID)
 	}
 }
 

@@ -1565,40 +1565,67 @@ func TestModelEditsCommentFromCommentScreen(t *testing.T) {
 
 func pressRune(t *testing.T, model Model, r rune) Model {
 	t.Helper()
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatalf("Update() returned %T, want Model", updated)
 	}
-	return got
+	return foldViewChangeRefresh(t, got, cmd)
 }
 
 func pressKey(t *testing.T, model Model, key tea.KeyType) Model {
 	t.Helper()
-	updated, _ := model.Update(tea.KeyMsg{Type: key})
+	updated, cmd := model.Update(tea.KeyMsg{Type: key})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatalf("Update() returned %T, want Model", updated)
 	}
-	return got
+	return foldViewChangeRefresh(t, got, cmd)
 }
 
 func pressAltKey(t *testing.T, model Model, key tea.KeyType) Model {
 	t.Helper()
-	updated, _ := model.Update(tea.KeyMsg{Type: key, Alt: true})
+	updated, cmd := model.Update(tea.KeyMsg{Type: key, Alt: true})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatalf("Update() returned %T, want Model", updated)
 	}
-	return got
+	return foldViewChangeRefresh(t, got, cmd)
 }
 
 func pressStringKey(t *testing.T, model Model, key string) Model {
 	t.Helper()
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatalf("Update() returned %T, want Model", updated)
+	}
+	return foldViewChangeRefresh(t, got, cmd)
+}
+
+// foldViewChangeRefresh keeps the synchronous test contract after
+// Update started returning a tea.Cmd for the view-change refresh path
+// (perf/tui-refresh-async). It only invokes the cmd when it is the
+// view-change refresh cmd this package controls — every other cmd
+// (write-flow IO, picker pickups, tick reschedulers) is left
+// unevaluated so the helper does not pay for IO the production runtime
+// would dispatch asynchronously.
+func foldViewChangeRefresh(t *testing.T, m Model, cmd tea.Cmd) Model {
+	t.Helper()
+	if cmd == nil {
+		return m
+	}
+	if !isViewChangeRefreshCmd(cmd) {
+		return m
+	}
+	msg := cmd()
+	if msg == nil {
+		return m
+	}
+	updated, _ := m.Update(msg)
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatalf("Update(refreshAfterViewChangeMsg) returned %T, want Model", updated)
 	}
 	return got
 }
