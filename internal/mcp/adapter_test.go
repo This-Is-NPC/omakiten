@@ -479,7 +479,7 @@ func newMCPTestService(t *testing.T, ctx context.Context) *agent.Service {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 	svc := agent.NewService(store, agent.ProjectSelector{CWD: root})
@@ -563,7 +563,7 @@ func newMCPProjectFixture(t *testing.T, ctx context.Context, slug string) (*snap
 	if err != nil {
 		t.Fatalf("UpsertProject(%s): %v", slug, err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "T-"+slug, "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "T-"+slug, "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask(%s): %v", slug, err)
 	}
 	return store, project
@@ -991,7 +991,7 @@ func newMCPProjectWithBundle(t *testing.T, ctx context.Context, slug string, bun
 	if err != nil {
 		t.Fatalf("UpsertProject(%s): %v", slug, err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "T-"+slug, "", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "T-"+slug, "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(%s): %v", slug, err)
 	}

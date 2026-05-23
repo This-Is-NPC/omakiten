@@ -26,10 +26,10 @@ func TestStoreProjectScopedTasks(t *testing.T) {
 		t.Fatalf("UpsertProject(B) error = %v", err)
 	}
 
-	if _, err := store.CreateTask(ctx, projectA.ID, "A task", "", domain.Priority(2), "backlog", store.snap()); err != nil {
+	if _, err := store.CreateTask(ctx, projectA.ID, "A task", "", domain.Priority(2), "backlog", nil, store.snap()); err != nil {
 		t.Fatalf("CreateTask(A) error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, projectB.ID, "B task", "", domain.Priority(2), "backlog", store.snap()); err != nil {
+	if _, err := store.CreateTask(ctx, projectB.ID, "B task", "", domain.Priority(2), "backlog", nil, store.snap()); err != nil {
 		t.Fatalf("CreateTask(B) error = %v", err)
 	}
 
@@ -59,7 +59,7 @@ func TestMoveTaskEnforcesWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -103,15 +103,15 @@ func TestStoreOperationalDataIsProjectScoped(t *testing.T) {
 		t.Fatalf("UpsertProject(B) error = %v", err)
 	}
 
-	taskA1, err := store.CreateTask(ctx, projectA.ID, "A first", "", domain.Priority(2), "backlog", store.snap())
+	taskA1, err := store.CreateTask(ctx, projectA.ID, "A first", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask(A1) error = %v", err)
 	}
-	taskA2, err := store.CreateTask(ctx, projectA.ID, "A second", "", domain.Priority(2), "backlog", store.snap())
+	taskA2, err := store.CreateTask(ctx, projectA.ID, "A second", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask(A2) error = %v", err)
 	}
-	taskB, err := store.CreateTask(ctx, projectB.ID, "B first", "", domain.Priority(2), "backlog", store.snap())
+	taskB, err := store.CreateTask(ctx, projectB.ID, "B first", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask(B) error = %v", err)
 	}
@@ -168,11 +168,11 @@ func TestDependencyServiceRejectsCycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	taskA, err := store.CreateTask(ctx, project.ID, "A", "", domain.Priority(2), "backlog", store.snap())
+	taskA, err := store.CreateTask(ctx, project.ID, "A", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask(A) error = %v", err)
 	}
-	taskB, err := store.CreateTask(ctx, project.ID, "B", "", domain.Priority(2), "backlog", store.snap())
+	taskB, err := store.CreateTask(ctx, project.ID, "B", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask(B) error = %v", err)
 	}
@@ -316,7 +316,7 @@ func TestStoreUpdateTask(t *testing.T) {
 		t.Fatal("UpdateTask() error = nil, want not found")
 	}
 
-	task, err := store.CreateTask(ctx, project.ID, "Task", "Desc", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "Task", "Desc", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -340,10 +340,10 @@ func TestStoreTaskCount(t *testing.T) {
 	projectA, _ := store.UpsertProject(ctx, "A", "a", "/work/a")
 	projectB, _ := store.UpsertProject(ctx, "B", "b", "/work/b")
 
-	if _, err := store.CreateTask(ctx, projectA.ID, "A1", "", domain.Priority(2), "backlog", store.snap()); err != nil {
+	if _, err := store.CreateTask(ctx, projectA.ID, "A1", "", domain.Priority(2), "backlog", nil, store.snap()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, projectB.ID, "B1", "", domain.Priority(2), "backlog", store.snap()); err != nil {
+	if _, err := store.CreateTask(ctx, projectB.ID, "B1", "", domain.Priority(2), "backlog", nil, store.snap()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
@@ -371,8 +371,8 @@ func TestStoreRemoveTaskDependency(t *testing.T) {
 	store.applyBundle(sqliteTestBundle(t))
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	taskA, _ := store.CreateTask(ctx, project.ID, "A", "", domain.Priority(2), "backlog", store.snap())
-	taskB, _ := store.CreateTask(ctx, project.ID, "B", "", domain.Priority(2), "backlog", store.snap())
+	taskA, _ := store.CreateTask(ctx, project.ID, "A", "", domain.Priority(2), "backlog", nil, store.snap())
+	taskB, _ := store.CreateTask(ctx, project.ID, "B", "", domain.Priority(2), "backlog", nil, store.snap())
 
 	if _, err := store.AddTaskDependency(ctx, project.ID, taskB.ID, taskA.ID); err != nil {
 		t.Fatalf("AddTaskDependency() error = %v", err)
@@ -395,7 +395,7 @@ func TestStoreMoveTaskErrors(t *testing.T) {
 	store.applyBundle(sqliteTestBundle(t))
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.snap())
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.snap())
 
 	_, err := store.MoveTask(ctx, project.ID, 9999, "dev", store.snap())
 	if err == nil {
@@ -456,8 +456,8 @@ func TestMoveTaskGuardBlockersIn(t *testing.T) {
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
 	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.snap())
 
-	blocker, _ := store.CreateTask(ctx, project.ID, "Blocker", "", domain.Priority(2), "backlog", store.snap())
-	main, _ := store.CreateTask(ctx, project.ID, "Main", "", domain.Priority(2), "backlog", store.snap())
+	blocker, _ := store.CreateTask(ctx, project.ID, "Blocker", "", domain.Priority(2), "backlog", nil, store.snap())
+	main, _ := store.CreateTask(ctx, project.ID, "Main", "", domain.Priority(2), "backlog", nil, store.snap())
 	if _, err := store.AddTaskDependency(ctx, project.ID, main.ID, blocker.ID); err != nil {
 		t.Fatalf("AddTaskDependency() error = %v", err)
 	}
@@ -473,8 +473,8 @@ func TestMoveTaskGuardBlockersIn(t *testing.T) {
 	}
 
 	// Move blocker to done bucket (create directly there since no dev→done transition)
-	doneBlocker, _ := store.CreateTask(ctx, project.ID, "Done Blocker", "", domain.Priority(2), "done", store.snap())
-	main2, _ := store.CreateTask(ctx, project.ID, "Main2", "", domain.Priority(2), "backlog", store.snap())
+	doneBlocker, _ := store.CreateTask(ctx, project.ID, "Done Blocker", "", domain.Priority(2), "done", nil, store.snap())
+	main2, _ := store.CreateTask(ctx, project.ID, "Main2", "", domain.Priority(2), "backlog", nil, store.snap())
 	if _, err := store.AddTaskDependency(ctx, project.ID, main2.ID, doneBlocker.ID); err != nil {
 		t.Fatalf("AddTaskDependency() error = %v", err)
 	}
@@ -496,7 +496,7 @@ func TestMoveTaskGuardBlockersInNoBlockers(t *testing.T) {
 	store.applyBundle(bundleWithBlockersInGuard(t))
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.snap())
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.snap())
 	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.snap())
 
 	// No blockers — guard passes
@@ -516,7 +516,7 @@ func TestMoveTaskGuardCommentsMin(t *testing.T) {
 	store.applyBundle(bundleWithCommentsMinGuard(t, 1))
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.snap())
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.snap())
 	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.snap())
 
 	// Guard fails: 0 comments
@@ -551,8 +551,8 @@ func TestMoveTaskNoGuardUnaffected(t *testing.T) {
 	store.applyBundle(sqliteTestBundle(t))
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	blocker, _ := store.CreateTask(ctx, project.ID, "Blocker", "", domain.Priority(2), "backlog", store.snap())
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.snap())
+	blocker, _ := store.CreateTask(ctx, project.ID, "Blocker", "", domain.Priority(2), "backlog", nil, store.snap())
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.snap())
 	if _, err := store.AddTaskDependency(ctx, project.ID, task.ID, blocker.ID); err != nil {
 		t.Fatalf("AddTaskDependency() error = %v", err)
 	}
@@ -575,7 +575,7 @@ func TestMoveTaskGuardCommentsTagged(t *testing.T) {
 	store.applyBundle(bundleWithCommentsTaggedGuard(t, "resume", 1))
 
 	project, _ := store.UpsertProject(ctx, "Project", "project", "/work/project")
-	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.snap())
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.snap())
 	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.snap())
 
 	// Guard fails: no comments at all

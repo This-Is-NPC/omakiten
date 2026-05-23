@@ -38,7 +38,7 @@ func TestProjectDeleteSnapshotsRealWALData(t *testing.T) {
 	}
 	const taskCount = 3
 	for i := 0; i < taskCount; i++ {
-		if _, err := store.CreateTask(ctx, project.ID, "wal-bound", "", domain.Priority(2), "backlog", store.snap()); err != nil {
+		if _, err := store.CreateTask(ctx, project.ID, "wal-bound", "", domain.Priority(2), "backlog", nil, store.snap()); err != nil {
 			t.Fatalf("CreateTask(%d): %v", i, err)
 		}
 	}

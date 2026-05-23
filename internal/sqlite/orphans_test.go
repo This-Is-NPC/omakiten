@@ -15,7 +15,7 @@ func TestPreviewOrphanedTasks_NoOrphans(t *testing.T) {
 
 	store.applyBundle(sqliteTestBundle(t))
 	project := mustUpsertProject(t, store, "p", "p", "/p")
-	if _, err := store.CreateTask(ctx, project.ID, "T1", "", domain.Priority(2), "backlog", store.snap()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "T1", "", domain.Priority(2), "backlog", nil, store.snap()); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
@@ -37,7 +37,7 @@ func TestPreviewOrphanedTasks_MissingKeyMapsToDefault(t *testing.T) {
 
 	store.applyBundle(bundleWithKeys(t, "default", []string{"docs", "dev"}, []int{1, 2}))
 	project := mustUpsertProject(t, store, "p", "p", "/p")
-	docsTask, err := store.CreateTask(ctx, project.ID, "doc task", "", domain.Priority(2), "docs", store.snap())
+	docsTask, err := store.CreateTask(ctx, project.ID, "doc task", "", domain.Priority(2), "docs", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -69,10 +69,10 @@ func TestPreviewOrphanedTasks_PreservedKeyNotOrphan(t *testing.T) {
 
 	store.applyBundle(bundleWithKeys(t, "default", []string{"backlog", "docs"}, []int{1, 2}))
 	project := mustUpsertProject(t, store, "p", "p", "/p")
-	if _, err := store.CreateTask(ctx, project.ID, "alive", "", domain.Priority(2), "backlog", store.snap()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "alive", "", domain.Priority(2), "backlog", nil, store.snap()); err != nil {
 		t.Fatalf("CreateTask backlog: %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "doomed", "", domain.Priority(2), "docs", store.snap()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "doomed", "", domain.Priority(2), "docs", nil, store.snap()); err != nil {
 		t.Fatalf("CreateTask docs: %v", err)
 	}
 
@@ -96,7 +96,7 @@ func TestRebindOrphanedTasks_UpdatesBucketAndEmitsEvent(t *testing.T) {
 
 	store.applyBundle(bundleWithKeys(t, "default", []string{"docs"}, []int{1}))
 	project := mustUpsertProject(t, store, "p", "p", "/p")
-	task, err := store.CreateTask(ctx, project.ID, "doc", "", domain.Priority(2), "docs", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "doc", "", domain.Priority(2), "docs", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestPreviewOrphanedTasks_IgnoresArchived(t *testing.T) {
 
 	store.applyBundle(bundleWithKeys(t, "default", []string{"docs"}, []int{1}))
 	project := mustUpsertProject(t, store, "p", "p", "/p")
-	task, err := store.CreateTask(ctx, project.ID, "archived doc", "", domain.Priority(2), "docs", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "archived doc", "", domain.Priority(2), "docs", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestPreviewOrphanedTasks_CrossBundleSwap(t *testing.T) {
 	bundleA.Kit.Name = "Preset A"
 	store.applyBundle(bundleA)
 	project := mustUpsertProject(t, store, "p", "p", "/p")
-	if _, err := store.CreateTask(ctx, project.ID, "doc work", "", domain.Priority(2), "docs", store.snap()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "doc work", "", domain.Priority(2), "docs", nil, store.snap()); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 

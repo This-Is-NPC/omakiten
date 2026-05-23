@@ -80,11 +80,11 @@ LIMIT 1
 func (s *Store) CountDescendants(ctx context.Context, projectID, parentID int64) (int, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx, `
-WITH RECURSIVE subtree(id) AS (
-    SELECT id FROM tasks WHERE project_id = ? AND parent_id = ?
+WITH RECURSIVE subtree(id, depth) AS (
+    SELECT id, 0 FROM tasks WHERE project_id = ? AND parent_id = ?
     UNION ALL
-    SELECT t.id FROM tasks t INNER JOIN subtree s ON t.parent_id = s.id
-    WHERE t.project_id = ?
+    SELECT t.id, s.depth + 1 FROM tasks t INNER JOIN subtree s ON t.parent_id = s.id
+    WHERE t.project_id = ? AND s.depth < 1024
 )
 SELECT COUNT(*) FROM subtree
 `, projectID, parentID, projectID).Scan(&count)
@@ -105,11 +105,11 @@ func (s *Store) IsDescendantOf(ctx context.Context, projectID, candidateID, ance
 	}
 	var hit int
 	err := s.db.QueryRowContext(ctx, `
-WITH RECURSIVE ancestors(id, parent_id) AS (
-    SELECT id, parent_id FROM tasks WHERE project_id = ? AND id = ?
+WITH RECURSIVE ancestors(id, parent_id, depth) AS (
+    SELECT id, parent_id, 0 FROM tasks WHERE project_id = ? AND id = ?
     UNION ALL
-    SELECT t.id, t.parent_id FROM tasks t INNER JOIN ancestors a ON t.id = a.parent_id
-    WHERE t.project_id = ?
+    SELECT t.id, t.parent_id, a.depth + 1 FROM tasks t INNER JOIN ancestors a ON t.id = a.parent_id
+    WHERE t.project_id = ? AND a.depth < 1024
 )
 SELECT COUNT(*) FROM ancestors WHERE id = ?
 `, projectID, candidateID, projectID, ancestorID).Scan(&hit)
@@ -122,26 +122,65 @@ SELECT COUNT(*) FROM ancestors WHERE id = ?
 // SetTaskParent updates tasks.parent_id for the given task. parentID
 // nil clears the column (the task becomes a root); a non-nil pointer
 // sets the FK. The caller is responsible for cycle prevention via
-// IsDescendantOf — this method is the pure-persistence write.
+// IsDescendantOf — this method is the pure-persistence write. When
+// parentID is non-nil the parent lookup and the UPDATE share a single
+// transaction so the project-scope assertion is not TOCTOU-vulnerable
+// to a concurrent re-parent racing between SELECT and UPDATE.
 func (s *Store) SetTaskParent(ctx context.Context, projectID, taskID int64, parentID *int64) error {
 	if parentID != nil && *parentID == taskID {
 		return domain.NewError(domain.ErrValidation, "task cannot be its own parent", map[string]any{"task_id": taskID})
 	}
-	var (
-		result sql.Result
-		err    error
-	)
 	if parentID == nil {
-		result, err = s.db.ExecContext(ctx, `
-UPDATE tasks SET parent_id = NULL, updated_at = CURRENT_TIMESTAMP
-WHERE project_id = ? AND id = ?
-`, projectID, taskID)
-	} else {
-		result, err = s.db.ExecContext(ctx, `
+		return s.clearTaskParent(ctx, projectID, taskID)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var parentProjectID int64
+	switch err := tx.QueryRowContext(ctx, `SELECT project_id FROM tasks WHERE id = ?`, *parentID).Scan(&parentProjectID); {
+	case errors.Is(err, sql.ErrNoRows):
+		return domain.NewError(domain.ErrValidation, "parent task not found", map[string]any{"task_id": taskID, "parent_id": *parentID})
+	case err != nil:
+		return err
+	}
+	if parentProjectID != projectID {
+		return domain.NewError(domain.ErrValidation, "parent task belongs to a different project", map[string]any{
+			"task_id":           taskID,
+			"parent_id":         *parentID,
+			"project_id":        projectID,
+			"parent_project_id": parentProjectID,
+		})
+	}
+	result, err := tx.ExecContext(ctx, `
 UPDATE tasks SET parent_id = ?, updated_at = CURRENT_TIMESTAMP
 WHERE project_id = ? AND id = ?
 `, *parentID, projectID, taskID)
+	if err != nil {
+		return err
 	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 0 {
+		return domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
+	}
+	return tx.Commit()
+}
+
+// clearTaskParent is the parent-clear branch of SetTaskParent split out
+// so the parent-set path can run inside a transaction without forking
+// every UPDATE statement. No FK lookup is needed when parent_id goes to
+// NULL, so the bare ExecContext on s.db keeps the previous behaviour.
+func (s *Store) clearTaskParent(ctx context.Context, projectID, taskID int64) error {
+	result, err := s.db.ExecContext(ctx, `
+UPDATE tasks SET parent_id = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE project_id = ? AND id = ?
+`, projectID, taskID)
 	if err != nil {
 		return err
 	}

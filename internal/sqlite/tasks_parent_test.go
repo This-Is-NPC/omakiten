@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"omakiten/internal/domain"
 )
@@ -18,19 +19,19 @@ func TestListDirectChildrenReturnsOnlyDirectChildren(t *testing.T) {
 	t.Parallel()
 	ctx, store, project := setupParentFixture(t)
 
-	root, err := store.CreateTask(ctx, project.ID, "root", "", domain.Priority(2), "backlog", store.snap())
+	root, err := store.CreateTask(ctx, project.ID, "root", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask(root) = %v", err)
 	}
-	childA, err := store.CreateTask(ctx, project.ID, "child-a", "", domain.Priority(2), "backlog", store.snap())
+	childA, err := store.CreateTask(ctx, project.ID, "child-a", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask(child-a) = %v", err)
 	}
-	childB, err := store.CreateTask(ctx, project.ID, "child-b", "", domain.Priority(2), "backlog", store.snap())
+	childB, err := store.CreateTask(ctx, project.ID, "child-b", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask(child-b) = %v", err)
 	}
-	grand, err := store.CreateTask(ctx, project.ID, "grandchild", "", domain.Priority(2), "backlog", store.snap())
+	grand, err := store.CreateTask(ctx, project.ID, "grandchild", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask(grand) = %v", err)
 	}
@@ -66,15 +67,15 @@ func TestFirstChildNotInBucketSurfacesOpenChild(t *testing.T) {
 	t.Parallel()
 	ctx, store, project := setupParentFixture(t)
 
-	root, err := store.CreateTask(ctx, project.ID, "root", "", domain.Priority(2), "backlog", store.snap())
+	root, err := store.CreateTask(ctx, project.ID, "root", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask(root) = %v", err)
 	}
-	childA, err := store.CreateTask(ctx, project.ID, "child-a", "", domain.Priority(2), "backlog", store.snap())
+	childA, err := store.CreateTask(ctx, project.ID, "child-a", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask(child-a) = %v", err)
 	}
-	childB, err := store.CreateTask(ctx, project.ID, "child-b", "", domain.Priority(2), "backlog", store.snap())
+	childB, err := store.CreateTask(ctx, project.ID, "child-b", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask(child-b) = %v", err)
 	}
@@ -119,7 +120,7 @@ func TestCountDescendantsWalksFullSubtree(t *testing.T) {
 	t.Parallel()
 	ctx, store, project := setupParentFixture(t)
 
-	root, err := store.CreateTask(ctx, project.ID, "root", "", domain.Priority(2), "backlog", store.snap())
+	root, err := store.CreateTask(ctx, project.ID, "root", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask(root) = %v", err)
 	}
@@ -129,10 +130,10 @@ func TestCountDescendantsWalksFullSubtree(t *testing.T) {
 		t.Fatalf("CountDescendants(empty) = %d, want 0", n)
 	}
 
-	c1, _ := store.CreateTask(ctx, project.ID, "c1", "", domain.Priority(2), "backlog", store.snap())
-	c2, _ := store.CreateTask(ctx, project.ID, "c2", "", domain.Priority(2), "backlog", store.snap())
-	g1, _ := store.CreateTask(ctx, project.ID, "g1", "", domain.Priority(2), "backlog", store.snap())
-	gg1, _ := store.CreateTask(ctx, project.ID, "gg1", "", domain.Priority(2), "backlog", store.snap())
+	c1, _ := store.CreateTask(ctx, project.ID, "c1", "", domain.Priority(2), "backlog", nil, store.snap())
+	c2, _ := store.CreateTask(ctx, project.ID, "c2", "", domain.Priority(2), "backlog", nil, store.snap())
+	g1, _ := store.CreateTask(ctx, project.ID, "g1", "", domain.Priority(2), "backlog", nil, store.snap())
+	gg1, _ := store.CreateTask(ctx, project.ID, "gg1", "", domain.Priority(2), "backlog", nil, store.snap())
 
 	for taskID, parentID := range map[int64]int64{
 		c1.ID:  root.ID,
@@ -159,10 +160,10 @@ func TestIsDescendantOfDetectsCycles(t *testing.T) {
 	t.Parallel()
 	ctx, store, project := setupParentFixture(t)
 
-	root, _ := store.CreateTask(ctx, project.ID, "root", "", domain.Priority(2), "backlog", store.snap())
-	child, _ := store.CreateTask(ctx, project.ID, "child", "", domain.Priority(2), "backlog", store.snap())
-	grand, _ := store.CreateTask(ctx, project.ID, "grand", "", domain.Priority(2), "backlog", store.snap())
-	sibling, _ := store.CreateTask(ctx, project.ID, "sibling", "", domain.Priority(2), "backlog", store.snap())
+	root, _ := store.CreateTask(ctx, project.ID, "root", "", domain.Priority(2), "backlog", nil, store.snap())
+	child, _ := store.CreateTask(ctx, project.ID, "child", "", domain.Priority(2), "backlog", nil, store.snap())
+	grand, _ := store.CreateTask(ctx, project.ID, "grand", "", domain.Priority(2), "backlog", nil, store.snap())
+	sibling, _ := store.CreateTask(ctx, project.ID, "sibling", "", domain.Priority(2), "backlog", nil, store.snap())
 
 	if err := store.SetTaskParent(ctx, project.ID, child.ID, &root.ID); err != nil {
 		t.Fatalf("SetTaskParent(child) = %v", err)
@@ -203,7 +204,7 @@ func TestSetTaskParentRejectsSelfParent(t *testing.T) {
 	t.Parallel()
 	ctx, store, project := setupParentFixture(t)
 
-	task, _ := store.CreateTask(ctx, project.ID, "solo", "", domain.Priority(2), "backlog", store.snap())
+	task, _ := store.CreateTask(ctx, project.ID, "solo", "", domain.Priority(2), "backlog", nil, store.snap())
 	err := store.SetTaskParent(ctx, project.ID, task.ID, &task.ID)
 	if err == nil {
 		t.Fatal("SetTaskParent(self) succeeded, want validation error")
@@ -218,8 +219,8 @@ func TestSetTaskParentClearsToRoot(t *testing.T) {
 	t.Parallel()
 	ctx, store, project := setupParentFixture(t)
 
-	root, _ := store.CreateTask(ctx, project.ID, "root", "", domain.Priority(2), "backlog", store.snap())
-	child, _ := store.CreateTask(ctx, project.ID, "child", "", domain.Priority(2), "backlog", store.snap())
+	root, _ := store.CreateTask(ctx, project.ID, "root", "", domain.Priority(2), "backlog", nil, store.snap())
+	child, _ := store.CreateTask(ctx, project.ID, "child", "", domain.Priority(2), "backlog", nil, store.snap())
 
 	if err := store.SetTaskParent(ctx, project.ID, child.ID, &root.ID); err != nil {
 		t.Fatalf("SetTaskParent(child→root) = %v", err)
@@ -241,10 +242,10 @@ func TestCountDirectChildrenIgnoresGrandchildren(t *testing.T) {
 	t.Parallel()
 	ctx, store, project := setupParentFixture(t)
 
-	root, _ := store.CreateTask(ctx, project.ID, "root", "", domain.Priority(2), "backlog", store.snap())
-	c1, _ := store.CreateTask(ctx, project.ID, "c1", "", domain.Priority(2), "backlog", store.snap())
-	c2, _ := store.CreateTask(ctx, project.ID, "c2", "", domain.Priority(2), "backlog", store.snap())
-	g, _ := store.CreateTask(ctx, project.ID, "g", "", domain.Priority(2), "backlog", store.snap())
+	root, _ := store.CreateTask(ctx, project.ID, "root", "", domain.Priority(2), "backlog", nil, store.snap())
+	c1, _ := store.CreateTask(ctx, project.ID, "c1", "", domain.Priority(2), "backlog", nil, store.snap())
+	c2, _ := store.CreateTask(ctx, project.ID, "c2", "", domain.Priority(2), "backlog", nil, store.snap())
+	g, _ := store.CreateTask(ctx, project.ID, "g", "", domain.Priority(2), "backlog", nil, store.snap())
 
 	for taskID, parentID := range map[int64]int64{
 		c1.ID: root.ID,
@@ -261,6 +262,73 @@ func TestCountDirectChildrenIgnoresGrandchildren(t *testing.T) {
 	}
 	if got != 2 {
 		t.Fatalf("CountDirectChildren = %d, want 2 (grandchild excluded)", got)
+	}
+}
+
+func TestSetTaskParent_RejectsCrossProjectParent(t *testing.T) {
+	t.Parallel()
+	ctx, store, projectA := setupParentFixture(t)
+
+	projectB, err := store.UpsertProject(ctx, "Other", "other", "/work/other")
+	if err != nil {
+		t.Fatalf("UpsertProject(other) = %v", err)
+	}
+
+	taskA, err := store.CreateTask(ctx, projectA.ID, "a", "", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask(a) = %v", err)
+	}
+	taskB, err := store.CreateTask(ctx, projectB.ID, "b", "", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask(b) = %v", err)
+	}
+
+	err = store.SetTaskParent(ctx, projectA.ID, taskA.ID, &taskB.ID)
+	if err == nil {
+		t.Fatal("SetTaskParent(cross-project) succeeded, want validation error")
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrValidation {
+		t.Fatalf("SetTaskParent(cross-project) error = %v, want validation", err)
+	}
+}
+
+func TestIsDescendantOf_DepthBounded(t *testing.T) {
+	t.Parallel()
+	ctx, store, project := setupParentFixture(t)
+
+	a, _ := store.CreateTask(ctx, project.ID, "a", "", domain.Priority(2), "backlog", nil, store.snap())
+	b, _ := store.CreateTask(ctx, project.ID, "b", "", domain.Priority(2), "backlog", nil, store.snap())
+	c, _ := store.CreateTask(ctx, project.ID, "c", "", domain.Priority(2), "backlog", nil, store.snap())
+
+	if err := store.SetTaskParent(ctx, project.ID, b.ID, &a.ID); err != nil {
+		t.Fatalf("SetTaskParent(b→a) = %v", err)
+	}
+	if err := store.SetTaskParent(ctx, project.ID, c.ID, &b.ID); err != nil {
+		t.Fatalf("SetTaskParent(c→b) = %v", err)
+	}
+	// Forge a cycle a→c (a's parent becomes c, while c already descends from a)
+	// via raw SQL, bypassing the service-layer cycle guard.
+	if _, err := store.db.ExecContext(ctx, `UPDATE tasks SET parent_id = ? WHERE id = ?`, c.ID, a.ID); err != nil {
+		t.Fatalf("raw cycle insert = %v", err)
+	}
+
+	bounded, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := store.IsDescendantOf(bounded, project.ID, c.ID, a.ID)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("IsDescendantOf(cycle) = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("IsDescendantOf did not return within 2s — depth cap missing")
 	}
 }
 

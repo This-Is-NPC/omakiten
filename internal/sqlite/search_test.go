@@ -16,7 +16,7 @@ func TestSearchIndexCoversFiveEntities(t *testing.T) {
 	store := openTestStore(t)
 	project := mustUpsertProject(t, store, "P", "p", "/work/p")
 
-	task, err := store.CreateTask(ctx, project.ID, "deploy pipeline", "tls handshake fix", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "deploy pipeline", "tls handshake fix", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestSearchFiltersByEntityTypes(t *testing.T) {
 	store := openTestStore(t)
 	project := mustUpsertProject(t, store, "P", "p", "/work/p")
 
-	task, err := store.CreateTask(ctx, project.ID, "tls task", "tls body", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "tls task", "tls body", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestSearchExcludesArchivedTasks(t *testing.T) {
 	store := openTestStore(t)
 	project := mustUpsertProject(t, store, "P", "p", "/work/p")
 
-	task, err := store.CreateTask(ctx, project.ID, "tls active", "body", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "tls active", "body", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -118,10 +118,10 @@ func TestSearchProjectFilter(t *testing.T) {
 	projectA := mustUpsertProject(t, store, "A", "a", "/work/a")
 	projectB := mustUpsertProject(t, store, "B", "b", "/work/b")
 
-	if _, err := store.CreateTask(ctx, projectA.ID, "tls in A", "body A", domain.Priority(2), "backlog", store.snap()); err != nil {
+	if _, err := store.CreateTask(ctx, projectA.ID, "tls in A", "body A", domain.Priority(2), "backlog", nil, store.snap()); err != nil {
 		t.Fatalf("CreateTask A: %v", err)
 	}
-	if _, err := store.CreateTask(ctx, projectB.ID, "tls in B", "body B", domain.Priority(2), "backlog", store.snap()); err != nil {
+	if _, err := store.CreateTask(ctx, projectB.ID, "tls in B", "body B", domain.Priority(2), "backlog", nil, store.snap()); err != nil {
 		t.Fatalf("CreateTask B: %v", err)
 	}
 
@@ -153,7 +153,7 @@ func TestSearchUpdateTriggerRefreshesContent(t *testing.T) {
 	store := openTestStore(t)
 	project := mustUpsertProject(t, store, "P", "p", "/work/p")
 
-	task, err := store.CreateTask(ctx, project.ID, "original title", "body", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "original title", "body", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}

@@ -149,7 +149,7 @@ func (f *fakeStores) FirstChildNotInBucket(context.Context, int64, int64, int64,
 }
 
 // TaskRepository
-func (f *fakeStores) CreateTask(_ context.Context, _ int64, _, _ string, _ domain.Priority, _ string, _ domain.BucketResolver) (domain.Task, error) {
+func (f *fakeStores) CreateTask(_ context.Context, _ int64, _, _ string, _ domain.Priority, _ string, _ *int64, _ domain.BucketResolver) (domain.Task, error) {
 	f.createCalls++
 	return f.createResp, f.createErr
 }
@@ -242,7 +242,7 @@ func TestWorkflowCreateTaskUsesDefaultWhenBucketEmpty(t *testing.T) {
 	}
 	svc := newWorkflowServiceForTest(f)
 
-	if _, err := svc.CreateTask(context.Background(), 1, "title", "", domain.Priority(2), ""); err != nil {
+	if _, err := svc.CreateTask(context.Background(), 1, "title", "", domain.Priority(2), "", nil); err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
 	if f.createCalls != 1 {

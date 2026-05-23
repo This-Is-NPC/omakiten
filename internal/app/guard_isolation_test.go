@@ -194,7 +194,7 @@ func (r *isolationRepo) FirstChildNotInBucket(context.Context, int64, int64, int
 
 // TaskRepository — only MoveTask is exercised; the other methods are unused
 // on the MoveTask path and return zero values.
-func (r *isolationRepo) CreateTask(context.Context, int64, string, string, domain.Priority, string, domain.BucketResolver) (domain.Task, error) {
+func (r *isolationRepo) CreateTask(context.Context, int64, string, string, domain.Priority, string, *int64, domain.BucketResolver) (domain.Task, error) {
 	return domain.Task{}, nil
 }
 func (r *isolationRepo) ListTasks(context.Context, int64, domain.TaskFilter, domain.BucketResolver) ([]domain.Task, error) {

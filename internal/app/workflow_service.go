@@ -97,7 +97,10 @@ func (s *WorkflowService) FinalBucketKey(_ context.Context) (string, error) {
 // CreateTask is the policy-bearing wrapper around TaskRepository.CreateTask:
 // it resolves the default bucket when bucketKey is empty, then delegates to
 // the persister. The store still emits task.created in the same transaction.
-func (s *WorkflowService) CreateTask(ctx context.Context, projectID int64, title, description string, priority domain.Priority, bucketKey string) (domain.Task, error) {
+// parentID is forwarded straight to the storage layer so sub-task creation
+// stays atomic — when non-nil the INSERT carries the FK, when nil the row
+// lands as a root.
+func (s *WorkflowService) CreateTask(ctx context.Context, projectID int64, title, description string, priority domain.Priority, bucketKey string, parentID *int64) (domain.Task, error) {
 	bucketKey = strings.TrimSpace(bucketKey)
 	if bucketKey == "" {
 		key, err := s.ResolveDefaultBucket(ctx)
@@ -109,7 +112,7 @@ func (s *WorkflowService) CreateTask(ctx context.Context, projectID int64, title
 	if priority == domain.PriorityZero {
 		priority = s.defaultPriority()
 	}
-	return s.tasks.CreateTask(ctx, projectID, title, description, priority, bucketKey, s.snap)
+	return s.tasks.CreateTask(ctx, projectID, title, description, priority, bucketKey, parentID, s.snap)
 }
 
 // OperationArchive / OperationDelete / OperationUnarchive label the

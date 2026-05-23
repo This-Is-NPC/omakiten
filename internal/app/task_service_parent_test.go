@@ -108,6 +108,95 @@ func TestTaskServiceEditClearsParent(t *testing.T) {
 	}
 }
 
+func TestTaskServiceAddSubRejectsArchivedParent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(t, 1000))
+	defer func() { _ = store.Close() }()
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+
+	parent, _ := service.Add(ctx, project.Context(), "Parent", "", "", "backlog")
+	if _, _, err := service.Archive(ctx, project.Context(), parent.ID); err != nil {
+		t.Fatalf("Archive(parent) = %v", err)
+	}
+
+	_, err := service.AddSub(ctx, project.Context(), parent.ID, "Child", "", "", "backlog")
+	if err == nil {
+		t.Fatal("AddSub(archived parent) error = nil, want validation")
+	}
+	assertCodedError(t, err, domain.ErrValidation)
+}
+
+func TestTaskServiceAddSubInheritsParentBucket(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(t, 1000))
+	defer func() { _ = store.Close() }()
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+
+	parent, err := service.Add(ctx, project.Context(), "Parent", "", "", "dev")
+	if err != nil {
+		t.Fatalf("Add(parent) = %v", err)
+	}
+	// Empty bucketKey on AddSub must inherit the parent's current
+	// bucket — the "workflow herdado do pai" invariant. Without this,
+	// a sub-task could be created directly in done while the parent
+	// sits in dev.
+	child, err := service.AddSub(ctx, project.Context(), parent.ID, "Child", "", "", "")
+	if err != nil {
+		t.Fatalf("AddSub(inherit) = %v", err)
+	}
+	if child.BucketKey != parent.BucketKey {
+		t.Fatalf("child.BucketKey = %q, want %q (parent bucket)", child.BucketKey, parent.BucketKey)
+	}
+}
+
+func TestTaskServiceAddSubRejectsExplicitCrossBucket(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(t, 1000))
+	defer func() { _ = store.Close() }()
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+
+	parent, err := service.Add(ctx, project.Context(), "Parent", "", "", "dev")
+	if err != nil {
+		t.Fatalf("Add(parent) = %v", err)
+	}
+	// An explicit bucketKey that differs from the parent must be
+	// rejected: the workflow position is inherited, so a sub-task
+	// cannot land in done while its parent still sits in dev.
+	_, err = service.AddSub(ctx, project.Context(), parent.ID, "Child", "", "", "done")
+	if err == nil {
+		t.Fatal("AddSub(cross-bucket) error = nil, want validation")
+	}
+	assertCodedError(t, err, domain.ErrValidation)
+
+	// Sanity: matching the parent's bucket explicitly is still allowed.
+	if _, err := service.AddSub(ctx, project.Context(), parent.ID, "Child2", "", "", "dev"); err != nil {
+		t.Fatalf("AddSub(matching bucket) = %v", err)
+	}
+}
+
+func TestTaskServiceEditRejectsReparentUnderArchived(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(t, 1000))
+	defer func() { _ = store.Close() }()
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+
+	candidate, _ := service.Add(ctx, project.Context(), "candidate parent", "", "", "backlog")
+	target, _ := service.Add(ctx, project.Context(), "target", "", "", "backlog")
+	if _, _, err := service.Archive(ctx, project.Context(), candidate.ID); err != nil {
+		t.Fatalf("Archive(candidate) = %v", err)
+	}
+
+	_, err := service.Edit(ctx, project.Context(), target.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: &candidate.ID})
+	if err == nil {
+		t.Fatal("Edit(reparent under archived) error = nil, want validation")
+	}
+	assertCodedError(t, err, domain.ErrValidation)
+}
+
 func TestTaskServiceListParentMode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

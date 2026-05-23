@@ -16,7 +16,7 @@ import (
 // app.WorkflowService.ResolveDefaultBucket); the store enforces only the
 // foreign-key existence of the bucket in the active workflow via the
 // caller-supplied BucketResolver.
-func (s *Store) CreateTask(ctx context.Context, projectID int64, title, description string, priority domain.Priority, bucketKey string, buckets domain.BucketResolver) (domain.Task, error) {
+func (s *Store) CreateTask(ctx context.Context, projectID int64, title, description string, priority domain.Priority, bucketKey string, parentID *int64, buckets domain.BucketResolver) (domain.Task, error) {
 	if bucketKey == "" {
 		return domain.Task{}, domain.NewError(domain.ErrValidation, "bucket key is required", nil)
 	}
@@ -42,11 +42,19 @@ func (s *Store) CreateTask(ctx context.Context, projectID int64, title, descript
 			"task priority unresolved at the storage layer; the app must substitute domain.DefaultPriority() before calling CreateTask",
 			map[string]any{"project_id": projectID, "bucket": bucketKey})
 	}
+	// parent_id lands in the same INSERT as the row itself so sub-task
+	// creation is atomic — no two-step INSERT-then-UPDATE that could
+	// leave an orphan root visible (and an audit event already emitted)
+	// when the second statement fails.
+	var parentArg any
+	if parentID != nil {
+		parentArg = *parentID
+	}
 	row := tx.QueryRowContext(ctx, `
-INSERT INTO tasks(project_id, bucket_id, title, description, priority_id)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO tasks(project_id, bucket_id, title, description, priority_id, parent_id)
+VALUES (?, ?, ?, ?, ?, ?)
 RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at, parent_id
-`, projectID, bucketID, title, description, int(priority))
+`, projectID, bucketID, title, description, int(priority), parentArg)
 
 	task, err := scanTask(row, bucketKey)
 	if err != nil {
@@ -54,6 +62,9 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 	}
 
 	payload := fmt.Sprintf(`{"bucket":%q}`, bucketKey)
+	if parentID != nil {
+		payload = fmt.Sprintf(`{"bucket":%q,"parent_id":%d}`, bucketKey, *parentID)
+	}
 	var ev domain.Event
 	if s.shouldLogEvent(domain.EventTypeTaskCreated) {
 		var err error

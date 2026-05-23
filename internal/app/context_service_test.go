@@ -16,11 +16,11 @@ func TestContextServiceDumpLevels(t *testing.T) {
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
 
-	taskA, err := store.CreateTask(ctx, project.ID, "A", "Build A", domain.Priority(2), "backlog", store.Snapshot())
+	taskA, err := store.CreateTask(ctx, project.ID, "A", "Build A", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(A) error = %v", err)
 	}
-	taskB, err := store.CreateTask(ctx, project.ID, "B", "Build B", domain.Priority(2), "backlog", store.Snapshot())
+	taskB, err := store.CreateTask(ctx, project.ID, "B", "Build B", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(B) error = %v", err)
 	}
