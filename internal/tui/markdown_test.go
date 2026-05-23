@@ -116,6 +116,86 @@ func TestMarkdownRenderer_ThemeChangeRebuildsColors(t *testing.T) {
 	}
 }
 
+// TestMarkdownRenderer_LRUEvictionRespectsBound pins the bounded-cache
+// contract: filling the cache past markdownCacheCapacity evicts the
+// oldest entry; re-rendering the freshly-evicted body adds a new
+// entry and pushes the next-oldest out. Without the bound, long
+// sessions that scroll through every entity body grew the cache
+// unbounded.
+func TestMarkdownRenderer_LRUEvictionRespectsBound(t *testing.T) {
+	r := newMarkdownRenderer(tokensFromTheme(markdownThemeOmakiten))
+	// Render markdownCacheCapacity + 1 distinct bodies at the same
+	// width so the (bodyHash, width) keys are all unique.
+	for i := 0; i <= markdownCacheCapacity; i++ {
+		body := "# heading " + strings.Repeat("x", i+1)
+		r.Render(body, 80)
+	}
+	if got := len(r.cache); got != markdownCacheCapacity {
+		t.Fatalf("len(cache) = %d, want %d (LRU eviction failed)", got, markdownCacheCapacity)
+	}
+	if got := r.order.Len(); got != markdownCacheCapacity {
+		t.Fatalf("len(order) = %d, want %d (LRU list out of sync with map)", got, markdownCacheCapacity)
+	}
+
+	// The first body inserted (i=0) should have been evicted because
+	// it was the LRU when the over-capacity insert happened.
+	evictedKey := markdownCacheKey{bodyHash: hashBody("# heading " + strings.Repeat("x", 1)), width: 80}
+	if _, ok := r.cache[evictedKey]; ok {
+		t.Fatalf("LRU did not evict the first-inserted body")
+	}
+
+	// Re-rendering the evicted body repopulates it and pushes another
+	// entry out. Cache size stays at the bound.
+	r.Render("# heading "+strings.Repeat("x", 1), 80)
+	if got := len(r.cache); got != markdownCacheCapacity {
+		t.Fatalf("len(cache) after refill = %d, want %d", got, markdownCacheCapacity)
+	}
+	if _, ok := r.cache[evictedKey]; !ok {
+		t.Fatalf("re-render did not repopulate the cache entry")
+	}
+}
+
+// TestMarkdownRenderer_ReusesTermRendererPerWidth pins the renderer
+// reuse: hitting a fresh body at the same width does NOT allocate a
+// new *glamour.TermRenderer. The renderers map is the source of truth
+// for "have we built a renderer at this width before".
+func TestMarkdownRenderer_ReusesTermRendererPerWidth(t *testing.T) {
+	r := newMarkdownRenderer(tokensFromTheme(markdownThemeOmakiten))
+	r.Render("# one", 80)
+	first := r.renderers[80]
+	r.Render("# two", 80)
+	if r.renderers[80] != first {
+		t.Fatalf("second render at width 80 allocated a new TermRenderer; reuse cache missed")
+	}
+	r.Render("# three", 120)
+	if r.renderers[120] == nil {
+		t.Fatalf("width 120 did not populate the renderers map")
+	}
+}
+
+// TestMarkdownRenderer_ReloadThemeClearsAllCaches asserts the theme-
+// rotation contract: reloadTheme rebuilds the StyleConfig and resets
+// the output cache + the per-width renderer cache so the next render
+// emits styles from the new palette.
+func TestMarkdownRenderer_ReloadThemeClearsAllCaches(t *testing.T) {
+	r := newMarkdownRenderer(tokensFromTheme(markdownThemeOmakiten))
+	r.Render("# warm", 80)
+	if len(r.cache) == 0 || len(r.renderers) == 0 {
+		t.Fatalf("expected caches populated before reload")
+	}
+	r.reloadTheme(tokensFromTheme(markdownThemeAlt))
+	if len(r.cache) != 0 {
+		t.Fatalf("reloadTheme did not clear output cache (len=%d)", len(r.cache))
+	}
+	if len(r.renderers) != 0 {
+		t.Fatalf("reloadTheme did not clear renderer cache (len=%d)", len(r.renderers))
+	}
+	out := r.Render("# fresh", 80)
+	if !strings.Contains(out, "38;2;255;0;255") {
+		t.Fatalf("post-reload render did not pick up alt theme primary")
+	}
+}
+
 func TestRenderBodyMarkdown_HonorsToggle(t *testing.T) {
 	body := "## Heading\n\ntext"
 	m := Model{
