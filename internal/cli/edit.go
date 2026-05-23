@@ -16,6 +16,7 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 	var description string
 	var priority string
 	var bucket string
+	var parent int64
 
 	cmd := &cobra.Command{
 		Use:   "edit TASK_ID",
@@ -63,6 +64,19 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 				if cmd.Flags().Changed("bucket") {
 					update.BucketKey = bucket
 				}
+				if cmd.Flags().Changed("parent") {
+					// Tri-state via the sentinel `0`: zero clears the FK
+					// (re-roots the task) and any positive id sets it.
+					// Anti-cycle + cross-project rejection live in the
+					// service layer; the CLI just forwards the value.
+					update.ChangeParent = true
+					if parent == 0 {
+						update.NewParentID = nil
+					} else {
+						pid := parent
+						update.NewParentID = &pid
+					}
+				}
 
 				task, err := app.NewTaskServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot()).Edit(ctx, project, taskID, update)
 				if err != nil {
@@ -77,5 +91,6 @@ func newEditCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().StringVarP(&description, "description", "d", "", opts.t("cli.task.edit.flag.description"))
 	cmd.Flags().StringVar(&priority, "priority", "", opts.t("cli.task.edit.flag.priority"))
 	cmd.Flags().StringVarP(&bucket, "bucket", "b", "", opts.t("cli.task.edit.flag.bucket"))
+	cmd.Flags().Int64Var(&parent, "parent", 0, opts.t("cli.task.edit.flag.parent"))
 	return cmd
 }

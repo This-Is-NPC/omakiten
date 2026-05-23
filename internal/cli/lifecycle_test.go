@@ -88,3 +88,56 @@ func TestCLIDependencyAndLifecycleCommands(t *testing.T) {
 	// task_not_found on archive of a non-existent id.
 	runCLIExpectError(t, dbPath, configPath, "task_not_found", "archive", "9999")
 }
+
+// TestCLISubTaskParentFlags closes the gap reported in comment #8280 — that
+// `add`, `edit`, and `list` did not surface the `--parent` flag while the
+// service layer was already wired for sub-tasks. The test drives each
+// command through the public CLI surface so the cobra flag + Changed()
+// branch + service call get exercised end-to-end, including the tri-state
+// behaviour of `--parent` for `edit` (re-parent then clear) and `list`
+// (roots / direct children).
+func TestCLISubTaskParentFlags(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	projectRoot := filepath.Join(tmp, "project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(projectRoot) error = %v", err)
+	}
+	t.Chdir(projectRoot)
+
+	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
+	runCLI(t, dbPath, configPath, "add", "-t", "Root")
+
+	// add --parent attaches the new row as a sub-task via AddSub.
+	subOut := runCLI(t, dbPath, configPath, "add", "-t", "Child", "--parent", "1")
+	if !strings.Contains(subOut, `"parent_id":1`) {
+		t.Fatalf("add --parent output missing parent_id=1: %s", subOut)
+	}
+
+	// list --parent 1 returns the direct children of #1.
+	childList := runCLI(t, dbPath, configPath, "list", "--parent", "1")
+	if !strings.Contains(childList, `"parent_id":1`) {
+		t.Fatalf("list --parent 1 missing child: %s", childList)
+	}
+
+	// list --parent 0 (sentinel) returns roots only — the child must be
+	// filtered out.
+	rootList := runCLI(t, dbPath, configPath, "list", "--parent", "0")
+	if strings.Contains(rootList, `"parent_id":1`) {
+		t.Fatalf("list --parent 0 leaked sub-task: %s", rootList)
+	}
+
+	// edit --parent 0 re-roots the child (clears parent_id).
+	reroot := runCLI(t, dbPath, configPath, "edit", "2", "--parent", "0")
+	if strings.Contains(reroot, `"parent_id":`) {
+		t.Fatalf("edit --parent 0 left parent_id on payload: %s", reroot)
+	}
+
+	// edit --parent <id> re-parents the now-rooted task back under #1
+	// (anti-cycle is enforced by the service layer; happy path here).
+	reparent := runCLI(t, dbPath, configPath, "edit", "2", "--parent", "1")
+	if !strings.Contains(reparent, `"parent_id":1`) {
+		t.Fatalf("edit --parent 1 missing parent_id=1: %s", reparent)
+	}
+}
