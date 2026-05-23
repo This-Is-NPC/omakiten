@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.20.0](https://github.com/This-Is-NPC/omakiten/compare/v0.19.0...v0.20.0) (2026-05-23)
+
+
+### Features
+
+* **backup:** okt db backup + project delete (TUI/CLI) with cascade migration ([#78](https://github.com/This-Is-NPC/omakiten/issues/78)) ([ee7d95d](https://github.com/This-Is-NPC/omakiten/commit/ee7d95d6c2971feb5b74ad45342f471224c4cf09))
+* **cli:** okt update + okt uninstall ([#74](https://github.com/This-Is-NPC/omakiten/issues/74)) ([1b3b029](https://github.com/This-Is-NPC/omakiten/commit/1b3b029d95d532479748e98f3855b14d82422b3a))
+* **cli:** setup picker step indicator + back-navigation ([#75](https://github.com/This-Is-NPC/omakiten/issues/75)) ([93246a1](https://github.com/This-Is-NPC/omakiten/commit/93246a1b6b4e168924a7eefd5e321e635c1bdd4a))
+* **i18n:** migrate guard hints to catalog tokens ([#70](https://github.com/This-Is-NPC/omakiten/issues/70)) ([78dc8ad](https://github.com/This-Is-NPC/omakiten/commit/78dc8ad1e5104ffac9c6d1f036c43210f2d4aa68))
+* **mcp:** register okt-commit, okt-review, okt-check across 4 presets ([#77](https://github.com/This-Is-NPC/omakiten/issues/77)) ([b5598e0](https://github.com/This-Is-NPC/omakiten/commit/b5598e0846011fbc779b8bb54a5183319ac75c35))
+* **tasks:** sub-tasks via parent_id + subtasks_complete guard + TUI redesign ([#79](https://github.com/This-Is-NPC/omakiten/issues/79)) ([e7b49cd](https://github.com/This-Is-NPC/omakiten/commit/e7b49cd4e5d1b9cfb8be69d5b7eda8cf2dffe6b5))
+
+
+### Bug Fixes
+
+* **sqlite:** preserve completed_at on move out of final bucket ([#72](https://github.com/This-Is-NPC/omakiten/issues/72)) ([210ad6e](https://github.com/This-Is-NPC/omakiten/commit/210ad6ee19c740fb9512f1bdcdcc9895a5c45c44))
+* **tui:** scroll Settings → general when content overflows viewport ([#76](https://github.com/This-Is-NPC/omakiten/issues/76)) ([1b7075e](https://github.com/This-Is-NPC/omakiten/commit/1b7075e516926d1594696b5752e064a946198061))
+
 ## [0.19.0](https://github.com/This-Is-NPC/omakiten/compare/v0.18.2...v0.19.0) (2026-05-20)
 
 
