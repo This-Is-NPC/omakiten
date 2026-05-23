@@ -1436,8 +1436,14 @@ func (m Model) taskBreadcrumbTrail() string {
 }
 
 // subtasksViewportRows returns the line budget the sub-tasks column
-// has after the surrounding screen chrome. Mirrors activityViewportLines
-// so both right-rail panes scroll against the same vertical budget.
+// has after the surrounding screen chrome. In side-by-side layout the
+// pane owns its full vertical column, so the original chrome=7
+// estimate stays accurate. In stacked layout the pane is one of three
+// sections in a joined string (form box + sub-tasks box + activity
+// box), so the budget must also subtract the form box height and the
+// section separator — otherwise the cursor walks past the outer
+// viewport slice without anything scrolling and the user sees no
+// movement. Mirrors activityViewportLines for the side-by-side case.
 func (m Model) subtasksViewportRows() int {
 	if m.height <= 0 {
 		return 0
@@ -1446,6 +1452,20 @@ func (m Model) subtasksViewportRows() int {
 	if m.status != "" {
 		chrome++
 	}
+
+	// In stacked layout the form box sits above the sub-tasks pane in
+	// the joined output; carve out its height + the "\n\n" separator
+	// so the budget reflects the leftover space.
+	if task, ok := m.activeTask(); ok {
+		layout := m.computeTaskViewLayout(m.availableWidth(), true)
+		if layout.kind == taskViewStacked {
+			details := m.renderTaskDetailsBox(task, layout)
+			formHeight := lipgloss.Height(details)
+			// +1 = blank line between form and sub-tasks sections.
+			chrome += formHeight + 1
+		}
+	}
+
 	rows := m.height - chrome
 	if rows < 4 {
 		return 0
@@ -1535,7 +1555,11 @@ func (m *Model) moveSubtaskCursor(delta int) {
 
 // syncSubtaskScrollToCursor advances subtaskScroll so the focused
 // sub-task card stays inside the viewport budget. Cheap O(n) scan;
-// the typical task has a handful of direct children.
+// the typical task has a handful of direct children. In stacked
+// layout it ALSO advances m.taskView.Viewport.Scroll so the joined
+// detail screen scrolls when the focused card falls below the outer
+// slice — without that, j/k on a tall sub-tasks list appeared to do
+// nothing because the outer slicer hid the new cursor position.
 func (m *Model) syncSubtaskScrollToCursor() {
 	if m.subtaskCursor < 0 {
 		return
@@ -1544,26 +1568,57 @@ func (m *Model) syncSubtaskScrollToCursor() {
 	if m.subtaskCursor >= len(children) {
 		return
 	}
+	const cardRowsEstimate = 4
+
 	viewport := m.subtasksViewportRows()
-	if viewport <= 0 {
+	if viewport > 0 {
+		// Each card occupies ~4 rows on screen (border + content + badges).
+		// The estimate keeps the cursor visible without the cost of measuring
+		// every rendered card; off-by-one drift is corrected by clampScroll
+		// on the next render.
+		cursorTop := m.subtaskCursor * cardRowsEstimate
+		cursorBottom := cursorTop + cardRowsEstimate
+		if cursorTop < m.subtaskScroll {
+			m.subtaskScroll = cursorTop
+		}
+		if cursorBottom > m.subtaskScroll+viewport {
+			m.subtaskScroll = cursorBottom - viewport
+		}
+		if m.subtaskScroll < 0 {
+			m.subtaskScroll = 0
+		}
+	} else {
 		m.subtaskScroll = 0
+	}
+
+	// Stacked layout: the sub-tasks panel is one of three sections
+	// joined into a single string sliced by m.taskView.Viewport. The
+	// cursor advance is invisible unless we also move the outer
+	// viewport. taskFocusedSectionOffset already knows the line index
+	// where the sub-tasks section starts inside the joined output.
+	layout := m.computeTaskViewLayout(m.availableWidth(), true)
+	if layout.kind != taskViewStacked {
 		return
 	}
-	// Each card occupies ~4 rows on screen (border + content + badges).
-	// The estimate keeps the cursor visible without the cost of measuring
-	// every rendered card; off-by-one drift is corrected by clampScroll
-	// on the next render.
-	const cardRowsEstimate = 4
-	cursorTop := m.subtaskCursor * cardRowsEstimate
-	cursorBottom := cursorTop + cardRowsEstimate
-	if cursorTop < m.subtaskScroll {
-		m.subtaskScroll = cursorTop
+	outerViewport := m.taskViewportHeight()
+	if outerViewport <= 0 {
+		return
 	}
-	if cursorBottom > m.subtaskScroll+viewport {
-		m.subtaskScroll = cursorBottom - viewport
+	// 3 = panel kicker(1) + rule(1) + leading blank inside the
+	// sub-tasks box before the first card row. Matches the chrome
+	// renderSubtasksPanel emits above the card list.
+	const subtasksHeaderRows = 3
+	sectionTop := m.taskFocusedSectionOffset()
+	cursorOuterTop := sectionTop + subtasksHeaderRows + m.subtaskCursor*cardRowsEstimate
+	cursorOuterBottom := cursorOuterTop + cardRowsEstimate
+	if cursorOuterTop < m.taskView.Viewport.Scroll {
+		m.taskView.Viewport.Scroll = cursorOuterTop
 	}
-	if m.subtaskScroll < 0 {
-		m.subtaskScroll = 0
+	if cursorOuterBottom > m.taskView.Viewport.Scroll+outerViewport {
+		m.taskView.Viewport.Scroll = cursorOuterBottom - outerViewport
+	}
+	if m.taskView.Viewport.Scroll < 0 {
+		m.taskView.Viewport.Scroll = 0
 	}
 }
 
