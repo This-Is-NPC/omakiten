@@ -1,6 +1,47 @@
 package agent
 
-import "omakiten/internal/domain"
+import (
+	"encoding/json"
+
+	"omakiten/internal/domain"
+)
+
+// OptionalInt64 is a tri-state JSON input value for an integer field.
+//
+// Stock encoding/json collapses absent and explicit-null inputs when the
+// target type is `**int64` (both produce a nil outer pointer), which makes
+// JSON-RPC inputs unable to distinguish "leave parent_id alone" from "clear
+// parent_id to nil". OptionalInt64 preserves the three cases through a
+// custom UnmarshalJSON:
+//
+//	field absent    → OptionalInt64{Set:false, Value:nil}
+//	field is null   → OptionalInt64{Set:true,  Value:nil}
+//	field is an int → OptionalInt64{Set:true,  Value:&v}
+//
+// Consumers check Set to decide whether the caller supplied the field and
+// then read Value to learn what was supplied.
+type OptionalInt64 struct {
+	Set   bool
+	Value *int64
+}
+
+// UnmarshalJSON marks the field as present and reads either nil (for the
+// JSON null literal) or a concrete int64 value. Any non-null, non-integer
+// JSON token surfaces as a decode error so callers see a self-explanatory
+// rejection rather than a silently dropped value.
+func (o *OptionalInt64) UnmarshalJSON(data []byte) error {
+	o.Set = true
+	if string(data) == "null" {
+		o.Value = nil
+		return nil
+	}
+	var v int64
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	o.Value = &v
+	return nil
+}
 
 type TaskSummary struct {
 	ID          int64  `json:"id"`
@@ -46,13 +87,13 @@ type ListTasksInput struct {
 	ProjectSelector
 	BucketKey string `json:"bucket_key,omitempty"`
 	// ParentID scopes the list by tasks.parent_id with three states:
-	//   omitted    → no filter (every task surfaces).
-	//   nil literal → roots only (parent_id IS NULL).
-	//   value      → direct children of that id.
-	// Encoded as a Go **int64 so the JSON-RPC marshaller can distinguish
-	// "absent" from "null" — the outer pointer is non-nil exactly when
-	// the caller supplied the field, regardless of value.
-	ParentID **int64 `json:"parent_id,omitempty"`
+	//   ParentID.Set == false           → no filter (every task surfaces).
+	//   ParentID.Set, Value == nil      → roots only (parent_id IS NULL).
+	//   ParentID.Set, Value != nil      → direct children of that id.
+	// Encoded through OptionalInt64 so JSON-RPC inputs can distinguish
+	// "absent" from "null" — stock encoding/json collapses both cases
+	// when targeting **int64.
+	ParentID OptionalInt64 `json:"parent_id,omitempty"`
 }
 
 type ListTasksResponse struct {
@@ -138,12 +179,11 @@ type EditTaskInput struct {
 	Title       *string `json:"title,omitempty"`
 	Description *string `json:"description,omitempty"`
 	Priority    *string `json:"priority,omitempty"`
-	// ParentID re-parents the task. Tri-state encoding:
-	//   omitted    → leave parent_id untouched.
-	//   nil literal → clear parent_id (the task becomes a root).
-	//   value      → set parent_id to that id; anti-cycle is enforced.
-	// **int64 so JSON-RPC distinguishes "absent" from "null".
-	ParentID **int64 `json:"parent_id,omitempty"`
+	// ParentID re-parents the task. Tri-state encoding through OptionalInt64:
+	//   ParentID.Set == false           → leave parent_id untouched.
+	//   ParentID.Set, Value == nil      → clear parent_id (the task becomes a root).
+	//   ParentID.Set, Value != nil      → set parent_id to that id; anti-cycle is enforced.
+	ParentID OptionalInt64 `json:"parent_id,omitempty"`
 }
 
 type EditTaskResponse struct {

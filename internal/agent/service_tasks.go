@@ -89,13 +89,12 @@ func (s *Service) ListTasks(ctx context.Context, input ListTasksInput) (ListTask
 		return ListTasksResponse{}, err
 	}
 	filter := domain.TaskFilter{BucketKey: strings.TrimSpace(input.BucketKey)}
-	if input.ParentID != nil {
-		inner := *input.ParentID
-		if inner == nil {
+	if input.ParentID.Set {
+		if input.ParentID.Value == nil {
 			filter.ParentMode = domain.ParentRoots
 		} else {
 			filter.ParentMode = domain.ParentChildren
-			filter.ParentValue = *inner
+			filter.ParentValue = *input.ParentID.Value
 		}
 	}
 	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).List(ctx, project, filter)
@@ -214,9 +213,9 @@ func (s *Service) EditTask(ctx context.Context, input EditTaskInput) (EditTaskRe
 		}
 		update.Priority = &p
 	}
-	if input.ParentID != nil {
+	if input.ParentID.Set {
 		update.ChangeParent = true
-		update.NewParentID = *input.ParentID
+		update.NewParentID = input.ParentID.Value
 	}
 	task, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).Edit(ctx, project, input.TaskID, update)
 	if err != nil {
