@@ -128,7 +128,11 @@ func ActiveConfigFile() (string, error) {
 func ActiveConfigFileInDir(dir string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(dir, ActiveConfigStateFile))
 	if err == nil {
-		if name := strings.TrimSpace(string(data)); name != "" {
+		// A traversal payload in .active ("../secret.yaml", "/abs/path",
+		// "..") would otherwise resolve outside <dir>; reject and fall
+		// through to discovery so a tampered state file degrades to the
+		// same behaviour as a stale one.
+		if name := strings.TrimSpace(string(data)); validActiveConfigName(name) {
 			customPath := filepath.Join(dir, "custom", name)
 			if _, statErr := os.Stat(customPath); statErr == nil {
 				return customPath, nil
@@ -206,13 +210,31 @@ func SetActiveConfigInDir(dir, filename string) error {
 	if filename == "" {
 		return fmt.Errorf("active config filename is required")
 	}
-	if filename != filepath.Base(filename) {
-		return fmt.Errorf("active config filename must be a basename, got %q", filename)
+	if !validActiveConfigName(filename) {
+		return fmt.Errorf("active config filename must be a clean basename, got %q", filename)
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, ActiveConfigStateFile), []byte(filename+"\n"), 0o644)
+}
+
+// validActiveConfigName reports whether name is safe to use as a yaml
+// profile basename inside the config dir. Rejects traversal payloads
+// (".", "..", absolute or nested paths, embedded separators) so neither
+// the read path (ActiveConfigFileInDir) nor the write path
+// (SetActiveConfigInDir) can be coaxed into resolving outside <dir>.
+func validActiveConfigName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	if name != filepath.Base(name) {
+		return false
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return false
+	}
+	return true
 }
 
 // EntityDir resolves to <root>/<folder> — the directory holding the default
