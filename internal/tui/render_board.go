@@ -100,9 +100,10 @@ func (m *Model) handleBoardKey(msg tea.KeyMsg) {
 
 // syncFocusedColumnScroll keeps m.boardScroll[focusedBucket] aligned so the
 // selected card stays fully visible inside the column viewport. Rendered card
-// heights vary (1- vs 2-line titles, badges line) so we render each card to
-// measure the actual height instead of using an approximation, otherwise
-// `down` arrow lags behind the cursor by ~1 card.
+// heights vary (1- vs 2-line titles, badges line) so we compute the exact
+// height from the card spec (cardHeightFromSpec) instead of rendering each
+// card just to count the trailing newlines — the render-to-measure trick
+// dominated keystroke time on long columns.
 func (m *Model) syncFocusedColumnScroll() {
 	bucket, ok := m.focusedBucketKey()
 	if !ok {
@@ -123,8 +124,15 @@ func (m *Model) syncFocusedColumnScroll() {
 	layout := m.computeBoardLayout(len(m.workflow.Buckets))
 	heights := make([]int, len(tasks))
 	for i, task := range tasks {
-		rendered := m.renderCard(task, false, layout)
-		heights[i] = strings.Count(rendered, "\n") + 1
+		heights[i] = m.cardHeightFromSpec(taskCardSpec{
+			ID:         task.ID,
+			Title:      task.Title,
+			Badges:     m.taskBoardBadges(task),
+			Selected:   false,
+			Archived:   task.State == domain.TaskStateArchived,
+			BoxWidth:   layout.cardWidth,
+			InnerWidth: layout.cardContentWidth,
+		})
 	}
 
 	if m.boardScroll == nil {
