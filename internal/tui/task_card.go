@@ -99,16 +99,41 @@ func (m Model) renderTaskCard(spec taskCardSpec) string {
 	// from `cardSelected` (primary green + Bold). Painting accent with
 	// primary would collide with the selection border and hide the
 	// cursor under the accent ring.
-	style := m.styles.card.Width(spec.BoxWidth)
+	//
+	// Style.Width(N) allocates a fresh Style each call; on long board
+	// columns that is N×cards-per-keystroke throw-away allocations.
+	// styleWidthFromCache memoises by width per variant so the cache
+	// hit path is a single map read.
+	var style lipgloss.Style
 	switch {
 	case spec.Selected:
-		style = m.styles.cardSelected.Width(spec.BoxWidth)
+		style = styleWidthFromCache(m.cardSelectedStyleByWidth, m.styles.cardSelected, spec.BoxWidth)
 	case spec.Archived:
-		style = m.styles.archivedCard.Width(spec.BoxWidth)
-	case spec.Accent:
-		style = style.BorderForeground(m.styles.info.GetForeground())
+		style = styleWidthFromCache(m.archivedCardStyleByWidth, m.styles.archivedCard, spec.BoxWidth)
+	default:
+		style = styleWidthFromCache(m.cardStyleByWidth, m.styles.card, spec.BoxWidth)
+		if spec.Accent {
+			style = style.BorderForeground(m.styles.info.GetForeground())
+		}
 	}
 	return style.Render(strings.Join(lines, "\n"))
+}
+
+// styleWidthFromCache returns base.Width(width) from the supplied
+// per-width cache, lazily filling the entry on a miss. nil maps are
+// supported (no cache available; degrades to a direct Width call) so
+// the helper stays safe to use from value-receiver render paths that
+// see a model copy with an uninitialised cache.
+func styleWidthFromCache(cache map[int]lipgloss.Style, base lipgloss.Style, width int) lipgloss.Style {
+	if cache == nil {
+		return base.Width(width)
+	}
+	if cached, ok := cache[width]; ok {
+		return cached
+	}
+	styled := base.Width(width)
+	cache[width] = styled
+	return styled
 }
 
 // cardHeightFromSpec computes the rendered card height the same way

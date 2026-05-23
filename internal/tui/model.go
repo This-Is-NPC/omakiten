@@ -66,6 +66,14 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		markdown:         newMarkdownRenderer(tokensFromTheme(theme)),
 		markdownRendered: true,
 		notifications:    notifications.Notifications,
+		// Pre-allocated style-by-width caches; value-receiver render
+		// paths read + write through these so the lipgloss.Style.Width(N)
+		// allocation only fires once per (variant, width) pair across
+		// the lifetime of the model.
+		cardStyleByWidth:         map[int]lipgloss.Style{},
+		cardSelectedStyleByWidth: map[int]lipgloss.Style{},
+		archivedCardStyleByWidth: map[int]lipgloss.Style{},
+		inputStyleByWidth:        map[int]lipgloss.Style{},
 	}
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()
@@ -490,6 +498,8 @@ func (m *Model) applyRefreshAfterViewChange(r refreshAfterViewChangeMsg) {
 	if r.plansValid {
 		m.plans = r.plans
 	}
+	m.invalidateBoardCaches()
+	m.rebuildBoardCaches()
 	m.clampPlanCursor()
 	m.clampSelection()
 	m.clampCardIdx()
@@ -1052,6 +1062,8 @@ func (m *Model) refresh() error {
 			m.plans = rollups
 		}
 	}
+	m.invalidateBoardCaches()
+	m.rebuildBoardCaches()
 	m.clampPlanCursor()
 	m.clampSelection()
 	m.clampCardIdx()

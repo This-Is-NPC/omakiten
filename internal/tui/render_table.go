@@ -152,20 +152,6 @@ func priorityAllowSet(values []string) map[string]struct{} {
 	return out
 }
 
-// priorityAllowed checks the priority against the configured filter
-// values (label strings supplied by config.views.{board,table}.filter
-// .priority). Resolves the priority id to its label via the model's
-// priority table before comparison so user-defined priorities (e.g.
-// "urgent") match the strings they typed in YAML, not the underlying
-// integer ids.
-func (m Model) priorityAllowed(allowed map[string]struct{}, priority domain.Priority) bool {
-	if allowed == nil {
-		return true
-	}
-	_, ok := allowed[m.priorityLabel(priority)]
-	return ok
-}
-
 func bucketAllowSet(values []string) map[string]struct{} {
 	if len(values) == 0 {
 		return nil
@@ -189,11 +175,20 @@ func bucketAllowed(allowed map[string]struct{}, bucketKey string) bool {
 // `table` view config. The returned slice is a copy — callers free to
 // re-order without mutating m.tasks (which is the board's source of truth).
 func (m Model) applyTableView() []domain.Task {
-	prioAllowed := priorityAllowSet(m.views.Table.Filter.Priority)
-	bucketAllowedSet := bucketAllowSet(m.views.Table.Filter.Bucket)
-	out := make([]domain.Task, 0, len(m.tasks))
-	for _, task := range m.tasks {
-		if !m.priorityAllowed(prioAllowed, task.Priority) {
+	if m.cachedTableView != nil {
+		return m.cachedTableView
+	}
+	return buildTableView(m.tasks, m.views.Table, m.priorities)
+}
+
+// buildTableView is the stateless filter+sort the refresh() cache
+// populator and the value-receiver fallback share.
+func buildTableView(tasks []domain.Task, view config.TableViewSettings, priorities []config.PriorityDefinition) []domain.Task {
+	prioAllowed := priorityAllowSet(view.Filter.Priority)
+	bucketAllowedSet := bucketAllowSet(view.Filter.Bucket)
+	out := make([]domain.Task, 0, len(tasks))
+	for _, task := range tasks {
+		if !priorityAllowedFromTable(prioAllowed, task.Priority, priorities) {
 			continue
 		}
 		if !bucketAllowed(bucketAllowedSet, task.BucketKey) {
@@ -201,7 +196,7 @@ func (m Model) applyTableView() []domain.Task {
 		}
 		out = append(out, task)
 	}
-	sortTasks(out, m.views.Table.Sort)
+	sortTasks(out, view.Sort)
 	return out
 }
 

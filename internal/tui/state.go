@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/activity"
 	"omakiten/internal/agentruntime"
@@ -517,6 +518,30 @@ type Model struct {
 	// scrolling under the input does not move the target. Reset to 0
 	// on submit / cancel.
 	planAssignTaskID int64
+
+	// cachedTasksByBucket memoises tasksByBucket() so the board renderer
+	// + every cursor handler that calls tasksInCurrentBucket share one
+	// filter+group pass per refresh. Invalidated whenever m.tasks /
+	// m.views.Board.Filter / m.priorities change (refresh() and any
+	// mutation handler that bumps the latter). nil = not yet built.
+	cachedTasksByBucket map[string][]domain.Task
+
+	// cachedTableView memoises applyTableView() — the renderTable hot
+	// path + cursor math share the same filtered+sorted slice. Same
+	// invalidation rule as cachedTasksByBucket plus the Table view
+	// settings (filter / sort).
+	cachedTableView []domain.Task
+
+	// cardStyleByWidth / cardSelectedStyleByWidth / archivedCardStyleByWidth
+	// memoise lipgloss.Style.Width(N) for the three card chrome variants
+	// taskCardSpec rendering hits per card. Long board columns previously
+	// allocated a fresh Style per card per render; the map lookup amortises
+	// the cost across every cell with the same width. Cleared at theme
+	// change (rare) via styles rebuild.
+	cardStyleByWidth         map[int]lipgloss.Style
+	cardSelectedStyleByWidth map[int]lipgloss.Style
+	archivedCardStyleByWidth map[int]lipgloss.Style
+	inputStyleByWidth        map[int]lipgloss.Style
 
 	// activityCardsCache memoises activityRowsForRender so the three
 	// scroll-math hot paths (clampActivityScroll, syncActivityScroll-

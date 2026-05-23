@@ -1748,7 +1748,7 @@ func (m Model) renderTaskTagsField(width int) string {
 		innerWidth = 8
 	}
 	input.Width = innerWidth
-	style := m.styles.input.Width(width)
+	style := styleWidthFromCache(m.inputStyleByWidth, m.styles.input, width)
 	if m.taskField == taskFieldTags {
 		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
 	}
@@ -1767,7 +1767,7 @@ func (m Model) renderTaskParentField(width int) string {
 		innerWidth = 8
 	}
 	input.Width = innerWidth
-	style := m.styles.input.Width(width)
+	style := styleWidthFromCache(m.inputStyleByWidth, m.styles.input, width)
 	if m.taskField == taskFieldParent {
 		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
 	}
@@ -1786,7 +1786,7 @@ func (m Model) renderTaskTitleField(width int) string {
 		innerWidth = 8
 	}
 	input.Width = innerWidth
-	style := m.styles.input.Width(width)
+	style := styleWidthFromCache(m.inputStyleByWidth, m.styles.input, width)
 	if m.taskField == taskFieldTitle {
 		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
 	}
@@ -1823,7 +1823,7 @@ func (m Model) renderTaskPriorityInput() string {
 			parts = append(parts, m.styles.hint.Render(label))
 		}
 	}
-	style := m.styles.input.Width(m.taskFormWidth())
+	style := styleWidthFromCache(m.inputStyleByWidth, m.styles.input, m.taskFormWidth())
 	if m.taskField == taskFieldPriority {
 		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
 	}
