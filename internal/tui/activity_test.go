@@ -27,7 +27,7 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "with comments", "", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "with comments", "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -82,7 +82,7 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "long body", "", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "long body", "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -169,7 +169,7 @@ func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "no comments", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "no comments", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
 
@@ -209,7 +209,7 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "with comment", "", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "with comment", "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -271,7 +271,7 @@ func TestActivityScrollKeepsFocusedCardVisible(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "lots of activity", "", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "lots of activity", "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -336,7 +336,7 @@ func TestActivityScrollResyncsOnResize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "resize repro", "", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "resize repro", "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}
@@ -401,7 +401,7 @@ func newActivityTestModel(t *testing.T, height, commentCount int, bodyFn func(in
 	if err != nil {
 		t.Fatalf("UpsertProject() = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "activity-test", "", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "activity-test", "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() = %v", err)
 	}

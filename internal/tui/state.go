@@ -240,6 +240,25 @@ type Model struct {
 	taskDescriptionInput textarea.Model
 	taskPriority         domain.Priority
 	taskField            taskFormField
+	// §E sectioned edit form — Tags is a CSV single-line input split on
+	// save, Parent accepts a task id with a blur-lookup validation hook.
+	// Both fields live on every open form (create + edit) so the section
+	// rotation chain stays uniform; they are no-ops on create when left
+	// empty.
+	taskTagsInput   textinput.Model
+	taskParentInput textinput.Model
+	// taskParentLookupError surfaces the blur-time validation hint when
+	// the parent id input doesn't resolve in the active project. Cleared
+	// on every keystroke so it reflects the current input value.
+	taskParentLookupError string
+	// taskEditInitial holds the values captured at openTaskEdit time so
+	// esc can prompt before discarding edits. Zero value = "no edit in
+	// flight" so create flow short-circuits the dirty check.
+	taskEditInitial taskEditSnapshot
+	// taskEscPendingDiscard arms the dirty-discard prompt: the first esc
+	// on a dirty edit surfaces a status hint; a second esc closes
+	// without saving. Cleared by any non-esc key.
+	taskEscPendingDiscard bool
 	// commentInput is reused by modeComment (add) and modeCommentEdit
 	// (rewrite). Reset on every beginInput call so the placeholder and
 	// pre-fill values reflect the active mode without leaking text across
@@ -608,7 +627,25 @@ const (
 	taskFieldTitle taskFormField = iota
 	taskFieldDescription
 	taskFieldPriority
+	// §E adds Tags (CSV input) and Parent (id input) to the section
+	// rotation. Order matches the spec heading order: Title →
+	// Description → Priority → Tags → Parent.
+	taskFieldTags
+	taskFieldParent
 )
+
+// taskEditSnapshot captures the form values present when an edit form
+// opens so esc can detect "dirty" and prompt before discarding. Tags
+// are stored as the normalised CSV the field will display (lowercased
+// + sorted) so a re-order of equivalent tag sets reads as clean.
+type taskEditSnapshot struct {
+	active      bool
+	title       string
+	description string
+	priority    domain.Priority
+	tagsCSV     string
+	parent      string
+}
 
 // topID identifies a top-level navigation zone. Tops group surfaces by
 // purpose: Tasks (data lenses over the work queue), Stats (observability),

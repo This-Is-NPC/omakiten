@@ -3,12 +3,14 @@ package tui
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/app"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/gridtable"
@@ -42,9 +44,35 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if task, ok := m.activeTask(); ok {
 				m.openTaskEdit(task)
 			}
-		case "n":
+		case "a", "n":
+			// §D.14 binds `a` to "add sub-task"; `n` retained as alias
+			// during the rebind cycle so muscle memory from the first
+			// landing keeps working — drop it after a release.
 			if task, ok := m.activeTask(); ok {
 				m.openSubTaskCreate(task)
+			}
+		case "s":
+			// §D.14 — `s` focuses the sub-tasks pane. Idempotent when
+			// already focused so re-pressing is harmless. When the task
+			// has no children the focus would trap j/k against an empty
+			// list, so leave the focus where it was and surface a status
+			// hint so the press still acknowledges.
+			children := m.directChildren(m.taskID)
+			if len(children) == 0 {
+				m.status = m.t("tui.status.no_subtasks_to_focus")
+			} else {
+				m.taskFocus = taskFocusSubtasks
+				if m.subtaskCursor < 0 {
+					m.subtaskCursor = 0
+				}
+			}
+		case " ":
+			// §D.14 — space on the sub-tasks pane shortcuts the focused
+			// child into the workflow's final bucket. Goes through the
+			// full transition engine so guards still fire; the error
+			// surfaces inline like any other failed move.
+			if m.taskFocus == taskFocusSubtasks {
+				m.sendFocusedSubtaskToDone()
 			}
 		case "f":
 			if task, ok := m.activeTask(); ok {
@@ -152,6 +180,17 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		return *m, tea.Quit
 	case "esc":
+		if m.taskScreen == taskScreenEdit && m.taskEditFormDirty() {
+			if !m.taskEscPendingDiscard {
+				// First esc on a dirty edit arms the discard prompt
+				// rather than closing immediately — the user gets one
+				// chance to recover the work before it disappears.
+				m.taskEscPendingDiscard = true
+				m.status = m.t("tui.taskedit.dirty_discard_prompt")
+				return *m, nil
+			}
+		}
+		m.taskEscPendingDiscard = false
 		if m.taskScreen == taskScreenCreate {
 			m.closeTaskScreen(m.t("tui.status.cancelled"))
 		} else if task, ok := m.activeTask(); ok {
@@ -161,17 +200,27 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return *m, nil
 	case "ctrl+s":
+		m.taskEscPendingDiscard = false
 		m.saveTaskForm()
 		return *m, nil
-	case "tab", "shift+tab":
-		m.toggleTaskField()
+	case "tab":
+		m.taskEscPendingDiscard = false
+		m.cycleTaskField(1)
+		return *m, nil
+	case "shift+tab":
+		m.taskEscPendingDiscard = false
+		m.cycleTaskField(-1)
 		return *m, nil
 	case "ctrl+b":
+		m.taskEscPendingDiscard = false
 		if m.taskScreen == taskScreenEdit {
 			m.openBlockerPicker()
 		}
 		return *m, nil
 	}
+	// Any other key dismisses the dirty-discard arm so the next esc
+	// behaves as "arm again", not "discard".
+	m.taskEscPendingDiscard = false
 	if m.taskField == taskFieldPriority {
 		switch msg.String() {
 		case "left", "h":
@@ -194,8 +243,60 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// (see newTaskDescriptionInput), so a bare Enter still falls through
 		// to the form-level ctrl+s/save plumbing because nothing matches it.
 		m.taskDescriptionInput, cmd = m.taskDescriptionInput.Update(msg)
+	case taskFieldTags:
+		m.taskTagsInput, cmd = m.taskTagsInput.Update(msg)
+	case taskFieldParent:
+		m.taskParentInput, cmd = m.taskParentInput.Update(msg)
+		// Clear any stale lookup error so the next blur recomputes
+		// against the current input — typing a fresh id mid-edit
+		// shouldn't leave the previous "not found" hint visible.
+		m.taskParentLookupError = ""
 	}
 	return *m, cmd
+}
+
+// taskEditFormDirty reports whether the form values have diverged from
+// the snapshot captured at openTaskEdit. Used by the esc dirty-check:
+// "clean" closes immediately, "dirty" arms a confirm prompt so the
+// user doesn't blow away an in-flight edit with a stray esc.
+func (m *Model) taskEditFormDirty() bool {
+	if !m.taskEditInitial.active {
+		return false
+	}
+	if strings.TrimSpace(m.taskTitleInput.Value()) != strings.TrimSpace(m.taskEditInitial.title) {
+		return true
+	}
+	if strings.TrimSpace(m.taskDescriptionInput.Value()) != strings.TrimSpace(m.taskEditInitial.description) {
+		return true
+	}
+	if m.taskPriority != m.taskEditInitial.priority {
+		return true
+	}
+	if normalizeTagsCSV(m.taskTagsInput.Value()) != normalizeTagsCSV(m.taskEditInitial.tagsCSV) {
+		return true
+	}
+	if strings.TrimSpace(m.taskParentInput.Value()) != strings.TrimSpace(m.taskEditInitial.parent) {
+		return true
+	}
+	return false
+}
+
+// normalizeTagsCSV folds a CSV tag list into a canonical sorted shape
+// so reorder-only edits (e.g. "a, b" → "b, a") don't trip the dirty
+// check. Empty fields are dropped; whitespace around each token is
+// trimmed.
+func normalizeTagsCSV(csv string) string {
+	parts := strings.Split(csv, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return strings.Join(out, ",")
 }
 
 func (m *Model) updateBlockerPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -264,6 +365,11 @@ func (m *Model) openTaskCreate() {
 	m.taskCreateParentID = nil
 	m.taskTitleInput = newTaskTitleInput()
 	m.taskDescriptionInput = newTaskDescriptionInput()
+	m.taskTagsInput = newTaskTagsInput()
+	m.taskParentInput = newTaskParentInput()
+	m.taskParentLookupError = ""
+	m.taskEditInitial = taskEditSnapshot{}
+	m.taskEscPendingDiscard = false
 	m.resizeTaskDescriptionInput()
 	// Default the form to the priority flagged `default: true` in
 	// config.priorities, falling back to the middle entry when none is
@@ -382,10 +488,60 @@ func (m *Model) openTaskEdit(task domain.Task) {
 	m.resizeTaskDescriptionInput()
 	m.taskDescriptionInput.CursorEnd()
 	m.taskPriority = task.Priority
+
+	// §E Tags + Parent sections. Tags is the CSV projection of the
+	// current attached tag set; Parent is the FK id as decimal (empty =
+	// root). Both are captured into taskEditInitial so esc can detect
+	// "dirty" without re-querying the DB.
+	tagsCSV := m.loadTaskTagsCSV(task.ID)
+	m.taskTagsInput = newTaskTagsInput()
+	m.taskTagsInput.SetValue(tagsCSV)
+	m.taskTagsInput.SetCursor(len(tagsCSV))
+
+	parentValue := ""
+	if task.ParentID != nil {
+		parentValue = strconv.FormatInt(*task.ParentID, 10)
+	}
+	m.taskParentInput = newTaskParentInput()
+	m.taskParentInput.SetValue(parentValue)
+	m.taskParentInput.SetCursor(len(parentValue))
+	m.taskParentLookupError = ""
+
+	m.taskEditInitial = taskEditSnapshot{
+		active:      true,
+		title:       task.Title,
+		description: task.Description,
+		priority:    task.Priority,
+		tagsCSV:     tagsCSV,
+		parent:      parentValue,
+	}
+	m.taskEscPendingDiscard = false
+
 	m.taskField = taskFieldTitle
 	m.applyTaskFieldFocus()
 	m.status = m.t("tui.status.editing_task")
 	m.moveMode = false
+}
+
+// loadTaskTagsCSV reads the active tag set for taskID and returns the
+// canonical CSV projection used by the §E Tags section. Sorted by name
+// so the dirty-check stays order-insensitive. Lookup failures fall
+// back to an empty string — Tags is a soft field, the form should
+// still open.
+func (m Model) loadTaskTagsCSV(taskID int64) string {
+	if m.repos.Tags == nil {
+		return ""
+	}
+	tags, err := m.repos.Tags.ListTaskTags(m.ctx, m.project.ID, taskID)
+	if err != nil {
+		return ""
+	}
+	names := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		names = append(names, tag.Name)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }
 
 // resizeTaskDescriptionInput keeps the persistent task description
@@ -414,6 +570,11 @@ func (m *Model) closeTaskScreen(status string) {
 	m.taskCreateParentID = nil
 	m.taskTitleInput = newTaskTitleInput()
 	m.taskDescriptionInput = newTaskDescriptionInput()
+	m.taskTagsInput = newTaskTagsInput()
+	m.taskParentInput = newTaskParentInput()
+	m.taskParentLookupError = ""
+	m.taskEditInitial = taskEditSnapshot{}
+	m.taskEscPendingDiscard = false
 	m.taskPriority = domain.PriorityZero
 	m.taskField = taskFieldTitle
 	m.status = status
@@ -434,21 +595,47 @@ func (m *Model) closeTaskScreen(status string) {
 	m.descriptionScreen = detailscreen.New(0)
 }
 
-func (m *Model) toggleTaskField() {
-	switch m.taskField {
-	case taskFieldTitle:
-		m.taskField = taskFieldDescription
-	case taskFieldDescription:
-		m.taskField = taskFieldPriority
-	default:
-		m.taskField = taskFieldTitle
+// taskFieldOrder is the §E section rotation: Title → Description →
+// Priority → Tags → Parent. cycleTaskField (Tab / Shift+Tab) walks this
+// slice; declaring it once keeps the forward and reverse paths in sync.
+var taskFieldOrder = []taskFormField{
+	taskFieldTitle,
+	taskFieldDescription,
+	taskFieldPriority,
+	taskFieldTags,
+	taskFieldParent,
+}
+
+// cycleTaskField rotates the active section by delta steps through
+// taskFieldOrder, wrapping at both ends. delta=+1 for Tab, delta=-1
+// for Shift+Tab. The blur side-effect on Parent runs through
+// applyTaskFieldFocus so the lookup hint fires regardless of which
+// direction the user leaves the field.
+func (m *Model) cycleTaskField(delta int) {
+	idx := 0
+	for i, f := range taskFieldOrder {
+		if f == m.taskField {
+			idx = i
+			break
+		}
+	}
+	previous := m.taskField
+	idx = (idx + delta + len(taskFieldOrder)) % len(taskFieldOrder)
+	m.taskField = taskFieldOrder[idx]
+	// Blur-time parent validation: when the cursor leaves Parent, run
+	// the lookup so the next render surfaces the hint. The save-time
+	// anti-cycle check still runs separately — this only catches the
+	// "exists + same project" precondition the user can act on
+	// immediately.
+	if previous == taskFieldParent && m.taskField != taskFieldParent {
+		m.validateParentInputOnBlur()
 	}
 	m.applyTaskFieldFocus()
 }
 
 // applyTaskFieldFocus mirrors m.taskField onto the bubbles inputs so the
-// caret only blinks in the focused field. Without this, both inputs would
-// render carets simultaneously which is visually ambiguous.
+// caret only blinks in the focused field. Without this, multiple inputs
+// would render carets simultaneously which is visually ambiguous.
 func (m *Model) applyTaskFieldFocus() {
 	if m.taskField == taskFieldTitle {
 		m.taskTitleInput.Focus()
@@ -460,6 +647,53 @@ func (m *Model) applyTaskFieldFocus() {
 	} else {
 		m.taskDescriptionInput.Blur()
 	}
+	if m.taskField == taskFieldTags {
+		m.taskTagsInput.Focus()
+	} else {
+		m.taskTagsInput.Blur()
+	}
+	if m.taskField == taskFieldParent {
+		m.taskParentInput.Focus()
+	} else {
+		m.taskParentInput.Blur()
+	}
+}
+
+// validateParentInputOnBlur runs the §E §7 parent-id lookup: the value
+// must parse as an int64, name a task in the active project, and not
+// refer to the task being edited. Anti-cycle is intentionally deferred
+// to save time so the user can keep typing without the form rejecting
+// transient ids. Sets taskParentLookupError when invalid; clears it
+// when valid or empty.
+func (m *Model) validateParentInputOnBlur() {
+	value := strings.TrimSpace(m.taskParentInput.Value())
+	if value == "" {
+		m.taskParentLookupError = ""
+		return
+	}
+	id, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || id <= 0 {
+		m.taskParentLookupError = m.t("tui.taskedit.parent_lookup_invalid")
+		return
+	}
+	if m.taskID > 0 && id == m.taskID {
+		m.taskParentLookupError = m.t("tui.taskedit.parent_lookup_self")
+		return
+	}
+	tasks, err := m.repos.Tasks.ListTasks(m.ctx, m.project.ID, domain.TaskFilter{IncludeArchived: true}, m.repos.activeSnapshot())
+	if err != nil {
+		// Don't punish the user for an IO blip — the save-time check
+		// will catch any real problem.
+		m.taskParentLookupError = ""
+		return
+	}
+	for _, t := range tasks {
+		if t.ID == id {
+			m.taskParentLookupError = ""
+			return
+		}
+	}
+	m.taskParentLookupError = m.t("tui.taskedit.parent_lookup_not_found")
 }
 
 // cycleTaskPriority advances the form's priority cursor through the
@@ -565,7 +799,18 @@ func (m *Model) armOrConfirmTaskDelete(task domain.Task) {
 	}
 	m.taskDeletePendingID = task.ID
 	m.commentDeletePendingID = 0
-	m.status = fmt.Sprintf(m.t("tui.confirm.task_delete_fmt"), task.ID, task.Title)
+	// Sub-tasks ride the FK ON DELETE CASCADE, so the prompt needs to
+	// announce the full subtree size — otherwise a one-key confirm can
+	// silently take out a multi-level branch. CountDescendants walks
+	// the recursive CTE; a failure here degrades to the root-only
+	// prompt rather than blocking the verb.
+	descendants, err := m.repos.Tasks.CountDescendants(m.ctx, m.project.ID, task.ID)
+	if err != nil || descendants == 0 {
+		m.status = fmt.Sprintf(m.t("tui.confirm.task_delete_fmt"), task.ID, task.Title)
+		return
+	}
+	m.status = fmt.Sprintf(m.t("tui.confirm.delete_subtree_fmt"),
+		task.ID, task.Title, descendants, descendants+1)
 }
 
 // executeTaskDelete runs the TaskService.Delete call and reconciles UI state
@@ -575,7 +820,7 @@ func (m *Model) armOrConfirmTaskDelete(task domain.Task) {
 // can retry intentionally rather than re-confirming a stale arm.
 func (m *Model) executeTaskDelete(taskID int64) {
 	m.taskDeletePendingID = 0
-		if _, err := app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry, m.repos.activeSnapshot()).Delete(m.ctx, m.project, taskID); err != nil {
+	if _, err := m.taskService(nil).Delete(m.ctx, m.project, taskID); err != nil {
 		m.status = err.Error()
 		return
 	}
@@ -597,6 +842,24 @@ func (m *Model) saveTaskForm() {
 	}
 	description := strings.TrimSpace(m.taskDescriptionInput.Value())
 
+	// §E Parent section: empty = root, otherwise int64. Bad input
+	// (non-numeric, negative, self) is rejected here so the user gets
+	// the inline hint instead of a service-layer cycle error.
+	parentValue := strings.TrimSpace(m.taskParentInput.Value())
+	var parentID *int64
+	if parentValue != "" {
+		id, parseErr := strconv.ParseInt(parentValue, 10, 64)
+		if parseErr != nil || id <= 0 {
+			m.status = m.t("tui.taskedit.parent_lookup_invalid")
+			return
+		}
+		if m.taskScreen == taskScreenEdit && id == m.taskID {
+			m.status = m.t("tui.taskedit.parent_lookup_self")
+			return
+		}
+		parentID = &id
+	}
+
 	var task domain.Task
 	var err error
 	switch m.taskScreen {
@@ -606,10 +869,16 @@ func (m *Model) saveTaskForm() {
 		// id, so we map it back through priorityLabel to keep the
 		// service signature uniform across surfaces.
 		label := m.priorityLabel(m.taskPriority)
-		taskService := app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry, m.repos.activeSnapshot())
-		if m.taskCreateParentID != nil {
+		taskService := m.taskService(nil)
+		switch {
+		case m.taskCreateParentID != nil:
 			task, err = taskService.AddSub(m.ctx, m.project, *m.taskCreateParentID, title, description, label, "")
-		} else {
+		case parentID != nil:
+			// §E parent textinput on create routes through AddSub so
+			// the service still enforces same-project + active +
+			// cross-bucket invariants.
+			task, err = taskService.AddSub(m.ctx, m.project, *parentID, title, description, label, "")
+		default:
 			task, err = taskService.Add(m.ctx, m.project, title, description, label, "")
 		}
 	case taskScreenEdit:
@@ -623,7 +892,14 @@ func (m *Model) saveTaskForm() {
 			p := m.taskPriority
 			update.Priority = &p
 		}
-		task, err = app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry, m.repos.activeSnapshot()).Edit(m.ctx, m.project, current.ID, update)
+		// §E Parent re-parent — only ride the ChangeParent flag when
+		// the value diverged from the snapshot so a no-op edit doesn't
+		// trip the service's archived/cycle checks unnecessarily.
+		if m.taskEditInitial.active && parentValue != strings.TrimSpace(m.taskEditInitial.parent) {
+			update.ChangeParent = true
+			update.NewParentID = parentID
+		}
+		task, err = m.taskService(nil).Edit(m.ctx, m.project, current.ID, update)
 	default:
 		return
 	}
@@ -631,6 +907,18 @@ func (m *Model) saveTaskForm() {
 		m.status = err.Error()
 		return
 	}
+
+	// §E Tags section. Diff the current CSV against the snapshot (edit)
+	// or against an empty set (create) and replay the delta through
+	// TagService.Add / TagService.Remove. Failures surface in status
+	// but the row is already persisted, so the form still closes — the
+	// user can re-open and retry the tag edit without losing the
+	// title/description/priority/parent work.
+	if tagErr := m.syncTaskTagsFromForm(task.ID); tagErr != nil {
+		m.status = tagErr.Error()
+		return
+	}
+
 	if err := m.refresh(); err != nil {
 		m.status = err.Error()
 		return
@@ -639,6 +927,81 @@ func (m *Model) saveTaskForm() {
 		m.openTaskView(task)
 	}
 	m.status = m.t("tui.status.saved")
+}
+
+// syncTaskTagsFromForm reconciles the persisted tag set for taskID with
+// the §E Tags CSV input. On create the snapshot is empty so every
+// parsed tag becomes an Add; on edit the diff against
+// taskEditInitial.tagsCSV decides which tags are added or removed.
+// Empty CSV entries are dropped; tag names go through the same
+// normalization pass TagService.Add applies internally so dupes
+// across whitespace / case differences collapse before the delta is
+// computed.
+func (m *Model) syncTaskTagsFromForm(taskID int64) error {
+	if taskID <= 0 || m.repos.Tags == nil {
+		return nil
+	}
+	wanted := parseTagsCSV(m.taskTagsInput.Value())
+	initial := parseTagsCSV(m.taskEditInitial.tagsCSV)
+	wantedSet := map[string]struct{}{}
+	for _, name := range wanted {
+		wantedSet[name] = struct{}{}
+	}
+	initialSet := map[string]struct{}{}
+	for _, name := range initial {
+		initialSet[name] = struct{}{}
+	}
+
+	snap := m.repos.activeSnapshot()
+	tagSvc := app.NewTagServiceWithEvents(m.repos.Tags, m.repos.Events, snap)
+
+	// Additions: anything in wanted but not in initial.
+	for _, name := range wanted {
+		if _, ok := initialSet[name]; ok {
+			continue
+		}
+		if _, err := tagSvc.Add(m.ctx, m.project, app.TagEntityTask, taskID, name); err != nil {
+			return err
+		}
+	}
+
+	// Removals: anything in the live attached set but not in wanted.
+	// Re-read so we pick up the ids — initialSet only holds names.
+	current, err := m.repos.Tags.ListTaskTags(m.ctx, m.project.ID, taskID)
+	if err != nil {
+		return err
+	}
+	for _, tag := range current {
+		if _, keep := wantedSet[tag.Name]; keep {
+			continue
+		}
+		if err := tagSvc.Remove(m.ctx, m.project, app.TagEntityTask, taskID, tag.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// parseTagsCSV splits a Tags CSV into a normalised slice. Trim
+// whitespace, drop empties, lowercase via TagService's normalisation
+// rule (snap-aware synonym pass happens inside TagService.Add — here
+// we only collapse whitespace so the diff stays string-stable).
+func parseTagsCSV(csv string) []string {
+	parts := strings.Split(csv, ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if _, dup := seen[p]; dup {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
 }
 
 func (m Model) renderTaskScreen() string {
@@ -1219,6 +1582,56 @@ func (m Model) activeSubtask() (domain.Task, bool) {
 	return children[m.subtaskCursor], true
 }
 
+// sendFocusedSubtaskToDone shortcuts the sub-task currently under the
+// cursor into the workflow's final bucket via the full transition
+// engine. §D.14 — `space` on the sub-tasks pane is the "mark this
+// child done" verb so the user doesn't have to open the child to move
+// it. Guards still fire (subtasks_complete on grandchildren, blockers,
+// etc.); failures surface inline.
+func (m *Model) sendFocusedSubtaskToDone() {
+	child, ok := m.activeSubtask()
+	if !ok {
+		return
+	}
+	snap := m.repos.activeSnapshot()
+	if snap == nil {
+		return
+	}
+	finalKey := snap.Workflow().FinalBucketKey()
+	if finalKey == "" {
+		return
+	}
+	if child.BucketKey == finalKey {
+		// Already in the final bucket — no transition fires, but the
+		// keypress still needs feedback so the user knows the press was
+		// received and the child is genuinely done.
+		m.status = fmt.Sprintf(m.t("tui.status.subtask_already_done_fmt"), child.ID, finalKey)
+		return
+	}
+	svc := m.taskService(snap)
+	if _, err := svc.Move(m.ctx, m.project, child.ID, finalKey); err != nil {
+		m.status = err.Error()
+		return
+	}
+	if err := m.refresh(); err != nil {
+		m.status = err.Error()
+		return
+	}
+	m.status = fmt.Sprintf(m.t("tui.status.subtask_sent_done_fmt"), child.ID, finalKey)
+}
+
+// taskService returns a TaskService bound to the current Model wiring.
+// snap is the snapshot the service reads through — callers may pass
+// nil to use the model's active snapshot, but most callers already
+// have it on hand from a prior repos.activeSnapshot() call and pass it
+// explicitly to avoid the second lookup.
+func (m *Model) taskService(snap *config.Snapshot) *app.TaskService {
+	if snap == nil {
+		snap = m.repos.activeSnapshot()
+	}
+	return app.NewTaskService(m.repos.Tasks, m.repos.Workflow, m.registry, snap)
+}
+
 // drillIntoSubtask opens the sub-task currently under the cursor as
 // the new task screen, pushing the current task ID onto the breadcrumb
 // stack so esc pops back to the parent (preserving its scroll + focus).
@@ -1311,8 +1724,54 @@ func (m Model) renderTaskForm(title string) string {
 		"",
 		m.renderTaskFormLabel(taskFieldPriority, "Priority"),
 		m.renderTaskPriorityInput(),
+		"",
+		m.renderTaskFormLabel(taskFieldTags, "Tags"),
+		m.renderTaskTagsField(width),
+		"",
+		m.renderTaskFormLabel(taskFieldParent, "Parent"),
+		m.renderTaskParentField(width),
+	}
+	if m.taskParentLookupError != "" {
+		lines = append(lines, m.styles.hint.Render("  "+m.taskParentLookupError))
 	}
 	return m.renderPanel(strings.Join(lines, "\n"))
+}
+
+// renderTaskTagsField mirrors renderTaskTitleField but binds to the
+// §E Tags single-line CSV input. Border tracks focus so the active
+// section reads as the next-keystroke target.
+func (m Model) renderTaskTagsField(width int) string {
+	input := m.taskTagsInput
+	input.Cursor.Style = m.styles.cursor
+	innerWidth := width - 4
+	if innerWidth < 8 {
+		innerWidth = 8
+	}
+	input.Width = innerWidth
+	style := m.styles.input.Width(width)
+	if m.taskField == taskFieldTags {
+		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
+	}
+	return style.Render(input.View())
+}
+
+// renderTaskParentField mirrors renderTaskTagsField for the §E Parent
+// id input. The lookup-error hint is rendered by the caller (one line
+// below the bordered box) so the error sits closest to the field that
+// produced it without competing with the next section's label.
+func (m Model) renderTaskParentField(width int) string {
+	input := m.taskParentInput
+	input.Cursor.Style = m.styles.cursor
+	innerWidth := width - 4
+	if innerWidth < 8 {
+		innerWidth = 8
+	}
+	input.Width = innerWidth
+	style := m.styles.input.Width(width)
+	if m.taskField == taskFieldParent {
+		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
+	}
+	return style.Render(input.View())
 }
 
 // renderTaskTitleField renders the bubbles textinput inside the same boxed

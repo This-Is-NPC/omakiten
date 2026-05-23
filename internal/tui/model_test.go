@@ -32,7 +32,7 @@ func TestModelSwitchesViews(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
@@ -58,11 +58,11 @@ func TestModelTableAndGraphShowCounts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	blocker, err := store.CreateTask(ctx, project.ID, "Blocker", "", domain.Priority(2), "backlog", store.Snapshot())
+	blocker, err := store.CreateTask(ctx, project.ID, "Blocker", "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(blocker) error = %v", err)
 	}
-	blocked, err := store.CreateTask(ctx, project.ID, "Blocked", "", domain.Priority(2), "backlog", store.Snapshot())
+	blocked, err := store.CreateTask(ctx, project.ID, "Blocked", "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(blocked) error = %v", err)
 	}
@@ -100,7 +100,7 @@ func TestModelTablesUseWideTerminalSpace(t *testing.T) {
 	}
 
 	longTitle := "Investigate viewport usage for the TUI table without truncating the task title"
-	if _, err := store.CreateTask(ctx, project.ID, longTitle, "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, longTitle, "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 	argsJSON := `{"root":"/home/howl/Projects/person/omakiten","view":"logs","expanded":true}`
@@ -274,7 +274,7 @@ func TestModelRealtimeTickRefreshesBoardTasks(t *testing.T) {
 	if len(model.tasks) != 0 {
 		t.Fatalf("initial tasks len = %d, want 0", len(model.tasks))
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "External task", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "External task", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
@@ -302,7 +302,7 @@ func TestModelOpensExistingTaskScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Existing task", "First line\nSecond line", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "Existing task", "First line\nSecond line", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -366,7 +366,7 @@ func TestModelAddsMultilineCommentInsideTaskCommentsPanel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Existing task", "", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "Existing task", "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -525,7 +525,7 @@ func TestModelEditsTaskAndReturnsToView(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Old title", "Old description", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Old title", "Old description", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
@@ -588,7 +588,7 @@ func TestOpenTaskEditCalibratesDescriptionTextarea(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Task with body", "Existing description across\nmultiple lines.", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Task with body", "Existing description across\nmultiple lines.", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
@@ -635,11 +635,11 @@ func TestModelSetsTaskBlockersFromPicker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	blocker, err := store.CreateTask(ctx, project.ID, "Design dependency", "", domain.Priority(2), "backlog", store.Snapshot())
+	blocker, err := store.CreateTask(ctx, project.ID, "Design dependency", "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(blocker) error = %v", err)
 	}
-	blocked, err := store.CreateTask(ctx, project.ID, "Implement feature", "", domain.Priority(2), "backlog", store.Snapshot())
+	blocked, err := store.CreateTask(ctx, project.ID, "Implement feature", "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(blocked) error = %v", err)
 	}
@@ -701,7 +701,7 @@ func TestModelBoardMoveSurfacesWorkflowBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Pinned", "", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "Pinned", "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -756,7 +756,7 @@ func TestModelTaskViewWrapsLongPropertyTextWithoutBreakingGrid(t *testing.T) {
 	}
 	longTitle := "Atualizar a documentação do projeto com orientações operacionais muito detalhadas para evitar quebra visual"
 	longDescription := "Revisar a documentação existente, completar pontos faltantes e alinhar as instruções ao comportamento atual do projeto, incluindo casos de borda com textos extensos para validação de layout."
-	if _, err := store.CreateTask(ctx, project.ID, longTitle, longDescription, domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, longTitle, longDescription, domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
@@ -821,10 +821,10 @@ func TestModelBoardCollapsesToFocusedColumnWhenNarrow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Backlog task", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Backlog task", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask(backlog) error = %v", err)
 	}
-	devTask, err := store.CreateTask(ctx, project.ID, "Dev task", "", domain.Priority(2), "backlog", store.Snapshot())
+	devTask, err := store.CreateTask(ctx, project.ID, "Dev task", "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(dev) error = %v", err)
 	}
@@ -1228,7 +1228,7 @@ func TestModelDeletesTaskFromTaskViewWithDoubleD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Doomed", "", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "Doomed", "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -1284,7 +1284,7 @@ func TestModelBlocksTaskEditOnPressWhenBucketForbids(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Locked", "", domain.Priority(2), "dev", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Locked", "", domain.Priority(2), "dev", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
@@ -1326,7 +1326,7 @@ func TestModelBlocksTaskDeleteArmWhenBucketForbids(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Locked", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Locked", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
@@ -1357,7 +1357,7 @@ func TestModelBoardDoesNotArmDeleteOnD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Survives", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Survives", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
@@ -1389,7 +1389,7 @@ func TestModelCancelsArmedTaskDeleteOnNavigation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Survives", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Survives", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
@@ -1431,7 +1431,7 @@ func TestModelDeletesCommentFromCommentScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -1498,7 +1498,7 @@ func TestModelEditsCommentFromCommentScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -1707,7 +1707,7 @@ func TestPlansSubTabRendersRollups(t *testing.T) {
 	if _, err := store.AddPlanWave(ctx, project.ID, planA.ID, "Wave 2", 2); err != nil {
 		t.Fatalf("AddPlanWave(2) error = %v", err)
 	}
-	taskOpen, err := store.CreateTask(ctx, project.ID, "open", "", domain.Priority(2), "backlog", snap)
+	taskOpen, err := store.CreateTask(ctx, project.ID, "open", "", domain.Priority(2), "backlog", nil, snap)
 	if err != nil {
 		t.Fatalf("CreateTask(open) error = %v", err)
 	}
@@ -1793,11 +1793,11 @@ func TestPlansSubTabEnterOpensNetwork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddPlanWave(2) error = %v", err)
 	}
-	tOpen, err := store.CreateTask(ctx, project.ID, "foundation-task", "", domain.Priority(2), "backlog", snap)
+	tOpen, err := store.CreateTask(ctx, project.ID, "foundation-task", "", domain.Priority(2), "backlog", nil, snap)
 	if err != nil {
 		t.Fatalf("CreateTask(open) error = %v", err)
 	}
-	tGated, err := store.CreateTask(ctx, project.ID, "migration-task", "", domain.Priority(2), "backlog", snap)
+	tGated, err := store.CreateTask(ctx, project.ID, "migration-task", "", domain.Priority(2), "backlog", nil, snap)
 	if err != nil {
 		t.Fatalf("CreateTask(gated) error = %v", err)
 	}
@@ -1897,7 +1897,7 @@ func TestPlansSubTabNetworkAssignOpensInputAndStampsAssignee(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddPlanWave() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "foundation-task", "", domain.Priority(2), "backlog", snap)
+	task, err := store.CreateTask(ctx, project.ID, "foundation-task", "", domain.Priority(2), "backlog", nil, snap)
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -2050,11 +2050,11 @@ func TestPlansSubTabNetworkRendersBlockerMarkers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddPlanWave() error = %v", err)
 	}
-	blocker, err := store.CreateTask(ctx, project.ID, "blocker-task", "", domain.Priority(2), "backlog", snap)
+	blocker, err := store.CreateTask(ctx, project.ID, "blocker-task", "", domain.Priority(2), "backlog", nil, snap)
 	if err != nil {
 		t.Fatalf("CreateTask blocker: %v", err)
 	}
-	dependent, err := store.CreateTask(ctx, project.ID, "dependent-task", "", domain.Priority(2), "backlog", snap)
+	dependent, err := store.CreateTask(ctx, project.ID, "dependent-task", "", domain.Priority(2), "backlog", nil, snap)
 	if err != nil {
 		t.Fatalf("CreateTask dependent: %v", err)
 	}
@@ -2204,8 +2204,8 @@ func TestPlansSubTabNetworkRendersDirectionalMarkers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
-	a, _ := store.CreateTask(ctx, project.ID, "alpha", "", domain.Priority(2), "backlog", snap)
-	b, _ := store.CreateTask(ctx, project.ID, "bravo", "", domain.Priority(2), "backlog", snap)
+	a, _ := store.CreateTask(ctx, project.ID, "alpha", "", domain.Priority(2), "backlog", nil, snap)
+	b, _ := store.CreateTask(ctx, project.ID, "bravo", "", domain.Priority(2), "backlog", nil, snap)
 	for _, tid := range []int64{a.ID, b.ID} {
 		if err := store.AssignTaskToPlan(ctx, project.ID, tid, plan.ID, wave.ID); err != nil {
 			t.Fatalf("AssignTaskToPlan: %v", err)
@@ -2281,10 +2281,10 @@ func TestPlansSubTabNetworkRendersCriticalPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
-	a, _ := store.CreateTask(ctx, project.ID, "alpha", "", domain.Priority(2), "backlog", snap)
-	b, _ := store.CreateTask(ctx, project.ID, "bravo", "", domain.Priority(2), "backlog", snap)
-	c, _ := store.CreateTask(ctx, project.ID, "charlie", "", domain.Priority(2), "backlog", snap)
-	d, _ := store.CreateTask(ctx, project.ID, "delta", "", domain.Priority(2), "backlog", snap)
+	a, _ := store.CreateTask(ctx, project.ID, "alpha", "", domain.Priority(2), "backlog", nil, snap)
+	b, _ := store.CreateTask(ctx, project.ID, "bravo", "", domain.Priority(2), "backlog", nil, snap)
+	c, _ := store.CreateTask(ctx, project.ID, "charlie", "", domain.Priority(2), "backlog", nil, snap)
+	d, _ := store.CreateTask(ctx, project.ID, "delta", "", domain.Priority(2), "backlog", nil, snap)
 	for _, tid := range []int64{a.ID, b.ID, c.ID, d.ID} {
 		if err := store.AssignTaskToPlan(ctx, project.ID, tid, plan.ID, wave.ID); err != nil {
 			t.Fatalf("AssignTaskToPlan #%d: %v", tid, err)
