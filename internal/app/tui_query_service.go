@@ -29,6 +29,14 @@ type TUISnapshot struct {
 // TUIQueryService centralises the multi-repo read fan-out the TUI used to
 // inline in its refresh method. Pulling it here keeps the TUI free of
 // per-port plumbing and gives the read pipeline a single test seam.
+//
+// Phase 3 perf note: the service deliberately does NOT hold a BundleEditor.
+// Every entity slice the TUI renders (skills, laws, personas, templates,
+// warnings) is sourced from the cached *config.Snapshot the runtime
+// installed at boot — refresh is a hot path and a disk re-walk on each
+// tick would pin a goroutine on os.ReadFile + YAML decode for ~50ms on a
+// realistic bundle. Edits still rotate the cache via BundleCache.Reload,
+// so a write-then-render cycle still sees the new bytes.
 type TUIQueryService struct {
 	tasks    TaskRepository
 	snap     *config.Snapshot
@@ -36,14 +44,11 @@ type TUIQueryService struct {
 	comments CommentRepository
 	entries  ContextEntryRepository
 	tags     TagRepository
-	editor   *BundleEditor
-	registry *domain.EnumRegistry
 }
 
-// NewTUIQueryService wires the TUI read model. registry is optional — when
-// nil the service falls back to process-global domain registries.
-func NewTUIQueryService(tasks TaskRepository, snap *config.Snapshot, deps DependencyRepository, comments CommentRepository, entries ContextEntryRepository, tags TagRepository, editor *BundleEditor, registry *domain.EnumRegistry) *TUIQueryService {
-	return &TUIQueryService{tasks: tasks, snap: snap, deps: deps, comments: comments, entries: entries, tags: tags, editor: editor, registry: registry}
+// NewTUIQueryService wires the TUI read model.
+func NewTUIQueryService(tasks TaskRepository, snap *config.Snapshot, deps DependencyRepository, comments CommentRepository, entries ContextEntryRepository, tags TagRepository) *TUIQueryService {
+	return &TUIQueryService{tasks: tasks, snap: snap, deps: deps, comments: comments, entries: entries, tags: tags}
 }
 
 // SnapshotOptions tunes the TUI snapshot fetch. IncludeArchived flips the
@@ -94,19 +99,31 @@ func (s *TUIQueryService) Snapshot(ctx context.Context, project domain.ProjectCo
 		skills := skillsFromSnapshot(cfgSnap)
 		personas := personasFromSnapshot(cfgSnap)
 
-		if s.editor != nil {
-			bundle, err := s.editor.Load()
-			if err != nil {
-				return snap, err
+		// Snapshot already carries the entity bodies BuildSnapshot copied
+		// from the bundle; the only data the legacy editor.Load() path
+		// contributed beyond that was the per-entity warning chip, which
+		// the snapshot now exposes via Warnings(). No disk scan on refresh.
+		warnings := bundleWarningIndex(cfgSnap.Warnings())
+		for i, sk := range skills {
+			if w, ok := warnings[sk.Key]; ok {
+				skills[i].Warning = w
 			}
-			skills = enrichSkillsFromBundle(skills, bundle)
-			laws = enrichLawsFromBundle(laws, bundle, s.registry)
-			personas = enrichPersonasFromBundle(personas, bundle)
-			snap.Templates = append([]config.TaskTemplate(nil), bundle.Templates...)
 		}
+		for i, l := range laws {
+			if w, ok := warnings[l.Key]; ok {
+				laws[i].Warning = w
+			}
+		}
+		for i, p := range personas {
+			if w, ok := warnings[p.Key]; ok {
+				personas[i].Warning = w
+			}
+		}
+
 		snap.Laws = laws
 		snap.Skills = skills
 		snap.Personas = personas
+		snap.Templates = append([]config.TaskTemplate(nil), cfgSnap.Templates()...)
 	}
 
 	entries, err := s.entries.ListContextEntries(ctx, project.ID)
@@ -152,88 +169,3 @@ func bundleWarningIndex(warnings []config.SourceWarning) map[string]string {
 	return out
 }
 
-func enrichSkillsFromBundle(skills []domain.Skill, bundle config.Bundle) []domain.Skill {
-	bySlug := map[string]config.Skill{}
-	for _, skill := range bundle.Skills {
-		bySlug[skill.Slug] = skill
-	}
-	warnings := bundleWarningIndex(bundle.Warnings)
-	for index, skill := range skills {
-		if file, ok := bySlug[skill.Key]; ok {
-			skills[index].Description = file.Description
-			skills[index].Body = file.Body
-			skills[index].SourcePath = file.SourcePath
-			skills[index].IsCustom = file.IsCustom
-			if file.Name != "" {
-				skills[index].Name = file.Name
-			}
-		}
-		if w, ok := warnings[skill.Key]; ok {
-			skills[index].Warning = w
-		}
-	}
-	return skills
-}
-
-func enrichLawsFromBundle(laws []domain.Law, bundle config.Bundle, registry *domain.EnumRegistry) []domain.Law {
-	bySlug := map[string]config.Law{}
-	for _, law := range bundle.Laws {
-		bySlug[law.Slug] = law
-	}
-	warnings := bundleWarningIndex(bundle.Warnings)
-	for index, law := range laws {
-		if file, ok := bySlug[law.Key]; ok {
-			laws[index].Body = file.Body
-			// Frontmatter carries the severity label; resolve to its
-			// configured id so the in-memory shape matches the store.
-			// Unknown labels keep whatever the store returned so the
-			// UI still renders while validator surfaces the typo.
-			if id, ok := severityFromLabel(file.Severity, registry); ok {
-				laws[index].Severity = id
-			}
-			laws[index].SourcePath = file.SourcePath
-			laws[index].Scope = domain.LawScope(file.Scope)
-			laws[index].ProjectKey = file.ProjectSlug
-			laws[index].PersonaKey = file.PersonaSlug
-			laws[index].IsCustom = file.IsCustom
-			if file.Name != "" {
-				laws[index].Name = file.Name
-			}
-		}
-		if w, ok := warnings[law.Key]; ok {
-			laws[index].Warning = w
-		}
-	}
-	return laws
-}
-
-func enrichPersonasFromBundle(personas []domain.Persona, bundle config.Bundle) []domain.Persona {
-	bySlug := map[string]config.Persona{}
-	for _, persona := range bundle.Personas {
-		bySlug[persona.Slug] = persona
-	}
-	warnings := bundleWarningIndex(bundle.Warnings)
-	for index, persona := range personas {
-		if file, ok := bySlug[persona.Key]; ok {
-			personas[index].Description = file.Description
-			personas[index].Body = file.Body
-			personas[index].SourcePath = file.SourcePath
-			personas[index].LawKeys = append([]string(nil), file.Laws...)
-			personas[index].IsCustom = file.IsCustom
-			if file.Name != "" {
-				personas[index].Name = file.Name
-			}
-		}
-		if w, ok := warnings[persona.Key]; ok {
-			personas[index].Warning = w
-		}
-	}
-	return personas
-}
-
-// severityFromLabel is the package-level variant used by enrichLawsFromBundle
-// (a pure function with no service receiver). registry is nil-safe: returns
-// SeverityZero, false when no registry is supplied.
-func severityFromLabel(label string, registry *domain.EnumRegistry) (domain.Severity, bool) {
-	return registry.SeverityFromLabel(label)
-}

@@ -279,6 +279,9 @@ func TestCustomBadgeAppearsOnUserOverride(t *testing.T) {
 	if _, err := model.repos.Editor.Apply(model.ctx, nil); err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
 	}
+	if err := runtimecache.RefreshFromEditor(model.repos.Cache, model.repos.ProjectID, model.repos.Editor); err != nil {
+		t.Fatalf("runtimecache.RefreshFromEditor: %v", err)
+	}
 	if err := model.refresh(); err != nil {
 		t.Fatalf("refresh() error = %v", err)
 	}

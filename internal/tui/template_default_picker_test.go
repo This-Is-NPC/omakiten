@@ -9,7 +9,17 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/config"
+	"omakiten/internal/testfixtures/runtimecache"
 )
+
+// runtimecacheRefresh mirrors production's BundleCache.Reload effect for
+// tests that mutate the on-disk bundle directly. The TUI refresh path
+// reads entity slices from the cached snapshot only — tests that bypass
+// the edit→rotateSnapshotAfterEdit loop must rotate the cache by hand
+// or refresh will keep returning the pre-edit view.
+func runtimecacheRefresh(model Model) error {
+	return runtimecache.RefreshFromEditor(model.repos.Cache, model.repos.ProjectID, model.repos.Editor)
+}
 
 // Custom-only fixture: a default global template ships at the root, and
 // the user adds a custom override under templates/custom/. The picker key
@@ -32,6 +42,9 @@ func TestTemplateDefaultPickerAssignsProjectScopedAndClearsPrior(t *testing.T) {
 		"---\nname: My Task Template\nentity: task\n---\nbody\n")
 	if _, err := model.repos.Editor.Apply(model.ctx, nil); err != nil {
 		t.Fatalf("Apply() reload error = %v", err)
+	}
+	if err := runtimecacheRefresh(model); err != nil {
+		t.Fatalf("runtimecache refresh: %v", err)
 	}
 	if err := model.refresh(); err != nil {
 		t.Fatalf("refresh() error = %v", err)
@@ -129,6 +142,9 @@ func TestTemplateDefaultPickerNoneClearsProjectBinding(t *testing.T) {
 		fmt.Sprintf("---\nname: My Task\nentity: task\ndefault: task\nproject: %s\n---\nbody\n", model.project.Slug))
 	if _, err := model.repos.Editor.Apply(model.ctx, nil); err != nil {
 		t.Fatalf("Apply() error = %v", err)
+	}
+	if err := runtimecacheRefresh(model); err != nil {
+		t.Fatalf("runtimecache refresh: %v", err)
 	}
 	if err := model.refresh(); err != nil {
 		t.Fatalf("refresh() error = %v", err)

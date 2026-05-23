@@ -426,18 +426,15 @@ func (m *Model) refreshStats() error {
 	return nil
 }
 
-// activeViewSettings reads the resolved per-view sort/filter from the active
-// bundle. When the bundle editor is not wired (tests, headless callers) it
-// falls back to the canonical defaults so the TUI behaves the same way.
+// activeViewSettings reads the resolved per-view sort/filter from the
+// active bundle's cached snapshot. Falls back to canonical defaults when
+// the snapshot is not wired (tests/headless callers); refresh is on the
+// hot path and previously re-walked disk via editor.Load() on every tick.
 func (m *Model) activeViewSettings() config.ViewSettings {
-	if m.repos.Editor == nil {
-		return config.Settings{}.EffectiveViews()
+	if snap := m.repos.activeSnapshot(); snap != nil {
+		return snap.Settings().EffectiveViews()
 	}
-	bundle, err := m.repos.Editor.Load()
-	if err != nil {
-		return config.Settings{}.EffectiveViews()
-	}
-	return bundle.Config.EffectiveViews()
+	return config.Settings{}.EffectiveViews()
 }
 
 func (m Model) View() string {
@@ -873,7 +870,7 @@ func (m *Model) refresh() error {
 	// testfixtures/runtimecache.Install. Reads hit r.Cache.Get(r.ProjectID).Snapshot
 	// unconditionally.
 
-	query := app.NewTUIQueryService(m.repos.Tasks, m.repos.activeSnapshot(), m.repos.Dependencies, m.repos.Comments, m.repos.Entries, m.repos.Tags, m.repos.Editor, m.registry)
+	query := app.NewTUIQueryService(m.repos.Tasks, m.repos.activeSnapshot(), m.repos.Dependencies, m.repos.Comments, m.repos.Entries, m.repos.Tags)
 	snap, err := query.Snapshot(m.ctx, m.project, domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order}, app.SnapshotOptions{IncludeArchived: m.includeArchived})
 	if err != nil {
 		return err

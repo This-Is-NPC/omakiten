@@ -198,6 +198,8 @@ type Snapshot struct {
 	settings Settings
 	theme    Theme
 	themeErr error
+
+	warnings []SourceWarning
 }
 
 // BuildSnapshot inflates a Bundle into the immutable Snapshot. Construct
@@ -283,6 +285,8 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 	for _, lang := range bundle.Languages {
 		snap.languagesByCode[lang.Code] = lang
 	}
+	snap.warnings = append(snap.warnings, bundle.Warnings...)
+
 	eff := bundle.Config.EffectiveLanguages()
 	baseline := snap.lookupLanguage("en")
 	snap.catalogCLI = buildSurfaceCatalog(snap.languagesByCode, eff.CLI, baseline)
@@ -658,6 +662,20 @@ func (s *Snapshot) Events() EventsSettings {
 // no separate registry pointer threaded alongside the snapshot.
 func (s *Snapshot) Registry() *domain.EnumRegistry {
 	return s.registry
+}
+
+// Warnings returns the loader-emitted soft-validation diagnostics from
+// the bundle this snapshot was built from. TUI/CLI surfaces use these
+// to render the same per-entity warning chip the bundle's
+// editor.Load() path would; reading them off the snapshot avoids a
+// disk round-trip on every TUI refresh.
+func (s *Snapshot) Warnings() []SourceWarning {
+	if len(s.warnings) == 0 {
+		return nil
+	}
+	out := make([]SourceWarning, len(s.warnings))
+	copy(out, s.warnings)
+	return out
 }
 
 // ContextSettings returns the resolved context-window block. Used by
