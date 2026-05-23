@@ -162,11 +162,17 @@ func (m Model) taskByID(taskID int64) (domain.Task, bool) {
 
 // tasksByBucket groups m.tasks by bucket key after applying the board
 // view's priority filter. Used by both the kanban renderer and the cursor
-// math (tasksInCurrentBucket reads from this).
+// math (tasksInCurrentBucket reads from this). Sub-tasks (rows with a
+// non-nil ParentID) are hidden so the kanban columns stay focused on
+// root work — the detail view's sub-tasks panel is the canonical place
+// to inspect a parent's children.
 func (m Model) tasksByBucket() map[string][]domain.Task {
 	tasksByBucket := map[string][]domain.Task{}
 	allowed := priorityAllowSet(m.views.Board.Filter.Priority)
 	for _, task := range m.tasks {
+		if task.IsSubTask() {
+			continue
+		}
 		if !m.priorityAllowed(allowed, task.Priority) {
 			continue
 		}
@@ -201,6 +207,13 @@ func (m *Model) syncSelectedFromBoard() {
 // selectTaskByID positions every cursor (board col/card, table row) onto
 // the given task id. Returns false when the id no longer exists in the
 // loaded slice — caller can fall back to a default selection.
+//
+// Sub-tasks are not rendered on the board, so when the requested id is a
+// child row the board cursor lands on its nearest visible ancestor (the
+// root of its subtree) instead. Without this, cardIdx would index into
+// the unfiltered m.tasks while the board renders the filtered
+// tasksByBucket — the cursor would point past the visible cards and
+// every subsequent `j` would chase a phantom row.
 func (m *Model) selectTaskByID(taskID int64) bool {
 	for i, task := range m.tasks {
 		if task.ID != taskID {
@@ -208,17 +221,20 @@ func (m *Model) selectTaskByID(taskID int64) bool {
 		}
 
 		m.selected = i
+		boardTask := task
+		if task.IsSubTask() {
+			if root, ok := m.boardAncestor(task); ok {
+				boardTask = root
+			}
+		}
 		for colIdx, bucket := range m.workflow.Buckets {
-			if bucket.Key != task.BucketKey {
+			if bucket.Key != boardTask.BucketKey {
 				continue
 			}
 
 			cardIdx := 0
-			for _, candidate := range m.tasks {
-				if candidate.BucketKey != task.BucketKey {
-					continue
-				}
-				if candidate.ID == taskID {
+			for _, candidate := range m.tasksByBucket()[boardTask.BucketKey] {
+				if candidate.ID == boardTask.ID {
 					m.colIdx = colIdx
 					m.cardIdx = cardIdx
 					return true
@@ -229,6 +245,22 @@ func (m *Model) selectTaskByID(taskID int64) bool {
 		return true
 	}
 	return false
+}
+
+// boardAncestor walks parent_id up from a sub-task until it hits a row
+// the board actually renders (no ParentID). Returns false when the
+// chain breaks before reaching a root — defensive against orphan FKs
+// that the FK constraint should rule out, but the selector treats as a
+// soft miss rather than panicking.
+func (m Model) boardAncestor(task domain.Task) (domain.Task, bool) {
+	for task.ParentID != nil {
+		parent, ok := m.taskByID(*task.ParentID)
+		if !ok {
+			return domain.Task{}, false
+		}
+		task = parent
+	}
+	return task, true
 }
 
 func (m *Model) clampSelection() {
@@ -286,6 +318,34 @@ func (m Model) blockersForTask(taskID int64) []domain.Task {
 
 func (m Model) commentCount(taskID int64) int {
 	return len(m.commentsForTask(taskID))
+}
+
+// subtaskCount returns the number of direct children of taskID in the
+// loaded model snapshot. Cheap O(n) scan over m.tasks — the typical
+// project has at most a few thousand tasks, well below any threshold
+// that would justify a per-card index.
+func (m Model) subtaskCount(taskID int64) int {
+	count := 0
+	for _, task := range m.tasks {
+		if task.ParentID != nil && *task.ParentID == taskID {
+			count++
+		}
+	}
+	return count
+}
+
+// directChildren returns the immediate sub-tasks of taskID, sorted by
+// id so the detail-view panel renders in stable insertion order. Pure
+// in-memory walk over m.tasks — same source the badge count reads.
+func (m Model) directChildren(taskID int64) []domain.Task {
+	var out []domain.Task
+	for _, task := range m.tasks {
+		if task.ParentID != nil && *task.ParentID == taskID {
+			out = append(out, task)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 func (m Model) tagsForTask(taskID int64) []domain.Tag {

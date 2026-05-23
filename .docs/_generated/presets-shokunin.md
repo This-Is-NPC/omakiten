@@ -57,7 +57,7 @@ Auto-derived from `defaults/config/shokunin.yaml`.
 |---|---|---|
 | `requirements` | `planning` | `#5w2h`×1 · `#requirements`×1 · `#acceptance`×1 |
 | `planning` | `dev` | `#self-branch`×1 · `#pre-mortem`×1 · `#risk-assessment`×1 · blockers in `done`,`docs` · `wave_gate` |
-| `dev` | `review` | `#resume`×1 · `#tests-passing`×1 · `#rollback-plan`×1 |
+| `dev` | `review` | `#resume`×1 · `#tests-passing`×1 · `#rollback-plan`×1 · `subtasks_complete` |
 | `review` | `docs` | `#peer-review`×2 |
 | `docs` | `done` | `#documentation`×1 · `#lessons-learned`×1 |
 | `review` | `dev` | — |

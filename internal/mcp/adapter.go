@@ -219,11 +219,11 @@ func tools() []ToolDefinition {
 		{Name: "project.overview", Description: "Return active project identity, workflow awareness, pending count, recent context, and next-step prompt.", InputSchema: selectorSchema()},
 		{Name: "project.resume", Description: "Return project distribution, likely next work, blocked work, dependencies, recent context, and workflow state.", InputSchema: selectorSchema()},
 		{Name: "tasks.continue", Description: "Load a project-owned task with dependencies, comments, workflow bucket, and recent handoff context. Set include_workflow=false on subsequent calls in a session where the workflow shape was already loaded by /okt to save tokens.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to continue"), "include_workflow": booleanSchema("Optional override for config.mcp.include_workflow_in_continue. Pass false to skip the workflow block when /okt already loaded it.")}, []string{"task_id"})},
-		{Name: "tasks.list", Description: "List active project tasks, optionally filtered by workflow bucket.", InputSchema: objectSchema(map[string]any{"bucket_key": stringSchema("Optional workflow bucket key")}, nil)},
+		{Name: "tasks.list", Description: "List active project tasks, optionally filtered by workflow bucket and/or parent. The parent_id filter is tri-state: omit for no filter (every task), pass null for roots only (parent_id IS NULL), or pass a task id for that parent's direct children.", InputSchema: objectSchema(map[string]any{"bucket_key": stringSchema("Optional workflow bucket key"), "parent_id": nullableIntegerSchema("Optional tri-state parent filter: omit for no filter; pass null for roots only (parent_id IS NULL); pass a task id for direct children of that id.")}, nil)},
 		{Name: "tasks.create_intent", Description: "Create a task intent after checking for similar or related project tasks and requiring confirmation when needed.", InputSchema: createTaskSchema()},
 		{Name: "tasks.create", Description: "Create a task directly through Omakiten's shared task service.", InputSchema: createTaskSchema()},
 		{Name: "tasks.move", Description: "Move a task through an allowed workflow transition.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "bucket_key": stringSchema("Target bucket key")}, []string{"task_id", "bucket_key"})},
-		{Name: "tasks.edit", Description: "Edit a task's title, description, and/or priority. Provide at least one of the three optional fields; the service rejects no-op calls. Subject to bucket policy (permissions.task.edit) — the default kit allows edits only in the planning bucket. Bucket moves go through tasks.move so the activity log distinguishes the two intents.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "title": stringSchema("Optional new title"), "description": stringSchema("Optional new description"), "priority": stringSchema("Optional priority label resolved against config.priorities (e.g. \"low\", \"normal\", \"high\")")}, []string{"task_id"})},
+		{Name: "tasks.edit", Description: "Edit a task's title, description, priority, and/or parent_id. Provide at least one of the optional fields; the service rejects no-op calls. Subject to bucket policy (permissions.task.edit) — the default kit allows edits only in the planning bucket. Bucket moves go through tasks.move so the activity log distinguishes the two intents. The parent_id field is tri-state: omit to leave parent_id untouched, pass null to clear (re-root the task), or pass a task id to re-parent (anti-cycle is enforced — naming a descendant fails with the conflicting ancestor surfaced).", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "title": stringSchema("Optional new title"), "description": stringSchema("Optional new description"), "priority": stringSchema("Optional priority label resolved against config.priorities (e.g. \"low\", \"normal\", \"high\")"), "parent_id": nullableIntegerSchema("Optional tri-state re-parent: omit to leave parent_id alone; pass null to clear (becomes a root); pass a task id to re-parent with anti-cycle enforcement.")}, []string{"task_id"})},
 		{Name: "tasks.delete", Description: "Hard-delete a task with cascade (comments, tags, dependencies, events). Subject to bucket policy (permissions.task.delete) and operations.delete.guards.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "confirmed": booleanSchema("Required true to actually delete the task")}, []string{"task_id"})},
 		{Name: "tasks.archive", Description: "Archive a task (state=archived) and move it into the workflow's final bucket. Bypasses bucket policy and transition guards but respects operations.archive.guards.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id")}, []string{"task_id"})},
 		{Name: "tasks.unarchive", Description: "Restore an archived task to active state, leaving its current bucket intact. Respects operations.unarchive.guards if declared.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id")}, []string{"task_id"})},
@@ -755,6 +755,7 @@ func createTaskSchema() map[string]any {
 	props["priority"] = stringSchema("Optional priority: low, normal, or high")
 	props["confirmed"] = booleanSchema("Set true after user confirmation")
 	props["template_slug"] = stringSchema("Optional slug of a loaded template; when set, the template body is merged into the description (user content first, template appended). Use templates.list to discover slugs.")
+	props["parent_id"] = nullableIntegerSchema("Optional parent task id. Set to an existing task's id to attach the new row as a sub-task via TaskService.AddSub (parent must belong to the same project and be active; cross-bucket parents are rejected). Omit or pass null to create a root task.")
 	return objectSchema(props, []string{"description"})
 }
 
@@ -815,6 +816,16 @@ func stringSchema(description string) map[string]any {
 
 func integerSchema(description string) map[string]any {
 	return map[string]any{"type": "integer", "description": description}
+}
+
+// nullableIntegerSchema declares an optional integer that also accepts the JSON
+// null literal. The schema-validating MCP client passes integers as-is, keeps
+// `null` (instead of stripping it as "unknown"), and drops the property entirely
+// when the caller leaves it absent — preserving the tri-state encoding the
+// agent layer relies on for fields like tasks.parent_id (`omitted` /
+// `null` / `id`).
+func nullableIntegerSchema(description string) map[string]any {
+	return map[string]any{"type": []string{"integer", "null"}, "description": description}
 }
 
 func booleanSchema(description string) map[string]any {

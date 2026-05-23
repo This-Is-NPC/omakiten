@@ -156,17 +156,19 @@ Presets:
 
 ### `okt add` — create a task
 
-`internal/cli/add.go`. Calls `app.TaskService.Add` → `app.WorkflowService.CreateTask`.
+`internal/cli/add.go`. Calls `app.TaskService.Add` → `app.WorkflowService.CreateTask`. When `--parent` is set, routes through `app.TaskService.AddSub` so the row + FK land in a single atomic INSERT.
 
 | Flag | Default | Effect |
 |---|---|---|
 | `--title`, `-t` | — | Task title. |
 | `--description`, `-d` | — | Task description. |
 | `--bucket`, `-b` | first active bucket | Bucket key. Empty falls back to `app.WorkflowService.ResolveDefaultBucket` — the **first bucket** of the active workflow, not a hard-coded `backlog`. |
+| `--parent` | — | Optional parent task id. Attaches the new row as a sub-task; the parent must belong to the active project and be `state=active`. Cross-bucket parents are rejected; the sub-task inherits the parent's bucket when `--bucket` is omitted. |
 
 ```sh
 okt add -t "Refactor sqlite store"
 okt add -t "Doc cleanup" -d "Update guards.md" -b dev
+okt add -t "Extract helper" --parent 42
 ```
 
 ### `okt list` — list tasks
@@ -176,10 +178,13 @@ okt add -t "Doc cleanup" -d "Update guards.md" -b dev
 | Flag | Default | Effect |
 |---|---|---|
 | `--bucket`, `-b` | — | Filter by bucket key. Empty = all. |
+| `--parent` | — (absent = no filter) | Tri-state parent filter via `cmd.Flags().Changed("parent")`: omit for no filter (every task), pass `0` for roots only (`parent_id IS NULL`), pass a positive id for that parent's direct children. |
 
 ```sh
 okt list
 okt list -b review
+okt list --parent 0    # roots only
+okt list --parent 42   # direct children of #42
 ```
 
 ### `okt edit TASK_ID` — edit a task
@@ -192,10 +197,13 @@ okt list -b review
 | `--description`, `-d` | Rewrite description. |
 | `--priority` | Priority label or numeric id. Resolved against the active bundle via `parsePriority` (`internal/cli/enums.go`) → `*domain.EnumRegistry`. Out-of-the-box labels: `low`, `normal`, `high` from `config.priorities` in `defaults/config/omakase.yaml`; rename them by editing the YAML, no code change required. |
 | `--bucket`, `-b` | Re-bucket through the workflow service (transition + guards still enforced). |
+| `--parent` | Tri-state re-parent via `cmd.Flags().Changed("parent")`: omit to leave `parent_id` untouched, pass `0` to clear (becomes a root), pass a positive id to re-parent with anti-cycle enforcement (target parent cannot already descend from this task). |
 
 ```sh
 okt edit 42 --priority high
 okt edit 42 -t "New title" -b done
+okt edit 99 --parent 42   # re-parent under #42
+okt edit 99 --parent 0    # clear parent (becomes a root)
 ```
 
 ### `okt move TASK_ID --to BUCKET` — move a task

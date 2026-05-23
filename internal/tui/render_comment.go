@@ -47,12 +47,13 @@ func (m Model) renderCommentScreen() string {
 	}
 
 	available := m.availableWidth()
+	// Focus overlay drops the 120-col cap so the comment body uses
+	// every column the terminal offers, matching the description
+	// overlay's full-width behaviour. Wide terminals were leaving
+	// a large gutter on the right of the comment box.
 	valueWidth := available - detailscreen.LabelWidth - 1 - 2
 	if valueWidth < 24 {
 		valueWidth = 24
-	}
-	if valueWidth > 120 {
-		valueWidth = 120
 	}
 
 	screen := m.commentScreen.Reset(valueWidth).

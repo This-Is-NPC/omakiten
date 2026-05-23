@@ -29,6 +29,9 @@ func (r *stubRepo) CountTaskCommentsTagged(context.Context, int64, int64, string
 func (r *stubRepo) CountPriorWavesPending(context.Context, int64, int64, domain.BucketResolver) (int, error) {
 	return r.priorWaves, nil
 }
+func (r *stubRepo) FirstChildNotInBucket(context.Context, int64, int64, int64, domain.BucketResolver) (domain.Task, bool, error) {
+	return domain.Task{}, false, nil
+}
 
 func snapWithWaveGateGuard(t *testing.T) *config.Snapshot {
 	t.Helper()

@@ -44,7 +44,7 @@ func TestEventsPolicyGatesTaskCreated(t *testing.T) {
 		Defaults:  config.EventChannelSettings{Log: &tru, Broadcast: &tru, Hook: &tru},
 		Overrides: map[string]config.EventChannelSettings{domain.EventTypeTaskCreated: {Log: &fal}},
 	})
-	task, err := store.CreateTask(ctx, project.ID, "gated", "", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "gated", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
@@ -61,7 +61,7 @@ func TestCreateTaskEmitsTaskCreatedEvent(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithProject(ctx, t)
 
-	task, err := store.CreateTask(ctx, project.ID, "first", "", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "first", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
@@ -93,7 +93,7 @@ func TestMoveTaskEmitsTaskMovedAndCompleted(t *testing.T) {
 	store, project := openStoreWithFullTransitions(ctx, t)
 	workflow := app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.snap())
 
-	task, err := store.CreateTask(ctx, project.ID, "to move", "", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "to move", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
@@ -137,7 +137,7 @@ func TestMoveTaskCompletedOnlyOnFinalBucket(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithFullTransitions(ctx, t)
 
-	task, err := store.CreateTask(ctx, project.ID, "intermediate", "", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "intermediate", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
@@ -160,7 +160,7 @@ func TestListTaskActivityUnifiesCommentsAndEvents(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithFullTransitions(ctx, t)
 
-	task, err := store.CreateTask(ctx, project.ID, "with comment", "", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "with comment", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
@@ -202,7 +202,7 @@ func TestCommentsAddRoutesThroughEvents(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithProject(ctx, t)
 
-	task, err := store.CreateTask(ctx, project.ID, "task", "", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "task", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}

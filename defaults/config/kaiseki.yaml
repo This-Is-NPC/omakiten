@@ -274,6 +274,7 @@ workflows:
         guards:
           - {type: comments_tagged, tag: resume, count: 1, hint: "${{intl:guard.kaiseki.review.comments_tagged.resume.hint}}"}
           - {type: comments_tagged, tag: tests-passing, count: 1, hint: "${{intl:guard.kaiseki.review.comments_tagged.tests_passing.hint}}"}
+          - {type: subtasks_complete, hint: "${{intl:guard.subtasks_complete.hint}}"}
       - from: 4
         to: 5
         guards:
@@ -282,6 +283,7 @@ workflows:
         to: 6
         guards:
           - {type: comments_tagged, tag: documentation, count: 1, hint: "${{intl:guard.common.done.comments_tagged.documentation.hint}}"}
+          - {type: subtasks_complete, hint: "${{intl:guard.subtasks_complete.hint}}"}
       - {from: 4, to: 3}
       - {from: 5, to: 4}
       - {from: 6, to: 4}

@@ -266,19 +266,62 @@ func activityMaxScroll(bodyLen, viewport int) int {
 	return bound
 }
 
-// toggleTaskFocus flips which column inside the task detail screen owns
-// j/k/enter. Re-entering activity focus auto-lands the cursor on a card so
-// the first navigation key always moves something visible — the user gets
-// instant feedback instead of pressing j a few times into the void.
+// toggleTaskFocus rotates which column inside the task detail screen
+// owns j/k/enter. With three possible zones (form / sub-tasks / activity)
+// the rotation is form → sub-tasks → activity → form. The sub-tasks
+// zone is skipped automatically when the current task has no children
+// so a barren detail screen still feels like a two-zone toggle.
 //
-// We also reset taskViewScroll when leaving the form so the activity column
-// renders from the top of the joined output; the activity panel manages its
-// own internal viewport and shouldn't be at the mercy of the form's scroll
-// state.
+// Side effects mirror the prior two-zone behaviour: entering activity
+// auto-lands the cursor on a card so j/k always moves something
+// visible, and entering sub-tasks clamps subtaskCursor to 0 for the
+// same reason. Leaving a zone resets the cursor sentinel so the
+// inactive panel stops drawing a focused border.
 func (m *Model) toggleTaskFocus() {
-	if m.taskFocus == taskFocusForm {
-		m.taskFocus = taskFocusActivity
-		m.taskView.Viewport.Scroll = 0
+	hasSubtasks := m.subtaskCount(m.taskID) > 0
+	next := m.taskFocus
+	switch m.taskFocus {
+	case taskFocusForm:
+		if hasSubtasks {
+			next = taskFocusSubtasks
+		} else {
+			next = taskFocusActivity
+		}
+	case taskFocusSubtasks:
+		next = taskFocusActivity
+	case taskFocusActivity:
+		next = taskFocusForm
+	}
+	m.applyTaskFocus(next)
+}
+
+// applyTaskFocus is the focus-set helper used by toggleTaskFocus and
+// by per-key handlers that promote a zone (e.g. `j` on the form
+// auto-rotates into the sub-tasks pane when one exists). Centralised
+// so the cursor-anchor side effects (activity card / sub-task card)
+// run regardless of how the focus changed. The page-level
+// taskView.Viewport.Scroll is also snapped to the newly-focused
+// section's offset so the zone always reads from the top of the
+// terminal viewport instead of getting cropped halfway down in the
+// stacked layout — the bug the user filed as "ao navegar via tab a
+// coluna em foco deve estar no top da tela".
+func (m *Model) applyTaskFocus(focus taskScreenFocus) {
+	if focus == taskFocusSubtasks && m.subtaskCount(m.taskID) == 0 {
+		focus = taskFocusActivity
+	}
+	m.taskFocus = focus
+	switch focus {
+	case taskFocusForm:
+		m.activityCursor = -1
+		m.subtaskCursor = -1
+	case taskFocusSubtasks:
+		m.activityCursor = -1
+		if m.subtaskCursor < 0 {
+			m.subtaskCursor = 0
+		}
+		m.syncSubtaskScrollToCursor()
+	case taskFocusActivity:
+		m.subtaskCursor = -1
 		if m.activityCursor < 0 {
 			rows := len(m.activityForTaskInView(m.taskID))
 			if rows > 0 {
@@ -286,10 +329,8 @@ func (m *Model) toggleTaskFocus() {
 				m.syncActivityScrollToCursor()
 			}
 		}
-		return
 	}
-	m.taskFocus = taskFocusForm
-	m.activityCursor = -1
+	m.taskView.Viewport.Scroll = m.taskFocusedSectionOffset()
 }
 
 // moveActivityCursor advances the focus to the previous/next event card and

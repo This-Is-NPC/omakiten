@@ -136,7 +136,7 @@ func newAgentFixtureEditLockedToBacklog(t *testing.T) editLockedFixture {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Seed", "Seed task", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "Seed", "Seed task", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}

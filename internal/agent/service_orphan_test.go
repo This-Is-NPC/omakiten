@@ -31,7 +31,7 @@ func TestMigrateOrphans_NoOpReturnsEmptyReport(t *testing.T) {
 func TestMigrateOrphans_RequiresConfirmationOnFirstCall(t *testing.T) {
 	fx := newAgentFixture(t)
 
-	devTask, err := fx.store.CreateTask(fx.ctx, fx.projectA.ID, "dev task", "", domain.Priority(2), "dev", fx.store.Snapshot())
+	devTask, err := fx.store.CreateTask(fx.ctx, fx.projectA.ID, "dev task", "", domain.Priority(2), "dev", nil, fx.store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestMigrateOrphans_RequiresConfirmationOnFirstCall(t *testing.T) {
 func TestMigrateOrphans_ConfirmedAppliesAndReports(t *testing.T) {
 	fx := newAgentFixture(t)
 
-	if _, err := fx.store.CreateTask(fx.ctx, fx.projectA.ID, "dev task", "", domain.Priority(2), "dev", fx.store.Snapshot()); err != nil {
+	if _, err := fx.store.CreateTask(fx.ctx, fx.projectA.ID, "dev task", "", domain.Priority(2), "dev", nil, fx.store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 	removeDevBucket(t, fx)

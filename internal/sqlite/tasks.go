@@ -16,7 +16,7 @@ import (
 // app.WorkflowService.ResolveDefaultBucket); the store enforces only the
 // foreign-key existence of the bucket in the active workflow via the
 // caller-supplied BucketResolver.
-func (s *Store) CreateTask(ctx context.Context, projectID int64, title, description string, priority domain.Priority, bucketKey string, buckets domain.BucketResolver) (domain.Task, error) {
+func (s *Store) CreateTask(ctx context.Context, projectID int64, title, description string, priority domain.Priority, bucketKey string, parentID *int64, buckets domain.BucketResolver) (domain.Task, error) {
 	if bucketKey == "" {
 		return domain.Task{}, domain.NewError(domain.ErrValidation, "bucket key is required", nil)
 	}
@@ -42,11 +42,19 @@ func (s *Store) CreateTask(ctx context.Context, projectID int64, title, descript
 			"task priority unresolved at the storage layer; the app must substitute domain.DefaultPriority() before calling CreateTask",
 			map[string]any{"project_id": projectID, "bucket": bucketKey})
 	}
+	// parent_id lands in the same INSERT as the row itself so sub-task
+	// creation is atomic — no two-step INSERT-then-UPDATE that could
+	// leave an orphan root visible (and an audit event already emitted)
+	// when the second statement fails.
+	var parentArg any
+	if parentID != nil {
+		parentArg = *parentID
+	}
 	row := tx.QueryRowContext(ctx, `
-INSERT INTO tasks(project_id, bucket_id, title, description, priority_id)
-VALUES (?, ?, ?, ?, ?)
-RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at
-`, projectID, bucketID, title, description, int(priority))
+INSERT INTO tasks(project_id, bucket_id, title, description, priority_id, parent_id)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at, parent_id
+`, projectID, bucketID, title, description, int(priority), parentArg)
 
 	task, err := scanTask(row, bucketKey)
 	if err != nil {
@@ -54,6 +62,9 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 	}
 
 	payload := fmt.Sprintf(`{"bucket":%q}`, bucketKey)
+	if parentID != nil {
+		payload = fmt.Sprintf(`{"bucket":%q,"parent_id":%d}`, bucketKey, *parentID)
+	}
 	var ev domain.Event
 	if s.shouldLogEvent(domain.EventTypeTaskCreated) {
 		var err error
@@ -82,7 +93,7 @@ func (s *Store) ListTasks(ctx context.Context, projectID int64, filter domain.Ta
 	// resolution returns empty strings — matches the pre-migration JOIN
 	// semantics for orphaned rows.
 	query := `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at, tasks.parent_id
 FROM tasks
 WHERE tasks.project_id = ?`
 	args := []any{projectID}
@@ -126,6 +137,13 @@ WHERE tasks.project_id = ?`
 			args = append(args, int(p))
 		}
 	}
+	switch filter.ParentMode {
+	case domain.ParentRoots:
+		query += " AND tasks.parent_id IS NULL"
+	case domain.ParentChildren:
+		query += " AND tasks.parent_id = ?"
+		args = append(args, filter.ParentValue)
+	}
 	query += " ORDER BY " + taskOrderClause(filter.Sort)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -136,10 +154,14 @@ WHERE tasks.project_id = ?`
 
 	var tasks []domain.Task
 	for rows.Next() {
-		var task domain.Task
-		if err := rows.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt); err != nil {
+		var (
+			task     domain.Task
+			parentID sql.NullInt64
+		)
+		if err := rows.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt, &parentID); err != nil {
 			return nil, err
 		}
+		assignParentID(&task, parentID)
 		task.BucketKey = s.bucketKeyByID(task.BucketID, buckets)
 		tasks = append(tasks, task)
 	}
@@ -223,7 +245,7 @@ UPDATE tasks SET bucket_id = ?, updated_at = CURRENT_TIMESTAMP,
   completed_at = CASE WHEN ? = 1 THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE completed_at END,
   assigned_to  = CASE WHEN bucket_id != ? THEN NULL ELSE assigned_to END
 WHERE project_id = ? AND id = ?
-RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at
+RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at, parent_id
 `, targetBucketID, isFinal, targetBucketID, projectID, taskID)
 
 	task, err := scanTask(row, targetBucketKey)
@@ -313,31 +335,50 @@ func (s *Store) TaskCount(ctx context.Context, projectID int64) (int64, error) {
 }
 
 func scanTask(row *sql.Row, bucketKey string) (domain.Task, error) {
-	var task domain.Task
-	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt); err != nil {
+	var (
+		task     domain.Task
+		parentID sql.NullInt64
+	)
+	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt, &parentID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", nil)
 		}
 		return domain.Task{}, err
 	}
+	assignParentID(&task, parentID)
 	task.BucketKey = bucketKey
 	return task, nil
 }
 
+// assignParentID promotes a nullable parent_id read into the *int64
+// surface on domain.Task. Centralised so every scan path treats SQL NULL
+// (root task) and a present FK (sub-task) the same way.
+func assignParentID(task *domain.Task, n sql.NullInt64) {
+	if !n.Valid {
+		return
+	}
+	id := n.Int64
+	task.ParentID = &id
+}
+
 func (s *Store) taskByID(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (domain.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at, tasks.parent_id
 FROM tasks
 WHERE tasks.project_id = ? AND tasks.id = ?
 `, projectID, taskID)
 
-	var task domain.Task
-	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt); err != nil {
+	var (
+		task     domain.Task
+		parentID sql.NullInt64
+	)
+	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt, &parentID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
 		}
 		return domain.Task{}, err
 	}
+	assignParentID(&task, parentID)
 	task.BucketKey = s.bucketKeyByID(task.BucketID, buckets)
 	return task, nil
 }

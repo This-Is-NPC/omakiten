@@ -51,7 +51,7 @@ func TestStoreHookExecutedSmoke(t *testing.T) {
 	defer engine.Stop()
 
 	// Trigger a real task.created emit through the Store.
-	if _, err := store.CreateTask(ctx, project.ID, "smoke", "", domain.Priority(2), "backlog", store.snap()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "smoke", "", domain.Priority(2), "backlog", nil, store.snap()); err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
 
@@ -128,7 +128,7 @@ func TestStoreHookGateClosedSkipsDispatch(t *testing.T) {
 	engine.Start(bus)
 	defer engine.Stop()
 
-	if _, err := store.CreateTask(ctx, project.ID, "smoke", "", domain.Priority(2), "backlog", store.snap()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "smoke", "", domain.Priority(2), "backlog", nil, store.snap()); err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
 	time.Sleep(50 * time.Millisecond)

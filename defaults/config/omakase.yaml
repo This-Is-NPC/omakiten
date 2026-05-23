@@ -432,6 +432,8 @@ workflows:
             tag: tests-passing
             count: 1
             hint: "${{intl:guard.omakase.review.comments_tagged.tests_passing.hint}}"
+          - type: subtasks_complete
+            hint: "${{intl:guard.subtasks_complete.hint}}"
       - from: 3
         to: 4
         guards:

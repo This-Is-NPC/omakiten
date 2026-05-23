@@ -442,6 +442,149 @@ func TestAdapterSchemaHelpers(t *testing.T) {
 	if booleanSchema("desc")["type"] != "boolean" {
 		t.Fatal("booleanSchema() missing boolean type")
 	}
+	nullable := nullableIntegerSchema("desc")
+	gotType, ok := nullable["type"].([]string)
+	if !ok {
+		t.Fatalf("nullableIntegerSchema() type = %#v, want []string", nullable["type"])
+	}
+	if len(gotType) != 2 || gotType[0] != "integer" || gotType[1] != "null" {
+		t.Fatalf("nullableIntegerSchema() type = %v, want [integer null]", gotType)
+	}
+}
+
+// TestToolsSchemaExposesParentID pins the contract that the MCP-facing
+// schemas for tasks.create / tasks.create_intent / tasks.edit / tasks.list
+// declare `parent_id` with `type: [integer, null]`. Without the declaration,
+// schema-aware MCP clients strip the field before dispatch, leaving the
+// agent layer's tri-state encoding unreachable and gap #8274 open.
+func TestToolsSchemaExposesParentID(t *testing.T) {
+	wantTools := map[string]bool{
+		"tasks.create":        true,
+		"tasks.create_intent": true,
+		"tasks.edit":          true,
+		"tasks.list":          true,
+	}
+	for _, tool := range Tools() {
+		if !wantTools[tool.Name] {
+			continue
+		}
+		props, ok := tool.InputSchema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s: InputSchema.properties missing or wrong type: %#v", tool.Name, tool.InputSchema["properties"])
+		}
+		raw, ok := props["parent_id"]
+		if !ok {
+			t.Fatalf("%s: properties.parent_id missing", tool.Name)
+		}
+		schema, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("%s: parent_id schema wrong shape: %#v", tool.Name, raw)
+		}
+		typ, ok := schema["type"].([]string)
+		if !ok {
+			t.Fatalf("%s: parent_id.type = %#v, want []string{\"integer\",\"null\"}", tool.Name, schema["type"])
+		}
+		if len(typ) != 2 || typ[0] != "integer" || typ[1] != "null" {
+			t.Fatalf("%s: parent_id.type = %v, want [integer null]", tool.Name, typ)
+		}
+		desc, _ := schema["description"].(string)
+		if desc == "" {
+			t.Fatalf("%s: parent_id missing description", tool.Name)
+		}
+	}
+}
+
+// TestAdapterTasksParentIDTriStateRoundTrip exercises the full MCP edge
+// for the parent_id tri-state across tasks.create, tasks.list, and
+// tasks.edit. Each call body uses the raw JSON-RPC arg shape so the schema
+// → decode → service path matches what a real client sends.
+func TestAdapterTasksParentIDTriStateRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	service := newMCPTestService(t, ctx)
+	adapter := NewAdapter(service)
+
+	// 1. Create a child of task #1 by passing parent_id as an integer.
+	createResult, err := adapter.CallTool(ctx, "tasks.create", withModel(map[string]any{
+		"description": "child of one",
+		"parent_id":   float64(1),
+	}))
+	if err != nil {
+		t.Fatalf("tasks.create with parent_id error = %v", err)
+	}
+	if createResult.IsError {
+		t.Fatalf("tasks.create with parent_id failed: %s", createResult.Content[0].Text)
+	}
+	var created map[string]any
+	if err := json.Unmarshal([]byte(createResult.Content[0].Text), &created); err != nil {
+		t.Fatalf("tasks.create payload not JSON: %v", err)
+	}
+	task, _ := created["task"].(map[string]any)
+	if task == nil {
+		t.Fatalf("tasks.create payload missing task: %v", created)
+	}
+	childIDFloat, _ := task["id"].(float64)
+	childID := int64(childIDFloat)
+	if childID == 0 {
+		t.Fatalf("tasks.create payload missing task.id: %v", task)
+	}
+	if pidFloat, ok := task["parent_id"].(float64); !ok || int64(pidFloat) != 1 {
+		t.Fatalf("created task parent_id = %v, want 1", task["parent_id"])
+	}
+
+	// 2. tasks.list with parent_id absent returns every task (the new child
+	// and the seeded root).
+	listAll, err := adapter.CallTool(ctx, "tasks.list", withModel(map[string]any{}))
+	if err != nil || listAll.IsError {
+		t.Fatalf("tasks.list (no filter) failed: %v / %s", err, listAll.Content[0].Text)
+	}
+	var listAllPayload map[string]any
+	_ = json.Unmarshal([]byte(listAll.Content[0].Text), &listAllPayload)
+	allTasks, _ := listAllPayload["tasks"].([]any)
+	if len(allTasks) != 2 {
+		t.Fatalf("tasks.list (no filter) returned %d, want 2", len(allTasks))
+	}
+
+	// 3. tasks.list with parent_id=null returns roots only (the seeded
+	// task #1; the child is filtered out).
+	listRoots, err := adapter.CallTool(ctx, "tasks.list", withModel(map[string]any{"parent_id": nil}))
+	if err != nil || listRoots.IsError {
+		t.Fatalf("tasks.list (roots) failed: %v / %s", err, listRoots.Content[0].Text)
+	}
+	var listRootsPayload map[string]any
+	_ = json.Unmarshal([]byte(listRoots.Content[0].Text), &listRootsPayload)
+	rootTasks, _ := listRootsPayload["tasks"].([]any)
+	if len(rootTasks) != 1 {
+		t.Fatalf("tasks.list (roots) returned %d, want 1 (sub-task should be filtered out)", len(rootTasks))
+	}
+
+	// 4. tasks.list with parent_id=<id> returns direct children only.
+	listChildren, err := adapter.CallTool(ctx, "tasks.list", withModel(map[string]any{"parent_id": float64(1)}))
+	if err != nil || listChildren.IsError {
+		t.Fatalf("tasks.list (children) failed: %v / %s", err, listChildren.Content[0].Text)
+	}
+	var listChildrenPayload map[string]any
+	_ = json.Unmarshal([]byte(listChildren.Content[0].Text), &listChildrenPayload)
+	childTasks, _ := listChildrenPayload["tasks"].([]any)
+	if len(childTasks) != 1 {
+		t.Fatalf("tasks.list (children) returned %d, want 1", len(childTasks))
+	}
+
+	// 5. tasks.edit with parent_id=null clears the parent (re-roots the
+	// child). Bucket policy permits edit in the planning bucket — the
+	// fixture parent lives in `backlog` so the inherited bucket is OK.
+	editResult, err := adapter.CallTool(ctx, "tasks.edit", withModel(map[string]any{
+		"task_id":   childID,
+		"parent_id": nil,
+	}))
+	if err != nil || editResult.IsError {
+		t.Fatalf("tasks.edit (clear) failed: %v / %s", err, editResult.Content[0].Text)
+	}
+	var editedPayload map[string]any
+	_ = json.Unmarshal([]byte(editResult.Content[0].Text), &editedPayload)
+	editedTask, _ := editedPayload["task"].(map[string]any)
+	if _, present := editedTask["parent_id"]; present {
+		t.Fatalf("tasks.edit (clear) left parent_id on payload: %v", editedTask)
+	}
 }
 
 func TestServeHandlesToolsList(t *testing.T) {
@@ -479,7 +622,7 @@ func newMCPTestService(t *testing.T, ctx context.Context) *agent.Service {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 	svc := agent.NewService(store, agent.ProjectSelector{CWD: root})
@@ -563,7 +706,7 @@ func newMCPProjectFixture(t *testing.T, ctx context.Context, slug string) (*snap
 	if err != nil {
 		t.Fatalf("UpsertProject(%s): %v", slug, err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "T-"+slug, "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "T-"+slug, "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask(%s): %v", slug, err)
 	}
 	return store, project
@@ -991,7 +1134,7 @@ func newMCPProjectWithBundle(t *testing.T, ctx context.Context, slug string, bun
 	if err != nil {
 		t.Fatalf("UpsertProject(%s): %v", slug, err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "T-"+slug, "", domain.Priority(2), "backlog", store.Snapshot())
+	task, err := store.CreateTask(ctx, project.ID, "T-"+slug, "", domain.Priority(2), "backlog", nil, store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask(%s): %v", slug, err)
 	}

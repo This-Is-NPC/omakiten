@@ -1116,17 +1116,30 @@ func (m Model) renderPlanNetworkRowBody(row planNetworkRow, selected bool, laneP
 		if row.IsCritical {
 			titleStyle = m.styles.info
 		}
+		// Sub-task rows get an indent glyph + a parent reference so
+		// the WBS hierarchy reads at a glance — including the
+		// cross-wave case where a sub-task lands in a different wave
+		// than its parent. The parent lookup is in-memory against the
+		// model snapshot (taskByID), so it does not require ParentID
+		// to be carried on PlanTaskRow.
+		subPrefix := ""
+		parentSuffix := ""
+		if task, ok := m.taskByID(row.Task.TaskID); ok && task.ParentID != nil {
+			subPrefix = m.styles.hint.Render("↳ ")
+			parentSuffix = "  " + m.styles.hint.Render(fmt.Sprintf("↳#%d", *task.ParentID))
+		}
 		titleText := fmt.Sprintf("#%d %s", row.Task.TaskID, row.Task.Title)
 		if row.Task.AssignedTo != "" {
 			titleText += " @" + truncateAgentHandle(row.Task.AssignedTo, 18)
 		}
-		prefixWidth := lipgloss.Width(rail) + lipgloss.Width(prefix)
-		titleBudget := layout.Title - prefixWidth
+		prefixWidth := lipgloss.Width(rail) + lipgloss.Width(prefix) + lipgloss.Width(subPrefix)
+		suffixWidth := lipgloss.Width(parentSuffix)
+		titleBudget := layout.Title - prefixWidth - suffixWidth
 		if titleBudget < 1 {
 			titleBudget = 1
 		}
 		titleText = truncateText(titleText, titleBudget)
-		titleCell := m.padCellDashed(rail+prefix+titleStyle.Render(titleText), layout.Title)
+		titleCell := m.padCellDashed(rail+prefix+subPrefix+titleStyle.Render(titleText)+parentSuffix, layout.Title)
 
 		bucketCell := truncateText(row.Task.BucketKey, layout.Bucket)
 		bucketStyled := m.styles.muted.Render(padCell(bucketCell, layout.Bucket))

@@ -22,7 +22,7 @@ func TestListTasksHonorsSortField(t *testing.T) {
 		{"alpha", 1},
 		{"bravo", 2},
 	} {
-		if _, err := store.CreateTask(ctx, project.ID, tc.title, "", tc.priority, "backlog", store.snap()); err != nil {
+		if _, err := store.CreateTask(ctx, project.ID, tc.title, "", tc.priority, "backlog", nil, store.snap()); err != nil {
 			t.Fatalf("CreateTask(%s) = %v", tc.title, err)
 		}
 	}
@@ -70,7 +70,7 @@ func TestListTasksHonorsPriorityFilter(t *testing.T) {
 		{"bravo", 2},
 		{"charlie", 3},
 	} {
-		if _, err := store.CreateTask(ctx, project.ID, tc.title, "", tc.priority, "backlog", store.snap()); err != nil {
+		if _, err := store.CreateTask(ctx, project.ID, tc.title, "", tc.priority, "backlog", nil, store.snap()); err != nil {
 			t.Fatalf("CreateTask(%s) = %v", tc.title, err)
 		}
 	}
@@ -95,11 +95,11 @@ func TestListTasksHonorsBucketKeysFilter(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithProject(ctx, t)
 
-	a, err := store.CreateTask(ctx, project.ID, "alpha", "", domain.Priority(2), "backlog", store.snap())
+	a, err := store.CreateTask(ctx, project.ID, "alpha", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask(alpha) = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "bravo", "", domain.Priority(2), "backlog", store.snap()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "bravo", "", domain.Priority(2), "backlog", nil, store.snap()); err != nil {
 		t.Fatalf("CreateTask(bravo) = %v", err)
 	}
 	if _, err := store.MoveTask(ctx, project.ID, a.ID, "dev", store.snap()); err != nil {
@@ -119,7 +119,7 @@ func TestListTasksReturnsCreatedAt(t *testing.T) {
 	ctx := context.Background()
 	store, project := openStoreWithProject(ctx, t)
 
-	if _, err := store.CreateTask(ctx, project.ID, "task", "", domain.Priority(2), "backlog", store.snap()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "task", "", domain.Priority(2), "backlog", nil, store.snap()); err != nil {
 		t.Fatalf("CreateTask = %v", err)
 	}
 

@@ -58,7 +58,72 @@ func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, ti
 		}
 		finish(status, errMsg)
 	}()
+	task, err = s.createTask(ctx, project, title, description, priority, bucketKey, nil)
+	return
+}
 
+// AddSub creates a task and attaches it to parentID as a sub-task in a
+// single atomic INSERT. The parent must belong to the same project and
+// be active; archived parents and explicit cross-bucket sub-tasks are
+// rejected at the service boundary. When bucketKey is empty, the new
+// sub-task inherits the parent's bucket so the "workflow herdado do
+// pai" invariant holds. Anti-cycle is unnecessary for fresh rows — they
+// have no descendants yet. Every call writes one activity row — even
+// pre-create rejections — so failed sub-task attempts surface in Stats
+// › Logs.
+func (s *TaskService) AddSub(ctx context.Context, project domain.ProjectContext, parentID int64, title, description, priority, bucketKey string) (task domain.Task, err error) {
+	finish := activity.Track(ctx, "app.TaskService.AddSub", project, map[string]any{"title": title, "parent_id": parentID, "bucket": bucketKey})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	if parentID <= 0 {
+		err = domain.NewError(domain.ErrValidation, "parent_id must be positive", map[string]any{"parent_id": parentID})
+		return
+	}
+	parent, err := s.taskByID(ctx, project, parentID)
+	if err != nil {
+		return
+	}
+	if parent.State != domain.TaskStateActive {
+		err = domain.NewError(domain.ErrValidation,
+			"parent task is archived; unarchive before attaching a sub-task",
+			map[string]any{"parent_id": parentID, "parent_state": string(parent.State)})
+		return
+	}
+	bucketKey = strings.TrimSpace(bucketKey)
+	if bucketKey != "" && bucketKey != parent.BucketKey {
+		err = domain.NewError(domain.ErrValidation,
+			"sub-task bucket must match parent bucket; sub-tasks inherit the parent's workflow position",
+			map[string]any{
+				"parent_id":     parentID,
+				"parent_bucket": parent.BucketKey,
+				"bucket":        bucketKey,
+			})
+		return
+	}
+	if bucketKey == "" {
+		bucketKey = parent.BucketKey
+	}
+	pid := parentID
+	task, err = s.createTask(ctx, project, title, description, priority, bucketKey, &pid)
+	return
+}
+
+// createTask is the shared worker for Add and AddSub. parentID nil
+// creates a root task; non-nil threads the FK into the same INSERT so
+// the row + parent link land atomically and the task.created event
+// payload carries the parent reference from t=0. Activity tracking
+// lives in the public surfaces (Add / AddSub) so the tag stays stable
+// per entry point and pre-call validations still write an activity row
+// on failure.
+func (s *TaskService) createTask(ctx context.Context, project domain.ProjectContext, title, description, priority, bucketKey string, parentID *int64) (task domain.Task, err error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		err = domain.NewError(domain.ErrValidation, "task title is required", nil)
@@ -69,7 +134,7 @@ func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, ti
 		return
 	}
 
-	task, err = s.workflow.CreateTask(ctx, project.ID, title, strings.TrimSpace(description), priorityID, strings.TrimSpace(bucketKey))
+	task, err = s.workflow.CreateTask(ctx, project.ID, title, strings.TrimSpace(description), priorityID, strings.TrimSpace(bucketKey), parentID)
 	return
 }
 
@@ -170,6 +235,9 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 	if update.BucketKey != "" {
 		changed = true
 	}
+	if update.ChangeParent {
+		changed = true
+	}
 	if !changed {
 		err = domain.NewError(domain.ErrValidation, "at least one task update is required", nil)
 		return
@@ -217,8 +285,64 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 			return
 		}
 	}
+	if update.ChangeParent {
+		if err = s.applyParentChange(ctx, project, taskID, update.NewParentID); err != nil {
+			return
+		}
+		if task.ID == 0 {
+			task, err = s.taskByID(ctx, project, taskID)
+			if err != nil {
+				return
+			}
+		} else {
+			task.ParentID = update.NewParentID
+		}
+	}
 
 	return
+}
+
+// applyParentChange validates a re-parent request against the cycle
+// invariant ("T.parent = P is unsafe iff P descends from T") and writes
+// the column. parentID nil clears parent_id (the task becomes a root).
+// Short-circuits when the requested value already matches the current
+// FK so a no-op edit doesn't bump updated_at or fire an extra write.
+// Rejects re-parents under an archived parent — the workflow propagates
+// from parent to child, so an archived parent has no live workflow to
+// inherit.
+func (s *TaskService) applyParentChange(ctx context.Context, project domain.ProjectContext, taskID int64, parentID *int64) error {
+	current, err := s.taskByID(ctx, project, taskID)
+	if err != nil {
+		return err
+	}
+	if domain.ParentIDEquals(current.ParentID, parentID) {
+		return nil
+	}
+	if parentID == nil {
+		return s.repo.SetTaskParent(ctx, project.ID, taskID, nil)
+	}
+	if *parentID == taskID {
+		return domain.NewError(domain.ErrValidation, "task cannot be its own parent", map[string]any{"task_id": taskID})
+	}
+	parent, err := s.taskByID(ctx, project, *parentID)
+	if err != nil {
+		return err
+	}
+	if parent.State != domain.TaskStateActive {
+		return domain.NewError(domain.ErrValidation,
+			"parent task is archived; unarchive before re-parenting under it",
+			map[string]any{"task_id": taskID, "parent_id": *parentID, "parent_state": string(parent.State)})
+	}
+	cycle, err := s.repo.IsDescendantOf(ctx, project.ID, *parentID, taskID)
+	if err != nil {
+		return err
+	}
+	if cycle {
+		return domain.NewError(domain.ErrValidation,
+			"re-parent would create a cycle: target parent is already a descendant of this task",
+			map[string]any{"task_id": taskID, "parent_id": *parentID})
+	}
+	return s.repo.SetTaskParent(ctx, project.ID, taskID, parentID)
 }
 
 // Delete enforces the bucket-level task.delete policy and any

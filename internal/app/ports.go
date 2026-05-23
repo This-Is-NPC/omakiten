@@ -76,7 +76,7 @@ type SnapshotSource interface {
 // bucket key↔id reads through a caller-supplied domain.BucketResolver
 // so the adapter never imports the config package.
 type TaskRepository interface {
-	CreateTask(ctx context.Context, projectID int64, title, description string, priority domain.Priority, bucketKey string, buckets domain.BucketResolver) (domain.Task, error)
+	CreateTask(ctx context.Context, projectID int64, title, description string, priority domain.Priority, bucketKey string, parentID *int64, buckets domain.BucketResolver) (domain.Task, error)
 	ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter, buckets domain.BucketResolver) ([]domain.Task, error)
 	MoveTask(ctx context.Context, projectID, taskID int64, targetBucketKey string, buckets domain.BucketResolver) (domain.Task, error)
 	UpdateTask(ctx context.Context, projectID, taskID int64, update domain.TaskUpdate, buckets domain.BucketResolver) (domain.Task, error)
@@ -100,6 +100,25 @@ type TaskRepository interface {
 	// ("cli.assign", "plans.claim_next", etc.) so consumers can attribute
 	// the change in the payload.
 	AssignTask(ctx context.Context, projectID, taskID int64, assignee, source string, buckets domain.BucketResolver) (domain.Task, domain.Event, error)
+	// SetTaskParent updates tasks.parent_id. parentID nil clears the
+	// column (the task becomes a root); a non-nil pointer sets the FK.
+	// The repository rejects self-parent inserts but does not walk the
+	// tree — anti-cycle is the service-layer caller's responsibility
+	// via IsDescendantOf.
+	SetTaskParent(ctx context.Context, projectID, taskID int64, parentID *int64) error
+	// IsDescendantOf reports whether candidateID has ancestorID in its
+	// parent chain. Used by re-parent flows to reject moves that would
+	// create a cycle (T.parent = P is unsafe iff P descends from T).
+	IsDescendantOf(ctx context.Context, projectID, candidateID, ancestorID int64) (bool, error)
+	// ListDirectChildren returns the immediate sub-tasks of parentID,
+	// ordered by id. Detail-view sub-tasks panel renders this list; the
+	// guard rule reaches for FirstChildNotInBucket instead.
+	ListDirectChildren(ctx context.Context, projectID, parentID int64, buckets domain.BucketResolver) ([]domain.Task, error)
+	// CountDirectChildren is the cheap variant for board badge slots.
+	CountDirectChildren(ctx context.Context, projectID, parentID int64) (int, error)
+	// CountDescendants walks the whole subtree — used by the cascade
+	// delete confirmation prompt to surface the total row count.
+	CountDescendants(ctx context.Context, projectID, parentID int64) (int, error)
 }
 
 // WorkflowRepository exposes the state-side primitives the app's
@@ -124,6 +143,11 @@ type GuardEvaluationRepository interface {
 	CountTaskComments(ctx context.Context, projectID, taskID int64) (int, error)
 	CountTaskCommentsTagged(ctx context.Context, projectID, taskID int64, tagName string) (int, error)
 	CountPriorWavesPending(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (int, error)
+	// FirstChildNotInBucket gates the subtasks_complete guard. The
+	// boolean reports whether a direct child still sits outside
+	// finalBucketID; the returned task names the first offender for
+	// the human-readable hint.
+	FirstChildNotInBucket(ctx context.Context, projectID, parentID, finalBucketID int64, buckets domain.BucketResolver) (domain.Task, bool, error)
 }
 
 type CommentRepository interface {

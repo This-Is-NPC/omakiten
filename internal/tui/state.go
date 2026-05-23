@@ -224,6 +224,13 @@ type Model struct {
 
 	taskScreen taskScreenMode
 	taskID     int64
+	// taskCreateParentID names the parent task when the create form was
+	// opened as a sub-task (key `n` from inside the detail view). nil
+	// means "create a root task"; non-nil triggers the AddSub branch in
+	// saveTaskForm and renders the parent breadcrumb in the form header.
+	// Reset on every closeTaskScreen so the next root-create cannot
+	// inherit a stale FK.
+	taskCreateParentID *int64
 	// taskTitleInput / taskDescriptionInput own caret state and inline text
 	// editing for the create/edit form. Replacing the prior `taskTitle` /
 	// `taskDescription` strings with bubbles components fixed the "no
@@ -233,6 +240,25 @@ type Model struct {
 	taskDescriptionInput textarea.Model
 	taskPriority         domain.Priority
 	taskField            taskFormField
+	// §E sectioned edit form — Tags is a CSV single-line input split on
+	// save, Parent accepts a task id with a blur-lookup validation hook.
+	// Both fields live on every open form (create + edit) so the section
+	// rotation chain stays uniform; they are no-ops on create when left
+	// empty.
+	taskTagsInput   textinput.Model
+	taskParentInput textinput.Model
+	// taskParentLookupError surfaces the blur-time validation hint when
+	// the parent id input doesn't resolve in the active project. Cleared
+	// on every keystroke so it reflects the current input value.
+	taskParentLookupError string
+	// taskEditInitial holds the values captured at openTaskEdit time so
+	// esc can prompt before discarding edits. Zero value = "no edit in
+	// flight" so create flow short-circuits the dirty check.
+	taskEditInitial taskEditSnapshot
+	// taskEscPendingDiscard arms the dirty-discard prompt: the first esc
+	// on a dirty edit surfaces a status hint; a second esc closes
+	// without saving. Cleared by any non-esc key.
+	taskEscPendingDiscard bool
 	// commentInput is reused by modeComment (add) and modeCommentEdit
 	// (rewrite). Reset on every beginInput call so the placeholder and
 	// pre-fill values reflect the active mode without leaking text across
@@ -366,9 +392,39 @@ type Model struct {
 	// navigation moves it; the scroll offset auto-follows.
 	activityCursor int
 	// taskFocus tracks which column inside the task detail screen owns
-	// navigation keys. Default: form/details column. Tab toggles to the
-	// activity column so j/k navigate cards instead of scrolling description.
+	// navigation keys. Default: form/details column. Tab rotates through
+	// form → sub-tasks (when present) → activity so j/k applies to the
+	// section the user just jumped to, instead of always scrolling the
+	// description and forcing modal switches per surface.
 	taskFocus taskScreenFocus
+
+	// subtaskCursor is the index into directChildren(taskID) for the
+	// sub-tasks pane cursor. -1 means "no selection"; rotating focus
+	// into the pane clamps it to 0 so the first card always reads as
+	// the cursor target.
+	subtaskCursor int
+	// subtaskScroll mirrors activityScroll: line offset into the
+	// scroll-window of pre-rendered sub-task cards. Auto-follows the
+	// cursor via syncSubtaskScrollToCursor.
+	subtaskScroll int
+
+	// taskViewStack records ancestor task IDs the user drilled in from
+	// (via Enter on a sub-task card). Esc pops back to the most recent
+	// ancestor instead of jumping straight to the board, so parent
+	// context survives N-level drilling. Empty means "current task was
+	// opened from a list view; esc closes the detail screen".
+	taskViewStack []int64
+
+	// descriptionScreenOpen is the modal "description detail" overlay
+	// layered on top of taskScreenView. Long descriptions overflow the
+	// form column, so `f` opens this dedicated full-width screen where
+	// the markdown can scroll freely. esc returns to the task detail
+	// view with focus preserved.
+	descriptionScreenOpen bool
+	// descriptionScreen owns the scroll offset for the dedicated
+	// description overlay; reset via detailscreen.New on each open so
+	// prior scroll state never leaks across tasks.
+	descriptionScreen detailscreen.Model
 
 	// commentScreenOpen is the modal "comment detail" view layered on top of
 	// taskScreenView. Long comments overflow the activity column, so Enter on
@@ -558,6 +614,7 @@ type taskScreenFocus int
 
 const (
 	taskFocusForm taskScreenFocus = iota
+	taskFocusSubtasks
 	taskFocusActivity
 )
 
@@ -570,7 +627,25 @@ const (
 	taskFieldTitle taskFormField = iota
 	taskFieldDescription
 	taskFieldPriority
+	// §E adds Tags (CSV input) and Parent (id input) to the section
+	// rotation. Order matches the spec heading order: Title →
+	// Description → Priority → Tags → Parent.
+	taskFieldTags
+	taskFieldParent
 )
+
+// taskEditSnapshot captures the form values present when an edit form
+// opens so esc can detect "dirty" and prompt before discarding. Tags
+// are stored as the normalised CSV the field will display (lowercased
+// + sorted) so a re-order of equivalent tag sets reads as clean.
+type taskEditSnapshot struct {
+	active      bool
+	title       string
+	description string
+	priority    domain.Priority
+	tagsCSV     string
+	parent      string
+}
 
 // topID identifies a top-level navigation zone. Tops group surfaces by
 // purpose: Tasks (data lenses over the work queue), Stats (observability),

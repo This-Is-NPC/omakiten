@@ -67,6 +67,8 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 	}
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()
+	model.taskTagsInput = newTaskTagsInput()
+	model.taskParentInput = newTaskParentInput()
 	model.commentInput = newCommentInput()
 	model.moveInput = newMoveInput()
 	detailscreen.SetStyles(model.styles.info)
@@ -179,6 +181,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.commentScreenOpen {
 			return m.updateCommentScreen(msg)
 		}
+		if m.descriptionScreenOpen {
+			return m.updateDescriptionScreen(msg)
+		}
 		if m.taskScreen != taskScreenClosed {
 			return m.updateTaskScreen(msg)
 		}
@@ -234,6 +239,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // a zero CharLimit keeps long titles editable, and the leading prompt is
 // suppressed because the form already kickers the field with `> // TITLE`.
 func newTaskTitleInput() textinput.Model {
+	t := textinput.New()
+	t.Prompt = ""
+	t.CharLimit = 0
+	return t
+}
+
+// newTaskTagsInput owns the §E Tags section. Single-line CSV input
+// (`tag1, tag2, tag3`); split on comma at save. Same Prompt/CharLimit
+// shape as the title input so the visual baseline matches.
+func newTaskTagsInput() textinput.Model {
+	t := textinput.New()
+	t.Prompt = ""
+	t.CharLimit = 0
+	return t
+}
+
+// newTaskParentInput owns the §E Parent section. Single-line integer
+// id (blank = root). Validation happens at blur time (lookup → exists +
+// same project) and at save (anti-cycle); the field stays a free
+// textinput so the caret behaves like the other sections.
+func newTaskParentInput() textinput.Model {
 	t := textinput.New()
 	t.Prompt = ""
 	t.CharLimit = 0

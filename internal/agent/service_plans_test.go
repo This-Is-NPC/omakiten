@@ -200,15 +200,15 @@ func TestShowPlanComputesProgressAcrossWaves(t *testing.T) {
 
 	// Two tasks in wave 1, one in wave 2. Move one of the wave-1 tasks
 	// into the final bucket (the test bundle's last bucket).
-	ta, err := fixture.store.CreateTask(fixture.ctx, fixture.projectA.ID, "T-a", "", domain.Priority(2), "backlog", fixture.store.Snapshot())
+	ta, err := fixture.store.CreateTask(fixture.ctx, fixture.projectA.ID, "T-a", "", domain.Priority(2), "backlog", nil, fixture.store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask a: %v", err)
 	}
-	tb, err := fixture.store.CreateTask(fixture.ctx, fixture.projectA.ID, "T-b", "", domain.Priority(2), "backlog", fixture.store.Snapshot())
+	tb, err := fixture.store.CreateTask(fixture.ctx, fixture.projectA.ID, "T-b", "", domain.Priority(2), "backlog", nil, fixture.store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask b: %v", err)
 	}
-	tc, err := fixture.store.CreateTask(fixture.ctx, fixture.projectA.ID, "T-c", "", domain.Priority(2), "backlog", fixture.store.Snapshot())
+	tc, err := fixture.store.CreateTask(fixture.ctx, fixture.projectA.ID, "T-c", "", domain.Priority(2), "backlog", nil, fixture.store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask c: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestContinuePlanPreviewsNextClaimable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
-	task, err := fixture.store.CreateTask(fixture.ctx, fixture.projectA.ID, "claimable", "", domain.Priority(2), "backlog", fixture.store.Snapshot())
+	task, err := fixture.store.CreateTask(fixture.ctx, fixture.projectA.ID, "claimable", "", domain.Priority(2), "backlog", nil, fixture.store.Snapshot())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}

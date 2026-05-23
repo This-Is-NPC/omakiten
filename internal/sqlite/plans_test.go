@@ -149,7 +149,7 @@ func TestAssignTaskToPlanLinksAndScopes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Child", "", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "Child", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestAssignTaskToPlanRejectsForeignWave(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddPlanWave B: %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Child", "", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "Child", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestClaimNextPlanTaskStampsAssigneeWithoutMovingBucket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Claim me", "", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "Claim me", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -299,15 +299,15 @@ func TestListPlanTaskDependenciesFiltersToInPlanEdges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
-	a, err := store.CreateTask(ctx, project.ID, "A", "", domain.Priority(2), "backlog", store.snap())
+	a, err := store.CreateTask(ctx, project.ID, "A", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask A: %v", err)
 	}
-	b, err := store.CreateTask(ctx, project.ID, "B", "", domain.Priority(2), "backlog", store.snap())
+	b, err := store.CreateTask(ctx, project.ID, "B", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask B: %v", err)
 	}
-	outsider, err := store.CreateTask(ctx, project.ID, "outsider", "", domain.Priority(2), "backlog", store.snap())
+	outsider, err := store.CreateTask(ctx, project.ID, "outsider", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask outsider: %v", err)
 	}
@@ -352,7 +352,7 @@ func TestPeekNextClaimableMatchesClaimWithoutMutating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Pick me", "", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "Pick me", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -440,11 +440,11 @@ func TestClaimNextPlanTaskGatesAcrossWaves(t *testing.T) {
 		t.Fatalf("AddPlanWave 2: %v", err)
 	}
 
-	t1, err := store.CreateTask(ctx, project.ID, "T1", "", domain.Priority(2), "backlog", store.snap())
+	t1, err := store.CreateTask(ctx, project.ID, "T1", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask 1: %v", err)
 	}
-	t2, err := store.CreateTask(ctx, project.ID, "T2", "", domain.Priority(2), "backlog", store.snap())
+	t2, err := store.CreateTask(ctx, project.ID, "T2", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask 2: %v", err)
 	}
@@ -502,7 +502,7 @@ func TestClaimNextPlanTaskIsAtomicUnderConcurrency(t *testing.T) {
 	const n = 8
 	taskIDs := map[int64]struct{}{}
 	for i := 0; i < n; i++ {
-		task, err := store.CreateTask(ctx, project.ID, "Race", "", domain.Priority(2), "backlog", store.snap())
+		task, err := store.CreateTask(ctx, project.ID, "Race", "", domain.Priority(2), "backlog", nil, store.snap())
 		if err != nil {
 			t.Fatalf("CreateTask %d: %v", i, err)
 		}
@@ -576,11 +576,11 @@ func TestCountPriorWavesPending(t *testing.T) {
 		t.Fatalf("AddPlanWave 2: %v", err)
 	}
 
-	t1, err := store.CreateTask(ctx, project.ID, "T1", "", domain.Priority(2), "backlog", store.snap())
+	t1, err := store.CreateTask(ctx, project.ID, "T1", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask 1: %v", err)
 	}
-	t2, err := store.CreateTask(ctx, project.ID, "T2", "", domain.Priority(2), "backlog", store.snap())
+	t2, err := store.CreateTask(ctx, project.ID, "T2", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask 2: %v", err)
 	}
@@ -613,7 +613,7 @@ func TestCountPriorWavesPending(t *testing.T) {
 	}
 
 	// Standalone task (no plan/wave) → guard is a no-op (count=0).
-	bare, err := store.CreateTask(ctx, project.ID, "Bare", "", domain.Priority(2), "backlog", store.snap())
+	bare, err := store.CreateTask(ctx, project.ID, "Bare", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask bare: %v", err)
 	}
@@ -642,7 +642,7 @@ func TestMoveTaskClearsAssignedToOnBucketChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Claimable", "", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "Claimable", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -700,11 +700,11 @@ func TestMaybeFinalizePlanForTaskTransitionsWhenLastTaskCloses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
-	t1, err := store.CreateTask(ctx, project.ID, "T1", "", domain.Priority(2), "backlog", store.snap())
+	t1, err := store.CreateTask(ctx, project.ID, "T1", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask t1: %v", err)
 	}
-	t2, err := store.CreateTask(ctx, project.ID, "T2", "", domain.Priority(2), "backlog", store.snap())
+	t2, err := store.CreateTask(ctx, project.ID, "T2", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask t2: %v", err)
 	}
@@ -803,7 +803,7 @@ func TestClaimNextPlanTaskNeverCompletesEvenInTwoBucketWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddPlanWave: %v", err)
 	}
-	task, err := store.CreateTask(ctx, project.ID, "Direct-terminal", "", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "Direct-terminal", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -891,7 +891,7 @@ func TestStoreBusyTimeoutTracksConfiguredValue(t *testing.T) {
 // task.assigned / task.unassigned accordingly. Same-value call is a no-op.
 func TestAssignTaskSetsThenClearsAssignee(t *testing.T) {
 	ctx, store, project := setupPlans(t)
-	task, err := store.CreateTask(ctx, project.ID, "Assignable", "", domain.Priority(2), "backlog", store.snap())
+	task, err := store.CreateTask(ctx, project.ID, "Assignable", "", domain.Priority(2), "backlog", nil, store.snap())
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}

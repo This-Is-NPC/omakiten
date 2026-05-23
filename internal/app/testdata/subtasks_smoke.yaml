@@ -1,0 +1,63 @@
+# Scenario: end-to-end smoke for #190 — subtasks_complete guard wired on
+# dev → review with a permissive default block so the smoke test focuses
+# on the guard behaviour, not on bucket-level policy. Four buckets
+# (backlog/dev/review/done) mirror the omakase preset so the smoke
+# matches the DoD wording: "tenta dev→review no parent (com guard
+# wiring ativo) → rejeita nomeando filho aberto → move filhos via space
+# → move parent → sucesso".
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default
+config:
+  output:
+    json_minified: true
+    omit_empty: true
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    defaults:
+      task:    { edit: true, delete: true }
+      comment: { edit: true, delete: true }
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1
+      - id: 2
+        key: dev
+        name: Development
+        position: 2
+      - id: 3
+        key: review
+        name: Review
+        position: 3
+      - id: 4
+        key: done
+        name: Done
+        position: 4
+    transitions:
+      - from: 1
+        to: 2
+      - from: 2
+        to: 3
+        guards:
+          - type: subtasks_complete
+            hint: "all sub-tasks must reach the final bucket before promotion"
+      - from: 3
+        to: 4
+      - from: 4
+        to: 3
+      - from: 3
+        to: 2
+      - from: 2
+        to: 1

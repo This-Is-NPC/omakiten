@@ -188,7 +188,7 @@ func TestCtrlHReturnsToHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
-	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+	if _, err := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
@@ -795,7 +795,7 @@ func TestHomeProjectDeleteRequeriesZeroCountersForAuditTruth(t *testing.T) {
 	// Tasks: 3 — distinguishable from the zero-value claim under the
 	// degraded path.
 	for i := 0; i < 3; i++ {
-		if _, err := store.CreateTask(ctx, doomed.ID, "Task", "", domain.Priority(2), "backlog", store.Snapshot()); err != nil {
+		if _, err := store.CreateTask(ctx, doomed.ID, "Task", "", domain.Priority(2), "backlog", nil, store.Snapshot()); err != nil {
 			t.Fatalf("CreateTask(%d): %v", i, err)
 		}
 	}
