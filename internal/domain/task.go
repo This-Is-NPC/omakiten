@@ -68,6 +68,21 @@ func (t Task) IsSubTask() bool {
 	return t.ParentID != nil
 }
 
+// ParentIDEquals compares two parent FK pointers by value, treating nil
+// as "root". Returns true when both pointers are nil or both non-nil and
+// point at the same id. Used by re-parent flows to short-circuit no-op
+// edits before they bump updated_at.
+func ParentIDEquals(a, b *int64) bool {
+	switch {
+	case a == nil && b == nil:
+		return true
+	case a == nil || b == nil:
+		return false
+	default:
+		return *a == *b
+	}
+}
+
 // TaskSort drives the ORDER BY clause applied by ListTasks. Field is one of
 // "id", "title", "priority", "created_at"; Order is "asc" or "desc". An empty
 // Field falls back to id ascending — the default ordering for unsorted lists.
