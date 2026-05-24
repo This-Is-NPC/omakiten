@@ -190,11 +190,7 @@ func (s *Store) ensureErrorExists(ctx context.Context, errorID int64) error {
 	return nil
 }
 
-type rowScanner interface {
-	Scan(dest ...any) error
-}
-
-func scanSolution(row rowScanner) (domain.Solution, error) {
+func scanSolution(row sqlutil.Scanner) (domain.Solution, error) {
 	var solution domain.Solution
 	var success sql.NullInt64
 	var taskID sql.NullInt64
