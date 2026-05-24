@@ -127,6 +127,35 @@ func TestEmptyListPropagatesNoSelectionThroughEveryMutator(t *testing.T) {
 	}
 }
 
+func TestWithCursorJumpsToIndexAndResyncs(t *testing.T) {
+	m := New().WithViewport(5).WithItems(fakeItems(20, 1)).WithCursor(15)
+	if m.Cursor() != 15 {
+		t.Fatalf("WithCursor(15) cursor = %d, want 15", m.Cursor())
+	}
+	// Scroll must follow so cursor 15 is visible in a viewport of 5.
+	first, last, ok := m.VisibleRange()
+	if !ok || m.Cursor() < first || m.Cursor() > last {
+		t.Fatalf("WithCursor(15) left cursor invisible: visible=[%d,%d] ok=%v", first, last, ok)
+	}
+}
+
+func TestWithCursorClampsOutOfRange(t *testing.T) {
+	m := New().WithViewport(10).WithItems(fakeItems(5, 1)).WithCursor(99)
+	if m.Cursor() != 4 {
+		t.Fatalf("WithCursor(99) on 5-item list = %d, want 4 clamped", m.Cursor())
+	}
+}
+
+func TestWithCursorMinusOnePreservesItems(t *testing.T) {
+	m := New().WithViewport(10).WithItems(fakeItems(5, 1)).WithCursor(3).WithCursor(-1)
+	if m.Cursor() != -1 {
+		t.Fatalf("WithCursor(-1) cursor = %d, want -1", m.Cursor())
+	}
+	if m.Len() != 5 {
+		t.Fatalf("WithCursor(-1) drained items: Len=%d, want 5", m.Len())
+	}
+}
+
 func TestWithItemsShrinkingClampsCursor(t *testing.T) {
 	m := New().WithViewport(20).WithItems(fakeItems(10, 1))
 	m = m.JumpLast()

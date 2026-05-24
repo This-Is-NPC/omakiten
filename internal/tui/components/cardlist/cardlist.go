@@ -189,6 +189,25 @@ func (m Model) PageUp() Model {
 	return m.MoveCursor(-m.pageStep())
 }
 
+// WithCursor jumps the cursor to a specific item index and re-runs
+// the resync invariant. Clamps idx to [-1, len(items)-1] so callers
+// can pass an out-of-range value (e.g. after items shrank) and get
+// safe behaviour. -1 is the no-selection sentinel — pass it to
+// clear the cursor without nuking the items slice (compare with
+// WithItems(nil) which drains everything).
+//
+// Used by surfaces that drive the cursor through a parallel field
+// on the parent Model (e.g. the board's m.cardIdx as the focused-
+// column cursor sentinel) instead of routing every keystroke
+// through MoveCursor. Those surfaces call WithCursor at sync time
+// so the cardlist's internal cursor stays aligned with the
+// authoritative one.
+func (m Model) WithCursor(idx int) Model {
+	m.cursor = idx
+	m.resync()
+	return m
+}
+
 // WithItems replaces the item list and re-runs the resync invariant.
 // Cursor is preserved when the new list still has an index at the
 // prior cursor; otherwise it clamps to the last item (e.g. the

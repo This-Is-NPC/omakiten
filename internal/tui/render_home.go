@@ -174,7 +174,7 @@ func (m *Model) selectHomeProject(project domain.Project) error {
 	m.colIdx = 0
 	m.cardIdx = 0
 	m.boardColScroll = 0
-	m.boardScroll = nil
+	m.boardLists = nil
 	m.selected = 0
 	m.tableScroll = 0
 	m.graphScroll = 0

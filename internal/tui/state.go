@@ -481,10 +481,14 @@ type Model struct {
 	// to keep colIdx inside the visible window.
 	boardColScroll int
 
-	// boardScroll holds a per-bucket scroll offset (in cards) so long columns
-	// can be scrolled vertically without losing context when navigating between
-	// lanes. Keys are bucket keys (domain.Bucket.Key).
-	boardScroll map[string]int
+	// boardLists owns the per-bucket cardlist.Model (cursor + scroll
+	// + items + viewport) so long columns can be scrolled vertically
+	// without losing context when navigating between lanes. Keys
+	// are bucket keys (domain.Bucket.Key). The cardlist's cursor
+	// mirrors m.cardIdx (the global focused-column cursor) — every
+	// sync routes through WithCursor + WithItems + WithViewport so
+	// the component's scrollwindow.Resync owns scroll correctness.
+	boardLists map[string]cardlist.Model
 
 	// entityView owns the detail-grid builder + scroll offset for the focused
 	// entity detail screen.
