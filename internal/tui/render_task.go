@@ -567,7 +567,10 @@ func (m *Model) resizeTaskDescriptionInput() {
 func (m *Model) closeTaskScreen(status string) {
 	m.blockerPickerOpen = false
 	m.blockerPickerTaskID = 0
-	m.blockerPicker.Cursor = 0
+	// Route through picker.WithCursor — itemCount/viewport are 0
+	// since the picker is closing anyway; the method collapses both
+	// fields to 0 internally.
+	m.blockerPicker = m.blockerPicker.WithCursor(0, 0, 0)
 	m.blockerPickerChecks = nil
 	m.taskScreen = taskScreenClosed
 	m.taskID = 0

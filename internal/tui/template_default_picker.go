@@ -57,8 +57,7 @@ func (m *Model) openTemplateDefaultPicker(slug string) {
 		mode: entityScreenDefaultPicker,
 		slug: slug,
 	}
-	m.entityPicker = picker.New(picker.Single)
-	m.entityPicker.Cursor = cursor
+	m.entityPicker = picker.New(picker.Single).WithCursor(cursor, len(options), 0)
 	m.status = m.t("tui.status.default_picker")
 }
 

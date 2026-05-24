@@ -56,8 +56,11 @@ func (m *Model) openThemePicker() {
 	m.themePickerOptions = options
 	m.entityScreen = entityScreenView
 	m.entityForm = entityForm{mode: entityScreenThemePicker}
-	m.entityPicker = picker.New(picker.Single)
-	m.entityPicker.Cursor = cursor
+	// picker.WithCursor routes the open-time seed cursor through one
+	// typed mutator that clamps + follow-scrolls; the prior raw field
+	// write left scroll at whatever stale value the prior open
+	// happened to land on.
+	m.entityPicker = picker.New(picker.Single).WithCursor(cursor, len(options), 0)
 	m.status = m.t("tui.status.theme_picker")
 }
 
@@ -82,8 +85,7 @@ func (m *Model) openConfigPicker() {
 	m.configPickerOptions = options
 	m.entityScreen = entityScreenView
 	m.entityForm = entityForm{mode: entityScreenConfigPicker}
-	m.entityPicker = picker.New(picker.Single)
-	m.entityPicker.Cursor = cursor
+	m.entityPicker = picker.New(picker.Single).WithCursor(cursor, len(options), 0)
 	m.status = m.t("tui.status.config_picker")
 }
 

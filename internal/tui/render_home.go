@@ -52,14 +52,13 @@ func (m *Model) loadHome() error {
 	m.homeProjectTags = tags
 	m.homeProjectPending = pending
 
-	if m.homePicker.Cursor >= len(projects) {
-		if len(projects) == 0 {
-			m.homePicker.Cursor = 0
-			m.homePicker.Scroll = 0
-		} else {
-			m.homePicker.Cursor = len(projects) - 1
-		}
-	}
+	// Routes through picker.WithCursor so the cursor + scroll
+	// resync runs through one typed mutator instead of two raw
+	// field writes. WithCursor clamps idx into [0, len-1] and
+	// follows scroll; the len==0 path collapses both to 0
+	// internally — the prior inline if/else collapses to a one-
+	// liner.
+	m.homePicker = m.homePicker.WithCursor(m.homePicker.Cursor, len(projects), m.homeViewportRows())
 	m.syncHomeScroll()
 	return nil
 }
@@ -220,10 +219,11 @@ func (m Model) homeCardSizes() (cardWidth, cardContent int) {
 // project card stays inside the viewport regardless of multi-line
 // titles or badge rows. Project cards have variable heights so the
 // scroll can't be counted in items — it's measured in rendered
-// terminal rows via the shared scrollwindow helpers.
+// terminal rows via the shared scrollwindow helpers. Routes through
+// picker.WithScroll so the assignment is one typed method call.
 func (m *Model) syncHomeScroll() {
 	if len(m.homeProjects) == 0 {
-		m.homePicker.Scroll = 0
+		m.homePicker = m.homePicker.WithScroll(0)
 		return
 	}
 	cardWidth, cardContent := m.homeCardSizes()
@@ -232,7 +232,9 @@ func (m *Model) syncHomeScroll() {
 		rendered := m.renderProjectCard(m.homeProjects[i], false, cardWidth, cardContent)
 		heights[i] = strings.Count(rendered, "\n") + 1
 	}
-	m.homePicker.Scroll = scrollwindow.Follow(m.homePicker.Scroll, m.homePicker.Cursor, heights, m.homeViewportRows(), scrollwindow.HintsSplit)
+	m.homePicker = m.homePicker.WithScroll(
+		scrollwindow.Follow(m.homePicker.Scroll, m.homePicker.Cursor, heights, m.homeViewportRows(), scrollwindow.HintsSplit),
+	)
 }
 
 // renderHome renders the multi-project picker mirroring the visual grammar
