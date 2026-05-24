@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/events"
 	"omakiten/internal/testfixtures"
 )
 
@@ -282,6 +284,70 @@ func TestClaimNextPlanTaskStampsAssigneeWithoutMovingBucket(t *testing.T) {
 	}
 	if ok {
 		t.Fatal("second claim succeeded; expected empty (already-claimed task is no longer candidate)")
+	}
+}
+
+// TestClaimNextPlanTask_EmitsEventOnSuccess pins the regression for the
+// confirmed missing-publish bug: ClaimNextPlanTask inserted the
+// task.assigned row inside its IMMEDIATE transaction but never called
+// publishEvent on the success path, so subscribers (hooks engine, TUI
+// live views) never observed the claim. The row was on disk; the bus
+// was silent. Assertion subscribes to the bus BEFORE the claim and
+// expects exactly one task.assigned event to land.
+func TestClaimNextPlanTask_EmitsEventOnSuccess(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-claim-bus", "Plan", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 0)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "Claim me", "", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, task.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan: %v", err)
+	}
+
+	tru := true
+	settings := config.EventsSettings{
+		Defaults: config.EventChannelSettings{Log: &tru, Broadcast: &tru, Hook: &tru},
+	}
+	store.SetEventsPolicy(settings)
+	bus := events.NewInProcessBus(settings)
+	store.SetEventBus(bus)
+
+	var mu sync.Mutex
+	var received []domain.Event
+	sub := bus.Subscribe(events.Filter{EventTypes: []string{domain.EventTypeTaskAssigned}}, func(_ context.Context, ev domain.Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		received = append(received, ev)
+	})
+	defer sub.Unsubscribe()
+
+	ctx = activity.WithAgent(ctx, "mcp", "plans.claim_next", "claude-opus-4-7", "")
+	claimed, ok, err := store.ClaimNextPlanTask(ctx, project.ID, plan.ID, store.snap())
+	if err != nil {
+		t.Fatalf("ClaimNextPlanTask: %v", err)
+	}
+	if !ok || claimed.ID != task.ID {
+		t.Fatalf("ClaimNextPlanTask = (%+v, %v), want claim of task %d", claimed, ok, task.ID)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(received) != 1 {
+		t.Fatalf("task.assigned broadcasts after claim = %d, want 1 (missing publishEvent on success path)", len(received))
+	}
+	if received[0].EntityID != task.ID {
+		t.Fatalf("broadcast entity_id = %d, want task %d", received[0].EntityID, task.ID)
+	}
+	if received[0].EventType != domain.EventTypeTaskAssigned {
+		t.Fatalf("broadcast event_type = %q, want %q", received[0].EventType, domain.EventTypeTaskAssigned)
 	}
 }
 
