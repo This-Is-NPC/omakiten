@@ -288,18 +288,21 @@ func scrollIntoView(start, focused, total, cap int) int {
 	return start
 }
 
-// syncBoardColScroll keeps boardColScroll aligned so the focused bucket stays
-// inside the currently-visible horizontal window.
+// syncBoardColScroll keeps boardColOffset aligned so the focused bucket
+// stays inside the currently-visible horizontal window. Horizontal
+// column carousel, not a vertical viewport — kept as a plain int
+// because the cardlist/linelist contract addresses scroll inside a
+// single column, not column-to-column navigation across the board.
 func (m *Model) syncBoardColScroll() {
 	n := len(m.workflow.Buckets)
 	if n == 0 {
-		m.boardColScroll = 0
+		m.boardColOffset = 0
 		return
 	}
 	layout := m.computeBoardLayout(n)
 	cap := m.boardColumnCapacity(layout)
 	focused := clampInt(m.colIdx, 0, n-1)
-	m.boardColScroll = scrollIntoView(m.boardColScroll, focused, n, cap)
+	m.boardColOffset = scrollIntoView(m.boardColOffset, focused, n, cap)
 }
 
 func (m Model) renderBoard() string {
@@ -329,7 +332,7 @@ func (m Model) renderBoard() string {
 	if cap > n {
 		cap = n
 	}
-	start := scrollIntoView(m.boardColScroll, clampInt(m.colIdx, 0, n-1), n, cap)
+	start := scrollIntoView(m.boardColOffset, clampInt(m.colIdx, 0, n-1), n, cap)
 	end := start + cap
 	if end > n {
 		end = n

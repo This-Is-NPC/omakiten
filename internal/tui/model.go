@@ -74,10 +74,15 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		// (kind, width) pair across the lifetime of the model. Inner
 		// maps lazily fill on first write per kind.
 		styleByKindWidth: map[styleKind]map[int]lipgloss.Style{},
-		tokenCountCache:  map[uint64]int{},
-		subtasks:         cardlist.New(),
-		planNetwork:      cardlist.New(),
-		activityLines:    linelist.New(),
+		tokenCountCache:      map[uint64]int{},
+		subtasks:             cardlist.New(),
+		planNetwork:          cardlist.New(),
+		activityLines:        linelist.New(),
+		logsList:             linelist.New(),
+		tableList:            linelist.New(),
+		graphList:            linelist.New(),
+		plansList:            linelist.New(),
+		settingsGeneralLines: linelist.New(),
 	}
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()

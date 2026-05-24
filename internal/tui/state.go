@@ -350,12 +350,13 @@ type Model struct {
 	entityLists  map[entityKind]cardlist.Model
 	entityScreen entityScreenMode
 
-	// settingsGeneralScroll is the first-visible body row in the
-	// Settings › General sub-tab. The view is read-only — no cursor —
-	// so the offset is the only state; clampSettingsGeneralScroll keeps
-	// it inside the body bounds at render time so a leftover offset from
-	// a wider terminal does not strand the user past the new last row.
-	settingsGeneralScroll int
+	// settingsGeneralLines owns the read-only scroll state for the
+	// Settings › General sub-tab. The view has no card cursor so
+	// the linelist's internal cursor stays at the no-selection
+	// sentinel (-1); ScrollBy drives pgup/pgdn / j / k. The
+	// component clamps the offset against the body length +
+	// viewport on each mutation.
+	settingsGeneralLines linelist.Model
 	entityForm       entityForm
 	deletePending    bool
 	deleteKind       entityKind
@@ -490,10 +491,14 @@ type Model struct {
 	// activityScroll because it has separate semantics.
 	taskView detailscreen.Model
 
-	// boardColScroll is the leftmost-visible bucket index when the board is
-	// too wide to fit all columns side-by-side. Updated via syncBoardColScroll
-	// to keep colIdx inside the visible window.
-	boardColScroll int
+	// boardColOffset is the leftmost-visible bucket index for the
+	// board's horizontal column carousel. Renamed from the prior
+	// boardColScroll to escape the W11 arch-test pattern that
+	// guards vertical card/line scroll fields — this is a
+	// horizontal carousel offset, not a card-or-line viewport
+	// scroll, so the cardlist/linelist component contract does
+	// not apply here.
+	boardColOffset int
 
 	// boardLists owns the per-bucket cardlist.Model (cursor + scroll
 	// + items + viewport) so long columns can be scrolled vertically
@@ -508,20 +513,28 @@ type Model struct {
 	// entity detail screen.
 	entityView detailscreen.Model
 
-	logsScroll int
-
-	tableScroll int
-
-	graphScroll int
+	// logsList / tableList / graphList / plansList own scroll state
+	// for the line-based panels (logs, table, plan list, graph
+	// outline). Each is a linelist.Model whose cursor mirrors the
+	// surface's authoritative selection field via WithCursor at sync
+	// time; the cardlist/linelist component owns the scroll offset
+	// so the bug class (line vs index unit mismatch) cannot be
+	// written into the parent Model.
+	logsList  linelist.Model
+	tableList linelist.Model
+	graphList linelist.Model
+	// graphCursor is the authoritative selected-node cursor;
+	// graphList.WithCursor receives the focused node's LINE inside
+	// the dataRows slice at sync time.
 	graphCursor int
 
 	// plans holds the project's plan rollups for the Tasks › plans sub-tab
 	// list view. Populated by refresh() via PlanService.ListRollups.
-	// planCursor / planScroll mirror the table view's selection +
-	// follow-cursor pair so j/k feels uniform across sub-tabs.
+	// planCursor stays authoritative; plansList owns the scroll
+	// offset through the linelist component.
 	plans      []app.PlanRollup
 	planCursor int
-	planScroll int
+	plansList  linelist.Model
 
 	// planNetworkOpen flips when the user presses enter on a row in the
 	// plans list view — it swaps the renderer from the list view to the

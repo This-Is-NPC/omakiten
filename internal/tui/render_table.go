@@ -60,12 +60,14 @@ func (m *Model) handleListKey(msg tea.KeyMsg) {
 	}
 }
 
-// syncTableScroll keeps m.tableScroll aligned so the selected task row
-// stays in view. Same caveat as syncLogsScroll: `sliceScrollRows`
-// reserves up to 2 rows for hints, so the data-row window for the
-// cursor is `tableViewportRows() - 2`.
+// syncTableScroll syncs the tableList linelist.Model so the selected
+// task row stays in view. Routes through WithLines + WithViewport +
+// WithCursor so scrollwindow.Resync owns the follow-cursor + clamp
+// chain.
 func (m *Model) syncTableScroll() {
-	m.tableScroll = followCursor(m.tableScroll, m.selected, scrollDataRows(m.tableViewportRows()), len(m.tasks))
+	tasks := m.applyTableView()
+	lines := make([]string, len(tasks))
+	m.tableList = m.tableList.WithLines(lines).WithViewport(m.tableViewportRows()).WithCursor(m.selected)
 }
 
 // tableViewportRows returns how many task rows fit in the table panel.
@@ -106,7 +108,7 @@ func (m Model) renderTable() string {
 		m.styles.info.Render(m.t("tui.table.header")),
 		m.hRule(contentWidth),
 	}
-	rows = append(rows, m.sliceScrollRows(dataRows, m.tableScroll, m.tableViewportRows())...)
+	rows = append(rows, m.sliceScrollRows(dataRows, m.tableList.Scroll(), m.tableViewportRows())...)
 	return m.renderPanel(strings.Join(rows, "\n"))
 }
 
@@ -124,7 +126,7 @@ func (m Model) renderTableCompactWith(tasks []domain.Task) string {
 		m.styles.kickerCount(m.t("tui.kicker.tasks"), len(tasks)),
 		m.hRule(width),
 	}
-	rows = append(rows, m.sliceScrollRows(dataRows, m.tableScroll, m.tableViewportRows())...)
+	rows = append(rows, m.sliceScrollRows(dataRows, m.tableList.Scroll(), m.tableViewportRows())...)
 	return m.renderPanel(strings.Join(rows, "\n"))
 }
 

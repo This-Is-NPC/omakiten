@@ -50,28 +50,18 @@ func (m *Model) handleGraphKey(msg tea.KeyMsg) {
 	m.syncGraphScroll(sel, len(lines))
 }
 
-// syncGraphScroll keeps m.graphScroll aligned so the cursor node stays
-// in the viewport. The graph panel renders through `sliceScrollRows`,
-// which reserves up to 2 panel rows for the "▲ above" / "▼ below"
-// hints — so the cursor's effective window is `scrollDataRows(viewport)`,
-// not the raw `viewport`. Without that adjustment the bottom 1–2 nodes
-// would land in the reserved hint band and disappear.
+// syncGraphScroll syncs the graphList linelist.Model so the cursor
+// node's LINE stays inside the viewport. Routes through WithLines +
+// WithViewport + WithCursor; scrollwindow.Resync owns the
+// follow-cursor + clamp chain.
 func (m *Model) syncGraphScroll(sel []int, totalLines int) {
 	viewport := m.graphViewportRows()
 	if viewport <= 0 || len(sel) == 0 {
 		return
 	}
-	effective := scrollDataRows(viewport)
 	cursorLine := sel[clampInt(m.graphCursor, 0, len(sel)-1)]
-	if cursorLine < m.graphScroll {
-		m.graphScroll = cursorLine
-	}
-	if cursorLine >= m.graphScroll+effective {
-		m.graphScroll = cursorLine - effective + 1
-	}
-	if m.graphScroll < 0 {
-		m.graphScroll = 0
-	}
+	lines := make([]string, totalLines)
+	m.graphList = m.graphList.WithLines(lines).WithViewport(viewport).WithCursor(cursorLine)
 }
 
 // graphViewportRows returns how many DAG lines fit in the graph panel viewport.
@@ -126,7 +116,7 @@ func (m Model) renderGraph() string {
 		m.styles.kickerCount(m.t("tui.kicker.dependency_graph"), len(m.dependencies)),
 		"",
 	}
-	rows = append(rows, m.sliceScrollRows(dataRows, m.graphScroll, m.graphViewportRows())...)
+	rows = append(rows, m.sliceScrollRows(dataRows, m.graphList.Scroll(), m.graphViewportRows())...)
 	return m.renderPanel(strings.Join(rows, "\n"))
 }
 

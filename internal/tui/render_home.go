@@ -173,13 +173,13 @@ func (m *Model) selectHomeProject(project domain.Project) error {
 	m.syncEntityKindFromSub()
 	m.colIdx = 0
 	m.cardIdx = 0
-	m.boardColScroll = 0
+	m.boardColOffset = 0
 	m.boardLists = nil
 	m.selected = 0
-	m.tableScroll = 0
-	m.graphScroll = 0
+	m.tableList = m.tableList.WithLines(nil)
+	m.graphList = m.graphList.WithLines(nil)
 	m.graphCursor = 0
-	m.logsScroll = 0
+	m.logsList = m.logsList.WithLines(nil)
 	m.logsSelected = 0
 	m.status = ""
 	return m.refresh()

@@ -110,10 +110,12 @@ func (m *Model) closePlanNetwork() {
 	m.planNetworkCollapsed = nil
 }
 
-// syncPlansScroll keeps planScroll aligned so the cursor stays in view —
-// same follow-cursor pattern as syncTableScroll/syncGraphScroll.
+// syncPlansScroll syncs the plansList linelist.Model so the cursor
+// stays in view. Routes through WithLines + WithViewport + WithCursor;
+// scrollwindow.Resync owns the follow-cursor + clamp chain.
 func (m *Model) syncPlansScroll() {
-	m.planScroll = followCursor(m.planScroll, m.planCursor, scrollDataRows(m.plansViewportRows()), len(m.plans))
+	lines := make([]string, len(m.plans))
+	m.plansList = m.plansList.WithLines(lines).WithViewport(m.plansViewportRows()).WithCursor(m.planCursor)
 }
 
 // plansViewportRows returns how many plan rows fit in the panel. Chrome
@@ -165,7 +167,7 @@ func (m Model) renderPlans() string {
 		m.styles.info.Render(m.t("tui.plans.list.header")),
 		m.hRule(contentWidth),
 	}
-	rows = append(rows, m.sliceScrollRows(dataRows, m.planScroll, m.plansViewportRows())...)
+	rows = append(rows, m.sliceScrollRows(dataRows, m.plansList.Scroll(), m.plansViewportRows())...)
 	return m.renderPanel(strings.Join(rows, "\n"))
 }
 

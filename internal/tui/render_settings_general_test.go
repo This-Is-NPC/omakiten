@@ -58,8 +58,8 @@ func TestSettingsGeneralScrollsWhenBodyOverflowsViewport(t *testing.T) {
 	}
 
 	maxOffset := m.maxSettingsGeneralScroll()
-	if m.settingsGeneralScroll != maxOffset {
-		t.Fatalf("scroll offset = %d after over-shooting; want clamped to maxSettingsGeneralScroll() = %d", m.settingsGeneralScroll, maxOffset)
+	if m.settingsGeneralLines.Scroll() != maxOffset {
+		t.Fatalf("scroll offset = %d after over-shooting; want clamped to maxSettingsGeneralScroll() = %d", m.settingsGeneralLines.Scroll(), maxOffset)
 	}
 }
 
@@ -83,7 +83,7 @@ func TestSettingsGeneralEndJumpsToBottom(t *testing.T) {
 
 	m.handleSettingsGeneralKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
 
-	if m.settingsGeneralScroll == 0 {
+	if m.settingsGeneralLines.Scroll() == 0 {
 		t.Fatalf("expected `G` to move scroll past 0 when body overflows; got 0")
 	}
 	rendered := m.renderSettingsGeneral()
@@ -92,8 +92,8 @@ func TestSettingsGeneralEndJumpsToBottom(t *testing.T) {
 	}
 
 	m.handleSettingsGeneralKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
-	if m.settingsGeneralScroll != 0 {
-		t.Fatalf("expected `g` to reset scroll to 0; got %d", m.settingsGeneralScroll)
+	if m.settingsGeneralLines.Scroll() != 0 {
+		t.Fatalf("expected `g` to reset scroll to 0; got %d", m.settingsGeneralLines.Scroll())
 	}
 }
 
@@ -121,13 +121,13 @@ func TestSettingsGeneralPageDownAdvancesByViewportStep(t *testing.T) {
 	}
 
 	m.handleSettingsGeneralKey(tea.KeyMsg{Type: tea.KeyPgDown})
-	if m.settingsGeneralScroll != step {
-		t.Fatalf("after pgdown: scroll = %d, want %d", m.settingsGeneralScroll, step)
+	if m.settingsGeneralLines.Scroll() != step {
+		t.Fatalf("after pgdown: scroll = %d, want %d", m.settingsGeneralLines.Scroll(), step)
 	}
 
 	m.handleSettingsGeneralKey(tea.KeyMsg{Type: tea.KeyPgUp})
-	if m.settingsGeneralScroll != 0 {
-		t.Fatalf("after pgup: scroll = %d, want 0", m.settingsGeneralScroll)
+	if m.settingsGeneralLines.Scroll() != 0 {
+		t.Fatalf("after pgup: scroll = %d, want 0", m.settingsGeneralLines.Scroll())
 	}
 }
 
@@ -156,8 +156,8 @@ func TestSettingsGeneralEndIsNoOpWhenBodyFits(t *testing.T) {
 	}
 
 	m.handleSettingsGeneralKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
-	if m.settingsGeneralScroll != 0 {
-		t.Fatalf("expected `G` to be a no-op when body fits; got scroll = %d", m.settingsGeneralScroll)
+	if m.settingsGeneralLines.Scroll() != 0 {
+		t.Fatalf("expected `G` to be a no-op when body fits; got scroll = %d", m.settingsGeneralLines.Scroll())
 	}
 }
 

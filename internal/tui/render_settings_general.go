@@ -29,8 +29,7 @@ func (m Model) renderSettingsGeneral() string {
 
 	bodyLines := strings.Split(body, "\n")
 	viewport := m.settingsGeneralViewportRows()
-	offset := clampSettingsGeneralScroll(m.settingsGeneralScroll, len(bodyLines), viewport)
-	visible := m.sliceScrollRows(bodyLines, offset, viewport)
+	visible := m.sliceScrollRows(bodyLines, m.settingsGeneralLines.Scroll(), viewport)
 	return "\n" + indentBlock(strings.Join(visible, "\n")+"\n\n"+hint, 2)
 }
 
@@ -136,44 +135,53 @@ func (m *Model) handleSettingsGeneralKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		return runExternalEditor(m.repos.Editor.Path())
 	case "down", "j":
-		m.settingsGeneralScroll++
-		m.syncSettingsGeneralScroll()
+		m.refreshSettingsGeneralLines()
+		m.settingsGeneralLines = m.settingsGeneralLines.ScrollBy(1)
 	case "up", "k":
-		m.settingsGeneralScroll--
-		m.syncSettingsGeneralScroll()
+		m.refreshSettingsGeneralLines()
+		m.settingsGeneralLines = m.settingsGeneralLines.ScrollBy(-1)
 	case "pgdown", "ctrl+d":
-		m.settingsGeneralScroll += taskViewPageStep(m.settingsGeneralViewportRows())
-		m.syncSettingsGeneralScroll()
+		m.refreshSettingsGeneralLines()
+		m.settingsGeneralLines = m.settingsGeneralLines.ScrollBy(taskViewPageStep(m.settingsGeneralViewportRows()))
 	case "pgup", "ctrl+u":
-		m.settingsGeneralScroll -= taskViewPageStep(m.settingsGeneralViewportRows())
-		m.syncSettingsGeneralScroll()
+		m.refreshSettingsGeneralLines()
+		m.settingsGeneralLines = m.settingsGeneralLines.ScrollBy(-taskViewPageStep(m.settingsGeneralViewportRows()))
 	case "home", "g":
-		m.settingsGeneralScroll = 0
+		m.refreshSettingsGeneralLines()
+		m.settingsGeneralLines = m.settingsGeneralLines.ScrollBy(-(1 << 20))
 	case "end", "G":
-		m.settingsGeneralScroll = m.maxSettingsGeneralScroll()
+		m.refreshSettingsGeneralLines()
+		m.settingsGeneralLines = m.settingsGeneralLines.ScrollBy(1 << 20)
 	}
 	return nil
 }
 
-// syncSettingsGeneralScroll re-clamps the stored offset against the
-// current body / viewport sizes — `clampSettingsGeneralScroll` runs at
-// render time too, but persisting the clamped value keeps the next
-// `j`/`k`/`pgdown` press relative to the visible window instead of a
-// stranded "ghost" offset past the last row.
-func (m *Model) syncSettingsGeneralScroll() {
+// refreshSettingsGeneralLines rebuilds the linelist's body lines +
+// viewport from the current Settings › General render. Called from
+// every *Model handler that touches the scroll state so the
+// linelist always has accurate inputs before its ScrollBy fires.
+func (m *Model) refreshSettingsGeneralLines() {
 	body := m.renderSettingsGeneralBody()
-	total := strings.Count(body, "\n") + 1
-	m.settingsGeneralScroll = clampSettingsGeneralScroll(
-		m.settingsGeneralScroll,
-		total,
-		m.settingsGeneralViewportRows(),
-	)
+	lines := strings.Split(body, "\n")
+	// WithCursor(-1) forces the no-selection sentinel even when the
+	// parent Model was constructed via a bare struct literal (test
+	// path) — the zero-value linelist.Model has cursor=0 which would
+	// trip Resync's Follow branch and clamp scroll to line 0 every
+	// frame. Settings › General is read-only, so cursor=-1 is always
+	// correct here.
+	m.settingsGeneralLines = m.settingsGeneralLines.
+		WithCursor(-1).
+		WithLines(lines).
+		WithViewport(m.settingsGeneralViewportRows())
 }
 
 // maxSettingsGeneralScroll returns the offset that puts the last body
-// row at the bottom of the viewport — used by `G`/`end` so the jump-to-
-// end key lands on the same row as if the user had paged all the way
-// down.
+// row at the bottom of the viewport. Surfaces the bound the linelist
+// component clamps to internally — at the bottom, only the
+// "▲ N above" hint reserves a row (no below-hint), so the formula
+// is total - viewport + AboveHintRows(HintsSplit) = total - viewport
+// + 1. Test harness reads this to assert `G` lands on the right
+// offset.
 func (m Model) maxSettingsGeneralScroll() int {
 	body := m.renderSettingsGeneralBody()
 	total := strings.Count(body, "\n") + 1
@@ -181,9 +189,11 @@ func (m Model) maxSettingsGeneralScroll() int {
 	if viewport <= 0 {
 		return 0
 	}
-	dataRows := scrollDataRows(viewport)
-	if total <= dataRows {
+	bound := total - viewport + 1
+	if bound < 0 {
 		return 0
 	}
-	return total - dataRows
+	return bound
 }
+
+// maxSettingsGeneralScroll returns the offset that puts the last body

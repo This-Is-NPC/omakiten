@@ -48,14 +48,18 @@ func (m *Model) handleLogsKey(msg tea.KeyMsg) {
 	}
 }
 
-// syncLogsScroll keeps m.logsScroll aligned so the selected log row stays
-// inside the viewport. `sliceScrollRows` reserves up to 2 of the panel
-// rows for "▲ above" / "▼ below" hints, so the data window the cursor
-// can actually live in is `logsViewportRows() - 2`. Pass that effective
-// size to followCursor — otherwise the cursor lands in the reserved
-// zone and the render clips it without anyone scrolling.
+// syncLogsScroll syncs the logsList linelist.Model so the selected
+// log row stays inside the viewport. Routes through WithLines +
+// WithViewport + WithCursor so scrollwindow.Resync owns the
+// follow-cursor + clamp chain in one place.
+//
+// Items carry only Height (Content empty) because the renderLogs
+// path builds its own dataRows + uses sliceScrollRows for the
+// visible slice — the linelist's role here is scroll state, not
+// rendering.
 func (m *Model) syncLogsScroll() {
-	m.logsScroll = followCursor(m.logsScroll, m.logsSelected, scrollDataRows(m.logsViewportRows()), len(m.logs))
+	lines := make([]string, len(m.logs))
+	m.logsList = m.logsList.WithLines(lines).WithViewport(m.logsViewportRows()).WithCursor(m.logsSelected)
 }
 
 // logsViewportRows returns how many data rows fit in the activity log
@@ -177,7 +181,7 @@ func (m Model) renderLogsWidePanel() string {
 		m.styles.info.Render(fmt.Sprintf(m.t("tui.log.column_header_fmt"), logOperationWidth, m.t("tui.log.operation_col"), logProjectWidth, m.t("tui.log.project_col"))),
 		m.hRule(contentWidth),
 	}
-	rows = append(rows, m.sliceScrollRows(dataRows, m.logsScroll, m.logsViewportRows())...)
+	rows = append(rows, m.sliceScrollRows(dataRows, m.logsList.Scroll(), m.logsViewportRows())...)
 	rows = append(rows, "", m.styles.hint.Render(m.t("tui.log.tui_refresh_note")))
 
 	return m.styles.panel.Render(strings.Join(rows, "\n"))
@@ -224,7 +228,7 @@ func (m Model) renderLogsCompactPanel() string {
 		m.styles.kickerCount(m.t("tui.kicker.activity"), limit),
 		m.hRule(width),
 	}
-	rows = append(rows, m.sliceScrollRows(dataRows, m.logsScroll, m.logsViewportRows())...)
+	rows = append(rows, m.sliceScrollRows(dataRows, m.logsList.Scroll(), m.logsViewportRows())...)
 	rows = append(rows, "", m.styles.hint.Render(m.t("tui.log.refresh_hint")))
 	return m.styles.panel.Render(strings.Join(rows, "\n"))
 }
