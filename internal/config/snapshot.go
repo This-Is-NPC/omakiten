@@ -293,6 +293,42 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 	snap.catalogTUI = buildSurfaceCatalog(snap.languagesByCode, eff.TUI, baseline)
 	snap.agentOutputLang = eff.AgentOutput
 
+	// RAM trim: every locale pack ships ~150 keys (long Hindi /
+	// Marathi packs ~1000+) which translates to ~7-50 KB of map
+	// overhead per pack. The picker only needs Code/Name/Native;
+	// the catalogs already captured their pointers into the
+	// active/baseline languages above. Drop Keys on every pack that
+	// is neither the active CLI / TUI / agent-output code nor the
+	// en baseline so the snapshot's residual footprint stays
+	// proportional to the surfaces in use, not the total locales
+	// shipped. The catalogs' pointers were taken on local copies
+	// (heap-escaped via the return) so the map drop here does not
+	// race-trim the catalogs.
+	keep := map[string]bool{}
+	if eff.CLI != "" {
+		keep[eff.CLI] = true
+	}
+	if eff.TUI != "" {
+		keep[eff.TUI] = true
+	}
+	if eff.AgentOutput != "" {
+		keep[eff.AgentOutput] = true
+	}
+	keep["en"] = true
+	for code, lang := range snap.languagesByCode {
+		if keep[code] {
+			continue
+		}
+		lang.Keys = nil
+		snap.languagesByCode[code] = lang
+	}
+	for i, lang := range snap.languages {
+		if keep[lang.Code] {
+			continue
+		}
+		snap.languages[i].Keys = nil
+	}
+
 	return snap
 }
 
