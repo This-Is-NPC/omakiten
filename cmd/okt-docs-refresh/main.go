@@ -131,10 +131,6 @@ func run(root string, check bool) error {
 
 	generated[".docs/_generated/tag-vocabulary.md"] = renderTagVocabulary(presets)
 
-	// prompt-costs.md is hand-maintained from `mise run mcp:prompts` output
-	// until a dedicated cost-snapshot subtask lands. Reading on disk so
-	// includes still resolve, but no overwrite here.
-
 	diffs := []string{}
 	for rel, content := range generated {
 		full := filepath.Join(root, rel)
@@ -614,9 +610,8 @@ func splitTarget(s string) (rel, section string) {
 }
 
 // stripGeneratedHeader drops the leading "<!-- GENERATED ... -->" comment line
-// (the docs:refresh banner, or the hand-maintained prompt-costs / requirements
-// variants) before splicing content into a marker block in another doc — the
-// surrounding file already names the source on the BEGIN marker.
+// (the docs:refresh banner) before splicing content into a marker block in
+// another doc — the surrounding file already names the source on the BEGIN marker.
 func stripGeneratedHeader(s string) string {
 	if strings.HasPrefix(s, "<!-- GENERATED") {
 		if i := strings.Index(s, "\n"); i >= 0 {

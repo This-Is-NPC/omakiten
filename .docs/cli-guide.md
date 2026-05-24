@@ -475,6 +475,37 @@ Rerun matrix:
 
 Output entries carry `op = added | removed | changed` plus the relevant side values. Maps descend recursively; lists and scalars compare by deep equality.
 
+### `okt config language` — inspect or update the language triple
+
+`internal/cli/config_language.go`. Three subcommands manage the CLI / TUI / agent-output language triple captured at install time. All writes go through the bundle editor (atomic temp-file + rename).
+
+#### `okt config language show`
+
+Reports the resolved triple — what the CLI prints, what the TUI renders, and what the agent uses for natural-language output — plus the kit default and the source of each (default vs. user override).
+
+#### `okt config language set [--cli CODE] [--tui CODE] [--agent FREEFORM]`
+
+Updates one or more of the three. CLI / TUI codes are validated against the loaded language packs (`internal/config/language.go::LoadLanguages`); unknown codes return `validation_error` with the list of available packs. The agent string is free-form (e.g. `"Português (Brasil)"`) because it is sent verbatim to the LLM. Persisting only the changed slot keeps the other two untouched.
+
+#### `okt config language reset [--cli] [--tui] [--agent] [--all]`
+
+Reverts the selected slot(s) to the kit default. `--all` clears every override at once. No-op when the slot is already at default.
+
+---
+
+## Database
+
+### `okt db backup [--out PATH]`
+
+`internal/cli/db.go`. Takes an online consistent backup of the global SQLite database (safe under live WAL-mode reads/writes — uses the SQLite Online Backup API surfaced by the `modernc.org/sqlite` driver, not a file copy). Default destination is `~/.local/share/omakiten/backups/<timestamp>.db` (or `$XDG_DATA_HOME` / `$OMAKITEN_HOME/data/backups/`); `--out` overrides with any writable path. JSON envelope reports source path, destination path, byte count, and elapsed duration.
+
+```sh
+okt db backup
+okt db backup --out /mnt/external/omakiten-2026-05-24.db
+```
+
+Restoring is a manual operation today: stop any running `okt mcp serve` / `okt tui`, move the backup file in over the live `omakiten.db`, and restart. No `okt db restore` ships intentionally — restores are rare, destructive, and best done with eyes-on.
+
 ---
 
 ## Skills

@@ -159,9 +159,9 @@ Every field above is required and validated. Missing or out-of-range values fail
 
 #### Worked example — taming a long-lived task
 
-A task with five long `#resume` comments (each ~1500 chars) ships ~6000 chars (~1500 tokens) of comments alone on every `tasks.continue` call. Combined with the workflow block (~150 tokens), the tool result lands at ~2400 tokens.
+A task with many long `#resume` comments dominates every `tasks.continue` call: each comment ships in full, the workflow block ships once, and a fresh task vs. a year-old task differ by an order of magnitude in payload size.
 
-Two changes cut that by more than half:
+Two settings collapse the bulk:
 
 ```yaml
 config:
@@ -170,9 +170,9 @@ config:
     max_comment_chars: 500    # 0 → 500
 ```
 
-After: 3 comments × 500 chars = ~375 tokens for comments, no truncation on the most recent (it stays under 500). Workflow still ships (~150 tokens) unless you also add `include_workflow_in_continue: false` once `/okt` ran. Total: ~525 tokens — a ~78% reduction on the comment-heavy task.
+`recent_comment_limit: 3` keeps the most recent three; `max_comment_chars: 500` hard-caps each body. Add `include_workflow_in_continue: false` once `/okt` has loaded the workflow in the session to drop the per-call workflow block too. The exact byte saving depends on each comment's length and the active workflow's shape — the qualitative effect is "load only what is new since last call".
 
-Cross-reference: `.docs/mcp-guide.md#anatomy-of-an-mcp-command` walks through how the tool result composes and which fields each setting trims.
+Cross-reference: `.docs/mcp-guide.md#tuning-context-cost` walks through how the tool result composes and which fields each setting trims.
 
 ### `config.tui`
 

@@ -196,8 +196,11 @@ Every tool accepts optional project selector fields where useful: `project_id`, 
 | `okt-implement` | Execute approved engineering work with strict rigor and commit discipline. |
 | `okt-document` | Survey project documentation for drift and propose updates. |
 | `okt-config` | Orient the agent on the active Omakiten config layout before edits. |
+| `okt-commit` | Draft Conventional Commits for the working tree without pushing. |
+| `okt-review` | Walk a diff through Fowler/Beck/Martin/Feathers lens; emit findings + refactor opportunities by file:line, severity-tagged. Read-only. |
+| `okt-check` | Discover the project's check targets via `mise tasks` and report pass/fail in a tabular comment. |
 
-The default kit follows a REST-style handoff pattern: each prompt's action text ends by suggesting the next prompt in the cycle. `okt → okt-resume / okt-imagine → okt-create → okt-continue → okt-implement` is the happy path; `okt-document` and `okt-config` are parallel.
+The default kit follows a REST-style handoff pattern: each prompt's action text ends by suggesting the next prompt in the cycle. `okt → okt-resume / okt-imagine → okt-create → okt-continue → okt-implement` is the happy path; `okt-document`, `okt-config`, `okt-commit`, `okt-review`, and `okt-check` are parallel surfaces.
 
 ## Anatomy of an MCP command
 
@@ -273,13 +276,13 @@ Not every entity body trafega in the prompt. The renderer pre-loads what the age
 | Persona | `description` + full `body` (inline under `## Persona`) | Always inline — body carries the role's procedural loop |
 | Skills | Names only, inline list under `## Skills — A, B, C` | Never — descriptions are decorative; procedure lives in persona body / action text |
 | Laws | `severity` + `name` + full `body` (inline under `## Laws`) | Always inline — laws are constraints that must frame every step |
-| Templates | Slug + optional name (when divergent from slug) + default kind + description | On demand via `templates.show <slug>` — bodies are large (the `pull-request` scaffold is ~700 tokens by itself) |
+| Templates | Slug + optional name (when divergent from slug) + default kind + description | On demand via `templates.show <slug>` — template bodies can be long (PR scaffolds, story templates) and shipping them inline would dominate the prompt window |
 
 The fetch hint for templates lives in the action text or the bound persona's body — not as a generic footer — so the prompt only mentions `templates.show` for commands that actually need it. `internal/agentruntime.TestTemplateBoundCommandsCarryFetchHint` enforces that contract: every `okt-*` prompt with bound templates must surface the hint somewhere in its rendered Markdown.
 
 This follows Anthropic's just-in-time context engineering principle: ship lightweight identifiers, let the agent fetch payloads on demand. The `template-fidelity` law remains pre-loaded (it is a constraint that must shape the fetch when it happens), but the body the constraint applies to lives behind a tool call.
 
-Trade-off: one extra MCP round-trip on the materialization step (only when the agent actually drafts the PR or fills the scaffold), in exchange for hundreds of tokens saved on every prompt resolution that does not reach materialization.
+Trade-off: one extra MCP round-trip on the materialization step (only when the agent actually drafts the PR or fills the scaffold), in exchange for a meaningful drop in every prompt resolution that does not reach materialization.
 
 ### What does NOT ship in the prompt body
 
@@ -287,28 +290,11 @@ Trade-off: one extra MCP round-trip on the materialization step (only when the a
 - Skill descriptions — see table above.
 - Law count parenthetical — `## Laws` carries no `(N)` suffix; the agent does not branch on the number.
 
-### Per-prompt fixed token cost
+### Per-prompt size budgets
 
-<!-- BEGIN include:_generated/prompt-costs.md -->
-# Prompt Costs — omakase canonical kit
+Workflow presets are user-tunable — bound persona / skills / laws / templates change as authors fork the kit, so absolute prompt sizes are an unstable target. A regression test (`internal/agentruntime/prompt_budget_test.go`) holds each prompt to its current footprint plus ~30% headroom against the canonical omakase kit; once a future change pushes a prompt past its budget the test fails and forces a deliberate tradeoff (trim entity bodies, add a JIT optimization, or raise the budget with justification).
 
-| Prompt | Bytes | ~Tokens | Drivers |
-|---|---|---|---|
-| `okt-document` | 2073 | 520 | documentation-agent + 5 skills + 5 laws |
-| `okt-resume` | 2185 | 545 | engineer + 6 skills (TBD/CI/TDD/DORA + implementation/markdown) + 4 laws + persona body (trunk-based loop) |
-| `okt` | 2201 | 550 | engineer + 6 skills + 4 laws + persona body |
-| `okt-continue` | 2272 | 570 | engineer + 6 skills + 4 laws + persona body |
-| `okt-config` | 2367 | 590 | documentation-agent + 5 skills + 5 laws + config-orientation metadata (JIT) |
-| `okt-imagine` | 4439 | 1110 | product-owner + 10 product-discipline skills + 7 laws (template-fidelity disabled) + persona body (5W2H Discovery loop) + 2 templates metadata (JIT) |
-| `okt-implement` | 6270 | 1570 | engineer + 6 skills + 12 laws (4 globals/inherited + 8 command-level TBD/CI/DORA/TDD) + persona body + 3 templates metadata (JIT) |
-| `okt-create` | 7131 | 1780 | product-owner + 10 skills + 9 laws (3 globals + 6 persona frontmatter + 2 command-level) + persona body + 4 templates metadata (JIT) |
-
-Without JIT, `okt-implement` would carry the full `pull-request` body (~700 extra tokens). Templates bound via `mcp_commands.<cmd>.templates` ship only metadata in the prompt and are fetched JIT via `templates.show`.
-
-A regression test (`internal/agentruntime/prompt_budget_test.go`) caps each prompt at current size + ~30% headroom. Current budgets (bytes): okt 2300 · okt-imagine 4900 · okt-create 7600 · okt-resume 2300 · okt-continue 2400 · okt-implement 8200 · okt-document 2700 · okt-config 3050.
-<!-- END include -->
-
-A regression test (`internal/agentruntime/prompt_budget_test.go`) enforces the per-prompt byte budgets listed above; once a future change pushes a prompt past its budget the test fails and forces a deliberate tradeoff (trim entity bodies, add a JIT optimization, or raise the budget with justification).
+The `mise run mcp:prompts` task renders every resolved prompt to stdout against the dev kit — use it locally to inspect the current shape of any prompt without committing a snapshot table to docs.
 
 ### Prompt engineering principles applied
 
@@ -321,35 +307,20 @@ The default kit follows Anthropic's [context engineering for AI agents](https://
 - **Failure-driven additions.** Add a law or example only after observing a real failure mode. `template-fidelity` was added because the agent fabricated `Closes #40`; `authorize-remote-writes` was added because `git push` is destructive. Don't speculate.
 - **Markdown sections, not XML tags.** The renderer uses `## Persona`, `## Skills`, `## Laws`, `## Templates`, `## Action`. Same load-bearing structure Anthropic recommends, but markdown reads cleanly in both the agent prompt and a developer's terminal when debugging.
 
-### Variable tool-result cost — `okt-continue` worked example
+### Variable tool-result cost
 
-The fixed prompt is only half the picture. For prompts that fetch task state, the tool result dominates. `tasks.continue` ships:
-
-- the full `task` (title + description — descriptions can be thousands of chars on rich tasks);
-- the active workflow shape (~150 tokens, redundant if `okt` already ran in the session);
-- dependencies for the task;
-- the last 5 comments reversed-chronological with full body and tags;
-- the last 3 project context entries;
-- a `next_step_prompt` string.
-
-For a fresh task this lands at ~400 tokens; for a long-running task with verbose `#resume` and `#documentation` comments, 3000+ tokens is realistic. So:
-
-| Component | Tokens (typical) | Source |
-|---|---|---|
-| `okt-continue` prompt | ~570 | Fixed; `service.ResolveCommand` rendering |
-| `tasks.continue` tool result | 400 – 3000+ | Varies; dominated by `comments[]` body length |
-| **Total per `/okt-continue`** | **~970 – 3600** | |
+The composed prompt is only half the picture. For prompts that fetch task state, the tool result is the dominant variable. `tasks.continue`, for example, ships the task body (description can be long on rich tasks), the active workflow shape, the dependency list, the most recent comments with full body and tags, the most recent project context entries, and a `next_step_prompt` string. The total grows linearly with comment volume and description length — a fresh task is compact, a long-running one with many `#resume` notes dominates the window.
 
 ### Tuning context cost
 
 The biggest variable is the tool result, not the prompt. Four knobs in `config.mcp` (see `.docs/configuration-guide.md#configmcp`) shape it without changing the protocol:
 
-| Setting | Affects | Typical saving on `/okt-continue` |
+| Setting | Affects | Impact |
 |---|---|---|
-| `recent_comment_limit` (int, default `5`) | Caps the comment-tail length in every checkpoint endpoint. Drop to `3` on tasks with many `#resume` notes. | ~40% of the `comments[]` block |
-| `max_comment_chars` (int, default `0`) | Truncates each comment body past N runes with `…`. Set to ~`500` for a hard floor while keeping the latest exchange readable. | ~50–70% of the `comments[]` block when bodies are long |
-| `include_workflow_in_continue` (`*bool`, default `true`) | Skips the `workflow` block in `tasks.continue`. The agent already has the workflow from the first `/okt` of the session — set `false` to stop re-shipping. | ~150 fixed tokens per call |
-| `cache_prompts` (`*bool`, default `true`) | Emits an Anthropic `cache_control` hint on `prompts/get` content. Aware clients reuse the cached prompt across calls. | ~90% of the prompt (~510 tokens on okt-continue; up to ~1600 tokens on okt-create) on subsequent calls within the cache window |
+| `recent_comment_limit` (int, default `5`) | Caps the comment-tail length in every checkpoint endpoint. Drop to `3` on tasks with many `#resume` notes. | Proportional to the truncated rows × their average body length. |
+| `max_comment_chars` (int, default `0`) | Truncates each comment body past N runes with `…`. Set to ~`500` for a hard floor while keeping the latest exchange readable. | High on comment-heavy tasks; nil on terse ones. |
+| `include_workflow_in_continue` (`*bool`, default `true`) | Skips the `workflow` block in `tasks.continue`. The agent already has the workflow from the first `/okt` of the session — set `false` to stop re-shipping. | Fixed per-call; matters on multi-task sessions. |
+| `cache_prompts` (`*bool`, default `true`) | Emits an Anthropic `cache_control` hint on `prompts/get` content. Aware clients reuse the cached prompt across calls. | Bulk of the prompt body on subsequent calls within the cache window. |
 
 The same accounting applies to every prompt — substitute the bound tool's DTO for the variable row above. `comments.list` is intentionally exempt from `max_comment_chars` because it's the explicit "read the full thread" endpoint; truncation would make the call useless.
 

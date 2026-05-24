@@ -713,16 +713,18 @@ The four official presets are starting points. Forking is the expected way to ma
 
 ### Token-friendly principles
 
-Resolved MCP prompts ship inline with every command call. Every byte counts.
+Resolved MCP prompts ship inline with every command call. Compact entities keep the prompt window predictable across preset variations.
 
-| Constraint | Reason |
+| Principle | Reason |
 |---|---|
-| Law body ≤ 120 tokens | Laws ship inline; keep them compact |
-| Skill body ≤ 80 tokens | Skill names ship inline; bodies are for `templates.show` style on-demand reads |
-| Persona body ≤ 200 tokens | Persona is read every turn |
-| Template body ≤ 250 tokens (frontmatter description ≤ 110 chars) | Template body is fetched JIT via `templates.show` |
-| Law `Bad:` / `Good:` examples only on judgment-call laws | Examples cost tokens; reserve them for clarification |
+| Keep law bodies compact | Laws ship inline; long prose dominates the prompt |
+| Skills lead with names, defer detail | Skill names ship inline; bodies belong in `templates.show`-style on-demand reads |
+| Persona body is read every turn — favour procedure over prose | Persona is part of every prompt; verbosity multiplies |
+| Templates carry short frontmatter `description`, fetch body JIT | Template body lives behind `templates.show`; the prompt only needs the metadata to know when to fetch |
+| Law `Bad:` / `Good:` examples only on judgment-call laws | Examples earn their bytes only when they teach generalization |
 | Industry abbreviations inline (TBD, DORA, TDD, SRE, SLO, ADR) | Definitions live once in the persona / guide; don't repeat |
+
+The regression test `internal/agentruntime/prompt_budget_test.go` holds each `okt-*` prompt to its current footprint plus headroom — pushing one past its budget forces a deliberate tradeoff (trim entity bodies, add a JIT optimization, or raise the budget with justification). Run `mise run mcp:prompts` to inspect every resolved prompt against the active kit.
 
 ### Reuse rule
 
@@ -785,6 +787,6 @@ Every cited work lives in [`reference/bibliography.md`](./reference/bibliography
 
 - [`configuration-guide.md`](configuration-guide.md) — every yaml field, semantics, validation rules.
 - [`guards-guide.md`](guards-guide.md) — guard kinds, evaluation order, permissions resolution, operation guards.
-- [`mcp-guide.md`](mcp-guide.md) — MCP tool surface, prompt anatomy, token costs.
+- [`mcp-guide.md`](mcp-guide.md) — MCP tool surface, prompt anatomy, tuning context cost.
 - [`data-model-guide.md`](internal/data-model-guide.md) — SQLite schema and migration history.
 - [`domain-events.md`](domain-events.md) — `events` table catalog and payload contracts.

@@ -66,7 +66,7 @@ Once connected, two modes coexist: **canonical slash prompts** for the most comm
 
 ### Canonical prompts
 
-Eight prompts ship as MCP prompts. The first five form the happy-path cycle (`okt → okt-resume / okt-imagine → okt-create → okt-continue → okt-implement`); the last three are parallel surfaces for execution, drift survey, and config orientation.
+Eleven prompts ship as MCP prompts. The first five form the happy-path cycle (`okt → okt-resume / okt-imagine → okt-create → okt-continue → okt-implement`); the remaining six are parallel surfaces for execution, drift survey, config orientation, commit drafting, diff review, and check discovery.
 
 | Prompt | When to use it |
 |---|---|
@@ -78,6 +78,9 @@ Eight prompts ship as MCP prompts. The first five form the happy-path cycle (`ok
 | `/okt-implement` | **Executing approved work** — bounded self-review, conventional commits, self-report on retried errors. |
 | `/okt-document` | **Surveying project documentation** — lists drift items in `.docs/`, `README.md`, `CONTRIBUTING.md`; does not edit in place. |
 | `/okt-config` | **Orienting the agent on the active config layout** — path resolution, entity folders, frontmatter shapes, wiring, guard kinds. Read-only. |
+| `/okt-commit` | **Draft Conventional Commits from the working tree** — groups changes by intent, writes the "why", never pushes. |
+| `/okt-review` | **Walk a diff through Fowler/Beck/Martin/Feathers lens** — emits findings + refactor opportunities by file:line, severity-tagged. Read-only. |
+| `/okt-check` | **Discover and run the project's check targets** — `mise tasks` discovery first; report pass/fail in a tabular comment. |
 
 ### Natural-language scenarios
 
@@ -152,7 +155,7 @@ Authoring your own preset is a first-class path. The agent orients itself on the
 
 Run it outside a project and it opens a multi-project home — pick one, work on it, and your shell `cd`s into that project's folder when you exit. → [TUI Guide](.docs/tui-guide.md)
 
-The full MCP surface (44 tools, 2 resources, 8 prompts) is documented in the [MCP Guide](.docs/mcp-guide.md).
+The full MCP surface (44 tools, 2 resources, 11 prompts) is documented in the [MCP Guide](.docs/mcp-guide.md).
 
 ## Documentation
 
@@ -178,7 +181,7 @@ The full MCP surface (44 tools, 2 resources, 8 prompts) is documented in the [MC
 - [Data Model Guide](.docs/internal/data-model-guide.md)
 - [Integration Guide — wiring hooks](.docs/internal/integration-guide.md)
 - [Per-project Snapshot architecture](.docs/internal/per-project-snapshot.md)
-- [Requirements & Behavior Map](.docs/_generated/requirements.md)
+- [Requirements & Behavior Map](.docs/internal/requirements.md)
 
 **Project**
 

@@ -23,8 +23,7 @@ Single contract for editing this repo's documentation. If a change to docs feels
 | Mental models (PDCA / 5W2H / SMART / INVEST / MoSCoW / RICE / OKR) | `.docs/explanation/mental-models.md` | linked by anchor |
 | Path resolution semantics | `.docs/reference/path-resolution.md` (canon: `internal/paths/paths.go`) | linked by anchor |
 | Filesystem layout tree | `.docs/reference/layout.md` | linked by anchor |
-| Token cost per prompt | `.docs/_generated/prompt-costs.md` | auto-include |
-| Requirements catalog | `.docs/_generated/requirements.md` | linked |
+| Requirements catalog | `.docs/internal/requirements.md` | linked |
 
 ## Cross-reference patterns
 

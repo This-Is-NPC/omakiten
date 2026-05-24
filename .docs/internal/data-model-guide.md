@@ -208,7 +208,11 @@ completed_at TEXT                        -- stamped on transition INTO terminal 
 plan_id      INTEGER REFERENCES plans(id) ON DELETE SET NULL
 wave_id      INTEGER REFERENCES plan_waves(id) ON DELETE SET NULL
 assigned_to  TEXT                        -- free-text claimant; populated by
-                                          -- plans.claim_next or okt assign
+                                          -- plans.claim_next or okt assign.
+                                          -- plans.claim_next publishes task.assigned
+                                          -- post-commit since 5b25db6 (2026-05-24);
+                                          -- the row landed on disk pre-fix but the
+                                          -- bus stayed silent.
 UNIQUE(project_id, id)
 ```
 
