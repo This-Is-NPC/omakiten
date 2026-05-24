@@ -38,7 +38,7 @@ INSERT INTO plans(project_id, slug, name, goal_body)
 VALUES (?, ?, ?, ?)
 RETURNING id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at
 `, projectID, slug, name, goalBody)
-			plan, err := scanPlan(row)
+			plan, err := sqlutil.ScanRow(row, decodePlan)
 			if err != nil {
 				if isUniqueViolation(err) {
 					return domain.Plan{}, domain.NewError(domain.ErrPlanSlugConflict,
@@ -70,7 +70,7 @@ func (s *Store) GetPlanBySlug(ctx context.Context, projectID int64, slug string)
 SELECT id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at
 FROM plans WHERE project_id = ? AND slug = ?
 `, projectID, slug)
-	plan, err := scanPlan(row)
+	plan, err := sqlutil.ScanRow(row, decodePlan)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Plan{}, domain.NewError(domain.ErrPlanNotFound, "plan not found",
@@ -88,7 +88,7 @@ func (s *Store) GetPlanByID(ctx context.Context, projectID, planID int64) (domai
 SELECT id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at
 FROM plans WHERE project_id = ? AND id = ?
 `, projectID, planID)
-	plan, err := scanPlan(row)
+	plan, err := sqlutil.ScanRow(row, decodePlan)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Plan{}, domain.NewError(domain.ErrPlanNotFound, "plan not found",
@@ -112,15 +112,7 @@ FROM plans WHERE project_id = ? ORDER BY id ASC
 	}
 	defer func() { _ = rows.Close() }()
 
-	var plans []domain.Plan
-	for rows.Next() {
-		plan, err := scanPlanRows(rows)
-		if err != nil {
-			return nil, err
-		}
-		plans = append(plans, plan)
-	}
-	return plans, rows.Err()
+	return sqlutil.ScanAll(rows, decodePlan)
 }
 
 // UpdatePlanGoalBody rewrites the plan's goal_body column and bumps
@@ -153,7 +145,7 @@ UPDATE plans SET goal_body = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 RETURNING id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at
 `, goalBody, planID)
-			return scanPlan(row)
+			return sqlutil.ScanRow(row, decodePlan)
 		},
 		Payload: func(_ domain.Plan) (string, error) {
 			b, err := json.Marshal(map[string]any{"length": len(goalBody)})
@@ -949,24 +941,18 @@ RETURNING id, entity_type, entity_id, project_id, event_type, COALESCE(body, '')
 	return event, nil
 }
 
-func scanPlan(row *sql.Row) (domain.Plan, error) {
+// decodePlan reads the canonical `plans` SELECT column list into a
+// domain.Plan. The closure shape lets the QueryRow path
+// (sqlutil.ScanRow) and the QueryContext path (sqlutil.ScanAll) share
+// the same column list, so the historic scanPlan / scanPlanRows pair
+// can no longer drift apart silently. Column order MUST match every
+// `SELECT id, project_id, slug, name, goal_body, status, created_at,
+// updated_at, completed_at FROM plans ...` in this file.
+func decodePlan(scan func(...any) error) (domain.Plan, error) {
 	var plan domain.Plan
 	var goalBody sql.NullString
 	var completedAt sql.NullString
-	if err := row.Scan(&plan.ID, &plan.ProjectID, &plan.Slug, &plan.Name,
-		&goalBody, &plan.Status, &plan.CreatedAt, &plan.UpdatedAt, &completedAt); err != nil {
-		return domain.Plan{}, err
-	}
-	plan.GoalBody = sqlutil.NullStringOr(goalBody, "")
-	plan.CompletedAt = sqlutil.NullStringOr(completedAt, "")
-	return plan, nil
-}
-
-func scanPlanRows(rows *sql.Rows) (domain.Plan, error) {
-	var plan domain.Plan
-	var goalBody sql.NullString
-	var completedAt sql.NullString
-	if err := rows.Scan(&plan.ID, &plan.ProjectID, &plan.Slug, &plan.Name,
+	if err := scan(&plan.ID, &plan.ProjectID, &plan.Slug, &plan.Name,
 		&goalBody, &plan.Status, &plan.CreatedAt, &plan.UpdatedAt, &completedAt); err != nil {
 		return domain.Plan{}, err
 	}
