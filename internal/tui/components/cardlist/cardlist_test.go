@@ -50,8 +50,10 @@ func TestModelZeroValueIsEmptyAndSafe(t *testing.T) {
 	if _, ok := m.ActiveItem(); ok {
 		t.Fatalf("ActiveItem returned ok=true on zero-value")
 	}
-	// Mutators on a zero-value Model must not panic.
-	m = m.MoveCursor(1).WithViewport(10)
+	// Mutators on a zero-value Model must not panic. Assign through
+	// a discard receiver so staticcheck does not flag the value as
+	// unused; the test goal is the "no panic" path.
+	_ = m.MoveCursor(1).WithViewport(10)
 }
 
 func TestNewReturnsNoSelection(t *testing.T) {
