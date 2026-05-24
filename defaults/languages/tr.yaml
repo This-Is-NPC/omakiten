@@ -305,6 +305,8 @@ keys:
   cli.workflow.orphan.flag.dry-run: "migrasyon planını uygulamadan yazdır (--confirm yoksa varsayılan)"
   cli.err.config_invalid: "config geçersiz"
   cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
+  cli.editor.not_configured: "no editor configured; set $VISUAL or $EDITOR"
+  cli.editor.not_found: "configured editor not found on PATH"
   cli.err.config_unreadable: "config dosyası okunamıyor"
   cli.err.init_seeded_config_invalid: "init ile seed edilen config geçersiz"
   cli.err.invalid_scope: "geçersiz --scope (global veya local bekleniyor)"

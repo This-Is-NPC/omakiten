@@ -304,6 +304,8 @@ keys:
   cli.workflow.orphan.flag.dry-run: "skriv ut migrasjonsplanen uten å anvende (default når --confirm mangler)"
   cli.err.config_invalid: "config er ugyldig"
   cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
+  cli.editor.not_configured: "no editor configured; set $VISUAL or $EDITOR"
+  cli.editor.not_found: "configured editor not found on PATH"
   cli.err.config_unreadable: "config-fil ikke lesbar"
   cli.err.init_seeded_config_invalid: "init-frøet config er ugyldig"
   cli.err.invalid_scope: "ugyldig --scope (vil ha global eller local)"

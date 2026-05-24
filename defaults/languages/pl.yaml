@@ -304,6 +304,8 @@ keys:
   cli.workflow.orphan.flag.dry-run: "wypisz plan migracji bez stosowania (domyślnie gdy brak --confirm)"
   cli.err.config_invalid: "config jest niepoprawny"
   cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
+  cli.editor.not_configured: "no editor configured; set $VISUAL or $EDITOR"
+  cli.editor.not_found: "configured editor not found on PATH"
   cli.err.config_unreadable: "plik config nie jest czytelny"
   cli.err.init_seeded_config_invalid: "zaszczepiony config init jest niepoprawny"
   cli.err.invalid_scope: "niepoprawny --scope (wymaga global lub local)"
