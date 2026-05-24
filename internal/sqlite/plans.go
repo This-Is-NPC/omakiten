@@ -25,43 +25,41 @@ func (s *Store) CreatePlan(ctx context.Context, projectID int64, slug, name, goa
 		return domain.Plan{}, domain.NewError(domain.ErrValidation, "plan name is required", nil)
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return domain.Plan{}, err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	row := tx.QueryRowContext(ctx, `
+	return txMutateAndEmit(ctx, s, TxMutation[domain.Plan]{
+		Scope:      EventScopeEntity,
+		EntityType: domain.EventEntityPlan,
+		EventType:  domain.EventTypePlanCreated,
+		ProjectID:  projectID,
+		EntityID:   func(p domain.Plan) int64 { return p.ID },
+		Mutate: func(ctx context.Context, tx *sql.Tx) (domain.Plan, error) {
+			row := tx.QueryRowContext(ctx, `
 INSERT INTO plans(project_id, slug, name, goal_body)
 VALUES (?, ?, ?, ?)
 RETURNING id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at
 `, projectID, slug, name, goalBody)
-
-	plan, err := scanPlan(row)
-	if err != nil {
-		if isUniqueViolation(err) {
-			return domain.Plan{}, domain.NewError(domain.ErrPlanSlugConflict,
-				"plan slug already exists for this project",
-				map[string]any{"project_id": projectID, "slug": slug})
-		}
-		return domain.Plan{}, err
-	}
-
-	payload, _ := json.Marshal(map[string]any{
-		"slug":       plan.Slug,
-		"name":       plan.Name,
-		"project_id": plan.ProjectID,
+			plan, err := scanPlan(row)
+			if err != nil {
+				if isUniqueViolation(err) {
+					return domain.Plan{}, domain.NewError(domain.ErrPlanSlugConflict,
+						"plan slug already exists for this project",
+						map[string]any{"project_id": projectID, "slug": slug})
+				}
+				return domain.Plan{}, err
+			}
+			return plan, nil
+		},
+		Payload: func(plan domain.Plan) (string, error) {
+			b, err := json.Marshal(map[string]any{
+				"slug":       plan.Slug,
+				"name":       plan.Name,
+				"project_id": plan.ProjectID,
+			})
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		},
 	})
-	ev, err := insertEntityEvent(ctx, tx, domain.EventEntityPlan, plan.ID, projectID, domain.EventTypePlanCreated, string(payload))
-	if err != nil {
-		return domain.Plan{}, err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return domain.Plan{}, err
-	}
-	s.publishEvent(ctx, ev)
-	return plan, nil
 }
 
 // GetPlanBySlug resolves a plan by its (project_id, slug) pair. Errors with
@@ -129,45 +127,41 @@ FROM plans WHERE project_id = ? ORDER BY id ASC
 // different project or does not exist; emits plan.goal_edited so
 // metrics.summary and the hooks engine see the edit.
 func (s *Store) UpdatePlanGoalBody(ctx context.Context, projectID, planID int64, goalBody string) (domain.Plan, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return domain.Plan{}, err
-	}
-	defer func() { _ = tx.Rollback() }()
+	return txMutateAndEmit(ctx, s, TxMutation[domain.Plan]{
+		Scope:      EventScopeEntity,
+		EntityType: domain.EventEntityPlan,
+		EventType:  domain.EventTypePlanGoalEdited,
+		ProjectID:  projectID,
+		EntityID:   func(p domain.Plan) int64 { return p.ID },
+		Mutate: func(ctx context.Context, tx *sql.Tx) (domain.Plan, error) {
+			var ownerProjectID int64
+			if err := tx.QueryRowContext(ctx, `SELECT project_id FROM plans WHERE id = ?`, planID).Scan(&ownerProjectID); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return domain.Plan{}, domain.NewError(domain.ErrPlanNotFound, "plan not found",
+						map[string]any{"plan_id": planID})
+				}
+				return domain.Plan{}, err
+			}
+			if ownerProjectID != projectID {
+				return domain.Plan{}, domain.NewError(domain.ErrPlanNotFound, "plan not found in active project",
+					map[string]any{"plan_id": planID, "project_id": projectID})
+			}
 
-	var ownerProjectID int64
-	if err := tx.QueryRowContext(ctx, `SELECT project_id FROM plans WHERE id = ?`, planID).Scan(&ownerProjectID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return domain.Plan{}, domain.NewError(domain.ErrPlanNotFound, "plan not found",
-				map[string]any{"plan_id": planID})
-		}
-		return domain.Plan{}, err
-	}
-	if ownerProjectID != projectID {
-		return domain.Plan{}, domain.NewError(domain.ErrPlanNotFound, "plan not found in active project",
-			map[string]any{"plan_id": planID, "project_id": projectID})
-	}
-
-	row := tx.QueryRowContext(ctx, `
+			row := tx.QueryRowContext(ctx, `
 UPDATE plans SET goal_body = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 RETURNING id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at
 `, goalBody, planID)
-	plan, err := scanPlan(row)
-	if err != nil {
-		return domain.Plan{}, err
-	}
-
-	payload, _ := json.Marshal(map[string]any{"length": len(goalBody)})
-	ev, err := insertEntityEvent(ctx, tx, domain.EventEntityPlan, planID, projectID, domain.EventTypePlanGoalEdited, string(payload))
-	if err != nil {
-		return domain.Plan{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return domain.Plan{}, err
-	}
-	s.publishEvent(ctx, ev)
-	return plan, nil
+			return scanPlan(row)
+		},
+		Payload: func(_ domain.Plan) (string, error) {
+			b, err := json.Marshal(map[string]any{"length": len(goalBody)})
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		},
+	})
 }
 
 // ListPlanTaskDependencies returns dependency edges where both
@@ -307,65 +301,67 @@ func (s *Store) AddPlanWave(ctx context.Context, projectID, planID int64, name s
 		return domain.PlanWave{}, domain.NewError(domain.ErrValidation, "wave name is required", nil)
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return domain.PlanWave{}, err
-	}
-	defer func() { _ = tx.Rollback() }()
+	return txMutateAndEmit(ctx, s, TxMutation[domain.PlanWave]{
+		Scope:      EventScopeEntity,
+		EntityType: domain.EventEntityPlan,
+		EventType:  domain.EventTypePlanWaveAdded,
+		ProjectID:  projectID,
+		// plan.wave_added is keyed by plan id (the wave id rides the
+		// payload) so dashboards can group additions by plan via
+		// entity_id without needing a follow-up join.
+		EntityID: func(_ domain.PlanWave) int64 { return planID },
+		Mutate: func(ctx context.Context, tx *sql.Tx) (domain.PlanWave, error) {
+			// Project-scope check before mutating: returns ErrPlanNotFound when
+			// the plan id belongs to a different project or simply does not exist.
+			var ownerProjectID int64
+			if err := tx.QueryRowContext(ctx, `SELECT project_id FROM plans WHERE id = ?`, planID).Scan(&ownerProjectID); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return domain.PlanWave{}, domain.NewError(domain.ErrPlanNotFound, "plan not found",
+						map[string]any{"plan_id": planID})
+				}
+				return domain.PlanWave{}, err
+			}
+			if ownerProjectID != projectID {
+				return domain.PlanWave{}, domain.NewError(domain.ErrPlanNotFound, "plan not found in active project",
+					map[string]any{"plan_id": planID, "project_id": projectID})
+			}
 
-	// Project-scope check before mutating: returns ErrPlanNotFound when
-	// the plan id belongs to a different project or simply does not exist.
-	var ownerProjectID int64
-	if err := tx.QueryRowContext(ctx, `SELECT project_id FROM plans WHERE id = ?`, planID).Scan(&ownerProjectID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return domain.PlanWave{}, domain.NewError(domain.ErrPlanNotFound, "plan not found",
-				map[string]any{"plan_id": planID})
-		}
-		return domain.PlanWave{}, err
-	}
-	if ownerProjectID != projectID {
-		return domain.PlanWave{}, domain.NewError(domain.ErrPlanNotFound, "plan not found in active project",
-			map[string]any{"plan_id": planID, "project_id": projectID})
-	}
+			if position <= 0 {
+				var maxPos sql.NullInt64
+				if err := tx.QueryRowContext(ctx, `SELECT MAX(position) FROM plan_waves WHERE plan_id = ?`, planID).Scan(&maxPos); err != nil {
+					return domain.PlanWave{}, err
+				}
+				position = int(maxPos.Int64) + 1
+			}
 
-	if position <= 0 {
-		var maxPos sql.NullInt64
-		if err := tx.QueryRowContext(ctx, `SELECT MAX(position) FROM plan_waves WHERE plan_id = ?`, planID).Scan(&maxPos); err != nil {
-			return domain.PlanWave{}, err
-		}
-		position = int(maxPos.Int64) + 1
-	}
-
-	row := tx.QueryRowContext(ctx, `
+			row := tx.QueryRowContext(ctx, `
 INSERT INTO plan_waves(plan_id, name, position) VALUES (?, ?, ?)
 RETURNING id, plan_id, name, position
 `, planID, name, position)
 
-	var wave domain.PlanWave
-	if err := row.Scan(&wave.ID, &wave.PlanID, &wave.Name, &wave.Position); err != nil {
-		if isUniqueViolation(err) {
-			return domain.PlanWave{}, domain.NewError(domain.ErrValidation,
-				"wave position already taken",
-				map[string]any{"plan_id": planID, "position": position})
-		}
-		return domain.PlanWave{}, err
-	}
-
-	payload, _ := json.Marshal(map[string]any{
-		"wave_id":  wave.ID,
-		"name":     wave.Name,
-		"position": wave.Position,
+			var wave domain.PlanWave
+			if err := row.Scan(&wave.ID, &wave.PlanID, &wave.Name, &wave.Position); err != nil {
+				if isUniqueViolation(err) {
+					return domain.PlanWave{}, domain.NewError(domain.ErrValidation,
+						"wave position already taken",
+						map[string]any{"plan_id": planID, "position": position})
+				}
+				return domain.PlanWave{}, err
+			}
+			return wave, nil
+		},
+		Payload: func(wave domain.PlanWave) (string, error) {
+			b, err := json.Marshal(map[string]any{
+				"wave_id":  wave.ID,
+				"name":     wave.Name,
+				"position": wave.Position,
+			})
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		},
 	})
-	ev, err := insertEntityEvent(ctx, tx, domain.EventEntityPlan, planID, projectID, domain.EventTypePlanWaveAdded, string(payload))
-	if err != nil {
-		return domain.PlanWave{}, err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return domain.PlanWave{}, err
-	}
-	s.publishEvent(ctx, ev)
-	return wave, nil
 }
 
 // ListPlanTasks returns every task attached to a plan, ordered by
