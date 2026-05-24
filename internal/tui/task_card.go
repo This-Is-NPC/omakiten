@@ -107,11 +107,11 @@ func (m Model) renderTaskCard(spec taskCardSpec) string {
 	var style lipgloss.Style
 	switch {
 	case spec.Selected:
-		style = styleWidthFromCache(m.cardSelectedStyleByWidth, m.styles.cardSelected, spec.BoxWidth)
+		style = styleWidthFromCache(m.styleByKindWidth, styleKindCardSelected, m.styles.cardSelected, spec.BoxWidth)
 	case spec.Archived:
-		style = styleWidthFromCache(m.archivedCardStyleByWidth, m.styles.archivedCard, spec.BoxWidth)
+		style = styleWidthFromCache(m.styleByKindWidth, styleKindCardArchived, m.styles.archivedCard, spec.BoxWidth)
 	default:
-		style = styleWidthFromCache(m.cardStyleByWidth, m.styles.card, spec.BoxWidth)
+		style = styleWidthFromCache(m.styleByKindWidth, styleKindCard, m.styles.card, spec.BoxWidth)
 		if spec.Accent {
 			style = style.BorderForeground(m.styles.info.GetForeground())
 		}
@@ -120,19 +120,25 @@ func (m Model) renderTaskCard(spec taskCardSpec) string {
 }
 
 // styleWidthFromCache returns base.Width(width) from the supplied
-// per-width cache, lazily filling the entry on a miss. nil maps are
-// supported (no cache available; degrades to a direct Width call) so
-// the helper stays safe to use from value-receiver render paths that
-// see a model copy with an uninitialised cache.
-func styleWidthFromCache(cache map[int]lipgloss.Style, base lipgloss.Style, width int) lipgloss.Style {
+// kind-indexed map-of-maps cache, lazily filling the per-kind inner
+// map and the per-width entry on a miss. A nil outer map is supported
+// (no cache available; degrades to a direct Width call) so the helper
+// stays safe to use from value-receiver render paths that see a model
+// copy with an uninitialised cache.
+func styleWidthFromCache(cache map[styleKind]map[int]lipgloss.Style, kind styleKind, base lipgloss.Style, width int) lipgloss.Style {
 	if cache == nil {
 		return base.Width(width)
 	}
-	if cached, ok := cache[width]; ok {
+	inner, ok := cache[kind]
+	if !ok {
+		inner = map[int]lipgloss.Style{}
+		cache[kind] = inner
+	}
+	if cached, ok := inner[width]; ok {
 		return cached
 	}
 	styled := base.Width(width)
-	cache[width] = styled
+	inner[width] = styled
 	return styled
 }
 

@@ -67,14 +67,12 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		markdown:         newMarkdownRenderer(tokensFromTheme(theme)),
 		markdownRendered: true,
 		notifications:    notifications.Notifications,
-		// Pre-allocated style-by-width caches; value-receiver render
-		// paths read + write through these so the lipgloss.Style.Width(N)
-		// allocation only fires once per (variant, width) pair across
-		// the lifetime of the model.
-		cardStyleByWidth:         map[int]lipgloss.Style{},
-		cardSelectedStyleByWidth: map[int]lipgloss.Style{},
-		archivedCardStyleByWidth: map[int]lipgloss.Style{},
-		inputStyleByWidth:        map[int]lipgloss.Style{},
+		// Pre-allocated style-by-kind-by-width cache; value-receiver
+		// render paths read + write through this so the
+		// lipgloss.Style.Width(N) allocation only fires once per
+		// (kind, width) pair across the lifetime of the model. Inner
+		// maps lazily fill on first write per kind.
+		styleByKindWidth: map[styleKind]map[int]lipgloss.Style{},
 		tokenCountCache:          map[uint64]int{},
 	}
 	model.taskTitleInput = newTaskTitleInput()

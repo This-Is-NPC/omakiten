@@ -20,6 +20,19 @@ import (
 	"omakiten/internal/tui/components/viewport"
 )
 
+// styleKind enumerates the chrome variants that benefit from per-width
+// lipgloss.Style memoisation. Routing through a single map-of-maps
+// keeps the four caches behind a single field on Model instead of four
+// parallel ones; adding a new variant is one constant + one map entry.
+type styleKind int
+
+const (
+	styleKindCard styleKind = iota
+	styleKindCardSelected
+	styleKindCardArchived
+	styleKindInput
+)
+
 const (
 	columnWidth                = 28
 	taskDetailsPanelWidth      = 40
@@ -541,16 +554,15 @@ type Model struct {
 	// settings (filter / sort).
 	cachedTableView []domain.Task
 
-	// cardStyleByWidth / cardSelectedStyleByWidth / archivedCardStyleByWidth
-	// memoise lipgloss.Style.Width(N) for the three card chrome variants
-	// taskCardSpec rendering hits per card. Long board columns previously
-	// allocated a fresh Style per card per render; the map lookup amortises
-	// the cost across every cell with the same width. Cleared at theme
-	// change (rare) via styles rebuild.
-	cardStyleByWidth         map[int]lipgloss.Style
-	cardSelectedStyleByWidth map[int]lipgloss.Style
-	archivedCardStyleByWidth map[int]lipgloss.Style
-	inputStyleByWidth        map[int]lipgloss.Style
+	// styleByKindWidth memoises lipgloss.Style.Width(N) for the four
+	// chrome variants (card / cardSelected / archivedCard / input) so
+	// taskCardSpec + form-field rendering reuse the same Style across
+	// every cell with the same (kind, width) pair. Long board columns
+	// previously allocated a fresh Style per card per render; the map
+	// lookup amortises the cost across the whole column. Cleared at
+	// theme change (rare) via styles rebuild — entire outer map is
+	// re-allocated so stale colours never serve from a stale inner.
+	styleByKindWidth map[styleKind]map[int]lipgloss.Style
 
 	// activityCardsCache memoises activityRowsForRender so the three
 	// scroll-math hot paths (clampActivityScroll, syncActivityScroll-

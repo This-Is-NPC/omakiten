@@ -47,26 +47,27 @@ func TestRebuildBoardCachesPopulatesBucketsAndTableView(t *testing.T) {
 }
 
 // TestStyleWidthFromCacheHits memoises lipgloss.Style.Width(N) lookups
-// across multiple card renders: repeat calls for the same width return
-// the cached entry, and a fresh width populates a new entry.
+// across multiple card renders: repeat calls for the same (kind, width)
+// pair return the cached entry, and a fresh width populates a new entry
+// under the same kind without disturbing other kinds.
 func TestStyleWidthFromCacheHits(t *testing.T) {
-	cache := map[int]lipgloss.Style{}
+	cache := map[styleKind]map[int]lipgloss.Style{}
 	base := lipgloss.NewStyle().Padding(0, 1)
 
-	w26a := styleWidthFromCache(cache, base, 26)
-	w26b := styleWidthFromCache(cache, base, 26)
+	w26a := styleWidthFromCache(cache, styleKindCard, base, 26)
+	w26b := styleWidthFromCache(cache, styleKindCard, base, 26)
 	if !reflect.DeepEqual(w26a, w26b) {
 		t.Fatalf("repeat lookup for width 26 returned different style")
 	}
-	if _, ok := cache[26]; !ok {
+	if _, ok := cache[styleKindCard][26]; !ok {
 		t.Fatalf("width 26 entry missing from cache")
 	}
-	_ = styleWidthFromCache(cache, base, 32)
-	if _, ok := cache[32]; !ok {
+	_ = styleWidthFromCache(cache, styleKindCard, base, 32)
+	if _, ok := cache[styleKindCard][32]; !ok {
 		t.Fatalf("new width 32 not cached")
 	}
-	if len(cache) != 2 {
-		t.Fatalf("cache size = %d, want 2", len(cache))
+	if len(cache[styleKindCard]) != 2 {
+		t.Fatalf("inner cache size = %d, want 2", len(cache[styleKindCard]))
 	}
 }
 
@@ -75,9 +76,43 @@ func TestStyleWidthFromCacheHits(t *testing.T) {
 // still get a valid Style back (degraded to the raw base.Width call).
 func TestStyleWidthFromCacheNilCacheStillRenders(t *testing.T) {
 	base := lipgloss.NewStyle().Padding(0, 1)
-	got := styleWidthFromCache(nil, base, 18)
+	got := styleWidthFromCache(nil, styleKindInput, base, 18)
 	want := base.Width(18)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("nil-cache fallback did not return base.Width(18)")
+	}
+}
+
+// TestStyleWidthFromCacheKindRouting pins the kind-routing contract:
+// each styleKind owns an independent inner map, so two kinds at the
+// same width never collide. Without per-kind partitioning, the second
+// caller would read the first caller's cached entry and render with
+// the wrong base style — the regression W8-1 explicitly guards.
+func TestStyleWidthFromCacheKindRouting(t *testing.T) {
+	cache := map[styleKind]map[int]lipgloss.Style{}
+	cardBase := lipgloss.NewStyle().Padding(0, 1).Bold(false)
+	selectedBase := lipgloss.NewStyle().Padding(0, 1).Bold(true)
+
+	cardW := styleWidthFromCache(cache, styleKindCard, cardBase, 24)
+	selectedW := styleWidthFromCache(cache, styleKindCardSelected, selectedBase, 24)
+	if reflect.DeepEqual(cardW, selectedW) {
+		t.Fatalf("kind routing collapsed: card and cardSelected at width 24 returned same style")
+	}
+	if _, ok := cache[styleKindCard][24]; !ok {
+		t.Fatalf("card inner cache missing entry for width 24")
+	}
+	if _, ok := cache[styleKindCardSelected][24]; !ok {
+		t.Fatalf("cardSelected inner cache missing entry for width 24")
+	}
+	if len(cache) != 2 {
+		t.Fatalf("outer cache size = %d, want 2 (one per kind)", len(cache))
+	}
+
+	// Re-hit each kind at the same width: the cached entries return
+	// without growth.
+	_ = styleWidthFromCache(cache, styleKindCard, cardBase, 24)
+	_ = styleWidthFromCache(cache, styleKindCardSelected, selectedBase, 24)
+	if len(cache[styleKindCard]) != 1 || len(cache[styleKindCardSelected]) != 1 {
+		t.Fatalf("repeat lookup grew the inner cache; want 1/1 got %d/%d", len(cache[styleKindCard]), len(cache[styleKindCardSelected]))
 	}
 }
