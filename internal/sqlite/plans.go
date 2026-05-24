@@ -644,7 +644,8 @@ WHERE project_id = ? AND id = ?
 	}
 
 	assignPayload, _ := json.Marshal(map[string]any{"assignee": agentModel, "source": "plans.claim_next"})
-	if _, err := insertEntityEvent(ctx, conn, domain.EventEntityTask, taskID, projectID, domain.EventTypeTaskAssigned, string(assignPayload)); err != nil {
+	assignEvent, err := insertEntityEvent(ctx, conn, domain.EventEntityTask, taskID, projectID, domain.EventTypeTaskAssigned, string(assignPayload))
+	if err != nil {
 		return domain.Task{}, false, err
 	}
 
@@ -653,6 +654,16 @@ WHERE project_id = ? AND id = ?
 	}
 	committed = true
 	closeConn()
+
+	// Publish post-commit. Pre-fix the row landed on disk but the
+	// bus stayed silent — TUI live views and hooks consumers never
+	// observed the claim until the next refresh. ClaimNextPlanTask
+	// keeps its hand-rolled IMMEDIATE-tx shape (pinned sql.Conn,
+	// per-conn busy_timeout reapply) because txMutateAndEmit uses
+	// BeginTx which would lose the reserved-lock serialisation under
+	// concurrent claims; the publish step is the one piece the
+	// inline path always forgot.
+	s.publishEvent(ctx, assignEvent)
 
 	task, err := s.taskByID(ctx, projectID, taskID, buckets)
 	if err != nil {
