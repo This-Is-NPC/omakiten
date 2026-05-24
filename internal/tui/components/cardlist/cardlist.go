@@ -242,15 +242,15 @@ func (m Model) WithViewport(rows int) Model {
 // chrome (column borders, kicker rows) wraps the cardlist's output
 // unchanged.
 //
-// When the viewport has rows left over after the last whole card
-// fits AND there is at least one more card below, View renders the
-// next card truncated to the leftover height as a visual preview.
-// The preview is read-only — cursor + scroll still move in
-// whole-card units; this just stops the column from leaving a blank
-// gap above the bottom border when a card refuses to fit fully. The
-// "▼ N below" hint still counts the partially-rendered card as
-// below, matching the linelist's line-based slice where a partial
-// trailing card is also "still in the below count".
+// When the viewport has rows left over after the whole-card slice,
+// View renders partial cards on the leading / trailing edges so the
+// column fills its allotted height instead of leaving a blank gap.
+// The leftover rows are split between the two edges (trailing
+// favoured by 1 row on an odd split). Partial cards are visual
+// previews only — cursor + scroll still advance in whole-card
+// units, and the above / below hints still count partial cards in
+// their respective sides. Matches the linelist's line-based slice
+// behaviour so the two surfaces feel symmetric.
 //
 // hintStyle is applied to the indicator rows. The cardlist does not
 // own the style choice because different surfaces (board vs activity
@@ -267,31 +267,60 @@ func (m Model) View(hintStyle lipgloss.Style) string {
 	if m.scroll == 0 && end == len(m.items) {
 		return joinItems(m.items)
 	}
-	parts := make([]string, 0, end-m.scroll+3)
+
+	// Account for everything the whole-card slice already consumes:
+	// above hint (if firing), every visible whole card, and the
+	// reserved below-hint row (if firing). What is left becomes the
+	// partial-card budget.
+	above := scrollwindow.Above(m.scroll)
+	below := scrollwindow.Below(end, len(m.items))
 	usedRows := 0
-	if above := scrollwindow.Above(m.scroll); above > 0 {
-		parts = append(parts, hintStyle.Render(formatAboveHint(above)))
+	if above > 0 {
 		usedRows++
 	}
 	for _, item := range m.items[m.scroll:end] {
-		parts = append(parts, item.Content)
 		usedRows += item.Height
 	}
-	below := scrollwindow.Below(end, len(m.items))
-	// Reserve one row for the below hint when it will render.
 	reservedBelow := 0
 	if below > 0 {
 		reservedBelow = 1
 	}
-	// Partial trailing card preview — fill any leftover viewport rows
-	// with the first lines of the next card so the column reaches
-	// the bottom border instead of leaving a blank gap. Only applies
-	// at the tail (above remains whole-card-aligned).
-	if end < len(m.items) {
-		remaining := m.viewportRows - usedRows - reservedBelow
-		if remaining > 0 {
-			parts = append(parts, truncateContentLines(m.items[end].Content, remaining))
-		}
+	remaining := m.viewportRows - usedRows - reservedBelow
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	// Split the leftover between leading / trailing partials. When
+	// only one edge has a partial card to show (scroll == 0 → no
+	// leading; end == len → no trailing), the active edge takes the
+	// whole leftover. When both apply, trailing wins the extra row
+	// on an odd split so the column emphasises the "more coming"
+	// direction the user is actively scrolling toward.
+	hasLeading := m.scroll > 0
+	hasTrailing := end < len(m.items)
+	leadingRows, trailingRows := 0, 0
+	switch {
+	case hasLeading && hasTrailing:
+		trailingRows = (remaining + 1) / 2
+		leadingRows = remaining - trailingRows
+	case hasTrailing:
+		trailingRows = remaining
+	case hasLeading:
+		leadingRows = remaining
+	}
+
+	parts := make([]string, 0, end-m.scroll+4)
+	if above > 0 {
+		parts = append(parts, hintStyle.Render(formatAboveHint(above)))
+	}
+	if leadingRows > 0 {
+		parts = append(parts, tailContentLines(m.items[m.scroll-1].Content, leadingRows))
+	}
+	for _, item := range m.items[m.scroll:end] {
+		parts = append(parts, item.Content)
+	}
+	if trailingRows > 0 {
+		parts = append(parts, headContentLines(m.items[end].Content, trailingRows))
 	}
 	if below > 0 {
 		parts = append(parts, hintStyle.Render(formatBelowHint(below)))
@@ -299,13 +328,11 @@ func (m Model) View(hintStyle lipgloss.Style) string {
 	return strings.Join(parts, "\n")
 }
 
-// truncateContentLines returns the first maxLines rows of content,
-// joined back with "\n". Used by View to render the next-below card
-// as a partial preview filling the leftover viewport rows. The
-// trailing line is intentionally NOT padded — the surface that wraps
-// the cardlist (kanbanColumnSized) owns the bottom border and the
-// visual cue is "this card is cut, scroll to read the rest".
-func truncateContentLines(content string, maxLines int) string {
+// headContentLines returns the first maxLines rows of content,
+// joined back with "\n". Used by View for the trailing partial card
+// preview: the cardlist column shows the top of the next-below card
+// so the user sees what is coming without having to scroll.
+func headContentLines(content string, maxLines int) string {
 	if maxLines <= 0 {
 		return ""
 	}
@@ -314,6 +341,21 @@ func truncateContentLines(content string, maxLines int) string {
 		return content
 	}
 	return strings.Join(lines[:maxLines], "\n")
+}
+
+// tailContentLines returns the LAST maxLines rows of content. Used
+// by View for the leading partial card preview: the cardlist column
+// shows the bottom of the just-above-scroll card so the user keeps
+// continuity when scrolling down mid-list.
+func tailContentLines(content string, maxLines int) string {
+	if maxLines <= 0 {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	if len(lines) <= maxLines {
+		return content
+	}
+	return strings.Join(lines[len(lines)-maxLines:], "\n")
 }
 
 // VisibleRange returns the [first, last] inclusive item indices the
