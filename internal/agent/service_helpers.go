@@ -280,6 +280,16 @@ func taskTitleAndDescription(title, description string) (string, string) {
 	return line, description
 }
 
+// similarTasksTextCapBytes bounds how much of (title + description)
+// the similarity loop tokenises + scans per task. A 100 KB
+// description blew O(per-task) work into the hundreds of microseconds
+// + GC churn — but the overlap signal saturates well before then
+// (task titles are short, the first paragraph of a description
+// carries the rest of the search vocabulary). 1 KB keeps the busy
+// path cheap without measurably hurting recall on realistic
+// descriptions.
+const similarTasksTextCapBytes = 1024
+
 func similarTasks(query string, tasks []domain.Task, limit int, registry *domain.EnumRegistry, stops map[string]bool) []TaskSummary {
 	queryWords := wordSet(query, stops)
 	if len(queryWords) == 0 {
@@ -293,6 +303,9 @@ func similarTasks(query string, tasks []domain.Task, limit int, registry *domain
 	queryLower := strings.ToLower(strings.TrimSpace(query))
 	for _, task := range tasks {
 		text := task.Title + " " + task.Description
+		if len(text) > similarTasksTextCapBytes {
+			text = text[:similarTasksTextCapBytes]
+		}
 		textLower := strings.ToLower(strings.TrimSpace(text))
 		words := wordSet(text, stops)
 		score := overlapScore(queryWords, words)
