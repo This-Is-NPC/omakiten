@@ -147,10 +147,15 @@ func mergeKitDefaults(b *config.Bundle) {
 		cfg.TUI.TokenBadge.RedAt = kit.TUI.TokenBadge.RedAt
 	}
 
-	// SQLite knobs: only one field today.
+	// SQLite knobs.
 	if cfg.SQLite.BusyTimeoutMs == 0 {
 		cfg.SQLite.BusyTimeoutMs = kit.SQLite.BusyTimeoutMs
 	}
+	if cfg.SQLite.CacheSizeKB == 0 {
+		cfg.SQLite.CacheSizeKB = kit.SQLite.CacheSizeKB
+	}
+	// MmapSizeBytes intentionally falls through: 0 is the valid
+	// "disabled" sentinel.
 
 	// Activity log retention.
 	if cfg.ActivityLog.MaxRows == 0 {

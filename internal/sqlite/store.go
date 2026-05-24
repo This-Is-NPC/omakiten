@@ -33,6 +33,18 @@ func kitBusyTimeoutMs() int {
 	return cfg.SQLite.BusyTimeoutMs
 }
 
+// kitCacheSizeKB mirrors kitBusyTimeoutMs for the cache_size PRAGMA:
+// tests + the bootstrap window inherit the embedded kit canonical
+// (1024 KiB) so the Store never opens at the SQLite-default 2 MiB
+// page cache that the rest of the codebase has long out-grown.
+func kitCacheSizeKB() int {
+	cfg, err := config.LoadKitConfig()
+	if err != nil {
+		return 1024
+	}
+	return cfg.SQLite.CacheSizeKB
+}
+
 // Store wraps the SQLite connection pool with the domain-specific methods used
 // by the rest of the app. The methods themselves live in topic-focused files
 // (tasks.go, comments.go, bundles.go, ...) so this file stays small and
@@ -126,6 +138,13 @@ func (s *Store) publishEvent(ctx context.Context, ev domain.Event) {
 // kit-canonical busy_timeout that Open applied.
 type ConfigKnobs struct {
 	BusyTimeoutMs            int
+	// CacheSizeKB applies PRAGMA cache_size in negative-kilobyte form
+	// after Open via ApplyConfig. 0 leaves Open's value in place; <0
+	// is rejected by the config validator and never reaches here.
+	CacheSizeKB int
+	// MmapSizeBytes applies PRAGMA mmap_size. 0 disables mmap; <0 is
+	// rejected by the config validator.
+	MmapSizeBytes            int
 	ActivityLogMaxRows       int
 	ActivityLogMaxAgeDays    int
 	EventsDefaultRecentLimit int
@@ -150,6 +169,16 @@ func (s *Store) ApplyConfig(ctx context.Context, k ConfigKnobs) error {
 		}
 		s.busyTimeoutMs = k.BusyTimeoutMs
 	}
+	if k.CacheSizeKB > 0 {
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("PRAGMA cache_size = -%d", k.CacheSizeKB)); err != nil {
+			return fmt.Errorf("apply cache_size: %w", err)
+		}
+	}
+	if k.MmapSizeBytes >= 0 {
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("PRAGMA mmap_size = %d", k.MmapSizeBytes)); err != nil {
+			return fmt.Errorf("apply mmap_size: %w", err)
+		}
+	}
 	s.SetActivityLogRetention(k.ActivityLogMaxRows, k.ActivityLogMaxAgeDays)
 	s.SetEventsRecentLimit(k.EventsDefaultRecentLimit)
 	s.SetEventsPolicy(k.EventsPolicy)
@@ -171,6 +200,12 @@ func (s *Store) ApplyConfig(ctx context.Context, k ConfigKnobs) error {
 // YAML on first call) so they don't have to thread the bundle around.
 type Options struct {
 	BusyTimeoutMs int
+	// CacheSizeKB sets PRAGMA cache_size in negative-kilobyte form.
+	// 0 falls back to the kit canonical so test paths inherit it
+	// without loading the bundle.
+	CacheSizeKB int
+	// MmapSizeBytes sets PRAGMA mmap_size; 0 disables mmap (default).
+	MmapSizeBytes int
 }
 
 // Open with the kit's default busy_timeout. Reserved for tests and
@@ -199,7 +234,10 @@ func OpenWithOptions(ctx context.Context, path string, opts Options) (*Store, er
 	// single live connection avoids "database is locked" surprises when both
 	// the TUI and the MCP server share one Store. Idle conn caps at 2 so the
 	// reader pool can warm up without holding extra fds open indefinitely.
-	db.SetMaxOpenConns(4)
+	// MaxOpenConns lowered from 4 → 2 because the TUI is read-mostly and the
+	// extra connections never carried real concurrency (single writer
+	// regardless) while costing extra fd / cache duplication.
+	db.SetMaxOpenConns(2)
 	db.SetMaxIdleConns(2)
 
 	store := &Store{db: db}
@@ -215,11 +253,25 @@ func OpenWithOptions(ctx context.Context, path string, opts Options) (*Store, er
 	// the pool hands out — not just once at Open. journal_mode=WAL is the
 	// outlier (it persists to the database header), but setting it here is
 	// still required so the FIRST connection is the one that flips it.
+	cacheSize := opts.CacheSizeKB
+	if cacheSize <= 0 {
+		cacheSize = kitCacheSizeKB()
+	}
+	mmapSize := opts.MmapSizeBytes
+	if mmapSize < 0 {
+		mmapSize = 0
+	}
 	for _, pragma := range []string{
 		"PRAGMA foreign_keys = ON",
 		"PRAGMA journal_mode = WAL",
 		"PRAGMA synchronous = NORMAL", // WAL-safe; full-fsync is overkill for a local CLI.
 		fmt.Sprintf("PRAGMA busy_timeout = %d", busyTimeout),
+		// cache_size accepts the negative kilobyte form to mean
+		// "this many KiB of page cache" regardless of page size.
+		fmt.Sprintf("PRAGMA cache_size = -%d", cacheSize),
+		// mmap_size = 0 disables mmap; any positive value asks SQLite
+		// to memory-map up to that many bytes of the DB file.
+		fmt.Sprintf("PRAGMA mmap_size = %d", mmapSize),
 	} {
 		if _, err := db.ExecContext(ctx, pragma); err != nil {
 			_ = store.Close()

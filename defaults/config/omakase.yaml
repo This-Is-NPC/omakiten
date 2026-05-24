@@ -43,6 +43,15 @@ config:
   # rather than user preference.
   sqlite:
     busy_timeout_ms: 5000
+    # cache_size_kb sets PRAGMA cache_size in negative-kilobyte form.
+    # 1024 KiB of page cache keeps the TUI's hot tables (tasks, events,
+    # task_dependencies) hot across the keystroke read fan-out.
+    cache_size_kb: 1024
+    # mmap_size_bytes sets PRAGMA mmap_size. 0 disables mmap (default)
+    # because mmap interacts poorly with NFS / FUSE mounts; users on
+    # local-only filesystems can raise this to e.g. 268435456 (256 MiB)
+    # for a measurable read-path win on larger databases.
+    mmap_size_bytes: 0
   # activity_log retention: prunes the per-call `operation` event log so
   # the activity feed stays fast. Each BeginActivityLog runs a synchronous
   # prune pass; the writer never blocks longer than O(rows-deleted).
