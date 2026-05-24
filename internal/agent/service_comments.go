@@ -14,7 +14,7 @@ func (s *Service) AddComment(ctx context.Context, input AddCommentInput) (Commen
 	}
 	body := input.Body
 	if input.TemplateSlug != "" {
-		merged, _, err := s.applyTemplateBody(input.TemplateSlug, body, "comment")
+		merged, _, err := s.applyTemplateBody(input.TemplateSlug, body, TemplateKindComment)
 		if err != nil {
 			return CommentResponse{}, err
 		}

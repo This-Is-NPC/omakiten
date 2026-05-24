@@ -190,7 +190,12 @@ func (s *Store) ListActivityLogs(ctx context.Context, filter domain.ActivityLogF
 	}
 	query += " ORDER BY created_at " + direction
 	if filter.Limit > 0 {
-		query += fmt.Sprintf(" LIMIT %d", filter.Limit)
+		// LIMIT bound via parameter instead of fmt.Sprintf so the
+		// query string stays immutable across calls (cleaner audit,
+		// and rules out a future caller plumbing an attacker-
+		// controlled int through filter.Limit).
+		query += " LIMIT ?"
+		args = append(args, filter.Limit)
 	}
 
 	rows, err := s.db.QueryContext(ctx, query, args...)

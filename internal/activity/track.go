@@ -3,6 +3,8 @@ package activity
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 	"time"
 
 	"omakiten/internal/domain"
@@ -55,6 +57,14 @@ func Track(ctx context.Context, operation string, project domain.ProjectContext,
 
 	start := time.Now()
 	return func(status string, errMsg string) {
-		_ = repo.FinishActivityLog(ctx, id, status, int(time.Since(start).Milliseconds()), errMsg)
+		if err := repo.FinishActivityLog(ctx, id, status, int(time.Since(start).Milliseconds()), errMsg); err != nil {
+			// Activity tracking must never break business logic, but
+			// silently dropping the close turns a corrupt activity
+			// table into a debugging nightmare downstream. Surface
+			// the cause on stderr so operators get a one-line breadcrumb
+			// without crashing the caller. Same channel the CLI envelope
+			// renderer uses for its own non-fatal warnings.
+			fmt.Fprintf(os.Stderr, "activity: FinishActivityLog(id=%d) failed: %v\n", id, err)
+		}
 	}
 }

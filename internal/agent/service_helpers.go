@@ -8,6 +8,16 @@ import (
 	"omakiten/internal/domain"
 )
 
+// TemplateKindTask + TemplateKindComment are the canonical kind
+// labels applyTemplateBody emits in validation errors and the
+// service surfaces accept on the wire. Promoted from inline string
+// literals so a typo at any callsite trips the compiler instead of
+// silently surfacing the wrong tag in error details.
+const (
+	TemplateKindTask    = "task"
+	TemplateKindComment = "comment"
+)
+
 // stopwordsTable builds the lowercase set wordSet drops before scoring.
 // Phase 3f replaced the process-global registry with a per-Service
 // field; this helper converts the per-project `config.search.stopwords`
@@ -177,7 +187,8 @@ func truncateBody(body string, maxChars int) string {
 // degrading. Returns the merged body, the resolved template summary, and an
 // error.
 //
-// `kind` is just an enum tag used in error messages — "task" or "comment".
+// `kind` is just an enum tag used in error messages — use the
+// TemplateKindTask / TemplateKindComment constants at callsites.
 func (s *Service) applyTemplateBody(slug, body, kind string) (string, *TaskTemplateSummary, error) {
 	slug = strings.TrimSpace(slug)
 	if slug == "" {
