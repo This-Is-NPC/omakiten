@@ -30,6 +30,13 @@ func atomicMove(src, dst string) error {
 	// hidden temp file so the final rename is atomic; remove the
 	// source only after the rename commits so a crash mid-copy leaves
 	// both files in a recoverable state.
+	//
+	// Note: tmp is deterministic ("<dst>.migrate.tmp"). MigrateLayout
+	// runs single-threaded today so two concurrent atomicMove calls
+	// against the same dst are unreachable; if/when migration ever
+	// gains concurrency, switch to os.CreateTemp(dir, prefix) so the
+	// suffix is random and concurrent callers do not collide on the
+	// stage file.
 	tmp := dst + ".migrate.tmp"
 	if err := copyFileBytes(src, tmp); err != nil {
 		_ = os.Remove(tmp)

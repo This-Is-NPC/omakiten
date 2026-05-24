@@ -131,9 +131,7 @@ func installBlockInto(rcPath, block string) error {
 		}
 		// 0700 — the rc file lives under $HOME, contains shell wiring
 		// the installer wrote on the user's behalf, and should not be
-		// readable by other accounts on a shared box. The narrower
-		// mode also covers `.profile`-adjacent files that hold per-
-		// user PATH overrides.
+		// readable by other accounts on a shared box.
 		if err := os.MkdirAll(filepath.Dir(rcPath), 0o700); err != nil {
 			return fmt.Errorf("mkdir for %s: %w", rcPath, err)
 		}

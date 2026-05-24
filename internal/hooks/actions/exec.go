@@ -108,12 +108,23 @@ func readArgv(args map[string]any) ([]string, error) {
 
 // resolveExecBinary delegates the security contract for argv[0] to
 // the shared cliutil.ResolveBinary helper (also consumed by the CLI
-// editor surface). The guarantee: pin argv[0] to an absolute on-disk
-// path before fork so exec.CommandContext cannot re-resolve via PATH
-// at fork time (mitigates TOCTOU between LookPath and Spawn). Bare
-// names still resolve through PATH at LookPath time — project hooks
-// that say `argv: ["okt"]` inherit the runtime's PATH, which the user
-// is expected to vet just as they would any other shell command.
+// editor surface).
+//
+// The actual guarantee is narrow and worth naming precisely: pin the
+// absolute path BEFORE fork so exec.CommandContext cannot re-resolve
+// via PATH at fork time. That mitigates a TOCTOU between the
+// LookPath result and the Spawn syscall — a malicious shell hook
+// cannot drop a same-name binary into a PATH dir between the engine
+// reading argv[0] and the kernel running it.
+//
+// What this does NOT do: it does not prevent PATH-shadowing in the
+// general sense. A bare argv[0] like "okt" still resolves through
+// the runtime's inherited PATH at LookPath time, so a project hook
+// that ships `argv: ["okt"]` will pick up whatever `okt` is first on
+// PATH (which is the same behaviour the user gets at their shell
+// prompt). The user is expected to vet bare names the same way they
+// vet any other shell command.
+//
 // Absolute paths pass through; relative paths with embedded
 // separators ("./script.sh", "../bin/foo") are rejected because the
 // hook YAML rarely knows what CWD the runtime executor will inherit.

@@ -295,6 +295,14 @@ func (c *BundleCache) rebuild(ctx context.Context, projectID int64, configPath s
 // just pins the prior bundle in RAM indefinitely. No-op when the
 // entry has already rotated again (rare race) or when PreviousSnapshot
 // is already nil.
+//
+// Lock order: acquires c.mu (write side). Callers MUST NOT hold any
+// other lock that c.mu's writers can block on. Today that set is
+// empty — OrphanService.Migrate runs the onMigrate consumer from a
+// dedicated goroutine that holds no caller-side locks. If a future
+// refactor introduces a lock that BundleCache.rebuild + this helper
+// could both transitively acquire, defer the release via tea.Cmd /
+// goroutine so the consumer never lock-couples with the caller.
 func (c *BundleCache) releasePreviousSnapshot(projectID int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

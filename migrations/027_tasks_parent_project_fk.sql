@@ -23,6 +23,16 @@
 DROP TRIGGER IF EXISTS tasks_parent_project_insert_guard;
 DROP TRIGGER IF EXISTS tasks_parent_project_update_guard;
 
+-- Note: the two WHEN arms below each issue a
+-- `SELECT project_id FROM tasks WHERE id = NEW.parent_id` scalar
+-- subquery. Reads identical to "two subqueries"; SQLite's query
+-- planner folds duplicates within a single statement so the cost is
+-- a single table read. A CTE / FROM-clause rewrite would only fire
+-- once per BEFORE trigger row but breaks the missing-row guard
+-- (FROM-empty-subquery emits zero rows and skips the SELECT CASE
+-- entirely), so the two scalar subqueries are kept — the missing-
+-- row arm relies on scalar-subquery-returns-NULL semantics.
+
 CREATE TRIGGER tasks_parent_project_insert_guard
 BEFORE INSERT ON tasks
 FOR EACH ROW
