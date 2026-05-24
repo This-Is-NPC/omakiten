@@ -94,17 +94,6 @@ func (m *Model) closePlanNetwork() {
 	m.planNetworkCollapsed = nil
 }
 
-// syncPlansScroll re-seeds the cursorwindow.Model with the current
-// item count + viewport so a refresh that grew or shrank the plans
-// slice lands the cursor inside the new bounds. The cursorwindow
-// owns the resync contract — this method is the post-refresh adapter
-// that keeps it in sync with len(m.plans).
-func (m *Model) syncPlansScroll() {
-	m.plansCursor = m.plansCursor.
-		WithItemCount(len(m.plans)).
-		WithViewport(m.plansViewportRows())
-}
-
 // plansViewportRows returns how many plan rows fit in the panel. Chrome
 // budget mirrors renderTable: 2 borders + 3 header rows (kicker / info
 // header / rule) = 5.
