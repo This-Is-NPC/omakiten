@@ -328,3 +328,99 @@ VALUES (?, NULL, 'publish-gate-canary', '', 2)
 		t.Fatalf("canary task rows = %d, want 0 (rollback should have wiped Mutate's INSERT)", stillThere)
 	}
 }
+
+// TestTxMutateAndEmit_ShouldLogFalse_PublishesSyntheticEvent pins the
+// dual-publish-path contract spelled out in txevent.go's doc-comment:
+// when ShouldLog returns false the helper skips the events-row INSERT
+// but still publishes a synthetic Event post-commit. Subscribers MUST
+// observe the envelope (so live views and hooks see the action) even
+// though the events table count is unchanged.
+//
+// The commit-failure-with-synthetic case (Commit fails after the
+// synthetic envelope is built) is covered transitively by
+// TestTxMutateAndEmit_PublishesOnlyOnCommit: both branches share the
+// same `if err := tx.Commit(); err != nil` gate, so a commit failure
+// returns before `committed = true` flips and the deferred Rollback
+// keeps the bus silent regardless of which branch built the envelope.
+func TestTxMutateAndEmit_ShouldLogFalse_PublishesSyntheticEvent(t *testing.T) {
+	ctx, store, project, sink := setupTxEvent(t)
+	sink.mu.Lock()
+	sink.received = nil
+	sink.mu.Unlock()
+
+	var beforeEventRows int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE project_id = ?`, project.ID).Scan(&beforeEventRows); err != nil {
+		t.Fatalf("count events before: %v", err)
+	}
+
+	sentinelTitle := "should-log-false-canary"
+	out, err := txMutateAndEmit(ctx, store.Store, TxMutation[txTestRow]{
+		Scope:     EventScopeTask,
+		EventType: domain.EventTypeTaskMoved,
+		ProjectID: project.ID,
+		EntityID:  func(r txTestRow) int64 { return r.id },
+		Body:      func(r txTestRow) string { return r.body },
+		ShouldLog: func() bool { return false },
+		Mutate: func(ctx context.Context, tx *sql.Tx) (txTestRow, error) {
+			row := tx.QueryRowContext(ctx, `
+INSERT INTO tasks(project_id, bucket_id, title, description, priority_id)
+VALUES (?, NULL, ?, '', 2)
+RETURNING id
+`, project.ID, sentinelTitle)
+			var id int64
+			if err := row.Scan(&id); err != nil {
+				return txTestRow{}, err
+			}
+			return txTestRow{id: id, body: "synthetic-body"}, nil
+		},
+		Payload: func(_ txTestRow) (string, error) {
+			return `{"silent":true}`, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("txMutateAndEmit: %v", err)
+	}
+
+	// Mutation committed: canary task is on disk.
+	var taskCount int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tasks WHERE project_id = ? AND title = ?`, project.ID, sentinelTitle).Scan(&taskCount); err != nil {
+		t.Fatalf("count canary tasks: %v", err)
+	}
+	if taskCount != 1 {
+		t.Fatalf("canary task rows = %d, want 1 (Mutate committed)", taskCount)
+	}
+
+	// Events table row count UNCHANGED — ShouldLog=false skipped the insert.
+	var afterEventRows int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE project_id = ?`, project.ID).Scan(&afterEventRows); err != nil {
+		t.Fatalf("count events after: %v", err)
+	}
+	if afterEventRows != beforeEventRows {
+		t.Fatalf("events row count changed: before=%d after=%d (ShouldLog=false should skip insert)", beforeEventRows, afterEventRows)
+	}
+
+	// Bus still observed exactly one synthetic envelope.
+	got := sink.snapshot()
+	if len(got) != 1 {
+		t.Fatalf("bus published %d envelopes, want 1 (synthetic publish should fire)", len(got))
+	}
+	ev := got[0]
+	if ev.EventType != domain.EventTypeTaskMoved {
+		t.Errorf("EventType = %q, want %q", ev.EventType, domain.EventTypeTaskMoved)
+	}
+	if ev.EntityType != domain.EventEntityTask {
+		t.Errorf("EntityType = %q, want %q (task-scope default)", ev.EntityType, domain.EventEntityTask)
+	}
+	if ev.EntityID != out.id {
+		t.Errorf("EntityID = %d, want %d", ev.EntityID, out.id)
+	}
+	if ev.ProjectID != project.ID {
+		t.Errorf("ProjectID = %d, want %d", ev.ProjectID, project.ID)
+	}
+	if ev.Body != "synthetic-body" {
+		t.Errorf("Body = %q, want %q", ev.Body, "synthetic-body")
+	}
+	if ev.Payload != `{"silent":true}` {
+		t.Errorf("Payload = %q, want %q", ev.Payload, `{"silent":true}`)
+	}
+}
