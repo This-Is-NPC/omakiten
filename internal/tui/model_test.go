@@ -1779,14 +1779,16 @@ func TestPlansSubTabRendersRollups(t *testing.T) {
 		t.Fatalf("plans view missing active wave name\n%s", view)
 	}
 
-	// j moves planCursor; k restores it.
+	// j moves the plans cursor; k restores it. The cursor is owned
+	// by the plansCursor cursorwindow.Model — its Cursor() accessor
+	// is the read-only view onto the unexported field.
 	advanced := pressRune(t, got, 'j')
-	if advanced.planCursor != 1 {
-		t.Fatalf("after 'j': planCursor = %d, want 1", advanced.planCursor)
+	if got := advanced.plansCursor.Cursor(); got != 1 {
+		t.Fatalf("after 'j': plansCursor = %d, want 1", got)
 	}
 	back := pressRune(t, advanced, 'k')
-	if back.planCursor != 0 {
-		t.Fatalf("after 'k': planCursor = %d, want 0", back.planCursor)
+	if got := back.plansCursor.Cursor(); got != 0 {
+		t.Fatalf("after 'k': plansCursor = %d, want 0", got)
 	}
 }
 

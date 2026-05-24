@@ -15,6 +15,7 @@ import (
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
 	"omakiten/internal/tui/components/cardlist"
+	"omakiten/internal/tui/components/cursorwindow"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/linelist"
 	"omakiten/internal/tui/components/notification"
@@ -530,11 +531,12 @@ type Model struct {
 
 	// plans holds the project's plan rollups for the Tasks › plans sub-tab
 	// list view. Populated by refresh() via PlanService.ListRollups.
-	// planCursor stays authoritative; plansList owns the scroll
-	// offset through the linelist component.
-	plans      []app.PlanRollup
-	planCursor int
-	plansList  linelist.Model
+	// plansCursor (cursorwindow.Model) owns the cursor + scroll pair —
+	// the prior raw `planCursor int` + linelist hybrid is gone; W11
+	// extends the cursor-as-unexported-state contract to fixed-row
+	// surfaces like this one.
+	plans       []app.PlanRollup
+	plansCursor cursorwindow.Model
 
 	// planNetworkOpen flips when the user presses enter on a row in the
 	// plans list view — it swaps the renderer from the list view to the

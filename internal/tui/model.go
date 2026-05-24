@@ -21,6 +21,7 @@ import (
 	hookactions "omakiten/internal/hooks/actions"
 	"omakiten/internal/token"
 	"omakiten/internal/tui/components/cardlist"
+	"omakiten/internal/tui/components/cursorwindow"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/linelist"
 	"omakiten/internal/tui/components/notification"
@@ -81,7 +82,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		logsList:             linelist.New(),
 		tableList:            linelist.New(),
 		graphList:            linelist.New(),
-		plansList:            linelist.New(),
+		plansCursor:          cursorwindow.New(0),
 		settingsGeneralLines: linelist.New(),
 	}
 	model.taskTitleInput = newTaskTitleInput()
@@ -1099,20 +1100,13 @@ func (m *Model) refresh() error {
 	return nil
 }
 
-// clampPlanCursor keeps planCursor inside the [0, len(plans)-1] window
-// after refresh trims the rollup slice. Mirrors the clamp helpers around
-// it so a deleted plan does not leave the cursor pointing past the end.
+// clampPlanCursor keeps the plansCursor inside the [0, len(plans)-1]
+// window after refresh trims the rollup slice. Routes through
+// cursorwindow.WithItemCount so the resync contract (clamp + scroll
+// follow) lands in one method call instead of being re-litigated
+// inline. Deleted plans cannot leave the cursor stranded past end.
 func (m *Model) clampPlanCursor() {
-	if m.planCursor < 0 {
-		m.planCursor = 0
-	}
-	if m.planCursor >= len(m.plans) {
-		if len(m.plans) == 0 {
-			m.planCursor = 0
-		} else {
-			m.planCursor = len(m.plans) - 1
-		}
-	}
+	m.plansCursor = m.plansCursor.WithItemCount(len(m.plans))
 }
 
 func (m Model) computeMetrics(maxTokens int) domain.TokenMetrics {

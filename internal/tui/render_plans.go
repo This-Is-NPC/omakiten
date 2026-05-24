@@ -12,44 +12,27 @@ import (
 // handlePlansKey drives the Tasks › plans sub-tab list view. j/k move
 // the cursor, page/home/end jump in larger steps, and `r` triggers a
 // manual refresh — same shape as handleListKey so muscle memory carries
-// over from the table sub-tab.
+// over from the table sub-tab. Every navigation goes through the
+// cursorwindow.Model mutators (MoveCursor / JumpFirst / JumpLast)
+// which re-run scrollwindow.Resync internally so the scroll follow
+// is one implementation deep instead of being inlined per case.
 func (m *Model) handlePlansKey(msg tea.KeyMsg) {
+	m.plansCursor = m.plansCursor.
+		WithItemCount(len(m.plans)).
+		WithViewport(m.plansViewportRows())
 	switch msg.String() {
 	case "up", "k":
-		if m.planCursor > 0 {
-			m.planCursor--
-			m.syncPlansScroll()
-		}
+		m.plansCursor = m.plansCursor.MoveCursor(-1)
 	case "down", "j":
-		if m.planCursor < len(m.plans)-1 {
-			m.planCursor++
-			m.syncPlansScroll()
-		}
+		m.plansCursor = m.plansCursor.MoveCursor(1)
 	case "pgup", "ctrl+u":
-		step := taskViewPageStep(m.plansViewportRows())
-		m.planCursor -= step
-		if m.planCursor < 0 {
-			m.planCursor = 0
-		}
-		m.syncPlansScroll()
+		m.plansCursor = m.plansCursor.MoveCursor(-taskViewPageStep(m.plansViewportRows()))
 	case "pgdown", "ctrl+d":
-		step := taskViewPageStep(m.plansViewportRows())
-		m.planCursor += step
-		if m.planCursor > len(m.plans)-1 {
-			m.planCursor = len(m.plans) - 1
-		}
-		if m.planCursor < 0 {
-			m.planCursor = 0
-		}
-		m.syncPlansScroll()
+		m.plansCursor = m.plansCursor.MoveCursor(taskViewPageStep(m.plansViewportRows()))
 	case "home", "g":
-		m.planCursor = 0
-		m.syncPlansScroll()
+		m.plansCursor = m.plansCursor.JumpFirst()
 	case "end", "G":
-		if len(m.plans) > 0 {
-			m.planCursor = len(m.plans) - 1
-			m.syncPlansScroll()
-		}
+		m.plansCursor = m.plansCursor.JumpLast()
 	case "enter":
 		m.openPlanNetwork()
 	case "r":
@@ -66,14 +49,15 @@ func (m *Model) handlePlansKey(msg tea.KeyMsg) {
 // stray enter from an unpopulated project does not erase the empty-state
 // hint.
 func (m *Model) openPlanNetwork() {
-	if m.planCursor < 0 || m.planCursor >= len(m.plans) {
+	cursor := m.plansCursor.Cursor()
+	if len(m.plans) == 0 || cursor < 0 || cursor >= len(m.plans) {
 		return
 	}
 	if m.repos.Plans == nil {
 		return
 	}
 	planSvc := app.NewPlanServiceWithSnapshot(m.repos.Plans, m.repos.activeSnapshot())
-	slug := m.plans[m.planCursor].Plan.Slug
+	slug := m.plans[cursor].Plan.Slug
 	show, err := planSvc.Show(m.ctx, m.project, slug)
 	if err != nil {
 		m.status = err.Error()
@@ -110,12 +94,15 @@ func (m *Model) closePlanNetwork() {
 	m.planNetworkCollapsed = nil
 }
 
-// syncPlansScroll syncs the plansList linelist.Model so the cursor
-// stays in view. Routes through WithLines + WithViewport + WithCursor;
-// scrollwindow.Resync owns the follow-cursor + clamp chain.
+// syncPlansScroll re-seeds the cursorwindow.Model with the current
+// item count + viewport so a refresh that grew or shrank the plans
+// slice lands the cursor inside the new bounds. The cursorwindow
+// owns the resync contract — this method is the post-refresh adapter
+// that keeps it in sync with len(m.plans).
 func (m *Model) syncPlansScroll() {
-	lines := make([]string, len(m.plans))
-	m.plansList = m.plansList.WithLines(lines).WithViewport(m.plansViewportRows()).WithCursor(m.planCursor)
+	m.plansCursor = m.plansCursor.
+		WithItemCount(len(m.plans)).
+		WithViewport(m.plansViewportRows())
 }
 
 // plansViewportRows returns how many plan rows fit in the panel. Chrome
@@ -143,8 +130,9 @@ func (m Model) renderPlans() string {
 
 	missingActive := m.t("tui.plans.list.active_wave_missing")
 	dataRows := make([]string, 0, len(m.plans))
+	plansCursorIdx := m.plansCursor.Cursor()
 	for idx, r := range m.plans {
-		marker := m.cursorMarker(idx == m.planCursor)
+		marker := m.cursorMarker(idx == plansCursorIdx)
 		pct := planPercent(r.DoneCount, r.TotalCount)
 		active := r.ActiveWaveName
 		if active == "" {
@@ -167,7 +155,7 @@ func (m Model) renderPlans() string {
 		m.styles.info.Render(m.t("tui.plans.list.header")),
 		m.hRule(contentWidth),
 	}
-	rows = append(rows, m.sliceScrollRows(dataRows, m.plansList.Scroll(), m.plansViewportRows())...)
+	rows = append(rows, m.sliceScrollRows(dataRows, m.plansCursor.Scroll(), m.plansViewportRows())...)
 	return m.renderPanel(strings.Join(rows, "\n"))
 }
 
