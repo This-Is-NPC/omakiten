@@ -95,6 +95,21 @@ func (m Model) Update(msg tea.Msg, viewport int) (Model, tea.Cmd) {
 // or fall through to their own handlers.
 func (m Model) LastEvent() Event { return m.lastEvent }
 
+// WithScroll returns a copy of m with the scroll offset set to the
+// given value, clamped at 0. Used by parents that reset scroll on
+// open/close transitions (the help overlay does this every time the
+// user re-opens it so the previous session's scroll doesn't bleed
+// into the next view). Same shape as picker.WithScroll — exported
+// field stays for read access, writers route through a typed
+// mutator so the scroll-boundary arch test recognises the call.
+func (m Model) WithScroll(scroll int) Model {
+	if scroll < 0 {
+		scroll = 0
+	}
+	m.Scroll = scroll
+	return m
+}
+
 // View renders the slice of lines visible at the current scroll offset
 // plus the footer hint when content overflows. When everything fits, the
 // footer is omitted so the caller can drop straight into compact layout

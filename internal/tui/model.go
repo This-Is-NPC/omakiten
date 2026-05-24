@@ -180,11 +180,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			case "a":
 				m.helpAll = !m.helpAll
-				m.help.Scroll = 0
+				m.help = m.help.WithScroll(0)
 			case "?", "q":
 				m.helpOpen = false
 				m.helpAll = false
-				m.help.Scroll = 0
+				m.help = m.help.WithScroll(0)
 			default:
 				// Delegate scroll keys (j/k/pgup/pgdn/g/G) and esc to the
 				// embedded viewport sub-model. Esc surfaces as EventCancel
@@ -193,7 +193,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.help.LastEvent() == viewport.EventCancel {
 					m.helpOpen = false
 					m.helpAll = false
-					m.help.Scroll = 0
+					m.help = m.help.WithScroll(0)
 				}
 			}
 			return m, nil
