@@ -269,7 +269,14 @@ func (c *BundleCache) rebuild(ctx context.Context, projectID int64, configPath s
 		// in hand. buildProjectRuntime injected one with prev=nil
 		// because the prior entry is only visible inside the cache;
 		// the rotation overwrites it with the rebind-capable view.
-		runtime.Service.SetOrphanService(app.NewOrphanService(c.store, runtime.Snapshot, runtime.PreviousSnapshot))
+		orphan := app.NewOrphanService(c.store, runtime.Snapshot, runtime.PreviousSnapshot)
+		// Wire the post-migrate consumer: once the rebind round runs,
+		// drop the cached PreviousSnapshot pointer so the prior bundle
+		// can be GC'd. Without this, a long-running TUI session that
+		// triggered one orphan flow held the prior Snapshot in RAM
+		// forever even though no further reader needed it (task #228).
+		orphan.SetMigrateConsumer(func() { c.releasePreviousSnapshot(projectID) })
+		runtime.Service.SetOrphanService(orphan)
 	}
 	c.entries[projectID] = runtime
 	c.mu.Unlock()
@@ -278,6 +285,24 @@ func (c *BundleCache) rebuild(ctx context.Context, projectID int64, configPath s
 		old.HooksEngine.Stop()
 	}
 	return runtime, nil
+}
+
+// releasePreviousSnapshot drops the PreviousSnapshot pointer on the
+// project's runtime entry so the prior bundle's Snapshot tree
+// (workflows, entities, locale packs) can be GC'd. Called by the
+// OrphanService's onMigrate consumer after a successful rebind —
+// nobody else holds a reference at that point, and keeping it alive
+// just pins the prior bundle in RAM indefinitely. No-op when the
+// entry has already rotated again (rare race) or when PreviousSnapshot
+// is already nil.
+func (c *BundleCache) releasePreviousSnapshot(projectID int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.entries[projectID]
+	if !ok || entry == nil {
+		return
+	}
+	entry.PreviousSnapshot = nil
 }
 
 // BuildProjectRuntime is the single point of bundle inflation. Open

@@ -22,6 +22,12 @@ type OrphanService struct {
 	repo     OrphanRepository
 	current  *config.Snapshot
 	previous *config.Snapshot
+	// onMigrate runs after a successful Migrate. The runtime cache
+	// wires it to release the previous snapshot pointer so the carried
+	// reference does not pin the prior bundle in RAM indefinitely
+	// (task #228 in the code-review plan). nil when no consumer is
+	// wired — tests and the CLI standalone path leave it unset.
+	onMigrate func()
 }
 
 // NewOrphanService wires the orphan service with the current and previous
@@ -33,6 +39,15 @@ type OrphanService struct {
 // Phase 2-bis spec mandates.
 func NewOrphanService(repo OrphanRepository, current, previous *config.Snapshot) *OrphanService {
 	return &OrphanService{repo: repo, current: current, previous: previous}
+}
+
+// SetMigrateConsumer installs a callback fired after Migrate completes
+// successfully. The agentruntime BundleCache uses it to drop its
+// PreviousSnapshot pointer once the rebind round consumed it — keeping
+// the carried reference alive afterwards just pins the prior bundle in
+// RAM with no remaining reader.
+func (s *OrphanService) SetMigrateConsumer(fn func()) {
+	s.onMigrate = fn
 }
 
 // Preview returns the orphan report for the given project without mutating.
@@ -67,5 +82,15 @@ func (s *OrphanService) Migrate(ctx context.Context, project domain.ProjectConte
 	}()
 
 	report, err = s.repo.RebindOrphanedTasks(ctx, project.ID, s.current, s.previous)
+	if err == nil && s.onMigrate != nil {
+		// Drop the cache's previous-snapshot reference. The rebind ran
+		// against `s.previous` and that pointer carries the prior
+		// bundle's full Snapshot tree (workflows, entities, locale
+		// packs). No other reader needs it after Migrate returns; if a
+		// later rebuild captures a fresh previous, the cache will set
+		// it again.
+		s.onMigrate()
+		s.previous = nil
+	}
 	return
 }
