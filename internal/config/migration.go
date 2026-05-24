@@ -93,7 +93,7 @@ func migrateYAML(rootDir string) error {
 		} else if !os.IsNotExist(err) {
 			return err
 		}
-		if err := os.Rename(legacy, current); err != nil {
+		if err := atomicMove(legacy, current); err != nil {
 			return fmt.Errorf("move %s: %w", legacy, err)
 		}
 	}
@@ -135,7 +135,7 @@ func migrateEntityFolders(rootDir string) error {
 			} else if !os.IsNotExist(err) {
 				return err
 			}
-			if err := os.Rename(from, to); err != nil {
+			if err := atomicMove(from, to); err != nil {
 				return fmt.Errorf("move %s -> %s: %w", from, to, err)
 			}
 		}
@@ -186,7 +186,7 @@ func segregateUserCustoms(rootDir string) error {
 			} else if !os.IsNotExist(err) {
 				return err
 			}
-			if err := os.Rename(from, to); err != nil {
+			if err := atomicMove(from, to); err != nil {
 				return fmt.Errorf("move %s -> custom/: %w", from, err)
 			}
 		}
@@ -454,7 +454,7 @@ func segregateUserConfigProfiles(rootDir string) error {
 		} else if !os.IsNotExist(err) {
 			return err
 		}
-		if err := os.Rename(from, to); err != nil {
+		if err := atomicMove(from, to); err != nil {
 			return fmt.Errorf("move %s -> custom/: %w", from, err)
 		}
 	}
