@@ -39,15 +39,15 @@ func TestToggleTaskFocusRotatesThroughSubtasks(t *testing.T) {
 	if m.taskFocus != taskFocusSubtasks {
 		t.Fatalf("first tab focus = %v, want taskFocusSubtasks (has children)", m.taskFocus)
 	}
-	if m.subtaskCursor != 0 {
-		t.Errorf("subtaskCursor on entering subtasks zone = %d, want 0 (auto-land on first card)", m.subtaskCursor)
+	if m.subtasks.Cursor() != 0 {
+		t.Errorf("subtaskCursor on entering subtasks zone = %d, want 0 (auto-land on first card)", m.subtasks.Cursor())
 	}
 	m.toggleTaskFocus()
 	if m.taskFocus != taskFocusActivity {
 		t.Fatalf("second tab focus = %v, want taskFocusActivity", m.taskFocus)
 	}
-	if m.subtaskCursor != -1 {
-		t.Errorf("subtaskCursor after leaving subtasks = %d, want -1 (cleared)", m.subtaskCursor)
+	if m.subtasks.Cursor() != -1 {
+		t.Errorf("subtaskCursor after leaving subtasks = %d, want -1 (cleared)", m.subtasks.Cursor())
 	}
 	m.toggleTaskFocus()
 	if m.taskFocus != taskFocusForm {
@@ -74,8 +74,8 @@ func TestToggleTaskFocusSkipsSubtasksWhenNoChildren(t *testing.T) {
 func TestDrillIntoSubtaskPushesParentOntoStack(t *testing.T) {
 	m := taskDrillFixture(t)
 	m.toggleTaskFocus() // form → subtasks
-	if m.subtaskCursor != 0 {
-		t.Fatalf("subtaskCursor = %d, want 0", m.subtaskCursor)
+	if m.subtasks.Cursor() != 0 {
+		t.Fatalf("subtaskCursor = %d, want 0", m.subtasks.Cursor())
 	}
 	m.drillIntoSubtask()
 
@@ -85,8 +85,8 @@ func TestDrillIntoSubtaskPushesParentOntoStack(t *testing.T) {
 	if len(m.taskViewStack) != 1 || m.taskViewStack[0] != 100 {
 		t.Fatalf("taskViewStack after drill = %v, want [100]", m.taskViewStack)
 	}
-	if m.subtaskCursor != -1 {
-		t.Errorf("subtaskCursor after drill = %d, want -1 (reset on open)", m.subtaskCursor)
+	if m.subtasks.Cursor() != -1 {
+		t.Errorf("subtaskCursor after drill = %d, want -1 (reset on open)", m.subtasks.Cursor())
 	}
 }
 
@@ -262,15 +262,15 @@ func TestMoveSubtaskCursorClampsToBounds(t *testing.T) {
 	m := taskDrillFixture(t)
 	// One child of task #100 (#101). Cursor begins at -1.
 	m.moveSubtaskCursor(1)
-	if m.subtaskCursor != 0 {
-		t.Fatalf("moveSubtaskCursor(+1) from -1 = %d, want 0", m.subtaskCursor)
+	if m.subtasks.Cursor() != 0 {
+		t.Fatalf("moveSubtaskCursor(+1) from -1 = %d, want 0", m.subtasks.Cursor())
 	}
 	m.moveSubtaskCursor(1)
-	if m.subtaskCursor != 0 {
-		t.Fatalf("moveSubtaskCursor past last child = %d, want 0 (clamped)", m.subtaskCursor)
+	if m.subtasks.Cursor() != 0 {
+		t.Fatalf("moveSubtaskCursor past last child = %d, want 0 (clamped)", m.subtasks.Cursor())
 	}
 	m.moveSubtaskCursor(-5)
-	if m.subtaskCursor != 0 {
-		t.Fatalf("moveSubtaskCursor below 0 = %d, want 0 (clamped)", m.subtaskCursor)
+	if m.subtasks.Cursor() != 0 {
+		t.Fatalf("moveSubtaskCursor below 0 = %d, want 0 (clamped)", m.subtasks.Cursor())
 	}
 }

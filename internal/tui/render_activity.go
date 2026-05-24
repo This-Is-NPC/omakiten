@@ -384,15 +384,16 @@ func (m *Model) applyTaskFocus(focus taskScreenFocus) {
 	switch focus {
 	case taskFocusForm:
 		m.activityCursor = -1
-		m.subtaskCursor = -1
+		m.subtasks = m.subtasks.WithItems(nil)
 	case taskFocusSubtasks:
 		m.activityCursor = -1
-		if m.subtaskCursor < 0 {
-			m.subtaskCursor = 0
+		m.refreshSubtaskList()
+		if m.subtasks.Cursor() < 0 {
+			m.subtasks = m.subtasks.JumpFirst()
 		}
-		m.syncSubtaskScrollToCursor()
+		m.followSubtaskCursorInOuterViewport()
 	case taskFocusActivity:
-		m.subtaskCursor = -1
+		m.subtasks = m.subtasks.WithItems(nil)
 		if m.activityCursor < 0 {
 			rows := len(m.activityForTaskInView(m.taskID))
 			if rows > 0 {

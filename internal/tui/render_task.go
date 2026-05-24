@@ -12,6 +12,8 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/cardlist"
+	"omakiten/internal/tui/components/columnframe"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/gridtable"
 	"omakiten/internal/tui/components/multilineform"
@@ -62,8 +64,9 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.status = m.t("tui.status.no_subtasks_to_focus")
 			} else {
 				m.taskFocus = taskFocusSubtasks
-				if m.subtaskCursor < 0 {
-					m.subtaskCursor = 0
+				m.refreshSubtaskList()
+				if m.subtasks.Cursor() < 0 {
+					m.subtasks = m.subtasks.JumpFirst()
 				}
 			}
 		case " ":
@@ -156,12 +159,14 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				case "k", "up":
 					m.moveSubtaskCursor(-1)
 				case "home", "g":
-					m.subtaskCursor = 0
-					m.subtaskScroll = 0
+					m.refreshSubtaskList()
+					m.subtasks = m.subtasks.JumpFirst()
+					m.followSubtaskCursorInOuterViewport()
 				case "end", "G":
 					if children := m.directChildren(m.taskID); len(children) > 0 {
-						m.subtaskCursor = len(children) - 1
-						m.syncSubtaskScrollToCursor()
+						m.refreshSubtaskList()
+						m.subtasks = m.subtasks.JumpLast()
+						m.followSubtaskCursorInOuterViewport()
 					}
 				}
 			default:
@@ -419,8 +424,7 @@ func (m *Model) openTaskView(task domain.Task) {
 	m.taskView = detailscreen.New(0)
 	m.activityScroll = 0
 	m.activityCursor = -1
-	m.subtaskCursor = -1
-	m.subtaskScroll = 0
+	m.subtasks = m.subtasks.WithItems(nil)
 	m.taskFocus = taskFocusForm
 	m.descriptionScreenOpen = false
 	m.descriptionScreen = detailscreen.New(0)
@@ -584,8 +588,7 @@ func (m *Model) closeTaskScreen(status string) {
 	m.activityForTask = 0
 	m.activityScroll = 0
 	m.activityCursor = -1
-	m.subtaskCursor = -1
-	m.subtaskScroll = 0
+	m.subtasks = m.subtasks.WithItems(nil)
 	m.taskViewStack = nil
 	// Drop the per-task activity cards cache (keyed by taskID) so the
 	// rendered card slice for the closed task does not linger across
@@ -1363,11 +1366,38 @@ func (m Model) renderSubtasksPanel(children []domain.Task, layout taskViewLayout
 		header = m.styles.info.Render("// " + headerLabel)
 	}
 
-	cards := make([]string, len(children))
-	heights := make([]int, len(children))
+	// Build the cardlist items from the children pre-render. The
+	// subtasks Model carries the cursor + scroll state that key
+	// handlers mutated through MoveCursor / JumpFirst / JumpLast; the
+	// View-pass replays the items + viewport so the cardlist's
+	// internal resync stays accurate even when the render is the only
+	// thing observing the freshly-resized terminal.
+	items := m.buildSubtaskCardItems(children, focused, layout)
+	subtasks := m.subtasks.WithItems(items).WithViewport(m.subtasksViewportRows())
+
+	column := columnframe.Model{
+		Header: header,
+		Rule:   m.hRule(layout.subtasksInner),
+		List:   subtasks,
+	}
+	if len(children) == 0 {
+		column.EmptyLine = m.styles.empty.Width(layout.subtasksInner).Render(m.t("tui.empty.sub_tasks"))
+	}
+	body := column.View(m.styles.hint)
+	return m.styles.kanbanColumnSized(layout.subtasksInner, 0).Render(body)
+}
+
+// buildSubtaskCardItems renders each child task as a card and packs
+// the result into cardlist.Items with the height each card actually
+// occupies on screen. Centralising the card-build means the items
+// the View pass renders and the items the *Model handlers use for
+// scroll math share one implementation.
+func (m Model) buildSubtaskCardItems(children []domain.Task, focused bool, layout taskViewLayout) []cardlist.Item {
+	items := make([]cardlist.Item, len(children))
+	cursor := m.subtasks.Cursor()
 	for i, child := range children {
-		selected := focused && i == m.subtaskCursor
-		cards[i] = m.renderTaskCard(taskCardSpec{
+		selected := focused && i == cursor
+		card := m.renderTaskCard(taskCardSpec{
 			ID:         child.ID,
 			Title:      child.Title,
 			Badges:     m.taskBoardBadges(child),
@@ -1376,24 +1406,9 @@ func (m Model) renderSubtasksPanel(children []domain.Task, layout taskViewLayout
 			BoxWidth:   layout.subtasksCard,
 			InnerWidth: layout.subtasksInner2,
 		})
-		heights[i] = strings.Count(cards[i], "\n") + 1
+		items[i] = cardlist.Item{Content: card, Height: strings.Count(card, "\n") + 1}
 	}
-
-	emptyLine := ""
-	if len(children) == 0 {
-		emptyLine = m.styles.empty.Width(layout.subtasksInner).Render(m.t("tui.empty.sub_tasks"))
-	}
-
-	body := m.renderColumnFrame(columnSpec{
-		Header:       header,
-		Rule:         m.hRule(layout.subtasksInner),
-		EmptyLine:    emptyLine,
-		Cards:        cards,
-		CardHeights:  heights,
-		ScrollOffset: m.subtaskScroll,
-		Viewport:     m.subtasksViewportRows(),
-	})
-	return m.styles.kanbanColumnSized(layout.subtasksInner, 0).Render(body)
+	return items
 }
 
 // taskBreadcrumbTrail formats the ancestor chain (parent → grandparent
@@ -1592,92 +1607,56 @@ func (m Model) renderTaskReference(task domain.Task) string {
 }
 
 // moveSubtaskCursor advances the cursor in the sub-tasks pane by the
-// given delta. Wraps from "no selection" (-1) to first or last card
-// depending on direction so a single keypress always lands on a real
-// row. Mirrors moveActivityCursor's behaviour so the two panes feel
-// identical under j/k.
+// given delta. Routes through cardlist.Model.MoveCursor so the
+// component's internal scrollwindow.Resync keeps cursor + scroll
+// coherent; the helper here only refreshes the items + viewport and
+// then chases the outer-viewport scroll in stacked layout.
+//
+// W11-B-1: replaces the prior hand-rolled cursor*4 line-offset math
+// that miscomputed subtaskScroll as a line offset where the renderer
+// expected a card index. The cardlist component owns both
+// quantities now; the bug class (unit mismatch) is structurally
+// extinct.
 func (m *Model) moveSubtaskCursor(delta int) {
-	children := m.directChildren(m.taskID)
-	rows := len(children)
-	if rows == 0 {
-		m.subtaskCursor = -1
-		return
-	}
-	if m.subtaskCursor < 0 {
-		if delta > 0 {
-			m.subtaskCursor = 0
-		} else {
-			m.subtaskCursor = rows - 1
-		}
-		m.syncSubtaskScrollToCursor()
-		return
-	}
-	next := m.subtaskCursor + delta
-	if next < 0 {
-		next = 0
-	}
-	if next >= rows {
-		next = rows - 1
-	}
-	m.subtaskCursor = next
-	m.syncSubtaskScrollToCursor()
+	m.refreshSubtaskList()
+	m.subtasks = m.subtasks.MoveCursor(delta)
+	m.followSubtaskCursorInOuterViewport()
 }
 
-// syncSubtaskScrollToCursor advances subtaskScroll so the focused
-// sub-task card stays inside the viewport budget. Cheap O(n) scan;
-// the typical task has a handful of direct children. In stacked
-// layout it ALSO advances m.taskView.Viewport.Scroll so the joined
-// detail screen scrolls when the focused card falls below the outer
-// slice — without that, j/k on a tall sub-tasks list appeared to do
-// nothing because the outer slicer hid the new cursor position.
-func (m *Model) syncSubtaskScrollToCursor() {
-	if m.subtaskCursor < 0 {
-		return
+// refreshSubtaskList rebuilds the cardlist's items + viewport from
+// the current children + measured form height. Called from every
+// *Model handler that mutates the sub-tasks state so the cardlist
+// always has accurate inputs before its resync fires. Items carry
+// the actual rendered heights so MoveCursor's resync respects card
+// geometry instead of guessing.
+func (m *Model) refreshSubtaskList() {
+	layout := m.computeTaskViewLayout(m.availableWidth(), true)
+	if layout.kind == taskViewStacked {
+		if task, ok := m.activeTask(); ok {
+			m.primeTaskDetailsBoxHeight(task, layout)
+		}
 	}
+	focused := m.taskFocus == taskFocusSubtasks
 	children := m.directChildren(m.taskID)
-	if m.subtaskCursor >= len(children) {
+	items := m.buildSubtaskCardItems(children, focused, layout)
+	m.subtasks = m.subtasks.WithItems(items).WithViewport(m.subtasksViewportRows())
+}
+
+// followSubtaskCursorInOuterViewport chases m.taskView.Viewport.Scroll
+// so the focused sub-task card stays inside the outer joined-content
+// slice in stacked layout. The inner card-index scroll is owned by
+// cardlist; this helper handles the cross-component concern where
+// the outer detail-screen viewport sees the rendered subtasks panel
+// as one of three vertically-joined sections.
+//
+// Uses the actual per-card heights from the cardlist's items so the
+// cumulative line offset matches what the renderer emits — closes
+// the prior bug where the outer-scroll math assumed every card was
+// 4 rows tall.
+func (m *Model) followSubtaskCursorInOuterViewport() {
+	if m.subtasks.Cursor() < 0 {
 		return
 	}
-	const cardRowsEstimate = 4
-
-	// Warm taskDetailsBoxHeightCache before the value-receiver scroll
-	// math reads it — both subtasksViewportRows + taskFocusedSection-
-	// Offset depend on the cached form height in stacked layout, and
-	// without this prime the first call would render the form once
-	// per keystroke.
-	if task, ok := m.activeTask(); ok {
-		layoutPrime := m.computeTaskViewLayout(m.availableWidth(), true)
-		if layoutPrime.kind == taskViewStacked {
-			m.primeTaskDetailsBoxHeight(task, layoutPrime)
-		}
-	}
-
-	viewport := m.subtasksViewportRows()
-	if viewport > 0 {
-		// Each card occupies ~4 rows on screen (border + content + badges).
-		// The estimate keeps the cursor visible without the cost of measuring
-		// every rendered card; off-by-one drift is corrected by clampScroll
-		// on the next render.
-		cursorTop := m.subtaskCursor * cardRowsEstimate
-		cursorBottom := cursorTop + cardRowsEstimate
-		if cursorTop < m.subtaskScroll {
-			m.subtaskScroll = cursorTop
-		}
-		if cursorBottom > m.subtaskScroll+viewport {
-			m.subtaskScroll = cursorBottom - viewport
-		}
-		if m.subtaskScroll < 0 {
-			m.subtaskScroll = 0
-		}
-	} else {
-		m.subtaskScroll = 0
-	}
-
-	// Stacked layout: the sub-tasks panel is one of three sections
-	// joined into a single string sliced by m.taskView.Viewport. The
-	// cursor advance is invisible unless we also move the outer
-	// viewport. taskFocusedSectionOffset already knows the line index
-	// where the sub-tasks section starts inside the joined output.
 	layout := m.computeTaskViewLayout(m.availableWidth(), true)
 	if layout.kind != taskViewStacked {
 		return
@@ -1686,13 +1665,25 @@ func (m *Model) syncSubtaskScrollToCursor() {
 	if outerViewport <= 0 {
 		return
 	}
-	// 3 = panel kicker(1) + rule(1) + leading blank inside the
-	// sub-tasks box before the first card row. Matches the chrome
-	// renderSubtasksPanel emits above the card list.
+	children := m.directChildren(m.taskID)
+	focused := m.taskFocus == taskFocusSubtasks
+	items := m.buildSubtaskCardItems(children, focused, layout)
+	cursor := m.subtasks.Cursor()
+	if cursor < 0 || cursor >= len(items) {
+		return
+	}
+	// 3 = panel kicker (1) + rule (1) + leading blank before the
+	// first card row. Matches what renderSubtasksPanel emits above
+	// the card list inside the bordered box.
 	const subtasksHeaderRows = 3
+	linesAbove := 0
+	for i := 0; i < cursor; i++ {
+		linesAbove += items[i].Height
+	}
+	cursorHeight := items[cursor].Height
 	sectionTop := m.taskFocusedSectionOffset()
-	cursorOuterTop := sectionTop + subtasksHeaderRows + m.subtaskCursor*cardRowsEstimate
-	cursorOuterBottom := cursorOuterTop + cardRowsEstimate
+	cursorOuterTop := sectionTop + subtasksHeaderRows + linesAbove
+	cursorOuterBottom := cursorOuterTop + cursorHeight
 	if cursorOuterTop < m.taskView.Viewport.Scroll {
 		m.taskView.Viewport.Scroll = cursorOuterTop
 	}
@@ -1709,14 +1700,15 @@ func (m *Model) syncSubtaskScrollToCursor() {
 // selection or the index drifted past the end (e.g. after refresh
 // dropped a child); callers render no-op for that case.
 func (m Model) activeSubtask() (domain.Task, bool) {
-	if m.subtaskCursor < 0 {
+	cursor := m.subtasks.Cursor()
+	if cursor < 0 {
 		return domain.Task{}, false
 	}
 	children := m.directChildren(m.taskID)
-	if m.subtaskCursor >= len(children) {
+	if cursor >= len(children) {
 		return domain.Task{}, false
 	}
-	return children[m.subtaskCursor], true
+	return children[cursor], true
 }
 
 // sendFocusedSubtaskToDone shortcuts the sub-task currently under the

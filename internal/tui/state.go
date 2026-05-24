@@ -14,8 +14,9 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
-	"omakiten/internal/tui/components/notification"
+	"omakiten/internal/tui/components/cardlist"
 	"omakiten/internal/tui/components/detailscreen"
+	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/picker"
 	"omakiten/internal/tui/components/viewport"
 )
@@ -420,15 +421,13 @@ type Model struct {
 	// description and forcing modal switches per surface.
 	taskFocus taskScreenFocus
 
-	// subtaskCursor is the index into directChildren(taskID) for the
-	// sub-tasks pane cursor. -1 means "no selection"; rotating focus
-	// into the pane clamps it to 0 so the first card always reads as
-	// the cursor target.
-	subtaskCursor int
-	// subtaskScroll mirrors activityScroll: line offset into the
-	// scroll-window of pre-rendered sub-task cards. Auto-follows the
-	// cursor via syncSubtaskScrollToCursor.
-	subtaskScroll int
+	// subtasks owns cursor + scroll for the sub-tasks pane. The
+	// cardlist.Model encapsulates the (cursor, scroll, items,
+	// viewport) tuple so no callsite can write the scroll field
+	// directly — the W11 refactor that closed the unit-mismatch
+	// bug class (line offset vs card index) routes every mutation
+	// through MoveCursor / WithItems / WithViewport.
+	subtasks cardlist.Model
 
 	// taskViewStack records ancestor task IDs the user drilled in from
 	// (via Enter on a sub-task card). Esc pops back to the most recent

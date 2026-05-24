@@ -20,6 +20,7 @@ import (
 	"omakiten/internal/domain"
 	hookactions "omakiten/internal/hooks/actions"
 	"omakiten/internal/token"
+	"omakiten/internal/tui/components/cardlist"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/picker"
@@ -72,7 +73,8 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		// (kind, width) pair across the lifetime of the model. Inner
 		// maps lazily fill on first write per kind.
 		styleByKindWidth: map[styleKind]map[int]lipgloss.Style{},
-		tokenCountCache:          map[uint64]int{},
+		tokenCountCache:  map[uint64]int{},
+		subtasks:         cardlist.New(),
 	}
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()
