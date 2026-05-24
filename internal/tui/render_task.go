@@ -1060,64 +1060,86 @@ func (m Model) renderTaskView() string {
 	}
 	available := m.availableWidth()
 	lyt := m.computeTaskViewLayout(available, true)
-	outerH := m.taskViewportHeight()
 	details := m.renderTaskDetailsBox(task, lyt)
+	formHeight := lipgloss.Height(details)
+	budget := m.taskViewBudget(lyt, formHeight)
 	children := m.directChildren(task.ID)
 
-	// Stacked: single-pane focus. The terminal is too narrow to host
-	// the activity rail next to the left column, so the renderer
-	// picks ONE panel to fill the outer viewport based on
-	// m.taskFocus. Tab cycles between panels; each is full-height
-	// when shown, eliminating the prior race where two panels both
-	// claimed the leftover space and one ended up floored to a
-	// 6-row sliver.
-	if lyt.kind == taskViewStacked {
-		switch m.taskFocus {
-		case taskFocusForm:
-			// Form has natural height; render as-is and let the
-			// outer scroll handle overflow when the description
-			// wraps long. No padding — empty space below the form
-			// signals "this is the form pane, tab for the others".
-			return m.applyTaskViewScroll(details)
-		case taskFocusSubtasks:
-			subtasksBox := m.renderSubtasksPanel(children, lyt, outerH)
-			return m.applyTaskViewScroll(subtasksBox)
-		case taskFocusActivity:
-			commentsBox := m.renderActivityBox(task.ID, lyt, outerH)
-			return m.applyTaskViewScroll(commentsBox)
-		}
+	// Early-render fallback: before the first WindowSizeMsg arrives
+	// (m.height == 0 → OuterHeight 0) we have no terminal budget to
+	// drive the cascade. Render all three panels content-sized so
+	// the first paint never goes blank or single-pane on a fresh
+	// task open; the next render with a real WindowSizeMsg snaps to
+	// the budget-driven layout.
+	if budget.OuterHeight <= 0 {
+		subtasksBox := m.renderSubtasksPanel(children, lyt, 0)
+		commentsBox := m.renderActivityBox(task.ID, lyt, 0)
+		return m.applyTaskViewScroll(joinTaskViewSections(lyt, details, subtasksBox, commentsBox))
 	}
 
-	// Side-by-side: all three panels visible. Sub-tasks panel locks
-	// to OuterHeight - formHeight so the left column reaches the
-	// outer viewport floor; the activity rail mirrors the left
-	// column's height via renderActivityBox's padding so the right
-	// rail's bottom border lines up with the left stack's.
-	formHeight := lipgloss.Height(details)
-	subtasksBoxHeight := outerH - formHeight
-	if subtasksBoxHeight < 0 {
-		subtasksBoxHeight = 0
+	// Side-by-side always renders the three-panel layout. Focus only
+	// changes the kicker/border accent (handled inside each panel
+	// renderer); sizing is identical across focus states.
+	if lyt.kind == taskViewSideBySide {
+		subtasksBox := m.renderSubtasksPanel(children, lyt, budget.SubtasksBoxHeight())
+		commentsBox := m.renderActivityBox(task.ID, lyt, budget.ActivityBoxHeight())
+		return m.applyTaskViewScroll(joinTaskViewSections(lyt, details, subtasksBox, commentsBox))
 	}
-	subtasksBox := m.renderSubtasksPanel(children, lyt, subtasksBoxHeight)
-	leftHeight := formHeight + lipgloss.Height(subtasksBox)
-	commentsBox := m.renderActivityBox(task.ID, lyt, leftHeight)
 
-	rendered := joinTaskViewSections(lyt, details, subtasksBox, commentsBox)
-	return m.applyTaskViewScroll(rendered)
+	// Stacked: cascade by focus.
+	//   - subtasks focus → single-pane subtasks, fullscreen.
+	//   - activity focus → single-pane activity, fullscreen.
+	//   - form focus → 3/2/1 cascade depending on the leftover height
+	//     after the form box; empty children / no events still render
+	//     inside their allotted slot (drop is by height only).
+	switch m.taskFocus {
+	case taskFocusSubtasks:
+		return m.applyTaskViewScroll(m.renderSubtasksPanel(children, lyt, budget.SubtasksBoxHeight()))
+	case taskFocusActivity:
+		return m.applyTaskViewScroll(m.renderActivityBox(task.ID, lyt, budget.ActivityBoxHeight()))
+	}
+
+	// Form focus stacked cascade. Stitch the visible panels with
+	// "\n\n" so the on-screen layout matches the budget's row math
+	// (each gap costs one Separator row, which the budget already
+	// excluded from the panel slots).
+	sections := []string{details}
+	if budget.ShowSubtasks() {
+		sections = append(sections, m.renderSubtasksPanel(children, lyt, budget.SubtasksBoxHeight()))
+	}
+	if budget.ShowActivity() {
+		sections = append(sections, m.renderActivityBox(task.ID, lyt, budget.ActivityBoxHeight()))
+	}
+	return m.applyTaskViewScroll(strings.Join(sections, "\n\n"))
 }
 
 // renderActivityBox builds the bordered activity pane. boxHeight is
-// the desired total box rows (borders + chrome + body); the body is
-// padded with blank lines so the final box matches that height
-// exactly. Centralised here so both the stacked single-pane path
-// (boxHeight = OuterHeight) and the side-by-side path (boxHeight =
-// leftHeight to mirror form + sub-tasks) share one assembly.
+// the desired total box rows (borders + chrome + body):
+//
+//   - boxHeight > 0: lock the rendered box to exactly that many
+//     rows by padding (or trimming) the body. Used by the
+//     budget-driven layouts in renderTaskView so the on-screen box
+//     matches the layout package's expectation.
+//   - boxHeight == 0: render content-sized — no height clamp. Used
+//     by the pre-WindowSizeMsg fallback path where the layout
+//     budget is unknown.
+//
+// renderFixedBox emits len(lines) + 2 rows total (one border on
+// each side).
 func (m Model) renderActivityBox(taskID int64, lyt taskViewLayout, boxHeight int) string {
 	commentsCellText := m.renderTaskCommentsCell(taskID)
 	commentsLines := gridtable.WrapLines(strings.Split(commentsCellText, "\n"), lyt.activityWidth)
-	desired := boxHeight - 2 // subtract the 2 border rows renderFixedBox adds outside the content
-	for len(commentsLines) < desired {
-		commentsLines = append(commentsLines, "")
+	if boxHeight > 0 {
+		desired := boxHeight - 2
+		if desired < 0 {
+			desired = 0
+		}
+		if len(commentsLines) > desired {
+			commentsLines = commentsLines[:desired]
+		}
+		for len(commentsLines) < desired {
+			commentsLines = append(commentsLines, "")
+		}
 	}
 	return renderFixedBox(commentsLines, lyt.activityWidth, m.styles.border)
 }
@@ -1359,13 +1381,16 @@ func (m Model) renderTaskDescriptionInline(description string, width int) string
 // state renders the same boxed pane with a hint line so leaf tasks
 // still show the column instead of dropping it from the layout.
 //
-// boxHeight is the desired total box rows (borders + chrome + body).
-// Pass 0 for a content-sized box (callers that don't know the outer
-// budget yet); pass a positive value to lock the panel height so the
-// box reaches a specific row (e.g. side-by-side wants the left
-// column to extend to the outer viewport floor; stacked single-pane
-// wants the panel to fill the outer viewport entirely).
-func (m Model) renderSubtasksPanel(children []domain.Task, layout taskViewLayout, boxHeight int) string {
+// boxHeight is the desired TOTAL box rows (borders + chrome + body):
+//
+//   - boxHeight > 0: lock the rendered box to exactly that many
+//     rows. lipgloss `Style.Height` treats its argument as INNER
+//     content rows (borders sit outside), so this helper subtracts
+//     layout.PanelBorders before handing the budget off.
+//   - boxHeight == 0: render content-sized — no height clamp. Used
+//     by the pre-WindowSizeMsg fallback path where the layout
+//     budget is unknown.
+func (m Model) renderSubtasksPanel(children []domain.Task, lyt taskViewLayout, boxHeight int) string {
 	finalKey := m.workflow.FinalBucketKey()
 	done := 0
 	for _, child := range children {
@@ -1383,25 +1408,32 @@ func (m Model) renderSubtasksPanel(children []domain.Task, layout taskViewLayout
 		header = m.styles.info.Render("// " + headerLabel)
 	}
 
-	// Build the cardlist items from the children pre-render. The
-	// subtasks Model carries the cursor + scroll state that key
-	// handlers mutated through MoveCursor / JumpFirst / JumpLast; the
-	// View-pass replays the items + viewport so the cardlist's
-	// internal resync stays accurate even when the render is the only
-	// thing observing the freshly-resized terminal.
-	items := m.buildSubtaskCardItems(children, focused, layout)
+	items := m.buildSubtaskCardItems(children, focused, lyt)
 	subtasks := m.subtasks.WithItems(items).WithViewport(m.subtasksViewportRows())
 
 	column := columnframe.Model{
 		Header: header,
-		Rule:   m.hRule(layout.subtasksInner),
+		Rule:   m.hRule(lyt.subtasksInner),
 		List:   subtasks,
 	}
 	if len(children) == 0 {
-		column.EmptyLine = m.styles.empty.Width(layout.subtasksInner).Render(m.t("tui.empty.sub_tasks"))
+		column.EmptyLine = m.styles.empty.Width(lyt.subtasksInner).Render(m.t("tui.empty.sub_tasks"))
 	}
 	body := column.View(m.styles.hint)
-	return m.styles.kanbanColumnSized(layout.subtasksInner, boxHeight).Render(body)
+
+	// boxHeight is the TOTAL row count the caller asked for;
+	// lipgloss interprets `Height(n)` as the inner content row count
+	// (borders are stacked outside). Convert before handing off.
+	// boxHeight == 0 → pass 0 through → kanbanColumnSized keeps the
+	// content-sized default.
+	inner := 0
+	if boxHeight > 0 {
+		inner = boxHeight - layout.PanelBorders
+		if inner < 0 {
+			inner = 0
+		}
+	}
+	return m.styles.kanbanColumnSized(lyt.subtasksInner, inner).Render(body)
 }
 
 // buildSubtaskCardItems renders each child task as a card and packs
@@ -1473,19 +1505,16 @@ func (m Model) taskBreadcrumbTrail() string {
 	return m.styles.hint.Render(prefix + "← " + strings.Join(parts, " ← "))
 }
 
-// subtasksViewportRows returns the line budget the sub-tasks card-list
-// gets when rendered. Routes through layout.TaskViewBudget so the
-// policy is identical for the activity panel.
+// subtasksViewportRows returns the inner row budget the sub-tasks
+// cardlist gets after layout chrome / borders. Routes through the
+// task-view budget so the policy stays paired with the activity
+// panel.
 //
-// In stacked single-pane mode the panel fills the outer viewport when
-// focused; the budget reflects that even when sub-tasks is not the
-// currently-focused section, so sync handlers (refreshSubtaskList,
-// moveSubtaskCursor) can keep cardlist state coherent for the
-// instant the user tabs back.
-//
-// Returns 0 when the terminal is unknown / too small — the cardlist's
-// own clamp treats 0 as "render every card, no slice", and the outer
-// taskViewportHeight slicer takes over.
+// Returns 0 when the panel would not render at the current budget
+// (stacked + activity focus, or stacked + form focus with terminal
+// below the SubtasksMinRows floor). 0 tells the cardlist "render
+// every card, no slice" — fine because the outer renderer will not
+// emit this panel.
 func (m Model) subtasksViewportRows() int {
 	if m.height <= 0 {
 		return 0
@@ -1497,26 +1526,37 @@ func (m Model) subtasksViewportRows() int {
 	lyt := m.computeTaskViewLayout(m.availableWidth(), true)
 	formHeight := m.cachedTaskDetailsBoxHeight(task, lyt)
 	rows := m.taskViewBudget(lyt, formHeight).SubtasksRows()
-	if rows < 4 {
+	if rows < 0 {
 		return 0
 	}
 	return rows
 }
 
 // taskViewBudget builds the layout.TaskViewBudget value the per-section
-// helpers consume. Centralises the Kind translation and the
+// helpers consume. Centralises the Kind / Focus translation and the
 // OuterHeight read so subtasksViewportRows + activityViewportLines stay
-// aligned on every refresh. Focus is irrelevant to the budget itself —
-// in stacked mode the renderer picks ONE panel to draw based on
-// m.taskFocus, and each panel's row budget is the full outer viewport
-// minus its own chrome.
+// aligned on every refresh.
+//
+// Focus drives the stacked-mode cascade (form focus → 3/2/1 panels,
+// subtasks/activity focus → single-pane fullscreen). The side-by-side
+// path ignores Focus for sizing — it always renders all three panels
+// at the same dimensions; only the kicker/border accent shifts to
+// signal which section owns the keys.
 func (m Model) taskViewBudget(lyt taskViewLayout, formHeight int) layout.TaskViewBudget {
 	kind := layout.Stacked
 	if lyt.kind == taskViewSideBySide {
 		kind = layout.SideBySide
 	}
+	focus := layout.FocusForm
+	switch m.taskFocus {
+	case taskFocusSubtasks:
+		focus = layout.FocusSubtasks
+	case taskFocusActivity:
+		focus = layout.FocusActivity
+	}
 	return layout.TaskViewBudget{
 		Kind:        kind,
+		Focus:       focus,
 		FormHeight:  formHeight,
 		OuterHeight: m.taskViewportHeight(),
 	}

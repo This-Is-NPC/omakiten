@@ -7,7 +7,6 @@ import (
 
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/gridtable"
-	"omakiten/internal/tui/layout"
 )
 
 func (m Model) renderTaskCommentsCell(taskID int64) string {
@@ -530,35 +529,26 @@ const (
 	activityViewportFallbackLines = 12
 )
 
-// activityViewportLines is the maximum number of LINES the activity column
-// renders before pagination kicks in. Routes through
-// layout.TaskViewBudget.ActivityRows so the policy stays paired with
-// subtasksViewportRows: in stacked single-pane mode the panel fills
-// the outer viewport; in side-by-side it caps at the left column's
-// height (or the outer viewport, whichever is shorter).
+// activityViewportLines returns the inner row budget the activity
+// linelist gets after layout chrome / borders. Routes through the
+// task-view budget so the policy stays paired with the sub-tasks
+// panel.
 //
-// The fallback path keeps the activityViewportFallbackLines value for
-// early renders before WindowSizeMsg arrives.
+// Returns activityViewportMinLines as a floor for navigability when
+// the panel will render but the budget collapses tight. The fallback
+// path keeps the activityViewportFallbackLines value for early
+// renders before WindowSizeMsg arrives.
 func (m Model) activityViewportLines() int {
 	if m.height <= 0 {
 		return activityViewportFallbackLines
 	}
 
-	// Side-by-side path needs the rendered sub-tasks panel height to
-	// cap the right-rail. The panel is locked to OuterHeight -
-	// FormHeight by renderTaskView so its measured height matches
-	// the budget — no double-rendering needed here.
-	subtasksH := 0
 	rows := 0
 	if m.taskScreen == taskScreenView {
 		if task, ok := m.activeTask(); ok {
 			l := m.computeTaskViewLayout(m.availableWidth(), true)
 			formH := m.cachedTaskDetailsBoxHeight(task, l)
-			budget := m.taskViewBudget(l, formH)
-			if l.kind == taskViewSideBySide {
-				subtasksH = budget.SubtasksRows() + layout.SubtasksHeader + layout.PanelBorders
-			}
-			rows = budget.ActivityRows(subtasksH)
+			rows = m.taskViewBudget(l, formH).ActivityRows()
 		}
 	}
 
