@@ -82,7 +82,7 @@ func (m *Model) openPlanNetwork() {
 	m.planNetworkShow = show
 	m.planNetworkOpen = true
 	m.planNetworkCursor = 0
-	m.planNetworkScroll = 0
+	m.planNetwork = m.planNetwork.WithItems(nil)
 	m.planNetworkCollapsed = map[int64]bool{}
 	// Land the cursor on the active wave's header when one exists so
 	// the user sees the live frontier first. Falls back to row 0
@@ -106,7 +106,7 @@ func (m *Model) closePlanNetwork() {
 	m.planNetworkOpen = false
 	m.planNetworkShow = app.PlanShow{}
 	m.planNetworkCursor = 0
-	m.planNetworkScroll = 0
+	m.planNetwork = m.planNetwork.WithItems(nil)
 	m.planNetworkCollapsed = nil
 }
 

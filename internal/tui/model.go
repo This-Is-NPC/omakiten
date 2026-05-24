@@ -75,6 +75,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		styleByKindWidth: map[styleKind]map[int]lipgloss.Style{},
 		tokenCountCache:  map[uint64]int{},
 		subtasks:         cardlist.New(),
+		planNetwork:      cardlist.New(),
 	}
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()

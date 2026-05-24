@@ -521,11 +521,13 @@ type Model struct {
 	// row is whatever the projection emitted next, so a collapsed
 	// wave header is followed immediately by the next wave header.
 	planNetworkCursor int
-	// planNetworkScroll is the vertical scroll offset into the same
-	// flat row list. A single int (not per-wave) because the outline
-	// is rendered into one viewport — there is no per-wave bucket
-	// scroll any more.
-	planNetworkScroll int
+	// planNetwork owns the scroll state for the flat row list via
+	// cardlist.Model. Cursor mirrors planNetworkCursor through
+	// WithCursor at sync time; the cardlist's internal
+	// scrollwindow.Resync makes the unit-mismatch bug class
+	// impossible — there is no `planNetworkScroll int` field
+	// callers could write the wrong unit to.
+	planNetwork cardlist.Model
 	// planNetworkCollapsed records which waves are folded down to a
 	// single header row. Default state is expanded (entries missing
 	// from the map render expanded). Toggled with `space` on the

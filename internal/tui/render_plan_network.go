@@ -12,6 +12,7 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/cardlist"
 	"omakiten/internal/tui/components/multilineform"
 )
 
@@ -250,17 +251,32 @@ func (m *Model) openPlanAssignEditor() {
 	)
 }
 
-// syncPlanNetworkScroll keeps planNetworkScroll aligned so the cursor
-// stays inside the viewport. Each row is exactly one terminal line, so
-// the math is the same as table/graph scrolling.
+// syncPlanNetworkScroll syncs the planNetwork cardlist.Model so the
+// cursor stays inside the viewport. Heights vary per row because
+// wave↔task transitions inject a separator line; the cardlist
+// component handles those variable heights through scrollwindow.Resync.
+//
+// Routes through WithItems + WithViewport + WithCursor so the
+// component owns scroll correctness. The Items carry only their
+// Height (Content is empty) because the plan-network renderer
+// builds its own rendered lines via planNetworkBuildRows + the
+// table-chrome assembly in renderPlanNetwork — cardlist's role
+// here is scroll state, not rendering.
 func (m *Model) syncPlanNetworkScroll(rows []planNetworkRow) {
 	viewport := m.planNetworkBodyViewportRows()
 	if viewport <= 0 || len(rows) == 0 {
-		m.planNetworkScroll = 0
+		m.planNetwork = m.planNetwork.WithItems(nil)
 		return
 	}
 	heights := planNetworkRowHeights(rows)
-	m.planNetworkScroll = followScrollWindowSplit(m.planNetworkScroll, m.planNetworkCursor, heights, viewport)
+	items := make([]cardlist.Item, len(rows))
+	for i, h := range heights {
+		items[i] = cardlist.Item{Content: "", Height: h}
+	}
+	m.planNetwork = m.planNetwork.
+		WithItems(items).
+		WithViewport(viewport).
+		WithCursor(m.planNetworkCursor)
 }
 
 // planNetworkViewportRows returns the number of terminal rows the
@@ -908,7 +924,14 @@ func (m Model) renderPlanNetwork() string {
 	if viewport <= 0 || len(rendered) == 0 {
 		bodyContent = strings.Join(rendered, "\n")
 	} else {
-		sliced := m.renderScrollWindowSplit(rendered, heights, m.planNetworkScroll, viewport)
+		// Read scroll offset from the cardlist, which owns it via
+		// the syncPlanNetworkScroll sync routine. The renderer still
+		// builds the line slice with its own chrome (separator
+		// transitions, lane-pad) so the cardlist's View path is not
+		// the one used here — we only need its scroll-position
+		// decision.
+		scroll := m.planNetwork.Scroll()
+		sliced := m.renderScrollWindowSplit(rendered, heights, scroll, viewport)
 		bodyContent = strings.Join(sliced, "\n")
 	}
 
