@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/app"
+	"omakiten/internal/domain"
 )
 
 // forbiddenBackupOutRoots are the absolute path prefixes the `db backup
@@ -78,11 +79,19 @@ func runDBBackup(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, 
 		}
 		finalPath = filepath.Clean(finalPath)
 		if root, blocked := blockedBackupOutRoot(finalPath); blocked {
-			return nil, fmt.Errorf(opts.t("cli.db.backup.error.system_path_fmt"), finalPath, root)
+			return nil, domain.NewError(
+				domain.ErrValidation,
+				fmt.Sprintf(opts.t("cli.db.backup.error.system_path_fmt"), finalPath, root),
+				map[string]any{"path": finalPath, "root": root},
+			)
 		}
 		if !force {
 			if _, statErr := os.Stat(finalPath); statErr == nil {
-				return nil, fmt.Errorf(opts.t("cli.db.backup.error.exists_fmt"), finalPath)
+				return nil, domain.NewError(
+					domain.ErrValidation,
+					fmt.Sprintf(opts.t("cli.db.backup.error.exists_fmt"), finalPath),
+					map[string]any{"path": finalPath},
+				)
 			} else if !errors.Is(statErr, os.ErrNotExist) {
 				return nil, fmt.Errorf("backup --out stat: %w", statErr)
 			}
