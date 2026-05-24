@@ -587,6 +587,13 @@ func (m *Model) closeTaskScreen(status string) {
 	m.subtaskCursor = -1
 	m.subtaskScroll = 0
 	m.taskViewStack = nil
+	// Drop the per-task activity cards cache (keyed by taskID) so the
+	// rendered card slice for the closed task does not linger across
+	// the entire process lifetime. Same for the per-task render
+	// caches the board / table / entity views populate — they are
+	// cheap to rebuild on the next refresh and live-once outlives
+	// the cards by far when many tasks are opened then closed.
+	m.activityCardsCache = activityCardsCacheEntry{}
 	m.taskFocus = taskFocusForm
 	m.commentScreenOpen = false
 	m.commentScreenID = 0
