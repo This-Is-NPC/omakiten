@@ -84,8 +84,11 @@ func TestEntityCellViewportNeverExceedsBudget(t *testing.T) {
 				tags:          tags,
 				entityKind:    entityKindTag,
 				entityCursors: map[entityKind]int{entityKindTag: scroll},
-				entityScroll:  map[entityKind]int{entityKindTag: scroll},
 			}
+			// Drive the cardlist-owned scroll state via the same sync
+			// routine production calls; the per-kind list lands with
+			// a row-index scroll aligned to the supplied cursor.
+			m.syncFocusedEntityScroll()
 			rendered := m.renderEntityCellWithViewport(entityKindTag, viewport, 200)
 			lines := strings.Count(rendered, "\n") + 1
 			// kicker + separator add 2 lines on top of the viewport budget.

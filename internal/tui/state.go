@@ -340,8 +340,14 @@ type Model struct {
 
 	entityKind    entityKind
 	entityCursors map[entityKind]int
-	entityScroll  map[entityKind]int
-	entityScreen  entityScreenMode
+	// entityLists owns the per-kind cardlist.Model whose items
+	// represent ROWS of the entity grid (cards wrap into rows of
+	// entityGridCols(contentWidth)). Scroll is a row index inside
+	// the cardlist; storing rows-as-items means a partial-row
+	// alignment cannot drift — the cardlist guarantees the cursor
+	// row stays inside the slice.
+	entityLists  map[entityKind]cardlist.Model
+	entityScreen entityScreenMode
 
 	// settingsGeneralScroll is the first-visible body row in the
 	// Settings › General sub-tab. The view is read-only — no cursor —
