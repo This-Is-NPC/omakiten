@@ -806,59 +806,77 @@ func (s *Store) MaybeFinalizePlanForTask(ctx context.Context, projectID, taskID 
 		return false, nil
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return false, err
+	// errSkipFinalize is a sentinel translated to (false, nil) below —
+	// signals 'gating check inside Mutate rejected the transition, roll
+	// the tx back without emitting an event'. The helper's contract is
+	// always-emit-on-success; a skip path needs an out-of-band signal.
+	type finalizeResult struct {
+		// active is the active-task count snapshot used in the
+		// plan.done payload. Captured pre-transition so the payload
+		// reflects what the finaliser saw.
+		active int
 	}
-	defer func() { _ = tx.Rollback() }()
+	errSkipFinalize := errors.New("skip finalize")
+	_, err := txMutateAndEmit(ctx, s, TxMutation[finalizeResult]{
+		Scope:      EventScopeEntity,
+		EntityType: domain.EventEntityPlan,
+		EventType:  domain.EventTypePlanDone,
+		ProjectID:  projectID,
+		EntityID:   func(_ finalizeResult) int64 { return planID.Int64 },
+		Mutate: func(ctx context.Context, tx *sql.Tx) (finalizeResult, error) {
+			var status string
+			if err := tx.QueryRowContext(ctx, `SELECT status FROM plans WHERE id = ? AND project_id = ?`, planID.Int64, projectID).Scan(&status); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return finalizeResult{}, errSkipFinalize
+				}
+				return finalizeResult{}, err
+			}
+			if status != "active" {
+				return finalizeResult{}, errSkipFinalize
+			}
 
-	var status string
-	if err := tx.QueryRowContext(ctx, `SELECT status FROM plans WHERE id = ? AND project_id = ?`, planID.Int64, projectID).Scan(&status); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+			var active, pending int
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM tasks WHERE plan_id = ? AND project_id = ? AND state = 'active'`, planID.Int64, projectID).Scan(&active); err != nil {
+				return finalizeResult{}, err
+			}
+			if active == 0 {
+				return finalizeResult{}, errSkipFinalize
+			}
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM tasks WHERE plan_id = ? AND project_id = ? AND state = 'active' AND COALESCE(bucket_id, 0) <> ?`, planID.Int64, projectID, finalBucket.ID).Scan(&pending); err != nil {
+				return finalizeResult{}, err
+			}
+			if pending > 0 {
+				return finalizeResult{}, errSkipFinalize
+			}
+
+			res, err := tx.ExecContext(ctx, `UPDATE plans SET status = 'done', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'active'`, planID.Int64)
+			if err != nil {
+				return finalizeResult{}, err
+			}
+			changed, err := res.RowsAffected()
+			if err != nil {
+				return finalizeResult{}, err
+			}
+			if changed == 0 {
+				// Lost a race against another finaliser — already transitioned.
+				return finalizeResult{}, errSkipFinalize
+			}
+			return finalizeResult{active: active}, nil
+		},
+		Payload: func(r finalizeResult) (string, error) {
+			b, err := json.Marshal(map[string]any{"total": r.active})
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		},
+	})
+	if err != nil {
+		if errors.Is(err, errSkipFinalize) {
 			return false, nil
 		}
 		return false, err
 	}
-	if status != "active" {
-		return false, nil
-	}
-
-	var active, pending int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM tasks WHERE plan_id = ? AND project_id = ? AND state = 'active'`, planID.Int64, projectID).Scan(&active); err != nil {
-		return false, err
-	}
-	if active == 0 {
-		return false, nil
-	}
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM tasks WHERE plan_id = ? AND project_id = ? AND state = 'active' AND COALESCE(bucket_id, 0) <> ?`, planID.Int64, projectID, finalBucket.ID).Scan(&pending); err != nil {
-		return false, err
-	}
-	if pending > 0 {
-		return false, nil
-	}
-
-	res, err := tx.ExecContext(ctx, `UPDATE plans SET status = 'done', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'active'`, planID.Int64)
-	if err != nil {
-		return false, err
-	}
-	changed, err := res.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	if changed == 0 {
-		// Lost a race against another finaliser — already transitioned.
-		return false, nil
-	}
-
-	payload, _ := json.Marshal(map[string]any{"total": active})
-	ev, err := insertEntityEvent(ctx, tx, domain.EventEntityPlan, planID.Int64, projectID, domain.EventTypePlanDone, string(payload))
-	if err != nil {
-		return false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	s.publishEvent(ctx, ev)
 	return true, nil
 }
 
