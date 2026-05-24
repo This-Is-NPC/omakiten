@@ -79,6 +79,9 @@ keys:
     pass is skipped — the user owns the rotation policy outside the
     default state directory.
   cli.db.backup.flag.out: "write the snapshot to this explicit file path (skips retention prune)"
+  cli.db.backup.flag.force: "overwrite the target file when --out points at an existing path"
+  cli.db.backup.error.system_path_fmt: "refusing to write backup to system path %q (under %s)"
+  cli.db.backup.error.exists_fmt: "refusing to overwrite existing file %q; pass --force to replace"
   cli.db.backup.success_fmt: "backup written to %s"
   cli.preset.omakase.title: "Kokin valinta"
   cli.preset.omakase.description: "Tasapainoinen workflow, jossa on self-branch, resume ja dokumentaatio-guardit."
