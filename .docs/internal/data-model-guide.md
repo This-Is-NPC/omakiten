@@ -396,6 +396,38 @@ The cross-project exceptions (errors, solutions, global tag list, template catal
 
 The driver is pure Go (`modernc.org/sqlite`), so the binary builds without CGo.
 
+## Schema auto-migration (config side)
+
+`MigrateLayout` (in `internal/config/migration.go`) runs every time
+the CLI / TUI boots through the materialize path and is responsible
+for two distinct migration surfaces:
+
+1. **Directory shape** (v0 / v1 / v2 layouts). Documented inline at
+   the function's godoc; the v2 shape is the current source of truth.
+2. **YAML schema** (`migrateSchemaDefaults` in
+   `internal/config/migration_schema.go`). Backfills required keys
+   that were added in later releases so user bundles authored before
+   those releases survive the next launch without manual edits. The
+   helper walks every `<root>/config/*.yaml`, parses to a
+   `*yaml.Node` (so user comments + key order survive), and only
+   rewrites a profile when at least one of the required keys is
+   missing. Identical inputs read through to a byte-identical write
+   that is skipped — running it twice is a no-op.
+
+Currently backfilled:
+
+- `config.sqlite.cache_size_kb` (kit canonical: 1024) — required since
+  W7 #225.
+- `config.sqlite.mmap_size_bytes` (kit canonical: 0) — required since
+  W7 #225.
+
+When adding a new required key to the wiring schema, extend
+`migrateSchemaDefaultsInFile` with a `mapValueNode(... ) == nil`
+check + `appendMapEntry(...)` call rather than letting the validator
+break user bundles on upgrade. The pattern keeps every prior version
+of the wiring loadable as long as the kit canonical for the new key
+is sensible as a backfill default.
+
 ## Where to learn more
 
 - Migration sources: `migrations/001_initial.sql` … `migrations/024_search_index_plans.sql`.

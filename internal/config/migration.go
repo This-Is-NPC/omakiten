@@ -48,6 +48,15 @@ func MigrateLayout(rootDir string) error {
 	if err := migrateLegacyTemplateBinding(rootDir); err != nil {
 		return err
 	}
+	// Schema-level migration runs after the directory-layout passes
+	// so it operates on the canonical <root>/config/*.yaml tree the
+	// rest of MigrateLayout already normalised. Backfills the sqlite
+	// knobs introduced in W7 #225 so legacy bundles authored before
+	// those keys became required survive the first post-upgrade
+	// load.
+	if err := migrateSchemaDefaults(rootDir); err != nil {
+		return err
+	}
 	return nil
 }
 
