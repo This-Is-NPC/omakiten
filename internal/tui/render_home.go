@@ -13,6 +13,7 @@ import (
 	"omakiten/internal/paths"
 	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/picker"
+	"omakiten/internal/tui/components/scrollwindow"
 )
 
 // loadHome (re)loads the cross-project data the Home view renders: every
@@ -231,7 +232,7 @@ func (m *Model) syncHomeScroll() {
 		rendered := m.renderProjectCard(m.homeProjects[i], false, cardWidth, cardContent)
 		heights[i] = strings.Count(rendered, "\n") + 1
 	}
-	m.homePicker.Scroll = followScrollWindowSplit(m.homePicker.Scroll, m.homePicker.Cursor, heights, m.homeViewportRows())
+	m.homePicker.Scroll = scrollwindow.Follow(m.homePicker.Scroll, m.homePicker.Cursor, heights, m.homeViewportRows(), scrollwindow.HintsSplit)
 }
 
 // renderHome renders the multi-project picker mirroring the visual grammar

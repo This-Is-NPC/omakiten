@@ -31,16 +31,17 @@ var scrollFieldAssignmentPattern = regexp.MustCompile(`m\.[A-Za-z_][A-Za-z0-9_]*
 // mismatch (line offset vs card index) that motivated this refactor
 // becomes impossible to write.
 //
-// SCAFFOLDED, NOT ENFORCING. Activated by W11-D after every surface
-// has been migrated. Today the test only reports the current
-// violation count so the migration waves can track progress; the
-// failure path is gated behind `os.Getenv("OKT_ENFORCE_SCROLL_BOUNDARY")`
-// so the gate flips on with one env-var change in mise's check
-// task during W11-D without touching this file.
+// ENFORCED by default since W11-D — mise's check task sets
+// OKT_ENFORCE_SCROLL_BOUNDARY=1, so any new surface that introduces
+// a `m.fooScroll = …` mutation in render_*.go fails CI with a
+// precise file:line list pointing at the cardlist / linelist
+// component the surface should route through.
 //
-// Once enforced, surfaces that introduce a new scroll-tracking
-// field land here automatically; the test is the merge gate the
-// reviewer no longer has to remember.
+// The env var stays opt-out for the rare local debugging session
+// that needs to bisect a scroll regression by introducing a
+// temporary direct mutation — unset the var, run the test, see the
+// count drop progress, then re-route through the component before
+// landing.
 func TestScrollStateBoundary(t *testing.T) {
 	root, err := repoRoot()
 	if err != nil {
@@ -86,12 +87,13 @@ func TestScrollStateBoundary(t *testing.T) {
 		t.Fatalf("walk %s: %v", renderDir, err)
 	}
 
-	enforce := os.Getenv("OKT_ENFORCE_SCROLL_BOUNDARY") == "1"
+	enforce := os.Getenv("OKT_ENFORCE_SCROLL_BOUNDARY") != "0"
 	if !enforce {
-		// Scaffolded — log the current pre-migration count so each
-		// W11-B / W11-C wave can quote the drop in its tests-passing
-		// comment.
-		t.Logf("scroll-state boundary scaffolded; %d direct Scroll mutations remain in render_*.go (will be enforced by W11-D)", len(violations))
+		// Opt-out path for local debugging — log the violation count
+		// without failing. Production CI runs with the env unset
+		// (default) and gets the strict gate; setting the var to "0"
+		// loosens it for a one-off bisect.
+		t.Logf("scroll-state boundary opt-out (OKT_ENFORCE_SCROLL_BOUNDARY=0); %d direct Scroll mutations remain in render_*.go", len(violations))
 		return
 	}
 	if len(violations) > 0 {
