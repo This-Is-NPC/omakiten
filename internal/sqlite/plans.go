@@ -638,7 +638,10 @@ WHERE project_id = ? AND id = ?
 		return domain.Task{}, false, err
 	}
 
-	assignPayload, _ := json.Marshal(map[string]any{"assignee": agentModel, "source": "plans.claim_next"})
+	assignPayload, err := json.Marshal(map[string]any{"assignee": agentModel, "source": "plans.claim_next"})
+	if err != nil {
+		return domain.Task{}, false, err
+	}
 	assignEvent, err := insertEntityEvent(ctx, conn, domain.EventEntityTask, taskID, projectID, domain.EventTypeTaskAssigned, string(assignPayload))
 	if err != nil {
 		return domain.Task{}, false, err
