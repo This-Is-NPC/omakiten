@@ -18,6 +18,7 @@ import (
 	"omakiten/internal/tui/components/gridtable"
 	"omakiten/internal/tui/components/multilineform"
 	"omakiten/internal/tui/components/picker"
+	"omakiten/internal/tui/layout"
 )
 
 func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1457,46 +1458,59 @@ func (m Model) taskBreadcrumbTrail() string {
 	return m.styles.hint.Render(prefix + "← " + strings.Join(parts, " ← "))
 }
 
-// subtasksViewportRows returns the line budget the sub-tasks column
-// has after the surrounding screen chrome. In side-by-side layout the
-// pane owns its full vertical column, so the original chrome=7
-// estimate stays accurate. In stacked layout the pane is one of three
-// sections in a joined string (form box + sub-tasks box + activity
-// box), so the budget must also subtract the form box height and the
-// section separator — otherwise the cursor walks past the outer
-// viewport slice without anything scrolling and the user sees no
-// movement. Mirrors activityViewportLines for the side-by-side case.
+// subtasksViewportRows returns the line budget the sub-tasks card-list
+// has after every sibling section has claimed its share. Routes through
+// layout.TaskViewBudget so the policy is identical for the activity
+// panel and so adding a third stacked section in the future means
+// extending the budget struct (one place) rather than re-litigating
+// the chrome math in every panel's helper.
 //
-// The form height is read through taskDetailsBoxHeightCache instead
-// of re-rendering the form on every call — syncSubtaskScrollToCursor
-// fires this on every j/k keystroke, and the previous render-to-measure
-// pattern allocated a fresh lipgloss form per call.
+// Returns 0 when the terminal is unknown / too small — the cardlist's
+// own clamp treats 0 as "render every card, no slice", and the outer
+// taskViewportHeight slicer takes over.
 func (m Model) subtasksViewportRows() int {
 	if m.height <= 0 {
 		return 0
 	}
-	chrome := 7 // header(2) + leading blank(1) + footer(2) + panel header(kicker+rule) (2)
-	if m.status != "" {
-		chrome++
+	task, ok := m.activeTask()
+	if !ok {
+		return 0
 	}
-
-	// In stacked layout the form box sits above the sub-tasks pane in
-	// the joined output; carve out its height + the "\n\n" separator
-	// so the budget reflects the leftover space.
-	if task, ok := m.activeTask(); ok {
-		layout := m.computeTaskViewLayout(m.availableWidth(), true)
-		if layout.kind == taskViewStacked {
-			formHeight := m.cachedTaskDetailsBoxHeight(task, layout)
-			// +1 = blank line between form and sub-tasks sections.
-			chrome += formHeight + 1
-		}
-	}
-
-	rows := m.height - chrome
+	lyt := m.computeTaskViewLayout(m.availableWidth(), true)
+	formHeight := m.cachedTaskDetailsBoxHeight(task, lyt)
+	rows := m.taskViewBudget(lyt, formHeight).SubtasksRows()
 	if rows < 4 {
 		return 0
 	}
 	return rows
+}
+
+// taskViewBudget builds the layout.TaskViewBudget value the per-section
+// helpers consume. Centralises the Kind / Focus translation and the
+// OuterHeight read so subtasksViewportRows + activityViewportLines stay
+// aligned on every refresh — when the user tabs between panels the
+// Focus field flips and the joint split shifts rows from one panel to
+// the other deterministically.
+func (m Model) taskViewBudget(lyt taskViewLayout, formHeight int) layout.TaskViewBudget {
+	kind := layout.Stacked
+	if lyt.kind == taskViewSideBySide {
+		kind = layout.SideBySide
+	}
+	focus := layout.FocusNone
+	switch m.taskFocus {
+	case taskFocusForm:
+		focus = layout.FocusForm
+	case taskFocusSubtasks:
+		focus = layout.FocusSubtasks
+	case taskFocusActivity:
+		focus = layout.FocusActivity
+	}
+	return layout.TaskViewBudget{
+		Kind:        kind,
+		Focus:       focus,
+		FormHeight:  formHeight,
+		OuterHeight: m.taskViewportHeight(),
+	}
 }
 
 // taskDetailsBoxHeightCacheEntry holds the memoised form box height.

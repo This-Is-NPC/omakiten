@@ -512,20 +512,12 @@ func (m *Model) syncActivityScrollToCursor() {
 	m.activityLines = list
 }
 
-// Chrome budget consumed by every rendered row of the task detail screen
-// outside the activity panel's slice. activityChromeBase aggregates the
-// fixed-cost rows present on every render; the optional surcharges are
-// added on top when their feature renders.
+// Chrome budget consumed by the embedded comment input + panel
+// constants. The prior activityChromeBase / activityChromeStatus
+// constants died with W12 — the screen-chrome accounting now lives
+// inside taskViewportHeight (consumed via layout.TaskViewBudget)
+// instead of being re-derived here.
 const (
-	// activityChromeBase: screen header (2) + leading blank
-	// applyTaskViewScroll prepends (1) + screen footer separator +
-	// keybindings (2) + activity panel top + bottom border (2) + kicker
-	// row inside the panel (1) + trailing margin so the bottom border is
-	// never the last row written to the alt-screen (1) = 9.
-	activityChromeBase = 9
-	// activityChromeStatus: extra row consumed when m.status renders an
-	// inline badge above the content.
-	activityChromeStatus = 1
 	// activityChromeEmbeddedInput: extra rows consumed by the embedded
 	// comment input (header + 5 input rows + hint + padding).
 	activityChromeEmbeddedInput = 9
@@ -540,70 +532,60 @@ const (
 )
 
 // activityViewportLines is the maximum number of LINES the activity column
-// renders before pagination kicks in. In stacked layout the budget
-// shrinks to account for the form + sub-tasks siblings that share the
-// outer joined-content viewport — closes bug 2 where the activity
-// panel asked for m.height-9 rows even when ~half the terminal was
-// already consumed by the two stacked siblings above it, producing a
-// joined string twice the terminal height that the outer slicer had
-// to chop.
+// renders before pagination kicks in. Routes through
+// layout.TaskViewBudget.ActivityRows so the stacked-mode joint split
+// (focus-aware share between sub-tasks and activity) and the side-by-
+// side cap (activity rail ≤ left column) come from the same source as
+// subtasksViewportRows — no panel can ever claim space the other one
+// also believes it owns.
 //
-// In side-by-side layout the original chrome estimate stays accurate
-// because activity owns its own vertical column (no siblings sharing
-// the budget). The fallback path keeps the activityViewportFallback-
-// Lines value for early renders before WindowSizeMsg arrives.
+// Pre-W12 this helper estimated the sub-tasks panel height by summing
+// every child card's row count, then asked TaskViewBudget for whatever
+// rows were left. With many children the sum was larger than the outer
+// viewport, ActivityRows floored to 0, and the activity panel collapsed
+// to activityViewportMinLines (~6 rows) even on tall terminals — bug 2
+// from the user report. The joint split fixes that by deciding both
+// shares from the leftover, independent of the measured sub-tasks
+// height.
+//
+// The fallback path keeps the activityViewportFallbackLines value for
+// early renders before WindowSizeMsg arrives.
 func (m Model) activityViewportLines() int {
 	if m.height <= 0 {
 		return activityViewportFallbackLines
 	}
-	chrome := activityChromeBase
-	if m.status != "" {
-		chrome += activityChromeStatus
-	}
-	if m.isEmbeddedCommentInput() {
-		chrome += activityChromeEmbeddedInput
-	}
-	rows := m.height - chrome
 
-	// Stacked layout: the activity panel sits below form + sub-tasks
-	// inside the joined content. Subtract their measured heights +
-	// separators (one blank row between each adjacent pair) so the
-	// activity slice + the form + the sub-tasks + their borders
-	// together fit inside the outer taskViewportHeight budget.
+	// Side-by-side path needs the rendered sub-tasks panel height to
+	// cap the right-rail. Stacked path ignores the argument inside
+	// TaskViewBudget — measuring the panel is a cheap allocation we
+	// skip when it would be discarded anyway.
+	subtasksH := 0
 	if m.taskScreen == taskScreenView {
-		if l := m.computeTaskViewLayout(m.availableWidth(), true); l.kind == taskViewStacked {
+		if l := m.computeTaskViewLayout(m.availableWidth(), true); l.kind == taskViewSideBySide {
 			if task, ok := m.activeTask(); ok {
 				formH := m.cachedTaskDetailsBoxHeight(task, l)
-				children := m.directChildren(task.ID)
-				// Estimate sub-tasks panel height by summing card
-				// heights + chrome. Cheap; the cards are already
-				// rendered by the cardlist sync path during the
-				// same frame.
-				subtasksH := layout.SubtasksHeader
-				cursorVal := m.subtasks.Cursor()
-				for i, child := range children {
-					selected := m.taskFocus == taskFocusSubtasks && i == cursorVal
-					subtasksH += m.cardHeightFromSpec(taskCardSpec{
-						ID:         child.ID,
-						Title:      child.Title,
-						Badges:     m.taskBoardBadges(child),
-						Selected:   selected,
-						Archived:   child.State == domain.TaskStateArchived,
-						BoxWidth:   l.subtasksCard,
-						InnerWidth: l.subtasksInner2,
-					})
-				}
-				budget := layout.TaskViewBudget{
-					Kind:        layout.Stacked,
-					FormHeight:  formH,
-					OuterHeight: m.taskViewportHeight(),
-				}
-				stackedRows := budget.ActivityRows(subtasksH)
-				if stackedRows < rows {
-					rows = stackedRows
-				}
+				subRows := m.taskViewBudget(l, formH).SubtasksRows()
+				// rendered panel height = body rows + chrome (header) + borders.
+				subtasksH = subRows + layout.SubtasksHeader + layout.PanelBorders
 			}
 		}
+	}
+
+	rows := 0
+	if m.taskScreen == taskScreenView {
+		if task, ok := m.activeTask(); ok {
+			l := m.computeTaskViewLayout(m.availableWidth(), true)
+			formH := m.cachedTaskDetailsBoxHeight(task, l)
+			rows = m.taskViewBudget(l, formH).ActivityRows(subtasksH)
+		}
+	}
+
+	// Subtract the embedded comment input from the available rows so
+	// the panel does not grow when the user starts composing. Status
+	// badge handling stays the same — the outer screen chrome owns it,
+	// the budget already excluded it.
+	if m.isEmbeddedCommentInput() {
+		rows -= activityChromeEmbeddedInput
 	}
 
 	if rows < activityViewportMinLines {
