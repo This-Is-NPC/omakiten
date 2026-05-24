@@ -36,11 +36,11 @@ func writeLoadFromDirFile(t *testing.T, dir, name, body string) string {
 // fixedDecoder ignores the raw bytes and returns an item keyed by the
 // filename slug. Good enough for exercising traversal + collision logic
 // without dragging the domain validators in.
-func fixedDecoder() func(path string, raw []byte, isCustom bool) (loadFromDirItem, error) {
-	return func(path string, _ []byte, isCustom bool) (loadFromDirItem, error) {
+func fixedDecoder() func(path string, raw []byte, isCustom bool) (loadFromDirItem, *SourceWarning, error) {
+	return func(path string, _ []byte, isCustom bool) (loadFromDirItem, *SourceWarning, error) {
 		base := filepath.Base(path)
 		slug := strings.TrimSuffix(base, filepath.Ext(base))
-		return loadFromDirItem{Slug: slug, Source: path, IsCustom: isCustom}, nil
+		return loadFromDirItem{Slug: slug, Source: path, IsCustom: isCustom}, nil, nil
 	}
 }
 
@@ -217,14 +217,77 @@ func TestLoadFromDir_decoderErrorPropagates(t *testing.T) {
 	_, _, err := LoadFromDir(dir, LoadOptions[loadFromDirItem]{
 		Suffix:       ".yaml",
 		MaxFileBytes: 1024,
-		Decode: func(path string, _ []byte, _ bool) (loadFromDirItem, error) {
-			return loadFromDirItem{}, sentinel
+		Decode: func(path string, _ []byte, _ bool) (loadFromDirItem, *SourceWarning, error) {
+			return loadFromDirItem{}, nil, sentinel
 		},
 		SlugOf:    func(item loadFromDirItem) string { return item.Slug },
 		Collision: CollideOverwrite,
 	})
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("expected sentinel propagation, got %v", err)
+	}
+}
+
+func TestLoadFromDir_onDecodeErrorRecoversCustom(t *testing.T) {
+	dir := t.TempDir()
+	writeLoadFromDirFile(t, dir, "good.yaml", "x")
+	writeLoadFromDirFile(t, filepath.Join(dir, "custom"), "bad.yaml", "x")
+	boom := fmt.Errorf("schema drift")
+	items, warnings, err := LoadFromDir(dir, LoadOptions[loadFromDirItem]{
+		Suffix:       ".yaml",
+		MaxFileBytes: 1024,
+		Decode: func(path string, _ []byte, isCustom bool) (loadFromDirItem, *SourceWarning, error) {
+			if filepath.Base(path) == "bad.yaml" {
+				return loadFromDirItem{}, nil, boom
+			}
+			base := filepath.Base(path)
+			slug := strings.TrimSuffix(base, filepath.Ext(base))
+			return loadFromDirItem{Slug: slug, Source: path, IsCustom: isCustom}, nil, nil
+		},
+		SlugOf:    func(item loadFromDirItem) string { return item.Slug },
+		Collision: CollideOverwrite,
+		OnDecodeError: func(path string, isCustom bool, err error) (*SourceWarning, bool) {
+			if !isCustom {
+				return nil, false
+			}
+			return &SourceWarning{Path: path, Message: err.Error()}, true
+		},
+	})
+	if err != nil {
+		t.Fatalf("LoadFromDir: %v", err)
+	}
+	if len(items) != 1 || items[0].Slug != "good" {
+		t.Fatalf("expected only good to survive, got %+v", items)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0].Message, "schema drift") {
+		t.Fatalf("expected recovery warning, got %+v", warnings)
+	}
+}
+
+func TestLoadFromDir_decoderWarningPropagates(t *testing.T) {
+	dir := t.TempDir()
+	writeLoadFromDirFile(t, dir, "alpha.yaml", "x")
+	items, warnings, err := LoadFromDir(dir, LoadOptions[loadFromDirItem]{
+		Suffix:       ".yaml",
+		MaxFileBytes: 1024,
+		Decode: func(path string, _ []byte, isCustom bool) (loadFromDirItem, *SourceWarning, error) {
+			base := filepath.Base(path)
+			slug := strings.TrimSuffix(base, filepath.Ext(base))
+			return loadFromDirItem{Slug: slug, Source: path, IsCustom: isCustom},
+				&SourceWarning{Slug: slug, Path: path, Message: "decode-time warning"},
+				nil
+		},
+		SlugOf:    func(item loadFromDirItem) string { return item.Slug },
+		Collision: CollideOverwrite,
+	})
+	if err != nil {
+		t.Fatalf("LoadFromDir: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if len(warnings) != 1 || warnings[0].Message != "decode-time warning" {
+		t.Fatalf("expected propagated warning, got %+v", warnings)
 	}
 }
 

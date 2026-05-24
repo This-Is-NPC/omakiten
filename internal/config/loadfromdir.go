@@ -45,10 +45,22 @@ type LoadOptions[T any] struct {
 	MaxFileBytes int64
 	// Decode parses raw into the domain type. isCustom is stamped by the
 	// walker (false for files at dir/, true for files at dir/custom/) so
-	// the decoder can embed scope on the returned item.
-	Decode    func(path string, raw []byte, isCustom bool) (T, error)
+	// the decoder can embed scope on the returned item. The optional
+	// warning is appended to the loader's accumulated warnings on
+	// success — used to surface non-fatal drift like a filename slug
+	// that does not match the in-file name field.
+	Decode    func(path string, raw []byte, isCustom bool) (T, *SourceWarning, error)
 	SlugOf    func(T) string
 	Collision CollisionPolicy
+	// OnDecodeError is consulted when Decode returns an error. It returns
+	// an optional non-fatal SourceWarning and a `recover` flag: if true,
+	// the file is skipped and the loader continues; if false, the error
+	// propagates. nil callback means every Decode error is fatal.
+	//
+	// Notification loaders use this to tolerate user-authored custom
+	// files that drift from the current schema (warning + skip) while
+	// still failing hard on broken default-scope files.
+	OnDecodeError func(path string, isCustom bool, err error) (*SourceWarning, bool)
 }
 
 // LoadFromDir walks dir and dir/custom for files ending in opts.Suffix,
@@ -81,15 +93,27 @@ func LoadFromDir[T any](dir string, opts LoadOptions[T]) ([]T, []SourceWarning, 
 	bySlug := map[string]entry{}
 	seenScope := map[string]bool{} // slug → scope of last winner
 	order := []string{}
+	var warnings []SourceWarning
 
 	for _, file := range files {
 		raw, readErr := readFileBounded(file.Path, opts.MaxFileBytes)
 		if readErr != nil {
 			return nil, nil, readErr
 		}
-		item, decodeErr := opts.Decode(file.Path, raw, file.IsCustom)
+		item, warning, decodeErr := opts.Decode(file.Path, raw, file.IsCustom)
 		if decodeErr != nil {
+			if opts.OnDecodeError != nil {
+				if recoveredWarning, recovered := opts.OnDecodeError(file.Path, file.IsCustom, decodeErr); recovered {
+					if recoveredWarning != nil {
+						warnings = append(warnings, *recoveredWarning)
+					}
+					continue
+				}
+			}
 			return nil, nil, decodeErr
+		}
+		if warning != nil {
+			warnings = append(warnings, *warning)
 		}
 		slug := opts.SlugOf(item)
 		if _, exists := bySlug[slug]; exists {
@@ -125,6 +149,6 @@ func LoadFromDir[T any](dir string, opts LoadOptions[T]) ([]T, []SourceWarning, 
 	for _, slug := range order {
 		out = append(out, bySlug[slug].item)
 	}
-	return out, nil, nil
+	return out, warnings, nil
 }
 
