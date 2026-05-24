@@ -95,19 +95,25 @@ func (r *runtime) bundleEditor() *app.BundleEditor {
 	return app.NewBundleEditor(configstore.New(), r.configPath)
 }
 
-func (r *runtime) skillService() *app.SkillService {
+// entityServiceRepos aggregates the editor/file/slugger triple every
+// entity service shares so each constructor below stays one line. The
+// configstore satisfies both EntityFileWriter and Slugifier — keeping
+// the alias inside the helper means a swap of either port lands once.
+func (r *runtime) entityServiceRepos() app.EntityServiceRepos {
 	store := configstore.New()
-	return app.NewSkillService(r.activeSnapshot(), r.bundleEditor(), store, store)
+	return app.EntityServiceRepos{Editor: r.bundleEditor(), Files: store, Slugger: store}
+}
+
+func (r *runtime) skillService() *app.SkillService {
+	return app.NewSkillService(r.entityServiceRepos(), r.activeSnapshot())
 }
 
 func (r *runtime) lawService() *app.LawService {
-	store := configstore.New()
-	return app.NewLawService(r.activeSnapshot(), r.bundleEditor(), store, store, r.activeRegistry())
+	return app.NewLawService(r.entityServiceRepos(), r.activeSnapshot(), r.activeRegistry())
 }
 
 func (r *runtime) personaService() *app.PersonaService {
-	store := configstore.New()
-	return app.NewPersonaService(r.activeSnapshot(), r.bundleEditor(), store, store)
+	return app.NewPersonaService(r.entityServiceRepos(), r.activeSnapshot())
 }
 
 func (r *runtime) contextService() *app.ContextService {

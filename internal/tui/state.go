@@ -164,6 +164,14 @@ func pkgTUICatalog() *config.Catalog {
 	return pkgTUICatalogPtr
 }
 
+// entityServiceRepos aggregates the editor/file/slugger triple every
+// entity service shares so inline TUI construction sites no longer
+// repeat the same three field reads at each callsite. Mirrors the
+// CLI runtime's entityServiceRepos helper.
+func (r *Repositories) entityServiceRepos() app.EntityServiceRepos {
+	return app.EntityServiceRepos{Editor: r.Editor, Files: r.EntityFiles, Slugger: r.Slugger}
+}
+
 // activeSnapshot returns the per-project *config.Snapshot from the
 // BundleCache entry the runtime installed at boot. TUI inline service
 // constructions capture this pointer at the moment of dispatch; the

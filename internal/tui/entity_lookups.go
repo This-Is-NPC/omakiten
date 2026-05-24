@@ -116,14 +116,14 @@ func (m Model) defaultSeverityID() domain.Severity {
 func (m Model) scaffoldEntity(ctx context.Context, kind entityKind, repos Repositories, name string) (string, error) {
 	switch kind {
 	case entityKindSkill:
-		service := app.NewSkillService(repos.activeSnapshot(), repos.Editor, repos.EntityFiles, repos.Slugger)
+		service := app.NewSkillService(repos.entityServiceRepos(), repos.activeSnapshot())
 		skill, err := service.Add(ctx, domain.SkillInput{Name: name})
 		if err != nil {
 			return "", err
 		}
 		return skill.SourcePath, nil
 	case entityKindLaw:
-		service := app.NewLawService(repos.activeSnapshot(), repos.Editor, repos.EntityFiles, repos.Slugger, m.registry)
+		service := app.NewLawService(repos.entityServiceRepos(), repos.activeSnapshot(), m.registry)
 		// New laws default to the configured `default: true` severity
 		// (typically "warning"). DefaultSeverity returns SeverityZero
 		// when the registry is empty (uninitialised tests), in which
@@ -141,7 +141,7 @@ func (m Model) scaffoldEntity(ctx context.Context, kind entityKind, repos Reposi
 		}
 		return law.SourcePath, nil
 	case entityKindPersona:
-		service := app.NewPersonaService(repos.activeSnapshot(), repos.Editor, repos.EntityFiles, repos.Slugger)
+		service := app.NewPersonaService(repos.entityServiceRepos(), repos.activeSnapshot())
 		persona, err := service.Add(ctx, domain.PersonaInput{Name: name})
 		if err != nil {
 			return "", err

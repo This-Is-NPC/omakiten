@@ -152,7 +152,7 @@ func TestEntityRefreshAfterEditorMessage(t *testing.T) {
 
 	// Simulate the editor flow: directly add a skill and dispatch the
 	// editorFinishedMsg the way runExternalEditor would after $EDITOR returns.
-	skillService := app.NewSkillService(model.repos.activeSnapshot(), editor, model.repos.EntityFiles, model.repos.Slugger)
+	skillService := app.NewSkillService(app.EntityServiceRepos{Editor: editor, Files: model.repos.EntityFiles, Slugger: model.repos.Slugger}, model.repos.activeSnapshot())
 	if _, err := skillService.Add(ctx, domain.SkillInput{Key: "tui", Name: "TUI"}); err != nil {
 		t.Fatalf("SkillService.Add() error = %v", err)
 	}
@@ -447,7 +447,7 @@ func TestPersonaPickerToggleAndSave(t *testing.T) {
 	ctx := context.Background()
 
 	// Add a second skill so the picker has two rows to toggle between.
-	if _, err := app.NewSkillService(model.repos.activeSnapshot(), model.repos.Editor, model.repos.EntityFiles, model.repos.Slugger).Add(ctx, domain.SkillInput{Key: "sqlite", Name: "SQLite"}); err != nil {
+	if _, err := app.NewSkillService(model.repos.entityServiceRepos(), model.repos.activeSnapshot()).Add(ctx, domain.SkillInput{Key: "sqlite", Name: "SQLite"}); err != nil {
 		t.Fatalf("Add(skill) error = %v", err)
 	}
 	if err := runtimecache.RefreshFromEditor(model.repos.Cache, model.repos.ProjectID, model.repos.Editor); err != nil {

@@ -317,13 +317,15 @@ func (m *Model) deleteEntity(kind entityKind, slug string) {
 		return
 	}
 	var err error
+	repos := m.repos.entityServiceRepos()
+	snap := m.repos.activeSnapshot()
 	switch kind {
 	case entityKindLaw:
-		err = app.NewLawService(m.repos.activeSnapshot(), m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger, m.registry).Remove(m.ctx, slug)
+		err = app.NewLawService(repos, snap, m.registry).Remove(m.ctx, slug)
 	case entityKindSkill:
-		err = app.NewSkillService(m.repos.activeSnapshot(), m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger).Remove(m.ctx, slug)
+		err = app.NewSkillService(repos, snap).Remove(m.ctx, slug)
 	case entityKindPersona:
-		err = app.NewPersonaService(m.repos.activeSnapshot(), m.repos.Editor, m.repos.EntityFiles, m.repos.Slugger).Remove(m.ctx, slug)
+		err = app.NewPersonaService(repos, snap).Remove(m.ctx, slug)
 	}
 	if err != nil {
 		m.status = err.Error()
