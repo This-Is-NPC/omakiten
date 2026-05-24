@@ -258,6 +258,69 @@ func TestViewRendersBothHintsMidScroll(t *testing.T) {
 	}
 }
 
+// TestViewRendersPartialTrailingCardFill pins the visual-fill
+// contract: when the viewport has rows left over after the last
+// whole card AND there is a next card below, the next card is
+// rendered truncated to fill those rows. The "▼ N below" hint still
+// counts the partially-rendered card as below — the partial is a
+// preview, not "fully visible".
+//
+// Setup: 10 items of height 3 each, viewport = 9. Scrollwindow
+// reserves 1 row for the below hint, leaving 8 rows for cards.
+// Two whole cards = 6 rows. 2 rows left over → next card renders
+// its first 2 lines as a partial preview.
+func TestViewRendersPartialTrailingCardFill(t *testing.T) {
+	items := make([]Item, 10)
+	for i := range items {
+		items[i] = Item{
+			Content: "card #" + strconv.Itoa(i) + "\n  line2\n  line3",
+			Height:  3,
+		}
+	}
+	m := New().WithViewport(9).WithItems(items)
+	got := m.View(lipgloss.NewStyle())
+
+	// Two whole cards (indices 0, 1).
+	if !strings.Contains(got, "card #0") {
+		t.Fatalf("View missing first whole card: %q", got)
+	}
+	if !strings.Contains(got, "card #1") {
+		t.Fatalf("View missing second whole card: %q", got)
+	}
+	// Partial preview of card #2 — at least its first line is
+	// visible, but its last (line3) is truncated away.
+	if !strings.Contains(got, "card #2") {
+		t.Fatalf("View missing partial preview of next card: %q", got)
+	}
+	if strings.Count(got, "card #2") != 1 {
+		t.Fatalf("View should preview card #2 exactly once: %q", got)
+	}
+	// Below hint must still fire and count the partial card.
+	if !strings.Contains(got, "▼") {
+		t.Fatalf("View missing ▼ below hint: %q", got)
+	}
+}
+
+// TestViewPartialTrailingCardDoesNotOverflow pins that the partial
+// preview never makes the rendered output taller than the viewport
+// budget — the entire point of the feature is to fill the leftover
+// rows, not to overflow.
+func TestViewPartialTrailingCardDoesNotOverflow(t *testing.T) {
+	items := make([]Item, 10)
+	for i := range items {
+		items[i] = Item{
+			Content: "card #" + strconv.Itoa(i) + "\n  line2\n  line3\n  line4",
+			Height:  4,
+		}
+	}
+	const viewport = 11
+	m := New().WithViewport(viewport).WithItems(items)
+	got := m.View(lipgloss.NewStyle())
+	if rows := strings.Count(got, "\n") + 1; rows > viewport {
+		t.Fatalf("View output rows = %d, viewport budget = %d (partial fill overflowed)", rows, viewport)
+	}
+}
+
 func TestVisibleRangeEmptyListReportsOkFalse(t *testing.T) {
 	_, _, ok := New().WithViewport(10).VisibleRange()
 	if ok {

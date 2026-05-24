@@ -242,6 +242,16 @@ func (m Model) WithViewport(rows int) Model {
 // chrome (column borders, kicker rows) wraps the cardlist's output
 // unchanged.
 //
+// When the viewport has rows left over after the last whole card
+// fits AND there is at least one more card below, View renders the
+// next card truncated to the leftover height as a visual preview.
+// The preview is read-only — cursor + scroll still move in
+// whole-card units; this just stops the column from leaving a blank
+// gap above the bottom border when a card refuses to fit fully. The
+// "▼ N below" hint still counts the partially-rendered card as
+// below, matching the linelist's line-based slice where a partial
+// trailing card is also "still in the below count".
+//
 // hintStyle is applied to the indicator rows. The cardlist does not
 // own the style choice because different surfaces (board vs activity
 // vs subtasks) use different theme tokens for the hint colour.
@@ -257,17 +267,53 @@ func (m Model) View(hintStyle lipgloss.Style) string {
 	if m.scroll == 0 && end == len(m.items) {
 		return joinItems(m.items)
 	}
-	parts := make([]string, 0, end-m.scroll+2)
+	parts := make([]string, 0, end-m.scroll+3)
+	usedRows := 0
 	if above := scrollwindow.Above(m.scroll); above > 0 {
 		parts = append(parts, hintStyle.Render(formatAboveHint(above)))
+		usedRows++
 	}
 	for _, item := range m.items[m.scroll:end] {
 		parts = append(parts, item.Content)
+		usedRows += item.Height
 	}
-	if below := scrollwindow.Below(end, len(m.items)); below > 0 {
+	below := scrollwindow.Below(end, len(m.items))
+	// Reserve one row for the below hint when it will render.
+	reservedBelow := 0
+	if below > 0 {
+		reservedBelow = 1
+	}
+	// Partial trailing card preview — fill any leftover viewport rows
+	// with the first lines of the next card so the column reaches
+	// the bottom border instead of leaving a blank gap. Only applies
+	// at the tail (above remains whole-card-aligned).
+	if end < len(m.items) {
+		remaining := m.viewportRows - usedRows - reservedBelow
+		if remaining > 0 {
+			parts = append(parts, truncateContentLines(m.items[end].Content, remaining))
+		}
+	}
+	if below > 0 {
 		parts = append(parts, hintStyle.Render(formatBelowHint(below)))
 	}
 	return strings.Join(parts, "\n")
+}
+
+// truncateContentLines returns the first maxLines rows of content,
+// joined back with "\n". Used by View to render the next-below card
+// as a partial preview filling the leftover viewport rows. The
+// trailing line is intentionally NOT padded — the surface that wraps
+// the cardlist (kanbanColumnSized) owns the bottom border and the
+// visual cue is "this card is cut, scroll to read the rest".
+func truncateContentLines(content string, maxLines int) string {
+	if maxLines <= 0 {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	if len(lines) <= maxLines {
+		return content
+	}
+	return strings.Join(lines[:maxLines], "\n")
 }
 
 // VisibleRange returns the [first, last] inclusive item indices the
