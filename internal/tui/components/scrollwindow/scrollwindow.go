@@ -134,6 +134,38 @@ func Follow(offset, cursor int, heights []int, viewport int, mode HintMode) int 
 	return offset
 }
 
+// Resync is the cardlist / linelist component glue: given the current
+// (cursor, scroll, heights, viewport), return a new (cursor, scroll)
+// pair guaranteed to keep cursor visible inside the viewport with the
+// HintsSplit reservation contract every component-based surface uses.
+//
+// Cursor is clamped to [-1, len(heights)-1]; -1 propagates the "no
+// selection" sentinel callers rely on (empty list, freshly opened
+// view). Scroll is clamped via Follow so the cursor item fits.
+//
+// Centralising the (clamp cursor, then follow scroll) sequence in one
+// helper closes the bug class that motivated the cardlist/linelist
+// refactor: every component mutator (MoveCursor, WithItems,
+// WithViewport) routes through Resync, so the resync contract is one
+// implementation deep instead of being re-invented per surface.
+func Resync(cursor, scroll int, heights []int, viewport int) (newCursor, newScroll int) {
+	if len(heights) == 0 {
+		return -1, 0
+	}
+	if cursor < -1 {
+		cursor = -1
+	}
+	if cursor >= len(heights) {
+		cursor = len(heights) - 1
+	}
+	if cursor == -1 {
+		// No selection — keep scroll at top so the first card stays in
+		// view when the cursor lands on it via the first j/k.
+		return -1, 0
+	}
+	return cursor, Follow(scroll, cursor, heights, viewport, HintsSplit)
+}
+
 // AboveHintRows is the upper bound of terminal rows the mode can spend
 // on the "▲ N above" indicator inside the viewport once offset > 0.
 // Callers computing max-scroll bounds use this to add back the row the

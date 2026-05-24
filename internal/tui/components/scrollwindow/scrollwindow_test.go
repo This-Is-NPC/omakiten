@@ -185,6 +185,56 @@ func TestAboveHintRowsByMode(t *testing.T) {
 	}
 }
 
+func TestResyncEmptyHeightsResetsCursorAndScroll(t *testing.T) {
+	// Empty list: Resync must report no-selection (-1) and zero scroll
+	// regardless of the caller's prior state. Callers depend on this so
+	// a list that drains (last child removed) does not keep a ghost
+	// cursor / non-zero scroll that the next render would mis-clamp.
+	cursor, scroll := Resync(3, 5, nil, 10)
+	if cursor != -1 || scroll != 0 {
+		t.Fatalf("Resync empty = (%d, %d), want (-1, 0)", cursor, scroll)
+	}
+}
+
+func TestResyncClampsCursorPastEnd(t *testing.T) {
+	// Out-of-range cursor (e.g. items shrank from 10 to 5) clamps to
+	// last item; scroll follows so the clamped cursor stays visible.
+	cursor, scroll := Resync(99, 0, ones(5), 5)
+	if cursor != 4 {
+		t.Fatalf("Resync past-end cursor = %d, want 4", cursor)
+	}
+	if scroll < 0 || scroll > cursor {
+		t.Fatalf("Resync past-end scroll = %d, want in [0,4]", scroll)
+	}
+}
+
+func TestResyncPreservesNoSelectionSentinel(t *testing.T) {
+	// Cursor=-1 means "no selection" — callers (cardlist.Model post
+	// applyTaskFocus) rely on Resync NOT promoting -1 to 0 silently.
+	// Scroll is reset to 0 so the first j/k lands on the first card
+	// with the panel at the top.
+	cursor, scroll := Resync(-1, 7, ones(10), 5)
+	if cursor != -1 || scroll != 0 {
+		t.Fatalf("Resync no-selection = (%d, %d), want (-1, 0)", cursor, scroll)
+	}
+}
+
+func TestResyncCursorAtEndFollowsScroll(t *testing.T) {
+	// Cursor at the last item of a list bigger than viewport must
+	// produce a scroll that places the cursor inside the visible slice
+	// (with HintsSplit reservation accounted for). End=Slice(off,...)
+	// must be > cursor.
+	heights := []int{4, 4, 4, 4, 4}
+	cursor, scroll := Resync(4, 0, heights, 12)
+	if cursor != 4 {
+		t.Fatalf("Resync cursor = %d, want 4", cursor)
+	}
+	end := Slice(scroll, heights, 12, HintsSplit)
+	if cursor < scroll || cursor >= end {
+		t.Fatalf("Resync left cursor invisible: cursor=%d scroll=%d end=%d", cursor, scroll, end)
+	}
+}
+
 func TestAboveBelowHelpers(t *testing.T) {
 	if got := Above(7); got != 7 {
 		t.Fatalf("Above(7) = %d, want 7", got)
