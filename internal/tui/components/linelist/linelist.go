@@ -146,6 +146,18 @@ func (m Model) ScrollBy(delta int) Model {
 	return m
 }
 
+// WithCursor jumps the cursor to a specific line index and re-runs
+// the resync invariant. Clamps idx to [-1, len(lines)-1]. -1 is the
+// no-selection sentinel; pass it to clear the cursor without
+// nuking the lines slice. Mirrors cardlist.Model.WithCursor for
+// surfaces that drive the cursor through an external authoritative
+// field on the parent Model.
+func (m Model) WithCursor(idx int) Model {
+	m.cursor = idx
+	m.resync()
+	return m
+}
+
 // WithLines replaces the line list and re-runs resync. Cursor is
 // preserved when the new list still has a line at that index; else
 // clamps to last.

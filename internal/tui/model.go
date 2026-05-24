@@ -22,6 +22,7 @@ import (
 	"omakiten/internal/token"
 	"omakiten/internal/tui/components/cardlist"
 	"omakiten/internal/tui/components/detailscreen"
+	"omakiten/internal/tui/components/linelist"
 	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/picker"
 	"omakiten/internal/tui/components/viewport"
@@ -76,6 +77,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		tokenCountCache:  map[uint64]int{},
 		subtasks:         cardlist.New(),
 		planNetwork:      cardlist.New(),
+		activityLines:    linelist.New(),
 	}
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()

@@ -210,12 +210,23 @@ func TestResyncClampsCursorPastEnd(t *testing.T) {
 
 func TestResyncPreservesNoSelectionSentinel(t *testing.T) {
 	// Cursor=-1 means "no selection" — callers (cardlist.Model post
-	// applyTaskFocus) rely on Resync NOT promoting -1 to 0 silently.
-	// Scroll is reset to 0 so the first j/k lands on the first card
-	// with the panel at the top.
+	// applyTaskFocus, linelist.Model after ScrollBy) rely on Resync
+	// NOT promoting -1 to 0 silently. Scroll is preserved within
+	// bounds so prior body-scroll work survives the sentinel.
 	cursor, scroll := Resync(-1, 7, ones(10), 5)
+	if cursor != -1 {
+		t.Fatalf("Resync no-selection cursor = %d, want -1", cursor)
+	}
+	// 10 items - 5 viewport + 1 above-hint = 6 max scroll. 7 clamps to 6.
+	if scroll != 6 {
+		t.Fatalf("Resync no-selection scroll = %d, want 6 (preserved + clamped)", scroll)
+	}
+}
+
+func TestResyncNoSelectionClampsNegativeScrollToZero(t *testing.T) {
+	cursor, scroll := Resync(-1, -3, ones(10), 5)
 	if cursor != -1 || scroll != 0 {
-		t.Fatalf("Resync no-selection = (%d, %d), want (-1, 0)", cursor, scroll)
+		t.Fatalf("Resync neg scroll = (%d, %d), want (-1, 0)", cursor, scroll)
 	}
 }
 

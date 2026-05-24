@@ -16,6 +16,7 @@ import (
 	"omakiten/internal/token"
 	"omakiten/internal/tui/components/cardlist"
 	"omakiten/internal/tui/components/detailscreen"
+	"omakiten/internal/tui/components/linelist"
 	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/picker"
 	"omakiten/internal/tui/components/viewport"
@@ -415,7 +416,14 @@ type Model struct {
 	// because the rest of refresh() loads all-task data.
 	activity        []domain.Event
 	activityForTask int64
-	activityScroll  int
+	// activityLines owns the activity panel's body scroll via
+	// linelist.Model. The cursor inside the linelist is the line
+	// index of the focused card's top row — syncActivityScrollToCursor
+	// keeps it aligned with m.activityCursor (the card index) via
+	// cardLineRanges. Scroll is always a LINE offset; the bug class
+	// (line vs card index) cannot be written because the field is
+	// unexported on the component.
+	activityLines linelist.Model
 	// activityCursor is the index into the visible activity feed; -1 means
 	// "no card selected" and disables the focused-border styling. Card
 	// navigation moves it; the scroll offset auto-follows.

@@ -147,10 +147,11 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				case "pgup", "ctrl+u":
 					m.scrollActivityLines(-m.activityViewportLines() / 2)
 				case "home", "g":
-					m.activityScroll = 0
+					m.refreshActivityLines()
+					m.activityLines = m.activityLines.ScrollBy(-(1 << 20))
 				case "end", "G":
-					m.activityScroll = 1 << 20
-					m.clampActivityScroll()
+					m.refreshActivityLines()
+					m.activityLines = m.activityLines.ScrollBy(1 << 20)
 				}
 			case taskFocusSubtasks:
 				switch msg.String() {
@@ -422,7 +423,7 @@ func (m *Model) openTaskView(task domain.Task) {
 	m.status = ""
 	m.moveMode = false
 	m.taskView = detailscreen.New(0)
-	m.activityScroll = 0
+	m.activityLines = m.activityLines.WithLines(nil)
 	m.activityCursor = -1
 	m.subtasks = m.subtasks.WithItems(nil)
 	m.taskFocus = taskFocusForm
@@ -586,7 +587,7 @@ func (m *Model) closeTaskScreen(status string) {
 	m.taskView = detailscreen.New(0)
 	m.activity = nil
 	m.activityForTask = 0
-	m.activityScroll = 0
+	m.activityLines = m.activityLines.WithLines(nil)
 	m.activityCursor = -1
 	m.subtasks = m.subtasks.WithItems(nil)
 	m.taskViewStack = nil

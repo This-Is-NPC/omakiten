@@ -159,9 +159,25 @@ func Resync(cursor, scroll int, heights []int, viewport int) (newCursor, newScro
 		cursor = len(heights) - 1
 	}
 	if cursor == -1 {
-		// No selection — keep scroll at top so the first card stays in
-		// view when the cursor lands on it via the first j/k.
-		return -1, 0
+		// No selection — preserve the caller's scroll within bounds
+		// so prior body-scroll work (linelist.ScrollBy) survives
+		// the cursor sentinel. Clamp against the largest offset that
+		// still renders the last line inside the viewport.
+		if scroll < 0 {
+			scroll = 0
+		}
+		if viewport > 0 {
+			bound := len(heights) - viewport + AboveHintRows(HintsSplit)
+			if bound < 0 {
+				bound = 0
+			}
+			if scroll > bound {
+				scroll = bound
+			}
+		} else {
+			scroll = 0
+		}
+		return -1, scroll
 	}
 	return cursor, Follow(scroll, cursor, heights, viewport, HintsSplit)
 }

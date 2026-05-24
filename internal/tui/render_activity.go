@@ -7,7 +7,7 @@ import (
 
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/gridtable"
-	"omakiten/internal/tui/components/scrollwindow"
+	"omakiten/internal/tui/layout"
 )
 
 func (m Model) renderTaskCommentsCell(taskID int64) string {
@@ -38,7 +38,7 @@ func (m Model) renderTaskCommentsCell(taskID int64) string {
 		for i := range heights {
 			heights[i] = 1
 		}
-		lines = append(lines, m.renderScrollWindowSplit(body, heights, m.activityScroll, m.activityViewportLines())...)
+		lines = append(lines, m.renderScrollWindowSplit(body, heights, m.activityLines.Scroll(), m.activityViewportLines())...)
 	}
 	if m.isEmbeddedCommentInput() && m.taskID == taskID {
 		lines = append(lines, "", m.renderCommentInput())
@@ -290,51 +290,26 @@ func payloadField(payload, key string) string {
 	return ""
 }
 
-// scrollActivityLines nudges activityScroll by a raw line delta and clamps
-// to valid range. Lets pgup/pgdn page the activity body independently of
-// the cursor — useful when a single expanded card is taller than the
-// viewport and the user wants to read past its first screenful.
+// scrollActivityLines nudges the activity body scroll by a raw line
+// delta. Routes through linelist.Model.ScrollBy so the component's
+// internal clamp keeps scroll inside [0, last renderable offset].
+// Decouples body-scroll from cursor — useful when an expanded card
+// is taller than the viewport and the user wants to read past its
+// first screenful without losing cursor position.
 func (m *Model) scrollActivityLines(delta int) {
-	m.activityScroll += delta
-	m.clampActivityScroll()
+	m.refreshActivityLines()
+	m.activityLines = m.activityLines.ScrollBy(delta)
 }
 
-// clampActivityScroll keeps activityScroll inside [0, activityMaxScroll()].
-// Computes total by re-rendering cards, which is cheap and avoids the
-// caller having to thread the body length through. See activityMaxScroll
-// for the off-by-one explanation around the split-hint reservation.
-func (m *Model) clampActivityScroll() {
+// refreshActivityLines rebuilds the linelist's body lines + viewport
+// from the current event slice + measured viewport. Called from
+// every *Model handler that touches activity scroll state so the
+// linelist always has accurate inputs before its resync fires.
+func (m *Model) refreshActivityLines() {
 	events := m.activityForTaskInView(m.taskID)
 	body := flattenActivityCards(m.cachedActivityRowsForRender(events))
 	viewport := m.activityViewportLines()
-	if viewport <= 0 || len(body) <= viewport {
-		m.activityScroll = 0
-		return
-	}
-	maxScroll := activityMaxScroll(len(body), viewport)
-	if m.activityScroll < 0 {
-		m.activityScroll = 0
-	}
-	if m.activityScroll > maxScroll {
-		m.activityScroll = maxScroll
-	}
-}
-
-// activityMaxScroll is the largest offset that still renders the last body
-// line inside the activity viewport given the split-hint reservation
-// renderScrollWindowSplit applies. When offset > 0 the renderer steals
-// scrollwindow.AboveHintRows(HintsSplit) rows for the "▲ N above" hint;
-// we add them back so the last line stays reachable — without this G /
-// sustained pgdown left the final card's tail cropped behind a "▼ N below"
-// that lied about still-reachable rows. Floored at 0 — callers should
-// early-return when the body fits without scroll, but defending here
-// keeps the helper composable.
-func activityMaxScroll(bodyLen, viewport int) int {
-	bound := bodyLen - viewport + scrollwindow.AboveHintRows(scrollwindow.HintsSplit)
-	if bound < 0 {
-		return 0
-	}
-	return bound
+	m.activityLines = m.activityLines.WithLines(body).WithViewport(viewport)
 }
 
 // toggleTaskFocus rotates which column inside the task detail screen
@@ -469,8 +444,8 @@ func (m Model) visibleActivityCardRange() (int, int, bool) {
 	if viewport <= 0 {
 		return 0, 0, false
 	}
-	top := m.activityScroll
-	bottom := m.activityScroll + viewport
+	top := m.activityLines.Scroll()
+	bottom := top + viewport
 	first, last := -1, -1
 	for i, r := range ranges {
 		if r.start >= top && r.start < bottom {
@@ -507,27 +482,34 @@ func (m *Model) syncActivityScrollToCursor() {
 	ranges := cardLineRanges(cards)
 	viewport := m.activityViewportLines()
 	if viewport <= 0 || len(body) <= viewport {
-		m.activityScroll = 0
+		m.activityLines = m.activityLines.WithLines(body).WithViewport(viewport)
 		return
 	}
-	heights := make([]int, len(body))
-	for i := range heights {
-		heights[i] = 1
-	}
+	// Feed the linelist the body + viewport, then place its cursor
+	// on the focused card's LAST line (so the entire card fits
+	// inside the slice with HintsSplit reservation). The linelist's
+	// internal Resync handles the Follow + clamp chain.
 	r := ranges[m.activityCursor]
 	cardTop := r.start
 	cardLast := r.start + r.height - 1
-	scroll := scrollwindow.Follow(m.activityScroll, cardLast, heights, viewport, scrollwindow.HintsSplit)
+	// Clear any stale linelist cursor first — m.activityCursor is the
+	// authoritative card cursor; the linelist's cursor is only used
+	// as the Resync vehicle for the current sync call. Without this
+	// clear, a prior sync's cursor (e.g. cardLast=3) would clamp the
+	// Follow run via Follow's `if offset > cursor { offset = cursor }`
+	// guard, snapping scroll back to that stale cursor instead of
+	// honouring the user's pgup/pgdn work.
+	list := m.activityLines.WithCursor(-1).WithLines(body).WithViewport(viewport).WithCursor(cardLast)
+	scroll := list.Scroll()
+	// Top-align tall expanded cards: if Follow drove scroll past the
+	// card's first line, snap back so the header stays visible. The
+	// scrollwindow.Follow chain inside WithCursor only ADVANCES
+	// scroll to fit the cursor; snapping back to cardTop is a
+	// separate UX rule.
 	if scroll > cardTop {
-		scroll = cardTop
+		list = list.WithCursor(-1).ScrollBy(cardTop - scroll)
 	}
-	if scroll < 0 {
-		scroll = 0
-	}
-	if maxScroll := activityMaxScroll(len(body), viewport); scroll > maxScroll {
-		scroll = maxScroll
-	}
-	m.activityScroll = scroll
+	m.activityLines = list
 }
 
 // Chrome budget consumed by every rendered row of the task detail screen
@@ -558,10 +540,18 @@ const (
 )
 
 // activityViewportLines is the maximum number of LINES the activity column
-// renders before pagination kicks in. Sized to consume the outer
-// `taskViewportHeight` budget so the column grows with the terminal — the
-// previous static chrome=12 left ~3 unused rows on every height because it
-// double-counted the screen header/footer the outer viewport already owns.
+// renders before pagination kicks in. In stacked layout the budget
+// shrinks to account for the form + sub-tasks siblings that share the
+// outer joined-content viewport — closes bug 2 where the activity
+// panel asked for m.height-9 rows even when ~half the terminal was
+// already consumed by the two stacked siblings above it, producing a
+// joined string twice the terminal height that the outer slicer had
+// to chop.
+//
+// In side-by-side layout the original chrome estimate stays accurate
+// because activity owns its own vertical column (no siblings sharing
+// the budget). The fallback path keeps the activityViewportFallback-
+// Lines value for early renders before WindowSizeMsg arrives.
 func (m Model) activityViewportLines() int {
 	if m.height <= 0 {
 		return activityViewportFallbackLines
@@ -574,6 +564,48 @@ func (m Model) activityViewportLines() int {
 		chrome += activityChromeEmbeddedInput
 	}
 	rows := m.height - chrome
+
+	// Stacked layout: the activity panel sits below form + sub-tasks
+	// inside the joined content. Subtract their measured heights +
+	// separators (one blank row between each adjacent pair) so the
+	// activity slice + the form + the sub-tasks + their borders
+	// together fit inside the outer taskViewportHeight budget.
+	if m.taskScreen == taskScreenView {
+		if l := m.computeTaskViewLayout(m.availableWidth(), true); l.kind == taskViewStacked {
+			if task, ok := m.activeTask(); ok {
+				formH := m.cachedTaskDetailsBoxHeight(task, l)
+				children := m.directChildren(task.ID)
+				// Estimate sub-tasks panel height by summing card
+				// heights + chrome. Cheap; the cards are already
+				// rendered by the cardlist sync path during the
+				// same frame.
+				subtasksH := layout.SubtasksHeader
+				cursorVal := m.subtasks.Cursor()
+				for i, child := range children {
+					selected := m.taskFocus == taskFocusSubtasks && i == cursorVal
+					subtasksH += m.cardHeightFromSpec(taskCardSpec{
+						ID:         child.ID,
+						Title:      child.Title,
+						Badges:     m.taskBoardBadges(child),
+						Selected:   selected,
+						Archived:   child.State == domain.TaskStateArchived,
+						BoxWidth:   l.subtasksCard,
+						InnerWidth: l.subtasksInner2,
+					})
+				}
+				budget := layout.TaskViewBudget{
+					Kind:        layout.Stacked,
+					FormHeight:  formH,
+					OuterHeight: m.taskViewportHeight(),
+				}
+				stackedRows := budget.ActivityRows(subtasksH)
+				if stackedRows < rows {
+					rows = stackedRows
+				}
+			}
+		}
+	}
+
 	if rows < activityViewportMinLines {
 		rows = activityViewportMinLines
 	}
