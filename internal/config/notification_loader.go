@@ -3,7 +3,6 @@ package config
 import (
 	"bytes"
 	"fmt"
-	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -16,6 +15,10 @@ func LoadNotification(path string) (Notification, error) {
 	if err != nil {
 		return Notification{}, err
 	}
+	return decodeNotificationBytes(path, raw)
+}
+
+func decodeNotificationBytes(path string, raw []byte) (Notification, error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(raw))
 	decoder.KnownFields(true)
 
@@ -43,61 +46,35 @@ func LoadNotification(path string) (Notification, error) {
 // the app stays usable while clearly flagging which custom files
 // were skipped.
 func LoadNotifications(dir string) (map[string]Notification, []SourceWarning, error) {
-	files, err := listNotificationFiles(dir)
+	items, warnings, err := LoadFromDir(dir, LoadOptions[Notification]{
+		Suffixes:     []string{".yaml", ".yml"},
+		MaxFileBytes: MaxNotificationFileBytes,
+		Decode: func(path string, raw []byte, isCustom bool) (Notification, *SourceWarning, error) {
+			notification, derr := decodeNotificationBytes(path, raw)
+			if derr != nil {
+				return Notification{}, nil, derr
+			}
+			notification.IsCustom = isCustom
+			return notification, nil, nil
+		},
+		SlugOf:    func(n Notification) string { return n.Name },
+		Collision: CollideOverwrite,
+		OnDecodeError: func(path string, isCustom bool, derr error) (*SourceWarning, bool) {
+			if !isCustom {
+				return nil, false
+			}
+			return &SourceWarning{
+				Path:    path,
+				Message: fmt.Sprintf("custom notification skipped — file is incompatible with the current schema: %v", derr),
+			}, true
+		},
+	})
 	if err != nil {
 		return nil, nil, err
 	}
-
-	byName := map[string]Notification{}
-	seen := map[string]string{}
-	var warnings []SourceWarning
-	for _, file := range files {
-		notification, err := LoadNotification(file.Path)
-		if err != nil {
-			if file.IsCustom {
-				warnings = append(warnings, SourceWarning{
-					Path:    file.Path,
-					Message: fmt.Sprintf("custom notification skipped — file is incompatible with the current schema: %v", err),
-				})
-				continue
-			}
-			return nil, nil, err
-		}
-		notification.IsCustom = file.IsCustom
-		if previous, dup := seen[notification.Name]; dup {
-			previousIsCustom := byName[notification.Name].IsCustom
-			if previousIsCustom == file.IsCustom {
-				return nil, nil, fmt.Errorf("duplicate notification name %q (also defined in %s)", notification.Name, previous)
-			}
-			// Custom overrides default — only when the new file is
-			// custom AND the existing entry was a default.
-			if !file.IsCustom {
-				continue
-			}
-		}
-		seen[notification.Name] = file.Path
-		byName[notification.Name] = notification
+	byName := make(map[string]Notification, len(items))
+	for _, n := range items {
+		byName[n.Name] = n
 	}
 	return byName, warnings, nil
-}
-
-// notificationFile is an alias for the shared entityFile shape;
-// notifications + entities + language packs all walk the same
-// {Path, IsCustom} pair, so the loader code dedups via listFilesIn.
-type notificationFile = entityFile
-
-func listNotificationFiles(dir string) ([]notificationFile, error) {
-	defaults, err := readYAMLFilesIn(dir, false)
-	if err != nil {
-		return nil, err
-	}
-	customs, err := readYAMLFilesIn(filepath.Join(dir, "custom"), true)
-	if err != nil {
-		return nil, err
-	}
-	return append(defaults, customs...), nil
-}
-
-func readYAMLFilesIn(dir string, isCustom bool) ([]notificationFile, error) {
-	return listFilesIn(dir, []string{".yaml", ".yml"}, isCustom)
 }
