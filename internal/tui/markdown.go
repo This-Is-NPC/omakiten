@@ -100,11 +100,10 @@ func (r *markdownRenderer) Render(body string, width int) string {
 
 	key := markdownCacheKey{bodyHash: hashBody(body), width: width}
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	if elem, ok := r.cache[key]; ok {
 		r.order.MoveToFront(elem)
-		out := elem.Value.(markdownCacheEntry).output
-		r.mu.Unlock()
-		return out
+		return elem.Value.(markdownCacheEntry).output
 	}
 	tr, ok := r.renderers[width]
 	if !ok {
@@ -115,38 +114,34 @@ func (r *markdownRenderer) Render(body string, width int) string {
 			glamour.WithColorProfile(termenv.TrueColor),
 		)
 		if err != nil {
-			r.mu.Unlock()
 			return body
 		}
 		r.renderers[width] = tr
 	}
-	r.mu.Unlock()
 
+	// tr.Render runs INSIDE the mutex: glamour's *TermRenderer threads
+	// renderer state through goldmark's AST walker (BlockStack +
+	// per-element ANSIRenderer fields), and the W3 #215 per-width reuse
+	// turned that state into shared mutable structure across goroutines.
+	// Cache hits short-circuit above, so the only contention is on
+	// distinct miss paths — acceptable since miss-path Render dominates
+	// the per-call cost regardless.
 	out, err := tr.Render(body)
 	if err != nil {
 		return body
 	}
 	out = strings.Trim(out, "\n")
 
-	r.mu.Lock()
-	if elem, ok := r.cache[key]; ok {
-		// Another goroutine raced us to populate the same key; reuse its
-		// entry and discard our just-computed output.
-		r.order.MoveToFront(elem)
-		out = elem.Value.(markdownCacheEntry).output
-	} else {
-		elem := r.order.PushFront(markdownCacheEntry{key: key, output: out})
-		r.cache[key] = elem
-		for r.order.Len() > markdownCacheCapacity {
-			oldest := r.order.Back()
-			if oldest == nil {
-				break
-			}
-			r.order.Remove(oldest)
-			delete(r.cache, oldest.Value.(markdownCacheEntry).key)
+	elem := r.order.PushFront(markdownCacheEntry{key: key, output: out})
+	r.cache[key] = elem
+	for r.order.Len() > markdownCacheCapacity {
+		oldest := r.order.Back()
+		if oldest == nil {
+			break
 		}
+		r.order.Remove(oldest)
+		delete(r.cache, oldest.Value.(markdownCacheEntry).key)
 	}
-	r.mu.Unlock()
 	return out
 }
 
