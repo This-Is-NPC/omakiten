@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
 	"time"
 
+	"omakiten/internal/cliutil"
 	"omakiten/internal/domain"
 )
 
@@ -39,6 +41,11 @@ func (e Exec) Execute(ctx context.Context, ev domain.Event, args map[string]any)
 	if err != nil {
 		return err
 	}
+	resolved, err := resolveExecBinary(argv[0])
+	if err != nil {
+		return err
+	}
+	argv[0] = resolved
 	timeout := readTimeout(args)
 
 	payload, err := json.Marshal(ev)
@@ -97,6 +104,43 @@ func readArgv(args map[string]any) ([]string, error) {
 		return out, nil
 	}
 	return nil, fmt.Errorf("exec: args.argv must be an array of strings, got %T", raw)
+}
+
+// resolveExecBinary delegates the security contract for argv[0] to
+// the shared cliutil.ResolveBinary helper (also consumed by the CLI
+// editor surface).
+//
+// The actual guarantee is narrow and worth naming precisely: pin the
+// absolute path BEFORE fork so exec.CommandContext cannot re-resolve
+// via PATH at fork time. That mitigates a TOCTOU between the
+// LookPath result and the Spawn syscall — a malicious shell hook
+// cannot drop a same-name binary into a PATH dir between the engine
+// reading argv[0] and the kernel running it.
+//
+// What this does NOT do: it does not prevent PATH-shadowing in the
+// general sense. A bare argv[0] like "okt" still resolves through
+// the runtime's inherited PATH at LookPath time, so a project hook
+// that ships `argv: ["okt"]` will pick up whatever `okt` is first on
+// PATH (which is the same behaviour the user gets at their shell
+// prompt). The user is expected to vet bare names the same way they
+// vet any other shell command.
+//
+// Absolute paths pass through; relative paths with embedded
+// separators ("./script.sh", "../bin/foo") are rejected because the
+// hook YAML rarely knows what CWD the runtime executor will inherit.
+func resolveExecBinary(name string) (string, error) {
+	resolved, err := cliutil.ResolveBinary(name)
+	if err == nil {
+		return resolved, nil
+	}
+	switch {
+	case errors.Is(err, cliutil.ErrBinaryEmpty):
+		return "", errors.New("exec: args.argv[0] must be a non-empty path")
+	case errors.Is(err, cliutil.ErrBinaryRelativeWithSep):
+		return "", fmt.Errorf("exec: args.argv[0] %q must be an absolute path or a bare command name on PATH", strings.TrimSpace(name))
+	default:
+		return "", fmt.Errorf("exec: %w", err)
+	}
 }
 
 func readTimeout(args map[string]any) time.Duration {

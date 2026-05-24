@@ -10,10 +10,10 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/token"
 	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
+	"omakiten/internal/token"
 )
 
 // TestModeMoveInputCursorAndWordJump exercises the modeMove textinput

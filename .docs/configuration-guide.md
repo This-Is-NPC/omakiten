@@ -159,9 +159,9 @@ Every field above is required and validated. Missing or out-of-range values fail
 
 #### Worked example — taming a long-lived task
 
-A task with five long `#resume` comments (each ~1500 chars) ships ~6000 chars (~1500 tokens) of comments alone on every `tasks.continue` call. Combined with the workflow block (~150 tokens), the tool result lands at ~2400 tokens.
+A task with many long `#resume` comments dominates every `tasks.continue` call: each comment ships in full, the workflow block ships once, and a fresh task vs. a year-old task differ by an order of magnitude in payload size.
 
-Two changes cut that by more than half:
+Two settings collapse the bulk:
 
 ```yaml
 config:
@@ -170,9 +170,9 @@ config:
     max_comment_chars: 500    # 0 → 500
 ```
 
-After: 3 comments × 500 chars = ~375 tokens for comments, no truncation on the most recent (it stays under 500). Workflow still ships (~150 tokens) unless you also add `include_workflow_in_continue: false` once `/okt` ran. Total: ~525 tokens — a ~78% reduction on the comment-heavy task.
+`recent_comment_limit: 3` keeps the most recent three; `max_comment_chars: 500` hard-caps each body. Add `include_workflow_in_continue: false` once `/okt` has loaded the workflow in the session to drop the per-call workflow block too. The exact byte saving depends on each comment's length and the active workflow's shape — the qualitative effect is "load only what is new since last call".
 
-Cross-reference: `.docs/mcp-guide.md#anatomy-of-an-mcp-command` walks through how the tool result composes and which fields each setting trims.
+Cross-reference: `.docs/mcp-guide.md#tuning-context-cost` walks through how the tool result composes and which fields each setting trims.
 
 ### `config.tui`
 
@@ -927,204 +927,48 @@ What ships in `defaults/` and is materialized on first run by `configstore.Ensur
 
 ### Laws (`defaults/laws/`)
 
-<!-- BEGIN auto:catalog kind=laws -->
-# Laws Catalog
+Each law is a single markdown file under `defaults/laws/<slug>.md` with frontmatter (`name`, `severity`, `description?`) and a body. Severity, description, and body are user-tunable per-project once the file lands in `<root>/laws/custom/<slug>.md`; the catalog therefore changes with every fork. Discover the active set with:
 
-Auto-derived from `defaults/laws/*.md` frontmatter.
-
-| Slug | Severity | Description |
-|---|---|---|
-| `5w2h-elicitation` | warning | During `okt-imagine`, walk the user through the seven questions: What / Why / Who / When / Where / How / How much. Don't accept vague answers ("the user", "soon", "important"). If a question can't be answered, name the gap and propose how to close it before filing the task. |
-| `accept-yellow` | info | Spike/tracer-bullet checks tolerate yellow signal — non-critical lint warnings, soft coverage drops, deferred hardening. The check runner reports the yellow target explicitly so the promotion path knows what to harden, but does not block the spike on it. |
-| `acceptance-criteria-required` | error | Every feature ships with documented acceptance criteria captured during the requirements stage. The shape is the project's convention — Given/When/Then, bullet list, executable test stub, or another testable form — but the criteria must be testable, the requester must agree to them, and the reviewer must be able to verify them against the implementation. |
-| `audit-trail-integrity` | error | Comments published in dev or beyond are append-only. No delete. Corrections happen via a new `#scribe-correction` comment that names the assertion being corrected, the corrected text, and the reason. The original stays in place — the trail must survive review. |
-| `authorize-remote-writes` | error | Never run `git push`, `git push --force`, `gh pr create`, `gh pr edit`, `gh pr merge`, or any command publishing/mutating a remote repo without explicit user authorization in this conversation. Local commits, branches, file edits OK. Authorization is per-action: pushing one branch does not authorize future pushes; opening one PR does not authorize others. |
-| `blameless-postmortem` | error | Any production incident or near-miss earns a `#postmortem` comment AND a `docs/postmortems/<YYYY-MM-DD>-<title>.md` file: timeline (UTC), detection latency, customer impact, 5-whys root cause, action items with owners and due dates. "Human error" is never a root cause — it is the system that allowed the error. |
-| `blast-radius-awareness` | warning | Every change declares its blast radius: users affected, services touched, irreversibility class. The classification drives gate severity — a critical-radius change demands stricter sign-off than a contained one. Default to overestimating; reviewers can downgrade. |
-| `bounded-self-review` | warning | Run tests after each increment. On failure: find root cause, apply targeted fix — never restart from scratch. Cap at 3 attempts; after 3 failures stop and report failing tests, root cause, attempted fixes, and adjustment plan. |
-| `boy-scout-rule` | warning | Leave code cleaner than you found it. Opportunistic small refactors during feature work are encouraged when they touch the affected area. Document each drive-by cleanup in a `#refactor-drive-by` comment; assert no behavior change. |
-| `conventional-commits` | error | Follow [Conventional Commits](https://www.conventionalcommits.org/) in English: `type(scope): summary`. Types: `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `build`, `ci`, `perf`. Append `!` for breaking (`feat!: ...`). One intent per commit; split mixed trees via non-interactive staging. |
-| `coverage-gate` | error | Test coverage must not drop. New behavioral code targets ≥80% line coverage on the affected packages. Exact numbers (delta + absolute) appear in the `#tests-passing` comment. Exemptions require a documented rationale signed by a reviewer. |
-| `coverage-gate-check` | warning | Reviewer verifies that the change keeps coverage at or above the project threshold — line and branch when both are tracked. Coverage drop without a written justification is a finding, not a footnote. |
-| `decision-record-on-divergence` | error | Significant decisions — adopting a new dependency, replacing a load-bearing component, deviating from precedent, or any choice future maintainers will want to trace back — get a decision record (`docs/decisions/<NNNN>-<title>.md`, or the repo's preferred location and format) BEFORE the change lands. The format is the project's convention, not a mandate. |
-| `decision-record-on-gap` | warning | When a check surfaces a known, accepted gap (uncovered branch, waived AC, deferred hardening), it is recorded — once — as a decision record (`docs/decisions/<NNNN>-<title>.md` or the repo's equivalent) before promotion. The check report then links the record instead of restating the rationale each run. Without the record, the gap drifts from "intentional" to "forgotten" the next time anyone re-runs the check. |
-| `design-recorded` | error | Implementation starts only after the design approach is documented in the repo's preferred format — decision record, RFC, design doc, sketch, or whatever the project already uses. The artifact is architecture-agnostic; what matters is that the approach is written down before code lands, so reviewers and future maintainers can audit the choice. |
-| `design-recorded-check` | warning | Reviewer verifies that significant design choices visible in the diff trace back to a recorded design doc / decision record / RFC. Choices made implicitly in code — new dependency, replaced component, deviation from precedent — are findings. |
-| `dual-peer-review` | error | At minimum two independent peer reviewers — neither the task author nor a co-author of the change. Each leaves a `#peer-review` comment with verdict, approval scope, and concerns. A single reviewer is not a peer review; it is a hand-off. |
-| `dual-review-required` | error | High-rigor presets require two independent reviewers before promotion past `review`. Independence means neither wrote the code under review. One reviewer is a courtesy; two reviewers catch what the first one missed and break the single-point-of-failure on judgement calls. |
-| `dual-signal-required` | warning | A green test run alone is not a green check — lint must also be clean (and any other configured static-analysis target). High-rigor presets require both signals before promotion past the check phase; one signal hides bugs the other catches (e.g. dead code, ineffective assignments, shadowed variables that tests happen to skip). |
-| `error-budget-aware` | warning | Reliability-affecting changes cite the current error-budget consumption before shipping. If the budget is exhausted, only fixes and rollbacks ship — features wait. Reference the SLO definition the change touches; do not invent budgets per task. |
-| `feasibility-gate` | error | If the request is not implementable in current architecture/dependencies, stop before authoring. Report technical reasons, concrete blockers, viable alternatives — then wait for the user. Do not soften infeasibility into "we could try". |
-| `findings-actionable` | warning | Every review finding ships a concrete fix on the same line — a named refactoring, a code edit, or an explicit "no action; signal noted". Vague observations ("this could be cleaner", "consider simplifying") waste reviewer attention. |
-| `green-main-always` | error | Never push code that breaks the build or tests on main. Verify locally (or via a pre-push CI run) before pushing. A broken main blocks every other contributor — fix-forward or revert within 10 minutes; do not "investigate later". |
-| `hypothesis-required` | error | Every spike answers a written question. The hypothesis lives on the task body or in a `#hypothesis` comment before any code is written. If the question can't be stated in one sentence with a falsifiable signal, the spike isn't ready — it is wandering. |
-| `invest-stories` | warning | User stories satisfy INVEST: Independent (can ship alone), Negotiable (room for the team to shape it), Valuable (clear benefit to a real user), Estimable (team can size it), Small (fits in a sprint or shorter), Testable (acceptance criteria are verifiable). Flag the missing letters when the story falls short. |
-| `link-decision-record` | warning | When the change implements or diverges from a decision recorded in the repo (decision record, RFC, design doc), link it from the commit body as `Refs: <path>` (e.g. `Refs: docs/decisions/0042-replace-sqlite-driver.md`). The commit becomes the bridge between the recorded rationale and the diff that realises it. |
-| `link-task-comments` | warning | When the change carries audit-trail comments on its Omakiten task — `#pre-mortem`, `#rollback-plan`, `#risk-assessment`, `#tests-passing`, `#peer-review` — reference them in the commit body as `Refs: task #<id> (#<tag>)`. Reviewers and future maintainers reading `git log` then have a single hop back to the rationale. |
-| `no-assumptions` | warning | Every claim must be traceable to code, configuration, or explicit user input. When info missing: ask, mark `[assumption]` with the guess explicit, or `[user-provided]` when the user said so without code backing. Never invent versions, file paths, or business rules to fill a section. |
-| `no-coauthored-by` | error | Never attribute a commit to an AI agent. No `Co-Authored-By: <model>` trailer, no `Generated with <tool>` footer, no model name in trailer or body. The human running the session is the author. No opt-out. Human `Co-Authored-By` trailers require explicit user request in this conversation. |
-| `no-praise-pad` | warning | Review comments report findings. They do not open with "great work", insert "looks good!" between issues, or close with applause. Praise padding inflates the comment, dilutes the signal, and trains authors to skim — the actual finding gets lost in the affirmation. |
-| `no-silent-behavior-changes` | error | Every behavioral change ships with explicit evidence: a failing-then-passing test, a `#resume` comment naming the change, or a commit message calling it out. Incidental shifts inside a refactor are still behavior changes — document them. |
-| `non-functional-explicit` | warning | Functional and non-functional requirements live in separate sections. NFRs cover performance, security, usability, observability, scale, accessibility, and compliance — each named with a target or marked "not applicable + reason". Burying NFRs inside the user story or treating "make it fast" as a requirement hides the real constraints. |
-| `outcome-over-output` | warning | A feature is not "shipped" because the code merged; it is shipped when the targeted outcome moves. Every task names the user or business outcome it should produce, not just the artifact it produces. If you can't state the expected outcome, the work isn't ready to start. |
-| `pdca-aware` | warning | Recognize which phase of Plan-Do-Check-Act each okt-* command represents. `okt-imagine` = PLAN; `okt-create` = PLAN → DO handoff; `okt-implement` = DO + ACT + CHECK as the task progresses through dev → review. Name the phase to the user when context shifts; users orient on the cycle even when the work stack is deep. |
-| `peer-review-required` | error | At least one independent peer review (reviewer is not the task author or a co-author of the change) before the task moves past review. The reviewer leaves a `#peer-review` comment naming the verdict (approve / request-changes / reject), the approval scope, and any open concerns. A single thumbs-up or a self-review does not satisfy this gate. |
-| `pre-mortem-aware` | warning | For changes that filed a `#pre-mortem`, the reviewer reads it before walking the diff. Findings reference the recorded failure modes — confirms whether mitigations actually shipped, flags failure modes the diff missed. |
-| `pre-mortem-required` | error | Before implementation, imagine the change has failed in production and write what went wrong. The `#pre-mortem` comment names failure modes, detection signals, and mitigations. No code lands before the pre-mortem is filed and reviewed. |
-| `prioritization-recorded` | warning | When the user brings more than one option to `okt-imagine` or `okt-create`, record the prioritization rationale before committing. Use MoSCoW (Must / Should / Could / Won't) for qualitative ranking; use RICE (Reach × Impact × Confidence ÷ Effort) when the team needs to compare across teams or quarters. "We picked the obvious one" is not a record. |
-| `project-scope-only` | error | Never mix tasks or context from different projects. |
-| `regression-required` | error | Every bugfix ships with a regression test that pins the failure mode. The test fails before the fix and passes after; the diff makes both points reviewable in one read. Without the test, the same bug can come back silently — and reviewers have no anchor for "is this really fixed?". |
-| `requirements-coverage-check` | warning | Coverage is measured against the recorded acceptance criteria, not just lines of code. Each AC is either exercised by an automated test, exercised by a documented manual check, or explicitly waived in a decision record — no fourth option. Line coverage that ignores AC traceability ships features that "pass" without anyone confirming they meet the requirement. |
-| `requirements-signed-off` | error | A task moves past requirements only after the requester signs off in writing on the user story, the acceptance criteria, and the non-functional constraints. "Signed off" means a comment from the requester naming the agreement; verbal nods or chat reactions do not survive review and do not count. |
-| `rollback-plan-mandatory` | error | Every change ships with a rollback plan: revert steps, validation post-rollback, comms plan. Non-trivial rollbacks (multi-step migrations, schema or data shape changes) require explicit reviewer sign-off on the strategy. |
-| `scope-from-paths` | warning | Derive the commit scope from the touched paths — the package, directory, or feature slug that owns the change. Vague catch-alls (`misc`, `update`, `chore`, `stuff`) hide intent and break `git log --grep` triage. |
-| `self-report` | error | Record any error that needed more than one fix attempt — the second attempt is the trigger. Call `errors.record` (one-line description, context, specific tags) and `solutions.add` against the returned id with the resolution that worked. Use `solutions.confirm` when applying a previously recorded solution found via `search(query, entity_types=["error"])`. |
-| `severity-tagged` | warning | Every finding carries an explicit severity — `error` (bug, security, data corruption, broken contract), `warning` (smell, fragile assumption, latent risk), `info` (suggestion, drive-by). The author needs the tag to triage; reviewers without it force the author to re-read every line. |
-| `small-batches` | warning | Prefer many small PRs (<400 LOC diff) over one large PR. Small batches review faster, revert cheaper, ship sooner, and shrink the blast radius of a regression. Optimizes the DORA lead-time and change-failure-rate metrics simultaneously. |
-| `smart-success` | warning | Every task carries a success definition that satisfies SMART — Specific outcome, Measurable signal, Achievable given the constraints, Relevant to the stated goal, Time-bound for re-evaluation. "Improve things" is not SMART; "p95 latency under 200ms on the canonical workload by end of sprint" is. |
-| `template-fidelity` | warning | Fill template placeholders with verifiable content from the working context. Leave empty or remove sections you cannot back with facts. Never fabricate issue numbers, links, file paths, or decisions the template did not declare. |
-| `test-evidence` | error | Behavioral changes ship with reproducible test evidence: a failing-then-passing test added in the same diff (TDD), or a `#tests-passing` comment with the test command, an output snippet, and a duration. "I tested locally" without an artifact the reviewer can rerun is not evidence. |
-| `time-boxed-check` | warning | Spike presets cap check effort up front — declare the box (e.g. 5 minutes) before running. When the box expires, ship the partial report with the time used noted; do not blow the box hunting marginal targets on throwaway code. |
-| `time-boxed-review` | warning | Spike presets cap review effort up front — declare the box (e.g. 15 minutes) before walking the diff. When the box expires, ship what you have with the time used noted; do not blow the box hunting marginal findings on throwaway code. |
-| `time-boxed-spike` | error | Every spike declares a time-box up front (hours or days, on the task body). Past the box: stop, write a `#discard` or `#promote` comment, and either kill the spike, escalate the box explicitly with reason, or convert it to a proper task. Open-ended spikes are not spikes — they are wandering. |
-| `tracer-bullet` | warning | Ship a thin end-to-end slice — input to output, demoable — before adding depth or polish to any single piece. Connect the wires first; flesh out logic only after the whole shape is observable. Half a feature is worse than a thin slice of the whole. |
-| `tracer-debt-acceptable` | info | Spike/tracer-bullet code is allowed to carry hardening debt — error handling stubs, missing edge-case coverage, hardcoded values. The reviewer flags the debt explicitly so the promotion path knows what to harden, but does not treat it as a blocker on the spike itself. |
-| `workflow-enforced` | error | Only move tasks through explicit workflow transitions. |
-| `yagni-first` | warning | Build only what the active hypothesis demands. Anything beyond gets a postit (followup comment, backlog task), not code. Generality, future-proofing, and "while I'm at it" cleanups belong to the next spike, not this one. |
-| `yaml-is-canonical` | error | Persist changes to laws, workflows, personas, skills, and config in omakiten.yaml. |
-<!-- END auto:catalog -->
+```sh
+okt law list                 # all loaded laws (slug, severity)
+okt law show <slug>          # body + frontmatter
+```
 
 Per-preset wiring (which preset binds which law via `mcp_commands.<cmd>.laws`) lives in [`_generated/presets-<preset>.md`](./_generated/) — one file per preset.
 
 ### Skills (`defaults/skills/`)
 
-The default kit ships only project-agnostic skills. Stack-specific skills (Go, Python, SQLite, React, etc.) belong in `<root>/skills/custom/<slug>.md` and are wired per-persona in your local active profile yaml.
+The default kit ships only project-agnostic skills. Stack-specific skills (Go, Python, SQLite, React, etc.) belong in `<root>/skills/custom/<slug>.md` and are wired per-persona in your local active profile yaml. Discover the active set with:
 
-<!-- BEGIN auto:catalog kind=skills -->
-# Skills Catalog
-
-Auto-derived from `defaults/skills/*.md` frontmatter.
-
-| Slug | Description |
-|---|---|
-| `acceptance-criteria-writing` | Testable acceptance shapes (Given/When/Then or alternatives); criteria the requester and reviewer can verify. |
-| `architecture-mapping` | Tech stack, dependencies, design patterns, infrastructure, code metrics with measurable references. |
-| `change-management` | Approval matrix, sign-off discipline, audit-trail integrity, regulated-environment habits. |
-| `code-smells` | Fowler/Beck smell catalog — long function, large class, feature envy, primitive obsession, shotgun surgery, divergent change. |
-| `continuous-integration` | Pre-push verification, CI as source of truth for green, fix-forward vs revert decision discipline. |
-| `conventional-commits-spec` | Conventional Commits 1.0.0 grammar — type(scope): subject, body, footers, breaking-change markers. |
-| `coverage-analysis` | Coverage thresholds — line vs branch — and the justified-gap pattern for accepting documented gaps. |
-| `decision-records` | When to record a decision; concise context / decision / consequences; discoverable filenames and links. |
-| `design-documentation` | Capture the approach in the repo's preferred format (decision record / RFC / design doc) before coding. |
-| `discovery` | Feasibility analysis, clarifying questions, scope boundaries, surfacing hidden constraints before code. |
-| `documentation` | Generates and reviews architecture, requirements, and contributor docs; claims traceable to code. |
-| `dora-mindset` | Optimize for lead time, deploy frequency, MTTR, and change failure rate — small batches help all four. |
-| `five-w-two-h` | Structured elicitation — What / Why / Who / When / Where / How / How much. Surface gaps; don't accept vague answers. |
-| `implementation` | Small coherent increments, tests for new and impacted behavior, regression analysis, bounded self-review. |
-| `invest-stories` | Wake (2003) checklist — Independent / Negotiable / Valuable / Estimable / Small / Testable. Flag missing letters. |
-| `lean-experimentation` | MVP design, falsifiable hypotheses, acceptance signals, build-measure-learn loops over polish. |
-| `legacy-seams` | Feathers 'Working Effectively with Legacy Code' (2004) — seams, characterization tests, Sprout Method/Class. |
-| `markdown` | Frontmatter, tables, code fences, mermaid; renders correctly in GitHub and editor previews. |
-| `moscow-prioritization` | Qualitative ranking — Must / Should / Could / Won't (this iteration). Record rationale per item. |
-| `non-functional-requirements` | Quality attributes — performance, security, usability, observability, scale, accessibility, compliance — captured separately from FRs. |
-| `okr-framing` | Objective + Key Results — outcome-driven goal shape. Each KR has baseline, target, and timeframe. |
-| `pdca-cycle` | Plan-Do-Check-Act awareness — recognize which phase each okt-* command represents and name it for the user. |
-| `postmortem-authoring` | Blameless 5-whys, timeline reconstruction (UTC), action items with owners and due dates. |
-| `readme-curation` | Keeps install, usage, and examples in sync with the actual code surface. |
-| `refactoring-catalog` | Fowler 'Refactoring' (1999, 2nd ed. 2018) named refactorings — Extract, Inline, Move, Rename, Replace Conditional with Polymorphism, etc. |
-| `regression-detection` | git bisect (Linus Torvalds, 2005) + characterization tests (Feathers 2004) for catching and pinning regressions on legacy paths. |
-| `requirements-elicitation` | Gather needs from stakeholders; INVEST-style user stories; testable acceptance criteria; documented sign-off. |
-| `requirements-mapping` | Extracts functional, non-functional, and business rules with source-file references. |
-| `rice-scoring` | Quantitative priority — Reach × Impact × Confidence ÷ Effort. Use when comparing across teams or quarters. |
-| `risk-driven-development` | Pre-mortem authoring, blast-radius analysis, irreversibility classification, mitigation-first design. |
-| `security-review-lens` | OWASP-aligned review prompts for diff-level security findings — injection, authn/z, secrets, deserialisation, supply chain. |
-| `smart-goals` | Specific / Measurable / Achievable / Relevant / Time-bound success criteria; turn intent into a verifiable signal. |
-| `solid-principles` | Robert C. Martin's SOLID — Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion. |
-| `sre-discipline` | SLI / SLO / error-budget thinking; four golden signals (latency, traffic, errors, saturation). |
-| `staged-delivery` | Move through requirements → planning → dev → review → docs → done with explicit gates and recorded handoffs. |
-| `static-analysis-discipline` | Lint / security (SAST) / coverage / SCA gates as part of Definition of Done; no merge with new warnings. |
-| `test-driven-development` | Red → green → refactor; tests-first for new behavior; regression test on every bugfix. |
-| `test-driven-development-strict` | Red → green → refactor with coverage-gate awareness; tests-first + coverage delta + perf regression check. |
-| `time-box-discipline` | Declare boxes up front; recognize when to kill, promote, or extend with explicit reason. |
-| `tracer-bullet-shipping` | Walking-skeleton end-to-end first; depth comes only after the full shape is observable. |
-| `trunk-based-development` | Short-lived branches (<1 day), frequent rebases on main, feature flags for incomplete work, fast revert. |
-| `user-story-writing` | Authoring user stories — Description, AC, DoD, scope; matches the task template verbatim. |
-<!-- END auto:catalog -->
+```sh
+okt skill list
+okt skill show <slug>
+```
 
 Per-persona skill bindings (which persona pulls which skill in each preset) live in [`_generated/presets-<preset>.md`](./_generated/).
 
 ### Personas (`defaults/personas/`)
 
-<!-- BEGIN auto:catalog kind=personas -->
-# Personas Catalog
+Each persona is a markdown file with a frontmatter `description` + a body declaring the procedural loop. Skill references happen on the wiring side, not on the persona file. Discover the active set with:
 
-Auto-derived from `defaults/personas/*.md` frontmatter.
-
-| Slug | Description | Skills |
-|---|---|---|
-| `check-runner` | Runs the configured check targets (test, lint, future audit), captures pass/fail, reports in a tabular comment; never applies fixes. | — |
-| `code-reviewer` | Reads diffs through Fowler/Beck/Martin/Feathers lens — surfaces bugs, security risks, refactor opportunities; never applies changes. | — |
-| `commit-author` | Drafts Conventional Commits from a working tree — groups changes by scope, writes the "why", never auto-pushes. | — |
-| `craftsperson` | Treats every change as regulated — pre-mortem, rollback plan, dual sign-off, blameless postmortem. | — |
-| `documentation-agent` | Keeps the project narrative in sync with code; surfaces material work as new tasks rather than editing in place. | — |
-| `engineer` | Trunk-based contributor — small batches, green main always, test-first, opportunistic cleanup. | — |
-| `methodical-engineer` | Works in stages — requirements before design, design before code, decisions recorded, peer review mandatory. | — |
-| `product-owner` | PLAN phase — interrogate the user via 5W2H, frame success in SMART, hand off only when concrete enough. | — |
-| `tinkerer` | Hypothesis-driven explorer — writes the question first, ships walking-skeleton, kills early. | — |
-<!-- END auto:catalog -->
+```sh
+okt persona list
+okt persona show <slug>
+```
 
 Each preset's `personas:` block in `defaults/config/<preset>.yaml` is the strict allowlist for that preset — entities outside the list still live on disk but are not loaded by that preset. Per-preset wiring tables: [`_generated/presets-<preset>.md`](./_generated/).
 
 ### Templates (`defaults/templates/`)
 
-<!-- BEGIN auto:catalog kind=templates -->
-# Templates Catalog
+Each template is a markdown body with frontmatter declaring `entity` (`comment` / `task` / `pr` / `decision` / …) and an optional `default` slot that marks it as the canonical scaffold for its entity kind. Bodies are fetched JIT via the MCP `templates.show` tool — they never ship inline in prompts. Discover the active set with:
 
-Auto-derived from `defaults/templates/*.md` frontmatter.
-
-| Slug | Entity | Default | Description |
-|---|---|---|---|
-| `comment-5w2h` | comment | — | Structured elicitation — answer the seven questions. Surface gaps explicitly when no answer is yet known. |
-| `comment-acceptance` | comment | — | Fills the `#acceptance` guard. Project picks the format — Given/When/Then or any other testable shape. |
-| `comment-check-report` | comment | — | Tabular pass/fail report emitted by okt-check; one row per discovered target. |
-| `comment-design-decision` | comment | — | Inline pointer to a decision record introduced by the change. Format is the project's convention. |
-| `comment-discard` | comment | — | Closes a spike that did not confirm its hypothesis. Records the lesson and the cost saved. |
-| `comment-documentation` | comment | comment-documentation | Closing checklist — fills the `#documentation` guard (review → done). |
-| `comment-hypothesis` | comment | — | Captures the question a spike answers; fills the `#hypothesis` guard (backlog → dev). |
-| `comment-lessons-learned` | comment | — | Closing reflection — what worked, what didn't, process changes proposed. |
-| `comment-moscow` | comment | — | Qualitative priority — Must / Should / Could / Won't (this iteration). Rationale per item. |
-| `comment-non-functional` | comment | — | NFRs separated from functional — performance / security / usability / observability / scale / accessibility / compliance. |
-| `comment-okr` | comment | — | Objective + Key Results — outcome-driven goal shape. Each KR has baseline, target, and timeframe. |
-| `comment-peer-review` | comment | — | Reviewer sign-off for the `#peer-review` guard (review → docs). |
-| `comment-peer-review-strict` | comment | — | Strict sign-off — one of N independent reviewers required by the dual-peer-review law. |
-| `comment-postmortem` | comment | — | Blameless incident or near-miss writeup. Mirrors `docs/postmortems/<YYYY-MM-DD>-<title>.md`. |
-| `comment-pre-mortem` | comment | — | Fills the `#pre-mortem` guard before implementation. Imagine the change has already failed. |
-| `comment-promote` | comment | — | Promotes a confirmed spike to real work. Names the production gaps that remain. |
-| `comment-refactor-drive-by` | comment | — | Documents an opportunistic Boy-Scout cleanup that rode along with a feature or fix. |
-| `comment-refactor-opportunities` | comment | — | Fowler-named refactor opportunities surfaced by okt-review; each row cites the methodology and the target. |
-| `comment-requirements` | comment | — | User story + acceptance signals for the `#requirements` guard (requirements → planning). |
-| `comment-resume` | comment | comment-resume | Implementation handoff — fills the `#resume` guard (dev → review). |
-| `comment-review-findings` | comment | — | Diff-walk findings emitted by okt-review; one row per finding, severity-tagged. |
-| `comment-rice-score` | comment | — | Quantitative priority — Reach × Impact × Confidence ÷ Effort, with computed score per option. |
-| `comment-risk-assessment` | comment | — | Fills the `#risk-assessment` guard. Names top risks, mitigations, and residual risk accepted. |
-| `comment-rollback-plan` | comment | — | Fills the `#rollback-plan` requirement before review. Names the path back to safety. |
-| `comment-scribe-correction` | comment | — | Append-only correction to a prior comment. The original stays; the trail survives. |
-| `comment-selfbranch` | comment | comment-selfbranch | Branch declaration — fills the `#self-branch` guard required to move backlog → dev. |
-| `comment-smart-success` | comment | — | Success criteria in SMART form — Specific / Measurable / Achievable / Relevant / Time-bound. |
-| `comment-tests-passing` | comment | — | Test evidence for `test-evidence` law; fills the `#tests-passing` guard (dev → review). |
-| `comment-tests-passing-strict` | comment | — | Test evidence with coverage delta + types + perf regression check; satisfies the coverage-gate law. |
-| `config-orientation` | orientation | — | Map of where Omakiten config lives, how the active profile is selected, and every field a user can tune to shape their workflow. |
-| `decision-record` | decision | — | Generic decision-record scaffold — status, context, decision, consequences, alternatives. Project picks file path. |
-| `design-doc` | design | — | Generic design-doc scaffold — problem, approach, trade-offs, open questions. Architecture-agnostic. |
-| `pull-request` | pr | pr | PR scaffold — before/after, changes, files, validation, deviations, risks, references. |
-| `task-bugfix` | task | — | Bugfix scaffold — reproduction, root cause, fix, regression test. |
-| `task-change-request` | task | — | Change-control scaffold — risk class, SLO impact, pre-mortem, rollback strategy, approval matrix. |
-| `task-feature` | task | — | Feature scaffold for staged delivery — requirements summary, approach, acceptance criteria, risks. |
-| `task-spike` | task | — | Spike scaffold — hypothesis, falsifiable signal, time-box, discard plan. |
-| `user-story` | task | task | Task scaffold — Description, AC, DoD, INVEST check, Scope, Feasibility. |
-<!-- END auto:catalog -->
+```sh
+okt mcp call templates.list --input '{}'      # slug + entity + default flag
+okt mcp call templates.show --input '{"slug":"<slug>"}'   # body
+```
 
 Per-command template bindings (which `okt-*` command pulls which template per preset) live in [`_generated/presets-<preset>.md`](./_generated/).
+
 
 ### Themes (`defaults/themes/`)
 

@@ -19,9 +19,12 @@ type LawService struct {
 // NewLawService wires the law orchestration layer. registry must be non-nil:
 // the service resolves severity labels and ids exclusively through the
 // supplied EnumRegistry so each call site operates against the bundle that
-// was actually loaded, free of process-global state.
-func NewLawService(snap *config.Snapshot, editor *BundleEditor, files EntityFileWriter, slugger Slugifier, registry *domain.EnumRegistry) *LawService {
-	return &LawService{snap: snap, editor: editor, files: files, slugger: slugger, registry: registry}
+// was actually loaded, free of process-global state. The registry stays
+// outside EntityServiceRepos because only the law surface needs it and
+// its lifecycle is tied to the per-project Snapshot rather than the
+// editor/file/slugger triple.
+func NewLawService(repos EntityServiceRepos, snap *config.Snapshot, registry *domain.EnumRegistry) *LawService {
+	return &LawService{snap: snap, editor: repos.Editor, files: repos.Files, slugger: repos.Slugger, registry: registry}
 }
 
 // lawsFromSnapshot projects the snapshot's config.Law slice into the

@@ -64,6 +64,51 @@ func TestExecTimesOut(t *testing.T) {
 	}
 }
 
+// TestResolveExecBinary pins the security guard from task #219: bare
+// names must round-trip through exec.LookPath into an absolute path so
+// the engine no longer resolves against the inherited PATH at fork
+// time. Absolute paths pass through. Relative paths with embedded
+// separators (./foo, ../bin/foo) are rejected outright because the
+// hook YAML cannot reason about the engine's CWD.
+func TestResolveExecBinary(t *testing.T) {
+	cases := []struct {
+		name      string
+		input     string
+		wantErr   bool
+		wantExact string // when wantErr is false; "" = don't check (LookPath-resolved)
+	}{
+		{name: "absolute path passes through", input: "/usr/bin/env", wantErr: false, wantExact: "/usr/bin/env"},
+		{name: "absolute path cleaned", input: "/usr/bin/./env", wantErr: false, wantExact: "/usr/bin/env"},
+		{name: "bare command resolves via PATH", input: "sh", wantErr: false},
+		{name: "empty argv0 rejected", input: "", wantErr: true},
+		{name: "blank argv0 rejected", input: "   ", wantErr: true},
+		{name: "relative ./script rejected", input: "./script.sh", wantErr: true},
+		{name: "relative ../bin/foo rejected", input: "../bin/foo", wantErr: true},
+		{name: "sub/dir/foo rejected", input: "sub/dir/foo", wantErr: true},
+		{name: "missing binary on PATH errors", input: "definitely-not-a-real-cmd-xyz-omakiten", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveExecBinary(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !filepath.IsAbs(got) {
+				t.Fatalf("resolveExecBinary returned non-absolute path %q", got)
+			}
+			if tc.wantExact != "" && got != tc.wantExact {
+				t.Fatalf("resolveExecBinary(%q) = %q, want %q", tc.input, got, tc.wantExact)
+			}
+		})
+	}
+}
+
 func TestExecNonZeroExitCodeReturnsError(t *testing.T) {
 	err := Exec{}.Execute(context.Background(),
 		domain.Event{},

@@ -1,8 +1,8 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
@@ -124,13 +124,11 @@ func ConfigRootFromYAMLPath(path string) string {
 }
 
 func readWiring(path string) (wiring, error) {
-	file, err := os.Open(path)
+	raw, err := readFileBounded(path, MaxWiringFileBytes)
 	if err != nil {
 		return wiring{}, err
 	}
-	defer func() { _ = file.Close() }()
-
-	decoder := yaml.NewDecoder(file)
+	decoder := yaml.NewDecoder(bytes.NewReader(raw))
 	decoder.KnownFields(true)
 
 	var w wiring

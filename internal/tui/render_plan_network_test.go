@@ -473,7 +473,7 @@ func TestRenderPlanNetworkWaveHeaderFullWidth(t *testing.T) {
 // TestPlanNetworkRowStateBadgePrecedence pins the order in which the
 // state badge selector resolves:
 //
-//   done > gated > in-progress > blocked > assigned > next > ready
+//	done > gated > in-progress > blocked > assigned > next > ready
 //
 // The split between in-progress / assigned exists because claim only
 // stamps assigned_to nowadays — it never moves the bucket. An

@@ -16,8 +16,8 @@ type SkillService struct {
 	slugger Slugifier
 }
 
-func NewSkillService(snap *config.Snapshot, editor *BundleEditor, files EntityFileWriter, slugger Slugifier) *SkillService {
-	return &SkillService{snap: snap, editor: editor, files: files, slugger: slugger}
+func NewSkillService(repos EntityServiceRepos, snap *config.Snapshot) *SkillService {
+	return &SkillService{snap: snap, editor: repos.Editor, files: repos.Files, slugger: repos.Slugger}
 }
 
 // skillsFromSnapshot projects the snapshot's config.Skill slice into

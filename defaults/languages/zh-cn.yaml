@@ -79,6 +79,9 @@ keys:
     pass is skipped — the user owns the rotation policy outside the
     default state directory.
   cli.db.backup.flag.out: "write the snapshot to this explicit file path (skips retention prune)"
+  cli.db.backup.flag.force: "overwrite the target file when --out points at an existing path"
+  cli.db.backup.error.system_path_fmt: "refusing to write backup to system path %q (under %s)"
+  cli.db.backup.error.exists_fmt: "refusing to overwrite existing file %q; pass --force to replace"
   cli.db.backup.success_fmt: "backup written to %s"
   cli.preset.omakase.title: "厨师精选"
   cli.preset.omakase.description: "带有 self-branch、resume 和文档 guards 的平衡型 workflow。"
@@ -294,6 +297,9 @@ keys:
   cli.workflow.orphan.flag.confirm: "应用重新绑定;不带此标志时命令打印计划并退出"
   cli.workflow.orphan.flag.dry-run: "打印迁移计划而不应用(在 --confirm 缺席时为默认)"
   cli.err.config_invalid: "config 无效"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
+  cli.editor.not_configured: "no editor configured; set $VISUAL or $EDITOR"
+  cli.editor.not_found: "configured editor not found on PATH"
   cli.err.config_unreadable: "config 文件不可读"
   cli.err.init_seeded_config_invalid: "init 种子化的 config 无效"
   cli.err.invalid_scope: "无效的 --scope(使用 global 或 local)"

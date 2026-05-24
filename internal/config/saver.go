@@ -2,8 +2,11 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -11,6 +14,17 @@ import (
 // SaveBundle writes only the wiring file (omakiten.yaml). Per-entity files are
 // written separately via the SkillFile / LawFile / PersonaFile helpers below or
 // through the BundleEditor's transactional Apply.
+//
+// Comment-preservation scope: the saver currently round-trips the
+// wiring through the struct-typed yaml encoder, which loses inline +
+// mid-file comments. As a partial fix the header block at the top of
+// the existing file (every line up to the first non-comment, non-
+// blank line) is captured before the rewrite and re-prepended to the
+// new bytes — that covers the common case of a banner comment block
+// documenting the workflow. Inline `# trailing` comments and comments
+// between keys still drop; a future migration to the yaml.Node API
+// would close the rest of the gap (see task #222 in the code-review
+// plan for the full-fidelity option).
 func SaveBundle(path string, bundle Bundle) error {
 	w, err := bundleToWiring(bundle)
 	if err != nil {
@@ -20,7 +34,56 @@ func SaveBundle(path string, bundle Bundle) error {
 	if err != nil {
 		return err
 	}
+	header, err := readHeaderComments(path)
+	if err != nil {
+		// Size-cap overflow is the one surfaced failure — silently
+		// stamping a saved file on top of an oversize on-disk wiring
+		// would mask the operator's pathological config. Other read
+		// errors (perm denied, IO etc.) still silently degrade inside
+		// readHeaderComments so the save proceeds.
+		return err
+	}
+	if len(header) > 0 {
+		data = append(header, data...)
+	}
 	return WriteAtomic(path, data)
+}
+
+// readHeaderComments returns the leading comment block (lines that are
+// either blank or start with `#`, up to the first content line) from
+// the file at path. Returns (nil, nil) when the file does not exist
+// yet (a fresh wiring is being seeded) or when an opaque read failure
+// hits the preservation path. The only error surfaced is the bounded
+// reader's tooLargeError — a wiring file that already exceeds
+// MaxWiringFileBytes is a pathological state the saver should refuse
+// to compound, since the load path (W5 #220) already rejects bundles
+// past that cap.
+func readHeaderComments(path string) ([]byte, error) {
+	existing, err := readFileBounded(path, MaxWiringFileBytes)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		if IsConfigTooLarge(err) {
+			return nil, err
+		}
+		// Other read failures (perm denied, mid-read IO) skip the
+		// preservation path rather than blocking the write. The atomic
+		// WriteAtomic below still surfaces real permission errors on
+		// the destination.
+		return nil, nil
+	}
+	lines := strings.SplitAfter(string(existing), "\n")
+	var header []byte
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			header = append(header, []byte(line)...)
+			continue
+		}
+		break
+	}
+	return header, nil
 }
 
 // SaveFullBundle writes the wiring file plus every entity file present in the

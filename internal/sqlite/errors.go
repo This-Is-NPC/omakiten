@@ -8,6 +8,7 @@ import (
 
 	"omakiten/internal/activity"
 	"omakiten/internal/domain"
+	"omakiten/internal/sqlite/sqlutil"
 )
 
 // agentAttribution pulls source/entrypoint/agent_model/agent_session_id
@@ -132,10 +133,7 @@ LIMIT ?
 			v := success.Int64 == 1
 			solution.Success = &v
 		}
-		if taskID.Valid {
-			v := taskID.Int64
-			solution.TaskID = &v
-		}
+		solution.TaskID = sqlutil.NullInt64Ptr(taskID)
 		out = append(out, solution)
 	}
 	return out, rows.Err()
@@ -192,11 +190,7 @@ func (s *Store) ensureErrorExists(ctx context.Context, errorID int64) error {
 	return nil
 }
 
-type rowScanner interface {
-	Scan(dest ...any) error
-}
-
-func scanSolution(row rowScanner) (domain.Solution, error) {
+func scanSolution(row sqlutil.Scanner) (domain.Solution, error) {
 	var solution domain.Solution
 	var success sql.NullInt64
 	var taskID sql.NullInt64
@@ -207,9 +201,6 @@ func scanSolution(row rowScanner) (domain.Solution, error) {
 		v := success.Int64 == 1
 		solution.Success = &v
 	}
-	if taskID.Valid {
-		v := taskID.Int64
-		solution.TaskID = &v
-	}
+	solution.TaskID = sqlutil.NullInt64Ptr(taskID)
 	return solution, nil
 }

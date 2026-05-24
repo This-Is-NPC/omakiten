@@ -117,7 +117,7 @@ func (s *Service) CreateTaskIntent(ctx context.Context, input CreateTaskInput) (
 
 	template := s.activeTaskTemplate(project.Slug)
 	if input.TemplateSlug != "" {
-		merged, applied, err := s.applyTemplateBody(input.TemplateSlug, description, "task")
+		merged, applied, err := s.applyTemplateBody(input.TemplateSlug, description, TemplateKindTask)
 		if err != nil {
 			return CreateTaskResponse{}, err
 		}

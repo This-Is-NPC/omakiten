@@ -120,20 +120,11 @@ func run(root string, check bool) error {
 
 	generated := map[string]string{}
 
-	generated[".docs/_generated/entities-laws.md"] = renderLaws(entities["laws"])
-	generated[".docs/_generated/entities-skills.md"] = renderSimpleEntities(entities["skills"], "skills")
-	generated[".docs/_generated/entities-personas.md"] = renderPersonas(entities["personas"])
-	generated[".docs/_generated/entities-templates.md"] = renderTemplates(entities["templates"])
-
 	for _, p := range presets {
 		generated[fmt.Sprintf(".docs/_generated/presets-%s.md", p.Key)] = renderPreset(p, entities)
 	}
 
 	generated[".docs/_generated/tag-vocabulary.md"] = renderTagVocabulary(presets)
-
-	// prompt-costs.md is hand-maintained from `mise run mcp:prompts` output
-	// until a dedicated cost-snapshot subtask lands. Reading on disk so
-	// includes still resolve, but no overwrite here.
 
 	diffs := []string{}
 	for rel, content := range generated {
@@ -245,66 +236,12 @@ func splitFrontmatter(raw []byte) ([]byte, []byte, error) {
 }
 
 // ---- renderers ----
-
-func renderLaws(es map[string]entity) string {
-	keys := sortedKeys(es)
-	var b strings.Builder
-	b.WriteString(generatedHeader)
-	b.WriteString("\n# Laws Catalog\n\n")
-	b.WriteString("Auto-derived from `defaults/laws/*.md` frontmatter.\n\n")
-	b.WriteString("| Slug | Severity | Description |\n|---|---|---|\n")
-	for _, k := range keys {
-		e := es[k]
-		b.WriteString(fmt.Sprintf("| `%s` | %s | %s |\n", e.Slug, defaulted(e.Severity, "—"), oneLine(e.Description)))
-	}
-	return b.String()
-}
-
-func renderSimpleEntities(es map[string]entity, kind string) string {
-	keys := sortedKeys(es)
-	var b strings.Builder
-	b.WriteString(generatedHeader)
-	b.WriteString(fmt.Sprintf("\n# %s Catalog\n\n", titleize(kind)))
-	b.WriteString(fmt.Sprintf("Auto-derived from `defaults/%s/*.md` frontmatter.\n\n", kind))
-	b.WriteString("| Slug | Description |\n|---|---|\n")
-	for _, k := range keys {
-		e := es[k]
-		b.WriteString(fmt.Sprintf("| `%s` | %s |\n", e.Slug, oneLine(e.Description)))
-	}
-	return b.String()
-}
-
-func renderPersonas(es map[string]entity) string {
-	keys := sortedKeys(es)
-	var b strings.Builder
-	b.WriteString(generatedHeader)
-	b.WriteString("\n# Personas Catalog\n\n")
-	b.WriteString("Auto-derived from `defaults/personas/*.md` frontmatter.\n\n")
-	b.WriteString("| Slug | Description | Skills |\n|---|---|---|\n")
-	for _, k := range keys {
-		e := es[k]
-		skills := "—"
-		if len(e.Skills) > 0 {
-			skills = "`" + strings.Join(e.Skills, "`, `") + "`"
-		}
-		b.WriteString(fmt.Sprintf("| `%s` | %s | %s |\n", e.Slug, oneLine(e.Description), skills))
-	}
-	return b.String()
-}
-
-func renderTemplates(es map[string]entity) string {
-	keys := sortedKeys(es)
-	var b strings.Builder
-	b.WriteString(generatedHeader)
-	b.WriteString("\n# Templates Catalog\n\n")
-	b.WriteString("Auto-derived from `defaults/templates/*.md` frontmatter.\n\n")
-	b.WriteString("| Slug | Entity | Default | Description |\n|---|---|---|---|\n")
-	for _, k := range keys {
-		e := es[k]
-		b.WriteString(fmt.Sprintf("| `%s` | %s | %s | %s |\n", e.Slug, defaulted(e.Entity, "—"), defaulted(e.Default, "—"), oneLine(e.Description)))
-	}
-	return b.String()
-}
+//
+// Entity catalogs (laws/skills/personas/templates) used to render here too, but
+// were dropped: entities are user-tunable per fork, so any static catalog goes
+// stale within hours. Discovery now flows through `okt <kind> list` /
+// `okt <kind> show <slug>` (and the MCP equivalents) — the preset doc still
+// surfaces wiring (which preset binds which entity), which is the stable bit.
 
 func renderPreset(p preset, entities map[string]map[string]entity) string {
 	var b strings.Builder
@@ -473,9 +410,8 @@ func renderTagVocabulary(presets []preset) string {
 // ---- marker engine ----
 
 var (
-	autoCatalogRe = regexp.MustCompile(`(?s)<!-- BEGIN auto:catalog kind=([a-z]+) -->\n.*?<!-- END auto:catalog -->`)
-	includeRe     = regexp.MustCompile(`(?s)<!-- BEGIN include:([^\s>]+) -->\n.*?<!-- END include -->`)
-	sectionReFmt  = `(?s)<!-- SECTION:%s -->\n(.*?)<!-- END SECTION -->`
+	includeRe    = regexp.MustCompile(`(?s)<!-- BEGIN include:([^\s>]+) -->\n.*?<!-- END include -->`)
+	sectionReFmt = `(?s)<!-- SECTION:%s -->\n(.*?)<!-- END SECTION -->`
 )
 
 func processMarkers(docsDir string, generated map[string]string, check bool, diffs *[]string) error {
@@ -494,25 +430,7 @@ func processMarkers(docsDir string, generated map[string]string, check bool, dif
 			return err
 		}
 		fences := codeFenceSpans(raw)
-		updated := raw
-
-		updated = replaceOutsideFences(updated, autoCatalogRe, func(match []byte) []byte {
-			sub := autoCatalogRe.FindSubmatch(match)
-			kind := string(sub[1])
-			rel := fmt.Sprintf(".docs/_generated/entities-%s.md", kind)
-			body, ok := generated[rel]
-			if !ok {
-				return match
-			}
-			body = stripGeneratedHeader(body)
-			return []byte(fmt.Sprintf("<!-- BEGIN auto:catalog kind=%s -->\n%s<!-- END auto:catalog -->", kind, body))
-		}, fences)
-
-		// Recompute fences after the first pass; auto-catalog replacements
-		// can shift later byte offsets enough that the second pass would
-		// reuse stale spans.
-		fences = codeFenceSpans(updated)
-		updated = replaceOutsideFences(updated, includeRe, func(match []byte) []byte {
+		updated := replaceOutsideFences(raw, includeRe, func(match []byte) []byte {
 			sub := includeRe.FindSubmatch(match)
 			target := string(sub[1])
 			rel, section := splitTarget(target)
@@ -614,9 +532,8 @@ func splitTarget(s string) (rel, section string) {
 }
 
 // stripGeneratedHeader drops the leading "<!-- GENERATED ... -->" comment line
-// (the docs:refresh banner, or the hand-maintained prompt-costs / requirements
-// variants) before splicing content into a marker block in another doc — the
-// surrounding file already names the source on the BEGIN marker.
+// (the docs:refresh banner) before splicing content into a marker block in
+// another doc — the surrounding file already names the source on the BEGIN marker.
 func stripGeneratedHeader(s string) string {
 	if strings.HasPrefix(s, "<!-- GENERATED") {
 		if i := strings.Index(s, "\n"); i >= 0 {
@@ -635,26 +552,11 @@ func writeFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
-func sortedKeys(m map[string]entity) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 func defaulted(s, def string) string {
 	if s == "" {
 		return def
 	}
 	return s
-}
-
-func oneLine(s string) string {
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.ReplaceAll(s, "|", `\|`)
-	return strings.TrimSpace(s)
 }
 
 func firstParagraph(body string) string {
@@ -667,13 +569,6 @@ func firstParagraph(body string) string {
 	}
 	s = strings.ReplaceAll(s, "\n", " ")
 	return strings.TrimSpace(s)
-}
-
-func titleize(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 func formatLaws(add, disabled []string) string {

@@ -15,8 +15,8 @@ type PersonaService struct {
 	slugger Slugifier
 }
 
-func NewPersonaService(snap *config.Snapshot, editor *BundleEditor, files EntityFileWriter, slugger Slugifier) *PersonaService {
-	return &PersonaService{snap: snap, editor: editor, files: files, slugger: slugger}
+func NewPersonaService(repos EntityServiceRepos, snap *config.Snapshot) *PersonaService {
+	return &PersonaService{snap: snap, editor: repos.Editor, files: repos.Files, slugger: repos.Slugger}
 }
 
 // personasFromSnapshot projects the config.Persona slice carried on

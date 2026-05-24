@@ -2,12 +2,8 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
-	"sort"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 
 	"omakiten/defaults"
 )
@@ -60,116 +56,61 @@ type languageFile struct {
 // what is on disk. The Snapshot picks the active language at build time
 // against the validated `languages.cli` / `languages.tui` config fields.
 func LoadLanguages(dir string) ([]Language, []SourceWarning, error) {
-	files, err := listLanguageFiles(dir)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	byCode := map[string]Language{}
-	order := []string{}
-	var warnings []SourceWarning
-	seen := map[string]entityFile{}
-	for _, file := range files {
-		raw, err := os.ReadFile(file.Path)
-		if err != nil {
-			return nil, nil, fmt.Errorf("read %s: %w", file.Path, err)
-		}
-		var lf languageFile
-		if err := decodeLanguageStrict(raw, &lf); err != nil {
-			return nil, nil, parseError(file.Path, err)
-		}
-		code := strings.TrimSpace(lf.Code)
-		if code == "" {
-			return nil, nil, parseError(file.Path, fmt.Errorf("language code is required"))
-		}
-		if code != strings.ToLower(code) {
-			return nil, nil, parseError(file.Path, fmt.Errorf("language code %q must be lowercase", code))
-		}
-		if strings.TrimSpace(lf.Name) == "" {
-			return nil, nil, parseError(file.Path, fmt.Errorf("language name is required"))
-		}
-		if strings.TrimSpace(lf.Native) == "" {
-			return nil, nil, parseError(file.Path, fmt.Errorf("language native label is required"))
-		}
-		filenameCode := slugFromFilename(file.Path)
-		if filenameCode != code {
-			warnings = append(warnings, SourceWarning{
-				Slug:    code,
-				Path:    file.Path,
-				Message: fmt.Sprintf("filename code %q does not match code field %q", filenameCode, code),
-			})
-		}
-		if previous, dup := seen[code]; dup {
-			if previous.IsCustom == file.IsCustom {
-				return nil, nil, parseError(file.Path, fmt.Errorf("duplicate language code %q (also defined in %s)", code, previous.Path))
-			}
-		}
-		seen[code] = file
-		keys := lf.Keys
-		if keys == nil {
-			keys = map[string]string{}
-		}
-		if _, exists := byCode[code]; !exists {
-			order = append(order, code)
-		}
-		byCode[code] = Language{
-			Code:       code,
-			Name:       strings.TrimSpace(lf.Name),
-			Native:     strings.TrimSpace(lf.Native),
-			Keys:       keys,
-			SourcePath: file.Path,
-			IsCustom:   file.IsCustom,
-		}
-	}
-	sort.Strings(order)
-	out := make([]Language, 0, len(order))
-	for _, code := range order {
-		out = append(out, byCode[code])
-	}
-	return out, warnings, nil
+	return LoadFromDir(dir, LoadOptions[Language]{
+		Suffixes:     []string{".yaml", ".yml"},
+		MaxFileBytes: MaxLanguagePackBytes,
+		Decode:       decodeLanguagePack,
+		SlugOf:       func(l Language) string { return l.Code },
+		Collision:    CollideOverwrite,
+	})
 }
 
-func listLanguageFiles(dir string) ([]entityFile, error) {
-	defaults, err := readLanguageYAMLFiles(dir, false)
-	if err != nil {
-		return nil, err
+// decodeLanguagePack parses a single language YAML file into a Language,
+// returning a filename↔code mismatch as a non-fatal warning so the
+// loader can keep loading the pack. Validation rules: code required,
+// lowercase; name required; native required. Any of these missing or
+// malformed fails the load.
+func decodeLanguagePack(path string, raw []byte, isCustom bool) (Language, *SourceWarning, error) {
+	var lf languageFile
+	if err := decodeLanguageStrict(raw, &lf); err != nil {
+		return Language{}, nil, parseError(path, err)
 	}
-	customs, err := readLanguageYAMLFiles(filepath.Join(dir, "custom"), true)
-	if err != nil {
-		return nil, err
+	code := strings.TrimSpace(lf.Code)
+	if code == "" {
+		return Language{}, nil, parseError(path, fmt.Errorf("language code is required"))
 	}
-	return append(defaults, customs...), nil
-}
-
-func readLanguageYAMLFiles(dir string, isCustom bool) ([]entityFile, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
+	if code != strings.ToLower(code) {
+		return Language{}, nil, parseError(path, fmt.Errorf("language code %q must be lowercase", code))
+	}
+	if strings.TrimSpace(lf.Name) == "" {
+		return Language{}, nil, parseError(path, fmt.Errorf("language name is required"))
+	}
+	if strings.TrimSpace(lf.Native) == "" {
+		return Language{}, nil, parseError(path, fmt.Errorf("language native label is required"))
+	}
+	var warning *SourceWarning
+	filenameCode := slugFromFilename(path)
+	if filenameCode != code {
+		warning = &SourceWarning{
+			Slug:    code,
+			Path:    path,
+			Message: fmt.Sprintf("filename code %q does not match code field %q", filenameCode, code),
 		}
-		return nil, fmt.Errorf("read dir %s: %w", dir, err)
 	}
-	var files []entityFile
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		lower := strings.ToLower(name)
-		if !strings.HasSuffix(lower, ".yaml") && !strings.HasSuffix(lower, ".yml") {
-			continue
-		}
-		files = append(files, entityFile{Path: filepath.Join(dir, name), IsCustom: isCustom})
+	keys := lf.Keys
+	if keys == nil {
+		keys = map[string]string{}
 	}
-	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
-	return files, nil
+	return Language{
+		Code:       code,
+		Name:       strings.TrimSpace(lf.Name),
+		Native:     strings.TrimSpace(lf.Native),
+		Keys:       keys,
+		SourcePath: path,
+		IsCustom:   isCustom,
+	}, warning, nil
 }
 
 func decodeLanguageStrict(raw []byte, target *languageFile) error {
-	dec := yaml.NewDecoder(strings.NewReader(string(raw)))
-	dec.KnownFields(true)
-	if err := dec.Decode(target); err != nil {
-		return err
-	}
-	return nil
+	return decodeYAMLStrict(raw, target)
 }

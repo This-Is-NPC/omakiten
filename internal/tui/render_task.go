@@ -12,10 +12,13 @@ import (
 	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/cardlist"
+	"omakiten/internal/tui/components/columnframe"
 	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/components/gridtable"
 	"omakiten/internal/tui/components/multilineform"
 	"omakiten/internal/tui/components/picker"
+	"omakiten/internal/tui/layout"
 )
 
 func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -62,8 +65,9 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.status = m.t("tui.status.no_subtasks_to_focus")
 			} else {
 				m.taskFocus = taskFocusSubtasks
-				if m.subtaskCursor < 0 {
-					m.subtaskCursor = 0
+				m.refreshSubtaskList()
+				if m.subtasks.Cursor() < 0 {
+					m.subtasks = m.subtasks.JumpFirst()
 				}
 			}
 		case " ":
@@ -144,10 +148,11 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				case "pgup", "ctrl+u":
 					m.scrollActivityLines(-m.activityViewportLines() / 2)
 				case "home", "g":
-					m.activityScroll = 0
+					m.refreshActivityLines()
+					m.activityLines = m.activityLines.ScrollBy(-(1 << 20))
 				case "end", "G":
-					m.activityScroll = 1 << 20
-					m.clampActivityScroll()
+					m.refreshActivityLines()
+					m.activityLines = m.activityLines.ScrollBy(1 << 20)
 				}
 			case taskFocusSubtasks:
 				switch msg.String() {
@@ -156,12 +161,12 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				case "k", "up":
 					m.moveSubtaskCursor(-1)
 				case "home", "g":
-					m.subtaskCursor = 0
-					m.subtaskScroll = 0
+					m.refreshSubtaskList()
+					m.subtasks = m.subtasks.JumpFirst()
 				case "end", "G":
 					if children := m.directChildren(m.taskID); len(children) > 0 {
-						m.subtaskCursor = len(children) - 1
-						m.syncSubtaskScrollToCursor()
+						m.refreshSubtaskList()
+						m.subtasks = m.subtasks.JumpLast()
 					}
 				}
 			default:
@@ -176,21 +181,21 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// raw text edits that the focused bubbles input owns. Anything not
 	// claimed by the screen is forwarded to the active input's Update so
 	// arrow keys, home/end, paste, word delete, etc. work natively.
+	// Disarm catchall: every non-esc keypress clears the dirty-discard
+	// arm so the next esc behaves as "arm again", not "discard". Funnel
+	// this through taskEscDisarm BEFORE the per-key dispatch so adding
+	// a new key case below cannot accidentally retain the armed flag.
+	// The esc case re-arms or confirms via taskEscArmOrConfirm.
+	if msg.String() != "esc" {
+		m.taskEscDisarm()
+	}
 	switch msg.String() {
 	case "ctrl+c":
 		return *m, tea.Quit
 	case "esc":
-		if m.taskScreen == taskScreenEdit && m.taskEditFormDirty() {
-			if !m.taskEscPendingDiscard {
-				// First esc on a dirty edit arms the discard prompt
-				// rather than closing immediately — the user gets one
-				// chance to recover the work before it disappears.
-				m.taskEscPendingDiscard = true
-				m.status = m.t("tui.taskedit.dirty_discard_prompt")
-				return *m, nil
-			}
+		if !m.taskEscArmOrConfirm() {
+			return *m, nil
 		}
-		m.taskEscPendingDiscard = false
 		if m.taskScreen == taskScreenCreate {
 			m.closeTaskScreen(m.t("tui.status.cancelled"))
 		} else if task, ok := m.activeTask(); ok {
@@ -200,27 +205,20 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return *m, nil
 	case "ctrl+s":
-		m.taskEscPendingDiscard = false
 		m.saveTaskForm()
 		return *m, nil
 	case "tab":
-		m.taskEscPendingDiscard = false
 		m.cycleTaskField(1)
 		return *m, nil
 	case "shift+tab":
-		m.taskEscPendingDiscard = false
 		m.cycleTaskField(-1)
 		return *m, nil
 	case "ctrl+b":
-		m.taskEscPendingDiscard = false
 		if m.taskScreen == taskScreenEdit {
 			m.openBlockerPicker()
 		}
 		return *m, nil
 	}
-	// Any other key dismisses the dirty-discard arm so the next esc
-	// behaves as "arm again", not "discard".
-	m.taskEscPendingDiscard = false
 	if m.taskField == taskFieldPriority {
 		switch msg.String() {
 		case "left", "h":
@@ -247,12 +245,54 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.taskTagsInput, cmd = m.taskTagsInput.Update(msg)
 	case taskFieldParent:
 		m.taskParentInput, cmd = m.taskParentInput.Update(msg)
-		// Clear any stale lookup error so the next blur recomputes
-		// against the current input — typing a fresh id mid-edit
-		// shouldn't leave the previous "not found" hint visible.
-		m.taskParentLookupError = ""
+		// Persist taskParentLookupError across mid-edit keystrokes so
+		// the user can read the hint long enough to act on it. The
+		// keystroke-driven clear was the bug: typing a correction
+		// dropped the message before the user could parse it.
+		// Legitimate clear sites stay intact:
+		//  - input emptied to "" by the current keystroke (covered
+		//    here so the error doesn't render against an empty field),
+		//  - validateParentInputOnBlur on field rotation (cycleTaskField),
+		//  - openTaskCreate / openTaskEdit / closeTaskScreen lifecycle
+		//    resets.
+		if strings.TrimSpace(m.taskParentInput.Value()) == "" {
+			m.taskParentLookupError = ""
+		}
 	}
 	return *m, cmd
+}
+
+// taskEscArmOrConfirm runs the esc-on-form policy for both create and
+// edit screens. On a dirty edit, the first call arms the discard
+// prompt (returns false so the caller leaves the form open); the next
+// call sees the armed flag and clears it (returns true so the caller
+// can close). On a clean form there is nothing to confirm — the arm is
+// cleared and the caller proceeds to close immediately.
+//
+// Consolidating the arm/clear bookkeeping into a single helper keeps
+// the contract reachable from one read site (the esc handler) instead
+// of the seven scattered "= false" mutations the previous shape relied
+// on. Pair with taskEscDisarm, which the keystroke dispatcher calls on
+// every non-esc key.
+func (m *Model) taskEscArmOrConfirm() (confirmed bool) {
+	if m.taskScreen == taskScreenEdit && m.taskEditFormDirty() && !m.taskEscPendingDiscard {
+		// First esc on a dirty edit arms the discard prompt rather
+		// than closing immediately — the user gets one chance to
+		// recover the work before it disappears.
+		m.taskEscPendingDiscard = true
+		m.status = m.t("tui.taskedit.dirty_discard_prompt")
+		return false
+	}
+	m.taskEscPendingDiscard = false
+	return true
+}
+
+// taskEscDisarm clears any armed dirty-discard state. Called from the
+// catchall in updateTaskScreen on every non-esc keypress so adding a
+// new key handler below cannot leave the flag set across an unrelated
+// interaction.
+func (m *Model) taskEscDisarm() {
+	m.taskEscPendingDiscard = false
 }
 
 // taskEditFormDirty reports whether the form values have diverged from
@@ -417,10 +457,9 @@ func (m *Model) openTaskView(task domain.Task) {
 	m.status = ""
 	m.moveMode = false
 	m.taskView = detailscreen.New(0)
-	m.activityScroll = 0
+	m.activityLines = m.activityLines.WithLines(nil)
 	m.activityCursor = -1
-	m.subtaskCursor = -1
-	m.subtaskScroll = 0
+	m.subtasks = m.subtasks.WithItems(nil)
 	m.taskFocus = taskFocusForm
 	m.descriptionScreenOpen = false
 	m.descriptionScreen = detailscreen.New(0)
@@ -563,7 +602,10 @@ func (m *Model) resizeTaskDescriptionInput() {
 func (m *Model) closeTaskScreen(status string) {
 	m.blockerPickerOpen = false
 	m.blockerPickerTaskID = 0
-	m.blockerPicker.Cursor = 0
+	// Route through picker.WithCursor — itemCount/viewport are 0
+	// since the picker is closing anyway; the method collapses both
+	// fields to 0 internally.
+	m.blockerPicker = m.blockerPicker.WithCursor(0, 0, 0)
 	m.blockerPickerChecks = nil
 	m.taskScreen = taskScreenClosed
 	m.taskID = 0
@@ -582,11 +624,17 @@ func (m *Model) closeTaskScreen(status string) {
 	m.taskView = detailscreen.New(0)
 	m.activity = nil
 	m.activityForTask = 0
-	m.activityScroll = 0
+	m.activityLines = m.activityLines.WithLines(nil)
 	m.activityCursor = -1
-	m.subtaskCursor = -1
-	m.subtaskScroll = 0
+	m.subtasks = m.subtasks.WithItems(nil)
 	m.taskViewStack = nil
+	// Drop the per-task activity cards cache (keyed by taskID) so the
+	// rendered card slice for the closed task does not linger across
+	// the entire process lifetime. Same for the per-task render
+	// caches the board / table / entity views populate — they are
+	// cheap to rebuild on the next refresh and live-once outlives
+	// the cards by far when many tasks are opened then closed.
+	m.activityCardsCache = activityCardsCacheEntry{}
 	m.taskFocus = taskFocusForm
 	m.commentScreenOpen = false
 	m.commentScreenID = 0
@@ -1049,40 +1097,89 @@ func (m Model) renderTaskView() string {
 		return m.renderPanel(m.t("tui.empty.task_not_found_refresh"))
 	}
 	available := m.availableWidth()
-	// Sub-tasks pane is always rendered so its empty state ("no
-	// sub-tasks. press n to add one.") is visible even on leaf tasks;
-	// hiding it confused users into thinking the column had collapsed
-	// or the screen was missing the new pane entirely.
-	layout := m.computeTaskViewLayout(available, true)
-	details := m.renderTaskDetailsBox(task, layout)
+	lyt := m.computeTaskViewLayout(available, true)
+	details := m.renderTaskDetailsBox(task, lyt)
+	formHeight := lipgloss.Height(details)
+	budget := m.taskViewBudget(lyt, formHeight)
 	children := m.directChildren(task.ID)
 
-	// Sub-tasks column: board-style cards via the shared
-	// columnFrame + taskCard helpers. Always rendered so the empty
-	// state is visible on leaf tasks — the pane communicates "no
-	// sub-tasks yet" instead of going missing.
-	subtasksBox := m.renderSubtasksPanel(children, layout)
+	// Early-render fallback: before the first WindowSizeMsg arrives
+	// (m.height == 0 → OuterHeight 0) we have no terminal budget to
+	// drive the cascade. Render all three panels content-sized so
+	// the first paint never goes blank or single-pane on a fresh
+	// task open; the next render with a real WindowSizeMsg snaps to
+	// the budget-driven layout.
+	if budget.OuterHeight <= 0 {
+		subtasksBox := m.renderSubtasksPanel(children, lyt, 0)
+		commentsBox := m.renderActivityBox(task.ID, lyt, 0)
+		return m.applyTaskViewScroll(joinTaskViewSections(lyt, details, subtasksBox, commentsBox))
+	}
 
-	// Activity column: existing pane, wrapped in a fixed box. In
-	// side-by-side mode the activity box is stretched to match the
-	// combined height of the form + sub-tasks stack so the right
-	// rail reads as a single tall column "ocupando todo o espaço"
-	// rather than a content-sized box floating at the top.
-	commentsCellText := m.renderTaskCommentsCell(task.ID)
-	commentsLines := gridtable.WrapLines(strings.Split(commentsCellText, "\n"), layout.activityWidth)
-	if layout.kind == taskViewSideBySide {
-		leftHeight := lipgloss.Height(details) + lipgloss.Height(subtasksBox)
-		// Subtract 2 for the activity box's own top + bottom borders
-		// so the FINAL box (borders + content) matches the left stack.
-		desired := leftHeight - 2
+	// Side-by-side always renders the three-panel layout. Focus only
+	// changes the kicker/border accent (handled inside each panel
+	// renderer); sizing is identical across focus states.
+	if lyt.kind == taskViewSideBySide {
+		subtasksBox := m.renderSubtasksPanel(children, lyt, budget.SubtasksBoxHeight())
+		commentsBox := m.renderActivityBox(task.ID, lyt, budget.ActivityBoxHeight())
+		return m.applyTaskViewScroll(joinTaskViewSections(lyt, details, subtasksBox, commentsBox))
+	}
+
+	// Stacked: cascade by focus.
+	//   - subtasks focus → single-pane subtasks, fullscreen.
+	//   - activity focus → single-pane activity, fullscreen.
+	//   - form focus → 3/2/1 cascade depending on the leftover height
+	//     after the form box; empty children / no events still render
+	//     inside their allotted slot (drop is by height only).
+	switch m.taskFocus {
+	case taskFocusSubtasks:
+		return m.applyTaskViewScroll(m.renderSubtasksPanel(children, lyt, budget.SubtasksBoxHeight()))
+	case taskFocusActivity:
+		return m.applyTaskViewScroll(m.renderActivityBox(task.ID, lyt, budget.ActivityBoxHeight()))
+	}
+
+	// Form focus stacked cascade. Stitch the visible panels with
+	// "\n\n" so the on-screen layout matches the budget's row math
+	// (each gap costs one Separator row, which the budget already
+	// excluded from the panel slots).
+	sections := []string{details}
+	if budget.ShowSubtasks() {
+		sections = append(sections, m.renderSubtasksPanel(children, lyt, budget.SubtasksBoxHeight()))
+	}
+	if budget.ShowActivity() {
+		sections = append(sections, m.renderActivityBox(task.ID, lyt, budget.ActivityBoxHeight()))
+	}
+	return m.applyTaskViewScroll(strings.Join(sections, "\n\n"))
+}
+
+// renderActivityBox builds the bordered activity pane. boxHeight is
+// the desired total box rows (borders + chrome + body):
+//
+//   - boxHeight > 0: lock the rendered box to exactly that many
+//     rows by padding (or trimming) the body. Used by the
+//     budget-driven layouts in renderTaskView so the on-screen box
+//     matches the layout package's expectation.
+//   - boxHeight == 0: render content-sized — no height clamp. Used
+//     by the pre-WindowSizeMsg fallback path where the layout
+//     budget is unknown.
+//
+// renderFixedBox emits len(lines) + 2 rows total (one border on
+// each side).
+func (m Model) renderActivityBox(taskID int64, lyt taskViewLayout, boxHeight int) string {
+	commentsCellText := m.renderTaskCommentsCell(taskID)
+	commentsLines := gridtable.WrapLines(strings.Split(commentsCellText, "\n"), lyt.activityWidth)
+	if boxHeight > 0 {
+		desired := boxHeight - 2
+		if desired < 0 {
+			desired = 0
+		}
+		if len(commentsLines) > desired {
+			commentsLines = commentsLines[:desired]
+		}
 		for len(commentsLines) < desired {
 			commentsLines = append(commentsLines, "")
 		}
 	}
-	commentsBox := renderFixedBox(commentsLines, layout.activityWidth, m.styles.border)
-
-	rendered := joinTaskViewSections(layout, details, subtasksBox, commentsBox)
-	return m.applyTaskViewScroll(rendered)
+	return renderFixedBox(commentsLines, lyt.activityWidth, m.styles.border)
 }
 
 // renderTaskDetailsBox builds the form column's bordered detailscreen:
@@ -1132,35 +1229,18 @@ func (m Model) renderTaskDetailsBox(task domain.Task, layout taskViewLayout) str
 
 // taskFocusedSectionOffset computes the line index inside the joined
 // renderTaskView output where the currently-focused section starts.
-// In side-by-side layout every section reads at the top of the
-// rendered string, so the offset is always 0 — the join is a single
-// horizontal row. In stacked layout the form, sub-tasks, and
-// activity boxes are separated by a "\n\n" run; the offset for each
-// is the cumulative height of the preceding boxes plus a blank
-// separator. Used by applyTaskFocus to land a freshly-focused zone
-// at the top of the viewport on tab.
+// Both packing modes now render the focused section at line 0:
+// side-by-side joins horizontally (no leading section to skip), and
+// stacked single-pane renders only the focused panel. The outer
+// taskView.Viewport.Scroll therefore always wants 0 on a focus
+// change.
+//
+// Kept as a function instead of inlining the 0 because applyTaskFocus
+// reads it through this name; future layouts that re-introduce a
+// non-zero offset (e.g. a banner above the focused section) only
+// need to update this helper.
 func (m Model) taskFocusedSectionOffset() int {
-	if m.taskFocus == taskFocusForm {
-		return 0
-	}
-	task, ok := m.activeTask()
-	if !ok {
-		return 0
-	}
-	layout := m.computeTaskViewLayout(m.availableWidth(), true)
-	if layout.kind != taskViewStacked {
-		return 0
-	}
-	details := m.renderTaskDetailsBox(task, layout)
-	formHeight := lipgloss.Height(details)
-	if m.taskFocus == taskFocusSubtasks {
-		// "\n\n" between sections yields one extra blank line between
-		// the form box's last row and the sub-tasks box's first row.
-		return formHeight + 1
-	}
-	subtasks := m.renderSubtasksPanel(m.directChildren(task.ID), layout)
-	subHeight := lipgloss.Height(subtasks)
-	return formHeight + 1 + subHeight + 1
+	return 0
 }
 
 // taskViewLayout records the per-section widths and packing decision
@@ -1294,21 +1374,20 @@ func (m Model) computeTaskViewLayout(available int, _ bool) taskViewLayout {
 	return layout
 }
 
-// joinTaskViewSections packs the three pre-rendered section boxes
-// according to the layout decision. SideBySide builds a vertical
-// stack on the left (form on top of sub-tasks) then puts activity
-// in a right rail; Stacked emits a single column of full-width
-// boxes. The two helpers are surfaced separately because lipgloss
-// JoinVertical / JoinHorizontal have no concept of "fall back to
-// stacking on narrow"; the policy lives here.
+// joinTaskViewSections packs the three pre-rendered section boxes for
+// the side-by-side layout: form + sub-tasks stack vertically on the
+// left, activity occupies a right rail. The stacked path no longer
+// reaches this helper — renderTaskView returns one of the three
+// boxes early when the layout is stacked (single-pane focus).
 func joinTaskViewSections(layout taskViewLayout, form, subtasks, activity string) string {
-	switch layout.kind {
-	case taskViewSideBySide:
+	if layout.kind == taskViewSideBySide {
 		leftCol := lipgloss.JoinVertical(lipgloss.Left, form, subtasks)
 		return lipgloss.JoinHorizontal(lipgloss.Top, leftCol, "  ", activity)
-	default: // taskViewStacked
-		return strings.Join([]string{form, subtasks, activity}, "\n\n")
 	}
+	// Defensive fallback — kept so a future layout addition that
+	// doesn't short-circuit in renderTaskView still produces a
+	// reasonable string instead of an empty one.
+	return strings.Join([]string{form, subtasks, activity}, "\n\n")
 }
 
 // renderTaskDescriptionInline returns the description block as rendered
@@ -1334,12 +1413,22 @@ func (m Model) renderTaskDescriptionInline(description string, width int) string
 
 // renderSubtasksPanel renders the sub-tasks pane as a board-style
 // column: bordered kicker + per-child task card via the shared
-// renderColumnFrame + renderTaskCard helpers. Cards mirror the board's
+// columnframe + renderTaskCard helpers. Cards mirror the board's
 // visual language so a sub-task here reads identically to its row on
 // the kanban surface — cursor + selection styling included. Empty
 // state renders the same boxed pane with a hint line so leaf tasks
 // still show the column instead of dropping it from the layout.
-func (m Model) renderSubtasksPanel(children []domain.Task, layout taskViewLayout) string {
+//
+// boxHeight is the desired TOTAL box rows (borders + chrome + body):
+//
+//   - boxHeight > 0: lock the rendered box to exactly that many
+//     rows. lipgloss `Style.Height` treats its argument as INNER
+//     content rows (borders sit outside), so this helper subtracts
+//     layout.PanelBorders before handing the budget off.
+//   - boxHeight == 0: render content-sized — no height clamp. Used
+//     by the pre-WindowSizeMsg fallback path where the layout
+//     budget is unknown.
+func (m Model) renderSubtasksPanel(children []domain.Task, lyt taskViewLayout, boxHeight int) string {
 	finalKey := m.workflow.FinalBucketKey()
 	done := 0
 	for _, child := range children {
@@ -1357,11 +1446,45 @@ func (m Model) renderSubtasksPanel(children []domain.Task, layout taskViewLayout
 		header = m.styles.info.Render("// " + headerLabel)
 	}
 
-	cards := make([]string, len(children))
-	heights := make([]int, len(children))
+	items := m.buildSubtaskCardItems(children, focused, lyt)
+	subtasks := m.subtasks.WithItems(items).WithViewport(m.subtasksViewportRows())
+
+	column := columnframe.Model{
+		Header: header,
+		Rule:   m.hRule(lyt.subtasksInner),
+		List:   subtasks,
+	}
+	if len(children) == 0 {
+		column.EmptyLine = m.styles.empty.Width(lyt.subtasksInner).Render(m.t("tui.empty.sub_tasks"))
+	}
+	body := column.View(m.styles.hint)
+
+	// boxHeight is the TOTAL row count the caller asked for;
+	// lipgloss interprets `Height(n)` as the inner content row count
+	// (borders are stacked outside). Convert before handing off.
+	// boxHeight == 0 → pass 0 through → kanbanColumnSized keeps the
+	// content-sized default.
+	inner := 0
+	if boxHeight > 0 {
+		inner = boxHeight - layout.PanelBorders
+		if inner < 0 {
+			inner = 0
+		}
+	}
+	return m.styles.kanbanColumnSized(lyt.subtasksInner, inner).Render(body)
+}
+
+// buildSubtaskCardItems renders each child task as a card and packs
+// the result into cardlist.Items with the height each card actually
+// occupies on screen. Centralising the card-build means the items
+// the View pass renders and the items the *Model handlers use for
+// scroll math share one implementation.
+func (m Model) buildSubtaskCardItems(children []domain.Task, focused bool, layout taskViewLayout) []cardlist.Item {
+	items := make([]cardlist.Item, len(children))
+	cursor := m.subtasks.Cursor()
 	for i, child := range children {
-		selected := focused && i == m.subtaskCursor
-		cards[i] = m.renderTaskCard(taskCardSpec{
+		selected := focused && i == cursor
+		card := m.renderTaskCard(taskCardSpec{
 			ID:         child.ID,
 			Title:      child.Title,
 			Badges:     m.taskBoardBadges(child),
@@ -1370,24 +1493,9 @@ func (m Model) renderSubtasksPanel(children []domain.Task, layout taskViewLayout
 			BoxWidth:   layout.subtasksCard,
 			InnerWidth: layout.subtasksInner2,
 		})
-		heights[i] = strings.Count(cards[i], "\n") + 1
+		items[i] = cardlist.Item{Content: card, Height: strings.Count(card, "\n") + 1}
 	}
-
-	emptyLine := ""
-	if len(children) == 0 {
-		emptyLine = m.styles.empty.Width(layout.subtasksInner).Render(m.t("tui.empty.sub_tasks"))
-	}
-
-	body := m.renderColumnFrame(columnSpec{
-		Header:       header,
-		Rule:         m.hRule(layout.subtasksInner),
-		EmptyLine:    emptyLine,
-		Cards:        cards,
-		CardHeights:  heights,
-		ScrollOffset: m.subtaskScroll,
-		Viewport:     m.subtasksViewportRows(),
-	})
-	return m.styles.kanbanColumnSized(layout.subtasksInner, 0).Render(body)
+	return items
 }
 
 // taskBreadcrumbTrail formats the ancestor chain (parent → grandparent
@@ -1435,22 +1543,121 @@ func (m Model) taskBreadcrumbTrail() string {
 	return m.styles.hint.Render(prefix + "← " + strings.Join(parts, " ← "))
 }
 
-// subtasksViewportRows returns the line budget the sub-tasks column
-// has after the surrounding screen chrome. Mirrors activityViewportLines
-// so both right-rail panes scroll against the same vertical budget.
+// subtasksViewportRows returns the inner row budget the sub-tasks
+// cardlist gets after layout chrome / borders. Routes through the
+// task-view budget so the policy stays paired with the activity
+// panel.
+//
+// Returns 0 when the panel would not render at the current budget
+// (stacked + activity focus, or stacked + form focus with terminal
+// below the SubtasksMinRows floor). 0 tells the cardlist "render
+// every card, no slice" — fine because the outer renderer will not
+// emit this panel.
 func (m Model) subtasksViewportRows() int {
 	if m.height <= 0 {
 		return 0
 	}
-	chrome := 7 // header(2) + leading blank(1) + footer(2) + panel header(kicker+rule) (2)
-	if m.status != "" {
-		chrome++
+	task, ok := m.activeTask()
+	if !ok {
+		return 0
 	}
-	rows := m.height - chrome
-	if rows < 4 {
+	lyt := m.computeTaskViewLayout(m.availableWidth(), true)
+	formHeight := m.cachedTaskDetailsBoxHeight(task, lyt)
+	rows := m.taskViewBudget(lyt, formHeight).SubtasksRows()
+	if rows < 0 {
 		return 0
 	}
 	return rows
+}
+
+// taskViewBudget builds the layout.TaskViewBudget value the per-section
+// helpers consume. Centralises the Kind / Focus translation and the
+// OuterHeight read so subtasksViewportRows + activityViewportLines stay
+// aligned on every refresh.
+//
+// Focus drives the stacked-mode cascade (form focus → 3/2/1 panels,
+// subtasks/activity focus → single-pane fullscreen). The side-by-side
+// path ignores Focus for sizing — it always renders all three panels
+// at the same dimensions; only the kicker/border accent shifts to
+// signal which section owns the keys.
+func (m Model) taskViewBudget(lyt taskViewLayout, formHeight int) layout.TaskViewBudget {
+	kind := layout.Stacked
+	if lyt.kind == taskViewSideBySide {
+		kind = layout.SideBySide
+	}
+	focus := layout.FocusForm
+	switch m.taskFocus {
+	case taskFocusSubtasks:
+		focus = layout.FocusSubtasks
+	case taskFocusActivity:
+		focus = layout.FocusActivity
+	}
+	return layout.TaskViewBudget{
+		Kind:        kind,
+		Focus:       focus,
+		FormHeight:  formHeight,
+		OuterHeight: m.taskViewportHeight(),
+	}
+}
+
+// taskDetailsBoxHeightCacheEntry holds the memoised form box height.
+// Lives on the Model so the value-copy carried into View() by the
+// Bubbletea loop preserves the cache populated by Update handlers.
+type taskDetailsBoxHeightCacheEntry struct {
+	valid  bool
+	key    uint64
+	height int
+}
+
+// taskDetailsBoxHeightKey fingerprints every model field that changes
+// the rendered form box's vertical extent: the active task identity,
+// its title / description bytes, the formValueWidth (description wrap),
+// blocker + tag counts, and the bucket / priority labels (each owns one
+// row). The cache miss path renders once via renderTaskDetailsBox and
+// stashes the result; later calls with identical fingerprints
+// short-circuit to the stored height with no lipgloss work.
+func (m Model) taskDetailsBoxHeightKey(task domain.Task, layout taskViewLayout) uint64 {
+	f := newFingerprint()
+	f.writeInt64(task.ID)
+	f.writeInt64(int64(layout.formValueWidth))
+	f.writeInt64(int64(len(m.blockersForTask(task.ID))))
+	f.writeInt64(int64(len(m.tagsForTask(task.ID))))
+	f.writeInt64(int64(m.commentCount(task.ID)))
+	f.writeString(task.Title)
+	f.writeString(task.Description)
+	f.writeString(task.BucketKey)
+	f.writeInt64(int64(task.Priority))
+	return f.sum()
+}
+
+// cachedTaskDetailsBoxHeight is the value-receiver entry point used by
+// the View() render path. On cache hit it returns the stored height
+// with no work; on miss it falls through to a fresh render-and-measure
+// but cannot persist (value copy). *Model handlers should warm the
+// cache via primeTaskDetailsBoxHeight before View() runs so the slow
+// path here is taken at most once per (taskID, width, …) tuple.
+func (m Model) cachedTaskDetailsBoxHeight(task domain.Task, layout taskViewLayout) int {
+	key := m.taskDetailsBoxHeightKey(task, layout)
+	if m.taskDetailsBoxHeightCache.valid && m.taskDetailsBoxHeightCache.key == key {
+		return m.taskDetailsBoxHeightCache.height
+	}
+	return lipgloss.Height(m.renderTaskDetailsBox(task, layout))
+}
+
+// primeTaskDetailsBoxHeight is the *Model variant that writes the
+// cached entry so subsequent value-receiver reads (including the
+// View() pass) short-circuit. Called from Update handlers that need
+// the form height for scroll math (syncSubtaskScrollToCursor,
+// applyTaskFocus via taskFocusedSectionOffset) so the heavy render
+// happens at most once per Update→View tick instead of three times.
+func (m *Model) primeTaskDetailsBoxHeight(task domain.Task, layout taskViewLayout) int {
+	key := m.taskDetailsBoxHeightKey(task, layout)
+	if m.taskDetailsBoxHeightCache.valid && m.taskDetailsBoxHeightCache.key == key {
+		return m.taskDetailsBoxHeightCache.height
+	}
+	height := lipgloss.Height(m.renderTaskDetailsBox(task, layout))
+	m.taskDetailsBoxHeightCache = taskDetailsBoxHeightCacheEntry{valid: true, key: key, height: height}
+	return height
 }
 
 // (border colors stay neutral on purpose — focus is signalled by the
@@ -1502,69 +1709,38 @@ func (m Model) renderTaskReference(task domain.Task) string {
 }
 
 // moveSubtaskCursor advances the cursor in the sub-tasks pane by the
-// given delta. Wraps from "no selection" (-1) to first or last card
-// depending on direction so a single keypress always lands on a real
-// row. Mirrors moveActivityCursor's behaviour so the two panes feel
-// identical under j/k.
+// given delta. Routes through cardlist.Model.MoveCursor so the
+// component's internal scrollwindow.Resync keeps cursor + scroll
+// coherent; the helper here only refreshes the items + viewport and
+// then chases the outer-viewport scroll in stacked layout.
+//
+// W11-B-1: replaces the prior hand-rolled cursor*4 line-offset math
+// that miscomputed subtaskScroll as a line offset where the renderer
+// expected a card index. The cardlist component owns both
+// quantities now; the bug class (unit mismatch) is structurally
+// extinct.
 func (m *Model) moveSubtaskCursor(delta int) {
-	children := m.directChildren(m.taskID)
-	rows := len(children)
-	if rows == 0 {
-		m.subtaskCursor = -1
-		return
-	}
-	if m.subtaskCursor < 0 {
-		if delta > 0 {
-			m.subtaskCursor = 0
-		} else {
-			m.subtaskCursor = rows - 1
-		}
-		m.syncSubtaskScrollToCursor()
-		return
-	}
-	next := m.subtaskCursor + delta
-	if next < 0 {
-		next = 0
-	}
-	if next >= rows {
-		next = rows - 1
-	}
-	m.subtaskCursor = next
-	m.syncSubtaskScrollToCursor()
+	m.refreshSubtaskList()
+	m.subtasks = m.subtasks.MoveCursor(delta)
 }
 
-// syncSubtaskScrollToCursor advances subtaskScroll so the focused
-// sub-task card stays inside the viewport budget. Cheap O(n) scan;
-// the typical task has a handful of direct children.
-func (m *Model) syncSubtaskScrollToCursor() {
-	if m.subtaskCursor < 0 {
-		return
+// refreshSubtaskList rebuilds the cardlist's items + viewport from
+// the current children + measured form height. Called from every
+// *Model handler that mutates the sub-tasks state so the cardlist
+// always has accurate inputs before its resync fires. Items carry
+// the actual rendered heights so MoveCursor's resync respects card
+// geometry instead of guessing.
+func (m *Model) refreshSubtaskList() {
+	layout := m.computeTaskViewLayout(m.availableWidth(), true)
+	if layout.kind == taskViewStacked {
+		if task, ok := m.activeTask(); ok {
+			m.primeTaskDetailsBoxHeight(task, layout)
+		}
 	}
+	focused := m.taskFocus == taskFocusSubtasks
 	children := m.directChildren(m.taskID)
-	if m.subtaskCursor >= len(children) {
-		return
-	}
-	viewport := m.subtasksViewportRows()
-	if viewport <= 0 {
-		m.subtaskScroll = 0
-		return
-	}
-	// Each card occupies ~4 rows on screen (border + content + badges).
-	// The estimate keeps the cursor visible without the cost of measuring
-	// every rendered card; off-by-one drift is corrected by clampScroll
-	// on the next render.
-	const cardRowsEstimate = 4
-	cursorTop := m.subtaskCursor * cardRowsEstimate
-	cursorBottom := cursorTop + cardRowsEstimate
-	if cursorTop < m.subtaskScroll {
-		m.subtaskScroll = cursorTop
-	}
-	if cursorBottom > m.subtaskScroll+viewport {
-		m.subtaskScroll = cursorBottom - viewport
-	}
-	if m.subtaskScroll < 0 {
-		m.subtaskScroll = 0
-	}
+	items := m.buildSubtaskCardItems(children, focused, layout)
+	m.subtasks = m.subtasks.WithItems(items).WithViewport(m.subtasksViewportRows())
 }
 
 // activeSubtask returns the sub-task currently under the cursor in
@@ -1572,14 +1748,15 @@ func (m *Model) syncSubtaskScrollToCursor() {
 // selection or the index drifted past the end (e.g. after refresh
 // dropped a child); callers render no-op for that case.
 func (m Model) activeSubtask() (domain.Task, bool) {
-	if m.subtaskCursor < 0 {
+	cursor := m.subtasks.Cursor()
+	if cursor < 0 {
 		return domain.Task{}, false
 	}
 	children := m.directChildren(m.taskID)
-	if m.subtaskCursor >= len(children) {
+	if cursor >= len(children) {
 		return domain.Task{}, false
 	}
-	return children[m.subtaskCursor], true
+	return children[cursor], true
 }
 
 // sendFocusedSubtaskToDone shortcuts the sub-task currently under the
@@ -1748,7 +1925,7 @@ func (m Model) renderTaskTagsField(width int) string {
 		innerWidth = 8
 	}
 	input.Width = innerWidth
-	style := m.styles.input.Width(width)
+	style := styleWidthFromCache(m.styleByKindWidth, styleKindInput, m.styles.input, width)
 	if m.taskField == taskFieldTags {
 		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
 	}
@@ -1767,7 +1944,7 @@ func (m Model) renderTaskParentField(width int) string {
 		innerWidth = 8
 	}
 	input.Width = innerWidth
-	style := m.styles.input.Width(width)
+	style := styleWidthFromCache(m.styleByKindWidth, styleKindInput, m.styles.input, width)
 	if m.taskField == taskFieldParent {
 		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
 	}
@@ -1786,7 +1963,7 @@ func (m Model) renderTaskTitleField(width int) string {
 		innerWidth = 8
 	}
 	input.Width = innerWidth
-	style := m.styles.input.Width(width)
+	style := styleWidthFromCache(m.styleByKindWidth, styleKindInput, m.styles.input, width)
 	if m.taskField == taskFieldTitle {
 		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
 	}
@@ -1823,7 +2000,7 @@ func (m Model) renderTaskPriorityInput() string {
 			parts = append(parts, m.styles.hint.Render(label))
 		}
 	}
-	style := m.styles.input.Width(m.taskFormWidth())
+	style := styleWidthFromCache(m.styleByKindWidth, styleKindInput, m.styles.input, m.taskFormWidth())
 	if m.taskField == taskFieldPriority {
 		style = style.BorderForeground(m.styles.hintAccent.GetForeground())
 	}

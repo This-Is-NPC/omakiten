@@ -95,19 +95,25 @@ func (r *runtime) bundleEditor() *app.BundleEditor {
 	return app.NewBundleEditor(configstore.New(), r.configPath)
 }
 
-func (r *runtime) skillService() *app.SkillService {
+// entityServiceRepos aggregates the editor/file/slugger triple every
+// entity service shares so each constructor below stays one line. The
+// configstore satisfies both EntityFileWriter and Slugifier — keeping
+// the alias inside the helper means a swap of either port lands once.
+func (r *runtime) entityServiceRepos() app.EntityServiceRepos {
 	store := configstore.New()
-	return app.NewSkillService(r.activeSnapshot(), r.bundleEditor(), store, store)
+	return app.EntityServiceRepos{Editor: r.bundleEditor(), Files: store, Slugger: store}
+}
+
+func (r *runtime) skillService() *app.SkillService {
+	return app.NewSkillService(r.entityServiceRepos(), r.activeSnapshot())
 }
 
 func (r *runtime) lawService() *app.LawService {
-	store := configstore.New()
-	return app.NewLawService(r.activeSnapshot(), r.bundleEditor(), store, store, r.activeRegistry())
+	return app.NewLawService(r.entityServiceRepos(), r.activeSnapshot(), r.activeRegistry())
 }
 
 func (r *runtime) personaService() *app.PersonaService {
-	store := configstore.New()
-	return app.NewPersonaService(r.activeSnapshot(), r.bundleEditor(), store, store)
+	return app.NewPersonaService(r.entityServiceRepos(), r.activeSnapshot())
 }
 
 func (r *runtime) contextService() *app.ContextService {
@@ -330,7 +336,11 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 // handle without re-implementing the cache lookup.
 func (r *runtime) ResolveProjectRuntime(ctx context.Context, projectID int64) (*agentruntime.ProjectRuntime, error) {
 	if r.cache == nil {
-		return nil, fmt.Errorf("cli runtime: bundle cache is not initialised; open() must run with materializeConfig=true")
+		// Redacted message: the underlying cause names internal
+		// construction options (materializeConfig=true) the user has
+		// no way to set. Point them at the user-facing remediation
+		// instead.
+		return nil, domain.NewError(domain.ErrConfigInvalid, t("cli.err.runtime_not_initialised"), nil)
 	}
 	if projectID == 0 {
 		projectID = r.projectID
@@ -434,7 +444,15 @@ func (o *runtimeOptions) resolveDiscoveryStart(ctx context.Context, store app.Pr
 	resolver := projectresolver.NewResolver(store)
 	cwd, _ := os.Getwd()
 	project, err := resolver.Resolve(ctx, projectresolver.ResolveOptions{ProjectID: o.projectID, Project: o.project, CWD: cwd})
-	if err != nil || project.RootPath == "" {
+	if err != nil {
+		// The user explicitly named a project (--project / --project-id);
+		// silently degrading to CWD masks the resolution failure and
+		// drops the rest of the command on a different bundle than the
+		// caller asked for. Surface the typed error so the operator
+		// can fix the flag or create the project before retrying.
+		return "", err
+	}
+	if project.RootPath == "" {
 		return cwd, nil
 	}
 	return project.RootPath, nil

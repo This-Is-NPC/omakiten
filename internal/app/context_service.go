@@ -22,11 +22,47 @@ type ContextService struct {
 	registry     *domain.EnumRegistry
 }
 
+// ContextRepoSet bundles the four repository ports ContextService
+// composes so callers don't thread the same store handle in four
+// times. The hexagonal-port shape is preserved: each field is the
+// narrow read/write surface the service actually uses; aggregating
+// here is purely a wiring convenience.
+type ContextRepoSet struct {
+	Tasks        TaskRepository
+	Comments     CommentRepository
+	Dependencies DependencyRepository
+	Entries      ContextEntryRepository
+}
+
+// NewContextService is the explicit per-port constructor preserved
+// for the composition root and tests that already pass a single
+// store handle in for all four ports.
 func NewContextService(tasks TaskRepository, comments CommentRepository, dependencies DependencyRepository, entries ContextEntryRepository, snap *config.Snapshot, counter token.Counter, registry *domain.EnumRegistry) *ContextService {
+	return NewContextServiceFromRepos(ContextRepoSet{
+		Tasks:        tasks,
+		Comments:     comments,
+		Dependencies: dependencies,
+		Entries:      entries,
+	}, snap, counter, registry)
+}
+
+// NewContextServiceFromRepos is the param-object constructor used by
+// callers that already aggregate the four repos. The agent service
+// reaches through it so the same store handle does not appear 4×
+// at every callsite.
+func NewContextServiceFromRepos(repos ContextRepoSet, snap *config.Snapshot, counter token.Counter, registry *domain.EnumRegistry) *ContextService {
 	if counter == nil {
 		counter = token.ApproxCounter{}
 	}
-	return &ContextService{tasks: tasks, comments: comments, dependencies: dependencies, entries: entries, snap: snap, counter: counter, registry: registry}
+	return &ContextService{
+		tasks:        repos.Tasks,
+		comments:     repos.Comments,
+		dependencies: repos.Dependencies,
+		entries:      repos.Entries,
+		snap:         snap,
+		counter:      counter,
+		registry:     registry,
+	}
 }
 
 func (s *ContextService) Add(ctx context.Context, project domain.ProjectContext, body string) (entry domain.ContextEntry, err error) {

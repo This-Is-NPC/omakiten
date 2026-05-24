@@ -353,6 +353,18 @@ type SQLiteSettings struct {
 	// demands > 0. Larger DBs or systems with concurrent writers may
 	// need a higher value than the kit's default.
 	BusyTimeoutMs int `yaml:"busy_timeout_ms" json:"busy_timeout_ms"`
+	// CacheSizeKB tunes PRAGMA cache_size; passed as the negative
+	// kilobyte form ("-N" = N KiB of page cache). Required; validator
+	// demands > 0. Larger projects / longer task histories benefit
+	// from a fatter page cache because the TUI keystroke read fan-out
+	// repeatedly walks the same tables (tasks, events, deps).
+	CacheSizeKB int `yaml:"cache_size_kb" json:"cache_size_kb"`
+	// MmapSizeBytes sets PRAGMA mmap_size; 0 disables mmap, any
+	// positive value asks SQLite to memory-map up to that many bytes
+	// of the database file. Required; validator demands >= 0. Disabled
+	// by default because mmap interacts poorly with NFS / FUSE mounts
+	// some users keep their config root on.
+	MmapSizeBytes int `yaml:"mmap_size_bytes" json:"mmap_size_bytes"`
 }
 
 // ActivityLogSettings declares the retention window for the per-call

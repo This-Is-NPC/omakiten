@@ -101,10 +101,10 @@ func (m *Model) emitBundleSwapped(fromKey, toKey, fromPath string) {
 		m.pendingSwapRevertPath = ""
 	}
 	payload := struct {
-		FromWorkflow string              `json:"from_workflow"`
-		ToWorkflow   string              `json:"to_workflow"`
-		OrphanCount  int                 `json:"orphan_count"`
-		HasOrphans   bool                `json:"has_orphans"`
+		FromWorkflow string               `json:"from_workflow"`
+		ToWorkflow   string               `json:"to_workflow"`
+		OrphanCount  int                  `json:"orphan_count"`
+		HasOrphans   bool                 `json:"has_orphans"`
 		Groups       []domain.OrphanGroup `json:"groups,omitempty"`
 	}{
 		FromWorkflow: fromKey,
@@ -144,4 +144,3 @@ func (m *Model) revertConfigSwap() {
 	display := strings.TrimSuffix(base, filepath.Ext(base))
 	m.status = fmt.Sprintf(m.t("tui.status.config_swap_cancelled_fmt"), display)
 }
-

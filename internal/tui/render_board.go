@@ -8,6 +8,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/cardlist"
+	"omakiten/internal/tui/components/columnframe"
 )
 
 func (m *Model) handleBoardKey(msg tea.KeyMsg) {
@@ -98,11 +100,16 @@ func (m *Model) handleBoardKey(msg tea.KeyMsg) {
 	}
 }
 
-// syncFocusedColumnScroll keeps m.boardScroll[focusedBucket] aligned so the
-// selected card stays fully visible inside the column viewport. Rendered card
-// heights vary (1- vs 2-line titles, badges line) so we render each card to
-// measure the actual height instead of using an approximation, otherwise
-// `down` arrow lags behind the cursor by ~1 card.
+// syncFocusedColumnScroll syncs the focused bucket's cardlist.Model so
+// the selected card stays fully visible inside the column viewport.
+// Rendered card heights vary (1- vs 2-line titles, badges line) so we
+// compute the exact height from the card spec (cardHeightFromSpec)
+// instead of rendering each card just to count the trailing newlines.
+//
+// Routes the cursor + scroll through cardlist.WithItems + WithViewport
+// + WithCursor so scrollwindow.Resync owns correctness. The
+// per-bucket map drops empty entries to keep state small as the
+// user navigates between lanes.
 func (m *Model) syncFocusedColumnScroll() {
 	bucket, ok := m.focusedBucketKey()
 	if !ok {
@@ -114,23 +121,42 @@ func (m *Model) syncFocusedColumnScroll() {
 	}
 	tasks := m.tasksInCurrentBucket()
 	if len(tasks) == 0 {
-		if m.boardScroll != nil {
-			delete(m.boardScroll, bucket)
+		if m.boardLists != nil {
+			delete(m.boardLists, bucket)
 		}
 		return
 	}
 
 	layout := m.computeBoardLayout(len(m.workflow.Buckets))
-	heights := make([]int, len(tasks))
+	items := make([]cardlist.Item, len(tasks))
 	for i, task := range tasks {
-		rendered := m.renderCard(task, false, layout)
-		heights[i] = strings.Count(rendered, "\n") + 1
+		h := m.cardHeightFromSpec(taskCardSpec{
+			ID:         task.ID,
+			Title:      task.Title,
+			Badges:     m.taskBoardBadges(task),
+			Selected:   false,
+			Archived:   task.State == domain.TaskStateArchived,
+			BoxWidth:   layout.cardWidth,
+			InnerWidth: layout.cardContentWidth,
+		})
+		// Item.Content is the pre-rendered card string; the board
+		// render path uses cardHeightFromSpec for scroll math and
+		// renderCard for the visible card, so the cardlist View
+		// path is not the one used by renderKanbanCell — we feed
+		// Items only for height accounting. The empty Content
+		// string is intentional; renderKanbanCell builds its own
+		// rendered cards via renderCard.
+		items[i] = cardlist.Item{Content: "", Height: h}
 	}
 
-	if m.boardScroll == nil {
-		m.boardScroll = map[string]int{}
+	if m.boardLists == nil {
+		m.boardLists = map[string]cardlist.Model{}
 	}
-	m.boardScroll[bucket] = followScrollWindowSplit(m.boardScroll[bucket], m.cardIdx, heights, viewport)
+	list, exists := m.boardLists[bucket]
+	if !exists {
+		list = cardlist.New()
+	}
+	m.boardLists[bucket] = list.WithItems(items).WithViewport(viewport).WithCursor(m.cardIdx)
 }
 
 func (m Model) focusedBucketKey() (string, bool) {
@@ -262,18 +288,21 @@ func scrollIntoView(start, focused, total, cap int) int {
 	return start
 }
 
-// syncBoardColScroll keeps boardColScroll aligned so the focused bucket stays
-// inside the currently-visible horizontal window.
+// syncBoardColScroll keeps boardColOffset aligned so the focused bucket
+// stays inside the currently-visible horizontal window. Horizontal
+// column carousel, not a vertical viewport — kept as a plain int
+// because the cardlist/linelist contract addresses scroll inside a
+// single column, not column-to-column navigation across the board.
 func (m *Model) syncBoardColScroll() {
 	n := len(m.workflow.Buckets)
 	if n == 0 {
-		m.boardColScroll = 0
+		m.boardColOffset = 0
 		return
 	}
 	layout := m.computeBoardLayout(n)
 	cap := m.boardColumnCapacity(layout)
 	focused := clampInt(m.colIdx, 0, n-1)
-	m.boardColScroll = scrollIntoView(m.boardColScroll, focused, n, cap)
+	m.boardColOffset = scrollIntoView(m.boardColOffset, focused, n, cap)
 }
 
 func (m Model) renderBoard() string {
@@ -303,7 +332,7 @@ func (m Model) renderBoard() string {
 	if cap > n {
 		cap = n
 	}
-	start := scrollIntoView(m.boardColScroll, clampInt(m.colIdx, 0, n-1), n, cap)
+	start := scrollIntoView(m.boardColOffset, clampInt(m.colIdx, 0, n-1), n, cap)
 	end := start + cap
 	if end > n {
 		end = n
@@ -353,22 +382,32 @@ func (m Model) renderKanbanCell(bucket domain.Bucket, tasks []domain.Task, focus
 	}
 	headerText := fmt.Sprintf("// %s · %d", strings.ToUpper(bucket.Name), len(tasks))
 
-	rendered := make([]string, len(tasks))
-	heights := make([]int, len(tasks))
+	items := make([]cardlist.Item, len(tasks))
 	for i, task := range tasks {
-		rendered[i] = m.renderCard(task, focused && i == selectedIdx, layout)
-		heights[i] = strings.Count(rendered[i], "\n") + 1
+		card := m.renderCard(task, focused && i == selectedIdx, layout)
+		items[i] = cardlist.Item{Content: card, Height: strings.Count(card, "\n") + 1}
 	}
 
-	return m.renderColumnFrame(columnSpec{
-		Header:       headerStyle.Render(headerText),
-		Rule:         m.hRule(layout.columnInner),
-		EmptyLine:    emptyStyle.Render(m.t("tui.board.empty")),
-		Cards:        rendered,
-		CardHeights:  heights,
-		ScrollOffset: m.boardScroll[bucket.Key],
-		Viewport:     layout.viewportRows,
-	})
+	// The cardlist for this bucket carries the scroll offset
+	// syncFocusedColumnScroll established for the focused lane.
+	// Non-focused lanes scroll-reset to top — only the focused
+	// bucket lives in m.boardLists; the rest render flush from 0.
+	list := m.boardLists[bucket.Key]
+	if !focused {
+		list = cardlist.New()
+	}
+	list = list.WithItems(items).WithViewport(layout.viewportRows)
+	if focused {
+		list = list.WithCursor(selectedIdx)
+	}
+
+	column := columnframe.Model{
+		Header:    headerStyle.Render(headerText),
+		Rule:      m.hRule(layout.columnInner),
+		EmptyLine: emptyStyle.Render(m.t("tui.board.empty")),
+		List:      list,
+	}
+	return column.View(m.styles.hint)
 }
 
 func (m Model) renderCard(task domain.Task, selected bool, layout boardLayout) string {

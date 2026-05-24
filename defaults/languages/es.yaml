@@ -79,6 +79,9 @@ keys:
     pass is skipped — the user owns the rotation policy outside the
     default state directory.
   cli.db.backup.flag.out: "write the snapshot to this explicit file path (skips retention prune)"
+  cli.db.backup.flag.force: "overwrite the target file when --out points at an existing path"
+  cli.db.backup.error.system_path_fmt: "refusing to write backup to system path %q (under %s)"
+  cli.db.backup.error.exists_fmt: "refusing to overwrite existing file %q; pass --force to replace"
   cli.db.backup.success_fmt: "backup written to %s"
   cli.preset.omakase.title: "Elección del chef"
   cli.preset.omakase.description: "Workflow equilibrado con self-branch, resume y guards de documentación."
@@ -305,6 +308,9 @@ keys:
   cli.workflow.orphan.flag.confirm: "aplica el re-vínculo; sin esta flag el comando imprime el plan y sale"
   cli.workflow.orphan.flag.dry-run: "imprime el plan de migración sin aplicar (predeterminado cuando --confirm está ausente)"
   cli.err.config_invalid: "config es inválida"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
+  cli.editor.not_configured: "no editor configured; set $VISUAL or $EDITOR"
+  cli.editor.not_found: "configured editor not found on PATH"
   cli.err.config_unreadable: "archivo de config no pudo ser leído"
   cli.err.init_seeded_config_invalid: "config creada por init es inválida"
   cli.err.invalid_scope: "--scope inválido (usa global o local)"

@@ -79,6 +79,9 @@ keys:
     pass is skipped — the user owns the rotation policy outside the
     default state directory.
   cli.db.backup.flag.out: "write the snapshot to this explicit file path (skips retention prune)"
+  cli.db.backup.flag.force: "overwrite the target file when --out points at an existing path"
+  cli.db.backup.error.system_path_fmt: "refusing to write backup to system path %q (under %s)"
+  cli.db.backup.error.exists_fmt: "refusing to overwrite existing file %q; pass --force to replace"
   cli.db.backup.success_fmt: "backup written to %s"
   cli.preset.omakase.title: "Şefin tercihi"
   cli.preset.omakase.description: "Self-branch, resume ve dokümantasyon guard'larıyla dengeli workflow."
@@ -301,6 +304,9 @@ keys:
   cli.workflow.orphan.flag.confirm: "yeniden bağlamayı uygula; bu bayrak olmadan komut planı yazdırır ve çıkar"
   cli.workflow.orphan.flag.dry-run: "migrasyon planını uygulamadan yazdır (--confirm yoksa varsayılan)"
   cli.err.config_invalid: "config geçersiz"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
+  cli.editor.not_configured: "no editor configured; set $VISUAL or $EDITOR"
+  cli.editor.not_found: "configured editor not found on PATH"
   cli.err.config_unreadable: "config dosyası okunamıyor"
   cli.err.init_seeded_config_invalid: "init ile seed edilen config geçersiz"
   cli.err.invalid_scope: "geçersiz --scope (global veya local bekleniyor)"

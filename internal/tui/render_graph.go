@@ -11,37 +11,27 @@ import (
 func (m *Model) handleGraphKey(msg tea.KeyMsg) {
 	lines := buildDAGLinesSorted(m.dependencies, m.tasks, m.graphRootLess())
 	sel := dagSelectableIndices(lines)
-	maxCursor := len(sel) - 1
-	if maxCursor < 0 {
-		maxCursor = 0
-	}
+	m.graphCursor = m.graphCursor.
+		WithItemCount(len(sel)).
+		WithViewport(m.graphViewportRows())
 
 	switch msg.String() {
 	case "up", "k":
-		if m.graphCursor > 0 {
-			m.graphCursor--
-		}
+		m.graphCursor = m.graphCursor.MoveCursor(-1)
 	case "down", "j":
-		if m.graphCursor < maxCursor {
-			m.graphCursor++
-		}
+		m.graphCursor = m.graphCursor.MoveCursor(1)
 	case "pgup", "ctrl+u":
-		m.graphCursor -= taskViewPageStep(m.graphViewportRows())
-		if m.graphCursor < 0 {
-			m.graphCursor = 0
-		}
+		m.graphCursor = m.graphCursor.MoveCursor(-taskViewPageStep(m.graphViewportRows()))
 	case "pgdown", "ctrl+d":
-		m.graphCursor += taskViewPageStep(m.graphViewportRows())
-		if m.graphCursor > maxCursor {
-			m.graphCursor = maxCursor
-		}
+		m.graphCursor = m.graphCursor.MoveCursor(taskViewPageStep(m.graphViewportRows()))
 	case "home", "g":
-		m.graphCursor = 0
+		m.graphCursor = m.graphCursor.JumpFirst()
 	case "end", "G":
-		m.graphCursor = maxCursor
+		m.graphCursor = m.graphCursor.JumpLast()
 	case "enter":
-		if m.graphCursor >= 0 && m.graphCursor < len(sel) {
-			taskID := lines[sel[m.graphCursor]].taskID
+		idx := m.graphCursor.Cursor()
+		if len(sel) > 0 && idx >= 0 && idx < len(sel) {
+			taskID := lines[sel[idx]].taskID
 			if task, ok := m.taskByID(taskID); ok {
 				m.openTaskView(task)
 			}
@@ -50,28 +40,21 @@ func (m *Model) handleGraphKey(msg tea.KeyMsg) {
 	m.syncGraphScroll(sel, len(lines))
 }
 
-// syncGraphScroll keeps m.graphScroll aligned so the cursor node stays
-// in the viewport. The graph panel renders through `sliceScrollRows`,
-// which reserves up to 2 panel rows for the "▲ above" / "▼ below"
-// hints — so the cursor's effective window is `scrollDataRows(viewport)`,
-// not the raw `viewport`. Without that adjustment the bottom 1–2 nodes
-// would land in the reserved hint band and disappear.
+// syncGraphScroll syncs the graphList linelist.Model so the cursor
+// node's LINE stays inside the viewport. graphCursor owns the cursor
+// as a selectable-index; the linelist needs a line-index so we map
+// selectable → line via the sel slice. Routes through WithLines +
+// WithViewport + WithCursor; scrollwindow.Resync owns the
+// follow-cursor + clamp chain.
 func (m *Model) syncGraphScroll(sel []int, totalLines int) {
 	viewport := m.graphViewportRows()
+	m.graphCursor = m.graphCursor.WithItemCount(len(sel)).WithViewport(viewport)
 	if viewport <= 0 || len(sel) == 0 {
 		return
 	}
-	effective := scrollDataRows(viewport)
-	cursorLine := sel[clampInt(m.graphCursor, 0, len(sel)-1)]
-	if cursorLine < m.graphScroll {
-		m.graphScroll = cursorLine
-	}
-	if cursorLine >= m.graphScroll+effective {
-		m.graphScroll = cursorLine - effective + 1
-	}
-	if m.graphScroll < 0 {
-		m.graphScroll = 0
-	}
+	cursorLine := sel[m.graphCursor.Cursor()]
+	lines := make([]string, totalLines)
+	m.graphList = m.graphList.WithLines(lines).WithViewport(viewport).WithCursor(cursorLine)
 }
 
 // graphViewportRows returns how many DAG lines fit in the graph panel viewport.
@@ -109,8 +92,7 @@ func (m Model) renderGraph() string {
 
 	cursorLineIdx := -1
 	if len(sel) > 0 {
-		cursor := clampInt(m.graphCursor, 0, len(sel)-1)
-		cursorLineIdx = sel[cursor]
+		cursorLineIdx = sel[m.graphCursor.Cursor()]
 	}
 
 	dataRows := make([]string, len(lines))
@@ -126,7 +108,7 @@ func (m Model) renderGraph() string {
 		m.styles.kickerCount(m.t("tui.kicker.dependency_graph"), len(m.dependencies)),
 		"",
 	}
-	rows = append(rows, m.sliceScrollRows(dataRows, m.graphScroll, m.graphViewportRows())...)
+	rows = append(rows, m.sliceScrollRows(dataRows, m.graphList.Scroll(), m.graphViewportRows())...)
 	return m.renderPanel(strings.Join(rows, "\n"))
 }
 

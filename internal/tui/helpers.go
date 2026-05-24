@@ -26,7 +26,6 @@ func truncateText(s string, max int) string {
 	return string(runes[:max-1]) + "…"
 }
 
-
 // wrapWords breaks s into lines where the first line is constrained to firstWidth
 // and subsequent lines to restWidth. It tries to keep whole words.
 func wrapWords(s string, firstWidth, restWidth int) []string {

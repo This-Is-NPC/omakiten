@@ -243,6 +243,60 @@ func TestSetActiveConfigRejectsPathSeparators(t *testing.T) {
 	}
 }
 
+// FuzzActiveConfigFileInDir asserts the resolver never returns a path that
+// escapes <dir> or <dir>/custom regardless of what the .active state file
+// contains. A traversal payload ("../secret.yaml", absolute paths, "..")
+// must fall through to discovery instead of resolving outside the sandbox.
+func FuzzActiveConfigFileInDir(f *testing.F) {
+	f.Add("omakase.yaml")
+	f.Add("user.yaml")
+	f.Add("")
+	f.Add(" ")
+	f.Add(".")
+	f.Add("..")
+	f.Add("../secret.yaml")
+	f.Add("../../etc/passwd")
+	f.Add("custom/inner.yaml")
+	f.Add("/abs/path.yaml")
+	f.Add("foo\x00bar")
+	f.Add("nested/file.yaml")
+	f.Add("nested\\file.yaml")
+
+	f.Fuzz(func(t *testing.T, name string) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "omakase.yaml"), []byte("x\n"), 0o644); err != nil {
+			t.Fatalf("seed omakase: %v", err)
+		}
+		customDir := filepath.Join(dir, "custom")
+		if err := os.MkdirAll(customDir, 0o755); err != nil {
+			t.Fatalf("seed custom dir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(customDir, "user.yaml"), []byte("x\n"), 0o644); err != nil {
+			t.Fatalf("seed user: %v", err)
+		}
+		// Plant a sibling outside the sandbox a traversal payload could reach.
+		parent := filepath.Dir(dir)
+		secret := filepath.Join(parent, "secret.yaml")
+		if err := os.WriteFile(secret, []byte("x\n"), 0o644); err != nil {
+			t.Fatalf("seed secret: %v", err)
+		}
+		defer os.Remove(secret)
+
+		if err := os.WriteFile(filepath.Join(dir, ActiveConfigStateFile), []byte(name+"\n"), 0o644); err != nil {
+			t.Fatalf("seed .active: %v", err)
+		}
+
+		got, err := ActiveConfigFileInDir(dir)
+		if err != nil {
+			return
+		}
+		parentGot := filepath.Dir(got)
+		if parentGot != dir && parentGot != customDir {
+			t.Fatalf("ActiveConfigFileInDir escaped sandbox: name=%q got=%q parent=%q sandbox=%q", name, got, parentGot, dir)
+		}
+	})
+}
+
 func TestEntityDirsResolveSiblingOfConfig(t *testing.T) {
 	t.Setenv(HomeEnv, "/srv/omakiten")
 	t.Setenv("XDG_CONFIG_HOME", "")

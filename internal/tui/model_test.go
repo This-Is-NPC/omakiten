@@ -20,7 +20,6 @@ import (
 	"omakiten/internal/token"
 )
 
-
 func TestModelSwitchesViews(t *testing.T) {
 	ctx := context.Background()
 	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
@@ -1269,7 +1268,6 @@ func TestModelDeletesTaskFromTaskViewWithDoubleD(t *testing.T) {
 // surface the policy hint immediately and refuse to open the form. The
 // service still re-runs the policy on save, but the user should never
 // type into a modal that is doomed to fail.
-//
 func TestModelBlocksTaskEditOnPressWhenBucketForbids(t *testing.T) {
 	ctx := context.Background()
 	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
@@ -1313,7 +1311,6 @@ func TestModelBlocksTaskEditOnPressWhenBucketForbids(t *testing.T) {
 // the destructive `d` arm. The first press in a forbidden bucket should
 // surface the policy hint and skip the arm — the user should not see a
 // "Confirm delete..." prompt for an action that cannot succeed.
-//
 func TestModelBlocksTaskDeleteArmWhenBucketForbids(t *testing.T) {
 	ctx := context.Background()
 	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
@@ -1565,40 +1562,67 @@ func TestModelEditsCommentFromCommentScreen(t *testing.T) {
 
 func pressRune(t *testing.T, model Model, r rune) Model {
 	t.Helper()
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatalf("Update() returned %T, want Model", updated)
 	}
-	return got
+	return foldViewChangeRefresh(t, got, cmd)
 }
 
 func pressKey(t *testing.T, model Model, key tea.KeyType) Model {
 	t.Helper()
-	updated, _ := model.Update(tea.KeyMsg{Type: key})
+	updated, cmd := model.Update(tea.KeyMsg{Type: key})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatalf("Update() returned %T, want Model", updated)
 	}
-	return got
+	return foldViewChangeRefresh(t, got, cmd)
 }
 
 func pressAltKey(t *testing.T, model Model, key tea.KeyType) Model {
 	t.Helper()
-	updated, _ := model.Update(tea.KeyMsg{Type: key, Alt: true})
+	updated, cmd := model.Update(tea.KeyMsg{Type: key, Alt: true})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatalf("Update() returned %T, want Model", updated)
 	}
-	return got
+	return foldViewChangeRefresh(t, got, cmd)
 }
 
 func pressStringKey(t *testing.T, model Model, key string) Model {
 	t.Helper()
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatalf("Update() returned %T, want Model", updated)
+	}
+	return foldViewChangeRefresh(t, got, cmd)
+}
+
+// foldViewChangeRefresh keeps the synchronous test contract after
+// Update started returning a tea.Cmd for the view-change refresh path
+// (perf/tui-refresh-async). It only invokes the cmd when it is the
+// view-change refresh cmd this package controls — every other cmd
+// (write-flow IO, picker pickups, tick reschedulers) is left
+// unevaluated so the helper does not pay for IO the production runtime
+// would dispatch asynchronously.
+func foldViewChangeRefresh(t *testing.T, m Model, cmd tea.Cmd) Model {
+	t.Helper()
+	if cmd == nil {
+		return m
+	}
+	if !isViewChangeRefreshCmd(cmd) {
+		return m
+	}
+	msg := cmd()
+	if msg == nil {
+		return m
+	}
+	updated, _ := m.Update(msg)
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatalf("Update(refreshAfterViewChangeMsg) returned %T, want Model", updated)
 	}
 	return got
 }
@@ -1752,14 +1776,16 @@ func TestPlansSubTabRendersRollups(t *testing.T) {
 		t.Fatalf("plans view missing active wave name\n%s", view)
 	}
 
-	// j moves planCursor; k restores it.
+	// j moves the plans cursor; k restores it. The cursor is owned
+	// by the plansCursor cursorwindow.Model — its Cursor() accessor
+	// is the read-only view onto the unexported field.
 	advanced := pressRune(t, got, 'j')
-	if advanced.planCursor != 1 {
-		t.Fatalf("after 'j': planCursor = %d, want 1", advanced.planCursor)
+	if got := advanced.plansCursor.Cursor(); got != 1 {
+		t.Fatalf("after 'j': plansCursor = %d, want 1", got)
 	}
 	back := pressRune(t, advanced, 'k')
-	if back.planCursor != 0 {
-		t.Fatalf("after 'k': planCursor = %d, want 0", back.planCursor)
+	if got := back.plansCursor.Cursor(); got != 0 {
+		t.Fatalf("after 'k': plansCursor = %d, want 0", got)
 	}
 }
 
@@ -1855,14 +1881,14 @@ func TestPlansSubTabEnterOpensNetwork(t *testing.T) {
 	// j advances the linear cursor one row; k walks it back. The
 	// rails+filaments outline collapses the multi-axis cursor of the
 	// old column view into a single index into the flat row list.
-	startCursor := opened.planNetworkCursor
+	startCursor := opened.planNetworkCursor.Cursor()
 	advanced := pressRune(t, opened, 'j')
-	if advanced.planNetworkCursor != startCursor+1 {
-		t.Fatalf("after 'j': planNetworkCursor = %d, want %d", advanced.planNetworkCursor, startCursor+1)
+	if got := advanced.planNetworkCursor.Cursor(); got != startCursor+1 {
+		t.Fatalf("after 'j': planNetworkCursor = %d, want %d", got, startCursor+1)
 	}
 	back := pressRune(t, advanced, 'k')
-	if back.planNetworkCursor != startCursor {
-		t.Fatalf("after 'k': planNetworkCursor = %d, want %d", back.planNetworkCursor, startCursor)
+	if got := back.planNetworkCursor.Cursor(); got != startCursor {
+		t.Fatalf("after 'k': planNetworkCursor = %d, want %d", got, startCursor)
 	}
 
 	closed := pressKey(t, opened, tea.KeyEsc)
@@ -2176,8 +2202,8 @@ func TestPlansSubTabNetworkScrollsVertically(t *testing.T) {
 	if len(rows) == 0 {
 		t.Fatalf("plan network produced no rows")
 	}
-	if cursor.planNetworkCursor != len(rows)-1 {
-		t.Fatalf("planNetworkCursor = %d, want %d (last row)", cursor.planNetworkCursor, len(rows)-1)
+	if got := cursor.planNetworkCursor.Cursor(); got != len(rows)-1 {
+		t.Fatalf("planNetworkCursor = %d, want %d (last row)", got, len(rows)-1)
 	}
 }
 

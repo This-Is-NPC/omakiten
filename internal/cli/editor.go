@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"omakiten/internal/app"
+	"omakiten/internal/cliutil"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
@@ -35,10 +37,14 @@ func runEditorCommand(path string) error {
 	editor := app.ResolveEditor()
 	parts := strings.Fields(editor)
 	if len(parts) == 0 {
-		return fmt.Errorf("editor not configured")
+		return domain.NewError(domain.ErrEditorNotFound, t("cli.editor.not_configured"), nil)
+	}
+	resolved, err := resolveEditorBinary(parts[0])
+	if err != nil {
+		return err
 	}
 	args := append(parts[1:], path)
-	cmd := exec.Command(parts[0], args...)
+	cmd := exec.Command(resolved, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -46,6 +52,24 @@ func runEditorCommand(path string) error {
 		return fmt.Errorf("editor %q exited: %w", editor, err)
 	}
 	return nil
+}
+
+// resolveEditorBinary pins the editor's argv[0] to an absolute on-disk
+// path via the shared cliutil.ResolveBinary helper. Empty input maps to
+// the "not configured" i18n key; every other failure (relative-with-
+// separator, missing on PATH, abs lookup failure) collapses to the
+// "not found" i18n key. The bare cliutil error chain is preserved on
+// the details.error field via SafeError so agent surfaces still get
+// the actionable inner cause without the path-bearing wrap prefix.
+func resolveEditorBinary(name string) (string, error) {
+	resolved, err := cliutil.ResolveBinary(name)
+	if err == nil {
+		return resolved, nil
+	}
+	if errors.Is(err, cliutil.ErrBinaryEmpty) {
+		return "", domain.NewError(domain.ErrEditorNotFound, t("cli.editor.not_configured"), nil)
+	}
+	return "", domain.NewError(domain.ErrEditorNotFound, t("cli.editor.not_found"), map[string]any{"editor": strings.TrimSpace(name), "error": domain.SafeError(err)})
 }
 
 // resolveSkillSlug accepts either a bare slug or a numeric SQLite id. Numeric

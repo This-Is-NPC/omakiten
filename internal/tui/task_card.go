@@ -99,14 +99,120 @@ func (m Model) renderTaskCard(spec taskCardSpec) string {
 	// from `cardSelected` (primary green + Bold). Painting accent with
 	// primary would collide with the selection border and hide the
 	// cursor under the accent ring.
-	style := m.styles.card.Width(spec.BoxWidth)
+	//
+	// Style.Width(N) allocates a fresh Style each call; on long board
+	// columns that is N×cards-per-keystroke throw-away allocations.
+	// styleWidthFromCache memoises by width per variant so the cache
+	// hit path is a single map read.
+	var style lipgloss.Style
 	switch {
 	case spec.Selected:
-		style = m.styles.cardSelected.Width(spec.BoxWidth)
+		style = styleWidthFromCache(m.styleByKindWidth, styleKindCardSelected, m.styles.cardSelected, spec.BoxWidth)
 	case spec.Archived:
-		style = m.styles.archivedCard.Width(spec.BoxWidth)
-	case spec.Accent:
-		style = style.BorderForeground(m.styles.info.GetForeground())
+		style = styleWidthFromCache(m.styleByKindWidth, styleKindCardArchived, m.styles.archivedCard, spec.BoxWidth)
+	default:
+		style = styleWidthFromCache(m.styleByKindWidth, styleKindCard, m.styles.card, spec.BoxWidth)
+		if spec.Accent {
+			style = style.BorderForeground(m.styles.info.GetForeground())
+		}
 	}
 	return style.Render(strings.Join(lines, "\n"))
+}
+
+// styleWidthFromCache returns base.Width(width) from the supplied
+// kind-indexed map-of-maps cache, lazily filling the per-kind inner
+// map and the per-width entry on a miss. A nil outer map is supported
+// (no cache available; degrades to a direct Width call) so the helper
+// stays safe to use from value-receiver render paths that see a model
+// copy with an uninitialised cache.
+func styleWidthFromCache(cache map[styleKind]map[int]lipgloss.Style, kind styleKind, base lipgloss.Style, width int) lipgloss.Style {
+	if cache == nil {
+		return base.Width(width)
+	}
+	inner, ok := cache[kind]
+	if !ok {
+		inner = map[int]lipgloss.Style{}
+		cache[kind] = inner
+	}
+	if cached, ok := inner[width]; ok {
+		return cached
+	}
+	styled := base.Width(width)
+	inner[width] = styled
+	return styled
+}
+
+// cardHeightFromSpec computes the rendered card height the same way
+// renderTaskCard would lay it out, without running the lipgloss
+// border/padding pass. Used by board hot paths (syncFocusedColumnScroll)
+// that previously rendered every card in the focused column just to
+// count the resulting newlines — a per-keystroke walk that dominated
+// the board refresh cost on long columns. Stays a method so it can
+// reuse cursorChevron for prefix width.
+//
+// Accuracy contract: matches the renderer output when InnerWidth is
+// wide enough to hold the prefix plus at least one title-word column.
+// Pathologically narrow widths (InnerWidth < prefixWidth + 1) trigger
+// lipgloss to wrap the prefix-prepended first line on render, which
+// this helper does not model — the board layout (computeBoardLayout)
+// enforces a much larger minimum so the divergence is unreachable in
+// production.
+func (m Model) cardHeightFromSpec(spec taskCardSpec) int {
+	prefix := m.cursorChevron(spec.Selected) + fmt.Sprintf("#%d ", spec.ID)
+	prefixWidth := lipgloss.Width(prefix)
+	firstWidth := spec.InnerWidth - prefixWidth
+	restWidth := firstWidth
+	if firstWidth < 1 {
+		firstWidth = 1
+	}
+	if restWidth < 1 {
+		restWidth = 1
+	}
+	titleLines := len(wrapWords(spec.Title, firstWidth, restWidth))
+
+	extraLines := 0
+	for _, extra := range spec.ExtraLines {
+		if extra != "" {
+			extraLines++
+		}
+	}
+
+	badgeLines := wrapBadgesLineCount(spec.Badges, spec.InnerWidth)
+
+	// +2 for the top and bottom border applied by styles.card / cardSelected /
+	// archivedCard — every variant uses a single-row border on each side.
+	return titleLines + extraLines + badgeLines + 2
+}
+
+// wrapBadgesLineCount mirrors wrapBadges' packing algorithm but emits
+// only the line count, avoiding the per-row strings.Join + final
+// strings.Join wrapBadges does. Kept colocated with the layout helper
+// so future wrap-policy tweaks (e.g. tighter separator) update both
+// the renderer and the measurer in lockstep.
+func wrapBadgesLineCount(badges []string, maxWidth int) int {
+	if len(badges) == 0 {
+		return 0
+	}
+	lines := 0
+	currentWidth := 0
+	currentCount := 0
+	for _, badge := range badges {
+		w := lipgloss.Width(badge)
+		sep := 0
+		if currentCount > 0 {
+			sep = 1
+		}
+		if currentCount > 0 && currentWidth+sep+w > maxWidth {
+			lines++
+			currentCount = 1
+			currentWidth = w
+			continue
+		}
+		currentCount++
+		currentWidth += sep + w
+	}
+	if currentCount > 0 {
+		lines++
+	}
+	return lines
 }

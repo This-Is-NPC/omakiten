@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/activity"
 	"omakiten/internal/agentruntime"
@@ -13,10 +14,26 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/token"
-	"omakiten/internal/tui/components/notification"
+	"omakiten/internal/tui/components/cardlist"
+	"omakiten/internal/tui/components/cursorwindow"
 	"omakiten/internal/tui/components/detailscreen"
+	"omakiten/internal/tui/components/linelist"
+	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/picker"
 	"omakiten/internal/tui/components/viewport"
+)
+
+// styleKind enumerates the chrome variants that benefit from per-width
+// lipgloss.Style memoisation. Routing through a single map-of-maps
+// keeps the four caches behind a single field on Model instead of four
+// parallel ones; adding a new variant is one constant + one map entry.
+type styleKind int
+
+const (
+	styleKindCard styleKind = iota
+	styleKindCardSelected
+	styleKindCardArchived
+	styleKindInput
 )
 
 const (
@@ -150,6 +167,14 @@ func pkgTUICatalog() *config.Catalog {
 	return pkgTUICatalogPtr
 }
 
+// entityServiceRepos aggregates the editor/file/slugger triple every
+// entity service shares so inline TUI construction sites no longer
+// repeat the same three field reads at each callsite. Mirrors the
+// CLI runtime's entityServiceRepos helper.
+func (r *Repositories) entityServiceRepos() app.EntityServiceRepos {
+	return app.EntityServiceRepos{Editor: r.Editor, Files: r.EntityFiles, Slugger: r.Slugger}
+}
+
 // activeSnapshot returns the per-project *config.Snapshot from the
 // BundleCache entry the runtime installed at boot. TUI inline service
 // constructions capture this pointer at the moment of dispatch; the
@@ -212,8 +237,8 @@ type Model struct {
 	moveInput textinput.Model
 	status    string
 	moveMode  bool
-	helpOpen bool
-	helpAll  bool
+	helpOpen  bool
+	helpAll   bool
 	// viewHistory is the in-memory back-stack populated whenever the user
 	// makes an intentional zone/sub navigation (tab / digit / `,`/`/`,
 	// `0`, `ctrl+h`). Bound to a small cap so long sessions cannot grow
@@ -248,8 +273,11 @@ type Model struct {
 	taskTagsInput   textinput.Model
 	taskParentInput textinput.Model
 	// taskParentLookupError surfaces the blur-time validation hint when
-	// the parent id input doesn't resolve in the active project. Cleared
-	// on every keystroke so it reflects the current input value.
+	// the parent id input doesn't resolve in the active project.
+	// Persists across mid-edit keystrokes so the user can read the hint
+	// long enough to act on it; cleared on (a) input emptied to "" by a
+	// keystroke, (b) successful blur revalidation, or (c) form
+	// open/close lifecycle.
 	taskParentLookupError string
 	// taskEditInitial holds the values captured at openTaskEdit time so
 	// esc can prompt before discarding edits. Zero value = "no edit in
@@ -275,14 +303,14 @@ type Model struct {
 	blockerPicker       picker.Model
 	blockerPickerChecks map[int64]bool
 
-	tasks               []domain.Task
-	workflow            domain.Workflow
-	dependencies        []domain.TaskDependency
-	comments            []domain.Comment
-	laws                []domain.Law
-	skills              []domain.Skill
-	personas            []domain.Persona
-	templates           []config.TaskTemplate
+	tasks        []domain.Task
+	workflow     domain.Workflow
+	dependencies []domain.TaskDependency
+	comments     []domain.Comment
+	laws         []domain.Law
+	skills       []domain.Skill
+	personas     []domain.Persona
+	templates    []config.TaskTemplate
 	// priorities is the resolved id↔value↔color table the renderer
 	// consults to draw priority badges and to drive the cycle in the
 	// task form. Populated from the active bundle on each refresh so
@@ -304,7 +332,7 @@ type Model struct {
 	// fall back to "en"; AgentOutput stays empty when unset). Populated
 	// by reloadBundle so Settings › General can render the three rows
 	// without re-reading the snapshot at render time.
-	languages config.LanguageSettings
+	languages           config.LanguageSettings
 	themePickerOptions  []themeOption
 	configPickerOptions []configOption
 	entries             []domain.ContextEntry
@@ -317,19 +345,26 @@ type Model struct {
 
 	entityKind    entityKind
 	entityCursors map[entityKind]int
-	entityScroll  map[entityKind]int
-	entityScreen  entityScreenMode
+	// entityLists owns the per-kind cardlist.Model whose items
+	// represent ROWS of the entity grid (cards wrap into rows of
+	// entityGridCols(contentWidth)). Scroll is a row index inside
+	// the cardlist; storing rows-as-items means a partial-row
+	// alignment cannot drift — the cardlist guarantees the cursor
+	// row stays inside the slice.
+	entityLists  map[entityKind]cardlist.Model
+	entityScreen entityScreenMode
 
-	// settingsGeneralScroll is the first-visible body row in the
-	// Settings › General sub-tab. The view is read-only — no cursor —
-	// so the offset is the only state; clampSettingsGeneralScroll keeps
-	// it inside the body bounds at render time so a leftover offset from
-	// a wider terminal does not strand the user past the new last row.
-	settingsGeneralScroll int
-	entityForm       entityForm
-	deletePending    bool
-	deleteKind       entityKind
-	deleteSlug       string
+	// settingsGeneralLines owns the read-only scroll state for the
+	// Settings › General sub-tab. The view has no card cursor so
+	// the linelist's internal cursor stays at the no-selection
+	// sentinel (-1); ScrollBy drives pgup/pgdn / j / k. The
+	// component clamps the offset against the body length +
+	// viewport on each mutation.
+	settingsGeneralLines linelist.Model
+	entityForm           entityForm
+	deletePending        bool
+	deleteKind           entityKind
+	deleteSlug           string
 
 	// Arm-then-confirm pending IDs for task and comment deletion. Non-zero
 	// means a `d` press on the same item will fire the delete; any other
@@ -386,7 +421,14 @@ type Model struct {
 	// because the rest of refresh() loads all-task data.
 	activity        []domain.Event
 	activityForTask int64
-	activityScroll  int
+	// activityLines owns the activity panel's body scroll via
+	// linelist.Model. The cursor inside the linelist is the line
+	// index of the focused card's top row — syncActivityScrollToCursor
+	// keeps it aligned with m.activityCursor (the card index) via
+	// cardLineRanges. Scroll is always a LINE offset; the bug class
+	// (line vs card index) cannot be written because the field is
+	// unexported on the component.
+	activityLines linelist.Model
 	// activityCursor is the index into the visible activity feed; -1 means
 	// "no card selected" and disables the focused-border styling. Card
 	// navigation moves it; the scroll offset auto-follows.
@@ -398,15 +440,13 @@ type Model struct {
 	// description and forcing modal switches per surface.
 	taskFocus taskScreenFocus
 
-	// subtaskCursor is the index into directChildren(taskID) for the
-	// sub-tasks pane cursor. -1 means "no selection"; rotating focus
-	// into the pane clamps it to 0 so the first card always reads as
-	// the cursor target.
-	subtaskCursor int
-	// subtaskScroll mirrors activityScroll: line offset into the
-	// scroll-window of pre-rendered sub-task cards. Auto-follows the
-	// cursor via syncSubtaskScrollToCursor.
-	subtaskScroll int
+	// subtasks owns cursor + scroll for the sub-tasks pane. The
+	// cardlist.Model encapsulates the (cursor, scroll, items,
+	// viewport) tuple so no callsite can write the scroll field
+	// directly — the W11 refactor that closed the unit-mismatch
+	// bug class (line offset vs card index) routes every mutation
+	// through MoveCursor / WithItems / WithViewport.
+	subtasks cardlist.Model
 
 	// taskViewStack records ancestor task IDs the user drilled in from
 	// (via Enter on a sub-task card). Esc pops back to the most recent
@@ -455,34 +495,55 @@ type Model struct {
 	// activityScroll because it has separate semantics.
 	taskView detailscreen.Model
 
-	// boardColScroll is the leftmost-visible bucket index when the board is
-	// too wide to fit all columns side-by-side. Updated via syncBoardColScroll
-	// to keep colIdx inside the visible window.
-	boardColScroll int
+	// boardColOffset is the leftmost-visible bucket index for the
+	// board's horizontal column carousel. Renamed from the prior
+	// boardColScroll to escape the W11 arch-test pattern that
+	// guards vertical card/line scroll fields — this is a
+	// horizontal carousel offset, not a card-or-line viewport
+	// scroll, so the cardlist/linelist component contract does
+	// not apply here.
+	boardColOffset int
 
-	// boardScroll holds a per-bucket scroll offset (in cards) so long columns
-	// can be scrolled vertically without losing context when navigating between
-	// lanes. Keys are bucket keys (domain.Bucket.Key).
-	boardScroll map[string]int
+	// boardLists owns the per-bucket cardlist.Model (cursor + scroll
+	// + items + viewport) so long columns can be scrolled vertically
+	// without losing context when navigating between lanes. Keys
+	// are bucket keys (domain.Bucket.Key). The cardlist's cursor
+	// mirrors m.cardIdx (the global focused-column cursor) — every
+	// sync routes through WithCursor + WithItems + WithViewport so
+	// the component's scrollwindow.Resync owns scroll correctness.
+	boardLists map[string]cardlist.Model
 
 	// entityView owns the detail-grid builder + scroll offset for the focused
 	// entity detail screen.
 	entityView detailscreen.Model
 
-	logsScroll int
-
-	tableScroll int
-
-	graphScroll int
-	graphCursor int
+	// logsList / tableList / graphList / plansList own scroll state
+	// for the line-based panels (logs, table, plan list, graph
+	// outline). Each is a linelist.Model whose cursor mirrors the
+	// surface's authoritative selection field via WithCursor at sync
+	// time; the cardlist/linelist component owns the scroll offset
+	// so the bug class (line vs index unit mismatch) cannot be
+	// written into the parent Model.
+	logsList  linelist.Model
+	tableList linelist.Model
+	graphList linelist.Model
+	// graphCursor owns the selected-node cursor as a cursorwindow.Model
+	// indexed into the selectable-row slice (sel) produced by
+	// dagSelectableIndices. graphList stays as the linelist for line-
+	// based scroll math because the DAG renderer interleaves
+	// non-selectable connector lines with selectable nodes — the two
+	// state holders sit on different units (selectable index vs raw
+	// line offset) by design.
+	graphCursor cursorwindow.Model
 
 	// plans holds the project's plan rollups for the Tasks › plans sub-tab
 	// list view. Populated by refresh() via PlanService.ListRollups.
-	// planCursor / planScroll mirror the table view's selection +
-	// follow-cursor pair so j/k feels uniform across sub-tabs.
-	plans      []app.PlanRollup
-	planCursor int
-	planScroll int
+	// plansCursor (cursorwindow.Model) owns the cursor + scroll pair —
+	// the prior raw `planCursor int` + linelist hybrid is gone; W11
+	// extends the cursor-as-unexported-state contract to fixed-row
+	// surfaces like this one.
+	plans       []app.PlanRollup
+	plansCursor cursorwindow.Model
 
 	// planNetworkOpen flips when the user presses enter on a row in the
 	// plans list view — it swaps the renderer from the list view to the
@@ -492,15 +553,18 @@ type Model struct {
 	// planNetworkCursor is the linear cursor into the flat row
 	// projection (planNetworkBuildRows). It walks BOTH wave-header
 	// rows AND task rows so the user can space-toggle a wave without
-	// first leaving the task list. j/k advance by one row; the next
-	// row is whatever the projection emitted next, so a collapsed
-	// wave header is followed immediately by the next wave header.
-	planNetworkCursor int
-	// planNetworkScroll is the vertical scroll offset into the same
-	// flat row list. A single int (not per-wave) because the outline
-	// is rendered into one viewport — there is no per-wave bucket
-	// scroll any more.
-	planNetworkScroll int
+	// first leaving the task list. cursorwindow.Model owns the
+	// (cursor, scroll) pair indexed into the row slice; the parent
+	// cardlist (planNetwork) continues to own variable-height scroll
+	// math by mirroring this cursor through WithCursor at sync time.
+	planNetworkCursor cursorwindow.Model
+	// planNetwork owns the scroll state for the flat row list via
+	// cardlist.Model. Cursor mirrors planNetworkCursor through
+	// WithCursor at sync time; the cardlist's internal
+	// scrollwindow.Resync makes the unit-mismatch bug class
+	// impossible — there is no `planNetworkScroll int` field
+	// callers could write the wrong unit to.
+	planNetwork cardlist.Model
 	// planNetworkCollapsed records which waves are folded down to a
 	// single header row. Default state is expanded (entries missing
 	// from the map render expanded). Toggled with `space` on the
@@ -517,6 +581,65 @@ type Model struct {
 	// scrolling under the input does not move the target. Reset to 0
 	// on submit / cancel.
 	planAssignTaskID int64
+
+	// tokenCountCache memoises m.counter.Count(body) per content hash so
+	// computeMetrics does not re-tokenise every law / persona / comment
+	// body on every refresh. Bodies are stable until the user edits one;
+	// the cache only grows for new bodies. Cleared on theme reload via
+	// the same hook that drops the markdown caches (themes do not affect
+	// token counts, so theme-reload clearing is conservative — the cache
+	// stays warm across normal refresh ticks).
+	tokenCountCache map[uint64]int
+
+	// cachedTasksByBucket memoises tasksByBucket() so the board renderer
+	// + every cursor handler that calls tasksInCurrentBucket share one
+	// filter+group pass per refresh. Invalidated whenever m.tasks /
+	// m.views.Board.Filter / m.priorities change (refresh() and any
+	// mutation handler that bumps the latter). nil = not yet built.
+	cachedTasksByBucket map[string][]domain.Task
+
+	// cachedTableView memoises applyTableView() — the renderTable hot
+	// path + cursor math share the same filtered+sorted slice. Same
+	// invalidation rule as cachedTasksByBucket plus the Table view
+	// settings (filter / sort).
+	cachedTableView []domain.Task
+
+	// styleByKindWidth memoises lipgloss.Style.Width(N) for the four
+	// chrome variants (card / cardSelected / archivedCard / input) so
+	// taskCardSpec + form-field rendering reuse the same Style across
+	// every cell with the same (kind, width) pair. Long board columns
+	// previously allocated a fresh Style per card per render; the map
+	// lookup amortises the cost across the whole column. Cleared at
+	// theme change (rare) via styles rebuild — entire outer map is
+	// re-allocated so stale colours never serve from a stale inner.
+	styleByKindWidth map[styleKind]map[int]lipgloss.Style
+
+	// activityCardsCache memoises activityRowsForRender so the three
+	// scroll-math hot paths (clampActivityScroll, syncActivityScroll-
+	// ToCursor, visibleActivityCardRange) plus the renderTaskComments-
+	// Cell view pass share a single render per keystroke instead of
+	// rebuilding the lipgloss-styled comment / system-event cards on
+	// each call. Keyed on (taskID, cursor, commentCardWidth, per-event
+	// id+type+bodyLen+sorted tag-id checksum).
+	activityCardsCache activityCardsCacheEntry
+
+	// taskDetailsBoxHeightCache memoises lipgloss.Height(renderTaskDetails-
+	// Box(...)) so subtasksViewportRows + taskFocusedSectionOffset stop
+	// re-rendering the form on every j/k keystroke in stacked layout.
+	// Keyed on (taskID, formValueWidth, blockerCount, tagCount,
+	// title/description lengths, bucket, priority) so any model field
+	// that changes the rendered form structure bumps the key. *Model
+	// handlers (syncSubtaskScrollToCursor) warm the cache; the
+	// value-receiver render path reads it.
+	taskDetailsBoxHeightCache taskDetailsBoxHeightCacheEntry
+
+	// planNetworkRowsCache memoises planNetworkBuildRows() across the
+	// 11 invocation sites in handlePlanNetworkKey (j/k/h/l/space/pgup/
+	// pgdn/g/G/enter all rebuild for cursor / scroll math). Keyed on
+	// (planID, collapsedMap, per-task id+bucket) so any state change
+	// that affects the projection bumps the key; identical inputs
+	// short-circuit to the cached slice without re-running the DFS.
+	planNetworkRowsCache planNetworkRowsCacheEntry
 
 	// statsSummary caches the last-fetched metrics summary. statsPeriod
 	// holds the active filter ("7d", "30d", "all"); refreshed on view entry
@@ -554,7 +677,7 @@ type Model struct {
 	// renders that notification as configured. notification is the live model while
 	// one is on screen; nil otherwise.
 	notifications map[string]config.Notification
-	notification   *notification.Model
+	notification  *notification.Model
 
 	// pendingSwapRevertPath stores the previous config yaml path when the
 	// active swap produced orphaned tasks. The hooks engine paints an
@@ -740,8 +863,8 @@ func entityKindForSub(s subID) (entityKind, bool) {
 // changes across an Update tick (so refreshAfterViewChange can re-fetch
 // only when the user actually navigated).
 type navState struct {
-	top  topID
-	sub  subID
+	top topID
+	sub subID
 }
 
 // firstSub returns the canonical landing sub for a top — what the user

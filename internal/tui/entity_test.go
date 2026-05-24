@@ -15,10 +15,10 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
-	"omakiten/internal/token"
 	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
+	"omakiten/internal/token"
 )
 
 func newEntityModel(t *testing.T) (Model, *snapstore.Store, *app.BundleEditor) {
@@ -49,7 +49,7 @@ func newEntityModel(t *testing.T) (Model, *snapstore.Store, *app.BundleEditor) {
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:    store,
+		Tasks: store,
 		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files, Catalog: newTestCatalog(t),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
@@ -152,7 +152,7 @@ func TestEntityRefreshAfterEditorMessage(t *testing.T) {
 
 	// Simulate the editor flow: directly add a skill and dispatch the
 	// editorFinishedMsg the way runExternalEditor would after $EDITOR returns.
-	skillService := app.NewSkillService(model.repos.activeSnapshot(), editor, model.repos.EntityFiles, model.repos.Slugger)
+	skillService := app.NewSkillService(app.EntityServiceRepos{Editor: editor, Files: model.repos.EntityFiles, Slugger: model.repos.Slugger}, model.repos.activeSnapshot())
 	if _, err := skillService.Add(ctx, domain.SkillInput{Key: "tui", Name: "TUI"}); err != nil {
 		t.Fatalf("SkillService.Add() error = %v", err)
 	}
@@ -222,7 +222,7 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:    store,
+		Tasks: store,
 		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files, Catalog: newTestCatalog(t),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
@@ -278,6 +278,9 @@ func TestCustomBadgeAppearsOnUserOverride(t *testing.T) {
 	}
 	if _, err := model.repos.Editor.Apply(model.ctx, nil); err != nil {
 		t.Fatalf("editor.Apply() error = %v", err)
+	}
+	if err := runtimecache.RefreshFromEditor(model.repos.Cache, model.repos.ProjectID, model.repos.Editor); err != nil {
+		t.Fatalf("runtimecache.RefreshFromEditor: %v", err)
 	}
 	if err := model.refresh(); err != nil {
 		t.Fatalf("refresh() error = %v", err)
@@ -444,7 +447,7 @@ func TestPersonaPickerToggleAndSave(t *testing.T) {
 	ctx := context.Background()
 
 	// Add a second skill so the picker has two rows to toggle between.
-	if _, err := app.NewSkillService(model.repos.activeSnapshot(), model.repos.Editor, model.repos.EntityFiles, model.repos.Slugger).Add(ctx, domain.SkillInput{Key: "sqlite", Name: "SQLite"}); err != nil {
+	if _, err := app.NewSkillService(model.repos.entityServiceRepos(), model.repos.activeSnapshot()).Add(ctx, domain.SkillInput{Key: "sqlite", Name: "SQLite"}); err != nil {
 		t.Fatalf("Add(skill) error = %v", err)
 	}
 	if err := runtimecache.RefreshFromEditor(model.repos.Cache, model.repos.ProjectID, model.repos.Editor); err != nil {

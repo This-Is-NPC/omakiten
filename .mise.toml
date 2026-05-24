@@ -9,6 +9,11 @@ run = "gofmt -w ."
 
 [tasks.test]
 description = "Run Go tests"
+# OKT_ENFORCE_SCROLL_BOUNDARY activates the W11-D arch gate: rejects
+# direct `*Scroll =` mutations in internal/tui/render_*.go so new
+# viewport surfaces stay routed through cardlist / linelist
+# components instead of re-inventing scroll-sync inline.
+env = { OKT_ENFORCE_SCROLL_BOUNDARY = "1" }
 run = "go test ./..."
 
 [tasks.build]

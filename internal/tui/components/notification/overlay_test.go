@@ -13,9 +13,9 @@ func TestOverlay_ninePositions(t *testing.T) {
 	over := "AB\nCD"
 
 	cases := []struct {
-		pos     Position
-		row     int
-		col     int
+		pos Position
+		row int
+		col int
 	}{
 		{PositionTopLeft, 0, 0},
 		{PositionTopCenter, 0, 4},

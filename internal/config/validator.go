@@ -319,6 +319,12 @@ func validateSQLiteSettings(s SQLiteSettings) error {
 	if s.BusyTimeoutMs <= 0 {
 		return fmt.Errorf("config.sqlite.busy_timeout_ms: must be > 0 (see defaults/omakiten.yaml)")
 	}
+	if s.CacheSizeKB <= 0 {
+		return fmt.Errorf("config.sqlite.cache_size_kb: must be > 0 (see defaults/omakiten.yaml)")
+	}
+	if s.MmapSizeBytes < 0 {
+		return fmt.Errorf("config.sqlite.mmap_size_bytes: must be >= 0 (0 disables mmap; see defaults/omakiten.yaml)")
+	}
 	return nil
 }
 

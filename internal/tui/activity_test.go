@@ -11,10 +11,10 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
-	"omakiten/internal/token"
 	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
+	"omakiten/internal/token"
 )
 
 func TestActivityCursorMovesAndScrolls(t *testing.T) {
@@ -39,13 +39,12 @@ func TestActivityCursorMovesAndScrolls(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:        store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks: store,
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
-		
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
@@ -95,13 +94,12 @@ func TestActivityEnterOpensCommentScreen(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:        store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks: store,
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
-		
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
@@ -174,13 +172,12 @@ func TestCommentScreenIgnoresSystemEvents(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:        store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks: store,
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
-		
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
@@ -218,13 +215,12 @@ func TestTabTogglesTaskFocus(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:        store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks: store,
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
-		
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
@@ -284,13 +280,12 @@ func TestActivityScrollKeepsFocusedCardVisible(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:        store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks: store,
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
-		
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
@@ -349,13 +344,12 @@ func TestActivityScrollResyncsOnResize(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:        store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks: store,
+		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 		Events:       store,
-		
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() = %v", err)
@@ -453,7 +447,7 @@ func TestActivityJAfterPageScrollDoesNotSnapBack(t *testing.T) {
 	// pgdown twice — enough to push the original cursor out of view.
 	got = pressKey(t, got, tea.KeyPgDown)
 	got = pressKey(t, got, tea.KeyPgDown)
-	scrollAfterPage := got.activityScroll
+	scrollAfterPage := got.activityLines.Scroll()
 	if scrollAfterPage == 0 {
 		t.Fatalf("pgdown did not advance activityScroll: still 0 after 2 pgdown presses")
 	}
@@ -464,7 +458,7 @@ func TestActivityJAfterPageScrollDoesNotSnapBack(t *testing.T) {
 	ranges := cardLineRanges(cards)
 	firstVisible := -1
 	for i, r := range ranges {
-		if r.start >= got.activityScroll {
+		if r.start >= got.activityLines.Scroll() {
 			firstVisible = i
 			break
 		}
@@ -477,8 +471,8 @@ func TestActivityJAfterPageScrollDoesNotSnapBack(t *testing.T) {
 	// throwing away the user's pgdown. Fix: cursor anchors to first
 	// visible card, scroll stays put.
 	got = pressRune(t, got, 'j')
-	if got.activityScroll < scrollAfterPage {
-		t.Fatalf("j after pgdown regressed activityScroll: was %d, now %d (snap-back bug)", scrollAfterPage, got.activityScroll)
+	if got.activityLines.Scroll() < scrollAfterPage {
+		t.Fatalf("j after pgdown regressed activityScroll: was %d, now %d (snap-back bug)", scrollAfterPage, got.activityLines.Scroll())
 	}
 	if got.activityCursor < firstVisible {
 		t.Fatalf("activityCursor after j = %d, want >= %d (first card visible after pgdown)", got.activityCursor, firstVisible)
@@ -519,7 +513,7 @@ func TestActivityJAfterPageUpFromBottomAnchorsToLastVisible(t *testing.T) {
 	if got.activityCursor != total-1 {
 		t.Fatalf("activityCursor after j×%d = %d, want %d", total-1, got.activityCursor, total-1)
 	}
-	scrollAtBottom := got.activityScroll
+	scrollAtBottom := got.activityLines.Scroll()
 
 	// pgup repeatedly until cursor falls past the bottom of the viewport
 	// — the body keeps scrolling up while the cursor stays pinned at the
@@ -534,7 +528,7 @@ func TestActivityJAfterPageUpFromBottomAnchorsToLastVisible(t *testing.T) {
 	if got.activityCursor <= last {
 		t.Fatalf("pgup did not push cursor below viewport: cursor=%d last-visible=%d", got.activityCursor, last)
 	}
-	scrollAfterPgup := got.activityScroll
+	scrollAfterPgup := got.activityLines.Scroll()
 	if scrollAfterPgup >= scrollAtBottom {
 		t.Fatalf("pgup did not reduce activityScroll: was %d, still %d", scrollAtBottom, scrollAfterPgup)
 	}
@@ -555,8 +549,8 @@ func TestActivityJAfterPageUpFromBottomAnchorsToLastVisible(t *testing.T) {
 	// card's tail into view (that's intentional UX), but it must stay
 	// well clear of the pre-pgup max — otherwise the user's page-scroll
 	// progress was thrown away.
-	if got.activityScroll >= scrollAtBottom {
-		t.Fatalf("j after pgup-from-bottom snap-back: scroll regressed to %d (≥ pre-pgup %d)", got.activityScroll, scrollAtBottom)
+	if got.activityLines.Scroll() >= scrollAtBottom {
+		t.Fatalf("j after pgup-from-bottom snap-back: scroll regressed to %d (≥ pre-pgup %d)", got.activityLines.Scroll(), scrollAtBottom)
 	}
 }
 
@@ -583,7 +577,7 @@ func TestActivityLastCardReachableAtEndScroll(t *testing.T) {
 
 	body := stripANSI(got.View())
 	if !strings.Contains(body, lastBody) {
-		t.Fatalf("last event body %q missing after G; activityScroll=%d\n--- view ---\n%s", lastBody, got.activityScroll, body)
+		t.Fatalf("last event body %q missing after G; activityScroll=%d\n--- view ---\n%s", lastBody, got.activityLines.Scroll(), body)
 	}
 }
 

@@ -12,44 +12,27 @@ import (
 // handlePlansKey drives the Tasks › plans sub-tab list view. j/k move
 // the cursor, page/home/end jump in larger steps, and `r` triggers a
 // manual refresh — same shape as handleListKey so muscle memory carries
-// over from the table sub-tab.
+// over from the table sub-tab. Every navigation goes through the
+// cursorwindow.Model mutators (MoveCursor / JumpFirst / JumpLast)
+// which re-run scrollwindow.Resync internally so the scroll follow
+// is one implementation deep instead of being inlined per case.
 func (m *Model) handlePlansKey(msg tea.KeyMsg) {
+	m.plansCursor = m.plansCursor.
+		WithItemCount(len(m.plans)).
+		WithViewport(m.plansViewportRows())
 	switch msg.String() {
 	case "up", "k":
-		if m.planCursor > 0 {
-			m.planCursor--
-			m.syncPlansScroll()
-		}
+		m.plansCursor = m.plansCursor.MoveCursor(-1)
 	case "down", "j":
-		if m.planCursor < len(m.plans)-1 {
-			m.planCursor++
-			m.syncPlansScroll()
-		}
+		m.plansCursor = m.plansCursor.MoveCursor(1)
 	case "pgup", "ctrl+u":
-		step := taskViewPageStep(m.plansViewportRows())
-		m.planCursor -= step
-		if m.planCursor < 0 {
-			m.planCursor = 0
-		}
-		m.syncPlansScroll()
+		m.plansCursor = m.plansCursor.MoveCursor(-taskViewPageStep(m.plansViewportRows()))
 	case "pgdown", "ctrl+d":
-		step := taskViewPageStep(m.plansViewportRows())
-		m.planCursor += step
-		if m.planCursor > len(m.plans)-1 {
-			m.planCursor = len(m.plans) - 1
-		}
-		if m.planCursor < 0 {
-			m.planCursor = 0
-		}
-		m.syncPlansScroll()
+		m.plansCursor = m.plansCursor.MoveCursor(taskViewPageStep(m.plansViewportRows()))
 	case "home", "g":
-		m.planCursor = 0
-		m.syncPlansScroll()
+		m.plansCursor = m.plansCursor.JumpFirst()
 	case "end", "G":
-		if len(m.plans) > 0 {
-			m.planCursor = len(m.plans) - 1
-			m.syncPlansScroll()
-		}
+		m.plansCursor = m.plansCursor.JumpLast()
 	case "enter":
 		m.openPlanNetwork()
 	case "r":
@@ -66,14 +49,15 @@ func (m *Model) handlePlansKey(msg tea.KeyMsg) {
 // stray enter from an unpopulated project does not erase the empty-state
 // hint.
 func (m *Model) openPlanNetwork() {
-	if m.planCursor < 0 || m.planCursor >= len(m.plans) {
+	cursor := m.plansCursor.Cursor()
+	if len(m.plans) == 0 || cursor < 0 || cursor >= len(m.plans) {
 		return
 	}
 	if m.repos.Plans == nil {
 		return
 	}
 	planSvc := app.NewPlanServiceWithSnapshot(m.repos.Plans, m.repos.activeSnapshot())
-	slug := m.plans[m.planCursor].Plan.Slug
+	slug := m.plans[cursor].Plan.Slug
 	show, err := planSvc.Show(m.ctx, m.project, slug)
 	if err != nil {
 		m.status = err.Error()
@@ -81,17 +65,17 @@ func (m *Model) openPlanNetwork() {
 	}
 	m.planNetworkShow = show
 	m.planNetworkOpen = true
-	m.planNetworkCursor = 0
-	m.planNetworkScroll = 0
+	m.planNetwork = m.planNetwork.WithItems(nil)
 	m.planNetworkCollapsed = map[int64]bool{}
+	rows := m.planNetworkBuildRows()
+	m.planNetworkCursor = m.planNetworkCursor.WithItemCount(len(rows)).SetCursor(0)
 	// Land the cursor on the active wave's header when one exists so
 	// the user sees the live frontier first. Falls back to row 0
 	// (first wave header) on plans without an active wave.
 	if show.ActiveWaveID > 0 {
-		rows := m.planNetworkBuildRows()
 		for i, row := range rows {
 			if row.Kind == planRowWaveHeader && row.WaveID == show.ActiveWaveID {
-				m.planNetworkCursor = i
+				m.planNetworkCursor = m.planNetworkCursor.SetCursor(i)
 				break
 			}
 		}
@@ -105,15 +89,9 @@ func (m *Model) openPlanNetwork() {
 func (m *Model) closePlanNetwork() {
 	m.planNetworkOpen = false
 	m.planNetworkShow = app.PlanShow{}
-	m.planNetworkCursor = 0
-	m.planNetworkScroll = 0
+	m.planNetworkCursor = m.planNetworkCursor.WithItemCount(0)
+	m.planNetwork = m.planNetwork.WithItems(nil)
 	m.planNetworkCollapsed = nil
-}
-
-// syncPlansScroll keeps planScroll aligned so the cursor stays in view —
-// same follow-cursor pattern as syncTableScroll/syncGraphScroll.
-func (m *Model) syncPlansScroll() {
-	m.planScroll = followCursor(m.planScroll, m.planCursor, scrollDataRows(m.plansViewportRows()), len(m.plans))
 }
 
 // plansViewportRows returns how many plan rows fit in the panel. Chrome
@@ -141,8 +119,9 @@ func (m Model) renderPlans() string {
 
 	missingActive := m.t("tui.plans.list.active_wave_missing")
 	dataRows := make([]string, 0, len(m.plans))
+	plansCursorIdx := m.plansCursor.Cursor()
 	for idx, r := range m.plans {
-		marker := m.cursorMarker(idx == m.planCursor)
+		marker := m.cursorMarker(idx == plansCursorIdx)
 		pct := planPercent(r.DoneCount, r.TotalCount)
 		active := r.ActiveWaveName
 		if active == "" {
@@ -165,7 +144,7 @@ func (m Model) renderPlans() string {
 		m.styles.info.Render(m.t("tui.plans.list.header")),
 		m.hRule(contentWidth),
 	}
-	rows = append(rows, m.sliceScrollRows(dataRows, m.planScroll, m.plansViewportRows())...)
+	rows = append(rows, m.sliceScrollRows(dataRows, m.plansCursor.Scroll(), m.plansViewportRows())...)
 	return m.renderPanel(strings.Join(rows, "\n"))
 }
 

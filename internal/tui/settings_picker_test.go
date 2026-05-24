@@ -16,9 +16,9 @@ import (
 	"omakiten/internal/configstore"
 	"omakiten/internal/events"
 	"omakiten/internal/paths"
-	"omakiten/internal/token"
 	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/snapstore"
+	"omakiten/internal/token"
 )
 
 const minimalThemeYAML = `version: 1

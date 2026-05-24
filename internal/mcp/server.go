@@ -43,12 +43,47 @@ func errorPayload(err error) *rpcError {
 	var coded *domain.CodedError
 	if errors.As(err, &coded) {
 		return &rpcError{
-			Code:    -32602,
+			Code:    jsonRPCCodeFor(coded.Code),
 			Message: coded.Message,
 			Data:    map[string]any{"code": string(coded.Code), "details": coded.Details},
 		}
 	}
 	return &rpcError{Code: -32603, Message: "internal error"}
+}
+
+// jsonRPCCodeFor maps a domain.ErrorCode onto the JSON-RPC error
+// code category the spec expects. Three buckets:
+//   - validation (-32602, "Invalid params"): client supplied a
+//     malformed argument the server can describe back to the caller.
+//   - business  (-32000, server-defined): the request was well-formed
+//     but the domain refused to satisfy it (not-found, guard
+//     violation, conflict). Stable per-server custom code.
+//   - internal  (-32603, "Internal error"): the server hit a
+//     condition it can't blame on the caller.
+// Today every CodedError collapsed to -32602; agents that wanted to
+// distinguish "I sent garbage" from "the server says no" had to
+// re-inspect the Data.code field. The per-category mapping makes
+// the JSON-RPC code itself informative.
+func jsonRPCCodeFor(code domain.ErrorCode) int {
+	switch code {
+	case domain.ErrValidation,
+		domain.ErrDependencyInvalid,
+		domain.ErrTagConflict:
+		return -32602
+	case domain.ErrConfigInvalid,
+		domain.ErrConfigTooLarge,
+		domain.ErrEditorFailed,
+		domain.ErrEditorNotFound,
+		domain.ErrUninstallFailed,
+		domain.ErrUpdateFailed:
+		return -32603
+	default:
+		// Business-rule rejections (not-found, conflict, guard,
+		// workflow-invalid) live here. Any new domain code lands on
+		// the business bucket by default; promote to validation /
+		// internal as new categories appear.
+		return -32000
+	}
 }
 
 func Serve(ctx context.Context, input io.Reader, output io.Writer, adapter *Adapter) error {

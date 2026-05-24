@@ -125,7 +125,7 @@ func (m Model) selectedTask() (domain.Task, bool) {
 		return m.taskByID(m.taskID)
 	}
 	if m.top == topTasks && m.sub == subBoard {
-		if len(m.workflow.Buckets) == 0 || m.colIdx >= len(m.workflow.Buckets) {
+		if len(m.workflow.Buckets) == 0 || m.colIdx < 0 || m.colIdx >= len(m.workflow.Buckets) {
 			return domain.Task{}, false
 		}
 		bucketTasks := m.tasksInCurrentBucket()
@@ -167,22 +167,66 @@ func (m Model) taskByID(taskID int64) (domain.Task, bool) {
 // root work — the detail view's sub-tasks panel is the canonical place
 // to inspect a parent's children.
 func (m Model) tasksByBucket() map[string][]domain.Task {
-	tasksByBucket := map[string][]domain.Task{}
-	allowed := priorityAllowSet(m.views.Board.Filter.Priority)
-	for _, task := range m.tasks {
+	if m.cachedTasksByBucket != nil {
+		return m.cachedTasksByBucket
+	}
+	return buildTasksByBucket(m.tasks, priorityAllowSet(m.views.Board.Filter.Priority), m.priorities)
+}
+
+// buildTasksByBucket filters m.tasks by the board view's priority allow
+// list, drops sub-tasks (kanban columns show roots only), and groups
+// by bucket key. Pulled out so the *Model cache populator and the
+// value-receiver fallback share the same code path.
+func buildTasksByBucket(tasks []domain.Task, allowed map[string]struct{}, priorities []config.PriorityDefinition) map[string][]domain.Task {
+	out := map[string][]domain.Task{}
+	for _, task := range tasks {
 		if task.IsSubTask() {
 			continue
 		}
-		if !m.priorityAllowed(allowed, task.Priority) {
+		if !priorityAllowedFromTable(allowed, task.Priority, priorities) {
 			continue
 		}
-		tasksByBucket[task.BucketKey] = append(tasksByBucket[task.BucketKey], task)
+		out[task.BucketKey] = append(out[task.BucketKey], task)
 	}
-	return tasksByBucket
+	return out
+}
+
+// priorityAllowedFromTable is the stateless flavour of
+// (Model).priorityAllowed used by buildTasksByBucket so the cache
+// populator does not need the full Model receiver.
+func priorityAllowedFromTable(allowed map[string]struct{}, p domain.Priority, priorities []config.PriorityDefinition) bool {
+	if allowed == nil {
+		return true
+	}
+	for _, def := range priorities {
+		if domain.Priority(def.ID) == p {
+			_, ok := allowed[def.Value]
+			return ok
+		}
+	}
+	return false
+}
+
+// rebuildBoardCaches recomputes m.cachedTasksByBucket and
+// m.cachedTableView from m.tasks + the current view filters. Called
+// from refresh() and from any mutation handler that touches m.tasks
+// (move, archive, edit) so the next render reads from a coherent
+// snapshot.
+func (m *Model) rebuildBoardCaches() {
+	m.cachedTasksByBucket = buildTasksByBucket(m.tasks, priorityAllowSet(m.views.Board.Filter.Priority), m.priorities)
+	m.cachedTableView = buildTableView(m.tasks, m.views.Table, m.priorities)
+}
+
+// invalidateBoardCaches drops the memoised board/table projections so
+// the next access rebuilds. Cheaper than calling rebuildBoardCaches
+// when the next refresh() will rebuild anyway.
+func (m *Model) invalidateBoardCaches() {
+	m.cachedTasksByBucket = nil
+	m.cachedTableView = nil
 }
 
 func (m Model) tasksInCurrentBucket() []domain.Task {
-	if len(m.workflow.Buckets) == 0 || m.colIdx >= len(m.workflow.Buckets) {
+	if len(m.workflow.Buckets) == 0 || m.colIdx < 0 || m.colIdx >= len(m.workflow.Buckets) {
 		return nil
 	}
 	return m.tasksByBucket()[m.workflow.Buckets[m.colIdx].Key]

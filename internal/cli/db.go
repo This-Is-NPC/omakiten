@@ -2,14 +2,27 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"omakiten/internal/app"
+	"omakiten/internal/domain"
 )
+
+// forbiddenBackupOutRoots are the absolute path prefixes the `db backup
+// --out` flag refuses to write into. Catches the common slip of typing
+// "/etc/foo.db" or similar — the snapshot carries every project's data
+// and dropping it into a system tree (a) leaks across users on a shared
+// box and (b) almost certainly is not what the operator intended.
+// Resolved relative to filepath.Separator at check time so the same
+// constant works on either path style. Order does not matter — the
+// guard exits on the first match.
+var forbiddenBackupOutRoots = []string{"/etc", "/usr", "/proc", "/sys", "/dev"}
 
 func newDBCommand(opts *runtimeOptions) *cobra.Command {
 	cmd := &cobra.Command{
@@ -22,6 +35,7 @@ func newDBCommand(opts *runtimeOptions) *cobra.Command {
 
 func newDBBackupCommand(opts *runtimeOptions) *cobra.Command {
 	var out string
+	var force bool
 
 	cmd := &cobra.Command{
 		Use:   "backup",
@@ -29,11 +43,12 @@ func newDBBackupCommand(opts *runtimeOptions) *cobra.Command {
 		Long:  opts.t("cli.db.backup.long"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runJSON(cmd, func(ctx context.Context) (any, error) {
-				return runDBBackup(ctx, cmd, opts, out)
+				return runDBBackup(ctx, cmd, opts, out, force)
 			})
 		},
 	}
 	cmd.Flags().StringVarP(&out, "out", "o", "", opts.t("cli.db.backup.flag.out"))
+	cmd.Flags().BoolVar(&force, "force", false, opts.t("cli.db.backup.flag.force"))
 	return cmd
 }
 
@@ -51,7 +66,7 @@ func newDBBackupCommand(opts *runtimeOptions) *cobra.Command {
 // not relax permissions because the user picked a path) and the prune
 // pass is skipped — the user pinned the destination, so retention
 // rotation against the default state directory does not apply.
-func runDBBackup(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, out string) (any, error) {
+func runDBBackup(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, out string, force bool) (any, error) {
 	dbPath, err := opts.resolvedDBPath()
 	if err != nil {
 		return nil, err
@@ -61,6 +76,25 @@ func runDBBackup(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, 
 		finalPath, err := filepath.Abs(out)
 		if err != nil {
 			return nil, err
+		}
+		finalPath = filepath.Clean(finalPath)
+		if root, blocked := blockedBackupOutRoot(finalPath); blocked {
+			return nil, domain.NewError(
+				domain.ErrValidation,
+				fmt.Sprintf(opts.t("cli.db.backup.error.system_path_fmt"), finalPath, root),
+				map[string]any{"path": finalPath, "root": root},
+			)
+		}
+		if !force {
+			if _, statErr := os.Stat(finalPath); statErr == nil {
+				return nil, domain.NewError(
+					domain.ErrValidation,
+					fmt.Sprintf(opts.t("cli.db.backup.error.exists_fmt"), finalPath),
+					map[string]any{"path": finalPath},
+				)
+			} else if !errors.Is(statErr, os.ErrNotExist) {
+				return nil, fmt.Errorf("backup --out stat: %w", statErr)
+			}
 		}
 		if err := os.MkdirAll(filepath.Dir(finalPath), 0o700); err != nil {
 			return nil, fmt.Errorf("backup --out parent: %w", err)
@@ -86,4 +120,17 @@ func runDBBackup(ctx context.Context, cmd *cobra.Command, opts *runtimeOptions, 
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(), opts.t("cli.db.backup.success_fmt")+"\n", finalPath)
 	return map[string]any{"path": finalPath, "pruned": true, "retention": retention}, nil
+}
+
+// blockedBackupOutRoot reports whether the cleaned absolute path lives
+// inside one of the forbiddenBackupOutRoots. Returns the matched root
+// so the caller's error message can name the rule that fired. Strict
+// prefix check: "/etc/foo" matches "/etc", but "/etcetera" does not.
+func blockedBackupOutRoot(absClean string) (string, bool) {
+	for _, root := range forbiddenBackupOutRoots {
+		if absClean == root || strings.HasPrefix(absClean, root+string(filepath.Separator)) {
+			return root, true
+		}
+	}
+	return "", false
 }

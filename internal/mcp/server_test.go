@@ -163,8 +163,11 @@ func TestServeEmptyLineSkip(t *testing.T) {
 func TestErrorPayloadCodedError(t *testing.T) {
 	err := domain.NewError(domain.ErrTaskNotFound, "task not found", map[string]any{"task_id": 7})
 	payload := errorPayload(err)
-	if payload.Code != -32602 {
-		t.Errorf("Code = %d, want -32602", payload.Code)
+	// ErrTaskNotFound is a business-rule rejection — well-formed
+	// request, the domain refused — so it maps to the server-defined
+	// JSON-RPC code -32000 per jsonRPCCodeFor's category table.
+	if payload.Code != -32000 {
+		t.Errorf("Code = %d, want -32000 (business)", payload.Code)
 	}
 	if payload.Message != "task not found" {
 		t.Errorf("Message = %q, want %q", payload.Message, "task not found")

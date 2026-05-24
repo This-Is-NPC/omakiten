@@ -31,10 +31,10 @@ const (
 type Event int
 
 const (
-	EventNone Event = iota
-	EventSelect // enter (Single) or ctrl+s (Multi)
-	EventToggle // space (Multi only)
-	EventCancel // esc
+	EventNone   Event = iota
+	EventSelect       // enter (Single) or ctrl+s (Multi)
+	EventToggle       // space (Multi only)
+	EventCancel       // esc
 )
 
 // Model owns cursor + scroll state for a single list picker. RowCount
@@ -105,6 +105,47 @@ func (m Model) Update(msg tea.Msg, rowCount, viewport int) (Model, tea.Cmd) {
 // Update — parents should check this on every Update to drive their own
 // state machine (close screen on Cancel, save on Select, toggle on Toggle).
 func (m Model) LastEvent() Event { return m.lastEvent }
+
+// WithCursor returns a copy of m with the cursor jumped to idx and the
+// scroll re-followed so the new cursor sits inside the visible window.
+// rowCount and viewport are passed inline (same shape as Update) so the
+// picker stays stateless w.r.t. row data — the parent owns geometry per
+// frame.
+//
+// Clamps idx to [0, rowCount-1]; rowCount <= 0 collapses cursor + scroll
+// to 0. Used by parent screens that drive the cursor through an external
+// authoritative field (e.g. settings_picker setting the cursor onto the
+// currently-active entity at open time).
+func (m Model) WithCursor(idx, rowCount, viewport int) Model {
+	if rowCount <= 0 {
+		m.Cursor = 0
+		m.Scroll = 0
+		return m
+	}
+	if idx < 0 {
+		idx = 0
+	}
+	if idx > rowCount-1 {
+		idx = rowCount - 1
+	}
+	m.Cursor = idx
+	m.Scroll = followCursor(m.Scroll, idx, viewport, rowCount)
+	return m
+}
+
+// WithScroll returns a copy of m with the scroll offset re-clamped to
+// keep the cursor inside the viewport. Used by surfaces that re-derive
+// scroll from a variable-height layout (the home grid does this every
+// frame because project cards have differing heights, so the
+// `viewport` here is the row budget the caller already computed via
+// scrollwindow.Follow on its own heights slice).
+func (m Model) WithScroll(scroll int) Model {
+	if scroll < 0 {
+		scroll = 0
+	}
+	m.Scroll = scroll
+	return m
+}
 
 // View is intentionally absent from this component — every picker in
 // omakiten renders its rows differently (custom badges, sticky "+ create

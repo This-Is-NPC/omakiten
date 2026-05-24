@@ -48,6 +48,15 @@ func MigrateLayout(rootDir string) error {
 	if err := migrateLegacyTemplateBinding(rootDir); err != nil {
 		return err
 	}
+	// Schema-level migration runs after the directory-layout passes
+	// so it operates on the canonical <root>/config/*.yaml tree the
+	// rest of MigrateLayout already normalised. Backfills the sqlite
+	// knobs introduced in W7 #225 so legacy bundles authored before
+	// those keys became required survive the first post-upgrade
+	// load.
+	if err := migrateSchemaDefaults(rootDir); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -93,7 +102,7 @@ func migrateYAML(rootDir string) error {
 		} else if !os.IsNotExist(err) {
 			return err
 		}
-		if err := os.Rename(legacy, current); err != nil {
+		if err := atomicMove(legacy, current); err != nil {
 			return fmt.Errorf("move %s: %w", legacy, err)
 		}
 	}
@@ -135,7 +144,7 @@ func migrateEntityFolders(rootDir string) error {
 			} else if !os.IsNotExist(err) {
 				return err
 			}
-			if err := os.Rename(from, to); err != nil {
+			if err := atomicMove(from, to); err != nil {
 				return fmt.Errorf("move %s -> %s: %w", from, to, err)
 			}
 		}
@@ -186,7 +195,7 @@ func segregateUserCustoms(rootDir string) error {
 			} else if !os.IsNotExist(err) {
 				return err
 			}
-			if err := os.Rename(from, to); err != nil {
+			if err := atomicMove(from, to); err != nil {
 				return fmt.Errorf("move %s -> custom/: %w", from, err)
 			}
 		}
@@ -454,7 +463,7 @@ func segregateUserConfigProfiles(rootDir string) error {
 		} else if !os.IsNotExist(err) {
 			return err
 		}
-		if err := os.Rename(from, to); err != nil {
+		if err := atomicMove(from, to); err != nil {
 			return fmt.Errorf("move %s -> custom/: %w", from, err)
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/sqlite/sqlutil"
 )
 
 // CreateTask inserts a task into the given bucket and emits the matching
@@ -26,12 +27,6 @@ func (s *Store) CreateTask(ctx context.Context, projectID int64, title, descript
 		return domain.Task{}, err
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return domain.Task{}, err
-	}
-	defer func() { _ = tx.Rollback() }()
-
 	// Priority must be resolved by the app layer (WorkflowService.
 	// CreateTask substitutes domain.DefaultPriority() when the input is
 	// PriorityZero). Migration 017 dropped the SQL DEFAULT — every
@@ -42,45 +37,35 @@ func (s *Store) CreateTask(ctx context.Context, projectID int64, title, descript
 			"task priority unresolved at the storage layer; the app must substitute domain.DefaultPriority() before calling CreateTask",
 			map[string]any{"project_id": projectID, "bucket": bucketKey})
 	}
-	// parent_id lands in the same INSERT as the row itself so sub-task
-	// creation is atomic — no two-step INSERT-then-UPDATE that could
-	// leave an orphan root visible (and an audit event already emitted)
-	// when the second statement fails.
-	var parentArg any
-	if parentID != nil {
-		parentArg = *parentID
-	}
-	row := tx.QueryRowContext(ctx, `
+	return txMutateAndEmit(ctx, s, TxMutation[domain.Task]{
+		Scope:     EventScopeTask,
+		EventType: domain.EventTypeTaskCreated,
+		ProjectID: projectID,
+		EntityID:  func(t domain.Task) int64 { return t.ID },
+		ShouldLog: func() bool { return s.shouldLogEvent(domain.EventTypeTaskCreated) },
+		Mutate: func(ctx context.Context, tx *sql.Tx) (domain.Task, error) {
+			// parent_id lands in the same INSERT as the row itself so sub-task
+			// creation is atomic — no two-step INSERT-then-UPDATE that could
+			// leave an orphan root visible (and an audit event already emitted)
+			// when the second statement fails.
+			var parentArg any
+			if parentID != nil {
+				parentArg = *parentID
+			}
+			row := tx.QueryRowContext(ctx, `
 INSERT INTO tasks(project_id, bucket_id, title, description, priority_id, parent_id)
 VALUES (?, ?, ?, ?, ?, ?)
 RETURNING id, project_id, bucket_id, title, description, priority_id, state, created_at, parent_id
 `, projectID, bucketID, title, description, int(priority), parentArg)
-
-	task, err := scanTask(row, bucketKey)
-	if err != nil {
-		return domain.Task{}, err
-	}
-
-	payload := fmt.Sprintf(`{"bucket":%q}`, bucketKey)
-	if parentID != nil {
-		payload = fmt.Sprintf(`{"bucket":%q,"parent_id":%d}`, bucketKey, *parentID)
-	}
-	var ev domain.Event
-	if s.shouldLogEvent(domain.EventTypeTaskCreated) {
-		var err error
-		ev, err = insertTaskEvent(ctx, tx, projectID, task.ID, domain.EventTypeTaskCreated, "", payload)
-		if err != nil {
-			return domain.Task{}, err
-		}
-	} else {
-		ev = domain.Event{EntityType: domain.EventEntityTask, EntityID: task.ID, ProjectID: projectID, EventType: domain.EventTypeTaskCreated, Payload: payload}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return domain.Task{}, err
-	}
-	s.publishEvent(ctx, ev)
-	return task, nil
+			return scanTask(row, bucketKey)
+		},
+		Payload: func(_ domain.Task) (string, error) {
+			if parentID != nil {
+				return fmt.Sprintf(`{"bucket":%q,"parent_id":%d}`, bucketKey, *parentID), nil
+			}
+			return fmt.Sprintf(`{"bucket":%q}`, bucketKey), nil
+		},
+	})
 }
 
 func (s *Store) ListTasks(ctx context.Context, projectID int64, filter domain.TaskFilter, buckets domain.BucketResolver) ([]domain.Task, error) {
@@ -352,13 +337,19 @@ func scanTask(row *sql.Row, bucketKey string) (domain.Task, error) {
 
 // assignParentID promotes a nullable parent_id read into the *int64
 // surface on domain.Task. Centralised so every scan path treats SQL NULL
-// (root task) and a present FK (sub-task) the same way.
+// (root task) and a present FK (sub-task) the same way. Delegates to
+// sqlutil.NullInt64Ptr so the *int64 contract stays in one place.
 func assignParentID(task *domain.Task, n sql.NullInt64) {
-	if !n.Valid {
-		return
-	}
-	id := n.Int64
-	task.ParentID = &id
+	task.ParentID = sqlutil.NullInt64Ptr(n)
+}
+
+// GetTaskByID is the port-facing point lookup the app's TaskService
+// reads through. Mirrors taskByID's body but exported so the
+// TaskRepository interface contract can name it; internal callers
+// (UpdateTask post-write read) still use taskByID to keep the
+// hexagonal direction inward.
+func (s *Store) GetTaskByID(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (domain.Task, error) {
+	return s.taskByID(ctx, projectID, taskID, buckets)
 }
 
 func (s *Store) taskByID(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (domain.Task, error) {

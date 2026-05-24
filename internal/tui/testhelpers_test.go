@@ -28,8 +28,8 @@ var (
 // newTestCatalog returns a singleton Catalog backed by defaults/languages/en.yaml.
 // Tests assert against the rendered English literals; the catalog has to be
 // wired so m.t(key) returns the literal rather than the key fallback.
-func newTestCatalog(t *testing.T) *config.Catalog {
-	t.Helper()
+func newTestCatalog(tb testing.TB) *config.Catalog {
+	tb.Helper()
 	testCatalogOnce.Do(func() {
 		en, err := config.LoadBundledLanguage("en")
 		if err != nil {
@@ -39,7 +39,7 @@ func newTestCatalog(t *testing.T) *config.Catalog {
 		testCatalog = config.NewCatalog(&en, &en)
 	})
 	if testCatalogErr != nil {
-		t.Fatalf("load bundled en catalog: %v", testCatalogErr)
+		tb.Fatalf("load bundled en catalog: %v", testCatalogErr)
 	}
 	return testCatalog
 }

@@ -8,6 +8,7 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/sqlite/sqlutil"
 )
 
 // RecordTaskEvent inserts an entity_type='task' event tied to a task. Used by
@@ -165,9 +166,7 @@ ORDER BY created_at `+direction+`, id `+direction+`
 			&ev.EventType, &ev.Body, &ev.Payload, &authorType, &ev.CreatedAt); err != nil {
 			return nil, err
 		}
-		if authorType.Valid {
-			ev.AuthorType = authorType.String
-		}
+		ev.AuthorType = sqlutil.NullStringOr(authorType, "")
 		events = append(events, ev)
 	}
 	if err := rows.Err(); err != nil {

@@ -71,7 +71,7 @@ func TestValidateBundleErrors(t *testing.T) {
 					Logs:         LogsViewSettings{Sort: SortSettings{Order: "desc"}, Limit: 50},
 					TaskActivity: TaskActivityViewSettings{Sort: SortSettings{Order: "asc"}},
 				},
-				SQLite:      SQLiteSettings{BusyTimeoutMs: 5000},
+				SQLite:      SQLiteSettings{BusyTimeoutMs: 5000, CacheSizeKB: 1024, MmapSizeBytes: 0},
 				ActivityLog: ActivityLogSettings{MaxRows: 500, MaxAgeDays: 7},
 				Solutions:   SolutionsSettings{DefaultTopLimit: 10, MaxTopLimit: 100},
 				Backup:      BackupSettings{RetentionCount: 5},

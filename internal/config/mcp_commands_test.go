@@ -45,7 +45,7 @@ config:
     graph: { sort: {field: id, order: asc} }
     logs: { sort: {order: desc}, limit: 50, filter: {source: []} }
     task_activity: { sort: {order: asc} }
-  sqlite: { busy_timeout_ms: 5000 }
+  sqlite: { busy_timeout_ms: 5000, cache_size_kb: 1024, mmap_size_bytes: 0 }
   activity_log: { max_rows: 500, max_age_days: 7 }
   solutions: { default_top_limit: 10, max_top_limit: 100 }
   events: { default_recent_limit: 50, defaults: { log: true, broadcast: true, hook: true } }
@@ -152,7 +152,7 @@ config:
     graph: { sort: {field: id, order: asc} }
     logs: { sort: {order: desc}, limit: 50, filter: {source: []} }
     task_activity: { sort: {order: asc} }
-  sqlite: { busy_timeout_ms: 5000 }
+  sqlite: { busy_timeout_ms: 5000, cache_size_kb: 1024, mmap_size_bytes: 0 }
   activity_log: { max_rows: 500, max_age_days: 7 }
   solutions: { default_top_limit: 10, max_top_limit: 100 }
   events: { default_recent_limit: 50, defaults: { log: true, broadcast: true, hook: true } }
@@ -224,7 +224,7 @@ config:
     graph: { sort: {field: id, order: asc} }
     logs: { sort: {order: desc}, limit: 50, filter: {source: []} }
     task_activity: { sort: {order: asc} }
-  sqlite: { busy_timeout_ms: 5000 }
+  sqlite: { busy_timeout_ms: 5000, cache_size_kb: 1024, mmap_size_bytes: 0 }
   activity_log: { max_rows: 500, max_age_days: 7 }
   solutions: { default_top_limit: 10, max_top_limit: 100 }
   events: { default_recent_limit: 50, defaults: { log: true, broadcast: true, hook: true } }

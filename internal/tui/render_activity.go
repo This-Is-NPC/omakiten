@@ -7,7 +7,6 @@ import (
 
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/gridtable"
-	"omakiten/internal/tui/components/scrollwindow"
 )
 
 func (m Model) renderTaskCommentsCell(taskID int64) string {
@@ -38,7 +37,7 @@ func (m Model) renderTaskCommentsCell(taskID int64) string {
 		for i := range heights {
 			heights[i] = 1
 		}
-		lines = append(lines, m.renderScrollWindowSplit(body, heights, m.activityScroll, m.activityViewportLines())...)
+		lines = append(lines, m.renderScrollWindowSplit(body, heights, m.activityLines.Scroll(), m.activityViewportLines())...)
 	}
 	if m.isEmbeddedCommentInput() && m.taskID == taskID {
 		lines = append(lines, "", m.renderCommentInput())
@@ -110,12 +109,27 @@ func (m Model) activityForTaskInView(taskID int64) []domain.Event {
 	return out
 }
 
-// activityRowsForRender renders each event card up front so pagination and
-// overflow accounting work on a stable list. Comments reuse the existing
-// commentCard (author + body + tags); system events use the same border color
-// as comments so the activity column reads as one cohesive stack. The focused
-// card (activityCursor) gets an accent border so card navigation is discoverable.
+// activityRowsForRender returns the rendered event card slice for the
+// activity panel. The hot path on a keystroke previously called this
+// from clampActivityScroll, visibleActivityCardRange,
+// syncActivityScrollToCursor AND the renderTaskCommentsCell view pass
+// — every call walked every event through renderCommentCardSelected
+// or renderSystemEventCard (lipgloss border + body wrap). The result
+// is now memoised on m.activityCardsCache; the value receiver reads
+// from the cache when the fingerprint matches, otherwise it builds
+// fresh cards but cannot persist them. *Model handlers that need to
+// repopulate the cache call cachedActivityRowsForRender below.
 func (m Model) activityRowsForRender(events []domain.Event) []string {
+	if m.activityCardsCache.valid && m.activityCardsCache.key == m.activityRowsForRenderKey(events) {
+		return m.activityCardsCache.cards
+	}
+	return m.activityRowsForRenderUncached(events)
+}
+
+// activityRowsForRenderUncached is the underlying renderer the cache
+// short-circuits when warm. Kept separate so the cache hit path is a
+// pure map read with zero card-render work.
+func (m Model) activityRowsForRenderUncached(events []domain.Event) []string {
 	rows := make([]string, 0, len(events))
 	for i, ev := range events {
 		focused := i == m.activityCursor
@@ -126,6 +140,61 @@ func (m Model) activityRowsForRender(events []domain.Event) []string {
 		rows = append(rows, m.renderSystemEventCard(ev, focused))
 	}
 	return rows
+}
+
+// cachedActivityRowsForRender is the *Model variant of
+// activityRowsForRender that writes back into the per-model cache.
+// Hot-path handlers (clampActivityScroll, syncActivityScrollToCursor,
+// visibleActivityCardRange via moveActivityCursor) call this so the
+// subsequent value-receiver render path inside renderTaskCommentsCell
+// hits a warm cache.
+func (m *Model) cachedActivityRowsForRender(events []domain.Event) []string {
+	key := m.activityRowsForRenderKey(events)
+	if m.activityCardsCache.valid && m.activityCardsCache.key == key {
+		return m.activityCardsCache.cards
+	}
+	cards := m.activityRowsForRenderUncached(events)
+	m.activityCardsCache = activityCardsCacheEntry{valid: true, key: key, cards: cards}
+	return cards
+}
+
+// activityRowsForRenderKey fingerprints the inputs activityRowsForRender
+// depends on: focused task id, cursor (changes the focused-card accent
+// border), commentCard content width (changes wrap), and per-event id
+// + type + body length + tag identities. The body length is a cheap
+// proxy that catches edit-in-place mutations without hashing the full
+// body string. Tags are folded as (len, then sorted ids) so a swap
+// (remove tag 3, add tag 5 — same length) still bumps the key while a
+// reorder (tags returned in different order from the DB) does not.
+func (m Model) activityRowsForRenderKey(events []domain.Event) uint64 {
+	f := newFingerprint()
+	f.writeInt64(m.taskID)
+	f.writeInt64(int64(m.activityCursor))
+	f.writeInt64(int64(m.commentCardWidth()))
+	for _, ev := range events {
+		f.writeInt64(ev.ID)
+		f.writeString(ev.EventType)
+		f.writeInt64(int64(len(ev.Body)))
+		f.writeInt64(int64(len(ev.Tags)))
+		if n := len(ev.Tags); n > 0 {
+			ids := make([]int64, n)
+			for i, t := range ev.Tags {
+				ids[i] = t.ID
+			}
+			f.writeInt64Slice(ids)
+		}
+	}
+	return f.sum()
+}
+
+// activityCardsCacheEntry is the memoised projection of
+// activityRowsForRender; lives on the Model so a fresh value copy
+// from the Bubbletea event loop carries the cache forward into the
+// next render.
+type activityCardsCacheEntry struct {
+	valid bool
+	key   uint64
+	cards []string
 }
 
 // renderSystemEventCard formats task.created/moved/completed in a card that
@@ -219,51 +288,26 @@ func payloadField(payload, key string) string {
 	return ""
 }
 
-// scrollActivityLines nudges activityScroll by a raw line delta and clamps
-// to valid range. Lets pgup/pgdn page the activity body independently of
-// the cursor — useful when a single expanded card is taller than the
-// viewport and the user wants to read past its first screenful.
+// scrollActivityLines nudges the activity body scroll by a raw line
+// delta. Routes through linelist.Model.ScrollBy so the component's
+// internal clamp keeps scroll inside [0, last renderable offset].
+// Decouples body-scroll from cursor — useful when an expanded card
+// is taller than the viewport and the user wants to read past its
+// first screenful without losing cursor position.
 func (m *Model) scrollActivityLines(delta int) {
-	m.activityScroll += delta
-	m.clampActivityScroll()
+	m.refreshActivityLines()
+	m.activityLines = m.activityLines.ScrollBy(delta)
 }
 
-// clampActivityScroll keeps activityScroll inside [0, activityMaxScroll()].
-// Computes total by re-rendering cards, which is cheap and avoids the
-// caller having to thread the body length through. See activityMaxScroll
-// for the off-by-one explanation around the split-hint reservation.
-func (m *Model) clampActivityScroll() {
+// refreshActivityLines rebuilds the linelist's body lines + viewport
+// from the current event slice + measured viewport. Called from
+// every *Model handler that touches activity scroll state so the
+// linelist always has accurate inputs before its resync fires.
+func (m *Model) refreshActivityLines() {
 	events := m.activityForTaskInView(m.taskID)
-	body := flattenActivityCards(m.activityRowsForRender(events))
+	body := flattenActivityCards(m.cachedActivityRowsForRender(events))
 	viewport := m.activityViewportLines()
-	if viewport <= 0 || len(body) <= viewport {
-		m.activityScroll = 0
-		return
-	}
-	maxScroll := activityMaxScroll(len(body), viewport)
-	if m.activityScroll < 0 {
-		m.activityScroll = 0
-	}
-	if m.activityScroll > maxScroll {
-		m.activityScroll = maxScroll
-	}
-}
-
-// activityMaxScroll is the largest offset that still renders the last body
-// line inside the activity viewport given the split-hint reservation
-// renderScrollWindowSplit applies. When offset > 0 the renderer steals
-// scrollwindow.AboveHintRows(HintsSplit) rows for the "▲ N above" hint;
-// we add them back so the last line stays reachable — without this G /
-// sustained pgdown left the final card's tail cropped behind a "▼ N below"
-// that lied about still-reachable rows. Floored at 0 — callers should
-// early-return when the body fits without scroll, but defending here
-// keeps the helper composable.
-func activityMaxScroll(bodyLen, viewport int) int {
-	bound := bodyLen - viewport + scrollwindow.AboveHintRows(scrollwindow.HintsSplit)
-	if bound < 0 {
-		return 0
-	}
-	return bound
+	m.activityLines = m.activityLines.WithLines(body).WithViewport(viewport)
 }
 
 // toggleTaskFocus rotates which column inside the task detail screen
@@ -313,15 +357,15 @@ func (m *Model) applyTaskFocus(focus taskScreenFocus) {
 	switch focus {
 	case taskFocusForm:
 		m.activityCursor = -1
-		m.subtaskCursor = -1
+		m.subtasks = m.subtasks.WithItems(nil)
 	case taskFocusSubtasks:
 		m.activityCursor = -1
-		if m.subtaskCursor < 0 {
-			m.subtaskCursor = 0
+		m.refreshSubtaskList()
+		if m.subtasks.Cursor() < 0 {
+			m.subtasks = m.subtasks.JumpFirst()
 		}
-		m.syncSubtaskScrollToCursor()
 	case taskFocusActivity:
-		m.subtaskCursor = -1
+		m.subtasks = m.subtasks.WithItems(nil)
 		if m.activityCursor < 0 {
 			rows := len(m.activityForTaskInView(m.taskID))
 			if rows > 0 {
@@ -397,8 +441,8 @@ func (m Model) visibleActivityCardRange() (int, int, bool) {
 	if viewport <= 0 {
 		return 0, 0, false
 	}
-	top := m.activityScroll
-	bottom := m.activityScroll + viewport
+	top := m.activityLines.Scroll()
+	bottom := top + viewport
 	first, last := -1, -1
 	for i, r := range ranges {
 		if r.start >= top && r.start < bottom {
@@ -430,48 +474,47 @@ func (m *Model) syncActivityScrollToCursor() {
 	if m.activityCursor >= len(events) {
 		return
 	}
-	cards := m.activityRowsForRender(events)
+	cards := m.cachedActivityRowsForRender(events)
 	body := flattenActivityCards(cards)
 	ranges := cardLineRanges(cards)
 	viewport := m.activityViewportLines()
 	if viewport <= 0 || len(body) <= viewport {
-		m.activityScroll = 0
+		m.activityLines = m.activityLines.WithLines(body).WithViewport(viewport)
 		return
 	}
-	heights := make([]int, len(body))
-	for i := range heights {
-		heights[i] = 1
-	}
+	// Feed the linelist the body + viewport, then place its cursor
+	// on the focused card's LAST line (so the entire card fits
+	// inside the slice with HintsSplit reservation). The linelist's
+	// internal Resync handles the Follow + clamp chain.
 	r := ranges[m.activityCursor]
 	cardTop := r.start
 	cardLast := r.start + r.height - 1
-	scroll := scrollwindow.Follow(m.activityScroll, cardLast, heights, viewport, scrollwindow.HintsSplit)
+	// Clear any stale linelist cursor first — m.activityCursor is the
+	// authoritative card cursor; the linelist's cursor is only used
+	// as the Resync vehicle for the current sync call. Without this
+	// clear, a prior sync's cursor (e.g. cardLast=3) would clamp the
+	// Follow run via Follow's `if offset > cursor { offset = cursor }`
+	// guard, snapping scroll back to that stale cursor instead of
+	// honouring the user's pgup/pgdn work.
+	list := m.activityLines.WithCursor(-1).WithLines(body).WithViewport(viewport).WithCursor(cardLast)
+	scroll := list.Scroll()
+	// Top-align tall expanded cards: if Follow drove scroll past the
+	// card's first line, snap back so the header stays visible. The
+	// scrollwindow.Follow chain inside WithCursor only ADVANCES
+	// scroll to fit the cursor; snapping back to cardTop is a
+	// separate UX rule.
 	if scroll > cardTop {
-		scroll = cardTop
+		list = list.WithCursor(-1).ScrollBy(cardTop - scroll)
 	}
-	if scroll < 0 {
-		scroll = 0
-	}
-	if maxScroll := activityMaxScroll(len(body), viewport); scroll > maxScroll {
-		scroll = maxScroll
-	}
-	m.activityScroll = scroll
+	m.activityLines = list
 }
 
-// Chrome budget consumed by every rendered row of the task detail screen
-// outside the activity panel's slice. activityChromeBase aggregates the
-// fixed-cost rows present on every render; the optional surcharges are
-// added on top when their feature renders.
+// Chrome budget consumed by the embedded comment input + panel
+// constants. The prior activityChromeBase / activityChromeStatus
+// constants died with W12 — the screen-chrome accounting now lives
+// inside taskViewportHeight (consumed via layout.TaskViewBudget)
+// instead of being re-derived here.
 const (
-	// activityChromeBase: screen header (2) + leading blank
-	// applyTaskViewScroll prepends (1) + screen footer separator +
-	// keybindings (2) + activity panel top + bottom border (2) + kicker
-	// row inside the panel (1) + trailing margin so the bottom border is
-	// never the last row written to the alt-screen (1) = 9.
-	activityChromeBase = 9
-	// activityChromeStatus: extra row consumed when m.status renders an
-	// inline badge above the content.
-	activityChromeStatus = 1
 	// activityChromeEmbeddedInput: extra rows consumed by the embedded
 	// comment input (header + 5 input rows + hint + padding).
 	activityChromeEmbeddedInput = 9
@@ -485,23 +528,35 @@ const (
 	activityViewportFallbackLines = 12
 )
 
-// activityViewportLines is the maximum number of LINES the activity column
-// renders before pagination kicks in. Sized to consume the outer
-// `taskViewportHeight` budget so the column grows with the terminal — the
-// previous static chrome=12 left ~3 unused rows on every height because it
-// double-counted the screen header/footer the outer viewport already owns.
+// activityViewportLines returns the inner row budget the activity
+// linelist gets after layout chrome / borders. Routes through the
+// task-view budget so the policy stays paired with the sub-tasks
+// panel.
+//
+// Returns activityViewportMinLines as a floor for navigability when
+// the panel will render but the budget collapses tight. The fallback
+// path keeps the activityViewportFallbackLines value for early
+// renders before WindowSizeMsg arrives.
 func (m Model) activityViewportLines() int {
 	if m.height <= 0 {
 		return activityViewportFallbackLines
 	}
-	chrome := activityChromeBase
-	if m.status != "" {
-		chrome += activityChromeStatus
+
+	rows := 0
+	if m.taskScreen == taskScreenView {
+		if task, ok := m.activeTask(); ok {
+			l := m.computeTaskViewLayout(m.availableWidth(), true)
+			formH := m.cachedTaskDetailsBoxHeight(task, l)
+			rows = m.taskViewBudget(l, formH).ActivityRows()
+		}
 	}
+
+	// Subtract the embedded comment input from the available rows so
+	// the panel does not grow when the user starts composing.
 	if m.isEmbeddedCommentInput() {
-		chrome += activityChromeEmbeddedInput
+		rows -= activityChromeEmbeddedInput
 	}
-	rows := m.height - chrome
+
 	if rows < activityViewportMinLines {
 		rows = activityViewportMinLines
 	}

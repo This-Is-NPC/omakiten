@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/cardlist"
 	"omakiten/internal/tui/components/scrollwindow"
 )
 
@@ -100,11 +101,15 @@ func (m Model) renderEntityCellWithViewport(kind entityKind, viewport int, conte
 		return strings.Join(lines, "\n")
 	}
 
-	storedCardOffset := 0
-	if m.entityScroll != nil {
-		storedCardOffset = m.entityScroll[kind]
+	// Read the row-aligned scroll offset from the cardlist that
+	// owns it via syncFocusedEntityScroll. The cardlist's Scroll()
+	// is a row index — partial-row alignment is impossible because
+	// the component never sees individual cards, only whole-row
+	// items.
+	rowOffset := 0
+	if list, ok := m.entityLists[kind]; ok {
+		rowOffset = list.Scroll()
 	}
-	rowOffset := storedCardOffset / cols
 	// Shared scroll math (scrollwindow.Slice) returns the row-end; the
 	// entity grid's only twist is that hints count CARDS, not rows, so
 	// we translate row offsets to card counts when emitting the
@@ -172,20 +177,21 @@ func (m Model) entityViewportRows() int {
 	return m.panelViewportRows(4)
 }
 
-// syncFocusedEntityScroll keeps m.entityScroll[focusedKind] aligned so the
-// selected card stays fully inside the column viewport. The offset is
-// stored as a card index but always lands on a row boundary — the grid
-// renderer wraps cards into rows of `entityGridCols(contentWidth)`, and
-// scrolling jumps a whole row at a time so partial rows never appear at
-// the top of the viewport.
+// syncFocusedEntityScroll syncs the focused-kind cardlist.Model so the
+// selected card's row stays fully inside the column viewport. The
+// cardlist's items are ROWS of the wrapped grid; the cursor is the
+// cursor card's row index. Routes through WithItems + WithViewport
+// + WithCursor so scrollwindow.Resync owns scroll correctness — a
+// partial-row alignment is structurally impossible because the
+// cardlist never sees individual cards, only whole-row items.
 func (m *Model) syncFocusedEntityScroll() {
 	kind := m.entityKind
 	count := m.entityCount(kind)
 	viewport := m.entityViewportRows()
 	contentWidth := m.entityCellContentWidth()
 	if viewport <= 0 || count == 0 {
-		if m.entityScroll != nil {
-			delete(m.entityScroll, kind)
+		if m.entityLists != nil {
+			delete(m.entityLists, kind)
 		}
 		return
 	}
@@ -195,7 +201,7 @@ func (m *Model) syncFocusedEntityScroll() {
 	cursorRow := cursor / cols
 	numRows := (count + cols - 1) / cols
 
-	rowHeights := make([]int, numRows)
+	items := make([]cardlist.Item, numRows)
 	for r := 0; r < numRows; r++ {
 		h := 0
 		for c := 0; c < cols; c++ {
@@ -209,15 +215,21 @@ func (m *Model) syncFocusedEntityScroll() {
 				h = ch
 			}
 		}
-		rowHeights[r] = h
+		// Items carry only Height; the entity surface builds its
+		// own rowText assembly (JoinHorizontal of cards) so the
+		// cardlist's View path is not the rendering surface. We
+		// only need its scroll-position decision.
+		items[r] = cardlist.Item{Content: "", Height: h}
 	}
 
-	if m.entityScroll == nil {
-		m.entityScroll = map[entityKind]int{}
+	if m.entityLists == nil {
+		m.entityLists = map[entityKind]cardlist.Model{}
 	}
-	rowOffset := m.entityScroll[kind] / cols
-	rowOffset = followScrollWindowSplit(rowOffset, cursorRow, rowHeights, viewport)
-	m.entityScroll[kind] = rowOffset * cols
+	list, exists := m.entityLists[kind]
+	if !exists {
+		list = cardlist.New()
+	}
+	m.entityLists[kind] = list.WithItems(items).WithViewport(viewport).WithCursor(cursorRow)
 }
 
 func (m Model) renderEntityCard(kind entityKind, index int, selected bool) string {

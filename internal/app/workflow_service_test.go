@@ -156,6 +156,9 @@ func (f *fakeStores) CreateTask(_ context.Context, _ int64, _, _ string, _ domai
 func (f *fakeStores) ListTasks(context.Context, int64, domain.TaskFilter, domain.BucketResolver) ([]domain.Task, error) {
 	return nil, nil
 }
+func (f *fakeStores) GetTaskByID(_ context.Context, projectID, taskID int64, _ domain.BucketResolver) (domain.Task, error) {
+	return domain.Task{ID: taskID, ProjectID: projectID}, nil
+}
 func (f *fakeStores) MoveTask(context.Context, int64, int64, string, domain.BucketResolver) (domain.Task, error) {
 	f.moveCalls++
 	return f.moveResp, f.moveErr

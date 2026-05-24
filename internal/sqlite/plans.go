@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/sqlite/sqlutil"
 )
 
 // CreatePlan inserts a plan and emits plan.created in the same transaction.
@@ -25,43 +26,42 @@ func (s *Store) CreatePlan(ctx context.Context, projectID int64, slug, name, goa
 		return domain.Plan{}, domain.NewError(domain.ErrValidation, "plan name is required", nil)
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return domain.Plan{}, err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	row := tx.QueryRowContext(ctx, `
+	return txMutateAndEmit(ctx, s, TxMutation[domain.Plan]{
+		Scope:      EventScopeEntity,
+		EntityType: domain.EventEntityPlan,
+		EventType:  domain.EventTypePlanCreated,
+		ProjectID:  projectID,
+		EntityID:   func(p domain.Plan) int64 { return p.ID },
+		Mutate: func(ctx context.Context, tx *sql.Tx) (domain.Plan, error) {
+			row := tx.QueryRowContext(ctx, `
 INSERT INTO plans(project_id, slug, name, goal_body)
 VALUES (?, ?, ?, ?)
 RETURNING id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at
 `, projectID, slug, name, goalBody)
-
-	plan, err := scanPlan(row)
-	if err != nil {
-		if isUniqueViolation(err) {
-			return domain.Plan{}, domain.NewError(domain.ErrPlanSlugConflict,
-				"plan slug already exists for this project",
-				map[string]any{"project_id": projectID, "slug": slug})
-		}
-		return domain.Plan{}, err
-	}
-
-	payload, _ := json.Marshal(map[string]any{
-		"slug":       plan.Slug,
-		"name":       plan.Name,
-		"project_id": plan.ProjectID,
+			plan, err := sqlutil.ScanRow(row, decodePlan)
+			if err != nil {
+				var ce *sqlutil.ConstraintError
+				if mapped := sqlutil.MapSQLiteError(err); errors.As(mapped, &ce) && ce.Violation == sqlutil.ViolationUnique {
+					return domain.Plan{}, domain.NewError(domain.ErrPlanSlugConflict,
+						"plan slug already exists for this project",
+						map[string]any{"project_id": projectID, "slug": slug})
+				}
+				return domain.Plan{}, err
+			}
+			return plan, nil
+		},
+		Payload: func(plan domain.Plan) (string, error) {
+			b, err := json.Marshal(map[string]any{
+				"slug":       plan.Slug,
+				"name":       plan.Name,
+				"project_id": plan.ProjectID,
+			})
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		},
 	})
-	ev, err := insertEntityEvent(ctx, tx, domain.EventEntityPlan, plan.ID, projectID, domain.EventTypePlanCreated, string(payload))
-	if err != nil {
-		return domain.Plan{}, err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return domain.Plan{}, err
-	}
-	s.publishEvent(ctx, ev)
-	return plan, nil
 }
 
 // GetPlanBySlug resolves a plan by its (project_id, slug) pair. Errors with
@@ -71,7 +71,7 @@ func (s *Store) GetPlanBySlug(ctx context.Context, projectID int64, slug string)
 SELECT id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at
 FROM plans WHERE project_id = ? AND slug = ?
 `, projectID, slug)
-	plan, err := scanPlan(row)
+	plan, err := sqlutil.ScanRow(row, decodePlan)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Plan{}, domain.NewError(domain.ErrPlanNotFound, "plan not found",
@@ -89,7 +89,7 @@ func (s *Store) GetPlanByID(ctx context.Context, projectID, planID int64) (domai
 SELECT id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at
 FROM plans WHERE project_id = ? AND id = ?
 `, projectID, planID)
-	plan, err := scanPlan(row)
+	plan, err := sqlutil.ScanRow(row, decodePlan)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Plan{}, domain.NewError(domain.ErrPlanNotFound, "plan not found",
@@ -113,15 +113,7 @@ FROM plans WHERE project_id = ? ORDER BY id ASC
 	}
 	defer func() { _ = rows.Close() }()
 
-	var plans []domain.Plan
-	for rows.Next() {
-		plan, err := scanPlanRows(rows)
-		if err != nil {
-			return nil, err
-		}
-		plans = append(plans, plan)
-	}
-	return plans, rows.Err()
+	return sqlutil.ScanAll(rows, decodePlan)
 }
 
 // UpdatePlanGoalBody rewrites the plan's goal_body column and bumps
@@ -129,45 +121,41 @@ FROM plans WHERE project_id = ? ORDER BY id ASC
 // different project or does not exist; emits plan.goal_edited so
 // metrics.summary and the hooks engine see the edit.
 func (s *Store) UpdatePlanGoalBody(ctx context.Context, projectID, planID int64, goalBody string) (domain.Plan, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return domain.Plan{}, err
-	}
-	defer func() { _ = tx.Rollback() }()
+	return txMutateAndEmit(ctx, s, TxMutation[domain.Plan]{
+		Scope:      EventScopeEntity,
+		EntityType: domain.EventEntityPlan,
+		EventType:  domain.EventTypePlanGoalEdited,
+		ProjectID:  projectID,
+		EntityID:   func(p domain.Plan) int64 { return p.ID },
+		Mutate: func(ctx context.Context, tx *sql.Tx) (domain.Plan, error) {
+			var ownerProjectID int64
+			if err := tx.QueryRowContext(ctx, `SELECT project_id FROM plans WHERE id = ?`, planID).Scan(&ownerProjectID); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return domain.Plan{}, domain.NewError(domain.ErrPlanNotFound, "plan not found",
+						map[string]any{"plan_id": planID})
+				}
+				return domain.Plan{}, err
+			}
+			if ownerProjectID != projectID {
+				return domain.Plan{}, domain.NewError(domain.ErrPlanNotFound, "plan not found in active project",
+					map[string]any{"plan_id": planID, "project_id": projectID})
+			}
 
-	var ownerProjectID int64
-	if err := tx.QueryRowContext(ctx, `SELECT project_id FROM plans WHERE id = ?`, planID).Scan(&ownerProjectID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return domain.Plan{}, domain.NewError(domain.ErrPlanNotFound, "plan not found",
-				map[string]any{"plan_id": planID})
-		}
-		return domain.Plan{}, err
-	}
-	if ownerProjectID != projectID {
-		return domain.Plan{}, domain.NewError(domain.ErrPlanNotFound, "plan not found in active project",
-			map[string]any{"plan_id": planID, "project_id": projectID})
-	}
-
-	row := tx.QueryRowContext(ctx, `
+			row := tx.QueryRowContext(ctx, `
 UPDATE plans SET goal_body = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 RETURNING id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at
 `, goalBody, planID)
-	plan, err := scanPlan(row)
-	if err != nil {
-		return domain.Plan{}, err
-	}
-
-	payload, _ := json.Marshal(map[string]any{"length": len(goalBody)})
-	ev, err := insertEntityEvent(ctx, tx, domain.EventEntityPlan, planID, projectID, domain.EventTypePlanGoalEdited, string(payload))
-	if err != nil {
-		return domain.Plan{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return domain.Plan{}, err
-	}
-	s.publishEvent(ctx, ev)
-	return plan, nil
+			return sqlutil.ScanRow(row, decodePlan)
+		},
+		Payload: func(_ domain.Plan) (string, error) {
+			b, err := json.Marshal(map[string]any{"length": len(goalBody)})
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		},
+	})
 }
 
 // ListPlanTaskDependencies returns dependency edges where both
@@ -307,65 +295,68 @@ func (s *Store) AddPlanWave(ctx context.Context, projectID, planID int64, name s
 		return domain.PlanWave{}, domain.NewError(domain.ErrValidation, "wave name is required", nil)
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return domain.PlanWave{}, err
-	}
-	defer func() { _ = tx.Rollback() }()
+	return txMutateAndEmit(ctx, s, TxMutation[domain.PlanWave]{
+		Scope:      EventScopeEntity,
+		EntityType: domain.EventEntityPlan,
+		EventType:  domain.EventTypePlanWaveAdded,
+		ProjectID:  projectID,
+		// plan.wave_added is keyed by plan id (the wave id rides the
+		// payload) so dashboards can group additions by plan via
+		// entity_id without needing a follow-up join.
+		EntityID: func(_ domain.PlanWave) int64 { return planID },
+		Mutate: func(ctx context.Context, tx *sql.Tx) (domain.PlanWave, error) {
+			// Project-scope check before mutating: returns ErrPlanNotFound when
+			// the plan id belongs to a different project or simply does not exist.
+			var ownerProjectID int64
+			if err := tx.QueryRowContext(ctx, `SELECT project_id FROM plans WHERE id = ?`, planID).Scan(&ownerProjectID); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return domain.PlanWave{}, domain.NewError(domain.ErrPlanNotFound, "plan not found",
+						map[string]any{"plan_id": planID})
+				}
+				return domain.PlanWave{}, err
+			}
+			if ownerProjectID != projectID {
+				return domain.PlanWave{}, domain.NewError(domain.ErrPlanNotFound, "plan not found in active project",
+					map[string]any{"plan_id": planID, "project_id": projectID})
+			}
 
-	// Project-scope check before mutating: returns ErrPlanNotFound when
-	// the plan id belongs to a different project or simply does not exist.
-	var ownerProjectID int64
-	if err := tx.QueryRowContext(ctx, `SELECT project_id FROM plans WHERE id = ?`, planID).Scan(&ownerProjectID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return domain.PlanWave{}, domain.NewError(domain.ErrPlanNotFound, "plan not found",
-				map[string]any{"plan_id": planID})
-		}
-		return domain.PlanWave{}, err
-	}
-	if ownerProjectID != projectID {
-		return domain.PlanWave{}, domain.NewError(domain.ErrPlanNotFound, "plan not found in active project",
-			map[string]any{"plan_id": planID, "project_id": projectID})
-	}
+			if position <= 0 {
+				var maxPos sql.NullInt64
+				if err := tx.QueryRowContext(ctx, `SELECT MAX(position) FROM plan_waves WHERE plan_id = ?`, planID).Scan(&maxPos); err != nil {
+					return domain.PlanWave{}, err
+				}
+				position = int(maxPos.Int64) + 1
+			}
 
-	if position <= 0 {
-		var maxPos sql.NullInt64
-		if err := tx.QueryRowContext(ctx, `SELECT MAX(position) FROM plan_waves WHERE plan_id = ?`, planID).Scan(&maxPos); err != nil {
-			return domain.PlanWave{}, err
-		}
-		position = int(maxPos.Int64) + 1
-	}
-
-	row := tx.QueryRowContext(ctx, `
+			row := tx.QueryRowContext(ctx, `
 INSERT INTO plan_waves(plan_id, name, position) VALUES (?, ?, ?)
 RETURNING id, plan_id, name, position
 `, planID, name, position)
 
-	var wave domain.PlanWave
-	if err := row.Scan(&wave.ID, &wave.PlanID, &wave.Name, &wave.Position); err != nil {
-		if isUniqueViolation(err) {
-			return domain.PlanWave{}, domain.NewError(domain.ErrValidation,
-				"wave position already taken",
-				map[string]any{"plan_id": planID, "position": position})
-		}
-		return domain.PlanWave{}, err
-	}
-
-	payload, _ := json.Marshal(map[string]any{
-		"wave_id":  wave.ID,
-		"name":     wave.Name,
-		"position": wave.Position,
+			var wave domain.PlanWave
+			if err := row.Scan(&wave.ID, &wave.PlanID, &wave.Name, &wave.Position); err != nil {
+				var ce *sqlutil.ConstraintError
+				if mapped := sqlutil.MapSQLiteError(err); errors.As(mapped, &ce) && ce.Violation == sqlutil.ViolationUnique {
+					return domain.PlanWave{}, domain.NewError(domain.ErrValidation,
+						"wave position already taken",
+						map[string]any{"plan_id": planID, "position": position})
+				}
+				return domain.PlanWave{}, err
+			}
+			return wave, nil
+		},
+		Payload: func(wave domain.PlanWave) (string, error) {
+			b, err := json.Marshal(map[string]any{
+				"wave_id":  wave.ID,
+				"name":     wave.Name,
+				"position": wave.Position,
+			})
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		},
 	})
-	ev, err := insertEntityEvent(ctx, tx, domain.EventEntityPlan, planID, projectID, domain.EventTypePlanWaveAdded, string(payload))
-	if err != nil {
-		return domain.PlanWave{}, err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return domain.PlanWave{}, err
-	}
-	s.publishEvent(ctx, ev)
-	return wave, nil
 }
 
 // ListPlanTasks returns every task attached to a plan, ordered by
@@ -647,8 +638,12 @@ WHERE project_id = ? AND id = ?
 		return domain.Task{}, false, err
 	}
 
-	assignPayload, _ := json.Marshal(map[string]any{"assignee": agentModel, "source": "plans.claim_next"})
-	if _, err := insertEntityEvent(ctx, conn, domain.EventEntityTask, taskID, projectID, domain.EventTypeTaskAssigned, string(assignPayload)); err != nil {
+	assignPayload, err := json.Marshal(map[string]any{"assignee": agentModel, "source": "plans.claim_next"})
+	if err != nil {
+		return domain.Task{}, false, err
+	}
+	assignEvent, err := insertEntityEvent(ctx, conn, domain.EventEntityTask, taskID, projectID, domain.EventTypeTaskAssigned, string(assignPayload))
+	if err != nil {
 		return domain.Task{}, false, err
 	}
 
@@ -657,6 +652,16 @@ WHERE project_id = ? AND id = ?
 	}
 	committed = true
 	closeConn()
+
+	// Publish post-commit. Pre-fix the row landed on disk but the
+	// bus stayed silent — TUI live views and hooks consumers never
+	// observed the claim until the next refresh. ClaimNextPlanTask
+	// keeps its hand-rolled IMMEDIATE-tx shape (pinned sql.Conn,
+	// per-conn busy_timeout reapply) because txMutateAndEmit uses
+	// BeginTx which would lose the reserved-lock serialisation under
+	// concurrent claims; the publish step is the one piece the
+	// inline path always forgot.
+	s.publishEvent(ctx, assignEvent)
 
 	task, err := s.taskByID(ctx, projectID, taskID, buckets)
 	if err != nil {
@@ -676,28 +681,29 @@ WHERE project_id = ? AND id = ?
 func (s *Store) AssignTask(ctx context.Context, projectID, taskID int64, assignee, source string, buckets domain.BucketResolver) (domain.Task, domain.Event, error) {
 	assignee = strings.TrimSpace(assignee)
 
+	// The no-op path (new == previous) bypasses the lifecycle helper:
+	// it neither mutates rows nor emits an event, so threading it
+	// through txMutateAndEmit would force a synthetic "no publish"
+	// branch the helper does not (and should not) model. Handled
+	// inline with its own small tx instead.
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.Task{}, domain.Event{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
-
 	var prev sql.NullString
 	if err := tx.QueryRowContext(ctx, `SELECT assigned_to FROM tasks WHERE project_id = ? AND id = ?`, projectID, taskID).Scan(&prev); err != nil {
+		_ = tx.Rollback()
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Task{}, domain.Event{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project",
 				map[string]any{"task_id": taskID, "project_id": projectID})
 		}
 		return domain.Task{}, domain.Event{}, err
 	}
-	prevStr := ""
-	if prev.Valid {
-		prevStr = prev.String
-	}
-
+	prevStr := sqlutil.NullStringOr(prev, "")
 	if prevStr == assignee {
 		task, terr := s.taskByIDTx(ctx, tx, projectID, taskID, buckets)
 		if terr != nil {
+			_ = tx.Rollback()
 			return domain.Task{}, domain.Event{}, terr
 		}
 		if err := tx.Commit(); err != nil {
@@ -705,38 +711,69 @@ func (s *Store) AssignTask(ctx context.Context, projectID, taskID int64, assigne
 		}
 		return task, domain.Event{}, nil
 	}
+	// Discard the probe tx; the helper opens a fresh one for the
+	// mutate-and-emit cycle. The probe never wrote anything, so
+	// rollback is cost-free.
+	_ = tx.Rollback()
 
-	var newVal any
-	if assignee != "" {
-		newVal = assignee
+	type assignResult struct {
+		task  domain.Task
+		event domain.Event
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE tasks SET assigned_to = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND id = ?`, newVal, projectID, taskID); err != nil {
-		return domain.Task{}, domain.Event{}, err
-	}
-
-	var eventType string
-	var payload []byte
+	eventType := domain.EventTypeTaskAssigned
 	if assignee == "" {
 		eventType = domain.EventTypeTaskUnassigned
-		payload, _ = json.Marshal(map[string]any{"former_assignee": prevStr, "source": source})
-	} else {
-		eventType = domain.EventTypeTaskAssigned
-		payload, _ = json.Marshal(map[string]any{"assignee": assignee, "source": source})
 	}
-	ev, err := insertEntityEvent(ctx, tx, domain.EventEntityTask, taskID, projectID, eventType, string(payload))
+	out, err := txMutateAndEmit(ctx, s, TxMutation[assignResult]{
+		Scope:      EventScopeEntity,
+		EntityType: domain.EventEntityTask,
+		EventType:  eventType,
+		ProjectID:  projectID,
+		EntityID:   func(_ assignResult) int64 { return taskID },
+		Mutate: func(ctx context.Context, tx *sql.Tx) (assignResult, error) {
+			var newVal any
+			if assignee != "" {
+				newVal = assignee
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE tasks SET assigned_to = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND id = ?`, newVal, projectID, taskID); err != nil {
+				return assignResult{}, err
+			}
+			task, err := s.taskByIDTx(ctx, tx, projectID, taskID, buckets)
+			if err != nil {
+				return assignResult{}, err
+			}
+			return assignResult{task: task}, nil
+		},
+		Payload: func(_ assignResult) (string, error) {
+			var payload []byte
+			var err error
+			if assignee == "" {
+				payload, err = json.Marshal(map[string]any{"former_assignee": prevStr, "source": source})
+			} else {
+				payload, err = json.Marshal(map[string]any{"assignee": assignee, "source": source})
+			}
+			if err != nil {
+				return "", err
+			}
+			return string(payload), nil
+		},
+	})
 	if err != nil {
 		return domain.Task{}, domain.Event{}, err
 	}
-
-	task, err := s.taskByIDTx(ctx, tx, projectID, taskID, buckets)
-	if err != nil {
-		return domain.Task{}, domain.Event{}, err
+	// The helper publishes the event itself; callers also expect the
+	// event back. Reconstruct it from the same shape the helper
+	// emitted (entity_type='task', entity_id=taskID, event_type as
+	// computed) — the persisted row carries server-stamped id/created_at
+	// that the existing callers don't read, so the envelope returned
+	// here matches the prior contract.
+	out.event = domain.Event{
+		EntityType: domain.EventEntityTask,
+		EntityID:   taskID,
+		ProjectID:  projectID,
+		EventType:  eventType,
 	}
-	if err := tx.Commit(); err != nil {
-		return domain.Task{}, domain.Event{}, err
-	}
-	s.publishEvent(ctx, ev)
-	return task, ev, nil
+	return out.task, out.event, nil
 }
 
 // MaybeFinalizePlanForTask transitions the task's owning plan to
@@ -775,59 +812,77 @@ func (s *Store) MaybeFinalizePlanForTask(ctx context.Context, projectID, taskID 
 		return false, nil
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return false, err
+	// errSkipFinalize is a sentinel translated to (false, nil) below —
+	// signals 'gating check inside Mutate rejected the transition, roll
+	// the tx back without emitting an event'. The helper's contract is
+	// always-emit-on-success; a skip path needs an out-of-band signal.
+	type finalizeResult struct {
+		// active is the active-task count snapshot used in the
+		// plan.done payload. Captured pre-transition so the payload
+		// reflects what the finaliser saw.
+		active int
 	}
-	defer func() { _ = tx.Rollback() }()
+	errSkipFinalize := errors.New("skip finalize")
+	_, err := txMutateAndEmit(ctx, s, TxMutation[finalizeResult]{
+		Scope:      EventScopeEntity,
+		EntityType: domain.EventEntityPlan,
+		EventType:  domain.EventTypePlanDone,
+		ProjectID:  projectID,
+		EntityID:   func(_ finalizeResult) int64 { return planID.Int64 },
+		Mutate: func(ctx context.Context, tx *sql.Tx) (finalizeResult, error) {
+			var status string
+			if err := tx.QueryRowContext(ctx, `SELECT status FROM plans WHERE id = ? AND project_id = ?`, planID.Int64, projectID).Scan(&status); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return finalizeResult{}, errSkipFinalize
+				}
+				return finalizeResult{}, err
+			}
+			if status != "active" {
+				return finalizeResult{}, errSkipFinalize
+			}
 
-	var status string
-	if err := tx.QueryRowContext(ctx, `SELECT status FROM plans WHERE id = ? AND project_id = ?`, planID.Int64, projectID).Scan(&status); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+			var active, pending int
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM tasks WHERE plan_id = ? AND project_id = ? AND state = 'active'`, planID.Int64, projectID).Scan(&active); err != nil {
+				return finalizeResult{}, err
+			}
+			if active == 0 {
+				return finalizeResult{}, errSkipFinalize
+			}
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM tasks WHERE plan_id = ? AND project_id = ? AND state = 'active' AND COALESCE(bucket_id, 0) <> ?`, planID.Int64, projectID, finalBucket.ID).Scan(&pending); err != nil {
+				return finalizeResult{}, err
+			}
+			if pending > 0 {
+				return finalizeResult{}, errSkipFinalize
+			}
+
+			res, err := tx.ExecContext(ctx, `UPDATE plans SET status = 'done', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'active'`, planID.Int64)
+			if err != nil {
+				return finalizeResult{}, err
+			}
+			changed, err := res.RowsAffected()
+			if err != nil {
+				return finalizeResult{}, err
+			}
+			if changed == 0 {
+				// Lost a race against another finaliser — already transitioned.
+				return finalizeResult{}, errSkipFinalize
+			}
+			return finalizeResult{active: active}, nil
+		},
+		Payload: func(r finalizeResult) (string, error) {
+			b, err := json.Marshal(map[string]any{"total": r.active})
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		},
+	})
+	if err != nil {
+		if errors.Is(err, errSkipFinalize) {
 			return false, nil
 		}
 		return false, err
 	}
-	if status != "active" {
-		return false, nil
-	}
-
-	var active, pending int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM tasks WHERE plan_id = ? AND project_id = ? AND state = 'active'`, planID.Int64, projectID).Scan(&active); err != nil {
-		return false, err
-	}
-	if active == 0 {
-		return false, nil
-	}
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM tasks WHERE plan_id = ? AND project_id = ? AND state = 'active' AND COALESCE(bucket_id, 0) <> ?`, planID.Int64, projectID, finalBucket.ID).Scan(&pending); err != nil {
-		return false, err
-	}
-	if pending > 0 {
-		return false, nil
-	}
-
-	res, err := tx.ExecContext(ctx, `UPDATE plans SET status = 'done', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'active'`, planID.Int64)
-	if err != nil {
-		return false, err
-	}
-	changed, err := res.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	if changed == 0 {
-		// Lost a race against another finaliser — already transitioned.
-		return false, nil
-	}
-
-	payload, _ := json.Marshal(map[string]any{"total": active})
-	ev, err := insertEntityEvent(ctx, tx, domain.EventEntityPlan, planID.Int64, projectID, domain.EventTypePlanDone, string(payload))
-	if err != nil {
-		return false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	s.publishEvent(ctx, ev)
 	return true, nil
 }
 
@@ -891,48 +946,23 @@ RETURNING id, entity_type, entity_id, project_id, event_type, COALESCE(body, '')
 	return event, nil
 }
 
-func scanPlan(row *sql.Row) (domain.Plan, error) {
+// decodePlan reads the canonical `plans` SELECT column list into a
+// domain.Plan. The closure shape lets the QueryRow path
+// (sqlutil.ScanRow) and the QueryContext path (sqlutil.ScanAll) share
+// the same column list, so the historic scanPlan / scanPlanRows pair
+// can no longer drift apart silently. Column order MUST match every
+// `SELECT id, project_id, slug, name, goal_body, status, created_at,
+// updated_at, completed_at FROM plans ...` in this file.
+func decodePlan(scan func(...any) error) (domain.Plan, error) {
 	var plan domain.Plan
 	var goalBody sql.NullString
 	var completedAt sql.NullString
-	if err := row.Scan(&plan.ID, &plan.ProjectID, &plan.Slug, &plan.Name,
+	if err := scan(&plan.ID, &plan.ProjectID, &plan.Slug, &plan.Name,
 		&goalBody, &plan.Status, &plan.CreatedAt, &plan.UpdatedAt, &completedAt); err != nil {
 		return domain.Plan{}, err
 	}
-	if goalBody.Valid {
-		plan.GoalBody = goalBody.String
-	}
-	if completedAt.Valid {
-		plan.CompletedAt = completedAt.String
-	}
+	plan.GoalBody = sqlutil.NullStringOr(goalBody, "")
+	plan.CompletedAt = sqlutil.NullStringOr(completedAt, "")
 	return plan, nil
 }
 
-func scanPlanRows(rows *sql.Rows) (domain.Plan, error) {
-	var plan domain.Plan
-	var goalBody sql.NullString
-	var completedAt sql.NullString
-	if err := rows.Scan(&plan.ID, &plan.ProjectID, &plan.Slug, &plan.Name,
-		&goalBody, &plan.Status, &plan.CreatedAt, &plan.UpdatedAt, &completedAt); err != nil {
-		return domain.Plan{}, err
-	}
-	if goalBody.Valid {
-		plan.GoalBody = goalBody.String
-	}
-	if completedAt.Valid {
-		plan.CompletedAt = completedAt.String
-	}
-	return plan, nil
-}
-
-func isUniqueViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-	// modernc.org/sqlite encodes UNIQUE violations in the error message as
-	// "UNIQUE constraint failed:" — string match is the only portable way
-	// without dragging the driver-specific error type into the storage
-	// layer. errors.Is on driver-specific sentinels would couple this
-	// package to the build tag.
-	return strings.Contains(err.Error(), "UNIQUE constraint failed")
-}

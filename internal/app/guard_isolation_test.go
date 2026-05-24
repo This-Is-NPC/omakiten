@@ -200,6 +200,9 @@ func (r *isolationRepo) CreateTask(context.Context, int64, string, string, domai
 func (r *isolationRepo) ListTasks(context.Context, int64, domain.TaskFilter, domain.BucketResolver) ([]domain.Task, error) {
 	return nil, nil
 }
+func (r *isolationRepo) GetTaskByID(_ context.Context, projectID, taskID int64, _ domain.BucketResolver) (domain.Task, error) {
+	return domain.Task{ID: taskID, ProjectID: projectID}, nil
+}
 func (r *isolationRepo) MoveTask(_ context.Context, projectID, taskID int64, _ string, _ domain.BucketResolver) (domain.Task, error) {
 	r.moveCalls.Add(1)
 	return domain.Task{ID: taskID, ProjectID: projectID}, nil
