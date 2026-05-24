@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/sqlite/sqlutil"
 )
 
 // CreatePlan inserts a plan and emits plan.created in the same transaction.
@@ -701,10 +702,7 @@ func (s *Store) AssignTask(ctx context.Context, projectID, taskID int64, assigne
 		}
 		return domain.Task{}, domain.Event{}, err
 	}
-	prevStr := ""
-	if prev.Valid {
-		prevStr = prev.String
-	}
+	prevStr := sqlutil.NullStringOr(prev, "")
 	if prevStr == assignee {
 		task, terr := s.taskByIDTx(ctx, tx, projectID, taskID, buckets)
 		if terr != nil {
@@ -959,12 +957,8 @@ func scanPlan(row *sql.Row) (domain.Plan, error) {
 		&goalBody, &plan.Status, &plan.CreatedAt, &plan.UpdatedAt, &completedAt); err != nil {
 		return domain.Plan{}, err
 	}
-	if goalBody.Valid {
-		plan.GoalBody = goalBody.String
-	}
-	if completedAt.Valid {
-		plan.CompletedAt = completedAt.String
-	}
+	plan.GoalBody = sqlutil.NullStringOr(goalBody, "")
+	plan.CompletedAt = sqlutil.NullStringOr(completedAt, "")
 	return plan, nil
 }
 
@@ -976,12 +970,8 @@ func scanPlanRows(rows *sql.Rows) (domain.Plan, error) {
 		&goalBody, &plan.Status, &plan.CreatedAt, &plan.UpdatedAt, &completedAt); err != nil {
 		return domain.Plan{}, err
 	}
-	if goalBody.Valid {
-		plan.GoalBody = goalBody.String
-	}
-	if completedAt.Valid {
-		plan.CompletedAt = completedAt.String
-	}
+	plan.GoalBody = sqlutil.NullStringOr(goalBody, "")
+	plan.CompletedAt = sqlutil.NullStringOr(completedAt, "")
 	return plan, nil
 }
 
