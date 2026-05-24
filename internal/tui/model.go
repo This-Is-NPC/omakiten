@@ -395,14 +395,18 @@ func (m *Model) refreshAfterViewChangeCmd(prev navState) tea.Cmd {
 // distinguish the async view-change refresh from every other cmd a key
 // dispatch returns (write IO, picker pickup, tick reschedule) without
 // having to execute the cmd to inspect its message type. Production
-// code never reads this map.
+// code never reads this map; applyRefreshAfterViewChange does call
+// Delete via the cmd pointer carried on the message so a long-running
+// TUI session does not leak one entry per nav.
 var viewChangeRefreshRegistry sync.Map
 
-func registerViewChangeRefreshCmd(cmd tea.Cmd) {
+func registerViewChangeRefreshCmd(cmd tea.Cmd) uintptr {
 	if cmd == nil {
-		return
+		return 0
 	}
-	viewChangeRefreshRegistry.Store(reflect.ValueOf(cmd).Pointer(), struct{}{})
+	key := reflect.ValueOf(cmd).Pointer()
+	viewChangeRefreshRegistry.Store(key, struct{}{})
+	return key
 }
 
 func isViewChangeRefreshCmd(cmd tea.Cmd) bool {
@@ -440,8 +444,14 @@ func (m *Model) refreshHeavyAfterViewChangeCmd() tea.Cmd {
 	project := m.project
 	sort := domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order}
 	archived := m.includeArchived
-	cmd := tea.Cmd(func() tea.Msg {
-		result := refreshAfterViewChangeMsg{preservedTaskID: preservedTaskID, langs: langs}
+	// Self-referential capture: the closure observes its own cmd value
+	// so the msg carries the registry key, letting
+	// applyRefreshAfterViewChange Delete the entry once the fold runs.
+	// Without that, every nav would add a new sync.Map entry that never
+	// drops.
+	var cmd tea.Cmd
+	cmd = tea.Cmd(func() tea.Msg {
+		result := refreshAfterViewChangeMsg{preservedTaskID: preservedTaskID, langs: langs, cmdKey: reflect.ValueOf(cmd).Pointer()}
 		s, err := query.Snapshot(ctx, project, sort, app.SnapshotOptions{IncludeArchived: archived})
 		if err != nil {
 			result.err = err
@@ -474,12 +484,20 @@ type refreshAfterViewChangeMsg struct {
 	langs           config.LanguageSettings
 	preservedTaskID int64
 	err             error
+	// cmdKey carries the function-pointer the worker cmd was registered
+	// under so applyRefreshAfterViewChange can Delete the registry entry
+	// on fold. Zero when the msg was synthesised by code that bypassed
+	// refreshHeavyAfterViewChangeCmd (e.g. test helpers).
+	cmdKey uintptr
 }
 
 // applyRefreshAfterViewChange folds the worker's result into the model.
 // Pure assignment — no IO — so it is safe to run on the Update
 // goroutine even when the worker is still running a subsequent tick.
 func (m *Model) applyRefreshAfterViewChange(r refreshAfterViewChangeMsg) {
+	if r.cmdKey != 0 {
+		viewChangeRefreshRegistry.Delete(r.cmdKey)
+	}
 	if !r.snapValid {
 		return
 	}

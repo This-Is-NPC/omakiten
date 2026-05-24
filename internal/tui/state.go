@@ -558,8 +558,18 @@ type Model struct {
 	// Cell view pass share a single render per keystroke instead of
 	// rebuilding the lipgloss-styled comment / system-event cards on
 	// each call. Keyed on (taskID, cursor, commentCardWidth, per-event
-	// id+type+bodyLen).
+	// id+type+bodyLen+sorted tag-id checksum).
 	activityCardsCache activityCardsCacheEntry
+
+	// taskDetailsBoxHeightCache memoises lipgloss.Height(renderTaskDetails-
+	// Box(...)) so subtasksViewportRows + taskFocusedSectionOffset stop
+	// re-rendering the form on every j/k keystroke in stacked layout.
+	// Keyed on (taskID, formValueWidth, blockerCount, tagCount,
+	// title/description lengths, bucket, priority) so any model field
+	// that changes the rendered form structure bumps the key. *Model
+	// handlers (syncSubtaskScrollToCursor) warm the cache; the
+	// value-receiver render path reads it.
+	taskDetailsBoxHeightCache taskDetailsBoxHeightCacheEntry
 
 	// planNetworkRowsCache memoises planNetworkBuildRows() across the
 	// 11 invocation sites in handlePlanNetworkKey (j/k/h/l/space/pgup/

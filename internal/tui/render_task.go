@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"encoding/binary"
 	"fmt"
+	"hash/fnv"
 	"sort"
 	"strconv"
 	"strings"
@@ -1158,8 +1160,7 @@ func (m Model) taskFocusedSectionOffset() int {
 	if layout.kind != taskViewStacked {
 		return 0
 	}
-	details := m.renderTaskDetailsBox(task, layout)
-	formHeight := lipgloss.Height(details)
+	formHeight := m.cachedTaskDetailsBoxHeight(task, layout)
 	if m.taskFocus == taskFocusSubtasks {
 		// "\n\n" between sections yields one extra blank line between
 		// the form box's last row and the sub-tasks box's first row.
@@ -1451,6 +1452,11 @@ func (m Model) taskBreadcrumbTrail() string {
 // section separator — otherwise the cursor walks past the outer
 // viewport slice without anything scrolling and the user sees no
 // movement. Mirrors activityViewportLines for the side-by-side case.
+//
+// The form height is read through taskDetailsBoxHeightCache instead
+// of re-rendering the form on every call — syncSubtaskScrollToCursor
+// fires this on every j/k keystroke, and the previous render-to-measure
+// pattern allocated a fresh lipgloss form per call.
 func (m Model) subtasksViewportRows() int {
 	if m.height <= 0 {
 		return 0
@@ -1466,8 +1472,7 @@ func (m Model) subtasksViewportRows() int {
 	if task, ok := m.activeTask(); ok {
 		layout := m.computeTaskViewLayout(m.availableWidth(), true)
 		if layout.kind == taskViewStacked {
-			details := m.renderTaskDetailsBox(task, layout)
-			formHeight := lipgloss.Height(details)
+			formHeight := m.cachedTaskDetailsBoxHeight(task, layout)
 			// +1 = blank line between form and sub-tasks sections.
 			chrome += formHeight + 1
 		}
@@ -1478,6 +1483,76 @@ func (m Model) subtasksViewportRows() int {
 		return 0
 	}
 	return rows
+}
+
+// taskDetailsBoxHeightCacheEntry holds the memoised form box height.
+// Lives on the Model so the value-copy carried into View() by the
+// Bubbletea loop preserves the cache populated by Update handlers.
+type taskDetailsBoxHeightCacheEntry struct {
+	valid  bool
+	key    uint64
+	height int
+}
+
+// taskDetailsBoxHeightKey fingerprints every model field that changes
+// the rendered form box's vertical extent: the active task identity,
+// its title / description bytes, the formValueWidth (description wrap),
+// blocker + tag counts, and the bucket / priority labels (each owns one
+// row). The cache miss path renders once via renderTaskDetailsBox and
+// stashes the result; later calls with identical fingerprints
+// short-circuit to the stored height with no lipgloss work.
+func (m Model) taskDetailsBoxHeightKey(task domain.Task, layout taskViewLayout) uint64 {
+	h := fnv.New64a()
+	var buf [8]byte
+	binary.LittleEndian.PutUint64(buf[:], uint64(task.ID))
+	h.Write(buf[:])
+	binary.LittleEndian.PutUint64(buf[:], uint64(layout.formValueWidth))
+	h.Write(buf[:])
+	binary.LittleEndian.PutUint64(buf[:], uint64(len(m.blockersForTask(task.ID))))
+	h.Write(buf[:])
+	binary.LittleEndian.PutUint64(buf[:], uint64(len(m.tagsForTask(task.ID))))
+	h.Write(buf[:])
+	binary.LittleEndian.PutUint64(buf[:], uint64(m.commentCount(task.ID)))
+	h.Write(buf[:])
+	h.Write([]byte(task.Title))
+	h.Write([]byte{0})
+	h.Write([]byte(task.Description))
+	h.Write([]byte{0})
+	h.Write([]byte(task.BucketKey))
+	h.Write([]byte{0})
+	binary.LittleEndian.PutUint64(buf[:], uint64(task.Priority))
+	h.Write(buf[:])
+	return h.Sum64()
+}
+
+// cachedTaskDetailsBoxHeight is the value-receiver entry point used by
+// the View() render path. On cache hit it returns the stored height
+// with no work; on miss it falls through to a fresh render-and-measure
+// but cannot persist (value copy). *Model handlers should warm the
+// cache via primeTaskDetailsBoxHeight before View() runs so the slow
+// path here is taken at most once per (taskID, width, …) tuple.
+func (m Model) cachedTaskDetailsBoxHeight(task domain.Task, layout taskViewLayout) int {
+	key := m.taskDetailsBoxHeightKey(task, layout)
+	if m.taskDetailsBoxHeightCache.valid && m.taskDetailsBoxHeightCache.key == key {
+		return m.taskDetailsBoxHeightCache.height
+	}
+	return lipgloss.Height(m.renderTaskDetailsBox(task, layout))
+}
+
+// primeTaskDetailsBoxHeight is the *Model variant that writes the
+// cached entry so subsequent value-receiver reads (including the
+// View() pass) short-circuit. Called from Update handlers that need
+// the form height for scroll math (syncSubtaskScrollToCursor,
+// applyTaskFocus via taskFocusedSectionOffset) so the heavy render
+// happens at most once per Update→View tick instead of three times.
+func (m *Model) primeTaskDetailsBoxHeight(task domain.Task, layout taskViewLayout) int {
+	key := m.taskDetailsBoxHeightKey(task, layout)
+	if m.taskDetailsBoxHeightCache.valid && m.taskDetailsBoxHeightCache.key == key {
+		return m.taskDetailsBoxHeightCache.height
+	}
+	height := lipgloss.Height(m.renderTaskDetailsBox(task, layout))
+	m.taskDetailsBoxHeightCache = taskDetailsBoxHeightCacheEntry{valid: true, key: key, height: height}
+	return height
 }
 
 // (border colors stay neutral on purpose — focus is signalled by the
@@ -1576,6 +1651,18 @@ func (m *Model) syncSubtaskScrollToCursor() {
 		return
 	}
 	const cardRowsEstimate = 4
+
+	// Warm taskDetailsBoxHeightCache before the value-receiver scroll
+	// math reads it — both subtasksViewportRows + taskFocusedSection-
+	// Offset depend on the cached form height in stacked layout, and
+	// without this prime the first call would render the form once
+	// per keystroke.
+	if task, ok := m.activeTask(); ok {
+		layoutPrime := m.computeTaskViewLayout(m.availableWidth(), true)
+		if layoutPrime.kind == taskViewStacked {
+			m.primeTaskDetailsBoxHeight(task, layoutPrime)
+		}
+	}
 
 	viewport := m.subtasksViewportRows()
 	if viewport > 0 {
