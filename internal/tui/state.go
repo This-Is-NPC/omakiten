@@ -524,10 +524,14 @@ type Model struct {
 	logsList  linelist.Model
 	tableList linelist.Model
 	graphList linelist.Model
-	// graphCursor is the authoritative selected-node cursor;
-	// graphList.WithCursor receives the focused node's LINE inside
-	// the dataRows slice at sync time.
-	graphCursor int
+	// graphCursor owns the selected-node cursor as a cursorwindow.Model
+	// indexed into the selectable-row slice (sel) produced by
+	// dagSelectableIndices. graphList stays as the linelist for line-
+	// based scroll math because the DAG renderer interleaves
+	// non-selectable connector lines with selectable nodes — the two
+	// state holders sit on different units (selectable index vs raw
+	// line offset) by design.
+	graphCursor cursorwindow.Model
 
 	// plans holds the project's plan rollups for the Tasks › plans sub-tab
 	// list view. Populated by refresh() via PlanService.ListRollups.

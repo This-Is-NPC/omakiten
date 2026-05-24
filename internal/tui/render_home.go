@@ -179,7 +179,7 @@ func (m *Model) selectHomeProject(project domain.Project) error {
 	m.selected = 0
 	m.tableList = m.tableList.WithLines(nil)
 	m.graphList = m.graphList.WithLines(nil)
-	m.graphCursor = 0
+	m.graphCursor = m.graphCursor.WithItemCount(0)
 	m.logsList = m.logsList.WithLines(nil)
 	m.logsSelected = 0
 	m.status = ""

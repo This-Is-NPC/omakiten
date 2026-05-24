@@ -82,6 +82,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		logsList:             linelist.New(),
 		tableList:            linelist.New(),
 		graphList:            linelist.New(),
+		graphCursor:          cursorwindow.New(0),
 		plansCursor:          cursorwindow.New(0),
 		settingsGeneralLines: linelist.New(),
 	}
