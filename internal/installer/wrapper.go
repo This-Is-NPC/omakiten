@@ -129,7 +129,12 @@ func installBlockInto(rcPath, block string) error {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("read %s: %w", rcPath, err)
 		}
-		if err := os.MkdirAll(filepath.Dir(rcPath), 0o755); err != nil {
+		// 0700 — the rc file lives under $HOME, contains shell wiring
+		// the installer wrote on the user's behalf, and should not be
+		// readable by other accounts on a shared box. The narrower
+		// mode also covers `.profile`-adjacent files that hold per-
+		// user PATH overrides.
+		if err := os.MkdirAll(filepath.Dir(rcPath), 0o700); err != nil {
 			return fmt.Errorf("mkdir for %s: %w", rcPath, err)
 		}
 		existing = nil
@@ -145,7 +150,9 @@ func installBlockInto(rcPath, block string) error {
 		updated = buf.Bytes()
 	}
 
-	if err := os.WriteFile(rcPath, updated, 0o644); err != nil {
+	// 0600 — same rationale as the parent directory: shell wiring +
+	// user-specific PATH overrides should not be world-readable.
+	if err := os.WriteFile(rcPath, updated, 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", rcPath, err)
 	}
 	return nil
@@ -170,7 +177,10 @@ func RemoveWrapper(rcPath string) (removed bool, err error) {
 	if bytes.Equal(updated, existing) {
 		return false, nil
 	}
-	if err := os.WriteFile(rcPath, updated, 0o644); err != nil {
+	// Match WriteWrapper's 0o600 — strip-and-rewrite should not
+	// silently widen permissions on a file the installer originally
+	// wrote at 0o600.
+	if err := os.WriteFile(rcPath, updated, 0o600); err != nil {
 		return false, fmt.Errorf("write %s: %w", rcPath, err)
 	}
 	return true, nil
