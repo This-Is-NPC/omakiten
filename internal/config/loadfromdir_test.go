@@ -36,11 +36,11 @@ func writeLoadFromDirFile(t *testing.T, dir, name, body string) string {
 // fixedDecoder ignores the raw bytes and returns an item keyed by the
 // filename slug. Good enough for exercising traversal + collision logic
 // without dragging the domain validators in.
-func fixedDecoder() func(path string, raw []byte) (loadFromDirItem, error) {
-	return func(path string, _ []byte) (loadFromDirItem, error) {
+func fixedDecoder() func(path string, raw []byte, isCustom bool) (loadFromDirItem, error) {
+	return func(path string, _ []byte, isCustom bool) (loadFromDirItem, error) {
 		base := filepath.Base(path)
 		slug := strings.TrimSuffix(base, filepath.Ext(base))
-		return loadFromDirItem{Slug: slug, Source: path}, nil
+		return loadFromDirItem{Slug: slug, Source: path, IsCustom: isCustom}, nil
 	}
 }
 
@@ -217,7 +217,7 @@ func TestLoadFromDir_decoderErrorPropagates(t *testing.T) {
 	_, _, err := LoadFromDir(dir, LoadOptions[loadFromDirItem]{
 		Suffix:       ".yaml",
 		MaxFileBytes: 1024,
-		Decode: func(path string, _ []byte) (loadFromDirItem, error) {
+		Decode: func(path string, _ []byte, _ bool) (loadFromDirItem, error) {
 			return loadFromDirItem{}, sentinel
 		},
 		SlugOf:    func(item loadFromDirItem) string { return item.Slug },
