@@ -491,14 +491,5 @@ func (s *TaskService) Unarchive(ctx context.Context, project domain.ProjectConte
 }
 
 func (s *TaskService) taskByID(ctx context.Context, project domain.ProjectContext, taskID int64) (domain.Task, error) {
-	tasks, err := s.repo.ListTasks(ctx, project.ID, domain.TaskFilter{IncludeArchived: true}, s.snap)
-	if err != nil {
-		return domain.Task{}, err
-	}
-	for _, t := range tasks {
-		if t.ID == taskID {
-			return t, nil
-		}
-	}
-	return domain.Task{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID})
+	return s.repo.GetTaskByID(ctx, project.ID, taskID, s.snap)
 }

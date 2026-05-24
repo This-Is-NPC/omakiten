@@ -361,6 +361,15 @@ func assignParentID(task *domain.Task, n sql.NullInt64) {
 	task.ParentID = &id
 }
 
+// GetTaskByID is the port-facing point lookup the app's TaskService
+// reads through. Mirrors taskByID's body but exported so the
+// TaskRepository interface contract can name it; internal callers
+// (UpdateTask post-write read) still use taskByID to keep the
+// hexagonal direction inward.
+func (s *Store) GetTaskByID(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (domain.Task, error) {
+	return s.taskByID(ctx, projectID, taskID, buckets)
+}
+
 func (s *Store) taskByID(ctx context.Context, projectID, taskID int64, buckets domain.BucketResolver) (domain.Task, error) {
 	row := s.db.QueryRowContext(ctx, `
 SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at, tasks.parent_id
