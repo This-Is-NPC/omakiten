@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -35,7 +34,15 @@ func SaveBundle(path string, bundle Bundle) error {
 	if err != nil {
 		return err
 	}
-	header := readHeaderComments(path)
+	header, err := readHeaderComments(path)
+	if err != nil {
+		// Size-cap overflow is the one surfaced failure — silently
+		// stamping a saved file on top of an oversize on-disk wiring
+		// would mask the operator's pathological config. Other read
+		// errors (perm denied, IO etc.) still silently degrade inside
+		// readHeaderComments so the save proceeds.
+		return err
+	}
 	if len(header) > 0 {
 		data = append(header, data...)
 	}
@@ -44,18 +51,27 @@ func SaveBundle(path string, bundle Bundle) error {
 
 // readHeaderComments returns the leading comment block (lines that are
 // either blank or start with `#`, up to the first content line) from
-// the file at path. Returns nil when the file does not exist yet (a
-// fresh wiring is being seeded) or when the file has no header.
-func readHeaderComments(path string) []byte {
-	existing, err := os.ReadFile(path)
+// the file at path. Returns (nil, nil) when the file does not exist
+// yet (a fresh wiring is being seeded) or when an opaque read failure
+// hits the preservation path. The only error surfaced is the bounded
+// reader's tooLargeError — a wiring file that already exceeds
+// MaxWiringFileBytes is a pathological state the saver should refuse
+// to compound, since the load path (W5 #220) already rejects bundles
+// past that cap.
+func readHeaderComments(path string) ([]byte, error) {
+	existing, err := readFileBounded(path, MaxWiringFileBytes)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil
+			return nil, nil
 		}
-		// Read failure: skip the preservation path rather than blocking
-		// the write. The atomic WriteAtomic below still surfaces real
-		// permission errors on the destination.
-		return nil
+		if IsConfigTooLarge(err) {
+			return nil, err
+		}
+		// Other read failures (perm denied, mid-read IO) skip the
+		// preservation path rather than blocking the write. The atomic
+		// WriteAtomic below still surfaces real permission errors on
+		// the destination.
+		return nil, nil
 	}
 	lines := strings.SplitAfter(string(existing), "\n")
 	var header []byte
@@ -67,7 +83,7 @@ func readHeaderComments(path string) []byte {
 		}
 		break
 	}
-	return header
+	return header, nil
 }
 
 // SaveFullBundle writes the wiring file plus every entity file present in the

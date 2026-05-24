@@ -68,7 +68,11 @@ func TestSaveBundlePreservesHeaderComments(t *testing.T) {
 // the SaveBundle preservation hook stays no-op friendly.
 func TestReadHeaderCommentsHandlesMissingFile(t *testing.T) {
 	dir := t.TempDir()
-	if got := readHeaderComments(filepath.Join(dir, "missing.yaml")); got != nil {
+	got, err := readHeaderComments(filepath.Join(dir, "missing.yaml"))
+	if err != nil {
+		t.Fatalf("missing file returned error: %v", err)
+	}
+	if got != nil {
 		t.Fatalf("missing file returned non-nil header: %q", got)
 	}
 }
@@ -83,8 +87,11 @@ func TestReadHeaderCommentsStopsAtFirstContentLine(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	got := string(readHeaderComments(path))
-	if got != "# leading note\n\n" {
+	got, err := readHeaderComments(path)
+	if err != nil {
+		t.Fatalf("readHeaderComments error: %v", err)
+	}
+	if string(got) != "# leading note\n\n" {
 		t.Fatalf("readHeaderComments = %q, want only the leading block", got)
 	}
 }
