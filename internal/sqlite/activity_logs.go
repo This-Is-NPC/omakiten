@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/sqlite/sqlutil"
 )
 
 // toolCallEventTypeList is the SQL-friendly form of the canonical
@@ -215,9 +216,7 @@ func (s *Store) ListActivityLogs(ctx context.Context, filter domain.ActivityLogF
 		); err != nil {
 			return nil, err
 		}
-		if finishedAt.Valid {
-			log.FinishedAt = finishedAt.String
-		}
+		log.FinishedAt = sqlutil.NullStringOr(finishedAt, "")
 		logs = append(logs, log)
 	}
 	return logs, rows.Err()

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/sqlite/sqlutil"
 )
 
 // CreateTask inserts a task into the given bucket and emits the matching
@@ -336,13 +337,10 @@ func scanTask(row *sql.Row, bucketKey string) (domain.Task, error) {
 
 // assignParentID promotes a nullable parent_id read into the *int64
 // surface on domain.Task. Centralised so every scan path treats SQL NULL
-// (root task) and a present FK (sub-task) the same way.
+// (root task) and a present FK (sub-task) the same way. Delegates to
+// sqlutil.NullInt64Ptr so the *int64 contract stays in one place.
 func assignParentID(task *domain.Task, n sql.NullInt64) {
-	if !n.Valid {
-		return
-	}
-	id := n.Int64
-	task.ParentID = &id
+	task.ParentID = sqlutil.NullInt64Ptr(n)
 }
 
 // GetTaskByID is the port-facing point lookup the app's TaskService
