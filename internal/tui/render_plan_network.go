@@ -2,9 +2,7 @@ package tui
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
-	"hash/fnv"
 	"sort"
 	"strings"
 
@@ -505,10 +503,8 @@ type planNetworkRowsCacheEntry struct {
 // included because the row's IsCritical / InProgress / FinalBucket
 // flags downstream of the cached projection vary with it.
 func (m Model) planNetworkRowsCacheKey() uint64 {
-	h := fnv.New64a()
-	var buf [8]byte
-	binary.LittleEndian.PutUint64(buf[:], uint64(m.planNetworkShow.Plan.ID))
-	h.Write(buf[:])
+	f := newFingerprint()
+	f.writeInt64(m.planNetworkShow.Plan.ID)
 
 	collapsedKeys := make([]int64, 0, len(m.planNetworkCollapsed))
 	for k := range m.planNetworkCollapsed {
@@ -516,26 +512,18 @@ func (m Model) planNetworkRowsCacheKey() uint64 {
 	}
 	sort.Slice(collapsedKeys, func(i, j int) bool { return collapsedKeys[i] < collapsedKeys[j] })
 	for _, k := range collapsedKeys {
-		binary.LittleEndian.PutUint64(buf[:], uint64(k))
-		h.Write(buf[:])
-		if m.planNetworkCollapsed[k] {
-			h.Write([]byte{1})
-		} else {
-			h.Write([]byte{0})
-		}
+		f.writeInt64(k)
+		f.writeBool(m.planNetworkCollapsed[k])
 	}
 
 	for _, wv := range m.planNetworkShow.Waves {
-		binary.LittleEndian.PutUint64(buf[:], uint64(wv.Wave.ID))
-		h.Write(buf[:])
+		f.writeInt64(wv.Wave.ID)
 		for _, t := range wv.Tasks {
-			binary.LittleEndian.PutUint64(buf[:], uint64(t.TaskID))
-			h.Write(buf[:])
-			h.Write([]byte(t.BucketKey))
-			h.Write([]byte{0})
+			f.writeInt64(t.TaskID)
+			f.writeString(t.BucketKey)
 		}
 	}
-	return h.Sum64()
+	return f.sum()
 }
 
 // invalidatePlanNetworkRowsCache drops the memoised projection so the

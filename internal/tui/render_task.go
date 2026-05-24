@@ -1,9 +1,7 @@
 package tui
 
 import (
-	"encoding/binary"
 	"fmt"
-	"hash/fnv"
 	"sort"
 	"strconv"
 	"strings"
@@ -1502,27 +1500,17 @@ type taskDetailsBoxHeightCacheEntry struct {
 // stashes the result; later calls with identical fingerprints
 // short-circuit to the stored height with no lipgloss work.
 func (m Model) taskDetailsBoxHeightKey(task domain.Task, layout taskViewLayout) uint64 {
-	h := fnv.New64a()
-	var buf [8]byte
-	binary.LittleEndian.PutUint64(buf[:], uint64(task.ID))
-	h.Write(buf[:])
-	binary.LittleEndian.PutUint64(buf[:], uint64(layout.formValueWidth))
-	h.Write(buf[:])
-	binary.LittleEndian.PutUint64(buf[:], uint64(len(m.blockersForTask(task.ID))))
-	h.Write(buf[:])
-	binary.LittleEndian.PutUint64(buf[:], uint64(len(m.tagsForTask(task.ID))))
-	h.Write(buf[:])
-	binary.LittleEndian.PutUint64(buf[:], uint64(m.commentCount(task.ID)))
-	h.Write(buf[:])
-	h.Write([]byte(task.Title))
-	h.Write([]byte{0})
-	h.Write([]byte(task.Description))
-	h.Write([]byte{0})
-	h.Write([]byte(task.BucketKey))
-	h.Write([]byte{0})
-	binary.LittleEndian.PutUint64(buf[:], uint64(task.Priority))
-	h.Write(buf[:])
-	return h.Sum64()
+	f := newFingerprint()
+	f.writeInt64(task.ID)
+	f.writeInt64(int64(layout.formValueWidth))
+	f.writeInt64(int64(len(m.blockersForTask(task.ID))))
+	f.writeInt64(int64(len(m.tagsForTask(task.ID))))
+	f.writeInt64(int64(m.commentCount(task.ID)))
+	f.writeString(task.Title)
+	f.writeString(task.Description)
+	f.writeString(task.BucketKey)
+	f.writeInt64(int64(task.Priority))
+	return f.sum()
 }
 
 // cachedTaskDetailsBoxHeight is the value-receiver entry point used by

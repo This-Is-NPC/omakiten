@@ -1,11 +1,8 @@
 package tui
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
-	"sort"
 	"strings"
 
 	"omakiten/internal/domain"
@@ -171,36 +168,24 @@ func (m *Model) cachedActivityRowsForRender(events []domain.Event) []string {
 // (remove tag 3, add tag 5 — same length) still bumps the key while a
 // reorder (tags returned in different order from the DB) does not.
 func (m Model) activityRowsForRenderKey(events []domain.Event) uint64 {
-	h := fnv.New64a()
-	var buf [8]byte
-	binary.LittleEndian.PutUint64(buf[:], uint64(m.taskID))
-	h.Write(buf[:])
-	binary.LittleEndian.PutUint64(buf[:], uint64(m.activityCursor))
-	h.Write(buf[:])
-	binary.LittleEndian.PutUint64(buf[:], uint64(m.commentCardWidth()))
-	h.Write(buf[:])
+	f := newFingerprint()
+	f.writeInt64(m.taskID)
+	f.writeInt64(int64(m.activityCursor))
+	f.writeInt64(int64(m.commentCardWidth()))
 	for _, ev := range events {
-		binary.LittleEndian.PutUint64(buf[:], uint64(ev.ID))
-		h.Write(buf[:])
-		h.Write([]byte(ev.EventType))
-		h.Write([]byte{0})
-		binary.LittleEndian.PutUint64(buf[:], uint64(len(ev.Body)))
-		h.Write(buf[:])
-		binary.LittleEndian.PutUint64(buf[:], uint64(len(ev.Tags)))
-		h.Write(buf[:])
+		f.writeInt64(ev.ID)
+		f.writeString(ev.EventType)
+		f.writeInt64(int64(len(ev.Body)))
+		f.writeInt64(int64(len(ev.Tags)))
 		if n := len(ev.Tags); n > 0 {
 			ids := make([]int64, n)
 			for i, t := range ev.Tags {
 				ids[i] = t.ID
 			}
-			sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-			for _, id := range ids {
-				binary.LittleEndian.PutUint64(buf[:], uint64(id))
-				h.Write(buf[:])
-			}
+			f.writeInt64Slice(ids)
 		}
 	}
-	return h.Sum64()
+	return f.sum()
 }
 
 // activityCardsCacheEntry is the memoised projection of

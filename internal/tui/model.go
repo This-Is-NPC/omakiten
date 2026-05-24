@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	fnv64a "hash/fnv"
 	"reflect"
 	"strings"
 	"sync"
@@ -1147,9 +1146,11 @@ func (m Model) countTokens(body string) int {
 // fnv64aString fingerprints body for the token cache key. Collisions
 // inside a single TUI session are statistically negligible against
 // 64-bit space; on collision the worst case is two bodies sharing a
-// stale count, which a future fresh body insert overwrites.
+// stale count, which a future fresh body insert overwrites. Delegates
+// to the shared fingerprint helper so the wire shape stays aligned
+// with the four cache-key callsites that use it.
 func fnv64aString(body string) uint64 {
-	h := fnv64a.New64a()
-	h.Write([]byte(body))
-	return h.Sum64()
+	f := newFingerprint()
+	f.writeString(body)
+	return f.sum()
 }
