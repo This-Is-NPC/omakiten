@@ -245,10 +245,19 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.taskTagsInput, cmd = m.taskTagsInput.Update(msg)
 	case taskFieldParent:
 		m.taskParentInput, cmd = m.taskParentInput.Update(msg)
-		// Clear any stale lookup error so the next blur recomputes
-		// against the current input — typing a fresh id mid-edit
-		// shouldn't leave the previous "not found" hint visible.
-		m.taskParentLookupError = ""
+		// Persist taskParentLookupError across mid-edit keystrokes so
+		// the user can read the hint long enough to act on it. The
+		// keystroke-driven clear was the bug: typing a correction
+		// dropped the message before the user could parse it.
+		// Legitimate clear sites stay intact:
+		//  - input emptied to "" by the current keystroke (covered
+		//    here so the error doesn't render against an empty field),
+		//  - validateParentInputOnBlur on field rotation (cycleTaskField),
+		//  - openTaskCreate / openTaskEdit / closeTaskScreen lifecycle
+		//    resets.
+		if strings.TrimSpace(m.taskParentInput.Value()) == "" {
+			m.taskParentLookupError = ""
+		}
 	}
 	return *m, cmd
 }

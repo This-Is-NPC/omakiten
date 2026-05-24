@@ -273,8 +273,11 @@ type Model struct {
 	taskTagsInput   textinput.Model
 	taskParentInput textinput.Model
 	// taskParentLookupError surfaces the blur-time validation hint when
-	// the parent id input doesn't resolve in the active project. Cleared
-	// on every keystroke so it reflects the current input value.
+	// the parent id input doesn't resolve in the active project.
+	// Persists across mid-edit keystrokes so the user can read the hint
+	// long enough to act on it; cleared on (a) input emptied to "" by a
+	// keystroke, (b) successful blur revalidation, or (c) form
+	// open/close lifecycle.
 	taskParentLookupError string
 	// taskEditInitial holds the values captured at openTaskEdit time so
 	// esc can prompt before discarding edits. Zero value = "no edit in
