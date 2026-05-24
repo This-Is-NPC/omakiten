@@ -104,64 +104,69 @@ func (s *Store) ListComments(ctx context.Context, projectID, taskID int64) ([]do
 // changed fields. Tag replacement clears event_tags for the comment then
 // re-applies the supplied list (deduped, normalized by the caller).
 func (s *Store) UpdateComment(ctx context.Context, projectID, commentID int64, body string, tags []domain.Tag) (domain.Comment, domain.Event, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return domain.Comment{}, domain.Event{}, err
+	type updateResult struct {
+		updated domain.Comment
+		prev    domain.Comment
 	}
-	defer func() { _ = tx.Rollback() }()
-
-	prev, err := commentByIDTx(ctx, tx, projectID, commentID)
-	if err != nil {
-		return domain.Comment{}, domain.Event{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
+	out, err := txMutateAndEmit(ctx, s, TxMutation[updateResult]{
+		Scope:     EventScopeTask,
+		EventType: domain.EventTypeCommentEdited,
+		ProjectID: projectID,
+		EntityID:  func(r updateResult) int64 { return r.updated.TaskID },
+		ShouldLog: func() bool { return s.shouldLogEvent(domain.EventTypeCommentEdited) },
+		Mutate: func(ctx context.Context, tx *sql.Tx) (updateResult, error) {
+			prev, err := commentByIDTx(ctx, tx, projectID, commentID)
+			if err != nil {
+				return updateResult{}, err
+			}
+			if _, err := tx.ExecContext(ctx, `
 UPDATE events SET body = ? WHERE id = ? AND project_id = ? AND entity_type = 'task' AND event_type = 'comment'
 `, body, commentID, projectID); err != nil {
-		return domain.Comment{}, domain.Event{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `DELETE FROM event_tags WHERE event_id = ?`, commentID); err != nil {
-		return domain.Comment{}, domain.Event{}, err
-	}
-
-	updated := domain.Comment{
-		ID:         prev.ID,
-		ProjectID:  prev.ProjectID,
-		TaskID:     prev.TaskID,
-		Body:       body,
-		AuthorType: prev.AuthorType,
-		CreatedAt:  prev.CreatedAt,
-	}
-	attached, err := attachTagsTx(ctx, tx, tagPivotEvent, commentID, tags)
+				return updateResult{}, err
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM event_tags WHERE event_id = ?`, commentID); err != nil {
+				return updateResult{}, err
+			}
+			updated := domain.Comment{
+				ID:         prev.ID,
+				ProjectID:  prev.ProjectID,
+				TaskID:     prev.TaskID,
+				Body:       body,
+				AuthorType: prev.AuthorType,
+				CreatedAt:  prev.CreatedAt,
+			}
+			attached, err := attachTagsTx(ctx, tx, tagPivotEvent, commentID, tags)
+			if err != nil {
+				return updateResult{}, err
+			}
+			updated.Tags = attached
+			return updateResult{updated: updated, prev: prev}, nil
+		},
+		Payload: func(r updateResult) (string, error) {
+			payload := map[string]any{"comment_id": commentID}
+			if r.prev.Body != body {
+				payload["body"] = map[string]any{"from": r.prev.Body, "to": body}
+			}
+			b, err := json.Marshal(payload)
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		},
+	})
 	if err != nil {
 		return domain.Comment{}, domain.Event{}, err
 	}
-	updated.Tags = attached
-
-	payload := map[string]any{"comment_id": commentID}
-	if prev.Body != body {
-		payload["body"] = map[string]any{"from": prev.Body, "to": body}
+	// Reconstruct the envelope callers expect (matches the pre-helper
+	// publish payload — id/created_at omitted but no caller reads them
+	// today).
+	event := domain.Event{
+		EntityType: domain.EventEntityTask,
+		EntityID:   out.updated.TaskID,
+		ProjectID:  projectID,
+		EventType:  domain.EventTypeCommentEdited,
 	}
-	payloadBytes, marshalErr := json.Marshal(payload)
-	if marshalErr != nil {
-		return domain.Comment{}, domain.Event{}, marshalErr
-	}
-	var event domain.Event
-	if s.shouldLogEvent(domain.EventTypeCommentEdited) {
-		event, err = insertTaskEvent(ctx, tx, projectID, prev.TaskID, domain.EventTypeCommentEdited, "", string(payloadBytes))
-		if err != nil {
-			return domain.Comment{}, domain.Event{}, err
-		}
-	} else {
-		event = domain.Event{EntityType: domain.EventEntityTask, EntityID: prev.TaskID, ProjectID: projectID, EventType: domain.EventTypeCommentEdited, Payload: string(payloadBytes)}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return domain.Comment{}, domain.Event{}, err
-	}
-	s.publishEvent(ctx, event)
-	return updated, event, nil
+	return out.updated, event, nil
 }
 
 // DeleteComment hard-deletes a comment (including its event_tags via FK
