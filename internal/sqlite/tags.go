@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/sqlite/sqlutil"
 )
 
 // tagPivot enumerates the join tables that link a tag to an entity. The
@@ -212,7 +213,7 @@ INSERT INTO task_tags(project_id, task_id, tag_id)
 VALUES (?, ?, ?)
 ON CONFLICT(project_id, task_id, tag_id) DO NOTHING
 `, projectID, taskID, tagID)
-	return err
+	return mapTagAttachError(err, "tag_id", tagID)
 }
 
 func (s *Store) RemoveTaskTag(ctx context.Context, projectID, taskID, tagID int64) error {
@@ -275,7 +276,7 @@ INSERT INTO project_tags(project_id, tag_id)
 VALUES (?, ?)
 ON CONFLICT(project_id, tag_id) DO NOTHING
 `, projectID, tagID)
-	return err
+	return mapTagAttachError(err, "tag_id", tagID)
 }
 
 func (s *Store) RemoveProjectTag(ctx context.Context, projectID, tagID int64) error {
@@ -305,4 +306,26 @@ ORDER BY t.name
 		tags = append(tags, tag)
 	}
 	return tags, rows.Err()
+}
+
+// mapTagAttachError surfaces SQLITE_CONSTRAINT_FOREIGNKEY on the tag
+// attach paths (AddTaskTag / AddProjectTag) as a typed
+// domain.ErrValidation so caller-supplied phantom tag IDs no longer
+// leak the driver message into the agent envelope as a generic
+// internal error. Non-constraint errors pass through unchanged so
+// genuine I/O failures still surface as such.
+func mapTagAttachError(err error, fieldName string, fieldValue any) error {
+	if err == nil {
+		return nil
+	}
+	var ce *sqlutil.ConstraintError
+	mapped := sqlutil.MapSQLiteError(err)
+	if !errors.As(mapped, &ce) {
+		return err
+	}
+	if ce.Violation == sqlutil.ViolationForeignKey {
+		return domain.NewError(domain.ErrValidation, "referenced row does not exist",
+			map[string]any{"field": fieldName, "value": fieldValue})
+	}
+	return err
 }
