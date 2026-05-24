@@ -329,10 +329,10 @@ func TestRenderFooter_resolvesActionLabelIntlToken(t *testing.T) {
 		{Key: "m", ID: "migrate", Label: "${{intl:test.action.migrate}}"},
 	}
 	lang := &config.Language{Code: "en", Keys: map[string]string{
-		"test.action.migrate":           "Migrate",
-		"notifications.footer.cancel":   "cancel",
-		"notifications.footer.close":    "close",
-		"notifications.footer.details":  "details",
+		"test.action.migrate":          "Migrate",
+		"notifications.footer.cancel":  "cancel",
+		"notifications.footer.close":   "close",
+		"notifications.footer.details": "details",
 	}}
 	catalog := config.NewCatalog(lang, lang)
 	m, _ := New(Options{Notification: bud, Theme: sampleTheme(), Text: "short", Catalog: catalog})

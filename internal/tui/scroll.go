@@ -104,4 +104,3 @@ func scrollDataRows(viewport int) int {
 	}
 	return viewport - reservedHints
 }
-

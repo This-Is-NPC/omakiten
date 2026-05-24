@@ -64,14 +64,14 @@ func TestReloadBundleUsesCacheWhenWired(t *testing.T) {
 		Dependencies: store,
 		Entries:      store,
 
-		Editor:       editor,
-		BundleStore:  files,
-		EntityFiles:  files,
-		Slugger:      files,
-		Events:       store,
-		Orphans:      store,
-		Cache:        cache,
-		ProjectID:    project.ID,
+		Editor:      editor,
+		BundleStore: files,
+		EntityFiles: files,
+		Slugger:     files,
+		Events:      store,
+		Orphans:     store,
+		Cache:       cache,
+		ProjectID:   project.ID,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel: %v", err)

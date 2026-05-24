@@ -334,7 +334,7 @@ type planNetworkRow struct {
 
 	// Task card fields (Kind == planRowTaskCard).
 	Task          domain.PlanTaskRow
-	Rail          string  // pre-built intra-wave rail glyph prefix
+	Rail          string // pre-built intra-wave rail glyph prefix
 	IsNext        bool
 	IsCritical    bool
 	BlockerCount  int
@@ -1068,20 +1068,20 @@ func (m Model) planNetworkMeasureTitle(rows []planNetworkRow, bucketW, depsW int
 // planNetworkRowStateBadge returns the inline state badge for a task
 // row, chosen by precedence:
 //
-//   done > gated > in-progress > blocked > assigned > next > ready
+//	done > gated > in-progress > blocked > assigned > next > ready
 //
 // Rationale per slot:
 //   - done           — bucket is the workflow's final position.
 //   - gated          — wave is not the plan's active wave.
 //   - in-progress    — bucket is BETWEEN first and final (e.g. dev,
-//                      review). State of fact: work is in flight.
-//                      Wins over blocked so a blocker added mid-flight
-//                      does not visually erase the in-flight status.
+//     review). State of fact: work is in flight.
+//     Wins over blocked so a blocker added mid-flight
+//     does not visually erase the in-flight status.
 //   - blocked        — task still in the first bucket with an
-//                      unfinished blocker chain.
+//     unfinished blocker chain.
 //   - assigned       — task still in the first bucket but has a
-//                      named owner. Differentiates "claimed,
-//                      waiting to start" from in-flight work.
+//     named owner. Differentiates "claimed,
+//     waiting to start" from in-flight work.
 //   - next           — next-claimable hint, no owner yet.
 //   - ready          — default.
 //

@@ -414,7 +414,7 @@ func TestModelCursorAlwaysVisibleProperty(t *testing.T) {
 	rng := rand.New(rand.NewSource(seed))
 	const iterations = 2000
 
-	m := New().WithViewport(rng.Intn(18)+3).WithItems(randomItems(rng))
+	m := New().WithViewport(rng.Intn(18) + 3).WithItems(randomItems(rng))
 
 	for step := 0; step < iterations; step++ {
 		switch rng.Intn(8) {

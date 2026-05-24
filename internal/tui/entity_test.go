@@ -15,10 +15,10 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
-	"omakiten/internal/token"
 	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
+	"omakiten/internal/token"
 )
 
 func newEntityModel(t *testing.T) (Model, *snapstore.Store, *app.BundleEditor) {
@@ -49,7 +49,7 @@ func newEntityModel(t *testing.T) (Model, *snapstore.Store, *app.BundleEditor) {
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:    store,
+		Tasks: store,
 		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files, Catalog: newTestCatalog(t),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
@@ -222,7 +222,7 @@ func newEntityModelWithTemplates(t *testing.T) Model {
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:    store,
+		Tasks: store,
 		Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Comments: store, Dependencies: store, Entries: store, Editor: editor,
 		BundleStore: files, EntityFiles: files, Slugger: files, Catalog: newTestCatalog(t),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})

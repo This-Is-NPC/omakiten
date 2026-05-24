@@ -13,10 +13,10 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
-	"omakiten/internal/token"
 	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
+	"omakiten/internal/token"
 	"omakiten/internal/tui/components/notification"
 )
 
@@ -113,14 +113,14 @@ func TestNewModelWithEmptyProjectOpensHome(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
-		Tasks:        store,
-		Projects:     store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks:    store,
+		Projects: store,
+		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
-		
-		Tags:         store,
+
+		Tags: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -152,14 +152,14 @@ func TestHomeHidesTabBar(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
-		Tasks:        store,
-		Projects:     store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks:    store,
+		Projects: store,
+		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
-		
-		Tags:         store,
+
+		Tags: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -193,14 +193,14 @@ func TestCtrlHReturnsToHome(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, project.Context(), Repositories{
-		Tasks:        store,
-		Projects:     store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks:    store,
+		Projects: store,
+		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
-		
-		Tags:         store,
+
+		Tags: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -229,14 +229,14 @@ func TestHomeEnterSelectsProject(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
-		Tasks:        store,
-		Projects:     store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks:    store,
+		Projects: store,
+		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
-		
-		Tags:         store,
+
+		Tags: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -270,15 +270,15 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
-		Tasks:        store,
-		Projects:     store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks:    store,
+		Projects: store,
+		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
 
-		Tags:         store,
-		Catalog:      newTestCatalog(t),
+		Tags:    store,
+		Catalog: newTestCatalog(t),
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
@@ -878,14 +878,14 @@ func TestHomeRendersProjectTagBadges(t *testing.T) {
 	}
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
-		Tasks:        store,
-		Projects:     store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks:    store,
+		Projects: store,
+		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
-		
-		Tags:         store,
+
+		Tags: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)

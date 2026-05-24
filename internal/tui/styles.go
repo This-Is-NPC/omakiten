@@ -132,17 +132,17 @@ type styles struct {
 	// textarea/textinput. Set Foreground=primary so the cursor.View()
 	// reverse-pass renders as a primary-bg block over a primary-fg char,
 	// guaranteeing visibility regardless of the surrounding line style.
-	cursor          lipgloss.Style
-	border          lipgloss.Style
-	kanbanColumn    lipgloss.Style
-	card            lipgloss.Style
-	cardSelected    lipgloss.Style
-	entityCard      lipgloss.Style
+	cursor             lipgloss.Style
+	border             lipgloss.Style
+	kanbanColumn       lipgloss.Style
+	card               lipgloss.Style
+	cardSelected       lipgloss.Style
+	entityCard         lipgloss.Style
 	entityCardSelected lipgloss.Style
-	marker          lipgloss.Style
-	separator       lipgloss.Style
-	empty           lipgloss.Style
-	input           lipgloss.Style
+	marker             lipgloss.Style
+	separator          lipgloss.Style
+	empty              lipgloss.Style
+	input              lipgloss.Style
 	// formMultiline is the bordered chrome shared by every multi-line
 	// textarea form — task description, inline comment-add, comment-edit
 	// overlay. Width and Height are intentionally not preset: the
@@ -151,15 +151,15 @@ type styles struct {
 	// shadowed (silent dead state) or surface as a stale override on
 	// resize.
 	formMultiline lipgloss.Style
-	footer          lipgloss.Style
-	hint            lipgloss.Style
-	hintAccent      lipgloss.Style
-	hintBox         lipgloss.Style
-	muted           lipgloss.Style
-	info            lipgloss.Style
-	success         lipgloss.Style
-	warning         lipgloss.Style
-	error           lipgloss.Style
+	footer        lipgloss.Style
+	hint          lipgloss.Style
+	hintAccent    lipgloss.Style
+	hintBox       lipgloss.Style
+	muted         lipgloss.Style
+	info          lipgloss.Style
+	success       lipgloss.Style
+	warning       lipgloss.Style
+	error         lipgloss.Style
 
 	badgeHigh        lipgloss.Style
 	badgeNormal      lipgloss.Style
@@ -201,33 +201,33 @@ func newStyles(theme config.Theme) styles {
 	badgeFg := color("badge_fg", "#1A1A1A")
 
 	return styles{
-		title:          lipgloss.NewStyle().Bold(true).Foreground(primary),
-		nav:            lipgloss.NewStyle().Foreground(secondary),
-		activeNav:      lipgloss.NewStyle().Foreground(primary).Bold(true),
-		panel:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2),
-		commentCard:    lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1),
-		cursor:         lipgloss.NewStyle().Foreground(primary),
+		title:       lipgloss.NewStyle().Bold(true).Foreground(primary),
+		nav:         lipgloss.NewStyle().Foreground(secondary),
+		activeNav:   lipgloss.NewStyle().Foreground(primary).Bold(true),
+		panel:       lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2),
+		commentCard: lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1),
+		cursor:      lipgloss.NewStyle().Foreground(primary),
 		// systemEventCard mirrors the commentCard geometry (border + padding)
 		// so the activity column stays visually consistent — same column
 		// alignment, same width budget. The metadata cue comes from the text
 		// color, not a different border color.
-		systemEventCard: lipgloss.NewStyle().Foreground(secondary).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1),
-		border:         lipgloss.NewStyle().Foreground(border),
-		kanbanColumn:   lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(border).Width(columnWidth).Padding(0, 0),
-		card:           lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(cardBoxWidth),
-		cardSelected:   lipgloss.NewStyle().Foreground(foreground).Bold(true).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 1).Width(cardBoxWidth),
-		entityCard:     lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(cardBoxWidth),
+		systemEventCard:    lipgloss.NewStyle().Foreground(secondary).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1),
+		border:             lipgloss.NewStyle().Foreground(border),
+		kanbanColumn:       lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(border).Width(columnWidth).Padding(0, 0),
+		card:               lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(cardBoxWidth),
+		cardSelected:       lipgloss.NewStyle().Foreground(foreground).Bold(true).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 1).Width(cardBoxWidth),
+		entityCard:         lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 1).Width(cardBoxWidth),
 		entityCardSelected: lipgloss.NewStyle().Foreground(foreground).Bold(true).Border(lipgloss.NormalBorder()).BorderForeground(primary).Padding(0, 1).Width(cardBoxWidth),
-		marker:         lipgloss.NewStyle().Foreground(primary).Bold(true),
-		separator:      lipgloss.NewStyle().Foreground(border),
-		empty:          lipgloss.NewStyle().Foreground(border).Width(columnWidth).Align(lipgloss.Center),
+		marker:             lipgloss.NewStyle().Foreground(primary).Bold(true),
+		separator:          lipgloss.NewStyle().Foreground(border),
+		empty:              lipgloss.NewStyle().Foreground(border).Width(columnWidth).Align(lipgloss.Center),
 		// Default border color is the muted `border` token; the form
 		// helpers in render_task.go opt-in to the `primary` accent only
 		// when their field is focused. Without this default, every input
 		// in the create/edit form would render with the green border the
 		// user reported as confusing — the eye lost which field was the
 		// active one.
-		input:          lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2),
+		input: lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2),
 		// formMultiline holds the neutral-border defaults; multilineform.Render
 		// swaps BorderForeground to the accent color when its `focused` flag
 		// is true. Padding(0, 2) matches the surrounding panel chrome so the
@@ -235,21 +235,21 @@ func newStyles(theme config.Theme) styles {
 		// the form. Width and Height are not preset — the leaf component owns
 		// per-render geometry (see styles.multilineFormTheme).
 		formMultiline: lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2),
-		footer:         lipgloss.NewStyle().Foreground(border),
-		hint:           lipgloss.NewStyle().Foreground(border),
-		hintAccent:     lipgloss.NewStyle().Foreground(primary).Bold(true),
-		hintBox:        lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2).Width(60),
-		muted:          lipgloss.NewStyle().Foreground(border),
-		info:           lipgloss.NewStyle().Foreground(secondary),
-		success:        lipgloss.NewStyle().Foreground(success),
-		warning:        lipgloss.NewStyle().Foreground(warning),
-		error:          lipgloss.NewStyle().Foreground(errorColor),
+		footer:        lipgloss.NewStyle().Foreground(border),
+		hint:          lipgloss.NewStyle().Foreground(border),
+		hintAccent:    lipgloss.NewStyle().Foreground(primary).Bold(true),
+		hintBox:       lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2).Width(60),
+		muted:         lipgloss.NewStyle().Foreground(border),
+		info:          lipgloss.NewStyle().Foreground(secondary),
+		success:       lipgloss.NewStyle().Foreground(success),
+		warning:       lipgloss.NewStyle().Foreground(warning),
+		error:         lipgloss.NewStyle().Foreground(errorColor),
 
-		badgeHigh:        lipgloss.NewStyle().Background(errorColor).Foreground(badgeFg).Padding(0, 1).Bold(true),
-		badgeNormal:      lipgloss.NewStyle().Background(success).Foreground(badgeFg).Padding(0, 1).Bold(true),
-		badgeLow:         lipgloss.NewStyle().Background(secondary).Foreground(badgeFg).Padding(0, 1).Bold(true),
-		badgeBlocker:     lipgloss.NewStyle().Background(warning).Foreground(badgeFg).Padding(0, 1).Bold(true),
-		badgeComment:     lipgloss.NewStyle().Background(border).Foreground(foreground).Padding(0, 1).Bold(true),
+		badgeHigh:    lipgloss.NewStyle().Background(errorColor).Foreground(badgeFg).Padding(0, 1).Bold(true),
+		badgeNormal:  lipgloss.NewStyle().Background(success).Foreground(badgeFg).Padding(0, 1).Bold(true),
+		badgeLow:     lipgloss.NewStyle().Background(secondary).Foreground(badgeFg).Padding(0, 1).Bold(true),
+		badgeBlocker: lipgloss.NewStyle().Background(warning).Foreground(badgeFg).Padding(0, 1).Bold(true),
+		badgeComment: lipgloss.NewStyle().Background(border).Foreground(foreground).Padding(0, 1).Bold(true),
 		// badgeSubtask uses the neutral secondary tone — sub-tasks are
 		// structure, not alarm, so it deliberately diverges from
 		// badgeBlocker's warning colour.

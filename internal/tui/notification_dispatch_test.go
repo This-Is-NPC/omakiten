@@ -11,11 +11,11 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	hookactions "omakiten/internal/hooks/actions"
-	"omakiten/internal/token"
-	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/testfixtures"
 	"omakiten/internal/testfixtures/runtimecache"
 	"omakiten/internal/testfixtures/snapstore"
+	"omakiten/internal/token"
+	"omakiten/internal/tui/components/notification"
 )
 
 func ptrBool(v bool) *bool { return &v }
@@ -58,14 +58,14 @@ func newNotificationTestModel(t *testing.T) Model {
 	binding := NotificationBinding{Notifications: map[string]config.Notification{bud.Name: bud}}
 
 	model, err := NewModel(ctx, domain.ProjectContext{}, Repositories{
-		Tasks:        store,
-		Projects:     store,
-		Cache: runtimecache.Install(0, store.Snapshot()), Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
+		Tasks:    store,
+		Projects: store,
+		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
 		Entries:      store,
-		
-		Tags:         store,
+
+		Tags: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, binding)
 	if err != nil {
 		t.Fatalf("NewModel: %v", err)

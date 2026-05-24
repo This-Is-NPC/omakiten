@@ -167,11 +167,11 @@ func TestSettingsGeneralEndIsNoOpWhenBodyFits(t *testing.T) {
 // last row when the terminal is resized smaller.
 func TestClampSettingsGeneralScroll(t *testing.T) {
 	for _, tc := range []struct {
-		name           string
-		offset         int
-		total          int
-		viewport       int
-		want           int
+		name     string
+		offset   int
+		total    int
+		viewport int
+		want     int
 	}{
 		{"viewport zero short-circuits", 5, 30, 0, 0},
 		{"body fits clamps to zero", 5, 8, 12, 0},

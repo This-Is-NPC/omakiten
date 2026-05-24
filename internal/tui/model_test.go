@@ -20,7 +20,6 @@ import (
 	"omakiten/internal/token"
 )
 
-
 func TestModelSwitchesViews(t *testing.T) {
 	ctx := context.Background()
 	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
@@ -1269,7 +1268,6 @@ func TestModelDeletesTaskFromTaskViewWithDoubleD(t *testing.T) {
 // surface the policy hint immediately and refuse to open the form. The
 // service still re-runs the policy on save, but the user should never
 // type into a modal that is doomed to fail.
-//
 func TestModelBlocksTaskEditOnPressWhenBucketForbids(t *testing.T) {
 	ctx := context.Background()
 	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")
@@ -1313,7 +1311,6 @@ func TestModelBlocksTaskEditOnPressWhenBucketForbids(t *testing.T) {
 // the destructive `d` arm. The first press in a forbidden bucket should
 // surface the policy hint and skip the arm — the user should not see a
 // "Confirm delete..." prompt for an action that cannot succeed.
-//
 func TestModelBlocksTaskDeleteArmWhenBucketForbids(t *testing.T) {
 	ctx := context.Background()
 	store := snapstore.Open(t, t.TempDir()+"/omakiten.db")

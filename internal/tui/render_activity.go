@@ -197,7 +197,6 @@ type activityCardsCacheEntry struct {
 	cards []string
 }
 
-
 // renderSystemEventCard formats task.created/moved/completed in a card that
 // matches the comment card geometry but reads as metadata: dimmer border,
 // no author header, single-line label + timestamp. Boxed (vs. the previous

@@ -164,4 +164,3 @@ func pageStep(viewport int) int {
 	}
 	return step
 }
-

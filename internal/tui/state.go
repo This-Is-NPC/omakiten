@@ -237,8 +237,8 @@ type Model struct {
 	moveInput textinput.Model
 	status    string
 	moveMode  bool
-	helpOpen bool
-	helpAll  bool
+	helpOpen  bool
+	helpAll   bool
 	// viewHistory is the in-memory back-stack populated whenever the user
 	// makes an intentional zone/sub navigation (tab / digit / `,`/`/`,
 	// `0`, `ctrl+h`). Bound to a small cap so long sessions cannot grow
@@ -303,14 +303,14 @@ type Model struct {
 	blockerPicker       picker.Model
 	blockerPickerChecks map[int64]bool
 
-	tasks               []domain.Task
-	workflow            domain.Workflow
-	dependencies        []domain.TaskDependency
-	comments            []domain.Comment
-	laws                []domain.Law
-	skills              []domain.Skill
-	personas            []domain.Persona
-	templates           []config.TaskTemplate
+	tasks        []domain.Task
+	workflow     domain.Workflow
+	dependencies []domain.TaskDependency
+	comments     []domain.Comment
+	laws         []domain.Law
+	skills       []domain.Skill
+	personas     []domain.Persona
+	templates    []config.TaskTemplate
 	// priorities is the resolved id↔value↔color table the renderer
 	// consults to draw priority badges and to drive the cycle in the
 	// task form. Populated from the active bundle on each refresh so
@@ -332,7 +332,7 @@ type Model struct {
 	// fall back to "en"; AgentOutput stays empty when unset). Populated
 	// by reloadBundle so Settings › General can render the three rows
 	// without re-reading the snapshot at render time.
-	languages config.LanguageSettings
+	languages           config.LanguageSettings
 	themePickerOptions  []themeOption
 	configPickerOptions []configOption
 	entries             []domain.ContextEntry
@@ -361,10 +361,10 @@ type Model struct {
 	// component clamps the offset against the body length +
 	// viewport on each mutation.
 	settingsGeneralLines linelist.Model
-	entityForm       entityForm
-	deletePending    bool
-	deleteKind       entityKind
-	deleteSlug       string
+	entityForm           entityForm
+	deletePending        bool
+	deleteKind           entityKind
+	deleteSlug           string
 
 	// Arm-then-confirm pending IDs for task and comment deletion. Non-zero
 	// means a `d` press on the same item will fire the delete; any other
@@ -677,7 +677,7 @@ type Model struct {
 	// renders that notification as configured. notification is the live model while
 	// one is on screen; nil otherwise.
 	notifications map[string]config.Notification
-	notification   *notification.Model
+	notification  *notification.Model
 
 	// pendingSwapRevertPath stores the previous config yaml path when the
 	// active swap produced orphaned tasks. The hooks engine paints an
@@ -863,8 +863,8 @@ func entityKindForSub(s subID) (entityKind, bool) {
 // changes across an Update tick (so refreshAfterViewChange can re-fetch
 // only when the user actually navigated).
 type navState struct {
-	top  topID
-	sub  subID
+	top topID
+	sub subID
 }
 
 // firstSub returns the canonical landing sub for a top — what the user

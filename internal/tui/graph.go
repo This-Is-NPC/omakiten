@@ -40,14 +40,14 @@ func buildDAGLinesSorted(deps []domain.TaskDependency, tasks []domain.Task, less
 	}
 
 	childrenOf := map[int64][]int64{}
-	parentsOf  := map[int64][]int64{}
-	inGraph    := map[int64]bool{}
+	parentsOf := map[int64][]int64{}
+	inGraph := map[int64]bool{}
 
 	for _, d := range deps {
 		childrenOf[d.DependsOnTaskID] = append(childrenOf[d.DependsOnTaskID], d.TaskID)
-		parentsOf[d.TaskID]           = append(parentsOf[d.TaskID], d.DependsOnTaskID)
-		inGraph[d.TaskID]             = true
-		inGraph[d.DependsOnTaskID]    = true
+		parentsOf[d.TaskID] = append(parentsOf[d.TaskID], d.DependsOnTaskID)
+		inGraph[d.TaskID] = true
+		inGraph[d.DependsOnTaskID] = true
 	}
 
 	for id := range childrenOf {

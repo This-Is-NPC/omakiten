@@ -31,10 +31,10 @@ const (
 type Event int
 
 const (
-	EventNone Event = iota
-	EventSelect // enter (Single) or ctrl+s (Multi)
-	EventToggle // space (Multi only)
-	EventCancel // esc
+	EventNone   Event = iota
+	EventSelect       // enter (Single) or ctrl+s (Multi)
+	EventToggle       // space (Multi only)
+	EventCancel       // esc
 )
 
 // Model owns cursor + scroll state for a single list picker. RowCount

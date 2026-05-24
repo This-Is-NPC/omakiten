@@ -74,7 +74,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		// lipgloss.Style.Width(N) allocation only fires once per
 		// (kind, width) pair across the lifetime of the model. Inner
 		// maps lazily fill on first write per kind.
-		styleByKindWidth: map[styleKind]map[int]lipgloss.Style{},
+		styleByKindWidth:     map[styleKind]map[int]lipgloss.Style{},
 		tokenCountCache:      map[uint64]int{},
 		subtasks:             cardlist.New(),
 		planNetwork:          cardlist.New(),

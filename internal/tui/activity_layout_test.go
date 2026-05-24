@@ -47,7 +47,7 @@ func TestActivityViewportLinesStackedFillsOuter(t *testing.T) {
 // outer behaviour stays exclusive to subtasks/activity focus.
 func TestActivityViewportLinesStackedFormFocusShrinksForSiblings(t *testing.T) {
 	model := buildRefreshHotPathModel(t)
-	model.width = 60 // narrow → forces stacked layout
+	model.width = 60  // narrow → forces stacked layout
 	model.height = 50 // tall enough for the 3-pane cascade
 
 	parent := domain.Task{ID: 1, Title: "Parent", BucketKey: "backlog", Priority: domain.Priority(2)}
