@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"omakiten/internal/app"
+	"omakiten/internal/cliutil"
 	"omakiten/internal/config"
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
@@ -52,31 +54,22 @@ func runEditorCommand(path string) error {
 	return nil
 }
 
-// resolveEditorBinary mirrors the hook exec guard: pin argv[0] to an
-// absolute on-disk path before spawning so a PATH lookup at fork time
-// cannot pick up a shadow binary the user did not approve. Absolute
-// paths pass through; bare names round-trip through exec.LookPath.
-// Relative paths with embedded separators are rejected — the CLI
-// resolves editor names against the user's PATH, never against CWD.
+// resolveEditorBinary pins the editor's argv[0] to an absolute on-disk
+// path via the shared cliutil.ResolveBinary helper. Empty input maps to
+// the "not configured" i18n key; every other failure (relative-with-
+// separator, missing on PATH, abs lookup failure) collapses to the
+// "not found" i18n key. The bare cliutil error chain is preserved on
+// the details.error field via SafeError so agent surfaces still get
+// the actionable inner cause without the path-bearing wrap prefix.
 func resolveEditorBinary(name string) (string, error) {
-	trimmed := strings.TrimSpace(name)
-	if trimmed == "" {
+	resolved, err := cliutil.ResolveBinary(name)
+	if err == nil {
+		return resolved, nil
+	}
+	if errors.Is(err, cliutil.ErrBinaryEmpty) {
 		return "", domain.NewError(domain.ErrEditorNotFound, t("cli.editor.not_configured"), nil)
 	}
-	if strings.ContainsRune(trimmed, os.PathSeparator) {
-		// Absolute path — keep verbatim. Relative paths with embedded
-		// separators are rejected outright so the editor surface does
-		// not silently inherit CWD-relative resolution semantics.
-		if !strings.HasPrefix(trimmed, string(os.PathSeparator)) {
-			return "", domain.NewError(domain.ErrEditorNotFound, t("cli.editor.not_found"), map[string]any{"editor": trimmed})
-		}
-		return trimmed, nil
-	}
-	resolved, err := exec.LookPath(trimmed)
-	if err != nil {
-		return "", domain.NewError(domain.ErrEditorNotFound, t("cli.editor.not_found"), map[string]any{"editor": trimmed, "error": domain.SafeError(err)})
-	}
-	return resolved, nil
+	return "", domain.NewError(domain.ErrEditorNotFound, t("cli.editor.not_found"), map[string]any{"editor": strings.TrimSpace(name), "error": domain.SafeError(err)})
 }
 
 // resolveSkillSlug accepts either a bare slug or a numeric SQLite id. Numeric

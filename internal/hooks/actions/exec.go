@@ -7,10 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"omakiten/internal/cliutil"
 	"omakiten/internal/domain"
 )
 
@@ -106,39 +106,30 @@ func readArgv(args map[string]any) ([]string, error) {
 	return nil, fmt.Errorf("exec: args.argv must be an array of strings, got %T", raw)
 }
 
-// resolveExecBinary enforces the security contract for argv[0]:
-// the bare name passes only when exec.LookPath resolves it to an
-// absolute on-disk path the engine pins before launch. A bare name
-// like "okt" otherwise resolves against the user-controlled PATH at
-// fork time — a hook YAML that shipped with a project could trigger
-// a shadow binary the operator never approved. Absolute paths pass
-// straight through. Relative paths with embedded separators (e.g.
-// "./script.sh", "../bin/foo") are rejected: the engine refuses to
-// resolve them against CWD because the hook YAML rarely knows what
-// CWD the runtime executor will inherit.
+// resolveExecBinary delegates the security contract for argv[0] to
+// the shared cliutil.ResolveBinary helper (also consumed by the CLI
+// editor surface). The guarantee: pin argv[0] to an absolute on-disk
+// path before fork so exec.CommandContext cannot re-resolve via PATH
+// at fork time (mitigates TOCTOU between LookPath and Spawn). Bare
+// names still resolve through PATH at LookPath time — project hooks
+// that say `argv: ["okt"]` inherit the runtime's PATH, which the user
+// is expected to vet just as they would any other shell command.
+// Absolute paths pass through; relative paths with embedded
+// separators ("./script.sh", "../bin/foo") are rejected because the
+// hook YAML rarely knows what CWD the runtime executor will inherit.
 func resolveExecBinary(name string) (string, error) {
-	trimmed := strings.TrimSpace(name)
-	if trimmed == "" {
+	resolved, err := cliutil.ResolveBinary(name)
+	if err == nil {
+		return resolved, nil
+	}
+	switch {
+	case errors.Is(err, cliutil.ErrBinaryEmpty):
 		return "", errors.New("exec: args.argv[0] must be a non-empty path")
+	case errors.Is(err, cliutil.ErrBinaryRelativeWithSep):
+		return "", fmt.Errorf("exec: args.argv[0] %q must be an absolute path or a bare command name on PATH", strings.TrimSpace(name))
+	default:
+		return "", fmt.Errorf("exec: %w", err)
 	}
-	if filepath.IsAbs(trimmed) {
-		return filepath.Clean(trimmed), nil
-	}
-	// Reject any explicit relative path — "./foo", "../bin/foo",
-	// "sub/dir/foo". The hook YAML cannot reason about the engine's
-	// CWD, so resolving these against it is a footgun.
-	if strings.ContainsRune(trimmed, filepath.Separator) {
-		return "", fmt.Errorf("exec: args.argv[0] %q must be an absolute path or a bare command name on PATH", trimmed)
-	}
-	resolved, err := exec.LookPath(trimmed)
-	if err != nil {
-		return "", fmt.Errorf("exec: argv[0] %q not found on PATH: %w", trimmed, err)
-	}
-	abs, err := filepath.Abs(resolved)
-	if err != nil {
-		return "", fmt.Errorf("exec: argv[0] %q resolved to %q but absolute path lookup failed: %w", trimmed, resolved, err)
-	}
-	return abs, nil
 }
 
 func readTimeout(args map[string]any) time.Duration {
