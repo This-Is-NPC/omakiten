@@ -176,7 +176,7 @@ Auto-derived from `defaults/config/izakaya.yaml`.
 <!-- END SECTION -->
 <!-- END include -->
 
-Severity (`error` vs `warning`) for each law lives in [`_generated/entities-laws.md`](./_generated/entities-laws.md).
+Severity (`error` vs `warning`) per law lives in its frontmatter under `defaults/laws/<slug>.md` (or the user override in `<root>/laws/custom/<slug>.md`). Inspect via `okt law show <slug>`.
 
 ### Visible output
 
@@ -313,7 +313,7 @@ Auto-derived from `defaults/config/omakase.yaml`.
 <!-- END SECTION -->
 <!-- END include -->
 
-Severity (`error` vs `warning`) for each law lives in [`_generated/entities-laws.md`](./_generated/entities-laws.md).
+Severity (`error` vs `warning`) per law lives in its frontmatter under `defaults/laws/<slug>.md` (or the user override in `<root>/laws/custom/<slug>.md`). Inspect via `okt law show <slug>`.
 
 ### Visible output
 
@@ -451,7 +451,7 @@ Auto-derived from `defaults/config/kaiseki.yaml`.
 <!-- END SECTION -->
 <!-- END include -->
 
-Severity (`error` vs `warning`) for each law lives in [`_generated/entities-laws.md`](./_generated/entities-laws.md).
+Severity (`error` vs `warning`) per law lives in its frontmatter under `defaults/laws/<slug>.md` (or the user override in `<root>/laws/custom/<slug>.md`). Inspect via `okt law show <slug>`.
 
 ### Visible output
 
@@ -593,7 +593,7 @@ Auto-derived from `defaults/config/shokunin.yaml`.
 <!-- END SECTION -->
 <!-- END include -->
 
-Severity (`error` vs `warning`) for each law lives in [`_generated/entities-laws.md`](./_generated/entities-laws.md).
+Severity (`error` vs `warning`) per law lives in its frontmatter under `defaults/laws/<slug>.md` (or the user override in `<root>/laws/custom/<slug>.md`). Inspect via `okt law show <slug>`.
 
 ### Visible output
 

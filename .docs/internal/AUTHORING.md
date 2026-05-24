@@ -13,7 +13,7 @@ Single contract for editing this repo's documentation. If a change to docs feels
 
 | Atom | Canonical home | Where it surfaces (auto) |
 |---|---|---|
-| Law / skill / persona / template description | `defaults/<kind>/<slug>.md` frontmatter | `.docs/_generated/entities-<kind>.md` |
+| Law / skill / persona / template description | `defaults/<kind>/<slug>.md` frontmatter | inspect via `okt <kind> list` / `okt <kind> show <slug>` (no static catalog — entities are dynamic per-fork) |
 | Theme colors and TUI palette | `defaults/themes/<slug>.yaml` | linked from `.docs/theming-guide.md` |
 | Notification card definitions (kitten_*, etc.) | `defaults/notifications/<slug>.yaml` | linked from `.docs/notifications.md` |
 | Bundled language packs (21 CLI/TUI locales) | `defaults/languages/<code>.yaml` | linked from `.docs/languages-guide.md`; parity test enforces key set |
@@ -47,17 +47,7 @@ Use when an agent reads the doc from an MCP prompt and cannot follow links (e.g.
 
 Include can target a whole file (`include:_generated/foo.md`) or a section (`include:_generated/foo.md#section-name`). Sections in generated files are wrapped with `<!-- SECTION:name -->` / `<!-- END SECTION -->`.
 
-### Pattern 3 — auto-catalog (large entity tables)
-
-```markdown
-<!-- BEGIN auto:catalog kind=laws -->
-...table rewritten by mise run docs:refresh from .docs/_generated/entities-laws.md...
-<!-- END auto:catalog -->
-```
-
-Valid `kind` values: `laws`, `skills`, `personas`, `templates`.
-
-### Pattern 4 — central glossary lookup
+### Pattern 3 — central glossary lookup
 
 `explanation/mental-models.md` defines each model once with a stable anchor. Every other doc cites `[INVEST](../explanation/mental-models.md#invest)`.
 
