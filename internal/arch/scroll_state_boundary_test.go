@@ -22,20 +22,20 @@ import (
 // the rule grep-able from the failure message.
 var scrollFieldAssignmentPattern = regexp.MustCompile(`m\.[A-Za-z_][A-Za-z0-9_]*Scroll\s*[+\-]?=`)
 
-// cursorFieldAssignmentPattern is the W11-extended sibling rule: any
-// `m.fooCursor = …` / `m.fooCursor += …` write outside
-// `internal/tui/components/` is a violation. The cursorwindow,
-// cardlist, linelist, and picker components own the cursor field as
-// internal state; surface code must mutate it through a typed
-// method (MoveCursor / JumpFirst / JumpLast / SetCursor / WithCursor)
-// so the clamp + resync contract is one implementation deep.
+// cursorFieldAssignmentPattern matches a candidate cursor field
+// assignment on a receiver — `m.fooCursor = …`, `m.fooCursor += …`,
+// `m.fooCursor++`, `m.fooCursor--`. The candidate is then filtered
+// in TestCursorStateBoundary to drop the typed-mutator escape hatch
+// (assignments whose RHS is a method-chain on the same cursor
+// field — see the post-match heuristic there).
 //
-// The bug class this rule closes: surfaces forgot to clamp the
-// cursor after deleting an item and stranded it past the new last
-// index. The new arch gate makes that mistake unrepresentable —
-// you cannot write the stranded value through a method that always
-// re-runs the clamp.
-var cursorFieldAssignmentPattern = regexp.MustCompile(`m\.[A-Za-z_][A-Za-z0-9_]*Cursor\s*[+\-]?=[^=]`)
+// We anchor on `m\.\w*Cursor` because a fresh cursor field declared
+// on the parent Model always lives behind `m.` in render_*.go (the
+// receiver convention is enforced by gofmt). Anything else (a
+// chained access like `m.foo.barCursor`) is intentionally out of
+// scope — components handle their own cursor invariants and pass
+// the result back by value through the parent's mutator method.
+var cursorFieldAssignmentPattern = regexp.MustCompile(`m\.([A-Za-z_][A-Za-z0-9_]*Cursor)\s*(\+\+|--|[+\-]?=)`)
 
 // TestScrollStateBoundary enforces the W11 contract: surface code in
 // internal/tui/render_*.go cannot write directly to a Scroll field.
@@ -166,13 +166,32 @@ func TestCursorStateBoundary(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		for _, idx := range cursorFieldAssignmentPattern.FindAllIndex(data, -1) {
-			line := 1 + strings.Count(string(data[:idx[0]]), "\n")
+		for _, m := range cursorFieldAssignmentPattern.FindAllSubmatchIndex(data, -1) {
+			field := string(data[m[2]:m[3]]) // captured `fooCursor`
+			// Pull the full source line so we can apply the
+			// typed-mutator heuristic. The escape hatch:
+			// `m.fooCursor = m.fooCursor.MutatorMethod(...)` is the
+			// canonical "re-assign-the-result-of-a-mutator" shape Go's
+			// value semantics force on us for an immutable-by-value
+			// component. We let it through when the RHS contains
+			// `m.<field>.` (the mutator chain back into the same
+			// cursor field).
+			lineStart := m[0]
+			for lineStart > 0 && data[lineStart-1] != '\n' {
+				lineStart--
+			}
+			lineEnd := m[1]
+			for lineEnd < len(data) && data[lineEnd] != '\n' {
+				lineEnd++
+			}
+			full := string(data[lineStart:lineEnd])
+			rhsSep := "m." + field + "."
+			if strings.Contains(full[m[1]-lineStart:], rhsSep) {
+				continue
+			}
+			lineNum := 1 + strings.Count(string(data[:m[0]]), "\n")
 			rel, _ := filepath.Rel(root, path)
-			// Trim the trailing non-`=` char the lookahead captured so
-			// the report shows just the assignment fragment.
-			match := strings.TrimSpace(string(data[idx[0] : idx[1]-1]))
-			violations = append(violations, rel+":"+itoa(line)+": "+match)
+			violations = append(violations, rel+":"+itoa(lineNum)+": "+strings.TrimSpace(full))
 		}
 		return nil
 	})
