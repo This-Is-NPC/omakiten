@@ -306,6 +306,7 @@ keys:
   cli.workflow.orphan.flag.confirm: "применить повторную привязку; без этого флага команда печатает план и выходит"
   cli.workflow.orphan.flag.dry-run: "напечатать план миграции без применения (по умолчанию когда --confirm отсутствует)"
   cli.err.config_invalid: "config недействителен"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
   cli.err.config_unreadable: "файл config не читается"
   cli.err.init_seeded_config_invalid: "созданный init config недействителен"
   cli.err.invalid_scope: "недействительный --scope (использовать global или local)"

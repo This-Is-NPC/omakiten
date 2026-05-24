@@ -304,6 +304,7 @@ keys:
   cli.workflow.orphan.flag.confirm: "pas de rebind toe; zonder deze flag print het commando het plan en stopt"
   cli.workflow.orphan.flag.dry-run: "print het migratieplan zonder toepassen (default wanneer --confirm ontbreekt)"
   cli.err.config_invalid: "config is ongeldig"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
   cli.err.config_unreadable: "config-bestand niet leesbaar"
   cli.err.init_seeded_config_invalid: "door init geseede config is ongeldig"
   cli.err.invalid_scope: "ongeldige --scope (verwacht global of local)"

@@ -303,6 +303,7 @@ keys:
   cli.workflow.orphan.flag.confirm: "zastosuj przepięcie; bez tej flagi komenda wypisuje plan i wychodzi"
   cli.workflow.orphan.flag.dry-run: "wypisz plan migracji bez stosowania (domyślnie gdy brak --confirm)"
   cli.err.config_invalid: "config jest niepoprawny"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
   cli.err.config_unreadable: "plik config nie jest czytelny"
   cli.err.init_seeded_config_invalid: "zaszczepiony config init jest niepoprawny"
   cli.err.invalid_scope: "niepoprawny --scope (wymaga global lub local)"

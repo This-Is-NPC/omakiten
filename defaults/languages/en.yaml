@@ -303,6 +303,7 @@ keys:
   cli.workflow.orphan.flag.confirm: "apply the rebind; without this flag the command prints the plan and exits"
   cli.workflow.orphan.flag.dry-run: "print the migration plan without applying (default when --confirm is absent)"
   cli.err.config_invalid: "config is invalid"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
   cli.err.config_unreadable: "config file not readable"
   cli.err.init_seeded_config_invalid: "init seeded config is invalid"
   cli.err.invalid_scope: "invalid --scope (want global or local)"

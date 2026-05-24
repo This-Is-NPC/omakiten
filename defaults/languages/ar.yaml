@@ -303,6 +303,7 @@ keys:
   cli.workflow.orphan.flag.confirm: "تطبيق إعادة الربط؛ بدون هذا العلم يطبع الأمر الخطّة ويخرج"
   cli.workflow.orphan.flag.dry-run: "طباعة خطّة الترحيل دون تطبيق (الافتراضي عند غياب --confirm)"
   cli.err.config_invalid: "الإعدادات غير صالحة"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
   cli.err.config_unreadable: "ملف الإعدادات غير قابل للقراءة"
   cli.err.init_seeded_config_invalid: "إعدادات init المُهيّأة غير صالحة"
   cli.err.invalid_scope: "‎--scope غير صالح (يجب أن يكون global أو local)"

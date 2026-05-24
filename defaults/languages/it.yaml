@@ -306,6 +306,7 @@ keys:
   cli.workflow.orphan.flag.confirm: "applica il ricollegamento; senza questa flag il comando stampa il piano ed esce"
   cli.workflow.orphan.flag.dry-run: "stampa il piano di migrazione senza applicare (default quando --confirm è assente)"
   cli.err.config_invalid: "config non valida"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
   cli.err.config_unreadable: "file di config non leggibile"
   cli.err.init_seeded_config_invalid: "la config seedata da init non è valida"
   cli.err.invalid_scope: "--scope non valido (usa global o local)"

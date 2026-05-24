@@ -305,6 +305,7 @@ keys:
   cli.workflow.orphan.flag.confirm: "रीबाइंड लागू करें; इस flag के बिना कमांड योजना प्रिंट करता है और बाहर निकलता है"
   cli.workflow.orphan.flag.dry-run: "लागू किए बिना माइग्रेशन योजना प्रिंट करें (--confirm अनुपस्थित होने पर डिफ़ॉल्ट)"
   cli.err.config_invalid: "config अमान्य है"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
   cli.err.config_unreadable: "config फ़ाइल पठनीय नहीं"
   cli.err.init_seeded_config_invalid: "init सीड किया गया config अमान्य है"
   cli.err.invalid_scope: "अमान्य --scope (global या local चाहिए)"

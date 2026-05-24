@@ -303,6 +303,7 @@ keys:
   cli.workflow.orphan.flag.confirm: "再バインドを適用。このフラグ無しではコマンドは計画を出力して終了する"
   cli.workflow.orphan.flag.dry-run: "適用せずに移行計画を出力 (--confirm が無い時のデフォルト)"
   cli.err.config_invalid: "config が不正です"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
   cli.err.config_unreadable: "config ファイルが読み取れません"
   cli.err.init_seeded_config_invalid: "init で seed された config が不正です"
   cli.err.invalid_scope: "--scope が不正です (global または local を指定)"

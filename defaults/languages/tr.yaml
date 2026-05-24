@@ -304,6 +304,7 @@ keys:
   cli.workflow.orphan.flag.confirm: "yeniden bağlamayı uygula; bu bayrak olmadan komut planı yazdırır ve çıkar"
   cli.workflow.orphan.flag.dry-run: "migrasyon planını uygulamadan yazdır (--confirm yoksa varsayılan)"
   cli.err.config_invalid: "config geçersiz"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
   cli.err.config_unreadable: "config dosyası okunamıyor"
   cli.err.init_seeded_config_invalid: "init ile seed edilen config geçersiz"
   cli.err.invalid_scope: "geçersiz --scope (global veya local bekleniyor)"

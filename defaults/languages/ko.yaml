@@ -301,6 +301,7 @@ keys:
   cli.workflow.orphan.flag.confirm: "재바인딩 적용; 이 플래그 없이는 명령이 계획을 출력하고 종료"
   cli.workflow.orphan.flag.dry-run: "적용 없이 마이그레이션 계획 출력(--confirm 없을 때 기본값)"
   cli.err.config_invalid: "config 가 유효하지 않음"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
   cli.err.config_unreadable: "config 파일을 읽을 수 없음"
   cli.err.init_seeded_config_invalid: "init 가 시드한 config 가 유효하지 않음"
   cli.err.invalid_scope: "유효하지 않은 --scope (global 또는 local 사용)"

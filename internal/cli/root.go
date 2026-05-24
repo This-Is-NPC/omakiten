@@ -330,7 +330,11 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 // handle without re-implementing the cache lookup.
 func (r *runtime) ResolveProjectRuntime(ctx context.Context, projectID int64) (*agentruntime.ProjectRuntime, error) {
 	if r.cache == nil {
-		return nil, fmt.Errorf("cli runtime: bundle cache is not initialised; open() must run with materializeConfig=true")
+		// Redacted message: the underlying cause names internal
+		// construction options (materializeConfig=true) the user has
+		// no way to set. Point them at the user-facing remediation
+		// instead.
+		return nil, domain.NewError(domain.ErrConfigInvalid, t("cli.err.runtime_not_initialised"), nil)
 	}
 	if projectID == 0 {
 		projectID = r.projectID
@@ -434,7 +438,15 @@ func (o *runtimeOptions) resolveDiscoveryStart(ctx context.Context, store app.Pr
 	resolver := projectresolver.NewResolver(store)
 	cwd, _ := os.Getwd()
 	project, err := resolver.Resolve(ctx, projectresolver.ResolveOptions{ProjectID: o.projectID, Project: o.project, CWD: cwd})
-	if err != nil || project.RootPath == "" {
+	if err != nil {
+		// The user explicitly named a project (--project / --project-id);
+		// silently degrading to CWD masks the resolution failure and
+		// drops the rest of the command on a different bundle than the
+		// caller asked for. Surface the typed error so the operator
+		// can fix the flag or create the project before retrying.
+		return "", err
+	}
+	if project.RootPath == "" {
 		return cwd, nil
 	}
 	return project.RootPath, nil

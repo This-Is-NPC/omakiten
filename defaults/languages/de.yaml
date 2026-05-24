@@ -310,6 +310,7 @@ keys:
   cli.workflow.orphan.flag.confirm: "wendet das Re-Binding an; ohne dieses Flag druckt der Befehl den Plan und beendet sich"
   cli.workflow.orphan.flag.dry-run: "druckt den Migrationsplan ohne anzuwenden (Standard wenn --confirm fehlt)"
   cli.err.config_invalid: "Config ist ungültig"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
   cli.err.config_unreadable: "Config-Datei nicht lesbar"
   cli.err.init_seeded_config_invalid: "init-geseedete Config ist ungültig"
   cli.err.invalid_scope: "--scope ungültig (global oder local nutzen)"

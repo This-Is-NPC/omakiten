@@ -304,6 +304,7 @@ keys:
   cli.workflow.orphan.flag.confirm: "sovella uudelleensidonta; ilman tätä lippua komento tulostaa suunnitelman ja poistuu"
   cli.workflow.orphan.flag.dry-run: "tulosta migraatiosuunnitelma soveltamatta (oletus kun --confirm puuttuu)"
   cli.err.config_invalid: "config on virheellinen"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
   cli.err.config_unreadable: "config-tiedostoa ei voida lukea"
   cli.err.init_seeded_config_invalid: "init-siemennetty config on virheellinen"
   cli.err.invalid_scope: "virheellinen --scope (haluttu global tai local)"

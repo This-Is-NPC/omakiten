@@ -303,6 +303,7 @@ keys:
   cli.workflow.orphan.flag.confirm: "applicera rebinden; utan denna flagga skriver kommandot ut planen och avslutar"
   cli.workflow.orphan.flag.dry-run: "skriv ut migrationsplanen utan att applicera (standard när --confirm saknas)"
   cli.err.config_invalid: "config är ogiltig"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
   cli.err.config_unreadable: "config-fil ej läsbar"
   cli.err.init_seeded_config_invalid: "seedad init-config är ogiltig"
   cli.err.invalid_scope: "ogiltig --scope (vill ha global eller local)"

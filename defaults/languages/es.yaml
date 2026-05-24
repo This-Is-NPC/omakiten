@@ -308,6 +308,7 @@ keys:
   cli.workflow.orphan.flag.confirm: "aplica el re-vínculo; sin esta flag el comando imprime el plan y sale"
   cli.workflow.orphan.flag.dry-run: "imprime el plan de migración sin aplicar (predeterminado cuando --confirm está ausente)"
   cli.err.config_invalid: "config es inválida"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
   cli.err.config_unreadable: "archivo de config no pudo ser leído"
   cli.err.init_seeded_config_invalid: "config creada por init es inválida"
   cli.err.invalid_scope: "--scope inválido (usa global o local)"

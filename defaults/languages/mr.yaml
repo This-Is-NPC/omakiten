@@ -303,6 +303,7 @@ keys:
   cli.workflow.orphan.flag.confirm: "rebind लागू करा; या flag शिवाय कमांड plan छापते आणि बाहेर पडते"
   cli.workflow.orphan.flag.dry-run: "migration plan लागू न करता छापा (--confirm नसताना डीफॉल्ट)"
   cli.err.config_invalid: "config अवैध आहे"
+  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
   cli.err.config_unreadable: "config फाइल वाचण्यायोग्य नाही"
   cli.err.init_seeded_config_invalid: "init ने पेरलेले config अवैध आहे"
   cli.err.invalid_scope: "अवैध --scope (global किंवा local हवे)"
