@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"omakiten/internal/domain"
@@ -119,6 +120,35 @@ func TestAddRemoveListTaskTags(t *testing.T) {
 	tags, _ = store.ListTaskTags(ctx, project.ID, task.ID)
 	if len(tags) != 0 {
 		t.Fatalf("ListTaskTags() after remove len = %d, want 0", len(tags))
+	}
+}
+
+// TestAddTaskTag_UnknownTagIDReturnsValidationError pins the new
+// behavior introduced by the MapSQLiteError migration: when callers
+// pass a tag_id that no longer (or never did) exist, the storage layer
+// surfaces a typed validation error instead of the raw FK message
+// bubbling up as a generic internal-error envelope. Before the
+// migration this path returned the driver error verbatim and callers
+// mapped it to ErrInternal — the typed surface lets ErrorService
+// classify it as ErrValidation with the field hint intact.
+func TestAddTaskTag_UnknownTagIDReturnsValidationError(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+
+	project, _ := store.UpsertProject(ctx, "P", "p", "/work/p")
+	task, _ := store.CreateTask(ctx, project.ID, "Task", "", domain.Priority(2), "backlog", nil, store.snap())
+
+	const phantomTagID int64 = 9999
+	err := store.AddTaskTag(ctx, project.ID, task.ID, phantomTagID)
+	if err == nil {
+		t.Fatalf("AddTaskTag(phantom tag) = nil, want FK violation")
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) {
+		t.Fatalf("AddTaskTag(phantom tag) returned %T (%v); want *domain.CodedError", err, err)
+	}
+	if coded.Code != domain.ErrValidation {
+		t.Fatalf("AddTaskTag(phantom tag) Code = %q, want %q", coded.Code, domain.ErrValidation)
 	}
 }
 
