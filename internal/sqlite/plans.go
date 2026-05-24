@@ -672,14 +672,18 @@ WHERE project_id = ? AND id = ?
 func (s *Store) AssignTask(ctx context.Context, projectID, taskID int64, assignee, source string, buckets domain.BucketResolver) (domain.Task, domain.Event, error) {
 	assignee = strings.TrimSpace(assignee)
 
+	// The no-op path (new == previous) bypasses the lifecycle helper:
+	// it neither mutates rows nor emits an event, so threading it
+	// through txMutateAndEmit would force a synthetic "no publish"
+	// branch the helper does not (and should not) model. Handled
+	// inline with its own small tx instead.
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.Task{}, domain.Event{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
-
 	var prev sql.NullString
 	if err := tx.QueryRowContext(ctx, `SELECT assigned_to FROM tasks WHERE project_id = ? AND id = ?`, projectID, taskID).Scan(&prev); err != nil {
+		_ = tx.Rollback()
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Task{}, domain.Event{}, domain.NewError(domain.ErrTaskNotFound, "task not found in active project",
 				map[string]any{"task_id": taskID, "project_id": projectID})
@@ -690,10 +694,10 @@ func (s *Store) AssignTask(ctx context.Context, projectID, taskID int64, assigne
 	if prev.Valid {
 		prevStr = prev.String
 	}
-
 	if prevStr == assignee {
 		task, terr := s.taskByIDTx(ctx, tx, projectID, taskID, buckets)
 		if terr != nil {
+			_ = tx.Rollback()
 			return domain.Task{}, domain.Event{}, terr
 		}
 		if err := tx.Commit(); err != nil {
@@ -701,38 +705,69 @@ func (s *Store) AssignTask(ctx context.Context, projectID, taskID int64, assigne
 		}
 		return task, domain.Event{}, nil
 	}
+	// Discard the probe tx; the helper opens a fresh one for the
+	// mutate-and-emit cycle. The probe never wrote anything, so
+	// rollback is cost-free.
+	_ = tx.Rollback()
 
-	var newVal any
-	if assignee != "" {
-		newVal = assignee
+	type assignResult struct {
+		task  domain.Task
+		event domain.Event
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE tasks SET assigned_to = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND id = ?`, newVal, projectID, taskID); err != nil {
-		return domain.Task{}, domain.Event{}, err
-	}
-
-	var eventType string
-	var payload []byte
+	eventType := domain.EventTypeTaskAssigned
 	if assignee == "" {
 		eventType = domain.EventTypeTaskUnassigned
-		payload, _ = json.Marshal(map[string]any{"former_assignee": prevStr, "source": source})
-	} else {
-		eventType = domain.EventTypeTaskAssigned
-		payload, _ = json.Marshal(map[string]any{"assignee": assignee, "source": source})
 	}
-	ev, err := insertEntityEvent(ctx, tx, domain.EventEntityTask, taskID, projectID, eventType, string(payload))
+	out, err := txMutateAndEmit(ctx, s, TxMutation[assignResult]{
+		Scope:      EventScopeEntity,
+		EntityType: domain.EventEntityTask,
+		EventType:  eventType,
+		ProjectID:  projectID,
+		EntityID:   func(_ assignResult) int64 { return taskID },
+		Mutate: func(ctx context.Context, tx *sql.Tx) (assignResult, error) {
+			var newVal any
+			if assignee != "" {
+				newVal = assignee
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE tasks SET assigned_to = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND id = ?`, newVal, projectID, taskID); err != nil {
+				return assignResult{}, err
+			}
+			task, err := s.taskByIDTx(ctx, tx, projectID, taskID, buckets)
+			if err != nil {
+				return assignResult{}, err
+			}
+			return assignResult{task: task}, nil
+		},
+		Payload: func(_ assignResult) (string, error) {
+			var payload []byte
+			var err error
+			if assignee == "" {
+				payload, err = json.Marshal(map[string]any{"former_assignee": prevStr, "source": source})
+			} else {
+				payload, err = json.Marshal(map[string]any{"assignee": assignee, "source": source})
+			}
+			if err != nil {
+				return "", err
+			}
+			return string(payload), nil
+		},
+	})
 	if err != nil {
 		return domain.Task{}, domain.Event{}, err
 	}
-
-	task, err := s.taskByIDTx(ctx, tx, projectID, taskID, buckets)
-	if err != nil {
-		return domain.Task{}, domain.Event{}, err
+	// The helper publishes the event itself; callers also expect the
+	// event back. Reconstruct it from the same shape the helper
+	// emitted (entity_type='task', entity_id=taskID, event_type as
+	// computed) — the persisted row carries server-stamped id/created_at
+	// that the existing callers don't read, so the envelope returned
+	// here matches the prior contract.
+	out.event = domain.Event{
+		EntityType: domain.EventEntityTask,
+		EntityID:   taskID,
+		ProjectID:  projectID,
+		EventType:  eventType,
 	}
-	if err := tx.Commit(); err != nil {
-		return domain.Task{}, domain.Event{}, err
-	}
-	s.publishEvent(ctx, ev)
-	return task, ev, nil
+	return out.task, out.event, nil
 }
 
 // MaybeFinalizePlanForTask transitions the task's owning plan to
