@@ -51,7 +51,7 @@ func LoadSkills(dir string) ([]Skill, []SourceWarning, error) {
 	var warnings []SourceWarning
 	seen := map[string]entityFile{}
 	for _, file := range files {
-		raw, err := os.ReadFile(file.Path)
+		raw, err := readFileBounded(file.Path, MaxEntityFileBytes)
 		if err != nil {
 			return nil, nil, fmt.Errorf("read %s: %w", file.Path, err)
 		}
@@ -108,7 +108,7 @@ func LoadLaws(dir string) ([]Law, []SourceWarning, error) {
 	var warnings []SourceWarning
 	seen := map[string]entityFile{}
 	for _, file := range files {
-		raw, err := os.ReadFile(file.Path)
+		raw, err := readFileBounded(file.Path, MaxEntityFileBytes)
 		if err != nil {
 			return nil, nil, fmt.Errorf("read %s: %w", file.Path, err)
 		}
@@ -166,7 +166,7 @@ func LoadPersonas(dir string) ([]Persona, []SourceWarning, error) {
 	var warnings []SourceWarning
 	seen := map[string]entityFile{}
 	for _, file := range files {
-		raw, err := os.ReadFile(file.Path)
+		raw, err := readFileBounded(file.Path, MaxEntityFileBytes)
 		if err != nil {
 			return nil, nil, fmt.Errorf("read %s: %w", file.Path, err)
 		}
@@ -229,7 +229,7 @@ func LoadTemplates(dir string) ([]TaskTemplate, []SourceWarning, error) {
 	var warnings []SourceWarning
 	seen := map[string]entityFile{}
 	for _, file := range files {
-		raw, err := os.ReadFile(file.Path)
+		raw, err := readFileBounded(file.Path, MaxEntityFileBytes)
 		if err != nil {
 			return nil, nil, fmt.Errorf("read %s: %w", file.Path, err)
 		}

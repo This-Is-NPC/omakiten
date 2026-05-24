@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,13 +15,11 @@ import (
 // and runs ValidateNotification. The on-disk shape mirrors theme files —
 // pure YAML, no frontmatter wrapping.
 func LoadNotification(path string) (Notification, error) {
-	file, err := os.Open(path)
+	raw, err := readFileBounded(path, MaxNotificationFileBytes)
 	if err != nil {
 		return Notification{}, err
 	}
-	defer func() { _ = file.Close() }()
-
-	decoder := yaml.NewDecoder(file)
+	decoder := yaml.NewDecoder(bytes.NewReader(raw))
 	decoder.KnownFields(true)
 
 	var notification Notification

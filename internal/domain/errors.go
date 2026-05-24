@@ -29,6 +29,7 @@ const (
 	ErrUninstallFailed           ErrorCode = "uninstall_failed"
 	ErrUpdateFailed              ErrorCode = "update_failed"
 	ErrEditorNotFound            ErrorCode = "editor_not_found"
+	ErrConfigTooLarge            ErrorCode = "config_too_large"
 )
 
 type CodedError struct {
