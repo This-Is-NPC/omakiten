@@ -47,7 +47,7 @@ func fixedDecoder() func(path string, raw []byte, isCustom bool) (loadFromDirIte
 func TestLoadFromDir_emptyDir(t *testing.T) {
 	dir := t.TempDir()
 	items, warnings, err := LoadFromDir(dir, LoadOptions[loadFromDirItem]{
-		Suffix:       ".yaml",
+		Suffixes:     []string{".yaml"},
 		MaxFileBytes: 1024,
 		Decode:       fixedDecoder(),
 		SlugOf:       func(item loadFromDirItem) string { return item.Slug },
@@ -66,7 +66,7 @@ func TestLoadFromDir_emptyDir(t *testing.T) {
 
 func TestLoadFromDir_missingDir(t *testing.T) {
 	items, warnings, err := LoadFromDir(filepath.Join(t.TempDir(), "does-not-exist"), LoadOptions[loadFromDirItem]{
-		Suffix:       ".yaml",
+		Suffixes:     []string{".yaml"},
 		MaxFileBytes: 1024,
 		Decode:       fixedDecoder(),
 		SlugOf:       func(item loadFromDirItem) string { return item.Slug },
@@ -86,7 +86,7 @@ func TestLoadFromDir_ignoresNonMatchingSuffix(t *testing.T) {
 	writeLoadFromDirFile(t, dir, "beta.txt", "ignored")
 	writeLoadFromDirFile(t, dir, "gamma.md", "ignored")
 	items, _, err := LoadFromDir(dir, LoadOptions[loadFromDirItem]{
-		Suffix:       ".yaml",
+		Suffixes:     []string{".yaml"},
 		MaxFileBytes: 1024,
 		Decode:       fixedDecoder(),
 		SlugOf:       func(item loadFromDirItem) string { return item.Slug },
@@ -104,7 +104,7 @@ func TestLoadFromDir_sizeCap(t *testing.T) {
 	dir := t.TempDir()
 	writeLoadFromDirFile(t, dir, "fat.yaml", strings.Repeat("x", 256))
 	_, _, err := LoadFromDir(dir, LoadOptions[loadFromDirItem]{
-		Suffix:       ".yaml",
+		Suffixes:     []string{".yaml"},
 		MaxFileBytes: 64,
 		Decode:       fixedDecoder(),
 		SlugOf:       func(item loadFromDirItem) string { return item.Slug },
@@ -126,7 +126,7 @@ func TestLoadFromDir_collideOverwrite_customWinsOverDefault(t *testing.T) {
 	customPath := writeLoadFromDirFile(t, customDir, "shared.yaml", "custom")
 
 	items, warnings, err := LoadFromDir(dir, LoadOptions[loadFromDirItem]{
-		Suffix:       ".yaml",
+		Suffixes:     []string{".yaml"},
 		MaxFileBytes: 1024,
 		Decode:       fixedDecoder(),
 		SlugOf:       func(item loadFromDirItem) string { return item.Slug },
@@ -155,7 +155,7 @@ func TestLoadFromDir_collideOverwrite_sameScopeDuplicateIsError(t *testing.T) {
 	writeLoadFromDirFile(t, dir, "other.yaml", "default")
 	// Force a same-scope collision by mapping both files to the same slug.
 	_, _, err := LoadFromDir(dir, LoadOptions[loadFromDirItem]{
-		Suffix:       ".yaml",
+		Suffixes:     []string{".yaml"},
 		MaxFileBytes: 1024,
 		Decode:       fixedDecoder(),
 		SlugOf:       func(item loadFromDirItem) string { return "fixed" },
@@ -174,7 +174,7 @@ func TestLoadFromDir_collideError_anyCollisionIsError(t *testing.T) {
 	writeLoadFromDirFile(t, dir, "shared.yaml", "default")
 	writeLoadFromDirFile(t, filepath.Join(dir, "custom"), "shared.yaml", "custom")
 	_, _, err := LoadFromDir(dir, LoadOptions[loadFromDirItem]{
-		Suffix:       ".yaml",
+		Suffixes:     []string{".yaml"},
 		MaxFileBytes: 1024,
 		Decode:       fixedDecoder(),
 		SlugOf:       func(item loadFromDirItem) string { return item.Slug },
@@ -193,7 +193,7 @@ func TestLoadFromDir_collideKeepFirst_defaultWinsOverCustom(t *testing.T) {
 	defaultPath := writeLoadFromDirFile(t, dir, "shared.yaml", "default")
 	writeLoadFromDirFile(t, filepath.Join(dir, "custom"), "shared.yaml", "custom")
 	items, _, err := LoadFromDir(dir, LoadOptions[loadFromDirItem]{
-		Suffix:       ".yaml",
+		Suffixes:     []string{".yaml"},
 		MaxFileBytes: 1024,
 		Decode:       fixedDecoder(),
 		SlugOf:       func(item loadFromDirItem) string { return item.Slug },
@@ -215,7 +215,7 @@ func TestLoadFromDir_decoderErrorPropagates(t *testing.T) {
 	writeLoadFromDirFile(t, dir, "boom.yaml", "anything")
 	sentinel := fmt.Errorf("decoder boom")
 	_, _, err := LoadFromDir(dir, LoadOptions[loadFromDirItem]{
-		Suffix:       ".yaml",
+		Suffixes:     []string{".yaml"},
 		MaxFileBytes: 1024,
 		Decode: func(path string, _ []byte, _ bool) (loadFromDirItem, *SourceWarning, error) {
 			return loadFromDirItem{}, nil, sentinel
@@ -234,7 +234,7 @@ func TestLoadFromDir_onDecodeErrorRecoversCustom(t *testing.T) {
 	writeLoadFromDirFile(t, filepath.Join(dir, "custom"), "bad.yaml", "x")
 	boom := fmt.Errorf("schema drift")
 	items, warnings, err := LoadFromDir(dir, LoadOptions[loadFromDirItem]{
-		Suffix:       ".yaml",
+		Suffixes:     []string{".yaml"},
 		MaxFileBytes: 1024,
 		Decode: func(path string, _ []byte, isCustom bool) (loadFromDirItem, *SourceWarning, error) {
 			if filepath.Base(path) == "bad.yaml" {
@@ -268,7 +268,7 @@ func TestLoadFromDir_decoderWarningPropagates(t *testing.T) {
 	dir := t.TempDir()
 	writeLoadFromDirFile(t, dir, "alpha.yaml", "x")
 	items, warnings, err := LoadFromDir(dir, LoadOptions[loadFromDirItem]{
-		Suffix:       ".yaml",
+		Suffixes:     []string{".yaml"},
 		MaxFileBytes: 1024,
 		Decode: func(path string, _ []byte, isCustom bool) (loadFromDirItem, *SourceWarning, error) {
 			base := filepath.Base(path)
@@ -297,7 +297,7 @@ func TestLoadFromDir_alphabeticalOrder(t *testing.T) {
 	writeLoadFromDirFile(t, dir, "alpha.yaml", "x")
 	writeLoadFromDirFile(t, dir, "bravo.yaml", "x")
 	items, _, err := LoadFromDir(dir, LoadOptions[loadFromDirItem]{
-		Suffix:       ".yaml",
+		Suffixes:     []string{".yaml"},
 		MaxFileBytes: 1024,
 		Decode:       fixedDecoder(),
 		SlugOf:       func(item loadFromDirItem) string { return item.Slug },

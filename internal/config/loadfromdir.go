@@ -41,7 +41,12 @@ const (
 // item (filename slug is not authoritative — e.g. notifications dedup on
 // Notification.Name, not filename).
 type LoadOptions[T any] struct {
-	Suffix       string
+	// Suffixes is the list of accepted file extensions (lowercased,
+	// dot-prefixed). Most loaders pin one (".md" for entities), but
+	// language packs and notifications historically accepted both
+	// ".yaml" and ".yml" — capture both so the migration is observably
+	// a no-op.
+	Suffixes     []string
 	MaxFileBytes int64
 	// Decode parses raw into the domain type. isCustom is stamped by the
 	// walker (false for files at dir/, true for files at dir/custom/) so
@@ -74,12 +79,15 @@ type LoadOptions[T any] struct {
 // emitted first, then customs — the merge stage decides who wins per the
 // policy above.
 func LoadFromDir[T any](dir string, opts LoadOptions[T]) ([]T, []SourceWarning, error) {
-	suffix := strings.ToLower(opts.Suffix)
-	files, err := listFilesIn(dir, []string{suffix}, false)
+	suffixes := make([]string, 0, len(opts.Suffixes))
+	for _, s := range opts.Suffixes {
+		suffixes = append(suffixes, strings.ToLower(s))
+	}
+	files, err := listFilesIn(dir, suffixes, false)
 	if err != nil {
 		return nil, nil, err
 	}
-	customs, err := listFilesIn(filepath.Join(dir, "custom"), []string{suffix}, true)
+	customs, err := listFilesIn(filepath.Join(dir, "custom"), suffixes, true)
 	if err != nil {
 		return nil, nil, err
 	}
