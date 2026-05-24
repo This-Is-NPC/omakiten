@@ -40,7 +40,8 @@ RETURNING id, project_id, slug, name, goal_body, status, created_at, updated_at,
 `, projectID, slug, name, goalBody)
 			plan, err := sqlutil.ScanRow(row, decodePlan)
 			if err != nil {
-				if isUniqueViolation(err) {
+				var ce *sqlutil.ConstraintError
+				if mapped := sqlutil.MapSQLiteError(err); errors.As(mapped, &ce) && ce.Violation == sqlutil.ViolationUnique {
 					return domain.Plan{}, domain.NewError(domain.ErrPlanSlugConflict,
 						"plan slug already exists for this project",
 						map[string]any{"project_id": projectID, "slug": slug})
@@ -334,7 +335,8 @@ RETURNING id, plan_id, name, position
 
 			var wave domain.PlanWave
 			if err := row.Scan(&wave.ID, &wave.PlanID, &wave.Name, &wave.Position); err != nil {
-				if isUniqueViolation(err) {
+				var ce *sqlutil.ConstraintError
+				if mapped := sqlutil.MapSQLiteError(err); errors.As(mapped, &ce) && ce.Violation == sqlutil.ViolationUnique {
 					return domain.PlanWave{}, domain.NewError(domain.ErrValidation,
 						"wave position already taken",
 						map[string]any{"plan_id": planID, "position": position})
@@ -961,14 +963,3 @@ func decodePlan(scan func(...any) error) (domain.Plan, error) {
 	return plan, nil
 }
 
-func isUniqueViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-	// modernc.org/sqlite encodes UNIQUE violations in the error message as
-	// "UNIQUE constraint failed:" — string match is the only portable way
-	// without dragging the driver-specific error type into the storage
-	// layer. errors.Is on driver-specific sentinels would couple this
-	// package to the build tag.
-	return strings.Contains(err.Error(), "UNIQUE constraint failed")
-}
