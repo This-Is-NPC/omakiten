@@ -22,6 +22,21 @@ import (
 // the rule grep-able from the failure message.
 var scrollFieldAssignmentPattern = regexp.MustCompile(`m\.[A-Za-z_][A-Za-z0-9_]*Scroll\s*[+\-]?=`)
 
+// cursorFieldAssignmentPattern is the W11-extended sibling rule: any
+// `m.fooCursor = …` / `m.fooCursor += …` write outside
+// `internal/tui/components/` is a violation. The cursorwindow,
+// cardlist, linelist, and picker components own the cursor field as
+// internal state; surface code must mutate it through a typed
+// method (MoveCursor / JumpFirst / JumpLast / SetCursor / WithCursor)
+// so the clamp + resync contract is one implementation deep.
+//
+// The bug class this rule closes: surfaces forgot to clamp the
+// cursor after deleting an item and stranded it past the new last
+// index. The new arch gate makes that mistake unrepresentable —
+// you cannot write the stranded value through a method that always
+// re-runs the clamp.
+var cursorFieldAssignmentPattern = regexp.MustCompile(`m\.[A-Za-z_][A-Za-z0-9_]*Cursor\s*[+\-]?=[^=]`)
+
 // TestScrollStateBoundary enforces the W11 contract: surface code in
 // internal/tui/render_*.go cannot write directly to a Scroll field.
 // Every mutation must go through the cardlist or linelist
@@ -98,6 +113,87 @@ func TestScrollStateBoundary(t *testing.T) {
 	}
 	if len(violations) > 0 {
 		t.Fatalf("scroll-state boundary violations — render_*.go cannot write a Scroll field directly; route through cardlist / linelist mutators:\n  - %s", strings.Join(violations, "\n  - "))
+	}
+}
+
+// TestCursorStateBoundary is the W11-extended sibling of
+// TestScrollStateBoundary: surface code in internal/tui cannot
+// write directly to a `*Cursor` field. Every cursor mutation must
+// go through the cursorwindow / cardlist / linelist / picker
+// component's typed mutator (MoveCursor, JumpFirst, JumpLast,
+// SetCursor, WithCursor, WithItemCount), each of which re-runs the
+// scrollwindow.Resync invariant internally — the stranded-cursor
+// regression class becomes unrepresentable.
+//
+// Unlike the Scroll test (which only walks render_*.go), this one
+// walks every non-test .go file inside internal/tui except the
+// components/ sub-tree. The reason is mechanical: the surfaces that
+// still mutate raw `*Cursor` ints live across model.go,
+// settings_picker.go, template_default_picker.go, persona_picker.go
+// and the render_*.go set — a render_-prefix filter would silently
+// let those slip through.
+//
+// ENFORCED by default; set OKT_ENFORCE_CURSOR_BOUNDARY=0 to log
+// without failing during a local migration bisect.
+func TestCursorStateBoundary(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatalf("locate repo root: %v", err)
+	}
+	tuiDir := filepath.Join(root, "internal", "tui")
+
+	var violations []string
+	err = filepath.WalkDir(tuiDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			// Skip the component sub-packages — they own the cursor
+			// field by design and the mutations they perform are the
+			// canonical implementation the boundary protects.
+			if d.Name() == "components" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".go") {
+			return nil
+		}
+		if strings.HasSuffix(d.Name(), "_test.go") {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, idx := range cursorFieldAssignmentPattern.FindAllIndex(data, -1) {
+			line := 1 + strings.Count(string(data[:idx[0]]), "\n")
+			rel, _ := filepath.Rel(root, path)
+			// Trim the trailing non-`=` char the lookahead captured so
+			// the report shows just the assignment fragment.
+			match := strings.TrimSpace(string(data[idx[0] : idx[1]-1]))
+			violations = append(violations, rel+":"+itoa(line)+": "+match)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", tuiDir, err)
+	}
+
+	// Opt-IN by env var until W11-extended migration completes. The
+	// commit that lands the new arch rule is intentionally RED — the
+	// violations list shows surface-by-surface migration targets.
+	// Once every surface has routed through a typed mutator, the
+	// `.mise.toml` test task flips OKT_ENFORCE_CURSOR_BOUNDARY=1 and
+	// the gate becomes strict by default (same shape as the Scroll
+	// counterpart did at W11-D).
+	enforce := os.Getenv("OKT_ENFORCE_CURSOR_BOUNDARY") == "1"
+	if !enforce {
+		t.Logf("cursor-state boundary opt-in pending migration (OKT_ENFORCE_CURSOR_BOUNDARY=1 to enforce); %d direct Cursor mutations remain in internal/tui", len(violations))
+		return
+	}
+	if len(violations) > 0 {
+		t.Fatalf("cursor-state boundary violations — internal/tui surface code cannot write a Cursor field directly; route through cursorwindow / cardlist / linelist / picker mutators:\n  - %s", strings.Join(violations, "\n  - "))
 	}
 }
 
