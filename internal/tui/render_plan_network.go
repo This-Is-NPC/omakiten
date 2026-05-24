@@ -37,39 +37,39 @@ import (
 // cursor walks both wave headers and task cards so toggling a wave
 // stays inside the same key model as opening a task.
 func (m *Model) handlePlanNetworkKey(msg tea.KeyMsg) {
+	rows := m.planNetworkBuildRows()
+	m.planNetworkCursor = m.planNetworkCursor.
+		WithItemCount(len(rows)).
+		WithViewport(m.planNetworkBodyViewportRows())
 	switch msg.String() {
 	case "esc":
 		m.closePlanNetwork()
 		return
 	case "down", "j":
-		rows := m.planNetworkBuildRows()
-		if m.planNetworkCursor < len(rows)-1 {
-			m.planNetworkCursor++
-			m.syncPlanNetworkScroll(rows)
-		}
+		m.planNetworkCursor = m.planNetworkCursor.MoveCursor(1)
+		m.syncPlanNetworkScroll(rows)
 	case "up", "k":
-		if m.planNetworkCursor > 0 {
-			m.planNetworkCursor--
-			m.syncPlanNetworkScroll(m.planNetworkBuildRows())
-		}
+		m.planNetworkCursor = m.planNetworkCursor.MoveCursor(-1)
+		m.syncPlanNetworkScroll(rows)
 	case " ":
 		m.togglePlanWaveAtCursor()
 	case "left", "h":
 		// Collapse the wave the cursor sits in; jump cursor to its
 		// header so subsequent j/k navigates between waves cleanly.
-		rows := m.planNetworkBuildRows()
-		if m.planNetworkCursor >= len(rows) {
+		idx := m.planNetworkCursor.Cursor()
+		if len(rows) == 0 || idx >= len(rows) {
 			return
 		}
-		waveID := rows[m.planNetworkCursor].WaveID
+		waveID := rows[idx].WaveID
 		if m.planNetworkCollapsed == nil {
 			m.planNetworkCollapsed = map[int64]bool{}
 		}
 		m.planNetworkCollapsed[waveID] = true
 		rows = m.planNetworkBuildRows()
-		for i := m.planNetworkCursor; i >= 0 && i < len(rows); i-- {
+		m.planNetworkCursor = m.planNetworkCursor.WithItemCount(len(rows))
+		for i := m.planNetworkCursor.Cursor(); i >= 0 && i < len(rows); i-- {
 			if rows[i].Kind == planRowWaveHeader && rows[i].WaveID == waveID {
-				m.planNetworkCursor = i
+				m.planNetworkCursor = m.planNetworkCursor.SetCursor(i)
 				break
 			}
 		}
@@ -77,11 +77,11 @@ func (m *Model) handlePlanNetworkKey(msg tea.KeyMsg) {
 	case "right", "l":
 		// Expand the focused wave header. No-op when the cursor is on
 		// a task row (already inside an expanded wave).
-		rows := m.planNetworkBuildRows()
-		if m.planNetworkCursor >= len(rows) {
+		idx := m.planNetworkCursor.Cursor()
+		if len(rows) == 0 || idx >= len(rows) {
 			return
 		}
-		row := rows[m.planNetworkCursor]
+		row := rows[idx]
 		if row.Kind != planRowWaveHeader {
 			return
 		}
@@ -91,11 +91,11 @@ func (m *Model) handlePlanNetworkKey(msg tea.KeyMsg) {
 		m.planNetworkCollapsed[row.WaveID] = false
 		m.syncPlanNetworkScroll(m.planNetworkBuildRows())
 	case "o", "enter":
-		rows := m.planNetworkBuildRows()
-		if m.planNetworkCursor >= len(rows) {
+		idx := m.planNetworkCursor.Cursor()
+		if len(rows) == 0 || idx >= len(rows) {
 			return
 		}
-		row := rows[m.planNetworkCursor]
+		row := rows[idx]
 		if row.Kind != planRowTaskCard {
 			// Enter on a wave header is treated as a collapse toggle
 			// so the row that already advertises ▼/▶ supports the
@@ -112,31 +112,21 @@ func (m *Model) handlePlanNetworkKey(msg tea.KeyMsg) {
 		if step < 1 {
 			step = 1
 		}
-		m.planNetworkCursor -= step
-		if m.planNetworkCursor < 0 {
-			m.planNetworkCursor = 0
-		}
-		m.syncPlanNetworkScroll(m.planNetworkBuildRows())
+		m.planNetworkCursor = m.planNetworkCursor.MoveCursor(-step)
+		m.syncPlanNetworkScroll(rows)
 	case "pgdown", "ctrl+d":
-		rows := m.planNetworkBuildRows()
 		viewport := m.planNetworkViewportRows()
 		step := viewport / 2
 		if step < 1 {
 			step = 1
 		}
-		m.planNetworkCursor += step
-		if m.planNetworkCursor >= len(rows) {
-			m.planNetworkCursor = len(rows) - 1
-		}
+		m.planNetworkCursor = m.planNetworkCursor.MoveCursor(step)
 		m.syncPlanNetworkScroll(rows)
 	case "home", "g":
-		m.planNetworkCursor = 0
-		m.syncPlanNetworkScroll(m.planNetworkBuildRows())
+		m.planNetworkCursor = m.planNetworkCursor.JumpFirst()
+		m.syncPlanNetworkScroll(rows)
 	case "end", "G":
-		rows := m.planNetworkBuildRows()
-		if len(rows) > 0 {
-			m.planNetworkCursor = len(rows) - 1
-		}
+		m.planNetworkCursor = m.planNetworkCursor.JumpLast()
 		m.syncPlanNetworkScroll(rows)
 	case "r":
 		if err := m.refreshCurrentView(); err != nil {
@@ -152,30 +142,30 @@ func (m *Model) handlePlanNetworkKey(msg tea.KeyMsg) {
 
 // togglePlanWaveAtCursor flips the collapse flag for the wave the
 // cursor currently sits on (its own wave for tasks; the header for
-// header rows). Cursor stays in place; if the toggle would push the
-// cursor past the end of the visible list, it clamps to the last row.
+// header rows). Cursor stays in place; WithItemCount(new-row-count)
+// clamps the cursor to the new last row if the toggle shrank the
+// list past it.
 func (m *Model) togglePlanWaveAtCursor() {
 	rows := m.planNetworkBuildRows()
-	if m.planNetworkCursor >= len(rows) {
+	idx := m.planNetworkCursor.Cursor()
+	if len(rows) == 0 || idx >= len(rows) {
 		return
 	}
-	waveID := rows[m.planNetworkCursor].WaveID
+	waveID := rows[idx].WaveID
 	if m.planNetworkCollapsed == nil {
 		m.planNetworkCollapsed = map[int64]bool{}
 	}
 	m.planNetworkCollapsed[waveID] = !m.planNetworkCollapsed[waveID]
 	rows = m.planNetworkBuildRows()
-	if m.planNetworkCursor >= len(rows) {
-		m.planNetworkCursor = len(rows) - 1
-	}
+	m.planNetworkCursor = m.planNetworkCursor.WithItemCount(len(rows))
 	// Re-snap cursor onto the wave's header when the wave just
 	// collapsed and the cursor used to live on a task row inside it —
-	// the row at planNetworkCursor would otherwise be the NEXT wave's
-	// header (or a later task), which silently teleports the cursor.
+	// the cursor would otherwise land on the NEXT wave's header (or
+	// a later task), which silently teleports the cursor.
 	if m.planNetworkCollapsed[waveID] {
-		for i := m.planNetworkCursor; i >= 0 && i < len(rows); i-- {
+		for i := m.planNetworkCursor.Cursor(); i >= 0 && i < len(rows); i-- {
 			if rows[i].Kind == planRowWaveHeader && rows[i].WaveID == waveID {
-				m.planNetworkCursor = i
+				m.planNetworkCursor = m.planNetworkCursor.SetCursor(i)
 				break
 			}
 		}
@@ -217,8 +207,12 @@ func (m *Model) reloadPlanNetwork() {
 	m.planNetworkShow = show
 	m.invalidatePlanNetworkRowsCache()
 	rows := m.planNetworkBuildRows()
-	if m.planNetworkCursor >= len(rows) {
-		m.planNetworkCursor = 0
+	// WithItemCount clamps cursor to new last row when the reload
+	// shrank the list past the prior cursor — drop-to-0 fallback is
+	// kept inline for the past-end edge case mirroring prior shape.
+	m.planNetworkCursor = m.planNetworkCursor.WithItemCount(len(rows))
+	if m.planNetworkCursor.Cursor() >= len(rows) && len(rows) > 0 {
+		m.planNetworkCursor = m.planNetworkCursor.SetCursor(0)
 	}
 	m.syncPlanNetworkScroll(rows)
 }
@@ -235,11 +229,12 @@ func (m *Model) openPlanAssignEditor() {
 		return
 	}
 	rows := m.planNetworkBuildRows()
-	if m.planNetworkCursor < 0 || m.planNetworkCursor >= len(rows) {
+	idx := m.planNetworkCursor.Cursor()
+	if len(rows) == 0 || idx < 0 || idx >= len(rows) {
 		m.status = m.t("tui.plans.status.assign_no_task")
 		return
 	}
-	row := rows[m.planNetworkCursor]
+	row := rows[idx]
 	if row.Kind != planRowTaskCard || row.Task.TaskID == 0 {
 		m.status = m.t("tui.plans.status.assign_no_task")
 		return
@@ -264,6 +259,7 @@ func (m *Model) openPlanAssignEditor() {
 // here is scroll state, not rendering.
 func (m *Model) syncPlanNetworkScroll(rows []planNetworkRow) {
 	viewport := m.planNetworkBodyViewportRows()
+	m.planNetworkCursor = m.planNetworkCursor.WithItemCount(len(rows)).WithViewport(viewport)
 	if viewport <= 0 || len(rows) == 0 {
 		m.planNetwork = m.planNetwork.WithItems(nil)
 		return
@@ -276,7 +272,7 @@ func (m *Model) syncPlanNetworkScroll(rows []planNetworkRow) {
 	m.planNetwork = m.planNetwork.
 		WithItems(items).
 		WithViewport(viewport).
-		WithCursor(m.planNetworkCursor)
+		WithCursor(m.planNetworkCursor.Cursor())
 }
 
 // planNetworkViewportRows returns the number of terminal rows the
@@ -900,7 +896,7 @@ func (m Model) renderPlanNetwork() string {
 	for i, row := range rows {
 		primaryLane := m.renderPlanNetworkLane(i, filaments, laneCount)
 		suppress := planNetworkFilamentSrcIDsAtRow(filaments, rows, i)
-		line := m.renderPlanNetworkRowBody(row, i == m.planNetworkCursor, primaryLane, suppress, layout)
+		line := m.renderPlanNetworkRowBody(row, i == m.planNetworkCursor.Cursor(), primaryLane, suppress, layout)
 		if i+1 < len(rows) && rows[i+1].Kind != row.Kind {
 			// Compact layout: only wave↔task transitions carry a
 			// separator. Consecutive same-kind rows stack tight (tasks

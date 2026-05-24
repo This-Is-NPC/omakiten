@@ -1884,14 +1884,14 @@ func TestPlansSubTabEnterOpensNetwork(t *testing.T) {
 	// j advances the linear cursor one row; k walks it back. The
 	// rails+filaments outline collapses the multi-axis cursor of the
 	// old column view into a single index into the flat row list.
-	startCursor := opened.planNetworkCursor
+	startCursor := opened.planNetworkCursor.Cursor()
 	advanced := pressRune(t, opened, 'j')
-	if advanced.planNetworkCursor != startCursor+1 {
-		t.Fatalf("after 'j': planNetworkCursor = %d, want %d", advanced.planNetworkCursor, startCursor+1)
+	if got := advanced.planNetworkCursor.Cursor(); got != startCursor+1 {
+		t.Fatalf("after 'j': planNetworkCursor = %d, want %d", got, startCursor+1)
 	}
 	back := pressRune(t, advanced, 'k')
-	if back.planNetworkCursor != startCursor {
-		t.Fatalf("after 'k': planNetworkCursor = %d, want %d", back.planNetworkCursor, startCursor)
+	if got := back.planNetworkCursor.Cursor(); got != startCursor {
+		t.Fatalf("after 'k': planNetworkCursor = %d, want %d", got, startCursor)
 	}
 
 	closed := pressKey(t, opened, tea.KeyEsc)
@@ -2205,8 +2205,8 @@ func TestPlansSubTabNetworkScrollsVertically(t *testing.T) {
 	if len(rows) == 0 {
 		t.Fatalf("plan network produced no rows")
 	}
-	if cursor.planNetworkCursor != len(rows)-1 {
-		t.Fatalf("planNetworkCursor = %d, want %d (last row)", cursor.planNetworkCursor, len(rows)-1)
+	if got := cursor.planNetworkCursor.Cursor(); got != len(rows)-1 {
+		t.Fatalf("planNetworkCursor = %d, want %d (last row)", got, len(rows)-1)
 	}
 }
 

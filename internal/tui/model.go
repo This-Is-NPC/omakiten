@@ -84,6 +84,7 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		graphList:            linelist.New(),
 		graphCursor:          cursorwindow.New(0),
 		plansCursor:          cursorwindow.New(0),
+		planNetworkCursor:    cursorwindow.New(0),
 		settingsGeneralLines: linelist.New(),
 	}
 	model.taskTitleInput = newTaskTitleInput()

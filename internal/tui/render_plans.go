@@ -65,17 +65,17 @@ func (m *Model) openPlanNetwork() {
 	}
 	m.planNetworkShow = show
 	m.planNetworkOpen = true
-	m.planNetworkCursor = 0
 	m.planNetwork = m.planNetwork.WithItems(nil)
 	m.planNetworkCollapsed = map[int64]bool{}
+	rows := m.planNetworkBuildRows()
+	m.planNetworkCursor = m.planNetworkCursor.WithItemCount(len(rows)).SetCursor(0)
 	// Land the cursor on the active wave's header when one exists so
 	// the user sees the live frontier first. Falls back to row 0
 	// (first wave header) on plans without an active wave.
 	if show.ActiveWaveID > 0 {
-		rows := m.planNetworkBuildRows()
 		for i, row := range rows {
 			if row.Kind == planRowWaveHeader && row.WaveID == show.ActiveWaveID {
-				m.planNetworkCursor = i
+				m.planNetworkCursor = m.planNetworkCursor.SetCursor(i)
 				break
 			}
 		}
@@ -89,7 +89,7 @@ func (m *Model) openPlanNetwork() {
 func (m *Model) closePlanNetwork() {
 	m.planNetworkOpen = false
 	m.planNetworkShow = app.PlanShow{}
-	m.planNetworkCursor = 0
+	m.planNetworkCursor = m.planNetworkCursor.WithItemCount(0)
 	m.planNetwork = m.planNetwork.WithItems(nil)
 	m.planNetworkCollapsed = nil
 }

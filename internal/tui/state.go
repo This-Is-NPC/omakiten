@@ -550,10 +550,11 @@ type Model struct {
 	// planNetworkCursor is the linear cursor into the flat row
 	// projection (planNetworkBuildRows). It walks BOTH wave-header
 	// rows AND task rows so the user can space-toggle a wave without
-	// first leaving the task list. j/k advance by one row; the next
-	// row is whatever the projection emitted next, so a collapsed
-	// wave header is followed immediately by the next wave header.
-	planNetworkCursor int
+	// first leaving the task list. cursorwindow.Model owns the
+	// (cursor, scroll) pair indexed into the row slice; the parent
+	// cardlist (planNetwork) continues to own variable-height scroll
+	// math by mirroring this cursor through WithCursor at sync time.
+	planNetworkCursor cursorwindow.Model
 	// planNetwork owns the scroll state for the flat row list via
 	// cardlist.Model. Cursor mirrors planNetworkCursor through
 	// WithCursor at sync time; the cardlist's internal

@@ -28,8 +28,9 @@ func TestPlanNetworkScrollIsCardIndexNotLineOffset(t *testing.T) {
 	var m Model
 	m.height = 24
 	m.width = 100
+	m.planNetworkCursor = m.planNetworkCursor.WithItemCount(len(rows))
 	for step := 0; step < len(rows); step++ {
-		m.planNetworkCursor = step
+		m.planNetworkCursor = m.planNetworkCursor.SetCursor(step)
 		m.syncPlanNetworkScroll(rows)
 		scroll := m.planNetwork.Scroll()
 		cursor := m.planNetwork.Cursor()
@@ -58,7 +59,7 @@ func TestPlanNetworkScrollResetsOnEmptyRows(t *testing.T) {
 	var m Model
 	m.height = 20 // panelViewportRows yields a budget smaller than 40 rows
 	m.width = 100
-	m.planNetworkCursor = 39
+	m.planNetworkCursor = m.planNetworkCursor.WithItemCount(len(rows)).SetCursor(39)
 	m.syncPlanNetworkScroll(rows)
 	if m.planNetwork.Scroll() == 0 {
 		t.Fatalf("setup: expected non-zero scroll after walking to cursor=39 in a 40-row list bigger than viewport")
