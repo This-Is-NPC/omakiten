@@ -181,21 +181,21 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// raw text edits that the focused bubbles input owns. Anything not
 	// claimed by the screen is forwarded to the active input's Update so
 	// arrow keys, home/end, paste, word delete, etc. work natively.
+	// Disarm catchall: every non-esc keypress clears the dirty-discard
+	// arm so the next esc behaves as "arm again", not "discard". Funnel
+	// this through taskEscDisarm BEFORE the per-key dispatch so adding
+	// a new key case below cannot accidentally retain the armed flag.
+	// The esc case re-arms or confirms via taskEscArmOrConfirm.
+	if msg.String() != "esc" {
+		m.taskEscDisarm()
+	}
 	switch msg.String() {
 	case "ctrl+c":
 		return *m, tea.Quit
 	case "esc":
-		if m.taskScreen == taskScreenEdit && m.taskEditFormDirty() {
-			if !m.taskEscPendingDiscard {
-				// First esc on a dirty edit arms the discard prompt
-				// rather than closing immediately — the user gets one
-				// chance to recover the work before it disappears.
-				m.taskEscPendingDiscard = true
-				m.status = m.t("tui.taskedit.dirty_discard_prompt")
-				return *m, nil
-			}
+		if !m.taskEscArmOrConfirm() {
+			return *m, nil
 		}
-		m.taskEscPendingDiscard = false
 		if m.taskScreen == taskScreenCreate {
 			m.closeTaskScreen(m.t("tui.status.cancelled"))
 		} else if task, ok := m.activeTask(); ok {
@@ -205,27 +205,20 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return *m, nil
 	case "ctrl+s":
-		m.taskEscPendingDiscard = false
 		m.saveTaskForm()
 		return *m, nil
 	case "tab":
-		m.taskEscPendingDiscard = false
 		m.cycleTaskField(1)
 		return *m, nil
 	case "shift+tab":
-		m.taskEscPendingDiscard = false
 		m.cycleTaskField(-1)
 		return *m, nil
 	case "ctrl+b":
-		m.taskEscPendingDiscard = false
 		if m.taskScreen == taskScreenEdit {
 			m.openBlockerPicker()
 		}
 		return *m, nil
 	}
-	// Any other key dismisses the dirty-discard arm so the next esc
-	// behaves as "arm again", not "discard".
-	m.taskEscPendingDiscard = false
 	if m.taskField == taskFieldPriority {
 		switch msg.String() {
 		case "left", "h":
@@ -258,6 +251,39 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.taskParentLookupError = ""
 	}
 	return *m, cmd
+}
+
+// taskEscArmOrConfirm runs the esc-on-form policy for both create and
+// edit screens. On a dirty edit, the first call arms the discard
+// prompt (returns false so the caller leaves the form open); the next
+// call sees the armed flag and clears it (returns true so the caller
+// can close). On a clean form there is nothing to confirm — the arm is
+// cleared and the caller proceeds to close immediately.
+//
+// Consolidating the arm/clear bookkeeping into a single helper keeps
+// the contract reachable from one read site (the esc handler) instead
+// of the seven scattered "= false" mutations the previous shape relied
+// on. Pair with taskEscDisarm, which the keystroke dispatcher calls on
+// every non-esc key.
+func (m *Model) taskEscArmOrConfirm() (confirmed bool) {
+	if m.taskScreen == taskScreenEdit && m.taskEditFormDirty() && !m.taskEscPendingDiscard {
+		// First esc on a dirty edit arms the discard prompt rather
+		// than closing immediately — the user gets one chance to
+		// recover the work before it disappears.
+		m.taskEscPendingDiscard = true
+		m.status = m.t("tui.taskedit.dirty_discard_prompt")
+		return false
+	}
+	m.taskEscPendingDiscard = false
+	return true
+}
+
+// taskEscDisarm clears any armed dirty-discard state. Called from the
+// catchall in updateTaskScreen on every non-esc keypress so adding a
+// new key handler below cannot leave the flag set across an unrelated
+// interaction.
+func (m *Model) taskEscDisarm() {
+	m.taskEscPendingDiscard = false
 }
 
 // taskEditFormDirty reports whether the form values have diverged from
