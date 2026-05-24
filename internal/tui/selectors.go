@@ -125,7 +125,7 @@ func (m Model) selectedTask() (domain.Task, bool) {
 		return m.taskByID(m.taskID)
 	}
 	if m.top == topTasks && m.sub == subBoard {
-		if len(m.workflow.Buckets) == 0 || m.colIdx >= len(m.workflow.Buckets) {
+		if len(m.workflow.Buckets) == 0 || m.colIdx < 0 || m.colIdx >= len(m.workflow.Buckets) {
 			return domain.Task{}, false
 		}
 		bucketTasks := m.tasksInCurrentBucket()
@@ -226,7 +226,7 @@ func (m *Model) invalidateBoardCaches() {
 }
 
 func (m Model) tasksInCurrentBucket() []domain.Task {
-	if len(m.workflow.Buckets) == 0 || m.colIdx >= len(m.workflow.Buckets) {
+	if len(m.workflow.Buckets) == 0 || m.colIdx < 0 || m.colIdx >= len(m.workflow.Buckets) {
 		return nil
 	}
 	return m.tasksByBucket()[m.workflow.Buckets[m.colIdx].Key]
