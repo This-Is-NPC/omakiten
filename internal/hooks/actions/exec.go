@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -39,6 +41,11 @@ func (e Exec) Execute(ctx context.Context, ev domain.Event, args map[string]any)
 	if err != nil {
 		return err
 	}
+	resolved, err := resolveExecBinary(argv[0])
+	if err != nil {
+		return err
+	}
+	argv[0] = resolved
 	timeout := readTimeout(args)
 
 	payload, err := json.Marshal(ev)
@@ -97,6 +104,41 @@ func readArgv(args map[string]any) ([]string, error) {
 		return out, nil
 	}
 	return nil, fmt.Errorf("exec: args.argv must be an array of strings, got %T", raw)
+}
+
+// resolveExecBinary enforces the security contract for argv[0]:
+// the bare name passes only when exec.LookPath resolves it to an
+// absolute on-disk path the engine pins before launch. A bare name
+// like "okt" otherwise resolves against the user-controlled PATH at
+// fork time — a hook YAML that shipped with a project could trigger
+// a shadow binary the operator never approved. Absolute paths pass
+// straight through. Relative paths with embedded separators (e.g.
+// "./script.sh", "../bin/foo") are rejected: the engine refuses to
+// resolve them against CWD because the hook YAML rarely knows what
+// CWD the runtime executor will inherit.
+func resolveExecBinary(name string) (string, error) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "", errors.New("exec: args.argv[0] must be a non-empty path")
+	}
+	if filepath.IsAbs(trimmed) {
+		return filepath.Clean(trimmed), nil
+	}
+	// Reject any explicit relative path — "./foo", "../bin/foo",
+	// "sub/dir/foo". The hook YAML cannot reason about the engine's
+	// CWD, so resolving these against it is a footgun.
+	if strings.ContainsRune(trimmed, filepath.Separator) {
+		return "", fmt.Errorf("exec: args.argv[0] %q must be an absolute path or a bare command name on PATH", trimmed)
+	}
+	resolved, err := exec.LookPath(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("exec: argv[0] %q not found on PATH: %w", trimmed, err)
+	}
+	abs, err := filepath.Abs(resolved)
+	if err != nil {
+		return "", fmt.Errorf("exec: argv[0] %q resolved to %q but absolute path lookup failed: %w", trimmed, resolved, err)
+	}
+	return abs, nil
 }
 
 func readTimeout(args map[string]any) time.Duration {

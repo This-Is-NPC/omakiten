@@ -94,14 +94,33 @@ piped to stdin as JSON, so scripts can extract whatever they need with
 
 | Key          | Type            | Required | Default | Description |
 | ------------ | --------------- | -------- | ------- | ----------- |
-| `argv`       | array of string | yes      | —       | `argv[0]` is the binary to run; `argv[1:]` are literal arguments. |
+| `argv`       | array of string | yes      | —       | `argv[0]` is the binary to run; `argv[1:]` are literal arguments. See **argv[0] resolution** below. |
 | `timeout_ms` | integer         | no       | `30000` | Hard deadline. On expiry the engine kills the process with `SIGKILL` and `hook.executed.success` lands as false. |
+
+#### argv[0] resolution
+
+`argv[0]` is pinned to an absolute path before the engine spawns the
+child so a hook in a project YAML cannot trigger a PATH-shadowed
+binary on the operator's machine. Resolution rules:
+
+- **Absolute path** (`/usr/bin/jq`, `/home/me/bin/run.sh`) — passed
+  through after `filepath.Clean`.
+- **Bare command name** (`bash`, `jq`, `okt`) — resolved via
+  `exec.LookPath` against the current `PATH` at hook-execution time
+  and pinned to the resulting absolute path. If `PATH` does not
+  contain the binary, the hook fails before launch.
+- **Explicit relative path** (`./script.sh`, `../bin/foo`,
+  `sub/dir/foo`) — **rejected**. The hook YAML cannot reason about
+  the runtime's CWD, so resolving relative paths against it is a
+  footgun. Use an absolute path, or wrap the script in a bare command
+  (`argv: ["bash", "/abs/path/to/script.sh"]`).
 
 The hook fails (and emits `success=false` plus the captured stderr in
 `error`) when:
 
 - `argv` is missing or contains non-string entries (the validator
   rejects this at `LoadBundle`).
+- `argv[0]` is an explicit relative path or is not found on `PATH`.
 - The command exits non-zero. Captured stderr is included in the error
   message and the structured log line.
 - The timeout fires. The error wraps `context.DeadlineExceeded` and
@@ -172,7 +191,7 @@ config:
       when: { operation: task.delete }
       do: exec
       args:
-        argv: ["./scripts/log-blocked-delete.sh"]
+        argv: ["bash", "./scripts/log-blocked-delete.sh"]
         timeout_ms: 3000
 ```
 
@@ -198,7 +217,7 @@ config:
     - on: task.archived
       do: exec
       args:
-        argv: ["./scripts/post-archive.sh"]
+        argv: ["bash", "./scripts/post-archive.sh"]
 ```
 
 The script reads the JSON event from stdin and can call
