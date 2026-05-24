@@ -366,7 +366,6 @@ func (m *Model) applyTaskFocus(focus taskScreenFocus) {
 		if m.subtasks.Cursor() < 0 {
 			m.subtasks = m.subtasks.JumpFirst()
 		}
-		m.followSubtaskCursorInOuterViewport()
 	case taskFocusActivity:
 		m.subtasks = m.subtasks.WithItems(nil)
 		if m.activityCursor < 0 {
@@ -533,20 +532,10 @@ const (
 
 // activityViewportLines is the maximum number of LINES the activity column
 // renders before pagination kicks in. Routes through
-// layout.TaskViewBudget.ActivityRows so the stacked-mode joint split
-// (focus-aware share between sub-tasks and activity) and the side-by-
-// side cap (activity rail ≤ left column) come from the same source as
-// subtasksViewportRows — no panel can ever claim space the other one
-// also believes it owns.
-//
-// Pre-W12 this helper estimated the sub-tasks panel height by summing
-// every child card's row count, then asked TaskViewBudget for whatever
-// rows were left. With many children the sum was larger than the outer
-// viewport, ActivityRows floored to 0, and the activity panel collapsed
-// to activityViewportMinLines (~6 rows) even on tall terminals — bug 2
-// from the user report. The joint split fixes that by deciding both
-// shares from the leftover, independent of the measured sub-tasks
-// height.
+// layout.TaskViewBudget.ActivityRows so the policy stays paired with
+// subtasksViewportRows: in stacked single-pane mode the panel fills
+// the outer viewport; in side-by-side it caps at the left column's
+// height (or the outer viewport, whichever is shorter).
 //
 // The fallback path keeps the activityViewportFallbackLines value for
 // early renders before WindowSizeMsg arrives.
@@ -556,34 +545,25 @@ func (m Model) activityViewportLines() int {
 	}
 
 	// Side-by-side path needs the rendered sub-tasks panel height to
-	// cap the right-rail. Stacked path ignores the argument inside
-	// TaskViewBudget — measuring the panel is a cheap allocation we
-	// skip when it would be discarded anyway.
+	// cap the right-rail. The panel is locked to OuterHeight -
+	// FormHeight by renderTaskView so its measured height matches
+	// the budget — no double-rendering needed here.
 	subtasksH := 0
-	if m.taskScreen == taskScreenView {
-		if l := m.computeTaskViewLayout(m.availableWidth(), true); l.kind == taskViewSideBySide {
-			if task, ok := m.activeTask(); ok {
-				formH := m.cachedTaskDetailsBoxHeight(task, l)
-				subRows := m.taskViewBudget(l, formH).SubtasksRows()
-				// rendered panel height = body rows + chrome (header) + borders.
-				subtasksH = subRows + layout.SubtasksHeader + layout.PanelBorders
-			}
-		}
-	}
-
 	rows := 0
 	if m.taskScreen == taskScreenView {
 		if task, ok := m.activeTask(); ok {
 			l := m.computeTaskViewLayout(m.availableWidth(), true)
 			formH := m.cachedTaskDetailsBoxHeight(task, l)
-			rows = m.taskViewBudget(l, formH).ActivityRows(subtasksH)
+			budget := m.taskViewBudget(l, formH)
+			if l.kind == taskViewSideBySide {
+				subtasksH = budget.SubtasksRows() + layout.SubtasksHeader + layout.PanelBorders
+			}
+			rows = budget.ActivityRows(subtasksH)
 		}
 	}
 
 	// Subtract the embedded comment input from the available rows so
-	// the panel does not grow when the user starts composing. Status
-	// badge handling stays the same — the outer screen chrome owns it,
-	// the budget already excluded it.
+	// the panel does not grow when the user starts composing.
 	if m.isEmbeddedCommentInput() {
 		rows -= activityChromeEmbeddedInput
 	}

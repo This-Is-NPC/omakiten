@@ -6,89 +6,66 @@ import (
 	"omakiten/internal/domain"
 )
 
-// TestActivityViewportLinesShrinksInStackedLayout pins the W12 joint-
-// split contract: in stacked layout the activity panel must not claim
-// the full m.height-based budget — it shares the row leftover with the
-// sub-tasks panel via layout.TaskViewBudget. The pre-W12 surface
-// summed every child card's height to estimate sub-tasks and then
-// asked for the remainder; with many children the activity slot
-// floored to activityViewportMinLines (~6) regardless of focus. The
-// new split decides both shares from the leftover, independent of
-// the measured sub-tasks height.
-func TestActivityViewportLinesShrinksInStackedLayout(t *testing.T) {
+// TestActivityViewportLinesStackedFillsOuter pins the W13 single-pane
+// stacked contract: when the terminal is too narrow for the side-by-
+// side layout, the activity panel — when focused — owns the full
+// outer viewport. The pre-W13 joint split would shrink activity to
+// share with sub-tasks even when sub-tasks was not on screen.
+func TestActivityViewportLinesStackedFillsOuter(t *testing.T) {
 	model := buildRefreshHotPathModel(t)
 	model.width = 60 // narrow → forces stacked layout
 	model.height = 40
 
 	parent := domain.Task{ID: 1, Title: "Parent", BucketKey: "backlog", Priority: domain.Priority(2)}
-	children := make([]domain.Task, 5)
-	for i := range children {
-		parentID := parent.ID
-		children[i] = domain.Task{
-			ID:        int64(100 + i),
-			Title:     "Child",
-			BucketKey: "backlog",
-			Priority:  domain.Priority(2),
-			ParentID:  &parentID,
-		}
-	}
-	model.tasks = append([]domain.Task{parent}, children...)
+	model.tasks = []domain.Task{parent}
 	model.taskID = parent.ID
 	model.taskScreen = taskScreenView
+	model.taskFocus = taskFocusActivity
 
 	rows := model.activityViewportLines()
 
-	// Joint split caps activity at roughly half the leftover under the
-	// form. On a 40-row terminal the prior height-based bound was 31
-	// rows; the new joint-aware budget must come in well under that.
-	if rows >= 31 {
-		t.Fatalf("activityViewportLines in stacked layout = %d, want < 31 (joint split should shrink activity)", rows)
-	}
-	// Floor still applies — never below the minimum-readable budget.
-	if rows < activityViewportMinLines {
-		t.Fatalf("activityViewportLines in stacked layout = %d, want ≥ activityViewportMinLines (%d)", rows, activityViewportMinLines)
+	// Outer viewport = m.height - 5 (screen chrome) = 35.
+	// Activity rows = OuterH - 2 (header) - 2 (borders) = 31.
+	// Anything well below outer means the joint split is still alive.
+	if rows < 25 {
+		t.Fatalf("activityViewportLines stacked = %d, want close to outer viewport (~31)", rows)
 	}
 }
 
-// TestActivityViewportLinesFocusShiftsBudget pins the focus-aware
-// behaviour: when the user tabs from sub-tasks-focused to activity-
-// focused, the activity row budget must grow (and sub-tasks must
-// shrink). The split lives inside layout.TaskViewBudget; this test
-// reads it through the panel surface to make sure the Focus field
-// flows from m.taskFocus correctly.
-func TestActivityViewportLinesFocusShiftsBudget(t *testing.T) {
+// TestActivityViewportLinesStackedIgnoresChildCount pins the
+// single-pane contract: the activity row budget does not shrink as
+// sub-tasks grow. Pre-W12 the helper summed every child card height
+// and subtracted it; W12 used a joint split that still moved rows
+// with focus. W13 is independent of sub-tasks: tab to activity =
+// activity fills the screen, regardless of how many children the
+// parent task has.
+func TestActivityViewportLinesStackedIgnoresChildCount(t *testing.T) {
 	model := buildRefreshHotPathModel(t)
-	// Need a terminal tall enough that the joint-split mins do not
-	// dominate both shares — when the leftover is small both panels
-	// floor to their mins and the focus signal vanishes. 60 rows
-	// gives enough headroom for the 65/35 split to produce different
-	// budgets per focus.
 	model.width = 60
-	model.height = 60
+	model.height = 40
 
 	parent := domain.Task{ID: 1, Title: "Parent", BucketKey: "backlog", Priority: domain.Priority(2)}
-	children := make([]domain.Task, 3)
-	for i := range children {
+	model.taskID = parent.ID
+	model.taskScreen = taskScreenView
+	model.taskFocus = taskFocusActivity
+
+	model.tasks = []domain.Task{parent}
+	noChildren := model.activityViewportLines()
+
+	model.tasks = []domain.Task{parent}
+	for i := 0; i < 20; i++ {
 		parentID := parent.ID
-		children[i] = domain.Task{
+		model.tasks = append(model.tasks, domain.Task{
 			ID:        int64(100 + i),
 			Title:     "Child",
 			BucketKey: "backlog",
 			Priority:  domain.Priority(2),
 			ParentID:  &parentID,
-		}
+		})
 	}
-	model.tasks = append([]domain.Task{parent}, children...)
-	model.taskID = parent.ID
-	model.taskScreen = taskScreenView
+	manyChildren := model.activityViewportLines()
 
-	model.taskFocus = taskFocusSubtasks
-	subFocusRows := model.activityViewportLines()
-
-	model.taskFocus = taskFocusActivity
-	actFocusRows := model.activityViewportLines()
-
-	if actFocusRows <= subFocusRows {
-		t.Fatalf("activity-focused budget (%d) did not grow over sub-tasks-focused (%d) — focus signal not flowing", actFocusRows, subFocusRows)
+	if noChildren != manyChildren {
+		t.Fatalf("activityViewportLines depends on child count: 0→%d vs 20→%d (single-pane should be independent)", noChildren, manyChildren)
 	}
 }

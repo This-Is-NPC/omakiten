@@ -6,13 +6,15 @@ import (
 	"omakiten/internal/domain"
 )
 
-// TestSubtasksCursorAdvancesOuterViewportScroll pins the navigation
-// regression from task #238: pressing j on a focused sub-tasks panel
-// must scroll the outer m.taskView.Viewport when the focused card
-// falls below the joined-detail-screen slice. Without that, the
-// cursor walked past the outer slice silently and the user saw
-// `▲ 0 above · ▼ N below` with no movement.
-func TestSubtasksCursorAdvancesOuterViewportScroll(t *testing.T) {
+// TestSubtasksCursorAdvancesInnerScrollInStacked pins the W13
+// single-pane navigation contract: pressing j on the focused
+// sub-tasks panel in stacked layout must advance the cardlist's
+// internal scroll when the cursor walks past the visible band. The
+// outer m.taskView.Viewport stays at 0 in single-pane mode — the
+// cardlist owns the visible window because the sub-tasks panel
+// IS the outer view. Pre-W13 this would have been an outer-scroll
+// chase; W13 is inner-scroll only.
+func TestSubtasksCursorAdvancesInnerScrollInStacked(t *testing.T) {
 	model := buildRefreshHotPathModel(t)
 	model.width = 80
 	model.height = 24
@@ -33,13 +35,13 @@ func TestSubtasksCursorAdvancesOuterViewportScroll(t *testing.T) {
 	model.taskID = parent.ID
 	model.applyTaskFocus(taskFocusSubtasks)
 
-	beforeOuter := model.taskView.Viewport.Scroll
+	beforeInner := model.subtasks.Scroll()
 	for i := 0; i < 25; i++ {
 		model.moveSubtaskCursor(1)
 	}
-	afterOuter := model.taskView.Viewport.Scroll
-	if afterOuter <= beforeOuter {
-		t.Fatalf("outer viewport scroll did not advance after 25× j on sub-tasks; before=%d after=%d cursor=%d", beforeOuter, afterOuter, model.subtasks.Cursor())
+	afterInner := model.subtasks.Scroll()
+	if afterInner <= beforeInner {
+		t.Fatalf("cardlist inner scroll did not advance after 25× j on sub-tasks; before=%d after=%d cursor=%d", beforeInner, afterInner, model.subtasks.Cursor())
 	}
 }
 
