@@ -168,18 +168,21 @@ type Snapshot struct {
 	finalBucketID    int64
 	transitionsByPair map[transitionKey]transitionEntry
 
+	// Per-entity slices are the storage of record. The *BySlug maps
+	// hold the slice index (not a value copy) so the snapshot stores
+	// each Persona / Skill / Law / TaskTemplate exactly once.
 	personas       []Persona
-	personasBySlug map[string]Persona
+	personasBySlug map[string]int
 
 	skills       []Skill
-	skillsBySlug map[string]Skill
+	skillsBySlug map[string]int
 
 	laws       []Law
-	lawsBySlug map[string]Law
+	lawsBySlug map[string]int
 
 	templates          []TaskTemplate
-	templatesBySlug    map[string]TaskTemplate
-	templatesByDefault map[templateDefaultKey]TaskTemplate
+	templatesBySlug    map[string]int
+	templatesByDefault map[templateDefaultKey]int
 
 	notifications map[string]Notification
 	mcpCommands   map[string]MCPCommandSpec
@@ -188,7 +191,7 @@ type Snapshot struct {
 	severities []SeverityDefinition
 
 	languages       []Language
-	languagesByCode map[string]Language
+	languagesByCode map[string]int
 	catalogCLI      *Catalog
 	catalogTUI      *Catalog
 	agentOutputLang string
@@ -211,14 +214,14 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 		bucketByID:         map[int64]domain.Bucket{},
 		bucketByKey:        map[string]domain.Bucket{},
 		transitionsByPair:  map[transitionKey]transitionEntry{},
-		personasBySlug:     map[string]Persona{},
-		skillsBySlug:       map[string]Skill{},
-		lawsBySlug:         map[string]Law{},
-		templatesBySlug:    map[string]TaskTemplate{},
-		templatesByDefault: map[templateDefaultKey]TaskTemplate{},
+		personasBySlug:     map[string]int{},
+		skillsBySlug:       map[string]int{},
+		lawsBySlug:         map[string]int{},
+		templatesBySlug:    map[string]int{},
+		templatesByDefault: map[templateDefaultKey]int{},
 		notifications:      map[string]Notification{},
 		mcpCommands:        map[string]MCPCommandSpec{},
-		languagesByCode:    map[string]Language{},
+		languagesByCode:    map[string]int{},
 	}
 
 	if wf, ok := activeWorkflow(bundle); ok {
@@ -245,25 +248,25 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 	}
 
 	snap.personas = append(snap.personas, bundle.Personas...)
-	for _, p := range bundle.Personas {
-		snap.personasBySlug[p.Slug] = p
+	for i, p := range snap.personas {
+		snap.personasBySlug[p.Slug] = i
 	}
 
 	snap.skills = append(snap.skills, bundle.Skills...)
-	for _, s := range bundle.Skills {
-		snap.skillsBySlug[s.Slug] = s
+	for i, s := range snap.skills {
+		snap.skillsBySlug[s.Slug] = i
 	}
 
 	snap.laws = append(snap.laws, bundle.Laws...)
-	for _, l := range bundle.Laws {
-		snap.lawsBySlug[l.Slug] = l
+	for i, l := range snap.laws {
+		snap.lawsBySlug[l.Slug] = i
 	}
 
 	snap.templates = append(snap.templates, bundle.Templates...)
-	for _, t := range bundle.Templates {
-		snap.templatesBySlug[t.Slug] = t
+	for i, t := range snap.templates {
+		snap.templatesBySlug[t.Slug] = i
 		if t.Default != "" {
-			snap.templatesByDefault[templateDefaultKey{kind: t.Default, project: t.ProjectSlug}] = t
+			snap.templatesByDefault[templateDefaultKey{kind: t.Default, project: t.ProjectSlug}] = i
 		}
 	}
 
@@ -282,15 +285,15 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 	snap.themeErr = bundle.ActiveThemeErr
 
 	snap.languages = append(snap.languages, bundle.Languages...)
-	for _, lang := range bundle.Languages {
-		snap.languagesByCode[lang.Code] = lang
+	for i, lang := range snap.languages {
+		snap.languagesByCode[lang.Code] = i
 	}
 	snap.warnings = append(snap.warnings, bundle.Warnings...)
 
 	eff := bundle.Config.EffectiveLanguages()
 	baseline := snap.lookupLanguage("en")
-	snap.catalogCLI = buildSurfaceCatalog(snap.languagesByCode, eff.CLI, baseline)
-	snap.catalogTUI = buildSurfaceCatalog(snap.languagesByCode, eff.TUI, baseline)
+	snap.catalogCLI = buildSurfaceCatalog(snap, eff.CLI, baseline)
+	snap.catalogTUI = buildSurfaceCatalog(snap, eff.TUI, baseline)
 	snap.agentOutputLang = eff.AgentOutput
 
 	// RAM trim: every locale pack ships ~150 keys (long Hindi /
@@ -315,13 +318,10 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 		keep[eff.AgentOutput] = true
 	}
 	keep["en"] = true
-	for code, lang := range snap.languagesByCode {
-		if keep[code] {
-			continue
-		}
-		lang.Keys = nil
-		snap.languagesByCode[code] = lang
-	}
+	// languagesByCode now stores slice indexes (see the snapshot dedup
+	// refactor); trim Keys on the slice and the by-code lookup follows
+	// because the catalogs already captured local copies of the active
+	// + baseline languages before the trim ran.
 	for i, lang := range snap.languages {
 		if keep[lang.Code] {
 			continue
@@ -336,7 +336,8 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 // catalog builder to grab the baseline ("en") pointer once so both
 // surface catalogs share the same fallback.
 func (s *Snapshot) lookupLanguage(code string) *Language {
-	if lang, ok := s.languagesByCode[code]; ok {
+	if idx, ok := s.languagesByCode[code]; ok {
+		lang := s.languages[idx]
 		return &lang
 	}
 	return nil
@@ -347,12 +348,8 @@ func (s *Snapshot) lookupLanguage(code string) *Language {
 // Catalog: active stays nil so every Get falls through to the baseline.
 // Baseline may also be nil when no en pack is shipped, in which case
 // Get falls through to the key literal.
-func buildSurfaceCatalog(byCode map[string]Language, code string, baseline *Language) *Catalog {
-	var active *Language
-	if lang, ok := byCode[code]; ok {
-		active = &lang
-	}
-	return NewCatalog(active, baseline)
+func buildSurfaceCatalog(snap *Snapshot, code string, baseline *Language) *Catalog {
+	return NewCatalog(snap.lookupLanguage(code), baseline)
 }
 
 // buildEnumRegistry inflates the bundle's priority/severity tables into the
@@ -444,8 +441,11 @@ func (s *Snapshot) Personas() []Persona {
 // PersonaBySlug resolves a persona by slug. ok=false when no persona
 // with that slug exists.
 func (s *Snapshot) PersonaBySlug(slug string) (Persona, bool) {
-	v, ok := s.personasBySlug[slug]
-	return v, ok
+	idx, ok := s.personasBySlug[slug]
+	if !ok {
+		return Persona{}, false
+	}
+	return s.personas[idx], true
 }
 
 // Skills returns the resolved skill catalog. The slice is a fresh copy.
@@ -455,8 +455,11 @@ func (s *Snapshot) Skills() []Skill {
 
 // SkillBySlug resolves a skill by slug.
 func (s *Snapshot) SkillBySlug(slug string) (Skill, bool) {
-	v, ok := s.skillsBySlug[slug]
-	return v, ok
+	idx, ok := s.skillsBySlug[slug]
+	if !ok {
+		return Skill{}, false
+	}
+	return s.skills[idx], true
 }
 
 // Laws returns the resolved law catalog. The slice is a fresh copy.
@@ -466,8 +469,11 @@ func (s *Snapshot) Laws() []Law {
 
 // LawBySlug resolves a law by slug.
 func (s *Snapshot) LawBySlug(slug string) (Law, bool) {
-	v, ok := s.lawsBySlug[slug]
-	return v, ok
+	idx, ok := s.lawsBySlug[slug]
+	if !ok {
+		return Law{}, false
+	}
+	return s.laws[idx], true
 }
 
 // Templates returns the resolved template catalog. The slice is a
@@ -488,8 +494,11 @@ func (s *Snapshot) Languages() []Language {
 // when no Language with that code is loaded — callers may then fall
 // back to the en baseline or surface a "not found" error.
 func (s *Snapshot) LanguageByCode(code string) (Language, bool) {
-	v, ok := s.languagesByCode[code]
-	return v, ok
+	idx, ok := s.languagesByCode[code]
+	if !ok {
+		return Language{}, false
+	}
+	return s.languages[idx], true
 }
 
 // Catalog returns the resolved Catalog for the given Surface. The
@@ -529,8 +538,11 @@ func (s *Snapshot) ResolveGuardHint(hint string) string {
 
 // TemplateBySlug resolves a template by slug.
 func (s *Snapshot) TemplateBySlug(slug string) (TaskTemplate, bool) {
-	v, ok := s.templatesBySlug[slug]
-	return v, ok
+	idx, ok := s.templatesBySlug[slug]
+	if !ok {
+		return TaskTemplate{}, false
+	}
+	return s.templates[idx], true
 }
 
 // ActiveDefault mirrors Bundle.TemplateByDefault: project-scoped wins,
@@ -541,12 +553,12 @@ func (s *Snapshot) ActiveDefault(kind, projectSlug string) (TaskTemplate, bool) 
 		return TaskTemplate{}, false
 	}
 	if projectSlug != "" {
-		if t, ok := s.templatesByDefault[templateDefaultKey{kind: kind, project: projectSlug}]; ok {
-			return t, true
+		if idx, ok := s.templatesByDefault[templateDefaultKey{kind: kind, project: projectSlug}]; ok {
+			return s.templates[idx], true
 		}
 	}
-	if t, ok := s.templatesByDefault[templateDefaultKey{kind: kind, project: ""}]; ok {
-		return t, true
+	if idx, ok := s.templatesByDefault[templateDefaultKey{kind: kind, project: ""}]; ok {
+		return s.templates[idx], true
 	}
 	return TaskTemplate{}, false
 }
