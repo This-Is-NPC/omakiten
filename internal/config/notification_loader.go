@@ -3,10 +3,7 @@ package config
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -84,10 +81,10 @@ func LoadNotifications(dir string) (map[string]Notification, []SourceWarning, er
 	return byName, warnings, nil
 }
 
-type notificationFile struct {
-	Path     string
-	IsCustom bool
-}
+// notificationFile is an alias for the shared entityFile shape;
+// notifications + entities + language packs all walk the same
+// {Path, IsCustom} pair, so the loader code dedups via listFilesIn.
+type notificationFile = entityFile
 
 func listNotificationFiles(dir string) ([]notificationFile, error) {
 	defaults, err := readYAMLFilesIn(dir, false)
@@ -102,25 +99,5 @@ func listNotificationFiles(dir string) ([]notificationFile, error) {
 }
 
 func readYAMLFilesIn(dir string, isCustom bool) ([]notificationFile, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read dir %s: %w", dir, err)
-	}
-	var files []notificationFile
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		lower := strings.ToLower(name)
-		if !strings.HasSuffix(lower, ".yaml") && !strings.HasSuffix(lower, ".yml") {
-			continue
-		}
-		files = append(files, notificationFile{Path: filepath.Join(dir, name), IsCustom: isCustom})
-	}
-	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
-	return files, nil
+	return listFilesIn(dir, []string{".yaml", ".yml"}, isCustom)
 }

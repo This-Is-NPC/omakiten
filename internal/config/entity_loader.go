@@ -302,6 +302,23 @@ func listEntityFiles(dir string) ([]entityFile, error) {
 }
 
 func readMDFilesIn(dir string, isCustom bool) ([]entityFile, error) {
+	return listFilesIn(dir, []string{".md"}, isCustom)
+}
+
+// listFilesIn returns every file directly under dir whose lowercase
+// extension matches one of `exts` (".md", ".yaml", ".yml", …),
+// sorted by absolute path so the caller's merge-by-slug step is
+// deterministic. The isCustom flag is stamped on every returned
+// entry — callers pass false for the defaults walk and true for
+// the matching custom/ subtree walk. A non-existent dir returns
+// (nil, nil) so the surrounding loader path can short-circuit
+// without distinguishing "no custom subtree" from "no defaults".
+//
+// Shared by the entity loader (.md), the language pack loader
+// (.yaml/.yml), and the notification loader (.yaml/.yml) — all
+// three previously inlined the same os.ReadDir + suffix-filter +
+// sort sequence with the same edge cases.
+func listFilesIn(dir string, exts []string, isCustom bool) ([]entityFile, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -315,13 +332,26 @@ func readMDFilesIn(dir string, isCustom bool) ([]entityFile, error) {
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasSuffix(strings.ToLower(name), ".md") {
+		lower := strings.ToLower(name)
+		if !hasAnySuffix(lower, exts) {
 			continue
 		}
 		files = append(files, entityFile{Path: filepath.Join(dir, name), IsCustom: isCustom})
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return files, nil
+}
+
+// hasAnySuffix reports whether name ends in any of the supplied
+// suffixes. Lifted out of listFilesIn so the call stays readable
+// when a future loader needs three or four candidate extensions.
+func hasAnySuffix(name string, suffixes []string) bool {
+	for _, s := range suffixes {
+		if strings.HasSuffix(name, s) {
+			return true
+		}
+	}
+	return false
 }
 
 func slugFromFilename(path string) string {
@@ -345,12 +375,22 @@ func decodeStrict(data []byte, target any) error {
 	if len(data) == 0 {
 		return fmt.Errorf("frontmatter is empty")
 	}
+	return decodeYAMLStrict(data, target)
+}
+
+// decodeYAMLStrict is the shared yaml.NewDecoder + KnownFields(true)
+// wrapper every config loader pipes its bytes through. Extracted from
+// the per-loader inline decoders so a future tweak (e.g. line/column
+// in error envelopes, document-mode toggle) lands in one place.
+// Empty-input guards stay at the caller because frontmatter and
+// language-pack semantics differ: a 0-byte frontmatter is an error
+// (the file claimed to be an entity but carried no fields); a 0-byte
+// language pack is acceptable (an empty placeholder pack inherits
+// every key from the en baseline).
+func decodeYAMLStrict(data []byte, target any) error {
 	dec := yaml.NewDecoder(strings.NewReader(string(data)))
 	dec.KnownFields(true)
-	if err := dec.Decode(target); err != nil {
-		return err
-	}
-	return nil
+	return dec.Decode(target)
 }
 
 func parseError(path string, err error) error {

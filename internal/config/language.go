@@ -2,12 +2,9 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 
 	"omakiten/defaults"
 )
@@ -142,34 +139,9 @@ func listLanguageFiles(dir string) ([]entityFile, error) {
 }
 
 func readLanguageYAMLFiles(dir string, isCustom bool) ([]entityFile, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read dir %s: %w", dir, err)
-	}
-	var files []entityFile
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		lower := strings.ToLower(name)
-		if !strings.HasSuffix(lower, ".yaml") && !strings.HasSuffix(lower, ".yml") {
-			continue
-		}
-		files = append(files, entityFile{Path: filepath.Join(dir, name), IsCustom: isCustom})
-	}
-	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
-	return files, nil
+	return listFilesIn(dir, []string{".yaml", ".yml"}, isCustom)
 }
 
 func decodeLanguageStrict(raw []byte, target *languageFile) error {
-	dec := yaml.NewDecoder(strings.NewReader(string(raw)))
-	dec.KnownFields(true)
-	if err := dec.Decode(target); err != nil {
-		return err
-	}
-	return nil
+	return decodeYAMLStrict(raw, target)
 }
