@@ -159,31 +159,69 @@ type ConfigKnobs struct {
 // ApplyConfig writes the resolved config knobs into the live Store. The
 // busy_timeout PRAGMA fires on the borrowed connection — modernc.org/sqlite
 // keeps it sticky for the connection's lifetime, and the small pool
-// (MaxOpenConns=4) means subsequent connections rerun PRAGMAs at first
+// (MaxOpenConns=2) means subsequent connections rerun PRAGMAs at first
 // use elsewhere. activity_log + events knobs are simple field writes the
 // hot-path code reads without taking a lock.
 func (s *Store) ApplyConfig(ctx context.Context, k ConfigKnobs) error {
+	if err := applyPragmas(ctx, s.db, pragmaSet{
+		BusyTimeoutMs: k.BusyTimeoutMs,
+		CacheSizeKB:   k.CacheSizeKB,
+		MmapSizeBytes: k.MmapSizeBytes,
+	}); err != nil {
+		return err
+	}
 	if k.BusyTimeoutMs > 0 {
-		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout = %d", k.BusyTimeoutMs)); err != nil {
-			return fmt.Errorf("apply busy_timeout: %w", err)
-		}
 		s.busyTimeoutMs = k.BusyTimeoutMs
-	}
-	if k.CacheSizeKB > 0 {
-		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("PRAGMA cache_size = -%d", k.CacheSizeKB)); err != nil {
-			return fmt.Errorf("apply cache_size: %w", err)
-		}
-	}
-	if k.MmapSizeBytes >= 0 {
-		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("PRAGMA mmap_size = %d", k.MmapSizeBytes)); err != nil {
-			return fmt.Errorf("apply mmap_size: %w", err)
-		}
 	}
 	s.SetActivityLogRetention(k.ActivityLogMaxRows, k.ActivityLogMaxAgeDays)
 	s.SetEventsRecentLimit(k.EventsDefaultRecentLimit)
 	s.SetEventsPolicy(k.EventsPolicy)
 	if k.EventBus != nil {
 		s.SetEventBus(k.EventBus)
+	}
+	return nil
+}
+
+// pragmaSet carries the user-tunable PRAGMA values applyPragmas issues.
+// Correctness PRAGMAs (foreign_keys / journal_mode / synchronous)
+// encode engine-level contracts Omakiten depends on, so they stay
+// inline in OpenWithOptions and never route through this helper.
+//
+// "Skip" semantics: BusyTimeoutMs <= 0 and CacheSizeKB <= 0 both skip
+// the issue; MmapSizeBytes < 0 skips (0 is a valid value that explicitly
+// disables mmap). The Open path fills positive values from the kit
+// canonical before calling; the ApplyConfig path passes the raw user-
+// supplied knobs and the skip branches preserve the prior per-knob
+// optionality.
+type pragmaSet struct {
+	BusyTimeoutMs int
+	CacheSizeKB   int
+	MmapSizeBytes int
+}
+
+// applyPragmas issues each user-tunable PRAGMA with a uniform
+// fmt.Sprintf shape + error wrap. Used by OpenWithOptions's per-
+// connection pragma loop AND ApplyConfig's live-write path so a new
+// PRAGMA (e.g. temp_store) lands in one file instead of two.
+func applyPragmas(ctx context.Context, db *sql.DB, p pragmaSet) error {
+	if p.BusyTimeoutMs > 0 {
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout = %d", p.BusyTimeoutMs)); err != nil {
+			return fmt.Errorf("apply busy_timeout: %w", err)
+		}
+	}
+	if p.CacheSizeKB > 0 {
+		// cache_size accepts the negative kilobyte form to mean
+		// "this many KiB of page cache" regardless of page size.
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("PRAGMA cache_size = -%d", p.CacheSizeKB)); err != nil {
+			return fmt.Errorf("apply cache_size: %w", err)
+		}
+	}
+	if p.MmapSizeBytes >= 0 {
+		// mmap_size = 0 disables mmap; any positive value asks SQLite
+		// to memory-map up to that many bytes of the DB file.
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("PRAGMA mmap_size = %d", p.MmapSizeBytes)); err != nil {
+			return fmt.Errorf("apply mmap_size: %w", err)
+		}
 	}
 	return nil
 }
@@ -261,22 +299,29 @@ func OpenWithOptions(ctx context.Context, path string, opts Options) (*Store, er
 	if mmapSize < 0 {
 		mmapSize = 0
 	}
+	// Correctness PRAGMAs encode engine-level contracts Omakiten depends
+	// on (foreign keys, WAL journaling, normal-sync durability). They
+	// stay inline rather than routing through applyPragmas because
+	// applyPragmas is the *user-tunable* surface — adding a correctness
+	// PRAGMA to the helper would make it visually equivalent to a
+	// per-user knob, which it is not.
 	for _, pragma := range []string{
 		"PRAGMA foreign_keys = ON",
 		"PRAGMA journal_mode = WAL",
 		"PRAGMA synchronous = NORMAL", // WAL-safe; full-fsync is overkill for a local CLI.
-		fmt.Sprintf("PRAGMA busy_timeout = %d", busyTimeout),
-		// cache_size accepts the negative kilobyte form to mean
-		// "this many KiB of page cache" regardless of page size.
-		fmt.Sprintf("PRAGMA cache_size = -%d", cacheSize),
-		// mmap_size = 0 disables mmap; any positive value asks SQLite
-		// to memory-map up to that many bytes of the DB file.
-		fmt.Sprintf("PRAGMA mmap_size = %d", mmapSize),
 	} {
 		if _, err := db.ExecContext(ctx, pragma); err != nil {
 			_ = store.Close()
 			return nil, fmt.Errorf("apply %s: %w", pragma, err)
 		}
+	}
+	if err := applyPragmas(ctx, db, pragmaSet{
+		BusyTimeoutMs: busyTimeout,
+		CacheSizeKB:   cacheSize,
+		MmapSizeBytes: mmapSize,
+	}); err != nil {
+		_ = store.Close()
+		return nil, err
 	}
 	if err := store.applyMigrations(ctx); err != nil {
 		_ = store.Close()
