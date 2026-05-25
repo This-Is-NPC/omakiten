@@ -301,7 +301,7 @@ func TestContinuePlanPreviewsNextClaimable(t *testing.T) {
 }
 
 // TestContinuePlanNoCandidate returns NextClaimable=nil when every
-// wave is fully done (or the active wave has no first-bucket tasks).
+// wave is fully done (or the active wave has no unassigned first-bucket tasks).
 func TestContinuePlanNoCandidate(t *testing.T) {
 	fixture := newAgentFixture(t)
 

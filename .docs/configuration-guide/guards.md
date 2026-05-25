@@ -6,12 +6,27 @@ Guards live next to transitions in the active profile yaml and are evaluated by 
 
 The same guard shapes also drive **operation policies** (`operations.{archive,delete,unarchive}.guards`) — see [Operation guards](#operation-guards) — and the bucket-level CRUD policy lives under a sibling block ([Bucket permissions](#bucket-permissions)).
 
+## Contents
+
+- [Where they sit in the move pipeline](#where-they-sit-in-the-move-pipeline)
+- [Guard types](#guard-types)
+- [Multiple guards on the same transition](#multiple-guards-on-the-same-transition)
+- [The `hint` field](#the-hint-field)
+- [Validation rules (parse-time)](#validation-rules-parse-time)
+- [Worked example (from `defaults/config/omakase.yaml`)](#worked-example-from-defaultsconfigomakaseyaml)
+- [Failure shape](#failure-shape)
+- [Agent guardrails: laws bound to commands and entities](#agent-guardrails-laws-bound-to-commands-and-entities)
+- [Operation guards](#operation-guards)
+- [Bucket permissions](#bucket-permissions)
+- [Adding a new guard type](#adding-a-new-guard-type)
+- [See also](#see-also)
+
 ## Where they sit in the move pipeline
 
 `app.WorkflowService.MoveTask` runs in this order (`internal/app/workflow_service.go:179`):
 
 1. Validate input (`task_id > 0`, target bucket non-empty).
-2. Load `tasks.state`; reject archived tasks with `validation_error "task is archived; unarchive before moving"` (the `tasks.unarchive` MCP tool, `okt task unarchive <id>` CLI, or TUI un-archive lift the gate). Archived tasks never reach the workflow flow — `Archive`/`Unarchive` live on `task_service.go` and have their own guard slot.
+2. Load `tasks.state`; reject archived tasks with `validation_error "task is archived; unarchive before moving"` (the `tasks.unarchive` MCP tool, `okt unarchive <id>` CLI, or TUI un-archive lift the gate). Archived tasks never reach the workflow flow — `Archive`/`Unarchive` live on `task_service.go` and have their own guard slot.
 3. Resolve current bucket via `WorkflowRepository.CurrentTaskBucket`.
 4. Resolve target bucket via the captured per-project Snapshot (`s.snap.BucketByKey`) — workflow shape lives in memory post-020, no repository round-trip.
 5. If `current != target`:
@@ -24,7 +39,7 @@ Self-moves (current == target) skip both the transition check and guard evaluati
 
 ## Guard types
 
-Four types are supported. Anything else is rejected at validation time with `unknown guard type`.
+Five types are supported. Anything else is rejected at validation time with `unknown guard type`.
 
 ### `blockers_in`
 
@@ -110,7 +125,25 @@ No fields beyond `type` and `hint`. The wave order is read from `plan_waves.posi
 - Otherwise counts tasks in waves with `position < currentWave.position` whose `bucket_id` is not the workflow's final bucket.
 - Fails with `guard_violation`, `rule="wave_gate"`, and `details.pending = N` when any prior-wave task is still in flight.
 
-The wave-gate edges themselves are not rendered in the network diagram (`internal/tui/plan_network.go`) — the guard is invisible by design so the diagram stays focused on intra/cross-wave dependency arrows.
+The wave-gate edges themselves are not rendered in the network diagram (`internal/tui/render_plan_network.go`) — the guard is invisible by design so the diagram stays focused on intra/cross-wave dependency arrows.
+
+### `subtasks_complete`
+
+Asserts that every direct child task (`tasks.parent_id = current task id`) currently sits in the workflow's final bucket. This lets a preset block promotion of a parent while any child remains open.
+
+```yaml
+- type: subtasks_complete
+  hint: "Finish all child tasks before promoting the parent."  # optional
+```
+
+No fields beyond `type` and `hint` are consumed. The final bucket is resolved from the active workflow snapshot, so renaming `done` still works as long as the workflow's last-position bucket represents completion.
+
+**Evaluation** (`internal/app/guards/evaluator.go:checkSubtasksComplete`):
+
+- Resolves the workflow's final bucket via `Snapshot.Workflow().FinalBucketKey()`.
+- Loads the first direct child not in that bucket via `GuardEvaluationRepository.FirstChildNotInBucket`.
+- Passes when no direct child is open. Grandchildren are handled by their own parent when that parent is promoted.
+- Fails with `guard_violation`, `rule="subtasks_complete"`, and details naming the open child id/title/bucket plus the final bucket.
 
 ## Multiple guards on the same transition
 
@@ -135,6 +168,10 @@ If you want both checks to be visible at once, split them across two stricter tr
 
 Empty/missing `hint` is fine; the error stays terse.
 
+### Hint resolution: `${{intl:KEY}}` tokens
+
+Hints support `${{intl:KEY}}` substitution so presets can keep copy in the i18n catalog instead of inlining language per guard. Expansion runs in `internal/app/guards/evaluator.go:212-217` (`resolveHint`) via `Snapshot.ResolveGuardHint` → `Catalog(SurfaceCLI).Resolve` (`internal/config/catalog.go:88`). Lookup hits the active catalog first, then baseline (`internal/config/catalog.go:58`); a missing key returns the key literal verbatim and logs at debug level — guard evaluation never fails on a missing token. Resolution is single-pass (catalog values are not re-scanned), unknown namespaces stay verbatim, and `$${{intl:KEY}}` escapes to a literal `${{intl:KEY}}`. Empty `hint` short-circuits before any catalog call.
+
 ## Validation rules (parse-time)
 
 `internal/config/validator.go:validateWorkflows` enforces, per transition, before the bundle is imported:
@@ -147,7 +184,7 @@ Empty/missing `hint` is fine; the error stays terse.
 | `comments_min.count < 1` | `workflows.<wf> guard comments_min: count must be >= 1` |
 | `comments_tagged.tag` empty | `workflows.<wf> guard comments_tagged: tag is required` |
 | `comments_tagged.count < 1` | `workflows.<wf> guard comments_tagged: count must be >= 1` |
-| `wave_gate` carries extra fields | rejected — only `hint` is configurable; pending count is derived |
+| `wave_gate` / `subtasks_complete` | no required fields beyond `type`; `hint` is optional and runtime state is derived |
 
 A failed validation rejects `okt config validate` and any bundle import that would re-materialize the SQLite read model.
 
@@ -196,6 +233,11 @@ workflows:
             tag: self-branch
             count: 1
             hint: "Before starting, create a dedicated feature branch or git worktree…"
+          - type: blockers_in
+            buckets: [done]
+            hint: "Move blockers to Done first…"
+          - type: wave_gate
+            hint: "Wait for the previous wave to finish…"
       - from: 2
         to: 3
         guards:
@@ -203,6 +245,12 @@ workflows:
             tag: resume
             count: 1
             hint: "Add a comment tagged #resume summarizing what was implemented…"
+          - type: comments_tagged
+            tag: tests-passing
+            count: 1
+            hint: "Attach passing test evidence…"
+          - type: subtasks_complete
+            hint: "Finish every direct child task before review…"
       - from: 3
         to: 4
         guards:
@@ -391,3 +439,16 @@ Violations surface as `guard_violation` with `rule: permissions` and a hint quot
 3. Extend `validateWorkflows` (`internal/config/validator.go`) so unknown payloads are rejected at validation time.
 4. Add tests in `internal/app/workflow_service_test.go` covering pass, fail, and hint passthrough.
 5. Document the new type here.
+
+## Update when
+
+- A new guard type lands in `internal/app/guards/evaluator.go` — add it to [Guard types](#guard-types) with its YAML shape and failure mode.
+- Validator rules change in `internal/config/validator.go::validateWorkflows`.
+- `app.WorkflowService.MoveTask` pipeline reorders or adds a step.
+- `guard.violated` event payload gains/drops a field (source: `internal/domain/events.go`).
+
+## See also
+
+- [workflow.md](../workflow.md) — guards per preset; preset-level conceptual flow.
+- [entities.md § workflows](entities.md#workflows) — full schema for `workflows[]`, including the guard slot wiring.
+- `internal/domain/events.go::KnownEventTypes` — source-of-truth for the `guard.violated` payload.

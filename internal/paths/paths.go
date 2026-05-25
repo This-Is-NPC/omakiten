@@ -40,13 +40,14 @@ const HomeEnv = "OMAKITEN_HOME"
 //   3. $XDG_CONFIG_HOME / $XDG_DATA_HOME
 //   4. ~/.config/omakiten and ~/.local/share/omakiten
 
-// ConfigRoot returns the base directory that holds both the yaml folder
-// (config/) and every entity folder (personas/, laws/, skills/, templates/,
-// themes/) as siblings. Layout:
+// ConfigRoot returns the base directory that holds both the yaml profile
+// folder (config/) and every file-backed asset folder (personas/, laws/,
+// skills/, templates/, themes/, notifications/, languages/) as siblings.
+// Layout:
 //
 //	<root>/config/<profile>.yaml
-//	<root>/<entity>/<slug>.md            # default entries (overwritten on update)
-//	<root>/<entity>/custom/<slug>.md     # user-created entries (preserved)
+//	<root>/<asset>/<slug-or-code>.<ext>          # defaults (overwritten on update)
+//	<root>/<asset>/custom/<slug-or-code>.<ext>   # user-created entries (preserved)
 func ConfigRoot() (string, error) {
 	if base := os.Getenv(HomeEnv); base != "" {
 		return base, nil
@@ -99,7 +100,8 @@ func ConfigFile() (string, error) {
 // out — a config file is mandatory.
 //
 // User-authored profiles live under <config-dir>/custom/ (mirroring the
-// custom/ convention used by personas, laws, skills, templates, themes); when
+// custom/ convention used by personas, laws, skills, templates, themes,
+// notifications, and languages); when
 // the active name is explicitly set via .active, the resolver tries that
 // subtree first and only falls back to the config-dir root when nothing
 // matches there. If the named profile is missing from both locations the
@@ -238,7 +240,8 @@ func validActiveConfigName(name string) bool {
 }
 
 // EntityDir resolves to <root>/<folder> — the directory holding the default
-// entity files (personas/, laws/, skills/, templates/, themes/).
+// file-backed assets (personas/, laws/, skills/, templates/, themes/,
+// notifications/, languages/).
 func EntityDir(folder string) (string, error) {
 	root, err := ConfigRoot()
 	if err != nil {

@@ -2,42 +2,43 @@
 
 Omakiten persists state in a single SQLite file (default `~/.local/share/omakiten/omakiten.db`, pure-Go driver `modernc.org/sqlite`). The schema is owned by the migration files under `migrations/` and applied transactionally on every connect (`internal/sqlite/store.go:Open`).
 
-> **CQRS-like split — post Phase 2-bis.** YAML files (the active profile yaml plus per-entity markdown) are the **only** source of truth for config. SQLite is **operational data only** — tasks, comments, dependencies, context entries, tags, errors, solutions, plans, plan_waves, task assignment, and the unified events log. Migration 020 dropped every config table from the database; the runtime now resolves workflows, buckets, personas, skills, laws, and templates from an in-memory `config.Snapshot` rebuilt on every `ConfigService.Import` (see `.docs/configuration-guide.md` § In-memory providers).
+> **CQRS-like split — post Phase 2-bis.** YAML files (the active profile yaml plus per-entity markdown) are the **only** source of truth for config. SQLite is **operational data only** — tasks, comments, dependencies, context entries, tags, errors, solutions, plans, plan_waves, task assignment, and the unified events log. Migration 020 dropped every config table from the database; the runtime now resolves workflows, buckets, personas, skills, laws, and templates from an in-memory `config.Snapshot` rebuilt on every `ConfigService.Import` (see `.docs/configuration-guide/README.md` § In-memory providers).
 
 ## Migrations
 
-Schema versions are tracked in `schema_migrations(version)`. Each numbered file under `migrations/` is applied once, in order:
+Schema versions are tracked in `schema_migrations(version)`. Each numbered file under `migrations/` is applied once, in order. See the header comment of each SQL file for the full rationale; the table below is the index.
 
 | File | What it adds |
 |---|---|
 | `001_initial.sql` | Core tables: `projects`, `config_bundles`, `settings`, `skills`, `personas`, `persona_skills`, `laws`, `workflows`, `workflow_buckets`, `workflow_transitions`, `tasks`, `comments`, `task_dependencies`, `context_entries`. |
-| `002_entities.sql` | Adds `description` / `body` / `source_path` to entity tables; introduces law `scope` (`global`/`project`/`persona`) with `project_id` / `persona_id` references; adds `tasks.workdir` / `tasks.branch` (both later removed in 017). |
-| `003_activity_logs.sql` | `activity_logs` table for operational telemetry (since absorbed into `events`). |
-| `004_tags.sql` | `tags`, `task_tags`, `project_tags` join tables. |
-| `005_transition_guards.sql` | `workflow_transitions.guards_json` column (later dropped with the table in 020). |
-| `006_comment_tags.sql` | `comment_tags` join table (later absorbed into `event_tags`). |
-| `007_errors.sql` | `errors`, `solutions`, `error_tags`. Errors and solutions are intentionally **cross-project**. |
+| `002_entities.sql` | Adds `description` / `body` / `source_path` to entity tables; law `scope` (`global`/`project`/`persona`); `tasks.workdir` / `tasks.branch` (removed in 017). |
+| `003_activity_logs.sql` | `activity_logs` table (later absorbed into `events`). |
+| `004_tags.sql` | `tags`, `task_tags`, `project_tags`. |
+| `005_transition_guards.sql` | `workflow_transitions.guards_json` (dropped with the table in 020). |
+| `006_comment_tags.sql` | `comment_tags` (later absorbed into `event_tags`). |
+| `007_errors.sql` | `errors`, `solutions`, `error_tags` — intentionally **cross-project**. |
 | `008_solution_likes.sql` | `solutions.likes` counter, incremented by `solutions.confirm(success=true)`. |
 | `009_events.sql` | Unified `events` table; migrates `comments` and `activity_logs` into it; rekeys `comment_tags` as `event_tags`; **drops** `comments`, `comment_tags`, `activity_logs`. |
-| `010_agent_attribution.sql` | Adds `agent_model` (NOT NULL DEFAULT '') and nullable `agent_session_id` to `events`, `errors`, and `solutions`; adds `source` / `entrypoint` to `errors` / `solutions`; creates `idx_events_agent_type(agent_model, event_type, created_at)` for the per-model benchmark queries. Existing rows are not backfilled — the domain-event timeline starts at this migration. |
-| `011_purge_tui_summary_pollution.sql` | One-shot delete of legacy `operation` rows written by the TUI Stats tick before `activity.WithoutTracking` wrapped the refresh context. Bounded the activity log so legitimate CLI / MCP entries could no longer be evicted by the per-second poll. |
-| `012_task_state.sql` | Adds `tasks.state TEXT NOT NULL DEFAULT 'active' CHECK ('active','archived')` and `idx_tasks_project_state(project_id, state)`. Archive bypasses bucket policy / transition guards but still respects `operations.archive.guards`. |
-| `013_bucket_permissions_operations.sql` | Adds `workflow_buckets.permissions_json` (per-bucket CRUD policy for tasks and comments) and `workflows.operations_json` (per-workflow archive/delete/unarchive guards). Both later dropped with the tables in 020 — policy now lives in the YAML and the in-memory Snapshot. |
-| `014_workflow_defaults.sql` | Adds `workflows.defaults_json` for task/comment edit/delete defaults at the workflow level. Also dropped with the table in 020. |
-| `015_priority_id.sql` | Converts `tasks.priority` (TEXT enum `low`/`normal`/`high`) into `tasks.priority_id` (INTEGER referencing the in-bundle `config.priorities` table). Backfill encodes the canonical `1=low`, `2=normal`, `3=high` mapping; subsequent renames in YAML never rewrite the integer ids. |
-| `016_severity_id.sql` | Same shape as 015 for `laws.severity` → `laws.severity_id` (`1=info`, `2=warning`, `3=error`). The `laws` table itself was dropped in 020; the severity id is now read from frontmatter at bundle import time. |
-| `017_drop_priority_severity_defaults.sql` | Rebuilds `tasks` and `laws` to drop the `DEFAULT 2` clauses on `priority_id` / `severity_id` (the SQL default obscured the principle that the canonical default lives in `defaults/omakiten.yaml`). The `tasks` rebuild also drops the unused `workdir` / `branch` columns added in 002. |
-| `018_drop_legacy_event_payloads.sql` | Deletes pre-refactor rows for `task.created`, `task.edited`, `task.removed`, `task.archived`, `task.unarchived`. Their payloads embedded label strings via a process-global registry, but the new wire shape emits the raw int id — purging avoids forcing every reader to accept both shapes. |
-| `019_unify_tool_call_events.sql` | Renames every `event_type='operation'` row to `cli.tool_call` / `mcp.tool_call` / `tui.tool_call` based on `source`. Enriches `payload` with `{tool_name, source, entrypoint, status, duration_ms, error_message, args}` so hooks can match without reading SQL columns. The legacy operation columns stay populated so `metrics.summary` keeps using its column-backed index. |
-| `020_drop_config_tables.sql` | **The Phase 2-bis breaking migration.** Drops `config_bundles`, `settings`, `skills`, `personas`, `persona_skills`, `laws`, `workflows`, `workflow_buckets`, `workflow_transitions`. Before the drop, rewrites `tasks.bucket_id` from the SQL-era `workflow_buckets.id` (autoincrement PK) to `workflow_buckets.local_id` (the YAML-declared bucket id the post-migration `Snapshot` indexes by) so existing tasks still resolve to a real bucket. Rebuilds `tasks` to drop the FK pointing at `workflow_buckets`; `bucket_id` is now a plain `INTEGER`. |
-| `021_rebind_orphan_buckets.sql` | Pure-SQL recovery for databases that applied an earlier version of 020 missing the bucket rebind. Walks `events` for each task's latest `task.moved` (fallback `task.created`) payload, extracts the bucket key, and maps onto the canonical preset bucket id via a `CASE` covering every shipped preset key. Tasks with no recoverable event land in bucket id 1. Idempotent on already-rebound databases. |
-| `022_search_index.sql` | Creates the unified FTS5 virtual table `search_index(content, entity_type UNINDEXED, entity_id UNINDEXED, project_id UNINDEXED)` with tokenizer `porter unicode61` and seeds it from the live rows: tasks (title + description), comments (the `events` rows where `event_type='comment'`), errors (description + context), solutions (description + steps), and context entries. Triggers keep the index in sync on insert / update / delete; `solutions` rows derive `project_id` via `errors.error_id`. Backs the unified `search` MCP tool that replaced the legacy `errors.search` path. |
-| `023_plans.sql` | Adds the WBS-style plan catalog. Creates `plans` (id, project_id FK, slug, name, goal_body markdown, status `active`/`done`/`abandoned`, completed_at, `UNIQUE(project_id, slug)`) and `plan_waves` (id, plan_id FK ON DELETE CASCADE, name, position, `UNIQUE(plan_id, position)`). Adds three nullable columns on `tasks`: `plan_id REFERENCES plans(id) ON DELETE SET NULL`, `wave_id REFERENCES plan_waves(id) ON DELETE SET NULL`, and `assigned_to TEXT`. Creates `idx_tasks_plan_wave(plan_id, wave_id)`. Tasks survive plan deletion as standalone work items; deleting a plan cascades its waves but only nulls the task pointers. |
-| `024_search_index_plans.sql` | Extends the FTS5 `search_index` (migration 022) with a sixth content type: `plan` rows indexed as `name + ' ' + goal_body`. Backfills from `plans` and installs three triggers (`search_index_plans_ai`/`au`/`ad`) so the cross-project `search` MCP tool finds plans by name or any phrase in the markdown goal body. |
+| `010_agent_attribution.sql` | Adds `agent_model`, `agent_session_id` to `events` / `errors` / `solutions`; `source` / `entrypoint` to `errors` / `solutions`; `idx_events_agent_type` for per-model benchmark queries. Domain-event timeline starts here — pre-existing rows not backfilled. |
+| `011_purge_tui_summary_pollution.sql` | One-shot delete of legacy `operation` rows written by the TUI Stats tick before `activity.WithoutTracking` wrapped the refresh context. |
+| `012_task_state.sql` | Adds `tasks.state` (`active`/`archived`) and `idx_tasks_project_state`. Archive bypasses bucket policy / transition guards but still respects `operations.archive.guards`. |
+| `013_bucket_permissions_operations.sql` | `workflow_buckets.permissions_json`, `workflows.operations_json` (both dropped in 020 — policy is now YAML-only). |
+| `014_workflow_defaults.sql` | `workflows.defaults_json` (dropped in 020). |
+| `015_priority_id.sql` | Converts `tasks.priority` (TEXT enum) into `tasks.priority_id` (INTEGER → `config.priorities`). Backfill: `1=low`, `2=normal`, `3=high`; YAML label renames never rewrite stored ids. |
+| `016_severity_id.sql` | Same shape as 015 for `laws.severity` → `laws.severity_id` (`1=info`, `2=warning`, `3=error`). `laws` itself dropped in 020; severity id now read from frontmatter at import. |
+| `017_drop_priority_severity_defaults.sql` | Drops the `DEFAULT 2` clauses on `priority_id` / `severity_id` (canonical default lives in `defaults/omakiten.yaml`) and the unused `tasks.workdir` / `tasks.branch` columns. |
+| `018_drop_legacy_event_payloads.sql` | Deletes pre-refactor task lifecycle rows so readers don't have to accept the old label-string payload shape. |
+| `019_unify_tool_call_events.sql` | Renames `event_type='operation'` rows to `cli.tool_call` / `mcp.tool_call` / `tui.tool_call` (per `source`). Enriches `payload` so hooks match without SQL column reads. Legacy `operation` columns stay populated for the `metrics.summary` index. |
+| `020_drop_config_tables.sql` | **Phase 2-bis breaking migration.** Drops `config_bundles`, `settings`, `skills`, `personas`, `persona_skills`, `laws`, `workflows`, `workflow_buckets`, `workflow_transitions`. First rewrites `tasks.bucket_id` from the SQL PK to the YAML-declared `local_id` so tasks still resolve. Rebuilds `tasks` to drop the bucket FK. |
+| `021_rebind_orphan_buckets.sql` | Pure-SQL recovery for DBs that applied an earlier 020 missing the bucket rebind. Walks `events` per task to recover the bucket key; unrecoverable tasks land in bucket id 1. Idempotent. |
+| `022_search_index.sql` | Creates FTS5 virtual table `search_index` (tokenizer `porter unicode61`) over tasks, comments, errors, solutions, context entries. Triggers keep it in sync. Backs the unified `search` MCP tool. |
+| `023_plans.sql` | WBS-style plan catalog: `plans`, `plan_waves` (`ON DELETE CASCADE` on `plan_id`), plus nullable `plan_id` / `wave_id` / `assigned_to` on `tasks` (both FKs `ON DELETE SET NULL`). Adds `idx_tasks_plan_wave`. Deleting a plan cascades waves but only nulls task pointers. |
+| `024_search_index_plans.sql` | Extends the FTS5 `search_index` with `plan` rows (`name + ' ' + goal_body`). |
+| `025_projects_cascade.sql` | Rebuilds project-owned tables so deleting a project cascades through tasks, context entries, project-scoped errors, plans, dependencies. Events keep a bare `project_id`; the service deletes project-scoped event rows explicitly. |
+| `026_tasks_parent_id.sql` | Nullable `tasks.parent_id` (`ON DELETE CASCADE`) + `idx_tasks_parent_id` for sub-task trees. |
+| `027_tasks_parent_project_fk.sql` | `BEFORE INSERT` / `BEFORE UPDATE` triggers rejecting cross-project parents — closes the gap left by the single-column self-FK. |
 
-After 009, three tables that older code referenced (`comments`, `comment_tags`, `activity_logs`) **no longer exist** — every reader/writer goes through `events` (see "The unified events table" below). After 020, nine more tables (`config_bundles`, `settings`, `skills`, `personas`, `persona_skills`, `laws`, `workflows`, `workflow_buckets`, `workflow_transitions`) are also gone — config is YAML-only. Migration 022 adds the FTS5 virtual table `search_index`, which is not a base table — it does not show up in the table count below, but every row inserted into `tasks`, `events` (comments), `errors`, `solutions`, `context_entries`, or `plans` is mirrored into it by trigger. Migration 023 adds `plans` and `plan_waves` (plus three nullable columns on `tasks`); 024 extends the FTS5 index to plan rows.
-
-## Current schema (post-024)
+## Current schema (post-027)
 
 The live schema contains fourteen base tables of operational state plus `schema_migrations` and the `search_index` FTS5 virtual table:
 
@@ -69,6 +70,7 @@ erDiagram
         text title
         int  priority_id "config.priorities id"
         text state "active|archived"
+        int  parent_id FK "nullable, self-FK, ON DELETE CASCADE"
         int  plan_id FK "nullable, ON DELETE SET NULL"
         int  wave_id FK "nullable, ON DELETE SET NULL"
         text assigned_to "nullable, free-text"
@@ -173,9 +175,9 @@ erDiagram
 
 A few invariants the diagram cannot express compactly:
 
-- **Project-scope invariant** for tasks: `tasks(project_id, id)` is a composite unique key, and `task_dependencies` uses dual composite FKs into it — this is what guarantees a dependency can never cross projects.
+- **Project-scope invariant** for tasks: `tasks(project_id, id)` is a composite unique key, and `task_dependencies` uses dual composite FKs into it — this is what guarantees a dependency can never cross projects. Sub-task `parent_id` uses a self-FK for existence plus migration-027 triggers for same-project enforcement.
 - **Cycle prevention** for `task_dependencies` is enforced in software (`internal/graph/dependency.go:HasCycle`), not by the schema.
-- **`tasks.bucket_id`** is an unconstrained `INTEGER` post-020 — there is no FK to a buckets table because no buckets table exists. The application resolves it against the per-project `config.Snapshot.BucketByID` built from YAML on every bundle import. An id Snapshot cannot resolve marks the row as an **orphan** and surfaces through `app.OrphanRepository.PreviewOrphanedTasks` / `RebindOrphanedTasks` (see `.docs/configuration-guide.md` § Orphan-task migration).
+- **`tasks.bucket_id`** is an unconstrained `INTEGER` post-020 — there is no FK to a buckets table because no buckets table exists. The application resolves it against the per-project `config.Snapshot.BucketByID` built from YAML on every bundle import. An id Snapshot cannot resolve marks the row as an **orphan** and surfaces through `app.OrphanRepository.PreviewOrphanedTasks` / `RebindOrphanedTasks` (see `.docs/configuration-guide/README.md` § Orphan-task migration).
 - **`tasks.priority_id`** is similarly unconstrained at the SQL layer. Validation is the bundle validator's job: every `priority_id` written must match an entry in `config.priorities`. Renaming a priority label is a YAML edit; the integer id stored on tasks does not change.
 - **`events` is a discriminated log**: `(entity_type, event_type)` selects the row's role (see "The unified events table" below). `entity_id` is the task / error / solution id when the entity type names a row, and is `NULL` for `entity_type='system'`.
 - **`solutions.success`** is a tri-state (`NULL` = untried, `0` = known-bad, `1` = known-good); `1` is the only state that increments `likes`.
@@ -186,11 +188,11 @@ A few invariants the diagram cannot express compactly:
 
 `id INT PK`, `name`, `slug UNIQUE`, `root_path UNIQUE`, `created_at`, `updated_at`, `archived_at?`.
 
-The active project is resolved by id, slug, or by matching `root_path` to the current working directory (`internal/project/resolver.go`). When a project's `root_path` carries a `.omakiten/` directory, the runtime uses that repo-local SQLite file in place of the global one (`internal/agentruntime/runtime.go`).
+The active project is resolved by id, slug, or by matching `root_path` to the current working directory (`internal/project/resolver.go`). A repo-local `.omakiten/` directory affects config resolution only; the SQLite database remains in the resolved data root (`$OMAKITEN_HOME/data`, `$XDG_DATA_HOME/omakiten`, or `~/.local/share/omakiten`).
 
 ### `tasks`
 
-Post-023 column shape:
+Post-027 column shape:
 
 ```
 id           INTEGER PRIMARY KEY AUTOINCREMENT
@@ -204,7 +206,10 @@ state        TEXT    NOT NULL DEFAULT 'active'
 created_at   TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 updated_at   TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 completed_at TEXT                        -- stamped on transition INTO terminal bucket;
-                                          -- cleared on transition OUT
+                                           -- cleared on transition OUT
+parent_id    INTEGER REFERENCES tasks(id) ON DELETE CASCADE
+                                          -- nullable sub-task parent; triggers enforce
+                                          -- parent.project_id == child.project_id
 plan_id      INTEGER REFERENCES plans(id) ON DELETE SET NULL
 wave_id      INTEGER REFERENCES plan_waves(id) ON DELETE SET NULL
 assigned_to  TEXT                        -- free-text claimant; populated by
@@ -217,6 +222,8 @@ UNIQUE(project_id, id)
 ```
 
 The `UNIQUE(project_id, id)` shape is what lets `task_dependencies` use a composite foreign key to enforce that **dependencies cannot cross projects**.
+
+`parent_id` forms a same-table hierarchy for sub-tasks. The self-FK guarantees the parent exists; the `tasks_parent_project_insert_guard` and `tasks_parent_project_update_guard` triggers added in migration 027 guarantee the parent belongs to the same project as the child. Deleting a parent cascades through its sub-tree at the database layer.
 
 `completed_at` is populated by `WorkflowService.MoveTask` whenever the destination is the workflow's final bucket and cleared when a task leaves the terminal bucket. Existing historical `done` rows are backfilled to `updated_at` once per `BuildProjectRuntime` via `Store.BackfillTaskCompletedAt` (`internal/sqlite/tasks_lifecycle.go`); the backfill is idempotent (zero rows after the first run) and errors are swallowed so a transient SQLite hiccup cannot block runtime composition. Tasks that bounced in/out of `done` lose the original completion moment — best-effort by design.
 
@@ -258,7 +265,7 @@ position INTEGER NOT NULL
 UNIQUE(plan_id, position)
 ```
 
-Waves are ordered phases inside a plan. Tasks within a wave run in parallel; wave `N+1` is gated on wave `N` being fully closed via the `wave_gate` guard (see `.docs/guards-guide.md`) — gating is **not** modelled as auto-wired dependency edges so the network diagram stays clean and the edge count stays linear instead of N×M.
+Waves are ordered phases inside a plan. Tasks within a wave run in parallel; wave `N+1` is gated on wave `N` being fully closed via the `wave_gate` guard (see `.docs/configuration-guide/guards.md`) — gating is **not** modelled as auto-wired dependency edges so the network diagram stays clean and the edge count stays linear instead of N×M.
 
 `ON DELETE CASCADE` on `plan_id` ensures waves disappear with their plan; child tasks keep `state='active'` because `tasks.plan_id` / `tasks.wave_id` are `ON DELETE SET NULL` (deleting a plan never deletes its work, only detaches it).
 
@@ -296,7 +303,7 @@ solutions: id, error_id (FK), description, steps,
 error_tags: error_id, tag_id          -- cascades on errors delete
 ```
 
-**Cross-project by design.** Errors carry an optional `project_id` (so you can filter), but the unified `search` tool (with `entity_types=["error"]`) and `solutions.list_top` are global so prior fixes are reusable across projects (see `.docs/mcp-guide.md` § Tools).
+**Cross-project by design.** Errors carry an optional `project_id` (so you can filter), but the unified `search` tool (with `entity_types=["error"]`) and `solutions.list_top` are global so prior fixes are reusable across projects (see `.docs/mcp.md` § Tools).
 
 `solutions.success` is a tri-state:
 
@@ -400,6 +407,31 @@ The cross-project exceptions (errors, solutions, global tag list, template catal
 
 The driver is pure Go (`modernc.org/sqlite`), so the binary builds without CGo.
 
+## Transactional event emission
+
+Every storage mutation that also writes the `events` log goes through `txMutateAndEmit[T]` (`internal/sqlite/txevent.go:100`), which owns the canonical `BeginTx → mutate → emit → Commit → publish` lifecycle. Callers describe one cycle by populating a `TxMutation[T]` literal (`internal/sqlite/txevent.go:41`): `Scope` picks `insertEntityEvent` vs `insertTaskEvent`, `Mutate` runs the persistence write inside the helper's transaction, `Payload` builds the JSON column after the mutation has produced the post-`RETURNING` row, `EntityID` / `Body` derive event columns from the same value, and `ShouldLog` optionally gates the row insert (synthetic broadcast still fires).
+
+Representative callsites:
+
+- `internal/sqlite/plans.go:29` — `CreatePlan` (entity scope, `plan.created`).
+- `internal/sqlite/plans.go:124` — `UpdatePlanGoalBody` (entity scope, `plan.goal_edited`).
+- `internal/sqlite/plans.go:298` — `AddPlanWave` (entity scope, `plan.wave_added`).
+- `internal/sqlite/plans.go:727` — `ClaimNextPlanTask` (task scope, `task.assigned`).
+- `internal/sqlite/tasks.go:40` — `CreateTask` (task scope, `task.created`, gated via `shouldLogEvent`).
+- `internal/sqlite/comments.go:111` — `UpdateComment` (task scope, `comment.edited`, gated).
+
+The invariant the helper enforces: the mutation row and the events row land in the same SQL transaction, so a rollback drops both. `tx.Commit()` is the only path to a `publishEvent` call, so bus subscribers never observe an event whose underlying row failed to persist; a `Payload` error after a successful `Mutate` rolls the mutation back rather than emitting an event with a malformed JSON column. `ShouldLog=false` skips the row insert but still publishes a synthetic `domain.Event` post-commit so listeners that previously read from the inline gated callsites (CreateTask, MoveTask, SetTaskState, UpdateComment, RebindOrphanedTasks) keep their existing wire shape.
+
+## `sqlutil` helpers
+
+The adapters under `internal/sqlite/` share a small, dependency-free helper package at `internal/sqlite/sqlutil/` for patterns that were drifting between callsites:
+
+- `NullStringOr(v, fallback)` (`internal/sqlite/sqlutil/null.go:30`) — coerces a `sql.NullString` to a plain string with an explicit fallback. Use when the domain field is a non-nullable string and the column is nullable for storage reasons. Sibling helpers `NullInt64Ptr` and `NullTimePtr` lift nullable columns into typed pointers when the domain distinguishes "absent" from zero.
+- `ScanRow[T]` (`internal/sqlite/sqlutil/scan.go:21`) — runs a decode closure against a single `Scanner` so the `QueryRowContext` path and the `QueryContext`/`ScanAll` path share one column list. Use whenever both single-row and multi-row variants exist (the historical `scanFoo` / `scanFooRows` pair).
+- `MapSQLiteError(err)` (`internal/sqlite/sqlutil/constraint.go:85`) — classifies `modernc.org/sqlite` driver errors into a typed `*ConstraintError` (`internal/sqlite/sqlutil/constraint.go:55`) carrying `Violation` (unique / foreign_key / check / not_null), best-effort `Table` / `Field`, and the original cause via `Unwrap`. Use at the storage edge to translate raw driver errors into domain errors via `errors.As(mapped, &ce)` (see `internal/sqlite/plans.go:43`).
+
+Helpers in `sqlutil` are behaviour-equivalent extractions, not new policy — adding a new fallback rule (e.g. "treat empty string as NULL") belongs in the caller, not the helper.
+
 ## Schema auto-migration (config side)
 
 `MigrateLayout` (in `internal/config/migration.go`) runs every time
@@ -432,10 +464,29 @@ break user bundles on upgrade. The pattern keeps every prior version
 of the wiring loadable as long as the kit canonical for the new key
 is sensible as a backfill default.
 
+### Config loaders: `LoadFromDir`
+
+The per-entity packs (skills, laws, personas, templates, language packs, notifications) all reach disk through one generic walker, `LoadFromDir[T]` (`internal/config/loadfromdir.go:81`). It walks `dir/` then `dir/custom/` for files matching `LoadOptions[T].Suffixes`, reads each under `MaxFileBytes`, invokes the caller's `Decode` to produce a `T`, dedups by `SlugOf`, and returns items in alphabetical slug order. A missing `dir` returns `(nil, nil, nil)` so first-run paths can call it before any defaults are materialised. `OnDecodeError` lets custom-scope files degrade to a warning + skip while default-scope drift stays fatal (used by `internal/config/notification_loader.go:49`).
+
+`CollisionPolicy` (`internal/config/loadfromdir.go:18`) controls what happens when two files produce the same slug. Same-scope duplicates (two defaults, or two customs) are always an error; the policy only varies on the cross-scope edge:
+
+- `CollideOverwrite` — defaults walked first, customs win on cross-scope collision. The behaviour every shipping loader uses today: `internal/config/entity_loader.go:44` (skills), `:77` (laws), `:114` (personas), `:155` (templates), `internal/config/language.go:59` (language packs), `internal/config/notification_loader.go:49` (notifications).
+- `CollideError` — any duplicate slug is fatal regardless of scope. No current consumer; pinned by tests so a future loader can opt in.
+- `CollideKeepFirst` — cross-scope keeps the first arrival (default wins, custom skipped). Reserved for read-only baselines where a custom file must never shadow the bundled default.
+
+The typical layering: `defaults/` ships the kit canonical pack, the user drops overrides into `custom/`, and `LoadFromDir` merges them into a single slug-keyed catalog the `Snapshot` indexes by.
+
 ## Where to learn more
 
-- Migration sources: `migrations/001_initial.sql` … `migrations/024_search_index_plans.sql`.
+- Migration sources: `migrations/001_initial.sql` … `migrations/027_tasks_parent_project_fk.sql`.
 - Domain types behind every row: `internal/domain/` (`task.go`, `event.go`, `tag.go`, `error_record.go`, `context.go`, `priority_test.go`, `severity_test.go`).
 - Adapter implementations: `internal/sqlite/` (one file per concern — `tasks.go`, `tasks_lifecycle.go` (archive/unarchive/remove), `comments.go`, `dependencies.go`, `events.go`, `tags.go`, `errors.go`, `metrics.go`, `bucket_resolver.go`, `activity_logs.go`, `guards.go`, `contexts.go`, `orphans.go`, `projects.go`, `store.go`).
 - App-level ports the adapter satisfies: `internal/app/ports.go`.
-- The in-memory side: `.docs/configuration-guide.md` § How config reads work at runtime; `internal/config/snapshot.go`, `internal/agentruntime/cache.go`.
+- The in-memory side: `.docs/configuration-guide/README.md` § How config reads work at runtime; `internal/config/snapshot.go`, `internal/agentruntime/cache.go`.
+
+## See also
+
+- `architecture.md` — codebase shape.
+- `internal/domain/events.go::KnownEventTypes` — events backed by these schemas.
+- `../configuration-guide/README.md` — schema-level config knobs.
+- `dev-guide.md` — local dev / migration commands.

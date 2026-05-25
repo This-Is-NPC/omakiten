@@ -4,6 +4,20 @@ Every team works differently, and any one preset will feel wrong to half its use
 
 This guide is the authoritative reference for picking a preset, understanding what it enforces, and forking your own.
 
+## Contents
+
+- [Why presets exist](#why-presets-exist)
+- [How to pick a preset](#how-to-pick-a-preset)
+- [PDCA mapping — the cycle behind every preset](#pdca-mapping--the-cycle-behind-every-preset)
+- [🍻 izakaya — Lean spike, tracer-bullet, walking skeleton](#-izakaya--lean-spike-tracer-bullet-walking-skeleton)
+- [🍱 omakase — Trunk-based development with DORA discipline](#-omakase--trunk-based-development-with-dora-discipline) (canonical worked example)
+- [🎌 kaiseki — Staged delivery with formal sign-offs](#-kaiseki--staged-delivery-with-formal-sign-offs)
+- [🥢 shokunin — Site Reliability Engineering with multi-reviewer change control](#-shokunin--site-reliability-engineering-with-multi-reviewer-change-control)
+- [Cross-preset progression](#cross-preset-progression)
+- [Plans — multi-agent fan-out](#plans--multi-agent-fan-out)
+- [Authoring your own preset](#authoring-your-own-preset)
+- [See also](#see-also)
+
 ## Why presets exist
 
 A preset is the combination of:
@@ -41,14 +55,14 @@ When in doubt, pick **omakase**. It is the canonical kit and the default selecti
 
 ## PDCA mapping — the cycle behind every preset
 
-Each preset embodies a different process discipline level, but every preset runs the same underlying cycle: [PDCA — Plan-Do-Check-Act](./explanation/mental-models.md#pdca). Every action through Omakiten maps onto one of the four phases.
+Each preset embodies a different process discipline level, but every preset runs the same underlying cycle: [PDCA — Plan-Do-Check-Act](./why_omakiten.md#pdca). Every action through Omakiten maps onto one of the four phases.
 
-The eight `okt-*` commands map to PDCA phases:
+The core `okt-*` cycle maps to PDCA phases:
 
 | PDCA phase | `okt-*` command | What happens |
 |---|---|---|
-| **PLAN** | `okt-imagine` | Product-owner persona interrogates the user via [5W2H](./explanation/mental-models.md#5w2h). Define success in [SMART](./explanation/mental-models.md#smart) terms. Surface assumptions and gaps. Decide if the request is concrete enough to file. |
-| **PLAN → DO** | `okt-create` | Formalize the imagined work as a task. [INVEST](./explanation/mental-models.md#invest) checklist on the user story. Acceptance criteria. Prioritization ([MoSCoW](./explanation/mental-models.md#moscow) or [RICE](./explanation/mental-models.md#rice)) when alternatives exist. Non-functional requirements named separately when relevant. |
+| **PLAN** | `okt-imagine` | Product-owner persona interrogates the user via [5W2H](./why_omakiten.md#5w2h). Define success in [SMART](./why_omakiten.md#smart) terms. Surface assumptions and gaps. Decide if the request is concrete enough to file. |
+| **PLAN → DO** | `okt-create` | Formalize the imagined work as a task. [INVEST](./why_omakiten.md#invest) checklist on the user story. Acceptance criteria. Prioritization ([MoSCoW](./why_omakiten.md#moscow) or [RICE](./why_omakiten.md#rice)) when alternatives exist. Non-functional requirements named separately when relevant. |
 | **DO** | task in `dev`, `okt-continue`, early `okt-implement` | Execute the planned increment. Test-first, conventional commits, small batches (the engineering discipline each preset enforces). |
 | **ACT** | mid `okt-implement` | Adjust during execution — drive-by cleanup, decision records on divergence, refactors, escalate when guards block. |
 | **CHECK** | end of `okt-implement` → task in `review` → `done` | Verify the outcome against the SMART success metric defined in PLAN. Peer review. Tests passing. Promote to `done` only when the loop closes. |
@@ -68,9 +82,9 @@ The eight `okt-*` commands map to PDCA phases:
 
 Three disciplines ride together at the preset's chosen level:
 
-- **Software engineering** (TBD / TDD / SRE / decision records) — how code lands.
-- **Product management** ([5W2H](./explanation/mental-models.md#5w2h) / [SMART](./explanation/mental-models.md#smart) / [INVEST](./explanation/mental-models.md#invest) / [MoSCoW](./explanation/mental-models.md#moscow) / [RICE](./explanation/mental-models.md#rice) / outcomes) — what gets built and why.
-- **Project management** ([PDCA](./explanation/mental-models.md#pdca) cycle awareness, staged delivery, audit trail) — how the work is structured and recorded.
+- **Software engineering** (trunk-based development / TDD / SRE / decision records) — how code lands.
+- **Product management** ([5W2H](./why_omakiten.md#5w2h) / [SMART](./why_omakiten.md#smart) / [INVEST](./why_omakiten.md#invest) / [MoSCoW](./why_omakiten.md#moscow) / [RICE](./why_omakiten.md#rice) / outcomes) — what gets built and why.
+- **Project management** ([PDCA](./why_omakiten.md#pdca) cycle awareness, staged delivery, audit trail) — how the work is structured and recorded.
 
 A preset is **coherent** when its engineering rigor matches its product rigor matches its project-management rigor. izakaya keeps all three light (spike); omakase balances all three at mainstream professional level; kaiseki tightens all three with formal stages; shokunin elevates all three with audit-trail integrity and multi-reviewer sign-off.
 
@@ -82,10 +96,10 @@ A preset is **coherent** when its engineering rigor matches its product rigor ma
 
 ### Methodology basis
 
-- **Lean Startup** — [Ries 2011](./reference/bibliography.md#ries-2011): build-measure-learn loops; MVP design.
-- **Extreme Programming (XP) Spike** — [Beck & Andres 2004](./reference/bibliography.md#beck-andres-2004): time-boxed exploratory work, throwaway code, learning-first.
-- **Tracer Bullet** — [Hunt & Thomas 1999](./reference/bibliography.md#hunt-thomas-1999) ch.7: thin end-to-end slice before depth.
-- **Walking Skeleton** — [Cockburn — Crystal Clear](./reference/bibliography.md#cockburn-crystal): connect the wires first, deepen later.
+- **Lean Startup** — [Ries 2011](./why_omakiten.md#ries-2011): build-measure-learn loops; MVP design.
+- **Extreme Programming (XP) Spike** — [Beck & Andres 2004](./why_omakiten.md#beck-andres-2004): time-boxed exploratory work, throwaway code, learning-first.
+- **Tracer Bullet** — [Hunt & Thomas 1999](./why_omakiten.md#hunt-thomas-1999) ch.7: thin end-to-end slice before depth.
+- **Walking Skeleton** — [Cockburn — Crystal Clear](./why_omakiten.md#cockburn-crystal): connect the wires first, deepen later.
 
 ### Workflow shape
 
@@ -118,65 +132,9 @@ Maximum permissiveness — spikes need to reshape freely.
 
 Operations: no guards (archive / delete / unarchive free).
 
-### Persona, laws, skills, templates
+### Delta vs omakase
 
-<!-- BEGIN include:_generated/presets-izakaya.md -->
-# Preset — Izakaya Workflow Preset
-
-Auto-derived from `defaults/config/izakaya.yaml`.
-
-<!-- SECTION:personas -->
-## Personas
-
-| Persona | Skills |
-|---|---|
-| `check-runner` | `test-driven-development`, `static-analysis-discipline`, `coverage-analysis`, `regression-detection`, `markdown` |
-| `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
-| `commit-author` | `conventional-commits-spec`, `markdown` |
-| `documentation-agent` | `documentation`, `architecture-mapping`, `readme-curation`, `markdown` |
-| `tinkerer` | `lean-experimentation`, `tracer-bullet-shipping`, `time-box-discipline`, `markdown` |
-
-<!-- END SECTION -->
-
-<!-- SECTION:mcp-commands -->
-## MCP command bindings
-
-| Command | Persona | Laws (+/-) | Templates |
-|---|---|---|---|
-| `global` | — | +`template-fidelity`, +`authorize-remote-writes`, +`project-scope-only` | — |
-| `okt` | tinkerer | — | — |
-| `okt-check` | check-runner | +`time-boxed-check`, +`accept-yellow` | `comment-check-report` |
-| `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by` | — |
-| `okt-config` | documentation-agent | — | `config-orientation` |
-| `okt-continue` | tinkerer | — | — |
-| `okt-create` | tinkerer | +`hypothesis-required`, +`yagni-first` | `task-spike` |
-| `okt-document` | documentation-agent | — | — |
-| `okt-imagine` | tinkerer | -`template-fidelity` | — |
-| `okt-implement` | tinkerer | +`time-boxed-spike`, +`tracer-bullet`, +`conventional-commits` | `pull-request` |
-| `okt-resume` | tinkerer | — | — |
-| `okt-review` | code-reviewer | +`time-boxed-review`, +`tracer-debt-acceptable` | `comment-review-findings`, `comment-refactor-opportunities` |
-
-<!-- END SECTION -->
-
-<!-- SECTION:workflow-guards -->
-## Workflow guards
-
-### `izakaya` workflow
-
-**Transitions**
-
-| From | To | Guards |
-|---|---|---|
-| `backlog` | `dev` | `#hypothesis`×1 · `wave_gate` |
-| `dev` | `done` | — |
-| `done` | `dev` | — |
-| `dev` | `backlog` | — |
-| `done` | `backlog` | — |
-
-<!-- END SECTION -->
-<!-- END include -->
-
-Severity (`error` vs `warning`) per law lives in its frontmatter under `defaults/laws/<slug>.md` (or the user override in `<root>/laws/custom/<slug>.md`). Inspect via `okt law show <slug>`.
+Lean spike kit: one persona (`tinkerer`) drives discovery, creation, and implementation; the engineering/product-owner split disappears. `okt-create` swaps to `task-spike` with `hypothesis-required` + `yagni-first` laws (no INVEST, no SMART). `okt-implement` runs under `time-boxed-spike` + `tracer-bullet` (no test-evidence, no green-main). `okt-check` and `okt-review` accept yellow / time-boxed findings. Full wiring: [`presets.md`](./presets.md).
 
 ### Visible output
 
@@ -206,11 +164,11 @@ echo my-izakaya.yaml > ~/.config/omakiten/config/.active
 ### Methodology basis
 
 - **Trunk-Based Development** — short-lived branches, fast revert, feature flags.
-- **Continuous Integration** — [Fowler 2006](./reference/bibliography.md#fowler-ci-2006): green main as the source of truth.
-- **DORA** — [Forsgren, Humble & Kim 2018](./reference/bibliography.md#forsgren-2018): lead time, deploy frequency, MTTR, change failure rate as the four optimization targets.
-- **Test-Driven Development** — [Beck 2002](./reference/bibliography.md#beck-tdd-2002): red → green → refactor; tests-first on new behavior.
-- **Conventional Commits** — [conventionalcommits.org](./reference/bibliography.md#conventional-commits): machine-parseable commit messages.
-- **Boy Scout Rule** — [Martin — Clean Code 2008](./reference/bibliography.md#martin-clean-2008) p.14: leave code cleaner than you found it.
+- **Continuous Integration** — [Fowler 2006](./why_omakiten.md#fowler-ci-2006): green main as the source of truth.
+- **DORA** — [Forsgren, Humble & Kim 2018](./why_omakiten.md#forsgren-2018): lead time, deploy frequency, MTTR, change failure rate as the four optimization targets.
+- **Test-Driven Development** — [Beck 2002](./why_omakiten.md#beck-tdd-2002): red → green → refactor; tests-first on new behavior.
+- **Conventional Commits** — [conventionalcommits.org](./why_omakiten.md#conventional-commits): machine-parseable commit messages.
+- **Boy Scout Rule** — [Martin — Clean Code 2008](./why_omakiten.md#martin-clean-2008) p.14: leave code cleaner than you found it.
 
 ### Workflow shape
 
@@ -246,72 +204,15 @@ Operations: archive requires `#documentation`.
 
 ### Persona, laws, skills, templates
 
-<!-- BEGIN include:_generated/presets-omakase.md -->
-# Preset — Omakase Workflow Preset
+Personas, MCP-command bindings, and workflow guards for `omakase` live in `defaults/config/omakase.yaml`. Inspect the active wiring with:
 
-Auto-derived from `defaults/config/omakase.yaml`.
+```bash
+okt persona list                     # personas in the active preset
+okt mcp call templates.list --input '{}'
+yq '.workflows[0]' defaults/config/omakase.yaml
+```
 
-<!-- SECTION:personas -->
-## Personas
-
-| Persona | Skills |
-|---|---|
-| `check-runner` | `test-driven-development`, `static-analysis-discipline`, `coverage-analysis`, `regression-detection`, `markdown` |
-| `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
-| `commit-author` | `conventional-commits-spec`, `markdown` |
-| `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
-| `engineer` | `trunk-based-development`, `continuous-integration`, `test-driven-development`, `dora-mindset`, `implementation`, `markdown` |
-| `product-owner` | `discovery`, `user-story-writing`, `pdca-cycle`, `five-w-two-h`, `smart-goals`, `invest-stories`, `moscow-prioritization`, `rice-scoring`, `non-functional-requirements`, `markdown` |
-
-<!-- END SECTION -->
-
-<!-- SECTION:mcp-commands -->
-## MCP command bindings
-
-| Command | Persona | Laws (+/-) | Templates |
-|---|---|---|---|
-| `global` | — | +`template-fidelity`, +`authorize-remote-writes` | — |
-| `okt` | engineer | — | — |
-| `okt-check` | check-runner | +`findings-actionable`, +`severity-tagged` | `comment-check-report` |
-| `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by`, +`scope-from-paths` | — |
-| `okt-config` | documentation-agent | — | `config-orientation` |
-| `okt-continue` | engineer | — | — |
-| `okt-create` | product-owner | +`invest-stories`, +`outcome-over-output` | `user-story`, `task-bugfix`, `comment-smart-success`, `comment-moscow` |
-| `okt-document` | documentation-agent | — | — |
-| `okt-imagine` | product-owner | -`template-fidelity` | `comment-5w2h`, `comment-smart-success` |
-| `okt-implement` | engineer | +`bounded-self-review`, +`no-silent-behavior-changes`, +`conventional-commits`, +`self-report`, +`green-main-always`, +`small-batches`, +`boy-scout-rule`, +`test-evidence` | `pull-request`, `comment-tests-passing`, `comment-refactor-drive-by` |
-| `okt-resume` | engineer | — | — |
-| `okt-review` | code-reviewer | +`findings-actionable`, +`no-praise-pad`, +`severity-tagged` | `comment-review-findings`, `comment-refactor-opportunities` |
-
-<!-- END SECTION -->
-
-<!-- SECTION:workflow-guards -->
-## Workflow guards
-
-### `omakase` workflow
-
-**Operations**
-
-| Operation | Guards |
-|---|---|
-| `archive` | `#documentation`×1 |
-
-**Transitions**
-
-| From | To | Guards |
-|---|---|---|
-| `backlog` | `dev` | `#self-branch`×1 · blockers in `done` · `wave_gate` |
-| `dev` | `review` | `#resume`×1 · `#tests-passing`×1 · `subtasks_complete` |
-| `review` | `done` | `#documentation`×1 |
-| `dev` | `backlog` | — |
-| `review` | `backlog` | — |
-| `review` | `dev` | — |
-| `done` | `review` | — |
-| `done` | `dev` | — |
-| `done` | `backlog` | — |
-
-<!-- END SECTION -->
-<!-- END include -->
+The [presets comparison](./presets.md) gives the side-by-side view across all four official presets.
 
 Severity (`error` vs `warning`) per law lives in its frontmatter under `defaults/laws/<slug>.md` (or the user override in `<root>/laws/custom/<slug>.md`). Inspect via `okt law show <slug>`.
 
@@ -341,10 +242,10 @@ echo my-omakase.yaml > ~/.config/omakiten/config/.active
 
 ### Methodology basis
 
-- **PMBOK Guide** — [PMI](./reference/bibliography.md#pmi-pmbok): stages, gates, sign-offs, change control.
-- **Pressman** — [*Software Engineering: A Practitioner's Approach*](./reference/bibliography.md#pressman): staged lifecycle models.
-- **Royce 1970** — [*Managing the Development of Large Software Systems*](./reference/bibliography.md#royce-1970): origin of waterfall + iterative refinement.
-- **ISO/IEC 12207** — [software lifecycle processes](./reference/bibliography.md#iso-12207).
+- **PMBOK Guide** — [PMI](./why_omakiten.md#pmi-pmbok): stages, gates, sign-offs, change control.
+- **Pressman** — [*Software Engineering: A Practitioner's Approach*](./why_omakiten.md#pressman): staged lifecycle models.
+- **Royce 1970** — [*Managing the Development of Large Software Systems*](./why_omakiten.md#royce-1970): origin of waterfall + iterative refinement.
+- **ISO/IEC 12207** — [software lifecycle processes](./why_omakiten.md#iso-12207).
 
 ### Workflow shape
 
@@ -381,77 +282,9 @@ requirements ──▶ planning ──▶ dev ──▶ review ──▶ docs �
 
 Operations: archive requires `#documentation`; delete requires `#peer-review`.
 
-### Persona, laws, skills, templates
+### Delta vs omakase
 
-<!-- BEGIN include:_generated/presets-kaiseki.md -->
-# Preset — Kaiseki Workflow Preset
-
-Auto-derived from `defaults/config/kaiseki.yaml`.
-
-<!-- SECTION:personas -->
-## Personas
-
-| Persona | Skills |
-|---|---|
-| `check-runner` | `test-driven-development`, `static-analysis-discipline`, `coverage-analysis`, `regression-detection`, `markdown` |
-| `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
-| `commit-author` | `conventional-commits-spec`, `markdown` |
-| `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
-| `methodical-engineer` | `staged-delivery`, `requirements-elicitation`, `design-documentation`, `decision-records`, `acceptance-criteria-writing`, `implementation`, `markdown` |
-| `product-owner` | `discovery`, `user-story-writing`, `requirements-elicitation`, `acceptance-criteria-writing`, `pdca-cycle`, `five-w-two-h`, `smart-goals`, `invest-stories`, `moscow-prioritization`, `rice-scoring`, `non-functional-requirements`, `markdown` |
-
-<!-- END SECTION -->
-
-<!-- SECTION:mcp-commands -->
-## MCP command bindings
-
-| Command | Persona | Laws (+/-) | Templates |
-|---|---|---|---|
-| `global` | — | +`template-fidelity`, +`authorize-remote-writes`, +`project-scope-only` | — |
-| `okt` | methodical-engineer | — | — |
-| `okt-check` | check-runner | +`requirements-coverage-check`, +`decision-record-on-gap` | `comment-check-report` |
-| `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by`, +`link-decision-record` | — |
-| `okt-config` | documentation-agent | — | `config-orientation` |
-| `okt-continue` | methodical-engineer | — | — |
-| `okt-create` | product-owner | +`requirements-signed-off`, +`acceptance-criteria-required`, +`invest-stories`, +`outcome-over-output`, +`prioritization-recorded`, +`non-functional-explicit` | `task-feature`, `comment-requirements`, `comment-acceptance`, `comment-smart-success`, `comment-moscow`, `comment-rice-score`, `comment-non-functional` |
-| `okt-document` | documentation-agent | — | — |
-| `okt-imagine` | product-owner | -`template-fidelity` | `comment-5w2h`, `comment-smart-success` |
-| `okt-implement` | methodical-engineer | +`design-recorded`, +`decision-record-on-divergence`, +`peer-review-required`, +`conventional-commits`, +`no-silent-behavior-changes` | `pull-request`, `decision-record`, `design-doc`, `comment-design-decision` |
-| `okt-resume` | methodical-engineer | — | — |
-| `okt-review` | code-reviewer | +`design-recorded-check`, +`decision-record-on-divergence` | `comment-review-findings`, `comment-refactor-opportunities` |
-
-<!-- END SECTION -->
-
-<!-- SECTION:workflow-guards -->
-## Workflow guards
-
-### `kaiseki` workflow
-
-**Operations**
-
-| Operation | Guards |
-|---|---|
-| `archive` | `#documentation`×1 |
-| `delete` | `#peer-review`×1 |
-
-**Transitions**
-
-| From | To | Guards |
-|---|---|---|
-| `requirements` | `planning` | `#5w2h`×1 · `#requirements`×1 · `#acceptance`×1 |
-| `planning` | `dev` | `#self-branch`×1 · `#design`×1 · blockers in `done`,`docs` · `wave_gate` |
-| `dev` | `review` | `#resume`×1 · `#tests-passing`×1 · `subtasks_complete` |
-| `review` | `docs` | `#peer-review`×1 |
-| `docs` | `done` | `#documentation`×1 · `subtasks_complete` |
-| `review` | `dev` | — |
-| `docs` | `review` | — |
-| `done` | `review` | — |
-| `done` | `docs` | — |
-
-<!-- END SECTION -->
-<!-- END include -->
-
-Severity (`error` vs `warning`) per law lives in its frontmatter under `defaults/laws/<slug>.md` (or the user override in `<root>/laws/custom/<slug>.md`). Inspect via `okt law show <slug>`.
+Adds two upstream buckets (`requirements`, `planning`) and one downstream bucket (`docs`). A `methodical-engineer` persona replaces omakase's `engineer` and carries `staged-delivery`, `requirements-elicitation`, `design-documentation`, `decision-records`. `product-owner` gains `requirements-elicitation` + `acceptance-criteria-writing`; `okt-create` enforces `requirements-signed-off` + `acceptance-criteria-required` and uses `task-feature` (not `user-story`). `okt-implement` adds `design-recorded`, `decision-record-on-divergence`, `peer-review-required` with `decision-record` / `design-doc` templates. `okt-review` checks design / decision-record presence. Operations: archive requires `#documentation`, delete requires `#peer-review`. Full wiring: [`presets.md`](./presets.md).
 
 ### Visible output
 
@@ -481,10 +314,10 @@ echo my-kaiseki.yaml > ~/.config/omakiten/config/.active
 
 ### Methodology basis
 
-- **Site Reliability Engineering** — [Beyer et al. 2016](./reference/bibliography.md#beyer-2016): SLI / SLO / error budgets, four golden signals.
-- **Pre-mortem** — [Klein 2007](./reference/bibliography.md#klein-2007): imagine the failure before shipping.
-- **Blameless Postmortems** — [Allspaw 2012](./reference/bibliography.md#allspaw-2012): no "human error" as root cause.
-- **Continuous Delivery** — [Humble & Farley 2010](./reference/bibliography.md#humble-farley-2010): release gates, multi-reviewer sign-off, rollback-first design.
+- **Site Reliability Engineering** — [Beyer et al. 2016](./why_omakiten.md#beyer-2016): SLI / SLO / error budgets, four golden signals.
+- **Pre-mortem** — [Klein 2007](./why_omakiten.md#klein-2007): imagine the failure before shipping.
+- **Blameless Postmortems** — [Allspaw 2012](./why_omakiten.md#allspaw-2012): no "human error" as root cause.
+- **Continuous Delivery** — [Humble & Farley 2010](./why_omakiten.md#humble-farley-2010): release gates, multi-reviewer sign-off, rollback-first design.
 
 ### Workflow shape
 
@@ -523,77 +356,9 @@ All `comment.delete` is denied workflow-wide — audit trail must survive. Corre
 
 Operations: archive requires `#documentation` + `#lessons-learned`; delete requires `#peer-review`; unarchive requires `#peer-review`.
 
-### Persona, laws, skills, templates
+### Delta vs kaiseki
 
-<!-- BEGIN include:_generated/presets-shokunin.md -->
-# Preset — Shokunin Workflow Preset
-
-Auto-derived from `defaults/config/shokunin.yaml`.
-
-<!-- SECTION:personas -->
-## Personas
-
-| Persona | Skills |
-|---|---|
-| `check-runner` | `test-driven-development-strict`, `static-analysis-discipline`, `coverage-analysis`, `regression-detection`, `markdown` |
-| `code-reviewer` | `refactoring-catalog`, `code-smells`, `solid-principles`, `legacy-seams`, `security-review-lens`, `markdown` |
-| `commit-author` | `conventional-commits-spec`, `markdown` |
-| `craftsperson` | `sre-discipline`, `risk-driven-development`, `postmortem-authoring`, `change-management`, `test-driven-development-strict`, `static-analysis-discipline`, `implementation`, `markdown` |
-| `documentation-agent` | `documentation`, `architecture-mapping`, `requirements-mapping`, `readme-curation`, `markdown` |
-| `product-owner` | `discovery`, `user-story-writing`, `pdca-cycle`, `five-w-two-h`, `smart-goals`, `invest-stories`, `moscow-prioritization`, `rice-scoring`, `okr-framing`, `non-functional-requirements`, `markdown` |
-
-<!-- END SECTION -->
-
-<!-- SECTION:mcp-commands -->
-## MCP command bindings
-
-| Command | Persona | Laws (+/-) | Templates |
-|---|---|---|---|
-| `global` | — | +`template-fidelity`, +`authorize-remote-writes`, +`project-scope-only` | — |
-| `okt` | craftsperson | — | — |
-| `okt-check` | check-runner | +`coverage-gate`, +`regression-required`, +`dual-signal-required` | `comment-check-report` |
-| `okt-commit` | commit-author | +`conventional-commits`, +`no-coauthored-by`, +`link-task-comments` | — |
-| `okt-config` | documentation-agent | — | `config-orientation` |
-| `okt-continue` | craftsperson | — | — |
-| `okt-create` | product-owner | +`blast-radius-awareness`, +`error-budget-aware`, +`invest-stories`, +`outcome-over-output`, +`prioritization-recorded`, +`non-functional-explicit` | `task-change-request`, `comment-requirements`, `comment-acceptance`, `comment-risk-assessment`, `comment-smart-success`, `comment-moscow`, `comment-rice-score`, `comment-okr`, `comment-non-functional` |
-| `okt-document` | documentation-agent | +`blameless-postmortem` | `comment-postmortem`, `comment-lessons-learned` |
-| `okt-imagine` | product-owner | -`template-fidelity` | `comment-5w2h`, `comment-smart-success` |
-| `okt-implement` | craftsperson | +`pre-mortem-required`, +`rollback-plan-mandatory`, +`dual-peer-review`, +`coverage-gate`, +`blast-radius-awareness`, +`error-budget-aware`, +`conventional-commits`, +`no-silent-behavior-changes` | `pull-request`, `comment-pre-mortem`, `comment-rollback-plan`, `comment-peer-review-strict`, `comment-tests-passing-strict`, `comment-risk-assessment`, `comment-scribe-correction` |
-| `okt-resume` | craftsperson | — | — |
-| `okt-review` | code-reviewer | +`dual-review-required`, +`coverage-gate-check`, +`pre-mortem-aware` | `comment-review-findings`, `comment-refactor-opportunities` |
-
-<!-- END SECTION -->
-
-<!-- SECTION:workflow-guards -->
-## Workflow guards
-
-### `shokunin` workflow
-
-**Operations**
-
-| Operation | Guards |
-|---|---|
-| `archive` | `#documentation`×1 · `#lessons-learned`×1 |
-| `delete` | `#peer-review`×1 |
-| `unarchive` | `#peer-review`×1 |
-
-**Transitions**
-
-| From | To | Guards |
-|---|---|---|
-| `requirements` | `planning` | `#5w2h`×1 · `#requirements`×1 · `#acceptance`×1 |
-| `planning` | `dev` | `#self-branch`×1 · `#pre-mortem`×1 · `#risk-assessment`×1 · blockers in `done`,`docs` · `wave_gate` |
-| `dev` | `review` | `#resume`×1 · `#tests-passing`×1 · `#rollback-plan`×1 · `subtasks_complete` |
-| `review` | `docs` | `#peer-review`×2 |
-| `docs` | `done` | `#documentation`×1 · `#lessons-learned`×1 |
-| `review` | `dev` | — |
-| `docs` | `review` | — |
-| `done` | `review` | — |
-
-<!-- END SECTION -->
-<!-- END include -->
-
-Severity (`error` vs `warning`) per law lives in its frontmatter under `defaults/laws/<slug>.md` (or the user override in `<root>/laws/custom/<slug>.md`). Inspect via `okt law show <slug>`.
+Same six-bucket shape, but every gate is tightened. `methodical-engineer` is replaced by `craftsperson` carrying `sre-discipline`, `risk-driven-development`, `postmortem-authoring`, `change-management`, plus the `-strict` variant of TDD. `check-runner` and `code-reviewer` upgrade to `test-driven-development-strict` and gain `coverage-gate` / `dual-review-required`. `product-owner` adds `okr-framing` and uses `task-change-request` under `blast-radius-awareness` + `error-budget-aware`. `okt-implement` adds `pre-mortem-required`, `rollback-plan-mandatory`, `dual-peer-review` with `comment-pre-mortem`, `comment-rollback-plan`, `comment-peer-review-strict`, `comment-tests-passing-strict`, `comment-scribe-correction`. `okt-document` runs `blameless-postmortem` with `comment-postmortem` + `comment-lessons-learned`. Guards: `planning → dev` adds `#pre-mortem` + `#risk-assessment`; `dev → review` adds `#rollback-plan`; `review → docs` requires `#peer-review`×**2**; `docs → done` adds `#lessons-learned`. Operations: archive requires `#documentation` + `#lessons-learned`; delete and unarchive both require `#peer-review`. Full wiring: [`presets.md`](./presets.md).
 
 ### Visible output
 
@@ -649,7 +414,7 @@ Plans sit **on top of** the active workflow, not inside it. A plan groups child 
 
 ### The wave-gate rule
 
-Tasks inside the same wave run in parallel. Wave `N+1` is blocked until wave `N` is fully closed. The rule is enforced by the `wave_gate` guard (`internal/app/guards/evaluator.go:checkWaveGate`) registered alongside `blockers_in`, `comments_min`, and `comments_tagged` — see [Guards Guide § `wave_gate`](./guards-guide.md#wave_gate).
+Tasks inside the same wave run in parallel. Wave `N+1` is blocked until wave `N` is fully closed. The rule is enforced by the `wave_gate` guard (`internal/app/guards/evaluator.go:checkWaveGate`) registered alongside `blockers_in`, `comments_min`, and `comments_tagged` — see [Guards Guide § `wave_gate`](./configuration-guide/guards.md#wave_gate).
 
 The four official presets all wire `wave_gate` onto the transition that enters `dev`:
 
@@ -667,13 +432,13 @@ Tasks not attached to a plan (`wave_id IS NULL`) pass the guard as a no-op, so t
 `plans.claim_next` is the only correct way for an agent to acquire work inside a plan. The MCP tool wraps a single SQLite write transaction:
 
 1. `BEGIN IMMEDIATE` — serialises against any concurrent claim attempt.
-2. `SELECT` the next unblocked task in the active wave (no prior-wave pending, no dependency in flight).
-3. `UPDATE tasks SET bucket_id=<dev>, assigned_to=<caller _agent_model>` in the same transaction.
-4. Commit. Returns the claimed task or `{claimed: false}`.
+2. `SELECT` the active wave (lowest-position wave with any non-final active task), then the lowest-id task in that wave that is active, unassigned, and still in the workflow's first bucket.
+3. `UPDATE tasks SET assigned_to=<caller _agent_model>` in the same transaction.
+4. Commit. Returns the claimed task or `{claimed: false}`. The bucket is not moved.
 
-Two concurrent calls land on the same write lock; the loser retries the SELECT and either claims a different task or returns empty. No double-claim is possible. The CLI handle (`okt plan claim <slug>`) hits the same primitive.
+Two concurrent calls land on the same write lock; the loser retries the SELECT and either claims a different first-bucket task or returns empty. No double-claim is possible. The CLI handle (`okt plan claim <slug>`) hits the same primitive.
 
-Agents should **never** call `tasks.move` to enter a plan task into `dev` — always go through `plans.claim_next`. Manual moves bypass the assignment write and leave the activity log inconsistent with the plan's progress view.
+Agents claim first, then move with `tasks.move` after preset-defined guard preconditions are satisfied. Calling `tasks.move` without a prior claim bypasses the assignment write and leaves the activity log inconsistent with the plan's progress view.
 
 ### Recovery from a crashed claim
 
@@ -686,9 +451,9 @@ v1 does not auto-reclaim — silent reclaim would hide real-world agent failures
 
 ### Surfaces
 
-- **MCP**: 7 tools under `plans.*` (`create`, `list`, `show`, `add_wave`, `assign_task`, `continue`, `claim_next`). See [MCP Guide § Plans](./mcp-guide.md#plans-wbs-style-multi-agent-orchestration).
-- **CLI**: `okt plan create|list|show|wave-add|assign|claim` and the orthogonal `okt assign <task_id> [who]` for free-text assignment outside the plan flow. See [CLI Guide § Plans](./cli-guide.md#plans).
-- **TUI**: a fourth sub-tab under `01 // TASKS` — list view first, then a column-per-wave network diagram per plan. See [TUI Guide § Tasks › Plans](./tui-guide.md#tasks--plans).
+- **MCP**: 7 tools under `plans.*` (`create`, `list`, `show`, `add_wave`, `assign_task`, `continue`, `claim_next`). See [MCP Guide § Plans](./mcp.md#plans-wbs-style-multi-agent-orchestration).
+- **CLI**: `okt plan create|list|show|wave-add|assign|claim` and the orthogonal `okt assign <task_id> [who]` for free-text assignment outside the plan flow. See [CLI Guide § Plans](./cli.md#plans).
+- **TUI**: a fourth sub-tab under `01 // TASKS` — list view first, then a column-per-wave network diagram per plan. See [TUI Guide § Tasks › Plans](./tui.md#tasks--plans).
 - **Search**: `plans.goal_body` is indexed in the unified FTS5 `search_index` so cross-project `search` finds plans by name or any phrase in the goal markdown.
 
 ---
@@ -750,8 +515,8 @@ okt config validate <config-dir>/config/custom/<my-preset>.yaml
 The validator rejects:
 
 - Missing required config blocks (mcp / views / priorities / severities / etc.)
-- Dangling refs in `mcp_commands` (persona / law / template slug not found)
-- Unknown guard types (only `comments_tagged`, `comments_min`, `blockers_in`, `wave_gate`)
+- Contradictory refs in `mcp_commands` (the same law in `laws` and `laws_disabled` on one command). Missing persona / law / template slugs are source warnings, not fatal validation errors.
+- Unknown guard types (only `comments_tagged`, `comments_min`, `blockers_in`, `wave_gate`, `subtasks_complete`)
 - Permissions referencing buckets that do not exist
 - Duplicate ids / values in priorities / severities / buckets
 
@@ -779,14 +544,15 @@ The TUI Settings › Config picker writes `.active` for you. The CLI accepts a p
 
 ---
 
-## References
+## See also
 
-Every cited work lives in [`reference/bibliography.md`](./reference/bibliography.md) with a stable anchor per entry. Per-preset "Methodology basis" sections above link directly to those anchors.
-
-### Omakiten reference docs
-
-- [`configuration-guide.md`](configuration-guide.md) — every yaml field, semantics, validation rules.
-- [`guards-guide.md`](guards-guide.md) — guard kinds, evaluation order, permissions resolution, operation guards.
-- [`mcp-guide.md`](mcp-guide.md) — MCP tool surface, prompt anatomy, tuning context cost.
-- [`data-model-guide.md`](internal/data-model-guide.md) — SQLite schema and migration history.
-- [`domain-events.md`](domain-events.md) — `events` table catalog and payload contracts.
+- [`configuration-guide/README.md`](./configuration-guide/README.md) — every YAML field with semantics + validation.
+- [`configuration-guide/guards.md`](./configuration-guide/guards.md) — guard types and their config.
+- [`presets.md`](./presets.md) — full izakaya wiring.
+- [`presets.md`](./presets.md) — full omakase wiring.
+- [`presets.md`](./presets.md) — full kaiseki wiring.
+- [`presets.md`](./presets.md) — full shokunin wiring.
+- [`mcp.md`](./mcp.md) — MCP tool surface, prompt anatomy, tuning context cost.
+- [`internal/data-model.md`](./internal/data-model.md) — SQLite schema and migration history.
+- `internal/domain/events.go::KnownEventTypes` — canonical list of `events` payloads.
+- [`why_omakiten.md`](./why_omakiten.md) — every cited work; per-preset "Methodology basis" anchors link here.

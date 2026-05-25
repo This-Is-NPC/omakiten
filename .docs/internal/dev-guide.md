@@ -2,6 +2,20 @@
 
 This guide is for people working **on** Omakiten — building, testing, and releasing the project. End-user docs live in [README.md](../../README.md) and the other `.docs/` guides.
 
+## Contents
+
+- [Getting Started](#getting-started)
+- [Mise Tasks Reference](#mise-tasks-reference)
+- [Project Layout](#project-layout)
+- [Local Workflows](#local-workflows)
+- [Testing](#testing)
+- [Conventions](#conventions)
+- [Merge gate](#merge-gate)
+- [Releasing](#releasing)
+- [Troubleshooting](#troubleshooting)
+- [Where to go next](#where-to-go-next)
+- [See also](#see-also)
+
 ## Getting Started
 
 ### Prerequisites
@@ -54,20 +68,20 @@ Every task is defined in `.mise.toml` at the repo root. Run with `mise run <name
 | `vuln` | `govulncheck ./...`. |
 | `check` | **PR gate.** Depends on `test`, `lint`, `vuln`, `docs:check`. |
 | `docs:refresh` | Runs `go run ./cmd/okt-docs-refresh --root .` to regenerate every embed-fed `.docs/_generated/` page from the live bundle. |
-| `docs:check` | Same binary with `--check` — exits non-zero on drift; the CI gate runs this. |
+| `docs:check` | Same binary with `--check` — exits non-zero on drift; the local merge gate runs this. |
 
 ### Install & local state
 
 | Task | What it does |
 |---|---|
-| `install` | `build` → installs `bin/okt` to `$HOME/.local/bin/okt`, syncs `defaults/` into `$HOME/.config/omakiten`, then runs `okt setup` (the same bubbletea picker `curl\|bash` users get; honours every `OKT_*` env var). Finishes with `okt init` against the repo. |
+| `install` | `build` → installs `bin/okt` to `$HOME/.local/bin/okt`, syncs `defaults/` into `$HOME/.config/omakiten`, then runs `okt setup --update` (the same bubbletea picker `curl\|bash` users get; honours every `OKT_*` env var). The `--update` flag is load-bearing — it force-refreshes shipped defaults so repeat runs pick up edits under `defaults/` instead of silently keeping the pre-install copy on disk. Finishes with `okt init` against the repo. |
 | `install:mcp:claude` | `build` → wires the local `bin/okt` into Claude Code's MCP config (`~/.claude.json`). |
 | `install:mcp:claude-desktop` | Same, for Claude Desktop. |
 | `install:mcp:opencode` | Same, for OpenCode. |
 | `uninstall` | Removes `~/.local/bin/okt` and the shell wrapper. **Does not** touch config or data. |
 | `purge` | Wipes `~/.config/omakiten` and `~/.local/share/omakiten`. Use after `uninstall` for a fresh-machine simulation. |
 | `dev:sync` | Mirrors `defaults/` into `dev_env/` (overwrites root, leaves `dev_env/custom/`). |
-| `dev:install` | `dev:sync` + builds `bin/okt` and runs `okt init` against the dev-env so the binary works against `OMAKITEN_HOME=dev_env` without touching real state. |
+| `dev:install` | `dev:sync` + builds `bin/okt` and runs `okt setup --skip-wrapper --skip-harnesses` against the dev-env so the binary works against `OMAKITEN_HOME=dev_env` without touching real state. |
 | `tui` | Runs the TUI against an isolated `dev_env/` (`OMAKITEN_HOME=dev_env`) — useful for trying changes without touching your real Omakiten state. Depends on `dev:install`. |
 | `mcp:prompts` | Resolves every `okt-*` MCP prompt against the dev-env bundle and prints the composed markdown — handy for previewing what an agent receives without an MCP client. Depends on `dev:sync`. |
 
@@ -114,7 +128,7 @@ defaults/                ships into ~/.config/omakiten on first run
   config/                official presets (omakase / izakaya / kaiseki / shokunin)
   languages/             21 bundled CLI/TUI language packs (en / pt-br / jp / …)
   themes/, notifications/, skills/, laws/, personas/, templates/
-migrations/              SQLite schema migrations (001 … 022; 022 adds FTS5 `search_index`)
+migrations/              SQLite schema migrations (001 … 027; 027 scopes sub-task parents by project)
 scripts/                 install / uninstall / wrapper helpers + tests
 ```
 
@@ -124,7 +138,7 @@ Architecture rules are enforced in two places — see [architecture.md](architec
 
 Both `internal/cli/root.go` and `internal/agentruntime/runtime.go` reach the same shape: parse the bundle once to seed the events bus, then call `agentruntime.NewBundleCache(...).SetProjectSelector(...)` + `cache.Resolve(ctx, projectID, configPath)`. `BundleCache` builds and caches one `*ProjectRuntime` per project id; the `BuildProjectRuntime` helper inside `internal/agentruntime/cache.go` is the single inflation path so boot, MCP per-project routing, CLI subcommands, and the TUI hot-reload all produce identical runtimes — divergence between code paths was the regression Phase 3a was designed to prevent.
 
-`ConfigService.Import` no longer writes SQL config tables (migration 020 dropped them) and no longer touches the SQL adapter at all (Phase 2-bis). The method reduces to LoadBundle + HashFile, returning `(bundle, hash, *domain.EnumRegistry)`; the composition root then calls `config.BuildSnapshot(bundle)` to materialise the per-project Snapshot and emits `bundle.imported` via `Store.RecordEntityEvent`. Anything that needs to react to a bundle change subscribes to `bundle.imported` on the in-process bus. See [configuration-guide.md § How config reads work at runtime](../configuration-guide.md#how-config-reads-work-at-runtime-in-memory-providers--per-project-cache) for the full data flow.
+`ConfigService.Import` no longer writes SQL config tables (migration 020 dropped them) and no longer touches the SQL adapter at all (Phase 2-bis). The method reduces to LoadBundle + HashFile, returning `(bundle, hash, *domain.EnumRegistry)`; the composition root then calls `config.BuildSnapshot(bundle)` to materialise the per-project Snapshot and emits `bundle.imported` via `Store.RecordEntityEvent`. Anything that needs to react to a bundle change subscribes to `bundle.imported` on the in-process bus. See [configuration-guide/README.md § How config reads work at runtime](../configuration-guide/project-overrides.md) for the full data flow.
 
 ### Migration 020 / 021 — `tasks.bucket_id` rebind
 
@@ -220,12 +234,12 @@ go tool cover -func=/tmp/coverage.out | tail -1
 
 - **Commit format:** [Conventional Commits](https://www.conventionalcommits.org/) in English. One intent per commit. Details in [CONTRIBUTING.md](../../CONTRIBUTING.md#commit-standards).
 - **Branch naming:** `feature/<short-name>` or `fix/<short-name>`, kebab-case.
-- **CHANGELOG:** notable user-visible changes go under `## Unreleased` in [CHANGELOG.md](../../CHANGELOG.md). `release-please` rewrites the version headings on release — never edit them by hand.
+- **CHANGELOG:** `CHANGELOG.md` is generated by release-please from Conventional Commit subjects. Do not add a manual Unreleased section in normal PRs; put richer release notes in the PR body or in the release-please PR before it merges.
 - **Docs:** end-user behaviour lives under `.docs/<topic>-guide.md`. When you change something a guide describes, update it in the same PR.
 
 ## Merge gate
 
-As of [#TBD], the project runs its merge gate locally instead of on GitHub Actions. The two former workflows (`ci.yml` and the `ci-docs.yml` companion) are gone; the gate is now `scripts/local-check.sh` driven by a tracked pre-push hook.
+The project runs its merge gate locally instead of on GitHub Actions. The two former workflows (`ci.yml` and the `ci-docs.yml` companion) are gone; the gate is now `scripts/local-check.sh` driven by a tracked pre-push hook.
 
 ### How it works
 
@@ -316,7 +330,7 @@ Fix: delete the stale binary or reorder PATH so `$HOME/.local/bin` precedes `$GO
 ### The interactive picker didn't appear in `mise run install`
 
 Two possible causes:
-1. One or more `OKT_*` env vars are set in your environment — each var skips its own picker screen, and when all five are set (`OKT_CLI_LANG`, `OKT_TUI_LANG`, `OKT_AGENT_LANG`, `OKT_PRESET`, `OKT_HARNESSES`) `okt setup` runs headlessly.
+1. One or more `OKT_*` env vars are set in your environment — each supplied value skips the matching setup input. The CLI/TUI language input is shared, so either `OKT_CLI_LANG` or `OKT_TUI_LANG` resolves it; add `OKT_AGENT_LANG`, `OKT_PRESET`, and `OKT_HARNESSES` to run `okt setup` headlessly.
 2. You're in a non-interactive shell (no controlling terminal). `okt setup` falls back to the env-var contract and surfaces a `validation_error` if any input is still missing. To force the picker, run interactively or pre-supply the values.
 
 ### `golangci-lint` complains about an import that `go vet` accepts
@@ -329,3 +343,9 @@ The repo enforces hexagonal boundaries via `depguard` rules in `.golangci.yml` m
 - [architecture.md](architecture.md) — hexagonal layout and adapter rules.
 - [requirements.md](requirements.md) — behavioural map of the implemented surface (curated by `/document`).
 - [CONTRIBUTING.md](../../CONTRIBUTING.md) — the canonical contributor checklist (commit standards, project knowledge base, workflow updates).
+
+## See also
+
+- [architecture.md](architecture.md) — codebase shape.
+- [data-model.md](data-model.md) — schema and migrations.
+- [../mcp.md](../mcp.md) — agent surface contract.

@@ -2,7 +2,20 @@
 
 Omakiten exposes a protocol-neutral agent intent layer in `internal/agent` and an MCP adapter in `internal/mcp`. The adapter maps MCP tools, resources, and prompts to the same `internal/app` services used by the CLI and TUI; it does not shell out to `okt` and does not duplicate workflow or project-scope rules.
 
-A small set of operations are deliberately CLI/TUI-only — see [surface-policy.md](surface-policy.md) for the criteria and the current restrictions (`projects.delete`, `db.backup`, `update`, `uninstall`, `setup`).
+A small set of operations are deliberately CLI/TUI-only — `projects.delete`, `db.backup`, `update`, `uninstall`, `setup`. Destructive or install-affecting ops never land on MCP; everything else does.
+
+## Contents
+
+- [Setup](#setup)
+- [Tools](#tools)
+- [Resources](#resources)
+- [Prompts](#prompts)
+- [Anatomy of an MCP command](#anatomy-of-an-mcp-command)
+- [Confirmation Behavior](#confirmation-behavior)
+- [Failure Guidance](#failure-guidance)
+- [Per-project routing](#per-project-routing)
+- [Scope Controls](#scope-controls)
+- [See also](#see-also)
 
 ## Setup
 
@@ -98,7 +111,7 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `plans.add_wave` | Append a wave to a plan. Pass `position=0` (or omit) to auto-assign the next slot, or a positive integer to insert at that position. Emits `plan.wave_added`. |
 | `plans.assign_task` | Attach an existing task to `(plan_id, wave_id)`. Idempotent re-assign within the same plan. |
 | `plans.continue` | Agent-tailored projection of a plan — overview formatted for an agent picking up work. Overlaps `plans.show` in content; tuned for context-window economy. |
-| `plans.claim_next` | Atomically reserve the next unblocked task in the active wave: `BEGIN IMMEDIATE` → SELECT next-claimable-in-active-wave (first-bucket + unassigned) → SET `assigned_to` to the caller's `_agent_model` in the same transaction. The bucket is NOT touched; the task stays in the workflow's first bucket. Returns the claimed task or `{claimed: false}` when nothing is available. Two concurrent `claim_next` calls serialise at the SQLite write lock; the loser re-evaluates and either claims the next task or returns empty. |
+| `plans.claim_next` | Atomically reserve the next claimable task in the active wave: `BEGIN IMMEDIATE` → SELECT next-claimable-in-active-wave (first-bucket + unassigned) → SET `assigned_to` to the caller's `_agent_model` in the same transaction. The bucket is NOT touched; the task stays in the workflow's first bucket. Returns the claimed task or `{claimed: false}` when nothing is available. Two concurrent `claim_next` calls serialise at the SQLite write lock; the loser re-evaluates and either claims the next task or returns empty. |
 
 `plans.claim_next` requires `_agent_model` like every tool, but the value is also written to `tasks.assigned_to` as the claimant identity. The claim is ownership-only — the bucket transition is a separate `tasks.move` call that goes through the workflow guard pipeline (e.g. omakase requires a self-branch comment before `backlog → dev`). Agents claim, then move; the two steps stay separate so preset-defined guards on the bucket transition remain authoritative. Recovery from a crashed agent is human-driven: `okt assign <id> ""` clears the assignment, or `okt move <id> backlog` clears it via the transition-out hook. v1 explicitly does NOT auto-reclaim.
 
@@ -110,7 +123,7 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `comments.list` | Lists task comments. |
 | `comments.edit` | Rewrites a comment's body and replaces its tags. Subject to bucket `permissions.comment.edit` (inherits from `permissions.task.edit` when no comment block is declared). |
 | `comments.delete` | Hard-deletes a comment. Subject to bucket `permissions.comment.delete` (same inheritance rule). Requires `confirmed=true`. |
-| `task_activity.list` | Unified chronological feed for a task (comments + system events such as `task.created`, `task.moved`, `task.completed`, `task.archived`, `task.unarchived`, `task.migrated`, `task.removed`, `comment.edited`, `comment.removed`); supports `order=asc\|desc`. |
+| `task_activity.list` | Unified chronological feed for a task (comments + system events such as `task.created`, `task.moved`, `task.completed`, `task.archived`, `task.unarchived`, `task.migrated`, `task.removed`, `task.assigned`, `task.unassigned`, `comment.edited`, `comment.removed`); supports `order=asc\|desc`. |
 
 ### Dependencies
 
@@ -313,7 +326,7 @@ The composed prompt is only half the picture. For prompts that fetch task state,
 
 ### Tuning context cost
 
-The biggest variable is the tool result, not the prompt. Four knobs in `config.mcp` (see `.docs/configuration-guide.md#configmcp`) shape it without changing the protocol:
+The biggest variable is the tool result, not the prompt. Seven knobs in `config.mcp` (see `.docs/configuration-guide/system.md#configmcp`) shape it without changing the protocol:
 
 | Setting | Affects | Impact |
 |---|---|---|
@@ -321,6 +334,9 @@ The biggest variable is the tool result, not the prompt. Four knobs in `config.m
 | `max_comment_chars` (int, default `0`) | Truncates each comment body past N runes with `…`. Set to ~`500` for a hard floor while keeping the latest exchange readable. | High on comment-heavy tasks; nil on terse ones. |
 | `include_workflow_in_continue` (`*bool`, default `true`) | Skips the `workflow` block in `tasks.continue`. The agent already has the workflow from the first `/okt` of the session — set `false` to stop re-shipping. | Fixed per-call; matters on multi-task sessions. |
 | `cache_prompts` (`*bool`, default `true`) | Emits an Anthropic `cache_control` hint on `prompts/get` content. Aware clients reuse the cached prompt across calls. | Bulk of the prompt body on subsequent calls within the cache window. |
+| `recent_context_limit` (int, default `3`) | Caps recent handoff context entries included in checkpoint endpoints. | High when context entries are long prose. |
+| `next_work_limit` (int, default `5`) | Caps likely-next-work suggestions in `project.resume`. | Keeps resume payloads bounded on large projects. |
+| `similar_task_limit` (int, default `5`) | Caps similar-task hints returned by `tasks.create_intent`. | Bounds duplicate-detection chatter. |
 
 The same accounting applies to every prompt — substitute the bound tool's DTO for the variable row above. `comments.list` is intentionally exempt from `max_comment_chars` because it's the explicit "read the full thread" endpoint; truncation would make the call useless.
 
@@ -331,6 +347,9 @@ Per-call overrides are available where they make sense: `tasks.continue` accepts
 Ambiguous or destructive operations return `requires_confirmation` instead of mutating state.
 
 - `tasks.create_intent` returns similar tasks and asks whether to continue existing work or retry with `confirmed=true`.
+- `orphans.migrate` previews affected tasks first and applies only when retried with `confirmed=true`.
+- `tasks.delete` asks for `confirmed=true` before hard-deleting a task and its cascaded rows.
+- `comments.delete` asks for `confirmed=true` before hard-deleting a comment.
 - `dependencies.remove` asks for `confirmed=true` before deleting the dependency.
 - `tags.remove` asks for `confirmed=true` before detaching the tag from a task or project.
 
@@ -338,7 +357,7 @@ Ambiguous or destructive operations return `requires_confirmation` instead of mu
 
 Domain errors are mapped to compact coded failures with next-step guidance (`internal/agent/errors.go:guidanceForCode`). Codes currently defined in `internal/domain/errors.go`:
 
-`config_invalid`, `project_not_found`, `project_ambiguous`, `task_not_found`, `workflow_invalid_transition`, `bucket_not_found`, `dependency_invalid`, `validation_error`, `law_not_found`, `skill_not_found`, `persona_not_found`, `skill_referenced`, `editor_failed`, `tag_not_found`, `tag_conflict`, `guard_violation`, `error_not_found`, `solution_not_found`.
+`config_invalid`, `config_too_large`, `project_not_found`, `project_ambiguous`, `task_not_found`, `workflow_invalid_transition`, `bucket_not_found`, `dependency_invalid`, `validation_error`, `law_not_found`, `skill_not_found`, `persona_not_found`, `skill_referenced`, `editor_failed`, `editor_not_found`, `tag_not_found`, `tag_conflict`, `guard_violation`, `error_not_found`, `solution_not_found`, `plan_not_found`, `plan_slug_conflict`, `plan_wave_not_found`, `uninstall_failed`, `update_failed`.
 
 ## Per-project routing
 
@@ -358,3 +377,8 @@ Implications:
 - Workflow movement goes through `app.WorkflowService.MoveTask` (transition allowance + guards + `task.completed` emission); task edits go through `app.TaskService.Edit`.
 - The core `internal/agent` package has no MCP SDK, package-manager, or transport dependency. The composition root for the MCP server is `internal/agentruntime`; the protocol translation lives in `internal/mcp`.
 - Hexagonal boundaries (no `agent` → `sqlite`/`configstore`/`mcp` imports) are enforced by `internal/arch/arch_test.go` and mirrored as `depguard` rules in `.golangci.yml`.
+
+## See also
+
+- [cli.md](cli.md) — sibling CLI surface for the same operations.
+- `internal/domain/events.go::KnownEventTypes` — canonical list of events emitted by MCP tool calls.

@@ -93,8 +93,10 @@ func (s *PlanService) AssignTask(ctx context.Context, project domain.ProjectCont
 }
 
 // ClaimNext is the atomic-claim primitive: serialised behind SQLite's
-// reserved write lock, picks the next unblocked task in the plan's
-// active wave and marks it claimed by the caller's _agent_model.
+// reserved write lock, picks the next claimable task in the plan's
+// active wave, and marks it claimed by the caller's _agent_model.
+// Claimable means active, unassigned, and still in the workflow's first
+// bucket; bucket movement remains a separate WorkflowService move.
 // Returns (task, true) on a successful claim, (zero, false) when no
 // task is claimable. The Snapshot captured by NewPlanServiceWithSnapshot
 // supplies the BucketResolver.

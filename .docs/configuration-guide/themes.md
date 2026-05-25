@@ -6,7 +6,7 @@ The active theme key is `config.theme.active` in the active profile yaml.
 
 ## Resolution order
 
-When the TUI starts, the theme path is resolved in this order (`internal/cli/tui.go:loadActiveThemeFromBundle`):
+When the bundle loads, the theme path is resolved in this order by `internal/config/theme_loader.go:resolveActiveTheme` (invoked from `internal/config/loader.go:LoadBundle`):
 
 1. `<config-root>/themes/custom/<active>.yaml` — user override (preferred when present).
 2. `<config-root>/themes/<active>.yaml` — default kit.
@@ -72,7 +72,7 @@ The other tokens (`success`/`warning`/`error`/`badge_fg`) do **not** participate
 
 ### Chroma is intentionally off
 
-Fenced code blocks render in the **foreground color only**, with no chroma syntax highlighting. The dev-editorial design language (see `internal/tui/markdown.go::buildMarkdownStyle` comment) calls for plain foreground code, `·` bullets, and a `─` rule so the body feels uniform with the rest of the TUI. If you author a theme expecting `glamour`'s default chroma styles, your code blocks will look monochrome on purpose — there is no theme knob to switch chroma back on. The same trade-off is noted in the [TUI Guide](tui-guide.md#markdown-rendering).
+Fenced code blocks render in the **foreground color only**, with no chroma syntax highlighting. The dev-editorial design language (see `internal/tui/markdown.go::buildMarkdownStyle` comment) calls for plain foreground code, `·` bullets, and a `─` rule so the body feels uniform with the rest of the TUI. If you author a theme expecting `glamour`'s default chroma styles, your code blocks will look monochrome on purpose — there is no theme knob to switch chroma back on. The same trade-off is noted in the [TUI guide](../tui.md#markdown-rendering).
 
 ## Authoring a theme
 
@@ -123,3 +123,14 @@ Two themes ship in `defaults/themes/`:
 | `catppuccin-macchiato` | Catppuccin Macchiato — soft pastels on a deep navy background. |
 
 Inspect either as a starting point — both follow the same eight-token shape plus the conventional `background` / `highlight` keys.
+
+## Update when
+
+- A new color token is consumed by `internal/tui/styles.go` or `internal/tui/markdown.go` — add it to the [token table](#color-tokens) with its visible effect.
+- `ValidateTheme` adds or relaxes a schema rule (`internal/config/validator.go::ValidateTheme`).
+- A bundled theme lands in `defaults/themes/` — add it to [Bundled themes](#bundled-themes).
+
+## See also
+
+- [TUI guide](../tui.md) — TUI surfaces themed by these tokens.
+- [system.md § config.theme](system.md#configtheme) — top-level wiring of `theme.active`.
