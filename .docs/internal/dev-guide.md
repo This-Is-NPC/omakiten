@@ -2,6 +2,20 @@
 
 This guide is for people working **on** Omakiten — building, testing, and releasing the project. End-user docs live in [README.md](../../README.md) and the other `.docs/` guides.
 
+## Contents
+
+- [Getting Started](#getting-started)
+- [Mise Tasks Reference](#mise-tasks-reference)
+- [Project Layout](#project-layout)
+- [Local Workflows](#local-workflows)
+- [Testing](#testing)
+- [Conventions](#conventions)
+- [Merge gate](#merge-gate)
+- [Releasing](#releasing)
+- [Troubleshooting](#troubleshooting)
+- [Where to go next](#where-to-go-next)
+- [See also](#see-also)
+
 ## Getting Started
 
 ### Prerequisites
@@ -329,3 +343,9 @@ The repo enforces hexagonal boundaries via `depguard` rules in `.golangci.yml` m
 - [architecture.md](architecture.md) — hexagonal layout and adapter rules.
 - [requirements.md](requirements.md) — behavioural map of the implemented surface (curated by `/document`).
 - [CONTRIBUTING.md](../../CONTRIBUTING.md) — the canonical contributor checklist (commit standards, project knowledge base, workflow updates).
+
+## See also
+
+- [architecture.md](architecture.md) — codebase shape.
+- [data-model-guide.md](data-model-guide.md) — schema and migrations.
+- [../mcp-guide.md](../mcp-guide.md) — agent surface contract.

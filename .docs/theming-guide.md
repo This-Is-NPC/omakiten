@@ -123,3 +123,8 @@ Two themes ship in `defaults/themes/`:
 | `catppuccin-macchiato` | Catppuccin Macchiato — soft pastels on a deep navy background. |
 
 Inspect either as a starting point — both follow the same eight-token shape plus the conventional `background` / `highlight` keys.
+
+## See also
+
+- [TUI guide](tui-guide.md) — TUI surfaces themed by these tokens.
+- [Configuration guide](configuration-guide.md) — `theme:` key in user config.

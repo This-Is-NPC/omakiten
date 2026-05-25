@@ -6,6 +6,21 @@ Guards live next to transitions in the active profile yaml and are evaluated by 
 
 The same guard shapes also drive **operation policies** (`operations.{archive,delete,unarchive}.guards`) — see [Operation guards](#operation-guards) — and the bucket-level CRUD policy lives under a sibling block ([Bucket permissions](#bucket-permissions)).
 
+## Contents
+
+- [Where they sit in the move pipeline](#where-they-sit-in-the-move-pipeline)
+- [Guard types](#guard-types)
+- [Multiple guards on the same transition](#multiple-guards-on-the-same-transition)
+- [The `hint` field](#the-hint-field)
+- [Validation rules (parse-time)](#validation-rules-parse-time)
+- [Worked example (from `defaults/config/omakase.yaml`)](#worked-example-from-defaultsconfigomakaseyaml)
+- [Failure shape](#failure-shape)
+- [Agent guardrails: laws bound to commands and entities](#agent-guardrails-laws-bound-to-commands-and-entities)
+- [Operation guards](#operation-guards)
+- [Bucket permissions](#bucket-permissions)
+- [Adding a new guard type](#adding-a-new-guard-type)
+- [See also](#see-also)
+
 ## Where they sit in the move pipeline
 
 `app.WorkflowService.MoveTask` runs in this order (`internal/app/workflow_service.go:179`):
@@ -424,3 +439,9 @@ Violations surface as `guard_violation` with `rule: permissions` and a hint quot
 3. Extend `validateWorkflows` (`internal/config/validator.go`) so unknown payloads are rejected at validation time.
 4. Add tests in `internal/app/workflow_service_test.go` covering pass, fail, and hint passthrough.
 5. Document the new type here.
+
+## See also
+
+- [workflow-guide.md](workflow-guide.md) — guards configured per preset.
+- [domain-events.md](domain-events.md) — `guard.violated` event payload.
+- [configuration-guide.md](configuration-guide.md) — `guards:` config key.

@@ -65,3 +65,8 @@ okt move 42 --to done
 okt mcp call search --input '{"query":"sqlite race","entity_types":["error","solution"]}'
 okt mcp call metrics.summary --input '{"period":"30d"}'
 ```
+
+## See also
+
+- [Mental models](explanation/mental-models.md) — design principles in depth.
+- [Workflow guide](workflow-guide.md) — concrete preset workflows.

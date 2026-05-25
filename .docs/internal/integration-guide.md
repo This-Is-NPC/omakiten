@@ -218,3 +218,8 @@ You can comment the YAML block out, or you can shut the channel gate with `confi
 - [`hooks.md`](../hooks.md) — schema reference, channel-gate semantics, action contract, and the dispatch lifecycle.
 - [`domain-events.md`](../domain-events.md) — full event catalog with payload shapes you can match on.
 - [`configuration-guide.md`](../configuration-guide.md) — the surrounding YAML blocks (`config.events.defaults`, `config.events.overrides`, `config.activity_log`, etc.) that interact with hook dispatch and persistence.
+
+## See also
+
+- [MCP guide](../mcp-guide.md) — MCP surface this integration uses.
+- [Dev guide](dev-guide.md) — local dev setup.

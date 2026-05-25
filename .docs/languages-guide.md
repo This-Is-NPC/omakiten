@@ -206,3 +206,7 @@ A first PR that translates only the CLI surface is fine. The remaining keys stil
 - `scripts/sync-defaults.sh` — copies packs into the user-global install on `mise run install`.
 
 That is the entire mechanism. No Go code changes are required to add a new bundled language — just the YAML file and (optionally) a refresh of any cross-referencing doc.
+
+## See also
+
+- [Configuration guide](configuration-guide.md) — `language:` key and locale pack loading.

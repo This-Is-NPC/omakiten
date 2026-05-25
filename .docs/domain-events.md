@@ -269,3 +269,9 @@ emit it — the event records what happened, not what was tried.
 Mutating `config.hooks` in the active profile yaml requires restarting the app for
 changes to take effect; the bundle is read once at startup like every
 other config block.
+
+## See also
+
+- [Hooks](hooks.md) — events as hook triggers.
+- [Notifications](notifications.md) — events that surface as desktop notifications.
+- [MCP guide](mcp-guide.md) — agent surface that emits these events.

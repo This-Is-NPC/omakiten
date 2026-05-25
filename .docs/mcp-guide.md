@@ -4,6 +4,19 @@ Omakiten exposes a protocol-neutral agent intent layer in `internal/agent` and a
 
 A small set of operations are deliberately CLI/TUI-only — see [surface-policy.md](surface-policy.md) for the criteria and the current restrictions (`projects.delete`, `db.backup`, `update`, `uninstall`, `setup`).
 
+## Contents
+
+- [Setup](#setup)
+- [Tools](#tools)
+- [Resources](#resources)
+- [Prompts](#prompts)
+- [Anatomy of an MCP command](#anatomy-of-an-mcp-command)
+- [Confirmation Behavior](#confirmation-behavior)
+- [Failure Guidance](#failure-guidance)
+- [Per-project routing](#per-project-routing)
+- [Scope Controls](#scope-controls)
+- [See also](#see-also)
+
 ## Setup
 
 Users can opt in from project initialization:
@@ -364,3 +377,9 @@ Implications:
 - Workflow movement goes through `app.WorkflowService.MoveTask` (transition allowance + guards + `task.completed` emission); task edits go through `app.TaskService.Edit`.
 - The core `internal/agent` package has no MCP SDK, package-manager, or transport dependency. The composition root for the MCP server is `internal/agentruntime`; the protocol translation lives in `internal/mcp`.
 - Hexagonal boundaries (no `agent` → `sqlite`/`configstore`/`mcp` imports) are enforced by `internal/arch/arch_test.go` and mirrored as `depguard` rules in `.golangci.yml`.
+
+## See also
+
+- [cli-guide.md](cli-guide.md) — sibling CLI surface for the same operations.
+- [domain-events.md](domain-events.md) — events emitted by MCP tool calls.
+- [surface-policy.md](surface-policy.md) — criteria for which ops land on MCP.

@@ -120,3 +120,9 @@ Not applicable — local-first single-user CLI/TUI/MCP tool with no authn or aut
 | Cyclomatic complexity | recommended | Not measured. **Recommendation**: `gocyclo` — purpose-built for Go, configurable per-function threshold (e.g., 15). Install `go install github.com/fzipp/gocyclo/cmd/gocyclo@latest`; run `gocyclo -over 15 .`. | Tool: `gocyclo`; Rationale: Go-native, per-function reporting |
 | Internal dependency structure | measured | No circular dependencies; hexagonal boundaries enforced by `internal/arch/arch_test.go` (passes) and mirrored as `depguard` rules in `.golangci.yml` (`golangci-lint run` → 0 issues). | `go list -deps ./...` per package + `go test ./internal/arch/...` |
 | Mutation score | recommended | Not measured — no mutation testing configured. **Recommendation**: `gremlins` (Go-native mutation tester). Install `go install github.com/go-gremlins/gremlins@latest`; run `gremlins run`. Integrates with the existing `go test` suite. | Tool: `gremlins`; Rationale: Go-native, works with existing tests |
+
+## See also
+
+- [Dev guide](dev-guide.md) — mise tasks and dev workflow.
+- [Data model guide](data-model-guide.md) — schema and migrations.
+- [Requirements](requirements.md) — functional requirements catalog.

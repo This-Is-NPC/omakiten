@@ -2,6 +2,22 @@
 
 `okt tui` opens the Bubble Tea terminal UI (`internal/cli/tui.go` → `internal/tui/model.go`). Navigation is hierarchical: three top-level **zones** (Tasks / Stats / Settings) plus a multi-project **Home** sentinel, each zone holding one or more **sub-menus**. Modal sub-screens (task detail, comment input, entity detail, pickers) layer on top of any sub.
 
+## Contents
+
+- [Home (multi-project picker)](#home-multi-project-picker)
+- [Navigation model](#navigation-model)
+- [Help overlay](#help-overlay)
+- [Footer](#footer)
+- [Per-zone keybindings](#per-zone-keybindings)
+- [Modal sub-screens](#modal-sub-screens)
+- [File-backed editing — the `$EDITOR` shellout](#file-backed-editing--the-editor-shellout)
+- [Default sort, filter, and limits](#default-sort-filter-and-limits)
+- [Live refresh](#live-refresh)
+- [Scroll abstraction](#scroll-abstraction)
+- [Theming](#theming)
+- [Markdown rendering](#markdown-rendering)
+- [See also](#see-also)
+
 ## Home (multi-project picker)
 
 When `okt tui` is launched **outside** a registered project (no `--project` / `--project-id`, and the current working directory does not match any registered `root_path`), the TUI opens on the Home Screen. It lists every project in the local SQLite database as a card — name, slug, root path, pending task count, and the project's tags as filled-pill badges.
@@ -104,13 +120,23 @@ The `primary` flag identifies the focal verb(s) of the surface (e.g. `enter open
 
 ## Per-zone keybindings
 
+### Common viewport bindings
+
+Every scrollable surface in this guide — per-zone tables below and every modal sub-screen with a body or list — shares the same viewport keys. They are listed once here and omitted from the per-surface tables:
+
+| Key | Action |
+|---|---|
+| `↑ ↓` · `j k` | move cursor / scroll (auto-scrolls when applicable) |
+| `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
+| `g` · `G` | jump to first / last |
+
+`esc` is universal: read-style overlays use `esc back`; picker / mode-style overlays use `esc cancel` (destructive on save state). `r` refreshes the active view from the store wherever the zone is refreshable. Per-surface tables list only the verbs that distinguish each surface.
+
 ### Tasks › Board
 
 | Key | Action |
 |---|---|
-| `← ↑ ↓ →` · `h j k l` | navigate lanes and tasks (auto-scrolls column) |
-| `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll focused column by page |
-| `g` · `G` | first / last card in column |
+| `← ↑ ↓ →` · `h l` | navigate lanes (column nav adds to common `j k`) |
 | `enter` | open task (delete and edit live inside the task view) |
 | `n` | new task |
 | `e` | edit task |
@@ -122,9 +148,6 @@ The `primary` flag identifies the focal verb(s) of the surface (e.g. `enter open
 
 | Key | Action |
 |---|---|
-| `↑ ↓` · `j k` | select task (auto-scrolls) |
-| `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
-| `g` · `G` | first / last task |
 | `enter` | open task (delete and edit live inside the task view) |
 | `n` | new task |
 | `e` | edit task |
@@ -135,10 +158,7 @@ The `primary` flag identifies the focal verb(s) of the surface (e.g. `enter open
 
 | Key | Action |
 |---|---|
-| `↑ ↓` · `j k` | move cursor |
 | `enter` | open task |
-| `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
-| `g` · `G` | jump to top / bottom |
 
 ### Tasks › Plans
 
@@ -159,10 +179,7 @@ The sub opens to a **list view** first; pressing `enter` on a plan opens the **n
 
 | Key | Action |
 |---|---|
-| `↑ ↓` · `j k` | select plan (auto-scrolls) |
-| `pgup` · `pgdn` · `home` · `end` | scroll / jump |
 | `enter` | open network view for the selected plan |
-| `r` | refresh |
 
 Empty state renders a hint when the active project has no plans.
 
@@ -178,14 +195,11 @@ Empty state renders a hint when the active project has no plans.
 
 | Key | Action |
 |---|---|
-| `j` · `k` | move the linear cursor (walks wave headers + task rows uniformly) |
 | `h` · `l` | collapse / expand the wave under the cursor |
-| `space` | toggle the wave under the cursor |
-| `g` · `G` · `pgup` · `pgdn` | top / bottom / page |
+| `space` | toggle the wave under the cursor (on a task row, no-op) |
 | `enter` · `o` | open the focused task; on a wave header, acts as `space` |
 | `c` | open the single-line assignee editor for the focused task (see below) |
 | `e` | open the in-TUI `goal_body` editor for the plan |
-| `r` | refetch plan via `PlanService.Show` |
 | `esc` · `q` | back to the list |
 
 The `c` binding opens a single-line input pre-filled with the focused task's current assignee and calls `app.TaskService.Assign` on submit (empty input clears the assignee). The TUI explicitly does NOT auto-claim via `PlanService.ClaimNext`: bucket transitions still flow through `WorkflowService.MoveTask` so preset guards (e.g. omakase's self-branch-comment requirement on `backlog → dev`) remain authoritative. The TUI runs under `WithAgent("tui","tui","human","")` so the activity log distinguishes human assignments from agent claims.
@@ -199,7 +213,6 @@ Per-AI-model benchmark over a configurable period (errors recorded, errors searc
 | Key | Action |
 |---|---|
 | `←` · `→` | cycle period (`7d` → `30d` → `all`) |
-| `r` | refresh |
 
 The TUI itself reports `agent_model="human"` so its own activity does not appear in this benchmark — only MCP traffic with a real `_agent_model` does. See `.docs/mcp-guide.md` for the underlying domain-event timeline.
 
@@ -207,12 +220,7 @@ The TUI itself reports `agent_model="human"` so its own activity does not appear
 
 Activity log viewer. Two bordered grid tables stack above the panel (Status: total / ok / error / running, Sources: cli / mcp / tui) — both **aggregate the entire project history** via `ActivityLogStats`, regardless of how many rows the panel beneath happens to render under `views.logs.limit`. The panel itself is paged by limit and ordered DESC by `created_at`, with the user-configured source filter applied (`views.logs.filter.source`).
 
-| Key | Action |
-|---|---|
-| `↑ ↓` · `j k` | select row (auto-scrolls) |
-| `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
-| `g` · `G` | first / last row |
-| `r` | refresh |
+No surface-specific keys beyond [Common viewport bindings](#common-viewport-bindings) (`r` refresh applies).
 
 The TUI's per-second realtime tick is **not** logged — `refreshTickMsg` wraps `m.ctx` with `activity.WithoutTracking` before calling `refreshCurrentView`, so the tick's `MetricsService.Summary` / list calls bypass `activity.Track`. Only user-explicit refreshes (`r`), refreshes after a view change, and writes from the application services land in the log.
 
@@ -229,7 +237,6 @@ Mutating any of these still goes through dedicated pickers (`t` for theme, `c` f
 |---|---|
 | `t` | open theme picker (hot-reload) |
 | `c` | open config picker (hot-reload) |
-| `r` | refresh |
 
 #### Config picker hot-reload
 
@@ -265,8 +272,6 @@ Each entity kind owns its own sub. Cards wrap into a multi-column grid sized to 
 
 | Key | Action |
 |---|---|
-| `↑ ↓` · `j k` | select entity (auto-scrolls) |
-| `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
 | `enter` | open detail |
 | `n` | new entity (creates the file and shells out to `$EDITOR`) |
 | `e` | edit in `$EDITOR` |
@@ -280,7 +285,6 @@ Templates are auto-loaded from `<config-root>/templates/` so `n` and `d` are no-
 
 | Key | Action |
 |---|---|
-| `↑ ↓` · `j k` | select template |
 | `enter` | open detail |
 | `a` | open the default-assignment picker (which kind this template is the default for) |
 | `t` · `c` | theme picker · config picker |
@@ -291,23 +295,19 @@ Tag browser. Only **orphan** tags (zero references) can be deleted from the TUI;
 
 | Key | Action |
 |---|---|
-| `↑ ↓` · `j k` | select tag |
 | `d` | arm delete (orphan only) |
 | `D` | delete every orphan tag (one shot) |
 | `t` · `c` | theme picker · config picker |
 
 ## Modal sub-screens
 
-These open on top of a zone/sub and intercept all input until dismissed. The contextual help overlay (`?`) automatically narrows to whichever sub-screen is open. Esc verbal across all back-style overlays is `esc back`; cancel-style modals (pickers, modes) keep `esc cancel`.
+These open on top of a zone/sub and intercept all input until dismissed. The contextual help overlay (`?`) automatically narrows to whichever sub-screen is open. Every scrollable modal inherits [Common viewport bindings](#common-viewport-bindings); per-modal tables list only the surface-specific verbs.
 
 ### Modal text inputs
 
-Every modal that captures text — `modeMove` (move task by bucket key), the inline new-comment (`modeComment`), the dedicated comment edit overlay (`commentScreenEditing`), and the create / edit task form — drives a Charm `bubbles` component:
+Every modal that captures text — `modeMove`, the inline new-comment (`modeComment`), the dedicated comment edit overlay (`commentScreenEditing`), and the create / edit task form — drives a Charm `bubbles` component: `textinput.Model` for single-line surfaces (`modeMove`, task title), `textarea.Model` for multi-line surfaces (comments, task description). Standard caret keys (`↑ ↓ ← →` · `home` · `end`) apply throughout.
 
-- `bubbles/textinput.Model` — single-line surfaces (`modeMove`, task title field).
-- `bubbles/textarea.Model` — multi-line surfaces (comment add, comment edit, task description).
-
-`KeyMap.InsertNewline` is rebound on every textarea so `shift+enter` / `alt+enter` / `ctrl+j` insert a newline natively (the prior `isNewlineModifier` shim that injected `\n` via `InsertString` is gone). For the task description textarea — where `ctrl+s` is the save key and a bare Enter is free for newlines — the binding includes `enter` too. For the comment textareas, `enter` is reserved for "save".
+`KeyMap.InsertNewline` is rebound on every textarea so `shift+enter` / `alt+enter` / `ctrl+j` insert a newline natively. For the task description textarea — where `ctrl+s` is the save key and a bare Enter is free for newlines — the binding includes `enter` too. For the comment textareas, `enter` is reserved for "save". The per-modal tables below therefore omit caret/newline rows and list only surface-specific verbs.
 
 `internal/tui/keys.go` declares the `commentInputBindings` and `moveInputBindings` records via `bubbles/key.Binding`. The same records drive both the runtime handlers in `updateInput` and the help-overlay rows in `render_help.go` — there is no separate hard-coded help string.
 
@@ -315,37 +315,29 @@ Every modal that captures text — `modeMove` (move task by bucket key), the inl
 
 ### Task view (after `enter` on a task card)
 
-Destructive verbs live inside the entered surface only — the board has no `d` shortcut. Pressing `e` or `d` runs a policy pre-check; if the bucket forbids it the guard hint surfaces in the status badge instead of opening the form.
+Destructive verbs live inside the entered surface only — the board has no `d` shortcut. Pressing `e` or `d` runs a policy pre-check; if the bucket forbids it the guard hint surfaces in the status badge instead of opening the form. `↑ ↓` · `j k` route to the description (form focus) or activity cards (activity focus); `esc back` returns to the launching surface.
 
 | Key | Action |
 |---|---|
 | `tab` · `shift+tab` | switch focus (form ⇄ activity column) |
-| `↑ ↓` · `j k` | scroll description (form focus) · navigate cards (activity focus) |
 | `J` · `K` | navigate activity cards regardless of focus |
 | `enter` | open the focused comment in the comment-detail view |
-| `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
-| `g` · `G` | jump to top / bottom |
 | `e` | edit task (form-column focus only; gated by `permissions.task.edit`) |
 | `b` | edit blockers (opens the blocker picker) |
 | `c` | add comment |
 | `m` | move |
 | `M` | toggle markdown render of the description (raw ⇄ rendered; default rendered) |
 | `d` `d` | arm hard-delete the task, then confirm (form-column focus only; gated by `permissions.task.delete` and `operations.delete.guards`) |
-| `esc` | back |
 
 ### Sub-tasks panel (inside Task view)
 
-The task view always renders three panels — task details on the left, sub-tasks and activity stacked on the right (side-by-side layout) or cascaded below the form (stacked layout). The sub-tasks panel lists the direct children of the focused task; pressing `enter` on a child drills into it, pushing the current task onto an ancestor stack so `esc` unwinds one level at a time.
-
-The keymap below is active whenever the task view is open. `j`/`k` route to whichever column owns focus (`tab` flips between form and sub-tasks; `J`/`K` always reach the activity feed regardless of focus).
+The task view always renders three panels — task details on the left, sub-tasks and activity stacked on the right (side-by-side layout) or cascaded below the form (stacked layout). The sub-tasks panel lists the direct children of the focused task; pressing `enter` on a child drills into it, pushing the current task onto an ancestor stack so `esc` unwinds one level at a time. `j`/`k` route to whichever column owns focus; `J`/`K` always reach the activity feed.
 
 | Key | Action |
 |---|---|
 | `tab` · `shift+tab` | switch focus (form ⇄ sub-tasks ⇄ activity) |
 | `a` · `n` | add sub-task (opens the task form pre-attached to the current task as parent) |
 | `s` | focus the sub-tasks panel (no-op with status hint when the task has no children) |
-| `j` · `k` | move cursor inside the focused sub-tasks panel |
-| `g` · `G` · `home` · `end` | first / last child |
 | `space` | send the focused child straight to the workflow's final bucket (guards still fire; errors surface inline) |
 | `enter` | drill into the focused child (becomes the new task view; `esc` pops back) |
 | `f` | open the dedicated description overlay for the focused task |
@@ -358,13 +350,9 @@ The `Parent` field on the task form (§E, last in the `Title → Description →
 
 | Key | Action |
 |---|---|
-| `↑ ↓` · `j k` | scroll body |
-| `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
-| `g` · `G` | jump to top / bottom |
 | `e` | edit comment body (gated by `permissions.comment.edit`) |
 | `M` | toggle markdown render of the comment body (raw ⇄ rendered; default rendered) |
 | `d` `d` | arm delete the comment, then confirm (gated by `permissions.comment.delete`) |
-| `esc` | back |
 
 ### Comment input — new comment (after `c` on a task card or in task view)
 
@@ -373,8 +361,6 @@ A multi-line `bubbles/textarea` opens **inline inside the activity column** of t
 | Key | Action |
 |---|---|
 | `enter` | save (creates a new comment) |
-| `alt+enter` · `shift+enter` · `ctrl+j` | insert newline |
-| `↑ ↓ ← →` · `home` · `end` | caret navigation within the body |
 | `esc` | cancel |
 
 ### Comment edit — edit existing comment (`e` on the comment view)
@@ -384,18 +370,17 @@ Pressing `e` on the comment-view overlay flips the **same overlay** into a dedic
 | Key | Action |
 |---|---|
 | `ctrl+s` | save the rewritten body (gated by `permissions.comment.edit`; tags survive the round-trip) |
-| `alt+enter` · `shift+enter` · `ctrl+j` | insert newline |
-| `↑ ↓ ← →` · `home` · `end` | caret navigation within the body |
 | `esc` | cancel — return to the read-only comment view |
 
 ### Task form (`n` to create, `e` to edit)
+
+In the description textarea, bare `enter` also inserts a newline (the textarea is the only one where `ctrl+s`, not `enter`, is the save key).
 
 | Key | Action |
 |---|---|
 | `tab` | switch field |
 | `← →` · `h l` | change priority |
 | `ctrl+b` | edit blockers (existing tasks only) |
-| `enter` · `alt+enter` · `shift+enter` | newline in description |
 | `ctrl+s` | save |
 | `esc` | cancel |
 
@@ -403,33 +388,25 @@ Pressing `e` on the comment-view overlay flips the **same overlay** into a dedic
 
 | Key | Action |
 |---|---|
-| `↑ ↓` · `j k` | move (auto-scrolls) |
-| `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
-| `g` · `G` | first / last candidate |
 | `space` | toggle blocker |
 | `ctrl+s` | save |
 | `esc` | cancel |
 
 ### Entity view (Settings › entity → `enter`)
 
+`esc` here also cancels a pending delete.
+
 | Key | Action |
 |---|---|
-| `↑ ↓` · `j k` | scroll body |
-| `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
-| `g` · `G` | jump to top / bottom |
 | `e` | edit (opens `$EDITOR`) |
 | `M` | toggle markdown render of the entity body (raw ⇄ rendered; default rendered) |
 | `d` `d` | arm delete, then confirm |
 | `p` | skill picker (persona only) |
-| `esc` | back, or cancel a pending delete |
 
 ### Skill picker (from a persona via `p`)
 
 | Key | Action |
 |---|---|
-| `↑ ↓` · `j k` | move (auto-scrolls) |
-| `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
-| `g` · `G` | first / last row |
 | `space` | toggle |
 | `enter` on `+ create new` | scaffold new skill |
 | `ctrl+s` | save |
@@ -439,8 +416,6 @@ Pressing `e` on the comment-view overlay flips the **same overlay** into a dedic
 
 | Key | Action |
 |---|---|
-| `↑ ↓` · `j k` | move (auto-scrolls) |
-| `pgup` · `pgdn` · `ctrl+u` · `ctrl+d` | scroll by half page |
 | `enter` | apply (theme: hot-reload; config: hot-reload via `BundleCache.Reload`; default: clears prior owner) |
 | `esc` | cancel |
 
@@ -514,3 +489,10 @@ The TUI loads its theme from `<config-root>/themes/<active>.yaml` with `themes/c
 Body fields shown in the read-only detail panels (task description, comment body inside the dedicated comment view, and the entity body for laws / personas / skills / templates) render as styled markdown by default. The renderer (`internal/tui/markdown.go`) builds an `ansi.StyleConfig` from the active theme tokens (`primary`, `foreground`, `border`, `secondary`) — switching theme rebuilds the renderer and clears its per-(body, width) cache. Code blocks render as plain mono (no chroma syntax highlight) so they stay aligned with the dev-editorial palette.
 
 Press `M` (capital) inside the task view, comment view, or entity view to toggle between raw and rendered for the rest of the session — useful when you need to copy markdown verbatim or debug formatting. The toggle is session-only; it is not persisted to the active profile yaml. The status badge confirms the active mode (`Markdown rendered` / `Markdown raw`). Editing flows (textareas + `$EDITOR`) are unaffected — they always show raw text.
+
+## See also
+
+- [`theming-guide.md`](theming-guide.md) — color tokens used by the TUI.
+- [`configuration-guide.md`](configuration-guide.md) — TUI scope, layout config.
+- [`cli-guide.md`](cli-guide.md) — sibling CLI surface.
+- [`mcp-guide.md`](mcp-guide.md) — agent surface mirror of TUI ops.

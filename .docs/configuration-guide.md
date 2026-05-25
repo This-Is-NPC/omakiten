@@ -13,6 +13,20 @@ The active runtime path is, in precedence (`internal/paths/paths.go`):
 
 The yaml lives under `<root>/config/`; per-entity folders are siblings of `config/`, not nested inside it. See **Paths and backups** at the bottom for the full layout. The default kit (`defaults/`) is materialized into the entity folders on first run by `configstore.EnsureDefaultFiles`; legacy flat layouts are auto-migrated by `configstore.MigrateLayout`. The composition roots (`internal/cli/root.go:open`, `internal/agentruntime/runtime.go:Open`) run `MigrateLayout` + `EnsureDefaultFiles` **before** resolving the active yaml, so a profile relocated into `custom/` during the same boot is honored.
 
+## Contents
+
+- [Top-level shape](#top-level-shape)
+- [config](#config)
+- [workflows](#workflows)
+- [Per-entity wiring](#per-entity-wiring)
+- [How config reads work at runtime (in-memory providers + per-project cache)](#how-config-reads-work-at-runtime-in-memory-providers--per-project-cache)
+- [Autoload, custom overrides, and slug rules](#autoload-custom-overrides-and-slug-rules)
+- [Validation summary](#validation-summary)
+- [Worked example (annotated)](#worked-example-annotated)
+- [Default kit reference](#default-kit-reference)
+- [Paths and backups](#paths-and-backups)
+- [See also](#see-also)
+
 ---
 
 ## Top-level shape
@@ -851,11 +865,9 @@ Validation rejects duplicate slugs in any list and slugs that overlap between `l
 
 ## How config reads work at runtime (in-memory providers + per-project cache)
 
-Phase 2 of the config refactor dropped every SQL config table — workflows, workflow_buckets, workflow_transitions, personas, persona_skills, skills, laws, settings, config_bundles (migration 020). Phase 2-bis then stripped every config-side method from the SQL adapter so `*sqlite.Store` carries zero `config.Bundle` / `config.Snapshot` references in production. The bundle YAML is the single source of truth; reads land on an immutable `*config.Snapshot` materialised by `config.BuildSnapshot(bundle)`. Every app service captures the `*config.Snapshot` pointer at construction; the pointer never mutates after build, so concurrent readers always see a consistent shape — hot-reload installs a new pointer in a new `*ProjectRuntime` entry rather than mutating the live one.
+> See [`internal/per-project-snapshot.md`](internal/per-project-snapshot.md).
 
-Phase 3 layered per-project bundles on top: `agentruntime.BundleCache` holds one `*ProjectRuntime` per project id. Each entry aggregates the per-project `*config.Snapshot`, an `agent.Service` (which holds the same Snapshot via `SetSnapshot`), a `hooks.Engine`, the action registry, the notification snapshot, and the enum registry built from THAT project's YAML. Cache rebuilds happen automatically on mtime change (every Resolve stat-checks the SourcePath) or explicitly via `Reload` (TUI Settings → Config picker). MCP `Adapter.CallTool` peeks `project` / `project_id` from incoming args and routes the dispatch against the matching entry; calls without those args fall back to the default project resolved at boot.
-
-Hot-reload of the active YAML no longer touches SQLite — `cache.Reload` re-parses, runs the validator, calls `config.BuildSnapshot`, installs the fresh `*ProjectRuntime` (carrying the new Snapshot pointer plus the previous one for the orphan flow), stops the prior engine, and emits `bundle.imported` for audit via `Store.RecordEntityEvent` from the composition root. In-flight callers that captured the prior Snapshot pointer keep reading the old shape until they release it. Validator rejection leaves the previous entry in place.
+The bundle YAML is the single source of truth; reads land on an immutable `*config.Snapshot` materialised by `config.BuildSnapshot(bundle)`. `agentruntime.BundleCache` holds one `*ProjectRuntime` per project id; hot-reload installs a fresh pointer in a new entry rather than mutating the live one, then emits `bundle.imported` for audit. Validator rejection leaves the previous entry in place.
 
 ## Autoload, custom overrides, and slug rules
 
@@ -1077,75 +1089,7 @@ Single workflow `omakase` with four buckets — `backlog` → `dev` → `review`
 
 ## Paths and backups
 
-### Layout under the resolved root
-
-`<root>` is one of (highest precedence first):
-
-1. `$OMAKITEN_HOME`
-2. `$XDG_CONFIG_HOME/omakiten`
-3. `~/.config/omakiten`
-
-```
-<root>/
-  config/
-    omakase.yaml           # canonical kit (also a workflow preset)
-    izakaya.yaml           # slim preset — workflow only
-    kaiseki.yaml           # six-stage formal preset
-    shokunin.yaml          # six-stage strict preset
-    .active                # one-line state: basename of the active profile (optional)
-    custom/                # user-authored profile yamls (preserved across default refresh)
-      <profile>.yaml
-  laws/
-    <slug>.md              # default-kit law
-    custom/<slug>.md       # user-authored law (preserved; overrides same-slug default)
-  skills/
-    <slug>.md
-    custom/<slug>.md
-  personas/
-    <slug>.md
-    custom/<slug>.md
-  templates/
-    <slug>.md
-    custom/<slug>.md
-  themes/
-    <key>.yaml
-    custom/<key>.yaml
-  notifications/
-    <slug>.yaml
-    custom/<slug>.yaml
-  languages/
-    <code>.yaml
-    custom/<code>.yaml
-```
-
-Source: `internal/paths/paths.go:ConfigRoot`, `EntityDir`, `EntityCustomDir`, `ActiveConfigFile`. Legacy flat layouts (`<root>/<name>.yaml` at the root with no `config/` subdir) are tolerated by `ConfigRootFromYAMLPath` and migrated forward by `configstore.MigrateLayout` on next connect. `ConfigRootFromYAMLPath` also recognizes `<root>/config/custom/<name>.yaml`, so entity folders resolve correctly when the active profile lives under `custom/`.
-
-### Repo-local `.omakiten/` standalone install
-
-When `.omakiten/` is present at (or above) the current working directory, the runtime treats it as a **complete standalone install** and ignores the user-global ConfigRoot entirely. There is no merge, no overlay, no layered fallback. The only thing that stays global is the SQLite database — `.omakiten/` is config-only.
-
-Discovery: `config.FindRepoLocal(CWD)` walks the parent chain, stopping at the first `.omakiten/`, at `$HOME`, or at the filesystem root. When the walker finds a directory, `runtimeOptions.resolvedConfigRoot` and `resolvedConfigPath` switch to that root for the rest of the process. The `--config` flag overrides discovery — when present, the flag is the authoritative source and the badge reflects "global".
-
-Layout mirrors the user-global root exactly:
-
-```
-<repo>/.omakiten/
-  config/
-    <active>.yaml          # picked preset (or user-authored profile)
-    .active                # one-line state: basename of the active profile
-    custom/                # user-authored profile yamls
-  skills/<slug>.md   + custom/
-  laws/<slug>.md     + custom/
-  personas/<slug>.md + custom/
-  templates/<slug>.md + custom/
-  themes/<key>.yaml  + custom/
-  notifications/<slug>.yaml + custom/
-  languages/<code>.yaml + custom/
-```
-
-The expected workflow is `okt config init --scope local --preset <name>`: that single call materialises every entity folder via `EnsureDefaultFiles`, copies every shipped preset yaml under `config/`, and points `.active` at the chosen one. The result is a self-contained install — `LoadBundle(<repo>/.omakiten/config/<active>.yaml)` succeeds without any merge step.
-
-Source: `internal/config/repo_local.go:FindRepoLocal`, `internal/config/seed_install.go:SeedInstall`, `internal/cli/root.go:runtimeOptions.discoverRepoLocalRoot`.
+> See [`reference/layout.md`](reference/layout.md) for the full filesystem tree and [`reference/path-resolution.md`](reference/path-resolution.md) for the ConfigRoot precedence and `.active` resolution. This section covers only the CLI / TUI / backup behavior on top of that layout.
 
 ### Inspecting the active layer — `okt config <sub>`
 
@@ -1167,21 +1111,11 @@ The badge reflects what the loader actually picked, not the discovery candidates
 
 ### SQLite database
 
-```
-<data-root>/omakiten.db
-```
-
-`<data-root>` is one of (highest precedence first):
-
-1. `$OMAKITEN_HOME/data`
-2. `$XDG_DATA_HOME/omakiten`
-3. `~/.local/share/omakiten`
-
-The DB is a single file. Schema migrations are applied transactionally on every connect (`internal/sqlite/store.go:Open`). Source: `internal/paths/paths.go:DataDir`, `DatabaseFile`.
+The DB is a single file at `<data-root>/omakiten.db` (see [`reference/layout.md`](reference/layout.md) for the precedence). Schema migrations are applied transactionally on every connect (`internal/sqlite/store.go:Open`). Source: `internal/paths/paths.go:DataDir`, `DatabaseFile`.
 
 ### Profiles (advanced)
 
-The resolver supports multiple yaml profiles under `<root>/config/`. The active one is selected by writing its basename into `<root>/config/.active`; `<root>/config/custom/<name>.yaml` is tried before `<root>/config/<name>.yaml`. Profile switching today happens via the TUI Settings › Config picker (which calls `paths.SetActiveConfig`); the CLI accepts a per-invocation override via `--config <path>` or by editing `.active` directly. When `.active` is missing, blank, or names a profile that exists in neither location, the resolver falls through to discovery: first alphabetical `.yaml` at the root, then under `custom/` — so a renamed or removed canonical kit degrades to "first available preset" instead of breaking init.
+Multiple yaml profiles can coexist under `<root>/config/`; `<root>/config/.active` names the active one and the TUI Settings › Config picker writes it. See [`reference/path-resolution.md`](reference/path-resolution.md) for the full `.active` resolution order (custom-before-root, alphabetical fallthrough).
 
 ### Backup
 
@@ -1223,3 +1157,12 @@ This complements the surface policy: destructive ops live on CLI + TUI but not M
 ### Resetting
 
 `mise run purge` removes both `~/.config/omakiten` and `~/.local/share/omakiten` (`.mise.toml`); it does not remove rolling snapshots under `~/.local/state/omakiten`. Re-run `okt init` to reseed defaults. Customs under `<entity>/custom/` are also removed by purge — back them up first if you care.
+
+---
+
+## See also
+
+- [`workflow-guide.md`](workflow-guide.md) — preset workflows and their wiring.
+- [`reference/layout.md`](reference/layout.md) — bundle file layout.
+- [`reference/path-resolution.md`](reference/path-resolution.md) — path lookup order.
+- [`internal/per-project-snapshot.md`](internal/per-project-snapshot.md) — per-project layering details.

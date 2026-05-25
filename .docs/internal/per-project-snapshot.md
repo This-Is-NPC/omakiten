@@ -414,3 +414,8 @@ new copy.
   caller-chosen `CollisionPolicy` (`CollideOverwrite`,
   `CollideError`, `CollideKeepFirst`). Collapsed three inline dedup
   loops (entity_loader, language, notification_loader).
+
+## See also
+
+- [Configuration guide](../configuration-guide.md) — per-project config layering.
+- [Path resolution](../reference/path-resolution.md) — bundle path resolution order.

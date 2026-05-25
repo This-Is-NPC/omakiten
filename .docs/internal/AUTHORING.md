@@ -94,3 +94,7 @@ These limits exist because every law/skill/persona/template that a preset wires 
 Process discipline, yes. Architecture, no. Reviewer ergonomics, yes. Specific frameworks (Clean / Hexagonal / DDD / MVC), no. Best practices (TDD, peer review, decision records), yes. Specific tooling (Jest / pytest / Datadog), no.
 
 The kit ships four official presets — `omakase`, `izakaya`, `kaiseki`, `shokunin` — each a distinct **process discipline**. None prescribe architecture.
+
+## See also
+
+- [Architecture](architecture.md) — atom map and Diataxis discipline reference.

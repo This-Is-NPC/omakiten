@@ -85,3 +85,8 @@ Doerr ([2018](../reference/bibliography.md#doerr-2018)). Pairs an aspirational *
 ## How these compose
 
 A typical `okt-imagine` → `okt-create` cycle uses several of these models together: 5W2H surfaces the problem, SMART pins down what success looks like, INVEST checks the resulting story, and MoSCoW or RICE (or both) sets priority against alternatives. PDCA frames the entire loop.
+
+## See also
+
+- [Bibliography](../reference/bibliography.md) — sources cited inline.
+- [Why omakiten](../why_omakiten.md) — narrative motivation.

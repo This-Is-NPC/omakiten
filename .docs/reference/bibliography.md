@@ -107,3 +107,7 @@ Walter A. Shewhart. *Statistical Method From the Viewpoint of Quality Control* (
 
 ### <a id="wake-2003"></a>Wake — INVEST in Good Stories, INVEST in Better Stories (2003)
 Bill Wake. "INVEST in Good Stories, INVEST in Better Stories" (xp123.com, 2003). Origin of the INVEST acronym (Independent / Negotiable / Valuable / Estimable / Small / Testable) for user-story quality.
+
+## See also
+
+- [Mental models](../explanation/mental-models.md) — concepts these references back.

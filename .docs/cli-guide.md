@@ -4,6 +4,31 @@
 
 > All flag tables below are derived from source in `internal/cli/`. The shipped binary's `--help` may lag if it is older than the current source — when in doubt, the source is canonical.
 
+## Contents
+
+- [Global flags](#global-flags)
+- [Environment variables](#environment-variables)
+- [`okt setup` — post-install picker](#okt-setup--post-install-picker)
+- [`okt update` — fetch latest release and swap the binary](#okt-update--fetch-latest-release-and-swap-the-binary)
+- [`okt uninstall` — remove the binary and shell-rc wrapper](#okt-uninstall--remove-the-binary-and-shell-rc-wrapper)
+- [`okt init` — register the current project](#okt-init--register-the-current-project)
+- [`okt config presets` — list official workflow presets](#okt-config-presets--list-official-workflow-presets)
+- [Tasks](#tasks)
+- [Comments](#comments)
+- [Dependencies](#dependencies)
+- [Plans](#plans)
+- [Context (handoff state)](#context-handoff-state)
+- [Workflow](#workflow)
+- [Config](#config)
+- [Database](#database)
+- [Skills](#skills)
+- [Laws](#laws)
+- [Personas](#personas)
+- [TUI](#tui)
+- [MCP](#mcp)
+- [Output envelope](#output-envelope)
+- [See also](#see-also)
+
 ## Global flags
 
 Inherited by every subcommand (`internal/cli/root.go:NewRootCommand`):
@@ -57,10 +82,7 @@ OKT_CLI_LANG=pt-br OKT_TUI_LANG=pt-br OKT_PRESET=omakase OKT_HARNESSES=0 \
 
 `internal/cli/update.go`. The in-binary counterpart of the curl|bash refresh path. Resolves the running binary via `os.Executable`, queries `https://api.github.com/repos/This-Is-NPC/omakiten/releases/latest`, downloads the matching asset (`okt_<OS>_<arch>.tar.gz` on POSIX, `.zip` on Windows), verifies its SHA256 against `checksums.txt` from the same release, extracts the `okt` entry from the archive, and atomically replaces the binary with a sibling temp file + rename.
 
-| Flag | Default | Effect |
-|---|---|---|
-| `--check` | `false` | Dry-run: print `current=<v> latest=<v> action=<noop\|upgrade>` and exit without writing. |
-| `--yes`, `-y` | `false` | Skip the confirmation prompt for non-interactive callers. |
+Flags: `--check` is a dry-run that prints `current=<v> latest=<v> action=<noop|upgrade>` and exits; `--yes` / `-y` skips the confirmation prompt for non-interactive callers.
 
 JSON envelope codes (under `data.code`):
 - `update_available` — `--check` saw a newer tag; nothing written.
@@ -85,12 +107,7 @@ Windows holds the EXE handle for any process running the binary, so the atomic s
 
 Local state — the SQLite DB under `$XDG_DATA_HOME/omakiten` and the active yaml profile + entity folders under `$XDG_CONFIG_HOME/omakiten` — is preserved by default. Purge flags opt back into deletion; the picker shows each target's on-disk size and a `THIS CANNOT BE UNDONE` line before toggling either checkbox.
 
-| Flag | Default | Effect |
-|---|---|---|
-| `--yes`, `-y` | `false` | Skip the picker and apply the resolved flag set non-interactively. |
-| `--purge-data` | `false` | Also delete `$XDG_DATA_HOME/omakiten` (SQLite DB + WAL/SHM). Irreversible. |
-| `--purge-config` | `false` | Also delete `$XDG_CONFIG_HOME/omakiten` (active yaml + entity folders). Irreversible. |
-| `--purge` | `false` | Shorthand for `--purge-data --purge-config`. |
+Flags: `--yes` / `-y` skips the picker for non-interactive callers; `--purge-data` also deletes `$XDG_DATA_HOME/omakiten` (SQLite DB + WAL/SHM); `--purge-config` also deletes `$XDG_CONFIG_HOME/omakiten` (active yaml + entity folders); `--purge` is shorthand for both. All purges are irreversible.
 
 JSON envelope codes (under `data.code`): `uninstall_completed`, `uninstall_failed`, `validation_error`.
 
@@ -107,21 +124,13 @@ The bundled `uninstall.sh` / `uninstall.ps1` scripts stay in the repo for the bo
 
 ## `okt init` — register the current project
 
-`internal/cli/init.go`. Inserts a project row in the global SQLite DB (`UpsertProject`); optionally writes the MCP harness config.
+`internal/cli/init.go`. Inserts a project row in the global SQLite DB (`UpsertProject`); optionally writes the MCP harness config and seeds a preset under `.omakiten/`.
 
-| Flag | Default | Effect |
-|---|---|---|
-| `--name` | — | Project display name. |
-| `--slug` | — | Project slug (kebab-case key). |
-| `--root` | `$CWD` | Project root path used for CWD-based resolution. |
-| `--enable-mcp` | `false` | Also configure an MCP harness entry. |
-| `--mcp-harness` | `claude-code` | One of `claude-code`, `claude-desktop`, `opencode`, `crush`, `github-copilot`, `codex` (`internal/agentsetup/setup.go::SupportedHarnesses`). |
-| `--mcp-config` | harness default | Override the harness config-file path. |
-| `--mcp-command` | current executable | Command written into the harness config. |
-| `--mcp-dry-run` | `false` | Preview changes without writing. |
-| `--mcp-force` | `false` | Replace an existing `mcpServers.omakiten` entry. |
-| `--preset` | — | Copy an official workflow preset from `defaults/config/<name>.yaml` into `<root>/.omakiten/config/<name>.yaml` and set `.active` to that basename. Without `--root`, a Git worktree is detected by walking up from `$CWD`; outside Git, `$CWD` is used. |
-| `--preset-force` | `false` | Overwrite an existing `.omakiten` target when applying `--preset`. |
+Run `okt init --help` for the full flag list. Non-obvious behavior:
+
+- `--root` defaults to `$CWD`; the value is what later CWD-based project resolution matches against.
+- `--enable-mcp` toggles a bundle of `--mcp-*` flags that mirror [`okt mcp setup`](#okt-mcp-setup) — see that section for the harness matrix.
+- `--preset NAME` copies `defaults/config/<NAME>.yaml` into `<root>/.omakiten/config/` and sets `.active`. Without `--root`, a Git worktree is detected by walking up from `$CWD`; outside Git, `$CWD` is used. Use `--preset-force` to overwrite an existing `.omakiten` target.
 
 ```sh
 okt init --name Omakiten --slug omakiten --root "$PWD"
@@ -154,16 +163,14 @@ Presets:
 
 ## Tasks
 
+Run `okt <subcommand> --help` for the full flag list of any task command. Notes below cover behavior not obvious from `--help`.
+
 ### `okt add` — create a task
 
 `internal/cli/add.go`. Calls `app.TaskService.Add` → `app.WorkflowService.CreateTask`. When `--parent` is set, routes through `app.TaskService.AddSub` so the row + FK land in a single atomic INSERT.
 
-| Flag | Default | Effect |
-|---|---|---|
-| `--title`, `-t` | — | Task title. |
-| `--description`, `-d` | — | Task description. |
-| `--bucket`, `-b` | first active bucket | Bucket key. Empty falls back to `app.WorkflowService.ResolveDefaultBucket` — the **first bucket** of the active workflow, not a hard-coded `backlog`. |
-| `--parent` | — | Optional parent task id. Attaches the new row as a sub-task; the parent must belong to the active project and be `state=active`. Cross-bucket parents are rejected; the sub-task inherits the parent's bucket when `--bucket` is omitted. |
+- `--bucket` empty falls back to `app.WorkflowService.ResolveDefaultBucket` — the **first bucket** of the active workflow, not a hard-coded `backlog`.
+- `--parent` requires an active task in the same project; cross-bucket parents are rejected; sub-task inherits the parent's bucket when `--bucket` is omitted.
 
 ```sh
 okt add -t "Refactor sqlite store"
@@ -173,12 +180,7 @@ okt add -t "Extract helper" --parent 42
 
 ### `okt list` — list tasks
 
-`internal/cli/list.go`. Calls `app.TaskService.List`.
-
-| Flag | Default | Effect |
-|---|---|---|
-| `--bucket`, `-b` | — | Filter by bucket key. Empty = all. |
-| `--parent` | — (absent = no filter) | Tri-state parent filter via `cmd.Flags().Changed("parent")`: omit for no filter (every task), pass `0` for roots only (`parent_id IS NULL`), pass a positive id for that parent's direct children. |
+`internal/cli/list.go`. Calls `app.TaskService.List`. `--parent` is tri-state via `cmd.Flags().Changed("parent")`: omit for no filter, pass `0` for roots only (`parent_id IS NULL`), pass a positive id for that parent's direct children.
 
 ```sh
 okt list
@@ -191,13 +193,9 @@ okt list --parent 42   # direct children of #42
 
 `internal/cli/edit.go`. Only fields explicitly passed are updated (`cmd.Flags().Changed(...)`).
 
-| Flag | Effect |
-|---|---|
-| `--title`, `-t` | Rewrite title. |
-| `--description`, `-d` | Rewrite description. |
-| `--priority` | Priority label or numeric id. Resolved against the active bundle via `parsePriority` (`internal/cli/enums.go`) → `*domain.EnumRegistry`. Out-of-the-box labels: `low`, `normal`, `high` from `config.priorities` in `defaults/config/omakase.yaml`; rename them by editing the YAML, no code change required. |
-| `--bucket`, `-b` | Re-bucket through the workflow service (transition + guards still enforced). |
-| `--parent` | Tri-state re-parent via `cmd.Flags().Changed("parent")`: omit to leave `parent_id` untouched, pass `0` to clear (becomes a root), pass a positive id to re-parent with anti-cycle enforcement (target parent cannot already descend from this task). |
+- `--priority` accepts a label or numeric id resolved against the active bundle via `parsePriority` (`internal/cli/enums.go`). Out-of-the-box labels (`low`, `normal`, `high`) come from `config.priorities` in `defaults/config/omakase.yaml`; rename them by editing the YAML.
+- `--bucket` re-buckets through the workflow service (transition guards still enforced; see [`guards-guide.md`](./guards-guide.md)).
+- `--parent` is tri-state: omit to leave `parent_id` untouched, pass `0` to clear (becomes a root), pass a positive id to re-parent with anti-cycle enforcement.
 
 ```sh
 okt edit 42 --priority high
@@ -208,11 +206,7 @@ okt edit 99 --parent 0    # clear parent (becomes a root)
 
 ### `okt move TASK_ID --to BUCKET` — move a task
 
-`internal/cli/move.go`. Calls `app.TaskService.Move` → `app.WorkflowService.MoveTask` (transition allowance + guards + `task.completed` on final bucket; see `.docs/guards-guide.md`).
-
-| Flag | Required | Effect |
-|---|---|---|
-| `--to`, `-t` | yes | Target bucket key. |
+`internal/cli/move.go`. Calls `app.TaskService.Move` → `app.WorkflowService.MoveTask` (transition allowance + guards + `task.completed` on final bucket; see [`guards-guide.md`](./guards-guide.md)).
 
 ```sh
 okt move 42 --to dev
@@ -241,50 +235,23 @@ okt unarchive 42
 
 ### `okt assign TASK_ID [WHO]` — set or clear the task assignee
 
-`internal/cli/assign.go`. Calls `app.TaskService.Assign`. Sets the free-text `tasks.assigned_to` column. Omitting `WHO` (or passing an empty string) clears the assignment back to NULL — the documented recovery path when a claiming agent crashes without finishing.
-
-| Position | Required | Effect |
-|---|---|---|
-| `TASK_ID` | yes | Numeric task id. |
-| `WHO` | no | Free-text claimant (`claude-opus-4-7`, `gabriel`, `tui`, …). Empty = clear. |
+`internal/cli/assign.go`. Calls `app.TaskService.Assign`. Sets the free-text `tasks.assigned_to` column. Omitting `WHO` (or passing an empty string) clears the assignment back to NULL — the documented recovery path when a claiming agent crashes without finishing. Emits `task.assigned` when set, `task.unassigned` when cleared.
 
 ```sh
 okt assign 42 claude-opus-4-7      # claim
 okt assign 42                       # clear (recovery)
 ```
 
-Emits `task.assigned` when set, `task.unassigned` when cleared. Listed at the top level (not under `okt task`) to match the existing flat surface (`okt move`, `okt edit`, `okt archive`, …).
-
 ---
 
 ## Comments
 
-`internal/cli/comment.go`.
+`internal/cli/comment.go`. Run `okt comment <subcommand> --help` for the full flag list.
 
-### `okt comment add TASK_ID`
-
-| Flag | Default | Effect |
-|---|---|---|
-| `--body`, `-b` | — | **Required.** Comment body. |
-| `--author`, `-a` | `human` | `human` or `agent`. |
-| `--tag`, `-T` | — | Tag name (kebab-case-normalized). Repeatable: `-T resume -T deployment-notes`. |
-
-### `okt comment list TASK_ID`
-
-No flags. Lists comments for the task in chronological order.
-
-### `okt comment edit COMMENT_ID`
-
-Calls `app.CommentService.Edit`. Subject to bucket `permissions.comment.edit` (inherits from `permissions.task.edit` when no comment block is declared). Replaces the body and the tag set in one call. Emits `comment.edited`.
-
-| Flag | Default | Effect |
-|---|---|---|
-| `--body`, `-b` | — | **Required.** New comment body. |
-| `--tag`, `-T` | — | Tag name. Repeatable. The submitted set replaces the old tags entirely. |
-
-### `okt comment delete COMMENT_ID --confirm`
-
-Calls `app.CommentService.Remove`. Subject to bucket `permissions.comment.delete` (same inheritance rule). Emits `comment.removed` with the body snapshot. Refuses to run without `--confirm`.
+- `okt comment add TASK_ID -b BODY` — `--author` defaults to `human` (other value: `agent`); `--tag` / `-T` is repeatable and kebab-case-normalized (`-T resume -T deployment-notes`).
+- `okt comment list TASK_ID` — chronological order, no flags.
+- `okt comment edit COMMENT_ID -b BODY [-T …]` — replaces body and tag set in one call. The submitted `--tag` set **replaces** the old one entirely. Subject to bucket `permissions.comment.edit` (inherits from `permissions.task.edit` when no comment block is declared). Emits `comment.edited`.
+- `okt comment delete COMMENT_ID --confirm` — subject to `permissions.comment.delete` (same inheritance rule). Emits `comment.removed` with the body snapshot. Refuses to run without `--confirm`.
 
 ```sh
 okt comment add 42 -b "Branch: feature/foo" -T self-branch
@@ -297,23 +264,11 @@ okt comment delete 1234 --confirm
 
 ## Dependencies
 
-`internal/cli/depend.go`. Project-scoped, cycle-prevented (`internal/graph/dependency.go:HasCycle`).
+`internal/cli/depend.go`. Project-scoped, cycle-prevented (`internal/graph/dependency.go:HasCycle`). Three subcommands share the same `--on` / `-i` flag (target dependency task id):
 
-### `okt depend add TASK_ID --on DEPENDS_ON_TASK_ID`
-
-| Flag | Required | Effect |
-|---|---|---|
-| `--on`, `-i` | yes | The task this task depends on. |
-
-### `okt depend remove TASK_ID --on DEPENDS_ON_TASK_ID`
-
-| Flag | Required | Effect |
-|---|---|---|
-| `--on`, `-i` | yes | Dependency to remove. |
-
-### `okt depend list TASK_ID`
-
-No flags. Returns dependencies for the task.
+- `okt depend add TASK_ID --on DEP_ID`
+- `okt depend remove TASK_ID --on DEP_ID`
+- `okt depend list TASK_ID` (no flags)
 
 ```sh
 okt depend add 42 --on 41
@@ -372,19 +327,8 @@ To clear an abandoned claim, run `okt assign <task_id>` (no `WHO`) or move the t
 
 `internal/cli/context.go`. Backed by `app.ContextService`.
 
-### `okt context add`
-
-| Flag | Required | Effect |
-|---|---|---|
-| `--body`, `-b` | yes | Context body (free-form markdown). Token-estimated on insert. |
-
-### `okt context dump`
-
-Dumps progressive context under the YAML token budget (`config.context.max_tokens`).
-
-| Flag | Default | Effect |
-|---|---|---|
-| `--level`, `-l` | `2` | `1` = context entries only · `2` adds workflow + tasks + dependencies · `3` adds comments + active laws (`internal/app/context_service.go`). |
+- `okt context add -b BODY` — `--body` required; body is free-form markdown, token-estimated on insert.
+- `okt context dump [-l LEVEL]` — dumps progressive context under the YAML token budget (`config.context.max_tokens`). Levels: `1` = context entries only; `2` (default) adds workflow + tasks + dependencies; `3` adds comments + active laws (`internal/app/context_service.go`).
 
 ```sh
 okt context add -b "Resuming from PR #17"
@@ -481,17 +425,9 @@ Output entries carry `op = added | removed | changed` plus the relevant side val
 
 `internal/cli/config_language.go`. Three subcommands manage the CLI / TUI / agent-output language triple captured at install time. All writes go through the bundle editor (atomic temp-file + rename).
 
-#### `okt config language show`
-
-Reports the resolved triple — what the CLI prints, what the TUI renders, and what the agent uses for natural-language output — plus the kit default and the source of each (default vs. user override).
-
-#### `okt config language set [--cli CODE] [--tui CODE] [--agent FREEFORM] [--global]`
-
-Updates one or more of the three. CLI / TUI codes are validated against the loaded language packs (`internal/config/language.go::LoadLanguages`); unknown codes return `validation_error` with the list of available packs. The agent string is free-form (e.g. `"Português (Brasil)"`) because it is sent verbatim to the LLM. Persisting only the changed slot keeps the other two untouched. `--global` bypasses repo-local discovery and writes the user-global profile.
-
-#### `okt config language reset [--global]`
-
-Clears all three language overrides so the kit defaults apply again. `--global` bypasses repo-local discovery and writes the user-global profile. There is no per-slot reset flag in the current CLI.
+- `okt config language show` — reports the resolved triple, the kit default, and each slot's source (default vs. user override).
+- `okt config language set [--cli CODE] [--tui CODE] [--agent FREEFORM] [--global]` — updates one or more slots. CLI / TUI codes are validated against the loaded language packs (`internal/config/language.go::LoadLanguages`); unknown codes return `validation_error` with the list of available packs. The agent string is free-form (e.g. `"Português (Brasil)"`) because it is sent verbatim to the LLM. `--global` bypasses repo-local discovery and writes the user-global profile.
+- `okt config language reset [--global]` — clears all three overrides so kit defaults apply again. No per-slot reset flag.
 
 ---
 
@@ -515,37 +451,14 @@ Restoring is a manual operation today: stop any running `okt mcp serve` / `okt t
 
 ## Skills
 
-File-backed under `skills/<slug>.md`. `internal/cli/skill.go`. Frontmatter: `name`, `description?` (`internal/config/entity_loader.go:skillFrontmatter`).
+File-backed under `skills/<slug>.md`. `internal/cli/skill.go`. Frontmatter: `name`, `description?` (`internal/config/entity_loader.go:skillFrontmatter`). Run `okt skill <subcommand> --help` for the full flag list.
 
 > `SLUG` arguments accept either the slug **or** the numeric SQLite id (back-compat fallback in `internal/cli/editor.go:resolveSkillSlug`).
 
-### `okt skill list`
-No flags.
-
-### `okt skill show SLUG`
-No flags.
-
-### `okt skill add`
-
-| Flag | Required | Effect |
-|---|---|---|
-| `--name`, `-n` | yes | Display name. |
-| `--key`, `-k` | derived | Slug. Defaults to `Slugify(--name)` when omitted. |
-| `--description`, `-d` | — | Short description. |
-| `--no-edit` | `false` | Skip opening `$EDITOR` on the new file. |
-
-After creating the scaffold, the command opens `$EDITOR` (then `$VISUAL`, then `nano`; resolved by `app.ResolveEditor`) and re-imports the bundle on save, unless `--no-edit` is set.
-
-### `okt skill edit SLUG`
-
-| Flag | Effect |
-|---|---|
-| `--name`, `-n` | Rewrite display name. |
-| `--description`, `-d` | Rewrite description. |
-| `--no-edit` | Apply only flag-driven updates; skip `$EDITOR`. |
-
-### `okt skill remove SLUG`
-No flags. Deletes the file and prunes references in personas (`internal/app/skill_service.go`).
+- `okt skill list` / `okt skill show SLUG` — no flags.
+- `okt skill add` — `--name` required; `--key` defaults to `Slugify(--name)`. After creating the scaffold the command opens `$EDITOR` (then `$VISUAL`, then `nano`; resolved by `app.ResolveEditor`) and re-imports the bundle on save, unless `--no-edit` is set.
+- `okt skill edit SLUG` — flag-driven `--name` / `--description` rewrites; `--no-edit` applies only flag-driven updates and skips `$EDITOR`.
+- `okt skill remove SLUG` — deletes the file and prunes references in personas (`internal/app/skill_service.go`).
 
 ```sh
 okt skill add -n "Go" -d "Idiomatic backend Go"
@@ -557,45 +470,14 @@ okt skill remove go
 
 ## Laws
 
-File-backed under `laws/<slug>.md`. `internal/cli/law.go`. Frontmatter: `name?`, `severity` (`info`/`warning`/`error`).
+File-backed under `laws/<slug>.md`. `internal/cli/law.go`. Frontmatter: `name?`, `severity` (`info`/`warning`/`error`). Run `okt law <subcommand> --help` for the full flag list.
 
 > `SLUG` arguments accept either the slug or the numeric id.
 
-### `okt law list`
-
-| Flag | Effect |
-|---|---|
-| `--scope` | Filter by `global`, `project`, or `persona`. |
-| `--project` | Filter by project slug. |
-| `--persona` | Filter by persona slug. |
-
-### `okt law show SLUG`
-No flags.
-
-### `okt law add`
-
-| Flag | Required | Default | Effect |
-|---|---|---|---|
-| `--key`, `-k` | yes | — | Law slug (kebab-case). |
-| `--name`, `-n` | — | — | Display name (optional). |
-| `--severity`, `-s` | — | `error` | `info`, `warning`, or `error`. |
-| `--body`, `-b` | — | placeholder | Body. Empty triggers the placeholder + `$EDITOR`. |
-| `--scope` | — | `global` | `global`, `project`, or `persona`. |
-| `--project` | when `--scope=project` | — | Project slug owning the law. |
-| `--persona` | when `--scope=persona` | — | Persona slug owning the law. |
-| `--no-edit` | — | `false` | Skip opening `$EDITOR`. |
-
-### `okt law edit SLUG`
-
-| Flag | Effect |
-|---|---|
-| `--name`, `-n` | Rewrite display name. |
-| `--severity`, `-s` | Rewrite severity. |
-| `--body`, `-b` | Rewrite body. |
-| `--no-edit` | Apply only flag-driven updates; skip `$EDITOR`. |
-
-### `okt law remove SLUG`
-No flags. Deletes the file and prunes references.
+- `okt law list` — `--scope` filters by `global` / `project` / `persona`; pair with `--project SLUG` or `--persona SLUG` to narrow further.
+- `okt law show SLUG` / `okt law remove SLUG` — no flags. Removal deletes the file and prunes references.
+- `okt law add` — `--key` required; `--severity` defaults to `error`; `--scope` defaults to `global` and gates a `--project` or `--persona` slug when set to those values. Empty `--body` triggers a placeholder + `$EDITOR`; pass `--no-edit` to skip.
+- `okt law edit SLUG` — flag-driven `--name` / `--severity` / `--body` rewrites; `--no-edit` applies only flag-driven updates.
 
 ```sh
 okt law add -k workflow-enforced -n "Workflow Enforced" -s error
@@ -606,39 +488,13 @@ okt law list --scope persona --persona engineer
 
 ## Personas
 
-File-backed under `personas/<slug>.md`. `internal/cli/persona.go`. Wiring (skill refs) lives in the active profile yaml's `personas:` section.
+File-backed under `personas/<slug>.md`. `internal/cli/persona.go`. Wiring (skill refs) lives in the active profile yaml's `personas:` section. Run `okt persona <subcommand> --help` for the full flag list.
 
 > `SLUG` arguments accept either the slug or the numeric id.
 
-### `okt persona list`
-No flags.
-
-### `okt persona show SLUG`
-No flags. Includes frontmatter, body, and resolved skill refs.
-
-### `okt persona add`
-
-| Flag | Required | Effect |
-|---|---|---|
-| `--name`, `-n` | yes | Display name. |
-| `--key`, `-k` | — | Slug. Defaults to `Slugify(--name)`. |
-| `--description`, `-d` | — | Short description. |
-| `--skill`, `-s` | — | Skill **id** (repeatable: `-s 1 -s 2`). |
-| `--skill-slug` | — | Skill **slug** (repeatable). |
-| `--no-edit` | — | Skip opening `$EDITOR`. |
-
-### `okt persona edit SLUG`
-
-| Flag | Effect |
-|---|---|
-| `--name`, `-n` | Rewrite display name. |
-| `--description`, `-d` | Rewrite description. |
-| `--skill`, `-s` | **Replaces** the skill id set. |
-| `--skill-slug` | **Replaces** the skill slug set. |
-| `--no-edit` | Apply only flag-driven updates; skip `$EDITOR`. |
-
-### `okt persona remove SLUG`
-No flags.
+- `okt persona list` / `okt persona remove SLUG` — no flags.
+- `okt persona show SLUG` — frontmatter, body, and resolved skill refs.
+- `okt persona add` / `okt persona edit SLUG` — flag-driven rewrites. On `add`, `--name` is required and `--key` defaults to `Slugify(--name)`. Skill wiring uses either `--skill` / `-s` (numeric id, repeatable) or `--skill-slug` (slug, repeatable). On `edit`, the submitted skill set **replaces** the existing one entirely.
 
 ```sh
 okt persona add -n "Engineer" --skill-slug go --skill-slug sqlite
@@ -687,13 +543,9 @@ Lists tool/resource/prompt definitions (`mcp.Tools()`, `mcp.Resources()`, `mcp.P
 
 Renders the resolved markdown for every `okt-*` MCP prompt, or one prompt when `name` is supplied. This is the CLI mirror of `prompts/get` and is useful for auditing persona/law/template composition without starting an MCP client.
 
-### `okt mcp call TOOL_NAME`
+### `okt mcp call TOOL_NAME --input JSON`
 
-Calls a tool directly without going through the stdio server. Useful for scripting and testing.
-
-| Flag | Effect |
-|---|---|
-| `--input` | JSON object passed as the tool input (e.g. `'{"task_id":42}'`). |
+Calls a tool directly without going through the stdio server. Useful for scripting and testing. `--input` accepts a JSON object string (e.g. `'{"task_id":42}'`).
 
 ### `okt mcp serve`
 
@@ -701,15 +553,7 @@ Runs the JSON-RPC 2.0 stdio server (`internal/mcp/server.go:Serve`). No flags. S
 
 ### `okt mcp setup`
 
-Writes the `omakiten` MCP server entry into a harness config file (`internal/agentsetup/setup.go`). Mirrors the `--mcp-*` flags exposed by `okt init` but as standalone subcommand flags:
-
-| Flag | Default | Effect |
-|---|---|---|
-| `--harness` | `claude-code` | One of `claude-code`, `claude-desktop`, `opencode`, `crush`, `github-copilot`, `codex` (`internal/agentsetup/setup.go::SupportedHarnesses`). |
-| `--config-path` | harness default | Override the harness config-file path. |
-| `--command` | current executable | Command written into the harness config. |
-| `--dry-run` | `false` | Preview changes without writing. |
-| `--force` | `false` | Replace an existing entry. |
+Writes the `omakiten` MCP server entry into a harness config file (`internal/agentsetup/setup.go`). Mirrors the `--mcp-*` flags exposed by `okt init` but as standalone subcommand flags (`--harness`, `--config-path`, `--command`, `--dry-run`, `--force`). Supported harnesses: `claude-code` (default), `claude-desktop`, `opencode`, `crush`, `github-copilot`, `codex` (`internal/agentsetup/setup.go::SupportedHarnesses`). Run `okt mcp setup --help` for defaults.
 
 ```sh
 okt mcp tools
@@ -741,3 +585,12 @@ Every command writes to stdout one of:
 `code` is one of the constants in `internal/domain/errors.go` (e.g., `validation_error`, `task_not_found`, `workflow_invalid_transition`, `guard_violation`, `dependency_invalid`, `tag_conflict`, `editor_failed`, `config_invalid`). The full list and agent-side guidance is in `.docs/mcp-guide.md` §"Failure Guidance".
 
 A failed command exits with status `1`. JSON minification follows `config.output.json_minified`.
+
+---
+
+## See also
+
+- [`configuration-guide.md`](./configuration-guide.md) — config keys CLI flags override.
+- [`mcp-guide.md`](./mcp-guide.md) — agent equivalent of CLI commands.
+- [`workflow-guide.md`](./workflow-guide.md) — preset CLI workflows.
+- [`surface-policy.md`](./surface-policy.md) — which ops live on CLI only vs all surfaces.
