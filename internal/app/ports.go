@@ -257,12 +257,12 @@ type PlanRepository interface {
 	ListPlanWaves(ctx context.Context, projectID, planID int64) ([]domain.PlanWave, error)
 	ListPlanTasks(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) ([]domain.PlanTaskRow, error)
 	AssignTaskToPlan(ctx context.Context, projectID, taskID, planID, waveID int64) error
-	// ClaimNextPlanTask atomically picks the next unblocked task in the
-	// plan's active wave (lowest-position wave with pending tasks),
-	// moves it from the workflow's first bucket into the second
-	// ("dev"), and stamps tasks.assigned_to with the caller's
-	// _agent_model (resolved from ctx). Returns (task, true) on a
-	// successful claim, (zero, false) when no task is claimable, or
+	// ClaimNextPlanTask atomically picks the next claimable task in the
+	// plan's active wave (active, unassigned, and still in the workflow's
+	// first bucket) and stamps tasks.assigned_to with the caller's
+	// _agent_model (resolved from ctx). The bucket is not moved; callers
+	// must perform the workflow transition separately. Returns (task,
+	// true) on a successful claim, (zero, false) when no task is claimable, or
 	// (zero, false, err) on storage failures. Race safety comes from
 	// BEGIN IMMEDIATE on a pinned connection — concurrent claims
 	// serialise behind the write lock.

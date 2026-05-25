@@ -114,9 +114,10 @@ type ClaimNextPlanTaskInput struct {
 }
 
 // ClaimNextPlanTaskResponse: Claimed is false when no task was available
-// (every wave fully done OR active wave has no first-bucket tasks left).
-// When Claimed=true the Task field carries the post-claim row (bucket
-// already moved into the destination, assigned_to set to the agent).
+// (every wave fully done OR active wave has no unassigned first-bucket
+// tasks left).
+// When Claimed=true the Task field carries the post-claim row with
+// assigned_to set to the agent. Bucket movement is deliberately separate.
 type ClaimNextPlanTaskResponse struct {
 	Project ProjectSummary `json:"project"`
 	Claimed bool           `json:"claimed"`
