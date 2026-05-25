@@ -34,10 +34,13 @@ Schema versions are tracked in `schema_migrations(version)`. Each numbered file 
 | `022_search_index.sql` | Creates the unified FTS5 virtual table `search_index(content, entity_type UNINDEXED, entity_id UNINDEXED, project_id UNINDEXED)` with tokenizer `porter unicode61` and seeds it from the live rows: tasks (title + description), comments (the `events` rows where `event_type='comment'`), errors (description + context), solutions (description + steps), and context entries. Triggers keep the index in sync on insert / update / delete; `solutions` rows derive `project_id` via `errors.error_id`. Backs the unified `search` MCP tool that replaced the legacy `errors.search` path. |
 | `023_plans.sql` | Adds the WBS-style plan catalog. Creates `plans` (id, project_id FK, slug, name, goal_body markdown, status `active`/`done`/`abandoned`, completed_at, `UNIQUE(project_id, slug)`) and `plan_waves` (id, plan_id FK ON DELETE CASCADE, name, position, `UNIQUE(plan_id, position)`). Adds three nullable columns on `tasks`: `plan_id REFERENCES plans(id) ON DELETE SET NULL`, `wave_id REFERENCES plan_waves(id) ON DELETE SET NULL`, and `assigned_to TEXT`. Creates `idx_tasks_plan_wave(plan_id, wave_id)`. Tasks survive plan deletion as standalone work items; deleting a plan cascades its waves but only nulls the task pointers. |
 | `024_search_index_plans.sql` | Extends the FTS5 `search_index` (migration 022) with a sixth content type: `plan` rows indexed as `name + ' ' + goal_body`. Backfills from `plans` and installs three triggers (`search_index_plans_ai`/`au`/`ad`) so the cross-project `search` MCP tool finds plans by name or any phrase in the markdown goal body. |
+| `025_projects_cascade.sql` | Rebuilds project-owned tables so deleting a project cascades through tasks, context entries, project-scoped errors, plans, and dependency rows. Recreates affected FTS triggers and indexes. Events keep a bare `project_id`; the service deletes project-scoped event rows explicitly in the same destructive flow. |
+| `026_tasks_parent_id.sql` | Adds nullable `tasks.parent_id REFERENCES tasks(id) ON DELETE CASCADE` plus `idx_tasks_parent_id`, enabling sub-task trees without backfilling existing rows. |
+| `027_tasks_parent_project_fk.sql` | Adds `BEFORE INSERT` / `BEFORE UPDATE` triggers that reject a `parent_id` pointing at a task in another project (or a missing task), closing the SQL-layer cross-project gap left by the single-column self-FK. |
 
-After 009, three tables that older code referenced (`comments`, `comment_tags`, `activity_logs`) **no longer exist** — every reader/writer goes through `events` (see "The unified events table" below). After 020, nine more tables (`config_bundles`, `settings`, `skills`, `personas`, `persona_skills`, `laws`, `workflows`, `workflow_buckets`, `workflow_transitions`) are also gone — config is YAML-only. Migration 022 adds the FTS5 virtual table `search_index`, which is not a base table — it does not show up in the table count below, but every row inserted into `tasks`, `events` (comments), `errors`, `solutions`, `context_entries`, or `plans` is mirrored into it by trigger. Migration 023 adds `plans` and `plan_waves` (plus three nullable columns on `tasks`); 024 extends the FTS5 index to plan rows.
+After 009, three tables that older code referenced (`comments`, `comment_tags`, `activity_logs`) **no longer exist** — every reader/writer goes through `events` (see "The unified events table" below). After 020, nine more tables (`config_bundles`, `settings`, `skills`, `personas`, `persona_skills`, `laws`, `workflows`, `workflow_buckets`, `workflow_transitions`) are also gone — config is YAML-only. Migration 022 adds the FTS5 virtual table `search_index`, which is not a base table — it does not show up in the table count below, but every row inserted into `tasks`, `events` (comments), `errors`, `solutions`, `context_entries`, or `plans` is mirrored into it by trigger. Migration 023 adds `plans` and `plan_waves` (plus plan/assignment columns on `tasks`); 024 extends the FTS5 index to plan rows; 025 rewires project delete cascades; 026-027 add and scope `tasks.parent_id`.
 
-## Current schema (post-024)
+## Current schema (post-027)
 
 The live schema contains fourteen base tables of operational state plus `schema_migrations` and the `search_index` FTS5 virtual table:
 
@@ -69,6 +72,7 @@ erDiagram
         text title
         int  priority_id "config.priorities id"
         text state "active|archived"
+        int  parent_id FK "nullable, self-FK, ON DELETE CASCADE"
         int  plan_id FK "nullable, ON DELETE SET NULL"
         int  wave_id FK "nullable, ON DELETE SET NULL"
         text assigned_to "nullable, free-text"
@@ -173,7 +177,7 @@ erDiagram
 
 A few invariants the diagram cannot express compactly:
 
-- **Project-scope invariant** for tasks: `tasks(project_id, id)` is a composite unique key, and `task_dependencies` uses dual composite FKs into it — this is what guarantees a dependency can never cross projects.
+- **Project-scope invariant** for tasks: `tasks(project_id, id)` is a composite unique key, and `task_dependencies` uses dual composite FKs into it — this is what guarantees a dependency can never cross projects. Sub-task `parent_id` uses a self-FK for existence plus migration-027 triggers for same-project enforcement.
 - **Cycle prevention** for `task_dependencies` is enforced in software (`internal/graph/dependency.go:HasCycle`), not by the schema.
 - **`tasks.bucket_id`** is an unconstrained `INTEGER` post-020 — there is no FK to a buckets table because no buckets table exists. The application resolves it against the per-project `config.Snapshot.BucketByID` built from YAML on every bundle import. An id Snapshot cannot resolve marks the row as an **orphan** and surfaces through `app.OrphanRepository.PreviewOrphanedTasks` / `RebindOrphanedTasks` (see `.docs/configuration-guide.md` § Orphan-task migration).
 - **`tasks.priority_id`** is similarly unconstrained at the SQL layer. Validation is the bundle validator's job: every `priority_id` written must match an entry in `config.priorities`. Renaming a priority label is a YAML edit; the integer id stored on tasks does not change.
@@ -186,11 +190,11 @@ A few invariants the diagram cannot express compactly:
 
 `id INT PK`, `name`, `slug UNIQUE`, `root_path UNIQUE`, `created_at`, `updated_at`, `archived_at?`.
 
-The active project is resolved by id, slug, or by matching `root_path` to the current working directory (`internal/project/resolver.go`). When a project's `root_path` carries a `.omakiten/` directory, the runtime uses that repo-local SQLite file in place of the global one (`internal/agentruntime/runtime.go`).
+The active project is resolved by id, slug, or by matching `root_path` to the current working directory (`internal/project/resolver.go`). A repo-local `.omakiten/` directory affects config resolution only; the SQLite database remains in the resolved data root (`$OMAKITEN_HOME/data`, `$XDG_DATA_HOME/omakiten`, or `~/.local/share/omakiten`).
 
 ### `tasks`
 
-Post-023 column shape:
+Post-027 column shape:
 
 ```
 id           INTEGER PRIMARY KEY AUTOINCREMENT
@@ -204,7 +208,10 @@ state        TEXT    NOT NULL DEFAULT 'active'
 created_at   TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 updated_at   TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 completed_at TEXT                        -- stamped on transition INTO terminal bucket;
-                                          -- cleared on transition OUT
+                                           -- cleared on transition OUT
+parent_id    INTEGER REFERENCES tasks(id) ON DELETE CASCADE
+                                          -- nullable sub-task parent; triggers enforce
+                                          -- parent.project_id == child.project_id
 plan_id      INTEGER REFERENCES plans(id) ON DELETE SET NULL
 wave_id      INTEGER REFERENCES plan_waves(id) ON DELETE SET NULL
 assigned_to  TEXT                        -- free-text claimant; populated by
@@ -217,6 +224,8 @@ UNIQUE(project_id, id)
 ```
 
 The `UNIQUE(project_id, id)` shape is what lets `task_dependencies` use a composite foreign key to enforce that **dependencies cannot cross projects**.
+
+`parent_id` forms a same-table hierarchy for sub-tasks. The self-FK guarantees the parent exists; the `tasks_parent_project_insert_guard` and `tasks_parent_project_update_guard` triggers added in migration 027 guarantee the parent belongs to the same project as the child. Deleting a parent cascades through its sub-tree at the database layer.
 
 `completed_at` is populated by `WorkflowService.MoveTask` whenever the destination is the workflow's final bucket and cleared when a task leaves the terminal bucket. Existing historical `done` rows are backfilled to `updated_at` once per `BuildProjectRuntime` via `Store.BackfillTaskCompletedAt` (`internal/sqlite/tasks_lifecycle.go`); the backfill is idempotent (zero rows after the first run) and errors are swallowed so a transient SQLite hiccup cannot block runtime composition. Tasks that bounced in/out of `done` lose the original completion moment — best-effort by design.
 
@@ -434,7 +443,7 @@ is sensible as a backfill default.
 
 ## Where to learn more
 
-- Migration sources: `migrations/001_initial.sql` … `migrations/024_search_index_plans.sql`.
+- Migration sources: `migrations/001_initial.sql` … `migrations/027_tasks_parent_project_fk.sql`.
 - Domain types behind every row: `internal/domain/` (`task.go`, `event.go`, `tag.go`, `error_record.go`, `context.go`, `priority_test.go`, `severity_test.go`).
 - Adapter implementations: `internal/sqlite/` (one file per concern — `tasks.go`, `tasks_lifecycle.go` (archive/unarchive/remove), `comments.go`, `dependencies.go`, `events.go`, `tags.go`, `errors.go`, `metrics.go`, `bucket_resolver.go`, `activity_logs.go`, `guards.go`, `contexts.go`, `orphans.go`, `projects.go`, `store.go`).
 - App-level ports the adapter satisfies: `internal/app/ports.go`.

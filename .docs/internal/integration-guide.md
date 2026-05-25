@@ -186,11 +186,11 @@ config:
         timeout_ms: 3000
 ```
 
-The recipe in [`hooks.md` § Recipes](hooks.md#log-every-blocked-delete) shows the matching `jq` extraction.
+The recipe in [`hooks.md` § Recipes](../hooks.md#log-every-blocked-delete) shows the matching `jq` extraction.
 
 ### Disable a hook without deleting it
 
-You can comment the YAML block out, or you can shut the channel gate at `config.events.channels.<event_type>.hook = false`. The latter keeps the hook configured but stops dispatch — useful when you want to A/B a noisy hook without re-editing the array.
+You can comment the YAML block out, or you can shut the channel gate with `config.events.overrides.<event_type>.hook: false`. The latter keeps the hook configured but stops dispatch — useful when you want to A/B a noisy hook without re-editing the array.
 
 ---
 
@@ -199,7 +199,7 @@ You can comment the YAML block out, or you can shut the channel gate at `config.
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | `okt config show` rejects the bundle with `validation_error` and a path like `config.hooks[0].on` | Event type typo — must match a string in [`domain-events.md`](../domain-events.md) | Copy the event name verbatim from the catalog |
-| Hook never fires; nothing in `hook.executed` | (a) Channel gate closed (`config.events.channels.<event_type>.hook` is `false`); (b) `when:` rules out every event; (c) you forgot to restart after editing the YAML | Check the gate first via `okt config show`; `when:` accepts only top-level payload keys; restart the running runtime |
+| Hook never fires; nothing in `hook.executed` | (a) Channel gate closed (`config.events.overrides.<event_type>.hook: false`, or inherited from `defaults.hook: false`); (b) `when:` rules out every event; (c) you forgot to restart after editing the YAML | Check the gate first via `okt config show`; `when:` accepts only top-level payload keys; restart the running runtime |
 | `hook.executed.success = false`, `error: "exec /path/foo failed: …"` | Script exited non-zero or could not run | Run the script manually with the same JSON on stdin: `echo '{}' \| /path/foo` |
 | `hook.executed.error: "exec … timed out after 3s"` | Script crossed `timeout_ms` | Lengthen the timeout, or move the slow part into a background job your script kicks off and returns from |
 | Script gets `argv` placeholders verbatim instead of expansions | `argv` does not run a shell — `~/scripts/foo` is taken literally | Use absolute paths, or `argv: ["/bin/bash", "-c", "your shell expression"]` |
@@ -209,7 +209,7 @@ You can comment the YAML block out, or you can shut the channel gate at `config.
 
 ## Beyond `exec` — adding a custom action
 
-`exec` covers most integrations because the script can do anything. When you genuinely need a Go-native action — for example, talking to an in-process service that does not have a CLI — you implement `hooks.Action` and register it. The full how-to lives in [`hooks.md` § Adding a new action](hooks.md#adding-a-new-action). One file to write, one line in `RegisterBuiltins` to wire, and a table entry in `hooks.md` to document the args contract.
+`exec` covers most integrations because the script can do anything. When you genuinely need a Go-native action — for example, talking to an in-process service that does not have a CLI — you implement `hooks.Action` and register it. The full how-to lives in [`hooks.md` § Adding a new action](../hooks.md#adding-a-new-action). One file to write, one line in `RegisterBuiltins` to wire, and a table entry in `hooks.md` to document the args contract.
 
 ---
 
@@ -217,4 +217,4 @@ You can comment the YAML block out, or you can shut the channel gate at `config.
 
 - [`hooks.md`](../hooks.md) — schema reference, channel-gate semantics, action contract, and the dispatch lifecycle.
 - [`domain-events.md`](../domain-events.md) — full event catalog with payload shapes you can match on.
-- [`configuration-guide.md`](../configuration-guide.md) — the surrounding YAML blocks (`config.events.channels`, `config.activity_log`, etc.) that interact with hook dispatch and persistence.
+- [`configuration-guide.md`](../configuration-guide.md) — the surrounding YAML blocks (`config.events.defaults`, `config.events.overrides`, `config.activity_log`, etc.) that interact with hook dispatch and persistence.
