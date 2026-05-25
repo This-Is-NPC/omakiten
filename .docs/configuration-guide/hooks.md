@@ -312,6 +312,190 @@ see the bare key when a translation is missing. Malformed tokens
 (`${{intl:`, `${{intl:}}`) are left verbatim with a debug-level log
 line; only well-formed `${{intl:KEY}}` is substituted.
 
+## Step-by-step walkthrough — wiring a hook into your workflow
+
+This walkthrough takes you from "I have Omakiten installed" to "a script of mine runs every time event X happens" without writing Go. The canonical action ships in the kit (`exec`) so anything you can run in a shell can react to a task move, a comment, a guard violation, or any other event in `internal/domain/events.go::KnownEventTypes`.
+
+### Prerequisites
+
+- Omakiten installed and at least one project registered. If `okt --version` works and `okt project list` shows your project, you are ready.
+- A shell (bash / zsh / fish — anything that can read a line from stdin).
+- `jq` — used by every example below to read the JSON event payload from stdin. Optional; you can substitute any JSON parser.
+
+### Step 1 — Locate the active profile yaml
+
+See [`path-resolution.md`](path-resolution.md) for the full resolver contract — `$OMAKITEN_HOME` / XDG / OS defaults, `.active` resolution, `custom/` shadowing, and discovery fallthrough.
+
+```bash
+cat "$HOME/.config/omakiten/config/.active"   # prints the active basename (e.g. omakase.yaml)
+okt config validate                            # runs the strict loader against the resolved path
+```
+
+Open the active file in your editor; you will be appending one block. If you want your edits to survive `mise run install` / kit refreshes, copy the file into `<config-dir>/custom/<name>.yaml` first.
+
+### Step 2 — Add a hook block
+
+Hooks live under `config.hooks` as a list. Each entry has three required fields (`on`, `do`, `args`) and one optional filter (`when`). For your first hook, append the block below to log every new comment to a sidecar file:
+
+```yaml
+config:
+  # … your existing config …
+  hooks:
+    - on: comment
+      do: exec
+      args:
+        argv: ["/home/me/scripts/log-comment.sh"]
+        timeout_ms: 3000
+```
+
+Notes:
+
+- `on:` must be one of the event types in `internal/domain/events.go::KnownEventTypes`. Typos fail at startup with a `validation_error` pointing at the bad value, so you cannot configure a hook that silently never fires.
+- `argv` is taken **literally**. No shell expansion — write the absolute path of your script there, not `~/scripts/...`.
+- `timeout_ms` is the deadline for your script. Default is `30000` (30 s); shorter is better for hot-path events.
+
+### Step 3 — Write the script
+
+Make the file executable and have it read one line from stdin (the event JSON). Example:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The engine pipes the entire domain.Event to stdin as a single JSON line.
+read -r event
+
+# Pull the fields you care about. For comments, body lives at .body,
+# the task id at .entity_id, and the project id at .project_id.
+task_id=$(echo "$event" | jq -r '.entity_id')
+body=$(echo "$event" | jq -r '.body')
+ts=$(date -Iseconds)
+
+mkdir -p ~/.local/share/omakiten/sidecar
+printf '%s\ttask=%s\t%s\n' "$ts" "$task_id" "$body" \
+  >> ~/.local/share/omakiten/sidecar/comments.log
+```
+
+Save as `/home/me/scripts/log-comment.sh`, then:
+
+```bash
+chmod +x /home/me/scripts/log-comment.sh
+```
+
+### Step 4 — Restart and verify
+
+The hook bundle loads at startup. Restart whatever is running Omakiten (the TUI, the MCP server, an `okt` command in flight), then trigger the event:
+
+```bash
+okt comment add 1 -b "first hook test"
+```
+
+Check the sidecar:
+
+```bash
+tail -1 ~/.local/share/omakiten/sidecar/comments.log
+# 2026-05-09T17:23:11+00:00  task=1  first hook test
+```
+
+If nothing landed, jump to [Troubleshooting](#troubleshooting).
+
+### Step 5 — Confirm the engine saw the hook
+
+Every dispatch emits a `hook.executed` row through the events store regardless of success. There is no MCP tool that lists raw events by `event_type`; query the SQLite log directly:
+
+```bash
+sqlite3 "$HOME/.local/share/omakiten/omakiten.db" \
+  "SELECT created_at, payload FROM events WHERE event_type = 'hook.executed' ORDER BY id DESC LIMIT 5;"
+```
+
+(swap the DB path for `<project-root>/.omakiten/omakiten.db` when the project is repo-local). The payload tells you which hook fired (`hook_index`), which event triggered it (`target_event_id`), the configured action (`action`), the duration (`duration_ms`), and on failure the captured error (`error`). Use this to tell "the script ran but exited non-zero" apart from "the engine never reached the script".
+
+### Step 6 — Filter events with `when:`
+
+Most useful hooks only care about a slice of an event type. Add a `when:` block to restrict by top-level payload keys (AND across keys, string-equality match):
+
+```yaml
+config:
+  hooks:
+    - on: task.moved
+      when:
+        to: review            # only fire when a task lands in review
+      do: exec
+      args:
+        argv: ["/home/me/scripts/notify-review.sh"]
+```
+
+JSON booleans (`"true"` / `"false"`) and numbers re-serialise through `encoding/json`, so `count: 3` matches a payload `{"count": 3}` without quoting.
+
+If the filter rules out every hook for an event, no `hook.executed` row is emitted — that is by design (`hook.executed` records what happened, not what was tried).
+
+### Step 7 — Production-ready patterns
+
+The examples below cover the cases users hit first. Each builds on Steps 1–6.
+
+#### Wire multiple hooks against the same event
+
+The list under `config.hooks` is order-preserving but the engine spawns each match on its own goroutine — slow scripts do not block fast ones:
+
+```yaml
+config:
+  hooks:
+    - on: task.completed
+      do: exec
+      args:
+        argv: ["/home/me/scripts/sync-to-linear.sh"]
+        timeout_ms: 10000
+    - on: task.completed
+      do: exec
+      args:
+        argv: ["/home/me/scripts/post-to-slack.sh"]
+        timeout_ms: 5000
+```
+
+#### Filter by source / agent_model
+
+`when:` only sees the JSON payload, not the row columns. To branch on `source` (cli / mcp / tui) or `agent_model` (the model id MCP tools carry), read those off stdin in your script:
+
+```bash
+#!/usr/bin/env bash
+read -r event
+src=$(echo "$event" | jq -r '.source')
+model=$(echo "$event" | jq -r '.agent_model')
+[[ "$src" == "mcp" ]] || exit 0          # only act on agent activity
+[[ "$model" == "claude-opus-4-7" ]] || exit 0
+echo "$event" >> ~/agent-events.ndjson
+```
+
+#### Capture every blocked transition
+
+Guard violations emit `guard.violated` with `operation` carrying the move name. Build an audit log of every blocked delete:
+
+```yaml
+config:
+  hooks:
+    - on: guard.violated
+      when: { operation: task.delete }
+      do: exec
+      args:
+        argv: ["/home/me/scripts/log-blocked-delete.sh"]
+        timeout_ms: 3000
+```
+
+#### Disable a hook without deleting it
+
+You can comment the YAML block out, or you can shut the channel gate with `config.events.overrides.<event_type>.hook: false`. The latter keeps the hook configured but stops dispatch — useful when you want to A/B a noisy hook without re-editing the array.
+
+### Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| `okt config show` rejects the bundle with `validation_error` and a path like `config.hooks[0].on` | Event type typo — must match a string in `internal/domain/events.go::KnownEventTypes` | Copy the event name verbatim from the catalog |
+| Hook never fires; nothing in `hook.executed` | (a) Channel gate closed (`config.events.overrides.<event_type>.hook: false`, or inherited from `defaults.hook: false`); (b) `when:` rules out every event; (c) you forgot to restart after editing the YAML | Check the gate first via `okt config show`; `when:` accepts only top-level payload keys; restart the running runtime |
+| `hook.executed.success = false`, `error: "exec /path/foo failed: …"` | Script exited non-zero or could not run | Run the script manually with the same JSON on stdin: `echo '{}' \| /path/foo` |
+| `hook.executed.error: "exec … timed out after 3s"` | Script crossed `timeout_ms` | Lengthen the timeout, or move the slow part into a background job your script kicks off and returns from |
+| Script gets `argv` placeholders verbatim instead of expansions | `argv` does not run a shell — `~/scripts/foo` is taken literally | Use absolute paths, or `argv: ["/bin/bash", "-c", "your shell expression"]` |
+| Hook fires twice on a single action | Two YAML entries match the same event | Tighten `when:` on one of them, or remove the duplicate |
+
 ## Update when
 
 - A new built-in action lands under `internal/hooks/actions/` — add its

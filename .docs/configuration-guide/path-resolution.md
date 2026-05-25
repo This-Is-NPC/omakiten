@@ -153,12 +153,31 @@ The strict snapshot filename pattern (`<yyyy-mm-dd>T<hh-mm-ss.nnnnnnnnn>Z.db`, w
 
 `mise run purge` removes both `~/.config/omakiten` and `~/.local/share/omakiten` (`.mise.toml`); it does not remove rolling snapshots under `~/.local/state/omakiten`. Re-run `okt init` to reseed defaults. Customs under `<entity>/custom/` are also removed by purge — back them up first if you care.
 
+## <a id="dev-env-layout"></a>Dev-env layout (`dev_env/`)
+
+The local development workflow mirrors the production root under `dev_env/`:
+
+```
+<repo>/dev_env/
+├── config/
+├── laws/
+├── skills/
+├── personas/
+├── templates/
+├── themes/
+├── notifications/
+└── languages/
+```
+
+`mise run dev:sync` mirrors `defaults/` into `dev_env/` aggressively (root overwritten, `custom/` left alone). `dev_env/` itself is gitignored (`.gitignore:24`). Tasks that need a clean dev state pull it in differently: `mise run mcp:prompts` `depends = ["dev:sync"]` directly, while `mise run tui` `depends = ["dev:install"]`, which transitively chains `dev:sync` + `build` before running `okt setup` against `dev_env/`.
+
 ## Update when
 
 - `internal/paths/paths.go` adds or changes a path-resolution helper (new env var, new layout shape).
 - `internal/config/repo_local.go` changes the `.omakiten/` walk-up behavior.
 - The `okt config <sub>` surface grows or renames a subcommand.
 - Backup filename pattern or retention semantics shift.
+- A new top-level folder lands under `<root>/` or `dev_env/`.
 
 ## See also
 
