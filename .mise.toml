@@ -191,11 +191,11 @@ description = "Run Go vulnerability scan"
 run = "govulncheck ./..."
 
 [tasks."docs:refresh"]
-description = "Regenerate .docs/_generated/* and rewrite auto-include markers across .docs/ from canonical sources"
+description = "Remove legacy generated docs artifacts and validate the current .docs/ tree"
 run = "go run ./cmd/okt-docs-refresh --root ."
 
 [tasks."docs:check"]
-description = "Fail if .docs/ would change after a regenerate (CI gate)"
+description = "Fail if legacy docs-refresh artifacts are present (CI gate)"
 run = "go run ./cmd/okt-docs-refresh --root . --check"
 
 [tasks.check]
