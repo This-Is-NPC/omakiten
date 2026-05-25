@@ -440,8 +440,15 @@ Violations surface as `guard_violation` with `rule: permissions` and a hint quot
 4. Add tests in `internal/app/workflow_service_test.go` covering pass, fail, and hint passthrough.
 5. Document the new type here.
 
+## Update when
+
+- A new guard type lands in `internal/app/guards/evaluator.go` — add it to [Guard types](#guard-types) with its YAML shape and failure mode.
+- Validator rules change in `internal/config/validator.go::validateWorkflows`.
+- `app.WorkflowService.MoveTask` pipeline reorders or adds a step.
+- `guard.violated` event payload gains/drops a field (source: `internal/domain/events.go`).
+
 ## See also
 
-- [workflow-guide.md](workflow-guide.md) — guards configured per preset.
-- [domain-events.md](domain-events.md) — `guard.violated` event payload.
-- [configuration-guide.md](configuration-guide.md) — `guards:` config key.
+- [workflow.md](../workflow.md) — guards per preset; preset-level conceptual flow.
+- [entities.md § workflows](entities.md#workflows) — full schema for `workflows[]`, including the guard slot wiring.
+- `internal/domain/events.go::KnownEventTypes` — source-of-truth for the `guard.violated` payload.

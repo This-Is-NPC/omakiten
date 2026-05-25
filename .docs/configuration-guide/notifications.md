@@ -350,15 +350,21 @@ it may show the bare key when a translation is missing. Malformed
 tokens (`${{intl:`, `${{intl:}}`) are left verbatim with a debug-level
 log line; only well-formed `${{intl:KEY}}` is substituted.
 
+## Update when
+
+- A new notification slug ships under `defaults/notifications/`.
+- The card schema gains a field (`internal/notifications/loader.go`).
+- The `${{intl:KEY}}` interpolation contract changes.
+- The exclusivity / scroll-routing behaviour shifts in `internal/tui/notifications/`.
+
 ## See also
 
-- [`mcp-guide.md`](mcp-guide.md) — agent-facing tool surface. The
-  `search` and `metrics.summary` tools are useful when wiring a
-  notification body to a query result instead of the raw triggering
+- [`mcp.md`](../mcp.md) — agent-facing tool surface; useful when wiring
+  a notification body to a query result instead of the raw triggering
   payload.
-- [`configuration-guide.md`](configuration-guide.md) — archive
-  lifecycle and CRUD policy that govern which events fire (and which
-  notifications therefore appear).
+- [`hooks.md`](hooks.md) — hook entries that dispatch notifications.
+- [`system.md § config.hooks`](system.md#confighooks) — hook subscription
+  shape that pulls notification cards in.
 
 ## Behaviour notes
 

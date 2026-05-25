@@ -88,8 +88,80 @@ When a `--config` flag points at a yaml file, the resolver derives `<root>` from
 
 `ConfigRootFromYAMLPath` never returns an error. Anywhere else falls back to the parent directory of the yaml file — the caller gets a usable `<root>` even for unrecognized layouts, and downstream resolution (`.active`, entity lookup) decides whether that root is viable.
 
+## Inspecting the active layer — `okt config <sub>`
+
+| Subcommand | Purpose |
+| --- | --- |
+| `okt config init --scope <global\|local> --preset <name> [--force]` | Materialise a complete install (config + entity folders + preset library) into the chosen scope. `--force` re-copies every embedded shipped file; user `custom/` subtrees are never touched. |
+| `okt config show --scope <global\|local>` | Print the raw bytes of the chosen scope's active yaml. |
+| `okt config path --scope <global\|local>` | Print the install root directory (the ConfigRoot for global, the discovered `.omakiten/` for local). |
+| `okt config why <key> [--layer <global\|local>]` | Walk the active config (or a pinned layer) by dotted YAML key path and report `{key, value, source, path}`. Missing keys return `source = "not_set"`. |
+| `okt config diff <left> <right>` | Structural YAML diff between two sources. Operands accept `global`, `local`, `local:<path>`, or any raw yaml file path. Emits one entry per divergent leaf (`added` / `removed` / `changed`). |
+
+## TUI scope badge
+
+Settings › General shows a `scope` row that reads:
+- `global` — runtime is loading the user-global install.
+- `local (<.omakiten path>)` — runtime is loading a discovered repo-local install.
+
+The badge reflects what the loader actually picked, not the discovery candidates. Using `--config <path>` clears the badge to `global` because the explicit flag bypasses walk-up discovery.
+
+## SQLite database
+
+The DB is a single file at `<data-root>/omakiten.db`. Schema migrations are applied transactionally on every connect (`internal/sqlite/store.go:Open`). Source: `internal/paths/paths.go:DataDir`, `DatabaseFile`. The data root is `$OMAKITEN_HOME/data/`, `$XDG_DATA_HOME/omakiten/`, or `~/.local/share/omakiten/` in precedence order.
+
+## Profiles (advanced)
+
+Multiple yaml profiles can coexist under `<root>/config/`; `<root>/config/.active` names the active one and the TUI Settings › Config picker writes it. See [`.active` resolution](#active-resolution) above for the full custom-before-root, alphabetical fallthrough order.
+
+## Backups
+
+Everything Omakiten persists is on the local filesystem. Config, data, and recoverable state are separate paths:
+
+```sh
+# Config (yaml + markdown entities + YAML assets + custom overrides)
+cp -a "${OMAKITEN_HOME:-$HOME/.config/omakiten}" /backup/omakiten-config
+
+# Data (SQLite) when OMAKITEN_HOME is unset.
+cp -a "${XDG_DATA_HOME:-$HOME/.local/share}/omakiten" /backup/omakiten-data
+
+# Recoverable state (rolling DB snapshots) when OMAKITEN_HOME is unset.
+cp -a "${XDG_STATE_HOME:-$HOME/.local/state}/omakiten" /backup/omakiten-state
+
+# Data + recoverable state when OMAKITEN_HOME is set.
+cp -a "$OMAKITEN_HOME/data" /backup/omakiten-data
+cp -a "$OMAKITEN_HOME/state" /backup/omakiten-state
+```
+
+The DB file can be copied while `okt` is not running. For the product-supported snapshot path, use `okt db backup`; it performs an atomic file copy and is the only backup flow Omakiten wraps in CLI/TUI behavior today. There is no concurrent multi-writer story — the tool is single-user, single-process by design.
+
+### Rolling snapshots — `okt db backup`
+
+The in-binary `okt db backup` writes the live SQLite file to a timestamped snapshot under `$XDG_STATE_HOME/omakiten/backups/<utc-iso>.db` (defaults to `~/.local/state/omakiten/backups/`; under `$OMAKITEN_HOME`, `$OMAKITEN_HOME/state/backups/`). The copy is atomic (tmp + rename) and prunes older snapshots according to `config.backup.retention_count`:
+
+```yaml
+config:
+  backup:
+    retention_count: 5   # keep the 5 newest snapshots; 0 disables prune
+```
+
+Every destructive command — `okt projects delete`, `okt update`, the TUI Home `d`+`d` confirm — runs the same routine before mutating state. Backup failure aborts the destructive flow with a coded error; the snapshot is the recovery artefact you reach for if the cascade went further than expected. `okt uninstall` does NOT auto-backup (uninstall removes user-owned data by intent); run `okt db backup` first if you want a snapshot to keep.
+
+The strict snapshot filename pattern (`<yyyy-mm-dd>T<hh-mm-ss.nnnnnnnnn>Z.db`, with the nanosecond suffix optional for older files) means manual `.db` files you drop in the same directory are ignored by the prune pass — only files matching the pattern are rotated.
+
+## Resetting
+
+`mise run purge` removes both `~/.config/omakiten` and `~/.local/share/omakiten` (`.mise.toml`); it does not remove rolling snapshots under `~/.local/state/omakiten`. Re-run `okt init` to reseed defaults. Customs under `<entity>/custom/` are also removed by purge — back them up first if you care.
+
+## Update when
+
+- `internal/paths/paths.go` adds or changes a path-resolution helper (new env var, new layout shape).
+- `internal/config/repo_local.go` changes the `.omakiten/` walk-up behavior.
+- The `okt config <sub>` surface grows or renames a subcommand.
+- Backup filename pattern or retention semantics shift.
+
 ## See also
 
-- [`integration-guide.md`](../internal/integration-guide.md) — wiring hooks against a resolved profile.
-- [`configuration-guide.md`](../configuration-guide.md) — yaml field reference.
-- `internal/paths/paths.go`, `internal/config/repo_local.go` (project-local discovery), and `internal/config/loader.go` — implementation.
+- [system.md](system.md) — `config.backup` retention knob and other runtime config.
+- [project-overrides.md](project-overrides.md) — per-project layering (the architecture above the on-disk layout).
+- `internal/paths/paths.go`, `internal/config/repo_local.go`, `internal/config/loader.go` — implementation.

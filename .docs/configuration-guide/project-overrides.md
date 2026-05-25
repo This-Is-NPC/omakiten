@@ -1,14 +1,21 @@
-# Per-project Snapshot architecture
+# Project overrides — per-project bundles and snapshot layering
 
-Authoritative reference for how Omakiten holds a project's configuration
-in memory and serves it to every dispatch path. Captures the
+Authoritative reference for how Omakiten layers configuration per
+project: how `.omakiten/` is discovered, how each project gets its own
+immutable `*config.Snapshot` in memory, and how hot-reload swaps a
+fresh pointer without poisoning in-flight calls. Captures the
 architectural shape #117 (Phase 2-bis) settled on and the drift from
 #110 that motivated it.
 
-Audience: contributors editing the agent runtime, the SQL adapter, or
-any service that reads workflow shape / catalogs / settings. Reading
-this file before changing those paths prevents reverting accidentally
-to the shared-singleton model the migration retired.
+Audience: configurators wanting to override defaults for a single
+project, and contributors editing the agent runtime, the SQL adapter,
+or any service that reads workflow shape / catalogs / settings.
+Reading this file before changing those paths prevents reverting
+accidentally to the shared-singleton model the migration retired.
+
+For ConfigRoot precedence and the on-disk layout, see
+[path-resolution.md](path-resolution.md). For top-level config
+knobs, see [system.md](system.md).
 
 ## TL;DR
 
@@ -415,7 +422,14 @@ new copy.
   `CollideError`, `CollideKeepFirst`). Collapsed three inline dedup
   loops (entity_loader, language, notification_loader).
 
+## Update when
+
+- `internal/config/snapshot.go` gains a new accessor, a new derived field, or changes the immutability contract.
+- `agentruntime.BundleCache` / `ProjectRuntime` adds a field or changes its rotation semantics.
+- A new invariant or anti-pattern is added/dropped during a future refactor.
+- Migrations 022+ change the SQL adapter scope (further table drops, FTS schema shifts).
+
 ## See also
 
-- [Configuration guide](../configuration-guide.md) — per-project config layering.
-- [Path resolution](../reference/path-resolution.md) — bundle path resolution order.
+- [system.md](system.md) — runtime config knobs each project resolves through Snapshot.
+- [path-resolution.md](path-resolution.md) — ConfigRoot precedence and `.omakiten/` walk-up.

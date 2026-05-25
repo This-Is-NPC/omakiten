@@ -207,6 +207,12 @@ A first PR that translates only the CLI surface is fine. The remaining keys stil
 
 That is the entire mechanism. No Go code changes are required to add a new bundled language — just the YAML file and (optionally) a refresh of any cross-referencing doc.
 
+## Update when
+
+- A new bundled pack lands under `defaults/languages/` — add it to [What ships today](#what-ships-today).
+- The parity rule, scaffold helper, or filename convention changes (`internal/config/language_pack_parity_test.go`, `scripts/new-language-pack.sh`).
+- The translation conventions (preserve primitives, notification voice) evolve.
+
 ## See also
 
-- [Configuration guide](configuration-guide.md) — `language:` key and locale pack loading.
+- [system.md § config.languages](system.md#configlanguages) — top-level wiring of CLI / TUI / agent-output language selection.

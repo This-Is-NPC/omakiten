@@ -312,14 +312,26 @@ see the bare key when a translation is missing. Malformed tokens
 (`${{intl:`, `${{intl:}}`) are left verbatim with a debug-level log
 line; only well-formed `${{intl:KEY}}` is substituted.
 
+## Update when
+
+- A new built-in action lands under `internal/hooks/actions/` — add its
+  args contract to **Built-in actions**.
+- `internal/domain/events.go::KnownEventTypes` gains or drops an event
+  type — sync the `on:` subscriber list and event-payload shape.
+- The hook action registry adds a registration hook or a new validation
+  pass at composition-root time.
+
 ## See also
 
-- [`mcp-guide.md`](mcp-guide.md) — agent-facing tool surface. The
-  `search` and `metrics.summary` tools are useful for hook payloads that
-  enrich themselves with project state before dispatching.
-- [`configuration-guide.md`](configuration-guide.md) — archive
-  lifecycle and CRUD policy that govern which events fire (and which
-  hooks therefore have a chance to run).
+- [`mcp.md`](../mcp.md) — agent-facing tool surface. The `search` and
+  `metrics.summary` tools are useful for hook payloads that enrich
+  themselves with project state before dispatching.
+- [`system.md § config.hooks`](system.md#confighooks) — wiring shape
+  in the active profile yaml.
+- [`notifications.md`](notifications.md) — notification cards a hook
+  can dispatch via `notification: <slug>`.
+- `internal/domain/events.go::KnownEventTypes` — canonical list of
+  domain events a hook may subscribe to.
 
 ## Adding a new action
 
