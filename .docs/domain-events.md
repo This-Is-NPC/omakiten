@@ -37,11 +37,11 @@ referencing values outside it.
 | `task.assigned`       | task                    | `TaskService.Assign` with non-empty `who`, or `PlanService.ClaimNext` on the claiming agent | `{task_id, assigned_to}`                                       | cli / mcp / tui   | true (reliably published from every path as of fix `5b25db6` / 2026-05-24; the `plans.claim_next` success path previously inserted the events row but skipped `publishEvent`, so subscribers missed claims until the next refresh) |
 | `task.unassigned`     | task                    | `TaskService.Assign` with empty `who`, or transition OUT of `dev` clears the field | `{task_id, prior_assigned_to}`                                | cli / mcp / tui   | true        |
 | `project.removed`     | project                 | `ProjectService.Delete` after a successful cascade            | `{slug, name, counters:{tasks, comments, plans, tags, activity_log_entries}, backup_path}`; `entity_id` is the just-deleted project id, `project_id` column is NULL (the project is gone) | cli / tui         | true        |
-| `plan.created`        | plan                    | `PlanService.Create`                                          | `{plan_id, slug, name}`                                        | cli / mcp / tui   | true        |
-| `plan.wave_added`     | plan                    | `PlanService.AddWave`                                         | `{plan_id, wave_id, name, position}`                           | cli / mcp / tui   | true        |
-| `plan.goal_edited`    | plan                    | `PlanService.EditGoalBody`                                    | `{plan_id, body:{from,to}}`                                    | cli / mcp / tui   | true        |
-| `plan.done`           | plan                    | Auto-emitted when the last child task closes (terminal bucket) | `{plan_id, slug}`                                              | system            | true        |
-| `plan.abandoned`      | plan                    | Explicit `PlanService.Abandon`                                | `{plan_id, slug}`                                              | cli / mcp / tui   | true        |
+| `plan.created`        | plan                    | `PlanService.Create`                                          | `{slug, name, project_id}` (the plan id is the envelope `entity_id`, not a payload field) | cli / mcp / tui   | true        |
+| `plan.wave_added`     | plan                    | `PlanService.AddWave`                                         | `{wave_id, name, position}` (entity_id is the plan id)         | cli / mcp / tui   | true        |
+| `plan.goal_edited`    | plan                    | `PlanService.EditGoalBody`                                    | `{length}` (new goal body length in bytes; the old/new text is intentionally not copied into the payload) | cli / mcp / tui   | true        |
+| `plan.done`           | plan                    | Auto-emitted when the last child task closes (terminal bucket) | `{total}` (count of finalised tasks at the moment of transition) | system            | true        |
+| `plan.abandoned`      | plan                    | _Reserved — constant is declared in `internal/domain/event.go` and registered in `KnownEventTypes`, but no emitter exists yet (no `PlanService.Abandon` ships in this build)._ | _n/a (not emitted)_                                            | _n/a_             | _n/a_       |
 | `tag.added`           | task / project / error  | `TagService.Add`                                              | `{entity_type, entity_id, tag_id, tag_name}`                   | cli / mcp / tui   | **false**   |
 | `tag.removed`         | task / project / error  | `TagService.Remove`                                           | `{entity_type, entity_id, tag_id, tag_name}`                   | cli / mcp / tui   | **false**   |
 | `dependency.added`    | task (the dependent)    | `DependencyService.Add`                                       | `{depends_on_task_id}`                                         | cli / mcp / tui   | true        |
@@ -71,7 +71,8 @@ referencing values outside it.
 ## Schema policy
 
 Every event row populates the canonical columns from
-`internal/sqlite/migrations/*` (`events` table). Different event types
+`migrations/*` (`events` table; the migrations folder lives at the
+repo root, not under `internal/sqlite/`). Different event types
 fill different subsets:
 
 - `body` — comment text (only for `event_type='comment'`); empty for
@@ -95,9 +96,9 @@ are expected to honor the contracts; future work may add typed decoders.
 ```json
 {
   "operation":   "<task.transition | task.archive | task.delete | task.unarchive | task.edit | comment.edit | comment.delete>",
-  "rule":        "<transition_not_allowed | permissions | blockers_in | comments_min | comments_tagged | wave_gate | (any user-defined guard.Type)>",
+  "rule":        "<transition_not_allowed | permissions | blockers_in | comments_min | comments_tagged | wave_gate | subtasks_complete | (any user-defined guard.Type)>",
   "hint":        "<rendered guard message — same string returned in domain.ErrGuardViolation.Message>",
-  "target":      { "task_id": 123, "from_bucket": "review", "to_bucket": "done" },
+  "target":      { "task_id": 123, "from_bucket_id": 4, "to_bucket_id": 7, "to_bucket": "done" },
   "attempted_by": "user | agent"
 }
 ```

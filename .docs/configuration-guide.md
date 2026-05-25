@@ -918,7 +918,11 @@ config:
   context:   { default_level: 2, max_tokens: 12000 }
   workflow:  { active: omakase }
   theme:     { active: omakiten }
-  template_defaults: [task, pr, comment-resume, comment-selfbranch]
+  # template_defaults declares the kinds the user can assign in the TUI
+  # picker. Each loaded template can claim at most one (kind, project) pair
+  # via its frontmatter (`default: <kind>`, optional `project: <slug>`).
+  # Defaults below match the canonical Omakiten kit; tweak as needed.
+  template_defaults: [task, pr, comment-resume, comment-selfbranch, comment-documentation]
   views:
     board: { sort: { field: created_at, order: desc }, filter: { priority: [high, normal] } }
     table: { sort: { field: title,      order: asc  } }

@@ -110,7 +110,7 @@ No fields beyond `type` and `hint`. The wave order is read from `plan_waves.posi
 - Otherwise counts tasks in waves with `position < currentWave.position` whose `bucket_id` is not the workflow's final bucket.
 - Fails with `guard_violation`, `rule="wave_gate"`, and `details.pending = N` when any prior-wave task is still in flight.
 
-The wave-gate edges themselves are not rendered in the network diagram (`internal/tui/plan_network.go`) — the guard is invisible by design so the diagram stays focused on intra/cross-wave dependency arrows.
+The wave-gate edges themselves are not rendered in the network diagram (`internal/tui/render_plan_network.go`) — the guard is invisible by design so the diagram stays focused on intra/cross-wave dependency arrows.
 
 ### `subtasks_complete`
 
@@ -152,6 +152,10 @@ If you want both checks to be visible at once, split them across two stricter tr
 `hint` is free-form text. When a guard fails, the hint is appended to the error message after `". Hint: "` and also returned in `details.hint`. It is the canonical place to tell the operator/agent how to remediate — e.g. which tag to apply, where to add the comment, which task to move first.
 
 Empty/missing `hint` is fine; the error stays terse.
+
+### Hint resolution: `${{intl:KEY}}` tokens
+
+Hints support `${{intl:KEY}}` substitution so presets can keep copy in the i18n catalog instead of inlining language per guard. Expansion runs in `internal/app/guards/evaluator.go:212-217` (`resolveHint`) via `Snapshot.ResolveGuardHint` → `Catalog(SurfaceCLI).Resolve` (`internal/config/catalog.go:88`). Lookup hits the active catalog first, then baseline (`internal/config/catalog.go:58`); a missing key returns the key literal verbatim and logs at debug level — guard evaluation never fails on a missing token. Resolution is single-pass (catalog values are not re-scanned), unknown namespaces stay verbatim, and `$${{intl:KEY}}` escapes to a literal `${{intl:KEY}}`. Empty `hint` short-circuits before any catalog call.
 
 ## Validation rules (parse-time)
 

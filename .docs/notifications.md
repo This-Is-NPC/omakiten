@@ -331,6 +331,35 @@ Copy any default into `notifications/custom/<your-slug>.yaml`, change `name:` to
 match the new filename, tweak frames, and reference the slug from a new
 `config.hooks` entry in the active profile yaml.
 
+## Guard hints and i18n
+
+Guard hint strings reaching a notification payload (`event.payload.hint`
+on `guard.violated`, surfaced via `message_field: hint` or
+`detail_message_field: hint`) may embed `${{intl:KEY}}` tokens so preset
+YAMLs keep hint copy in the locale catalog instead of inlining a single
+language. `resolveHint` in `internal/app/guards/evaluator.go:212`
+expands the tokens against the active i18n catalog via
+`Snapshot.ResolveGuardHint` before the violation event is emitted, so
+the notification always renders the resolved string.
+
+Fallback chain when a key is absent: active locale → baseline locale →
+**literal key text**. `Catalog.Get` returns the key verbatim and logs
+at debug level (`catalog: key missing from active and baseline;
+returning key literal`) — the card never displays an empty bubble, but
+it may show the bare key when a translation is missing. Malformed
+tokens (`${{intl:`, `${{intl:}}`) are left verbatim with a debug-level
+log line; only well-formed `${{intl:KEY}}` is substituted.
+
+## See also
+
+- [`mcp-guide.md`](mcp-guide.md) — agent-facing tool surface. The
+  `search` and `metrics.summary` tools are useful when wiring a
+  notification body to a query result instead of the raw triggering
+  payload.
+- [`configuration-guide.md`](configuration-guide.md) — archive
+  lifecycle and CRUD policy that govern which events fire (and which
+  notifications therefore appear).
+
 ## Behaviour notes
 
 - Notifications are **opt-in**: an empty `config.hooks` block ships

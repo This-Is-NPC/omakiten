@@ -333,6 +333,27 @@ Destructive verbs live inside the entered surface only — the board has no `d` 
 | `d` `d` | arm hard-delete the task, then confirm (form-column focus only; gated by `permissions.task.delete` and `operations.delete.guards`) |
 | `esc` | back |
 
+### Sub-tasks panel (inside Task view)
+
+The task view always renders three panels — task details on the left, sub-tasks and activity stacked on the right (side-by-side layout) or cascaded below the form (stacked layout). The sub-tasks panel lists the direct children of the focused task; pressing `enter` on a child drills into it, pushing the current task onto an ancestor stack so `esc` unwinds one level at a time.
+
+The keymap below is active whenever the task view is open. `j`/`k` route to whichever column owns focus (`tab` flips between form and sub-tasks; `J`/`K` always reach the activity feed regardless of focus).
+
+| Key | Action |
+|---|---|
+| `tab` · `shift+tab` | switch focus (form ⇄ sub-tasks ⇄ activity) |
+| `a` · `n` | add sub-task (opens the task form pre-attached to the current task as parent) |
+| `s` | focus the sub-tasks panel (no-op with status hint when the task has no children) |
+| `j` · `k` | move cursor inside the focused sub-tasks panel |
+| `g` · `G` · `home` · `end` | first / last child |
+| `space` | send the focused child straight to the workflow's final bucket (guards still fire; errors surface inline) |
+| `enter` | drill into the focused child (becomes the new task view; `esc` pops back) |
+| `f` | open the dedicated description overlay for the focused task |
+
+`f` is wired to the **parent task's** description, not the focused child — it surfaces the body when the inline form column truncates after `taskDescriptionInlineCap` lines (the elision hint reads `+N more · f to focus`). To read a child's description, `enter` into it first.
+
+The `Parent` field on the task form (§E, last in the `Title → Description → Priority → Tags → Parent` rotation) holds the parent task id as a decimal — empty means root. The field is pre-filled from `tasks.parent_id` on edit, captured into `taskEditInitial` so `esc` can detect a dirty edit without re-querying the store, and validated on blur via `validateParentInputOnBlur` (rotation through `cycleTaskField`). Creating a sub-task through `a` / `n` instead routes through `TaskService.AddSub` with `taskCreateParentID` held out-of-band and rendered as a breadcrumb in the form header.
+
 ### Comment view (after `enter` on a comment)
 
 | Key | Action |

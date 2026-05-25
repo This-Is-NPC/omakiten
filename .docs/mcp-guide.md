@@ -110,7 +110,7 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `comments.list` | Lists task comments. |
 | `comments.edit` | Rewrites a comment's body and replaces its tags. Subject to bucket `permissions.comment.edit` (inherits from `permissions.task.edit` when no comment block is declared). |
 | `comments.delete` | Hard-deletes a comment. Subject to bucket `permissions.comment.delete` (same inheritance rule). Requires `confirmed=true`. |
-| `task_activity.list` | Unified chronological feed for a task (comments + system events such as `task.created`, `task.moved`, `task.completed`, `task.archived`, `task.unarchived`, `task.migrated`, `task.removed`, `comment.edited`, `comment.removed`); supports `order=asc\|desc`. |
+| `task_activity.list` | Unified chronological feed for a task (comments + system events such as `task.created`, `task.moved`, `task.completed`, `task.archived`, `task.unarchived`, `task.migrated`, `task.removed`, `task.assigned`, `task.unassigned`, `comment.edited`, `comment.removed`); supports `order=asc\|desc`. |
 
 ### Dependencies
 
@@ -344,7 +344,7 @@ Ambiguous or destructive operations return `requires_confirmation` instead of mu
 
 Domain errors are mapped to compact coded failures with next-step guidance (`internal/agent/errors.go:guidanceForCode`). Codes currently defined in `internal/domain/errors.go`:
 
-`config_invalid`, `project_not_found`, `project_ambiguous`, `task_not_found`, `workflow_invalid_transition`, `bucket_not_found`, `dependency_invalid`, `validation_error`, `law_not_found`, `skill_not_found`, `persona_not_found`, `skill_referenced`, `editor_failed`, `tag_not_found`, `tag_conflict`, `guard_violation`, `error_not_found`, `solution_not_found`.
+`config_invalid`, `config_too_large`, `project_not_found`, `project_ambiguous`, `task_not_found`, `workflow_invalid_transition`, `bucket_not_found`, `dependency_invalid`, `validation_error`, `law_not_found`, `skill_not_found`, `persona_not_found`, `skill_referenced`, `editor_failed`, `editor_not_found`, `tag_not_found`, `tag_conflict`, `guard_violation`, `error_not_found`, `solution_not_found`, `plan_not_found`, `plan_slug_conflict`, `plan_wave_not_found`, `uninstall_failed`, `update_failed`.
 
 ## Per-project routing
 

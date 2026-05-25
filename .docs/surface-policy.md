@@ -24,6 +24,15 @@ Operations that fail none of those checks default to the standard CLI + TUI + MC
 
 `✓` = surface owns this operation. `✗` = explicitly out of scope for this surface.
 
+`tasks.delete` and `comments.delete` are exposed on all three surfaces (adapter.go registers them as MCP tools) but are not unconditional: each call passes through bucket-level permissions and operation guards before any rows move.
+
+## Bucket permissions and operation guards
+
+Surface availability is only the outer gate. Mutating tools also flow through two YAML-declared checks evaluated by `internal/app/guards/evaluator.go`:
+
+- **Bucket permissions** — `permissions.task.edit`, `permissions.task.delete`, `permissions.comment.edit`, and `permissions.comment.delete` resolve against the task's current bucket (falling through to `workflow.defaults`, then to an implicit `true`). The default kit allows `tasks.edit` only in the planning bucket; deletes inherit the same shape unless declared separately.
+- **Operation guards** — `operations.delete.guards`, `operations.archive.guards`, and `operations.unarchive.guards` run guard specs (`blockers_in`, `comments_min`, `comments_tagged`, `wave_gate`, `subtasks_complete`) before the operation commits. Archive and unarchive bypass bucket permissions and transition guards but still honour these operation guards; deletes pay both tolls. Violations emit a `guard.violated` event tagged `attempted_by=agent` for MCP traffic.
+
 ## Backup safety net
 
 Every operation tagged "irreversible" in the table above runs `app.BackupService` before mutating state when the flow owns project data (`projects.delete`; `update` runs the same snapshot routine before swapping the binary). `uninstall` is intentionally opt-in for backups because it removes user-owned state by request; run `okt db backup` first when you want a retained snapshot. The snapshot lands under `$XDG_STATE_HOME/omakiten/backups/<utc-iso>.db` with the retention count from `config.backup.retention_count` (default 5). Backup failure aborts the destructive flow before any rows or files are touched.

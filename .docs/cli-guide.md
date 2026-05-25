@@ -129,7 +129,7 @@ okt init --slug acme --enable-mcp --mcp-harness opencode --mcp-dry-run
 okt init --preset kaiseki --name Acme --slug acme
 ```
 
-Official presets are flat YAML starter files in `defaults/config/`: `omakase.yaml` (the canonical kit; full config + workflow), `izakaya.yaml`, `kaiseki.yaml`, and `shokunin.yaml`. Applying one writes only `.omakiten/config/<preset>.yaml` and points `.omakiten/config/.active` at it; the resolver finds it on the next invocation.
+Official presets are flat YAML starter files in `defaults/config/`: `omakase.yaml` (the canonical kit; full config + workflow), `izakaya.yaml`, `kaiseki.yaml`, and `shokunin.yaml`. Applying one invokes `config.SeedInstall`, which materialises the full install under `.omakiten/`: the preset YAML, `.active`, and every default entity (skills, laws, personas, templates, themes, notifications) for that preset; the resolver finds it on the next invocation.
 
 ---
 

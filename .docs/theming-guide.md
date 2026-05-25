@@ -6,7 +6,7 @@ The active theme key is `config.theme.active` in the active profile yaml.
 
 ## Resolution order
 
-When the TUI starts, the theme path is resolved in this order (`internal/cli/tui.go:loadActiveThemeFromBundle`):
+When the bundle loads, the theme path is resolved in this order by `internal/config/theme_loader.go:resolveActiveTheme` (invoked from `internal/config/loader.go:LoadBundle`):
 
 1. `<config-root>/themes/custom/<active>.yaml` — user override (preferred when present).
 2. `<config-root>/themes/<active>.yaml` — default kit.
