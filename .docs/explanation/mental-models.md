@@ -1,6 +1,6 @@
 # Mental Models
 
-The frameworks every Omakiten preset assumes you have in your head. Each section has a stable anchor — link from other docs as `[INVEST](./explanation/mental-models.md#invest)`.
+The frameworks every Omakiten preset assumes you have in your head. Each section has a stable anchor — link from `.docs/*.md` files as `[INVEST](./explanation/mental-models.md#invest)`, from nested docs as `[INVEST](../explanation/mental-models.md#invest)`, or from this folder as `[INVEST](./mental-models.md#invest)`.
 
 ## <a id="pdca"></a>PDCA — Plan-Do-Check-Act
 
