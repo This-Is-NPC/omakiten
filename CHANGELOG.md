@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.2](https://github.com/This-Is-NPC/omakiten/compare/v0.20.1...v0.20.2) (2026-05-25)
+
+
+### Bug Fixes
+
+* restructure documentation tree ([#82](https://github.com/This-Is-NPC/omakiten/issues/82)) ([81176bc](https://github.com/This-Is-NPC/omakiten/commit/81176bc726856db3f2ce70d7408419cd22dfde7a))
+
 ## [0.20.1](https://github.com/This-Is-NPC/omakiten/compare/v0.20.0...v0.20.1) (2026-05-24)
 
 
