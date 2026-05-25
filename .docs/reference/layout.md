@@ -92,7 +92,7 @@ The local development workflow mirrors the production root under `dev_env/`:
 └── languages/
 ```
 
-`mise run dev:sync` mirrors `defaults/` into `dev_env/` aggressively (root overwritten, `custom/` left alone). Tasks that need a clean dev state (`mise run mcp:prompts`, `mise run tui`) `depends = ["dev:sync"]` first.
+`mise run dev:sync` mirrors `defaults/` into `dev_env/` aggressively (root overwritten, `custom/` left alone). `dev_env/` itself is gitignored (`.gitignore:24`). Tasks that need a clean dev state pull it in differently: `mise run mcp:prompts` `depends = ["dev:sync"]` directly, while `mise run tui` `depends = ["dev:install"]`, which transitively chains `dev:sync` + `build` before running `okt setup` against `dev_env/`.
 
 ## See also
 
