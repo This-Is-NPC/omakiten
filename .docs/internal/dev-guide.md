@@ -60,14 +60,14 @@ Every task is defined in `.mise.toml` at the repo root. Run with `mise run <name
 
 | Task | What it does |
 |---|---|
-| `install` | `build` → installs `bin/okt` to `$HOME/.local/bin/okt`, syncs `defaults/` into `$HOME/.config/omakiten`, then runs `okt setup` (the same bubbletea picker `curl\|bash` users get; honours every `OKT_*` env var). Finishes with `okt init` against the repo. |
+| `install` | `build` → installs `bin/okt` to `$HOME/.local/bin/okt`, syncs `defaults/` into `$HOME/.config/omakiten`, then runs `okt setup --update` (the same bubbletea picker `curl\|bash` users get; honours every `OKT_*` env var). The `--update` flag is load-bearing — it force-refreshes shipped defaults so repeat runs pick up edits under `defaults/` instead of silently keeping the pre-install copy on disk. Finishes with `okt init` against the repo. |
 | `install:mcp:claude` | `build` → wires the local `bin/okt` into Claude Code's MCP config (`~/.claude.json`). |
 | `install:mcp:claude-desktop` | Same, for Claude Desktop. |
 | `install:mcp:opencode` | Same, for OpenCode. |
 | `uninstall` | Removes `~/.local/bin/okt` and the shell wrapper. **Does not** touch config or data. |
 | `purge` | Wipes `~/.config/omakiten` and `~/.local/share/omakiten`. Use after `uninstall` for a fresh-machine simulation. |
 | `dev:sync` | Mirrors `defaults/` into `dev_env/` (overwrites root, leaves `dev_env/custom/`). |
-| `dev:install` | `dev:sync` + builds `bin/okt` and runs `okt init` against the dev-env so the binary works against `OMAKITEN_HOME=dev_env` without touching real state. |
+| `dev:install` | `dev:sync` + builds `bin/okt` and runs `okt setup --skip-wrapper --skip-harnesses` against the dev-env so the binary works against `OMAKITEN_HOME=dev_env` without touching real state. |
 | `tui` | Runs the TUI against an isolated `dev_env/` (`OMAKITEN_HOME=dev_env`) — useful for trying changes without touching your real Omakiten state. Depends on `dev:install`. |
 | `mcp:prompts` | Resolves every `okt-*` MCP prompt against the dev-env bundle and prints the composed markdown — handy for previewing what an agent receives without an MCP client. Depends on `dev:sync`. |
 

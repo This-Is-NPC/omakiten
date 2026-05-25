@@ -26,7 +26,9 @@ to the shared-singleton model the migration retired.
 - The SQL adapter (`*sqlite.Store`) is back to operational state only:
   `tasks`, `events` (with `event_tags`), `task_dependencies`, `tags`
   (with `task_tags` / `project_tags` / `error_tags`), `errors`,
-  `solutions`, `context_entries`. Migration 009 folded `comments` and
+  `solutions`, `context_entries`, `plans`, `plan_waves` (added by
+  `migrations/023_plans.sql`; service layer in
+  `internal/sqlite/plans.go`). Migration 009 folded `comments` and
   `activity_logs` into `events`; migration 020 dropped every config
   table; migration 022 adds the FTS5 `search_index` virtual table behind
   the unified `search` MCP tool — populated by triggers off the base
@@ -58,8 +60,14 @@ to the shared-singleton model the migration retired.
             │ agentruntime.ProjectRuntime[projectID] │
             │   ├── Snapshot / PreviousSnapshot      │
             │   ├── Service (agent.Service)          │
+            │   ├── Workflow (app.WorkflowService)   │
             │   ├── HooksEngine                      │
-            │   └── ActionRegistry, …                │
+            │   ├── ActionRegistry                   │
+            │   ├── NotificationAction              │
+            │   ├── NotificationSnapshot            │
+            │   ├── EnumRegistry                     │
+            │   ├── Theme                            │
+            │   └── SourcePath / LoadedAt / Mtime    │
             └──────────────┬─────────────────────────┘
                            │ SetSnapshot,
                            │ NewService,
@@ -212,8 +220,8 @@ type ConfigRepository interface {
 
 Why it breaks: the interface declares methods nothing calls. Correct
 shape: the interface disappears entirely once ProjectRuntime owns the
-snapshot and `Store.EmitBundleImported` carries the audit
-side-effect.
+snapshot and `Store.RecordEntityEvent(..., EventTypeBundleImported,
+...)` (`internal/sqlite/events.go:96`) carries the audit side-effect.
 
 ## Appendix — #110 drift retrospective
 
@@ -250,7 +258,8 @@ What #117 fixed:
 - Store loses `Providers()`, `previousProviders`, `providersImported`,
   `providersMu`, `Providers()`, `PreviousProviders()`, `Snapshot()`,
   `PreviousSnapshot()`, and `ImportBundle`. `ProjectRuntime` owns the
-  snapshot pair; `Store.EmitBundleImported` remains as the audit-only
+  snapshot pair; the generic `Store.RecordEntityEvent(...,
+  EventTypeBundleImported, ...)` helper remains as the audit-only
   surface for hooks subscribed to bundle.imported.
 - BundleCache produces a fresh Snapshot per Reload; the new entry's
   `PreviousSnapshot` pins the prior pointer for the orphan flow.
@@ -366,3 +375,42 @@ added), one new constructor parameter (`*config.Snapshot`) on three
 already-snap-adjacent services, one new field on `ProjectRuntime`
 (`Workflow`). No production caller threads any setter outside the
 single `SetSnapshot` entry point.
+
+## Appendix — Round-2 / W11 shared helpers
+
+Symbols extracted during Round-2 + W11 to close the "same algorithm
+inlined N times" drift the retrospective flagged. Each entry pins the
+canonical site so future work extends the helper instead of forking a
+new copy.
+
+- **`txMutateAndEmit[T]`** (`internal/sqlite/txevent.go:100`). Generic
+  "open tx → mutate → marshal payload → insert event row →
+  commit → publish" pipeline. The post-commit publish keeps the
+  subscriber-observed-event ⇒ row-on-disk invariant. 15 callsites
+  across `comments.go`, `plans.go`, `tasks.go` route every write +
+  audit-event pair through this helper.
+- **`cursorwindow`** (`internal/tui/components/cursorwindow/`).
+  Canonical cursor + scroll holder for fixed-row TUI surfaces whose
+  chrome is owned by the parent renderer. Cursor / scroll fields are
+  unexported; every mutation routes through a typed method
+  (`MoveCursor`, `JumpFirst`, `PageDown`, `WithItemCount`,
+  `WithViewport`) that re-runs the resync invariant. Three TUI uses:
+  `graphCursor`, `plansCursor`, `planNetworkCursor`
+  (`internal/tui/state.go:537,546,560`).
+- **`sqlutil`** (`internal/sqlite/sqlutil/`). Dependency-free helpers
+  shared by the SQL adapters:
+  - `NullStringOr(v, fallback)` (`null.go`) — null-coercion with an
+    explicit fallback.
+  - `ScanRow[T]` (`scan.go`) — single decode closure shared by
+    `QueryRowContext` / `QueryContext` paths so paired `scanFoo` /
+    `scanFooRows` helpers cannot drift.
+  - `MapSQLiteError` → `*ConstraintError` (`constraint.go:85`) —
+    classifies SQLITE_CONSTRAINT_* extended codes into a typed
+    `ConstraintError{Violation, Table, Field, Cause}` while
+    preserving `errors.Is` chains through `Unwrap`.
+- **`LoadFromDir[T]`** (`internal/config/loadfromdir.go:81`). Walks
+  `dir` and `dir/custom` for files matching `opts.Suffixes`, decodes
+  via `opts.Decode`, and dedups on `opts.SlugOf` under a
+  caller-chosen `CollisionPolicy` (`CollideOverwrite`,
+  `CollideError`, `CollideKeepFirst`). Collapsed three inline dedup
+  loops (entity_loader, language, notification_loader).
