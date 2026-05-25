@@ -26,10 +26,10 @@ Inherited by every subcommand (`internal/cli/root.go:NewRootCommand`):
 | Variable | Effect |
 |---|---|
 | `OMAKITEN_HOME` | Overrides config + data root (see path resolution above). |
-| `OMAKITEN_AGENT_MODEL` | Identifies the agent driving CLI calls; denormalized on every write (`events`, `errors`, `solutions`) and surfaced by `metrics.summary` / TUI Stats. Empty string is allowed and marks the call as non-benchmarked. |
+| `OMAKITEN_AGENT_MODEL` | Identifies the agent driving CLI calls; denormalized on every write (`events`, `errors`, `solutions`) and surfaced by `metrics.summary` / TUI Stats. Empty string is allowed for most CLI calls and marks the call as non-benchmarked; `okt plan claim` is the exception and rejects an empty value because ownership claims must name an agent. |
 | `OMAKITEN_AGENT_SESSION_ID` | Optional opaque session id; lets `metrics.summary`'s `search_before_record_ratio` correlate searches to records within a session. |
 | `OKT_CD_FILE` · `XDG_RUNTIME_DIR` · `TMPDIR` | Resolution chain for the TUI `cd-on-exit` handshake file (see `okt tui` below). |
-| `OKT_CLI_LANG` · `OKT_TUI_LANG` · `OKT_AGENT_LANG` | Skip the matching `okt setup` picker screen by pre-supplying the chosen value. `OKT_CLI_LANG` and `OKT_TUI_LANG` validate against bundled packs under `defaults/languages/`; `OKT_AGENT_LANG` is free-form. |
+| `OKT_CLI_LANG` · `OKT_TUI_LANG` · `OKT_AGENT_LANG` | Pre-supply `okt setup` language inputs. CLI/TUI share one picker screen: either `OKT_CLI_LANG` or `OKT_TUI_LANG` resolves both fields (`OKT_CLI_LANG` wins if both are set). `OKT_AGENT_LANG` fills the separate agent-output language input. |
 | `OKT_PRESET` · `OKT_HARNESSES` | Skip the preset and harness picker screens (`omakase` / CSV of harness names; `0` disables harness setup). |
 
 The TUI sets `agent_model="human"` internally so its activity is filtered out of the per-model benchmark; it does not consult `OMAKITEN_AGENT_MODEL`.
@@ -38,11 +38,11 @@ The TUI sets `agent_model="human"` internally so its activity is filtered out of
 
 ## `okt setup` — post-install picker
 
-`internal/cli/setup.go`. The bubbletea picker the curl-bash installer hands off to. Walks CLI language → TUI language → agent output language → workflow preset → MCP harnesses in one program, then writes the `okt()` shell-rc wrapper. Re-run with `--update` to revisit choices; existing rc-wrapper and `omakiten.yaml` settings are preserved.
+`internal/cli/setup.go`. The bubbletea picker the curl-bash installer hands off to. Walks language → agent output language → workflow preset → MCP harnesses in one program, then writes the `okt()` shell-rc wrapper. CLI and TUI share the install-time language picker; the per-surface split lives in the profile yaml and can be changed later with `okt config language`. Re-run with `--update` to revisit choices; existing rc-wrapper and `omakiten.yaml` settings are preserved.
 
 The language pickers enumerate `defaults/languages/` at boot via `defaults.FS.ReadDir("languages")` — every bundled YAML auto-appears, with no allowlist to update. Adding a new pack ships as a doc-only PR on top of `defaults/languages/<code>.yaml`; see the [Languages Guide](./languages-guide.md) for the filename convention, header fields, parity rule, and the `scripts/new-language-pack.sh` scaffold.
 
-Each picker screen is skipped when the matching env var or flag is set (`OKT_CLI_LANG` / `--cli-lang`, `OKT_TUI_LANG` / `--tui-lang`, `OKT_AGENT_LANG` / `--agent-lang`, `OKT_PRESET` / `--preset`, `OKT_HARNESSES` / `--harnesses`). Useful in CI, Dockerfiles, and dotfiles bootstrap.
+Each picker screen is skipped when the matching env var or flag is set (`OKT_CLI_LANG` / `--cli-lang`, `OKT_TUI_LANG` / `--tui-lang`, `OKT_AGENT_LANG` / `--agent-lang`, `OKT_PRESET` / `--preset`, `OKT_HARNESSES` / `--harnesses`). For the shared CLI/TUI language screen, either `OKT_CLI_LANG` or `OKT_TUI_LANG` resolves both fields; `OKT_CLI_LANG` wins when both are set, and the other field mirrors it unless supplied explicitly. Useful in CI, Dockerfiles, and dotfiles bootstrap.
 
 ```sh
 okt setup                                    # interactive — needs a TTY
@@ -349,7 +349,7 @@ Attaches an existing task to `(plan, wave)`. Re-assigning within the same plan i
 
 ### `okt plan claim SLUG`
 
-Atomically reserves the next unblocked task in the plan's active wave by stamping `tasks.assigned_to` with the resolved agent identity (`OMAKITEN_AGENT_MODEL`, falling back to empty when unset). The CLI form is the human-driven counterpart to the MCP `plans.claim_next` tool and inherits the same `BEGIN IMMEDIATE` serialisation. **The bucket is not moved** — the claim is ownership-only, so the workflow's first bucket stays the task's bucket. Returns `{claimed: false}` when nothing is currently claimable.
+Atomically reserves the next claimable task in the plan's active wave (unassigned and still in the workflow's first bucket) by stamping `tasks.assigned_to` with the resolved agent identity from `OMAKITEN_AGENT_MODEL`. The value is required; an empty or unset model returns `validation_error`. The CLI form is the human-driven counterpart to the MCP `plans.claim_next` tool and inherits the same `BEGIN IMMEDIATE` serialisation. **The bucket is not moved** — the claim is ownership-only, so the workflow's first bucket stays the task's bucket. Returns `{claimed: false}` when nothing is currently claimable.
 
 ```sh
 okt plan create plans-v1 --name "Plans rollout" --goal-body "Land WBS in 3 waves"
@@ -446,6 +446,8 @@ okt config validate ./omakase.yaml
 
 Both scopes share `config.SeedInstall` internally, which copies every embedded shipped file (skills, laws, personas, templates, themes, notifications, every preset yaml) and sets `.active` to the chosen preset. `--force` re-copies the shipped files (preserving every `custom/` subtree).
 
+Optional language flags mirror `okt setup`: `--cli-lang`, `--tui-lang`, and `--agent-lang`. Missing language flags prompt on an interactive TTY after the preset is seeded; in headless mode the seeded kit defaults remain. CLI/TUI codes are validated against the loaded language packs, while agent-output language is free-form.
+
 Rerun matrix:
 - Same preset, same files → `no_op:true`.
 - Different preset → flips `.active`, no `no_op`.
@@ -483,25 +485,28 @@ Output entries carry `op = added | removed | changed` plus the relevant side val
 
 Reports the resolved triple — what the CLI prints, what the TUI renders, and what the agent uses for natural-language output — plus the kit default and the source of each (default vs. user override).
 
-#### `okt config language set [--cli CODE] [--tui CODE] [--agent FREEFORM]`
+#### `okt config language set [--cli CODE] [--tui CODE] [--agent FREEFORM] [--global]`
 
-Updates one or more of the three. CLI / TUI codes are validated against the loaded language packs (`internal/config/language.go::LoadLanguages`); unknown codes return `validation_error` with the list of available packs. The agent string is free-form (e.g. `"Português (Brasil)"`) because it is sent verbatim to the LLM. Persisting only the changed slot keeps the other two untouched.
+Updates one or more of the three. CLI / TUI codes are validated against the loaded language packs (`internal/config/language.go::LoadLanguages`); unknown codes return `validation_error` with the list of available packs. The agent string is free-form (e.g. `"Português (Brasil)"`) because it is sent verbatim to the LLM. Persisting only the changed slot keeps the other two untouched. `--global` bypasses repo-local discovery and writes the user-global profile.
 
-#### `okt config language reset [--cli] [--tui] [--agent] [--all]`
+#### `okt config language reset [--global]`
 
-Reverts the selected slot(s) to the kit default. `--all` clears every override at once. No-op when the slot is already at default.
+Clears all three language overrides so the kit defaults apply again. `--global` bypasses repo-local discovery and writes the user-global profile. There is no per-slot reset flag in the current CLI.
 
 ---
 
 ## Database
 
-### `okt db backup [--out PATH]`
+### `okt db backup [--out PATH] [--force]`
 
-`internal/cli/db.go`. Takes an online consistent backup of the global SQLite database (safe under live WAL-mode reads/writes — uses the SQLite Online Backup API surfaced by the `modernc.org/sqlite` driver, not a file copy). Default destination is `~/.local/share/omakiten/backups/<timestamp>.db` (or `$XDG_DATA_HOME` / `$OMAKITEN_HOME/data/backups/`); `--out` overrides with any writable path. JSON envelope reports source path, destination path, byte count, and elapsed duration.
+`internal/cli/db.go`. Writes a rolling snapshot of the resolved SQLite database with an atomic file copy (`tmp` + rename). Default destination is `$XDG_STATE_HOME/omakiten/backups/<timestamp>.db` (or `~/.local/state/omakiten/backups/`; under `$OMAKITEN_HOME`, `$OMAKITEN_HOME/state/backups/`). `--out` writes an exact destination path, creates parent directories with `0700`, skips retention pruning, and refuses common system roots such as `/etc` and `/usr`. `--force` allows an explicit `--out` path to overwrite an existing file.
+
+The default JSON payload is `{path, pruned:true, retention}`. With `--out`, the payload is `{path, pruned:false}`.
 
 ```sh
 okt db backup
 okt db backup --out /mnt/external/omakiten-2026-05-24.db
+okt db backup --out /mnt/external/omakiten-latest.db --force
 ```
 
 Restoring is a manual operation today: stop any running `okt mcp serve` / `okt tui`, move the backup file in over the live `omakiten.db`, and restart. No `okt db restore` ships intentionally — restores are rare, destructive, and best done with eyes-on.
@@ -678,6 +683,10 @@ The handshake file the wrapper reads can be overridden via `$OKT_CD_FILE`; defau
 
 Lists tool/resource/prompt definitions (`mcp.Tools()`, `mcp.Resources()`, `mcp.Prompts()`). No flags.
 
+### `okt mcp prompts [name]`
+
+Renders the resolved markdown for every `okt-*` MCP prompt, or one prompt when `name` is supplied. This is the CLI mirror of `prompts/get` and is useful for auditing persona/law/template composition without starting an MCP client.
+
 ### `okt mcp call TOOL_NAME`
 
 Calls a tool directly without going through the stdio server. Useful for scripting and testing.
@@ -704,6 +713,7 @@ Writes the `omakiten` MCP server entry into a harness config file (`internal/age
 
 ```sh
 okt mcp tools
+okt mcp prompts okt-implement
 okt mcp call tasks.list --input '{"bucket_key":"dev"}'
 okt mcp call search --input '{"query":"sqlite race","entity_types":["error","solution"]}'
 okt mcp setup --harness opencode --dry-run

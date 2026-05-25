@@ -70,8 +70,18 @@ config:
     active: omakase           # string, required; must match workflows[].key
   theme:
     active: omakiten          # string, required; must match a themes/<key>.yaml file
-  template_defaults: [task, pr, comment-resume, comment-selfbranch]
+  template_defaults: [task, pr, comment-resume, comment-selfbranch, comment-documentation]
+  languages: { cli: en, tui: en, agent_output: English }
+  mcp: { … }
+  tui: { … }
   views: { … }
+  sqlite: { … }
+  activity_log: { … }
+  solutions: { … }
+  backup: { … }
+  events: { … }
+  search: { … }
+  tag_synonyms: { … }
 ```
 
 ### `config.output`
@@ -105,10 +115,10 @@ Theme files are validated separately (`ValidateTheme`): `version: 1`, non-empty 
 ### `config.template_defaults`
 
 ```yaml
-template_defaults: [task, pr, comment-resume, comment-selfbranch]
+template_defaults: [task, pr, comment-resume, comment-selfbranch, comment-documentation]
 ```
 
-The list of "kinds" that templates may claim as their `default:` slot. When omitted, falls back to the canonical default set (`config.DefaultTemplateKinds`).
+The list of "kinds" that templates may claim as their `default:` slot. This field is required; the kit YAML is the canonical source for the default set.
 
 A template `.md` whose frontmatter declares `default: <kind>` activates as the scaffold for that kind. The validator enforces:
 
@@ -116,6 +126,24 @@ A template `.md` whose frontmatter declares `default: <kind>` activates as the s
 - At most one template per `(default, project)` pair (`only one may`).
 
 The TUI's template-default picker offers exactly the kinds in this list.
+
+### `config.languages`
+
+Stores the language selected per surface. CLI and TUI values must resolve to loaded `languages/<code>.yaml` packs (bundled or `languages/custom/`), while `agent_output` is free-form text appended to MCP prompt composition as an output-language directive.
+
+```yaml
+config:
+  languages:
+    cli: en
+    tui: pt-br
+    agent_output: "Português (Brasil)"
+```
+
+| Field | Type | Validation | Effect |
+|---|---|---|---|
+| `cli` | language code | loaded pack, defaults to `en` when empty | CLI labels / help / CLI-owned errors. |
+| `tui` | language code | loaded pack, defaults to `en` when empty | Terminal UI labels and notifications. |
+| `agent_output` | string | free-form | Natural-language directive sent to the agent in composed MCP prompts. Empty means no directive. |
 
 ### `config.mcp`
 
@@ -193,7 +221,7 @@ config:
 | `yellow_at` | int | `150` | Threshold above which the badge turns yellow. Calibrated for the default kit: most laws land in the 70–190 token range with their few-shot examples, so 150 keeps the green band signal-rich rather than uniformly yellow. |
 | `red_at` | int | `400` | Threshold above which the badge turns red. Raise if you author heavy laws/personas; lower if you keep entities terse. |
 
-Non-positive values fall back to the canonical defaults silently.
+Both thresholds are required and strictly positive; `red_at` must be greater than `yellow_at`. Non-positive or inverted values fail validation instead of falling back silently.
 
 ### `config.priorities`
 
@@ -297,7 +325,7 @@ Adding a `{id: 4, value: blocker, color: error}` entry makes `severity: blocker`
 
 ### `config.views`
 
-Per-view defaults seeded into the TUI on startup. Every field is optional; omitted values fall back to canonical defaults via `Settings.EffectiveViews()` (`internal/config/bundle.go`).
+Per-view defaults seeded into the TUI on startup. Sort fields/orders are required where shown below; filter lists may be empty to mean "all". The kit YAML is the canonical source, so omitted sort knobs fail validation rather than falling back to code defaults.
 
 ```yaml
 views:
@@ -313,7 +341,7 @@ views:
     sort:   { field: id, order: asc }                 # field in [id, title]
   logs:
     sort:   { order: desc }                           # field is rejected — only direction is configurable
-    limit:  50                                        # int, >= 0
+    limit:  50                                        # int, > 0
     filter: { source: [] }                            # subset of [cli, tui, mcp]
   task_activity:
     sort:   { order: asc }                            # asc = chronological, desc = newest first
@@ -328,7 +356,7 @@ Allowed values come from `internal/config/validator.go`:
 | `graph.sort.field` | `id`, `title` | `id` |
 | `graph.sort.order` | `asc`, `desc` | `asc` |
 | `logs.sort.order` | `asc`, `desc` (no `field`) | `desc` |
-| `logs.limit` | int `>= 0` | `50` |
+| `logs.limit` | int `> 0` | `50` |
 | `logs.filter.source` | subset of `cli`, `tui`, `mcp` | `[]` (no filter) |
 | `task_activity.sort.order` | `asc`, `desc` (no `field`) | `asc` |
 | `*.filter.priority` | subset of `low`, `normal`, `high` | `[]` |
@@ -338,17 +366,21 @@ Typos surface with errors like `config.views.board.sort.field "creatd_at" is not
 
 ### `config.sqlite`
 
-Connection-level engine knobs the Store applies at Open. **Required block** — the kit ships the canonical `busy_timeout` the user inherits at install time. Other PRAGMAs (`foreign_keys=ON`, `journal_mode=WAL`, `synchronous=NORMAL`) intentionally stay in code: they encode the engine-level contract Omakiten depends on, not user preference.
+Connection-level engine knobs the Store applies at Open. **Required block** — the kit ships the canonical values the user inherits at install time. Other PRAGMAs (`foreign_keys=ON`, `journal_mode=WAL`, `synchronous=NORMAL`) intentionally stay in code: they encode the engine-level contract Omakiten depends on, not user preference.
 
 ```yaml
 config:
   sqlite:
     busy_timeout_ms: 5000     # int >0; PRAGMA busy_timeout
+    cache_size_kb: 1024       # int >0; PRAGMA cache_size in negative KiB form
+    mmap_size_bytes: 0        # int >=0; PRAGMA mmap_size, 0 disables mmap
 ```
 
 | Field | Type | Constraint | What it does |
 |---|---|---|---|
 | `busy_timeout_ms` | int | `> 0` | Sets `PRAGMA busy_timeout`. Larger DBs or systems with concurrent writers (TUI + MCP server sharing a Store) may need a higher value to avoid `database is locked` errors. |
+| `cache_size_kb` | int | `> 0` | Sets `PRAGMA cache_size` using SQLite's negative-kilobyte form so hot task/event/dependency pages stay in cache across TUI read fan-out. |
+| `mmap_size_bytes` | int | `>= 0` | Sets `PRAGMA mmap_size`. Zero disables mmap; raise only on local filesystems where memory-mapped reads are safe. |
 
 ### `config.activity_log`
 
@@ -382,19 +414,69 @@ config:
 | `default_top_limit` | int | `> 0` | Limit applied when the caller omits one. |
 | `max_top_limit` | int | `>= default_top_limit` | Hard cap on caller-supplied limits. Validator rejects inverted ranges so the runtime always has a sane window. |
 
+### `config.backup`
+
+Tunes rolling database snapshots written by `okt db backup` and destructive flows that call `app.BackupService` before mutating state.
+
+```yaml
+config:
+  backup:
+    retention_count: 5   # int >=0; 0 disables prune
+```
+
+| Field | Type | Constraint | What it does |
+|---|---|---|---|
+| `retention_count` | int | `>= 0` | Keeps the N newest snapshots in `StateDir()/backups`. Zero disables pruning so snapshots accumulate until managed externally. |
+
 ### `config.events`
 
-Fallback recent-events limit used by `Store.ListRecentEvents` when callers pass `<=0`. **Required block.**
+Fallback recent-events limit plus per-event channel policy. **Required block.** `defaults` must declare all three channels; `overrides` can change any subset per event type and inherits unspecified channels from `defaults`.
 
 ```yaml
 config:
   events:
     default_recent_limit: 50  # int >0
+    defaults:
+      log: true               # persist to events table
+      broadcast: true         # fan out over the in-process bus
+      hook: true              # let hooks engine dispatch
+    overrides:
+      tag.added:   { log: false }
+      tag.removed: { log: false }
 ```
 
 | Field | Type | Constraint | What it does |
 |---|---|---|---|
 | `default_recent_limit` | int | `> 0` | Fallback row count applied when the caller passes `<=0`. The query is indexed on `(event_type, created_at, id)` so larger values are cheap. |
+| `defaults.log` | bool | required | Persists matching events to SQLite when true. Comments are user data and still write even when the log gate is false. |
+| `defaults.broadcast` | bool | required | Publishes matching events to in-process subscribers when true. |
+| `defaults.hook` | bool | required | Lets the hooks engine consider matching events when true. |
+| `overrides` | map | optional; keys must be known event types | Per-event channel overrides. Omitted channel fields inherit from `defaults`; unknown event names fail validation. |
+
+### `config.hooks`
+
+Declares automation that reacts to domain events. The active profile owns only the subscription shape; executable action contracts live in [Hooks](hooks.md), notification card definitions live in `notifications/<slug>.yaml`.
+
+```yaml
+config:
+  hooks:
+    - on: guard.violated
+      when: { operation: task.delete }
+      do: exec
+      args:
+        argv: ["/home/me/scripts/log-blocked-delete.sh"]
+        timeout_ms: 3000
+    - on: bundle.swapped
+      notification: kitten_orphan_migration
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `on` | event type | Required; must be in `domain.KnownEventTypes`. |
+| `when` | map | Optional top-level payload equality filters; all entries must match. |
+| `do` / `args` | action shape | Runs an action such as `exec` or `noop`. Mutually exclusive with `notification`. |
+| `notification` | slug | Sends a TUI card using `notifications/<slug>.yaml`. Mutually exclusive with `do`. |
+| `message`, `message_field`, `detail_message`, `detail_message_field` | strings | Optional hook-level fallbacks for notification text. |
 
 ### `config.search`
 
@@ -591,7 +673,7 @@ Each `(from, to)` pair must be unique within a workflow. Self-transitions (`from
 
 ### Guards
 
-Guards live on a transition and run before the move persists. Three types: `blockers_in`, `comments_min`, `comments_tagged`.
+Guards live on a transition and run before the move persists. Five types are built in: `blockers_in`, `comments_min`, `comments_tagged`, `wave_gate`, and `subtasks_complete`.
 
 See **`.docs/guards-guide.md`** for the full mechanics, validation rules, and worked examples. In summary:
 
@@ -607,6 +689,10 @@ guards:
     tag: resume                           # required
     count: 1                              # required, >= 1
     hint: "…"
+  - type: wave_gate                       # no extra fields; prior-wave pending count is derived
+    hint: "Wait for previous waves."
+  - type: subtasks_complete               # no extra fields; direct children must be in the final bucket
+    hint: "Finish child tasks first."
 ```
 
 ---
@@ -754,12 +840,12 @@ Binds each `okt-*` MCP prompt to the persona, laws, and templates the agent rece
 
 | Field | Type | Notes |
 |---|---|---|
-| `persona` | string | Must resolve to a loaded persona; ignored on the `global` slot. |
-| `laws` | list of slugs | Added to the effective law set; each slug must resolve to a loaded law. |
+| `persona` | string | Command persona slug; ignored on the `global` slot. Missing slugs are reported as non-fatal source warnings. |
+| `laws` | list of slugs | Added to the effective law set. Missing slugs are reported as non-fatal source warnings. |
 | `laws_disabled` | list of slugs | Removed from the effective law set after the union. Cannot overlap with `laws` on the same command. |
-| `templates` | list of slugs | Bound template slugs; each must resolve to a loaded template; ignored on the `global` slot. |
+| `templates` | list of slugs | Bound template slugs; ignored on the `global` slot. Missing slugs are reported as non-fatal source warnings. |
 
-Validation rejects duplicate slugs in any list, slugs that overlap between `laws` and `laws_disabled`, and any reference that does not match a loaded entity.
+Validation rejects duplicate slugs in any list and slugs that overlap between `laws` and `laws_disabled` on the same command. Missing persona/law/template references are warnings (`SourceWarning`) rather than hard validation failures so a partially-authored bundle can still load.
 
 ---
 
@@ -981,7 +1067,7 @@ See `.docs/theming-guide.md` for the eight color tokens consumed by the TUI.
 
 ### Default workflow (`defaults/config/omakase.yaml`)
 
-Single workflow `default` with four buckets — `backlog` → `dev` → `review` → `done` — and tag-anchored guards on every forward edge plus guard-free kickback paths (`review→dev`, `done→review`). Full transitions and guards: see `defaults/config/omakase.yaml` or `.docs/guards-guide.md` §"Worked example".
+Single workflow `omakase` with four buckets — `backlog` → `dev` → `review` → `done` — and tag-anchored guards on every forward edge plus guard-free regression paths (`dev→backlog`, `review→backlog`, `review→dev`, `done→review`, `done→dev`, `done→backlog`). Forward guards include `wave_gate` on `backlog→dev` and `subtasks_complete` on `dev→review`. Full transitions and guards: see `defaults/config/omakase.yaml` or `.docs/guards-guide.md` §"Worked example".
 
 ---
 
@@ -1023,6 +1109,9 @@ Single workflow `default` with four buckets — `backlog` → `dev` → `review`
   notifications/
     <slug>.yaml
     custom/<slug>.yaml
+  languages/
+    <code>.yaml
+    custom/<code>.yaml
 ```
 
 Source: `internal/paths/paths.go:ConfigRoot`, `EntityDir`, `EntityCustomDir`, `ActiveConfigFile`. Legacy flat layouts (`<root>/<name>.yaml` at the root with no `config/` subdir) are tolerated by `ConfigRootFromYAMLPath` and migrated forward by `configstore.MigrateLayout` on next connect. `ConfigRootFromYAMLPath` also recognizes `<root>/config/custom/<name>.yaml`, so entity folders resolve correctly when the active profile lives under `custom/`.
@@ -1047,6 +1136,7 @@ Layout mirrors the user-global root exactly:
   templates/<slug>.md + custom/
   themes/<key>.yaml  + custom/
   notifications/<slug>.yaml + custom/
+  languages/<code>.yaml + custom/
 ```
 
 The expected workflow is `okt config init --scope local --preset <name>`: that single call materialises every entity folder via `EnsureDefaultFiles`, copies every shipped preset yaml under `config/`, and points `.active` at the chosen one. The result is a self-contained install — `LoadBundle(<repo>/.omakiten/config/<active>.yaml)` succeeds without any merge step.
@@ -1091,34 +1181,41 @@ The resolver supports multiple yaml profiles under `<root>/config/`. The active 
 
 ### Backup
 
-Everything Omakiten persists is on the local filesystem. Two paths cover full state:
+Everything Omakiten persists is on the local filesystem. Config, data, and recoverable state are separate paths:
 
 ```sh
-# Config (yaml + entity files + themes + customs)
+# Config (yaml + markdown entities + YAML assets + custom overrides)
 cp -a "${OMAKITEN_HOME:-$HOME/.config/omakiten}" /backup/omakiten-config
 
-# Data (SQLite)
-cp -a "${OMAKITEN_HOME:+$OMAKITEN_HOME/data}${OMAKITEN_HOME:-$HOME/.local/share/omakiten}" /backup/omakiten-data
+# Data (SQLite) when OMAKITEN_HOME is unset.
+cp -a "${XDG_DATA_HOME:-$HOME/.local/share}/omakiten" /backup/omakiten-data
+
+# Recoverable state (rolling DB snapshots) when OMAKITEN_HOME is unset.
+cp -a "${XDG_STATE_HOME:-$HOME/.local/state}/omakiten" /backup/omakiten-state
+
+# Data + recoverable state when OMAKITEN_HOME is set.
+cp -a "$OMAKITEN_HOME/data" /backup/omakiten-data
+cp -a "$OMAKITEN_HOME/state" /backup/omakiten-state
 ```
 
-The DB file can be copied while `okt` is not running; for a hot backup use SQLite's `.backup` command or `VACUUM INTO`. There is no concurrent multi-writer story — the tool is single-user, single-process by design.
+The DB file can be copied while `okt` is not running. For the product-supported snapshot path, use `okt db backup`; it performs an atomic file copy and is the only backup flow Omakiten wraps in CLI/TUI behavior today. There is no concurrent multi-writer story — the tool is single-user, single-process by design.
 
 #### Rolling snapshots — `okt db backup`
 
-The in-binary `okt db backup` writes the live SQLite file to a timestamped snapshot under `$XDG_STATE_HOME/omakiten/backups/<utc-iso>.db` (defaults to `~/.local/state/omakiten/backups/`). The copy is atomic (tmp + rename) and prunes older snapshots according to `settings.backup.retention_count`:
+The in-binary `okt db backup` writes the live SQLite file to a timestamped snapshot under `$XDG_STATE_HOME/omakiten/backups/<utc-iso>.db` (defaults to `~/.local/state/omakiten/backups/`; under `$OMAKITEN_HOME`, `$OMAKITEN_HOME/state/backups/`). The copy is atomic (tmp + rename) and prunes older snapshots according to `config.backup.retention_count`:
 
 ```yaml
-settings:
+config:
   backup:
     retention_count: 5   # keep the 5 newest snapshots; 0 disables prune
 ```
 
 Every destructive command — `okt projects delete`, `okt update`, the TUI Home `d`+`d` confirm — runs the same routine before mutating state. Backup failure aborts the destructive flow with a coded error; the snapshot is the recovery artefact you reach for if the cascade went further than expected. `okt uninstall` does NOT auto-backup (uninstall removes user-owned data by intent); run `okt db backup` first if you want a snapshot to keep.
 
-The strict snapshot filename pattern (`<yyyy-mm-dd>T<hh-mm-ss>Z.db`) means manual `.db` files you drop in the same directory are ignored by the prune pass — only files matching the pattern are rotated.
+The strict snapshot filename pattern (`<yyyy-mm-dd>T<hh-mm-ss.nnnnnnnnn>Z.db`, with the nanosecond suffix optional for older files) means manual `.db` files you drop in the same directory are ignored by the prune pass — only files matching the pattern are rotated.
 
 This complements the surface policy: destructive ops live on CLI + TUI but not MCP. See [surface-policy.md](surface-policy.md) for the full table and criteria.
 
 ### Resetting
 
-`mise run purge` removes both `~/.config/omakiten` and `~/.local/share/omakiten` (`.mise.toml`). Re-run `okt init` to reseed defaults. Customs under `<entity>/custom/` are also removed by purge — back them up first if you care.
+`mise run purge` removes both `~/.config/omakiten` and `~/.local/share/omakiten` (`.mise.toml`); it does not remove rolling snapshots under `~/.local/state/omakiten`. Re-run `okt init` to reseed defaults. Customs under `<entity>/custom/` are also removed by purge — back them up first if you care.

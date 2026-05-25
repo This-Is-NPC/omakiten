@@ -241,7 +241,7 @@ config:
       when: { operation: task.delete }
       do: exec
       args:
-        argv: ["./scripts/log-blocked-delete.sh"]
+        argv: ["/home/me/scripts/log-blocked-delete.sh"]
         timeout_ms: 3000
 ```
 

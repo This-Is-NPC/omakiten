@@ -11,7 +11,7 @@ The same guard shapes also drive **operation policies** (`operations.{archive,de
 `app.WorkflowService.MoveTask` runs in this order (`internal/app/workflow_service.go:179`):
 
 1. Validate input (`task_id > 0`, target bucket non-empty).
-2. Load `tasks.state`; reject archived tasks with `validation_error "task is archived; unarchive before moving"` (the `tasks.unarchive` MCP tool, `okt task unarchive <id>` CLI, or TUI un-archive lift the gate). Archived tasks never reach the workflow flow — `Archive`/`Unarchive` live on `task_service.go` and have their own guard slot.
+2. Load `tasks.state`; reject archived tasks with `validation_error "task is archived; unarchive before moving"` (the `tasks.unarchive` MCP tool, `okt unarchive <id>` CLI, or TUI un-archive lift the gate). Archived tasks never reach the workflow flow — `Archive`/`Unarchive` live on `task_service.go` and have their own guard slot.
 3. Resolve current bucket via `WorkflowRepository.CurrentTaskBucket`.
 4. Resolve target bucket via the captured per-project Snapshot (`s.snap.BucketByKey`) — workflow shape lives in memory post-020, no repository round-trip.
 5. If `current != target`:
@@ -24,7 +24,7 @@ Self-moves (current == target) skip both the transition check and guard evaluati
 
 ## Guard types
 
-Four types are supported. Anything else is rejected at validation time with `unknown guard type`.
+Five types are supported. Anything else is rejected at validation time with `unknown guard type`.
 
 ### `blockers_in`
 
@@ -112,6 +112,24 @@ No fields beyond `type` and `hint`. The wave order is read from `plan_waves.posi
 
 The wave-gate edges themselves are not rendered in the network diagram (`internal/tui/plan_network.go`) — the guard is invisible by design so the diagram stays focused on intra/cross-wave dependency arrows.
 
+### `subtasks_complete`
+
+Asserts that every direct child task (`tasks.parent_id = current task id`) currently sits in the workflow's final bucket. This lets a preset block promotion of a parent while any child remains open.
+
+```yaml
+- type: subtasks_complete
+  hint: "Finish all child tasks before promoting the parent."  # optional
+```
+
+No fields beyond `type` and `hint` are consumed. The final bucket is resolved from the active workflow snapshot, so renaming `done` still works as long as the workflow's last-position bucket represents completion.
+
+**Evaluation** (`internal/app/guards/evaluator.go:checkSubtasksComplete`):
+
+- Resolves the workflow's final bucket via `Snapshot.Workflow().FinalBucketKey()`.
+- Loads the first direct child not in that bucket via `GuardEvaluationRepository.FirstChildNotInBucket`.
+- Passes when no direct child is open. Grandchildren are handled by their own parent when that parent is promoted.
+- Fails with `guard_violation`, `rule="subtasks_complete"`, and details naming the open child id/title/bucket plus the final bucket.
+
 ## Multiple guards on the same transition
 
 Guards are stored and evaluated in declaration order. The **first** violation short-circuits and is the one returned to the user; later guards do not run. Pick the order that gives the most actionable error first.
@@ -147,7 +165,7 @@ Empty/missing `hint` is fine; the error stays terse.
 | `comments_min.count < 1` | `workflows.<wf> guard comments_min: count must be >= 1` |
 | `comments_tagged.tag` empty | `workflows.<wf> guard comments_tagged: tag is required` |
 | `comments_tagged.count < 1` | `workflows.<wf> guard comments_tagged: count must be >= 1` |
-| `wave_gate` carries extra fields | rejected — only `hint` is configurable; pending count is derived |
+| `wave_gate` / `subtasks_complete` | no required fields beyond `type`; `hint` is optional and runtime state is derived |
 
 A failed validation rejects `okt config validate` and any bundle import that would re-materialize the SQLite read model.
 
@@ -196,6 +214,11 @@ workflows:
             tag: self-branch
             count: 1
             hint: "Before starting, create a dedicated feature branch or git worktree…"
+          - type: blockers_in
+            buckets: [done]
+            hint: "Move blockers to Done first…"
+          - type: wave_gate
+            hint: "Wait for the previous wave to finish…"
       - from: 2
         to: 3
         guards:
@@ -203,6 +226,12 @@ workflows:
             tag: resume
             count: 1
             hint: "Add a comment tagged #resume summarizing what was implemented…"
+          - type: comments_tagged
+            tag: tests-passing
+            count: 1
+            hint: "Attach passing test evidence…"
+          - type: subtasks_complete
+            hint: "Finish every direct child task before review…"
       - from: 3
         to: 4
         guards:

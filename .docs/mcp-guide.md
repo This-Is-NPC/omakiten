@@ -98,7 +98,7 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `plans.add_wave` | Append a wave to a plan. Pass `position=0` (or omit) to auto-assign the next slot, or a positive integer to insert at that position. Emits `plan.wave_added`. |
 | `plans.assign_task` | Attach an existing task to `(plan_id, wave_id)`. Idempotent re-assign within the same plan. |
 | `plans.continue` | Agent-tailored projection of a plan — overview formatted for an agent picking up work. Overlaps `plans.show` in content; tuned for context-window economy. |
-| `plans.claim_next` | Atomically reserve the next unblocked task in the active wave: `BEGIN IMMEDIATE` → SELECT next-claimable-in-active-wave (first-bucket + unassigned) → SET `assigned_to` to the caller's `_agent_model` in the same transaction. The bucket is NOT touched; the task stays in the workflow's first bucket. Returns the claimed task or `{claimed: false}` when nothing is available. Two concurrent `claim_next` calls serialise at the SQLite write lock; the loser re-evaluates and either claims the next task or returns empty. |
+| `plans.claim_next` | Atomically reserve the next claimable task in the active wave: `BEGIN IMMEDIATE` → SELECT next-claimable-in-active-wave (first-bucket + unassigned) → SET `assigned_to` to the caller's `_agent_model` in the same transaction. The bucket is NOT touched; the task stays in the workflow's first bucket. Returns the claimed task or `{claimed: false}` when nothing is available. Two concurrent `claim_next` calls serialise at the SQLite write lock; the loser re-evaluates and either claims the next task or returns empty. |
 
 `plans.claim_next` requires `_agent_model` like every tool, but the value is also written to `tasks.assigned_to` as the claimant identity. The claim is ownership-only — the bucket transition is a separate `tasks.move` call that goes through the workflow guard pipeline (e.g. omakase requires a self-branch comment before `backlog → dev`). Agents claim, then move; the two steps stay separate so preset-defined guards on the bucket transition remain authoritative. Recovery from a crashed agent is human-driven: `okt assign <id> ""` clears the assignment, or `okt move <id> backlog` clears it via the transition-out hook. v1 explicitly does NOT auto-reclaim.
 
@@ -313,7 +313,7 @@ The composed prompt is only half the picture. For prompts that fetch task state,
 
 ### Tuning context cost
 
-The biggest variable is the tool result, not the prompt. Four knobs in `config.mcp` (see `.docs/configuration-guide.md#configmcp`) shape it without changing the protocol:
+The biggest variable is the tool result, not the prompt. Seven knobs in `config.mcp` (see `.docs/configuration-guide.md#configmcp`) shape it without changing the protocol:
 
 | Setting | Affects | Impact |
 |---|---|---|
@@ -321,6 +321,9 @@ The biggest variable is the tool result, not the prompt. Four knobs in `config.m
 | `max_comment_chars` (int, default `0`) | Truncates each comment body past N runes with `…`. Set to ~`500` for a hard floor while keeping the latest exchange readable. | High on comment-heavy tasks; nil on terse ones. |
 | `include_workflow_in_continue` (`*bool`, default `true`) | Skips the `workflow` block in `tasks.continue`. The agent already has the workflow from the first `/okt` of the session — set `false` to stop re-shipping. | Fixed per-call; matters on multi-task sessions. |
 | `cache_prompts` (`*bool`, default `true`) | Emits an Anthropic `cache_control` hint on `prompts/get` content. Aware clients reuse the cached prompt across calls. | Bulk of the prompt body on subsequent calls within the cache window. |
+| `recent_context_limit` (int, default `3`) | Caps recent handoff context entries included in checkpoint endpoints. | High when context entries are long prose. |
+| `next_work_limit` (int, default `5`) | Caps likely-next-work suggestions in `project.resume`. | Keeps resume payloads bounded on large projects. |
+| `similar_task_limit` (int, default `5`) | Caps similar-task hints returned by `tasks.create_intent`. | Bounds duplicate-detection chatter. |
 
 The same accounting applies to every prompt — substitute the bound tool's DTO for the variable row above. `comments.list` is intentionally exempt from `max_comment_chars` because it's the explicit "read the full thread" endpoint; truncation would make the call useless.
 
@@ -331,6 +334,9 @@ Per-call overrides are available where they make sense: `tasks.continue` accepts
 Ambiguous or destructive operations return `requires_confirmation` instead of mutating state.
 
 - `tasks.create_intent` returns similar tasks and asks whether to continue existing work or retry with `confirmed=true`.
+- `orphans.migrate` previews affected tasks first and applies only when retried with `confirmed=true`.
+- `tasks.delete` asks for `confirmed=true` before hard-deleting a task and its cascaded rows.
+- `comments.delete` asks for `confirmed=true` before hard-deleting a comment.
 - `dependencies.remove` asks for `confirmed=true` before deleting the dependency.
 - `tags.remove` asks for `confirmed=true` before detaching the tag from a task or project.
 

@@ -26,7 +26,7 @@ Operations that fail none of those checks default to the standard CLI + TUI + MC
 
 ## Backup safety net
 
-Every operation tagged "irreversible" in the table above runs `app.BackupService` before mutating state — either directly (`projects.delete`, `update`) or implicitly via the user running `okt db backup` first (`uninstall`, by convention; see `okt uninstall --help`). The snapshot lands under `$XDG_STATE_HOME/omakiten/backups/<utc-iso>.db` with the retention count from `settings.backup.retention_count` (default 5). Backup failure aborts the destructive flow before any rows or files are touched.
+Every operation tagged "irreversible" in the table above runs `app.BackupService` before mutating state when the flow owns project data (`projects.delete`; `update` runs the same snapshot routine before swapping the binary). `uninstall` is intentionally opt-in for backups because it removes user-owned state by request; run `okt db backup` first when you want a retained snapshot. The snapshot lands under `$XDG_STATE_HOME/omakiten/backups/<utc-iso>.db` with the retention count from `config.backup.retention_count` (default 5). Backup failure aborts the destructive flow before any rows or files are touched.
 
 ## Convention for new operations
 
@@ -40,5 +40,5 @@ Document any deviation in the table above so the policy stays discoverable. Revi
 
 ## See also
 
-- [Configuration guide](configuration-guide.md) — `settings.backup.retention_count` knob.
+- [Configuration guide](configuration-guide.md) — `config.backup.retention_count` knob.
 - [MCP guide](mcp-guide.md) — agent surface catalogue.

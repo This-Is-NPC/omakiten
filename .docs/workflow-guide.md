@@ -43,7 +43,7 @@ When in doubt, pick **omakase**. It is the canonical kit and the default selecti
 
 Each preset embodies a different process discipline level, but every preset runs the same underlying cycle: [PDCA — Plan-Do-Check-Act](./explanation/mental-models.md#pdca). Every action through Omakiten maps onto one of the four phases.
 
-The eight `okt-*` commands map to PDCA phases:
+The core `okt-*` cycle maps to PDCA phases:
 
 | PDCA phase | `okt-*` command | What happens |
 |---|---|---|
@@ -68,7 +68,7 @@ The eight `okt-*` commands map to PDCA phases:
 
 Three disciplines ride together at the preset's chosen level:
 
-- **Software engineering** (TBD / TDD / SRE / decision records) — how code lands.
+- **Software engineering** (trunk-based development / TDD / SRE / decision records) — how code lands.
 - **Product management** ([5W2H](./explanation/mental-models.md#5w2h) / [SMART](./explanation/mental-models.md#smart) / [INVEST](./explanation/mental-models.md#invest) / [MoSCoW](./explanation/mental-models.md#moscow) / [RICE](./explanation/mental-models.md#rice) / outcomes) — what gets built and why.
 - **Project management** ([PDCA](./explanation/mental-models.md#pdca) cycle awareness, staged delivery, audit trail) — how the work is structured and recorded.
 
@@ -667,13 +667,13 @@ Tasks not attached to a plan (`wave_id IS NULL`) pass the guard as a no-op, so t
 `plans.claim_next` is the only correct way for an agent to acquire work inside a plan. The MCP tool wraps a single SQLite write transaction:
 
 1. `BEGIN IMMEDIATE` — serialises against any concurrent claim attempt.
-2. `SELECT` the next unblocked task in the active wave (no prior-wave pending, no dependency in flight).
-3. `UPDATE tasks SET bucket_id=<dev>, assigned_to=<caller _agent_model>` in the same transaction.
-4. Commit. Returns the claimed task or `{claimed: false}`.
+2. `SELECT` the active wave (lowest-position wave with any non-final active task), then the lowest-id task in that wave that is active, unassigned, and still in the workflow's first bucket.
+3. `UPDATE tasks SET assigned_to=<caller _agent_model>` in the same transaction.
+4. Commit. Returns the claimed task or `{claimed: false}`. The bucket is not moved.
 
-Two concurrent calls land on the same write lock; the loser retries the SELECT and either claims a different task or returns empty. No double-claim is possible. The CLI handle (`okt plan claim <slug>`) hits the same primitive.
+Two concurrent calls land on the same write lock; the loser retries the SELECT and either claims a different first-bucket task or returns empty. No double-claim is possible. The CLI handle (`okt plan claim <slug>`) hits the same primitive.
 
-Agents should **never** call `tasks.move` to enter a plan task into `dev` — always go through `plans.claim_next`. Manual moves bypass the assignment write and leave the activity log inconsistent with the plan's progress view.
+Agents claim first, then move with `tasks.move` after preset-defined guard preconditions are satisfied. Calling `tasks.move` without a prior claim bypasses the assignment write and leaves the activity log inconsistent with the plan's progress view.
 
 ### Recovery from a crashed claim
 
@@ -750,8 +750,8 @@ okt config validate <config-dir>/config/custom/<my-preset>.yaml
 The validator rejects:
 
 - Missing required config blocks (mcp / views / priorities / severities / etc.)
-- Dangling refs in `mcp_commands` (persona / law / template slug not found)
-- Unknown guard types (only `comments_tagged`, `comments_min`, `blockers_in`, `wave_gate`)
+- Contradictory refs in `mcp_commands` (the same law in `laws` and `laws_disabled` on one command). Missing persona / law / template slugs are source warnings, not fatal validation errors.
+- Unknown guard types (only `comments_tagged`, `comments_min`, `blockers_in`, `wave_gate`, `subtasks_complete`)
 - Permissions referencing buckets that do not exist
 - Duplicate ids / values in priorities / severities / buckets
 

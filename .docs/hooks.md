@@ -191,11 +191,11 @@ config:
       when: { operation: task.delete }
       do: exec
       args:
-        argv: ["bash", "./scripts/log-blocked-delete.sh"]
+        argv: ["bash", "/home/me/scripts/log-blocked-delete.sh"]
         timeout_ms: 3000
 ```
 
-`./scripts/log-blocked-delete.sh`:
+`/home/me/scripts/log-blocked-delete.sh`:
 
 ```bash
 #!/usr/bin/env bash
@@ -217,7 +217,7 @@ config:
     - on: task.archived
       do: exec
       args:
-        argv: ["bash", "./scripts/post-archive.sh"]
+        argv: ["bash", "/home/me/scripts/post-archive.sh"]
 ```
 
 The script reads the JSON event from stdin and can call
