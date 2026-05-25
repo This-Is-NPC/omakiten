@@ -2,7 +2,7 @@
 
 Omakiten exposes a protocol-neutral agent intent layer in `internal/agent` and an MCP adapter in `internal/mcp`. The adapter maps MCP tools, resources, and prompts to the same `internal/app` services used by the CLI and TUI; it does not shell out to `okt` and does not duplicate workflow or project-scope rules.
 
-A small set of operations are deliberately CLI/TUI-only — see [surface-policy.md](surface-policy.md) for the criteria and the current restrictions (`projects.delete`, `db.backup`, `update`, `uninstall`, `setup`).
+A small set of operations are deliberately CLI/TUI-only — `projects.delete`, `db.backup`, `update`, `uninstall`, `setup`. Destructive or install-affecting ops never land on MCP; everything else does.
 
 ## Contents
 
@@ -326,7 +326,7 @@ The composed prompt is only half the picture. For prompts that fetch task state,
 
 ### Tuning context cost
 
-The biggest variable is the tool result, not the prompt. Seven knobs in `config.mcp` (see `.docs/configuration-guide.md#configmcp`) shape it without changing the protocol:
+The biggest variable is the tool result, not the prompt. Seven knobs in `config.mcp` (see `.docs/configuration-guide/system.md#configmcp`) shape it without changing the protocol:
 
 | Setting | Affects | Impact |
 |---|---|---|
@@ -380,6 +380,5 @@ Implications:
 
 ## See also
 
-- [cli-guide.md](cli-guide.md) — sibling CLI surface for the same operations.
-- [domain-events.md](domain-events.md) — events emitted by MCP tool calls.
-- [surface-policy.md](surface-policy.md) — criteria for which ops land on MCP.
+- [cli.md](cli.md) — sibling CLI surface for the same operations.
+- `internal/domain/events.go::KnownEventTypes` — canonical list of events emitted by MCP tool calls.

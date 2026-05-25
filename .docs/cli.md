@@ -44,7 +44,7 @@ Inherited by every subcommand (`internal/cli/root.go:NewRootCommand`):
 
 **Project resolution order** (`internal/project/resolver.go`): `--project-id` → `--project` → current working directory matching a registered project root.
 
-**Path resolution** — full contract (precedence, `.active` lookup, `custom/` shadowing, discovery fallthrough, boot order) lives in [`reference/path-resolution.md`](./reference/path-resolution.md). TL;DR precedence: `--config` / `--db` flag → `$OMAKITEN_HOME` → `$XDG_CONFIG_HOME` / `$XDG_DATA_HOME` → `~/.config/omakiten` and `~/.local/share/omakiten`.
+**Path resolution** — full contract (precedence, `.active` lookup, `custom/` shadowing, discovery fallthrough, boot order) lives in [`configuration-guide/path-resolution.md`](./configuration-guide/path-resolution.md). TL;DR precedence: `--config` / `--db` flag → `$OMAKITEN_HOME` → `$XDG_CONFIG_HOME` / `$XDG_DATA_HOME` → `~/.config/omakiten` and `~/.local/share/omakiten`.
 
 ## Environment variables
 
@@ -65,7 +65,7 @@ The TUI sets `agent_model="human"` internally so its activity is filtered out of
 
 `internal/cli/setup.go`. The bubbletea picker the curl-bash installer hands off to. Walks language → agent output language → workflow preset → MCP harnesses in one program, then writes the `okt()` shell-rc wrapper. CLI and TUI share the install-time language picker; the per-surface split lives in the profile yaml and can be changed later with `okt config language`. Re-run with `--update` to revisit choices; existing rc-wrapper and `omakiten.yaml` settings are preserved.
 
-The language pickers enumerate `defaults/languages/` at boot via `defaults.FS.ReadDir("languages")` — every bundled YAML auto-appears, with no allowlist to update. Adding a new pack ships as a doc-only PR on top of `defaults/languages/<code>.yaml`; see the [Languages Guide](./languages-guide.md) for the filename convention, header fields, parity rule, and the `scripts/new-language-pack.sh` scaffold.
+The language pickers enumerate `defaults/languages/` at boot via `defaults.FS.ReadDir("languages")` — every bundled YAML auto-appears, with no allowlist to update. Adding a new pack ships as a doc-only PR on top of `defaults/languages/<code>.yaml`; see the [Languages Guide](./configuration-guide/languages.md) for the filename convention, header fields, parity rule, and the `scripts/new-language-pack.sh` scaffold.
 
 Each picker screen is skipped when the matching env var or flag is set (`OKT_CLI_LANG` / `--cli-lang`, `OKT_TUI_LANG` / `--tui-lang`, `OKT_AGENT_LANG` / `--agent-lang`, `OKT_PRESET` / `--preset`, `OKT_HARNESSES` / `--harnesses`). For the shared CLI/TUI language screen, either `OKT_CLI_LANG` or `OKT_TUI_LANG` resolves both fields; `OKT_CLI_LANG` wins when both are set, and the other field mirrors it unless supplied explicitly. Useful in CI, Dockerfiles, and dotfiles bootstrap.
 
@@ -194,7 +194,7 @@ okt list --parent 42   # direct children of #42
 `internal/cli/edit.go`. Only fields explicitly passed are updated (`cmd.Flags().Changed(...)`).
 
 - `--priority` accepts a label or numeric id resolved against the active bundle via `parsePriority` (`internal/cli/enums.go`). Out-of-the-box labels (`low`, `normal`, `high`) come from `config.priorities` in `defaults/config/omakase.yaml`; rename them by editing the YAML.
-- `--bucket` re-buckets through the workflow service (transition guards still enforced; see [`guards-guide.md`](./guards-guide.md)).
+- `--bucket` re-buckets through the workflow service (transition guards still enforced; see [`configuration-guide/guards.md`](./configuration-guide/guards.md)).
 - `--parent` is tri-state: omit to leave `parent_id` untouched, pass `0` to clear (becomes a root), pass a positive id to re-parent with anti-cycle enforcement.
 
 ```sh
@@ -206,7 +206,7 @@ okt edit 99 --parent 0    # clear parent (becomes a root)
 
 ### `okt move TASK_ID --to BUCKET` — move a task
 
-`internal/cli/move.go`. Calls `app.TaskService.Move` → `app.WorkflowService.MoveTask` (transition allowance + guards + `task.completed` on final bucket; see [`guards-guide.md`](./guards-guide.md)).
+`internal/cli/move.go`. Calls `app.TaskService.Move` → `app.WorkflowService.MoveTask` (transition allowance + guards + `task.completed` on final bucket; see [`configuration-guide/guards.md`](./configuration-guide/guards.md)).
 
 ```sh
 okt move 42 --to dev
@@ -512,7 +512,7 @@ okt persona edit engineer --skill-slug go --skill-slug cli   # replaces full ski
 **Project-resolution behavior on launch:**
 
 - With `--project` / `--project-id`, or when `$CWD` matches a registered project root, the TUI opens directly on that project's Board (existing behavior).
-- Without any of the above, the TUI opens the Home Screen listing every registered project. Selecting one loads its Board normally. See [TUI Guide → Home](tui-guide.md#home-multi-project-picker).
+- Without any of the above, the TUI opens the Home Screen listing every registered project. Selecting one loads its Board normally. See [TUI Guide → Home](tui.md#home-multi-project-picker).
 
 No flags beyond globals.
 
@@ -566,7 +566,7 @@ okt mcp serve   # invoked by the harness, not by hand
 
 `okt mcp call search` is the CLI handle for the unified FTS5 surface (`internal/app/search_service.go`); it returns BM25-ranked hits with `<mark>...</mark>` snippets across tasks, comments, errors, solutions, and context entries. Pass `entity_types: []` (or omit the key) for an all-five sweep — the legacy `errors.search` MCP tool was retired alongside it.
 
-The full set of MCP tools, resources, and prompts is documented in `.docs/mcp-guide.md`.
+The full set of MCP tools, resources, and prompts is documented in `.docs/mcp.md`.
 
 ---
 
@@ -582,7 +582,7 @@ Every command writes to stdout one of:
 {"ok":false,"error":{"code":"<coded>","msg":"…","details":{…}}}
 ```
 
-`code` is one of the constants in `internal/domain/errors.go` (e.g., `validation_error`, `task_not_found`, `workflow_invalid_transition`, `guard_violation`, `dependency_invalid`, `tag_conflict`, `editor_failed`, `config_invalid`). The full list and agent-side guidance is in `.docs/mcp-guide.md` §"Failure Guidance".
+`code` is one of the constants in `internal/domain/errors.go` (e.g., `validation_error`, `task_not_found`, `workflow_invalid_transition`, `guard_violation`, `dependency_invalid`, `tag_conflict`, `editor_failed`, `config_invalid`). The full list and agent-side guidance is in `.docs/mcp.md` §"Failure Guidance".
 
 A failed command exits with status `1`. JSON minification follows `config.output.json_minified`.
 
@@ -590,7 +590,7 @@ A failed command exits with status `1`. JSON minification follows `config.output
 
 ## See also
 
-- [`configuration-guide.md`](./configuration-guide.md) — config keys CLI flags override.
-- [`mcp-guide.md`](./mcp-guide.md) — agent equivalent of CLI commands.
-- [`workflow-guide.md`](./workflow-guide.md) — preset CLI workflows.
-- [`surface-policy.md`](./surface-policy.md) — which ops live on CLI only vs all surfaces.
+- [`configuration-guide/README.md`](./configuration-guide/README.md) — config keys CLI flags override.
+- [`mcp.md`](./mcp.md) — agent equivalent of CLI commands.
+- [`workflow.md`](./workflow.md) — preset CLI workflows.
+- [`mcp.md`](./mcp.md) — agent equivalent for ops that live on MCP; CLI-only ops (`projects.delete`, `db.backup`, `update`, `uninstall`, `setup`) are documented in their respective subcommand sections above.

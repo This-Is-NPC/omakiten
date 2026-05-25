@@ -6,8 +6,9 @@ runtime subscribes to the in-process events bus and dispatches the
 matching `do:` action asynchronously.
 
 This guide covers the YAML schema, the per-action argument contracts,
-and a few worked recipes. For the broader event catalog and runtime
-behaviour, see [`domain-events.md`](domain-events.md).
+and a few worked recipes. For the canonical list of event types,
+inspect `internal/domain/events.go::KnownEventTypes` — the source of
+truth for everything an `on:` clause can subscribe to.
 
 ## Schema
 
@@ -42,7 +43,7 @@ dispatch by `engine.projectID == event.ProjectID`:
 The consequence: a `mcp.tool_call` hook declared in project A's bundle
 will not fire on tool calls dispatched against project B's service,
 even when both run through the same `okt mcp serve` process. See
-[`mcp-guide.md`](mcp-guide.md#per-project-routing) for how the dispatch
+[`mcp.md`](../mcp.md#per-project-routing) for how the dispatch
 side decides which project a tool call belongs to.
 
 ### Event matching
@@ -73,7 +74,7 @@ side decides which project a tool call belongs to.
 ### Channel gates
 
 The same `config.events` channels covered in
-[`domain-events.md`](domain-events.md#configuration) apply:
+[`system.md § config.events`](system.md#configevents) apply:
 
 - `log` — gates persistence of the underlying domain event.
 - `broadcast` — gates the bus fan-out.

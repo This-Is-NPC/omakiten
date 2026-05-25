@@ -214,7 +214,7 @@ Per-AI-model benchmark over a configurable period (errors recorded, errors searc
 |---|---|
 | `←` · `→` | cycle period (`7d` → `30d` → `all`) |
 
-The TUI itself reports `agent_model="human"` so its own activity does not appear in this benchmark — only MCP traffic with a real `_agent_model` does. See `.docs/mcp-guide.md` for the underlying domain-event timeline.
+The TUI itself reports `agent_model="human"` so its own activity does not appear in this benchmark — only MCP traffic with a real `_agent_model` does. See `.docs/mcp.md` for the underlying domain-event timeline.
 
 ### Stats › Logs
 
@@ -430,7 +430,7 @@ Two consequences worth knowing:
 
 ## Default sort, filter, and limits
 
-Per-view defaults come from `config.views` in the active profile yaml (`Settings.EffectiveViews()`). The TUI seeds itself from these on startup. Allowed values and canonical defaults are documented in `.docs/configuration-guide.md` §"`config.views`".
+Per-view defaults come from `config.views` in the active profile yaml (`Settings.EffectiveViews()`). The TUI seeds itself from these on startup. Allowed values and canonical defaults are documented in `.docs/configuration-guide/README.md` §"`config.views`".
 
 ## Live refresh
 
@@ -482,7 +482,7 @@ Never inline the walk-and-reserve loop. The 16-case `scrollwindow_test.go` locks
 
 ## Theming
 
-The TUI loads its theme from `<config-root>/themes/<active>.yaml` with `themes/custom/<active>.yaml` taking precedence (`internal/cli/tui.go:loadActiveTheme`). The active theme key is `config.theme.active`. See `.docs/theming-guide.md` for color tokens and authoring.
+The TUI loads its theme from `<config-root>/themes/<active>.yaml` with `themes/custom/<active>.yaml` taking precedence (`internal/cli/tui.go:loadActiveTheme`). The active theme key is `config.theme.active`. See `.docs/configuration-guide/themes.md` for color tokens and authoring.
 
 ## Markdown rendering
 
@@ -492,7 +492,7 @@ Press `M` (capital) inside the task view, comment view, or entity view to toggle
 
 ## See also
 
-- [`theming-guide.md`](theming-guide.md) — color tokens used by the TUI.
-- [`configuration-guide.md`](configuration-guide.md) — TUI scope, layout config.
-- [`cli-guide.md`](cli-guide.md) — sibling CLI surface.
-- [`mcp-guide.md`](mcp-guide.md) — agent surface mirror of TUI ops.
+- [`configuration-guide/themes.md`](configuration-guide/themes.md) — color tokens used by the TUI.
+- [`configuration-guide/README.md`](configuration-guide/README.md) — TUI scope, layout config.
+- [`cli.md`](cli.md) — sibling CLI surface.
+- [`mcp.md`](mcp.md) — agent surface mirror of TUI ops.

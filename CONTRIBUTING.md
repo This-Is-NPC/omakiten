@@ -148,8 +148,8 @@ The 79 existing `_test.go` files are intact; no mass refactor. Migrate opportuni
 ### Documentation
 
 - Every `internal/*` package carries a 2-4 sentence package comment so `go doc` answers "what is this for?" without opening source. The comment may live in a dedicated `doc.go` (preferred for packages that span many files) or in the comment block immediately above `package <name>` in the main file. Pick one shape per package; do not add `doc.go` to a package whose main file already carries the description.
-- User-facing guides live under `.docs/<topic>-guide.md` (`cli-guide`, `tui-guide`, `mcp-guide`, `configuration-guide`, `guards-guide`, `theming-guide`, `workflow-guide`, `languages-guide`) plus flat reference docs (`domain-events.md`, `hooks.md`, `notifications.md`). New bundled language packs follow the recipe in [`.docs/languages-guide.md`](.docs/languages-guide.md).
-- Contributor / architecture docs live under `.docs/internal/` (`architecture.md`, `dev-guide.md`, `data-model-guide.md`, `integration-guide.md`, `per-project-snapshot.md`, `AUTHORING.md`). Reference anchors live under `.docs/reference/`; conceptual frameworks under `.docs/explanation/`.
+- User-facing docs live under `.docs/` in the 21-file shape indexed by [`.docs/README.md`](.docs/README.md): six root surfaces (`cli`, `tui`, `mcp`, `workflow`, `presets`, `why_omakiten`) plus the `configuration-guide/` subdir (system, entities, guards, hooks, notifications, themes, languages, path-resolution, project-overrides). New bundled language packs follow the recipe in [`.docs/configuration-guide/languages.md`](.docs/configuration-guide/languages.md).
+- Contributor / architecture docs live under `.docs/internal/` (`architecture.md`, `dev-guide.md`, `data-model.md`, `requirements.md`). Authoring rules and the atom map sit in [`.docs/README.md`](.docs/README.md) § Authoring.
 - Project-level reference (curated by `/document`): `.docs/internal/architecture.md`, `.docs/internal/requirements.md`.
 - When changing behavior covered by an existing guide, update the guide in the same PR.
 

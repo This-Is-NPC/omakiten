@@ -58,7 +58,7 @@ okt uninstall --yes              # remove binary + okt() wrapper, keep DB and co
 okt uninstall --yes --purge      # nuke everything, including data and config
 ```
 
-Both commands fall through to an interactive picker when invoked without flags on a TTY (cf. `okt uninstall` checkbox flow with on-disk size hints and a `THIS CANNOT BE UNDONE` line). See [`.docs/cli-guide.md`](./.docs/cli-guide.md#okt-update--fetch-latest-release-and-swap-the-binary) for the full flag tables, JSON envelope codes, and the Windows EXE-in-use caveat.
+Both commands fall through to an interactive picker when invoked without flags on a TTY (cf. `okt uninstall` checkbox flow with on-disk size hints and a `THIS CANNOT BE UNDONE` line). See [`.docs/cli.md`](./.docs/cli.md#okt-update--fetch-latest-release-and-swap-the-binary) for the full flag tables, JSON envelope codes, and the Windows EXE-in-use caveat.
 
 ## How you work with it
 
@@ -102,7 +102,7 @@ Beyond the slash prompts, describe the action and the agent picks the right tool
 
 ### Guardrails the agent can't bypass
 
-Define your workflow as buckets and explicit transitions — `backlog → dev → review → done` — with rules between them: *can't leave `dev` without a `#review` comment*, *can't move to `done` while blockers are still open*. Your agent is bound by the same rules you are. Forbidden moves come back as coded errors, not silent state changes. Per-bucket CRUD policy applies to edits and deletes too: a `done` bucket can freeze deletion entirely. → [Guards Guide](.docs/guards-guide.md)
+Define your workflow as buckets and explicit transitions — `backlog → dev → review → done` — with rules between them: *can't leave `dev` without a `#review` comment*, *can't move to `done` while blockers are still open*. Your agent is bound by the same rules you are. Forbidden moves come back as coded errors, not silent state changes. Per-bucket CRUD policy applies to edits and deletes too: a `done` bucket can freeze deletion entirely. → [Guards](.docs/configuration-guide/guards.md)
 
 ### Memory that survives the session
 
@@ -114,19 +114,19 @@ Context dumps are tiered (level 1–3) and capped at a token budget you set. You
 
 ### Speaks your language
 
-**21 bundled language packs** — Arabic, Chinese (zh-cn), Danish, Dutch, English, Finnish, French, German, Hindi, Italian, Japanese, Korean, Marathi, Norwegian, Polish, Portuguese (Brazil), Russian, Spanish, Swedish, Turkish, Ukrainian. CLI, TUI, and agent-output language are chosen *independently* at install — read your terminal in English, browse the board in Portuguese, tell the agent to reply in Japanese. Missing your locale? `scripts/new-language-pack.sh <code> <native> <name>` scaffolds a TODO-marked pack the parity test keeps honest. → [Languages Guide](.docs/languages-guide.md)
+**21 bundled language packs** — Arabic, Chinese (zh-cn), Danish, Dutch, English, Finnish, French, German, Hindi, Italian, Japanese, Korean, Marathi, Norwegian, Polish, Portuguese (Brazil), Russian, Spanish, Swedish, Turkish, Ukrainian. CLI, TUI, and agent-output language are chosen *independently* at install — read your terminal in English, browse the board in Portuguese, tell the agent to reply in Japanese. Missing your locale? `scripts/new-language-pack.sh <code> <native> <name>` scaffolds a TODO-marked pack the parity test keeps honest. → [Languages](.docs/configuration-guide/languages.md)
 
 ### WBS-style plans with atomic claim
 
-Group tasks into ordered **waves** under a plan, then let two-to-four agents fan out without racing. `plans.claim_next` is an atomic SQLite write — `BEGIN IMMEDIATE` serialises concurrent claims so the same task can never be picked twice, and the claiming agent's identity lands on `tasks.assigned_to` for free. A `wave_gate` guard keeps wave `N+1` blocked until wave `N` fully closes, so a fan-out cannot accidentally jump ahead. The TUI surfaces it as a column-per-wave network diagram next to the board / table / graph views. → [Workflow Guide § Plans](.docs/workflow-guide.md#plans--multi-agent-fan-out)
+Group tasks into ordered **waves** under a plan, then let two-to-four agents fan out without racing. `plans.claim_next` is an atomic SQLite write — `BEGIN IMMEDIATE` serialises concurrent claims so the same task can never be picked twice, and the claiming agent's identity lands on `tasks.assigned_to` for free. A `wave_gate` guard keeps wave `N+1` blocked until wave `N` fully closes, so a fan-out cannot accidentally jump ahead. The TUI surfaces it as a column-per-wave network diagram next to the board / table / graph views. → [Workflow § Plans](.docs/workflow.md#plans--multi-agent-fan-out)
 
 ### Observable by design
 
-Every meaningful state change emits a typed domain event (`task.created`, `task.moved`, `error.recorded`, `guard.violated`, …). A YAML-driven hooks engine subscribes to those events and runs configurable async actions; **notification cards** turn the same stream into pop-up feedback inside the TUI, with short message, optional tab-detail, and timeout dismissal. The MCP `metrics.summary` tool reduces the event log into a per-AI-model dashboard — errors recorded, errors searched, solution like-rate, search-before-record ratio — over a `7d`, `30d`, or `all` window. → [Domain Events Catalog](.docs/domain-events.md) · [Hooks Engine](.docs/hooks.md) · [Notifications](.docs/notifications.md)
+Every meaningful state change emits a typed domain event (`task.created`, `task.moved`, `error.recorded`, `guard.violated`, …). A YAML-driven hooks engine subscribes to those events and runs configurable async actions; **notification cards** turn the same stream into pop-up feedback inside the TUI, with short message, optional tab-detail, and timeout dismissal. The MCP `metrics.summary` tool reduces the event log into a per-AI-model dashboard — errors recorded, errors searched, solution like-rate, search-before-record ratio — over a `7d`, `30d`, or `all` window. → [Hooks Engine](.docs/configuration-guide/hooks.md) · [Notifications](.docs/configuration-guide/notifications.md) · `internal/domain/events.go` (event catalog).
 
 ### Customize how your agent behaves
 
-Define laws your agent must follow, give it personas with curated skill sets, set templates for tasks / PRs / comments, declare workflow defaults and per-bucket CRUD policy, and reshape domain enums (priorities and severities ship as configurable id↔value tables) — all in plain YAML and Markdown under your config directory. Edit them, version them, share them with a teammate by copying a folder. → [Configuration Guide](.docs/configuration-guide.md)
+Define laws your agent must follow, give it personas with curated skill sets, set templates for tasks / PRs / comments, declare workflow defaults and per-bucket CRUD policy, and reshape domain enums (priorities and severities ship as configurable id↔value tables) — all in plain YAML and Markdown under your config directory. Edit them, version them, share them with a teammate by copying a folder. → [Configuration Guide](.docs/configuration-guide/README.md)
 
 ### Local-first, every project
 
@@ -145,52 +145,26 @@ Four official presets ship under `defaults/config/`. Each one is a different **p
 
 The installer asks which one to activate at install time (defaults to omakase). Switch later from the TUI Settings › Config picker, with `okt init --preset <name>` on a new project, or by editing `~/.config/omakiten/config/.active`. List the menu via `okt config presets`.
 
-Every preset's `okt-imagine` interrogates you via 5W2H so you understand what you're building before any code is planned. Success criteria land in SMART form; priorities (when alternatives exist) record as MoSCoW or RICE. The `okt-*` cycle maps to Plan-Do-Check-Act — see the [Workflow Guide § PDCA mapping](.docs/workflow-guide.md#pdca-mapping--the-cycle-behind-every-preset).
+Every preset's `okt-imagine` interrogates you via 5W2H so you understand what you're building before any code is planned. Success criteria land in SMART form; priorities (when alternatives exist) record as MoSCoW or RICE. The `okt-*` cycle maps to Plan-Do-Check-Act — see [Workflow § PDCA mapping](.docs/workflow.md#pdca-mapping--the-cycle-behind-every-preset).
 
-Authoring your own preset is a first-class path. The agent orients itself on the active config via the `/okt-config` MCP prompt; the full picker / fork recipe sits in the [Workflow Guide](.docs/workflow-guide.md).
+Authoring your own preset is a first-class path. The agent orients itself on the active config via the `/okt-config` MCP prompt; the full picker / fork recipe sits in the [Workflow doc](.docs/workflow.md).
 
 ## When you want to see it
 
 `okt tui` opens a terminal UI organised into three zones — **Tasks** (board / table / graph / plans), **Stats** (per-model benchmark / activity logs), **Settings** (runtime info / entity browser) — same data the CLI and MCP layers see, just visual. Task descriptions, comment bodies, and entity files render as styled markdown by default; press `M` to toggle raw. Editing config files in another tab hot-reloads the running TUI and prompts you through orphan-task migration if the new workflow's buckets changed.
 
-Run it outside a project and it opens a multi-project home — pick one, work on it, and your shell `cd`s into that project's folder when you exit. → [TUI Guide](.docs/tui-guide.md)
+Run it outside a project and it opens a multi-project home — pick one, work on it, and your shell `cd`s into that project's folder when you exit. → [TUI](.docs/tui.md)
 
-The full MCP surface (44 tools, 2 resources, 11 prompts) is documented in the [MCP Guide](.docs/mcp-guide.md).
+The full MCP surface (44 tools, 2 resources, 11 prompts) is documented in [.docs/mcp.md](.docs/mcp.md).
 
 ## Documentation
 
-**User guides**
+Single index lives at [`.docs/README.md`](.docs/README.md). 21 docs grouped by audience:
 
-- [CLI Guide](.docs/cli-guide.md)
-- [TUI Guide](.docs/tui-guide.md)
-- [MCP Guide](.docs/mcp-guide.md)
-- [Configuration Guide](.docs/configuration-guide.md)
-- [Workflow Guide — presets and authoring your own](.docs/workflow-guide.md)
-- [Workflow Guards Guide](.docs/guards-guide.md)
-- [Theming Guide](.docs/theming-guide.md)
-- [Languages Guide — adding a bundled pack](.docs/languages-guide.md)
-- [Domain Events Catalog](.docs/domain-events.md)
-- [Hooks Engine](.docs/hooks.md)
-- [Notifications](.docs/notifications.md)
-- [Surface Policy](.docs/surface-policy.md)
-- [Why Omakiten?](.docs/why_omakiten.md)
-
-**Contributors / internals**
-
-- [Architecture & Tech Stack](.docs/internal/architecture.md)
-- [Developer Guide](.docs/internal/dev-guide.md)
-- [Data Model Guide](.docs/internal/data-model-guide.md)
-- [Integration Guide — wiring hooks](.docs/internal/integration-guide.md)
-- [Per-project Snapshot architecture](.docs/internal/per-project-snapshot.md)
-- [Requirements & Behavior Map](.docs/internal/requirements.md)
-- [Docs Authoring Guide](.docs/internal/AUTHORING.md)
-
-**Reference / concepts**
-
-- [Path Resolution](.docs/reference/path-resolution.md)
-- [Filesystem Layout](.docs/reference/layout.md)
-- [Mental Models](.docs/explanation/mental-models.md)
-- [Bibliography](.docs/reference/bibliography.md)
+- **Orientation** — [Why Omakiten?](.docs/why_omakiten.md), [Presets comparison](.docs/presets.md), [Workflow](.docs/workflow.md).
+- **User-facing surfaces** — [CLI](.docs/cli.md), [TUI](.docs/tui.md), [MCP](.docs/mcp.md).
+- **Configuration** — see [`configuration-guide/`](.docs/configuration-guide/README.md): system, entities, guards, hooks, notifications, themes, languages, path-resolution, project-overrides.
+- **Contributors / internals** — [Architecture](.docs/internal/architecture.md), [Requirements](.docs/internal/requirements.md), [Developer Guide](.docs/internal/dev-guide.md), [Data Model](.docs/internal/data-model.md).
 
 **Project**
 

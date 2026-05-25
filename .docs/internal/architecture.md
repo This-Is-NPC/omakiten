@@ -124,5 +124,5 @@ Not applicable — local-first single-user CLI/TUI/MCP tool with no authn or aut
 ## See also
 
 - [Dev guide](dev-guide.md) — mise tasks and dev workflow.
-- [Data model guide](data-model-guide.md) — schema and migrations.
+- [Data model guide](data-model.md) — schema and migrations.
 - [Requirements](requirements.md) — functional requirements catalog.
