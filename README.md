@@ -1,13 +1,117 @@
 # Omakiten
 
+**The local source of truth for your AI agents.**
+
+Omakiten is a local checkpoint system for AI-assisted development. No cloud. No account. No telemetry. Just you, your projects, your agents, and a SQLite database on your machine.
+
 [![Release](https://img.shields.io/github/v/release/This-Is-NPC/omakiten)](https://github.com/This-Is-NPC/omakiten/releases)
 [![License](https://img.shields.io/github/license/This-Is-NPC/omakiten)](LICENSE)
 
-**Opinionated checkpoints for AI-driven development.**
+<p align="center">
+  21 languages | 100% local | Open source | Zero telemetry
+</p>
 
-AI agents lose context between sessions, act outside your workflow, and rediscover the same fix every month. Omakiten is the local source of truth they read before continuing — they always start from the picture you have.
+---
 
-It lives in your terminal and keeps your project state — tasks, dependencies, decisions, errors, and fixes — in a local SQLite database. Your agent reads and writes it through the Model Context Protocol (MCP), so the workflow rules you set apply to the agent too.
+## The Problem
+
+AI agents lose context between sessions. Different tools see different parts of the work. One agent rediscovers the bug another agent already fixed. You repeat the same explanation. They repeat the same mistake.
+
+Omakiten gives your agents a shared local source of truth before they continue: tasks, dependencies, workflow state, decisions, errors, solutions, handoff notes, and plans in one place they can read and write through MCP.
+
+---
+
+## How It Works
+
+You keep working with whichever agent you prefer. Omakiten sits underneath them as the shared checkpoint for every project and every supported MCP harness.
+
+```mermaid
+flowchart TB
+    user([You])
+
+    subgraph projectA[Project A]
+        claudeA[Claude Code]
+        opencodeA[OpenCode]
+    end
+
+    subgraph projectB[Project B]
+        claudeB[Claude Code]
+    end
+
+    user --> claudeA
+    user --> opencodeA
+    user --> claudeB
+
+    claudeA <-->|MCP| omakiten
+    opencodeA <-->|MCP| omakiten
+    claudeB <-->|MCP| omakiten
+
+    cli[okt CLI] <-->|same state| omakiten
+    tui[okt tui] <-->|same state| omakiten
+
+    omakiten[(Omakiten<br/>local source of truth)]
+    db[(SQLite<br/>projects, tasks, dependencies<br/>context, errors, solutions<br/>workflow guards, plans)]
+
+    omakiten <--> db
+```
+
+The important part is the direction of control: you interact with the agents, and the agents coordinate through Omakiten. Claude Code in Project A, Claude Code in Project B, and OpenCode in Project A can all read from the same local state without inventing their own memory.
+
+---
+
+## What It Solves
+
+| Workflow guardrails | Memory between sessions | Unified search |
+|---|---|---|
+| Rules like *"do not leave `dev` without a review comment"* apply to agents too. Guards are project-scoped, so Project A can enforce strict review gates while Project B keeps a lighter flow. Forbidden moves return explicit errors, not silent state changes. | Tasks, comments, errors, solutions, and handoff context persist in SQLite. Agents resume from the real state, even days later. | Full-text search (FTS5) spans projects on your machine. *"Have we seen this error before?"* finally has an answer. |
+
+| Multi-agent plans | 21 languages | Events and hooks |
+|---|---|---|
+| Group work into ordered waves. Agents claim work atomically through SQLite, so the same task is never picked twice. Wave gates prevent work from jumping ahead. | CLI, TUI, and agent output language are configured independently. Use English in the terminal, Portuguese in the board, and Japanese for agent replies. | Typed events like `task.created`, `error.recorded`, and `guard.violated` can trigger async YAML hooks. Per-model AI metrics are included. |
+
+---
+
+## The Agent Workflow
+
+Omakiten ships canonical MCP prompts for the common development loop. The happy path is intentionally simple: discover the work, create the task, implement with guardrails, then review the diff.
+
+```mermaid
+flowchart LR
+    imagine["/okt-imagine<br/>Discover the work"]
+    create["/okt-create<br/>Shape and register the task"]
+    implement["/okt-implement<br/>Execute with guardrails"]
+    review["/okt-review<br/>Inspect the diff"]
+
+    imagine --> create --> implement --> review
+```
+
+### Daily Command Highlights
+
+| Prompt | Use it when you want to |
+|---|---|
+| `/okt` | Start a session with project identity, active workflow, pending work, recent context, and the suggested next step. |
+| `/okt-imagine` | Clarify the idea before a task exists. The agent asks 5W2H questions and turns success into SMART criteria. |
+| `/okt-create` | Create work with duplicate detection, INVEST validation, and prioritization rationale when alternatives exist. |
+| `/okt-resume` | Come back to a project after a pause and see likely next work, blocked items, and handoff context. |
+| `/okt-continue` | Resume a specific task with dependencies, comments, workflow position, and recent context loaded at once. |
+| `/okt-implement` | Execute approved work with workflow guardrails, bounded self-review, and error retry reporting. |
+| `/okt-review` | Review the current diff with findings, risk notes, and file-level feedback. |
+| `/okt-check` | Discover and run the project's check targets, then report pass/fail clearly. |
+| `/okt-commit` | Draft Conventional Commits from the working tree without pushing. |
+
+Natural language works too:
+
+| What you say | What the agent does |
+|---|---|
+| "What is the state of this project?" | Reads `project.overview`. |
+| "Pick up where we left off." | Reads `project.resume`. |
+| "Move task 17 to review." | Calls `tasks.move`; transition rules still apply. |
+| "Have we seen this error before?" | Searches tasks, comments, errors, solutions, and context across projects. |
+| "That solution worked." | Confirms the solution as known-good. |
+
+[See the full MCP surface](.docs/mcp.md): 44 tools, 2 resources, and 11 prompts.
+
+---
 
 ## Install
 
@@ -23,151 +127,112 @@ curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install
 irm https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.ps1 | iex
 ```
 
-After downloading the binary the installer hands off to `okt setup`, a bubbletea picker that walks you through **language → agent-output language → workflow preset → MCP harnesses**. CLI and TUI share the install-time language picker, then can be split later via `okt config language`. Re-run any time with `okt setup --update` to revisit your choices; existing rc-file wrapper and `omakiten.yaml` are preserved.
+The installer opens an interactive picker: CLI/TUI language, agent-output language, workflow preset, and MCP harnesses. For headless installs in CI, Dockerfiles, or dotfiles, provide environment variables:
 
-Six MCP harnesses ship wired: `claude-code`, `claude-desktop`, `codex`, `crush`, `github-copilot`, `opencode`. Pick one, many, or none — re-run `okt mcp setup --harness <name>` at any time.
-
-For headless installs (CI, Dockerfile, dotfiles) pre-supply the five inputs and the picker stays silent:
-
-| Env var          | Skips the picker for             |
-|------------------|----------------------------------|
-| `OKT_CLI_LANG`   | Shared install-time CLI/TUI language (e.g. `en`, `pt-br`) |
-| `OKT_TUI_LANG`   | Shared install-time CLI/TUI language when CLI is omitted |
-| `OKT_AGENT_LANG` | Agent output language (free-form, e.g. `Português (Brasil)`) |
-| `OKT_PRESET`     | Workflow preset (default `omakase`) |
-| `OKT_HARNESSES`  | MCP harnesses (CSV; `0` skips harness setup) |
-
-Then register your first project:
+| Variable | Defines |
+|---|---|
+| `OKT_CLI_LANG` | CLI/TUI language, for example `pt-br` or `en`. |
+| `OKT_TUI_LANG` | CLI/TUI language when `OKT_CLI_LANG` is omitted. |
+| `OKT_AGENT_LANG` | Language agents use when responding. |
+| `OKT_PRESET` | Workflow preset: `omakase`, `izakaya`, `kaiseki`, or `shokunin`. |
+| `OKT_HARNESSES` | MCP harnesses, for example `claude-code,codex,opencode`, or `0` for none. |
 
 ```bash
+OKT_CLI_LANG=en OKT_AGENT_LANG="English" OKT_PRESET=omakase OKT_HARNESSES=claude-code,opencode \
+  bash <(curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.sh)
+```
+
+Supported MCP harnesses include `claude-code`, `claude-desktop`, `codex`, `crush`, `github-copilot`, and `opencode`.
+
+---
+
+## Your First Project
+
+```bash
+# Register the current project
 okt init --name MyProject --slug my-project
-# or pin a different preset per-project:
-okt init --name MyProject --slug my-project --preset shokunin
+
+# Inspect the current state
+okt list
+
+# Open the visual interface
+okt tui
 ```
 
-Projects can also keep their config beside the code — drop a `.omakiten/config/<preset>.yaml` at the repo root and Omakiten loads that bundle while you're inside the tree. Snapshot, hot-reload, and orphan-task migration are isolated per-project so two repos never see each other's workflow.
+Per-project configuration is supported. Put `.omakiten/config/omakase.yaml` in the repository root and Omakiten loads that workflow whenever you are inside the project tree. Guards, bucket rules, hooks, workflow snapshots, task state, and migration paths stay isolated per project.
 
-### Update and uninstall
+---
 
-The binary self-services its own lifecycle — no need to re-pipe the installer for refreshes or remember the bundled shell scripts:
+## Four Work Disciplines
+
+Each preset is a process discipline, not an architecture prescription. Omakiten does not force DDD, Clean Architecture, or any framework-specific structure.
+
+| Preset | Spirit | Use it for |
+|---|---|---|
+| **omakase** | Trunk-based development, TDD, Conventional Commits, boy-scout cleanup. | The balanced default for professional software work. |
+| **izakaya** | Lean startup, spikes, tracer bullets, walking skeletons. | Prototypes, side projects, experiments, and low-ceremony work. |
+| **kaiseki** | Staged delivery, formal sign-offs, documented decisions. | Planned features in serious codebases with multiple stakeholders. |
+| **shokunin** | SRE discipline, pre-mortems, multi-reviewer change control, blameless postmortems. | Regulated environments, irreversible changes, and audit-heavy work. |
+
+Every preset runs `okt-imagine` through 5W2H before work is filed, so you understand what you are building before planning code.
+
+---
+
+## What Changes Day To Day
+
+**Before:** You explain the project from scratch to every agent. They suggest changes that violate the team's process. The same error comes back because the previous fix lived only in a chat transcript.
+
+**After:** Each agent reads the checkpoint before acting. Workflow rules are enforced at the shared state layer. Search crosses projects. Handoff notes survive sessions. You spend less time repeating context and more time building.
+
+---
+
+## TUI
+
+`okt tui` opens a terminal UI with three zones: **Tasks** (board, table, graph, plans), **Stats** (per-model benchmark, logs), and **Settings** (runtime info, entity browser). Task descriptions, comments, and entity files render as styled markdown; press `M` to toggle raw mode.
+
+Outside a project, it opens a multi-project home. Pick a project, work on it, and the shell `cd`s into that project's folder when you exit.
+
+[Read the full TUI guide](.docs/tui.md)
+
+---
+
+## Update And Uninstall
 
 ```bash
-okt update --check               # report current vs. latest, no write
-okt update --yes                 # download + atomically swap the binary
-okt uninstall --yes              # remove binary + okt() wrapper, keep DB and config
-okt uninstall --yes --purge      # nuke everything, including data and config
+okt update --check    # check without changing anything
+okt update --yes      # download and atomically swap the binary
+
+okt uninstall --yes             # remove binary and wrapper, keep data
+okt uninstall --yes --purge     # remove everything, including data and config
 ```
 
-Both commands fall through to an interactive picker when invoked without flags on a TTY (cf. `okt uninstall` checkbox flow with on-disk size hints and a `THIS CANNOT BE UNDONE` line). See [`.docs/cli.md`](./.docs/cli.md#okt-update--fetch-latest-release-and-swap-the-binary) for the full flag tables, JSON envelope codes, and the Windows EXE-in-use caveat.
+Both commands fall back to an interactive picker when called without flags in a TTY.
 
-## How you work with it
-
-Once connected, two modes coexist: **canonical slash prompts** for the most common moves, and **natural-language requests** the agent translates into MCP tool calls.
-
-### Canonical prompts
-
-Eleven prompts ship as MCP prompts. The first five form the happy-path cycle (`okt → okt-resume / okt-imagine → okt-create → okt-continue → okt-implement`); the remaining six are parallel surfaces for execution, drift survey, config orientation, commit drafting, diff review, and check discovery.
-
-| Prompt | When to use it |
-|---|---|
-| `/okt` | **Start of a session** — loads project identity, active workflow, pending count, and the next-step suggestion. |
-| `/okt-imagine` | **PLAN phase — discovery before any task exists** — product-owner persona interrogates you via 5W2H, frames success in SMART terms, surfaces gaps. |
-| `/okt-create <description>` | **PLAN → DO handoff** — duplicate detection, INVEST-checked user story, prioritization rationale (MoSCoW / RICE) when alternatives exist. |
-| `/okt-resume` | **Coming back to a project after a pause** — surfaces the most relevant work to pick up next, including blocked items and recent handoff context. |
-| `/okt-continue <task_id>` | **Resuming a specific task** — pulls dependencies, comments, workflow position, and recent context in one shot. |
-| `/okt-implement` | **Executing approved work** — bounded self-review, conventional commits, self-report on retried errors. |
-| `/okt-document` | **Surveying project documentation** — lists drift items in `.docs/`, `README.md`, `CONTRIBUTING.md`; does not edit in place. |
-| `/okt-config` | **Orienting the agent on the active config layout** — path resolution, entity folders, frontmatter shapes, wiring, guard kinds. Read-only. |
-| `/okt-commit` | **Draft Conventional Commits from the working tree** — groups changes by intent, writes the "why", never pushes. |
-| `/okt-review` | **Walk a diff through Fowler/Beck/Martin/Feathers lens** — emits findings + refactor opportunities by file:line, severity-tagged. Read-only. |
-| `/okt-check` | **Discover and run the project's check targets** — `mise tasks` discovery first; report pass/fail in a tabular comment. |
-
-### Natural-language scenarios
-
-Beyond the slash prompts, describe the action and the agent picks the right tool:
-
-| What you say to the agent | What the agent does |
-|---|---|
-| "What's the state of this project?" | Reads `project.overview` and summarizes. |
-| "Pick up where we left off." | Reads `project.resume` and proposes next work. |
-| "Continue task 42." | Loads task 42 with deps + comments + recent context. |
-| "Move task 17 to review." | Calls `tasks.move` (transition rules and guards still apply). |
-| "What's blocking task 42?" | Lists dependencies + their bucket state. |
-| "Save a handoff note: refactored auth to use middleware." | Stores a context entry for the next session. |
-| "Log this error: TLS handshake fails on staging." | Records the error, attaches a candidate solution. |
-| "Have we ever hit this before?" | Unified `search` across tasks, comments, errors, solutions, and handoff context — every project on the machine. |
-| "That fix worked." | Confirms the solution as known-good (increments its like counter). |
-
-## What makes Omakiten different
-
-### Guardrails the agent can't bypass
-
-Define your workflow as buckets and explicit transitions — `backlog → dev → review → done` — with rules between them: *can't leave `dev` without a `#review` comment*, *can't move to `done` while blockers are still open*. Your agent is bound by the same rules you are. Forbidden moves come back as coded errors, not silent state changes. Per-bucket CRUD policy applies to edits and deletes too: a `done` bucket can freeze deletion entirely. → [Guards](.docs/configuration-guide/guards.md)
-
-### Memory that survives the session
-
-A unified `search` MCP tool indexes five entity types — tasks, comments, errors, solutions, and handoff context — in a single SQLite FTS5 index ranked by BM25. *"Have we ever hit this error?"* answers from anywhere on your machine: any project, any session. Errors carry the candidate solutions that worked, so the agent stops re-discovering the same fix every quarter.
-
-### Compact handoffs that fit the context window
-
-Context dumps are tiered (level 1–3) and capped at a token budget you set. Your agent gets exactly enough state to continue — not a wall of unrelated history. *"Pick up where we left off"* finally means something.
-
-### Speaks your language
-
-**21 bundled language packs** — Arabic, Chinese (zh-cn), Danish, Dutch, English, Finnish, French, German, Hindi, Italian, Japanese, Korean, Marathi, Norwegian, Polish, Portuguese (Brazil), Russian, Spanish, Swedish, Turkish, Ukrainian. CLI, TUI, and agent-output language are chosen *independently* at install — read your terminal in English, browse the board in Portuguese, tell the agent to reply in Japanese. Missing your locale? `scripts/new-language-pack.sh <code> <native> <name>` scaffolds a TODO-marked pack the parity test keeps honest. → [Languages](.docs/configuration-guide/languages.md)
-
-### WBS-style plans with atomic claim
-
-Group tasks into ordered **waves** under a plan, then let two-to-four agents fan out without racing. `plans.claim_next` is an atomic SQLite write — `BEGIN IMMEDIATE` serialises concurrent claims so the same task can never be picked twice, and the claiming agent's identity lands on `tasks.assigned_to` for free. A `wave_gate` guard keeps wave `N+1` blocked until wave `N` fully closes, so a fan-out cannot accidentally jump ahead. The TUI surfaces it as a column-per-wave network diagram next to the board / table / graph views. → [Workflow § Plans](.docs/workflow.md#plans--multi-agent-fan-out)
-
-### Observable by design
-
-Every meaningful state change emits a typed domain event (`task.created`, `task.moved`, `error.recorded`, `guard.violated`, …). A YAML-driven hooks engine subscribes to those events and runs configurable async actions; **notification cards** turn the same stream into pop-up feedback inside the TUI, with short message, optional tab-detail, and timeout dismissal. The MCP `metrics.summary` tool reduces the event log into a per-AI-model dashboard — errors recorded, errors searched, solution like-rate, search-before-record ratio — over a `7d`, `30d`, or `all` window. → [Hooks Engine](.docs/configuration-guide/hooks.md) · [Notifications](.docs/configuration-guide/notifications.md) · `internal/domain/events.go` (event catalog).
-
-### Customize how your agent behaves
-
-Define laws your agent must follow, give it personas with curated skill sets, set templates for tasks / PRs / comments, declare workflow defaults and per-bucket CRUD policy, and reshape domain enums (priorities and severities ship as configurable id↔value tables) — all in plain YAML and Markdown under your config directory. Edit them, version them, share them with a teammate by copying a folder. → [Configuration Guide](.docs/configuration-guide/README.md)
-
-### Local-first, every project
-
-Tasks, comments, dependencies, errors, fixes — all in a SQLite file in your home directory or `.omakiten/` at the repo root. One tool tracks every project on the machine; switch directories and your agent picks up where you left off. No account. No telemetry. No cloud.
-
-## Workflow presets
-
-Four official presets ship under `defaults/config/`. Each one is a different **process discipline** — they do not prescribe architecture, only how the team works through the development cycle.
-
-| Preset | Methodology | When to use |
-|---|---|---|
-| **omakase** | Trunk-based + CI + DORA + TDD + Conventional Commits + Boy-Scout cleanup | The balanced default. Mainstream professional software work. |
-| **izakaya** | Lean Startup + XP Spike + Tracer Bullet + Walking Skeleton | Spikes, prototypes, side-projects. Minimum ceremony. |
-| **kaiseki** | Staged delivery (PMBOK-flavored) with formal sign-offs + decision records + peer review | Planned features in a serious codebase. Architecture-agnostic. |
-| **shokunin** | SRE + Pre-mortem + Multi-reviewer change control + Blameless postmortem | Regulated environments, irreversible changes, audit-trail-mandatory work. |
-
-The installer asks which one to activate at install time (defaults to omakase). Switch later from the TUI Settings › Config picker, with `okt init --preset <name>` on a new project, or by editing `~/.config/omakiten/config/.active`. List the menu via `okt config presets`.
-
-Every preset's `okt-imagine` interrogates you via 5W2H so you understand what you're building before any code is planned. Success criteria land in SMART form; priorities (when alternatives exist) record as MoSCoW or RICE. The `okt-*` cycle maps to Plan-Do-Check-Act — see [Workflow § PDCA mapping](.docs/workflow.md#pdca-mapping--the-cycle-behind-every-preset).
-
-Authoring your own preset is a first-class path. The agent orients itself on the active config via the `/okt-config` MCP prompt; the full picker / fork recipe sits in the [Workflow doc](.docs/workflow.md).
-
-## When you want to see it
-
-`okt tui` opens a terminal UI organised into three zones — **Tasks** (board / table / graph / plans), **Stats** (per-model benchmark / activity logs), **Settings** (runtime info / entity browser) — same data the CLI and MCP layers see, just visual. Task descriptions, comment bodies, and entity files render as styled markdown by default; press `M` to toggle raw. Editing config files in another tab hot-reloads the running TUI and prompts you through orphan-task migration if the new workflow's buckets changed.
-
-Run it outside a project and it opens a multi-project home — pick one, work on it, and your shell `cd`s into that project's folder when you exit. → [TUI](.docs/tui.md)
-
-The full MCP surface (44 tools, 2 resources, 11 prompts) is documented in [.docs/mcp.md](.docs/mcp.md).
+---
 
 ## Documentation
 
-Single index lives at [`.docs/README.md`](.docs/README.md). 21 docs grouped by audience:
+| Audience | Start here |
+|---|---|
+| **Understand the why** | [`.docs/why_omakiten.md`](.docs/why_omakiten.md): positioning, mental models, PDCA, 5W2H, SMART, INVEST, bibliography. |
+| **Compare presets** | [`.docs/presets.md`](.docs/presets.md): side-by-side comparison of the four presets. |
+| **Configure Omakiten** | [`.docs/configuration-guide/README.md`](.docs/configuration-guide/README.md): one document per feature with inline YAML schemas. |
+| **Contribute** | [`.docs/internal/architecture.md`](.docs/internal/architecture.md): hexagonal architecture, snapshot pattern, data model. |
+| **CLI reference** | [`.docs/cli.md`](.docs/cli.md): flags, subcommands, JSON envelope. |
+| **MCP reference** | [`.docs/mcp.md`](.docs/mcp.md): tools, resources, prompts, and harness setup. |
 
-- **Orientation** — [Why Omakiten?](.docs/why_omakiten.md), [Presets comparison](.docs/presets.md), [Workflow](.docs/workflow.md).
-- **User-facing surfaces** — [CLI](.docs/cli.md), [TUI](.docs/tui.md), [MCP](.docs/mcp.md).
-- **Configuration** — see [`configuration-guide/`](.docs/configuration-guide/README.md): system, entities, guards, hooks, notifications, themes, languages, path-resolution, project-overrides.
-- **Contributors / internals** — [Architecture](.docs/internal/architecture.md), [Requirements](.docs/internal/requirements.md), [Developer Guide](.docs/internal/dev-guide.md), [Data Model](.docs/internal/data-model.md).
+Master index: [`.docs/README.md`](.docs/README.md)
 
-**Project**
+---
+
+## Project
 
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
-- [LICENSE](LICENSE)
+- [License](LICENSE)
+
+<p align="center">
+  <strong><a href="https://github.com/This-Is-NPC/omakiten/releases">Install now</a></strong>
+  &nbsp;&middot;&nbsp;
+  <strong><a href=".docs/why_omakiten.md">Read the manifesto</a></strong>
+</p>
