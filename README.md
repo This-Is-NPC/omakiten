@@ -23,7 +23,7 @@ curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install
 irm https://raw.githubusercontent.com/This-Is-NPC/omakiten/master/install.ps1 | iex
 ```
 
-After downloading the binary the installer hands off to `okt setup`, a bubbletea picker that walks you through **CLI language → TUI language → agent-output language → workflow preset → MCP harnesses**. Re-run any time with `okt setup --update` to revisit your choices; existing rc-file wrapper and `omakiten.yaml` are preserved.
+After downloading the binary the installer hands off to `okt setup`, a bubbletea picker that walks you through **language → agent-output language → workflow preset → MCP harnesses**. CLI and TUI share the install-time language picker, then can be split later via `okt config language`. Re-run any time with `okt setup --update` to revisit your choices; existing rc-file wrapper and `omakiten.yaml` are preserved.
 
 Six MCP harnesses ship wired: `claude-code`, `claude-desktop`, `codex`, `crush`, `github-copilot`, `opencode`. Pick one, many, or none — re-run `okt mcp setup --harness <name>` at any time.
 
@@ -31,8 +31,8 @@ For headless installs (CI, Dockerfile, dotfiles) pre-supply the five inputs and 
 
 | Env var          | Skips the picker for             |
 |------------------|----------------------------------|
-| `OKT_CLI_LANG`   | CLI language (e.g. `en`, `pt-br`) |
-| `OKT_TUI_LANG`   | TUI language (defaults to CLI)    |
+| `OKT_CLI_LANG`   | Shared install-time CLI/TUI language (e.g. `en`, `pt-br`) |
+| `OKT_TUI_LANG`   | Shared install-time CLI/TUI language when CLI is omitted |
 | `OKT_AGENT_LANG` | Agent output language (free-form, e.g. `Português (Brasil)`) |
 | `OKT_PRESET`     | Workflow preset (default `omakase`) |
 | `OKT_HARNESSES`  | MCP harnesses (CSV; `0` skips harness setup) |
@@ -172,6 +172,7 @@ The full MCP surface (44 tools, 2 resources, 11 prompts) is documented in the [M
 - [Domain Events Catalog](.docs/domain-events.md)
 - [Hooks Engine](.docs/hooks.md)
 - [Notifications](.docs/notifications.md)
+- [Surface Policy](.docs/surface-policy.md)
 - [Why Omakiten?](.docs/why_omakiten.md)
 
 **Contributors / internals**
@@ -182,6 +183,14 @@ The full MCP surface (44 tools, 2 resources, 11 prompts) is documented in the [M
 - [Integration Guide — wiring hooks](.docs/internal/integration-guide.md)
 - [Per-project Snapshot architecture](.docs/internal/per-project-snapshot.md)
 - [Requirements & Behavior Map](.docs/internal/requirements.md)
+- [Docs Authoring Guide](.docs/internal/AUTHORING.md)
+
+**Reference / concepts**
+
+- [Path Resolution](.docs/reference/path-resolution.md)
+- [Filesystem Layout](.docs/reference/layout.md)
+- [Mental Models](.docs/explanation/mental-models.md)
+- [Bibliography](.docs/reference/bibliography.md)
 
 **Project**
 
