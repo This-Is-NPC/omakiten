@@ -8,7 +8,7 @@ In order, first match wins:
 
 1. **`--config <path>` flag** (CLI-level) — pin to a specific yaml file. Skips resolver entirely; the directory containing the file is treated as `<root>/config/`.
 2. **<a id="repo-local"></a>Project-local `.omakiten/`** — `config.FindRepoLocal(startDir)` walks up from the current working directory (CLI / MCP) or the project's `root_path` (`agentruntime.Open`) looking for a `.omakiten/` directory. When found, that directory becomes `<root>` for this invocation — full config + entity layout, distinct per project, committed alongside the repo. The walk stops at `$HOME` and at the filesystem root, so accidental hits in unrelated parents are not picked up. SQLite data stays at the user-global path; only the config side is repo-local.
-3. **<a id="omakiten-home"></a>`$OMAKITEN_HOME`** env var — pins config + data + entity overrides under one directory. Layout: `$OMAKITEN_HOME/{config,data}/...` plus entity folders as siblings.
+3. **<a id="omakiten-home"></a>`$OMAKITEN_HOME`** env var — pins config, data, state, and entity overrides under one directory. Layout: `$OMAKITEN_HOME/{config,data,state}/...` plus entity folders as siblings.
 4. **`$XDG_CONFIG_HOME`** env var — `$XDG_CONFIG_HOME/omakiten`.
 5. **OS default** — `~/.config/omakiten` (Linux / macOS); equivalent under Windows.
 
@@ -29,10 +29,15 @@ In order, first match wins:
 ├── skills/...                same shape as laws/
 ├── personas/...
 ├── templates/...
-└── themes/...
+├── themes/<slug>.yaml
+├── themes/custom/<slug>.yaml
+├── notifications/<slug>.yaml
+├── notifications/custom/<slug>.yaml
+├── languages/<code>.yaml
+└── languages/custom/<code>.yaml
 ```
 
-Data (SQLite db) lives under a parallel root: `$OMAKITEN_HOME/data/` or `$XDG_DATA_HOME/omakiten/` or `~/.local/share/omakiten/`.
+Data (SQLite db) lives under a parallel root: `$OMAKITEN_HOME/data/` or `$XDG_DATA_HOME/omakiten/` or `~/.local/share/omakiten/`. Recoverable state, currently database backups, lives under `$OMAKITEN_HOME/state/` or `$XDG_STATE_HOME/omakiten/` or `~/.local/state/omakiten/`.
 
 ## <a id="active-resolution"></a>`.active` resolution
 

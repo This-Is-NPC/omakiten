@@ -1,6 +1,6 @@
 # Filesystem Layout
 
-Canonical directory tree for an Omakiten installation. Anchored sections — link from other docs as `[layout](./reference/layout.md#root-tree)`.
+Canonical directory tree for an Omakiten installation. Anchored sections — link from `.docs/*.md` files as `[layout](./reference/layout.md#root-tree)`, from nested docs as `[layout](../reference/layout.md#root-tree)`, or from this folder as `[layout](./layout.md#root-tree)`.
 
 ## <a id="root-tree"></a>Root tree
 
@@ -26,9 +26,9 @@ Canonical directory tree for an Omakiten installation. Anchored sections — lin
 ├── templates/                    same shape
 │   ├── <slug>.md
 │   └── custom/<slug>.md
-├── themes/                       same shape
-│   ├── <slug>.md
-│   └── custom/<slug>.md
+├── themes/                       TUI theme definitions
+│   ├── <slug>.yaml
+│   └── custom/<slug>.yaml
 ├── notifications/                kit notification cards (kitten_*, plus preset
 │   ├── <slug>.yaml               personas) — referenced from `config.hooks`;
 │   └── custom/<slug>.yaml        same custom/ shadowing as the other folders.
@@ -51,11 +51,11 @@ $XDG_DATA_HOME/omakiten/omakiten.db    (when XDG_DATA_HOME is set)
 
 Every entity directory (`config/`, `laws/`, `skills/`, `personas/`, `templates/`, `themes/`, `notifications/`, `languages/`) has a `custom/` subdirectory. For each slug or language code, `custom/` always wins.
 
-Rationale: `mise run install` (and `okt config sync`) overwrites the root copy of every kit-shipped entity. The `custom/` copy is never touched. Users who fork a default copy its file to `custom/` first; agents respect the override transparently.
+Rationale: `mise run install`, `okt setup --update`, and `okt config init --force` overwrite the root copy of kit-shipped assets. The `custom/` copy is never touched. Users who fork a default copy its file to `custom/` first; agents respect the override transparently.
 
 ## <a id="repo-local-layout"></a>Project-local layout (`.omakiten/`)
 
-When a project commits its own `.omakiten/` directory at the repo root (or anywhere up the path tree under `$HOME`), `config.FindRepoLocal` resolves that directory as `<root>` for every invocation made from inside that tree. The internal shape mirrors the user-global root verbatim — `config/`, `laws/`, `skills/`, `personas/`, `templates/`, `themes/`, each with its own `custom/` shadow folder:
+When a project commits its own `.omakiten/` directory at the repo root (or anywhere up the path tree under `$HOME`), `config.FindRepoLocal` resolves that directory as `<root>` for every invocation made from inside that tree. The internal shape mirrors the user-global root verbatim — `config/`, `laws/`, `skills/`, `personas/`, `templates/`, `themes/`, `notifications/`, and `languages/`, each with its own `custom/` shadow folder:
 
 ```
 <repo>/.omakiten/
@@ -69,7 +69,9 @@ When a project commits its own `.omakiten/` directory at the repo root (or anywh
 ├── skills/...
 ├── personas/...
 ├── templates/...
-└── themes/...
+├── themes/...
+├── notifications/...
+└── languages/...
 ```
 
 This is the per-project install — pinned config, pinned entity overrides, version-controlled with the code. The SQLite database stays at the user-global path (`~/.local/share/omakiten/omakiten.db` or the `$XDG_DATA_HOME` / `$OMAKITEN_HOME` equivalents); only the read side is repo-local. Walk-up discovery stops at `$HOME` and the filesystem root, so the feature opt-in is precise: no `.omakiten/` in the path tree → fall through to the global resolver. See [`path-resolution.md` § Project-local `.omakiten/`](./path-resolution.md#repo-local).
@@ -85,7 +87,9 @@ The local development workflow mirrors the production root under `dev_env/`:
 ├── skills/
 ├── personas/
 ├── templates/
-└── themes/
+├── themes/
+├── notifications/
+└── languages/
 ```
 
 `mise run dev:sync` mirrors `defaults/` into `dev_env/` aggressively (root overwritten, `custom/` left alone). Tasks that need a clean dev state (`mise run mcp:prompts`, `mise run tui`) `depends = ["dev:sync"]` first.

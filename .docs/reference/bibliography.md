@@ -1,6 +1,6 @@
 # Bibliography
 
-Canonical citation list for every source referenced anywhere in the docs. Each entry has a stable anchor — link from other docs as `[short name](./reference/bibliography.md#anchor)`.
+Canonical citation list for every source referenced anywhere in the docs. Each entry has a stable anchor — link from `.docs/*.md` files as `[short name](./reference/bibliography.md#anchor)`, from nested docs as `[short name](../reference/bibliography.md#anchor)`, or from this folder as `[short name](./bibliography.md#anchor)`.
 
 ## A
 
