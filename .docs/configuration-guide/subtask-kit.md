@@ -120,6 +120,8 @@ Sub-tasks whose bucket key is absent from the incoming resolved kit emit a dedic
 
 Bucket validity is **key-based**: if the bucket key exists in the incoming resolved kit, no orphan event is emitted even when the bucket id, label, or position changed. Root tasks continue to emit the legacy `task.migrated` event with `reason: workflow_swap` so audit consumers can keep matching the historical payload.
 
+The three event-payload shapes (`task.bucket_orphaned`, `task.migrated`, `subtask_kit.notice_emitted`) live in `internal/domain/orphan.go` as exported Go structs (`TaskBucketOrphanedPayload`, `TaskMigratedPayload`, `SubtaskKitNoticePayload`). Audit consumers can import the domain package and unmarshal payloads against the typed schema directly instead of working off raw JSON.
+
 ## Hook subject metadata
 
 Task-scoped event payloads carry the resolving subject identity so the dispatcher can route to the correct kit's hooks:
@@ -133,6 +135,8 @@ Task-scoped event payloads carry the resolving subject identity so the dispatche
   ...other event fields
 }
 ```
+
+`subject_depth` is the materialised distance from the nearest root ancestor — 0 for root rows, 1 for direct children, 2 for grandchildren, and so on. The value comes from the persisted `tasks.depth` column (migration 028) so payloads carry the real depth without a recursive parent-walk at emission time; audit consumers and depth-aware hook filters can key off the exact value rather than the legacy `0/1` binary marker. The single payload helper lives at `internal/domain/event_payloads.go::NewTaskSubjectPayload` so the JSON shape stays in one place across the storage and app layers.
 
 Dispatch rules:
 
