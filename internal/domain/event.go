@@ -40,6 +40,15 @@ const (
 	// change, not a workflow transition — transition guards are bypassed.
 	// EntityType=task, Payload={from, to, reason}.
 	EventTypeTaskMigrated = "task.migrated"
+	// EventTypeTaskBucketOrphaned fires per affected sub-task when a
+	// subtask_kit enable/disable/swap leaves the sub-task in a bucket
+	// absent from the incoming resolved kit. Distinct from task.migrated
+	// because the trigger is a per-depth resolved-kit swap (not a root
+	// workflow swap) and hooks resolve through the depth-aware dispatcher.
+	// EntityType=task, Payload={task_id, parent_id, depth, old_bucket,
+	// from_kit, to_kit, resolved_kit, reason}; reason is always
+	// bucket_missing_in_resolved_kit for this trigger.
+	EventTypeTaskBucketOrphaned = "task.bucket_orphaned"
 	// EventTypeTaskCompleted fires when a task moves into the workflow's
 	// final bucket. Co-emits with task.moved on the same transition.
 	// EntityType=task, Payload={bucket}.
@@ -147,6 +156,16 @@ const (
 	// success, error, duration_ms}.
 	EventTypeHookExecuted = "hook.executed"
 
+	// EventTypeSubtaskKitNoticeEmitted fires once per first-enablement
+	// transition of subtask_kit (no sub-kit → some configured path) at
+	// the bundle-cache rebuild point. Subsequent same-path reloads,
+	// sub-kit swaps, and disable transitions do NOT emit. The audit
+	// trail records the i18n key and the resolved kit identities so
+	// hooks and downstream UI surfaces can explain the protocol boundary
+	// (mcp_commands always resolves at the project root). EntityType=
+	// system, Payload={i18n_key, from_kit, to_kit}.
+	EventTypeSubtaskKitNoticeEmitted = "subtask_kit.notice_emitted"
+
 	// EventTypeBundleSwapped fires when the active config bundle is
 	// replaced through the TUI hot-reload path (Settings → Config picker).
 	// EntityType=system, Payload={from_workflow, to_workflow,
@@ -236,6 +255,7 @@ var KnownEventTypes = []string{
 	EventTypeTaskCreated,
 	EventTypeTaskMoved,
 	EventTypeTaskMigrated,
+	EventTypeTaskBucketOrphaned,
 	EventTypeTaskCompleted,
 	EventTypeTaskEdited,
 	EventTypeTaskRemoved,
@@ -263,6 +283,7 @@ var KnownEventTypes = []string{
 	EventTypeHookExecuted,
 	EventTypeBundleSwapped,
 	EventTypeBundleImported,
+	EventTypeSubtaskKitNoticeEmitted,
 	EventTypeConfirmationGranted,
 	EventTypeCLIToolCall,
 	EventTypeMCPToolCall,

@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -44,6 +45,36 @@ func (s *Store) RecordTaskEvent(ctx context.Context, projectID, taskID int64, ev
 // inline in MoveTask's transaction without forcing callers to pick.
 type dbExecutor interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func taskEventPayload(task domain.Task, buckets domain.BucketResolver, fields map[string]any) (string, error) {
+	if fields == nil {
+		fields = map[string]any{}
+	}
+	fields["subject_task_id"] = task.ID
+	if task.ParentID != nil {
+		fields["subject_parent_id"] = *task.ParentID
+		fields["subject_depth"] = 1
+	} else {
+		fields["subject_parent_id"] = nil
+		fields["subject_depth"] = 0
+	}
+	fields["resolved_kit"] = resolvedKitKey(buckets)
+	body, err := json.Marshal(fields)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+func resolvedKitKey(buckets domain.BucketResolver) string {
+	if buckets == nil {
+		return ""
+	}
+	if kit, ok := buckets.(interface{ Kit() config.Kit }); ok {
+		return kit.Kit().Key
+	}
+	return ""
 }
 
 // RecordEntityEvent persists a domain event with attribution pulled from ctx.
