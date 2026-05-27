@@ -3,7 +3,6 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -47,34 +46,13 @@ type dbExecutor interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// taskEventPayload composes the task-scoped event JSON for sqlite-layer
-// events. Subject metadata (task id, parent id, depth, resolved kit) is
-// added on top of the caller-supplied event-specific fields. The fields
-// map is shallow-copied before mutation so callers that reuse the map
-// across calls (or pass a literal they intend to use elsewhere) do not
-// see the subject keys leak into subsequent calls. Review finding §B.7
-// of #297.
+// taskEventPayload is a thin wrapper around domain.NewTaskSubjectPayload
+// that resolves the kit identity through the supplied BucketResolver.
+// The actual JSON composition + subject metadata rules live in
+// internal/domain so app + sqlite share one source of truth — #297
+// review opportunity §D.17 / #299 §B consolidates both helpers there.
 func taskEventPayload(task domain.Task, buckets domain.BucketResolver, fields map[string]any) (string, error) {
-	merged := make(map[string]any, len(fields)+4)
-	for k, v := range fields {
-		merged[k] = v
-	}
-	merged["subject_task_id"] = task.ID
-	if task.ParentID != nil {
-		merged["subject_parent_id"] = *task.ParentID
-	} else {
-		merged["subject_parent_id"] = nil
-	}
-	// subject_depth comes from the persisted column (migration 028 /
-	// #299 §A) — grandchildren now report depth >= 2 instead of the
-	// previous hard-coded 1. Closes #297 review finding §B.5.
-	merged["subject_depth"] = task.Depth
-	merged["resolved_kit"] = resolvedKitKey(buckets)
-	body, err := json.Marshal(merged)
-	if err != nil {
-		return "", err
-	}
-	return string(body), nil
+	return domain.NewTaskSubjectPayload(task, resolvedKitKey(buckets), fields)
 }
 
 // resolvedKitKey reads the kit identity from a BucketResolver through

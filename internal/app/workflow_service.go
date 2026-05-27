@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -119,33 +118,6 @@ func finalBucketKey(snap *config.Snapshot) (string, error) {
 	return final.Key, nil
 }
 
-// taskSubjectPayload composes a task-scoped event payload at the app
-// layer (mirrors sqlite/events.go::taskEventPayload). The fields map is
-// shallow-copied before mutation so callers that reuse the map across
-// calls do not see subject keys leak into subsequent payloads. Review
-// finding §B.7 of #297.
-func taskSubjectPayload(task domain.Task, resolvedKit string, fields map[string]any) (string, error) {
-	merged := make(map[string]any, len(fields)+4)
-	for k, v := range fields {
-		merged[k] = v
-	}
-	merged["subject_task_id"] = task.ID
-	if task.ParentID != nil {
-		merged["subject_parent_id"] = *task.ParentID
-	} else {
-		merged["subject_parent_id"] = nil
-	}
-	// subject_depth reads the persisted column (migration 028 / #299 §A)
-	// so grandchildren report >= 2 instead of the previous hard-coded 1.
-	// Closes #297 review finding §B.5.
-	merged["subject_depth"] = task.Depth
-	merged["resolved_kit"] = resolvedKit
-	body, err := json.Marshal(merged)
-	if err != nil {
-		return "", err
-	}
-	return string(body), nil
-}
 
 // CreateTask is the policy-bearing wrapper around TaskRepository.CreateTask:
 // it resolves the default bucket when bucketKey is empty, then delegates to
@@ -323,7 +295,7 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 
 	if currentBucketID != target.ID {
 		if taskSnap.IsFinalBucket(target.ID) {
-			payload, payloadErr := taskSubjectPayload(task, taskSnap.Kit().Key, map[string]any{"bucket": targetBucketKey})
+			payload, payloadErr := domain.NewTaskSubjectPayload(task, taskSnap.Kit().Key, map[string]any{"bucket": targetBucketKey})
 			if payloadErr != nil {
 				err = payloadErr
 				return
