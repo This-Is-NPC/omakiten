@@ -5,11 +5,20 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"sort"
 
 	"omakiten/internal/domain"
 )
+
+// orphanDepthLimit caps the recursive CTE that derives task.parent_id
+// chains. Real-world hierarchies are well under 64 (sub-tasks usually
+// stack one or two deep); the cap exists so a pathological chain or a
+// cycle escapes the query in bounded time. The earlier value (1024)
+// was over-generous and silently truncated to `depth=0` via the LEFT
+// JOIN's COALESCE — review finding §B.2 of #297.
+const orphanDepthLimit = 64
 
 // isNilResolver returns true when the BucketResolver interface is nil
 // OR when it wraps a typed-nil pointer (the common shape callers get
@@ -152,28 +161,53 @@ func (s *Store) queryActiveTasksScoped(ctx context.Context, projectID int64, sco
 	if scope == scopeSubTasks {
 		scopeFilter = "AND t.parent_id IS NOT NULL"
 	}
-	query := `
+	query := fmt.Sprintf(`
 WITH RECURSIVE depths(id, parent_id, depth) AS (
     SELECT id, parent_id, 0 FROM tasks
         WHERE project_id = ? AND parent_id IS NULL
     UNION ALL
     SELECT t.id, t.parent_id, d.depth + 1 FROM tasks t
         INNER JOIN depths d ON t.parent_id = d.id
-        WHERE t.project_id = ? AND d.depth < 1024
+        WHERE t.project_id = ? AND d.depth < %d
 )
 SELECT t.id, t.title, COALESCE(t.bucket_id, 0), t.parent_id, COALESCE(d.depth, 0)
 FROM tasks t
 LEFT JOIN depths d ON d.id = t.id
-WHERE t.project_id = ? AND t.state = 'active' ` + scopeFilter + `
+WHERE t.project_id = ? AND t.state = 'active' `+scopeFilter+`
 ORDER BY t.id
-`
+`, orphanDepthLimit)
 	rows, err := s.db.QueryContext(ctx, query, projectID, projectID, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 
-	return scanOrphanRows(rows)
+	scanned, err := scanOrphanRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	// Truncation marker: a row with parent_id != nil but depth == 0
+	// only happens when the CTE excluded it (depth chain longer than
+	// orphanDepthLimit), so LEFT JOIN -> NULL -> COALESCE -> 0. Surface
+	// via slog so audit consumers see the gap; do not fail the
+	// migration because the rebind itself uses bucket_id and is still
+	// correct — only the depth payload is unreliable for the affected
+	// rows.
+	var truncated int
+	for _, row := range scanned {
+		if row.parentID != nil && row.depth == 0 {
+			truncated++
+		}
+	}
+	if truncated > 0 {
+		slog.Warn("orphan depth CTE truncated; deeper rows report depth=0",
+			"project_id", projectID,
+			"scope", scope,
+			"truncated_rows", truncated,
+			"depth_cap", orphanDepthLimit,
+		)
+	}
+	return scanned, nil
 }
 
 // queryActiveRootTasks is the simple non-recursive path used when the

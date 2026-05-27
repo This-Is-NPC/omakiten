@@ -109,20 +109,26 @@ func finalBucketKey(snap *config.Snapshot) (string, error) {
 	return final.Key, nil
 }
 
+// taskSubjectPayload composes a task-scoped event payload at the app
+// layer (mirrors sqlite/events.go::taskEventPayload). The fields map is
+// shallow-copied before mutation so callers that reuse the map across
+// calls do not see subject keys leak into subsequent payloads. Review
+// finding §B.7 of #297.
 func taskSubjectPayload(task domain.Task, resolvedKit string, fields map[string]any) (string, error) {
-	if fields == nil {
-		fields = map[string]any{}
+	merged := make(map[string]any, len(fields)+4)
+	for k, v := range fields {
+		merged[k] = v
 	}
-	fields["subject_task_id"] = task.ID
+	merged["subject_task_id"] = task.ID
 	if task.ParentID != nil {
-		fields["subject_parent_id"] = *task.ParentID
-		fields["subject_depth"] = 1
+		merged["subject_parent_id"] = *task.ParentID
+		merged["subject_depth"] = 1
 	} else {
-		fields["subject_parent_id"] = nil
-		fields["subject_depth"] = 0
+		merged["subject_parent_id"] = nil
+		merged["subject_depth"] = 0
 	}
-	fields["resolved_kit"] = resolvedKit
-	body, err := json.Marshal(fields)
+	merged["resolved_kit"] = resolvedKit
+	body, err := json.Marshal(merged)
 	if err != nil {
 		return "", err
 	}

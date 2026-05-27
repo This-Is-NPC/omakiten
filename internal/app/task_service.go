@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 
 	"omakiten/internal/activity"
@@ -512,6 +513,14 @@ func (s *TaskService) taskByID(ctx context.Context, project domain.ProjectContex
 	return s.withResolvedBucketKey(task), nil
 }
 
+// withResolvedBucketKey re-derives the task's BucketKey from the
+// resolved snapshot's BucketByID index. A miss (bucket id not in the
+// snapshot) signals snapshot/db drift — an active task is pointing at
+// a bucket the loaded kit no longer knows. The task surfaces with an
+// empty BucketKey so downstream renders fall back to "unbucketed"
+// instead of showing a stale key; the slog.Warn makes the drift
+// observable so operators can correlate with a recent kit swap.
+// Review finding §B.8 of #297.
 func (s *TaskService) withResolvedBucketKey(task domain.Task) domain.Task {
 	taskSnap := s.snap.For(task)
 	if taskSnap == nil {
@@ -520,6 +529,11 @@ func (s *TaskService) withResolvedBucketKey(task domain.Task) domain.Task {
 	if bucket, ok := taskSnap.BucketByID(task.BucketID); ok {
 		task.BucketKey = bucket.Key
 	} else {
+		slog.Warn("task bucket id not found in resolved snapshot; emitting empty BucketKey",
+			"task_id", task.ID,
+			"bucket_id", task.BucketID,
+			"resolved_kit", taskSnap.Kit().Key,
+		)
 		task.BucketKey = ""
 	}
 	return task

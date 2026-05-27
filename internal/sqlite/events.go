@@ -47,20 +47,28 @@ type dbExecutor interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+// taskEventPayload composes the task-scoped event JSON for sqlite-layer
+// events. Subject metadata (task id, parent id, depth, resolved kit) is
+// added on top of the caller-supplied event-specific fields. The fields
+// map is shallow-copied before mutation so callers that reuse the map
+// across calls (or pass a literal they intend to use elsewhere) do not
+// see the subject keys leak into subsequent calls. Review finding §B.7
+// of #297.
 func taskEventPayload(task domain.Task, buckets domain.BucketResolver, fields map[string]any) (string, error) {
-	if fields == nil {
-		fields = map[string]any{}
+	merged := make(map[string]any, len(fields)+4)
+	for k, v := range fields {
+		merged[k] = v
 	}
-	fields["subject_task_id"] = task.ID
+	merged["subject_task_id"] = task.ID
 	if task.ParentID != nil {
-		fields["subject_parent_id"] = *task.ParentID
-		fields["subject_depth"] = 1
+		merged["subject_parent_id"] = *task.ParentID
+		merged["subject_depth"] = 1
 	} else {
-		fields["subject_parent_id"] = nil
-		fields["subject_depth"] = 0
+		merged["subject_parent_id"] = nil
+		merged["subject_depth"] = 0
 	}
-	fields["resolved_kit"] = resolvedKitKey(buckets)
-	body, err := json.Marshal(fields)
+	merged["resolved_kit"] = resolvedKitKey(buckets)
+	body, err := json.Marshal(merged)
 	if err != nil {
 		return "", err
 	}
