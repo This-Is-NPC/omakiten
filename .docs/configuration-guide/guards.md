@@ -279,6 +279,24 @@ All guard violations use the `guard_violation` coded error (`internal/domain/err
 
 Because the move never persists when a guard fails, no `task.moved` event is recorded. The current bucket is preserved.
 
+Every task-scoped violation also records a `guard.violated` audit event whose payload carries the same subject metadata block every other task event ships:
+
+```json
+{
+  "operation":         "task.transition",   // or task.archive / task.delete / task.edit / etc.
+  "rule":              "subtasks_complete", // guard.Type or "permissions" / "transition_not_allowed"
+  "hint":              "subtasks_complete guard: subtask #42 ...",
+  "target":            { "task_id": 7, "from_bucket_id": 2, "to_bucket_id": 3, "to_bucket": "review" },
+  "attempted_by":      "agent",             // "agent" for MCP source, "user" otherwise
+  "subject_task_id":   7,
+  "subject_parent_id": 42,                  // null for root tasks
+  "subject_depth":     1,                   // 0 for root, 1+ for sub-tasks
+  "resolved_kit":      "izakaya"            // sub-kit identity for sub-task subjects; root kit otherwise
+}
+```
+
+The subject block is the same shape `task.created` / `task.moved` / `task.edited` carry — see [`subtask-kit.md § Hook subject metadata`](subtask-kit.md#hook-subject-metadata). Hooks scoped to `SubjectDepth: subtask` therefore match a sub-task guard violation; hooks scoped to `SubjectDepth: root` only match a root-task violation. The depth filter activates as soon as `subtask_kit:` is wired; before that every hook fires regardless of depth (matches pre-cascade behavior).
+
 ## Agent guardrails: laws bound to commands and entities
 
 Guards above run on **workflow transitions**. A second class of guardrails runs on **MCP prompt resolution** — when the agent asks for `okt-implement`, the server resolves the bound persona, skills, laws, and templates and ships them in a single PromptMessage. This is where the `template-fidelity` law lives, for example: bound globally to every command so the agent does not invent fields when filling a PR template.

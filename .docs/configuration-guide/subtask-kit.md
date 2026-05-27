@@ -19,6 +19,12 @@ A new sub-task always lands in the **first bucket of the kit that resolves for i
 
 Operators wiring guards on the **outbound** edges of the first bucket (e.g. `backlog → dev`) must confirm the guard set is appropriate for inception — newly created sub-tasks will hit those guards on their first move. If the first bucket should remain a friction-free intake lane, leave the `backlog → dev` transition guard-free.
 
+## Reparent across kits
+
+Editing a task's parent (`tasks.edit task_id change_parent=true new_parent_id=<id|null>` or the form's Parent field in the TUI) can shift the row's resolved kit — promoting a root task to a sub-task crosses into the sub-kit, clearing the parent collapses a sub-task back to the root kit. When the task's current bucket key does **not** exist in the new resolved kit, the reparent helper force-rebinds the row to the new kit's first bucket — same policy `AddSub` applies to fresh sub-tasks. The reparent never rejects on bucket incompatibility; the row is never stuck pointing at a bucket the new kit does not know.
+
+`TaskService.Edit` re-reads the task after a parent change so the returned `Depth`, `ParentID`, and resolved `BucketKey` reflect the post-write state — combined field-edit + reparent calls return one consistent row, not a half-stale snapshot. The recovery path emits `task.moved` for the forced bucket shift so the audit log carries both the parent change and the bucket rebind.
+
 ## YAML shape
 
 The root kit gains an optional top-level key. The path is **relative to the root kit file's own directory** — no absolute paths, no `..` escapes.
@@ -97,6 +103,14 @@ The migration splits the rebind by depth so each task is diffed against **its ow
 
 Projects without a `subtask_kit:` configured keep the pre-cascade behavior byte-for-byte — the legacy "all tasks" migration path stays the entry point.
 
+### Atomic root + sub rebind
+
+Cascade migrations run inside a **single repository transaction**. The root-tree rebind and the sub-task rebind execute back-to-back in one `BeginTx`, and the joint `Commit` is the only point where rows become visible to readers. A sub-task failure mid-pass rolls the root-pass writes back too — partial migrations cannot happen.
+
+Events follow the same gate: every `task.migrated` (root pass) and `task.bucket_orphaned` (sub-task pass) is buffered, then published only after the joint commit succeeds. A rollback discards the buffered events too, so subscribers never see a half-finished migration.
+
+App callers go through `app.OrphanRepository.RebindOrphanedCascade(ctx, projectID, plan)` — a single call with a `domain.OrphanCascadePlan` carrying both resolver pairs and the kit identities. `PreviewOrphanedCascade(ctx, projectID, plan)` is the read-only twin; the TUI bundle-swap prompt and the confirmed migrate run it through the same plan so the preview row set matches the rows the migrate will rewrite. The `domain.OrphanCascadePlan` struct lives in `internal/domain/orphan_cascade.go` and is the contract callers compose against.
+
 ## Orphan event schema
 
 Sub-tasks whose bucket key is absent from the incoming resolved kit emit a dedicated event — one per affected sub-task:
@@ -147,6 +161,27 @@ Dispatch rules:
 
 When no `subtask_kit:` is configured, every event resolves through the root kit regardless of depth — matches the pre-cascade behavior.
 
+### `guard.violated` carries the same subject metadata
+
+Task-scoped guard violations (`guard.violated` with `entity_type: task`) emit through `guards.Evaluator.EmitViolatedForTask`, which stamps the payload with the same `subject_task_id` / `subject_parent_id` / `subject_depth` / `resolved_kit` block every other task event already carries. A sub-task guard rejection therefore matches `SubjectDepth: subtask` hooks only — root-kit hooks scoped to `SubjectDepth: root` no longer absorb sub-task violations the way the pre-fix code did.
+
+Production callsites are migrated: bucket-policy denials in `TaskService.Edit` / `Delete` / `Archive` / `Unarchive`, transition rejections in `WorkflowService.MoveTask`, comment-edit / -delete policy denials in `CommentService`, and every built-in guard check (`blockers_in`, `comments_min`, `comments_tagged`, `wave_gate`, `subtasks_complete`) all flow through the task-aware helper. Non-task entity callsites (none in production today) can keep using the bare `EmitViolated` path; the typed `task` overload is the depth-aware one.
+
+## Notifications per kit
+
+When a sub-kit ships its own `notifications/<slug>.yaml`, the slug resolves through the sub-kit catalog at runtime — not just at validation time. The hooks engine threads the resolved kit identity through the action dispatch (`_notification_resolved_kit` arg), and the notification action looks the slug up in `NotificationBundleSnapshot.NotificationsByKit[<resolved_kit>][<slug>]` first, falling back to the legacy global `Notifications` map when the per-kit catalog has no entry for the slug.
+
+The practical effect: a sub-kit hook entry like
+
+```yaml
+config:
+  hooks:
+    - on: task.bucket_orphaned
+      notification: subtask-orphaned-warning   # declared in sub-kit notifications/
+```
+
+now dispatches against `notifications/subtask-orphaned-warning.yaml` loaded from the sub-kit, even if the root kit never references that slug. Collisions resolve per-kit: a root and sub-kit can both define `notifications/<same-slug>.yaml` with different chrome / copy and each kit's hooks see its own version.
+
 ## Transparency notice
 
 The first time a project enables `subtask_kit:` (transition from no sub-kit to a configured path), the runtime emits a one-shot `subtask_kit.notice_emitted` system event with the i18n key `notice.subtask_kit.enabled.mcp_resolves_at_root`. The TUI surfaces it once so the operator understands the protocol boundary: `mcp_commands` still resolves at the project root regardless of sub-kit contents.
@@ -165,3 +200,11 @@ Two paths land you at a configured sub-kit:
 2. **Edit `omakiten.yaml` in `$EDITOR`** and let the file watcher rebuild the snapshot. Same validator + migration + notice fires.
 
 The picker is read-only with respect to the sub-kit file's *contents*; selecting a file does not open it for editing. Authoring stays in `$EDITOR` against the kit YAML directly.
+
+### Picker identity is the full relative path
+
+Default and custom kits with the same basename are **distinct identities** in the picker. A stock `config/izakaya.yaml` and a `config/custom/izakaya.yaml` show up as two rows; the active dot lands on whichever row's `RelativePath` matches the `subtask_kit:` value written in `omakiten.yaml`. Selecting the custom row writes `subtask_kit: custom/izakaya.yaml` so the loader resolves the user override; selecting the default writes `subtask_kit: izakaya.yaml`. The `subtask_kit:` value round-trips through the YAML byte-for-byte so the resolver never collapses the two onto the same kit.
+
+### Rollback restores disk AND runtime
+
+If the candidate sub-kit fails to load (validator rejection, nested cascade, YAML parse error), the picker's rollback path rewrites the prior `subtask_kit:` value AND re-runs the bundle reload against the restored file so the cache rotates back to the previous snapshot. The user sees the error inline; the runtime ends up driving the same configuration the YAML names. The pre-fix code rewrote only the YAML and left the cache rotated to the bad bundle — the new transactional helper closes that window.

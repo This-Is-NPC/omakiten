@@ -279,6 +279,12 @@ Each hook entry uses **either** `notification: <slug>` or
 `do: <action>` + `args:` (exec/noop dispatch). Mixing both shapes in
 the same entry fails validation. Unknown slugs fail at `LoadBundle`.
 
+### Per-kit catalog resolution
+
+When a sub-task kit is wired ([`subtask-kit.md`](subtask-kit.md)), each hook entry's resolved kit identity is threaded through dispatch so a slug declared in the sub-kit's `config.hooks` resolves through the **sub-kit's** notification catalog at runtime — not the root's. The action looks up the slug in `NotificationsByKit[<resolved_kit>][<slug>]` first and falls back to the root `Notifications` map only when the per-kit catalog has no entry for that slug. Root-kit hooks dispatch identically through the root catalog.
+
+The practical effect: a sub-kit can ship a `notifications/subtask-orphaned-warning.yaml` and reference it from its own `config.hooks` without the root kit needing to know the slug exists. Collisions (a slug declared in both kits' catalogs) resolve per-kit: each kit sees its own chrome / copy.
+
 ### Message resolution
 
 Either layer (notification YAML or hook entry) may declare `message`
