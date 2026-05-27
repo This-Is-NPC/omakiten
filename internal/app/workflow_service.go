@@ -87,7 +87,7 @@ func (s *WorkflowService) FinalBucketKey(_ context.Context) (string, error) {
 // truth.
 func workflowBuckets(snap *config.Snapshot) ([]domain.Bucket, error) {
 	if snap == nil {
-		return nil, domain.NewError(domain.ErrConfigInvalid, "active workflow has no buckets", nil)
+		return nil, domain.NewError(domain.ErrConfigInvalid, "active workflow snapshot is nil", nil)
 	}
 	workflow := snap.Workflow()
 	if len(workflow.Buckets) == 0 {
@@ -117,7 +117,6 @@ func finalBucketKey(snap *config.Snapshot) (string, error) {
 	}
 	return final.Key, nil
 }
-
 
 // CreateTask is the policy-bearing wrapper around TaskRepository.CreateTask:
 // it resolves the default bucket when bucketKey is empty, then delegates to

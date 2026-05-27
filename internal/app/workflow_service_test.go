@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"omakiten/internal/app/guards"
@@ -235,6 +236,22 @@ func TestWorkflowResolveDefaultBucketEmptyWorkflow(t *testing.T) {
 	var coded *domain.CodedError
 	if !errors.As(err, &coded) || coded.Code != domain.ErrConfigInvalid {
 		t.Fatalf("ResolveDefaultBucket err = %v, want config_invalid", err)
+	}
+	if !strings.Contains(err.Error(), "active workflow has no buckets") {
+		t.Fatalf("ResolveDefaultBucket err = %v, want empty-buckets message", err)
+	}
+}
+
+func TestWorkflowResolveDefaultBucketNilSnapshot(t *testing.T) {
+	f := &fakeStores{}
+	svc := NewWorkflowService(nil, f, guards.NewGuardEvaluator(nil, f, f), f, f, nil)
+	_, err := svc.ResolveDefaultBucket(context.Background())
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrConfigInvalid {
+		t.Fatalf("ResolveDefaultBucket err = %v, want config_invalid", err)
+	}
+	if !strings.Contains(err.Error(), "active workflow snapshot is nil") {
+		t.Fatalf("ResolveDefaultBucket err = %v, want nil-snapshot message", err)
 	}
 }
 
