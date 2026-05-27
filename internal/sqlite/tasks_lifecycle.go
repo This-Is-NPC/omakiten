@@ -3,7 +3,6 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -42,7 +41,7 @@ func (s *Store) HardDeleteTask(ctx context.Context, projectID, taskID int64, buc
 		return domain.Event{}, err
 	}
 
-	payload, err := json.Marshal(map[string]any{
+	payload, err := taskEventPayload(task, buckets, map[string]any{
 		"task_id":     task.ID,
 		"title":       task.Title,
 		"description": task.Description,
@@ -60,14 +59,14 @@ func (s *Store) HardDeleteTask(ctx context.Context, projectID, taskID int64, buc
 INSERT INTO events(entity_type, project_id, event_type, body, payload)
 VALUES ('system', ?, ?, '', ?)
 RETURNING id, entity_type, COALESCE(entity_id, 0), project_id, event_type, body, payload, created_at
-`, projectID, domain.EventTypeTaskRemoved, string(payload)).Scan(
+`, projectID, domain.EventTypeTaskRemoved, payload).Scan(
 			&event.ID, &event.EntityType, &event.EntityID, &event.ProjectID,
 			&event.EventType, &event.Body, &event.Payload, &event.CreatedAt,
 		); err != nil {
 			return domain.Event{}, fmt.Errorf("emit task.removed: %w", err)
 		}
 	} else {
-		event = domain.Event{EntityType: domain.EventEntitySystem, ProjectID: projectID, EventType: domain.EventTypeTaskRemoved, Payload: string(payload)}
+		event = domain.Event{EntityType: domain.EventEntitySystem, ProjectID: projectID, EventType: domain.EventTypeTaskRemoved, Payload: payload}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -180,7 +179,7 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 	if state == domain.TaskStateActive {
 		eventType = domain.EventTypeTaskUnarchived
 	}
-	payload, marshalErr := json.Marshal(map[string]any{
+	payload, marshalErr := taskEventPayload(task, buckets, map[string]any{
 		"from_bucket": prev.BucketKey,
 		"to_bucket":   bucketKey,
 		"from_state":  prev.State,
@@ -191,12 +190,12 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 	}
 	var event domain.Event
 	if s.shouldLogEvent(eventType) {
-		event, err = insertTaskEvent(ctx, tx, projectID, taskID, eventType, "", string(payload))
+		event, err = insertTaskEvent(ctx, tx, projectID, taskID, eventType, "", payload)
 		if err != nil {
 			return domain.Task{}, domain.Event{}, err
 		}
 	} else {
-		event = domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: eventType, Payload: string(payload)}
+		event = domain.Event{EntityType: domain.EventEntityTask, EntityID: taskID, ProjectID: projectID, EventType: eventType, Payload: payload}
 	}
 
 	var unassignEv domain.Event
@@ -225,7 +224,7 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 
 // EmitTaskEditedEvent records a task.edited event with a payload describing
 // the edited fields. Service layer calls it after a successful UpdateTask.
-func (s *Store) EmitTaskEditedEvent(ctx context.Context, projectID, taskID int64, before, after domain.Task) (domain.Event, error) {
+func (s *Store) EmitTaskEditedEvent(ctx context.Context, projectID, taskID int64, before, after domain.Task, buckets domain.BucketResolver) (domain.Event, error) {
 	payload := map[string]any{}
 	if before.Title != after.Title {
 		payload["title"] = map[string]any{"from": before.Title, "to": after.Title}
@@ -236,11 +235,11 @@ func (s *Store) EmitTaskEditedEvent(ctx context.Context, projectID, taskID int64
 	if before.Priority != after.Priority {
 		payload["priority"] = map[string]any{"from": int(before.Priority), "to": int(after.Priority)}
 	}
-	body, err := json.Marshal(payload)
+	body, err := taskEventPayload(after, buckets, payload)
 	if err != nil {
 		return domain.Event{}, err
 	}
-	return s.RecordTaskEvent(ctx, projectID, taskID, domain.EventTypeTaskEdited, "", string(body))
+	return s.RecordTaskEvent(ctx, projectID, taskID, domain.EventTypeTaskEdited, "", body)
 }
 
 func (s *Store) taskByIDTx(ctx context.Context, tx *sql.Tx, projectID, taskID int64, buckets domain.BucketResolver) (domain.Task, error) {

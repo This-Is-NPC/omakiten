@@ -9,6 +9,12 @@ type OrphanedTask struct {
 	Title         string `json:"title"`
 	FromBucketKey string `json:"from_bucket_key"`
 	ToBucketKey   string `json:"to_bucket_key"`
+	// ParentID + Depth surface the task's position in the parent_id tree
+	// so the sub-task kit cascade migration (#285) can attribute orphan
+	// events to the correct resolved kit. ParentID is nil for root tasks;
+	// Depth is 0 for root rows, 1 for direct sub-tasks, 2 for grandchildren.
+	ParentID *int64 `json:"parent_id,omitempty"`
+	Depth    int    `json:"depth,omitempty"`
 }
 
 // OrphanGroup aggregates orphaned tasks that share the same from→to rebind.

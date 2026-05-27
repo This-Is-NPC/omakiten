@@ -2,6 +2,8 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
@@ -25,6 +27,17 @@ func isNilResolver(r domain.BucketResolver) bool {
 	return false
 }
 
+// orphanScope selects which subset of active tasks the orphan helpers
+// inspect. The zero value covers every active task — the pre-#281
+// behaviour preserved for projects without subtask_kit.
+type orphanScope uint8
+
+const (
+	scopeAllTasks orphanScope = iota
+	scopeRootTasks
+	scopeSubTasks
+)
+
 // PreviewOrphanedTasks reports active tasks whose bucket no longer
 // belongs to the active workflow. The SQL `workflow_buckets` table was
 // dropped in migration 020; the implementation now diffs the current
@@ -41,6 +54,16 @@ func isNilResolver(r domain.BucketResolver) bool {
 //   - no previous resolver (caller has only ever seen one bundle)
 //   - every task's bucket_id resolves in the current resolver
 func (s *Store) PreviewOrphanedTasks(ctx context.Context, projectID int64, current, previous domain.BucketResolver) (domain.OrphanReport, error) {
+	return s.previewOrphansScoped(ctx, projectID, current, previous, scopeAllTasks)
+}
+
+// previewOrphansScoped is the shared implementation behind
+// PreviewOrphanedTasks plus the depth-scoped helpers introduced by the
+// sub-task kit cascade (#285). Callers select the row filter via scope:
+// scopeAllTasks keeps the pre-#281 behaviour for projects without a
+// sub-task kit; scopeRootTasks restricts to tasks.parent_id IS NULL;
+// scopeSubTasks restricts to tasks.parent_id IS NOT NULL.
+func (s *Store) previewOrphansScoped(ctx context.Context, projectID int64, current, previous domain.BucketResolver, scope orphanScope) (domain.OrphanReport, error) {
 	if current == nil {
 		return domain.OrphanReport{}, nil
 	}
@@ -55,7 +78,7 @@ func (s *Store) PreviewOrphanedTasks(ctx context.Context, projectID int64, curre
 	}
 	defaultKey := wf.Buckets[0].Key
 
-	taskRows, err := s.queryActiveTasksWithBucket(ctx, projectID)
+	taskRows, err := s.queryActiveTasksScoped(ctx, projectID, scope)
 	if err != nil {
 		return domain.OrphanReport{}, err
 	}
@@ -97,6 +120,8 @@ func (s *Store) PreviewOrphanedTasks(ctx context.Context, projectID int64, curre
 			Title:         row.title,
 			FromBucketKey: fromKey,
 			ToBucketKey:   toKey,
+			ParentID:      row.parentID,
+			Depth:         row.depth,
 		})
 		group.Count++
 	}
@@ -114,26 +139,74 @@ func (s *Store) PreviewOrphanedTasks(ctx context.Context, projectID int64, curre
 	return report, nil
 }
 
-// queryActiveTasksWithBucket returns every active task row with its
-// stored bucket_id. The orphan-classification logic runs in Go so the
-// previous-resolver lookup stays close to the diff that drives it.
-func (s *Store) queryActiveTasksWithBucket(ctx context.Context, projectID int64) ([]orphanRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
-SELECT t.id, t.title, COALESCE(t.bucket_id, 0)
+// queryActiveTasksScoped returns every active task row visible to the
+// orphan scope. The root-only scope reads through a plain SELECT
+// (depth is always 0 for parent_id IS NULL); the all-tasks and
+// sub-task scopes pay for the recursive ancestor walk so the
+// sub-task path emits the correct depth for grandchildren and below.
+func (s *Store) queryActiveTasksScoped(ctx context.Context, projectID int64, scope orphanScope) ([]orphanRow, error) {
+	if scope == scopeRootTasks {
+		return s.queryActiveRootTasks(ctx, projectID)
+	}
+	scopeFilter := ""
+	if scope == scopeSubTasks {
+		scopeFilter = "AND t.parent_id IS NOT NULL"
+	}
+	query := `
+WITH RECURSIVE depths(id, parent_id, depth) AS (
+    SELECT id, parent_id, 0 FROM tasks
+        WHERE project_id = ? AND parent_id IS NULL
+    UNION ALL
+    SELECT t.id, t.parent_id, d.depth + 1 FROM tasks t
+        INNER JOIN depths d ON t.parent_id = d.id
+        WHERE t.project_id = ? AND d.depth < 1024
+)
+SELECT t.id, t.title, COALESCE(t.bucket_id, 0), t.parent_id, COALESCE(d.depth, 0)
 FROM tasks t
-WHERE t.project_id = ? AND t.state = 'active'
+LEFT JOIN depths d ON d.id = t.id
+WHERE t.project_id = ? AND t.state = 'active' ` + scopeFilter + `
+ORDER BY t.id
+`
+	rows, err := s.db.QueryContext(ctx, query, projectID, projectID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanOrphanRows(rows)
+}
+
+// queryActiveRootTasks is the simple non-recursive path used when the
+// orphan scope only needs depth=0 rows. Skipping the recursive CTE on
+// the root-tasks path avoids walking the full sub-task tree once per
+// migration.
+func (s *Store) queryActiveRootTasks(ctx context.Context, projectID int64) ([]orphanRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT t.id, t.title, COALESCE(t.bucket_id, 0), t.parent_id, 0 AS depth
+FROM tasks t
+WHERE t.project_id = ? AND t.state = 'active' AND t.parent_id IS NULL
 ORDER BY t.id
 `, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
+	return scanOrphanRows(rows)
+}
 
+func scanOrphanRows(rows *sql.Rows) ([]orphanRow, error) {
 	var out []orphanRow
 	for rows.Next() {
-		var row orphanRow
-		if err := rows.Scan(&row.taskID, &row.title, &row.bucketID); err != nil {
+		var (
+			row      orphanRow
+			parentFK sql.NullInt64
+		)
+		if err := rows.Scan(&row.taskID, &row.title, &row.bucketID, &parentFK, &row.depth); err != nil {
 			return nil, err
+		}
+		if parentFK.Valid {
+			pid := parentFK.Int64
+			row.parentID = &pid
 		}
 		if row.bucketID == 0 {
 			continue
@@ -147,6 +220,8 @@ type orphanRow struct {
 	taskID   int64
 	title    string
 	bucketID int64
+	parentID *int64
+	depth    int
 }
 
 // RebindOrphanedTasks applies the migration: every active task pointing
@@ -154,7 +229,40 @@ type orphanRow struct {
 // key (when the key survives) or to the default (first) bucket. A
 // task.migrated event is emitted per task inside the same transaction.
 func (s *Store) RebindOrphanedTasks(ctx context.Context, projectID int64, current, previous domain.BucketResolver) (domain.OrphanReport, error) {
-	report, err := s.PreviewOrphanedTasks(ctx, projectID, current, previous)
+	return s.rebindOrphansScoped(ctx, projectID, current, previous, scopeAllTasks, domain.EventTypeTaskMigrated, orphanEventContext{})
+}
+
+// RebindOrphanedRootTasks is the root-only variant invoked when a
+// project has a sub-task kit configured: the legacy "all tasks"
+// migration path would otherwise pull sub-tasks through the root kit's
+// workflow even though their resolved kit is the sub-kit. Emits
+// task.migrated per affected root task; sub-tasks travel through
+// RebindOrphanedSubtasks instead.
+func (s *Store) RebindOrphanedRootTasks(ctx context.Context, projectID int64, current, previous domain.BucketResolver) (domain.OrphanReport, error) {
+	return s.rebindOrphansScoped(ctx, projectID, current, previous, scopeRootTasks, domain.EventTypeTaskMigrated, orphanEventContext{})
+}
+
+// RebindOrphanedSubtasks emits the dedicated task.bucket_orphaned event
+// for every sub-task whose bucket key is absent from the incoming
+// sub-kit's workflow. The payload follows the lock from umbrella #281
+// (task_id, parent_id, depth, old_bucket, from_kit, to_kit,
+// resolved_kit, reason=bucket_missing_in_resolved_kit). Root tasks are
+// not visible to this method — the caller pairs it with
+// RebindOrphanedRootTasks for the root tree.
+func (s *Store) RebindOrphanedSubtasks(ctx context.Context, projectID int64, current, previous domain.BucketResolver, fromKit, toKit string) (domain.OrphanReport, error) {
+	return s.rebindOrphansScoped(ctx, projectID, current, previous, scopeSubTasks, domain.EventTypeTaskBucketOrphaned, orphanEventContext{FromKit: fromKit, ToKit: toKit})
+}
+
+// orphanEventContext carries the kit-identity strings the sub-task path
+// needs in its event payload. The legacy task.migrated path leaves both
+// fields empty — its payload predates the resolved-kit metadata.
+type orphanEventContext struct {
+	FromKit string
+	ToKit   string
+}
+
+func (s *Store) rebindOrphansScoped(ctx context.Context, projectID int64, current, previous domain.BucketResolver, scope orphanScope, eventType string, evCtx orphanEventContext) (domain.OrphanReport, error) {
+	report, err := s.previewOrphansScoped(ctx, projectID, current, previous, scope)
 	if err != nil {
 		return domain.OrphanReport{}, err
 	}
@@ -192,15 +300,15 @@ WHERE project_id = ? AND id = ?
 				return domain.OrphanReport{}, err
 			}
 
-			payload := fmt.Sprintf(`{"from":%q,"to":%q,"reason":"workflow_swap"}`, task.FromBucketKey, task.ToBucketKey)
+			payload := buildOrphanPayload(eventType, task, evCtx)
 			var ev domain.Event
-			if s.shouldLogEvent(domain.EventTypeTaskMigrated) {
-				ev, err = insertTaskEvent(ctx, tx, projectID, task.TaskID, domain.EventTypeTaskMigrated, "", payload)
+			if s.shouldLogEvent(eventType) {
+				ev, err = insertTaskEvent(ctx, tx, projectID, task.TaskID, eventType, "", payload)
 				if err != nil {
 					return domain.OrphanReport{}, err
 				}
 			} else {
-				ev = domain.Event{EntityType: domain.EventEntityTask, EntityID: task.TaskID, ProjectID: projectID, EventType: domain.EventTypeTaskMigrated, Payload: payload}
+				ev = domain.Event{EntityType: domain.EventEntityTask, EntityID: task.TaskID, ProjectID: projectID, EventType: eventType, Payload: payload}
 			}
 			events = append(events, emitted{event: ev})
 		}
@@ -213,4 +321,65 @@ WHERE project_id = ? AND id = ?
 		s.publishEvent(ctx, e.event)
 	}
 	return report, nil
+}
+
+// orphanBucketPayload is the locked sub-task kit cascade payload —
+// task_id, parent_id (nullable), depth, old_bucket, from_kit, to_kit,
+// resolved_kit, reason — emitted as task.bucket_orphaned per affected
+// sub-task. Marshalled via encoding/json so kit / bucket keys with
+// special characters (line separators, control bytes) cannot produce
+// malformed payloads.
+type orphanBucketPayload struct {
+	TaskID      int64  `json:"task_id"`
+	ParentID    *int64 `json:"parent_id"`
+	Depth       int    `json:"depth"`
+	OldBucket   string `json:"old_bucket"`
+	FromKit     string `json:"from_kit"`
+	ToKit       string `json:"to_kit"`
+	ResolvedKit string `json:"resolved_kit"`
+	Reason      string `json:"reason"`
+}
+
+// taskMigratedPayload is the legacy task.migrated payload — kept on
+// its own typed struct so future schema changes round-trip safely
+// through encoding/json.
+type taskMigratedPayload struct {
+	From   string `json:"from"`
+	To     string `json:"to"`
+	Reason string `json:"reason"`
+}
+
+// buildOrphanPayload composes the per-event JSON payload via
+// encoding/json so kit / bucket strings with exotic characters
+// (U+2028/U+2029 line separators, NULs, control bytes) round-trip as
+// valid JSON. task.migrated keeps the legacy {from, to, reason} shape
+// so existing audit consumers continue to match; task.bucket_orphaned
+// carries the locked sub-task kit cascade payload.
+func buildOrphanPayload(eventType string, task domain.OrphanedTask, evCtx orphanEventContext) string {
+	if eventType == domain.EventTypeTaskBucketOrphaned {
+		payload := orphanBucketPayload{
+			TaskID:      task.TaskID,
+			ParentID:    task.ParentID,
+			Depth:       task.Depth,
+			OldBucket:   task.FromBucketKey,
+			FromKit:     evCtx.FromKit,
+			ToKit:       evCtx.ToKit,
+			ResolvedKit: evCtx.ToKit,
+			Reason:      "bucket_missing_in_resolved_kit",
+		}
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			// Marshal failure on a struct with primitive fields would be
+			// a runtime invariant violation, not a data issue. Surface
+			// the error context so the audit log row makes the fault
+			// auditable instead of silently dropping the event.
+			return fmt.Sprintf(`{"reason":"orphan_payload_marshal_failed","error":%q}`, err.Error())
+		}
+		return string(raw)
+	}
+	raw, err := json.Marshal(taskMigratedPayload{From: task.FromBucketKey, To: task.ToBucketKey, Reason: "workflow_swap"})
+	if err != nil {
+		return fmt.Sprintf(`{"reason":"task_migrated_payload_marshal_failed","error":%q}`, err.Error())
+	}
+	return string(raw)
 }

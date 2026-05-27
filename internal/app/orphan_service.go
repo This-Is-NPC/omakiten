@@ -13,9 +13,19 @@ import (
 // the rebind and emits task.migrated events. Both accept the current and
 // previous BucketResolver views (previous may be nil on the first import)
 // so the adapter never imports config.
+//
+// RebindOrphanedRootTasks and RebindOrphanedSubtasks split the rebind by
+// depth for projects with a sub-task kit configured: the root path keeps
+// emitting task.migrated against the root workflow, while the sub-task
+// path emits the dedicated task.bucket_orphaned event against the
+// sub-kit workflow with the locked from_kit/to_kit/resolved_kit payload.
+// Projects without a sub-task kit continue to use RebindOrphanedTasks
+// (the "all tasks" entry point) so pre-cascade behaviour is preserved.
 type OrphanRepository interface {
 	PreviewOrphanedTasks(ctx context.Context, projectID int64, current, previous domain.BucketResolver) (domain.OrphanReport, error)
 	RebindOrphanedTasks(ctx context.Context, projectID int64, current, previous domain.BucketResolver) (domain.OrphanReport, error)
+	RebindOrphanedRootTasks(ctx context.Context, projectID int64, current, previous domain.BucketResolver) (domain.OrphanReport, error)
+	RebindOrphanedSubtasks(ctx context.Context, projectID int64, current, previous domain.BucketResolver, fromKit, toKit string) (domain.OrphanReport, error)
 }
 
 type OrphanService struct {
@@ -67,8 +77,15 @@ func (s *OrphanService) Preview(ctx context.Context, project domain.ProjectConte
 	return
 }
 
-// Migrate applies the rebind for every orphan task and returns the report
-// describing what was migrated.
+// Migrate applies the rebind for every orphan task and returns the
+// combined report describing what was migrated. When the project has a
+// sub-task kit configured (in either the current or previous snapshot),
+// the rebind splits by depth: root tasks rebind against the root
+// workflow and emit task.migrated; sub-tasks rebind against the
+// resolved sub-kit workflow and emit task.bucket_orphaned with the
+// locked payload (#281 cascade). Projects without subtask_kit fall back
+// to the legacy "all tasks" path so the pre-cascade behaviour stays
+// byte-identical.
 func (s *OrphanService) Migrate(ctx context.Context, project domain.ProjectContext) (report domain.OrphanReport, err error) {
 	finish := activity.Track(ctx, "app.OrphanService.Migrate", project, nil)
 	defer func() {
@@ -81,7 +98,11 @@ func (s *OrphanService) Migrate(ctx context.Context, project domain.ProjectConte
 		finish(status, errMsg)
 	}()
 
-	report, err = s.repo.RebindOrphanedTasks(ctx, project.ID, s.current, s.previous)
+	if s.cascadeActive() {
+		report, err = s.migrateCascade(ctx, project.ID)
+	} else {
+		report, err = s.repo.RebindOrphanedTasks(ctx, project.ID, s.current, s.previous)
+	}
 	if err == nil && s.onMigrate != nil {
 		// Drop the cache's previous-snapshot reference. The rebind ran
 		// against `s.previous` and that pointer carries the prior
@@ -93,4 +114,81 @@ func (s *OrphanService) Migrate(ctx context.Context, project domain.ProjectConte
 		s.previous = nil
 	}
 	return
+}
+
+// cascadeActive reports whether the migration must use the depth-split
+// path: any snapshot in the pair (current or previous) declaring a
+// sub-task kit triggers the cascade, so enable/disable/swap all route
+// through migrateCascade.
+func (s *OrphanService) cascadeActive() bool {
+	return snapshotHasSubtaskKit(s.current) || snapshotHasSubtaskKit(s.previous)
+}
+
+func snapshotHasSubtaskKit(snap *config.Snapshot) bool {
+	if snap == nil {
+		return false
+	}
+	_, ok := snap.SubtaskKit()
+	return ok
+}
+
+// migrateCascade fans the rebind into two scoped passes: root tasks
+// against the root workflow (legacy task.migrated) and sub-tasks against
+// the resolved sub-kit workflow (task.bucket_orphaned). The from_kit/
+// to_kit identities follow the locked semantics: enable goes root→sub,
+// disable goes sub→root, swap goes sub→sub.
+func (s *OrphanService) migrateCascade(ctx context.Context, projectID int64) (domain.OrphanReport, error) {
+	rootReport, err := s.repo.RebindOrphanedRootTasks(ctx, projectID, s.current, s.previous)
+	if err != nil {
+		return domain.OrphanReport{}, err
+	}
+
+	curSub := resolveSubtaskOrRoot(s.current)
+	prevSub := resolveSubtaskOrRoot(s.previous)
+	fromKit, toKit := resolvedKitIdentities(s.previous, s.current)
+	subReport, err := s.repo.RebindOrphanedSubtasks(ctx, projectID, curSub, prevSub, fromKit, toKit)
+	if err != nil {
+		return domain.OrphanReport{}, err
+	}
+
+	combined := rootReport
+	if combined.WorkflowKey == "" {
+		combined.WorkflowKey = subReport.WorkflowKey
+	}
+	combined.Groups = append(combined.Groups, subReport.Groups...)
+	combined.Total += subReport.Total
+	return combined, nil
+}
+
+// resolveSubtaskOrRoot returns the sub-kit snapshot when configured,
+// otherwise the root snapshot. The migration cascade routes sub-tasks
+// through whichever snapshot is the authoritative source of their
+// workflow — on disable that collapses back to the root snapshot.
+func resolveSubtaskOrRoot(snap *config.Snapshot) domain.BucketResolver {
+	if snap == nil {
+		return nil
+	}
+	if sub, ok := snap.SubtaskKit(); ok {
+		return sub
+	}
+	return snap
+}
+
+// resolvedKitIdentities derives the from_kit / to_kit identity strings
+// the task.bucket_orphaned payload requires. The values come from the
+// sub-kit snapshot when configured, otherwise the root kit — which
+// matches the locked semantics: enable (root → sub), disable
+// (sub → root), swap (sub → sub).
+func resolvedKitIdentities(prev, curr *config.Snapshot) (string, string) {
+	return kitIdentity(prev), kitIdentity(curr)
+}
+
+func kitIdentity(snap *config.Snapshot) string {
+	if snap == nil {
+		return ""
+	}
+	if sub, ok := snap.SubtaskKit(); ok {
+		return sub.Kit().Key
+	}
+	return snap.Kit().Key
 }

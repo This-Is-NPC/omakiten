@@ -24,6 +24,14 @@ func (s consumerStubOrphanRepo) RebindOrphanedTasks(context.Context, int64, doma
 	return domain.OrphanReport{}, s.rebindErr
 }
 
+func (s consumerStubOrphanRepo) RebindOrphanedRootTasks(context.Context, int64, domain.BucketResolver, domain.BucketResolver) (domain.OrphanReport, error) {
+	return domain.OrphanReport{}, s.rebindErr
+}
+
+func (s consumerStubOrphanRepo) RebindOrphanedSubtasks(context.Context, int64, domain.BucketResolver, domain.BucketResolver, string, string) (domain.OrphanReport, error) {
+	return domain.OrphanReport{}, s.rebindErr
+}
+
 // TestOrphanServiceMigrateFiresConsumerAndClearsPrevious pins the
 // W7 #228 lifetime fix: after a successful Migrate the consumer
 // callback runs exactly once and the previous-snapshot pointer on

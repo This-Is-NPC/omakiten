@@ -59,11 +59,12 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 `, projectID, bucketID, title, description, int(priority), parentArg)
 			return scanTask(row, bucketKey)
 		},
-		Payload: func(_ domain.Task) (string, error) {
+		Payload: func(task domain.Task) (string, error) {
+			fields := map[string]any{"bucket": bucketKey}
 			if parentID != nil {
-				return fmt.Sprintf(`{"bucket":%q,"parent_id":%d}`, bucketKey, *parentID), nil
+				fields["parent_id"] = *parentID
 			}
-			return fmt.Sprintf(`{"bucket":%q}`, bucketKey), nil
+			return taskEventPayload(task, buckets, fields)
 		},
 	})
 }
@@ -241,7 +242,10 @@ RETURNING id, project_id, bucket_id, title, description, priority_id, state, cre
 	var moveEv domain.Event
 	var unassignEv domain.Event
 	if currentBucketID != targetBucketID {
-		movePayload := fmt.Sprintf(`{"from":%q,"to":%q}`, currentBucketKey, targetBucketKey)
+		movePayload, payloadErr := taskEventPayload(task, buckets, map[string]any{"from": currentBucketKey, "to": targetBucketKey})
+		if payloadErr != nil {
+			return domain.Task{}, payloadErr
+		}
 		if s.shouldLogEvent(domain.EventTypeTaskMoved) {
 			var err error
 			moveEv, err = insertTaskEvent(ctx, tx, projectID, taskID, domain.EventTypeTaskMoved, "", movePayload)
