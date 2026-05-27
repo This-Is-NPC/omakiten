@@ -134,6 +134,7 @@ type Settings struct {
 	Events           EventsSettings      `yaml:"events,omitempty" json:"events,omitempty"`
 	Search           SearchSettings      `yaml:"search,omitempty" json:"search,omitempty"`
 	Hooks            []HookSpec          `yaml:"hooks,omitempty" json:"hooks,omitempty"`
+	Tricks           TricksSettings      `yaml:"tricks,omitempty" json:"tricks,omitempty"`
 	TagSynonyms      map[string]string   `yaml:"tag_synonyms,omitempty" json:"tag_synonyms,omitempty"`
 	// Priorities is the configurable id↔value table for task priorities.
 	// Code references the id (opaque); renderers resolve the value via
@@ -441,6 +442,26 @@ type HookSpec struct {
 	MessageField       string                 `yaml:"message_field,omitempty" json:"message_field,omitempty"`
 	DetailMessage      string                 `yaml:"detail_message,omitempty" json:"detail_message,omitempty"`
 	DetailMessageField string                 `yaml:"detail_message_field,omitempty" json:"detail_message_field,omitempty"`
+}
+
+// TricksSettings holds the user-overridable parts of the TUI trick
+// palette (Ctrl+K overlay). Nav remaps a positional 2-digit code (the
+// shape the palette ScreenRegistry ships with) to a different Route
+// slug — useful when the user's muscle memory expects a code on a
+// different screen than the canonical layout. An empty Nav map keeps
+// every positional default in place.
+//
+// Reserved-verb enforcement does not live in this struct: the
+// validator inspects every HookSpec.When["verb"] entry against
+// domain.ReservedTrickVerbs at load time and rejects matches with a
+// hard error, so users cannot silently rebind built-in dispatch.
+type TricksSettings struct {
+	// Nav maps positional codes (2 digits in 1-9, e.g. "33") to Route
+	// slugs (e.g. "settings.personas"). The palette layer validates
+	// the slug-against-route-table semantic check at TUI bind time;
+	// this struct's shape is the only contract the config validator
+	// enforces.
+	Nav map[string]string `yaml:"nav,omitempty" json:"nav,omitempty"`
 }
 
 // EventsSettings declares per-event-type channel policies (log to db,
