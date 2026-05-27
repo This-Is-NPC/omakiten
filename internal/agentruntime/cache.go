@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -372,7 +373,16 @@ func (c *BundleCache) maybeEmitSubtaskKitNotice(ctx context.Context, projectID i
 	if err != nil {
 		return
 	}
-	_ = c.store.RecordEntityEvent(ctx, domain.EventEntitySystem, 0, projectID, domain.EventTypeSubtaskKitNoticeEmitted, string(raw))
+	if recErr := c.store.RecordEntityEvent(ctx, domain.EventEntitySystem, 0, projectID, domain.EventTypeSubtaskKitNoticeEmitted, string(raw)); recErr != nil {
+		// Audit-row write failure is degraded observability, not a
+		// hot-reload failure. Bundle rotation already succeeded; abort
+		// would leave the runtime in an inconsistent state. Surface
+		// via slog so operators see the gap. Review finding §C.9 of #297.
+		slog.Warn("subtask_kit notice audit write failed; transparency notice not persisted",
+			"project_id", projectID,
+			"err", recErr,
+		)
+	}
 }
 
 // snapshotRootKitKey returns the root kit identity of the snapshot, or

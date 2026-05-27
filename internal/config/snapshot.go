@@ -349,6 +349,16 @@ func (s *Snapshot) Kit() Kit {
 	return s.kit
 }
 
+// KitKey satisfies domain.BucketResolver — it returns the same string as
+// `s.Kit().Key` but lets non-config callers (sqlite, hooks) read the kit
+// identity through the interface without depending on the config package.
+func (s *Snapshot) KitKey() string {
+	if s == nil {
+		return ""
+	}
+	return s.kit.Key
+}
+
 // SubtaskKitPath returns the root kit's raw subtask_kit path, if configured.
 func (s *Snapshot) SubtaskKitPath() string {
 	if s == nil {

@@ -202,16 +202,17 @@ func matchesSubjectDepth(hook Hook, ev domain.Event) bool {
 	}
 }
 
+// subjectDepth extracts the event subject's depth from its JSON payload.
+// json.Unmarshal decodes every numeric JSON value into float64, so the
+// type switch only needs the float64 arm (the previous `case int:` arm
+// was dead — review finding §C.12 of #297).
 func subjectDepth(ev domain.Event) (int, bool) {
 	payload := decodePayload(ev.Payload)
 	if payload == nil {
 		return 0, false
 	}
-	switch v := payload["subject_depth"].(type) {
-	case float64:
+	if v, ok := payload["subject_depth"].(float64); ok {
 		return int(v), true
-	case int:
-		return v, true
 	}
 	return 0, false
 }

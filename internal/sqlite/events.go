@@ -75,14 +75,16 @@ func taskEventPayload(task domain.Task, buckets domain.BucketResolver, fields ma
 	return string(body), nil
 }
 
+// resolvedKitKey reads the kit identity from a BucketResolver through
+// the new domain.BucketResolver.KitKey() contract. The previous
+// implementation cast to `interface{ Kit() config.Kit }` — that pulled
+// the config package into the resolver lookup and leaked the layering.
+// Review finding §C.13 of #297.
 func resolvedKitKey(buckets domain.BucketResolver) string {
 	if buckets == nil {
 		return ""
 	}
-	if kit, ok := buckets.(interface{ Kit() config.Kit }); ok {
-		return kit.Kit().Key
-	}
-	return ""
+	return buckets.KitKey()
 }
 
 // RecordEntityEvent persists a domain event with attribution pulled from ctx.

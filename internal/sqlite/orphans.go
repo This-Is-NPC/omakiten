@@ -295,6 +295,16 @@ type orphanEventContext struct {
 	ToKit   string
 }
 
+// rebindOrphansScoped is the shared rebind dispatcher. When the event
+// type is disabled in the store's log filter (`shouldLogEvent(eventType)`
+// returns false), the slice appended to `events` carries bare
+// `domain.Event{}` rows: no `ID`, no `CreatedAt`, no autoincrement-derived
+// fields — only the entity/project/type/payload that the caller supplied.
+// Consumers of the returned slice that only emit downstream hooks or copy
+// the payload tolerate this; consumers that depend on the audit-log row
+// id (e.g. correlated event IDs) must check `shouldLogEvent` themselves
+// before treating the slice as audit-quality data. Documented per
+// review finding §C.11 of #297.
 func (s *Store) rebindOrphansScoped(ctx context.Context, projectID int64, current, previous domain.BucketResolver, scope orphanScope, eventType string, evCtx orphanEventContext) (domain.OrphanReport, error) {
 	report, err := s.previewOrphansScoped(ctx, projectID, current, previous, scope)
 	if err != nil {
