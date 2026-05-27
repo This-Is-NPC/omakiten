@@ -354,15 +354,16 @@ func (c *BundleCache) maybeEmitSubtaskKitNotice(ctx context.Context, projectID i
 	if c.store == nil {
 		return
 	}
-	raw, err := json.Marshal(domain.SubtaskKitNoticePayload{
+	raw, err := (domain.SubtaskKitNoticePayload{
 		I18nKey: config.SubtaskKitTransparencyNoticeKey(),
 		FromKit: snapshotRootKitKey(prev),
 		ToKit:   snapshotSubtaskKitKey(curr),
-	})
+	}).JSON()
 	if err != nil {
+		slog.Warn("subtask_kit notice payload marshal failed", "project_id", projectID, "err", err)
 		return
 	}
-	if recErr := c.store.RecordEntityEvent(ctx, domain.EventEntitySystem, 0, projectID, domain.EventTypeSubtaskKitNoticeEmitted, string(raw)); recErr != nil {
+	if recErr := c.store.RecordEntityEvent(ctx, domain.EventEntitySystem, 0, projectID, domain.EventTypeSubtaskKitNoticeEmitted, raw); recErr != nil {
 		// Audit-row write failure is degraded observability, not a
 		// hot-reload failure. Bundle rotation already succeeded; abort
 		// would leave the runtime in an inconsistent state. Surface

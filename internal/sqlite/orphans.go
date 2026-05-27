@@ -3,7 +3,6 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -434,7 +433,7 @@ func buildOrphanPayload(eventType string, task domain.OrphanedTask, evCtx orphan
 			ResolvedKit: evCtx.ToKit,
 			Reason:      "bucket_missing_in_resolved_kit",
 		}
-		raw, err := json.Marshal(payload)
+		raw, err := payload.JSON()
 		if err != nil {
 			// Marshal failure on a struct with primitive fields would be
 			// a runtime invariant violation, not a data issue. Surface
@@ -442,11 +441,11 @@ func buildOrphanPayload(eventType string, task domain.OrphanedTask, evCtx orphan
 			// auditable instead of silently dropping the event.
 			return fmt.Sprintf(`{"reason":"orphan_payload_marshal_failed","error":%q}`, err.Error())
 		}
-		return string(raw)
+		return raw
 	}
-	raw, err := json.Marshal(domain.TaskMigratedPayload{From: task.FromBucketKey, To: task.ToBucketKey, Reason: "workflow_swap"})
+	raw, err := (domain.TaskMigratedPayload{From: task.FromBucketKey, To: task.ToBucketKey, Reason: "workflow_swap"}).JSON()
 	if err != nil {
 		return fmt.Sprintf(`{"reason":"task_migrated_payload_marshal_failed","error":%q}`, err.Error())
 	}
-	return string(raw)
+	return raw
 }

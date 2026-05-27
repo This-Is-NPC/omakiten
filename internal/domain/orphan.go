@@ -1,5 +1,7 @@
 package domain
 
+import "encoding/json"
+
 // OrphanedTask describes a single task whose current bucket no longer exists
 // in the active workflow. The task can be rebinded to a target bucket — either
 // the same key in the new workflow (when preserved) or the first active bucket
@@ -56,6 +58,10 @@ type TaskBucketOrphanedPayload struct {
 	Reason      string `json:"reason"`
 }
 
+func (p TaskBucketOrphanedPayload) JSON() (string, error) {
+	return payloadJSON(p)
+}
+
 // TaskMigratedPayload is the legacy task.migrated payload — kept on
 // its own typed struct so future schema changes round-trip safely
 // through encoding/json. Moved to domain alongside
@@ -64,6 +70,10 @@ type TaskMigratedPayload struct {
 	From   string `json:"from"`
 	To     string `json:"to"`
 	Reason string `json:"reason"`
+}
+
+func (p TaskMigratedPayload) JSON() (string, error) {
+	return payloadJSON(p)
 }
 
 // SubtaskKitNoticePayload is the audit-log shape for the one-shot
@@ -76,4 +86,16 @@ type SubtaskKitNoticePayload struct {
 	I18nKey string `json:"i18n_key"`
 	FromKit string `json:"from_kit"`
 	ToKit   string `json:"to_kit"`
+}
+
+func (p SubtaskKitNoticePayload) JSON() (string, error) {
+	return payloadJSON(p)
+}
+
+func payloadJSON(payload any) (string, error) {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
 }
