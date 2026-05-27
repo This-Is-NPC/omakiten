@@ -21,6 +21,7 @@ import (
 	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/picker"
 	"omakiten/internal/tui/components/viewport"
+	"omakiten/internal/tui/palette"
 )
 
 // styleKind enumerates the chrome variants that benefit from per-width
@@ -246,6 +247,19 @@ type Model struct {
 	moveMode          bool
 	helpOpen  bool
 	helpAll   bool
+	// paletteOpen tracks the trick palette overlay (#182). When true,
+	// every keypress routes through palette.Model.Update until the
+	// overlay emits palette.DismissMsg (esc) or a SubmitMsg /
+	// SearchMsg the root Update consumes and closes the overlay
+	// against.
+	paletteOpen bool
+	palette     palette.Model
+	// paletteRegistry resolves nav:<code> codes to Route slugs. Built
+	// once at composition (newPickerModel-style helpers and cli/tui.go)
+	// from palette.DefaultScreens + the user's config.tricks.nav
+	// overrides so the palette dispatch path stays allocation-free at
+	// each open.
+	paletteRegistry *palette.Registry
 	// viewHistory is the in-memory back-stack populated whenever the user
 	// makes an intentional zone/sub navigation (tab / digit / `,`/`/`,
 	// `0`, `ctrl+h`). Bound to a small cap so long sessions cannot grow

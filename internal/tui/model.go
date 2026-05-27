@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"sync"
@@ -27,6 +28,7 @@ import (
 	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/picker"
 	"omakiten/internal/tui/components/viewport"
+	"omakiten/internal/tui/palette"
 )
 
 // NotificationBinding carries the loaded notification catalog into the TUI Model.
@@ -173,7 +175,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editorFinishedMsg:
 		m.handleEditorFinished(msg)
 		return m, nil
+	case palette.DismissMsg:
+		m.paletteOpen = false
+		return m, nil
+	case palette.SubmitMsg:
+		// Increment 5 wires the open/dismiss/route paths; the
+		// nav/op built-in handler arrives in increment 6. For now
+		// surface the parsed token to the user via the overlay's
+		// own status so the round-trip is visible end-to-end.
+		m.palette.SetStatus(fmt.Sprintf("dispatch pending — token verb=%q operand=%q", msg.Token.Verb, msg.Token.Operand))
+		return m, nil
+	case palette.SearchMsg:
+		// Search-tab wiring lands alongside the nav/op handlers in
+		// increment 6 (re-uses app.SearchService). Until then echo
+		// the query inline so the overlay path is verifiable.
+		m.palette.SetStatus(fmt.Sprintf("search pending — query %q", msg.Query))
+		return m, nil
 	case tea.KeyMsg:
+		if m.paletteOpen {
+			var cmd tea.Cmd
+			m.palette, cmd = m.palette.Update(msg)
+			return m, cmd
+		}
+		if msg.String() == "ctrl+k" && m.canOpenPalette() {
+			m.palette = palette.NewModel()
+			m.paletteOpen = true
+			return m, nil
+		}
 		if m.helpOpen {
 			switch msg.String() {
 			case "ctrl+c":
@@ -365,6 +393,36 @@ func (m Model) shouldRealtimeRefresh() bool {
 		return false
 	}
 	return !m.helpOpen && m.mode == modeNormal && m.taskScreen == taskScreenClosed && m.entityScreen == entityScreenClosed && !m.moveMode
+}
+
+// canOpenPalette gates the global Ctrl+K binding so the palette
+// never steals focus from another modal input. The matrix mirrors
+// shouldRealtimeRefresh's "no modal active" check plus the
+// description / comment overlays (which are not background-refresh
+// gates but still own keyboard focus when open).
+func (m Model) canOpenPalette() bool {
+	if m.paletteOpen {
+		return false
+	}
+	if m.helpOpen {
+		return false
+	}
+	if m.mode != modeNormal {
+		return false
+	}
+	if m.commentScreenOpen || m.descriptionScreenOpen {
+		return false
+	}
+	if m.taskScreen != taskScreenClosed {
+		return false
+	}
+	if m.entityScreen != entityScreenClosed {
+		return false
+	}
+	if m.moveMode {
+		return false
+	}
+	return true
 }
 
 // refreshAfterViewChangeCmd reacts to a sub-tab nav transition. Light
