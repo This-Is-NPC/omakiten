@@ -18,11 +18,21 @@ import (
 // files. Pulled out as a sibling type (not reusing configOption) so the
 // sentinel can carry a nil filename without forcing every caller of
 // the config picker to branch on an empty string.
+//
+// RelativePath is the kit's identity inside the config dir
+// (`foo.yaml` for a default entry, `custom/foo.yaml` for a user
+// override). Comparing the picker's active row against the snapshot's
+// SubtaskKitPath via this field instead of `filepath.Base(Filename)`
+// is the locked behaviour from task #301 review §11557 finding B8 —
+// a default `foo.yaml` and a `custom/foo.yaml` are distinct kits even
+// though they share a basename, and treating them as the same row
+// would silently land the active dot on the wrong entry.
 type subtaskKitOption struct {
-	Filename string
-	Display  string
-	IsCustom bool
-	IsNone   bool
+	Filename     string
+	RelativePath string
+	Display      string
+	IsCustom     bool
+	IsNone       bool
 }
 
 // openSubtaskKitPicker scans the active config dir for kit files
@@ -41,13 +51,13 @@ func (m *Model) openSubtaskKitPicker() {
 		// the cascade is disabled, but surface a hint via status.
 		m.status = m.t("tui.status.no_subtask_kit_profiles")
 	}
-	active := m.currentSubtaskKitFilename()
+	active := m.currentSubtaskKitRelative()
 	cursor := 0
 	for i, opt := range options {
 		switch {
 		case opt.IsNone && active == "":
 			cursor = i
-		case opt.Filename == active:
+		case opt.RelativePath == active:
 			cursor = i
 		}
 	}
@@ -62,6 +72,12 @@ func (m *Model) openSubtaskKitPicker() {
 // would offer + a sentinel "none (inherit root)" entry. Profile order:
 // sentinel first (so it stays predictable), then defaults alpha, then
 // customs alpha — same precedence the existing root-kit picker uses.
+//
+// Each non-sentinel option carries both Filename (basename for
+// display) and RelativePath (kit identity inside the config dir). The
+// active-row picker uses RelativePath so a default `foo.yaml` and a
+// `custom/foo.yaml` resolve to distinct rows (#301 review §11557
+// finding B8).
 func discoverSubtaskKitOptions(configDir string) ([]subtaskKitOption, error) {
 	profiles, err := discoverConfigProfiles(configDir)
 	if err != nil {
@@ -71,26 +87,38 @@ func discoverSubtaskKitOptions(configDir string) ([]subtaskKitOption, error) {
 	out = append(out, subtaskKitOption{IsNone: true})
 	for _, p := range profiles {
 		out = append(out, subtaskKitOption{
-			Filename: p.Filename,
-			Display:  p.Display,
-			IsCustom: p.IsCustom,
+			Filename:     p.Filename,
+			RelativePath: profileRelativePath(p),
+			Display:      p.Display,
+			IsCustom:     p.IsCustom,
 		})
 	}
 	return out, nil
 }
 
-// currentSubtaskKitFilename returns the basename of the sub-kit
-// currently wired into omakiten.yaml, or "" when no cascade is active.
-func (m Model) currentSubtaskKitFilename() string {
-	snap := m.repos.activeSnapshot()
-	if snap == nil {
+// profileRelativePath returns the kit identity inside the config dir
+// (`foo.yaml` for defaults, `custom/foo.yaml` for user overrides).
+// Matches the SubtaskKit field shape `omakiten.yaml` carries so the
+// active picker option compares cleanly with the snapshot's
+// SubtaskKitPath without going through filepath.Base.
+func profileRelativePath(p configOption) string {
+	if p.IsCustom {
+		return filepath.Join("custom", p.Filename)
+	}
+	return p.Filename
+}
+
+// currentSubtaskKitRelative returns the relative path of the sub-kit
+// currently wired into omakiten.yaml (`foo.yaml` or
+// `custom/foo.yaml`), or "" when no cascade is active. Used by the
+// picker to land the active dot on the right row even when a default
+// and a custom kit share a basename (#301 review §11557 finding B8).
+func (m Model) currentSubtaskKitRelative() string {
+	bundle, err := m.repos.Editor.Load()
+	if err != nil {
 		return ""
 	}
-	rel := snap.SubtaskKitPath()
-	if rel == "" {
-		return ""
-	}
-	return filepath.Base(rel)
+	return bundle.SubtaskKit
 }
 
 // updateSubtaskKitPicker routes keypresses while the sub-kit picker is
@@ -114,8 +142,11 @@ func (m Model) updateSubtaskKitPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // omakiten.yaml (or clears it for the "none" sentinel), then triggers
 // the hot-reload path so #285's migration handler and #282's
 // transparency notice fire through the cache rebuild. On reload
-// failure the YAML mutation is rolled back via a second Apply so the
-// on-disk wiring never diverges from the runtime snapshot.
+// failure the YAML mutation is rolled back via the transactional
+// helper (`applySubtaskKitWithRollback`) so disk AND runtime/cache
+// state both return to the prior wiring — #301 review §11557 finding
+// B9 closed the regression where the YAML was reverted but the cache
+// had already rotated to the candidate snapshot.
 func (m *Model) applySubtaskKitSelection() {
 	if m.entityPicker.Cursor < 0 || m.entityPicker.Cursor >= len(m.subtaskKitPickerOptions) {
 		return
@@ -123,11 +154,7 @@ func (m *Model) applySubtaskKitSelection() {
 	chosen := m.subtaskKitPickerOptions[m.entityPicker.Cursor]
 	relative := ""
 	if !chosen.IsNone {
-		if chosen.IsCustom {
-			relative = filepath.Join("custom", chosen.Filename)
-		} else {
-			relative = chosen.Filename
-		}
+		relative = chosen.RelativePath
 	}
 
 	originalRelative, err := m.loadCurrentSubtaskKitRelative()
@@ -135,29 +162,10 @@ func (m *Model) applySubtaskKitSelection() {
 		m.status = fmt.Sprintf(m.t("tui.status.subtask_kit_switch_failed_fmt"), err.Error())
 		return
 	}
-	previousActive := m.currentSubtaskKitFilename()
+	previousActive := m.currentSubtaskKitRelative()
 
-	if _, err := m.repos.Editor.Apply(m.ctx, func(bundle *config.Bundle) error {
-		bundle.SubtaskKit = relative
-		return nil
-	}); err != nil {
-		m.status = fmt.Sprintf(m.t("tui.status.subtask_kit_switch_failed_fmt"), err.Error())
-		return
-	}
-
-	if err := m.reloadBundle(m.repos.Editor.Path()); err != nil {
-		// Reload failed against the candidate YAML — restore the prior
-		// subtask_kit value via a second Apply so the on-disk state
-		// matches the runtime again. The rollback Apply failure is
-		// folded into the surfaced error so operators see both.
-		if _, rerr := m.repos.Editor.Apply(m.ctx, func(bundle *config.Bundle) error {
-			bundle.SubtaskKit = originalRelative
-			return nil
-		}); rerr != nil {
-			m.status = fmt.Sprintf(m.t("tui.status.subtask_kit_switch_failed_fmt"), fmt.Sprintf("%v (rollback also failed: %v)", err, rerr))
-			return
-		}
-		m.status = fmt.Sprintf(m.t("tui.status.subtask_kit_switch_failed_fmt"), err.Error())
+	if applyErr := m.applySubtaskKitWithRollback(originalRelative, relative); applyErr != nil {
+		m.status = fmt.Sprintf(m.t("tui.status.subtask_kit_switch_failed_fmt"), applyErr.Error())
 		return
 	}
 	switch {
@@ -171,6 +179,41 @@ func (m *Model) applySubtaskKitSelection() {
 		display := strings.TrimSuffix(chosen.Filename, filepath.Ext(chosen.Filename))
 		m.closeEntityScreen(fmt.Sprintf(m.t("tui.status.subtask_kit_switched_fmt"), display))
 	}
+}
+
+// applySubtaskKitWithRollback is the transactional write/reload/
+// rollback helper for the sub-task kit picker. The candidate write
+// always runs first; on reload failure the helper rewrites the
+// original `subtask_kit` value AND re-runs `reloadBundle` against the
+// restored file so the runtime cache rotates back to the prior
+// snapshot. Without the second reload the on-disk YAML would say
+// "use the previous kit" while the cache still held the candidate's
+// snapshot (#301 review §11557 finding B9).
+//
+// The second `reloadBundle` suppresses the bundle.swapped emit so the
+// user is not bounced through a second orphan-migration prompt for a
+// rollback they did not consent to (mirrors `revertConfigSwap`).
+func (m *Model) applySubtaskKitWithRollback(originalRelative, candidateRelative string) error {
+	if _, err := m.repos.Editor.Apply(m.ctx, func(bundle *config.Bundle) error {
+		bundle.SubtaskKit = candidateRelative
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := m.reloadBundle(m.repos.Editor.Path()); err != nil {
+		if _, rerr := m.repos.Editor.Apply(m.ctx, func(bundle *config.Bundle) error {
+			bundle.SubtaskKit = originalRelative
+			return nil
+		}); rerr != nil {
+			return fmt.Errorf("%w (rollback yaml write also failed: %v)", err, rerr)
+		}
+		m.suppressNextSwapEmit = true
+		if rerr := m.reloadBundle(m.repos.Editor.Path()); rerr != nil {
+			return fmt.Errorf("%w (rollback reload also failed: %v)", err, rerr)
+		}
+		return err
+	}
+	return nil
 }
 
 // loadCurrentSubtaskKitRelative reads the active wiring file and
@@ -191,8 +234,12 @@ func (m Model) loadCurrentSubtaskKitRelative() (string, error) {
 // picker's kicker + hint + rows shape (single accent per the design
 // language) so the surface reads identically when the user toggles
 // between the two pickers.
+//
+// The active dot uses RelativePath identity, not the basename — a
+// default `foo.yaml` and a `custom/foo.yaml` are distinct rows and
+// only one carries the dot at a time (#301 review §11557 finding B8).
 func (m Model) renderSubtaskKitPicker() string {
-	active := m.currentSubtaskKitFilename()
+	active := m.currentSubtaskKitRelative()
 	rows := make([]string, 0, len(m.subtaskKitPickerOptions))
 	for index, opt := range m.subtaskKitPickerOptions {
 		marker := m.cursorMarker(m.entityPicker.Cursor == index)
@@ -200,7 +247,7 @@ func (m Model) renderSubtaskKitPicker() string {
 		switch {
 		case opt.IsNone && active == "":
 			dot = "•"
-		case !opt.IsNone && opt.Filename == active:
+		case !opt.IsNone && opt.RelativePath == active:
 			dot = "•"
 		}
 		var row string
