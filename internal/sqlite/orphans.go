@@ -231,15 +231,19 @@ func (s *Store) queryRecursiveOrphans(ctx context.Context, projectID int64, scop
 	if err != nil {
 		return nil, err
 	}
-	// Truncation marker: a row with parent_id != nil but depth == 0
-	// only happens when the CTE excluded it (depth chain longer than
-	// orphanDepthLimit), so LEFT JOIN -> NULL -> COALESCE -> 0. Surface
-	// via slog so audit consumers see the gap; do not fail the
-	// migration because the rebind itself uses bucket_id and is still
-	// correct — only the depth payload is unreliable for the affected
-	// rows.
+	detectAndWarnTruncation(projectID, scopeName, scanned)
+	return scanned, nil
+}
+
+// detectAndWarnTruncation surfaces the recursive-depth truncation marker:
+// a row with parent_id != nil but depth == 0 only happens when the CTE
+// excluded it (depth chain longer than orphanDepthLimit), so LEFT JOIN ->
+// NULL -> COALESCE -> 0. Do not fail the migration because the rebind
+// itself uses bucket_id and is still correct — only the depth payload is
+// unreliable for the affected rows.
+func detectAndWarnTruncation(projectID int64, scopeName string, rows []orphanRow) {
 	var truncated int
-	for _, row := range scanned {
+	for _, row := range rows {
 		if row.parentID != nil && row.depth == 0 {
 			truncated++
 		}
@@ -252,7 +256,6 @@ func (s *Store) queryRecursiveOrphans(ctx context.Context, projectID int64, scop
 			"depth_cap", orphanDepthLimit,
 		)
 	}
-	return scanned, nil
 }
 
 // queryActiveRootTasks is the simple non-recursive path used when the

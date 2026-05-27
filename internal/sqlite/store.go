@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -65,9 +66,9 @@ type Store struct {
 	// pinned conns the pool hands out cold) read this field so concurrent
 	// callers honour the user's config instead of falling back to the
 	// kit default.
-	busyTimeoutMs         int
-	activityLogMaxRows    int
-	activityLogMaxAgeDays int
+	busyTimeoutMs            int
+	activityLogMaxRows       int
+	activityLogMaxAgeDays    int
 	eventsDefaultRecentLimit int
 	// eventsPolicy gates the per-event-type log channel: when
 	// ResolveLog returns false, the audit event is dropped before
@@ -137,7 +138,7 @@ func (s *Store) publishEvent(ctx context.Context, ev domain.Event) {
 // about post-Open re-application skip this entirely and inherit the
 // kit-canonical busy_timeout that Open applied.
 type ConfigKnobs struct {
-	BusyTimeoutMs            int
+	BusyTimeoutMs int
 	// CacheSizeKB applies PRAGMA cache_size in negative-kilobyte form
 	// after Open via ApplyConfig. 0 leaves Open's value in place; <0
 	// is rejected by the config validator and never reaches here.
@@ -407,9 +408,33 @@ func (s *Store) applyMigrations(ctx context.Context) error {
 		}
 	}
 
+	if err := s.warnTaskDepthBackfillTruncation(ctx); err != nil {
+		return err
+	}
+
 	return nil
 }
 
+func (s *Store) warnTaskDepthBackfillTruncation(ctx context.Context) error {
+	var depthColumns int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = 'depth'`).Scan(&depthColumns); err != nil {
+		return err
+	}
+	if depthColumns == 0 {
+		return nil
+	}
+	var truncatedRows int64
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tasks WHERE parent_id IS NOT NULL AND depth = 0`).Scan(&truncatedRows); err != nil {
+		return err
+	}
+	if truncatedRows > 0 {
+		slog.Warn("tasks depth backfill truncated; descendants > 64 retain depth=0",
+			"truncated_rows", truncatedRows,
+			"depth_cap", orphanDepthLimit,
+		)
+	}
+	return nil
+}
 
 // placeholders builds an "?,?,?"-shaped string for IN clauses. Lives at the
 // package root because tasks.go, comments.go and personas.go all need it for
