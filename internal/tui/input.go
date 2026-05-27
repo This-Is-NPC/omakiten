@@ -109,6 +109,7 @@ func (m *Model) cancelInput() {
 	m.commentEditID = 0
 	m.planGoalEditingID = 0
 	m.planAssignTaskID = 0
+	m.moveInputTargetID = 0
 	m.commentInput = newCommentInput()
 	m.moveInput = newMoveInput()
 	m.status = m.t("tui.status.cancelled")
@@ -153,7 +154,19 @@ func (m *Model) submitInput() {
 		commentSvc := app.NewCommentService(m.repos.Comments, m.repos.activeSnapshot())
 		_, err = commentSvc.Add(m.ctx, m.project, task.ID, input, "human", nil)
 	case modeMove:
-		task, ok := m.selectedTask()
+		var task domain.Task
+		var ok bool
+		if m.moveInputTargetID > 0 {
+			// `m` from the sub-tasks pane (or any caller that named an
+			// explicit target via beginMoveInputForTask) MUST rewrite that
+			// row — not whatever selectedTask happens to return. The
+			// pre-fix code always routed through selectedTask, which
+			// resolves to the open task screen's parent while a task is
+			// open, so every sub-task move quietly hit the parent instead.
+			task, ok = m.taskByID(m.moveInputTargetID)
+		} else {
+			task, ok = m.selectedTask()
+		}
 		if !ok {
 			err = domain.NewError(domain.ErrTaskNotFound, "no selected task", nil)
 			break
@@ -182,6 +195,7 @@ func (m *Model) submitInput() {
 		m.commentEditID = 0
 		m.planGoalEditingID = 0
 		m.planAssignTaskID = 0
+		m.moveInputTargetID = 0
 		m.commentInput = newCommentInput()
 		m.moveInput = newMoveInput()
 		m.syncActivityScrollToCursor()
@@ -207,6 +221,7 @@ func (m *Model) submitInput() {
 	m.commentEditID = 0
 	m.planGoalEditingID = 0
 	m.planAssignTaskID = 0
+	m.moveInputTargetID = 0
 	m.commentInput = newCommentInput()
 	m.moveInput = newMoveInput()
 	m.syncActivityScrollToCursor()

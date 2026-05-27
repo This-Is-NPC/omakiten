@@ -235,8 +235,15 @@ type Model struct {
 	// triggered by `m` followed by typing a target bucket key). Reset
 	// on every beginInput call so prior values don't leak across moves.
 	moveInput textinput.Model
-	status    string
-	moveMode  bool
+	// moveInputTargetID names the task the next modeMove submission
+	// rewrites. Zero means "fall back to selectedTask" (the legacy
+	// parent/board behaviour). Non-zero is set by `m` on the sub-tasks
+	// pane so the entered bucket key applies to the focused child, not
+	// the parent the task view is open against. Reset on submit /
+	// cancel so it cannot leak across moves.
+	moveInputTargetID int64
+	status            string
+	moveMode          bool
 	helpOpen  bool
 	helpAll   bool
 	// viewHistory is the in-memory back-stack populated whenever the user

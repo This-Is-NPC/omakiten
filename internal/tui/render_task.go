@@ -91,8 +91,17 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.beginInput(modeComment, m.t("tui.input.comment_body"), "")
 			}
 		case "m":
-			if _, ok := m.activeTask(); ok {
-				m.beginInput(modeMove, m.t("tui.input.target_bucket_key"), "")
+			// On the sub-tasks pane `m` moves the FOCUSED CHILD; in every
+			// other focus zone the open task (parent) is the target. The
+			// pre-fix path always called activeTask() so the move-input's
+			// bucket key was applied to the parent — invisibly silencing
+			// every sub-task move attempt the user thought they had made.
+			if m.taskFocus == taskFocusSubtasks {
+				if child, ok := m.activeSubtask(); ok {
+					m.beginMoveInputForTask(child)
+				}
+			} else if parent, ok := m.activeTask(); ok {
+				m.beginMoveInputForTask(parent)
 			}
 		case "d":
 			// Task delete only fires when the form column owns focus —
@@ -2101,6 +2110,45 @@ func finalBucketSnapshotForTask(snap *config.Snapshot, task domain.Task) *config
 		return nil
 	}
 	return snap.For(task)
+}
+
+// beginMoveInputForTask opens the modeMove text input bound to a
+// specific task. The prompt label appends the available bucket keys
+// for the task's resolved kit so the user sees the valid targets
+// instead of guessing them — the pre-fix prompt was a bare
+// "Target bucket key" with no hint of what to type. Captures the
+// task id in `moveInputTargetID` so submitInput rewrites THIS task,
+// not whatever `selectedTask()` happens to return.
+func (m *Model) beginMoveInputForTask(task domain.Task) {
+	m.moveInputTargetID = task.ID
+	m.beginInput(modeMove, m.moveInputPromptForTask(task), "")
+}
+
+// moveInputPromptForTask composes the modeMove prompt label. Shape:
+//
+//	"Target bucket — backlog · dev · done"
+//
+// when the resolved snapshot is available; falls back to the bare
+// i18n label when no snapshot is loaded (rare bootstrap window).
+func (m Model) moveInputPromptForTask(task domain.Task) string {
+	base := m.t("tui.input.target_bucket_key")
+	snap := m.repos.activeSnapshot()
+	if snap == nil {
+		return base
+	}
+	taskSnap := snap.For(task)
+	if taskSnap == nil {
+		return base
+	}
+	buckets := taskSnap.Workflow().Buckets
+	if len(buckets) == 0 {
+		return base
+	}
+	keys := make([]string, 0, len(buckets))
+	for _, b := range buckets {
+		keys = append(keys, b.Key)
+	}
+	return fmt.Sprintf("%s — %s", base, strings.Join(keys, " · "))
 }
 
 // taskService returns a TaskService bound to the current Model wiring.
