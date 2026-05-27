@@ -220,6 +220,27 @@ func (s *WorkflowService) Evaluator() *guards.Evaluator {
 	return s.guards
 }
 
+// TaskByID returns the live task row resolved through the per-project
+// Snapshot. Exposed so CommentService can hand the task into
+// `Evaluator.EmitViolatedForTask` when surfacing a comment-level guard
+// violation — the entity is `task`, so the payload must carry the
+// task's depth/parent metadata (#301 review §11557 finding A4).
+func (s *WorkflowService) TaskByID(ctx context.Context, project domain.ProjectContext, taskID int64) (domain.Task, error) {
+	return s.tasks.GetTaskByID(ctx, project.ID, taskID, s.snap)
+}
+
+// ResolveTaskSnap returns the task row plus the snapshot resolved for
+// its depth. Used by CommentService when threading the task through
+// `Evaluator.EmitViolatedForTask` so the payload's `resolved_kit` is
+// derived from `snap.For(task)` instead of falling back to root.
+func (s *WorkflowService) ResolveTaskSnap(ctx context.Context, project domain.ProjectContext, taskID int64) (domain.Task, *config.Snapshot, error) {
+	task, err := s.TaskByID(ctx, project, taskID)
+	if err != nil {
+		return domain.Task{}, nil, err
+	}
+	return task, s.snap.For(task), nil
+}
+
 // MoveTask runs the full move policy: resolve current/target buckets, enforce
 // the configured transition + guards, persist the move via TaskRepository
 // (which records task.moved), then conditionally emit task.completed when the
@@ -275,14 +296,14 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 	if currentBucketID != target.ID {
 		allowed := taskSnap.TransitionAllowed(currentBucketID, target.ID)
 		if !allowed {
-			s.guards.EmitViolated(ctx, project.ID, domain.EventEntityTask, taskID,
+			s.guards.EmitViolatedForTask(ctx, project.ID, taskForResolution, taskSnap,
 				GuardOperationTaskTransition, GuardRuleTransition,
 				"transition not allowed",
 				map[string]any{"task_id": taskID, "from_bucket_id": currentBucketID, "to_bucket_id": target.ID, "to_bucket": targetBucketKey})
 			err = domain.NewError(domain.ErrWorkflowInvalidTransition, "transition not allowed", map[string]any{"task_id": taskID, "from": currentBucketID, "to": target.ID})
 			return
 		}
-		if err = s.guards.EvaluateTransitionFor(ctx, project.ID, taskID, currentBucketID, target.ID, targetBucketKey, taskSnap); err != nil {
+		if err = s.guards.EvaluateTransitionForTask(ctx, project.ID, taskForResolution, currentBucketID, target.ID, targetBucketKey, taskSnap); err != nil {
 			return
 		}
 	}

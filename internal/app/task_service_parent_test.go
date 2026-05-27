@@ -474,6 +474,137 @@ func TestTaskServiceListParentMode(t *testing.T) {
 	}
 }
 
+// TestTaskServiceEditReparentRebindsRootToSubFirstBucket pins task #301
+// review §11557 finding A2: when a root task is reparented under another
+// root, the new resolved kit is the sub-kit. The root task's bucket
+// ("dev") does not exist in the sub-kit; the implementation must
+// force-rebind it to the sub-kit's first bucket (mirroring AddSub
+// policy from commit c9fa08e). The returned row also has to reflect
+// the new bucket key and depth — fresh row guarantee (#301 finding B6).
+func TestTaskServiceEditReparentRebindsRootToSubFirstBucket(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	bundle := appTestBundle(t, 1000)
+	bundle.SubtaskBundle = subtaskRuntimeBundle("sub", []config.Bucket{
+		{ID: 10, Key: "todo", Name: "Todo", Position: 1},
+		{ID: 20, Key: "done", Name: "Done", Position: 2},
+	}, nil)
+	store, project := appTestStore(t, bundle)
+	defer func() { _ = store.Close() }()
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+
+	parent, err := service.Add(ctx, project.Context(), "Parent", "", "", "backlog")
+	if err != nil {
+		t.Fatalf("Add(parent) = %v", err)
+	}
+	orphanCandidate, err := service.Add(ctx, project.Context(), "Orphan", "", "", "dev")
+	if err != nil {
+		t.Fatalf("Add(orphan) = %v", err)
+	}
+
+	got, err := service.Edit(ctx, project.Context(), orphanCandidate.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: &parent.ID})
+	if err != nil {
+		t.Fatalf("Edit(reparent) = %v", err)
+	}
+	if got.BucketKey != "todo" {
+		t.Fatalf("got.BucketKey = %q, want todo (sub-kit first bucket — root bucket dev not present in sub kit)", got.BucketKey)
+	}
+	if got.Depth != 1 {
+		t.Fatalf("got.Depth = %d, want 1", got.Depth)
+	}
+	if got.ParentID == nil || *got.ParentID != parent.ID {
+		t.Fatalf("got.ParentID = %v, want %d", got.ParentID, parent.ID)
+	}
+}
+
+// TestTaskServiceEditReparentRebindsSubToRootFirstBucket pins task #301
+// review §11557 finding A2 in the opposite direction: clearing the
+// parent on a sub-task that holds a sub-kit-only bucket key forces a
+// rebind to the root kit's first bucket. The row never gets stuck
+// pointing at a bucket the new resolved kit does not know.
+func TestTaskServiceEditReparentRebindsSubToRootFirstBucket(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	bundle := appTestBundle(t, 1000)
+	bundle.SubtaskBundle = subtaskRuntimeBundle("sub", []config.Bucket{
+		{ID: 10, Key: "todo", Name: "Todo", Position: 1},
+		{ID: 20, Key: "done", Name: "Done", Position: 2},
+	}, []config.Transition{{From: 10, To: 20}})
+	store, project := appTestStore(t, bundle)
+	defer func() { _ = store.Close() }()
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+
+	parent, err := service.Add(ctx, project.Context(), "Parent", "", "", "backlog")
+	if err != nil {
+		t.Fatalf("Add(parent) = %v", err)
+	}
+	child, err := service.AddSub(ctx, project.Context(), parent.ID, "Child", "", "", "done")
+	if err != nil {
+		t.Fatalf("AddSub(child) = %v", err)
+	}
+	if child.BucketKey != "done" {
+		t.Fatalf("setup precondition: child bucket = %q, want done", child.BucketKey)
+	}
+
+	got, err := service.Edit(ctx, project.Context(), child.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: nil})
+	if err != nil {
+		t.Fatalf("Edit(clear parent) = %v", err)
+	}
+	if got.ParentID != nil {
+		t.Fatalf("got.ParentID = %v, want nil (re-rooted)", got.ParentID)
+	}
+	if got.Depth != 0 {
+		t.Fatalf("got.Depth = %d, want 0 (root)", got.Depth)
+	}
+	if got.BucketKey != "backlog" {
+		t.Fatalf("got.BucketKey = %q, want backlog (root kit first bucket — sub-kit bucket done not in root)", got.BucketKey)
+	}
+}
+
+// TestTaskServiceEditCombinedFieldEditAndReparentReturnsFreshRow pins
+// task #301 review §11557 finding B6: combining field edits with a
+// parent change must return the post-write snapshot. Previously the
+// service patched `task.ParentID` in memory without re-reading, so
+// Depth and BucketKey could lag if the parent change crossed kits or
+// triggered a subtree-depth recompute.
+func TestTaskServiceEditCombinedFieldEditAndReparentReturnsFreshRow(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	bundle := appTestBundle(t, 1000)
+	bundle.SubtaskBundle = subtaskRuntimeBundle("sub", []config.Bucket{
+		{ID: 10, Key: "todo", Name: "Todo", Position: 1},
+		{ID: 20, Key: "done", Name: "Done", Position: 2},
+	}, nil)
+	store, project := appTestStore(t, bundle)
+	defer func() { _ = store.Close() }()
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+
+	parent, _ := service.Add(ctx, project.Context(), "Parent", "", "", "backlog")
+	orphanCandidate, _ := service.Add(ctx, project.Context(), "Orphan", "", "", "dev")
+	newTitle := "Renamed"
+
+	got, err := service.Edit(ctx, project.Context(), orphanCandidate.ID, domain.TaskUpdate{
+		Title:        &newTitle,
+		ChangeParent: true,
+		NewParentID:  &parent.ID,
+	})
+	if err != nil {
+		t.Fatalf("Edit(title + reparent) = %v", err)
+	}
+	if got.Title != newTitle {
+		t.Fatalf("got.Title = %q, want %q (field edit lost)", got.Title, newTitle)
+	}
+	if got.Depth != 1 {
+		t.Fatalf("got.Depth = %d, want 1 (reparent recompute lost)", got.Depth)
+	}
+	if got.ParentID == nil || *got.ParentID != parent.ID {
+		t.Fatalf("got.ParentID = %v, want %d", got.ParentID, parent.ID)
+	}
+	if got.BucketKey != "todo" {
+		t.Fatalf("got.BucketKey = %q, want todo (cross-kit first-bucket rebind lost)", got.BucketKey)
+	}
+}
+
 func subtaskRuntimeBundle(key string, buckets []config.Bucket, transitions []config.Transition) *config.Bundle {
 	return &config.Bundle{
 		Kit:    config.Kit{ID: 900, Key: key, Name: key},

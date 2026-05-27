@@ -383,6 +383,11 @@ func TestEngineFiltersHooksBySubjectDepth(t *testing.T) {
 		{On: domain.EventTypeTaskCreated, Do: "sub", SubjectDepth: SubjectDepthSubtask, ResolvedKit: "sub"},
 		{On: domain.EventTypeTaskMoved, Do: "sub", SubjectDepth: SubjectDepthSubtask, ResolvedKit: "sub"},
 		{On: domain.EventTypeTaskBucketOrphaned, Do: "sub", SubjectDepth: SubjectDepthSubtask, ResolvedKit: "sub"},
+		// #301 finding A4: guard.violated payloads now carry
+		// subject_depth + resolved_kit so the engine routes a sub-task
+		// violation to the sub-kit hook only.
+		{On: domain.EventTypeGuardViolated, Do: "sub", SubjectDepth: SubjectDepthSubtask, ResolvedKit: "sub"},
+		{On: domain.EventTypeGuardViolated, Do: "root", SubjectDepth: SubjectDepthRoot, ResolvedKit: "root"},
 	}, registry, defaultSettings(), &fakeRecorder{})
 	engine.Start(bus)
 	defer engine.Stop()
@@ -424,11 +429,26 @@ func TestEngineFiltersHooksBySubjectDepth(t *testing.T) {
 	}
 	subWG.Wait()
 
+	// #301 finding A4 regression: a sub-task guard.violated payload
+	// must route ONLY to the sub-kit hook (depth=1), not the root one.
+	subWG.Add(1)
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeGuardViolated, Payload: `{"operation":"task.archive","rule":"subtasks_complete","subject_task_id":2,"subject_parent_id":1,"subject_depth":1,"resolved_kit":"sub"}`}); err != nil {
+		t.Fatalf("Publish sub guard.violated = %v", err)
+	}
+	subWG.Wait()
+
 	subMu.Lock()
 	gotSubTotal := len(subEvents)
 	subMu.Unlock()
-	if gotSubTotal != 3 {
-		t.Fatalf("sub hook total events = %d, want 3", gotSubTotal)
+	if gotSubTotal != 4 {
+		t.Fatalf("sub hook total events = %d, want 4 (created + moved + orphaned + guard.violated)", gotSubTotal)
+	}
+	// Root hook must not have absorbed the sub-task guard.violated.
+	rootMu.Lock()
+	gotRoot := len(rootEvents)
+	rootMu.Unlock()
+	if gotRoot != 1 {
+		t.Fatalf("root hook events after sub guard.violated = %d, want 1 (root.created only)", gotRoot)
 	}
 }
 
