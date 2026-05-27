@@ -93,20 +93,48 @@ func NewGuardEvaluator(snap *config.Snapshot, repo Repository, events EventSink)
 // targetBucketKey carries the user-visible bucket name used in the
 // guard.violated payload's target.to_bucket.
 func (e *Evaluator) EvaluateTransition(ctx context.Context, projectID, taskID, fromBucketID, toBucketID int64, targetBucketKey string) error {
-	specs := e.snap.Guards(fromBucketID, toBucketID)
+	return e.EvaluateTransitionFor(ctx, projectID, taskID, fromBucketID, toBucketID, targetBucketKey, nil)
+}
+
+// EvaluateTransitionFor is the depth-aware variant used by services that have
+// already resolved the task's kit. A nil snap falls back to the evaluator's root
+// snapshot to preserve the older call surface.
+func (e *Evaluator) EvaluateTransitionFor(ctx context.Context, projectID, taskID, fromBucketID, toBucketID int64, targetBucketKey string, snap *config.Snapshot) error {
+	snap = e.resolvedSnapshot(snap)
+	if snap == nil {
+		return nil
+	}
+	specs := snap.Guards(fromBucketID, toBucketID)
 	target := map[string]any{"task_id": taskID, "from_bucket_id": fromBucketID, "to_bucket_id": toBucketID, "to_bucket": targetBucketKey}
-	return e.runGuards(ctx, projectID, taskID, specs, OperationTaskTransition, target)
+	return e.runGuardsWithSnapshot(ctx, projectID, taskID, specs, OperationTaskTransition, target, snap)
 }
 
 // EvaluateOperation runs every guard declared on the named operation against
 // the named task. operation is one of the Operation* constants.
 func (e *Evaluator) EvaluateOperation(ctx context.Context, projectID, taskID int64, operation string) error {
-	workflow := e.snap.Workflow()
+	return e.EvaluateOperationFor(ctx, projectID, taskID, operation, nil)
+}
+
+// EvaluateOperationFor evaluates archive/delete/unarchive guards against the
+// task's resolved kit. A nil snap falls back to the evaluator's root snapshot.
+func (e *Evaluator) EvaluateOperationFor(ctx context.Context, projectID, taskID int64, operation string, snap *config.Snapshot) error {
+	snap = e.resolvedSnapshot(snap)
+	if snap == nil {
+		return nil
+	}
+	workflow := snap.Workflow()
 	specs := operationGuards(workflow, operation)
 	if len(specs) == 0 {
 		return nil
 	}
-	return e.runGuards(ctx, projectID, taskID, specs, OperationPayloadName(operation), nil)
+	return e.runGuardsWithSnapshot(ctx, projectID, taskID, specs, OperationPayloadName(operation), nil, snap)
+}
+
+func (e *Evaluator) resolvedSnapshot(snap *config.Snapshot) *config.Snapshot {
+	if snap != nil {
+		return snap
+	}
+	return e.snap
 }
 
 // EmitViolated records a guard.violated domain event. operation and rule are
@@ -171,21 +199,21 @@ func operationGuards(workflow domain.Workflow, operation string) []domain.Transi
 	return nil
 }
 
-// runGuards is the shared dispatch. Both transition guards and operation
-// guards (archive/delete/unarchive) feed through here so a new guard type
-// only needs one switch arm. operation labels the call site for the
-// guard.violated payload; defaultTarget carries call-site-specific
-// identifiers and is overridden per check when needed.
-func (e *Evaluator) runGuards(ctx context.Context, projectID, taskID int64, specs []domain.TransitionGuard, operation string, defaultTarget map[string]any) error {
+// runGuardsWithSnapshot is the shared dispatch. Both transition guards and
+// operation guards (archive/delete/unarchive) feed through here so a new guard
+// type only needs one switch arm. operation labels the call site for the
+// guard.violated payload; defaultTarget carries call-site-specific identifiers
+// and is overridden per check when needed.
+func (e *Evaluator) runGuardsWithSnapshot(ctx context.Context, projectID, taskID int64, specs []domain.TransitionGuard, operation string, defaultTarget map[string]any, snap *config.Snapshot) error {
 	target := map[string]any{"task_id": taskID}
 	if defaultTarget != nil {
 		target = defaultTarget
 	}
 	for _, guard := range specs {
-		hint := e.resolveHint(guard.Hint)
+		hint := e.resolveHintFrom(snap, guard.Hint)
 		switch guard.Type {
 		case "blockers_in":
-			if err := e.checkBlockersIn(ctx, projectID, taskID, guard.Buckets, hint, operation, target); err != nil {
+			if err := e.checkBlockersIn(ctx, projectID, taskID, guard.Buckets, hint, operation, target, snap); err != nil {
 				return err
 			}
 		case "comments_min":
@@ -197,11 +225,11 @@ func (e *Evaluator) runGuards(ctx context.Context, projectID, taskID int64, spec
 				return err
 			}
 		case "wave_gate":
-			if err := e.checkWaveGate(ctx, projectID, taskID, hint, operation, target); err != nil {
+			if err := e.checkWaveGate(ctx, projectID, taskID, hint, operation, target, snap); err != nil {
 				return err
 			}
 		case "subtasks_complete":
-			if err := e.checkSubtasksComplete(ctx, projectID, taskID, hint, operation, target); err != nil {
+			if err := e.checkSubtasksComplete(ctx, projectID, taskID, hint, operation, target, snap); err != nil {
 				return err
 			}
 		}
@@ -209,20 +237,23 @@ func (e *Evaluator) runGuards(ctx context.Context, projectID, taskID int64, spec
 	return nil
 }
 
-// resolveHint expands `${{intl:KEY}}` tokens in guard hint strings via the
-// Snapshot's catalog projection so presets can keep hint copy in the
-// language catalog instead of hardcoding it in each YAML entry. The
-// inner-layer accessor `ResolveGuardHint` shields this package from
-// catalog/surface types (see internal/arch/i18n_boundary_test.go).
-func (e *Evaluator) resolveHint(hint string) string {
+// resolveHintFrom expands `${{intl:KEY}}` tokens in guard hint strings via the
+// resolved Snapshot's catalog projection so presets can keep hint copy in the
+// language catalog instead of hardcoding it in each YAML entry. The inner-layer
+// accessor `ResolveGuardHint` shields this package from catalog/surface types
+// (see internal/arch/i18n_boundary_test.go).
+func (e *Evaluator) resolveHintFrom(snap *config.Snapshot, hint string) string {
 	if hint == "" {
 		return ""
 	}
-	return e.snap.ResolveGuardHint(hint)
+	if snap == nil {
+		return hint
+	}
+	return snap.ResolveGuardHint(hint)
 }
 
-func (e *Evaluator) checkWaveGate(ctx context.Context, projectID, taskID int64, hint, operation string, target map[string]any) error {
-	pending, err := e.repo.CountPriorWavesPending(ctx, projectID, taskID, e.snap)
+func (e *Evaluator) checkWaveGate(ctx context.Context, projectID, taskID int64, hint, operation string, target map[string]any, snap *config.Snapshot) error {
+	pending, err := e.repo.CountPriorWavesPending(ctx, projectID, taskID, snap)
 	if err != nil {
 		return err
 	}
@@ -239,19 +270,21 @@ func (e *Evaluator) checkWaveGate(ctx context.Context, projectID, taskID int64, 
 	return domain.NewError(domain.ErrGuardViolation, msg, details)
 }
 
-func (e *Evaluator) checkSubtasksComplete(ctx context.Context, projectID, taskID int64, hint, operation string, target map[string]any) error {
-	// The final bucket comes from the per-project workflow snapshot —
-	// every preset that wires this guard inherits the same notion of
-	// "done" the rest of the engine uses (FinalBucketKey).
-	finalKey := e.snap.Workflow().FinalBucketKey()
-	finalBucket, ok := e.snap.BucketByKey(finalKey)
+func (e *Evaluator) checkSubtasksComplete(ctx context.Context, projectID, taskID int64, hint, operation string, target map[string]any, snap *config.Snapshot) error {
+	childParentID := taskID
+	childSnap := snap.For(domain.Task{ParentID: &childParentID})
+	if childSnap == nil {
+		return nil
+	}
+	finalKey := childSnap.Workflow().FinalBucketKey()
+	finalBucket, ok := childSnap.BucketByKey(finalKey)
 	if !ok {
 		// Workflow without a final bucket cannot evaluate completeness;
 		// treat as satisfied so misconfigured presets don't lock every
 		// transition out.
 		return nil
 	}
-	open, found, err := e.repo.FirstChildNotInBucket(ctx, projectID, taskID, finalBucket.ID, e.snap)
+	open, found, err := e.repo.FirstChildNotInBucket(ctx, projectID, taskID, finalBucket.ID, childSnap)
 	if err != nil {
 		return err
 	}
@@ -274,8 +307,8 @@ func (e *Evaluator) checkSubtasksComplete(ctx context.Context, projectID, taskID
 	return domain.NewError(domain.ErrGuardViolation, msg, details)
 }
 
-func (e *Evaluator) checkBlockersIn(ctx context.Context, projectID, taskID int64, allowedKeys []string, hint, operation string, target map[string]any) error {
-	blockers, err := e.repo.ListTaskBlockerBuckets(ctx, projectID, taskID, e.snap)
+func (e *Evaluator) checkBlockersIn(ctx context.Context, projectID, taskID int64, allowedKeys []string, hint, operation string, target map[string]any, snap *config.Snapshot) error {
+	blockers, err := e.repo.ListTaskBlockerBuckets(ctx, projectID, taskID, snap)
 	if err != nil {
 		return err
 	}

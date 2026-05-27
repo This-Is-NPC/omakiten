@@ -175,7 +175,7 @@ func (f *fakeStores) HardDeleteTask(context.Context, int64, int64, domain.Bucket
 func (f *fakeStores) SetTaskState(context.Context, int64, int64, domain.TaskState, string, domain.BucketResolver) (domain.Task, domain.Event, error) {
 	return domain.Task{}, domain.Event{}, nil
 }
-func (f *fakeStores) EmitTaskEditedEvent(context.Context, int64, int64, domain.Task, domain.Task) (domain.Event, error) {
+func (f *fakeStores) EmitTaskEditedEvent(context.Context, int64, int64, domain.Task, domain.Task, domain.BucketResolver) (domain.Event, error) {
 	return domain.Event{}, nil
 }
 func (f *fakeStores) AssignTask(context.Context, int64, int64, string, string, domain.BucketResolver) (domain.Task, domain.Event, error) {

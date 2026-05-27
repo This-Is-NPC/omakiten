@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/testfixtures"
 )
@@ -177,6 +179,112 @@ func TestTaskServiceAddSubRejectsExplicitCrossBucket(t *testing.T) {
 	}
 }
 
+func TestTaskServiceAddSubUsesSubtaskKitFirstBucket(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	bundle := appTestBundle(t, 1000)
+	bundle.SubtaskBundle = subtaskRuntimeBundle("sub", []config.Bucket{
+		{ID: 10, Key: "todo", Name: "Todo", Position: 1},
+		{ID: 20, Key: "done", Name: "Done", Position: 2},
+	}, nil)
+	store, project := appTestStore(t, bundle)
+	defer func() { _ = store.Close() }()
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+
+	parent, err := service.Add(ctx, project.Context(), "Parent", "", "", "dev")
+	if err != nil {
+		t.Fatalf("Add(parent) = %v", err)
+	}
+	child, err := service.AddSub(ctx, project.Context(), parent.ID, "Child", "", "", "")
+	if err != nil {
+		t.Fatalf("AddSub = %v", err)
+	}
+	if child.BucketKey != "todo" {
+		t.Fatalf("child.BucketKey = %q, want sub-kit first bucket todo", child.BucketKey)
+	}
+}
+
+func TestTaskServiceMoveSubtaskUsesSubtaskKitTransitions(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	bundle, registry := testfixtures.LoadBundle(t, "subtasks_smoke.yaml")
+	bundle.SubtaskBundle = subtaskRuntimeBundle("sub", []config.Bucket{
+		{ID: 2, Key: "dev", Name: "Development", Position: 1},
+		{ID: 3, Key: "review", Name: "Review", Position: 2},
+		{ID: 4, Key: "done", Name: "Done", Position: 3},
+	}, []config.Transition{{From: 2, To: 4}})
+	store, project := appTestStore(t, bundle)
+	defer func() { _ = store.Close() }()
+	service := NewTaskServiceFromStore(store, registry, store.Snapshot())
+
+	parent, err := service.Add(ctx, project.Context(), "Parent", "", "", "dev")
+	if err != nil {
+		t.Fatalf("Add(parent) = %v", err)
+	}
+	child, err := service.AddSub(ctx, project.Context(), parent.ID, "Child", "", "", "")
+	if err != nil {
+		t.Fatalf("AddSub = %v", err)
+	}
+
+	_, err = service.Move(ctx, project.Context(), child.ID, "review")
+	if err == nil {
+		t.Fatal("Move(child dev->review) error = nil, want sub-kit transition rejection")
+	}
+	assertCodedError(t, err, domain.ErrWorkflowInvalidTransition)
+}
+
+func TestTaskServiceEventsCarryDepthMetadata(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	bundle := appTestBundle(t, 1000)
+	bundle.SubtaskBundle = subtaskRuntimeBundle("sub", []config.Bucket{
+		{ID: 10, Key: "todo", Name: "Todo", Position: 1},
+		{ID: 20, Key: "done", Name: "Done", Position: 2},
+	}, []config.Transition{{From: 10, To: 20}})
+	store, project := appTestStore(t, bundle)
+	defer func() { _ = store.Close() }()
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+
+	parent, err := service.Add(ctx, project.Context(), "Parent", "", "", "dev")
+	if err != nil {
+		t.Fatalf("Add(parent) = %v", err)
+	}
+	child, err := service.AddSub(ctx, project.Context(), parent.ID, "Child", "", "", "")
+	if err != nil {
+		t.Fatalf("AddSub(child) = %v", err)
+	}
+	if _, err := service.Move(ctx, project.Context(), child.ID, "done"); err != nil {
+		t.Fatalf("Move(child todo->done) = %v", err)
+	}
+	renamed := "Child renamed"
+	if _, err := service.Edit(ctx, project.Context(), child.ID, domain.TaskUpdate{Title: &renamed}); err != nil {
+		t.Fatalf("Edit(child title) = %v", err)
+	}
+
+	createdEvents, err := store.ListRecentEvents(ctx, domain.EventTypeTaskCreated, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents(created) = %v", err)
+	}
+	rootPayload := eventPayloadForTask(t, createdEvents, parent.ID)
+	assertSubjectMetadata(t, rootPayload, parent.ID, nil, 0, "default")
+	childPayload := eventPayloadForTask(t, createdEvents, child.ID)
+	assertSubjectMetadata(t, childPayload, child.ID, &parent.ID, 1, "sub")
+
+	movedEvents, err := store.ListRecentEvents(ctx, domain.EventTypeTaskMoved, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents(moved) = %v", err)
+	}
+	movePayload := eventPayloadForTask(t, movedEvents, child.ID)
+	assertSubjectMetadata(t, movePayload, child.ID, &parent.ID, 1, "sub")
+
+	editedEvents, err := store.ListRecentEvents(ctx, domain.EventTypeTaskEdited, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents(edited) = %v", err)
+	}
+	editPayload := eventPayloadForTask(t, editedEvents, child.ID)
+	assertSubjectMetadata(t, editPayload, child.ID, &parent.ID, 1, "sub")
+}
+
 func TestTaskServiceEditRejectsReparentUnderArchived(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -235,5 +343,55 @@ func TestTaskServiceListParentMode(t *testing.T) {
 		if c.ParentID == nil || *c.ParentID != root.ID {
 			t.Fatalf("child %d ParentID = %v", c.ID, c.ParentID)
 		}
+	}
+}
+
+func subtaskRuntimeBundle(key string, buckets []config.Bucket, transitions []config.Transition) *config.Bundle {
+	return &config.Bundle{
+		Kit:    config.Kit{ID: 900, Key: key, Name: key},
+		Config: config.Settings{Workflow: config.WorkflowSettings{Active: key}},
+		Workflows: []config.Workflow{{
+			ID:          900,
+			Key:         key,
+			Name:        key,
+			Buckets:     buckets,
+			Transitions: transitions,
+		}},
+	}
+}
+
+func eventPayloadForTask(t *testing.T, events []domain.Event, taskID int64) map[string]any {
+	t.Helper()
+	for _, event := range events {
+		if event.EntityID != taskID {
+			continue
+		}
+		payload := map[string]any{}
+		if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+			t.Fatalf("event payload for task %d is not JSON: %v", taskID, err)
+		}
+		return payload
+	}
+	t.Fatalf("event for task %d not found in %+v", taskID, events)
+	return nil
+}
+
+func assertSubjectMetadata(t *testing.T, payload map[string]any, taskID int64, parentID *int64, depth int, kit string) {
+	t.Helper()
+	if got := int64(payload["subject_task_id"].(float64)); got != taskID {
+		t.Fatalf("subject_task_id = %d, want %d (payload %+v)", got, taskID, payload)
+	}
+	if parentID == nil {
+		if payload["subject_parent_id"] != nil {
+			t.Fatalf("subject_parent_id = %v, want nil (payload %+v)", payload["subject_parent_id"], payload)
+		}
+	} else if got := int64(payload["subject_parent_id"].(float64)); got != *parentID {
+		t.Fatalf("subject_parent_id = %d, want %d (payload %+v)", got, *parentID, payload)
+	}
+	if got := int(payload["subject_depth"].(float64)); got != depth {
+		t.Fatalf("subject_depth = %d, want %d (payload %+v)", got, depth, payload)
+	}
+	if got := payload["resolved_kit"]; got != kit {
+		t.Fatalf("resolved_kit = %v, want %q (payload %+v)", got, kit, payload)
 	}
 }

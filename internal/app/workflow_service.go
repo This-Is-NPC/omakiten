@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -70,18 +71,32 @@ func NewWorkflowServiceFromStore(store CompositeWorkflowStore, registry *domain.
 // Errors with ErrConfigInvalid if the active workflow has no buckets, so
 // upstream callers can default to "" without baking "backlog" into prod.
 func (s *WorkflowService) ResolveDefaultBucket(_ context.Context) (string, error) {
-	workflow := s.snap.Workflow()
-	if len(workflow.Buckets) == 0 {
-		return "", domain.NewError(domain.ErrConfigInvalid, "active workflow has no buckets", nil)
-	}
-	return workflow.Buckets[0].Key, nil
+	return defaultBucketKey(s.snap)
 }
 
 // FinalBucketKey returns the key of the highest-position bucket in the active
 // workflow — the destination for archive operations. Errors with
 // ErrConfigInvalid if the active workflow has no buckets.
 func (s *WorkflowService) FinalBucketKey(_ context.Context) (string, error) {
-	workflow := s.snap.Workflow()
+	return finalBucketKey(s.snap)
+}
+
+func defaultBucketKey(snap *config.Snapshot) (string, error) {
+	if snap == nil {
+		return "", domain.NewError(domain.ErrConfigInvalid, "active workflow has no buckets", nil)
+	}
+	workflow := snap.Workflow()
+	if len(workflow.Buckets) == 0 {
+		return "", domain.NewError(domain.ErrConfigInvalid, "active workflow has no buckets", nil)
+	}
+	return workflow.Buckets[0].Key, nil
+}
+
+func finalBucketKey(snap *config.Snapshot) (string, error) {
+	if snap == nil {
+		return "", domain.NewError(domain.ErrConfigInvalid, "active workflow has no buckets", nil)
+	}
+	workflow := snap.Workflow()
 	if len(workflow.Buckets) == 0 {
 		return "", domain.NewError(domain.ErrConfigInvalid, "active workflow has no buckets", nil)
 	}
@@ -94,6 +109,26 @@ func (s *WorkflowService) FinalBucketKey(_ context.Context) (string, error) {
 	return final.Key, nil
 }
 
+func taskSubjectPayload(task domain.Task, resolvedKit string, fields map[string]any) (string, error) {
+	if fields == nil {
+		fields = map[string]any{}
+	}
+	fields["subject_task_id"] = task.ID
+	if task.ParentID != nil {
+		fields["subject_parent_id"] = *task.ParentID
+		fields["subject_depth"] = 1
+	} else {
+		fields["subject_parent_id"] = nil
+		fields["subject_depth"] = 0
+	}
+	fields["resolved_kit"] = resolvedKit
+	body, err := json.Marshal(fields)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
 // CreateTask is the policy-bearing wrapper around TaskRepository.CreateTask:
 // it resolves the default bucket when bucketKey is empty, then delegates to
 // the persister. The store still emits task.created in the same transaction.
@@ -101,9 +136,10 @@ func (s *WorkflowService) FinalBucketKey(_ context.Context) (string, error) {
 // stays atomic — when non-nil the INSERT carries the FK, when nil the row
 // lands as a root.
 func (s *WorkflowService) CreateTask(ctx context.Context, projectID int64, title, description string, priority domain.Priority, bucketKey string, parentID *int64) (domain.Task, error) {
+	taskSnap := s.snap.For(domain.Task{ParentID: parentID})
 	bucketKey = strings.TrimSpace(bucketKey)
 	if bucketKey == "" {
-		key, err := s.ResolveDefaultBucket(ctx)
+		key, err := defaultBucketKey(taskSnap)
 		if err != nil {
 			return domain.Task{}, err
 		}
@@ -112,7 +148,7 @@ func (s *WorkflowService) CreateTask(ctx context.Context, projectID int64, title
 	if priority == domain.PriorityZero {
 		priority = s.defaultPriority()
 	}
-	return s.tasks.CreateTask(ctx, projectID, title, description, priority, bucketKey, parentID, s.snap)
+	return s.tasks.CreateTask(ctx, projectID, title, description, priority, bucketKey, parentID, taskSnap)
 }
 
 // OperationArchive / OperationDelete / OperationUnarchive label the
@@ -166,11 +202,16 @@ const (
 // hint when the answer is "no", listing buckets where the operation IS
 // permitted so the agent can suggest a remediation.
 func (s *WorkflowService) ResolveBucketPermissions(ctx context.Context, project domain.ProjectContext, taskID int64, entity, operation string) (bool, string, error) {
-	currentBucketID, currentBucketKey, err := s.repo.CurrentTaskBucket(ctx, project.ID, taskID, s.snap)
+	task, err := s.tasks.GetTaskByID(ctx, project.ID, taskID, s.snap)
 	if err != nil {
 		return false, "", err
 	}
-	workflow := s.snap.Workflow()
+	taskSnap := s.snap.For(task)
+	currentBucketID, currentBucketKey, err := s.repo.CurrentTaskBucket(ctx, project.ID, taskID, taskSnap)
+	if err != nil {
+		return false, "", err
+	}
+	workflow := taskSnap.Workflow()
 
 	allowed, allowedBuckets := evaluatePermission(workflow, currentBucketID, entity, operation)
 	if allowed {
@@ -216,6 +257,12 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 		return
 	}
 
+	taskForResolution, err := s.tasks.GetTaskByID(ctx, project.ID, taskID, s.snap)
+	if err != nil {
+		return
+	}
+	taskSnap := s.snap.For(taskForResolution)
+
 	state, err := s.repo.TaskState(ctx, project.ID, taskID)
 	if err != nil {
 		return
@@ -225,19 +272,19 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 		return
 	}
 
-	currentBucketID, _, err := s.repo.CurrentTaskBucket(ctx, project.ID, taskID, s.snap)
+	currentBucketID, _, err := s.repo.CurrentTaskBucket(ctx, project.ID, taskID, taskSnap)
 	if err != nil {
 		return
 	}
 
-	target, ok := s.snap.BucketByKey(targetBucketKey)
+	target, ok := taskSnap.BucketByKey(targetBucketKey)
 	if !ok {
 		err = domain.NewError(domain.ErrBucketNotFound, "bucket not found", map[string]any{"bucket": targetBucketKey})
 		return
 	}
 
 	if currentBucketID != target.ID {
-		allowed := s.snap.TransitionAllowed(currentBucketID, target.ID)
+		allowed := taskSnap.TransitionAllowed(currentBucketID, target.ID)
 		if !allowed {
 			s.guards.EmitViolated(ctx, project.ID, domain.EventEntityTask, taskID,
 				GuardOperationTaskTransition, GuardRuleTransition,
@@ -246,19 +293,23 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 			err = domain.NewError(domain.ErrWorkflowInvalidTransition, "transition not allowed", map[string]any{"task_id": taskID, "from": currentBucketID, "to": target.ID})
 			return
 		}
-		if err = s.guards.EvaluateTransition(ctx, project.ID, taskID, currentBucketID, target.ID, targetBucketKey); err != nil {
+		if err = s.guards.EvaluateTransitionFor(ctx, project.ID, taskID, currentBucketID, target.ID, targetBucketKey, taskSnap); err != nil {
 			return
 		}
 	}
 
-	task, err = s.tasks.MoveTask(ctx, project.ID, taskID, targetBucketKey, s.snap)
+	task, err = s.tasks.MoveTask(ctx, project.ID, taskID, targetBucketKey, taskSnap)
 	if err != nil {
 		return
 	}
 
 	if currentBucketID != target.ID {
-		if s.snap.IsFinalBucket(target.ID) {
-			payload := fmt.Sprintf(`{"bucket":%q}`, targetBucketKey)
+		if taskSnap.IsFinalBucket(target.ID) {
+			payload, payloadErr := taskSubjectPayload(task, taskSnap.Kit().Key, map[string]any{"bucket": targetBucketKey})
+			if payloadErr != nil {
+				err = payloadErr
+				return
+			}
 			if _, err = s.events.RecordTaskEvent(ctx, project.ID, taskID, domain.EventTypeTaskCompleted, "", payload); err != nil {
 				return
 			}
@@ -270,7 +321,7 @@ func (s *WorkflowService) MoveTask(ctx context.Context, project domain.ProjectCo
 			// recomputable on the next terminal move — losing the
 			// audit signal beats blocking a legitimate move.
 			if s.planFinalizer != nil {
-				_, _ = s.planFinalizer.MaybeFinalizePlanForTask(ctx, project.ID, taskID, s.snap)
+				_, _ = s.planFinalizer.MaybeFinalizePlanForTask(ctx, project.ID, taskID, taskSnap)
 			}
 		}
 	}

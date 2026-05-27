@@ -64,13 +64,12 @@ func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, ti
 
 // AddSub creates a task and attaches it to parentID as a sub-task in a
 // single atomic INSERT. The parent must belong to the same project and
-// be active; archived parents and explicit cross-bucket sub-tasks are
-// rejected at the service boundary. When bucketKey is empty, the new
-// sub-task inherits the parent's bucket so the "workflow herdado do
-// pai" invariant holds. Anti-cycle is unnecessary for fresh rows — they
-// have no descendants yet. Every call writes one activity row — even
-// pre-create rejections — so failed sub-task attempts surface in Stats
-// › Logs.
+// be active. When a subtask_kit is configured and bucketKey is empty, the new
+// sub-task lands in that kit's first workflow bucket; without a subtask_kit,
+// the pre-cascade parent-bucket inheritance is preserved. Anti-cycle is
+// unnecessary for fresh rows — they have no descendants yet. Every call writes
+// one activity row — even pre-create rejections — so failed sub-task attempts
+// surface in Stats › Logs.
 func (s *TaskService) AddSub(ctx context.Context, project domain.ProjectContext, parentID int64, title, description, priority, bucketKey string) (task domain.Task, err error) {
 	finish := activity.Track(ctx, "app.TaskService.AddSub", project, map[string]any{"title": title, "parent_id": parentID, "bucket": bucketKey})
 	defer func() {
@@ -97,8 +96,11 @@ func (s *TaskService) AddSub(ctx context.Context, project domain.ProjectContext,
 			map[string]any{"parent_id": parentID, "parent_state": string(parent.State)})
 		return
 	}
+	pid := parentID
+	childSnap := s.snap.For(domain.Task{ParentID: &pid})
+	usesSubtaskKit := childSnap != nil && childSnap != s.snap
 	bucketKey = strings.TrimSpace(bucketKey)
-	if bucketKey != "" && bucketKey != parent.BucketKey {
+	if !usesSubtaskKit && bucketKey != "" && bucketKey != parent.BucketKey {
 		err = domain.NewError(domain.ErrValidation,
 			"sub-task bucket must match parent bucket; sub-tasks inherit the parent's workflow position",
 			map[string]any{
@@ -109,9 +111,15 @@ func (s *TaskService) AddSub(ctx context.Context, project domain.ProjectContext,
 		return
 	}
 	if bucketKey == "" {
-		bucketKey = parent.BucketKey
+		if usesSubtaskKit {
+			bucketKey, err = defaultBucketKey(childSnap)
+			if err != nil {
+				return
+			}
+		} else {
+			bucketKey = parent.BucketKey
+		}
 	}
-	pid := parentID
 	task, err = s.createTask(ctx, project, title, description, priority, bucketKey, &pid)
 	return
 }
@@ -176,6 +184,9 @@ func (s *TaskService) List(ctx context.Context, project domain.ProjectContext, f
 	}()
 
 	tasks, err = s.repo.ListTasks(ctx, project.ID, filter, s.snap)
+	for i := range tasks {
+		tasks[i] = s.withResolvedBucketKey(tasks[i])
+	}
 	return
 }
 
@@ -280,7 +291,8 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 		if err != nil {
 			return
 		}
-		if _, evErr := s.repo.EmitTaskEditedEvent(ctx, project.ID, taskID, before, task); evErr != nil {
+		task = s.withResolvedBucketKey(task)
+		if _, evErr := s.repo.EmitTaskEditedEvent(ctx, project.ID, taskID, before, task, s.snap.For(task)); evErr != nil {
 			err = evErr
 			return
 		}
@@ -384,11 +396,16 @@ func (s *TaskService) Delete(ctx context.Context, project domain.ProjectContext,
 		err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"task_id": taskID, "hint": hint, "entity": EntityTask, "operation": PermissionDelete})
 		return
 	}
-	if err = s.workflow.Evaluator().EvaluateOperation(ctx, project.ID, taskID, OperationDelete); err != nil {
+	taskForResolution, err := s.taskByID(ctx, project, taskID)
+	if err != nil {
+		return
+	}
+	taskSnap := s.snap.For(taskForResolution)
+	if err = s.workflow.Evaluator().EvaluateOperationFor(ctx, project.ID, taskID, OperationDelete, taskSnap); err != nil {
 		return
 	}
 
-	event, err = s.repo.HardDeleteTask(ctx, project.ID, taskID, s.snap)
+	event, err = s.repo.HardDeleteTask(ctx, project.ID, taskID, taskSnap)
 	return
 }
 
@@ -415,20 +432,23 @@ func (s *TaskService) Archive(ctx context.Context, project domain.ProjectContext
 	// Verify the task exists before evaluating guards — guards against a
 	// non-existent task would otherwise misreport as guard_violation when the
 	// real failure is task_not_found.
-	if _, err = s.taskByID(ctx, project, taskID); err != nil {
+	taskForResolution, err := s.taskByID(ctx, project, taskID)
+	if err != nil {
+		return
+	}
+	taskSnap := s.snap.For(taskForResolution)
+
+	if err = s.workflow.Evaluator().EvaluateOperationFor(ctx, project.ID, taskID, OperationArchive, taskSnap); err != nil {
 		return
 	}
 
-	if err = s.workflow.Evaluator().EvaluateOperation(ctx, project.ID, taskID, OperationArchive); err != nil {
-		return
-	}
-
-	finalBucket, err := s.workflow.FinalBucketKey(ctx)
+	finalBucket, err := finalBucketKey(taskSnap)
 	if err != nil {
 		return
 	}
 
-	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateArchived, finalBucket, s.snap)
+	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateArchived, finalBucket, taskSnap)
+	task = s.withResolvedBucketKey(task)
 	return
 }
 
@@ -454,7 +474,13 @@ func (s *TaskService) Assign(ctx context.Context, project domain.ProjectContext,
 		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
 		return
 	}
-	task, event, err = s.repo.AssignTask(ctx, project.ID, taskID, assignee, "cli.assign", s.snap)
+	taskForResolution, err := s.taskByID(ctx, project, taskID)
+	if err != nil {
+		return
+	}
+	taskSnap := s.snap.For(taskForResolution)
+	task, event, err = s.repo.AssignTask(ctx, project.ID, taskID, assignee, "cli.assign", taskSnap)
+	task = s.withResolvedBucketKey(task)
 	return
 }
 
@@ -478,18 +504,38 @@ func (s *TaskService) Unarchive(ctx context.Context, project domain.ProjectConte
 	}
 
 	// Verify the task exists before evaluating guards — see Archive for rationale.
-	if _, err = s.taskByID(ctx, project, taskID); err != nil {
+	taskForResolution, err := s.taskByID(ctx, project, taskID)
+	if err != nil {
+		return
+	}
+	taskSnap := s.snap.For(taskForResolution)
+
+	if err = s.workflow.Evaluator().EvaluateOperationFor(ctx, project.ID, taskID, OperationUnarchive, taskSnap); err != nil {
 		return
 	}
 
-	if err = s.workflow.Evaluator().EvaluateOperation(ctx, project.ID, taskID, OperationUnarchive); err != nil {
-		return
-	}
-
-	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateActive, "", s.snap)
+	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateActive, "", taskSnap)
+	task = s.withResolvedBucketKey(task)
 	return
 }
 
 func (s *TaskService) taskByID(ctx context.Context, project domain.ProjectContext, taskID int64) (domain.Task, error) {
-	return s.repo.GetTaskByID(ctx, project.ID, taskID, s.snap)
+	task, err := s.repo.GetTaskByID(ctx, project.ID, taskID, s.snap)
+	if err != nil {
+		return domain.Task{}, err
+	}
+	return s.withResolvedBucketKey(task), nil
+}
+
+func (s *TaskService) withResolvedBucketKey(task domain.Task) domain.Task {
+	taskSnap := s.snap.For(task)
+	if taskSnap == nil {
+		return task
+	}
+	if bucket, ok := taskSnap.BucketByID(task.BucketID); ok {
+		task.BucketKey = bucket.Key
+	} else {
+		task.BucketKey = ""
+	}
+	return task
 }

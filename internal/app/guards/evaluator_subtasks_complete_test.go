@@ -12,8 +12,10 @@ import (
 // subtasksRepo lets the subtasks_complete tests inject the response of
 // FirstChildNotInBucket without standing up a sqlite store.
 type subtasksRepo struct {
-	openChild  domain.Task
-	hasOpen    bool
+	openChild     domain.Task
+	hasOpen       bool
+	finalBucketID int64
+	workflowKey   string
 }
 
 func (r *subtasksRepo) ListTaskBlockerBuckets(context.Context, int64, int64, domain.BucketResolver) ([]domain.TaskBlocker, error) {
@@ -28,7 +30,11 @@ func (r *subtasksRepo) CountTaskCommentsTagged(context.Context, int64, int64, st
 func (r *subtasksRepo) CountPriorWavesPending(context.Context, int64, int64, domain.BucketResolver) (int, error) {
 	return 0, nil
 }
-func (r *subtasksRepo) FirstChildNotInBucket(context.Context, int64, int64, int64, domain.BucketResolver) (domain.Task, bool, error) {
+func (r *subtasksRepo) FirstChildNotInBucket(_ context.Context, _ int64, _ int64, finalBucketID int64, buckets domain.BucketResolver) (domain.Task, bool, error) {
+	r.finalBucketID = finalBucketID
+	if buckets != nil {
+		r.workflowKey = buckets.Workflow().Key
+	}
 	return r.openChild, r.hasOpen, nil
 }
 
@@ -98,6 +104,50 @@ func TestEvaluateTransitionPassesWhenTaskHasNoChildren(t *testing.T) {
 
 	if err := eval.EvaluateTransition(context.Background(), 1, 1, 2, 3, "done"); err != nil {
 		t.Fatalf("unexpected error with no children: %v", err)
+	}
+}
+
+func TestEvaluateTransitionSubtasksCompleteUsesChildResolvedKit(t *testing.T) {
+	snap := config.BuildSnapshot(config.Bundle{
+		Workflows: []config.Workflow{{
+			ID:   1,
+			Key:  "root",
+			Name: "Root",
+			Buckets: []config.Bucket{
+				{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
+				{ID: 2, Key: "dev", Name: "Dev", Position: 2},
+				{ID: 3, Key: "review", Name: "Review", Position: 3},
+				{ID: 4, Key: "done", Name: "Done", Position: 4},
+			},
+			Transitions: []config.Transition{
+				{From: 2, To: 3, Guards: []config.TransitionGuard{{Type: "subtasks_complete"}}},
+			},
+		}},
+		Config: config.Settings{Workflow: config.WorkflowSettings{Active: "root"}},
+		SubtaskBundle: &config.Bundle{
+			Workflows: []config.Workflow{{
+				ID:   2,
+				Key:  "sub",
+				Name: "Sub",
+				Buckets: []config.Bucket{
+					{ID: 10, Key: "todo", Name: "Todo", Position: 1},
+					{ID: 30, Key: "closed", Name: "Closed", Position: 2},
+				},
+			}},
+			Config: config.Settings{Workflow: config.WorkflowSettings{Active: "sub"}},
+		},
+	})
+	repo := &subtasksRepo{hasOpen: false}
+	eval := NewGuardEvaluator(snap, repo, nil)
+
+	if err := eval.EvaluateTransition(context.Background(), 1, 1, 2, 3, "review"); err != nil {
+		t.Fatalf("EvaluateTransition = %v", err)
+	}
+	if repo.finalBucketID != 30 {
+		t.Fatalf("finalBucketID = %d, want sub-kit final bucket 30", repo.finalBucketID)
+	}
+	if repo.workflowKey != "sub" {
+		t.Fatalf("resolver workflow = %q, want sub", repo.workflowKey)
 	}
 }
 
