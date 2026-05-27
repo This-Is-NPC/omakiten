@@ -63,13 +63,14 @@ func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, ti
 }
 
 // AddSub creates a task and attaches it to parentID as a sub-task in a
-// single atomic INSERT. The parent must belong to the same project and
-// be active. When a subtask_kit is configured and bucketKey is empty, the new
-// sub-task lands in that kit's first workflow bucket; without a subtask_kit,
-// the pre-cascade parent-bucket inheritance is preserved. Anti-cycle is
-// unnecessary for fresh rows — they have no descendants yet. Every call writes
-// one activity row — even pre-create rejections — so failed sub-task attempts
-// surface in Stats › Logs.
+// single atomic INSERT. The parent must belong to the same project and be
+// active. When bucketKey is empty, the new sub-task lands in the first
+// bucket of the kit that resolves for it (sub-kit when subtask_kit is
+// configured; otherwise the root kit) — a fresh sub-task is new work and
+// belongs at the workflow's start, never at the parent's current step.
+// Anti-cycle is unnecessary for fresh rows — they have no descendants
+// yet. Every call writes one activity row — even pre-create rejections —
+// so failed sub-task attempts surface in Stats › Logs.
 func (s *TaskService) AddSub(ctx context.Context, project domain.ProjectContext, parentID int64, title, description, priority, bucketKey string) (task domain.Task, err error) {
 	finish := activity.Track(ctx, "app.TaskService.AddSub", project, map[string]any{"title": title, "parent_id": parentID, "bucket": bucketKey})
 	defer func() {
@@ -97,27 +98,11 @@ func (s *TaskService) AddSub(ctx context.Context, project domain.ProjectContext,
 		return
 	}
 	pid := parentID
-	childSnap := s.snap.For(domain.Task{ParentID: &pid})
-	usesSubtaskKit := childSnap != nil && childSnap != s.snap
 	bucketKey = strings.TrimSpace(bucketKey)
-	if !usesSubtaskKit && bucketKey != "" && bucketKey != parent.BucketKey {
-		err = domain.NewError(domain.ErrValidation,
-			"sub-task bucket must match parent bucket; sub-tasks inherit the parent's workflow position",
-			map[string]any{
-				"parent_id":     parentID,
-				"parent_bucket": parent.BucketKey,
-				"bucket":        bucketKey,
-			})
-		return
-	}
 	if bucketKey == "" {
-		if usesSubtaskKit {
-			bucketKey, err = defaultBucketKey(childSnap)
-			if err != nil {
-				return
-			}
-		} else {
-			bucketKey = parent.BucketKey
+		bucketKey, err = defaultBucketKey(s.snap.For(domain.Task{ParentID: &pid}))
+		if err != nil {
+			return
 		}
 	}
 	task, err = s.createTask(ctx, project, title, description, priority, bucketKey, &pid)

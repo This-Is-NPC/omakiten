@@ -13,6 +13,12 @@ Per-depth resolution applies to **task shape only**:
 
 The boundary keeps MCP prompt assembly identical for root and sub-tasks: `tasks.continue <sub_id>` returns the same persona / laws / templates that `tasks.continue <root_id>` would. Only the workflow surface (which bucket the task can move into, which guard fires, which hook gets dispatched) shifts with depth.
 
+## Sub-task creation
+
+A new sub-task always lands in the **first bucket of the kit that resolves for it**: the sub-kit's `workflows[0].buckets[0]` when `subtask_kit:` is configured, the root kit's `workflows[0].buckets[0]` otherwise. The pre-cascade behaviour of inheriting the parent task's current bucket is gone — a fresh sub-task is new work and belongs at the workflow's start, not at the parent's current step.
+
+Operators wiring guards on the **outbound** edges of the first bucket (e.g. `backlog → dev`) must confirm the guard set is appropriate for inception — newly created sub-tasks will hit those guards on their first move. If the first bucket should remain a friction-free intake lane, leave the `backlog → dev` transition guard-free.
+
 ## YAML shape
 
 The root kit gains an optional top-level key. The path is **relative to the root kit file's own directory** — no absolute paths, no `..` escapes.

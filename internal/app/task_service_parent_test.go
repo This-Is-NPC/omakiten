@@ -129,7 +129,7 @@ func TestTaskServiceAddSubRejectsArchivedParent(t *testing.T) {
 	assertCodedError(t, err, domain.ErrValidation)
 }
 
-func TestTaskServiceAddSubInheritsParentBucket(t *testing.T) {
+func TestTaskServiceAddSubLandsInRootKitFirstBucket_WhenNoCascade(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store, project := appTestStore(t, appTestBundle(t, 1000))
@@ -140,20 +140,21 @@ func TestTaskServiceAddSubInheritsParentBucket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Add(parent) = %v", err)
 	}
-	// Empty bucketKey on AddSub must inherit the parent's current
-	// bucket — the "workflow herdado do pai" invariant. Without this,
-	// a sub-task could be created directly in done while the parent
-	// sits in dev.
+	// A new sub-task is new work and must land at the start of the
+	// resolved workflow — the root kit's first bucket when no sub-kit
+	// is configured. The pre-#281 "workflow herdado do pai" invariant
+	// is gone: a fresh sub-task in done while the parent sits in dev
+	// never made sense.
 	child, err := service.AddSub(ctx, project.Context(), parent.ID, "Child", "", "", "")
 	if err != nil {
-		t.Fatalf("AddSub(inherit) = %v", err)
+		t.Fatalf("AddSub(default bucket) = %v", err)
 	}
-	if child.BucketKey != parent.BucketKey {
-		t.Fatalf("child.BucketKey = %q, want %q (parent bucket)", child.BucketKey, parent.BucketKey)
+	if child.BucketKey != "backlog" {
+		t.Fatalf("child.BucketKey = %q, want backlog (root kit first bucket)", child.BucketKey)
 	}
 }
 
-func TestTaskServiceAddSubRejectsExplicitCrossBucket(t *testing.T) {
+func TestTaskServiceAddSubAcceptsExplicitNonParentBucket(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store, project := appTestStore(t, appTestBundle(t, 1000))
@@ -164,18 +165,20 @@ func TestTaskServiceAddSubRejectsExplicitCrossBucket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Add(parent) = %v", err)
 	}
-	// An explicit bucketKey that differs from the parent must be
-	// rejected: the workflow position is inherited, so a sub-task
-	// cannot land in done while its parent still sits in dev.
-	_, err = service.AddSub(ctx, project.Context(), parent.ID, "Child", "", "", "done")
-	if err == nil {
-		t.Fatal("AddSub(cross-bucket) error = nil, want validation")
+	// A caller that names an explicit bucket continues to work — the
+	// cross-bucket validation of the pre-#281 invariant is removed
+	// along with the parent-bucket inheritance. (The default fixture
+	// only ships backlog + dev; landing in backlog explicitly proves
+	// the caller picks the lane, not the parent's current bucket.)
+	child, err := service.AddSub(ctx, project.Context(), parent.ID, "Child", "", "", "backlog")
+	if err != nil {
+		t.Fatalf("AddSub(explicit backlog) = %v", err)
 	}
-	assertCodedError(t, err, domain.ErrValidation)
-
-	// Sanity: matching the parent's bucket explicitly is still allowed.
-	if _, err := service.AddSub(ctx, project.Context(), parent.ID, "Child2", "", "", "dev"); err != nil {
-		t.Fatalf("AddSub(matching bucket) = %v", err)
+	if child.BucketKey != "backlog" {
+		t.Fatalf("child.BucketKey = %q, want backlog (explicit caller choice)", child.BucketKey)
+	}
+	if parent.BucketKey != "dev" {
+		t.Fatalf("parent.BucketKey = %q (sanity); child lane must differ from parent", parent.BucketKey)
 	}
 }
 
