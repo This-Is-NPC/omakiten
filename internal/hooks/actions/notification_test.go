@@ -243,6 +243,84 @@ func TestNotificationShowAction_templatingErrorPropagates(t *testing.T) {
 	}
 }
 
+// TestNotificationShowAction_PerKitCatalogResolvesSubOnlySlug pins
+// task #301 review §11557 finding A5: a slug that exists only in the
+// sub-kit notification catalog must resolve when a sub-kit hook fires
+// it. The runtime stamps `_notification_resolved_kit` into the args
+// based on the hook entry's resolved kit identity.
+func TestNotificationShowAction_PerKitCatalogResolvesSubOnlySlug(t *testing.T) {
+	root := sampleNotificationConfig()
+	root.Name = "root-only"
+	sub := sampleNotificationConfig()
+	sub.Name = "sub-only"
+	a := NewNotificationShowAction(NotificationBundleSnapshot{
+		Notifications: map[string]config.Notification{
+			"root-only": root,
+		},
+		NotificationsByKit: map[string]map[string]config.Notification{
+			"root": {"root-only": root},
+			"sub":  {"sub-only": sub},
+		},
+	})
+	sink := &recordingSender{msgs: make(chan NotificationShowMsg, 1)}
+	a.SetSender(sink)
+	err := a.Execute(context.Background(),
+		domain.Event{Payload: `{"hint":"sub-kit-violation"}`},
+		map[string]any{
+			NotificationArgSlug:        "sub-only",
+			NotificationArgResolvedKit: "sub",
+		},
+	)
+	if err != nil {
+		t.Fatalf("Execute(sub-only via sub kit) = %v", err)
+	}
+	select {
+	case msg := <-sink.msgs:
+		if msg.Notification.Name != "sub-only" {
+			t.Fatalf("Notification.Name = %q, want sub-only (per-kit lookup misrouted)", msg.Notification.Name)
+		}
+	default:
+		t.Fatal("Execute did not send NotificationShowMsg")
+	}
+}
+
+// TestNotificationShowAction_PerKitCatalogFallsBackToRoot covers the
+// degraded path: when the resolved kit's per-kit map exists but does
+// NOT carry the slug, the action falls back to the legacy
+// `Notifications` map so non-kit-aware tests/callers stay green.
+func TestNotificationShowAction_PerKitCatalogFallsBackToRoot(t *testing.T) {
+	root := sampleNotificationConfig()
+	root.Name = "shared"
+	a := NewNotificationShowAction(NotificationBundleSnapshot{
+		Notifications: map[string]config.Notification{
+			"shared": root,
+		},
+		NotificationsByKit: map[string]map[string]config.Notification{
+			"sub": {}, // sub kit declares no per-kit slug for "shared"
+		},
+	})
+	sink := &recordingSender{msgs: make(chan NotificationShowMsg, 1)}
+	a.SetSender(sink)
+	err := a.Execute(context.Background(),
+		domain.Event{Payload: `{"hint":"hi"}`},
+		map[string]any{
+			NotificationArgSlug:        "shared",
+			NotificationArgResolvedKit: "sub",
+		},
+	)
+	if err != nil {
+		t.Fatalf("Execute(shared via sub kit fallback) = %v", err)
+	}
+	select {
+	case msg := <-sink.msgs:
+		if msg.Notification.Name != "shared" {
+			t.Fatalf("Notification.Name = %q, want shared (root fallback)", msg.Notification.Name)
+		}
+	default:
+		t.Fatal("Execute did not send NotificationShowMsg")
+	}
+}
+
 func withActions(base config.Notification, actions []config.NotificationAction) config.Notification {
 	base.Actions = actions
 	base.Name = "prompt"

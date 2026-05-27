@@ -35,9 +35,15 @@ func NewNotificationService(snap *config.Snapshot) *NotificationService {
 // Reading through Snapshot.Notifications guarantees the catalog is the
 // same view every other service holds; the returned map is a defensive
 // copy owned by the snapshot, safe to hand to the action registry.
+//
+// When the root snapshot declares a sub-task kit, the per-kit catalog
+// map (NotificationsByKit) is also populated so the sub-kit's
+// notifications resolve at runtime — a sub-kit-only slug must execute
+// successfully, not just validate (#301 review §11557 finding A5).
 func (s *NotificationService) BundleSnapshot() actions.NotificationBundleSnapshot {
-	return actions.NotificationBundleSnapshot{
-		Notifications: s.snap.Notifications(),
+	out := actions.NotificationBundleSnapshot{
+		Notifications:      s.snap.Notifications(),
+		NotificationsByKit: map[string]map[string]config.Notification{},
 		// Per task #82 §15-§17, the notification action expands
 		// ${{intl:KEY}} tokens against the catalog so bundled presets can
 		// move their hook copy into the language catalog. The
@@ -47,4 +53,13 @@ func (s *NotificationService) BundleSnapshot() actions.NotificationBundleSnapsho
 		// composition root sets Catalog after constructing the snapshot.
 		Catalog: nil,
 	}
+	if rootKey := s.snap.Kit().Key; rootKey != "" {
+		out.NotificationsByKit[rootKey] = s.snap.Notifications()
+	}
+	if sub, ok := s.snap.SubtaskKit(); ok {
+		if subKey := sub.Kit().Key; subKey != "" {
+			out.NotificationsByKit[subKey] = sub.Notifications()
+		}
+	}
+	return out
 }

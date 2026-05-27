@@ -25,6 +25,12 @@ const (
 	NotificationArgMessageField       = "_notification_message_field"
 	NotificationArgDetailMessage      = "_notification_detail_message"
 	NotificationArgDetailMessageField = "_notification_detail_message_field"
+	// NotificationArgResolvedKit names the kit identity the hook entry
+	// originated from (root snapshot or sub-kit snapshot). The action
+	// uses it to pick the matching per-kit notification catalog so a
+	// sub-kit-only slug resolves through the sub-kit catalog instead of
+	// falling back to the root one (#301 review §11557 finding A5).
+	NotificationArgResolvedKit = "_notification_resolved_kit"
 )
 
 // NotificationShowMsg is the neutral message emitted by NotificationShowAction.
@@ -46,9 +52,19 @@ type NotificationSender interface {
 // tokens inside the resolved message + detail text against it so users
 // (and bundled presets) can keep notification copy in the language
 // catalog instead of hardcoding it in each preset's hook entries.
+//
+// NotificationsByKit holds per-kit catalogs (kit identity → slug →
+// notification). When the hook entry's resolved kit is present and the
+// slug resolves against that per-kit catalog, the per-kit notification
+// wins over the root entry — so a sub-kit hook can ship its own slug
+// without colliding with (or being shadowed by) the root catalog (#301
+// review §11557 finding A5). Falls back to `Notifications` when the
+// per-kit map is unset for the resolved kit or carries no entry for
+// the slug.
 type NotificationBundleSnapshot struct {
-	Notifications map[string]config.Notification
-	Catalog       *config.Catalog
+	Notifications      map[string]config.Notification
+	NotificationsByKit map[string]map[string]config.Notification
+	Catalog            *config.Catalog
 }
 
 // NotificationShowAction resolves a configured notification and emits the
@@ -95,7 +111,8 @@ func (a *NotificationShowAction) Execute(_ context.Context, ev domain.Event, arg
 		return fmt.Errorf("notification.show: %s must be a non-empty string, got %T", NotificationArgSlug, slugRaw)
 	}
 
-	notification, ok := snapshot.Notifications[slug]
+	resolvedKit, _ := args[NotificationArgResolvedKit].(string)
+	notification, ok := resolveNotification(snapshot, slug, resolvedKit)
 	if !ok {
 		return fmt.Errorf("notification.show: notification %q not loaded (check notifications/ + custom/)", slug)
 	}
@@ -129,6 +146,23 @@ func (a *NotificationShowAction) Execute(_ context.Context, ev domain.Event, arg
 
 	sender.SendNotification(NotificationShowMsg{Notification: notification, Text: text, DetailText: detailText})
 	return nil
+}
+
+// resolveNotification picks the notification entry for slug, preferring
+// the per-kit catalog (when present and non-empty) before falling back
+// to the root catalog. Per-kit lookup is the locked behaviour from
+// #301 review §11557 finding A5 — a sub-kit-only slug must execute
+// successfully at runtime, not just validate at load time.
+func resolveNotification(snapshot NotificationBundleSnapshot, slug, resolvedKit string) (config.Notification, bool) {
+	if resolvedKit != "" {
+		if perKit, ok := snapshot.NotificationsByKit[resolvedKit]; ok {
+			if n, ok := perKit[slug]; ok {
+				return n, true
+			}
+		}
+	}
+	n, ok := snapshot.Notifications[slug]
+	return n, ok
 }
 
 func renderActionCommands(actions []config.NotificationAction, ev domain.Event) ([]config.NotificationAction, error) {
