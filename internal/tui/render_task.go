@@ -2048,6 +2048,13 @@ func (m *Model) moveSubtaskColumn(delta int) {
 // child done" verb so the user doesn't have to open the child to move
 // it. Guards still fire (subtasks_complete on grandchildren, blockers,
 // etc.); failures surface inline.
+//
+// The final bucket is resolved through the focused child's resolved
+// kit, not the root kit's workflow — a sub-task ships under the
+// configured sub-kit and that kit's terminal bucket is the right
+// target. Locked decision on task #301 (review §11557 finding A3):
+// resolving through the root snapshot was silently routing sub-tasks
+// to whatever bucket key the root kit happened to call "final".
 func (m *Model) sendFocusedSubtaskToDone() {
 	child, ok := m.activeSubtask()
 	if !ok {
@@ -2057,7 +2064,11 @@ func (m *Model) sendFocusedSubtaskToDone() {
 	if snap == nil {
 		return
 	}
-	finalKey := snap.Workflow().FinalBucketKey()
+	childSnap := finalBucketSnapshotForTask(snap, child)
+	if childSnap == nil {
+		return
+	}
+	finalKey := childSnap.Workflow().FinalBucketKey()
 	if finalKey == "" {
 		return
 	}
@@ -2078,6 +2089,18 @@ func (m *Model) sendFocusedSubtaskToDone() {
 		return
 	}
 	m.status = fmt.Sprintf(m.t("tui.status.subtask_sent_done_fmt"), child.ID, finalKey)
+}
+
+// finalBucketSnapshotForTask returns the snapshot whose workflow owns
+// the task's final bucket. The root snapshot answers for root tasks;
+// sub-tasks resolve through `snap.For(task)` so the sub-kit's
+// FinalBucketKey wins over the root kit's. Returns nil when snap is
+// nil (rare bootstrap window) so the caller can no-op cleanly.
+func finalBucketSnapshotForTask(snap *config.Snapshot, task domain.Task) *config.Snapshot {
+	if snap == nil {
+		return nil
+	}
+	return snap.For(task)
 }
 
 // taskService returns a TaskService bound to the current Model wiring.
