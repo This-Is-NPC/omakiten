@@ -127,6 +127,7 @@ keys:
   cli.workflow.short: "workflow 구성 검사"
   cli.workflow.show.short: "활성 workflow 표시"
   cli.workflow.orphan.short: "workflow 교체로 bucket 이 비활성화된 tasks 미리보기 또는 재바인딩"
+  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit enabled: MCP commands, personas, laws, templates, and skills still resolve from the project root kit."
   cli.config.init.long: |-
     선택된 scope 에 뿌리를 둔 standalone config 설치를 생성합니다.
 
@@ -782,6 +783,17 @@ keys:
   tui.status.theme_picker: "테마 선택기"
   tui.status.no_config_profiles: "config 프로필을 찾을 수 없음"
   tui.status.config_picker: "config 선택기"
+  tui.status.no_subtask_kit_profiles: "No sub-task kit profiles found"
+  tui.status.subtask_kit_picker: "Sub-task kit picker"
+  tui.status.subtask_kit_picker_cancelled: "Sub-task kit picker cancelled"
+  tui.status.subtask_kit_switched_fmt: "Sub-task kit set to %s"
+  tui.status.subtask_kit_cleared: "Sub-task kit cleared (inherit root)"
+  tui.status.subtask_kit_already_none: "Sub-task kit already inherits root"
+  tui.status.subtask_kit_switch_failed_fmt: "Sub-task kit switch failed: %s"
+  tui.kicker.subtask_kit_active_fmt: "Sub-task kit · active: %s"
+  tui.picker.hint.subtask_kit: "up/down: move · enter: apply (hot-reload) · esc: cancel"
+  tui.picker.subtask_kit_none: "none (inherit root)"
+  tui.subtask_board.fallback_lane_name: "All"
   tui.status.no_template_selected: "선택된 template 없음"
   tui.status.template_not_found: "template 을 찾을 수 없음"
   tui.status.template_picker_needs_project: "template 기본값을 할당하려면 TUI 가 프로젝트 내에서 열려 있어야 합니다"

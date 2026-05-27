@@ -127,6 +127,7 @@ keys:
   cli.workflow.short: "检查 workflow 配置"
   cli.workflow.show.short: "显示活动的 workflow"
   cli.workflow.orphan.short: "预览或重新绑定那些 bucket 被 workflow 切换停用的 tasks"
+  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit enabled: MCP commands, personas, laws, templates, and skills still resolve from the project root kit."
   cli.config.init.long: |-
     在所选 scope 中创建一个独立的 config 安装。
 
@@ -778,6 +779,17 @@ keys:
   tui.status.theme_picker: "主题选择器"
   tui.status.no_config_profiles: "未找到 config 配置"
   tui.status.config_picker: "Config 选择器"
+  tui.status.no_subtask_kit_profiles: "No sub-task kit profiles found"
+  tui.status.subtask_kit_picker: "Sub-task kit picker"
+  tui.status.subtask_kit_picker_cancelled: "Sub-task kit picker cancelled"
+  tui.status.subtask_kit_switched_fmt: "Sub-task kit set to %s"
+  tui.status.subtask_kit_cleared: "Sub-task kit cleared (inherit root)"
+  tui.status.subtask_kit_already_none: "Sub-task kit already inherits root"
+  tui.status.subtask_kit_switch_failed_fmt: "Sub-task kit switch failed: %s"
+  tui.kicker.subtask_kit_active_fmt: "Sub-task kit · active: %s"
+  tui.picker.hint.subtask_kit: "up/down: move · enter: apply (hot-reload) · esc: cancel"
+  tui.picker.subtask_kit_none: "none (inherit root)"
+  tui.subtask_board.fallback_lane_name: "All"
   tui.status.no_template_selected: "未选择 template"
   tui.status.template_not_found: "未找到 template"
   tui.status.template_picker_needs_project: "TUI 必须在项目内打开才能分配 template 默认值"

@@ -127,6 +127,7 @@ keys:
   cli.workflow.short: "Inspicerer workflow-konfiguration"
   cli.workflow.show.short: "Viser den aktive workflow"
   cli.workflow.orphan.short: "Forhåndsvis eller rebind tasks hvis bucket blev deaktiveret af en workflow-udskiftning"
+  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit enabled: MCP commands, personas, laws, templates, and skills still resolve from the project root kit."
   cli.config.init.long: |-
     Initialiserer en standalone config-installation forankret i det valgte scope.
 
@@ -785,6 +786,17 @@ keys:
   tui.status.theme_picker: "Tema-vælger"
   tui.status.no_config_profiles: "Ingen config-profiler fundet"
   tui.status.config_picker: "Config-vælger"
+  tui.status.no_subtask_kit_profiles: "No sub-task kit profiles found"
+  tui.status.subtask_kit_picker: "Sub-task kit picker"
+  tui.status.subtask_kit_picker_cancelled: "Sub-task kit picker cancelled"
+  tui.status.subtask_kit_switched_fmt: "Sub-task kit set to %s"
+  tui.status.subtask_kit_cleared: "Sub-task kit cleared (inherit root)"
+  tui.status.subtask_kit_already_none: "Sub-task kit already inherits root"
+  tui.status.subtask_kit_switch_failed_fmt: "Sub-task kit switch failed: %s"
+  tui.kicker.subtask_kit_active_fmt: "Sub-task kit · active: %s"
+  tui.picker.hint.subtask_kit: "up/down: move · enter: apply (hot-reload) · esc: cancel"
+  tui.picker.subtask_kit_none: "none (inherit root)"
+  tui.subtask_board.fallback_lane_name: "All"
   tui.status.no_template_selected: "Ingen template valgt"
   tui.status.template_not_found: "Template ikke fundet"
   tui.status.template_picker_needs_project: "TUI skal være åbnet i et projekt for at tildele en template-default"

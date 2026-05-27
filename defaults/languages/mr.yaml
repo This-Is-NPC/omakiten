@@ -127,6 +127,7 @@ keys:
   cli.workflow.short: "workflow कॉन्फिगरेशन तपासा"
   cli.workflow.show.short: "सक्रिय workflow दाखवा"
   cli.workflow.orphan.short: "workflow swap मुळे ज्यांचे bucket निष्क्रिय झाले अशा task चे पूर्वावलोकन करा किंवा पुनर्संचयित करा"
+  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit enabled: MCP commands, personas, laws, templates, and skills still resolve from the project root kit."
   cli.config.init.long: |-
     निवडलेल्या scope मध्ये मूळ असलेले standalone config इन्स्टॉल पेरून ठेवा.
 
@@ -784,6 +785,17 @@ keys:
   tui.status.theme_picker: "Theme picker"
   tui.status.no_config_profiles: "कोणतीही config profile सापडली नाहीत"
   tui.status.config_picker: "Config picker"
+  tui.status.no_subtask_kit_profiles: "No sub-task kit profiles found"
+  tui.status.subtask_kit_picker: "Sub-task kit picker"
+  tui.status.subtask_kit_picker_cancelled: "Sub-task kit picker cancelled"
+  tui.status.subtask_kit_switched_fmt: "Sub-task kit set to %s"
+  tui.status.subtask_kit_cleared: "Sub-task kit cleared (inherit root)"
+  tui.status.subtask_kit_already_none: "Sub-task kit already inherits root"
+  tui.status.subtask_kit_switch_failed_fmt: "Sub-task kit switch failed: %s"
+  tui.kicker.subtask_kit_active_fmt: "Sub-task kit · active: %s"
+  tui.picker.hint.subtask_kit: "up/down: move · enter: apply (hot-reload) · esc: cancel"
+  tui.picker.subtask_kit_none: "none (inherit root)"
+  tui.subtask_board.fallback_lane_name: "All"
   tui.status.no_template_selected: "कोणतेही template निवडले नाही"
   tui.status.template_not_found: "Template सापडले नाही"
   tui.status.template_picker_needs_project: "template डीफॉल्ट नियुक्त करण्यासाठी TUI project मध्ये उघडले पाहिजे"
