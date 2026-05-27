@@ -162,10 +162,14 @@ func copyBool(b *bool) *bool {
 // the contract "snapshot is immutable" enforceable even when a caller
 // mistakenly mutates the returned slice.
 type Snapshot struct {
-	workflow         domain.Workflow
-	bucketByID       map[int64]domain.Bucket
-	bucketByKey      map[string]domain.Bucket
-	finalBucketID    int64
+	kit                Kit
+	subtaskKitPath     string
+	subtaskKitSnapshot *Snapshot
+
+	workflow          domain.Workflow
+	bucketByID        map[int64]domain.Bucket
+	bucketByKey       map[string]domain.Bucket
+	finalBucketID     int64
 	transitionsByPair map[transitionKey]transitionEntry
 
 	// Per-entity slices are the storage of record. The *BySlug maps
@@ -211,6 +215,8 @@ type Snapshot struct {
 // the caller is free to mutate or discard it after the call.
 func BuildSnapshot(bundle Bundle) *Snapshot {
 	snap := &Snapshot{
+		kit:                bundle.Kit,
+		subtaskKitPath:     bundle.SubtaskKit,
 		bucketByID:         map[int64]domain.Bucket{},
 		bucketByKey:        map[string]domain.Bucket{},
 		transitionsByPair:  map[transitionKey]transitionEntry{},
@@ -222,6 +228,9 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 		notifications:      map[string]Notification{},
 		mcpCommands:        map[string]MCPCommandSpec{},
 		languagesByCode:    map[string]int{},
+	}
+	if bundle.SubtaskBundle != nil {
+		snap.subtaskKitSnapshot = BuildSnapshot(*bundle.SubtaskBundle)
 	}
 
 	if wf, ok := activeWorkflow(bundle); ok {
@@ -330,6 +339,46 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 	}
 
 	return snap
+}
+
+// Kit returns the identity block for the kit that produced this snapshot.
+func (s *Snapshot) Kit() Kit {
+	if s == nil {
+		return Kit{}
+	}
+	return s.kit
+}
+
+// SubtaskKitPath returns the root kit's raw subtask_kit path, if configured.
+func (s *Snapshot) SubtaskKitPath() string {
+	if s == nil {
+		return ""
+	}
+	return s.subtaskKitPath
+}
+
+// SubtaskKit returns the loaded sub-kit snapshot, if the root kit configured
+// one. Callers that need protocol settings should stay on the root snapshot;
+// this child snapshot is for task-shape concerns only.
+func (s *Snapshot) SubtaskKit() (*Snapshot, bool) {
+	if s == nil || s.subtaskKitSnapshot == nil {
+		return nil, false
+	}
+	return s.subtaskKitSnapshot, true
+}
+
+// For returns the task-shape snapshot that applies to the supplied task.
+// Root tasks (or calls with no task) resolve to the root kit. Any task with a
+// parent resolves to the configured sub-task kit when present; projects without
+// subtask_kit fall back to the root snapshot so pre-cascade behavior is kept.
+func (s *Snapshot) For(tasks ...domain.Task) *Snapshot {
+	if s == nil {
+		return nil
+	}
+	if len(tasks) == 0 || !tasks[0].IsSubTask() || s.subtaskKitSnapshot == nil {
+		return s
+	}
+	return s.subtaskKitSnapshot
 }
 
 // lookupLanguage returns the Language with code or nil. Used by the

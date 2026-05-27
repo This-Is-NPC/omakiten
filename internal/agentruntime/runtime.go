@@ -237,6 +237,30 @@ func buildHookEntries(specs []config.HookSpec) []hooks.Hook {
 	return out
 }
 
+func buildDepthAwareHookEntries(snapshot *config.Snapshot) []hooks.Hook {
+	if snapshot == nil {
+		return nil
+	}
+	entries := buildHookEntries(snapshot.Hooks())
+	rootDepth := hooks.SubjectDepthAny
+	if _, ok := snapshot.SubtaskKit(); ok {
+		rootDepth = hooks.SubjectDepthRoot
+	}
+	for i := range entries {
+		entries[i].SubjectDepth = rootDepth
+		entries[i].ResolvedKit = snapshot.Kit().Key
+	}
+	if sub, ok := snapshot.SubtaskKit(); ok {
+		subEntries := buildHookEntries(sub.Hooks())
+		for i := range subEntries {
+			subEntries[i].SubjectDepth = hooks.SubjectDepthSubtask
+			subEntries[i].ResolvedKit = sub.Kit().Key
+		}
+		entries = append(entries, subEntries...)
+	}
+	return entries
+}
+
 // ActionRegistry exposes the hook action registry so callers (TUI startup,
 // tests) can register additional actions before the engine is busy.
 func (r *Runtime) ActionRegistry() *hooks.ActionRegistry {

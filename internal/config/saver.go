@@ -133,6 +133,7 @@ func bundleToWiring(bundle Bundle) (wiring, error) {
 	w := wiring{
 		Version:     bundle.Version,
 		Kit:         bundle.Kit,
+		SubtaskKit:  bundle.SubtaskKit,
 		Config:      bundle.Config,
 		Workflows:   bundle.Workflows,
 		MCPCommands: bundle.MCPCommands,
