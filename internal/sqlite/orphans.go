@@ -342,23 +342,58 @@ type orphanEventContext struct {
 	ToKit   string
 }
 
-// rebindOrphansScoped is the shared rebind dispatcher. When the event
-// type is disabled in the store's log filter (`shouldLogEvent(eventType)`
-// returns false), the slice appended to `events` carries bare
-// `domain.Event{}` rows: no `ID`, no `CreatedAt`, no autoincrement-derived
-// fields — only the entity/project/type/payload that the caller supplied.
-// Consumers of the returned slice that only emit downstream hooks or copy
-// the payload tolerate this; consumers that depend on the audit-log row
-// id (e.g. correlated event IDs) must check `shouldLogEvent` themselves
-// before treating the slice as audit-quality data. Documented per
-// review finding §C.11 of #297.
+// rebindOrphansScoped is the legacy per-scope dispatcher used by the
+// single-scope public entrypoints (RebindOrphanedTasks,
+// RebindOrphanedRootTasks, RebindOrphanedSubtasks). It opens its own
+// transaction so callers that need a single scope keep working
+// byte-identically. Cascade callers go through `RebindOrphanedCascade`
+// which folds both scopes into one transaction (locked decision on
+// task #301: atomic root + sub rebind, no partial progress).
+//
+// When the event type is disabled in the store's log filter
+// (`shouldLogEvent(eventType)` returns false), the slice appended to
+// `events` carries bare `domain.Event{}` rows: no `ID`, no
+// `CreatedAt`, no autoincrement-derived fields — only the
+// entity/project/type/payload that the caller supplied. Consumers of
+// the returned slice that only emit downstream hooks or copy the
+// payload tolerate this; consumers that depend on the audit-log row
+// id (e.g. correlated event IDs) must check `shouldLogEvent`
+// themselves before treating the slice as audit-quality data.
+// Documented per review finding §C.11 of #297.
 func (s *Store) rebindOrphansScoped(ctx context.Context, projectID int64, current, previous domain.BucketResolver, q orphanQuery, eventType string, evCtx orphanEventContext) (domain.OrphanReport, error) {
-	report, err := s.previewOrphansScoped(ctx, projectID, current, previous, q)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.OrphanReport{}, err
 	}
+	defer func() { _ = tx.Rollback() }()
+
+	report, events, err := s.rebindOrphansInTx(ctx, tx, projectID, current, previous, q, eventType, evCtx)
+	if err != nil {
+		return domain.OrphanReport{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.OrphanReport{}, err
+	}
+	for _, ev := range events {
+		s.publishEvent(ctx, ev)
+	}
+	return report, nil
+}
+
+// rebindOrphansInTx runs the rebind for a single scope inside an
+// existing transaction. Returns the matching report plus the list of
+// events the caller is expected to publish post-commit. Callers MUST
+// commit `tx` themselves before publishing — publishing inside the
+// tx would leak partially-committed rows to subscribers. Cascade
+// callers buffer the events from both passes and publish them
+// together after the joint commit.
+func (s *Store) rebindOrphansInTx(ctx context.Context, tx *sql.Tx, projectID int64, current, previous domain.BucketResolver, q orphanQuery, eventType string, evCtx orphanEventContext) (domain.OrphanReport, []domain.Event, error) {
+	report, err := s.previewOrphansScoped(ctx, projectID, current, previous, q)
+	if err != nil {
+		return domain.OrphanReport{}, nil, err
+	}
 	if report.Total == 0 {
-		return report, nil
+		return report, nil, nil
 	}
 
 	wf := current.Workflow()
@@ -367,28 +402,18 @@ func (s *Store) rebindOrphansScoped(ctx context.Context, projectID int64, curren
 		idByKey[b.Key] = b.ID
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return domain.OrphanReport{}, err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	type emitted struct {
-		event domain.Event
-	}
-	var events []emitted
-
+	events := make([]domain.Event, 0, report.Total)
 	for _, group := range report.Groups {
 		toID, ok := idByKey[group.ToBucketKey]
 		if !ok {
-			return domain.OrphanReport{}, fmt.Errorf("rebind orphaned tasks: target bucket %q not in active workflow", group.ToBucketKey)
+			return domain.OrphanReport{}, nil, fmt.Errorf("rebind orphaned tasks: target bucket %q not in active workflow", group.ToBucketKey)
 		}
 		for _, task := range group.Tasks {
 			if _, err := tx.ExecContext(ctx, `
 UPDATE tasks SET bucket_id = ?, updated_at = CURRENT_TIMESTAMP
 WHERE project_id = ? AND id = ?
 `, toID, projectID, task.TaskID); err != nil {
-				return domain.OrphanReport{}, err
+				return domain.OrphanReport{}, nil, err
 			}
 
 			payload := buildOrphanPayload(eventType, task, evCtx)
@@ -396,22 +421,111 @@ WHERE project_id = ? AND id = ?
 			if s.shouldLogEvent(eventType) {
 				ev, err = insertTaskEvent(ctx, tx, projectID, task.TaskID, eventType, "", payload)
 				if err != nil {
-					return domain.OrphanReport{}, err
+					return domain.OrphanReport{}, nil, err
 				}
 			} else {
 				ev = domain.Event{EntityType: domain.EventEntityTask, EntityID: task.TaskID, ProjectID: projectID, EventType: eventType, Payload: payload}
 			}
-			events = append(events, emitted{event: ev})
+			events = append(events, ev)
 		}
+	}
+	return report, events, nil
+}
+
+// PreviewOrphanedCascade returns the combined orphan preview for the
+// cascade plan: root-tree rows resolve against (plan.CurrentRoot,
+// plan.PreviousRoot); sub-task rows resolve against (plan.CurrentSub,
+// plan.PreviousSub). The combined report mirrors what
+// `RebindOrphanedCascade` would rewrite — preview/migrate parity is
+// the locked contract on task #301 (review §11557 finding A1).
+//
+// Returns a zero report when no current root resolver is supplied:
+// the preview can't decide which buckets are active without a current
+// workflow, so an empty report is the safe degraded answer.
+func (s *Store) PreviewOrphanedCascade(ctx context.Context, projectID int64, plan domain.OrphanCascadePlan) (domain.OrphanReport, error) {
+	if plan.CurrentRoot == nil {
+		return domain.OrphanReport{}, nil
+	}
+	rootReport, err := s.previewOrphansScoped(ctx, projectID, plan.CurrentRoot, plan.PreviousRoot, rootOnlyOrphans{})
+	if err != nil {
+		return domain.OrphanReport{}, err
+	}
+	subCurrent := plan.CurrentSub
+	subPrevious := plan.PreviousSub
+	if subCurrent == nil {
+		subCurrent = plan.CurrentRoot
+	}
+	if subPrevious == nil {
+		subPrevious = plan.PreviousRoot
+	}
+	subReport, err := s.previewOrphansScoped(ctx, projectID, subCurrent, subPrevious, subtaskOrphans{})
+	if err != nil {
+		return domain.OrphanReport{}, err
+	}
+	combined := rootReport
+	if combined.WorkflowKey == "" {
+		combined.WorkflowKey = subReport.WorkflowKey
+	}
+	combined.Groups = append(combined.Groups, subReport.Groups...)
+	combined.Total += subReport.Total
+	return combined, nil
+}
+
+// RebindOrphanedCascade applies the cascade migration atomically:
+// root-tree rebind and sub-task rebind run inside ONE transaction so
+// a sub-task failure rolls back the root-pass writes too. Events from
+// both passes publish only after the joint commit succeeds.
+//
+// Locked decision on task #301 (review §11557 finding A7): no partial
+// progress. The earlier app-layer pattern of two sequential repo
+// calls could commit the root pass and then fail the sub pass,
+// leaving the database half-migrated; folding both inside one tx
+// closes that window.
+func (s *Store) RebindOrphanedCascade(ctx context.Context, projectID int64, plan domain.OrphanCascadePlan) (domain.OrphanReport, error) {
+	if plan.CurrentRoot == nil {
+		return domain.OrphanReport{}, nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.OrphanReport{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	rootReport, rootEvents, err := s.rebindOrphansInTx(ctx, tx, projectID, plan.CurrentRoot, plan.PreviousRoot, rootOnlyOrphans{}, domain.EventTypeTaskMigrated, orphanEventContext{})
+	if err != nil {
+		return domain.OrphanReport{}, err
+	}
+
+	subCurrent := plan.CurrentSub
+	subPrevious := plan.PreviousSub
+	if subCurrent == nil {
+		subCurrent = plan.CurrentRoot
+	}
+	if subPrevious == nil {
+		subPrevious = plan.PreviousRoot
+	}
+	subReport, subEvents, err := s.rebindOrphansInTx(ctx, tx, projectID, subCurrent, subPrevious, subtaskOrphans{}, domain.EventTypeTaskBucketOrphaned, orphanEventContext{FromKit: plan.FromKit, ToKit: plan.ToKit})
+	if err != nil {
+		return domain.OrphanReport{}, err
 	}
 
 	if err := tx.Commit(); err != nil {
 		return domain.OrphanReport{}, err
 	}
-	for _, e := range events {
-		s.publishEvent(ctx, e.event)
+	for _, ev := range rootEvents {
+		s.publishEvent(ctx, ev)
 	}
-	return report, nil
+	for _, ev := range subEvents {
+		s.publishEvent(ctx, ev)
+	}
+
+	combined := rootReport
+	if combined.WorkflowKey == "" {
+		combined.WorkflowKey = subReport.WorkflowKey
+	}
+	combined.Groups = append(combined.Groups, subReport.Groups...)
+	combined.Total += subReport.Total
+	return combined, nil
 }
 
 // buildOrphanPayload composes the per-event JSON payload. Payload

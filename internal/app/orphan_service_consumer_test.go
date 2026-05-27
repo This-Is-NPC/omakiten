@@ -24,11 +24,11 @@ func (s consumerStubOrphanRepo) RebindOrphanedTasks(context.Context, int64, doma
 	return domain.OrphanReport{}, s.rebindErr
 }
 
-func (s consumerStubOrphanRepo) RebindOrphanedRootTasks(context.Context, int64, domain.BucketResolver, domain.BucketResolver) (domain.OrphanReport, error) {
-	return domain.OrphanReport{}, s.rebindErr
+func (s consumerStubOrphanRepo) PreviewOrphanedCascade(context.Context, int64, domain.OrphanCascadePlan) (domain.OrphanReport, error) {
+	return domain.OrphanReport{}, nil
 }
 
-func (s consumerStubOrphanRepo) RebindOrphanedSubtasks(context.Context, int64, domain.BucketResolver, domain.BucketResolver, string, string) (domain.OrphanReport, error) {
+func (s consumerStubOrphanRepo) RebindOrphanedCascade(context.Context, int64, domain.OrphanCascadePlan) (domain.OrphanReport, error) {
 	return domain.OrphanReport{}, s.rebindErr
 }
 
