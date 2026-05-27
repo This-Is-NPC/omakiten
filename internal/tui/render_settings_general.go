@@ -128,6 +128,8 @@ func (m *Model) handleSettingsGeneralKey(msg tea.KeyMsg) tea.Cmd {
 		m.openThemePicker()
 	case "c":
 		m.openConfigPicker()
+	case "s":
+		m.openSubtaskKitPicker()
 	case "e":
 		if m.repos.Editor == nil {
 			m.status = m.t("tui.status.editor_unavailable")
