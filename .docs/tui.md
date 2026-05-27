@@ -97,12 +97,62 @@ Subs map to `subID` constants in `internal/tui/state.go`; the wiring (which disp
 | `0` · `ctrl+h` | back to multi-project Home |
 | `ctrl+o` | pop the back-stack (vim-style "older") to restore the previous (zone, sub) |
 | `r` | refresh from store (per-zone semantics) |
+| `ctrl+k` | open the [trick palette](#trick-palette) (Tricks tab + Search tab) — blocked while a modal input (comment / move / task / entity / help) owns the keyboard |
 
 `left` / `right` (and `h` / `l`) are exclusively within-view bindings — Board lanes, Stats General period picker — and never switch zones. Cross-zone navigation is `tab` / digits / `,`/`/`.
 
 ### Back-stack (`ctrl+o`)
 
 Every intentional navigation (`tab`, `shift+tab`, `1`/`2`/`3`, `,`/`/`, `0`, `ctrl+h`) pushes the current `(top, sub)` onto a session-scoped stack capped at 16 entries (`viewHistory` in `state.go`). `ctrl+o` pops the most recent entry. Empty-stack presses are silent no-ops. Refresh ticks and overlay close events do not touch the stack — it records *navigation*, not every state change. Persistence is intentionally session-only.
+
+## Trick palette
+
+`ctrl+k` opens a centred overlay with two tabs:
+
+- **Tricks** — verb-prefixed shortcut input (`verb:operand`). The default focus on open.
+- **Search** — FTS5 fuzzy search wired to `app.SearchService.Search`. Reachable from Tricks via `tab`.
+
+Inside the overlay:
+
+| Key | Action |
+|---|---|
+| `tab` | toggle between Tricks and Search (per-tab input is preserved) |
+| `enter` | submit (parse + dispatch on Tricks; run query on Search) |
+| `esc` | close the overlay and restore the prior screen state |
+
+### Tricks tab — verb catalog
+
+| Verb | Operand | Handler | Example |
+|---|---|---|---|
+| `nav` | positional 2-digit code | built-in: registry → `(zone, sub)` jump | `nav:31` → Settings · General |
+| `op` | task id (bare digits at MVP) | built-in: open task detail view | `op:381` → open task #381 |
+| *(any other)* | free-form | no built-in dispatch; emits `trick.executed` for user-defined hooks | `hook:1` → user-configured `exec` / `notify` |
+
+Parse rules (rejected before any event emits):
+
+- exactly one `:` separator
+- non-empty verb, non-empty operand (whitespace trimmed)
+- verb matches `^[a-z][a-z0-9_-]*$` (lowercase ASCII, starts with letter)
+
+The built-in verb names `nav` and `op` are reserved. A user hook in `omakiten.yaml` that filters `when: {verb: nav}` or `when: {verb: op}` is rejected at config load time (see [tricks configuration](configuration-guide/tricks.md#reserved-verbs)).
+
+### nav positional layout (MVP)
+
+| Code | Destination |
+|---|---|
+| `nav:11` · `nav:12` · `nav:13` · `nav:14` | Tasks · board · table · graph · plans |
+| `nav:21` · `nav:22` | Stats · general · logs |
+| `nav:31` · `nav:32` · `nav:33` · `nav:34` · `nav:35` · `nav:36` | Settings · general · laws · personas · skills · templates · tags |
+
+Codes use 2 digits in `1-9` (positional grammar `^[1-9][1-9]$`). The cap leaves 81 slots for a current load of 12 — adding a sub appends the next unused code under its parent zone. Per-screen overrides land in `config.tricks.nav` (see [tricks configuration](configuration-guide/tricks.md)).
+
+### Search tab
+
+Submits the raw query to `app.SearchService.Search` across the unified FTS5 index (tasks, comments, errors, solutions, context entries, plans). The current MVP renders result count plus the top 3 hits inline; a dedicated results pane is a follow-up.
+
+### Event emission
+
+Every Tricks-tab submission emits `trick.executed` with payload `{verb, operand, raw}` before the built-in handler runs (or in lieu of one for user-defined verbs). User hooks subscribe via the standard `hooks:` schema — see [tricks configuration](configuration-guide/tricks.md#user-defined-verb-hooks) for examples.
 
 ## Help overlay
 
