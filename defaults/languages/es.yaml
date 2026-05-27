@@ -669,7 +669,7 @@ keys:
   tui.picker.hint.skills_persona: "arriba/abajo: mueve · espacio: alternar · enter en '+ crear nueva': nueva skill · ctrl+s: guardar · esc: cancelar"
   tui.picker.hint.template_default: "arriba/abajo: mueve · enter: asigna para este proyecto (limpia dueño anterior) · esc: cancelar"
   tui.picker.hint.blockers: "arriba/abajo: mueve · espacio: alternar · ctrl+s: guardar · esc: cancelar"
-  tui.settings.general_hint: "solo lectura · t (tema) / c (config) para cambiar · e para editar omakiten.yaml en $EDITOR"
+  tui.settings.general_hint: "solo lectura · t (tema) / c (config) / s (sub-task kit) para cambiar · e para editar omakiten.yaml en $EDITOR"
   tui.entity_screen.persona_skill_pick: "p: abrir picker de skill"
   tui.entity_screen.template_set_default: "a: asignar tipo predeterminado"
   tui.board.empty_press_n: "Pulsa "

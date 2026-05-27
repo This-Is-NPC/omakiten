@@ -671,7 +671,7 @@ keys:
   tui.picker.hint.skills_persona: "oben/unten: verschieben · Leertaste: umschalten · enter auf '+ neu erstellen': neue skill · ctrl+s: speichern · esc: abbrechen"
   tui.picker.hint.template_default: "oben/unten: verschieben · enter: für dieses Projekt zuweisen (löscht früheren Besitzer) · esc: abbrechen"
   tui.picker.hint.blockers: "oben/unten: verschieben · Leertaste: umschalten · ctrl+s: speichern · esc: abbrechen"
-  tui.settings.general_hint: "nur lesen · t (Theme) / c (Config) zum Wechseln · e zum Bearbeiten von omakiten.yaml in $EDITOR"
+  tui.settings.general_hint: "nur lesen · t (Theme) / c (Config) / s (sub-task kit) zum Wechseln · e zum Bearbeiten von omakiten.yaml in $EDITOR"
   tui.entity_screen.persona_skill_pick: "p: skill-Picker öffnen"
   tui.entity_screen.template_set_default: "a: Standard-Typ zuweisen"
   tui.board.empty_press_n: "Drücke "

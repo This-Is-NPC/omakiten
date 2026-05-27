@@ -666,7 +666,7 @@ keys:
   tui.picker.hint.skills_persona: "up/down: ले जाएँ · space: टॉगल · '+ नया बनाएँ' पर enter: नया skill · ctrl+s: सहेजें · esc: रद्द करें"
   tui.picker.hint.template_default: "up/down: ले जाएँ · enter: इस project के लिए असाइन करें (पिछला स्वामी साफ़ करता है) · esc: रद्द करें"
   tui.picker.hint.blockers: "up/down: ले जाएँ · space: टॉगल · ctrl+s: सहेजें · esc: रद्द करें"
-  tui.settings.general_hint: "केवल-पठन · बदलने के लिए t (theme) / c (config) · $EDITOR में omakiten.yaml संपादित करने के लिए e"
+  tui.settings.general_hint: "केवल-पठन · बदलने के लिए t (theme) / c (config) / s (sub-task kit) · $EDITOR में omakiten.yaml संपादित करने के लिए e"
   tui.entity_screen.persona_skill_pick: "p: skill पिकर खोलें"
   tui.entity_screen.template_set_default: "a: डिफ़ॉल्ट प्रकार असाइन करें"
   tui.board.empty_press_n: "दबाएँ "

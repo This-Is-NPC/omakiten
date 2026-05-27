@@ -664,7 +664,7 @@ keys:
   tui.picker.hint.skills_persona: "up/down: نقل · space: تبديل · enter على '+ create new': skill جديدة · ctrl+s: حفظ · esc: إلغاء"
   tui.picker.hint.template_default: "up/down: نقل · enter: تعيين لهذا المشروع (يمسح المالك السابق) · esc: إلغاء"
   tui.picker.hint.blockers: "up/down: نقل · space: تبديل · ctrl+s: حفظ · esc: إلغاء"
-  tui.settings.general_hint: "للقراءة فقط · t (السمة) / c (الإعدادات) للتبديل · e لتحرير omakiten.yaml في $EDITOR"
+  tui.settings.general_hint: "للقراءة فقط · t (السمة) / c (الإعدادات) / s (sub-task kit) للتبديل · e لتحرير omakiten.yaml في $EDITOR"
   tui.entity_screen.persona_skill_pick: "p: فتح مُنتقي skill"
   tui.entity_screen.template_set_default: "a: تعيين النوع الافتراضي"
   tui.board.empty_press_n: "اضغط "

@@ -664,7 +664,7 @@ keys:
   tui.picker.hint.skills_persona: "opp/ned: flytt · space: veksle · enter på '+ opprett ny': ny skill · ctrl+s: lagre · esc: avbryt"
   tui.picker.hint.template_default: "opp/ned: flytt · enter: tilordne for dette prosjektet (tømmer tidligere eier) · esc: avbryt"
   tui.picker.hint.blockers: "opp/ned: flytt · space: veksle · ctrl+s: lagre · esc: avbryt"
-  tui.settings.general_hint: "lese-bare · t (tema) / c (config) for å bytte · e for å redigere omakiten.yaml i $EDITOR"
+  tui.settings.general_hint: "lese-bare · t (tema) / c (config) / s (sub-task kit) for å bytte · e for å redigere omakiten.yaml i $EDITOR"
   tui.entity_screen.persona_skill_pick: "p: åpne skill-velger"
   tui.entity_screen.template_set_default: "a: tilordne default-type"
   tui.board.empty_press_n: "Trykk "

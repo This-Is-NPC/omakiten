@@ -664,7 +664,7 @@ keys:
   tui.picker.hint.skills_persona: "upp/ned: flytta · space: växla · enter på '+ skapa ny': ny skill · ctrl+s: spara · esc: avbryt"
   tui.picker.hint.template_default: "upp/ned: flytta · enter: tilldela för detta projekt (rensar tidigare ägare) · esc: avbryt"
   tui.picker.hint.blockers: "upp/ned: flytta · space: växla · ctrl+s: spara · esc: avbryt"
-  tui.settings.general_hint: "skrivskyddad · t (theme) / c (config) för att växla · e för att redigera omakiten.yaml i $EDITOR"
+  tui.settings.general_hint: "skrivskyddad · t (theme) / c (config) / s (sub-task kit) för att växla · e för att redigera omakiten.yaml i $EDITOR"
   tui.entity_screen.persona_skill_pick: "p: öppna skill-väljare"
   tui.entity_screen.template_set_default: "a: tilldela standardtyp"
   tui.board.empty_press_n: "Tryck "

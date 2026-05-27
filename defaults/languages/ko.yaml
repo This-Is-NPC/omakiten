@@ -662,7 +662,7 @@ keys:
   tui.picker.hint.skills_persona: "위/아래: 이동 · 스페이스: 전환 · '+ 새로 생성' 에서 enter: 새 skill · ctrl+s: 저장 · esc: 취소"
   tui.picker.hint.template_default: "위/아래: 이동 · enter: 이 프로젝트에 할당 (이전 소유자 지움) · esc: 취소"
   tui.picker.hint.blockers: "위/아래: 이동 · 스페이스: 전환 · ctrl+s: 저장 · esc: 취소"
-  tui.settings.general_hint: "읽기 전용 · t (테마) / c (config) 로 전환 · e 로 $EDITOR 에서 omakiten.yaml 편집"
+  tui.settings.general_hint: "읽기 전용 · t (테마) / c (config) / s (sub-task kit) 로 전환 · e 로 $EDITOR 에서 omakiten.yaml 편집"
   tui.entity_screen.persona_skill_pick: "p: skill 선택기 열기"
   tui.entity_screen.template_set_default: "a: 기본 유형 할당"
   tui.board.empty_press_n: "누르세요 "

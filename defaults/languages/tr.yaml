@@ -665,7 +665,7 @@ keys:
   tui.picker.hint.skills_persona: "yukarı/aşağı: taşı · space: değiştir · '+ yeni oluştur'da enter: yeni skill · ctrl+s: kaydet · esc: iptal"
   tui.picker.hint.template_default: "yukarı/aşağı: taşı · enter: bu project'e ata (önceki sahibi temizler) · esc: iptal"
   tui.picker.hint.blockers: "yukarı/aşağı: taşı · space: değiştir · ctrl+s: kaydet · esc: iptal"
-  tui.settings.general_hint: "salt okunur · değiştirmek için t (tema) / c (config) · omakiten.yaml'ı $EDITOR'da düzenlemek için e"
+  tui.settings.general_hint: "salt okunur · değiştirmek için t (tema) / c (config) / s (sub-task kit) · omakiten.yaml'ı $EDITOR'da düzenlemek için e"
   tui.entity_screen.persona_skill_pick: "p: skill seçiciyi aç"
   tui.entity_screen.template_set_default: "a: varsayılan türü ata"
   tui.board.empty_press_n: "Bas "

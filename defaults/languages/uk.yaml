@@ -664,7 +664,7 @@ keys:
   tui.picker.hint.skills_persona: "up/down: перемістити · space: перемкнути · enter на '+ create new': новий skill · ctrl+s: зберегти · esc: скасувати"
   tui.picker.hint.template_default: "up/down: перемістити · enter: призначити для цього проєкту (очищає попереднього власника) · esc: скасувати"
   tui.picker.hint.blockers: "up/down: перемістити · space: перемкнути · ctrl+s: зберегти · esc: скасувати"
-  tui.settings.general_hint: "тільки читання · t (theme) / c (config) для перемикання · e щоб редагувати omakiten.yaml в $EDITOR"
+  tui.settings.general_hint: "тільки читання · t (theme) / c (config) / s (sub-task kit) для перемикання · e щоб редагувати omakiten.yaml в $EDITOR"
   tui.entity_screen.persona_skill_pick: "p: відкрити вибір skill"
   tui.entity_screen.template_set_default: "a: призначити тип за замовчуванням"
   tui.board.empty_press_n: "Натисніть "

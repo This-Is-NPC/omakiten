@@ -684,7 +684,7 @@ keys:
   tui.picker.hint.skills_persona: "up/down: move · space: toggle · enter on '+ create new': new skill · ctrl+s: save · esc: cancel"
   tui.picker.hint.template_default: "up/down: move · enter: assign for this project (clears prior owner) · esc: cancel"
   tui.picker.hint.blockers: "up/down: move · space: toggle · ctrl+s: save · esc: cancel"
-  tui.settings.general_hint: "read-only · t (theme) / c (config) to switch · e to edit omakiten.yaml in $EDITOR"
+  tui.settings.general_hint: "read-only · t (theme) / c (config) / s (sub-task kit) to switch · e to edit omakiten.yaml in $EDITOR"
   tui.entity_screen.persona_skill_pick: "p: open skill picker"
   tui.entity_screen.template_set_default: "a: assign default kind"
   tui.board.empty_press_n: "Press "

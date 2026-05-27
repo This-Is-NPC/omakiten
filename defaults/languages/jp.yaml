@@ -664,7 +664,7 @@ keys:
   tui.picker.hint.skills_persona: "上/下: 移動 · スペース: 切替 · enter で '+ 新規作成': 新しい skill · ctrl+s: 保存 · esc: キャンセル"
   tui.picker.hint.template_default: "上/下: 移動 · enter: このプロジェクトに割り当て (前の所有者をクリア) · esc: キャンセル"
   tui.picker.hint.blockers: "上/下: 移動 · スペース: 切替 · ctrl+s: 保存 · esc: キャンセル"
-  tui.settings.general_hint: "読み取り専用 · t (テーマ) / c (config) で切替 · e で $EDITOR で omakiten.yaml を編集"
+  tui.settings.general_hint: "読み取り専用 · t (テーマ) / c (config) / s (sub-task kit) で切替 · e で $EDITOR で omakiten.yaml を編集"
   tui.entity_screen.persona_skill_pick: "p: skill ピッカーを開く"
   tui.entity_screen.template_set_default: "a: デフォルトの種類を割り当て"
   tui.board.empty_press_n: "押してください "

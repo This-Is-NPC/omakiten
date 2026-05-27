@@ -665,7 +665,7 @@ keys:
   tui.picker.hint.skills_persona: "up/down: siirrä · space: vaihda · enter kohdassa '+ luo uusi': uusi skill · ctrl+s: tallenna · esc: peruuta"
   tui.picker.hint.template_default: "up/down: siirrä · enter: osoita tälle projektille (tyhjentää aiemman omistajan) · esc: peruuta"
   tui.picker.hint.blockers: "up/down: siirrä · space: vaihda · ctrl+s: tallenna · esc: peruuta"
-  tui.settings.general_hint: "vain luku · t (teema) / c (config) vaihtaaksesi · e muokataksesi omakiten.yamlia $EDITORissa"
+  tui.settings.general_hint: "vain luku · t (teema) / c (config) / s (sub-task kit) vaihtaaksesi · e muokataksesi omakiten.yamlia $EDITORissa"
   tui.entity_screen.persona_skill_pick: "p: avaa skill-valitsin"
   tui.entity_screen.template_set_default: "a: osoita oletuslaji"
   tui.board.empty_press_n: "Paina "

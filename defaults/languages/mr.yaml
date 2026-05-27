@@ -664,7 +664,7 @@ keys:
   tui.picker.hint.skills_persona: "up/down: हलवा · space: टॉगल · '+ नवीन तयार करा' वर enter: नवीन skill · ctrl+s: जतन करा · esc: रद्द करा"
   tui.picker.hint.template_default: "up/down: हलवा · enter: या project साठी नियुक्त करा (पूर्वीचा मालक साफ करते) · esc: रद्द करा"
   tui.picker.hint.blockers: "up/down: हलवा · space: टॉगल · ctrl+s: जतन करा · esc: रद्द करा"
-  tui.settings.general_hint: "फक्त-वाचन · बदलण्यासाठी t (theme) / c (config) · $EDITOR मध्ये omakiten.yaml संपादित करण्यासाठी e"
+  tui.settings.general_hint: "फक्त-वाचन · बदलण्यासाठी t (theme) / c (config) / s (sub-task kit) · $EDITOR मध्ये omakiten.yaml संपादित करण्यासाठी e"
   tui.entity_screen.persona_skill_pick: "p: skill picker उघडा"
   tui.entity_screen.template_set_default: "a: डीफॉल्ट प्रकार नियुक्त करा"
   tui.board.empty_press_n: "दाबा "

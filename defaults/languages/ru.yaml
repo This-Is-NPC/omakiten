@@ -667,7 +667,7 @@ keys:
   tui.picker.hint.skills_persona: "вверх/вниз: переместить · пробел: переключить · enter на '+ создать новый': новый skill · ctrl+s: сохранить · esc: отмена"
   tui.picker.hint.template_default: "вверх/вниз: переместить · enter: назначить для этого проекта (очищает предыдущего владельца) · esc: отмена"
   tui.picker.hint.blockers: "вверх/вниз: переместить · пробел: переключить · ctrl+s: сохранить · esc: отмена"
-  tui.settings.general_hint: "только чтение · t (тема) / c (config) для переключения · e для редактирования omakiten.yaml в $EDITOR"
+  tui.settings.general_hint: "только чтение · t (тема) / c (config) / s (sub-task kit) для переключения · e для редактирования omakiten.yaml в $EDITOR"
   tui.entity_screen.persona_skill_pick: "p: открыть picker skill"
   tui.entity_screen.template_set_default: "a: назначить тип по умолчанию"
   tui.board.empty_press_n: "Нажмите "

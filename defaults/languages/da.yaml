@@ -665,7 +665,7 @@ keys:
   tui.picker.hint.skills_persona: "op/ned: flyt · mellemrum: skift · enter på '+ opret ny': ny skill · ctrl+s: gem · esc: annullér"
   tui.picker.hint.template_default: "op/ned: flyt · enter: tildel for dette projekt (rydder tidligere ejer) · esc: annullér"
   tui.picker.hint.blockers: "op/ned: flyt · mellemrum: skift · ctrl+s: gem · esc: annullér"
-  tui.settings.general_hint: "kun-læs · t (tema) / c (config) for at skifte · e for at redigere omakiten.yaml i $EDITOR"
+  tui.settings.general_hint: "kun-læs · t (tema) / c (config) / s (sub-task kit) for at skifte · e for at redigere omakiten.yaml i $EDITOR"
   tui.entity_screen.persona_skill_pick: "p: åbn skill-vælger"
   tui.entity_screen.template_set_default: "a: tildel default-type"
   tui.board.empty_press_n: "Tryk "

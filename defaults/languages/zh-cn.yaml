@@ -658,7 +658,7 @@ keys:
   tui.picker.hint.skills_persona: "上/下: 移动 · 空格: 切换 · 在 '+ 创建新' 上 enter: 新 skill · ctrl+s: 保存 · esc: 取消"
   tui.picker.hint.template_default: "上/下: 移动 · enter: 为此项目分配(清除先前所有者)· esc: 取消"
   tui.picker.hint.blockers: "上/下: 移动 · 空格: 切换 · ctrl+s: 保存 · esc: 取消"
-  tui.settings.general_hint: "只读 · t (主题) / c (config) 切换 · e 在 $EDITOR 中编辑 omakiten.yaml"
+  tui.settings.general_hint: "只读 · t (主题) / c (config) / s (sub-task kit) 切换 · e 在 $EDITOR 中编辑 omakiten.yaml"
   tui.entity_screen.persona_skill_pick: "p: 打开 skill 选择器"
   tui.entity_screen.template_set_default: "a: 分配默认类型"
   tui.board.empty_press_n: "按 "

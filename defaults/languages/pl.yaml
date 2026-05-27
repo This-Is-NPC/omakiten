@@ -664,7 +664,7 @@ keys:
   tui.picker.hint.skills_persona: "góra/dół: przesuń · spacja: przełącz · enter na '+ utwórz nowy': nowy skill · ctrl+s: zapisz · esc: anuluj"
   tui.picker.hint.template_default: "góra/dół: przesuń · enter: przypisz dla tego projektu (czyści poprzedniego właściciela) · esc: anuluj"
   tui.picker.hint.blockers: "góra/dół: przesuń · spacja: przełącz · ctrl+s: zapisz · esc: anuluj"
-  tui.settings.general_hint: "tylko do odczytu · t (theme) / c (config) aby przełączyć · e aby edytować omakiten.yaml w $EDITOR"
+  tui.settings.general_hint: "tylko do odczytu · t (theme) / c (config) / s (sub-task kit) aby przełączyć · e aby edytować omakiten.yaml w $EDITOR"
   tui.entity_screen.persona_skill_pick: "p: otwórz wybór skill"
   tui.entity_screen.template_set_default: "a: przypisz domyślny rodzaj"
   tui.board.empty_press_n: "Naciśnij "

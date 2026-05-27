@@ -665,7 +665,7 @@ keys:
   tui.picker.hint.skills_persona: "op/neer: verplaats · spatie: wissel · enter op '+ create new': nieuwe skill · ctrl+s: opslaan · esc: annuleren"
   tui.picker.hint.template_default: "op/neer: verplaats · enter: toewijzen voor dit project (wist vorige eigenaar) · esc: annuleren"
   tui.picker.hint.blockers: "op/neer: verplaats · spatie: wissel · ctrl+s: opslaan · esc: annuleren"
-  tui.settings.general_hint: "alleen-lezen · t (thema) / c (config) om te wisselen · e om omakiten.yaml in $EDITOR te bewerken"
+  tui.settings.general_hint: "alleen-lezen · t (thema) / c (config) / s (sub-task kit) om te wisselen · e om omakiten.yaml in $EDITOR te bewerken"
   tui.entity_screen.persona_skill_pick: "p: open skill picker"
   tui.entity_screen.template_set_default: "a: wijs default kind toe"
   tui.board.empty_press_n: "Druk op "

@@ -667,7 +667,7 @@ keys:
   tui.picker.hint.skills_persona: "su/giù: sposta · spazio: alterna · enter su '+ crea nuova': nuova skill · ctrl+s: salva · esc: annulla"
   tui.picker.hint.template_default: "su/giù: sposta · enter: assegna per questo progetto (azzera il proprietario precedente) · esc: annulla"
   tui.picker.hint.blockers: "su/giù: sposta · spazio: alterna · ctrl+s: salva · esc: annulla"
-  tui.settings.general_hint: "sola lettura · t (tema) / c (config) per cambiare · e per modificare omakiten.yaml in $EDITOR"
+  tui.settings.general_hint: "sola lettura · t (tema) / c (config) / s (sub-task kit) per cambiare · e per modificare omakiten.yaml in $EDITOR"
   tui.entity_screen.persona_skill_pick: "p: apri picker skill"
   tui.entity_screen.template_set_default: "a: assegna tipo di default"
   tui.board.empty_press_n: "Premi "
