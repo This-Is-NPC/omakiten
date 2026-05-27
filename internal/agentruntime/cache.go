@@ -340,17 +340,6 @@ func (c *BundleCache) rebuild(ctx context.Context, projectID int64, configPath s
 	return runtime, nil
 }
 
-// subtaskKitNoticePayload is the audit-log shape for the one-shot
-// transparency notice — i18n key plus the kit identities that
-// bracketed the first-enablement transition. Marshalled via
-// encoding/json so kit identities with special characters round-trip
-// as valid JSON.
-type subtaskKitNoticePayload struct {
-	I18nKey string `json:"i18n_key"`
-	FromKit string `json:"from_kit"`
-	ToKit   string `json:"to_kit"`
-}
-
 // maybeEmitSubtaskKitNotice records the one-shot transparency notice
 // event when the prev→curr snapshot pair represents a first-enablement
 // of subtask_kit (no sub-kit → some configured path). Same-path
@@ -365,7 +354,7 @@ func (c *BundleCache) maybeEmitSubtaskKitNotice(ctx context.Context, projectID i
 	if c.store == nil {
 		return
 	}
-	raw, err := json.Marshal(subtaskKitNoticePayload{
+	raw, err := json.Marshal(domain.SubtaskKitNoticePayload{
 		I18nKey: config.SubtaskKitTransparencyNoticeKey(),
 		FromKit: snapshotRootKitKey(prev),
 		ToKit:   snapshotSubtaskKitKey(curr),
