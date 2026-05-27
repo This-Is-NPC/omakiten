@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/This-Is-NPC/omakiten/compare/v0.20.2...v0.21.0) (2026-05-27)
+
+
+### Features
+
+* **subtask-kit:** cascade workflow with atomic migration and depth-aware dispatch ([#84](https://github.com/This-Is-NPC/omakiten/issues/84)) ([420a4a4](https://github.com/This-Is-NPC/omakiten/commit/420a4a47b74400bb51a35b4c64198f6bccdb1d27))
+
 ## [0.20.2](https://github.com/This-Is-NPC/omakiten/compare/v0.20.1...v0.20.2) (2026-05-25)
 
 
