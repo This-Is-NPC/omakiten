@@ -506,8 +506,13 @@ func (s *TaskService) Unarchive(ctx context.Context, project domain.ProjectConte
 // Assign / Unarchive — each ran the same three-line dance before #297's
 // boy-scout pass. Edit + the List path do their own resolution because
 // the row they have in hand is already the post-mutation snapshot of
-// the task. Extract Function — Fowler, per review opportunity §D.15 of
-// #297.
+// the task.
+//
+// Lifecycle callers may intentionally discard the returned Task: repository
+// methods such as HardDeleteTask, SetTaskState, and AssignTask re-read inside
+// their own transactions so event payloads and mutation decisions observe the
+// state-on-disk at write time instead of a pre-transaction snapshot.
+// Extract Function — Fowler, per review opportunity §D.15 of #297.
 func (s *TaskService) resolveTaskSnap(ctx context.Context, project domain.ProjectContext, taskID int64) (domain.Task, *config.Snapshot, error) {
 	task, err := s.taskByID(ctx, project, taskID)
 	if err != nil {
