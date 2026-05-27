@@ -160,6 +160,10 @@ func (m *Model) updateTaskScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.moveSubtaskCursor(1)
 				case "k", "up":
 					m.moveSubtaskCursor(-1)
+				case "h", "left":
+					m.moveSubtaskColumn(-1)
+				case "l", "right":
+					m.moveSubtaskColumn(1)
 				case "home", "g":
 					m.refreshSubtaskList()
 					m.subtasks = m.subtasks.JumpFirst()
@@ -1429,7 +1433,9 @@ func (m Model) renderTaskDescriptionInline(description string, width int) string
 //     by the pre-WindowSizeMsg fallback path where the layout
 //     budget is unknown.
 func (m Model) renderSubtasksPanel(children []domain.Task, lyt taskViewLayout, boxHeight int) string {
-	finalKey := m.workflow.FinalBucketKey()
+	resolvedWorkflow := m.subtaskPanelWorkflow()
+	buckets := resolvedWorkflow.Buckets
+	finalKey := resolvedWorkflow.FinalBucketKey()
 	done := 0
 	for _, child := range children {
 		if child.BucketKey == finalKey {
@@ -1446,24 +1452,15 @@ func (m Model) renderSubtasksPanel(children []domain.Task, lyt taskViewLayout, b
 		header = m.styles.info.Render("// " + headerLabel)
 	}
 
-	items := m.buildSubtaskCardItems(children, focused, lyt)
-	subtasks := m.subtasks.WithItems(items).WithViewport(m.subtasksViewportRows())
+	// The panel keeps a single SUB-TASKS kicker (header line +
+	// horizontal rule) so the legacy detail-view layout stays
+	// recognisable; below the rule, columns render one-per-bucket so
+	// the user reads the workflow distribution at a glance instead of
+	// scanning a flat checklist.
+	panelHeader := header + "\n" + m.hRule(lyt.subtasksInner)
+	board := m.renderSubtaskBoard(children, buckets, focused, lyt)
+	body := panelHeader + "\n" + board
 
-	column := columnframe.Model{
-		Header: header,
-		Rule:   m.hRule(lyt.subtasksInner),
-		List:   subtasks,
-	}
-	if len(children) == 0 {
-		column.EmptyLine = m.styles.empty.Width(lyt.subtasksInner).Render(m.t("tui.empty.sub_tasks"))
-	}
-	body := column.View(m.styles.hint)
-
-	// boxHeight is the TOTAL row count the caller asked for;
-	// lipgloss interprets `Height(n)` as the inner content row count
-	// (borders are stacked outside). Convert before handing off.
-	// boxHeight == 0 → pass 0 through → kanbanColumnSized keeps the
-	// content-sized default.
 	inner := 0
 	if boxHeight > 0 {
 		inner = boxHeight - layout.PanelBorders
@@ -1472,6 +1469,225 @@ func (m Model) renderSubtasksPanel(children []domain.Task, lyt taskViewLayout, b
 		}
 	}
 	return m.styles.kanbanColumnSized(lyt.subtasksInner, inner).Render(body)
+}
+
+// renderSubtaskBoard renders the per-bucket columns inside the
+// detail-view sub-tasks panel. Mirrors the root board's column-frame +
+// cardlist pattern; the focused-column index is m.subtaskColIdx and
+// the horizontal carousel offset is m.subtaskColOffset so narrow
+// terminals scroll the columns sideways instead of squashing the cards.
+//
+// Per-column height is clamped to a shared budget so JoinHorizontal
+// pads every column to the same row count — without the clamp, a
+// focused column packed with cards would force every empty sibling to
+// stretch with whitespace and produce the giant vertical gap the
+// #286 regression review surfaced.
+func (m Model) renderSubtaskBoard(children []domain.Task, buckets []domain.Bucket, focused bool, lyt taskViewLayout) string {
+	fallbackAllInOne := false
+	if len(buckets) == 0 {
+		// No resolved workflow (test fixtures, pre-init renders, or
+		// snapshot in an unusual state). Fall back to a single
+		// "unbucketed" lane so the children still surface — the panel
+		// stays useful even when the kit has not been wired yet.
+		buckets = []domain.Bucket{{Key: "", Name: m.t("tui.subtask_board.fallback_lane_name")}}
+		fallbackAllInOne = true
+	}
+
+	var childrenByBucket map[string][]domain.Task
+	if fallbackAllInOne {
+		childrenByBucket = map[string][]domain.Task{"": append([]domain.Task(nil), children...)}
+	} else {
+		childrenByBucket = groupChildrenByBucket(children, buckets)
+	}
+	layout := m.computeSubtaskBoardLayout(len(buckets), lyt)
+	cardlistRows := m.subtaskColumnCardlistRows()
+	columnInnerRows := subtaskColumnHeaderRows + cardlistRows
+
+	n := len(buckets)
+	cap := layout.capacity
+	if cap > n {
+		cap = n
+	}
+	focusedCol := clampInt(m.subtaskColIdx, 0, n-1)
+	start := scrollIntoView(m.subtaskColOffset, focusedCol, n, cap)
+	end := start + cap
+	if end > n {
+		end = n
+	}
+
+	cells := make([]string, 0, end-start)
+	for i := start; i < end; i++ {
+		bucket := buckets[i]
+		bucketChildren := childrenByBucket[bucket.Key]
+		cells = append(cells, m.renderSubtaskColumn(bucket, bucketChildren, focused && i == focusedCol, layout, cardlistRows, columnInnerRows))
+	}
+
+	parts := make([]string, 0, 2*len(cells)-1)
+	for i, cell := range cells {
+		parts = append(parts, cell)
+		if i < len(cells)-1 {
+			parts = append(parts, " ")
+		}
+	}
+	board := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+	if cap < n {
+		hint := fmt.Sprintf(m.t("tui.board.lanes_hint_fmt"), start+1, end, n)
+		board = board + "\n" + m.styles.hint.Render(hint)
+	}
+	return board
+}
+
+// subtaskColumnHeaderRows is the row count one bucket column's header
+// line + horizontal rule occupy above its cardlist viewport.
+const subtaskColumnHeaderRows = 2
+
+// subtaskColumnBorderRows is the top+bottom border rows the per-column
+// kanbanColumnSized wrapper adds on screen (lipgloss `Height(n)` is
+// the INNER content rows — see panel_height_test.go). The board lays
+// every column inside its own bordered box so JoinHorizontal pads
+// shorter columns to the focused column's height; both terms add to
+// the cardlist budget the renderer must subtract from
+// subtasksViewportRows so the panel fits boxHeight without overflow.
+const subtaskColumnBorderRows = 2
+
+// groupChildrenByBucket buckets the supplied children by their
+// BucketKey so each column reads its own slice in O(N) instead of
+// re-filtering per column. Children whose BucketKey is not in the
+// resolved workflow still appear under the panel-level done/total
+// kicker but stay out of the per-column slices — the kicker reflects
+// reality even when an orphan slipped past the migration path.
+func groupChildrenByBucket(children []domain.Task, buckets []domain.Bucket) map[string][]domain.Task {
+	keys := make(map[string]struct{}, len(buckets))
+	for _, b := range buckets {
+		keys[b.Key] = struct{}{}
+	}
+	out := make(map[string][]domain.Task, len(buckets))
+	for _, child := range children {
+		if _, ok := keys[child.BucketKey]; !ok {
+			continue
+		}
+		out[child.BucketKey] = append(out[child.BucketKey], child)
+	}
+	return out
+}
+
+// subtaskBoardLayout holds the per-render geometry for the sub-tasks
+// bucket-grouped board. Mirrors boardLayout for the root board but
+// scoped to the panel's inner width so the columns never overflow the
+// detail-view box. capacity is the number of columns the panel can
+// show side-by-side before the horizontal carousel kicks in.
+type subtaskBoardLayout struct {
+	columnInner      int
+	cardWidth        int
+	cardContentWidth int
+	capacity         int
+}
+
+func (m Model) computeSubtaskBoardLayout(n int, lyt taskViewLayout) subtaskBoardLayout {
+	const (
+		minColumnInner       = 18
+		preferredColumnInner = 24
+	)
+	if n <= 0 {
+		n = 1
+	}
+	available := lyt.subtasksInner
+	if available < minColumnInner+2 {
+		available = minColumnInner + 2
+	}
+	preferredOnScreen := preferredColumnInner + 2
+	capacity := (available + 1) / (preferredOnScreen + 1)
+	if capacity < 1 {
+		capacity = 1
+	}
+	if capacity > n {
+		capacity = n
+	}
+	colOnScreen := (available - (capacity - 1)) / capacity
+	columnInner := colOnScreen - 2
+	if columnInner < minColumnInner {
+		columnInner = minColumnInner
+	}
+	cardWidth := columnInner - 2
+	cardContent := cardWidth - 2
+	return subtaskBoardLayout{
+		columnInner:      columnInner,
+		cardWidth:        cardWidth,
+		cardContentWidth: cardContent,
+		capacity:         capacity,
+	}
+}
+
+func (m Model) renderSubtaskColumn(bucket domain.Bucket, children []domain.Task, focused bool, layout subtaskBoardLayout, cardlistRows, columnInnerRows int) string {
+	headerStyle := m.styles.hintAccent
+	if !focused {
+		headerStyle = m.styles.muted
+	}
+	headerText := fmt.Sprintf("// %s · %d", strings.ToUpper(bucket.Name), len(children))
+
+	cursor := -1
+	if focused {
+		cursor = m.subtasks.Cursor()
+	}
+	items := make([]cardlist.Item, len(children))
+	for i, child := range children {
+		selected := focused && i == cursor
+		card := m.renderTaskCard(taskCardSpec{
+			ID:         child.ID,
+			Title:      child.Title,
+			Badges:     m.taskBoardBadges(child),
+			Selected:   selected,
+			Archived:   child.State == domain.TaskStateArchived,
+			BoxWidth:   layout.cardWidth,
+			InnerWidth: layout.cardContentWidth,
+		})
+		items[i] = cardlist.Item{Content: card, Height: strings.Count(card, "\n") + 1}
+	}
+
+	list := cardlist.New()
+	if focused {
+		list = m.subtasks.WithItems(items).WithViewport(cardlistRows).WithCursor(cursor)
+	} else {
+		list = list.WithItems(items).WithViewport(cardlistRows)
+	}
+
+	column := columnframe.Model{
+		Header:    headerStyle.Render(headerText),
+		Rule:      m.hRule(layout.columnInner),
+		EmptyLine: m.styles.empty.Width(layout.columnInner).Render(m.t("tui.board.empty")),
+		List:      list,
+	}
+	return m.styles.kanbanColumnSized(layout.columnInner, columnInnerRows).Render(column.View(m.styles.hint))
+}
+
+// subtaskColumnCardlistRows is the per-bucket cardlist viewport budget
+// inside the detail-view sub-tasks panel. Subtracts BOTH the per-
+// column chrome (header + rule) AND the per-column border (top +
+// bottom). Without subtracting the column border the focused
+// column's cardlist tries to fill subtasksViewportRows rows, the
+// kanbanColumnSized wrapper adds two more border rows on screen, and
+// the panel overruns boxHeight — the regression visible in the
+// post-#286 screenshots.
+func (m Model) subtaskColumnCardlistRows() int {
+	rows := m.subtasksViewportRows() - subtaskColumnHeaderRows - subtaskColumnBorderRows
+	if rows < 0 {
+		return 0
+	}
+	return rows
+}
+
+// subtaskPanelWorkflow returns the workflow whose buckets the
+// sub-tasks panel draws as columns. When subtask_kit is configured on
+// the active snapshot, the sub-kit's workflow drives the layout;
+// otherwise the panel falls back to the root workflow already loaded
+// on the model so pre-cascade detail views render identically.
+func (m Model) subtaskPanelWorkflow() domain.Workflow {
+	if snap := m.repos.activeSnapshot(); snap != nil {
+		if sub, ok := snap.SubtaskKit(); ok {
+			return sub.Workflow()
+		}
+	}
+	return m.workflow
 }
 
 // buildSubtaskCardItems renders each child task as a card and packs
@@ -1543,16 +1759,19 @@ func (m Model) taskBreadcrumbTrail() string {
 	return m.styles.hint.Render(prefix + "← " + strings.Join(parts, " ← "))
 }
 
-// subtasksViewportRows returns the inner row budget the sub-tasks
-// cardlist gets after layout chrome / borders. Routes through the
-// task-view budget so the policy stays paired with the activity
-// panel.
+// subtasksViewportRows returns the row budget reserved for the bucket-
+// grouped board's content area (everything below the SUB-TASKS panel
+// kicker + rule). The renderer subtracts the per-column chrome via
+// subtaskColumnCardlistRows before feeding the cardlist; this number
+// is the shared inner budget the bucket-grouped board fills, not the
+// cardlist viewport itself. Routes through the task-view budget so
+// the policy stays paired with the activity panel.
 //
 // Returns 0 when the panel would not render at the current budget
 // (stacked + activity focus, or stacked + form focus with terminal
-// below the SubtasksMinRows floor). 0 tells the cardlist "render
-// every card, no slice" — fine because the outer renderer will not
-// emit this panel.
+// below the SubtasksMinRows floor). 0 tells the bucket-grouped board
+// "render every card, no slice" — fine because the outer renderer
+// will not emit this panel.
 func (m Model) subtasksViewportRows() int {
 	if m.height <= 0 {
 		return 0
@@ -1725,11 +1944,14 @@ func (m *Model) moveSubtaskCursor(delta int) {
 }
 
 // refreshSubtaskList rebuilds the cardlist's items + viewport from
-// the current children + measured form height. Called from every
-// *Model handler that mutates the sub-tasks state so the cardlist
-// always has accurate inputs before its resync fires. Items carry
-// the actual rendered heights so MoveCursor's resync respects card
-// geometry instead of guessing.
+// the FOCUSED bucket column's children. Mirrors the root board:
+// m.subtasks owns cursor/scroll for the focused column only, every
+// other column renders flush from a transient cardlist inside
+// renderSubtaskColumn. Called from every *Model handler that mutates
+// the sub-tasks state so the cardlist always has accurate inputs
+// before its resync fires. Viewport budget routes through
+// subtaskColumnCardlistRows so the focused column's cardlist matches
+// the height the renderer reserves for the bucket-grouped board.
 func (m *Model) refreshSubtaskList() {
 	layout := m.computeTaskViewLayout(m.availableWidth(), true)
 	if layout.kind == taskViewStacked {
@@ -1738,13 +1960,38 @@ func (m *Model) refreshSubtaskList() {
 		}
 	}
 	focused := m.taskFocus == taskFocusSubtasks
-	children := m.directChildren(m.taskID)
+	children := m.directChildrenInFocusedBucket()
 	items := m.buildSubtaskCardItems(children, focused, layout)
-	m.subtasks = m.subtasks.WithItems(items).WithViewport(m.subtasksViewportRows())
+	m.subtasks = m.subtasks.WithItems(items).WithViewport(m.subtaskColumnCardlistRows())
+}
+
+// directChildrenInFocusedBucket returns the children of the current
+// task that live in the focused sub-tasks panel column. When no sub-
+// task kit is configured the resolved workflow falls back to the root
+// kit so the legacy "all children in one column" case stays observable
+// — the focused column is the only one and lists everything.
+func (m Model) directChildrenInFocusedBucket() []domain.Task {
+	all := m.directChildren(m.taskID)
+	buckets := m.subtaskPanelWorkflow().Buckets
+	if len(buckets) == 0 {
+		// No resolved workflow → renderer shows every child in one
+		// fallback lane (mirrored here so cursor / refresh math
+		// addresses the same slice the renderer paints).
+		return all
+	}
+	focusedCol := clampInt(m.subtaskColIdx, 0, len(buckets)-1)
+	focusedKey := buckets[focusedCol].Key
+	out := make([]domain.Task, 0, len(all))
+	for _, child := range all {
+		if child.BucketKey == focusedKey {
+			out = append(out, child)
+		}
+	}
+	return out
 }
 
 // activeSubtask returns the sub-task currently under the cursor in
-// the sub-tasks pane. Falls back to false when the pane has no
+// the focused bucket column. Falls back to false when the pane has no
 // selection or the index drifted past the end (e.g. after refresh
 // dropped a child); callers render no-op for that case.
 func (m Model) activeSubtask() (domain.Task, bool) {
@@ -1752,11 +1999,38 @@ func (m Model) activeSubtask() (domain.Task, bool) {
 	if cursor < 0 {
 		return domain.Task{}, false
 	}
-	children := m.directChildren(m.taskID)
+	children := m.directChildrenInFocusedBucket()
 	if cursor >= len(children) {
 		return domain.Task{}, false
 	}
 	return children[cursor], true
+}
+
+// moveSubtaskColumn advances the focused sub-tasks panel column by
+// the given delta (-1 for h, +1 for l). Clamps to bucket range,
+// resets the cursor to the first card in the new column, and slides
+// the horizontal carousel offset so the focused column stays visible.
+func (m *Model) moveSubtaskColumn(delta int) {
+	buckets := m.subtaskPanelWorkflow().Buckets
+	n := len(buckets)
+	if n == 0 {
+		return
+	}
+	next := m.subtaskColIdx + delta
+	if next < 0 {
+		next = 0
+	}
+	if next >= n {
+		next = n - 1
+	}
+	if next == m.subtaskColIdx {
+		return
+	}
+	m.subtaskColIdx = next
+	m.refreshSubtaskList()
+	if m.subtasks.Cursor() < 0 {
+		m.subtasks = m.subtasks.JumpFirst()
+	}
 }
 
 // sendFocusedSubtaskToDone shortcuts the sub-task currently under the

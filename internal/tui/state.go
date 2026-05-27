@@ -333,8 +333,9 @@ type Model struct {
 	// by reloadBundle so Settings › General can render the three rows
 	// without re-reading the snapshot at render time.
 	languages           config.LanguageSettings
-	themePickerOptions  []themeOption
-	configPickerOptions []configOption
+	themePickerOptions       []themeOption
+	configPickerOptions      []configOption
+	subtaskKitPickerOptions  []subtaskKitOption
 	entries             []domain.ContextEntry
 	tags                []domain.Tag
 	taskTagsMap         map[int64][]domain.Tag
@@ -446,7 +447,23 @@ type Model struct {
 	// directly — the W11 refactor that closed the unit-mismatch
 	// bug class (line offset vs card index) routes every mutation
 	// through MoveCursor / WithItems / WithViewport.
+	//
+	// In the #281 bucket-grouped panel the cardlist is scoped to the
+	// CURRENTLY FOCUSED bucket column — every other column renders
+	// flush from a transient cardlist so cursor + scroll mirror the
+	// root board's per-lane semantics.
 	subtasks cardlist.Model
+
+	// subtaskColIdx is the focused bucket-column index inside the
+	// detail-view sub-tasks panel (#281 cascade phase 5). Mirrors the
+	// root board's colIdx but scoped to the sub-task panel only.
+	subtaskColIdx int
+
+	// subtaskColOffset is the leftmost-visible bucket index for the
+	// sub-tasks panel's horizontal column carousel. Used when the
+	// terminal cannot fit every column at once; mirrors boardColOffset
+	// with the same scrollIntoView semantics.
+	subtaskColOffset int
 
 	// taskViewStack records ancestor task IDs the user drilled in from
 	// (via Enter on a sub-task card). Esc pops back to the most recent

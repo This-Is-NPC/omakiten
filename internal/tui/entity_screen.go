@@ -17,6 +17,8 @@ func (m Model) updateEntityScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateThemePicker(msg)
 	case entityScreenConfigPicker:
 		return m.updateConfigPicker(msg)
+	case entityScreenSubtaskKitPicker:
+		return m.updateSubtaskKitPicker(msg)
 	case entityScreenDefaultPicker:
 		return m.updateTemplateDefaultPicker(msg)
 	}
@@ -95,6 +97,8 @@ func (m Model) renderEntityScreen() string {
 		return m.renderThemePicker()
 	case entityScreenConfigPicker:
 		return m.renderConfigPicker()
+	case entityScreenSubtaskKitPicker:
+		return m.renderSubtaskKitPicker()
 	case entityScreenDefaultPicker:
 		return m.renderTemplateDefaultPicker()
 	}

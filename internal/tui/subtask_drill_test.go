@@ -253,8 +253,11 @@ func TestRenderTaskViewShowsSubtasksEmptyState(t *testing.T) {
 	if !strings.Contains(out, "SUB-TASKS") {
 		t.Fatalf("childless task view must still render SUB-TASKS pane (empty state), got:\n%s", out)
 	}
-	if !strings.Contains(out, "No sub-tasks") {
-		t.Fatalf("empty sub-tasks pane must surface the empty-state hint, got:\n%s", out)
+	// The bucket-grouped panel surfaces per-column "empty" hints; the
+	// legacy panel-wide "No sub-tasks" line was retired in #286 review
+	// findings so h/l navigation still works against an empty board.
+	if !strings.Contains(out, "empty") {
+		t.Fatalf("empty sub-tasks pane must surface the per-column empty hint, got:\n%s", out)
 	}
 }
 

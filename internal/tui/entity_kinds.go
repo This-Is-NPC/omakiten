@@ -35,6 +35,7 @@ const (
 	entityScreenThemePicker
 	entityScreenConfigPicker
 	entityScreenDefaultPicker
+	entityScreenSubtaskKitPicker
 )
 
 // entityForm carries the per-screen state. For Phase 1 it only holds the
