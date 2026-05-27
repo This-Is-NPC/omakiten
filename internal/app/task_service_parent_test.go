@@ -288,6 +288,131 @@ func TestTaskServiceEventsCarryDepthMetadata(t *testing.T) {
 	assertSubjectMetadata(t, editPayload, child.ID, &parent.ID, 1, "sub")
 }
 
+func TestTaskDepth_RootInsertsAtZero(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(t, 1000))
+	defer func() { _ = store.Close() }()
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+
+	root, err := service.Add(ctx, project.Context(), "Root", "", "", "backlog")
+	if err != nil {
+		t.Fatalf("Add(root) = %v", err)
+	}
+	if root.Depth != 0 {
+		t.Fatalf("root.Depth = %d, want 0", root.Depth)
+	}
+}
+
+func TestTaskDepth_SubInsertAtParentDepthPlusOne(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(t, 1000))
+	defer func() { _ = store.Close() }()
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+
+	parent, err := service.Add(ctx, project.Context(), "Parent", "", "", "backlog")
+	if err != nil {
+		t.Fatalf("Add(parent) = %v", err)
+	}
+	child, err := service.AddSub(ctx, project.Context(), parent.ID, "Child", "", "", "")
+	if err != nil {
+		t.Fatalf("AddSub(child) = %v", err)
+	}
+	if child.Depth != parent.Depth+1 {
+		t.Fatalf("child.Depth = %d, want %d (parent %d + 1)", child.Depth, parent.Depth+1, parent.Depth)
+	}
+}
+
+func TestTaskDepth_GrandchildAtTwo(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(t, 1000))
+	defer func() { _ = store.Close() }()
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+
+	parent, _ := service.Add(ctx, project.Context(), "Parent", "", "", "backlog")
+	child, _ := service.AddSub(ctx, project.Context(), parent.ID, "Child", "", "", "")
+	grandchild, err := service.AddSub(ctx, project.Context(), child.ID, "Grandchild", "", "", "")
+	if err != nil {
+		t.Fatalf("AddSub(grandchild) = %v", err)
+	}
+	if grandchild.Depth != 2 {
+		t.Fatalf("grandchild.Depth = %d, want 2 (root=0, child=1, grandchild=2)", grandchild.Depth)
+	}
+}
+
+func TestTaskDepth_ReparentRecomputesSubtree(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(t, 1000))
+	defer func() { _ = store.Close() }()
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+
+	// Build two roots: A (depth 0) and B (depth 0). Attach child under A
+	// (depth 1) and grandchild under that child (depth 2). Then reparent
+	// the child under B — its new depth should still be 1, and the
+	// grandchild's depth should recompute to 2 (B.depth + 1 + 1).
+	a, _ := service.Add(ctx, project.Context(), "A", "", "", "backlog")
+	b, _ := service.Add(ctx, project.Context(), "B", "", "", "backlog")
+	child, _ := service.AddSub(ctx, project.Context(), a.ID, "child", "", "", "")
+	grandchild, _ := service.AddSub(ctx, project.Context(), child.ID, "grandchild", "", "", "")
+	if child.Depth != 1 || grandchild.Depth != 2 {
+		t.Fatalf("pre-reparent depths off: child=%d grandchild=%d", child.Depth, grandchild.Depth)
+	}
+
+	if _, err := service.Edit(ctx, project.Context(), child.ID, domain.TaskUpdate{ChangeParent: true, NewParentID: &b.ID}); err != nil {
+		t.Fatalf("Edit(reparent child under B) = %v", err)
+	}
+
+	// Re-read the subtree. Child's depth = B.depth + 1; grandchild's depth
+	// = child.depth + 1. The reparent must propagate through the subtree.
+	rows, err := store.ListDirectChildren(ctx, project.ID, b.ID, store.Snapshot())
+	if err != nil {
+		t.Fatalf("ListDirectChildren(B) = %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != child.ID {
+		t.Fatalf("B's children after reparent = %+v, want [child]", rows)
+	}
+	if rows[0].Depth != b.Depth+1 {
+		t.Fatalf("child.Depth after reparent = %d, want %d (B.depth + 1)", rows[0].Depth, b.Depth+1)
+	}
+	gcRows, err := store.ListDirectChildren(ctx, project.ID, child.ID, store.Snapshot())
+	if err != nil {
+		t.Fatalf("ListDirectChildren(child) = %v", err)
+	}
+	if len(gcRows) != 1 || gcRows[0].ID != grandchild.ID {
+		t.Fatalf("child's children after reparent = %+v, want [grandchild]", gcRows)
+	}
+	if gcRows[0].Depth != rows[0].Depth+1 {
+		t.Fatalf("grandchild.Depth after reparent = %d, want %d (child.depth + 1)", gcRows[0].Depth, rows[0].Depth+1)
+	}
+}
+
+func TestSubjectDepth_GrandchildEmitsTwo(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(t, 1000))
+	defer func() { _ = store.Close() }()
+	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+
+	parent, _ := service.Add(ctx, project.Context(), "Parent", "", "", "backlog")
+	child, _ := service.AddSub(ctx, project.Context(), parent.ID, "Child", "", "", "")
+	grandchild, err := service.AddSub(ctx, project.Context(), child.ID, "Grandchild", "", "", "")
+	if err != nil {
+		t.Fatalf("AddSub(grandchild) = %v", err)
+	}
+
+	events, err := store.ListRecentEvents(ctx, domain.EventTypeTaskCreated, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents(created) = %v", err)
+	}
+	payload := eventPayloadForTask(t, events, grandchild.ID)
+	if got := int(payload["subject_depth"].(float64)); got != 2 {
+		t.Fatalf("subject_depth for grandchild created = %d, want 2 (payload %+v)", got, payload)
+	}
+}
+
 func TestTaskServiceEditRejectsReparentUnderArchived(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

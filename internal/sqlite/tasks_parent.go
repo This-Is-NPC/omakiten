@@ -15,7 +15,7 @@ import (
 // recursive walks live in CountDescendants and DescendsFrom.
 func (s *Store) ListDirectChildren(ctx context.Context, projectID, parentID int64, buckets domain.BucketResolver) ([]domain.Task, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at, tasks.parent_id
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at, tasks.parent_id, tasks.depth
 FROM tasks
 WHERE tasks.project_id = ? AND tasks.parent_id = ?
 ORDER BY tasks.id
@@ -31,7 +31,7 @@ ORDER BY tasks.id
 			task     domain.Task
 			parentFK sql.NullInt64
 		)
-		if err := rows.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt, &parentFK); err != nil {
+		if err := rows.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt, &parentFK, &task.Depth); err != nil {
 			return nil, err
 		}
 		assignParentID(&task, parentFK)
@@ -49,7 +49,7 @@ ORDER BY tasks.id
 // own promotions.
 func (s *Store) FirstChildNotInBucket(ctx context.Context, projectID, parentID, finalBucketID int64, buckets domain.BucketResolver) (domain.Task, bool, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at, tasks.parent_id
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at, tasks.parent_id, tasks.depth
 FROM tasks
 WHERE tasks.project_id = ? AND tasks.parent_id = ?
   AND tasks.state = 'active'
@@ -62,7 +62,7 @@ LIMIT 1
 		task     domain.Task
 		parentFK sql.NullInt64
 	)
-	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt, &parentFK); err != nil {
+	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt, &parentFK, &task.Depth); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Task{}, false, nil
 		}
@@ -169,15 +169,50 @@ WHERE project_id = ? AND id = ?
 	if changed == 0 {
 		return domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
 	}
+	if err := recomputeSubtreeDepth(ctx, tx, projectID, taskID); err != nil {
+		return err
+	}
 	return tx.Commit()
+}
+
+// recomputeSubtreeDepth resets `tasks.depth` for taskID and every
+// descendant after a reparent. The new depth for taskID is
+// `parent.depth + 1` (or 0 when parent_id is NULL); each descendant
+// inherits parent.depth + 1 via a recursive UPDATE. Called inside the
+// reparent transaction so depth stays in lockstep with parent_id. #299
+// §A.4 covers the contract; the recursive UPDATE caps at
+// orphanDepthLimit (64) so a cycle escapes in bounded time.
+func recomputeSubtreeDepth(ctx context.Context, tx *sql.Tx, projectID, rootID int64) error {
+	_, err := tx.ExecContext(ctx, `
+WITH RECURSIVE subtree(id, depth) AS (
+    SELECT t.id, COALESCE((SELECT p.depth + 1 FROM tasks p WHERE p.id = t.parent_id), 0)
+      FROM tasks t
+      WHERE t.project_id = ? AND t.id = ?
+    UNION ALL
+    SELECT t.id, s.depth + 1
+      FROM tasks t
+      INNER JOIN subtree s ON t.parent_id = s.id
+      WHERE t.project_id = ? AND s.depth < 64
+)
+UPDATE tasks SET depth = (SELECT depth FROM subtree WHERE subtree.id = tasks.id)
+WHERE id IN (SELECT id FROM subtree)
+`, projectID, rootID, projectID)
+	return err
 }
 
 // clearTaskParent is the parent-clear branch of SetTaskParent split out
 // so the parent-set path can run inside a transaction without forking
-// every UPDATE statement. No FK lookup is needed when parent_id goes to
-// NULL, so the bare ExecContext on s.db keeps the previous behaviour.
+// every UPDATE statement. Wrapped in a transaction now so the
+// depth-recompute (#299 §A.4) lands atomically with the parent_id =
+// NULL update — without the transaction, a crash between the two
+// statements could leave a sub-tree with stale depth values.
 func (s *Store) clearTaskParent(ctx context.Context, projectID, taskID int64) error {
-	result, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, `
 UPDATE tasks SET parent_id = NULL, updated_at = CURRENT_TIMESTAMP
 WHERE project_id = ? AND id = ?
 `, projectID, taskID)
@@ -191,7 +226,10 @@ WHERE project_id = ? AND id = ?
 	if changed == 0 {
 		return domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
 	}
-	return nil
+	if err := recomputeSubtreeDepth(ctx, tx, projectID, taskID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // CountDirectChildren returns the number of direct children for parentID

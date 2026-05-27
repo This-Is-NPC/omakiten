@@ -62,11 +62,13 @@ func taskEventPayload(task domain.Task, buckets domain.BucketResolver, fields ma
 	merged["subject_task_id"] = task.ID
 	if task.ParentID != nil {
 		merged["subject_parent_id"] = *task.ParentID
-		merged["subject_depth"] = 1
 	} else {
 		merged["subject_parent_id"] = nil
-		merged["subject_depth"] = 0
 	}
+	// subject_depth comes from the persisted column (migration 028 /
+	// #299 §A) — grandchildren now report depth >= 2 instead of the
+	// previous hard-coded 1. Closes #297 review finding §B.5.
+	merged["subject_depth"] = task.Depth
 	merged["resolved_kit"] = resolvedKitKey(buckets)
 	body, err := json.Marshal(merged)
 	if err != nil {
