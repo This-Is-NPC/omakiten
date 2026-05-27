@@ -81,27 +81,37 @@ func (s *WorkflowService) FinalBucketKey(_ context.Context) (string, error) {
 	return finalBucketKey(s.snap)
 }
 
-func defaultBucketKey(snap *config.Snapshot) (string, error) {
+// workflowBuckets returns the resolved workflow's bucket slice plus the
+// nil-snap / empty-buckets guard the kit-key helpers share. Extracted
+// per #297 review-opportunity §D.14 — `defaultBucketKey` + `finalBucketKey`
+// duplicated the guard byte-for-byte and now route through one source of
+// truth.
+func workflowBuckets(snap *config.Snapshot) ([]domain.Bucket, error) {
 	if snap == nil {
-		return "", domain.NewError(domain.ErrConfigInvalid, "active workflow has no buckets", nil)
+		return nil, domain.NewError(domain.ErrConfigInvalid, "active workflow has no buckets", nil)
 	}
 	workflow := snap.Workflow()
 	if len(workflow.Buckets) == 0 {
-		return "", domain.NewError(domain.ErrConfigInvalid, "active workflow has no buckets", nil)
+		return nil, domain.NewError(domain.ErrConfigInvalid, "active workflow has no buckets", nil)
 	}
-	return workflow.Buckets[0].Key, nil
+	return workflow.Buckets, nil
+}
+
+func defaultBucketKey(snap *config.Snapshot) (string, error) {
+	buckets, err := workflowBuckets(snap)
+	if err != nil {
+		return "", err
+	}
+	return buckets[0].Key, nil
 }
 
 func finalBucketKey(snap *config.Snapshot) (string, error) {
-	if snap == nil {
-		return "", domain.NewError(domain.ErrConfigInvalid, "active workflow has no buckets", nil)
+	buckets, err := workflowBuckets(snap)
+	if err != nil {
+		return "", err
 	}
-	workflow := snap.Workflow()
-	if len(workflow.Buckets) == 0 {
-		return "", domain.NewError(domain.ErrConfigInvalid, "active workflow has no buckets", nil)
-	}
-	final := workflow.Buckets[0]
-	for _, b := range workflow.Buckets {
+	final := buckets[0]
+	for _, b := range buckets {
 		if b.Position > final.Position {
 			final = b
 		}

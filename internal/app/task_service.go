@@ -382,11 +382,10 @@ func (s *TaskService) Delete(ctx context.Context, project domain.ProjectContext,
 		err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"task_id": taskID, "hint": hint, "entity": EntityTask, "operation": PermissionDelete})
 		return
 	}
-	taskForResolution, err := s.taskByID(ctx, project, taskID)
+	_, taskSnap, err := s.resolveTaskSnap(ctx, project, taskID)
 	if err != nil {
 		return
 	}
-	taskSnap := s.snap.For(taskForResolution)
 	if err = s.workflow.Evaluator().EvaluateOperationFor(ctx, project.ID, taskID, OperationDelete, taskSnap); err != nil {
 		return
 	}
@@ -418,11 +417,10 @@ func (s *TaskService) Archive(ctx context.Context, project domain.ProjectContext
 	// Verify the task exists before evaluating guards — guards against a
 	// non-existent task would otherwise misreport as guard_violation when the
 	// real failure is task_not_found.
-	taskForResolution, err := s.taskByID(ctx, project, taskID)
+	_, taskSnap, err := s.resolveTaskSnap(ctx, project, taskID)
 	if err != nil {
 		return
 	}
-	taskSnap := s.snap.For(taskForResolution)
 
 	if err = s.workflow.Evaluator().EvaluateOperationFor(ctx, project.ID, taskID, OperationArchive, taskSnap); err != nil {
 		return
@@ -460,11 +458,10 @@ func (s *TaskService) Assign(ctx context.Context, project domain.ProjectContext,
 		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
 		return
 	}
-	taskForResolution, err := s.taskByID(ctx, project, taskID)
+	_, taskSnap, err := s.resolveTaskSnap(ctx, project, taskID)
 	if err != nil {
 		return
 	}
-	taskSnap := s.snap.For(taskForResolution)
 	task, event, err = s.repo.AssignTask(ctx, project.ID, taskID, assignee, "cli.assign", taskSnap)
 	task = s.withResolvedBucketKey(task)
 	return
@@ -490,11 +487,10 @@ func (s *TaskService) Unarchive(ctx context.Context, project domain.ProjectConte
 	}
 
 	// Verify the task exists before evaluating guards — see Archive for rationale.
-	taskForResolution, err := s.taskByID(ctx, project, taskID)
+	_, taskSnap, err := s.resolveTaskSnap(ctx, project, taskID)
 	if err != nil {
 		return
 	}
-	taskSnap := s.snap.For(taskForResolution)
 
 	if err = s.workflow.Evaluator().EvaluateOperationFor(ctx, project.ID, taskID, OperationUnarchive, taskSnap); err != nil {
 		return
@@ -503,6 +499,21 @@ func (s *TaskService) Unarchive(ctx context.Context, project domain.ProjectConte
 	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateActive, "", taskSnap)
 	task = s.withResolvedBucketKey(task)
 	return
+}
+
+// resolveTaskSnap looks up the task and returns it alongside the
+// snapshot resolved for its depth. Shared prelude for Delete / Archive /
+// Assign / Unarchive — each ran the same three-line dance before #297's
+// boy-scout pass. Edit + the List path do their own resolution because
+// the row they have in hand is already the post-mutation snapshot of
+// the task. Extract Function — Fowler, per review opportunity §D.15 of
+// #297.
+func (s *TaskService) resolveTaskSnap(ctx context.Context, project domain.ProjectContext, taskID int64) (domain.Task, *config.Snapshot, error) {
+	task, err := s.taskByID(ctx, project, taskID)
+	if err != nil {
+		return domain.Task{}, nil, err
+	}
+	return task, s.snap.For(task), nil
 }
 
 func (s *TaskService) taskByID(ctx context.Context, project domain.ProjectContext, taskID int64) (domain.Task, error) {

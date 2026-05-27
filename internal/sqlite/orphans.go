@@ -20,6 +20,39 @@ import (
 // JOIN's COALESCE — review finding §B.2 of #297.
 const orphanDepthLimit = 64
 
+// orphanScopedQuery returns the pre-built SQL for the given scope. The
+// previous implementation concatenated a `scopeFilter` string into the
+// query at call time; pre-building keeps the SQL plan stable and
+// removes the Replace Primitive with Object smell flagged by review
+// opportunity §D.16 of #297. scopeRootTasks does not use this — it has
+// its own non-recursive query in queryActiveRootTasks.
+func orphanScopedQuery(scope orphanScope) (string, bool) {
+	q, ok := orphanScopedQueries[scope]
+	return q, ok
+}
+
+var orphanScopedQueries = func() map[orphanScope]string {
+	template := `
+WITH RECURSIVE depths(id, parent_id, depth) AS (
+    SELECT id, parent_id, 0 FROM tasks
+        WHERE project_id = ? AND parent_id IS NULL
+    UNION ALL
+    SELECT t.id, t.parent_id, d.depth + 1 FROM tasks t
+        INNER JOIN depths d ON t.parent_id = d.id
+        WHERE t.project_id = ? AND d.depth < %d
+)
+SELECT t.id, t.title, COALESCE(t.bucket_id, 0), t.parent_id, COALESCE(d.depth, 0)
+FROM tasks t
+LEFT JOIN depths d ON d.id = t.id
+WHERE t.project_id = ? AND t.state = 'active' %s
+ORDER BY t.id
+`
+	return map[orphanScope]string{
+		scopeAllTasks: fmt.Sprintf(template, orphanDepthLimit, ""),
+		scopeSubTasks: fmt.Sprintf(template, orphanDepthLimit, "AND t.parent_id IS NOT NULL"),
+	}
+}()
+
 // isNilResolver returns true when the BucketResolver interface is nil
 // OR when it wraps a typed-nil pointer (the common shape callers get
 // when they assign a nil Snapshot pointer to a BucketResolver slot).
@@ -157,25 +190,10 @@ func (s *Store) queryActiveTasksScoped(ctx context.Context, projectID int64, sco
 	if scope == scopeRootTasks {
 		return s.queryActiveRootTasks(ctx, projectID)
 	}
-	scopeFilter := ""
-	if scope == scopeSubTasks {
-		scopeFilter = "AND t.parent_id IS NOT NULL"
+	query, ok := orphanScopedQuery(scope)
+	if !ok {
+		return nil, fmt.Errorf("orphan scope %d has no query template", scope)
 	}
-	query := fmt.Sprintf(`
-WITH RECURSIVE depths(id, parent_id, depth) AS (
-    SELECT id, parent_id, 0 FROM tasks
-        WHERE project_id = ? AND parent_id IS NULL
-    UNION ALL
-    SELECT t.id, t.parent_id, d.depth + 1 FROM tasks t
-        INNER JOIN depths d ON t.parent_id = d.id
-        WHERE t.project_id = ? AND d.depth < %d
-)
-SELECT t.id, t.title, COALESCE(t.bucket_id, 0), t.parent_id, COALESCE(d.depth, 0)
-FROM tasks t
-LEFT JOIN depths d ON d.id = t.id
-WHERE t.project_id = ? AND t.state = 'active' `+scopeFilter+`
-ORDER BY t.id
-`, orphanDepthLimit)
 	rows, err := s.db.QueryContext(ctx, query, projectID, projectID, projectID)
 	if err != nil {
 		return nil, err
