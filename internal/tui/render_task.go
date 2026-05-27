@@ -1093,8 +1093,10 @@ func (m Model) renderTaskScreen() string {
 // task description occupies inside the form column before it gets
 // elided with a "+N more · f to focus" hint. Long descriptions read
 // in the dedicated overlay (openDescriptionScreen) instead of pushing
-// activity + sub-tasks below the fold.
-const taskDescriptionInlineCap = 12
+// activity + sub-tasks below the fold. Lowered from 12 → 6 so the
+// sub-tasks pane gains vertical room without changing the elision
+// contract (still `f` to focus the full body).
+const taskDescriptionInlineCap = 6
 
 // subtasksPanelMinInner is the minimum inner width the sub-tasks
 // column needs to render a readable task card. Mirrors the board's
