@@ -78,6 +78,12 @@ type Repositories struct {
 	Metrics      *app.MetricsService
 	Orphans      app.OrphanRepository
 	Plans        app.PlanRepository
+	// Search powers the trick palette Search tab (#182). Optional —
+	// when nil, palette.SearchMsg surfaces a "search not wired" status
+	// inline so the rest of the palette (Tricks tab + Ctrl+K
+	// open/close) stays usable on test fixtures that do not need the
+	// FTS5 path.
+	Search *app.SearchService
 	// Checkpointer is invoked right before a destructive snapshot
 	// (project delete) so the live SQLite WAL frames land in the
 	// main .db file the BackupService will copy. Optional — when

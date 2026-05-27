@@ -765,6 +765,16 @@ func (s *Snapshot) Events() EventsSettings {
 	return s.settings.Events
 }
 
+// Tricks returns the resolved trick palette settings block. The TUI
+// reads this at NewModel + reloadBundle to seed the palette
+// ScreenRegistry with the user's `tricks.nav` overrides; reading
+// through the snapshot keeps the TUI free of the bundle editor's
+// LoadBundle path (the refresh_noscan_test guard panics if the TUI
+// touches the editor outside the explicit hot-reload code path).
+func (s *Snapshot) Tricks() TricksSettings {
+	return s.settings.Tricks
+}
+
 // Registry returns the per-project EnumRegistry built at BuildSnapshot time
 // from the bundle's priority and severity tables. App services that resolve
 // priority or severity labels read through this single instance — there is

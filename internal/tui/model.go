@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"strings"
 	"sync"
@@ -88,6 +87,9 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		plansCursor:          cursorwindow.New(0),
 		planNetworkCursor:    cursorwindow.New(0),
 		settingsGeneralLines: linelist.New(),
+	}
+	if reg, err := buildPaletteRegistry(repos); err == nil {
+		model.paletteRegistry = reg
 	}
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()
@@ -179,18 +181,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.paletteOpen = false
 		return m, nil
 	case palette.SubmitMsg:
-		// Increment 5 wires the open/dismiss/route paths; the
-		// nav/op built-in handler arrives in increment 6. For now
-		// surface the parsed token to the user via the overlay's
-		// own status so the round-trip is visible end-to-end.
-		m.palette.SetStatus(fmt.Sprintf("dispatch pending — token verb=%q operand=%q", msg.Token.Verb, msg.Token.Operand))
-		return m, nil
+		return m, m.dispatchTrick(msg.Token)
 	case palette.SearchMsg:
-		// Search-tab wiring lands alongside the nav/op handlers in
-		// increment 6 (re-uses app.SearchService). Until then echo
-		// the query inline so the overlay path is verifiable.
-		m.palette.SetStatus(fmt.Sprintf("search pending — query %q", msg.Query))
-		return m, nil
+		return m, m.dispatchPaletteSearch(msg.Query)
 	case tea.KeyMsg:
 		if m.paletteOpen {
 			var cmd tea.Cmd
