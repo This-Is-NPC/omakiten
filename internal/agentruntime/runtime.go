@@ -237,6 +237,51 @@ func buildHookEntries(specs []config.HookSpec) []hooks.Hook {
 	return out
 }
 
+func buildDepthAwareHookEntries(snapshot *config.Snapshot) []hooks.Hook {
+	if snapshot == nil {
+		return nil
+	}
+	entries := buildHookEntries(snapshot.Hooks())
+	rootDepth := hooks.SubjectDepthAny
+	if _, ok := snapshot.SubtaskKit(); ok {
+		rootDepth = hooks.SubjectDepthRoot
+	}
+	rootKey := snapshot.Kit().Key
+	for i := range entries {
+		entries[i].SubjectDepth = rootDepth
+		entries[i].ResolvedKit = rootKey
+		stampNotificationResolvedKit(&entries[i], rootKey)
+	}
+	if sub, ok := snapshot.SubtaskKit(); ok {
+		subEntries := buildHookEntries(sub.Hooks())
+		subKey := sub.Kit().Key
+		for i := range subEntries {
+			subEntries[i].SubjectDepth = hooks.SubjectDepthSubtask
+			subEntries[i].ResolvedKit = subKey
+			stampNotificationResolvedKit(&subEntries[i], subKey)
+		}
+		entries = append(entries, subEntries...)
+	}
+	return entries
+}
+
+// stampNotificationResolvedKit threads the hook entry's resolved kit
+// identity into the notification.show action args so the action picks
+// the right per-kit catalog at dispatch time (#301 review §11557
+// finding A5). No-op for non-notification entries.
+func stampNotificationResolvedKit(hook *hooks.Hook, kitKey string) {
+	if hook.Do != actions.NotificationActionName {
+		return
+	}
+	if kitKey == "" {
+		return
+	}
+	if hook.Args == nil {
+		hook.Args = map[string]any{}
+	}
+	hook.Args[actions.NotificationArgResolvedKit] = kitKey
+}
+
 // ActionRegistry exposes the hook action registry so callers (TUI startup,
 // tests) can register additional actions before the engine is busy.
 func (r *Runtime) ActionRegistry() *hooks.ActionRegistry {

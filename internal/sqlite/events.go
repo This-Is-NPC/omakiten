@@ -46,6 +46,27 @@ type dbExecutor interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+// taskEventPayload is a thin wrapper around domain.NewTaskSubjectPayload
+// that resolves the kit identity through the supplied BucketResolver.
+// The actual JSON composition + subject metadata rules live in
+// internal/domain so app + sqlite share one source of truth — #297
+// review opportunity §D.17 / #299 §B consolidates both helpers there.
+func taskEventPayload(task domain.Task, buckets domain.BucketResolver, fields map[string]any) (string, error) {
+	return domain.NewTaskSubjectPayload(task, resolvedKitKey(buckets), fields)
+}
+
+// resolvedKitKey reads the kit identity from a BucketResolver through
+// the new domain.BucketResolver.KitKey() contract. The previous
+// implementation cast to `interface{ Kit() config.Kit }` — that pulled
+// the config package into the resolver lookup and leaked the layering.
+// Review finding §C.13 of #297.
+func resolvedKitKey(buckets domain.BucketResolver) string {
+	if buckets == nil {
+		return ""
+	}
+	return buckets.KitKey()
+}
+
 // RecordEntityEvent persists a domain event with attribution pulled from ctx.
 // Used by ErrorService to emit error.recorded, solution.added, solution.liked,
 // and other domain events. entityType="system" for events that don't tie to

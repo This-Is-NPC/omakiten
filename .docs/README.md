@@ -1,6 +1,6 @@
 # Omakiten documentation
 
-Public documentation for the Omakiten CLI/TUI/MCP toolkit. 21 docs total, grouped by audience.
+Public documentation for the Omakiten CLI/TUI/MCP toolkit. 22 docs total, grouped by audience.
 
 ## Root — orientation and user-facing surfaces
 
@@ -22,6 +22,7 @@ Each doc inlines the YAML schema for the feature it teaches. See [configuration-
 | [system.md](configuration-guide/system.md) | `config.{output,context,workflow,mcp,tui,sqlite,activity_log,solutions,backup,events,search,tag_synonyms}` plus top-level shape and validation. |
 | [entities.md](configuration-guide/entities.md) | Entity wiring — `workflows[]`, `skills`, `laws`, `personas`, `projects`, `templates`, `mcp_commands`, plus enum tables (`priorities`, `severities`), view defaults, `template_defaults`. |
 | [guards.md](configuration-guide/guards.md) | The five transition-and-operation guard types, their YAML payloads, and how to add a new type. |
+| [subtask-kit.md](configuration-guide/subtask-kit.md) | Per-level kit cascade — `subtask_kit:` shape, validator rules, migration order, `task.bucket_orphaned` event, hook subject metadata, transparency notice. |
 | [hooks.md](configuration-guide/hooks.md) | `config.hooks` schema, the built-in actions (`exec`, `noop`, `notification`), and a step-by-step walkthrough for wiring a hook into your workflow. |
 | [notifications.md](configuration-guide/notifications.md) | TUI notification cards loaded from `notifications/<slug>.yaml` and dispatched from hooks. |
 | [themes.md](configuration-guide/themes.md) | TUI theme YAML — 8 color tokens, markdown palette, authoring recipe. |

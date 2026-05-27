@@ -95,6 +95,9 @@ func (e *Engine) dispatch(ctx context.Context, ev domain.Event) {
 		return
 	}
 	for idx, hook := range e.hooks {
+		if !matchesSubjectDepth(hook, ev) {
+			continue
+		}
 		if !matches(hook, ev) {
 			continue
 		}
@@ -132,6 +135,7 @@ func (e *Engine) run(parent context.Context, idx int, hook Hook, action Action, 
 		"action":          hook.Do,
 		"event_type":      ev.EventType,
 		"target_event_id": ev.ID,
+		"resolved_kit":    hook.ResolvedKit,
 		"success":         execErr == nil,
 		"duration_ms":     duration.Milliseconds(),
 	}
@@ -183,6 +187,34 @@ func matches(hook Hook, ev domain.Event) bool {
 		}
 	}
 	return true
+}
+
+func matchesSubjectDepth(hook Hook, ev domain.Event) bool {
+	switch hook.SubjectDepth {
+	case SubjectDepthRoot:
+		depth, ok := subjectDepth(ev)
+		return !ok || depth == 0
+	case SubjectDepthSubtask:
+		depth, ok := subjectDepth(ev)
+		return ok && depth >= 1
+	default:
+		return true
+	}
+}
+
+// subjectDepth extracts the event subject's depth from its JSON payload.
+// json.Unmarshal decodes every numeric JSON value into float64, so the
+// type switch only needs the float64 arm (the previous `case int:` arm
+// was dead — review finding §C.12 of #297).
+func subjectDepth(ev domain.Event) (int, bool) {
+	payload := decodePayload(ev.Payload)
+	if payload == nil {
+		return 0, false
+	}
+	if v, ok := payload["subject_depth"].(float64); ok {
+		return int(v), true
+	}
+	return 0, false
 }
 
 func decodePayload(payload string) map[string]any {

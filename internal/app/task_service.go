@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 
 	"omakiten/internal/activity"
@@ -63,14 +64,14 @@ func (s *TaskService) Add(ctx context.Context, project domain.ProjectContext, ti
 }
 
 // AddSub creates a task and attaches it to parentID as a sub-task in a
-// single atomic INSERT. The parent must belong to the same project and
-// be active; archived parents and explicit cross-bucket sub-tasks are
-// rejected at the service boundary. When bucketKey is empty, the new
-// sub-task inherits the parent's bucket so the "workflow herdado do
-// pai" invariant holds. Anti-cycle is unnecessary for fresh rows — they
-// have no descendants yet. Every call writes one activity row — even
-// pre-create rejections — so failed sub-task attempts surface in Stats
-// › Logs.
+// single atomic INSERT. The parent must belong to the same project and be
+// active. When bucketKey is empty, the new sub-task lands in the first
+// bucket of the kit that resolves for it (sub-kit when subtask_kit is
+// configured; otherwise the root kit) — a fresh sub-task is new work and
+// belongs at the workflow's start, never at the parent's current step.
+// Anti-cycle is unnecessary for fresh rows — they have no descendants
+// yet. Every call writes one activity row — even pre-create rejections —
+// so failed sub-task attempts surface in Stats › Logs.
 func (s *TaskService) AddSub(ctx context.Context, project domain.ProjectContext, parentID int64, title, description, priority, bucketKey string) (task domain.Task, err error) {
 	finish := activity.Track(ctx, "app.TaskService.AddSub", project, map[string]any{"title": title, "parent_id": parentID, "bucket": bucketKey})
 	defer func() {
@@ -97,21 +98,14 @@ func (s *TaskService) AddSub(ctx context.Context, project domain.ProjectContext,
 			map[string]any{"parent_id": parentID, "parent_state": string(parent.State)})
 		return
 	}
-	bucketKey = strings.TrimSpace(bucketKey)
-	if bucketKey != "" && bucketKey != parent.BucketKey {
-		err = domain.NewError(domain.ErrValidation,
-			"sub-task bucket must match parent bucket; sub-tasks inherit the parent's workflow position",
-			map[string]any{
-				"parent_id":     parentID,
-				"parent_bucket": parent.BucketKey,
-				"bucket":        bucketKey,
-			})
-		return
-	}
-	if bucketKey == "" {
-		bucketKey = parent.BucketKey
-	}
 	pid := parentID
+	bucketKey = strings.TrimSpace(bucketKey)
+	if bucketKey == "" {
+		bucketKey, err = defaultBucketKey(s.snap.For(domain.Task{ParentID: &pid}))
+		if err != nil {
+			return
+		}
+	}
 	task, err = s.createTask(ctx, project, title, description, priority, bucketKey, &pid)
 	return
 }
@@ -176,6 +170,9 @@ func (s *TaskService) List(ctx context.Context, project domain.ProjectContext, f
 	}()
 
 	tasks, err = s.repo.ListTasks(ctx, project.ID, filter, s.snap)
+	for i := range tasks {
+		tasks[i] = s.withResolvedBucketKey(tasks[i])
+	}
 	return
 }
 
@@ -261,7 +258,7 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 			return
 		}
 		if !allowed {
-			s.workflow.Evaluator().EmitViolated(ctx, project.ID, domain.EventEntityTask, taskID,
+			s.workflow.Evaluator().EmitViolatedForTask(ctx, project.ID, before, s.snap.For(before),
 				GuardOperationTaskEdit, GuardRulePermissions, hint,
 				map[string]any{"task_id": taskID, "entity": EntityTask, "operation": PermissionEdit})
 			err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"task_id": taskID, "hint": hint, "entity": EntityTask, "operation": PermissionEdit})
@@ -280,7 +277,8 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 		if err != nil {
 			return
 		}
-		if _, evErr := s.repo.EmitTaskEditedEvent(ctx, project.ID, taskID, before, task); evErr != nil {
+		task = s.withResolvedBucketKey(task)
+		if _, evErr := s.repo.EmitTaskEditedEvent(ctx, project.ID, taskID, before, task, s.snap.For(task)); evErr != nil {
 			err = evErr
 			return
 		}
@@ -289,13 +287,16 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 		if err = s.applyParentChange(ctx, project, taskID, update.NewParentID); err != nil {
 			return
 		}
-		if task.ID == 0 {
-			task, err = s.taskByID(ctx, project, taskID)
-			if err != nil {
-				return
-			}
-		} else {
-			task.ParentID = update.NewParentID
+		// Always re-read after a parent change. `applyParentChange` may
+		// have recomputed depth via the storage layer (tasks.depth
+		// trigger) and the cross-kit recovery path may have forced the
+		// bucket to the new resolved kit's first bucket. Returning the
+		// stale `task` snapshot from the field-edit branch would lie
+		// about Depth / BucketKey to the caller (#301 review §11557
+		// finding B6).
+		task, err = s.taskByID(ctx, project, taskID)
+		if err != nil {
+			return
 		}
 	}
 
@@ -310,6 +311,15 @@ func (s *TaskService) Edit(ctx context.Context, project domain.ProjectContext, t
 // Rejects re-parents under an archived parent — the workflow propagates
 // from parent to child, so an archived parent has no live workflow to
 // inherit.
+//
+// When the parent change crosses kits (root→sub-task or vice-versa via
+// AddSub semantics) the task's current bucket key may not exist in the
+// new resolved kit's workflow. In that case the helper force-rebinds
+// the row to the new kit's first bucket — the same policy `AddSub`
+// applies to a fresh sub-task (commit c9fa08e). Locked decision on
+// task #301 (review §11557 finding A2): never reject the reparent;
+// always recover via first-bucket rebind so the user is never stuck
+// with a row pointing at a bucket the new kit does not know.
 func (s *TaskService) applyParentChange(ctx context.Context, project domain.ProjectContext, taskID int64, parentID *int64) error {
 	current, err := s.taskByID(ctx, project, taskID)
 	if err != nil {
@@ -318,31 +328,67 @@ func (s *TaskService) applyParentChange(ctx context.Context, project domain.Proj
 	if domain.ParentIDEquals(current.ParentID, parentID) {
 		return nil
 	}
-	if parentID == nil {
-		return s.repo.SetTaskParent(ctx, project.ID, taskID, nil)
+	if parentID != nil {
+		if *parentID == taskID {
+			return domain.NewError(domain.ErrValidation, "task cannot be its own parent", map[string]any{"task_id": taskID})
+		}
+		parent, err := s.taskByID(ctx, project, *parentID)
+		if err != nil {
+			return err
+		}
+		if parent.State != domain.TaskStateActive {
+			return domain.NewError(domain.ErrValidation,
+				"parent task is archived; unarchive before re-parenting under it",
+				map[string]any{"task_id": taskID, "parent_id": *parentID, "parent_state": string(parent.State)})
+		}
+		cycle, err := s.repo.IsDescendantOf(ctx, project.ID, *parentID, taskID)
+		if err != nil {
+			return err
+		}
+		if cycle {
+			return domain.NewError(domain.ErrValidation,
+				"re-parent would create a cycle: target parent is already a descendant of this task",
+				map[string]any{"task_id": taskID, "parent_id": *parentID})
+		}
 	}
-	if *parentID == taskID {
-		return domain.NewError(domain.ErrValidation, "task cannot be its own parent", map[string]any{"task_id": taskID})
+	if err := s.repo.SetTaskParent(ctx, project.ID, taskID, parentID); err != nil {
+		return err
 	}
-	parent, err := s.taskByID(ctx, project, *parentID)
+	return s.ensureBucketBelongsToResolvedKit(ctx, project, taskID)
+}
+
+// ensureBucketBelongsToResolvedKit checks whether the task's current
+// bucket key exists in the new resolved kit's workflow after a parent
+// change. When it does not, the task is moved into the new kit's first
+// bucket so the row stays valid under the new kit (#301 review §11557
+// finding A2, mirroring `AddSub`'s first-bucket policy). No-op when
+// the bucket key survives the kit shift or when no resolved snapshot
+// is available (uninitialised tests).
+func (s *TaskService) ensureBucketBelongsToResolvedKit(ctx context.Context, project domain.ProjectContext, taskID int64) error {
+	if s.snap == nil {
+		return nil
+	}
+	refreshed, err := s.taskByID(ctx, project, taskID)
 	if err != nil {
 		return err
 	}
-	if parent.State != domain.TaskStateActive {
-		return domain.NewError(domain.ErrValidation,
-			"parent task is archived; unarchive before re-parenting under it",
-			map[string]any{"task_id": taskID, "parent_id": *parentID, "parent_state": string(parent.State)})
+	taskSnap := s.snap.For(refreshed)
+	if taskSnap == nil {
+		return nil
 	}
-	cycle, err := s.repo.IsDescendantOf(ctx, project.ID, *parentID, taskID)
+	if refreshed.BucketKey != "" {
+		if _, ok := taskSnap.BucketByKey(refreshed.BucketKey); ok {
+			return nil
+		}
+	}
+	target, err := defaultBucketKey(taskSnap)
 	if err != nil {
 		return err
 	}
-	if cycle {
-		return domain.NewError(domain.ErrValidation,
-			"re-parent would create a cycle: target parent is already a descendant of this task",
-			map[string]any{"task_id": taskID, "parent_id": *parentID})
+	if _, err := s.repo.MoveTask(ctx, project.ID, taskID, target, taskSnap); err != nil {
+		return err
 	}
-	return s.repo.SetTaskParent(ctx, project.ID, taskID, parentID)
+	return nil
 }
 
 // Delete enforces the bucket-level task.delete policy and any
@@ -369,7 +415,8 @@ func (s *TaskService) Delete(ctx context.Context, project domain.ProjectContext,
 	// Verify the task exists before evaluating policy and guards — see Archive
 	// for rationale. Reports task_not_found correctly instead of guard_violation
 	// or permission denial for a phantom row.
-	if _, err = s.taskByID(ctx, project, taskID); err != nil {
+	taskRow, taskSnap, err := s.resolveTaskSnap(ctx, project, taskID)
+	if err != nil {
 		return
 	}
 
@@ -378,17 +425,17 @@ func (s *TaskService) Delete(ctx context.Context, project domain.ProjectContext,
 		return
 	}
 	if !allowed {
-		s.workflow.Evaluator().EmitViolated(ctx, project.ID, domain.EventEntityTask, taskID,
+		s.workflow.Evaluator().EmitViolatedForTask(ctx, project.ID, taskRow, taskSnap,
 			GuardOperationTaskDelete, GuardRulePermissions, hint,
 			map[string]any{"task_id": taskID, "entity": EntityTask, "operation": PermissionDelete})
 		err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"task_id": taskID, "hint": hint, "entity": EntityTask, "operation": PermissionDelete})
 		return
 	}
-	if err = s.workflow.Evaluator().EvaluateOperation(ctx, project.ID, taskID, OperationDelete); err != nil {
+	if err = s.workflow.Evaluator().EvaluateOperationForTask(ctx, project.ID, taskRow, OperationDelete, taskSnap); err != nil {
 		return
 	}
 
-	event, err = s.repo.HardDeleteTask(ctx, project.ID, taskID, s.snap)
+	event, err = s.repo.HardDeleteTask(ctx, project.ID, taskID, taskSnap)
 	return
 }
 
@@ -415,20 +462,22 @@ func (s *TaskService) Archive(ctx context.Context, project domain.ProjectContext
 	// Verify the task exists before evaluating guards — guards against a
 	// non-existent task would otherwise misreport as guard_violation when the
 	// real failure is task_not_found.
-	if _, err = s.taskByID(ctx, project, taskID); err != nil {
-		return
-	}
-
-	if err = s.workflow.Evaluator().EvaluateOperation(ctx, project.ID, taskID, OperationArchive); err != nil {
-		return
-	}
-
-	finalBucket, err := s.workflow.FinalBucketKey(ctx)
+	taskRow, taskSnap, err := s.resolveTaskSnap(ctx, project, taskID)
 	if err != nil {
 		return
 	}
 
-	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateArchived, finalBucket, s.snap)
+	if err = s.workflow.Evaluator().EvaluateOperationForTask(ctx, project.ID, taskRow, OperationArchive, taskSnap); err != nil {
+		return
+	}
+
+	finalBucket, err := finalBucketKey(taskSnap)
+	if err != nil {
+		return
+	}
+
+	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateArchived, finalBucket, taskSnap)
+	task = s.withResolvedBucketKey(task)
 	return
 }
 
@@ -454,7 +503,12 @@ func (s *TaskService) Assign(ctx context.Context, project domain.ProjectContext,
 		err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
 		return
 	}
-	task, event, err = s.repo.AssignTask(ctx, project.ID, taskID, assignee, "cli.assign", s.snap)
+	_, taskSnap, err := s.resolveTaskSnap(ctx, project, taskID)
+	if err != nil {
+		return
+	}
+	task, event, err = s.repo.AssignTask(ctx, project.ID, taskID, assignee, "cli.assign", taskSnap)
+	task = s.withResolvedBucketKey(task)
 	return
 }
 
@@ -478,18 +532,70 @@ func (s *TaskService) Unarchive(ctx context.Context, project domain.ProjectConte
 	}
 
 	// Verify the task exists before evaluating guards — see Archive for rationale.
-	if _, err = s.taskByID(ctx, project, taskID); err != nil {
+	taskRow, taskSnap, err := s.resolveTaskSnap(ctx, project, taskID)
+	if err != nil {
 		return
 	}
 
-	if err = s.workflow.Evaluator().EvaluateOperation(ctx, project.ID, taskID, OperationUnarchive); err != nil {
+	if err = s.workflow.Evaluator().EvaluateOperationForTask(ctx, project.ID, taskRow, OperationUnarchive, taskSnap); err != nil {
 		return
 	}
 
-	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateActive, "", s.snap)
+	task, event, err = s.repo.SetTaskState(ctx, project.ID, taskID, domain.TaskStateActive, "", taskSnap)
+	task = s.withResolvedBucketKey(task)
 	return
 }
 
+// resolveTaskSnap looks up the task and returns it alongside the
+// snapshot resolved for its depth. Shared prelude for Delete / Archive /
+// Assign / Unarchive — each ran the same three-line dance before #297's
+// boy-scout pass. Edit + the List path do their own resolution because
+// the row they have in hand is already the post-mutation snapshot of
+// the task.
+//
+// Lifecycle callers may intentionally discard the returned Task: repository
+// methods such as HardDeleteTask, SetTaskState, and AssignTask re-read inside
+// their own transactions so event payloads and mutation decisions observe the
+// state-on-disk at write time instead of a pre-transaction snapshot.
+// Extract Function — Fowler, per review opportunity §D.15 of #297.
+func (s *TaskService) resolveTaskSnap(ctx context.Context, project domain.ProjectContext, taskID int64) (domain.Task, *config.Snapshot, error) {
+	task, err := s.taskByID(ctx, project, taskID)
+	if err != nil {
+		return domain.Task{}, nil, err
+	}
+	return task, s.snap.For(task), nil
+}
+
 func (s *TaskService) taskByID(ctx context.Context, project domain.ProjectContext, taskID int64) (domain.Task, error) {
-	return s.repo.GetTaskByID(ctx, project.ID, taskID, s.snap)
+	task, err := s.repo.GetTaskByID(ctx, project.ID, taskID, s.snap)
+	if err != nil {
+		return domain.Task{}, err
+	}
+	return s.withResolvedBucketKey(task), nil
+}
+
+// withResolvedBucketKey re-derives the task's BucketKey from the
+// resolved snapshot's BucketByID index. A miss (bucket id not in the
+// snapshot) signals snapshot/db drift — an active task is pointing at
+// a bucket the loaded kit no longer knows. The task surfaces with an
+// empty BucketKey so downstream renders fall back to "unbucketed"
+// instead of showing a stale key; the slog.Warn makes the drift
+// observable so operators can correlate with a recent kit swap.
+// Review finding §B.8 of #297.
+func (s *TaskService) withResolvedBucketKey(task domain.Task) domain.Task {
+	taskSnap := s.snap.For(task)
+	if taskSnap == nil {
+		return task
+	}
+	if bucket, ok := taskSnap.BucketByID(task.BucketID); ok {
+		task.BucketKey = bucket.Key
+	} else {
+		slog.Warn("task bucket id not found in resolved snapshot; emitting empty BucketKey",
+			"task_id", task.ID,
+			"bucket_id", task.BucketID,
+			"resolved_kit", taskSnap.Kit().Key,
+		)
+		task.BucketKey = ""
+	}
+	return task
 }

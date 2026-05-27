@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/testfixtures"
 )
@@ -13,13 +14,14 @@ import (
 // TestSubtasksEndToEndSmoke walks the full DoD smoke flow for task #190:
 //
 //  1. Create a parent task in dev.
-//  2. Attach three sub-tasks (c1, c2, c3) — inheriting parent bucket.
+//  2. Attach three sub-tasks (c1, c2, c3) — landing in the root kit's
+//     first bucket (backlog), not the parent's bucket.
 //  3. Attach a grandchild under c1.
 //  4. Attempt dev→review on the parent — the subtasks_complete guard
 //     fires and names the first open child found.
-//  5. Walk every descendant through dev → review → done so each level's
-//     subtasks_complete guard clears in order (grandchild → c1, then
-//     c1/c2/c3 → parent).
+//  5. Walk every descendant through backlog → dev → review → done so
+//     each level's subtasks_complete guard clears in order (grandchild →
+//     c1, then c1/c2/c3 → parent).
 //  6. Move the parent dev→review → done — both transitions succeed once
 //     the subtree is fully closed.
 //
@@ -45,8 +47,8 @@ func TestSubtasksEndToEndSmoke(t *testing.T) {
 		if err != nil {
 			t.Fatalf("AddSub(%s) = %v", title, err)
 		}
-		if child.BucketKey != "dev" {
-			t.Fatalf("AddSub(%s) bucket = %q, want dev (inherited)", title, child.BucketKey)
+		if child.BucketKey != "backlog" {
+			t.Fatalf("AddSub(%s) bucket = %q, want backlog (root kit first bucket)", title, child.BucketKey)
 		}
 		return child
 	}
@@ -84,6 +86,9 @@ func TestSubtasksEndToEndSmoke(t *testing.T) {
 
 	walkToDone := func(taskID int64, label string) {
 		t.Helper()
+		if _, err := service.Move(ctx, project.Context(), taskID, "dev"); err != nil {
+			t.Fatalf("Move(%s backlog→dev) = %v", label, err)
+		}
 		if _, err := service.Move(ctx, project.Context(), taskID, "review"); err != nil {
 			t.Fatalf("Move(%s dev→review) = %v", label, err)
 		}
@@ -114,5 +119,36 @@ func TestSubtasksEndToEndSmoke(t *testing.T) {
 	}
 	if len(roots) != 1 || roots[0].ID != parent.ID || roots[0].BucketKey != "done" {
 		t.Fatalf("roots = %+v, want one root in done", roots)
+	}
+}
+
+func TestSubtasksCompleteUsesSubtaskKitFinalBucket(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	bundle, registry := testfixtures.LoadBundle(t, "subtasks_smoke.yaml")
+	bundle.SubtaskBundle = subtaskRuntimeBundle("izakaya", []config.Bucket{
+		{ID: 2, Key: "dev", Name: "Development", Position: 1},
+		{ID: 3, Key: "done", Name: "Done", Position: 2},
+	}, []config.Transition{{From: 2, To: 3}})
+	store, project := appTestStore(t, bundle)
+	defer func() { _ = store.Close() }()
+	service := NewTaskServiceFromStore(store, registry, store.Snapshot())
+
+	parent, err := service.Add(ctx, project.Context(), "Parent", "", "", "dev")
+	if err != nil {
+		t.Fatalf("Add(parent) = %v", err)
+	}
+	child, err := service.AddSub(ctx, project.Context(), parent.ID, "Child", "", "", "")
+	if err != nil {
+		t.Fatalf("AddSub(child) = %v", err)
+	}
+	if child.BucketKey != "dev" {
+		t.Fatalf("child.BucketKey = %q, want sub-kit first bucket dev", child.BucketKey)
+	}
+	if _, err := service.Move(ctx, project.Context(), child.ID, "done"); err != nil {
+		t.Fatalf("Move(child dev->done in sub-kit) = %v", err)
+	}
+	if _, err := service.Move(ctx, project.Context(), parent.ID, "review"); err != nil {
+		t.Fatalf("Move(parent dev->review) after child reached sub-kit done = %v", err)
 	}
 }

@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -235,6 +236,40 @@ func TestSetTaskParentClearsToRoot(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("root still has %d children after clearing", len(got))
+	}
+}
+
+func TestSetTaskParentWarnsWhenDepthRecomputeTruncates(t *testing.T) {
+	ctx, store, project := setupParentFixture(t)
+
+	root, err := store.CreateTask(ctx, project.ID, "root", "", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask(root) = %v", err)
+	}
+	parentID := root.ID
+	for i := 0; i < orphanDepthLimit+3; i++ {
+		next, err := store.CreateTask(ctx, project.ID, "chain", "", domain.Priority(2), "backlog", &parentID, store.snap())
+		if err != nil {
+			t.Fatalf("CreateTask(chain %d) = %v", i, err)
+		}
+		parentID = next.ID
+	}
+	newRoot, err := store.CreateTask(ctx, project.ID, "new-root", "", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask(new-root) = %v", err)
+	}
+
+	logs := captureSlog(t)
+	if err := store.SetTaskParent(ctx, project.ID, root.ID, &newRoot.ID); err != nil {
+		t.Fatalf("SetTaskParent(root→new-root) = %v", err)
+	}
+
+	got := logs.String()
+	if !strings.Contains(got, "recomputeSubtreeDepth truncated; descendants > 64 retain stale depth") {
+		t.Fatalf("slog output = %q, want recomputeSubtreeDepth truncation warning", got)
+	}
+	if !strings.Contains(got, "root_id=") || !strings.Contains(got, "depth_cap=64") {
+		t.Fatalf("slog output = %q, want root_id and depth_cap attributes", got)
 	}
 }
 

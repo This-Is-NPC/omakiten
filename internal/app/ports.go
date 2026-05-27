@@ -98,7 +98,7 @@ type TaskRepository interface {
 	SetTaskState(ctx context.Context, projectID, taskID int64, state domain.TaskState, targetBucketKey string, buckets domain.BucketResolver) (domain.Task, domain.Event, error)
 	// EmitTaskEditedEvent records a task.edited row with a payload describing
 	// the changed fields. Service layer calls it after a successful UpdateTask.
-	EmitTaskEditedEvent(ctx context.Context, projectID, taskID int64, before, after domain.Task) (domain.Event, error)
+	EmitTaskEditedEvent(ctx context.Context, projectID, taskID int64, before, after domain.Task, buckets domain.BucketResolver) (domain.Event, error)
 	// AssignTask sets tasks.assigned_to to the trimmed value (empty string
 	// clears the column to NULL) and emits task.assigned / task.unassigned
 	// in the same transaction. No-ops when the new assignee equals the

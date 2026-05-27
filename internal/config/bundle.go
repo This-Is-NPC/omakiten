@@ -9,6 +9,8 @@ type Bundle struct {
 	Version       int                       `yaml:"version" json:"version"`
 	Kit           Kit                       `yaml:"kit" json:"kit"`
 	Config        Settings                  `yaml:"config" json:"config"`
+	SubtaskKit    string                    `yaml:"-" json:"subtask_kit,omitempty"`
+	SubtaskBundle *Bundle                   `yaml:"-" json:"subtask_bundle,omitempty"`
 	Skills        []Skill                   `yaml:"-" json:"skills,omitempty"`
 	Personas      []Persona                 `yaml:"-" json:"personas,omitempty"`
 	Laws          []Law                     `yaml:"-" json:"laws,omitempty"`
@@ -28,6 +30,7 @@ type Bundle struct {
 	ActiveTheme    Theme           `yaml:"-" json:"active_theme"`
 	ActiveThemeErr error           `yaml:"-" json:"-"`
 	Warnings       []SourceWarning `yaml:"-" json:"warnings,omitempty"`
+	SourcePaths    []string        `yaml:"-" json:"-"`
 }
 
 // TemplateByDefault resolves the template that should be used as the active
@@ -61,6 +64,7 @@ func (b Bundle) TemplateByDefault(kind, projectSlug string) *TaskTemplate {
 type wiring struct {
 	Version     int                       `yaml:"version"`
 	Kit         Kit                       `yaml:"kit"`
+	SubtaskKit  string                    `yaml:"subtask_kit,omitempty"`
 	Config      Settings                  `yaml:"config"`
 	Workflows   []Workflow                `yaml:"workflows"`
 	Skills      []string                  `yaml:"skills,omitempty"`

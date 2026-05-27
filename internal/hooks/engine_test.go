@@ -49,11 +49,16 @@ type signalAction struct {
 	ran     *bool
 	mu      *sync.Mutex
 	counter *int
+	events  *[]domain.Event
 }
 
 func (s signalAction) Name() string { return s.name }
 
 func (s signalAction) Execute(_ context.Context, _ domain.Event, _ map[string]any) error {
+	return s.execute(domain.Event{})
+}
+
+func (s signalAction) execute(ev domain.Event) error {
 	s.mu.Lock()
 	if s.ran != nil {
 		*s.ran = true
@@ -61,11 +66,20 @@ func (s signalAction) Execute(_ context.Context, _ domain.Event, _ map[string]an
 	if s.counter != nil {
 		*s.counter++
 	}
+	if s.events != nil {
+		*s.events = append(*s.events, ev)
+	}
 	s.mu.Unlock()
 	if s.wg != nil {
 		s.wg.Done()
 	}
 	return s.err
+}
+
+type captureAction struct{ signalAction }
+
+func (s captureAction) Execute(_ context.Context, ev domain.Event, _ map[string]any) error {
+	return s.execute(ev)
 }
 
 func defaultSettings() config.EventsSettings {
@@ -353,4 +367,114 @@ func TestEngineMatchesWhenPayload(t *testing.T) {
 	// Match.
 	_ = bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeGuardViolated, Payload: `{"operation":"task.delete"}`})
 	wg.Wait()
+}
+
+func TestEngineFiltersHooksBySubjectDepth(t *testing.T) {
+	bus := events.NewInProcessBus(defaultSettings())
+	registry := NewActionRegistry()
+	rootMu, subMu := sync.Mutex{}, sync.Mutex{}
+	rootEvents := []domain.Event{}
+	subEvents := []domain.Event{}
+	var rootWG, subWG sync.WaitGroup
+	registry.Register(captureAction{signalAction{name: "root", wg: &rootWG, mu: &rootMu, events: &rootEvents}})
+	registry.Register(captureAction{signalAction{name: "sub", wg: &subWG, mu: &subMu, events: &subEvents}})
+	engine := NewEngine([]Hook{
+		{On: domain.EventTypeTaskCreated, Do: "root", SubjectDepth: SubjectDepthRoot, ResolvedKit: "root"},
+		{On: domain.EventTypeTaskCreated, Do: "sub", SubjectDepth: SubjectDepthSubtask, ResolvedKit: "sub"},
+		{On: domain.EventTypeTaskMoved, Do: "sub", SubjectDepth: SubjectDepthSubtask, ResolvedKit: "sub"},
+		{On: domain.EventTypeTaskBucketOrphaned, Do: "sub", SubjectDepth: SubjectDepthSubtask, ResolvedKit: "sub"},
+		// #301 finding A4: guard.violated payloads now carry
+		// subject_depth + resolved_kit so the engine routes a sub-task
+		// violation to the sub-kit hook only.
+		{On: domain.EventTypeGuardViolated, Do: "sub", SubjectDepth: SubjectDepthSubtask, ResolvedKit: "sub"},
+		{On: domain.EventTypeGuardViolated, Do: "root", SubjectDepth: SubjectDepthRoot, ResolvedKit: "root"},
+	}, registry, defaultSettings(), &fakeRecorder{})
+	engine.Start(bus)
+	defer engine.Stop()
+
+	rootWG.Add(1)
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated, Payload: `{"subject_task_id":1,"subject_depth":0,"resolved_kit":"root"}`}); err != nil {
+		t.Fatalf("Publish root created = %v", err)
+	}
+	rootWG.Wait()
+	time.Sleep(20 * time.Millisecond)
+	if len(rootEvents) != 1 {
+		t.Fatalf("root hook events = %d, want 1", len(rootEvents))
+	}
+	if len(subEvents) != 0 {
+		t.Fatalf("sub hook fired for root task: %+v", subEvents)
+	}
+
+	subWG.Add(1)
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated, Payload: `{"subject_task_id":2,"subject_parent_id":1,"subject_depth":1,"resolved_kit":"sub"}`}); err != nil {
+		t.Fatalf("Publish sub created = %v", err)
+	}
+	subWG.Wait()
+	subMu.Lock()
+	gotSubCreated := len(subEvents)
+	subMu.Unlock()
+	if gotSubCreated != 1 {
+		t.Fatalf("sub hook events after sub create = %d, want 1", gotSubCreated)
+	}
+
+	subWG.Add(1)
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskMoved, Payload: `{"subject_task_id":2,"subject_parent_id":1,"subject_depth":1,"resolved_kit":"sub"}`}); err != nil {
+		t.Fatalf("Publish sub moved = %v", err)
+	}
+	subWG.Wait()
+
+	subWG.Add(1)
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskBucketOrphaned, Payload: `{"subject_task_id":2,"subject_parent_id":1,"subject_depth":1,"resolved_kit":"sub"}`}); err != nil {
+		t.Fatalf("Publish sub orphaned = %v", err)
+	}
+	subWG.Wait()
+
+	// #301 finding A4 regression: a sub-task guard.violated payload
+	// must route ONLY to the sub-kit hook (depth=1), not the root one.
+	subWG.Add(1)
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeGuardViolated, Payload: `{"operation":"task.archive","rule":"subtasks_complete","subject_task_id":2,"subject_parent_id":1,"subject_depth":1,"resolved_kit":"sub"}`}); err != nil {
+		t.Fatalf("Publish sub guard.violated = %v", err)
+	}
+	subWG.Wait()
+
+	subMu.Lock()
+	gotSubTotal := len(subEvents)
+	subMu.Unlock()
+	if gotSubTotal != 4 {
+		t.Fatalf("sub hook total events = %d, want 4 (created + moved + orphaned + guard.violated)", gotSubTotal)
+	}
+	// Root hook must not have absorbed the sub-task guard.violated.
+	rootMu.Lock()
+	gotRoot := len(rootEvents)
+	rootMu.Unlock()
+	if gotRoot != 1 {
+		t.Fatalf("root hook events after sub guard.violated = %d, want 1 (root.created only)", gotRoot)
+	}
+}
+
+func TestEngineRootHookWithoutSubtaskKitMatchesAnyDepth(t *testing.T) {
+	bus := events.NewInProcessBus(defaultSettings())
+	registry := NewActionRegistry()
+	var wg sync.WaitGroup
+	mu := sync.Mutex{}
+	count := 0
+	registry.Register(signalAction{name: "root", wg: &wg, mu: &mu, counter: &count})
+	engine := NewEngine([]Hook{{On: domain.EventTypeTaskCreated, Do: "root", SubjectDepth: SubjectDepthAny, ResolvedKit: "root"}}, registry, defaultSettings(), &fakeRecorder{})
+	engine.Start(bus)
+	defer engine.Stop()
+
+	wg.Add(2)
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated, Payload: `{"subject_task_id":1,"subject_depth":0,"resolved_kit":"root"}`}); err != nil {
+		t.Fatalf("Publish root = %v", err)
+	}
+	if err := bus.Publish(context.Background(), domain.Event{EventType: domain.EventTypeTaskCreated, Payload: `{"subject_task_id":2,"subject_parent_id":1,"subject_depth":1,"resolved_kit":"root"}`}); err != nil {
+		t.Fatalf("Publish sub without sub-kit = %v", err)
+	}
+	wg.Wait()
+	mu.Lock()
+	got := count
+	mu.Unlock()
+	if got != 2 {
+		t.Fatalf("root hook count = %d, want 2", got)
+	}
 }

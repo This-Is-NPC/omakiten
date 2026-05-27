@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -66,6 +67,9 @@ type ProjectRuntime struct {
 	// produced this runtime. Used by Reload to stat-detect bundle
 	// changes.
 	SourcePath string
+	// SourcePaths includes SourcePath plus any loaded sub-kit files that
+	// should trigger the same rebuild when their mtime changes.
+	SourcePaths []string
 	// LoadedAt is the wall-clock timestamp the runtime finished
 	// initialising. Used by /metrics.summary timelines and the TUI
 	// "config loaded at" badge.
@@ -73,6 +77,8 @@ type ProjectRuntime struct {
 	// Mtime is the SourcePath's modification time captured at load. A
 	// stat comparison in Resolve drives the rebuild-on-change rule.
 	Mtime time.Time
+	// SourceMtimes records the mtime for every watched source path.
+	SourceMtimes map[string]time.Time
 	// Snapshot is the immutable per-project view of the loaded bundle.
 	// Every app service consumed by this runtime reads workflow shape,
 	// catalogs, settings, hooks, events and synonyms through this
@@ -183,15 +189,11 @@ func (c *BundleCache) Resolve(ctx context.Context, projectID int64, configPath s
 		if path == "" {
 			return entry, nil
 		}
-		// Stat the source bundle. When the file is missing (rare —
-		// user moved or renamed it after boot) we keep serving the
-		// cached entry rather than crashing; a manual Reload surfaces
-		// the failure to the caller.
-		info, err := os.Stat(path)
-		if err != nil {
+		changed, ok := watchedSourceChanged(entry, path)
+		if !ok {
 			return entry, nil
 		}
-		if info.ModTime().Equal(entry.Mtime) {
+		if !changed {
 			return entry, nil
 		}
 		// Mtime changed — rebuild against the resolved path. Callers
@@ -201,6 +203,54 @@ func (c *BundleCache) Resolve(ctx context.Context, projectID int64, configPath s
 	}
 
 	return c.rebuild(ctx, projectID, configPath)
+}
+
+func watchedSourceChanged(entry *ProjectRuntime, fallbackPath string) (changed bool, ok bool) {
+	paths := entry.SourcePaths
+	if len(paths) == 0 {
+		paths = []string{fallbackPath}
+	}
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		// When a watched file is missing (user moved or renamed it after boot),
+		// keep serving the cached entry. Explicit Reload surfaces the failure.
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		ok = true
+		want, exists := entry.SourceMtimes[path]
+		if !exists && path == entry.SourcePath {
+			want = entry.Mtime
+			exists = !entry.Mtime.IsZero()
+		}
+		if !exists || !info.ModTime().Equal(want) {
+			changed = true
+		}
+	}
+	return changed, ok
+}
+
+func statSourceMtimes(paths []string, primary string) (map[string]time.Time, time.Time) {
+	out := make(map[string]time.Time, len(paths))
+	var primaryMtime time.Time
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		mtime := info.ModTime()
+		out[path] = mtime
+		if path == primary {
+			primaryMtime = mtime
+		}
+	}
+	return out, primaryMtime
 }
 
 // Reload forces a rebuild of the runtime for projectID regardless of
@@ -284,7 +334,72 @@ func (c *BundleCache) rebuild(ctx context.Context, projectID int64, configPath s
 	if old != nil && old.HooksEngine != nil {
 		old.HooksEngine.Stop()
 	}
+	if old != nil {
+		c.maybeEmitSubtaskKitNotice(ctx, projectID, old.Snapshot, runtime.Snapshot)
+	}
 	return runtime, nil
+}
+
+// maybeEmitSubtaskKitNotice records the one-shot transparency notice
+// event when the prev→curr snapshot pair represents a first-enablement
+// of subtask_kit (no sub-kit → some configured path). Same-path
+// reloads, sub-kit swaps between two paths, and disable transitions all
+// fall through without emitting. Errors are swallowed: the rotation
+// itself already succeeded and a missing audit row must not abort the
+// hot-reload path.
+func (c *BundleCache) maybeEmitSubtaskKitNotice(ctx context.Context, projectID int64, prev, curr *config.Snapshot) {
+	if !config.NewSubtaskKitNoticeNeeded(prev, curr) {
+		return
+	}
+	if c.store == nil {
+		return
+	}
+	raw, err := (domain.SubtaskKitNoticePayload{
+		I18nKey: config.SubtaskKitTransparencyNoticeKey(),
+		FromKit: snapshotRootKitKey(prev),
+		ToKit:   snapshotSubtaskKitKey(curr),
+	}).JSON()
+	if err != nil {
+		slog.Warn("subtask_kit notice payload marshal failed", "project_id", projectID, "err", err)
+		return
+	}
+	if recErr := c.store.RecordEntityEvent(ctx, domain.EventEntitySystem, 0, projectID, domain.EventTypeSubtaskKitNoticeEmitted, raw); recErr != nil {
+		// Audit-row write failure is degraded observability, not a
+		// hot-reload failure. Bundle rotation already succeeded; abort
+		// would leave the runtime in an inconsistent state. Surface
+		// via slog so operators see the gap. Review finding §C.9 of #297.
+		slog.Warn("subtask_kit notice audit write failed; transparency notice not persisted",
+			"project_id", projectID,
+			"err", recErr,
+		)
+	}
+}
+
+// snapshotRootKitKey returns the root kit identity of the snapshot, or
+// the empty string when the snapshot is nil. Used by the transparency
+// notice payload to attribute the "from" side of a first-enablement
+// transition — the previous snapshot has no sub-kit by definition, so
+// only the root identity is meaningful.
+func snapshotRootKitKey(snap *config.Snapshot) string {
+	if snap == nil {
+		return ""
+	}
+	return snap.Kit().Key
+}
+
+// snapshotSubtaskKitKey returns the sub-kit identity of the snapshot
+// when configured; falls back to the root identity when the sub-kit is
+// absent (defensive — the notice only fires when the curr snapshot has
+// a sub-kit, but keeping the fallback explicit avoids relying on
+// invariants the future could change).
+func snapshotSubtaskKitKey(snap *config.Snapshot) string {
+	if snap == nil {
+		return ""
+	}
+	if sub, ok := snap.SubtaskKit(); ok {
+		return sub.Kit().Key
+	}
+	return snap.Kit().Key
 }
 
 // releasePreviousSnapshot drops the PreviousSnapshot pointer on the
@@ -381,6 +496,14 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	}, snapshot.Notifications()); err != nil {
 		return nil, err
 	}
+	if subSnapshot, ok := snapshot.SubtaskKit(); ok {
+		if err := config.ValidateHooks(subSnapshot.Hooks(), func(name string) bool {
+			_, ok := registry.Get(name)
+			return ok
+		}, subSnapshot.Notifications()); err != nil {
+			return nil, err
+		}
+	}
 
 	if err := store.ApplyConfig(ctx, sqlite.ConfigKnobs{
 		BusyTimeoutMs:            bundle.Config.SQLite.BusyTimeoutMs,
@@ -394,7 +517,7 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	}); err != nil {
 		return nil, err
 	}
-	hookEntries := buildHookEntries(snapshot.Hooks())
+	hookEntries := buildDepthAwareHookEntries(snapshot)
 	engine := hooks.NewEngine(hookEntries, registry, snapshot.Events(), store)
 	engine.SetProjectID(projectID)
 	if bus != nil {
@@ -435,10 +558,11 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		SolutionsTopLimitMax:     bundle.Config.Solutions.MaxTopLimit,
 	})
 
-	mtime := time.Time{}
-	if info, err := os.Stat(configPath); err == nil {
-		mtime = info.ModTime()
+	sourcePaths := bundle.SourcePaths
+	if len(sourcePaths) == 0 {
+		sourcePaths = []string{configPath}
 	}
+	sourceMtimes, mtime := statSourceMtimes(sourcePaths, configPath)
 
 	return &ProjectRuntime{
 		Service:              svc,
@@ -448,12 +572,13 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		EnumRegistry:         enumRegistry,
 		NotificationSnapshot: notifSnapshot,
 		SourcePath:           configPath,
+		SourcePaths:          append([]string(nil), sourcePaths...),
 		LoadedAt:             time.Now(),
 		Mtime:                mtime,
+		SourceMtimes:         sourceMtimes,
 		Snapshot:             snapshot,
 		Workflow:             app.NewWorkflowServiceFromStore(store, snapshot.Registry(), snapshot),
 		// PreviousSnapshot is populated by the cache on rotation —
 		// buildProjectRuntime has no access to the prior entry.
 	}, nil
 }
-

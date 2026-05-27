@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"omakiten/internal/domain"
 )
@@ -15,7 +16,7 @@ import (
 // recursive walks live in CountDescendants and DescendsFrom.
 func (s *Store) ListDirectChildren(ctx context.Context, projectID, parentID int64, buckets domain.BucketResolver) ([]domain.Task, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at, tasks.parent_id
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at, tasks.parent_id, tasks.depth
 FROM tasks
 WHERE tasks.project_id = ? AND tasks.parent_id = ?
 ORDER BY tasks.id
@@ -31,7 +32,7 @@ ORDER BY tasks.id
 			task     domain.Task
 			parentFK sql.NullInt64
 		)
-		if err := rows.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt, &parentFK); err != nil {
+		if err := rows.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt, &parentFK, &task.Depth); err != nil {
 			return nil, err
 		}
 		assignParentID(&task, parentFK)
@@ -49,7 +50,7 @@ ORDER BY tasks.id
 // own promotions.
 func (s *Store) FirstChildNotInBucket(ctx context.Context, projectID, parentID, finalBucketID int64, buckets domain.BucketResolver) (domain.Task, bool, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at, tasks.parent_id
+SELECT tasks.id, tasks.project_id, COALESCE(tasks.bucket_id, 0), tasks.title, tasks.description, tasks.priority_id, tasks.state, tasks.created_at, tasks.parent_id, tasks.depth
 FROM tasks
 WHERE tasks.project_id = ? AND tasks.parent_id = ?
   AND tasks.state = 'active'
@@ -62,7 +63,7 @@ LIMIT 1
 		task     domain.Task
 		parentFK sql.NullInt64
 	)
-	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt, &parentFK); err != nil {
+	if err := row.Scan(&task.ID, &task.ProjectID, &task.BucketID, &task.Title, &task.Description, &task.Priority, &task.State, &task.CreatedAt, &parentFK, &task.Depth); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Task{}, false, nil
 		}
@@ -134,64 +135,176 @@ func (s *Store) SetTaskParent(ctx context.Context, projectID, taskID int64, pare
 		return s.clearTaskParent(ctx, projectID, taskID)
 	}
 
+	return s.withTaskParentTx(ctx, projectID, taskID, func(tx *sql.Tx) error {
+		var parentProjectID int64
+		switch err := tx.QueryRowContext(ctx, `SELECT project_id FROM tasks WHERE id = ?`, *parentID).Scan(&parentProjectID); {
+		case errors.Is(err, sql.ErrNoRows):
+			return domain.NewError(domain.ErrValidation, "parent task not found", map[string]any{"task_id": taskID, "parent_id": *parentID})
+		case err != nil:
+			return err
+		}
+		if parentProjectID != projectID {
+			return domain.NewError(domain.ErrValidation, "parent task belongs to a different project", map[string]any{
+				"task_id":           taskID,
+				"parent_id":         *parentID,
+				"project_id":        projectID,
+				"parent_project_id": parentProjectID,
+			})
+		}
+		result, err := tx.ExecContext(ctx, `
+UPDATE tasks SET parent_id = ?, updated_at = CURRENT_TIMESTAMP
+WHERE project_id = ? AND id = ?
+`, *parentID, projectID, taskID)
+		if err != nil {
+			return err
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if changed == 0 {
+			return domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
+		}
+		return nil
+	})
+}
+
+func (s *Store) withTaskParentTx(ctx context.Context, projectID, taskID int64, mutate func(*sql.Tx) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-
-	var parentProjectID int64
-	switch err := tx.QueryRowContext(ctx, `SELECT project_id FROM tasks WHERE id = ?`, *parentID).Scan(&parentProjectID); {
-	case errors.Is(err, sql.ErrNoRows):
-		return domain.NewError(domain.ErrValidation, "parent task not found", map[string]any{"task_id": taskID, "parent_id": *parentID})
-	case err != nil:
+	if err := mutate(tx); err != nil {
 		return err
 	}
-	if parentProjectID != projectID {
-		return domain.NewError(domain.ErrValidation, "parent task belongs to a different project", map[string]any{
-			"task_id":           taskID,
-			"parent_id":         *parentID,
-			"project_id":        projectID,
-			"parent_project_id": parentProjectID,
-		})
-	}
-	result, err := tx.ExecContext(ctx, `
-UPDATE tasks SET parent_id = ?, updated_at = CURRENT_TIMESTAMP
-WHERE project_id = ? AND id = ?
-`, *parentID, projectID, taskID)
-	if err != nil {
+	if err := recomputeSubtreeDepth(ctx, tx, projectID, taskID); err != nil {
 		return err
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if changed == 0 {
-		return domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
 	}
 	return tx.Commit()
 }
 
+func subtreeRowCount(ctx context.Context, tx *sql.Tx, projectID, rootID int64, depthLimit int) (int64, error) {
+	query := fmt.Sprintf(`
+WITH RECURSIVE subtree(id, depth) AS (
+    SELECT id, 0 FROM tasks WHERE project_id = ? AND id = ?
+    UNION ALL
+    SELECT t.id, s.depth + 1
+      FROM tasks t
+      INNER JOIN subtree s ON t.parent_id = s.id
+      WHERE t.project_id = ? AND s.depth < %d
+)
+SELECT COUNT(*) FROM subtree
+`, depthLimit)
+	var count int64
+	if err := tx.QueryRowContext(ctx, query, projectID, rootID, projectID).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func recomputeSubtreeDepthVisitedRows(ctx context.Context, tx *sql.Tx, projectID, rootID int64) (int64, error) {
+	query := fmt.Sprintf(`
+WITH RECURSIVE subtree(id, depth) AS (
+    SELECT t.id, COALESCE((SELECT p.depth + 1 FROM tasks p WHERE p.id = t.parent_id), 0)
+      FROM tasks t
+      WHERE t.project_id = ? AND t.id = ?
+    UNION ALL
+    SELECT t.id, s.depth + 1
+      FROM tasks t
+      INNER JOIN subtree s ON t.parent_id = s.id
+      WHERE t.project_id = ? AND s.depth < %d
+)
+SELECT COUNT(*) FROM subtree
+`, orphanDepthLimit)
+	var count int64
+	if err := tx.QueryRowContext(ctx, query, projectID, rootID, projectID).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func warnRecomputeSubtreeDepthTruncation(projectID, rootID, visitedRows, subtreeRows int64) {
+	if subtreeRows <= visitedRows {
+		return
+	}
+	slog.Warn("recomputeSubtreeDepth truncated; descendants > 64 retain stale depth",
+		"project_id", projectID,
+		"root_id", rootID,
+		"depth_cap", orphanDepthLimit,
+		"visited_rows", visitedRows,
+		"subtree_rows", subtreeRows,
+	)
+}
+
+var recomputeSubtreeDepthSQL = fmt.Sprintf(`
+WITH RECURSIVE subtree(id, depth) AS (
+    SELECT t.id, COALESCE((SELECT p.depth + 1 FROM tasks p WHERE p.id = t.parent_id), 0)
+      FROM tasks t
+      WHERE t.project_id = ? AND t.id = ?
+    UNION ALL
+    SELECT t.id, s.depth + 1
+      FROM tasks t
+      INNER JOIN subtree s ON t.parent_id = s.id
+      WHERE t.project_id = ? AND s.depth < %d
+)
+UPDATE tasks SET depth = (SELECT depth FROM subtree WHERE subtree.id = tasks.id)
+WHERE id IN (SELECT id FROM subtree)
+`, orphanDepthLimit)
+
+const taskParentAuditDepthLimit = 1024
+
+// recomputeSubtreeDepth resets `tasks.depth` for taskID and every
+// descendant after a reparent. The new depth for taskID is
+// `parent.depth + 1` (or 0 when parent_id is NULL); each descendant
+// inherits parent.depth + 1 via a recursive UPDATE. Called inside the
+// reparent transaction so depth stays in lockstep with parent_id. #299
+// §A.4 covers the contract; the recursive UPDATE caps at
+// orphanDepthLimit (64) so a cycle escapes in bounded time.
+func recomputeSubtreeDepth(ctx context.Context, tx *sql.Tx, projectID, rootID int64) error {
+	visitedRows, err := recomputeSubtreeDepthVisitedRows(ctx, tx, projectID, rootID)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, recomputeSubtreeDepthSQL, projectID, rootID, projectID)
+	if err != nil {
+		return err
+	}
+	subtreeRows, err := subtreeRowCount(ctx, tx, projectID, rootID, taskParentAuditDepthLimit)
+	if err != nil {
+		return err
+	}
+	warnRecomputeSubtreeDepthTruncation(projectID, rootID, visitedRows, subtreeRows)
+	return nil
+}
+
 // clearTaskParent is the parent-clear branch of SetTaskParent split out
 // so the parent-set path can run inside a transaction without forking
-// every UPDATE statement. No FK lookup is needed when parent_id goes to
-// NULL, so the bare ExecContext on s.db keeps the previous behaviour.
+// every UPDATE statement. Wrapped in a transaction now so the
+// depth-recompute (#299 §A.4) lands atomically with the parent_id =
+// NULL update — without the transaction, a crash between the two
+// statements could leave a sub-tree with stale depth values. This starts
+// its own transaction; callers must not already hold a tx and then call
+// back into SetTaskParent / clearTaskParent, because the SQLite driver does
+// not support nesting that outer transaction around this method's BeginTx.
 func (s *Store) clearTaskParent(ctx context.Context, projectID, taskID int64) error {
-	result, err := s.db.ExecContext(ctx, `
+	return s.withTaskParentTx(ctx, projectID, taskID, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `
 UPDATE tasks SET parent_id = NULL, updated_at = CURRENT_TIMESTAMP
 WHERE project_id = ? AND id = ?
 `, projectID, taskID)
-	if err != nil {
-		return err
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if changed == 0 {
-		return domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
-	}
-	return nil
+		if err != nil {
+			return err
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if changed == 0 {
+			return domain.NewError(domain.ErrTaskNotFound, "task not found in active project", map[string]any{"task_id": taskID, "project_id": projectID})
+		}
+		return nil
+	})
 }
 
 // CountDirectChildren returns the number of direct children for parentID

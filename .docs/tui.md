@@ -319,13 +319,13 @@ Destructive verbs live inside the entered surface only — the board has no `d` 
 
 | Key | Action |
 |---|---|
-| `tab` · `shift+tab` | switch focus (form ⇄ activity column) |
+| `tab` · `shift+tab` | switch focus (form ⇄ sub-tasks ⇄ activity) |
 | `J` · `K` | navigate activity cards regardless of focus |
 | `enter` | open the focused comment in the comment-detail view |
 | `e` | edit task (form-column focus only; gated by `permissions.task.edit`) |
 | `b` | edit blockers (opens the blocker picker) |
 | `c` | add comment |
-| `m` | move |
+| `m` | move — sub-tasks focus targets the focused child, every other focus zone targets the open task; prompt label appends the resolved kit's bucket keys (e.g. `Target bucket — backlog · dev · done`) so valid targets are visible without leaving the input |
 | `M` | toggle markdown render of the description (raw ⇄ rendered; default rendered) |
 | `d` `d` | arm hard-delete the task, then confirm (form-column focus only; gated by `permissions.task.delete` and `operations.delete.guards`) |
 
@@ -338,11 +338,12 @@ The task view always renders three panels — task details on the left, sub-task
 | `tab` · `shift+tab` | switch focus (form ⇄ sub-tasks ⇄ activity) |
 | `a` · `n` | add sub-task (opens the task form pre-attached to the current task as parent) |
 | `s` | focus the sub-tasks panel (no-op with status hint when the task has no children) |
-| `space` | send the focused child straight to the workflow's final bucket (guards still fire; errors surface inline) |
+| `space` | send the focused child straight to the workflow's final bucket — resolves the final bucket from the child's resolved kit so sub-tasks land in the sub-kit's terminal bucket, not the root kit's (guards still fire; errors surface inline) |
+| `m` | move the focused child by bucket key; the input prompt appends the sub-kit's bucket keys so valid targets are visible inline |
 | `enter` | drill into the focused child (becomes the new task view; `esc` pops back) |
 | `f` | open the dedicated description overlay for the focused task |
 
-`f` is wired to the **parent task's** description, not the focused child — it surfaces the body when the inline form column truncates after `taskDescriptionInlineCap` lines (the elision hint reads `+N more · f to focus`). To read a child's description, `enter` into it first.
+`f` is wired to the **parent task's** description, not the focused child — it surfaces the body when the inline form column truncates after `taskDescriptionInlineCap` lines (6 by default; the elision hint reads `+N more · f to focus`). To read a child's description, `enter` into it first.
 
 The `Parent` field on the task form (§E, last in the `Title → Description → Priority → Tags → Parent` rotation) holds the parent task id as a decimal — empty means root. The field is pre-filled from `tasks.parent_id` on edit, captured into `taskEditInitial` so `esc` can detect a dirty edit without re-querying the store, and validated on blur via `validateParentInputOnBlur` (rotation through `cycleTaskField`). Creating a sub-task through `a` / `n` instead routes through `TaskService.AddSub` with `taskCreateParentID` held out-of-band and rendered as a breadcrumb in the form header.
 

@@ -52,7 +52,10 @@ func TestGuardIsolationCrossProjectMoveTask(t *testing.T) {
 	// per-call repo so the test does not race on fakeStores counters.
 	const goroutinesPerProject = 64
 
-	type result struct{ projectKey rune; err error }
+	type result struct {
+		projectKey rune
+		err        error
+	}
 	results := make(chan result, goroutinesPerProject*2)
 
 	var wg sync.WaitGroup
@@ -219,7 +222,7 @@ func (r *isolationRepo) HardDeleteTask(context.Context, int64, int64, domain.Buc
 func (r *isolationRepo) SetTaskState(context.Context, int64, int64, domain.TaskState, string, domain.BucketResolver) (domain.Task, domain.Event, error) {
 	return domain.Task{}, domain.Event{}, nil
 }
-func (r *isolationRepo) EmitTaskEditedEvent(context.Context, int64, int64, domain.Task, domain.Task) (domain.Event, error) {
+func (r *isolationRepo) EmitTaskEditedEvent(context.Context, int64, int64, domain.Task, domain.Task, domain.BucketResolver) (domain.Event, error) {
 	return domain.Event{}, nil
 }
 func (r *isolationRepo) AssignTask(context.Context, int64, int64, string, string, domain.BucketResolver) (domain.Task, domain.Event, error) {

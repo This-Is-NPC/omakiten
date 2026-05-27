@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"omakiten/internal/app/guards"
@@ -175,7 +176,7 @@ func (f *fakeStores) HardDeleteTask(context.Context, int64, int64, domain.Bucket
 func (f *fakeStores) SetTaskState(context.Context, int64, int64, domain.TaskState, string, domain.BucketResolver) (domain.Task, domain.Event, error) {
 	return domain.Task{}, domain.Event{}, nil
 }
-func (f *fakeStores) EmitTaskEditedEvent(context.Context, int64, int64, domain.Task, domain.Task) (domain.Event, error) {
+func (f *fakeStores) EmitTaskEditedEvent(context.Context, int64, int64, domain.Task, domain.Task, domain.BucketResolver) (domain.Event, error) {
 	return domain.Event{}, nil
 }
 func (f *fakeStores) AssignTask(context.Context, int64, int64, string, string, domain.BucketResolver) (domain.Task, domain.Event, error) {
@@ -235,6 +236,22 @@ func TestWorkflowResolveDefaultBucketEmptyWorkflow(t *testing.T) {
 	var coded *domain.CodedError
 	if !errors.As(err, &coded) || coded.Code != domain.ErrConfigInvalid {
 		t.Fatalf("ResolveDefaultBucket err = %v, want config_invalid", err)
+	}
+	if !strings.Contains(err.Error(), "active workflow has no buckets") {
+		t.Fatalf("ResolveDefaultBucket err = %v, want empty-buckets message", err)
+	}
+}
+
+func TestWorkflowResolveDefaultBucketNilSnapshot(t *testing.T) {
+	f := &fakeStores{}
+	svc := NewWorkflowService(nil, f, guards.NewGuardEvaluator(nil, f, f), f, f, nil)
+	_, err := svc.ResolveDefaultBucket(context.Background())
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrConfigInvalid {
+		t.Fatalf("ResolveDefaultBucket err = %v, want config_invalid", err)
+	}
+	if !strings.Contains(err.Error(), "active workflow snapshot is nil") {
+		t.Fatalf("ResolveDefaultBucket err = %v, want nil-snapshot message", err)
 	}
 }
 

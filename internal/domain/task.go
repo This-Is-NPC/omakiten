@@ -59,6 +59,13 @@ type Task struct {
 	// through the same workflow as the parent, but the subtasks_complete
 	// guard reads this column to gate parent promotion on child status.
 	ParentID *int64 `json:"parent_id,omitempty"`
+	// Depth is the materialised distance from the nearest root ancestor.
+	// 0 for root rows, 1 for direct children, 2 for grandchildren, and so
+	// on. Persisted via the `tasks.depth` column (migration 028) so event
+	// payloads can carry the real value without paying for a recursive
+	// parent-walk on every emission — see #297 review finding §B.5 and
+	// the implementation in #299.
+	Depth int `json:"depth,omitempty"`
 }
 
 // IsSubTask reports whether the task is attached to a parent. Root tasks

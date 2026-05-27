@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"omakiten/internal/app"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	"omakiten/internal/paths"
@@ -87,8 +88,25 @@ func (m *Model) reloadBundle(path string) error {
 // path is stashed on the model so an esc-press on the resulting prompt
 // reverts the swap. Failures are swallowed: the swap itself already
 // succeeded, and a missing event must not crash the TUI mid-render.
+//
+// The preview routes through PreviewOrphanedCascade when either snapshot
+// in the pair declares a sub-task kit so the rows shown match what
+// `OrphanService.Migrate` would rebind — preview/migrate parity (#301
+// review §11557 finding A1). Projects without a sub-task kit keep using
+// the legacy `PreviewOrphanedTasks` entrypoint so the pre-cascade
+// bundle.swapped payload stays byte-identical.
 func (m *Model) emitBundleSwapped(fromKey, toKey, fromPath string) {
-	report, err := m.repos.Orphans.PreviewOrphanedTasks(m.ctx, m.project.ID, m.repos.activeSnapshot(), m.repos.activePreviousSnapshot())
+	current := m.repos.activeSnapshot()
+	previous := m.repos.activePreviousSnapshot()
+	var (
+		report domain.OrphanReport
+		err    error
+	)
+	if app.CascadeActive(current, previous) {
+		report, err = m.repos.Orphans.PreviewOrphanedCascade(m.ctx, m.project.ID, app.NewOrphanCascadePlan(current, previous))
+	} else {
+		report, err = m.repos.Orphans.PreviewOrphanedTasks(m.ctx, m.project.ID, current, previous)
+	}
 	if err != nil {
 		// Preview failed but the swap already committed. Best we can do
 		// is surface the partial state — emit the event with zero orphans

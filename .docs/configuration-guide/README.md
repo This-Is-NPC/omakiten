@@ -7,6 +7,7 @@ How to configure Omakiten through the active profile yaml plus the sibling entit
 | [system.md](system.md) | Runtime knobs — `config.{output,context,workflow,mcp,tui,sqlite,activity_log,solutions,backup,events,search,tag_synonyms}` plus top-level shape and validation. |
 | [entities.md](entities.md) | Entity wiring — `workflows[]`, `skills`, `laws`, `personas`, `projects`, `templates`, `mcp_commands`, enum tables (`priorities`, `severities`), view defaults, `template_defaults`, autoload rules. |
 | [guards.md](guards.md) | The five transition-and-operation guard types, their YAML payloads, failure shapes, and how to add a new type. |
+| [subtask-kit.md](subtask-kit.md) | Per-level kit cascade — `subtask_kit:` shape, validator rules, migration order, `task.bucket_orphaned` event schema, hook subject metadata, transparency notice. |
 | [hooks.md](hooks.md) | Event subscriptions in `config.hooks`, the built-in action contracts (`exec`, `noop`, `notification`), and the `${{intl:KEY}}` interpolation. |
 | [notifications.md](notifications.md) | TUI notification cards loaded from `notifications/<slug>.yaml` and dispatched from hooks. |
 | [themes.md](themes.md) | TUI theme YAML (`themes/<key>.yaml`) — 8 color tokens, markdown palette, authoring recipe, `config.theme` wiring. |
