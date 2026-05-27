@@ -1522,6 +1522,15 @@ func (m Model) renderSubtaskBoard(children []domain.Task, buckets []domain.Bucke
 		cells = append(cells, m.renderSubtaskColumn(bucket, bucketChildren, focused && i == focusedCol, layout, cardlistRows, columnInnerRows))
 	}
 
+	if len(cells) == 0 {
+		// Defensive: every code path today guarantees layout.capacity >= 1
+		// (clamped in computeSubtaskBoardLayout) and the synthetic fallback
+		// bucket forces n >= 1, so cap >= 1 and cells >= 1. The guard sits
+		// here in case a future change loosens either invariant — without
+		// it, `make([]string, 0, 2*len(cells)-1)` panics on `-1` capacity.
+		return ""
+	}
+
 	parts := make([]string, 0, 2*len(cells)-1)
 	for i, cell := range cells {
 		parts = append(parts, cell)

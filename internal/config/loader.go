@@ -216,5 +216,31 @@ func resolveSubtaskKitPath(rootPath, rel string) (string, error) {
 			return "", fmt.Errorf("subtask_kit %q: path must not contain parent directory segments", rel)
 		}
 	}
-	return filepath.Join(filepath.Dir(rootPath), trimmed), nil
+	configDir := filepath.Dir(rootPath)
+	joined := filepath.Join(configDir, trimmed)
+	// Reject symlinks that point outside the config dir. The earlier guards
+	// catch lexical `..` and absolute paths, but a symlink at any segment can
+	// still escape: e.g. `config/sub.yaml -> ../../../etc/passwd`. Resolve
+	// the canonical path and assert it stays rooted under configDir. Missing
+	// files surface a distinct error at the os.Open call site downstream;
+	// EvalSymlinks errors for paths that do not exist yet, so the not-exist
+	// branch is treated as "no symlink escape" and the downstream open
+	// produces the friendlier diagnostic.
+	resolvedRoot, err := filepath.EvalSymlinks(configDir)
+	if err != nil {
+		// configDir itself unreadable is a separate failure surfaced via the
+		// downstream open path; do not double-report here.
+		return joined, nil
+	}
+	resolvedJoined, err := filepath.EvalSymlinks(joined)
+	if err != nil {
+		// File does not exist yet (or unreadable) — let the downstream open
+		// produce the canonical error.
+		return joined, nil
+	}
+	rel2, err := filepath.Rel(resolvedRoot, resolvedJoined)
+	if err != nil || strings.HasPrefix(rel2, "..") || rel2 == ".." {
+		return "", fmt.Errorf("subtask_kit %q: resolved path %q escapes config directory %q via symlink", rel, resolvedJoined, resolvedRoot)
+	}
+	return joined, nil
 }

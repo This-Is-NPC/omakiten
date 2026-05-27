@@ -368,14 +368,16 @@ func (s *Snapshot) SubtaskKit() (*Snapshot, bool) {
 }
 
 // For returns the task-shape snapshot that applies to the supplied task.
-// Root tasks (or calls with no task) resolve to the root kit. Any task with a
-// parent resolves to the configured sub-task kit when present; projects without
-// subtask_kit fall back to the root snapshot so pre-cascade behavior is kept.
-func (s *Snapshot) For(tasks ...domain.Task) *Snapshot {
+// Root tasks resolve to the root kit. A sub-task resolves to the configured
+// sub-task kit when present; projects without subtask_kit fall back to the
+// root snapshot so pre-cascade behavior is kept. Callers without a task to
+// resolve should use the snapshot directly (the API previously accepted a
+// variadic and silently ignored extra args — that footgun is gone).
+func (s *Snapshot) For(task domain.Task) *Snapshot {
 	if s == nil {
 		return nil
 	}
-	if len(tasks) == 0 || !tasks[0].IsSubTask() || s.subtaskKitSnapshot == nil {
+	if !task.IsSubTask() || s.subtaskKitSnapshot == nil {
 		return s
 	}
 	return s.subtaskKitSnapshot

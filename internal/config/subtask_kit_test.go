@@ -112,6 +112,37 @@ func TestLoadBundleRejectsInvalidSubtaskKitPaths(t *testing.T) {
 	}
 }
 
+func TestLoadBundleRejectsSubtaskKitSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	if err := EnsureDefaultFiles(root); err != nil {
+		t.Fatalf("EnsureDefaultFiles() error = %v", err)
+	}
+	configPath := filepath.Join(root, "config", "omakase.yaml")
+
+	// Target lives outside the config dir but inside the test tempdir so the
+	// EvalSymlinks call resolves successfully. The lexical guards in
+	// resolveSubtaskKitPath pass because the symlink itself is named
+	// `escape.yaml` (no `..`, not absolute) — only the canonical-path check
+	// detects the escape.
+	outside := filepath.Join(root, "outside.yaml")
+	if err := os.WriteFile(outside, []byte("version: 1\nkit:\n  id: 9\n  key: out\n  name: Out\nconfig:\n  workflow:\n    active: out\nworkflows:\n  - id: 9\n    key: out\n    name: Out\n    buckets:\n      - { id: 1, key: backlog, name: Backlog, position: 1 }\n    transitions: []\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(outside): %v", err)
+	}
+	symlinkPath := filepath.Join(root, "config", "escape.yaml")
+	if err := os.Symlink(outside, symlinkPath); err != nil {
+		t.Skipf("symlink unsupported on this platform: %v", err)
+	}
+	appendTopLevelYAML(t, configPath, "subtask_kit: escape.yaml\n")
+
+	_, err := LoadBundle(configPath)
+	if err == nil {
+		t.Fatal("LoadBundle() error = nil, want symlink-escape rejection")
+	}
+	if !strings.Contains(err.Error(), "subtask_kit") || !strings.Contains(err.Error(), "escapes config directory") {
+		t.Fatalf("LoadBundle() error = %q, want subtask_kit + escapes config directory", err.Error())
+	}
+}
+
 func TestLoadBundleRejectsMissingPartialAndNestedSubtaskKit(t *testing.T) {
 	cases := map[string]struct {
 		setup   func(t *testing.T, root string) string
@@ -229,19 +260,14 @@ func TestSnapshotForResolvesRootAndSubtaskKits(t *testing.T) {
 		task domain.Task
 		want string
 	}{
-		"no task argument defaults to root": {want: "root"},
-		"root task":                         {task: domain.Task{ID: 1}, want: "root"},
-		"depth one subtask":                 {task: domain.Task{ID: 2, ParentID: &parentID}, want: "sub"},
-		"depth two plus subtask":            {task: domain.Task{ID: 3, ParentID: &parentID}, want: "sub"},
+		"zero-value task defaults to root": {task: domain.Task{}, want: "root"},
+		"root task":                        {task: domain.Task{ID: 1}, want: "root"},
+		"depth one subtask":                {task: domain.Task{ID: 2, ParentID: &parentID}, want: "sub"},
+		"depth two plus subtask":           {task: domain.Task{ID: 3, ParentID: &parentID}, want: "sub"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			var got *Snapshot
-			if tc.task.ID == 0 && tc.task.ParentID == nil {
-				got = withSub.For()
-			} else {
-				got = withSub.For(tc.task)
-			}
+			got := withSub.For(tc.task)
 			if got.Kit().Key != tc.want {
 				t.Fatalf("Snapshot.For(...).Kit().Key = %q, want %q", got.Kit().Key, tc.want)
 			}
