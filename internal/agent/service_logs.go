@@ -28,8 +28,7 @@ const logsSinceLayout = "2006-01-02T15:04:05Z"
 //
 //   - Empty categories  → no category filter (every event_type).
 //   - Empty since       → time floor = now - Snapshot.LogsWindowDays.
-//   - Limit <= 0        → no MCP-side cap; SQL layer still applies its
-//     own row ceiling.
+//   - Limit <= 0        → SQL layer caps at MaxListEventsLimit (10000).
 //   - Order ""          → "desc" (newest first).
 //
 // Validation is intentionally permissive — unknown categories are

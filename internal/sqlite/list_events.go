@@ -17,6 +17,13 @@ import (
 // timezone suffix and would not compare correctly.
 const sqliteTimestampLayout = "2006-01-02 15:04:05"
 
+// MaxListEventsLimit is the server-side hard ceiling on ListEvents row
+// counts. Callers can request fewer rows via EventFilter.Limit, but
+// anything above this (or 0 / negative, meaning "no caller cap") gets
+// clamped here so an MCP client requesting `limit=1_000_000` cannot
+// exhaust memory by streaming the entire events table.
+const MaxListEventsLimit = 10_000
+
 // ListEvents is the generic Logs inspector read path. It returns rows
 // from the unified `events` table filtered by domain.EventFilter axes
 // and shaped as domain.EventRow values for consumption by TUI / CLI /
@@ -28,7 +35,7 @@ const sqliteTimestampLayout = "2006-01-02 15:04:05"
 //   - ProjectID = 0  → no project filter (system-wide view).
 //   - Categories empty → no category filter; every event_type is included.
 //   - Since zero-value → no time floor.
-//   - Limit <= 0     → no row cap.
+//   - Limit <= 0 or > MaxListEventsLimit (10000) → capped at MaxListEventsLimit.
 //   - Order "" or "desc" → newest-first; "asc" → oldest-first. Within
 //     equal timestamps, id is the tiebreaker so paging stays stable.
 //
@@ -96,10 +103,12 @@ func (s *Store) ListEvents(ctx context.Context, filter domain.EventFilter) ([]do
 	}
 	query += " ORDER BY created_at " + direction + ", id " + direction
 
-	if filter.Limit > 0 {
-		query += " LIMIT ?"
-		args = append(args, filter.Limit)
+	effective := filter.Limit
+	if effective <= 0 || effective > MaxListEventsLimit {
+		effective = MaxListEventsLimit
 	}
+	query += " LIMIT ?"
+	args = append(args, effective)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {

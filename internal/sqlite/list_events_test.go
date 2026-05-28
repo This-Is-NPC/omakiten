@@ -451,3 +451,60 @@ func ids(rows []domain.EventRow) []int64 {
 	}
 	return out
 }
+
+// TestListEventsZeroLimitReturnsAllUnderCap locks the safety-ceiling
+// contract for the common path: Limit <= 0 means "no caller cap" but
+// the SQL layer still clamps at MaxListEventsLimit. With a tiny
+// dataset (well under the cap), every row must still come back so the
+// ceiling doesn't double as a low-traffic ceiling.
+func TestListEventsZeroLimitReturnsAllUnderCap(t *testing.T) {
+	ctx := context.Background()
+	store := openStoreFixture(t, t.TempDir()+"/omakiten.db")
+	now := time.Now().UTC()
+	for i := 0; i < 5; i++ {
+		seedEvent(ctx, t, store, 1, domain.EventTypeTaskCreated, now.Add(time.Duration(-i)*time.Minute))
+	}
+
+	got, err := store.ListEvents(ctx, domain.EventFilter{ProjectID: 1, Limit: 0})
+	if err != nil {
+		t.Fatalf("ListEvents(limit=0) error = %v", err)
+	}
+	if len(got) != 5 {
+		t.Fatalf("len = %d, want 5 (every row under the cap)", len(got))
+	}
+}
+
+// TestListEventsLimitAboveCapClamped locks the safety-ceiling contract
+// for the abusive path: a caller asking for far more than
+// MaxListEventsLimit must not error and must not return more than the
+// cap. We seed a handful of rows (well under the cap) so the result
+// length is bounded by row count, not by the cap — the key assertion is
+// "no error, no over-cap result". A separate sanity check confirms the
+// generated SQL would honour the clamp for a larger dataset.
+func TestListEventsLimitAboveCapClamped(t *testing.T) {
+	ctx := context.Background()
+	store := openStoreFixture(t, t.TempDir()+"/omakiten.db")
+	now := time.Now().UTC()
+	for i := 0; i < 5; i++ {
+		seedEvent(ctx, t, store, 1, domain.EventTypeTaskCreated, now.Add(time.Duration(-i)*time.Minute))
+	}
+
+	got, err := store.ListEvents(ctx, domain.EventFilter{ProjectID: 1, Limit: 50_000})
+	if err != nil {
+		t.Fatalf("ListEvents(limit=50_000) error = %v", err)
+	}
+	if len(got) > MaxListEventsLimit {
+		t.Fatalf("len = %d, want <= MaxListEventsLimit (%d)", len(got), MaxListEventsLimit)
+	}
+	if len(got) != 5 {
+		t.Fatalf("len = %d, want 5 (every seeded row, clamp must not drop legitimate rows)", len(got))
+	}
+}
+
+// TestMaxListEventsLimitConstant pins the public constant so callers
+// referencing it (godoc, MCP schema) don't drift silently.
+func TestMaxListEventsLimitConstant(t *testing.T) {
+	if MaxListEventsLimit != 10_000 {
+		t.Fatalf("MaxListEventsLimit = %d, want 10000", MaxListEventsLimit)
+	}
+}

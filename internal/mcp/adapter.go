@@ -894,7 +894,7 @@ func logsListSchema() map[string]any {
 		"description": "Optional list of EventCategory values to include. Empty/omitted = every category. Example: [\"tool_call\"] reproduces the legacy activity-log filter; [\"task\", \"comment\"] narrows to task lifecycle and comments.",
 	}
 	props["since"] = stringSchema("Optional time floor as a Go duration (\"24h\", \"30m\") or N-day shorthand (\"7d\", \"30d\"). Omitted → use the project's configured Logs window (config.views.logs.window_days, 30 days by default).")
-	props["limit"] = integerSchema("Optional row cap. 0 or omitted = no MCP-side cap (the SQL layer still applies its safety ceiling).")
+	props["limit"] = integerSchema("Optional row cap. 0/omitted/>10000 = capped at 10000 by the SQL layer's safety ceiling.")
 	props["order"] = stringSchema("Sort direction: \"desc\" (default, newest first) or \"asc\" (oldest first). Anything else falls back to \"desc\".")
 	return objectSchema(props, nil)
 }
