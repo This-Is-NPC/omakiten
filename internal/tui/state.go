@@ -864,7 +864,6 @@ const (
 	subSettingsSkills
 	subSettingsTemplates
 	subSettingsTags
-	subSettingsEffective
 	subSettingsGuards
 )
 
@@ -877,7 +876,7 @@ var topOrder = []topID{topTasks, topStats, topSettings}
 var subsByTop = map[topID][]subID{
 	topTasks:    {subBoard, subTable, subGraph, subPlans},
 	topStats:    {subStatsGeneral, subStatsLogs},
-	topSettings: {subSettingsGeneral, subSettingsLaws, subSettingsPersonas, subSettingsSkills, subSettingsTemplates, subSettingsTags, subSettingsEffective, subSettingsGuards},
+	topSettings: {subSettingsGeneral, subSettingsLaws, subSettingsPersonas, subSettingsSkills, subSettingsTemplates, subSettingsTags, subSettingsGuards},
 }
 
 var topLabels = map[topID]string{
@@ -899,7 +898,6 @@ var subLabels = map[subID]string{
 	subSettingsSkills:    "skills",
 	subSettingsTemplates: "templates",
 	subSettingsTags:      "tags",
-	subSettingsEffective: "effective",
 	subSettingsGuards:    "guards",
 }
 
