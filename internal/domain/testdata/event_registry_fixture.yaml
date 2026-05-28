@@ -109,12 +109,12 @@ definitions:
     entity_type: error
     metric: error_recorded
     formatter: error.recorded
-  error.searched:
+  errors.researched:
     category: audit
-    display: "error searched"
-    entity_type: error
+    display: "errors researched"
+    entity_type: search
     metric: error_searched
-    formatter: error.searched
+    formatter: errors.researched
   solution.added:
     category: audit
     display: "solution added"

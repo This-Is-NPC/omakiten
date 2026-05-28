@@ -9,7 +9,7 @@ func init() {
 	registerFormatter(EventTypeProjectRemoved, summarizeProjectRemoved)
 	registerFormatter(EventTypeConfirmationGranted, summarizeConfirmationGranted)
 	registerFormatter(EventTypeErrorRecorded, summarizeErrorRecorded)
-	registerFormatter(EventTypeErrorSearched, summarizeErrorSearched)
+	registerFormatter(EventTypeErrorsResearched, summarizeErrorsResearched)
 	registerFormatter(EventTypeSolutionAdded, summarizeSolutionAdded)
 	registerFormatter(EventTypeSolutionConfirmed, summarizeSolutionConfirmed)
 	registerFormatter(EventTypeSolutionLiked, summarizeSolutionLiked)
@@ -62,19 +62,19 @@ func summarizeErrorRecorded(row EventRow) string {
 	return base
 }
 
-func summarizeErrorSearched(row EventRow) string {
+func summarizeErrorsResearched(row EventRow) string {
 	payload := decodePayload(row.Payload)
 	q := readString(payload, "query")
 	count, hasCount := readInt(payload, "result_count")
 	switch {
 	case q != "" && hasCount:
-		return fmt.Sprintf("searched %q → %d hit(s)", condenseLine(q), count)
+		return fmt.Sprintf("researched %q → %d hit(s)", condenseLine(q), count)
 	case q != "":
-		return fmt.Sprintf("searched %q", condenseLine(q))
+		return fmt.Sprintf("researched %q", condenseLine(q))
 	case hasCount:
-		return fmt.Sprintf("search → %d hit(s)", count)
+		return fmt.Sprintf("research → %d hit(s)", count)
 	}
-	return "error searched"
+	return "errors researched"
 }
 
 func summarizeSolutionAdded(row EventRow) string {
