@@ -261,6 +261,11 @@ func tools() []ToolDefinition {
 		{Name: "plans.assign_task", Description: "Attach an existing task to a (plan, wave). Identify the plan by slug or plan_id; supply at least one. Cross-plan / cross-project wave references are rejected.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to attach"), "slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "wave_id": integerSchema("Wave id; must belong to the named plan")}, []string{"task_id", "wave_id"})},
 		{Name: "plans.claim_next", Description: "Atomically reserve the next claimable task in the plan's active wave (lowest-position wave with pending tasks). Claimable means active, unassigned, and still in the workflow's first bucket. Stamps tasks.assigned_to with the caller's _agent_model and emits task.assigned; the bucket is not moved, so callers must use tasks.move separately once preset guards are satisfied. Returns claimed=false (no task) when every wave is fully done or no unassigned first-bucket task remains in the active wave. Concurrency-safe via BEGIN IMMEDIATE on a pinned connection.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)")}, nil)},
 		{Name: "plans.continue", Description: "Agent-tailored projection of a plan: returns the same aggregate plans.show emits (full plan + waves + done/total + active wave) plus a non-mutating preview of the task plans.claim_next would reserve next. Use before plans.claim_next so an agent can inspect goal_body, the wave layout, and the candidate task before committing to a claim.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug")}, []string{"slug"})},
+		{Name: "notes.create", Description: "Create a project-or-global knowledge note. Scope drives the project_id assignment: \"project\" (default when a project is resolved) uses the resolved project; \"global\" forces project_id=NULL so the row is visible cross-project. Kind is a free string (convention: \"handoff\", \"decision\", \"architecture\", \"requirements\", \"runbook\", \"gotcha\", \"retrospective\", \"glossary\", \"free\"). Tags reuse the global tags table. Body soft-limited to 64 KiB.", InputSchema: createNoteSchema()},
+		{Name: "notes.edit", Description: "Patch an existing note. Omit a field to leave it untouched; pass an empty string for title/body/kind and the call rejects with validation_error. tags pointer is replacement: pass an empty array to clear every tag.", InputSchema: editNoteSchema()},
+		{Name: "notes.show", Description: "Return one note row plus its tags by id.", InputSchema: objectSchema(map[string]any{"id": integerSchema("Note id")}, []string{"id"})},
+		{Name: "notes.list", Description: "List notes filtered by scope (\"\", \"project\", \"global\"), kind, tags (intersection), pinned, and limit/offset. Order: pinned DESC, updated_at DESC, id DESC. Default scope is \"any\" — both project-scoped and global notes flow back when a project is resolved.", InputSchema: listNotesSchema()},
+		{Name: "notes.delete", Description: "Hard-delete a note. Requires confirm=true; first call without confirm returns a Confirmation block. Tags and FTS rows cascade via triggers.", InputSchema: objectSchema(map[string]any{"id": integerSchema("Note id"), "confirm": booleanSchema("Required true to actually delete the note")}, []string{"id"})},
 	}
 }
 
@@ -632,6 +637,36 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		if err == nil {
 			data, err = service.ContinuePlan(ctx, input)
 		}
+	case "notes.create":
+		var input agent.CreateNoteInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.CreateNote(ctx, input)
+		}
+	case "notes.edit":
+		var input agent.EditNoteInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.EditNote(ctx, input)
+		}
+	case "notes.show":
+		var input agent.ShowNoteInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.ShowNote(ctx, input)
+		}
+	case "notes.list":
+		var input agent.ListNotesInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.ListNotes(ctx, input)
+		}
+	case "notes.delete":
+		var input agent.DeleteNoteInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.DeleteNote(ctx, input)
+		}
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP tool %q", name)
 	}
@@ -877,6 +912,39 @@ func confirmSolutionSchema() map[string]any {
 func listTopSolutionsSchema() map[string]any {
 	props := selectorProperties()
 	props["limit"] = integerSchema("Maximum number of solutions to return (defaults and caps come from config.solutions; omitted/<=0 = default_top_limit, larger values clamped to max_top_limit)")
+	return objectSchema(props, nil)
+}
+
+func createNoteSchema() map[string]any {
+	props := selectorProperties()
+	props["scope"] = stringSchema("Scope: \"project\" (default when a project is resolved), \"global\" (project_id NULL), or omitted (project when resolved, global otherwise).")
+	props["kind"] = stringSchema("Free-string kind (convention: handoff, decision, architecture, requirements, runbook, gotcha, retrospective, glossary, free).")
+	props["title"] = stringSchema("Note title; required, non-empty after trim.")
+	props["body"] = stringSchema("Note body; required, non-empty, soft-limited to 64 KiB.")
+	props["pinned"] = booleanSchema("Optional pin flag; pinned notes float to the top of notes.list.")
+	props["tags"] = arrayStringSchema("Optional tag names; normalized via the per-project synonym table.")
+	return objectSchema(props, []string{"kind", "title", "body"})
+}
+
+func editNoteSchema() map[string]any {
+	props := selectorProperties()
+	props["id"] = integerSchema("Note id")
+	props["title"] = stringSchema("Optional new title; empty string rejected.")
+	props["body"] = stringSchema("Optional new body; empty string rejected, 64 KiB cap.")
+	props["kind"] = stringSchema("Optional new kind; empty string rejected.")
+	props["pinned"] = booleanSchema("Optional pinned flag.")
+	props["tags"] = arrayStringSchema("Optional full tag replacement; pass an empty array to clear every tag.")
+	return objectSchema(props, []string{"id"})
+}
+
+func listNotesSchema() map[string]any {
+	props := selectorProperties()
+	props["scope"] = stringSchema("Scope filter: \"\" (any, default), \"global\" (project_id IS NULL), or \"project\" (project_id = resolved project).")
+	props["kind"] = stringSchema("Optional exact-match kind filter.")
+	props["tags"] = arrayStringSchema("Optional tag intersection filter — only notes carrying every supplied tag match.")
+	props["pinned"] = booleanSchema("Optional pinned filter; omit for both.")
+	props["limit"] = integerSchema("Optional row cap; omit for unbounded.")
+	props["offset"] = integerSchema("Optional offset; ignored when limit is 0.")
 	return objectSchema(props, nil)
 }
 
