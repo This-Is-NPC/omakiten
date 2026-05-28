@@ -31,6 +31,15 @@ type Bundle struct {
 	ActiveThemeErr error           `yaml:"-" json:"-"`
 	Warnings       []SourceWarning `yaml:"-" json:"warnings,omitempty"`
 	SourcePaths    []string        `yaml:"-" json:"-"`
+	// Sources records per-leaf-path origin for the merged Config
+	// settings. Keys are dot-paths matching the EffectiveTuples accessor
+	// (`section.key`, `section[N].field`, `section`); values are one of
+	// SourceDefault / SourceProject / SourceEnv. Populated by LoadBundle
+	// after diffing the user's loaded Settings against the embedded kit
+	// baseline (`defaults/config/<kit.key>.yaml`); test bundles
+	// constructed without LoadBundle leave this nil and consumers fall
+	// back to SourceDefault via Bundle.SourceFor.
+	Sources map[string]string `yaml:"-" json:"sources,omitempty"`
 }
 
 // TemplateByDefault resolves the template that should be used as the active
