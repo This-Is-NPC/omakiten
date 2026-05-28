@@ -83,26 +83,49 @@ func EventCategoryOf(eventType string) EventCategory {
 	return def.Category
 }
 
+// categoryIndex memoizes the EventCategory → sorted []event_type lookup
+// served by EventTypesForCategory. The loader rebuilds it eagerly at the
+// end of LoadEventRegistryFromYAML, so reads after boot are an O(1) map
+// hit plus an O(K) slice copy (K = entries in that category). Reads
+// before boot return nil.
+//
+// Eager rebuild keeps the cost on the boot path (where it's already
+// dominated by YAML parsing) and guarantees no first-call latency for
+// SQL-issuing call sites like sqlite.ListEvents.
+var categoryIndex map[EventCategory][]string
+
+// buildCategoryIndex walks EventDefinitions once and groups event_type
+// keys by category, sorting each bucket for deterministic SQL IN lists.
+// Called by LoadEventRegistryFromYAML after the registry is fully
+// populated. Resets categoryIndex even when EventDefinitions is empty
+// so a registry reset clears stale buckets.
+func buildCategoryIndex() {
+	idx := make(map[EventCategory][]string)
+	for _, def := range EventDefinitions {
+		idx[def.Category] = append(idx[def.Category], def.Key)
+	}
+	for c := range idx {
+		sort.Strings(idx[c])
+	}
+	categoryIndex = idx
+}
+
 // EventTypesForCategory returns every event_type that maps to the given
-// category, walking EventDefinitions in O(N) on each call. N≈41 keeps
-// the linear scan cheap and avoids a rebuild step after registry reloads.
-// The output is sorted by event_type for deterministic SQL IN lists.
-// Unknown categories (including EventCategoryUnknown by construction)
-// return nil so callers can treat the result as a distinguishable
-// "no matches" sentinel.
+// category. Backed by a memoized index rebuilt eagerly by
+// LoadEventRegistryFromYAML, so each call is a map lookup plus a defensive
+// copy of the cached slice. The output is sorted by event_type for
+// deterministic SQL IN lists. Unknown categories (including
+// EventCategoryUnknown by construction) return nil so callers can treat
+// the result as a distinguishable "no matches" sentinel.
 //
 // Used by repository layers (e.g. sqlite.ListEvents) to expand
 // EventFilter.Categories into an event_type IN (...) SQL clause.
 func EventTypesForCategory(c EventCategory) []string {
-	var out []string
-	for _, def := range EventDefinitions {
-		if def.Category == c {
-			out = append(out, def.Key)
-		}
-	}
-	if len(out) == 0 {
+	cached, ok := categoryIndex[c]
+	if !ok || len(cached) == 0 {
 		return nil
 	}
-	sort.Strings(out)
+	out := make([]string, len(cached))
+	copy(out, cached)
 	return out
 }

@@ -92,6 +92,11 @@ func LoadEventRegistryFromYAML(payload []byte) error {
 	EventDefinitions = defs
 	EventDefByKey = byKey
 	KnownEventTypes = keys
+	// Rebuild the category index eagerly so the first
+	// EventTypesForCategory call after boot is an O(1) map hit. Pays
+	// the O(N) walk on the boot path (already dominated by YAML parse)
+	// instead of on the first SQL-issuing query.
+	buildCategoryIndex()
 	return nil
 }
 
