@@ -134,3 +134,128 @@ func TestRenderSettingsGuards_NilSnapshotDegrades(t *testing.T) {
 		t.Fatalf("expected disallowed/diagonal cell to render `—` sentinel; body:\n%s", body)
 	}
 }
+
+// guardsModelFromBundle is a small fixture builder used by the
+// subtask-kit tests below. Inflates `bundle` into a Snapshot, installs
+// it in a runtimecache, and wires the Model fields the renderer reads.
+// Optionally takes a child snapshot to weld onto `snap.subtaskKitSnapshot`
+// via the loader-level SubtaskBundle field so `SubtaskKit()` returns it.
+func guardsModelFromBundle(t *testing.T, root config.Bundle, sub *config.Bundle) Model {
+	t.Helper()
+	if sub != nil {
+		root.SubtaskBundle = sub
+	}
+	snap := config.BuildSnapshot(root)
+	return Model{
+		styles:    newStyles(config.Theme{}),
+		width:     200,
+		height:    60,
+		top:       topSettings,
+		workflow:  snap.Workflow(),
+		languages: config.LanguageSettings{CLI: "en", TUI: "en"},
+		repos:     Repositories{Cache: runtimecache.Install(0, snap)},
+	}
+}
+
+// guardsOmakaseBundle returns a minimal 3-bucket fixture with the
+// supplied per-transition guard list. Used by all three subtask-kit
+// cases below so root/sub fixtures only differ on guard payload.
+func guardsOmakaseBundle(extraGuards []config.TransitionGuard) config.Bundle {
+	return config.Bundle{
+		Kit:    config.Kit{Key: "omakase"},
+		Config: config.Settings{Workflow: config.WorkflowSettings{Active: "omakase"}},
+		Workflows: []config.Workflow{{
+			ID:   1,
+			Key:  "omakase",
+			Name: "Omakase",
+			Buckets: []config.Bucket{
+				{ID: 1, Key: "backlog", Name: "Backlog", Position: 1},
+				{ID: 2, Key: "dev", Name: "Development", Position: 2},
+				{ID: 3, Key: "done", Name: "Done", Position: 3},
+			},
+			Transitions: []config.Transition{
+				{From: 1, To: 2, Guards: extraGuards},
+				{From: 2, To: 3},
+			},
+		}},
+	}
+}
+
+// TestRenderSettingsGuards_NoSubtaskKit_SingleMatrix locks the
+// no-subtask-kit path: when the root snapshot does not configure
+// `subtask_kit`, the renderer must collapse to a single matrix using
+// the existing `tui.settings.guards_tab` kicker. The two new dual-mode
+// kickers must NOT appear so the visual surface for projects without
+// a sub-kit stays byte-identical to the pre-cascade renderer.
+func TestRenderSettingsGuards_NoSubtaskKit_SingleMatrix(t *testing.T) {
+	m := guardsModelFromBundle(t, guardsOmakaseBundle(nil), nil)
+
+	body := m.renderSettingsGuardsBody()
+
+	// Single-matrix path keeps the original guards-tab kicker.
+	if !strings.Contains(body, "GUARDS") {
+		t.Fatalf("expected `GUARDS` kicker on single-matrix render; body:\n%s", body)
+	}
+	// Dual-mode kickers must NOT leak into the single-matrix path.
+	if strings.Contains(body, "ROOT") {
+		t.Fatalf("did not expect ROOT kicker when no subtask_kit configured; body:\n%s", body)
+	}
+	if strings.Contains(body, "SUBTASK KIT") {
+		t.Fatalf("did not expect SUBTASK KIT kicker when no subtask_kit configured; body:\n%s", body)
+	}
+}
+
+// TestRenderSettingsGuards_SubtaskKitIdentical_SingleMatrix locks the
+// equality short-circuit: when the root snapshot configures a
+// `subtask_kit` but the resolved sub-kit matches the root on bucket
+// ordering, transition set, and per-cell guard payload, the renderer
+// must collapse to a single matrix (no `ROOT` / `SUBTASK KIT` kickers).
+// This is the common case for projects that wire a sub-kit symbolically
+// while keeping its guards aligned with the root.
+func TestRenderSettingsGuards_SubtaskKitIdentical_SingleMatrix(t *testing.T) {
+	guards := []config.TransitionGuard{{Type: "comments_tagged", Tag: "self-branch", Count: 1}}
+	root := guardsOmakaseBundle(guards)
+	sub := guardsOmakaseBundle(guards)
+	m := guardsModelFromBundle(t, root, &sub)
+
+	body := m.renderSettingsGuardsBody()
+
+	if !strings.Contains(body, "GUARDS") {
+		t.Fatalf("expected `GUARDS` kicker when root/sub are guard-identical; body:\n%s", body)
+	}
+	if strings.Contains(body, "ROOT") || strings.Contains(body, "SUBTASK KIT") {
+		t.Fatalf("did not expect dual kickers when root/sub are guard-identical; body:\n%s", body)
+	}
+	// Only one matrix worth of guard slugs renders.
+	if got := strings.Count(body, "comments_tagged"); got != 1 {
+		t.Fatalf("expected guard slug `comments_tagged` exactly once on single-matrix render; got %d; body:\n%s", got, body)
+	}
+}
+
+// TestRenderSettingsGuards_SubtaskKitDiverges_DualMatrix locks the
+// dual-matrix path: when root and sub-kit declare different guard
+// payloads on at least one cell, the renderer must stack TWO matrices
+// labelled with `ROOT` / `SUBTASK KIT` kickers. Both guard slugs (one
+// per kit) must render — neither side may be silently dropped.
+func TestRenderSettingsGuards_SubtaskKitDiverges_DualMatrix(t *testing.T) {
+	root := guardsOmakaseBundle([]config.TransitionGuard{{Type: "comments_tagged", Tag: "self-branch", Count: 1}})
+	sub := guardsOmakaseBundle([]config.TransitionGuard{{Type: "comments_min", Count: 3}})
+	m := guardsModelFromBundle(t, root, &sub)
+
+	body := m.renderSettingsGuardsBody()
+
+	// Dual mode swaps the `GUARDS` kicker for two specific kickers.
+	if !strings.Contains(body, "ROOT") {
+		t.Fatalf("expected `ROOT` kicker on dual-matrix render; body:\n%s", body)
+	}
+	if !strings.Contains(body, "SUBTASK KIT") {
+		t.Fatalf("expected `SUBTASK KIT` kicker on dual-matrix render; body:\n%s", body)
+	}
+	// Both kits surface their guard payloads — one slug per matrix.
+	if !strings.Contains(body, "comments_tagged") {
+		t.Fatalf("expected root guard slug `comments_tagged` on dual-matrix render; body:\n%s", body)
+	}
+	if !strings.Contains(body, "comments_min") {
+		t.Fatalf("expected sub-kit guard slug `comments_min` on dual-matrix render; body:\n%s", body)
+	}
+}

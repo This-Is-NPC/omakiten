@@ -11,14 +11,23 @@ import (
 	"omakiten/internal/tui/components/gridtable"
 )
 
-// renderSettingsGuards renders the read-only N×N matrix surfaced under
-// Settings › Guards. Rows = from-bucket; columns = to-bucket; cell
+// renderSettingsGuards renders the read-only N×N guards matrix surfaced
+// under Settings › Guards. Rows = from-bucket; columns = to-bucket; cell
 // content reflects the four states declared on the active workflow:
 //
 //   - diagonal (`from == to`) → sentinel `tui.settings.guards.sentinel_disallowed`
 //   - no entry in `workflow.transitions` → same disallowed sentinel
 //   - allowed + zero guards → sentinel `tui.settings.guards.sentinel_empty`
 //   - allowed + ≥1 guards → comma-separated guard slugs from `snap.Guards`
+//
+// When the active project configures `subtask_kit` AND the resolved
+// sub-kit workflow diverges from the root (bucket ordering, transition
+// set, or per-cell guard payload), TWO matrices stack vertically — root
+// first (kicker `tui.settings.guards.kicker_root`) then sub-kit
+// (kicker `tui.settings.guards.kicker_subtask`). Identical kits OR
+// absent `subtask_kit` collapse back to the single-matrix render with
+// the original `tui.settings.guards_tab` kicker so projects without
+// cascade overrides are visually unchanged.
 //
 // The body wraps in `sliceScrollRows` so the user can scroll once the
 // dispatch wiring (259.4) installs handlers — for the moment the offset
@@ -35,27 +44,41 @@ func (m Model) renderSettingsGuards() string {
 	return "\n" + indentBlock(strings.Join(visible, "\n")+"\n\n"+hint, 2)
 }
 
-// renderSettingsGuardsBody builds the from/to matrix as a single
-// rendered block. Extracted so the future key handler (259.4) can
-// measure body height for scroll clamping without re-running the
-// renderer's scroll wrapper — `renderSettingsGeneral` follows the same
-// split.
-//
-// Buckets are ordered by Position so the matrix mirrors workflow flow
-// (backlog → done for omakase). Guard slugs come from the active
-// snapshot when wired; absent a snapshot (test fixtures without a
-// runtime cache) the cell falls back to the empty sentinel because the
-// transition list alone cannot reveal guard payloads.
+// renderSettingsGuardsBody builds the body block, choosing between a
+// single-matrix render (no subtask_kit OR root/sub-kit are guard-equal)
+// and a dual-matrix render (subtask_kit present AND diverges). Extracted
+// so the future key handler (259.4) can measure body height for scroll
+// clamping without re-running the renderer's scroll wrapper —
+// `renderSettingsGeneral` follows the same split.
 func (m Model) renderSettingsGuardsBody() string {
-	buckets := orderedBuckets(m.workflow.Buckets)
+	root := m.repos.activeSnapshot()
+	sub, hasSub := root.SubtaskKit()
+
+	if !hasSub || guardsMatricesEqual(root, sub) {
+		return m.renderGuardsMatrix(root, m.workflow, m.t("tui.settings.guards_tab"))
+	}
+
+	rootMatrix := m.renderGuardsMatrix(root, root.Workflow(), m.t("tui.settings.guards.kicker_root"))
+	subMatrix := m.renderGuardsMatrix(sub, sub.Workflow(), m.t("tui.settings.guards.kicker_subtask"))
+	return rootMatrix + "\n\n" + subMatrix
+}
+
+// renderGuardsMatrix builds a single from/to matrix for the supplied
+// snapshot+workflow with the supplied kicker label. Buckets render in
+// Position order so the matrix mirrors workflow flow (backlog → done
+// for omakase). Guard slugs come from the supplied snapshot when wired;
+// absent a snapshot (test fixtures without a runtime cache) the cell
+// falls back to the empty sentinel because the transition list alone
+// cannot reveal guard payloads.
+func (m Model) renderGuardsMatrix(snap *config.Snapshot, workflow domain.Workflow, kickerLabel string) string {
+	buckets := orderedBuckets(workflow.Buckets)
 	disallowed := m.t("tui.settings.guards.sentinel_disallowed")
 	empty := m.t("tui.settings.guards.sentinel_empty")
 
-	transitions := indexTransitions(m.workflow.Transitions)
-	snap := m.repos.activeSnapshot()
+	transitions := indexTransitions(workflow.Transitions)
 
 	rows := make([][]string, 0, len(buckets)+2)
-	rows = append(rows, []string{m.styles.kicker(m.t("tui.settings.guards_tab"))})
+	rows = append(rows, []string{m.styles.kicker(kickerLabel)})
 
 	headerCells := make([]string, 0, len(buckets)+1)
 	headerCells = append(headerCells, m.styles.kicker(m.t("tui.settings.guards.header_from")+" \\ "+m.t("tui.settings.guards.header_to")))
@@ -80,6 +103,140 @@ func (m Model) renderSettingsGuardsBody() string {
 		widths = append(widths, valueWidth)
 	}
 	return gridtable.Render(rows, widths, m.styles.border)
+}
+
+// guardsMatricesEqual returns true when the two snapshots produce
+// guard-identical matrices: same bucket ordering (Position + Key), same
+// transition set (regardless of declaration order), and same guard
+// payload per allowed cell (guard list treated as a set so authors who
+// reorder guards in YAML don't trip a false divergence).
+//
+// A nil sub snapshot is treated as "equal" so the caller short-circuits
+// to the single-matrix render — `renderSettingsGuardsBody` already
+// guards the nil case via the `hasSub` flag before calling this helper,
+// but the defensive return keeps the helper safe to reuse.
+func guardsMatricesEqual(a, b *config.Snapshot) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	wa := a.Workflow()
+	wb := b.Workflow()
+
+	if !bucketSlicesEqual(orderedBuckets(wa.Buckets), orderedBuckets(wb.Buckets)) {
+		return false
+	}
+	if !transitionSetsEqual(wa.Transitions, wb.Transitions) {
+		return false
+	}
+	return guardPayloadsEqual(a, b, orderedBuckets(wa.Buckets))
+}
+
+// bucketSlicesEqual compares two position-ordered bucket slices on
+// identity-relevant fields: ID, Key, Position. Two slices are equal
+// when length matches AND each index pair shares all three fields.
+// Permissions/Name are intentionally excluded — the guards matrix
+// reflects flow + guards only; cosmetic label drift between root and
+// sub-kit must not trip a divergence.
+func bucketSlicesEqual(a, b []domain.Bucket) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].ID != b[i].ID || a[i].Key != b[i].Key || a[i].Position != b[i].Position {
+			return false
+		}
+	}
+	return true
+}
+
+// transitionSetsEqual compares two transition slices as sets keyed by
+// (fromKey, toKey). Order-independent so authors who reshuffle
+// transitions in YAML don't trip a divergence.
+func transitionSetsEqual(a, b []domain.WorkflowTransition) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	idx := indexTransitions(a)
+	for _, t := range b {
+		if !idx[[2]string{t.FromBucketKey, t.ToBucketKey}] {
+			return false
+		}
+	}
+	return true
+}
+
+// guardPayloadsEqual walks every (from, to) cell defined by the shared
+// bucket set and compares the guard slices on both snapshots. Guards
+// are compared as a sorted-by-(Type,Tag,Count) set so list-order drift
+// in YAML does not trip a divergence. Returns false on the first cell
+// where guard payloads differ.
+func guardPayloadsEqual(a, b *config.Snapshot, buckets []domain.Bucket) bool {
+	for _, from := range buckets {
+		for _, to := range buckets {
+			if from.ID == to.ID {
+				continue
+			}
+			ga := normalizeGuards(a.Guards(from.ID, to.ID))
+			gb := normalizeGuards(b.Guards(from.ID, to.ID))
+			if len(ga) != len(gb) {
+				return false
+			}
+			for i := range ga {
+				if !guardsEqual(ga[i], gb[i]) {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+// normalizeGuards returns a sorted copy of the guard slice so the
+// equality compare is stable across YAML declaration order. Buckets
+// inside each guard are also sorted so authors who list blocker
+// buckets in a different order between root and sub-kit don't trip a
+// false divergence.
+func normalizeGuards(in []domain.TransitionGuard) []domain.TransitionGuard {
+	out := make([]domain.TransitionGuard, len(in))
+	for i, g := range in {
+		copyG := g
+		if len(g.Buckets) > 0 {
+			copyG.Buckets = append([]string(nil), g.Buckets...)
+			sort.Strings(copyG.Buckets)
+		}
+		out[i] = copyG
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Type != out[j].Type {
+			return out[i].Type < out[j].Type
+		}
+		if out[i].Tag != out[j].Tag {
+			return out[i].Tag < out[j].Tag
+		}
+		if out[i].Count != out[j].Count {
+			return out[i].Count < out[j].Count
+		}
+		return strings.Join(out[i].Buckets, ",") < strings.Join(out[j].Buckets, ",")
+	})
+	return out
+}
+
+// guardsEqual compares two guards on all surfaced fields. Hint is
+// included because authors who customize the remediation tip on a
+// sub-kit are signalling an intentional divergence the user should see.
+func guardsEqual(a, b domain.TransitionGuard) bool {
+	if a.Type != b.Type || a.Tag != b.Tag || a.Count != b.Count || a.Hint != b.Hint {
+		return false
+	}
+	if len(a.Buckets) != len(b.Buckets) {
+		return false
+	}
+	for i := range a.Buckets {
+		if a.Buckets[i] != b.Buckets[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // settingsGuardsViewportRows mirrors `settingsGeneralViewportRows` —
