@@ -156,9 +156,10 @@ views:
   graph:
     sort:   { field: id, order: asc }                 # field in [id, title]
   logs:
-    sort:   { order: desc }                           # field is rejected — only direction is configurable
-    limit:  50                                        # int, > 0
-    filter: { source: [] }                            # subset of [cli, tui, mcp]
+    sort:        { order: desc }                      # field is rejected — only direction is configurable
+    limit:       50                                   # int, > 0
+    window_days: 30                                   # int, > 0; default time window for the Logs event inspector (CLI/MCP/TUI). CLI --since and MCP since override.
+    filter:      { source: [] }                       # subset of [cli, tui, mcp] — legacy schema; not consumed by the new event inspector
   task_activity:
     sort:   { order: asc }                            # asc = chronological, desc = newest first
 ```
@@ -173,6 +174,7 @@ Allowed values come from `internal/config/validator.go`:
 | `graph.sort.order` | `asc`, `desc` | `asc` |
 | `logs.sort.order` | `asc`, `desc` (no `field`) | `desc` |
 | `logs.limit` | int `> 0` | `50` |
+| `logs.window_days` | int `> 0` | `30` |
 | `logs.filter.source` | subset of `cli`, `tui`, `mcp` | `[]` (no filter) |
 | `task_activity.sort.order` | `asc`, `desc` (no `field`) | `asc` |
 | `*.filter.priority` | subset of `low`, `normal`, `high` | `[]` |
