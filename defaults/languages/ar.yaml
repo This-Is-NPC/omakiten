@@ -428,6 +428,7 @@ keys:
   tui.footer.subs: "فرعية"
   tui.footer.theme: "سمة"
   tui.footer.config: "إعدادات"
+  tui.footer.subtask_kit: "مجموعة المهام الفرعية"
   tui.footer.select: "اختيار"
   tui.footer.default: "افتراضي"
   tui.footer.top_bottom: "أعلى/أسفل"

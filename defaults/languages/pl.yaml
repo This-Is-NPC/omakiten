@@ -428,6 +428,7 @@ keys:
   tui.footer.subs: "podmenu"
   tui.footer.theme: "theme"
   tui.footer.config: "config"
+  tui.footer.subtask_kit: "zestaw podzadań"
   tui.footer.select: "wybierz"
   tui.footer.default: "domyślny"
   tui.footer.top_bottom: "góra/dół"

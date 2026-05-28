@@ -429,6 +429,7 @@ keys:
   tui.footer.subs: "subs"
   tui.footer.theme: "thema"
   tui.footer.config: "config"
+  tui.footer.subtask_kit: "subtaak-kit"
   tui.footer.select: "selecteren"
   tui.footer.default: "default"
   tui.footer.top_bottom: "top/bottom"

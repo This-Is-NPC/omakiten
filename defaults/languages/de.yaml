@@ -435,6 +435,7 @@ keys:
   tui.footer.subs: "subs"
   tui.footer.theme: "Theme"
   tui.footer.config: "Config"
+  tui.footer.subtask_kit: "Subtask-Kit"
   tui.footer.select: "auswählen"
   tui.footer.default: "Standard"
   tui.footer.top_bottom: "Anfang/Ende"

@@ -428,6 +428,7 @@ keys:
   tui.footer.subs: "subs"
   tui.footer.theme: "theme"
   tui.footer.config: "config"
+  tui.footer.subtask_kit: "underuppgiftskit"
   tui.footer.select: "välj"
   tui.footer.default: "standard"
   tui.footer.top_bottom: "topp/botten"

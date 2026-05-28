@@ -429,6 +429,7 @@ keys:
   tui.footer.subs: "alt menüler"
   tui.footer.theme: "tema"
   tui.footer.config: "config"
+  tui.footer.subtask_kit: "alt görev kiti"
   tui.footer.select: "seç"
   tui.footer.default: "varsayılan"
   tui.footer.top_bottom: "üst/alt"

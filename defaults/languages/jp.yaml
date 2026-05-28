@@ -428,6 +428,7 @@ keys:
   tui.footer.subs: "サブ"
   tui.footer.theme: "テーマ"
   tui.footer.config: "config"
+  tui.footer.subtask_kit: "サブタスクキット"
   tui.footer.select: "選択"
   tui.footer.default: "デフォルト"
   tui.footer.top_bottom: "先頭/末尾"

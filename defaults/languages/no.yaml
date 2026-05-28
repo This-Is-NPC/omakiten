@@ -428,6 +428,7 @@ keys:
   tui.footer.subs: "undermenyer"
   tui.footer.theme: "tema"
   tui.footer.config: "config"
+  tui.footer.subtask_kit: "underoppgavekit"
   tui.footer.select: "velg"
   tui.footer.default: "default"
   tui.footer.top_bottom: "topp/bunn"

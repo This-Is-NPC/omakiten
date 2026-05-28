@@ -429,6 +429,7 @@ keys:
   tui.footer.subs: "alavalikot"
   tui.footer.theme: "teema"
   tui.footer.config: "config"
+  tui.footer.subtask_kit: "alitehtäväkit"
   tui.footer.select: "valitse"
   tui.footer.default: "oletus"
   tui.footer.top_bottom: "ylös/alas"

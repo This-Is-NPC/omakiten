@@ -430,6 +430,7 @@ keys:
   tui.footer.subs: "सब"
   tui.footer.theme: "theme"
   tui.footer.config: "config"
+  tui.footer.subtask_kit: "उप-कार्य किट"
   tui.footer.select: "चुनें"
   tui.footer.default: "डिफ़ॉल्ट"
   tui.footer.top_bottom: "ऊपर/नीचे"

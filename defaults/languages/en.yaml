@@ -435,6 +435,7 @@ keys:
   tui.footer.toggle_markdown: "toggle markdown"
   tui.footer.theme: "theme"
   tui.footer.config: "config"
+  tui.footer.subtask_kit: "subtask-kit"
   tui.footer.select: "select"
   tui.footer.default: "default"
   tui.footer.top_bottom: "top/bottom"

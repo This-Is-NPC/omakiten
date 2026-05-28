@@ -428,6 +428,7 @@ keys:
   tui.footer.subs: "subs"
   tui.footer.theme: "theme"
   tui.footer.config: "config"
+  tui.footer.subtask_kit: "набір підзавдань"
   tui.footer.select: "обрати"
   tui.footer.default: "за замовчуванням"
   tui.footer.top_bottom: "верх/низ"
