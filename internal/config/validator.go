@@ -17,7 +17,6 @@ var allowedSortOrders = map[string]struct{}{
 var (
 	allowedTaskSortFields  = []string{"id", "title", "priority", "created_at"}
 	allowedGraphSortFields = []string{"id", "title"}
-	allowedLogsSources     = []string{"cli", "tui", "mcp"}
 )
 
 // effectiveSeverityValues returns the configurable label set for law
@@ -910,9 +909,6 @@ func validateViewSettings(v ViewSettings, workflows []Workflow, activeWorkflow s
 	}
 	if v.Logs.WindowDays <= 0 {
 		return fmt.Errorf("config.views.logs.window_days: must be > 0 (see defaults/omakiten.yaml)")
-	}
-	if err := validateStringSet("config.views.logs.filter.source", v.Logs.Filter.Source, allowedLogsSources); err != nil {
-		return err
 	}
 
 	if err := validateRequiredSort("config.views.task_activity.sort", v.TaskActivity.Sort, nil, false); err != nil {
