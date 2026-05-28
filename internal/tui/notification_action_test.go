@@ -8,6 +8,7 @@ import (
 
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
+	"omakiten/internal/testfakes/eventrepo"
 	"omakiten/internal/tui/components/notification"
 )
 
@@ -68,7 +69,14 @@ func TestHandleNotificationAction_recordsConfirmationGranted(t *testing.T) {
 	}
 }
 
+// recordingEventRepo wraps the real app.EventRepository and bumps a
+// per-eventType counter on every recorded write. Read paths delegate to
+// inner so consumers (e.g. plan finalization, activity feed) still see
+// real data. The embedded eventrepo.NoOp is a forward-compat safety net:
+// when new methods land on app.EventRepository, the recorder inherits
+// no-op defaults instead of failing to compile in lock-step.
 type recordingEventRepo struct {
+	eventrepo.NoOp
 	inner       app.EventRepository
 	countByType map[string]int
 }
