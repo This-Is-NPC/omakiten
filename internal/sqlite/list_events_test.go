@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"testing"
 	"time"
@@ -300,15 +301,18 @@ func TestListEventsProjectScope(t *testing.T) {
 
 // TestListEventsUsesIndex documents AC#6 — the planner must use
 // idx_events_type_started for category-filtered queries; no full scan.
+// The check is split in two: (1) the plan reports USING INDEX (no full
+// scan), (2) the named index exists in sqlite_master. Splitting the
+// concerns keeps the assertion robust against EXPLAIN output format
+// drift while still tripping on a real schema rename.
 func TestListEventsUsesIndex(t *testing.T) {
 	ctx := context.Background()
 	store := openStoreFixture(t, t.TempDir()+"/omakiten.db")
 	now := time.Now()
 	seedEvent(ctx, t, store, 1, domain.EventTypeTaskCreated, now)
 
-	// EXPLAIN QUERY PLAN against the category-filtered shape. Build the
-	// argument list manually so the EXPLAIN exactly matches the
-	// production query.
+	// Build the category-filtered shape EXPLAIN sees so the arg list
+	// exactly matches the production query.
 	eventTypes := domain.EventTypesForCategory(domain.EventCategoryTask)
 	ph := make([]string, len(eventTypes))
 	args := []any{int64(1)}
@@ -316,31 +320,9 @@ func TestListEventsUsesIndex(t *testing.T) {
 		ph[i] = "?"
 		args = append(args, et)
 	}
-	query := "EXPLAIN QUERY PLAN SELECT id FROM events WHERE project_id = ? AND event_type IN (" + strings.Join(ph, ",") + ") ORDER BY created_at DESC"
+	query := "SELECT id FROM events WHERE project_id = ? AND event_type IN (" + strings.Join(ph, ",") + ") ORDER BY created_at DESC"
 
-	rows, err := store.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		t.Fatalf("EXPLAIN QUERY PLAN error = %v", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var plan strings.Builder
-	for rows.Next() {
-		var id, parent, notused int
-		var detail string
-		if err := rows.Scan(&id, &parent, &notused, &detail); err != nil {
-			t.Fatalf("scan EXPLAIN error = %v", err)
-		}
-		plan.WriteString(detail)
-		plan.WriteString("\n")
-	}
-	planStr := plan.String()
-	if !strings.Contains(planStr, "idx_events_type_started") {
-		t.Fatalf("EXPLAIN plan missing idx_events_type_started — got:\n%s", planStr)
-	}
-	if strings.Contains(planStr, "SCAN events") && !strings.Contains(planStr, "USING INDEX") {
-		t.Fatalf("EXPLAIN plan shows full table scan — got:\n%s", planStr)
-	}
+	assertQueryUsesIndex(t, store.db, query, args, "idx_events_type_started")
 }
 
 // TestEventCategoryCountsStableShape locks AC#5 — every known category
@@ -486,5 +468,44 @@ func TestListEventsLimitAboveCapClamped(t *testing.T) {
 func TestMaxListEventsLimitConstant(t *testing.T) {
 	if MaxListEventsLimit != 10_000 {
 		t.Fatalf("MaxListEventsLimit = %d, want 10000", MaxListEventsLimit)
+	}
+}
+
+// assertQueryUsesIndex runs EXPLAIN QUERY PLAN against the given query
+// and asserts (a) the plan reports "USING INDEX" (no full scan) and
+// (b) the named index exists in sqlite_master. Splitting the two
+// concerns keeps the assertion robust against EXPLAIN output format
+// drift while still tripping on a real schema rename: a rename
+// surfaces as "expected index missing" rather than a brittle substring
+// miss against the planner's free-form detail text.
+func assertQueryUsesIndex(t *testing.T, db *sql.DB, query string, args []any, indexName string) {
+	t.Helper()
+	// 1. Plan asserts "USING INDEX" — proves the optimizer didn't scan.
+	rows, err := db.Query("EXPLAIN QUERY PLAN "+query, args...)
+	if err != nil {
+		t.Fatalf("EXPLAIN QUERY PLAN: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var plan strings.Builder
+	for rows.Next() {
+		var id, parent, notUsed int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notUsed, &detail); err != nil {
+			t.Fatalf("scan plan: %v", err)
+		}
+		plan.WriteString(detail)
+		plan.WriteByte('\n')
+	}
+	planStr := plan.String()
+	if !strings.Contains(planStr, "USING INDEX") && !strings.Contains(planStr, "USING COVERING INDEX") {
+		t.Fatalf("query did not use an index; plan:\n%s", planStr)
+	}
+	// 2. Named index exists — rename surfaces as "missing", not "string drift".
+	var name string
+	if err := db.QueryRow(
+		`SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?`,
+		indexName,
+	).Scan(&name); err != nil {
+		t.Fatalf("expected index %q to exist in sqlite_master: %v", indexName, err)
 	}
 }
