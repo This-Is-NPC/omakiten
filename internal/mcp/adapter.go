@@ -232,6 +232,7 @@ func tools() []ToolDefinition {
 		{Name: "comments.edit", Description: "Rewrite a comment body and replace its tags. Subject to bucket policy (permissions.comment.edit, inherited from permissions.task when not declared).", InputSchema: objectSchema(map[string]any{"comment_id": integerSchema("Comment id"), "body": stringSchema("New comment body"), "tags": arrayStringSchema("Optional tag names; replaces all existing tags on the comment")}, []string{"comment_id", "body"})},
 		{Name: "comments.delete", Description: "Hard-delete a comment. Subject to bucket policy (permissions.comment.delete, inherited from permissions.task when not declared).", InputSchema: objectSchema(map[string]any{"comment_id": integerSchema("Comment id"), "confirmed": booleanSchema("Required true to actually delete the comment")}, []string{"comment_id"})},
 		{Name: "task_activity.list", Description: "Return the unified activity feed for a task: comments and system events (task.created, task.moved, task.completed) ordered chronologically.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "order": stringSchema("Sort order: 'asc' (chronological, default) or 'desc' (newest first)")}, []string{"task_id"})},
+		{Name: "logs.list", Description: "Generic Logs inspector over the unified events log. Returns every event_type — task lifecycle, comments, plans, guards, hooks, tool calls (CLI/MCP/TUI), tricks, audits, and domain bookkeeping — each row carrying a rendered `summary` string so the agent does not have to parse the payload JSON. Default scope is the active project over the configured window (config.views.logs.window_days, 30 days by default). Pass `categories=[\"tool_call\"]` to reproduce the legacy activity-log filter; pass `since=\"24h\"` to narrow the window. Allowed categories: task, comment, plan, tag-dep, guard, audit, hook, tool_call, trick, domain.", InputSchema: logsListSchema()},
 		{Name: "dependencies.add", Description: "Add a project-scoped task dependency with cycle prevention.", InputSchema: dependencySchema(false)},
 		{Name: "dependencies.remove", Description: "Remove a task dependency after explicit confirmation.", InputSchema: dependencySchema(true)},
 		{Name: "dependencies.list", Description: "List dependencies for one task or all active project tasks.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Optional task id; omit or set 0 for all")}, nil)},
@@ -460,6 +461,12 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = service.ListTaskActivity(ctx, input)
+		}
+	case "logs.list":
+		var input agent.ListLogsInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.ListLogs(ctx, input)
 		}
 	case "dependencies.add":
 		var input agent.AddDependencyInput
@@ -870,5 +877,24 @@ func confirmSolutionSchema() map[string]any {
 func listTopSolutionsSchema() map[string]any {
 	props := selectorProperties()
 	props["limit"] = integerSchema("Maximum number of solutions to return (defaults and caps come from config.solutions; omitted/<=0 = default_top_limit, larger values clamped to max_top_limit)")
+	return objectSchema(props, nil)
+}
+
+// logsListSchema declares the param surface for the `logs.list` tool.
+// All four params are optional so the no-arg call returns a useful
+// default response (last window_days of every category, descending).
+// Categories enumerates the legal EventCategory string values so
+// schema-aware clients (and the human reading mcp.md) can drive the
+// chip without re-deriving them from the Go enum.
+func logsListSchema() map[string]any {
+	props := selectorProperties()
+	props["categories"] = map[string]any{
+		"type":        "array",
+		"items":       map[string]any{"type": "string", "enum": []string{"task", "comment", "plan", "tag-dep", "guard", "audit", "hook", "tool_call", "trick", "domain"}},
+		"description": "Optional list of EventCategory values to include. Empty/omitted = every category. Example: [\"tool_call\"] reproduces the legacy activity-log filter; [\"task\", \"comment\"] narrows to task lifecycle and comments.",
+	}
+	props["since"] = stringSchema("Optional time floor as a Go duration (\"24h\", \"30m\") or N-day shorthand (\"7d\", \"30d\"). Omitted → use the project's configured Logs window (config.views.logs.window_days, 30 days by default).")
+	props["limit"] = integerSchema("Optional row cap. 0 or omitted = no MCP-side cap (the SQL layer still applies its safety ceiling).")
+	props["order"] = stringSchema("Sort direction: \"desc\" (default, newest first) or \"asc\" (oldest first). Anything else falls back to \"desc\".")
 	return objectSchema(props, nil)
 }

@@ -183,6 +183,8 @@ type EventRepository interface {
 	ListTaskActivity(ctx context.Context, projectID, taskID int64, order string) ([]domain.Event, error)
 	// ListEvents is the generic Logs inspector read path. Zero values on
 	// the filter degrade to "no filter" per domain.EventFilter godoc.
+	// Backs the `logs.list` MCP tool + TUI / CLI siblings so every
+	// consumer reads the same shape.
 	ListEvents(ctx context.Context, filter domain.EventFilter) ([]domain.EventRow, error)
 	// EventCategoryCounts returns per-category totals over the optional
 	// project + time window. Every known category is present in the
