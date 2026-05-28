@@ -300,6 +300,67 @@ func TestSetMaxResultRowsShowsMoreIndicator(t *testing.T) {
 	}
 }
 
+func TestSetMaxResultRowsScrollHoldsUntilCursorReachesBottomEdge(t *testing.T) {
+	m := seedSearchModel(fakeHits(50))
+	m.SetMaxResultRows(10)
+	// Move cursor inside the initial window — scroll must NOT slide.
+	for i := 0; i < 9; i++ {
+		m, _ = m.Update(downKey())
+	}
+	view := m.View()
+	if strings.Contains(view, "↑") {
+		t.Fatalf("scroll slid prematurely (got ↑ indicator); view=\n%s", view)
+	}
+	if !strings.Contains(view, "task #100") {
+		t.Fatalf("first row task #100 dropped from view while cursor still in initial window; view=\n%s", view)
+	}
+	if !strings.Contains(view, "▸ task #109") {
+		t.Fatalf("cursor not on task #109 (bottom of initial window); view=\n%s", view)
+	}
+	// Cross the bottom edge — scroll must slide by exactly one row.
+	m, _ = m.Update(downKey())
+	view = m.View()
+	if strings.Contains(view, "task #100  ") {
+		t.Fatalf("task #100 still rendered after sliding past bottom edge; view=\n%s", view)
+	}
+	if !strings.Contains(view, "↑ 1 more") {
+		t.Fatalf("expected ↑ 1 more after sliding by one; view=\n%s", view)
+	}
+	if !strings.Contains(view, "▸ task #110") {
+		t.Fatalf("cursor not on task #110 after first slide; view=\n%s", view)
+	}
+}
+
+func TestSetMaxResultRowsScrollHoldsOnUpUntilCursorCrossesTopEdge(t *testing.T) {
+	m := seedSearchModel(fakeHits(50))
+	m.SetMaxResultRows(5)
+	// Slide window down so resultsScroll > 0 (cursor=10 → scroll=6, window [6,11)).
+	for i := 0; i < 10; i++ {
+		m, _ = m.Update(downKey())
+	}
+	// Walk cursor back up but stay inside the visible window —
+	// scroll must hold at 6.
+	for i := 0; i < 4; i++ {
+		m, _ = m.Update(upKey())
+	}
+	view := m.View()
+	if !strings.Contains(view, "↑ 6 more") {
+		t.Fatalf("scroll did not hold while cursor stayed in window; view=\n%s", view)
+	}
+	if !strings.Contains(view, "▸ task #106") {
+		t.Fatalf("cursor not on task #106 (top of held window); view=\n%s", view)
+	}
+	// One more up crosses the top edge — scroll slides up by one.
+	m, _ = m.Update(upKey())
+	view = m.View()
+	if !strings.Contains(view, "↑ 5 more") {
+		t.Fatalf("expected ↑ 5 more after sliding up by one; view=\n%s", view)
+	}
+	if !strings.Contains(view, "▸ task #105") {
+		t.Fatalf("cursor not on task #105 after top-edge slide; view=\n%s", view)
+	}
+}
+
 func TestSetMaxResultRowsZeroMeansUnlimited(t *testing.T) {
 	m := seedSearchModel(fakeHits(7))
 	// No SetMaxResultRows call — default zero must render all 7.

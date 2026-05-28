@@ -86,6 +86,14 @@ type Model struct {
 	// a focused row emits OpenHitMsg instead of SearchMsg.
 	results       []domain.SearchHit
 	resultsCursor int
+	// resultsScroll is the index of the first row inside the visible
+	// window. It follows the cursor with an edge-anchored rule (same
+	// shape as `syncFocusedColumnScroll` for the board's card lists):
+	// the window only slides when the cursor would otherwise leave
+	// the [scroll, scroll+maxResultRows) range. A centred window
+	// would scroll on every down-arrow which feels jumpy and breaks
+	// parity with the rest of the TUI's tables.
+	resultsScroll int
 	// maxResultRows caps the number of result rows renderResultList
 	// emits per View() pass. Zero (the default) means unlimited —
 	// callers that do not plumb terminal height keep the legacy
@@ -177,6 +185,7 @@ func (m Model) FocusedHit() (domain.SearchHit, bool) {
 func (m *Model) SetResults(hits []domain.SearchHit) {
 	m.results = append([]domain.SearchHit(nil), hits...)
 	m.resultsCursor = 0
+	m.resultsScroll = 0
 	m.status = ""
 }
 
@@ -186,6 +195,7 @@ func (m *Model) SetResults(hits []domain.SearchHit) {
 func (m *Model) ClearResults() {
 	m.results = nil
 	m.resultsCursor = 0
+	m.resultsScroll = 0
 }
 
 // Update routes the keypress and bubbles the appropriate outbound
@@ -265,6 +275,37 @@ func (m *Model) moveResultsCursor(delta int) {
 		next = len(m.results) - 1
 	}
 	m.resultsCursor = next
+	m.followResultsScroll()
+}
+
+// followResultsScroll keeps `resultsScroll` consistent with the
+// cursor under an edge-anchored rule: only when the cursor would
+// otherwise leave the visible [scroll, scroll+maxResultRows) range
+// do we slide the window — same shape as `syncFocusedColumnScroll`
+// for the board's card lists. The scroll is also clamped against
+// the tail of the result slice so a shrinking window (e.g. after a
+// terminal resize) does not leave dead rows below the list.
+func (m *Model) followResultsScroll() {
+	if m.maxResultRows <= 0 {
+		m.resultsScroll = 0
+		return
+	}
+	if m.resultsCursor < m.resultsScroll {
+		m.resultsScroll = m.resultsCursor
+	}
+	if m.resultsCursor >= m.resultsScroll+m.maxResultRows {
+		m.resultsScroll = m.resultsCursor - m.maxResultRows + 1
+	}
+	if m.resultsScroll < 0 {
+		m.resultsScroll = 0
+	}
+	maxScroll := len(m.results) - m.maxResultRows
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.resultsScroll > maxScroll {
+		m.resultsScroll = maxScroll
+	}
 }
 
 func (m Model) submit() (Model, tea.Cmd) {
@@ -308,6 +349,7 @@ func (m *Model) SetMaxResultRows(n int) {
 		n = 0
 	}
 	m.maxResultRows = n
+	m.followResultsScroll()
 }
 
 // markTagPattern strips FTS5 snippet highlight markers. The
@@ -382,25 +424,22 @@ func (m Model) renderResultList() string {
 // resultsWindow returns the [start, end) slice of `m.results` that
 // renderResultList should emit. Zero maxResultRows (the default)
 // disables windowing and renders every hit. Otherwise the window
-// is centred on the cursor and clamped to the slice bounds so the
-// focused row is always visible.
+// is anchored on `resultsScroll`, which `followResultsScroll`
+// updates only when the cursor would otherwise leave the visible
+// range — matching the edge-anchored scroll the rest of the TUI's
+// tables use.
 func (m Model) resultsWindow() (int, int) {
 	n := len(m.results)
 	if m.maxResultRows <= 0 || n <= m.maxResultRows {
 		return 0, n
 	}
-	half := m.maxResultRows / 2
-	start := m.resultsCursor - half
+	start := m.resultsScroll
 	if start < 0 {
 		start = 0
 	}
 	end := start + m.maxResultRows
 	if end > n {
 		end = n
-		start = end - m.maxResultRows
-		if start < 0 {
-			start = 0
-		}
 	}
 	return start, end
 }
