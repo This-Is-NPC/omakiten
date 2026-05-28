@@ -12,6 +12,17 @@
 
 * **cli:** rewrite `okt logs` as the unified event inspector with `--category`, `--since`, and `--limit` flags. Default scope is the last `views.logs.window_days` for the active project; `--category` is repeatable and comma-separated and accepts the same chips as the TUI (`task`, `comment`, `plan`, `tag-dep`, `guard`, `audit`, `hook`, `tool_call`, `trick`, `domain`, plus the `all` shortcut).
 
+## [0.23.0](https://github.com/This-Is-NPC/omakiten/compare/v0.22.3...v0.23.0) (2026-05-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **events:** /metrics.summary JSON shape changed: per-bucket flat fields (errors_recorded, errors_searched, solutions_added, solutions_liked, solutions_failed, solutions_top_viewed) replaced by a buckets map keyed by metric tag. Update consumers to read buckets.error_searched etc. instead.
+
+### Bug Fixes
+
+* **events:** YAML-driven event registry + rename error.searched ([#95](https://github.com/This-Is-NPC/omakiten/issues/95)) ([ffd7df6](https://github.com/This-Is-NPC/omakiten/commit/ffd7df6966114d0913279b9c7f41677cd6e0f0dc))
+
 ## [0.22.3](https://github.com/This-Is-NPC/omakiten/compare/v0.22.2...v0.22.3) (2026-05-28)
 
 
