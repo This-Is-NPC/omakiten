@@ -92,10 +92,13 @@ func TestEventTypesForCategoryReturnsNilForUnknown(t *testing.T) {
 	}
 }
 
-// TestEventTypesForCategoryIsDeterministic — repeated calls return
-// slices with identical contents and ordering. The inversion sorts at
-// init time so the SQL IN-list shape is stable for EXPLAIN diff review
-// and for any caller that tests against the rendered query.
+// TestEventTypesForCategoryIsDeterministic locks the SQL IN-list
+// ordering invariant. Go map iteration order is non-deterministic, so
+// EventTypesForCategory must sort each category bucket at init time.
+// Without this lock, two callers building the same query could produce
+// different SQL strings, breaking statement caches and EXPLAIN-plan
+// tests. Repeated calls must return slices with identical contents and
+// ordering.
 func TestEventTypesForCategoryIsDeterministic(t *testing.T) {
 	for _, c := range KnownEventCategories {
 		a := EventTypesForCategory(c)
