@@ -8,6 +8,7 @@ import (
 )
 
 func TestLoadBundleParsesViewsSection(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	if err := EnsureDefaultFiles(tmp); err != nil {
 		t.Fatalf("EnsureDefaultFiles() = %v", err)
@@ -128,6 +129,7 @@ workflows:
 // validator must accept it. If this fails, the kit ships an
 // unparseable / incomplete document — the most basic invariant.
 func TestLoadBundleParsesKitDefaultFile(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	if err := EnsureDefaultFiles(tmp); err != nil {
 		t.Fatalf("EnsureDefaultFiles() = %v", err)
@@ -181,6 +183,7 @@ func fullViewSettings() ViewSettings {
 }
 
 func TestValidateViewSettingsRejectsBadValues(t *testing.T) {
+	t.Parallel()
 	baseWorkflow := []Workflow{{
 		ID: 1, Key: "default", Name: "Default",
 		Buckets: []Bucket{
@@ -263,6 +266,7 @@ func TestValidateViewSettingsRejectsBadValues(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			views := fullViewSettings()
 			tc.mutate(&views)
 			err := validateViewSettings(views, baseWorkflow, "default", []string{"low", "normal", "high"})
@@ -277,6 +281,7 @@ func TestValidateViewSettingsRejectsBadValues(t *testing.T) {
 }
 
 func TestValidateViewSettingsAcceptsValid(t *testing.T) {
+	t.Parallel()
 	baseWorkflow := []Workflow{{
 		ID: 1, Key: "default", Name: "Default",
 		Buckets: []Bucket{{ID: 1, Key: "backlog", Name: "Backlog", Position: 1}},
@@ -307,6 +312,7 @@ func TestValidateViewSettingsAcceptsValid(t *testing.T) {
 // validateViewSettings as a parameter, so a board filter mentioning
 // "urgent" passes when the priority is declared.
 func TestValidateViewSettingsHonorsCustomPriorities(t *testing.T) {
+	t.Parallel()
 	baseWorkflow := []Workflow{{
 		ID: 1, Key: "default", Name: "Default",
 		Buckets: []Bucket{{ID: 1, Key: "backlog", Name: "Backlog", Position: 1}},

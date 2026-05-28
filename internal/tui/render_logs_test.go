@@ -17,6 +17,7 @@ import (
 // these strings to fit inside the fixed-width column, so changes here
 // also affect alignment.
 func TestFormatLogsEntityComposition(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		row  domain.EventRow
@@ -30,6 +31,7 @@ func TestFormatLogsEntityComposition(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			if got := formatLogsEntity(tc.row); got != tc.want {
 				t.Fatalf("formatLogsEntity() = %q, want %q", got, tc.want)
 			}
@@ -42,6 +44,7 @@ func TestFormatLogsEntityComposition(t *testing.T) {
 // fall back to the em-dash. Empty rows degrade to the dash so the
 // column is never blank.
 func TestFormatLogsWhoColumn(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		row  domain.EventRow
@@ -54,6 +57,7 @@ func TestFormatLogsWhoColumn(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			if got := formatLogsWho(tc.row); got != tc.want {
 				t.Fatalf("formatLogsWho() = %q, want %q", got, tc.want)
 			}
@@ -66,6 +70,7 @@ func TestFormatLogsWhoColumn(t *testing.T) {
 // `width` characters so the column always carries the most recent
 // component. Values that already fit are returned untouched.
 func TestShortTimeForLogsTrimsToWidth(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		ts    string
 		width int
@@ -91,6 +96,7 @@ func TestShortTimeForLogsTrimsToWidth(t *testing.T) {
 // event_types are silently skipped so the headline number cannot
 // mix categories.
 func TestComputeEventStatsToolCallHealth(t *testing.T) {
+	t.Parallel()
 	rows := []domain.EventRow{
 		{EventType: domain.EventTypeCLIToolCall, Status: "ok"},
 		{EventType: domain.EventTypeMCPToolCall, Status: "error"},
@@ -124,6 +130,7 @@ func TestComputeEventStatsToolCallHealth(t *testing.T) {
 // repository-supplied per-category counts are taken verbatim — the
 // renderer never overrides the canonical totals.
 func TestComputeEventStatsCategoryCountsPassthrough(t *testing.T) {
+	t.Parallel()
 	counts := map[domain.EventCategory]int{
 		domain.EventCategoryTask:     5,
 		domain.EventCategoryComment:  2,
@@ -142,6 +149,7 @@ func TestComputeEventStatsCategoryCountsPassthrough(t *testing.T) {
 // must carry every column tag (TIME, TYPE, ENTITY, WHO, DETAIL) and
 // each row must surface its SummarizeEvent detail string.
 func TestRenderLogsWidePanelEmitsFiveColumnLayout(t *testing.T) {
+	t.Parallel()
 	model := newRenderLogsTestModel(t, 180)
 	model.events = []domain.EventRow{
 		{
@@ -195,6 +203,7 @@ func TestRenderLogsWidePanelEmitsFiveColumnLayout(t *testing.T) {
 // ENTITY / WHO column tags are dropped, but the SummarizeEvent
 // detail still carries the per-row signal.
 func TestRenderLogsCompactPanelDropsAuxiliaryColumns(t *testing.T) {
+	t.Parallel()
 	model := newRenderLogsTestModel(t, 80)
 	model.events = []domain.EventRow{
 		{
@@ -233,6 +242,7 @@ func TestRenderLogsCompactPanelDropsAuxiliaryColumns(t *testing.T) {
 // the user sees the full grouping vocabulary, with zero counts when
 // the window holds no matching rows.
 func TestRenderLogsSummaryTablesListsEveryKnownCategory(t *testing.T) {
+	t.Parallel()
 	model := newRenderLogsTestModel(t, 180)
 	model.eventStats = computeEventStats(nil, map[domain.EventCategory]int{
 		domain.EventCategoryTask:     3,
@@ -259,6 +269,7 @@ func TestRenderLogsSummaryTablesListsEveryKnownCategory(t *testing.T) {
 // from the existing tui.empty.logs catalog key so the message
 // stays localised.
 func TestRenderLogsEmptyStateRendersEmptyPanel(t *testing.T) {
+	t.Parallel()
 	model := newRenderLogsTestModel(t, 180)
 	model.repos.Events = stubEmptyEventRepo{}
 	view := ansi.Strip(model.renderLogs())
@@ -276,6 +287,7 @@ func TestRenderLogsEmptyStateRendersEmptyPanel(t *testing.T) {
 // We exercise the toggle through renderLogs so the dispatch logic
 // stays exercised end-to-end.
 func TestRenderLogsWidthSplitSwitchesPanels(t *testing.T) {
+	t.Parallel()
 	row := domain.EventRow{
 		ID:         1,
 		EntityType: "system",
