@@ -446,6 +446,16 @@ func (m *Model) refreshAfterViewChangeCmd(prev navState) tea.Cmd {
 	if m.top == prev.top && m.sub == prev.sub {
 		return nil
 	}
+	// Settings › General and Settings › Guards share `settingsGeneralLines`
+	// as their scroll state. When the user flips between them the linelist
+	// otherwise carries an offset clamped against the previous body — visible
+	// as a Guards view that opens mid-matrix because the General offset was
+	// large. Refresh against the new body and rewind to the top so each sub
+	// switch starts at row 0.
+	if m.top == topSettings && (m.sub == subSettingsGeneral || m.sub == subSettingsGuards) {
+		m.refreshSettingsGeneralLines()
+		m.settingsGeneralLines = m.settingsGeneralLines.ScrollBy(-(1 << 20))
+	}
 	if m.onHome() {
 		if err := m.loadHome(); err != nil {
 			m.status = err.Error()

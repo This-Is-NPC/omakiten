@@ -29,18 +29,21 @@ import (
 // the original `tui.settings.guards_tab` kicker so projects without
 // cascade overrides are visually unchanged.
 //
-// The body wraps in `sliceScrollRows` so the user can scroll once the
-// dispatch wiring (259.4) installs handlers — for the moment the offset
-// is hard-pinned to 0 because no handler ships yet; the renderer still
-// clips correctly when the matrix exceeds the viewport so the layout
-// budget is honoured the day the handlers land.
+// The body wraps in `sliceScrollRows` so the user can scroll the dual
+// matrix when it overflows. Scroll state is shared with Settings ›
+// General through `m.settingsGeneralLines` — the General handler
+// (`handleSettingsGeneralKey`) drives both subs and `refreshSettingsGeneralLines`
+// picks the right body source from `m.sub` before each ScrollBy. The
+// stale-offset case after switching subs is absorbed by
+// `sliceScrollRows`, which clamps an out-of-range offset against the
+// current body length.
 func (m Model) renderSettingsGuards() string {
 	body := m.renderSettingsGuardsBody()
 	hint := m.styles.hint.Render(m.t("tui.settings.guards_hint"))
 
 	bodyLines := strings.Split(body, "\n")
 	viewport := m.settingsGuardsViewportRows()
-	visible := m.sliceScrollRows(bodyLines, 0, viewport)
+	visible := m.sliceScrollRows(bodyLines, m.settingsGeneralLines.Scroll(), viewport)
 	return "\n" + indentBlock(strings.Join(visible, "\n")+"\n\n"+hint, 2)
 }
 

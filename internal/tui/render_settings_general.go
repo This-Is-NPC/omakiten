@@ -311,20 +311,30 @@ func clampSettingsGeneralScroll(offset, total, viewport int) int {
 	return offset
 }
 
-// handleSettingsGeneralKey routes keypresses while Settings › General is
-// active. The view itself is read-only; only the global theme/config
-// pickers remain reachable from here so the user can still hot-swap
-// themes and pick a config profile without leaving Settings. `e` shells
-// out to $EDITOR against the active omakiten.yaml so the user can edit
-// the wiring file directly; on return the bundle is re-imported through
-// the same handleEditorFinished path the entity edits use.
+// handleSettingsGeneralKey routes keypresses while Settings › General
+// OR Settings › Guards is active. Both subs are read-only scroll-only
+// surfaces, so the handler is shared — `refreshSettingsGeneralLines`
+// picks the right body source from `m.sub` before each ScrollBy so the
+// linelist always knows the current body's bounds. Only the global
+// theme/config/subtask-kit/editor pickers remain reachable from here so
+// the user can still hot-swap themes and pick a config profile without
+// leaving Settings. `e` shells out to $EDITOR against the active
+// omakiten.yaml so the user can edit the wiring file directly; on
+// return the bundle is re-imported through the same
+// handleEditorFinished path the entity edits use.
 //
-// `j`/`k`/`PgUp`/`PgDn`/`g`/`G` scroll the body when the rendered
-// summary block is taller than the available viewport — the sibling
-// Settings sub-tabs already scrolled, so this binding closes the
-// general-only dead-end. Scroll is offset-only (no cursor) since the
-// view is read-only.
+// `j`/`k`/`PgUp`/`PgDn`/`g`/`G` scroll the body when the rendered block
+// is taller than the available viewport — the sibling Settings sub-tabs
+// already scrolled, so this binding closes the general/guards
+// dead-ends. Scroll is offset-only (no cursor) since the view is
+// read-only.
 func (m *Model) handleSettingsGeneralKey(msg tea.KeyMsg) tea.Cmd {
+	pageStep := func() int {
+		if m.sub == subSettingsGuards {
+			return taskViewPageStep(m.settingsGuardsViewportRows())
+		}
+		return taskViewPageStep(m.settingsGeneralViewportRows())
+	}
 	switch msg.String() {
 	case "t":
 		m.openThemePicker()
@@ -346,10 +356,10 @@ func (m *Model) handleSettingsGeneralKey(msg tea.KeyMsg) tea.Cmd {
 		m.settingsGeneralLines = m.settingsGeneralLines.ScrollBy(-1)
 	case "pgdown", "ctrl+d":
 		m.refreshSettingsGeneralLines()
-		m.settingsGeneralLines = m.settingsGeneralLines.ScrollBy(taskViewPageStep(m.settingsGeneralViewportRows()))
+		m.settingsGeneralLines = m.settingsGeneralLines.ScrollBy(pageStep())
 	case "pgup", "ctrl+u":
 		m.refreshSettingsGeneralLines()
-		m.settingsGeneralLines = m.settingsGeneralLines.ScrollBy(-taskViewPageStep(m.settingsGeneralViewportRows()))
+		m.settingsGeneralLines = m.settingsGeneralLines.ScrollBy(-pageStep())
 	case "home", "g":
 		m.refreshSettingsGeneralLines()
 		m.settingsGeneralLines = m.settingsGeneralLines.ScrollBy(-(1 << 20))
@@ -361,22 +371,40 @@ func (m *Model) handleSettingsGeneralKey(msg tea.KeyMsg) tea.Cmd {
 }
 
 // refreshSettingsGeneralLines rebuilds the linelist's body lines +
-// viewport from the current Settings › General render. Called from
+// viewport from the active Settings sub-tab's render. Called from
 // every *Model handler that touches the scroll state so the
 // linelist always has accurate inputs before its ScrollBy fires.
+//
+// The linelist is shared between Settings › General and Settings ›
+// Guards — both subs are read-only scroll-only surfaces, so a single
+// offset/cursor pair is enough. The body source switches on `m.sub`
+// so j/k/pgup/pgdn/g/G operate on the visible body's bounds in each
+// sub. The viewport also switches because the Guards body packs a
+// slightly different chrome budget (mirror helper
+// `settingsGuardsViewportRows`).
 func (m *Model) refreshSettingsGeneralLines() {
-	body := m.renderSettingsGeneralBody()
+	var (
+		body     string
+		viewport int
+	)
+	if m.sub == subSettingsGuards {
+		body = m.renderSettingsGuardsBody()
+		viewport = m.settingsGuardsViewportRows()
+	} else {
+		body = m.renderSettingsGeneralBody()
+		viewport = m.settingsGeneralViewportRows()
+	}
 	lines := strings.Split(body, "\n")
 	// WithCursor(-1) forces the no-selection sentinel even when the
 	// parent Model was constructed via a bare struct literal (test
 	// path) — the zero-value linelist.Model has cursor=0 which would
 	// trip Resync's Follow branch and clamp scroll to line 0 every
-	// frame. Settings › General is read-only, so cursor=-1 is always
-	// correct here.
+	// frame. Settings › General and Settings › Guards are both
+	// read-only, so cursor=-1 is always correct here.
 	m.settingsGeneralLines = m.settingsGeneralLines.
 		WithCursor(-1).
 		WithLines(lines).
-		WithViewport(m.settingsGeneralViewportRows())
+		WithViewport(viewport)
 }
 
 // maxSettingsGeneralScroll returns the offset that puts the last body
