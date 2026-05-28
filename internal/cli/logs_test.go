@@ -104,7 +104,7 @@ func TestResolveLogSinceFlagWins(t *testing.T) {
 	snap := stubLogsSnapshot{window: 30 * 24 * time.Hour}
 
 	t.Run("flag overrides snapshot window", func(t *testing.T) {
-		got, err := resolveLogSince("24h", snap)
+		got, err := resolveLogSince("24h", snap, time.Now)
 		if err != nil {
 			t.Fatalf("resolveLogSince() error = %v", err)
 		}
@@ -115,7 +115,7 @@ func TestResolveLogSinceFlagWins(t *testing.T) {
 	})
 
 	t.Run("days suffix accepted", func(t *testing.T) {
-		got, err := resolveLogSince("7d", snap)
+		got, err := resolveLogSince("7d", snap, time.Now)
 		if err != nil {
 			t.Fatalf("resolveLogSince(7d) error = %v", err)
 		}
@@ -126,7 +126,7 @@ func TestResolveLogSinceFlagWins(t *testing.T) {
 	})
 
 	t.Run("falls back to snapshot window when flag empty", func(t *testing.T) {
-		got, err := resolveLogSince("", snap)
+		got, err := resolveLogSince("", snap, time.Now)
 		if err != nil {
 			t.Fatalf("resolveLogSince() error = %v", err)
 		}
@@ -137,7 +137,7 @@ func TestResolveLogSinceFlagWins(t *testing.T) {
 	})
 
 	t.Run("invalid duration returns coded error", func(t *testing.T) {
-		_, err := resolveLogSince("not-a-duration", snap)
+		_, err := resolveLogSince("not-a-duration", snap, time.Now)
 		if err == nil {
 			t.Fatalf("resolveLogSince(not-a-duration) error = nil, want failure")
 		}
@@ -151,7 +151,7 @@ func TestResolveLogSinceFlagWins(t *testing.T) {
 	})
 
 	t.Run("zero window returns zero time floor", func(t *testing.T) {
-		got, err := resolveLogSince("", stubLogsSnapshot{window: 0})
+		got, err := resolveLogSince("", stubLogsSnapshot{window: 0}, time.Now)
 		if err != nil {
 			t.Fatalf("resolveLogSince() error = %v", err)
 		}
