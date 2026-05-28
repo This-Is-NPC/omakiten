@@ -76,13 +76,6 @@ func clampInt(value, minValue, maxValue int) int {
 	return value
 }
 
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func indentBlock(block string, spaces int) string {
 	indent := strings.Repeat(" ", spaces)
 	lines := strings.Split(block, "\n")

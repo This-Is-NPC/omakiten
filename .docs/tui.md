@@ -225,7 +225,32 @@ The TUI itself reports `agent_model="human"` so its own activity does not appear
 
 ### Stats › Logs
 
-Activity log viewer. Two bordered grid tables stack above the panel (Status: total / ok / error / running, Sources: cli / mcp / tui) — both **aggregate the entire project history** via `ActivityLogStats`, regardless of how many rows the panel beneath happens to render under `views.logs.limit`. The panel itself is paged by limit and ordered DESC by `created_at`, with the user-configured source filter applied (`views.logs.filter.source`).
+Unified event inspector — every `event_type` the project has recorded inside the snapshot's `views.logs.window_days` window renders through one 5-column row shape:
+
+```
+TIME · TYPE · ENTITY · WHO · DETAIL
+```
+
+| Column | Source | Notes |
+|---|---|---|
+| `TIME` | `events.created_at` | trailing 12 chars in the wide layout (HH:MM:SS in compact) |
+| `TYPE` | `events.event_type` | painted via the `category.<name>` theme tokens (see below) |
+| `ENTITY` | `entity_type + #entity_id` | collapses to `system` when `entity_id = 0` |
+| `WHO` | `source` / `author_type` | tool calls show source, comments show author_type, system events show `—` |
+| `DETAIL` | `domain.SummarizeEvent(row)` | per-event_type one-liner; never empty (see `internal/domain/event_summary.go`) |
+
+Two bordered grid tables stack above the panel:
+
+- **Categories** — one row per `domain.KnownEventCategories` entry with its window total from `EventRepository.EventCategoryCounts`. Every category is present (zero counts acceptable) so the grouping vocabulary is visible at a glance.
+- **Health · tool_calls** — `ok` / `error` / `running` counts scoped explicitly to the `cli.tool_call` / `mcp.tool_call` / `tui.tool_call` / `hook.executed` subset. The kicker carries the scope so the numbers cannot be confused with the project-wide totals above.
+
+Both tables aggregate over the same `views.logs.window_days` window the panel rows do.
+
+Per-row TYPE coloring resolves through `category.<name>` theme tokens (`category.tasks`, `category.comment`, `category.plan`, `category.audit`, `category.guard`, `category.trick`, `category.tool_call`); themes that omit a token fall back to the neutral hint color so older / custom palettes keep rendering. The `tag-dep` and `hook` categories reuse the closest visual neighbor (`tasks` and `tool_call` respectively) to avoid a one-glyph palette per category.
+
+The wide / compact split lives at the 92-cell `availableWidth()` threshold: terminals at or above render the full 5-column header; narrower terminals drop the explicit ENTITY / WHO column tags and fall back to `marker time type detail` — the `DETAIL` column still carries the per-row signal verbatim through `SummarizeEvent`, and TYPE keeps its category color so the per-row category remains readable without the dedicated column.
+
+`Model.logsCategoryFilter` is the seam sub-task #326 will wire the F-chip toggle through — it returns `nil` today so the default view surfaces every event_type. The refresh path reads it once per tick, so chip wiring lands in one place without rewriting the renderer.
 
 No surface-specific keys beyond [Common viewport bindings](#common-viewport-bindings) (`r` refresh applies).
 

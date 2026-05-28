@@ -119,7 +119,7 @@ func TestModelTablesUseWideTerminalSpace(t *testing.T) {
 		t.Fatalf("FinishActivityLog() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -148,11 +148,23 @@ func TestModelTablesUseWideTerminalSpace(t *testing.T) {
 
 	logsModel := pressStringKey(t, pressRune(t, model, '2'), "/")
 	logs := ansi.Strip(logsModel.View())
-	if !strings.Contains(logs, argsJSON) {
-		t.Fatalf("wide logs truncated arguments\n%s", logs)
+	// The unified Logs inspector renders TIME · TYPE · ENTITY · WHO ·
+	// DETAIL — args JSON no longer surfaces directly. Instead the
+	// SummarizeEvent detail column carries source/tool/status, so the
+	// operation name still appears.
+	if !strings.Contains(logs, "app.ProjectService.Init") {
+		t.Fatalf("wide logs missing operation name\n%s", logs)
 	}
-	if !strings.Contains(logs, "// ACTIVITY · 1") {
-		t.Fatalf("wide logs missing table-style section label\n%s", logs)
+	// The unified Logs inspector surfaces every event_type — the
+	// tool_call row above plus the task.created row from CreateTask
+	// above land as two activity rows.
+	if !strings.Contains(logs, "// ACTIVITY · 2") {
+		t.Fatalf("wide logs missing 2-row activity count\n%s", logs)
+	}
+	for _, header := range []string{"TIME", "TYPE", "ENTITY", "WHO", "DETAIL"} {
+		if !strings.Contains(logs, header) {
+			t.Fatalf("wide logs missing 5-column header %q\n%s", header, logs)
+		}
 	}
 	if tablePanelWidth, logsPanelWidth := panelWidth(table), panelWidth(logs); tablePanelWidth == 0 || logsPanelWidth == 0 || tablePanelWidth != logsPanelWidth {
 		t.Fatalf("table/log panel widths = %d/%d, want matching non-zero widths\nTABLE:\n%s\nLOGS:\n%s", tablePanelWidth, logsPanelWidth, table, logs)
@@ -186,7 +198,7 @@ func TestModelLoadsActivityLogsWhenOpeningLogsView(t *testing.T) {
 		t.Fatalf("FinishActivityLog() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -197,7 +209,11 @@ func TestModelLoadsActivityLogsWhenOpeningLogsView(t *testing.T) {
 		t.Fatalf("(top, sub) = (%d, %d), want (topStats, subStatsLogs)", got.top, got.sub)
 	}
 	view := ansi.Strip(got.View())
-	for _, want := range []string{"app.TaskService.Add", "project", `{"title":"From CLI"}`, "ok"} {
+	// SummarizeEvent renders the tool_call row as
+	// `<source>/<tool_name> [status] <duration>ms`, so the operation
+	// + source + status all surface inside the DETAIL column. The
+	// TYPE column carries the event_type itself.
+	for _, want := range []string{"app.TaskService.Add", "cli.tool_call", "ok"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("View() missing %q\n%s", want, view)
 		}
@@ -216,7 +232,7 @@ func TestModelRefreshKeyUpdatesActivityLogs(t *testing.T) {
 		t.Fatalf("UpsertProject() error = %v", err)
 	}
 
-	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
+	model, err := NewModel(ctx, project.Context(), Repositories{Tasks: store, Comments: store, Dependencies: store, Entries: store, Cache: runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()), Events: store, ActivityLogs: store}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
 	if err != nil {
 		t.Fatalf("NewModel() error = %v", err)
 	}
@@ -244,7 +260,12 @@ func TestModelRefreshKeyUpdatesActivityLogs(t *testing.T) {
 
 	got = pressRune(t, got, 'r')
 	view := ansi.Strip(got.View())
-	for _, want := range []string{"app.CommentService.Add", "mcp", `{"task_id":1}`} {
+	// The Logs inspector renders the new event_row through
+	// SummarizeEvent, which renders tool_call rows as
+	// `<source>/<tool_name> [status] <ms>ms`. The TYPE column
+	// carries the event_type (mcp.tool_call), the WHO column the
+	// source (mcp).
+	for _, want := range []string{"app.CommentService.Add", "mcp"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("View() missing %q after refresh\n%s", want, view)
 		}

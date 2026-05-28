@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"omakiten/internal/app/guards"
 	"omakiten/internal/config"
@@ -253,6 +254,12 @@ func (r *isolationRepo) RecordEntityEvent(context.Context, string, int64, int64,
 	return nil
 }
 func (r *isolationRepo) ListTaskActivity(context.Context, int64, int64, string) ([]domain.Event, error) {
+	return nil, nil
+}
+func (r *isolationRepo) ListEvents(context.Context, domain.EventFilter) ([]domain.EventRow, error) {
+	return nil, nil
+}
+func (r *isolationRepo) EventCategoryCounts(context.Context, int64, time.Time) (map[domain.EventCategory]int, error) {
 	return nil, nil
 }
 
