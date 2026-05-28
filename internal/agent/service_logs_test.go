@@ -6,25 +6,25 @@ import (
 	"time"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/testfakes/clock"
 )
 
-// logsSinceJitterTolerance is the slack permitted between the
-// expected `now - duration` floor and the actual value returned by
-// resolveLogsSince. The gap is wall-clock jitter (test setup ↔
-// assertion), never domain semantics. Heavy CI shared runners can
-// stall a goroutine for several seconds, so the tolerance is set
-// well above the worst observed local drift but small enough to
-// catch genuine off-by-N regressions in the duration math.
-const logsSinceJitterTolerance = 10 * time.Second
+// fakeClockAnchor is the deterministic instant the clock-dependent
+// resolveLogsSince tests seed their fake clock at. Picked arbitrarily
+// — the value matters only because the assertions compare exact
+// equality against `anchor - duration`, retiring the wall-clock
+// jitter tolerance the legacy tests carried.
+var fakeClockAnchor = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 
 // TestResolveLogsSinceDefaultUsesSnapshotWindow locks the default
 // behaviour: with no `since` input, the service substitutes
 // Snapshot.LogsWindowDays as the time floor so MCP callers can pass
 // nothing and still get the project's configured window.
 func TestResolveLogsSinceDefaultUsesSnapshotWindow(t *testing.T) {
+	t.Parallel()
 	// snapshot==nil is the test path; resolveLogsSince must accept
 	// it and fall back to a zero-value (no floor) rather than panic.
-	since, err := resolveLogsSince("", nil, time.Now)
+	since, err := resolveLogsSince("", nil, clock.New(fakeClockAnchor).Now)
 	if err != nil {
 		t.Fatalf("resolveLogsSince(empty, nil) error = %v", err)
 	}
@@ -35,8 +35,11 @@ func TestResolveLogsSinceDefaultUsesSnapshotWindow(t *testing.T) {
 
 // TestResolveLogsSinceAcceptsGoDuration locks the Go-shorthand path:
 // "24h" / "30m" / "90s" all parse via time.ParseDuration and produce
-// a non-zero floor at `now - duration`.
+// a non-zero floor at `now - duration`. The fake clock pins `now` to
+// fakeClockAnchor so the expected value is `anchor - dur` exactly —
+// no tolerance window required.
 func TestResolveLogsSinceAcceptsGoDuration(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in  string
 		dur time.Duration
@@ -48,21 +51,16 @@ func TestResolveLogsSinceAcceptsGoDuration(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {
-			got, err := resolveLogsSince(tc.in, nil, time.Now)
+			t.Parallel()
+			fake := clock.New(fakeClockAnchor)
+			got, err := resolveLogsSince(tc.in, nil, fake.Now)
 			if err != nil {
 				t.Fatalf("resolveLogsSince(%q) error = %v", tc.in, err)
 			}
-			if got.IsZero() {
-				t.Fatalf("resolveLogsSince(%q) = zero, want non-zero", tc.in)
-			}
-			// Recompute `expected` inside the assertion block so the
-			// snapshot-to-comparison gap is the tightest the runtime
-			// allows. A `now` captured before the table loop drifts
-			// under heavy CI load and falsely trips the tolerance.
-			expected := time.Now().Add(-tc.dur)
-			if diff := got.Sub(expected); diff < -logsSinceJitterTolerance || diff > logsSinceJitterTolerance {
-				t.Fatalf("resolveLogsSince(%q) = %v, want within %v of %v (drift: %v)",
-					tc.in, got, logsSinceJitterTolerance, expected, diff)
+			want := fakeClockAnchor.Add(-tc.dur)
+			if !got.Equal(want) {
+				t.Fatalf("resolveLogsSince(%q) = %v, want %v",
+					tc.in, got, want)
 			}
 		})
 	}
@@ -72,16 +70,15 @@ func TestResolveLogsSinceAcceptsGoDuration(t *testing.T) {
 // time.ParseDuration does not support natively. "7d" must produce a
 // floor 7 days before now.
 func TestResolveLogsSinceAcceptsDayShorthand(t *testing.T) {
-	got, err := resolveLogsSince("7d", nil, time.Now)
+	t.Parallel()
+	fake := clock.New(fakeClockAnchor)
+	got, err := resolveLogsSince("7d", nil, fake.Now)
 	if err != nil {
 		t.Fatalf("resolveLogsSince(7d) error = %v", err)
 	}
-	// Recompute `expected` after the call so the snapshot-to-assertion
-	// gap is minimal; the tolerance covers wall-clock jitter only.
-	expected := time.Now().Add(-7 * 24 * time.Hour)
-	if diff := got.Sub(expected); diff < -logsSinceJitterTolerance || diff > logsSinceJitterTolerance {
-		t.Fatalf("resolveLogsSince(7d) = %v, want within %v of %v (drift: %v)",
-			got, logsSinceJitterTolerance, expected, diff)
+	want := fakeClockAnchor.Add(-7 * 24 * time.Hour)
+	if !got.Equal(want) {
+		t.Fatalf("resolveLogsSince(7d) = %v, want %v", got, want)
 	}
 }
 
@@ -89,7 +86,8 @@ func TestResolveLogsSinceAcceptsDayShorthand(t *testing.T) {
 // contract: unparseable input surfaces a validation error rather than
 // silently produce a zero floor (which would erase the window).
 func TestResolveLogsSinceRejectsGarbage(t *testing.T) {
-	_, err := resolveLogsSince("yesterday", nil, time.Now)
+	t.Parallel()
+	_, err := resolveLogsSince("yesterday", nil, clock.New(fakeClockAnchor).Now)
 	if err == nil {
 		t.Fatal("resolveLogsSince(yesterday) error = nil, want validation_error")
 	}
@@ -103,9 +101,11 @@ func TestResolveLogsSinceRejectsGarbage(t *testing.T) {
 // indistinguishable from "no rows since this instant" — surface it as
 // a validation error so callers correct the input.
 func TestResolveLogsSinceRejectsZeroDuration(t *testing.T) {
+	t.Parallel()
 	for _, in := range []string{"0h", "0d", "0s"} {
 		t.Run(in, func(t *testing.T) {
-			_, err := resolveLogsSince(in, nil, time.Now)
+			t.Parallel()
+			_, err := resolveLogsSince(in, nil, clock.New(fakeClockAnchor).Now)
 			if err == nil {
 				t.Fatalf("resolveLogsSince(%q) error = nil, want validation_error", in)
 			}

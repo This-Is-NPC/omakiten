@@ -11,14 +11,15 @@ import (
 	"time"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/testfakes/clock"
 )
 
-// cliJitterTolerance is the wall-clock slack permitted between the
-// expected `now - duration` floor and the value resolveLogSince
-// returns. The gap is process-scheduling jitter, not domain
-// semantics; 5s is well above the worst observed local drift while
-// still tight enough to catch off-by-N regressions in the math.
-const cliJitterTolerance = 5 * time.Second
+// cliFakeClockAnchor is the deterministic instant the clock-dependent
+// resolveLogSince tests seed their fake clock at. Picked arbitrarily
+// — the value matters only because the assertions compare exact
+// equality against `anchor.UTC() - duration`, retiring the
+// wall-clock jitter tolerance the legacy tests carried.
+var cliFakeClockAnchor = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 
 // TestParseLogCategories pins the flag→filter mapping for every
 // supported shape: empty input, `all` short-circuit, repeatable
@@ -99,45 +100,57 @@ func TestParseLogCategories(t *testing.T) {
 // TestResolveLogSinceFlagWins exercises the --since flag against a
 // fake snapshot: explicit flag wins over the snapshot default, plain
 // `d`-suffixed durations parse, and an invalid string surfaces a
-// typed validation error.
+// typed validation error. The fake clock pins `now` to
+// cliFakeClockAnchor so each assertion is exact equality against
+// `anchor.UTC() - dur` — no wall-clock tolerance required.
 func TestResolveLogSinceFlagWins(t *testing.T) {
+	t.Parallel()
 	snap := stubLogsSnapshot{window: 30 * 24 * time.Hour}
+	anchorUTC := cliFakeClockAnchor.UTC()
 
 	t.Run("flag overrides snapshot window", func(t *testing.T) {
-		got, err := resolveLogSince("24h", snap, time.Now)
+		t.Parallel()
+		fake := clock.New(cliFakeClockAnchor)
+		got, err := resolveLogSince("24h", snap, fake.Now)
 		if err != nil {
 			t.Fatalf("resolveLogSince() error = %v", err)
 		}
-		want := time.Now().UTC().Add(-24 * time.Hour)
-		if diff := absDuration(got.Sub(want)); diff > cliJitterTolerance {
-			t.Fatalf("resolveLogSince(24h) = %v, want ~%v (diff %v)", got, want, diff)
+		want := anchorUTC.Add(-24 * time.Hour)
+		if !got.Equal(want) {
+			t.Fatalf("resolveLogSince(24h) = %v, want %v", got, want)
 		}
 	})
 
 	t.Run("days suffix accepted", func(t *testing.T) {
-		got, err := resolveLogSince("7d", snap, time.Now)
+		t.Parallel()
+		fake := clock.New(cliFakeClockAnchor)
+		got, err := resolveLogSince("7d", snap, fake.Now)
 		if err != nil {
 			t.Fatalf("resolveLogSince(7d) error = %v", err)
 		}
-		want := time.Now().UTC().Add(-7 * 24 * time.Hour)
-		if diff := absDuration(got.Sub(want)); diff > cliJitterTolerance {
-			t.Fatalf("resolveLogSince(7d) = %v, want ~%v (diff %v)", got, want, diff)
+		want := anchorUTC.Add(-7 * 24 * time.Hour)
+		if !got.Equal(want) {
+			t.Fatalf("resolveLogSince(7d) = %v, want %v", got, want)
 		}
 	})
 
 	t.Run("falls back to snapshot window when flag empty", func(t *testing.T) {
-		got, err := resolveLogSince("", snap, time.Now)
+		t.Parallel()
+		fake := clock.New(cliFakeClockAnchor)
+		got, err := resolveLogSince("", snap, fake.Now)
 		if err != nil {
 			t.Fatalf("resolveLogSince() error = %v", err)
 		}
-		want := time.Now().UTC().Add(-30 * 24 * time.Hour)
-		if diff := absDuration(got.Sub(want)); diff > cliJitterTolerance {
-			t.Fatalf("resolveLogSince() = %v, want ~%v (diff %v)", got, want, diff)
+		want := anchorUTC.Add(-30 * 24 * time.Hour)
+		if !got.Equal(want) {
+			t.Fatalf("resolveLogSince() = %v, want %v", got, want)
 		}
 	})
 
 	t.Run("invalid duration returns coded error", func(t *testing.T) {
-		_, err := resolveLogSince("not-a-duration", snap, time.Now)
+		t.Parallel()
+		fake := clock.New(cliFakeClockAnchor)
+		_, err := resolveLogSince("not-a-duration", snap, fake.Now)
 		if err == nil {
 			t.Fatalf("resolveLogSince(not-a-duration) error = nil, want failure")
 		}
@@ -151,7 +164,9 @@ func TestResolveLogSinceFlagWins(t *testing.T) {
 	})
 
 	t.Run("zero window returns zero time floor", func(t *testing.T) {
-		got, err := resolveLogSince("", stubLogsSnapshot{window: 0}, time.Now)
+		t.Parallel()
+		fake := clock.New(cliFakeClockAnchor)
+		got, err := resolveLogSince("", stubLogsSnapshot{window: 0}, fake.Now)
 		if err != nil {
 			t.Fatalf("resolveLogSince() error = %v", err)
 		}
@@ -387,14 +402,4 @@ func knownCategoryNamesForSort() []string {
 		out = append(out, string(c))
 	}
 	return out
-}
-
-// absDuration returns |d|; used to give the time-based tests a small
-// tolerance window so we don't race against the wall clock between
-// the test setup and the comparison call.
-func absDuration(d time.Duration) time.Duration {
-	if d < 0 {
-		return -d
-	}
-	return d
 }
