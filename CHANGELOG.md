@@ -10,6 +10,13 @@
 
 * **cli:** rewrite `okt logs` as the unified event inspector with `--category`, `--since`, and `--limit` flags. Default scope is the last `views.logs.window_days` for the active project; `--category` is repeatable and comma-separated and accepts the same chips as the TUI (`task`, `comment`, `plan`, `tag-dep`, `guard`, `audit`, `hook`, `tool_call`, `trick`, `domain`, plus the `all` shortcut).
 
+## [0.22.3](https://github.com/This-Is-NPC/omakiten/compare/v0.22.2...v0.22.3) (2026-05-28)
+
+
+### Bug Fixes
+
+* **tui:** palette overlay viewport + edge-anchored scroll + columnar result table ([#93](https://github.com/This-Is-NPC/omakiten/issues/93)) ([9a9db2a](https://github.com/This-Is-NPC/omakiten/commit/9a9db2af11bd259e8346acd0faa40b8ec9602f7a))
+
 ## [0.22.2](https://github.com/This-Is-NPC/omakiten/compare/v0.22.1...v0.22.2) (2026-05-28)
 
 
