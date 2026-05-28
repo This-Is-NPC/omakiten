@@ -184,8 +184,12 @@ func TestRenderLogsWidePanelEmitsFiveColumnLayout(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"cli.tool_call",
-		"task.created",
+		// Phase 3 (#355): TYPE column renders EventDef.Display from the
+		// YAML registry, not the raw event_type. Tests run with the
+		// omakase fixture loaded via TestMain, so these labels are the
+		// canonical kit values.
+		"CLI tool call",
+		"task created",
 		"system",
 		"task#42",
 		"cli",
@@ -221,7 +225,9 @@ func TestRenderLogsCompactPanelDropsAuxiliaryColumns(t *testing.T) {
 	view := ansi.Strip(model.renderLogsCompactPanel())
 	for _, want := range []string{
 		"// ACTIVITY · 1",
-		"cli.tool_call",
+		// Phase 3 (#355): TYPE column now uses EventDef.Display from the
+		// YAML registry.
+		"CLI tool call",
 		"cli/app.TaskService.Add [ok] 7ms",
 	} {
 		if !strings.Contains(view, want) {
@@ -354,4 +360,139 @@ func (stubEmptyEventRepo) ListEvents(context.Context, domain.EventFilter) ([]dom
 }
 func (stubEmptyEventRepo) EventCategoryCounts(context.Context, int64, time.Time) (map[domain.EventCategory]int, error) {
 	return nil, nil
+}
+
+// TestActivityLogRendersDisplayLabel pins AC#1 + AC#2 of Phase 3:
+// the wide and compact panels render EventDef.Display (from the
+// YAML-loaded registry) for the TYPE cell, and fall back to the
+// raw event_type when the lookup misses.
+//
+// Sequential because the test mutates the package-level
+// domain.EventDefByKey map; cleanup restores the prior state so
+// other tests that run after this one are unaffected.
+func TestActivityLogRendersDisplayLabel(t *testing.T) {
+	// Snapshot + restore the registry so parallel tests in the same
+	// package see the original (empty / production-loaded) map.
+	prev := domain.EventDefByKey
+	cloned := make(map[string]domain.EventDef, len(prev))
+	for k, v := range prev {
+		cloned[k] = v
+	}
+	cloned["task.created"] = domain.EventDef{
+		Key:        "task.created",
+		Category:   domain.EventCategoryTask,
+		Display:    "task created",
+		LogVisible: true,
+		// Formatter emits a summary string that does NOT carry the raw
+		// event_type so the "does NOT contain task.created" assertion
+		// scopes to the TYPE cell rather than colliding with the DETAIL
+		// cell's payload echo.
+		Formatter: func(domain.EventRow) string { return "wired renderer" },
+	}
+	domain.EventDefByKey = cloned
+	t.Cleanup(func() { domain.EventDefByKey = prev })
+
+	t.Run("wide_panel_renders_display", func(t *testing.T) {
+		model := newRenderLogsTestModel(t, 180)
+		row := domain.EventRow{
+			ID:         1,
+			EntityType: "task",
+			EntityID:   42,
+			EventType:  "task.created",
+			CreatedAt:  "2026-05-27 13:46:00",
+			Payload:    `{"title":"Wire renderer","bucket":"backlog","priority":"normal"}`,
+		}
+		out := ansi.Strip(formatLogsWideRow(model, " ", row, 12, 20, 16, 8, 40))
+		if !strings.Contains(out, "task created") {
+			t.Fatalf("wide row missing display label %q\n%s", "task created", out)
+		}
+		if strings.Contains(out, "task.created") {
+			t.Fatalf("wide row unexpectedly carries raw event_type %q\n%s", "task.created", out)
+		}
+	})
+
+	t.Run("compact_panel_renders_display", func(t *testing.T) {
+		model := newRenderLogsTestModel(t, 80)
+		model.events = []domain.EventRow{{
+			ID:         1,
+			EntityType: "task",
+			EntityID:   42,
+			EventType:  "task.created",
+			CreatedAt:  "2026-05-27 13:46:00",
+			Payload:    `{"title":"Wire renderer","bucket":"backlog","priority":"normal"}`,
+		}}
+		view := ansi.Strip(model.renderLogsCompactPanel())
+		if !strings.Contains(view, "task created") {
+			t.Fatalf("compact panel missing display label %q\n%s", "task created", view)
+		}
+		if strings.Contains(view, "task.created") {
+			t.Fatalf("compact panel unexpectedly carries raw event_type %q\n%s", "task.created", view)
+		}
+	})
+
+	t.Run("unknown_event_type_falls_back_to_raw_key", func(t *testing.T) {
+		model := newRenderLogsTestModel(t, 180)
+		row := domain.EventRow{
+			ID:         99,
+			EntityType: "system",
+			EventType:  "__test.unknown",
+			CreatedAt:  "2026-05-27 13:46:00",
+		}
+		wide := ansi.Strip(formatLogsWideRow(model, " ", row, 12, 20, 16, 8, 40))
+		if !strings.Contains(wide, "__test.unknown") {
+			t.Fatalf("wide row missing raw fallback %q\n%s", "__test.unknown", wide)
+		}
+
+		compactModel := newRenderLogsTestModel(t, 80)
+		compactModel.events = []domain.EventRow{row}
+		compact := ansi.Strip(compactModel.renderLogsCompactPanel())
+		if !strings.Contains(compact, "__test.unknown") {
+			t.Fatalf("compact panel missing raw fallback %q\n%s", "__test.unknown", compact)
+		}
+	})
+}
+
+// TestActivityLogLogVisibleFilterHides pins AC#3: filterLogVisibleRows
+// drops rows whose event_type maps to an EventDef with
+// LogVisible == false, while leaving registry-miss + LogVisible == true
+// rows untouched.
+func TestActivityLogLogVisibleFilterHides(t *testing.T) {
+	prev := domain.EventDefByKey
+	cloned := make(map[string]domain.EventDef, len(prev))
+	for k, v := range prev {
+		cloned[k] = v
+	}
+	cloned["__test.hidden"] = domain.EventDef{
+		Key:        "__test.hidden",
+		Category:   domain.EventCategoryDomain,
+		LogVisible: false,
+		Formatter:  func(domain.EventRow) string { return "" },
+	}
+	cloned["__test.visible"] = domain.EventDef{
+		Key:        "__test.visible",
+		Category:   domain.EventCategoryDomain,
+		LogVisible: true,
+		Formatter:  func(domain.EventRow) string { return "" },
+	}
+	domain.EventDefByKey = cloned
+	t.Cleanup(func() { domain.EventDefByKey = prev })
+
+	rows := []domain.EventRow{
+		{ID: 1, EventType: "__test.hidden"},
+		{ID: 2, EventType: "__test.visible"},
+		{ID: 3, EventType: "__test.unmapped"}, // registry miss → passes
+	}
+	got := filterLogVisibleRows(rows)
+	if len(got) != 2 {
+		t.Fatalf("filterLogVisibleRows: got %d rows, want 2 (visible + unmapped)\n%+v", len(got), got)
+	}
+	for _, r := range got {
+		if r.EventType == "__test.hidden" {
+			t.Fatalf("filterLogVisibleRows did not drop hidden row\n%+v", got)
+		}
+	}
+	// Sanity: the visible + unmapped rows survive in order.
+	if got[0].ID != 2 || got[1].ID != 3 {
+		t.Fatalf("filterLogVisibleRows reordered or lost rows: got IDs %d,%d want 2,3", got[0].ID, got[1].ID)
+	}
 }

@@ -212,8 +212,9 @@ func TestModelLoadsActivityLogsWhenOpeningLogsView(t *testing.T) {
 	// SummarizeEvent renders the tool_call row as
 	// `<source>/<tool_name> [status] <duration>ms`, so the operation
 	// + source + status all surface inside the DETAIL column. The
-	// TYPE column carries the event_type itself.
-	for _, want := range []string{"app.TaskService.Add", "cli.tool_call", "ok"} {
+	// TYPE column carries EventDef.Display from the YAML-loaded
+	// registry (Phase 3 #355).
+	for _, want := range []string{"app.TaskService.Add", "CLI tool call", "ok"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("View() missing %q\n%s", want, view)
 		}
