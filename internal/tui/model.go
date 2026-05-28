@@ -669,6 +669,13 @@ func (m *Model) refreshActivityLogs() error {
 	if err != nil {
 		return err
 	}
+	// Apply the LogVisible registry filter only when the user has not
+	// explicitly narrowed via a chip. An explicit chip selection wins —
+	// the user asked to see that category, even if a future YAML config
+	// marks individual entries LogVisible: false.
+	if m.logsFilterMode == LogsFilterAll {
+		rows = filterLogVisibleRows(rows)
+	}
 	m.events = rows
 	// Summary tables aggregate across the wider window (still
 	// scoped by the snapshot's logs.window_days) so the headline

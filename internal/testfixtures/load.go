@@ -196,6 +196,15 @@ func mergeKitDefaults(b *config.Bundle) {
 	if cfg.Events.Defaults.Broadcast == nil {
 		cfg.Events.Defaults.Broadcast = kit.Events.Defaults.Broadcast
 	}
+	if cfg.Events.Defaults.LogVisible == nil {
+		cfg.Events.Defaults.LogVisible = kit.Events.Defaults.LogVisible
+	}
+	if cfg.Events.Defaults.Metric == "" {
+		cfg.Events.Defaults.Metric = kit.Events.Defaults.Metric
+	}
+	if cfg.Events.Defaults.EntityType == "" {
+		cfg.Events.Defaults.EntityType = kit.Events.Defaults.EntityType
+	}
 	if cfg.Events.Defaults.Hook == nil {
 		cfg.Events.Defaults.Hook = kit.Events.Defaults.Hook
 	}
