@@ -681,11 +681,33 @@ func (m *Model) activeViewSettings() config.ViewSettings {
 
 func (m Model) View() string {
 	view := m.renderView()
+	if m.paletteOpen {
+		view = normalizeViewToTerminal(view, m.width, m.height)
+		view = notification.Overlay(view, m.renderPaletteOverlay(), notification.PositionCenter)
+	}
 	if m.notification != nil {
 		view = normalizeViewToTerminal(view, m.width, m.height)
 		view = notification.Overlay(view, m.notification.View(), m.notification.Position())
 	}
 	return view
+}
+
+// renderPaletteOverlay wraps palette.Model.View output in a bordered
+// panel matching the theme's accent so the overlay reads as a modal
+// floating above the base render. Width is fixed at 48 cells — wide
+// enough for `verb:operand` + an inline status, narrow enough to fit
+// without clipping on standard 80-column terminals.
+func (m Model) renderPaletteOverlay() string {
+	body := m.palette.View()
+	kicker := m.styles.kicker("// PALETTE · ctrl+k")
+	hint := m.styles.hint.Render("enter submit · tab toggles tabs · esc close")
+	panel := lipgloss.JoinVertical(lipgloss.Left, kicker, hint, "", body)
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(m.styles.hintAccent.GetForeground()).
+		Padding(0, 2).
+		Width(48).
+		Render(panel)
 }
 
 // normalizeViewToTerminal rectangularises the rendered view so the
