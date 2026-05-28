@@ -321,3 +321,36 @@ func TestSummarizeEventDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// TestRegisterDuplicatePanics locks the registry guarantee: a second
+// register() call for the same event_type must panic so two categories
+// cannot silently shadow each other. We register against a synthetic
+// event_type so the test does not corrupt the production table for
+// later tests.
+func TestRegisterDuplicatePanics(t *testing.T) {
+	const ev = "_test.register_duplicate_panics"
+	// Ensure the slot is empty even if a prior run leaked.
+	delete(summarizers, ev)
+	defer delete(summarizers, ev)
+
+	register(ev, func(EventRow) string { return "first" })
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic on duplicate register, got none")
+		}
+	}()
+	register(ev, func(EventRow) string { return "second" })
+}
+
+// TestRegistryCoversKnownEventTypes locks the registry-coverage rule:
+// every entry in KnownEventTypes must have a summariser registered.
+// Adding a new event_type to KnownEventTypes without a corresponding
+// register() call in a per-category init() trips this guard.
+func TestRegistryCoversKnownEventTypes(t *testing.T) {
+	for _, ev := range KnownEventTypes {
+		if _, ok := summarizers[ev]; !ok {
+			t.Errorf("KnownEventTypes entry %q has no summarizer registered", ev)
+		}
+	}
+}
