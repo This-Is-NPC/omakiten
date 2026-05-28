@@ -19,6 +19,7 @@ import (
 // has landed in logs_filter.go and the help-row description in
 // en.yaml + .docs/tui.md is out of sync with the runtime.
 func TestLogsFilterCycleForwardOrder(t *testing.T) {
+	t.Parallel()
 	want := []LogsFilterMode{
 		LogsFilterAll,
 		LogsFilterToolCalls,
@@ -42,6 +43,7 @@ func TestLogsFilterCycleForwardOrder(t *testing.T) {
 // (umbrella AC #2 covers forward; reverse is the inverse and the
 // scope description in the task also calls it out explicitly).
 func TestLogsFilterCycleBackwardOrder(t *testing.T) {
+	t.Parallel()
 	want := []LogsFilterMode{
 		LogsFilterAll,
 		LogsFilterSystem,
@@ -66,6 +68,7 @@ func TestLogsFilterCycleBackwardOrder(t *testing.T) {
 // invariant is membership, not order. Failure here means the panel
 // rows the user sees will no longer match the chip label.
 func TestLogsFilterCategoriesMapping(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		mode LogsFilterMode
@@ -107,6 +110,7 @@ func TestLogsFilterCategoriesMapping(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got := logsFilterCategories(tc.mode)
 			if tc.want == nil {
 				if got != nil {
@@ -128,6 +132,7 @@ func TestLogsFilterCategoriesMapping(t *testing.T) {
 // surface it in two chips (double-render). The test fails when a
 // new category lands without the chip-mapping update.
 func TestLogsFilterPartitionsKnownCategories(t *testing.T) {
+	t.Parallel()
 	seen := map[domain.EventCategory]int{}
 	for _, mode := range []LogsFilterMode{
 		LogsFilterToolCalls,
@@ -156,6 +161,7 @@ func TestLogsFilterPartitionsKnownCategories(t *testing.T) {
 // logsFilterCategories silently returns nil for a chip the cycle
 // still surfaces and the user sees "all" rows under a non-all chip.
 func TestLogsFilterPartitionMapMatchesEnumeration(t *testing.T) {
+	t.Parallel()
 	for _, f := range []LogsFilterMode{
 		LogsFilterAll,
 		LogsFilterToolCalls,
@@ -175,6 +181,7 @@ func TestLogsFilterPartitionMapMatchesEnumeration(t *testing.T) {
 // renderer tests) so the refresh path does not short-circuit before
 // the mode flip lands.
 func TestHandleLogsKeyCyclesFilterForward(t *testing.T) {
+	t.Parallel()
 	model := newLogsKeyTestModel(t)
 	model.handleLogsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	if model.logsFilterMode != LogsFilterToolCalls {
@@ -191,6 +198,7 @@ func TestHandleLogsKeyCyclesFilterForward(t *testing.T) {
 // in reverse. The first press from LogsFilterAll must land on
 // LogsFilterSystem — the wraparound rule the help text promises.
 func TestHandleLogsKeyCyclesFilterBackward(t *testing.T) {
+	t.Parallel()
 	model := newLogsKeyTestModel(t)
 	model.handleLogsKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'F'}})
 	if model.logsFilterMode != LogsFilterSystem {
@@ -204,6 +212,7 @@ func TestHandleLogsKeyCyclesFilterBackward(t *testing.T) {
 // non-color cue, and the cycle hint surfaces verbatim from the
 // catalog so locales can translate it.
 func TestRenderLogsFilterChipsHighlightsActive(t *testing.T) {
+	t.Parallel()
 	model := newRenderLogsTestModel(t, 180)
 	model.logsFilterMode = LogsFilterToolCalls
 
@@ -229,6 +238,7 @@ func TestRenderLogsFilterChipsHighlightsActive(t *testing.T) {
 // would visually drop the chips and the user could not get back to
 // `all` without remembering the key.
 func TestRenderLogsRefreshesChipsAcrossStates(t *testing.T) {
+	t.Parallel()
 	model := newRenderLogsTestModel(t, 180)
 	// No events loaded → empty-state branch. The chip strip must
 	// still print so the user can cycle back to `all`.
