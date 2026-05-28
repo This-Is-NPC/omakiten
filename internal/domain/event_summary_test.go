@@ -344,13 +344,21 @@ func TestRegisterDuplicatePanics(t *testing.T) {
 }
 
 // TestRegistryCoversKnownEventTypes locks the registry-coverage rule:
-// every entry in KnownEventTypes must have a summariser registered.
-// Adding a new event_type to KnownEventTypes without a corresponding
-// register() call in a per-category init() trips this guard.
+// summarizers must equal KnownEventTypes exactly. A KnownEventTypes
+// entry without a register() call is a missing summariser; a registry
+// entry not in KnownEventTypes is an orphan (deleted constant or
+// stale init()).
 func TestRegistryCoversKnownEventTypes(t *testing.T) {
+	known := make(map[string]struct{}, len(KnownEventTypes))
 	for _, ev := range KnownEventTypes {
+		known[ev] = struct{}{}
 		if _, ok := summarizers[ev]; !ok {
 			t.Errorf("KnownEventTypes entry %q has no summarizer registered", ev)
+		}
+	}
+	for ev := range summarizers {
+		if _, ok := known[ev]; !ok {
+			t.Errorf("summarizer registered for %q which is not in KnownEventTypes", ev)
 		}
 	}
 }
