@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"strings"
+	"time"
 
 	"omakiten/internal/app"
 	"omakiten/internal/config"
@@ -128,6 +129,13 @@ type Service struct {
 	// both pointers and hands it in via SetOrphanService — the agent
 	// service no longer carries a previousSnapshot pointer of its own.
 	orphanSvc *app.OrphanService
+	// now is the wall-clock source clock-dependent helpers (logs
+	// `since` resolution today, additional surfaces as the audit
+	// extends) call instead of time.Now directly. NewService seeds it
+	// with time.Now so production behaviour is unchanged; tests that
+	// need deterministic timestamps call SetNow with a
+	// testfakes/clock.Fake.Now closure.
+	now func() time.Time
 }
 
 // NewService constructs the agent service with zero-value settings.
@@ -141,8 +149,36 @@ func NewService(repo Repository, selector ProjectSelector) *Service {
 		repo:     repo,
 		selector: selector,
 		counter:  token.NewCounter(),
+		now:      time.Now,
 		// settings are zero-valued; SetSettings wires the actual knobs.
 	}
+}
+
+// SetNow overrides the wall-clock source the service hands to
+// clock-dependent helpers (resolveLogsSince today). Production
+// composition leaves this untouched so the time.Now default seeded by
+// NewService stays in effect; tests pass internal/testfakes/clock.Fake.Now
+// to retire wall-clock jitter tolerance windows.
+//
+// Passing nil is a no-op so callers can guard the override behind a
+// nil check at the test setup site without an extra branch here.
+func (s *Service) SetNow(now func() time.Time) {
+	if now == nil {
+		return
+	}
+	s.now = now
+}
+
+// nowFunc returns the active wall-clock source. Falls back to
+// time.Now when SetNow has not yet been called (defensive against
+// tests that construct a Service without the runtime composition
+// root); production NewService seeds the field eagerly so this branch
+// is exercised by tests only.
+func (s *Service) nowFunc() func() time.Time {
+	if s.now == nil {
+		return time.Now
+	}
+	return s.now
 }
 
 // Synonyms returns the per-project tag-synonym table derived from the

@@ -434,14 +434,31 @@ type Model struct {
 	// returns so the parent shell wrapper can `cd` into the project.
 	lastProjectRoot string
 
-	logs         []domain.ActivityLog
+	// events is the bounded row buffer rendered by the unified Logs
+	// inspector (umbrella #320, sub-task #325). Populated by
+	// refreshActivityLogs from EventRepository.ListEvents with the
+	// active views.logs.window_days time floor and views.logs.limit
+	// cap; the summary tables aggregate the wider window via
+	// EventRepository.EventCategoryCounts.
+	events       []domain.EventRow
 	logsSelected int
-	// logsStats is the unbounded aggregate over the activity log scope
-	// (project + view source filter). Populated alongside `logs` on
-	// every refresh of the Stats › Logs view; the summary tables read
-	// from this so the headline counts reflect the full project
-	// history rather than just the limit-N rows currently materialised.
-	logsStats domain.ActivityLogStats
+	// logsFilterMode is the active filter preset for the Stats › Logs
+	// inspector. Cycled by `f` (forward) and `shift+F` (backward) via
+	// handleLogsKey; folded into the repository fetch through
+	// Model.logsCategoryFilter on every refreshActivityLogs tick. Zero
+	// value (LogsFilterAll) is the no-op filter, so a freshly opened
+	// Logs view surfaces every event_type without any user action.
+	// State preserved across refresh because it lives on Model.
+	logsFilterMode LogsFilterMode
+	// eventStats holds the unbounded aggregates the Logs inspector
+	// summary tables render: per-category counts (every known
+	// category present, count 0 acceptable) and a tool_call health
+	// breakdown (ok/error/running across tool_call + hook subset).
+	// Populated alongside `events` on every refresh of the Stats ›
+	// Logs view so the headline numbers reflect everything in the
+	// snapshot's logs.window_days horizon — not just the rows that
+	// fit in the panel beneath.
+	eventStats eventStats
 
 	// activity holds the unified activity feed (comments + system events)
 	// for the currently-open task detail view. Populated on openTaskView

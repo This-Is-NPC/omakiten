@@ -10,6 +10,7 @@ import (
 	"omakiten/internal/app/guards"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/testfakes/eventrepo"
 )
 
 // TestGuardIsolationCrossProjectMoveTask pins the Phase 2-bis Round-2
@@ -147,8 +148,13 @@ func buildIsolationSnapshot(t *testing.T, guards []domain.TransitionGuard) *conf
 // guards.Evaluator compose, with atomic.Int64 counters so the test can
 // confirm MoveTask reached the persistence boundary the expected number of
 // times across N concurrent invocations. Production never builds one of
-// these — it is the minimum surface area the test needs.
+// these — it is the minimum surface area the test needs. The EventRepository
+// surface (RecordTaskEvent / RecordEntityEvent / ListTaskActivity /
+// ListEvents / EventCategoryCounts) is inherited from the embedded
+// eventrepo.NoOp — this fixture never reaches a code path that consults the
+// events log, so every method can return zero values.
 type isolationRepo struct {
+	eventrepo.NoOp
 	moveCalls   atomic.Int64
 	commentsFn  func() int
 	taggedFn    func(string) int
@@ -244,17 +250,10 @@ func (r *isolationRepo) CountDescendants(context.Context, int64, int64) (int, er
 	return 0, nil
 }
 
-// EventRepository — task.completed emission noop; the move target isn't the
-// final bucket in this fixture, so MoveTask never reaches RecordTaskEvent.
-func (r *isolationRepo) RecordTaskEvent(context.Context, int64, int64, string, string, string) (domain.Event, error) {
-	return domain.Event{}, nil
-}
-func (r *isolationRepo) RecordEntityEvent(context.Context, string, int64, int64, string, string) error {
-	return nil
-}
-func (r *isolationRepo) ListTaskActivity(context.Context, int64, int64, string) ([]domain.Event, error) {
-	return nil, nil
-}
+// EventRepository surface is satisfied by the embedded eventrepo.NoOp:
+// the move target in this fixture isn't the workflow's final bucket, so
+// MoveTask never reaches RecordTaskEvent / RecordEntityEvent, and the
+// test never reads the events log.
 
 // nilGuardRepo is the read-only counts repo the evaluators borrow when the
 // per-call isolationRepo is not yet in scope (the evaluator is built once

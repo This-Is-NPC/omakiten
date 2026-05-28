@@ -34,6 +34,24 @@ keys:
   cli.context.short: "हैंडऑफ़ के लिए project कॉन्टेक्स्ट देखें"
   cli.context.add.short: "project हैंडऑफ़ कॉन्टेक्स्ट प्रविष्टि जोड़ें"
   cli.context.dump.short: "agent के लिए प्रगतिशील कॉन्टेक्स्ट डंप करें"
+  cli.logs.short: "Inspect the unified event log (task, comment, plan, hook, tool_call, guard, …)"
+  cli.logs.long: |-
+    okt logs reads the unified events table through the same path the TUI Logs
+    inspector uses. The default window is the last Snapshot.LogsWindowDays()
+    days for the active project, all categories included.
+
+    Categories (match the TUI filter chips): task, comment, plan, tag-dep,
+    guard, audit, hook, tool_call, trick, domain. Pass `all` to clear the
+    filter explicitly.
+
+    Output is a JSON envelope; each row carries the 5-field shape
+    (time · event_type · entity · author · summary) where `summary` is the
+    canonical SummarizeEvent string used by the TUI inspector.
+  cli.logs.flag.category: "restrict to one or more event categories (repeatable, comma-separated; `all` clears the filter)"
+  cli.logs.flag.since: "override the default window (e.g. 24h, 30m, 7d)"
+  cli.logs.flag.limit: "cap the number of rows returned (0 = no cap)"
+  cli.err.logs_invalid_category: "unknown event category"
+  cli.err.logs_invalid_since: "invalid --since duration; expected forms like 24h, 30m, 7d"
   cli.depend.short: "task निर्भरताएँ प्रबंधित करें"
   cli.depend.add.short: "task निर्भरता जोड़ें"
   cli.depend.remove.short: "task निर्भरता हटाएँ"
@@ -585,6 +603,8 @@ keys:
   tui.help.stats_logs.select_row: "पंक्ति चुनें (स्वतः-स्क्रॉल)"
   tui.help.stats_logs.scroll_halfpage: "आधे पृष्ठ से स्क्रॉल करें"
   tui.help.stats_logs.first_last_row: "पहली / अंतिम पंक्ति"
+  tui.help.stats_logs.filter_cycle: "filter chip चक्र (सभी → tool-calls → डोमेन → सिस्टम)"
+  tui.help.stats_logs.filter_cycle_back: "filter chip विपरीत चक्र"
   tui.help.stats_logs.refresh: "रीफ़्रेश"
   tui.help.stats_general.title: "Stats · सामान्य"
   tui.help.stats_general.cycle_period: "अवधि चक्र (7d / 30d / सब)"
@@ -643,6 +663,12 @@ keys:
   tui.log.project_col: "PROJECT"
   tui.log.refresh_hint: "r रीफ़्रेश · पूर्ण तर्क व्यापक टर्मिनल पर दिखते हैं"
   tui.log.tui_refresh_note: "केवल app सेवा कॉल लॉग होते हैं। TUI रीफ़्रेश और सीधे पठन नहीं दिखाए जाते।"
+  tui.log.filter.kicker: "logs · filter"
+  tui.log.filter.hint: "(F चक्र)"
+  tui.log.filter.all: "सभी"
+  tui.log.filter.tool_calls: "tool-calls"
+  tui.log.filter.domain: "डोमेन"
+  tui.log.filter.system: "सिस्टम"
   tui.badge.custom: "CUSTOM"
   tui.badge.fix: "FIX"
   tui.badge.blocker: "ब्लॉकर"

@@ -34,6 +34,24 @@ keys:
   cli.context.short: "Inspiser prosjektkontekst for overlevering"
   cli.context.add.short: "Legg til en oppføring for prosjektoverlevering"
   cli.context.dump.short: "Dump progressiv kontekst for agents"
+  cli.logs.short: "Inspect the unified event log (task, comment, plan, hook, tool_call, guard, …)"
+  cli.logs.long: |-
+    okt logs reads the unified events table through the same path the TUI Logs
+    inspector uses. The default window is the last Snapshot.LogsWindowDays()
+    days for the active project, all categories included.
+
+    Categories (match the TUI filter chips): task, comment, plan, tag-dep,
+    guard, audit, hook, tool_call, trick, domain. Pass `all` to clear the
+    filter explicitly.
+
+    Output is a JSON envelope; each row carries the 5-field shape
+    (time · event_type · entity · author · summary) where `summary` is the
+    canonical SummarizeEvent string used by the TUI inspector.
+  cli.logs.flag.category: "restrict to one or more event categories (repeatable, comma-separated; `all` clears the filter)"
+  cli.logs.flag.since: "override the default window (e.g. 24h, 30m, 7d)"
+  cli.logs.flag.limit: "cap the number of rows returned (0 = no cap)"
+  cli.err.logs_invalid_category: "unknown event category"
+  cli.err.logs_invalid_since: "invalid --since duration; expected forms like 24h, 30m, 7d"
   cli.depend.short: "Administrer task-avhengigheter"
   cli.depend.add.short: "Legg til en task-avhengighet"
   cli.depend.remove.short: "Fjern en task-avhengighet"
@@ -583,6 +601,8 @@ keys:
   tui.help.stats_logs.select_row: "velg rad (auto-ruller)"
   tui.help.stats_logs.scroll_halfpage: "rull halv side"
   tui.help.stats_logs.first_last_row: "første / siste rad"
+  tui.help.stats_logs.filter_cycle: "filter-chip syklus (alle → tool-calls → domene → system)"
+  tui.help.stats_logs.filter_cycle_back: "filter-chip syklus baklengs"
   tui.help.stats_logs.refresh: "oppdater"
   tui.help.stats_general.title: "Stats · generelt"
   tui.help.stats_general.cycle_period: "syklus av periode (7d / 30d / alle)"
@@ -641,6 +661,12 @@ keys:
   tui.log.project_col: "PROSJEKT"
   tui.log.refresh_hint: "r oppdater · fulle argumenter vises på bredere terminaler"
   tui.log.tui_refresh_note: "Kun app-tjenestekall logges. TUI-oppdateringer og direkte lesninger vises ikke."
+  tui.log.filter.kicker: "logs · filter"
+  tui.log.filter.hint: "(F syklus)"
+  tui.log.filter.all: "alle"
+  tui.log.filter.tool_calls: "tool-calls"
+  tui.log.filter.domain: "domene"
+  tui.log.filter.system: "system"
   tui.badge.custom: "CUSTOM"
   tui.badge.fix: "FIX"
   tui.badge.blocker: "blocker"

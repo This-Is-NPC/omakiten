@@ -1,0 +1,80 @@
+package domain
+
+import (
+	"fmt"
+)
+
+func init() {
+	register(EventTypePlanCreated, summarizePlanCreated)
+	register(EventTypePlanWaveAdded, summarizePlanWaveAdded)
+	register(EventTypePlanGoalEdited, summarizePlanGoalEdited)
+	register(EventTypePlanDone, summarizePlanDone)
+	register(EventTypePlanAbandoned, summarizePlanAbandoned)
+	register(EventTypeTrickExecuted, summarizeTrickExecuted)
+}
+
+func summarizePlanCreated(row EventRow) string {
+	payload := decodePayload(row.Payload)
+	slug := readString(payload, "slug")
+	name := readString(payload, "name")
+	switch {
+	case slug != "" && name != "":
+		return fmt.Sprintf("plan %s (%s)", slug, condenseLine(name))
+	case slug != "":
+		return "plan " + slug
+	case name != "":
+		return "plan " + condenseLine(name)
+	}
+	return "plan created"
+}
+
+func summarizePlanWaveAdded(row EventRow) string {
+	payload := decodePayload(row.Payload)
+	name := readString(payload, "name")
+	if pos, ok := readInt(payload, "position"); ok {
+		if name != "" {
+			return fmt.Sprintf("wave #%d added: %s", pos, condenseLine(name))
+		}
+		return fmt.Sprintf("wave #%d added", pos)
+	}
+	if name != "" {
+		return "wave added: " + condenseLine(name)
+	}
+	return "wave added"
+}
+
+func summarizePlanGoalEdited(row EventRow) string {
+	payload := decodePayload(row.Payload)
+	if length, ok := readInt(payload, "length"); ok {
+		return fmt.Sprintf("goal edited (%d chars)", length)
+	}
+	return "plan goal edited"
+}
+
+func summarizePlanDone(_ EventRow) string {
+	return "plan done"
+}
+
+func summarizePlanAbandoned(row EventRow) string {
+	payload := decodePayload(row.Payload)
+	if reason := readString(payload, "reason"); reason != "" {
+		return "plan abandoned: " + condenseLine(reason)
+	}
+	return "plan abandoned"
+}
+
+func summarizeTrickExecuted(row EventRow) string {
+	payload := decodePayload(row.Payload)
+	verb := readString(payload, "verb")
+	operand := readString(payload, "operand")
+	raw := readString(payload, "raw")
+	switch {
+	case verb != "" && operand != "":
+		return fmt.Sprintf("trick %s:%s", verb, condenseLine(operand))
+	case verb != "":
+		return "trick " + verb
+	case raw != "":
+		return "trick " + condenseLine(raw)
+	}
+	return "trick executed"
+}

@@ -164,7 +164,7 @@ config:
     logs:
       sort: {order: desc}
       limit: 50
-      filter: {source: []}
+      window_days: 30
     task_activity:
       sort: {order: asc}
 personas:

@@ -11,3 +11,13 @@ colors:
   error: "#FF5544"
   border: "#494543"
   highlight: "#1A1A19"
+  # Per-category accents for the Logs event inspector. Each token feeds a
+  # `hint*` style in internal/tui/styles.go; if a token is removed the loader
+  # falls back to the `border` (`hint`) color so removal degrades gracefully.
+  category.tasks: "#39FF14"
+  category.comment: "#8FAE9A"
+  category.plan: "#FFB347"
+  category.audit: "#5FB3D9"
+  category.guard: "#FF5544"
+  category.trick: "#D070C7"
+  category.tool_call: "#86D27A"

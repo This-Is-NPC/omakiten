@@ -125,6 +125,12 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `comments.delete` | Hard-deletes a comment. Subject to bucket `permissions.comment.delete` (same inheritance rule). Requires `confirmed=true`. |
 | `task_activity.list` | Unified chronological feed for a task (comments + system events such as `task.created`, `task.moved`, `task.completed`, `task.archived`, `task.unarchived`, `task.migrated`, `task.removed`, `task.assigned`, `task.unassigned`, `comment.edited`, `comment.removed`); supports `order=asc\|desc`. |
 
+### Logs (generic event inspector)
+
+| Tool | Purpose |
+|---|---|
+| `logs.list` | Generic Logs inspector over the unified events log — every event_type (task lifecycle, comments, plans, guards, hooks, tool calls, tricks, audits, domain bookkeeping) in one read. Optional `categories` (array of `task`/`comment`/`plan`/`tag-dep`/`guard`/`audit`/`hook`/`tool_call`/`trick`/`domain`) scopes the read; omit for all. Optional `since` accepts Go duration (`24h`, `30m`, `1h30m`) or N-day shorthand (`7d`, `30d`); omit to use the project's configured window (`config.views.logs.window_days`, 30 days by default). Optional `limit` caps the row count; omit for no MCP-side cap. Optional `order` is `desc` (default) or `asc`. Every row carries the full `EventRow` columns plus a `category` (resolved `EventCategory`) and a `summary` string rendered via `domain.SummarizeEvent` so agents see human-readable detail without parsing the payload JSON. `categories=["tool_call"]` reproduces the legacy activity-log filter. |
+
 ### Dependencies
 
 | Tool | Purpose |

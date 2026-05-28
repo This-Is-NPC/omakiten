@@ -1,9 +1,10 @@
 package installer
 
 import (
-	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 // TestParseHarnessSelection_ShellParity walks the same input shapes
@@ -39,8 +40,8 @@ func TestParseHarnessSelection_ShellParity(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got, status, warnings := ParseHarnessSelection(tc.raw)
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Fatalf("harnesses: got %v want %v", got, tc.want)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("harnesses mismatch (-want +got):\n%s", diff)
 			}
 			if status != tc.status {
 				t.Fatalf("status: got %v want %v", status, tc.status)

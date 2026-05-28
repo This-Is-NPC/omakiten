@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"time"
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
@@ -167,6 +168,11 @@ type CommentRepository interface {
 // EventRepository exposes the unified events log. Both the activity feed
 // (per-task) and the system event recorders write through this interface,
 // so the service layer never has to know the underlying table layout.
+//
+// The generic read methods (ListEvents, EventCategoryCounts) feed the
+// Logs inspector surfaces (TUI / CLI / MCP) introduced by umbrella
+// task #320 — they share the same port so the Repositories
+// composition root only wires one EventRepository implementation.
 type EventRepository interface {
 	RecordTaskEvent(ctx context.Context, projectID, taskID int64, eventType, body, payload string) (domain.Event, error)
 	// RecordEntityEvent persists a domain event with the agent attribution
@@ -175,6 +181,16 @@ type EventRepository interface {
 	// subject is the project as a whole.
 	RecordEntityEvent(ctx context.Context, entityType string, entityID int64, projectID int64, eventType string, payload string) error
 	ListTaskActivity(ctx context.Context, projectID, taskID int64, order string) ([]domain.Event, error)
+	// ListEvents is the generic Logs inspector read path. Zero values on
+	// the filter degrade to "no filter" per domain.EventFilter godoc.
+	// Backs the `logs.list` MCP tool + TUI / CLI siblings so every
+	// consumer reads the same shape.
+	ListEvents(ctx context.Context, filter domain.EventFilter) ([]domain.EventRow, error)
+	// EventCategoryCounts returns per-category totals over the optional
+	// project + time window. Every known category is present in the
+	// returned map with at least a 0 count so renderers can draw a
+	// stable table.
+	EventCategoryCounts(ctx context.Context, projectID int64, since time.Time) (map[domain.EventCategory]int, error)
 }
 
 type DependencyRepository interface {

@@ -588,8 +588,18 @@ type TableFilterSettings struct {
 	Bucket   []string `yaml:"bucket,omitempty" json:"bucket,omitempty"`
 }
 
+// LogsFilterSettings is retained ONLY as a parse sink for the legacy
+// `views.logs.filter.source` key (pre-event-inspector). The field is no
+// longer consumed by anything — the new Logs inspector filters via
+// EventCategory in EventFilter.Categories, not by source. Existing
+// omakiten.yaml files in the wild still ship `filter: {source: [...]}`;
+// the strict YAML loader (KnownFields=true) would reject the unknown
+// key without this shim. Validator no longer enforces a value set; the
+// field is silently accepted and discarded.
+//
+// Do not add new fields here. New logs filters belong on EventFilter.
 type LogsFilterSettings struct {
-	Source []string `yaml:"source,omitempty" json:"source,omitempty"`
+	Source []string `yaml:"source,omitempty" json:"-"`
 }
 
 type BoardViewSettings struct {
@@ -607,9 +617,20 @@ type GraphViewSettings struct {
 }
 
 type LogsViewSettings struct {
-	Sort   SortSettings       `yaml:"sort,omitempty" json:"sort,omitempty"`
-	Limit  int                `yaml:"limit,omitempty" json:"limit,omitempty"`
-	Filter LogsFilterSettings `yaml:"filter,omitempty" json:"filter,omitempty"`
+	Sort SortSettings `yaml:"sort,omitempty" json:"sort,omitempty"`
+	// Limit caps how many rows the LOGS view ships per query. Required;
+	// validator demands > 0.
+	Limit int `yaml:"limit,omitempty" json:"limit,omitempty"`
+	// WindowDays declares the default time horizon for the LOGS view
+	// across TUI / CLI / MCP. Required; validator demands > 0. Consumers
+	// read it via Snapshot.LogsWindowDays() which converts to a
+	// time.Duration (days * 24h) so call sites can do
+	// `time.Now().Add(-d)` without re-doing the math.
+	WindowDays int `yaml:"window_days,omitempty" json:"window_days,omitempty"`
+	// Filter is retained for backwards compatibility with configs that
+	// still ship `filter.source`. The value is parsed and discarded; no
+	// production code reads it. See LogsFilterSettings doc.
+	Filter LogsFilterSettings `yaml:"filter,omitempty" json:"-"`
 }
 
 type TaskActivityViewSettings struct {

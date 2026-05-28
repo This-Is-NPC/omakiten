@@ -174,6 +174,8 @@ func (m Model) renderHelp() string {
 			{"↑ ↓ · j k", m.t("tui.help.stats_logs.select_row")},
 			{"pgup · pgdn · ctrl+u · ctrl+d", m.t("tui.help.stats_logs.scroll_halfpage")},
 			{"g · G", m.t("tui.help.stats_logs.first_last_row")},
+			{"f", m.t("tui.help.stats_logs.filter_cycle")},
+			{"shift+F", m.t("tui.help.stats_logs.filter_cycle_back")},
 			{"r", m.t("tui.help.stats_logs.refresh")},
 		}},
 		{"stats_general", m.t("tui.help.stats_general.title"), []binding{

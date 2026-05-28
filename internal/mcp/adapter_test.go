@@ -41,6 +41,7 @@ func TestToolsIncludePlannedSurface(t *testing.T) {
 		"solutions.add":       false,
 		"solutions.confirm":   false,
 		"metrics.summary":     false,
+		"logs.list":           false,
 	}
 	for _, tool := range Tools() {
 		if _, ok := want[tool.Name]; ok {
@@ -184,6 +185,7 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		"comments.add",
 		"comments.list",
 		"task_activity.list",
+		"logs.list",
 		"dependencies.add",
 		"dependencies.remove",
 		"dependencies.list",
@@ -692,6 +694,10 @@ func TestAdapterServiceResolverRoutesByProjectArg(t *testing.T) {
 // newMCPProjectFixture builds a self-contained sqlite store + project +
 // task triple keyed by slug. Used by per-project routing tests where
 // two adapters need to point at distinct underlying state.
+//
+// slug is fixture-arbitrary: pick any non-empty string the test
+// asserts against. Each call provisions its own TempDir-backed store
+// so multiple invocations in the same test do not collide.
 func newMCPProjectFixture(t *testing.T, ctx context.Context, slug string) (*snapstore.Store, domain.Project) {
 	t.Helper()
 	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
@@ -977,14 +983,37 @@ func callListTemplates(t *testing.T, ctx context.Context, adapter *Adapter, proj
 
 // TestAdapterServiceResolverConcurrentRouting drives N goroutines through
 // CallTool with project= alternating between alpha and bravo. The
-// project.overview payload echoes the project slug, so each goroutine
-// can confirm the routing reached the correct service. -race surfaces
-// any cross-call data corruption that a torn dispatch would introduce.
+// project.overview payload echoes the project slug and surfaces
+// per-bucket task counts, so each goroutine can confirm both the
+// slug echo AND that the overview was computed against the
+// resolver-selected store. -race surfaces any cross-call data
+// corruption that a torn dispatch would introduce.
+//
+// Routing isolation: the helper seeds one backlog task per store, so
+// we plant additional backlog tasks here to make the per-project
+// counts diverge (alpha=2, bravo=3). A resolver that collapsed both
+// requests onto a single store would return the same count for both
+// projects, while the slug-echo assertion (which only proves the
+// request slug round-trips through the response) would still pass.
 func TestAdapterServiceResolverConcurrentRouting(t *testing.T) {
 	ctx := context.Background()
 
 	storeA, projectA, _ := newMCPProjectWithBundle(t, ctx, "alpha", mcpTestBundle(t))
 	storeB, projectB, _ := newMCPProjectWithBundle(t, ctx, "bravo", mcpTestBundle(t))
+
+	// Plant extra tasks so the backlog count differs per project. A
+	// resolver collapse would surface as both projects reporting the
+	// same count regardless of slug.
+	if _, err := storeA.CreateTask(ctx, projectA.ID, "T-alpha-extra", "", domain.Priority(2), "backlog", nil, storeA.Snapshot()); err != nil {
+		t.Fatalf("CreateTask(alpha extra): %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := storeB.CreateTask(ctx, projectB.ID, fmt.Sprintf("T-bravo-extra-%d", i), "", domain.Priority(2), "backlog", nil, storeB.Snapshot()); err != nil {
+			t.Fatalf("CreateTask(bravo extra %d): %v", i, err)
+		}
+	}
+	const alphaBacklogCount = 2 // seeded T-alpha + T-alpha-extra
+	const bravoBacklogCount = 3 // seeded T-bravo + 2 extras
 
 	serviceA := agent.NewService(storeA, agent.ProjectSelector{ProjectID: projectA.ID})
 	serviceA.SetSnapshot(storeA.Snapshot())
@@ -1011,8 +1040,10 @@ func TestAdapterServiceResolverConcurrentRouting(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			project := "alpha"
+			wantBacklog := alphaBacklogCount
 			if id%2 == 1 {
 				project = "bravo"
+				wantBacklog = bravoBacklogCount
 			}
 			for j := 0; j < iters; j++ {
 				result, err := adapter.CallTool(ctx, "project.overview", withModel(map[string]any{"project": project}))
@@ -1028,6 +1059,10 @@ func TestAdapterServiceResolverConcurrentRouting(t *testing.T) {
 					Project struct {
 						Slug string `json:"slug"`
 					} `json:"project"`
+					TaskBuckets []struct {
+						BucketKey string `json:"bucket_key"`
+						Count     int    `json:"count"`
+					} `json:"task_buckets"`
 				}
 				if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
 					errs <- fmt.Errorf("worker %d iter %d decode: %w", id, j, err)
@@ -1035,6 +1070,20 @@ func TestAdapterServiceResolverConcurrentRouting(t *testing.T) {
 				}
 				if payload.Project.Slug != project {
 					errs <- fmt.Errorf("worker %d iter %d crosstalk: got %q want %q", id, j, payload.Project.Slug, project)
+					return
+				}
+				// Routing isolation: the bucket count comes from the
+				// resolver-selected store, NOT the request args, so a
+				// silent resolver collapse fails this assertion.
+				gotBacklog := -1
+				for _, b := range payload.TaskBuckets {
+					if b.BucketKey == "backlog" {
+						gotBacklog = b.Count
+						break
+					}
+				}
+				if gotBacklog != wantBacklog {
+					errs <- fmt.Errorf("worker %d iter %d project %q backlog count = %d, want %d (resolver may have collapsed to wrong store)", id, j, project, gotBacklog, wantBacklog)
 					return
 				}
 			}
@@ -1120,6 +1169,12 @@ func snippet(r ToolResult) string {
 // store, registers a project under slug, and seeds a single backlog
 // task so dispatch tests have something to operate on. Returns the
 // triple every per-project test needs.
+//
+// slug is fixture-arbitrary: callers commonly pass "alpha" / "bravo"
+// for two-project routing tests, but any non-empty string works. The
+// helper is safe to invoke multiple times in the same test with
+// distinct slugs — each call provisions its own TempDir-backed store
+// so the resulting (store, project, task) triples do not collide.
 func newMCPProjectWithBundle(t *testing.T, ctx context.Context, slug string, bundle config.Bundle) (*snapstore.Store, domain.Project, domain.Task) {
 	t.Helper()
 	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))

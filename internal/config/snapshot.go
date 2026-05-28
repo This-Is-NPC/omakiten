@@ -1,6 +1,8 @@
 package config
 
 import (
+	"time"
+
 	"omakiten/internal/domain"
 )
 
@@ -804,4 +806,14 @@ func (s *Snapshot) ContextSettings() domain.ContextSettings {
 		DefaultLevel: s.settings.Context.DefaultLevel,
 		MaxTokens:    s.settings.Context.MaxTokens,
 	}
+}
+
+// LogsWindowDays returns the configured LOGS-view default time horizon
+// as a time.Duration (days × 24h). Call sites that need a timestamp
+// floor can do `time.Now().Add(-snap.LogsWindowDays())` without
+// re-doing the day-to-duration math themselves. The validator
+// guarantees `config.views.logs.window_days > 0` at runtime, so the
+// returned value is always positive.
+func (s *Snapshot) LogsWindowDays() time.Duration {
+	return time.Duration(s.settings.Views.Logs.WindowDays) * 24 * time.Hour
 }

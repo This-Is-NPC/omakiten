@@ -34,6 +34,24 @@ keys:
   cli.context.short: "Inspecteer projectcontext voor handoff"
   cli.context.add.short: "Voeg een handoff-context entry toe aan het project"
   cli.context.dump.short: "Dump progressieve context voor agents"
+  cli.logs.short: "Inspect the unified event log (task, comment, plan, hook, tool_call, guard, …)"
+  cli.logs.long: |-
+    okt logs reads the unified events table through the same path the TUI Logs
+    inspector uses. The default window is the last Snapshot.LogsWindowDays()
+    days for the active project, all categories included.
+
+    Categories (match the TUI filter chips): task, comment, plan, tag-dep,
+    guard, audit, hook, tool_call, trick, domain. Pass `all` to clear the
+    filter explicitly.
+
+    Output is a JSON envelope; each row carries the 5-field shape
+    (time · event_type · entity · author · summary) where `summary` is the
+    canonical SummarizeEvent string used by the TUI inspector.
+  cli.logs.flag.category: "restrict to one or more event categories (repeatable, comma-separated; `all` clears the filter)"
+  cli.logs.flag.since: "override the default window (e.g. 24h, 30m, 7d)"
+  cli.logs.flag.limit: "cap the number of rows returned (0 = no cap)"
+  cli.err.logs_invalid_category: "unknown event category"
+  cli.err.logs_invalid_since: "invalid --since duration; expected forms like 24h, 30m, 7d"
   cli.depend.short: "Beheer task-dependencies"
   cli.depend.add.short: "Voeg een task-dependency toe"
   cli.depend.remove.short: "Verwijder een task-dependency"
@@ -584,6 +602,8 @@ keys:
   tui.help.stats_logs.select_row: "selecteer rij (scrolt automatisch)"
   tui.help.stats_logs.scroll_halfpage: "scroll met halve pagina"
   tui.help.stats_logs.first_last_row: "eerste / laatste rij"
+  tui.help.stats_logs.filter_cycle: "filterchip cyclus (alle → tool-calls → domein → systeem)"
+  tui.help.stats_logs.filter_cycle_back: "filterchip cyclus omgekeerd"
   tui.help.stats_logs.refresh: "vernieuwen"
   tui.help.stats_general.title: "Stats · algemeen"
   tui.help.stats_general.cycle_period: "cycle periode (7d / 30d / all)"
@@ -642,6 +662,12 @@ keys:
   tui.log.project_col: "PROJECT"
   tui.log.refresh_hint: "r vernieuwen · volledige argumenten verschijnen op bredere terminals"
   tui.log.tui_refresh_note: "Alleen app service calls worden gelogd. TUI refreshes en directe reads verschijnen niet."
+  tui.log.filter.kicker: "logs · filter"
+  tui.log.filter.hint: "(F cyclus)"
+  tui.log.filter.all: "alle"
+  tui.log.filter.tool_calls: "tool-calls"
+  tui.log.filter.domain: "domein"
+  tui.log.filter.system: "systeem"
   tui.badge.custom: "CUSTOM"
   tui.badge.fix: "FIX"
   tui.badge.blocker: "blocker"

@@ -8,6 +8,7 @@ import (
 )
 
 func TestLoadBundleParsesViewsSection(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	if err := EnsureDefaultFiles(tmp); err != nil {
 		t.Fatalf("EnsureDefaultFiles() = %v", err)
@@ -71,8 +72,9 @@ config:
       sort:
         order: asc
       limit: 25
+      window_days: 14
       filter:
-        source: [cli, mcp]
+        source: [cli, mcp]  # legacy key — silently dropped after #330 cleanup; kept here as a backwards-compat regression smoke test
     task_activity:
       sort:
         order: desc
@@ -110,9 +112,11 @@ workflows:
 	if views.Logs.Limit != 25 {
 		t.Errorf("Logs.Limit = %d, want 25", views.Logs.Limit)
 	}
-	if len(views.Logs.Filter.Source) != 2 {
-		t.Errorf("Logs.Filter.Source len = %d, want 2", len(views.Logs.Filter.Source))
+	if views.Logs.WindowDays != 14 {
+		t.Errorf("Logs.WindowDays = %d, want 14", views.Logs.WindowDays)
 	}
+	// Legacy `views.logs.filter.source` key (dropped by #330) must not
+	// reject the load — yaml unmarshal silently ignores unknown keys.
 	if views.TaskActivity.Sort.Order != "desc" {
 		t.Errorf("TaskActivity.Sort.Order = %q, want desc", views.TaskActivity.Sort.Order)
 	}
@@ -124,6 +128,7 @@ workflows:
 // validator must accept it. If this fails, the kit ships an
 // unparseable / incomplete document — the most basic invariant.
 func TestLoadBundleParsesKitDefaultFile(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	if err := EnsureDefaultFiles(tmp); err != nil {
 		t.Fatalf("EnsureDefaultFiles() = %v", err)
@@ -166,8 +171,9 @@ func fullViewSettings() ViewSettings {
 			Sort: SortSettings{Field: "id", Order: "asc"},
 		},
 		Logs: LogsViewSettings{
-			Sort:  SortSettings{Order: "desc"},
-			Limit: 50,
+			Sort:       SortSettings{Order: "desc"},
+			Limit:      50,
+			WindowDays: 30,
 		},
 		TaskActivity: TaskActivityViewSettings{
 			Sort: SortSettings{Order: "asc"},
@@ -176,6 +182,7 @@ func fullViewSettings() ViewSettings {
 }
 
 func TestValidateViewSettingsRejectsBadValues(t *testing.T) {
+	t.Parallel()
 	baseWorkflow := []Workflow{{
 		ID: 1, Key: "default", Name: "Default",
 		Buckets: []Bucket{
@@ -220,14 +227,19 @@ func TestValidateViewSettingsRejectsBadValues(t *testing.T) {
 			wantErr: "config.views.logs.sort.field is not configurable",
 		},
 		{
-			name:    "logs filter source invalid",
-			mutate:  func(v *ViewSettings) { v.Logs.Filter.Source = []string{"slack"} },
-			wantErr: "config.views.logs.filter.source",
-		},
-		{
 			name:    "logs zero limit",
 			mutate:  func(v *ViewSettings) { v.Logs.Limit = 0 },
 			wantErr: "config.views.logs.limit",
+		},
+		{
+			name:    "logs zero window_days",
+			mutate:  func(v *ViewSettings) { v.Logs.WindowDays = 0 },
+			wantErr: "config.views.logs.window_days",
+		},
+		{
+			name:    "logs negative window_days",
+			mutate:  func(v *ViewSettings) { v.Logs.WindowDays = -1 },
+			wantErr: "config.views.logs.window_days",
 		},
 		{
 			name:    "task_activity field forbidden",
@@ -248,6 +260,7 @@ func TestValidateViewSettingsRejectsBadValues(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			views := fullViewSettings()
 			tc.mutate(&views)
 			err := validateViewSettings(views, baseWorkflow, "default", []string{"low", "normal", "high"})
@@ -262,6 +275,7 @@ func TestValidateViewSettingsRejectsBadValues(t *testing.T) {
 }
 
 func TestValidateViewSettingsAcceptsValid(t *testing.T) {
+	t.Parallel()
 	baseWorkflow := []Workflow{{
 		ID: 1, Key: "default", Name: "Default",
 		Buckets: []Bucket{{ID: 1, Key: "backlog", Name: "Backlog", Position: 1}},
@@ -277,7 +291,6 @@ func TestValidateViewSettingsAcceptsValid(t *testing.T) {
 	custom.Board.Filter.Priority = []string{"high", "normal"}
 	custom.Table.Filter.Bucket = []string{"backlog"}
 	custom.Logs.Limit = 200
-	custom.Logs.Filter.Source = []string{"cli", "tui"}
 	if err := validateViewSettings(custom, baseWorkflow, "default", []string{"low", "normal", "high"}); err != nil {
 		t.Fatalf("custom valid ViewSettings should pass: %v", err)
 	}
@@ -292,6 +305,7 @@ func TestValidateViewSettingsAcceptsValid(t *testing.T) {
 // validateViewSettings as a parameter, so a board filter mentioning
 // "urgent" passes when the priority is declared.
 func TestValidateViewSettingsHonorsCustomPriorities(t *testing.T) {
+	t.Parallel()
 	baseWorkflow := []Workflow{{
 		ID: 1, Key: "default", Name: "Default",
 		Buckets: []Bucket{{ID: 1, Key: "backlog", Name: "Backlog", Position: 1}},

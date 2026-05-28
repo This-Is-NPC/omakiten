@@ -34,6 +34,24 @@ keys:
   cli.context.short: "handoff साठी project context तपासा"
   cli.context.add.short: "project handoff context नोंद जोडा"
   cli.context.dump.short: "agent साठी प्रगतीशील context डंप करा"
+  cli.logs.short: "Inspect the unified event log (task, comment, plan, hook, tool_call, guard, …)"
+  cli.logs.long: |-
+    okt logs reads the unified events table through the same path the TUI Logs
+    inspector uses. The default window is the last Snapshot.LogsWindowDays()
+    days for the active project, all categories included.
+
+    Categories (match the TUI filter chips): task, comment, plan, tag-dep,
+    guard, audit, hook, tool_call, trick, domain. Pass `all` to clear the
+    filter explicitly.
+
+    Output is a JSON envelope; each row carries the 5-field shape
+    (time · event_type · entity · author · summary) where `summary` is the
+    canonical SummarizeEvent string used by the TUI inspector.
+  cli.logs.flag.category: "restrict to one or more event categories (repeatable, comma-separated; `all` clears the filter)"
+  cli.logs.flag.since: "override the default window (e.g. 24h, 30m, 7d)"
+  cli.logs.flag.limit: "cap the number of rows returned (0 = no cap)"
+  cli.err.logs_invalid_category: "unknown event category"
+  cli.err.logs_invalid_since: "invalid --since duration; expected forms like 24h, 30m, 7d"
   cli.depend.short: "task अवलंबित्व व्यवस्थापित करा"
   cli.depend.add.short: "task अवलंबित्व जोडा"
   cli.depend.remove.short: "task अवलंबित्व काढून टाका"
@@ -583,6 +601,8 @@ keys:
   tui.help.stats_logs.select_row: "row निवडा (स्वयं-स्क्रोल)"
   tui.help.stats_logs.scroll_halfpage: "अर्ध्या पानाने स्क्रोल करा"
   tui.help.stats_logs.first_last_row: "पहिली / शेवटची row"
+  tui.help.stats_logs.filter_cycle: "filter chip सायकल (सर्व → tool-calls → domain → system)"
+  tui.help.stats_logs.filter_cycle_back: "filter chip विरुद्ध सायकल"
   tui.help.stats_logs.refresh: "रीफ्रेश"
   tui.help.stats_general.title: "Stats · सामान्य"
   tui.help.stats_general.cycle_period: "कालावधी फिरवा (7d / 30d / all)"
@@ -641,6 +661,12 @@ keys:
   tui.log.project_col: "PROJECT"
   tui.log.refresh_hint: "r रीफ्रेश · पूर्ण arguments रुंद terminal वर दिसतात"
   tui.log.tui_refresh_note: "फक्त app service कॉल लॉग केले जातात. TUI रीफ्रेश आणि थेट read दाखवले जात नाहीत."
+  tui.log.filter.kicker: "logs · filter"
+  tui.log.filter.hint: "(F सायकल)"
+  tui.log.filter.all: "सर्व"
+  tui.log.filter.tool_calls: "tool-calls"
+  tui.log.filter.domain: "domain"
+  tui.log.filter.system: "system"
   tui.badge.custom: "CUSTOM"
   tui.badge.fix: "FIX"
   tui.badge.blocker: "ब्लॉकर"

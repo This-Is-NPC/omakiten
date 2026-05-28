@@ -34,6 +34,24 @@ keys:
   cli.context.short: "Переглянути контекст проєкту для передачі"
   cli.context.add.short: "Додати запис контексту передачі проєкту"
   cli.context.dump.short: "Вивантажити прогресивний контекст для agents"
+  cli.logs.short: "Inspect the unified event log (task, comment, plan, hook, tool_call, guard, …)"
+  cli.logs.long: |-
+    okt logs reads the unified events table through the same path the TUI Logs
+    inspector uses. The default window is the last Snapshot.LogsWindowDays()
+    days for the active project, all categories included.
+
+    Categories (match the TUI filter chips): task, comment, plan, tag-dep,
+    guard, audit, hook, tool_call, trick, domain. Pass `all` to clear the
+    filter explicitly.
+
+    Output is a JSON envelope; each row carries the 5-field shape
+    (time · event_type · entity · author · summary) where `summary` is the
+    canonical SummarizeEvent string used by the TUI inspector.
+  cli.logs.flag.category: "restrict to one or more event categories (repeatable, comma-separated; `all` clears the filter)"
+  cli.logs.flag.since: "override the default window (e.g. 24h, 30m, 7d)"
+  cli.logs.flag.limit: "cap the number of rows returned (0 = no cap)"
+  cli.err.logs_invalid_category: "unknown event category"
+  cli.err.logs_invalid_since: "invalid --since duration; expected forms like 24h, 30m, 7d"
   cli.depend.short: "Керувати залежностями tasks"
   cli.depend.add.short: "Додати залежність task"
   cli.depend.remove.short: "Прибрати залежність task"
@@ -583,6 +601,8 @@ keys:
   tui.help.stats_logs.select_row: "обрати рядок (автопрокрутка)"
   tui.help.stats_logs.scroll_halfpage: "прокрутити пів-сторінки"
   tui.help.stats_logs.first_last_row: "перший / останній рядок"
+  tui.help.stats_logs.filter_cycle: "цикл фільтра (усі → tool-calls → домен → система)"
+  tui.help.stats_logs.filter_cycle_back: "цикл фільтра у зворотному порядку"
   tui.help.stats_logs.refresh: "оновити"
   tui.help.stats_general.title: "Stats · загальне"
   tui.help.stats_general.cycle_period: "циклити період (7d / 30d / усі)"
@@ -641,6 +661,12 @@ keys:
   tui.log.project_col: "ПРОЄКТ"
   tui.log.refresh_hint: "r оновити · повні аргументи з'являються в ширших терміналах"
   tui.log.tui_refresh_note: "Логуються лише виклики app service. Оновлення TUI та прямі читання не показуються."
+  tui.log.filter.kicker: "logs · фільтр"
+  tui.log.filter.hint: "(F цикл)"
+  tui.log.filter.all: "усі"
+  tui.log.filter.tool_calls: "tool-calls"
+  tui.log.filter.domain: "домен"
+  tui.log.filter.system: "система"
   tui.badge.custom: "CUSTOM"
   tui.badge.fix: "FIX"
   tui.badge.blocker: "блокер"

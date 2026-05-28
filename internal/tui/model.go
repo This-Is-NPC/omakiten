@@ -636,37 +636,68 @@ func (m *Model) refreshPreservingTaskSelection() error {
 }
 
 func (m *Model) refreshActivityLogs() error {
-	if m.repos.ActivityLogs == nil {
+	if m.repos.Events == nil {
 		return nil
 	}
 	views := m.activeViewSettings()
 	m.views = views
-	sources := make([]domain.ActivitySource, 0, len(views.Logs.Filter.Source))
-	for _, src := range views.Logs.Filter.Source {
-		sources = append(sources, domain.ActivitySource(src))
-	}
-	listFilter := domain.ActivityLogFilter{
+	since := m.logsSinceFloor(views.Logs.WindowDays)
+	listFilter := domain.EventFilter{
 		ProjectID: m.project.ID,
-		Limit:     views.Logs.Limit,
-		Order:     views.Logs.Sort.Order,
-		Sources:   sources,
+		// Categories empty by default so the Logs inspector shows
+		// every event_type the project has recorded inside the
+		// window. Sub-task #326 will fold the F-chip selection into
+		// this slice without rewriting the refresh path.
+		Categories: m.logsCategoryFilter(),
+		Since:      since,
+		Limit:      views.Logs.Limit,
+		Order:      views.Logs.Sort.Order,
 	}
-	logs, err := m.repos.ActivityLogs.ListActivityLogs(m.ctx, listFilter)
+	rows, err := m.repos.Events.ListEvents(m.ctx, listFilter)
 	if err != nil {
 		return err
 	}
-	m.logs = logs
-	// Summary tables aggregate the full project history (no limit, no
-	// view source filter), so the headline numbers reflect everything
-	// the project has logged — not just whichever rows happen to fit
-	// in the panel beneath.
-	statsFilter := domain.ActivityLogFilter{ProjectID: m.project.ID}
-	stats, err := m.repos.ActivityLogs.ActivityLogStats(m.ctx, statsFilter)
+	m.events = rows
+	// Summary tables aggregate across the wider window (still
+	// scoped by the snapshot's logs.window_days) so the headline
+	// numbers reflect every recorded event regardless of the panel
+	// row cap.
+	counts, err := m.repos.Events.EventCategoryCounts(m.ctx, m.project.ID, since)
 	if err != nil {
 		return err
 	}
-	m.logsStats = stats
+	m.eventStats = computeEventStats(rows, counts)
 	return nil
+}
+
+// logsSinceFloor converts views.logs.window_days into the inclusive
+// time floor passed to EventRepository. Negative or zero values mean
+// "no time floor" (return the zero-value time.Time) so test fixtures
+// and legacy bundles without the setting still render every row they
+// have. The active snapshot is the source of truth — when wired, it
+// normalises the day count before us; this helper is the last-mile
+// fallback for the headless paths that never opened a bundle.
+func (m *Model) logsSinceFloor(windowDays int) time.Time {
+	if snap := m.repos.activeSnapshot(); snap != nil {
+		if d := snap.LogsWindowDays(); d > 0 {
+			return time.Now().Add(-d)
+		}
+	}
+	if windowDays <= 0 {
+		return time.Time{}
+	}
+	return time.Now().Add(-time.Duration(windowDays) * 24 * time.Hour)
+}
+
+// logsCategoryFilter projects the active LogsFilterMode onto the
+// repository's EventFilter.Categories slice. Returns nil for
+// LogsFilterAll so domain.EventFilter treats it as "no category
+// filter" — the default view surfaces every event_type recorded in
+// the snapshot's logs.window_days horizon. Sub-task #326 wires the
+// F-chip toggle through here; the renderer and refreshActivityLogs
+// both read the same seam so chip state and panel rows stay aligned.
+func (m *Model) logsCategoryFilter() []domain.EventCategory {
+	return logsFilterCategories(m.logsFilterMode)
 }
 
 func (m *Model) refreshStats() error {

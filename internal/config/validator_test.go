@@ -68,7 +68,7 @@ func TestValidateBundleErrors(t *testing.T) {
 					Board:        BoardViewSettings{Sort: SortSettings{Field: "created_at", Order: "desc"}},
 					Table:        TableViewSettings{Sort: SortSettings{Field: "created_at", Order: "desc"}},
 					Graph:        GraphViewSettings{Sort: SortSettings{Field: "id", Order: "asc"}},
-					Logs:         LogsViewSettings{Sort: SortSettings{Order: "desc"}, Limit: 50},
+					Logs:         LogsViewSettings{Sort: SortSettings{Order: "desc"}, Limit: 50, WindowDays: 30},
 					TaskActivity: TaskActivityViewSettings{Sort: SortSettings{Order: "asc"}},
 				},
 				SQLite:      SQLiteSettings{BusyTimeoutMs: 5000, CacheSizeKB: 1024, MmapSizeBytes: 0},
@@ -197,14 +197,29 @@ func TestValidatePrioritiesEnforcesAscendingIDs(t *testing.T) {
 			wantErr: "",
 		},
 		{
+			name:    "single ID passes",
+			input:   []PriorityDefinition{{ID: 1, Value: "low"}},
+			wantErr: "",
+		},
+		{
 			name:    "descending rejected",
 			input:   []PriorityDefinition{{ID: 3, Value: "high"}, {ID: 1, Value: "low"}},
+			wantErr: "ascending order",
+		},
+		{
+			name:    "descending fails",
+			input:   []PriorityDefinition{{ID: 3, Value: "high"}, {ID: 2, Value: "normal"}, {ID: 1, Value: "low"}},
 			wantErr: "ascending order",
 		},
 		{
 			name:    "jumbled rejected",
 			input:   []PriorityDefinition{{ID: 1, Value: "low"}, {ID: 5, Value: "high"}, {ID: 3, Value: "normal"}},
 			wantErr: "ascending order",
+		},
+		{
+			name:    "equal IDs fail",
+			input:   []PriorityDefinition{{ID: 1, Value: "low"}, {ID: 1, Value: "normal"}, {ID: 2, Value: "high"}},
+			wantErr: "declared twice",
 		},
 	}
 	for _, tc := range cases {

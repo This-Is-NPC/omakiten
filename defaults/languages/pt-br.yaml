@@ -34,6 +34,24 @@ keys:
   cli.context.short: "Inspeciona o contexto do projeto para handoff"
   cli.context.add.short: "Adiciona uma entrada de contexto de handoff do projeto"
   cli.context.dump.short: "Dump de contexto progressivo para agentes"
+  cli.logs.short: "Inspect the unified event log (task, comment, plan, hook, tool_call, guard, …)"
+  cli.logs.long: |-
+    okt logs reads the unified events table through the same path the TUI Logs
+    inspector uses. The default window is the last Snapshot.LogsWindowDays()
+    days for the active project, all categories included.
+
+    Categories (match the TUI filter chips): task, comment, plan, tag-dep,
+    guard, audit, hook, tool_call, trick, domain. Pass `all` to clear the
+    filter explicitly.
+
+    Output is a JSON envelope; each row carries the 5-field shape
+    (time · event_type · entity · author · summary) where `summary` is the
+    canonical SummarizeEvent string used by the TUI inspector.
+  cli.logs.flag.category: "restrict to one or more event categories (repeatable, comma-separated; `all` clears the filter)"
+  cli.logs.flag.since: "override the default window (e.g. 24h, 30m, 7d)"
+  cli.logs.flag.limit: "cap the number of rows returned (0 = no cap)"
+  cli.err.logs_invalid_category: "unknown event category"
+  cli.err.logs_invalid_since: "invalid --since duration; expected forms like 24h, 30m, 7d"
   cli.depend.short: "Gerencia dependências de tasks"
   cli.depend.add.short: "Adiciona uma dependência de task"
   cli.depend.remove.short: "Remove uma dependência de task"
@@ -585,6 +603,8 @@ keys:
   tui.help.stats_logs.select_row: "seleciona linha (rola automaticamente)"
   tui.help.stats_logs.scroll_halfpage: "rola meia página"
   tui.help.stats_logs.first_last_row: "primeira / última linha"
+  tui.help.stats_logs.filter_cycle: "ciclo do chip de filtro (todos → tool-calls → domínio → sistema)"
+  tui.help.stats_logs.filter_cycle_back: "ciclo do chip de filtro em ordem reversa"
   tui.help.stats_logs.refresh: "atualizar"
   tui.help.stats_general.title: "Stats · geral"
   tui.help.stats_general.cycle_period: "cicla período (7d / 30d / all)"
@@ -643,6 +663,12 @@ keys:
   tui.log.project_col: "PROJETO"
   tui.log.refresh_hint: "r atualizar · argumentos completos aparecem em terminais mais largos"
   tui.log.tui_refresh_note: "Apenas chamadas de app service são logadas. Refreshes da TUI e leituras diretas não aparecem."
+  tui.log.filter.kicker: "logs · filtro"
+  tui.log.filter.hint: "(F ciclo)"
+  tui.log.filter.all: "todos"
+  tui.log.filter.tool_calls: "tool-calls"
+  tui.log.filter.domain: "domínio"
+  tui.log.filter.system: "sistema"
   tui.badge.custom: "CUSTOM"
   tui.badge.fix: "FIX"
   tui.badge.blocker: "bloqueador"

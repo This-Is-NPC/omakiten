@@ -34,6 +34,24 @@ keys:
   cli.context.short: "检查项目 context 用于交接"
   cli.context.add.short: "添加项目交接 context 条目"
   cli.context.dump.short: "为 agents 输出渐进式 context"
+  cli.logs.short: "Inspect the unified event log (task, comment, plan, hook, tool_call, guard, …)"
+  cli.logs.long: |-
+    okt logs reads the unified events table through the same path the TUI Logs
+    inspector uses. The default window is the last Snapshot.LogsWindowDays()
+    days for the active project, all categories included.
+
+    Categories (match the TUI filter chips): task, comment, plan, tag-dep,
+    guard, audit, hook, tool_call, trick, domain. Pass `all` to clear the
+    filter explicitly.
+
+    Output is a JSON envelope; each row carries the 5-field shape
+    (time · event_type · entity · author · summary) where `summary` is the
+    canonical SummarizeEvent string used by the TUI inspector.
+  cli.logs.flag.category: "restrict to one or more event categories (repeatable, comma-separated; `all` clears the filter)"
+  cli.logs.flag.since: "override the default window (e.g. 24h, 30m, 7d)"
+  cli.logs.flag.limit: "cap the number of rows returned (0 = no cap)"
+  cli.err.logs_invalid_category: "unknown event category"
+  cli.err.logs_invalid_since: "invalid --since duration; expected forms like 24h, 30m, 7d"
   cli.depend.short: "管理 task 依赖"
   cli.depend.add.short: "添加 task 依赖"
   cli.depend.remove.short: "移除 task 依赖"
@@ -577,6 +595,8 @@ keys:
   tui.help.stats_logs.select_row: "选择行(自动滚动)"
   tui.help.stats_logs.scroll_halfpage: "滚动半页"
   tui.help.stats_logs.first_last_row: "第一行 / 最后一行"
+  tui.help.stats_logs.filter_cycle: "循环过滤芯片 (全部 → tool-calls → 领域 → 系统)"
+  tui.help.stats_logs.filter_cycle_back: "反向循环过滤芯片"
   tui.help.stats_logs.refresh: "刷新"
   tui.help.stats_general.title: "Stats · 通用"
   tui.help.stats_general.cycle_period: "循环周期 (7d / 30d / all)"
@@ -635,6 +655,12 @@ keys:
   tui.log.project_col: "项目"
   tui.log.refresh_hint: "r 刷新 · 完整参数在更宽的终端中显示"
   tui.log.tui_refresh_note: "仅 app service 调用被记录。TUI 刷新和直接读取不显示。"
+  tui.log.filter.kicker: "logs · 过滤器"
+  tui.log.filter.hint: "(F 循环)"
+  tui.log.filter.all: "全部"
+  tui.log.filter.tool_calls: "tool-calls"
+  tui.log.filter.domain: "领域"
+  tui.log.filter.system: "系统"
   tui.badge.custom: "CUSTOM"
   tui.badge.fix: "FIX"
   tui.badge.blocker: "阻塞"
