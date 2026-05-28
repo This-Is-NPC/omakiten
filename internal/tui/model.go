@@ -183,13 +183,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case paletteSearchResultMsg:
 		// Async tail of dispatchPaletteSearch. Drop the result
 		// silently when the user closed the palette in the
-		// meantime — SetStatus on a closed overlay would leak
-		// stale text into the next open.
+		// meantime — SetResults / SetStatus on a closed overlay
+		// would leak stale text into the next open.
 		if !m.paletteOpen {
 			return m, nil
 		}
-		m.palette.SetStatus(msg.status)
+		if len(msg.hits) > 0 {
+			m.palette.SetResults(msg.hits)
+		} else {
+			m.palette.SetStatus(msg.status)
+		}
 		return m, nil
+	case palette.OpenHitMsg:
+		return m, m.dispatchOpenHit(msg.Hit)
 	case palette.SubmitMsg:
 		return m, m.dispatchTrick(msg.Token)
 	case palette.SearchMsg:

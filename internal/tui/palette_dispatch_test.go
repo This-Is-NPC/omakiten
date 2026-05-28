@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"omakiten/internal/app"
+	"omakiten/internal/domain"
 	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/tui/palette"
 )
@@ -137,14 +138,35 @@ func TestDispatchPaletteSearchNilRepoStaysSyncStatus(t *testing.T) {
 	}
 }
 
-func TestPaletteSearchResultMsgUpdatesStatusWhenOpen(t *testing.T) {
+func TestPaletteSearchResultMsgStatusPathSetsInlineHint(t *testing.T) {
 	model, _ := newPickerModel(t)
 	model.paletteOpen = true
 	model.palette = palette.NewModel()
-	next, _ := model.Update(paletteSearchResultMsg{query: "x", status: "12 results"})
+	next, _ := model.Update(paletteSearchResultMsg{query: "x", status: "no results for \"x\""})
 	got := next.(Model)
-	if got.palette.Status() != "12 results" {
-		t.Fatalf("after result msg, status = %q, want \"12 results\"", got.palette.Status())
+	if !strings.Contains(got.palette.Status(), "no results") {
+		t.Fatalf("status = %q, want no-results hint", got.palette.Status())
+	}
+	if got.palette.HasResults() {
+		t.Fatalf("HasResults true on status-only path")
+	}
+}
+
+func TestPaletteSearchResultMsgHitsPathPopulatesList(t *testing.T) {
+	model, _ := newPickerModel(t)
+	model.paletteOpen = true
+	model.palette = palette.NewModel()
+	hits := []domain.SearchHit{
+		{EntityType: domain.SearchEntityTask, ID: 42, Snippet: "foo"},
+		{EntityType: domain.SearchEntityComment, ID: 99, Snippet: "bar"},
+	}
+	next, _ := model.Update(paletteSearchResultMsg{query: "x", hits: hits})
+	got := next.(Model)
+	if !got.palette.HasResults() {
+		t.Fatalf("HasResults false after hits path")
+	}
+	if len(got.palette.Results()) != 2 {
+		t.Fatalf("Results len = %d, want 2", len(got.palette.Results()))
 	}
 }
 
@@ -157,6 +179,72 @@ func TestPaletteSearchResultMsgIgnoredWhenClosed(t *testing.T) {
 	got := next.(Model)
 	if got.palette.Status() != "stale" {
 		t.Fatalf("closed-overlay path mutated status to %q; should leave prior value intact", got.palette.Status())
+	}
+}
+
+func TestDispatchOpenHitTaskOpensViewAndClosesPalette(t *testing.T) {
+	model, _ := newPickerModel(t)
+	// Seed a task in the same project the picker model holds so
+	// GetTaskByID can find it. The picker fixture wires repos.Tasks
+	// to *snapstore.Store, so a type assertion gives access to the
+	// CreateTask + Snapshot pair the test fixture exposes.
+	store, ok := model.repos.Tasks.(*snapstore.Store)
+	if !ok {
+		t.Fatalf("repos.Tasks is %T, expected *snapstore.Store", model.repos.Tasks)
+	}
+	if err := store.ImportBundle(model.ctx, tuiTestBundle(t), "test.yaml", "hash"); err != nil {
+		t.Fatalf("seed bundle: %v", err)
+	}
+	task, err := store.CreateTask(model.ctx, model.project.ID, "Search target", "", domain.Priority(2), "backlog", nil, store.Snapshot())
+	if err != nil {
+		t.Fatalf("seed task: %v", err)
+	}
+	model.paletteOpen = true
+	model.palette = palette.NewModel()
+	model.dispatchOpenHit(domain.SearchHit{EntityType: domain.SearchEntityTask, ID: task.ID})
+	if model.paletteOpen {
+		t.Fatalf("open-task dispatch did not close the palette")
+	}
+	if model.taskID != task.ID {
+		t.Fatalf("taskID = %d after open, want %d", model.taskID, task.ID)
+	}
+	if model.taskScreen == taskScreenClosed {
+		t.Fatalf("taskScreen still closed after open-task dispatch")
+	}
+}
+
+func TestDispatchOpenHitUnknownTaskKeepsPaletteOpen(t *testing.T) {
+	model, _ := newPickerModel(t)
+	model.paletteOpen = true
+	model.palette = palette.NewModel()
+	model.dispatchOpenHit(domain.SearchHit{EntityType: domain.SearchEntityTask, ID: 999999})
+	if !model.paletteOpen {
+		t.Fatalf("unknown-task should keep palette open")
+	}
+	if !strings.Contains(model.palette.Status(), "not found") {
+		t.Fatalf("status = %q, want \"not found\" mention", model.palette.Status())
+	}
+}
+
+func TestDispatchOpenHitUnsupportedTypeStaysInline(t *testing.T) {
+	for _, entityType := range []domain.SearchEntityType{
+		domain.SearchEntityError,
+		domain.SearchEntitySolution,
+		domain.SearchEntityContext,
+		domain.SearchEntityPlan,
+	} {
+		t.Run(string(entityType), func(t *testing.T) {
+			model, _ := newPickerModel(t)
+			model.paletteOpen = true
+			model.palette = palette.NewModel()
+			model.dispatchOpenHit(domain.SearchHit{EntityType: entityType, ID: 1})
+			if !model.paletteOpen {
+				t.Errorf("entity type %s closed the palette; should be inline-only", entityType)
+			}
+			if !strings.Contains(model.palette.Status(), "no TUI view") {
+				t.Errorf("entity type %s status = %q, want \"no TUI view\" hint", entityType, model.palette.Status())
+			}
+		})
 	}
 }
 

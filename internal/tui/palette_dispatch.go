@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/tui/components/detailscreen"
 	"omakiten/internal/tui/palette"
 )
 
@@ -150,31 +151,28 @@ func buildPaletteRegistry(repos Repositories) (*palette.Registry, error) {
 }
 
 // paletteSearchResultMsg is the async tail of dispatchPaletteSearch.
-// Carrying the formatted status string (not the raw SearchHit slice)
-// keeps Update arm free of snippet truncation logic and means the
-// goroutine returns a fully-rendered result the UI assigns directly.
+// Carries the raw SearchHit slice (or a status string for errors and
+// empty results) so the palette renders a navigable list — the
+// per-hit rendering lives in palette.Model.View, not here.
 type paletteSearchResultMsg struct {
 	query  string
+	hits   []domain.SearchHit
 	status string
 }
 
 // dispatchPaletteSearch returns a tea.Cmd that runs the FTS5 query
-// off the UI goroutine. The synchronous original blocked Update for
-// the full Search round-trip (FTS5 query + activity.Track writes), so
-// even a sub-100ms call read as a freeze because the palette could
-// not redraw until Update returned. Hand the work to a goroutine via
-// tea.Cmd, post paletteSearchResultMsg back, and let the root Update
-// fold the formatted status into the open overlay. Mirrors the
-// existing dispatchNotification + home project delete patterns.
-//
-// Pre-dispatch the helper sets a "searching <query>…" status
-// synchronously so the user gets immediate feedback while the
-// goroutine works.
+// off the UI goroutine. Pre-dispatch the helper clears any prior
+// result list and sets a "searching <query>…" status synchronously
+// so the user gets immediate feedback. The Cmd posts
+// paletteSearchResultMsg back; the Update arm either populates the
+// palette's navigable result list (success path) or surfaces an
+// inline status (error / empty-result path).
 func (m *Model) dispatchPaletteSearch(query string) tea.Cmd {
 	if m.repos.Search == nil {
 		m.palette.SetStatus("search not wired in this build")
 		return nil
 	}
+	m.palette.ClearResults()
 	m.palette.SetStatus(fmt.Sprintf("searching %q…", query))
 	search := m.repos.Search
 	ctx := m.ctx
@@ -184,31 +182,71 @@ func (m *Model) dispatchPaletteSearch(query string) tea.Cmd {
 		if err != nil {
 			return paletteSearchResultMsg{query: query, status: "search failed: " + err.Error()}
 		}
-		return paletteSearchResultMsg{query: query, status: formatPaletteSearchResults(query, hits)}
+		if len(hits) == 0 {
+			return paletteSearchResultMsg{query: query, status: fmt.Sprintf("no results for %q", query)}
+		}
+		return paletteSearchResultMsg{query: query, hits: hits}
 	}
 }
 
-// formatPaletteSearchResults renders the FTS5 hits as a result-count
-// header plus up to the first three rows. Pulled out of the dispatch
-// path so the goroutine produces a plain string and the Update arm
-// only has to assign it.
-func formatPaletteSearchResults(query string, hits []domain.SearchHit) string {
-	if len(hits) == 0 {
-		return fmt.Sprintf("no results for %q", query)
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "%d results", len(hits))
-	cap := 3
-	if len(hits) < cap {
-		cap = len(hits)
-	}
-	for i := 0; i < cap; i++ {
-		h := hits[i]
-		snippet := strings.TrimSpace(h.Snippet)
-		if len(snippet) > 60 {
-			snippet = snippet[:60] + "…"
+// dispatchOpenHit routes a selected hit (palette.OpenHitMsg) to its
+// TUI detail view. Per #319 D1 only entity types that have a TUI
+// screen today are openable; everything else surfaces an inline
+// hint and leaves the palette open so the user can pick another
+// row or refine the query.
+func (m *Model) dispatchOpenHit(hit domain.SearchHit) tea.Cmd {
+	switch hit.EntityType {
+	case domain.SearchEntityTask:
+		task, err := m.repos.Tasks.GetTaskByID(m.ctx, m.project.ID, hit.ID, nil)
+		if err != nil {
+			m.palette.SetStatus(fmt.Sprintf("task #%d not found", hit.ID))
+			return nil
 		}
-		fmt.Fprintf(&b, "\n  %s #%d %s", h.EntityType, h.ID, snippet)
+		m.paletteOpen = false
+		m.openTaskView(task)
+		return nil
+	case domain.SearchEntityComment:
+		if err := m.openCommentByID(hit.ID); err != nil {
+			m.palette.SetStatus(fmt.Sprintf("comment #%d: %s", hit.ID, err.Error()))
+			return nil
+		}
+		m.paletteOpen = false
+		return nil
+	default:
+		m.palette.SetStatus(fmt.Sprintf("%s: no TUI view", hit.EntityType))
+		return nil
 	}
-	return b.String()
+}
+
+// openCommentByID resolves the comment, opens its parent task, and
+// then opens the comment detail overlay. The TUI does not expose a
+// comment view independent of its parent task — the standard path
+// is to land on the task, scroll the activity feed to the comment
+// row, and open the detail screen. Replicate that flow programmatically
+// so a palette-driven open lands the user in the same state as a
+// keyboard drill.
+func (m *Model) openCommentByID(commentID int64) error {
+	comment, err := m.repos.Comments.CommentByID(m.ctx, m.project.ID, commentID)
+	if err != nil {
+		return err
+	}
+	parent, err := m.repos.Tasks.GetTaskByID(m.ctx, m.project.ID, comment.TaskID, nil)
+	if err != nil {
+		return err
+	}
+	m.openTaskView(parent)
+	// openTaskView populates m.taskID + the activity feed; locate
+	// the comment's event row and pin the cursor on it so the
+	// dedicated detail screen reads the right event when it opens.
+	events := m.activityForTaskInView(m.taskID)
+	for i, ev := range events {
+		if ev.EventType == domain.EventTypeComment && ev.ID == commentID {
+			m.activityCursor = i
+			break
+		}
+	}
+	m.commentScreenOpen = true
+	m.commentScreenID = commentID
+	m.commentScreen = detailscreen.New(0)
+	return nil
 }
