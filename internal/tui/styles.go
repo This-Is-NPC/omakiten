@@ -155,7 +155,19 @@ type styles struct {
 	hint          lipgloss.Style
 	hintAccent    lipgloss.Style
 	hintBox       lipgloss.Style
-	muted         lipgloss.Style
+	// hintTasks / hintComment / hintPlan / hintAudit / hintGuard / hintTrick /
+	// hintToolCall paint the per-category accents in the Logs event inspector
+	// (sub-task #325 wires them). Each resolves from a `category.<name>` theme
+	// token; when a theme omits the token, newStyles falls back to the generic
+	// `hint` color so older / custom themes never render an unstyled glyph.
+	hintTasks    lipgloss.Style
+	hintComment  lipgloss.Style
+	hintPlan     lipgloss.Style
+	hintAudit    lipgloss.Style
+	hintGuard    lipgloss.Style
+	hintTrick    lipgloss.Style
+	hintToolCall lipgloss.Style
+	muted        lipgloss.Style
 	info          lipgloss.Style
 	success       lipgloss.Style
 	warning       lipgloss.Style
@@ -200,6 +212,18 @@ func newStyles(theme config.Theme) styles {
 	// palettes can override it.
 	badgeFg := color("badge_fg", "#1A1A1A")
 
+	// categoryColor resolves a Logs-event-category token (e.g. `category.tasks`)
+	// from the active theme. When the token is missing or empty it falls back
+	// to the generic `hint` color (`border` token, same fallback chain as the
+	// `hint` style above) so themes that pre-date the Logs event inspector
+	// keep rendering without panic or a default-black glyph.
+	categoryColor := func(key string) lipgloss.Color {
+		if value := theme.Colors[key]; value != "" {
+			return lipgloss.Color(value)
+		}
+		return border
+	}
+
 	return styles{
 		title:       lipgloss.NewStyle().Bold(true).Foreground(primary),
 		nav:         lipgloss.NewStyle().Foreground(secondary),
@@ -239,6 +263,13 @@ func newStyles(theme config.Theme) styles {
 		hint:          lipgloss.NewStyle().Foreground(border),
 		hintAccent:    lipgloss.NewStyle().Foreground(primary).Bold(true),
 		hintBox:       lipgloss.NewStyle().Foreground(foreground).Border(lipgloss.NormalBorder()).BorderForeground(border).Padding(0, 2).Width(60),
+		hintTasks:     lipgloss.NewStyle().Foreground(categoryColor("category.tasks")),
+		hintComment:   lipgloss.NewStyle().Foreground(categoryColor("category.comment")),
+		hintPlan:      lipgloss.NewStyle().Foreground(categoryColor("category.plan")),
+		hintAudit:     lipgloss.NewStyle().Foreground(categoryColor("category.audit")),
+		hintGuard:     lipgloss.NewStyle().Foreground(categoryColor("category.guard")),
+		hintTrick:     lipgloss.NewStyle().Foreground(categoryColor("category.trick")),
+		hintToolCall:  lipgloss.NewStyle().Foreground(categoryColor("category.tool_call")),
 		muted:         lipgloss.NewStyle().Foreground(border),
 		info:          lipgloss.NewStyle().Foreground(secondary),
 		success:       lipgloss.NewStyle().Foreground(success),
