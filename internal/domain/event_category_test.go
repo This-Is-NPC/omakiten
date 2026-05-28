@@ -1,8 +1,9 @@
 package domain
 
 import (
-	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 // TestEventCategoryOfCoversKnownEventTypes locks AC#1: every entry in
@@ -103,8 +104,8 @@ func TestEventTypesForCategoryIsDeterministic(t *testing.T) {
 	for _, c := range KnownEventCategories {
 		a := EventTypesForCategory(c)
 		b := EventTypesForCategory(c)
-		if !reflect.DeepEqual(a, b) {
-			t.Errorf("EventTypesForCategory(%q) non-deterministic: a=%v b=%v", c, a, b)
+		if diff := cmp.Diff(a, b); diff != "" {
+			t.Errorf("EventTypesForCategory(%q) non-deterministic (-first +second):\n%s", c, diff)
 		}
 	}
 }

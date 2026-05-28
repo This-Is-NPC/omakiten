@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/google/go-cmp/cmp"
 
 	"omakiten/internal/domain"
 )
@@ -33,8 +34,8 @@ func TestLogsFilterCycleForwardOrder(t *testing.T) {
 		mode = logsFilterCycle(mode, 1)
 		got = append(got, mode)
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("forward cycle = %v, want %v", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("forward cycle mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -57,8 +58,8 @@ func TestLogsFilterCycleBackwardOrder(t *testing.T) {
 		mode = logsFilterCycle(mode, -1)
 		got = append(got, mode)
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("backward cycle = %v, want %v", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("backward cycle mismatch (-want +got):\n%s", diff)
 	}
 }
 

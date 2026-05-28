@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"omakiten/internal/sqlite/sqlutil"
 )
 
@@ -177,7 +179,7 @@ func TestScanAll_LoopContractWithFakeRows(t *testing.T) {
 		t.Fatalf("Err: %v", err)
 	}
 	want := []recordedDecode{{ID: 1, Name: "alpha"}, {ID: 2, Name: "beta"}, {ID: 3, Name: "gamma"}}
-	if !reflect.DeepEqual(out, want) {
-		t.Fatalf("loop output = %+v, want %+v", out, want)
+	if diff := cmp.Diff(want, out); diff != "" {
+		t.Fatalf("loop output mismatch (-want +got):\n%s", diff)
 	}
 }

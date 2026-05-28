@@ -4,9 +4,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 // TestWriteActivePreset_HonoursOmakitenHome pins the resolver to a
@@ -56,8 +57,8 @@ func TestWriteWrappers_SkipsMissingRC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteWrappers: %v", err)
 	}
-	if !reflect.DeepEqual(installed, []string{bashrc}) {
-		t.Fatalf("installed: got %v want %v", installed, []string{bashrc})
+	if diff := cmp.Diff([]string{bashrc}, installed); diff != "" {
+		t.Fatalf("installed mismatch (-want +got):\n%s", diff)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".zshrc")); err == nil {
 		t.Fatalf("WriteWrappers created .zshrc when seed was missing")
@@ -118,8 +119,8 @@ func TestPowerShellProfileTargets_PerOS(t *testing.T) {
 			filepath.Join("/tmp/h", "Documents", "PowerShell", "profile.ps1"),
 			filepath.Join("/tmp/h", "Documents", "WindowsPowerShell", "profile.ps1"),
 		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("windows targets: got %v want %v", got, want)
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Fatalf("windows targets mismatch (-want +got):\n%s", diff)
 		}
 		return
 	}
