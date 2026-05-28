@@ -14,6 +14,14 @@ import (
 // one kit YAML cannot pass green by sampling another.
 var kitKeys = []string{"izakaya", "kaiseki", "omakase", "shokunin"}
 
+// refKit pins the kit the cross-kit identity subtest compares against.
+// Hoisted to a package-level const so the choice is visible alongside
+// kitKeys (rather than buried inside the subtest body) and so any
+// future test that needs the canonical kit reads from the same source.
+// Omakase is the reference because it is the default kit the runtime
+// boots into and the one every TestMain hydrates the registry from.
+const refKit = "omakase"
+
 // TestEventRegistryYAMLParity asserts a four-way contract introduced by
 // the YAML-driven event registry refactor (Phase 0):
 //
@@ -47,13 +55,13 @@ func TestEventRegistryYAMLParity(t *testing.T) {
 		kits[key] = cfg.Events.Definitions
 	}
 
-	// Hydrate the domain registry from the omakase kit so
+	// Hydrate the domain registry from refKit so
 	// domain.KnownEventTypes is populated. Phase 1 dropped the
 	// hand-maintained Go literal in favour of a loader-fed slice; tests
 	// that walk domain.KnownEventTypes must therefore prime the loader
 	// first, exactly as boot does at runtime.
-	if err := config.LoadDomainEventRegistry(kitEvents(t, "omakase")); err != nil {
-		t.Fatalf("LoadDomainEventRegistry(omakase): %v", err)
+	if err := config.LoadDomainEventRegistry(kitEvents(t, refKit)); err != nil {
+		t.Fatalf("LoadDomainEventRegistry(%q): %v", refKit, err)
 	}
 	knownSet := make(map[string]struct{}, len(domain.KnownEventTypes))
 	for _, k := range domain.KnownEventTypes {
@@ -116,18 +124,17 @@ func TestEventRegistryYAMLParity(t *testing.T) {
 	})
 
 	t.Run("cross_kit_identity", func(t *testing.T) {
-		// Pin omakase as the reference; every other kit must deep-equal it
-		// so the registry is canonical across kits. A divergence reports
-		// the offending kit + key + field so authors can fix the drift at
-		// its source rather than chase a synthesized diff.
-		const ref = "omakase"
-		refDefs := kits[ref]
+		// Compare every other kit against refKit so the registry is
+		// canonical across kits. A divergence reports the offending kit
+		// + key + field so authors can fix the drift at its source
+		// rather than chase a synthesized diff.
+		refDefs := kits[refKit]
 		for _, key := range kitKeys {
-			if key == ref {
+			if key == refKit {
 				continue
 			}
 			key := key
-			t.Run(ref+"_vs_"+key, func(t *testing.T) {
+			t.Run(refKit+"_vs_"+key, func(t *testing.T) {
 				other := kits[key]
 				if reflect.DeepEqual(refDefs, other) {
 					return
@@ -138,17 +145,17 @@ func TestEventRegistryYAMLParity(t *testing.T) {
 				refKeys := keysOf(refDefs)
 				otherKeys := keysOf(other)
 				if missing := diff(refKeys, otherKeys); len(missing) > 0 {
-					t.Errorf("kit %q missing keys present in %q: %v", key, ref, missing)
+					t.Errorf("kit %q missing keys present in %q: %v", key, refKit, missing)
 				}
 				if extra := diff(otherKeys, refKeys); len(extra) > 0 {
-					t.Errorf("kit %q has keys absent from %q: %v", key, ref, extra)
+					t.Errorf("kit %q has keys absent from %q: %v", key, refKit, extra)
 				}
 				for _, k := range refKeys {
 					o, ok := other[k]
 					if !ok {
 						continue
 					}
-					reportFieldDiffs(t, ref, key, k, refDefs[k], o)
+					reportFieldDiffs(t, refKit, key, k, refDefs[k], o)
 				}
 			})
 		}
