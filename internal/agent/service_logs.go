@@ -46,7 +46,7 @@ func (s *Service) ListLogs(ctx context.Context, input ListLogsInput) (ListLogsRe
 		return ListLogsResponse{}, err
 	}
 
-	since, err := resolveLogsSince(input.Since, s.snapshot)
+	since, err := resolveLogsSince(input.Since, s.snapshot, s.nowFunc())
 	if err != nil {
 		return ListLogsResponse{}, err
 	}
@@ -119,7 +119,13 @@ func normalizeLogsCategories(raw []string) ([]domain.EventCategory, error) {
 // then via the day-aware fallback ("7d", "30d") so callers can
 // express both granularities. Anything that fails both parses
 // surfaces a validation error rather than a silent zero-floor.
-func resolveLogsSince(raw string, snap *config.Snapshot) (time.Time, error) {
+//
+// The `now` callback is injected so tests can substitute a
+// deterministic clock (internal/testfakes/clock.Fake.Now) instead of
+// snapshotting time.Now() and comparing with a tolerance window.
+// Production callers route through Service.nowFunc(), which defaults
+// to time.Now — the public ListLogs behaviour is unchanged.
+func resolveLogsSince(raw string, snap *config.Snapshot, now func() time.Time) (time.Time, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		if snap == nil {
@@ -129,7 +135,7 @@ func resolveLogsSince(raw string, snap *config.Snapshot) (time.Time, error) {
 		if window <= 0 {
 			return time.Time{}, nil
 		}
-		return time.Now().Add(-window), nil
+		return now().Add(-window), nil
 	}
 	if d, err := time.ParseDuration(trimmed); err == nil {
 		if d <= 0 {
@@ -137,7 +143,7 @@ func resolveLogsSince(raw string, snap *config.Snapshot) (time.Time, error) {
 				"logs.since duration must be positive (got "+trimmed+")",
 				map[string]any{"since": trimmed})
 		}
-		return time.Now().Add(-d), nil
+		return now().Add(-d), nil
 	}
 	if d, ok := parseDayDuration(trimmed); ok {
 		if d <= 0 {
@@ -145,7 +151,7 @@ func resolveLogsSince(raw string, snap *config.Snapshot) (time.Time, error) {
 				"logs.since duration must be positive (got "+trimmed+")",
 				map[string]any{"since": trimmed})
 		}
-		return time.Now().Add(-d), nil
+		return now().Add(-d), nil
 	}
 	return time.Time{}, domain.NewError(domain.ErrValidation,
 		"logs.since must be a Go duration (e.g. \"24h\", \"30m\") or N-day shorthand (e.g. \"7d\"); got "+trimmed,

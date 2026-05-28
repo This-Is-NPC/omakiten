@@ -24,7 +24,7 @@ const logsSinceJitterTolerance = 10 * time.Second
 func TestResolveLogsSinceDefaultUsesSnapshotWindow(t *testing.T) {
 	// snapshot==nil is the test path; resolveLogsSince must accept
 	// it and fall back to a zero-value (no floor) rather than panic.
-	since, err := resolveLogsSince("", nil)
+	since, err := resolveLogsSince("", nil, time.Now)
 	if err != nil {
 		t.Fatalf("resolveLogsSince(empty, nil) error = %v", err)
 	}
@@ -48,7 +48,7 @@ func TestResolveLogsSinceAcceptsGoDuration(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {
-			got, err := resolveLogsSince(tc.in, nil)
+			got, err := resolveLogsSince(tc.in, nil, time.Now)
 			if err != nil {
 				t.Fatalf("resolveLogsSince(%q) error = %v", tc.in, err)
 			}
@@ -72,7 +72,7 @@ func TestResolveLogsSinceAcceptsGoDuration(t *testing.T) {
 // time.ParseDuration does not support natively. "7d" must produce a
 // floor 7 days before now.
 func TestResolveLogsSinceAcceptsDayShorthand(t *testing.T) {
-	got, err := resolveLogsSince("7d", nil)
+	got, err := resolveLogsSince("7d", nil, time.Now)
 	if err != nil {
 		t.Fatalf("resolveLogsSince(7d) error = %v", err)
 	}
@@ -89,7 +89,7 @@ func TestResolveLogsSinceAcceptsDayShorthand(t *testing.T) {
 // contract: unparseable input surfaces a validation error rather than
 // silently produce a zero floor (which would erase the window).
 func TestResolveLogsSinceRejectsGarbage(t *testing.T) {
-	_, err := resolveLogsSince("yesterday", nil)
+	_, err := resolveLogsSince("yesterday", nil, time.Now)
 	if err == nil {
 		t.Fatal("resolveLogsSince(yesterday) error = nil, want validation_error")
 	}
@@ -105,7 +105,7 @@ func TestResolveLogsSinceRejectsGarbage(t *testing.T) {
 func TestResolveLogsSinceRejectsZeroDuration(t *testing.T) {
 	for _, in := range []string{"0h", "0d", "0s"} {
 		t.Run(in, func(t *testing.T) {
-			_, err := resolveLogsSince(in, nil)
+			_, err := resolveLogsSince(in, nil, time.Now)
 			if err == nil {
 				t.Fatalf("resolveLogsSince(%q) error = nil, want validation_error", in)
 			}
