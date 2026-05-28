@@ -10,6 +10,22 @@
 
 * **cli:** rewrite `okt logs` as the unified event inspector with `--category`, `--since`, and `--limit` flags. Default scope is the last `views.logs.window_days` for the active project; `--category` is repeatable and comma-separated and accepts the same chips as the TUI (`task`, `comment`, `plan`, `tag-dep`, `guard`, `audit`, `hook`, `tool_call`, `trick`, `domain`, plus the `all` shortcut).
 
+## [0.22.0](https://github.com/This-Is-NPC/omakiten/compare/v0.21.0...v0.22.0) (2026-05-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **logs:** okt logs no longer emits the legacy ActivityLog row shape. Each event now carries the EventRow projection (event_type, entity_type, author_type, category, summary). Downstream tooling that scraped source-only rows must switch to the new shape. The legacy ListActivityLogs repo method is retained for now.
+
+### Features
+
+* **tui:** trick palette — verb dispatch + navigable search ([#86](https://github.com/This-Is-NPC/omakiten/issues/86)) ([7ed8609](https://github.com/This-Is-NPC/omakiten/commit/7ed86096d40eb7375ba8665c325b6c0aaaf3630c))
+
+
+### Bug Fixes
+
+* **logs:** rewrite Logs view as generic event inspector ([#88](https://github.com/This-Is-NPC/omakiten/issues/88)) ([3227bed](https://github.com/This-Is-NPC/omakiten/commit/3227bedd99828a4d975a170b8ac9ef173f85e6b9))
+
 ## [0.21.0](https://github.com/This-Is-NPC/omakiten/compare/v0.20.2...v0.21.0) (2026-05-27)
 
 
