@@ -492,16 +492,46 @@ type EventsSettings struct {
 	// keys outside domain.KnownEventTypes so typos surface at load time
 	// rather than as silent no-ops.
 	Overrides map[string]EventChannelSettings `yaml:"overrides,omitempty" json:"overrides,omitempty"`
+	// Definitions is the YAML-loaded event_type registry: one entry per
+	// known event_type declaring its category, display label, optional
+	// entity_type / metric / log_visible flags, and the formatter id
+	// used to render its payload. Mirrors the loader's
+	// eventRegistryDefinition struct in internal/domain so the kit
+	// Settings carries the block; the loader consumes the same shape
+	// when wired in Wave 2c.
+	Definitions map[string]EventDefinitionSettings `yaml:"definitions,omitempty" json:"definitions,omitempty"`
 }
 
 // EventChannelSettings is the per-event tri-channel policy. Pointer fields
 // distinguish "inherit default" (nil) from explicit false. The runtime
 // only consumes Log today; Broadcast and Hook are reserved for the
 // upcoming event-bus task.
+//
+// LogVisible / Metric / EntityType are the YAML-loaded defaults for the
+// event_type registry definitions block (declared Wave 2b). They are
+// surfaced here so the kit `events.defaults:` block can supply a
+// fallback for every definition that does not declare the field
+// explicitly. No runtime consumer reads them yet — wired in Wave 2c.
 type EventChannelSettings struct {
-	Log       *bool `yaml:"log,omitempty" json:"log,omitempty"`
-	Broadcast *bool `yaml:"broadcast,omitempty" json:"broadcast,omitempty"`
-	Hook      *bool `yaml:"hook,omitempty" json:"hook,omitempty"`
+	Log        *bool  `yaml:"log,omitempty" json:"log,omitempty"`
+	Broadcast  *bool  `yaml:"broadcast,omitempty" json:"broadcast,omitempty"`
+	Hook       *bool  `yaml:"hook,omitempty" json:"hook,omitempty"`
+	LogVisible *bool  `yaml:"log_visible,omitempty" json:"log_visible,omitempty"`
+	Metric     string `yaml:"metric,omitempty" json:"metric,omitempty"`
+	EntityType string `yaml:"entity_type,omitempty" json:"entity_type,omitempty"`
+}
+
+// EventDefinitionSettings is the YAML-loaded metadata for one event_type.
+// Mirrors the loader's eventRegistryDefinition struct in internal/domain
+// so the kit Settings carries the block; the loader consumes the same shape
+// when wired in Wave 2c.
+type EventDefinitionSettings struct {
+	Category   string  `yaml:"category" json:"category"`
+	Display    string  `yaml:"display" json:"display"`
+	EntityType *string `yaml:"entity_type,omitempty" json:"entity_type,omitempty"`
+	Metric     *string `yaml:"metric,omitempty" json:"metric,omitempty"`
+	LogVisible *bool   `yaml:"log_visible,omitempty" json:"log_visible,omitempty"`
+	Formatter  string  `yaml:"formatter" json:"formatter"`
 }
 
 // ResolveLog reports whether the given event_type should be persisted to
