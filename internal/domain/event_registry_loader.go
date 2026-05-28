@@ -3,9 +3,27 @@ package domain
 import (
 	"fmt"
 	"sort"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
+
+// registryMu serialises writes to the package-level event-registry
+// globals (EventDefinitions, EventDefByKey, KnownEventTypes, and the
+// memoized categoryIndex).
+//
+// Invariant: LoadEventRegistryFromYAML runs once at boot, before any
+// reader goroutine spins up — under that contract the mutex is
+// strictly defensive. It guards against accidental concurrent reload
+// paths (e.g. a future hot-reload feature, or a test that drives
+// boot-style hydration from multiple goroutines under -race).
+//
+// Reads (EventCategoryOf, EventTypesForCategory, SummarizeEvent,
+// direct accesses to EventDefinitions / EventDefByKey /
+// KnownEventTypes) intentionally do not take the lock. They are safe
+// because the registry is final after LoadEventRegistryFromYAML
+// returns; the mutex protects the write side only.
+var registryMu sync.RWMutex
 
 // EventDef is the YAML-loaded metadata for one event_type. All fields except
 // Key + Category + Formatter are optional and inherit from the YAML defaults
@@ -89,6 +107,8 @@ func LoadEventRegistryFromYAML(payload []byte) error {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
+	registryMu.Lock()
+	defer registryMu.Unlock()
 	EventDefinitions = defs
 	EventDefByKey = byKey
 	KnownEventTypes = keys

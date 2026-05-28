@@ -2,6 +2,7 @@ package domain
 
 import (
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -146,6 +147,52 @@ func TestLoadEventRegistryFromYAML_MissingDefinitionsErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "definitions") {
 		t.Fatalf("error does not mention definitions: %v", err)
+	}
+}
+
+// TestLoadEventRegistryConcurrentReloadIsSerialized exercises the
+// registryMu write lock. Spawns N goroutines that each call
+// LoadEventRegistryFromYAML with a valid payload; without the mutex,
+// `go test -race` flags the concurrent writes to EventDefinitions /
+// EventDefByKey / KnownEventTypes / categoryIndex. The assertion that
+// the registry remains non-empty after the dust settles guards against
+// a partial-write race nullifying the final state.
+//
+// Documents the loader's defensive concurrency posture: production
+// callers run the loader once at boot, but the lock keeps the
+// invariant true under accidental concurrent reload paths.
+func TestLoadEventRegistryConcurrentReloadIsSerialized(t *testing.T) {
+	const fmtID = "__test.fmt.concurrent"
+	setupTestFormatter(t, fmtID, func(EventRow) string { return "concurrent" })
+	restoreFixtureRegistry(t)
+
+	yaml := `defaults:
+  log_visible: true
+  metric: events
+  entity_type: task
+definitions:
+  concurrent_load:
+    category: task
+    display: Concurrent load
+    formatter: __test.fmt.concurrent
+`
+	const goroutines = 32
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			if err := LoadEventRegistryFromYAML([]byte(yaml)); err != nil {
+				t.Errorf("load: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if len(EventDefinitions) != 1 {
+		t.Fatalf("after concurrent reloads want 1 entry, got %d", len(EventDefinitions))
+	}
+	if _, ok := EventDefByKey["concurrent_load"]; !ok {
+		t.Fatalf("EventDefByKey missing concurrent_load after race")
 	}
 }
 
