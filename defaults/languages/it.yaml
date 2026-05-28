@@ -760,6 +760,8 @@ keys:
   tui.settings.guards.header_from: "da"
   tui.settings.guards.sentinel_disallowed: "—"
   tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.kicker_root: "radice"
+  tui.settings.guards.kicker_subtask: "kit sotto-attività"
   tui.kicker.totals: "Totali"
   tui.kicker.tokens: "Tokens"
   tui.stat.total_row_label: "totale"

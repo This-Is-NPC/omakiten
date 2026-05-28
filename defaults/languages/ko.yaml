@@ -755,6 +755,8 @@ keys:
   tui.settings.guards.header_from: "출처"
   tui.settings.guards.sentinel_disallowed: "—"
   tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.kicker_root: "루트"
+  tui.settings.guards.kicker_subtask: "하위 작업 키트"
   tui.kicker.totals: "합계"
   tui.kicker.tokens: "Tokens"
   tui.stat.total_row_label: "전체"

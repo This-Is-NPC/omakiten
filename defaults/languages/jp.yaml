@@ -757,6 +757,8 @@ keys:
   tui.settings.guards.header_from: "送信元"
   tui.settings.guards.sentinel_disallowed: "—"
   tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.kicker_root: "ルート"
+  tui.settings.guards.kicker_subtask: "サブタスクキット"
   tui.kicker.totals: "合計"
   tui.kicker.tokens: "Tokens"
   tui.stat.total_row_label: "合計"

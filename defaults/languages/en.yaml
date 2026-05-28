@@ -777,6 +777,8 @@ keys:
   tui.settings.guards.header_from: "from"
   tui.settings.guards.sentinel_disallowed: "—"
   tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.kicker_root: "root"
+  tui.settings.guards.kicker_subtask: "subtask kit"
   tui.kicker.totals: "Totals"
   tui.kicker.tokens: "Tokens"
   tui.stat.total_row_label: "total"

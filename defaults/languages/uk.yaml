@@ -757,6 +757,8 @@ keys:
   tui.settings.guards.header_from: "з"
   tui.settings.guards.sentinel_disallowed: "—"
   tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.kicker_root: "корінь"
+  tui.settings.guards.kicker_subtask: "набір підзавдань"
   tui.kicker.totals: "Підсумки"
   tui.kicker.tokens: "Tokens"
   tui.stat.total_row_label: "разом"

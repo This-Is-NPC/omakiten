@@ -758,6 +758,8 @@ keys:
   tui.settings.guards.header_from: "fra"
   tui.settings.guards.sentinel_disallowed: "—"
   tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.kicker_root: "rod"
+  tui.settings.guards.kicker_subtask: "underopgavekit"
   tui.kicker.totals: "Totaler"
   tui.kicker.tokens: "Tokens"
   tui.stat.total_row_label: "total"

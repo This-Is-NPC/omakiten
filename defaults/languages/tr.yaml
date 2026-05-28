@@ -758,6 +758,8 @@ keys:
   tui.settings.guards.header_from: "kaynak"
   tui.settings.guards.sentinel_disallowed: "—"
   tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.kicker_root: "kök"
+  tui.settings.guards.kicker_subtask: "alt görev kiti"
   tui.kicker.totals: "Toplamlar"
   tui.kicker.tokens: "Token'lar"
   tui.stat.total_row_label: "toplam"

@@ -759,6 +759,8 @@ keys:
   tui.settings.guards.header_from: "से"
   tui.settings.guards.sentinel_disallowed: "—"
   tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.kicker_root: "मूल"
+  tui.settings.guards.kicker_subtask: "उपकार्य किट"
   tui.kicker.totals: "कुल योग"
   tui.kicker.tokens: "टोकन"
   tui.stat.total_row_label: "कुल"

@@ -758,6 +758,8 @@ keys:
   tui.settings.guards.header_from: "van"
   tui.settings.guards.sentinel_disallowed: "—"
   tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.kicker_root: "hoofd"
+  tui.settings.guards.kicker_subtask: "subtaakkit"
   tui.kicker.totals: "Totalen"
   tui.kicker.tokens: "Tokens"
   tui.stat.total_row_label: "totaal"

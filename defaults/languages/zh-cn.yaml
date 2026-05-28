@@ -751,6 +751,8 @@ keys:
   tui.settings.guards.header_from: "从"
   tui.settings.guards.sentinel_disallowed: "—"
   tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.kicker_root: "根"
+  tui.settings.guards.kicker_subtask: "子任务套件"
   tui.kicker.totals: "合计"
   tui.kicker.tokens: "Tokens"
   tui.stat.total_row_label: "总计"

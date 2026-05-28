@@ -757,6 +757,8 @@ keys:
   tui.settings.guards.header_from: "من"
   tui.settings.guards.sentinel_disallowed: "—"
   tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.kicker_root: "الجذر"
+  tui.settings.guards.kicker_subtask: "حزمة المهمة الفرعية"
   tui.kicker.totals: "الإجماليات"
   tui.kicker.tokens: "الرموز"
   tui.stat.total_row_label: "الإجمالي"

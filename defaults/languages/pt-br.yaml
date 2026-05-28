@@ -759,6 +759,8 @@ keys:
   tui.settings.guards.header_from: "de"
   tui.settings.guards.sentinel_disallowed: "—"
   tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.kicker_root: "raiz"
+  tui.settings.guards.kicker_subtask: "kit de subtarefa"
   tui.kicker.totals: "Totais"
   tui.kicker.tokens: "Tokens"
   tui.stat.total_row_label: "total"

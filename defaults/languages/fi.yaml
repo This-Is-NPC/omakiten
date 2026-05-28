@@ -758,6 +758,8 @@ keys:
   tui.settings.guards.header_from: "lähde"
   tui.settings.guards.sentinel_disallowed: "—"
   tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.kicker_root: "juuri"
+  tui.settings.guards.kicker_subtask: "alitehtäväpakkaus"
   tui.kicker.totals: "Yhteensä"
   tui.kicker.tokens: "Tokenit"
   tui.stat.total_row_label: "yhteensä"

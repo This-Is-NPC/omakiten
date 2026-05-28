@@ -757,6 +757,8 @@ keys:
   tui.settings.guards.header_from: "z"
   tui.settings.guards.sentinel_disallowed: "—"
   tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.kicker_root: "główny"
+  tui.settings.guards.kicker_subtask: "zestaw podzadań"
   tui.kicker.totals: "Sumy"
   tui.kicker.tokens: "Tokeny"
   tui.stat.total_row_label: "razem"
