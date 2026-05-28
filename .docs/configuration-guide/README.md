@@ -10,7 +10,7 @@ How to configure Omakiten through the active profile yaml plus the sibling entit
 | [subtask-kit.md](subtask-kit.md) | Per-level kit cascade — `subtask_kit:` shape, validator rules, migration order, `task.bucket_orphaned` event schema, hook subject metadata, transparency notice. |
 | [hooks.md](hooks.md) | Event subscriptions in `config.hooks`, the built-in action contracts (`exec`, `noop`, `notification`), and the `${{intl:KEY}}` interpolation. |
 | [notifications.md](notifications.md) | TUI notification cards loaded from `notifications/<slug>.yaml` and dispatched from hooks. |
-| [tricks.md](tricks.md) | Trick palette (`ctrl+k`) — `config.tricks.nav` overrides, reserved verbs (`nav` / `op`), user-defined verb hooks, `trick.executed` payload. |
+| [tricks.md](tricks.md) | Trick palette (`ctrl+k`) — full reference: command catalog, Tricks + Search tab keybindings, open dispatch, `config.tricks.nav` overrides, reserved verbs, hook recipes, troubleshooting. |
 | [themes.md](themes.md) | TUI theme YAML (`themes/<key>.yaml`) — 8 color tokens, markdown palette, authoring recipe, `config.theme` wiring. |
 | [languages.md](languages.md) | Bundled language packs under `defaults/languages/`, parity rule, scaffolding helper, and how to add a new locale. |
 | [path-resolution.md](path-resolution.md) | ConfigRoot precedence, `.active` resolution, `<root>/` layout, `okt config <sub>` inspectors, backup paths. |
