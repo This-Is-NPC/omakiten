@@ -338,7 +338,7 @@ func (m Model) renderLogsWidePanel() string {
 // are reachable by tests.
 func formatLogsWideRow(m Model, marker string, row domain.EventRow, timeW, typeW, entityW, whoW, detailW int) string {
 	timeStr := shortTimeForLogs(row.CreatedAt, timeW)
-	typeStr := truncateText(row.EventType, typeW)
+	typeStr := truncateText(eventDisplayLabel(row.EventType), typeW)
 	typeStyled := categoryStyle(m, domain.EventCategoryOf(row.EventType)).Render(padRight(typeStr, typeW))
 	entityStr := truncateText(formatLogsEntity(row), entityW)
 	whoStr := truncateText(formatLogsWho(row), whoW)
@@ -366,7 +366,7 @@ func (m Model) renderLogsCompactPanel() string {
 		row := m.events[i]
 		marker := m.cursorMarker(m.logsSelected == i)
 		timeStr := shortTimeForLogs(row.CreatedAt, 8)
-		typeStr := categoryStyle(m, domain.EventCategoryOf(row.EventType)).Render(row.EventType)
+		typeStr := categoryStyle(m, domain.EventCategoryOf(row.EventType)).Render(eventDisplayLabel(row.EventType))
 		prefix := fmt.Sprintf("%s %s %s ", marker, timeStr, typeStr)
 		budget := clampInt(width-lipgloss.Width(prefix), 8, width)
 		dataRows = append(dataRows, prefix+truncateText(domain.SummarizeEvent(row), budget))
@@ -473,6 +473,38 @@ func padRight(s string, width int) string {
 		return s
 	}
 	return s + strings.Repeat(" ", width-visible)
+}
+
+// eventDisplayLabel returns the human-friendly label for an event_type
+// from the YAML-loaded registry (EventDefByKey). When the registry has
+// no entry for the key — unmapped event_types, headless tests that
+// never loaded YAML — the raw key is returned so the row still surfaces.
+func eventDisplayLabel(eventType string) string {
+	if def, ok := domain.EventDefByKey[eventType]; ok && def.Display != "" {
+		return def.Display
+	}
+	return eventType
+}
+
+// filterLogVisibleRows drops EventRows whose event_type maps to an
+// EventDef with LogVisible == false. Rows whose event_type is missing
+// from the registry, or whose def has LogVisible == true, pass through
+// unchanged. Phase 3 wires this hook so Phase 4+ can flip individual
+// events without touching TUI code; shipped configs currently mark
+// every event LogVisible == true, so this is a no-op in production.
+func filterLogVisibleRows(rows []domain.EventRow) []domain.EventRow {
+	if len(rows) == 0 {
+		return rows
+	}
+	filtered := make([]domain.EventRow, 0, len(rows))
+	for _, r := range rows {
+		def, ok := domain.EventDefByKey[r.EventType]
+		if ok && !def.LogVisible {
+			continue
+		}
+		filtered = append(filtered, r)
+	}
+	return filtered
 }
 
 // sliceScrollRows is the public assembly helper for fixed-height

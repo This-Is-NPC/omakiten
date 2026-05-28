@@ -256,9 +256,9 @@ func TestSummarizeEventPerTypeRendering(t *testing.T) {
 			row:  EventRow{EventType: EventTypeErrorRecorded, Payload: `{"tags":["sql","timeout"],"has_context":true}`},
 			want: "error recorded #sql #timeout (+context)",
 		},
-		"error.searched": {
-			row:  EventRow{EventType: EventTypeErrorSearched, Payload: `{"query":"connection","tags":[],"result_count":4}`},
-			want: `searched "connection" → 4 hit(s)`,
+		"errors.researched": {
+			row:  EventRow{EventType: EventTypeErrorsResearched, Payload: `{"query":"connection","tags":[],"result_count":4}`},
+			want: `researched "connection" → 4 hit(s)`,
 		},
 		"solution.added": {
 			row:  EventRow{EventType: EventTypeSolutionAdded, Payload: `{"error_id":11}`},
@@ -322,46 +322,47 @@ func TestSummarizeEventDeterministic(t *testing.T) {
 	}
 }
 
-// TestRegisterDuplicatePanics locks the registry guarantee: a second
-// register() call for the same event_type must panic so two categories
-// cannot silently shadow each other. We register against a synthetic
-// event_type so the test does not corrupt the production table for
-// later tests.
-func TestRegisterDuplicatePanics(t *testing.T) {
-	const ev = "_test.register_duplicate_panics"
-	// Ensure the slot is empty even if a prior run leaked, and register
-	// cleanup before the first register() call. t.Cleanup runs
-	// unconditionally on teardown, so the global map is restored even if
-	// the second register() panics before a defer line could be reached.
-	delete(summarizers, ev)
-	t.Cleanup(func() { delete(summarizers, ev) })
+// TestRegisterFormatterDuplicatePanics locks the registry guarantee: a
+// second registerFormatter() call for the same id must panic so two
+// summarizers cannot silently shadow each other. We use a synthetic id
+// so the test never corrupts the production formatter registry.
+func TestRegisterFormatterDuplicatePanics(t *testing.T) {
+	const id = "_test.register_formatter_duplicate_panics"
+	delete(formatterRegistry, id)
+	t.Cleanup(func() { delete(formatterRegistry, id) })
 
-	register(ev, func(EventRow) string { return "first" })
+	registerFormatter(id, func(EventRow) string { return "first" })
 
 	defer func() {
 		if r := recover(); r == nil {
-			t.Fatalf("expected panic on duplicate register, got none")
+			t.Fatalf("expected panic on duplicate registerFormatter, got none")
 		}
 	}()
-	register(ev, func(EventRow) string { return "second" })
+	registerFormatter(id, func(EventRow) string { return "second" })
 }
 
 // TestRegistryCoversKnownEventTypes locks the registry-coverage rule:
-// summarizers must equal KnownEventTypes exactly. A KnownEventTypes
-// entry without a register() call is a missing summariser; a registry
-// entry not in KnownEventTypes is an orphan (deleted constant or
-// stale init()).
+// every entry in KnownEventTypes must resolve to a non-nil Formatter
+// through EventDefByKey, and every key in EventDefByKey must appear in
+// KnownEventTypes. A miss in either direction means the YAML fixture
+// drifted from the formatter id registrations the event_summary_*.go
+// init() functions own.
 func TestRegistryCoversKnownEventTypes(t *testing.T) {
 	known := make(map[string]struct{}, len(KnownEventTypes))
 	for _, ev := range KnownEventTypes {
 		known[ev] = struct{}{}
-		if _, ok := summarizers[ev]; !ok {
-			t.Errorf("KnownEventTypes entry %q has no summarizer registered", ev)
+		def, ok := EventDefByKey[ev]
+		if !ok {
+			t.Errorf("KnownEventTypes entry %q missing from EventDefByKey", ev)
+			continue
+		}
+		if def.Formatter == nil {
+			t.Errorf("EventDefByKey[%q].Formatter is nil — formatter id never resolved", ev)
 		}
 	}
-	for ev := range summarizers {
+	for ev := range EventDefByKey {
 		if _, ok := known[ev]; !ok {
-			t.Errorf("summarizer registered for %q which is not in KnownEventTypes", ev)
+			t.Errorf("EventDefByKey entry %q absent from KnownEventTypes", ev)
 		}
 	}
 }

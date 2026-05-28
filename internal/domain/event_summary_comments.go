@@ -6,9 +6,9 @@ import (
 )
 
 func init() {
-	register(EventTypeComment, summarizeComment)
-	register(EventTypeCommentEdited, summarizeCommentEdited)
-	register(EventTypeCommentRemoved, summarizeCommentRemoved)
+	registerFormatter(EventTypeComment, summarizeComment)
+	registerFormatter(EventTypeCommentEdited, summarizeCommentEdited)
+	registerFormatter(EventTypeCommentRemoved, summarizeCommentRemoved)
 }
 
 func summarizeComment(row EventRow) string {

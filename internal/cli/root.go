@@ -303,6 +303,16 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		}
 		emitBundleWarnings(preview)
 
+		// Hydrate the domain event_type registry from the kit YAML
+		// before any service that consumes it (formatter resolution,
+		// log-visibility gating, metric routing) is constructed. The
+		// helper is a no-op when the events block has no definitions
+		// so fixture-driven tests stay unaffected.
+		if err := config.LoadDomainEventRegistry(preview.Config.Events); err != nil {
+			_ = store.Close()
+			return nil, err
+		}
+
 		cwd, err := os.Getwd()
 		if err != nil {
 			_ = store.Close()

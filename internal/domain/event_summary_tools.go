@@ -6,9 +6,9 @@ import (
 )
 
 func init() {
-	register(EventTypeCLIToolCall, summarizeToolCall)
-	register(EventTypeMCPToolCall, summarizeToolCall)
-	register(EventTypeTUIToolCall, summarizeToolCall)
+	registerFormatter(EventTypeCLIToolCall, summarizeToolCall)
+	registerFormatter(EventTypeMCPToolCall, summarizeToolCall)
+	registerFormatter(EventTypeTUIToolCall, summarizeToolCall)
 }
 
 // summarizeToolCall renders the per-invocation activity log entries

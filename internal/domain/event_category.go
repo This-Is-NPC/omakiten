@@ -10,7 +10,8 @@ import "sort"
 // The set is closed: every value in KnownEventTypes must map to exactly
 // one EventCategory through EventCategoryOf. The TestEventCategoryOf*
 // tests in this package lock that parity — adding a new event_type
-// without a corresponding switch arm fails the build.
+// to the YAML registry without a matching category entry trips the
+// closed-set assertion at boot.
 type EventCategory string
 
 const (
@@ -66,109 +67,65 @@ var KnownEventCategories = []EventCategory{
 	EventCategoryDomain,
 }
 
-// EventCategoryOf returns the category an event_type belongs to.
-// Returns EventCategoryUnknown for values outside KnownEventTypes —
-// callers render those rows under a generic bucket rather than panic.
+// EventCategoryOf returns the category an event_type belongs to,
+// resolved through the YAML-loaded registry (EventDefByKey). Returns
+// EventCategoryUnknown for values outside the registry — callers render
+// those rows under a generic bucket rather than panic.
 //
-// The switch has one arm per KnownEventTypes entry; the enumeration
-// test in event_category_test.go fails when a new event_type lands in
-// event.go without a category arm here.
+// Until LoadEventRegistryFromYAML has populated the registry every input
+// resolves to EventCategoryUnknown, including known constants — boot
+// wiring must hydrate the registry before consumers run.
 func EventCategoryOf(eventType string) EventCategory {
-	switch eventType {
-	// Task lifecycle.
-	case EventTypeTaskCreated,
-		EventTypeTaskMoved,
-		EventTypeTaskMigrated,
-		EventTypeTaskBucketOrphaned,
-		EventTypeTaskCompleted,
-		EventTypeTaskEdited,
-		EventTypeTaskRemoved,
-		EventTypeTaskArchived,
-		EventTypeTaskUnarchived,
-		EventTypeTaskAssigned,
-		EventTypeTaskUnassigned:
-		return EventCategoryTask
-
-	// Comments.
-	case EventTypeComment,
-		EventTypeCommentEdited,
-		EventTypeCommentRemoved:
-		return EventCategoryComment
-
-	// Plan / wave lifecycle.
-	case EventTypePlanCreated,
-		EventTypePlanWaveAdded,
-		EventTypePlanGoalEdited,
-		EventTypePlanDone,
-		EventTypePlanAbandoned:
-		return EventCategoryPlan
-
-	// Tags + dependencies (entity-relationship edges).
-	case EventTypeTagAdded,
-		EventTypeTagRemoved,
-		EventTypeDependencyAdded,
-		EventTypeDependencyRemoved:
-		return EventCategoryTagDep
-
-	// Guards.
-	case EventTypeGuardViolated:
-		return EventCategoryGuard
-
-	// Audit — domain service emissions, confirmations, project removal.
-	case EventTypeProjectRemoved,
-		EventTypeConfirmationGranted,
-		EventTypeErrorRecorded,
-		EventTypeErrorSearched,
-		EventTypeSolutionAdded,
-		EventTypeSolutionConfirmed,
-		EventTypeSolutionLiked,
-		EventTypeSolutionFailed,
-		EventTypeSolutionViewedTop:
-		return EventCategoryAudit
-
-	// Hook dispatch.
-	case EventTypeHookExecuted:
-		return EventCategoryHook
-
-	// Tool calls.
-	case EventTypeCLIToolCall,
-		EventTypeMCPToolCall,
-		EventTypeTUIToolCall:
-		return EventCategoryToolCall
-
-	// Trick palette.
-	case EventTypeTrickExecuted:
-		return EventCategoryTrick
-
-	// Domain / infrastructure bookkeeping.
-	case EventTypeBundleSwapped,
-		EventTypeBundleImported,
-		EventTypeSubtaskKitNoticeEmitted:
-		return EventCategoryDomain
+	def, ok := EventDefByKey[eventType]
+	if !ok {
+		return EventCategoryUnknown
 	}
-	return EventCategoryUnknown
+	return def.Category
 }
 
-// EventTypesForCategory returns every event_type that maps to the
-// given category via EventCategoryOf. Computed once at init time by
-// walking KnownEventTypes through EventCategoryOf — adding a new
-// event_type + category arm to EventCategoryOf automatically picks
-// it up here. Unknown categories return nil.
+// categoryIndex memoizes the EventCategory → sorted []event_type lookup
+// served by EventTypesForCategory. The loader rebuilds it eagerly at the
+// end of LoadEventRegistryFromYAML, so reads after boot are an O(1) map
+// hit plus an O(K) slice copy (K = entries in that category). Reads
+// before boot return nil.
+//
+// Eager rebuild keeps the cost on the boot path (where it's already
+// dominated by YAML parsing) and guarantees no first-call latency for
+// SQL-issuing call sites like sqlite.ListEvents.
+var categoryIndex map[EventCategory][]string
+
+// buildCategoryIndex walks EventDefinitions once and groups event_type
+// keys by category, sorting each bucket for deterministic SQL IN lists.
+// Called by LoadEventRegistryFromYAML after the registry is fully
+// populated. Resets categoryIndex even when EventDefinitions is empty
+// so a registry reset clears stale buckets.
+func buildCategoryIndex() {
+	idx := make(map[EventCategory][]string)
+	for _, def := range EventDefinitions {
+		idx[def.Category] = append(idx[def.Category], def.Key)
+	}
+	for c := range idx {
+		sort.Strings(idx[c])
+	}
+	categoryIndex = idx
+}
+
+// EventTypesForCategory returns every event_type that maps to the given
+// category. Backed by a memoized index rebuilt eagerly by
+// LoadEventRegistryFromYAML, so each call is a map lookup plus a defensive
+// copy of the cached slice. The output is sorted by event_type for
+// deterministic SQL IN lists. Unknown categories (including
+// EventCategoryUnknown by construction) return nil so callers can treat
+// the result as a distinguishable "no matches" sentinel.
 //
 // Used by repository layers (e.g. sqlite.ListEvents) to expand
 // EventFilter.Categories into an event_type IN (...) SQL clause.
 func EventTypesForCategory(c EventCategory) []string {
-	return eventTypesByCategory[c]
+	cached, ok := categoryIndex[c]
+	if !ok || len(cached) == 0 {
+		return nil
+	}
+	out := make([]string, len(cached))
+	copy(out, cached)
+	return out
 }
-
-var eventTypesByCategory = func() map[EventCategory][]string {
-	m := make(map[EventCategory][]string, len(KnownEventCategories))
-	for _, ev := range KnownEventTypes {
-		cat := EventCategoryOf(ev)
-		m[cat] = append(m[cat], ev)
-	}
-	for cat := range m {
-		sort.Strings(m[cat]) // deterministic order for SQL IN list
-	}
-	return m
-}()

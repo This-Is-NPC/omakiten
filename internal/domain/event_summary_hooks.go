@@ -5,10 +5,10 @@ import (
 )
 
 func init() {
-	register(EventTypeHookExecuted, summarizeHookExecuted)
-	register(EventTypeSubtaskKitNoticeEmitted, summarizeSubtaskKitNoticeEmitted)
-	register(EventTypeBundleSwapped, summarizeBundleSwapped)
-	register(EventTypeBundleImported, summarizeBundleImported)
+	registerFormatter(EventTypeHookExecuted, summarizeHookExecuted)
+	registerFormatter(EventTypeSubtaskKitNoticeEmitted, summarizeSubtaskKitNoticeEmitted)
+	registerFormatter(EventTypeBundleSwapped, summarizeBundleSwapped)
+	registerFormatter(EventTypeBundleImported, summarizeBundleImported)
 }
 
 func summarizeHookExecuted(row EventRow) string {

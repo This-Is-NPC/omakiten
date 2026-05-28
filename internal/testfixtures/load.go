@@ -87,6 +87,17 @@ func loadFromPath(t testing.TB, path string) (config.Bundle, *domain.EnumRegistr
 	// on the scenario under exercise without copying canonical boilerplate.
 	mergeKitDefaults(&bundle)
 
+	// Hydrate the domain event registry from the merged bundle so the
+	// pure-domain helpers (EventCategoryOf, SummarizeEvent, KnownEventTypes)
+	// behave as they do in production. Boot wires this through
+	// config.LoadDomainEventRegistry; testfixtures mirrors the call here
+	// because Phase 1 of the YAML-registry refactor dropped the static
+	// switch fallback. Idempotent and process-global by design — every
+	// fixture installs the same canonical 41-entry table.
+	if err := config.LoadDomainEventRegistry(bundle.Config.Events); err != nil {
+		t.Fatalf("testfixtures: hydrate domain event registry: %v", err)
+	}
+
 	// Build the bundle-scoped EnumRegistry tests inject into services.
 	// No process-global state involved.
 	registry := registryFromBundle(bundle)
@@ -185,6 +196,15 @@ func mergeKitDefaults(b *config.Bundle) {
 	if cfg.Events.Defaults.Broadcast == nil {
 		cfg.Events.Defaults.Broadcast = kit.Events.Defaults.Broadcast
 	}
+	if cfg.Events.Defaults.LogVisible == nil {
+		cfg.Events.Defaults.LogVisible = kit.Events.Defaults.LogVisible
+	}
+	if cfg.Events.Defaults.Metric == "" {
+		cfg.Events.Defaults.Metric = kit.Events.Defaults.Metric
+	}
+	if cfg.Events.Defaults.EntityType == "" {
+		cfg.Events.Defaults.EntityType = kit.Events.Defaults.EntityType
+	}
 	if cfg.Events.Defaults.Hook == nil {
 		cfg.Events.Defaults.Hook = kit.Events.Defaults.Hook
 	}
@@ -192,6 +212,28 @@ func mergeKitDefaults(b *config.Bundle) {
 		cfg.Events.Overrides = make(map[string]config.EventChannelSettings, len(kit.Events.Overrides))
 		for k, v := range kit.Events.Overrides {
 			cfg.Events.Overrides[k] = v
+		}
+	}
+	// Definitions inherit from the kit so validateEventsSettings (which
+	// now resolves `overrides:` keys against the local definitions map)
+	// accepts fixtures that omit the 41-entry block. Phase 1 of the YAML
+	// event registry refactor relies on this kit-local set both at
+	// LoadBundle time and inside ValidateHooks.
+	//
+	// Merge is key-level so a fixture that declares one override (e.g.
+	// a custom Display for task.created) keeps its override AND inherits
+	// the remaining 40 kit entries. The previous all-or-nothing swap
+	// would have silently dropped the kit definitions whenever the
+	// fixture's Definitions map was non-empty, leaving the fixture with
+	// a single-entry registry the validator rejects.
+	if len(kit.Events.Definitions) > 0 {
+		if cfg.Events.Definitions == nil {
+			cfg.Events.Definitions = make(map[string]config.EventDefinitionSettings, len(kit.Events.Definitions))
+		}
+		for k, v := range kit.Events.Definitions {
+			if _, ok := cfg.Events.Definitions[k]; !ok {
+				cfg.Events.Definitions[k] = v
+			}
 		}
 	}
 

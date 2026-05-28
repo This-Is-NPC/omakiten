@@ -202,9 +202,11 @@ const (
 	// EventTypeErrorRecorded fires when ErrorService.Record persists a
 	// new error row. EntityType=error, Payload={tags, has_context}.
 	EventTypeErrorRecorded = "error.recorded"
-	// EventTypeErrorSearched fires when ErrorService.Search runs.
-	// EntityType=error (entity_id=0), Payload={query, tags, result_count}.
-	EventTypeErrorSearched = "error.searched"
+	// EventTypeErrorsResearched fires when SearchService.Search runs over
+	// the error entity type — semantically "the agent researched existing
+	// errors before recording a new one". EntityType=search (entity_id=0),
+	// Payload={query, entity_types, result_count, unified}.
+	EventTypeErrorsResearched = "errors.researched"
 	// EventTypeSolutionAdded fires when ErrorService.AddSolution
 	// persists a candidate. EntityType=solution, Payload={error_id}.
 	EventTypeSolutionAdded = "solution.added"
@@ -249,73 +251,31 @@ func ToolCallEventTypeForSource(source ActivitySource) string {
 }
 
 // KnownEventTypes is the closed set of event_type values the application
-// emits. Used by config validation to reject overrides referencing
-// unknown event types (typo guard) and by tests to assert catalog
-// completeness. Order is informational; consumers must not depend on it.
+// emits, derived from the YAML event registry at boot. Empty until
+// LoadEventRegistryFromYAML runs (typically through config.LoadDomainEventRegistry
+// during process startup). Used by config validation to reject overrides
+// referencing unknown event types (typo guard) and by tests to assert
+// catalog completeness. Sorted by the loader for deterministic output;
+// consumers may still treat the order as informational.
 //
 // EventTypeOperation is excluded because it is the pre-019 legacy value
 // no longer emitted by activity.Track — the three EventType*ToolCall
-// constants supersede it.
-var KnownEventTypes = []string{
-	EventTypeComment,
-	EventTypeCommentEdited,
-	EventTypeCommentRemoved,
-	EventTypeTaskCreated,
-	EventTypeTaskMoved,
-	EventTypeTaskMigrated,
-	EventTypeTaskBucketOrphaned,
-	EventTypeTaskCompleted,
-	EventTypeTaskEdited,
-	EventTypeTaskRemoved,
-	EventTypeTaskArchived,
-	EventTypeTaskUnarchived,
-	EventTypeTaskAssigned,
-	EventTypeTaskUnassigned,
-	EventTypeProjectRemoved,
-	EventTypePlanCreated,
-	EventTypePlanWaveAdded,
-	EventTypePlanGoalEdited,
-	EventTypePlanDone,
-	EventTypePlanAbandoned,
-	EventTypeTagAdded,
-	EventTypeTagRemoved,
-	EventTypeDependencyAdded,
-	EventTypeDependencyRemoved,
-	EventTypeGuardViolated,
-	EventTypeErrorRecorded,
-	EventTypeErrorSearched,
-	EventTypeSolutionAdded,
-	EventTypeSolutionConfirmed,
-	EventTypeSolutionLiked,
-	EventTypeSolutionFailed,
-	EventTypeSolutionViewedTop,
-	EventTypeHookExecuted,
-	EventTypeBundleSwapped,
-	EventTypeBundleImported,
-	EventTypeSubtaskKitNoticeEmitted,
-	EventTypeConfirmationGranted,
-	EventTypeCLIToolCall,
-	EventTypeMCPToolCall,
-	EventTypeTUIToolCall,
-	EventTypeTrickExecuted,
-}
+// constants supersede it. The loader never resurrects it.
+var KnownEventTypes = []string{}
 
 // IsKnownEventType reports whether s matches one of KnownEventTypes.
-// Used by config validation.
+// Used by config validation. Returns false for every input until the
+// YAML registry has been loaded.
 func IsKnownEventType(s string) bool {
-	for _, t := range KnownEventTypes {
-		if t == s {
-			return true
-		}
-	}
-	return false
+	_, ok := EventDefByKey[s]
+	return ok
 }
 
 const (
 	// EventEntityTask scopes events to a task row (entity_id is the task id).
 	EventEntityTask = "task"
 	// EventEntitySystem scopes events that don't tie to a single row
-	// (e.g. solution.viewed_top, error.searched).
+	// (e.g. solution.viewed_top, errors.researched).
 	EventEntitySystem = "system"
 	// EventEntityProject scopes events whose primary subject is a project
 	// (project tag adds/removes today).

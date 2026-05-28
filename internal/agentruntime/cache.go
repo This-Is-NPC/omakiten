@@ -490,14 +490,16 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 	notificationAction := actions.NewNotificationShowAction(notifSnapshot)
 	registry.Register(notificationAction)
 
-	if err := config.ValidateHooks(bundle.Config.Hooks, func(name string) bool {
+	knownEvents := config.KnownEventsFromDefinitions(bundle.Config.Events.Definitions)
+	if err := config.ValidateHooks(bundle.Config.Hooks, knownEvents, func(name string) bool {
 		_, ok := registry.Get(name)
 		return ok
 	}, snapshot.Notifications()); err != nil {
 		return nil, err
 	}
 	if subSnapshot, ok := snapshot.SubtaskKit(); ok {
-		if err := config.ValidateHooks(subSnapshot.Hooks(), func(name string) bool {
+		subKnownEvents := config.KnownEventsFromDefinitions(subSnapshot.Events().Definitions)
+		if err := config.ValidateHooks(subSnapshot.Hooks(), subKnownEvents, func(name string) bool {
 			_, ok := registry.Get(name)
 			return ok
 		}, subSnapshot.Notifications()); err != nil {

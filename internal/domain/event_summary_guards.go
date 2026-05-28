@@ -5,7 +5,7 @@ import (
 )
 
 func init() {
-	register(EventTypeGuardViolated, summarizeGuardViolated)
+	registerFormatter(EventTypeGuardViolated, summarizeGuardViolated)
 }
 
 func summarizeGuardViolated(row EventRow) string {

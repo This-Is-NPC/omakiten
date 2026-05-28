@@ -93,11 +93,192 @@ config:
       log: true
       broadcast: true
       hook: true
+      log_visible: true
+      metric: ""
+      entity_type: ""
     overrides:
       tag.added:
         log: false
       tag.removed:
         log: false
+    definitions:
+      comment:
+        category: comment
+        display: "comment added"
+        formatter: comment
+      comment.edited:
+        category: comment
+        display: "comment edited"
+        formatter: comment.edited
+      comment.removed:
+        category: comment
+        display: "comment removed"
+        formatter: comment.removed
+      task.created:
+        category: task
+        display: "task created"
+        formatter: task.created
+      task.moved:
+        category: task
+        display: "task moved"
+        formatter: task.moved
+      task.migrated:
+        category: task
+        display: "task migrated"
+        formatter: task.migrated
+      task.bucket_orphaned:
+        category: task
+        display: "task bucket orphaned"
+        formatter: task.bucket_orphaned
+      task.completed:
+        category: task
+        display: "task completed"
+        formatter: task.completed
+      task.edited:
+        category: task
+        display: "task edited"
+        formatter: task.edited
+      task.removed:
+        category: task
+        display: "task removed"
+        formatter: task.removed
+      task.archived:
+        category: task
+        display: "task archived"
+        formatter: task.archived
+      task.unarchived:
+        category: task
+        display: "task unarchived"
+        formatter: task.unarchived
+      task.assigned:
+        category: task
+        display: "task assigned"
+        formatter: task.assigned
+      task.unassigned:
+        category: task
+        display: "task unassigned"
+        formatter: task.unassigned
+      project.removed:
+        category: audit
+        display: "project removed"
+        formatter: project.removed
+      plan.created:
+        category: plan
+        display: "plan created"
+        formatter: plan.created
+      plan.wave_added:
+        category: plan
+        display: "plan wave added"
+        formatter: plan.wave_added
+      plan.goal_edited:
+        category: plan
+        display: "plan goal edited"
+        formatter: plan.goal_edited
+      plan.done:
+        category: plan
+        display: "plan done"
+        formatter: plan.done
+      plan.abandoned:
+        category: plan
+        display: "plan abandoned"
+        formatter: plan.abandoned
+      tag.added:
+        category: tag-dep
+        display: "tag added"
+        formatter: tag.added
+      tag.removed:
+        category: tag-dep
+        display: "tag removed"
+        formatter: tag.removed
+      dependency.added:
+        category: tag-dep
+        display: "dependency added"
+        formatter: dependency.added
+      dependency.removed:
+        category: tag-dep
+        display: "dependency removed"
+        formatter: dependency.removed
+      guard.violated:
+        category: guard
+        display: "guard violated"
+        formatter: guard.violated
+      error.recorded:
+        category: audit
+        display: "error recorded"
+        entity_type: error
+        metric: error_recorded
+        formatter: error.recorded
+      errors.researched:
+        category: audit
+        display: "errors researched"
+        entity_type: search
+        metric: error_searched
+        formatter: errors.researched
+      solution.added:
+        category: audit
+        display: "solution added"
+        entity_type: solution
+        metric: solution_added
+        formatter: solution.added
+      solution.confirmed:
+        category: audit
+        display: "solution confirmed"
+        entity_type: solution
+        formatter: solution.confirmed
+      solution.liked:
+        category: audit
+        display: "solution liked"
+        entity_type: solution
+        metric: solution_liked
+        formatter: solution.liked
+      solution.failed:
+        category: audit
+        display: "solution failed"
+        entity_type: solution
+        metric: solution_failed
+        formatter: solution.failed
+      solution.viewed_top:
+        category: audit
+        display: "solution viewed top"
+        entity_type: solution
+        metric: solution_top_viewed
+        formatter: solution.viewed_top
+      hook.executed:
+        category: hook
+        display: "hook executed"
+        formatter: hook.executed
+      subtask_kit.notice_emitted:
+        category: domain
+        display: "subtask kit notice emitted"
+        formatter: subtask_kit.notice_emitted
+      bundle.swapped:
+        category: domain
+        display: "bundle swapped"
+        formatter: bundle.swapped
+      bundle.imported:
+        category: domain
+        display: "bundle imported"
+        formatter: bundle.imported
+      confirmation.granted:
+        category: audit
+        display: "confirmation granted"
+        formatter: confirmation.granted
+      trick.executed:
+        category: trick
+        display: "trick executed"
+        formatter: trick.executed
+      cli.tool_call:
+        category: tool_call
+        display: "CLI tool call"
+        formatter: cli.tool_call
+      mcp.tool_call:
+        category: tool_call
+        display: "MCP tool call"
+        formatter: mcp.tool_call
+      tui.tool_call:
+        category: tool_call
+        display: "TUI tool call"
+        formatter: tui.tool_call
   # hooks subscribes to events.bus and dispatches actions when the
   # event_type matches `on:` and every key in `when:` matches the
   # corresponding top-level key in event.payload (string equality;
@@ -214,9 +395,9 @@ config:
     - on: error.recorded
       notification: kitten_knowledge
       message: "${{intl:notifications.omakase.error_recorded.message}}"
-    - on: error.searched
+    - on: errors.researched
       notification: kitten_knowledge
-      message: "${{intl:notifications.omakase.error_searched.message}}"
+      message: "${{intl:notifications.omakase.errors_researched.message}}"
     - on: solution.added
       notification: kitten_knowledge
       message: "${{intl:notifications.omakase.solution_added.message}}"

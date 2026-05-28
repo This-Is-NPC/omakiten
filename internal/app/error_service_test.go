@@ -27,9 +27,9 @@ func TestErrorServiceEmitsAttributedDomainEvents(t *testing.T) {
 	if _, err := searchSvc.Search(ctx, project.Context(), "FK", []string{"error"}); err != nil {
 		t.Fatalf("SearchService.Search() error = %v", err)
 	}
-	searchEv := assertLatestEvent(t, store, domain.EventTypeErrorSearched, "error", 0, "claude-opus-4-7", "sess-42")
+	searchEv := assertLatestEvent(t, store, domain.EventTypeErrorsResearched, "search", 0, "claude-opus-4-7", "sess-42")
 	if !strings.Contains(searchEv.Payload, `"result_count":1`) {
-		t.Fatalf("error.searched payload missing result_count: %s", searchEv.Payload)
+		t.Fatalf("errors.researched payload missing result_count: %s", searchEv.Payload)
 	}
 
 	sol, err := service.AddSolution(ctx, project.Context(), rec.ID, "drop fk", "alter table", nil)

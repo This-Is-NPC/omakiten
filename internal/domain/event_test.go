@@ -30,7 +30,7 @@ func TestKnownEventTypesCoversCatalog(t *testing.T) {
 		EventTypeDependencyRemoved: {},
 		EventTypeGuardViolated:     {},
 		EventTypeErrorRecorded:     {},
-		EventTypeErrorSearched:     {},
+		EventTypeErrorsResearched:  {},
 		EventTypeSolutionAdded:     {},
 		EventTypeSolutionConfirmed: {},
 		EventTypeSolutionLiked:     {},

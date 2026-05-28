@@ -5,10 +5,10 @@ import (
 )
 
 func init() {
-	register(EventTypeTagAdded, summarizeTagAdded)
-	register(EventTypeTagRemoved, summarizeTagRemoved)
-	register(EventTypeDependencyAdded, summarizeDependencyAdded)
-	register(EventTypeDependencyRemoved, summarizeDependencyRemoved)
+	registerFormatter(EventTypeTagAdded, summarizeTagAdded)
+	registerFormatter(EventTypeTagRemoved, summarizeTagRemoved)
+	registerFormatter(EventTypeDependencyAdded, summarizeDependencyAdded)
+	registerFormatter(EventTypeDependencyRemoved, summarizeDependencyRemoved)
 }
 
 func summarizeTagAdded(row EventRow) string {

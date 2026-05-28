@@ -109,3 +109,30 @@ func TestEventTypesForCategoryIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// TestEventTypesForCategoryMemoizes locks the memoization contract:
+// repeated calls hit the cached category index instead of re-walking
+// EventDefinitions, and each call returns a fresh slice (so callers
+// can mutate the result without corrupting the cache).
+//
+// The cache identity is asserted indirectly: mutating one returned
+// slice must not change the contents of a slice returned by a later
+// call. With the pre-memoization implementation this assertion still
+// passed (each call built its own slice), but combined with the
+// non-emptiness check it guards both the freshness invariant and the
+// rebuild-on-load contract (a stale empty index would fail here).
+func TestEventTypesForCategoryMemoizes(t *testing.T) {
+	for _, c := range KnownEventCategories {
+		first := EventTypesForCategory(c)
+		if len(first) == 0 {
+			t.Fatalf("EventTypesForCategory(%q) returned empty — categoryIndex not built", c)
+		}
+		// Defensive-copy contract: mutating the returned slice must
+		// not affect later calls.
+		first[0] = "__sentinel__"
+		second := EventTypesForCategory(c)
+		if second[0] == "__sentinel__" {
+			t.Fatalf("EventTypesForCategory(%q) leaked the cached slice — mutation visible across calls", c)
+		}
+	}
+}

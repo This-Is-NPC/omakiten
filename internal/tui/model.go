@@ -669,7 +669,29 @@ func (m *Model) refreshActivityLogs() error {
 	if err != nil {
 		return err
 	}
+	// Apply the LogVisible registry filter only when the user has not
+	// explicitly narrowed via a chip. An explicit chip selection wins —
+	// the user asked to see that category, even if a future YAML config
+	// marks individual entries LogVisible: false.
+	if m.logsFilterMode == LogsFilterAll {
+		rows = filterLogVisibleRows(rows)
+	}
 	m.events = rows
+	// Clamp the cursor to the new row buffer. Refresh callers other
+	// than cycleLogsFilter (which already pins selection to 0) can
+	// land here with a logsSelected that points past len(rows) after
+	// the registry / chip filter shrinks the result. In particular,
+	// when filterLogVisibleRows empties the buffer we must drop the
+	// cursor to 0 so the empty-state renderer in renderLogs and any
+	// later cursorMarker lookup do not address a row that no longer
+	// exists.
+	if m.logsSelected >= len(m.events) {
+		if len(m.events) == 0 {
+			m.logsSelected = 0
+		} else {
+			m.logsSelected = len(m.events) - 1
+		}
+	}
 	// Summary tables aggregate across the wider window (still
 	// scoped by the snapshot's logs.window_days) so the headline
 	// numbers reflect every recorded event regardless of the panel

@@ -6,17 +6,17 @@ import (
 )
 
 func init() {
-	register(EventTypeTaskCreated, summarizeTaskCreated)
-	register(EventTypeTaskMoved, summarizeTaskMoved)
-	register(EventTypeTaskMigrated, summarizeTaskMigrated)
-	register(EventTypeTaskBucketOrphaned, summarizeTaskBucketOrphaned)
-	register(EventTypeTaskCompleted, summarizeTaskCompleted)
-	register(EventTypeTaskEdited, summarizeTaskEdited)
-	register(EventTypeTaskRemoved, summarizeTaskRemoved)
-	register(EventTypeTaskArchived, summarizeTaskArchived)
-	register(EventTypeTaskUnarchived, summarizeTaskUnarchived)
-	register(EventTypeTaskAssigned, summarizeTaskAssigned)
-	register(EventTypeTaskUnassigned, summarizeTaskUnassigned)
+	registerFormatter(EventTypeTaskCreated, summarizeTaskCreated)
+	registerFormatter(EventTypeTaskMoved, summarizeTaskMoved)
+	registerFormatter(EventTypeTaskMigrated, summarizeTaskMigrated)
+	registerFormatter(EventTypeTaskBucketOrphaned, summarizeTaskBucketOrphaned)
+	registerFormatter(EventTypeTaskCompleted, summarizeTaskCompleted)
+	registerFormatter(EventTypeTaskEdited, summarizeTaskEdited)
+	registerFormatter(EventTypeTaskRemoved, summarizeTaskRemoved)
+	registerFormatter(EventTypeTaskArchived, summarizeTaskArchived)
+	registerFormatter(EventTypeTaskUnarchived, summarizeTaskUnarchived)
+	registerFormatter(EventTypeTaskAssigned, summarizeTaskAssigned)
+	registerFormatter(EventTypeTaskUnassigned, summarizeTaskUnassigned)
 }
 
 func summarizeTaskCreated(row EventRow) string {

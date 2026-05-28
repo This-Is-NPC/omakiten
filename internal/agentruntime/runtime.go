@@ -112,6 +112,17 @@ func Open(ctx context.Context, opts Options) (*Runtime, error) {
 		_ = store.Close()
 		return nil, err
 	}
+
+	// Hydrate the domain event_type registry from the kit YAML
+	// before the bundle cache resolves services that consume it
+	// (formatter resolution, log-visibility gating, metric routing).
+	// No-op when the events block has no definitions so fixture-only
+	// runtimes stay unaffected.
+	if err := config.LoadDomainEventRegistry(preview.Config.Events); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+
 	bus := events.NewInProcessBus(preview.Config.Events)
 
 	cwd := opts.CWD

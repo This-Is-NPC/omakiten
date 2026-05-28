@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"omakiten/internal/activity"
+	"omakiten/internal/domain"
 )
 
 func TestMetricsServiceSummaryAggregatesPerModel(t *testing.T) {
@@ -49,81 +50,54 @@ func TestMetricsServiceSummaryAggregatesPerModel(t *testing.T) {
 		t.Fatalf("Summary error = %v", err)
 	}
 
-	byModel := map[string]int{}
+	byModel := map[string]domain.AgentMetrics{}
 	for _, m := range summary.ByModel {
-		byModel[m.AgentModel] = m.ErrorsRecorded
-	}
-	if byModel["claude-opus-4-7"] != 1 {
-		t.Fatalf("opus errors_recorded = %d, want 1", byModel["claude-opus-4-7"])
-	}
-	if byModel["claude-sonnet-4-6"] != 2 {
-		t.Fatalf("sonnet errors_recorded = %d, want 2", byModel["claude-sonnet-4-6"])
+		byModel[m.AgentModel] = m
 	}
 
-	var opus, sonnet *struct {
-		Searched, Liked, SearchRatio, Sample, Recorded int
-		LikeRate                                       float64
-	}
-	for i := range summary.ByModel {
-		m := summary.ByModel[i]
-		if m.AgentModel == "claude-opus-4-7" {
-			opus = &struct {
-				Searched, Liked, SearchRatio, Sample, Recorded int
-				LikeRate                                       float64
-			}{
-				Searched:    m.ErrorsSearched,
-				Liked:       m.SolutionsLiked,
-				SearchRatio: int(m.SearchBeforeRecordRatio * 100),
-				Sample:      m.SessionCorrelatedSample,
-				Recorded:    m.ErrorsRecorded,
-				LikeRate:    m.LikeRate,
-			}
-		}
-		if m.AgentModel == "claude-sonnet-4-6" {
-			sonnet = &struct {
-				Searched, Liked, SearchRatio, Sample, Recorded int
-				LikeRate                                       float64
-			}{
-				Searched:    m.ErrorsSearched,
-				Liked:       m.SolutionsLiked,
-				SearchRatio: int(m.SearchBeforeRecordRatio * 100),
-				Sample:      m.SessionCorrelatedSample,
-				Recorded:    m.ErrorsRecorded,
-				LikeRate:    m.LikeRate,
-			}
-		}
+	opus, opusOK := byModel["claude-opus-4-7"]
+	sonnet, sonnetOK := byModel["claude-sonnet-4-6"]
+	if !opusOK || !sonnetOK {
+		t.Fatalf("missing model in summary: opus_ok=%v sonnet_ok=%v", opusOK, sonnetOK)
 	}
 
-	if opus == nil || sonnet == nil {
-		t.Fatalf("missing model in summary: opus=%v sonnet=%v", opus, sonnet)
+	if got := opus.Buckets[domain.MetricBucketErrorRecorded]; got != 1 {
+		t.Fatalf("opus error_recorded = %d, want 1", got)
+	}
+	if got := sonnet.Buckets[domain.MetricBucketErrorRecorded]; got != 2 {
+		t.Fatalf("sonnet error_recorded = %d, want 2", got)
 	}
 
 	// Opus searched once, recorded once with a session id, search came
-	// before the record → ratio 100%.
-	if opus.Searched != 1 {
-		t.Fatalf("opus errors_searched = %d, want 1", opus.Searched)
+	// before the record → ratio 100%. The like_rate denominator is the
+	// SolutionAdded bucket; canonical formula is liked / added.
+	if got := opus.Buckets[domain.MetricBucketErrorsResearched]; got != 1 {
+		t.Fatalf("opus error_searched = %d, want 1", got)
 	}
-	if opus.Liked != 1 {
-		t.Fatalf("opus solutions_liked = %d, want 1", opus.Liked)
+	if got := opus.Buckets[domain.MetricBucketSolutionLiked]; got != 1 {
+		t.Fatalf("opus solution_liked = %d, want 1", got)
+	}
+	if got := opus.Buckets[domain.MetricBucketSolutionAdded]; got != 1 {
+		t.Fatalf("opus solution_added = %d, want 1", got)
 	}
 	if opus.LikeRate != 1.0 {
 		t.Fatalf("opus like_rate = %v, want 1.0", opus.LikeRate)
 	}
-	if opus.SearchRatio != 100 {
-		t.Fatalf("opus search_before_record_ratio = %d%%, want 100%%", opus.SearchRatio)
+	if got := int(opus.SearchBeforeRecordRatio * 100); got != 100 {
+		t.Fatalf("opus search_before_record_ratio = %d%%, want 100%%", got)
 	}
 
 	// Sonnet recorded twice without searching → ratio 0%.
-	if sonnet.Searched != 0 {
-		t.Fatalf("sonnet errors_searched = %d, want 0", sonnet.Searched)
+	if got := sonnet.Buckets[domain.MetricBucketErrorsResearched]; got != 0 {
+		t.Fatalf("sonnet error_searched = %d, want 0", got)
 	}
-	if sonnet.SearchRatio != 0 {
-		t.Fatalf("sonnet search_before_record_ratio = %d%%, want 0%%", sonnet.SearchRatio)
+	if got := int(sonnet.SearchBeforeRecordRatio * 100); got != 0 {
+		t.Fatalf("sonnet search_before_record_ratio = %d%%, want 0%%", got)
 	}
 
 	// Total reflects both models.
-	if summary.Total.ErrorsRecorded != 3 {
-		t.Fatalf("total errors_recorded = %d, want 3", summary.Total.ErrorsRecorded)
+	if got := summary.Total.Buckets[domain.MetricBucketErrorRecorded]; got != 3 {
+		t.Fatalf("total error_recorded = %d, want 3", got)
 	}
 
 	// Total.SearchBeforeRecordRatio is reconstructed from absolute counts so
@@ -134,6 +108,65 @@ func TestMetricsServiceSummaryAggregatesPerModel(t *testing.T) {
 	}
 	if got := int(summary.Total.SearchBeforeRecordRatio*100 + 0.5); got != 33 {
 		t.Fatalf("total search_before_record_ratio = %d%%, want 33%%", got)
+	}
+}
+
+func TestMetricsServiceSummaryLikeRateFormula(t *testing.T) {
+	store, project := appTestStore(t, appTestBundle(t, 1000))
+	defer func() { _ = store.Close() }()
+
+	errService := NewErrorService(store, store.Snapshot())
+	ctxAgent := activity.WithAgent(context.Background(), "mcp", "errors_record", "claude-haiku-4-7", "sess-haiku")
+
+	// One error, two candidate solutions: one liked, one failed.
+	// Expected: solution_added=2, solution_liked=1, solution_failed=1,
+	// like_rate = 1/2 = 0.5 (canonical formula: liked / added).
+	rec, err := errService.Record(ctxAgent, project.Context(), "race", "", nil)
+	if err != nil {
+		t.Fatalf("Record error = %v", err)
+	}
+	liked, err := errService.AddSolution(ctxAgent, project.Context(), rec.ID, "add mutex", "", nil)
+	if err != nil {
+		t.Fatalf("AddSolution(liked) error = %v", err)
+	}
+	failed, err := errService.AddSolution(ctxAgent, project.Context(), rec.ID, "retry loop", "", nil)
+	if err != nil {
+		t.Fatalf("AddSolution(failed) error = %v", err)
+	}
+	if _, err := errService.ConfirmSolution(ctxAgent, project.Context(), liked.ID, true); err != nil {
+		t.Fatalf("ConfirmSolution(true) error = %v", err)
+	}
+	if _, err := errService.ConfirmSolution(ctxAgent, project.Context(), failed.ID, false); err != nil {
+		t.Fatalf("ConfirmSolution(false) error = %v", err)
+	}
+
+	summary, err := NewMetricsService(store).Summary(context.Background(), project.Context(), "30d", 0)
+	if err != nil {
+		t.Fatalf("Summary error = %v", err)
+	}
+
+	var haiku *domain.AgentMetrics
+	for i := range summary.ByModel {
+		if summary.ByModel[i].AgentModel == "claude-haiku-4-7" {
+			haiku = &summary.ByModel[i]
+			break
+		}
+	}
+	if haiku == nil {
+		t.Fatalf("haiku row missing from summary")
+	}
+
+	if got := haiku.Buckets[domain.MetricBucketSolutionAdded]; got != 2 {
+		t.Fatalf("solution_added = %d, want 2", got)
+	}
+	if got := haiku.Buckets[domain.MetricBucketSolutionLiked]; got != 1 {
+		t.Fatalf("solution_liked = %d, want 1", got)
+	}
+	if got := haiku.Buckets[domain.MetricBucketSolutionFailed]; got != 1 {
+		t.Fatalf("solution_failed = %d, want 1", got)
+	}
+	if haiku.LikeRate != 0.5 {
+		t.Fatalf("like_rate = %v, want 0.5 (liked/added = 1/2)", haiku.LikeRate)
 	}
 }
 
