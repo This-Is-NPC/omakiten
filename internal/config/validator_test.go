@@ -68,7 +68,7 @@ func TestValidateBundleErrors(t *testing.T) {
 					Board:        BoardViewSettings{Sort: SortSettings{Field: "created_at", Order: "desc"}},
 					Table:        TableViewSettings{Sort: SortSettings{Field: "created_at", Order: "desc"}},
 					Graph:        GraphViewSettings{Sort: SortSettings{Field: "id", Order: "asc"}},
-					Logs:         LogsViewSettings{Sort: SortSettings{Order: "desc"}, Limit: 50},
+					Logs:         LogsViewSettings{Sort: SortSettings{Order: "desc"}, Limit: 50, WindowDays: 30},
 					TaskActivity: TaskActivityViewSettings{Sort: SortSettings{Order: "asc"}},
 				},
 				SQLite:      SQLiteSettings{BusyTimeoutMs: 5000, CacheSizeKB: 1024, MmapSizeBytes: 0},

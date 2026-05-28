@@ -607,9 +607,17 @@ type GraphViewSettings struct {
 }
 
 type LogsViewSettings struct {
-	Sort   SortSettings       `yaml:"sort,omitempty" json:"sort,omitempty"`
-	Limit  int                `yaml:"limit,omitempty" json:"limit,omitempty"`
-	Filter LogsFilterSettings `yaml:"filter,omitempty" json:"filter,omitempty"`
+	Sort SortSettings `yaml:"sort,omitempty" json:"sort,omitempty"`
+	// Limit caps how many rows the LOGS view ships per query. Required;
+	// validator demands > 0.
+	Limit int `yaml:"limit,omitempty" json:"limit,omitempty"`
+	// WindowDays declares the default time horizon for the LOGS view
+	// across TUI / CLI / MCP. Required; validator demands > 0. Consumers
+	// read it via Snapshot.LogsWindowDays() which converts to a
+	// time.Duration (days * 24h) so call sites can do
+	// `time.Now().Add(-d)` without re-doing the math.
+	WindowDays int                `yaml:"window_days,omitempty" json:"window_days,omitempty"`
+	Filter     LogsFilterSettings `yaml:"filter,omitempty" json:"filter,omitempty"`
 }
 
 type TaskActivityViewSettings struct {

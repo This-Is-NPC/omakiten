@@ -908,6 +908,9 @@ func validateViewSettings(v ViewSettings, workflows []Workflow, activeWorkflow s
 	if v.Logs.Limit <= 0 {
 		return fmt.Errorf("config.views.logs.limit: must be > 0 (see defaults/omakiten.yaml)")
 	}
+	if v.Logs.WindowDays <= 0 {
+		return fmt.Errorf("config.views.logs.window_days: must be > 0 (see defaults/omakiten.yaml)")
+	}
 	if err := validateStringSet("config.views.logs.filter.source", v.Logs.Filter.Source, allowedLogsSources); err != nil {
 		return err
 	}

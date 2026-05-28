@@ -237,6 +237,9 @@ func mergeViewSettings(v *config.ViewSettings, kit config.ViewSettings) {
 	if v.Logs.Limit == 0 {
 		v.Logs.Limit = kit.Logs.Limit
 	}
+	if v.Logs.WindowDays == 0 {
+		v.Logs.WindowDays = kit.Logs.WindowDays
+	}
 	if v.TaskActivity.Sort.Order == "" {
 		v.TaskActivity.Sort.Order = kit.TaskActivity.Sort.Order
 	}

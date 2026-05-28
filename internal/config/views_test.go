@@ -71,6 +71,7 @@ config:
       sort:
         order: asc
       limit: 25
+      window_days: 14
       filter:
         source: [cli, mcp]
     task_activity:
@@ -109,6 +110,9 @@ workflows:
 	}
 	if views.Logs.Limit != 25 {
 		t.Errorf("Logs.Limit = %d, want 25", views.Logs.Limit)
+	}
+	if views.Logs.WindowDays != 14 {
+		t.Errorf("Logs.WindowDays = %d, want 14", views.Logs.WindowDays)
 	}
 	if len(views.Logs.Filter.Source) != 2 {
 		t.Errorf("Logs.Filter.Source len = %d, want 2", len(views.Logs.Filter.Source))
@@ -166,8 +170,9 @@ func fullViewSettings() ViewSettings {
 			Sort: SortSettings{Field: "id", Order: "asc"},
 		},
 		Logs: LogsViewSettings{
-			Sort:  SortSettings{Order: "desc"},
-			Limit: 50,
+			Sort:       SortSettings{Order: "desc"},
+			Limit:      50,
+			WindowDays: 30,
 		},
 		TaskActivity: TaskActivityViewSettings{
 			Sort: SortSettings{Order: "asc"},
@@ -228,6 +233,16 @@ func TestValidateViewSettingsRejectsBadValues(t *testing.T) {
 			name:    "logs zero limit",
 			mutate:  func(v *ViewSettings) { v.Logs.Limit = 0 },
 			wantErr: "config.views.logs.limit",
+		},
+		{
+			name:    "logs zero window_days",
+			mutate:  func(v *ViewSettings) { v.Logs.WindowDays = 0 },
+			wantErr: "config.views.logs.window_days",
+		},
+		{
+			name:    "logs negative window_days",
+			mutate:  func(v *ViewSettings) { v.Logs.WindowDays = -1 },
+			wantErr: "config.views.logs.window_days",
 		},
 		{
 			name:    "task_activity field forbidden",
