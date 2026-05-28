@@ -74,7 +74,7 @@ config:
       limit: 25
       window_days: 14
       filter:
-        source: [cli, mcp]
+        source: [cli, mcp]  # legacy key — silently dropped after #330 cleanup; kept here as a backwards-compat regression smoke test
     task_activity:
       sort:
         order: desc
@@ -115,9 +115,8 @@ workflows:
 	if views.Logs.WindowDays != 14 {
 		t.Errorf("Logs.WindowDays = %d, want 14", views.Logs.WindowDays)
 	}
-	if len(views.Logs.Filter.Source) != 2 {
-		t.Errorf("Logs.Filter.Source len = %d, want 2", len(views.Logs.Filter.Source))
-	}
+	// Legacy `views.logs.filter.source` key (dropped by #330) must not
+	// reject the load — yaml unmarshal silently ignores unknown keys.
 	if views.TaskActivity.Sort.Order != "desc" {
 		t.Errorf("TaskActivity.Sort.Order = %q, want desc", views.TaskActivity.Sort.Order)
 	}
@@ -228,11 +227,6 @@ func TestValidateViewSettingsRejectsBadValues(t *testing.T) {
 			wantErr: "config.views.logs.sort.field is not configurable",
 		},
 		{
-			name:    "logs filter source invalid",
-			mutate:  func(v *ViewSettings) { v.Logs.Filter.Source = []string{"slack"} },
-			wantErr: "config.views.logs.filter.source",
-		},
-		{
 			name:    "logs zero limit",
 			mutate:  func(v *ViewSettings) { v.Logs.Limit = 0 },
 			wantErr: "config.views.logs.limit",
@@ -297,7 +291,6 @@ func TestValidateViewSettingsAcceptsValid(t *testing.T) {
 	custom.Board.Filter.Priority = []string{"high", "normal"}
 	custom.Table.Filter.Bucket = []string{"backlog"}
 	custom.Logs.Limit = 200
-	custom.Logs.Filter.Source = []string{"cli", "tui"}
 	if err := validateViewSettings(custom, baseWorkflow, "default", []string{"low", "normal", "high"}); err != nil {
 		t.Fatalf("custom valid ViewSettings should pass: %v", err)
 	}
