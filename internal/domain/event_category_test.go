@@ -1,6 +1,9 @@
 package domain
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 // TestEventCategoryOfCoversKnownEventTypes locks AC#1: every entry in
 // KnownEventTypes must map to a concrete category — never the unknown
@@ -52,4 +55,53 @@ func categoryInKnownSet(c EventCategory) bool {
 		}
 	}
 	return false
+}
+
+// TestEventTypesForCategoryMatchesEventCategoryOf locks the inverse
+// mapping: every event_type in KnownEventTypes must appear under the
+// category EventCategoryOf assigns to it. Failure means the cached
+// inversion drifted from the canonical switch — should be impossible
+// because the map is computed from EventCategoryOf at init time, but
+// the assertion guards against future hand-edits of the cache.
+func TestEventTypesForCategoryMatchesEventCategoryOf(t *testing.T) {
+	for _, ev := range KnownEventTypes {
+		cat := EventCategoryOf(ev)
+		got := EventTypesForCategory(cat)
+		found := false
+		for _, e := range got {
+			if e == ev {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("EventTypesForCategory(%q) = %v; missing %q (EventCategoryOf says it belongs there)",
+				cat, got, ev)
+		}
+	}
+}
+
+// TestEventTypesForCategoryReturnsNilForUnknown — categories outside
+// KnownEventCategories (including EventCategoryUnknown by construction
+// — it has no event_types because no arm returns it as a primary
+// classification) yield nil so callers can treat the result as a
+// distinguishable "no matches" sentinel.
+func TestEventTypesForCategoryReturnsNilForUnknown(t *testing.T) {
+	if got := EventTypesForCategory(EventCategory("not-a-category")); got != nil {
+		t.Fatalf("EventTypesForCategory(\"not-a-category\") = %v, want nil", got)
+	}
+}
+
+// TestEventTypesForCategoryIsDeterministic — repeated calls return
+// slices with identical contents and ordering. The inversion sorts at
+// init time so the SQL IN-list shape is stable for EXPLAIN diff review
+// and for any caller that tests against the rendered query.
+func TestEventTypesForCategoryIsDeterministic(t *testing.T) {
+	for _, c := range KnownEventCategories {
+		a := EventTypesForCategory(c)
+		b := EventTypesForCategory(c)
+		if !reflect.DeepEqual(a, b) {
+			t.Errorf("EventTypesForCategory(%q) non-deterministic: a=%v b=%v", c, a, b)
+		}
+	}
 }

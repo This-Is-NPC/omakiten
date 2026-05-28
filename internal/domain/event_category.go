@@ -1,5 +1,7 @@
 package domain
 
+import "sort"
+
 // EventCategory is the coarse bucket the Logs inspector groups
 // event_type values into. The Logs filter chip (TUI key `F` in the
 // unified inspector) cycles through subsets composed of these
@@ -146,3 +148,27 @@ func EventCategoryOf(eventType string) EventCategory {
 	}
 	return EventCategoryUnknown
 }
+
+// EventTypesForCategory returns every event_type that maps to the
+// given category via EventCategoryOf. Computed once at init time by
+// walking KnownEventTypes through EventCategoryOf — adding a new
+// event_type + category arm to EventCategoryOf automatically picks
+// it up here. Unknown categories return nil.
+//
+// Used by repository layers (e.g. sqlite.ListEvents) to expand
+// EventFilter.Categories into an event_type IN (...) SQL clause.
+func EventTypesForCategory(c EventCategory) []string {
+	return eventTypesByCategory[c]
+}
+
+var eventTypesByCategory = func() map[EventCategory][]string {
+	m := make(map[EventCategory][]string, len(KnownEventCategories))
+	for _, ev := range KnownEventTypes {
+		cat := EventCategoryOf(ev)
+		m[cat] = append(m[cat], ev)
+	}
+	for cat := range m {
+		sort.Strings(m[cat]) // deterministic order for SQL IN list
+	}
+	return m
+}()
