@@ -219,10 +219,21 @@ func mergeKitDefaults(b *config.Bundle) {
 	// accepts fixtures that omit the 41-entry block. Phase 1 of the YAML
 	// event registry refactor relies on this kit-local set both at
 	// LoadBundle time and inside ValidateHooks.
-	if len(cfg.Events.Definitions) == 0 && len(kit.Events.Definitions) > 0 {
-		cfg.Events.Definitions = make(map[string]config.EventDefinitionSettings, len(kit.Events.Definitions))
+	//
+	// Merge is key-level so a fixture that declares one override (e.g.
+	// a custom Display for task.created) keeps its override AND inherits
+	// the remaining 40 kit entries. The previous all-or-nothing swap
+	// would have silently dropped the kit definitions whenever the
+	// fixture's Definitions map was non-empty, leaving the fixture with
+	// a single-entry registry the validator rejects.
+	if len(kit.Events.Definitions) > 0 {
+		if cfg.Events.Definitions == nil {
+			cfg.Events.Definitions = make(map[string]config.EventDefinitionSettings, len(kit.Events.Definitions))
+		}
 		for k, v := range kit.Events.Definitions {
-			cfg.Events.Definitions[k] = v
+			if _, ok := cfg.Events.Definitions[k]; !ok {
+				cfg.Events.Definitions[k] = v
+			}
 		}
 	}
 
