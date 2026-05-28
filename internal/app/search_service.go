@@ -134,7 +134,7 @@ func normalizeEntityTypes(raw []string) ([]domain.SearchEntityType, error) {
 		if !domain.IsValidSearchEntityType(name) {
 			return nil, domain.NewError(domain.ErrValidation, "invalid entity_type", map[string]any{
 				"value":   name,
-				"allowed": []string{"task", "comment", "error", "solution", "context"},
+				"allowed": []string{"task", "comment", "error", "solution", "context", "plan", "note"},
 			})
 		}
 		t := domain.SearchEntityType(name)

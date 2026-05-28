@@ -204,6 +204,22 @@ type ContextEntryRepository interface {
 	ListContextEntries(ctx context.Context, projectID int64) ([]domain.ContextEntry, error)
 }
 
+// NoteRepository persists the project-or-global notes entity introduced
+// by umbrella #359 (storage land in #360). Scope is encoded in projectID
+// at the storage boundary: 0 = global (project_id IS NULL), non-zero =
+// project-scoped (FK cascades on project delete via migration 031).
+//
+// The adapter keeps notes_fts + the unified search_index in sync via
+// triggers, so callers do not have to issue any extra writes after
+// CreateNote / UpdateNote / DeleteNote.
+type NoteRepository interface {
+	CreateNote(ctx context.Context, projectID int64, kind, title, body string, pinned bool, authorModel string, tags []domain.Tag) (domain.Note, error)
+	UpdateNote(ctx context.Context, id int64, update domain.NoteUpdate) (domain.Note, error)
+	NoteByID(ctx context.Context, id int64) (domain.Note, error)
+	ListNotes(ctx context.Context, filter domain.NoteFilter) ([]domain.Note, error)
+	DeleteNote(ctx context.Context, id int64) error
+}
+
 type TagRepository interface {
 	FindOrCreateTag(ctx context.Context, name, label string) (domain.Tag, error)
 	ListAllTags(ctx context.Context) ([]domain.Tag, error)
