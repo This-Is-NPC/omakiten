@@ -1,0 +1,225 @@
+package sqlite
+
+import (
+	"context"
+	"database/sql"
+	"sort"
+	"strings"
+	"time"
+
+	"omakiten/internal/domain"
+)
+
+// sqliteTimestampLayout is the TEXT shape SQLite's CURRENT_TIMESTAMP
+// writes into events.created_at ("YYYY-MM-DD HH:MM:SS" UTC). Predicate
+// values must be formatted the same way so string comparison gives the
+// expected ordering — Go's default time.Time.String() includes a
+// timezone suffix and would not compare correctly.
+const sqliteTimestampLayout = "2006-01-02 15:04:05"
+
+// ListEvents is the generic Logs inspector read path. It returns rows
+// from the unified `events` table filtered by domain.EventFilter axes
+// and shaped as domain.EventRow values for consumption by TUI / CLI /
+// MCP surfaces.
+//
+// Filter semantics — every axis degrades to "no filter" at its zero
+// value (see EventFilter godoc):
+//
+//   - ProjectID = 0  → no project filter (system-wide view).
+//   - Categories empty → no category filter; every event_type is included.
+//   - Since zero-value → no time floor.
+//   - Limit <= 0     → no row cap.
+//   - Order "" or "desc" → newest-first; "asc" → oldest-first. Within
+//     equal timestamps, id is the tiebreaker so paging stays stable.
+//
+// Category expansion: each requested EventCategory is expanded into the
+// concrete event_type strings it owns by iterating domain.KnownEventTypes
+// and grouping through domain.EventCategoryOf — the inversion stays in
+// sync with the canonical category switch because the domain
+// TestEventCategoryOf* tests fail when a new event_type lands without a
+// category arm. The result becomes a `event_type IN (?, ?, ...)`
+// predicate so the planner reuses `idx_events_type_started`
+// (event_type, created_at) from migration 009 — the same index
+// activity_logs.go relies on. No new index is added by this read path.
+//
+// EXPLAIN QUERY PLAN for the canonical category-filtered query reports:
+//
+//	SEARCH events USING INDEX idx_events_type_started (event_type=?)
+//
+// confirming the planner uses the existing index and avoids a full
+// table scan. When Categories is empty the planner falls back to a
+// covering scan over `events` — acceptable because the caller is
+// asking for everything; the `Since` predicate still narrows the row
+// set when present.
+//
+// When every supplied category is unknown the helper would emit an
+// empty IN list (`IN ()`), which SQLite rejects as a syntax error. We
+// short-circuit and return an empty slice instead so callers receive a
+// predictable "nothing matches" result.
+func (s *Store) ListEvents(ctx context.Context, filter domain.EventFilter) ([]domain.EventRow, error) {
+	conds := []string{}
+	args := []any{}
+
+	if filter.ProjectID > 0 {
+		conds = append(conds, "project_id = ?")
+		args = append(args, filter.ProjectID)
+	}
+
+	if len(filter.Categories) > 0 {
+		eventTypes := expandCategoriesToEventTypes(filter.Categories)
+		if len(eventTypes) == 0 {
+			// Every supplied category was unknown — return an empty
+			// slice rather than build an invalid `IN ()` clause.
+			return nil, nil
+		}
+		ph := make([]string, len(eventTypes))
+		for i, et := range eventTypes {
+			ph[i] = "?"
+			args = append(args, et)
+		}
+		conds = append(conds, "event_type IN ("+strings.Join(ph, ",")+")")
+	}
+
+	if !filter.Since.IsZero() {
+		conds = append(conds, "created_at >= ?")
+		args = append(args, filter.Since.UTC().Format(sqliteTimestampLayout))
+	}
+
+	query := "SELECT id, entity_type, COALESCE(entity_id, 0), COALESCE(project_id, 0), COALESCE(project_slug, ''), event_type, COALESCE(body, ''), COALESCE(payload, ''), COALESCE(author_type, ''), COALESCE(source, ''), COALESCE(status, ''), COALESCE(duration_ms, 0), COALESCE(error_message, ''), created_at, COALESCE(finished_at, ''), COALESCE(agent_model, '') FROM events"
+	if len(conds) > 0 {
+		query += " WHERE " + strings.Join(conds, " AND ")
+	}
+
+	direction := "DESC"
+	if strings.EqualFold(filter.Order, "asc") {
+		direction = "ASC"
+	}
+	query += " ORDER BY created_at " + direction + ", id " + direction
+
+	if filter.Limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, filter.Limit)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []domain.EventRow
+	for rows.Next() {
+		var row domain.EventRow
+		var durationMs sql.NullInt64
+		if err := rows.Scan(
+			&row.ID,
+			&row.EntityType,
+			&row.EntityID,
+			&row.ProjectID,
+			&row.ProjectSlug,
+			&row.EventType,
+			&row.Body,
+			&row.Payload,
+			&row.AuthorType,
+			&row.Source,
+			&row.Status,
+			&durationMs,
+			&row.ErrorMessage,
+			&row.CreatedAt,
+			&row.FinishedAt,
+			&row.AgentModel,
+		); err != nil {
+			return nil, err
+		}
+		row.DurationMs = int(durationMs.Int64)
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// EventCategoryCounts returns a count of events per known category over
+// the requested time window. Every category in domain.KnownEventCategories
+// is present in the result map — categories with no matching rows
+// return 0 so renderers can build a stable table without filling in
+// defaults. EventCategoryUnknown is omitted; rows whose event_type is
+// outside KnownEventTypes (legacy / forward-compat) do not contribute
+// to any bucket.
+//
+// projectID = 0 disables the project filter (system-wide). since
+// zero-value disables the time floor. The implementation runs a single
+// `GROUP BY event_type` aggregate and folds rows into category buckets
+// in Go — keeps the SQL trivial and avoids threading the category
+// switch into a CASE expression that would have to be kept in sync
+// with domain/event_category.go by hand.
+func (s *Store) EventCategoryCounts(ctx context.Context, projectID int64, since time.Time) (map[domain.EventCategory]int, error) {
+	conds := []string{}
+	args := []any{}
+	if projectID > 0 {
+		conds = append(conds, "project_id = ?")
+		args = append(args, projectID)
+	}
+	if !since.IsZero() {
+		conds = append(conds, "created_at >= ?")
+		args = append(args, since.UTC().Format(sqliteTimestampLayout))
+	}
+
+	query := "SELECT event_type, COUNT(*) FROM events"
+	if len(conds) > 0 {
+		query += " WHERE " + strings.Join(conds, " AND ")
+	}
+	query += " GROUP BY event_type"
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	counts := make(map[domain.EventCategory]int, len(domain.KnownEventCategories))
+	for _, c := range domain.KnownEventCategories {
+		counts[c] = 0
+	}
+	for rows.Next() {
+		var eventType string
+		var n int
+		if err := rows.Scan(&eventType, &n); err != nil {
+			return nil, err
+		}
+		cat := domain.EventCategoryOf(eventType)
+		if cat == domain.EventCategoryUnknown {
+			continue
+		}
+		counts[cat] += n
+	}
+	return counts, rows.Err()
+}
+
+// expandCategoriesToEventTypes returns the deduplicated set of concrete
+// event_type strings owned by the requested categories. Iterates
+// domain.KnownEventTypes once and groups through domain.EventCategoryOf
+// so the inversion always stays in sync with the canonical category
+// switch — adding a new event_type to the catalog without a category
+// arm fails domain.TestEventCategoryOf* tests before this helper is
+// reached. Result order is sorted for stable SQL output (eases test
+// assertions + EXPLAIN diff review). Unknown categories are silently
+// skipped because they cannot own any event_type by definition.
+func expandCategoriesToEventTypes(categories []domain.EventCategory) []string {
+	want := make(map[domain.EventCategory]struct{}, len(categories))
+	for _, c := range categories {
+		want[c] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(domain.KnownEventTypes))
+	out := make([]string, 0, len(domain.KnownEventTypes))
+	for _, et := range domain.KnownEventTypes {
+		if _, ok := want[domain.EventCategoryOf(et)]; !ok {
+			continue
+		}
+		if _, dup := seen[et]; dup {
+			continue
+		}
+		seen[et] = struct{}{}
+		out = append(out, et)
+	}
+	sort.Strings(out)
+	return out
+}
