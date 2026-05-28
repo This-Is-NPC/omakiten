@@ -162,6 +162,8 @@ func (m Model) renderCurrentView() string {
 		return m.renderSettingsEntity(entityKindTag)
 	case subSettingsEffective:
 		return m.renderSettingsEffective()
+	case subSettingsGuards:
+		return m.renderSettingsGuards()
 	default:
 		return ""
 	}

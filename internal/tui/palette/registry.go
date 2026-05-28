@@ -68,6 +68,7 @@ var validRoutes = map[Route]struct{}{
 	RouteSettingsTemplates: {},
 	RouteSettingsTags:      {},
 	RouteSettingsEffective: {},
+	RouteSettingsGuards:    {},
 }
 
 // Canonical route slugs. Mirror the (topID, subID) pairs declared
@@ -87,6 +88,7 @@ const (
 	RouteSettingsTemplates Route = "settings.templates"
 	RouteSettingsTags      Route = "settings.tags"
 	RouteSettingsEffective Route = "settings.effective"
+	RouteSettingsGuards    Route = "settings.guards"
 )
 
 // DefaultScreens returns the canonical positional layout the
@@ -112,6 +114,7 @@ func DefaultScreens() []ScreenDescriptor {
 		{Code: "35", Route: RouteSettingsTemplates, TitleKey: "tui.palette.route.settings_templates"},
 		{Code: "36", Route: RouteSettingsTags, TitleKey: "tui.palette.route.settings_tags"},
 		{Code: "37", Route: RouteSettingsEffective, TitleKey: "tui.palette.route.settings_effective"},
+		{Code: "38", Route: RouteSettingsGuards, TitleKey: "tui.palette.route.settings_guards"},
 	}
 }
 

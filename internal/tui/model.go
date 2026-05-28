@@ -285,7 +285,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.handleStatsKey(msg)
 		case subStatsLogs:
 			m.handleLogsKey(msg)
-		case subSettingsGeneral, subSettingsEffective:
+		case subSettingsGeneral, subSettingsEffective, subSettingsGuards:
 			if cmd := m.handleSettingsGeneralKey(msg); cmd != nil {
 				return m, cmd
 			}

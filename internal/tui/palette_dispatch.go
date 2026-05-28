@@ -34,6 +34,7 @@ var routeBindings = map[palette.Route]navState{
 	palette.RouteSettingsTemplates: {top: topSettings, sub: subSettingsTemplates},
 	palette.RouteSettingsTags:      {top: topSettings, sub: subSettingsTags},
 	palette.RouteSettingsEffective: {top: topSettings, sub: subSettingsEffective},
+	palette.RouteSettingsGuards:    {top: topSettings, sub: subSettingsGuards},
 }
 
 // dispatchTrick is the built-in palette dispatch path. Every
