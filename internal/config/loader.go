@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -77,6 +78,7 @@ func loadBundle(path string, opts loadBundleOptions) (Bundle, error) {
 		ActiveTheme:    theme,
 		ActiveThemeErr: themeErr,
 		SourcePaths:    []string{path},
+		Sources:        buildSettingsSources(wired.Config, wired.Kit.Key),
 	}
 
 	if themeErr != nil {
@@ -129,6 +131,29 @@ func loadBundle(path string, opts loadBundleOptions) (Bundle, error) {
 		bundle.SubtaskBundle = &subtaskBundle
 	}
 	return bundle, nil
+}
+
+// buildSettingsSources computes the per-leaf-path origin map for the
+// loaded Settings against the embedded kit baseline matching `kitKey`
+// (falls back to omakase when the binary does not ship a baseline for
+// the bundle's custom kit). The env-overlay hook fires after the diff so
+// a future loader-level env binding promotes its path to SourceEnv
+// without disturbing default/project classification.
+//
+// Returns nil when the kit baseline is unreadable; consumers fall back
+// to SourceDefault via Bundle.SourceFor, so a missing baseline degrades
+// to "show every leaf as default" rather than aborting the load.
+func buildSettingsSources(user Settings, kitKey string) map[string]string {
+	kit, err := LoadKitConfigByKey(kitKey)
+	if err != nil {
+		return nil
+	}
+	sources := computeSettingsSources(user, kit)
+	if sources == nil {
+		return nil
+	}
+	ApplyEnvOverlay(sources, os.LookupEnv)
+	return sources
 }
 
 // ConfigRootFromYAMLPath strips the trailing `config/<file>.yaml` (or
