@@ -120,12 +120,15 @@ func (m Model) effectiveConfigSections() [][][]string {
 		return nil
 	}
 
-	// Bucket tuples by section while preserving the accessor's
-	// declaration-order section list. EffectiveSectionKeys already
-	// returns sections in the canonical Settings struct field order,
-	// so we lean on it for the outer loop instead of re-tracking
-	// order while we group.
-	sectionKeys := snap.EffectiveSectionKeys()
+	// Bucket tuples by section. EffectiveSectionKeys returns sections
+	// in the accessor's struct-field order, which is convenient for
+	// non-TUI consumers but doesn't match the user-relevance ordering
+	// the Settings viewer wants. orderEffectiveSections reorders the
+	// section list so user-facing prefs (languages, theme, priorities,
+	// …) lead and infra plumbing (mcp, sqlite, backup) trails; sections
+	// not in the table fall through to a stable tail in their original
+	// accessor order so future additions stay defensive.
+	sectionKeys := orderEffectiveSections(snap.EffectiveSectionKeys())
 	grouped := make(map[string][]config.EffectiveTuple, len(sectionKeys))
 	for _, t := range tuples {
 		grouped[t.Section] = append(grouped[t.Section], t)
@@ -164,6 +167,66 @@ func (m Model) effectiveConfigSections() [][][]string {
 		tables = append(tables, m.summaryRows(label, fields...))
 	}
 	return tables
+}
+
+// effectiveSectionRenderOrder is the user-relevance ordering applied
+// to effective-config sections in Settings › General. Tiers (top →
+// bottom): user-facing prefs, workflow/content surface, output/search,
+// infra integration. The accessor itself stays struct-field-order so
+// non-TUI consumers (MCP, CLI) keep deciding their own ordering — only
+// the renderer picks up this table. Sections absent from the table are
+// appended in their original accessor order so new Settings fields
+// never silently disappear from the viewer (see task #346 DoD #2).
+var effectiveSectionRenderOrder = []string{
+	"languages",
+	"theme",
+	"priorities",
+	"severities",
+	"tag_synonyms",
+	"tricks",
+	"workflow",
+	"template_defaults",
+	"views",
+	"context",
+	"tui",
+	"output",
+	"search",
+	"solutions",
+	"activity_log",
+	"mcp",
+	"hooks",
+	"events",
+	"sqlite",
+	"backup",
+}
+
+// orderEffectiveSections returns sections reordered per
+// effectiveSectionRenderOrder. Known sections lead in tier order;
+// unknown sections follow in their original input order. Only sections
+// present in the input slice are returned — the ordering table is a
+// preference, not a presence guarantee.
+func orderEffectiveSections(sections []string) []string {
+	if len(sections) == 0 {
+		return sections
+	}
+	present := make(map[string]bool, len(sections))
+	for _, s := range sections {
+		present[s] = true
+	}
+	out := make([]string, 0, len(sections))
+	known := make(map[string]bool, len(effectiveSectionRenderOrder))
+	for _, s := range effectiveSectionRenderOrder {
+		known[s] = true
+		if present[s] {
+			out = append(out, s)
+		}
+	}
+	for _, s := range sections {
+		if !known[s] {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // settingsGeneralViewportRows is the data-row budget for the General

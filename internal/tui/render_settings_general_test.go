@@ -378,6 +378,132 @@ func TestSettingsGeneralFooterHintIsReadOnly(t *testing.T) {
 	}
 }
 
+// TestSettingsGeneralEffectiveSectionOrder pins the user-relevance
+// ordering applied by orderEffectiveSections: tier-1 (`languages`,
+// `theme`, `priorities`) leads the rendered body, tier-4 (`backup`)
+// trails. The fixture seeds enough sections so all four tiers are
+// represented; we walk the body once, collect each section kicker's
+// index, and assert the relative ordering.
+func TestSettingsGeneralEffectiveSectionOrder(t *testing.T) {
+	bundle := effectiveBundleFixture()
+	// Seed `backup` so it lands in the rendered body and we can pin
+	// it as the tail of the order table. The default fixture omits
+	// it, which would otherwise make the "last is backup" leg vacuous.
+	bundle.Config.Backup = config.BackupSettings{RetentionCount: 5}
+	snap := config.BuildSnapshot(bundle)
+	m := Model{
+		styles:    newStyles(config.Theme{}),
+		width:     160,
+		height:    200,
+		top:       topSettings,
+		sub:       subSettingsGeneral,
+		project:   domain.ProjectContext{Slug: "test-project"},
+		theme:     config.Theme{},
+		workflow:  snap.Workflow(),
+		languages: config.LanguageSettings{CLI: "en", TUI: "en"},
+		repos:     Repositories{Cache: runtimecache.Install(0, snap)},
+	}
+	body := stripANSI(m.renderSettingsGeneralBody())
+
+	// Section kickers and label rows both render as `// LABEL` — the
+	// difference is the value cell. Kickers render an empty value
+	// (summaryRows emits `[]string{kicker, ""}` for the title row);
+	// label rows always carry content (`—` placeholder at minimum).
+	// We scan line-by-line and only accept lines whose value cell
+	// (everything between the second and third `│` border) is blank.
+	sections := snap.EffectiveSectionKeys()
+	lines := strings.Split(body, "\n")
+	indexOf := func(section string) int {
+		needle := "// " + strings.ToUpper(m.t("tui.settings.effective.section."+section))
+		for i, line := range lines {
+			if !strings.Contains(line, needle) {
+				continue
+			}
+			parts := strings.Split(line, "│")
+			if len(parts) < 4 {
+				continue
+			}
+			if strings.TrimSpace(parts[2]) != "" {
+				continue
+			}
+			return i
+		}
+		return -1
+	}
+
+	// Assertion 1: leading sections appear in the required order
+	// (languages → theme → priorities). priorities is absent from
+	// this fixture so we walk the order table and pick the first
+	// three present sections in order.
+	want := []string{"languages", "theme", "priorities"}
+	leading := make([]string, 0, len(want))
+	for _, s := range want {
+		for _, present := range sections {
+			if present == s {
+				leading = append(leading, s)
+				break
+			}
+		}
+	}
+	if len(leading) < 2 {
+		t.Fatalf("fixture does not contain enough tier-1 sections to exercise ordering (have %v)", leading)
+	}
+	prev := -1
+	for _, s := range leading {
+		idx := indexOf(s)
+		if idx < 0 {
+			t.Fatalf("rendered body missing tier-1 section %q; body:\n%s", s, body)
+		}
+		if idx <= prev {
+			t.Fatalf("tier-1 section %q at index %d not after previous index %d; ordering broken; body:\n%s", s, idx, prev, body)
+		}
+		prev = idx
+	}
+
+	// Assertion 2: every known section that follows `backup` in the
+	// render-order table is either absent or also after `backup` — so
+	// the last rendered known section is `backup` for this fixture.
+	backupIdx := indexOf("backup")
+	if backupIdx < 0 {
+		t.Fatalf("rendered body missing `backup` section; fixture seeding failed; body:\n%s", body)
+	}
+	for _, present := range sections {
+		// Only rank against sections in the known order table.
+		known := false
+		for _, k := range effectiveSectionRenderOrder {
+			if k == present {
+				known = true
+				break
+			}
+		}
+		if !known || present == "backup" {
+			continue
+		}
+		idx := indexOf(present)
+		if idx > backupIdx {
+			t.Fatalf("known section %q rendered after `backup` (idx %d > %d); backup must be the tail of the order table; body:\n%s", present, idx, backupIdx, body)
+		}
+	}
+}
+
+// TestOrderEffectiveSectionsUnknownTail pins the defensive contract:
+// sections not listed in effectiveSectionRenderOrder are appended in
+// their original input order, after all known sections. Guards future
+// Settings field additions from silently dropping out of the viewer.
+func TestOrderEffectiveSectionsUnknownTail(t *testing.T) {
+	in := []string{"future_one", "backup", "languages", "future_two", "theme"}
+	got := orderEffectiveSections(in)
+	want := []string{"languages", "theme", "backup", "future_one", "future_two"}
+	if len(got) != len(want) {
+		t.Fatalf("orderEffectiveSections len = %d, want %d (%v vs %v)", len(got), len(want), got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("orderEffectiveSections[%d] = %q, want %q (full: %v)", i, got[i], want[i], got)
+		}
+	}
+}
+
 // TestSettingsGeneralEffectiveTruncatesLongValues pins the
 // truncation contract: very long scalar values render with the
 // terminal-native `…` glyph instead of wrapping or overflowing. We
