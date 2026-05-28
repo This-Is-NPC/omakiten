@@ -11,7 +11,7 @@ type EventMetricBucket string
 
 const (
 	MetricBucketErrorRecorded     EventMetricBucket = "error_recorded"
-	MetricBucketErrorSearched     EventMetricBucket = "error_searched"
+	MetricBucketErrorsResearched  EventMetricBucket = "error_searched"
 	MetricBucketSolutionAdded     EventMetricBucket = "solution_added"
 	MetricBucketSolutionLiked     EventMetricBucket = "solution_liked"
 	MetricBucketSolutionFailed    EventMetricBucket = "solution_failed"

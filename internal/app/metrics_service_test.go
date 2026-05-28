@@ -71,7 +71,7 @@ func TestMetricsServiceSummaryAggregatesPerModel(t *testing.T) {
 	// Opus searched once, recorded once with a session id, search came
 	// before the record → ratio 100%. The like_rate denominator is the
 	// SolutionAdded bucket; canonical formula is liked / added.
-	if got := opus.Buckets[domain.MetricBucketErrorSearched]; got != 1 {
+	if got := opus.Buckets[domain.MetricBucketErrorsResearched]; got != 1 {
 		t.Fatalf("opus error_searched = %d, want 1", got)
 	}
 	if got := opus.Buckets[domain.MetricBucketSolutionLiked]; got != 1 {
@@ -88,7 +88,7 @@ func TestMetricsServiceSummaryAggregatesPerModel(t *testing.T) {
 	}
 
 	// Sonnet recorded twice without searching → ratio 0%.
-	if got := sonnet.Buckets[domain.MetricBucketErrorSearched]; got != 0 {
+	if got := sonnet.Buckets[domain.MetricBucketErrorsResearched]; got != 0 {
 		t.Fatalf("sonnet error_searched = %d, want 0", got)
 	}
 	if got := int(sonnet.SearchBeforeRecordRatio * 100); got != 0 {

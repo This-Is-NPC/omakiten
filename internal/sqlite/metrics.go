@@ -128,7 +128,7 @@ ORDER BY 2 DESC, 1
 // Both event_type keys (the "record" trigger and the "search" lookup) are
 // resolved through the YAML registry: the record side is the entry whose
 // Metric is MetricBucketErrorRecorded, the search side is the entry whose
-// Metric is MetricBucketErrorSearched. A rename in the YAML therefore
+// Metric is MetricBucketErrorsResearched. A rename in the YAML therefore
 // flows through without touching this query.
 func (s *Store) fillSearchBeforeRecord(ctx context.Context, models []domain.AgentMetrics, periodClause string, projectID int64) error {
 	if len(models) == 0 {
@@ -138,7 +138,7 @@ func (s *Store) fillSearchBeforeRecord(ctx context.Context, models []domain.Agen
 	if !ok {
 		return nil
 	}
-	searchedKey, ok := metricKey(domain.MetricBucketErrorSearched)
+	searchedKey, ok := metricKey(domain.MetricBucketErrorsResearched)
 	if !ok {
 		return nil
 	}
