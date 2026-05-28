@@ -262,12 +262,12 @@ A single-line chip strip sits above the summary tables:
 
 `F` rotates the active chip forward; `shift+F` rotates it backward. The active chip is bracketed and painted with the focus accent so the eye lands on it without colour-only signalling.
 
-| Mode | Filter | Categories included |
+| Mode | Categories included | Event types rolled up |
 |---|---|---|
-| `all` | none — no `Categories` filter passed to the repository | every `domain.KnownEventCategory` |
-| `tool-calls` | `cli.tool_call`, `mcp.tool_call`, `tui.tool_call`, `hook.executed` | `tool_call`, `hook` |
-| `domain` | user-authored activity | `task`, `comment`, `plan`, `trick`, `tag-dep` |
-| `system` | system bookkeeping | `audit`, `guard`, `domain` |
+| `all` | every `domain.KnownEventCategory` | no `Categories` filter passed to the repository |
+| `tool-calls` | `tool_call`, `hook` | all CLI / MCP / TUI tool calls (`cli.tool_call`, `mcp.tool_call`, `tui.tool_call`) plus hook executions (`hook.executed`) |
+| `domain` | `task`, `comment`, `plan`, `trick`, `tag-dep` | user-authored activity |
+| `system` | `audit`, `guard`, `domain` | system bookkeeping |
 
 Filter state lives on the Model so it survives the per-second realtime tick, manual `r` refreshes, and zone re-entries — the user picks the chip once and the surface stays scoped until the next `F` press.
 
