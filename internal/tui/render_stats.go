@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"omakiten/internal/domain"
 )
 
 var statsPeriods = []string{"7d", "30d", "all"}
@@ -104,15 +106,15 @@ func (m Model) renderStatsModelPanel() string {
 			searchPct = fmt.Sprintf("%.0f%%", am.SearchBeforeRecordRatio*100)
 		}
 		likePct := "—"
-		if am.SolutionsAdded > 0 {
+		if am.Buckets[domain.MetricBucketSolutionAdded] > 0 {
 			likePct = fmt.Sprintf("%.0f%%", am.LikeRate*100)
 		}
 		row := fmt.Sprintf("%-*s %*d %*d %*s %*d %*s",
 			modelW, truncateText(am.AgentModel, modelW),
-			countW, am.ErrorsRecorded,
-			countW, am.ErrorsSearched,
+			countW, am.Buckets[domain.MetricBucketErrorRecorded],
+			countW, am.Buckets[domain.MetricBucketErrorSearched],
 			ratioW, searchPct,
-			countW, am.SolutionsAdded,
+			countW, am.Buckets[domain.MetricBucketSolutionAdded],
 			likeW, likePct,
 		)
 		rows = append(rows, row)
@@ -127,15 +129,15 @@ func (m Model) renderStatsModelPanel() string {
 			searchPct = fmt.Sprintf("%.0f%%", t.SearchBeforeRecordRatio*100)
 		}
 		likePct := "—"
-		if t.SolutionsAdded > 0 {
+		if t.Buckets[domain.MetricBucketSolutionAdded] > 0 {
 			likePct = fmt.Sprintf("%.0f%%", t.LikeRate*100)
 		}
 		totalRow := fmt.Sprintf("%-*s %*d %*d %*s %*d %*s",
 			modelW, m.t("tui.stat.total_row_label"),
-			countW, t.ErrorsRecorded,
-			countW, t.ErrorsSearched,
+			countW, t.Buckets[domain.MetricBucketErrorRecorded],
+			countW, t.Buckets[domain.MetricBucketErrorSearched],
 			ratioW, searchPct,
-			countW, t.SolutionsAdded,
+			countW, t.Buckets[domain.MetricBucketSolutionAdded],
 			likeW, likePct,
 		)
 		rows = append(rows, sepLine, m.styles.info.Render(totalRow))

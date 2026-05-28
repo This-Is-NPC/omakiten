@@ -4,6 +4,7 @@
 
 ### ⚠ BREAKING CHANGES
 
+* **metrics:** `/metrics.summary` JSON shape changed: per-bucket flat fields (`errors_recorded`, `errors_searched`, `solutions_added`, `solutions_liked`, `solutions_failed`, `solutions_top_viewed`) replaced by a `buckets` map keyed by metric tag. Update consumers to read `buckets.error_searched` etc. instead.
 * **cli:** `okt logs` is now a generic event inspector backed by `ListEvents`. The JSON envelope shape changed: each row carries the unified `EventRow` projection (`event_type`, `entity_type`, `author_type`, `category`, `summary`) instead of the legacy `domain.ActivityLog` columns. The `summary` field is the same one-line text the TUI Logs inspector renders. Downstream tooling that scraped `source`-only rows must switch to the new shape; the legacy `ListActivityLogs` repo method is retained for now and is not affected.
 
 ### Features

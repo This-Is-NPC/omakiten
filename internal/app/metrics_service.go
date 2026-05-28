@@ -48,15 +48,13 @@ func (s *MetricsService) Summary(ctx context.Context, project domain.ProjectCont
 		Period:  period,
 		Since:   since,
 		ByModel: rows,
+		Total:   domain.AgentMetrics{Buckets: map[domain.EventMetricBucket]int{}},
 	}
 	var totalSearchBefore int
 	for _, m := range rows {
-		summary.Total.ErrorsRecorded += m.ErrorsRecorded
-		summary.Total.ErrorsSearched += m.ErrorsSearched
-		summary.Total.SolutionsAdded += m.SolutionsAdded
-		summary.Total.SolutionsLiked += m.SolutionsLiked
-		summary.Total.SolutionsFailed += m.SolutionsFailed
-		summary.Total.SolutionsTopViewed += m.SolutionsTopViewed
+		for bucket, count := range m.Buckets {
+			summary.Total.Buckets[bucket] += count
+		}
 		summary.Total.SessionCorrelatedSample += m.SessionCorrelatedSample
 		// Reconstruct the per-model search-before-record count from the ratio
 		// so the totals row can recompute the ratio over the combined sample
@@ -64,8 +62,9 @@ func (s *MetricsService) Summary(ctx context.Context, project domain.ProjectCont
 		// differ in size).
 		totalSearchBefore += int(m.SearchBeforeRecordRatio*float64(m.SessionCorrelatedSample) + 0.5)
 	}
-	if summary.Total.SolutionsAdded > 0 {
-		summary.Total.LikeRate = float64(summary.Total.SolutionsLiked) / float64(summary.Total.SolutionsAdded)
+	totalAdded := summary.Total.Buckets[domain.MetricBucketSolutionAdded]
+	if totalAdded > 0 {
+		summary.Total.LikeRate = float64(summary.Total.Buckets[domain.MetricBucketSolutionLiked]) / float64(totalAdded)
 	}
 	if summary.Total.SessionCorrelatedSample > 0 {
 		summary.Total.SearchBeforeRecordRatio = float64(totalSearchBefore) / float64(summary.Total.SessionCorrelatedSample)
