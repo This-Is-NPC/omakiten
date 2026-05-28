@@ -864,6 +864,7 @@ const (
 	subSettingsSkills
 	subSettingsTemplates
 	subSettingsTags
+	subSettingsEffective
 )
 
 // topOrder is the canonical cycle order for tab/shift+tab and the order
@@ -875,7 +876,7 @@ var topOrder = []topID{topTasks, topStats, topSettings}
 var subsByTop = map[topID][]subID{
 	topTasks:    {subBoard, subTable, subGraph, subPlans},
 	topStats:    {subStatsGeneral, subStatsLogs},
-	topSettings: {subSettingsGeneral, subSettingsLaws, subSettingsPersonas, subSettingsSkills, subSettingsTemplates, subSettingsTags},
+	topSettings: {subSettingsGeneral, subSettingsLaws, subSettingsPersonas, subSettingsSkills, subSettingsTemplates, subSettingsTags, subSettingsEffective},
 }
 
 var topLabels = map[topID]string{
@@ -897,6 +898,7 @@ var subLabels = map[subID]string{
 	subSettingsSkills:    "skills",
 	subSettingsTemplates: "templates",
 	subSettingsTags:      "tags",
+	subSettingsEffective: "effective",
 }
 
 // settingsEntitySubs maps the per-entity Settings subs to the underlying

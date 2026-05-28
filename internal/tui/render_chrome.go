@@ -160,6 +160,8 @@ func (m Model) renderCurrentView() string {
 		return m.renderSettingsEntity(entityKindTemplate)
 	case subSettingsTags:
 		return m.renderSettingsEntity(entityKindTag)
+	case subSettingsEffective:
+		return m.renderSettingsEffective()
 	default:
 		return ""
 	}
