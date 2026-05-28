@@ -136,6 +136,100 @@ definitions:
 	}
 }
 
+// TestLoadEventRegistryFromYAML_ReloadResetsRegistry locks the loader's
+// reset-on-reload contract: a second LoadEventRegistryFromYAML call
+// replaces the prior registry wholesale instead of merging into it. The
+// production runtime never hot-reloads today, but the loader owns the
+// EventDefinitions slice + EventDefByKey map (see registryMu doc) and
+// future hot-reload paths rely on the reset behaviour to drop stale
+// keys.
+func TestLoadEventRegistryFromYAML_ReloadResetsRegistry(t *testing.T) {
+	const (
+		fmtA = "__test.fmt.reload_a"
+		fmtB = "__test.fmt.reload_b"
+	)
+	setupTestFormatter(t, fmtA, func(EventRow) string { return "A" })
+	setupTestFormatter(t, fmtB, func(EventRow) string { return "B" })
+	restoreFixtureRegistry(t)
+
+	yamlA := `defaults:
+  log_visible: true
+  metric: events
+  entity_type: task
+definitions:
+  reload_only_a:
+    category: task
+    display: Only A
+    formatter: __test.fmt.reload_a
+`
+	if err := LoadEventRegistryFromYAML([]byte(yamlA)); err != nil {
+		t.Fatalf("load A: %v", err)
+	}
+	if len(EventDefinitions) != 1 {
+		t.Fatalf("after load A want 1 entry, got %d", len(EventDefinitions))
+	}
+	if _, ok := EventDefByKey["reload_only_a"]; !ok {
+		t.Fatalf("after load A missing reload_only_a")
+	}
+
+	yamlB := `defaults:
+  log_visible: true
+  metric: events
+  entity_type: task
+definitions:
+  reload_only_b:
+    category: comment
+    display: Only B
+    formatter: __test.fmt.reload_b
+  reload_also_b:
+    category: plan
+    display: Also B
+    formatter: __test.fmt.reload_b
+`
+	if err := LoadEventRegistryFromYAML([]byte(yamlB)); err != nil {
+		t.Fatalf("load B: %v", err)
+	}
+	if len(EventDefinitions) != 2 {
+		t.Fatalf("after load B want 2 entries, got %d", len(EventDefinitions))
+	}
+	if _, ok := EventDefByKey["reload_only_a"]; ok {
+		t.Fatalf("after load B the prior reload_only_a entry leaked through; loader did not reset")
+	}
+	for _, key := range []string{"reload_only_b", "reload_also_b"} {
+		if _, ok := EventDefByKey[key]; !ok {
+			t.Fatalf("after load B missing %q", key)
+		}
+	}
+}
+
+// TestLoadEventRegistryFromYAML_MalformedYAMLReturnsError locks the
+// loader's parse-error path: invalid YAML must surface a wrapped error
+// (so callers can attribute the failure) and must not partially mutate
+// the registry. With the loader's eager reset-before-validate shape,
+// only a successful parse + validate sequence reaches the global
+// assignments — a malformed payload is rejected before any global
+// touches happen.
+func TestLoadEventRegistryFromYAML_MalformedYAMLReturnsError(t *testing.T) {
+	restoreFixtureRegistry(t)
+
+	// Capture pre-call registry length so we can verify the loader
+	// does not partially mutate on a malformed payload.
+	preLen := len(EventDefinitions)
+
+	// `[unclosed` is invalid YAML — the flow-sequence opener never
+	// closes, so gopkg.in/yaml.v3 fails with a parse error.
+	err := LoadEventRegistryFromYAML([]byte("definitions: [unclosed"))
+	if err == nil {
+		t.Fatalf("want error for malformed YAML, got nil")
+	}
+	if !strings.Contains(err.Error(), "parse yaml") {
+		t.Fatalf("error does not wrap the parse failure with the loader prefix: %v", err)
+	}
+	if len(EventDefinitions) != preLen {
+		t.Fatalf("EventDefinitions mutated on malformed input: want len %d, got %d", preLen, len(EventDefinitions))
+	}
+}
+
 func TestLoadEventRegistryFromYAML_MissingDefinitionsErrors(t *testing.T) {
 	yaml := `defaults:
   log_visible: true
