@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
@@ -84,6 +85,14 @@ func (r *recordingEventRepo) RecordEntityEvent(ctx context.Context, entityType s
 
 func (r *recordingEventRepo) ListTaskActivity(ctx context.Context, projectID, taskID int64, order string) ([]domain.Event, error) {
 	return r.inner.ListTaskActivity(ctx, projectID, taskID, order)
+}
+
+func (r *recordingEventRepo) ListEvents(ctx context.Context, filter domain.EventFilter) ([]domain.EventRow, error) {
+	return r.inner.ListEvents(ctx, filter)
+}
+
+func (r *recordingEventRepo) EventCategoryCounts(ctx context.Context, projectID int64, since time.Time) (map[domain.EventCategory]int, error) {
+	return r.inner.EventCategoryCounts(ctx, projectID, since)
 }
 
 func (r *recordingEventRepo) tick(eventType string) {

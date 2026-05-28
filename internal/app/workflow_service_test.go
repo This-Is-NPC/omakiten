@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"omakiten/internal/app/guards"
 	"omakiten/internal/config"
@@ -208,6 +209,12 @@ func (f *fakeStores) RecordEntityEvent(_ context.Context, _ string, entityID, pr
 	return nil
 }
 func (f *fakeStores) ListTaskActivity(context.Context, int64, int64, string) ([]domain.Event, error) {
+	return nil, nil
+}
+func (f *fakeStores) ListEvents(context.Context, domain.EventFilter) ([]domain.EventRow, error) {
+	return nil, nil
+}
+func (f *fakeStores) EventCategoryCounts(context.Context, int64, time.Time) (map[domain.EventCategory]int, error) {
 	return nil, nil
 }
 
