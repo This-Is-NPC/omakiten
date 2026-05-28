@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/google/go-cmp/cmp"
 
 	"omakiten/internal/domain"
 )
@@ -29,11 +30,11 @@ func TestRebuildBoardCachesPopulatesBucketsAndTableView(t *testing.T) {
 
 	first := model.tasksByBucket()
 	second := model.tasksByBucket()
-	if !reflect.DeepEqual(first, second) {
-		t.Fatalf("tasksByBucket returned different maps across calls")
+	if diff := cmp.Diff(first, second); diff != "" {
+		t.Fatalf("tasksByBucket returned different maps across calls (-first +second):\n%s", diff)
 	}
 	if &first == &second { // map identity is meaningless; check the value reference instead
-		t.Fatalf("unexpected reference comparison; reflect.DeepEqual is the contract here")
+		t.Fatalf("unexpected reference comparison; deep equality is the contract here")
 	}
 
 	table1 := model.applyTableView()

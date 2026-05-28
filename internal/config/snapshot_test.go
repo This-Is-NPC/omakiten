@@ -4,10 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"omakiten/internal/domain"
 )
@@ -84,11 +85,11 @@ func TestSnapshotPerBundleIsolation(t *testing.T) {
 
 	wantA := []string{"planning", "review"}
 	wantB := []string{"todo", "doing"}
-	if got := bucketKeys(snapA.Workflow()); !reflect.DeepEqual(got, wantA) {
-		t.Fatalf("snap A buckets = %v, want %v", got, wantA)
+	if diff := cmp.Diff(wantA, bucketKeys(snapA.Workflow())); diff != "" {
+		t.Fatalf("snap A buckets mismatch (-want +got):\n%s", diff)
 	}
-	if got := bucketKeys(snapB.Workflow()); !reflect.DeepEqual(got, wantB) {
-		t.Fatalf("snap B buckets = %v, want %v", got, wantB)
+	if diff := cmp.Diff(wantB, bucketKeys(snapB.Workflow())); diff != "" {
+		t.Fatalf("snap B buckets mismatch (-want +got):\n%s", diff)
 	}
 }
 

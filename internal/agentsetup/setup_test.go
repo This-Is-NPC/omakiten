@@ -5,10 +5,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	toml "github.com/pelletier/go-toml/v2"
 
 	"omakiten/internal/domain"
@@ -116,8 +116,8 @@ func TestSetupCreatedStatus(t *testing.T) {
 func TestSupportedHarnesses(t *testing.T) {
 	want := []string{ClaudeCodeHarness, ClaudeDesktopHarness, OpenCodeHarness, CrushHarness, GitHubCopilotHarness, CodexHarness}
 	got := SupportedHarnesses()
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("SupportedHarnesses() = %v, want %v", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("SupportedHarnesses() mismatch (-want +got):\n%s", diff)
 	}
 }
 
