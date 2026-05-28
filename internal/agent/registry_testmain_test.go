@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"omakiten/internal/config"
+	"omakiten/internal/testutil"
 )
 
 // TestMain hydrates the domain event registry from the embedded omakase
@@ -14,21 +14,13 @@ import (
 // helpers like logsRow (which call domain.EventCategoryOf and
 // domain.SummarizeEvent) need the registry populated even for tests
 // that do not go through testfixtures.LoadBundle.
+//
+// The hydration body lives in internal/testutil so the agent, cli,
+// sqlite, and tui packages share a single source of truth.
 func TestMain(m *testing.M) {
-	if err := hydrateDomainEventRegistry(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	if err := testutil.HydrateDomainEventRegistry(); err != nil {
+		fmt.Fprintln(os.Stderr, fmt.Errorf("agent testmain: %w", err))
 		os.Exit(1)
 	}
 	os.Exit(m.Run())
-}
-
-func hydrateDomainEventRegistry() error {
-	cfg, err := config.LoadKitConfigByKey("omakase")
-	if err != nil {
-		return fmt.Errorf("agent testmain: load omakase kit: %w", err)
-	}
-	if err := config.LoadDomainEventRegistry(cfg.Events); err != nil {
-		return fmt.Errorf("agent testmain: hydrate event registry: %w", err)
-	}
-	return nil
 }
