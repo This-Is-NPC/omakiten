@@ -15,9 +15,24 @@ func setupTestFormatter(t *testing.T, id string, fn func(EventRow) string) {
 	})
 }
 
+// restoreFixtureRegistry queues a Cleanup hook that re-loads the embedded
+// fixture registry once the current test returns. Loader tests overwrite
+// EventDefinitions/EventDefByKey/KnownEventTypes wholesale, so without
+// this hook a later test in the same `go test` run would see a one-entry
+// registry instead of the 41-entry fixture TestMain installed.
+func restoreFixtureRegistry(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() {
+		if err := loadFixtureRegistry(); err != nil {
+			t.Fatalf("restore fixture registry: %v", err)
+		}
+	})
+}
+
 func TestLoadEventRegistryFromYAML_PopulatesRegistry(t *testing.T) {
 	const fmtID = "__test.fmt.load"
 	setupTestFormatter(t, fmtID, func(EventRow) string { return "load-ok" })
+	restoreFixtureRegistry(t)
 
 	yaml := `defaults:
   log_visible: true
@@ -57,6 +72,7 @@ definitions:
 func TestLoadEventRegistryFromYAML_DefaultsMerge(t *testing.T) {
 	const fmtID = "__test.fmt.defaults"
 	setupTestFormatter(t, fmtID, func(EventRow) string { return "" })
+	restoreFixtureRegistry(t)
 
 	yaml := `defaults:
   log_visible: true

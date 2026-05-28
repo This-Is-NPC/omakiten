@@ -87,6 +87,17 @@ func loadFromPath(t testing.TB, path string) (config.Bundle, *domain.EnumRegistr
 	// on the scenario under exercise without copying canonical boilerplate.
 	mergeKitDefaults(&bundle)
 
+	// Hydrate the domain event registry from the merged bundle so the
+	// pure-domain helpers (EventCategoryOf, SummarizeEvent, KnownEventTypes)
+	// behave as they do in production. Boot wires this through
+	// config.LoadDomainEventRegistry; testfixtures mirrors the call here
+	// because Phase 1 of the YAML-registry refactor dropped the static
+	// switch fallback. Idempotent and process-global by design — every
+	// fixture installs the same canonical 41-entry table.
+	if err := config.LoadDomainEventRegistry(bundle.Config.Events); err != nil {
+		t.Fatalf("testfixtures: hydrate domain event registry: %v", err)
+	}
+
 	// Build the bundle-scoped EnumRegistry tests inject into services.
 	// No process-global state involved.
 	registry := registryFromBundle(bundle)
@@ -192,6 +203,17 @@ func mergeKitDefaults(b *config.Bundle) {
 		cfg.Events.Overrides = make(map[string]config.EventChannelSettings, len(kit.Events.Overrides))
 		for k, v := range kit.Events.Overrides {
 			cfg.Events.Overrides[k] = v
+		}
+	}
+	// Definitions inherit from the kit so validateEventsSettings (which
+	// now resolves `overrides:` keys against the local definitions map)
+	// accepts fixtures that omit the 41-entry block. Phase 1 of the YAML
+	// event registry refactor relies on this kit-local set both at
+	// LoadBundle time and inside ValidateHooks.
+	if len(cfg.Events.Definitions) == 0 && len(kit.Events.Definitions) > 0 {
+		cfg.Events.Definitions = make(map[string]config.EventDefinitionSettings, len(kit.Events.Definitions))
+		for k, v := range kit.Events.Definitions {
+			cfg.Events.Definitions[k] = v
 		}
 	}
 

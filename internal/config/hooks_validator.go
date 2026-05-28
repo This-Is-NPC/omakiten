@@ -3,8 +3,6 @@ package config
 import (
 	"fmt"
 	"strings"
-
-	"omakiten/internal/domain"
 )
 
 // HookActionResolver reports whether a `do:` name is a registered
@@ -20,16 +18,22 @@ type HookActionResolver func(name string) bool
 //   - notification:  on + when + notification:<slug>  (notification card)
 //
 // `do:` must name a registered action; `notification:` must resolve to a
-// loaded notification. on/event_type must be a known event type. Empty
-// hooks list is allowed.
-func ValidateHooks(hooks []HookSpec, isAction HookActionResolver, notifications map[string]Notification) error {
+// loaded notification. on/event_type must be one of `knownEvents` —
+// the bundle-local event_type registry (typically EventsSettings.Definitions)
+// supplies the closed set so validation does not depend on a global
+// domain.KnownEventTypes that is empty at LoadBundle time. A nil/empty
+// knownEvents disables the event_type check, which lets test fixtures
+// supply a hook entry without declaring a full events block.
+func ValidateHooks(hooks []HookSpec, knownEvents map[string]struct{}, isAction HookActionResolver, notifications map[string]Notification) error {
 	for i, h := range hooks {
 		on := strings.TrimSpace(h.On)
 		if on == "" {
 			return fmt.Errorf("config.hooks[%d]: on is required", i)
 		}
-		if !domain.IsKnownEventType(on) {
-			return fmt.Errorf("config.hooks[%d]: unknown event_type %q (see internal/domain/event.go::KnownEventTypes)", i, on)
+		if len(knownEvents) > 0 {
+			if _, ok := knownEvents[on]; !ok {
+				return fmt.Errorf("config.hooks[%d]: unknown event_type %q (declare it under config.events.definitions in the active kit)", i, on)
+			}
 		}
 
 		do := strings.TrimSpace(h.Do)

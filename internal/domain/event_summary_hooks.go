@@ -5,13 +5,9 @@ import (
 )
 
 func init() {
-	register(EventTypeHookExecuted, summarizeHookExecuted)
 	registerFormatter(EventTypeHookExecuted, summarizeHookExecuted)
-	register(EventTypeSubtaskKitNoticeEmitted, summarizeSubtaskKitNoticeEmitted)
 	registerFormatter(EventTypeSubtaskKitNoticeEmitted, summarizeSubtaskKitNoticeEmitted)
-	register(EventTypeBundleSwapped, summarizeBundleSwapped)
 	registerFormatter(EventTypeBundleSwapped, summarizeBundleSwapped)
-	register(EventTypeBundleImported, summarizeBundleImported)
 	registerFormatter(EventTypeBundleImported, summarizeBundleImported)
 }
 

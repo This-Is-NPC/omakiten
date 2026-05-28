@@ -19,32 +19,17 @@ import (
 //   - Never empty. Every branch returns at least the event_type as a
 //     last resort so the Logs grid never shows a blank cell.
 //
-// Implementation: each known event_type registers a summariser in its
-// per-category file's `init()`. The parity tests in
-// event_summary_test.go fail when a new event_type lands in event.go
-// without a corresponding register() call.
+// Dispatch goes through the YAML-loaded EventDefByKey table — each
+// definition's Formatter is the function its event_summary_*.go file
+// installed via registerFormatter() at init. Rows whose event_type is
+// absent from the registry (or whose definition lacks a formatter) fall
+// back to unknownFallback so the Logs grid still renders something
+// useful.
 func SummarizeEvent(row EventRow) string {
-	if fn, ok := summarizers[row.EventType]; ok {
-		return fn(row)
+	if def, ok := EventDefByKey[row.EventType]; ok && def.Formatter != nil {
+		return def.Formatter(row)
 	}
 	return unknownFallback(row)
-}
-
-// summarizers is the per-event_type dispatch table populated by
-// init() in event_summary_<category>.go. Lookup is O(1); the
-// duplicate-registration panic in register() guarantees a single
-// owner per event_type.
-var summarizers = map[string]func(EventRow) string{}
-
-// register installs an arm in the summarizers table. Panics on
-// duplicate registration so two categories cannot silently shadow
-// one another — the panic surfaces at process startup, not at the
-// first emission that hits the conflicting arm.
-func register(eventType string, fn func(EventRow) string) {
-	if _, dup := summarizers[eventType]; dup {
-		panic("duplicate summarizer registered for " + eventType)
-	}
-	summarizers[eventType] = fn
 }
 
 // unknownFallback renders rows whose event_type is not registered.

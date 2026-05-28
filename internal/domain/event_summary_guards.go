@@ -5,7 +5,6 @@ import (
 )
 
 func init() {
-	register(EventTypeGuardViolated, summarizeGuardViolated)
 	registerFormatter(EventTypeGuardViolated, summarizeGuardViolated)
 }
 

@@ -5,17 +5,11 @@ import (
 )
 
 func init() {
-	register(EventTypePlanCreated, summarizePlanCreated)
 	registerFormatter(EventTypePlanCreated, summarizePlanCreated)
-	register(EventTypePlanWaveAdded, summarizePlanWaveAdded)
 	registerFormatter(EventTypePlanWaveAdded, summarizePlanWaveAdded)
-	register(EventTypePlanGoalEdited, summarizePlanGoalEdited)
 	registerFormatter(EventTypePlanGoalEdited, summarizePlanGoalEdited)
-	register(EventTypePlanDone, summarizePlanDone)
 	registerFormatter(EventTypePlanDone, summarizePlanDone)
-	register(EventTypePlanAbandoned, summarizePlanAbandoned)
 	registerFormatter(EventTypePlanAbandoned, summarizePlanAbandoned)
-	register(EventTypeTrickExecuted, summarizeTrickExecuted)
 	registerFormatter(EventTypeTrickExecuted, summarizeTrickExecuted)
 }
 

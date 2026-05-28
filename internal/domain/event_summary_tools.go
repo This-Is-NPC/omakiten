@@ -6,11 +6,8 @@ import (
 )
 
 func init() {
-	register(EventTypeCLIToolCall, summarizeToolCall)
 	registerFormatter(EventTypeCLIToolCall, summarizeToolCall)
-	register(EventTypeMCPToolCall, summarizeToolCall)
 	registerFormatter(EventTypeMCPToolCall, summarizeToolCall)
-	register(EventTypeTUIToolCall, summarizeToolCall)
 	registerFormatter(EventTypeTUIToolCall, summarizeToolCall)
 }
 

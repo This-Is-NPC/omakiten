@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"sort"
 
 	"gopkg.in/yaml.v3"
 )
@@ -62,6 +63,7 @@ func LoadEventRegistryFromYAML(payload []byte) error {
 	}
 	defs := make([]EventDef, 0, len(parsed.Definitions))
 	byKey := make(map[string]EventDef, len(parsed.Definitions))
+	keys := make([]string, 0, len(parsed.Definitions))
 	for key, raw := range parsed.Definitions {
 		if raw.Category == "" {
 			return fmt.Errorf("event_registry_loader: %q missing category", key)
@@ -84,9 +86,12 @@ func LoadEventRegistryFromYAML(payload []byte) error {
 		}
 		defs = append(defs, def)
 		byKey[key] = def
+		keys = append(keys, key)
 	}
+	sort.Strings(keys)
 	EventDefinitions = defs
 	EventDefByKey = byKey
+	KnownEventTypes = keys
 	return nil
 }
 

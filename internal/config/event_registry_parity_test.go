@@ -35,11 +35,6 @@ var kitKeys = []string{"izakaya", "kaiseki", "omakase", "shokunin"}
 // runtime uses, so a regression in either the YAML, the loader, or the
 // embed packaging surfaces here before it reaches a user.
 func TestEventRegistryYAMLParity(t *testing.T) {
-	knownSet := make(map[string]struct{}, len(domain.KnownEventTypes))
-	for _, k := range domain.KnownEventTypes {
-		knownSet[k] = struct{}{}
-	}
-
 	kits := make(map[string]map[string]config.EventDefinitionSettings, len(kitKeys))
 	for _, key := range kitKeys {
 		cfg, err := config.LoadKitConfigByKey(key)
@@ -50,6 +45,19 @@ func TestEventRegistryYAMLParity(t *testing.T) {
 			t.Fatalf("kit %q: events.definitions block is empty", key)
 		}
 		kits[key] = cfg.Events.Definitions
+	}
+
+	// Hydrate the domain registry from the omakase kit so
+	// domain.KnownEventTypes is populated. Phase 1 dropped the
+	// hand-maintained Go literal in favour of a loader-fed slice; tests
+	// that walk domain.KnownEventTypes must therefore prime the loader
+	// first, exactly as boot does at runtime.
+	if err := config.LoadDomainEventRegistry(kitEvents(t, "omakase")); err != nil {
+		t.Fatalf("LoadDomainEventRegistry(omakase): %v", err)
+	}
+	knownSet := make(map[string]struct{}, len(domain.KnownEventTypes))
+	for _, k := range domain.KnownEventTypes {
+		knownSet[k] = struct{}{}
 	}
 
 	t.Run("const_yaml_key_parity", func(t *testing.T) {
@@ -145,6 +153,18 @@ func TestEventRegistryYAMLParity(t *testing.T) {
 			})
 		}
 	})
+}
+
+// kitEvents loads a kit by key and returns its EventsSettings so the
+// parity test can hand it to config.LoadDomainEventRegistry without
+// re-running the LoadKitConfigByKey gymnastics for each access.
+func kitEvents(t *testing.T, key string) config.EventsSettings {
+	t.Helper()
+	cfg, err := config.LoadKitConfigByKey(key)
+	if err != nil {
+		t.Fatalf("LoadKitConfigByKey(%q): %v", key, err)
+	}
+	return cfg.Events
 }
 
 func keysOf(m map[string]config.EventDefinitionSettings) []string {

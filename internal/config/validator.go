@@ -103,8 +103,12 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	// Action-name resolution happens at composition root (after the
 	// runtime registers built-ins); skip it here so plain LoadBundle
 	// callers (tests, CLI subcommands) still validate event-type +
-	// argv shape without needing an engine.
-	if err := ValidateHooks(bundle.Config.Hooks, nil, bundle.Notifications); err != nil {
+	// argv shape without needing an engine. The kit-local definitions
+	// map supplies the closed set of valid event_types — the domain
+	// registry is empty until LoadDomainEventRegistry runs, so passing
+	// the bundle's own definitions keeps the typo guard intact during
+	// LoadBundle.
+	if err := ValidateHooks(bundle.Config.Hooks, KnownEventsFromDefinitions(bundle.Config.Events.Definitions), nil, bundle.Notifications); err != nil {
 		return err
 	}
 	if err := validateTricksSettings(bundle.Config.Tricks, bundle.Config.Hooks); err != nil {
@@ -391,11 +395,27 @@ func validateEventsSettings(e EventsSettings) error {
 		return fmt.Errorf("config.events.defaults.hook: required (see defaults/omakiten.yaml)")
 	}
 	for key := range e.Overrides {
-		if !domain.IsKnownEventType(key) {
-			return fmt.Errorf("config.events.overrides: unknown event_type %q (see internal/domain/event.go::KnownEventTypes)", key)
+		if _, ok := e.Definitions[key]; !ok {
+			return fmt.Errorf("config.events.overrides: unknown event_type %q (declare it under config.events.definitions in the active kit)", key)
 		}
 	}
 	return nil
+}
+
+// KnownEventsFromDefinitions converts an EventsSettings.Definitions map
+// into the set shape ValidateHooks expects. Empty input returns nil so
+// callers without an events block (test fixtures) skip the typo guard.
+// Exported because agentruntime composes hook validation against the
+// project's bundle without going through ValidateBundle.
+func KnownEventsFromDefinitions(defs map[string]EventDefinitionSettings) map[string]struct{} {
+	if len(defs) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(defs))
+	for k := range defs {
+		out[k] = struct{}{}
+	}
+	return out
 }
 
 // validateTricksSettings enforces the shape of the tricks: block:
