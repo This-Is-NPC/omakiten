@@ -21,7 +21,7 @@ const (
 // AgentMetrics aggregates per-AI-model behaviour over a period. Drives the
 // /metrics.summary tool: each row is one model, computed from the unified
 // events log filtered to domain events tagged with a `metric:` value in
-// the YAML registry (error.recorded, error.searched, solution.added,
+// the YAML registry (error.recorded, errors.researched, solution.added,
 // solution.liked, solution.failed, solution.viewed_top).
 //
 // LikeRate divides liked solutions by added solutions (0 when none added).

@@ -135,12 +135,12 @@ config:
         entity_type: error
         metric: error_recorded
         formatter: error.recorded
-      error.searched:
+      errors.researched:
         category: audit
-        display: "error searched"
-        entity_type: error
+        display: "errors researched"
+        entity_type: search
         metric: error_searched
-        formatter: error.searched
+        formatter: errors.researched
       solution.added:
         category: audit
         display: "solution added"
@@ -298,9 +298,9 @@ config:
     - on: error.recorded
       notification: kitten_knowledge
       message: "${{intl:notifications.shokunin.error_recorded.message}}"
-    - on: error.searched
+    - on: errors.researched
       notification: kitten_knowledge
-      message: "${{intl:notifications.shokunin.error_searched.message}}"
+      message: "${{intl:notifications.shokunin.errors_researched.message}}"
     - on: solution.added
       notification: kitten_knowledge
       message: "${{intl:notifications.shokunin.solution_added.message}}"

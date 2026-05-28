@@ -17,9 +17,9 @@ import (
 // SearchRepository. Empty `entityTypes` is treated as "all five".
 //
 // When the search covers errors (entity types include "error" or the
-// filter is empty), the service still emits the legacy `error.searched`
-// domain event so /metrics.summary keeps producing the "search before
-// record" ratio per AI model.
+// filter is empty), the service emits the `errors.researched` domain
+// event so /metrics.summary keeps producing the "search before record"
+// ratio per AI model.
 type SearchService struct {
 	repo   SearchRepository
 	events EventRepository
@@ -81,7 +81,7 @@ func (s *SearchService) Search(ctx context.Context, project domain.ProjectContex
 			"unified":      true,
 		})
 		if marshalErr == nil {
-			_ = s.events.RecordEntityEvent(ctx, "error", 0, project.ID, domain.EventTypeErrorSearched, string(payload))
+			_ = s.events.RecordEntityEvent(ctx, "search", 0, project.ID, domain.EventTypeErrorsResearched, string(payload))
 		}
 	}
 	return

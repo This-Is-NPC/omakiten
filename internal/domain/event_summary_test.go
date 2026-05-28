@@ -256,9 +256,9 @@ func TestSummarizeEventPerTypeRendering(t *testing.T) {
 			row:  EventRow{EventType: EventTypeErrorRecorded, Payload: `{"tags":["sql","timeout"],"has_context":true}`},
 			want: "error recorded #sql #timeout (+context)",
 		},
-		"error.searched": {
-			row:  EventRow{EventType: EventTypeErrorSearched, Payload: `{"query":"connection","tags":[],"result_count":4}`},
-			want: `searched "connection" → 4 hit(s)`,
+		"errors.researched": {
+			row:  EventRow{EventType: EventTypeErrorsResearched, Payload: `{"query":"connection","tags":[],"result_count":4}`},
+			want: `researched "connection" → 4 hit(s)`,
 		},
 		"solution.added": {
 			row:  EventRow{EventType: EventTypeSolutionAdded, Payload: `{"error_id":11}`},

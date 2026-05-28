@@ -35,7 +35,7 @@ func TestSearchServiceRejectsUnknownEntityType(t *testing.T) {
 	assertCodedError(t, err, domain.ErrValidation)
 }
 
-func TestSearchServiceEmitsErrorSearchedForErrorScope(t *testing.T) {
+func TestSearchServiceEmitsErrorsResearchedForErrorScope(t *testing.T) {
 	ctx := activity.WithAgent(context.Background(), "mcp", "search", "claude-opus-4-7", "sess-1")
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
@@ -50,13 +50,13 @@ func TestSearchServiceEmitsErrorSearchedForErrorScope(t *testing.T) {
 		t.Fatalf("Search: %v", err)
 	}
 
-	ev := assertLatestEvent(t, store, domain.EventTypeErrorSearched, "error", 0, "claude-opus-4-7", "sess-1")
+	ev := assertLatestEvent(t, store, domain.EventTypeErrorsResearched, "search", 0, "claude-opus-4-7", "sess-1")
 	if !strings.Contains(ev.Payload, `"unified":true`) {
-		t.Fatalf("error.searched payload missing unified marker: %s", ev.Payload)
+		t.Fatalf("errors.researched payload missing unified marker: %s", ev.Payload)
 	}
 }
 
-func TestSearchServiceSkipsErrorSearchedWhenScopeExcludesError(t *testing.T) {
+func TestSearchServiceSkipsErrorsResearchedWhenScopeExcludesError(t *testing.T) {
 	ctx := activity.WithAgent(context.Background(), "mcp", "search", "claude-opus-4-7", "sess-2")
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
@@ -66,24 +66,24 @@ func TestSearchServiceSkipsErrorSearchedWhenScopeExcludesError(t *testing.T) {
 		t.Fatalf("Search: %v", err)
 	}
 
-	// Fresh store + task-only scope ⇒ zero error.searched events should
+	// Fresh store + task-only scope ⇒ zero errors.researched events should
 	// exist. Asserting absence of any row (rather than just absence of
 	// the unified marker) catches regressions where an old-shape payload
 	// would slip through.
-	recent, err := store.ListRecentEvents(ctx, domain.EventTypeErrorSearched, 50)
+	recent, err := store.ListRecentEvents(ctx, domain.EventTypeErrorsResearched, 50)
 	if err != nil {
 		t.Fatalf("ListRecentEvents: %v", err)
 	}
 	if len(recent) != 0 {
-		t.Fatalf("expected zero error.searched events for task-only scope, got %d: %+v", len(recent), recent)
+		t.Fatalf("expected zero errors.researched events for task-only scope, got %d: %+v", len(recent), recent)
 	}
 }
 
-// Cross-project search (project.ID == 0) must still emit error.searched
+// Cross-project search (project.ID == 0) must still emit errors.researched
 // when the scope covers errors, and the payload must carry the unified
-// marker. Coverage gap: TestSearchServiceEmitsErrorSearchedForErrorScope
+// marker. Coverage gap: TestSearchServiceEmitsErrorsResearchedForErrorScope
 // only exercises the per-project path.
-func TestSearchServiceEmitsErrorSearchedForCrossProjectScope(t *testing.T) {
+func TestSearchServiceEmitsErrorsResearchedForCrossProjectScope(t *testing.T) {
 	ctx := activity.WithAgent(context.Background(), "mcp", "search", "claude-opus-4-7", "sess-3")
 	store, project := appTestStore(t, appTestBundle(t, 1000))
 	defer func() { _ = store.Close() }()
@@ -99,9 +99,9 @@ func TestSearchServiceEmitsErrorSearchedForCrossProjectScope(t *testing.T) {
 	}
 
 	// project.ID = 0 propagates to RecordEntityEvent; assertLatestEvent
-	// expects entityID==0 (errors have no specific entity here either).
-	ev := assertLatestEvent(t, store, domain.EventTypeErrorSearched, "error", 0, "claude-opus-4-7", "sess-3")
+	// expects entityID==0 (the search action targets no specific entity).
+	ev := assertLatestEvent(t, store, domain.EventTypeErrorsResearched, "search", 0, "claude-opus-4-7", "sess-3")
 	if !strings.Contains(ev.Payload, `"unified":true`) {
-		t.Fatalf("cross-project error.searched payload missing unified marker: %s", ev.Payload)
+		t.Fatalf("cross-project errors.researched payload missing unified marker: %s", ev.Payload)
 	}
 }

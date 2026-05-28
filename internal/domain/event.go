@@ -202,9 +202,11 @@ const (
 	// EventTypeErrorRecorded fires when ErrorService.Record persists a
 	// new error row. EntityType=error, Payload={tags, has_context}.
 	EventTypeErrorRecorded = "error.recorded"
-	// EventTypeErrorSearched fires when ErrorService.Search runs.
-	// EntityType=error (entity_id=0), Payload={query, tags, result_count}.
-	EventTypeErrorSearched = "error.searched"
+	// EventTypeErrorsResearched fires when SearchService.Search runs over
+	// the error entity type — semantically "the agent researched existing
+	// errors before recording a new one". EntityType=search (entity_id=0),
+	// Payload={query, entity_types, result_count, unified}.
+	EventTypeErrorsResearched = "errors.researched"
 	// EventTypeSolutionAdded fires when ErrorService.AddSolution
 	// persists a candidate. EntityType=solution, Payload={error_id}.
 	EventTypeSolutionAdded = "solution.added"
@@ -273,7 +275,7 @@ const (
 	// EventEntityTask scopes events to a task row (entity_id is the task id).
 	EventEntityTask = "task"
 	// EventEntitySystem scopes events that don't tie to a single row
-	// (e.g. solution.viewed_top, error.searched).
+	// (e.g. solution.viewed_top, errors.researched).
 	EventEntitySystem = "system"
 	// EventEntityProject scopes events whose primary subject is a project
 	// (project tag adds/removes today).
