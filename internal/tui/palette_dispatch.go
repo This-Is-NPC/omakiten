@@ -149,24 +149,52 @@ func buildPaletteRegistry(repos Repositories) (*palette.Registry, error) {
 	return reg, err
 }
 
-// dispatchPaletteSearch runs the FTS5 query and folds the result
-// into the palette's inline status. The MVP renders the top three
-// hits as `task #<id> [snippet]` lines — usable for verification
-// without a dedicated results pane. Full results UI is tracked as
-// a follow-up; the wire-up here proves AC 2 (Search tab functional).
+// paletteSearchResultMsg is the async tail of dispatchPaletteSearch.
+// Carrying the formatted status string (not the raw SearchHit slice)
+// keeps Update arm free of snippet truncation logic and means the
+// goroutine returns a fully-rendered result the UI assigns directly.
+type paletteSearchResultMsg struct {
+	query  string
+	status string
+}
+
+// dispatchPaletteSearch returns a tea.Cmd that runs the FTS5 query
+// off the UI goroutine. The synchronous original blocked Update for
+// the full Search round-trip (FTS5 query + activity.Track writes), so
+// even a sub-100ms call read as a freeze because the palette could
+// not redraw until Update returned. Hand the work to a goroutine via
+// tea.Cmd, post paletteSearchResultMsg back, and let the root Update
+// fold the formatted status into the open overlay. Mirrors the
+// existing dispatchNotification + home project delete patterns.
+//
+// Pre-dispatch the helper sets a "searching <query>…" status
+// synchronously so the user gets immediate feedback while the
+// goroutine works.
 func (m *Model) dispatchPaletteSearch(query string) tea.Cmd {
 	if m.repos.Search == nil {
 		m.palette.SetStatus("search not wired in this build")
 		return nil
 	}
-	hits, err := m.repos.Search.Search(m.ctx, m.project, query, nil)
-	if err != nil {
-		m.palette.SetStatus("search failed: " + err.Error())
-		return nil
+	m.palette.SetStatus(fmt.Sprintf("searching %q…", query))
+	search := m.repos.Search
+	ctx := m.ctx
+	project := m.project
+	return func() tea.Msg {
+		hits, err := search.Search(ctx, project, query, nil)
+		if err != nil {
+			return paletteSearchResultMsg{query: query, status: "search failed: " + err.Error()}
+		}
+		return paletteSearchResultMsg{query: query, status: formatPaletteSearchResults(query, hits)}
 	}
+}
+
+// formatPaletteSearchResults renders the FTS5 hits as a result-count
+// header plus up to the first three rows. Pulled out of the dispatch
+// path so the goroutine produces a plain string and the Update arm
+// only has to assign it.
+func formatPaletteSearchResults(query string, hits []domain.SearchHit) string {
 	if len(hits) == 0 {
-		m.palette.SetStatus(fmt.Sprintf("no results for %q", query))
-		return nil
+		return fmt.Sprintf("no results for %q", query)
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d results", len(hits))
@@ -182,6 +210,5 @@ func (m *Model) dispatchPaletteSearch(query string) tea.Cmd {
 		}
 		fmt.Fprintf(&b, "\n  %s #%d %s", h.EntityType, h.ID, snippet)
 	}
-	m.palette.SetStatus(b.String())
-	return nil
+	return b.String()
 }

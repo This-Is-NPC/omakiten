@@ -4,8 +4,21 @@ import (
 	"strings"
 	"testing"
 
+	"omakiten/internal/app"
+	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/tui/palette"
 )
+
+// stubSearchService builds an isolated SearchService against a
+// per-test snapstore so dispatchPaletteSearch returns a non-nil
+// tea.Cmd without sharing storage with the picker model under
+// test (the picker fixture exposes the DB only via repos.Tasks,
+// which is not assignable to *sqlite.Store at this seam).
+func stubSearchService(t *testing.T) *app.SearchService {
+	t.Helper()
+	store := snapstore.Open(t, t.TempDir()+"/search.db")
+	return app.NewSearchService(store.Store, store.Store)
+}
 
 func TestDispatchTrickNavResolvesAndCloses(t *testing.T) {
 	model, _ := newPickerModel(t)
@@ -90,6 +103,60 @@ func TestJumpToRouteAllBindingsResolve(t *testing.T) {
 		if err := model.jumpToRoute(descriptor.Route); err != nil {
 			t.Errorf("jumpToRoute(%q) error = %v", descriptor.Route, err)
 		}
+	}
+}
+
+func TestDispatchPaletteSearchReturnsCmdWhenRepoPresent(t *testing.T) {
+	model, _ := newPickerModel(t)
+	model.repos.Search = stubSearchService(t)
+	model.paletteOpen = true
+	model.palette = palette.NewModel()
+	cmd := model.dispatchPaletteSearch("anything")
+	if cmd == nil {
+		t.Fatalf("dispatchPaletteSearch returned nil cmd; expected async tea.Cmd")
+	}
+	if model.palette.Status() == "" {
+		t.Fatalf("synchronous pre-status not set; user should see immediate feedback")
+	}
+	if !strings.Contains(model.palette.Status(), "searching") {
+		t.Fatalf("pre-status = %q, want \"searching\" prefix", model.palette.Status())
+	}
+}
+
+func TestDispatchPaletteSearchNilRepoStaysSyncStatus(t *testing.T) {
+	model, _ := newPickerModel(t)
+	model.repos.Search = nil
+	model.paletteOpen = true
+	model.palette = palette.NewModel()
+	cmd := model.dispatchPaletteSearch("anything")
+	if cmd != nil {
+		t.Fatalf("nil-repo path should not return a cmd; got %v", cmd)
+	}
+	if !strings.Contains(model.palette.Status(), "not wired") {
+		t.Fatalf("status = %q, want \"not wired\" mention", model.palette.Status())
+	}
+}
+
+func TestPaletteSearchResultMsgUpdatesStatusWhenOpen(t *testing.T) {
+	model, _ := newPickerModel(t)
+	model.paletteOpen = true
+	model.palette = palette.NewModel()
+	next, _ := model.Update(paletteSearchResultMsg{query: "x", status: "12 results"})
+	got := next.(Model)
+	if got.palette.Status() != "12 results" {
+		t.Fatalf("after result msg, status = %q, want \"12 results\"", got.palette.Status())
+	}
+}
+
+func TestPaletteSearchResultMsgIgnoredWhenClosed(t *testing.T) {
+	model, _ := newPickerModel(t)
+	model.paletteOpen = false
+	model.palette = palette.NewModel()
+	model.palette.SetStatus("stale")
+	next, _ := model.Update(paletteSearchResultMsg{query: "x", status: "fresh result"})
+	got := next.(Model)
+	if got.palette.Status() != "stale" {
+		t.Fatalf("closed-overlay path mutated status to %q; should leave prior value intact", got.palette.Status())
 	}
 }
 
