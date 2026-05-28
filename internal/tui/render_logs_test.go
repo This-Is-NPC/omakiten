@@ -452,6 +452,81 @@ func TestActivityLogRendersDisplayLabel(t *testing.T) {
 	})
 }
 
+// stubFixedEventRepo returns a pre-baked row slice from ListEvents.
+// Used by TestActivityLogLogVisibleFilterHidesAll to drive
+// refreshActivityLogs through a deterministic data source so the
+// LogVisible registry filter is the only variable.
+type stubFixedEventRepo struct {
+	stubEmptyEventRepo
+	rows []domain.EventRow
+}
+
+func (s stubFixedEventRepo) ListEvents(context.Context, domain.EventFilter) ([]domain.EventRow, error) {
+	out := make([]domain.EventRow, len(s.rows))
+	copy(out, s.rows)
+	return out, nil
+}
+
+// TestActivityLogLogVisibleFilterHidesAll locks the empty-buffer
+// short-circuit in refreshActivityLogs. When every fixture row maps
+// to an EventDef with LogVisible == false, filterLogVisibleRows
+// returns an empty slice. The cursor must drop to 0 (so later
+// renders / cursor lookups never address a stale index) and the
+// renderer must hit the canonical empty-state panel — never the
+// wide table headers.
+//
+// Reproduces the regression flagged on task #358 review: refresh
+// callers other than cycleLogsFilter did not reset logsSelected,
+// so a refresh that emptied the buffer left the cursor pointing
+// past the new len(events).
+func TestActivityLogLogVisibleFilterHidesAll(t *testing.T) {
+	prev := domain.EventDefByKey
+	cloned := make(map[string]domain.EventDef, len(prev))
+	for k, v := range prev {
+		cloned[k] = v
+	}
+	cloned["__test.hide_all_a"] = domain.EventDef{
+		Key:        "__test.hide_all_a",
+		Category:   domain.EventCategoryDomain,
+		LogVisible: false,
+		Formatter:  func(domain.EventRow) string { return "" },
+	}
+	cloned["__test.hide_all_b"] = domain.EventDef{
+		Key:        "__test.hide_all_b",
+		Category:   domain.EventCategoryDomain,
+		LogVisible: false,
+		Formatter:  func(domain.EventRow) string { return "" },
+	}
+	domain.EventDefByKey = cloned
+	t.Cleanup(func() { domain.EventDefByKey = prev })
+
+	model := newRenderLogsTestModel(t, 180)
+	model.ctx = context.Background()
+	model.repos.Events = stubFixedEventRepo{rows: []domain.EventRow{
+		{ID: 1, EventType: "__test.hide_all_a"},
+		{ID: 2, EventType: "__test.hide_all_b"},
+		{ID: 3, EventType: "__test.hide_all_a"},
+	}}
+	// Seed a non-zero cursor so we can prove refresh resets it.
+	model.logsSelected = 2
+
+	if err := model.refreshActivityLogs(); err != nil {
+		t.Fatalf("refreshActivityLogs: %v", err)
+	}
+	if len(model.events) != 0 {
+		t.Fatalf("events: got %d rows, want 0 (all filtered out)", len(model.events))
+	}
+	if model.logsSelected != 0 {
+		t.Fatalf("logsSelected: got %d, want 0 after empty filter", model.logsSelected)
+	}
+	view := ansi.Strip(model.renderLogs())
+	for _, banned := range []string{"TIME", "TYPE", "ENTITY", "WHO", "DETAIL"} {
+		if strings.Contains(view, banned) {
+			t.Errorf("filter-emptied Logs view unexpectedly carries wide column %q\n%s", banned, view)
+		}
+	}
+}
+
 // TestActivityLogLogVisibleFilterHides pins AC#3: filterLogVisibleRows
 // drops rows whose event_type maps to an EventDef with
 // LogVisible == false, while leaving registry-miss + LogVisible == true
