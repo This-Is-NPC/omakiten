@@ -411,11 +411,25 @@ func (m Model) footerTokens() []footerToken {
 		return []footerToken{
 			{key: "t", label: m.t("tui.footer.theme"), primary: true},
 			{key: "c", label: m.t("tui.footer.config"), primary: true},
+			{key: "s", label: m.t("tui.footer.subtask_kit"), primary: true},
 			{key: "e", label: m.t("tui.footer.edit"), primary: true},
 			{key: "j/k", label: m.t("tui.footer.scroll")},
 			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
 			{key: "g/G", label: m.t("tui.footer.top_bottom")},
-			{key: "r", label: m.t("tui.footer.refresh")},
+			{key: "tab", label: m.t("tui.footer.zones")},
+			{key: ",//", label: m.t("tui.footer.subs")},
+			{key: "ctrl+o", label: m.t("tui.footer.back")},
+			m.helpToken(),
+		}
+	case m.sub == subSettingsGuards:
+		return []footerToken{
+			{key: "t", label: m.t("tui.footer.theme"), primary: true},
+			{key: "c", label: m.t("tui.footer.config"), primary: true},
+			{key: "s", label: m.t("tui.footer.subtask_kit"), primary: true},
+			{key: "e", label: m.t("tui.footer.edit"), primary: true},
+			{key: "j/k", label: m.t("tui.footer.scroll")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
+			{key: "g/G", label: m.t("tui.footer.top_bottom")},
 			{key: "tab", label: m.t("tui.footer.zones")},
 			{key: ",//", label: m.t("tui.footer.subs")},
 			{key: "ctrl+o", label: m.t("tui.footer.back")},
@@ -440,6 +454,7 @@ func (m Model) footerTokens() []footerToken {
 	case m.sub == subSettingsTemplates:
 		return []footerToken{
 			{key: "enter", label: m.t("tui.footer.open"), primary: true},
+			{key: "e", label: m.t("tui.footer.edit"), primary: true},
 			{key: "a", label: m.t("tui.footer.default"), primary: true},
 			{key: "up/down", label: m.t("tui.footer.select")},
 			{key: "t", label: m.t("tui.footer.theme")},
@@ -453,13 +468,26 @@ func (m Model) footerTokens() []footerToken {
 			{key: "d", label: m.t("tui.footer.confirm_delete"), primary: true},
 			{key: "esc", label: m.t("tui.footer.cancel")},
 		}
-	case m.sub == subSettingsLaws || m.sub == subSettingsPersonas || m.sub == subSettingsSkills:
+	case m.sub == subSettingsPersonas:
 		return []footerToken{
 			{key: "enter", label: m.t("tui.footer.open"), primary: true},
 			{key: "n", label: m.t("tui.footer.new"), primary: true},
 			{key: "e", label: m.t("tui.footer.edit"), primary: true},
 			{key: "d", label: m.t("tui.footer.arm_delete")},
 			{key: "p", label: m.t("tui.footer.skills_persona")},
+			{key: "up/down", label: m.t("tui.footer.select")},
+			{key: "t", label: m.t("tui.footer.theme")},
+			{key: "c", label: m.t("tui.footer.config")},
+			{key: "tab", label: m.t("tui.footer.zones")},
+			{key: ",//", label: m.t("tui.footer.subs")},
+			m.helpToken(),
+		}
+	case m.sub == subSettingsLaws || m.sub == subSettingsSkills:
+		return []footerToken{
+			{key: "enter", label: m.t("tui.footer.open"), primary: true},
+			{key: "n", label: m.t("tui.footer.new"), primary: true},
+			{key: "e", label: m.t("tui.footer.edit"), primary: true},
+			{key: "d", label: m.t("tui.footer.arm_delete")},
 			{key: "up/down", label: m.t("tui.footer.select")},
 			{key: "t", label: m.t("tui.footer.theme")},
 			{key: "c", label: m.t("tui.footer.config")},
