@@ -11,3 +11,14 @@ colors:
   error: "#ED8796"
   border: "#494D64"
   highlight: "#363A4F"
+  # Per-category accents for the Logs event inspector. Hex values come from
+  # the canonical Catppuccin Macchiato palette so the chips stay tonally
+  # on-brand. Omitting any of these falls back to `border` via the `hint`
+  # style — never a panic, never an unstyled glyph.
+  category.tasks: "#8AADF4"   # blue
+  category.comment: "#C6A0F6" # mauve
+  category.plan: "#EED49F"    # yellow
+  category.audit: "#8BD5CA"   # teal
+  category.guard: "#ED8796"   # red
+  category.trick: "#F5BDE6"   # pink
+  category.tool_call: "#A6DA95" # green
