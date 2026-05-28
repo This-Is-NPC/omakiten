@@ -6,17 +6,20 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"omakiten/internal/app/guards"
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
+	"omakiten/internal/testfakes/eventrepo"
 )
 
 // fakeStores groups every port WorkflowService composes so tests can stub
 // each behavior independently. Defaults (zero values) are inert: lists are
-// empty, transitions are disallowed, and counts are zero.
+// empty, transitions are disallowed, and counts are zero. The EventRepository
+// surface is inherited from eventrepo.NoOp — only RecordTaskEvent and
+// RecordEntityEvent are overridden below so tests can assert on eventCalls.
 type fakeStores struct {
+	eventrepo.NoOp
 	defaultBucket    string
 	bucketsByKey     map[string]domain.Bucket
 	allowedFromTo    map[[2]int64]bool
@@ -199,7 +202,10 @@ func (f *fakeStores) CountDescendants(context.Context, int64, int64) (int, error
 	return 0, nil
 }
 
-// EventRepository
+// EventRepository — the recording methods append to eventCalls so tests can
+// assert on emitted events. The remaining no-op methods (ListTaskActivity,
+// ListEvents, EventCategoryCounts) are inherited from the embedded
+// eventrepo.NoOp.
 func (f *fakeStores) RecordTaskEvent(_ context.Context, projectID, taskID int64, eventType, _, payload string) (domain.Event, error) {
 	f.eventCalls = append(f.eventCalls, recordedEvent{projectID, taskID, eventType, payload})
 	return domain.Event{}, nil
@@ -207,15 +213,6 @@ func (f *fakeStores) RecordTaskEvent(_ context.Context, projectID, taskID int64,
 func (f *fakeStores) RecordEntityEvent(_ context.Context, _ string, entityID, projectID int64, eventType, payload string) error {
 	f.eventCalls = append(f.eventCalls, recordedEvent{projectID, entityID, eventType, payload})
 	return nil
-}
-func (f *fakeStores) ListTaskActivity(context.Context, int64, int64, string) ([]domain.Event, error) {
-	return nil, nil
-}
-func (f *fakeStores) ListEvents(context.Context, domain.EventFilter) ([]domain.EventRow, error) {
-	return nil, nil
-}
-func (f *fakeStores) EventCategoryCounts(context.Context, int64, time.Time) (map[domain.EventCategory]int, error) {
-	return nil, nil
 }
 
 func newWorkflowServiceForTest(f *fakeStores) *WorkflowService {
