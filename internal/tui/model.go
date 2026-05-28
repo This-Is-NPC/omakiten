@@ -689,14 +689,15 @@ func (m *Model) logsSinceFloor(windowDays int) time.Time {
 	return time.Now().Add(-time.Duration(windowDays) * 24 * time.Hour)
 }
 
-// logsCategoryFilter is the seam sub-task #326 (Logs F-chip toggle)
-// will populate from the active filter selection. Today it always
-// returns nil — domain.EventFilter treats that as "no category
-// filter", so the default view surfaces every event_type. Keeping
-// the indirection here means the chip wiring lands in one place
-// without touching renderActivityLogs or the renderer body.
+// logsCategoryFilter projects the active LogsFilterMode onto the
+// repository's EventFilter.Categories slice. Returns nil for
+// LogsFilterAll so domain.EventFilter treats it as "no category
+// filter" — the default view surfaces every event_type recorded in
+// the snapshot's logs.window_days horizon. Sub-task #326 wires the
+// F-chip toggle through here; the renderer and refreshActivityLogs
+// both read the same seam so chip state and panel rows stay aligned.
 func (m *Model) logsCategoryFilter() []domain.EventCategory {
-	return nil
+	return logsFilterCategories(m.logsFilterMode)
 }
 
 func (m *Model) refreshStats() error {

@@ -442,6 +442,14 @@ type Model struct {
 	// EventRepository.EventCategoryCounts.
 	events       []domain.EventRow
 	logsSelected int
+	// logsFilterMode is the active filter preset for the Stats › Logs
+	// inspector. Cycled by `f` (forward) and `shift+F` (backward) via
+	// handleLogsKey; folded into the repository fetch through
+	// Model.logsCategoryFilter on every refreshActivityLogs tick. Zero
+	// value (LogsFilterAll) is the no-op filter, so a freshly opened
+	// Logs view surfaces every event_type without any user action.
+	// State preserved across refresh because it lives on Model.
+	logsFilterMode LogsFilterMode
 	// eventStats holds the unbounded aggregates the Logs inspector
 	// summary tables render: per-category counts (every known
 	// category present, count 0 acceptable) and a tool_call health
