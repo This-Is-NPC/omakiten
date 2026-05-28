@@ -58,12 +58,12 @@ type eventRegistryDefaults struct {
 }
 
 type eventRegistryDefinition struct {
-	Category   string  `yaml:"category"`
-	Display    string  `yaml:"display"`
-	EntityType *string `yaml:"entity_type,omitempty"`
-	Metric     *string `yaml:"metric,omitempty"`
-	LogVisible *bool   `yaml:"log_visible,omitempty"`
-	Formatter  string  `yaml:"formatter"`
+	Category   string      `yaml:"category"`
+	Display    string      `yaml:"display"`
+	EntityType *string     `yaml:"entity_type,omitempty"`
+	Metric     *string     `yaml:"metric,omitempty"`
+	LogVisible *bool       `yaml:"log_visible,omitempty"`
+	Formatter  FormatterID `yaml:"formatter"`
 }
 
 // LoadEventRegistryFromYAML parses a YAML byte payload (typically the

@@ -114,7 +114,7 @@ func TestEventRegistryYAMLParity(t *testing.T) {
 						t.Errorf("kit %q: definition %q missing formatter id", key, k)
 						continue
 					}
-					if _, ok := domain.ResolveFormatter(def.Formatter); !ok {
+					if _, ok := domain.ResolveFormatter(domain.FormatterID(def.Formatter)); !ok {
 						t.Errorf("kit %q: definition %q formatter id %q not registered in domain.formatterRegistry",
 							key, k, def.Formatter)
 					}

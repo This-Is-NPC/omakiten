@@ -8,7 +8,7 @@ import (
 
 // setupTestFormatter registers a test formatter id and queues cleanup so the
 // global formatterRegistry stays isolated across tests.
-func setupTestFormatter(t *testing.T, id string, fn func(EventRow) string) {
+func setupTestFormatter(t *testing.T, id FormatterID, fn func(EventRow) string) {
 	t.Helper()
 	registerFormatter(id, fn)
 	t.Cleanup(func() {
