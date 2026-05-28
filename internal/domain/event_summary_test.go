@@ -329,9 +329,12 @@ func TestSummarizeEventDeterministic(t *testing.T) {
 // later tests.
 func TestRegisterDuplicatePanics(t *testing.T) {
 	const ev = "_test.register_duplicate_panics"
-	// Ensure the slot is empty even if a prior run leaked.
+	// Ensure the slot is empty even if a prior run leaked, and register
+	// cleanup before the first register() call. t.Cleanup runs
+	// unconditionally on teardown, so the global map is restored even if
+	// the second register() panics before a defer line could be reached.
 	delete(summarizers, ev)
-	defer delete(summarizers, ev)
+	t.Cleanup(func() { delete(summarizers, ev) })
 
 	register(ev, func(EventRow) string { return "first" })
 
