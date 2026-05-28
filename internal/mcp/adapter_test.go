@@ -694,6 +694,10 @@ func TestAdapterServiceResolverRoutesByProjectArg(t *testing.T) {
 // newMCPProjectFixture builds a self-contained sqlite store + project +
 // task triple keyed by slug. Used by per-project routing tests where
 // two adapters need to point at distinct underlying state.
+//
+// slug is fixture-arbitrary: pick any non-empty string the test
+// asserts against. Each call provisions its own TempDir-backed store
+// so multiple invocations in the same test do not collide.
 func newMCPProjectFixture(t *testing.T, ctx context.Context, slug string) (*snapstore.Store, domain.Project) {
 	t.Helper()
 	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
@@ -1122,6 +1126,12 @@ func snippet(r ToolResult) string {
 // store, registers a project under slug, and seeds a single backlog
 // task so dispatch tests have something to operate on. Returns the
 // triple every per-project test needs.
+//
+// slug is fixture-arbitrary: callers commonly pass "alpha" / "bravo"
+// for two-project routing tests, but any non-empty string works. The
+// helper is safe to invoke multiple times in the same test with
+// distinct slugs — each call provisions its own TempDir-backed store
+// so the resulting (store, project, task) triples do not collide.
 func newMCPProjectWithBundle(t *testing.T, ctx context.Context, slug string, bundle config.Bundle) (*snapstore.Store, domain.Project, domain.Task) {
 	t.Helper()
 	store := snapstore.Open(t, filepath.Join(t.TempDir(), "omakiten.db"))
