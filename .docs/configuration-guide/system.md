@@ -384,6 +384,7 @@ The runtime applies one substitution; `golang` → `go` works, but if you also d
 | Bad template `default` | `templates.<slug>: default "<kind>" is not in config.template_defaults` |
 | Two templates claiming the same `(default, project)` | `templates.<a> and templates.<b> both declare default="<kind>" (<scope>)` |
 | Bad view sort/filter | `config.views.<view>.* "<v>" is not one of [...]` |
+| Missing/zero `config.views.logs.window_days` | `config.views.logs.window_days: must be > 0 (see defaults/omakiten.yaml)` |
 | Project laws referencing a non-existent law | `projects.<slug> laws: ref "<slug>" has no matching law file` |
 | Missing/zero `config.sqlite.busy_timeout_ms` | `config.sqlite.busy_timeout_ms: must be > 0 (see defaults/config/omakase.yaml)` |
 | Missing/zero `config.activity_log.{max_rows, max_age_days}` | `config.activity_log.max_rows: must be > 0 (see defaults/config/omakase.yaml)` |
@@ -419,7 +420,7 @@ config:
   views:
     board: { sort: { field: created_at, order: desc }, filter: { priority: [high, normal] } }
     table: { sort: { field: title,      order: asc  } }
-    logs:  { limit: 100 }
+    logs:  { limit: 100, window_days: 30 }
   sqlite:       { busy_timeout_ms: 5000 }
   activity_log: { max_rows: 500, max_age_days: 7 }
   solutions:    { default_top_limit: 10, max_top_limit: 100 }

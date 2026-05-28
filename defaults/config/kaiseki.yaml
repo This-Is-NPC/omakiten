@@ -164,6 +164,7 @@ config:
     logs:
       sort: {order: desc}
       limit: 50
+      window_days: 30
       filter: {source: []}
     task_activity:
       sort: {order: asc}

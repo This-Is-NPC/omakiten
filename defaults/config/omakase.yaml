@@ -339,6 +339,7 @@ config:
       sort:
         order: desc         # only direction is configurable for logs
       limit: 50
+      window_days: 30       # default time horizon for the LOGS view (days)
       filter:
         source: []          # subset of [cli, tui, mcp]
     task_activity:

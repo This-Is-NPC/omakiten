@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"omakiten/internal/domain"
 )
@@ -155,6 +156,32 @@ func TestSnapshotExposesActiveTheme(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "custom=") || !strings.Contains(err.Error(), "default=") {
 		t.Fatalf("failing bundle: snap.ThemeError() message %q does not name both candidate paths", err.Error())
+	}
+}
+
+// TestSnapshotLogsWindowDays pins the day-to-duration math the LOGS-view
+// consumers depend on. Configured `window_days: N` must come out of
+// Snapshot.LogsWindowDays() as N*24h so call sites can pass it straight
+// to `time.Now().Add(-d)` without re-doing the conversion.
+func TestSnapshotLogsWindowDays(t *testing.T) {
+	cases := map[string]struct {
+		windowDays int
+		want       time.Duration
+	}{
+		"kit default 30":     {windowDays: 30, want: 30 * 24 * time.Hour},
+		"short window 7":     {windowDays: 7, want: 7 * 24 * time.Hour},
+		"long window 365":    {windowDays: 365, want: 365 * 24 * time.Hour},
+		"single day":         {windowDays: 1, want: 24 * time.Hour},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			bundle := newTwoBucketBundle("alpha", "beta")
+			bundle.Config.Views.Logs.WindowDays = tc.windowDays
+			snap := BuildSnapshot(bundle)
+			if got := snap.LogsWindowDays(); got != tc.want {
+				t.Fatalf("LogsWindowDays() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
