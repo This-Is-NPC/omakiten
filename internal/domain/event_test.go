@@ -43,6 +43,7 @@ func TestKnownEventTypesCoversCatalog(t *testing.T) {
 		EventTypeCLIToolCall:         {},
 		EventTypeMCPToolCall:         {},
 		EventTypeTUIToolCall:         {},
+		EventTypeTrickExecuted:       {},
 	}
 	if len(KnownEventTypes) != len(want) {
 		t.Fatalf("KnownEventTypes len = %d, want %d", len(KnownEventTypes), len(want))

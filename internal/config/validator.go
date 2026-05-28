@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -105,6 +106,9 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	// callers (tests, CLI subcommands) still validate event-type +
 	// argv shape without needing an engine.
 	if err := ValidateHooks(bundle.Config.Hooks, nil, bundle.Notifications); err != nil {
+		return err
+	}
+	if err := validateTricksSettings(bundle.Config.Tricks, bundle.Config.Hooks); err != nil {
 		return err
 	}
 	if err := validateSearchSettings(bundle.Config.Search); err != nil {
@@ -394,6 +398,45 @@ func validateEventsSettings(e EventsSettings) error {
 	}
 	return nil
 }
+
+// validateTricksSettings enforces the shape of the tricks: block:
+//   - every nav override code matches the positional 2-digit grammar
+//     (^[1-9][1-9]$); typos fail at load time, not at first keypress
+//   - every nav override route slug is a non-empty string (semantic
+//     route-table check is owned by palette.New at TUI bind time so
+//     this package stays free of an import cycle into internal/tui)
+//   - no HookSpec.When["verb"] entry matches a domain.ReservedTrickVerbs
+//     value — built-in dispatch for `nav`/`op` is hard-coded in the
+//     palette handler, so a user hook filtering on those verbs would
+//     shadow the built-in behaviour expected by every other user
+func validateTricksSettings(t TricksSettings, hooks []HookSpec) error {
+	for code, route := range t.Nav {
+		if !trickNavCodePattern.MatchString(code) {
+			return fmt.Errorf("config.tricks.nav: code %q is malformed (want 2 digits in 1-9, e.g. \"11\" or \"33\")", code)
+		}
+		if strings.TrimSpace(route) == "" {
+			return fmt.Errorf("config.tricks.nav[%q]: route slug must be non-empty", code)
+		}
+	}
+	for i, hook := range hooks {
+		verb, ok := hook.When["verb"]
+		if !ok {
+			continue
+		}
+		if domain.IsReservedTrickVerb(verb) {
+			return fmt.Errorf("config.hooks[%d].when.verb: %q is reserved by the trick palette built-in handler; pick a different verb (reserved: %v)", i, verb, domain.ReservedTrickVerbs)
+		}
+	}
+	return nil
+}
+
+// trickNavCodePattern is the positional 2-digit grammar shared with the
+// palette ScreenRegistry. Duplicated rather than imported because
+// config cannot import internal/tui/palette (palette imports nothing
+// from config either way, so a thin shared constant in domain would be
+// the only alternative — not worth the indirection for a 12-char
+// regex).
+var trickNavCodePattern = regexp.MustCompile(`^[1-9][1-9]$`)
 
 // validateSearchSettings enforces the stopwords block. Non-empty so
 // multilingual users have a clear extension point: edit the YAML to

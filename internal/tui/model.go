@@ -27,6 +27,7 @@ import (
 	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/picker"
 	"omakiten/internal/tui/components/viewport"
+	"omakiten/internal/tui/palette"
 )
 
 // NotificationBinding carries the loaded notification catalog into the TUI Model.
@@ -86,6 +87,9 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		plansCursor:          cursorwindow.New(0),
 		planNetworkCursor:    cursorwindow.New(0),
 		settingsGeneralLines: linelist.New(),
+	}
+	if reg, err := buildPaletteRegistry(repos); err == nil {
+		model.paletteRegistry = reg
 	}
 	model.taskTitleInput = newTaskTitleInput()
 	model.taskDescriptionInput = newTaskDescriptionInput()
@@ -173,7 +177,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editorFinishedMsg:
 		m.handleEditorFinished(msg)
 		return m, nil
+	case palette.DismissMsg:
+		m.paletteOpen = false
+		return m, nil
+	case paletteSearchResultMsg:
+		// Async tail of dispatchPaletteSearch. Drop the result
+		// silently when the user closed the palette in the
+		// meantime — SetResults / SetStatus on a closed overlay
+		// would leak stale text into the next open.
+		if !m.paletteOpen {
+			return m, nil
+		}
+		if len(msg.hits) > 0 {
+			m.palette.SetResults(msg.hits)
+		} else {
+			m.palette.SetStatus(msg.status)
+		}
+		return m, nil
+	case palette.OpenHitMsg:
+		return m, m.dispatchOpenHit(msg.Hit)
+	case palette.SubmitMsg:
+		return m, m.dispatchTrick(msg.Token)
+	case palette.SearchMsg:
+		return m, m.dispatchPaletteSearch(msg.Query)
 	case tea.KeyMsg:
+		if m.paletteOpen {
+			var cmd tea.Cmd
+			m.palette, cmd = m.palette.Update(msg)
+			return m, cmd
+		}
+		if msg.String() == "ctrl+k" && m.canOpenPalette() {
+			m.palette = palette.NewModel()
+			m.paletteOpen = true
+			return m, nil
+		}
 		if m.helpOpen {
 			switch msg.String() {
 			case "ctrl+c":
@@ -365,6 +402,36 @@ func (m Model) shouldRealtimeRefresh() bool {
 		return false
 	}
 	return !m.helpOpen && m.mode == modeNormal && m.taskScreen == taskScreenClosed && m.entityScreen == entityScreenClosed && !m.moveMode
+}
+
+// canOpenPalette gates the global Ctrl+K binding so the palette
+// never steals focus from another modal input. The matrix mirrors
+// shouldRealtimeRefresh's "no modal active" check plus the
+// description / comment overlays (which are not background-refresh
+// gates but still own keyboard focus when open).
+func (m Model) canOpenPalette() bool {
+	if m.paletteOpen {
+		return false
+	}
+	if m.helpOpen {
+		return false
+	}
+	if m.mode != modeNormal {
+		return false
+	}
+	if m.commentScreenOpen || m.descriptionScreenOpen {
+		return false
+	}
+	if m.taskScreen != taskScreenClosed {
+		return false
+	}
+	if m.entityScreen != entityScreenClosed {
+		return false
+	}
+	if m.moveMode {
+		return false
+	}
+	return true
 }
 
 // refreshAfterViewChangeCmd reacts to a sub-tab nav transition. Light
@@ -630,11 +697,41 @@ func (m *Model) activeViewSettings() config.ViewSettings {
 
 func (m Model) View() string {
 	view := m.renderView()
-	if m.notification != nil {
+	// Notification and palette are mutually exclusive overlays —
+	// when a notification is active it owns the screen and the
+	// palette panel is suppressed (state preserved; the next View
+	// pass after the notification dismisses brings the palette back
+	// with its prior results / cursor). Matches dispatchNotification's
+	// input-layer precedence: notification keystrokes already win
+	// over palette routing in Update, so visual precedence here
+	// keeps the input contract and the render contract aligned.
+	switch {
+	case m.notification != nil:
 		view = normalizeViewToTerminal(view, m.width, m.height)
 		view = notification.Overlay(view, m.notification.View(), m.notification.Position())
+	case m.paletteOpen:
+		view = normalizeViewToTerminal(view, m.width, m.height)
+		view = notification.Overlay(view, m.renderPaletteOverlay(), notification.PositionCenter)
 	}
 	return view
+}
+
+// renderPaletteOverlay wraps palette.Model.View output in a bordered
+// panel matching the theme's accent so the overlay reads as a modal
+// floating above the base render. Width is fixed at 48 cells — wide
+// enough for `verb:operand` + an inline status, narrow enough to fit
+// without clipping on standard 80-column terminals.
+func (m Model) renderPaletteOverlay() string {
+	body := m.palette.View()
+	kicker := m.styles.kicker("palette")
+	hint := m.styles.hint.Render("enter submit · tab toggles tabs · esc close")
+	panel := lipgloss.JoinVertical(lipgloss.Left, kicker, hint, "", body)
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(m.styles.hintAccent.GetForeground()).
+		Padding(0, 2).
+		Width(48).
+		Render(panel)
 }
 
 // normalizeViewToTerminal rectangularises the rendered view so the

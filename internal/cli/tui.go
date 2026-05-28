@@ -85,6 +85,7 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		Metrics:      app.NewMetricsService(rt.store),
 		Orphans:      rt.store,
 		Plans:        rt.store,
+		Search:       app.NewSearchService(rt.store, rt.store),
 		Checkpointer: rt.store,
 		DispatchCommand: func(ctx context.Context, args []string) ([]byte, error) {
 			cmd := NewRootCommand(version)

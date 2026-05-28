@@ -74,6 +74,14 @@ func (m *Model) reloadBundle(path string) error {
 	if err := m.refresh(); err != nil {
 		return err
 	}
+	// Rotate the trick-palette registry against the freshly-loaded
+	// bundle so config.tricks.nav overrides edited in-session take
+	// effect on the next Ctrl+K open. Best-effort: registry build
+	// failure leaves the previous registry in place rather than
+	// nil-ing it out and breaking palette dispatch.
+	if reg, err := buildPaletteRegistry(m.repos); err == nil {
+		m.paletteRegistry = reg
+	}
 
 	suppressed := m.suppressNextSwapEmit
 	m.suppressNextSwapEmit = false

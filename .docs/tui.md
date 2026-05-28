@@ -97,12 +97,19 @@ Subs map to `subID` constants in `internal/tui/state.go`; the wiring (which disp
 | `0` · `ctrl+h` | back to multi-project Home |
 | `ctrl+o` | pop the back-stack (vim-style "older") to restore the previous (zone, sub) |
 | `r` | refresh from store (per-zone semantics) |
+| `ctrl+k` | open the [trick palette](#trick-palette) (Tricks tab + Search tab) — blocked while a modal input (comment / move / task / entity / help) owns the keyboard |
 
 `left` / `right` (and `h` / `l`) are exclusively within-view bindings — Board lanes, Stats General period picker — and never switch zones. Cross-zone navigation is `tab` / digits / `,`/`/`.
 
 ### Back-stack (`ctrl+o`)
 
 Every intentional navigation (`tab`, `shift+tab`, `1`/`2`/`3`, `,`/`/`, `0`, `ctrl+h`) pushes the current `(top, sub)` onto a session-scoped stack capped at 16 entries (`viewHistory` in `state.go`). `ctrl+o` pops the most recent entry. Empty-stack presses are silent no-ops. Refresh ticks and overlay close events do not touch the stack — it records *navigation*, not every state change. Persistence is intentionally session-only.
+
+## Trick palette
+
+`ctrl+k` opens the global trick palette overlay — a two-tab modal with **Tricks** (verb-prefixed shortcut commands like `nav:31`, `op:381`, `hook:1`) and **Search** (FTS5 fuzzy search with a navigable result list). The palette is mutually exclusive with the notification overlay: notifications suppress the palette panel until they dismiss, then the palette re-appears with prior state.
+
+Full reference — command catalog, keybindings, configuration, hook recipes, troubleshooting — lives in [configuration-guide/tricks.md](configuration-guide/tricks.md).
 
 ## Help overlay
 

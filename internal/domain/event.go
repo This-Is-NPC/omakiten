@@ -222,6 +222,14 @@ const (
 	// EventTypeSolutionViewedTop fires when ListTopSolutions runs.
 	// EntityType=solution (entity_id=0), Payload={limit, returned_count}.
 	EventTypeSolutionViewedTop = "solution.viewed_top"
+
+	// EventTypeTrickExecuted fires once per trick submission from the TUI
+	// palette (Ctrl+K overlay). Built-in handlers consume `verb=nav`
+	// (screen route resolved via the palette ScreenRegistry) and
+	// `verb=op` (entity open by id); any other verb is user-defined and
+	// reaches hooks through `when: {verb: <name>, operand: <value>}`
+	// filtering. EntityType=system, Payload={verb, operand, raw}.
+	EventTypeTrickExecuted = "trick.executed"
 )
 
 // ToolCallEventTypeForSource returns the canonical event_type string for
@@ -288,6 +296,7 @@ var KnownEventTypes = []string{
 	EventTypeCLIToolCall,
 	EventTypeMCPToolCall,
 	EventTypeTUIToolCall,
+	EventTypeTrickExecuted,
 }
 
 // IsKnownEventType reports whether s matches one of KnownEventTypes.

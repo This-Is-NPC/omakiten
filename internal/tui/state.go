@@ -21,6 +21,7 @@ import (
 	"omakiten/internal/tui/components/notification"
 	"omakiten/internal/tui/components/picker"
 	"omakiten/internal/tui/components/viewport"
+	"omakiten/internal/tui/palette"
 )
 
 // styleKind enumerates the chrome variants that benefit from per-width
@@ -77,6 +78,12 @@ type Repositories struct {
 	Metrics      *app.MetricsService
 	Orphans      app.OrphanRepository
 	Plans        app.PlanRepository
+	// Search powers the trick palette Search tab (#182). Optional —
+	// when nil, palette.SearchMsg surfaces a "search not wired" status
+	// inline so the rest of the palette (Tricks tab + Ctrl+K
+	// open/close) stays usable on test fixtures that do not need the
+	// FTS5 path.
+	Search *app.SearchService
 	// Checkpointer is invoked right before a destructive snapshot
 	// (project delete) so the live SQLite WAL frames land in the
 	// main .db file the BackupService will copy. Optional — when
@@ -246,6 +253,19 @@ type Model struct {
 	moveMode          bool
 	helpOpen  bool
 	helpAll   bool
+	// paletteOpen tracks the trick palette overlay (#182). When true,
+	// every keypress routes through palette.Model.Update until the
+	// overlay emits palette.DismissMsg (esc) or a SubmitMsg /
+	// SearchMsg the root Update consumes and closes the overlay
+	// against.
+	paletteOpen bool
+	palette     palette.Model
+	// paletteRegistry resolves nav:<code> codes to Route slugs. Built
+	// once at composition (newPickerModel-style helpers and cli/tui.go)
+	// from palette.DefaultScreens + the user's config.tricks.nav
+	// overrides so the palette dispatch path stays allocation-free at
+	// each open.
+	paletteRegistry *palette.Registry
 	// viewHistory is the in-memory back-stack populated whenever the user
 	// makes an intentional zone/sub navigation (tab / digit / `,`/`/`,
 	// `0`, `ctrl+h`). Bound to a small cap so long sessions cannot grow
