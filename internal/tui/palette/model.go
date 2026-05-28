@@ -8,9 +8,21 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/domain"
 )
+
+// resultListMaxWidth caps each rendered result row at the inner
+// content width of the parent's palette panel — the parent in
+// internal/tui/model.go::renderPaletteOverlay wraps the overlay
+// in a rounded-border lipgloss style with Width(48) and Padding(0,2),
+// so 48 - 2*2 padding - 2 border = 44 cells of usable content.
+// Keeping the budget here (rather than threading SetWidth from
+// the parent on every open + resize) trades a tiny coupling for
+// no plumbing churn; the constant is the single source the tests
+// also lock against.
+const resultListMaxWidth = 44
 
 // Tab identifies which input the palette overlay is currently
 // driving. Tricks is the default landing surface (per AC 1); the
@@ -138,8 +150,18 @@ func (m Model) FocusedHit() (domain.SearchHit, bool) {
 // cursor to the first row. Callers post this from the async
 // search completion arm; the model owns the cursor invariants so
 // the dispatch layer never has to clamp.
+//
+// Side effect: status is cleared. Setting fresh results implies
+// the prior "searching <q>…" / "no results for <q>" hint is now
+// stale, and showing it next to a populated list confuses the
+// user. Documented here so the contract is explicit (#319 review
+// finding I4).
+//
+// The hits slice is copied into the model so caller-side mutation
+// after SetResults does not alias internal state (#319 review
+// finding W1).
 func (m *Model) SetResults(hits []domain.SearchHit) {
-	m.results = hits
+	m.results = append([]domain.SearchHit(nil), hits...)
 	m.resultsCursor = 0
 	m.status = ""
 }
@@ -291,7 +313,8 @@ func (m Model) View() string {
 // renderResultList draws the navigable hit list. Header row is
 // the result count; each row carries a cursor marker, the entity
 // type, the id, and the cleaned snippet (mark tags stripped,
-// newlines collapsed). No top-N cap — the user sees every hit
+// newlines collapsed, ANSI escapes stripped, width-budgeted to
+// fit the parent panel). No top-N cap — the user sees every hit
 // the FTS5 adapter returned.
 func (m Model) renderResultList() string {
 	var b strings.Builder
@@ -301,18 +324,28 @@ func (m Model) renderResultList() string {
 		if i == m.resultsCursor {
 			marker = "▸ "
 		}
-		fmt.Fprintf(&b, "\n%s%s #%d  %s", marker, hit.EntityType, hit.ID, cleanSnippet(hit.Snippet))
+		prefix := fmt.Sprintf("%s%s #%d  ", marker, hit.EntityType, hit.ID)
+		snippet := cleanSnippet(hit.Snippet)
+		budget := resultListMaxWidth - ansi.StringWidth(prefix)
+		if budget < 1 {
+			budget = 1
+		}
+		fmt.Fprintf(&b, "\n%s%s", prefix, ansi.Truncate(snippet, budget, "…"))
 	}
 	return b.String()
 }
 
-// cleanSnippet strips FTS5 <mark> tags and collapses any embedded
-// newlines so each hit renders on a single visual row. Trim trailing
-// whitespace so the list reads tightly.
+// cleanSnippet sanitises the FTS5 snippet for terminal rendering:
+// strips <mark> highlight tags (they would print verbatim as HTML
+// text), collapses embedded newlines so each hit fits one visual
+// row, and removes ANSI escape sequences carried in upstream task
+// titles / comment bodies (intentional or hostile — protects the
+// terminal from injection per #319 review finding W3).
 func cleanSnippet(snippet string) string {
 	out := markTagPattern.ReplaceAllString(snippet, "")
 	out = strings.ReplaceAll(out, "\n", " ")
 	out = strings.ReplaceAll(out, "\r", " ")
+	out = ansi.Strip(out)
 	return strings.TrimSpace(out)
 }
 

@@ -225,6 +225,14 @@ func (m *Model) dispatchOpenHit(hit domain.SearchHit) tea.Cmd {
 // row, and open the detail screen. Replicate that flow programmatically
 // so a palette-driven open lands the user in the same state as a
 // keyboard drill.
+//
+// The activity feed is read explicitly via Events.ListTaskActivity
+// rather than piggybacking on activityForTaskInView (which depends
+// on openTaskView having synchronously populated the in-memory
+// feed). Eliminates the implicit temporal coupling flagged by
+// #319 review finding W2 — one extra DB roundtrip on comment-open
+// is acceptable for a one-shot user action and the contract is
+// now explicit at the call site.
 func (m *Model) openCommentByID(commentID int64) error {
 	comment, err := m.repos.Comments.CommentByID(m.ctx, m.project.ID, commentID)
 	if err != nil {
@@ -235,10 +243,10 @@ func (m *Model) openCommentByID(commentID int64) error {
 		return err
 	}
 	m.openTaskView(parent)
-	// openTaskView populates m.taskID + the activity feed; locate
-	// the comment's event row and pin the cursor on it so the
-	// dedicated detail screen reads the right event when it opens.
-	events := m.activityForTaskInView(m.taskID)
+	events, err := m.repos.Events.ListTaskActivity(m.ctx, m.project.ID, comment.TaskID, "")
+	if err != nil {
+		return err
+	}
 	for i, ev := range events {
 		if ev.EventType == domain.EventTypeComment && ev.ID == commentID {
 			m.activityCursor = i

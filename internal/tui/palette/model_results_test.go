@@ -210,3 +210,55 @@ func TestCleanSnippetStripsMarkTags(t *testing.T) {
 		}
 	}
 }
+
+func TestCleanSnippetStripsANSIEscapes(t *testing.T) {
+	cases := []struct {
+		name, in, want string
+	}{
+		{"bold reset", "\x1b[1mhello\x1b[0m", "hello"},
+		{"color sequence", "\x1b[38;5;196mred text\x1b[0m world", "red text world"},
+		{"clear screen", "\x1b[2Joh no", "oh no"},
+		{"mark + ansi mix", "<mark>\x1b[31mfoo\x1b[0m</mark> bar", "foo bar"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := cleanSnippet(c.in)
+			if got != c.want {
+				t.Errorf("cleanSnippet(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+func TestSetResultsDefensiveCopy(t *testing.T) {
+	hits := fakeHits(3)
+	m := NewModel()
+	m.SetResults(hits)
+	// Mutate the caller's slice; model state must not see the change.
+	hits[0].ID = 999
+	got, _ := m.FocusedHit()
+	if got.ID != 100 {
+		t.Fatalf("SetResults aliased caller slice: focused hit id = %d, want 100", got.ID)
+	}
+}
+
+func TestRenderResultListTruncatesLongSnippets(t *testing.T) {
+	long := strings.Repeat("x", resultListMaxWidth*3)
+	m := seedSearchModel([]domain.SearchHit{
+		{EntityType: domain.SearchEntityTask, ID: 1, Snippet: long},
+	})
+	view := m.View()
+	// Every rendered line must fit the resultListMaxWidth budget.
+	for _, line := range strings.Split(view, "\n") {
+		if strings.HasPrefix(strings.TrimLeft(line, " ▸"), "task #1") {
+			if width := len(line); width > resultListMaxWidth+4 {
+				// +4 slack for the leading marker; the truncated snippet
+				// itself must respect the budget.
+				t.Fatalf("result row width = %d, exceeds budget %d (line=%q)", width, resultListMaxWidth, line)
+			}
+			if !strings.Contains(line, "…") {
+				t.Fatalf("truncation indicator (…) missing on long snippet; line=%q", line)
+			}
+		}
+	}
+}
