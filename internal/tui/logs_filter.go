@@ -5,8 +5,9 @@ import "omakiten/internal/domain"
 // LogsFilterMode is the user-facing filter preset cycled via the
 // Stats › Logs `F` key (umbrella #320 AC #2). The set is closed
 // because the chip strip enumerates every variant; adding a value
-// here means adding both a chip render arm and a categories arm in
-// logsFilterCategories. Order is the cycle order itself:
+// here means adding an entry to logsFilterPartition (the
+// mode→categories source of truth) plus a chip render arm. Order
+// is the cycle order itself:
 //
 //	all → tool-calls → domain → system → all
 //
@@ -71,37 +72,43 @@ func logsFilterCycle(mode LogsFilterMode, step int) LogsFilterMode {
 	return logsFilterModes[next]
 }
 
-// logsFilterCategories projects a mode onto the EventFilter.Categories
-// slice the repository consumes. LogsFilterAll → nil (no filter);
-// other modes → the canonical category subset for that preset.
+// logsFilterPartition is the single source of truth for the
+// mode → repository-filter category projection. Each LogsFilterMode
+// constant maps to the canonical category subset the panel surfaces
+// when that chip is active; LogsFilterAll maps to nil so
+// EventFilter treats it as "no category filter" downstream.
 //
-// The category subsets are stable because they reference named
-// domain.EventCategory constants — if the umbrella adds or renames
-// a category, the build break is local to this file (plus the
-// table test in logs_filter_test.go that pins the mapping).
+// When a new domain.EventCategory lands (or a new chip is added),
+// this map is the only edit site: logsFilterCategories delegates,
+// the union test pins it against domain.KnownEventCategories, and
+// TestLogsFilterPartitionMapMatchesEnumeration catches enum drift.
+var logsFilterPartition = map[LogsFilterMode][]domain.EventCategory{
+	LogsFilterAll: nil, // nil = no filter, show every category
+	LogsFilterToolCalls: {
+		domain.EventCategoryToolCall,
+		domain.EventCategoryHook,
+	},
+	LogsFilterDomain: {
+		domain.EventCategoryTask,
+		domain.EventCategoryComment,
+		domain.EventCategoryPlan,
+		domain.EventCategoryTrick,
+		domain.EventCategoryTagDep,
+	},
+	LogsFilterSystem: {
+		domain.EventCategoryAudit,
+		domain.EventCategoryGuard,
+		domain.EventCategoryDomain,
+	},
+}
+
+// logsFilterCategories projects a mode onto the EventFilter.Categories
+// slice the repository consumes by looking the mode up in
+// logsFilterPartition. LogsFilterAll → nil (no filter); other modes
+// → the canonical category subset for that preset. Unknown modes
+// fall through to nil so a stale fixture cannot panic the renderer.
 func logsFilterCategories(mode LogsFilterMode) []domain.EventCategory {
-	switch mode {
-	case LogsFilterToolCalls:
-		return []domain.EventCategory{
-			domain.EventCategoryToolCall,
-			domain.EventCategoryHook,
-		}
-	case LogsFilterDomain:
-		return []domain.EventCategory{
-			domain.EventCategoryTask,
-			domain.EventCategoryComment,
-			domain.EventCategoryPlan,
-			domain.EventCategoryTrick,
-			domain.EventCategoryTagDep,
-		}
-	case LogsFilterSystem:
-		return []domain.EventCategory{
-			domain.EventCategoryAudit,
-			domain.EventCategoryGuard,
-			domain.EventCategoryDomain,
-		}
-	}
-	return nil
+	return logsFilterPartition[mode]
 }
 
 // logsFilterChipKey returns the i18n catalog key for the chip label
