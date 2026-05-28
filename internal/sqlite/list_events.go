@@ -39,12 +39,11 @@ const MaxListEventsLimit = 10_000
 //   - Order "" or "desc" → newest-first; "asc" → oldest-first. Within
 //     equal timestamps, id is the tiebreaker so paging stays stable.
 //
-// Category expansion: each requested EventCategory is expanded into the
-// concrete event_type strings it owns by iterating domain.KnownEventTypes
-// and grouping through domain.EventCategoryOf — the inversion stays in
-// sync with the canonical category switch because the domain
-// TestEventCategoryOf* tests fail when a new event_type lands without a
-// category arm. The result becomes a `event_type IN (?, ?, ...)`
+// Category expansion: each requested EventCategory is expanded via
+// domain.EventTypesForCategory — the inversion is computed in the
+// domain layer from KnownEventTypes + EventCategoryOf, so adding a new
+// event_type with a category arm propagates here automatically. The
+// expanded set becomes a `event_type IN (?, ?, ...)`
 // predicate so the planner reuses `idx_events_type_started`
 // (event_type, created_at) from migration 009 — the same index
 // activity_logs.go relies on. No new index is added by this read path.
@@ -73,12 +72,28 @@ func (s *Store) ListEvents(ctx context.Context, filter domain.EventFilter) ([]do
 	}
 
 	if len(filter.Categories) > 0 {
-		eventTypes := expandCategoriesToEventTypes(filter.Categories)
-		if len(eventTypes) == 0 {
+		// Expand each requested category into its concrete event_type
+		// set via the domain helper. Dedup across categories with a set
+		// — the partition guarantees no overlap today, but a defensive
+		// dedup means a future overlapping category can't produce a
+		// duplicate-laden IN list. Final order is sorted so the SQL
+		// shape stays stable for EXPLAIN diff review.
+		seen := make(map[string]struct{})
+		for _, cat := range filter.Categories {
+			for _, et := range domain.EventTypesForCategory(cat) {
+				seen[et] = struct{}{}
+			}
+		}
+		if len(seen) == 0 {
 			// Every supplied category was unknown — return an empty
 			// slice rather than build an invalid `IN ()` clause.
 			return nil, nil
 		}
+		eventTypes := make([]string, 0, len(seen))
+		for et := range seen {
+			eventTypes = append(eventTypes, et)
+		}
+		sort.Strings(eventTypes)
 		ph := make([]string, len(eventTypes))
 		for i, et := range eventTypes {
 			ph[i] = "?"
@@ -203,32 +218,3 @@ func (s *Store) EventCategoryCounts(ctx context.Context, projectID int64, since 
 	return counts, rows.Err()
 }
 
-// expandCategoriesToEventTypes returns the deduplicated set of concrete
-// event_type strings owned by the requested categories. Iterates
-// domain.KnownEventTypes once and groups through domain.EventCategoryOf
-// so the inversion always stays in sync with the canonical category
-// switch — adding a new event_type to the catalog without a category
-// arm fails domain.TestEventCategoryOf* tests before this helper is
-// reached. Result order is sorted for stable SQL output (eases test
-// assertions + EXPLAIN diff review). Unknown categories are silently
-// skipped because they cannot own any event_type by definition.
-func expandCategoriesToEventTypes(categories []domain.EventCategory) []string {
-	want := make(map[domain.EventCategory]struct{}, len(categories))
-	for _, c := range categories {
-		want[c] = struct{}{}
-	}
-	seen := make(map[string]struct{}, len(domain.KnownEventTypes))
-	out := make([]string, 0, len(domain.KnownEventTypes))
-	for _, et := range domain.KnownEventTypes {
-		if _, ok := want[domain.EventCategoryOf(et)]; !ok {
-			continue
-		}
-		if _, dup := seen[et]; dup {
-			continue
-		}
-		seen[et] = struct{}{}
-		out = append(out, et)
-	}
-	sort.Strings(out)
-	return out
-}

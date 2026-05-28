@@ -309,7 +309,7 @@ func TestListEventsUsesIndex(t *testing.T) {
 	// EXPLAIN QUERY PLAN against the category-filtered shape. Build the
 	// argument list manually so the EXPLAIN exactly matches the
 	// production query.
-	eventTypes := expandCategoriesToEventTypes([]domain.EventCategory{domain.EventCategoryTask})
+	eventTypes := domain.EventTypesForCategory(domain.EventCategoryTask)
 	ph := make([]string, len(eventTypes))
 	args := []any{int64(1)}
 	for i, et := range eventTypes {
@@ -421,26 +421,6 @@ func TestEventCategoryCountsProjectScope(t *testing.T) {
 	}
 	if scoped[domain.EventCategoryTask] != 2 {
 		t.Errorf("task count (project=2) = %d, want 2", scoped[domain.EventCategoryTask])
-	}
-}
-
-// TestExpandCategoriesToEventTypes — direct unit on the helper.
-func TestExpandCategoriesToEventTypes(t *testing.T) {
-	got := expandCategoriesToEventTypes([]domain.EventCategory{domain.EventCategoryHook})
-	if len(got) != 1 || got[0] != domain.EventTypeHookExecuted {
-		t.Fatalf("hook expansion = %v, want [%q]", got, domain.EventTypeHookExecuted)
-	}
-
-	// Multi: tool_call has 3 event_types — cli/mcp/tui — sorted.
-	tool := expandCategoriesToEventTypes([]domain.EventCategory{domain.EventCategoryToolCall})
-	if len(tool) != 3 {
-		t.Fatalf("tool_call expansion len = %d, want 3 (cli/mcp/tui)", len(tool))
-	}
-
-	// Unknown silently drops.
-	empty := expandCategoriesToEventTypes([]domain.EventCategory{domain.EventCategory("nope")})
-	if len(empty) != 0 {
-		t.Fatalf("unknown expansion = %v, want []", empty)
 	}
 }
 
