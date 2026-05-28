@@ -61,7 +61,7 @@ func newLogsCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 
-				since, err := resolveLogSince(sinceFlag, rt.activeSnapshot())
+				since, err := resolveLogSince(sinceFlag, rt.activeSnapshot(), time.Now)
 				if err != nil {
 					return nil, err
 				}
@@ -231,8 +231,19 @@ func knownCategoryNames() []string {
 // like `7d` are accepted as an extra ergonomic shorthand because
 // `time.ParseDuration` itself rejects the `d` unit. Anything that
 // fails both paths surfaces as a typed `validation_error`.
-func resolveLogSince(flag string, snap interface{ LogsWindowDays() time.Duration }) (time.Time, error) {
-	now := time.Now().UTC()
+//
+// The `now` callback is injected so tests can substitute a
+// deterministic clock (internal/testfakes/clock.Fake.Now) instead of
+// snapshotting time.Now() and comparing against a tolerance window.
+// The production caller passes time.Now verbatim so the wall-clock
+// behaviour of `okt logs --since` is unchanged. A nil `now` is
+// treated as time.Now so callers without a clock preference (mostly
+// future helper packages) need not branch at every call site.
+func resolveLogSince(flag string, snap interface{ LogsWindowDays() time.Duration }, now func() time.Time) (time.Time, error) {
+	if now == nil {
+		now = time.Now
+	}
+	nowUTC := now().UTC()
 	if flag != "" {
 		dur, err := parseLogDuration(flag)
 		if err != nil {
@@ -245,7 +256,7 @@ func resolveLogSince(flag string, snap interface{ LogsWindowDays() time.Duration
 		if dur <= 0 {
 			return time.Time{}, nil
 		}
-		return now.Add(-dur), nil
+		return nowUTC.Add(-dur), nil
 	}
 	if snap == nil {
 		return time.Time{}, nil
@@ -254,7 +265,7 @@ func resolveLogSince(flag string, snap interface{ LogsWindowDays() time.Duration
 	if win <= 0 {
 		return time.Time{}, nil
 	}
-	return now.Add(-win), nil
+	return nowUTC.Add(-win), nil
 }
 
 // parseLogDuration accepts a `time.ParseDuration` string with an
