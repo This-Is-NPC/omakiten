@@ -697,13 +697,21 @@ func (m *Model) activeViewSettings() config.ViewSettings {
 
 func (m Model) View() string {
 	view := m.renderView()
-	if m.paletteOpen {
-		view = normalizeViewToTerminal(view, m.width, m.height)
-		view = notification.Overlay(view, m.renderPaletteOverlay(), notification.PositionCenter)
-	}
-	if m.notification != nil {
+	// Notification and palette are mutually exclusive overlays —
+	// when a notification is active it owns the screen and the
+	// palette panel is suppressed (state preserved; the next View
+	// pass after the notification dismisses brings the palette back
+	// with its prior results / cursor). Matches dispatchNotification's
+	// input-layer precedence: notification keystrokes already win
+	// over palette routing in Update, so visual precedence here
+	// keeps the input contract and the render contract aligned.
+	switch {
+	case m.notification != nil:
 		view = normalizeViewToTerminal(view, m.width, m.height)
 		view = notification.Overlay(view, m.notification.View(), m.notification.Position())
+	case m.paletteOpen:
+		view = normalizeViewToTerminal(view, m.width, m.height)
+		view = notification.Overlay(view, m.renderPaletteOverlay(), notification.PositionCenter)
 	}
 	return view
 }
