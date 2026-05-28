@@ -1,6 +1,7 @@
 package palette
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -27,7 +28,7 @@ func fakeHits(n int) []domain.SearchHit {
 		out[i] = domain.SearchHit{
 			EntityType: domain.SearchEntityTask,
 			ID:         int64(100 + i),
-			Snippet:    "snippet " + string(rune('a'+i)),
+			Snippet:    fmt.Sprintf("snippet %d", i),
 		}
 	}
 	return out

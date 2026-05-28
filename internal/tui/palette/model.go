@@ -24,6 +24,12 @@ import (
 // also lock against.
 const resultListMaxWidth = 44
 
+// resultListPageStep is the cursor delta applied by pgup/pgdown
+// inside the navigable result list. Centralised so future tuning
+// (e.g. tying it to terminal height) lands in one place instead
+// of two parallel arms inside Update.
+const resultListPageStep = 5
+
 // Tab identifies which input the palette overlay is currently
 // driving. Tricks is the default landing surface (per AC 1); the
 // Search tab wraps the existing FTS5 SearchService and is reached
@@ -205,23 +211,23 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case "enter":
 		return m.submit()
 	case "up", "k":
-		if m.tab == TabSearch && m.HasResults() {
+		if m.resultsFocused() {
 			m.moveResultsCursor(-1)
 			return m, nil
 		}
 	case "down", "j":
-		if m.tab == TabSearch && m.HasResults() {
+		if m.resultsFocused() {
 			m.moveResultsCursor(1)
 			return m, nil
 		}
 	case "pgup":
-		if m.tab == TabSearch && m.HasResults() {
-			m.moveResultsCursor(-5)
+		if m.resultsFocused() {
+			m.moveResultsCursor(-resultListPageStep)
 			return m, nil
 		}
 	case "pgdown":
-		if m.tab == TabSearch && m.HasResults() {
-			m.moveResultsCursor(5)
+		if m.resultsFocused() {
+			m.moveResultsCursor(resultListPageStep)
 			return m, nil
 		}
 	}
@@ -233,6 +239,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 	m.status = ""
 	return m, cmd
+}
+
+// resultsFocused reports whether the navigable result list owns
+// the keyboard. Centralises the gate the up/down/pgup/pgdown arms
+// share — duplicated guard was flagged by #319 review finding I1.
+func (m Model) resultsFocused() bool {
+	return m.tab == TabSearch && m.HasResults()
 }
 
 func (m *Model) moveResultsCursor(delta int) {
@@ -290,24 +303,26 @@ var markTagPattern = regexp.MustCompile(`</?mark>`)
 // row plus, when results are present, the navigable list with
 // cursor marker and cleaned snippets.
 func (m Model) View() string {
-	tabs := "[ tricks ]  search"
+	var b strings.Builder
 	if m.tab == TabSearch {
-		tabs = "tricks  [ search ]"
-	}
-	var body string
-	if m.tab == TabTricks {
-		body = m.tricks.View()
+		b.WriteString("tricks  [ search ]\n")
 	} else {
-		body = m.search.View()
+		b.WriteString("[ tricks ]  search\n")
+	}
+	if m.tab == TabTricks {
+		b.WriteString(m.tricks.View())
+	} else {
+		b.WriteString(m.search.View())
 		if m.HasResults() {
-			body += "\n\n" + m.renderResultList()
+			b.WriteString("\n\n")
+			b.WriteString(m.renderResultList())
 		}
 	}
-	out := tabs + "\n" + body
 	if m.status != "" {
-		out += "\n" + m.status
+		b.WriteByte('\n')
+		b.WriteString(m.status)
 	}
-	return out
+	return b.String()
 }
 
 // renderResultList draws the navigable hit list. Header row is
