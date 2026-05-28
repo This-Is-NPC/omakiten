@@ -21,12 +21,12 @@ import (
 // their natural representation, strings are emitted verbatim without
 // surrounding quotes (the renderer is free to add quotes for display).
 //
-// Source is reserved for the future per-key origin (`default` /
-// `project` / `env`). Snapshot does not currently track origin — the
-// Bundle path collapses default + project YAML into a single Settings
-// value before BuildSnapshot ever sees it. Until that instrumentation
-// lands, Source stays empty on every row and follow-up task 258.x will
-// thread the origin through.
+// Source is the per-leaf origin label (SourceDefault / SourceProject /
+// SourceEnv) the LoadBundle merge stamped into Bundle.Sources. The
+// accessor populates it from Snapshot.SourceFor; bundles built without
+// LoadBundle (test fixtures) fall back to SourceDefault so every row
+// carries a non-empty label. The TUI settings viewer (#258) renders
+// this column directly.
 type EffectiveTuple struct {
 	Section string
 	Key     string
@@ -93,6 +93,7 @@ func (s *Snapshot) EffectiveTuples() []EffectiveTuple {
 				Section: section,
 				Key:     r.key,
 				Value:   r.value,
+				Source:  s.SourceFor(joinPath(section, r.key)),
 			})
 		}
 	}

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"time"
 
 	"omakiten/internal/domain"
@@ -205,8 +206,14 @@ type Snapshot struct {
 	registry *domain.EnumRegistry
 
 	settings Settings
-	theme    Theme
-	themeErr error
+	// settingsSources mirrors Bundle.Sources: per-leaf-path origin
+	// labels (SourceDefault / SourceProject / SourceEnv) used by the
+	// settings viewer column. Stored by value so the snapshot stays
+	// immutable; SourceFor returns SourceDefault for missing paths so
+	// every EffectiveTuple gets a non-empty label.
+	settingsSources map[string]string
+	theme           Theme
+	themeErr        error
 
 	warnings []SourceWarning
 }
@@ -291,6 +298,12 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 	snap.priorities = append(snap.priorities, bundle.Config.Priorities...)
 	snap.severities = append(snap.severities, bundle.Config.Severities...)
 	snap.settings = bundle.Config
+	if len(bundle.Sources) > 0 {
+		snap.settingsSources = make(map[string]string, len(bundle.Sources))
+		for k, v := range bundle.Sources {
+			snap.settingsSources[k] = v
+		}
+	}
 	snap.registry = buildEnumRegistry(bundle)
 	snap.theme = cloneTheme(bundle.ActiveTheme)
 	snap.themeErr = bundle.ActiveThemeErr
@@ -690,6 +703,23 @@ func (s *Snapshot) SeverityIDByLabel(label string) int {
 // knob go through this single accessor.
 func (s *Snapshot) Settings() Settings {
 	return s.settings
+}
+
+// SourceFor returns the layer label recorded for dot-path `path`
+// (SourceDefault / SourceProject / SourceEnv). Empty or missing paths
+// fall back to SourceDefault — the conservative answer when the
+// snapshot was built from a Bundle that bypassed LoadBundle (test
+// fixtures, MCP composer mocks). Used by EffectiveTuples to populate
+// the per-row Source field; the TUI settings viewer (#258) consumes
+// that field directly.
+func (s *Snapshot) SourceFor(path string) string {
+	if s == nil || s.settingsSources == nil {
+		return SourceDefault
+	}
+	if v, ok := s.settingsSources[strings.TrimSpace(path)]; ok && v != "" {
+		return v
+	}
+	return SourceDefault
 }
 
 // Theme returns the active theme tokens resolved by LoadBundle. Returned

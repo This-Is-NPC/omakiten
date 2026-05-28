@@ -3,7 +3,6 @@ package config
 import (
 	"bytes"
 	"fmt"
-	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -290,18 +289,6 @@ func applyEnvOverlayWithBindings(sources map[string]string, lookup EnvOverlayLoo
 		}
 		sources[binding.path] = SourceEnv
 	}
-}
-
-// sortedSourcePaths returns the dot-path keys of `sources` in ascending
-// order. Test helper so failure output is stable; production code never
-// needs an ordered view (lookups are by path).
-func sortedSourcePaths(sources map[string]string) []string {
-	out := make([]string, 0, len(sources))
-	for k := range sources {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // SourceFor returns the layer label recorded for dot-path `path`. Empty

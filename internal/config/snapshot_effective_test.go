@@ -217,22 +217,135 @@ func TestEffectiveTuples_NilReceiver(t *testing.T) {
 	}
 }
 
-// TestEffectiveTuples_NoSourceTrackedYet documents the current
-// limitation: until follow-up task threads per-key origin through
-// Bundle → Snapshot, every tuple ships with Source == "". When the
-// instrumentation lands, this test is updated to assert non-empty
-// Source on at least one tuple (and removed once every tuple is
-// covered).
-func TestEffectiveTuples_NoSourceTrackedYet(t *testing.T) {
+// TestEffectiveTuples_SourceNonEmptyOnEveryRow pins the per-row
+// contract: once the loader-merge instrumentation lands, every tuple
+// reports a non-empty Source from the allowed set {default, project,
+// env}. Bundles built via newTwoBucketBundle bypass LoadBundle so the
+// Sources map is nil; the snapshot's SourceFor falls back to
+// SourceDefault, which keeps the viewer column populated rather than
+// rendering empty cells.
+func TestEffectiveTuples_SourceNonEmptyOnEveryRow(t *testing.T) {
 	bundle := newTwoBucketBundle("alpha", "beta")
 	bundle.Config.Output.JSONMinified = true
+	bundle.Config.Theme = ThemeSettings{Active: "omacon"}
+	bundle.Config.MCP = MCPSettings{
+		RecentCommentLimit:        3,
+		MaxCommentChars:           200,
+		IncludeWorkflowInContinue: boolPtr(true),
+		CachePrompts:              boolPtr(false),
+		RecentContextLimit:        2,
+		NextWorkLimit:             2,
+		SimilarTaskLimit:          2,
+	}
+	allowed := map[string]bool{
+		SourceDefault: true,
+		SourceProject: true,
+		SourceEnv:     true,
+	}
 	snap := BuildSnapshot(bundle)
-	for _, tup := range snap.EffectiveTuples() {
-		if tup.Source != "" {
-			t.Fatalf("Snapshot does not yet track per-key source; tuple %s has Source=%q",
-				tup.String(), tup.Source)
+	tuples := snap.EffectiveTuples()
+	if len(tuples) == 0 {
+		t.Fatal("expected at least one tuple from populated Settings")
+	}
+	for _, tup := range tuples {
+		if tup.Source == "" {
+			t.Errorf("tuple %s.%s: Source is empty (must be one of %v)",
+				tup.Section, tup.Key, sortedAllowed(allowed))
+			continue
+		}
+		if !allowed[tup.Source] {
+			t.Errorf("tuple %s.%s: Source=%q not in %v",
+				tup.Section, tup.Key, tup.Source, sortedAllowed(allowed))
 		}
 	}
+}
+
+// TestEffectiveTuples_SourceLayersThreadThrough exercises the snapshot
+// threading end-to-end against all three labels. The fixture seeds
+// Bundle.Sources directly (LoadBundle is not required to enter this
+// branch — production callers populate the same map there) and the
+// accessor surfaces the seeded label on each matching tuple. The
+// production loader populates SourceDefault / SourceProject from the
+// kit baseline diff and SourceEnv from ApplyEnvOverlay; this test
+// covers the downstream wiring so the renderer column is unblocked
+// without depending on the on-disk loader path.
+func TestEffectiveTuples_SourceLayersThreadThrough(t *testing.T) {
+	bundle := newTwoBucketBundle("alpha", "beta")
+	bundle.Config.Output = OutputSettings{JSONMinified: true, OmitEmpty: true}
+	bundle.Config.Theme = ThemeSettings{Active: "omacon"}
+	bundle.Config.MCP = MCPSettings{
+		RecentCommentLimit:        9,
+		MaxCommentChars:           300,
+		IncludeWorkflowInContinue: boolPtr(false),
+		CachePrompts:              boolPtr(true),
+		RecentContextLimit:        4,
+		NextWorkLimit:             4,
+		SimilarTaskLimit:          4,
+	}
+	bundle.Sources = map[string]string{
+		"output.json_minified":     SourceProject,
+		"output.omit_empty":        SourceDefault,
+		"theme.active":             SourceEnv,
+		"mcp.recent_comment_limit": SourceProject,
+		"mcp.cache_prompts":        SourceDefault,
+	}
+
+	snap := BuildSnapshot(bundle)
+	got := map[string]string{}
+	for _, tup := range snap.EffectiveTuples() {
+		got[joinPath(tup.Section, tup.Key)] = tup.Source
+	}
+
+	cases := map[string]string{
+		"output.json_minified":     SourceProject,
+		"output.omit_empty":        SourceDefault,
+		"theme.active":             SourceEnv,
+		"mcp.recent_comment_limit": SourceProject,
+		"mcp.cache_prompts":        SourceDefault,
+	}
+	for path, want := range cases {
+		if got[path] != want {
+			t.Errorf("path %q: got Source=%q, want %q", path, got[path], want)
+		}
+	}
+
+	// Unseeded paths fall through to SourceDefault — proves the snapshot
+	// accessor's fallback covers leaves the loader did not record (e.g.
+	// future-added Settings fields seen by the accessor before the
+	// loader's source-tracker is taught about them).
+	if got["mcp.max_comment_chars"] != SourceDefault {
+		t.Errorf("unseeded path mcp.max_comment_chars: got %q, want %q (fallback)",
+			got["mcp.max_comment_chars"], SourceDefault)
+	}
+}
+
+// TestSnapshot_SourceFor_NilSafeAndFallback pins the receiver-level
+// contract for the SourceFor accessor: nil receiver and missing path
+// both return SourceDefault so call sites never need a nil check before
+// rendering the column.
+func TestSnapshot_SourceFor_NilSafeAndFallback(t *testing.T) {
+	var nilSnap *Snapshot
+	if got := nilSnap.SourceFor("any.path"); got != SourceDefault {
+		t.Fatalf("nil receiver: got %q want %q", got, SourceDefault)
+	}
+	bundle := newTwoBucketBundle("alpha", "beta")
+	bundle.Sources = map[string]string{"theme.active": SourceProject}
+	snap := BuildSnapshot(bundle)
+	if got := snap.SourceFor("theme.active"); got != SourceProject {
+		t.Fatalf("seeded path: got %q want %q", got, SourceProject)
+	}
+	if got := snap.SourceFor("not.in.map"); got != SourceDefault {
+		t.Fatalf("missing path: got %q want %q", got, SourceDefault)
+	}
+}
+
+func sortedAllowed(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // walkScalarPaths is the test-only reflect counterpart to flattenNode.
