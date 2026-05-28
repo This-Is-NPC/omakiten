@@ -274,6 +274,7 @@ var KnownEventTypes = []string{
 	EventTypeProjectRemoved,
 	EventTypePlanCreated,
 	EventTypePlanWaveAdded,
+	EventTypePlanGoalEdited,
 	EventTypePlanDone,
 	EventTypePlanAbandoned,
 	EventTypeTagAdded,
