@@ -150,6 +150,24 @@ func TestLogsFilterPartitionsKnownCategories(t *testing.T) {
 	}
 }
 
+// TestLogsFilterPartitionMapMatchesEnumeration locks the
+// LogsFilterMode → logsFilterPartition drift. Every LogsFilter
+// constant must appear as a key in the partition map; otherwise
+// logsFilterCategories silently returns nil for a chip the cycle
+// still surfaces and the user sees "all" rows under a non-all chip.
+func TestLogsFilterPartitionMapMatchesEnumeration(t *testing.T) {
+	for _, f := range []LogsFilterMode{
+		LogsFilterAll,
+		LogsFilterToolCalls,
+		LogsFilterDomain,
+		LogsFilterSystem,
+	} {
+		if _, ok := logsFilterPartition[f]; !ok {
+			t.Errorf("LogsFilterMode %v missing from logsFilterPartition", f)
+		}
+	}
+}
+
 // TestHandleLogsKeyCyclesFilterForward simulates an `f` keystroke
 // against the live handler and asserts the Model field rolls over
 // into the next preset. Mirrors the production routing: the model
