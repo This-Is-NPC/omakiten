@@ -12,6 +12,14 @@ import (
 
 func (m *Model) handleLogsKey(msg tea.KeyMsg) {
 	switch msg.String() {
+	case "f":
+		m.cycleLogsFilter(1)
+	case "F":
+		// shift+F surfaces as "F" in bubbletea's KeyMsg.String() when
+		// the key is uppercased; we route it through the same cycle
+		// helper with step=-1 so the reverse direction stays in one
+		// place and the tests can pin both arms against logsFilterCycle.
+		m.cycleLogsFilter(-1)
 	case "up", "k":
 		if m.logsSelected > 0 {
 			m.logsSelected--
@@ -50,6 +58,30 @@ func (m *Model) handleLogsKey(msg tea.KeyMsg) {
 	}
 }
 
+// cycleLogsFilter rotates the active filter preset and re-fetches
+// the panel rows through refreshActivityLogs so the chip selection
+// and the visible rows stay aligned in one tick. Cursor / scroll
+// are reset (the filtered row buffer can be shorter than the
+// current selection) so the user lands on the first matching row
+// instead of an empty selection. The repo lookup failure surfaces
+// via m.status the same way the `r` refresh path does.
+func (m *Model) cycleLogsFilter(step int) {
+	m.logsFilterMode = logsFilterCycle(m.logsFilterMode, step)
+	m.logsSelected = 0
+	if m.repos.Events == nil {
+		// Tests that exercise the cycle without a live Events port
+		// still expect the mode field to roll over; the refresh
+		// short-circuits to nil there so we leave the events buffer
+		// untouched.
+		m.syncLogsScroll()
+		return
+	}
+	if err := m.refreshActivityLogs(); err != nil {
+		m.status = err.Error()
+	}
+	m.syncLogsScroll()
+}
+
 // syncLogsScroll syncs the logsList linelist.Model so the selected
 // log row stays inside the viewport. Routes through WithLines +
 // WithViewport + WithCursor so scrollwindow.Resync owns the
@@ -82,11 +114,13 @@ func (m Model) logsViewportRows() int {
 	}
 	const (
 		leadingBlank = 1 // "\n" prepended by renderLogs before the body
+		chipStrip    = 1 // single-line F-cycle filter chip row above the summary
+		gapAfterChip = 1 // blank line between chip strip and summary tables
 		gapToPanel   = 1 // blank line between summary and panel
 		panelChrome  = 7 // 2 borders + 3 header rows + 2 footer rows
 		footerLines  = 2 // newline + indented keybinding hint
 	)
-	chrome := screenHeader + statusLine + leadingBlank + summary + gapToPanel + panelChrome + footerLines
+	chrome := screenHeader + statusLine + leadingBlank + chipStrip + gapAfterChip + summary + gapToPanel + panelChrome + footerLines
 	rows := m.height - chrome
 	if rows < 4 {
 		return 0
@@ -99,14 +133,19 @@ func (m Model) logsViewportRows() int {
 // project has recorded inside the snapshot's `views.logs.window_days`
 // window is rendered through a single 5-column row shape (time · type
 // · entity · who · detail) with a categories + tool-call-health
-// summary stacked above. Sub-task #326 will wire an F-chip filter
-// through `Model.logsCategoryFilter` without rewriting the panel.
+// summary stacked above and an F-cycle filter chip strip above that
+// (sub-task #326).
 func (m Model) renderLogs() string {
 	if m.repos.Events == nil {
 		return m.renderPanel(m.t("tui.empty.activity_logging_unavailable"))
 	}
+	chips := m.renderLogsFilterChips()
 	if len(m.events) == 0 {
-		return m.renderPanel(m.t("tui.empty.logs"))
+		// Keep the chip strip visible on the empty state so the user
+		// can see they have a non-`all` filter active and cycle back
+		// without leaving the surface. The empty-state panel still
+		// owns the rest of the body.
+		return "\n" + indentBlock(chips, 2) + m.renderPanel(m.t("tui.empty.logs"))
 	}
 
 	summary := m.renderLogsSummaryTables()
@@ -116,7 +155,35 @@ func (m Model) renderLogs() string {
 	} else {
 		panel = m.renderLogsWidePanel()
 	}
-	return "\n" + indentBlock(summary+"\n\n"+panel, 2)
+	return "\n" + indentBlock(chips+"\n\n"+summary+"\n\n"+panel, 2)
+}
+
+// renderLogsFilterChips emits the single-line chip strip above the
+// summary tables. The active chip is bracketed and painted with the
+// hint-accent style (the same primary accent the surrounding focus
+// contract uses); inactive chips render in the muted hint color so
+// the active one carries the eye. Trailing `(F cycle)` hint
+// surfaces the keybinding without forcing the user into the help
+// overlay.
+//
+// The strip is rendered through m.t so locale packs can translate
+// each chip label independently; the cycle order itself stays a
+// code constant (logsFilterModes) because it is also the order the
+// chips render in.
+func (m Model) renderLogsFilterChips() string {
+	parts := []string{
+		m.styles.info.Render("// " + strings.ToUpper(m.t("tui.log.filter.kicker")) + ":"),
+	}
+	for _, mode := range logsFilterModes {
+		label := m.t(logsFilterChipKey(mode))
+		if mode == m.logsFilterMode {
+			parts = append(parts, m.styles.hintAccent.Render("[ "+label+" ]"))
+			continue
+		}
+		parts = append(parts, m.styles.hint.Render(label))
+	}
+	parts = append(parts, "  "+m.styles.hint.Render(m.t("tui.log.filter.hint")))
+	return strings.Join(parts, " ")
 }
 
 // eventStats is the unbounded aggregate the Logs inspector summary

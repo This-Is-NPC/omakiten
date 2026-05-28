@@ -250,9 +250,31 @@ Per-row TYPE coloring resolves through `category.<name>` theme tokens (`category
 
 The wide / compact split lives at the 92-cell `availableWidth()` threshold: terminals at or above render the full 5-column header; narrower terminals drop the explicit ENTITY / WHO column tags and fall back to `marker time type detail` — the `DETAIL` column still carries the per-row signal verbatim through `SummarizeEvent`, and TYPE keeps its category color so the per-row category remains readable without the dedicated column.
 
-`Model.logsCategoryFilter` is the seam sub-task #326 will wire the F-chip toggle through — it returns `nil` today so the default view surfaces every event_type. The refresh path reads it once per tick, so chip wiring lands in one place without rewriting the renderer.
+`Model.logsCategoryFilter` projects the active filter chip onto `EventFilter.Categories` — the refresh path reads it once per tick so the chip selection and the panel rows always stay aligned.
 
-No surface-specific keys beyond [Common viewport bindings](#common-viewport-bindings) (`r` refresh applies).
+#### Filter chip (`F` cycle)
+
+A single-line chip strip sits above the summary tables:
+
+```
+// LOGS · FILTER: [ all ] tool-calls domain system   (F cycle)
+```
+
+`F` rotates the active chip forward; `shift+F` rotates it backward. The active chip is bracketed and painted with the focus accent so the eye lands on it without colour-only signalling.
+
+| Mode | Filter | Categories included |
+|---|---|---|
+| `all` | none — no `Categories` filter passed to the repository | every `domain.KnownEventCategory` |
+| `tool-calls` | `cli.tool_call`, `mcp.tool_call`, `tui.tool_call`, `hook.executed` | `tool_call`, `hook` |
+| `domain` | user-authored activity | `task`, `comment`, `plan`, `trick`, `tag-dep` |
+| `system` | system bookkeeping | `audit`, `guard`, `domain` |
+
+Filter state lives on the Model so it survives the per-second realtime tick, manual `r` refreshes, and zone re-entries — the user picks the chip once and the surface stays scoped until the next `F` press.
+
+| Key | Action |
+|---|---|
+| `F` | cycle filter chip forward (`all → tool-calls → domain → system → all`) |
+| `shift+F` | cycle filter chip backward |
 
 The TUI's per-second realtime tick is **not** logged — `refreshTickMsg` wraps `m.ctx` with `activity.WithoutTracking` before calling `refreshCurrentView`, so the tick's `MetricsService.Summary` / list calls bypass `activity.Track`. Only user-explicit refreshes (`r`), refreshes after a view change, and writes from the application services land in the log.
 
