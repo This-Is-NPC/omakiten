@@ -255,6 +255,9 @@ func (r *isolationRepo) RecordEntityEvent(context.Context, string, int64, int64,
 func (r *isolationRepo) ListTaskActivity(context.Context, int64, int64, string) ([]domain.Event, error) {
 	return nil, nil
 }
+func (r *isolationRepo) ListEvents(context.Context, domain.EventFilter) ([]domain.EventRow, error) {
+	return nil, nil
+}
 
 // nilGuardRepo is the read-only counts repo the evaluators borrow when the
 // per-call isolationRepo is not yet in scope (the evaluator is built once

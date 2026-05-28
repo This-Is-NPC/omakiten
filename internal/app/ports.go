@@ -175,6 +175,11 @@ type EventRepository interface {
 	// subject is the project as a whole.
 	RecordEntityEvent(ctx context.Context, entityType string, entityID int64, projectID int64, eventType string, payload string) error
 	ListTaskActivity(ctx context.Context, projectID, taskID int64, order string) ([]domain.Event, error)
+	// ListEvents returns rows from the unified events log filtered by
+	// the supplied EventFilter. Backs the generic Logs inspector
+	// surface (`logs.list` MCP tool + TUI / CLI siblings) so every
+	// consumer reads the same shape.
+	ListEvents(ctx context.Context, filter domain.EventFilter) ([]domain.EventRow, error)
 }
 
 type DependencyRepository interface {

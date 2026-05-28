@@ -210,6 +210,9 @@ func (f *fakeStores) RecordEntityEvent(_ context.Context, _ string, entityID, pr
 func (f *fakeStores) ListTaskActivity(context.Context, int64, int64, string) ([]domain.Event, error) {
 	return nil, nil
 }
+func (f *fakeStores) ListEvents(context.Context, domain.EventFilter) ([]domain.EventRow, error) {
+	return nil, nil
+}
 
 func newWorkflowServiceForTest(f *fakeStores) *WorkflowService {
 	snap := f.Snapshot()

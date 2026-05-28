@@ -86,6 +86,10 @@ func (r *recordingEventRepo) ListTaskActivity(ctx context.Context, projectID, ta
 	return r.inner.ListTaskActivity(ctx, projectID, taskID, order)
 }
 
+func (r *recordingEventRepo) ListEvents(ctx context.Context, filter domain.EventFilter) ([]domain.EventRow, error) {
+	return r.inner.ListEvents(ctx, filter)
+}
+
 func (r *recordingEventRepo) tick(eventType string) {
 	if r.countByType == nil {
 		r.countByType = map[string]int{}
