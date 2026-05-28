@@ -8,6 +8,15 @@ import (
 	"omakiten/internal/domain"
 )
 
+// logsSinceJitterTolerance is the slack permitted between the
+// expected `now - duration` floor and the actual value returned by
+// resolveLogsSince. The gap is wall-clock jitter (test setup ↔
+// assertion), never domain semantics. Heavy CI shared runners can
+// stall a goroutine for several seconds, so the tolerance is set
+// well above the worst observed local drift but small enough to
+// catch genuine off-by-N regressions in the duration math.
+const logsSinceJitterTolerance = 10 * time.Second
+
 // TestResolveLogsSinceDefaultUsesSnapshotWindow locks the default
 // behaviour: with no `since` input, the service substitutes
 // Snapshot.LogsWindowDays as the time floor so MCP callers can pass
@@ -28,13 +37,15 @@ func TestResolveLogsSinceDefaultUsesSnapshotWindow(t *testing.T) {
 // "24h" / "30m" / "90s" all parse via time.ParseDuration and produce
 // a non-zero floor at `now - duration`.
 func TestResolveLogsSinceAcceptsGoDuration(t *testing.T) {
-	cases := []struct{ in string }{
-		{"24h"},
-		{"30m"},
-		{"90s"},
-		{"1h30m"},
+	cases := []struct {
+		in  string
+		dur time.Duration
+	}{
+		{"24h", 24 * time.Hour},
+		{"30m", 30 * time.Minute},
+		{"90s", 90 * time.Second},
+		{"1h30m", 1*time.Hour + 30*time.Minute},
 	}
-	now := time.Now()
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {
 			got, err := resolveLogsSince(tc.in, nil)
@@ -44,8 +55,14 @@ func TestResolveLogsSinceAcceptsGoDuration(t *testing.T) {
 			if got.IsZero() {
 				t.Fatalf("resolveLogsSince(%q) = zero, want non-zero", tc.in)
 			}
-			if got.After(now) {
-				t.Fatalf("resolveLogsSince(%q) = %v, want <= now", tc.in, got)
+			// Recompute `expected` inside the assertion block so the
+			// snapshot-to-comparison gap is the tightest the runtime
+			// allows. A `now` captured before the table loop drifts
+			// under heavy CI load and falsely trips the tolerance.
+			expected := time.Now().Add(-tc.dur)
+			if diff := got.Sub(expected); diff < -logsSinceJitterTolerance || diff > logsSinceJitterTolerance {
+				t.Fatalf("resolveLogsSince(%q) = %v, want within %v of %v (drift: %v)",
+					tc.in, got, logsSinceJitterTolerance, expected, diff)
 			}
 		})
 	}
@@ -55,15 +72,16 @@ func TestResolveLogsSinceAcceptsGoDuration(t *testing.T) {
 // time.ParseDuration does not support natively. "7d" must produce a
 // floor 7 days before now.
 func TestResolveLogsSinceAcceptsDayShorthand(t *testing.T) {
-	now := time.Now()
 	got, err := resolveLogsSince("7d", nil)
 	if err != nil {
 		t.Fatalf("resolveLogsSince(7d) error = %v", err)
 	}
-	delta := now.Sub(got)
-	want := 7 * 24 * time.Hour
-	if delta < want-time.Minute || delta > want+time.Minute {
-		t.Fatalf("resolveLogsSince(7d) delta = %v, want ~%v", delta, want)
+	// Recompute `expected` after the call so the snapshot-to-assertion
+	// gap is minimal; the tolerance covers wall-clock jitter only.
+	expected := time.Now().Add(-7 * 24 * time.Hour)
+	if diff := got.Sub(expected); diff < -logsSinceJitterTolerance || diff > logsSinceJitterTolerance {
+		t.Fatalf("resolveLogsSince(7d) = %v, want within %v of %v (drift: %v)",
+			got, logsSinceJitterTolerance, expected, diff)
 	}
 }
 

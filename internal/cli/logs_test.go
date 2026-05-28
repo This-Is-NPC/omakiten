@@ -13,6 +13,13 @@ import (
 	"omakiten/internal/domain"
 )
 
+// cliJitterTolerance is the wall-clock slack permitted between the
+// expected `now - duration` floor and the value resolveLogSince
+// returns. The gap is process-scheduling jitter, not domain
+// semantics; 5s is well above the worst observed local drift while
+// still tight enough to catch off-by-N regressions in the math.
+const cliJitterTolerance = 5 * time.Second
+
 // TestParseLogCategories pins the flag→filter mapping for every
 // supported shape: empty input, `all` short-circuit, repeatable
 // + comma-separated entries, dedup, unknown rejection. Keeping this
@@ -102,7 +109,7 @@ func TestResolveLogSinceFlagWins(t *testing.T) {
 			t.Fatalf("resolveLogSince() error = %v", err)
 		}
 		want := time.Now().UTC().Add(-24 * time.Hour)
-		if diff := absDuration(got.Sub(want)); diff > 5*time.Second {
+		if diff := absDuration(got.Sub(want)); diff > cliJitterTolerance {
 			t.Fatalf("resolveLogSince(24h) = %v, want ~%v (diff %v)", got, want, diff)
 		}
 	})
@@ -113,7 +120,7 @@ func TestResolveLogSinceFlagWins(t *testing.T) {
 			t.Fatalf("resolveLogSince(7d) error = %v", err)
 		}
 		want := time.Now().UTC().Add(-7 * 24 * time.Hour)
-		if diff := absDuration(got.Sub(want)); diff > 5*time.Second {
+		if diff := absDuration(got.Sub(want)); diff > cliJitterTolerance {
 			t.Fatalf("resolveLogSince(7d) = %v, want ~%v (diff %v)", got, want, diff)
 		}
 	})
@@ -124,7 +131,7 @@ func TestResolveLogSinceFlagWins(t *testing.T) {
 			t.Fatalf("resolveLogSince() error = %v", err)
 		}
 		want := time.Now().UTC().Add(-30 * 24 * time.Hour)
-		if diff := absDuration(got.Sub(want)); diff > 5*time.Second {
+		if diff := absDuration(got.Sub(want)); diff > cliJitterTolerance {
 			t.Fatalf("resolveLogSince() = %v, want ~%v (diff %v)", got, want, diff)
 		}
 	})
@@ -201,6 +208,17 @@ func TestProjectLogRowsCarriesSummary(t *testing.T) {
 // (each of those writes an event row), then assert `okt logs`
 // emits the new 5-field shape with category + summary populated.
 func TestCLILogsRunsAndShapeMatchesAC(t *testing.T) {
+	// Slow integration test: drives the cobra tree through init/add/
+	// comment/logs against a real on-disk SQLite database. Opt out of
+	// `go test -short` so quick smoke runs stay snappy; the unit-level
+	// projection and parse tests above still cover the shape contract.
+	//
+	// t.Parallel is intentionally NOT called: this test invokes
+	// t.Chdir, which mutates the process working directory and is
+	// documented as incompatible with parallel tests.
+	if testing.Short() {
+		t.Skip("integration test: skipped under -short")
+	}
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")
 	configPath := filepath.Join(tmp, "config", "omakase.yaml")
