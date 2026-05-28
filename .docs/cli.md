@@ -18,6 +18,7 @@
 - [Dependencies](#dependencies)
 - [Plans](#plans)
 - [Context (handoff state)](#context-handoff-state)
+- [Logs (event inspector)](#logs-event-inspector)
 - [Workflow](#workflow)
 - [Config](#config)
 - [Database](#database)
@@ -334,6 +335,35 @@ To clear an abandoned claim, run `okt assign <task_id>` (no `WHO`) or move the t
 okt context add -b "Resuming from PR #17"
 okt context dump -l 3
 ```
+
+---
+
+## Logs (event inspector)
+
+`internal/cli/logs.go`. Reads the unified `events` table via `internal/sqlite.Store.ListEvents` — the same path the TUI Logs inspector consumes — and projects each row through `domain.SummarizeEvent` for the `summary` column.
+
+Default scope is the last `views.logs.window_days` of every category for the resolved project (configured under `config.views.logs.window_days`, exposed as `Snapshot.LogsWindowDays()`).
+
+| Flag | Type | Default | Effect |
+|---|---|---|---|
+| `--category`, `-c` | `[]string` | — | Restrict to one or more event categories. Repeatable (`-c task -c plan`) **and** comma-separated (`-c task,plan`). Token `all` clears the filter. Unknown tokens fail with `validation_error`. |
+| `--since` | duration | settings window | Override the time floor. Accepts `time.ParseDuration` strings (`24h`, `30m`, …) plus an extra `Nd` shorthand for whole days (`7d`). |
+| `--limit`, `-n` | int | `0` (no cap) | Cap the number of rows returned. |
+
+Accepted categories (mirror the TUI filter chips): `task`, `comment`, `plan`, `tag-dep`, `guard`, `audit`, `hook`, `tool_call`, `trick`, `domain`.
+
+Each emitted row carries the 5-field shape `time · event_type · entity · author_type · summary` plus the derived `category` and the underlying `EventRow` projection fields (`entity_id`, `source`, `status`, `duration_ms`, `agent_model`, `project_slug` when non-empty).
+
+```sh
+okt logs                                   # default window, every category
+okt logs --category tool_call              # filter to CLI/MCP/TUI tool calls
+okt logs --category task --category plan   # task + plan rows
+okt logs --category task,plan              # equivalent comma form
+okt logs --since 24h                       # narrow to the last 24 hours
+okt logs --since 7d --limit 50             # last week, capped at 50 rows
+```
+
+> **Breaking change vs the legacy activity-log shape**: `okt logs` no longer returns rows shaped like `domain.ActivityLog`. Each row now carries the generic `event_type` + `summary` projection. Downstream tooling that scraped `source`-only rows should switch to the new shape.
 
 ---
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** `okt logs` is now a generic event inspector backed by `ListEvents`. The JSON envelope shape changed: each row carries the unified `EventRow` projection (`event_type`, `entity_type`, `author_type`, `category`, `summary`) instead of the legacy `domain.ActivityLog` columns. The `summary` field is the same one-line text the TUI Logs inspector renders. Downstream tooling that scraped `source`-only rows must switch to the new shape; the legacy `ListActivityLogs` repo method is retained for now and is not affected.
+
+### Features
+
+* **cli:** rewrite `okt logs` as the unified event inspector with `--category`, `--since`, and `--limit` flags. Default scope is the last `views.logs.window_days` for the active project; `--category` is repeatable and comma-separated and accepts the same chips as the TUI (`task`, `comment`, `plan`, `tag-dep`, `guard`, `audit`, `hook`, `tool_call`, `trick`, `domain`, plus the `all` shortcut).
+
 ## [0.21.0](https://github.com/This-Is-NPC/omakiten/compare/v0.20.2...v0.21.0) (2026-05-27)
 
 

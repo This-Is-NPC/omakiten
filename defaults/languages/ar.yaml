@@ -34,6 +34,24 @@ keys:
   cli.context.short: "فحص سياق المشروع لتسليم العمل"
   cli.context.add.short: "إضافة مدخل سياق تسليم للمشروع"
   cli.context.dump.short: "تفريغ سياق تدريجي للوكلاء agents"
+  cli.logs.short: "Inspect the unified event log (task, comment, plan, hook, tool_call, guard, …)"
+  cli.logs.long: |-
+    okt logs reads the unified events table through the same path the TUI Logs
+    inspector uses. The default window is the last Snapshot.LogsWindowDays()
+    days for the active project, all categories included.
+
+    Categories (match the TUI filter chips): task, comment, plan, tag-dep,
+    guard, audit, hook, tool_call, trick, domain. Pass `all` to clear the
+    filter explicitly.
+
+    Output is a JSON envelope; each row carries the 5-field shape
+    (time · event_type · entity · author · summary) where `summary` is the
+    canonical SummarizeEvent string used by the TUI inspector.
+  cli.logs.flag.category: "restrict to one or more event categories (repeatable, comma-separated; `all` clears the filter)"
+  cli.logs.flag.since: "override the default window (e.g. 24h, 30m, 7d)"
+  cli.logs.flag.limit: "cap the number of rows returned (0 = no cap)"
+  cli.err.logs_invalid_category: "unknown event category"
+  cli.err.logs_invalid_since: "invalid --since duration; expected forms like 24h, 30m, 7d"
   cli.depend.short: "إدارة تبعيات tasks"
   cli.depend.add.short: "إضافة تبعية task"
   cli.depend.remove.short: "إزالة تبعية task"
