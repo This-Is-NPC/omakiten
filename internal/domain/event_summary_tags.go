@@ -6,9 +6,13 @@ import (
 
 func init() {
 	register(EventTypeTagAdded, summarizeTagAdded)
+	registerFormatter(EventTypeTagAdded, summarizeTagAdded)
 	register(EventTypeTagRemoved, summarizeTagRemoved)
+	registerFormatter(EventTypeTagRemoved, summarizeTagRemoved)
 	register(EventTypeDependencyAdded, summarizeDependencyAdded)
+	registerFormatter(EventTypeDependencyAdded, summarizeDependencyAdded)
 	register(EventTypeDependencyRemoved, summarizeDependencyRemoved)
+	registerFormatter(EventTypeDependencyRemoved, summarizeDependencyRemoved)
 }
 
 func summarizeTagAdded(row EventRow) string {

@@ -7,14 +7,23 @@ import (
 
 func init() {
 	register(EventTypeProjectRemoved, summarizeProjectRemoved)
+	registerFormatter(EventTypeProjectRemoved, summarizeProjectRemoved)
 	register(EventTypeConfirmationGranted, summarizeConfirmationGranted)
+	registerFormatter(EventTypeConfirmationGranted, summarizeConfirmationGranted)
 	register(EventTypeErrorRecorded, summarizeErrorRecorded)
+	registerFormatter(EventTypeErrorRecorded, summarizeErrorRecorded)
 	register(EventTypeErrorSearched, summarizeErrorSearched)
+	registerFormatter(EventTypeErrorSearched, summarizeErrorSearched)
 	register(EventTypeSolutionAdded, summarizeSolutionAdded)
+	registerFormatter(EventTypeSolutionAdded, summarizeSolutionAdded)
 	register(EventTypeSolutionConfirmed, summarizeSolutionConfirmed)
+	registerFormatter(EventTypeSolutionConfirmed, summarizeSolutionConfirmed)
 	register(EventTypeSolutionLiked, summarizeSolutionLiked)
+	registerFormatter(EventTypeSolutionLiked, summarizeSolutionLiked)
 	register(EventTypeSolutionFailed, summarizeSolutionFailed)
+	registerFormatter(EventTypeSolutionFailed, summarizeSolutionFailed)
 	register(EventTypeSolutionViewedTop, summarizeSolutionViewedTop)
+	registerFormatter(EventTypeSolutionViewedTop, summarizeSolutionViewedTop)
 }
 
 func summarizeProjectRemoved(row EventRow) string {
