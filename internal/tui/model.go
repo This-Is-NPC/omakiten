@@ -158,6 +158,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncBoardColScroll()
 		m.syncFocusedEntityScroll()
 		m.syncActivityScrollToCursor()
+		m.palette.SetMaxResultRows(m.paletteResultRowsBudget())
 	case refreshTickMsg:
 		if m.shouldRealtimeRefresh() {
 			// Realtime tick is renderer-driven, not user-triggered, so
@@ -208,6 +209,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.String() == "ctrl+k" && m.canOpenPalette() {
 			m.palette = palette.NewModel()
+			m.palette.SetMaxResultRows(m.paletteResultRowsBudget())
 			m.paletteOpen = true
 			return m, nil
 		}
@@ -761,18 +763,48 @@ func (m Model) View() string {
 // panel matching the theme's accent so the overlay reads as a modal
 // floating above the base render. Width is fixed at 48 cells — wide
 // enough for `verb:operand` + an inline status, narrow enough to fit
-// without clipping on standard 80-column terminals.
+// without clipping on standard 80-column terminals. MaxHeight caps
+// the overlay so a runaway palette body (e.g. a 200-hit search list)
+// cannot push the base render and footer hints off-screen — the
+// inner result list runs its own sliding-window cap via
+// `palette.Model.SetMaxResultRows`.
 func (m Model) renderPaletteOverlay() string {
 	body := m.palette.View()
 	kicker := m.styles.kicker("palette")
 	hint := m.styles.hint.Render("enter submit · tab toggles tabs · esc close")
 	panel := lipgloss.JoinVertical(lipgloss.Left, kicker, hint, "", body)
-	return lipgloss.NewStyle().
+	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(m.styles.hintAccent.GetForeground()).
 		Padding(0, 2).
-		Width(48).
-		Render(panel)
+		Width(48)
+	if m.height > 0 {
+		style = style.MaxHeight(m.height)
+	}
+	return style.Render(panel)
+}
+
+// paletteResultRowsBudget computes the maximum number of result
+// rows the palette overlay can render given the current terminal
+// height. The constant 13 accounts for the overlay's non-row
+// chrome: 2 border lines, 3 lines of header (kicker, hint, blank
+// separator), 2 lines for the tabs label + search input, 2 blank
+// lines that precede the result list, the "N results" header, the
+// two optional `↑/↓ N more` indicators, and a status line. Floor
+// at 3 so the cursor row plus a sliver of context always fits even
+// on a one-line terminal; zero (unlimited) is reserved for the
+// pre-resize path.
+func (m Model) paletteResultRowsBudget() int {
+	const chromeLines = 13
+	const floor = 3
+	if m.height <= 0 {
+		return 0
+	}
+	budget := m.height - chromeLines
+	if budget < floor {
+		return floor
+	}
+	return budget
 }
 
 // normalizeViewToTerminal rectangularises the rendered view so the

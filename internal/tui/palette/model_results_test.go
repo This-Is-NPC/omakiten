@@ -243,6 +243,75 @@ func TestSetResultsDefensiveCopy(t *testing.T) {
 	}
 }
 
+func TestSetMaxResultRowsCapsRenderedRows(t *testing.T) {
+	m := seedSearchModel(fakeHits(200))
+	m.SetMaxResultRows(10)
+	view := m.View()
+	// Count rendered result rows (those starting with the cursor /
+	// blank marker followed by a "task #" prefix). Must be <= 10.
+	rendered := 0
+	for _, line := range strings.Split(view, "\n") {
+		trimmed := strings.TrimLeft(line, " ▸")
+		if strings.HasPrefix(trimmed, "task #") {
+			rendered++
+		}
+	}
+	if rendered > 10 {
+		t.Fatalf("rendered result rows = %d, want <=10 with SetMaxResultRows(10)", rendered)
+	}
+	if rendered == 0 {
+		t.Fatalf("no result rows rendered; view=%q", view)
+	}
+	if !strings.Contains(view, "200 results") {
+		t.Fatalf("result count header missing from view")
+	}
+	if !strings.Contains(view, "▸") {
+		t.Fatalf("cursor marker missing")
+	}
+}
+
+func TestSetMaxResultRowsWindowSlidesWithCursor(t *testing.T) {
+	m := seedSearchModel(fakeHits(50))
+	m.SetMaxResultRows(5)
+	for i := 0; i < 20; i++ {
+		m, _ = m.Update(downKey())
+	}
+	if m.ResultsCursor() != 20 {
+		t.Fatalf("cursor = %d, want 20", m.ResultsCursor())
+	}
+	view := m.View()
+	if !strings.Contains(view, "task #120") {
+		t.Fatalf("focused hit task #120 missing from view; view=\n%s", view)
+	}
+	if strings.Contains(view, "task #100  ") {
+		t.Fatalf("non-visible hit task #100 still rendered; view=\n%s", view)
+	}
+	if !strings.Contains(view, "▸ task #120") {
+		t.Fatalf("cursor marker not on focused row; view=\n%s", view)
+	}
+}
+
+func TestSetMaxResultRowsShowsMoreIndicator(t *testing.T) {
+	m := seedSearchModel(fakeHits(20))
+	m.SetMaxResultRows(5)
+	view := m.View()
+	if !strings.Contains(view, "more") {
+		t.Fatalf("expected 'more' indicator for hidden rows; view=\n%s", view)
+	}
+}
+
+func TestSetMaxResultRowsZeroMeansUnlimited(t *testing.T) {
+	m := seedSearchModel(fakeHits(7))
+	// No SetMaxResultRows call — default zero must render all 7.
+	view := m.View()
+	for i := 0; i < 7; i++ {
+		want := fmt.Sprintf("task #%d", 100+i)
+		if !strings.Contains(view, want) {
+			t.Fatalf("default render missing %s; view=\n%s", want, view)
+		}
+	}
+}
+
 func TestRenderResultListTruncatesLongSnippets(t *testing.T) {
 	long := strings.Repeat("x", resultListMaxWidth*3)
 	m := seedSearchModel([]domain.SearchHit{
