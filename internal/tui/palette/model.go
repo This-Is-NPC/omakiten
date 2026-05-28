@@ -24,6 +24,19 @@ import (
 // also lock against.
 const resultListMaxWidth = 44
 
+// Column widths for the `| id | type | result |` table layout
+// rendered inside the overlay panel. The marker cell already
+// carries its own trailing space ("▸ " / "  "), so only the
+// id↔type and type↔result column boundaries need a one-cell gap.
+// The sum must equal resultListMaxWidth so the horizontal `─`
+// rule lines up beneath the header row without overrun.
+const (
+	colWidthMarker = 2
+	colWidthID     = 6
+	colWidthType   = 8
+	colWidthResult = resultListMaxWidth - colWidthMarker - colWidthID - 1 - colWidthType - 1
+)
+
 // resultListPageStep is the cursor delta applied by pgup/pgdown
 // inside the navigable result list. Centralised so future tuning
 // (e.g. tying it to terminal height) lands in one place instead
@@ -386,39 +399,59 @@ func (m Model) View() string {
 	return b.String()
 }
 
-// renderResultList draws the navigable hit list. Header row is
-// the result count; each row carries a cursor marker, the entity
-// type, the id, and the cleaned snippet (mark tags stripped,
-// newlines collapsed, ANSI escapes stripped, width-budgeted to
-// fit the parent panel). When maxResultRows > 0 the list slides a
-// fixed-size window around the cursor so the overlay never grows
-// past the parent's viewport budget; an `↑N more` / `↓N more`
-// indicator row makes the truncation visible.
+// renderResultList draws the navigable hit list as a three-column
+// table — id, type, result — matching the visual language used by
+// `renderLogsWidePanel` in render_logs.go: count line, header row,
+// horizontal rule, body rows. Every row carries a cursor marker
+// in its leading cell; the result column holds the cleaned
+// snippet (mark tags stripped, newlines collapsed, ANSI escapes
+// stripped, width-budgeted to colWidthResult). When maxResultRows
+// > 0 the list slides a fixed-size window around the cursor so
+// the overlay never grows past the parent's viewport budget; an
+// `↑N more` / `↓N more` indicator row makes the truncation
+// visible.
 func (m Model) renderResultList() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d results", len(m.results))
+	fmt.Fprintf(&b, "\n%s%-*s %-*s %s",
+		strings.Repeat(" ", colWidthMarker),
+		colWidthID, "ID",
+		colWidthType, "TYPE",
+		"RESULT",
+	)
+	b.WriteByte('\n')
+	b.WriteString(strings.Repeat("─", resultListMaxWidth))
 	start, end := m.resultsWindow()
 	if start > 0 {
 		fmt.Fprintf(&b, "\n  ↑ %d more", start)
 	}
 	for i := start; i < end; i++ {
-		hit := m.results[i]
 		marker := "  "
 		if i == m.resultsCursor {
 			marker = "▸ "
 		}
-		prefix := fmt.Sprintf("%s%s #%d  ", marker, hit.EntityType, hit.ID)
-		snippet := cleanSnippet(hit.Snippet)
-		budget := resultListMaxWidth - ansi.StringWidth(prefix)
-		if budget < 1 {
-			budget = 1
-		}
-		fmt.Fprintf(&b, "\n%s%s", prefix, ansi.Truncate(snippet, budget, "…"))
+		b.WriteByte('\n')
+		b.WriteString(formatResultRow(marker, m.results[i]))
 	}
 	if end < len(m.results) {
 		fmt.Fprintf(&b, "\n  ↓ %d more", len(m.results)-end)
 	}
 	return b.String()
+}
+
+// formatResultRow lays out one body row of the result table. The
+// id and type columns are left-aligned to their fixed widths; the
+// result column carries the snippet truncated to colWidthResult so
+// the row width never exceeds resultListMaxWidth.
+func formatResultRow(marker string, hit domain.SearchHit) string {
+	id := fmt.Sprintf("#%d", hit.ID)
+	snippet := ansi.Truncate(cleanSnippet(hit.Snippet), colWidthResult, "…")
+	return fmt.Sprintf("%s%-*s %-*s %s",
+		marker,
+		colWidthID, id,
+		colWidthType, string(hit.EntityType),
+		snippet,
+	)
 }
 
 // resultsWindow returns the [start, end) slice of `m.results` that

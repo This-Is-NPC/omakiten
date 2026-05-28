@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/domain"
 )
@@ -185,8 +186,11 @@ func TestViewRendersResultListOnSearchTab(t *testing.T) {
 	if !strings.Contains(view, "3 results") {
 		t.Fatalf("view missing result count, got:\n%s", view)
 	}
-	if !strings.Contains(view, "task #100") || !strings.Contains(view, "task #102") {
-		t.Fatalf("view missing hit rows, got:\n%s", view)
+	if !strings.Contains(view, "#100") || !strings.Contains(view, "#102") {
+		t.Fatalf("view missing hit id cells, got:\n%s", view)
+	}
+	if !strings.Contains(view, "task") {
+		t.Fatalf("view missing entity-type cell, got:\n%s", view)
 	}
 	// Cursor marker present on first row.
 	if !strings.Contains(view, "▸") {
@@ -247,12 +251,13 @@ func TestSetMaxResultRowsCapsRenderedRows(t *testing.T) {
 	m := seedSearchModel(fakeHits(200))
 	m.SetMaxResultRows(10)
 	view := m.View()
-	// Count rendered result rows (those starting with the cursor /
-	// blank marker followed by a "task #" prefix). Must be <= 10.
+	// Count rendered result rows by looking for body-row prefixes
+	// (marker cell followed by the `#` of the id column). The header
+	// row carries `ID` not `#`, so it does not count.
 	rendered := 0
 	for _, line := range strings.Split(view, "\n") {
 		trimmed := strings.TrimLeft(line, " ▸")
-		if strings.HasPrefix(trimmed, "task #") {
+		if strings.HasPrefix(trimmed, "#") {
 			rendered++
 		}
 	}
@@ -280,13 +285,13 @@ func TestSetMaxResultRowsWindowSlidesWithCursor(t *testing.T) {
 		t.Fatalf("cursor = %d, want 20", m.ResultsCursor())
 	}
 	view := m.View()
-	if !strings.Contains(view, "task #120") {
-		t.Fatalf("focused hit task #120 missing from view; view=\n%s", view)
+	if !strings.Contains(view, "#120 ") {
+		t.Fatalf("focused hit #120 missing from view; view=\n%s", view)
 	}
-	if strings.Contains(view, "task #100  ") {
-		t.Fatalf("non-visible hit task #100 still rendered; view=\n%s", view)
+	if strings.Contains(view, "#100 ") {
+		t.Fatalf("non-visible hit #100 still rendered; view=\n%s", view)
 	}
-	if !strings.Contains(view, "▸ task #120") {
+	if !strings.Contains(view, "▸ #120") {
 		t.Fatalf("cursor marker not on focused row; view=\n%s", view)
 	}
 }
@@ -311,23 +316,23 @@ func TestSetMaxResultRowsScrollHoldsUntilCursorReachesBottomEdge(t *testing.T) {
 	if strings.Contains(view, "↑") {
 		t.Fatalf("scroll slid prematurely (got ↑ indicator); view=\n%s", view)
 	}
-	if !strings.Contains(view, "task #100") {
-		t.Fatalf("first row task #100 dropped from view while cursor still in initial window; view=\n%s", view)
+	if !strings.Contains(view, "#100 ") {
+		t.Fatalf("first row #100 dropped from view while cursor still in initial window; view=\n%s", view)
 	}
-	if !strings.Contains(view, "▸ task #109") {
-		t.Fatalf("cursor not on task #109 (bottom of initial window); view=\n%s", view)
+	if !strings.Contains(view, "▸ #109") {
+		t.Fatalf("cursor not on #109 (bottom of initial window); view=\n%s", view)
 	}
 	// Cross the bottom edge — scroll must slide by exactly one row.
 	m, _ = m.Update(downKey())
 	view = m.View()
-	if strings.Contains(view, "task #100  ") {
-		t.Fatalf("task #100 still rendered after sliding past bottom edge; view=\n%s", view)
+	if strings.Contains(view, "#100 ") {
+		t.Fatalf("#100 still rendered after sliding past bottom edge; view=\n%s", view)
 	}
 	if !strings.Contains(view, "↑ 1 more") {
 		t.Fatalf("expected ↑ 1 more after sliding by one; view=\n%s", view)
 	}
-	if !strings.Contains(view, "▸ task #110") {
-		t.Fatalf("cursor not on task #110 after first slide; view=\n%s", view)
+	if !strings.Contains(view, "▸ #110") {
+		t.Fatalf("cursor not on #110 after first slide; view=\n%s", view)
 	}
 }
 
@@ -347,8 +352,8 @@ func TestSetMaxResultRowsScrollHoldsOnUpUntilCursorCrossesTopEdge(t *testing.T) 
 	if !strings.Contains(view, "↑ 6 more") {
 		t.Fatalf("scroll did not hold while cursor stayed in window; view=\n%s", view)
 	}
-	if !strings.Contains(view, "▸ task #106") {
-		t.Fatalf("cursor not on task #106 (top of held window); view=\n%s", view)
+	if !strings.Contains(view, "▸ #106") {
+		t.Fatalf("cursor not on #106 (top of held window); view=\n%s", view)
 	}
 	// One more up crosses the top edge — scroll slides up by one.
 	m, _ = m.Update(upKey())
@@ -356,8 +361,8 @@ func TestSetMaxResultRowsScrollHoldsOnUpUntilCursorCrossesTopEdge(t *testing.T) 
 	if !strings.Contains(view, "↑ 5 more") {
 		t.Fatalf("expected ↑ 5 more after sliding up by one; view=\n%s", view)
 	}
-	if !strings.Contains(view, "▸ task #105") {
-		t.Fatalf("cursor not on task #105 after top-edge slide; view=\n%s", view)
+	if !strings.Contains(view, "▸ #105") {
+		t.Fatalf("cursor not on #105 after top-edge slide; view=\n%s", view)
 	}
 }
 
@@ -366,9 +371,9 @@ func TestSetMaxResultRowsZeroMeansUnlimited(t *testing.T) {
 	// No SetMaxResultRows call — default zero must render all 7.
 	view := m.View()
 	for i := 0; i < 7; i++ {
-		want := fmt.Sprintf("task #%d", 100+i)
+		want := fmt.Sprintf("#%d ", 100+i)
 		if !strings.Contains(view, want) {
-			t.Fatalf("default render missing %s; view=\n%s", want, view)
+			t.Fatalf("default render missing id cell %s; view=\n%s", want, view)
 		}
 	}
 }
@@ -379,17 +384,30 @@ func TestRenderResultListTruncatesLongSnippets(t *testing.T) {
 		{EntityType: domain.SearchEntityTask, ID: 1, Snippet: long},
 	})
 	view := m.View()
-	// Every rendered line must fit the resultListMaxWidth budget.
+	// The body row carries id `#1` in its id cell — find it and
+	// assert the total row width respects resultListMaxWidth.
 	for _, line := range strings.Split(view, "\n") {
-		if strings.HasPrefix(strings.TrimLeft(line, " ▸"), "task #1") {
-			if width := len(line); width > resultListMaxWidth+4 {
-				// +4 slack for the leading marker; the truncated snippet
-				// itself must respect the budget.
-				t.Fatalf("result row width = %d, exceeds budget %d (line=%q)", width, resultListMaxWidth, line)
-			}
-			if !strings.Contains(line, "…") {
-				t.Fatalf("truncation indicator (…) missing on long snippet; line=%q", line)
-			}
+		trimmed := strings.TrimLeft(line, " ▸")
+		if !strings.HasPrefix(trimmed, "#1 ") {
+			continue
 		}
+		if width := ansi.StringWidth(line); width > resultListMaxWidth {
+			t.Fatalf("result row width = %d, exceeds budget %d (line=%q)", width, resultListMaxWidth, line)
+		}
+		if !strings.Contains(line, "…") {
+			t.Fatalf("truncation indicator (…) missing on long snippet; line=%q", line)
+		}
+	}
+}
+
+func TestRenderResultListEmitsHeader(t *testing.T) {
+	m := seedSearchModel(fakeHits(3))
+	view := m.View()
+	if !strings.Contains(view, "ID") || !strings.Contains(view, "TYPE") || !strings.Contains(view, "RESULT") {
+		t.Fatalf("header row missing ID/TYPE/RESULT cells; view=\n%s", view)
+	}
+	rule := strings.Repeat("─", resultListMaxWidth)
+	if !strings.Contains(view, rule) {
+		t.Fatalf("horizontal rule of width %d missing under header; view=\n%s", resultListMaxWidth, view)
 	}
 }
