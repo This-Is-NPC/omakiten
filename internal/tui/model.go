@@ -699,7 +699,7 @@ func (m Model) View() string {
 // without clipping on standard 80-column terminals.
 func (m Model) renderPaletteOverlay() string {
 	body := m.palette.View()
-	kicker := m.styles.kicker("// PALETTE · ctrl+k")
+	kicker := m.styles.kicker("palette")
 	hint := m.styles.hint.Render("enter submit · tab toggles tabs · esc close")
 	panel := lipgloss.JoinVertical(lipgloss.Left, kicker, hint, "", body)
 	return lipgloss.NewStyle().
