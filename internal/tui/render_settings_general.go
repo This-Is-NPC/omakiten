@@ -124,11 +124,18 @@ func (m Model) effectiveConfigSections() [][][]string {
 	// in the accessor's struct-field order, which is convenient for
 	// non-TUI consumers but doesn't match the user-relevance ordering
 	// the Settings viewer wants. orderEffectiveSections reorders the
-	// section list so user-facing prefs (languages, theme, priorities,
-	// …) lead and infra plumbing (mcp, sqlite, backup) trails; sections
-	// not in the table fall through to a stable tail in their original
-	// accessor order so future additions stay defensive.
+	// section list so user-facing prefs (theme, tricks, priorities,
+	// …) lead and infra plumbing (mcp, sqlite, backup, hooks) trails;
+	// sections not in the table fall through to a stable tail in their
+	// original accessor order so future additions stay defensive.
+	//
+	// hiddenEffectiveSections drops sections whose effective values are
+	// already surfaced elsewhere in the TUI (Runtime card, Project line,
+	// dedicated sub-tabs) — see the set's doc comment for the per-section
+	// rationale. Hidden sections are filtered after ordering so the
+	// unknown-section tail-append still runs against the visible set.
 	sectionKeys := orderEffectiveSections(snap.EffectiveSectionKeys())
+	sectionKeys = filterHiddenEffectiveSections(sectionKeys)
 	grouped := make(map[string][]config.EffectiveTuple, len(sectionKeys))
 	for _, t := range tuples {
 		grouped[t.Section] = append(grouped[t.Section], t)
@@ -171,21 +178,21 @@ func (m Model) effectiveConfigSections() [][][]string {
 
 // effectiveSectionRenderOrder is the user-relevance ordering applied
 // to effective-config sections in Settings › General. Tiers (top →
-// bottom): user-facing prefs, workflow/content surface, output/search,
-// infra integration. The accessor itself stays struct-field-order so
-// non-TUI consumers (MCP, CLI) keep deciding their own ordering — only
-// the renderer picks up this table. Sections absent from the table are
-// appended in their original accessor order so new Settings fields
-// never silently disappear from the viewer (see task #346 DoD #2).
+// bottom): user-facing prefs (theme/tricks/priorities/severities),
+// content surface (views/context/tui/output), search & solutions,
+// infra integration (mcp/events/sqlite/backup), with hooks last as the
+// power-user escape hatch. The accessor itself stays struct-field-order
+// so non-TUI consumers (MCP, CLI) keep deciding their own ordering —
+// only the renderer picks up this table. Sections absent from the
+// table are appended in their original accessor order so new Settings
+// fields never silently disappear from the viewer (see task #346
+// DoD #2). Sections listed in hiddenEffectiveSections are filtered
+// after ordering so the viewer never surfaces them.
 var effectiveSectionRenderOrder = []string{
-	"languages",
 	"theme",
+	"tricks",
 	"priorities",
 	"severities",
-	"tag_synonyms",
-	"tricks",
-	"workflow",
-	"template_defaults",
 	"views",
 	"context",
 	"tui",
@@ -194,17 +201,40 @@ var effectiveSectionRenderOrder = []string{
 	"solutions",
 	"activity_log",
 	"mcp",
-	"hooks",
 	"events",
 	"sqlite",
 	"backup",
+	"hooks",
+}
+
+// hiddenEffectiveSections names the top-level Settings sections that
+// Settings › General intentionally suppresses because their effective
+// values are already surfaced elsewhere in the TUI:
+//
+//   - languages: Runtime card already prints CLI / TUI / AgentOutput
+//   - workflow: Project line prints the active workflow key, and the
+//     Guards sub-tab owns transitions/guards
+//   - template_defaults: Templates sub-tab is the dedicated surface
+//   - tag_synonyms: Tags sub-tab is the dedicated surface
+//
+// The i18n labels (`tui.settings.effective.section.<n>`) stay in the
+// locale packs so a future re-enable does not have to round-trip
+// through the parity test — see i18n parity rule in MEMORY.
+var hiddenEffectiveSections = map[string]bool{
+	"languages":         true,
+	"workflow":          true,
+	"template_defaults": true,
+	"tag_synonyms":      true,
 }
 
 // orderEffectiveSections returns sections reordered per
 // effectiveSectionRenderOrder. Known sections lead in tier order;
 // unknown sections follow in their original input order. Only sections
 // present in the input slice are returned — the ordering table is a
-// preference, not a presence guarantee.
+// preference, not a presence guarantee. Hidden sections are still
+// returned here; filterHiddenEffectiveSections is the dedicated drop
+// step so unknown-section tail-append stays uncoupled from the hide
+// policy.
 func orderEffectiveSections(sections []string) []string {
 	if len(sections) == 0 {
 		return sections
@@ -225,6 +255,26 @@ func orderEffectiveSections(sections []string) []string {
 		if !known[s] {
 			out = append(out, s)
 		}
+	}
+	return out
+}
+
+// filterHiddenEffectiveSections drops sections listed in
+// hiddenEffectiveSections while preserving the input order. Run after
+// orderEffectiveSections so the unknown-section tail-append still
+// works against the full accessor list — the hide policy only affects
+// what reaches the renderer, not whether future Settings fields stay
+// defensive.
+func filterHiddenEffectiveSections(sections []string) []string {
+	if len(sections) == 0 {
+		return sections
+	}
+	out := make([]string, 0, len(sections))
+	for _, s := range sections {
+		if hiddenEffectiveSections[s] {
+			continue
+		}
+		out = append(out, s)
 	}
 	return out
 }

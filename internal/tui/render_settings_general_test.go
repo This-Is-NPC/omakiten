@@ -281,10 +281,14 @@ func TestSettingsGeneralPreservesRuntimeAndProjectAfterComposition(t *testing.T)
 
 // TestSettingsGeneralEffectiveSectionCountMatchesAccessor pins the
 // composition contract: every top-level section reported by
-// EffectiveSectionKeys must surface as a distinct kicker in the
-// rendered General body. The kicker resolves through the catalog
-// (`tui.settings.effective.section.<n>`), so we strip ANSI and search
-// for the human-readable label that the English pack ships.
+// EffectiveSectionKeys MINUS the hide list must surface as a distinct
+// kicker in the rendered General body. Hidden sections are surfaced
+// elsewhere (Runtime card / Project line / dedicated sub-tabs) so they
+// must NOT appear as kickers here — that leg is covered by
+// TestSettingsGeneralEffectiveSectionsHidden. The kicker resolves
+// through the catalog (`tui.settings.effective.section.<n>`), so we
+// strip ANSI and search for the human-readable label that the English
+// pack ships.
 func TestSettingsGeneralEffectiveSectionCountMatchesAccessor(t *testing.T) {
 	m, snap := effectiveModelFixture(160, 200)
 
@@ -293,7 +297,12 @@ func TestSettingsGeneralEffectiveSectionCountMatchesAccessor(t *testing.T) {
 	if len(sections) == 0 {
 		t.Fatal("EffectiveSectionKeys returned 0 — fixture has no populated Settings sections")
 	}
+	visible := 0
 	for _, section := range sections {
+		if hiddenEffectiveSections[section] {
+			continue
+		}
+		visible++
 		label := m.t("tui.settings.effective.section." + section)
 		if label == "tui.settings.effective.section."+section {
 			t.Fatalf("catalog missing label for section %q (resolved to raw key)", section)
@@ -306,14 +315,28 @@ func TestSettingsGeneralEffectiveSectionCountMatchesAccessor(t *testing.T) {
 			t.Fatalf("rendered body missing kicker for section %q (label %q); body:\n%s", section, label, body)
 		}
 	}
+	// Sanity: visible count = accessor count - hidden count present in
+	// the fixture. Locks the arithmetic so a future regression that
+	// silently drops a visible section is caught here.
+	expectedVisible := len(sections)
+	for _, section := range sections {
+		if hiddenEffectiveSections[section] {
+			expectedVisible--
+		}
+	}
+	if visible != expectedVisible {
+		t.Fatalf("visible-section walk = %d, want %d (accessor=%d, hidden_in_fixture=%d)", visible, expectedVisible, len(sections), len(sections)-expectedVisible)
+	}
 }
 
 // TestSettingsGeneralEffectiveRowCountMatchesAccessor pins the
-// composition contract leg 2: every tuple the accessor emits must
-// surface as a row in the merged General body. Walks the tuple list
-// and asserts the key path appears in the post-strip body — values
-// are subject to truncation, so the key path is the deterministic
-// anchor.
+// composition contract leg 2: every tuple the accessor emits in a
+// visible section must surface as a row in the merged General body.
+// Tuples belonging to hidden sections (Runtime/Project/sub-tab dupes)
+// are skipped so the assertion mirrors the renderer's filter. Walks
+// the tuple list and asserts the key path appears in the post-strip
+// body — values are subject to truncation, so the key path is the
+// deterministic anchor.
 func TestSettingsGeneralEffectiveRowCountMatchesAccessor(t *testing.T) {
 	m, snap := effectiveModelFixture(160, 200)
 
@@ -323,6 +346,9 @@ func TestSettingsGeneralEffectiveRowCountMatchesAccessor(t *testing.T) {
 		t.Fatal("EffectiveTuples returned 0 — fixture has no populated Settings sections")
 	}
 	for _, tup := range tuples {
+		if hiddenEffectiveSections[tup.Section] {
+			continue
+		}
 		// Scalar sections emit Key="" — the composer falls back to
 		// the section name, so search for that instead. The kicker
 		// styling uppercases the key path, so we match the
@@ -379,17 +405,19 @@ func TestSettingsGeneralFooterHintIsReadOnly(t *testing.T) {
 }
 
 // TestSettingsGeneralEffectiveSectionOrder pins the user-relevance
-// ordering applied by orderEffectiveSections: tier-1 (`languages`,
-// `theme`, `priorities`) leads the rendered body, tier-4 (`backup`)
-// trails. The fixture seeds enough sections so all four tiers are
+// ordering applied by orderEffectiveSections + the hide filter:
+// the first visible effective section is `theme` (tier-1 leader, top
+// of the order table now that `languages` is hidden) and the last
+// known section is `hooks` (tail of the order table — power-user
+// escape hatch). The fixture seeds enough sections so all tiers are
 // represented; we walk the body once, collect each section kicker's
 // index, and assert the relative ordering.
 func TestSettingsGeneralEffectiveSectionOrder(t *testing.T) {
 	bundle := effectiveBundleFixture()
-	// Seed `backup` so it lands in the rendered body and we can pin
+	// Seed `hooks` so it lands in the rendered body and we can pin
 	// it as the tail of the order table. The default fixture omits
-	// it, which would otherwise make the "last is backup" leg vacuous.
-	bundle.Config.Backup = config.BackupSettings{RetentionCount: 5}
+	// it, which would otherwise make the "last is hooks" leg vacuous.
+	bundle.Config.Hooks = []config.HookSpec{{On: "task.created", Do: "log"}}
 	snap := config.BuildSnapshot(bundle)
 	m := Model{
 		styles:    newStyles(config.Theme{}),
@@ -431,43 +459,40 @@ func TestSettingsGeneralEffectiveSectionOrder(t *testing.T) {
 		return -1
 	}
 
-	// Assertion 1: leading sections appear in the required order
-	// (languages → theme → priorities). priorities is absent from
-	// this fixture so we walk the order table and pick the first
-	// three present sections in order.
-	want := []string{"languages", "theme", "priorities"}
-	leading := make([]string, 0, len(want))
-	for _, s := range want {
-		for _, present := range sections {
-			if present == s {
-				leading = append(leading, s)
-				break
-			}
-		}
-	}
-	if len(leading) < 2 {
-		t.Fatalf("fixture does not contain enough tier-1 sections to exercise ordering (have %v)", leading)
-	}
-	prev := -1
-	for _, s := range leading {
-		idx := indexOf(s)
-		if idx < 0 {
-			t.Fatalf("rendered body missing tier-1 section %q; body:\n%s", s, body)
-		}
-		if idx <= prev {
-			t.Fatalf("tier-1 section %q at index %d not after previous index %d; ordering broken; body:\n%s", s, idx, prev, body)
-		}
-		prev = idx
-	}
-
-	// Assertion 2: every known section that follows `backup` in the
-	// render-order table is either absent or also after `backup` — so
-	// the last rendered known section is `backup` for this fixture.
-	backupIdx := indexOf("backup")
-	if backupIdx < 0 {
-		t.Fatalf("rendered body missing `backup` section; fixture seeding failed; body:\n%s", body)
+	// Assertion 1: the first visible effective-section kicker in the
+	// rendered body is `theme`. Hidden sections (`languages`,
+	// `workflow`, `template_defaults`, `tag_synonyms`) must not
+	// appear, so `theme` leads regardless of the accessor's
+	// struct-field order.
+	themeIdx := indexOf("theme")
+	if themeIdx < 0 {
+		t.Fatalf("rendered body missing `theme` section; body:\n%s", body)
 	}
 	for _, present := range sections {
+		if present == "theme" || hiddenEffectiveSections[present] {
+			continue
+		}
+		idx := indexOf(present)
+		if idx < 0 {
+			continue
+		}
+		if idx < themeIdx {
+			t.Fatalf("section %q rendered before `theme` (idx %d < %d); theme must be the head of the visible order; body:\n%s", present, idx, themeIdx, body)
+		}
+	}
+
+	// Assertion 2: every known visible section that precedes `hooks`
+	// in the render-order table is either absent or also before
+	// `hooks` — so the last rendered known section is `hooks` for
+	// this fixture.
+	hooksIdx := indexOf("hooks")
+	if hooksIdx < 0 {
+		t.Fatalf("rendered body missing `hooks` section; fixture seeding failed; body:\n%s", body)
+	}
+	for _, present := range sections {
+		if hiddenEffectiveSections[present] || present == "hooks" {
+			continue
+		}
 		// Only rank against sections in the known order table.
 		known := false
 		for _, k := range effectiveSectionRenderOrder {
@@ -476,12 +501,61 @@ func TestSettingsGeneralEffectiveSectionOrder(t *testing.T) {
 				break
 			}
 		}
-		if !known || present == "backup" {
+		if !known {
 			continue
 		}
 		idx := indexOf(present)
-		if idx > backupIdx {
-			t.Fatalf("known section %q rendered after `backup` (idx %d > %d); backup must be the tail of the order table; body:\n%s", present, idx, backupIdx, body)
+		if idx > hooksIdx {
+			t.Fatalf("known section %q rendered after `hooks` (idx %d > %d); hooks must be the tail of the order table; body:\n%s", present, idx, hooksIdx, body)
+		}
+	}
+}
+
+// TestSettingsGeneralEffectiveSectionsHidden pins the hide policy:
+// `languages`, `workflow`, `template_defaults`, and `tag_synonyms`
+// are suppressed in Settings › General because their effective values
+// are already surfaced elsewhere (Runtime card / Project line /
+// dedicated sub-tabs). The fixture populates `tag_synonyms` and
+// `workflow` so this test would catch a regression that re-introduced
+// either kicker. `languages` and `template_defaults` are also asserted
+// even though the default fixture doesn't populate the latter — the
+// negative assertion is cheap and locks the contract for both keys.
+//
+// Kicker detection mirrors TestSettingsGeneralEffectiveSectionOrder:
+// kickers render as `// LABEL` with an empty value cell; row labels
+// (e.g. PROJECT card's `workflow` row) share the `// LABEL` prefix but
+// always carry a value, so we filter on the cell being blank to avoid
+// a false positive against the Project card's `workflow` row.
+func TestSettingsGeneralEffectiveSectionsHidden(t *testing.T) {
+	m, _ := effectiveModelFixture(160, 200)
+	body := stripANSI(m.renderSettingsGeneralBody())
+	lines := strings.Split(body, "\n")
+
+	hasKicker := func(label string) bool {
+		needle := "// " + strings.ToUpper(label)
+		for _, line := range lines {
+			if !strings.Contains(line, needle) {
+				continue
+			}
+			parts := strings.Split(line, "│")
+			if len(parts) < 4 {
+				continue
+			}
+			if strings.TrimSpace(parts[2]) != "" {
+				continue
+			}
+			return true
+		}
+		return false
+	}
+
+	for section := range hiddenEffectiveSections {
+		label := m.t("tui.settings.effective.section." + section)
+		if label == "tui.settings.effective.section."+section {
+			t.Fatalf("catalog missing label for hidden section %q (resolved to raw key) — hide check needs a real label to assert against", section)
+		}
+		if hasKicker(label) {
+			t.Fatalf("rendered body must not contain kicker for hidden section %q (label %q); body:\n%s", section, label, body)
 		}
 	}
 }
@@ -490,10 +564,14 @@ func TestSettingsGeneralEffectiveSectionOrder(t *testing.T) {
 // sections not listed in effectiveSectionRenderOrder are appended in
 // their original input order, after all known sections. Guards future
 // Settings field additions from silently dropping out of the viewer.
+// `theme`/`backup`/`hooks` are picked from the current order table so
+// the test stays decoupled from the exact tier roster (e.g. a reorder
+// inside the known set would not break this assertion as long as
+// known-leads-unknowns holds).
 func TestOrderEffectiveSectionsUnknownTail(t *testing.T) {
-	in := []string{"future_one", "backup", "languages", "future_two", "theme"}
+	in := []string{"future_one", "hooks", "backup", "future_two", "theme"}
 	got := orderEffectiveSections(in)
-	want := []string{"languages", "theme", "backup", "future_one", "future_two"}
+	want := []string{"theme", "backup", "hooks", "future_one", "future_two"}
 	if len(got) != len(want) {
 		t.Fatalf("orderEffectiveSections len = %d, want %d (%v vs %v)", len(got), len(want), got, want)
 	}
@@ -508,12 +586,13 @@ func TestOrderEffectiveSectionsUnknownTail(t *testing.T) {
 // truncation contract: very long scalar values render with the
 // terminal-native `…` glyph instead of wrapping or overflowing. We
 // stage a custom Settings with a 200-char value and look for the
-// ellipsis in the rendered body.
+// ellipsis in the rendered body. Uses `theme.active` as the carrier
+// because `tag_synonyms` (the earlier choice) is now hidden from the
+// effective viewer — the truncation logic itself is section-agnostic
+// so the assertion still pins the same code path.
 func TestSettingsGeneralEffectiveTruncatesLongValues(t *testing.T) {
 	bundle := effectiveBundleFixture()
-	bundle.Config.TagSynonyms = map[string]string{
-		"long": strings.Repeat("x", 200),
-	}
+	bundle.Config.Theme = config.ThemeSettings{Active: strings.Repeat("x", 200)}
 	snap := config.BuildSnapshot(bundle)
 	m := Model{
 		styles:    newStyles(config.Theme{}),
