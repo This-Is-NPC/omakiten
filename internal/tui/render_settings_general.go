@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"omakiten/internal/config"
 )
 
 // renderSettingsGeneral renders the read-only info card surfaced under
@@ -70,11 +72,98 @@ func (m Model) renderSettingsGeneralBody() string {
 		[2]string{m.t("tui.settings.project.theme"), valueOrDash(m.theme.Key)},
 	)
 
+	// Compose the effective-config tables after Runtime / Project so
+	// the entire Settings › General body packs through a single
+	// renderSummaryTables call. The shared call keeps the Auto
+	// label-width scan honest across all stacked panels — otherwise
+	// runtime/project would size against a 14-col floor while the
+	// effective sections would size against 24, and stacked tables of
+	// mismatched widths look ragged.
+	tables := [][][]string{runtimeRows, projectRows}
+	tables = append(tables, m.effectiveConfigSections()...)
+
 	return m.renderSummaryTables(summaryTablesOpts{
-		LabelWidth: 14,
+		LabelWidth: 24,
 		ValueWidth: 46,
 		Auto:       true,
-	}, runtimeRows, projectRows)
+	}, tables...)
+}
+
+// effectiveConfigSections builds one summary table per top-level
+// Settings section reported by the active snapshot's effective-config
+// accessor. Returned as a list of pre-built table rows so the General
+// renderer can fold them into its single renderSummaryTables call
+// alongside the Runtime / Project tables.
+//
+// Returns an empty slice when no snapshot is bound or no sections are
+// populated — the General view still renders Runtime + Project in that
+// case, so the caller does not need a fallback hint here. (The footer
+// hint on the panel itself, tui.settings.general_hint, already covers
+// the read-only contract for both halves of the body.)
+//
+// Layout: one bordered table per section, rows = `key path` +
+// `effective value`. Reuses the same summary-table primitive as
+// Runtime/Project per feedback_tui_wrappable_sections — no new layout
+// primitive lands here.
+//
+// Source layer (`default` / `project` / `env`) is reserved on the
+// accessor but not yet threaded — the i18n keys exist
+// (`tui.settings.effective.source.*`) so a follow-up wave can light up
+// a third column without touching this composer's call shape.
+func (m Model) effectiveConfigSections() [][][]string {
+	snap := m.repos.activeSnapshot()
+	if snap == nil {
+		return nil
+	}
+	tuples := snap.EffectiveTuples()
+	if len(tuples) == 0 {
+		return nil
+	}
+
+	// Bucket tuples by section while preserving the accessor's
+	// declaration-order section list. EffectiveSectionKeys already
+	// returns sections in the canonical Settings struct field order,
+	// so we lean on it for the outer loop instead of re-tracking
+	// order while we group.
+	sectionKeys := snap.EffectiveSectionKeys()
+	grouped := make(map[string][]config.EffectiveTuple, len(sectionKeys))
+	for _, t := range tuples {
+		grouped[t.Section] = append(grouped[t.Section], t)
+	}
+
+	// Cap the value column so long literals (long paths, packed
+	// transition lists, multi-line YAML scalars) truncate with the
+	// `…` glyph instead of wrapping and breaking the grid. The
+	// summary-table packer scales the value column up in Auto mode,
+	// so this is only a soft ceiling for individual cell values —
+	// the table itself still fills the panel width.
+	const valueCap = 80
+
+	tables := make([][][]string, 0, len(sectionKeys))
+	for _, section := range sectionKeys {
+		rows := grouped[section]
+		if len(rows) == 0 {
+			continue
+		}
+		label := m.t("tui.settings.effective.section." + section)
+		fields := make([][2]string, 0, len(rows))
+		for _, r := range rows {
+			keyPath := r.Key
+			if keyPath == "" {
+				// Scalar sections (no nested path) — show the
+				// section name as the key so the row still reads
+				// as `<section> · <value>` instead of leaving an
+				// empty label cell.
+				keyPath = section
+			}
+			fields = append(fields, [2]string{
+				keyPath,
+				truncateText(r.Value, valueCap),
+			})
+		}
+		tables = append(tables, m.summaryRows(label, fields...))
+	}
+	return tables
 }
 
 // settingsGeneralViewportRows is the data-row budget for the General
