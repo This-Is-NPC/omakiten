@@ -33,93 +33,56 @@ import (
 // convention. This is EXPECTED growth from the locked bullet-with-body design,
 // not a regression. CW8 (#379) re-tightens these once theming rewires each
 // command to a minimal skill subset rather than the full default repertoire.
+// Recalibrated for omakase theming (#274 / W4): omakase became the first preset
+// to wire command-level `skills:` — each command now selects a minimal SUBSET of
+// its bound persona's skill_repertoire (2-4 skills) instead of letting the full
+// repertoire flow through persona wiring. Every prompt shrank accordingly, so
+// each budget below is the command's current rendered size × ~1.3 (~30%
+// headroom), rounded to the nearest 100, matching this file's convention. This
+// is the tightening the prior CW3-CW7 comments deferred to "#379"; #379 still
+// owns the formal final pass across all presets, this wave just keeps the
+// omakase kit honest and green now that its skill footprint is minimal.
 var promptBudgets = map[string]int{
-	"okt":                23000,
-	"okt-task-imagine":   26400,
-	"okt-task-create":    29900,
-	"okt-project-resume": 22900,
-	"okt-task-continue":  23100,
-	"okt-task-implement": 28300,
-	"okt-task-document":  20200,
-	"okt-config":         20600,
-	"okt-task-commit":    9500,
-	"okt-task-review":    19400,
-	"okt-task-check":     15200,
-	// Notes/handoff commands (#363), rescoped to the v2 prefix surface
-	// (#373). Budgets sized against the embedded omakase default kit with
-	// ~30% headroom. okt-pause (former handoff) carries the longest action
-	// body (workflow/wave edge cases) plus the `project-scope-only` +
-	// `no-praise-pad` laws and the `note-handoff` template metadata.
-	// okt-note-recap folds in the former standup digest: its action body is
-	// the longest of the note family and it binds both note-recap and
-	// note-standup-digest template metadata, so its budget is raised.
-	"okt-pause":      21900,
-	"okt-note-free":  20900,
-	"okt-note-recap": 24900,
-	// CW5 (#376): granular okt-task-* surface — 12 new lifecycle commands + 1
-	// new nav (okt-task-resume). Budgets sized against the embedded omakase
-	// default kit with ~30% headroom, bucketed by the bound persona's skill
-	// footprint: Builder (engineer) ~ continue/implement, Owner (product-owner)
-	// ~ imagine/create, Tester (check-runner) ~ check, Reviewer (code-reviewer)
-	// ~ review, Scribe (documentation-agent) ~ document. CW8 (#379)
-	// re-tightens these once theming rewires each command to a minimal skill
-	// subset rather than the full default repertoire.
-	"okt-task-resume":       23500,
-	"okt-task-research":     27000,
-	"okt-task-validate":     27000,
-	"okt-task-requirements": 27000,
-	"okt-task-prioritize":   27000,
-	"okt-task-decompose":    23700,
-	"okt-task-estimate":     23600,
-	"okt-task-design":       23800,
-	"okt-task-self-review":  23700,
-	"okt-task-refactor":     23700,
-	"okt-task-quality":      15600,
-	"okt-task-secure":       19700,
-	"okt-task-debrief":      20300,
-	// CW6 (#377): granular plan/project/note surface. Budgets sized against the
-	// embedded omakase default kit with ~30% headroom, bucketed by the bound
-	// persona's skill footprint: okt-plan-* bind Owner (product-owner, ~ imagine
-	// footprint); okt-project-continue and okt-note-list/show bind Builder
-	// (engineer, ~ continue/note footprint). CW8 (#379) re-tightens once theming
-	// rewires each command to a minimal skill subset.
-	"okt-plan-create":      27000,
-	"okt-plan-show":        27000,
-	"okt-plan-continue":    27000,
-	"okt-plan-claim":       27000,
-	"okt-project-continue": 23500,
-	"okt-note-list":        23500,
-	"okt-note-show":        23500,
-	// CW3 (#374): okt-run Owner orchestrator. Binds the Owner persona
-	// (product-owner, ~ imagine/create skill footprint) with no templates but
-	// the longest action body in the surface — the full director playbook
-	// (target detection, runnable selection, per-task subagent spawn,
-	// conditional-parallel gating, compact-return review loop, clean halt).
-	// Budget sized against the embedded omakase default kit with ~30% headroom.
-	// CW8 (#379) re-tightens once theming rewires it to a minimal skill subset.
-	"okt-run": 28000,
-	// CW4 (#375): the four guiding orchestrators. okt-start (shared with the bare
-	// `okt` shortcut) and okt-pause bind the Concierge-ish documentation-agent —
-	// the lighter skill footprint (~okt-task-document family) — but each carries
-	// a long guiding action body (read-state → propose → coach), so the budget
-	// sits above the document family. okt-shape and okt-audit bind the Owner
-	// persona (product-owner, ~ okt-run footprint) and each carries the longest
-	// action bodies in the surface (full shaping / assurance playbooks). Budgets
-	// sized against the embedded omakase default kit with ~30% headroom. CW8
-	// (#379) re-tightens once theming rewires each to a minimal skill subset.
-	"okt-start": 22000,
-	"okt-shape": 29000,
-	"okt-audit": 29000,
-	// CW7 (#378): system commands (talk to the tool, not the project). All three
-	// bind the documentation-agent (~ okt-task-document / okt-config footprint).
-	// okt-help carries the longest action body in the system family — the full
-	// tier-aware guide (tiers + mental flow + drop-to-granular hints) — so its
-	// budget sits above okt-config; okt-config (KEPT) binds the config-orientation
-	// template; okt-skill is a lean skills.list/skills.get UX wrapper. Budgets
-	// sized against the embedded omakase default kit with ~30% headroom. CW8
-	// (#379) re-tightens once theming rewires each to a minimal skill subset.
-	"okt-help":  23000,
-	"okt-skill": 22000,
+	"okt":                   4800,
+	"okt-task-imagine":      4000,
+	"okt-task-create":       8000,
+	"okt-project-resume":    3100,
+	"okt-task-continue":     2500,
+	"okt-task-implement":    8000,
+	"okt-task-document":     3300,
+	"okt-config":            4200,
+	"okt-task-commit":       5100,
+	"okt-task-review":       5300,
+	"okt-task-check":        4400,
+	"okt-pause":             5900,
+	"okt-note-free":         3900,
+	"okt-note-recap":        5100,
+	"okt-task-resume":       2800,
+	"okt-task-research":     2600,
+	"okt-task-validate":     2600,
+	"okt-task-requirements": 4500,
+	"okt-task-prioritize":   5100,
+	"okt-task-decompose":    4400,
+	"okt-task-estimate":     4300,
+	"okt-task-design":       2700,
+	"okt-task-self-review":  3800,
+	"okt-task-refactor":     4300,
+	"okt-task-quality":      4200,
+	"okt-task-secure":       4100,
+	"okt-task-debrief":      4100,
+	"okt-plan-create":       4500,
+	"okt-plan-show":         4500,
+	"okt-plan-continue":     4500,
+	"okt-plan-claim":        4600,
+	"okt-project-continue":  3500,
+	"okt-note-list":         3500,
+	"okt-note-show":         3400,
+	"okt-run":               7000,
+	"okt-start":             4800,
+	"okt-shape":             6500,
+	"okt-audit":             6400,
+	"okt-help":              5800,
+	"okt-skill":             4500,
 }
 
 // TestTemplateBoundCommandsCarryFetchHint guards the JIT contract for

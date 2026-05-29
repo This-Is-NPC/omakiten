@@ -695,56 +695,88 @@ workflows:
 #   - project-scope-only
 #   - workflow-enforced
 #   - yaml-is-canonical
+# Omakase (Naruto) themed roster — Pitch B, by canonical role (#189 W4).
+# Schema v2: each persona declares a `skill_repertoire` (the full pool it is
+# equipped with); mcp_commands below may only select a SUBSET of that pool
+# (enforced by validateMCPCommandSkillSubset). The persona carries TONE; the
+# skill carries PROCEDURE; templates carry STRUCTURE. Concierge and Scribe are
+# the same hand (shikamaru-nara), so seven persona files cover eight role slots.
 personas:
-  - slug: engineer
-    skills:
-      - trunk-based-development
-      - continuous-integration
-      - test-driven-development
-      - dora-mindset
-      - implementation
-      - standup-digest
-      - recap-timeline
-      - markdown
-  - slug: product-owner
-    skills:
-      - discovery
-      - user-story-writing
+  # Concierge + Scribe — intel/router and record-keeper. Repertoire includes
+  # all four #359 note skills so the okt-note-* and okt-pause slots resolve.
+  - slug: shikamaru-nara
+    schema_version: 2
+    skill_repertoire:
       - pdca-cycle
-      - five-w-two-h
-      - smart-goals
-      - invest-stories
-      - moscow-prioritization
-      - rice-scoring
-      - non-functional-requirements
-      - markdown
-  - slug: documentation-agent
-    skills:
-      - documentation
-      - architecture-mapping
-      - requirements-mapping
-      - readme-curation
+      - discovery
       - handoff-synthesis
       - note-capture
+      - recap-timeline
+      - standup-digest
+      - documentation
+      - architecture-mapping
+      - postmortem-authoring
+      - staged-delivery
       - markdown
-  - slug: commit-author
-    skills:
-      - conventional-commits-spec
+  # Owner — direction, prioritization, requirements, plan authoring.
+  - slug: third-hokage
+    schema_version: 2
+    skill_repertoire:
+      - five-w-two-h
+      - smart-goals
+      - staged-delivery
+      - dora-mindset
+      - risk-driven-development
+      - requirements-elicitation
+      - non-functional-requirements
+      - moscow-prioritization
+      - rice-scoring
+      - user-story-writing
+      - invest-stories
       - markdown
-  - slug: code-reviewer
-    skills:
-      - refactoring-catalog
-      - code-smells
-      - solid-principles
-      - legacy-seams
-      - security-review-lens
+  # Ideator — discovery and cheap experiments.
+  - slug: konohamaru-class
+    schema_version: 2
+    skill_repertoire:
+      - discovery
+      - lean-experimentation
+      - five-w-two-h
       - markdown
-  - slug: check-runner
-    skills:
+  # Builder — small green increments, opportunistic cleanup.
+  - slug: naruto-uzumaki
+    schema_version: 2
+    skill_repertoire:
+      - implementation
       - test-driven-development
-      - static-analysis-discipline
-      - coverage-analysis
+      - trunk-based-development
+      - continuous-integration
+      - solid-principles
+      - code-smells
+      - refactoring-catalog
+      - markdown
+  # Tester — runs the checks, reports evidence.
+  - slug: sakura-haruno
+    schema_version: 2
+    skill_repertoire:
       - regression-detection
+      - coverage-analysis
+      - static-analysis-discipline
+      - test-driven-development
+      - markdown
+  # Reviewer — whole-diff read, structural + security lens.
+  - slug: kakashi-hatake
+    schema_version: 2
+    skill_repertoire:
+      - code-smells
+      - refactoring-catalog
+      - security-review-lens
+      - solid-principles
+      - markdown
+  # Committer — Conventional Commits, scoped history, never auto-pushes.
+  - slug: iruka-umino
+    schema_version: 2
+    skill_repertoire:
+      - conventional-commits-spec
       - markdown
 # mcp_commands binds each `okt-*` MCP prompt to a persona, a set of laws, and a
 # set of templates. The reserved `global:` entry declares laws inherited by
@@ -779,57 +811,80 @@ mcp_commands:
     laws:
       - template-fidelity
       - authorize-remote-writes
+  # Omakase (Naruto) slot bindings (#189 W4). Each command binds the themed
+  # persona for its canonical role and selects a SUBSET of that persona's
+  # skill_repertoire — the first preset to wire command-level skills (earlier
+  # waves left them empty). The W1 subset validator enforces skills ⊆ repertoire.
   okt:
-    persona: documentation-agent
-  # CW4 (#375) — orchestrators that guide. okt-start (Concierge smart entry,
-  # shared with the bare `okt` shortcut) and okt-pause (Concierge close) bind
-  # the documentation-agent — the closest Concierge-ish persona under the
-  # current kit. okt-shape and okt-audit are Owner orchestrators, so they bind
-  # the same Owner-role persona okt-run / okt-task-create use (product-owner).
-  # Command-level skills stay empty; skills flow through persona wiring. The
-  # themed Concierge persona is #189.
+    persona: shikamaru-nara
+    skills:
+      - pdca-cycle
+  # Orchestrators that guide. okt-start (Concierge smart entry, shared with the
+  # bare `okt` shortcut) and okt-pause (Concierge close) bind shikamaru-nara.
+  # okt-shape / okt-audit are Owner orchestrators → third-hokage.
   okt-start:
-    persona: documentation-agent
+    persona: shikamaru-nara
+    skills:
+      - pdca-cycle
+      - discovery
   okt-shape:
-    persona: product-owner
+    persona: third-hokage
+    skills:
+      - five-w-two-h
+      - smart-goals
   okt-audit:
-    persona: product-owner
-  # CW3 (#374) — okt-run Owner orchestrator. Binds the Owner-role persona
-  # (product-owner, the same role okt-task-create / okt-plan-* use): okt-run is
-  # the director that delegates implementation to per-task Builder subagents and
-  # reviews their compact returns. Lean by design — no okt-task-* bodies, no
-  # templates. Command-level skills stay empty; skills flow through persona
-  # wiring. Themed persona rebind is #189.
+    persona: third-hokage
+    skills:
+      - risk-driven-development
+  # okt-run Owner director — delegates implementation to per-task Builder
+  # subagents and reviews their compact returns.
   okt-run:
-    persona: product-owner
+    persona: third-hokage
+    skills:
+      - staged-delivery
+      - dora-mindset
   okt-task-imagine:
-    persona: product-owner
+    persona: konohamaru-class
+    skills:
+      - discovery
+      - lean-experimentation
     laws_disabled:
       - template-fidelity
     templates:
       - comment-5w2h
       - comment-smart-success
-  # CW5 (#376) — granular lifecycle commands. Slot wiring only: each binds the
-  # existing persona that fits its role (Ideator/Owner = product-owner,
-  # Builder = engineer, Tester = check-runner, Reviewer = code-reviewer,
-  # Scribe = documentation-agent). Skills flow through persona wiring as with
-  # every other task command. Themed persona/skill rebind is #189.
+  # Granular lifecycle commands. Ideator → konohamaru-class; Owner →
+  # third-hokage; Builder → naruto-uzumaki; Concierge → shikamaru-nara.
   okt-task-research:
-    persona: product-owner
+    persona: konohamaru-class
+    skills:
+      - discovery
     laws_disabled:
       - template-fidelity
   okt-task-validate:
-    persona: product-owner
+    persona: konohamaru-class
+    skills:
+      - lean-experimentation
     laws_disabled:
       - template-fidelity
   okt-task-requirements:
-    persona: product-owner
+    persona: third-hokage
+    skills:
+      - requirements-elicitation
+      - non-functional-requirements
   okt-task-prioritize:
-    persona: product-owner
+    persona: third-hokage
+    skills:
+      - moscow-prioritization
+      - rice-scoring
     templates:
       - comment-moscow
   okt-task-create:
-    persona: product-owner
+    persona: third-hokage
+    skills:
+      - user-story-writing
+      - invest-stories
+      - smart-goals
     laws:
       - invest-stories
       - outcome-over-output
@@ -839,32 +894,57 @@ mcp_commands:
       - comment-smart-success
       - comment-moscow
   okt-task-decompose:
-    persona: product-owner
+    persona: third-hokage
+    skills:
+      - user-story-writing
   okt-task-estimate:
-    persona: product-owner
+    persona: third-hokage
+    skills:
+      - rice-scoring
   okt-task-design:
-    persona: engineer
+    persona: naruto-uzumaki
+    skills:
+      - solid-principles
   okt-project-resume:
-    persona: engineer
+    persona: shikamaru-nara
+    skills:
+      - pdca-cycle
   okt-project-continue:
-    persona: engineer
-  # CW6 (#377) — granular plan commands. Owner/Concierge role binds the
-  # product-owner persona (the Owner that authors + claims plan work). Slot
-  # wiring only; skills flow through persona wiring. Themed rebind = #189.
+    persona: shikamaru-nara
+    skills:
+      - pdca-cycle
+  # Granular plan commands. Owner role → third-hokage (authors + claims plans).
   okt-plan-create:
-    persona: product-owner
+    persona: third-hokage
+    skills:
+      - staged-delivery
   okt-plan-show:
-    persona: product-owner
+    persona: third-hokage
+    skills:
+      - staged-delivery
   okt-plan-continue:
-    persona: product-owner
+    persona: third-hokage
+    skills:
+      - staged-delivery
   okt-plan-claim:
-    persona: product-owner
+    persona: third-hokage
+    skills:
+      - staged-delivery
   okt-task-resume:
-    persona: engineer
+    persona: naruto-uzumaki
+    skills:
+      - implementation
   okt-task-continue:
-    persona: engineer
+    persona: naruto-uzumaki
+    skills:
+      - implementation
   okt-task-implement:
-    persona: engineer
+    persona: naruto-uzumaki
+    skills:
+      - implementation
+      - test-driven-development
+      - trunk-based-development
+      - continuous-integration
     laws:
       - bounded-self-review
       - no-silent-behavior-changes
@@ -879,47 +959,66 @@ mcp_commands:
       - comment-tests-passing
       - comment-refactor-drive-by
   okt-task-self-review:
-    persona: engineer
+    persona: naruto-uzumaki
+    skills:
+      - code-smells
     laws:
       - bounded-self-review
     templates:
       - comment-refactor-drive-by
   okt-task-refactor:
-    persona: engineer
+    persona: naruto-uzumaki
+    skills:
+      - refactoring-catalog
     laws:
       - no-silent-behavior-changes
       - boy-scout-rule
     templates:
       - comment-refactor-opportunities
+  # Scribe → shikamaru-nara.
   okt-task-document:
-    persona: documentation-agent
+    persona: shikamaru-nara
+    skills:
+      - documentation
+      - architecture-mapping
   okt-task-debrief:
-    persona: documentation-agent
+    persona: shikamaru-nara
+    skills:
+      - postmortem-authoring
     laws:
       - no-praise-pad
-  # CW7 (#378) — system commands talk to the TOOL, not the project. All three
-  # bind the documentation-agent (the orientation/teaching role under the
-  # current kit), consistent with okt-config's existing wiring. okt-help is the
-  # tier-aware tutorial; okt-skill wires UX onto the read-only skills.list /
-  # skills.get tools (pulls any skill, ungated by persona repertoire). Command-
-  # level skills stay empty; skills flow through persona wiring. Themed rebind
-  # is #189.
+  # System commands talk to the TOOL, not the project. Concierge/generic role →
+  # shikamaru-nara. okt-skill pulls ANY skill (ungated by persona repertoire);
+  # the markdown subset just shapes its own prose.
   okt-help:
-    persona: documentation-agent
+    persona: shikamaru-nara
+    skills:
+      - markdown
   okt-config:
-    persona: documentation-agent
+    persona: shikamaru-nara
+    skills:
+      - markdown
     templates:
       - config-orientation
   okt-skill:
-    persona: documentation-agent
+    persona: shikamaru-nara
+    skills:
+      - markdown
+  # Committer → iruka-umino.
   okt-task-commit:
-    persona: commit-author
+    persona: iruka-umino
+    skills:
+      - conventional-commits-spec
     laws:
       - conventional-commits
       - no-coauthored-by
       - scope-from-paths
+  # Reviewer → kakashi-hatake.
   okt-task-review:
-    persona: code-reviewer
+    persona: kakashi-hatake
+    skills:
+      - code-smells
+      - refactoring-catalog
     laws:
       - findings-actionable
       - no-praise-pad
@@ -928,49 +1027,67 @@ mcp_commands:
       - comment-review-findings
       - comment-refactor-opportunities
   okt-task-secure:
-    persona: code-reviewer
+    persona: kakashi-hatake
+    skills:
+      - security-review-lens
     laws:
       - findings-actionable
       - severity-tagged
     templates:
       - comment-review-findings
+  # Tester → sakura-haruno.
   okt-task-check:
-    persona: check-runner
+    persona: sakura-haruno
+    skills:
+      - regression-detection
+      - coverage-analysis
     laws:
       - findings-actionable
       - severity-tagged
     templates:
       - comment-check-report
   okt-task-quality:
-    persona: check-runner
+    persona: sakura-haruno
+    skills:
+      - static-analysis-discipline
     laws:
       - findings-actionable
       - severity-tagged
     templates:
       - comment-review-findings
-  # Notes / handoff v1 (#363), rescoped to the v2 prefix surface (#373).
-  # okt-pause (bare orchestrator close) + okt-note-free (ad-hoc capture)
-  # wire into the documentation-agent; okt-note-recap (navigation; folds in
-  # the former standup digest via a wide window) into the engineer. Persona
-  # choice is provisional under the current persona kit; #189 W4/W5.x rebinds
-  # these to themed personas under Proposta B. Skills bind via persona wiring.
+  # Notes / handoff. The Concierge+Scribe (shikamaru-nara) repertoire carries
+  # all four #359 note skills — handoff-synthesis, note-capture, standup-digest,
+  # recap-timeline — so every notes-bearing slot resolves a real skill subset.
+  # okt-pause (orchestrator close) synthesises a handoff; okt-note-free captures
+  # ad-hoc; okt-note-recap folds the standup digest into a wide-window recap.
   okt-pause:
-    persona: documentation-agent
+    persona: shikamaru-nara
+    skills:
+      - handoff-synthesis
     laws:
       - project-scope-only
       - no-praise-pad
     templates:
       - note-handoff
   okt-note-free:
-    persona: documentation-agent
+    persona: shikamaru-nara
+    skills:
+      - note-capture
     templates:
       - note-free
   okt-note-recap:
-    persona: engineer
+    persona: shikamaru-nara
+    skills:
+      - recap-timeline
+      - standup-digest
     templates:
       - note-recap
       - note-standup-digest
   okt-note-list:
-    persona: engineer
+    persona: shikamaru-nara
+    skills:
+      - note-capture
   okt-note-show:
-    persona: engineer
+    persona: shikamaru-nara
+    skills:
+      - note-capture
