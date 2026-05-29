@@ -1093,6 +1093,13 @@ keys:
   cli.update.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); binary unchanged — run `okt config validate --migrate` for details"
   cli.update.err.config_validation_exec_fmt: "run staged binary health check: %s"
   cli.tui.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); run `okt config validate --migrate` for details"
+  # Remediation hint copy (#367) — %s slot carries the suggested command literal.
+  cli.config.validate.remediation.missing_shipped_file: "Restore the shipped default files: %s — your custom/ subtree is preserved; back up direct edits to shipped files first."
+  cli.config.validate.remediation.embedded_default_drift: "Refresh the embedded defaults the running binary expects: %s — your custom/ subtree stays untouched."
+  cli.config.validate.remediation.unknown_schema_key: "Remove the unknown key from the config: %s — open the file at the path cited above and delete the entry."
+  cli.config.validate.remediation.invalid_value: "Fix the invalid value: %s — open the file at the cited path and adjust the field."
+  cli.config.validate.remediation.missing_required_key: "Add the missing required key: %s — open the file at the cited path and insert the entry described in the error."
+  cli.config.validate.remediation.theme_not_found: "Pick a theme the runtime can resolve: %s — open the file and set config.theme.active to one of the available slugs."
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "Ingen plans endnu. Opret en med `okt plan create <slug> --name \"...\"`."
   tui.plans.list.header: "// SLUG             STATUS    FÆRDIG/TOTAL  %    NAVN ‹AKTIV WAVE›"

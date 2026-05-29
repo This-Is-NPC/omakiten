@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -71,13 +72,21 @@ func classifyValidationError(err error) string {
 
 // buildValidateFailureDetails packages a single validator error into
 // the `details` map the failure envelope ships. The shape pins
-// #365 AC 1: `{errors: [{kind, path, message, suggested_command}],
-// warnings: [...]}`. Callers compose this around the outer
-// domain.NewError so `runJSON` writes an `ok: false` envelope with the
-// structured payload nested under `details`.
+// #365 AC 1 plus #367's i18n hint: `{errors: [{kind, path, message,
+// suggested_command, hint}], warnings: [...]}`. Callers compose this
+// around the outer domain.NewError so `runJSON` writes an `ok:
+// false` envelope with the structured payload nested under
+// `details`.
+//
+// `hint` is the i18n-resolved prose copy from
+// cli.config.validate.remediation.<kind>; the format-string slot
+// receives the catalogued command literal so a future locale
+// override of the prose still names the same command — translators
+// cannot invent new ones (`law: no-assumptions`).
 func buildValidateFailureDetails(path string, err error, warnings []string) map[string]any {
 	kind := classifyValidationError(err)
 	entry := healthCheckRemediations[kind]
+	hint := fmt.Sprintf(t("cli.config.validate.remediation."+kind), entry.Command)
 	return map[string]any{
 		"path": path,
 		"errors": []map[string]any{
@@ -86,6 +95,7 @@ func buildValidateFailureDetails(path string, err error, warnings []string) map[
 				"path":              path,
 				"message":           domain.SafeError(err),
 				"suggested_command": entry.Command,
+				"hint":              hint,
 			},
 		},
 		"warnings": warnings,

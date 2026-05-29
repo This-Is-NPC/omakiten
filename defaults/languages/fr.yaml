@@ -1089,11 +1089,18 @@ keys:
   cli.update.err.backup_failed_fmt: "pre-swap backup failed: %s; binary unchanged"
 
   # okt config validate --migrate health-check additions (#365).
-  cli.config.validate.flag.migrate: "run MigrateLayout + EnsureDefaultFiles before LoadBundle/ValidateBundle so schema backfills land in the report"
-  cli.update.err.stage_binary_fmt: "stage extracted binary for pre-swap health check: %s"
-  cli.update.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); binary unchanged — run `okt config validate --migrate` for details"
-  cli.update.err.config_validation_exec_fmt: "run staged binary health check: %s"
-  cli.tui.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); run `okt config validate --migrate` for details"
+  cli.config.validate.flag.migrate: "lancer MigrateLayout + EnsureDefaultFiles avant LoadBundle/ValidateBundle pour que les backfills de schéma figurent dans le rapport"
+  cli.update.err.stage_binary_fmt: "préparer le binaire extrait pour le health check pré-swap : %s"
+  cli.update.err.config_validation_failed_fmt: "health check de la config a échoué (%d erreurs, première : %s) ; binaire inchangé — lancez `okt config validate --migrate` pour les détails"
+  cli.update.err.config_validation_exec_fmt: "exécuter le health check du binaire staged : %s"
+  cli.tui.err.config_validation_failed_fmt: "health check de la config a échoué (%d erreurs, première : %s) ; lancez `okt config validate --migrate` pour les détails"
+  # Remediation hint copy (#367) — %s slot carries the suggested command literal.
+  cli.config.validate.remediation.missing_shipped_file: "Restaurer les fichiers par défaut embarqués : %s — votre sous-arbre custom/ est préservé ; sauvegardez d'abord les modifications directes aux fichiers shipped."
+  cli.config.validate.remediation.embedded_default_drift: "Rafraîchir les defaults embarqués attendus par le binaire en cours : %s — votre sous-arbre custom/ n'est pas touché."
+  cli.config.validate.remediation.unknown_schema_key: "Retirer la clé inconnue de la config : %s — ouvrez le fichier au chemin cité et supprimez l'entrée."
+  cli.config.validate.remediation.invalid_value: "Corriger la valeur invalide : %s — ouvrez le fichier au chemin cité et ajustez le champ."
+  cli.config.validate.remediation.missing_required_key: "Ajouter la clé requise manquante : %s — ouvrez le fichier au chemin cité et insérez l'entrée décrite dans l'erreur."
+  cli.config.validate.remediation.theme_not_found: "Choisir un thème que le runtime sait résoudre : %s — ouvrez le fichier et définissez config.theme.active sur l'un des slugs disponibles."
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "Aucun plan pour l'instant. Créez-en un avec `okt plan create <slug> --name \"...\"`."
   tui.plans.list.header: "// SLUG             STATUS    FAIT/TOTAL   %    NOM ‹WAVE ACTIVE›"

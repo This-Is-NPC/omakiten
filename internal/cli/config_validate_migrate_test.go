@@ -131,6 +131,13 @@ func TestConfigValidateMigrateBrokenYamlReturnsStructuredEnvelope(t *testing.T) 
 	if entry["path"] != cfgPath {
 		t.Fatalf("details.errors[0].path = %v want %s", entry["path"], cfgPath)
 	}
+	hint, _ := entry["hint"].(string)
+	if strings.TrimSpace(hint) == "" {
+		t.Fatalf("details.errors[0].hint empty for kind %q — #367 i18n hint missing", kind)
+	}
+	if !strings.Contains(hint, cmdStr) {
+		t.Fatalf("details.errors[0].hint = %q must embed suggested_command %q", hint, cmdStr)
+	}
 }
 
 // TestClassifyValidationErrorMapsKnownPatterns locks the substring
