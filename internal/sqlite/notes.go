@@ -73,8 +73,7 @@ func (s *Store) UpdateNote(ctx context.Context, id int64, update domain.NoteUpda
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	existing, err := noteByIDTx(ctx, tx, id)
-	if err != nil {
+	if _, err := noteByIDTx(ctx, tx, id); err != nil {
 		return domain.Note{}, err
 	}
 
@@ -125,8 +124,6 @@ func (s *Store) UpdateNote(ctx context.Context, id int64, update domain.NoteUpda
 	if err != nil {
 		return domain.Note{}, err
 	}
-	// Carry tags forward — noteByIDTx loads them inline.
-	_ = existing
 	if err := tx.Commit(); err != nil {
 		return domain.Note{}, err
 	}
