@@ -127,12 +127,12 @@ func printPromptSurface(out io.Writer, opts *runtimeOptions) error {
 		fmt.Fprintf(out, "%s%-22s %s\n", indent, name, agent.CommandDescription(name))
 	}
 
-	fmt.Fprintf(out, "\nOrchestrators (%d) — bare, director path\n", len(orchestrators))
+	fmt.Fprintf(out, opts.t("cli.mcp.prompt.list.orchestrators"), len(orchestrators))
 	for _, name := range orchestrators {
 		writeRow("  ", name)
 	}
 
-	fmt.Fprintf(out, "\nSystem (%d) — talk to the tool, no project object\n", len(system))
+	fmt.Fprintf(out, opts.t("cli.mcp.prompt.list.system"), len(system))
 	for _, name := range system {
 		writeRow("  ", name)
 	}
@@ -141,9 +141,9 @@ func printPromptSurface(out io.Writer, opts *runtimeOptions) error {
 	for _, names := range granular {
 		granularCount += len(names)
 	}
-	fmt.Fprintf(out, "\nGranular (%d) — okt-<object>-<verb>, surgical\n", granularCount)
+	fmt.Fprintf(out, opts.t("cli.mcp.prompt.list.granular"), granularCount)
 	for _, object := range objectOrder {
-		fmt.Fprintf(out, "  %s (%d)\n", object, len(granular[object]))
+		fmt.Fprintf(out, "  "+opts.t("cli.mcp.prompt.list.object"), object, len(granular[object]))
 		for _, name := range granular[object] {
 			writeRow("    ", name)
 		}
