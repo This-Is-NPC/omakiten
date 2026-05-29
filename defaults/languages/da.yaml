@@ -1086,6 +1086,13 @@ keys:
   cli.update.err.windows_unsupported: "okt update not yet supported on Windows; reinstall via install.ps1"
   cli.update.err.dev_build: "this is a dev build; rebuild from source or install a release"
   cli.update.err.backup_failed_fmt: "pre-swap backup failed: %s; binary unchanged"
+
+  # okt config validate --migrate health-check additions (#365).
+  cli.config.validate.flag.migrate: "run MigrateLayout + EnsureDefaultFiles before LoadBundle/ValidateBundle so schema backfills land in the report"
+  cli.update.err.stage_binary_fmt: "stage extracted binary for pre-swap health check: %s"
+  cli.update.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); binary unchanged — run `okt config validate --migrate` for details"
+  cli.update.err.config_validation_exec_fmt: "run staged binary health check: %s"
+  cli.tui.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); run `okt config validate --migrate` for details"
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "Ingen plans endnu. Opret en med `okt plan create <slug> --name \"...\"`."
   tui.plans.list.header: "// SLUG             STATUS    FÆRDIG/TOTAL  %    NAVN ‹AKTIV WAVE›"
