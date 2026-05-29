@@ -68,7 +68,7 @@ Resolves each `okt-*` prompt through the running agent service (using your activ
 
 ## Tools
 
-The full surface is the source of truth in `internal/mcp/adapter.go::Tools` (the public entry; the inner `tools()` returns the literal table). Currently 44 tools, grouped below.
+The full surface is the source of truth in `internal/mcp/adapter.go::Tools` (the public entry; the inner `tools()` returns the literal table). Currently 50 tools, grouped below.
 
 ### Required `_agent_model` on every call
 
@@ -146,6 +146,16 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `context.add` | Adds a project handoff context entry. |
 | `context.dump` | Dumps compact context at level 1, 2, or 3 under a token budget. |
 
+### Notes (knowledge entries)
+
+| Tool | Purpose |
+|---|---|
+| `notes.create` | Creates a project-or-global knowledge note. `scope` is `"project"` (default when a project is resolved) or `"global"` (forces `project_id=NULL` so the row is visible cross-project). `kind` is a free string — convention: `"handoff"`, `"decision"`, `"architecture"`, `"requirements"`, `"runbook"`, `"gotcha"`, `"retrospective"`, `"glossary"`, `"free"`. Tags reuse the global tags table. Body is soft-limited to 64 KiB. |
+| `notes.edit` | Patches an existing note. Omit a field to leave it untouched; an empty `title`/`body`/`kind` rejects with `validation_error`. The `tags` pointer is a full replacement — pass an empty array to clear every tag. |
+| `notes.show` | Returns one note row plus its tags by id. |
+| `notes.list` | Lists notes filtered by `scope` (`""`, `"project"`, `"global"`), `kind`, `tags` (intersection), `pinned`, and `limit`/`offset`. Default ordering: pinned DESC, `updated_at` DESC, `id` DESC. Default scope when a project resolves is "any" — both project-scoped and global notes flow back. |
+| `notes.delete` | Hard-deletes a note. Requires `confirm=true`; the first call without confirmation returns a Confirmation block. Tags and FTS rows cascade via triggers. |
+
 ### Tags
 
 | Tool | Purpose |
@@ -218,8 +228,12 @@ Every tool accepts optional project selector fields where useful: `project_id`, 
 | `okt-commit` | Draft Conventional Commits for the working tree without pushing. |
 | `okt-review` | Walk a diff through Fowler/Beck/Martin/Feathers lens; emit findings + refactor opportunities by file:line, severity-tagged. Read-only. |
 | `okt-check` | Discover the project's check targets via `mise tasks` and report pass/fail in a tabular comment. |
+| `okt-handoff` | Close a session with a synthesised handoff note covering delta since the previous handoff, active work, decisions, blockers, and next steps. Writes a `notes.create` row with `kind="handoff"` against the resolved scope. |
+| `okt-note` | Capture a free-form knowledge note (project or global) without ceremony. Pairs with the `note-free` template. |
+| `okt-standup` | Cross-project standup digest — for each project with activity in the window, surfaces the latest handoff plus the delta since. Read-side aggregation; no writes. |
+| `okt-recap` | Temporal recap over a window — notes grouped by kind plus tasks moved to `done`. Useful for retrospectives or release notes. Read-side aggregation; no writes. |
 
-The default kit follows a REST-style handoff pattern: each prompt's action text ends by suggesting the next prompt in the cycle. `okt → okt-resume / okt-imagine → okt-create → okt-continue → okt-implement` is the happy path; `okt-document`, `okt-config`, `okt-commit`, `okt-review`, and `okt-check` are parallel surfaces.
+The default kit follows a REST-style handoff pattern: each prompt's action text ends by suggesting the next prompt in the cycle. `okt → okt-resume / okt-imagine → okt-create → okt-continue → okt-implement` is the happy path; `okt-document`, `okt-config`, `okt-commit`, `okt-review`, and `okt-check` are parallel surfaces. `okt-handoff`, `okt-note`, `okt-standup`, and `okt-recap` sit alongside the loop: `okt-handoff` closes a session by writing a `handoff` note; `okt-note` captures ad-hoc knowledge; `okt-standup` and `okt-recap` read across projects / windows to orient the next session.
 
 ## Anatomy of an MCP command
 
