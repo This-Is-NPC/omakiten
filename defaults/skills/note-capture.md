@@ -1,11 +1,11 @@
 ---
 name: Note capture
-description: Validate user-stated note inputs, resolve scope from cwd or explicit flag, and persist a free-form note via notes_create.
+description: Validate user-stated note inputs, resolve scope from cwd or explicit flag, and persist a free-form note via comments_add.
 schema_version: 2
 role_affinity:
   - Scribe
 ---
-Capture is a one-shot write. The skill does not interpret or rephrase the body — it normalises inputs, validates them, and commits the note exactly as stated.
+Capture is a one-shot write. The skill does not interpret or rephrase the body — it normalises inputs, validates them, and commits the comment exactly as stated.
 
 ## Inputs
 
@@ -14,7 +14,7 @@ Accept from invocation args or a follow-up prompt:
 - **body** — required, non-empty after trimming. The captured content verbatim.
 - **title** — required, non-empty after trimming. Short noun phrase, no terminal period.
 - **kind** — optional. Defaults to `free`. The kind `handoff` is owned by `handoff-synthesis` — reject it here so capture stays single-purpose.
-- **scope** — optional. `project` or `global`. Resolution rules below.
+- **scope** — optional. `project` or `global` (persisted as the `universal` comment scope). Resolution rules below.
 
 ## Scope resolution
 
@@ -30,8 +30,8 @@ Accept from invocation args or a follow-up prompt:
 
 ## Persist
 
-- Call `notes_create` with the resolved `scope`, `kind=free` (or whatever the user passed once allow-listed), `title`, and `body`.
-- Surface the new note id to the user. Do not echo the full body back; the user already has it.
+- Call `comments_add` with the resolved scope (`project`, or `universal` for a `global` capture), `kind=free` (or whatever the user passed once allow-listed), `title`, and `body`. Omit `task_id` — captures hang on the project or universally, never on a task.
+- Surface the new comment id to the user. Do not echo the full body back; the user already has it.
 
 ## Boundaries
 

@@ -17,7 +17,8 @@ import "strings"
 // pins the sharing.
 const oktStartAction = "Open the session as the concierge: orient the user, then hand them the next move. Read the " +
 	"active picture first — `project.overview` for the board snapshot, `tasks.list` for in-flight work, " +
-	"`plans.list` for the plan state, and `notes.list` (kind `handoff` and `recap`, most recent first) to recover " +
+	"`plans.list` for the plan state, and `comments.list` with `scope=project` (kind `handoff` and `recap`, most " +
+	"recent first) to recover " +
 	"the latest HANDOFF/RECAP so you resume the thread the previous session left, not a cold start. " +
 	"PROPOSE CONCRETE NEXT COMMANDS from what you read — name the actual command, not a vague direction: when a " +
 	"handoff points at an open task, suggest `okt-task-continue` with that id; when a plan has a claimable task, " +
@@ -536,8 +537,8 @@ var commandTable = []commandEntry{
 			"handoff), and the PLAN (`plans.continue` / `plans.show` for the active wave and what remains claimable). " +
 			"Synthesise material state since the previous handoff via `project.overview`. " +
 			"Call `templates.show note-handoff` to fetch the scaffold, fill the populated slots, and PERSIST THE " +
-			"HANDOFF NOTE via `notes.create` with `scope=project`, `kind=handoff` — the durable artifact is the note, " +
-			"not the chat. Honor `--body` to override the rendered body verbatim and `--note` to append extra context " +
+			"HANDOFF via `comments.add` with `scope=project`, `kind=handoff` (no `task_id`) — the durable artifact is " +
+			"the handoff comment, not the chat. Honor `--body` to override the rendered body verbatim and `--note` to append extra context " +
 			"under a free-form section. When nothing material changed since the last handoff, render with a \"no " +
 			"material changes since <prev>\" marker and still persist so the timeline stays continuous. " +
 			"COACH THE HANDOFF QUALITY: lead with the single next action the next session should take, then the open " +
@@ -554,9 +555,10 @@ var commandTable = []commandEntry{
 			"(default `project` when the cwd resolves; explicit `--scope global` always wins). Resolve kind " +
 			"from `--kind` (default `free`); reject `handoff`, `standup-digest`, and `recap` here — those " +
 			"belong to their dedicated commands. Title from `--title`; body from prompt or stdin. Call " +
-			"`templates.show note-free` to fetch the minimal scaffold, then persist via `notes.create`. " +
+			"`templates.show note-free` to fetch the minimal scaffold, then persist via `comments.add` with the " +
+			"resolved scope (`project`, or `universal` for `--scope global`) and no `task_id`. " +
 			"Reject empty body or empty title; when the cwd is ambiguous (multiple projects resolve) require " +
-			"`--project <slug>`. Next: suggest `notes.list` to confirm the note landed, or `okt-note-recap` to " +
+			"`--project <slug>`. Next: suggest `okt-note-list` to confirm the note landed, or `okt-note-recap` to " +
 			"see it folded into the project timeline.",
 		Description: "Capture a free-form knowledge note (project or global) without ceremony.",
 	},
@@ -565,12 +567,12 @@ var commandTable = []commandEntry{
 		Action: "Render a recap timeline of recent activity, scoped by the window argument. With a " +
 			"single-project window (default — project from `--project <slug>` or cwd) it groups recent notes " +
 			"chronologically: resolve the window from `[janela]`/`--since` (default `7d`) and the kind filter " +
-			"from `--kinds <comma-list>` (default all), call `notes.list` for the project filtered by window " +
-			"and kinds, then `templates.show note-recap` to fetch the scaffold; group entries by kind, order " +
+			"from `--kinds <comma-list>` (default all), call `comments.list` with `scope=project` for the project " +
+			"filtered by `since` (the window) and `kind`, then `templates.show note-recap` to fetch the scaffold; group entries by kind, order " +
 			"chronologically with a timestamp prefix per bullet. With a wide window (`okt-note-recap day` or " +
 			"any cross-project invocation where `--project` is omitted) it folds in the former standup digest: " +
-			"enumerate every project the user owns, call `notes.list` per project filtered by `kind=handoff` " +
-			"within the window (per-project limit from `--limit`, default `5`), then `templates.show " +
+			"enumerate every project the user owns, call `comments.list` with `scope=project` per project filtered by `kind=handoff` " +
+			"and `since` (the window; per-project limit from `--limit`, default `5`), then `templates.show " +
 			"note-standup-digest` and fill one section per project ordered by most recent handoff first, " +
 			"silent projects last under a clear header; when more than 50 projects resolve, paginate or " +
 			"require `--project`. Read-only either way — never persist; the recap is the artifact. When zero " +
@@ -581,9 +583,10 @@ var commandTable = []commandEntry{
 	},
 	{
 		Slug: "okt-note-list",
-		Action: "List knowledge notes for the active scope. Resolve scope from `--scope` (default `any` — both " +
-			"project-scoped and global notes when a project resolves; `project`/`global` narrow it), with optional " +
-			"`--kind`, `--tags` (intersection), `--pinned`, and `--limit`/`--offset`. Call `notes.list` with the " +
+		Action: "List knowledge notes for the active scope. Resolve scope from `--scope` (default both " +
+			"project-scoped and universal notes when a project resolves; `project`/`global` narrow it, mapping " +
+			"`global` to the `universal` comment scope), with optional " +
+			"`--kind`, `--tag`, `--pinned`. Call `comments.list` with the " +
 			"filters and report each note's id, kind, title, scope, and pinned flag — order pinned first, then most " +
 			"recently updated. Read-only. Next: suggest `okt-note-show` with a note id to read one in full.",
 		Description: "List knowledge notes for the active scope with kind/tag/pinned filters.",
@@ -591,8 +594,9 @@ var commandTable = []commandEntry{
 	{
 		Slug: "okt-note-show",
 		Action: "Read one note in full. Resolve the id from `--id` (or the first positional argument), call " +
-			"`notes.show`, and render the note's title, kind, scope, tags, and body verbatim. Read-only — never mutate " +
-			"here; `notes.edit`/`notes.delete` are MCP-only by design. Next: suggest `okt-note-list` to scan the " +
+			"`comments.list` (scoped, then match the row by comment id), and render the note's title, kind, scope, " +
+			"tags, and body verbatim. Read-only — never mutate " +
+			"here; `comments.edit`/`comments.delete` are MCP-only by design. Next: suggest `okt-note-list` to scan the " +
 			"surrounding notes, or `okt-task-continue` when the note points at an open task to resume.",
 		Description: "Read one knowledge note in full by id.",
 	},
