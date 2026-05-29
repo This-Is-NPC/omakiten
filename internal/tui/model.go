@@ -252,6 +252,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.descriptionScreenOpen {
 			return m.updateDescriptionScreen(msg)
 		}
+		if m.planGoalScreenOpen {
+			return m.updatePlanGoalScreen(msg)
+		}
 		if m.taskScreen != taskScreenClosed {
 			return m.updateTaskScreen(msg)
 		}
@@ -428,7 +431,7 @@ func (m Model) canOpenPalette() bool {
 	if m.mode != modeNormal {
 		return false
 	}
-	if m.commentScreenOpen || m.descriptionScreenOpen {
+	if m.commentScreenOpen || m.descriptionScreenOpen || m.planGoalScreenOpen {
 		return false
 	}
 	if m.taskScreen != taskScreenClosed {
