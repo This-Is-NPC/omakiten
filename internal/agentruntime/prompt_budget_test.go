@@ -30,6 +30,16 @@ var promptBudgets = map[string]int{
 	"okt-commit":    4700,
 	"okt-review":    9000,
 	"okt-check":     5500,
+	// Notes/handoff v1 commands (#363). Budgets sized against the
+	// embedded omakase default kit with ~30% headroom. The handoff
+	// command carries the longest action body (workflow/wave edge cases)
+	// plus the `project-scope-only` + `no-praise-pad` laws and the
+	// `note-handoff` template metadata. Standup/recap are lighter — no
+	// per-command laws, single-template binding.
+	"okt-handoff":   4500,
+	"okt-note":      3500,
+	"okt-standup":   4000,
+	"okt-recap":     4000,
 }
 
 // TestTemplateBoundCommandsCarryFetchHint guards the JIT contract for

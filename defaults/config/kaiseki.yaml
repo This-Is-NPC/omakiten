@@ -353,11 +353,11 @@ config:
       sort: {order: asc}
 personas:
   - slug: methodical-engineer
-    skills: [staged-delivery, requirements-elicitation, design-documentation, decision-records, acceptance-criteria-writing, implementation, markdown]
+    skills: [staged-delivery, requirements-elicitation, design-documentation, decision-records, acceptance-criteria-writing, implementation, standup-digest, recap-timeline, markdown]
   - slug: product-owner
     skills: [discovery, user-story-writing, requirements-elicitation, acceptance-criteria-writing, pdca-cycle, five-w-two-h, smart-goals, invest-stories, moscow-prioritization, rice-scoring, non-functional-requirements, markdown]
   - slug: documentation-agent
-    skills: [documentation, architecture-mapping, requirements-mapping, readme-curation, markdown]
+    skills: [documentation, architecture-mapping, requirements-mapping, readme-curation, handoff-synthesis, note-capture, markdown]
   - slug: commit-author
     skills: [conventional-commits-spec, markdown]
   - slug: code-reviewer
@@ -401,6 +401,21 @@ mcp_commands:
     persona: check-runner
     laws: [requirements-coverage-check, decision-record-on-gap]
     templates: [comment-check-report]
+  # Notes / handoff v1 (#363). Provisional persona kit — #189 W4/W5.x
+  # rebinds to themed personas under Proposta B.
+  okt-handoff:
+    persona: documentation-agent
+    laws: [project-scope-only, no-praise-pad]
+    templates: [note-handoff]
+  okt-note:
+    persona: documentation-agent
+    templates: [note-free]
+  okt-standup:
+    persona: methodical-engineer
+    templates: [note-standup-digest]
+  okt-recap:
+    persona: methodical-engineer
+    templates: [note-recap]
 workflows:
   - id: 1
     key: kaiseki
