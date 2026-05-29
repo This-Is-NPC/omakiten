@@ -45,8 +45,13 @@ import (
 // fetches, and let bound laws/persona body/templates do the role and
 // constraint work instead of restating it in prose.
 var commandActions = map[string]string{
-	"okt": "Load the active project state via `project.overview`. Report the snapshot to the user. " +
-		"Next: suggest `okt-project-resume` to scan likely-next work, or `okt-task-imagine` to explore a new direction.",
+	// `okt` is the bare shortcut to `okt-start`: both land on the same Concierge
+	// entry playbook so a user who types `okt` gets the smart entry, not a thin
+	// router. The shared text is `oktStartAction` below; keeping the two keys
+	// pointed at one const is the resolution-level shortcut (no string-alias
+	// table needed) and is pinned by the okt→okt-start smoke test.
+	"okt":       oktStartAction,
+	"okt-start": oktStartAction,
 
 	"okt-task-imagine": "Open discovery — no task exists yet. Ground yourself " +
 		"with `project.overview` and `tasks.list`, then interrogate the user via 5W2H (What / Why / Who / When / " +
@@ -113,16 +118,23 @@ var commandActions = map[string]string{
 		"never re-run after editing. Next: failures route to `okt-task-implement` with the target name + tail; " +
 		"smell-level findings route to `okt-task-review` for triage.",
 
-	"okt-pause": "Close the current session with a handoff note for the next agent. Synthesise material " +
-		"state since the previous handoff via `project.overview`, `tasks.list`, and `task.activity.list` " +
-		"for in-flight tasks. Call `templates.show note-handoff` to fetch the scaffold, fill the populated " +
-		"slots, and persist via `notes.create` with `scope=project`, `kind=handoff`. Honor `--body` to " +
-		"override the rendered body verbatim and `--note` to append extra context under a free-form " +
-		"section. When nothing material changed since the last handoff, render with a \"no material " +
-		"changes since <prev>\" marker and still persist so the timeline stays continuous. When the cwd " +
-		"resolves no project, stop with `no project at <cwd>` and suggest `--project <slug>`; when the " +
-		"project lacks an active workflow, omit the workflow/wave sections. Next: suggest the user run " +
-		"`okt-note-recap` in their next session to load the handoff back into context.",
+	"okt-pause": "Close the current session by snapshotting where the work stands into a handoff note the next " +
+		"session reads first. Capture the live picture across all three planes: the GIT state (run `git status` and " +
+		"`git diff --stat` via Bash for the working-tree summary, the current branch, and uncommitted work), the " +
+		"ACTIVE TASK (`tasks.list` for in-flight ids, `task.activity.list` for what moved since the previous " +
+		"handoff), and the PLAN (`plans.continue` / `plans.show` for the active wave and what remains claimable). " +
+		"Synthesise material state since the previous handoff via `project.overview`. " +
+		"Call `templates.show note-handoff` to fetch the scaffold, fill the populated slots, and PERSIST THE " +
+		"HANDOFF NOTE via `notes.create` with `scope=project`, `kind=handoff` — the durable artifact is the note, " +
+		"not the chat. Honor `--body` to override the rendered body verbatim and `--note` to append extra context " +
+		"under a free-form section. When nothing material changed since the last handoff, render with a \"no " +
+		"material changes since <prev>\" marker and still persist so the timeline stays continuous. " +
+		"COACH THE HANDOFF QUALITY: lead with the single next action the next session should take, then the open " +
+		"questions and the in-flight diff — write what an agent with zero context needs to resume, not a changelog " +
+		"of what you did. When the cwd resolves no project, stop with `no project at <cwd>` and suggest " +
+		"`--project <slug>`; when the project lacks an active workflow, omit the workflow/wave sections. Next: " +
+		"suggest the user run `okt-start` (or `okt-note-recap`) at the top of their next session to load this " +
+		"handoff back into context.",
 
 	"okt-note-free": "Capture a free-form knowledge note without ceremony. Resolve scope from `--scope` " +
 		"(default `project` when the cwd resolves; explicit `--scope global` always wins). Resolve kind " +
@@ -299,12 +311,97 @@ var commandActions = map[string]string{
 		"user can re-invoke `okt-run` from the halted task. " +
 		"Next: when every selected task is accepted, suggest `okt-audit` for a deep review pass, or `okt-pause` to " +
 		"synthesise a handoff note.",
+
+	// okt-shape is the Owner shaping orchestrator: it carries a raw idea or a
+	// loose backlog from inception to ready-to-build — discover → define →
+	// plan — and GUIDES at every fork, naming the granular command for each
+	// step and teaching when each is worth running rather than executing them
+	// blindly. The load-bearing phrases below (chain the discover/define
+	// granulars, then okt-plan-create; surface what is still undefined) are
+	// pinned by the okt-shape smoke test in agentruntime.
+	"okt-shape": "Shape a raw idea — or a loose backlog — into ready-to-build tasks plus an execution plan. You " +
+		"orchestrate the shaping; you do not implement. Read the current picture first with `project.overview` and " +
+		"`tasks.list` so you shape against what already exists, not in a vacuum. " +
+		"CHAIN THE DISCOVER → DEFINE GRANULARS, directing by command NAME only — do not render their bodies. " +
+		"DISCOVER the problem space: `okt-task-research` to map prior art and unknowns, then `okt-task-validate` to " +
+		"pressure-test whether the problem is real and worth solving now. DEFINE the solution: `okt-task-requirements` " +
+		"to capture functional/non-functional criteria, `okt-task-prioritize` to rank against alternatives, then " +
+		"`okt-task-create` to author each ready task with an INVEST-checked story. For coarse work, slot " +
+		"`okt-task-decompose` and `okt-task-estimate` between define and create to right-size the slices. " +
+		"COACH THE DECISION at each fork: skip discovery only when the problem is already well-understood; do not " +
+		"author a task whose value or feasibility is still unproven — loop back to validate instead. A shaping pass " +
+		"is done when each candidate is a concrete, prioritized, ready task. " +
+		"GROUP THE READY TASKS INTO A PLAN with `okt-plan-create`: settle the slug, name, and goal_body, then lay the " +
+		"tasks into ordered waves so dependencies fall across wave boundaries. Suggest a plan whenever the shaping " +
+		"produced more than one ready task or any dependency between them. " +
+		"SURFACE WHAT IS STILL UNDEFINED before you hand off: list every gap — unanswered requirement, unranked " +
+		"candidate, unestimated coarse task, missing acceptance criterion, unresolved dependency — so the user sees " +
+		"exactly what blocks build, rather than discovering it mid-implementation. " +
+		"Next: once the plan is assembled and the gaps are named, suggest `okt-run` to drive the plan to completion, " +
+		"or `okt-task-continue` with a specific id when the user wants to build one task by hand.",
+
+	// okt-audit is the Owner assurance orchestrator: like okt-run it is a PROMPT
+	// the consuming agent acts on — omakiten cannot spawn agents itself — so the
+	// action text encodes the playbook that instructs the agent to spawn the
+	// Reviewer/Security subagents and aggregate their severity-tagged findings.
+	// The load-bearing phrases below (spawn Reviewer + Security subagents via the
+	// Agent tool; review → secure → quality → debrief; aggregate severity-tagged
+	// findings; coach on severity/risk) are pinned by the okt-audit smoke test in
+	// agentruntime.
+	"okt-audit": "Commission an assurance pass on completed work. You are the director: you do not perform the " +
+		"review yourself — you SPAWN SUBAGENTS via the Agent tool, one per assurance lens, and aggregate what they " +
+		"return. Detect the target from context: a task id audits that task's diff, a plan id audits every task the " +
+		"plan completed; a bare invocation audits the current branch's diff resolved via `project.overview` / " +
+		"`plans.continue`. " +
+		"SPAWN A REVIEWER SUBAGENT and a SECURITY SUBAGENT in parallel — their surfaces are disjoint, so concurrency " +
+		"is worthwhile. The delegation contract you hand each is lean: it names the target and instructs the subagent " +
+		"to INVOKE THE GRANULAR COMMANDS ITSELF via its OWN MCP access in its OWN FRESH CONTEXT — the Reviewer runs " +
+		"`okt-task-review` then `okt-task-quality`; the Security subagent runs `okt-task-secure`. You NEVER render or " +
+		"hold those command bodies; each subagent fetches its own. " +
+		"RUN THE PLAYBOOK review → secure → quality → debrief: the review and secure passes run inside the spawned " +
+		"subagents; once their findings land you commission the quality read and close with `okt-task-debrief` to " +
+		"capture what the audit learned. " +
+		"AGGREGATE THE FINDINGS into one report, each finding SEVERITY-TAGGED (`error` / `warning` / `info`) and " +
+		"attributed to its lens; de-duplicate overlaps where the Reviewer and Security subagent flagged the same " +
+		"line. COACH ON SEVERITY AND RISK: rank by blast radius, not count — one `error` on an auth path outweighs a " +
+		"dozen `info` smells; call out which findings block ship versus which are follow-ups, and say so plainly. " +
+		"This is the deep third-party review pass `okt-run` deliberately does NOT do — do not collapse it back into a " +
+		"director acceptance gate. " +
+		"Next: route blocking findings to `okt-task-implement` with the finding id and location, or suggest " +
+		"`okt-pause` to record a handoff note when the audit clears.",
 }
+
+// oktStartAction is the Concierge entry playbook shared by both the bare `okt`
+// shortcut and the explicit `okt-start`. It is the smart entry that replaces
+// the old thin `okt` router: it reads the latest handoff/recap notes and the
+// plan/board state, then PROPOSES concrete next commands AND teaches the
+// options available — guiding, not execute-only. The load-bearing phrases
+// (reads notes handoff/recap, reads plan + board state, proposes concrete next
+// commands, suggest a plan when the board has tasks but no plan, teaches the
+// available options) are pinned by the okt-start smoke test in agentruntime.
+const oktStartAction = "Open the session as the concierge: orient the user, then hand them the next move. Read the " +
+	"active picture first — `project.overview` for the board snapshot, `tasks.list` for in-flight work, " +
+	"`plans.list` for the plan state, and `notes.list` (kind `handoff` and `recap`, most recent first) to recover " +
+	"the latest HANDOFF/RECAP so you resume the thread the previous session left, not a cold start. " +
+	"PROPOSE CONCRETE NEXT COMMANDS from what you read — name the actual command, not a vague direction: when a " +
+	"handoff points at an open task, suggest `okt-task-continue` with that id; when a plan has a claimable task, " +
+	"suggest `okt-plan-continue` / `okt-plan-claim`; when the board is empty or the user has a fresh idea, suggest " +
+	"`okt-shape` to shape it into ready tasks; when work is ready to drive, suggest `okt-run`. " +
+	"SUGGEST CREATING A PLAN when the board has tasks but no plan groups them — loose tasks with no plan are a gap, " +
+	"so point the user at `okt-shape` (or `okt-plan-create` directly) to organize them into waves before driving. " +
+	"TEACH THE AVAILABLE OPTIONS as you go: briefly say what each suggested command does and when to reach for it, " +
+	"so the user is choosing among understood moves rather than guessing — the entry coaches, it does not just " +
+	"route. When the cwd resolves no project, stop with `no project at <cwd>` and suggest `--project <slug>`. " +
+	"Next: surface the single best next command for the current state, with the runner-up alternatives named so " +
+	"the user can override your pick."
 
 // commandDescriptions match the prompts/list metadata. Keeping them next to
 // the action text means the MCP adapter can ship a single source of truth.
 var commandDescriptions = map[string]string{
-	"okt":                "Contextualize the agent with active Omakiten project state.",
+	"okt":                "Smart entry — shortcut to okt-start: reads handoffs/recaps + plan/board and proposes the next command.",
+	"okt-start":          "Concierge entry — reads handoffs/recaps + plan/board state, proposes concrete next commands, and teaches the options.",
+	"okt-shape":          "Owner orchestrator — shape a raw idea or backlog into ready tasks + an execution plan; chains discover/define + okt-plan-create and surfaces gaps.",
+	"okt-audit":          "Owner orchestrator — commission a deep assurance pass: spawn Reviewer + Security subagents, aggregate severity-tagged findings, coach on risk.",
 	"okt-task-imagine":   "PLAN phase — interrogate the user via 5W2H and frame success in SMART terms before any task exists.",
 	"okt-task-create":    "PLAN → DO handoff — author the task with an INVEST-checked story; record prioritization when alternatives exist.",
 	"okt-project-resume": "Scan likely-next work across the active project.",
@@ -315,7 +412,7 @@ var commandDescriptions = map[string]string{
 	"okt-task-commit":    "Draft Conventional Commits for the working tree without pushing.",
 	"okt-task-review":    "Walk the diff through Fowler/Beck/Martin/Feathers lens and surface findings + refactor opportunities.",
 	"okt-task-check":     "Run discovered test/lint targets and report pass/fail in a tabular comment.",
-	"okt-pause":          "Close the session with a synthesised handoff note for the next agent.",
+	"okt-pause":          "Concierge close — snapshot git + active task + plan into a handoff note for the next session.",
 	"okt-note-free":      "Capture a free-form knowledge note (project or global) without ceremony.",
 	"okt-note-recap":     "Recap timeline of recent notes; wide window folds in the cross-project handoff digest.",
 	"okt-task-resume":      "Cold-start a task from scratch — rebuild full context when none is loaded in this session.",
@@ -347,6 +444,8 @@ var commandDescriptions = map[string]string{
 func CommandNames() []string {
 	return []string{
 		"okt",
+		"okt-start",
+		"okt-shape",
 		"okt-run",
 		"okt-task-imagine",
 		"okt-task-research",
@@ -376,6 +475,7 @@ func CommandNames() []string {
 		"okt-task-secure",
 		"okt-task-check",
 		"okt-task-quality",
+		"okt-audit",
 		"okt-pause",
 		"okt-note-free",
 		"okt-note-recap",

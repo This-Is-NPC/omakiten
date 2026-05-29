@@ -98,6 +98,18 @@ var promptBudgets = map[string]int{
 	// Budget sized against the embedded omakase default kit with ~30% headroom.
 	// CW8 (#379) re-tightens once theming rewires it to a minimal skill subset.
 	"okt-run": 28000,
+	// CW4 (#375): the four guiding orchestrators. okt-start (shared with the bare
+	// `okt` shortcut) and okt-pause bind the Concierge-ish documentation-agent —
+	// the lighter skill footprint (~okt-task-document family) — but each carries
+	// a long guiding action body (read-state → propose → coach), so the budget
+	// sits above the document family. okt-shape and okt-audit bind the Owner
+	// persona (product-owner, ~ okt-run footprint) and each carries the longest
+	// action bodies in the surface (full shaping / assurance playbooks). Budgets
+	// sized against the embedded omakase default kit with ~30% headroom. CW8
+	// (#379) re-tightens once theming rewires each to a minimal skill subset.
+	"okt-start": 22000,
+	"okt-shape": 29000,
+	"okt-audit": 29000,
 }
 
 // TestTemplateBoundCommandsCarryFetchHint guards the JIT contract for
@@ -379,6 +391,192 @@ func TestCW3OktRunDelegationPlaybook(t *testing.T) {
 			t.Fatalf("okt-run prompt missing the %q clause (expected load-bearing phrase %q):\n%s", c.clause, c.phrase, resp.Markdown)
 		}
 	}
+}
+
+// resolveForSmoke is a CW4 helper: it opens the runtime against the embedded
+// omakase default kit and resolves one command, failing the test on any error.
+// It centralises the boilerplate the four guiding-orchestrator smoke gates
+// share, mirroring the single-command resolve the okt-run gate does inline.
+func resolveForSmoke(t *testing.T, name string) agent.ResolveCommandResponse {
+	t.Helper()
+	ctx := context.Background()
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "data", "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+
+	rt, err := Open(ctx, Options{DBPath: dbPath, ConfigPath: configPath, CWD: tmp})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = rt.Close() })
+
+	resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
+	if err != nil {
+		t.Fatalf("ResolveCommand(%s) error = %v", name, err)
+	}
+	return resp
+}
+
+// assertGuidingOrchestrator is the shared CW4 smoke assertion: the command must
+// resolve as the orchestrator tier, carry a wired persona + non-empty action +
+// prompts/list description, and its rendered prompt must contain every pinned
+// load-bearing phrase (case-insensitive). Each phrase pins a clause of the
+// guiding playbook so a future edit that erodes the next-move/coaching contract
+// surfaces here — same phrase-pinning style as TestCW3OktRunDelegationPlaybook.
+func assertGuidingOrchestrator(t *testing.T, name string, resp agent.ResolveCommandResponse, phrases []string) {
+	t.Helper()
+	if resp.Persona == nil {
+		t.Fatalf("%s resolved with no persona — the role slot is not wired in the preset YAML", name)
+	}
+	if !strings.Contains(resp.Markdown, "## Persona — ") {
+		t.Fatalf("%s markdown missing non-empty Persona section:\n%s", name, resp.Markdown)
+	}
+	if !strings.Contains(resp.Markdown, "## Action\n") || strings.TrimSpace(resp.Action) == "" {
+		t.Fatalf("%s markdown missing non-empty Action section:\n%s", name, resp.Markdown)
+	}
+	if strings.TrimSpace(agent.CommandDescription(name)) == "" {
+		t.Fatalf("%s carries no prompts/list description", name)
+	}
+	desc, ok := agent.DescribeCommand(name)
+	if !ok || desc.Tier != agent.CommandTierOrchestrator {
+		t.Fatalf("%s must decode as the orchestrator tier, got %+v ok=%v", name, desc, ok)
+	}
+	lower := strings.ToLower(resp.Markdown)
+	for _, phrase := range phrases {
+		if !strings.Contains(lower, strings.ToLower(phrase)) {
+			t.Fatalf("%s prompt missing load-bearing phrase %q (the guiding playbook eroded):\n%s", name, phrase, resp.Markdown)
+		}
+	}
+}
+
+// TestCW4OktStartSmartEntry is the AC#2 smoke gate: okt-start is the Concierge
+// smart entry that reads handoff/recap notes plus plan/board state and proposes
+// concrete next commands — including the suggest-a-plan-when-tasks-but-no-plan
+// branch — while teaching the available options. It is a PROMPT the agent acts
+// on; the gate pins the load-bearing clauses in the rendered prompt.
+func TestCW4OktStartSmartEntry(t *testing.T) {
+	resp := resolveForSmoke(t, "okt-start")
+	assertGuidingOrchestrator(t, "okt-start", resp, []string{
+		// reads notes (handoff + recap) so it resumes the prior thread
+		"notes.list",
+		"handoff",
+		"recap",
+		// reads plan + board state
+		"plans.list",
+		"project.overview",
+		"tasks.list",
+		// proposes concrete next commands (names the actual command)
+		"propose concrete next commands",
+		"okt-task-continue",
+		"okt-plan-continue",
+		// suggest a plan when the board has tasks but no plan
+		"the board has tasks but no plan",
+		// teaches the available options — guiding, not execute-only
+		"teach the available options",
+		"the entry coaches, it does not just",
+	})
+}
+
+// TestCW4OktStartIsOktShortcut is the AC#6 gate: the bare `okt` must resolve to
+// the SAME smart-entry playbook as `okt-start`. Both keys point at the shared
+// oktStartAction const, so their resolved action text is byte-identical — the
+// resolution-level shortcut with no string-alias table.
+func TestCW4OktStartIsOktShortcut(t *testing.T) {
+	okt := resolveForSmoke(t, "okt")
+	start := resolveForSmoke(t, "okt-start")
+	if strings.TrimSpace(okt.Action) == "" {
+		t.Fatal("okt resolved with empty action text")
+	}
+	if okt.Action != start.Action {
+		t.Fatalf("`okt` does not shortcut to `okt-start` — action texts diverge.\nokt:\n%s\n\nokt-start:\n%s", okt.Action, start.Action)
+	}
+	// The shortcut must still carry the smart-entry contract, not the old thin
+	// router — pin the proposes-next-commands clause on the `okt` resolution.
+	if !strings.Contains(strings.ToLower(okt.Markdown), "propose concrete next commands") {
+		t.Fatalf("`okt` shortcut lost the smart-entry playbook:\n%s", okt.Markdown)
+	}
+}
+
+// TestCW4OktShapeChainsGranulars is the AC#3 smoke gate: okt-shape chains the
+// discover/define granulars + okt-plan-create and surfaces what is still
+// undefined. It directs by command NAME only — pinned below.
+func TestCW4OktShapeChainsGranulars(t *testing.T) {
+	resp := resolveForSmoke(t, "okt-shape")
+	assertGuidingOrchestrator(t, "okt-shape", resp, []string{
+		// chains the discover granulars
+		"chain the discover",
+		"okt-task-research",
+		"okt-task-validate",
+		// chains the define granulars
+		"okt-task-requirements",
+		"okt-task-prioritize",
+		"okt-task-create",
+		// produces an execution plan
+		"okt-plan-create",
+		"ordered waves",
+		// surfaces gaps
+		"surface what is still undefined",
+		// guides the decision (coach the fork)
+		"coach the decision",
+		// next-move handoff
+		"okt-run",
+	})
+}
+
+// TestCW4OktAuditSpawnsSubagents is the AC#4 smoke gate: okt-audit is a PROMPT
+// that instructs the consuming agent to spawn Reviewer + Security subagents and
+// aggregate severity-tagged findings (omakiten cannot spawn agents itself). The
+// gate pins the spawn contract, the review→secure→quality→debrief playbook, the
+// severity-tagged aggregation, and the risk coaching.
+func TestCW4OktAuditSpawnsSubagents(t *testing.T) {
+	resp := resolveForSmoke(t, "okt-audit")
+	assertGuidingOrchestrator(t, "okt-audit", resp, []string{
+		// spawns Reviewer + Security subagents via the Agent tool
+		"spawn subagents",
+		"spawn a reviewer subagent",
+		"security subagent",
+		"the agent tool",
+		// each subagent invokes the granular commands itself in its own context
+		"own fresh context",
+		"okt-task-review",
+		"okt-task-secure",
+		"okt-task-quality",
+		// review → secure → quality → debrief playbook
+		"review → secure → quality → debrief",
+		"okt-task-debrief",
+		// aggregates severity-tagged findings
+		"aggregate the findings",
+		"severity-tagged",
+		// coaches on severity / risk
+		"coach on severity and risk",
+		// the deep pass okt-run deliberately does not do
+		"deep third-party review pass",
+	})
+}
+
+// TestCW4OktPauseHandoffNote is the AC#5 smoke gate: okt-pause snapshots the
+// current work across git + active task + plan and produces a handoff note via
+// the notes MCP (notes.create, kind=handoff — the CreateNote type handoff
+// intent). It guides the handoff quality and points at the next session's
+// resume. Pinned below.
+func TestCW4OktPauseHandoffNote(t *testing.T) {
+	resp := resolveForSmoke(t, "okt-pause")
+	assertGuidingOrchestrator(t, "okt-pause", resp, []string{
+		// snapshot the three planes: git + active task + plan
+		"git status",
+		"active task",
+		"task.activity.list",
+		"plans.continue",
+		// produces a handoff note via the notes MCP (CreateNote type handoff)
+		"notes.create",
+		"kind=handoff",
+		"persist the handoff note",
+		// guides the handoff quality (next-move + coaching)
+		"coach the handoff quality",
+		"single next action",
+		// next session resume handoff
+		"okt-start",
+	})
 }
 
 // TestPromptBudgets renders every `okt-*` prompt against the embedded default

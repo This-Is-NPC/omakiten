@@ -404,7 +404,18 @@ mcp_commands:
   global:
     laws: [template-fidelity, authorize-remote-writes, project-scope-only]
   okt:
-    persona: methodical-engineer
+    persona: documentation-agent
+  # CW4 (#375) — guiding orchestrators. okt-start (Concierge smart entry, shared
+  # with the bare `okt` shortcut) + okt-pause (Concierge close) bind the
+  # documentation-agent (closest Concierge-ish persona under the current kit);
+  # okt-shape + okt-audit are Owner orchestrators binding the Owner-role persona
+  # (product-owner). Skills flow through persona wiring. Themed Concierge = #189.
+  okt-start:
+    persona: documentation-agent
+  okt-shape:
+    persona: product-owner
+  okt-audit:
+    persona: product-owner
   # CW3 (#374) — okt-run Owner orchestrator. Binds the Owner-role persona
   # (product-owner, the same role okt-task-create / okt-plan-* use): okt-run is
   # the director that delegates implementation to per-task Builder subagents and
