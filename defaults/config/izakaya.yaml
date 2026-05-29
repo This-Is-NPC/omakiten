@@ -434,6 +434,18 @@ mcp_commands:
     persona: tinkerer
   okt-project-resume:
     persona: tinkerer
+  okt-project-continue:
+    persona: tinkerer
+  # CW6 (#377) — granular plan commands. Owner role collapsed onto tinkerer
+  # like the rest of the lean izakaya kit. Slot wiring only; themed rebind #189.
+  okt-plan-create:
+    persona: tinkerer
+  okt-plan-show:
+    persona: tinkerer
+  okt-plan-continue:
+    persona: tinkerer
+  okt-plan-claim:
+    persona: tinkerer
   okt-task-resume:
     persona: tinkerer
   okt-task-continue:
@@ -484,6 +496,10 @@ mcp_commands:
   okt-note-recap:
     persona: tinkerer
     templates: [note-recap, note-standup-digest]
+  okt-note-list:
+    persona: tinkerer
+  okt-note-show:
+    persona: tinkerer
 workflows:
   - id: 1
     key: izakaya

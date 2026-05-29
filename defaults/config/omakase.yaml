@@ -825,6 +825,19 @@ mcp_commands:
     persona: engineer
   okt-project-resume:
     persona: engineer
+  okt-project-continue:
+    persona: engineer
+  # CW6 (#377) — granular plan commands. Owner/Concierge role binds the
+  # product-owner persona (the Owner that authors + claims plan work). Slot
+  # wiring only; skills flow through persona wiring. Themed rebind = #189.
+  okt-plan-create:
+    persona: product-owner
+  okt-plan-show:
+    persona: product-owner
+  okt-plan-continue:
+    persona: product-owner
+  okt-plan-claim:
+    persona: product-owner
   okt-task-resume:
     persona: engineer
   okt-task-continue:
@@ -925,3 +938,7 @@ mcp_commands:
     templates:
       - note-recap
       - note-standup-digest
+  okt-note-list:
+    persona: engineer
+  okt-note-show:
+    persona: engineer

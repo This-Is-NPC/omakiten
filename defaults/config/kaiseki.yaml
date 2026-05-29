@@ -440,6 +440,18 @@ mcp_commands:
     templates: [design-doc, comment-design-decision]
   okt-project-resume:
     persona: methodical-engineer
+  okt-project-continue:
+    persona: methodical-engineer
+  # CW6 (#377) — granular plan commands. Owner role binds product-owner.
+  # Slot wiring only; skills flow through persona wiring. Themed rebind = #189.
+  okt-plan-create:
+    persona: product-owner
+  okt-plan-show:
+    persona: product-owner
+  okt-plan-continue:
+    persona: product-owner
+  okt-plan-claim:
+    persona: product-owner
   okt-task-resume:
     persona: methodical-engineer
   okt-task-continue:
@@ -492,6 +504,10 @@ mcp_commands:
   okt-note-recap:
     persona: methodical-engineer
     templates: [note-recap, note-standup-digest]
+  okt-note-list:
+    persona: methodical-engineer
+  okt-note-show:
+    persona: methodical-engineer
 workflows:
   - id: 1
     key: kaiseki
