@@ -261,6 +261,44 @@ var commandActions = map[string]string{
 		"`notes.show`, and render the note's title, kind, scope, tags, and body verbatim. Read-only — never mutate " +
 		"here; `notes.edit`/`notes.delete` are MCP-only by design. Next: suggest `okt-note-list` to scan the " +
 		"surrounding notes, or `okt-task-continue` when the note points at an open task to resume.",
+
+	// okt-run is the Owner director playbook: a LEAN orchestrator that drives a
+	// plan (or a single task) to completion by spawning ONE Builder subagent per
+	// task via the Agent tool, then reviewing each compact return. It NEVER
+	// renders or holds `okt-task-*` bodies — the delegation contract instructs
+	// each Builder to invoke those granular commands ITSELF through its own MCP
+	// access, in the Builder's own fresh context. The engine is subagents, not a
+	// workflow. The load-bearing contract phrases below (spawn-per-task,
+	// lean-context / subagent-invokes-its-own-commands, conditional-parallel
+	// gating, compact structured return, clean halt on failure) are pinned by
+	// the okt-run smoke test in agentruntime.
+	"okt-run": "Direct a plan — or a single task — to completion by delegation. You are the Owner: you " +
+		"orchestrate, you do not implement. Detect the target from context: a task id runs that one task, a plan " +
+		"id (or slug) runs that plan, and a bare invocation resolves the current plan via `plans.continue` / " +
+		"`project.overview`. " +
+		"For a plan, read its scope with `plans.show` / `plans.continue` and read each candidate task's " +
+		"dependency graph with `dependencies.list` — do NOT load the `okt-task-*` command bodies; you direct by " +
+		"command NAME only, keeping this context lean. " +
+		"SELECT runnable tasks: a task is runnable only when every dependency it has is already satisfied. Tasks " +
+		"with unmet dependencies WAIT. " +
+		"SPAWN ONE BUILDER SUBAGENT PER TASK via the Agent tool. The delegation contract you hand each Builder is " +
+		"lean — it names the task id and instructs the Builder to INVOKE THE GRANULAR `okt-task-*` COMMANDS ITSELF " +
+		"via its OWN MCP access in its OWN FRESH CONTEXT (typically `okt-task-resume` or `okt-task-continue`, then " +
+		"`okt-task-implement` / `okt-task-self-review` / `okt-task-refactor` / `okt-task-check`). You NEVER render, " +
+		"hold, or pass the body of any `okt-task-*` command — the Builder fetches each one itself. " +
+		"CONDITIONAL PARALLELISM: run independent tasks concurrently ONLY when their dependencies are satisfied AND " +
+		"concurrency is worthwhile (disjoint surfaces, no shared files, enough work to justify the coordination) — " +
+		"never parallelize everything; when in doubt, run sequentially. " +
+		"COMPACT RETURN: instruct each Builder to return a compact, structured result — a diff summary plus " +
+		"`#tests-passing` evidence (the check tail / passing count) — NOT its full working context. You review " +
+		"that return only: accept it, reject it with a reason, or re-spawn a fresh Builder for the same task. This " +
+		"is a lightweight director acceptance gate, not a third-party code review — deep review lives in " +
+		"`okt-audit`; do not duplicate it here. " +
+		"HALT CLEANLY on the first task whose Builder returns failing or blocked: stop spawning, report the final " +
+		"state (which tasks accepted, which one halted and why, which remain), and leave the run resumable so the " +
+		"user can re-invoke `okt-run` from the halted task. " +
+		"Next: when every selected task is accepted, suggest `okt-audit` for a deep review pass, or `okt-pause` to " +
+		"synthesise a handoff note.",
 }
 
 // commandDescriptions match the prompts/list metadata. Keeping them next to
@@ -300,6 +338,7 @@ var commandDescriptions = map[string]string{
 	"okt-project-continue": "Warm-resume the project from the last session — pick up the open thread.",
 	"okt-note-list":        "List knowledge notes for the active scope with kind/tag/pinned filters.",
 	"okt-note-show":        "Read one knowledge note in full by id.",
+	"okt-run":              "Owner orchestrator — drive a plan or task to completion by spawning a Builder subagent per task and reviewing each compact return; conditional parallelism.",
 }
 
 // CommandNames returns the canonical, ordered list of `okt-*` prompts the MCP
@@ -308,6 +347,7 @@ var commandDescriptions = map[string]string{
 func CommandNames() []string {
 	return []string{
 		"okt",
+		"okt-run",
 		"okt-task-imagine",
 		"okt-task-research",
 		"okt-task-validate",

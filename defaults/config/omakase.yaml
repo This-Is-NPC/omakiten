@@ -781,6 +781,14 @@ mcp_commands:
       - authorize-remote-writes
   okt:
     persona: engineer
+  # CW3 (#374) — okt-run Owner orchestrator. Binds the Owner-role persona
+  # (product-owner, the same role okt-task-create / okt-plan-* use): okt-run is
+  # the director that delegates implementation to per-task Builder subagents and
+  # reviews their compact returns. Lean by design — no okt-task-* bodies, no
+  # templates. Command-level skills stay empty; skills flow through persona
+  # wiring. Themed persona rebind is #189.
+  okt-run:
+    persona: product-owner
   okt-task-imagine:
     persona: product-owner
     laws_disabled:
