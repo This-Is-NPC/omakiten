@@ -262,3 +262,30 @@ func TestEmitHealthCheckEvent_DoesNotMutateCallerPayload(t *testing.T) {
 		t.Fatalf("caller payload mutated: len = %d, want %d (emit must clone before truncating)", len(got), len(original))
 	}
 }
+
+// TestEmitHealthCheckEvent_TruncatesAnyOversizedStringField pins the
+// Open/Closed generalisation: the cap surface must cover every
+// string field above `healthCheckPayloadCap`, not only the magic
+// `validator_raw_excerpt` key. A future emission that ships an
+// unrelated multi-KB string (e.g. a captured stack trace) must get
+// the same truncation treatment without an explicit edit to the
+// cap branch.
+func TestEmitHealthCheckEvent_TruncatesAnyOversizedStringField(t *testing.T) {
+	huge := strings.Repeat("y", healthCheckPayloadCap*2)
+	tiny := "stays untouched"
+	events := &stubEventStore{}
+	emitHealthCheckEvent(context.Background(), events, "irrelevant", map[string]any{
+		"some_future_excerpt": huge,
+		"short_field":         tiny,
+	})
+	if len(events.calls) != 1 {
+		t.Fatalf("calls = %d want 1", len(events.calls))
+	}
+	got, _ := events.calls[0].payload["some_future_excerpt"].(string)
+	if len(got) != healthCheckPayloadCap {
+		t.Errorf("some_future_excerpt length = %d want %d", len(got), healthCheckPayloadCap)
+	}
+	if short, _ := events.calls[0].payload["short_field"].(string); short != tiny {
+		t.Errorf("short_field mutated: got %q want %q", short, tiny)
+	}
+}

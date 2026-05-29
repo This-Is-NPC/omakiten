@@ -31,23 +31,17 @@ const healthCheckPayloadCap = 2048
 // nil store is a no-op so direct unit tests can wire `nil` for the
 // emit branch they do not exercise.
 //
-// The caller's `payload` map is never mutated; when the
-// `validator_raw_excerpt` entry exceeds the cap the helper marshals
-// from a locally truncated copy so callers can pass a literal map
-// and reuse it across emissions without seeing the truncation
-// persist.
+// The caller's `payload` map is never mutated; when ANY string field
+// exceeds `healthCheckPayloadCap` the helper marshals from a locally
+// truncated copy. The closed-set design used to target a single
+// magic key (`validator_raw_excerpt`); the generalisation lets
+// future emissions ship oversized strings without re-editing the
+// cap branch (Open/Closed — Martin).
 func emitHealthCheckEvent(ctx context.Context, store healthCheckEventStore, eventType string, payload map[string]any) {
 	if store == nil {
 		return
 	}
-	out := payload
-	if raw, ok := payload["validator_raw_excerpt"].(string); ok && len(raw) > healthCheckPayloadCap {
-		out = make(map[string]any, len(payload))
-		for k, v := range payload {
-			out[k] = v
-		}
-		out["validator_raw_excerpt"] = raw[:healthCheckPayloadCap]
-	}
+	out := truncateOversizedPayload(payload, healthCheckPayloadCap)
 	body, err := json.Marshal(out)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "health-check emit: marshal %s: %v\n", eventType, err)
@@ -56,4 +50,30 @@ func emitHealthCheckEvent(ctx context.Context, store healthCheckEventStore, even
 	if err := store.RecordEntityEvent(ctx, "system", 0, 0, eventType, string(body)); err != nil {
 		fmt.Fprintf(os.Stderr, "health-check emit: record %s: %v\n", eventType, err)
 	}
+}
+
+// truncateOversizedPayload returns the original map untouched when no
+// string field exceeds cap. Otherwise it returns a defensive shallow
+// copy with every oversized string clipped to cap bytes — the caller
+// keeps its original payload, the audit-row JSON stays bounded, and
+// the helper does not have to enumerate the closed set of keys.
+func truncateOversizedPayload(payload map[string]any, cap int) map[string]any {
+	var clone map[string]any
+	for k, v := range payload {
+		s, ok := v.(string)
+		if !ok || len(s) <= cap {
+			continue
+		}
+		if clone == nil {
+			clone = make(map[string]any, len(payload))
+			for kk, vv := range payload {
+				clone[kk] = vv
+			}
+		}
+		clone[k] = s[:cap]
+	}
+	if clone == nil {
+		return payload
+	}
+	return clone
 }
