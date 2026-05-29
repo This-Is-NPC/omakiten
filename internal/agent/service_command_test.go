@@ -156,9 +156,10 @@ func TestResolveCommandTemplatesJITRendering(t *testing.T) {
 
 // TestRenderCommandMarkdownDropsRedundantStructure pins the renderer
 // streamlining contract: the rendered Markdown must NOT echo the prompt name
-// header or description (both ship in `prompts/list` metadata) and must NOT
-// emit per-skill description bullets (skill names suffice; the procedure
-// lives in persona body and action text).
+// header or description (both ship in `prompts/list` metadata). Skills render
+// as bullet-with-body — one bullet per skill, in configured order, carrying
+// the skill body when present and falling back to the description otherwise.
+// The bare `## Skills — A, B` inline header (no per-skill detail) is gone.
 func TestRenderCommandMarkdownDropsRedundantStructure(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
@@ -171,15 +172,53 @@ func TestRenderCommandMarkdownDropsRedundantStructure(t *testing.T) {
 	if strings.HasPrefix(resp.Markdown, "# ") || strings.Contains(resp.Markdown, "\n# okt-") {
 		t.Fatalf("Markdown should not echo prompt name as H1 header — already in prompts/list metadata. Got:\n%s", resp.Markdown)
 	}
-	// Skills section emits the inline list only — no per-skill bullets.
-	if !strings.Contains(resp.Markdown, "## Skills — Go") {
-		t.Fatalf("Markdown should carry inline `## Skills — <names>`, got:\n%s", resp.Markdown)
+	// The section headline carries no inline name list anymore — detail lives
+	// in the per-skill bullets below it.
+	if !strings.Contains(resp.Markdown, "## Skills\n") {
+		t.Fatalf("Markdown should carry a plain `## Skills` header, got:\n%s", resp.Markdown)
 	}
-	// Bulleted skill lines like `- **Go**: <description>` must be gone.
-	for _, line := range strings.Split(resp.Markdown, "\n") {
-		if strings.HasPrefix(line, "- **Go**:") || strings.HasPrefix(line, "- **SQLite**:") {
-			t.Fatalf("Markdown should not emit per-skill description bullets, got line: %q", line)
-		}
+	if strings.Contains(resp.Markdown, "## Skills — ") {
+		t.Fatalf("Markdown should not carry the inline `## Skills — <names>` list, got:\n%s", resp.Markdown)
+	}
+	// The okt-implement persona binds only `go`, which has a body in the
+	// fixture — it must render bullet-with-body.
+	if !strings.Contains(resp.Markdown, "- **Go** — Go body.") {
+		t.Fatalf("Markdown should render skill body bullet `- **Go** — Go body.`, got:\n%s", resp.Markdown)
+	}
+}
+
+// TestRenderCommandMarkdownSkillBulletWithBody pins the bullet-with-body
+// contract directly: skills with a body render the body, skills without a
+// body fall back to the description, and configured order is preserved.
+func TestRenderCommandMarkdownSkillBulletWithBody(t *testing.T) {
+	resp := ResolveCommandResponse{
+		Action: "do the thing",
+		Skills: []SkillInfo{
+			{Slug: "go", Name: "Go", Description: "Idiomatic Go.", Body: "Write small functions.\nPrefer composition."},
+			{Slug: "sqlite", Name: "SQLite", Description: "Embedded SQL.", Body: ""},
+			{Slug: "bare", Name: "Bare", Description: "", Body: ""},
+		},
+	}
+	md := renderCommandMarkdown(resp)
+
+	// Body-bearing skill renders its body; multi-line body indents continuations.
+	if !strings.Contains(md, "- **Go** — Write small functions.\n  Prefer composition.") {
+		t.Fatalf("body-bearing skill should render bullet-with-body, got:\n%s", md)
+	}
+	// Body-less skill falls back to the description.
+	if !strings.Contains(md, "- **SQLite** — Embedded SQL.") {
+		t.Fatalf("body-less skill should fall back to description, got:\n%s", md)
+	}
+	// Skill with neither body nor description renders the bare name.
+	if !strings.Contains(md, "- **Bare**\n") {
+		t.Fatalf("skill with no body or description should render bare name, got:\n%s", md)
+	}
+	// Configured order preserved: Go before SQLite before Bare.
+	goIdx := strings.Index(md, "**Go**")
+	sqliteIdx := strings.Index(md, "**SQLite**")
+	bareIdx := strings.Index(md, "**Bare**")
+	if goIdx >= sqliteIdx || sqliteIdx >= bareIdx {
+		t.Fatalf("skills must render in configured order, got go=%d sqlite=%d bare=%d:\n%s", goIdx, sqliteIdx, bareIdx, md)
 	}
 }
 
