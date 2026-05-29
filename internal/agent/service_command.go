@@ -13,26 +13,30 @@ import (
 // Each action follows a REST-style hypermedia handoff: it names the canonical
 // tool to call and points at the next command in the flow. The cycle is:
 //
-//	okt → okt-resume / okt-imagine
-//	  okt-imagine → okt-create
-//	    okt-create → (move to dev) → okt-continue / okt-implement
-//	      okt-resume → okt-continue
-//	        okt-continue → okt-implement
-//	          okt-implement → (move to review)
-//	okt-document is parallel: surfaces drift; if material work is needed,
-//	suggests `okt-create` to spin up a documentation task.
+//	okt → okt-project-resume / okt-task-imagine
+//	  okt-task-imagine → okt-task-create
+//	    okt-task-create → (move to dev) → okt-task-continue / okt-task-implement
+//	      okt-project-resume → okt-task-continue
+//	        okt-task-continue → okt-task-implement
+//	          okt-task-implement → (move to review)
+//	okt-task-document is parallel: surfaces drift; if material work is needed,
+//	suggests `okt-task-create` to spin up a documentation task.
 //	okt-config is parallel: orients the agent on the config layout so it can
-//	answer edit questions without guessing; suggests `okt-implement` when the
-//	user has a concrete edit in mind.
-//	okt-commit is parallel: drafts Conventional Commits for user-authored
-//	edits made outside the `okt-implement` loop; never auto-pushes — the
+//	answer edit questions without guessing; suggests `okt-task-implement` when
+//	the user has a concrete edit in mind.
+//	okt-task-commit is parallel: drafts Conventional Commits for user-authored
+//	edits made outside the `okt-task-implement` loop; never auto-pushes — the
 //	human owns publication.
-//	okt-review is parallel: walks the diff through a Fowler/Beck/Martin/
+//	okt-task-review is parallel: walks the diff through a Fowler/Beck/Martin/
 //	Feathers lens; surfaces findings + refactor opportunities; read-only,
-//	suggests `okt-implement` to apply fixes.
-//	okt-check is parallel: discovers test/lint/audit targets, runs them
+//	suggests `okt-task-implement` to apply fixes.
+//	okt-task-check is parallel: discovers test/lint/audit targets, runs them
 //	via Bash, emits a tabular pass/fail report; read-only, suggests
-//	`okt-implement` for fixes or `okt-review` for triage.
+//	`okt-task-implement` for fixes or `okt-task-review` for triage.
+//	okt-pause is the bare orchestrator close: synthesises a handoff note for
+//	the next session. okt-note-free captures an ad-hoc note. okt-note-recap
+//	renders a recap timeline and, with a wide window (e.g. `day`/cross-project),
+//	folds in the former standup digest — one command spans both.
 // Action texts deliberately stop short of repeating constraints already
 // declared inline in `## Laws` or role-specific flow already declared in the
 // persona body. Each one names the canonical tool and ends with a REST-style
@@ -42,16 +46,16 @@ import (
 // constraint work instead of restating it in prose.
 var commandActions = map[string]string{
 	"okt": "Load the active project state via `project.overview`. Report the snapshot to the user. " +
-		"Next: suggest `okt-resume` to scan likely-next work, or `okt-imagine` to explore a new direction.",
+		"Next: suggest `okt-project-resume` to scan likely-next work, or `okt-task-imagine` to explore a new direction.",
 
-	"okt-imagine": "Open discovery — no task exists yet. Ground yourself " +
+	"okt-task-imagine": "Open discovery — no task exists yet. Ground yourself " +
 		"with `project.overview` and `tasks.list`, then interrogate the user via 5W2H (What / Why / Who / When / " +
 		"Where / How / How much) — don't accept vague answers. Call `templates.show comment-5w2h` and " +
 		"`templates.show comment-smart-success` to fetch the scaffolds when the user is ready to commit answers; " +
 		"template-fidelity is disabled here so freewheel exploration is fine before the scaffolds land. " +
-		"Frame success in SMART terms before handing off. Next: when the shape is concrete, suggest `okt-create`.",
+		"Frame success in SMART terms before handing off. Next: when the shape is concrete, suggest `okt-task-create`.",
 
-	"okt-create": "Author the task. Apply feasibility-gate first — " +
+	"okt-task-create": "Author the task. Apply feasibility-gate first — " +
 		"infeasible requests stop here with the report, no task created. Otherwise call " +
 		"`templates.show user-story` to fetch the scaffold, fill it per template-fidelity, then " +
 		"`tasks.create_intent` with the filled description. The response carries `confirmation` and " +
@@ -59,31 +63,31 @@ var commandActions = map[string]string{
 		"Next: suggest the user create the branch, add a `#self-branch` comment via `comments.add` " +
 		"(template_slug=`comment-selfbranch`), and move the task to dev.",
 
-	"okt-resume": "Scan for next work. Call `project.resume` and report " +
-		"top candidates with one-line rationale. Next: when the user picks a task, suggest `okt-continue` " +
+	"okt-project-resume": "Scan for next work. Call `project.resume` and report " +
+		"top candidates with one-line rationale. Next: when the user picks a task, suggest `okt-task-continue` " +
 		"with that task id.",
 
-	"okt-continue": "Read a task's checkpoint — understand where the task stopped, " +
+	"okt-task-continue": "Read a task's checkpoint — understand where the task stopped, " +
 		"do not start coding. Call `tasks.continue` for the task id, then summarize the last decision, " +
-		"open questions, and the immediate next increment. Next: suggest `okt-implement` with the same id.",
+		"open questions, and the immediate next increment. Next: suggest `okt-task-implement` with the same id.",
 
-	"okt-implement": "Apply the next increment for the task. If you do not have the task state, " +
+	"okt-task-implement": "Apply the next increment for the task. If you do not have the task state, " +
 		"call `tasks.continue` first. " +
 		"Next: suggest the user add a `#resume` comment via `comments.add` " +
 		"(template_slug=`comment-resume`) and move the task to review.",
 
-	"okt-document": "Survey `.docs/internal/architecture.md`, " +
+	"okt-task-document": "Survey `.docs/internal/architecture.md`, " +
 		"`.docs/internal/requirements.md`, `README.md`, `CONTRIBUTING.md`, and other top-level docs. List drift " +
 		"items with file references and suggested wording — do not edit in place. " +
-		"Next: if material work is needed, suggest `okt-create` to spin up a documentation task.",
+		"Next: if material work is needed, suggest `okt-task-create` to spin up a documentation task.",
 
 	"okt-config": "Orient on the active config layout. Call `templates.show config-orientation` to " +
 		"load the path resolution order, entity layout, frontmatter shapes, wiring relationships, and " +
 		"workflow guard kinds. Read it fully before answering any config-edit question — do not guess. " +
-		"Next: if the user has a concrete edit in mind, suggest `okt-implement` with the change scoped to " +
+		"Next: if the user has a concrete edit in mind, suggest `okt-task-implement` with the change scoped to " +
 		"`omakiten.yaml` or the relevant entity file.",
 
-	"okt-commit": "Draft Conventional Commits for the working tree. Read `git status` and `git diff --cached` " +
+	"okt-task-commit": "Draft Conventional Commits for the working tree. Read `git status` and `git diff --cached` " +
 		"(fall back to unstaged changes when nothing is staged). Group hunks into one intent per commit; split " +
 		"mixed trees via non-interactive staging (`git add <path>` / `git restore --staged <path>`). Derive the " +
 		"scope from the touched paths. Draft `<type>(<scope>): <subject>` (≤50 chars, imperative) plus an " +
@@ -91,25 +95,25 @@ var commandActions = map[string]string{
 		"before invoking `git commit` via Bash. Never `git push` — the human owns publication. " +
 		"Next: when the working tree is clean, suggest the user `git push` when ready.",
 
-	"okt-review": "Walk the diff with the loaded lens. Run `git diff <base>..HEAD` (default base `main`; use " +
+	"okt-task-review": "Walk the diff with the loaded lens. Run `git diff <base>..HEAD` (default base `main`; use " +
 		"staged when explicit) and read every hunk before writing findings. Order the pass correctness → " +
 		"security → smells → refactor opportunities → scalability/performance. Cite methodology by name when " +
 		"applicable (`Extract Function — Fowler`, `Feature Envy — Fowler/Beck`, `Sprout Method — Feathers`, " +
 		"`OCP — Martin`). Tag every finding by severity (`error` / `warning` / `info`). Call " +
 		"`templates.show comment-review-findings` and `templates.show comment-refactor-opportunities` for " +
 		"the scaffolds, then post the filled comments on the task. Read-only — never edit files, never run " +
-		"`git commit`. Next: when findings need fixes, suggest `okt-implement` with the finding ids.",
+		"`git commit`. Next: when findings need fixes, suggest `okt-task-implement` with the finding ids.",
 
-	"okt-check": "Run the project's check targets. Discover them via `mise tasks` first; fall back to " +
+	"okt-task-check": "Run the project's check targets. Discover them via `mise tasks` first; fall back to " +
 		"`npm run`, `make -qp`, `package.json > scripts`, or the repo's `CONTRIBUTING.md` — stop at the " +
 		"first hit, do not guess. Invoke each target via Bash, capture stdout/stderr/exit code. Call " +
 		"`templates.show comment-check-report` for the scaffold, then fill it — one row per target with " +
 		"status (`pass` / `fail` / `skip` / `yellow`) and a one-line failing tail. Quote the last ≤10 " +
 		"lines of stderr verbatim per failed target; never summarize errors. Read-only — never apply fixes, " +
-		"never re-run after editing. Next: failures route to `okt-implement` with the target name + tail; " +
-		"smell-level findings route to `okt-review` for triage.",
+		"never re-run after editing. Next: failures route to `okt-task-implement` with the target name + tail; " +
+		"smell-level findings route to `okt-task-review` for triage.",
 
-	"okt-handoff": "Close the current session with a handoff note for the next agent. Synthesise material " +
+	"okt-pause": "Close the current session with a handoff note for the next agent. Synthesise material " +
 		"state since the previous handoff via `project.overview`, `tasks.list`, and `task.activity.list` " +
 		"for in-flight tasks. Call `templates.show note-handoff` to fetch the scaffold, fill the populated " +
 		"slots, and persist via `notes.create` with `scope=project`, `kind=handoff`. Honor `--body` to " +
@@ -118,54 +122,51 @@ var commandActions = map[string]string{
 		"changes since <prev>\" marker and still persist so the timeline stays continuous. When the cwd " +
 		"resolves no project, stop with `no project at <cwd>` and suggest `--project <slug>`; when the " +
 		"project lacks an active workflow, omit the workflow/wave sections. Next: suggest the user run " +
-		"`okt-standup` or `okt-recap` in their next session to load the handoff back into context.",
+		"`okt-note-recap` in their next session to load the handoff back into context.",
 
-	"okt-note": "Capture a free-form knowledge note without ceremony. Resolve scope from `--scope` " +
+	"okt-note-free": "Capture a free-form knowledge note without ceremony. Resolve scope from `--scope` " +
 		"(default `project` when the cwd resolves; explicit `--scope global` always wins). Resolve kind " +
 		"from `--kind` (default `free`); reject `handoff`, `standup-digest`, and `recap` here — those " +
 		"belong to their dedicated commands. Title from `--title`; body from prompt or stdin. Call " +
 		"`templates.show note-free` to fetch the minimal scaffold, then persist via `notes.create`. " +
 		"Reject empty body or empty title; when the cwd is ambiguous (multiple projects resolve) require " +
-		"`--project <slug>`. Next: suggest `notes.list` to confirm the note landed, or `okt-recap` to see " +
-		"it folded into the project timeline.",
+		"`--project <slug>`. Next: suggest `notes.list` to confirm the note landed, or `okt-note-recap` to " +
+		"see it folded into the project timeline.",
 
-	"okt-standup": "Produce a cross-project standup digest from recent handoff notes. Resolve the window " +
-		"from `--since` (default `7d`) and the per-project limit from `--limit` (default `5`). When " +
-		"`--project <slug>` is omitted, enumerate every project the user owns and aggregate handoffs " +
-		"across all of them; when more than 50 projects resolve, paginate or require `--project`. Call " +
-		"`notes.list` per project filtered by `kind=handoff` within the window, then `templates.show " +
-		"note-standup-digest` to fetch the scaffold and fill one section per project ordered by most " +
-		"recent handoff first; silent projects appear at the bottom under a clear header. Read-only — " +
-		"never persist; the rendered digest is the artifact. When zero handoffs match the window, surface " +
-		"\"no handoffs — run okt-handoff\". Next: suggest `okt-recap` for a deeper per-project timeline.",
-
-	"okt-recap": "Render a single-project recap timeline of recent activity. Resolve the project from " +
-		"`--project <slug>` (default cwd), the window from `--since` (default `7d`), and the kind filter " +
-		"from `--kinds <comma-list>` (default all). Call `notes.list` for the project filtered by the " +
-		"window and kinds, then `templates.show note-recap` to fetch the scaffold. Group entries by kind, " +
-		"order chronologically with a timestamp prefix per bullet. Read-only — never persist; the recap " +
-		"is the artifact. When zero notes match the window, surface \"nothing in window\". Next: suggest " +
-		"`okt-continue` with a specific task id when the recap reveals an open thread to resume.",
+	"okt-note-recap": "Render a recap timeline of recent activity, scoped by the window argument. With a " +
+		"single-project window (default — project from `--project <slug>` or cwd) it groups recent notes " +
+		"chronologically: resolve the window from `[janela]`/`--since` (default `7d`) and the kind filter " +
+		"from `--kinds <comma-list>` (default all), call `notes.list` for the project filtered by window " +
+		"and kinds, then `templates.show note-recap` to fetch the scaffold; group entries by kind, order " +
+		"chronologically with a timestamp prefix per bullet. With a wide window (`okt-note-recap day` or " +
+		"any cross-project invocation where `--project` is omitted) it folds in the former standup digest: " +
+		"enumerate every project the user owns, call `notes.list` per project filtered by `kind=handoff` " +
+		"within the window (per-project limit from `--limit`, default `5`), then `templates.show " +
+		"note-standup-digest` and fill one section per project ordered by most recent handoff first, " +
+		"silent projects last under a clear header; when more than 50 projects resolve, paginate or " +
+		"require `--project`. Read-only either way — never persist; the recap is the artifact. When zero " +
+		"notes/handoffs match the window, surface \"nothing in window\" (or \"no handoffs — run okt-pause\" " +
+		"for the cross-project case). Next: suggest `okt-task-continue` with a specific task id when the " +
+		"recap reveals an open thread to resume.",
 }
 
 // commandDescriptions match the prompts/list metadata. Keeping them next to
 // the action text means the MCP adapter can ship a single source of truth.
 var commandDescriptions = map[string]string{
-	"okt":           "Contextualize the agent with active Omakiten project state.",
-	"okt-imagine":   "PLAN phase — interrogate the user via 5W2H and frame success in SMART terms before any task exists.",
-	"okt-create":    "PLAN → DO handoff — author the task with an INVEST-checked story; record prioritization when alternatives exist.",
-	"okt-resume":    "Scan likely-next work across the active project.",
-	"okt-continue":  "Read a task's checkpoint as an engineer before resuming work.",
-	"okt-implement": "Execute approved engineering work with strict rigor and commit discipline.",
-	"okt-document":  "Survey project documentation for drift and propose updates.",
-	"okt-config":    "Orient the agent on the active Omakiten config layout before edits.",
-	"okt-commit":    "Draft Conventional Commits for the working tree without pushing.",
-	"okt-review":    "Walk the diff through Fowler/Beck/Martin/Feathers lens and surface findings + refactor opportunities.",
-	"okt-check":     "Run discovered test/lint targets and report pass/fail in a tabular comment.",
-	"okt-handoff":   "Close the session with a synthesised handoff note for the next agent.",
-	"okt-note":      "Capture a free-form knowledge note (project or global) without ceremony.",
-	"okt-standup":   "Cross-project standup digest aggregated from recent handoff notes.",
-	"okt-recap":     "Single-project recap timeline of recent notes grouped by kind.",
+	"okt":                "Contextualize the agent with active Omakiten project state.",
+	"okt-task-imagine":   "PLAN phase — interrogate the user via 5W2H and frame success in SMART terms before any task exists.",
+	"okt-task-create":    "PLAN → DO handoff — author the task with an INVEST-checked story; record prioritization when alternatives exist.",
+	"okt-project-resume": "Scan likely-next work across the active project.",
+	"okt-task-continue":  "Read a task's checkpoint as an engineer before resuming work.",
+	"okt-task-implement": "Execute approved engineering work with strict rigor and commit discipline.",
+	"okt-task-document":  "Survey project documentation for drift and propose updates.",
+	"okt-config":         "Orient the agent on the active Omakiten config layout before edits.",
+	"okt-task-commit":    "Draft Conventional Commits for the working tree without pushing.",
+	"okt-task-review":    "Walk the diff through Fowler/Beck/Martin/Feathers lens and surface findings + refactor opportunities.",
+	"okt-task-check":     "Run discovered test/lint targets and report pass/fail in a tabular comment.",
+	"okt-pause":          "Close the session with a synthesised handoff note for the next agent.",
+	"okt-note-free":      "Capture a free-form knowledge note (project or global) without ceremony.",
+	"okt-note-recap":     "Recap timeline of recent notes; wide window folds in the cross-project handoff digest.",
 }
 
 // CommandNames returns the canonical, ordered list of `okt-*` prompts the MCP
@@ -174,20 +175,19 @@ var commandDescriptions = map[string]string{
 func CommandNames() []string {
 	return []string{
 		"okt",
-		"okt-imagine",
-		"okt-create",
-		"okt-resume",
-		"okt-continue",
-		"okt-implement",
-		"okt-document",
+		"okt-task-imagine",
+		"okt-task-create",
+		"okt-project-resume",
+		"okt-task-continue",
+		"okt-task-implement",
+		"okt-task-document",
 		"okt-config",
-		"okt-commit",
-		"okt-review",
-		"okt-check",
-		"okt-handoff",
-		"okt-note",
-		"okt-standup",
-		"okt-recap",
+		"okt-task-commit",
+		"okt-task-review",
+		"okt-task-check",
+		"okt-pause",
+		"okt-note-free",
+		"okt-note-recap",
 	}
 }
 

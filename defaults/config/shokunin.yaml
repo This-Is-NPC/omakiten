@@ -405,56 +405,53 @@ mcp_commands:
     laws: [template-fidelity, authorize-remote-writes, project-scope-only]
   okt:
     persona: craftsperson
-  okt-imagine:
+  okt-task-imagine:
     persona: product-owner
     laws_disabled: [template-fidelity]
     templates: [comment-5w2h, comment-smart-success]
-  okt-create:
+  okt-task-create:
     persona: product-owner
     laws: [blast-radius-awareness, error-budget-aware, invest-stories, outcome-over-output, prioritization-recorded, non-functional-explicit]
     templates: [task-change-request, comment-requirements, comment-acceptance, comment-risk-assessment, comment-smart-success, comment-moscow, comment-rice-score, comment-okr, comment-non-functional]
-  okt-resume:
+  okt-project-resume:
     persona: craftsperson
-  okt-continue:
+  okt-task-continue:
     persona: craftsperson
-  okt-implement:
+  okt-task-implement:
     persona: craftsperson
     laws: [pre-mortem-required, rollback-plan-mandatory, dual-peer-review, coverage-gate, blast-radius-awareness, error-budget-aware, conventional-commits, no-silent-behavior-changes]
     templates: [pull-request, comment-pre-mortem, comment-rollback-plan, comment-peer-review-strict, comment-tests-passing-strict, comment-risk-assessment, comment-scribe-correction]
-  okt-document:
+  okt-task-document:
     persona: documentation-agent
     laws: [blameless-postmortem]
     templates: [comment-postmortem, comment-lessons-learned]
   okt-config:
     persona: documentation-agent
     templates: [config-orientation]
-  okt-commit:
+  okt-task-commit:
     persona: commit-author
     laws: [conventional-commits, no-coauthored-by, link-task-comments]
-  okt-review:
+  okt-task-review:
     persona: code-reviewer
     laws: [dual-review-required, coverage-gate-check, pre-mortem-aware]
     templates: [comment-review-findings, comment-refactor-opportunities]
-  okt-check:
+  okt-task-check:
     persona: check-runner
     laws: [coverage-gate, regression-required, dual-signal-required]
     templates: [comment-check-report]
-  # Notes / handoff v1 (#363). Provisional persona kit — #189 W4/W5.x
-  # rebinds to themed personas under Proposta B (likely
-  # alphonse-elric / maes-hughes equivalents).
-  okt-handoff:
+  # Notes / handoff v1 (#363), rescoped to the v2 prefix surface (#373).
+  # Provisional persona kit — #189 W4/W5.x rebinds to themed personas
+  # under Proposta B (likely alphonse-elric / maes-hughes equivalents).
+  okt-pause:
     persona: documentation-agent
     laws: [project-scope-only, no-praise-pad]
     templates: [note-handoff]
-  okt-note:
+  okt-note-free:
     persona: documentation-agent
     templates: [note-free]
-  okt-standup:
+  okt-note-recap:
     persona: craftsperson
-    templates: [note-standup-digest]
-  okt-recap:
-    persona: craftsperson
-    templates: [note-recap]
+    templates: [note-recap, note-standup-digest]
 workflows:
   - id: 1
     key: shokunin

@@ -14,7 +14,7 @@ func TestResolveCommandComposesEffectiveLaws(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-implement"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -51,7 +51,7 @@ func TestResolveCommandLawsDisabledOptsOut(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-imagine"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-imagine"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -96,17 +96,17 @@ func TestResolveCommandEmptyName(t *testing.T) {
 // where to go after the current step and the workflow becomes guesswork.
 func TestResolveCommandRestHandoffsPresent(t *testing.T) {
 	expectedHandoffs := map[string][]string{
-		"okt":           {"okt-resume", "okt-imagine"},
-		"okt-imagine":   {"okt-create"},
-		"okt-create":    {"comment-selfbranch"},
-		"okt-resume":    {"okt-continue"},
-		"okt-continue":  {"okt-implement"},
-		"okt-implement": {"comment-resume"},
-		"okt-document":  {"okt-create"},
-		"okt-config":    {"templates.show", "config-orientation", "okt-implement"},
-		"okt-commit":    {"git push"},
-		"okt-review":    {"okt-implement"},
-		"okt-check":     {"okt-implement"},
+		"okt":                {"okt-project-resume", "okt-task-imagine"},
+		"okt-task-imagine":   {"okt-task-create"},
+		"okt-task-create":    {"comment-selfbranch"},
+		"okt-project-resume": {"okt-task-continue"},
+		"okt-task-continue":  {"okt-task-implement"},
+		"okt-task-implement": {"comment-resume"},
+		"okt-task-document":  {"okt-task-create"},
+		"okt-config":         {"templates.show", "config-orientation", "okt-task-implement"},
+		"okt-task-commit":    {"git push"},
+		"okt-task-review":    {"okt-task-implement"},
+		"okt-task-check":     {"okt-task-implement"},
 	}
 	for name, hints := range expectedHandoffs {
 		text := CommandActionFallback(name)
@@ -136,7 +136,7 @@ func TestResolveCommandTemplatesJITRendering(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-implement"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -164,7 +164,7 @@ func TestRenderCommandMarkdownDropsRedundantStructure(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-implement"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -257,7 +257,7 @@ func TestLawBodiesCarryFewShotExamples(t *testing.T) {
 	wireBindingFixtures(t, fixture)
 
 	loadBearing := []string{"template-fidelity"} // wired in the fixture's law catalog
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-implement"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -294,7 +294,7 @@ func TestResolveCommandRendersPersonaBody(t *testing.T) {
 		Laws:        []string{"project-scope-only"},
 	})
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-implement"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -331,7 +331,7 @@ func TestCommandActionsArePersonaAgnostic(t *testing.T) {
 		}
 	}
 	// Pin okt-implement specifics: bootstrap tool + handoff marker must remain.
-	implementAction := CommandActionFallback("okt-implement")
+	implementAction := CommandActionFallback("okt-task-implement")
 	for _, want := range []string{"tasks.continue", "comment-resume"} {
 		if !strings.Contains(implementAction, want) {
 			t.Fatalf("okt-implement action missing required marker %q:\n%s", want, implementAction)
@@ -393,8 +393,8 @@ func wireBindingFixturesWithPersona(t *testing.T, fixture agentFixture, persona 
 	commands := map[string]MCPCommandBinding{
 		MCPCommandsGlobalKey: {Laws: []string{"template-fidelity"}},
 		"okt":                {Persona: "backend-agent"},
-		"okt-implement":      {Persona: "backend-agent", Templates: []string{"pull-request"}},
-		"okt-imagine":        {Persona: "backend-agent", LawsDisabled: []string{"template-fidelity"}},
+		"okt-task-implement": {Persona: "backend-agent", Templates: []string{"pull-request"}},
+		"okt-task-imagine":   {Persona: "backend-agent", LawsDisabled: []string{"template-fidelity"}},
 	}
 	fixture.service.SetSnapshot(snapshotWithEntities(t, skills, laws, []PersonaInfo{persona}, templates, commands))
 }

@@ -280,11 +280,11 @@ func Resources() []ResourceDefinition {
 // Prompts() means new commands only need a description in the agent layer
 // plus, optionally, an entry here when they take inputs.
 var promptArguments = map[string][]PromptArgument{
-	"okt-imagine":   {{Name: "topic", Description: "Topic, problem, or feature seed to explore", Required: false}},
-	"okt-create":    {{Name: "description", Description: "Task description", Required: true}},
-	"okt-continue":  {{Name: "task_id", Description: "Task id", Required: true}},
-	"okt-implement": {{Name: "task_id", Description: "Task id to implement", Required: false}},
-	"okt-document":  {{Name: "focus", Description: "Optional area to focus the survey (e.g. 'README', 'architecture')", Required: false}},
+	"okt-task-imagine":   {{Name: "topic", Description: "Topic, problem, or feature seed to explore", Required: false}},
+	"okt-task-create":    {{Name: "description", Description: "Task description", Required: true}},
+	"okt-task-continue":  {{Name: "task_id", Description: "Task id", Required: true}},
+	"okt-task-implement": {{Name: "task_id", Description: "Task id to implement", Required: false}},
+	"okt-task-document":  {{Name: "focus", Description: "Optional area to focus the survey (e.g. 'README', 'architecture')", Required: false}},
 }
 
 func Prompts() []PromptDefinition {

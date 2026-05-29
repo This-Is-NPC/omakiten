@@ -749,31 +749,31 @@ personas:
 # mcp_commands binds each `okt-*` MCP prompt to a persona, a set of laws, and a
 # set of templates. The reserved `global:` entry declares laws inherited by
 # every command. Per-command entries can add `laws:` or opt out of inherited
-# laws via `laws_disabled:` (e.g. `okt-imagine` skips template-fidelity so the
-# discovery flow can sketch freely).
+# laws via `laws_disabled:` (e.g. `okt-task-imagine` skips template-fidelity so
+# the discovery flow can sketch freely).
 #
 # The default kit follows a REST-style handoff pattern: each command resolves
 # one role and ends its action text by suggesting the next command. Cycle:
 #
-#   okt → okt-resume / okt-imagine
-#     okt-imagine → okt-create
-#       okt-create → (move to dev → guard) → okt-continue / okt-implement
-#         okt-resume → okt-continue
-#           okt-continue → okt-implement
-#             okt-implement → (move to review → guard)
-#   okt-document is parallel — surfaces drift; if material work is needed,
-#   suggests okt-create to spin up a documentation task.
+#   okt → okt-project-resume / okt-task-imagine
+#     okt-task-imagine → okt-task-create
+#       okt-task-create → (move to dev → guard) → okt-task-continue / okt-task-implement
+#         okt-project-resume → okt-task-continue
+#           okt-task-continue → okt-task-implement
+#             okt-task-implement → (move to review → guard)
+#   okt-task-document is parallel — surfaces drift; if material work is needed,
+#   suggests okt-task-create to spin up a documentation task.
 #   okt-config is parallel — orients the agent on the config layout so it can
-#   answer edit questions without guessing; suggests okt-implement when the
+#   answer edit questions without guessing; suggests okt-task-implement when the
 #   user has a concrete edit in mind.
-#   okt-commit is parallel — drafts Conventional Commits for user-authored
-#   edits made outside the okt-implement loop; never auto-pushes.
-#   okt-review is parallel — walks the diff with a Fowler/Beck/Martin/
+#   okt-task-commit is parallel — drafts Conventional Commits for user-authored
+#   edits made outside the okt-task-implement loop; never auto-pushes.
+#   okt-task-review is parallel — walks the diff with a Fowler/Beck/Martin/
 #   Feathers lens; surfaces findings + refactor opportunities; read-only
-#   (suggests okt-implement to apply fixes).
-#   okt-check is parallel — discovers test/lint/audit targets, runs them,
-#   emits a tabular pass/fail report; read-only (suggests okt-implement
-#   for fixes or okt-review for triage).
+#   (suggests okt-task-implement to apply fixes).
+#   okt-task-check is parallel — discovers test/lint/audit targets, runs them,
+#   emits a tabular pass/fail report; read-only (suggests okt-task-implement
+#   for fixes or okt-task-review for triage).
 mcp_commands:
   global:
     laws:
@@ -781,14 +781,14 @@ mcp_commands:
       - authorize-remote-writes
   okt:
     persona: engineer
-  okt-imagine:
+  okt-task-imagine:
     persona: product-owner
     laws_disabled:
       - template-fidelity
     templates:
       - comment-5w2h
       - comment-smart-success
-  okt-create:
+  okt-task-create:
     persona: product-owner
     laws:
       - invest-stories
@@ -798,11 +798,11 @@ mcp_commands:
       - task-bugfix
       - comment-smart-success
       - comment-moscow
-  okt-resume:
+  okt-project-resume:
     persona: engineer
-  okt-continue:
+  okt-task-continue:
     persona: engineer
-  okt-implement:
+  okt-task-implement:
     persona: engineer
     laws:
       - bounded-self-review
@@ -817,19 +817,19 @@ mcp_commands:
       - pull-request
       - comment-tests-passing
       - comment-refactor-drive-by
-  okt-document:
+  okt-task-document:
     persona: documentation-agent
   okt-config:
     persona: documentation-agent
     templates:
       - config-orientation
-  okt-commit:
+  okt-task-commit:
     persona: commit-author
     laws:
       - conventional-commits
       - no-coauthored-by
       - scope-from-paths
-  okt-review:
+  okt-task-review:
     persona: code-reviewer
     laws:
       - findings-actionable
@@ -838,34 +838,32 @@ mcp_commands:
     templates:
       - comment-review-findings
       - comment-refactor-opportunities
-  okt-check:
+  okt-task-check:
     persona: check-runner
     laws:
       - findings-actionable
       - severity-tagged
     templates:
       - comment-check-report
-  # Notes / handoff v1 (#363). Four atomic commands wired into the
-  # documentation-agent (close + ad-hoc capture) and the engineer
-  # (navigation: standup / recap). Persona choice is provisional under
-  # the current persona kit; #189 W4/W5.x rebinds these to themed
-  # personas under Proposta B. Skills bind via the persona wiring above.
-  okt-handoff:
+  # Notes / handoff v1 (#363), rescoped to the v2 prefix surface (#373).
+  # okt-pause (bare orchestrator close) + okt-note-free (ad-hoc capture)
+  # wire into the documentation-agent; okt-note-recap (navigation; folds in
+  # the former standup digest via a wide window) into the engineer. Persona
+  # choice is provisional under the current persona kit; #189 W4/W5.x rebinds
+  # these to themed personas under Proposta B. Skills bind via persona wiring.
+  okt-pause:
     persona: documentation-agent
     laws:
       - project-scope-only
       - no-praise-pad
     templates:
       - note-handoff
-  okt-note:
+  okt-note-free:
     persona: documentation-agent
     templates:
       - note-free
-  okt-standup:
-    persona: engineer
-    templates:
-      - note-standup-digest
-  okt-recap:
+  okt-note-recap:
     persona: engineer
     templates:
       - note-recap
+      - note-standup-digest
