@@ -30,14 +30,25 @@ const healthCheckPayloadCap = 2048
 // update flow's contract is the binary swap, not the audit trail. A
 // nil store is a no-op so direct unit tests can wire `nil` for the
 // emit branch they do not exercise.
+//
+// The caller's `payload` map is never mutated; when the
+// `validator_raw_excerpt` entry exceeds the cap the helper marshals
+// from a locally truncated copy so callers can pass a literal map
+// and reuse it across emissions without seeing the truncation
+// persist.
 func emitHealthCheckEvent(ctx context.Context, store healthCheckEventStore, eventType string, payload map[string]any) {
 	if store == nil {
 		return
 	}
+	out := payload
 	if raw, ok := payload["validator_raw_excerpt"].(string); ok && len(raw) > healthCheckPayloadCap {
-		payload["validator_raw_excerpt"] = raw[:healthCheckPayloadCap]
+		out = make(map[string]any, len(payload))
+		for k, v := range payload {
+			out[k] = v
+		}
+		out["validator_raw_excerpt"] = raw[:healthCheckPayloadCap]
 	}
-	body, err := json.Marshal(payload)
+	body, err := json.Marshal(out)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "health-check emit: marshal %s: %v\n", eventType, err)
 		return

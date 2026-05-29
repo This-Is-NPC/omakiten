@@ -243,3 +243,22 @@ func TestEmitHealthCheckEvent_TruncatesValidatorRawExcerpt(t *testing.T) {
 func TestEmitHealthCheckEvent_NilStoreNoOp(t *testing.T) {
 	emitHealthCheckEvent(context.Background(), nil, "irrelevant", map[string]any{"foo": "bar"})
 }
+
+// TestEmitHealthCheckEvent_DoesNotMutateCallerPayload pins the
+// Side-Effect review-finding fix: the helper must not modify the
+// caller's map. Pre-fix the truncation step assigned back into the
+// passed map; a caller emitting twice would see the first
+// emission's truncation persist into the second.
+func TestEmitHealthCheckEvent_DoesNotMutateCallerPayload(t *testing.T) {
+	original := strings.Repeat("x", healthCheckPayloadCap*3)
+	payload := map[string]any{"validator_raw_excerpt": original}
+	events := &stubEventStore{}
+	emitHealthCheckEvent(context.Background(), events, "irrelevant", payload)
+	got, ok := payload["validator_raw_excerpt"].(string)
+	if !ok {
+		t.Fatalf("caller payload missing validator_raw_excerpt entry — emit nil'd it")
+	}
+	if len(got) != len(original) {
+		t.Fatalf("caller payload mutated: len = %d, want %d (emit must clone before truncating)", len(got), len(original))
+	}
+}
