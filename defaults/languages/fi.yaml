@@ -138,6 +138,8 @@ keys:
   cli.persona.remove.short: "Poista persona (poistaa tiedoston + karsii viittaukset)"
   cli.mcp.short: "Tuo Omakitenin agent-intentit MCP:n kautta"
   cli.mcp.prompt.short: "Renderöi ratkaistu okt-* prompt-markdown stdoutiin"
+  cli.mcp.prompt.flag.list: "Listaa komentopinnan tasoittain ryhmiteltynä sisältöjen renderöinnin sijaan"
+  cli.mcp.prompt.list.title: "Komentopinta — %d komentoa\n"
   cli.mcp.tools.short: "Listaa Omakitenin MCP-työkalumääritykset"
   cli.mcp.call.short: "Kutsu Omakitenin MCP-työkalua JSON-syöteobjektilla"
   cli.mcp.serve.short: "Suorita Omakitenin MCP stdio-palvelin"

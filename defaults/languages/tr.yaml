@@ -138,6 +138,8 @@ keys:
   cli.persona.remove.short: "Persona kaldır (dosyayı siler + referansları temizler)"
   cli.mcp.short: "Omakiten agent niyetlerini MCP üzerinden sun"
   cli.mcp.prompt.short: "Çözümlenmiş okt-* prompt markdown'ını stdout'a yazdır"
+  cli.mcp.prompt.flag.list: "Komut yüzeyini gövdeleri işlemek yerine katmana göre gruplanmış listeler"
+  cli.mcp.prompt.list.title: "Komut yüzeyi — %d komut\n"
   cli.mcp.tools.short: "Omakiten MCP tool tanımlarını listele"
   cli.mcp.call.short: "Bir Omakiten MCP tool'unu JSON girdi nesnesiyle çağır"
   cli.mcp.serve.short: "Omakiten MCP stdio sunucusunu çalıştır"

@@ -138,6 +138,8 @@ keys:
   cli.persona.remove.short: "persona 제거(파일 삭제 + refs 정리)"
   cli.mcp.short: "MCP 를 통해 Omakiten agent intents 노출"
   cli.mcp.prompt.short: "해석된 okt-* prompt 마크다운을 stdout 에 렌더링"
+  cli.mcp.prompt.flag.list: "본문을 렌더링하는 대신 명령 표면을 계층별로 그룹화하여 나열"
+  cli.mcp.prompt.list.title: "명령 표면 — %d개 명령\n"
   cli.mcp.tools.short: "Omakiten MCP tool 정의 목록"
   cli.mcp.call.short: "JSON 입력 객체로 Omakiten MCP tool 호출"
   cli.mcp.serve.short: "Omakiten MCP stdio 서버 실행"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -34,12 +35,24 @@ func newMCPCommand(opts *runtimeOptions) *cobra.Command {
 // an MCP client. With no argument, every prompt in `agent.CommandNames()` is
 // rendered in handoff order, separated by horizontal rules and annotated
 // with byte/rune counts. A single name argument renders that prompt only.
+//
+// `--list` switches to the command-surface listing: instead of rendering
+// bodies, it prints the 40-command kit grouped by routing tier (orchestrator /
+// system / granular) with the granular tier further grouped by object
+// namespace (`okt-<object>-<verb>`). This is the CLI's view of the same surface
+// the MCP `prompts/list` exposes, so users can see the namespacing and tiers
+// from the shell without an MCP client.
 func newMCPPromptsCommand(opts *runtimeOptions) *cobra.Command {
-	return &cobra.Command{
+	var list bool
+	cmd := &cobra.Command{
 		Use:   "prompts [name]",
 		Short: opts.t("cli.mcp.prompt.short"),
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if list {
+				return printPromptSurface(cmd.OutOrStdout(), opts)
+			}
+
 			ctx := cmd.Context()
 			rt, err := agentruntime.Open(ctx, agentOptions(opts))
 			if err != nil {
@@ -72,6 +85,70 @@ func newMCPPromptsCommand(opts *runtimeOptions) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&list, "list", false, opts.t("cli.mcp.prompt.flag.list"))
+	return cmd
+}
+
+// printPromptSurface renders the command-surface listing: the full
+// agent.CommandNames() kit grouped by routing tier, with the granular tier
+// sub-grouped by object namespace. Order within each tier follows
+// CommandNames() (the REST-style handoff order) so the listing reads the way a
+// user invokes the commands.
+func printPromptSurface(out io.Writer, opts *runtimeOptions) error {
+	names := agent.CommandNames()
+
+	var orchestrators, system []string
+	granular := map[string][]string{}
+	var objectOrder []string
+
+	for _, name := range names {
+		desc, ok := agent.DescribeCommand(name)
+		if !ok {
+			// A registered command that does not decode is a surface bug; surface
+			// it loudly rather than silently dropping it from the listing.
+			return fmt.Errorf("command %q does not decode into a known tier — the surface and the registry disagree", name)
+		}
+		switch desc.Tier {
+		case agent.CommandTierOrchestrator:
+			orchestrators = append(orchestrators, name)
+		case agent.CommandTierSystem:
+			system = append(system, name)
+		case agent.CommandTierGranular:
+			if _, seen := granular[desc.Object]; !seen {
+				objectOrder = append(objectOrder, desc.Object)
+			}
+			granular[desc.Object] = append(granular[desc.Object], name)
+		}
+	}
+
+	fmt.Fprintf(out, opts.t("cli.mcp.prompt.list.title"), len(names))
+
+	writeRow := func(indent, name string) {
+		fmt.Fprintf(out, "%s%-22s %s\n", indent, name, agent.CommandDescription(name))
+	}
+
+	fmt.Fprintf(out, "\nOrchestrators (%d) — bare, director path\n", len(orchestrators))
+	for _, name := range orchestrators {
+		writeRow("  ", name)
+	}
+
+	fmt.Fprintf(out, "\nSystem (%d) — talk to the tool, no project object\n", len(system))
+	for _, name := range system {
+		writeRow("  ", name)
+	}
+
+	granularCount := 0
+	for _, names := range granular {
+		granularCount += len(names)
+	}
+	fmt.Fprintf(out, "\nGranular (%d) — okt-<object>-<verb>, surgical\n", granularCount)
+	for _, object := range objectOrder {
+		fmt.Fprintf(out, "  %s (%d)\n", object, len(granular[object]))
+		for _, name := range granular[object] {
+			writeRow("    ", name)
+		}
+	}
+	return nil
 }
 
 func runeCount(s string) int {
