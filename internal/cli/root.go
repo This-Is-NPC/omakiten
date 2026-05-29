@@ -299,7 +299,19 @@ func (o *runtimeOptions) open(ctx context.Context, materializeConfig bool) (*run
 		preview, err := config.LoadBundle(configPath)
 		if err != nil {
 			_ = store.Close()
-			return nil, err
+			// Wrap with the structured envelope #365 introduced for
+			// `okt config validate --migrate` so every surface that
+			// runs through open() (most prominently `okt tui`)
+			// emits the same {errors:[{kind, path, message,
+			// suggested_command}]} shape — the user gets a
+			// copy-pasteable repair command instead of a bare
+			// validator string.
+			firstKind := classifyValidationError(err)
+			return nil, domain.NewError(
+				domain.ErrConfigInvalid,
+				fmt.Sprintf(t("cli.tui.err.config_validation_failed_fmt"), 1, firstKind),
+				buildValidateFailureDetails(configPath, err, nil),
+			)
 		}
 		emitBundleWarnings(preview)
 

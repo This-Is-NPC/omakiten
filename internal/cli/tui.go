@@ -18,6 +18,7 @@ import (
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
 	hookactions "omakiten/internal/hooks/actions"
+	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
 	"omakiten/internal/tui"
 )
@@ -35,6 +36,7 @@ func newTUICommand(opts *runtimeOptions, version string) *cobra.Command {
 func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 	rt, err := opts.open(ctx, true)
 	if err != nil {
+		emitTUIHealthCheckFailedFromOpenError(ctx, opts, err)
 		return err
 	}
 	defer rt.close()
@@ -53,16 +55,40 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 			return err
 		}
 	}
+	// Boot-time health check (#365 AC 5). `opts.open(_, true)`
+	// already ran MigrateLayout + EnsureDefaultFiles + LoadBundle +
+	// ValidateBundle and wrapped any failure with the structured
+	// envelope at root.go:299. The bundle handle below is consumed
+	// only for the active-theme snapshot guard — if `opts.open`
+	// returned a valid runtime, the bundle is loadable, so a fresh
+	// LoadBundle here would be redundant.
 	bundle, err := config.LoadBundle(rt.configPath)
 	if err != nil {
-		return domain.NewError(domain.ErrConfigInvalid, t("cli.err.config_invalid"), map[string]any{"path": rt.configPath, "error": fmt.Sprint(err)})
+		// Defensive: unreachable in the current `opts.open` flow,
+		// kept as guard against future open() refactors that might
+		// elide the in-line LoadBundle. Surfaces the same envelope
+		// the wrap-in-open path emits so the user sees one shape.
+		firstKind := classifyValidationError(err)
+		return domain.NewError(
+			domain.ErrConfigInvalid,
+			fmt.Sprintf(t("cli.tui.err.config_validation_failed_fmt"), 1, firstKind),
+			buildValidateFailureDetails(rt.configPath, err, nil),
+		)
 	}
 	snap := rt.activeSnapshot()
 	if err := snap.ThemeError(); err != nil {
-		return domain.NewError(domain.ErrConfigInvalid, t("cli.err.theme_invalid"), map[string]any{
-			"active": bundle.Config.Theme.Active,
-			"error":  err.Error(),
-		})
+		// Theme snapshot failures aren't caught by `opts.open`'s
+		// LoadBundle path — the snapshot is built from the loaded
+		// bundle, and an unresolvable theme slug surfaces here as
+		// a distinct boot guard. Reuse the same envelope shape so
+		// the user sees consistent kind + remediation copy.
+		warnings := extractBundleWarnings(bundle)
+		firstKind := classifyValidationError(err)
+		return domain.NewError(
+			domain.ErrConfigInvalid,
+			fmt.Sprintf(t("cli.tui.err.config_validation_failed_fmt"), 1, firstKind),
+			buildValidateFailureDetails(rt.configPath, err, warnings),
+		)
 	}
 	theme := snap.Theme()
 
@@ -158,6 +184,83 @@ func writeOktCDPath(root string) error {
 		return nil
 	}
 	return os.WriteFile(target, []byte(root+"\n"), 0o600)
+}
+
+// emitTUIHealthCheckFailedFromOpenError records a tui.healthcheck.failed
+// row when opts.open returns a config-invalid coded error (#369 AC 4).
+// The on-disk store is opened from scratch because opts.open closes
+// the store before returning the wrapping error; the helper is
+// best-effort and the failure surface is unaffected when the activity
+// path is unavailable.
+func emitTUIHealthCheckFailedFromOpenError(ctx context.Context, opts *runtimeOptions, openErr error) {
+	var coded *domain.CodedError
+	if !errors.As(openErr, &coded) || coded.Code != domain.ErrConfigInvalid {
+		return
+	}
+	dbPath, dbErr := opts.resolvedDBPath()
+	if dbErr != nil {
+		return
+	}
+	store, storeErr := sqlite.Open(ctx, dbPath)
+	if storeErr != nil {
+		return
+	}
+	defer store.Close()
+
+	payload := map[string]any{}
+	if cfgPath, _ := coded.Details["path"].(string); cfgPath != "" {
+		payload["config_path"] = cfgPath
+	}
+	count, firstKind := summariseValidationErrors(coded.Details["errors"])
+	// Caller chooses the audit-row default when the wrapper could
+	// not enumerate any structured errors: the bundle clearly broke
+	// in some way (we are in the config-invalid branch) so emit
+	// `validator_error_count: 1` as the "we saw an error but cannot
+	// say which" floor. The historic 1 lived inside
+	// summariseValidationErrors and could not be distinguished from
+	// "exactly one error was recorded".
+	if count == 0 {
+		count = 1
+	}
+	payload["validator_error_count"] = count
+	if firstKind != "" {
+		payload["validator_first_error_kind"] = firstKind
+	}
+	emitHealthCheckEvent(ctx, store, domain.EventTypeTUIHealthCheckFailed, payload)
+}
+
+// summariseValidationErrors extracts (count, first-error-kind) from
+// the `details.errors` payload regardless of whether it landed as the
+// hand-built `[]map[string]any` shape (in-process wrap) or the
+// JSON-roundtripped `[]any` shape (activity-store roundtrip, hook
+// payload). The TUI helper used to take the `[]map[string]any`
+// branch only, so a roundtripped envelope silently fell back to
+// count=1 and no kind — Primitive Obsession on `map[string]any`.
+//
+// Returns (0, "") when no structured errors could be enumerated;
+// callers decide whether to emit a count=1 floor or skip the field.
+// Pre-fix the helper baked the count=1 default in and consumers
+// could not distinguish "no enumerable errors" from "exactly one
+// error was recorded".
+func summariseValidationErrors(raw any) (int, string) {
+	switch errs := raw.(type) {
+	case []map[string]any:
+		if len(errs) == 0 {
+			return 0, ""
+		}
+		kind, _ := errs[0]["kind"].(string)
+		return len(errs), kind
+	case []any:
+		if len(errs) == 0 {
+			return 0, ""
+		}
+		if m, ok := errs[0].(map[string]any); ok {
+			kind, _ := m["kind"].(string)
+			return len(errs), kind
+		}
+		return len(errs), ""
+	}
+	return 0, ""
 }
 
 func oktCDPath() string {

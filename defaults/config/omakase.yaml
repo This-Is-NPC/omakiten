@@ -295,6 +295,26 @@ config:
         category: note
         display: "note removed"
         formatter: note.removed
+      update.healthcheck.passed:
+        category: update
+        display: "update health-check passed"
+        formatter: update.healthcheck.passed
+      update.healthcheck.failed:
+        category: update
+        display: "update health-check failed"
+        formatter: update.healthcheck.failed
+      update.swap.completed:
+        category: update
+        display: "update binary swap completed"
+        formatter: update.swap.completed
+      update.swap.aborted:
+        category: update
+        display: "update binary swap aborted"
+        formatter: update.swap.aborted
+      tui.healthcheck.failed:
+        category: tui
+        display: "tui boot health-check failed"
+        formatter: tui.healthcheck.failed
   # hooks subscribes to events.bus and dispatches actions when the
   # event_type matches `on:` and every key in `when:` matches the
   # corresponding top-level key in event.payload (string equality;

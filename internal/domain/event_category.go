@@ -49,6 +49,17 @@ const (
 	// from EventCategoryTask because notes are first-class rows scoped
 	// project|global rather than per-task children.
 	EventCategoryNote EventCategory = "note"
+	// EventCategoryUpdate groups `okt update` lifecycle events: pre-swap
+	// health-check pass/fail, swap completion, swap abort. Added in
+	// #368 so the Logs inspector can filter the upgrade audit trail
+	// distinctly from other system events.
+	EventCategoryUpdate EventCategory = "update"
+	// EventCategoryTUI groups `okt tui` lifecycle events. Today only
+	// boot-time health-check failure is recorded (passing boot is the
+	// steady-state path and intentionally skipped) but the category
+	// exists so future TUI audit events have a home without growing
+	// the catalogue per-event.
+	EventCategoryTUI EventCategory = "tui"
 	// EventCategoryUnknown is returned by EventCategoryOf when the
 	// event_type is not in KnownEventTypes. The Logs inspector renders
 	// such rows under a generic "other" group and never panics.
@@ -71,6 +82,8 @@ var KnownEventCategories = []EventCategory{
 	EventCategoryTrick,
 	EventCategoryDomain,
 	EventCategoryNote,
+	EventCategoryUpdate,
+	EventCategoryTUI,
 }
 
 // EventCategoryOf returns the category an event_type belongs to,

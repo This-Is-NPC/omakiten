@@ -1087,6 +1087,20 @@ keys:
   cli.update.err.windows_unsupported: "okt update not yet supported on Windows; reinstall via install.ps1"
   cli.update.err.dev_build: "this is a dev build; rebuild from source or install a release"
   cli.update.err.backup_failed_fmt: "pre-swap backup failed: %s; binary unchanged"
+
+  # okt config validate --migrate health-check additions (#365).
+  cli.config.validate.flag.migrate: "esegue MigrateLayout + EnsureDefaultFiles prima di LoadBundle/ValidateBundle in modo che i backfill di schema finiscano nel report"
+  cli.update.err.stage_binary_fmt: "preparare il binary estratto per il health check pre-swap: %s"
+  cli.update.err.config_validation_failed_fmt: "health check del config fallito (%d errori, primo: %s); binary invariato — esegui `okt config validate --migrate` per dettagli"
+  cli.update.err.config_validation_exec_fmt: "eseguire health check del binary staged: %s"
+  cli.tui.err.config_validation_failed_fmt: "health check del config fallito (%d errori, primo: %s); esegui `okt config validate --migrate` per dettagli"
+  # Remediation hint copy (#367) — %s slot carries the suggested command literal.
+  cli.config.validate.remediation.missing_shipped_file: "Ripristina i file di default shipped: %s — il tuo sottoalbero custom/ è preservato; fai prima il backup di modifiche dirette ai file shipped."
+  cli.config.validate.remediation.embedded_default_drift: "Aggiorna i default embedded che il binary in esecuzione si aspetta: %s — il tuo sottoalbero custom/ non viene toccato."
+  cli.config.validate.remediation.unknown_schema_key: "Rimuovi la chiave sconosciuta dal config: %s — apri il file al path citato e cancella la voce."
+  cli.config.validate.remediation.invalid_value: "Correggi il valore non valido: %s — apri il file al path citato e regola il campo."
+  cli.config.validate.remediation.missing_required_key: "Aggiungi la chiave obbligatoria mancante: %s — apri il file al path citato e inserisci la voce descritta nell'errore."
+  cli.config.validate.remediation.theme_not_found: "Scegli un tema che il runtime può risolvere: %s — apri il file e imposta config.theme.active su uno degli slug disponibili."
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "Nessun plan ancora. Creane uno con `okt plan create <slug> --name \"...\"`."
   tui.plans.list.header: "// SLUG             STATUS    FATTO/TOTALE  %    NOME ‹WAVE ATTIVA›"

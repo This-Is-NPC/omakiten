@@ -1092,6 +1092,20 @@ keys:
   cli.update.err.windows_unsupported: "okt update not yet supported on Windows; reinstall via install.ps1"
   cli.update.err.dev_build: "this is a dev build; rebuild from source or install a release"
   cli.update.err.backup_failed_fmt: "pre-swap backup failed: %s; binary unchanged"
+
+  # okt config validate --migrate health-check additions (#365).
+  cli.config.validate.flag.migrate: "führt MigrateLayout + EnsureDefaultFiles vor LoadBundle/ValidateBundle aus, damit Schema-Backfills im Report landen"
+  cli.update.err.stage_binary_fmt: "extrahierte Binary für Pre-Swap-Health-Check stagen: %s"
+  cli.update.err.config_validation_failed_fmt: "Config-Health-Check fehlgeschlagen (%d Fehler, erster: %s); Binary unverändert — führt `okt config validate --migrate` für Details aus"
+  cli.update.err.config_validation_exec_fmt: "Health-Check der staged Binary ausführen: %s"
+  cli.tui.err.config_validation_failed_fmt: "Config-Health-Check fehlgeschlagen (%d Fehler, erster: %s); führt `okt config validate --migrate` für Details aus"
+  # Remediation hint copy (#367) — %s slot carries the suggested command literal.
+  cli.config.validate.remediation.missing_shipped_file: "Stellt die mitgelieferten Standarddateien wieder her: %s — euer custom/-Teilbaum bleibt erhalten; sichert direkte Änderungen an shipped-Dateien zuerst."
+  cli.config.validate.remediation.embedded_default_drift: "Aktualisiert die eingebetteten Defaults, die das laufende Binary erwartet: %s — euer custom/-Teilbaum bleibt unangetastet."
+  cli.config.validate.remediation.unknown_schema_key: "Entfernt den unbekannten Key aus der Config: %s — öffnet die Datei am genannten Pfad und löscht den Eintrag."
+  cli.config.validate.remediation.invalid_value: "Behebt den ungültigen Wert: %s — öffnet die Datei am genannten Pfad und passt das Feld an."
+  cli.config.validate.remediation.missing_required_key: "Fügt den fehlenden Pflicht-Key hinzu: %s — öffnet die Datei am genannten Pfad und fügt den im Fehler beschriebenen Eintrag ein."
+  cli.config.validate.remediation.theme_not_found: "Wählt ein Theme, das die Runtime auflösen kann: %s — öffnet die Datei und setzt config.theme.active auf einen der verfügbaren Slugs."
   # Plans — TUI plan list + network diagram + goal editor.
   tui.plans.list.empty: "Noch keine plans. Erstelle einen mit `okt plan create <slug> --name \"...\"`."
   tui.plans.list.header: "// SLUG             STATUS    FERTIG/GESAMT  %  NAME ‹AKTIVE WAVE›"
