@@ -409,11 +409,35 @@ mcp_commands:
     persona: product-owner
     laws_disabled: [template-fidelity]
     templates: [comment-5w2h, comment-smart-success]
+  # CW5 (#376) — granular lifecycle commands. Slot wiring only; reuses the
+  # existing role personas (Ideator/Owner = product-owner, Builder =
+  # craftsperson, Tester = check-runner, Reviewer = code-reviewer, Scribe =
+  # documentation-agent). Skills flow through persona wiring. Rebind = #189.
+  okt-task-research:
+    persona: product-owner
+    laws_disabled: [template-fidelity]
+  okt-task-validate:
+    persona: product-owner
+    laws_disabled: [template-fidelity]
+  okt-task-requirements:
+    persona: product-owner
+    templates: [comment-requirements, comment-acceptance]
+  okt-task-prioritize:
+    persona: product-owner
+    templates: [comment-moscow, comment-rice-score]
   okt-task-create:
     persona: product-owner
     laws: [blast-radius-awareness, error-budget-aware, invest-stories, outcome-over-output, prioritization-recorded, non-functional-explicit]
     templates: [task-change-request, comment-requirements, comment-acceptance, comment-risk-assessment, comment-smart-success, comment-moscow, comment-rice-score, comment-okr, comment-non-functional]
+  okt-task-decompose:
+    persona: product-owner
+  okt-task-estimate:
+    persona: product-owner
+  okt-task-design:
+    persona: craftsperson
   okt-project-resume:
+    persona: craftsperson
+  okt-task-resume:
     persona: craftsperson
   okt-task-continue:
     persona: craftsperson
@@ -421,10 +445,21 @@ mcp_commands:
     persona: craftsperson
     laws: [pre-mortem-required, rollback-plan-mandatory, dual-peer-review, coverage-gate, blast-radius-awareness, error-budget-aware, conventional-commits, no-silent-behavior-changes]
     templates: [pull-request, comment-pre-mortem, comment-rollback-plan, comment-peer-review-strict, comment-tests-passing-strict, comment-risk-assessment, comment-scribe-correction]
+  okt-task-self-review:
+    persona: craftsperson
+    templates: [comment-peer-review-strict]
+  okt-task-refactor:
+    persona: craftsperson
+    laws: [no-silent-behavior-changes]
+    templates: [comment-review-findings]
   okt-task-document:
     persona: documentation-agent
     laws: [blameless-postmortem]
     templates: [comment-postmortem, comment-lessons-learned]
+  okt-task-debrief:
+    persona: documentation-agent
+    laws: [blameless-postmortem, no-praise-pad]
+    templates: [comment-lessons-learned]
   okt-config:
     persona: documentation-agent
     templates: [config-orientation]
@@ -435,10 +470,17 @@ mcp_commands:
     persona: code-reviewer
     laws: [dual-review-required, coverage-gate-check, pre-mortem-aware]
     templates: [comment-review-findings, comment-refactor-opportunities]
+  okt-task-secure:
+    persona: code-reviewer
+    templates: [comment-review-findings]
   okt-task-check:
     persona: check-runner
     laws: [coverage-gate, regression-required, dual-signal-required]
     templates: [comment-check-report]
+  okt-task-quality:
+    persona: check-runner
+    laws: [coverage-gate]
+    templates: [comment-review-findings]
   # Notes / handoff v1 (#363), rescoped to the v2 prefix surface (#373).
   # Provisional persona kit — #189 W4/W5.x rebinds to themed personas
   # under Proposta B (likely alphonse-elric / maes-hughes equivalents).

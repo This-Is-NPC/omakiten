@@ -56,6 +56,27 @@ var promptBudgets = map[string]int{
 	"okt-pause":      21900,
 	"okt-note-free":  20900,
 	"okt-note-recap": 24900,
+	// CW5 (#376): granular okt-task-* surface — 12 new lifecycle commands + 1
+	// new nav (okt-task-resume). Budgets sized against the embedded omakase
+	// default kit with ~30% headroom, bucketed by the bound persona's skill
+	// footprint: Builder (engineer) ~ continue/implement, Owner (product-owner)
+	// ~ imagine/create, Tester (check-runner) ~ check, Reviewer (code-reviewer)
+	// ~ review, Scribe (documentation-agent) ~ document. CW8 (#379)
+	// re-tightens these once theming rewires each command to a minimal skill
+	// subset rather than the full default repertoire.
+	"okt-task-resume":       23500,
+	"okt-task-research":     27000,
+	"okt-task-validate":     27000,
+	"okt-task-requirements": 27000,
+	"okt-task-prioritize":   27000,
+	"okt-task-decompose":    23700,
+	"okt-task-estimate":     23600,
+	"okt-task-design":       23800,
+	"okt-task-self-review":  23700,
+	"okt-task-refactor":     23700,
+	"okt-task-quality":      15600,
+	"okt-task-secure":       19700,
+	"okt-task-debrief":      20300,
 }
 
 // TestTemplateBoundCommandsCarryFetchHint guards the JIT contract for
@@ -92,6 +113,98 @@ func TestTemplateBoundCommandsCarryFetchHint(t *testing.T) {
 					name, len(resp.Templates), resp.Markdown)
 			}
 		})
+	}
+}
+
+// cw5GranularTaskCommands is the granular okt-task-* surface registered in
+// CW5 (#376): the 12 new lifecycle commands plus the new cold-start nav.
+var cw5GranularTaskCommands = []string{
+	"okt-task-research",
+	"okt-task-validate",
+	"okt-task-requirements",
+	"okt-task-prioritize",
+	"okt-task-decompose",
+	"okt-task-estimate",
+	"okt-task-design",
+	"okt-task-resume",
+	"okt-task-self-review",
+	"okt-task-refactor",
+	"okt-task-quality",
+	"okt-task-secure",
+	"okt-task-debrief",
+}
+
+// TestCW5GranularCommandsRenderNonEmpty is the AC#5 smoke gate: every new
+// granular okt-task-* command must resolve against the embedded default kit
+// with a non-empty Persona section (the role slot is wired) and a non-empty
+// Action section (the action text lands), and must surface a description in
+// prompts/list metadata. A command that registers in CommandNames() but is
+// not wired in the preset YAML would render with no Persona section, failing
+// here.
+func TestCW5GranularCommandsRenderNonEmpty(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "data", "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+
+	rt, err := Open(ctx, Options{DBPath: dbPath, ConfigPath: configPath, CWD: tmp})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = rt.Close() }()
+
+	for _, name := range cw5GranularTaskCommands {
+		t.Run(name, func(t *testing.T) {
+			resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
+			if err != nil {
+				t.Fatalf("ResolveCommand(%s) error = %v", name, err)
+			}
+			if resp.Persona == nil {
+				t.Fatalf("%s resolved with no persona — the role slot is not wired in the preset YAML", name)
+			}
+			if !strings.Contains(resp.Markdown, "## Persona — ") {
+				t.Fatalf("%s markdown missing non-empty Persona section:\n%s", name, resp.Markdown)
+			}
+			if !strings.Contains(resp.Markdown, "## Action\n") || strings.TrimSpace(resp.Action) == "" {
+				t.Fatalf("%s markdown missing non-empty Action section:\n%s", name, resp.Markdown)
+			}
+			if strings.TrimSpace(agent.CommandDescription(name)) == "" {
+				t.Fatalf("%s carries no prompts/list description", name)
+			}
+		})
+	}
+}
+
+// TestCW5DistinctCommandPairs pins the AC#2/#3/#4 distinctness contracts:
+// cold-resume vs warm-continue, mechanical check vs human-lens quality, and
+// author self-review vs third-party review must each carry materially
+// different action text (not a copy-paste of the sibling).
+func TestCW5DistinctCommandPairs(t *testing.T) {
+	pairs := [][2]string{
+		{"okt-task-resume", "okt-task-continue"},
+		{"okt-task-check", "okt-task-quality"},
+		{"okt-task-self-review", "okt-task-review"},
+	}
+	for _, p := range pairs {
+		a := agent.CommandActionFallback(p[0])
+		b := agent.CommandActionFallback(p[1])
+		if a == "" || b == "" {
+			t.Fatalf("action text missing for pair %s / %s", p[0], p[1])
+		}
+		if a == b {
+			t.Fatalf("%s and %s share identical action text — they must behave distinctly", p[0], p[1])
+		}
+	}
+	// Cold resume must signal full-context rebuild; warm continue must signal a
+	// checkpoint read. Pin the load-bearing intent words so a future edit that
+	// collapses the distinction surfaces here.
+	resume := agent.CommandActionFallback("okt-task-resume")
+	if !strings.Contains(strings.ToLower(resume), "cold") {
+		t.Fatalf("okt-task-resume action should signal a cold full-context start:\n%s", resume)
+	}
+	cont := agent.CommandActionFallback("okt-task-continue")
+	if !strings.Contains(strings.ToLower(cont), "checkpoint") {
+		t.Fatalf("okt-task-continue action should signal a warm checkpoint read:\n%s", cont)
 	}
 }
 
