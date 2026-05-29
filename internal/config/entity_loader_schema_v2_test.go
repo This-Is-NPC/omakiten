@@ -10,7 +10,7 @@ import (
 func TestLoadSkillsParsesSchemaV2Fields(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "go.md"),
-		"---\nname: Go\ndescription: Go lang\nschema_version: 2\nrole_affinity:\n  - engineer\n  - check-runner\n---\nbody\n")
+		"---\nname: Go\ndescription: Go lang\nschema_version: 2\nrole_affinity:\n  - builder\n  - verifier\n---\nbody\n")
 
 	skills, _, err := LoadSkills(dir)
 	if err != nil {
@@ -23,7 +23,7 @@ func TestLoadSkillsParsesSchemaV2Fields(t *testing.T) {
 	if got.SchemaVersion != 2 {
 		t.Fatalf("schema_version = %d, want 2", got.SchemaVersion)
 	}
-	want := []string{"engineer", "check-runner"}
+	want := []string{"builder", "verifier"}
 	if !equalStringSlice(got.RoleAffinity, want) {
 		t.Fatalf("role_affinity = %v, want %v", got.RoleAffinity, want)
 	}
@@ -33,8 +33,8 @@ func TestLoadSkillsParsesSchemaV2Fields(t *testing.T) {
 // surfaces the schema-v2 persona fields: schema_version + skill_repertoire.
 func TestLoadPersonasParsesSchemaV2Fields(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "engineer.md"),
-		"---\nname: Engineer\nschema_version: 2\nskill_repertoire:\n  - go\n  - sqlite\n  - markdown\n---\nbody\n")
+	writeFile(t, filepath.Join(dir, "builder.md"),
+		"---\nname: Builder\nschema_version: 2\nskill_repertoire:\n  - go\n  - sqlite\n  - markdown\n---\nbody\n")
 
 	personas, _, err := LoadPersonas(dir)
 	if err != nil {

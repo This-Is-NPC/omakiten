@@ -135,7 +135,7 @@ Operations: no guards (archive / delete / unarchive free).
 
 ### Delta vs omakase
 
-Lean spike kit: one persona (`tinkerer`) drives discovery, creation, and implementation; the engineering/product-owner split disappears. `okt-create` swaps to `task-spike` with `hypothesis-required` + `yagni-first` laws (no INVEST, no SMART). `okt-implement` runs under `time-boxed-spike` + `tracer-bullet` (no test-evidence, no green-main). `okt-check` and `okt-review` accept yellow / time-boxed findings. Full wiring: [`presets.md`](./presets.md).
+Lean spike kit: a single spike-driver persona handles discovery, creation, and implementation; the builder / product-management role split disappears. `okt-create` swaps to `task-spike` with `hypothesis-required` + `yagni-first` laws (no INVEST, no SMART). `okt-implement` runs under `time-boxed-spike` + `tracer-bullet` (no test-evidence, no green-main). `okt-check` and `okt-review` accept yellow / time-boxed findings. Full wiring: [`presets.md`](./presets.md).
 
 ### Visible output
 
@@ -285,7 +285,7 @@ Operations: archive requires `#documentation`; delete requires `#peer-review`.
 
 ### Delta vs omakase
 
-Adds two upstream buckets (`requirements`, `planning`) and one downstream bucket (`docs`). A `methodical-engineer` persona replaces omakase's `engineer` and carries `staged-delivery`, `requirements-elicitation`, `design-documentation`, `decision-records`. `product-owner` gains `requirements-elicitation` + `acceptance-criteria-writing`; `okt-create` enforces `requirements-signed-off` + `acceptance-criteria-required` and uses `task-feature` (not `user-story`). `okt-implement` adds `design-recorded`, `decision-record-on-divergence`, `peer-review-required` with `decision-record` / `design-doc` templates. `okt-review` checks design / decision-record presence. Operations: archive requires `#documentation`, delete requires `#peer-review`. Full wiring: [`presets.md`](./presets.md).
+Adds two upstream buckets (`requirements`, `planning`) and one downstream bucket (`docs`). The builder role tightens to a methodical, staged-delivery discipline carrying `staged-delivery`, `requirements-elicitation`, `design-documentation`, `decision-records`. The product role gains `requirements-elicitation` + `acceptance-criteria-writing`; `okt-create` enforces `requirements-signed-off` + `acceptance-criteria-required` and uses `task-feature` (not `user-story`). `okt-implement` adds `design-recorded`, `decision-record-on-divergence`, `peer-review-required` with `decision-record` / `design-doc` templates. `okt-review` checks design / decision-record presence. Operations: archive requires `#documentation`, delete requires `#peer-review`. Full wiring: [`presets.md`](./presets.md).
 
 ### Visible output
 
@@ -359,7 +359,7 @@ Operations: archive requires `#documentation` + `#lessons-learned`; delete requi
 
 ### Delta vs kaiseki
 
-Same six-bucket shape, but every gate is tightened. `methodical-engineer` is replaced by `craftsperson` carrying `sre-discipline`, `risk-driven-development`, `postmortem-authoring`, `change-management`, plus the `-strict` variant of TDD. `check-runner` and `code-reviewer` upgrade to `test-driven-development-strict` and gain `coverage-gate` / `dual-review-required`. `product-owner` adds `okr-framing` and uses `task-change-request` under `blast-radius-awareness` + `error-budget-aware`. `okt-implement` adds `pre-mortem-required`, `rollback-plan-mandatory`, `dual-peer-review` with `comment-pre-mortem`, `comment-rollback-plan`, `comment-peer-review-strict`, `comment-tests-passing-strict`, `comment-scribe-correction`. `okt-document` runs `blameless-postmortem` with `comment-postmortem` + `comment-lessons-learned`. Guards: `planning → dev` adds `#pre-mortem` + `#risk-assessment`; `dev → review` adds `#rollback-plan`; `review → docs` requires `#peer-review`×**2**; `docs → done` adds `#lessons-learned`. Operations: archive requires `#documentation` + `#lessons-learned`; delete and unarchive both require `#peer-review`. Full wiring: [`presets.md`](./presets.md).
+Same six-bucket shape, but every gate is tightened. The builder role hardens to an SRE-grade craft discipline carrying `sre-discipline`, `risk-driven-development`, `postmortem-authoring`, `change-management`, plus the `-strict` variant of TDD. The check and review roles upgrade to `test-driven-development-strict` and gain `coverage-gate` / `dual-review-required`. The product role adds `okr-framing` and uses `task-change-request` under `blast-radius-awareness` + `error-budget-aware`. `okt-implement` adds `pre-mortem-required`, `rollback-plan-mandatory`, `dual-peer-review` with `comment-pre-mortem`, `comment-rollback-plan`, `comment-peer-review-strict`, `comment-tests-passing-strict`, `comment-scribe-correction`. `okt-document` runs `blameless-postmortem` with `comment-postmortem` + `comment-lessons-learned`. Guards: `planning → dev` adds `#pre-mortem` + `#risk-assessment`; `dev → review` adds `#rollback-plan`; `review → docs` requires `#peer-review`×**2**; `docs → done` adds `#lessons-learned`. Operations: archive requires `#documentation` + `#lessons-learned`; delete and unarchive both require `#peer-review`. Full wiring: [`presets.md`](./presets.md).
 
 ### Visible output
 
@@ -517,7 +517,7 @@ The four official presets are starting points. Forking is the expected way to ma
 
 | Entity | Pattern | Example |
 |---|---|---|
-| Persona file | `defaults/personas/<slug>.md` — single noun, kebab-case | `tinkerer`, `methodical-engineer` |
+| Persona file | `defaults/personas/<slug>.md` — kebab-case | `roy-mustang`, `gandalf-the-grey` |
 | Skill file | `defaults/skills/<slug>.md` — noun or verb-noun | `lean-experimentation`, `staged-delivery` |
 | Law file (shared body) | `defaults/laws/<slug>.md` — descriptive phrase | `template-fidelity`, `green-main-always` |
 | Law file (preset-specific) | `defaults/laws/<slug>.md` — unique phrase, no preset prefix | `yagni-first`, `pre-mortem-required` |

@@ -408,7 +408,7 @@ The scope (`global` / `persona` / `project`) is **not** stored in the file — i
 
 ```yaml
 personas:
-  - slug: engineer
+  - slug: builder
     skills: [implementation, markdown]  # optional, must be loaded slugs, no duplicates
     laws:   [workflow-enforced]         # optional, must be loaded slugs
 ```
@@ -487,11 +487,11 @@ mcp_commands:
   global:                       # reserved key — laws inherited by every okt-* prompt
     laws: [template-fidelity]
   okt-create:
-    persona: engineer      # optional — must be a loaded persona slug
+    persona: builder       # optional — must be a loaded persona slug
     laws: [workflow-enforced]   # optional — added on top of global
     templates: [user-story]     # optional — bound template slugs
   okt-imagine:
-    persona: engineer
+    persona: builder
     laws_disabled:              # optional — opts out of inherited laws
       - template-fidelity
 ```

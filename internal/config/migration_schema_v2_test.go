@@ -16,7 +16,7 @@ import (
 const v1Fixture = `# fixture header comment
 version: 1
 personas:
-  - slug: engineer
+  - slug: builder
     skills:
       - go
       - sqlite
@@ -27,18 +27,18 @@ shared_skill_pool:
   - markdown
 preset_variants:
   fast:
-    persona: engineer
+    persona: builder
 mcp_commands:
   global:
     laws:
       - template-fidelity
   okt-implement:
-    persona: engineer
+    persona: builder
     skills:
       - go
       - markdown
   okt-continue:
-    persona: engineer
+    persona: builder
     skills:
       - sqlite
       - go
@@ -104,15 +104,15 @@ func TestMigrateSchemaV2InfersRepertoireAndDropsDeprecated(t *testing.T) {
 	for i, p := range doc.Personas {
 		byslug[p.Slug] = i
 	}
-	eng := doc.Personas[byslug["engineer"]]
+	eng := doc.Personas[byslug["builder"]]
 	if eng.SchemaVersion != SchemaVersionV2 {
-		t.Fatalf("engineer schema_version = %d, want %d", eng.SchemaVersion, SchemaVersionV2)
+		t.Fatalf("builder schema_version = %d, want %d", eng.SchemaVersion, SchemaVersionV2)
 	}
 	// union of okt-implement {go, markdown} then okt-continue {sqlite, go}
 	// in document order, first-seen wins: {go, markdown, sqlite}.
 	wantEng := []string{"go", "markdown", "sqlite"}
 	if !equalStringSlice(eng.SkillRepertoire, wantEng) {
-		t.Fatalf("engineer skill_repertoire = %v, want %v", eng.SkillRepertoire, wantEng)
+		t.Fatalf("builder skill_repertoire = %v, want %v", eng.SkillRepertoire, wantEng)
 	}
 
 	rev := doc.Personas[byslug["reviewer"]]
@@ -163,14 +163,14 @@ func TestMigrateSchemaV2Idempotent(t *testing.T) {
 func TestMigrateSchemaV2AlreadyV2IsNoOp(t *testing.T) {
 	v2 := `version: 1
 personas:
-  - slug: engineer
+  - slug: builder
     schema_version: 2
     skill_repertoire:
       - go
       - markdown
 mcp_commands:
   okt-implement:
-    persona: engineer
+    persona: builder
     skills:
       - go
 `
