@@ -1,0 +1,132 @@
+package tui
+
+import (
+	tea "github.com/charmbracelet/bubbletea"
+
+	"omakiten/internal/domain"
+)
+
+// openProjectView routes to the dedicated project-view screen
+// (subProjectView, reached via Ctrl+P). It pushes the current view onto
+// the back-stack so ctrl+o restores it, resets the screen's focus to the
+// metadata panel + scroll to the top, and primes the project-scoped
+// activity feed via refreshProjectSummary. The project identity itself
+// comes from m.project (already resolved at boot); this only fetches the
+// feed.
+//
+// Lives outside render_*.go on purpose: the scroll-state boundary arch
+// test (internal/arch) forbids render_*.go from writing a *Scroll field,
+// and the open/scroll mutators here reset projectActivityScroll /
+// projectMetaScroll. The render pass (render_project.go) stays pure.
+func (m *Model) openProjectView() {
+	m.pushHistory()
+	m.moveMode = false
+	m.status = ""
+	m.top = topTasks
+	m.sub = subProjectView
+	m.projectFocus = projectFocusMeta
+	m.projectActivityScroll = 0
+	m.projectMetaScroll = 0
+	if err := m.refreshProjectSummary(); err != nil {
+		m.status = err.Error()
+	}
+}
+
+// refreshProjectSummary loads the project- and universal-scoped comment
+// events for the current project into m.projectActivity, ready for the
+// activity feed on the project-view screen. Project identity (name / slug
+// / root path / id) is read straight from m.project at render time, so it
+// is not re-fetched here. An empty filter pulls the full pinned-first
+// feed.
+func (m *Model) refreshProjectSummary() error {
+	events, err := m.commentsForProjectScope(domain.CommentFilter{})
+	if err != nil {
+		return err
+	}
+	m.projectActivity = events
+	return nil
+}
+
+// handleProjectKey owns the project-view screen's keys: Tab toggles which
+// panel (metadata / activity) owns scroll; j/k/pgup/pgdn scroll the active
+// panel; r refreshes the feed; esc / ctrl+o leave the screen (handled by
+// handleCommonKey's back-nav). The task-mutation keys (n/e/c/m/A) are
+// swallowed so the read-only v1 screen stays inert instead of falling
+// through to handleCommonKey's board bindings. Returns true when the key
+// was consumed so the dispatcher does not fall through.
+func (m *Model) handleProjectKey(msg tea.KeyMsg) bool {
+	switch msg.String() {
+	case "tab":
+		m.toggleProjectFocus()
+		return true
+	case "j", "down":
+		m.scrollProjectFocused(1)
+		return true
+	case "k", "up":
+		m.scrollProjectFocused(-1)
+		return true
+	case "pgdown", "pgdn":
+		m.scrollProjectFocused(m.projectActivityViewportLines())
+		return true
+	case "pgup":
+		m.scrollProjectFocused(-m.projectActivityViewportLines())
+		return true
+	case "g", "home":
+		m.setProjectFocusedScroll(0)
+		return true
+	case "r":
+		if err := m.refreshProjectSummary(); err != nil {
+			m.status = err.Error()
+		} else {
+			m.status = m.t("tui.status.refreshed")
+		}
+		return true
+	case "n", "e", "c", "m", "A":
+		// Read-only in v1: swallow the task-mutation keys so they do not
+		// fall through to handleCommonKey (which gates on top==topTasks,
+		// true here) and open a task create/edit/comment surface.
+		return true
+	}
+	return false
+}
+
+// toggleProjectFocus rotates the project-view focus metadata ↔ activity.
+func (m *Model) toggleProjectFocus() {
+	if m.projectFocus == projectFocusMeta {
+		m.projectFocus = projectFocusActivity
+	} else {
+		m.projectFocus = projectFocusMeta
+	}
+}
+
+// scrollProjectFocused nudges the scroll offset of whichever panel
+// currently owns focus by delta lines, clamped at zero.
+func (m *Model) scrollProjectFocused(delta int) {
+	if m.projectFocus == projectFocusActivity {
+		m.projectActivityScroll = clampMinZero(m.projectActivityScroll + delta)
+		return
+	}
+	m.projectMetaScroll = clampMinZero(m.projectMetaScroll + delta)
+}
+
+// setProjectFocusedScroll snaps the focused panel's scroll to an absolute
+// offset (clamped at zero) — backs the g/home top-of-panel binding.
+func (m *Model) setProjectFocusedScroll(offset int) {
+	if offset < 0 {
+		offset = 0
+	}
+	if m.projectFocus == projectFocusActivity {
+		m.projectActivityScroll = offset
+		return
+	}
+	m.projectMetaScroll = offset
+}
+
+// clampMinZero returns n, or 0 when n is negative. Tiny helper kept local
+// to the project-view scroll math.
+func clampMinZero(n int) int {
+	if n < 0 {
+		return 0
+	}
+	return n
+}

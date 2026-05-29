@@ -485,6 +485,28 @@ type Model struct {
 	// description and forcing modal switches per surface.
 	taskFocus taskScreenFocus
 
+	// projectFocus tracks which panel (metadata / activity) owns
+	// navigation keys inside the project-view screen (subProjectView).
+	// Reset to projectFocusMeta whenever the screen is (re)opened by
+	// Ctrl+P so re-entry always lands on the metadata side.
+	projectFocus projectScreenFocus
+
+	// projectActivity caches the project- and universal-scoped comment
+	// events fetched by refreshProjectSummary for the project-view
+	// screen. Held on the model so the render pass and the activity
+	// scroll handlers read the same slice without re-querying the store
+	// on every keystroke.
+	projectActivity []domain.Event
+
+	// projectActivityScroll is the line offset of the project-view
+	// activity feed viewport. j/k/pgup/pgdn nudge it while the activity
+	// panel owns focus; the metadata panel uses projectMetaScroll.
+	projectActivityScroll int
+
+	// projectMetaScroll is the line offset of the project-view metadata
+	// panel viewport, used when that panel owns focus.
+	projectMetaScroll int
+
 	// subtasks owns cursor + scroll for the sub-tasks pane. The
 	// cardlist.Model encapsulates the (cursor, scroll, items,
 	// viewport) tuple so no callsite can write the scroll field
@@ -802,6 +824,17 @@ const (
 	taskFocusActivity
 )
 
+// projectScreenFocus is which panel owns navigation keys inside the
+// project-view screen (Ctrl+P). Tab toggles metadata ↔ activity so the
+// user can scroll either side without a per-panel binding — the same
+// zone model the task view uses, scoped down to two panels.
+type projectScreenFocus int
+
+const (
+	projectFocusMeta projectScreenFocus = iota
+	projectFocusActivity
+)
+
 // taskFormField identifies which field of the create/edit form is focused.
 // Tab cycles forward; the priority field has its own ←/→ cycle for the
 // fixed enum (low/normal/high).
@@ -865,6 +898,12 @@ const (
 	subSettingsTemplates
 	subSettingsTags
 	subSettingsGuards
+	// subProjectView is the dedicated project-view screen (Ctrl+P):
+	// project metadata + a project-scoped activity feed. It is addressed
+	// like any other sub for routing/footer purposes but is intentionally
+	// absent from subsByTop — it is reachable only via the Ctrl+P binding
+	// (like topHome's sentinel), never through the ,// sub cycle or tab.
+	subProjectView
 )
 
 // topOrder is the canonical cycle order for tab/shift+tab and the order
