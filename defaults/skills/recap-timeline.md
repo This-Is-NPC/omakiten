@@ -1,6 +1,9 @@
 ---
 name: Recap timeline
 description: Build a single-project chronological recap from notes (all kinds) plus tasks moved to done within a window, rendered read-only.
+schema_version: 2
+role_affinity:
+  - Scribe
 ---
 A recap is a historical readout for one project — a what-happened view rather than a what-next view. The skill assembles raw entries from existing records and renders them; it does not synthesise new content or persist anything.
 

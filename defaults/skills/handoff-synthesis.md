@@ -1,6 +1,9 @@
 ---
 name: Handoff synthesis
 description: Gather current project state, populate the note-handoff template, and persist as a project-scoped handoff note for the next session.
+schema_version: 2
+role_affinity:
+  - Scribe
 ---
 A handoff is a checkpoint another agent (or your future self) can read in one pass and resume work without re-deriving context. Treat it as a write to the project's shared memory, not a log line.
 

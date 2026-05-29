@@ -1,6 +1,9 @@
 ---
 name: Note capture
 description: Validate user-stated note inputs, resolve scope from cwd or explicit flag, and persist a free-form note via notes_create.
+schema_version: 2
+role_affinity:
+  - Scribe
 ---
 Capture is a one-shot write. The skill does not interpret or rephrase the body — it normalises inputs, validates them, and commits the note exactly as stated.
 
