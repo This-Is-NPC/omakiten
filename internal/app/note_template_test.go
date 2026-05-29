@@ -64,13 +64,27 @@ func TestRenderNoteHandoffAllSlotsFilled(t *testing.T) {
 
 func TestRenderNoteHandoffCollapsesEmptySections(t *testing.T) {
 	body := loadEmbeddedTemplate(t, "note-handoff")
+	// All slots declared (some empty) so missingkey=error stays clean —
+	// the collapse contract is about zero-valued slots erasing their
+	// section, not about undeclared slots being tolerated.
 	out, err := RenderNoteTemplate("note-handoff", body, map[string]any{
-		"ProjectName":    "Omakiten",
-		"ProjectSlug":    "omakiten",
-		"ActiveTasks":    "- #361 templates",
-		"RecentProgress": "- N1 storage shipped",
-		"AuthorModel":    "claude-opus-4-7",
-		"Timestamp":      "2026-05-28T23:55:00Z",
+		"ProjectName":        "Omakiten",
+		"ProjectSlug":        "omakiten",
+		"ProjectRoot":        "",
+		"WindowSince":        "",
+		"SinceCounts":        "",
+		"PreviousHandoffRef": "",
+		"ActiveTasks":        "- #361 templates",
+		"ActivePlanWave":     "",
+		"RecentProgress":     "- N1 storage shipped",
+		"DecisionsWindow":    "",
+		"DiscardsWindow":     "",
+		"DepsUnmet":          "",
+		"BlockerComments":    "",
+		"NextSteps":          "",
+		"ExtraNote":          "",
+		"AuthorModel":        "claude-opus-4-7",
+		"Timestamp":          "2026-05-28T23:55:00Z",
 	})
 	if err != nil {
 		t.Fatalf("RenderNoteTemplate: %v", err)
@@ -116,10 +130,12 @@ func TestRenderNoteRecapAllSlotsFilled(t *testing.T) {
 func TestRenderNoteRecapCollapsesEmptySections(t *testing.T) {
 	body := loadEmbeddedTemplate(t, "note-recap")
 	out, err := RenderNoteTemplate("note-recap", body, map[string]any{
-		"WindowSince": "2026-05-20",
-		"WindowUntil": "2026-05-28",
-		"AuthorModel": "claude-opus-4-7",
-		"Timestamp":   "2026-05-28T23:55:00Z",
+		"WindowSince":     "2026-05-20",
+		"WindowUntil":     "2026-05-28",
+		"NotesByKind":     []map[string]string{},
+		"TasksDoneWindow": "",
+		"AuthorModel":     "claude-opus-4-7",
+		"Timestamp":       "2026-05-28T23:55:00Z",
 	})
 	if err != nil {
 		t.Fatalf("RenderNoteTemplate: %v", err)
@@ -166,7 +182,7 @@ func TestRenderNoteStandupDigestCollapsesEmptyProjectBlocks(t *testing.T) {
 		"Window":       "2026-05-27 → 2026-05-28",
 		"ProjectCount": 1,
 		"Projects": []map[string]string{
-			{"Name": "Omakiten"},
+			{"Name": "Omakiten", "LatestHandoff": "", "DeltaSinceHandoff": ""},
 		},
 		"AuthorModel": "claude-opus-4-7",
 		"Timestamp":   "2026-05-28T23:55:00Z",
@@ -201,8 +217,11 @@ func TestRenderNoteFreeAllSlotsFilled(t *testing.T) {
 func TestRenderNoteFreeCollapsesEmptyFooterParts(t *testing.T) {
 	body := loadEmbeddedTemplate(t, "note-free")
 	out, err := RenderNoteTemplate("note-free", body, map[string]any{
-		"Title": "Free note",
-		"Body":  "Lone body.",
+		"Title":       "Free note",
+		"Body":        "Lone body.",
+		"Kind":        "",
+		"Timestamp":   "",
+		"AuthorModel": "",
 	})
 	if err != nil {
 		t.Fatalf("RenderNoteTemplate: %v", err)
@@ -225,6 +244,21 @@ func TestRenderNoteTemplateInvalidSyntaxReturnsError(t *testing.T) {
 	_, err := RenderNoteTemplate("broken", "{{if .X}}", nil)
 	if err == nil {
 		t.Fatal("RenderNoteTemplate: error = nil, want parse failure")
+	}
+}
+
+// TestRenderNoteTemplateUndeclaredSlotReturnsError locks the
+// missingkey=error guarantee: a typo in a slot name (here `.Titel`
+// instead of `.Title`) must surface as an Execute error so the silent
+// empty-render path stays closed. Before the fix this returned the
+// rendered body with a blank where the typo was.
+func TestRenderNoteTemplateUndeclaredSlotReturnsError(t *testing.T) {
+	_, err := RenderNoteTemplate("typo", "Hi {{.Titel}}", map[string]any{"Title": "world"})
+	if err == nil {
+		t.Fatal("RenderNoteTemplate: error = nil, want missingkey error")
+	}
+	if !strings.Contains(err.Error(), "Titel") {
+		t.Fatalf("error %q does not mention the undeclared slot", err.Error())
 	}
 }
 

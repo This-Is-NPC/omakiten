@@ -20,12 +20,15 @@ import (
 // the slot data; the template only enforces layout.
 //
 // Returns an error when the template fails to parse or a referenced slot
-// is mis-spelt (text/template surfaces both as Execute errors).
+// is mis-spelt — `missingkey=error` surfaces undeclared keys as Execute
+// errors so typos cannot silently render an empty value. The
+// `{{if .Slot -}}...{{end -}}` blocks the v1 note templates use still
+// collapse correctly on zero-value (`""`, `nil`, `0`, empty slice).
 func RenderNoteTemplate(name, body string, data any) (string, error) {
 	if strings.TrimSpace(body) == "" {
 		return "", nil
 	}
-	tpl, err := template.New(name).Option("missingkey=zero").Parse(body)
+	tpl, err := template.New(name).Option("missingkey=error").Parse(body)
 	if err != nil {
 		return "", fmt.Errorf("parse note template %q: %w", name, err)
 	}
