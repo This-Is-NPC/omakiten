@@ -306,6 +306,13 @@ func (m Model) customBadge() string {
 	return m.styles.badgeInfo.Render(m.t("tui.badge.custom"))
 }
 
+// activeBadge marks a catalog entry wired into the active bundle. The
+// Settings view lists every preset's entities; this badge lets the user
+// scan a column for the subset actually in force.
+func (m Model) activeBadge() string {
+	return m.styles.badgeActive.Render(m.t("tui.badge.active"))
+}
+
 func (m Model) renderLawBadges(index int) []string {
 	law := m.laws[index]
 	var badges []string
@@ -335,6 +342,9 @@ func (m Model) renderLawBadges(index int) []string {
 	if strings.TrimSpace(law.Warning) != "" {
 		badges = append(badges, m.styles.badgeFix.Render(m.t("tui.badge.fix")))
 	}
+	if law.Active {
+		badges = append(badges, m.activeBadge())
+	}
 	if law.IsCustom {
 		badges = append(badges, m.customBadge())
 	}
@@ -351,6 +361,9 @@ func (m Model) renderPersonaBadges(index int) []string {
 	if strings.TrimSpace(persona.Warning) != "" {
 		badges = append(badges, m.styles.badgeFix.Render(m.t("tui.badge.fix")))
 	}
+	if persona.Active {
+		badges = append(badges, m.activeBadge())
+	}
 	if persona.IsCustom {
 		badges = append(badges, m.customBadge())
 	}
@@ -366,6 +379,9 @@ func (m Model) renderSkillBadges(index int) []string {
 	badges := []string{m.tokenBadge(tokens)}
 	if strings.TrimSpace(skill.Warning) != "" {
 		badges = append(badges, m.styles.badgeFix.Render(m.t("tui.badge.fix")))
+	}
+	if skill.Active {
+		badges = append(badges, m.activeBadge())
 	}
 	if skill.IsCustom {
 		badges = append(badges, m.customBadge())
@@ -386,6 +402,9 @@ func (m Model) renderTemplateBadges(index int) []string {
 			label += "·" + strings.ToUpper(template.ProjectSlug)
 		}
 		badges = append(badges, m.styles.badgeInfo.Render(label))
+	}
+	if template.Active {
+		badges = append(badges, m.activeBadge())
 	}
 	if template.IsCustom {
 		badges = append(badges, m.customBadge())

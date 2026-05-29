@@ -675,6 +675,7 @@ keys:
   tui.log.filter.domain: "نطاق"
   tui.log.filter.system: "نظام"
   tui.badge.custom: "CUSTOM"
+  tui.badge.active: "ACTIVE"
   tui.badge.fix: "FIX"
   tui.badge.blocker: "حاجب"
   tui.badge.blockers: "حواجب"

@@ -675,6 +675,7 @@ keys:
   tui.log.filter.domain: "domän"
   tui.log.filter.system: "system"
   tui.badge.custom: "ANPASSAD"
+  tui.badge.active: "AKTIV"
   tui.badge.fix: "FIX"
   tui.badge.blocker: "blocker"
   tui.badge.blockers: "blockers"

@@ -1,5 +1,27 @@
 package config
 
+// buildCatalog folds the full on-disk entity set (`loaded`) and the active
+// picked subset into one catalog slice: every loaded entry is emitted, but
+// entries present in `picked` are taken from the picked copy (so scope/skill
+// wiring metadata the pick* step stamped survives) and flagged Active=true;
+// the rest are emitted as loaded with Active=false. slugOf keys both sides;
+// withActive returns a copy with the Active flag set. Order follows `loaded`.
+func buildCatalog[T any](loaded, picked []T, slugOf func(T) string, withActive func(T, bool) T) []T {
+	bySlug := make(map[string]T, len(picked))
+	for _, p := range picked {
+		bySlug[slugOf(p)] = p
+	}
+	out := make([]T, 0, len(loaded))
+	for _, l := range loaded {
+		if p, ok := bySlug[slugOf(l)]; ok {
+			out = append(out, withActive(p, true))
+			continue
+		}
+		out = append(out, withActive(l, false))
+	}
+	return out
+}
+
 // pickSkills filters the on-disk skill set against the wiring's allowlist.
 // When the wiring omits the `skills:` slot, every loaded skill is auto-included.
 func pickSkills(loaded []Skill, refs []string) []Skill {

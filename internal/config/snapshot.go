@@ -191,6 +191,16 @@ type Snapshot struct {
 	templatesBySlug    map[string]int
 	templatesByDefault map[templateDefaultKey]int
 
+	// all* hold the full on-disk catalog (every preset's entity files),
+	// each entry stamped with Active for the wiring in force. The active
+	// subset above is the storage of record for runtime resolution; these
+	// back only the Settings catalog view. nil on bundles built before the
+	// catalog fields existed — accessors fall back to the active slice.
+	allPersonas  []Persona
+	allSkills    []Skill
+	allLaws      []Law
+	allTemplates []TaskTemplate
+
 	notifications map[string]Notification
 	mcpCommands   map[string]MCPCommandSpec
 
@@ -287,6 +297,13 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 			snap.templatesByDefault[templateDefaultKey{kind: t.Default, project: t.ProjectSlug}] = i
 		}
 	}
+
+	// Full catalog (active-flagged) for the Settings view. Stored alongside
+	// the active slices above; runtime resolution never reads these.
+	snap.allPersonas = append(snap.allPersonas, bundle.AllPersonas...)
+	snap.allSkills = append(snap.allSkills, bundle.AllSkills...)
+	snap.allLaws = append(snap.allLaws, bundle.AllLaws...)
+	snap.allTemplates = append(snap.allTemplates, bundle.AllTemplates...)
 
 	for k, n := range bundle.Notifications {
 		snap.notifications[k] = n
@@ -556,6 +573,59 @@ func (s *Snapshot) LawBySlug(slug string) (Law, bool) {
 // fresh copy.
 func (s *Snapshot) Templates() []TaskTemplate {
 	return append([]TaskTemplate(nil), s.templates...)
+}
+
+// AllPersonas returns the full on-disk persona catalog with each entry's
+// Active flag set for the wiring in force. Falls back to the active slice
+// for bundles built before the catalog fields existed. Fresh copy.
+func (s *Snapshot) AllPersonas() []Persona {
+	if s.allPersonas == nil {
+		ps := s.Personas()
+		for i := range ps {
+			ps[i].Active = true
+		}
+		return ps
+	}
+	return append([]Persona(nil), s.allPersonas...)
+}
+
+// AllSkills returns the full on-disk skill catalog (active-flagged). Falls
+// back to the active slice when unset. Fresh copy.
+func (s *Snapshot) AllSkills() []Skill {
+	if s.allSkills == nil {
+		sk := s.Skills()
+		for i := range sk {
+			sk[i].Active = true
+		}
+		return sk
+	}
+	return append([]Skill(nil), s.allSkills...)
+}
+
+// AllLaws returns the full on-disk law catalog (active-flagged). Falls back
+// to the active slice when unset. Fresh copy.
+func (s *Snapshot) AllLaws() []Law {
+	if s.allLaws == nil {
+		l := s.Laws()
+		for i := range l {
+			l[i].Active = true
+		}
+		return l
+	}
+	return append([]Law(nil), s.allLaws...)
+}
+
+// AllTemplates returns the full on-disk template catalog (active-flagged).
+// Falls back to the active slice when unset. Fresh copy.
+func (s *Snapshot) AllTemplates() []TaskTemplate {
+	if s.allTemplates == nil {
+		t := s.Templates()
+		for i := range t {
+			t[i].Active = true
+		}
+		return t
+	}
+	return append([]TaskTemplate(nil), s.allTemplates...)
 }
 
 // Languages returns every Language discovered by the loader (bundled +

@@ -28,8 +28,16 @@ func NewPersonaService(repos EntityServiceRepos, snap *config.Snapshot) *Persona
 // Skill id refs resolve against the same snapshot so the persona's
 // SkillIDs are stable within the snapshot.
 func personasFromSnapshot(snap *config.Snapshot) []domain.Persona {
-	personas := snap.Personas()
-	skills := snap.Skills()
+	return mapPersonaSlice(snap.Personas(), snap.Skills())
+}
+
+// allPersonasFromSnapshot projects the full on-disk persona catalog with the
+// Active flag carried through, for the Settings catalog view.
+func allPersonasFromSnapshot(snap *config.Snapshot) []domain.Persona {
+	return mapPersonaSlice(snap.AllPersonas(), snap.Skills())
+}
+
+func mapPersonaSlice(personas []config.Persona, skills []config.Skill) []domain.Persona {
 	skillIDBySlug := make(map[string]int64, len(skills))
 	for i, sk := range skills {
 		skillIDBySlug[sk.Slug] = int64(i + 1)
@@ -53,6 +61,7 @@ func personasFromSnapshot(snap *config.Snapshot) []domain.Persona {
 			LawKeys:     append([]string(nil), p.Laws...),
 			SourcePath:  p.SourcePath,
 			IsCustom:    p.IsCustom,
+			Active:      p.Active,
 		})
 	}
 	return out

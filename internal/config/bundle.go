@@ -15,7 +15,16 @@ type Bundle struct {
 	Personas      []Persona                 `yaml:"-" json:"personas,omitempty"`
 	Laws          []Law                     `yaml:"-" json:"laws,omitempty"`
 	Templates     []TaskTemplate            `yaml:"-" json:"templates,omitempty"`
-	Workflows     []Workflow                `yaml:"workflows" json:"workflows,omitempty"`
+	// All* hold the full on-disk catalog (every preset's entity files),
+	// each entry stamped with Active=true when wired into this bundle.
+	// Runtime resolution uses the picked Skills/Personas/Laws/Templates
+	// above; only the Settings catalog view reads All* so the user sees
+	// the complete pool with an active marker, not just the active subset.
+	AllSkills    []Skill        `yaml:"-" json:"-"`
+	AllPersonas  []Persona      `yaml:"-" json:"-"`
+	AllLaws      []Law          `yaml:"-" json:"-"`
+	AllTemplates []TaskTemplate `yaml:"-" json:"-"`
+	Workflows    []Workflow     `yaml:"workflows" json:"workflows,omitempty"`
 	Projects      []Project                 `yaml:"-" json:"projects,omitempty"`
 	MCPCommands   map[string]MCPCommandSpec `yaml:"-" json:"mcp_commands,omitempty"`
 	Notifications map[string]Notification   `yaml:"-" json:"notifications,omitempty"`
@@ -720,6 +729,10 @@ type Skill struct {
 	RoleAffinity []string `json:"role_affinity,omitempty"`
 	SourcePath   string   `json:"source_path,omitempty"`
 	IsCustom     bool     `json:"is_custom,omitempty"`
+	// Active is set only on Bundle.AllSkills / Snapshot.AllSkills entries
+	// that are wired into the active bundle. The picked Skills slice is
+	// active by definition, so the field is left zero there.
+	Active bool `json:"-"`
 }
 
 type Persona struct {
@@ -736,6 +749,8 @@ type Persona struct {
 	Laws            []string `json:"laws,omitempty"`
 	SourcePath      string   `json:"source_path,omitempty"`
 	IsCustom        bool     `json:"is_custom,omitempty"`
+	// Active marks AllPersonas catalog entries wired into the active bundle.
+	Active bool `json:"-"`
 }
 
 type Law struct {
@@ -748,6 +763,8 @@ type Law struct {
 	PersonaSlug string `json:"persona,omitempty"`
 	SourcePath  string `json:"source_path,omitempty"`
 	IsCustom    bool   `json:"is_custom,omitempty"`
+	// Active marks AllLaws catalog entries wired into the active bundle.
+	Active bool `json:"-"`
 }
 
 type Project struct {
@@ -777,6 +794,8 @@ type TaskTemplate struct {
 	Body        string   `json:"body,omitempty"`
 	SourcePath  string   `json:"source_path,omitempty"`
 	IsCustom    bool     `json:"is_custom,omitempty"`
+	// Active marks AllTemplates catalog entries wired into the active bundle.
+	Active bool `json:"-"`
 }
 
 type Workflow struct {

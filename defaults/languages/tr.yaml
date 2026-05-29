@@ -676,6 +676,7 @@ keys:
   tui.log.filter.domain: "domain"
   tui.log.filter.system: "sistem"
   tui.badge.custom: "ÖZEL"
+  tui.badge.active: "ETKİN"
   tui.badge.fix: "DÜZELT"
   tui.badge.blocker: "engel"
   tui.badge.blockers: "engeller"

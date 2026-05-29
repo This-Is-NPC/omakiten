@@ -41,6 +41,10 @@ type Skill struct {
 	SourcePath  string `json:"source_path,omitempty"`
 	Warning     string `json:"warning,omitempty"`
 	IsCustom    bool   `json:"is_custom,omitempty"`
+	// Active marks a catalog entry wired into the active bundle. The
+	// Settings view lists the full on-disk catalog and badges the active
+	// subset; runtime-resolved skill slices are active by definition.
+	Active bool `json:"active,omitempty"`
 }
 
 type Persona struct {
@@ -55,6 +59,8 @@ type Persona struct {
 	SourcePath  string   `json:"source_path,omitempty"`
 	Warning     string   `json:"warning,omitempty"`
 	IsCustom    bool     `json:"is_custom,omitempty"`
+	// Active marks a catalog entry wired into the active bundle (Settings view).
+	Active bool `json:"active,omitempty"`
 }
 
 type LawScope string
@@ -77,6 +83,8 @@ type Law struct {
 	SourcePath string   `json:"source_path,omitempty"`
 	Warning    string   `json:"warning,omitempty"`
 	IsCustom   bool     `json:"is_custom,omitempty"`
+	// Active marks a catalog entry wired into the active bundle (Settings view).
+	Active bool `json:"active,omitempty"`
 }
 
 type LawInput struct {

@@ -669,6 +669,7 @@ keys:
   tui.log.filter.domain: "领域"
   tui.log.filter.system: "系统"
   tui.badge.custom: "CUSTOM"
+  tui.badge.active: "ACTIVE"
   tui.badge.fix: "FIX"
   tui.badge.blocker: "阻塞"
   tui.badge.blockers: "阻塞"
