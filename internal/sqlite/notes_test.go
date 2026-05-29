@@ -68,7 +68,7 @@ func TestUpdateNotePatchSemantics(t *testing.T) {
 
 	title := "T2"
 	pinned := true
-	tags := []string{"b", "c"}
+	tags := []domain.Tag{{Name: "b", Label: "B"}, {Name: "c", Label: "C"}}
 	updated, err := store.UpdateNote(ctx, note.ID, domain.NoteUpdate{Title: &title, Pinned: &pinned, Tags: &tags})
 	if err != nil {
 		t.Fatalf("UpdateNote: %v", err)
@@ -85,7 +85,7 @@ func TestUpdateNotePatchSemantics(t *testing.T) {
 	}
 
 	// Empty tag replacement clears every tag.
-	empty := []string{}
+	empty := []domain.Tag{}
 	cleared, err := store.UpdateNote(ctx, note.ID, domain.NoteUpdate{Tags: &empty})
 	if err != nil {
 		t.Fatalf("UpdateNote clear tags: %v", err)

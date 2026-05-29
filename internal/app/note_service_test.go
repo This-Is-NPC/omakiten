@@ -103,6 +103,45 @@ func TestNoteServiceDeleteRequiresConfirm(t *testing.T) {
 	}
 }
 
+// TestNoteServiceEditTagLabelMatchesCreate locks the applyTagLabel
+// extraction: Create and Edit normalise the same raw input into the
+// same (Name, Label) pair. Before the fix Edit passed normalised names
+// straight through and the sqlite layer set Label = Name, dropping the
+// original casing the user typed.
+func TestNoteServiceEditTagLabelMatchesCreate(t *testing.T) {
+	ctx := context.Background()
+	store, project := appTestStore(t, appTestBundle(t, 1000))
+	defer func() { _ = store.Close() }()
+
+	svc := NewNoteService(store, store.Snapshot())
+
+	created, err := svc.Create(ctx, CreateNoteInput{
+		Project: project.Context(),
+		Kind:    "free",
+		Title:   "T",
+		Body:    "B",
+		Tags:    []string{"Architecture"},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if len(created.Tags) != 1 || created.Tags[0].Name != "architecture" || created.Tags[0].Label != "Architecture" {
+		t.Fatalf("Create tag = %+v, want {architecture, Architecture}", created.Tags)
+	}
+
+	replacement := []string{"Architecture"}
+	edited, err := svc.Edit(ctx, EditNoteInput{NoteID: created.ID, Tags: &replacement})
+	if err != nil {
+		t.Fatalf("Edit: %v", err)
+	}
+	if len(edited.Tags) != 1 {
+		t.Fatalf("Edit tags len = %d, want 1: %+v", len(edited.Tags), edited.Tags)
+	}
+	if edited.Tags[0].Name != created.Tags[0].Name || edited.Tags[0].Label != created.Tags[0].Label {
+		t.Fatalf("Edit tag drift: Create=%+v Edit=%+v", created.Tags[0], edited.Tags[0])
+	}
+}
+
 func TestNoteServiceListRejectsInvalidScope(t *testing.T) {
 	ctx := context.Background()
 	store, _ := appTestStore(t, appTestBundle(t, 1000))

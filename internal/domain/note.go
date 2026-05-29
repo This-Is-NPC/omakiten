@@ -50,11 +50,13 @@ const (
 // explicit" distinction (nil = leave untouched, non-nil = overwrite).
 // Tags carries the full replacement set when non-nil so callers can
 // clear all tags by passing an empty slice (len(*Tags) == 0) instead
-// of nil.
+// of nil. Tags arrive as fully-paired domain.Tag values (Name + Label
+// already normalised by the service layer) so the storage layer never
+// derives one from the other and cannot drift from the Create path.
 type NoteUpdate struct {
 	Title  *string
 	Body   *string
 	Kind   *string
 	Pinned *bool
-	Tags   *[]string
+	Tags   *[]Tag
 }

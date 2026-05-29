@@ -107,15 +107,7 @@ func (s *Store) UpdateNote(ctx context.Context, id int64, update domain.NoteUpda
 		if _, err := tx.ExecContext(ctx, `DELETE FROM notes_tags WHERE note_id = ?`, id); err != nil {
 			return domain.Note{}, err
 		}
-		domainTags := make([]domain.Tag, 0, len(*update.Tags))
-		for _, raw := range *update.Tags {
-			name := strings.TrimSpace(raw)
-			if name == "" {
-				continue
-			}
-			domainTags = append(domainTags, domain.Tag{Name: name, Label: name})
-		}
-		if _, err := attachNoteTagsTx(ctx, tx, id, domainTags); err != nil {
+		if _, err := attachNoteTagsTx(ctx, tx, id, *update.Tags); err != nil {
 			return domain.Note{}, err
 		}
 	}

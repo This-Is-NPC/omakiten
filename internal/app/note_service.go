@@ -158,13 +158,14 @@ func (s *NoteService) Edit(ctx context.Context, input EditNoteInput) (note domai
 		update.Pinned = input.Pinned
 	}
 	if input.Tags != nil {
-		normalized := make([]string, 0, len(*input.Tags))
+		synonyms := s.snap.Synonyms()
+		normalized := make([]domain.Tag, 0, len(*input.Tags))
 		for _, raw := range *input.Tags {
-			name := NormalizeTagName(raw, s.snap.Synonyms())
+			name, label := applyTagLabel(raw, synonyms)
 			if name == "" {
 				continue
 			}
-			normalized = append(normalized, name)
+			normalized = append(normalized, domain.Tag{Name: name, Label: label})
 		}
 		update.Tags = &normalized
 	}
@@ -247,11 +248,11 @@ func (s *NoteService) normalizeTags(raw []string) []domain.Tag {
 	synonyms := s.snap.Synonyms()
 	tags := make([]domain.Tag, 0, len(raw))
 	for _, r := range raw {
-		name := NormalizeTagName(r, synonyms)
+		name, label := applyTagLabel(r, synonyms)
 		if name == "" {
 			continue
 		}
-		tags = append(tags, domain.Tag{Name: name, Label: TagLabel(r)})
+		tags = append(tags, domain.Tag{Name: name, Label: label})
 	}
 	return tags
 }
