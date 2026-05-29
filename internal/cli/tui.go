@@ -212,6 +212,16 @@ func emitTUIHealthCheckFailedFromOpenError(ctx context.Context, opts *runtimeOpt
 		payload["config_path"] = cfgPath
 	}
 	count, firstKind := summariseValidationErrors(coded.Details["errors"])
+	// Caller chooses the audit-row default when the wrapper could
+	// not enumerate any structured errors: the bundle clearly broke
+	// in some way (we are in the config-invalid branch) so emit
+	// `validator_error_count: 1` as the "we saw an error but cannot
+	// say which" floor. The historic 1 lived inside
+	// summariseValidationErrors and could not be distinguished from
+	// "exactly one error was recorded".
+	if count == 0 {
+		count = 1
+	}
 	payload["validator_error_count"] = count
 	if firstKind != "" {
 		payload["validator_first_error_kind"] = firstKind
@@ -226,17 +236,23 @@ func emitTUIHealthCheckFailedFromOpenError(ctx context.Context, opts *runtimeOpt
 // payload). The TUI helper used to take the `[]map[string]any`
 // branch only, so a roundtripped envelope silently fell back to
 // count=1 and no kind — Primitive Obsession on `map[string]any`.
+//
+// Returns (0, "") when no structured errors could be enumerated;
+// callers decide whether to emit a count=1 floor or skip the field.
+// Pre-fix the helper baked the count=1 default in and consumers
+// could not distinguish "no enumerable errors" from "exactly one
+// error was recorded".
 func summariseValidationErrors(raw any) (int, string) {
 	switch errs := raw.(type) {
 	case []map[string]any:
 		if len(errs) == 0 {
-			return 1, ""
+			return 0, ""
 		}
 		kind, _ := errs[0]["kind"].(string)
 		return len(errs), kind
 	case []any:
 		if len(errs) == 0 {
-			return 1, ""
+			return 0, ""
 		}
 		if m, ok := errs[0].(map[string]any); ok {
 			kind, _ := m["kind"].(string)
@@ -244,7 +260,7 @@ func summariseValidationErrors(raw any) (int, string) {
 		}
 		return len(errs), ""
 	}
-	return 1, ""
+	return 0, ""
 }
 
 func oktCDPath() string {

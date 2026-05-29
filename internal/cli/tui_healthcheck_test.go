@@ -103,21 +103,33 @@ func TestSummariseValidationErrors_HandlesBothPayloadShapes(t *testing.T) {
 			wantKind:  "missing_required_key",
 		},
 		{
-			name:      "JSON-roundtripped []any without map elements",
+			name:      "JSON-roundtripped []any without map elements still counts the entry",
 			raw:       []any{"not-a-map"},
 			wantCount: 1,
 			wantKind:  "",
 		},
 		{
-			name:      "nil falls through to count=1",
+			name:      "nil returns (0, \"\") — caller decides the audit count default",
 			raw:       nil,
-			wantCount: 1,
+			wantCount: 0,
 			wantKind:  "",
 		},
 		{
-			name:      "wrong type falls through to count=1",
+			name:      "empty []map[string]any returns (0, \"\")",
+			raw:       []map[string]any{},
+			wantCount: 0,
+			wantKind:  "",
+		},
+		{
+			name:      "empty []any returns (0, \"\")",
+			raw:       []any{},
+			wantCount: 0,
+			wantKind:  "",
+		},
+		{
+			name:      "wrong type returns (0, \"\") rather than the historic 1 default",
 			raw:       "garbage",
-			wantCount: 1,
+			wantCount: 0,
 			wantKind:  "",
 		},
 	}
