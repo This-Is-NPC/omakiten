@@ -155,6 +155,103 @@ func (s *Service) ContinuePlan(ctx context.Context, input ContinuePlanInput) (Co
 	return resp, nil
 }
 
+// EditPlan mutates a plan's name / slug / status and/or goal_body. The
+// plan is identified by slug or plan_id (slug wins). goal_body edits go
+// through UpdateGoalBody (emits plan.goal_edited); name/slug/status edits
+// go through UpdatePlan (emits plan.edited, plus plan.abandoned on an
+// abandon). At least one editable field must be supplied. Returns the
+// post-edit plan projection.
+func (s *Service) EditPlan(ctx context.Context, input EditPlanInput) (EditPlanResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return EditPlanResponse{}, err
+	}
+	svc := s.newPlanService()
+	planID := input.PlanID
+	if input.Slug != "" {
+		plan, err := svc.GetBySlug(ctx, project, input.Slug)
+		if err != nil {
+			return EditPlanResponse{}, err
+		}
+		planID = plan.ID
+	}
+	if planID == 0 {
+		return EditPlanResponse{}, domain.NewError(domain.ErrValidation, "plan id or slug is required", nil)
+	}
+	if input.Name == nil && input.NewSlug == nil && input.Status == nil && input.GoalBody == nil {
+		return EditPlanResponse{}, domain.NewError(domain.ErrValidation,
+			"plans.edit requires at least one of name, new_slug, status, goal_body", nil)
+	}
+
+	var plan domain.Plan
+	if input.GoalBody != nil {
+		plan, err = svc.UpdateGoalBody(ctx, project, planID, *input.GoalBody)
+		if err != nil {
+			return EditPlanResponse{}, err
+		}
+	}
+	if input.Name != nil || input.NewSlug != nil || input.Status != nil {
+		plan, err = svc.UpdatePlan(ctx, project, planID, input.Name, input.NewSlug, input.Status)
+		if err != nil {
+			return EditPlanResponse{}, err
+		}
+	}
+	if plan.ID == 0 {
+		// Only goal_body was edited and the helper above set plan; this
+		// branch is defensive (plan is always populated when any field
+		// was applied) but keeps the projection honest.
+		plan, err = svc.GetBySlug(ctx, project, plan.Slug)
+		if err != nil {
+			return EditPlanResponse{}, err
+		}
+	}
+	return EditPlanResponse{
+		Project: projectSummary(project),
+		Plan:    planSummary(plan),
+	}, nil
+}
+
+// DeletePlan hard-deletes a plan after explicit confirmation. The first
+// (unconfirmed) call returns a Confirmation block; retry with
+// confirmed=true to proceed. Waves cascade; member tasks survive
+// detached (plan_id / wave_id cleared).
+func (s *Service) DeletePlan(ctx context.Context, input DeletePlanInput) (DeletePlanResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return DeletePlanResponse{}, err
+	}
+	svc := s.newPlanService()
+	planID := input.PlanID
+	if input.Slug != "" {
+		plan, err := svc.GetBySlug(ctx, project, input.Slug)
+		if err != nil {
+			return DeletePlanResponse{}, err
+		}
+		planID = plan.ID
+	}
+	if planID == 0 {
+		return DeletePlanResponse{}, domain.NewError(domain.ErrValidation, "plan id or slug is required", nil)
+	}
+	if !input.Confirmed {
+		return DeletePlanResponse{
+			Project: projectSummary(project),
+			Confirmation: Confirmation{
+				RequiresConfirmation: true,
+				Reason:               "Deleting a plan is destructive: its waves cascade-delete and member tasks are detached (plan_id / wave_id cleared). The tasks themselves survive. Confirm with confirmed=true to proceed.",
+				Options: []ConfirmationOption{
+					{Action: "confirm_delete", Label: "Retry plans.delete with confirmed=true to hard-delete the plan"},
+				},
+			},
+		}, nil
+	}
+	event, err := svc.DeletePlan(ctx, project, planID)
+	if err != nil {
+		return DeletePlanResponse{}, err
+	}
+	snapshot := eventSummary(event)
+	return DeletePlanResponse{Project: projectSummary(project), Snapshot: &snapshot}, nil
+}
+
 // AssignPlanTask attaches an existing task to a plan + wave. The plan
 // is identified by slug or plan_id (slug wins when both supplied);
 // wave_id is taken verbatim — supplying a wave from a different plan

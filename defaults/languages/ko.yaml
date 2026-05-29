@@ -1152,6 +1152,13 @@ keys:
   cli.plan.wave_add.flag.position: "wave 위치 (1 기반); 0 은 현재 최대 뒤에 추가"
   cli.plan.assign.short: "기존 task 를 (plan, wave) 에 연결"
   cli.plan.claim.short: "plan 의 활성 wave 에서 다음 차단 해제된 task 를 원자적으로 확보 (OMAKITEN_AGENT_MODEL 필요)"
+  cli.plan.edit.short: "Edit a plan's name, slug, status, and/or goal body"
+  cli.plan.edit.flag.name: "New plan name"
+  cli.plan.edit.flag.slug: "New plan slug (must stay unique within the project)"
+  cli.plan.edit.flag.status: "New status: active, done, or abandoned"
+  cli.plan.edit.flag.goal_body: "New markdown goal / acceptance body"
+  cli.plan.delete.short: "Hard-delete a plan (waves cascade; member tasks survive detached)"
+  cli.plan.delete.flag.confirm: "Required to confirm the destructive delete"
 
   # Plans — wave_gate-specific notification copy.
   notifications.omakase.guard_wave_gate.message: "이전 wave 가 아직 정찰 중. 먼저 모이세요."

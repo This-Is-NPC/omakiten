@@ -84,6 +84,15 @@ const (
 	// EventTypePlanGoalEdited fires when a plan's goal_body is rewritten
 	// via plans.update_goal_body. EntityType=plan, Payload={length}.
 	EventTypePlanGoalEdited = "plan.goal_edited"
+	// EventTypePlanEdited fires when a plan's name / slug / status is
+	// changed via plans.edit. EntityType=plan,
+	// Payload={fields:{<field>:{from,to}}}.
+	EventTypePlanEdited = "plan.edited"
+	// EventTypePlanDeleted fires when a plan is hard-deleted via
+	// plans.delete. Waves cascade and member tasks are detached
+	// (plan_id/wave_id SET NULL). EntityType=plan,
+	// Payload={slug, name, status}.
+	EventTypePlanDeleted = "plan.deleted"
 	// EventTypePlanDone fires when a plan auto-transitions to status=done
 	// (every child task in a terminal bucket). EntityType=plan, Payload={}.
 	EventTypePlanDone = "plan.done"

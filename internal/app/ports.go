@@ -280,6 +280,22 @@ type PlanRepository interface {
 	GetPlanByID(ctx context.Context, projectID, planID int64) (domain.Plan, error)
 	ListPlans(ctx context.Context, projectID int64) ([]domain.Plan, error)
 	UpdatePlanGoalBody(ctx context.Context, projectID, planID int64, goalBody string) (domain.Plan, error)
+	// UpdatePlan mutates a plan's name / slug / status in a single
+	// transaction. Each field is optional: a nil pointer leaves the
+	// column untouched, a non-nil pointer rewrites it. Slug changes are
+	// checked against the (project_id, slug) UNIQUE — a collision maps to
+	// ErrPlanSlugConflict. status='abandoned' co-emits plan.abandoned
+	// alongside plan.edited; the primary event is always plan.edited
+	// carrying the per-field {from,to} diff. Returns ErrPlanNotFound when
+	// the plan id belongs to a different project or does not exist, and
+	// ErrValidation when no field is supplied (no-op rejected).
+	UpdatePlan(ctx context.Context, projectID, planID int64, name, slug, status *string) (domain.Plan, error)
+	// DeletePlan hard-deletes a plan row. FK policy (migration 023)
+	// cascades plan_waves and SET-NULLs tasks.plan_id / wave_id, so member
+	// tasks survive unattached. Emits plan.deleted carrying {slug, name,
+	// status}. Returns ErrPlanNotFound when the plan id belongs to a
+	// different project or does not exist.
+	DeletePlan(ctx context.Context, projectID, planID int64) (domain.Event, error)
 	AddPlanWave(ctx context.Context, projectID, planID int64, name string, position int) (domain.PlanWave, error)
 	ListPlanWaves(ctx context.Context, projectID, planID int64) ([]domain.PlanWave, error)
 	ListPlanTasks(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) ([]domain.PlanTaskRow, error)

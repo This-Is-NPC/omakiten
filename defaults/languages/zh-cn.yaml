@@ -1147,6 +1147,13 @@ keys:
   cli.plan.wave_add.flag.position: "wave 位置 (从 1 开始);0 追加到当前最大之后"
   cli.plan.assign.short: "将现有 task 附加到 (plan, wave)"
   cli.plan.claim.short: "原子地认领 plan 活动 wave 中下一个未阻塞的 task (需要 OMAKITEN_AGENT_MODEL)"
+  cli.plan.edit.short: "Edit a plan's name, slug, status, and/or goal body"
+  cli.plan.edit.flag.name: "New plan name"
+  cli.plan.edit.flag.slug: "New plan slug (must stay unique within the project)"
+  cli.plan.edit.flag.status: "New status: active, done, or abandoned"
+  cli.plan.edit.flag.goal_body: "New markdown goal / acceptance body"
+  cli.plan.delete.short: "Hard-delete a plan (waves cascade; member tasks survive detached)"
+  cli.plan.delete.flag.confirm: "Required to confirm the destructive delete"
 
   # Plans — wave_gate-specific notification copy.
   notifications.omakase.guard_wave_gate.message: "前一个 wave 还在侦察。 队伍先要集结。"

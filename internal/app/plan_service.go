@@ -136,6 +136,43 @@ func (s *PlanService) UpdateGoalBody(ctx context.Context, project domain.Project
 	return
 }
 
+// UpdatePlan mutates a plan's name / slug / status. Each field is
+// optional (nil pointer = leave untouched). The repo emits plan.edited
+// (and plan.abandoned when status→abandoned). Slug collisions surface as
+// ErrPlanSlugConflict; a no-op set surfaces as ErrValidation.
+func (s *PlanService) UpdatePlan(ctx context.Context, project domain.ProjectContext, planID int64, name, slug, status *string) (plan domain.Plan, err error) {
+	finish := activity.Track(ctx, "app.PlanService.UpdatePlan", project, map[string]any{"plan_id": planID})
+	defer func() {
+		st := "ok"
+		errMsg := ""
+		if err != nil {
+			st = "error"
+			errMsg = err.Error()
+		}
+		finish(st, errMsg)
+	}()
+	plan, err = s.repo.UpdatePlan(ctx, project.ID, planID, name, slug, status)
+	return
+}
+
+// DeletePlan hard-deletes a plan. Waves cascade; member tasks survive
+// with plan_id / wave_id cleared (FK SET NULL). The repo emits
+// plan.deleted; the returned event is the deletion record.
+func (s *PlanService) DeletePlan(ctx context.Context, project domain.ProjectContext, planID int64) (event domain.Event, err error) {
+	finish := activity.Track(ctx, "app.PlanService.DeletePlan", project, map[string]any{"plan_id": planID})
+	defer func() {
+		st := "ok"
+		errMsg := ""
+		if err != nil {
+			st = "error"
+			errMsg = err.Error()
+		}
+		finish(st, errMsg)
+	}()
+	event, err = s.repo.DeletePlan(ctx, project.ID, planID)
+	return
+}
+
 // PeekNextClaimable returns the next task plans.claim_next would
 // reserve, without mutating anything. Snapshot-bound: requires the
 // same BucketResolver ClaimNext depends on.

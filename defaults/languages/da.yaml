@@ -1157,6 +1157,13 @@ keys:
   cli.plan.wave_add.flag.position: "wave-position (1-baseret); 0 tilføjer efter den højeste"
   cli.plan.assign.short: "Knytter en eksisterende task til (plan, wave)"
   cli.plan.claim.short: "Reserverer atomart den næste fri task i plan'ets aktive wave (kræver OMAKITEN_AGENT_MODEL)"
+  cli.plan.edit.short: "Edit a plan's name, slug, status, and/or goal body"
+  cli.plan.edit.flag.name: "New plan name"
+  cli.plan.edit.flag.slug: "New plan slug (must stay unique within the project)"
+  cli.plan.edit.flag.status: "New status: active, done, or abandoned"
+  cli.plan.edit.flag.goal_body: "New markdown goal / acceptance body"
+  cli.plan.delete.short: "Hard-delete a plan (waves cascade; member tasks survive detached)"
+  cli.plan.delete.flag.confirm: "Required to confirm the destructive delete"
 
   # Plans — wave_gate-specific notification copy.
   notifications.omakase.guard_wave_gate.message: "Forrige wave spejder stadig. Gruppen må samles først."

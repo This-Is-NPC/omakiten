@@ -100,3 +100,76 @@ func TestCLIPlanClaimRequiresAgentModel(t *testing.T) {
 	t.Setenv("OMAKITEN_AGENT_MODEL", "")
 	runCLIExpectError(t, dbPath, configPath, "validation_error", "plan", "claim", "ship")
 }
+
+func TestCLIPlanEditNameSlugStatus(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	projectRoot := filepath.Join(tmp, "project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Chdir(projectRoot)
+
+	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
+	runCLI(t, dbPath, configPath, "plan", "create", "ship", "--name", "Ship", "--goal-body", "old")
+
+	edited := runCLI(t, dbPath, configPath, "plan", "edit", "ship",
+		"--name", "Shipped", "--slug", "shipped", "--status", "done")
+	if !strings.Contains(edited, `"slug":"shipped"`) || !strings.Contains(edited, `"name":"Shipped"`) {
+		t.Fatalf("plan edit output = %s", edited)
+	}
+	if !strings.Contains(edited, `"status":"done"`) {
+		t.Fatalf("plan edit status not applied: %s", edited)
+	}
+
+	// Goal-body-only edit on the new slug.
+	goal := runCLI(t, dbPath, configPath, "plan", "edit", "shipped", "--goal-body", "fresh")
+	if !strings.Contains(goal, `"goal_body":"fresh"`) {
+		t.Fatalf("plan edit goal output = %s", goal)
+	}
+}
+
+func TestCLIPlanEditRequiresAtLeastOneFlag(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	projectRoot := filepath.Join(tmp, "project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Chdir(projectRoot)
+
+	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
+	runCLI(t, dbPath, configPath, "plan", "create", "ship", "--name", "Ship")
+	runCLIExpectError(t, dbPath, configPath, "validation_error", "plan", "edit", "ship")
+}
+
+func TestCLIPlanDeleteRequiresConfirm(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	projectRoot := filepath.Join(tmp, "project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Chdir(projectRoot)
+
+	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
+	runCLI(t, dbPath, configPath, "plan", "create", "ship", "--name", "Ship")
+
+	// Without --confirm → validation error, plan survives.
+	runCLIExpectError(t, dbPath, configPath, "validation_error", "plan", "delete", "ship")
+	if listed := runCLI(t, dbPath, configPath, "plan", "list"); !strings.Contains(listed, `"slug":"ship"`) {
+		t.Fatalf("plan should survive unconfirmed delete: %s", listed)
+	}
+
+	// With --confirm → removed.
+	deleted := runCLI(t, dbPath, configPath, "plan", "delete", "ship", "--confirm")
+	if !strings.Contains(deleted, `"deleted":"ship"`) {
+		t.Fatalf("plan delete output = %s", deleted)
+	}
+	if listed := runCLI(t, dbPath, configPath, "plan", "list"); strings.Contains(listed, `"slug":"ship"`) {
+		t.Fatalf("plan should be gone after confirmed delete: %s", listed)
+	}
+}

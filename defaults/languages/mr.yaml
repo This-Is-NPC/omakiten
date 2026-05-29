@@ -1154,6 +1154,13 @@ keys:
   cli.plan.wave_add.flag.position: "wave स्थान (1 पासून); 0 सध्याच्या सर्वोच्चनंतर जोडते"
   cli.plan.assign.short: "अस्तित्वातील task ला (plan, wave) ला जोडा"
   cli.plan.claim.short: "plan च्या सक्रिय wave मधील पुढील अबाधित task राखीव करा (OMAKITEN_AGENT_MODEL आवश्यक)"
+  cli.plan.edit.short: "Edit a plan's name, slug, status, and/or goal body"
+  cli.plan.edit.flag.name: "New plan name"
+  cli.plan.edit.flag.slug: "New plan slug (must stay unique within the project)"
+  cli.plan.edit.flag.status: "New status: active, done, or abandoned"
+  cli.plan.edit.flag.goal_body: "New markdown goal / acceptance body"
+  cli.plan.delete.short: "Hard-delete a plan (waves cascade; member tasks survive detached)"
+  cli.plan.delete.flag.confirm: "Required to confirm the destructive delete"
 
   # Plans — wave_gate-specific notification copy.
   notifications.omakase.guard_wave_gate.message: "मागील wave अद्याप टेहळणीत. आधी गटाने एकत्र यावे."

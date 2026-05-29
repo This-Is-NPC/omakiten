@@ -2,12 +2,15 @@ package domain
 
 import (
 	"fmt"
+	"strings"
 )
 
 func init() {
 	registerFormatter(EventTypePlanCreated, summarizePlanCreated)
 	registerFormatter(EventTypePlanWaveAdded, summarizePlanWaveAdded)
 	registerFormatter(EventTypePlanGoalEdited, summarizePlanGoalEdited)
+	registerFormatter(EventTypePlanEdited, summarizePlanEdited)
+	registerFormatter(EventTypePlanDeleted, summarizePlanDeleted)
 	registerFormatter(EventTypePlanDone, summarizePlanDone)
 	registerFormatter(EventTypePlanAbandoned, summarizePlanAbandoned)
 	registerFormatter(EventTypeTrickExecuted, summarizeTrickExecuted)
@@ -49,6 +52,35 @@ func summarizePlanGoalEdited(row EventRow) string {
 		return fmt.Sprintf("goal edited (%d chars)", length)
 	}
 	return "plan goal edited"
+}
+
+func summarizePlanEdited(row EventRow) string {
+	payload := decodePayload(row.Payload)
+	fields := readObject(payload, "fields")
+	if len(fields) == 0 {
+		return "plan edited"
+	}
+	names := make([]string, 0, len(fields))
+	for k := range fields {
+		names = append(names, k)
+	}
+	strSliceSort(names)
+	return "plan edited: " + strings.Join(names, ", ")
+}
+
+func summarizePlanDeleted(row EventRow) string {
+	payload := decodePayload(row.Payload)
+	slug := readString(payload, "slug")
+	name := readString(payload, "name")
+	switch {
+	case slug != "" && name != "":
+		return fmt.Sprintf("plan deleted: %s (%s)", slug, condenseLine(name))
+	case slug != "":
+		return "plan deleted: " + slug
+	case name != "":
+		return "plan deleted: " + condenseLine(name)
+	}
+	return "plan deleted"
 }
 
 func summarizePlanDone(_ EventRow) string {

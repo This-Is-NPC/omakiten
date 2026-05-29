@@ -24,6 +24,118 @@ func newPlanCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.AddCommand(newPlanWaveAddCommand(opts))
 	cmd.AddCommand(newPlanAssignCommand(opts))
 	cmd.AddCommand(newPlanClaimCommand(opts))
+	cmd.AddCommand(newPlanEditCommand(opts))
+	cmd.AddCommand(newPlanDeleteCommand(opts))
+	return cmd
+}
+
+// newPlanEditCommand wires `okt plan edit SLUG [--name --slug --status
+// --goal-body]`. Only flags the user explicitly set are forwarded —
+// goal_body edits route through UpdateGoalBody (plan.goal_edited) while
+// name/slug/status route through UpdatePlan (plan.edited, plus
+// plan.abandoned on an abandon). At least one flag is required.
+func newPlanEditCommand(opts *runtimeOptions) *cobra.Command {
+	var name, slug, status, goalBody string
+	cmd := &cobra.Command{
+		Use:   "edit SLUG",
+		Short: opts.t("cli.plan.edit.short"),
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				var namePtr, slugPtr, statusPtr *string
+				if cmd.Flags().Changed("name") {
+					namePtr = &name
+				}
+				if cmd.Flags().Changed("slug") {
+					slugPtr = &slug
+				}
+				if cmd.Flags().Changed("status") {
+					statusPtr = &status
+				}
+				goalChanged := cmd.Flags().Changed("goal-body")
+				if namePtr == nil && slugPtr == nil && statusPtr == nil && !goalChanged {
+					return nil, domain.NewError(domain.ErrValidation,
+						"plan edit requires at least one of --name, --slug, --status, --goal-body", nil)
+				}
+
+				rt, err := opts.open(ctx, true)
+				if err != nil {
+					return nil, err
+				}
+				defer rt.close()
+				ctx = rt.WithActivityRepo(ctx)
+
+				project, err := opts.resolveProject(ctx, rt.store)
+				if err != nil {
+					return nil, err
+				}
+				svc := app.NewPlanService(rt.store)
+				plan, err := svc.GetBySlug(ctx, project, args[0])
+				if err != nil {
+					return nil, err
+				}
+				if goalChanged {
+					plan, err = svc.UpdateGoalBody(ctx, project, plan.ID, goalBody)
+					if err != nil {
+						return nil, err
+					}
+				}
+				if namePtr != nil || slugPtr != nil || statusPtr != nil {
+					plan, err = svc.UpdatePlan(ctx, project, plan.ID, namePtr, slugPtr, statusPtr)
+					if err != nil {
+						return nil, err
+					}
+				}
+				return map[string]any{"project": project, "plan": plan}, nil
+			})
+		},
+	}
+	cmd.Flags().StringVarP(&name, "name", "n", "", opts.t("cli.plan.edit.flag.name"))
+	cmd.Flags().StringVarP(&slug, "slug", "s", "", opts.t("cli.plan.edit.flag.slug"))
+	cmd.Flags().StringVar(&status, "status", "", opts.t("cli.plan.edit.flag.status"))
+	cmd.Flags().StringVarP(&goalBody, "goal-body", "g", "", opts.t("cli.plan.edit.flag.goal_body"))
+	return cmd
+}
+
+// newPlanDeleteCommand wires `okt plan delete SLUG --confirm`. The
+// destructive op requires --confirm; waves cascade-delete and member
+// tasks survive detached (plan_id / wave_id cleared).
+func newPlanDeleteCommand(opts *runtimeOptions) *cobra.Command {
+	var confirm bool
+	cmd := &cobra.Command{
+		Use:   "delete SLUG",
+		Short: opts.t("cli.plan.delete.short"),
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				if !confirm {
+					return nil, domain.NewError(domain.ErrValidation,
+						"plan delete is destructive (waves cascade, tasks detach); pass --confirm to proceed", nil)
+				}
+				rt, err := opts.open(ctx, true)
+				if err != nil {
+					return nil, err
+				}
+				defer rt.close()
+				ctx = rt.WithActivityRepo(ctx)
+
+				project, err := opts.resolveProject(ctx, rt.store)
+				if err != nil {
+					return nil, err
+				}
+				svc := app.NewPlanService(rt.store)
+				plan, err := svc.GetBySlug(ctx, project, args[0])
+				if err != nil {
+					return nil, err
+				}
+				if _, err := svc.DeletePlan(ctx, project, plan.ID); err != nil {
+					return nil, err
+				}
+				return map[string]any{"project": project, "deleted": plan.Slug}, nil
+			})
+		},
+	}
+	cmd.Flags().BoolVar(&confirm, "confirm", false, opts.t("cli.plan.delete.flag.confirm"))
 	return cmd
 }
 

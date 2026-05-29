@@ -263,6 +263,8 @@ func tools() []ToolDefinition {
 		{Name: "plans.assign_task", Description: "Attach an existing task to a (plan, wave). Identify the plan by slug or plan_id; supply at least one. Cross-plan / cross-project wave references are rejected.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to attach"), "slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "wave_id": integerSchema("Wave id; must belong to the named plan")}, []string{"task_id", "wave_id"})},
 		{Name: "plans.claim_next", Description: "Atomically reserve the next claimable task in the plan's active wave (lowest-position wave with pending tasks). Claimable means active, unassigned, and still in the workflow's first bucket. Stamps tasks.assigned_to with the caller's _agent_model and emits task.assigned; the bucket is not moved, so callers must use tasks.move separately once preset guards are satisfied. Returns claimed=false (no task) when every wave is fully done or no unassigned first-bucket task remains in the active wave. Concurrency-safe via BEGIN IMMEDIATE on a pinned connection.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)")}, nil)},
 		{Name: "plans.continue", Description: "Agent-tailored projection of a plan: returns the same aggregate plans.show emits (full plan + waves + done/total + active wave) plus a non-mutating preview of the task plans.claim_next would reserve next. Use before plans.claim_next so an agent can inspect goal_body, the wave layout, and the candidate task before committing to a claim.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug")}, []string{"slug"})},
+		{Name: "plans.edit", Description: "Edit a plan's name, slug, status, and/or goal_body. Identify the plan by slug or plan_id; supply at least one editable field. status accepts active / done / abandoned (abandoned co-emits plan.abandoned); a new_slug collision rejects with plan_slug_conflict. Emits plan.edited with the per-field diff (and plan.goal_edited when goal_body changes).", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug to identify the plan (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "name": stringSchema("Optional new plan name"), "new_slug": stringSchema("Optional new plan slug; must stay unique within the project"), "status": stringSchema("Optional new status: active, done, or abandoned"), "goal_body": stringSchema("Optional new markdown goal body")}, nil)},
+		{Name: "plans.delete", Description: "Hard-delete a plan. Its waves cascade-delete and member tasks are detached (plan_id / wave_id cleared) but otherwise survive. Identify the plan by slug or plan_id. First call without confirmed=true returns a Confirmation block; retry with confirmed=true to apply. Emits plan.deleted.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "confirmed": booleanSchema("Required true to actually delete the plan")}, nil)},
 	}
 }
 
@@ -645,6 +647,18 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = service.ContinuePlan(ctx, input)
+		}
+	case "plans.edit":
+		var input agent.EditPlanInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.EditPlan(ctx, input)
+		}
+	case "plans.delete":
+		var input agent.DeletePlanInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.DeletePlan(ctx, input)
 		}
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP tool %q", name)

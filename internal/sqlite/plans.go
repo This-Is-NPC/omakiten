@@ -158,6 +158,213 @@ RETURNING id, project_id, slug, name, goal_body, status, created_at, updated_at,
 	})
 }
 
+// UpdatePlan mutates a plan's name / slug / status. Each field is
+// optional: a nil pointer leaves the column untouched. The primary event
+// is always plan.edited carrying the per-field {from,to} diff; when status
+// transitions to 'abandoned' a second plan.abandoned event co-emits in the
+// same transaction. A slug collision maps to ErrPlanSlugConflict; an empty
+// field set (no-op) is rejected with ErrValidation. Returns ErrPlanNotFound
+// when the plan id belongs to a different project or does not exist.
+//
+// Hand-rolls the transaction (rather than txMutateAndEmit) because the
+// abandon path emits two events that must publish post-commit together —
+// the single-event helper cannot model the co-emit.
+func (s *Store) UpdatePlan(ctx context.Context, projectID, planID int64, name, slug, status *string) (domain.Plan, error) {
+	if name == nil && slug == nil && status == nil {
+		return domain.Plan{}, domain.NewError(domain.ErrValidation, "plans.edit requires at least one of name, slug, status", nil)
+	}
+	if name != nil {
+		trimmed := strings.TrimSpace(*name)
+		if trimmed == "" {
+			return domain.Plan{}, domain.NewError(domain.ErrValidation, "plan name cannot be blank", nil)
+		}
+		name = &trimmed
+	}
+	if slug != nil {
+		trimmed := strings.TrimSpace(*slug)
+		if trimmed == "" {
+			return domain.Plan{}, domain.NewError(domain.ErrValidation, "plan slug cannot be blank", nil)
+		}
+		slug = &trimmed
+	}
+	if status != nil {
+		trimmed := strings.TrimSpace(*status)
+		switch domain.PlanStatus(trimmed) {
+		case domain.PlanStatusActive, domain.PlanStatusDone, domain.PlanStatusAbandoned:
+		default:
+			return domain.Plan{}, domain.NewError(domain.ErrValidation, "plan status must be one of active, done, abandoned",
+				map[string]any{"status": trimmed})
+		}
+		status = &trimmed
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Plan{}, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	prev, err := sqlutil.ScanRow(tx.QueryRowContext(ctx, `
+SELECT id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at
+FROM plans WHERE project_id = ? AND id = ?
+`, projectID, planID), decodePlan)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Plan{}, domain.NewError(domain.ErrPlanNotFound, "plan not found",
+				map[string]any{"project_id": projectID, "plan_id": planID})
+		}
+		return domain.Plan{}, err
+	}
+
+	fields := map[string]any{}
+	if name != nil && *name != prev.Name {
+		fields["name"] = map[string]any{"from": prev.Name, "to": *name}
+	} else {
+		name = nil
+	}
+	if slug != nil && *slug != prev.Slug {
+		fields["slug"] = map[string]any{"from": prev.Slug, "to": *slug}
+	} else {
+		slug = nil
+	}
+	abandoning := false
+	if status != nil && *status != string(prev.Status) {
+		fields["status"] = map[string]any{"from": string(prev.Status), "to": *status}
+		abandoning = *status == string(domain.PlanStatusAbandoned)
+	} else {
+		status = nil
+	}
+	if len(fields) == 0 {
+		return domain.Plan{}, domain.NewError(domain.ErrValidation, "plans.edit changed nothing (values match the current plan)", nil)
+	}
+
+	sets := []string{"updated_at = CURRENT_TIMESTAMP"}
+	argv := []any{}
+	if name != nil {
+		sets = append(sets, "name = ?")
+		argv = append(argv, *name)
+	}
+	if slug != nil {
+		sets = append(sets, "slug = ?")
+		argv = append(argv, *slug)
+	}
+	if status != nil {
+		sets = append(sets, "status = ?")
+		argv = append(argv, *status)
+		// Stamp completed_at when leaving 'active' for a terminal state;
+		// clear it on a reopen back to 'active' so the column stays honest.
+		if *status == string(domain.PlanStatusActive) {
+			sets = append(sets, "completed_at = NULL")
+		} else {
+			sets = append(sets, "completed_at = CURRENT_TIMESTAMP")
+		}
+	}
+	argv = append(argv, planID)
+
+	row := tx.QueryRowContext(ctx, `UPDATE plans SET `+strings.Join(sets, ", ")+`
+WHERE id = ?
+RETURNING id, project_id, slug, name, goal_body, status, created_at, updated_at, completed_at`, argv...)
+	updated, err := sqlutil.ScanRow(row, decodePlan)
+	if err != nil {
+		var ce *sqlutil.ConstraintError
+		if mapped := sqlutil.MapSQLiteError(err); errors.As(mapped, &ce) && ce.Violation == sqlutil.ViolationUnique {
+			return domain.Plan{}, domain.NewError(domain.ErrPlanSlugConflict,
+				"plan slug already exists for this project",
+				map[string]any{"project_id": projectID, "plan_id": planID})
+		}
+		return domain.Plan{}, err
+	}
+
+	editedPayload, err := json.Marshal(map[string]any{"fields": fields})
+	if err != nil {
+		return domain.Plan{}, err
+	}
+	editedEvent, err := insertEntityEvent(ctx, tx, domain.EventEntityPlan, planID, projectID, domain.EventTypePlanEdited, string(editedPayload))
+	if err != nil {
+		return domain.Plan{}, err
+	}
+
+	var abandonEvent domain.Event
+	if abandoning {
+		abandonEvent, err = insertEntityEvent(ctx, tx, domain.EventEntityPlan, planID, projectID, domain.EventTypePlanAbandoned, "{}")
+		if err != nil {
+			return domain.Plan{}, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return domain.Plan{}, err
+	}
+	committed = true
+
+	s.publishEvent(ctx, editedEvent)
+	if abandoning {
+		s.publishEvent(ctx, abandonEvent)
+	}
+	return updated, nil
+}
+
+// DeletePlan hard-deletes a plan row, emitting plan.deleted. The FK
+// policy from migration 023 cascades plan_waves and SET-NULLs
+// tasks.plan_id / wave_id, so member tasks survive detached. Returns
+// ErrPlanNotFound when the plan id belongs to a different project or
+// does not exist.
+func (s *Store) DeletePlan(ctx context.Context, projectID, planID int64) (domain.Event, error) {
+	type deletedPlan struct {
+		slug   string
+		name   string
+		status string
+	}
+	_, err := txMutateAndEmit(ctx, s, TxMutation[deletedPlan]{
+		Scope:      EventScopeEntity,
+		EntityType: domain.EventEntityPlan,
+		EventType:  domain.EventTypePlanDeleted,
+		ProjectID:  projectID,
+		EntityID:   func(_ deletedPlan) int64 { return planID },
+		Mutate: func(ctx context.Context, tx *sql.Tx) (deletedPlan, error) {
+			var dp deletedPlan
+			err := tx.QueryRowContext(ctx, `SELECT slug, name, status FROM plans WHERE project_id = ? AND id = ?`,
+				projectID, planID).Scan(&dp.slug, &dp.name, &dp.status)
+			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return deletedPlan{}, domain.NewError(domain.ErrPlanNotFound, "plan not found",
+						map[string]any{"project_id": projectID, "plan_id": planID})
+				}
+				return deletedPlan{}, err
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM plans WHERE project_id = ? AND id = ?`, projectID, planID); err != nil {
+				return deletedPlan{}, err
+			}
+			return dp, nil
+		},
+		Payload: func(dp deletedPlan) (string, error) {
+			b, err := json.Marshal(map[string]any{
+				"slug":   dp.slug,
+				"name":   dp.name,
+				"status": dp.status,
+			})
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		},
+	})
+	if err != nil {
+		return domain.Event{}, err
+	}
+	return domain.Event{
+		EntityType: domain.EventEntityPlan,
+		EntityID:   planID,
+		ProjectID:  projectID,
+		EventType:  domain.EventTypePlanDeleted,
+	}, nil
+}
+
 // ListPlanTaskDependencies returns dependency edges where both
 // endpoints (task_id and depends_on_task_id) belong to the same plan.
 // Cross-plan or out-of-plan edges are filtered out so the network

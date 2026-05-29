@@ -42,6 +42,8 @@ func TestToolsIncludePlannedSurface(t *testing.T) {
 		"solutions.confirm":   false,
 		"metrics.summary":     false,
 		"logs.list":           false,
+		"plans.edit":          false,
+		"plans.delete":        false,
 		"skills.list":         false,
 		"skills.get":          false,
 	}
@@ -207,6 +209,8 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		"plans.assign_task",
 		"plans.claim_next",
 		"plans.continue",
+		"plans.edit",
+		"plans.delete",
 		"skills.list",
 		"skills.get",
 	}
@@ -248,6 +252,10 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 			args = map[string]any{"slug": "demo-plan-plans.create"}
 		case "plans.continue":
 			args = map[string]any{"slug": "demo-plan-plans.create"}
+		case "plans.edit":
+			args = map[string]any{"slug": "demo-plan-plans.create", "name": "Renamed Demo"}
+		case "plans.delete":
+			args = map[string]any{"slug": "demo-plan-plans.create", "confirmed": true}
 		}
 		_, err := adapter.CallTool(ctx, name, withModel(args))
 		if err != nil {

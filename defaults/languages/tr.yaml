@@ -1156,6 +1156,13 @@ keys:
   cli.plan.wave_add.flag.position: "wave konumu (1-tabanlı); 0 en yüksekten sonra ekler"
   cli.plan.assign.short: "Mevcut bir task'ı (plan, wave)'e bağlar"
   cli.plan.claim.short: "plan'ın aktif wave'indeki bir sonraki uygun task'ı atomik olarak ayırtır (OMAKITEN_AGENT_MODEL gerekir)"
+  cli.plan.edit.short: "Edit a plan's name, slug, status, and/or goal body"
+  cli.plan.edit.flag.name: "New plan name"
+  cli.plan.edit.flag.slug: "New plan slug (must stay unique within the project)"
+  cli.plan.edit.flag.status: "New status: active, done, or abandoned"
+  cli.plan.edit.flag.goal_body: "New markdown goal / acceptance body"
+  cli.plan.delete.short: "Hard-delete a plan (waves cascade; member tasks survive detached)"
+  cli.plan.delete.flag.confirm: "Required to confirm the destructive delete"
 
   # Plans — wave_gate-specific notification copy.
   notifications.omakase.guard_wave_gate.message: "Önceki wave hâlâ keşifte. Grup önce toplanmalı."

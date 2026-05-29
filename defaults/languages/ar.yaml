@@ -1153,6 +1153,13 @@ keys:
   cli.plan.wave_add.flag.position: "موضع wave (يبدأ من 1)؛ 0 يضيف بعد الأعلى الحالي"
   cli.plan.assign.short: "إرفاق task قائم بـ (plan, wave)"
   cli.plan.claim.short: "حجز ذرّي للـ task التالي غير المحجوب في wave النشطة من plan (يتطلب OMAKITEN_AGENT_MODEL)"
+  cli.plan.edit.short: "Edit a plan's name, slug, status, and/or goal body"
+  cli.plan.edit.flag.name: "New plan name"
+  cli.plan.edit.flag.slug: "New plan slug (must stay unique within the project)"
+  cli.plan.edit.flag.status: "New status: active, done, or abandoned"
+  cli.plan.edit.flag.goal_body: "New markdown goal / acceptance body"
+  cli.plan.delete.short: "Hard-delete a plan (waves cascade; member tasks survive detached)"
+  cli.plan.delete.flag.confirm: "Required to confirm the destructive delete"
 
   # Plans — wave_gate-specific notification copy.
   notifications.omakase.guard_wave_gate.message: "wave السابقة ما زالت تستكشف. على المجموعة التجمع أولًا."

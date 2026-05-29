@@ -72,6 +72,43 @@ type PlanTaskRow struct {
 	AssignedTo string `json:"assigned_to,omitempty"`
 }
 
+// EditPlanInput is the MCP-side shape for plans.edit. The plan is
+// identified by slug or plan_id (slug wins when both supplied). Name,
+// Slug, Status, and GoalBody are optional pointers: nil leaves the
+// column untouched, non-nil rewrites it. The service rejects a call that
+// supplies no editable field. Status accepts active / done / abandoned;
+// abandoned co-emits plan.abandoned.
+type EditPlanInput struct {
+	ProjectSelector
+	PlanID   int64   `json:"plan_id,omitempty"`
+	Slug     string  `json:"slug,omitempty"`
+	Name     *string `json:"name,omitempty"`
+	NewSlug  *string `json:"new_slug,omitempty"`
+	Status   *string `json:"status,omitempty"`
+	GoalBody *string `json:"goal_body,omitempty"`
+}
+
+type EditPlanResponse struct {
+	Project ProjectSummary `json:"project"`
+	Plan    PlanSummary    `json:"plan"`
+}
+
+// DeletePlanInput identifies a plan to hard-delete. Confirmed must be
+// true to proceed; the first (unconfirmed) call returns a Confirmation
+// block mirroring tasks.delete.
+type DeletePlanInput struct {
+	ProjectSelector
+	PlanID    int64  `json:"plan_id,omitempty"`
+	Slug      string `json:"slug,omitempty"`
+	Confirmed bool   `json:"confirmed,omitempty"`
+}
+
+type DeletePlanResponse struct {
+	Project      ProjectSummary `json:"project"`
+	Confirmation Confirmation   `json:"confirmation,omitempty"`
+	Snapshot     *EventSummary  `json:"snapshot,omitempty"`
+}
+
 type AddPlanWaveInput struct {
 	ProjectSelector
 	PlanID   int64  `json:"plan_id"`

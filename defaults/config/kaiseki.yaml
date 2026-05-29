@@ -109,6 +109,14 @@ config:
         category: plan
         display: "plan abandoned"
         formatter: plan.abandoned
+      plan.edited:
+        category: plan
+        display: "plan edited"
+        formatter: plan.edited
+      plan.deleted:
+        category: plan
+        display: "plan deleted"
+        formatter: plan.deleted
       tag.added:
         category: tag-dep
         display: "tag added"
