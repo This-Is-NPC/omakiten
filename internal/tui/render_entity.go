@@ -324,15 +324,19 @@ func (m Model) renderLawBadges(index int) []string {
 		badges = append(badges, badge)
 	}
 
-	// Scope badge
-	scope := m.t("tui.badge.global")
-	switch law.Scope {
-	case domain.LawScopeProject:
-		scope = m.t("tui.badge.project")
-	case domain.LawScopePersona:
-		scope = m.t("tui.badge.persona")
+	// Scope badge — only meaningful for laws wired into the active bundle.
+	// Inactive catalog laws carry an empty Scope (no wiring), so rendering a
+	// default GLOBAL badge would falsely assert a global binding; suppress it.
+	if law.Active {
+		scope := m.t("tui.badge.global")
+		switch law.Scope {
+		case domain.LawScopeProject:
+			scope = m.t("tui.badge.project")
+		case domain.LawScopePersona:
+			scope = m.t("tui.badge.persona")
+		}
+		badges = append(badges, m.styles.badgeScope.Render(scope))
 	}
-	badges = append(badges, m.styles.badgeScope.Render(scope))
 
 	// Token count: matches computeMetrics (key + body) so the per-entity weight
 	// matches the totals shown in the Token budget panel.
