@@ -116,6 +116,7 @@ func snapshotCommandCatalog(snap *config.Snapshot) CommandCatalog {
 				Laws:         append([]string(nil), spec.Laws...),
 				LawsDisabled: append([]string(nil), spec.LawsDisabled...),
 				Templates:    append([]string(nil), spec.Templates...),
+				Skills:       append([]string(nil), spec.Skills...),
 			}
 		}
 		return out
