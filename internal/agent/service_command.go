@@ -399,10 +399,10 @@ func effectiveLaws(globalSpec, commandSpec MCPCommandBinding, persona *PersonaIn
 // surfaces before calling `prompts/get`. Emitting them again here would just
 // duplicate bytes the agent already has.
 //
-// Skills render as a single inline list under `## Skills — A, B, C`. Skill
-// descriptions are decorative metadata; the procedural content lives in the
-// persona body and the action text, so per-bullet description lines just
-// inflate the prompt without driving agent behavior.
+// Skills render as bullet-with-body under `## Skills` — one bullet per skill
+// in configured (persona-wiring) order. Each bullet carries the skill body
+// (the procedural payload) when present; skills without a body fall back to
+// their description, and skills with neither render as a bare name bullet.
 //
 // Laws render under `## Laws` (no count parenthetical) — the number is
 // decorative; the agent does not branch on it.
@@ -436,11 +436,41 @@ func renderCommandMarkdown(resp ResolveCommandResponse) string {
 	}
 
 	if len(resp.Skills) > 0 {
-		names := make([]string, 0, len(resp.Skills))
+		openSection("## Skills")
 		for _, sk := range resp.Skills {
-			names = append(names, sk.Name)
+			label := sk.Name
+			if label == "" {
+				label = sk.Slug
+			}
+			// Body is the procedural payload; description is the fallback when
+			// a skill carries no body. Skills with neither render as a bare
+			// name bullet so configured order and presence stay visible.
+			detail := strings.TrimSpace(sk.Body)
+			if detail == "" {
+				detail = strings.TrimSpace(sk.Description)
+			}
+			if detail == "" {
+				fmt.Fprintf(&b, "- **%s**\n", label)
+				continue
+			}
+			// Multi-line bodies need every continuation line indented two
+			// spaces so they stay visually nested under the bullet, matching
+			// the multi-line law rendering below.
+			if idx := strings.Index(detail, "\n"); idx >= 0 {
+				head := detail[:idx]
+				tail := detail[idx+1:]
+				fmt.Fprintf(&b, "- **%s** — %s\n", label, head)
+				for _, line := range strings.Split(tail, "\n") {
+					if line == "" {
+						fmt.Fprintln(&b)
+						continue
+					}
+					fmt.Fprintf(&b, "  %s\n", line)
+				}
+				continue
+			}
+			fmt.Fprintf(&b, "- **%s** — %s\n", label, detail)
 		}
-		openSection(fmt.Sprintf("## Skills — %s", strings.Join(names, ", ")))
 	}
 
 	if len(resp.Laws) > 0 {

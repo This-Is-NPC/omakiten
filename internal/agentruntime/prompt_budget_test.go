@@ -18,28 +18,34 @@ import (
 //
 // Numbers come from `mise run mcp:prompts` output against `dev_env/`. Update
 // alongside any change that grows a prompt past its current budget.
+//
+// Recalibrated in CW1 (#372): skills now render bullet-with-body (one bullet
+// per skill carrying its body, or its description when body-less) instead of a
+// single inline `## Skills — A, B` name list. Every skill-bearing prompt grew
+// by the sum of its skills' description/body lines; budgets re-sized to the new
+// default-kit footprint with ~30% headroom.
 var promptBudgets = map[string]int{
-	"okt":           2300,
-	"okt-imagine":   4900,
-	"okt-create":    7600,
-	"okt-resume":    2300,
-	"okt-continue":  2400,
-	"okt-implement": 8200,
-	"okt-document":  2700,
-	"okt-config":    3050,
-	"okt-commit":    4700,
-	"okt-review":    9000,
-	"okt-check":     5500,
+	"okt":           9700,
+	"okt-imagine":   7300,
+	"okt-create":    10800,
+	"okt-resume":    9700,
+	"okt-continue":  9800,
+	"okt-implement": 15100,
+	"okt-document":  8800,
+	"okt-config":    9200,
+	"okt-commit":    7200,
+	"okt-review":    17100,
+	"okt-check":     8700,
 	// Notes/handoff v1 commands (#363). Budgets sized against the
 	// embedded omakase default kit with ~30% headroom. The handoff
 	// command carries the longest action body (workflow/wave edge cases)
 	// plus the `project-scope-only` + `no-praise-pad` laws and the
 	// `note-handoff` template metadata. Standup/recap are lighter — no
 	// per-command laws, single-template binding.
-	"okt-handoff":   4500,
-	"okt-note":      3500,
-	"okt-standup":   4000,
-	"okt-recap":     4000,
+	"okt-handoff":   10600,
+	"okt-note":      9500,
+	"okt-standup":   10800,
+	"okt-recap":     10600,
 }
 
 // TestTemplateBoundCommandsCarryFetchHint guards the JIT contract for
