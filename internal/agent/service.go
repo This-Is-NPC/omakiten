@@ -79,7 +79,6 @@ type Repository interface {
 	app.OrphanRepository
 	app.SearchRepository
 	app.PlanRepository
-	app.NoteRepository
 }
 
 // TaskTemplateLookup returns the active task template scaffold to embed in

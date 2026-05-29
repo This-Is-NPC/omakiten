@@ -44,11 +44,6 @@ const (
 	// events that don't fit the other buckets (bundle.swapped,
 	// bundle.imported, subtask_kit.notice_emitted).
 	EventCategoryDomain EventCategory = "domain"
-	// EventCategoryNote groups note-entity lifecycle events
-	// (note.created, note.edited, note.pinned, note.removed). Distinct
-	// from EventCategoryTask because notes are first-class rows scoped
-	// project|global rather than per-task children.
-	EventCategoryNote EventCategory = "note"
 	// EventCategoryUpdate groups `okt update` lifecycle events: pre-swap
 	// health-check pass/fail, swap completion, swap abort. Added in
 	// #368 so the Logs inspector can filter the upgrade audit trail
@@ -81,7 +76,6 @@ var KnownEventCategories = []EventCategory{
 	EventCategoryToolCall,
 	EventCategoryTrick,
 	EventCategoryDomain,
-	EventCategoryNote,
 	EventCategoryUpdate,
 	EventCategoryTUI,
 }

@@ -89,7 +89,7 @@ func TestLogsFilterCategoriesMapping(t *testing.T) {
 			},
 		},
 		{
-			name: "domain → task / comment / plan / trick / tag-dep / note",
+			name: "domain → task / comment / plan / trick / tag-dep",
 			mode: LogsFilterDomain,
 			want: []domain.EventCategory{
 				domain.EventCategoryTask,
@@ -97,7 +97,6 @@ func TestLogsFilterCategoriesMapping(t *testing.T) {
 				domain.EventCategoryPlan,
 				domain.EventCategoryTrick,
 				domain.EventCategoryTagDep,
-				domain.EventCategoryNote,
 			},
 		},
 		{
