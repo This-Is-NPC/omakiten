@@ -17,14 +17,14 @@ func init() {
 // across entity types — verb-first, quoted subject, metadata in parens,
 // tag chips appended.
 func summarizeNoteCreated(row EventRow) string {
-	return renderNoteSummary(row, "note created", "note created")
+	return renderNoteSummary(row, "note created")
 }
 
 // summarizeNoteEdited renders "note edited <title> (kind · scope) #tags".
 // Tags reflect the post-mutation set so a tag-replacement edit shows the
 // new set rather than the previous one.
 func summarizeNoteEdited(row EventRow) string {
-	return renderNoteSummary(row, "note edited", "note edited")
+	return renderNoteSummary(row, "note edited")
 }
 
 // summarizeNotePinned distinguishes pin from unpin via the `pinned`
@@ -37,7 +37,7 @@ func summarizeNotePinned(row EventRow) string {
 	if !readBool(payload, "pinned") {
 		verb = "note unpinned"
 	}
-	return renderNoteSummaryFromPayload(payload, verb, verb)
+	return renderNoteSummaryFromPayload(payload, verb)
 }
 
 // summarizeNoteRemoved relies on the title snapshot stored in the payload
@@ -45,19 +45,18 @@ func summarizeNotePinned(row EventRow) string {
 // no way to label the lost row, so the bare verb fallback documents the
 // payload-shape contract directly.
 func summarizeNoteRemoved(row EventRow) string {
-	return renderNoteSummary(row, "note removed", "note removed")
+	return renderNoteSummary(row, "note removed")
 }
 
 // renderNoteSummary is the shared rendering shape for the three
-// title-carrying note formatters. fallback is the value returned when
-// the payload is missing or yields no meaningful chunks — every branch
-// guarantees a non-empty single-line output per SummarizeEvent's
-// contract.
-func renderNoteSummary(row EventRow, verb, fallback string) string {
-	return renderNoteSummaryFromPayload(decodePayload(row.Payload), verb, fallback)
+// title-carrying note formatters. The verb doubles as the fallback
+// when the payload yields no meaningful chunks, guaranteeing a
+// non-empty single-line output per SummarizeEvent's contract.
+func renderNoteSummary(row EventRow, verb string) string {
+	return renderNoteSummaryFromPayload(decodePayload(row.Payload), verb)
 }
 
-func renderNoteSummaryFromPayload(payload map[string]any, verb, fallback string) string {
+func renderNoteSummaryFromPayload(payload map[string]any, verb string) string {
 	title := readString(payload, "title")
 	kind := readString(payload, "kind")
 	scope := readString(payload, "scope")
@@ -75,7 +74,7 @@ func renderNoteSummaryFromPayload(payload map[string]any, verb, fallback string)
 	}
 
 	if len(parts) == 0 {
-		return fallback
+		return verb
 	}
 	return verb + " " + strings.Join(parts, " ")
 }
