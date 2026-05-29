@@ -24,18 +24,27 @@ import (
 // single inline `## Skills — A, B` name list. Every skill-bearing prompt grew
 // by the sum of its skills' description/body lines; budgets re-sized to the new
 // default-kit footprint with ~30% headroom.
+//
+// Recalibrated post-W2 (#270): the 33 default skills gained full procedural
+// bodies, so every skill-bearing command prompt grew again — the prior budgets
+// were calibrated against body-less skill stubs. Budgets here reflect the
+// new full-body-skill footprint: each is the command's current rendered size
+// × ~1.3 (~30% headroom), rounded to the nearest 100, matching this file's
+// convention. This is EXPECTED growth from the locked bullet-with-body design,
+// not a regression. CW8 (#379) re-tightens these once theming rewires each
+// command to a minimal skill subset rather than the full default repertoire.
 var promptBudgets = map[string]int{
-	"okt":                9700,
-	"okt-task-imagine":   7300,
-	"okt-task-create":    10800,
-	"okt-project-resume": 9700,
-	"okt-task-continue":  9800,
-	"okt-task-implement": 15100,
-	"okt-task-document":  8800,
-	"okt-config":         9200,
-	"okt-task-commit":    7200,
-	"okt-task-review":    17100,
-	"okt-task-check":     8700,
+	"okt":                23000,
+	"okt-task-imagine":   26400,
+	"okt-task-create":    29900,
+	"okt-project-resume": 22900,
+	"okt-task-continue":  23100,
+	"okt-task-implement": 28300,
+	"okt-task-document":  20200,
+	"okt-config":         20600,
+	"okt-task-commit":    9500,
+	"okt-task-review":    19400,
+	"okt-task-check":     15200,
 	// Notes/handoff commands (#363), rescoped to the v2 prefix surface
 	// (#373). Budgets sized against the embedded omakase default kit with
 	// ~30% headroom. okt-pause (former handoff) carries the longest action
@@ -44,9 +53,9 @@ var promptBudgets = map[string]int{
 	// okt-note-recap folds in the former standup digest: its action body is
 	// the longest of the note family and it binds both note-recap and
 	// note-standup-digest template metadata, so its budget is raised.
-	"okt-pause":      10600,
-	"okt-note-free":  9500,
-	"okt-note-recap": 11000,
+	"okt-pause":      21900,
+	"okt-note-free":  20900,
+	"okt-note-recap": 24900,
 }
 
 // TestTemplateBoundCommandsCarryFetchHint guards the JIT contract for
