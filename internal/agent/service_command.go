@@ -37,6 +37,7 @@ import (
 //	the next session. okt-note-free captures an ad-hoc note. okt-note-recap
 //	renders a recap timeline and, with a wide window (e.g. `day`/cross-project),
 //	folds in the former standup digest — one command spans both.
+//
 // Action texts deliberately stop short of repeating constraints already
 // declared inline in `## Laws` or role-specific flow already declared in the
 // persona body. Each one names the canonical tool and ends with a REST-style
@@ -77,7 +78,9 @@ var commandActions = map[string]string{
 		"open questions, and the immediate next increment. Next: suggest `okt-task-implement` with the same id.",
 
 	"okt-task-implement": "Apply the next increment for the task. If you do not have the task state, " +
-		"call `tasks.continue` first. " +
+		"call `tasks.continue` first. When opening a PR or recording test evidence, call `templates.show` " +
+		"for the bound scaffold (e.g. `templates.show pull-request`, `templates.show comment-tests-passing`) " +
+		"and fill it per template-fidelity. " +
 		"Next: suggest the user add a `#resume` comment via `comments.add` " +
 		"(template_slug=`comment-resume`) and move the task to review.",
 
@@ -465,46 +468,46 @@ const oktStartAction = "Open the session as the concierge: orient the user, then
 // commandDescriptions match the prompts/list metadata. Keeping them next to
 // the action text means the MCP adapter can ship a single source of truth.
 var commandDescriptions = map[string]string{
-	"okt":                "Smart entry — shortcut to okt-start: reads handoffs/recaps + plan/board and proposes the next command.",
-	"okt-start":          "Concierge entry — reads handoffs/recaps + plan/board state, proposes concrete next commands, and teaches the options.",
-	"okt-shape":          "Owner orchestrator — shape a raw idea or backlog into ready tasks + an execution plan; chains discover/define + okt-plan-create and surfaces gaps.",
-	"okt-audit":          "Owner orchestrator — commission a deep assurance pass: spawn Reviewer + Security subagents, aggregate severity-tagged findings, coach on risk.",
-	"okt-task-imagine":   "PLAN phase — interrogate the user via 5W2H and frame success in SMART terms before any task exists.",
-	"okt-task-create":    "PLAN → DO handoff — author the task with an INVEST-checked story; record prioritization when alternatives exist.",
-	"okt-project-resume": "Scan likely-next work across the active project.",
-	"okt-task-continue":  "Read a task's checkpoint as an engineer before resuming work.",
-	"okt-task-implement": "Execute approved engineering work with strict rigor and commit discipline.",
-	"okt-task-document":  "Survey project documentation for drift and propose updates.",
-	"okt-help":           "System command — tier-aware guide to how omakiten works: the orchestrator/system/granular tiers, the start→shape→run→audit→pause flow, and when to drop to granular commands.",
-	"okt-config":         "System command — orient on the active Omakiten config layout to customize the environment.",
-	"okt-skill":          "System command — load a skill body via skills.get (e.g. okt-skill commit), or list the catalog via skills.list with no arg; pulls any skill, ungated by persona repertoire.",
-	"okt-task-commit":    "Draft Conventional Commits for the working tree without pushing.",
-	"okt-task-review":    "Walk the diff through Fowler/Beck/Martin/Feathers lens and surface findings + refactor opportunities.",
-	"okt-task-check":     "Run discovered test/lint targets and report pass/fail in a tabular comment.",
-	"okt-pause":          "Concierge close — snapshot git + active task + plan into a handoff note for the next session.",
-	"okt-note-free":      "Capture a free-form knowledge note (project or global) without ceremony.",
-	"okt-note-recap":     "Recap timeline of recent notes; wide window folds in the cross-project handoff digest.",
-	"okt-task-resume":      "Cold-start a task from scratch — rebuild full context when none is loaded in this session.",
-	"okt-task-research":    "Investigate the problem space and map the unknowns before any solution is committed.",
-	"okt-task-validate":    "Pressure-test the problem framing — is it real, worth solving now, evidence-backed?",
+	"okt":                   "Smart entry — shortcut to okt-start: reads handoffs/recaps + plan/board and proposes the next command.",
+	"okt-start":             "Concierge entry — reads handoffs/recaps + plan/board state, proposes concrete next commands, and teaches the options.",
+	"okt-shape":             "Owner orchestrator — shape a raw idea or backlog into ready tasks + an execution plan; chains discover/define + okt-plan-create and surfaces gaps.",
+	"okt-audit":             "Owner orchestrator — commission a deep assurance pass: spawn Reviewer + Security subagents, aggregate severity-tagged findings, coach on risk.",
+	"okt-task-imagine":      "PLAN phase — interrogate the user via 5W2H and frame success in SMART terms before any task exists.",
+	"okt-task-create":       "PLAN → DO handoff — author the task with an INVEST-checked story; record prioritization when alternatives exist.",
+	"okt-project-resume":    "Scan likely-next work across the active project.",
+	"okt-task-continue":     "Read a task's checkpoint as an engineer before resuming work.",
+	"okt-task-implement":    "Execute approved engineering work with strict rigor and commit discipline.",
+	"okt-task-document":     "Survey project documentation for drift and propose updates.",
+	"okt-help":              "System command — tier-aware guide to how omakiten works: the orchestrator/system/granular tiers, the start→shape→run→audit→pause flow, and when to drop to granular commands.",
+	"okt-config":            "System command — orient on the active Omakiten config layout to customize the environment.",
+	"okt-skill":             "System command — load a skill body via skills.get (e.g. okt-skill commit), or list the catalog via skills.list with no arg; pulls any skill, ungated by persona repertoire.",
+	"okt-task-commit":       "Draft Conventional Commits for the working tree without pushing.",
+	"okt-task-review":       "Walk the diff through Fowler/Beck/Martin/Feathers lens and surface findings + refactor opportunities.",
+	"okt-task-check":        "Run discovered test/lint targets and report pass/fail in a tabular comment.",
+	"okt-pause":             "Concierge close — snapshot git + active task + plan into a handoff note for the next session.",
+	"okt-note-free":         "Capture a free-form knowledge note (project or global) without ceremony.",
+	"okt-note-recap":        "Recap timeline of recent notes; wide window folds in the cross-project handoff digest.",
+	"okt-task-resume":       "Cold-start a task from scratch — rebuild full context when none is loaded in this session.",
+	"okt-task-research":     "Investigate the problem space and map the unknowns before any solution is committed.",
+	"okt-task-validate":     "Pressure-test the problem framing — is it real, worth solving now, evidence-backed?",
 	"okt-task-requirements": "Capture functional + non-functional requirements and explicit acceptance criteria.",
-	"okt-task-prioritize":  "Rank the work against alternatives with an explicit scoring method and rationale.",
-	"okt-task-decompose":   "Break a coarse task into right-sized, independently shippable increments.",
-	"okt-task-estimate":    "Size each increment with a relative estimate and a one-line basis-of-estimate.",
-	"okt-task-design":      "Shape the solution — approach, seams, interfaces — and weigh an alternative before coding.",
-	"okt-task-self-review": "Author's own pre-handoff diff pass — distinct from the third-party review.",
-	"okt-task-refactor":    "Apply one behavior-preserving structural improvement with the suite green throughout.",
-	"okt-task-quality":     "Qualitative human-lens quality read — smells, coverage, design — distinct from the mechanical gate.",
-	"okt-task-secure":      "Security-only diff pass — input-to-sink tracing, authz, injection, secret leakage.",
-	"okt-task-debrief":     "Capture learnings from completed work — decisions that held, assumptions that broke.",
-	"okt-plan-create":      "Author a WBS-style plan grouping child tasks into ordered waves with a goal body.",
-	"okt-plan-show":        "Inspect one plan — wave layout, done/total counts, percent, and the active wave.",
-	"okt-plan-continue":    "Preview a plan plus the next claimable task before committing to a claim.",
-	"okt-plan-claim":       "Atomically reserve the next claimable task in the plan's active wave.",
-	"okt-project-continue": "Warm-resume the project from the last session — pick up the open thread.",
-	"okt-note-list":        "List knowledge notes for the active scope with kind/tag/pinned filters.",
-	"okt-note-show":        "Read one knowledge note in full by id.",
-	"okt-run":              "Owner orchestrator — drive a plan or task to completion by spawning a Builder subagent per task and reviewing each compact return; conditional parallelism.",
+	"okt-task-prioritize":   "Rank the work against alternatives with an explicit scoring method and rationale.",
+	"okt-task-decompose":    "Break a coarse task into right-sized, independently shippable increments.",
+	"okt-task-estimate":     "Size each increment with a relative estimate and a one-line basis-of-estimate.",
+	"okt-task-design":       "Shape the solution — approach, seams, interfaces — and weigh an alternative before coding.",
+	"okt-task-self-review":  "Author's own pre-handoff diff pass — distinct from the third-party review.",
+	"okt-task-refactor":     "Apply one behavior-preserving structural improvement with the suite green throughout.",
+	"okt-task-quality":      "Qualitative human-lens quality read — smells, coverage, design — distinct from the mechanical gate.",
+	"okt-task-secure":       "Security-only diff pass — input-to-sink tracing, authz, injection, secret leakage.",
+	"okt-task-debrief":      "Capture learnings from completed work — decisions that held, assumptions that broke.",
+	"okt-plan-create":       "Author a WBS-style plan grouping child tasks into ordered waves with a goal body.",
+	"okt-plan-show":         "Inspect one plan — wave layout, done/total counts, percent, and the active wave.",
+	"okt-plan-continue":     "Preview a plan plus the next claimable task before committing to a claim.",
+	"okt-plan-claim":        "Atomically reserve the next claimable task in the plan's active wave.",
+	"okt-project-continue":  "Warm-resume the project from the last session — pick up the open thread.",
+	"okt-note-list":         "List knowledge notes for the active scope with kind/tag/pinned filters.",
+	"okt-note-show":         "Read one knowledge note in full by id.",
+	"okt-run":               "Owner orchestrator — drive a plan or task to completion by spawning a Builder subagent per task and reviewing each compact return; conditional parallelism.",
 }
 
 // CommandNames returns the canonical, ordered list of `okt-*` prompts the MCP
