@@ -615,7 +615,15 @@ func (s *Service) ResolveCommand(_ context.Context, input ResolveCommandInput) (
 		if persona, ok := personas[spec.Persona]; ok {
 			info := persona
 			resp.Persona = &info
-			resp.Skills = pickSkillsForPersona(persona, skills)
+			// Command-level skills (schema v2) win over the persona's full
+			// repertoire: a themed command ships only the minimal subset it
+			// declares. Presets that have not wired command-level skills fall
+			// back to the persona repertoire so they keep rendering as before.
+			slugs := spec.Skills
+			if len(slugs) == 0 {
+				slugs = persona.Skills
+			}
+			resp.Skills = pickSkills(slugs, skills)
 		}
 	}
 
@@ -697,12 +705,16 @@ func (s *Service) loadTemplateCatalogForCommand() map[string]TemplateInfo {
 	return out
 }
 
-func pickSkillsForPersona(persona PersonaInfo, skills map[string]SkillInfo) []SkillInfo {
-	if len(persona.Skills) == 0 || len(skills) == 0 {
+// pickSkills resolves an ordered list of skill slugs against the skill catalog,
+// preserving the order the caller declared them in and silently dropping slugs
+// the catalog does not know. Callers pass either the command's declared skill
+// subset (schema v2) or the persona's full repertoire (fallback).
+func pickSkills(slugs []string, skills map[string]SkillInfo) []SkillInfo {
+	if len(slugs) == 0 || len(skills) == 0 {
 		return nil
 	}
-	out := make([]SkillInfo, 0, len(persona.Skills))
-	for _, slug := range persona.Skills {
+	out := make([]SkillInfo, 0, len(slugs))
+	for _, slug := range slugs {
 		if sk, ok := skills[slug]; ok {
 			out = append(out, sk)
 		}

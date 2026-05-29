@@ -47,6 +47,13 @@ type MCPCommandBinding struct {
 	Laws         []string `json:"laws,omitempty"`
 	LawsDisabled []string `json:"laws_disabled,omitempty"`
 	Templates    []string `json:"templates,omitempty"`
+	// Skills (schema v2) is the per-command skill selection — a minimal
+	// subset of the bound persona's skill_repertoire. When set, it wins over
+	// the persona's full repertoire so a themed command ships only the 2-4
+	// skills relevant to its step. Empty falls back to the persona repertoire
+	// for backward compatibility with presets that have not yet wired
+	// command-level skills.
+	Skills []string `json:"skills,omitempty"`
 }
 
 // SkillCatalog, LawCatalog, PersonaCatalog and CommandCatalog are the lookup

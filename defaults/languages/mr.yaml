@@ -138,6 +138,8 @@ keys:
   cli.persona.remove.short: "persona काढून टाका (फाइल हटवते + संदर्भ काढते)"
   cli.mcp.short: "MCP द्वारे Omakiten agent intent उघड करा"
   cli.mcp.prompt.short: "रिझॉल्व्ह केलेले okt-* prompt markdown stdout वर रेंडर करा"
+  cli.mcp.prompt.flag.list: "बॉडी रेंडर करण्याऐवजी कमांड पृष्ठभाग स्तरानुसार गटबद्ध करून सूचीबद्ध करा"
+  cli.mcp.prompt.list.title: "कमांड पृष्ठभाग — %d कमांड\n"
   cli.mcp.tools.short: "Omakiten MCP tool व्याख्या सूची दाखवा"
   cli.mcp.call.short: "JSON input ऑब्जेक्टसह Omakiten MCP tool कॉल करा"
   cli.mcp.serve.short: "Omakiten MCP stdio server चालवा"

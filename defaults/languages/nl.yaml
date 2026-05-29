@@ -138,6 +138,8 @@ keys:
   cli.persona.remove.short: "Verwijder een persona (verwijdert bestand + prunet refs)"
   cli.mcp.short: "Stel intents van de Omakiten agent beschikbaar via MCP"
   cli.mcp.prompt.short: "Render de opgeloste markdown van een okt-* prompt naar stdout"
+  cli.mcp.prompt.flag.list: "Toont het commando-oppervlak gegroepeerd per niveau in plaats van de inhoud te renderen"
+  cli.mcp.prompt.list.title: "Commando-oppervlak — %d commando's\n"
   cli.mcp.tools.short: "Toon de MCP tool-definities van Omakiten"
   cli.mcp.call.short: "Roep een Omakiten MCP tool aan met een JSON input-object"
   cli.mcp.serve.short: "Start de Omakiten MCP stdio-server"

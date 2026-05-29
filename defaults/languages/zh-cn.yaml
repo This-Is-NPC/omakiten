@@ -138,6 +138,8 @@ keys:
   cli.persona.remove.short: "移除 persona(删除文件 + 清理引用)"
   cli.mcp.short: "通过 MCP 暴露 Omakiten agent intents"
   cli.mcp.prompt.short: "将解析后的 okt-* prompt markdown 渲染到 stdout"
+  cli.mcp.prompt.flag.list: "按层级分组列出命令面，而不是渲染正文"
+  cli.mcp.prompt.list.title: "命令面 — %d 个命令\n"
   cli.mcp.tools.short: "列出 Omakiten MCP tool 定义"
   cli.mcp.call.short: "使用 JSON 输入对象调用 Omakiten MCP tool"
   cli.mcp.serve.short: "运行 Omakiten MCP stdio 服务器"
