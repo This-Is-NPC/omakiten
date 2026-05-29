@@ -1,6 +1,10 @@
 ---
 name: Refactoring catalog
 description: "Fowler 'Refactoring' (1999, 2nd ed. 2018) named refactorings — Extract, Inline, Move, Rename, Replace Conditional with Polymorphism, etc."
+schema_version: 2
+role_affinity:
+  - Builder
+  - Reviewer
 ---
 Cite refactorings by name when proposing changes. Each name is a contract — reader knows the shape without re-reading the diff.
 

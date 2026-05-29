@@ -1,6 +1,10 @@
 ---
 name: Coverage analysis
 description: "Coverage thresholds — line vs branch — and the justified-gap pattern for accepting documented gaps."
+schema_version: 2
+role_affinity:
+  - Tester
+  - Reviewer
 ---
 Coverage discipline (Ned Batchelder, coverage.py 2004; SQLite TH3):
 

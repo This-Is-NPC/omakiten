@@ -1,6 +1,9 @@
 ---
 name: Conventional Commits spec
 description: "Conventional Commits 1.0.0 grammar — type(scope): subject, body, footers, breaking-change markers."
+schema_version: 2
+role_affinity:
+  - Committer
 ---
 Grammar (Conventional Commits 1.0.0):
 
