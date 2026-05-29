@@ -65,7 +65,7 @@ RETURNING id, project_id, kind, title, body, pinned, author_model, created_at, u
 	// failure leaves the events table consistent with the notes table —
 	// mirrors the tasks.CreateTask pattern. The payload is rebuilt from
 	// the post-INSERT note so scope/tags reflect the persisted state.
-	createdEv, err := emitNoteEventTx(ctx, s, tx, note, domain.EventTypeNoteCreated, nil)
+	createdEv, err := s.emitNoteEventTx(ctx, tx, note, domain.EventTypeNoteCreated, nil)
 	if err != nil {
 		return domain.Note{}, err
 	}
@@ -74,9 +74,7 @@ RETURNING id, project_id, kind, title, body, pinned, author_model, created_at, u
 		return domain.Note{}, err
 	}
 	committed = true
-	if createdEv.EventType != "" {
-		s.publishEvent(ctx, createdEv)
-	}
+	s.publishEvent(ctx, createdEv)
 	return note, nil
 }
 
@@ -157,7 +155,7 @@ func (s *Store) UpdateNote(ctx context.Context, id int64, update domain.NoteUpda
 		return domain.Note{}, err
 	}
 
-	events, err := noteChangeEvents(ctx, s, tx, previous, refreshed, update)
+	events, err := s.noteChangeEvents(ctx, tx, previous, refreshed, update)
 	if err != nil {
 		return domain.Note{}, err
 	}
@@ -185,7 +183,7 @@ func (s *Store) UpdateNote(ctx context.Context, id int64, update domain.NoteUpda
 // without conflating it with arbitrary field edits. The pinned event
 // only fires for a real flip, never for a same-value re-write — that
 // guard is what TestUpdateNoteSamePinnedDoesNotEmitPinned locks.
-func noteChangeEvents(ctx context.Context, s *Store, tx *sql.Tx, previous, refreshed domain.Note, update domain.NoteUpdate) ([]domain.Event, error) {
+func (s *Store) noteChangeEvents(ctx context.Context, tx *sql.Tx, previous, refreshed domain.Note, update domain.NoteUpdate) ([]domain.Event, error) {
 	scalarChanged := refreshed.Title != previous.Title ||
 		refreshed.Body != previous.Body ||
 		refreshed.Kind != previous.Kind ||
@@ -196,14 +194,14 @@ func noteChangeEvents(ctx context.Context, s *Store, tx *sql.Tx, previous, refre
 		return nil, nil
 	}
 
-	editedEv, err := emitNoteEventTx(ctx, s, tx, refreshed, domain.EventTypeNoteEdited, nil)
+	editedEv, err := s.emitNoteEventTx(ctx, tx, refreshed, domain.EventTypeNoteEdited, nil)
 	if err != nil {
 		return nil, err
 	}
 	events := []domain.Event{editedEv}
 
 	if update.Pinned != nil && *update.Pinned != previous.Pinned {
-		pinnedEv, err := emitNoteEventTx(ctx, s, tx, refreshed, domain.EventTypeNotePinned, map[string]any{
+		pinnedEv, err := s.emitNoteEventTx(ctx, tx, refreshed, domain.EventTypeNotePinned, map[string]any{
 			"pinned": refreshed.Pinned,
 		})
 		if err != nil {
@@ -378,7 +376,7 @@ func (s *Store) DeleteNote(ctx context.Context, id int64) error {
 		return err
 	}
 
-	removedEv, err := emitNoteEventTx(ctx, s, tx, previous, domain.EventTypeNoteRemoved, nil)
+	removedEv, err := s.emitNoteEventTx(ctx, tx, previous, domain.EventTypeNoteRemoved, nil)
 	if err != nil {
 		return err
 	}
@@ -403,9 +401,7 @@ func (s *Store) DeleteNote(ctx context.Context, id int64) error {
 		return err
 	}
 	committed = true
-	if removedEv.EventType != "" {
-		s.publishEvent(ctx, removedEv)
-	}
+	s.publishEvent(ctx, removedEv)
 	return nil
 }
 
@@ -540,7 +536,7 @@ ORDER BY nt.note_id, t.name`, args...)
 // The helper centralises the event-shape contract so a future payload
 // field reaches every emit site (Create / Update / Delete) through one
 // change instead of three drift-prone literals.
-func emitNoteEventTx(ctx context.Context, s *Store, tx *sql.Tx, note domain.Note, eventType string, extra map[string]any) (domain.Event, error) {
+func (s *Store) emitNoteEventTx(ctx context.Context, tx *sql.Tx, note domain.Note, eventType string, extra map[string]any) (domain.Event, error) {
 	payload, err := buildNoteEventPayload(note, extra)
 	if err != nil {
 		return domain.Event{}, err
