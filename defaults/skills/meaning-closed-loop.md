@@ -3,9 +3,9 @@ name: Meaning closed loop
 description: "Verify the delivered work answers the original ask before handing back: restate intent, map it to evidence, surface any scope shift explicitly."
 schema_version: 2
 role_affinity:
-  - engineer
-  - methodical-engineer
-  - code-reviewer
+  - Builder
+  - Reviewer
+  - Scribe
 ---
 A unit of work starts as an intent — a question the requester wants answered or an outcome they want to exist. The loop closes only when the hand-back demonstrates that the delivered change satisfies that exact intent. This skill is the procedure for closing it; the `meaning-closed-loop` law is the obligation to do so.
 
