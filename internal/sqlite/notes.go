@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -23,7 +24,12 @@ func (s *Store) CreateNote(ctx context.Context, projectID int64, kind, title, bo
 	if err != nil {
 		return domain.Note{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
 
 	var projectArg any
 	if projectID > 0 {
@@ -55,8 +61,21 @@ RETURNING id, project_id, kind, title, body, pinned, author_model, created_at, u
 	}
 	note.Tags = attached
 
+	// Emit note.created inside the same tx so a downstream commit
+	// failure leaves the events table consistent with the notes table —
+	// mirrors the tasks.CreateTask pattern. The payload is rebuilt from
+	// the post-INSERT note so scope/tags reflect the persisted state.
+	createdEv, err := emitNoteEventTx(ctx, s, tx, note, domain.EventTypeNoteCreated, nil)
+	if err != nil {
+		return domain.Note{}, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return domain.Note{}, err
+	}
+	committed = true
+	if createdEv.EventType != "" {
+		s.publishEvent(ctx, createdEv)
 	}
 	return note, nil
 }
@@ -71,9 +90,15 @@ func (s *Store) UpdateNote(ctx context.Context, id int64, update domain.NoteUpda
 	if err != nil {
 		return domain.Note{}, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
 
-	if _, err := noteByIDTx(ctx, tx, id); err != nil {
+	previous, err := noteByIDTx(ctx, tx, id)
+	if err != nil {
 		return domain.Note{}, err
 	}
 
@@ -113,8 +138,36 @@ func (s *Store) UpdateNote(ctx context.Context, id int64, update domain.NoteUpda
 	if err != nil {
 		return domain.Note{}, err
 	}
+
+	// Emit note.edited unconditionally — every UpdateNote call stamps
+	// updated_at and a tag-only patch is still a meaningful edit (the
+	// activity feed surfaces tag changes through the post-mutation tag
+	// snapshot in the payload). When the pinned flag actually flipped,
+	// co-emit note.pinned so the toggle has its own activity-feed line
+	// without conflating it with arbitrary field edits.
+	editedEv, err := emitNoteEventTx(ctx, s, tx, refreshed, domain.EventTypeNoteEdited, nil)
+	if err != nil {
+		return domain.Note{}, err
+	}
+	var pinnedEv domain.Event
+	if update.Pinned != nil && *update.Pinned != previous.Pinned {
+		pinnedEv, err = emitNoteEventTx(ctx, s, tx, refreshed, domain.EventTypeNotePinned, map[string]any{
+			"pinned": refreshed.Pinned,
+		})
+		if err != nil {
+			return domain.Note{}, err
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return domain.Note{}, err
+	}
+	committed = true
+	if editedEv.EventType != "" {
+		s.publishEvent(ctx, editedEv)
+	}
+	if pinnedEv.EventType != "" {
+		s.publishEvent(ctx, pinnedEv)
 	}
 	return refreshed, nil
 }
@@ -235,8 +288,34 @@ func (s *Store) ListNotes(ctx context.Context, filter domain.NoteFilter) ([]doma
 
 // DeleteNote hard-deletes a note row. Tags cascade via FK; the FTS
 // triggers from 031 keep notes_fts and search_index consistent.
+// The deletion is wrapped in a tx so the note.removed event can be
+// recorded in the same atomic block — the title/kind/scope/tags
+// snapshot lands in the payload BEFORE the DELETE runs because the
+// row (and the notes_tags pivot rows) are gone by the time the audit
+// consumer reads back.
 func (s *Store) DeleteNote(ctx context.Context, id int64) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM notes WHERE id = ?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	previous, err := noteByIDTx(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+
+	removedEv, err := emitNoteEventTx(ctx, s, tx, previous, domain.EventTypeNoteRemoved, nil)
+	if err != nil {
+		return err
+	}
+
+	res, err := tx.ExecContext(ctx, `DELETE FROM notes WHERE id = ?`, id)
 	if err != nil {
 		return err
 	}
@@ -245,7 +324,19 @@ func (s *Store) DeleteNote(ctx context.Context, id int64) error {
 		return err
 	}
 	if affected == 0 {
+		// noteByIDTx above already rejected missing rows; reaching this
+		// branch implies a concurrent deletion between the SELECT and
+		// the DELETE. Surface the same validation error the original
+		// implementation returned so MCP envelopes stay consistent.
 		return domain.NewError(domain.ErrValidation, "note not found", map[string]any{"note_id": id})
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	if removedEv.EventType != "" {
+		s.publishEvent(ctx, removedEv)
 	}
 	return nil
 }
@@ -367,6 +458,66 @@ ORDER BY nt.note_id, t.name`, args...)
 		result[noteID] = append(result[noteID], tag)
 	}
 	return result, rows.Err()
+}
+
+// emitNoteEventTx persists a note-scoped event row inside the caller's
+// transaction. Composes the canonical {title, kind, scope, tags}
+// payload from the supplied note and merges any extra fields the
+// caller passes (e.g. note.pinned carries `pinned: <bool>`). Returns
+// the persisted row on success, a synthetic envelope when shouldLogEvent
+// rejects the type so subscribers still observe the action, or a
+// zero-value Event + nil error when both branches no-op (currently
+// unreachable — the helper always emits or errors).
+//
+// The helper centralises the event-shape contract so a future payload
+// field reaches every emit site (Create / Update / Delete) through one
+// change instead of three drift-prone literals.
+func emitNoteEventTx(ctx context.Context, s *Store, tx *sql.Tx, note domain.Note, eventType string, extra map[string]any) (domain.Event, error) {
+	payload, err := buildNoteEventPayload(note, extra)
+	if err != nil {
+		return domain.Event{}, err
+	}
+	if !s.shouldLogEvent(eventType) {
+		return domain.Event{
+			EntityType: domain.EventEntityNote,
+			EntityID:   note.ID,
+			ProjectID:  note.ProjectID,
+			EventType:  eventType,
+			Payload:    payload,
+		}, nil
+	}
+	return insertEntityEvent(ctx, tx, domain.EventEntityNote, note.ID, note.ProjectID, eventType, payload)
+}
+
+// buildNoteEventPayload composes the JSON payload every note.* event
+// shares: {title, kind, scope, tags}. Scope is derived from
+// note.ProjectID so consumers don't need to inspect the event row's
+// project_id column. Extra fields layered on top (without overwriting
+// the canonical keys silently — extra wins so note.pinned can carry
+// `pinned: <bool>` on top of the standard shape).
+func buildNoteEventPayload(note domain.Note, extra map[string]any) (string, error) {
+	scope := "project"
+	if note.ProjectID == 0 {
+		scope = "global"
+	}
+	tagNames := make([]string, 0, len(note.Tags))
+	for _, t := range note.Tags {
+		tagNames = append(tagNames, t.Name)
+	}
+	payload := map[string]any{
+		"title": note.Title,
+		"kind":  note.Kind,
+		"scope": scope,
+		"tags":  tagNames,
+	}
+	for k, v := range extra {
+		payload[k] = v
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("marshal note event payload: %w", err)
+	}
+	return string(body), nil
 }
 
 func nullStringIfEmpty(s string) any {
