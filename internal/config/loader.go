@@ -103,18 +103,10 @@ func loadBundle(path string, opts loadBundleOptions) (Bundle, error) {
 	// All* expose the full on-disk catalog with the active subset flagged,
 	// so the Settings view lists every preset's entities (not just the
 	// active wiring) while runtime resolution keeps using the picked slices.
-	bundle.AllSkills = buildCatalog(skills, bundle.Skills,
-		func(s Skill) string { return s.Slug },
-		func(s Skill, a bool) Skill { s.Active = a; return s })
-	bundle.AllLaws = buildCatalog(laws, bundle.Laws,
-		func(l Law) string { return l.Slug },
-		func(l Law, a bool) Law { l.Active = a; return l })
-	bundle.AllPersonas = buildCatalog(personas, bundle.Personas,
-		func(p Persona) string { return p.Slug },
-		func(p Persona, a bool) Persona { p.Active = a; return p })
-	bundle.AllTemplates = buildCatalog(templates, bundle.Templates,
-		func(t TaskTemplate) string { return t.Slug },
-		func(t TaskTemplate, a bool) TaskTemplate { t.Active = a; return t })
+	bundle.AllSkills = catalogSkills(skills, bundle.Skills)
+	bundle.AllLaws = catalogLaws(laws, bundle.Laws)
+	bundle.AllPersonas = catalogPersonas(personas, bundle.Personas)
+	bundle.AllTemplates = catalogTemplates(templates, bundle.Templates)
 
 	bundle.Projects = pickProjects(wired.Projects)
 	bundle.MCPCommands = wired.MCPCommands

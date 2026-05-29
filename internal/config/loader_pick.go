@@ -22,6 +22,34 @@ func buildCatalog[T any](loaded, picked []T, slugOf func(T) string, withActive f
 	return out
 }
 
+// catalogSkills / catalogLaws / catalogPersonas / catalogTemplates bind
+// buildCatalog to each entity type's Slug accessor and Active setter, so the
+// loader call site reads as one named call per kind instead of repeating the
+// slugOf/withActive closures inline.
+func catalogSkills(loaded, picked []Skill) []Skill {
+	return buildCatalog(loaded, picked,
+		func(s Skill) string { return s.Slug },
+		func(s Skill, a bool) Skill { s.Active = a; return s })
+}
+
+func catalogLaws(loaded, picked []Law) []Law {
+	return buildCatalog(loaded, picked,
+		func(l Law) string { return l.Slug },
+		func(l Law, a bool) Law { l.Active = a; return l })
+}
+
+func catalogPersonas(loaded, picked []Persona) []Persona {
+	return buildCatalog(loaded, picked,
+		func(p Persona) string { return p.Slug },
+		func(p Persona, a bool) Persona { p.Active = a; return p })
+}
+
+func catalogTemplates(loaded, picked []TaskTemplate) []TaskTemplate {
+	return buildCatalog(loaded, picked,
+		func(t TaskTemplate) string { return t.Slug },
+		func(t TaskTemplate, a bool) TaskTemplate { t.Active = a; return t })
+}
+
 // pickSkills filters the on-disk skill set against the wiring's allowlist.
 // When the wiring omits the `skills:` slot, every loaded skill is auto-included.
 func pickSkills(loaded []Skill, refs []string) []Skill {

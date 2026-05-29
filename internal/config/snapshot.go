@@ -575,16 +575,24 @@ func (s *Snapshot) Templates() []TaskTemplate {
 	return append([]TaskTemplate(nil), s.templates...)
 }
 
+// activeStamped marks every entry in xs Active via mark and returns the same
+// slice. The All* accessors use it for their fallback (bundles built without
+// a catalog): the active slice IS the active set, so each entry is flagged.
+// xs is already a fresh copy from the active accessor, so the in-place write
+// does not mutate snapshot state.
+func activeStamped[T any](xs []T, mark func(*T)) []T {
+	for i := range xs {
+		mark(&xs[i])
+	}
+	return xs
+}
+
 // AllPersonas returns the full on-disk persona catalog with each entry's
 // Active flag set for the wiring in force. Falls back to the active slice
 // for bundles built before the catalog fields existed. Fresh copy.
 func (s *Snapshot) AllPersonas() []Persona {
 	if s.allPersonas == nil {
-		ps := s.Personas()
-		for i := range ps {
-			ps[i].Active = true
-		}
-		return ps
+		return activeStamped(s.Personas(), func(p *Persona) { p.Active = true })
 	}
 	return append([]Persona(nil), s.allPersonas...)
 }
@@ -593,11 +601,7 @@ func (s *Snapshot) AllPersonas() []Persona {
 // back to the active slice when unset. Fresh copy.
 func (s *Snapshot) AllSkills() []Skill {
 	if s.allSkills == nil {
-		sk := s.Skills()
-		for i := range sk {
-			sk[i].Active = true
-		}
-		return sk
+		return activeStamped(s.Skills(), func(sk *Skill) { sk.Active = true })
 	}
 	return append([]Skill(nil), s.allSkills...)
 }
@@ -606,11 +610,7 @@ func (s *Snapshot) AllSkills() []Skill {
 // to the active slice when unset. Fresh copy.
 func (s *Snapshot) AllLaws() []Law {
 	if s.allLaws == nil {
-		l := s.Laws()
-		for i := range l {
-			l[i].Active = true
-		}
-		return l
+		return activeStamped(s.Laws(), func(l *Law) { l.Active = true })
 	}
 	return append([]Law(nil), s.allLaws...)
 }
@@ -619,11 +619,7 @@ func (s *Snapshot) AllLaws() []Law {
 // Falls back to the active slice when unset. Fresh copy.
 func (s *Snapshot) AllTemplates() []TaskTemplate {
 	if s.allTemplates == nil {
-		t := s.Templates()
-		for i := range t {
-			t[i].Active = true
-		}
-		return t
+		return activeStamped(s.Templates(), func(t *TaskTemplate) { t.Active = true })
 	}
 	return append([]TaskTemplate(nil), s.allTemplates...)
 }
