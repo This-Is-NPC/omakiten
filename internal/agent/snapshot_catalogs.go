@@ -94,12 +94,13 @@ func snapshotPersonaCatalog(snap *config.Snapshot) PersonaCatalog {
 		out := make([]PersonaInfo, 0, len(personas))
 		for _, p := range personas {
 			out = append(out, PersonaInfo{
-				Slug:        p.Slug,
-				Name:        p.Name,
-				Description: p.Description,
-				Body:        p.Body,
-				Skills:      append([]string(nil), p.Skills...),
-				Laws:        append([]string(nil), p.Laws...),
+				Slug:            p.Slug,
+				Name:            p.Name,
+				Description:     p.Description,
+				Body:            p.Body,
+				Skills:          append([]string(nil), p.Skills...),
+				SkillRepertoire: append([]string(nil), p.SkillRepertoire...),
+				Laws:            append([]string(nil), p.Laws...),
 			})
 		}
 		return out
