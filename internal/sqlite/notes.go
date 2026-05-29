@@ -104,10 +104,7 @@ func (s *Store) UpdateNote(ctx context.Context, id int64, update domain.NoteUpda
 	}
 
 	if update.Tags != nil {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM notes_tags WHERE note_id = ?`, id); err != nil {
-			return domain.Note{}, err
-		}
-		if _, err := attachNoteTagsTx(ctx, tx, id, *update.Tags); err != nil {
+		if err := replaceNoteTagsTx(ctx, tx, id, *update.Tags); err != nil {
 			return domain.Note{}, err
 		}
 	}
@@ -297,6 +294,22 @@ WHERE nt.note_id = ? ORDER BY t.name`, id)
 	}
 	note.Tags = tags
 	return note, nil
+}
+
+// replaceNoteTagsTx wipes the notes_tags pivot for the given note and
+// re-attaches the supplied tag set in one tx. Centralises the
+// "replace all tags for a note" semantic so future writers (UpdateNote,
+// any new bulk-tag tool) cannot drift on the DELETE+INSERT sequencing.
+// Passing an empty slice clears every tag without reinserting any —
+// callers signal "leave alone" upstream by skipping the call entirely.
+func replaceNoteTagsTx(ctx context.Context, tx *sql.Tx, noteID int64, tags []domain.Tag) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM notes_tags WHERE note_id = ?`, noteID); err != nil {
+		return err
+	}
+	if _, err := attachNoteTagsTx(ctx, tx, noteID, tags); err != nil {
+		return err
+	}
+	return nil
 }
 
 // attachNoteTagsTx mirrors attachTagsTx for the notes_tags pivot.
