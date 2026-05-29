@@ -22,6 +22,7 @@ import (
 
 	"omakiten/internal/domain"
 	"omakiten/internal/lifecycle"
+	"omakiten/internal/sqlite"
 )
 
 // updateBackupForOpts constructs the pre-swap BackupService through
@@ -135,6 +136,12 @@ type updateClient struct {
 	// proceeds unchanged (back-compat for direct tests that already
 	// vet the swap path without a validator).
 	Validator updateValidatorFn
+	// EventStore is the activity-emit sink the runUpdate flow writes
+	// healthcheck.passed / healthcheck.failed / swap.completed /
+	// swap.aborted rows through (#369 AC 1). nil disables emission;
+	// activity-write failures are swallowed regardless so the swap's
+	// success criterion is the binary state, not the audit row.
+	EventStore healthCheckEventStore
 }
 
 // updateBackupRunner is the narrow port runUpdate uses to invoke the
@@ -178,6 +185,17 @@ func newUpdateCommand(opts *runtimeOptions) *cobra.Command {
 					client.ConfigPath = cfgPath
 				}
 				client.Validator = defaultUpdateValidator
+				// EventStore opens the SQLite store so runUpdate can
+				// append healthcheck.* / swap.* rows to the activity
+				// log (#369). Resolution failure (state-dir
+				// unwritable etc.) is non-fatal — emission becomes a
+				// no-op and the swap path remains intact.
+				if dbPath, dbErr := opts.resolvedDBPath(); dbErr == nil {
+					if store, openErr := sqlite.Open(ctx, dbPath); openErr == nil {
+						defer store.Close()
+						client.EventStore = store
+					}
+				}
 				return runUpdate(ctx, client, updateInputs{Check: check, Yes: yes})
 			})
 		},
@@ -326,6 +344,20 @@ func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, e
 					firstKind = k
 				}
 			}
+			emitHealthCheckEvent(ctx, c.EventStore, domain.EventTypeUpdateHealthCheckFailed, map[string]any{
+				"from_version":               current,
+				"to_version":                 latest,
+				"staged_path":                stagedPath,
+				"validator_error_count":      len(result.Errors),
+				"validator_first_error_kind": firstKind,
+				"validator_raw_excerpt":      string(result.RawOutput),
+			})
+			emitHealthCheckEvent(ctx, c.EventStore, domain.EventTypeUpdateSwapAborted, map[string]any{
+				"from_version":          current,
+				"to_version":            latest,
+				"reason":                "config_validation_failed",
+				"validator_error_count": len(result.Errors),
+			})
 			return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.config_validation_failed_fmt"), len(result.Errors), firstKind), map[string]any{
 				"reason":        "config_validation_failed",
 				"current":       current,
@@ -336,6 +368,12 @@ func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, e
 				"validator_raw": string(result.RawOutput),
 			})
 		}
+		emitHealthCheckEvent(ctx, c.EventStore, domain.EventTypeUpdateHealthCheckPassed, map[string]any{
+			"from_version": current,
+			"to_version":   latest,
+			"binary_path":  c.BinaryPath,
+			"staged_path":  stagedPath,
+		})
 	}
 
 	// Pre-swap snapshot: write a recovery .db under StateDir/backups
@@ -370,6 +408,13 @@ func runUpdate(ctx context.Context, c updateClient, inputs updateInputs) (any, e
 		return nil, domain.NewError(domain.ErrUpdateFailed, fmt.Sprintf(t("cli.update.err.swap_binary"), c.BinaryPath, err.Error()), nil)
 	}
 	swapped = true
+
+	emitHealthCheckEvent(ctx, c.EventStore, domain.EventTypeUpdateSwapCompleted, map[string]any{
+		"from_version": current,
+		"to_version":   latest,
+		"binary_path":  c.BinaryPath,
+		"backup_path":  backupPath,
+	})
 
 	return map[string]any{
 		"code":        "update_completed",

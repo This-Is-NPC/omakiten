@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"omakiten/internal/domain"
+	"omakiten/internal/sqlite"
 )
 
 // TestRunTUI_BrokenConfigReturnsStructuredEnvelope pins #365 AC 5: a
@@ -65,5 +67,47 @@ func TestRunTUI_BrokenConfigReturnsStructuredEnvelope(t *testing.T) {
 	}
 	if msg, _ := entry["message"].(string); !strings.Contains(strings.ToLower(msg), "version") {
 		t.Fatalf("entry.message = %q want substring 'version'", msg)
+	}
+}
+
+// TestRunTUI_BrokenConfigEmitsTUIHealthCheckFailed pins #369 AC 4: when
+// `okt tui` aborts on a config-invalid boot, the tui.healthcheck.failed
+// event lands in the activity log so the operator can audit the
+// failure later (`okt logs list --kind tui.healthcheck.failed`).
+func TestRunTUI_BrokenConfigEmitsTUIHealthCheckFailed(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "db.sqlite")
+	cfgDir := filepath.Join(tmp, "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir cfgDir: %v", err)
+	}
+	cfgPath := filepath.Join(cfgDir, "omakase.yaml")
+	if err := os.WriteFile(cfgPath, []byte("version: 2\n"), 0o644); err != nil {
+		t.Fatalf("write broken yaml: %v", err)
+	}
+
+	cmd := NewRootCommand("test")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--db", dbPath, "--config", cfgPath, "tui"})
+	if err := cmd.Execute(); err == nil {
+		t.Fatalf("expected coded error on broken config, out=%s", out.String())
+	}
+
+	store, err := sqlite.Open(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("reopen sqlite: %v", err)
+	}
+	defer store.Close()
+	rows, err := store.ListRecentEvents(context.Background(), domain.EventTypeTUIHealthCheckFailed, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("tui.healthcheck.failed rows = %d want 1", len(rows))
+	}
+	if !strings.Contains(rows[0].Payload, "validator_first_error_kind") {
+		t.Errorf("payload missing validator_first_error_kind: %s", rows[0].Payload)
 	}
 }

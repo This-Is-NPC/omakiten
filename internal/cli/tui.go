@@ -18,6 +18,7 @@ import (
 	"omakiten/internal/configstore"
 	"omakiten/internal/domain"
 	hookactions "omakiten/internal/hooks/actions"
+	"omakiten/internal/sqlite"
 	"omakiten/internal/token"
 	"omakiten/internal/tui"
 )
@@ -35,6 +36,7 @@ func newTUICommand(opts *runtimeOptions, version string) *cobra.Command {
 func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 	rt, err := opts.open(ctx, true)
 	if err != nil {
+		emitTUIHealthCheckFailedFromOpenError(ctx, opts, err)
 		return err
 	}
 	defer rt.close()
@@ -177,6 +179,42 @@ func writeOktCDPath(root string) error {
 		return nil
 	}
 	return os.WriteFile(target, []byte(root+"\n"), 0o600)
+}
+
+// emitTUIHealthCheckFailedFromOpenError records a tui.healthcheck.failed
+// row when opts.open returns a config-invalid coded error (#369 AC 4).
+// The on-disk store is opened from scratch because opts.open closes
+// the store before returning the wrapping error; the helper is
+// best-effort and the failure surface is unaffected when the activity
+// path is unavailable.
+func emitTUIHealthCheckFailedFromOpenError(ctx context.Context, opts *runtimeOptions, openErr error) {
+	var coded *domain.CodedError
+	if !errors.As(openErr, &coded) || coded.Code != domain.ErrConfigInvalid {
+		return
+	}
+	dbPath, dbErr := opts.resolvedDBPath()
+	if dbErr != nil {
+		return
+	}
+	store, storeErr := sqlite.Open(ctx, dbPath)
+	if storeErr != nil {
+		return
+	}
+	defer store.Close()
+
+	payload := map[string]any{}
+	if cfgPath, _ := coded.Details["path"].(string); cfgPath != "" {
+		payload["config_path"] = cfgPath
+	}
+	if errs, ok := coded.Details["errors"].([]map[string]any); ok && len(errs) > 0 {
+		payload["validator_error_count"] = len(errs)
+		if k, _ := errs[0]["kind"].(string); k != "" {
+			payload["validator_first_error_kind"] = k
+		}
+	} else {
+		payload["validator_error_count"] = 1
+	}
+	emitHealthCheckEvent(ctx, store, domain.EventTypeTUIHealthCheckFailed, payload)
 }
 
 func oktCDPath() string {
