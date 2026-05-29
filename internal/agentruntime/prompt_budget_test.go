@@ -471,8 +471,8 @@ func assertGuidingOrchestrator(t *testing.T, name string, resp agent.ResolveComm
 func TestCW4OktStartSmartEntry(t *testing.T) {
 	resp := resolveForSmoke(t, "okt-start")
 	assertGuidingOrchestrator(t, "okt-start", resp, []string{
-		// reads notes (handoff + recap) so it resumes the prior thread
-		"notes.list",
+		// reads scope-aware comments (handoff + recap) so it resumes the prior thread
+		"comments.list",
 		"handoff",
 		"recap",
 		// reads plan + board state
@@ -569,9 +569,9 @@ func TestCW4OktAuditSpawnsSubagents(t *testing.T) {
 }
 
 // TestCW4OktPauseHandoffNote is the AC#5 smoke gate: okt-pause snapshots the
-// current work across git + active task + plan and produces a handoff note via
-// the notes MCP (notes.create, kind=handoff — the CreateNote type handoff
-// intent). It guides the handoff quality and points at the next session's
+// current work across git + active task + plan and persists a project-scoped
+// handoff via the scope-aware comments surface (comments.add, scope=project,
+// kind=handoff). It guides the handoff quality and points at the next session's
 // resume. Pinned below.
 func TestCW4OktPauseHandoffNote(t *testing.T) {
 	resp := resolveForSmoke(t, "okt-pause")
@@ -581,10 +581,10 @@ func TestCW4OktPauseHandoffNote(t *testing.T) {
 		"active task",
 		"task.activity.list",
 		"plans.continue",
-		// produces a handoff note via the notes MCP (CreateNote type handoff)
-		"notes.create",
+		// persists a project-scoped handoff via the comments surface
+		"comments.add",
 		"kind=handoff",
-		"persist the handoff note",
+		"persist the handoff",
 		// guides the handoff quality (next-move + coaching)
 		"coach the handoff quality",
 		"single next action",
