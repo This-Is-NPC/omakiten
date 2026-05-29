@@ -617,11 +617,16 @@ func (s *Service) ResolveCommand(_ context.Context, input ResolveCommandInput) (
 			resp.Persona = &info
 			// Command-level skills (schema v2) win over the persona's full
 			// repertoire: a themed command ships only the minimal subset it
-			// declares. Presets that have not wired command-level skills fall
-			// back to the persona repertoire so they keep rendering as before.
+			// declares. Commands that omit command-level skills fall back to
+			// the persona's directly-wired Skills (v1), then to its
+			// SkillRepertoire (v2) so a schema-v2 persona whose pool lives in
+			// SkillRepertoire still renders its skills.
 			slugs := spec.Skills
 			if len(slugs) == 0 {
 				slugs = persona.Skills
+			}
+			if len(slugs) == 0 {
+				slugs = persona.SkillRepertoire
 			}
 			resp.Skills = pickSkills(slugs, skills)
 		}

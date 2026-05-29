@@ -6,12 +6,17 @@ package agent
 // protocol- and config-neutral.
 
 type PersonaInfo struct {
-	Slug        string   `json:"slug"`
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Body        string   `json:"body,omitempty"`
-	Skills      []string `json:"skills,omitempty"`
-	Laws        []string `json:"laws,omitempty"`
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Body        string `json:"body,omitempty"`
+	// Skills is the legacy v1 directly-wired skill list. SkillRepertoire
+	// (schema v2) is the persona's full skill pool from which a command may
+	// select a subset. A command that declares no command-level skills falls
+	// back to Skills (v1), then SkillRepertoire (v2).
+	Skills          []string `json:"skills,omitempty"`
+	SkillRepertoire []string `json:"skill_repertoire,omitempty"`
+	Laws            []string `json:"laws,omitempty"`
 }
 
 type SkillInfo struct {

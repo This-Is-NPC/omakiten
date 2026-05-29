@@ -310,6 +310,42 @@ func TestResolveCommandRendersPersonaBody(t *testing.T) {
 	}
 }
 
+// TestResolveCommandFallsBackToSkillRepertoire pins the schema-v2 fallback:
+// when a command declares no command-level skills AND the bound persona has an
+// empty v1 Skills list but a populated v2 SkillRepertoire, the resolver must
+// render the repertoire skills under `## Skills`. Before SkillRepertoire was
+// carried on PersonaInfo this rendered an empty section silently.
+func TestResolveCommandFallsBackToSkillRepertoire(t *testing.T) {
+	fixture := newAgentFixture(t)
+	wireBindingFixturesWithPersona(t, fixture, PersonaInfo{
+		Slug:            "backend-agent",
+		Name:            "Backend Agent",
+		Description:     "Backend-focused agent.",
+		Skills:          nil, // v2 persona: no directly-wired v1 skills
+		SkillRepertoire: []string{"go", "sqlite"},
+		Laws:            []string{"project-scope-only"},
+	})
+
+	// okt-task-implement declares no command-level skills in the fixture, so
+	// resolution must walk the fallback chain into SkillRepertoire.
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
+	if err != nil {
+		t.Fatalf("ResolveCommand() error = %v", err)
+	}
+	if len(resp.Skills) != 2 {
+		t.Fatalf("resolved skills = %d, want 2 from SkillRepertoire fallback: %+v", len(resp.Skills), resp.Skills)
+	}
+	if resp.Skills[0].Slug != "go" || resp.Skills[1].Slug != "sqlite" {
+		t.Fatalf("resolved skill order = [%s %s], want [go sqlite]", resp.Skills[0].Slug, resp.Skills[1].Slug)
+	}
+	if !strings.Contains(resp.Markdown, "## Skills") {
+		t.Fatalf("rendered markdown missing ## Skills section:\n%s", resp.Markdown)
+	}
+	if !strings.Contains(resp.Markdown, "**Go**") {
+		t.Fatalf("rendered markdown missing repertoire skill Go:\n%s", resp.Markdown)
+	}
+}
+
 // TestCommandActionsArePersonaAgnostic guards the architectural separation
 // between command action text and persona body across every `okt-*` prompt.
 // Every command's `mcp_commands.<cmd>.persona` is configurable, so no action
