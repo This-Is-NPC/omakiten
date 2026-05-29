@@ -96,7 +96,14 @@ func TestResolveCommandEmptyName(t *testing.T) {
 // where to go after the current step and the workflow becomes guesswork.
 func TestResolveCommandRestHandoffsPresent(t *testing.T) {
 	expectedHandoffs := map[string][]string{
-		"okt":                {"okt-project-resume", "okt-task-imagine"},
+		// CW4 (#375): `okt` is the bare shortcut to `okt-start`, so both land on
+		// the smart-entry playbook whose next-move handoffs name the actual
+		// commands to run from the current state (continue a task / a plan, or
+		// shape new work).
+		"okt":                {"okt-task-continue", "okt-plan-continue", "okt-shape"},
+		"okt-start":          {"okt-task-continue", "okt-plan-continue", "okt-shape"},
+		"okt-shape":          {"okt-plan-create", "okt-run"},
+		"okt-audit":          {"okt-task-implement", "okt-pause"},
 		"okt-task-imagine":   {"okt-task-create"},
 		"okt-task-create":    {"comment-selfbranch"},
 		"okt-project-resume": {"okt-task-continue"},
