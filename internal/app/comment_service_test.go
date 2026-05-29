@@ -6,6 +6,7 @@ import (
 
 	"omakiten/internal/domain"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
 func TestCommentServiceAdd(t *testing.T) {
@@ -143,6 +144,74 @@ func TestCommentServiceAddScoped(t *testing.T) {
 	// bad author rejected.
 	if _, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{Scope: domain.CommentScopeProject, Body: "x", AuthorType: "robot"}); err == nil {
 		t.Fatal("AddScoped(bad author) = nil error, want validation")
+	}
+}
+
+// TestCommentServiceScopeAwareGuards proves the scope-keyed comment edit
+// policy from omakiten #389: a task comment is blocked in a bucket where
+// comment.edit resolves to false, while a project comment is allowed because
+// defaults.comment.project.edit=true — resolved task-lessly with no
+// GetTaskByID call. Backward-compat (flat config = task scope) is covered by
+// the resolver unit tests; here the fixture uses the explicit per-scope shape.
+func TestCommentServiceScopeAwareGuards(t *testing.T) {
+	ctx := context.Background()
+
+	store := snapstore.Open(t, t.TempDir()+"/scopes.db")
+	defer func() { _ = store.Close() }()
+	bundle, _ := testfixtures.LoadBundle(t, "policy_comment_scopes.yaml")
+	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() = %v", err)
+	}
+
+	workflow := NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+	service := NewCommentServiceWithWorkflow(store, workflow, store.Snapshot())
+
+	// task comment in the backlog bucket (permissions.comment.edit=false).
+	taskSvc := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+	task, err := taskSvc.Add(ctx, project.Context(), "T", "", "", "backlog")
+	if err != nil {
+		t.Fatalf("Add(task) = %v", err)
+	}
+	taskComment, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
+		Scope: domain.CommentScopeTask, TaskID: task.ID, Body: "task note",
+	})
+	if err != nil {
+		t.Fatalf("AddScoped(task) = %v", err)
+	}
+
+	// task comment edit must be blocked by the bucket policy.
+	if _, err := service.Edit(ctx, project.Context(), taskComment.ID, "edited", nil); err == nil {
+		t.Fatal("Edit(task comment) = nil error, want guard violation")
+	} else {
+		assertCodedError(t, err, domain.ErrGuardViolation)
+	}
+
+	// project comment edit must be allowed (defaults.comment.project.edit=true).
+	projComment, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
+		Scope: domain.CommentScopeProject, Body: "project note",
+	})
+	if err != nil {
+		t.Fatalf("AddScoped(project) = %v", err)
+	}
+	if _, err := service.Edit(ctx, project.Context(), projComment.ID, "edited project", nil); err != nil {
+		t.Fatalf("Edit(project comment) = %v, want allowed", err)
+	}
+
+	// universal comment edit must be blocked (defaults.comment.universal.edit=false).
+	uniComment, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
+		Scope: domain.CommentScopeUniversal, Body: "universal note",
+	})
+	if err != nil {
+		t.Fatalf("AddScoped(universal) = %v", err)
+	}
+	if _, err := service.Edit(ctx, project.Context(), uniComment.ID, "edited universal", nil); err == nil {
+		t.Fatal("Edit(universal comment) = nil error, want guard violation")
+	} else {
+		assertCodedError(t, err, domain.ErrGuardViolation)
 	}
 }
 

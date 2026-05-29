@@ -132,6 +132,94 @@ func TestResolveCommentPermission(t *testing.T) {
 	}
 }
 
+func TestResolveCommentScopePermission(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		defaults *WorkflowDefaults
+		scope    string
+		op       string
+		want     bool
+	}{
+		// task scope, flat back-compat: comment: {edit:false} resolves as task.
+		"task flat edit false (back-compat)": {
+			defaults: &WorkflowDefaults{Comment: &EntityPermission{Edit: boolPtr(false)}},
+			scope:    CommentScopeTask, op: commentOpEdit, want: false,
+		},
+		"task flat delete defaults true (no rule)": {
+			defaults: &WorkflowDefaults{Comment: &EntityPermission{Edit: boolPtr(false)}},
+			scope:    CommentScopeTask, op: commentOpDelete, want: true,
+		},
+		// task scope inherits defaults.task when comment is silent.
+		"task inherits defaults.task delete": {
+			defaults: &WorkflowDefaults{Task: &EntityPermission{Delete: boolPtr(false)}},
+			scope:    CommentScopeTask, op: commentOpDelete, want: false,
+		},
+		// task scope explicit comment.task sub-block beats flat + defaults.task.
+		"task sub-block beats flat": {
+			defaults: &WorkflowDefaults{Comment: &EntityPermission{
+				Edit: boolPtr(false),
+				Task: &EntityPermission{Edit: boolPtr(true)},
+			}},
+			scope: CommentScopeTask, op: commentOpEdit, want: true,
+		},
+		// project scope: explicit allow.
+		"project edit allowed": {
+			defaults: &WorkflowDefaults{Comment: &EntityPermission{
+				Project: &EntityPermission{Edit: boolPtr(true), Delete: boolPtr(false)},
+			}},
+			scope: CommentScopeProject, op: commentOpEdit, want: true,
+		},
+		"project delete denied": {
+			defaults: &WorkflowDefaults{Comment: &EntityPermission{
+				Project: &EntityPermission{Edit: boolPtr(true), Delete: boolPtr(false)},
+			}},
+			scope: CommentScopeProject, op: commentOpDelete, want: false,
+		},
+		// project scope has no task inheritance — defaults.task is ignored.
+		"project ignores defaults.task": {
+			defaults: &WorkflowDefaults{Task: &EntityPermission{Edit: boolPtr(false)}},
+			scope:    CommentScopeProject, op: commentOpEdit, want: true,
+		},
+		// universal scope.
+		"universal edit denied": {
+			defaults: &WorkflowDefaults{Comment: &EntityPermission{
+				Universal: &EntityPermission{Edit: boolPtr(false)},
+			}},
+			scope: CommentScopeUniversal, op: commentOpEdit, want: false,
+		},
+		"universal delete implicit true": {
+			defaults: &WorkflowDefaults{Comment: &EntityPermission{
+				Universal: &EntityPermission{Edit: boolPtr(false)},
+			}},
+			scope: CommentScopeUniversal, op: commentOpDelete, want: true,
+		},
+		// no defaults block — implicit allow everywhere.
+		"nil defaults task edit": {
+			defaults: nil, scope: CommentScopeTask, op: commentOpEdit, want: true,
+		},
+		"nil defaults project delete": {
+			defaults: nil, scope: CommentScopeProject, op: commentOpDelete, want: true,
+		},
+		"nil defaults universal edit": {
+			defaults: nil, scope: CommentScopeUniversal, op: commentOpEdit, want: true,
+		},
+		// empty scope falls back to task chain.
+		"empty scope = task": {
+			defaults: &WorkflowDefaults{Comment: &EntityPermission{Edit: boolPtr(false)}},
+			scope:    "", op: commentOpEdit, want: false,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if got := ResolveCommentScopePermission(tc.defaults, tc.scope, tc.op); got != tc.want {
+				t.Fatalf("ResolveCommentScopePermission(%v, %q, %q) = %v, want %v", tc.defaults, tc.scope, tc.op, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestResolveBoolDirectly(t *testing.T) {
 	t.Parallel()
 

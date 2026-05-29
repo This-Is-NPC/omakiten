@@ -201,25 +201,8 @@ func (s *CommentService) Edit(ctx context.Context, project domain.ProjectContext
 		return
 	}
 
-	if s.workflow != nil {
-		var allowed bool
-		var hint string
-		allowed, hint, err = s.workflow.ResolveBucketPermissions(ctx, project, existing.TaskID, EntityComment, PermissionEdit)
-		if err != nil {
-			return
-		}
-		if !allowed {
-			taskRow, taskSnap, taskErr := s.workflow.ResolveTaskSnap(ctx, project, existing.TaskID)
-			if taskErr != nil {
-				err = taskErr
-				return
-			}
-			s.workflow.Evaluator().EmitViolatedForTask(ctx, project.ID, taskRow, taskSnap,
-				GuardOperationCommentEdit, GuardRulePermissions, hint,
-				map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "entity": EntityComment, "operation": PermissionEdit})
-			err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "hint": hint, "entity": EntityComment, "operation": PermissionEdit})
-			return
-		}
+	if err = s.enforceCommentPermission(ctx, project, existing, commentID, PermissionEdit, GuardOperationCommentEdit); err != nil {
+		return
 	}
 
 	tags := make([]domain.Tag, 0, len(rawTags))
@@ -259,29 +242,69 @@ func (s *CommentService) Remove(ctx context.Context, project domain.ProjectConte
 		return
 	}
 
-	if s.workflow != nil {
-		var allowed bool
-		var hint string
-		allowed, hint, err = s.workflow.ResolveBucketPermissions(ctx, project, existing.TaskID, EntityComment, PermissionDelete)
-		if err != nil {
-			return
-		}
-		if !allowed {
-			taskRow, taskSnap, taskErr := s.workflow.ResolveTaskSnap(ctx, project, existing.TaskID)
-			if taskErr != nil {
-				err = taskErr
-				return
-			}
-			s.workflow.Evaluator().EmitViolatedForTask(ctx, project.ID, taskRow, taskSnap,
-				GuardOperationCommentDelete, GuardRulePermissions, hint,
-				map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "entity": EntityComment, "operation": PermissionDelete})
-			err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "hint": hint, "entity": EntityComment, "operation": PermissionDelete})
-			return
-		}
+	if err = s.enforceCommentPermission(ctx, project, existing, commentID, PermissionDelete, GuardOperationCommentDelete); err != nil {
+		return
 	}
 
 	event, err = s.repo.DeleteComment(ctx, project.ID, commentID)
 	return
+}
+
+// enforceCommentPermission is the scope-aware guard shared by Edit and Remove.
+// It is a no-op when no workflow service is wired (read-only composition).
+//
+//   - task scope:      resolved against the comment's current bucket via
+//     ResolveBucketPermissions (uses the comment's TaskID). A denial emits a
+//     task-scoped guard.violated and returns ErrGuardViolation.
+//   - project scope:   resolved task-lessly against the workflow defaults
+//     (defaults.comment.project.<op>). A denial emits a project-scoped
+//     guard.violated and returns ErrGuardViolation.
+//   - universal scope: resolved task-lessly (defaults.comment.universal.<op>).
+//     A denial emits a global (entity-less) guard.violated and returns
+//     ErrGuardViolation.
+//
+// operation is PermissionEdit/PermissionDelete; guardOp is the canonical
+// GuardOperationComment* payload value.
+func (s *CommentService) enforceCommentPermission(ctx context.Context, project domain.ProjectContext, existing domain.Comment, commentID int64, operation, guardOp string) error {
+	if s.workflow == nil {
+		return nil
+	}
+
+	scope := existing.Scope
+	if scope == "" {
+		scope = domain.CommentScopeTask
+	}
+
+	if scope == domain.CommentScopeTask {
+		allowed, hint, err := s.workflow.ResolveBucketPermissions(ctx, project, existing.TaskID, EntityComment, operation)
+		if err != nil {
+			return err
+		}
+		if allowed {
+			return nil
+		}
+		taskRow, taskSnap, taskErr := s.workflow.ResolveTaskSnap(ctx, project, existing.TaskID)
+		if taskErr != nil {
+			return taskErr
+		}
+		s.workflow.Evaluator().EmitViolatedForTask(ctx, project.ID, taskRow, taskSnap,
+			guardOp, GuardRulePermissions, hint,
+			map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "entity": EntityComment, "operation": operation})
+		return domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "hint": hint, "entity": EntityComment, "operation": operation})
+	}
+
+	// project / universal: no task, resolve against workflow defaults only.
+	allowed, hint := s.workflow.ResolveCommentScopePermission(scope, operation)
+	if allowed {
+		return nil
+	}
+	target := map[string]any{"comment_id": commentID, "entity": EntityComment, "operation": operation, "scope": scope}
+	if scope == domain.CommentScopeProject {
+		s.workflow.Evaluator().EmitViolatedForProject(ctx, project.ID, guardOp, GuardRulePermissions, hint, target)
+	} else {
+		s.workflow.Evaluator().EmitViolated(ctx, project.ID, domain.EventEntityUniversal, 0, guardOp, GuardRulePermissions, hint, target)
+	}
+	return domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"comment_id": commentID, "hint": hint, "entity": EntityComment, "operation": operation, "scope": scope})
 }
 
 func (s *CommentService) List(ctx context.Context, project domain.ProjectContext, taskID int64) (comments []domain.Comment, err error) {
