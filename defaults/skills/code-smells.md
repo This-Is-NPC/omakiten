@@ -1,6 +1,10 @@
 ---
 name: Code smells
 description: "Fowler/Beck smell catalog — long function, large class, feature envy, primitive obsession, shotgun surgery, divergent change."
+schema_version: 2
+role_affinity:
+  - Reviewer
+  - Builder
 ---
 Smells are pattern-matching shortcuts. Each one points to a likely refactoring without prescribing the fix.
 

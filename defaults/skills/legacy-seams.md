@@ -1,6 +1,10 @@
 ---
 name: Legacy seams
 description: "Feathers 'Working Effectively with Legacy Code' (2004) — seams, characterization tests, Sprout Method/Class."
+schema_version: 2
+role_affinity:
+  - Builder
+  - Tester
 ---
 Legacy code = code without tests (Feathers). Refactoring it safely requires finding a *seam* — a place where you can change behaviour without editing in place.
 
