@@ -537,8 +537,21 @@ func defaultUpdateValidator(ctx context.Context, binaryPath, configPath string) 
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	runErr := cmd.Run()
+	// Mirror the validator subprocess's stderr to the parent, capped
+	// so a misbehaving validator that floods stderr with multi-MB
+	// output cannot block the parse or hide the JSON envelope behind
+	// noise. The first 64 KiB carries the warnings that motivated
+	// the split; anything larger is a runaway and warrants the
+	// truncation marker.
 	if stderr.Len() > 0 {
-		_, _ = os.Stderr.Write(stderr.Bytes())
+		const stderrMirrorCap = 64 << 10
+		buf := stderr.Bytes()
+		if len(buf) > stderrMirrorCap {
+			_, _ = os.Stderr.Write(buf[:stderrMirrorCap])
+			fmt.Fprintf(os.Stderr, "\n[okt update: validator stderr truncated after %d bytes; %d more bytes suppressed]\n", stderrMirrorCap, len(buf)-stderrMirrorCap)
+		} else {
+			_, _ = os.Stderr.Write(buf)
+		}
 	}
 
 	var exitErr *exec.ExitError
