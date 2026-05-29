@@ -958,7 +958,7 @@ func logsListSchema() map[string]any {
 	props := selectorProperties()
 	props["categories"] = map[string]any{
 		"type":        "array",
-		"items":       map[string]any{"type": "string", "enum": []string{"task", "comment", "plan", "tag-dep", "guard", "audit", "hook", "tool_call", "trick", "domain", "note"}},
+		"items":       map[string]any{"type": "string", "enum": []string{"task", "comment", "plan", "tag-dep", "guard", "audit", "hook", "tool_call", "trick", "domain", "note", "update", "tui"}},
 		"description": "Optional list of EventCategory values to include. Empty/omitted = every category. Example: [\"tool_call\"] reproduces the legacy activity-log filter; [\"task\", \"comment\"] narrows to task lifecycle and comments.",
 	}
 	props["since"] = stringSchema("Optional time floor as a Go duration (\"24h\", \"30m\") or N-day shorthand (\"7d\", \"30d\"). Omitted → use the project's configured Logs window (config.views.logs.window_days, 30 days by default).")

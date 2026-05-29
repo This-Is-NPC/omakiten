@@ -100,6 +100,8 @@ var logsFilterPartition = map[LogsFilterMode][]domain.EventCategory{
 		domain.EventCategoryAudit,
 		domain.EventCategoryGuard,
 		domain.EventCategoryDomain,
+		domain.EventCategoryUpdate,
+		domain.EventCategoryTUI,
 	},
 }
 

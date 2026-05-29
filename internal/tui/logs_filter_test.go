@@ -101,12 +101,14 @@ func TestLogsFilterCategoriesMapping(t *testing.T) {
 			},
 		},
 		{
-			name: "system → audit / guard / domain",
+			name: "system → audit / guard / domain / update / tui",
 			mode: LogsFilterSystem,
 			want: []domain.EventCategory{
 				domain.EventCategoryAudit,
 				domain.EventCategoryGuard,
 				domain.EventCategoryDomain,
+				domain.EventCategoryUpdate,
+				domain.EventCategoryTUI,
 			},
 		},
 	}

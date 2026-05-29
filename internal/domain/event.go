@@ -315,6 +315,42 @@ const (
 	// (project_id IS NULL) so the entity_type alone does not imply a
 	// project — consumers must read project_id from the event row.
 	EventEntityNote = "note"
+
+	// EventTypeUpdateHealthCheckPassed fires from runUpdate after the
+	// staged-binary validator returns OK, before the swap. The event
+	// confirms the pre-swap health check passed and the swap is about
+	// to fire; the post-swap pin is EventTypeUpdateSwapCompleted.
+	// EntityType=system, Payload={from_version, to_version,
+	// binary_path, staged_path}.
+	EventTypeUpdateHealthCheckPassed = "update.healthcheck.passed"
+	// EventTypeUpdateHealthCheckFailed fires from runUpdate when the
+	// staged-binary validator returns a non-zero exit. Carries the
+	// classified error kinds so operators can audit which schema
+	// requirement the user's bundle failed to satisfy.
+	// EntityType=system, Payload={from_version, to_version,
+	// staged_path, validator_error_count, validator_first_error_kind,
+	// validator_raw_excerpt}.
+	EventTypeUpdateHealthCheckFailed = "update.healthcheck.failed"
+	// EventTypeUpdateSwapCompleted fires from runUpdate after the atomic
+	// rename of the staged binary over the live path succeeds. Pairs
+	// with EventTypeUpdateHealthCheckPassed; the validator passes once
+	// per upgrade, the swap may fail downstream for non-config reasons
+	// (rename EACCES, etc) so the two events are recorded separately.
+	// EntityType=system, Payload={from_version, to_version,
+	// binary_path, backup_path}.
+	EventTypeUpdateSwapCompleted = "update.swap.completed"
+	// EventTypeUpdateSwapAborted fires from runUpdate when the abort is
+	// downstream of a health-check failure. EntityType=system,
+	// Payload={from_version, to_version, reason, validator_error_count}.
+	// `reason` is always "config_validation_failed" for this trigger.
+	EventTypeUpdateSwapAborted = "update.swap.aborted"
+	// EventTypeTUIHealthCheckFailed fires from runTUI when the
+	// boot-time bundle load fails. The TUI passing case is the
+	// steady-state path and intentionally not audited (matching the
+	// tag.added/tag.removed silencing pattern). EntityType=system,
+	// Payload={binary_path, config_path, validator_error_count,
+	// validator_first_error_kind}.
+	EventTypeTUIHealthCheckFailed = "tui.healthcheck.failed"
 )
 
 // Event is the row shape of the unified events log. Different event_types
