@@ -120,6 +120,73 @@ func TestUpdateNoteEmitsEdited(t *testing.T) {
 	}
 }
 
+// TestUpdateNoteNoOpDoesNotEmitEdited locks the no-op suppression
+// contract: a patch that touches no field — neither explicitly (empty
+// NoteUpdate{}) nor effectively (Title pointer set to the same value;
+// Tags pointer set to the same set) — emits zero note.edited rows and
+// leaves updated_at untouched. The previous implementation always
+// stamped updated_at + fired note.edited; the activity feed surfaced
+// phantom edits whenever a caller "rewrote" a field with its current
+// value.
+func TestUpdateNoteNoOpDoesNotEmitEdited(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct {
+		name    string
+		mutate  func(prev domain.Note) domain.NoteUpdate
+		seedTag []domain.Tag
+	}{
+		{
+			name:   "empty patch",
+			mutate: func(domain.Note) domain.NoteUpdate { return domain.NoteUpdate{} },
+		},
+		{
+			name: "title pointer matches previous",
+			mutate: func(prev domain.Note) domain.NoteUpdate {
+				title := prev.Title
+				return domain.NoteUpdate{Title: &title}
+			},
+		},
+		{
+			name:    "tags pointer matches current set",
+			seedTag: []domain.Tag{{Name: "arch", Label: "Arch"}},
+			mutate: func(prev domain.Note) domain.NoteUpdate {
+				// Re-pass the same tags so attachNoteTagsTx writes
+				// the same rows it already wrote on Create.
+				same := append([]domain.Tag(nil), prev.Tags...)
+				return domain.NoteUpdate{Tags: &same}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := openTestStore(t)
+			project := mustUpsertProject(t, store, "P", "p", "/work/p")
+			note, err := store.CreateNote(ctx, project.ID, "handoff", "T1", "body", false, "", tc.seedTag)
+			if err != nil {
+				t.Fatalf("CreateNote: %v", err)
+			}
+
+			refreshed, err := store.UpdateNote(ctx, note.ID, tc.mutate(note))
+			if err != nil {
+				t.Fatalf("UpdateNote: %v", err)
+			}
+
+			edited, err := store.ListRecentEvents(ctx, domain.EventTypeNoteEdited, 10)
+			if err != nil {
+				t.Fatalf("ListRecentEvents: %v", err)
+			}
+			if len(edited) != 0 {
+				t.Fatalf("note.edited rows = %d, want 0 (no-op patch)", len(edited))
+			}
+			if refreshed.UpdatedAt != note.UpdatedAt {
+				t.Fatalf("updated_at = %q, want unchanged %q", refreshed.UpdatedAt, note.UpdatedAt)
+			}
+		})
+	}
+}
+
 // TestUpdateNotePinToggleCoEmitsPinned locks the dual-emit contract:
 // a patch that flips `pinned` produces BOTH a note.edited row (any
 // field change is an edit) and a note.pinned row (the toggle itself).

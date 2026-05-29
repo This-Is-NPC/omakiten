@@ -102,33 +102,51 @@ func (s *Store) UpdateNote(ctx context.Context, id int64, update domain.NoteUpda
 		return domain.Note{}, err
 	}
 
-	sets := []string{"updated_at = CURRENT_TIMESTAMP"}
+	sets := []string{}
 	args := []any{}
-	if update.Title != nil {
+	if update.Title != nil && *update.Title != previous.Title {
 		sets = append(sets, "title = ?")
 		args = append(args, *update.Title)
 	}
-	if update.Body != nil {
+	if update.Body != nil && *update.Body != previous.Body {
 		sets = append(sets, "body = ?")
 		args = append(args, *update.Body)
 	}
-	if update.Kind != nil {
+	if update.Kind != nil && *update.Kind != previous.Kind {
 		sets = append(sets, "kind = ?")
 		args = append(args, *update.Kind)
 	}
-	if update.Pinned != nil {
+	if update.Pinned != nil && *update.Pinned != previous.Pinned {
 		sets = append(sets, "pinned = ?")
 		args = append(args, boolToInt(*update.Pinned))
 	}
 
-	// Always run the UPDATE (even when only tags change) so updated_at
-	// reflects the patch — tag replacement is a meaningful edit too.
-	args = append(args, id)
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`UPDATE notes SET %s WHERE id = ?`, strings.Join(sets, ", ")), args...); err != nil {
-		return domain.Note{}, mapNoteSQLiteError(err)
+	tagsChanged := update.Tags != nil && !sameTagSet(previous.Tags, *update.Tags)
+
+	// No-op short-circuit: when no scalar field differs AND the tag
+	// patch (if any) matches the current set, skip the UPDATE and the
+	// note.edited emit entirely. Bumping updated_at for a no-op is
+	// itself a phantom side effect; the activity feed must reflect
+	// genuine edits only.
+	if len(sets) == 0 && !tagsChanged {
+		if err := tx.Commit(); err != nil {
+			return domain.Note{}, err
+		}
+		committed = true
+		return previous, nil
 	}
 
-	if update.Tags != nil {
+	if len(sets) > 0 || tagsChanged {
+		// Always stamp updated_at when something changes — including the
+		// tag-only path, since tag replacement is a meaningful edit too.
+		sets = append([]string{"updated_at = CURRENT_TIMESTAMP"}, sets...)
+		args = append(args, id)
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`UPDATE notes SET %s WHERE id = ?`, strings.Join(sets, ", ")), args...); err != nil {
+			return domain.Note{}, mapNoteSQLiteError(err)
+		}
+	}
+
+	if tagsChanged {
 		if err := replaceNoteTagsTx(ctx, tx, id, *update.Tags); err != nil {
 			return domain.Note{}, err
 		}
@@ -139,37 +157,87 @@ func (s *Store) UpdateNote(ctx context.Context, id int64, update domain.NoteUpda
 		return domain.Note{}, err
 	}
 
-	// Emit note.edited unconditionally — every UpdateNote call stamps
-	// updated_at and a tag-only patch is still a meaningful edit (the
-	// activity feed surfaces tag changes through the post-mutation tag
-	// snapshot in the payload). When the pinned flag actually flipped,
-	// co-emit note.pinned so the toggle has its own activity-feed line
-	// without conflating it with arbitrary field edits.
-	editedEv, err := emitNoteEventTx(ctx, s, tx, refreshed, domain.EventTypeNoteEdited, nil)
+	events, err := noteChangeEvents(ctx, s, tx, previous, refreshed, update)
 	if err != nil {
 		return domain.Note{}, err
-	}
-	var pinnedEv domain.Event
-	if update.Pinned != nil && *update.Pinned != previous.Pinned {
-		pinnedEv, err = emitNoteEventTx(ctx, s, tx, refreshed, domain.EventTypeNotePinned, map[string]any{
-			"pinned": refreshed.Pinned,
-		})
-		if err != nil {
-			return domain.Note{}, err
-		}
 	}
 
 	if err := tx.Commit(); err != nil {
 		return domain.Note{}, err
 	}
 	committed = true
-	if editedEv.EventType != "" {
-		s.publishEvent(ctx, editedEv)
-	}
-	if pinnedEv.EventType != "" {
-		s.publishEvent(ctx, pinnedEv)
+	for _, ev := range events {
+		s.publishEvent(ctx, ev)
 	}
 	return refreshed, nil
+}
+
+// noteChangeEvents computes the event slice an UpdateNote call must
+// emit by comparing previous vs refreshed (post-UPDATE) snapshots
+// against the requested patch. Returns an empty slice when the patch
+// resolved to a no-op so the publish loop is naturally empty — caller
+// (UpdateNote) short-circuits the UPDATE before reaching here when
+// the whole patch is a no-op, but this helper still defends against
+// the all-fields-match-previous shape by emitting nothing.
+//
+// Co-emits note.pinned alongside note.edited when the pinned flag
+// actually flipped so the activity feed gets a dedicated toggle line
+// without conflating it with arbitrary field edits. The pinned event
+// only fires for a real flip, never for a same-value re-write — that
+// guard is what TestUpdateNoteSamePinnedDoesNotEmitPinned locks.
+func noteChangeEvents(ctx context.Context, s *Store, tx *sql.Tx, previous, refreshed domain.Note, update domain.NoteUpdate) ([]domain.Event, error) {
+	scalarChanged := refreshed.Title != previous.Title ||
+		refreshed.Body != previous.Body ||
+		refreshed.Kind != previous.Kind ||
+		refreshed.Pinned != previous.Pinned
+	tagsChanged := update.Tags != nil && !sameTagSet(previous.Tags, refreshed.Tags)
+
+	if !scalarChanged && !tagsChanged {
+		return nil, nil
+	}
+
+	editedEv, err := emitNoteEventTx(ctx, s, tx, refreshed, domain.EventTypeNoteEdited, nil)
+	if err != nil {
+		return nil, err
+	}
+	events := []domain.Event{editedEv}
+
+	if update.Pinned != nil && *update.Pinned != previous.Pinned {
+		pinnedEv, err := emitNoteEventTx(ctx, s, tx, refreshed, domain.EventTypeNotePinned, map[string]any{
+			"pinned": refreshed.Pinned,
+		})
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, pinnedEv)
+	}
+
+	return events, nil
+}
+
+// sameTagSet reports whether two tag slices carry the same {name,label}
+// pairs, irrespective of order. Used by UpdateNote to suppress phantom
+// note.edited emits when a caller re-passes the current tag set.
+func sameTagSet(a, b []domain.Tag) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	if len(a) == 0 {
+		return true
+	}
+	type key struct{ name, label string }
+	counts := make(map[key]int, len(a))
+	for _, t := range a {
+		counts[key{t.Name, t.Label}]++
+	}
+	for _, t := range b {
+		k := key{t.Name, t.Label}
+		counts[k]--
+		if counts[k] < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // NoteByID returns a single note row plus its tags. Missing rows
