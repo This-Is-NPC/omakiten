@@ -25,35 +25,36 @@ import (
 // by the sum of its skills' description/body lines; budgets re-sized to the new
 // default-kit footprint with ~30% headroom.
 var promptBudgets = map[string]int{
-	"okt":           9700,
-	"okt-imagine":   7300,
-	"okt-create":    10800,
-	"okt-resume":    9700,
-	"okt-continue":  9800,
-	"okt-implement": 15100,
-	"okt-document":  8800,
-	"okt-config":    9200,
-	"okt-commit":    7200,
-	"okt-review":    17100,
-	"okt-check":     8700,
-	// Notes/handoff v1 commands (#363). Budgets sized against the
-	// embedded omakase default kit with ~30% headroom. The handoff
-	// command carries the longest action body (workflow/wave edge cases)
-	// plus the `project-scope-only` + `no-praise-pad` laws and the
-	// `note-handoff` template metadata. Standup/recap are lighter — no
-	// per-command laws, single-template binding.
-	"okt-handoff":   10600,
-	"okt-note":      9500,
-	"okt-standup":   10800,
-	"okt-recap":     10600,
+	"okt":                9700,
+	"okt-task-imagine":   7300,
+	"okt-task-create":    10800,
+	"okt-project-resume": 9700,
+	"okt-task-continue":  9800,
+	"okt-task-implement": 15100,
+	"okt-task-document":  8800,
+	"okt-config":         9200,
+	"okt-task-commit":    7200,
+	"okt-task-review":    17100,
+	"okt-task-check":     8700,
+	// Notes/handoff commands (#363), rescoped to the v2 prefix surface
+	// (#373). Budgets sized against the embedded omakase default kit with
+	// ~30% headroom. okt-pause (former handoff) carries the longest action
+	// body (workflow/wave edge cases) plus the `project-scope-only` +
+	// `no-praise-pad` laws and the `note-handoff` template metadata.
+	// okt-note-recap folds in the former standup digest: its action body is
+	// the longest of the note family and it binds both note-recap and
+	// note-standup-digest template metadata, so its budget is raised.
+	"okt-pause":      10600,
+	"okt-note-free":  9500,
+	"okt-note-recap": 11000,
 }
 
 // TestTemplateBoundCommandsCarryFetchHint guards the JIT contract for
 // templates against the embedded default kit: every `okt-*` prompt that
 // binds at least one template must surface the `templates.show` fetch hint
 // somewhere in its rendered Markdown — typically via the action text
-// (e.g. `okt-create`, `okt-config`) or the persona body (engineer's implement
-// loop covers `okt-implement`). Without the hint, the agent has no
+// (e.g. `okt-task-create`, `okt-config`) or the persona body (engineer's
+// implement loop covers `okt-task-implement`). Without the hint, the agent has no
 // in-prompt anchor for the materialization step, which would defeat the JIT
 // pattern.
 func TestTemplateBoundCommandsCarryFetchHint(t *testing.T) {

@@ -335,7 +335,7 @@ func TestAdapterReadResource(t *testing.T) {
 func TestAdapterGetPrompt(t *testing.T) {
 	ctx := context.Background()
 	var adapter *Adapter // nil adapter exercises the fallback path
-	prompts := []string{"okt", "okt-create", "okt-continue", "okt-resume", "okt-imagine", "okt-implement"}
+	prompts := []string{"okt", "okt-task-create", "okt-task-continue", "okt-project-resume", "okt-task-imagine", "okt-task-implement"}
 	for _, name := range prompts {
 		result, err := adapter.GetPrompt(ctx, name, nil)
 		if err != nil {

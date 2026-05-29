@@ -50,6 +50,6 @@ func (s *Service) ResumeProject(ctx context.Context, input ResumeProjectInput) (
 		BlockedWork:    blockedWork(tasks, dependencies, s.registry),
 		Dependencies:   dependencySummaries(dependencies),
 		RecentContext:  contextSnippets(entries, s.settings.RecentContextLimit),
-		NextStepPrompt: "Choose a likely next task, inspect blocked work, or ask for `/okt-continue #<id>` context.",
+		NextStepPrompt: "Choose a likely next task, inspect blocked work, or ask for `/okt-task-continue #<id>` context.",
 	}, nil
 }
