@@ -55,33 +55,38 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 			return err
 		}
 	}
-	// Boot-time health check (#365 AC 5). MigrateLayout +
-	// EnsureDefaultFiles already ran inside opts.open above; this
-	// pass reruns LoadBundle (ValidateBundle is invoked internally
-	// at loader.go:116) so the bubbletea model is only constructed
-	// when the bundle is loadable + valid under the running binary.
-	// Failures surface as the same structured envelope `okt config
-	// validate --migrate` emits, so the user sees the per-error
-	// kind + suggested_command instead of a bare "config is
-	// invalid" string.
+	// Boot-time health check (#365 AC 5). `opts.open(_, true)`
+	// already ran MigrateLayout + EnsureDefaultFiles + LoadBundle +
+	// ValidateBundle and wrapped any failure with the structured
+	// envelope at root.go:299. The bundle handle below is consumed
+	// only for the active-theme snapshot guard — if `opts.open`
+	// returned a valid runtime, the bundle is loadable, so a fresh
+	// LoadBundle here would be redundant.
 	bundle, err := config.LoadBundle(rt.configPath)
 	if err != nil {
-		errCount := 1
+		// Defensive: unreachable in the current `opts.open` flow,
+		// kept as guard against future open() refactors that might
+		// elide the in-line LoadBundle. Surfaces the same envelope
+		// the wrap-in-open path emits so the user sees one shape.
 		firstKind := classifyValidationError(err)
 		return domain.NewError(
 			domain.ErrConfigInvalid,
-			fmt.Sprintf(t("cli.tui.err.config_validation_failed_fmt"), errCount, firstKind),
+			fmt.Sprintf(t("cli.tui.err.config_validation_failed_fmt"), 1, firstKind),
 			buildValidateFailureDetails(rt.configPath, err, nil),
 		)
 	}
 	snap := rt.activeSnapshot()
 	if err := snap.ThemeError(); err != nil {
+		// Theme snapshot failures aren't caught by `opts.open`'s
+		// LoadBundle path — the snapshot is built from the loaded
+		// bundle, and an unresolvable theme slug surfaces here as
+		// a distinct boot guard. Reuse the same envelope shape so
+		// the user sees consistent kind + remediation copy.
 		warnings := extractBundleWarnings(bundle)
-		errCount := 1
 		firstKind := classifyValidationError(err)
 		return domain.NewError(
 			domain.ErrConfigInvalid,
-			fmt.Sprintf(t("cli.tui.err.config_validation_failed_fmt"), errCount, firstKind),
+			fmt.Sprintf(t("cli.tui.err.config_validation_failed_fmt"), 1, firstKind),
 			buildValidateFailureDetails(rt.configPath, err, warnings),
 		)
 	}
