@@ -218,6 +218,10 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 		return err
 	}
 
+	if err := validateMCPCommandSkillSubset(bundle); err != nil {
+		return err
+	}
+
 	return validateWorkflows(bundle.Workflows, bundle.Config.Workflow.Active)
 }
 
@@ -245,6 +249,65 @@ func validateMCPCommands(bundle Bundle, personaSet, lawSet, templateSet map[stri
 					return fmt.Errorf("mcp_commands.%s: law %q is in both laws and laws_disabled", name, slug)
 				}
 			}
+		}
+	}
+	return nil
+}
+
+// validateMCPCommandSkillSubset enforces the schema-v2 rule (task #268):
+// every slug in mcp_commands[name].skills must be a member of the bound
+// persona's skill_repertoire. A command can only draw from skills the
+// persona is equipped with. The error names the offending command, the
+// persona, and the missing skills so the author can fix the wiring in one
+// pass.
+//
+// Commands with no skills, or that bind no persona, are skipped — there is
+// nothing to constrain. The reserved `global` key carries no persona/skills
+// and is likewise skipped. Iteration order is sorted so the surfaced error
+// is deterministic across runs.
+func validateMCPCommandSkillSubset(bundle Bundle) error {
+	if len(bundle.MCPCommands) == 0 {
+		return nil
+	}
+	repertoire := map[string]map[string]struct{}{}
+	for _, persona := range bundle.Personas {
+		set := make(map[string]struct{}, len(persona.SkillRepertoire))
+		for _, slug := range persona.SkillRepertoire {
+			set[slug] = struct{}{}
+		}
+		repertoire[persona.Slug] = set
+	}
+
+	names := make([]string, 0, len(bundle.MCPCommands))
+	for name := range bundle.MCPCommands {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		if name == MCPCommandsGlobalKey {
+			continue
+		}
+		spec := bundle.MCPCommands[name]
+		if len(spec.Skills) == 0 {
+			continue
+		}
+		personaSlug := strings.TrimSpace(spec.Persona)
+		if personaSlug == "" {
+			continue
+		}
+		pool := repertoire[personaSlug]
+		var missing []string
+		for _, slug := range spec.Skills {
+			if _, ok := pool[slug]; !ok {
+				missing = append(missing, slug)
+			}
+		}
+		if len(missing) > 0 {
+			return fmt.Errorf(
+				"mcp_commands.%s.skills: %s not in persona %q skill_repertoire",
+				name, strings.Join(missing, ", "), personaSlug,
+			)
 		}
 	}
 	return nil
