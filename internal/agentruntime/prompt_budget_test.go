@@ -97,8 +97,8 @@ var promptBudgets = map[string]int{
 // templates against the embedded default kit: every `okt-*` prompt that
 // binds at least one template must surface the `templates.show` fetch hint
 // somewhere in its rendered Markdown — typically via the action text
-// (e.g. `okt-task-create`, `okt-config`) or the persona body (engineer's
-// implement loop covers `okt-task-implement`). Without the hint, the agent has no
+// (e.g. `okt-task-create`, `okt-config`) or the persona body (the bound
+// persona's implement loop covers `okt-task-implement`). Without the hint, the agent has no
 // in-prompt anchor for the materialization step, which would defeat the JIT
 // pattern.
 func TestTemplateBoundCommandsCarryFetchHint(t *testing.T) {

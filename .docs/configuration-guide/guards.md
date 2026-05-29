@@ -326,13 +326,13 @@ mcp_commands:
     laws:
       - template-fidelity        # applies to every okt-* command
   okt-create:
-    persona: engineer
+    persona: builder
     templates: [user-story]
   okt-implement:
-    persona: engineer
+    persona: builder
     templates: [pull-request]
   okt-imagine:
-    persona: engineer
+    persona: builder
     laws_disabled:               # opt out of the global law for discovery
       - template-fidelity
 ```
@@ -350,7 +350,7 @@ laws:
 ```
 
 ```yaml
-# personas/engineer.md
+# personas/builder.md
 ---
 name: Backend Agent
 laws:

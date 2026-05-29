@@ -511,7 +511,7 @@ File-backed under `laws/<slug>.md`. `internal/cli/law.go`. Frontmatter: `name?`,
 
 ```sh
 okt law add -k workflow-enforced -n "Workflow Enforced" -s error
-okt law list --scope persona --persona engineer
+okt law list --scope persona --persona builder
 ```
 
 ---
@@ -527,8 +527,8 @@ File-backed under `personas/<slug>.md`. `internal/cli/persona.go`. Wiring (skill
 - `okt persona add` / `okt persona edit SLUG` — flag-driven rewrites. On `add`, `--name` is required and `--key` defaults to `Slugify(--name)`. Skill wiring uses either `--skill` / `-s` (numeric id, repeatable) or `--skill-slug` (slug, repeatable). On `edit`, the submitted skill set **replaces** the existing one entirely.
 
 ```sh
-okt persona add -n "Engineer" --skill-slug go --skill-slug sqlite
-okt persona edit engineer --skill-slug go --skill-slug cli   # replaces full skill set
+okt persona add -n "Builder" --skill-slug go --skill-slug sqlite
+okt persona edit builder --skill-slug go --skill-slug cli   # replaces full skill set
 ```
 
 ---

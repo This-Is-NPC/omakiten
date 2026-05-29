@@ -8,11 +8,11 @@ import (
 func bundleWithCommandSkills(repertoire, cmdSkills []string) Bundle {
 	return Bundle{
 		Personas: []Persona{
-			{Slug: "engineer", SchemaVersion: 2, SkillRepertoire: repertoire},
+			{Slug: "builder", SchemaVersion: 2, SkillRepertoire: repertoire},
 		},
 		MCPCommands: map[string]MCPCommandSpec{
 			MCPCommandsGlobalKey: {Laws: []string{"template-fidelity"}},
-			"okt-implement":      {Persona: "engineer", Skills: cmdSkills},
+			"okt-implement":      {Persona: "builder", Skills: cmdSkills},
 		},
 	}
 }
@@ -36,7 +36,7 @@ func TestSkillSubsetRejectsSuperset(t *testing.T) {
 		t.Fatalf("validateMCPCommandSkillSubset() = nil, want rejection")
 	}
 	msg := err.Error()
-	for _, want := range []string{"okt-implement", "engineer", "rust", "cobol"} {
+	for _, want := range []string{"okt-implement", "builder", "rust", "cobol"} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("error %q missing %q", msg, want)
 		}

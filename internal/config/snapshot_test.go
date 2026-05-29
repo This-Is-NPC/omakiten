@@ -50,7 +50,7 @@ func TestSnapshotIsImmutableUnderBundleMutation(t *testing.T) {
 // reader.
 func TestSnapshotReturnsFreshSlices(t *testing.T) {
 	bundle := newTwoBucketBundle("alpha", "beta")
-	bundle.Personas = []Persona{{Slug: "engineer", Name: "Engineer"}}
+	bundle.Personas = []Persona{{Slug: "builder", Name: "Builder"}}
 	snap := BuildSnapshot(bundle)
 
 	first := snap.Personas()
@@ -60,8 +60,8 @@ func TestSnapshotReturnsFreshSlices(t *testing.T) {
 	first[0] = Persona{Slug: "OVERWRITTEN"}
 
 	second := snap.Personas()
-	if second[0].Slug != "engineer" {
-		t.Fatalf("mutation of caller-returned slice leaked into snapshot: got %q, want %q", second[0].Slug, "engineer")
+	if second[0].Slug != "builder" {
+		t.Fatalf("mutation of caller-returned slice leaked into snapshot: got %q, want %q", second[0].Slug, "builder")
 	}
 }
 

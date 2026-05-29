@@ -99,7 +99,7 @@ Seven questions an interviewer asks before agreeing to file work:
 | **How** | Approach or constraint shaping execution. |
 | **How much** | Budget — effort, money, or time-box. |
 
-Used by the `product-owner` persona inside `okt-imagine` to surface gaps before work is filed. Vague answers ("the user", "soon", "important") are not accepted — the gap is named and the conversation continues.
+Used by the product persona inside `okt-imagine` to surface gaps before work is filed. Vague answers ("the user", "soon", "important") are not accepted — the gap is named and the conversation continues.
 
 ## <a id="smart"></a>SMART — Success criteria
 

@@ -320,7 +320,6 @@ func TestResolveCommandRendersPersonaBody(t *testing.T) {
 func TestCommandActionsArePersonaAgnostic(t *testing.T) {
 	leakedPhrases := []string{
 		"Take the role",
-		"engineer",
 		"product owner",
 		"documentation curator",
 		"honoring every law",
