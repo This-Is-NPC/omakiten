@@ -218,6 +218,55 @@ func (s *CommentService) Edit(ctx context.Context, project domain.ProjectContext
 	return
 }
 
+// EditScoped applies the full scope-agnostic patch (body/title/kind/pinned +
+// tags) through repo.EditComment after enforcing the per-bucket comment.edit
+// policy. It mirrors Edit's validation and permission path but carries the
+// note-like columns introduced for the scoped comment surface.
+func (s *CommentService) EditScoped(ctx context.Context, project domain.ProjectContext, commentID int64, edit domain.CommentEdit, rawTags []string) (comment domain.Comment, err error) {
+	finish := activity.Track(ctx, "app.CommentService.EditScoped", project, map[string]any{"comment_id": commentID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	if commentID <= 0 {
+		err = domain.NewError(domain.ErrValidation, "comment id must be positive", nil)
+		return
+	}
+	edit.Body = strings.TrimSpace(edit.Body)
+	if edit.Body == "" {
+		err = domain.NewError(domain.ErrValidation, "comment body is required", nil)
+		return
+	}
+
+	existing, err := s.repo.CommentByID(ctx, project.ID, commentID)
+	if err != nil {
+		return
+	}
+
+	if err = s.enforceCommentPermission(ctx, project, existing, commentID, PermissionEdit, GuardOperationCommentEdit); err != nil {
+		return
+	}
+
+	tags := make([]domain.Tag, 0, len(rawTags))
+	for _, raw := range rawTags {
+		name := NormalizeTagName(raw, s.snap.Synonyms())
+		if name == "" {
+			continue
+		}
+		tags = append(tags, domain.Tag{Name: name, Label: TagLabel(raw)})
+	}
+	edit.Tags = tags
+
+	comment, _, err = s.repo.EditComment(ctx, project.ID, commentID, edit)
+	return
+}
+
 // Remove hard-deletes a comment after enforcing the per-bucket comment.delete
 // policy. Emits comment.removed with the body snapshot for audit.
 func (s *CommentService) Remove(ctx context.Context, project domain.ProjectContext, commentID int64) (event domain.Event, err error) {
