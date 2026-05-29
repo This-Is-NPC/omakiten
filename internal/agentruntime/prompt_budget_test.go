@@ -10,79 +10,87 @@ import (
 )
 
 // promptBudgets caps each `okt-*` prompt's resolved markdown size in bytes,
-// measured against the embedded default kit. Values track the current default
-// flow with ~30% headroom so legitimate growth is still allowed; once a prompt
-// breaks past its budget the test fails and forces a deliberate decision —
-// trim the entity bodies, add a new optimization (e.g. JIT persona body), or
-// raise the budget with a justification in the same commit.
+// measured against the embedded default kit. It is a regression guardrail
+// against silent prompt bloat: once a prompt breaks past its budget the test
+// fails and forces a deliberate decision — trim the entity bodies, add a new
+// optimization (e.g. JIT template bodies), or raise the budget with a
+// justification in the same commit.
 //
-// Numbers come from `mise run mcp:prompts` output against `dev_env/`. Update
-// alongside any change that grows a prompt past its current budget.
+// CALIBRATION CONVENTION (the single rule this file follows):
 //
-// Recalibrated in CW1 (#372): skills now render bullet-with-body (one bullet
-// per skill carrying its body, or its description when body-less) instead of a
-// single inline `## Skills — A, B` name list. Every skill-bearing prompt grew
-// by the sum of its skills' description/body lines; budgets re-sized to the new
-// default-kit footprint with ~30% headroom.
+//	budget = round-up-to-nearest-100( rendered_bytes × 1.3 )
 //
-// Recalibrated post-W2 (#270): the 33 default skills gained full procedural
-// bodies, so every skill-bearing command prompt grew again — the prior budgets
-// were calibrated against body-less skill stubs. Budgets here reflect the
-// new full-body-skill footprint: each is the command's current rendered size
-// × ~1.3 (~30% headroom), rounded to the nearest 100, matching this file's
-// convention. This is EXPECTED growth from the locked bullet-with-body design,
-// not a regression. CW8 (#379) re-tightens these once theming rewires each
-// command to a minimal skill subset rather than the full default repertoire.
-// Recalibrated for omakase theming (#274 / W4): omakase became the first preset
-// to wire command-level `skills:` — each command now selects a minimal SUBSET of
-// its bound persona's skill_repertoire (2-4 skills) instead of letting the full
-// repertoire flow through persona wiring. Every prompt shrank accordingly, so
-// each budget below is the command's current rendered size × ~1.3 (~30%
-// headroom), rounded to the nearest 100, matching this file's convention. This
-// is the tightening the prior CW3-CW7 comments deferred to "#379"; #379 still
-// owns the formal final pass across all presets, this wave just keeps the
-// omakase kit honest and green now that its skill footprint is minimal.
+// where `rendered_bytes` is the command's current resolved-markdown size
+// against the canonical omakase kit, as emitted by `mise run mcp:prompts`. The
+// ×1.3 factor leaves ~30% headroom so legitimate authoring growth (a longer
+// persona body, an added law) is absorbed without a budget edit, while a
+// runaway regression (a full skill repertoire leaking back in, a duplicated
+// section) still trips the gate. Every value below is derived by this formula —
+// no hand-tuned exceptions — so re-running the calibration after any kit change
+// is mechanical: render, multiply, round, paste.
+//
+// History: skills render bullet-with-body since CW1 (#372); the 33 default
+// skills gained full procedural bodies in W2 (#270); omakase wired command-level
+// minimal skill SUBSETS (2-4 skills per command instead of the full persona
+// repertoire) in W4 (#274). #379 (CW8) is the formal final pass: it freezes the
+// full 40-command surface — orchestrators (okt, okt-start, okt-shape, okt-run,
+// okt-audit, okt-pause), system (okt-help, okt-config, okt-skill), and the
+// granular okt-task-* / okt-plan-* / okt-project-* / okt-note-* set.
+//
+// CW8 also closed a wiring gap that the W4 theming had left dangling: the
+// per-command `skills:` subset authored in the omakase YAML was validated but
+// never reached the resolver, so ResolveCommand fell back to the v2 personas'
+// (empty) legacy `skills` field and rendered NO `## Skills` section at all. With
+// the subset now flowing through (MCPCommandBinding.Skills →
+// pickSkills), every command's declared skills render bullet-with-body inline —
+// which is exactly the footprint these budgets must cover. That is why every
+// skill-bearing command roughly doubled here versus the pre-fix numbers: the
+// skill bodies are now actually present. Each value below is the post-fix
+// rendered size × 1.3, rounded up to the nearest 100, against the canonical
+// omakase kit. Cross-preset note: omakase is the only preset wiring command-level
+// skill subsets today; others still flow the persona repertoire, but the gate
+// runs against the omakase kit. When W6 themes the rest, re-run the formula.
 var promptBudgets = map[string]int{
-	"okt":                   4800,
-	"okt-task-imagine":      4000,
-	"okt-task-create":       8000,
-	"okt-project-resume":    3100,
-	"okt-task-continue":     2500,
-	"okt-task-implement":    8000,
-	"okt-task-document":     3300,
-	"okt-config":            4200,
-	"okt-task-commit":       5100,
-	"okt-task-review":       5300,
-	"okt-task-check":        4400,
-	"okt-pause":             5900,
-	"okt-note-free":         3900,
-	"okt-note-recap":        5100,
-	"okt-task-resume":       2800,
-	"okt-task-research":     2600,
-	"okt-task-validate":     2600,
-	"okt-task-requirements": 4500,
-	"okt-task-prioritize":   5100,
-	"okt-task-decompose":    4400,
-	"okt-task-estimate":     4300,
-	"okt-task-design":       2700,
-	"okt-task-self-review":  3800,
-	"okt-task-refactor":     4300,
-	"okt-task-quality":      4200,
-	"okt-task-secure":       4100,
-	"okt-task-debrief":      4100,
-	"okt-plan-create":       4500,
-	"okt-plan-show":         4500,
-	"okt-plan-continue":     4500,
-	"okt-plan-claim":        4600,
-	"okt-project-continue":  3500,
-	"okt-note-list":         3500,
-	"okt-note-show":         3400,
-	"okt-run":               7000,
-	"okt-start":             4800,
-	"okt-shape":             6500,
-	"okt-audit":             6400,
-	"okt-help":              5800,
-	"okt-skill":             4500,
+	"okt":                   7100,
+	"okt-help":              8300,
+	"okt-start":             9300,
+	"okt-shape":             10400,
+	"okt-run":               12100,
+	"okt-task-imagine":      8500,
+	"okt-task-research":     4900,
+	"okt-task-validate":     4800,
+	"okt-task-requirements": 9000,
+	"okt-task-prioritize":   9200,
+	"okt-task-create":       14100,
+	"okt-task-decompose":    6500,
+	"okt-task-estimate":     6500,
+	"okt-task-design":       4500,
+	"okt-project-resume":    5300,
+	"okt-project-continue":  5800,
+	"okt-plan-create":       7000,
+	"okt-plan-show":         7000,
+	"okt-plan-continue":     7000,
+	"okt-plan-claim":        7100,
+	"okt-task-resume":       5400,
+	"okt-task-continue":     5100,
+	"okt-task-implement":    17400,
+	"okt-task-self-review":  6300,
+	"okt-task-refactor":     6600,
+	"okt-task-document":     8300,
+	"okt-task-debrief":      6700,
+	"okt-config":            6800,
+	"okt-skill":             7000,
+	"okt-task-commit":       6300,
+	"okt-task-review":       10000,
+	"okt-task-secure":       6800,
+	"okt-task-check":        7800,
+	"okt-task-quality":      6700,
+	"okt-audit":             9200,
+	"okt-pause":             9100,
+	"okt-note-free":         6500,
+	"okt-note-recap":        11200,
+	"okt-note-list":         6100,
+	"okt-note-show":         5900,
 }
 
 // TestTemplateBoundCommandsCarryFetchHint guards the JIT contract for
@@ -122,32 +130,46 @@ func TestTemplateBoundCommandsCarryFetchHint(t *testing.T) {
 	}
 }
 
-// cw5GranularTaskCommands is the granular okt-task-* surface registered in
-// CW5 (#376): the 12 new lifecycle commands plus the new cold-start nav.
-var cw5GranularTaskCommands = []string{
-	"okt-task-research",
-	"okt-task-validate",
-	"okt-task-requirements",
-	"okt-task-prioritize",
-	"okt-task-decompose",
-	"okt-task-estimate",
-	"okt-task-design",
-	"okt-task-resume",
-	"okt-task-self-review",
-	"okt-task-refactor",
-	"okt-task-quality",
-	"okt-task-secure",
-	"okt-task-debrief",
+// orchestratorCommands is the bare-verb orchestrator tier of the v2 surface.
+// The full-surface smoke gate asserts these additionally carry their
+// guidance/suggestion block (a non-empty Action that names a downstream
+// command), on top of the per-command section contract every command must meet.
+var orchestratorCommands = map[string]struct{}{
+	"okt":       {},
+	"okt-start": {},
+	"okt-shape": {},
+	"okt-run":   {},
+	"okt-audit": {},
+	"okt-pause": {},
 }
 
-// TestCW5GranularCommandsRenderNonEmpty is the AC#5 smoke gate: every new
-// granular okt-task-* command must resolve against the embedded default kit
-// with a non-empty Persona section (the role slot is wired) and a non-empty
-// Action section (the action text lands), and must surface a description in
-// prompts/list metadata. A command that registers in CommandNames() but is
-// not wired in the preset YAML would render with no Persona section, failing
-// here.
-func TestCW5GranularCommandsRenderNonEmpty(t *testing.T) {
+// TestFullCommandSurfaceSmoke is the AC#2 closeout gate: it renders EVERY
+// command in agent.CommandNames() against the canonical omakase kit and asserts
+// each one carries its expected sections. This is the consolidation of the
+// per-wave CW3-CW7 subset gates (the prior TestCW5/TestCW6 *RenderNonEmpty
+// tests) into one coherent full-surface contract so a command that registers
+// but is left unwired — or a renderer regression that drops a section — fails
+// here regardless of which wave introduced it.
+//
+// Every command must surface:
+//   - a wired Persona section (role slot bound in the preset YAML),
+//   - a non-empty Action section + non-empty Action field,
+//   - a prompts/list description,
+//   - a Laws section (the global law floor reaches every command),
+//   - bullet-with-body Skills (the command's declared skill subset renders,
+//     each as a `- **Name** — body` bullet — the W4 theming contract),
+//   - a Templates section iff the command binds templates (and when it does,
+//     the templates.show JIT fetch hint is present — see
+//     TestTemplateBoundCommandsCarryFetchHint for the dedicated guard).
+//
+// Orchestrators additionally assert their guidance/suggestion block: the Action
+// must name at least one downstream `okt-` command so the director hands off.
+//
+// Deeper per-command contracts (the guiding-playbook phrase pins for the
+// orchestrators, the system-tier pins, the okt-run delegation playbook, and the
+// distinct-pair assertions) live in the dedicated tests below; this gate is the
+// breadth pass that guarantees no command in the surface renders empty.
+func TestFullCommandSurfaceSmoke(t *testing.T) {
 	ctx := context.Background()
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "data", "omakiten.db")
@@ -159,23 +181,94 @@ func TestCW5GranularCommandsRenderNonEmpty(t *testing.T) {
 	}
 	defer func() { _ = rt.Close() }()
 
-	for _, name := range cw5GranularTaskCommands {
+	names := agent.CommandNames()
+	if len(names) != 40 {
+		t.Fatalf("expected the v2 surface to carry 40 commands, got %d — update this gate and the docs if the surface changed deliberately", len(names))
+	}
+
+	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
 			resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
 			if err != nil {
 				t.Fatalf("ResolveCommand(%s) error = %v", name, err)
 			}
+
+			// Persona — role slot wired.
 			if resp.Persona == nil {
 				t.Fatalf("%s resolved with no persona — the role slot is not wired in the preset YAML", name)
 			}
 			if !strings.Contains(resp.Markdown, "## Persona — ") {
 				t.Fatalf("%s markdown missing non-empty Persona section:\n%s", name, resp.Markdown)
 			}
+
+			// Action — non-empty section + field.
 			if !strings.Contains(resp.Markdown, "## Action\n") || strings.TrimSpace(resp.Action) == "" {
 				t.Fatalf("%s markdown missing non-empty Action section:\n%s", name, resp.Markdown)
 			}
+
+			// prompts/list description.
 			if strings.TrimSpace(agent.CommandDescription(name)) == "" {
 				t.Fatalf("%s carries no prompts/list description", name)
+			}
+
+			// Laws — the global floor reaches every command.
+			if !strings.Contains(resp.Markdown, "## Laws\n") || len(resp.Laws) == 0 {
+				t.Fatalf("%s markdown missing non-empty Laws section (the global law floor should reach every command):\n%s", name, resp.Markdown)
+			}
+
+			// Skills — bullet-with-body. Every v2 command declares a minimal
+			// skill subset; each skill must render as a `- **Name** — body`
+			// bullet under `## Skills`, never an empty section or a bare name.
+			if len(resp.Skills) == 0 {
+				t.Fatalf("%s resolved with no skills — the command-level skill subset is not wired (or the persona repertoire is empty)", name)
+			}
+			if !strings.Contains(resp.Markdown, "## Skills\n") {
+				t.Fatalf("%s markdown missing the Skills section despite %d resolved skills:\n%s", name, len(resp.Skills), resp.Markdown)
+			}
+			for _, sk := range resp.Skills {
+				label := sk.Name
+				if label == "" {
+					label = sk.Slug
+				}
+				body := strings.TrimSpace(sk.Body)
+				if body == "" {
+					body = strings.TrimSpace(sk.Description)
+				}
+				if body == "" {
+					t.Fatalf("%s skill %q renders as a bare name bullet — bullet-with-body requires a non-empty body or description", name, label)
+				}
+				// The head of the bullet must be present verbatim in the
+				// rendered markdown so we know the body actually shipped.
+				head := body
+				if idx := strings.IndexByte(head, '\n'); idx >= 0 {
+					head = head[:idx]
+				}
+				wantBullet := "- **" + label + "** — " + head
+				if !strings.Contains(resp.Markdown, wantBullet) {
+					t.Fatalf("%s skill %q did not render bullet-with-body (expected line %q):\n%s", name, label, wantBullet, resp.Markdown)
+				}
+			}
+
+			// Templates — section present iff bound, with the JIT fetch hint.
+			if len(resp.Templates) > 0 {
+				if !strings.Contains(resp.Markdown, "## Templates\n") {
+					t.Fatalf("%s binds %d template(s) but renders no Templates section:\n%s", name, len(resp.Templates), resp.Markdown)
+				}
+				if !strings.Contains(resp.Markdown, "templates.show") {
+					t.Fatalf("%s binds templates but carries no templates.show JIT fetch hint:\n%s", name, resp.Markdown)
+				}
+			}
+
+			// Orchestrators carry a guidance/suggestion block: the Action must
+			// hand off to at least one downstream okt- command.
+			if _, isOrch := orchestratorCommands[name]; isOrch {
+				if !strings.Contains(resp.Markdown, "okt-") {
+					t.Fatalf("orchestrator %s carries no downstream okt- command suggestion in its guidance block:\n%s", name, resp.Markdown)
+				}
+				desc, ok := agent.DescribeCommand(name)
+				if !ok || desc.Tier != agent.CommandTierOrchestrator {
+					t.Fatalf("orchestrator %s must decode as the orchestrator tier, got %+v ok=%v", name, desc, ok)
+				}
 			}
 		})
 	}
@@ -211,58 +304,6 @@ func TestCW5DistinctCommandPairs(t *testing.T) {
 	cont := agent.CommandActionFallback("okt-task-continue")
 	if !strings.Contains(strings.ToLower(cont), "checkpoint") {
 		t.Fatalf("okt-task-continue action should signal a warm checkpoint read:\n%s", cont)
-	}
-}
-
-// cw6GranularCommands is the granular plan/project/note surface registered in
-// CW6 (#377): 4 plan commands, the new warm okt-project-continue, and the new
-// okt-note-list / okt-note-show navigation pair.
-var cw6GranularCommands = []string{
-	"okt-plan-create",
-	"okt-plan-show",
-	"okt-plan-continue",
-	"okt-plan-claim",
-	"okt-project-continue",
-	"okt-note-list",
-	"okt-note-show",
-}
-
-// TestCW6GranularCommandsRenderNonEmpty is the AC#6 smoke gate (mirrors the
-// CW5 gate): every new granular plan/project/note command must resolve against
-// the embedded default kit with a non-empty Persona section (the role slot is
-// wired in the preset YAML) and a non-empty Action section, and must surface a
-// prompts/list description.
-func TestCW6GranularCommandsRenderNonEmpty(t *testing.T) {
-	ctx := context.Background()
-	tmp := t.TempDir()
-	dbPath := filepath.Join(tmp, "data", "omakiten.db")
-	configPath := filepath.Join(tmp, "config", "omakase.yaml")
-
-	rt, err := Open(ctx, Options{DBPath: dbPath, ConfigPath: configPath, CWD: tmp})
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer func() { _ = rt.Close() }()
-
-	for _, name := range cw6GranularCommands {
-		t.Run(name, func(t *testing.T) {
-			resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
-			if err != nil {
-				t.Fatalf("ResolveCommand(%s) error = %v", name, err)
-			}
-			if resp.Persona == nil {
-				t.Fatalf("%s resolved with no persona — the role slot is not wired in the preset YAML", name)
-			}
-			if !strings.Contains(resp.Markdown, "## Persona — ") {
-				t.Fatalf("%s markdown missing non-empty Persona section:\n%s", name, resp.Markdown)
-			}
-			if !strings.Contains(resp.Markdown, "## Action\n") || strings.TrimSpace(resp.Action) == "" {
-				t.Fatalf("%s markdown missing non-empty Action section:\n%s", name, resp.Markdown)
-			}
-			if strings.TrimSpace(agent.CommandDescription(name)) == "" {
-				t.Fatalf("%s carries no prompts/list description", name)
-			}
-		})
 	}
 }
 
