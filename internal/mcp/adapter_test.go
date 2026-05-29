@@ -1298,3 +1298,74 @@ func mcpTestBundle(t *testing.T) config.Bundle {
 	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}}
 	return bundle
 }
+
+// TestAdapterCommentsScopeDispatch drives the reworked comments.* surface
+// end-to-end through CallTool: add at task, project, and universal scope, then
+// list the project-scoped handoff log filtered by kind.
+func TestAdapterCommentsScopeDispatch(t *testing.T) {
+	ctx := context.Background()
+	service := newMCPTestService(t, ctx)
+	adapter := NewAdapter(service)
+
+	add := func(args map[string]any) map[string]any {
+		t.Helper()
+		result, err := adapter.CallTool(ctx, "comments.add", withModel(args))
+		if err != nil {
+			t.Fatalf("CallTool(comments.add) error = %v", err)
+		}
+		if result.IsError {
+			t.Fatalf("comments.add IsError = true, content = %s", result.Content[0].Text)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
+			t.Fatalf("comments.add content not JSON: %v", err)
+		}
+		comment, _ := payload["comment"].(map[string]any)
+		if comment == nil {
+			t.Fatalf("comments.add payload missing comment: %#v", payload)
+		}
+		return comment
+	}
+
+	taskC := add(map[string]any{"task_id": 1, "body": "task note", "author_type": "agent"})
+	if taskC["scope"] != "task" {
+		t.Fatalf("task comment scope = %v, want task", taskC["scope"])
+	}
+
+	projC := add(map[string]any{"scope": "project", "body": "project recap", "author_type": "agent", "kind": "recap"})
+	if projC["scope"] != "project" || projC["kind"] != "recap" {
+		t.Fatalf("project comment = %#v, want scope=project kind=recap", projC)
+	}
+
+	uniC := add(map[string]any{"scope": "universal", "body": "global note", "author_type": "agent"})
+	if uniC["scope"] != "universal" {
+		t.Fatalf("universal comment scope = %v, want universal", uniC["scope"])
+	}
+
+	// project scope must not carry task_id.
+	bad, err := adapter.CallTool(ctx, "comments.add", withModel(map[string]any{"scope": "project", "task_id": 1, "body": "x"}))
+	if err != nil {
+		t.Fatalf("CallTool(comments.add bad) error = %v", err)
+	}
+	if !bad.IsError {
+		t.Fatalf("comments.add(project+task_id) IsError = false, want validation failure")
+	}
+
+	// Filtered list: kind=recap returns exactly the project recap row.
+	listResult, err := adapter.CallTool(ctx, "comments.list", withModel(map[string]any{"kind": "recap"}))
+	if err != nil {
+		t.Fatalf("CallTool(comments.list) error = %v", err)
+	}
+	if listResult.IsError {
+		t.Fatalf("comments.list IsError = true, content = %s", listResult.Content[0].Text)
+	}
+	var listPayload struct {
+		Comments []map[string]any `json:"comments"`
+	}
+	if err := json.Unmarshal([]byte(listResult.Content[0].Text), &listPayload); err != nil {
+		t.Fatalf("comments.list content not JSON: %v", err)
+	}
+	if len(listPayload.Comments) != 1 || listPayload.Comments[0]["kind"] != "recap" {
+		t.Fatalf("comments.list(kind=recap) = %#v, want one recap row", listPayload.Comments)
+	}
+}
