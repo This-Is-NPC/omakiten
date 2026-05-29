@@ -142,6 +142,15 @@ func pickPersonas(loaded []Persona, refs []PersonaWiring) []Persona {
 	for _, ref := range refs {
 		if p, ok := bySlug[ref.Slug]; ok {
 			p.Skills = append([]string(nil), ref.Skills...)
+			// schema_version + skill_repertoire on the wiring entry win
+			// over the frontmatter-declared values so omakiten.yaml stays
+			// the single source of truth for persona ⇄ skill wiring.
+			if ref.SchemaVersion != 0 {
+				p.SchemaVersion = ref.SchemaVersion
+			}
+			if len(ref.SkillRepertoire) > 0 {
+				p.SkillRepertoire = append([]string(nil), ref.SkillRepertoire...)
+			}
 			p.Laws = mergeLawSlugs(p.Laws, ref.Laws)
 			out = append(out, p)
 		}
