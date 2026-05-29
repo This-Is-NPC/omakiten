@@ -273,23 +273,7 @@ func renderCommandMarkdown(resp ResolveCommandResponse) string {
 				fmt.Fprintf(&b, "- **%s**\n", label)
 				continue
 			}
-			// Multi-line bodies need every continuation line indented two
-			// spaces so they stay visually nested under the bullet, matching
-			// the multi-line law rendering below.
-			if idx := strings.Index(detail, "\n"); idx >= 0 {
-				head := detail[:idx]
-				tail := detail[idx+1:]
-				fmt.Fprintf(&b, "- **%s** — %s\n", label, head)
-				for _, line := range strings.Split(tail, "\n") {
-					if line == "" {
-						fmt.Fprintln(&b)
-						continue
-					}
-					fmt.Fprintf(&b, "  %s\n", line)
-				}
-				continue
-			}
-			fmt.Fprintf(&b, "- **%s** — %s\n", label, detail)
+			renderBulletWithBody(&b, label, detail)
 		}
 	}
 
@@ -301,25 +285,7 @@ func renderCommandMarkdown(resp ResolveCommandResponse) string {
 				label = law.Slug
 			}
 			body := strings.TrimSpace(law.Body)
-			// Multi-line law bodies (those carrying Bad:/Good: examples or a
-			// second paragraph) need every continuation line indented two
-			// spaces so they remain visually nested under the bullet —
-			// otherwise the example lines render as orphan paragraphs between
-			// laws.
-			if idx := strings.Index(body, "\n"); idx >= 0 {
-				head := body[:idx]
-				tail := body[idx+1:]
-				fmt.Fprintf(&b, "- **[%s] %s** — %s\n", law.Severity, label, head)
-				for _, line := range strings.Split(tail, "\n") {
-					if line == "" {
-						fmt.Fprintln(&b)
-						continue
-					}
-					fmt.Fprintf(&b, "  %s\n", line)
-				}
-				continue
-			}
-			fmt.Fprintf(&b, "- **[%s] %s** — %s\n", law.Severity, label, body)
+			renderBulletWithBody(&b, fmt.Sprintf("[%s] %s", law.Severity, label), body)
 		}
 	}
 
@@ -351,6 +317,31 @@ func renderCommandMarkdown(resp ResolveCommandResponse) string {
 		fmt.Fprintf(&b, "\n**Output language:** %s\n", lang)
 	}
 	return b.String()
+}
+
+// renderBulletWithBody writes one Markdown list item whose detail may span
+// multiple lines. The bolded label leads the bullet (`- **<label>** — <head>`)
+// and every continuation line is indented two spaces so the body stays
+// visually nested under the bullet — blank lines pass through verbatim so
+// paragraph breaks inside the body survive. Shared by the `## Skills` and
+// `## Laws` sections, which differ only in how the label is composed (a skill
+// name vs `[severity] law-name`); the multi-line indent handling is identical,
+// so it lives here once. detail is assumed non-empty.
+func renderBulletWithBody(b *strings.Builder, label, detail string) {
+	if idx := strings.Index(detail, "\n"); idx >= 0 {
+		head := detail[:idx]
+		tail := detail[idx+1:]
+		fmt.Fprintf(b, "- **%s** — %s\n", label, head)
+		for _, line := range strings.Split(tail, "\n") {
+			if line == "" {
+				fmt.Fprintln(b)
+				continue
+			}
+			fmt.Fprintf(b, "  %s\n", line)
+		}
+		return
+	}
+	fmt.Fprintf(b, "- **%s** — %s\n", label, detail)
 }
 
 // templateNameEchoesSlug reports whether the human-readable template name is
