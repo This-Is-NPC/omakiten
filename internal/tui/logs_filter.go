@@ -94,6 +94,7 @@ var logsFilterPartition = map[LogsFilterMode][]domain.EventCategory{
 		domain.EventCategoryPlan,
 		domain.EventCategoryTrick,
 		domain.EventCategoryTagDep,
+		domain.EventCategoryNote,
 	},
 	LogsFilterSystem: {
 		domain.EventCategoryAudit,
