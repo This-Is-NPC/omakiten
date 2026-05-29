@@ -261,20 +261,3 @@ func TestShokuninNotesSlotsBindScribe(t *testing.T) {
 		})
 	}
 }
-
-func lawPresent(laws []agent.LawInfo, slug string) bool {
-	for _, l := range laws {
-		if l.Slug == slug {
-			return true
-		}
-	}
-	return false
-}
-
-func lawSlugs(laws []agent.LawInfo) []string {
-	out := make([]string, 0, len(laws))
-	for _, l := range laws {
-		out = append(out, l.Slug)
-	}
-	return out
-}

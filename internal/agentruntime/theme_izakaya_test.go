@@ -88,14 +88,14 @@ func TestIzakayaRepresentativeCommandsRender(t *testing.T) {
 		persona string
 		law     string // optional themed/role law that must be present ("" = skip)
 	}{
-		{"okt", "calcifer", ""},                           // Concierge
-		{"okt-shape", "markl", ""},                        // Owner orchestrator
-		{"okt-task-imagine", "witch-of-the-waste", ""},    // Ideator
+		{"okt", "calcifer", ""},                                          // Concierge
+		{"okt-shape", "markl", ""},                                       // Owner orchestrator
+		{"okt-task-imagine", "witch-of-the-waste", ""},                   // Ideator
 		{"okt-task-validate", "witch-of-the-waste", "cheap-probe-first"}, // Ideator + themed law
-		{"okt-task-check", "calcifer", ""},                // Tester
-		{"okt-task-review", "sophie-hatter", ""},          // Reviewer
-		{"okt-task-commit", "markl", ""},                  // Committer
-		{"okt-task-document", "sophie-hatter", ""},        // Scribe
+		{"okt-task-check", "calcifer", ""},                               // Tester
+		{"okt-task-review", "sophie-hatter", ""},                         // Reviewer
+		{"okt-task-commit", "markl", ""},                                 // Committer
+		{"okt-task-document", "sophie-hatter", ""},                       // Scribe
 	}
 
 	for _, tc := range cases {
@@ -193,29 +193,4 @@ func assertBulletWithBody(t *testing.T, name string, resp agent.ResolveCommandRe
 			t.Fatalf("%s skill %q did not render bullet-with-body (expected %q):\n%s", name, label, wantBullet, resp.Markdown)
 		}
 	}
-}
-
-func lawPresent(laws []agent.LawInfo, slug string) bool {
-	for _, l := range laws {
-		if l.Slug == slug {
-			return true
-		}
-	}
-	return false
-}
-
-func lawSlugs(laws []agent.LawInfo) []string {
-	out := make([]string, 0, len(laws))
-	for _, l := range laws {
-		out = append(out, l.Slug)
-	}
-	return out
-}
-
-func skillSlugs(skills []agent.SkillInfo) []string {
-	out := make([]string, 0, len(skills))
-	for _, s := range skills {
-		out = append(out, s.Slug)
-	}
-	return out
 }

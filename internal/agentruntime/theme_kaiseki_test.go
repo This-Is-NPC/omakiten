@@ -120,7 +120,7 @@ func TestKaisekiAragornBuilderIdentity(t *testing.T) {
 func TestKaisekiRosterBindings(t *testing.T) {
 	rt := openKaiseki(t)
 	cases := map[string]string{
-		"okt-start":          "bilbo-baggins",   // Concierge
+		"okt-start":          "bilbo-baggins",    // Concierge
 		"okt-shape":          "gandalf-the-grey", // Owner orchestrator
 		"okt-task-imagine":   "frodo-baggins",    // Ideator
 		"okt-task-implement": "aragorn",          // Builder
@@ -202,23 +202,6 @@ func TestKaisekiReviewerCouncilLaw(t *testing.T) {
 	}
 }
 
-func lawPresent(laws []agent.LawInfo, slug string) bool {
-	for _, l := range laws {
-		if l.Slug == slug {
-			return true
-		}
-	}
-	return false
-}
-
-func lawSlugs(laws []agent.LawInfo) []string {
-	out := make([]string, 0, len(laws))
-	for _, l := range laws {
-		out = append(out, l.Slug)
-	}
-	return out
-}
-
 func skillPresent(skills []agent.SkillInfo, slug string) bool {
 	for _, s := range skills {
 		if s.Slug == slug {
@@ -226,12 +209,4 @@ func skillPresent(skills []agent.SkillInfo, slug string) bool {
 		}
 	}
 	return false
-}
-
-func skillSlugs(skills []agent.SkillInfo) []string {
-	out := make([]string, 0, len(skills))
-	for _, s := range skills {
-		out = append(out, s.Slug)
-	}
-	return out
 }
