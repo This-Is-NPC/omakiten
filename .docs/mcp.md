@@ -58,11 +58,14 @@ Both `install.sh` and `install.ps1` end with an interactive multi-select prompt 
 ### Inspecting prompts
 
 ```sh
-okt mcp prompts            # render every okt-* prompt
-okt mcp prompts okt-implement   # render one
+okt mcp prompts                     # render every okt-* prompt
+okt mcp prompts okt-task-implement  # render one
+okt mcp prompts --list              # list the surface by tier (no bodies)
 ```
 
 Resolves each `okt-*` prompt through the running agent service (using your active config) and prints the composed markdown to stdout, separated by horizontal rules and annotated with byte/rune counts. Useful for previewing the exact prompt the agent receives without spinning up an MCP client.
+
+`--list` skips the bodies and prints the command-surface listing instead: the 40-command kit grouped by routing tier (orchestrator / system / granular), with the granular tier sub-grouped by object namespace (`okt-<object>-<verb>`). It is the shell-side view of the same surface `prompts/list` exposes over MCP.
 
 `mise run mcp:prompts` is the contributor shortcut: syncs `dev_env/` defaults and runs the same command against them.
 
@@ -213,27 +216,39 @@ Every tool accepts optional project selector fields where useful: `project_id`, 
 
 ## Prompts
 
-`prompts/list` is built from `agent.CommandNames()`; bindings come from `mcp_commands` in the active profile yaml. Each prompt resolves a persona, the union of bound laws, and any bound templates into a single user message — see the worked example below.
+`prompts/list` is built from `agent.CommandNames()`; bindings come from `mcp_commands` in the active profile yaml. Each prompt resolves a persona, the persona-or-command skill subset, the union of bound laws, and any bound templates into a single user message — see the worked example below.
+
+The v2 surface (#371) is 40 commands across three routing tiers. The router decodes each slug via `agent.DescribeCommand` (`internal/agent/command_registry.go`) into a tier and, for the granular tier, an object namespace. `okt mcp prompts --list` prints this same grouping from the shell.
+
+**Orchestrators** — bare, primary path, cross-object director role; delegates to specialists:
 
 | Prompt | Intent |
 |---|---|
-| `okt` | Load project overview before continuing work. |
-| `okt-imagine` | PLAN phase — product-owner persona interrogates the user via 5W2H and frames success in SMART terms before any task exists. |
-| `okt-create` | PLAN → DO handoff — author the task with INVEST-checked user story; record prioritization (MoSCoW / RICE) when alternatives exist. |
-| `okt-resume` | Scan likely-next work across the active project. |
-| `okt-continue` | Read a task's checkpoint as an engineer before resuming work. |
-| `okt-implement` | Execute approved engineering work with strict rigor and commit discipline. |
-| `okt-document` | Survey project documentation for drift and propose updates. |
-| `okt-config` | Orient the agent on the active Omakiten config layout before edits. |
-| `okt-commit` | Draft Conventional Commits for the working tree without pushing. |
-| `okt-review` | Walk a diff through Fowler/Beck/Martin/Feathers lens; emit findings + refactor opportunities by file:line, severity-tagged. Read-only. |
-| `okt-check` | Discover the project's check targets via `mise tasks` and report pass/fail in a tabular comment. |
-| `okt-handoff` | Close a session with a synthesised handoff note covering delta since the previous handoff, active work, decisions, blockers, and next steps. Writes a `notes.create` row with `kind="handoff"` against the resolved scope. |
-| `okt-note` | Capture a free-form knowledge note (project or global) without ceremony. Pairs with the `note-free` template. |
-| `okt-standup` | Cross-project standup digest — for each project with activity in the window, surfaces the latest handoff plus the delta since. Read-side aggregation; no writes. |
-| `okt-recap` | Temporal recap over a window — notes grouped by kind plus tasks moved to `done`. Useful for retrospectives or release notes. Read-side aggregation; no writes. |
+| `okt` | Smart entry — shortcut to `okt-start`. |
+| `okt-start` | Concierge entry — reads handoff/recap notes + plan/board state, proposes concrete next commands, teaches the options. |
+| `okt-shape` | Owner — shape a raw idea/backlog into ready tasks + an execution plan; chains the discover/define granulars + `okt-plan-create`. |
+| `okt-run` | Owner — drive a plan or task to completion by spawning a Builder subagent per task and reviewing each compact return. |
+| `okt-audit` | Owner — commission a deep assurance pass: spawn Reviewer + Security subagents, aggregate severity-tagged findings. |
+| `okt-pause` | Concierge close — snapshot git + active task + plan into a `kind=handoff` note for the next session. |
 
-The default kit follows a REST-style handoff pattern: each prompt's action text ends by suggesting the next prompt in the cycle. `okt → okt-resume / okt-imagine → okt-create → okt-continue → okt-implement` is the happy path; `okt-document`, `okt-config`, `okt-commit`, `okt-review`, and `okt-check` are parallel surfaces. `okt-handoff`, `okt-note`, `okt-standup`, and `okt-recap` sit alongside the loop: `okt-handoff` closes a session by writing a `handoff` note; `okt-note` captures ad-hoc knowledge; `okt-standup` and `okt-recap` read across projects / windows to orient the next session.
+**System** — bare, talks to the tool not the project (no object):
+
+| Prompt | Intent |
+|---|---|
+| `okt-help` | Tier-aware guide: the orchestrator/system/granular tiers, the start→shape→run→audit→pause flow, and when to drop to granular. |
+| `okt-config` | Orient on the active Omakiten config layout before edits. |
+| `okt-skill` | Load a skill body via `skills.get` (e.g. `okt-skill commit`), or list the catalog via `skills.list` with no arg. |
+
+**Granular** — object-namespaced (`okt-<object>-<verb>`), power-user, surgical:
+
+| Object | Prompts |
+|---|---|
+| `task` (21) | `okt-task-imagine`, `okt-task-research`, `okt-task-validate`, `okt-task-requirements`, `okt-task-prioritize`, `okt-task-create`, `okt-task-decompose`, `okt-task-estimate`, `okt-task-design`, `okt-task-resume`, `okt-task-continue`, `okt-task-implement`, `okt-task-self-review`, `okt-task-refactor`, `okt-task-document`, `okt-task-debrief`, `okt-task-commit`, `okt-task-review`, `okt-task-secure`, `okt-task-check`, `okt-task-quality` |
+| `project` (2) | `okt-project-resume`, `okt-project-continue` |
+| `plan` (4) | `okt-plan-create`, `okt-plan-show`, `okt-plan-continue`, `okt-plan-claim` |
+| `note` (4) | `okt-note-free`, `okt-note-recap`, `okt-note-list`, `okt-note-show` |
+
+The orchestrators carry the mental flow: `okt`/`okt-start` orient, `okt-shape` plans, `okt-run` drives delegation, `okt-audit` assures, `okt-pause` hands off. Each guiding orchestrator's action text suggests the next downstream command. Granular commands are the surgical drop-down the orchestrators chain — invoke them directly for a single step (e.g. `okt-task-implement`, `okt-plan-claim`) when you do not want the director loop. `okt-run` and `okt-audit` are PROMPTS the consuming agent acts on by spawning subagents (omakiten cannot spawn agents itself); each subagent invokes the granular `okt-task-*` commands itself in its own fresh context.
 
 ## Anatomy of an MCP command
 
@@ -263,7 +278,7 @@ sequenceDiagram
 
     Note over Service: Reads bundle snapshots seeded<br/>at runtime startup — no DB hit.<br/>Effective laws =<br/>global ∪ persona ∪ command<br/>∪ template-bound,<br/>− laws_disabled, deduped.
 
-    Service->>Service: renderCommandMarkdown<br/>(persona description + body inline,<br/>skill names inline,<br/>law severity + name + body inline,<br/>template metadata only — body JIT,<br/>action text)
+    Service->>Service: renderCommandMarkdown<br/>(persona description + body inline,<br/>skill subset bullet-with-body inline,<br/>law severity + name + body inline,<br/>template metadata only — body JIT,<br/>action text)
     Service-->>Adapter: ResolveCommandResponse{ Markdown, … }
     Adapter->>Adapter: cache_prompts? attach<br/>cache_control: ephemeral hint
     Adapter-->>Server: PromptResult
@@ -307,7 +322,7 @@ Not every entity body trafega in the prompt. The renderer pre-loads what the age
 | Entity | What ships in the prompt | When body is fetched |
 |---|---|---|
 | Persona | `description` + full `body` (inline under `## Persona`) | Always inline — body carries the role's procedural loop |
-| Skills | Names only, inline list under `## Skills — A, B, C` | Never — descriptions are decorative; procedure lives in persona body / action text |
+| Skills | The command's declared skill subset, rendered bullet-with-body under `## Skills` — one `- **Name** — body` bullet per skill (body, or description when body-less) | Always inline — the skill body is the procedural payload the role applies at this step |
 | Laws | `severity` + `name` + full `body` (inline under `## Laws`) | Always inline — laws are constraints that must frame every step |
 | Templates | Slug + optional name (when divergent from slug) + default kind + description | On demand via `templates.show <slug>` — template bodies can be long (PR scaffolds, story templates) and shipping them inline would dominate the prompt window |
 
@@ -320,7 +335,7 @@ Trade-off: one extra MCP round-trip on the materialization step (only when the a
 ### What does NOT ship in the prompt body
 
 - Prompt name and description — both already exposed via `prompts/list` metadata in the MCP protocol; aware clients surface them before calling `prompts/get`. Echoing them in the body would just duplicate bytes the agent already has.
-- Skill descriptions — see table above.
+- The persona's full skill repertoire — only the command's declared skill subset ships (a themed command selects 2-4 of its persona's `skill_repertoire`); the rest stay out of the prompt. A command that declares no subset falls back to the full persona repertoire.
 - Law count parenthetical — `## Laws` carries no `(N)` suffix; the agent does not branch on the number.
 
 ### Per-prompt size budgets
