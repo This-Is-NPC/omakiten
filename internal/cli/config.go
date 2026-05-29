@@ -11,7 +11,7 @@ import (
 	"omakiten/internal/domain"
 )
 
-// healthCheckRemediation pairs a validator error kind with the
+// healthCheckRemediations maps a validator error kind to the
 // instructional command the user runs to repair the bundle. Every
 // entry is read-only relative to user-owned files: the catalogue must
 // never expand to include commands that mutate the user's config
@@ -20,22 +20,14 @@ import (
 // `okt setup --update --skip-wrapper --skip-harnesses` overwrites
 // shipped files only; user-owned `<kind>/custom/` subtrees stay
 // untouched (verified at internal/config/default_files.go:84).
-type healthCheckRemediation struct {
-	Kind    string
-	Command string
-}
-
-// healthCheckRemediations is the seeded catalogue per #365 AC 9. Keys
-// the classifier may emit must each have an entry here so the envelope
-// can never advertise a kind without a paired command.
-var healthCheckRemediations = map[string]healthCheckRemediation{
-	"missing_shipped_file":   {Kind: "missing_shipped_file", Command: "okt setup --update --skip-wrapper --skip-harnesses"},
-	"embedded_default_drift": {Kind: "embedded_default_drift", Command: "okt setup --update --skip-wrapper --skip-harnesses"},
-	"unknown_schema_key":     {Kind: "unknown_schema_key", Command: "okt config edit <path>"},
-	"invalid_value":          {Kind: "invalid_value", Command: "okt config edit <path>"},
-	"missing_required_key":   {Kind: "missing_required_key", Command: "okt config edit <path>"},
-	"theme_not_found":        {Kind: "theme_not_found", Command: "okt config edit <path>"},
-	"validation":             {Kind: "validation", Command: "okt config edit <path>"},
+var healthCheckRemediations = map[string]string{
+	"missing_shipped_file":   "okt setup --update --skip-wrapper --skip-harnesses",
+	"embedded_default_drift": "okt setup --update --skip-wrapper --skip-harnesses",
+	"unknown_schema_key":     "okt config edit <path>",
+	"invalid_value":          "okt config edit <path>",
+	"missing_required_key":   "okt config edit <path>",
+	"theme_not_found":        "okt config edit <path>",
+	"validation":             "okt config edit <path>",
 }
 
 // classifyValidationError maps a single LoadBundle / ValidateBundle
@@ -54,13 +46,19 @@ func classifyValidationError(err error) string {
 		return ""
 	}
 	msg := strings.ToLower(err.Error())
+	// Ordering matters: `is required` / `must be set` must run
+	// before the `theme` substring branch so the validator string
+	// `config.theme.active is required` resolves to
+	// missing_required_key, not theme_not_found. The theme branch
+	// requires the dedicated `active theme` phrasing the loader
+	// emits when a theme slug is unknown (resolveActiveTheme).
 	switch {
-	case strings.Contains(msg, "active theme") || strings.Contains(msg, "theme"):
+	case strings.Contains(msg, "is required") || strings.Contains(msg, "must be set"):
+		return "missing_required_key"
+	case strings.Contains(msg, "active theme"):
 		return "theme_not_found"
 	case strings.Contains(msg, "unknown") && (strings.Contains(msg, "key") || strings.Contains(msg, "field")):
 		return "unknown_schema_key"
-	case strings.Contains(msg, "is required") || strings.Contains(msg, "must be set"):
-		return "missing_required_key"
 	case strings.Contains(msg, "must be") || strings.Contains(msg, "cannot be") || strings.Contains(msg, "between"):
 		return "invalid_value"
 	case strings.Contains(msg, "no such file") || strings.Contains(msg, "does not exist"):
@@ -85,8 +83,8 @@ func classifyValidationError(err error) string {
 // cannot invent new ones (`law: no-assumptions`).
 func buildValidateFailureDetails(path string, err error, warnings []string) map[string]any {
 	kind := classifyValidationError(err)
-	entry := healthCheckRemediations[kind]
-	hint := fmt.Sprintf(t("cli.config.validate.remediation."+kind), entry.Command)
+	command := healthCheckRemediations[kind]
+	hint := fmt.Sprintf(t("cli.config.validate.remediation."+kind), command)
 	return map[string]any{
 		"path": path,
 		"errors": []map[string]any{
@@ -94,7 +92,7 @@ func buildValidateFailureDetails(path string, err error, warnings []string) map[
 				"kind":              kind,
 				"path":              path,
 				"message":           domain.SafeError(err),
-				"suggested_command": entry.Command,
+				"suggested_command": command,
 				"hint":              hint,
 			},
 		},

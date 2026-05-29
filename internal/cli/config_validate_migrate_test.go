@@ -149,7 +149,15 @@ func TestClassifyValidationErrorMapsKnownPatterns(t *testing.T) {
 		msg  string
 		want string
 	}{
-		{"config.theme.active is required", "theme_not_found"},
+		// "is required" must win over the substring `theme` so
+		// `config.theme.active is required` routes to the
+		// missing-required-key remediation, not the theme-picker
+		// hint. Locks the ordering bug review-finding flagged.
+		{"config.theme.active is required", "missing_required_key"},
+		// The dedicated "active theme nope not loadable" phrasing
+		// the validator emits when a theme slug is unknown still
+		// resolves to theme_not_found.
+		{"active theme \"nope\" not loadable: missing file", "theme_not_found"},
 		{"unknown field 'foo' in config.context", "unknown_schema_key"},
 		{"config.workflow.active is required", "missing_required_key"},
 		{"config.context.default_level must be between 1 and 3", "invalid_value"},
