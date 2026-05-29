@@ -53,16 +53,35 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 			return err
 		}
 	}
+	// Boot-time health check (#365 AC 5). MigrateLayout +
+	// EnsureDefaultFiles already ran inside opts.open above; this
+	// pass reruns LoadBundle (ValidateBundle is invoked internally
+	// at loader.go:116) so the bubbletea model is only constructed
+	// when the bundle is loadable + valid under the running binary.
+	// Failures surface as the same structured envelope `okt config
+	// validate --migrate` emits, so the user sees the per-error
+	// kind + suggested_command instead of a bare "config is
+	// invalid" string.
 	bundle, err := config.LoadBundle(rt.configPath)
 	if err != nil {
-		return domain.NewError(domain.ErrConfigInvalid, t("cli.err.config_invalid"), map[string]any{"path": rt.configPath, "error": fmt.Sprint(err)})
+		errCount := 1
+		firstKind := classifyValidationError(err)
+		return domain.NewError(
+			domain.ErrConfigInvalid,
+			fmt.Sprintf(t("cli.tui.err.config_validation_failed_fmt"), errCount, firstKind),
+			buildValidateFailureDetails(rt.configPath, err, nil),
+		)
 	}
 	snap := rt.activeSnapshot()
 	if err := snap.ThemeError(); err != nil {
-		return domain.NewError(domain.ErrConfigInvalid, t("cli.err.theme_invalid"), map[string]any{
-			"active": bundle.Config.Theme.Active,
-			"error":  err.Error(),
-		})
+		warnings := extractBundleWarnings(bundle)
+		errCount := 1
+		firstKind := classifyValidationError(err)
+		return domain.NewError(
+			domain.ErrConfigInvalid,
+			fmt.Sprintf(t("cli.tui.err.config_validation_failed_fmt"), errCount, firstKind),
+			buildValidateFailureDetails(rt.configPath, err, warnings),
+		)
 	}
 	theme := snap.Theme()
 
