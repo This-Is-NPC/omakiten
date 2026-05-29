@@ -83,6 +83,25 @@ func bootstrapActiveLanguage(surface config.Surface, baseline *config.Language) 
 	if err != nil {
 		return baseline
 	}
+	// Probe first (#370): read languages.{cli,tui} without running
+	// ValidateBundle so a broken bundle — the exact moment the repair
+	// hint matters most — still renders errors in the user's locale.
+	// Same `path` the LoadBundle branch consumes below, so the two can
+	// never read different files. The probe wins only when it yields a
+	// non-empty surface code that resolves through the embed FS; an empty
+	// or unresolvable code falls through to the LoadBundle path below,
+	// preserving custom-pack support on healthy bundles.
+	if probe, ok := config.ProbeLanguageSetting(path); ok {
+		code := probe.CLI
+		if surface == config.SurfaceTUI {
+			code = probe.TUI
+		}
+		if code != "" && code != baseline.Code {
+			if embed, err := config.LoadBundledLanguage(code); err == nil {
+				return &embed
+			}
+		}
+	}
 	bundle, err := config.LoadBundle(path)
 	if err != nil {
 		return baseline
