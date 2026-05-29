@@ -211,15 +211,40 @@ func emitTUIHealthCheckFailedFromOpenError(ctx context.Context, opts *runtimeOpt
 	if cfgPath, _ := coded.Details["path"].(string); cfgPath != "" {
 		payload["config_path"] = cfgPath
 	}
-	if errs, ok := coded.Details["errors"].([]map[string]any); ok && len(errs) > 0 {
-		payload["validator_error_count"] = len(errs)
-		if k, _ := errs[0]["kind"].(string); k != "" {
-			payload["validator_first_error_kind"] = k
-		}
-	} else {
-		payload["validator_error_count"] = 1
+	count, firstKind := summariseValidationErrors(coded.Details["errors"])
+	payload["validator_error_count"] = count
+	if firstKind != "" {
+		payload["validator_first_error_kind"] = firstKind
 	}
 	emitHealthCheckEvent(ctx, store, domain.EventTypeTUIHealthCheckFailed, payload)
+}
+
+// summariseValidationErrors extracts (count, first-error-kind) from
+// the `details.errors` payload regardless of whether it landed as the
+// hand-built `[]map[string]any` shape (in-process wrap) or the
+// JSON-roundtripped `[]any` shape (activity-store roundtrip, hook
+// payload). The TUI helper used to take the `[]map[string]any`
+// branch only, so a roundtripped envelope silently fell back to
+// count=1 and no kind — Primitive Obsession on `map[string]any`.
+func summariseValidationErrors(raw any) (int, string) {
+	switch errs := raw.(type) {
+	case []map[string]any:
+		if len(errs) == 0 {
+			return 1, ""
+		}
+		kind, _ := errs[0]["kind"].(string)
+		return len(errs), kind
+	case []any:
+		if len(errs) == 0 {
+			return 1, ""
+		}
+		if m, ok := errs[0].(map[string]any); ok {
+			kind, _ := m["kind"].(string)
+			return len(errs), kind
+		}
+		return len(errs), ""
+	}
+	return 1, ""
 }
 
 func oktCDPath() string {

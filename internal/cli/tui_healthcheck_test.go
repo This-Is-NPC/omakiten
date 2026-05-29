@@ -70,6 +70,70 @@ func TestRunTUI_BrokenConfigReturnsStructuredEnvelope(t *testing.T) {
 	}
 }
 
+// TestSummariseValidationErrors_HandlesBothPayloadShapes pins the
+// `[]map[string]any` ↔ `[]any` fallback for
+// `emitTUIHealthCheckFailedFromOpenError`. The in-process wrap
+// builds the slice as `[]map[string]any`; a JSON roundtrip
+// (activity-store, hook payload) lands it as `[]any`. The TUI helper
+// must handle both — pre-fix the JSON shape silently fell through
+// to count=1 with no kind.
+func TestSummariseValidationErrors_HandlesBothPayloadShapes(t *testing.T) {
+	cases := []struct {
+		name      string
+		raw       any
+		wantCount int
+		wantKind  string
+	}{
+		{
+			name: "in-process []map[string]any",
+			raw: []map[string]any{
+				{"kind": "theme_not_found", "message": "x"},
+				{"kind": "invalid_value", "message": "y"},
+			},
+			wantCount: 2,
+			wantKind:  "theme_not_found",
+		},
+		{
+			name: "JSON-roundtripped []any of map[string]any",
+			raw: []any{
+				map[string]any{"kind": "missing_required_key", "message": "x"},
+				map[string]any{"kind": "invalid_value", "message": "y"},
+			},
+			wantCount: 2,
+			wantKind:  "missing_required_key",
+		},
+		{
+			name:      "JSON-roundtripped []any without map elements",
+			raw:       []any{"not-a-map"},
+			wantCount: 1,
+			wantKind:  "",
+		},
+		{
+			name:      "nil falls through to count=1",
+			raw:       nil,
+			wantCount: 1,
+			wantKind:  "",
+		},
+		{
+			name:      "wrong type falls through to count=1",
+			raw:       "garbage",
+			wantCount: 1,
+			wantKind:  "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotCount, gotKind := summariseValidationErrors(tc.raw)
+			if gotCount != tc.wantCount {
+				t.Errorf("count = %d want %d", gotCount, tc.wantCount)
+			}
+			if gotKind != tc.wantKind {
+				t.Errorf("kind = %q want %q", gotKind, tc.wantKind)
+			}
+		})
+	}
+}
+
 // TestRunTUI_BrokenConfigEmitsTUIHealthCheckFailed pins #369 AC 4: when
 // `okt tui` aborts on a config-invalid boot, the tui.healthcheck.failed
 // event lands in the activity log so the operator can audit the
