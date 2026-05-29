@@ -512,16 +512,28 @@ func defaultUpdateClient(version string) (updateClient, error) {
 // failures or unparseable output produce an error here. The validator
 // inherits the parent's env so the staged binary sees the same
 // `OMAKITEN_HOME` / XDG state the live binary would on next launch.
+//
+// Stdout and stderr are captured into SEPARATE buffers — the staged
+// binary's `emitBundleWarnings` writes to stderr while the JSON
+// envelope lands on stdout, and a shared buffer would prepend the
+// warning text to the JSON and break `json.Unmarshal` with an
+// `invalid character` error. Stderr is mirrored to the parent's
+// stderr after the call so warnings stay visible without poisoning
+// the parse.
 func defaultUpdateValidator(ctx context.Context, binaryPath, configPath string) (updateValidatorResult, error) {
 	cmd := exec.CommandContext(ctx, binaryPath, "config", "validate", "--migrate", "--config", configPath)
 	cmd.Env = os.Environ()
-	var stdout bytes.Buffer
+	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
-	cmd.Stderr = &stdout
+	cmd.Stderr = &stderr
 	runErr := cmd.Run()
+	if stderr.Len() > 0 {
+		_, _ = os.Stderr.Write(stderr.Bytes())
+	}
 
 	var exitErr *exec.ExitError
-	if errors.As(runErr, &exitErr) {
+	exitedNonZero := errors.As(runErr, &exitErr)
+	if exitedNonZero {
 		// Non-zero exit is the documented validator-fail path;
 		// surface OK=false with parsed errors rather than treating
 		// it as exec infrastructure breakage.
@@ -533,6 +545,13 @@ func defaultUpdateValidator(ctx context.Context, binaryPath, configPath string) 
 
 	raw := bytes.TrimSpace(stdout.Bytes())
 	if len(raw) == 0 {
+		// Non-zero exit + empty stdout is still a structured failure
+		// from the user's perspective (the validator decided to
+		// abort); only the zero-exit + empty stdout combination is
+		// genuine infra weirdness worth surfacing as an error.
+		if exitedNonZero {
+			return updateValidatorResult{OK: false, RawOutput: nil}, nil
+		}
 		return updateValidatorResult{OK: false, RawOutput: nil}, fmt.Errorf("validator produced no output")
 	}
 
