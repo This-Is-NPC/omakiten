@@ -182,6 +182,7 @@ type styles struct {
 	badgeInfo        lipgloss.Style
 	badgeScope       lipgloss.Style
 	badgeFix         lipgloss.Style
+	badgeActive      lipgloss.Style
 	badgeTokenGreen  lipgloss.Style
 	badgeTokenYellow lipgloss.Style
 	badgeTokenRed    lipgloss.Style
@@ -288,6 +289,7 @@ func newStyles(theme config.Theme) styles {
 		badgeInfo:        lipgloss.NewStyle().Background(secondary).Foreground(badgeFg).Padding(0, 1).Bold(true),
 		badgeScope:       lipgloss.NewStyle().Background(border).Foreground(foreground).Padding(0, 1).Bold(true),
 		badgeFix:         lipgloss.NewStyle().Background(warning).Foreground(badgeFg).Padding(0, 1).Bold(true),
+		badgeActive:      lipgloss.NewStyle().Background(success).Foreground(badgeFg).Padding(0, 1).Bold(true),
 		badgeTokenGreen:  lipgloss.NewStyle().Background(success).Foreground(badgeFg).Padding(0, 1).Bold(true),
 		badgeTokenYellow: lipgloss.NewStyle().Background(warning).Foreground(badgeFg).Padding(0, 1).Bold(true),
 		badgeTokenRed:    lipgloss.NewStyle().Background(errorColor).Foreground(badgeFg).Padding(0, 1).Bold(true),

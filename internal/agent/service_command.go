@@ -9,203 +9,6 @@ import (
 	"omakiten/internal/domain"
 )
 
-// commandActions stores the per-command instruction the MCP prompt lands on.
-// Each action follows a REST-style hypermedia handoff: it names the canonical
-// tool to call and points at the next command in the flow. The cycle is:
-//
-//	okt → okt-resume / okt-imagine
-//	  okt-imagine → okt-create
-//	    okt-create → (move to dev) → okt-continue / okt-implement
-//	      okt-resume → okt-continue
-//	        okt-continue → okt-implement
-//	          okt-implement → (move to review)
-//	okt-document is parallel: surfaces drift; if material work is needed,
-//	suggests `okt-create` to spin up a documentation task.
-//	okt-config is parallel: orients the agent on the config layout so it can
-//	answer edit questions without guessing; suggests `okt-implement` when the
-//	user has a concrete edit in mind.
-//	okt-commit is parallel: drafts Conventional Commits for user-authored
-//	edits made outside the `okt-implement` loop; never auto-pushes — the
-//	human owns publication.
-//	okt-review is parallel: walks the diff through a Fowler/Beck/Martin/
-//	Feathers lens; surfaces findings + refactor opportunities; read-only,
-//	suggests `okt-implement` to apply fixes.
-//	okt-check is parallel: discovers test/lint/audit targets, runs them
-//	via Bash, emits a tabular pass/fail report; read-only, suggests
-//	`okt-implement` for fixes or `okt-review` for triage.
-// Action texts deliberately stop short of repeating constraints already
-// declared inline in `## Laws` or role-specific flow already declared in the
-// persona body. Each one names the canonical tool and ends with a REST-style
-// handoff. Anthropic's context-engineering guidance is the rubric: keep
-// prompts at the right altitude, defer body-heavy data via just-in-time
-// fetches, and let bound laws/persona body/templates do the role and
-// constraint work instead of restating it in prose.
-var commandActions = map[string]string{
-	"okt": "Load the active project state via `project.overview`. Report the snapshot to the user. " +
-		"Next: suggest `okt-resume` to scan likely-next work, or `okt-imagine` to explore a new direction.",
-
-	"okt-imagine": "Open discovery — no task exists yet. Ground yourself " +
-		"with `project.overview` and `tasks.list`, then interrogate the user via 5W2H (What / Why / Who / When / " +
-		"Where / How / How much) — don't accept vague answers. Call `templates.show comment-5w2h` and " +
-		"`templates.show comment-smart-success` to fetch the scaffolds when the user is ready to commit answers; " +
-		"template-fidelity is disabled here so freewheel exploration is fine before the scaffolds land. " +
-		"Frame success in SMART terms before handing off. Next: when the shape is concrete, suggest `okt-create`.",
-
-	"okt-create": "Author the task. Apply feasibility-gate first — " +
-		"infeasible requests stop here with the report, no task created. Otherwise call " +
-		"`templates.show user-story` to fetch the scaffold, fill it per template-fidelity, then " +
-		"`tasks.create_intent` with the filled description. The response carries `confirmation` and " +
-		"`similar_tasks` when ambiguity exists — surface them to the user verbatim and let them choose. " +
-		"Next: suggest the user create the branch, add a `#self-branch` comment via `comments.add` " +
-		"(template_slug=`comment-selfbranch`), and move the task to dev.",
-
-	"okt-resume": "Scan for next work. Call `project.resume` and report " +
-		"top candidates with one-line rationale. Next: when the user picks a task, suggest `okt-continue` " +
-		"with that task id.",
-
-	"okt-continue": "Read a task's checkpoint — understand where the task stopped, " +
-		"do not start coding. Call `tasks.continue` for the task id, then summarize the last decision, " +
-		"open questions, and the immediate next increment. Next: suggest `okt-implement` with the same id.",
-
-	"okt-implement": "Apply the next increment for the task. If you do not have the task state, " +
-		"call `tasks.continue` first. " +
-		"Next: suggest the user add a `#resume` comment via `comments.add` " +
-		"(template_slug=`comment-resume`) and move the task to review.",
-
-	"okt-document": "Survey `.docs/internal/architecture.md`, " +
-		"`.docs/internal/requirements.md`, `README.md`, `CONTRIBUTING.md`, and other top-level docs. List drift " +
-		"items with file references and suggested wording — do not edit in place. " +
-		"Next: if material work is needed, suggest `okt-create` to spin up a documentation task.",
-
-	"okt-config": "Orient on the active config layout. Call `templates.show config-orientation` to " +
-		"load the path resolution order, entity layout, frontmatter shapes, wiring relationships, and " +
-		"workflow guard kinds. Read it fully before answering any config-edit question — do not guess. " +
-		"Next: if the user has a concrete edit in mind, suggest `okt-implement` with the change scoped to " +
-		"`omakiten.yaml` or the relevant entity file.",
-
-	"okt-commit": "Draft Conventional Commits for the working tree. Read `git status` and `git diff --cached` " +
-		"(fall back to unstaged changes when nothing is staged). Group hunks into one intent per commit; split " +
-		"mixed trees via non-interactive staging (`git add <path>` / `git restore --staged <path>`). Derive the " +
-		"scope from the touched paths. Draft `<type>(<scope>): <subject>` (≤50 chars, imperative) plus an " +
-		"optional 72-column body that explains the \"why\" the diff does not. Surface every draft to the user " +
-		"before invoking `git commit` via Bash. Never `git push` — the human owns publication. " +
-		"Next: when the working tree is clean, suggest the user `git push` when ready.",
-
-	"okt-review": "Walk the diff with the loaded lens. Run `git diff <base>..HEAD` (default base `main`; use " +
-		"staged when explicit) and read every hunk before writing findings. Order the pass correctness → " +
-		"security → smells → refactor opportunities → scalability/performance. Cite methodology by name when " +
-		"applicable (`Extract Function — Fowler`, `Feature Envy — Fowler/Beck`, `Sprout Method — Feathers`, " +
-		"`OCP — Martin`). Tag every finding by severity (`error` / `warning` / `info`). Call " +
-		"`templates.show comment-review-findings` and `templates.show comment-refactor-opportunities` for " +
-		"the scaffolds, then post the filled comments on the task. Read-only — never edit files, never run " +
-		"`git commit`. Next: when findings need fixes, suggest `okt-implement` with the finding ids.",
-
-	"okt-check": "Run the project's check targets. Discover them via `mise tasks` first; fall back to " +
-		"`npm run`, `make -qp`, `package.json > scripts`, or the repo's `CONTRIBUTING.md` — stop at the " +
-		"first hit, do not guess. Invoke each target via Bash, capture stdout/stderr/exit code. Call " +
-		"`templates.show comment-check-report` for the scaffold, then fill it — one row per target with " +
-		"status (`pass` / `fail` / `skip` / `yellow`) and a one-line failing tail. Quote the last ≤10 " +
-		"lines of stderr verbatim per failed target; never summarize errors. Read-only — never apply fixes, " +
-		"never re-run after editing. Next: failures route to `okt-implement` with the target name + tail; " +
-		"smell-level findings route to `okt-review` for triage.",
-
-	"okt-handoff": "Close the current session with a handoff note for the next agent. Synthesise material " +
-		"state since the previous handoff via `project.overview`, `tasks.list`, and `task.activity.list` " +
-		"for in-flight tasks. Call `templates.show note-handoff` to fetch the scaffold, fill the populated " +
-		"slots, and persist via `notes.create` with `scope=project`, `kind=handoff`. Honor `--body` to " +
-		"override the rendered body verbatim and `--note` to append extra context under a free-form " +
-		"section. When nothing material changed since the last handoff, render with a \"no material " +
-		"changes since <prev>\" marker and still persist so the timeline stays continuous. When the cwd " +
-		"resolves no project, stop with `no project at <cwd>` and suggest `--project <slug>`; when the " +
-		"project lacks an active workflow, omit the workflow/wave sections. Next: suggest the user run " +
-		"`okt-standup` or `okt-recap` in their next session to load the handoff back into context.",
-
-	"okt-note": "Capture a free-form knowledge note without ceremony. Resolve scope from `--scope` " +
-		"(default `project` when the cwd resolves; explicit `--scope global` always wins). Resolve kind " +
-		"from `--kind` (default `free`); reject `handoff`, `standup-digest`, and `recap` here — those " +
-		"belong to their dedicated commands. Title from `--title`; body from prompt or stdin. Call " +
-		"`templates.show note-free` to fetch the minimal scaffold, then persist via `notes.create`. " +
-		"Reject empty body or empty title; when the cwd is ambiguous (multiple projects resolve) require " +
-		"`--project <slug>`. Next: suggest `notes.list` to confirm the note landed, or `okt-recap` to see " +
-		"it folded into the project timeline.",
-
-	"okt-standup": "Produce a cross-project standup digest from recent handoff notes. Resolve the window " +
-		"from `--since` (default `7d`) and the per-project limit from `--limit` (default `5`). When " +
-		"`--project <slug>` is omitted, enumerate every project the user owns and aggregate handoffs " +
-		"across all of them; when more than 50 projects resolve, paginate or require `--project`. Call " +
-		"`notes.list` per project filtered by `kind=handoff` within the window, then `templates.show " +
-		"note-standup-digest` to fetch the scaffold and fill one section per project ordered by most " +
-		"recent handoff first; silent projects appear at the bottom under a clear header. Read-only — " +
-		"never persist; the rendered digest is the artifact. When zero handoffs match the window, surface " +
-		"\"no handoffs — run okt-handoff\". Next: suggest `okt-recap` for a deeper per-project timeline.",
-
-	"okt-recap": "Render a single-project recap timeline of recent activity. Resolve the project from " +
-		"`--project <slug>` (default cwd), the window from `--since` (default `7d`), and the kind filter " +
-		"from `--kinds <comma-list>` (default all). Call `notes.list` for the project filtered by the " +
-		"window and kinds, then `templates.show note-recap` to fetch the scaffold. Group entries by kind, " +
-		"order chronologically with a timestamp prefix per bullet. Read-only — never persist; the recap " +
-		"is the artifact. When zero notes match the window, surface \"nothing in window\". Next: suggest " +
-		"`okt-continue` with a specific task id when the recap reveals an open thread to resume.",
-}
-
-// commandDescriptions match the prompts/list metadata. Keeping them next to
-// the action text means the MCP adapter can ship a single source of truth.
-var commandDescriptions = map[string]string{
-	"okt":           "Contextualize the agent with active Omakiten project state.",
-	"okt-imagine":   "PLAN phase — interrogate the user via 5W2H and frame success in SMART terms before any task exists.",
-	"okt-create":    "PLAN → DO handoff — author the task with an INVEST-checked story; record prioritization when alternatives exist.",
-	"okt-resume":    "Scan likely-next work across the active project.",
-	"okt-continue":  "Read a task's checkpoint as an engineer before resuming work.",
-	"okt-implement": "Execute approved engineering work with strict rigor and commit discipline.",
-	"okt-document":  "Survey project documentation for drift and propose updates.",
-	"okt-config":    "Orient the agent on the active Omakiten config layout before edits.",
-	"okt-commit":    "Draft Conventional Commits for the working tree without pushing.",
-	"okt-review":    "Walk the diff through Fowler/Beck/Martin/Feathers lens and surface findings + refactor opportunities.",
-	"okt-check":     "Run discovered test/lint targets and report pass/fail in a tabular comment.",
-	"okt-handoff":   "Close the session with a synthesised handoff note for the next agent.",
-	"okt-note":      "Capture a free-form knowledge note (project or global) without ceremony.",
-	"okt-standup":   "Cross-project standup digest aggregated from recent handoff notes.",
-	"okt-recap":     "Single-project recap timeline of recent notes grouped by kind.",
-}
-
-// CommandNames returns the canonical, ordered list of `okt-*` prompts the MCP
-// adapter exposes. Order mirrors the REST-style handoff cycle so prompts/list
-// answers in the order a user would naturally invoke them.
-func CommandNames() []string {
-	return []string{
-		"okt",
-		"okt-imagine",
-		"okt-create",
-		"okt-resume",
-		"okt-continue",
-		"okt-implement",
-		"okt-document",
-		"okt-config",
-		"okt-commit",
-		"okt-review",
-		"okt-check",
-		"okt-handoff",
-		"okt-note",
-		"okt-standup",
-		"okt-recap",
-	}
-}
-
-// CommandDescription returns the prompts/list description for a known command,
-// or the empty string when the command name is unknown.
-func CommandDescription(name string) string {
-	return commandDescriptions[strings.TrimSpace(name)]
-}
-
-// CommandActionFallback returns the bare action text for `name` without any
-// persona/laws/templates wiring. The MCP adapter falls back to this when no
-// service is wired (test harnesses, partially initialized runtimes), so a
-// prompts/get call still produces a usable message even before bindings are
-// available.
-func CommandActionFallback(name string) string {
-	return commandActions[strings.TrimSpace(name)]
-}
-
 // ResolveCommand assembles the persona/skills/laws/templates package bound to
 // `name` and returns it both structured and rendered as a single markdown
 // message ready for an MCP PromptMessage. The resolution follows the rules
@@ -224,15 +27,15 @@ func (s *Service) ResolveCommand(_ context.Context, input ResolveCommandInput) (
 	if name == "" {
 		return ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "command name is required", nil)
 	}
-	action, known := commandActions[name]
+	entry, known := commandBySlug[name]
 	if !known {
 		return ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "unknown MCP command", map[string]any{"name": name})
 	}
 
 	resp := ResolveCommandResponse{
 		Name:        name,
-		Description: commandDescriptions[name],
-		Action:      action,
+		Description: entry.Description,
+		Action:      entry.Action,
 	}
 
 	commands := s.loadCommandCatalog()
@@ -248,7 +51,20 @@ func (s *Service) ResolveCommand(_ context.Context, input ResolveCommandInput) (
 		if persona, ok := personas[spec.Persona]; ok {
 			info := persona
 			resp.Persona = &info
-			resp.Skills = pickSkillsForPersona(persona, skills)
+			// Command-level skills (schema v2) win over the persona's full
+			// repertoire: a themed command ships only the minimal subset it
+			// declares. Commands that omit command-level skills fall back to
+			// the persona's directly-wired Skills (v1), then to its
+			// SkillRepertoire (v2) so a schema-v2 persona whose pool lives in
+			// SkillRepertoire still renders its skills.
+			slugs := spec.Skills
+			if len(slugs) == 0 {
+				slugs = persona.Skills
+			}
+			if len(slugs) == 0 {
+				slugs = persona.SkillRepertoire
+			}
+			resp.Skills = pickSkills(slugs, skills)
 		}
 	}
 
@@ -330,12 +146,16 @@ func (s *Service) loadTemplateCatalogForCommand() map[string]TemplateInfo {
 	return out
 }
 
-func pickSkillsForPersona(persona PersonaInfo, skills map[string]SkillInfo) []SkillInfo {
-	if len(persona.Skills) == 0 || len(skills) == 0 {
+// pickSkills resolves an ordered list of skill slugs against the skill catalog,
+// preserving the order the caller declared them in and silently dropping slugs
+// the catalog does not know. Callers pass either the command's declared skill
+// subset (schema v2) or the persona's full repertoire (fallback).
+func pickSkills(slugs []string, skills map[string]SkillInfo) []SkillInfo {
+	if len(slugs) == 0 || len(skills) == 0 {
 		return nil
 	}
-	out := make([]SkillInfo, 0, len(persona.Skills))
-	for _, slug := range persona.Skills {
+	out := make([]SkillInfo, 0, len(slugs))
+	for _, slug := range slugs {
 		if sk, ok := skills[slug]; ok {
 			out = append(out, sk)
 		}
@@ -399,10 +219,10 @@ func effectiveLaws(globalSpec, commandSpec MCPCommandBinding, persona *PersonaIn
 // surfaces before calling `prompts/get`. Emitting them again here would just
 // duplicate bytes the agent already has.
 //
-// Skills render as a single inline list under `## Skills — A, B, C`. Skill
-// descriptions are decorative metadata; the procedural content lives in the
-// persona body and the action text, so per-bullet description lines just
-// inflate the prompt without driving agent behavior.
+// Skills render as bullet-with-body under `## Skills` — one bullet per skill
+// in configured (persona-wiring) order. Each bullet carries the skill body
+// (the procedural payload) when present; skills without a body fall back to
+// their description, and skills with neither render as a bare name bullet.
 //
 // Laws render under `## Laws` (no count parenthetical) — the number is
 // decorative; the agent does not branch on it.
@@ -436,11 +256,25 @@ func renderCommandMarkdown(resp ResolveCommandResponse) string {
 	}
 
 	if len(resp.Skills) > 0 {
-		names := make([]string, 0, len(resp.Skills))
+		openSection("## Skills")
 		for _, sk := range resp.Skills {
-			names = append(names, sk.Name)
+			label := sk.Name
+			if label == "" {
+				label = sk.Slug
+			}
+			// Body is the procedural payload; description is the fallback when
+			// a skill carries no body. Skills with neither render as a bare
+			// name bullet so configured order and presence stay visible.
+			detail := strings.TrimSpace(sk.Body)
+			if detail == "" {
+				detail = strings.TrimSpace(sk.Description)
+			}
+			if detail == "" {
+				fmt.Fprintf(&b, "- **%s**\n", label)
+				continue
+			}
+			renderBulletWithBody(&b, label, detail)
 		}
-		openSection(fmt.Sprintf("## Skills — %s", strings.Join(names, ", ")))
 	}
 
 	if len(resp.Laws) > 0 {
@@ -451,25 +285,7 @@ func renderCommandMarkdown(resp ResolveCommandResponse) string {
 				label = law.Slug
 			}
 			body := strings.TrimSpace(law.Body)
-			// Multi-line law bodies (those carrying Bad:/Good: examples or a
-			// second paragraph) need every continuation line indented two
-			// spaces so they remain visually nested under the bullet —
-			// otherwise the example lines render as orphan paragraphs between
-			// laws.
-			if idx := strings.Index(body, "\n"); idx >= 0 {
-				head := body[:idx]
-				tail := body[idx+1:]
-				fmt.Fprintf(&b, "- **[%s] %s** — %s\n", law.Severity, label, head)
-				for _, line := range strings.Split(tail, "\n") {
-					if line == "" {
-						fmt.Fprintln(&b)
-						continue
-					}
-					fmt.Fprintf(&b, "  %s\n", line)
-				}
-				continue
-			}
-			fmt.Fprintf(&b, "- **[%s] %s** — %s\n", law.Severity, label, body)
+			renderBulletWithBody(&b, fmt.Sprintf("[%s] %s", law.Severity, label), body)
 		}
 	}
 
@@ -501,6 +317,31 @@ func renderCommandMarkdown(resp ResolveCommandResponse) string {
 		fmt.Fprintf(&b, "\n**Output language:** %s\n", lang)
 	}
 	return b.String()
+}
+
+// renderBulletWithBody writes one Markdown list item whose detail may span
+// multiple lines. The bolded label leads the bullet (`- **<label>** — <head>`)
+// and every continuation line is indented two spaces so the body stays
+// visually nested under the bullet — blank lines pass through verbatim so
+// paragraph breaks inside the body survive. Shared by the `## Skills` and
+// `## Laws` sections, which differ only in how the label is composed (a skill
+// name vs `[severity] law-name`); the multi-line indent handling is identical,
+// so it lives here once. detail is assumed non-empty.
+func renderBulletWithBody(b *strings.Builder, label, detail string) {
+	if idx := strings.Index(detail, "\n"); idx >= 0 {
+		head := detail[:idx]
+		tail := detail[idx+1:]
+		fmt.Fprintf(b, "- **%s** — %s\n", label, head)
+		for _, line := range strings.Split(tail, "\n") {
+			if line == "" {
+				fmt.Fprintln(b)
+				continue
+			}
+			fmt.Fprintf(b, "  %s\n", line)
+		}
+		return
+	}
+	fmt.Fprintf(b, "- **%s** — %s\n", label, detail)
 }
 
 // templateNameEchoesSlug reports whether the human-readable template name is

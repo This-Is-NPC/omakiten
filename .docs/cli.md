@@ -511,7 +511,7 @@ File-backed under `laws/<slug>.md`. `internal/cli/law.go`. Frontmatter: `name?`,
 
 ```sh
 okt law add -k workflow-enforced -n "Workflow Enforced" -s error
-okt law list --scope persona --persona engineer
+okt law list --scope persona --persona builder
 ```
 
 ---
@@ -527,8 +527,8 @@ File-backed under `personas/<slug>.md`. `internal/cli/persona.go`. Wiring (skill
 - `okt persona add` / `okt persona edit SLUG` — flag-driven rewrites. On `add`, `--name` is required and `--key` defaults to `Slugify(--name)`. Skill wiring uses either `--skill` / `-s` (numeric id, repeatable) or `--skill-slug` (slug, repeatable). On `edit`, the submitted skill set **replaces** the existing one entirely.
 
 ```sh
-okt persona add -n "Engineer" --skill-slug go --skill-slug sqlite
-okt persona edit engineer --skill-slug go --skill-slug cli   # replaces full skill set
+okt persona add -n "Builder" --skill-slug go --skill-slug sqlite
+okt persona edit builder --skill-slug go --skill-slug cli   # replaces full skill set
 ```
 
 ---
@@ -569,9 +569,11 @@ The handshake file the wrapper reads can be overridden via `$OKT_CD_FILE`; defau
 
 Lists tool/resource/prompt definitions (`mcp.Tools()`, `mcp.Resources()`, `mcp.Prompts()`). No flags.
 
-### `okt mcp prompts [name]`
+### `okt mcp prompts [name] [--list]`
 
-Renders the resolved markdown for every `okt-*` MCP prompt, or one prompt when `name` is supplied. This is the CLI mirror of `prompts/get` and is useful for auditing persona/law/template composition without starting an MCP client.
+Renders the resolved markdown for every `okt-*` MCP prompt, or one prompt when `name` is supplied. This is the CLI mirror of `prompts/get` and is useful for auditing persona/skill/law/template composition without starting an MCP client.
+
+`--list` skips the bodies and prints the command-surface listing: the 40-command v2 kit grouped by routing tier (orchestrator / system / granular), with the granular tier sub-grouped by object namespace (`okt-<object>-<verb>`). It is the shell-side view of the MCP `prompts/list` surface — see `.docs/mcp.md#prompts` for the full tier breakdown.
 
 ### `okt mcp call TOOL_NAME --input JSON`
 
@@ -587,7 +589,8 @@ Writes the `omakiten` MCP server entry into a harness config file (`internal/age
 
 ```sh
 okt mcp tools
-okt mcp prompts okt-implement
+okt mcp prompts okt-task-implement
+okt mcp prompts --list
 okt mcp call tasks.list --input '{"bucket_key":"dev"}'
 okt mcp call search --input '{"query":"sqlite race","entity_types":["error","solution"]}'
 okt mcp setup --harness opencode --dry-run

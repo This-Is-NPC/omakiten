@@ -15,7 +15,16 @@ type Bundle struct {
 	Personas      []Persona                 `yaml:"-" json:"personas,omitempty"`
 	Laws          []Law                     `yaml:"-" json:"laws,omitempty"`
 	Templates     []TaskTemplate            `yaml:"-" json:"templates,omitempty"`
-	Workflows     []Workflow                `yaml:"workflows" json:"workflows,omitempty"`
+	// All* hold the full on-disk catalog (every preset's entity files),
+	// each entry stamped with Active=true when wired into this bundle.
+	// Runtime resolution uses the picked Skills/Personas/Laws/Templates
+	// above; only the Settings catalog view reads All* so the user sees
+	// the complete pool with an active marker, not just the active subset.
+	AllSkills    []Skill        `yaml:"-" json:"-"`
+	AllPersonas  []Persona      `yaml:"-" json:"-"`
+	AllLaws      []Law          `yaml:"-" json:"-"`
+	AllTemplates []TaskTemplate `yaml:"-" json:"-"`
+	Workflows    []Workflow     `yaml:"workflows" json:"workflows,omitempty"`
 	Projects      []Project                 `yaml:"-" json:"projects,omitempty"`
 	MCPCommands   map[string]MCPCommandSpec `yaml:"-" json:"mcp_commands,omitempty"`
 	Notifications map[string]Notification   `yaml:"-" json:"notifications,omitempty"`
@@ -96,6 +105,11 @@ type MCPCommandSpec struct {
 	Laws         []string `yaml:"laws,omitempty" json:"laws,omitempty"`
 	LawsDisabled []string `yaml:"laws_disabled,omitempty" json:"laws_disabled,omitempty"`
 	Templates    []string `yaml:"templates,omitempty" json:"templates,omitempty"`
+	// Skills (schema v2) is the per-command skill selection. Each slug
+	// must be a member of the bound persona's skill_repertoire — the
+	// command can only draw from skills the persona is equipped with.
+	// Validated by validateMCPCommandSkillSubset.
+	Skills []string `yaml:"skills,omitempty" json:"skills,omitempty"`
 }
 
 // MCPCommandsGlobalKey is the reserved entry inside mcp_commands that supplies
@@ -108,9 +122,18 @@ const MCPCommandsGlobalKey = "global"
 // (description, free-form notes) lives in personas/<slug>.md; this struct only
 // holds the relationships managed by the system.
 type PersonaWiring struct {
-	Slug   string   `yaml:"slug"`
+	Slug string `yaml:"slug"`
+	// SchemaVersion marks the persona wiring as schema v2 (skill_repertoire
+	// model). Absent / 0 means a legacy v1 entry that the migrator upgrades.
+	SchemaVersion int `yaml:"schema_version,omitempty"`
+	// Skills is the legacy v1 field: the persona's directly-wired skills.
+	// In v2 it is superseded by SkillRepertoire; the migrator hoists the
+	// union of per-command skills into SkillRepertoire.
 	Skills []string `yaml:"skills,omitempty"`
-	Laws   []string `yaml:"laws,omitempty"`
+	// SkillRepertoire (schema v2) is the full pool of skills the persona is
+	// equipped with. mcp_commands may only select a subset of this pool.
+	SkillRepertoire []string `yaml:"skill_repertoire,omitempty"`
+	Laws            []string `yaml:"laws,omitempty"`
 }
 
 // ProjectWiring is the project entry inside `omakiten.yaml` (Phase 2 surface).
@@ -700,19 +723,34 @@ type Skill struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Body        string `json:"body,omitempty"`
-	SourcePath  string `json:"source_path,omitempty"`
-	IsCustom    bool   `json:"is_custom,omitempty"`
+	// SchemaVersion marks a schema-v2 skill (carries role_affinity).
+	SchemaVersion int `json:"schema_version,omitempty"`
+	// RoleAffinity (schema v2) lists the roles this skill is suited for.
+	RoleAffinity []string `json:"role_affinity,omitempty"`
+	SourcePath   string   `json:"source_path,omitempty"`
+	IsCustom     bool     `json:"is_custom,omitempty"`
+	// Active is set only on Bundle.AllSkills / Snapshot.AllSkills entries
+	// that are wired into the active bundle. The picked Skills slice is
+	// active by definition, so the field is left zero there.
+	Active bool `json:"-"`
 }
 
 type Persona struct {
-	Slug        string   `json:"slug"`
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Body        string   `json:"body,omitempty"`
-	Skills      []string `json:"skills,omitempty"`
-	Laws        []string `json:"laws,omitempty"`
-	SourcePath  string   `json:"source_path,omitempty"`
-	IsCustom    bool     `json:"is_custom,omitempty"`
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Body        string `json:"body,omitempty"`
+	// SchemaVersion marks a schema-v2 persona (carries skill_repertoire).
+	SchemaVersion int      `json:"schema_version,omitempty"`
+	Skills        []string `json:"skills,omitempty"`
+	// SkillRepertoire (schema v2) is the persona's full skill pool;
+	// mcp_commands may only select a subset of it.
+	SkillRepertoire []string `json:"skill_repertoire,omitempty"`
+	Laws            []string `json:"laws,omitempty"`
+	SourcePath      string   `json:"source_path,omitempty"`
+	IsCustom        bool     `json:"is_custom,omitempty"`
+	// Active marks AllPersonas catalog entries wired into the active bundle.
+	Active bool `json:"-"`
 }
 
 type Law struct {
@@ -725,6 +763,8 @@ type Law struct {
 	PersonaSlug string `json:"persona,omitempty"`
 	SourcePath  string `json:"source_path,omitempty"`
 	IsCustom    bool   `json:"is_custom,omitempty"`
+	// Active marks AllLaws catalog entries wired into the active bundle.
+	Active bool `json:"-"`
 }
 
 type Project struct {
@@ -754,6 +794,8 @@ type TaskTemplate struct {
 	Body        string   `json:"body,omitempty"`
 	SourcePath  string   `json:"source_path,omitempty"`
 	IsCustom    bool     `json:"is_custom,omitempty"`
+	// Active marks AllTemplates catalog entries wired into the active bundle.
+	Active bool `json:"-"`
 }
 
 type Workflow struct {

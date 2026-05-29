@@ -14,6 +14,9 @@ import (
 type skillFrontmatter struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description,omitempty"`
+	// SchemaVersion + RoleAffinity are schema-v2 fields (task #268).
+	SchemaVersion int      `yaml:"schema_version,omitempty"`
+	RoleAffinity  []string `yaml:"role_affinity,omitempty"`
 }
 
 type lawFrontmatter struct {
@@ -25,6 +28,9 @@ type personaFrontmatter struct {
 	Name        string   `yaml:"name"`
 	Description string   `yaml:"description,omitempty"`
 	Laws        []string `yaml:"laws,omitempty"`
+	// SchemaVersion + SkillRepertoire are schema-v2 fields (task #268).
+	SchemaVersion   int      `yaml:"schema_version,omitempty"`
+	SkillRepertoire []string `yaml:"skill_repertoire,omitempty"`
 }
 
 type templateFrontmatter struct {
@@ -64,12 +70,14 @@ func decodeSkillFile(path string, raw []byte, isCustom bool) (Skill, *SourceWarn
 	}
 	slug := slugFromFilename(path)
 	return Skill{
-		Slug:        slug,
-		Name:        meta.Name,
-		Description: meta.Description,
-		Body:        string(body),
-		SourcePath:  path,
-		IsCustom:    isCustom,
+		Slug:          slug,
+		Name:          meta.Name,
+		Description:   meta.Description,
+		Body:          string(body),
+		SchemaVersion: meta.SchemaVersion,
+		RoleAffinity:  append([]string(nil), meta.RoleAffinity...),
+		SourcePath:    path,
+		IsCustom:      isCustom,
 	}, slugMismatchWarning(slug, meta.Name, path), nil
 }
 
@@ -134,13 +142,15 @@ func decodePersonaFile(path string, raw []byte, isCustom bool) (Persona, *Source
 	}
 	slug := slugFromFilename(path)
 	return Persona{
-		Slug:        slug,
-		Name:        meta.Name,
-		Description: meta.Description,
-		Body:        string(body),
-		Laws:        append([]string(nil), meta.Laws...),
-		SourcePath:  path,
-		IsCustom:    isCustom,
+		Slug:            slug,
+		Name:            meta.Name,
+		Description:     meta.Description,
+		Body:            string(body),
+		Laws:            append([]string(nil), meta.Laws...),
+		SchemaVersion:   meta.SchemaVersion,
+		SkillRepertoire: append([]string(nil), meta.SkillRepertoire...),
+		SourcePath:      path,
+		IsCustom:        isCustom,
 	}, slugMismatchWarning(slug, meta.Name, path), nil
 }
 

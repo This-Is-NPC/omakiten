@@ -387,71 +387,268 @@ config:
       window_days: 30
     task_activity:
       sort: {order: asc}
+# Kaiseki (LOTR) themed roster — Pitch B, by canonical role (#189 W5.2).
+# Schema v2: each persona declares a `skill_repertoire` (the full pool it is
+# equipped with); mcp_commands below may only select a SUBSET of that pool
+# (enforced by validateMCPCommandSkillSubset). The persona carries TONE; the
+# skill carries PROCEDURE; templates carry STRUCTURE. Concierge and Scribe are
+# the same hand (bilbo-baggins), so seven persona files cover eight role slots.
 personas:
-  - slug: methodical-engineer
-    skills: [staged-delivery, requirements-elicitation, design-documentation, decision-records, acceptance-criteria-writing, implementation, standup-digest, recap-timeline, markdown]
-  - slug: product-owner
-    skills: [discovery, user-story-writing, requirements-elicitation, acceptance-criteria-writing, pdca-cycle, five-w-two-h, smart-goals, invest-stories, moscow-prioritization, rice-scoring, non-functional-requirements, markdown]
-  - slug: documentation-agent
-    skills: [documentation, architecture-mapping, requirements-mapping, readme-curation, handoff-synthesis, note-capture, markdown]
-  - slug: commit-author
-    skills: [conventional-commits-spec, markdown]
-  - slug: code-reviewer
-    skills: [refactoring-catalog, code-smells, solid-principles, legacy-seams, security-review-lens, markdown]
-  - slug: check-runner
-    skills: [test-driven-development, static-analysis-discipline, coverage-analysis, regression-detection, markdown]
+  # Concierge + Scribe — chronicler/router and record-keeper. Repertoire carries
+  # all four #359 note skills (handoff-synthesis, note-capture, standup-digest,
+  # recap-timeline) plus the themed `chronicle-handoff` variant so the okt-note-*
+  # and okt-pause slots resolve.
+  - slug: bilbo-baggins
+    schema_version: 2
+    skill_repertoire:
+      - pdca-cycle
+      - discovery
+      - handoff-synthesis
+      - chronicle-handoff
+      - note-capture
+      - recap-timeline
+      - standup-digest
+      - documentation
+      - architecture-mapping
+      - postmortem-authoring
+      - staged-delivery
+      - markdown
+  # Owner — direction, prioritization, requirements, plan authoring.
+  - slug: gandalf-the-grey
+    schema_version: 2
+    skill_repertoire:
+      - five-w-two-h
+      - smart-goals
+      - staged-delivery
+      - dora-mindset
+      - risk-driven-development
+      - requirements-elicitation
+      - non-functional-requirements
+      - moscow-prioritization
+      - rice-scoring
+      - user-story-writing
+      - invest-stories
+      - markdown
+  # Ideator — discovery and cheap experiments.
+  - slug: frodo-baggins
+    schema_version: 2
+    skill_repertoire:
+      - discovery
+      - lean-experimentation
+      - five-w-two-h
+      - markdown
+  # Builder — small sure increments, opportunistic cleanup.
+  - slug: aragorn
+    schema_version: 2
+    skill_repertoire:
+      - implementation
+      - test-driven-development
+      - trunk-based-development
+      - continuous-integration
+      - solid-principles
+      - code-smells
+      - refactoring-catalog
+      - markdown
+  # Tester — runs the checks, reports evidence.
+  - slug: legolas
+    schema_version: 2
+    skill_repertoire:
+      - regression-detection
+      - coverage-analysis
+      - static-analysis-discipline
+      - test-driven-development
+      - markdown
+  # Reviewer — whole-diff read, structural + security lens.
+  - slug: elrond
+    schema_version: 2
+    skill_repertoire:
+      - code-smells
+      - refactoring-catalog
+      - security-review-lens
+      - solid-principles
+      - markdown
+  # Committer — Conventional Commits, scoped history, never auto-pushes.
+  - slug: samwise-gamgee
+    schema_version: 2
+    skill_repertoire:
+      - conventional-commits-spec
+      - markdown
 mcp_commands:
   global:
     laws: [template-fidelity, authorize-remote-writes, project-scope-only]
+  # Kaiseki (LOTR) slot bindings (#189 W5.2). Each command binds the themed
+  # persona for its canonical role and selects a SUBSET of that persona's
+  # skill_repertoire. The W1 subset validator enforces skills ⊆ repertoire.
   okt:
-    persona: methodical-engineer
-  okt-imagine:
-    persona: product-owner
+    persona: bilbo-baggins
+    skills: [pdca-cycle]
+  # Guiding orchestrators. okt-start (Concierge smart entry, shared with the bare
+  # `okt` shortcut) + okt-pause (Concierge close) bind bilbo-baggins. okt-shape /
+  # okt-audit are Owner orchestrators → gandalf-the-grey.
+  okt-start:
+    persona: bilbo-baggins
+    skills: [pdca-cycle, discovery]
+  okt-shape:
+    persona: gandalf-the-grey
+    skills: [five-w-two-h, smart-goals]
+  okt-audit:
+    persona: gandalf-the-grey
+    skills: [risk-driven-development]
+  # okt-run Owner director — delegates implementation to per-task Builder
+  # subagents and reviews their compact returns.
+  okt-run:
+    persona: gandalf-the-grey
+    skills: [staged-delivery, dora-mindset]
+  okt-task-imagine:
+    persona: frodo-baggins
+    skills: [discovery, lean-experimentation]
     laws_disabled: [template-fidelity]
     templates: [comment-5w2h, comment-smart-success]
-  okt-create:
-    persona: product-owner
+  # Granular lifecycle commands. Ideator → frodo-baggins; Owner →
+  # gandalf-the-grey; Builder → aragorn; Concierge/Scribe → bilbo-baggins.
+  okt-task-research:
+    persona: frodo-baggins
+    skills: [discovery]
+    laws_disabled: [template-fidelity]
+  okt-task-validate:
+    persona: frodo-baggins
+    skills: [lean-experimentation]
+    laws_disabled: [template-fidelity]
+  okt-task-requirements:
+    persona: gandalf-the-grey
+    skills: [requirements-elicitation, non-functional-requirements]
+    laws: [requirements-signed-off, acceptance-criteria-required]
+    templates: [comment-requirements, comment-acceptance]
+  okt-task-prioritize:
+    persona: gandalf-the-grey
+    skills: [moscow-prioritization, rice-scoring]
+    templates: [comment-moscow, comment-rice-score]
+  okt-task-create:
+    persona: gandalf-the-grey
+    skills: [user-story-writing, invest-stories, smart-goals]
     laws: [requirements-signed-off, acceptance-criteria-required, invest-stories, outcome-over-output, prioritization-recorded, non-functional-explicit]
     templates: [task-feature, comment-requirements, comment-acceptance, comment-smart-success, comment-moscow, comment-rice-score, comment-non-functional]
-  okt-resume:
-    persona: methodical-engineer
-  okt-continue:
-    persona: methodical-engineer
-  okt-implement:
-    persona: methodical-engineer
-    laws: [design-recorded, decision-record-on-divergence, peer-review-required, conventional-commits, no-silent-behavior-changes]
+  okt-task-decompose:
+    persona: gandalf-the-grey
+    skills: [user-story-writing]
+  okt-task-estimate:
+    persona: gandalf-the-grey
+    skills: [rice-scoring]
+  okt-task-design:
+    persona: aragorn
+    skills: [solid-principles]
+    laws: [map-before-the-road, design-recorded]
+    templates: [design-doc, comment-design-decision]
+  okt-project-resume:
+    persona: bilbo-baggins
+    skills: [pdca-cycle]
+  okt-project-continue:
+    persona: bilbo-baggins
+    skills: [pdca-cycle]
+  # Granular plan commands. Owner role → gandalf-the-grey.
+  okt-plan-create:
+    persona: gandalf-the-grey
+    skills: [staged-delivery]
+  okt-plan-show:
+    persona: gandalf-the-grey
+    skills: [staged-delivery]
+  okt-plan-continue:
+    persona: gandalf-the-grey
+    skills: [staged-delivery]
+  okt-plan-claim:
+    persona: gandalf-the-grey
+    skills: [staged-delivery]
+  okt-task-resume:
+    persona: aragorn
+    skills: [implementation]
+  okt-task-continue:
+    persona: aragorn
+    skills: [implementation]
+  okt-task-implement:
+    persona: aragorn
+    skills: [implementation, test-driven-development, trunk-based-development, continuous-integration]
+    laws: [map-before-the-road, design-recorded, decision-record-on-divergence, council-of-elrond-review, conventional-commits, no-silent-behavior-changes]
     templates: [pull-request, decision-record, design-doc, comment-design-decision]
-  okt-document:
-    persona: documentation-agent
+  okt-task-self-review:
+    persona: aragorn
+    skills: [code-smells]
+    templates: [comment-review-findings]
+  okt-task-refactor:
+    persona: aragorn
+    skills: [refactoring-catalog]
+    laws: [no-silent-behavior-changes]
+    templates: [comment-refactor-opportunities]
+  # Scribe → bilbo-baggins.
+  okt-task-document:
+    persona: bilbo-baggins
+    skills: [documentation, architecture-mapping]
+  okt-task-debrief:
+    persona: bilbo-baggins
+    skills: [postmortem-authoring]
+    laws: [no-praise-pad]
+  # System commands talk to the TOOL, not the project. Concierge/generic →
+  # bilbo-baggins. okt-skill pulls ANY skill (ungated by persona repertoire);
+  # the markdown subset just shapes its own prose.
+  okt-help:
+    persona: bilbo-baggins
+    skills: [markdown]
   okt-config:
-    persona: documentation-agent
+    persona: bilbo-baggins
+    skills: [markdown]
     templates: [config-orientation]
-  okt-commit:
-    persona: commit-author
+  okt-skill:
+    persona: bilbo-baggins
+    skills: [markdown]
+  # Committer → samwise-gamgee.
+  okt-task-commit:
+    persona: samwise-gamgee
+    skills: [conventional-commits-spec]
     laws: [conventional-commits, no-coauthored-by, link-decision-record]
-  okt-review:
-    persona: code-reviewer
-    laws: [design-recorded-check, decision-record-on-divergence]
+  # Reviewer → elrond.
+  okt-task-review:
+    persona: elrond
+    skills: [code-smells, refactoring-catalog]
+    laws: [council-of-elrond-review, design-recorded-check, decision-record-on-divergence]
     templates: [comment-review-findings, comment-refactor-opportunities]
-  okt-check:
-    persona: check-runner
+  okt-task-secure:
+    persona: elrond
+    skills: [security-review-lens]
+    templates: [comment-review-findings]
+  # Tester → legolas.
+  okt-task-check:
+    persona: legolas
+    skills: [regression-detection, coverage-analysis]
     laws: [requirements-coverage-check, decision-record-on-gap]
     templates: [comment-check-report]
-  # Notes / handoff v1 (#363). Provisional persona kit — #189 W4/W5.x
-  # rebinds to themed personas under Proposta B.
-  okt-handoff:
-    persona: documentation-agent
-    laws: [project-scope-only, no-praise-pad]
+  okt-task-quality:
+    persona: legolas
+    skills: [static-analysis-discipline]
+    templates: [comment-review-findings]
+  # Notes / handoff. The Concierge+Scribe (bilbo-baggins) repertoire carries all
+  # four #359 note skills — handoff-synthesis, note-capture, standup-digest,
+  # recap-timeline — plus the themed chronicle-handoff variant, so every
+  # notes-bearing slot resolves a real skill subset. okt-pause (orchestrator
+  # close) synthesises a handoff via the Red Book chronicle; okt-note-free
+  # captures ad-hoc; okt-note-recap folds the standup digest into a recap.
+  okt-pause:
+    persona: bilbo-baggins
+    skills: [chronicle-handoff]
+    laws: [project-scope-only, red-book-of-westmarch, no-praise-pad]
     templates: [note-handoff]
-  okt-note:
-    persona: documentation-agent
+  okt-note-free:
+    persona: bilbo-baggins
+    skills: [note-capture]
     templates: [note-free]
-  okt-standup:
-    persona: methodical-engineer
-    templates: [note-standup-digest]
-  okt-recap:
-    persona: methodical-engineer
-    templates: [note-recap]
+  okt-note-recap:
+    persona: bilbo-baggins
+    skills: [recap-timeline, standup-digest]
+    templates: [note-recap, note-standup-digest]
+  okt-note-list:
+    persona: bilbo-baggins
+    skills: [note-capture]
+  okt-note-show:
+    persona: bilbo-baggins
+    skills: [note-capture]
 workflows:
   - id: 1
     key: kaiseki

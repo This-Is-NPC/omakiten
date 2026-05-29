@@ -1309,10 +1309,19 @@ func (m Model) computeMetrics(maxTokens int) domain.TokenMetrics {
 		total += entry.TokenEstimate
 	}
 	for _, law := range m.laws {
+		// m.laws now carries the full catalog; only the active subset is in
+		// the agent context, so inactive entries must not inflate the budget.
+		if !law.Active {
+			continue
+		}
 		total += m.countTokens(law.Key + " " + law.Body)
 	}
 	for _, persona := range m.personas {
 		// Persona descriptions count toward the budget; skill bodies do not.
+		// Skip inactive catalog entries — only wired personas hit the budget.
+		if !persona.Active {
+			continue
+		}
 		total += m.countTokens(persona.Description)
 	}
 	for _, comment := range m.comments {

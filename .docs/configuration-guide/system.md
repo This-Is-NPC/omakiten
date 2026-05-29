@@ -488,7 +488,7 @@ skills: [implementation, markdown]
 laws: [workflow-enforced, yaml-is-canonical]
 
 personas:
-  - slug: engineer
+  - slug: builder
     skills: [implementation, markdown]
     laws:   [project-scope-only]   # persona-scoped — must NOT also appear in top-level laws
 

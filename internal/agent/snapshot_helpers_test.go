@@ -92,12 +92,13 @@ func snapshotWithEntities(
 	}
 	for _, p := range personas {
 		bundle.Personas = append(bundle.Personas, config.Persona{
-			Slug:        p.Slug,
-			Name:        p.Name,
-			Description: p.Description,
-			Body:        p.Body,
-			Skills:      append([]string(nil), p.Skills...),
-			Laws:        append([]string(nil), p.Laws...),
+			Slug:            p.Slug,
+			Name:            p.Name,
+			Description:     p.Description,
+			Body:            p.Body,
+			Skills:          append([]string(nil), p.Skills...),
+			SkillRepertoire: append([]string(nil), p.SkillRepertoire...),
+			Laws:            append([]string(nil), p.Laws...),
 		})
 	}
 	for _, tpl := range templates {
@@ -122,6 +123,7 @@ func snapshotWithEntities(
 				Laws:         append([]string(nil), binding.Laws...),
 				LawsDisabled: append([]string(nil), binding.LawsDisabled...),
 				Templates:    append([]string(nil), binding.Templates...),
+				Skills:       append([]string(nil), binding.Skills...),
 			}
 		}
 	}

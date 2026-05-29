@@ -160,11 +160,11 @@ mcp_commands:
   global:
     laws: [template-fidelity, authorize-remote-writes]
   okt-implement:
-    persona: engineer
+    persona: builder
     laws: [bounded-self-review, no-silent-behavior-changes, conventional-commits, self-report]
     templates: [pull-request]
   okt-imagine:
-    persona: product-owner
+    persona: planner
     laws_disabled: [template-fidelity]
 ```
 

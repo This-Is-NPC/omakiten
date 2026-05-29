@@ -1,6 +1,10 @@
 ---
 name: Standup digest
 description: Aggregate recent handoff notes across projects within a time window, compute per-project deltas, and render the standup digest read-only.
+schema_version: 2
+role_affinity:
+  - Scribe
+  - Concierge
 ---
 A standup digest is a multi-project snapshot for the start of a working session. The skill reads existing handoffs; it never writes them. If a project has no handoff in the window, the digest reports the gap rather than inventing one.
 

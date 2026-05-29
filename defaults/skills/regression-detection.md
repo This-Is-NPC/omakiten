@@ -1,6 +1,10 @@
 ---
 name: Regression detection
 description: "git bisect (Linus Torvalds, 2005) + characterization tests (Feathers 2004) for catching and pinning regressions on legacy paths."
+schema_version: 2
+role_affinity:
+  - Tester
+  - Reviewer
 ---
 Two complementary techniques — one finds, one prevents.
 

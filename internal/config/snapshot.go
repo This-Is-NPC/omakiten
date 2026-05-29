@@ -191,6 +191,16 @@ type Snapshot struct {
 	templatesBySlug    map[string]int
 	templatesByDefault map[templateDefaultKey]int
 
+	// all* hold the full on-disk catalog (every preset's entity files),
+	// each entry stamped with Active for the wiring in force. The active
+	// subset above is the storage of record for runtime resolution; these
+	// back only the Settings catalog view. nil on bundles built before the
+	// catalog fields existed — accessors fall back to the active slice.
+	allPersonas  []Persona
+	allSkills    []Skill
+	allLaws      []Law
+	allTemplates []TaskTemplate
+
 	notifications map[string]Notification
 	mcpCommands   map[string]MCPCommandSpec
 
@@ -287,6 +297,13 @@ func BuildSnapshot(bundle Bundle) *Snapshot {
 			snap.templatesByDefault[templateDefaultKey{kind: t.Default, project: t.ProjectSlug}] = i
 		}
 	}
+
+	// Full catalog (active-flagged) for the Settings view. Stored alongside
+	// the active slices above; runtime resolution never reads these.
+	snap.allPersonas = append(snap.allPersonas, bundle.AllPersonas...)
+	snap.allSkills = append(snap.allSkills, bundle.AllSkills...)
+	snap.allLaws = append(snap.allLaws, bundle.AllLaws...)
+	snap.allTemplates = append(snap.allTemplates, bundle.AllTemplates...)
 
 	for k, n := range bundle.Notifications {
 		snap.notifications[k] = n
@@ -556,6 +573,55 @@ func (s *Snapshot) LawBySlug(slug string) (Law, bool) {
 // fresh copy.
 func (s *Snapshot) Templates() []TaskTemplate {
 	return append([]TaskTemplate(nil), s.templates...)
+}
+
+// activeStamped marks every entry in xs Active via mark and returns the same
+// slice. The All* accessors use it for their fallback (bundles built without
+// a catalog): the active slice IS the active set, so each entry is flagged.
+// xs is already a fresh copy from the active accessor, so the in-place write
+// does not mutate snapshot state.
+func activeStamped[T any](xs []T, mark func(*T)) []T {
+	for i := range xs {
+		mark(&xs[i])
+	}
+	return xs
+}
+
+// AllPersonas returns the full on-disk persona catalog with each entry's
+// Active flag set for the wiring in force. Falls back to the active slice
+// for bundles built before the catalog fields existed. Fresh copy.
+func (s *Snapshot) AllPersonas() []Persona {
+	if s.allPersonas == nil {
+		return activeStamped(s.Personas(), func(p *Persona) { p.Active = true })
+	}
+	return append([]Persona(nil), s.allPersonas...)
+}
+
+// AllSkills returns the full on-disk skill catalog (active-flagged). Falls
+// back to the active slice when unset. Fresh copy.
+func (s *Snapshot) AllSkills() []Skill {
+	if s.allSkills == nil {
+		return activeStamped(s.Skills(), func(sk *Skill) { sk.Active = true })
+	}
+	return append([]Skill(nil), s.allSkills...)
+}
+
+// AllLaws returns the full on-disk law catalog (active-flagged). Falls back
+// to the active slice when unset. Fresh copy.
+func (s *Snapshot) AllLaws() []Law {
+	if s.allLaws == nil {
+		return activeStamped(s.Laws(), func(l *Law) { l.Active = true })
+	}
+	return append([]Law(nil), s.allLaws...)
+}
+
+// AllTemplates returns the full on-disk template catalog (active-flagged).
+// Falls back to the active slice when unset. Fresh copy.
+func (s *Snapshot) AllTemplates() []TaskTemplate {
+	if s.allTemplates == nil {
+		return activeStamped(s.Templates(), func(t *TaskTemplate) { t.Active = true })
+	}
+	return append([]TaskTemplate(nil), s.allTemplates...)
 }
 
 // Languages returns every Language discovered by the loader (bundled +

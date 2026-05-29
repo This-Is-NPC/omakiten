@@ -1,6 +1,10 @@
 ---
 name: SOLID principles
 description: Robert C. Martin's SOLID — Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion.
+schema_version: 2
+role_affinity:
+  - Builder
+  - Reviewer
 ---
 Cite by abbreviation when surfacing a finding; each one carries a concrete signal pattern.
 

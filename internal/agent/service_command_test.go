@@ -14,7 +14,7 @@ func TestResolveCommandComposesEffectiveLaws(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-implement"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -51,7 +51,7 @@ func TestResolveCommandLawsDisabledOptsOut(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-imagine"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-imagine"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -96,17 +96,24 @@ func TestResolveCommandEmptyName(t *testing.T) {
 // where to go after the current step and the workflow becomes guesswork.
 func TestResolveCommandRestHandoffsPresent(t *testing.T) {
 	expectedHandoffs := map[string][]string{
-		"okt":           {"okt-resume", "okt-imagine"},
-		"okt-imagine":   {"okt-create"},
-		"okt-create":    {"comment-selfbranch"},
-		"okt-resume":    {"okt-continue"},
-		"okt-continue":  {"okt-implement"},
-		"okt-implement": {"comment-resume"},
-		"okt-document":  {"okt-create"},
-		"okt-config":    {"templates.show", "config-orientation", "okt-implement"},
-		"okt-commit":    {"git push"},
-		"okt-review":    {"okt-implement"},
-		"okt-check":     {"okt-implement"},
+		// CW4 (#375): `okt` is the bare shortcut to `okt-start`, so both land on
+		// the smart-entry playbook whose next-move handoffs name the actual
+		// commands to run from the current state (continue a task / a plan, or
+		// shape new work).
+		"okt":                {"okt-task-continue", "okt-plan-continue", "okt-shape"},
+		"okt-start":          {"okt-task-continue", "okt-plan-continue", "okt-shape"},
+		"okt-shape":          {"okt-plan-create", "okt-run"},
+		"okt-audit":          {"okt-task-implement", "okt-pause"},
+		"okt-task-imagine":   {"okt-task-create"},
+		"okt-task-create":    {"comment-selfbranch"},
+		"okt-project-resume": {"okt-task-continue"},
+		"okt-task-continue":  {"okt-task-implement"},
+		"okt-task-implement": {"comment-resume"},
+		"okt-task-document":  {"okt-task-create"},
+		"okt-config":         {"templates.show", "config-orientation", "okt-task-implement"},
+		"okt-task-commit":    {"git push"},
+		"okt-task-review":    {"okt-task-implement"},
+		"okt-task-check":     {"okt-task-implement"},
 	}
 	for name, hints := range expectedHandoffs {
 		text := CommandActionFallback(name)
@@ -136,7 +143,7 @@ func TestResolveCommandTemplatesJITRendering(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-implement"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -156,14 +163,15 @@ func TestResolveCommandTemplatesJITRendering(t *testing.T) {
 
 // TestRenderCommandMarkdownDropsRedundantStructure pins the renderer
 // streamlining contract: the rendered Markdown must NOT echo the prompt name
-// header or description (both ship in `prompts/list` metadata) and must NOT
-// emit per-skill description bullets (skill names suffice; the procedure
-// lives in persona body and action text).
+// header or description (both ship in `prompts/list` metadata). Skills render
+// as bullet-with-body — one bullet per skill, in configured order, carrying
+// the skill body when present and falling back to the description otherwise.
+// The bare `## Skills — A, B` inline header (no per-skill detail) is gone.
 func TestRenderCommandMarkdownDropsRedundantStructure(t *testing.T) {
 	fixture := newAgentFixture(t)
 	wireBindingFixtures(t, fixture)
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-implement"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -171,15 +179,53 @@ func TestRenderCommandMarkdownDropsRedundantStructure(t *testing.T) {
 	if strings.HasPrefix(resp.Markdown, "# ") || strings.Contains(resp.Markdown, "\n# okt-") {
 		t.Fatalf("Markdown should not echo prompt name as H1 header — already in prompts/list metadata. Got:\n%s", resp.Markdown)
 	}
-	// Skills section emits the inline list only — no per-skill bullets.
-	if !strings.Contains(resp.Markdown, "## Skills — Go") {
-		t.Fatalf("Markdown should carry inline `## Skills — <names>`, got:\n%s", resp.Markdown)
+	// The section headline carries no inline name list anymore — detail lives
+	// in the per-skill bullets below it.
+	if !strings.Contains(resp.Markdown, "## Skills\n") {
+		t.Fatalf("Markdown should carry a plain `## Skills` header, got:\n%s", resp.Markdown)
 	}
-	// Bulleted skill lines like `- **Go**: <description>` must be gone.
-	for _, line := range strings.Split(resp.Markdown, "\n") {
-		if strings.HasPrefix(line, "- **Go**:") || strings.HasPrefix(line, "- **SQLite**:") {
-			t.Fatalf("Markdown should not emit per-skill description bullets, got line: %q", line)
-		}
+	if strings.Contains(resp.Markdown, "## Skills — ") {
+		t.Fatalf("Markdown should not carry the inline `## Skills — <names>` list, got:\n%s", resp.Markdown)
+	}
+	// The okt-implement persona binds only `go`, which has a body in the
+	// fixture — it must render bullet-with-body.
+	if !strings.Contains(resp.Markdown, "- **Go** — Go body.") {
+		t.Fatalf("Markdown should render skill body bullet `- **Go** — Go body.`, got:\n%s", resp.Markdown)
+	}
+}
+
+// TestRenderCommandMarkdownSkillBulletWithBody pins the bullet-with-body
+// contract directly: skills with a body render the body, skills without a
+// body fall back to the description, and configured order is preserved.
+func TestRenderCommandMarkdownSkillBulletWithBody(t *testing.T) {
+	resp := ResolveCommandResponse{
+		Action: "do the thing",
+		Skills: []SkillInfo{
+			{Slug: "go", Name: "Go", Description: "Idiomatic Go.", Body: "Write small functions.\nPrefer composition."},
+			{Slug: "sqlite", Name: "SQLite", Description: "Embedded SQL.", Body: ""},
+			{Slug: "bare", Name: "Bare", Description: "", Body: ""},
+		},
+	}
+	md := renderCommandMarkdown(resp)
+
+	// Body-bearing skill renders its body; multi-line body indents continuations.
+	if !strings.Contains(md, "- **Go** — Write small functions.\n  Prefer composition.") {
+		t.Fatalf("body-bearing skill should render bullet-with-body, got:\n%s", md)
+	}
+	// Body-less skill falls back to the description.
+	if !strings.Contains(md, "- **SQLite** — Embedded SQL.") {
+		t.Fatalf("body-less skill should fall back to description, got:\n%s", md)
+	}
+	// Skill with neither body nor description renders the bare name.
+	if !strings.Contains(md, "- **Bare**\n") {
+		t.Fatalf("skill with no body or description should render bare name, got:\n%s", md)
+	}
+	// Configured order preserved: Go before SQLite before Bare.
+	goIdx := strings.Index(md, "**Go**")
+	sqliteIdx := strings.Index(md, "**SQLite**")
+	bareIdx := strings.Index(md, "**Bare**")
+	if goIdx >= sqliteIdx || sqliteIdx >= bareIdx {
+		t.Fatalf("skills must render in configured order, got go=%d sqlite=%d bare=%d:\n%s", goIdx, sqliteIdx, bareIdx, md)
 	}
 }
 
@@ -218,7 +264,7 @@ func TestLawBodiesCarryFewShotExamples(t *testing.T) {
 	wireBindingFixtures(t, fixture)
 
 	loadBearing := []string{"template-fidelity"} // wired in the fixture's law catalog
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-implement"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
@@ -255,12 +301,48 @@ func TestResolveCommandRendersPersonaBody(t *testing.T) {
 		Laws:        []string{"project-scope-only"},
 	})
 
-	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-implement"})
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
 	if !strings.Contains(resp.Markdown, marker) {
 		t.Fatalf("persona body marker %q missing from rendered markdown:\n%s", marker, resp.Markdown)
+	}
+}
+
+// TestResolveCommandFallsBackToSkillRepertoire pins the schema-v2 fallback:
+// when a command declares no command-level skills AND the bound persona has an
+// empty v1 Skills list but a populated v2 SkillRepertoire, the resolver must
+// render the repertoire skills under `## Skills`. Before SkillRepertoire was
+// carried on PersonaInfo this rendered an empty section silently.
+func TestResolveCommandFallsBackToSkillRepertoire(t *testing.T) {
+	fixture := newAgentFixture(t)
+	wireBindingFixturesWithPersona(t, fixture, PersonaInfo{
+		Slug:            "backend-agent",
+		Name:            "Backend Agent",
+		Description:     "Backend-focused agent.",
+		Skills:          nil, // v2 persona: no directly-wired v1 skills
+		SkillRepertoire: []string{"go", "sqlite"},
+		Laws:            []string{"project-scope-only"},
+	})
+
+	// okt-task-implement declares no command-level skills in the fixture, so
+	// resolution must walk the fallback chain into SkillRepertoire.
+	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-task-implement"})
+	if err != nil {
+		t.Fatalf("ResolveCommand() error = %v", err)
+	}
+	if len(resp.Skills) != 2 {
+		t.Fatalf("resolved skills = %d, want 2 from SkillRepertoire fallback: %+v", len(resp.Skills), resp.Skills)
+	}
+	if resp.Skills[0].Slug != "go" || resp.Skills[1].Slug != "sqlite" {
+		t.Fatalf("resolved skill order = [%s %s], want [go sqlite]", resp.Skills[0].Slug, resp.Skills[1].Slug)
+	}
+	if !strings.Contains(resp.Markdown, "## Skills") {
+		t.Fatalf("rendered markdown missing ## Skills section:\n%s", resp.Markdown)
+	}
+	if !strings.Contains(resp.Markdown, "**Go**") {
+		t.Fatalf("rendered markdown missing repertoire skill Go:\n%s", resp.Markdown)
 	}
 }
 
@@ -274,7 +356,6 @@ func TestResolveCommandRendersPersonaBody(t *testing.T) {
 func TestCommandActionsArePersonaAgnostic(t *testing.T) {
 	leakedPhrases := []string{
 		"Take the role",
-		"engineer",
 		"product owner",
 		"documentation curator",
 		"honoring every law",
@@ -292,7 +373,7 @@ func TestCommandActionsArePersonaAgnostic(t *testing.T) {
 		}
 	}
 	// Pin okt-implement specifics: bootstrap tool + handoff marker must remain.
-	implementAction := CommandActionFallback("okt-implement")
+	implementAction := CommandActionFallback("okt-task-implement")
 	for _, want := range []string{"tasks.continue", "comment-resume"} {
 		if !strings.Contains(implementAction, want) {
 			t.Fatalf("okt-implement action missing required marker %q:\n%s", want, implementAction)
@@ -354,8 +435,8 @@ func wireBindingFixturesWithPersona(t *testing.T, fixture agentFixture, persona 
 	commands := map[string]MCPCommandBinding{
 		MCPCommandsGlobalKey: {Laws: []string{"template-fidelity"}},
 		"okt":                {Persona: "backend-agent"},
-		"okt-implement":      {Persona: "backend-agent", Templates: []string{"pull-request"}},
-		"okt-imagine":        {Persona: "backend-agent", LawsDisabled: []string{"template-fidelity"}},
+		"okt-task-implement": {Persona: "backend-agent", Templates: []string{"pull-request"}},
+		"okt-task-imagine":   {Persona: "backend-agent", LawsDisabled: []string{"template-fidelity"}},
 	}
 	fixture.service.SetSnapshot(snapshotWithEntities(t, skills, laws, []PersonaInfo{persona}, templates, commands))
 }

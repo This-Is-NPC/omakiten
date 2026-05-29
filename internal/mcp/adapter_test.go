@@ -42,6 +42,8 @@ func TestToolsIncludePlannedSurface(t *testing.T) {
 		"solutions.confirm":   false,
 		"metrics.summary":     false,
 		"logs.list":           false,
+		"skills.list":         false,
+		"skills.get":          false,
 	}
 	for _, tool := range Tools() {
 		if _, ok := want[tool.Name]; ok {
@@ -205,11 +207,15 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		"plans.assign_task",
 		"plans.claim_next",
 		"plans.continue",
+		"skills.list",
+		"skills.get",
 	}
 
 	for _, name := range tools {
 		var args map[string]any
 		switch name {
+		case "skills.get":
+			args = map[string]any{"slug": "go"}
 		case "tasks.continue", "comments.add", "comments.list", "task_activity.list", "dependencies.add", "dependencies.remove", "dependencies.list":
 			args = map[string]any{"task_id": 1}
 		case "tasks.move":
@@ -247,6 +253,94 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CallTool(%s) error = %v", name, err)
 		}
+	}
+}
+
+// TestAdapterSkillsToolsReadOnly pins the CW6 read-only skills surface:
+// skills.list returns slugs + descriptions with NO body, skills.get returns
+// one known skill's body, and skills.get on an unknown slug rejects cleanly
+// with the missing slug surfaced. There is no skills.create / skills.edit /
+// skills.delete tool — the catalog is user-authored and MCP never mutates it.
+func TestAdapterSkillsToolsReadOnly(t *testing.T) {
+	ctx := context.Background()
+	service := newMCPTestService(t, ctx)
+	adapter := NewAdapter(service)
+
+	// No write path exists.
+	for _, name := range []string{"skills.create", "skills.edit", "skills.delete"} {
+		if _, err := adapter.CallTool(ctx, name, withModel(nil)); err == nil {
+			t.Fatalf("%s unexpectedly dispatched — skills must be read-only", name)
+		}
+	}
+
+	// list: slugs + descriptions, no bodies.
+	listRes, err := adapter.CallTool(ctx, "skills.list", withModel(nil))
+	if err != nil {
+		t.Fatalf("CallTool(skills.list) error = %v", err)
+	}
+	if listRes.IsError {
+		t.Fatalf("skills.list error: %s", listRes.Content[0].Text)
+	}
+	var listPayload struct {
+		Skills []struct {
+			Slug        string `json:"slug"`
+			Description string `json:"description"`
+			Body        string `json:"body"`
+		} `json:"skills"`
+	}
+	if err := json.Unmarshal([]byte(listRes.Content[0].Text), &listPayload); err != nil {
+		t.Fatalf("skills.list payload not JSON: %v", err)
+	}
+	if len(listPayload.Skills) == 0 {
+		t.Fatalf("skills.list returned no skills")
+	}
+	found := false
+	for _, sk := range listPayload.Skills {
+		if sk.Body != "" {
+			t.Fatalf("skills.list leaked a body for %q — list must omit bodies", sk.Slug)
+		}
+		if sk.Slug == "go" {
+			found = true
+			if sk.Description == "" {
+				t.Fatalf("skills.list dropped the description for %q", sk.Slug)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("skills.list missing known skill %q", "go")
+	}
+
+	// get: returns the body for a known slug.
+	getRes, err := adapter.CallTool(ctx, "skills.get", withModel(map[string]any{"slug": "go"}))
+	if err != nil {
+		t.Fatalf("CallTool(skills.get) error = %v", err)
+	}
+	if getRes.IsError {
+		t.Fatalf("skills.get error: %s", getRes.Content[0].Text)
+	}
+	var getPayload struct {
+		Skill struct {
+			Slug string `json:"slug"`
+			Body string `json:"body"`
+		} `json:"skill"`
+	}
+	if err := json.Unmarshal([]byte(getRes.Content[0].Text), &getPayload); err != nil {
+		t.Fatalf("skills.get payload not JSON: %v", err)
+	}
+	if getPayload.Skill.Slug != "go" || getPayload.Skill.Body == "" {
+		t.Fatalf("skills.get returned %#v, want slug=go with a non-empty body", getPayload.Skill)
+	}
+
+	// get: unknown slug rejects cleanly, naming the missing slug.
+	missRes, err := adapter.CallTool(ctx, "skills.get", withModel(map[string]any{"slug": "does-not-exist"}))
+	if err != nil {
+		t.Fatalf("CallTool(skills.get unknown) transport error = %v", err)
+	}
+	if !missRes.IsError {
+		t.Fatalf("skills.get on unknown slug should be a tool error, got: %s", missRes.Content[0].Text)
+	}
+	if !strings.Contains(missRes.Content[0].Text, "does-not-exist") {
+		t.Fatalf("skills.get unknown-slug error should name the slug, got: %s", missRes.Content[0].Text)
 	}
 }
 
@@ -335,7 +429,7 @@ func TestAdapterReadResource(t *testing.T) {
 func TestAdapterGetPrompt(t *testing.T) {
 	ctx := context.Background()
 	var adapter *Adapter // nil adapter exercises the fallback path
-	prompts := []string{"okt", "okt-create", "okt-continue", "okt-resume", "okt-imagine", "okt-implement"}
+	prompts := []string{"okt", "okt-task-create", "okt-task-continue", "okt-project-resume", "okt-task-imagine", "okt-task-implement"}
 	for _, name := range prompts {
 		result, err := adapter.GetPrompt(ctx, name, nil)
 		if err != nil {
@@ -1199,7 +1293,7 @@ func newMCPProjectWithBundle(t *testing.T, ctx context.Context, slug string, bun
 func mcpTestBundle(t *testing.T) config.Bundle {
 	t.Helper()
 	bundle, _ := testfixtures.LoadBundle(t, "default.yaml")
-	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
+	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go", Description: "Idiomatic Go.", Body: "Write idiomatic, well-tested Go."}}
 	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
 	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay scoped.", Scope: "global"}}
 	return bundle

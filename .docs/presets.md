@@ -17,7 +17,7 @@ The YAML under `defaults/config/<preset>.yaml` is the source of truth for everyt
 
 Per-preset wiring (personas, laws, MCP-command bindings, workflow guards) is derived from `defaults/config/<preset>.yaml`. The shape is identical across all four — what changes is the **content** of each list:
 
-- **`personas:`** — strict allowlist; entities outside the list still live on disk but do not load. izakaya keeps it minimal (tinkerer + check-runner + reviewer + commit-author + documentation-agent); kaiseki and shokunin add stage-specific roles (architect, release-manager, sre, qa-gatekeeper, etc.).
+- **`personas:`** — strict allowlist; entities outside the list still live on disk but do not load. Each preset binds its own themed roster (izakaya's is the leanest); kaiseki and shokunin add stage-specific roles to cover their extra buckets.
 - **`laws:`** — global laws inherited by every command. The four presets agree on `template-fidelity`, `authorize-remote-writes`, `project-scope-only`, and `workflow-enforced`; preset-specific laws layer on top (e.g. omakase's `green-main-always`, shokunin's `blameless-postmortem`).
 - **`mcp_commands.<command>.laws` / `templates`** — per-command bindings. Each command (`okt-create`, `okt-implement`, `okt-review`, …) gets a persona, a law set on top of `global`, and one or more templates. This is where presets express their character — izakaya's `okt-implement` adds `time-boxed-spike` + `tracer-bullet`; shokunin's adds `change-management` + `pre-mortem-required`.
 - **`workflows[].buckets` / `transitions` / `operations`** — bucket count and guard layout. Omakase has the canonical 4-bucket trunk; kaiseki and shokunin add review / canary / staging buckets with stage-specific guards.

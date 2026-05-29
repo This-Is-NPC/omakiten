@@ -95,9 +95,12 @@ func (s *TUIQueryService) Snapshot(ctx context.Context, project domain.ProjectCo
 	snap.Comments = comments
 
 	if cfgSnap != nil {
-		laws := lawsFromSnapshot(cfgSnap)
-		skills := skillsFromSnapshot(cfgSnap)
-		personas := personasFromSnapshot(cfgSnap)
+		// Settings renders the full on-disk catalog (every preset's entities)
+		// with the active subset flagged, not just the active wiring. Runtime
+		// resolution still reads the picked snapshot slices elsewhere.
+		laws := allLawsFromSnapshot(cfgSnap)
+		skills := allSkillsFromSnapshot(cfgSnap)
+		personas := allPersonasFromSnapshot(cfgSnap)
 
 		// Snapshot already carries the entity bodies BuildSnapshot copied
 		// from the bundle; the only data the legacy editor.Load() path
@@ -123,7 +126,7 @@ func (s *TUIQueryService) Snapshot(ctx context.Context, project domain.ProjectCo
 		snap.Laws = laws
 		snap.Skills = skills
 		snap.Personas = personas
-		snap.Templates = append([]config.TaskTemplate(nil), cfgSnap.Templates()...)
+		snap.Templates = append([]config.TaskTemplate(nil), cfgSnap.AllTemplates()...)
 	}
 
 	entries, err := s.entries.ListContextEntries(ctx, project.ID)

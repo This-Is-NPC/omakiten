@@ -35,7 +35,16 @@ func NewLawService(repos EntityServiceRepos, snap *config.Snapshot, registry *do
 // bad severities at import time, so 0 only appears for laws that
 // survived a bundle without severity validation in tests.
 func lawsFromSnapshot(snap *config.Snapshot) []domain.Law {
-	laws := snap.Laws()
+	return mapLawSlice(snap, snap.Laws())
+}
+
+// allLawsFromSnapshot projects the full on-disk law catalog with the Active
+// flag carried through, for the Settings catalog view.
+func allLawsFromSnapshot(snap *config.Snapshot) []domain.Law {
+	return mapLawSlice(snap, snap.AllLaws())
+}
+
+func mapLawSlice(snap *config.Snapshot, laws []config.Law) []domain.Law {
 	out := make([]domain.Law, 0, len(laws))
 	for i, l := range laws {
 		out = append(out, domain.Law{
@@ -49,6 +58,7 @@ func lawsFromSnapshot(snap *config.Snapshot) []domain.Law {
 			PersonaKey: l.PersonaSlug,
 			SourcePath: l.SourcePath,
 			IsCustom:   l.IsCustom,
+			Active:     l.Active,
 		})
 	}
 	return out

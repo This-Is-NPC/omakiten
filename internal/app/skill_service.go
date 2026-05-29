@@ -25,7 +25,16 @@ func NewSkillService(repos EntityServiceRepos, snap *config.Snapshot) *SkillServ
 // snapshot; they rotate on every bundle import, so cross-rebuild
 // callers must key by slug rather than by id.
 func skillsFromSnapshot(snap *config.Snapshot) []domain.Skill {
-	skills := snap.Skills()
+	return mapSkillSlice(snap.Skills())
+}
+
+// allSkillsFromSnapshot projects the full on-disk skill catalog with the
+// Active flag carried through, for the Settings catalog view.
+func allSkillsFromSnapshot(snap *config.Snapshot) []domain.Skill {
+	return mapSkillSlice(snap.AllSkills())
+}
+
+func mapSkillSlice(skills []config.Skill) []domain.Skill {
 	out := make([]domain.Skill, 0, len(skills))
 	for i, sk := range skills {
 		out = append(out, domain.Skill{
@@ -36,6 +45,7 @@ func skillsFromSnapshot(snap *config.Snapshot) []domain.Skill {
 			Body:        sk.Body,
 			SourcePath:  sk.SourcePath,
 			IsCustom:    sk.IsCustom,
+			Active:      sk.Active,
 		})
 	}
 	return out

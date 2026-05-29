@@ -1,6 +1,9 @@
 ---
 name: Security review lens
 description: OWASP-aligned review prompts for diff-level security findings — injection, authn/z, secrets, deserialisation, supply chain.
+schema_version: 2
+role_affinity:
+  - Reviewer
 ---
 Read every diff through the OWASP Top 10 (2021) lens. One line per finding, severity-tagged.
 

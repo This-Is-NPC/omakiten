@@ -1,5 +1,55 @@
 package config
 
+// buildCatalog folds the full on-disk entity set (`loaded`) and the active
+// picked subset into one catalog slice: every loaded entry is emitted, but
+// entries present in `picked` are taken from the picked copy (so scope/skill
+// wiring metadata the pick* step stamped survives) and flagged Active=true;
+// the rest are emitted as loaded with Active=false. slugOf keys both sides;
+// withActive returns a copy with the Active flag set. Order follows `loaded`.
+func buildCatalog[T any](loaded, picked []T, slugOf func(T) string, withActive func(T, bool) T) []T {
+	bySlug := make(map[string]T, len(picked))
+	for _, p := range picked {
+		bySlug[slugOf(p)] = p
+	}
+	out := make([]T, 0, len(loaded))
+	for _, l := range loaded {
+		if p, ok := bySlug[slugOf(l)]; ok {
+			out = append(out, withActive(p, true))
+			continue
+		}
+		out = append(out, withActive(l, false))
+	}
+	return out
+}
+
+// catalogSkills / catalogLaws / catalogPersonas / catalogTemplates bind
+// buildCatalog to each entity type's Slug accessor and Active setter, so the
+// loader call site reads as one named call per kind instead of repeating the
+// slugOf/withActive closures inline.
+func catalogSkills(loaded, picked []Skill) []Skill {
+	return buildCatalog(loaded, picked,
+		func(s Skill) string { return s.Slug },
+		func(s Skill, a bool) Skill { s.Active = a; return s })
+}
+
+func catalogLaws(loaded, picked []Law) []Law {
+	return buildCatalog(loaded, picked,
+		func(l Law) string { return l.Slug },
+		func(l Law, a bool) Law { l.Active = a; return l })
+}
+
+func catalogPersonas(loaded, picked []Persona) []Persona {
+	return buildCatalog(loaded, picked,
+		func(p Persona) string { return p.Slug },
+		func(p Persona, a bool) Persona { p.Active = a; return p })
+}
+
+func catalogTemplates(loaded, picked []TaskTemplate) []TaskTemplate {
+	return buildCatalog(loaded, picked,
+		func(t TaskTemplate) string { return t.Slug },
+		func(t TaskTemplate, a bool) TaskTemplate { t.Active = a; return t })
+}
+
 // pickSkills filters the on-disk skill set against the wiring's allowlist.
 // When the wiring omits the `skills:` slot, every loaded skill is auto-included.
 func pickSkills(loaded []Skill, refs []string) []Skill {
@@ -142,6 +192,15 @@ func pickPersonas(loaded []Persona, refs []PersonaWiring) []Persona {
 	for _, ref := range refs {
 		if p, ok := bySlug[ref.Slug]; ok {
 			p.Skills = append([]string(nil), ref.Skills...)
+			// schema_version + skill_repertoire on the wiring entry win
+			// over the frontmatter-declared values so omakiten.yaml stays
+			// the single source of truth for persona ⇄ skill wiring.
+			if ref.SchemaVersion != 0 {
+				p.SchemaVersion = ref.SchemaVersion
+			}
+			if len(ref.SkillRepertoire) > 0 {
+				p.SkillRepertoire = append([]string(nil), ref.SkillRepertoire...)
+			}
 			p.Laws = mergeLawSlugs(p.Laws, ref.Laws)
 			out = append(out, p)
 		}

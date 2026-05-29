@@ -387,74 +387,290 @@ config:
       window_days: 30
     task_activity:
       sort: {order: asc}
+# Shokunin (Fullmetal Alchemist: Brotherhood) themed roster — Pitch B, by
+# canonical role (#189 W5.1). Designated canonical reference layout. Schema v2:
+# each persona declares a `skill_repertoire` (the full pool it is equipped with);
+# mcp_commands below select a SUBSET of that pool (enforced by
+# validateMCPCommandSkillSubset). Persona carries TONE; skill carries PROCEDURE;
+# templates carry STRUCTURE. Concierge (maes-hughes) also covers the Tester slot;
+# Scribe (alphonse-elric) carries all four #359 note skills and binds the
+# notes-bearing slots. king-bradley stays in the roster (locked authority).
 personas:
-  - slug: craftsperson
-    skills: [sre-discipline, risk-driven-development, postmortem-authoring, change-management, test-driven-development-strict, static-analysis-discipline, implementation, standup-digest, recap-timeline, markdown]
-  - slug: product-owner
-    skills: [discovery, user-story-writing, pdca-cycle, five-w-two-h, smart-goals, invest-stories, moscow-prioritization, rice-scoring, okr-framing, non-functional-requirements, markdown]
-  - slug: documentation-agent
-    skills: [documentation, architecture-mapping, requirements-mapping, readme-curation, handoff-synthesis, note-capture, markdown]
-  - slug: commit-author
-    skills: [conventional-commits-spec, markdown]
-  - slug: code-reviewer
-    skills: [refactoring-catalog, code-smells, solid-principles, legacy-seams, security-review-lens, markdown]
-  - slug: check-runner
-    skills: [test-driven-development-strict, static-analysis-discipline, coverage-analysis, regression-detection, markdown]
+  # Concierge + Tester — intel/router who also verifies the evidence. Repertoire
+  # carries the Tester skills so the okt-task-check / okt-task-quality slots
+  # resolve a real subset alongside the Concierge entry/system slots.
+  - slug: maes-hughes
+    schema_version: 2
+    skill_repertoire:
+      - pdca-cycle
+      - discovery
+      - architecture-mapping
+      - documentation
+      - staged-delivery
+      - regression-detection
+      - coverage-analysis
+      - static-analysis-discipline
+      - test-driven-development
+      - gate-of-truth-toll
+      - markdown
+  # Scribe — record-keeper. Repertoire includes all four #359 note skills so the
+  # okt-pause and okt-note-* slots resolve (AC#6).
+  - slug: alphonse-elric
+    schema_version: 2
+    skill_repertoire:
+      - documentation
+      - architecture-mapping
+      - handoff-synthesis
+      - note-capture
+      - standup-digest
+      - recap-timeline
+      - postmortem-authoring
+      - markdown
+  # Owner — direction, prioritization, requirements, plan authoring.
+  - slug: roy-mustang
+    schema_version: 2
+    skill_repertoire:
+      - five-w-two-h
+      - smart-goals
+      - staged-delivery
+      - dora-mindset
+      - risk-driven-development
+      - requirements-elicitation
+      - non-functional-requirements
+      - moscow-prioritization
+      - rice-scoring
+      - user-story-writing
+      - invest-stories
+      - markdown
+  # Ideator — discovery and cheap experiments.
+  - slug: pinako-rockbell
+    schema_version: 2
+    skill_repertoire:
+      - discovery
+      - lean-experimentation
+      - five-w-two-h
+      - markdown
+  # Builder — small green increments, full price paid up front. Repertoire
+  # carries the themed gate-of-truth-toll (strict TDD) and automail-fallback
+  # (rollback) skills alongside the generic Builder pool.
+  - slug: edward-elric
+    schema_version: 2
+    skill_repertoire:
+      - implementation
+      - test-driven-development
+      - gate-of-truth-toll
+      - automail-fallback
+      - trunk-based-development
+      - continuous-integration
+      - solid-principles
+      - code-smells
+      - refactoring-catalog
+      - markdown
+  # Reviewer — whole-diff read, structural + security lens.
+  - slug: olivier-armstrong
+    schema_version: 2
+    skill_repertoire:
+      - code-smells
+      - refactoring-catalog
+      - security-review-lens
+      - solid-principles
+      - markdown
+  # Committer — Conventional Commits, scoped history, never auto-pushes.
+  - slug: riza-hawkeye
+    schema_version: 2
+    skill_repertoire:
+      - conventional-commits-spec
+      - markdown
+  # Locked authority — kept in the roster, bound to the hard-gate orchestrator
+  # (okt-audit) so the persona ships even when lightly used.
+  - slug: king-bradley
+    schema_version: 2
+    skill_repertoire:
+      - risk-driven-development
+      - markdown
 mcp_commands:
   global:
     laws: [template-fidelity, authorize-remote-writes, project-scope-only]
+  # Shokunin slot bindings (#189 W5.1). Each command binds the themed persona for
+  # its canonical role and selects a SUBSET of that persona's skill_repertoire.
+  # The W1 subset validator enforces skills ⊆ repertoire.
   okt:
-    persona: craftsperson
-  okt-imagine:
-    persona: product-owner
+    persona: maes-hughes
+    skills: [pdca-cycle]
+  # Guiding orchestrators. okt-start (Concierge smart entry, shared with the bare
+  # `okt` shortcut) binds the Concierge (maes-hughes). okt-pause (Concierge close)
+  # binds the Scribe (alphonse-elric) — see the notes block. okt-shape / okt-audit
+  # are Owner orchestrators → roy-mustang; okt-audit additionally seats the locked
+  # king-bradley authority on its hard gate.
+  okt-start:
+    persona: maes-hughes
+    skills: [pdca-cycle, discovery]
+  okt-shape:
+    persona: roy-mustang
+    skills: [five-w-two-h, smart-goals]
+  okt-audit:
+    persona: king-bradley
+    skills: [risk-driven-development]
+    laws: [briggs-fortress-gate]
+  # okt-run Owner director — delegates implementation to per-task Builder
+  # subagents and reviews their compact returns.
+  okt-run:
+    persona: roy-mustang
+    skills: [staged-delivery, dora-mindset]
+  okt-task-imagine:
+    persona: pinako-rockbell
+    skills: [discovery, lean-experimentation]
     laws_disabled: [template-fidelity]
     templates: [comment-5w2h, comment-smart-success]
-  okt-create:
-    persona: product-owner
-    laws: [blast-radius-awareness, error-budget-aware, invest-stories, outcome-over-output, prioritization-recorded, non-functional-explicit]
-    templates: [task-change-request, comment-requirements, comment-acceptance, comment-risk-assessment, comment-smart-success, comment-moscow, comment-rice-score, comment-okr, comment-non-functional]
-  okt-resume:
-    persona: craftsperson
-  okt-continue:
-    persona: craftsperson
-  okt-implement:
-    persona: craftsperson
-    laws: [pre-mortem-required, rollback-plan-mandatory, dual-peer-review, coverage-gate, blast-radius-awareness, error-budget-aware, conventional-commits, no-silent-behavior-changes]
-    templates: [pull-request, comment-pre-mortem, comment-rollback-plan, comment-peer-review-strict, comment-tests-passing-strict, comment-risk-assessment, comment-scribe-correction]
-  okt-document:
-    persona: documentation-agent
+  # Granular lifecycle commands. Ideator → pinako-rockbell; Owner → roy-mustang;
+  # Builder → edward-elric; Concierge → maes-hughes.
+  okt-task-research:
+    persona: pinako-rockbell
+    skills: [discovery]
+    laws_disabled: [template-fidelity]
+  okt-task-validate:
+    persona: pinako-rockbell
+    skills: [lean-experimentation]
+    laws_disabled: [template-fidelity]
+  okt-task-requirements:
+    persona: roy-mustang
+    skills: [requirements-elicitation, non-functional-requirements]
+    templates: [comment-requirements, comment-acceptance]
+  okt-task-prioritize:
+    persona: roy-mustang
+    skills: [moscow-prioritization, rice-scoring]
+    templates: [comment-moscow, comment-rice-score]
+  okt-task-create:
+    persona: roy-mustang
+    skills: [user-story-writing, invest-stories, smart-goals]
+    laws: [invest-stories, outcome-over-output, non-functional-explicit]
+    templates: [task-change-request, comment-requirements, comment-acceptance, comment-smart-success, comment-moscow, comment-non-functional]
+  okt-task-decompose:
+    persona: roy-mustang
+    skills: [user-story-writing]
+  okt-task-estimate:
+    persona: roy-mustang
+    skills: [rice-scoring]
+  okt-task-design:
+    persona: edward-elric
+    skills: [solid-principles]
+  okt-project-resume:
+    persona: maes-hughes
+    skills: [pdca-cycle]
+  okt-project-continue:
+    persona: maes-hughes
+    skills: [pdca-cycle]
+  # Granular plan commands. Owner role → roy-mustang (authors + claims plans).
+  okt-plan-create:
+    persona: roy-mustang
+    skills: [staged-delivery]
+  okt-plan-show:
+    persona: roy-mustang
+    skills: [staged-delivery]
+  okt-plan-continue:
+    persona: roy-mustang
+    skills: [staged-delivery]
+  okt-plan-claim:
+    persona: roy-mustang
+    skills: [staged-delivery]
+  okt-task-resume:
+    persona: edward-elric
+    skills: [implementation]
+  okt-task-continue:
+    persona: edward-elric
+    skills: [implementation]
+  # Builder loop. Themed laws: transmutation-circle-required (pre-mortem),
+  # automail-fallback skill (rollback), truth-cannot-be-hidden (no silent change).
+  okt-task-implement:
+    persona: edward-elric
+    skills: [implementation, gate-of-truth-toll, automail-fallback, trunk-based-development, continuous-integration]
+    laws: [transmutation-circle-required, truth-cannot-be-hidden, conventional-commits, no-silent-behavior-changes]
+    templates: [pull-request, comment-pre-mortem, comment-rollback-plan, comment-tests-passing-strict, comment-risk-assessment]
+  okt-task-self-review:
+    persona: edward-elric
+    skills: [code-smells]
+    laws: [no-silent-behavior-changes]
+    templates: [comment-peer-review-strict]
+  okt-task-refactor:
+    persona: edward-elric
+    skills: [refactoring-catalog]
+    laws: [truth-cannot-be-hidden, no-silent-behavior-changes]
+    templates: [comment-review-findings]
+  # Scribe → alphonse-elric.
+  okt-task-document:
+    persona: alphonse-elric
+    skills: [documentation, architecture-mapping]
     laws: [blameless-postmortem]
-    templates: [comment-postmortem, comment-lessons-learned]
+  okt-task-debrief:
+    persona: alphonse-elric
+    skills: [postmortem-authoring]
+    laws: [blameless-postmortem, no-praise-pad]
+  # System commands talk to the TOOL, not the project. Concierge/generic role →
+  # maes-hughes. okt-skill pulls ANY skill (ungated by persona repertoire); the
+  # markdown subset just shapes its own prose.
+  okt-help:
+    persona: maes-hughes
+    skills: [markdown]
   okt-config:
-    persona: documentation-agent
+    persona: maes-hughes
+    skills: [markdown]
     templates: [config-orientation]
-  okt-commit:
-    persona: commit-author
+  okt-skill:
+    persona: maes-hughes
+    skills: [markdown]
+  # Committer → riza-hawkeye.
+  okt-task-commit:
+    persona: riza-hawkeye
+    skills: [conventional-commits-spec]
     laws: [conventional-commits, no-coauthored-by, link-task-comments]
-  okt-review:
-    persona: code-reviewer
-    laws: [dual-review-required, coverage-gate-check, pre-mortem-aware]
+  # Reviewer → olivier-armstrong. Themed gate: briggs-fortress-gate
+  # (actionable findings, severity-ranked); equivalent-exchange-audit pairs the
+  # verdict with evidence.
+  okt-task-review:
+    persona: olivier-armstrong
+    skills: [code-smells, refactoring-catalog]
+    laws: [briggs-fortress-gate, equivalent-exchange-audit, dual-review-required]
     templates: [comment-review-findings, comment-refactor-opportunities]
-  okt-check:
-    persona: check-runner
-    laws: [coverage-gate, regression-required, dual-signal-required]
+  okt-task-secure:
+    persona: olivier-armstrong
+    skills: [security-review-lens]
+    laws: [briggs-fortress-gate]
+    templates: [comment-review-findings]
+  # Tester → maes-hughes (Concierge also holds the Tester repertoire).
+  okt-task-check:
+    persona: maes-hughes
+    skills: [regression-detection, coverage-analysis]
+    laws: [equivalent-exchange-audit, regression-required]
     templates: [comment-check-report]
-  # Notes / handoff v1 (#363). Provisional persona kit — #189 W4/W5.x
-  # rebinds to themed personas under Proposta B (likely
-  # alphonse-elric / maes-hughes equivalents).
-  okt-handoff:
-    persona: documentation-agent
+  okt-task-quality:
+    persona: maes-hughes
+    skills: [static-analysis-discipline]
+    laws: [equivalent-exchange-audit]
+    templates: [comment-review-findings]
+  # Notes / handoff. The Scribe (alphonse-elric) repertoire carries all four #359
+  # note skills — handoff-synthesis, note-capture, standup-digest, recap-timeline
+  # — so every notes-bearing slot resolves a real skill subset (AC#6). okt-pause
+  # (orchestrator close) synthesises a handoff; okt-note-free captures ad-hoc;
+  # okt-note-recap folds the standup digest into a wide-window recap.
+  okt-pause:
+    persona: alphonse-elric
+    skills: [handoff-synthesis]
     laws: [project-scope-only, no-praise-pad]
     templates: [note-handoff]
-  okt-note:
-    persona: documentation-agent
+  okt-note-free:
+    persona: alphonse-elric
+    skills: [note-capture]
     templates: [note-free]
-  okt-standup:
-    persona: craftsperson
-    templates: [note-standup-digest]
-  okt-recap:
-    persona: craftsperson
-    templates: [note-recap]
+  okt-note-recap:
+    persona: alphonse-elric
+    skills: [recap-timeline, standup-digest]
+    templates: [note-recap, note-standup-digest]
+  okt-note-list:
+    persona: alphonse-elric
+    skills: [note-capture]
+  okt-note-show:
+    persona: alphonse-elric
+    skills: [note-capture]
 workflows:
   - id: 1
     key: shokunin
