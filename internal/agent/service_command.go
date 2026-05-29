@@ -108,6 +108,44 @@ var commandActions = map[string]string{
 		"lines of stderr verbatim per failed target; never summarize errors. Read-only — never apply fixes, " +
 		"never re-run after editing. Next: failures route to `okt-implement` with the target name + tail; " +
 		"smell-level findings route to `okt-review` for triage.",
+
+	"okt-handoff": "Close the current session with a handoff note for the next agent. Synthesise material " +
+		"state since the previous handoff via `project.overview`, `tasks.list`, and `task.activity.list` " +
+		"for in-flight tasks. Call `templates.show note-handoff` to fetch the scaffold, fill the populated " +
+		"slots, and persist via `notes.create` with `scope=project`, `kind=handoff`. Honor `--body` to " +
+		"override the rendered body verbatim and `--note` to append extra context under a free-form " +
+		"section. When nothing material changed since the last handoff, render with a \"no material " +
+		"changes since <prev>\" marker and still persist so the timeline stays continuous. When the cwd " +
+		"resolves no project, stop with `no project at <cwd>` and suggest `--project <slug>`; when the " +
+		"project lacks an active workflow, omit the workflow/wave sections. Next: suggest the user run " +
+		"`okt-standup` or `okt-recap` in their next session to load the handoff back into context.",
+
+	"okt-note": "Capture a free-form knowledge note without ceremony. Resolve scope from `--scope` " +
+		"(default `project` when the cwd resolves; explicit `--scope global` always wins). Resolve kind " +
+		"from `--kind` (default `free`); reject `handoff`, `standup-digest`, and `recap` here — those " +
+		"belong to their dedicated commands. Title from `--title`; body from prompt or stdin. Call " +
+		"`templates.show note-free` to fetch the minimal scaffold, then persist via `notes.create`. " +
+		"Reject empty body or empty title; when the cwd is ambiguous (multiple projects resolve) require " +
+		"`--project <slug>`. Next: suggest `notes.list` to confirm the note landed, or `okt-recap` to see " +
+		"it folded into the project timeline.",
+
+	"okt-standup": "Produce a cross-project standup digest from recent handoff notes. Resolve the window " +
+		"from `--since` (default `7d`) and the per-project limit from `--limit` (default `5`). When " +
+		"`--project <slug>` is omitted, enumerate every project the user owns and aggregate handoffs " +
+		"across all of them; when more than 50 projects resolve, paginate or require `--project`. Call " +
+		"`notes.list` per project filtered by `kind=handoff` within the window, then `templates.show " +
+		"note-standup-digest` to fetch the scaffold and fill one section per project ordered by most " +
+		"recent handoff first; silent projects appear at the bottom under a clear header. Read-only — " +
+		"never persist; the rendered digest is the artifact. When zero handoffs match the window, surface " +
+		"\"no handoffs — run okt-handoff\". Next: suggest `okt-recap` for a deeper per-project timeline.",
+
+	"okt-recap": "Render a single-project recap timeline of recent activity. Resolve the project from " +
+		"`--project <slug>` (default cwd), the window from `--since` (default `7d`), and the kind filter " +
+		"from `--kinds <comma-list>` (default all). Call `notes.list` for the project filtered by the " +
+		"window and kinds, then `templates.show note-recap` to fetch the scaffold. Group entries by kind, " +
+		"order chronologically with a timestamp prefix per bullet. Read-only — never persist; the recap " +
+		"is the artifact. When zero notes match the window, surface \"nothing in window\". Next: suggest " +
+		"`okt-continue` with a specific task id when the recap reveals an open thread to resume.",
 }
 
 // commandDescriptions match the prompts/list metadata. Keeping them next to
@@ -124,6 +162,10 @@ var commandDescriptions = map[string]string{
 	"okt-commit":    "Draft Conventional Commits for the working tree without pushing.",
 	"okt-review":    "Walk the diff through Fowler/Beck/Martin/Feathers lens and surface findings + refactor opportunities.",
 	"okt-check":     "Run discovered test/lint targets and report pass/fail in a tabular comment.",
+	"okt-handoff":   "Close the session with a synthesised handoff note for the next agent.",
+	"okt-note":      "Capture a free-form knowledge note (project or global) without ceremony.",
+	"okt-standup":   "Cross-project standup digest aggregated from recent handoff notes.",
+	"okt-recap":     "Single-project recap timeline of recent notes grouped by kind.",
 }
 
 // CommandNames returns the canonical, ordered list of `okt-*` prompts the MCP
@@ -142,6 +184,10 @@ func CommandNames() []string {
 		"okt-commit",
 		"okt-review",
 		"okt-check",
+		"okt-handoff",
+		"okt-note",
+		"okt-standup",
+		"okt-recap",
 	}
 }
 

@@ -279,6 +279,22 @@ config:
         category: tool_call
         display: "TUI tool call"
         formatter: tui.tool_call
+      note.created:
+        category: note
+        display: "note created"
+        formatter: note.created
+      note.edited:
+        category: note
+        display: "note edited"
+        formatter: note.edited
+      note.pinned:
+        category: note
+        display: "note pinned/unpinned"
+        formatter: note.pinned
+      note.removed:
+        category: note
+        display: "note removed"
+        formatter: note.removed
   # hooks subscribes to events.bus and dispatches actions when the
   # event_type matches `on:` and every key in `when:` matches the
   # corresponding top-level key in event.payload (string equality;
@@ -667,6 +683,8 @@ personas:
       - test-driven-development
       - dora-mindset
       - implementation
+      - standup-digest
+      - recap-timeline
       - markdown
   - slug: product-owner
     skills:
@@ -686,6 +704,8 @@ personas:
       - architecture-mapping
       - requirements-mapping
       - readme-curation
+      - handoff-synthesis
+      - note-capture
       - markdown
   - slug: commit-author
     skills:
@@ -805,3 +825,27 @@ mcp_commands:
       - severity-tagged
     templates:
       - comment-check-report
+  # Notes / handoff v1 (#363). Four atomic commands wired into the
+  # documentation-agent (close + ad-hoc capture) and the engineer
+  # (navigation: standup / recap). Persona choice is provisional under
+  # the current persona kit; #189 W4/W5.x rebinds these to themed
+  # personas under Proposta B. Skills bind via the persona wiring above.
+  okt-handoff:
+    persona: documentation-agent
+    laws:
+      - project-scope-only
+      - no-praise-pad
+    templates:
+      - note-handoff
+  okt-note:
+    persona: documentation-agent
+    templates:
+      - note-free
+  okt-standup:
+    persona: engineer
+    templates:
+      - note-standup-digest
+  okt-recap:
+    persona: engineer
+    templates:
+      - note-recap

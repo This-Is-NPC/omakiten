@@ -206,6 +206,22 @@ config:
         category: tool_call
         display: "TUI tool call"
         formatter: tui.tool_call
+      note.created:
+        category: note
+        display: "note created"
+        formatter: note.created
+      note.edited:
+        category: note
+        display: "note edited"
+        formatter: note.edited
+      note.pinned:
+        category: note
+        display: "note pinned/unpinned"
+        formatter: note.pinned
+      note.removed:
+        category: note
+        display: "note removed"
+        formatter: note.removed
   hooks:
     - on: task.created
       notification: kitten_informative
@@ -353,11 +369,11 @@ config:
       sort: {order: asc}
 personas:
   - slug: craftsperson
-    skills: [sre-discipline, risk-driven-development, postmortem-authoring, change-management, test-driven-development-strict, static-analysis-discipline, implementation, markdown]
+    skills: [sre-discipline, risk-driven-development, postmortem-authoring, change-management, test-driven-development-strict, static-analysis-discipline, implementation, standup-digest, recap-timeline, markdown]
   - slug: product-owner
     skills: [discovery, user-story-writing, pdca-cycle, five-w-two-h, smart-goals, invest-stories, moscow-prioritization, rice-scoring, okr-framing, non-functional-requirements, markdown]
   - slug: documentation-agent
-    skills: [documentation, architecture-mapping, requirements-mapping, readme-curation, markdown]
+    skills: [documentation, architecture-mapping, requirements-mapping, readme-curation, handoff-synthesis, note-capture, markdown]
   - slug: commit-author
     skills: [conventional-commits-spec, markdown]
   - slug: code-reviewer
@@ -403,6 +419,22 @@ mcp_commands:
     persona: check-runner
     laws: [coverage-gate, regression-required, dual-signal-required]
     templates: [comment-check-report]
+  # Notes / handoff v1 (#363). Provisional persona kit — #189 W4/W5.x
+  # rebinds to themed personas under Proposta B (likely
+  # alphonse-elric / maes-hughes equivalents).
+  okt-handoff:
+    persona: documentation-agent
+    laws: [project-scope-only, no-praise-pad]
+    templates: [note-handoff]
+  okt-note:
+    persona: documentation-agent
+    templates: [note-free]
+  okt-standup:
+    persona: craftsperson
+    templates: [note-standup-digest]
+  okt-recap:
+    persona: craftsperson
+    templates: [note-recap]
 workflows:
   - id: 1
     key: shokunin

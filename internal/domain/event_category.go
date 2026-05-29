@@ -44,6 +44,11 @@ const (
 	// events that don't fit the other buckets (bundle.swapped,
 	// bundle.imported, subtask_kit.notice_emitted).
 	EventCategoryDomain EventCategory = "domain"
+	// EventCategoryNote groups note-entity lifecycle events
+	// (note.created, note.edited, note.pinned, note.removed). Distinct
+	// from EventCategoryTask because notes are first-class rows scoped
+	// project|global rather than per-task children.
+	EventCategoryNote EventCategory = "note"
 	// EventCategoryUnknown is returned by EventCategoryOf when the
 	// event_type is not in KnownEventTypes. The Logs inspector renders
 	// such rows under a generic "other" group and never panics.
@@ -65,6 +70,7 @@ var KnownEventCategories = []EventCategory{
 	EventCategoryToolCall,
 	EventCategoryTrick,
 	EventCategoryDomain,
+	EventCategoryNote,
 }
 
 // EventCategoryOf returns the category an event_type belongs to,

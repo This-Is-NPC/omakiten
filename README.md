@@ -98,6 +98,10 @@ flowchart LR
 | `/okt-review` | Review the current diff with findings, risk notes, and file-level feedback. |
 | `/okt-check` | Discover and run the project's check targets, then report pass/fail clearly. |
 | `/okt-commit` | Draft Conventional Commits from the working tree without pushing. |
+| `/okt-handoff` | Close a session with a structured handoff note covering delta, active work, decisions, and next steps. |
+| `/okt-note` | Capture a free-form knowledge note (project or global) without ceremony. |
+| `/okt-standup` | Render a cross-project standup digest from the latest handoff per project. |
+| `/okt-recap` | Summarise a window of notes and tasks moved to done for retrospectives or release notes. |
 
 Natural language works too:
 
@@ -109,7 +113,7 @@ Natural language works too:
 | "Have we seen this error before?" | Searches tasks, comments, errors, solutions, and context across projects. |
 | "That solution worked." | Confirms the solution as known-good. |
 
-[See the full MCP surface](.docs/mcp.md): 44 tools, 2 resources, and 11 prompts.
+[See the full MCP surface](.docs/mcp.md): 50 tools, 2 resources, and 15 prompts.
 
 ---
 

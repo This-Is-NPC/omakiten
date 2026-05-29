@@ -232,6 +232,28 @@ const (
 	// reaches hooks through `when: {verb: <name>, operand: <value>}`
 	// filtering. EntityType=system, Payload={verb, operand, raw}.
 	EventTypeTrickExecuted = "trick.executed"
+
+	// EventTypeNoteCreated fires when a notes row is inserted via
+	// Store.CreateNote. EntityType=note, EntityID=note id, ProjectID
+	// carries the scope (0 = global). Payload={title, kind, scope, tags}.
+	EventTypeNoteCreated = "note.created"
+	// EventTypeNoteEdited fires when any mutable note field (title, body,
+	// kind, or tag set) changes through Store.UpdateNote. A toggle of the
+	// pinned flag co-emits note.pinned. EntityType=note,
+	// Payload={title, kind, scope, tags}.
+	EventTypeNoteEdited = "note.edited"
+	// EventTypeNotePinned fires when Store.UpdateNote flips the pinned
+	// flag (either direction). Always co-emits with note.edited because
+	// pinning is also a meaningful edit of the row. EntityType=note,
+	// Payload={title, kind, scope, tags, pinned}; `pinned` carries the
+	// post-mutation state so consumers can distinguish pin from unpin
+	// without re-reading the row.
+	EventTypeNotePinned = "note.pinned"
+	// EventTypeNoteRemoved fires immediately before Store.DeleteNote
+	// hard-deletes the row. Title is snapshotted into the payload so
+	// activity-feed consumers retain context after the row is gone.
+	// EntityType=note, Payload={title, kind, scope, tags}.
+	EventTypeNoteRemoved = "note.removed"
 )
 
 // ToolCallEventTypeForSource returns the canonical event_type string for
@@ -288,6 +310,11 @@ const (
 	// plan id). Wave events also land under this entity scope — the wave
 	// id travels in the payload because the activity feed groups by plan.
 	EventEntityPlan = "plan"
+	// EventEntityNote scopes events tied to a note row (entity_id is the
+	// note id). Notes can be project-scoped (project_id > 0) or global
+	// (project_id IS NULL) so the entity_type alone does not imply a
+	// project — consumers must read project_id from the event row.
+	EventEntityNote = "note"
 )
 
 // Event is the row shape of the unified events log. Different event_types

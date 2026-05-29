@@ -14,6 +14,7 @@ This guide is the authoritative reference for picking a preset, understanding wh
 - [🎌 kaiseki — Staged delivery with formal sign-offs](#-kaiseki--staged-delivery-with-formal-sign-offs)
 - [🥢 shokunin — Site Reliability Engineering with multi-reviewer change control](#-shokunin--site-reliability-engineering-with-multi-reviewer-change-control)
 - [Cross-preset progression](#cross-preset-progression)
+- [Notes and handoff loop](#notes-and-handoff-loop)
 - [Plans — multi-agent fan-out](#plans--multi-agent-fan-out)
 - [Authoring your own preset](#authoring-your-own-preset)
 - [See also](#see-also)
@@ -405,6 +406,56 @@ echo my-shokunin.yaml > ~/.config/omakiten/config/.active
 | Comment trail preserved (delete denied) | — | dev+ | planning+ | requirements+ |
 
 Each level adds one or more layers of discipline without removing the previous ones.
+
+---
+
+## Notes and handoff loop
+
+Sitting alongside the bucket cycle, four atomic commands carry knowledge between sessions and across projects. All four are wired into every preset (`omakase`, `izakaya`, `kaiseki`, `shokunin`) and write or read from the `notes` table — a project-or-global knowledge store with its own FTS5 index. Notes are separate from task comments: comments live inside one task's audit trail, notes live alongside the project (or globally) and survive long after the originating task closes.
+
+### The four commands
+
+| Command | Phase | Writes? | Purpose |
+|---|---|---|---|
+| `okt-handoff` | session close (CHECK) | `notes.create kind="handoff"` | Synthesise the session: delta since the previous handoff, active work, recent progress, decisions/discards, blockers, next steps. Bound to the `note-handoff` template; carries `project-scope-only` + `no-praise-pad` laws so the body stays factual. |
+| `okt-note` | any (ACT/CHECK) | `notes.create` (free `kind`) | Ad-hoc knowledge capture — gotcha, decision, glossary entry, anything that should outlive the current task. Bound to `note-free` (minimal title/body/footer shell). Scope `project` (default) or `global` (cross-project visibility). |
+| `okt-standup` | session start (PLAN) | read-only | Cross-project digest: for each project with activity in the window, surface the latest `handoff` note plus the delta since. Read-side aggregation against `notes.list` + `task_activity`. Bound to `note-standup-digest`. |
+| `okt-recap` | retrospective (CHECK) | read-only | Temporal window: notes grouped by `kind` plus tasks moved to `done` in the window. Useful for sprint retros, release notes, or onboarding a new contributor. Bound to `note-recap`. |
+
+### The loop in practice
+
+```
+session start ──▶  okt-standup        (read: latest handoff per project)
+                       │
+                       ▼
+                   okt-resume / okt-continue    (per-project loop, unchanged)
+                       │
+                   …work…                       (bucket cycle: dev → review → done)
+                       │
+                       ▼
+session close ──▶  okt-handoff        (write: handoff note)
+                       │
+                       ▼
+periodic     ──▶  okt-recap           (read: window summary)
+                       │
+                       ▼
+ad-hoc       ──▶  okt-note            (write: any time something deserves to outlive the task)
+```
+
+Two write commands (`okt-handoff`, `okt-note`) and two read commands (`okt-standup`, `okt-recap`). The read commands need no per-preset wiring deltas — they aggregate whatever the project's notes table already holds. The write commands carry a thin law set (`project-scope-only`, `no-praise-pad` on `okt-handoff`) so the synthesised body stays auditable without inflating the prompt budget.
+
+### Why notes are separate from comments
+
+| Comments | Notes |
+|---|---|
+| Live inside one task's audit trail | Live alongside the project (or globally) |
+| Bucket permissions gate edit / delete | Independent CRUD; no bucket policy |
+| Cascade-deleted with the task | Survive task deletion |
+| Indexed in `search` under `entity_type="comment"` | Indexed under `entity_type="note"` |
+
+A task's `#tests-passing` evidence belongs in the task's comment trail (it documents that task's CHECK phase). A "we picked SQLite over Postgres because…" decision, the team glossary, a runbook for a flaky deploy, or the snapshot at the end of today's session — those belong in notes, where they stay reachable from any future task or project view.
+
+See [`mcp.md` § Notes](./mcp.md#notes-knowledge-entries) for the tool-level surface and [`mcp.md` § Prompts](./mcp.md#prompts) for the prompt table including these four commands.
 
 ---
 
