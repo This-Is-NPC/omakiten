@@ -278,8 +278,12 @@ const (
 	// (e.g. solution.viewed_top, errors.researched).
 	EventEntitySystem = "system"
 	// EventEntityProject scopes events whose primary subject is a project
-	// (project tag adds/removes today).
+	// (project tag adds/removes today, project-scoped comments).
 	EventEntityProject = "project"
+	// EventEntityUniversal scopes comments that hang off no task and no
+	// project (entity_id and project_id both NULL) — the universal handoff
+	// log shared across every project.
+	EventEntityUniversal = "universal"
 	// EventEntityError scopes events tied to an error row.
 	EventEntityError = "error"
 	// EventEntitySolution scopes events tied to a solution row.

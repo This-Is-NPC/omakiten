@@ -145,14 +145,84 @@ type TaskUpdate struct {
 	NewParentID  *int64
 }
 
+// CommentScope names which entity a comment hangs off. It is derived from the
+// events.entity_type column: a task comment carries the task id in entity_id, a
+// project comment the project id, and a universal comment has no entity_id and
+// no project_id. The three values mirror the EventEntity* constants reused as
+// the events.entity_type for comment rows.
+const (
+	CommentScopeTask      = "task"
+	CommentScopeProject   = "project"
+	CommentScopeUniversal = "universal"
+)
+
 type Comment struct {
-	ID         int64  `json:"id"`
-	ProjectID  int64  `json:"project_id"`
-	TaskID     int64  `json:"task_id"`
+	ID        int64 `json:"id"`
+	ProjectID int64 `json:"project_id"`
+	TaskID    int64 `json:"task_id"`
+	// Scope is derived from events.entity_type (task|project|universal).
+	Scope      string `json:"scope,omitempty"`
 	Body       string `json:"body"`
+	Title      string `json:"title,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	Pinned     bool   `json:"pinned,omitempty"`
 	AuthorType string `json:"author_type"`
 	CreatedAt  string `json:"created_at,omitempty"`
+	UpdatedAt  string `json:"updated_at,omitempty"`
 	Tags       []Tag  `json:"tags,omitempty"`
+}
+
+// CommentWrite is the scope-aware payload for creating a comment. Scope selects
+// the events.entity_type and how ProjectID/TaskID map onto entity_id/project_id:
+//
+//   - task:      entity_type='task',      entity_id=TaskID,    project_id=ProjectID
+//   - project:   entity_type='project',   entity_id=ProjectID, project_id=ProjectID
+//   - universal: entity_type='universal', entity_id=NULL,      project_id=NULL
+type CommentWrite struct {
+	Scope      string
+	ProjectID  int64
+	TaskID     int64
+	Body       string
+	Title      string
+	Kind       string
+	Pinned     bool
+	AuthorType string
+	Tags       []Tag
+}
+
+// CommentEdit is the scope-agnostic patch applied to an existing comment.
+// Body is always rewritten; Title/Kind/Pinned overwrite their columns.
+type CommentEdit struct {
+	Body   string
+	Title  string
+	Kind   string
+	Pinned bool
+	Tags   []Tag
+}
+
+// CommentFilter narrows the cross-cutting comment query surface (the
+// filterable handoff log). All fields are optional and AND together. A zero
+// filter lists every comment the projection allows.
+type CommentFilter struct {
+	// Scope restricts to task|project|universal when non-empty.
+	Scope string
+	// ProjectID scopes to a single project. 0 means cross-project. Universal
+	// comments (project_id NULL) only match when ProjectID is 0.
+	ProjectID int64
+	// TaskID further narrows task-scoped rows to a single task.
+	TaskID int64
+	// Kind restricts to a single comment kind when non-empty.
+	Kind string
+	// Tag restricts to comments carrying the named tag when non-empty.
+	Tag string
+	// PinnedOnly returns only pinned comments (the cover sheet).
+	PinnedOnly bool
+	// Search is an FTS5 MATCH expression run against body+title when non-empty.
+	Search string
+	// CreatedAfter / CreatedBefore bound created_at (RFC3339/SQLite datetime
+	// strings) when non-empty — the time-window slice.
+	CreatedAfter  string
+	CreatedBefore string
 }
 
 type TaskDependency struct {
