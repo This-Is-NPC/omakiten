@@ -110,6 +110,16 @@ var promptBudgets = map[string]int{
 	"okt-start": 22000,
 	"okt-shape": 29000,
 	"okt-audit": 29000,
+	// CW7 (#378): system commands (talk to the tool, not the project). All three
+	// bind the documentation-agent (~ okt-task-document / okt-config footprint).
+	// okt-help carries the longest action body in the system family — the full
+	// tier-aware guide (tiers + mental flow + drop-to-granular hints) — so its
+	// budget sits above okt-config; okt-config (KEPT) binds the config-orientation
+	// template; okt-skill is a lean skills.list/skills.get UX wrapper. Budgets
+	// sized against the embedded omakase default kit with ~30% headroom. CW8
+	// (#379) re-tightens once theming rewires each to a minimal skill subset.
+	"okt-help":  23000,
+	"okt-skill": 22000,
 }
 
 // TestTemplateBoundCommandsCarryFetchHint guards the JIT contract for
@@ -576,6 +586,113 @@ func TestCW4OktPauseHandoffNote(t *testing.T) {
 		"single next action",
 		// next session resume handoff
 		"okt-start",
+	})
+}
+
+// assertSystemCommand is the shared CW7 smoke assertion: the command must
+// resolve as the SYSTEM tier (talk to the tool, no project object), carry a
+// wired persona + non-empty action + prompts/list description, and its rendered
+// prompt must contain every pinned load-bearing phrase (case-insensitive).
+// Mirrors assertGuidingOrchestrator but pins the system tier instead of the
+// orchestrator tier.
+func assertSystemCommand(t *testing.T, name string, resp agent.ResolveCommandResponse, phrases []string) {
+	t.Helper()
+	if resp.Persona == nil {
+		t.Fatalf("%s resolved with no persona — the role slot is not wired in the preset YAML", name)
+	}
+	if !strings.Contains(resp.Markdown, "## Persona — ") {
+		t.Fatalf("%s markdown missing non-empty Persona section:\n%s", name, resp.Markdown)
+	}
+	if !strings.Contains(resp.Markdown, "## Action\n") || strings.TrimSpace(resp.Action) == "" {
+		t.Fatalf("%s markdown missing non-empty Action section:\n%s", name, resp.Markdown)
+	}
+	if strings.TrimSpace(agent.CommandDescription(name)) == "" {
+		t.Fatalf("%s carries no prompts/list description", name)
+	}
+	desc, ok := agent.DescribeCommand(name)
+	if !ok || desc.Tier != agent.CommandTierSystem {
+		t.Fatalf("%s must decode as the system tier, got %+v ok=%v", name, desc, ok)
+	}
+	lower := strings.ToLower(resp.Markdown)
+	for _, phrase := range phrases {
+		if !strings.Contains(lower, strings.ToLower(phrase)) {
+			t.Fatalf("%s prompt missing load-bearing phrase %q:\n%s", name, phrase, resp.Markdown)
+		}
+	}
+}
+
+// TestCW7OktHelpTierGuide is the AC#1 smoke gate: okt-help renders a tier-aware
+// guide (orchestrators / system / granular), walks the start → shape → run →
+// audit → pause mental flow, and gives the drop-to-granular decision hint. It
+// is a PROMPT the agent acts on; the gate pins the load-bearing tier names,
+// the flow command chain, and the decision hint — phrase-pinning style mirrors
+// TestCW3OktRunDelegationPlaybook.
+func TestCW7OktHelpTierGuide(t *testing.T) {
+	resp := resolveForSmoke(t, "okt-help")
+	assertSystemCommand(t, "okt-help", resp, []string{
+		// the three command tiers, named
+		"the command tiers",
+		"orchestrators",
+		"system",
+		"granular",
+		// the start → shape → run → audit → pause mental flow
+		"the mental flow",
+		"okt-start",
+		"okt-shape",
+		"okt-run",
+		"okt-audit",
+		"okt-pause",
+		// when to drop to the granular okt-task-* / okt-plan-* surface
+		"when to drop to granular",
+		"okt-task-implement",
+		"okt-plan-claim",
+	})
+}
+
+// TestCW7OktConfigReachable is the AC#2 gate: okt-config is retained and
+// reachable (registered in CommandNames, resolves with a wired persona,
+// decodes as the system tier), and its orientation content is current with the
+// v2 surface — it points at okt-help for the broader tour. It binds the
+// config-orientation template, so the JIT fetch hint must be present.
+func TestCW7OktConfigReachable(t *testing.T) {
+	registered := false
+	for _, n := range agent.CommandNames() {
+		if n == "okt-config" {
+			registered = true
+			break
+		}
+	}
+	if !registered {
+		t.Fatal("okt-config is not registered in CommandNames() — the kept system command was dropped")
+	}
+	resp := resolveForSmoke(t, "okt-config")
+	assertSystemCommand(t, "okt-config", resp, []string{
+		// orients the user to customize their config/environment
+		"templates.show config-orientation",
+		"customize their omakiten environment",
+		// content current with the v2 surface — points at the broader tour
+		"okt-help",
+	})
+}
+
+// TestCW7OktSkillWiredToSkillTools is the AC#3 gate: okt-skill's UX is wired
+// onto the read-only skills.get / skills.list MCP tools from CW6 — a slug loads
+// one skill body via skills.get (with `commit` named as the example), a bare
+// invocation lists the catalog via skills.list, and the command pulls ANY skill
+// ungated by the persona's skill repertoire.
+func TestCW7OktSkillWiredToSkillTools(t *testing.T) {
+	resp := resolveForSmoke(t, "okt-skill")
+	assertSystemCommand(t, "okt-skill", resp, []string{
+		// with a slug → skills.get for the body; commit is the named example
+		"skills.get",
+		"/okt-skill commit",
+		"commit` skill body",
+		// no arg → catalog via skills.list
+		"skills.list",
+		"render the catalog",
+		// pulls any skill, ungated by the persona repertoire
+		"any skill",
+		"not gated by the active persona's skill repertoire",
 	})
 }
 

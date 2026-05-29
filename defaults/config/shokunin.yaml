@@ -491,9 +491,16 @@ mcp_commands:
     persona: documentation-agent
     laws: [blameless-postmortem, no-praise-pad]
     templates: [comment-lessons-learned]
+  # CW7 (#378) — system commands (talk to the tool). documentation-agent, like
+  # okt-config. okt-skill wires UX onto skills.list/skills.get; ungated by
+  # repertoire. Themed rebind = #189.
+  okt-help:
+    persona: documentation-agent
   okt-config:
     persona: documentation-agent
     templates: [config-orientation]
+  okt-skill:
+    persona: documentation-agent
   okt-task-commit:
     persona: commit-author
     laws: [conventional-commits, no-coauthored-by, link-task-comments]

@@ -86,11 +86,78 @@ var commandActions = map[string]string{
 		"items with file references and suggested wording — do not edit in place. " +
 		"Next: if material work is needed, suggest `okt-task-create` to spin up a documentation task.",
 
-	"okt-config": "Orient on the active config layout. Call `templates.show config-orientation` to " +
-		"load the path resolution order, entity layout, frontmatter shapes, wiring relationships, and " +
-		"workflow guard kinds. Read it fully before answering any config-edit question — do not guess. " +
-		"Next: if the user has a concrete edit in mind, suggest `okt-task-implement` with the change scoped to " +
-		"`omakiten.yaml` or the relevant entity file.",
+	// okt-help is the system-tier orientation command: it teaches HOW omakiten
+	// works rather than executing project work. It is tier-aware — it names the
+	// three command tiers (orchestrators / system / granular), walks the
+	// start → shape → run → audit → pause mental flow, and gives decision hints
+	// for WHEN to drop from an orchestrator to the granular okt-task-* /
+	// okt-plan-* surface. The load-bearing phrases (the three tier names, the
+	// mental-flow command chain, the drop-to-granular hint) are pinned by the
+	// CW7 okt-help smoke test in agentruntime.
+	"okt-help": "Orient the user on how omakiten works and help them organize their work — this is the tutorial, " +
+		"not a project action. Teach the surface in three layers.\n\n" +
+		"THE COMMAND TIERS — omakiten's `okt-*` commands fall into three tiers, and naming the tier tells the user " +
+		"which altitude they are operating at:\n" +
+		"- ORCHESTRATORS (bare, primary path): `okt-start`, `okt-shape`, `okt-run`, `okt-audit`, `okt-pause` (and " +
+		"the bare `okt`, a shortcut to `okt-start`). These are the director commands — they read state, propose the " +
+		"next move, and delegate the surgical work. Reach for these first; they are where most sessions live.\n" +
+		"- SYSTEM (bare, talk to the TOOL not the project): `okt-help` (this), `okt-config` (orient on / customize " +
+		"the config + environment), `okt-skill <slug>` (load a skill body, or list the catalog). No project object — " +
+		"they configure or explain omakiten itself.\n" +
+		"- GRANULAR (object-namespaced `okt-<object>-<verb>`): the power-user, surgical surface — `okt-task-*`, " +
+		"`okt-plan-*`, `okt-project-*`, `okt-note-*`. One precise step each (implement, review, secure, claim, …).\n\n" +
+		"THE MENTAL FLOW — a session normally walks `okt-start` → `okt-shape` → `okt-run` → `okt-audit` → `okt-pause`: " +
+		"START to orient and pick up the prior thread, SHAPE a raw idea or loose backlog into ready tasks plus a plan, " +
+		"RUN to drive that plan to completion by delegation, AUDIT for a deep assurance pass, then PAUSE to snapshot a " +
+		"handoff note for the next session. The orchestrators each name the next command, so the flow self-advances.\n\n" +
+		"WHEN TO DROP TO GRANULAR — stay on the orchestrators for the normal path; drop to the granular okt-task-* / " +
+		"okt-plan-* commands when you need a single surgical step the orchestrator would otherwise delegate: building " +
+		"one task by hand (`okt-task-continue` → `okt-task-implement`), running just a review (`okt-task-review`), a " +
+		"security-only pass (`okt-task-secure`), or claiming one plan task (`okt-plan-claim`). Rule of thumb: " +
+		"orchestrators decide and delegate; granulars do the one thing — reach for a granular when you already know " +
+		"the exact step and want to skip the director. " +
+		"Next: suggest `okt-start` to begin a session, `okt-config` to customize the environment, or " +
+		"`okt-skill` to browse the available skills.",
+
+	// okt-config is the system-tier orientation command for customizing the
+	// user's environment/config. KEPT from the v1 surface (slug unchanged, no
+	// deprecation) — refreshed for the v2 command surface so the next-move
+	// hints point at the current orchestrator/granular tiers (e.g. okt-help for
+	// the broader tour) rather than only the old implement loop.
+	"okt-config": "Orient the user on the active config layout so they can customize their omakiten environment. " +
+		"Call `templates.show config-orientation` to load the path resolution order, entity layout, frontmatter " +
+		"shapes, wiring relationships, and workflow guard kinds. Read it fully before answering any config-edit " +
+		"question — do not guess. The config is where the user tailors omakiten: the active preset and workflow, the " +
+		"personas/laws/skills/templates each `okt-*` command binds, the agent output language, and the workflow guard " +
+		"rules. Editing an entity file or `omakiten.yaml` reshapes how every command resolves, so locate the exact " +
+		"file before proposing a change. " +
+		"Next: for the broader tour of how the command tiers fit together, suggest `okt-help`; when the user has a " +
+		"concrete edit in mind, suggest `okt-task-implement` with the change scoped to `omakiten.yaml` or the " +
+		"relevant entity file.",
+
+	// okt-skill is the system-tier command that wires UX onto the read-only
+	// skills.list / skills.get MCP tools from CW6. Bare `/okt-skill` lists the
+	// catalog via skills.list; `/okt-skill <slug>` loads one skill body via
+	// skills.get. It pulls ANY skill in the catalog — it is NOT gated by the
+	// active persona's skill repertoire (that gating only governs which skills
+	// auto-flow into a command prompt; this command is the explicit escape
+	// hatch to read any skill on demand). The load-bearing phrases (skills.get
+	// for one body, skills.list for the catalog, ungated-by-repertoire) are
+	// pinned by the CW7 okt-skill smoke test in agentruntime.
+	"okt-skill": "Load a skill on demand, or browse the skill catalog. Resolve the slug from `--slug` or the first " +
+		"positional argument (e.g. `/okt-skill commit`). " +
+		"WITH A SLUG: call `skills.get` for that slug and surface the skill's full BODY verbatim — the procedural " +
+		"payload the user asked to read (e.g. `/okt-skill commit` loads the `commit` skill body via `skills.get`). " +
+		"When the slug is unknown, `skills.get` rejects naming the missing slug — relay that and suggest a bare " +
+		"`okt-skill` to see the valid slugs. " +
+		"WITH NO ARGUMENT: call `skills.list` and render the catalog — every loaded skill's slug + name + " +
+		"description, ordered by slug — so the user can pick one to load. " +
+		"This command pulls ANY skill in the catalog: it is NOT gated by the active persona's skill repertoire. The " +
+		"repertoire only decides which skills auto-flow into a command's prompt; `okt-skill` is the explicit escape " +
+		"hatch to read any authored skill on demand, regardless of which persona is bound. Read-only — skills are " +
+		"authored by the user; never create, edit, or delete a skill through this command. " +
+		"Next: when the loaded skill names a process step, suggest the matching granular command (e.g. the `commit` " +
+		"skill → `okt-task-commit`); otherwise suggest `okt-help` for the command tour.",
 
 	"okt-task-commit": "Draft Conventional Commits for the working tree. Read `git status` and `git diff --cached` " +
 		"(fall back to unstaged changes when nothing is staged). Group hunks into one intent per commit; split " +
@@ -408,7 +475,9 @@ var commandDescriptions = map[string]string{
 	"okt-task-continue":  "Read a task's checkpoint as an engineer before resuming work.",
 	"okt-task-implement": "Execute approved engineering work with strict rigor and commit discipline.",
 	"okt-task-document":  "Survey project documentation for drift and propose updates.",
-	"okt-config":         "Orient the agent on the active Omakiten config layout before edits.",
+	"okt-help":           "System command — tier-aware guide to how omakiten works: the orchestrator/system/granular tiers, the start→shape→run→audit→pause flow, and when to drop to granular commands.",
+	"okt-config":         "System command — orient on the active Omakiten config layout to customize the environment.",
+	"okt-skill":          "System command — load a skill body via skills.get (e.g. okt-skill commit), or list the catalog via skills.list with no arg; pulls any skill, ungated by persona repertoire.",
 	"okt-task-commit":    "Draft Conventional Commits for the working tree without pushing.",
 	"okt-task-review":    "Walk the diff through Fowler/Beck/Martin/Feathers lens and surface findings + refactor opportunities.",
 	"okt-task-check":     "Run discovered test/lint targets and report pass/fail in a tabular comment.",
@@ -444,6 +513,7 @@ var commandDescriptions = map[string]string{
 func CommandNames() []string {
 	return []string{
 		"okt",
+		"okt-help",
 		"okt-start",
 		"okt-shape",
 		"okt-run",
@@ -470,6 +540,7 @@ func CommandNames() []string {
 		"okt-task-document",
 		"okt-task-debrief",
 		"okt-config",
+		"okt-skill",
 		"okt-task-commit",
 		"okt-task-review",
 		"okt-task-secure",

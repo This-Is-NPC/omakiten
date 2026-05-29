@@ -897,10 +897,21 @@ mcp_commands:
     persona: documentation-agent
     laws:
       - no-praise-pad
+  # CW7 (#378) — system commands talk to the TOOL, not the project. All three
+  # bind the documentation-agent (the orientation/teaching role under the
+  # current kit), consistent with okt-config's existing wiring. okt-help is the
+  # tier-aware tutorial; okt-skill wires UX onto the read-only skills.list /
+  # skills.get tools (pulls any skill, ungated by persona repertoire). Command-
+  # level skills stay empty; skills flow through persona wiring. Themed rebind
+  # is #189.
+  okt-help:
+    persona: documentation-agent
   okt-config:
     persona: documentation-agent
     templates:
       - config-orientation
+  okt-skill:
+    persona: documentation-agent
   okt-task-commit:
     persona: commit-author
     laws:
