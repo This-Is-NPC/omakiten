@@ -79,6 +79,97 @@ func (s *CommentService) Add(ctx context.Context, project domain.ProjectContext,
 	return
 }
 
+// AddScoped creates a comment at the requested scope (task|project|universal),
+// carrying the optional kind/title/pinned note-like fields. Task scope still
+// requires a positive task id; project/universal scopes do not. Body and author
+// validation match Add.
+func (s *CommentService) AddScoped(ctx context.Context, project domain.ProjectContext, w domain.CommentWrite) (comment domain.Comment, err error) {
+	finish := activity.Track(ctx, "app.CommentService.AddScoped", project, map[string]any{"scope": w.Scope, "task_id": w.TaskID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	scope := w.Scope
+	if scope == "" {
+		scope = domain.CommentScopeTask
+	}
+	switch scope {
+	case domain.CommentScopeTask:
+		if w.TaskID <= 0 {
+			err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+			return
+		}
+	case domain.CommentScopeProject, domain.CommentScopeUniversal:
+		// no task id required
+	default:
+		err = domain.NewError(domain.ErrValidation, "unknown comment scope", map[string]any{"scope": w.Scope})
+		return
+	}
+
+	w.Scope = scope
+	w.ProjectID = project.ID
+	w.Body = strings.TrimSpace(w.Body)
+	if w.Body == "" {
+		err = domain.NewError(domain.ErrValidation, "comment body is required", nil)
+		return
+	}
+	w.AuthorType = strings.TrimSpace(w.AuthorType)
+	if w.AuthorType == "" {
+		w.AuthorType = "human"
+	}
+	if w.AuthorType != "human" && w.AuthorType != "agent" {
+		err = domain.NewError(domain.ErrValidation, "author type must be human or agent", map[string]any{"author_type": w.AuthorType})
+		return
+	}
+	w.Tags = s.normalizeTags(w.Tags)
+	comment, err = s.repo.AddScopedComment(ctx, w)
+	return
+}
+
+// Query runs the filterable handoff-log read (scope/kind/tag/FTS/pinned/window,
+// single-project or cross-project). The filter is passed through to the repo
+// untouched; callers set ProjectID explicitly to scope or leave it 0 for the
+// cross-project view.
+func (s *CommentService) Query(ctx context.Context, project domain.ProjectContext, filter domain.CommentFilter) (comments []domain.Comment, err error) {
+	finish := activity.Track(ctx, "app.CommentService.Query", project, map[string]any{"scope": filter.Scope, "kind": filter.Kind})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+	comments, err = s.repo.QueryComments(ctx, filter)
+	return
+}
+
+// normalizeTags applies the per-project synonym table to a tag slice. Tags that
+// normalize to empty are dropped. Mirrors the inline loops in Add/Edit so the
+// scope-aware writers share one path.
+func (s *CommentService) normalizeTags(in []domain.Tag) []domain.Tag {
+	out := make([]domain.Tag, 0, len(in))
+	for _, t := range in {
+		raw := t.Label
+		if raw == "" {
+			raw = t.Name
+		}
+		name := NormalizeTagName(raw, s.snap.Synonyms())
+		if name == "" {
+			continue
+		}
+		out = append(out, domain.Tag{Name: name, Label: TagLabel(raw)})
+	}
+	return out
+}
+
 // Edit rewrites a comment's body and replaces its tags after enforcing the
 // per-bucket comment.edit policy. Inheritance: when permissions.comment is
 // missing on the bucket, the comment policy mirrors permissions.task; when

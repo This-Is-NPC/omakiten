@@ -158,9 +158,20 @@ type GuardEvaluationRepository interface {
 }
 
 type CommentRepository interface {
+	// AddComment is the task-scope convenience wrapper kept for existing
+	// callers; it delegates to AddScopedComment with Scope=task.
 	AddComment(ctx context.Context, projectID, taskID int64, body, authorType string, tags []domain.Tag) (domain.Comment, error)
+	// AddScopedComment writes a comment at the requested scope (task, project,
+	// or universal) carrying the optional kind/title/pinned fields.
+	AddScopedComment(ctx context.Context, w domain.CommentWrite) (domain.Comment, error)
 	ListComments(ctx context.Context, projectID, taskID int64) ([]domain.Comment, error)
+	// QueryComments is the filterable handoff-log surface: list by scope, kind,
+	// tag, FTS, pinned-only, and time-window, single-project or cross-project.
+	QueryComments(ctx context.Context, filter domain.CommentFilter) ([]domain.Comment, error)
 	UpdateComment(ctx context.Context, projectID, commentID int64, body string, tags []domain.Tag) (domain.Comment, domain.Event, error)
+	// EditComment applies the full scope-agnostic patch (body/title/kind/pinned
+	// + tags) and stamps updated_at.
+	EditComment(ctx context.Context, projectID, commentID int64, edit domain.CommentEdit) (domain.Comment, domain.Event, error)
 	DeleteComment(ctx context.Context, projectID, commentID int64) (domain.Event, error)
 	CommentByID(ctx context.Context, projectID, commentID int64) (domain.Comment, error)
 }
