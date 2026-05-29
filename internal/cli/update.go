@@ -180,21 +180,31 @@ func newUpdateCommand(opts *runtimeOptions) *cobra.Command {
 				// the validator branch and the update behaves
 				// exactly as it did pre-#365 — the user still gets
 				// the binary swap, just without the pre-flight
-				// health check.
+				// health check. The fallback is logged to stderr so
+				// the user sees the degraded mode instead of a
+				// silent skip.
 				if cfgPath, cfgErr := opts.resolvedConfigPath(); cfgErr == nil {
 					client.ConfigPath = cfgPath
+				} else {
+					fmt.Fprintf(os.Stderr, "okt update: config path unavailable, skipping pre-swap health check: %v\n", cfgErr)
 				}
 				client.Validator = defaultUpdateValidator
 				// EventStore opens the SQLite store so runUpdate can
 				// append healthcheck.* / swap.* rows to the activity
 				// log (#369). Resolution failure (state-dir
 				// unwritable etc.) is non-fatal — emission becomes a
-				// no-op and the swap path remains intact.
+				// no-op and the swap path remains intact. Both
+				// failure modes get a stderr breadcrumb so the
+				// missing audit row is traceable.
 				if dbPath, dbErr := opts.resolvedDBPath(); dbErr == nil {
 					if store, openErr := sqlite.Open(ctx, dbPath); openErr == nil {
 						defer store.Close()
 						client.EventStore = store
+					} else {
+						fmt.Fprintf(os.Stderr, "okt update: sqlite open %s failed, activity rows skipped: %v\n", dbPath, openErr)
 					}
+				} else {
+					fmt.Fprintf(os.Stderr, "okt update: db path unavailable, activity rows skipped: %v\n", dbErr)
 				}
 				return runUpdate(ctx, client, updateInputs{Check: check, Yes: yes})
 			})
