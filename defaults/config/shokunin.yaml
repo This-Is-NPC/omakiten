@@ -437,6 +437,18 @@ mcp_commands:
     persona: craftsperson
   okt-project-resume:
     persona: craftsperson
+  okt-project-continue:
+    persona: craftsperson
+  # CW6 (#377) — granular plan commands. Owner role binds product-owner.
+  # Slot wiring only; skills flow through persona wiring. Themed rebind = #189.
+  okt-plan-create:
+    persona: product-owner
+  okt-plan-show:
+    persona: product-owner
+  okt-plan-continue:
+    persona: product-owner
+  okt-plan-claim:
+    persona: product-owner
   okt-task-resume:
     persona: craftsperson
   okt-task-continue:
@@ -494,6 +506,10 @@ mcp_commands:
   okt-note-recap:
     persona: craftsperson
     templates: [note-recap, note-standup-digest]
+  okt-note-list:
+    persona: craftsperson
+  okt-note-show:
+    persona: craftsperson
 workflows:
   - id: 1
     key: shokunin

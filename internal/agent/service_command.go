@@ -222,6 +222,45 @@ var commandActions = map[string]string{
 		"notes/handoffs match the window, surface \"nothing in window\" (or \"no handoffs — run okt-pause\" " +
 		"for the cross-project case). Next: suggest `okt-task-continue` with a specific task id when the " +
 		"recap reveals an open thread to resume.",
+
+	"okt-plan-create": "Author a WBS-style plan that groups child tasks into ordered waves. Settle the slug " +
+		"(kebab-case, unique per project), a human-readable name, and a markdown `goal_body` stating the plan's " +
+		"intent and acceptance criteria before committing. Call `plans.create` with the filled fields. " +
+		"Next: suggest `plans.add_wave` to lay out the waves, then `okt-plan-show` to inspect the assembled plan.",
+
+	"okt-plan-show": "Inspect one plan's structure. Call `plans.show` for the slug and report the wave layout, " +
+		"per-wave and overall done/total counts, the integer percent complete, and the active wave (lowest-position " +
+		"wave with pending work). Read-only — surface the snapshot, do not mutate. Next: suggest `okt-plan-continue` " +
+		"to preview the next claimable task, or `okt-plan-claim` when the user is ready to reserve it.",
+
+	"okt-plan-continue": "Preview a plan before committing to a claim. Call `plans.continue` for the slug: it returns " +
+		"the full plan aggregate (waves, done/total, active wave) plus a non-mutating preview of the task " +
+		"`plans.claim_next` would reserve next. Inspect the goal_body, wave layout, and candidate task, then report " +
+		"them. Read-only — nothing is reserved here. Next: suggest `okt-plan-claim` to atomically reserve the " +
+		"previewed task.",
+
+	"okt-plan-claim": "Reserve the next claimable task in the plan's active wave. Call `plans.claim_next` for the " +
+		"slug — it atomically stamps the task with the caller and emits `task.assigned`, but does not move the " +
+		"bucket. Report the claimed task id, or surface `claimed=false` when no unassigned first-bucket task remains " +
+		"in the active wave. Next: suggest `tasks.move` to advance the claimed task once the preset guards are " +
+		"satisfied, then `okt-task-continue` with the claimed id to start work.",
+
+	"okt-project-continue": "Warm-resume the current project from the last session. Assume continuity — you have " +
+		"recent context. Call `project.overview` for the active snapshot and `tasks.list` for in-flight work, then " +
+		"pick up the most recent open thread without re-deriving the whole project from scratch. Unlike the cold " +
+		"`okt-project-resume` scan, this is the warm hand-back: surface what changed since last session and the " +
+		"immediate next move. Next: suggest `okt-task-continue` with the in-flight task id to read its checkpoint.",
+
+	"okt-note-list": "List knowledge notes for the active scope. Resolve scope from `--scope` (default `any` — both " +
+		"project-scoped and global notes when a project resolves; `project`/`global` narrow it), with optional " +
+		"`--kind`, `--tags` (intersection), `--pinned`, and `--limit`/`--offset`. Call `notes.list` with the " +
+		"filters and report each note's id, kind, title, scope, and pinned flag — order pinned first, then most " +
+		"recently updated. Read-only. Next: suggest `okt-note-show` with a note id to read one in full.",
+
+	"okt-note-show": "Read one note in full. Resolve the id from `--id` (or the first positional argument), call " +
+		"`notes.show`, and render the note's title, kind, scope, tags, and body verbatim. Read-only — never mutate " +
+		"here; `notes.edit`/`notes.delete` are MCP-only by design. Next: suggest `okt-note-list` to scan the " +
+		"surrounding notes, or `okt-task-continue` when the note points at an open task to resume.",
 }
 
 // commandDescriptions match the prompts/list metadata. Keeping them next to
@@ -254,6 +293,13 @@ var commandDescriptions = map[string]string{
 	"okt-task-quality":     "Qualitative human-lens quality read — smells, coverage, design — distinct from the mechanical gate.",
 	"okt-task-secure":      "Security-only diff pass — input-to-sink tracing, authz, injection, secret leakage.",
 	"okt-task-debrief":     "Capture learnings from completed work — decisions that held, assumptions that broke.",
+	"okt-plan-create":      "Author a WBS-style plan grouping child tasks into ordered waves with a goal body.",
+	"okt-plan-show":        "Inspect one plan — wave layout, done/total counts, percent, and the active wave.",
+	"okt-plan-continue":    "Preview a plan plus the next claimable task before committing to a claim.",
+	"okt-plan-claim":       "Atomically reserve the next claimable task in the plan's active wave.",
+	"okt-project-continue": "Warm-resume the project from the last session — pick up the open thread.",
+	"okt-note-list":        "List knowledge notes for the active scope with kind/tag/pinned filters.",
+	"okt-note-show":        "Read one knowledge note in full by id.",
 }
 
 // CommandNames returns the canonical, ordered list of `okt-*` prompts the MCP
@@ -272,6 +318,11 @@ func CommandNames() []string {
 		"okt-task-estimate",
 		"okt-task-design",
 		"okt-project-resume",
+		"okt-project-continue",
+		"okt-plan-create",
+		"okt-plan-show",
+		"okt-plan-continue",
+		"okt-plan-claim",
 		"okt-task-resume",
 		"okt-task-continue",
 		"okt-task-implement",
@@ -288,6 +339,8 @@ func CommandNames() []string {
 		"okt-pause",
 		"okt-note-free",
 		"okt-note-recap",
+		"okt-note-list",
+		"okt-note-show",
 	}
 }
 

@@ -77,6 +77,19 @@ var promptBudgets = map[string]int{
 	"okt-task-quality":      15600,
 	"okt-task-secure":       19700,
 	"okt-task-debrief":      20300,
+	// CW6 (#377): granular plan/project/note surface. Budgets sized against the
+	// embedded omakase default kit with ~30% headroom, bucketed by the bound
+	// persona's skill footprint: okt-plan-* bind Owner (product-owner, ~ imagine
+	// footprint); okt-project-continue and okt-note-list/show bind Builder
+	// (engineer, ~ continue/note footprint). CW8 (#379) re-tightens once theming
+	// rewires each command to a minimal skill subset.
+	"okt-plan-create":      27000,
+	"okt-plan-show":        27000,
+	"okt-plan-continue":    27000,
+	"okt-plan-claim":       27000,
+	"okt-project-continue": 23500,
+	"okt-note-list":        23500,
+	"okt-note-show":        23500,
 }
 
 // TestTemplateBoundCommandsCarryFetchHint guards the JIT contract for
@@ -205,6 +218,76 @@ func TestCW5DistinctCommandPairs(t *testing.T) {
 	cont := agent.CommandActionFallback("okt-task-continue")
 	if !strings.Contains(strings.ToLower(cont), "checkpoint") {
 		t.Fatalf("okt-task-continue action should signal a warm checkpoint read:\n%s", cont)
+	}
+}
+
+// cw6GranularCommands is the granular plan/project/note surface registered in
+// CW6 (#377): 4 plan commands, the new warm okt-project-continue, and the new
+// okt-note-list / okt-note-show navigation pair.
+var cw6GranularCommands = []string{
+	"okt-plan-create",
+	"okt-plan-show",
+	"okt-plan-continue",
+	"okt-plan-claim",
+	"okt-project-continue",
+	"okt-note-list",
+	"okt-note-show",
+}
+
+// TestCW6GranularCommandsRenderNonEmpty is the AC#6 smoke gate (mirrors the
+// CW5 gate): every new granular plan/project/note command must resolve against
+// the embedded default kit with a non-empty Persona section (the role slot is
+// wired in the preset YAML) and a non-empty Action section, and must surface a
+// prompts/list description.
+func TestCW6GranularCommandsRenderNonEmpty(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "data", "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+
+	rt, err := Open(ctx, Options{DBPath: dbPath, ConfigPath: configPath, CWD: tmp})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = rt.Close() }()
+
+	for _, name := range cw6GranularCommands {
+		t.Run(name, func(t *testing.T) {
+			resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
+			if err != nil {
+				t.Fatalf("ResolveCommand(%s) error = %v", name, err)
+			}
+			if resp.Persona == nil {
+				t.Fatalf("%s resolved with no persona — the role slot is not wired in the preset YAML", name)
+			}
+			if !strings.Contains(resp.Markdown, "## Persona — ") {
+				t.Fatalf("%s markdown missing non-empty Persona section:\n%s", name, resp.Markdown)
+			}
+			if !strings.Contains(resp.Markdown, "## Action\n") || strings.TrimSpace(resp.Action) == "" {
+				t.Fatalf("%s markdown missing non-empty Action section:\n%s", name, resp.Markdown)
+			}
+			if strings.TrimSpace(agent.CommandDescription(name)) == "" {
+				t.Fatalf("%s carries no prompts/list description", name)
+			}
+		})
+	}
+}
+
+// TestCW6ProjectResumeVsContinueDistinct pins AC#4: the cold-overview
+// okt-project-resume and the warm last-session okt-project-continue must carry
+// materially distinct action text. Resume signals a cold scan; continue signals
+// a warm hand-back.
+func TestCW6ProjectResumeVsContinueDistinct(t *testing.T) {
+	resume := agent.CommandActionFallback("okt-project-resume")
+	cont := agent.CommandActionFallback("okt-project-continue")
+	if resume == "" || cont == "" {
+		t.Fatalf("action text missing for okt-project-resume / okt-project-continue")
+	}
+	if resume == cont {
+		t.Fatalf("okt-project-resume and okt-project-continue share identical action text — they must behave distinctly")
+	}
+	if !strings.Contains(strings.ToLower(cont), "warm") {
+		t.Fatalf("okt-project-continue action should signal a warm last-session resume:\n%s", cont)
 	}
 }
 
