@@ -10,7 +10,7 @@ Accept from invocation args or a follow-up prompt:
 
 - **body** — required, non-empty after trimming. The captured content verbatim.
 - **title** — required, non-empty after trimming. Short noun phrase, no terminal period.
-- **kind** — optional. Defaults to `free`. Other valid kinds (`handoff`, `standup-digest`, `recap`) are owned by their dedicated skills; reject them here so capture stays single-purpose.
+- **kind** — optional. Defaults to `free`. The kind `handoff` is owned by `handoff-synthesis` — reject it here so capture stays single-purpose.
 - **scope** — optional. `project` or `global`. Resolution rules below.
 
 ## Scope resolution

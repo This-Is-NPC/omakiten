@@ -34,6 +34,7 @@ SELECT COUNT(*) FROM sqlite_master
 WHERE type = 'trigger' AND (name LIKE 'notes_fts_%' OR name LIKE 'search_index_notes_%')`).Scan(&trigCount); err != nil {
 		t.Fatalf("count notes triggers: %v", err)
 	}
+	// 6 = 3 notes_fts sync triggers + 3 search_index_notes triggers
 	if trigCount != 6 {
 		t.Fatalf("notes triggers = %d, want 6", trigCount)
 	}
