@@ -279,6 +279,22 @@ config:
         category: tool_call
         display: "TUI tool call"
         formatter: tui.tool_call
+      note.created:
+        category: note
+        display: "note created"
+        formatter: note.created
+      note.edited:
+        category: note
+        display: "note edited"
+        formatter: note.edited
+      note.pinned:
+        category: note
+        display: "note pinned/unpinned"
+        formatter: note.pinned
+      note.removed:
+        category: note
+        display: "note removed"
+        formatter: note.removed
   # hooks subscribes to events.bus and dispatches actions when the
   # event_type matches `on:` and every key in `when:` matches the
   # corresponding top-level key in event.payload (string equality;
