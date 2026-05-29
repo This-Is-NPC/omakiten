@@ -38,7 +38,7 @@ func (m Model) renderHeader() string {
 	}
 	sb.WriteString(m.styles.nav.Render(truncateText(m.project.Slug, 40)))
 	sb.WriteString(m.styles.hint.Render(" · local checkpoint"))
-	if m.helpOpen || m.taskScreen != taskScreenClosed || m.entityScreen != entityScreenClosed {
+	if m.helpOpen || m.taskScreen != taskScreenClosed || m.entityScreen != entityScreenClosed || m.sub == subProjectView {
 		return sb.String()
 	}
 	sb.WriteString("\n\n  ")
@@ -133,6 +133,8 @@ func (m Model) renderCurrentView() string {
 		return m.renderHome()
 	}
 	switch m.sub {
+	case subProjectView:
+		return m.renderProjectView()
 	case subBoard:
 		return m.renderBoard()
 	case subTable:
@@ -379,6 +381,16 @@ func (m Model) footerTokens() []footerToken {
 		}
 	case m.onHome():
 		return m.homeFooterTokens()
+	case m.sub == subProjectView:
+		return []footerToken{
+			{key: "tab", label: m.t("tui.footer.zone"), primary: true},
+			{key: "j/k", label: m.t("tui.footer.scroll")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
+			{key: "g", label: m.t("tui.footer.top_bottom")},
+			{key: "r", label: m.t("tui.footer.refresh")},
+			m.escBack(),
+			m.helpToken(),
+		}
 	case m.sub == subPlans && m.planNetworkOpen:
 		return []footerToken{
 			{key: "c", label: m.t("tui.footer.assign"), primary: true},
@@ -404,6 +416,7 @@ func (m Model) footerTokens() []footerToken {
 			{key: "e", label: m.t("tui.footer.edit")},
 			{key: "tab", label: m.t("tui.footer.zones")},
 			{key: ",//", label: m.t("tui.footer.subs")},
+			{key: "ctrl+p", label: m.t("tui.footer.project")},
 			{key: "ctrl+o", label: m.t("tui.footer.back")},
 			m.helpToken(),
 		}
