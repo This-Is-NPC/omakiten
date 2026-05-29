@@ -172,40 +172,8 @@ func newUpdateCommand(opts *runtimeOptions) *cobra.Command {
 				client.BackupFactory = func(_ context.Context) (updateBackupRunner, error) {
 					return updateBackupForOpts(cmd, opts)
 				}
-				// ConfigPath resolution intentionally lives at RunE
-				// (not defaultUpdateClient) so the production wiring
-				// honours --config / repo-local discovery the same
-				// way every other CLI surface does. Resolution
-				// failure here is non-fatal: empty ConfigPath drops
-				// the validator branch and the update behaves
-				// exactly as it did pre-#365 — the user still gets
-				// the binary swap, just without the pre-flight
-				// health check. The fallback is logged to stderr so
-				// the user sees the degraded mode instead of a
-				// silent skip.
-				if cfgPath, cfgErr := opts.resolvedConfigPath(); cfgErr == nil {
-					client.ConfigPath = cfgPath
-				} else {
-					fmt.Fprintf(os.Stderr, "okt update: config path unavailable, skipping pre-swap health check: %v\n", cfgErr)
-				}
-				client.Validator = defaultUpdateValidator
-				// EventStore opens the SQLite store so runUpdate can
-				// append healthcheck.* / swap.* rows to the activity
-				// log (#369). Resolution failure (state-dir
-				// unwritable etc.) is non-fatal — emission becomes a
-				// no-op and the swap path remains intact. Both
-				// failure modes get a stderr breadcrumb so the
-				// missing audit row is traceable.
-				if dbPath, dbErr := opts.resolvedDBPath(); dbErr == nil {
-					if store, openErr := sqlite.Open(ctx, dbPath); openErr == nil {
-						defer store.Close()
-						client.EventStore = store
-					} else {
-						fmt.Fprintf(os.Stderr, "okt update: sqlite open %s failed, activity rows skipped: %v\n", dbPath, openErr)
-					}
-				} else {
-					fmt.Fprintf(os.Stderr, "okt update: db path unavailable, activity rows skipped: %v\n", dbErr)
-				}
+				cleanup := wireHealthCheckEmission(ctx, opts, &client)
+				defer cleanup()
 				return runUpdate(ctx, client, updateInputs{Check: check, Yes: yes})
 			})
 		},
@@ -214,6 +182,45 @@ func newUpdateCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, opts.t("cli.update.flag.yes"))
 	cmd.Flags().BoolVar(&check, "check", false, opts.t("cli.update.flag.check"))
 	return cmd
+}
+
+// wireHealthCheckEmission resolves the runtime knobs the production
+// `runUpdate` needs to fire the pre-swap health check (#365) and the
+// matching activity rows (#369), mutating client in place. Both
+// resolutions are fail-soft: an unresolvable config path drops the
+// validator branch, an unresolvable / unopenable DB path drops the
+// emission. Each fallback is logged to stderr (same channel
+// `emitHealthCheckEvent` uses) so a missing audit row is traceable.
+//
+// Returns a cleanup func the RunE closure defers so the staged-in
+// sqlite handle (when one was opened) is closed at function exit.
+// The cleanup is always non-nil; it is a no-op when no store was
+// opened so callers can `defer cleanup()` unconditionally.
+//
+// Extracted as a Sprout Method (Feathers) so newUpdateCommand's
+// RunE closure stays at one level of abstraction; the per-finding
+// stderr fprints stay co-located with the resolution they
+// guard against.
+func wireHealthCheckEmission(ctx context.Context, opts *runtimeOptions, client *updateClient) func() {
+	if cfgPath, cfgErr := opts.resolvedConfigPath(); cfgErr == nil {
+		client.ConfigPath = cfgPath
+	} else {
+		fmt.Fprintf(os.Stderr, "okt update: config path unavailable, skipping pre-swap health check: %v\n", cfgErr)
+	}
+	client.Validator = defaultUpdateValidator
+
+	dbPath, dbErr := opts.resolvedDBPath()
+	if dbErr != nil {
+		fmt.Fprintf(os.Stderr, "okt update: db path unavailable, activity rows skipped: %v\n", dbErr)
+		return func() {}
+	}
+	store, openErr := sqlite.Open(ctx, dbPath)
+	if openErr != nil {
+		fmt.Fprintf(os.Stderr, "okt update: sqlite open %s failed, activity rows skipped: %v\n", dbPath, openErr)
+		return func() {}
+	}
+	client.EventStore = store
+	return func() { _ = store.Close() }
 }
 
 // updateInputs is the resolved flag set runUpdate consumes. Kept as a
