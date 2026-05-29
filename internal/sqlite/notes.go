@@ -527,11 +527,12 @@ ORDER BY nt.note_id, t.name`, args...)
 // emitNoteEventTx persists a note-scoped event row inside the caller's
 // transaction. Composes the canonical {title, kind, scope, tags}
 // payload from the supplied note and merges any extra fields the
-// caller passes (e.g. note.pinned carries `pinned: <bool>`). Returns
-// the persisted row on success, a synthetic envelope when shouldLogEvent
-// rejects the type so subscribers still observe the action, or a
-// zero-value Event + nil error when both branches no-op (currently
-// unreachable — the helper always emits or errors).
+// caller passes (e.g. note.pinned carries `pinned: <bool>`). Two
+// branches: insertEntityEvent writes the row when shouldLogEvent
+// accepts the type; otherwise the helper returns a synthetic envelope
+// carrying the same {EntityType, EntityID, ProjectID, EventType,
+// Payload} so subscribers still observe the action when config.events
+// suppressed persistence.
 //
 // The helper centralises the event-shape contract so a future payload
 // field reaches every emit site (Create / Update / Delete) through one
@@ -556,9 +557,9 @@ func (s *Store) emitNoteEventTx(ctx context.Context, tx *sql.Tx, note domain.Not
 // buildNoteEventPayload composes the JSON payload every note.* event
 // shares: {title, kind, scope, tags}. Scope is derived from
 // note.ProjectID so consumers don't need to inspect the event row's
-// project_id column. Extra fields layered on top (without overwriting
-// the canonical keys silently — extra wins so note.pinned can carry
-// `pinned: <bool>` on top of the standard shape).
+// project_id column. Extra fields are layered on top; identical keys
+// in extra silently overwrite the canonical ones (note.pinned relies
+// on this to add `pinned: <bool>` to the standard shape).
 func buildNoteEventPayload(note domain.Note, extra map[string]any) (string, error) {
 	scope := "project"
 	if note.ProjectID == 0 {
