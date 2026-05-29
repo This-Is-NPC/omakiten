@@ -788,6 +788,25 @@ mcp_commands:
     templates:
       - comment-5w2h
       - comment-smart-success
+  # CW5 (#376) — granular lifecycle commands. Slot wiring only: each binds the
+  # existing persona that fits its role (Ideator/Owner = product-owner,
+  # Builder = engineer, Tester = check-runner, Reviewer = code-reviewer,
+  # Scribe = documentation-agent). Skills flow through persona wiring as with
+  # every other task command. Themed persona/skill rebind is #189.
+  okt-task-research:
+    persona: product-owner
+    laws_disabled:
+      - template-fidelity
+  okt-task-validate:
+    persona: product-owner
+    laws_disabled:
+      - template-fidelity
+  okt-task-requirements:
+    persona: product-owner
+  okt-task-prioritize:
+    persona: product-owner
+    templates:
+      - comment-moscow
   okt-task-create:
     persona: product-owner
     laws:
@@ -798,7 +817,15 @@ mcp_commands:
       - task-bugfix
       - comment-smart-success
       - comment-moscow
+  okt-task-decompose:
+    persona: product-owner
+  okt-task-estimate:
+    persona: product-owner
+  okt-task-design:
+    persona: engineer
   okt-project-resume:
+    persona: engineer
+  okt-task-resume:
     persona: engineer
   okt-task-continue:
     persona: engineer
@@ -817,8 +844,25 @@ mcp_commands:
       - pull-request
       - comment-tests-passing
       - comment-refactor-drive-by
+  okt-task-self-review:
+    persona: engineer
+    laws:
+      - bounded-self-review
+    templates:
+      - comment-refactor-drive-by
+  okt-task-refactor:
+    persona: engineer
+    laws:
+      - no-silent-behavior-changes
+      - boy-scout-rule
+    templates:
+      - comment-refactor-opportunities
   okt-task-document:
     persona: documentation-agent
+  okt-task-debrief:
+    persona: documentation-agent
+    laws:
+      - no-praise-pad
   okt-config:
     persona: documentation-agent
     templates:
@@ -838,6 +882,13 @@ mcp_commands:
     templates:
       - comment-review-findings
       - comment-refactor-opportunities
+  okt-task-secure:
+    persona: code-reviewer
+    laws:
+      - findings-actionable
+      - severity-tagged
+    templates:
+      - comment-review-findings
   okt-task-check:
     persona: check-runner
     laws:
@@ -845,6 +896,13 @@ mcp_commands:
       - severity-tagged
     templates:
       - comment-check-report
+  okt-task-quality:
+    persona: check-runner
+    laws:
+      - findings-actionable
+      - severity-tagged
+    templates:
+      - comment-review-findings
   # Notes / handoff v1 (#363), rescoped to the v2 prefix surface (#373).
   # okt-pause (bare orchestrator close) + okt-note-free (ad-hoc capture)
   # wire into the documentation-agent; okt-note-recap (navigation; folds in

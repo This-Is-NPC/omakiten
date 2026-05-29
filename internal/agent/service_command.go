@@ -133,6 +133,80 @@ var commandActions = map[string]string{
 		"`--project <slug>`. Next: suggest `notes.list` to confirm the note landed, or `okt-note-recap` to " +
 		"see it folded into the project timeline.",
 
+	"okt-task-resume": "Cold-start a task — no prior context in this session. Call `tasks.continue` for the " +
+		"task id, then reconstruct the full picture from scratch: read the description, every comment, the " +
+		"dependency graph, and the latest `#resume`/`#tests-passing` checkpoints. Unlike a warm checkpoint read, " +
+		"assume you know nothing — re-derive the current state, open questions, and the immediate next increment " +
+		"from the artifacts. Next: suggest `okt-task-implement` with the same id once you have rebuilt context.",
+
+	"okt-task-research": "Investigate the problem space before any solution is committed. Survey prior art with " +
+		"`search` and `tasks.list`, read the relevant code and docs, and enumerate the unknowns the task must " +
+		"resolve. Produce a findings digest — options, trade-offs, and open questions — read-only. Next: when the " +
+		"unknowns are mapped, suggest `okt-task-validate` to pressure-test the framing.",
+
+	"okt-task-validate": "Pressure-test the problem framing before it hardens into requirements. Challenge the " +
+		"assumptions surfaced in discovery — is the problem real, is it worth solving now, what evidence backs the " +
+		"demand? Surface risks and falsifiers; do not author the task here. Next: when the framing survives " +
+		"scrutiny, suggest `okt-task-requirements` to capture what the solution must satisfy.",
+
+	"okt-task-requirements": "Capture what the solution must satisfy. Elicit functional and non-functional " +
+		"requirements, edge cases, and explicit acceptance criteria; separate must-have from nice-to-have. " +
+		"Call `templates.show` for any bound requirements/acceptance scaffold and fill it. Read-only " +
+		"with respect to the task body — record findings as the requirements baseline. Next: suggest " +
+		"`okt-task-prioritize` to rank the work against alternatives.",
+
+	"okt-task-prioritize": "Rank the work against alternatives. Score candidates with an explicit method " +
+		"(MoSCoW / RICE / value-vs-effort) and record the rationale so the ordering is auditable, not arbitrary. " +
+		"Call `templates.show` for the bound scoring scaffold and fill it. " +
+		"Read-only. Next: when the priority is justified, suggest `okt-task-create` to author the top candidate.",
+
+	"okt-task-decompose": "Break a coarse task into right-sized increments. Identify the seams — independently " +
+		"shippable slices, each with its own acceptance criteria — and propose the subtask breakdown without " +
+		"creating them blindly. Surface dependencies between slices. Next: suggest `okt-task-estimate` to size " +
+		"each increment.",
+
+	"okt-task-estimate": "Size each increment. Attach a relative estimate (points / t-shirt) to every slice with " +
+		"a one-line basis-of-estimate, and flag the increments whose uncertainty dominates. Read-only. Next: when " +
+		"the sizing is recorded, suggest `okt-task-design` to shape the first increment.",
+
+	"okt-task-design": "Shape the solution before writing it. Sketch the approach — data flow, the seams you will " +
+		"touch, the interfaces you will introduce — and weigh at least one alternative. Call `templates.show` for " +
+		"any bound design scaffold and fill it. Record the design rationale; " +
+		"do not edit production code here. Next: suggest `okt-task-implement` to build the chosen design.",
+
+	"okt-task-self-review": "Review your OWN diff before handing it to a third party. Run `git diff <base>..HEAD` " +
+		"and read every hunk you wrote with fresh eyes: dead code, leftover debug output, missing tests, unhandled " +
+		"edge cases, and the gap between what you intended and what you actually changed. Call `templates.show` for " +
+		"any bound findings scaffold and fill it. Distinct from the " +
+		"third-party `okt-task-review` — this is the author's own pre-handoff pass. Fix trivial issues inline; " +
+		"escalate the rest. Next: when your own pass is clean, suggest `okt-task-review` for a third-party lens.",
+
+	"okt-task-refactor": "Improve the structure of code without changing its behavior. Identify a single smell " +
+		"(duplication, long function, feature envy), apply the named refactoring (`Extract Function`, `Move " +
+		"Method`), and keep the test suite green at every step. Call `templates.show` for any bound refactor " +
+		"scaffold and fill it. One behavior-preserving transformation per pass — " +
+		"no feature work. Next: suggest `okt-task-check` to confirm the suite still passes.",
+
+	"okt-task-quality": "Assess quality through a human lens — the judgment a linter cannot make. Read the diff for " +
+		"design coherence, naming, test coverage of the meaningful branches, and the smells that pass the " +
+		"mechanical gate but still erode the codebase. Call `templates.show` for any bound findings scaffold and " +
+		"fill it. Distinct from the pass/fail `okt-task-check` mechanical " +
+		"gate — this is the qualitative read. Surface findings by severity; read-only. Next: route structural " +
+		"findings to `okt-task-refactor`, behavioral gaps to `okt-task-implement`.",
+
+	"okt-task-secure": "Walk the diff through a security lens. Trace untrusted input to sinks, check authz on every " +
+		"new path, look for injection / SSRF / secret leakage / unsafe deserialization, and verify error paths do " +
+		"not leak internals. Call `templates.show` for any bound findings scaffold and fill it. Cite the class of " +
+		"each finding and tag it by severity; read-only — never edit. " +
+		"Distinct from the general `okt-task-review`: this pass is security-only. Next: route findings to " +
+		"`okt-task-implement` with the vulnerability class and location.",
+
+	"okt-task-debrief": "Close the loop on completed work — capture what was learned, not what was done. Distill " +
+		"the decisions that held, the assumptions that broke, and the follow-ups worth carrying forward, so the " +
+		"next task starts smarter. Call `templates.show` for any bound lessons scaffold and fill it. Record the " +
+		"debrief; read-only with respect to code. Next: suggest " +
+		"`okt-task-document` if the learnings imply documentation drift.",
+
 	"okt-note-recap": "Render a recap timeline of recent activity, scoped by the window argument. With a " +
 		"single-project window (default — project from `--project <slug>` or cwd) it groups recent notes " +
 		"chronologically: resolve the window from `[janela]`/`--since` (default `7d`) and the kind filter " +
@@ -167,6 +241,19 @@ var commandDescriptions = map[string]string{
 	"okt-pause":          "Close the session with a synthesised handoff note for the next agent.",
 	"okt-note-free":      "Capture a free-form knowledge note (project or global) without ceremony.",
 	"okt-note-recap":     "Recap timeline of recent notes; wide window folds in the cross-project handoff digest.",
+	"okt-task-resume":      "Cold-start a task from scratch — rebuild full context when none is loaded in this session.",
+	"okt-task-research":    "Investigate the problem space and map the unknowns before any solution is committed.",
+	"okt-task-validate":    "Pressure-test the problem framing — is it real, worth solving now, evidence-backed?",
+	"okt-task-requirements": "Capture functional + non-functional requirements and explicit acceptance criteria.",
+	"okt-task-prioritize":  "Rank the work against alternatives with an explicit scoring method and rationale.",
+	"okt-task-decompose":   "Break a coarse task into right-sized, independently shippable increments.",
+	"okt-task-estimate":    "Size each increment with a relative estimate and a one-line basis-of-estimate.",
+	"okt-task-design":      "Shape the solution — approach, seams, interfaces — and weigh an alternative before coding.",
+	"okt-task-self-review": "Author's own pre-handoff diff pass — distinct from the third-party review.",
+	"okt-task-refactor":    "Apply one behavior-preserving structural improvement with the suite green throughout.",
+	"okt-task-quality":     "Qualitative human-lens quality read — smells, coverage, design — distinct from the mechanical gate.",
+	"okt-task-secure":      "Security-only diff pass — input-to-sink tracing, authz, injection, secret leakage.",
+	"okt-task-debrief":     "Capture learnings from completed work — decisions that held, assumptions that broke.",
 }
 
 // CommandNames returns the canonical, ordered list of `okt-*` prompts the MCP
@@ -176,15 +263,28 @@ func CommandNames() []string {
 	return []string{
 		"okt",
 		"okt-task-imagine",
+		"okt-task-research",
+		"okt-task-validate",
+		"okt-task-requirements",
+		"okt-task-prioritize",
 		"okt-task-create",
+		"okt-task-decompose",
+		"okt-task-estimate",
+		"okt-task-design",
 		"okt-project-resume",
+		"okt-task-resume",
 		"okt-task-continue",
 		"okt-task-implement",
+		"okt-task-self-review",
+		"okt-task-refactor",
 		"okt-task-document",
+		"okt-task-debrief",
 		"okt-config",
 		"okt-task-commit",
 		"okt-task-review",
+		"okt-task-secure",
 		"okt-task-check",
+		"okt-task-quality",
 		"okt-pause",
 		"okt-note-free",
 		"okt-note-recap",
