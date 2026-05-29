@@ -90,6 +90,14 @@ var promptBudgets = map[string]int{
 	"okt-project-continue": 23500,
 	"okt-note-list":        23500,
 	"okt-note-show":        23500,
+	// CW3 (#374): okt-run Owner orchestrator. Binds the Owner persona
+	// (product-owner, ~ imagine/create skill footprint) with no templates but
+	// the longest action body in the surface — the full director playbook
+	// (target detection, runnable selection, per-task subagent spawn,
+	// conditional-parallel gating, compact-return review loop, clean halt).
+	// Budget sized against the embedded omakase default kit with ~30% headroom.
+	// CW8 (#379) re-tightens once theming rewires it to a minimal skill subset.
+	"okt-run": 28000,
 }
 
 // TestTemplateBoundCommandsCarryFetchHint guards the JIT contract for
@@ -288,6 +296,88 @@ func TestCW6ProjectResumeVsContinueDistinct(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(cont), "warm") {
 		t.Fatalf("okt-project-continue action should signal a warm last-session resume:\n%s", cont)
+	}
+}
+
+// TestCW3OktRunDelegationPlaybook is the AC#8 smoke gate. omakiten cannot
+// itself spawn agents — okt-run is a PROMPT, and the agent consuming it does
+// the spawning — so the smoke test asserts the RENDERED okt-run prompt against
+// the embedded default kit carries the locked Owner→Builder delegation
+// playbook contract. Each assertion pins a load-bearing phrase so a future edit
+// that erodes a clause of the contract surfaces here (mirrors the
+// TestCW5DistinctCommandPairs phrase-pinning style).
+func TestCW3OktRunDelegationPlaybook(t *testing.T) {
+	ctx := context.Background()
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "data", "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+
+	rt, err := Open(ctx, Options{DBPath: dbPath, ConfigPath: configPath, CWD: tmp})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() { _ = rt.Close() }()
+
+	resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: "okt-run"})
+	if err != nil {
+		t.Fatalf("ResolveCommand(okt-run) error = %v", err)
+	}
+
+	// The role slot must be wired (Owner persona) and the action must land.
+	if resp.Persona == nil {
+		t.Fatalf("okt-run resolved with no persona — the Owner role slot is not wired in the preset YAML")
+	}
+	if !strings.Contains(resp.Markdown, "## Persona — ") {
+		t.Fatalf("okt-run markdown missing non-empty Persona section:\n%s", resp.Markdown)
+	}
+	if !strings.Contains(resp.Markdown, "## Action\n") || strings.TrimSpace(resp.Action) == "" {
+		t.Fatalf("okt-run markdown missing non-empty Action section:\n%s", resp.Markdown)
+	}
+	if strings.TrimSpace(agent.CommandDescription("okt-run")) == "" {
+		t.Fatalf("okt-run carries no prompts/list description")
+	}
+
+	// okt-run decodes as a bare orchestrator (not granular) — the engine is
+	// subagents, not a workflow.
+	desc, ok := agent.DescribeCommand("okt-run")
+	if !ok || desc.Tier != agent.CommandTierOrchestrator {
+		t.Fatalf("okt-run must decode as the orchestrator tier, got %+v ok=%v", desc, ok)
+	}
+
+	lower := strings.ToLower(resp.Markdown)
+
+	// Each clause of the locked delegation contract, pinned by a load-bearing
+	// phrase. The contract: spawn ONE Builder subagent PER task via the Agent
+	// tool; lean Owner context that NEVER holds okt-task-* bodies; the Builder
+	// invokes the granular commands ITSELF via its own MCP in its own fresh
+	// context; conditional parallelism gated on deps-satisfied AND worthwhile
+	// (explicitly NOT parallelize-everything); a compact structured return
+	// (diff + #tests-passing) the Owner reviews; a clean halt on failure that
+	// leaves the run resumable; and review here is NOT the deep okt-audit pass.
+	contract := []struct {
+		clause string
+		phrase string
+	}{
+		{"spawn one Builder subagent per task via the Agent tool", "spawn one builder subagent per task via the agent tool"},
+		{"delegates implementation (Owner does not implement)", "you do not implement"},
+		{"lean Owner context never holds okt-task-* bodies", "do not load the `okt-task-*` command bodies"},
+		{"Builder invokes the granular commands itself via its own MCP", "invoke the granular `okt-task-*` commands itself"},
+		{"Builder runs in its own fresh context", "own fresh context"},
+		{"conditional parallelism gated on deps satisfied AND worthwhile", "only when their dependencies are satisfied and"},
+		{"explicitly not parallelize-everything", "never parallelize everything"},
+		{"tasks with unmet dependencies wait", "wait"},
+		{"compact structured return for review", "compact, structured result"},
+		{"return carries #tests-passing evidence", "#tests-passing"},
+		{"Owner reviews the return: accept / reject / re-spawn", "re-spawn a fresh builder"},
+		{"deep review lives in okt-audit, not duplicated here", "deep review lives in"},
+		{"clean halt on a failing/blocked task", "halt cleanly"},
+		{"run is resumable from the halted task", "resumable"},
+		{"single-task or plan target detected from context", "detect the target from context"},
+	}
+	for _, c := range contract {
+		if !strings.Contains(lower, c.phrase) {
+			t.Fatalf("okt-run prompt missing the %q clause (expected load-bearing phrase %q):\n%s", c.clause, c.phrase, resp.Markdown)
+		}
 	}
 }
 
