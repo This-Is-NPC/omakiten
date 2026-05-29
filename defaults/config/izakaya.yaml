@@ -387,146 +387,259 @@ config:
       window_days: 30
     task_activity:
       sort: {order: asc}
+# Izakaya (Howl's Moving Castle) themed roster — #189 W5.3, by canonical role.
+# Schema v2: each persona declares a `skill_repertoire` (the full pool it is
+# equipped with); mcp_commands below may only select a SUBSET of that pool
+# (enforced by validateMCPCommandSkillSubset). The persona carries TONE; the
+# skill carries PROCEDURE; templates carry STRUCTURE. The lean izakaya kit
+# dual-binds roles onto fewer hands: Calcifer is Concierge + Tester, Markl is
+# Owner + Committer, Sophie is Reviewer + Scribe — five persona files cover the
+# eight role slots.
 personas:
-  - slug: tinkerer
-    skills: [lean-experimentation, tracer-bullet-shipping, time-box-discipline, standup-digest, recap-timeline, markdown]
-  - slug: documentation-agent
-    skills: [documentation, architecture-mapping, readme-curation, handoff-synthesis, note-capture, markdown]
-  - slug: commit-author
-    skills: [conventional-commits-spec, markdown]
-  - slug: code-reviewer
-    skills: [refactoring-catalog, code-smells, solid-principles, legacy-seams, security-review-lens, markdown]
-  - slug: check-runner
-    skills: [test-driven-development, static-analysis-discipline, coverage-analysis, regression-detection, markdown]
+  # Concierge + Tester — the hearth-fire that sees every room and routes work,
+  # then proves what burns clean before it ships.
+  - slug: calcifer
+    schema_version: 2
+    skill_repertoire:
+      - pdca-cycle
+      - discovery
+      - regression-detection
+      - coverage-analysis
+      - static-analysis-discipline
+      - test-driven-development
+      - markdown
+  # Ideator — bold notions chased with a cheap probe first.
+  - slug: witch-of-the-waste
+    schema_version: 2
+    skill_repertoire:
+      - discovery
+      - lean-experimentation
+      - five-w-two-h
+      - markdown
+  # Owner + Committer — front-desk steward who decides what work is worth taking
+  # and in what order, then signs each finished job into the record cleanly.
+  - slug: markl
+    schema_version: 2
+    skill_repertoire:
+      - five-w-two-h
+      - smart-goals
+      - staged-delivery
+      - dora-mindset
+      - risk-driven-development
+      - requirements-elicitation
+      - non-functional-requirements
+      - moscow-prioritization
+      - rice-scoring
+      - user-story-writing
+      - invest-stories
+      - conventional-commits-spec
+      - markdown
+  # Builder — small bold strokes, trunk kept green, tidies what he passes through.
+  - slug: howl-pendragon
+    schema_version: 2
+    skill_repertoire:
+      - implementation
+      - test-driven-development
+      - trunk-based-development
+      - continuous-integration
+      - solid-principles
+      - code-smells
+      - refactoring-catalog
+      - castle-tidying
+      - markdown
+  # Reviewer + Scribe — sees the true shape under the mess, says plainly what
+  # needs mending, and keeps the castle's record clear. Repertoire carries all
+  # four #359 note skills so the okt-note-* and okt-pause slots resolve.
+  - slug: sophie-hatter
+    schema_version: 2
+    skill_repertoire:
+      - code-smells
+      - refactoring-catalog
+      - security-review-lens
+      - solid-principles
+      - handoff-synthesis
+      - note-capture
+      - standup-digest
+      - recap-timeline
+      - documentation
+      - architecture-mapping
+      - postmortem-authoring
+      - markdown
+# Izakaya (Howl's Moving Castle) slot bindings — #189 W5.3. Each command binds
+# the themed persona for its canonical role and selects a SUBSET of that
+# persona's skill_repertoire. The W1 subset validator enforces skills ⊆
+# repertoire. The lean izakaya kit keeps narrow skill subsets and preserves the
+# `laws_disabled` opt-outs on the exploration commands.
 mcp_commands:
   global:
     laws: [template-fidelity, authorize-remote-writes, project-scope-only]
   okt:
-    persona: documentation-agent
-  # CW4 (#375) — guiding orchestrators. okt-start (Concierge smart entry, shared
-  # with the bare `okt` shortcut) + okt-pause (Concierge close) bind the
-  # documentation-agent (closest Concierge-ish persona under the current kit);
-  # okt-shape + okt-audit are Owner orchestrators binding this leaner preset's
-  # Owner-role persona (tinkerer). Skills flow through persona wiring. Themed
-  # Concierge persona is #189.
+    persona: calcifer
+    skills: [pdca-cycle]
+  # Guiding orchestrators. okt-start (Concierge smart entry, shared with the bare
+  # `okt` shortcut) binds Calcifer (Concierge). okt-shape + okt-audit + okt-run
+  # are Owner orchestrators → Markl. okt-pause (Scribe close, synthesises a
+  # handoff) binds Sophie (Scribe) — see the Notes block below.
   okt-start:
-    persona: documentation-agent
+    persona: calcifer
+    skills: [pdca-cycle, discovery]
   okt-shape:
-    persona: tinkerer
+    persona: markl
+    skills: [five-w-two-h, smart-goals]
   okt-audit:
-    persona: tinkerer
-  # CW3 (#374) — okt-run Owner orchestrator. Binds the Owner-role persona
-  # (tinkerer, the same role okt-task-create / okt-plan-* use in this leaner
-  # preset): okt-run is the director that delegates implementation to per-task
-  # Builder subagents and reviews their compact returns. Lean by design — no
-  # okt-task-* bodies, no templates. Command-level skills stay empty; skills
-  # flow through persona wiring. Themed persona rebind is #189.
+    persona: markl
+    skills: [risk-driven-development]
+  # okt-run Owner director — delegates implementation to per-task Builder
+  # subagents and reviews their compact returns.
   okt-run:
-    persona: tinkerer
+    persona: markl
+    skills: [staged-delivery, dora-mindset]
+  # Granular lifecycle commands. Ideator → Witch of the Waste; Owner → Markl;
+  # Builder → Howl. The exploration commands keep their lean `laws_disabled`
+  # opt-out so the discovery flow can sketch freely.
   okt-task-imagine:
-    persona: tinkerer
+    persona: witch-of-the-waste
+    skills: [discovery, lean-experimentation]
     laws_disabled: [template-fidelity]
-  # CW5 (#376) — granular lifecycle commands. Slot wiring only. The lean
-  # izakaya kit collapses Ideator/Owner/Builder onto the tinkerer; Tester =
-  # check-runner, Reviewer = code-reviewer, Scribe = documentation-agent.
-  # Skills flow through persona wiring. Themed rebind = #189.
   okt-task-research:
-    persona: tinkerer
+    persona: witch-of-the-waste
+    skills: [discovery]
     laws_disabled: [template-fidelity]
   okt-task-validate:
-    persona: tinkerer
+    persona: witch-of-the-waste
+    skills: [lean-experimentation]
+    laws: [cheap-probe-first]
     laws_disabled: [template-fidelity]
   okt-task-requirements:
-    persona: tinkerer
-    laws_disabled: [template-fidelity]
+    persona: markl
+    skills: [requirements-elicitation, non-functional-requirements]
   okt-task-prioritize:
-    persona: tinkerer
-    laws_disabled: [template-fidelity]
+    persona: markl
+    skills: [moscow-prioritization, rice-scoring]
+    templates: [comment-moscow]
   okt-task-create:
-    persona: tinkerer
-    laws: [hypothesis-required, yagni-first]
-    templates: [task-spike]
+    persona: markl
+    skills: [user-story-writing, invest-stories, smart-goals]
+    laws: [invest-stories]
+    templates: [user-story, comment-smart-success, comment-moscow]
   okt-task-decompose:
-    persona: tinkerer
+    persona: markl
+    skills: [user-story-writing]
   okt-task-estimate:
-    persona: tinkerer
+    persona: markl
+    skills: [rice-scoring]
   okt-task-design:
-    persona: tinkerer
+    persona: howl-pendragon
+    skills: [solid-principles]
   okt-project-resume:
-    persona: tinkerer
+    persona: calcifer
+    skills: [pdca-cycle]
   okt-project-continue:
-    persona: tinkerer
-  # CW6 (#377) — granular plan commands. Owner role collapsed onto tinkerer
-  # like the rest of the lean izakaya kit. Slot wiring only; themed rebind #189.
+    persona: calcifer
+    skills: [pdca-cycle]
+  # Granular plan commands. Owner role → Markl (authors + claims plans).
   okt-plan-create:
-    persona: tinkerer
+    persona: markl
+    skills: [staged-delivery]
   okt-plan-show:
-    persona: tinkerer
+    persona: markl
+    skills: [staged-delivery]
   okt-plan-continue:
-    persona: tinkerer
+    persona: markl
+    skills: [staged-delivery]
   okt-plan-claim:
-    persona: tinkerer
+    persona: markl
+    skills: [staged-delivery]
   okt-task-resume:
-    persona: tinkerer
+    persona: howl-pendragon
+    skills: [implementation]
   okt-task-continue:
-    persona: tinkerer
+    persona: howl-pendragon
+    skills: [implementation]
   okt-task-implement:
-    persona: tinkerer
-    laws: [time-boxed-spike, tracer-bullet, conventional-commits]
-    templates: [pull-request]
+    persona: howl-pendragon
+    skills: [implementation, test-driven-development, trunk-based-development, continuous-integration]
+    laws: [walking-skeleton-first, conventional-commits]
+    templates: [pull-request, comment-tests-passing, comment-refactor-drive-by]
   okt-task-self-review:
-    persona: tinkerer
+    persona: howl-pendragon
+    skills: [code-smells, castle-tidying]
+    templates: [comment-refactor-drive-by]
   okt-task-refactor:
-    persona: tinkerer
+    persona: howl-pendragon
+    skills: [refactoring-catalog, castle-tidying]
+    templates: [comment-refactor-opportunities]
+  # Scribe → Sophie.
   okt-task-document:
-    persona: documentation-agent
+    persona: sophie-hatter
+    skills: [documentation, architecture-mapping]
   okt-task-debrief:
-    persona: documentation-agent
-  # CW7 (#378) — system commands (talk to the tool). documentation-agent, like
-  # okt-config. okt-skill wires UX onto skills.list/skills.get; ungated by
-  # repertoire. Themed rebind = #189.
+    persona: sophie-hatter
+    skills: [postmortem-authoring]
+    laws: [no-praise-pad]
+  # System commands talk to the TOOL, not the project. Concierge/generic role →
+  # Calcifer. okt-skill pulls ANY skill (ungated by persona repertoire); the
+  # markdown subset just shapes its own prose.
   okt-help:
-    persona: documentation-agent
+    persona: calcifer
+    skills: [markdown]
   okt-config:
-    persona: documentation-agent
+    persona: calcifer
+    skills: [markdown]
     templates: [config-orientation]
   okt-skill:
-    persona: documentation-agent
+    persona: calcifer
+    skills: [markdown]
+  # Committer → Markl.
   okt-task-commit:
-    persona: commit-author
+    persona: markl
+    skills: [conventional-commits-spec]
     laws: [conventional-commits, no-coauthored-by]
+  # Reviewer → Sophie.
   okt-task-review:
-    persona: code-reviewer
-    laws: [time-boxed-review, tracer-debt-acceptable]
+    persona: sophie-hatter
+    skills: [code-smells, refactoring-catalog]
+    laws: [no-praise-pad]
     templates: [comment-review-findings, comment-refactor-opportunities]
   okt-task-secure:
-    persona: code-reviewer
-    laws: [time-boxed-review]
+    persona: sophie-hatter
+    skills: [security-review-lens]
     templates: [comment-review-findings]
+  # Tester → Calcifer.
   okt-task-check:
-    persona: check-runner
-    laws: [time-boxed-check, accept-yellow]
+    persona: calcifer
+    skills: [regression-detection, coverage-analysis]
+    laws: [accept-yellow]
     templates: [comment-check-report]
   okt-task-quality:
-    persona: check-runner
+    persona: calcifer
+    skills: [static-analysis-discipline]
     laws: [accept-yellow]
     templates: [comment-review-findings]
-  # Notes / handoff v1 (#363), rescoped to the v2 prefix surface (#373).
-  # Provisional persona kit — #189 W4/W5.x rebinds to themed personas.
+  # Notes / handoff. The Scribe (Sophie) repertoire carries all four #359 note
+  # skills — handoff-synthesis, note-capture, standup-digest, recap-timeline —
+  # so every notes-bearing slot resolves a real skill subset. okt-pause (Scribe
+  # close) synthesises a handoff; okt-note-free captures ad-hoc; okt-note-recap
+  # folds the standup digest into a wide-window recap.
   okt-pause:
-    persona: documentation-agent
+    persona: sophie-hatter
+    skills: [handoff-synthesis]
     laws: [project-scope-only, no-praise-pad]
     templates: [note-handoff]
   okt-note-free:
-    persona: documentation-agent
+    persona: sophie-hatter
+    skills: [note-capture]
     templates: [note-free]
   okt-note-recap:
-    persona: tinkerer
+    persona: sophie-hatter
+    skills: [recap-timeline, standup-digest]
     templates: [note-recap, note-standup-digest]
   okt-note-list:
-    persona: tinkerer
+    persona: sophie-hatter
+    skills: [note-capture]
   okt-note-show:
-    persona: tinkerer
+    persona: sophie-hatter
+    skills: [note-capture]
 workflows:
   - id: 1
     key: izakaya
