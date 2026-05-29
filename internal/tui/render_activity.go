@@ -3,8 +3,10 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
+	"omakiten/internal/app"
 	"omakiten/internal/domain"
 	"omakiten/internal/tui/components/gridtable"
 )
@@ -94,19 +96,102 @@ func (m Model) activityForTaskInView(taskID int64) []domain.Event {
 	comments := m.commentsForTask(taskID)
 	out := make([]domain.Event, len(comments))
 	for i, c := range comments {
-		out[i] = domain.Event{
-			ID:         c.ID,
-			EntityType: domain.EventEntityTask,
-			EntityID:   c.TaskID,
-			ProjectID:  c.ProjectID,
-			EventType:  domain.EventTypeComment,
-			Body:       c.Body,
-			AuthorType: c.AuthorType,
-			CreatedAt:  c.CreatedAt,
-			Tags:       c.Tags,
-		}
+		out[i] = commentToEvent(c)
 	}
 	return out
+}
+
+// commentToEvent projects a domain.Comment into the domain.Event shape the
+// activity renderers consume. Scope-aware: the comment's Scope (task |
+// project | universal) selects entity_type, and EntityID is the comment's
+// owning entity id — the task id for task-scoped rows, the project id for
+// project-scoped rows, 0 for universal. A blank Scope (legacy/in-memory
+// task comments) defaults to task so the existing task feed is unchanged.
+func commentToEvent(c domain.Comment) domain.Event {
+	scope := c.Scope
+	if scope == "" {
+		scope = domain.CommentScopeTask
+	}
+	entityID := c.TaskID
+	switch scope {
+	case domain.CommentScopeProject:
+		entityID = c.ProjectID
+	case domain.CommentScopeUniversal:
+		entityID = 0
+	}
+	return domain.Event{
+		ID:         c.ID,
+		EntityType: scope,
+		EntityID:   entityID,
+		ProjectID:  c.ProjectID,
+		EventType:  domain.EventTypeComment,
+		Body:       c.Body,
+		AuthorType: c.AuthorType,
+		CreatedAt:  c.CreatedAt,
+		Tags:       c.Tags,
+	}
+}
+
+// commentsForProjectScope fetches project- and universal-scoped comment
+// events for the current project, ready to feed the same activity/comment
+// renderers the task feed uses. It is the reusable data seam #390's
+// project-view screen will consume; the optional filter narrows by
+// kind/tag/FTS/pinned without forcing callers to assemble a CommentFilter.
+//
+// The store's QueryComments matches universal rows (project_id NULL) only
+// when ProjectID is 0, so a project-scoped read and the cross-project
+// universal read are two separate queries here, then merged. A caller that
+// pins filter.Scope to a single scope (project OR universal) short-circuits
+// to the one matching query.
+//
+// The merged slice is pinned-first (pinned comments lead, then the store's
+// natural created_at order) so a cover-sheet style read surfaces flagged
+// handoffs at the top.
+//
+// Consumes app.CommentService.Query → store.QueryComments; it does not touch
+// store internals or add a new store signature.
+func (m Model) commentsForProjectScope(filter domain.CommentFilter) ([]domain.Event, error) {
+	svc := app.NewCommentService(m.repos.Comments, m.repos.activeSnapshot())
+
+	merged := make([]domain.Comment, 0)
+
+	// Project-scoped rows for this project. Skipped when the caller pinned the
+	// filter to universal only.
+	if filter.Scope != domain.CommentScopeUniversal {
+		pf := filter
+		pf.ProjectID = m.project.ID
+		if pf.Scope == "" {
+			pf.Scope = domain.CommentScopeProject
+		}
+		comments, err := svc.Query(m.ctx, m.project, pf)
+		if err != nil {
+			return nil, err
+		}
+		merged = append(merged, comments...)
+	}
+
+	// Universal rows (cross-project, project_id NULL → ProjectID must be 0).
+	// Skipped when the caller pinned the filter to project only.
+	if filter.Scope != domain.CommentScopeProject {
+		uf := filter
+		uf.ProjectID = 0
+		uf.Scope = domain.CommentScopeUniversal
+		comments, err := svc.Query(m.ctx, m.project, uf)
+		if err != nil {
+			return nil, err
+		}
+		merged = append(merged, comments...)
+	}
+
+	// Stable pinned-first sort: preserves the store order within each group.
+	sort.SliceStable(merged, func(i, j int) bool {
+		return merged[i].Pinned && !merged[j].Pinned
+	})
+	out := make([]domain.Event, len(merged))
+	for i, c := range merged {
+		out[i] = commentToEvent(c)
+	}
+	return out, nil
 }
 
 // activityRowsForRender returns the rendered event card slice for the
@@ -159,19 +244,26 @@ func (m *Model) cachedActivityRowsForRender(events []domain.Event) []string {
 }
 
 // activityRowsForRenderKey fingerprints the inputs activityRowsForRender
-// depends on: focused task id, cursor (changes the focused-card accent
-// border), commentCard content width (changes wrap), and per-event id
-// + type + body length + tag identities. The body length is a cheap
-// proxy that catches edit-in-place mutations without hashing the full
-// body string. Tags are folded as (len, then sorted ids) so a swap
-// (remove tag 3, add tag 5 — same length) still bumps the key while a
-// reorder (tags returned in different order from the DB) does not.
+// depends on: cursor (changes the focused-card accent border), commentCard
+// content width (changes wrap), and per-event scope (entity_type +
+// entity_id) + id + type + body length + tag identities. The body length is
+// a cheap proxy that catches edit-in-place mutations without hashing the full
+// body string. Tags are folded as (len, then sorted ids) so a swap (remove
+// tag 3, add tag 5 — same length) still bumps the key while a reorder (tags
+// returned in different order from the DB) does not.
+//
+// The scope is folded per-event (entity_type + entity_id) rather than keying
+// the whole feed on m.taskID. Without this a project-scoped feed and a
+// task-scoped feed that happened to share cursor + widths + event ids would
+// hash identical and collide in m.activityCardsCache; the per-event scope
+// fold keeps each feed's cards distinct.
 func (m Model) activityRowsForRenderKey(events []domain.Event) uint64 {
 	f := newFingerprint()
-	f.writeInt64(m.taskID)
 	f.writeInt64(int64(m.activityCursor))
 	f.writeInt64(int64(m.commentCardWidth()))
 	for _, ev := range events {
+		f.writeString(ev.EntityType)
+		f.writeInt64(ev.EntityID)
 		f.writeInt64(ev.ID)
 		f.writeString(ev.EventType)
 		f.writeInt64(int64(len(ev.Body)))
@@ -226,17 +318,25 @@ func (m Model) renderSystemEventCard(ev domain.Event, focused bool) string {
 
 // eventToComment narrows a comment-typed Event back into the Comment
 // shape that renderCommentCard expects. Lets the comment renderer stay
-// untouched while the activity feed funnels through Event.
+// untouched while the activity feed funnels through Event. Scope-aware:
+// the event's entity_type rides back onto Comment.Scope, and TaskID is set
+// only for task-scoped rows so card/screen rendering does not assume a task
+// owner for project/universal comments.
 func eventToComment(ev domain.Event) domain.Comment {
-	return domain.Comment{
+	c := domain.Comment{
 		ID:         ev.ID,
 		ProjectID:  ev.ProjectID,
-		TaskID:     ev.EntityID,
+		Scope:      ev.EntityType,
 		Body:       ev.Body,
 		AuthorType: ev.AuthorType,
 		CreatedAt:  ev.CreatedAt,
 		Tags:       ev.Tags,
 	}
+	if ev.EntityType == "" || ev.EntityType == domain.EventEntityTask {
+		c.Scope = domain.CommentScopeTask
+		c.TaskID = ev.EntityID
+	}
+	return c
 }
 
 // systemEventLabel renders task.* events as human-readable strings using
