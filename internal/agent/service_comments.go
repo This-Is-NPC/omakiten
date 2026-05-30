@@ -74,8 +74,11 @@ func (s *Service) EditComment(ctx context.Context, input EditCommentInput) (Comm
 	}
 	workflow := s.workflow
 	edit := domain.CommentEdit{
-		Body:   input.Body,
 		Pinned: input.Pinned,
+	}
+	if input.Body != nil {
+		trimmed := strings.TrimSpace(*input.Body)
+		edit.Body = &trimmed
 	}
 	if input.Title != nil {
 		trimmed := strings.TrimSpace(*input.Title)

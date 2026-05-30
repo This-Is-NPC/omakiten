@@ -234,7 +234,7 @@ func TestEditCommentScopedFields(t *testing.T) {
 	title := "Final"
 	kind := "recap"
 	edited, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
-		CommentID: created.Comment.ID, Body: "after", Title: &title, Kind: &kind, Pinned: &pinned,
+		CommentID: created.Comment.ID, Body: strPtr("after"), Title: &title, Kind: &kind, Pinned: &pinned,
 	})
 	if err != nil {
 		t.Fatalf("EditComment() error = %v", err)
@@ -265,7 +265,7 @@ func TestEditCommentPreservesNoteFieldsOnBodyOnlyEdit(t *testing.T) {
 
 	// Body-only edit: Title/Kind/Pinned omitted.
 	edited, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
-		CommentID: created.Comment.ID, Body: "after",
+		CommentID: created.Comment.ID, Body: strPtr("after"),
 	})
 	if err != nil {
 		t.Fatalf("EditComment(body only) error = %v", err)
@@ -280,7 +280,7 @@ func TestEditCommentPreservesNoteFieldsOnBodyOnlyEdit(t *testing.T) {
 	// Explicit pinned=false unpins (and leaves title/kind alone).
 	unpin := false
 	edited2, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
-		CommentID: created.Comment.ID, Body: "after2", Pinned: &unpin,
+		CommentID: created.Comment.ID, Body: strPtr("after2"), Pinned: &unpin,
 	})
 	if err != nil {
 		t.Fatalf("EditComment(unpin) error = %v", err)
@@ -290,5 +290,49 @@ func TestEditCommentPreservesNoteFieldsOnBodyOnlyEdit(t *testing.T) {
 	}
 	if edited2.Comment.Title != "Heading" || edited2.Comment.Kind != "handoff" {
 		t.Fatalf("EditComment(unpin) wiped title/kind = %+v", edited2.Comment)
+	}
+}
+
+// TestEditCommentBodyTriState pins the partial-update body contract at the
+// agent boundary: a nil Body (omitted JSON) leaves the stored body untouched
+// while metadata applies, an explicit empty/whitespace body is rejected (cannot
+// blank a comment), and a patch with no fields at all is a rejected no-op.
+func TestEditCommentBodyTriState(t *testing.T) {
+	fixture := newAgentFixture(t)
+
+	created, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		Scope: domain.CommentScopeProject, Body: "original", AuthorType: "agent",
+	})
+	if err != nil {
+		t.Fatalf("AddComment(project) error = %v", err)
+	}
+
+	// Metadata-only edit: Body omitted (nil) → body preserved, metadata applied.
+	pinned := true
+	edited, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+		CommentID: created.Comment.ID, Pinned: &pinned, Title: strPtr("Heading"),
+	})
+	if err != nil {
+		t.Fatalf("EditComment(metadata only) error = %v", err)
+	}
+	if edited.Comment.Body != "original" {
+		t.Fatalf("metadata-only edit changed body = %q, want preserved", edited.Comment.Body)
+	}
+	if !edited.Comment.Pinned || edited.Comment.Title != "Heading" {
+		t.Fatalf("metadata-only edit did not apply metadata = %+v", edited.Comment)
+	}
+
+	// Explicit empty body → rejected.
+	if _, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+		CommentID: created.Comment.ID, Body: strPtr("   "),
+	}); err == nil {
+		t.Fatal("EditComment(empty body) error = nil, want validation error")
+	}
+
+	// No fields at all → rejected no-op.
+	if _, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+		CommentID: created.Comment.ID,
+	}); err == nil {
+		t.Fatal("EditComment(no fields) error = nil, want validation error")
 	}
 }

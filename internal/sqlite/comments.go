@@ -279,7 +279,7 @@ func (s *Store) queryCommentRows(ctx context.Context, query string, args []any) 
 // the wider scope-agnostic patch. Emits a comment.edited event tied to the
 // parent task with a payload that names the changed fields.
 func (s *Store) UpdateComment(ctx context.Context, projectID, commentID int64, body string, tags []domain.Tag) (domain.Comment, domain.Event, error) {
-	return s.EditComment(ctx, projectID, commentID, domain.CommentEdit{Body: body, Tags: tags})
+	return s.EditComment(ctx, projectID, commentID, domain.CommentEdit{Body: &body, Tags: tags})
 }
 
 // EditComment applies the scope-agnostic patch (body/title/kind/pinned + tags),
@@ -305,9 +305,14 @@ func (s *Store) EditComment(ctx context.Context, projectID, commentID int64, edi
 		return domain.Comment{}, domain.Event{}, err
 	}
 
-	// Tri-state patch: a nil Title/Kind/Pinned pointer preserves the loaded
-	// row's existing value so a body-only edit can't silently wipe a title,
-	// kind, or pinned flag. Only an explicit non-nil pointer overwrites.
+	// Tri-state patch: a nil Body/Title/Kind/Pinned pointer preserves the
+	// loaded row's existing value so a metadata-only edit can't silently wipe
+	// the body, and a body-only edit can't wipe a title, kind, or pinned flag.
+	// Only an explicit non-nil pointer overwrites. updated_at still bumps below.
+	newBody := prev.Body
+	if edit.Body != nil {
+		newBody = *edit.Body
+	}
 	newTitle := prev.Title
 	if edit.Title != nil {
 		newTitle = *edit.Title
@@ -331,7 +336,7 @@ func (s *Store) EditComment(ctx context.Context, projectID, commentID int64, edi
 	if _, err := tx.ExecContext(ctx, `
 UPDATE events SET body = ?, title = ?, kind = ?, pinned = ?, updated_at = datetime('now')
 WHERE id = ? AND event_type = 'comment'
-`, edit.Body, titleArg, kindArg, boolToInt(newPinned), commentID); err != nil {
+`, newBody, titleArg, kindArg, boolToInt(newPinned), commentID); err != nil {
 		return domain.Comment{}, domain.Event{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM event_tags WHERE event_id = ?`, commentID); err != nil {
@@ -339,7 +344,7 @@ WHERE id = ? AND event_type = 'comment'
 	}
 
 	updated := prev
-	updated.Body = edit.Body
+	updated.Body = newBody
 	updated.Title = newTitle
 	updated.Kind = newKind
 	updated.Pinned = newPinned
@@ -350,8 +355,8 @@ WHERE id = ? AND event_type = 'comment'
 	updated.Tags = attached
 
 	payload := map[string]any{"comment_id": commentID}
-	if prev.Body != edit.Body {
-		payload["body"] = map[string]any{"from": prev.Body, "to": edit.Body}
+	if prev.Body != newBody {
+		payload["body"] = map[string]any{"from": prev.Body, "to": newBody}
 	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {

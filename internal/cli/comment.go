@@ -274,20 +274,13 @@ func newCommentEditCommand(opts *runtimeOptions) *cobra.Command {
 					return nil, err
 				}
 
-				// EditScoped requires a non-empty body. A pure metadata edit
-				// (no --body) must not be rejected and must not rewrite the
-				// stored body, so when --body is omitted we re-supply the
-				// comment's current body verbatim.
-				resolvedBody := editBody
-				if !bodyChanged {
-					existing, err := rt.store.CommentByID(ctx, project.ID, commentID)
-					if err != nil {
-						return nil, err
-					}
-					resolvedBody = existing.Body
+				// Body is tri-state: omit --body to leave the stored body
+				// untouched (a pure metadata edit), so we pass nil and let the
+				// store preserve the previous body. No read-modify-write here.
+				var cEdit domain.CommentEdit
+				if bodyChanged {
+					cEdit.Body = &editBody
 				}
-
-				cEdit := domain.CommentEdit{Body: resolvedBody}
 				if titleChanged {
 					trimmed := strings.TrimSpace(title)
 					cEdit.Title = &trimmed

@@ -122,7 +122,7 @@ func TestEditCommentWidePatch(t *testing.T) {
 
 	title, kind, pinned := "Heading", "recap", true
 	edited, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{
-		Body: "after", Title: &title, Kind: &kind, Pinned: &pinned,
+		Body: strPtr("after"), Title: &title, Kind: &kind, Pinned: &pinned,
 		Tags: []domain.Tag{{Name: "resume", Label: "resume"}},
 	})
 	if err != nil {
@@ -172,7 +172,7 @@ func TestEditCommentTriStatePreservesUnsetFields(t *testing.T) {
 	}
 
 	// Body-only edit: Title/Kind/Pinned nil → must preserve.
-	edited, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Body: "after"})
+	edited, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Body: strPtr("after")})
 	if err != nil {
 		t.Fatalf("EditComment(body only): %v", err)
 	}
@@ -189,7 +189,7 @@ func TestEditCommentTriStatePreservesUnsetFields(t *testing.T) {
 
 	// Explicit pinned=false unpins; title/kind still preserved.
 	unpin := false
-	edited2, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Body: "after2", Pinned: &unpin})
+	edited2, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Body: strPtr("after2"), Pinned: &unpin})
 	if err != nil {
 		t.Fatalf("EditComment(unpin): %v", err)
 	}
@@ -198,6 +198,47 @@ func TestEditCommentTriStatePreservesUnsetFields(t *testing.T) {
 	}
 	if edited2.Title != "X" || edited2.Kind != "handoff" {
 		t.Fatalf("EditComment(unpin) wiped title/kind = %+v", edited2)
+	}
+}
+
+// TestEditCommentTriStateBodyPreservesOnNil proves the store keeps the loaded
+// row's body when edit.Body is nil (a metadata-only edit) and overwrites it
+// only on an explicit non-nil pointer. Fails on the pre-tri-state EditComment
+// which wrote the body column unconditionally from a plain string field.
+func TestEditCommentTriStateBodyPreservesOnNil(t *testing.T) {
+	ctx, store, project, _ := commentScopeFixture(t)
+	c, err := store.AddScopedComment(ctx, domain.CommentWrite{
+		Scope: domain.CommentScopeProject, ProjectID: project.ID,
+		Body: "keep me", Pinned: false, AuthorType: "agent",
+	})
+	if err != nil {
+		t.Fatalf("AddScopedComment: %v", err)
+	}
+
+	// Metadata-only edit: Body nil → body must be preserved, pinned flips.
+	pin := true
+	edited, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Pinned: &pin})
+	if err != nil {
+		t.Fatalf("EditComment(body nil): %v", err)
+	}
+	if edited.Body != "keep me" || !edited.Pinned {
+		t.Fatalf("EditComment(body nil) = %+v, want body preserved + pinned", edited)
+	}
+	reloaded, err := store.CommentByID(ctx, project.ID, c.ID)
+	if err != nil {
+		t.Fatalf("CommentByID: %v", err)
+	}
+	if reloaded.Body != "keep me" || !reloaded.Pinned {
+		t.Fatalf("reloaded after metadata-only edit = %+v, want body preserved", reloaded)
+	}
+
+	// Explicit non-nil body overwrites.
+	edited2, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Body: strPtr("rewritten")})
+	if err != nil {
+		t.Fatalf("EditComment(body set): %v", err)
+	}
+	if edited2.Body != "rewritten" {
+		t.Fatalf("EditComment(body set) = %+v, want body overwritten", edited2)
 	}
 }
 

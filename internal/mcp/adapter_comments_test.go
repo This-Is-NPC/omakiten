@@ -138,6 +138,74 @@ func TestAdapterCommentsEditTriStateThroughCallTool(t *testing.T) {
 	}
 }
 
+// TestAdapterCommentsEditBodyTriState guards the partial-update (PATCH) body
+// semantics: omitting `body` decodes to a nil *string and leaves the stored body
+// untouched while metadata changes, an explicit empty body is rejected (you may
+// rewrite but not blank a comment), and a no-op patch with no fields at all is
+// rejected.
+func TestAdapterCommentsEditBodyTriState(t *testing.T) {
+	ctx := context.Background()
+	service := newMCPTestService(t, ctx)
+	adapter := NewAdapter(service)
+
+	created := addComment(t, ctx, adapter, map[string]any{
+		"scope":       "project",
+		"body":        "original body",
+		"author_type": "agent",
+	})
+	commentID := int64(created["id"].(float64))
+
+	// Metadata-only edit: body OMITTED, pinned/title/kind set. Body preserved,
+	// metadata applied. No read-resend on the transport.
+	res, err := adapter.CallTool(ctx, "comments.edit", withModel(map[string]any{
+		"comment_id": commentID,
+		"pinned":     true,
+		"title":      "Heading",
+		"kind":       "recap",
+	}))
+	if err != nil {
+		t.Fatalf("CallTool(comments.edit metadata-only) error = %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("comments.edit metadata-only IsError = true: %s", res.Content[0].Text)
+	}
+	var edited struct {
+		Comment map[string]any `json:"comment"`
+	}
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &edited); err != nil {
+		t.Fatalf("comments.edit payload not JSON: %v", err)
+	}
+	if edited.Comment["body"] != "original body" {
+		t.Fatalf("metadata-only edit changed body = %v, want preserved", edited.Comment["body"])
+	}
+	if edited.Comment["pinned"] != true || edited.Comment["title"] != "Heading" || edited.Comment["kind"] != "recap" {
+		t.Fatalf("metadata-only edit did not apply metadata = %#v", edited.Comment)
+	}
+
+	// Explicit empty body → rejected (cannot blank a comment).
+	blankRes, err := adapter.CallTool(ctx, "comments.edit", withModel(map[string]any{
+		"comment_id": commentID,
+		"body":       "   ",
+	}))
+	if err != nil {
+		t.Fatalf("CallTool(comments.edit blank body) error = %v", err)
+	}
+	if !blankRes.IsError {
+		t.Fatalf("comments.edit with blank body should be rejected, got %s", blankRes.Content[0].Text)
+	}
+
+	// No-op patch: nothing set → rejected.
+	noopRes, err := adapter.CallTool(ctx, "comments.edit", withModel(map[string]any{
+		"comment_id": commentID,
+	}))
+	if err != nil {
+		t.Fatalf("CallTool(comments.edit no-op) error = %v", err)
+	}
+	if !noopRes.IsError {
+		t.Fatalf("comments.edit with no fields should be rejected, got %s", noopRes.Content[0].Text)
+	}
+}
+
 // commentGuardBundle returns the mcp default bundle with a scope-aware comment
 // policy installed on workflow[0].defaults + the backlog bucket. Mirrors
 // internal/app/testdata/policy_comment_scopes.yaml, built inline so the

@@ -31,11 +31,13 @@ type AddCommentInput struct {
 
 type EditCommentInput struct {
 	ProjectSelector
-	CommentID int64  `json:"comment_id"`
-	Body      string `json:"body"`
-	// Title/Kind/Pinned are tri-state: an omitted JSON field decodes to nil
+	CommentID int64 `json:"comment_id"`
+	// Body/Title/Kind/Pinned are tri-state: an omitted JSON field decodes to nil
 	// and leaves the stored column untouched; an explicit value overwrites it.
-	// This keeps a body-only edit from wiping a comment's title, kind, or pin.
+	// This keeps a metadata-only edit (pin/title/kind) from wiping the body, and
+	// a body-only edit from wiping a comment's title, kind, or pin. A non-nil
+	// body must be non-empty.
+	Body   *string  `json:"body,omitempty"`
 	Title  *string  `json:"title,omitempty"`
 	Kind   *string  `json:"kind,omitempty"`
 	Pinned *bool    `json:"pinned,omitempty"`

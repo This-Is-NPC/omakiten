@@ -238,9 +238,23 @@ func (s *CommentService) EditScoped(ctx context.Context, project domain.ProjectC
 		err = domain.NewError(domain.ErrValidation, "comment id must be positive", nil)
 		return
 	}
-	edit.Body = strings.TrimSpace(edit.Body)
-	if edit.Body == "" {
-		err = domain.NewError(domain.ErrValidation, "comment body is required", nil)
+	// Body is tri-state: a nil pointer leaves the stored body untouched (a
+	// metadata-only edit), while a non-nil pointer overwrites it but must be
+	// non-empty after trim — you can rewrite a body but not blank it.
+	if edit.Body != nil {
+		trimmed := strings.TrimSpace(*edit.Body)
+		if trimmed == "" {
+			err = domain.NewError(domain.ErrValidation, "comment body is required", nil)
+			return
+		}
+		edit.Body = &trimmed
+	}
+
+	// Reject a no-op patch: an edit that changes nothing (no body, no
+	// title/kind/pinned, no tags) is not a real edit. Tri-state body must not
+	// silently let an empty patch through.
+	if edit.Body == nil && edit.Title == nil && edit.Kind == nil && edit.Pinned == nil && len(rawTags) == 0 {
+		err = domain.NewError(domain.ErrValidation, "comment edit requires at least one field", nil)
 		return
 	}
 
