@@ -490,10 +490,10 @@ type Model struct {
 	// description and forcing modal switches per surface.
 	taskFocus taskScreenFocus
 
-	// projectFocus tracks which panel (metadata / activity) owns
+	// projectFocus tracks which zone (form / dashboard / activity) owns
 	// navigation keys inside the project-view screen (subProjectView).
-	// Reset to projectFocusMeta whenever the screen is (re)opened by
-	// Ctrl+P so re-entry always lands on the metadata side.
+	// Reset to projectFocusForm whenever the screen is (re)opened by
+	// Ctrl+P so re-entry always lands on the form side. Mirrors taskFocus.
 	projectFocus projectScreenFocus
 
 	// projectActivity caches the project- and universal-scoped comment
@@ -524,6 +524,25 @@ type Model struct {
 	// ListProjectTags. Rendered as a chip row in the project-view
 	// metadata panel.
 	projectTags []domain.Tag
+
+	// projectDashboard caches the per-project status dashboard counts
+	// (tasks-per-bucket + total, root/sub split, plan progress) computed
+	// by refreshProjectSummary. Held on the model so the render pass reads
+	// the same snapshot without re-querying on every keystroke. Mirrors
+	// the task view's sub-tasks slot, replaced here by the dashboard.
+	projectDashboard projectDashboardData
+
+	// projectFormScreenOpen is the modal "project form detail" overlay
+	// layered on top of the project view, opened with `f`. Long project
+	// descriptions overflow the form zone, so this dedicated full-width
+	// screen renders the metadata + uncapped, scrollable description.
+	// esc/f returns to the project view with focus preserved. Clones the
+	// task view's descriptionScreen / planGoalScreen pattern.
+	projectFormScreenOpen bool
+	// projectFormScreen owns the scroll offset for the dedicated project
+	// form overlay; reset via detailscreen.New on each open so prior
+	// scroll state never leaks across project switches.
+	projectFormScreen detailscreen.Model
 
 	// subtasks owns cursor + scroll for the sub-tasks pane. The
 	// cardlist.Model encapsulates the (cursor, scroll, items,
@@ -855,16 +874,51 @@ const (
 	taskFocusActivity
 )
 
-// projectScreenFocus is which panel owns navigation keys inside the
-// project-view screen (Ctrl+P). Tab toggles metadata ↔ activity so the
-// user can scroll either side without a per-panel binding — the same
-// zone model the task view uses, scoped down to two panels.
+// projectScreenFocus is which zone owns navigation keys inside the
+// project-view screen (Ctrl+P). Tab cycles form → dashboard → activity
+// so the user can scroll any zone without a per-zone binding — the same
+// three-zone model the task view uses (form / sub-tasks / activity),
+// with the sub-tasks slot replaced by a project status dashboard.
 type projectScreenFocus int
 
 const (
-	projectFocusMeta projectScreenFocus = iota
+	projectFocusForm projectScreenFocus = iota
+	projectFocusDashboard
 	projectFocusActivity
 )
+
+// projectDashboardData is the per-project status snapshot the project
+// view's dashboard zone renders: tasks per workflow bucket (+ total),
+// the root/sub-task split, and aggregate plan progress. Computed by
+// refreshProjectSummary from the already-wired Tasks/Plans repos so the
+// render pass stays pure. Zero value is a valid empty dashboard.
+type projectDashboardData struct {
+	// bucketCounts holds the task count for every workflow bucket, in
+	// bucket order, paired with the localized bucket name. Roots and
+	// sub-tasks both count toward their bucket (unlike the kanban board,
+	// which hides sub-tasks) so the total reflects every active task.
+	bucketCounts []projectBucketCount
+	// totalTasks is the sum across every bucket — all active tasks.
+	totalTasks int
+	// rootTasks / subTasks split the total by parent_id (children vs
+	// roots). rootTasks + subTasks == totalTasks.
+	rootTasks int
+	subTasks  int
+
+	// planCount is the number of plans in the project; planDone /
+	// planTotal are the aggregate done/total task counts across every
+	// plan's rollup (PlanService.ListRollups).
+	planCount int
+	planDone  int
+	planTotal int
+}
+
+// projectBucketCount pairs a workflow bucket's display name with its
+// active task count for the dashboard's per-bucket rows.
+type projectBucketCount struct {
+	name  string
+	count int
+}
 
 // taskFormField identifies which field of the create/edit form is focused.
 // Tab cycles forward; the priority field has its own ←/→ cycle for the

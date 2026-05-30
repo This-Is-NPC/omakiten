@@ -126,6 +126,9 @@ func (m Model) renderCurrentView() string {
 	if m.planGoalScreenOpen {
 		return m.renderPlanGoalScreen()
 	}
+	if m.projectFormScreenOpen {
+		return m.renderProjectFormScreen()
+	}
 	if m.taskScreen != taskScreenClosed {
 		return m.renderTaskScreen()
 	}
@@ -280,6 +283,15 @@ func (m Model) footerTokens() []footerToken {
 			{key: "M", label: m.t("tui.footer.toggle_markdown")},
 			m.helpToken(),
 		}
+	case m.projectFormScreenOpen:
+		return []footerToken{
+			{key: "f/esc", label: m.t("tui.footer.close_focus"), primary: true},
+			{key: "j/k", label: m.t("tui.footer.scroll")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
+			{key: "g/G", label: m.t("tui.footer.top_bottom")},
+			{key: "M", label: m.t("tui.footer.toggle_markdown")},
+			m.helpToken(),
+		}
 	case m.commentScreenOpen:
 		deleteLabel := m.t("tui.footer.arm_delete")
 		if m.commentDeletePendingID != 0 {
@@ -396,6 +408,7 @@ func (m Model) footerTokens() []footerToken {
 	case m.sub == subProjectView:
 		return []footerToken{
 			{key: "tab", label: m.t("tui.footer.zone"), primary: true},
+			{key: "f", label: m.t("tui.footer.focus_description"), primary: true},
 			{key: "j/k", label: m.t("tui.footer.scroll")},
 			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
 			{key: "g/G", label: m.t("tui.footer.top_bottom")},
