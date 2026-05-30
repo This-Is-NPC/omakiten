@@ -253,6 +253,56 @@ func TestCommentServiceScopeAwareGuards(t *testing.T) {
 	}
 }
 
+// TestUniversalCommentViolationIsProjectLess proves the universal-scope guard
+// violation row is stored project-less (project_id IS NULL → 0 via COALESCE),
+// matching how universal comments themselves are stored. Before the fix the
+// emit stamped the acting project id onto a project_id-NULL entity.
+func TestUniversalCommentViolationIsProjectLess(t *testing.T) {
+	ctx := context.Background()
+
+	store := snapstore.Open(t, t.TempDir()+"/uni.db")
+	defer func() { _ = store.Close() }()
+	bundle, _ := testfixtures.LoadBundle(t, "policy_comment_scopes.yaml")
+	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() = %v", err)
+	}
+
+	workflow := NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+	service := NewCommentServiceWithWorkflow(store, workflow, store.Snapshot())
+
+	uni, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
+		Scope: domain.CommentScopeUniversal, Body: "universal note",
+	})
+	if err != nil {
+		t.Fatalf("AddScoped(universal) = %v", err)
+	}
+	// defaults.comment.universal.edit=false denies the edit and emits a violation.
+	if _, err := service.Edit(ctx, project.Context(), uni.ID, "edited", nil); err == nil {
+		t.Fatal("Edit(universal) = nil error, want guard violation")
+	}
+
+	rows, err := store.ListEvents(ctx, domain.EventFilter{Categories: []domain.EventCategory{domain.EventCategoryGuard}})
+	if err != nil {
+		t.Fatalf("ListEvents(guard) = %v", err)
+	}
+	var found bool
+	for _, r := range rows {
+		if r.EventType == domain.EventTypeGuardViolated && r.EntityType == domain.EventEntityUniversal {
+			found = true
+			if r.ProjectID != 0 {
+				t.Fatalf("universal guard.violated project_id = %d, want 0 (project-less)", r.ProjectID)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("no universal guard.violated row emitted; rows = %+v", rows)
+	}
+}
+
 func TestCommentServiceQuery(t *testing.T) {
 	ctx := context.Background()
 	store, project := appTestStore(t, appTestBundle(t, 1000))

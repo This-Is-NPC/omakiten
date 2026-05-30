@@ -351,7 +351,10 @@ func (s *CommentService) enforceCommentPermission(ctx context.Context, project d
 	if scope == domain.CommentScopeProject {
 		s.workflow.Evaluator().EmitViolatedForProject(ctx, project.ID, guardOp, GuardRulePermissions, hint, target)
 	} else {
-		s.workflow.Evaluator().EmitViolated(ctx, project.ID, domain.EventEntityUniversal, 0, guardOp, GuardRulePermissions, hint, target)
+		// Universal comments are stored project-less (project_id IS NULL); the
+		// violation row must match, so pass projectID=0 rather than stamping the
+		// acting project onto a project-less entity.
+		s.workflow.Evaluator().EmitViolated(ctx, 0, domain.EventEntityUniversal, 0, guardOp, GuardRulePermissions, hint, target)
 	}
 	return domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"comment_id": commentID, "hint": hint, "entity": EntityComment, "operation": operation, "scope": scope})
 }
