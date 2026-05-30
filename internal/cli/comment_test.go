@@ -166,8 +166,102 @@ func TestCLICommentEditTriState(t *testing.T) {
 	runCLIExpectError(t, dbPath, configPath, "validation_error", "comment", "edit", id)
 }
 
-// NOTE: a guard-denied edit/delete path is not covered here. The CLI test
-// harness initializes the default (permissive) workflow via `okt init` and
-// there is no existing helper to inject a deny-policy bundle the way the agent
-// fixtures do; exercising a guard.violated denial belongs to the agent-layer
-// tests (internal/agent/service_comments_scope_test.go) which already cover it.
+// TestCLICommentGuardDenied proves the comment edit/delete guards are
+// enforced THROUGH the `okt comment` CLI (not just at the agent/MCP layer):
+// the CLI routes edit/delete via commentServiceWithWorkflow(...).Edit/Remove
+// → enforceCommentPermission, the same guard path MCP uses. A denial must
+// surface the coded `guard_violation` envelope.
+//
+// Two scopes are exercised against the seeded default omakase workflow:
+//
+//   - TASK scope: the default config allows comment edit/delete in `backlog`
+//     and `dev`, but `done` pins permissions.comment.delete=false and inherits
+//     edit=false from defaults.comment. Moving a task to `done` and then
+//     editing/deleting its comment must be blocked — the bucket-resolved
+//     task-scope path. A backlog comment edit/delete is the ALLOWED control.
+//
+//   - PROJECT scope: the seeded default has no defaults.comment.project
+//     sub-block (project comments resolve to the implicit allow). We overwrite
+//     the seeded omakase.yaml with a defaults.comment.project deny sub-block so
+//     a project-scoped edit is blocked task-lessly via
+//     ResolveCommentScopePermission. EnsureDefaultFiles never overwrites an
+//     existing file, so the next CLI invocation LoadBundle's our deny policy.
+func TestCLICommentGuardDenied(t *testing.T) {
+	dbPath, configPath := commentTestEnv(t)
+
+	// --- TASK scope, ALLOWED control: a comment on a backlog task edits and
+	// deletes fine under the default policy. Task 1 lands in `backlog`.
+	ctrl := runCLI(t, dbPath, configPath, "comment", "add", "1", "-b", "backlog note")
+	ctrlID := commentIDFromJSON(t, ctrl)
+	edited := runCLI(t, dbPath, configPath, "comment", "edit", ctrlID, "-b", "backlog note edited")
+	if !strings.Contains(edited, `"body":"backlog note edited"`) {
+		t.Fatalf("backlog (allowed) edit did not apply: %s", edited)
+	}
+	if del := runCLI(t, dbPath, configPath, "comment", "delete", ctrlID, "--confirm"); !strings.Contains(del, `"snapshot"`) {
+		t.Fatalf("backlog (allowed) delete did not succeed: %s", del)
+	}
+
+	// --- TASK scope, DENIED: add a comment, move the task to `done`
+	// (comment edit inherited-false, delete pinned-false), then edit/delete.
+	denied := runCLI(t, dbPath, configPath, "comment", "add", "1", "-b", "doomed note")
+	deniedID := commentIDFromJSON(t, denied)
+	// Walk the task to `done` through the default omakase transition guards,
+	// satisfying each forward gate with the tagged comment it requires:
+	// backlog→dev (self-branch), dev→review (resume + tests-passing),
+	// review→done (documentation).
+	runCLI(t, dbPath, configPath, "comment", "add", "1", "-b", "feat/x", "--tag", "self-branch")
+	runCLI(t, dbPath, configPath, "move", "1", "-t", "dev")
+	runCLI(t, dbPath, configPath, "comment", "add", "1", "-b", "resume", "--tag", "resume")
+	runCLI(t, dbPath, configPath, "comment", "add", "1", "-b", "tests", "--tag", "tests-passing")
+	runCLI(t, dbPath, configPath, "move", "1", "-t", "review")
+	runCLI(t, dbPath, configPath, "comment", "add", "1", "-b", "docs", "--tag", "documentation")
+	runCLI(t, dbPath, configPath, "move", "1", "-t", "done")
+
+	// Now in `done`: comment edit is denied (defaults.comment.edit=false,
+	// no bucket override) and delete is denied (done pins delete=false).
+	runCLIExpectError(t, dbPath, configPath, "guard_violation",
+		"comment", "edit", deniedID, "-b", "nope")
+	runCLIExpectError(t, dbPath, configPath, "guard_violation",
+		"comment", "delete", deniedID, "--confirm")
+
+	// --- PROJECT scope, DENIED via injected deny-policy. Add a project
+	// comment FIRST (project edits are allowed by default), then overwrite the
+	// seeded config with a defaults.comment.project.edit=false sub-block so the
+	// subsequent edit is blocked task-lessly.
+	proj := runCLI(t, dbPath, configPath, "comment", "add", "--scope", "project", "-b", "project note")
+	projID := commentIDFromJSON(t, proj)
+	injectProjectCommentDeny(t, configPath)
+	runCLIExpectError(t, dbPath, configPath, "guard_violation",
+		"comment", "edit", projID, "-b", "blocked")
+}
+
+// injectProjectCommentDeny rewrites the seeded omakase.yaml so the active
+// workflow declares defaults.comment.project.{edit,delete}=false. It targets
+// the verbatim default block shipped in defaults/config/omakase.yaml:
+//
+//	      comment:
+//	        edit: false
+//	        delete: false
+//
+// replacing it with the same flat fields PLUS a project deny sub-block. The
+// flat fields are kept so the task-scope chain is unchanged; only the
+// previously-absent project sub-block is added. EnsureDefaultFiles skips files
+// that already exist, so this on-disk edit survives subsequent CLI boots.
+func injectProjectCommentDeny(t *testing.T, configPath string) {
+	t.Helper()
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read seeded config %s: %v", configPath, err)
+	}
+	const oldBlock = "      comment:\n        edit: false\n        delete: false\n"
+	const newBlock = "      comment:\n        edit: false\n        delete: false\n" +
+		"        project:\n          edit: false\n          delete: false\n"
+	if !strings.Contains(string(raw), oldBlock) {
+		t.Fatalf("seeded config lacks the expected defaults.comment block; "+
+			"the default omakase.yaml layout changed. content:\n%s", raw)
+	}
+	patched := strings.Replace(string(raw), oldBlock, newBlock, 1)
+	if err := os.WriteFile(configPath, []byte(patched), 0o644); err != nil {
+		t.Fatalf("write patched config %s: %v", configPath, err)
+	}
+}
