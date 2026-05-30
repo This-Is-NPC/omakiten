@@ -107,3 +107,21 @@ func TestProjectViewFooterTokens(t *testing.T) {
 		}
 	}
 }
+
+// TestOpenProjectViewNilCommentsRepoNoPanic proves openProjectView (→
+// refreshProjectSummary → commentsForProjectScope) does not panic when the
+// Comments repo is nil, and surfaces an empty feed instead of crashing on
+// the nil-interface QueryComments call.
+func TestOpenProjectViewNilCommentsRepoNoPanic(t *testing.T) {
+	model, _, _ := scopedFeedModel(t)
+	model.repos.Comments = nil
+
+	model.openProjectView()
+
+	if model.sub != subProjectView {
+		t.Fatalf("openProjectView should still route to subProjectView; sub = %v", model.sub)
+	}
+	if len(model.projectActivity) != 0 {
+		t.Fatalf("nil Comments repo should yield an empty feed; got %d events", len(model.projectActivity))
+	}
+}

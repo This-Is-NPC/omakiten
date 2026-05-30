@@ -151,6 +151,13 @@ func commentToEvent(c domain.Comment) domain.Event {
 // Consumes app.CommentService.Query → store.QueryComments; it does not touch
 // store internals or add a new store signature.
 func (m Model) commentsForProjectScope(filter domain.CommentFilter) ([]domain.Event, error) {
+	// Guard a nil Comments repo (e.g. boot before wiring, or a degraded
+	// config). A nil-interface QueryComments call would panic, so short
+	// out to an empty feed instead — mirrors the Plans-repo guards in
+	// openPlanNetwork / openPlanGoalScreen.
+	if m.repos.Comments == nil {
+		return nil, nil
+	}
 	svc := app.NewCommentService(m.repos.Comments, m.repos.activeSnapshot())
 
 	merged := make([]domain.Comment, 0)
