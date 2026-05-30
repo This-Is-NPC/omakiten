@@ -29,15 +29,15 @@ RETURNING id, name, slug, root_path
 }
 
 func (s *Store) FindProjectByID(ctx context.Context, id int64) (domain.Project, error) {
-	return s.scanProject(s.db.QueryRowContext(ctx, "SELECT id, name, slug, root_path FROM projects WHERE id = ? AND archived_at IS NULL", id))
+	return s.scanProject(s.db.QueryRowContext(ctx, "SELECT id, name, slug, root_path, description FROM projects WHERE id = ? AND archived_at IS NULL", id))
 }
 
 func (s *Store) FindProjectBySlug(ctx context.Context, slug string) (domain.Project, error) {
-	return s.scanProject(s.db.QueryRowContext(ctx, "SELECT id, name, slug, root_path FROM projects WHERE slug = ? AND archived_at IS NULL", slug))
+	return s.scanProject(s.db.QueryRowContext(ctx, "SELECT id, name, slug, root_path, description FROM projects WHERE slug = ? AND archived_at IS NULL", slug))
 }
 
 func (s *Store) ListProjects(ctx context.Context) ([]domain.Project, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id, name, slug, root_path FROM projects WHERE archived_at IS NULL ORDER BY LOWER(name), id")
+	rows, err := s.db.QueryContext(ctx, "SELECT id, name, slug, root_path, description FROM projects WHERE archived_at IS NULL ORDER BY LOWER(name), id")
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]domain.Project, error) {
 	var projects []domain.Project
 	for rows.Next() {
 		var project domain.Project
-		if err := rows.Scan(&project.ID, &project.Name, &project.Slug, &project.RootPath); err != nil {
+		if err := rows.Scan(&project.ID, &project.Name, &project.Slug, &project.RootPath, &project.Description); err != nil {
 			return nil, err
 		}
 		projects = append(projects, project)
@@ -76,7 +76,7 @@ func (s *Store) FindProjectsContainingPath(ctx context.Context, path string) ([]
 
 func (s *Store) scanProject(row *sql.Row) (domain.Project, error) {
 	var project domain.Project
-	if err := row.Scan(&project.ID, &project.Name, &project.Slug, &project.RootPath); err != nil {
+	if err := row.Scan(&project.ID, &project.Name, &project.Slug, &project.RootPath, &project.Description); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Project{}, domain.NewError(domain.ErrProjectNotFound, "project not found", nil)
 		}
