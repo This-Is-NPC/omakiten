@@ -395,6 +395,7 @@ keys:
   cli.print.agent_output_note: "自由記述。ロードされた catalog に対して検証されません"
   tui.empty.activity: "まだアクティビティがありません。"
   tui.empty.project_activity: "プロジェクトのアクティビティはまだありません。"
+  tui.empty.project_description: "プロジェクトの説明はまだありません。"
   tui.empty.activity_hint: "c を押して comment を追加。"
   tui.empty.board_no_buckets: "workflow bucket がありません。アクティブな workflow config に bucket を追加してください。"
   tui.empty.board_no_tasks: "まだ task がありません。"

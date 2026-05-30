@@ -396,6 +396,7 @@ keys:
   cli.print.agent_output_note: "vrije tekst; niet gevalideerd tegen de geladen catalog"
   tui.empty.activity: "Nog geen activiteit."
   tui.empty.project_activity: "Nog geen projectactiviteit."
+  tui.empty.project_description: "Nog geen projectbeschrijving."
   tui.empty.activity_hint: "Druk op c om een comment toe te voegen."
   tui.empty.board_no_buckets: "Geen workflow buckets. Voeg buckets toe in de actieve workflow config."
   tui.empty.board_no_tasks: "Nog geen tasks."

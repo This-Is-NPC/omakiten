@@ -395,6 +395,7 @@ keys:
   cli.print.agent_output_note: "вільна; не валідується проти завантаженого каталогу"
   tui.empty.activity: "Активності поки немає."
   tui.empty.project_activity: "Поки немає активності проєкту."
+  tui.empty.project_description: "Поки немає опису проєкту."
   tui.empty.activity_hint: "Натисніть c, щоб додати comment."
   tui.empty.board_no_buckets: "Немає buckets workflow. Додайте buckets у config активного workflow."
   tui.empty.board_no_tasks: "Tasks поки немає."

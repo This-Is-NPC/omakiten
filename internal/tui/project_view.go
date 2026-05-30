@@ -35,15 +35,32 @@ func (m *Model) openProjectView() {
 // refreshProjectSummary loads the project- and universal-scoped comment
 // events for the current project into m.projectActivity, ready for the
 // activity feed on the project-view screen. Project identity (name / slug
-// / root path / id) is read straight from m.project at render time, so it
-// is not re-fetched here. An empty filter pulls the full pinned-first
-// feed.
+// / root path / id) is read straight from m.project at render time; the
+// description and tag attachments — which m.project does not carry — are
+// fetched here into m.projectDescription / m.projectTags for the metadata
+// panel. An empty filter pulls the full pinned-first feed.
+//
+// The Projects / Tags repos are nil-guarded so the comment-only test
+// model (which wires neither) still refreshes the feed without panicking;
+// a fetch error on either leaves the cached value untouched rather than
+// failing the whole refresh.
 func (m *Model) refreshProjectSummary() error {
 	events, err := m.commentsForProjectScope(domain.CommentFilter{})
 	if err != nil {
 		return err
 	}
 	m.projectActivity = events
+
+	if m.repos.Projects != nil {
+		if project, perr := m.repos.Projects.FindProjectByID(m.ctx, m.project.ID); perr == nil {
+			m.projectDescription = project.Description
+		}
+	}
+	if m.repos.Tags != nil {
+		if tags, terr := m.repos.Tags.ListProjectTags(m.ctx, m.project.ID); terr == nil {
+			m.projectTags = tags
+		}
+	}
 	return nil
 }
 

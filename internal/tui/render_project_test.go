@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"omakiten/internal/domain"
 )
 
 func ctrlP() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyCtrlP} }
@@ -92,6 +94,45 @@ func TestRenderProjectMetaPanelSingleFrame(t *testing.T) {
 	}
 	if tops != 1 || bottoms != 1 {
 		t.Fatalf("meta panel should have a single frame (1 top, 1 bottom); got %d top / %d bottom:\n%s", tops, bottoms, panel)
+	}
+}
+
+// TestRenderProjectViewTagsAndDescription proves the project-view metadata
+// panel surfaces the tags row and the description Span. The tag chips and
+// description body are seeded onto the model directly (the comment-only
+// test store wires neither the Projects nor Tags repo).
+func TestRenderProjectViewTagsAndDescription(t *testing.T) {
+	model, _, _ := scopedFeedModel(t)
+	opened, _ := model.Update(ctrlP())
+	m := opened.(Model)
+	m.width = 160
+
+	// Empty state: no tags, no description → both fall back to a hint/dash.
+	out := m.renderProjectView()
+	if !strings.Contains(out, strings.ToUpper(m.t("tui.row.tags"))) {
+		t.Fatalf("project view missing TAGS row:\n%s", out)
+	}
+	if !strings.Contains(out, strings.ToUpper(m.t("tui.kicker.description"))) {
+		t.Fatalf("project view missing DESCRIPTION kicker:\n%s", out)
+	}
+	if !strings.Contains(out, m.t("tui.empty.project_description")) {
+		t.Fatalf("project view missing empty-state description hint:\n%s", out)
+	}
+
+	// Populated: chips + a markdown description body both render.
+	m.projectTags = []domain.Tag{{Name: "go", Label: "go"}, {Name: "tui", Label: "tui"}}
+	m.projectDescription = "ProjectDescriptionMarker"
+	out = m.renderProjectView()
+	if !strings.Contains(out, "go") || !strings.Contains(out, "tui") {
+		t.Fatalf("project view missing tag chips:\n%s", out)
+	}
+	// The markdown renderer styles per word, so assert on a single-token
+	// marker that survives without an interleaved ANSI break.
+	if !strings.Contains(out, "ProjectDescriptionMarker") {
+		t.Fatalf("project view missing description body:\n%s", out)
+	}
+	if strings.Contains(out, m.t("tui.empty.project_description")) {
+		t.Fatalf("description empty-state hint should be gone once a body is set:\n%s", out)
 	}
 }
 

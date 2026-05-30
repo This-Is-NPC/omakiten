@@ -396,6 +396,7 @@ keys:
   cli.print.agent_output_note: "serbest form; yüklü katalog'a karşı doğrulanmaz"
   tui.empty.activity: "Henüz aktivite yok."
   tui.empty.project_activity: "Henüz proje etkinliği yok."
+  tui.empty.project_description: "Henüz proje açıklaması yok."
   tui.empty.activity_hint: "Comment eklemek için c'ye bas."
   tui.empty.board_no_buckets: "Workflow bucket'ı yok. Aktif workflow config'inde bucket ekle."
   tui.empty.board_no_tasks: "Henüz task yok."

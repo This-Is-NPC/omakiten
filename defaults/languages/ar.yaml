@@ -395,6 +395,7 @@ keys:
   cli.print.agent_output_note: "نص حر؛ لا يُتحقَّق منه مقابل الفهرس المحمَّل"
   tui.empty.activity: "لا يوجد نشاط بعد."
   tui.empty.project_activity: "لا يوجد نشاط للمشروع بعد."
+  tui.empty.project_description: "لا يوجد وصف للمشروع بعد."
   tui.empty.activity_hint: "اضغط c لإضافة comment."
   tui.empty.board_no_buckets: "لا توجد buckets في workflow. أضف buckets في إعدادات workflow النشط."
   tui.empty.board_no_tasks: "لا توجد tasks بعد."

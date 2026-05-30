@@ -512,6 +512,19 @@ type Model struct {
 	// panel viewport, used when that panel owns focus.
 	projectMetaScroll int
 
+	// projectDescription caches the current project's description body,
+	// fetched (alongside the activity feed) by refreshProjectSummary via
+	// FindProjectByID. m.project carries only the identity fields resolved
+	// at boot, so the description is loaded here for the project-view
+	// metadata panel and re-read on every render.
+	projectDescription string
+
+	// projectTags caches the current project's tag attachments
+	// (project_tags bridge), fetched by refreshProjectSummary via
+	// ListProjectTags. Rendered as a chip row in the project-view
+	// metadata panel.
+	projectTags []domain.Tag
+
 	// subtasks owns cursor + scroll for the sub-tasks pane. The
 	// cardlist.Model encapsulates the (cursor, scroll, items,
 	// viewport) tuple so no callsite can write the scroll field

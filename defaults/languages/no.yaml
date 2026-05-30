@@ -395,6 +395,7 @@ keys:
   cli.print.agent_output_note: "fritekst; ikke validert mot lastet katalog"
   tui.empty.activity: "Ingen aktivitet ennå."
   tui.empty.project_activity: "Ingen prosjektaktivitet ennå."
+  tui.empty.project_description: "Ingen prosjektbeskrivelse ennå."
   tui.empty.activity_hint: "Trykk c for å legge til en comment."
   tui.empty.board_no_buckets: "Ingen workflow-buckets. Legg til buckets i aktiv workflow-config."
   tui.empty.board_no_tasks: "Ingen tasks ennå."

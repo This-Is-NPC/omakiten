@@ -395,6 +395,7 @@ keys:
   cli.print.agent_output_note: "fri form; valideras inte mot laddad katalog"
   tui.empty.activity: "Ingen aktivitet ännu."
   tui.empty.project_activity: "Ingen projektaktivitet ännu."
+  tui.empty.project_description: "Ingen projektbeskrivning ännu."
   tui.empty.activity_hint: "Tryck c för att lägga till en comment."
   tui.empty.board_no_buckets: "Inga workflow-buckets. Lägg till buckets i aktiv workflow-config."
   tui.empty.board_no_tasks: "Inga tasks ännu."

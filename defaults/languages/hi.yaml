@@ -397,6 +397,7 @@ keys:
   cli.print.agent_output_note: "मुक्त-रूप; लोड किए गए कैटलॉग के विरुद्ध मान्य नहीं किया गया"
   tui.empty.activity: "अभी तक कोई गतिविधि नहीं।"
   tui.empty.project_activity: "अभी तक कोई परियोजना गतिविधि नहीं।"
+  tui.empty.project_description: "अभी तक कोई परियोजना विवरण नहीं।"
   tui.empty.activity_hint: "comment जोड़ने के लिए c दबाएँ।"
   tui.empty.board_no_buckets: "कोई workflow bucket नहीं। सक्रिय workflow config में bucket जोड़ें।"
   tui.empty.board_no_tasks: "अभी तक कोई task नहीं।"

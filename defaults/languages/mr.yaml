@@ -395,6 +395,7 @@ keys:
   cli.print.agent_output_note: "मुक्त-स्वरूप; लोड केलेल्या catalog विरुद्ध वैध केले जात नाही"
   tui.empty.activity: "अद्याप कोणतीही क्रिया नाही."
   tui.empty.project_activity: "अद्याप प्रकल्प क्रियाकलाप नाही."
+  tui.empty.project_description: "अद्याप प्रकल्प वर्णन नाही."
   tui.empty.activity_hint: "comment जोडण्यासाठी c दाबा."
   tui.empty.board_no_buckets: "कोणतेही workflow bucket नाहीत. सक्रिय workflow config मध्ये bucket जोडा."
   tui.empty.board_no_tasks: "अद्याप कोणतेही task नाहीत."

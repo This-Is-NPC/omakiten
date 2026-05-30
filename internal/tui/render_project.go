@@ -21,13 +21,13 @@ func (m Model) projectMetaPanelWidth() int {
 }
 
 // renderProjectMetaPanel builds the project metadata panel: a kicker plus
-// the projects-table identity fields (name / slug / root path / id) and a
-// comment count, rendered through the same detailscreen grid the task-view
-// form uses. The grid draws its own frame (gridtable.Render borders) —
-// exactly like renderTaskDetailsBox — so there is NO outer m.styles.panel
-// wrapper here; wrapping the already-framed grid produced a double border.
-// focused flips the kicker to the focus accent so the user can see which
-// panel owns navigation keys.
+// the projects-table identity fields (name / slug / root path / id), the
+// project tags and description, and a comment count, rendered through the
+// same detailscreen grid the task-view form uses. The grid draws its own
+// frame (gridtable.Render borders) — exactly like renderTaskDetailsBox —
+// so there is NO outer m.styles.panel wrapper here; wrapping the already-
+// framed grid produced a double border. focused flips the kicker to the
+// focus accent so the user can see which panel owns navigation keys.
 func (m Model) renderProjectMetaPanel(focused bool) string {
 	panelWidth := m.projectMetaPanelWidth()
 	// The grid renders at LabelWidth + valueWidth + 1 (inner divider) + 2
@@ -57,14 +57,53 @@ func (m Model) projectMetaDetail(valueWidth int, kicker string) string {
 	if strings.TrimSpace(rootPath) == "" {
 		rootPath = "—"
 	}
-	return detailscreen.New(valueWidth).
+
+	tagLine := m.styles.hint.Render("—")
+	if line := m.projectTagsLine(); line != "" {
+		tagLine = line
+	}
+
+	detail := detailscreen.New(valueWidth).
 		Custom(kicker).
 		Row(m.t("tui.row.name"), m.project.Name).
 		Row(m.t("tui.row.slug"), m.project.Slug).
 		Row(m.t("tui.row.root_path"), rootPath).
 		Row(m.t("tui.row.id"), fmt.Sprintf("%d", m.project.ID)).
+		Row(m.t("tui.row.tags"), tagLine).
 		Row(m.t("tui.row.comments"), fmt.Sprintf("%d", len(m.projectActivity))).
-		View(0, m.styles.border, m.styles.hint)
+		Kicker(m.t("tui.kicker.description")).
+		Span(m.projectDescriptionInline(valueWidth))
+	return detail.View(0, m.styles.border, m.styles.hint)
+}
+
+// projectTagsLine renders the project's tag attachments as a single
+// `·`-joined chip line (the same separator the task-view form uses for
+// task tags). Empty when the project has no tags so the caller can fall
+// back to a dash placeholder.
+func (m Model) projectTagsLine() string {
+	if len(m.projectTags) == 0 {
+		return ""
+	}
+	names := make([]string, len(m.projectTags))
+	for i, tag := range m.projectTags {
+		label := tag.Label
+		if label == "" {
+			label = tag.Name
+		}
+		names[i] = label
+	}
+	return strings.Join(names, " · ")
+}
+
+// projectDescriptionInline renders the project description as full-width
+// markdown (the way the task view renders task.Description), or a
+// localized empty-state hint when the project has no description.
+func (m Model) projectDescriptionInline(width int) string {
+	body := strings.TrimSpace(m.projectDescription)
+	if body == "" {
+		return m.styles.hint.Render(m.t("tui.empty.project_description"))
+	}
+	return m.renderBodyMarkdown(body, width)
 }
 
 // renderProjectActivityPanel renders the project-scoped activity feed:

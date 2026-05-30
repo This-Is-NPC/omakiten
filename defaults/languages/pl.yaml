@@ -395,6 +395,7 @@ keys:
   cli.print.agent_output_note: "dowolny; nie walidowany względem załadowanego katalogu"
   tui.empty.activity: "Brak aktywności."
   tui.empty.project_activity: "Brak aktywności projektu."
+  tui.empty.project_description: "Brak opisu projektu."
   tui.empty.activity_hint: "Naciśnij c, aby dodać comment."
   tui.empty.board_no_buckets: "Brak buckets workflow. Dodaj buckets w aktywnej konfiguracji workflow."
   tui.empty.board_no_tasks: "Brak tasks."

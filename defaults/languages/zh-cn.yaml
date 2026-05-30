@@ -389,6 +389,7 @@ keys:
   cli.print.agent_output_note: "自由形式;不针对已加载的 catalog 验证"
   tui.empty.activity: "暂无活动。"
   tui.empty.project_activity: "暂无项目活动。"
+  tui.empty.project_description: "暂无项目描述。"
   tui.empty.activity_hint: "按 c 添加评论。"
   tui.empty.board_no_buckets: "没有 workflow buckets。在活动 workflow config 中添加 buckets。"
   tui.empty.board_no_tasks: "暂无 tasks。"

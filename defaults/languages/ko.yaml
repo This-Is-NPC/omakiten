@@ -393,6 +393,7 @@ keys:
   cli.print.agent_output_note: "자유 형식; 로드된 catalog 에 대해 검증되지 않음"
   tui.empty.activity: "아직 활동이 없습니다."
   tui.empty.project_activity: "아직 프로젝트 활동이 없습니다."
+  tui.empty.project_description: "아직 프로젝트 설명이 없습니다."
   tui.empty.activity_hint: "댓글을 추가하려면 c 를 누르세요."
   tui.empty.board_no_buckets: "workflow buckets 가 없습니다. 활성 workflow config 에 buckets 를 추가하세요."
   tui.empty.board_no_tasks: "아직 tasks 가 없습니다."

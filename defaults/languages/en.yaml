@@ -396,6 +396,7 @@ keys:
   tui.empty.activity: "No activity yet."
   tui.empty.activity_hint: "Press c to add a comment."
   tui.empty.project_activity: "No project activity yet."
+  tui.empty.project_description: "No project description yet."
   tui.empty.board_no_buckets: "No workflow buckets. Add buckets in the active workflow config."
   tui.empty.board_no_tasks: "No tasks yet."
   tui.empty.graph_no_deps: "No task dependencies yet."

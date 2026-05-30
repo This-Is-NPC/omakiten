@@ -396,6 +396,7 @@ keys:
   cli.print.agent_output_note: "vapaamuotoinen; ei validoitu ladattua katalogia vasten"
   tui.empty.activity: "Ei vielä aktiviteettia."
   tui.empty.project_activity: "Ei projektitoimintaa vielä."
+  tui.empty.project_description: "Ei projektikuvausta vielä."
   tui.empty.activity_hint: "Paina c lisätäksesi commentin."
   tui.empty.board_no_buckets: "Ei workflow-bucketeja. Lisää bucketit aktiiviseen workflow-configiin."
   tui.empty.board_no_tasks: "Ei vielä taskeja."

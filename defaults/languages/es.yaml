@@ -400,6 +400,7 @@ keys:
   cli.print.agent_output_note: "libre; no validado contra el catalog cargado"
   tui.empty.activity: "Sin actividad aún."
   tui.empty.project_activity: "Aún no hay actividad del proyecto."
+  tui.empty.project_description: "Aún no hay descripción del proyecto."
   tui.empty.activity_hint: "Pulsa c para añadir un comentario."
   tui.empty.board_no_buckets: "Sin buckets de workflow. Añade buckets en la config del workflow activo."
   tui.empty.board_no_tasks: "Sin tasks aún."
