@@ -123,6 +123,9 @@ func (m Model) renderCurrentView() string {
 	if m.descriptionScreenOpen {
 		return m.renderDescriptionScreen()
 	}
+	if m.planGoalScreenOpen {
+		return m.renderPlanGoalScreen()
+	}
 	if m.taskScreen != taskScreenClosed {
 		return m.renderTaskScreen()
 	}
@@ -268,6 +271,15 @@ func (m Model) footerTokens() []footerToken {
 			{key: "M", label: m.t("tui.footer.toggle_markdown")},
 			m.helpToken(),
 		}
+	case m.planGoalScreenOpen:
+		return []footerToken{
+			{key: "f/esc", label: m.t("tui.footer.close_focus"), primary: true},
+			{key: "j/k", label: m.t("tui.footer.scroll")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
+			{key: "g/G", label: m.t("tui.footer.top_bottom")},
+			{key: "M", label: m.t("tui.footer.toggle_markdown")},
+			m.helpToken(),
+		}
 	case m.commentScreenOpen:
 		deleteLabel := m.t("tui.footer.arm_delete")
 		if m.commentDeletePendingID != 0 {
@@ -403,6 +415,18 @@ func (m Model) footerTokens() []footerToken {
 			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
 			{key: "r", label: m.t("tui.footer.refresh")},
 			m.escBack(),
+			m.helpToken(),
+		}
+	case m.sub == subPlans:
+		return []footerToken{
+			{key: "enter", label: m.t("tui.footer.open"), primary: true},
+			{key: "f", label: m.t("tui.footer.view_goal"), primary: true},
+			{key: "j/k", label: m.t("tui.footer.move")},
+			{key: "g/G", label: m.t("tui.footer.top_bottom")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
+			{key: "r", label: m.t("tui.footer.refresh")},
+			{key: "tab", label: m.t("tui.footer.zones")},
+			{key: ",//", label: m.t("tui.footer.subs")},
 			m.helpToken(),
 		}
 	case m.sub == subBoard:

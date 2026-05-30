@@ -653,6 +653,19 @@ type Model struct {
 	// from the map render expanded). Toggled with `space` on the
 	// focused wave header.
 	planNetworkCollapsed map[int64]bool
+	// planGoalScreenOpen flips when the user presses `f` on a row in the
+	// plans list view — it swaps the renderer to the read-only full-width
+	// goal-body overlay (mirrors the task view's `f` description screen).
+	// esc / `f` flips back. Read-only: the goal is never edited from here.
+	planGoalScreenOpen bool
+	// planGoalShow is the PlanShow projection fetched on `f` so the goal
+	// overlay can render the cursored plan's slug/name/status header plus
+	// its markdown goal_body. Reset on close so the next open re-fetches.
+	planGoalShow app.PlanShow
+	// planGoalScreen owns the scroll offset for the goal overlay; reset via
+	// detailscreen.New on each open so prior scroll state never leaks across
+	// plans.
+	planGoalScreen detailscreen.Model
 	// planGoalEditingID names the plan whose goal_body is open in the
 	// modePlanGoal textarea overlay. Non-zero while the overlay is
 	// active; reset to 0 on submit / cancel.
