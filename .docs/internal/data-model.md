@@ -37,8 +37,13 @@ Schema versions are tracked in `schema_migrations(version)`. Each numbered file 
 | `025_projects_cascade.sql` | Rebuilds project-owned tables so deleting a project cascades through tasks, context entries, project-scoped errors, plans, dependencies. Events keep a bare `project_id`; the service deletes project-scoped event rows explicitly. |
 | `026_tasks_parent_id.sql` | Nullable `tasks.parent_id` (`ON DELETE CASCADE`) + `idx_tasks_parent_id` for sub-task trees. |
 | `027_tasks_parent_project_fk.sql` | `BEFORE INSERT` / `BEFORE UPDATE` triggers rejecting cross-project parents — closes the gap left by the single-column self-FK. |
+| `028_tasks_depth.sql` | Materialized `tasks.depth` column for sub-task trees. |
+| `029_repair_tasks_depth.sql` | Repairs `tasks.depth` drift and installs an invariant trigger. |
+| `030_rename_errors_researched.sql` | Renames historical `error.searched` rows to `errors.researched` (event-registry refactor). |
+| `031_notes.sql` | **Never shipped.** Added a standalone `notes` entity (`notes`, `notes_tags`, `notes_fts`, plus `entity_type='note'` search-index triggers). Superseded and fully dropped by 032 before any release. |
+| `032_events_comment_log.sql` | Makes `events` the scoped comment log. Adds `kind` / `title` / `pinned` / `updated_at` columns to `events`, recasts comment scope onto `(entity_type, entity_id, project_id)` — `task`+taskID, `project`+projectID, `universal`+NULL — and **drops the unreleased `notes` entity** (table, join, FTS, triggers; zero rows, no data migration). Recasts the comment `search_index` triggers to index `body + ' ' + title`. |
 
-## Current schema (post-027)
+## Current schema (post-032)
 
 The live schema contains fourteen base tables of operational state plus `schema_migrations` and the `search_index` FTS5 virtual table:
 
@@ -317,13 +322,13 @@ Indexes: `idx_errors_project`, `idx_errors_created_at(DESC)`, `idx_solutions_err
 
 ## The unified `events` table
 
-After migration 009, **comments**, **task lifecycle events**, **operational telemetry**, and (after migration 010) **domain events** all live in one append-only log. The discriminators are `entity_type` and `event_type`:
+After migration 009, **comments**, **task lifecycle events**, **operational telemetry**, and (after migration 010) **domain events** all live in one append-only log. The discriminators are `entity_type` and `event_type`. Since migration 032 the `events` table also carries the note-like comment columns `kind` / `title` / `pinned` / `updated_at`, and comment **scope** is encoded in `(entity_type, entity_id)`: `task`+task id, `project`+project id, `universal`+NULL. There is no separate notes entity — a "note" is just a project/universal-scoped comment (see [`migrations/032_events_comment_log.sql`](../../migrations/032_events_comment_log.sql)).
 
 | `entity_type` | `event_type` | `entity_id` | Use |
 |---|---|---|---|
-| `task` | `comment` | task id | Comment authored by a human or agent. `body` carries the comment text; `author_type` is `'human'`/`'agent'`. |
-| `task` | `comment.edited` | task id | Comment body or tag set updated. `payload={comment_id, body:{from,to}}`. |
-| `task` | `comment.removed` | task id | Comment hard-deleted. `payload={comment_id, author_type, body}`. |
+| `task`/`project`/`universal` | `comment` | task id / project id / NULL | Comment authored by a human or agent, scoped via `entity_type`. `body` carries the text; `author_type` is `'human'`/`'agent'`; optional `kind` (free string, e.g. `handoff`/`recap`/`standup`), `title`, and `pinned` flag. Indexed in `search_index` as `body + ' ' + title`. |
+| `task`/`project`/`universal` | `comment.edited` | comment's scope id | Comment patched (body/title/kind/pinned and/or tags). `updated_at` is bumped. Payload always carries `comment_id`; `body:{from,to}` is included only when the body actually changed (metadata-only edits emit just `{comment_id}`). Emitted under the comment's own scope. |
+| `task`/`project`/`universal` | `comment.removed` | comment's scope id | Comment hard-deleted (scope-agnostic). `payload={comment_id, author_type, body}`. Emitted under the comment's own scope. |
 | `task` | `task.created` | task id | Emitted in the same transaction as the `tasks` insert. `payload={bucket}`. |
 | `task` | `task.moved` | task id | Emitted by the task repo when `bucket_id` changes via a transition. `payload={from, to}`. |
 | `task` | `task.migrated` | task id | Emitted when a task is rebound by a workflow swap (preset change, bucket removed/renamed). Distinct from `task.moved` because transition guards are bypassed. `payload={from, to, reason:"workflow_swap"}`. |
@@ -371,7 +376,8 @@ Both fields are validator-required (> 0) — disabling retention is not a suppor
 
 | Surface | What it sees | File |
 |---|---|---|
-| `comments.list` (CLI/MCP/TUI) | `entity_type='task' AND event_type='comment'` ordered ascending by id | `internal/sqlite/comments.go:ListComments` |
+| `comments.list` default (CLI/MCP/TUI) | `entity_type='task' AND event_type='comment'` ordered ascending by id | `internal/sqlite/comments.go:ListComments` |
+| `comments.list` filtered (scope/kind/tag/pinned/query/since/comment_id) | `event_type='comment'` with scope, kind, pinned, tag-join, FTS5 (`search_index`), and `created_at` floor predicates layered on | `internal/sqlite/comments.go:QueryComments` |
 | `task_activity.list` MCP tool, TUI activity column | `entity_type='task'` ordered chronologically (asc default, desc optional) | `internal/sqlite/events.go:ListTaskActivity` |
 | Logs view (TUI), `okt mcp call` history | `event_type IN ('cli.tool_call','mcp.tool_call','tui.tool_call')` ordered desc; legacy `operation` rows still surface for back-compat | `internal/sqlite/activity_logs.go:ListActivityLogs` |
 | Guard `comments_min` | `count(*) WHERE entity_type='task' AND event_type='comment' AND entity_id=?` | `internal/sqlite/guards.go:CountTaskComments` |
@@ -420,9 +426,10 @@ Representative callsites:
 - `internal/sqlite/plans.go:298` — `AddPlanWave` (entity scope, `plan.wave_added`).
 - `internal/sqlite/plans.go:727` — `ClaimNextPlanTask` (task scope, `task.assigned`).
 - `internal/sqlite/tasks.go:40` — `CreateTask` (task scope, `task.created`, gated via `shouldLogEvent`).
-- `internal/sqlite/comments.go:111` — `UpdateComment` (task scope, `comment.edited`, gated).
 
-The invariant the helper enforces: the mutation row and the events row land in the same SQL transaction, so a rollback drops both. `tx.Commit()` is the only path to a `publishEvent` call, so bus subscribers never observe an event whose underlying row failed to persist; a `Payload` error after a successful `Mutate` rolls the mutation back rather than emitting an event with a malformed JSON column. `ShouldLog=false` skips the row insert but still publishes a synthetic `domain.Event` post-commit so listeners that previously read from the inline gated callsites (CreateTask, MoveTask, SetTaskState, UpdateComment, RebindOrphanedTasks) keep their existing wire shape.
+The scoped comment writers (`AddScopedComment`, `EditComment`, `DeleteComment` in `internal/sqlite/comments.go`) hand-roll their own `BeginTx → mutate → emit → Commit → publish` cycle rather than going through `txMutateAndEmit`, because they resolve the event's entity scope (`entityIDForScope`) and gate the row insert per scope themselves. They preserve the same invariants (event row shares the mutation's transaction; `publishEvent` only after commit; `shouldLogEvent` gating with a synthetic broadcast when off).
+
+The invariant the helper enforces: the mutation row and the events row land in the same SQL transaction, so a rollback drops both. `tx.Commit()` is the only path to a `publishEvent` call, so bus subscribers never observe an event whose underlying row failed to persist; a `Payload` error after a successful `Mutate` rolls the mutation back rather than emitting an event with a malformed JSON column. `ShouldLog=false` skips the row insert but still publishes a synthetic `domain.Event` post-commit so listeners that previously read from the inline gated callsites (CreateTask, MoveTask, SetTaskState, RebindOrphanedTasks) keep their existing wire shape.
 
 ## `sqlutil` helpers
 

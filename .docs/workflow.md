@@ -451,7 +451,7 @@ A note is the same comment row with a wider scope — the distinction is `scope`
 | Task comment (`scope=task`) | Project/global note (`scope=project` / `universal`) |
 |---|---|
 | Lives inside one task's audit trail | Lives alongside the project, or globally (`universal`) |
-| Bucket permissions gate edit / delete | Edit / delete gated by `permissions.comment.*` (inherits task policy) |
+| Bucket `permissions.comment.*` gate edit / delete (inherits task policy) | Edit / delete gated task-lessly by `workflows[].defaults.comment.{project,universal}.*` |
 | Cascade-deleted with the task | Outlives any single task |
 | Indexed in `search` under `entity_type="comment"` | Indexed under `entity_type="comment"`, with `title` searchable too |
 
