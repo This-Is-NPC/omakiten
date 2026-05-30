@@ -108,6 +108,32 @@ func TestProjectViewFooterTokens(t *testing.T) {
 	}
 }
 
+// TestProjectViewEscLeavesScreen proves the footer's advertised "esc back"
+// is real: esc pops the back stack so the project view (subProjectView) is
+// no longer the active sub afterward.
+func TestProjectViewEscLeavesScreen(t *testing.T) {
+	model, _, _ := scopedFeedModel(t)
+	priorSub := model.sub
+	if priorSub == subProjectView {
+		t.Fatalf("setup: model should not start on the project view")
+	}
+
+	opened, _ := model.Update(ctrlP())
+	m := opened.(Model)
+	if m.sub != subProjectView {
+		t.Fatalf("setup: ctrl+p did not open the project view; sub = %v", m.sub)
+	}
+
+	back, _ := m.Update(escKey())
+	m = back.(Model)
+	if m.sub == subProjectView {
+		t.Fatalf("esc did not leave the project view; sub still %v", m.sub)
+	}
+	if m.sub != priorSub {
+		t.Fatalf("esc should restore the prior sub %v; got %v", priorSub, m.sub)
+	}
+}
+
 // TestOpenProjectViewNilCommentsRepoNoPanic proves openProjectView (→
 // refreshProjectSummary → commentsForProjectScope) does not panic when the
 // Comments repo is nil, and surfaces an empty feed instead of crashing on

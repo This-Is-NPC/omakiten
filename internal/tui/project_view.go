@@ -49,11 +49,12 @@ func (m *Model) refreshProjectSummary() error {
 
 // handleProjectKey owns the project-view screen's keys: Tab toggles which
 // panel (metadata / activity) owns scroll; j/k/pgup/pgdn scroll the active
-// panel; r refreshes the feed; esc / ctrl+o leave the screen (handled by
-// handleCommonKey's back-nav). The task-mutation keys (n/e/c/m/A) are
-// swallowed so the read-only v1 screen stays inert instead of falling
-// through to handleCommonKey's board bindings. Returns true when the key
-// was consumed so the dispatcher does not fall through.
+// panel; g/home jumps the focused panel to the top; r refreshes the feed;
+// esc leaves the screen via the same back-nav as ctrl+o (pop the view
+// history to restore the prior top/sub). The task-mutation keys
+// (n/e/c/m/A) are swallowed so the read-only v1 screen stays inert instead
+// of falling through to handleCommonKey's board bindings. Returns true when
+// the key was consumed so the dispatcher does not fall through.
 func (m *Model) handleProjectKey(msg tea.KeyMsg) bool {
 	switch msg.String() {
 	case "tab":
@@ -73,6 +74,16 @@ func (m *Model) handleProjectKey(msg tea.KeyMsg) bool {
 		return true
 	case "g", "home":
 		m.setProjectFocusedScroll(0)
+		return true
+	case "esc":
+		// Leave the project view the same way ctrl+o does: pop the back
+		// stack to restore the prior (top, sub). The footer advertises
+		// "esc back", so this makes the binding real. No-op when the
+		// stack is empty (start of session).
+		if m.popHistory() {
+			m.moveMode = false
+			m.status = ""
+		}
 		return true
 	case "r":
 		if err := m.refreshProjectSummary(); err != nil {
