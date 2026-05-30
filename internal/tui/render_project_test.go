@@ -9,9 +9,10 @@ import (
 	"omakiten/internal/domain"
 )
 
-func ctrlP() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyCtrlP} }
+func ctrlP() tea.KeyMsg  { return tea.KeyMsg{Type: tea.KeyCtrlP} }
 func tabKey() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyTab} }
 func endKey() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyEnd} }
+func fKey() tea.KeyMsg   { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}} }
 
 // TestCtrlPOpensProjectView proves Ctrl+P from a per-project board routes
 // to the dedicated project-view screen (subProjectView) and primes the
@@ -36,8 +37,8 @@ func TestCtrlPOpensProjectView(t *testing.T) {
 	if len(got.projectActivity) != 3 {
 		t.Fatalf("projectActivity = %d events, want 3 (project+universal)", len(got.projectActivity))
 	}
-	if got.projectFocus != projectFocusMeta {
-		t.Fatalf("project view should open focused on metadata; focus = %v", got.projectFocus)
+	if got.projectFocus != projectFocusForm {
+		t.Fatalf("project view should open focused on the form; focus = %v", got.projectFocus)
 	}
 }
 
@@ -136,26 +137,33 @@ func TestRenderProjectViewTagsAndDescription(t *testing.T) {
 	}
 }
 
-// TestProjectViewTabTogglesFocus proves Tab rotates the focused panel
-// metadata ↔ activity inside the project view.
+// TestProjectViewTabTogglesFocus proves Tab cycles the focused zone
+// form → dashboard → activity → form inside the project view, mirroring
+// the task view's three-zone rotation.
 func TestProjectViewTabTogglesFocus(t *testing.T) {
 	model, _, _ := scopedFeedModel(t)
 	opened, _ := model.Update(ctrlP())
 	m := opened.(Model)
-	if m.projectFocus != projectFocusMeta {
-		t.Fatalf("setup: project view should open on metadata focus")
+	if m.projectFocus != projectFocusForm {
+		t.Fatalf("setup: project view should open on form focus")
 	}
 
 	next, _ := m.Update(tabKey())
 	m = next.(Model)
-	if m.projectFocus != projectFocusActivity {
-		t.Fatalf("tab did not move focus to activity; focus = %v", m.projectFocus)
+	if m.projectFocus != projectFocusDashboard {
+		t.Fatalf("tab did not move focus to dashboard; focus = %v", m.projectFocus)
 	}
 
 	next, _ = m.Update(tabKey())
 	m = next.(Model)
-	if m.projectFocus != projectFocusMeta {
-		t.Fatalf("second tab did not return focus to metadata; focus = %v", m.projectFocus)
+	if m.projectFocus != projectFocusActivity {
+		t.Fatalf("second tab did not move focus to activity; focus = %v", m.projectFocus)
+	}
+
+	next, _ = m.Update(tabKey())
+	m = next.(Model)
+	if m.projectFocus != projectFocusForm {
+		t.Fatalf("third tab did not wrap focus back to the form; focus = %v", m.projectFocus)
 	}
 }
 
@@ -230,11 +238,14 @@ func TestProjectViewGScrollsActivityToBottom(t *testing.T) {
 	opened, _ := model.Update(ctrlP())
 	m := opened.(Model)
 
-	// Focus the activity panel (Tab) so the scroll bindings act on it.
+	// Focus the activity zone (Tab twice: form → dashboard → activity) so
+	// the scroll bindings act on it.
 	tabbed, _ := m.Update(tabKey())
 	m = tabbed.(Model)
+	tabbed, _ = m.Update(tabKey())
+	m = tabbed.(Model)
 	if m.projectFocus != projectFocusActivity {
-		t.Fatalf("setup: tab did not focus the activity panel; focus = %v", m.projectFocus)
+		t.Fatalf("setup: two tabs did not focus the activity zone; focus = %v", m.projectFocus)
 	}
 
 	wantMax := m.projectFocusedScrollMax()
@@ -297,5 +308,159 @@ func TestRenderProjectViewLayoutSwitchesOnWidth(t *testing.T) {
 				t.Fatalf("narrow layout should stack meta above activity, not share a row:\n%s", narrow)
 			}
 		}
+	}
+}
+
+// TestProjectViewDashboardCounts proves the status dashboard zone surfaces
+// the per-bucket task counts + total, the root/sub-task split, and the
+// aggregate plan progress computed by computeProjectDashboard.
+func TestProjectViewDashboardCounts(t *testing.T) {
+	model, _, _ := scopedFeedModel(t)
+	opened, _ := model.Update(ctrlP())
+	m := opened.(Model)
+	m.width = 160
+
+	// Seed a deterministic task mix: 2 roots in backlog, 1 child of root #1
+	// in a second lane. The workflow buckets drive the per-bucket rows.
+	m.workflow.Buckets = []domain.Bucket{{Key: "backlog", Name: "Backlog"}, {Key: "doing", Name: "Doing"}}
+	parentID := int64(1)
+	m.tasks = []domain.Task{
+		{ID: 1, Title: "Root A", BucketKey: "backlog", Priority: domain.Priority(2)},
+		{ID: 2, Title: "Root B", BucketKey: "backlog", Priority: domain.Priority(2)},
+		{ID: 3, Title: "Child", BucketKey: "doing", Priority: domain.Priority(2), ParentID: &parentID},
+	}
+	m.cachedTasksByBucket = nil
+	m.projectDashboard = m.computeProjectDashboard()
+
+	d := m.projectDashboard
+	if d.totalTasks != 3 {
+		t.Fatalf("dashboard total = %d, want 3", d.totalTasks)
+	}
+	if d.rootTasks != 2 || d.subTasks != 1 {
+		t.Fatalf("dashboard root/sub split = %d/%d, want 2/1", d.rootTasks, d.subTasks)
+	}
+	if len(d.bucketCounts) != 2 {
+		t.Fatalf("dashboard bucketCounts = %d, want 2 (one per workflow bucket)", len(d.bucketCounts))
+	}
+	if d.bucketCounts[0].count != 2 || d.bucketCounts[1].count != 1 {
+		t.Fatalf("dashboard per-bucket counts = backlog:%d doing:%d, want 2/1", d.bucketCounts[0].count, d.bucketCounts[1].count)
+	}
+
+	out := m.renderProjectDashboardPanel(true, m.projectMetaPanelWidth())
+	for _, want := range []string{
+		strings.ToUpper(m.t("tui.kicker.dashboard")),
+		strings.ToUpper(m.t("tui.dashboard.tasks")),
+		strings.ToUpper(m.t("tui.dashboard.total")),
+		strings.ToUpper(m.t("tui.dashboard.subtasks")),
+		strings.ToUpper(m.t("tui.dashboard.plans")),
+		"BACKLOG",
+		"DOING",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("dashboard panel missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestProjectViewDashboardRendersInView proves the dashboard zone is wired
+// into the composed project view (not just the isolated panel renderer).
+func TestProjectViewDashboardRendersInView(t *testing.T) {
+	model, _, _ := scopedFeedModel(t)
+	opened, _ := model.Update(ctrlP())
+	m := opened.(Model)
+	m.width = 160
+
+	out := m.renderProjectView()
+	if !strings.Contains(out, strings.ToUpper(m.t("tui.kicker.dashboard"))) {
+		t.Fatalf("project view missing dashboard zone:\n%s", out)
+	}
+}
+
+// TestProjectDescriptionCapped proves a long project description is elided
+// in the form zone to taskDescriptionInlineCap lines plus a "+N more" cue,
+// rather than overflowing the zone (the #390 warning the rework subsumes).
+func TestProjectDescriptionCapped(t *testing.T) {
+	model, _, _ := scopedFeedModel(t)
+	opened, _ := model.Update(ctrlP())
+	m := opened.(Model)
+	m.width = 160
+
+	// A body well over the cap so the inline render must truncate + cue.
+	bodyLines := make([]string, 0, taskDescriptionInlineCap+8)
+	for i := 0; i < taskDescriptionInlineCap+8; i++ {
+		bodyLines = append(bodyLines, "line-of-the-project-description")
+	}
+	m.projectDescription = strings.Join(bodyLines, "\n")
+
+	inline := m.renderProjectDescriptionInline(80)
+	gotLines := strings.Count(inline, "\n") + 1
+	// cap lines + 1 cue line.
+	if gotLines > taskDescriptionInlineCap+1 {
+		t.Fatalf("capped description rendered %d lines, want <= %d", gotLines, taskDescriptionInlineCap+1)
+	}
+	// The cue carries the "+N more" formatting (the f-to-focus hint).
+	if !strings.Contains(inline, "more") && !strings.Contains(inline, "+") {
+		t.Fatalf("capped description missing the +N more cue:\n%s", inline)
+	}
+}
+
+// TestProjectFormScreenOpensAndCloses proves `f` from the project view
+// opens the fullscreen project form overlay (uncapped, scrollable
+// description) and that `f`/esc close it back to the project view.
+func TestProjectFormScreenOpensAndCloses(t *testing.T) {
+	model, _, _ := scopedFeedModel(t)
+	opened, _ := model.Update(ctrlP())
+	m := opened.(Model)
+	m.width = 160
+	if m.projectFormScreenOpen {
+		t.Fatalf("setup: form overlay should be closed on open")
+	}
+
+	pressed, _ := m.Update(fKey())
+	m = pressed.(Model)
+	if !m.projectFormScreenOpen {
+		t.Fatalf("`f` did not open the project form overlay")
+	}
+
+	// The overlay renders the full metadata + the (uncapped) description.
+	m.projectDescription = "FullProjectDescriptionMarker"
+	out := m.renderProjectFormScreen()
+	if !strings.Contains(out, "FullProjectDescriptionMarker") {
+		t.Fatalf("form overlay missing the full description body:\n%s", out)
+	}
+
+	// `f` again closes it.
+	closed, _ := m.Update(fKey())
+	m = closed.(Model)
+	if m.projectFormScreenOpen {
+		t.Fatalf("second `f` did not close the project form overlay")
+	}
+
+	// esc also closes it.
+	reopened, _ := m.Update(fKey())
+	m = reopened.(Model)
+	if !m.projectFormScreenOpen {
+		t.Fatalf("setup: `f` did not reopen the overlay")
+	}
+	escd, _ := m.Update(escKey())
+	m = escd.(Model)
+	if m.projectFormScreenOpen {
+		t.Fatalf("esc did not close the project form overlay")
+	}
+}
+
+// TestProjectFormScreenBlocksPalette proves the fullscreen form overlay
+// gates the global Ctrl+K palette, matching the description / plan-goal
+// overlays.
+func TestProjectFormScreenBlocksPalette(t *testing.T) {
+	model, _, _ := scopedFeedModel(t)
+	opened, _ := model.Update(ctrlP())
+	m := opened.(Model)
+	if !m.canOpenPalette() {
+		t.Fatalf("setup: palette should be openable from the project view")
+	}
+	m.projectFormScreenOpen = true
+	if m.canOpenPalette() {
+		t.Fatalf("palette should be gated while the project form overlay is open")
 	}
 }
