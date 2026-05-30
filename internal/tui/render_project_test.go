@@ -465,7 +465,6 @@ func TestProjectFormScreenBlocksPalette(t *testing.T) {
 		t.Fatalf("palette should be gated while the project form overlay is open")
 	}
 }
-}
 
 // TestRefreshProjectSummaryReloadsTasks proves refreshProjectSummary reloads
 // the project's task set before folding the dashboard, so a task created
@@ -494,3 +493,84 @@ func TestRefreshProjectSummaryReloadsTasks(t *testing.T) {
 	}
 }
 
+// TestProjectViewFooterScrollOnlyForActivity proves the footer advertises
+// the scroll/page/top-bottom keys ONLY while the activity zone owns focus —
+// the form + dashboard zones are not scroll-windowed, so claiming scroll
+// there would promise a no-op.
+func TestProjectViewFooterScrollOnlyForActivity(t *testing.T) {
+	model, _, _ := scopedFeedModel(t)
+	opened, _ := model.Update(ctrlP())
+	m := opened.(Model)
+
+	scrollKeys := func(mm Model) bool {
+		for _, tok := range mm.footerTokens() {
+			if tok.key == "j/k" || tok.key == "pgup/pgdn" || tok.key == "g/G" {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Form zone (open default): no scroll hints.
+	if m.projectFocus != projectFocusForm {
+		t.Fatalf("setup: project view should open on form focus; got %v", m.projectFocus)
+	}
+	if scrollKeys(m) {
+		t.Fatalf("form-focused footer should not advertise scroll keys")
+	}
+
+	// Dashboard zone: still no scroll hints.
+	tabbed, _ := m.Update(tabKey())
+	m = tabbed.(Model)
+	if m.projectFocus != projectFocusDashboard {
+		t.Fatalf("setup: tab did not focus dashboard; got %v", m.projectFocus)
+	}
+	if scrollKeys(m) {
+		t.Fatalf("dashboard-focused footer should not advertise scroll keys")
+	}
+
+	// Activity zone: scroll hints reappear (it IS windowed).
+	tabbed, _ = m.Update(tabKey())
+	m = tabbed.(Model)
+	if m.projectFocus != projectFocusActivity {
+		t.Fatalf("setup: tab did not focus activity; got %v", m.projectFocus)
+	}
+	if !scrollKeys(m) {
+		t.Fatalf("activity-focused footer should advertise scroll keys")
+	}
+}
+
+// TestProjectViewScrollNoOpOnNonWindowedZones proves scroll keys are inert
+// while the form or dashboard zone owns focus (neither is windowed), and the
+// activity zone still scrolls — confirming the dead meta-scroll removal left
+// the live behavior intact.
+func TestProjectViewScrollNoOpOnNonWindowedZones(t *testing.T) {
+	model, _, _ := scopedFeedModel(t)
+	opened, _ := model.Update(ctrlP())
+	m := opened.(Model)
+
+	// Form focus: j must not move any scroll offset.
+	down, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = down.(Model)
+	if m.projectActivityScroll != 0 {
+		t.Fatalf("scroll on the form zone should be a no-op; activity scroll = %d", m.projectActivityScroll)
+	}
+
+	// Dashboard focus: same.
+	tabbed, _ := m.Update(tabKey())
+	m = tabbed.(Model)
+	down, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = down.(Model)
+	if m.projectActivityScroll != 0 {
+		t.Fatalf("scroll on the dashboard zone should be a no-op; activity scroll = %d", m.projectActivityScroll)
+	}
+
+	// Activity focus: j advances the activity scroll.
+	tabbed, _ = m.Update(tabKey())
+	m = tabbed.(Model)
+	down, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = down.(Model)
+	if m.projectActivityScroll != 1 {
+		t.Fatalf("scroll on the activity zone should advance; activity scroll = %d, want 1", m.projectActivityScroll)
+	}
+}

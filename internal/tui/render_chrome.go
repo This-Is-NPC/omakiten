@@ -406,16 +406,27 @@ func (m Model) footerTokens() []footerToken {
 	case m.onHome():
 		return m.homeFooterTokens()
 	case m.sub == subProjectView:
-		return []footerToken{
+		tokens := []footerToken{
 			{key: "tab", label: m.t("tui.footer.zone"), primary: true},
 			{key: "f", label: m.t("tui.footer.focus_description"), primary: true},
-			{key: "j/k", label: m.t("tui.footer.scroll")},
-			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
-			{key: "g/G", label: m.t("tui.footer.top_bottom")},
-			{key: "r", label: m.t("tui.footer.refresh")},
+		}
+		// Only the activity zone is scroll-windowed; the form + dashboard
+		// draw a full fixed body, so advertising scroll there would promise
+		// a no-op. Surface the scroll keys only when the activity zone owns
+		// focus.
+		if m.projectFocus == projectFocusActivity {
+			tokens = append(tokens,
+				footerToken{key: "j/k", label: m.t("tui.footer.scroll")},
+				footerToken{key: "pgup/pgdn", label: m.t("tui.footer.page")},
+				footerToken{key: "g/G", label: m.t("tui.footer.top_bottom")},
+			)
+		}
+		tokens = append(tokens,
+			footerToken{key: "r", label: m.t("tui.footer.refresh")},
 			m.escBack(),
 			m.helpToken(),
-		}
+		)
+		return tokens
 	case m.sub == subPlans && m.planNetworkOpen:
 		return []footerToken{
 			{key: "c", label: m.t("tui.footer.assign"), primary: true},

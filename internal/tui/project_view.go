@@ -19,8 +19,8 @@ import (
 //
 // Lives outside render_*.go on purpose: the scroll-state boundary arch
 // test (internal/arch) forbids render_*.go from writing a *Scroll field,
-// and the open/scroll mutators here reset projectActivityScroll /
-// projectMetaScroll. The render pass (render_project.go) stays pure.
+// and the open/scroll mutators here reset projectActivityScroll. The render
+// pass (render_project.go) stays pure.
 func (m *Model) openProjectView() {
 	m.pushHistory()
 	m.moveMode = false
@@ -29,7 +29,6 @@ func (m *Model) openProjectView() {
 	m.sub = subProjectView
 	m.projectFocus = projectFocusForm
 	m.projectActivityScroll = 0
-	m.projectMetaScroll = 0
 	m.projectFormScreenOpen = false
 	m.projectFormScreen = detailscreen.New(0)
 	if err := m.refreshProjectSummary(); err != nil {
@@ -233,29 +232,28 @@ func (m *Model) cycleProjectFocus(delta int) {
 	m.projectFocus = projectScreenFocus(cur)
 }
 
-// scrollProjectFocused nudges the scroll offset of whichever zone
-// currently owns focus by delta lines, clamped at zero. The dashboard zone
-// is fixed-height (renders the full grid), so it shares the metadata
-// scroll field with the form zone — neither scroll-windows in v1.
+// scrollProjectFocused nudges the activity zone's scroll offset by delta
+// lines, clamped at zero. Only the activity zone is scroll-windowed; the
+// form + dashboard draw a full fixed body, so scroll keys are a no-op there
+// (the footer hides the scroll hints to match).
 func (m *Model) scrollProjectFocused(delta int) {
-	if m.projectFocus == projectFocusActivity {
-		m.projectActivityScroll = clampMinZero(m.projectActivityScroll + delta)
+	if m.projectFocus != projectFocusActivity {
 		return
 	}
-	m.projectMetaScroll = clampMinZero(m.projectMetaScroll + delta)
+	m.projectActivityScroll = clampMinZero(m.projectActivityScroll + delta)
 }
 
-// setProjectFocusedScroll snaps the focused zone's scroll to an absolute
-// offset (clamped at zero) — backs the g/home top-of-zone binding.
+// setProjectFocusedScroll snaps the activity zone's scroll to an absolute
+// offset (clamped at zero) — backs the g/home top-of-zone binding. No-op for
+// the non-windowed form + dashboard zones.
 func (m *Model) setProjectFocusedScroll(offset int) {
+	if m.projectFocus != projectFocusActivity {
+		return
+	}
 	if offset < 0 {
 		offset = 0
 	}
-	if m.projectFocus == projectFocusActivity {
-		m.projectActivityScroll = offset
-		return
-	}
-	m.projectMetaScroll = offset
+	m.projectActivityScroll = offset
 }
 
 // projectFocusedScrollMax is the largest scroll offset that still shows

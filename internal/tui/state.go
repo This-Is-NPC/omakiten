@@ -505,12 +505,9 @@ type Model struct {
 
 	// projectActivityScroll is the line offset of the project-view
 	// activity feed viewport. j/k/pgup/pgdn nudge it while the activity
-	// panel owns focus; the metadata panel uses projectMetaScroll.
+	// panel owns focus; the form + dashboard zones are not scroll-windowed
+	// (they draw a full fixed body), so the scroll keys no-op there.
 	projectActivityScroll int
-
-	// projectMetaScroll is the line offset of the project-view metadata
-	// panel viewport, used when that panel owns focus.
-	projectMetaScroll int
 
 	// projectDescription caches the current project's description body,
 	// fetched (alongside the activity feed) by refreshProjectSummary via
