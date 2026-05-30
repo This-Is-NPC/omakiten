@@ -191,12 +191,15 @@ type CommentWrite struct {
 }
 
 // CommentEdit is the scope-agnostic patch applied to an existing comment.
-// Body is always rewritten; Title/Kind/Pinned overwrite their columns.
+// Body is always rewritten; Title/Kind/Pinned are tri-state pointers — a nil
+// pointer leaves the stored column untouched, a non-nil pointer overwrites it.
+// This prevents a body-only edit from silently wiping a pinned flag, title, or
+// kind. Mirrors how EditPlanInput/UpdatePlan handle partial updates.
 type CommentEdit struct {
 	Body   string
-	Title  string
-	Kind   string
-	Pinned bool
+	Title  *string
+	Kind   *string
+	Pinned *bool
 	Tags   []Tag
 }
 

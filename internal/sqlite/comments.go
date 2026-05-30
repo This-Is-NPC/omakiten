@@ -297,17 +297,33 @@ func (s *Store) EditComment(ctx context.Context, projectID, commentID int64, edi
 		return domain.Comment{}, domain.Event{}, err
 	}
 
-	var titleArg, kindArg any
-	if edit.Title != "" {
-		titleArg = edit.Title
+	// Tri-state patch: a nil Title/Kind/Pinned pointer preserves the loaded
+	// row's existing value so a body-only edit can't silently wipe a title,
+	// kind, or pinned flag. Only an explicit non-nil pointer overwrites.
+	newTitle := prev.Title
+	if edit.Title != nil {
+		newTitle = *edit.Title
 	}
-	if edit.Kind != "" {
-		kindArg = edit.Kind
+	newKind := prev.Kind
+	if edit.Kind != nil {
+		newKind = *edit.Kind
+	}
+	newPinned := prev.Pinned
+	if edit.Pinned != nil {
+		newPinned = *edit.Pinned
+	}
+
+	var titleArg, kindArg any
+	if newTitle != "" {
+		titleArg = newTitle
+	}
+	if newKind != "" {
+		kindArg = newKind
 	}
 	if _, err := tx.ExecContext(ctx, `
 UPDATE events SET body = ?, title = ?, kind = ?, pinned = ?, updated_at = datetime('now')
 WHERE id = ? AND event_type = 'comment'
-`, edit.Body, titleArg, kindArg, boolToInt(edit.Pinned), commentID); err != nil {
+`, edit.Body, titleArg, kindArg, boolToInt(newPinned), commentID); err != nil {
 		return domain.Comment{}, domain.Event{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM event_tags WHERE event_id = ?`, commentID); err != nil {
@@ -316,9 +332,9 @@ WHERE id = ? AND event_type = 'comment'
 
 	updated := prev
 	updated.Body = edit.Body
-	updated.Title = edit.Title
-	updated.Kind = edit.Kind
-	updated.Pinned = edit.Pinned
+	updated.Title = newTitle
+	updated.Kind = newKind
+	updated.Pinned = newPinned
 	attached, err := attachTagsTx(ctx, tx, tagPivotEvent, commentID, edit.Tags)
 	if err != nil {
 		return domain.Comment{}, domain.Event{}, err

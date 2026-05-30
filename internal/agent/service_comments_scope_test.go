@@ -158,13 +158,64 @@ func TestEditCommentScopedFields(t *testing.T) {
 	}
 
 	pinned := true
+	title := "Final"
+	kind := "recap"
 	edited, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
-		CommentID: created.Comment.ID, Body: "after", Title: "Final", Kind: "recap", Pinned: &pinned,
+		CommentID: created.Comment.ID, Body: "after", Title: &title, Kind: &kind, Pinned: &pinned,
 	})
 	if err != nil {
 		t.Fatalf("EditComment() error = %v", err)
 	}
 	if edited.Comment.Body != "after" || edited.Comment.Title != "Final" || edited.Comment.Kind != "recap" || !edited.Comment.Pinned {
 		t.Fatalf("EditComment() = %+v, want body/title/kind/pinned applied", edited.Comment)
+	}
+}
+
+// TestEditCommentPreservesNoteFieldsOnBodyOnlyEdit pins the tri-state contract
+// at the agent boundary: a body-only edit (Title/Kind/Pinned omitted → nil)
+// must NOT wipe a pinned=true, titled, kinded note. An explicit pinned=false
+// then unpins. Fails on the pre-fix code where the DTO carried plain
+// string/bool zero values that the store wrote unconditionally.
+func TestEditCommentPreservesNoteFieldsOnBodyOnlyEdit(t *testing.T) {
+	fixture := newAgentFixture(t)
+
+	pinned := true
+	title := "Heading"
+	kind := "handoff"
+	created, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		Scope: domain.CommentScopeProject, Body: "before", AuthorType: "agent",
+		Title: title, Kind: kind, Pinned: pinned,
+	})
+	if err != nil {
+		t.Fatalf("AddComment(project) error = %v", err)
+	}
+
+	// Body-only edit: Title/Kind/Pinned omitted.
+	edited, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+		CommentID: created.Comment.ID, Body: "after",
+	})
+	if err != nil {
+		t.Fatalf("EditComment(body only) error = %v", err)
+	}
+	if edited.Comment.Body != "after" {
+		t.Fatalf("EditComment body = %q, want %q", edited.Comment.Body, "after")
+	}
+	if !edited.Comment.Pinned || edited.Comment.Title != "Heading" || edited.Comment.Kind != "handoff" {
+		t.Fatalf("EditComment(body only) wiped note fields = %+v", edited.Comment)
+	}
+
+	// Explicit pinned=false unpins (and leaves title/kind alone).
+	unpin := false
+	edited2, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+		CommentID: created.Comment.ID, Body: "after2", Pinned: &unpin,
+	})
+	if err != nil {
+		t.Fatalf("EditComment(unpin) error = %v", err)
+	}
+	if edited2.Comment.Pinned {
+		t.Fatalf("EditComment(pinned=false) did not unpin = %+v", edited2.Comment)
+	}
+	if edited2.Comment.Title != "Heading" || edited2.Comment.Kind != "handoff" {
+		t.Fatalf("EditComment(unpin) wiped title/kind = %+v", edited2.Comment)
 	}
 }

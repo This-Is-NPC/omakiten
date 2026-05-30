@@ -74,12 +74,16 @@ func (s *Service) EditComment(ctx context.Context, input EditCommentInput) (Comm
 	}
 	workflow := s.workflow
 	edit := domain.CommentEdit{
-		Body:  input.Body,
-		Title: strings.TrimSpace(input.Title),
-		Kind:  strings.TrimSpace(input.Kind),
+		Body:   input.Body,
+		Pinned: input.Pinned,
 	}
-	if input.Pinned != nil {
-		edit.Pinned = *input.Pinned
+	if input.Title != nil {
+		trimmed := strings.TrimSpace(*input.Title)
+		edit.Title = &trimmed
+	}
+	if input.Kind != nil {
+		trimmed := strings.TrimSpace(*input.Kind)
+		edit.Kind = &trimmed
 	}
 	comment, err := s.newCommentServiceWithWorkflow(workflow).EditScoped(ctx, project, input.CommentID, edit, input.Tags)
 	if err != nil {
