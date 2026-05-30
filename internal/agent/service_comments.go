@@ -30,21 +30,10 @@ func (s *Service) AddComment(ctx context.Context, input AddCommentInput) (Commen
 	if scope == "" {
 		scope = domain.CommentScopeTask
 	}
-	switch scope {
-	case domain.CommentScopeTask:
-		if input.TaskID <= 0 {
-			return CommentResponse{}, domain.NewError(domain.ErrValidation, "task scope requires task_id", map[string]any{"scope": scope})
-		}
-	case domain.CommentScopeProject:
-		if input.TaskID > 0 {
-			return CommentResponse{}, domain.NewError(domain.ErrValidation, "project scope must not carry task_id", map[string]any{"scope": scope, "task_id": input.TaskID})
-		}
-	case domain.CommentScopeUniversal:
-		if input.TaskID > 0 {
-			return CommentResponse{}, domain.NewError(domain.ErrValidation, "universal scope must not carry task_id", map[string]any{"scope": scope, "task_id": input.TaskID})
-		}
-	default:
-		return CommentResponse{}, domain.NewError(domain.ErrValidation, "unknown comment scope", map[string]any{"scope": scope})
+	// The agent surface has no separate "task id supplied" signal — a positive
+	// TaskID is the only way to carry one — so hasTaskID mirrors TaskID > 0.
+	if err := domain.ValidateCommentScopeTaskID(scope, input.TaskID, input.TaskID > 0); err != nil {
+		return CommentResponse{}, err
 	}
 
 	tags := make([]domain.Tag, 0, len(input.Tags))
