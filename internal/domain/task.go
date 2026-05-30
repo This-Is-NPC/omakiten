@@ -207,6 +207,10 @@ type CommentEdit struct {
 // filterable handoff log). All fields are optional and AND together. A zero
 // filter lists every comment the projection allows.
 type CommentFilter struct {
+	// CommentID narrows to a single comment by its id (events.id) when > 0.
+	// Used by the get-by-id read path (okt-note-show) so the agent can fetch
+	// exactly one comment through the filterable query surface.
+	CommentID int64
 	// Scope restricts to task|project|universal when non-empty.
 	Scope string
 	// ProjectID scopes to a single project. 0 means cross-project. Universal

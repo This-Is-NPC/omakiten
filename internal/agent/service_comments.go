@@ -130,8 +130,9 @@ func (s *Service) ListComments(ctx context.Context, input ListCommentsInput) (Co
 	since := strings.TrimSpace(input.Since)
 
 	// Pure task-scoped listing (no extra filters) keeps the original List path
-	// so the default behaviour is byte-for-byte unchanged.
-	if scope == "" && kind == "" && tag == "" && query == "" && since == "" && !input.Pinned {
+	// so the default behaviour is byte-for-byte unchanged. A comment_id (the
+	// get-by-id path) routes through Query so the id filter applies.
+	if scope == "" && kind == "" && tag == "" && query == "" && since == "" && !input.Pinned && input.CommentID <= 0 {
 		comments, err := s.newCommentService().List(ctx, project, input.TaskID)
 		if err != nil {
 			return CommentsResponse{}, err
@@ -145,7 +146,13 @@ func (s *Service) ListComments(ctx context.Context, input ListCommentsInput) (Co
 	if scope == domain.CommentScopeUniversal {
 		projectID = 0
 	}
+	// A comment_id (get-by-id) names a globally unique row across all scopes —
+	// drop the project filter so okt-note-show can fetch a universal note too.
+	if input.CommentID > 0 {
+		projectID = 0
+	}
 	filter := domain.CommentFilter{
+		CommentID:  input.CommentID,
 		Scope:      scope,
 		ProjectID:  projectID,
 		TaskID:     input.TaskID,

@@ -147,6 +147,43 @@ func TestListCommentsDefaultUnchanged(t *testing.T) {
 
 // TestEditCommentScopedFields edits a comment's title/kind/pinned alongside its
 // body and verifies the patch round-trips.
+// TestListCommentsByID proves comments.list with comment_id returns exactly the
+// named row, and that a universal note (project_id NULL) is reachable by id even
+// though the routine scoped list would project-scope it out. Fails before the
+// comment_id filter existed.
+func TestListCommentsByID(t *testing.T) {
+	fixture := newAgentFixture(t)
+
+	taskC, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		TaskID: fixture.taskA1.ID, Body: "task note", AuthorType: "agent",
+	})
+	if err != nil {
+		t.Fatalf("AddComment(task) error = %v", err)
+	}
+	uniC, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		Scope: domain.CommentScopeUniversal, Body: "global note", AuthorType: "agent",
+	})
+	if err != nil {
+		t.Fatalf("AddComment(universal) error = %v", err)
+	}
+
+	got, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{CommentID: taskC.Comment.ID})
+	if err != nil {
+		t.Fatalf("ListComments(comment_id task) error = %v", err)
+	}
+	if len(got.Comments) != 1 || got.Comments[0].ID != taskC.Comment.ID || got.Comments[0].Body != "task note" {
+		t.Fatalf("ListComments(comment_id=%d) = %+v, want exactly the task comment", taskC.Comment.ID, got.Comments)
+	}
+
+	gotUni, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{CommentID: uniC.Comment.ID})
+	if err != nil {
+		t.Fatalf("ListComments(comment_id universal) error = %v", err)
+	}
+	if len(gotUni.Comments) != 1 || gotUni.Comments[0].ID != uniC.Comment.ID {
+		t.Fatalf("ListComments(comment_id=%d universal) = %+v, want exactly the universal note", uniC.Comment.ID, gotUni.Comments)
+	}
+}
+
 func TestEditCommentScopedFields(t *testing.T) {
 	fixture := newAgentFixture(t)
 

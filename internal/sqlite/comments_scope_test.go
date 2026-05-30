@@ -276,6 +276,33 @@ func TestQueryComments(t *testing.T) {
 	}
 }
 
+// TestQueryCommentsByID proves the comment_id filter returns exactly the named
+// row and nothing else. Fails before the CommentFilter.CommentID addition,
+// which had no get-by-id predicate.
+func TestQueryCommentsByID(t *testing.T) {
+	ctx, store, project, task := commentScopeFixture(t)
+
+	a, err := store.AddScopedComment(ctx, domain.CommentWrite{
+		Scope: domain.CommentScopeTask, ProjectID: project.ID, TaskID: task.ID, Body: "a", AuthorType: "agent",
+	})
+	if err != nil {
+		t.Fatalf("AddScopedComment(a): %v", err)
+	}
+	if _, err := store.AddScopedComment(ctx, domain.CommentWrite{
+		Scope: domain.CommentScopeProject, ProjectID: project.ID, Body: "b", AuthorType: "human",
+	}); err != nil {
+		t.Fatalf("AddScopedComment(b): %v", err)
+	}
+
+	got, err := store.QueryComments(ctx, domain.CommentFilter{CommentID: a.ID})
+	if err != nil {
+		t.Fatalf("QueryComments(comment_id): %v", err)
+	}
+	if len(got) != 1 || got[0].ID != a.ID || got[0].Body != "a" {
+		t.Fatalf("QueryComments(comment_id=%d) = %+v, want exactly comment a", a.ID, got)
+	}
+}
+
 func TestQueryCommentsTimeWindow(t *testing.T) {
 	ctx, store, project, task := commentScopeFixture(t)
 

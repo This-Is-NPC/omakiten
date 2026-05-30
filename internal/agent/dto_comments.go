@@ -56,8 +56,9 @@ type DeleteCommentResponse struct {
 
 type ListCommentsInput struct {
 	ProjectSelector
-	TaskID int64  `json:"task_id,omitempty"`
-	Scope  string `json:"scope,omitempty"`
+	TaskID    int64  `json:"task_id,omitempty"`
+	CommentID int64  `json:"comment_id,omitempty"`
+	Scope     string `json:"scope,omitempty"`
 	Kind   string `json:"kind,omitempty"`
 	Tag    string `json:"tag,omitempty"`
 	Pinned bool   `json:"pinned,omitempty"`

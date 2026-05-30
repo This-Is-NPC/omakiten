@@ -193,6 +193,10 @@ func (s *Store) QueryComments(ctx context.Context, filter domain.CommentFilter) 
 	}
 
 	conds = append(conds, "e.event_type = 'comment'")
+	if filter.CommentID > 0 {
+		conds = append(conds, "e.id = ?")
+		args = append(args, filter.CommentID)
+	}
 	if filter.Scope != "" {
 		conds = append(conds, "e.entity_type = ?")
 		args = append(args, filter.Scope)
