@@ -145,6 +145,41 @@ func TestCLIPlanEditRequiresAtLeastOneFlag(t *testing.T) {
 	runCLIExpectError(t, dbPath, configPath, "validation_error", "plan", "edit", "ship")
 }
 
+// TestCLIPlanEditNoOpNameDoesNotPersistGoalBody pins the partial-write
+// guard: `plan edit --goal-body NEW --name <unchanged>` must reject the
+// no-op name diff WITHOUT having persisted the goal-body edit. Before
+// the ordering fix the goal write committed + emitted first, then
+// UpdatePlan rejected "changed nothing", leaving the new goal on disk
+// behind an error response. Running UpdatePlan first means the no-op
+// rejection fires before the goal write, so the goal body stays "old".
+func TestCLIPlanEditNoOpNameDoesNotPersistGoalBody(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	projectRoot := filepath.Join(tmp, "project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Chdir(projectRoot)
+
+	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
+	runCLI(t, dbPath, configPath, "plan", "create", "ship", "--name", "Ship", "--goal-body", "old")
+
+	// --goal-body changes, but --name repeats the current name → the
+	// name diff is a no-op and UpdatePlan rejects "changed nothing".
+	runCLIExpectError(t, dbPath, configPath, "validation_error",
+		"plan", "edit", "ship", "--goal-body", "fresh", "--name", "Ship")
+
+	// The rejected no-op must NOT have leaked the goal-body write.
+	shown := runCLI(t, dbPath, configPath, "plan", "show", "ship")
+	if !strings.Contains(shown, `"goal_body":"old"`) {
+		t.Fatalf("goal_body should still be \"old\" after rejected edit, got: %s", shown)
+	}
+	if strings.Contains(shown, `"goal_body":"fresh"`) {
+		t.Fatalf("partial write: goal_body was persisted despite the rejected name diff: %s", shown)
+	}
+}
+
 func TestCLIPlanDeleteRequiresConfirm(t *testing.T) {
 	tmp := t.TempDir()
 	dbPath := filepath.Join(tmp, "omakiten.db")

@@ -136,11 +136,10 @@ func summarizePlanDone(_ EventRow) string {
 	return "plan done"
 }
 
-func summarizePlanAbandoned(row EventRow) string {
-	payload := decodePayload(row.Payload)
-	if reason := readString(payload, "reason"); reason != "" {
-		return "plan abandoned: " + condenseLine(reason)
-	}
+func summarizePlanAbandoned(_ EventRow) string {
+	// plan.abandoned always co-emits an empty "{}" payload (see
+	// UpdatePlan); there is no "reason" source upstream, so the summary
+	// is a fixed line rather than a payload read.
 	return "plan abandoned"
 }
 

@@ -226,14 +226,21 @@ func newPlanEditCommand(opts *runtimeOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				if goalChanged {
-					plan, err = svc.UpdateGoalBody(ctx, project, plan.ID, goalBody)
+				// UpdatePlan must run BEFORE UpdateGoalBody: UpdatePlan
+				// rejects a no-op name/slug/status diff with "changed
+				// nothing", and that rejection has to fire before the
+				// goal-body write commits + emits — otherwise a
+				// `--goal-body X --name <unchanged>` invocation would
+				// persist the goal edit and THEN error, leaving a partial
+				// write the caller cannot tell apart from a clean success.
+				if namePtr != nil || slugPtr != nil || statusPtr != nil {
+					plan, err = svc.UpdatePlan(ctx, project, plan.ID, namePtr, slugPtr, statusPtr)
 					if err != nil {
 						return nil, err
 					}
 				}
-				if namePtr != nil || slugPtr != nil || statusPtr != nil {
-					plan, err = svc.UpdatePlan(ctx, project, plan.ID, namePtr, slugPtr, statusPtr)
+				if goalChanged {
+					plan, err = svc.UpdateGoalBody(ctx, project, plan.ID, goalBody)
 					if err != nil {
 						return nil, err
 					}

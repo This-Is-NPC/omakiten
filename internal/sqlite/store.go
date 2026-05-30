@@ -255,6 +255,22 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	return OpenWithOptions(ctx, path, Options{})
 }
 
+// dsnWithForeignKeys appends modernc.org/sqlite's `_pragma=foreign_keys(1)`
+// query param to a database path so FK enforcement is applied on every
+// connection the driver opens (modernc runs `_pragma` directives in its
+// per-connection newConn path). Works for `:memory:` and bare file
+// paths alike — modernc parses the query for pragmas and, for non-`file:`
+// DSNs, strips it before handing the path to SQLite. Filesystem paths do
+// not contain `?`, so a single `?` separator is sufficient; the `&`
+// branch only matters if a caller ever passes a pre-parametrised DSN.
+func dsnWithForeignKeys(path string) string {
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return path + sep + "_pragma=foreign_keys(1)"
+}
+
 // OpenWithOptions is the production entry point — composition root
 // passes Options.BusyTimeoutMs from the loaded bundle. Zero falls
 // back to the kit canonical so test paths don't have to load YAML
@@ -264,7 +280,18 @@ func OpenWithOptions(ctx context.Context, path string, opts Options) (*Store, er
 		return nil, err
 	}
 
-	db, err := sql.Open("sqlite", path)
+	// foreign_keys MUST be enabled per-connection: modernc.org/sqlite
+	// defaults it OFF on every new connection, so issuing a single
+	// `PRAGMA foreign_keys = ON` after Open only protects whichever
+	// connection ran it — any other pooled connection would silently
+	// no-op FK cascades (orphaned plan_waves, dangling tasks.plan_id /
+	// wave_id). Threading it through the DSN's `_pragma` query param
+	// makes the driver run it on EVERY connection it opens (modernc
+	// applies `_pragma` in newConn, after each connect). The query is
+	// parsed for pragmas and stripped from the sqlite path for non-URI
+	// DSNs (`:memory:` and bare file paths alike), so this is safe for
+	// every path the store opens.
+	db, err := sql.Open("sqlite", dsnWithForeignKeys(path))
 	if err != nil {
 		return nil, err
 	}
@@ -301,13 +328,14 @@ func OpenWithOptions(ctx context.Context, path string, opts Options) (*Store, er
 		mmapSize = 0
 	}
 	// Correctness PRAGMAs encode engine-level contracts Omakiten depends
-	// on (foreign keys, WAL journaling, normal-sync durability). They
-	// stay inline rather than routing through applyPragmas because
-	// applyPragmas is the *user-tunable* surface — adding a correctness
-	// PRAGMA to the helper would make it visually equivalent to a
-	// per-user knob, which it is not.
+	// on (WAL journaling, normal-sync durability). They stay inline
+	// rather than routing through applyPragmas because applyPragmas is
+	// the *user-tunable* surface — adding a correctness PRAGMA to the
+	// helper would make it visually equivalent to a per-user knob, which
+	// it is not. foreign_keys is the exception: it MUST hold on every
+	// pooled connection, so it rides the DSN's _pragma param (see the
+	// dsnWithForeignKeys call above) rather than this once-at-Open loop.
 	for _, pragma := range []string{
-		"PRAGMA foreign_keys = ON",
 		"PRAGMA journal_mode = WAL",
 		"PRAGMA synchronous = NORMAL", // WAL-safe; full-fsync is overkill for a local CLI.
 	} {
