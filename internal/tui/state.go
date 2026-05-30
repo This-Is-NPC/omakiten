@@ -42,6 +42,11 @@ const (
 	taskDetailsPanelWidth      = 40
 	taskCommentsPanelMinWidth  = 44
 	taskCommentsPanelMaxWidth  = 96
+	// projectMetaPanelMinWidth floors the project-view metadata column and
+	// gates the side-by-side ↔ stacked decision: the two columns sit
+	// side-by-side only when the terminal can give the meta panel at least
+	// this many cells next to the activity rail (plus the 2-cell gutter).
+	projectMetaPanelMinWidth = 32
 	commentInputHeight         = 5
 	taskFormInputWidth         = 72
 	taskDescriptionInputHeight = 8

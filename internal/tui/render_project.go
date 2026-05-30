@@ -14,8 +14,8 @@ import (
 // between the two columns, floored so the grid never collapses.
 func (m Model) projectMetaPanelWidth() int {
 	w := m.availableWidth() - m.activityPanelWidth() - 2
-	if w < 32 {
-		w = 32
+	if w < projectMetaPanelMinWidth {
+		w = projectMetaPanelMinWidth
 	}
 	return w
 }
@@ -113,8 +113,15 @@ func (m Model) renderProjectView() string {
 	meta := m.renderProjectMetaPanel(metaFocused)
 	activity := m.renderProjectActivityPanel(activityFocused)
 
+	// Stack only when the terminal is too narrow to give the meta panel its
+	// minimum width beside the activity rail (plus the 2-cell gutter). Gating
+	// on the raw width keeps the intent explicit: the old
+	// `availableWidth() >= projectMetaPanelWidth()+activityPanelWidth()+2`
+	// check was a tautology (projectMetaPanelWidth is defined as
+	// availableWidth()-activityPanelWidth()-2), so it only ever stacked via
+	// the meta-width floor.
 	var content string
-	if m.availableWidth() >= m.projectMetaPanelWidth()+m.activityPanelWidth()+2 {
+	if m.availableWidth() >= m.activityPanelWidth()+projectMetaPanelMinWidth+2 {
 		content = lipgloss.JoinHorizontal(lipgloss.Top, meta, "  ", activity)
 	} else {
 		content = lipgloss.JoinVertical(lipgloss.Left, meta, "", activity)

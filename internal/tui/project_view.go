@@ -49,11 +49,12 @@ func (m *Model) refreshProjectSummary() error {
 
 // handleProjectKey owns the project-view screen's keys: Tab toggles which
 // panel (metadata / activity) owns scroll; j/k/pgup/pgdn scroll the active
-// panel; r refreshes the feed; esc / ctrl+o leave the screen (handled by
-// handleCommonKey's back-nav). The task-mutation keys (n/e/c/m/A) are
-// swallowed so the read-only v1 screen stays inert instead of falling
-// through to handleCommonKey's board bindings. Returns true when the key
-// was consumed so the dispatcher does not fall through.
+// panel; g/home and G/end jump the focused panel to top/bottom; r refreshes
+// the feed; esc leaves the screen via the same back-nav as ctrl+o (pop the
+// view history to restore the prior top/sub). The task-mutation keys
+// (n/e/c/m/A) are swallowed so the read-only v1 screen stays inert instead
+// of falling through to handleCommonKey's board bindings. Returns true when
+// the key was consumed so the dispatcher does not fall through.
 func (m *Model) handleProjectKey(msg tea.KeyMsg) bool {
 	switch msg.String() {
 	case "tab":
@@ -73,6 +74,19 @@ func (m *Model) handleProjectKey(msg tea.KeyMsg) bool {
 		return true
 	case "g", "home":
 		m.setProjectFocusedScroll(0)
+		return true
+	case "G", "end":
+		m.setProjectFocusedScroll(m.projectFocusedScrollMax())
+		return true
+	case "esc":
+		// Leave the project view the same way ctrl+o does: pop the back
+		// stack to restore the prior (top, sub). The footer advertises
+		// "esc back", so this makes the binding real. No-op when the
+		// stack is empty (start of session).
+		if m.popHistory() {
+			m.moveMode = false
+			m.status = ""
+		}
 		return true
 	case "r":
 		if err := m.refreshProjectSummary(); err != nil {
@@ -120,6 +134,27 @@ func (m *Model) setProjectFocusedScroll(offset int) {
 		return
 	}
 	m.projectMetaScroll = offset
+}
+
+// projectFocusedScrollMax is the largest scroll offset that still shows
+// content for the focused panel — the absolute target for the G/end
+// "scroll to bottom" binding. For the activity panel it mirrors the
+// renderer's clamp (offset is bounded to len(items)-1 inside
+// renderScrollWindowSplit). The metadata panel is not scroll-windowed in
+// v1 (renderProjectMetaPanel draws the full fixed detail), so its bottom
+// is the top: 0.
+func (m *Model) projectFocusedScrollMax() int {
+	if m.projectFocus != projectFocusActivity {
+		return 0
+	}
+	if len(m.projectActivity) == 0 {
+		return 0
+	}
+	items := flattenActivityCards(m.activityRowsForRender(m.projectActivity))
+	if len(items) == 0 {
+		return 0
+	}
+	return len(items) - 1
 }
 
 // clampMinZero returns n, or 0 when n is negative. Tiny helper kept local
