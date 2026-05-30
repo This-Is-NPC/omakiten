@@ -255,20 +255,56 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	return OpenWithOptions(ctx, path, Options{})
 }
 
-// dsnWithForeignKeys appends modernc.org/sqlite's `_pragma=foreign_keys(1)`
-// query param to a database path so FK enforcement is applied on every
+// dsnWithPragmas appends modernc.org/sqlite's `_pragma=...` query params to
+// a database path so the per-connection PRAGMAs are applied on EVERY
 // connection the driver opens (modernc runs `_pragma` directives in its
-// per-connection newConn path). Works for `:memory:` and bare file
-// paths alike — modernc parses the query for pragmas and, for non-`file:`
+// per-connection newConn path), not just whichever pooled connection
+// happened to run a one-shot `db.ExecContext` at Open.
+//
+// foreign_keys, busy_timeout and synchronous are all per-connection in
+// SQLite: a single ExecContext at Open lands on one pooled connection,
+// leaving a cold second connection at the engine defaults (foreign_keys
+// OFF, busy_timeout=0, synchronous=FULL). Threading them through the DSN
+// fixes that. cache_size and mmap_size are likewise per-connection (page
+// cache / memory-map are owned by each connection), so they ride along
+// too — one place, applied uniformly.
+//
+// modernc accepts multiple `_pragma` params and applies them in order;
+// `synchronous(1)` == NORMAL. Works for `:memory:` and bare file paths
+// alike — modernc parses the query for pragmas and, for non-`file:`
 // DSNs, strips it before handing the path to SQLite. Filesystem paths do
-// not contain `?`, so a single `?` separator is sufficient; the `&`
-// branch only matters if a caller ever passes a pre-parametrised DSN.
-func dsnWithForeignKeys(path string) string {
+// not contain `?`, so the FIRST param uses a `?` separator; every
+// subsequent param uses `&` (the multi-param case the older single-param
+// FK builder never exercised). cacheSizeKB / mmapSizeBytes follow the
+// same skip semantics as applyPragmas: cacheSizeKB <= 0 and
+// mmapSizeBytes < 0 omit the param (0 mmap_size explicitly disables mmap
+// and IS emitted).
+func dsnWithPragmas(path string, busyTimeoutMs, cacheSizeKB, mmapSizeBytes int) string {
+	params := []string{
+		"_pragma=foreign_keys(1)",
+		"_pragma=synchronous(1)", // 1 == NORMAL; WAL-safe, full-fsync overkill for a local CLI.
+	}
+	if busyTimeoutMs > 0 {
+		params = append(params, fmt.Sprintf("_pragma=busy_timeout(%d)", busyTimeoutMs))
+	}
+	if cacheSizeKB > 0 {
+		// Negative kilobyte form: "this many KiB of page cache".
+		params = append(params, fmt.Sprintf("_pragma=cache_size(-%d)", cacheSizeKB))
+	}
+	if mmapSizeBytes >= 0 {
+		params = append(params, fmt.Sprintf("_pragma=mmap_size(%d)", mmapSizeBytes))
+	}
+
+	dsn := path
 	sep := "?"
 	if strings.Contains(path, "?") {
 		sep = "&"
 	}
-	return path + sep + "_pragma=foreign_keys(1)"
+	for _, p := range params {
+		dsn += sep + p
+		sep = "&"
+	}
+	return dsn
 }
 
 // OpenWithOptions is the production entry point — composition root
@@ -280,18 +316,36 @@ func OpenWithOptions(ctx context.Context, path string, opts Options) (*Store, er
 		return nil, err
 	}
 
-	// foreign_keys MUST be enabled per-connection: modernc.org/sqlite
-	// defaults it OFF on every new connection, so issuing a single
-	// `PRAGMA foreign_keys = ON` after Open only protects whichever
-	// connection ran it — any other pooled connection would silently
-	// no-op FK cascades (orphaned plan_waves, dangling tasks.plan_id /
-	// wave_id). Threading it through the DSN's `_pragma` query param
-	// makes the driver run it on EVERY connection it opens (modernc
-	// applies `_pragma` in newConn, after each connect). The query is
-	// parsed for pragmas and stripped from the sqlite path for non-URI
-	// DSNs (`:memory:` and bare file paths alike), so this is safe for
-	// every path the store opens.
-	db, err := sql.Open("sqlite", dsnWithForeignKeys(path))
+	// Per-connection PRAGMAs (foreign_keys, busy_timeout, synchronous,
+	// cache_size, mmap_size) MUST be threaded through the DSN's `_pragma`
+	// query param: SQLite applies them per-connection, so a single
+	// `db.ExecContext` after Open only protects whichever pooled
+	// connection ran it. A cold second connection (MaxOpenConns=2) would
+	// otherwise sit at the engine defaults — foreign_keys OFF (silent
+	// no-op FK cascades), busy_timeout=0 (instant SQLITE_BUSY instead of
+	// waiting), synchronous=FULL. Threading them through the DSN makes
+	// the driver run them on EVERY connection it opens (modernc applies
+	// `_pragma` in newConn, after each connect). The query is parsed for
+	// pragmas and stripped from the sqlite path for non-URI DSNs
+	// (`:memory:` and bare file paths alike), so this is safe for every
+	// path the store opens. journal_mode=WAL is the outlier — it persists
+	// to the DB header, so it stays a one-shot ExecContext below.
+	busyTimeout := opts.BusyTimeoutMs
+	if busyTimeout <= 0 {
+		// Test paths and the bootstrap window (between sqlite.Open and
+		// ConfigService.Import) inherit the kit canonical so the engine
+		// never runs without a busy_timeout configured.
+		busyTimeout = kitBusyTimeoutMs()
+	}
+	cacheSize := opts.CacheSizeKB
+	if cacheSize <= 0 {
+		cacheSize = kitCacheSizeKB()
+	}
+	mmapSize := opts.MmapSizeBytes
+	if mmapSize < 0 {
+		mmapSize = 0
+	}
+	db, err := sql.Open("sqlite", dsnWithPragmas(path, busyTimeout, cacheSize, mmapSize))
 	if err != nil {
 		return nil, err
 	}
@@ -307,50 +361,19 @@ func OpenWithOptions(ctx context.Context, path string, opts Options) (*Store, er
 	db.SetMaxIdleConns(2)
 
 	store := &Store{db: db}
-	busyTimeout := opts.BusyTimeoutMs
-	if busyTimeout <= 0 {
-		// Test paths and the bootstrap window (between sqlite.Open and
-		// ConfigService.Import) inherit the kit canonical so the engine
-		// never runs without a busy_timeout configured.
-		busyTimeout = kitBusyTimeoutMs()
-	}
+	// busyTimeout was resolved above (kit canonical fallback) and threaded
+	// into the DSN; record it so the per-connection PRAGMA reappliers
+	// outside Open's path (ClaimNextPlanTask) honour the same value.
 	store.busyTimeoutMs = busyTimeout
-	// PRAGMAs run per-connection in SQLite, so they have to fire on every conn
-	// the pool hands out — not just once at Open. journal_mode=WAL is the
-	// outlier (it persists to the database header), but setting it here is
-	// still required so the FIRST connection is the one that flips it.
-	cacheSize := opts.CacheSizeKB
-	if cacheSize <= 0 {
-		cacheSize = kitCacheSizeKB()
-	}
-	mmapSize := opts.MmapSizeBytes
-	if mmapSize < 0 {
-		mmapSize = 0
-	}
-	// Correctness PRAGMAs encode engine-level contracts Omakiten depends
-	// on (WAL journaling, normal-sync durability). They stay inline
-	// rather than routing through applyPragmas because applyPragmas is
-	// the *user-tunable* surface — adding a correctness PRAGMA to the
-	// helper would make it visually equivalent to a per-user knob, which
-	// it is not. foreign_keys is the exception: it MUST hold on every
-	// pooled connection, so it rides the DSN's _pragma param (see the
-	// dsnWithForeignKeys call above) rather than this once-at-Open loop.
-	for _, pragma := range []string{
-		"PRAGMA journal_mode = WAL",
-		"PRAGMA synchronous = NORMAL", // WAL-safe; full-fsync is overkill for a local CLI.
-	} {
-		if _, err := db.ExecContext(ctx, pragma); err != nil {
-			_ = store.Close()
-			return nil, fmt.Errorf("apply %s: %w", pragma, err)
-		}
-	}
-	if err := applyPragmas(ctx, db, pragmaSet{
-		BusyTimeoutMs: busyTimeout,
-		CacheSizeKB:   cacheSize,
-		MmapSizeBytes: mmapSize,
-	}); err != nil {
+	// journal_mode=WAL persists to the DB header (not per-connection), so
+	// a single ExecContext on the first connection is enough — and it
+	// MUST run once at Open so the header flips before any writer commits.
+	// The per-connection PRAGMAs (foreign_keys, busy_timeout, synchronous,
+	// cache_size, mmap_size) ride the DSN's _pragma params instead (see
+	// dsnWithPragmas above).
+	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode = WAL"); err != nil {
 		_ = store.Close()
-		return nil, err
+		return nil, fmt.Errorf("apply PRAGMA journal_mode = WAL: %w", err)
 	}
 	if err := store.applyMigrations(ctx); err != nil {
 		_ = store.Close()

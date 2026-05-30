@@ -49,6 +49,64 @@ func TestForeignKeysEnforcedOnEveryConnection(t *testing.T) {
 	}
 }
 
+// TestBusyTimeoutAndSyncOnEveryConnection probes the busy_timeout and
+// synchronous PRAGMAs on a SECOND pooled connection. SQLite applies
+// busy_timeout and synchronous per-connection, so issuing them once via
+// db.ExecContext at Open only lands on whichever pooled connection ran
+// it — a freshly opened second connection reports busy_timeout=0 and
+// synchronous=2 (FULL). This test pins connection #1 busy so the probe
+// is forced onto a cold second connection, then asserts it reports the
+// configured busy_timeout (7777) and synchronous=1 (NORMAL). Fails on
+// the pre-fix once-at-Open ExecContext pragma.
+func TestBusyTimeoutAndSyncOnEveryConnection(t *testing.T) {
+	ctx := context.Background()
+	const wantBusyTimeout = 7777
+	store, err := OpenWithOptions(ctx, t.TempDir()+"/busy.db", Options{BusyTimeoutMs: wantBusyTimeout})
+	if err != nil {
+		t.Fatalf("OpenWithOptions: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	// Pin connection #1 busy with an open transaction so the next
+	// db.Conn() is forced to materialise a brand-new connection.
+	busyConn, err := store.db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("pin first connection: %v", err)
+	}
+	defer func() { _ = busyConn.Close() }()
+	busyTx, err := busyConn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin holding tx: %v", err)
+	}
+	defer func() { _ = busyTx.Rollback() }()
+
+	// Second connection — must independently report the configured
+	// busy_timeout and synchronous=NORMAL.
+	coldConn, err := store.db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open second connection: %v", err)
+	}
+	defer func() { _ = coldConn.Close() }()
+
+	var busyTimeout int64
+	if err := coldConn.QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&busyTimeout); err != nil {
+		t.Fatalf("query busy_timeout on second connection: %v", err)
+	}
+	if busyTimeout != wantBusyTimeout {
+		t.Fatalf("PRAGMA busy_timeout on second connection = %d, want %d "+
+			"(busy_timeout must apply to EVERY pooled connection)", busyTimeout, wantBusyTimeout)
+	}
+
+	var sync int64
+	if err := coldConn.QueryRowContext(ctx, "PRAGMA synchronous").Scan(&sync); err != nil {
+		t.Fatalf("query synchronous on second connection: %v", err)
+	}
+	if sync != 1 {
+		t.Fatalf("PRAGMA synchronous on second connection = %d, want 1 (NORMAL) "+
+			"(synchronous must apply to EVERY pooled connection)", sync)
+	}
+}
+
 // TestDeletePlanCascadesOnColdConnection is the regression that fails
 // on the single-conn pragma: it forces DeletePlan's mutation onto a
 // cold/second pooled connection (by pinning conn #1 busy) and asserts
