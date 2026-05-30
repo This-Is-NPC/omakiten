@@ -118,6 +118,15 @@ func (s *Service) DeleteComment(ctx context.Context, input DeleteCommentInput) (
 	return DeleteCommentResponse{Project: projectSummary(project), Snapshot: &snap}, nil
 }
 
+// ListComments is the comments.list handler. It is project-scoped by design:
+// the resolved project's id is stamped onto filter.ProjectID for every routine
+// list (task/project/kind/tag/pinned/query/since), so a normal call NEVER leaks
+// comments from other projects. The only project-less reads are deliberate and
+// narrow: scope=universal (universal comments carry project_id NULL and only
+// match when ProjectID=0) and comment_id get-by-id (a globally unique row). The
+// cross-project handoff/standup digest is not a single project-less call — the
+// agent enumerates each project and issues one scope=project call per project,
+// each carrying that project's id (see okt-note-recap in the command table).
 func (s *Service) ListComments(ctx context.Context, input ListCommentsInput) (CommentsResponse, error) {
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {

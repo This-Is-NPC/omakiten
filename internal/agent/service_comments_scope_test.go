@@ -184,6 +184,42 @@ func TestListCommentsByID(t *testing.T) {
 	}
 }
 
+// TestListCommentsDoesNotLeakAcrossProjects pins the project-scoping contract:
+// a routine comments.list (scope=project) resolved for project A must NOT
+// surface project B's comments. Guards against a regression where Query passed
+// a project-less filter through to the cross-project read.
+func TestListCommentsDoesNotLeakAcrossProjects(t *testing.T) {
+	fixture := newAgentFixture(t)
+
+	// Project A's own project-scoped note (default selector resolves to A).
+	if _, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		Scope: domain.CommentScopeProject, Body: "A project note", AuthorType: "agent",
+	}); err != nil {
+		t.Fatalf("AddComment(A project) error = %v", err)
+	}
+	// Project B's project-scoped note, addressed explicitly by id.
+	if _, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		ProjectSelector: ProjectSelector{ProjectID: fixture.projectB.ID},
+		Scope:           domain.CommentScopeProject, Body: "B project note", AuthorType: "agent",
+	}); err != nil {
+		t.Fatalf("AddComment(B project) error = %v", err)
+	}
+
+	// A routine scope=project list for project A must only see A's note.
+	got, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{Scope: domain.CommentScopeProject})
+	if err != nil {
+		t.Fatalf("ListComments(scope=project) error = %v", err)
+	}
+	for _, c := range got.Comments {
+		if c.Body == "B project note" {
+			t.Fatalf("comments.list leaked project B's comment: %+v", got.Comments)
+		}
+	}
+	if len(got.Comments) != 1 || got.Comments[0].Body != "A project note" {
+		t.Fatalf("ListComments(scope=project) = %+v, want only A's project note", got.Comments)
+	}
+}
+
 func TestEditCommentScopedFields(t *testing.T) {
 	fixture := newAgentFixture(t)
 
