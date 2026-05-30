@@ -201,7 +201,11 @@ type CommentEdit struct {
 	Title  *string
 	Kind   *string
 	Pinned *bool
-	Tags   []Tag
+	// Tags is tri-state, matching the scalar fields above: a nil pointer leaves
+	// the comment's existing tags untouched (a body-only or metadata-only edit
+	// must not silently wipe tags), while a non-nil pointer replaces the tag set
+	// wholesale — including a non-nil empty slice, which clears all tags.
+	Tags *[]Tag
 }
 
 // CommentFilter narrows the cross-cutting comment query surface (the

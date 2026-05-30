@@ -166,6 +166,33 @@ func TestCLICommentEditTriState(t *testing.T) {
 	runCLIExpectError(t, dbPath, configPath, "validation_error", "comment", "edit", id)
 }
 
+// TestCLICommentEditPreservesTagsOnBodyOnly pins the tag tri-state through the
+// CLI: `comment edit ID --body x` with no --tag must NOT wipe the comment's
+// tags. Fails on the pre-fix path that always forwarded a (nil) tag slice and
+// unconditionally replaced the tag set in the store.
+func TestCLICommentEditPreservesTagsOnBodyOnly(t *testing.T) {
+	dbPath, configPath := commentTestEnv(t)
+
+	created := runCLI(t, dbPath, configPath, "comment", "add", "--scope", "project",
+		"-b", "before", "--tag", "keepme")
+	id := commentIDFromJSON(t, created)
+
+	// Body-only edit (no --tag) preserves keepme.
+	bodyOnly := runCLI(t, dbPath, configPath, "comment", "edit", id, "-b", "after")
+	if !strings.Contains(bodyOnly, `"body":"after"`) {
+		t.Fatalf("body-only edit did not change body: %s", bodyOnly)
+	}
+	if !strings.Contains(bodyOnly, `"name":"keepme"`) {
+		t.Fatalf("body-only edit wiped tags: %s", bodyOnly)
+	}
+
+	// Explicit --tag replaces.
+	replaced := runCLI(t, dbPath, configPath, "comment", "edit", id, "--tag", "other")
+	if !strings.Contains(replaced, `"name":"other"`) || strings.Contains(replaced, `"name":"keepme"`) {
+		t.Fatalf("--tag edit did not replace tags: %s", replaced)
+	}
+}
+
 // TestCLICommentGuardDenied proves the comment edit/delete guards are
 // enforced THROUGH the `okt comment` CLI (not just at the agent/MCP layer):
 // the CLI routes edit/delete via commentServiceWithWorkflow(...).Edit/Remove

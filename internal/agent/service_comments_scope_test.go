@@ -374,6 +374,64 @@ func TestEditCommentPreservesNoteFieldsOnBodyOnlyEdit(t *testing.T) {
 	}
 }
 
+// TestEditCommentTriStateTags pins the tag tri-state at the agent boundary: a
+// body-only edit (Tags omitted → nil JSON slice) preserves the comment's tags,
+// an explicit empty Tags array clears them, and a populated array replaces them.
+// Fails on the pre-fix handler that always forwarded input.Tags, wiping tags on
+// any tags-omitted edit.
+func TestEditCommentTriStateTags(t *testing.T) {
+	fixture := newAgentFixture(t)
+
+	created, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		Scope: domain.CommentScopeProject, Body: "before", AuthorType: "agent",
+		Tags: []string{"keepme"},
+	})
+	if err != nil {
+		t.Fatalf("AddComment(project) error = %v", err)
+	}
+
+	tagNames := func(c CommentSummary) []string {
+		out := make([]string, 0, len(c.Tags))
+		for _, tg := range c.Tags {
+			out = append(out, tg.Name)
+		}
+		return out
+	}
+
+	// Body-only edit: Tags omitted (nil) → keepme survives.
+	bodyOnly, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+		CommentID: created.Comment.ID, Body: strPtr("after"),
+	})
+	if err != nil {
+		t.Fatalf("EditComment(body only) error = %v", err)
+	}
+	if got := tagNames(bodyOnly.Comment); len(got) != 1 || got[0] != "keepme" {
+		t.Fatalf("body-only edit wiped tags = %v, want [keepme]", got)
+	}
+
+	// Explicit replace with [other].
+	replaced, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+		CommentID: created.Comment.ID, Tags: []string{"other"},
+	})
+	if err != nil {
+		t.Fatalf("EditComment(tags=other) error = %v", err)
+	}
+	if got := tagNames(replaced.Comment); len(got) != 1 || got[0] != "other" {
+		t.Fatalf("tags=[other] edit = %v, want [other]", got)
+	}
+
+	// Explicit empty array clears.
+	cleared, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+		CommentID: created.Comment.ID, Tags: []string{},
+	})
+	if err != nil {
+		t.Fatalf("EditComment(tags=[]) error = %v", err)
+	}
+	if got := tagNames(cleared.Comment); len(got) != 0 {
+		t.Fatalf("tags=[] edit = %v, want cleared", got)
+	}
+}
+
 // TestEditCommentBodyTriState pins the partial-update body contract at the
 // agent boundary: a nil Body (omitted JSON) leaves the stored body untouched
 // while metadata applies, an explicit empty/whitespace body is rejected (cannot

@@ -292,9 +292,12 @@ func newCommentEditCommand(opts *runtimeOptions) *cobra.Command {
 					cEdit.Pinned = &pinned
 				}
 
-				var rawTags []string
+				// Tags are tri-state: --tag unset (Changed=false) forwards a nil
+				// pointer so the store preserves the existing tags; --tag given
+				// (even `--tag ""` clearing to empty) replaces them.
+				var rawTags *[]string
 				if tagChanged {
-					rawTags = editTags
+					rawTags = &editTags
 				}
 
 				workflow := rt.activeWorkflow()

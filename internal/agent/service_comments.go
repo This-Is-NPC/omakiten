@@ -88,7 +88,14 @@ func (s *Service) EditComment(ctx context.Context, input EditCommentInput) (Comm
 		trimmed := strings.TrimSpace(*input.Kind)
 		edit.Kind = &trimmed
 	}
-	comment, err := s.newCommentServiceWithWorkflow(workflow).EditScoped(ctx, project, input.CommentID, edit, input.Tags)
+	// Tags is tri-state: an omitted JSON `tags` field decodes to a nil slice,
+	// which we forward as a nil pointer so the store leaves the existing tags
+	// untouched; an explicit array (even empty) replaces them.
+	var rawTags *[]string
+	if input.Tags != nil {
+		rawTags = &input.Tags
+	}
+	comment, err := s.newCommentServiceWithWorkflow(workflow).EditScoped(ctx, project, input.CommentID, edit, rawTags)
 	if err != nil {
 		return CommentResponse{}, err
 	}

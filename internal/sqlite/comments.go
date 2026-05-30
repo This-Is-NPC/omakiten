@@ -291,7 +291,10 @@ func (s *Store) queryCommentRows(ctx context.Context, query string, args []any) 
 // the wider scope-agnostic patch. Emits a comment.edited event tied to the
 // parent task with a payload that names the changed fields.
 func (s *Store) UpdateComment(ctx context.Context, projectID, commentID int64, body string, tags []domain.Tag) (domain.Comment, domain.Event, error) {
-	return s.EditComment(ctx, projectID, commentID, domain.CommentEdit{Body: &body, Tags: tags})
+	// Legacy semantics: this path always replaces the tag set, so the tri-state
+	// pointer is always non-nil (an empty tags slice clears, matching the old
+	// unconditional DELETE + re-attach behaviour).
+	return s.EditComment(ctx, projectID, commentID, domain.CommentEdit{Body: &body, Tags: &tags})
 }
 
 // EditComment applies the scope-agnostic patch (body/title/kind/pinned + tags),
@@ -351,20 +354,32 @@ WHERE id = ? AND event_type = 'comment'
 `, newBody, titleArg, kindArg, boolToInt(newPinned), commentID); err != nil {
 		return domain.Comment{}, domain.Event{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM event_tags WHERE event_id = ?`, commentID); err != nil {
-		return domain.Comment{}, domain.Event{}, err
-	}
-
 	updated := prev
 	updated.Body = newBody
 	updated.Title = newTitle
 	updated.Kind = newKind
 	updated.Pinned = newPinned
-	attached, err := attachTagsTx(ctx, tx, tagPivotEvent, commentID, edit.Tags)
-	if err != nil {
-		return domain.Comment{}, domain.Event{}, err
+
+	// Tags are tri-state: a nil edit.Tags pointer leaves the existing tag set
+	// untouched (a body-only or metadata-only edit must not wipe tags), while a
+	// non-nil pointer replaces them wholesale (an empty slice clears all tags).
+	if edit.Tags != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM event_tags WHERE event_id = ?`, commentID); err != nil {
+			return domain.Comment{}, domain.Event{}, err
+		}
+		attached, err := attachTagsTx(ctx, tx, tagPivotEvent, commentID, *edit.Tags)
+		if err != nil {
+			return domain.Comment{}, domain.Event{}, err
+		}
+		updated.Tags = attached
+	} else {
+		// Preserve the loaded tag set in the returned comment when unchanged.
+		existing, err := eventTagsByIDsQ(ctx, tx, []int64{commentID})
+		if err != nil {
+			return domain.Comment{}, domain.Event{}, err
+		}
+		updated.Tags = existing[commentID]
 	}
-	updated.Tags = attached
 
 	payload := map[string]any{"comment_id": commentID}
 	if prev.Body != newBody {
@@ -487,6 +502,18 @@ WHERE id = ? AND event_type = 'comment' AND (project_id = ? OR project_id IS NUL
 }
 
 func (s *Store) eventTagsByIDs(ctx context.Context, eventIDs []int64) (map[int64][]domain.Tag, error) {
+	return eventTagsByIDsQ(ctx, s.db, eventIDs)
+}
+
+// rowQuerier is the read surface shared by *sql.DB and *sql.Tx, letting tag
+// reads run either standalone or inside an open transaction.
+type rowQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// eventTagsByIDsQ loads the tag set for each event id through any rowQuerier so
+// callers inside a tx (EditComment's tags-unchanged path) read consistently.
+func eventTagsByIDsQ(ctx context.Context, q rowQuerier, eventIDs []int64) (map[int64][]domain.Tag, error) {
 	if len(eventIDs) == 0 {
 		return nil, nil
 	}
@@ -494,7 +521,7 @@ func (s *Store) eventTagsByIDs(ctx context.Context, eventIDs []int64) (map[int64
 	for i, id := range eventIDs {
 		args[i] = id
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := q.QueryContext(ctx,
 		"SELECT et.event_id, t.id, t.name, t.label FROM event_tags et JOIN tags t ON t.id = et.tag_id WHERE et.event_id IN ("+placeholders(len(eventIDs))+")",
 		args...)
 	if err != nil {

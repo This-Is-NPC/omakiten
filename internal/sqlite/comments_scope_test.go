@@ -121,9 +121,10 @@ func TestEditCommentWidePatch(t *testing.T) {
 	}
 
 	title, kind, pinned := "Heading", "recap", true
+	wideTags := []domain.Tag{{Name: "resume", Label: "resume"}}
 	edited, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{
 		Body: strPtr("after"), Title: &title, Kind: &kind, Pinned: &pinned,
-		Tags: []domain.Tag{{Name: "resume", Label: "resume"}},
+		Tags: &wideTags,
 	})
 	if err != nil {
 		t.Fatalf("EditComment: %v", err)
@@ -154,6 +155,60 @@ func TestEditCommentWidePatch(t *testing.T) {
 	}
 	if len(queried[0].Tags) != 1 || queried[0].Tags[0].Name != "resume" {
 		t.Fatalf("reloaded tags = %+v", queried[0].Tags)
+	}
+}
+
+// TestEditCommentTriStateTags proves the tag set is tri-state: a nil Tags
+// pointer leaves the existing tags untouched (metadata/body-only edit), a
+// non-nil empty slice clears them, and a non-nil populated slice replaces them.
+// Fails on the pre-fix EditComment which unconditionally DELETEd event_tags and
+// re-attached edit.Tags, wiping tags on any tags-omitted edit.
+func TestEditCommentTriStateTags(t *testing.T) {
+	ctx, store, project, _ := commentScopeFixture(t)
+	c, err := store.AddScopedComment(ctx, domain.CommentWrite{
+		Scope: domain.CommentScopeProject, ProjectID: project.ID, Body: "before", AuthorType: "human",
+		Tags: []domain.Tag{{Name: "keepme", Label: "keepme"}},
+	})
+	if err != nil {
+		t.Fatalf("AddScopedComment: %v", err)
+	}
+
+	tagsOf := func(id int64) []domain.Tag {
+		t.Helper()
+		got, err := store.QueryComments(ctx, domain.CommentFilter{CommentID: id})
+		if err != nil {
+			t.Fatalf("QueryComments(comment_id): %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("QueryComments(comment_id=%d) = %d rows, want 1", id, len(got))
+		}
+		return got[0].Tags
+	}
+
+	// Body-only edit, Tags nil → keepme survives.
+	if _, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Body: strPtr("after")}); err != nil {
+		t.Fatalf("EditComment(body only): %v", err)
+	}
+	if tags := tagsOf(c.ID); len(tags) != 1 || tags[0].Name != "keepme" {
+		t.Fatalf("body-only edit wiped tags = %+v, want keepme preserved", tags)
+	}
+
+	// Explicit replace with [other].
+	other := []domain.Tag{{Name: "other", Label: "other"}}
+	if _, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Tags: &other}); err != nil {
+		t.Fatalf("EditComment(tags=other): %v", err)
+	}
+	if tags := tagsOf(c.ID); len(tags) != 1 || tags[0].Name != "other" {
+		t.Fatalf("tags=[other] edit = %+v, want only other", tags)
+	}
+
+	// Explicit empty slice clears.
+	empty := []domain.Tag{}
+	if _, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Tags: &empty}); err != nil {
+		t.Fatalf("EditComment(tags=[]): %v", err)
+	}
+	if tags := tagsOf(c.ID); len(tags) != 0 {
+		t.Fatalf("tags=[] edit = %+v, want cleared", tags)
 	}
 }
 

@@ -222,7 +222,11 @@ func (s *CommentService) Edit(ctx context.Context, project domain.ProjectContext
 // tags) through repo.EditComment after enforcing the per-bucket comment.edit
 // policy. It mirrors Edit's validation and permission path but carries the
 // note-like columns introduced for the scoped comment surface.
-func (s *CommentService) EditScoped(ctx context.Context, project domain.ProjectContext, commentID int64, edit domain.CommentEdit, rawTags []string) (comment domain.Comment, err error) {
+// rawTags is tri-state: a nil pointer means "tags omitted" and leaves the
+// comment's existing tag set untouched, while a non-nil pointer (even an empty
+// slice) replaces the tags wholesale. This keeps a body-only or metadata-only
+// edit from silently wiping a comment's tags.
+func (s *CommentService) EditScoped(ctx context.Context, project domain.ProjectContext, commentID int64, edit domain.CommentEdit, rawTags *[]string) (comment domain.Comment, err error) {
 	finish := activity.Track(ctx, "app.CommentService.EditScoped", project, map[string]any{"comment_id": commentID})
 	defer func() {
 		status := "ok"
@@ -252,8 +256,9 @@ func (s *CommentService) EditScoped(ctx context.Context, project domain.ProjectC
 
 	// Reject a no-op patch: an edit that changes nothing (no body, no
 	// title/kind/pinned, no tags) is not a real edit. Tri-state body must not
-	// silently let an empty patch through.
-	if edit.Body == nil && edit.Title == nil && edit.Kind == nil && edit.Pinned == nil && len(rawTags) == 0 {
+	// silently let an empty patch through. A non-nil rawTags pointer counts as a
+	// provided field even when the slice is empty (an explicit tag clear).
+	if edit.Body == nil && edit.Title == nil && edit.Kind == nil && edit.Pinned == nil && rawTags == nil {
 		err = domain.NewError(domain.ErrValidation, "comment edit requires at least one field", nil)
 		return
 	}
@@ -267,15 +272,20 @@ func (s *CommentService) EditScoped(ctx context.Context, project domain.ProjectC
 		return
 	}
 
-	tags := make([]domain.Tag, 0, len(rawTags))
-	for _, raw := range rawTags {
-		name := NormalizeTagName(raw, s.snap.Synonyms())
-		if name == "" {
-			continue
+	// Only normalize and forward tags when the caller provided them; a nil
+	// rawTags pointer leaves edit.Tags nil so the store preserves the existing
+	// tag set (tri-state).
+	if rawTags != nil {
+		tags := make([]domain.Tag, 0, len(*rawTags))
+		for _, raw := range *rawTags {
+			name := NormalizeTagName(raw, s.snap.Synonyms())
+			if name == "" {
+				continue
+			}
+			tags = append(tags, domain.Tag{Name: name, Label: TagLabel(raw)})
 		}
-		tags = append(tags, domain.Tag{Name: name, Label: TagLabel(raw)})
+		edit.Tags = &tags
 	}
-	edit.Tags = tags
 
 	comment, _, err = s.repo.EditComment(ctx, project.ID, commentID, edit)
 	return
