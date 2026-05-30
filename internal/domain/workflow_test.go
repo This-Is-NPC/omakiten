@@ -120,6 +120,29 @@ func TestResolveCommentPermission(t *testing.T) {
 			wantEdit: true,
 			wantDel:  false,
 		},
+		// #389 chain: defaults.comment.task.<op> must be consulted in the
+		// task-comment bucket path (above the flat defaults.comment).
+		"defaults.comment.task denies with no bucket override": {
+			bucket: Bucket{},
+			defaults: &WorkflowDefaults{
+				Comment: &EntityPermission{
+					Task: &EntityPermission{Edit: boolPtr(false), Delete: boolPtr(false)},
+				},
+			},
+			wantEdit: false,
+			wantDel:  false,
+		},
+		"defaults.comment.task beats flat defaults.comment": {
+			bucket: Bucket{},
+			defaults: &WorkflowDefaults{
+				Comment: &EntityPermission{
+					Edit: boolPtr(true), // flat (legacy) would allow
+					Task: &EntityPermission{Edit: boolPtr(false)},
+				},
+			},
+			wantEdit: false,
+			wantDel:  true,
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

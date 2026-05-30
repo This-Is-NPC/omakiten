@@ -107,16 +107,30 @@ func (b Bucket) ResolveCommentPermission(defaults *WorkflowDefaults) (edit, del 
 	edit = resolveBool(
 		bucketField(b, commentEdit),
 		bucketField(b, taskEdit),
+		defaultsCommentScopeField(defaults, CommentScopeTask, commentOpEdit),
 		defaultsField(defaults, commentEdit),
 		defaultsField(defaults, taskEdit),
 	)
 	del = resolveBool(
 		bucketField(b, commentDelete),
 		bucketField(b, taskDelete),
+		defaultsCommentScopeField(defaults, CommentScopeTask, commentOpDelete),
 		defaultsField(defaults, commentDelete),
 		defaultsField(defaults, taskDelete),
 	)
 	return edit, del
+}
+
+// defaultsCommentScopeField extracts defaults.comment.<scope>.<op>, the
+// per-scope sub-block on the workflow defaults. Used by the task-comment bucket
+// chain so a defaults-driven `defaults.comment.task.{edit,delete}` is honored
+// even when no bucket declares a comment/task override (the #389 designed
+// chain). Returns nil when any layer of the path is absent.
+func defaultsCommentScopeField(defaults *WorkflowDefaults, scope, op string) *bool {
+	if defaults == nil {
+		return nil
+	}
+	return scopeOpField(scopeBlock(defaults.Comment, scope), op)
 }
 
 // ResolveCommentScopePermission resolves the comment edit/delete policy for a

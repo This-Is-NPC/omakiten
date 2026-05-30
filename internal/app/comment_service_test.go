@@ -213,6 +213,44 @@ func TestCommentServiceScopeAwareGuards(t *testing.T) {
 	} else {
 		assertCodedError(t, err, domain.ErrGuardViolation)
 	}
+
+	// Bucket-free chain: a task in the "dev" bucket (which declares NO
+	// permissions) must still be denied a comment edit purely by
+	// defaults.comment.task.edit=false. This exercises #389's designed chain
+	// itself, not a bucket override. Fails before the ResolveCommentPermission
+	// fix, where defaults.comment.task was never consulted.
+	devTask, err := taskSvc.Add(ctx, project.Context(), "Dev", "", "", "backlog")
+	if err != nil {
+		t.Fatalf("Add(dev task) = %v", err)
+	}
+	if _, err := taskSvc.Move(ctx, project.Context(), devTask.ID, "dev"); err != nil {
+		t.Fatalf("Move(dev task -> dev) = %v", err)
+	}
+	devComment, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
+		Scope: domain.CommentScopeTask, TaskID: devTask.ID, Body: "dev note",
+	})
+	if err != nil {
+		t.Fatalf("AddScoped(dev task) = %v", err)
+	}
+	if _, err := service.Edit(ctx, project.Context(), devComment.ID, "edited dev", nil); err == nil {
+		t.Fatal("Edit(dev-bucket task comment) = nil error, want guard violation via defaults.comment.task")
+	} else {
+		assertCodedError(t, err, domain.ErrGuardViolation)
+	}
+
+	// Delete-scope coverage (was previously untested at the service layer):
+	// task delete denied by defaults.comment.task.delete=false (dev bucket has
+	// no override), project delete denied by defaults.comment.project.delete=false.
+	if _, err := service.Remove(ctx, project.Context(), devComment.ID); err == nil {
+		t.Fatal("Remove(task comment) = nil error, want guard violation")
+	} else {
+		assertCodedError(t, err, domain.ErrGuardViolation)
+	}
+	if _, err := service.Remove(ctx, project.Context(), projComment.ID); err == nil {
+		t.Fatal("Remove(project comment) = nil error, want guard violation")
+	} else {
+		assertCodedError(t, err, domain.ErrGuardViolation)
+	}
 }
 
 func TestCommentServiceQuery(t *testing.T) {

@@ -3,11 +3,15 @@
 #       task:      edit=false  → task comments cannot be edited (default chain)
 #       project:   edit=true   → project comments may be edited
 #       universal: edit=false  → universal comments cannot be edited
-#   - bucket "dev" additionally pins permissions.comment.edit=false so a task
-#     comment sitting in dev is blocked at the bucket layer too.
+#   - bucket "backlog" additionally pins permissions.comment.edit=false so a
+#     task comment sitting in backlog is blocked at the bucket layer too.
+#   - bucket "dev" declares NO permissions, so a task comment there resolves
+#     purely through the defaults chain (defaults.comment.task.*) — this is the
+#     bucket-free path that exercises #389's designed chain end to end.
 #
-# Proves: a task comment is blocked while a project comment with
-# defaults.comment.project.edit=true is allowed — both task-less scopes
+# Proves: a task comment is blocked (bucket AND defaults), a project comment
+# with defaults.comment.project.edit=true is allowed, and delete is denied for
+# task/project via defaults.comment.<scope>.delete=false — all task-less scopes
 # resolve without a GetTaskByID call.
 version: 1
 kit:
@@ -30,8 +34,10 @@ workflows:
       comment:
         task:
           edit: false
+          delete: false
         project:
           edit: true
+          delete: false
         universal:
           edit: false
     buckets:
