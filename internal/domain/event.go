@@ -93,6 +93,24 @@ const (
 	// (plan_id/wave_id SET NULL). EntityType=plan,
 	// Payload={slug, name, status}.
 	EventTypePlanDeleted = "plan.deleted"
+	// EventTypePlanWaveRemoved fires when a wave is deleted from a plan via
+	// plans.remove_wave. Member tasks survive with wave_id cleared (FK SET
+	// NULL); plan_id is untouched. EntityType=plan (keyed by plan id),
+	// Payload={wave_id, name, position}.
+	EventTypePlanWaveRemoved = "plan.wave_removed"
+	// EventTypePlanWaveRenamed fires when a wave's name changes via
+	// plans.rename_wave. EntityType=plan (keyed by plan id),
+	// Payload={wave_id, from, to}.
+	EventTypePlanWaveRenamed = "plan.wave_renamed"
+	// EventTypePlanWaveReordered fires when a wave's position changes via
+	// plans.reorder_wave. A collision with an occupied slot swaps the two
+	// waves. EntityType=plan (keyed by plan id),
+	// Payload={wave_id, from, to}.
+	EventTypePlanWaveReordered = "plan.wave_reordered"
+	// EventTypePlanTaskUnassigned fires when a task is detached from its
+	// plan via plans.unassign (plan_id and wave_id both cleared).
+	// EntityType=task, Payload={plan_id, wave_id, source}.
+	EventTypePlanTaskUnassigned = "plan.task_unassigned"
 	// EventTypePlanDone fires when a plan auto-transitions to status=done
 	// (every child task in a terminal bucket). EntityType=plan, Payload={}.
 	EventTypePlanDone = "plan.done"
@@ -344,21 +362,21 @@ const (
 // system events (task.*) use Payload, operations use Source/Operation/
 // Status/DurationMs. Treat absent fields as empty.
 type Event struct {
-	ID           int64  `json:"id"`
-	EntityType   string `json:"entity_type"`
-	EntityID     int64  `json:"entity_id,omitempty"`
-	ProjectID    int64  `json:"project_id,omitempty"`
-	ProjectSlug  string `json:"project_slug,omitempty"`
-	EventType    string `json:"event_type"`
-	Body         string `json:"body,omitempty"`
-	Payload      string `json:"payload,omitempty"`
-	AuthorType   string `json:"author_type,omitempty"`
-	Source       string `json:"source,omitempty"`
-	Entrypoint   string `json:"entrypoint,omitempty"`
-	Operation    string `json:"operation,omitempty"`
-	Status       string `json:"status,omitempty"`
-	DurationMs   int    `json:"duration_ms,omitempty"`
-	ErrorMessage string `json:"error_message,omitempty"`
+	ID             int64  `json:"id"`
+	EntityType     string `json:"entity_type"`
+	EntityID       int64  `json:"entity_id,omitempty"`
+	ProjectID      int64  `json:"project_id,omitempty"`
+	ProjectSlug    string `json:"project_slug,omitempty"`
+	EventType      string `json:"event_type"`
+	Body           string `json:"body,omitempty"`
+	Payload        string `json:"payload,omitempty"`
+	AuthorType     string `json:"author_type,omitempty"`
+	Source         string `json:"source,omitempty"`
+	Entrypoint     string `json:"entrypoint,omitempty"`
+	Operation      string `json:"operation,omitempty"`
+	Status         string `json:"status,omitempty"`
+	DurationMs     int    `json:"duration_ms,omitempty"`
+	ErrorMessage   string `json:"error_message,omitempty"`
 	CreatedAt      string `json:"created_at"`
 	FinishedAt     string `json:"finished_at,omitempty"`
 	Tags           []Tag  `json:"tags,omitempty"`

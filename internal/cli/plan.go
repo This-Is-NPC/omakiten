@@ -26,7 +26,159 @@ func newPlanCommand(opts *runtimeOptions) *cobra.Command {
 	cmd.AddCommand(newPlanClaimCommand(opts))
 	cmd.AddCommand(newPlanEditCommand(opts))
 	cmd.AddCommand(newPlanDeleteCommand(opts))
+	cmd.AddCommand(newPlanWaveRemoveCommand(opts))
+	cmd.AddCommand(newPlanWaveRenameCommand(opts))
+	cmd.AddCommand(newPlanWaveReorderCommand(opts))
+	cmd.AddCommand(newPlanUnassignCommand(opts))
 	return cmd
+}
+
+// newPlanWaveRemoveCommand wires `okt plan wave-remove WAVE_ID --confirm`.
+// The destructive op requires --confirm; the wave's tasks survive with
+// wave_id cleared (plan_id intact).
+func newPlanWaveRemoveCommand(opts *runtimeOptions) *cobra.Command {
+	var confirm bool
+	cmd := &cobra.Command{
+		Use:   "wave-remove WAVE_ID",
+		Short: opts.t("cli.plan.wave_remove.short"),
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				waveID, err := strconv.ParseInt(args[0], 10, 64)
+				if err != nil {
+					return nil, domain.NewError(domain.ErrValidation, "wave id is not numeric", map[string]any{"value": args[0]})
+				}
+				if !confirm {
+					return nil, domain.NewError(domain.ErrValidation,
+						"wave remove detaches the wave's tasks (wave cleared); pass --confirm to proceed", nil)
+				}
+				rt, err := opts.open(ctx, true)
+				if err != nil {
+					return nil, err
+				}
+				defer rt.close()
+				ctx = rt.WithActivityRepo(ctx)
+
+				project, err := opts.resolveProject(ctx, rt.store)
+				if err != nil {
+					return nil, err
+				}
+				wave, err := app.NewPlanService(rt.store).RemoveWave(ctx, project, waveID)
+				if err != nil {
+					return nil, err
+				}
+				return map[string]any{"project": project, "removed_wave": wave}, nil
+			})
+		},
+	}
+	cmd.Flags().BoolVar(&confirm, "confirm", false, opts.t("cli.plan.wave_remove.flag.confirm"))
+	return cmd
+}
+
+// newPlanWaveRenameCommand wires `okt plan wave-rename WAVE_ID NAME`.
+func newPlanWaveRenameCommand(opts *runtimeOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "wave-rename WAVE_ID NAME",
+		Short: opts.t("cli.plan.wave_rename.short"),
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				waveID, err := strconv.ParseInt(args[0], 10, 64)
+				if err != nil {
+					return nil, domain.NewError(domain.ErrValidation, "wave id is not numeric", map[string]any{"value": args[0]})
+				}
+				rt, err := opts.open(ctx, true)
+				if err != nil {
+					return nil, err
+				}
+				defer rt.close()
+				ctx = rt.WithActivityRepo(ctx)
+
+				project, err := opts.resolveProject(ctx, rt.store)
+				if err != nil {
+					return nil, err
+				}
+				wave, err := app.NewPlanService(rt.store).RenameWave(ctx, project, waveID, args[1])
+				if err != nil {
+					return nil, err
+				}
+				return map[string]any{"project": project, "wave": wave}, nil
+			})
+		},
+	}
+}
+
+// newPlanWaveReorderCommand wires `okt plan wave-reorder WAVE_ID POSITION`.
+// The position is 1-based; colliding with an occupied slot swaps the two
+// waves.
+func newPlanWaveReorderCommand(opts *runtimeOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "wave-reorder WAVE_ID POSITION",
+		Short: opts.t("cli.plan.wave_reorder.short"),
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				waveID, err := strconv.ParseInt(args[0], 10, 64)
+				if err != nil {
+					return nil, domain.NewError(domain.ErrValidation, "wave id is not numeric", map[string]any{"value": args[0]})
+				}
+				position, err := strconv.Atoi(args[1])
+				if err != nil {
+					return nil, domain.NewError(domain.ErrValidation, "position is not numeric", map[string]any{"value": args[1]})
+				}
+				rt, err := opts.open(ctx, true)
+				if err != nil {
+					return nil, err
+				}
+				defer rt.close()
+				ctx = rt.WithActivityRepo(ctx)
+
+				project, err := opts.resolveProject(ctx, rt.store)
+				if err != nil {
+					return nil, err
+				}
+				wave, err := app.NewPlanService(rt.store).ReorderWave(ctx, project, waveID, position)
+				if err != nil {
+					return nil, err
+				}
+				return map[string]any{"project": project, "wave": wave}, nil
+			})
+		},
+	}
+}
+
+// newPlanUnassignCommand wires `okt plan unassign TASK_ID`. Detaches the
+// task from its plan, clearing both plan_id and wave_id.
+func newPlanUnassignCommand(opts *runtimeOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "unassign TASK_ID",
+		Short: opts.t("cli.plan.unassign.short"),
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runJSON(cmd, func(ctx context.Context) (any, error) {
+				taskID, err := strconv.ParseInt(args[0], 10, 64)
+				if err != nil {
+					return nil, domain.NewError(domain.ErrValidation, "task id is not numeric", map[string]any{"value": args[0]})
+				}
+				rt, err := opts.open(ctx, true)
+				if err != nil {
+					return nil, err
+				}
+				defer rt.close()
+				ctx = rt.WithActivityRepo(ctx)
+
+				project, err := opts.resolveProject(ctx, rt.store)
+				if err != nil {
+					return nil, err
+				}
+				event, err := app.NewPlanService(rt.store).UnassignTask(ctx, project, taskID)
+				if err != nil {
+					return nil, err
+				}
+				return map[string]any{"project": project, "task_id": taskID, "detached": event.EventType != ""}, nil
+			})
+		},
+	}
 }
 
 // newPlanEditCommand wires `okt plan edit SLUG [--name --slug --status

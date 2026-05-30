@@ -11,6 +11,10 @@ func init() {
 	registerFormatter(EventTypePlanGoalEdited, summarizePlanGoalEdited)
 	registerFormatter(EventTypePlanEdited, summarizePlanEdited)
 	registerFormatter(EventTypePlanDeleted, summarizePlanDeleted)
+	registerFormatter(EventTypePlanWaveRemoved, summarizePlanWaveRemoved)
+	registerFormatter(EventTypePlanWaveRenamed, summarizePlanWaveRenamed)
+	registerFormatter(EventTypePlanWaveReordered, summarizePlanWaveReordered)
+	registerFormatter(EventTypePlanTaskUnassigned, summarizePlanTaskUnassigned)
 	registerFormatter(EventTypePlanDone, summarizePlanDone)
 	registerFormatter(EventTypePlanAbandoned, summarizePlanAbandoned)
 	registerFormatter(EventTypeTrickExecuted, summarizeTrickExecuted)
@@ -81,6 +85,51 @@ func summarizePlanDeleted(row EventRow) string {
 		return "plan deleted: " + condenseLine(name)
 	}
 	return "plan deleted"
+}
+
+func summarizePlanWaveRemoved(row EventRow) string {
+	payload := decodePayload(row.Payload)
+	name := readString(payload, "name")
+	if pos, ok := readInt(payload, "position"); ok {
+		if name != "" {
+			return fmt.Sprintf("wave #%d removed: %s", pos, condenseLine(name))
+		}
+		return fmt.Sprintf("wave #%d removed", pos)
+	}
+	if name != "" {
+		return "wave removed: " + condenseLine(name)
+	}
+	return "wave removed"
+}
+
+func summarizePlanWaveRenamed(row EventRow) string {
+	payload := decodePayload(row.Payload)
+	from := readString(payload, "from")
+	to := readString(payload, "to")
+	if from != "" && to != "" {
+		return fmt.Sprintf("wave renamed: %s → %s", condenseLine(from), condenseLine(to))
+	}
+	if to != "" {
+		return "wave renamed: " + condenseLine(to)
+	}
+	return "wave renamed"
+}
+
+func summarizePlanWaveReordered(row EventRow) string {
+	payload := decodePayload(row.Payload)
+	from, fromOK := readInt(payload, "from")
+	to, toOK := readInt(payload, "to")
+	if fromOK && toOK {
+		return fmt.Sprintf("wave reordered: #%d → #%d", from, to)
+	}
+	if toOK {
+		return fmt.Sprintf("wave reordered to #%d", to)
+	}
+	return "wave reordered"
+}
+
+func summarizePlanTaskUnassigned(_ EventRow) string {
+	return "task detached from plan"
 }
 
 func summarizePlanDone(_ EventRow) string {

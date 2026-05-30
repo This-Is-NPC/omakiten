@@ -341,11 +341,104 @@ func (s *Service) AddPlanWave(ctx context.Context, input AddPlanWaveInput) (AddP
 	}
 	return AddPlanWaveResponse{
 		Project: projectSummary(project),
-		Wave: PlanWaveSummary{
-			ID:       wave.ID,
-			PlanID:   wave.PlanID,
-			Name:     wave.Name,
-			Position: wave.Position,
-		},
+		Wave:    planWaveSummary(wave),
+	}, nil
+}
+
+// planWaveSummary projects a domain.PlanWave into the MCP wire shape.
+func planWaveSummary(wave domain.PlanWave) PlanWaveSummary {
+	return PlanWaveSummary{
+		ID:       wave.ID,
+		PlanID:   wave.PlanID,
+		Name:     wave.Name,
+		Position: wave.Position,
+	}
+}
+
+// RemovePlanWave deletes a wave after explicit confirmation. The first
+// (unconfirmed) call returns a Confirmation block; retry with
+// confirmed=true to proceed. The wave's tasks survive with wave_id
+// cleared (plan_id intact).
+func (s *Service) RemovePlanWave(ctx context.Context, input RemovePlanWaveInput) (RemovePlanWaveResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return RemovePlanWaveResponse{}, err
+	}
+	if input.WaveID == 0 {
+		return RemovePlanWaveResponse{}, domain.NewError(domain.ErrValidation, "wave_id is required", nil)
+	}
+	if !input.Confirmed {
+		return RemovePlanWaveResponse{
+			Project: projectSummary(project),
+			Confirmation: Confirmation{
+				RequiresConfirmation: true,
+				Reason:               "Removing a wave detaches its tasks (wave_id cleared; they stay in the plan but unscheduled). Confirm with confirmed=true to proceed.",
+				Options: []ConfirmationOption{
+					{Action: "confirm_remove_wave", Label: "Retry plans.remove_wave with confirmed=true to delete the wave"},
+				},
+			},
+		}, nil
+	}
+	wave, err := s.newPlanService().RemoveWave(ctx, project, input.WaveID)
+	if err != nil {
+		return RemovePlanWaveResponse{}, err
+	}
+	summary := planWaveSummary(wave)
+	return RemovePlanWaveResponse{Project: projectSummary(project), Wave: &summary}, nil
+}
+
+// RenamePlanWave rewrites a wave's name. Name is required, non-blank, and
+// must differ from the current name (else ErrValidation).
+func (s *Service) RenamePlanWave(ctx context.Context, input RenamePlanWaveInput) (RenamePlanWaveResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return RenamePlanWaveResponse{}, err
+	}
+	if input.WaveID == 0 {
+		return RenamePlanWaveResponse{}, domain.NewError(domain.ErrValidation, "wave_id is required", nil)
+	}
+	wave, err := s.newPlanService().RenameWave(ctx, project, input.WaveID, input.Name)
+	if err != nil {
+		return RenamePlanWaveResponse{}, err
+	}
+	return RenamePlanWaveResponse{Project: projectSummary(project), Wave: planWaveSummary(wave)}, nil
+}
+
+// ReorderPlanWave moves a wave to a 1-based position within its plan,
+// swapping with the occupant on collision.
+func (s *Service) ReorderPlanWave(ctx context.Context, input ReorderPlanWaveInput) (ReorderPlanWaveResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return ReorderPlanWaveResponse{}, err
+	}
+	if input.WaveID == 0 {
+		return ReorderPlanWaveResponse{}, domain.NewError(domain.ErrValidation, "wave_id is required", nil)
+	}
+	wave, err := s.newPlanService().ReorderWave(ctx, project, input.WaveID, input.Position)
+	if err != nil {
+		return ReorderPlanWaveResponse{}, err
+	}
+	return ReorderPlanWaveResponse{Project: projectSummary(project), Wave: planWaveSummary(wave)}, nil
+}
+
+// UnassignPlanTask detaches a task from its plan (clears plan_id and
+// wave_id). Detached=false when the task was already unattached (no-op,
+// no event emitted).
+func (s *Service) UnassignPlanTask(ctx context.Context, input UnassignPlanTaskInput) (UnassignPlanTaskResponse, error) {
+	project, err := s.resolveProject(ctx, input.ProjectSelector)
+	if err != nil {
+		return UnassignPlanTaskResponse{}, err
+	}
+	if input.TaskID == 0 {
+		return UnassignPlanTaskResponse{}, domain.NewError(domain.ErrValidation, "task_id is required", nil)
+	}
+	event, err := s.newPlanService().UnassignTask(ctx, project, input.TaskID)
+	if err != nil {
+		return UnassignPlanTaskResponse{}, err
+	}
+	return UnassignPlanTaskResponse{
+		Project:  projectSummary(project),
+		TaskID:   input.TaskID,
+		Detached: event.EventType != "",
 	}, nil
 }

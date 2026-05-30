@@ -44,6 +44,10 @@ func TestToolsIncludePlannedSurface(t *testing.T) {
 		"logs.list":           false,
 		"plans.edit":          false,
 		"plans.delete":        false,
+		"plans.remove_wave":   false,
+		"plans.rename_wave":   false,
+		"plans.reorder_wave":  false,
+		"plans.unassign":      false,
 		"skills.list":         false,
 		"skills.get":          false,
 	}
@@ -210,6 +214,10 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		"plans.claim_next",
 		"plans.continue",
 		"plans.edit",
+		"plans.rename_wave",
+		"plans.reorder_wave",
+		"plans.unassign",
+		"plans.remove_wave",
 		"plans.delete",
 		"skills.list",
 		"skills.get",
@@ -256,6 +264,14 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 			args = map[string]any{"slug": "demo-plan-plans.create", "name": "Renamed Demo"}
 		case "plans.delete":
 			args = map[string]any{"slug": "demo-plan-plans.create", "confirmed": true}
+		case "plans.rename_wave":
+			args = map[string]any{"wave_id": 1, "name": "renamed wave"}
+		case "plans.reorder_wave":
+			args = map[string]any{"wave_id": 1, "position": 5}
+		case "plans.unassign":
+			args = map[string]any{"task_id": 1}
+		case "plans.remove_wave":
+			args = map[string]any{"wave_id": 1, "confirmed": true}
 		}
 		_, err := adapter.CallTool(ctx, name, withModel(args))
 		if err != nil {

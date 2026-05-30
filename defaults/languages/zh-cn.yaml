@@ -1154,6 +1154,11 @@ keys:
   cli.plan.edit.flag.goal_body: "New markdown goal / acceptance body"
   cli.plan.delete.short: "Hard-delete a plan (waves cascade; member tasks survive detached)"
   cli.plan.delete.flag.confirm: "Required to confirm the destructive delete"
+  cli.plan.wave_remove.short: "Remove a wave from a plan (its tasks survive with wave cleared)"
+  cli.plan.wave_remove.flag.confirm: "Required to confirm removing the wave"
+  cli.plan.wave_rename.short: "Rename a wave"
+  cli.plan.wave_reorder.short: "Move a wave to a new 1-based position (swaps on collision)"
+  cli.plan.unassign.short: "Detach a task from its plan (clears plan and wave)"
 
   # Plans — wave_gate-specific notification copy.
   notifications.omakase.guard_wave_gate.message: "前一个 wave 还在侦察。 队伍先要集结。"

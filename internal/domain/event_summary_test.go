@@ -176,6 +176,22 @@ func TestSummarizeEventPerTypeRendering(t *testing.T) {
 			row:  EventRow{EventType: EventTypePlanAbandoned, Payload: `{"reason":"scope cut"}`},
 			want: "plan abandoned: scope cut",
 		},
+		"plan.wave_removed with position": {
+			row:  EventRow{EventType: EventTypePlanWaveRemoved, Payload: `{"wave_id":3,"name":"Backend","position":2}`},
+			want: "wave #2 removed: Backend",
+		},
+		"plan.wave_renamed from/to": {
+			row:  EventRow{EventType: EventTypePlanWaveRenamed, Payload: `{"wave_id":3,"from":"Backend","to":"API"}`},
+			want: "wave renamed: Backend → API",
+		},
+		"plan.wave_reordered from/to": {
+			row:  EventRow{EventType: EventTypePlanWaveReordered, Payload: `{"wave_id":3,"from":1,"to":2}`},
+			want: "wave reordered: #1 → #2",
+		},
+		"plan.task_unassigned": {
+			row:  EventRow{EventType: EventTypePlanTaskUnassigned, Payload: `{"plan_id":1,"wave_id":2,"source":"plans.unassign"}`},
+			want: "task detached from plan",
+		},
 
 		// Tags + deps.
 		"tag.added": {

@@ -173,3 +173,62 @@ func TestCLIPlanDeleteRequiresConfirm(t *testing.T) {
 		t.Fatalf("plan should be gone after confirmed delete: %s", listed)
 	}
 }
+
+func TestCLIPlanWaveMutationsAndUnassign(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	projectRoot := filepath.Join(tmp, "project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Chdir(projectRoot)
+
+	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
+	runCLI(t, dbPath, configPath, "add", "-t", "T1")
+	runCLI(t, dbPath, configPath, "plan", "create", "ship", "--name", "Ship")
+
+	w1 := runCLI(t, dbPath, configPath, "plan", "wave-add", "ship", "alpha", "--position", "1")
+	wave1ID := waveIDFromJSON(t, w1)
+	runCLI(t, dbPath, configPath, "plan", "wave-add", "ship", "beta", "--position", "2")
+
+	// wave-rename.
+	renamed := runCLI(t, dbPath, configPath, "plan", "wave-rename", wave1ID, "alpha-prime")
+	if !strings.Contains(renamed, `"name":"alpha-prime"`) {
+		t.Fatalf("wave-rename output = %s", renamed)
+	}
+
+	// wave-reorder: move wave 1 to position 2 (collision → swap).
+	reordered := runCLI(t, dbPath, configPath, "plan", "wave-reorder", wave1ID, "2")
+	if !strings.Contains(reordered, `"position":2`) {
+		t.Fatalf("wave-reorder output = %s", reordered)
+	}
+
+	// assign task 1 to wave 1, then unassign.
+	runCLI(t, dbPath, configPath, "plan", "assign", "ship", wave1ID, "1")
+	unassigned := runCLI(t, dbPath, configPath, "plan", "unassign", "1")
+	if !strings.Contains(unassigned, `"detached":true`) {
+		t.Fatalf("unassign output = %s", unassigned)
+	}
+
+	// wave-remove requires --confirm.
+	runCLIExpectError(t, dbPath, configPath, "validation_error", "plan", "wave-remove", wave1ID)
+	removed := runCLI(t, dbPath, configPath, "plan", "wave-remove", wave1ID, "--confirm")
+	if !strings.Contains(removed, `"removed_wave"`) {
+		t.Fatalf("wave-remove output = %s", removed)
+	}
+}
+
+// waveIDFromJSON extracts the wave id from a wave-add JSON payload.
+func waveIDFromJSON(t *testing.T, out string) string {
+	t.Helper()
+	idIdx := strings.Index(out, `"id":`)
+	if idIdx < 0 {
+		t.Fatalf("payload lacks id field: %s", out)
+	}
+	commaIdx := strings.Index(out[idIdx:], ",")
+	if commaIdx < 0 {
+		t.Fatalf("id field missing terminator: %s", out)
+	}
+	return strings.TrimPrefix(out[idIdx:idIdx+commaIdx], `"id":`)
+}

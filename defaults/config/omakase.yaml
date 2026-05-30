@@ -190,6 +190,22 @@ config:
         category: plan
         display: "plan deleted"
         formatter: plan.deleted
+      plan.wave_removed:
+        category: plan
+        display: "plan wave removed"
+        formatter: plan.wave_removed
+      plan.wave_renamed:
+        category: plan
+        display: "plan wave renamed"
+        formatter: plan.wave_renamed
+      plan.wave_reordered:
+        category: plan
+        display: "plan wave reordered"
+        formatter: plan.wave_reordered
+      plan.task_unassigned:
+        category: plan
+        display: "plan task unassigned"
+        formatter: plan.task_unassigned
       tag.added:
         category: tag-dep
         display: "tag added"

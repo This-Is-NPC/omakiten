@@ -265,6 +265,10 @@ func tools() []ToolDefinition {
 		{Name: "plans.continue", Description: "Agent-tailored projection of a plan: returns the same aggregate plans.show emits (full plan + waves + done/total + active wave) plus a non-mutating preview of the task plans.claim_next would reserve next. Use before plans.claim_next so an agent can inspect goal_body, the wave layout, and the candidate task before committing to a claim.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug")}, []string{"slug"})},
 		{Name: "plans.edit", Description: "Edit a plan's name, slug, status, and/or goal_body. Identify the plan by slug or plan_id; supply at least one editable field. status accepts active / done / abandoned (abandoned co-emits plan.abandoned); a new_slug collision rejects with plan_slug_conflict. Emits plan.edited with the per-field diff (and plan.goal_edited when goal_body changes).", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug to identify the plan (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "name": stringSchema("Optional new plan name"), "new_slug": stringSchema("Optional new plan slug; must stay unique within the project"), "status": stringSchema("Optional new status: active, done, or abandoned"), "goal_body": stringSchema("Optional new markdown goal body")}, nil)},
 		{Name: "plans.delete", Description: "Hard-delete a plan. Its waves cascade-delete and member tasks are detached (plan_id / wave_id cleared) but otherwise survive. Identify the plan by slug or plan_id. First call without confirmed=true returns a Confirmation block; retry with confirmed=true to apply. Emits plan.deleted.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "confirmed": booleanSchema("Required true to actually delete the plan")}, nil)},
+		{Name: "plans.remove_wave", Description: "Delete a wave from a plan. Its tasks survive with wave_id cleared (plan_id intact, so they stay in the plan but unscheduled). First call without confirmed=true returns a Confirmation block; retry with confirmed=true to apply. Emits plan.wave_removed.", InputSchema: objectSchema(map[string]any{"wave_id": integerSchema("Wave id to delete"), "confirmed": booleanSchema("Required true to actually remove the wave")}, []string{"wave_id"})},
+		{Name: "plans.rename_wave", Description: "Rename a wave. The new name must be non-blank and differ from the current name. Emits plan.wave_renamed.", InputSchema: objectSchema(map[string]any{"wave_id": integerSchema("Wave id to rename"), "name": stringSchema("New wave name")}, []string{"wave_id", "name"})},
+		{Name: "plans.reorder_wave", Description: "Move a wave to a new 1-based position within its plan. A collision with an occupied slot swaps the two waves. Emits plan.wave_reordered.", InputSchema: objectSchema(map[string]any{"wave_id": integerSchema("Wave id to move"), "position": integerSchema("New 1-based position")}, []string{"wave_id", "position"})},
+		{Name: "plans.unassign", Description: "Detach a task from its plan, clearing both plan_id and wave_id (full detach; the task becomes a standalone work item again). A task already unattached is a no-op. Emits plan.task_unassigned.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to detach")}, []string{"task_id"})},
 	}
 }
 
@@ -659,6 +663,30 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = service.DeletePlan(ctx, input)
+		}
+	case "plans.remove_wave":
+		var input agent.RemovePlanWaveInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.RemovePlanWave(ctx, input)
+		}
+	case "plans.rename_wave":
+		var input agent.RenamePlanWaveInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.RenamePlanWave(ctx, input)
+		}
+	case "plans.reorder_wave":
+		var input agent.ReorderPlanWaveInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.ReorderPlanWave(ctx, input)
+		}
+	case "plans.unassign":
+		var input agent.UnassignPlanTaskInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.UnassignPlanTask(ctx, input)
 		}
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP tool %q", name)

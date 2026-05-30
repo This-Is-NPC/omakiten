@@ -43,13 +43,13 @@ type ShowPlanInput struct {
 }
 
 type ShowPlanResponse struct {
-	Project      ProjectSummary  `json:"project"`
-	Plan         PlanSummary     `json:"plan"`
-	Waves        []PlanWaveView  `json:"waves"`
-	DoneCount    int             `json:"done_count"`
-	TotalCount   int             `json:"total_count"`
-	Percent      int             `json:"percent"`
-	ActiveWaveID int64           `json:"active_wave_id,omitempty"`
+	Project      ProjectSummary `json:"project"`
+	Plan         PlanSummary    `json:"plan"`
+	Waves        []PlanWaveView `json:"waves"`
+	DoneCount    int            `json:"done_count"`
+	TotalCount   int            `json:"total_count"`
+	Percent      int            `json:"percent"`
+	ActiveWaveID int64          `json:"active_wave_id,omitempty"`
 }
 
 // PlanWaveView pairs a wave with its task list and per-wave counts.
@@ -118,7 +118,7 @@ type AddPlanWaveInput struct {
 }
 
 type AddPlanWaveResponse struct {
-	Project ProjectSummary `json:"project"`
+	Project ProjectSummary  `json:"project"`
 	Wave    PlanWaveSummary `json:"wave"`
 }
 
@@ -127,6 +127,60 @@ type PlanWaveSummary struct {
 	PlanID   int64  `json:"plan_id"`
 	Name     string `json:"name"`
 	Position int    `json:"position"`
+}
+
+// RemovePlanWaveInput identifies a wave to delete. Confirmed must be
+// true to proceed; the first (unconfirmed) call returns a Confirmation
+// block mirroring plans.delete (removing a wave detaches its tasks).
+type RemovePlanWaveInput struct {
+	ProjectSelector
+	WaveID    int64 `json:"wave_id"`
+	Confirmed bool  `json:"confirmed,omitempty"`
+}
+
+type RemovePlanWaveResponse struct {
+	Project      ProjectSummary   `json:"project"`
+	Confirmation Confirmation     `json:"confirmation,omitempty"`
+	Wave         *PlanWaveSummary `json:"wave,omitempty"`
+}
+
+// RenamePlanWaveInput renames a wave by id. Name is required and must be
+// non-blank and different from the current name.
+type RenamePlanWaveInput struct {
+	ProjectSelector
+	WaveID int64  `json:"wave_id"`
+	Name   string `json:"name"`
+}
+
+type RenamePlanWaveResponse struct {
+	Project ProjectSummary  `json:"project"`
+	Wave    PlanWaveSummary `json:"wave"`
+}
+
+// ReorderPlanWaveInput moves a wave to Position (1-based) within its
+// plan. A collision with an occupied slot swaps the two waves.
+type ReorderPlanWaveInput struct {
+	ProjectSelector
+	WaveID   int64 `json:"wave_id"`
+	Position int   `json:"position"`
+}
+
+type ReorderPlanWaveResponse struct {
+	Project ProjectSummary  `json:"project"`
+	Wave    PlanWaveSummary `json:"wave"`
+}
+
+// UnassignPlanTaskInput detaches a task from its plan (clears both
+// plan_id and wave_id). Identified by task_id.
+type UnassignPlanTaskInput struct {
+	ProjectSelector
+	TaskID int64 `json:"task_id"`
+}
+
+type UnassignPlanTaskResponse struct {
+	Project  ProjectSummary `json:"project"`
+	TaskID   int64          `json:"task_id"`
+	Detached bool           `json:"detached"`
 }
 
 type AssignPlanTaskInput struct {
@@ -173,14 +227,14 @@ type ContinuePlanInput struct {
 // inspect goal_body, the wave layout, and the candidate task before
 // committing to a claim.
 type ContinuePlanResponse struct {
-	Project       ProjectSummary  `json:"project"`
-	Plan          PlanSummary     `json:"plan"`
-	Waves         []PlanWaveView  `json:"waves"`
-	DoneCount     int             `json:"done_count"`
-	TotalCount    int             `json:"total_count"`
-	Percent       int             `json:"percent"`
-	ActiveWaveID  int64           `json:"active_wave_id,omitempty"`
-	NextClaimable *PlanTaskRow    `json:"next_claimable,omitempty"`
+	Project       ProjectSummary `json:"project"`
+	Plan          PlanSummary    `json:"plan"`
+	Waves         []PlanWaveView `json:"waves"`
+	DoneCount     int            `json:"done_count"`
+	TotalCount    int            `json:"total_count"`
+	Percent       int            `json:"percent"`
+	ActiveWaveID  int64          `json:"active_wave_id,omitempty"`
+	NextClaimable *PlanTaskRow   `json:"next_claimable,omitempty"`
 }
 
 // planSummary projects a domain.Plan into the MCP wire shape, keeping
