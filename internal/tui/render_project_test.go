@@ -9,6 +9,7 @@ import (
 
 func ctrlP() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyCtrlP} }
 func tabKey() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyTab} }
+func endKey() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyEnd} }
 
 // TestCtrlPOpensProjectView proves Ctrl+P from a per-project board routes
 // to the dedicated project-view screen (subProjectView) and primes the
@@ -149,5 +150,39 @@ func TestOpenProjectViewNilCommentsRepoNoPanic(t *testing.T) {
 	}
 	if len(model.projectActivity) != 0 {
 		t.Fatalf("nil Comments repo should yield an empty feed; got %d events", len(model.projectActivity))
+	}
+}
+
+// TestProjectViewGScrollsActivityToBottom proves G/end snaps the focused
+// activity panel to its bottom offset (the renderer-clamped last item),
+// mirroring g/home → top.
+func TestProjectViewGScrollsActivityToBottom(t *testing.T) {
+	model, _, _ := scopedFeedModel(t)
+	opened, _ := model.Update(ctrlP())
+	m := opened.(Model)
+
+	// Focus the activity panel (Tab) so the scroll bindings act on it.
+	tabbed, _ := m.Update(tabKey())
+	m = tabbed.(Model)
+	if m.projectFocus != projectFocusActivity {
+		t.Fatalf("setup: tab did not focus the activity panel; focus = %v", m.projectFocus)
+	}
+
+	wantMax := m.projectFocusedScrollMax()
+	if wantMax <= 0 {
+		t.Fatalf("setup: expected a scrollable activity feed; max = %d", wantMax)
+	}
+
+	ended, _ := m.Update(endKey())
+	m = ended.(Model)
+	if m.projectActivityScroll != wantMax {
+		t.Fatalf("end did not snap activity scroll to bottom; got %d want %d", m.projectActivityScroll, wantMax)
+	}
+
+	// g/home returns it to the top.
+	top, _ := m.Update(tea.KeyMsg{Type: tea.KeyHome})
+	m = top.(Model)
+	if m.projectActivityScroll != 0 {
+		t.Fatalf("home did not return activity scroll to top; got %d", m.projectActivityScroll)
 	}
 }
