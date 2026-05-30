@@ -212,12 +212,16 @@ func (s *Store) QueryComments(ctx context.Context, filter domain.CommentFilter) 
 	if filter.PinnedOnly {
 		conds = append(conds, "e.pinned = 1")
 	}
+	// created_at is stored "YYYY-MM-DD HH:MM:SS" (space separator); bounds may
+	// arrive as RFC3339 ("...T...Z"), which would sort wrong under a raw string
+	// compare. datetime() normalizes both the column and the bound to a common
+	// shape so the window comparison is chronological, not lexicographic.
 	if filter.CreatedAfter != "" {
-		conds = append(conds, "e.created_at >= ?")
+		conds = append(conds, "datetime(e.created_at) >= datetime(?)")
 		args = append(args, filter.CreatedAfter)
 	}
 	if filter.CreatedBefore != "" {
-		conds = append(conds, "e.created_at <= ?")
+		conds = append(conds, "datetime(e.created_at) <= datetime(?)")
 		args = append(args, filter.CreatedBefore)
 	}
 

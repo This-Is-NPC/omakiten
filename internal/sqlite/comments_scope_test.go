@@ -310,3 +310,39 @@ func TestQueryCommentsTimeWindow(t *testing.T) {
 		t.Fatalf("QueryComments(window out) = %+v, want none", got)
 	}
 }
+
+// TestQueryCommentsTimeWindowRFC3339SameDay pins the datetime() normalization:
+// created_at is stored "YYYY-MM-DD HH:MM:SS" (space), but an RFC3339 bound on
+// the SAME calendar day uses a 'T' separator. A lexicographic string compare
+// sorts 'T' (0x54) above the space (0x20), so `created_at >= bound` wrongly
+// excludes the row — an empty window. datetime() on both sides fixes it.
+func TestQueryCommentsTimeWindowRFC3339SameDay(t *testing.T) {
+	ctx, store, project, task := commentScopeFixture(t)
+
+	c, err := store.AddScopedComment(ctx, domain.CommentWrite{
+		Scope: domain.CommentScopeTask, ProjectID: project.ID, TaskID: task.ID,
+		Body: "today", AuthorType: "agent",
+	})
+	if err != nil {
+		t.Fatalf("AddScopedComment: %v", err)
+	}
+
+	// Read the row's stored date and build a same-day RFC3339 floor at 00:00:00Z.
+	stored, err := store.CommentByID(ctx, project.ID, c.ID)
+	if err != nil {
+		t.Fatalf("CommentByID: %v", err)
+	}
+	day := stored.CreatedAt // "YYYY-MM-DD HH:MM:SS"
+	if len(day) < 10 {
+		t.Fatalf("unexpected created_at %q", stored.CreatedAt)
+	}
+	floor := day[:10] + "T00:00:00Z" // same day, midnight, RFC3339 with 'T'
+
+	got, err := store.QueryComments(ctx, domain.CommentFilter{CreatedAfter: floor})
+	if err != nil {
+		t.Fatalf("QueryComments(same-day RFC3339 floor): %v", err)
+	}
+	if len(got) != 1 || got[0].ID != c.ID {
+		t.Fatalf("QueryComments(CreatedAfter=%q) = %+v, want the seeded comment", floor, got)
+	}
+}
