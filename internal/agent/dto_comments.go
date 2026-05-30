@@ -5,16 +5,25 @@ import "omakiten/internal/domain"
 type CommentSummary struct {
 	ID         int64        `json:"id"`
 	TaskID     int64        `json:"task_id"`
+	Scope      string       `json:"scope,omitempty"`
 	Body       string       `json:"body"`
+	Title      string       `json:"title,omitempty"`
+	Kind       string       `json:"kind,omitempty"`
+	Pinned     bool         `json:"pinned,omitempty"`
 	AuthorType string       `json:"author_type"`
 	CreatedAt  string       `json:"created_at,omitempty"`
+	UpdatedAt  string       `json:"updated_at,omitempty"`
 	Tags       []TagSummary `json:"tags,omitempty"`
 }
 
 type AddCommentInput struct {
 	ProjectSelector
-	TaskID       int64    `json:"task_id"`
+	TaskID       int64    `json:"task_id,omitempty"`
+	Scope        string   `json:"scope,omitempty"`
 	Body         string   `json:"body"`
+	Title        string   `json:"title,omitempty"`
+	Kind         string   `json:"kind,omitempty"`
+	Pinned       bool     `json:"pinned,omitempty"`
 	AuthorType   string   `json:"author_type,omitempty"`
 	Tags         []string `json:"tags,omitempty"`
 	TemplateSlug string   `json:"template_slug,omitempty"`
@@ -22,9 +31,17 @@ type AddCommentInput struct {
 
 type EditCommentInput struct {
 	ProjectSelector
-	CommentID int64    `json:"comment_id"`
-	Body      string   `json:"body"`
-	Tags      []string `json:"tags,omitempty"`
+	CommentID int64 `json:"comment_id"`
+	// Body/Title/Kind/Pinned are tri-state: an omitted JSON field decodes to nil
+	// and leaves the stored column untouched; an explicit value overwrites it.
+	// This keeps a metadata-only edit (pin/title/kind) from wiping the body, and
+	// a body-only edit from wiping a comment's title, kind, or pin. A non-nil
+	// body must be non-empty.
+	Body   *string  `json:"body,omitempty"`
+	Title  *string  `json:"title,omitempty"`
+	Kind   *string  `json:"kind,omitempty"`
+	Pinned *bool    `json:"pinned,omitempty"`
+	Tags   []string `json:"tags,omitempty"`
 }
 
 type DeleteCommentInput struct {
@@ -41,7 +58,14 @@ type DeleteCommentResponse struct {
 
 type ListCommentsInput struct {
 	ProjectSelector
-	TaskID int64 `json:"task_id"`
+	TaskID    int64  `json:"task_id,omitempty"`
+	CommentID int64  `json:"comment_id,omitempty"`
+	Scope     string `json:"scope,omitempty"`
+	Kind      string `json:"kind,omitempty"`
+	Tag       string `json:"tag,omitempty"`
+	Pinned    bool   `json:"pinned,omitempty"`
+	Query     string `json:"query,omitempty"`
+	Since     string `json:"since,omitempty"`
 }
 
 type CommentsResponse struct {
@@ -79,7 +103,18 @@ type ListTaskActivityResponse struct {
 }
 
 func commentSummary(comment domain.Comment) CommentSummary {
-	s := CommentSummary{ID: comment.ID, TaskID: comment.TaskID, Body: comment.Body, AuthorType: comment.AuthorType, CreatedAt: comment.CreatedAt}
+	s := CommentSummary{
+		ID:         comment.ID,
+		TaskID:     comment.TaskID,
+		Scope:      comment.Scope,
+		Body:       comment.Body,
+		Title:      comment.Title,
+		Kind:       comment.Kind,
+		Pinned:     comment.Pinned,
+		AuthorType: comment.AuthorType,
+		CreatedAt:  comment.CreatedAt,
+		UpdatedAt:  comment.UpdatedAt,
+	}
 	if len(comment.Tags) > 0 {
 		s.Tags = tagSummaries(comment.Tags)
 	}

@@ -411,21 +411,21 @@ Each level adds one or more layers of discipline without removing the previous o
 
 ## Notes and handoff loop
 
-Sitting alongside the bucket cycle, four atomic commands carry knowledge between sessions and across projects. All four are wired into every preset (`omakase`, `izakaya`, `kaiseki`, `shokunin`) and write or read from the `notes` table — a project-or-global knowledge store with its own FTS5 index. Notes are separate from task comments: comments live inside one task's audit trail, notes live alongside the project (or globally) and survive long after the originating task closes.
+Sitting alongside the bucket cycle, a small set of atomic commands carry knowledge between sessions and across projects. They are wired into every preset (`omakase`, `izakaya`, `kaiseki`, `shokunin`) and read or write through the **scope-aware comment model** — there is no separate notes entity. A "note" is just a comment whose `scope` is `project` or `universal` (rather than `task`), optionally carrying a `title`, a free-form `kind` (`handoff`, `recap`, …), and a `pinned` flag. The same `events` table and FTS5 search index back both task comments and these project/global notes.
 
-### The four commands
+### The commands
 
 | Command | Phase | Writes? | Purpose |
 |---|---|---|---|
-| `okt-handoff` | session close (CHECK) | `notes.create kind="handoff"` | Synthesise the session: delta since the previous handoff, active work, recent progress, decisions/discards, blockers, next steps. Bound to the `note-handoff` template; carries `project-scope-only` + `no-praise-pad` laws so the body stays factual. |
-| `okt-note` | any (ACT/CHECK) | `notes.create` (free `kind`) | Ad-hoc knowledge capture — gotcha, decision, glossary entry, anything that should outlive the current task. Bound to `note-free` (minimal title/body/footer shell). Scope `project` (default) or `global` (cross-project visibility). |
-| `okt-standup` | session start (PLAN) | read-only | Cross-project digest: for each project with activity in the window, surface the latest `handoff` note plus the delta since. Read-side aggregation against `notes.list` + `task_activity`. Bound to `note-standup-digest`. |
-| `okt-recap` | retrospective (CHECK) | read-only | Temporal window: notes grouped by `kind` plus tasks moved to `done` in the window. Useful for sprint retros, release notes, or onboarding a new contributor. Bound to `note-recap`. |
+| `okt-pause` | session close (CHECK) | `comments.add scope=project kind=handoff` | Synthesise the session: delta since the previous handoff, active work, recent progress, decisions/discards, blockers, next steps. Bound to the `note-handoff` template; carries `project-scope-only` + `no-praise-pad` laws so the body stays factual. |
+| `okt-note-free` | any (ACT/CHECK) | `comments.add` (free `kind`) | Ad-hoc knowledge capture — gotcha, decision, glossary entry, anything that should outlive the current task. Bound to `note-free` (minimal title/body/footer shell). Scope `project` (default) or `global` → `universal` (cross-project visibility). |
+| `okt-note-recap` | retrospective / session start | read-only | Temporal window over project notes grouped by `kind`. A wide (cross-project) window folds in the handoff digest: the latest `kind=handoff` comment per project plus the delta since. Read-side aggregation against `comments.list`. Bound to `note-recap` / `note-standup-digest`. |
+| `okt-note-list` / `okt-note-show` | any | read-only | List or display project/global notes via `comments.list` filtered by `scope`/`kind`/`pinned`. |
 
 ### The loop in practice
 
 ```
-session start ──▶  okt-standup        (read: latest handoff per project)
+session start ──▶  okt-note-recap (wide)   (read: latest handoff per project)
                        │
                        ▼
                    okt-resume / okt-continue    (per-project loop, unchanged)
@@ -433,29 +433,31 @@ session start ──▶  okt-standup        (read: latest handoff per project)
                    …work…                       (bucket cycle: dev → review → done)
                        │
                        ▼
-session close ──▶  okt-handoff        (write: handoff note)
+session close ──▶  okt-pause        (write: handoff comment, scope=project kind=handoff)
                        │
                        ▼
-periodic     ──▶  okt-recap           (read: window summary)
+periodic     ──▶  okt-note-recap    (read: window summary)
                        │
                        ▼
-ad-hoc       ──▶  okt-note            (write: any time something deserves to outlive the task)
+ad-hoc       ──▶  okt-note-free     (write: any time something deserves to outlive the task)
 ```
 
-Two write commands (`okt-handoff`, `okt-note`) and two read commands (`okt-standup`, `okt-recap`). The read commands need no per-preset wiring deltas — they aggregate whatever the project's notes table already holds. The write commands carry a thin law set (`project-scope-only`, `no-praise-pad` on `okt-handoff`) so the synthesised body stays auditable without inflating the prompt budget.
+Two write commands (`okt-pause`, `okt-note-free`) and the read family (`okt-note-recap`, `okt-note-list`, `okt-note-show`). The read commands need no per-preset wiring deltas — they aggregate whatever project/universal comments the `events` table already holds. The write commands carry a thin law set (`project-scope-only`, `no-praise-pad` on `okt-pause`) so the synthesised body stays auditable without inflating the prompt budget.
 
-### Why notes are separate from comments
+### Task comments vs. project/global notes
 
-| Comments | Notes |
+A note is the same comment row with a wider scope — the distinction is `scope`, not a separate table:
+
+| Task comment (`scope=task`) | Project/global note (`scope=project` / `universal`) |
 |---|---|
-| Live inside one task's audit trail | Live alongside the project (or globally) |
-| Bucket permissions gate edit / delete | Independent CRUD; no bucket policy |
-| Cascade-deleted with the task | Survive task deletion |
-| Indexed in `search` under `entity_type="comment"` | Indexed under `entity_type="note"` |
+| Lives inside one task's audit trail | Lives alongside the project, or globally (`universal`) |
+| Bucket `permissions.comment.*` gate edit / delete (inherits task policy) | Edit / delete gated task-lessly by `workflows[].defaults.comment.{project,universal}.*` |
+| Cascade-deleted with the task | Outlives any single task |
+| Indexed in `search` under `entity_type="comment"` | Indexed under `entity_type="comment"`, with `title` searchable too |
 
-A task's `#tests-passing` evidence belongs in the task's comment trail (it documents that task's CHECK phase). A "we picked SQLite over Postgres because…" decision, the team glossary, a runbook for a flaky deploy, or the snapshot at the end of today's session — those belong in notes, where they stay reachable from any future task or project view.
+A task's `#tests-passing` evidence belongs in the task's comment trail (it documents that task's CHECK phase). A "we picked SQLite over Postgres because…" decision, the team glossary, a runbook for a flaky deploy, or the snapshot at the end of today's session — those belong in a `scope=project`/`universal` comment, where they stay reachable from any future task or project view.
 
-See [`mcp.md` § Notes](./mcp.md#notes-knowledge-entries) for the tool-level surface and [`mcp.md` § Prompts](./mcp.md#prompts) for the prompt table including these four commands.
+See [`mcp.md` § Comments & activity](./mcp.md#comments--activity) for the tool-level surface (scope/kind/title/pinned filters) and [`mcp.md` § Prompts](./mcp.md#prompts) for the prompt table including these commands.
 
 ---
 

@@ -44,7 +44,23 @@ type BucketPermissions struct {
 type EntityPermission struct {
 	Edit   *bool `json:"edit,omitempty"`
 	Delete *bool `json:"delete,omitempty"`
+	// Scopes carries optional per-scope sub-blocks for the comment entity
+	// only (task|project|universal). Task scope reuses the flat Edit/Delete
+	// fields for backward-compat: a flat `comment: {edit,delete}` resolves
+	// as the task scope. Project/Universal comments have no bucket, so they
+	// resolve purely at the workflow-defaults level via these sub-blocks.
+	// nil sub-blocks fall through to the implicit `true`.
+	Task      *EntityPermission `json:"task,omitempty"`
+	Project   *EntityPermission `json:"project,omitempty"`
+	Universal *EntityPermission `json:"universal,omitempty"`
 }
+
+// CommentScopeEdit / CommentScopeDelete are the op selectors ResolveCommentScopePermission
+// arbitrates over. Mirror the PermissionEdit/Delete strings in the app layer.
+const (
+	commentOpEdit   = "edit"
+	commentOpDelete = "delete"
+)
 
 // WorkflowOperations declares guards that gate non-flow operations
 // (archive / delete / unarchive). Reuses TransitionGuard so the existing
@@ -80,25 +96,126 @@ func (b Bucket) ResolveTaskPermission(defaults *WorkflowDefaults) (edit, del boo
 	return edit, del
 }
 
-// ResolveCommentPermission returns the effective comment-level
+// ResolveCommentPermission returns the effective task-scope comment-level
 // (edit, delete) for this bucket. Comment fields inherit from task at each
 // layer of the chain — bucket.comment falls back to bucket.task; if both
 // are nil, defaults.comment falls back to defaults.task; if all four are
-// nil the implicit `true` wins.
+// nil the implicit `true` wins. This is the task-scope path; project and
+// universal comments have no bucket and resolve via
+// ResolveCommentScopePermission against the workflow defaults directly.
 func (b Bucket) ResolveCommentPermission(defaults *WorkflowDefaults) (edit, del bool) {
 	edit = resolveBool(
 		bucketField(b, commentEdit),
 		bucketField(b, taskEdit),
+		defaultsCommentScopeField(defaults, CommentScopeTask, commentOpEdit),
 		defaultsField(defaults, commentEdit),
 		defaultsField(defaults, taskEdit),
 	)
 	del = resolveBool(
 		bucketField(b, commentDelete),
 		bucketField(b, taskDelete),
+		defaultsCommentScopeField(defaults, CommentScopeTask, commentOpDelete),
 		defaultsField(defaults, commentDelete),
 		defaultsField(defaults, taskDelete),
 	)
 	return edit, del
+}
+
+// defaultsCommentScopeField extracts defaults.comment.<scope>.<op>, the
+// per-scope sub-block on the workflow defaults. Used by the task-comment bucket
+// chain so a defaults-driven `defaults.comment.task.{edit,delete}` is honored
+// even when no bucket declares a comment/task override (the #389 designed
+// chain). Returns nil when any layer of the path is absent.
+func defaultsCommentScopeField(defaults *WorkflowDefaults, scope, op string) *bool {
+	if defaults == nil {
+		return nil
+	}
+	return scopeOpField(scopeBlock(defaults.Comment, scope), op)
+}
+
+// ResolveCommentScopePermission resolves the comment edit/delete policy for a
+// given scope (task|project|universal) against the workflow defaults, with no
+// bucket layer. Scope resolution chains:
+//
+//	task:      defaults.comment.task.<op> → defaults.comment.<op> → defaults.task.<op> → true
+//	project:   defaults.comment.project.<op> → true
+//	universal: defaults.comment.universal.<op> → true
+//
+// The task scope keeps the flat `comment: {edit,delete}` fields as a
+// backward-compatible alias for `comment.task` and still inherits from
+// defaults.task, mirroring the per-bucket task chain at the defaults layer.
+// Project/Universal have no bucket and no task inheritance — an undeclared
+// sub-block falls straight through to the implicit `true` (no rule = allow).
+func ResolveCommentScopePermission(defaults *WorkflowDefaults, scope, op string) bool {
+	var comment *EntityPermission
+	if defaults != nil {
+		comment = defaults.Comment
+	}
+	switch scope {
+	case CommentScopeProject:
+		return resolveBool(scopeOpField(scopeBlock(comment, CommentScopeProject), op))
+	case CommentScopeUniversal:
+		return resolveBool(scopeOpField(scopeBlock(comment, CommentScopeUniversal), op))
+	default: // task scope (also the implicit/empty fallback)
+		return resolveBool(
+			scopeOpField(scopeBlock(comment, CommentScopeTask), op),
+			flatOpField(comment, op),
+			defaultsTaskOpField(defaults, op),
+		)
+	}
+}
+
+// scopeBlock returns the named scope sub-block on a comment EntityPermission,
+// or nil when the comment block or sub-block is absent.
+func scopeBlock(comment *EntityPermission, scope string) *EntityPermission {
+	if comment == nil {
+		return nil
+	}
+	switch scope {
+	case CommentScopeTask:
+		return comment.Task
+	case CommentScopeProject:
+		return comment.Project
+	case CommentScopeUniversal:
+		return comment.Universal
+	}
+	return nil
+}
+
+// scopeOpField extracts the edit/delete pointer from a scope sub-block.
+func scopeOpField(p *EntityPermission, op string) *bool {
+	if p == nil {
+		return nil
+	}
+	if op == commentOpDelete {
+		return p.Delete
+	}
+	return p.Edit
+}
+
+// flatOpField extracts the flat edit/delete pointer from the comment block —
+// the backward-compatible `comment: {edit,delete}` alias for the task scope.
+func flatOpField(comment *EntityPermission, op string) *bool {
+	if comment == nil {
+		return nil
+	}
+	if op == commentOpDelete {
+		return comment.Delete
+	}
+	return comment.Edit
+}
+
+// defaultsTaskOpField extracts the defaults.task edit/delete pointer so the
+// task-scope comment chain inherits from defaults.task as the final declared
+// layer before the implicit true.
+func defaultsTaskOpField(defaults *WorkflowDefaults, op string) *bool {
+	if defaults == nil || defaults.Task == nil {
+		return nil
+	}
+	if op == commentOpDelete {
+		return defaults.Task.Delete
+	}
+	return defaults.Task.Edit
 }
 
 // resolveBool walks the candidate pointers in priority order and returns

@@ -79,6 +79,97 @@ func (s *CommentService) Add(ctx context.Context, project domain.ProjectContext,
 	return
 }
 
+// AddScoped creates a comment at the requested scope (task|project|universal),
+// carrying the optional kind/title/pinned note-like fields. Task scope still
+// requires a positive task id; project/universal scopes do not. Body and author
+// validation match Add.
+func (s *CommentService) AddScoped(ctx context.Context, project domain.ProjectContext, w domain.CommentWrite) (comment domain.Comment, err error) {
+	finish := activity.Track(ctx, "app.CommentService.AddScoped", project, map[string]any{"scope": w.Scope, "task_id": w.TaskID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	scope := w.Scope
+	if scope == "" {
+		scope = domain.CommentScopeTask
+	}
+	switch scope {
+	case domain.CommentScopeTask:
+		if w.TaskID <= 0 {
+			err = domain.NewError(domain.ErrValidation, "task id must be positive", nil)
+			return
+		}
+	case domain.CommentScopeProject, domain.CommentScopeUniversal:
+		// no task id required
+	default:
+		err = domain.NewError(domain.ErrValidation, "unknown comment scope", map[string]any{"scope": w.Scope})
+		return
+	}
+
+	w.Scope = scope
+	w.ProjectID = project.ID
+	w.Body = strings.TrimSpace(w.Body)
+	if w.Body == "" {
+		err = domain.NewError(domain.ErrValidation, "comment body is required", nil)
+		return
+	}
+	w.AuthorType = strings.TrimSpace(w.AuthorType)
+	if w.AuthorType == "" {
+		w.AuthorType = "human"
+	}
+	if w.AuthorType != "human" && w.AuthorType != "agent" {
+		err = domain.NewError(domain.ErrValidation, "author type must be human or agent", map[string]any{"author_type": w.AuthorType})
+		return
+	}
+	w.Tags = s.normalizeTags(w.Tags)
+	comment, err = s.repo.AddScopedComment(ctx, w)
+	return
+}
+
+// Query runs the filterable handoff-log read (scope/kind/tag/FTS/pinned/window,
+// single-project or cross-project). The filter is passed through to the repo
+// untouched; callers set ProjectID explicitly to scope or leave it 0 for the
+// cross-project view.
+func (s *CommentService) Query(ctx context.Context, project domain.ProjectContext, filter domain.CommentFilter) (comments []domain.Comment, err error) {
+	finish := activity.Track(ctx, "app.CommentService.Query", project, map[string]any{"scope": filter.Scope, "kind": filter.Kind})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+	comments, err = s.repo.QueryComments(ctx, filter)
+	return
+}
+
+// normalizeTags applies the per-project synonym table to a tag slice. Tags that
+// normalize to empty are dropped. Mirrors the inline loops in Add/Edit so the
+// scope-aware writers share one path.
+func (s *CommentService) normalizeTags(in []domain.Tag) []domain.Tag {
+	out := make([]domain.Tag, 0, len(in))
+	for _, t := range in {
+		raw := t.Label
+		if raw == "" {
+			raw = t.Name
+		}
+		name := NormalizeTagName(raw, s.snap.Synonyms())
+		if name == "" {
+			continue
+		}
+		out = append(out, domain.Tag{Name: name, Label: TagLabel(raw)})
+	}
+	return out
+}
+
 // Edit rewrites a comment's body and replaces its tags after enforcing the
 // per-bucket comment.edit policy. Inheritance: when permissions.comment is
 // missing on the bucket, the comment policy mirrors permissions.task; when
@@ -110,25 +201,8 @@ func (s *CommentService) Edit(ctx context.Context, project domain.ProjectContext
 		return
 	}
 
-	if s.workflow != nil {
-		var allowed bool
-		var hint string
-		allowed, hint, err = s.workflow.ResolveBucketPermissions(ctx, project, existing.TaskID, EntityComment, PermissionEdit)
-		if err != nil {
-			return
-		}
-		if !allowed {
-			taskRow, taskSnap, taskErr := s.workflow.ResolveTaskSnap(ctx, project, existing.TaskID)
-			if taskErr != nil {
-				err = taskErr
-				return
-			}
-			s.workflow.Evaluator().EmitViolatedForTask(ctx, project.ID, taskRow, taskSnap,
-				GuardOperationCommentEdit, GuardRulePermissions, hint,
-				map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "entity": EntityComment, "operation": PermissionEdit})
-			err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "hint": hint, "entity": EntityComment, "operation": PermissionEdit})
-			return
-		}
+	if err = s.enforceCommentPermission(ctx, project, existing, commentID, PermissionEdit, GuardOperationCommentEdit); err != nil {
+		return
 	}
 
 	tags := make([]domain.Tag, 0, len(rawTags))
@@ -141,6 +215,79 @@ func (s *CommentService) Edit(ctx context.Context, project domain.ProjectContext
 	}
 
 	comment, _, err = s.repo.UpdateComment(ctx, project.ID, commentID, body, tags)
+	return
+}
+
+// EditScoped applies the full scope-agnostic patch (body/title/kind/pinned +
+// tags) through repo.EditComment after enforcing the per-bucket comment.edit
+// policy. It mirrors Edit's validation and permission path but carries the
+// note-like columns introduced for the scoped comment surface.
+// rawTags is tri-state: a nil pointer means "tags omitted" and leaves the
+// comment's existing tag set untouched, while a non-nil pointer (even an empty
+// slice) replaces the tags wholesale. This keeps a body-only or metadata-only
+// edit from silently wiping a comment's tags.
+func (s *CommentService) EditScoped(ctx context.Context, project domain.ProjectContext, commentID int64, edit domain.CommentEdit, rawTags *[]string) (comment domain.Comment, err error) {
+	finish := activity.Track(ctx, "app.CommentService.EditScoped", project, map[string]any{"comment_id": commentID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+
+	if commentID <= 0 {
+		err = domain.NewError(domain.ErrValidation, "comment id must be positive", nil)
+		return
+	}
+	// Body is tri-state: a nil pointer leaves the stored body untouched (a
+	// metadata-only edit), while a non-nil pointer overwrites it but must be
+	// non-empty after trim — you can rewrite a body but not blank it.
+	if edit.Body != nil {
+		trimmed := strings.TrimSpace(*edit.Body)
+		if trimmed == "" {
+			err = domain.NewError(domain.ErrValidation, "comment body is required", nil)
+			return
+		}
+		edit.Body = &trimmed
+	}
+
+	// Reject a no-op patch: an edit that changes nothing (no body, no
+	// title/kind/pinned, no tags) is not a real edit. Tri-state body must not
+	// silently let an empty patch through. A non-nil rawTags pointer counts as a
+	// provided field even when the slice is empty (an explicit tag clear).
+	if edit.Body == nil && edit.Title == nil && edit.Kind == nil && edit.Pinned == nil && rawTags == nil {
+		err = domain.NewError(domain.ErrValidation, "comment edit requires at least one field", nil)
+		return
+	}
+
+	existing, err := s.repo.CommentByID(ctx, project.ID, commentID)
+	if err != nil {
+		return
+	}
+
+	if err = s.enforceCommentPermission(ctx, project, existing, commentID, PermissionEdit, GuardOperationCommentEdit); err != nil {
+		return
+	}
+
+	// Only normalize and forward tags when the caller provided them; a nil
+	// rawTags pointer leaves edit.Tags nil so the store preserves the existing
+	// tag set (tri-state).
+	if rawTags != nil {
+		tags := make([]domain.Tag, 0, len(*rawTags))
+		for _, raw := range *rawTags {
+			name := NormalizeTagName(raw, s.snap.Synonyms())
+			if name == "" {
+				continue
+			}
+			tags = append(tags, domain.Tag{Name: name, Label: TagLabel(raw)})
+		}
+		edit.Tags = &tags
+	}
+
+	comment, _, err = s.repo.EditComment(ctx, project.ID, commentID, edit)
 	return
 }
 
@@ -168,29 +315,72 @@ func (s *CommentService) Remove(ctx context.Context, project domain.ProjectConte
 		return
 	}
 
-	if s.workflow != nil {
-		var allowed bool
-		var hint string
-		allowed, hint, err = s.workflow.ResolveBucketPermissions(ctx, project, existing.TaskID, EntityComment, PermissionDelete)
-		if err != nil {
-			return
-		}
-		if !allowed {
-			taskRow, taskSnap, taskErr := s.workflow.ResolveTaskSnap(ctx, project, existing.TaskID)
-			if taskErr != nil {
-				err = taskErr
-				return
-			}
-			s.workflow.Evaluator().EmitViolatedForTask(ctx, project.ID, taskRow, taskSnap,
-				GuardOperationCommentDelete, GuardRulePermissions, hint,
-				map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "entity": EntityComment, "operation": PermissionDelete})
-			err = domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "hint": hint, "entity": EntityComment, "operation": PermissionDelete})
-			return
-		}
+	if err = s.enforceCommentPermission(ctx, project, existing, commentID, PermissionDelete, GuardOperationCommentDelete); err != nil {
+		return
 	}
 
 	event, err = s.repo.DeleteComment(ctx, project.ID, commentID)
 	return
+}
+
+// enforceCommentPermission is the scope-aware guard shared by Edit and Remove.
+// It is a no-op when no workflow service is wired (read-only composition).
+//
+//   - task scope:      resolved against the comment's current bucket via
+//     ResolveBucketPermissions (uses the comment's TaskID). A denial emits a
+//     task-scoped guard.violated and returns ErrGuardViolation.
+//   - project scope:   resolved task-lessly against the workflow defaults
+//     (defaults.comment.project.<op>). A denial emits a project-scoped
+//     guard.violated and returns ErrGuardViolation.
+//   - universal scope: resolved task-lessly (defaults.comment.universal.<op>).
+//     A denial emits a global (entity-less) guard.violated and returns
+//     ErrGuardViolation.
+//
+// operation is PermissionEdit/PermissionDelete; guardOp is the canonical
+// GuardOperationComment* payload value.
+func (s *CommentService) enforceCommentPermission(ctx context.Context, project domain.ProjectContext, existing domain.Comment, commentID int64, operation, guardOp string) error {
+	if s.workflow == nil {
+		return nil
+	}
+
+	scope := existing.Scope
+	if scope == "" {
+		scope = domain.CommentScopeTask
+	}
+
+	if scope == domain.CommentScopeTask {
+		allowed, hint, err := s.workflow.ResolveBucketPermissions(ctx, project, existing.TaskID, EntityComment, operation)
+		if err != nil {
+			return err
+		}
+		if allowed {
+			return nil
+		}
+		taskRow, taskSnap, taskErr := s.workflow.ResolveTaskSnap(ctx, project, existing.TaskID)
+		if taskErr != nil {
+			return taskErr
+		}
+		s.workflow.Evaluator().EmitViolatedForTask(ctx, project.ID, taskRow, taskSnap,
+			guardOp, GuardRulePermissions, hint,
+			map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "entity": EntityComment, "operation": operation})
+		return domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"comment_id": commentID, "task_id": existing.TaskID, "hint": hint, "entity": EntityComment, "operation": operation})
+	}
+
+	// project / universal: no task, resolve against workflow defaults only.
+	allowed, hint := s.workflow.ResolveCommentScopePermission(scope, operation)
+	if allowed {
+		return nil
+	}
+	target := map[string]any{"comment_id": commentID, "entity": EntityComment, "operation": operation, "scope": scope}
+	if scope == domain.CommentScopeProject {
+		s.workflow.Evaluator().EmitViolatedForProject(ctx, project.ID, guardOp, GuardRulePermissions, hint, target)
+	} else {
+		// Universal comments are stored project-less (project_id IS NULL); the
+		// violation row must match, so pass projectID=0 rather than stamping the
+		// acting project onto a project-less entity.
+		s.workflow.Evaluator().EmitViolated(ctx, 0, domain.EventEntityUniversal, 0, guardOp, GuardRulePermissions, hint, target)
+	}
+	return domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"comment_id": commentID, "hint": hint, "entity": EntityComment, "operation": operation, "scope": scope})
 }
 
 func (s *CommentService) List(ctx context.Context, project domain.ProjectContext, taskID int64) (comments []domain.Comment, err error) {

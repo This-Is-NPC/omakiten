@@ -249,14 +249,20 @@ okt assign 42                       # clear (recovery)
 
 `internal/cli/comment.go`. Run `okt comment <subcommand> --help` for the full flag list.
 
-- `okt comment add TASK_ID -b BODY` — `--author` defaults to `human` (other value: `agent`); `--tag` / `-T` is repeatable and kebab-case-normalized (`-T resume -T deployment-notes`).
-- `okt comment list TASK_ID` — chronological order, no flags.
-- `okt comment edit COMMENT_ID -b BODY [-T …]` — replaces body and tag set in one call. The submitted `--tag` set **replaces** the old one entirely. Subject to bucket `permissions.comment.edit` (inherits from `permissions.task.edit` when no comment block is declared). Emits `comment.edited`.
-- `okt comment delete COMMENT_ID --confirm` — subject to `permissions.comment.delete` (same inheritance rule). Emits `comment.removed` with the body snapshot. Refuses to run without `--confirm`.
+Comments are scope-aware: `--scope task` (default) hangs the comment off a task, `--scope project` off the project (no `TASK_ID`), and `--scope universal` is cross-project (no `TASK_ID`, NULL `project_id`). All four subcommands have full parity with the `comments.*` MCP tools.
+
+- `okt comment add [TASK_ID] -b BODY` — `--body` / `-b` is required. Task scope needs the `TASK_ID` arg; project/universal scopes must omit it. Flags: `--scope` (`task`|`project`|`universal`), `--kind` (free string, e.g. `handoff`/`recap`/`standup`), `--title`, `--pinned`, `--author` (defaults to `human`; other value `agent`), and `--tag` / `-T` (repeatable, kebab-case-normalized — `-T resume -T deployment-notes`).
+- `okt comment list [TASK_ID]` — a bare `TASK_ID` with no other flag lists that task's comments in chronological order (legacy task-scoped path). Adding any filter switches to the query surface: `--scope` (`task`|`project`|`universal`), `--kind`, `--tag` / `-T`, `--pinned` (pinned-only), `--query` (FTS5 over body + title), `--since` (window floor — Go duration `24h`/`30m` or N-day shorthand `7d`), and `--comment-id` (fetch exactly one comment by id, any scope, ignoring the project filter).
+- `okt comment edit COMMENT_ID [-b BODY] [--title …] [--kind …] [--pinned] [-T …]` — tri-state PATCH: `--body` is **optional**; omitting it leaves the stored body untouched (a metadata-only edit), and a supplied body must be non-empty (you can rewrite but not blank it). `--title`/`--kind`/`--pinned` are only applied when their flag is explicitly set, so a body-only edit never wipes them. At least one of `--body`/`--title`/`--kind`/`--pinned`/`--tag` is required. The submitted `--tag` set **replaces** the old one entirely. Scope-aware guard: task scope resolves bucket `permissions.comment.edit` (inherits `permissions.task.edit` when no comment block is declared); project/universal scope resolves the task-less workflow defaults `defaults.comment.{project,universal}.edit`. Emits `comment.edited`.
+- `okt comment delete COMMENT_ID --confirm` — scope-agnostic. Subject to the same scope-aware policy (`permissions.comment.delete` for task scope, `defaults.comment.{project,universal}.delete` for project/universal). Emits `comment.removed` with the body snapshot. Refuses to run without `--confirm`.
 
 ```sh
 okt comment add 42 -b "Branch: feature/foo" -T self-branch
+okt comment add -b "Sprint handoff" --scope project --kind handoff --pinned
 okt comment list 42
+okt comment list --scope project --kind handoff --pinned
+okt comment list --query "rebase NEAR/3 conflict" --since 7d
+okt comment edit 1234 --pinned                       # metadata-only; body untouched
 okt comment edit 1234 -b "Branch: feature/foo (rebased)" -T self-branch -T rebased
 okt comment delete 1234 --confirm
 ```

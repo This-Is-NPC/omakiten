@@ -98,6 +98,22 @@ func TestSummarizeEventPerTypeRendering(t *testing.T) {
 			row:  EventRow{EventType: EventTypeCommentEdited, Payload: `{"comment_id":5,"body":{"from":"old","to":"new"}}`},
 			want: `edited: "old" → "new"`,
 		},
+		"comment.edited pin only": {
+			row:  EventRow{EventType: EventTypeCommentEdited, Payload: `{"comment_id":5,"pinned":{"from":false,"to":true}}`},
+			want: "pinned",
+		},
+		"comment.edited unpin only": {
+			row:  EventRow{EventType: EventTypeCommentEdited, Payload: `{"comment_id":5,"pinned":{"from":true,"to":false}}`},
+			want: "unpinned",
+		},
+		"comment.edited title only": {
+			row:  EventRow{EventType: EventTypeCommentEdited, Payload: `{"comment_id":5,"title":{"from":"Old","to":"New"}}`},
+			want: `retitled: "Old" → "New"`,
+		},
+		"comment.edited kind only": {
+			row:  EventRow{EventType: EventTypeCommentEdited, Payload: `{"comment_id":5,"kind":{"from":"draft","to":"recap"}}`},
+			want: "kind: draft → recap",
+		},
 		"comment.removed with body": {
 			row:  EventRow{EventType: EventTypeCommentRemoved, Payload: `{"comment_id":7,"body":"gone"}`},
 			want: `removed: "gone"`,
@@ -172,9 +188,25 @@ func TestSummarizeEventPerTypeRendering(t *testing.T) {
 			row:  EventRow{EventType: EventTypePlanDone},
 			want: "plan done",
 		},
-		"plan.abandoned reason": {
-			row:  EventRow{EventType: EventTypePlanAbandoned, Payload: `{"reason":"scope cut"}`},
-			want: "plan abandoned: scope cut",
+		"plan.abandoned": {
+			row:  EventRow{EventType: EventTypePlanAbandoned, Payload: `{}`},
+			want: "plan abandoned",
+		},
+		"plan.wave_removed with position": {
+			row:  EventRow{EventType: EventTypePlanWaveRemoved, Payload: `{"wave_id":3,"name":"Backend","position":2}`},
+			want: "wave #2 removed: Backend",
+		},
+		"plan.wave_renamed from/to": {
+			row:  EventRow{EventType: EventTypePlanWaveRenamed, Payload: `{"wave_id":3,"from":"Backend","to":"API"}`},
+			want: "wave renamed: Backend → API",
+		},
+		"plan.wave_reordered from/to": {
+			row:  EventRow{EventType: EventTypePlanWaveReordered, Payload: `{"wave_id":3,"from":1,"to":2}`},
+			want: "wave reordered: #1 → #2",
+		},
+		"plan.task_unassigned": {
+			row:  EventRow{EventType: EventTypePlanTaskUnassigned, Payload: `{"plan_id":1,"wave_id":2,"source":"plans.unassign"}`},
+			want: "task detached from plan",
 		},
 
 		// Tags + deps.

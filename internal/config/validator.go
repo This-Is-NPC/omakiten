@@ -848,6 +848,10 @@ func validateWorkflows(workflows []Workflow, activeKey string) error {
 			}
 		}
 
+		if err := validatePermissionScopes(workflow); err != nil {
+			return err
+		}
+
 		if err := validateGuards(workflow.Key, "operations.archive", workflow.Operations.Archive.Guards, bucketKeySet); err != nil {
 			return err
 		}
@@ -864,6 +868,40 @@ func validateWorkflows(workflows []Workflow, activeKey string) error {
 	}
 
 	return nil
+}
+
+// validatePermissionScopes enforces the rule that per-scope sub-blocks
+// (task/project/universal) are only meaningful on workflows[].defaults.comment.
+// They are rejected anywhere else: on defaults.task, and on any bucket-level
+// permission block (task or comment) — buckets have no scope dimension, and a
+// scope sub-block there would silently never resolve. The comment scope key
+// set is closed to {task, project, universal}; the strict YAML decoder rejects
+// any other key at parse time, so this validator guards the structural
+// placement rather than the key names themselves.
+func validatePermissionScopes(workflow Workflow) error {
+	if workflow.Defaults != nil {
+		if hasScopeBlocks(workflow.Defaults.Task) {
+			return fmt.Errorf("workflows.%s.defaults.task: scope sub-blocks (task/project/universal) are only valid under defaults.comment", workflow.Key)
+		}
+	}
+	for _, bucket := range workflow.Buckets {
+		if bucket.Permissions == nil {
+			continue
+		}
+		if hasScopeBlocks(bucket.Permissions.Task) {
+			return fmt.Errorf("workflows.%s.buckets.%s.permissions.task: scope sub-blocks are not valid at the bucket level", workflow.Key, bucket.Key)
+		}
+		if hasScopeBlocks(bucket.Permissions.Comment) {
+			return fmt.Errorf("workflows.%s.buckets.%s.permissions.comment: scope sub-blocks (task/project/universal) are only valid under workflow.defaults.comment", workflow.Key, bucket.Key)
+		}
+	}
+	return nil
+}
+
+// hasScopeBlocks reports whether any per-scope sub-block is declared on the
+// permission. nil is treated as "no sub-blocks".
+func hasScopeBlocks(p *EntityPermission) bool {
+	return p != nil && (p.Task != nil || p.Project != nil || p.Universal != nil)
 }
 
 // validateGuards enforces the comments_tagged / comments_min / blockers_in

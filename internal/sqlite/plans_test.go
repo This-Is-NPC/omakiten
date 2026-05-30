@@ -1024,3 +1024,503 @@ func TestGetPlanByIDScopesByProject(t *testing.T) {
 		t.Fatalf("cross-project error = %v, want ErrPlanNotFound", err)
 	}
 }
+
+func strPtr(s string) *string { return &s }
+
+func TestUpdatePlanEditsNameSlugStatus(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+
+	updated, err := store.UpdatePlan(ctx, project.ID, plan.ID,
+		strPtr("Renamed"), strPtr("plan-z"), strPtr(string(domain.PlanStatusDone)))
+	if err != nil {
+		t.Fatalf("UpdatePlan: %v", err)
+	}
+	if updated.Name != "Renamed" || updated.Slug != "plan-z" {
+		t.Fatalf("UpdatePlan name/slug = %q/%q, want Renamed/plan-z", updated.Name, updated.Slug)
+	}
+	if updated.Status != domain.PlanStatusDone {
+		t.Fatalf("UpdatePlan status = %q, want done", updated.Status)
+	}
+	if updated.CompletedAt == "" {
+		t.Fatalf("UpdatePlan completed_at empty after terminal transition")
+	}
+
+	// plan.edited event emitted with the field diff.
+	events, err := store.ListRecentEvents(ctx, domain.EventTypePlanEdited, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("plan.edited events = %d, want 1", len(events))
+	}
+	if events[0].EntityType != domain.EventEntityPlan || events[0].EntityID != plan.ID {
+		t.Fatalf("plan.edited entity = %s/%d, want plan/%d", events[0].EntityType, events[0].EntityID, plan.ID)
+	}
+}
+
+func TestUpdatePlanPartialLeavesOtherFields(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "Goal")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	updated, err := store.UpdatePlan(ctx, project.ID, plan.ID, strPtr("Just Name"), nil, nil)
+	if err != nil {
+		t.Fatalf("UpdatePlan: %v", err)
+	}
+	if updated.Name != "Just Name" || updated.Slug != "plan-a" || updated.GoalBody != "Goal" {
+		t.Fatalf("UpdatePlan partial = %+v, want only name changed", updated)
+	}
+	if updated.Status != domain.PlanStatusActive {
+		t.Fatalf("UpdatePlan partial status = %q, want active untouched", updated.Status)
+	}
+}
+
+func TestUpdatePlanRejectsSlugCollision(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	if _, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", ""); err != nil {
+		t.Fatalf("CreatePlan A: %v", err)
+	}
+	planB, err := store.CreatePlan(ctx, project.ID, "plan-b", "Plan B", "")
+	if err != nil {
+		t.Fatalf("CreatePlan B: %v", err)
+	}
+	_, err = store.UpdatePlan(ctx, project.ID, planB.ID, nil, strPtr("plan-a"), nil)
+	if err == nil {
+		t.Fatal("expected slug collision error, got nil")
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrPlanSlugConflict {
+		t.Fatalf("collision error = %v, want ErrPlanSlugConflict", err)
+	}
+}
+
+func TestUpdatePlanRejectsNoOp(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	if _, err := store.UpdatePlan(ctx, project.ID, plan.ID, nil, nil, nil); err == nil {
+		t.Fatal("expected validation error for empty field set, got nil")
+	}
+	// Values matching the current row are also a no-op.
+	_, err = store.UpdatePlan(ctx, project.ID, plan.ID, strPtr("Plan A"), strPtr("plan-a"), nil)
+	if err == nil {
+		t.Fatal("expected validation error when values match current plan, got nil")
+	}
+}
+
+func TestUpdatePlanRejectsBadStatus(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	_, err = store.UpdatePlan(ctx, project.ID, plan.ID, nil, nil, strPtr("paused"))
+	if err == nil {
+		t.Fatal("expected validation error for unknown status, got nil")
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrValidation {
+		t.Fatalf("bad status error = %v, want ErrValidation", err)
+	}
+}
+
+func TestUpdatePlanAbandonCoEmitsAbandonedEvent(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	updated, err := store.UpdatePlan(ctx, project.ID, plan.ID, nil, nil, strPtr(string(domain.PlanStatusAbandoned)))
+	if err != nil {
+		t.Fatalf("UpdatePlan abandon: %v", err)
+	}
+	if updated.Status != domain.PlanStatusAbandoned {
+		t.Fatalf("status = %q, want abandoned", updated.Status)
+	}
+	abandoned, err := store.ListRecentEvents(ctx, domain.EventTypePlanAbandoned, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents abandoned: %v", err)
+	}
+	if len(abandoned) != 1 {
+		t.Fatalf("plan.abandoned events = %d, want 1", len(abandoned))
+	}
+	edited, err := store.ListRecentEvents(ctx, domain.EventTypePlanEdited, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents edited: %v", err)
+	}
+	if len(edited) != 1 {
+		t.Fatalf("plan.edited events = %d, want 1 (primary always emits)", len(edited))
+	}
+}
+
+func TestUpdatePlanCrossProjectRejected(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	_, err = store.UpdatePlan(ctx, project.ID+999, plan.ID, strPtr("X"), nil, nil)
+	if err == nil {
+		t.Fatal("expected ErrPlanNotFound for cross-project edit, got nil")
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrPlanNotFound {
+		t.Fatalf("cross-project error = %v, want ErrPlanNotFound", err)
+	}
+}
+
+func TestDeletePlanCascadesWavesAndDetachesTasks(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 0)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "Member", "", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, task.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan: %v", err)
+	}
+
+	if _, err := store.DeletePlan(ctx, project.ID, plan.ID); err != nil {
+		t.Fatalf("DeletePlan: %v", err)
+	}
+
+	// Plan row gone.
+	var planCount int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plans WHERE id = ?`, plan.ID).Scan(&planCount); err != nil {
+		t.Fatalf("count plans: %v", err)
+	}
+	if planCount != 0 {
+		t.Fatalf("plan row count = %d, want 0", planCount)
+	}
+	// Waves cascade-deleted.
+	var waveCount int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plan_waves WHERE plan_id = ?`, plan.ID).Scan(&waveCount); err != nil {
+		t.Fatalf("count waves: %v", err)
+	}
+	if waveCount != 0 {
+		t.Fatalf("plan_waves count = %d, want 0 (cascade)", waveCount)
+	}
+	// Member task survives, detached (plan_id / wave_id NULL).
+	var taskExists int
+	var planID, waveID sql.NullInt64
+	if err := store.db.QueryRowContext(ctx, `SELECT 1, plan_id, wave_id FROM tasks WHERE id = ?`, task.ID).Scan(&taskExists, &planID, &waveID); err != nil {
+		t.Fatalf("scan surviving task: %v", err)
+	}
+	if taskExists != 1 {
+		t.Fatalf("member task vanished after plan delete")
+	}
+	if planID.Valid || waveID.Valid {
+		t.Fatalf("task plan_id/wave_id = %v/%v, want both NULL after SET NULL cascade", planID, waveID)
+	}
+
+	// plan.deleted event emitted.
+	events, err := store.ListRecentEvents(ctx, domain.EventTypePlanDeleted, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("plan.deleted events = %d, want 1", len(events))
+	}
+	if events[0].EntityType != domain.EventEntityPlan || events[0].EntityID != plan.ID {
+		t.Fatalf("plan.deleted entity = %s/%d, want plan/%d", events[0].EntityType, events[0].EntityID, plan.ID)
+	}
+}
+
+func TestDeletePlanNotFound(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	_, err := store.DeletePlan(ctx, project.ID, 99999)
+	if err == nil {
+		t.Fatal("expected ErrPlanNotFound, got nil")
+	}
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrPlanNotFound {
+		t.Fatalf("delete missing error = %v, want ErrPlanNotFound", err)
+	}
+}
+
+func TestRemovePlanWaveDetachesMemberTasks(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 0)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "Child", "", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, task.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan: %v", err)
+	}
+
+	removed, err := store.RemovePlanWave(ctx, project.ID, wave.ID)
+	if err != nil {
+		t.Fatalf("RemovePlanWave: %v", err)
+	}
+	if removed.ID != wave.ID || removed.Name != "wave-one" {
+		t.Fatalf("RemovePlanWave returned %+v, want wave-one/%d", removed, wave.ID)
+	}
+
+	// Wave gone.
+	waves, err := store.ListPlanWaves(ctx, project.ID, plan.ID)
+	if err != nil {
+		t.Fatalf("ListPlanWaves: %v", err)
+	}
+	if len(waves) != 0 {
+		t.Fatalf("waves after remove = %d, want 0", len(waves))
+	}
+
+	// Member task survives: wave_id cleared, plan_id intact.
+	var planID, waveID sql.NullInt64
+	if err := store.db.QueryRowContext(ctx, `SELECT plan_id, wave_id FROM tasks WHERE id = ?`, task.ID).Scan(&planID, &waveID); err != nil {
+		t.Fatalf("scan task: %v", err)
+	}
+	if waveID.Valid {
+		t.Fatalf("task wave_id = %v, want NULL after wave removal", waveID)
+	}
+	if !planID.Valid || planID.Int64 != plan.ID {
+		t.Fatalf("task plan_id = %v, want %d (plan link must survive)", planID, plan.ID)
+	}
+
+	// plan.wave_removed event emitted, keyed by plan id.
+	events, err := store.ListRecentEvents(ctx, domain.EventTypePlanWaveRemoved, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("plan.wave_removed events = %d, want 1", len(events))
+	}
+	if events[0].EntityType != domain.EventEntityPlan || events[0].EntityID != plan.ID {
+		t.Fatalf("plan.wave_removed entity = %s/%d, want plan/%d", events[0].EntityType, events[0].EntityID, plan.ID)
+	}
+}
+
+func TestRemovePlanWaveScopesByProject(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 0)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	other, err := store.UpsertProject(ctx, "Other", "other", "/work/other")
+	if err != nil {
+		t.Fatalf("UpsertProject: %v", err)
+	}
+	_, err = store.RemovePlanWave(ctx, other.ID, wave.ID)
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrPlanWaveNotFound {
+		t.Fatalf("cross-project remove error = %v, want ErrPlanWaveNotFound", err)
+	}
+}
+
+func TestRenamePlanWave(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "old-name", 0)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+
+	renamed, err := store.RenamePlanWave(ctx, project.ID, wave.ID, "new-name")
+	if err != nil {
+		t.Fatalf("RenamePlanWave: %v", err)
+	}
+	if renamed.Name != "new-name" || renamed.Position != wave.Position {
+		t.Fatalf("RenamePlanWave = %+v, want new-name at position %d", renamed, wave.Position)
+	}
+
+	// No-op rename rejected.
+	if _, err := store.RenamePlanWave(ctx, project.ID, wave.ID, "new-name"); err == nil {
+		t.Fatal("expected no-op rename rejection")
+	}
+	// Blank rejected.
+	if _, err := store.RenamePlanWave(ctx, project.ID, wave.ID, "   "); err == nil {
+		t.Fatal("expected blank rename rejection")
+	}
+
+	events, err := store.ListRecentEvents(ctx, domain.EventTypePlanWaveRenamed, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("plan.wave_renamed events = %d, want 1", len(events))
+	}
+}
+
+func TestReorderPlanWaveSwapsOnCollision(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	w1, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 1)
+	if err != nil {
+		t.Fatalf("AddPlanWave 1: %v", err)
+	}
+	w2, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-two", 2)
+	if err != nil {
+		t.Fatalf("AddPlanWave 2: %v", err)
+	}
+
+	// Move w1 (pos 1) to pos 2 — occupied by w2, so swap.
+	moved, err := store.ReorderPlanWave(ctx, project.ID, w1.ID, 2)
+	if err != nil {
+		t.Fatalf("ReorderPlanWave: %v", err)
+	}
+	if moved.Position != 2 {
+		t.Fatalf("moved wave position = %d, want 2", moved.Position)
+	}
+
+	// Position uniqueness preserved: w2 took w1's old slot (1).
+	waves, err := store.ListPlanWaves(ctx, project.ID, plan.ID)
+	if err != nil {
+		t.Fatalf("ListPlanWaves: %v", err)
+	}
+	if len(waves) != 2 {
+		t.Fatalf("waves = %d, want 2", len(waves))
+	}
+	// Ordered by position ASC.
+	if waves[0].ID != w2.ID || waves[0].Position != 1 {
+		t.Fatalf("waves[0] = %+v, want w2 at position 1", waves[0])
+	}
+	if waves[1].ID != w1.ID || waves[1].Position != 2 {
+		t.Fatalf("waves[1] = %+v, want w1 at position 2", waves[1])
+	}
+
+	events, err := store.ListRecentEvents(ctx, domain.EventTypePlanWaveReordered, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("plan.wave_reordered events = %d, want 1", len(events))
+	}
+}
+
+func TestReorderPlanWaveToFreeSlot(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	w1, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 1)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+
+	moved, err := store.ReorderPlanWave(ctx, project.ID, w1.ID, 5)
+	if err != nil {
+		t.Fatalf("ReorderPlanWave free slot: %v", err)
+	}
+	if moved.Position != 5 {
+		t.Fatalf("moved position = %d, want 5", moved.Position)
+	}
+
+	// No-op (already at 5) rejected.
+	if _, err := store.ReorderPlanWave(ctx, project.ID, w1.ID, 5); err == nil {
+		t.Fatal("expected no-op reorder rejection")
+	}
+	// Non-positive rejected.
+	if _, err := store.ReorderPlanWave(ctx, project.ID, w1.ID, 0); err == nil {
+		t.Fatal("expected non-positive position rejection")
+	}
+}
+
+func TestUnassignTaskFromPlanClearsLinkage(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	plan, err := store.CreatePlan(ctx, project.ID, "plan-a", "Plan A", "")
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := store.AddPlanWave(ctx, project.ID, plan.ID, "wave-one", 0)
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, "Child", "", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if err := store.AssignTaskToPlan(ctx, project.ID, task.ID, plan.ID, wave.ID); err != nil {
+		t.Fatalf("AssignTaskToPlan: %v", err)
+	}
+
+	event, err := store.UnassignTaskFromPlan(ctx, project.ID, task.ID)
+	if err != nil {
+		t.Fatalf("UnassignTaskFromPlan: %v", err)
+	}
+	if event.EventType != domain.EventTypePlanTaskUnassigned || event.EntityID != task.ID {
+		t.Fatalf("unassign event = %+v, want plan.task_unassigned for task %d", event, task.ID)
+	}
+
+	var planID, waveID sql.NullInt64
+	if err := store.db.QueryRowContext(ctx, `SELECT plan_id, wave_id FROM tasks WHERE id = ?`, task.ID).Scan(&planID, &waveID); err != nil {
+		t.Fatalf("scan task: %v", err)
+	}
+	if planID.Valid || waveID.Valid {
+		t.Fatalf("task linkage plan_id=%v wave_id=%v, want both NULL", planID, waveID)
+	}
+
+	events, err := store.ListRecentEvents(ctx, domain.EventTypePlanTaskUnassigned, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("plan.task_unassigned events = %d, want 1", len(events))
+	}
+	if events[0].EntityType != domain.EventEntityTask {
+		t.Fatalf("event entity_type = %q, want task", events[0].EntityType)
+	}
+}
+
+func TestUnassignTaskFromPlanNoOpWhenDetached(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	task, err := store.CreateTask(ctx, project.ID, "Standalone", "", domain.Priority(2), "backlog", nil, store.snap())
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	event, err := store.UnassignTaskFromPlan(ctx, project.ID, task.ID)
+	if err != nil {
+		t.Fatalf("UnassignTaskFromPlan no-op: %v", err)
+	}
+	if event.EventType != "" {
+		t.Fatalf("no-op detach emitted event %q, want zero", event.EventType)
+	}
+	events, err := store.ListRecentEvents(ctx, domain.EventTypePlanTaskUnassigned, 10)
+	if err != nil {
+		t.Fatalf("ListRecentEvents: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("no-op detach emitted %d events, want 0", len(events))
+	}
+}
+
+func TestUnassignTaskFromPlanNotFound(t *testing.T) {
+	ctx, store, project := setupPlans(t)
+	_, err := store.UnassignTaskFromPlan(ctx, project.ID, 99999)
+	var coded *domain.CodedError
+	if !errors.As(err, &coded) || coded.Code != domain.ErrTaskNotFound {
+		t.Fatalf("missing task error = %v, want ErrTaskNotFound", err)
+	}
+}

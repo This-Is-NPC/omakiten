@@ -84,6 +84,33 @@ const (
 	// EventTypePlanGoalEdited fires when a plan's goal_body is rewritten
 	// via plans.update_goal_body. EntityType=plan, Payload={length}.
 	EventTypePlanGoalEdited = "plan.goal_edited"
+	// EventTypePlanEdited fires when a plan's name / slug / status is
+	// changed via plans.edit. EntityType=plan,
+	// Payload={fields:{<field>:{from,to}}}.
+	EventTypePlanEdited = "plan.edited"
+	// EventTypePlanDeleted fires when a plan is hard-deleted via
+	// plans.delete. Waves cascade and member tasks are detached
+	// (plan_id/wave_id SET NULL). EntityType=plan,
+	// Payload={slug, name, status}.
+	EventTypePlanDeleted = "plan.deleted"
+	// EventTypePlanWaveRemoved fires when a wave is deleted from a plan via
+	// plans.remove_wave. Member tasks survive with wave_id cleared (FK SET
+	// NULL); plan_id is untouched. EntityType=plan (keyed by plan id),
+	// Payload={wave_id, name, position}.
+	EventTypePlanWaveRemoved = "plan.wave_removed"
+	// EventTypePlanWaveRenamed fires when a wave's name changes via
+	// plans.rename_wave. EntityType=plan (keyed by plan id),
+	// Payload={wave_id, from, to}.
+	EventTypePlanWaveRenamed = "plan.wave_renamed"
+	// EventTypePlanWaveReordered fires when a wave's position changes via
+	// plans.reorder_wave. A collision with an occupied slot swaps the two
+	// waves. EntityType=plan (keyed by plan id),
+	// Payload={wave_id, from, to}.
+	EventTypePlanWaveReordered = "plan.wave_reordered"
+	// EventTypePlanTaskUnassigned fires when a task is detached from its
+	// plan via plans.unassign (plan_id and wave_id both cleared).
+	// EntityType=task, Payload={plan_id, wave_id, source}.
+	EventTypePlanTaskUnassigned = "plan.task_unassigned"
 	// EventTypePlanDone fires when a plan auto-transitions to status=done
 	// (every child task in a terminal bucket). EntityType=plan, Payload={}.
 	EventTypePlanDone = "plan.done"
@@ -232,28 +259,6 @@ const (
 	// reaches hooks through `when: {verb: <name>, operand: <value>}`
 	// filtering. EntityType=system, Payload={verb, operand, raw}.
 	EventTypeTrickExecuted = "trick.executed"
-
-	// EventTypeNoteCreated fires when a notes row is inserted via
-	// Store.CreateNote. EntityType=note, EntityID=note id, ProjectID
-	// carries the scope (0 = global). Payload={title, kind, scope, tags}.
-	EventTypeNoteCreated = "note.created"
-	// EventTypeNoteEdited fires when any mutable note field (title, body,
-	// kind, or tag set) changes through Store.UpdateNote. A toggle of the
-	// pinned flag co-emits note.pinned. EntityType=note,
-	// Payload={title, kind, scope, tags}.
-	EventTypeNoteEdited = "note.edited"
-	// EventTypeNotePinned fires when Store.UpdateNote flips the pinned
-	// flag (either direction). Always co-emits with note.edited because
-	// pinning is also a meaningful edit of the row. EntityType=note,
-	// Payload={title, kind, scope, tags, pinned}; `pinned` carries the
-	// post-mutation state so consumers can distinguish pin from unpin
-	// without re-reading the row.
-	EventTypeNotePinned = "note.pinned"
-	// EventTypeNoteRemoved fires immediately before Store.DeleteNote
-	// hard-deletes the row. Title is snapshotted into the payload so
-	// activity-feed consumers retain context after the row is gone.
-	// EntityType=note, Payload={title, kind, scope, tags}.
-	EventTypeNoteRemoved = "note.removed"
 )
 
 // ToolCallEventTypeForSource returns the canonical event_type string for
@@ -300,8 +305,12 @@ const (
 	// (e.g. solution.viewed_top, errors.researched).
 	EventEntitySystem = "system"
 	// EventEntityProject scopes events whose primary subject is a project
-	// (project tag adds/removes today).
+	// (project tag adds/removes today, project-scoped comments).
 	EventEntityProject = "project"
+	// EventEntityUniversal scopes comments that hang off no task and no
+	// project (entity_id and project_id both NULL) — the universal handoff
+	// log shared across every project.
+	EventEntityUniversal = "universal"
 	// EventEntityError scopes events tied to an error row.
 	EventEntityError = "error"
 	// EventEntitySolution scopes events tied to a solution row.
@@ -310,11 +319,6 @@ const (
 	// plan id). Wave events also land under this entity scope — the wave
 	// id travels in the payload because the activity feed groups by plan.
 	EventEntityPlan = "plan"
-	// EventEntityNote scopes events tied to a note row (entity_id is the
-	// note id). Notes can be project-scoped (project_id > 0) or global
-	// (project_id IS NULL) so the entity_type alone does not imply a
-	// project — consumers must read project_id from the event row.
-	EventEntityNote = "note"
 
 	// EventTypeUpdateHealthCheckPassed fires from runUpdate after the
 	// staged-binary validator returns OK, before the swap. The event
@@ -358,21 +362,21 @@ const (
 // system events (task.*) use Payload, operations use Source/Operation/
 // Status/DurationMs. Treat absent fields as empty.
 type Event struct {
-	ID           int64  `json:"id"`
-	EntityType   string `json:"entity_type"`
-	EntityID     int64  `json:"entity_id,omitempty"`
-	ProjectID    int64  `json:"project_id,omitempty"`
-	ProjectSlug  string `json:"project_slug,omitempty"`
-	EventType    string `json:"event_type"`
-	Body         string `json:"body,omitempty"`
-	Payload      string `json:"payload,omitempty"`
-	AuthorType   string `json:"author_type,omitempty"`
-	Source       string `json:"source,omitempty"`
-	Entrypoint   string `json:"entrypoint,omitempty"`
-	Operation    string `json:"operation,omitempty"`
-	Status       string `json:"status,omitempty"`
-	DurationMs   int    `json:"duration_ms,omitempty"`
-	ErrorMessage string `json:"error_message,omitempty"`
+	ID             int64  `json:"id"`
+	EntityType     string `json:"entity_type"`
+	EntityID       int64  `json:"entity_id,omitempty"`
+	ProjectID      int64  `json:"project_id,omitempty"`
+	ProjectSlug    string `json:"project_slug,omitempty"`
+	EventType      string `json:"event_type"`
+	Body           string `json:"body,omitempty"`
+	Payload        string `json:"payload,omitempty"`
+	AuthorType     string `json:"author_type,omitempty"`
+	Source         string `json:"source,omitempty"`
+	Entrypoint     string `json:"entrypoint,omitempty"`
+	Operation      string `json:"operation,omitempty"`
+	Status         string `json:"status,omitempty"`
+	DurationMs     int    `json:"duration_ms,omitempty"`
+	ErrorMessage   string `json:"error_message,omitempty"`
 	CreatedAt      string `json:"created_at"`
 	FinishedAt     string `json:"finished_at,omitempty"`
 	Tags           []Tag  `json:"tags,omitempty"`

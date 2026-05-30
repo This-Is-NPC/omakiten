@@ -121,7 +121,13 @@ func toDomainPermission(in *EntityPermission) *domain.EntityPermission {
 	if in == nil {
 		return nil
 	}
-	return &domain.EntityPermission{Edit: copyBool(in.Edit), Delete: copyBool(in.Delete)}
+	return &domain.EntityPermission{
+		Edit:      copyBool(in.Edit),
+		Delete:    copyBool(in.Delete),
+		Task:      toDomainPermission(in.Task),
+		Project:   toDomainPermission(in.Project),
+		Universal: toDomainPermission(in.Universal),
+	}
 }
 
 func toDomainBucketPerms(in *BucketPermissions) *domain.BucketPermissions {

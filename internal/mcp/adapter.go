@@ -227,12 +227,12 @@ func tools() []ToolDefinition {
 		{Name: "tasks.delete", Description: "Hard-delete a task with cascade (comments, tags, dependencies, events). Subject to bucket policy (permissions.task.delete) and operations.delete.guards.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "confirmed": booleanSchema("Required true to actually delete the task")}, []string{"task_id"})},
 		{Name: "tasks.archive", Description: "Archive a task (state=archived) and move it into the workflow's final bucket. Bypasses bucket policy and transition guards but respects operations.archive.guards.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id")}, []string{"task_id"})},
 		{Name: "tasks.unarchive", Description: "Restore an archived task to active state, leaving its current bucket intact. Respects operations.unarchive.guards if declared.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id")}, []string{"task_id"})},
-		{Name: "comments.add", Description: "Add a human or agent comment to a project-owned task. Optionally tag the comment with one or more tag names (normalized to kebab-case) or pre-fill its body from a loaded template.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "body": stringSchema("Comment body"), "author_type": stringSchema("human or agent"), "tags": arrayStringSchema("Optional tag names to attach to this comment (e.g. [\"resume\", \"deployment-notes\"])"), "template_slug": stringSchema("Optional slug of a loaded template; when set, the template body is merged into the comment (user content first, template appended).")}, []string{"task_id", "body"})},
-		{Name: "comments.list", Description: "List comments for a project-owned task.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id")}, []string{"task_id"})},
-		{Name: "comments.edit", Description: "Rewrite a comment body and replace its tags. Subject to bucket policy (permissions.comment.edit, inherited from permissions.task when not declared).", InputSchema: objectSchema(map[string]any{"comment_id": integerSchema("Comment id"), "body": stringSchema("New comment body"), "tags": arrayStringSchema("Optional tag names; replaces all existing tags on the comment")}, []string{"comment_id", "body"})},
+		{Name: "comments.add", Description: "Add a scope-aware human or agent comment. scope selects where it hangs: task (default; requires task_id), project (requires no task_id), or universal (cross-project; no task_id). Optional note-like fields kind/title/pinned and tag names (normalized to kebab-case); body may be pre-filled from a loaded template.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id (required when scope=task; must be omitted for project/universal)"), "scope": stringSchema("Comment scope: task (default), project, or universal"), "body": stringSchema("Comment body"), "title": stringSchema("Optional title for the comment"), "kind": stringSchema("Optional comment kind (e.g. \"handoff\", \"recap\", \"standup\")"), "pinned": booleanSchema("Optional; pin the comment to the cover sheet"), "author_type": stringSchema("human or agent"), "tags": arrayStringSchema("Optional tag names to attach to this comment (e.g. [\"resume\", \"deployment-notes\"])"), "template_slug": stringSchema("Optional slug of a loaded template; when set, the template body is merged into the comment (user content first, template appended).")}, []string{"body"})},
+		{Name: "comments.list", Description: "List comments. With no extra filters this lists the named task's comments (task-scoped, default). Pass comment_id to fetch exactly one comment by id (get-by-id, any scope). Add scope/kind/tag/pinned/query/since to query the filterable handoff log: scope (task|project|universal), kind, tag, pinned (pinned-only), query (FTS5 over body+title), and since (time-window floor, e.g. \"24h\", \"7d\").", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id; narrows task-scoped rows"), "comment_id": integerSchema("Comment id; returns exactly that comment (any scope), ignoring the project filter"), "scope": stringSchema("Optional scope filter: task, project, or universal"), "kind": stringSchema("Optional comment kind filter"), "tag": stringSchema("Optional tag-name filter"), "pinned": booleanSchema("Optional; return only pinned comments"), "query": stringSchema("Optional FTS5 MATCH expression over comment body and title"), "since": stringSchema("Optional time-window floor (Go duration \"24h\"/\"30m\" or N-day shorthand \"7d\")")}, nil)},
+		{Name: "comments.edit", Description: "Edit a comment's body and/or its title/kind/pinned flag, and replace its tags. Every field is a partial update (PATCH semantics): provide at least one of body/title/kind/pinned/tags; the service rejects no-op calls. Omit body to leave it unchanged (metadata-only edit) — a non-null body must be non-empty (you can rewrite but not blank it). Subject to bucket policy (permissions.comment.edit, inherited from permissions.task when not declared).", InputSchema: objectSchema(map[string]any{"comment_id": integerSchema("Comment id"), "body": stringSchema("Optional new comment body; omit to leave the body unchanged. A non-null value must be non-empty."), "title": stringSchema("Optional new title"), "kind": stringSchema("Optional new comment kind"), "pinned": booleanSchema("Optional; set the pinned flag"), "tags": arrayStringSchema("Optional tag names; replaces all existing tags on the comment")}, []string{"comment_id"})},
 		{Name: "comments.delete", Description: "Hard-delete a comment. Subject to bucket policy (permissions.comment.delete, inherited from permissions.task when not declared).", InputSchema: objectSchema(map[string]any{"comment_id": integerSchema("Comment id"), "confirmed": booleanSchema("Required true to actually delete the comment")}, []string{"comment_id"})},
 		{Name: "task_activity.list", Description: "Return the unified activity feed for a task: comments and system events (task.created, task.moved, task.completed) ordered chronologically.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id"), "order": stringSchema("Sort order: 'asc' (chronological, default) or 'desc' (newest first)")}, []string{"task_id"})},
-		{Name: "logs.list", Description: "Generic Logs inspector over the unified events log. Returns every event_type — task lifecycle, comments, plans, notes, guards, hooks, tool calls (CLI/MCP/TUI), tricks, audits, and domain bookkeeping — each row carrying a rendered `summary` string so the agent does not have to parse the payload JSON. Default scope is the active project over the configured window (config.views.logs.window_days, 30 days by default). Pass `categories=[\"tool_call\"]` to reproduce the legacy activity-log filter; pass `since=\"24h\"` to narrow the window. Allowed categories: task, comment, plan, tag-dep, guard, audit, hook, tool_call, trick, domain, note.", InputSchema: logsListSchema()},
+		{Name: "logs.list", Description: "Generic Logs inspector over the unified events log. Returns every event_type — task lifecycle, comments, plans, guards, hooks, tool calls (CLI/MCP/TUI), tricks, audits, and domain bookkeeping — each row carrying a rendered `summary` string so the agent does not have to parse the payload JSON. Default scope is the active project over the configured window (config.views.logs.window_days, 30 days by default). Pass `categories=[\"tool_call\"]` to reproduce the legacy activity-log filter; pass `since=\"24h\"` to narrow the window. Allowed categories: task, comment, plan, tag-dep, guard, audit, hook, tool_call, trick, domain.", InputSchema: logsListSchema()},
 		{Name: "dependencies.add", Description: "Add a project-scoped task dependency with cycle prevention.", InputSchema: dependencySchema(false)},
 		{Name: "dependencies.remove", Description: "Remove a task dependency after explicit confirmation.", InputSchema: dependencySchema(true)},
 		{Name: "dependencies.list", Description: "List dependencies for one task or all active project tasks.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Optional task id; omit or set 0 for all")}, nil)},
@@ -263,11 +263,12 @@ func tools() []ToolDefinition {
 		{Name: "plans.assign_task", Description: "Attach an existing task to a (plan, wave). Identify the plan by slug or plan_id; supply at least one. Cross-plan / cross-project wave references are rejected.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to attach"), "slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "wave_id": integerSchema("Wave id; must belong to the named plan")}, []string{"task_id", "wave_id"})},
 		{Name: "plans.claim_next", Description: "Atomically reserve the next claimable task in the plan's active wave (lowest-position wave with pending tasks). Claimable means active, unassigned, and still in the workflow's first bucket. Stamps tasks.assigned_to with the caller's _agent_model and emits task.assigned; the bucket is not moved, so callers must use tasks.move separately once preset guards are satisfied. Returns claimed=false (no task) when every wave is fully done or no unassigned first-bucket task remains in the active wave. Concurrency-safe via BEGIN IMMEDIATE on a pinned connection.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)")}, nil)},
 		{Name: "plans.continue", Description: "Agent-tailored projection of a plan: returns the same aggregate plans.show emits (full plan + waves + done/total + active wave) plus a non-mutating preview of the task plans.claim_next would reserve next. Use before plans.claim_next so an agent can inspect goal_body, the wave layout, and the candidate task before committing to a claim.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug")}, []string{"slug"})},
-		{Name: "notes.create", Description: "Create a project-or-global knowledge note. Scope drives the project_id assignment: \"project\" (default when a project is resolved) uses the resolved project; \"global\" forces project_id=NULL so the row is visible cross-project. Kind is a free string (convention: \"handoff\", \"decision\", \"architecture\", \"requirements\", \"runbook\", \"gotcha\", \"retrospective\", \"glossary\", \"free\"). Tags reuse the global tags table. Body soft-limited to 64 KiB.", InputSchema: createNoteSchema()},
-		{Name: "notes.edit", Description: "Patch an existing note. Omit a field to leave it untouched; pass an empty string for title/body/kind and the call rejects with validation_error. tags pointer is replacement: pass an empty array to clear every tag.", InputSchema: editNoteSchema()},
-		{Name: "notes.show", Description: "Return one note row plus its tags by id.", InputSchema: objectSchema(map[string]any{"id": integerSchema("Note id")}, []string{"id"})},
-		{Name: "notes.list", Description: "List notes filtered by scope (\"\", \"project\", \"global\"), kind, tags (intersection), pinned, and limit/offset. Order: pinned DESC, updated_at DESC, id DESC. Default scope is \"any\" — both project-scoped and global notes flow back when a project is resolved.", InputSchema: listNotesSchema()},
-		{Name: "notes.delete", Description: "Hard-delete a note. Requires confirm=true; first call without confirm returns a Confirmation block. Tags and FTS rows cascade via triggers.", InputSchema: objectSchema(map[string]any{"id": integerSchema("Note id"), "confirm": booleanSchema("Required true to actually delete the note")}, []string{"id"})},
+		{Name: "plans.edit", Description: "Edit a plan's name, slug, status, and/or goal_body. Identify the plan by slug or plan_id; supply at least one editable field. status accepts active / done / abandoned (abandoned co-emits plan.abandoned); a new_slug collision rejects with plan_slug_conflict. Emits plan.edited with the per-field diff (and plan.goal_edited when goal_body changes).", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug to identify the plan (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "name": stringSchema("Optional new plan name"), "new_slug": stringSchema("Optional new plan slug; must stay unique within the project"), "status": stringSchema("Optional new status: active, done, or abandoned"), "goal_body": stringSchema("Optional new markdown goal body")}, nil)},
+		{Name: "plans.delete", Description: "Hard-delete a plan. Its waves cascade-delete and member tasks are detached (plan_id / wave_id cleared) but otherwise survive. Identify the plan by slug or plan_id. First call without confirmed=true returns a Confirmation block; retry with confirmed=true to apply. Emits plan.deleted.", InputSchema: objectSchema(map[string]any{"slug": stringSchema("Plan slug (alternative to plan_id)"), "plan_id": integerSchema("Plan id (alternative to slug)"), "confirmed": booleanSchema("Required true to actually delete the plan")}, nil)},
+		{Name: "plans.remove_wave", Description: "Delete a wave from a plan. Its tasks survive with wave_id cleared (plan_id intact, so they stay in the plan but unscheduled). First call without confirmed=true returns a Confirmation block; retry with confirmed=true to apply. Emits plan.wave_removed.", InputSchema: objectSchema(map[string]any{"wave_id": integerSchema("Wave id to delete"), "confirmed": booleanSchema("Required true to actually remove the wave")}, []string{"wave_id"})},
+		{Name: "plans.rename_wave", Description: "Rename a wave. The new name must be non-blank and differ from the current name. Emits plan.wave_renamed.", InputSchema: objectSchema(map[string]any{"wave_id": integerSchema("Wave id to rename"), "name": stringSchema("New wave name")}, []string{"wave_id", "name"})},
+		{Name: "plans.reorder_wave", Description: "Move a wave to a new 1-based position within its plan. A collision with an occupied slot swaps the two waves. Emits plan.wave_reordered.", InputSchema: objectSchema(map[string]any{"wave_id": integerSchema("Wave id to move"), "position": integerSchema("New 1-based position")}, []string{"wave_id", "position"})},
+		{Name: "plans.unassign", Description: "Detach a task from its plan, clearing both plan_id and wave_id (full detach; the task becomes a standalone work item again). A task already unattached is a no-op. Emits plan.task_unassigned.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to detach")}, []string{"task_id"})},
 	}
 }
 
@@ -651,35 +652,41 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		if err == nil {
 			data, err = service.ContinuePlan(ctx, input)
 		}
-	case "notes.create":
-		var input agent.CreateNoteInput
+	case "plans.edit":
+		var input agent.EditPlanInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = service.CreateNote(ctx, input)
+			data, err = service.EditPlan(ctx, input)
 		}
-	case "notes.edit":
-		var input agent.EditNoteInput
+	case "plans.delete":
+		var input agent.DeletePlanInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = service.EditNote(ctx, input)
+			data, err = service.DeletePlan(ctx, input)
 		}
-	case "notes.show":
-		var input agent.ShowNoteInput
+	case "plans.remove_wave":
+		var input agent.RemovePlanWaveInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = service.ShowNote(ctx, input)
+			data, err = service.RemovePlanWave(ctx, input)
 		}
-	case "notes.list":
-		var input agent.ListNotesInput
+	case "plans.rename_wave":
+		var input agent.RenamePlanWaveInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = service.ListNotes(ctx, input)
+			data, err = service.RenamePlanWave(ctx, input)
 		}
-	case "notes.delete":
-		var input agent.DeleteNoteInput
+	case "plans.reorder_wave":
+		var input agent.ReorderPlanWaveInput
 		err = decodeArgs(args, &input)
 		if err == nil {
-			data, err = service.DeleteNote(ctx, input)
+			data, err = service.ReorderPlanWave(ctx, input)
+		}
+	case "plans.unassign":
+		var input agent.UnassignPlanTaskInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.UnassignPlanTask(ctx, input)
 		}
 	default:
 		return ToolResult{}, fmt.Errorf("unknown MCP tool %q", name)
@@ -926,39 +933,6 @@ func confirmSolutionSchema() map[string]any {
 func listTopSolutionsSchema() map[string]any {
 	props := selectorProperties()
 	props["limit"] = integerSchema("Maximum number of solutions to return (defaults and caps come from config.solutions; omitted/<=0 = default_top_limit, larger values clamped to max_top_limit)")
-	return objectSchema(props, nil)
-}
-
-func createNoteSchema() map[string]any {
-	props := selectorProperties()
-	props["scope"] = stringSchema("Scope: \"project\" (default when a project is resolved), \"global\" (project_id NULL), or omitted (project when resolved, global otherwise).")
-	props["kind"] = stringSchema("Free-string kind (convention: handoff, decision, architecture, requirements, runbook, gotcha, retrospective, glossary, free).")
-	props["title"] = stringSchema("Note title; required, non-empty after trim.")
-	props["body"] = stringSchema("Note body; required, non-empty, soft-limited to 64 KiB.")
-	props["pinned"] = booleanSchema("Optional pin flag; pinned notes float to the top of notes.list.")
-	props["tags"] = arrayStringSchema("Optional tag names; normalized via the per-project synonym table.")
-	return objectSchema(props, []string{"kind", "title", "body"})
-}
-
-func editNoteSchema() map[string]any {
-	props := selectorProperties()
-	props["id"] = integerSchema("Note id")
-	props["title"] = stringSchema("Optional new title; empty string rejected.")
-	props["body"] = stringSchema("Optional new body; empty string rejected, 64 KiB cap.")
-	props["kind"] = stringSchema("Optional new kind; empty string rejected.")
-	props["pinned"] = booleanSchema("Optional pinned flag.")
-	props["tags"] = arrayStringSchema("Optional full tag replacement; pass an empty array to clear every tag.")
-	return objectSchema(props, []string{"id"})
-}
-
-func listNotesSchema() map[string]any {
-	props := selectorProperties()
-	props["scope"] = stringSchema("Scope filter: \"\" (any, default), \"global\" (project_id IS NULL), or \"project\" (project_id = resolved project).")
-	props["kind"] = stringSchema("Optional exact-match kind filter.")
-	props["tags"] = arrayStringSchema("Optional tag intersection filter — only notes carrying every supplied tag match.")
-	props["pinned"] = booleanSchema("Optional pinned filter; omit for both.")
-	props["limit"] = integerSchema("Optional row cap; omit for unbounded.")
-	props["offset"] = integerSchema("Optional offset; ignored when limit is 0.")
 	return objectSchema(props, nil)
 }
 

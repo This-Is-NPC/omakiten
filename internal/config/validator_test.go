@@ -1,9 +1,42 @@
 package config
 
 import (
+	"bytes"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
+
+// TestCommentPermissionScopeDecode pins the scope-aware comment policy shape
+// (omakiten #389): the flat `comment: {edit, delete}` form still parses
+// (backward-compat → task scope), the per-scope sub-blocks parse, and an
+// unknown scope key is rejected by the strict decoder.
+func TestCommentPermissionScopeDecode(t *testing.T) {
+	decode := func(in string) error {
+		dec := yaml.NewDecoder(bytes.NewReader([]byte(in)))
+		dec.KnownFields(true)
+		var p EntityPermission
+		return dec.Decode(&p)
+	}
+
+	t.Run("flat back-compat parses", func(t *testing.T) {
+		if err := decode("edit: false\ndelete: true\n"); err != nil {
+			t.Fatalf("flat comment permission should parse, got %v", err)
+		}
+	})
+	t.Run("scope sub-blocks parse", func(t *testing.T) {
+		in := "task:\n  edit: false\nproject:\n  edit: true\nuniversal:\n  delete: false\n"
+		if err := decode(in); err != nil {
+			t.Fatalf("scoped comment permission should parse, got %v", err)
+		}
+	})
+	t.Run("unknown scope key rejected", func(t *testing.T) {
+		if err := decode("global:\n  edit: true\n"); err == nil {
+			t.Fatal("unknown scope key should be rejected by strict decoder")
+		}
+	})
+}
 
 func TestValidateTheme(t *testing.T) {
 	if err := ValidateTheme(Theme{Version: 1, Key: "dark", Name: "Dark", Colors: map[string]string{"bg": "#000"}}); err != nil {
@@ -158,6 +191,18 @@ func TestValidateBundleErrors(t *testing.T) {
 		{"events overrides unknown event_type", func(b *Bundle) {
 			b.Config.Events.Overrides = map[string]EventChannelSettings{"task.unknown": {}}
 		}, `unknown event_type "task.unknown"`},
+		{"comment scope sub-block on defaults.task", func(b *Bundle) {
+			tr := true
+			b.Workflows[0].Defaults = &WorkflowDefaults{
+				Task: &EntityPermission{Project: &EntityPermission{Edit: &tr}},
+			}
+		}, "scope sub-blocks (task/project/universal) are only valid under defaults.comment"},
+		{"comment scope sub-block on bucket comment", func(b *Bundle) {
+			tr := true
+			b.Workflows[0].Buckets[0].Permissions = &BucketPermissions{
+				Comment: &EntityPermission{Project: &EntityPermission{Edit: &tr}},
+			}
+		}, "scope sub-blocks (task/project/universal) are only valid under workflow.defaults.comment"},
 	}
 
 	for _, tc := range tests {

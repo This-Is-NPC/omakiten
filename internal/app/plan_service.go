@@ -136,6 +136,43 @@ func (s *PlanService) UpdateGoalBody(ctx context.Context, project domain.Project
 	return
 }
 
+// UpdatePlan mutates a plan's name / slug / status. Each field is
+// optional (nil pointer = leave untouched). The repo emits plan.edited
+// (and plan.abandoned when status→abandoned). Slug collisions surface as
+// ErrPlanSlugConflict; a no-op set surfaces as ErrValidation.
+func (s *PlanService) UpdatePlan(ctx context.Context, project domain.ProjectContext, planID int64, name, slug, status *string) (plan domain.Plan, err error) {
+	finish := activity.Track(ctx, "app.PlanService.UpdatePlan", project, map[string]any{"plan_id": planID})
+	defer func() {
+		st := "ok"
+		errMsg := ""
+		if err != nil {
+			st = "error"
+			errMsg = err.Error()
+		}
+		finish(st, errMsg)
+	}()
+	plan, err = s.repo.UpdatePlan(ctx, project.ID, planID, name, slug, status)
+	return
+}
+
+// DeletePlan hard-deletes a plan. Waves cascade; member tasks survive
+// with plan_id / wave_id cleared (FK SET NULL). The repo emits
+// plan.deleted; the returned event is the deletion record.
+func (s *PlanService) DeletePlan(ctx context.Context, project domain.ProjectContext, planID int64) (event domain.Event, err error) {
+	finish := activity.Track(ctx, "app.PlanService.DeletePlan", project, map[string]any{"plan_id": planID})
+	defer func() {
+		st := "ok"
+		errMsg := ""
+		if err != nil {
+			st = "error"
+			errMsg = err.Error()
+		}
+		finish(st, errMsg)
+	}()
+	event, err = s.repo.DeletePlan(ctx, project.ID, planID)
+	return
+}
+
 // PeekNextClaimable returns the next task plans.claim_next would
 // reserve, without mutating anything. Snapshot-bound: requires the
 // same BucketResolver ClaimNext depends on.
@@ -174,6 +211,82 @@ func (s *PlanService) AddWave(ctx context.Context, project domain.ProjectContext
 	return
 }
 
+// RemoveWave deletes a wave from a plan. Member tasks survive with their
+// wave_id cleared (FK SET NULL); plan_id is untouched. The repo emits
+// plan.wave_removed. Returns ErrPlanWaveNotFound when the wave does not
+// belong to the project.
+func (s *PlanService) RemoveWave(ctx context.Context, project domain.ProjectContext, waveID int64) (wave domain.PlanWave, err error) {
+	finish := activity.Track(ctx, "app.PlanService.RemoveWave", project, map[string]any{"wave_id": waveID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+	wave, err = s.repo.RemovePlanWave(ctx, project.ID, waveID)
+	return
+}
+
+// RenameWave rewrites a wave's name. The repo emits plan.wave_renamed.
+// A blank or no-op name surfaces as ErrValidation; an unknown/out-of-
+// project wave surfaces as ErrPlanWaveNotFound.
+func (s *PlanService) RenameWave(ctx context.Context, project domain.ProjectContext, waveID int64, name string) (wave domain.PlanWave, err error) {
+	finish := activity.Track(ctx, "app.PlanService.RenameWave", project, map[string]any{"wave_id": waveID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+	wave, err = s.repo.RenamePlanWave(ctx, project.ID, waveID, strings.TrimSpace(name))
+	return
+}
+
+// ReorderWave moves a wave to newPosition (1-based) within its plan,
+// swapping with the slot's occupant on collision. The repo emits
+// plan.wave_reordered. newPosition <= 0 and no-op moves surface as
+// ErrValidation; an unknown/out-of-project wave surfaces as
+// ErrPlanWaveNotFound.
+func (s *PlanService) ReorderWave(ctx context.Context, project domain.ProjectContext, waveID int64, newPosition int) (wave domain.PlanWave, err error) {
+	finish := activity.Track(ctx, "app.PlanService.ReorderWave", project, map[string]any{"wave_id": waveID, "position": newPosition})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+	wave, err = s.repo.ReorderPlanWave(ctx, project.ID, waveID, newPosition)
+	return
+}
+
+// UnassignTask detaches a task from its plan, clearing both plan_id and
+// wave_id (full detach). The repo emits plan.task_unassigned (no event
+// when the task was already detached). Returns ErrTaskNotFound when the
+// task does not belong to the project.
+func (s *PlanService) UnassignTask(ctx context.Context, project domain.ProjectContext, taskID int64) (event domain.Event, err error) {
+	finish := activity.Track(ctx, "app.PlanService.UnassignTask", project, map[string]any{"task_id": taskID})
+	defer func() {
+		status := "ok"
+		errMsg := ""
+		if err != nil {
+			status = "error"
+			errMsg = err.Error()
+		}
+		finish(status, errMsg)
+	}()
+	event, err = s.repo.UnassignTaskFromPlan(ctx, project.ID, taskID)
+	return
+}
+
 // PlanShow is the aggregated view PlanService.Show returns. The active
 // wave is the lowest-position wave whose tasks are not all in the
 // workflow's final bucket; ActiveWaveID is 0 when every wave is done
@@ -181,12 +294,12 @@ func (s *PlanService) AddWave(ctx context.Context, project domain.ProjectContext
 // in-plan task→task edges (both endpoints belong to this plan) so the
 // network renderer can draw blocker markers without a follow-up query.
 type PlanShow struct {
-	Plan         domain.Plan              `json:"plan"`
-	Waves        []PlanWaveView           `json:"waves"`
-	DoneCount    int                      `json:"done_count"`
-	TotalCount   int                      `json:"total_count"`
-	ActiveWaveID int64                    `json:"active_wave_id,omitempty"`
-	Dependencies []domain.TaskDependency  `json:"dependencies,omitempty"`
+	Plan         domain.Plan             `json:"plan"`
+	Waves        []PlanWaveView          `json:"waves"`
+	DoneCount    int                     `json:"done_count"`
+	TotalCount   int                     `json:"total_count"`
+	ActiveWaveID int64                   `json:"active_wave_id,omitempty"`
+	Dependencies []domain.TaskDependency `json:"dependencies,omitempty"`
 }
 
 // PlanWaveView pairs a wave with its tasks and per-wave done/total

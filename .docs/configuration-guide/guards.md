@@ -432,6 +432,17 @@ Per-bucket CRUD policy lives under `workflows[].buckets[].permissions` with a wo
 
 Declaring `task.edit: false` therefore denies edit on **both** task and comments unless `comment.edit` is set explicitly at the same or a deeper layer.
 
+The chain above is the **task-scoped** comment path (resolved against the comment's bucket via `Bucket.ResolveCommentPermission`). Comments with `scope: project` or `scope: universal` have no bucket — their edit/delete policy is resolved task-lessly against per-scope sub-blocks under `workflows[].defaults.comment` (`domain.ResolveCommentScopePermission`):
+
+```yaml
+defaults:
+  comment:
+    project:   { edit: true,  delete: false }   # project-scoped comments
+    universal: { edit: false, delete: false }    # cross-project comments
+```
+
+Omitting a `project`/`universal` sub-block (or its field) means implicit `true`. These sub-blocks are valid **only** under `workflows[].defaults.comment` — placing them on a bucket's `permissions.comment` or under `defaults.task` is a config validation error.
+
 ```yaml
 defaults:
   task:    { edit: false, delete: false }    # workflow-level: deny by default

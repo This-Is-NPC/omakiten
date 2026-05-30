@@ -182,6 +182,30 @@ config:
         category: plan
         display: "plan abandoned"
         formatter: plan.abandoned
+      plan.edited:
+        category: plan
+        display: "plan edited"
+        formatter: plan.edited
+      plan.deleted:
+        category: plan
+        display: "plan deleted"
+        formatter: plan.deleted
+      plan.wave_removed:
+        category: plan
+        display: "plan wave removed"
+        formatter: plan.wave_removed
+      plan.wave_renamed:
+        category: plan
+        display: "plan wave renamed"
+        formatter: plan.wave_renamed
+      plan.wave_reordered:
+        category: plan
+        display: "plan wave reordered"
+        formatter: plan.wave_reordered
+      plan.task_unassigned:
+        category: plan
+        display: "plan task unassigned"
+        formatter: plan.task_unassigned
       tag.added:
         category: tag-dep
         display: "tag added"
@@ -279,22 +303,6 @@ config:
         category: tool_call
         display: "TUI tool call"
         formatter: tui.tool_call
-      note.created:
-        category: note
-        display: "note created"
-        formatter: note.created
-      note.edited:
-        category: note
-        display: "note edited"
-        formatter: note.edited
-      note.pinned:
-        category: note
-        display: "note pinned/unpinned"
-        formatter: note.pinned
-      note.removed:
-        category: note
-        display: "note removed"
-        formatter: note.removed
       update.healthcheck.passed:
         category: update
         display: "update health-check passed"

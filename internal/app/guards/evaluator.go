@@ -225,6 +225,24 @@ func (e *Evaluator) EmitViolatedForTask(ctx context.Context, projectID int64, ta
 	_ = e.events.RecordEntityEvent(ctx, domain.EventEntityTask, task.ID, projectID, domain.EventTypeGuardViolated, body)
 }
 
+// EmitViolatedForProject is the project-scoped variant for guard
+// violations whose subject is a project rather than a task (project-scoped
+// comment edit/delete denials). The event is recorded under
+// EventEntityProject with entity_id = projectID and no task subject fields —
+// projects have no depth/parent metadata, so the depth-routing block other
+// task events carry is intentionally absent. Telemetry only; emission errors
+// are swallowed.
+func (e *Evaluator) EmitViolatedForProject(ctx context.Context, projectID int64, operation, rule, hint string, target map[string]any) {
+	if e.events == nil {
+		return
+	}
+	body := buildGuardViolatedPayload(ctx, operation, rule, hint, target, nil)
+	if body == "" {
+		return
+	}
+	_ = e.events.RecordEntityEvent(ctx, domain.EventEntityProject, projectID, projectID, domain.EventTypeGuardViolated, body)
+}
+
 // buildGuardViolatedPayload assembles the JSON body shared by both
 // emission paths. `subject` is folded in at the top level (alongside
 // `operation` / `rule` / `hint` / `target` / `attempted_by`) so the

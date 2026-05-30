@@ -839,13 +839,29 @@ type BucketPermissions struct {
 	Comment *EntityPermission `yaml:"comment,omitempty" json:"comment,omitempty"`
 }
 
-// EntityPermission is the CRUD policy for one entity. Both fields are
+// EntityPermission is the CRUD policy for one entity. Edit/Delete are
 // pointers so the YAML can omit a field and have the runtime fall through
 // to the next layer of the resolution chain rather than treating the zero
 // value as "explicit false".
+//
+// Task/Project/Universal are optional scope sub-blocks used by the comment
+// entity only: `defaults.comment` may declare per-scope policy as
+//
+//	comment:
+//	  task:      { edit: false, delete: false }
+//	  project:   { edit: true,  delete: false }
+//	  universal: { edit: false, delete: false }
+//
+// The flat `comment: {edit, delete}` shape still parses and resolves as the
+// task scope (backward-compat). Both shapes may coexist; the task chain reads
+// the flat fields after comment.task. These sub-blocks are ignored for the
+// task/bucket entity.
 type EntityPermission struct {
-	Edit   *bool `yaml:"edit,omitempty" json:"edit,omitempty"`
-	Delete *bool `yaml:"delete,omitempty" json:"delete,omitempty"`
+	Edit      *bool             `yaml:"edit,omitempty" json:"edit,omitempty"`
+	Delete    *bool             `yaml:"delete,omitempty" json:"delete,omitempty"`
+	Task      *EntityPermission `yaml:"task,omitempty" json:"task,omitempty"`
+	Project   *EntityPermission `yaml:"project,omitempty" json:"project,omitempty"`
+	Universal *EntityPermission `yaml:"universal,omitempty" json:"universal,omitempty"`
 }
 
 // WorkflowOperations declares the guards that gate non-flow operations

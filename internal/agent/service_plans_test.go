@@ -317,3 +317,208 @@ func TestContinuePlanNoCandidate(t *testing.T) {
 		t.Fatalf("NextClaimable = %+v, want nil on empty plan", resp.NextClaimable)
 	}
 }
+
+func TestEditPlanUpdatesNameSlugStatus(t *testing.T) {
+	fixture := newAgentFixture(t)
+	if _, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "p-edit", Name: "Original"}); err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	name, newSlug, status := "Renamed", "p-renamed", string(domain.PlanStatusDone)
+	resp, err := fixture.service.EditPlan(fixture.ctx, EditPlanInput{
+		Slug:    "p-edit",
+		Name:    &name,
+		NewSlug: &newSlug,
+		Status:  &status,
+	})
+	if err != nil {
+		t.Fatalf("EditPlan: %v", err)
+	}
+	if resp.Plan.Name != "Renamed" || resp.Plan.Slug != "p-renamed" {
+		t.Fatalf("EditPlan plan = %+v, want Renamed/p-renamed", resp.Plan)
+	}
+	if resp.Plan.Status != string(domain.PlanStatusDone) {
+		t.Fatalf("EditPlan status = %q, want done", resp.Plan.Status)
+	}
+}
+
+func TestEditPlanGoalBodyOnly(t *testing.T) {
+	fixture := newAgentFixture(t)
+	if _, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "p-goal", Name: "Plan", GoalBody: "old"}); err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	body := "new body"
+	resp, err := fixture.service.EditPlan(fixture.ctx, EditPlanInput{Slug: "p-goal", GoalBody: &body})
+	if err != nil {
+		t.Fatalf("EditPlan goal: %v", err)
+	}
+	if resp.Plan.GoalBody != "new body" {
+		t.Fatalf("EditPlan goal_body = %q, want 'new body'", resp.Plan.GoalBody)
+	}
+	if resp.Plan.Name != "Plan" || resp.Plan.Status != string(domain.PlanStatusActive) {
+		t.Fatalf("EditPlan goal-only mutated other fields: %+v", resp.Plan)
+	}
+}
+
+func TestEditPlanRejectsEmptyFieldSet(t *testing.T) {
+	fixture := newAgentFixture(t)
+	if _, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "p-noop", Name: "Plan"}); err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	_, err := fixture.service.EditPlan(fixture.ctx, EditPlanInput{Slug: "p-noop"})
+	assertCodedError(t, err, domain.ErrValidation)
+}
+
+func TestEditPlanRejectsMissingPlanIdentifier(t *testing.T) {
+	fixture := newAgentFixture(t)
+	name := "X"
+	_, err := fixture.service.EditPlan(fixture.ctx, EditPlanInput{Name: &name})
+	assertCodedError(t, err, domain.ErrValidation)
+}
+
+func TestDeletePlanRequiresConfirmation(t *testing.T) {
+	fixture := newAgentFixture(t)
+	if _, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "p-del", Name: "Plan"}); err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	resp, err := fixture.service.DeletePlan(fixture.ctx, DeletePlanInput{Slug: "p-del"})
+	if err != nil {
+		t.Fatalf("DeletePlan unconfirmed: %v", err)
+	}
+	if !resp.Confirmation.RequiresConfirmation {
+		t.Fatalf("DeletePlan unconfirmed should request confirmation, got %+v", resp)
+	}
+	if resp.Snapshot != nil {
+		t.Fatalf("DeletePlan unconfirmed should not delete, got snapshot %+v", resp.Snapshot)
+	}
+	// Plan still present.
+	if _, err := fixture.service.ShowPlan(fixture.ctx, ShowPlanInput{Slug: "p-del"}); err != nil {
+		t.Fatalf("plan should still exist after unconfirmed delete: %v", err)
+	}
+}
+
+func TestDeletePlanConfirmedRemoves(t *testing.T) {
+	fixture := newAgentFixture(t)
+	if _, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "p-del2", Name: "Plan"}); err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	resp, err := fixture.service.DeletePlan(fixture.ctx, DeletePlanInput{Slug: "p-del2", Confirmed: true})
+	if err != nil {
+		t.Fatalf("DeletePlan confirmed: %v", err)
+	}
+	if resp.Snapshot == nil || resp.Snapshot.EventType != domain.EventTypePlanDeleted {
+		t.Fatalf("DeletePlan confirmed snapshot = %+v, want plan.deleted", resp.Snapshot)
+	}
+	_, err = fixture.service.ShowPlan(fixture.ctx, ShowPlanInput{Slug: "p-del2"})
+	assertCodedError(t, err, domain.ErrPlanNotFound)
+}
+
+func TestRemovePlanWaveRequiresConfirmation(t *testing.T) {
+	fixture := newAgentFixture(t)
+	plan, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "rw", Name: "RW"})
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "wave-one"})
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+
+	// Unconfirmed → confirmation block, wave survives.
+	resp, err := fixture.service.RemovePlanWave(fixture.ctx, RemovePlanWaveInput{WaveID: wave.Wave.ID})
+	if err != nil {
+		t.Fatalf("RemovePlanWave unconfirmed: %v", err)
+	}
+	if !resp.Confirmation.RequiresConfirmation || resp.Wave != nil {
+		t.Fatalf("RemovePlanWave unconfirmed = %+v, want confirmation w/o wave", resp)
+	}
+
+	// Confirmed → removed.
+	resp, err = fixture.service.RemovePlanWave(fixture.ctx, RemovePlanWaveInput{WaveID: wave.Wave.ID, Confirmed: true})
+	if err != nil {
+		t.Fatalf("RemovePlanWave confirmed: %v", err)
+	}
+	if resp.Wave == nil || resp.Wave.ID != wave.Wave.ID {
+		t.Fatalf("RemovePlanWave confirmed wave = %+v, want %d", resp.Wave, wave.Wave.ID)
+	}
+}
+
+func TestRenamePlanWaveUpdatesName(t *testing.T) {
+	fixture := newAgentFixture(t)
+	plan, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "rn", Name: "RN"})
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "before"})
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	resp, err := fixture.service.RenamePlanWave(fixture.ctx, RenamePlanWaveInput{WaveID: wave.Wave.ID, Name: "after"})
+	if err != nil {
+		t.Fatalf("RenamePlanWave: %v", err)
+	}
+	if resp.Wave.Name != "after" {
+		t.Fatalf("RenamePlanWave name = %q, want after", resp.Wave.Name)
+	}
+}
+
+func TestReorderPlanWaveSwaps(t *testing.T) {
+	fixture := newAgentFixture(t)
+	plan, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "ro", Name: "RO"})
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	w1, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "one", Position: 1})
+	if err != nil {
+		t.Fatalf("AddPlanWave 1: %v", err)
+	}
+	if _, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "two", Position: 2}); err != nil {
+		t.Fatalf("AddPlanWave 2: %v", err)
+	}
+	resp, err := fixture.service.ReorderPlanWave(fixture.ctx, ReorderPlanWaveInput{WaveID: w1.Wave.ID, Position: 2})
+	if err != nil {
+		t.Fatalf("ReorderPlanWave: %v", err)
+	}
+	if resp.Wave.Position != 2 {
+		t.Fatalf("ReorderPlanWave position = %d, want 2", resp.Wave.Position)
+	}
+}
+
+func TestReorderPlanWaveRejectsMissingWave(t *testing.T) {
+	fixture := newAgentFixture(t)
+	_, err := fixture.service.ReorderPlanWave(fixture.ctx, ReorderPlanWaveInput{Position: 1})
+	assertCodedError(t, err, domain.ErrValidation)
+}
+
+func TestUnassignPlanTaskDetaches(t *testing.T) {
+	fixture := newAgentFixture(t)
+	plan, err := fixture.service.CreatePlan(fixture.ctx, CreatePlanInput{Slug: "un", Name: "UN"})
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	wave, err := fixture.service.AddPlanWave(fixture.ctx, AddPlanWaveInput{PlanID: plan.Plan.ID, Name: "wave-one"})
+	if err != nil {
+		t.Fatalf("AddPlanWave: %v", err)
+	}
+	if _, err := fixture.service.AssignPlanTask(fixture.ctx, AssignPlanTaskInput{
+		TaskID: fixture.taskA1.ID, PlanID: plan.Plan.ID, WaveID: wave.Wave.ID,
+	}); err != nil {
+		t.Fatalf("AssignPlanTask: %v", err)
+	}
+
+	resp, err := fixture.service.UnassignPlanTask(fixture.ctx, UnassignPlanTaskInput{TaskID: fixture.taskA1.ID})
+	if err != nil {
+		t.Fatalf("UnassignPlanTask: %v", err)
+	}
+	if !resp.Detached {
+		t.Fatalf("UnassignPlanTask detached = false, want true")
+	}
+
+	// Second call → no-op (already detached).
+	resp, err = fixture.service.UnassignPlanTask(fixture.ctx, UnassignPlanTaskInput{TaskID: fixture.taskA1.ID})
+	if err != nil {
+		t.Fatalf("UnassignPlanTask second: %v", err)
+	}
+	if resp.Detached {
+		t.Fatalf("second UnassignPlanTask detached = true, want false (no-op)")
+	}
+}

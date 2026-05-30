@@ -252,6 +252,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.descriptionScreenOpen {
 			return m.updateDescriptionScreen(msg)
 		}
+		if m.planGoalScreenOpen {
+			return m.updatePlanGoalScreen(msg)
+		}
+		if m.projectFormScreenOpen {
+			return m.updateProjectFormScreen(msg)
+		}
 		if m.taskScreen != taskScreenClosed {
 			return m.updateTaskScreen(msg)
 		}
@@ -266,6 +272,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.onHome() {
 			cmd := m.handleHomeKey(msg)
 			return m, cmd
+		}
+		// The project-view screen owns tab (panel toggle) and the scroll
+		// vocabulary before handleCommonKey can rebind them to zone-cycle /
+		// refresh, so its handler runs first and only the keys it does not
+		// claim (ctrl+o/ctrl+h/ctrl+p back-nav, esc, quit) fall through.
+		if m.sub == subProjectView && m.handleProjectKey(msg) {
+			return m, nil
 		}
 		if m.handleCommonKey(msg) {
 			return m, m.refreshAfterViewChangeCmd(prevNav)
@@ -421,7 +434,7 @@ func (m Model) canOpenPalette() bool {
 	if m.mode != modeNormal {
 		return false
 	}
-	if m.commentScreenOpen || m.descriptionScreenOpen {
+	if m.commentScreenOpen || m.descriptionScreenOpen || m.planGoalScreenOpen || m.projectFormScreenOpen {
 		return false
 	}
 	if m.taskScreen != taskScreenClosed {
@@ -1077,6 +1090,15 @@ func (m *Model) handleCommonKey(msg tea.KeyMsg) bool {
 		if err := m.loadHome(); err != nil {
 			m.status = err.Error()
 		}
+		return true
+	case "ctrl+p":
+		// Open the dedicated project-view screen: project metadata +
+		// project-scoped activity feed. Reachable from every per-project
+		// view; openProjectView pushes the current view so ctrl+o returns.
+		// Suppressed on Home (no project resolved yet) — handled there by
+		// the early onHome() branch in Update, so this case only fires on a
+		// per-project surface.
+		m.openProjectView()
 		return true
 	case "ctrl+o":
 		// Vim-style "older": pop the back-stack to restore the most

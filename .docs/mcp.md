@@ -122,10 +122,10 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 
 | Tool | Purpose |
 |---|---|
-| `comments.add` | Adds a human or agent task comment, with optional tag attachment. |
-| `comments.list` | Lists task comments. |
-| `comments.edit` | Rewrites a comment's body and replaces its tags. Subject to bucket `permissions.comment.edit` (inherits from `permissions.task.edit` when no comment block is declared). |
-| `comments.delete` | Hard-deletes a comment. Subject to bucket `permissions.comment.delete` (same inheritance rule). Requires `confirmed=true`. |
+| `comments.add` | Adds a scope-aware human or agent comment. `scope` is `"task"` (default — requires `task_id`), `"project"` (requires no `task_id`), or `"universal"` (cross-project — no `task_id`). Optional note-like fields `title`, `kind` (free string, e.g. `"handoff"`/`"recap"`/`"standup"`), and `pinned`, plus optional tag attachment and `template_slug` body merge. |
+| `comments.list` | With no extra filters, lists the named task's comments (task-scoped default). Add filters to query the handoff log: `scope` (`task`/`project`/`universal`), `kind`, `tag`, `pinned` (pinned-only), `query` (FTS5 over body + title), and `since` (time-window floor — Go duration `24h`/`30m` or N-day shorthand `7d`). |
+| `comments.edit` | Tri-state PATCH of a comment. Every field is optional — `body`, `title`, `kind`, `pinned` are all omittable (omit = unchanged), so a metadata-only edit needs no body; supply at least one of `body`/`title`/`kind`/`pinned`/`tags` (no-op calls are rejected). A non-null `body` must be non-empty (rewrite-only, can't blank it). The submitted `tags` set replaces all existing tags. Scope-aware guard: task scope resolves bucket `permissions.comment.edit` (inherits `permissions.task.edit` when no comment block is declared); project/universal scope resolves the task-less workflow defaults `defaults.comment.{project,universal}.edit`. |
+| `comments.delete` | Hard-deletes a comment; scope-agnostic. Scope-aware guard: `permissions.comment.delete` for task scope (same inheritance rule), `defaults.comment.{project,universal}.delete` for project/universal scope. Requires `confirmed=true`. |
 | `task_activity.list` | Unified chronological feed for a task (comments + system events such as `task.created`, `task.moved`, `task.completed`, `task.archived`, `task.unarchived`, `task.migrated`, `task.removed`, `task.assigned`, `task.unassigned`, `comment.edited`, `comment.removed`); supports `order=asc\|desc`. |
 
 ### Logs (generic event inspector)
@@ -148,16 +148,6 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 |---|---|
 | `context.add` | Adds a project handoff context entry. |
 | `context.dump` | Dumps compact context at level 1, 2, or 3 under a token budget. |
-
-### Notes (knowledge entries)
-
-| Tool | Purpose |
-|---|---|
-| `notes.create` | Creates a project-or-global knowledge note. `scope` is `"project"` (default when a project is resolved) or `"global"` (forces `project_id=NULL` so the row is visible cross-project). `kind` is a free string — convention: `"handoff"`, `"decision"`, `"architecture"`, `"requirements"`, `"runbook"`, `"gotcha"`, `"retrospective"`, `"glossary"`, `"free"`. Tags reuse the global tags table. Body is soft-limited to 64 KiB. |
-| `notes.edit` | Patches an existing note. Omit a field to leave it untouched; an empty `title`/`body`/`kind` rejects with `validation_error`. The `tags` pointer is a full replacement — pass an empty array to clear every tag. |
-| `notes.show` | Returns one note row plus its tags by id. |
-| `notes.list` | Lists notes filtered by `scope` (`""`, `"project"`, `"global"`), `kind`, `tags` (intersection), `pinned`, and `limit`/`offset`. Default ordering: pinned DESC, `updated_at` DESC, `id` DESC. Default scope when a project resolves is "any" — both project-scoped and global notes flow back. |
-| `notes.delete` | Hard-deletes a note. Requires `confirm=true`; the first call without confirmation returns a Confirmation block. Tags and FTS rows cascade via triggers. |
 
 ### Tags
 

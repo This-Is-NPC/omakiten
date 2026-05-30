@@ -100,3 +100,170 @@ func TestCLIPlanClaimRequiresAgentModel(t *testing.T) {
 	t.Setenv("OMAKITEN_AGENT_MODEL", "")
 	runCLIExpectError(t, dbPath, configPath, "validation_error", "plan", "claim", "ship")
 }
+
+func TestCLIPlanEditNameSlugStatus(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	projectRoot := filepath.Join(tmp, "project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Chdir(projectRoot)
+
+	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
+	runCLI(t, dbPath, configPath, "plan", "create", "ship", "--name", "Ship", "--goal-body", "old")
+
+	edited := runCLI(t, dbPath, configPath, "plan", "edit", "ship",
+		"--name", "Shipped", "--slug", "shipped", "--status", "done")
+	if !strings.Contains(edited, `"slug":"shipped"`) || !strings.Contains(edited, `"name":"Shipped"`) {
+		t.Fatalf("plan edit output = %s", edited)
+	}
+	if !strings.Contains(edited, `"status":"done"`) {
+		t.Fatalf("plan edit status not applied: %s", edited)
+	}
+
+	// Goal-body-only edit on the new slug.
+	goal := runCLI(t, dbPath, configPath, "plan", "edit", "shipped", "--goal-body", "fresh")
+	if !strings.Contains(goal, `"goal_body":"fresh"`) {
+		t.Fatalf("plan edit goal output = %s", goal)
+	}
+}
+
+func TestCLIPlanEditRequiresAtLeastOneFlag(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	projectRoot := filepath.Join(tmp, "project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Chdir(projectRoot)
+
+	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
+	runCLI(t, dbPath, configPath, "plan", "create", "ship", "--name", "Ship")
+	runCLIExpectError(t, dbPath, configPath, "validation_error", "plan", "edit", "ship")
+}
+
+// TestCLIPlanEditNoOpNameDoesNotPersistGoalBody pins the partial-write
+// guard: `plan edit --goal-body NEW --name <unchanged>` must reject the
+// no-op name diff WITHOUT having persisted the goal-body edit. Before
+// the ordering fix the goal write committed + emitted first, then
+// UpdatePlan rejected "changed nothing", leaving the new goal on disk
+// behind an error response. Running UpdatePlan first means the no-op
+// rejection fires before the goal write, so the goal body stays "old".
+func TestCLIPlanEditNoOpNameDoesNotPersistGoalBody(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	projectRoot := filepath.Join(tmp, "project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Chdir(projectRoot)
+
+	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
+	runCLI(t, dbPath, configPath, "plan", "create", "ship", "--name", "Ship", "--goal-body", "old")
+
+	// --goal-body changes, but --name repeats the current name → the
+	// name diff is a no-op and UpdatePlan rejects "changed nothing".
+	runCLIExpectError(t, dbPath, configPath, "validation_error",
+		"plan", "edit", "ship", "--goal-body", "fresh", "--name", "Ship")
+
+	// The rejected no-op must NOT have leaked the goal-body write.
+	shown := runCLI(t, dbPath, configPath, "plan", "show", "ship")
+	if !strings.Contains(shown, `"goal_body":"old"`) {
+		t.Fatalf("goal_body should still be \"old\" after rejected edit, got: %s", shown)
+	}
+	if strings.Contains(shown, `"goal_body":"fresh"`) {
+		t.Fatalf("partial write: goal_body was persisted despite the rejected name diff: %s", shown)
+	}
+}
+
+func TestCLIPlanDeleteRequiresConfirm(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	projectRoot := filepath.Join(tmp, "project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Chdir(projectRoot)
+
+	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
+	runCLI(t, dbPath, configPath, "plan", "create", "ship", "--name", "Ship")
+
+	// Without --confirm → validation error, plan survives.
+	runCLIExpectError(t, dbPath, configPath, "validation_error", "plan", "delete", "ship")
+	if listed := runCLI(t, dbPath, configPath, "plan", "list"); !strings.Contains(listed, `"slug":"ship"`) {
+		t.Fatalf("plan should survive unconfirmed delete: %s", listed)
+	}
+
+	// With --confirm → removed.
+	deleted := runCLI(t, dbPath, configPath, "plan", "delete", "ship", "--confirm")
+	if !strings.Contains(deleted, `"deleted":"ship"`) {
+		t.Fatalf("plan delete output = %s", deleted)
+	}
+	if listed := runCLI(t, dbPath, configPath, "plan", "list"); strings.Contains(listed, `"slug":"ship"`) {
+		t.Fatalf("plan should be gone after confirmed delete: %s", listed)
+	}
+}
+
+func TestCLIPlanWaveMutationsAndUnassign(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "omakiten.db")
+	configPath := filepath.Join(tmp, "config", "omakase.yaml")
+	projectRoot := filepath.Join(tmp, "project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Chdir(projectRoot)
+
+	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
+	runCLI(t, dbPath, configPath, "add", "-t", "T1")
+	runCLI(t, dbPath, configPath, "plan", "create", "ship", "--name", "Ship")
+
+	w1 := runCLI(t, dbPath, configPath, "plan", "wave-add", "ship", "alpha", "--position", "1")
+	wave1ID := waveIDFromJSON(t, w1)
+	runCLI(t, dbPath, configPath, "plan", "wave-add", "ship", "beta", "--position", "2")
+
+	// wave-rename.
+	renamed := runCLI(t, dbPath, configPath, "plan", "wave-rename", wave1ID, "alpha-prime")
+	if !strings.Contains(renamed, `"name":"alpha-prime"`) {
+		t.Fatalf("wave-rename output = %s", renamed)
+	}
+
+	// wave-reorder: move wave 1 to position 2 (collision → swap).
+	reordered := runCLI(t, dbPath, configPath, "plan", "wave-reorder", wave1ID, "2")
+	if !strings.Contains(reordered, `"position":2`) {
+		t.Fatalf("wave-reorder output = %s", reordered)
+	}
+
+	// assign task 1 to wave 1, then unassign.
+	runCLI(t, dbPath, configPath, "plan", "assign", "ship", wave1ID, "1")
+	unassigned := runCLI(t, dbPath, configPath, "plan", "unassign", "1")
+	if !strings.Contains(unassigned, `"detached":true`) {
+		t.Fatalf("unassign output = %s", unassigned)
+	}
+
+	// wave-remove requires --confirm.
+	runCLIExpectError(t, dbPath, configPath, "validation_error", "plan", "wave-remove", wave1ID)
+	removed := runCLI(t, dbPath, configPath, "plan", "wave-remove", wave1ID, "--confirm")
+	if !strings.Contains(removed, `"removed_wave"`) {
+		t.Fatalf("wave-remove output = %s", removed)
+	}
+}
+
+// waveIDFromJSON extracts the wave id from a wave-add JSON payload.
+func waveIDFromJSON(t *testing.T, out string) string {
+	t.Helper()
+	idIdx := strings.Index(out, `"id":`)
+	if idIdx < 0 {
+		t.Fatalf("payload lacks id field: %s", out)
+	}
+	commaIdx := strings.Index(out[idIdx:], ",")
+	if commaIdx < 0 {
+		t.Fatalf("id field missing terminator: %s", out)
+	}
+	return strings.TrimPrefix(out[idIdx:idIdx+commaIdx], `"id":`)
+}

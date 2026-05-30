@@ -38,7 +38,7 @@ func (m Model) renderHeader() string {
 	}
 	sb.WriteString(m.styles.nav.Render(truncateText(m.project.Slug, 40)))
 	sb.WriteString(m.styles.hint.Render(" · local checkpoint"))
-	if m.helpOpen || m.taskScreen != taskScreenClosed || m.entityScreen != entityScreenClosed {
+	if m.helpOpen || m.taskScreen != taskScreenClosed || m.entityScreen != entityScreenClosed || m.sub == subProjectView {
 		return sb.String()
 	}
 	sb.WriteString("\n\n  ")
@@ -123,6 +123,12 @@ func (m Model) renderCurrentView() string {
 	if m.descriptionScreenOpen {
 		return m.renderDescriptionScreen()
 	}
+	if m.planGoalScreenOpen {
+		return m.renderPlanGoalScreen()
+	}
+	if m.projectFormScreenOpen {
+		return m.renderProjectFormScreen()
+	}
 	if m.taskScreen != taskScreenClosed {
 		return m.renderTaskScreen()
 	}
@@ -133,6 +139,8 @@ func (m Model) renderCurrentView() string {
 		return m.renderHome()
 	}
 	switch m.sub {
+	case subProjectView:
+		return m.renderProjectView()
 	case subBoard:
 		return m.renderBoard()
 	case subTable:
@@ -266,6 +274,24 @@ func (m Model) footerTokens() []footerToken {
 			{key: "M", label: m.t("tui.footer.toggle_markdown")},
 			m.helpToken(),
 		}
+	case m.planGoalScreenOpen:
+		return []footerToken{
+			{key: "f/esc", label: m.t("tui.footer.close_focus"), primary: true},
+			{key: "j/k", label: m.t("tui.footer.scroll")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
+			{key: "g/G", label: m.t("tui.footer.top_bottom")},
+			{key: "M", label: m.t("tui.footer.toggle_markdown")},
+			m.helpToken(),
+		}
+	case m.projectFormScreenOpen:
+		return []footerToken{
+			{key: "f/esc", label: m.t("tui.footer.close_focus"), primary: true},
+			{key: "j/k", label: m.t("tui.footer.scroll")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
+			{key: "g/G", label: m.t("tui.footer.top_bottom")},
+			{key: "M", label: m.t("tui.footer.toggle_markdown")},
+			m.helpToken(),
+		}
 	case m.commentScreenOpen:
 		deleteLabel := m.t("tui.footer.arm_delete")
 		if m.commentDeletePendingID != 0 {
@@ -379,6 +405,28 @@ func (m Model) footerTokens() []footerToken {
 		}
 	case m.onHome():
 		return m.homeFooterTokens()
+	case m.sub == subProjectView:
+		tokens := []footerToken{
+			{key: "tab", label: m.t("tui.footer.zone"), primary: true},
+			{key: "f", label: m.t("tui.footer.focus_description"), primary: true},
+		}
+		// Only the activity zone is scroll-windowed; the form + dashboard
+		// draw a full fixed body, so advertising scroll there would promise
+		// a no-op. Surface the scroll keys only when the activity zone owns
+		// focus.
+		if m.projectFocus == projectFocusActivity {
+			tokens = append(tokens,
+				footerToken{key: "j/k", label: m.t("tui.footer.scroll")},
+				footerToken{key: "pgup/pgdn", label: m.t("tui.footer.page")},
+				footerToken{key: "g/G", label: m.t("tui.footer.top_bottom")},
+			)
+		}
+		tokens = append(tokens,
+			footerToken{key: "r", label: m.t("tui.footer.refresh")},
+			m.escBack(),
+			m.helpToken(),
+		)
+		return tokens
 	case m.sub == subPlans && m.planNetworkOpen:
 		return []footerToken{
 			{key: "c", label: m.t("tui.footer.assign"), primary: true},
@@ -393,6 +441,18 @@ func (m Model) footerTokens() []footerToken {
 			m.escBack(),
 			m.helpToken(),
 		}
+	case m.sub == subPlans:
+		return []footerToken{
+			{key: "enter", label: m.t("tui.footer.open"), primary: true},
+			{key: "f", label: m.t("tui.footer.view_goal"), primary: true},
+			{key: "j/k", label: m.t("tui.footer.move")},
+			{key: "g/G", label: m.t("tui.footer.top_bottom")},
+			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
+			{key: "r", label: m.t("tui.footer.refresh")},
+			{key: "tab", label: m.t("tui.footer.zones")},
+			{key: ",//", label: m.t("tui.footer.subs")},
+			m.helpToken(),
+		}
 	case m.sub == subBoard:
 		return []footerToken{
 			{key: "enter", label: m.t("tui.footer.open"), primary: true},
@@ -404,6 +464,7 @@ func (m Model) footerTokens() []footerToken {
 			{key: "e", label: m.t("tui.footer.edit")},
 			{key: "tab", label: m.t("tui.footer.zones")},
 			{key: ",//", label: m.t("tui.footer.subs")},
+			{key: "ctrl+p", label: m.t("tui.footer.project")},
 			{key: "ctrl+o", label: m.t("tui.footer.back")},
 			m.helpToken(),
 		}

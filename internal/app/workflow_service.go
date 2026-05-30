@@ -211,6 +211,21 @@ func (s *WorkflowService) ResolveBucketPermissions(ctx context.Context, project 
 	return false, hint, nil
 }
 
+// ResolveCommentScopePermission answers whether (scope, operation) is allowed
+// for a comment that hangs off no task — project and universal scopes. It
+// resolves purely against the active workflow's defaults (no GetTaskByID, no
+// bucket lookup) per the scope chain documented on
+// domain.ResolveCommentScopePermission. Returns a descriptive hint when the
+// answer is "no" so the caller can surface the offending scope key.
+func (s *WorkflowService) ResolveCommentScopePermission(scope, operation string) (bool, string) {
+	defaults := s.snap.Workflow().Defaults
+	if domain.ResolveCommentScopePermission(defaults, scope, operation) {
+		return true, ""
+	}
+	hint := fmt.Sprintf("policy: %s comment %s is not permitted (declare workflows[].defaults.comment.%s.%s)", scope, operation, scope, operation)
+	return false, hint
+}
+
 // Evaluator returns the per-project guard evaluator the service composes.
 // Callers (TaskService, CommentService, TUI render paths) that need to emit
 // a violation event or evaluate non-transition operation guards go through

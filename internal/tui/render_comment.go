@@ -57,8 +57,14 @@ func (m Model) renderCommentScreen() string {
 	}
 
 	screen := m.commentScreen.Reset(valueWidth).
-		Custom(m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.comment_fmt"), comment.ID))).
-		Row(m.t("tui.row.task"), fmt.Sprintf("#%d", comment.TaskID)).
+		Custom(m.styles.kicker(fmt.Sprintf(m.t("tui.kicker.comment_fmt"), comment.ID)))
+	// Only task-scoped comments hang off a task row; project/universal
+	// comments have no owning task, so the "Task #N" row is suppressed
+	// rather than rendering a misleading "#0".
+	if comment.Scope == "" || comment.Scope == domain.CommentScopeTask {
+		screen = screen.Row(m.t("tui.row.task"), fmt.Sprintf("#%d", comment.TaskID))
+	}
+	screen = screen.
 		Row(m.t("tui.row.author"), strings.TrimSpace(comment.AuthorType)).
 		Row(m.t("tui.row.when"), strings.TrimSpace(comment.CreatedAt))
 	if tagLine != "" {

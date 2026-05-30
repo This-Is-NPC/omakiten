@@ -35,6 +35,8 @@ func (m *Model) handlePlansKey(msg tea.KeyMsg) {
 		m.plansCursor = m.plansCursor.JumpLast()
 	case "enter":
 		m.openPlanNetwork()
+	case "f":
+		m.openPlanGoalScreen()
 	case "r":
 		if err := m.refreshPreservingTaskSelection(); err != nil {
 			m.status = err.Error()

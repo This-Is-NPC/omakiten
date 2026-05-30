@@ -229,6 +229,18 @@ defaults:
 
 The resolver picks the first non-`nil` value walking the chain top-to-bottom. Pointer booleans (`*bool`) distinguish "field omitted" from "explicitly `false`" — omitting `delete` flows to the next layer; writing `delete: false` ends the walk with a deny.
 
+The chain above governs **task-scoped** comments (anchored to the comment's current bucket). Comments also carry a `scope` of `project` or `universal`; these have no bucket, so their edit/delete policy is resolved task-lessly against the workflow defaults via per-scope sub-blocks on `defaults.comment`:
+
+```yaml
+defaults:
+  comment:
+    task:      { edit: false, delete: false }   # task scope (flat comment: {edit,delete} is equivalent)
+    project:   { edit: true,  delete: false }    # project-scoped comments / handoff log
+    universal: { edit: false, delete: false }    # cross-project comments
+```
+
+The flat `comment: {edit, delete}` shape still parses and resolves as the task scope (back-compat); both shapes may coexist. The `task`/`project`/`universal` sub-blocks are valid only under `workflows[].defaults.comment` — declaring them under `defaults.task` or under a bucket's `permissions.comment` is a validation error.
+
 There is no hardcoded "first bucket is special" rule anymore. The default kit (`defaults/config/omakase.yaml`) declares the equivalent shape explicitly: strict defaults at the workflow level + an opt-in on the `backlog` bucket.
 
 ### `workflows[].buckets`

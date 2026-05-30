@@ -1,10 +1,11 @@
 package domain
 
 type Project struct {
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	Slug     string `json:"slug"`
-	RootPath string `json:"root_path"`
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	RootPath    string `json:"root_path"`
+	Description string `json:"description"`
 }
 
 // ProjectDeleteCounters is the per-table row-count snapshot the
@@ -26,10 +27,11 @@ type ProjectDeleteCounters struct {
 }
 
 type ProjectContext struct {
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	Slug     string `json:"slug"`
-	RootPath string `json:"root_path"`
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	RootPath    string `json:"root_path"`
+	Description string `json:"description"`
 }
 
 func (p Project) Context() ProjectContext {

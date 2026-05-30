@@ -1,6 +1,50 @@
 package agent
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+// TestNoteCommandsTargetScopedComments pins the #386 repoint: the okt-note-*
+// atomics (and the orchestrators that persist/read handoffs) now drive the
+// scope-aware `comments.*` surface, since the `notes.*` entity was removed.
+// No action body may still reference a `notes.` tool, and the note-family
+// commands must name `comments.` so the prompts route the user to the live API.
+func TestNoteCommandsTargetScopedComments(t *testing.T) {
+	// Every command body must be free of the removed notes.* tool namespace.
+	for _, slug := range CommandNames() {
+		body := CommandActionFallback(slug)
+		if strings.Contains(body, "notes.") {
+			t.Errorf("command %q action still references removed notes.* tool:\n%s", slug, body)
+		}
+	}
+
+	// The note-family + handoff-persisting commands must drive comments.*.
+	mustReferenceComments := []string{
+		"okt-note-free",
+		"okt-note-recap",
+		"okt-note-list",
+		"okt-note-show",
+		"okt-pause",
+		"okt-start",
+	}
+	for _, slug := range mustReferenceComments {
+		body := CommandActionFallback(slug)
+		if body == "" {
+			t.Fatalf("command %q has no action body", slug)
+		}
+		if !strings.Contains(body, "comments.") {
+			t.Errorf("command %q action does not reference the comments.* surface:\n%s", slug, body)
+		}
+	}
+
+	// Slugs stay put — the mcp_test note( group + command count depend on them.
+	for _, slug := range []string{"okt-note-free", "okt-note-recap", "okt-note-list", "okt-note-show"} {
+		if _, ok := DescribeCommand(slug); !ok {
+			t.Fatalf("note slug %q was renamed/removed; mcp_test note group + count rely on it", slug)
+		}
+	}
+}
 
 // TestDescribeCommandTiers pins the three-tier classification + object
 // namespacing the v2 command surface (#371) routes on. Bare slugs split into

@@ -51,19 +51,3 @@ func TagLabel(raw string) string {
 	runes[0] = unicode.ToUpper(runes[0])
 	return string(runes)
 }
-
-// applyTagLabel pairs a normalised tag name with its display label
-// derived from the raw input. Centralises the "name + label" tuple so
-// Create and Edit paths cannot drift — both note service flows (and the
-// sqlite UpdateNote tag replacement) feed raw user input through here
-// to keep canonical Name and human-readable Label in lock-step.
-//
-// Returns empty name+label when the raw input normalises to an empty
-// canonical (caller should skip the resulting tag).
-func applyTagLabel(raw string, synonyms map[string]string) (name, label string) {
-	name = NormalizeTagName(raw, synonyms)
-	if name == "" {
-		return "", ""
-	}
-	return name, TagLabel(raw)
-}

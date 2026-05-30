@@ -34,6 +34,17 @@ func NullStringOr(v sql.NullString, fallback string) string {
 	return fallback
 }
 
+// NullInt64Or returns the wrapped int64 when v is valid, otherwise the
+// caller-supplied fallback. The int64 analogue of NullStringOr, for
+// callers that want a plain value with an explicit default rather than a
+// pointer.
+func NullInt64Or(v sql.NullInt64, fallback int64) int64 {
+	if v.Valid {
+		return v.Int64
+	}
+	return fallback
+}
+
 // NullInt64Ptr lifts a nullable int64 into a `*int64`, returning nil for
 // the NULL case. Used by domain types that distinguish "no parent" /
 // "no related task" (nil) from "id 0" (a real but unlikely id). The

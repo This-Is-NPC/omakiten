@@ -158,9 +158,20 @@ type GuardEvaluationRepository interface {
 }
 
 type CommentRepository interface {
+	// AddComment is the task-scope convenience wrapper kept for existing
+	// callers; it delegates to AddScopedComment with Scope=task.
 	AddComment(ctx context.Context, projectID, taskID int64, body, authorType string, tags []domain.Tag) (domain.Comment, error)
+	// AddScopedComment writes a comment at the requested scope (task, project,
+	// or universal) carrying the optional kind/title/pinned fields.
+	AddScopedComment(ctx context.Context, w domain.CommentWrite) (domain.Comment, error)
 	ListComments(ctx context.Context, projectID, taskID int64) ([]domain.Comment, error)
+	// QueryComments is the filterable handoff-log surface: list by scope, kind,
+	// tag, FTS, pinned-only, and time-window, single-project or cross-project.
+	QueryComments(ctx context.Context, filter domain.CommentFilter) ([]domain.Comment, error)
 	UpdateComment(ctx context.Context, projectID, commentID int64, body string, tags []domain.Tag) (domain.Comment, domain.Event, error)
+	// EditComment applies the full scope-agnostic patch (body/title/kind/pinned
+	// + tags) and stamps updated_at.
+	EditComment(ctx context.Context, projectID, commentID int64, edit domain.CommentEdit) (domain.Comment, domain.Event, error)
 	DeleteComment(ctx context.Context, projectID, commentID int64) (domain.Event, error)
 	CommentByID(ctx context.Context, projectID, commentID int64) (domain.Comment, error)
 }
@@ -202,22 +213,6 @@ type DependencyRepository interface {
 type ContextEntryRepository interface {
 	AddContextEntry(ctx context.Context, projectID int64, body string, tokenEstimate int) (domain.ContextEntry, error)
 	ListContextEntries(ctx context.Context, projectID int64) ([]domain.ContextEntry, error)
-}
-
-// NoteRepository persists the project-or-global notes entity introduced
-// by umbrella #359 (storage land in #360). Scope is encoded in projectID
-// at the storage boundary: 0 = global (project_id IS NULL), non-zero =
-// project-scoped (FK cascades on project delete via migration 031).
-//
-// The adapter keeps notes_fts + the unified search_index in sync via
-// triggers, so callers do not have to issue any extra writes after
-// CreateNote / UpdateNote / DeleteNote.
-type NoteRepository interface {
-	CreateNote(ctx context.Context, projectID int64, kind, title, body string, pinned bool, authorModel string, tags []domain.Tag) (domain.Note, error)
-	UpdateNote(ctx context.Context, id int64, update domain.NoteUpdate) (domain.Note, error)
-	NoteByID(ctx context.Context, id int64) (domain.Note, error)
-	ListNotes(ctx context.Context, filter domain.NoteFilter) ([]domain.Note, error)
-	DeleteNote(ctx context.Context, id int64) error
 }
 
 type TagRepository interface {
@@ -285,7 +280,47 @@ type PlanRepository interface {
 	GetPlanByID(ctx context.Context, projectID, planID int64) (domain.Plan, error)
 	ListPlans(ctx context.Context, projectID int64) ([]domain.Plan, error)
 	UpdatePlanGoalBody(ctx context.Context, projectID, planID int64, goalBody string) (domain.Plan, error)
+	// UpdatePlan mutates a plan's name / slug / status in a single
+	// transaction. Each field is optional: a nil pointer leaves the
+	// column untouched, a non-nil pointer rewrites it. Slug changes are
+	// checked against the (project_id, slug) UNIQUE — a collision maps to
+	// ErrPlanSlugConflict. status='abandoned' co-emits plan.abandoned
+	// alongside plan.edited; the primary event is always plan.edited
+	// carrying the per-field {from,to} diff. Returns ErrPlanNotFound when
+	// the plan id belongs to a different project or does not exist, and
+	// ErrValidation when no field is supplied (no-op rejected).
+	UpdatePlan(ctx context.Context, projectID, planID int64, name, slug, status *string) (domain.Plan, error)
+	// DeletePlan hard-deletes a plan row. FK policy (migration 023)
+	// cascades plan_waves and SET-NULLs tasks.plan_id / wave_id, so member
+	// tasks survive unattached. Emits plan.deleted carrying {slug, name,
+	// status}. Returns ErrPlanNotFound when the plan id belongs to a
+	// different project or does not exist.
+	DeletePlan(ctx context.Context, projectID, planID int64) (domain.Event, error)
 	AddPlanWave(ctx context.Context, projectID, planID int64, name string, position int) (domain.PlanWave, error)
+	// RemovePlanWave deletes a wave. The FK policy (migration 023,
+	// tasks.wave_id ON DELETE SET NULL) clears member tasks' wave_id
+	// while leaving plan_id intact, so the tasks survive in the plan but
+	// unscheduled. Emits plan.wave_removed. Returns ErrPlanWaveNotFound
+	// when the wave id belongs to a different project or does not exist.
+	RemovePlanWave(ctx context.Context, projectID, waveID int64) (domain.PlanWave, error)
+	// RenamePlanWave rewrites a wave's name (blank rejected with
+	// ErrValidation; no-op rejected). Emits plan.wave_renamed. Returns
+	// ErrPlanWaveNotFound when the wave id belongs to a different project
+	// or does not exist.
+	RenamePlanWave(ctx context.Context, projectID, waveID int64, name string) (domain.PlanWave, error)
+	// ReorderPlanWave moves a wave to newPosition (1-based) within its
+	// plan, swapping with the occupant of the target slot when collided
+	// (the (plan_id, position) UNIQUE is honoured via a temp sentinel
+	// during the crossover). newPosition <= 0 and no-op moves reject with
+	// ErrValidation. Emits plan.wave_reordered. Returns
+	// ErrPlanWaveNotFound when the wave id is unknown or out of project.
+	ReorderPlanWave(ctx context.Context, projectID, waveID int64, newPosition int) (domain.PlanWave, error)
+	// UnassignTaskFromPlan detaches a task from its plan, clearing BOTH
+	// plan_id and wave_id (full detach). An already-detached task is a
+	// no-op (no event). Emits plan.task_unassigned. Returns
+	// ErrTaskNotFound when the task id belongs to a different project or
+	// does not exist.
+	UnassignTaskFromPlan(ctx context.Context, projectID, taskID int64) (domain.Event, error)
 	ListPlanWaves(ctx context.Context, projectID, planID int64) ([]domain.PlanWave, error)
 	ListPlanTasks(ctx context.Context, projectID, planID int64, buckets domain.BucketResolver) ([]domain.PlanTaskRow, error)
 	AssignTaskToPlan(ctx context.Context, projectID, taskID, planID, waveID int64) error
