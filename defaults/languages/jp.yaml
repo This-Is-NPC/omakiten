@@ -639,7 +639,7 @@ keys:
   tui.help.stats_general.refresh: "更新"
   tui.kicker.activity: "アクティビティ"
   tui.kicker.dashboard: "ダッシュボード"
-  tui.dashboard.tasks: "タスク"
+  tui.dashboard.tasks: "アクティブなタスク"
   tui.dashboard.total: "合計"
   tui.dashboard.subtasks: "サブタスク"
   tui.dashboard.roots: "ルート"

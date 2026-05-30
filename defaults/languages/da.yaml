@@ -640,7 +640,7 @@ keys:
   tui.help.stats_general.refresh: "genindlæs"
   tui.kicker.activity: "Aktivitet"
   tui.kicker.dashboard: "Oversigt"
-  tui.dashboard.tasks: "Opgaver"
+  tui.dashboard.tasks: "Aktive opgaver"
   tui.dashboard.total: "I alt"
   tui.dashboard.subtasks: "Underopgaver"
   tui.dashboard.roots: "Rødder"

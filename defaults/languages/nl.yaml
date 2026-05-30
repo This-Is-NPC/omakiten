@@ -640,7 +640,7 @@ keys:
   tui.help.stats_general.refresh: "vernieuwen"
   tui.kicker.activity: "Activiteit"
   tui.kicker.dashboard: "Dashboard"
-  tui.dashboard.tasks: "Taken"
+  tui.dashboard.tasks: "Actieve taken"
   tui.dashboard.total: "Totaal"
   tui.dashboard.subtasks: "Subtaken"
   tui.dashboard.roots: "Hoofdtaken"

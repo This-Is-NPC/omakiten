@@ -640,7 +640,7 @@ keys:
   tui.help.stats_general.refresh: "päivitä"
   tui.kicker.activity: "Aktiviteetti"
   tui.kicker.dashboard: "Yhteenveto"
-  tui.dashboard.tasks: "Tehtävät"
+  tui.dashboard.tasks: "Aktiiviset tehtävät"
   tui.dashboard.total: "Yhteensä"
   tui.dashboard.subtasks: "Alitehtävät"
   tui.dashboard.roots: "Juuret"

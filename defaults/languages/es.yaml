@@ -644,7 +644,7 @@ keys:
   tui.help.stats_general.refresh: "actualizar"
   tui.kicker.activity: "Actividad"
   tui.kicker.dashboard: "Panel"
-  tui.dashboard.tasks: "Tareas"
+  tui.dashboard.tasks: "Tareas activas"
   tui.dashboard.total: "Total"
   tui.dashboard.subtasks: "Subtareas"
   tui.dashboard.roots: "Raíces"

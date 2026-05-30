@@ -642,7 +642,7 @@ keys:
   tui.help.stats_general.refresh: "aggiorna"
   tui.kicker.activity: "Attività"
   tui.kicker.dashboard: "Cruscotto"
-  tui.dashboard.tasks: "Attività"
+  tui.dashboard.tasks: "Attività attive"
   tui.dashboard.total: "Totale"
   tui.dashboard.subtasks: "Sottoattività"
   tui.dashboard.roots: "Radici"

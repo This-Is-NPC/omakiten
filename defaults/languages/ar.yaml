@@ -639,7 +639,7 @@ keys:
   tui.help.stats_general.refresh: "تحديث"
   tui.kicker.activity: "النشاط"
   tui.kicker.dashboard: "لوحة المعلومات"
-  tui.dashboard.tasks: "المهام"
+  tui.dashboard.tasks: "المهام النشطة"
   tui.dashboard.total: "الإجمالي"
   tui.dashboard.subtasks: "المهام الفرعية"
   tui.dashboard.roots: "الجذور"

@@ -633,7 +633,7 @@ keys:
   tui.help.stats_general.refresh: "刷新"
   tui.kicker.activity: "活动"
   tui.kicker.dashboard: "仪表盘"
-  tui.dashboard.tasks: "任务"
+  tui.dashboard.tasks: "活动任务"
   tui.dashboard.total: "总计"
   tui.dashboard.subtasks: "子任务"
   tui.dashboard.roots: "根任务"

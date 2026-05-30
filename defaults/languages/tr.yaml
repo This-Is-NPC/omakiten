@@ -640,7 +640,7 @@ keys:
   tui.help.stats_general.refresh: "yenile"
   tui.kicker.activity: "Aktivite"
   tui.kicker.dashboard: "Pano"
-  tui.dashboard.tasks: "Görevler"
+  tui.dashboard.tasks: "Etkin görevler"
   tui.dashboard.total: "Toplam"
   tui.dashboard.subtasks: "Alt görevler"
   tui.dashboard.roots: "Kökler"

@@ -642,7 +642,7 @@ keys:
   tui.help.stats_general.refresh: "обновить"
   tui.kicker.activity: "Активность"
   tui.kicker.dashboard: "Панель"
-  tui.dashboard.tasks: "Задачи"
+  tui.dashboard.tasks: "Активные задачи"
   tui.dashboard.total: "Всего"
   tui.dashboard.subtasks: "Подзадачи"
   tui.dashboard.roots: "Корневые"

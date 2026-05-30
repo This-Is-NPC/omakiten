@@ -637,7 +637,7 @@ keys:
   tui.help.stats_general.refresh: "새로 고침"
   tui.kicker.activity: "활동"
   tui.kicker.dashboard: "대시보드"
-  tui.dashboard.tasks: "작업"
+  tui.dashboard.tasks: "활성 작업"
   tui.dashboard.total: "합계"
   tui.dashboard.subtasks: "하위 작업"
   tui.dashboard.roots: "루트"

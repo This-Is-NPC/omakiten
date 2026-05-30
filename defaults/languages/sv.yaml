@@ -639,7 +639,7 @@ keys:
   tui.help.stats_general.refresh: "uppdatera"
   tui.kicker.activity: "Aktivitet"
   tui.kicker.dashboard: "Översikt"
-  tui.dashboard.tasks: "Uppgifter"
+  tui.dashboard.tasks: "Aktiva uppgifter"
   tui.dashboard.total: "Totalt"
   tui.dashboard.subtasks: "Deluppgifter"
   tui.dashboard.roots: "Rötter"

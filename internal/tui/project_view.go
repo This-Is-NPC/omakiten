@@ -73,8 +73,44 @@ func (m *Model) refreshProjectSummary() error {
 			m.projectTags = tags
 		}
 	}
+
+	// Reload the project's active task set BEFORE folding the dashboard so
+	// the counts reflect the current state on open AND on `r` — the board's
+	// own load only fires on board nav, so without this Ctrl+P (and the
+	// project-view refresh) would show whatever m.tasks held when the board
+	// was last visited. Reuses the board's snapshot path (same sort + active
+	// scope) so the two views agree on which tasks count.
+	m.reloadProjectTasks()
+
 	m.projectDashboard = m.computeProjectDashboard()
 	return nil
+}
+
+// reloadProjectTasks refreshes m.tasks (and the dependent board caches) so
+// the project-view dashboard counts stay current. Reads the task list
+// directly via the Tasks repo's ListTasks (the same call the board's
+// Snapshot uses) rather than a full TUI snapshot, so it does not depend on
+// the Comments/Dependencies repos a comment-only model leaves nil. Scope
+// mirrors the board: active tasks unless the user has toggled archived in,
+// sorted by the active board view. Nil-guards the Tasks repo and leaves
+// m.tasks untouched on a query error rather than blanking a loaded set.
+func (m *Model) reloadProjectTasks() {
+	if m.repos.Tasks == nil {
+		return
+	}
+	views := m.activeViewSettings()
+	snap := m.repos.activeSnapshot()
+	filter := domain.TaskFilter{
+		Sort:            domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order},
+		IncludeArchived: m.includeArchived,
+	}
+	tasks, err := m.repos.Tasks.ListTasks(m.ctx, m.project.ID, filter, snap)
+	if err != nil {
+		return
+	}
+	m.tasks = tasks
+	m.invalidateBoardCaches()
+	m.rebuildBoardCaches()
 }
 
 // computeProjectDashboard folds the model's already-loaded task slice and

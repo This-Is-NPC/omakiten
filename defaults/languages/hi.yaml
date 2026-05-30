@@ -641,7 +641,7 @@ keys:
   tui.help.stats_general.refresh: "रीफ़्रेश"
   tui.kicker.activity: "गतिविधि"
   tui.kicker.dashboard: "डैशबोर्ड"
-  tui.dashboard.tasks: "कार्य"
+  tui.dashboard.tasks: "सक्रिय कार्य"
   tui.dashboard.total: "कुल"
   tui.dashboard.subtasks: "उप-कार्य"
   tui.dashboard.roots: "मूल"

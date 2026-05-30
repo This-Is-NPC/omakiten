@@ -641,7 +641,7 @@ keys:
   tui.help.stats_general.refresh: "rafraîchir"
   tui.kicker.activity: "Activité"
   tui.kicker.dashboard: "Tableau de bord"
-  tui.dashboard.tasks: "Tâches"
+  tui.dashboard.tasks: "Tâches actives"
   tui.dashboard.total: "Total"
   tui.dashboard.subtasks: "Sous-tâches"
   tui.dashboard.roots: "Racines"

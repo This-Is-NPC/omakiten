@@ -639,7 +639,7 @@ keys:
   tui.help.stats_general.refresh: "оновити"
   tui.kicker.activity: "Активність"
   tui.kicker.dashboard: "Панель"
-  tui.dashboard.tasks: "Завдання"
+  tui.dashboard.tasks: "Активні завдання"
   tui.dashboard.total: "Усього"
   tui.dashboard.subtasks: "Підзавдання"
   tui.dashboard.roots: "Кореневі"

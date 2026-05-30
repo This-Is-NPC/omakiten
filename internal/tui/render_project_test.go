@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -464,3 +465,32 @@ func TestProjectFormScreenBlocksPalette(t *testing.T) {
 		t.Fatalf("palette should be gated while the project form overlay is open")
 	}
 }
+}
+
+// TestRefreshProjectSummaryReloadsTasks proves refreshProjectSummary reloads
+// the project's task set before folding the dashboard, so a task created
+// after the board was last loaded shows up in the dashboard counts on the
+// next refresh (`r`) — the dashboard is no longer stale.
+func TestRefreshProjectSummaryReloadsTasks(t *testing.T) {
+	model, project, _ := scopedFeedModel(t)
+	opened, _ := model.Update(ctrlP())
+	m := opened.(Model)
+
+	before := m.projectDashboard.totalTasks
+
+	// Create a new task directly in the store AFTER the project view opened.
+	// Without the in-refresh reload, m.tasks (and thus the dashboard) would
+	// keep the pre-create count.
+	if _, err := m.repos.Tasks.CreateTask(context.Background(), project.ID, "Fresh", "", domain.Priority(2), "backlog", nil, m.repos.activeSnapshot()); err != nil {
+		t.Fatalf("CreateTask() = %v", err)
+	}
+
+	if err := m.refreshProjectSummary(); err != nil {
+		t.Fatalf("refreshProjectSummary() = %v", err)
+	}
+
+	if got := m.projectDashboard.totalTasks; got != before+1 {
+		t.Fatalf("dashboard total after refresh = %d, want %d (reflecting the new task)", got, before+1)
+	}
+}
+
