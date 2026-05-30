@@ -31,12 +31,15 @@ type AddCommentInput struct {
 
 type EditCommentInput struct {
 	ProjectSelector
-	CommentID int64    `json:"comment_id"`
-	Body      string   `json:"body"`
-	Title     string   `json:"title,omitempty"`
-	Kind      string   `json:"kind,omitempty"`
-	Pinned    *bool    `json:"pinned,omitempty"`
-	Tags      []string `json:"tags,omitempty"`
+	CommentID int64  `json:"comment_id"`
+	Body      string `json:"body"`
+	// Title/Kind/Pinned are tri-state: an omitted JSON field decodes to nil
+	// and leaves the stored column untouched; an explicit value overwrites it.
+	// This keeps a body-only edit from wiping a comment's title, kind, or pin.
+	Title  *string  `json:"title,omitempty"`
+	Kind   *string  `json:"kind,omitempty"`
+	Pinned *bool    `json:"pinned,omitempty"`
+	Tags   []string `json:"tags,omitempty"`
 }
 
 type DeleteCommentInput struct {
@@ -53,13 +56,14 @@ type DeleteCommentResponse struct {
 
 type ListCommentsInput struct {
 	ProjectSelector
-	TaskID int64  `json:"task_id,omitempty"`
-	Scope  string `json:"scope,omitempty"`
-	Kind   string `json:"kind,omitempty"`
-	Tag    string `json:"tag,omitempty"`
-	Pinned bool   `json:"pinned,omitempty"`
-	Query  string `json:"query,omitempty"`
-	Since  string `json:"since,omitempty"`
+	TaskID    int64  `json:"task_id,omitempty"`
+	CommentID int64  `json:"comment_id,omitempty"`
+	Scope     string `json:"scope,omitempty"`
+	Kind      string `json:"kind,omitempty"`
+	Tag       string `json:"tag,omitempty"`
+	Pinned    bool   `json:"pinned,omitempty"`
+	Query     string `json:"query,omitempty"`
+	Since     string `json:"since,omitempty"`
 }
 
 type CommentsResponse struct {

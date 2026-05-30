@@ -191,12 +191,15 @@ type CommentWrite struct {
 }
 
 // CommentEdit is the scope-agnostic patch applied to an existing comment.
-// Body is always rewritten; Title/Kind/Pinned overwrite their columns.
+// Body is always rewritten; Title/Kind/Pinned are tri-state pointers — a nil
+// pointer leaves the stored column untouched, a non-nil pointer overwrites it.
+// This prevents a body-only edit from silently wiping a pinned flag, title, or
+// kind. Mirrors how EditPlanInput/UpdatePlan handle partial updates.
 type CommentEdit struct {
 	Body   string
-	Title  string
-	Kind   string
-	Pinned bool
+	Title  *string
+	Kind   *string
+	Pinned *bool
 	Tags   []Tag
 }
 
@@ -204,6 +207,10 @@ type CommentEdit struct {
 // filterable handoff log). All fields are optional and AND together. A zero
 // filter lists every comment the projection allows.
 type CommentFilter struct {
+	// CommentID narrows to a single comment by its id (events.id) when > 0.
+	// Used by the get-by-id read path (okt-note-show) so the agent can fetch
+	// exactly one comment through the filterable query surface.
+	CommentID int64
 	// Scope restricts to task|project|universal when non-empty.
 	Scope string
 	// ProjectID scopes to a single project. 0 means cross-project. Universal

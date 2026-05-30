@@ -147,6 +147,79 @@ func TestListCommentsDefaultUnchanged(t *testing.T) {
 
 // TestEditCommentScopedFields edits a comment's title/kind/pinned alongside its
 // body and verifies the patch round-trips.
+// TestListCommentsByID proves comments.list with comment_id returns exactly the
+// named row, and that a universal note (project_id NULL) is reachable by id even
+// though the routine scoped list would project-scope it out. Fails before the
+// comment_id filter existed.
+func TestListCommentsByID(t *testing.T) {
+	fixture := newAgentFixture(t)
+
+	taskC, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		TaskID: fixture.taskA1.ID, Body: "task note", AuthorType: "agent",
+	})
+	if err != nil {
+		t.Fatalf("AddComment(task) error = %v", err)
+	}
+	uniC, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		Scope: domain.CommentScopeUniversal, Body: "global note", AuthorType: "agent",
+	})
+	if err != nil {
+		t.Fatalf("AddComment(universal) error = %v", err)
+	}
+
+	got, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{CommentID: taskC.Comment.ID})
+	if err != nil {
+		t.Fatalf("ListComments(comment_id task) error = %v", err)
+	}
+	if len(got.Comments) != 1 || got.Comments[0].ID != taskC.Comment.ID || got.Comments[0].Body != "task note" {
+		t.Fatalf("ListComments(comment_id=%d) = %+v, want exactly the task comment", taskC.Comment.ID, got.Comments)
+	}
+
+	gotUni, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{CommentID: uniC.Comment.ID})
+	if err != nil {
+		t.Fatalf("ListComments(comment_id universal) error = %v", err)
+	}
+	if len(gotUni.Comments) != 1 || gotUni.Comments[0].ID != uniC.Comment.ID {
+		t.Fatalf("ListComments(comment_id=%d universal) = %+v, want exactly the universal note", uniC.Comment.ID, gotUni.Comments)
+	}
+}
+
+// TestListCommentsDoesNotLeakAcrossProjects pins the project-scoping contract:
+// a routine comments.list (scope=project) resolved for project A must NOT
+// surface project B's comments. Guards against a regression where Query passed
+// a project-less filter through to the cross-project read.
+func TestListCommentsDoesNotLeakAcrossProjects(t *testing.T) {
+	fixture := newAgentFixture(t)
+
+	// Project A's own project-scoped note (default selector resolves to A).
+	if _, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		Scope: domain.CommentScopeProject, Body: "A project note", AuthorType: "agent",
+	}); err != nil {
+		t.Fatalf("AddComment(A project) error = %v", err)
+	}
+	// Project B's project-scoped note, addressed explicitly by id.
+	if _, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		ProjectSelector: ProjectSelector{ProjectID: fixture.projectB.ID},
+		Scope:           domain.CommentScopeProject, Body: "B project note", AuthorType: "agent",
+	}); err != nil {
+		t.Fatalf("AddComment(B project) error = %v", err)
+	}
+
+	// A routine scope=project list for project A must only see A's note.
+	got, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{Scope: domain.CommentScopeProject})
+	if err != nil {
+		t.Fatalf("ListComments(scope=project) error = %v", err)
+	}
+	for _, c := range got.Comments {
+		if c.Body == "B project note" {
+			t.Fatalf("comments.list leaked project B's comment: %+v", got.Comments)
+		}
+	}
+	if len(got.Comments) != 1 || got.Comments[0].Body != "A project note" {
+		t.Fatalf("ListComments(scope=project) = %+v, want only A's project note", got.Comments)
+	}
+}
+
 func TestEditCommentScopedFields(t *testing.T) {
 	fixture := newAgentFixture(t)
 
@@ -158,13 +231,64 @@ func TestEditCommentScopedFields(t *testing.T) {
 	}
 
 	pinned := true
+	title := "Final"
+	kind := "recap"
 	edited, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
-		CommentID: created.Comment.ID, Body: "after", Title: "Final", Kind: "recap", Pinned: &pinned,
+		CommentID: created.Comment.ID, Body: "after", Title: &title, Kind: &kind, Pinned: &pinned,
 	})
 	if err != nil {
 		t.Fatalf("EditComment() error = %v", err)
 	}
 	if edited.Comment.Body != "after" || edited.Comment.Title != "Final" || edited.Comment.Kind != "recap" || !edited.Comment.Pinned {
 		t.Fatalf("EditComment() = %+v, want body/title/kind/pinned applied", edited.Comment)
+	}
+}
+
+// TestEditCommentPreservesNoteFieldsOnBodyOnlyEdit pins the tri-state contract
+// at the agent boundary: a body-only edit (Title/Kind/Pinned omitted → nil)
+// must NOT wipe a pinned=true, titled, kinded note. An explicit pinned=false
+// then unpins. Fails on the pre-fix code where the DTO carried plain
+// string/bool zero values that the store wrote unconditionally.
+func TestEditCommentPreservesNoteFieldsOnBodyOnlyEdit(t *testing.T) {
+	fixture := newAgentFixture(t)
+
+	pinned := true
+	title := "Heading"
+	kind := "handoff"
+	created, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		Scope: domain.CommentScopeProject, Body: "before", AuthorType: "agent",
+		Title: title, Kind: kind, Pinned: pinned,
+	})
+	if err != nil {
+		t.Fatalf("AddComment(project) error = %v", err)
+	}
+
+	// Body-only edit: Title/Kind/Pinned omitted.
+	edited, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+		CommentID: created.Comment.ID, Body: "after",
+	})
+	if err != nil {
+		t.Fatalf("EditComment(body only) error = %v", err)
+	}
+	if edited.Comment.Body != "after" {
+		t.Fatalf("EditComment body = %q, want %q", edited.Comment.Body, "after")
+	}
+	if !edited.Comment.Pinned || edited.Comment.Title != "Heading" || edited.Comment.Kind != "handoff" {
+		t.Fatalf("EditComment(body only) wiped note fields = %+v", edited.Comment)
+	}
+
+	// Explicit pinned=false unpins (and leaves title/kind alone).
+	unpin := false
+	edited2, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+		CommentID: created.Comment.ID, Body: "after2", Pinned: &unpin,
+	})
+	if err != nil {
+		t.Fatalf("EditComment(unpin) error = %v", err)
+	}
+	if edited2.Comment.Pinned {
+		t.Fatalf("EditComment(pinned=false) did not unpin = %+v", edited2.Comment)
+	}
+	if edited2.Comment.Title != "Heading" || edited2.Comment.Kind != "handoff" {
+		t.Fatalf("EditComment(unpin) wiped title/kind = %+v", edited2.Comment)
 	}
 }

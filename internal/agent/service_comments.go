@@ -74,12 +74,16 @@ func (s *Service) EditComment(ctx context.Context, input EditCommentInput) (Comm
 	}
 	workflow := s.workflow
 	edit := domain.CommentEdit{
-		Body:  input.Body,
-		Title: strings.TrimSpace(input.Title),
-		Kind:  strings.TrimSpace(input.Kind),
+		Body:   input.Body,
+		Pinned: input.Pinned,
 	}
-	if input.Pinned != nil {
-		edit.Pinned = *input.Pinned
+	if input.Title != nil {
+		trimmed := strings.TrimSpace(*input.Title)
+		edit.Title = &trimmed
+	}
+	if input.Kind != nil {
+		trimmed := strings.TrimSpace(*input.Kind)
+		edit.Kind = &trimmed
 	}
 	comment, err := s.newCommentServiceWithWorkflow(workflow).EditScoped(ctx, project, input.CommentID, edit, input.Tags)
 	if err != nil {
@@ -114,6 +118,15 @@ func (s *Service) DeleteComment(ctx context.Context, input DeleteCommentInput) (
 	return DeleteCommentResponse{Project: projectSummary(project), Snapshot: &snap}, nil
 }
 
+// ListComments is the comments.list handler. It is project-scoped by design:
+// the resolved project's id is stamped onto filter.ProjectID for every routine
+// list (task/project/kind/tag/pinned/query/since), so a normal call NEVER leaks
+// comments from other projects. The only project-less reads are deliberate and
+// narrow: scope=universal (universal comments carry project_id NULL and only
+// match when ProjectID=0) and comment_id get-by-id (a globally unique row). The
+// cross-project handoff/standup digest is not a single project-less call — the
+// agent enumerates each project and issues one scope=project call per project,
+// each carrying that project's id (see okt-note-recap in the command table).
 func (s *Service) ListComments(ctx context.Context, input ListCommentsInput) (CommentsResponse, error) {
 	project, err := s.resolveProject(ctx, input.ProjectSelector)
 	if err != nil {
@@ -126,8 +139,9 @@ func (s *Service) ListComments(ctx context.Context, input ListCommentsInput) (Co
 	since := strings.TrimSpace(input.Since)
 
 	// Pure task-scoped listing (no extra filters) keeps the original List path
-	// so the default behaviour is byte-for-byte unchanged.
-	if scope == "" && kind == "" && tag == "" && query == "" && since == "" && !input.Pinned {
+	// so the default behaviour is byte-for-byte unchanged. A comment_id (the
+	// get-by-id path) routes through Query so the id filter applies.
+	if scope == "" && kind == "" && tag == "" && query == "" && since == "" && !input.Pinned && input.CommentID <= 0 {
 		comments, err := s.newCommentService().List(ctx, project, input.TaskID)
 		if err != nil {
 			return CommentsResponse{}, err
@@ -141,7 +155,13 @@ func (s *Service) ListComments(ctx context.Context, input ListCommentsInput) (Co
 	if scope == domain.CommentScopeUniversal {
 		projectID = 0
 	}
+	// A comment_id (get-by-id) names a globally unique row across all scopes —
+	// drop the project filter so okt-note-show can fetch a universal note too.
+	if input.CommentID > 0 {
+		projectID = 0
+	}
 	filter := domain.CommentFilter{
+		CommentID:  input.CommentID,
 		Scope:      scope,
 		ProjectID:  projectID,
 		TaskID:     input.TaskID,

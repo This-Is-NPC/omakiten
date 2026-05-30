@@ -594,8 +594,8 @@ var commandTable = []commandEntry{
 	{
 		Slug: "okt-note-show",
 		Action: "Read one note in full. Resolve the id from `--id` (or the first positional argument), call " +
-			"`comments.list` (scoped, then match the row by comment id), and render the note's title, kind, scope, " +
-			"tags, and body verbatim. Read-only — never mutate " +
+			"`comments.list` with `comment_id` set to that id (returns exactly the one row, any scope), and render " +
+			"the note's title, kind, scope, tags, and body verbatim. Read-only — never mutate " +
 			"here; `comments.edit`/`comments.delete` are MCP-only by design. Next: suggest `okt-note-list` to scan the " +
 			"surrounding notes, or `okt-task-continue` when the note points at an open task to resume.",
 		Description: "Read one knowledge note in full by id.",

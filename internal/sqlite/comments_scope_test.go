@@ -120,8 +120,9 @@ func TestEditCommentWidePatch(t *testing.T) {
 		t.Fatalf("new comment UpdatedAt = %q, want empty", c.UpdatedAt)
 	}
 
+	title, kind, pinned := "Heading", "recap", true
 	edited, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{
-		Body: "after", Title: "Heading", Kind: "recap", Pinned: true,
+		Body: "after", Title: &title, Kind: &kind, Pinned: &pinned,
 		Tags: []domain.Tag{{Name: "resume", Label: "resume"}},
 	})
 	if err != nil {
@@ -153,6 +154,50 @@ func TestEditCommentWidePatch(t *testing.T) {
 	}
 	if len(queried[0].Tags) != 1 || queried[0].Tags[0].Name != "resume" {
 		t.Fatalf("reloaded tags = %+v", queried[0].Tags)
+	}
+}
+
+// TestEditCommentTriStatePreservesUnsetFields proves the store keeps the loaded
+// row's title/kind/pinned when the patch pointer is nil, and overwrites only on
+// an explicit non-nil pointer. Fails on the pre-fix EditComment which wrote all
+// three columns unconditionally from zero-value fields.
+func TestEditCommentTriStatePreservesUnsetFields(t *testing.T) {
+	ctx, store, project, _ := commentScopeFixture(t)
+	c, err := store.AddScopedComment(ctx, domain.CommentWrite{
+		Scope: domain.CommentScopeProject, ProjectID: project.ID,
+		Body: "before", Title: "X", Kind: "handoff", Pinned: true, AuthorType: "agent",
+	})
+	if err != nil {
+		t.Fatalf("AddScopedComment: %v", err)
+	}
+
+	// Body-only edit: Title/Kind/Pinned nil → must preserve.
+	edited, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Body: "after"})
+	if err != nil {
+		t.Fatalf("EditComment(body only): %v", err)
+	}
+	if edited.Body != "after" || edited.Title != "X" || edited.Kind != "handoff" || !edited.Pinned {
+		t.Fatalf("EditComment(body only) = %+v, want title/kind/pinned preserved", edited)
+	}
+	reloaded, err := store.CommentByID(ctx, project.ID, c.ID)
+	if err != nil {
+		t.Fatalf("CommentByID: %v", err)
+	}
+	if reloaded.Title != "X" || reloaded.Kind != "handoff" || !reloaded.Pinned {
+		t.Fatalf("reloaded after body-only edit = %+v, want preserved", reloaded)
+	}
+
+	// Explicit pinned=false unpins; title/kind still preserved.
+	unpin := false
+	edited2, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Body: "after2", Pinned: &unpin})
+	if err != nil {
+		t.Fatalf("EditComment(unpin): %v", err)
+	}
+	if edited2.Pinned {
+		t.Fatalf("EditComment(pinned=false) did not unpin = %+v", edited2)
+	}
+	if edited2.Title != "X" || edited2.Kind != "handoff" {
+		t.Fatalf("EditComment(unpin) wiped title/kind = %+v", edited2)
 	}
 }
 
@@ -231,6 +276,33 @@ func TestQueryComments(t *testing.T) {
 	}
 }
 
+// TestQueryCommentsByID proves the comment_id filter returns exactly the named
+// row and nothing else. Fails before the CommentFilter.CommentID addition,
+// which had no get-by-id predicate.
+func TestQueryCommentsByID(t *testing.T) {
+	ctx, store, project, task := commentScopeFixture(t)
+
+	a, err := store.AddScopedComment(ctx, domain.CommentWrite{
+		Scope: domain.CommentScopeTask, ProjectID: project.ID, TaskID: task.ID, Body: "a", AuthorType: "agent",
+	})
+	if err != nil {
+		t.Fatalf("AddScopedComment(a): %v", err)
+	}
+	if _, err := store.AddScopedComment(ctx, domain.CommentWrite{
+		Scope: domain.CommentScopeProject, ProjectID: project.ID, Body: "b", AuthorType: "human",
+	}); err != nil {
+		t.Fatalf("AddScopedComment(b): %v", err)
+	}
+
+	got, err := store.QueryComments(ctx, domain.CommentFilter{CommentID: a.ID})
+	if err != nil {
+		t.Fatalf("QueryComments(comment_id): %v", err)
+	}
+	if len(got) != 1 || got[0].ID != a.ID || got[0].Body != "a" {
+		t.Fatalf("QueryComments(comment_id=%d) = %+v, want exactly comment a", a.ID, got)
+	}
+}
+
 func TestQueryCommentsTimeWindow(t *testing.T) {
 	ctx, store, project, task := commentScopeFixture(t)
 
@@ -263,5 +335,41 @@ func TestQueryCommentsTimeWindow(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("QueryComments(window out) = %+v, want none", got)
+	}
+}
+
+// TestQueryCommentsTimeWindowRFC3339SameDay pins the datetime() normalization:
+// created_at is stored "YYYY-MM-DD HH:MM:SS" (space), but an RFC3339 bound on
+// the SAME calendar day uses a 'T' separator. A lexicographic string compare
+// sorts 'T' (0x54) above the space (0x20), so `created_at >= bound` wrongly
+// excludes the row — an empty window. datetime() on both sides fixes it.
+func TestQueryCommentsTimeWindowRFC3339SameDay(t *testing.T) {
+	ctx, store, project, task := commentScopeFixture(t)
+
+	c, err := store.AddScopedComment(ctx, domain.CommentWrite{
+		Scope: domain.CommentScopeTask, ProjectID: project.ID, TaskID: task.ID,
+		Body: "today", AuthorType: "agent",
+	})
+	if err != nil {
+		t.Fatalf("AddScopedComment: %v", err)
+	}
+
+	// Read the row's stored date and build a same-day RFC3339 floor at 00:00:00Z.
+	stored, err := store.CommentByID(ctx, project.ID, c.ID)
+	if err != nil {
+		t.Fatalf("CommentByID: %v", err)
+	}
+	day := stored.CreatedAt // "YYYY-MM-DD HH:MM:SS"
+	if len(day) < 10 {
+		t.Fatalf("unexpected created_at %q", stored.CreatedAt)
+	}
+	floor := day[:10] + "T00:00:00Z" // same day, midnight, RFC3339 with 'T'
+
+	got, err := store.QueryComments(ctx, domain.CommentFilter{CreatedAfter: floor})
+	if err != nil {
+		t.Fatalf("QueryComments(same-day RFC3339 floor): %v", err)
+	}
+	if len(got) != 1 || got[0].ID != c.ID {
+		t.Fatalf("QueryComments(CreatedAfter=%q) = %+v, want the seeded comment", floor, got)
 	}
 }

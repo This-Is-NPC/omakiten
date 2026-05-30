@@ -213,6 +213,94 @@ func TestCommentServiceScopeAwareGuards(t *testing.T) {
 	} else {
 		assertCodedError(t, err, domain.ErrGuardViolation)
 	}
+
+	// Bucket-free chain: a task in the "dev" bucket (which declares NO
+	// permissions) must still be denied a comment edit purely by
+	// defaults.comment.task.edit=false. This exercises #389's designed chain
+	// itself, not a bucket override. Fails before the ResolveCommentPermission
+	// fix, where defaults.comment.task was never consulted.
+	devTask, err := taskSvc.Add(ctx, project.Context(), "Dev", "", "", "backlog")
+	if err != nil {
+		t.Fatalf("Add(dev task) = %v", err)
+	}
+	if _, err := taskSvc.Move(ctx, project.Context(), devTask.ID, "dev"); err != nil {
+		t.Fatalf("Move(dev task -> dev) = %v", err)
+	}
+	devComment, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
+		Scope: domain.CommentScopeTask, TaskID: devTask.ID, Body: "dev note",
+	})
+	if err != nil {
+		t.Fatalf("AddScoped(dev task) = %v", err)
+	}
+	if _, err := service.Edit(ctx, project.Context(), devComment.ID, "edited dev", nil); err == nil {
+		t.Fatal("Edit(dev-bucket task comment) = nil error, want guard violation via defaults.comment.task")
+	} else {
+		assertCodedError(t, err, domain.ErrGuardViolation)
+	}
+
+	// Delete-scope coverage (was previously untested at the service layer):
+	// task delete denied by defaults.comment.task.delete=false (dev bucket has
+	// no override), project delete denied by defaults.comment.project.delete=false.
+	if _, err := service.Remove(ctx, project.Context(), devComment.ID); err == nil {
+		t.Fatal("Remove(task comment) = nil error, want guard violation")
+	} else {
+		assertCodedError(t, err, domain.ErrGuardViolation)
+	}
+	if _, err := service.Remove(ctx, project.Context(), projComment.ID); err == nil {
+		t.Fatal("Remove(project comment) = nil error, want guard violation")
+	} else {
+		assertCodedError(t, err, domain.ErrGuardViolation)
+	}
+}
+
+// TestUniversalCommentViolationIsProjectLess proves the universal-scope guard
+// violation row is stored project-less (project_id IS NULL → 0 via COALESCE),
+// matching how universal comments themselves are stored. Before the fix the
+// emit stamped the acting project id onto a project_id-NULL entity.
+func TestUniversalCommentViolationIsProjectLess(t *testing.T) {
+	ctx := context.Background()
+
+	store := snapstore.Open(t, t.TempDir()+"/uni.db")
+	defer func() { _ = store.Close() }()
+	bundle, _ := testfixtures.LoadBundle(t, "policy_comment_scopes.yaml")
+	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
+		t.Fatalf("ImportBundle() = %v", err)
+	}
+	project, err := store.UpsertProject(ctx, "Project", "project", "/work/project")
+	if err != nil {
+		t.Fatalf("UpsertProject() = %v", err)
+	}
+
+	workflow := NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
+	service := NewCommentServiceWithWorkflow(store, workflow, store.Snapshot())
+
+	uni, err := service.AddScoped(ctx, project.Context(), domain.CommentWrite{
+		Scope: domain.CommentScopeUniversal, Body: "universal note",
+	})
+	if err != nil {
+		t.Fatalf("AddScoped(universal) = %v", err)
+	}
+	// defaults.comment.universal.edit=false denies the edit and emits a violation.
+	if _, err := service.Edit(ctx, project.Context(), uni.ID, "edited", nil); err == nil {
+		t.Fatal("Edit(universal) = nil error, want guard violation")
+	}
+
+	rows, err := store.ListEvents(ctx, domain.EventFilter{Categories: []domain.EventCategory{domain.EventCategoryGuard}})
+	if err != nil {
+		t.Fatalf("ListEvents(guard) = %v", err)
+	}
+	var found bool
+	for _, r := range rows {
+		if r.EventType == domain.EventTypeGuardViolated && r.EntityType == domain.EventEntityUniversal {
+			found = true
+			if r.ProjectID != 0 {
+				t.Fatalf("universal guard.violated project_id = %d, want 0 (project-less)", r.ProjectID)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("no universal guard.violated row emitted; rows = %+v", rows)
+	}
 }
 
 func TestCommentServiceQuery(t *testing.T) {
