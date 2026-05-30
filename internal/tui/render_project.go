@@ -23,11 +23,17 @@ func (m Model) projectMetaPanelWidth() int {
 // renderProjectMetaPanel builds the project metadata panel: a kicker plus
 // the projects-table identity fields (name / slug / root path / id) and a
 // comment count, rendered through the same detailscreen grid the task-view
-// form uses. focused flips the kicker to the focus accent so the user can
-// see which panel owns navigation keys.
+// form uses. The grid draws its own frame (gridtable.Render borders) —
+// exactly like renderTaskDetailsBox — so there is NO outer m.styles.panel
+// wrapper here; wrapping the already-framed grid produced a double border.
+// focused flips the kicker to the focus accent so the user can see which
+// panel owns navigation keys.
 func (m Model) renderProjectMetaPanel(focused bool) string {
 	panelWidth := m.projectMetaPanelWidth()
-	valueWidth := panelWidth - detailscreen.LabelWidth - 1 - 2
+	// The grid renders at LabelWidth + valueWidth + 1 (inner divider) + 2
+	// (outer │ borders). Solve valueWidth so the framed grid's total width
+	// matches panelWidth and its horizontal rules span the full column.
+	valueWidth := panelWidth - detailscreen.LabelWidth - 3
 	if valueWidth < 8 {
 		valueWidth = 8
 	}
@@ -38,13 +44,14 @@ func (m Model) renderProjectMetaPanel(focused bool) string {
 		kicker = m.styles.kickerFocused(kickerLabel)
 	}
 
-	detail := m.projectMetaDetail(valueWidth, kicker)
-	return m.styles.panel.Width(panelWidth - 2).Render(detail)
+	return m.projectMetaDetail(valueWidth, kicker)
 }
 
 // projectMetaDetail assembles the detailscreen rows for the metadata
 // panel. Split out from renderProjectMetaPanel so the row set can be
 // asserted directly in tests without measuring the surrounding box.
+// Returns the self-framed grid string (gridtable draws the single border)
+// — no outer panel wrap, matching renderTaskDetailsBox.
 func (m Model) projectMetaDetail(valueWidth int, kicker string) string {
 	rootPath := m.project.RootPath
 	if strings.TrimSpace(rootPath) == "" {

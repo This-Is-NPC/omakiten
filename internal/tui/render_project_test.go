@@ -67,6 +67,34 @@ func TestRenderProjectViewShowsMetadataAndFeed(t *testing.T) {
 	}
 }
 
+// TestRenderProjectMetaPanelSingleFrame proves the metadata panel renders
+// exactly ONE frame (the grid's own border) — the prior double-wrap
+// (gridtable border + an outer m.styles.panel) produced two stacked top
+// borders and misaligned rule fragments. The grid frame is a single top
+// rule (┌…┐) and a single bottom rule (└…┘).
+func TestRenderProjectMetaPanelSingleFrame(t *testing.T) {
+	model, _, _ := scopedFeedModel(t)
+	opened, _ := model.Update(ctrlP())
+	m := opened.(Model)
+	m.width = 160
+
+	panel := m.renderProjectMetaPanel(true)
+	lines := strings.Split(strings.TrimRight(panel, "\n"), "\n")
+
+	tops, bottoms := 0, 0
+	for _, line := range lines {
+		if strings.Contains(line, "┌") {
+			tops++
+		}
+		if strings.Contains(line, "└") {
+			bottoms++
+		}
+	}
+	if tops != 1 || bottoms != 1 {
+		t.Fatalf("meta panel should have a single frame (1 top, 1 bottom); got %d top / %d bottom:\n%s", tops, bottoms, panel)
+	}
+}
+
 // TestProjectViewTabTogglesFocus proves Tab rotates the focused panel
 // metadata ↔ activity inside the project view.
 func TestProjectViewTabTogglesFocus(t *testing.T) {
@@ -195,14 +223,18 @@ func TestRenderProjectViewLayoutSwitchesOnWidth(t *testing.T) {
 	opened, _ := model.Update(ctrlP())
 	m := opened.(Model)
 
-	// Wide: meta + activity share rows. The line carrying the project name
-	// (meta panel) must also carry activity content (the pinned card lands
-	// on the same row), proving a side-by-side join.
+	// Wide: meta + activity share rows. The two panels are top-aligned, so
+	// the meta kicker line (`PROJECT · <slug>`) and the activity kicker line
+	// (`ACTIVITY`) land on the same physical row — proving a side-by-side
+	// horizontal join. Pinning to the kicker rows (rather than a specific
+	// field/card pairing) keeps the assertion stable as the meta panel grows
+	// new fields and its body height shifts.
+	upperName := strings.ToUpper(project.Name)
 	m.width = 160
 	wide := m.renderProjectView()
 	sideBySide := false
 	for _, line := range strings.Split(wide, "\n") {
-		if strings.Contains(line, project.Name) && strings.Contains(line, "pinned cover sheet") {
+		if strings.Contains(line, upperName) && strings.Contains(line, "ACTIVITY") {
 			sideBySide = true
 			break
 		}
