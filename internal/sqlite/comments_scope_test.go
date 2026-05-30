@@ -2,6 +2,8 @@ package sqlite
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"testing"
 
 	"omakiten/internal/domain"
@@ -121,9 +123,10 @@ func TestEditCommentWidePatch(t *testing.T) {
 	}
 
 	title, kind, pinned := "Heading", "recap", true
+	wideTags := []domain.Tag{{Name: "resume", Label: "resume"}}
 	edited, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{
 		Body: strPtr("after"), Title: &title, Kind: &kind, Pinned: &pinned,
-		Tags: []domain.Tag{{Name: "resume", Label: "resume"}},
+		Tags: &wideTags,
 	})
 	if err != nil {
 		t.Fatalf("EditComment: %v", err)
@@ -154,6 +157,197 @@ func TestEditCommentWidePatch(t *testing.T) {
 	}
 	if len(queried[0].Tags) != 1 || queried[0].Tags[0].Name != "resume" {
 		t.Fatalf("reloaded tags = %+v", queried[0].Tags)
+	}
+}
+
+// TestEditCommentPayloadCarriesFieldDeltas proves the comment.edited payload
+// names every changed field with a {from,to} entry — body, title, kind, and
+// pinned — so the activity feed can distinguish a pin from a title change.
+// Fails on the pre-fix emitter that only ever wrote the body delta, leaving a
+// pin/title/kind-only edit with a content-free {comment_id} payload.
+func TestEditCommentPayloadCarriesFieldDeltas(t *testing.T) {
+	ctx, store, project, _ := commentScopeFixture(t)
+	c, err := store.AddScopedComment(ctx, domain.CommentWrite{
+		Scope: domain.CommentScopeProject, ProjectID: project.ID,
+		Body: "before", Title: "Old", Kind: "draft", Pinned: false, AuthorType: "agent",
+	})
+	if err != nil {
+		t.Fatalf("AddScopedComment: %v", err)
+	}
+
+	decode := func(payload string) map[string]any {
+		t.Helper()
+		var m map[string]any
+		if err := json.Unmarshal([]byte(payload), &m); err != nil {
+			t.Fatalf("decode payload %q: %v", payload, err)
+		}
+		return m
+	}
+	delta := func(m map[string]any, key string) (string, string) {
+		t.Helper()
+		sub, ok := m[key].(map[string]any)
+		if !ok {
+			t.Fatalf("payload missing %q delta: %v", key, m)
+		}
+		return fmt.Sprintf("%v", sub["from"]), fmt.Sprintf("%v", sub["to"])
+	}
+
+	// Pin/title/kind-only edit (no body change): payload names each changed field.
+	title, kind, pinned := "New", "recap", true
+	_, event, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{
+		Title: &title, Kind: &kind, Pinned: &pinned,
+	})
+	if err != nil {
+		t.Fatalf("EditComment(meta): %v", err)
+	}
+	m := decode(event.Payload)
+	if _, ok := m["body"]; ok {
+		t.Fatalf("payload carries a body delta for an unchanged body: %v", m)
+	}
+	if from, to := delta(m, "title"); from != "Old" || to != "New" {
+		t.Fatalf("title delta = %q→%q, want Old→New", from, to)
+	}
+	if from, to := delta(m, "kind"); from != "draft" || to != "recap" {
+		t.Fatalf("kind delta = %q→%q, want draft→recap", from, to)
+	}
+	if from, to := delta(m, "pinned"); from != "false" || to != "true" {
+		t.Fatalf("pinned delta = %q→%q, want false→true", from, to)
+	}
+
+	// Body-only edit carries only the body delta (no spurious field deltas).
+	_, event2, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Body: strPtr("after")})
+	if err != nil {
+		t.Fatalf("EditComment(body): %v", err)
+	}
+	m2 := decode(event2.Payload)
+	if from, to := delta(m2, "body"); from != "before" || to != "after" {
+		t.Fatalf("body delta = %q→%q, want before→after", from, to)
+	}
+	for _, k := range []string{"title", "kind", "pinned"} {
+		if _, ok := m2[k]; ok {
+			t.Fatalf("body-only edit carries spurious %q delta: %v", k, m2)
+		}
+	}
+}
+
+// TestEditCommentNoOpIsIdempotent proves a patch whose resolved values equal
+// the stored row (e.g. pinned=true on an already-pinned comment) does NOT bump
+// updated_at and emits no comment.edited event. Fails on the pre-fix path that
+// wrote + emitted whenever a field was provided, regardless of whether the
+// value actually changed.
+func TestEditCommentNoOpIsIdempotent(t *testing.T) {
+	ctx, store, project, _ := commentScopeFixture(t)
+	c, err := store.AddScopedComment(ctx, domain.CommentWrite{
+		Scope: domain.CommentScopeProject, ProjectID: project.ID,
+		Body: "body", Title: "Title", Kind: "recap", Pinned: true, AuthorType: "agent",
+		Tags: []domain.Tag{{Name: "keepme", Label: "keepme"}},
+	})
+	if err != nil {
+		t.Fatalf("AddScopedComment: %v", err)
+	}
+
+	// pinned=true on an already-pinned row is a no-op.
+	pinned := true
+	_, event, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Pinned: &pinned})
+	if err != nil {
+		t.Fatalf("EditComment(no-op): %v", err)
+	}
+	if event.ID != 0 || event.EventType != "" {
+		t.Fatalf("no-op edit emitted an event = %+v, want none", event)
+	}
+	reloaded, err := store.CommentByID(ctx, project.ID, c.ID)
+	if err != nil {
+		t.Fatalf("CommentByID: %v", err)
+	}
+	if reloaded.UpdatedAt != "" {
+		t.Fatalf("no-op edit stamped updated_at = %q, want empty", reloaded.UpdatedAt)
+	}
+
+	// Re-supplying the identical tag set is also a no-op.
+	sameTags := []domain.Tag{{Name: "keepme", Label: "keepme"}}
+	_, event2, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Tags: &sameTags})
+	if err != nil {
+		t.Fatalf("EditComment(same tags): %v", err)
+	}
+	if event2.ID != 0 || event2.EventType != "" {
+		t.Fatalf("identical-tags edit emitted an event = %+v, want none", event2)
+	}
+	reloaded2, err := store.CommentByID(ctx, project.ID, c.ID)
+	if err != nil {
+		t.Fatalf("CommentByID: %v", err)
+	}
+	if reloaded2.UpdatedAt != "" {
+		t.Fatalf("identical-tags edit stamped updated_at = %q, want empty", reloaded2.UpdatedAt)
+	}
+
+	// A real change still writes + emits.
+	_, event3, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Body: strPtr("changed")})
+	if err != nil {
+		t.Fatalf("EditComment(real change): %v", err)
+	}
+	if event3.EventType != domain.EventTypeCommentEdited {
+		t.Fatalf("real change did not emit comment.edited = %+v", event3)
+	}
+	reloaded3, err := store.CommentByID(ctx, project.ID, c.ID)
+	if err != nil {
+		t.Fatalf("CommentByID: %v", err)
+	}
+	if reloaded3.UpdatedAt == "" {
+		t.Fatalf("real change did not stamp updated_at")
+	}
+}
+
+// TestEditCommentTriStateTags proves the tag set is tri-state: a nil Tags
+// pointer leaves the existing tags untouched (metadata/body-only edit), a
+// non-nil empty slice clears them, and a non-nil populated slice replaces them.
+// Fails on the pre-fix EditComment which unconditionally DELETEd event_tags and
+// re-attached edit.Tags, wiping tags on any tags-omitted edit.
+func TestEditCommentTriStateTags(t *testing.T) {
+	ctx, store, project, _ := commentScopeFixture(t)
+	c, err := store.AddScopedComment(ctx, domain.CommentWrite{
+		Scope: domain.CommentScopeProject, ProjectID: project.ID, Body: "before", AuthorType: "human",
+		Tags: []domain.Tag{{Name: "keepme", Label: "keepme"}},
+	})
+	if err != nil {
+		t.Fatalf("AddScopedComment: %v", err)
+	}
+
+	tagsOf := func(id int64) []domain.Tag {
+		t.Helper()
+		got, err := store.QueryComments(ctx, domain.CommentFilter{CommentID: id})
+		if err != nil {
+			t.Fatalf("QueryComments(comment_id): %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("QueryComments(comment_id=%d) = %d rows, want 1", id, len(got))
+		}
+		return got[0].Tags
+	}
+
+	// Body-only edit, Tags nil → keepme survives.
+	if _, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Body: strPtr("after")}); err != nil {
+		t.Fatalf("EditComment(body only): %v", err)
+	}
+	if tags := tagsOf(c.ID); len(tags) != 1 || tags[0].Name != "keepme" {
+		t.Fatalf("body-only edit wiped tags = %+v, want keepme preserved", tags)
+	}
+
+	// Explicit replace with [other].
+	other := []domain.Tag{{Name: "other", Label: "other"}}
+	if _, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Tags: &other}); err != nil {
+		t.Fatalf("EditComment(tags=other): %v", err)
+	}
+	if tags := tagsOf(c.ID); len(tags) != 1 || tags[0].Name != "other" {
+		t.Fatalf("tags=[other] edit = %+v, want only other", tags)
+	}
+
+	// Explicit empty slice clears.
+	empty := []domain.Tag{}
+	if _, _, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Tags: &empty}); err != nil {
+		t.Fatalf("EditComment(tags=[]): %v", err)
+	}
+	if tags := tagsOf(c.ID); len(tags) != 0 {
+		t.Fatalf("tags=[] edit = %+v, want cleared", tags)
 	}
 }
 

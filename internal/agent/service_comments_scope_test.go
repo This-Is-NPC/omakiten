@@ -220,6 +220,87 @@ func TestListCommentsDoesNotLeakAcrossProjects(t *testing.T) {
 	}
 }
 
+// TestListCommentByIDDoesNotLeakAcrossProjects pins finding #1: a get-by-id
+// read (comment_id) from project A must NOT return project B's task or project
+// comment, while a universal (project-less) comment IS readable cross-project,
+// and A's own comment is readable. The pre-fix handler forced projectID=0 on the
+// comment_id path, dropping the project filter for every scope and leaking B.
+func TestListCommentByIDDoesNotLeakAcrossProjects(t *testing.T) {
+	fixture := newAgentFixture(t)
+
+	// B's task-scoped comment (seeded "B comment" on taskB) and a B project note.
+	bTask, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{
+		ProjectSelector: ProjectSelector{ProjectID: fixture.projectB.ID},
+		TaskID:          fixture.taskB.ID,
+	})
+	if err != nil {
+		t.Fatalf("list B task comments error = %v", err)
+	}
+	if len(bTask.Comments) == 0 {
+		t.Fatalf("expected a seeded B task comment")
+	}
+	bTaskCommentID := bTask.Comments[0].ID
+
+	bProj, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		ProjectSelector: ProjectSelector{ProjectID: fixture.projectB.ID},
+		Scope:           domain.CommentScopeProject, Body: "B project secret", AuthorType: "agent",
+	})
+	if err != nil {
+		t.Fatalf("AddComment(B project) error = %v", err)
+	}
+
+	// A universal note (project-less) and one of A's own project notes.
+	uni, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		ProjectSelector: ProjectSelector{ProjectID: fixture.projectB.ID},
+		Scope:           domain.CommentScopeUniversal, Body: "global note", AuthorType: "agent",
+	})
+	if err != nil {
+		t.Fatalf("AddComment(universal) error = %v", err)
+	}
+	aOwn, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		Scope: domain.CommentScopeProject, Body: "A own note", AuthorType: "agent",
+	})
+	if err != nil {
+		t.Fatalf("AddComment(A project) error = %v", err)
+	}
+
+	// From project A (default selector → A): B's task comment is invisible.
+	gotBTask, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{CommentID: bTaskCommentID})
+	if err != nil {
+		t.Fatalf("ListComments(comment_id=B task) error = %v", err)
+	}
+	if len(gotBTask.Comments) != 0 {
+		t.Fatalf("comment_id leaked project B's task comment: %+v", gotBTask.Comments)
+	}
+
+	// B's project comment is invisible from A.
+	gotBProj, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{CommentID: bProj.Comment.ID})
+	if err != nil {
+		t.Fatalf("ListComments(comment_id=B project) error = %v", err)
+	}
+	if len(gotBProj.Comments) != 0 {
+		t.Fatalf("comment_id leaked project B's project comment: %+v", gotBProj.Comments)
+	}
+
+	// Universal comment IS readable cross-project.
+	gotUni, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{CommentID: uni.Comment.ID})
+	if err != nil {
+		t.Fatalf("ListComments(comment_id=universal) error = %v", err)
+	}
+	if len(gotUni.Comments) != 1 || gotUni.Comments[0].Body != "global note" {
+		t.Fatalf("ListComments(comment_id=universal) = %+v, want the universal note", gotUni.Comments)
+	}
+
+	// A's own comment is readable.
+	gotOwn, err := fixture.service.ListComments(fixture.ctx, ListCommentsInput{CommentID: aOwn.Comment.ID})
+	if err != nil {
+		t.Fatalf("ListComments(comment_id=A own) error = %v", err)
+	}
+	if len(gotOwn.Comments) != 1 || gotOwn.Comments[0].Body != "A own note" {
+		t.Fatalf("ListComments(comment_id=A own) = %+v, want A's note", gotOwn.Comments)
+	}
+}
+
 func TestEditCommentScopedFields(t *testing.T) {
 	fixture := newAgentFixture(t)
 
@@ -290,6 +371,64 @@ func TestEditCommentPreservesNoteFieldsOnBodyOnlyEdit(t *testing.T) {
 	}
 	if edited2.Comment.Title != "Heading" || edited2.Comment.Kind != "handoff" {
 		t.Fatalf("EditComment(unpin) wiped title/kind = %+v", edited2.Comment)
+	}
+}
+
+// TestEditCommentTriStateTags pins the tag tri-state at the agent boundary: a
+// body-only edit (Tags omitted → nil JSON slice) preserves the comment's tags,
+// an explicit empty Tags array clears them, and a populated array replaces them.
+// Fails on the pre-fix handler that always forwarded input.Tags, wiping tags on
+// any tags-omitted edit.
+func TestEditCommentTriStateTags(t *testing.T) {
+	fixture := newAgentFixture(t)
+
+	created, err := fixture.service.AddComment(fixture.ctx, AddCommentInput{
+		Scope: domain.CommentScopeProject, Body: "before", AuthorType: "agent",
+		Tags: []string{"keepme"},
+	})
+	if err != nil {
+		t.Fatalf("AddComment(project) error = %v", err)
+	}
+
+	tagNames := func(c CommentSummary) []string {
+		out := make([]string, 0, len(c.Tags))
+		for _, tg := range c.Tags {
+			out = append(out, tg.Name)
+		}
+		return out
+	}
+
+	// Body-only edit: Tags omitted (nil) → keepme survives.
+	bodyOnly, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+		CommentID: created.Comment.ID, Body: strPtr("after"),
+	})
+	if err != nil {
+		t.Fatalf("EditComment(body only) error = %v", err)
+	}
+	if got := tagNames(bodyOnly.Comment); len(got) != 1 || got[0] != "keepme" {
+		t.Fatalf("body-only edit wiped tags = %v, want [keepme]", got)
+	}
+
+	// Explicit replace with [other].
+	replaced, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+		CommentID: created.Comment.ID, Tags: []string{"other"},
+	})
+	if err != nil {
+		t.Fatalf("EditComment(tags=other) error = %v", err)
+	}
+	if got := tagNames(replaced.Comment); len(got) != 1 || got[0] != "other" {
+		t.Fatalf("tags=[other] edit = %v, want [other]", got)
+	}
+
+	// Explicit empty array clears.
+	cleared, err := fixture.service.EditComment(fixture.ctx, EditCommentInput{
+		CommentID: created.Comment.ID, Tags: []string{},
+	})
+	if err != nil {
+		t.Fatalf("EditComment(tags=[]) error = %v", err)
+	}
+	if got := tagNames(cleared.Comment); len(got) != 0 {
+		t.Fatalf("tags=[] edit = %v, want cleared", got)
 	}
 }
 

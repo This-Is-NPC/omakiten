@@ -196,12 +196,24 @@ func (s *Store) QueryComments(ctx context.Context, filter domain.CommentFilter) 
 	if filter.CommentID > 0 {
 		conds = append(conds, "e.id = ?")
 		args = append(args, filter.CommentID)
+		// A get-by-id read names a globally unique row, but must NOT leak another
+		// project's task/project comment. Mirror commentByIDTx: scope task/project
+		// rows to the caller's project while universal rows (project_id NULL) fall
+		// through so a universal note stays readable cross-project. The general
+		// `filter.ProjectID > 0` clause below would also exclude universals, so the
+		// id path carries its own project filter that whitelists project-less rows.
+		if filter.ProjectID > 0 {
+			conds = append(conds, "(e.project_id = ? OR e.project_id IS NULL)")
+			args = append(args, filter.ProjectID)
+		}
 	}
 	if filter.Scope != "" {
 		conds = append(conds, "e.entity_type = ?")
 		args = append(args, filter.Scope)
 	}
-	if filter.ProjectID > 0 {
+	// The get-by-id path above applies its own universal-aware project filter, so
+	// skip the strict equality here (which would exclude project-less universals).
+	if filter.ProjectID > 0 && filter.CommentID <= 0 {
 		conds = append(conds, "e.project_id = ?")
 		args = append(args, filter.ProjectID)
 	}
@@ -279,7 +291,10 @@ func (s *Store) queryCommentRows(ctx context.Context, query string, args []any) 
 // the wider scope-agnostic patch. Emits a comment.edited event tied to the
 // parent task with a payload that names the changed fields.
 func (s *Store) UpdateComment(ctx context.Context, projectID, commentID int64, body string, tags []domain.Tag) (domain.Comment, domain.Event, error) {
-	return s.EditComment(ctx, projectID, commentID, domain.CommentEdit{Body: &body, Tags: tags})
+	// Legacy semantics: this path always replaces the tag set, so the tri-state
+	// pointer is always non-nil (an empty tags slice clears, matching the old
+	// unconditional DELETE + re-attach behaviour).
+	return s.EditComment(ctx, projectID, commentID, domain.CommentEdit{Body: &body, Tags: &tags})
 }
 
 // EditComment applies the scope-agnostic patch (body/title/kind/pinned + tags),
@@ -326,6 +341,39 @@ func (s *Store) EditComment(ctx context.Context, projectID, commentID int64, edi
 		newPinned = *edit.Pinned
 	}
 
+	// Load the existing tag set up front: it is needed both to detect whether a
+	// provided tag set actually differs (the no-op guard) and to echo back the
+	// unchanged tags when the patch leaves tags alone.
+	existingTags, err := eventTagsByIDsQ(ctx, tx, []int64{commentID})
+	if err != nil {
+		return domain.Comment{}, domain.Event{}, err
+	}
+	prevTags := existingTags[commentID]
+
+	scalarChanged := prev.Body != newBody || prev.Title != newTitle ||
+		prev.Kind != newKind || prev.Pinned != newPinned
+	// Tags change only when explicitly provided AND the resolved set differs from
+	// what is stored; re-supplying the identical set is not a change.
+	tagsChanged := edit.Tags != nil && !sameTagSet(prevTags, *edit.Tags)
+
+	updated := prev
+	updated.Body = newBody
+	updated.Title = newTitle
+	updated.Kind = newKind
+	updated.Pinned = newPinned
+	updated.Tags = prevTags
+
+	// Idempotent no-op: a patch whose resolved values equal the stored row must
+	// not bump updated_at or emit a content-free comment.edited. prev is the
+	// in-tx snapshot, so this comparison is race-free.
+	if !scalarChanged && !tagsChanged {
+		if err := tx.Commit(); err != nil {
+			return domain.Comment{}, domain.Event{}, err
+		}
+		committed = true
+		return updated, domain.Event{}, nil
+	}
+
 	var titleArg, kindArg any
 	if newTitle != "" {
 		titleArg = newTitle
@@ -339,24 +387,37 @@ WHERE id = ? AND event_type = 'comment'
 `, newBody, titleArg, kindArg, boolToInt(newPinned), commentID); err != nil {
 		return domain.Comment{}, domain.Event{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM event_tags WHERE event_id = ?`, commentID); err != nil {
-		return domain.Comment{}, domain.Event{}, err
+
+	// Tags are tri-state: a nil edit.Tags pointer leaves the existing tag set
+	// untouched (a body-only or metadata-only edit must not wipe tags), while a
+	// non-nil pointer replaces them wholesale (an empty slice clears all tags).
+	// Only re-attach when the set actually changed.
+	if tagsChanged {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM event_tags WHERE event_id = ?`, commentID); err != nil {
+			return domain.Comment{}, domain.Event{}, err
+		}
+		attached, err := attachTagsTx(ctx, tx, tagPivotEvent, commentID, *edit.Tags)
+		if err != nil {
+			return domain.Comment{}, domain.Event{}, err
+		}
+		updated.Tags = attached
 	}
 
-	updated := prev
-	updated.Body = newBody
-	updated.Title = newTitle
-	updated.Kind = newKind
-	updated.Pinned = newPinned
-	attached, err := attachTagsTx(ctx, tx, tagPivotEvent, commentID, edit.Tags)
-	if err != nil {
-		return domain.Comment{}, domain.Event{}, err
-	}
-	updated.Tags = attached
-
+	// Name every changed field with a {from,to} entry so the activity feed can
+	// tell a pin from a title from a kind change — a metadata-only edit must not
+	// emit a content-free {comment_id} payload.
 	payload := map[string]any{"comment_id": commentID}
 	if prev.Body != newBody {
 		payload["body"] = map[string]any{"from": prev.Body, "to": newBody}
+	}
+	if prev.Title != newTitle {
+		payload["title"] = map[string]any{"from": prev.Title, "to": newTitle}
+	}
+	if prev.Kind != newKind {
+		payload["kind"] = map[string]any{"from": prev.Kind, "to": newKind}
+	}
+	if prev.Pinned != newPinned {
+		payload["pinned"] = map[string]any{"from": prev.Pinned, "to": newPinned}
 	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -379,6 +440,32 @@ WHERE id = ? AND event_type = 'comment'
 	committed = true
 	s.publishEvent(ctx, event)
 	return updated, event, nil
+}
+
+// sameTagSet reports whether two tag slices carry the same set of tag names,
+// order-independent. Used by EditComment's no-op guard so re-supplying a
+// comment's existing tags doesn't count as a change. Comparison is by Name (the
+// normalized identity attachTagsTx keys on), not Label.
+func sameTagSet(a, b []domain.Tag) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]int, len(a))
+	for _, t := range a {
+		seen[t.Name]++
+	}
+	for _, t := range b {
+		seen[t.Name]--
+		if seen[t.Name] < 0 {
+			return false
+		}
+	}
+	for _, n := range seen {
+		if n != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // entityIDForScope resolves the events.entity_id the comment's event row points
@@ -475,6 +562,18 @@ WHERE id = ? AND event_type = 'comment' AND (project_id = ? OR project_id IS NUL
 }
 
 func (s *Store) eventTagsByIDs(ctx context.Context, eventIDs []int64) (map[int64][]domain.Tag, error) {
+	return eventTagsByIDsQ(ctx, s.db, eventIDs)
+}
+
+// rowQuerier is the read surface shared by *sql.DB and *sql.Tx, letting tag
+// reads run either standalone or inside an open transaction.
+type rowQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// eventTagsByIDsQ loads the tag set for each event id through any rowQuerier so
+// callers inside a tx (EditComment's tags-unchanged path) read consistently.
+func eventTagsByIDsQ(ctx context.Context, q rowQuerier, eventIDs []int64) (map[int64][]domain.Tag, error) {
 	if len(eventIDs) == 0 {
 		return nil, nil
 	}
@@ -482,7 +581,7 @@ func (s *Store) eventTagsByIDs(ctx context.Context, eventIDs []int64) (map[int64
 	for i, id := range eventIDs {
 		args[i] = id
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := q.QueryContext(ctx,
 		"SELECT et.event_id, t.id, t.name, t.label FROM event_tags et JOIN tags t ON t.id = et.tag_id WHERE et.event_id IN ("+placeholders(len(eventIDs))+")",
 		args...)
 	if err != nil {

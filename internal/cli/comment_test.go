@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -25,22 +27,25 @@ func commentTestEnv(t *testing.T) (dbPath, configPath string) {
 	return dbPath, configPath
 }
 
-// commentIDFromJSON extracts the comment id from an add/edit JSON payload.
+// commentIDFromJSON decodes the comment.id field from an add/edit JSON payload.
+// Decoding the nested object explicitly avoids scraping the first "id":, which
+// would silently pick up the wrong field if the envelope shape ever changes.
 func commentIDFromJSON(t *testing.T, out string) string {
 	t.Helper()
-	// The comment object nests an "id" field; the first "id": occurrence in
-	// the payload is the comment id (the comment object is rendered before
-	// any task/project echo of a numeric id elsewhere is not present here).
-	idIdx := strings.Index(out, `"id":`)
-	if idIdx < 0 {
-		t.Fatalf("payload lacks id field: %s", out)
+	var payload struct {
+		Data struct {
+			Comment struct {
+				ID int64 `json:"id"`
+			} `json:"comment"`
+		} `json:"data"`
 	}
-	rest := out[idIdx+len(`"id":`):]
-	end := strings.IndexAny(rest, ",}")
-	if end < 0 {
-		t.Fatalf("id field missing terminator: %s", out)
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("decode comment payload: %v\n%s", err, out)
 	}
-	return strings.TrimSpace(rest[:end])
+	if payload.Data.Comment.ID == 0 {
+		t.Fatalf("payload lacks data.comment.id: %s", out)
+	}
+	return strconv.FormatInt(payload.Data.Comment.ID, 10)
 }
 
 func TestCLICommentAddScopes(t *testing.T) {
@@ -164,6 +169,33 @@ func TestCLICommentEditTriState(t *testing.T) {
 
 	// Edit with no fields at all is rejected.
 	runCLIExpectError(t, dbPath, configPath, "validation_error", "comment", "edit", id)
+}
+
+// TestCLICommentEditPreservesTagsOnBodyOnly pins the tag tri-state through the
+// CLI: `comment edit ID --body x` with no --tag must NOT wipe the comment's
+// tags. Fails on the pre-fix path that always forwarded a (nil) tag slice and
+// unconditionally replaced the tag set in the store.
+func TestCLICommentEditPreservesTagsOnBodyOnly(t *testing.T) {
+	dbPath, configPath := commentTestEnv(t)
+
+	created := runCLI(t, dbPath, configPath, "comment", "add", "--scope", "project",
+		"-b", "before", "--tag", "keepme")
+	id := commentIDFromJSON(t, created)
+
+	// Body-only edit (no --tag) preserves keepme.
+	bodyOnly := runCLI(t, dbPath, configPath, "comment", "edit", id, "-b", "after")
+	if !strings.Contains(bodyOnly, `"body":"after"`) {
+		t.Fatalf("body-only edit did not change body: %s", bodyOnly)
+	}
+	if !strings.Contains(bodyOnly, `"name":"keepme"`) {
+		t.Fatalf("body-only edit wiped tags: %s", bodyOnly)
+	}
+
+	// Explicit --tag replaces.
+	replaced := runCLI(t, dbPath, configPath, "comment", "edit", id, "--tag", "other")
+	if !strings.Contains(replaced, `"name":"other"`) || strings.Contains(replaced, `"name":"keepme"`) {
+		t.Fatalf("--tag edit did not replace tags: %s", replaced)
+	}
 }
 
 // TestCLICommentGuardDenied proves the comment edit/delete guards are

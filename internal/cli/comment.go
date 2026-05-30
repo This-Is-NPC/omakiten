@@ -64,20 +64,12 @@ func newCommentAddCommand(opts *runtimeOptions) *cobra.Command {
 					taskID = parsed
 				}
 
-				switch resolvedScope {
-				case domain.CommentScopeTask:
-					if !hasTaskArg {
-						return nil, domain.NewError(domain.ErrValidation,
-							opts.t("cli.err.comment_task_scope_requires_id"), map[string]any{"scope": resolvedScope})
-					}
-				case domain.CommentScopeProject, domain.CommentScopeUniversal:
-					if hasTaskArg {
-						return nil, domain.NewError(domain.ErrValidation,
-							opts.t("cli.err.comment_scope_no_task_id"), map[string]any{"scope": resolvedScope, "task_id": taskID})
-					}
-				default:
-					return nil, domain.NewError(domain.ErrValidation,
-						opts.t("cli.err.comment_unknown_scope"), map[string]any{"scope": resolvedScope})
+				// Delegate the scope→task_id rule to the shared domain validator so
+				// the CLI and the agent handler can't diverge. The CLI's arg
+				// presence (hasTaskArg) is the authoritative "task id supplied"
+				// signal — a bare `comment add 0` still counts as supplied.
+				if err := domain.ValidateCommentScopeTaskID(resolvedScope, taskID, hasTaskArg); err != nil {
+					return nil, err
 				}
 
 				rt, err := opts.open(ctx, true)
@@ -183,13 +175,12 @@ func newCommentListCommand(opts *runtimeOptions) *cobra.Command {
 				}
 
 				// Universal comments carry project_id NULL and only match
-				// when ProjectID is 0; a comment_id names a globally unique
-				// row across scopes, so drop the project filter for both.
+				// when ProjectID is 0. A comment_id names a globally unique
+				// row but keeps the caller's project id so it cannot read
+				// another project's task/project comment; the store's id path
+				// still lets project-less universal rows fall through.
 				projectID := project.ID
 				if resolvedScope == domain.CommentScopeUniversal {
-					projectID = 0
-				}
-				if commentID > 0 {
 					projectID = 0
 				}
 				filter := domain.CommentFilter{
@@ -293,9 +284,12 @@ func newCommentEditCommand(opts *runtimeOptions) *cobra.Command {
 					cEdit.Pinned = &pinned
 				}
 
-				var rawTags []string
+				// Tags are tri-state: --tag unset (Changed=false) forwards a nil
+				// pointer so the store preserves the existing tags; --tag given
+				// (even `--tag ""` clearing to empty) replaces them.
+				var rawTags *[]string
 				if tagChanged {
-					rawTags = editTags
+					rawTags = &editTags
 				}
 
 				workflow := rt.activeWorkflow()

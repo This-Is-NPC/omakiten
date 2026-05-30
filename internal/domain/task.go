@@ -156,6 +156,35 @@ const (
 	CommentScopeUniversal = "universal"
 )
 
+// ValidateCommentScopeTaskID is the single scope→task_id rule both the CLI and
+// the agent handler delegate to (the previously hand-rolled, diverging checks).
+// hasTaskID reports whether a task id was supplied at all — the CLI derives it
+// from arg presence, the agent from a non-zero TaskID — so a task id of 0 that
+// was explicitly supplied is still rejected for a non-task scope. The rule:
+//
+//   - task:               requires a positive task id;
+//   - project/universal:  must not carry a task id;
+//   - anything else:       unknown scope, rejected.
+//
+// The caller is expected to default an empty scope to CommentScopeTask before
+// calling so a bare add still requires a task id.
+func ValidateCommentScopeTaskID(scope string, taskID int64, hasTaskID bool) error {
+	switch scope {
+	case CommentScopeTask:
+		if !hasTaskID || taskID <= 0 {
+			return NewError(ErrValidation, "task scope requires task_id", map[string]any{"scope": scope})
+		}
+		return nil
+	case CommentScopeProject, CommentScopeUniversal:
+		if hasTaskID || taskID > 0 {
+			return NewError(ErrValidation, scope+" scope must not carry task_id", map[string]any{"scope": scope, "task_id": taskID})
+		}
+		return nil
+	default:
+		return NewError(ErrValidation, "unknown comment scope", map[string]any{"scope": scope})
+	}
+}
+
 type Comment struct {
 	ID        int64 `json:"id"`
 	ProjectID int64 `json:"project_id"`
@@ -201,7 +230,11 @@ type CommentEdit struct {
 	Title  *string
 	Kind   *string
 	Pinned *bool
-	Tags   []Tag
+	// Tags is tri-state, matching the scalar fields above: a nil pointer leaves
+	// the comment's existing tags untouched (a body-only or metadata-only edit
+	// must not silently wipe tags), while a non-nil pointer replaces the tag set
+	// wholesale — including a non-nil empty slice, which clears all tags.
+	Tags *[]Tag
 }
 
 // CommentFilter narrows the cross-cutting comment query surface (the
