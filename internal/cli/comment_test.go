@@ -1,0 +1,173 @@
+package cli
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// commentTestEnv spins up an initialized project with one task, returning the
+// db/config paths. Mirrors the plan_test harness.
+func commentTestEnv(t *testing.T) (dbPath, configPath string) {
+	t.Helper()
+	tmp := t.TempDir()
+	dbPath = filepath.Join(tmp, "omakiten.db")
+	configPath = filepath.Join(tmp, "config", "omakase.yaml")
+	projectRoot := filepath.Join(tmp, "project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Chdir(projectRoot)
+
+	runCLI(t, dbPath, configPath, "init", "--name", "Project", "--slug", "project")
+	runCLI(t, dbPath, configPath, "add", "-t", "T1")
+	return dbPath, configPath
+}
+
+// commentIDFromJSON extracts the comment id from an add/edit JSON payload.
+func commentIDFromJSON(t *testing.T, out string) string {
+	t.Helper()
+	// The comment object nests an "id" field; the first "id": occurrence in
+	// the payload is the comment id (the comment object is rendered before
+	// any task/project echo of a numeric id elsewhere is not present here).
+	idIdx := strings.Index(out, `"id":`)
+	if idIdx < 0 {
+		t.Fatalf("payload lacks id field: %s", out)
+	}
+	rest := out[idIdx+len(`"id":`):]
+	end := strings.IndexAny(rest, ",}")
+	if end < 0 {
+		t.Fatalf("id field missing terminator: %s", out)
+	}
+	return strings.TrimSpace(rest[:end])
+}
+
+func TestCLICommentAddScopes(t *testing.T) {
+	dbPath, configPath := commentTestEnv(t)
+
+	// Project scope with no TASK_ID succeeds.
+	proj := runCLI(t, dbPath, configPath, "comment", "add", "--scope", "project", "-b", "project note")
+	if !strings.Contains(proj, `"scope":"project"`) || !strings.Contains(proj, `"body":"project note"`) {
+		t.Fatalf("project-scope add output = %s", proj)
+	}
+
+	// Universal scope with no TASK_ID succeeds.
+	uni := runCLI(t, dbPath, configPath, "comment", "add", "--scope", "universal", "-b", "universal note")
+	if !strings.Contains(uni, `"scope":"universal"`) || !strings.Contains(uni, `"body":"universal note"`) {
+		t.Fatalf("universal-scope add output = %s", uni)
+	}
+
+	// Task scope (default) with TASK_ID succeeds and carries title/kind/pinned.
+	task := runCLI(t, dbPath, configPath, "comment", "add", "1",
+		"-b", "task note", "--title", "Heading", "--kind", "handoff", "--pinned")
+	if !strings.Contains(task, `"title":"Heading"`) || !strings.Contains(task, `"kind":"handoff"`) || !strings.Contains(task, `"pinned":true`) {
+		t.Fatalf("task-scope add output = %s", task)
+	}
+
+	// Project scope WITH a TASK_ID errors.
+	runCLIExpectError(t, dbPath, configPath, "validation_error",
+		"comment", "add", "1", "--scope", "project", "-b", "bad")
+
+	// Task scope WITHOUT a TASK_ID errors.
+	runCLIExpectError(t, dbPath, configPath, "validation_error",
+		"comment", "add", "--scope", "task", "-b", "bad")
+}
+
+func TestCLICommentListFilters(t *testing.T) {
+	dbPath, configPath := commentTestEnv(t)
+
+	runCLI(t, dbPath, configPath, "comment", "add", "1", "-b", "plain task note")
+	pinned := runCLI(t, dbPath, configPath, "comment", "add", "--scope", "project",
+		"-b", "pinned recap", "--kind", "recap", "--pinned")
+	pinnedID := commentIDFromJSON(t, pinned)
+	runCLI(t, dbPath, configPath, "comment", "add", "--scope", "project", "-b", "unpinned note")
+
+	// Bare task list (back-compat) returns the task comment via legacy List.
+	bare := runCLI(t, dbPath, configPath, "comment", "list", "1")
+	if !strings.Contains(bare, `"body":"plain task note"`) {
+		t.Fatalf("bare list output = %s", bare)
+	}
+	if strings.Contains(bare, `"body":"pinned recap"`) {
+		t.Fatalf("bare task list leaked project comment: %s", bare)
+	}
+
+	// Filter by scope=project returns both project comments, not the task one.
+	byScope := runCLI(t, dbPath, configPath, "comment", "list", "--scope", "project")
+	if !strings.Contains(byScope, `"body":"pinned recap"`) || !strings.Contains(byScope, `"body":"unpinned note"`) {
+		t.Fatalf("scope=project list output = %s", byScope)
+	}
+	if strings.Contains(byScope, `"body":"plain task note"`) {
+		t.Fatalf("scope=project list leaked task comment: %s", byScope)
+	}
+
+	// Filter by kind=recap returns only the recap.
+	byKind := runCLI(t, dbPath, configPath, "comment", "list", "--kind", "recap")
+	if !strings.Contains(byKind, `"body":"pinned recap"`) || strings.Contains(byKind, `"body":"unpinned note"`) {
+		t.Fatalf("kind=recap list output = %s", byKind)
+	}
+
+	// Filter by --pinned returns only the pinned comment.
+	byPinned := runCLI(t, dbPath, configPath, "comment", "list", "--pinned")
+	if !strings.Contains(byPinned, `"body":"pinned recap"`) || strings.Contains(byPinned, `"body":"unpinned note"`) {
+		t.Fatalf("--pinned list output = %s", byPinned)
+	}
+
+	// Filter by --comment-id returns exactly that row.
+	byID := runCLI(t, dbPath, configPath, "comment", "list", "--comment-id", pinnedID)
+	if !strings.Contains(byID, `"body":"pinned recap"`) || strings.Contains(byID, `"body":"unpinned note"`) {
+		t.Fatalf("--comment-id list output = %s", byID)
+	}
+}
+
+// TestCLICommentEditTriState pins the #385 fix through the CLI: a body-only
+// edit preserves pinned/title/kind; an explicit --pinned=false unpins; and a
+// metadata-only edit (no --body) is accepted and leaves the body intact.
+func TestCLICommentEditTriState(t *testing.T) {
+	dbPath, configPath := commentTestEnv(t)
+
+	created := runCLI(t, dbPath, configPath, "comment", "add", "--scope", "project",
+		"-b", "before", "--title", "Heading", "--kind", "handoff", "--pinned")
+	id := commentIDFromJSON(t, created)
+
+	// Body-only edit must preserve pinned/title/kind.
+	bodyOnly := runCLI(t, dbPath, configPath, "comment", "edit", id, "-b", "after")
+	if !strings.Contains(bodyOnly, `"body":"after"`) {
+		t.Fatalf("body-only edit did not change body: %s", bodyOnly)
+	}
+	if !strings.Contains(bodyOnly, `"pinned":true`) ||
+		!strings.Contains(bodyOnly, `"title":"Heading"`) ||
+		!strings.Contains(bodyOnly, `"kind":"handoff"`) {
+		t.Fatalf("body-only edit wiped metadata: %s", bodyOnly)
+	}
+
+	// Metadata-only edit (no --body) must work and leave the body intact.
+	metaOnly := runCLI(t, dbPath, configPath, "comment", "edit", id, "--title", "Updated")
+	if !strings.Contains(metaOnly, `"title":"Updated"`) {
+		t.Fatalf("metadata-only edit did not set title: %s", metaOnly)
+	}
+	if !strings.Contains(metaOnly, `"body":"after"`) {
+		t.Fatalf("metadata-only edit changed the body: %s", metaOnly)
+	}
+	if !strings.Contains(metaOnly, `"pinned":true`) {
+		t.Fatalf("metadata-only edit wiped pinned: %s", metaOnly)
+	}
+
+	// Explicit --pinned=false unpins (pinned is omitempty → absent when false).
+	unpin := runCLI(t, dbPath, configPath, "comment", "edit", id, "--pinned=false")
+	if strings.Contains(unpin, `"pinned":true`) {
+		t.Fatalf("--pinned=false did not unpin: %s", unpin)
+	}
+	if !strings.Contains(unpin, `"title":"Updated"`) || !strings.Contains(unpin, `"kind":"handoff"`) {
+		t.Fatalf("--pinned=false wiped title/kind: %s", unpin)
+	}
+
+	// Edit with no fields at all is rejected.
+	runCLIExpectError(t, dbPath, configPath, "validation_error", "comment", "edit", id)
+}
+
+// NOTE: a guard-denied edit/delete path is not covered here. The CLI test
+// harness initializes the default (permissive) workflow via `okt init` and
+// there is no existing helper to inject a deny-policy bundle the way the agent
+// fixtures do; exercising a guard.violated denial belongs to the agent-layer
+// tests (internal/agent/service_comments_scope_test.go) which already cover it.
