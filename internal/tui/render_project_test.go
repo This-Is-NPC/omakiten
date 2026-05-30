@@ -186,3 +186,43 @@ func TestProjectViewGScrollsActivityToBottom(t *testing.T) {
 		t.Fatalf("home did not return activity scroll to top; got %d", m.projectActivityScroll)
 	}
 }
+
+// TestRenderProjectViewLayoutSwitchesOnWidth proves the side-by-side ↔
+// stacked decision is driven by terminal width: a wide terminal renders the
+// two panels on the same rows (side-by-side), a narrow one stacks them.
+func TestRenderProjectViewLayoutSwitchesOnWidth(t *testing.T) {
+	model, project, _ := scopedFeedModel(t)
+	opened, _ := model.Update(ctrlP())
+	m := opened.(Model)
+
+	// Wide: meta + activity share rows. The line carrying the project name
+	// (meta panel) must also carry activity content (the pinned card lands
+	// on the same row), proving a side-by-side join.
+	m.width = 160
+	wide := m.renderProjectView()
+	sideBySide := false
+	for _, line := range strings.Split(wide, "\n") {
+		if strings.Contains(line, project.Name) && strings.Contains(line, "pinned cover sheet") {
+			sideBySide = true
+			break
+		}
+	}
+	if !sideBySide {
+		t.Fatalf("wide layout should place meta and activity side-by-side:\n%s", wide)
+	}
+
+	// Narrow: panels stack, so no single line carries content from both
+	// columns — the name row never shares with any activity body.
+	m.width = 40
+	narrow := m.renderProjectView()
+	for _, line := range strings.Split(narrow, "\n") {
+		if !strings.Contains(line, project.Name) {
+			continue
+		}
+		for _, body := range []string{"pinned cover sheet", "project handoff body", "universal body"} {
+			if strings.Contains(line, body) {
+				t.Fatalf("narrow layout should stack meta above activity, not share a row:\n%s", narrow)
+			}
+		}
+	}
+}
