@@ -196,12 +196,24 @@ func (s *Store) QueryComments(ctx context.Context, filter domain.CommentFilter) 
 	if filter.CommentID > 0 {
 		conds = append(conds, "e.id = ?")
 		args = append(args, filter.CommentID)
+		// A get-by-id read names a globally unique row, but must NOT leak another
+		// project's task/project comment. Mirror commentByIDTx: scope task/project
+		// rows to the caller's project while universal rows (project_id NULL) fall
+		// through so a universal note stays readable cross-project. The general
+		// `filter.ProjectID > 0` clause below would also exclude universals, so the
+		// id path carries its own project filter that whitelists project-less rows.
+		if filter.ProjectID > 0 {
+			conds = append(conds, "(e.project_id = ? OR e.project_id IS NULL)")
+			args = append(args, filter.ProjectID)
+		}
 	}
 	if filter.Scope != "" {
 		conds = append(conds, "e.entity_type = ?")
 		args = append(args, filter.Scope)
 	}
-	if filter.ProjectID > 0 {
+	// The get-by-id path above applies its own universal-aware project filter, so
+	// skip the strict equality here (which would exclude project-less universals).
+	if filter.ProjectID > 0 && filter.CommentID <= 0 {
 		conds = append(conds, "e.project_id = ?")
 		args = append(args, filter.ProjectID)
 	}

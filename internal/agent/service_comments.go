@@ -126,7 +126,9 @@ func (s *Service) DeleteComment(ctx context.Context, input DeleteCommentInput) (
 // list (task/project/kind/tag/pinned/query/since), so a normal call NEVER leaks
 // comments from other projects. The only project-less reads are deliberate and
 // narrow: scope=universal (universal comments carry project_id NULL and only
-// match when ProjectID=0) and comment_id get-by-id (a globally unique row). The
+// match when ProjectID=0). The comment_id get-by-id path still carries the
+// caller's project id (the store scopes task/project rows to it and lets
+// universal rows through), so it cannot read another project's comment. The
 // cross-project handoff/standup digest is not a single project-less call — the
 // agent enumerates each project and issues one scope=project call per project,
 // each carrying that project's id (see okt-note-recap in the command table).
@@ -158,11 +160,11 @@ func (s *Service) ListComments(ctx context.Context, input ListCommentsInput) (Co
 	if scope == domain.CommentScopeUniversal {
 		projectID = 0
 	}
-	// A comment_id (get-by-id) names a globally unique row across all scopes —
-	// drop the project filter so okt-note-show can fetch a universal note too.
-	if input.CommentID > 0 {
-		projectID = 0
-	}
+	// A comment_id (get-by-id) names a globally unique row, but it must NOT leak
+	// another project's task/project comment. Keep the caller's project id: the
+	// store's id path scopes task/project rows to it while still letting universal
+	// (project-less) rows fall through, so okt-note-show fetches a universal note
+	// without exposing project B's private comments to project A.
 	filter := domain.CommentFilter{
 		CommentID:  input.CommentID,
 		Scope:      scope,

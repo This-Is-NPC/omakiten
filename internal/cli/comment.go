@@ -183,13 +183,12 @@ func newCommentListCommand(opts *runtimeOptions) *cobra.Command {
 				}
 
 				// Universal comments carry project_id NULL and only match
-				// when ProjectID is 0; a comment_id names a globally unique
-				// row across scopes, so drop the project filter for both.
+				// when ProjectID is 0. A comment_id names a globally unique
+				// row but keeps the caller's project id so it cannot read
+				// another project's task/project comment; the store's id path
+				// still lets project-less universal rows fall through.
 				projectID := project.ID
 				if resolvedScope == domain.CommentScopeUniversal {
-					projectID = 0
-				}
-				if commentID > 0 {
 					projectID = 0
 				}
 				filter := domain.CommentFilter{
