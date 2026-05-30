@@ -230,6 +230,73 @@ func TestEditCommentPayloadCarriesFieldDeltas(t *testing.T) {
 	}
 }
 
+// TestEditCommentNoOpIsIdempotent proves a patch whose resolved values equal
+// the stored row (e.g. pinned=true on an already-pinned comment) does NOT bump
+// updated_at and emits no comment.edited event. Fails on the pre-fix path that
+// wrote + emitted whenever a field was provided, regardless of whether the
+// value actually changed.
+func TestEditCommentNoOpIsIdempotent(t *testing.T) {
+	ctx, store, project, _ := commentScopeFixture(t)
+	c, err := store.AddScopedComment(ctx, domain.CommentWrite{
+		Scope: domain.CommentScopeProject, ProjectID: project.ID,
+		Body: "body", Title: "Title", Kind: "recap", Pinned: true, AuthorType: "agent",
+		Tags: []domain.Tag{{Name: "keepme", Label: "keepme"}},
+	})
+	if err != nil {
+		t.Fatalf("AddScopedComment: %v", err)
+	}
+
+	// pinned=true on an already-pinned row is a no-op.
+	pinned := true
+	_, event, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Pinned: &pinned})
+	if err != nil {
+		t.Fatalf("EditComment(no-op): %v", err)
+	}
+	if event.ID != 0 || event.EventType != "" {
+		t.Fatalf("no-op edit emitted an event = %+v, want none", event)
+	}
+	reloaded, err := store.CommentByID(ctx, project.ID, c.ID)
+	if err != nil {
+		t.Fatalf("CommentByID: %v", err)
+	}
+	if reloaded.UpdatedAt != "" {
+		t.Fatalf("no-op edit stamped updated_at = %q, want empty", reloaded.UpdatedAt)
+	}
+
+	// Re-supplying the identical tag set is also a no-op.
+	sameTags := []domain.Tag{{Name: "keepme", Label: "keepme"}}
+	_, event2, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Tags: &sameTags})
+	if err != nil {
+		t.Fatalf("EditComment(same tags): %v", err)
+	}
+	if event2.ID != 0 || event2.EventType != "" {
+		t.Fatalf("identical-tags edit emitted an event = %+v, want none", event2)
+	}
+	reloaded2, err := store.CommentByID(ctx, project.ID, c.ID)
+	if err != nil {
+		t.Fatalf("CommentByID: %v", err)
+	}
+	if reloaded2.UpdatedAt != "" {
+		t.Fatalf("identical-tags edit stamped updated_at = %q, want empty", reloaded2.UpdatedAt)
+	}
+
+	// A real change still writes + emits.
+	_, event3, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Body: strPtr("changed")})
+	if err != nil {
+		t.Fatalf("EditComment(real change): %v", err)
+	}
+	if event3.EventType != domain.EventTypeCommentEdited {
+		t.Fatalf("real change did not emit comment.edited = %+v", event3)
+	}
+	reloaded3, err := store.CommentByID(ctx, project.ID, c.ID)
+	if err != nil {
+		t.Fatalf("CommentByID: %v", err)
+	}
+	if reloaded3.UpdatedAt == "" {
+		t.Fatalf("real change did not stamp updated_at")
+	}
+}
+
 // TestEditCommentTriStateTags proves the tag set is tri-state: a nil Tags
 // pointer leaves the existing tags untouched (metadata/body-only edit), a
 // non-nil empty slice clears them, and a non-nil populated slice replaces them.

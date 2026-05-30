@@ -341,6 +341,39 @@ func (s *Store) EditComment(ctx context.Context, projectID, commentID int64, edi
 		newPinned = *edit.Pinned
 	}
 
+	// Load the existing tag set up front: it is needed both to detect whether a
+	// provided tag set actually differs (the no-op guard) and to echo back the
+	// unchanged tags when the patch leaves tags alone.
+	existingTags, err := eventTagsByIDsQ(ctx, tx, []int64{commentID})
+	if err != nil {
+		return domain.Comment{}, domain.Event{}, err
+	}
+	prevTags := existingTags[commentID]
+
+	scalarChanged := prev.Body != newBody || prev.Title != newTitle ||
+		prev.Kind != newKind || prev.Pinned != newPinned
+	// Tags change only when explicitly provided AND the resolved set differs from
+	// what is stored; re-supplying the identical set is not a change.
+	tagsChanged := edit.Tags != nil && !sameTagSet(prevTags, *edit.Tags)
+
+	updated := prev
+	updated.Body = newBody
+	updated.Title = newTitle
+	updated.Kind = newKind
+	updated.Pinned = newPinned
+	updated.Tags = prevTags
+
+	// Idempotent no-op: a patch whose resolved values equal the stored row must
+	// not bump updated_at or emit a content-free comment.edited. prev is the
+	// in-tx snapshot, so this comparison is race-free.
+	if !scalarChanged && !tagsChanged {
+		if err := tx.Commit(); err != nil {
+			return domain.Comment{}, domain.Event{}, err
+		}
+		committed = true
+		return updated, domain.Event{}, nil
+	}
+
 	var titleArg, kindArg any
 	if newTitle != "" {
 		titleArg = newTitle
@@ -354,16 +387,12 @@ WHERE id = ? AND event_type = 'comment'
 `, newBody, titleArg, kindArg, boolToInt(newPinned), commentID); err != nil {
 		return domain.Comment{}, domain.Event{}, err
 	}
-	updated := prev
-	updated.Body = newBody
-	updated.Title = newTitle
-	updated.Kind = newKind
-	updated.Pinned = newPinned
 
 	// Tags are tri-state: a nil edit.Tags pointer leaves the existing tag set
 	// untouched (a body-only or metadata-only edit must not wipe tags), while a
 	// non-nil pointer replaces them wholesale (an empty slice clears all tags).
-	if edit.Tags != nil {
+	// Only re-attach when the set actually changed.
+	if tagsChanged {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM event_tags WHERE event_id = ?`, commentID); err != nil {
 			return domain.Comment{}, domain.Event{}, err
 		}
@@ -372,13 +401,6 @@ WHERE id = ? AND event_type = 'comment'
 			return domain.Comment{}, domain.Event{}, err
 		}
 		updated.Tags = attached
-	} else {
-		// Preserve the loaded tag set in the returned comment when unchanged.
-		existing, err := eventTagsByIDsQ(ctx, tx, []int64{commentID})
-		if err != nil {
-			return domain.Comment{}, domain.Event{}, err
-		}
-		updated.Tags = existing[commentID]
 	}
 
 	// Name every changed field with a {from,to} entry so the activity feed can
@@ -418,6 +440,32 @@ WHERE id = ? AND event_type = 'comment'
 	committed = true
 	s.publishEvent(ctx, event)
 	return updated, event, nil
+}
+
+// sameTagSet reports whether two tag slices carry the same set of tag names,
+// order-independent. Used by EditComment's no-op guard so re-supplying a
+// comment's existing tags doesn't count as a change. Comparison is by Name (the
+// normalized identity attachTagsTx keys on), not Label.
+func sameTagSet(a, b []domain.Tag) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]int, len(a))
+	for _, t := range a {
+		seen[t.Name]++
+	}
+	for _, t := range b {
+		seen[t.Name]--
+		if seen[t.Name] < 0 {
+			return false
+		}
+	}
+	for _, n := range seen {
+		if n != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // entityIDForScope resolves the events.entity_id the comment's event row points
