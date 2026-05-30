@@ -172,9 +172,9 @@ func TestSummarizeEventPerTypeRendering(t *testing.T) {
 			row:  EventRow{EventType: EventTypePlanDone},
 			want: "plan done",
 		},
-		"plan.abandoned reason": {
-			row:  EventRow{EventType: EventTypePlanAbandoned, Payload: `{"reason":"scope cut"}`},
-			want: "plan abandoned: scope cut",
+		"plan.abandoned": {
+			row:  EventRow{EventType: EventTypePlanAbandoned, Payload: `{}`},
+			want: "plan abandoned",
 		},
 		"plan.wave_removed with position": {
 			row:  EventRow{EventType: EventTypePlanWaveRemoved, Payload: `{"wave_id":3,"name":"Backend","position":2}`},
