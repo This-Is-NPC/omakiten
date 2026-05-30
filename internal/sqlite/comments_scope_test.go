@@ -2,6 +2,8 @@ package sqlite
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"testing"
 
 	"omakiten/internal/domain"
@@ -155,6 +157,76 @@ func TestEditCommentWidePatch(t *testing.T) {
 	}
 	if len(queried[0].Tags) != 1 || queried[0].Tags[0].Name != "resume" {
 		t.Fatalf("reloaded tags = %+v", queried[0].Tags)
+	}
+}
+
+// TestEditCommentPayloadCarriesFieldDeltas proves the comment.edited payload
+// names every changed field with a {from,to} entry — body, title, kind, and
+// pinned — so the activity feed can distinguish a pin from a title change.
+// Fails on the pre-fix emitter that only ever wrote the body delta, leaving a
+// pin/title/kind-only edit with a content-free {comment_id} payload.
+func TestEditCommentPayloadCarriesFieldDeltas(t *testing.T) {
+	ctx, store, project, _ := commentScopeFixture(t)
+	c, err := store.AddScopedComment(ctx, domain.CommentWrite{
+		Scope: domain.CommentScopeProject, ProjectID: project.ID,
+		Body: "before", Title: "Old", Kind: "draft", Pinned: false, AuthorType: "agent",
+	})
+	if err != nil {
+		t.Fatalf("AddScopedComment: %v", err)
+	}
+
+	decode := func(payload string) map[string]any {
+		t.Helper()
+		var m map[string]any
+		if err := json.Unmarshal([]byte(payload), &m); err != nil {
+			t.Fatalf("decode payload %q: %v", payload, err)
+		}
+		return m
+	}
+	delta := func(m map[string]any, key string) (string, string) {
+		t.Helper()
+		sub, ok := m[key].(map[string]any)
+		if !ok {
+			t.Fatalf("payload missing %q delta: %v", key, m)
+		}
+		return fmt.Sprintf("%v", sub["from"]), fmt.Sprintf("%v", sub["to"])
+	}
+
+	// Pin/title/kind-only edit (no body change): payload names each changed field.
+	title, kind, pinned := "New", "recap", true
+	_, event, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{
+		Title: &title, Kind: &kind, Pinned: &pinned,
+	})
+	if err != nil {
+		t.Fatalf("EditComment(meta): %v", err)
+	}
+	m := decode(event.Payload)
+	if _, ok := m["body"]; ok {
+		t.Fatalf("payload carries a body delta for an unchanged body: %v", m)
+	}
+	if from, to := delta(m, "title"); from != "Old" || to != "New" {
+		t.Fatalf("title delta = %q→%q, want Old→New", from, to)
+	}
+	if from, to := delta(m, "kind"); from != "draft" || to != "recap" {
+		t.Fatalf("kind delta = %q→%q, want draft→recap", from, to)
+	}
+	if from, to := delta(m, "pinned"); from != "false" || to != "true" {
+		t.Fatalf("pinned delta = %q→%q, want false→true", from, to)
+	}
+
+	// Body-only edit carries only the body delta (no spurious field deltas).
+	_, event2, err := store.EditComment(ctx, project.ID, c.ID, domain.CommentEdit{Body: strPtr("after")})
+	if err != nil {
+		t.Fatalf("EditComment(body): %v", err)
+	}
+	m2 := decode(event2.Payload)
+	if from, to := delta(m2, "body"); from != "before" || to != "after" {
+		t.Fatalf("body delta = %q→%q, want before→after", from, to)
+	}
+	for _, k := range []string{"title", "kind", "pinned"} {
+		if _, ok := m2[k]; ok {
+			t.Fatalf("body-only edit carries spurious %q delta: %v", k, m2)
+		}
 	}
 }
 

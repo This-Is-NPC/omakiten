@@ -381,9 +381,21 @@ WHERE id = ? AND event_type = 'comment'
 		updated.Tags = existing[commentID]
 	}
 
+	// Name every changed field with a {from,to} entry so the activity feed can
+	// tell a pin from a title from a kind change — a metadata-only edit must not
+	// emit a content-free {comment_id} payload.
 	payload := map[string]any{"comment_id": commentID}
 	if prev.Body != newBody {
 		payload["body"] = map[string]any{"from": prev.Body, "to": newBody}
+	}
+	if prev.Title != newTitle {
+		payload["title"] = map[string]any{"from": prev.Title, "to": newTitle}
+	}
+	if prev.Kind != newKind {
+		payload["kind"] = map[string]any{"from": prev.Kind, "to": newKind}
+	}
+	if prev.Pinned != newPinned {
+		payload["pinned"] = map[string]any{"from": prev.Pinned, "to": newPinned}
 	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {

@@ -98,6 +98,22 @@ func TestSummarizeEventPerTypeRendering(t *testing.T) {
 			row:  EventRow{EventType: EventTypeCommentEdited, Payload: `{"comment_id":5,"body":{"from":"old","to":"new"}}`},
 			want: `edited: "old" → "new"`,
 		},
+		"comment.edited pin only": {
+			row:  EventRow{EventType: EventTypeCommentEdited, Payload: `{"comment_id":5,"pinned":{"from":false,"to":true}}`},
+			want: "pinned",
+		},
+		"comment.edited unpin only": {
+			row:  EventRow{EventType: EventTypeCommentEdited, Payload: `{"comment_id":5,"pinned":{"from":true,"to":false}}`},
+			want: "unpinned",
+		},
+		"comment.edited title only": {
+			row:  EventRow{EventType: EventTypeCommentEdited, Payload: `{"comment_id":5,"title":{"from":"Old","to":"New"}}`},
+			want: `retitled: "Old" → "New"`,
+		},
+		"comment.edited kind only": {
+			row:  EventRow{EventType: EventTypeCommentEdited, Payload: `{"comment_id":5,"kind":{"from":"draft","to":"recap"}}`},
+			want: "kind: draft → recap",
+		},
 		"comment.removed with body": {
 			row:  EventRow{EventType: EventTypeCommentRemoved, Payload: `{"comment_id":7,"body":"gone"}`},
 			want: `removed: "gone"`,

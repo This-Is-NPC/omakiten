@@ -119,15 +119,15 @@ func readStringSlice(m map[string]any, key string) []string {
 	return out
 }
 
-// readBodyDelta pulls the {from,to} body delta written by the
-// comment.edited emitter. Either side may be absent — the caller
-// renders whichever side it has.
-func readBodyDelta(m map[string]any) (from, to string) {
-	body := readObject(m, "body")
-	if body == nil {
-		return "", ""
+// readDelta pulls a {from,to} delta for the named key (body/title/kind/pinned)
+// written by the comment.edited emitter. ok is false when the key is absent, so
+// the caller can tell "field unchanged" from "field changed to empty".
+func readDelta(m map[string]any, key string) (from, to string, ok bool) {
+	sub := readObject(m, key)
+	if sub == nil {
+		return "", "", false
 	}
-	return readString(body, "from"), readString(body, "to")
+	return readString(sub, "from"), readString(sub, "to"), true
 }
 
 // condenseLine collapses runs of whitespace (including newlines) into
