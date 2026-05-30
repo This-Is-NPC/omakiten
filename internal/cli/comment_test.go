@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -25,22 +27,25 @@ func commentTestEnv(t *testing.T) (dbPath, configPath string) {
 	return dbPath, configPath
 }
 
-// commentIDFromJSON extracts the comment id from an add/edit JSON payload.
+// commentIDFromJSON decodes the comment.id field from an add/edit JSON payload.
+// Decoding the nested object explicitly avoids scraping the first "id":, which
+// would silently pick up the wrong field if the envelope shape ever changes.
 func commentIDFromJSON(t *testing.T, out string) string {
 	t.Helper()
-	// The comment object nests an "id" field; the first "id": occurrence in
-	// the payload is the comment id (the comment object is rendered before
-	// any task/project echo of a numeric id elsewhere is not present here).
-	idIdx := strings.Index(out, `"id":`)
-	if idIdx < 0 {
-		t.Fatalf("payload lacks id field: %s", out)
+	var payload struct {
+		Data struct {
+			Comment struct {
+				ID int64 `json:"id"`
+			} `json:"comment"`
+		} `json:"data"`
 	}
-	rest := out[idIdx+len(`"id":`):]
-	end := strings.IndexAny(rest, ",}")
-	if end < 0 {
-		t.Fatalf("id field missing terminator: %s", out)
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("decode comment payload: %v\n%s", err, out)
 	}
-	return strings.TrimSpace(rest[:end])
+	if payload.Data.Comment.ID == 0 {
+		t.Fatalf("payload lacks data.comment.id: %s", out)
+	}
+	return strconv.FormatInt(payload.Data.Comment.ID, 10)
 }
 
 func TestCLICommentAddScopes(t *testing.T) {
