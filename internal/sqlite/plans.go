@@ -823,6 +823,22 @@ func (s *Store) ReorderPlanWave(ctx context.Context, projectID, waveID int64, ne
 					map[string]any{"wave_id": waveID, "position": newPosition})
 			}
 
+			// mapPositionClash turns the raw UNIQUE(plan_id, position)
+			// violation into a clean domain error. Two concurrent reorders
+			// can both read stale positions, the loser then lands its final
+			// UPDATE on a slot the winner already took; surfacing
+			// ErrValidation (matching AddPlanWave's "wave position already
+			// taken") beats leaking a raw SQLite constraint string.
+			mapPositionClash := func(err error) error {
+				var ce *sqlutil.ConstraintError
+				if mapped := sqlutil.MapSQLiteError(err); errors.As(mapped, &ce) && ce.Violation == sqlutil.ViolationUnique {
+					return domain.NewError(domain.ErrValidation,
+						"wave position already taken",
+						map[string]any{"wave_id": waveID, "position": newPosition})
+				}
+				return err
+			}
+
 			// Is the target slot occupied by a sibling wave?
 			var occupantID int64
 			err = tx.QueryRowContext(ctx, `SELECT id FROM plan_waves WHERE plan_id = ? AND position = ?`,
@@ -831,7 +847,7 @@ func (s *Store) ReorderPlanWave(ctx context.Context, projectID, waveID int64, ne
 			case errors.Is(err, sql.ErrNoRows):
 				// Free slot — simple move.
 				if _, err := tx.ExecContext(ctx, `UPDATE plan_waves SET position = ? WHERE id = ?`, newPosition, waveID); err != nil {
-					return reorderResult{}, err
+					return reorderResult{}, mapPositionClash(err)
 				}
 			case err != nil:
 				return reorderResult{}, err
@@ -842,10 +858,10 @@ func (s *Store) ReorderPlanWave(ctx context.Context, projectID, waveID int64, ne
 					return reorderResult{}, err
 				}
 				if _, err := tx.ExecContext(ctx, `UPDATE plan_waves SET position = ? WHERE id = ?`, moving.Position, occupantID); err != nil {
-					return reorderResult{}, err
+					return reorderResult{}, mapPositionClash(err)
 				}
 				if _, err := tx.ExecContext(ctx, `UPDATE plan_waves SET position = ? WHERE id = ?`, newPosition, waveID); err != nil {
-					return reorderResult{}, err
+					return reorderResult{}, mapPositionClash(err)
 				}
 			}
 
@@ -1043,10 +1059,10 @@ func (s *Store) ClaimNextPlanTask(ctx context.Context, projectID, planID int64, 
 		connClosed = true
 		_ = conn.Close()
 	}
-	// Pool has MaxOpenConns=4; the final taskByID lookup needs its own
-	// pool slot, so the pinned conn MUST be released before that call —
-	// otherwise N>4 concurrent claims deadlock all holders against the
-	// post-commit reader. closeConn enforces release-once semantics so
+	// Pool has MaxOpenConns=2 (store.go); the final taskByID lookup needs
+	// its own pool slot, so the pinned conn MUST be released before that
+	// call — otherwise N>2 concurrent claims deadlock all holders against
+	// the post-commit reader. closeConn enforces release-once semantics so
 	// the happy path and every error path agree.
 	defer closeConn()
 
