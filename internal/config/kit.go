@@ -1,10 +1,9 @@
 package config
 
 import (
-	"bytes"
 	"fmt"
-
-	"gopkg.in/yaml.v3"
+	"os"
+	"path/filepath"
 
 	"omakiten/defaults"
 )
@@ -37,8 +36,9 @@ func LoadKitConfigByKey(key string) (Settings, error) {
 	if candidate == "" {
 		candidate = "omakase"
 	}
-	data, err := defaults.FS.ReadFile("config/" + candidate + ".yaml")
-	if err != nil {
+
+	// Probe that the preset exists before materialising a temp dir.
+	if _, err := defaults.FS.ReadFile("config/" + candidate + ".yaml"); err != nil {
 		if candidate == "omakase" {
 			return Settings{}, fmt.Errorf("read embedded kit YAML: %w", err)
 		}
@@ -49,10 +49,23 @@ func LoadKitConfigByKey(key string) (Settings, error) {
 		// SourceProject by classifyLeaf's nil-kit branch.
 		return LoadKitConfigByKey("omakase")
 	}
-	dec := yaml.NewDecoder(bytes.NewReader(data))
-	dec.KnownFields(true)
-	var w wiring
-	if err := dec.Decode(&w); err != nil {
+
+	// Preset YAMLs use import directives (merge_from:, from:) that the
+	// resolver must expand before strict decoding. Materialise config/
+	// (including modules/) into a temp dir so the resolver can follow
+	// relative paths, then read via the normal two-pass loader path.
+	tmp, err := os.MkdirTemp("", "okt-kit-*")
+	if err != nil {
+		return Settings{}, fmt.Errorf("LoadKitConfigByKey: %w", err)
+	}
+	defer os.RemoveAll(tmp)
+
+	if err := copyEmbeddedDirRecursive("config", filepath.Join(tmp, "config"), false); err != nil {
+		return Settings{}, fmt.Errorf("parse embedded kit YAML %s: %w", candidate, err)
+	}
+
+	w, _, _, err := readWiringDetailed(filepath.Join(tmp, "config", candidate+".yaml"))
+	if err != nil {
 		return Settings{}, fmt.Errorf("parse embedded kit YAML %s: %w", candidate, err)
 	}
 	return w.Config, nil
