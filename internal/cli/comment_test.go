@@ -293,25 +293,26 @@ func TestCLICommentAddCreateGuardDenied(t *testing.T) {
 // patch target is that module file, derived from configPath.
 func injectProjectCommentDeny(t *testing.T, configPath string) {
 	t.Helper()
-	workflowPath := filepath.Join(filepath.Dir(configPath), "modules", "workflows", "omakase.yaml")
-	raw, err := os.ReadFile(workflowPath)
-	if err != nil {
-		t.Fatalf("read seeded workflow module %s: %v", workflowPath, err)
-	}
-	const oldBlock = "    comment:\n      edit: false\n      delete: false\n"
-	const newBlock = "    comment:\n      edit: false\n      delete: false\n" +
-		"      project:\n        edit: false\n        delete: false\n"
-	if !strings.Contains(string(raw), oldBlock) {
-		t.Fatalf("seeded config lacks the expected defaults.comment block; "+
-			"the default omakase.yaml layout changed. content:\n%s", raw)
-	}
-	patched := strings.Replace(string(raw), oldBlock, newBlock, 1)
-	if err := os.WriteFile(workflowPath, []byte(patched), 0o644); err != nil {
-		t.Fatalf("write patched workflow module %s: %v", workflowPath, err)
-	}
+	patchWorkflowCommentBlock(t, configPath,
+		"      project:\n        edit: false\n        delete: false\n")
 }
 
 func injectProjectCommentCreateDeny(t *testing.T, configPath string) {
+	t.Helper()
+	patchWorkflowCommentBlock(t, configPath,
+		"      project:\n        create: false\n")
+}
+
+// patchWorkflowCommentBlock rewrites the seeded workflow module's verbatim
+// defaults.comment block, appending projectSubBlock (a project deny sub-block)
+// while keeping the flat edit/delete fields so the task-scope chain is
+// unchanged. It targets the block shipped in
+// defaults/config/modules/workflows/omakase.yaml — the workflow definition
+// moved there from the inline preset when modular imports were introduced, so
+// the patch target is that module file, derived from configPath.
+// EnsureDefaultFiles skips files that already exist, so this on-disk edit
+// survives subsequent CLI boots.
+func patchWorkflowCommentBlock(t *testing.T, configPath, projectSubBlock string) {
 	t.Helper()
 	workflowPath := filepath.Join(filepath.Dir(configPath), "modules", "workflows", "omakase.yaml")
 	raw, err := os.ReadFile(workflowPath)
@@ -319,8 +320,7 @@ func injectProjectCommentCreateDeny(t *testing.T, configPath string) {
 		t.Fatalf("read seeded workflow module %s: %v", workflowPath, err)
 	}
 	const oldBlock = "    comment:\n      edit: false\n      delete: false\n"
-	const newBlock = "    comment:\n      edit: false\n      delete: false\n" +
-		"      project:\n        create: false\n"
+	newBlock := oldBlock + projectSubBlock
 	if !strings.Contains(string(raw), oldBlock) {
 		t.Fatalf("seeded config lacks the expected defaults.comment block; "+
 			"the default omakase.yaml layout changed. content:\n%s", raw)
