@@ -137,7 +137,111 @@ config:
       message: "${{intl:notifications.omakase.solution_viewed_top.message}}"
 
 workflows:
-  from: ./modules/workflows/omakase.yaml
+  - id: 1
+    key: omakase
+    name: Omakase Workflow
+    # defaults declares the workflow-level fallback for task/comment edit
+    # and delete. Resolution order: bucket.permissions → workflow.defaults
+    # → implicit `true` (no rule = allow). The default kit ships strict
+    # defaults so a brand-new task respects "edit only in backlog" out of
+    # the box; per-bucket `permissions:` overrides relax this where the
+    # workflow author wants to allow edits/deletes elsewhere.
+    defaults:
+      task:
+        edit: false
+        delete: false
+      comment:
+        edit: false
+        delete: false
+    operations:
+      archive:
+        guards:
+          - type: comments_tagged
+            tag: documentation
+            count: 1
+            hint: "${{intl:guard.common.archive.comments_tagged.documentation.hint}}"
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1
+        permissions:
+          task:
+            edit: true
+            delete: true
+          comment:
+            edit: true
+            delete: true
+      - id: 2
+        key: dev
+        name: Development
+        position: 2
+        permissions:
+          comment:
+            edit: true
+            delete: true
+      - id: 3
+        key: review
+        name: Review
+        position: 3
+        permissions:
+          comment:
+            edit: true
+      - id: 4
+        key: done
+        name: Done
+        position: 4
+        permissions:
+          task:
+            delete: false
+          comment:
+            delete: false
+    transitions:
+      - from: 1
+        to: 2
+        guards:
+          - type: comments_tagged
+            tag: self-branch
+            count: 1
+            hint: "${{intl:guard.omakase.dev.comments_tagged.self_branch.hint}}"
+          - type: blockers_in
+            buckets: [done]
+            hint: "${{intl:guard.omakase.dev.blockers_in.hint}}"
+          - type: wave_gate
+            hint: "${{intl:guard.wave_gate.hint}}"
+      - from: 2
+        to: 3
+        guards:
+          - type: comments_tagged
+            tag: resume
+            count: 1
+            hint: "${{intl:guard.omakase.review.comments_tagged.resume.hint}}"
+          - type: comments_tagged
+            tag: tests-passing
+            count: 1
+            hint: "${{intl:guard.omakase.review.comments_tagged.tests_passing.hint}}"
+          - type: subtasks_complete
+            hint: "${{intl:guard.subtasks_complete.hint}}"
+      - from: 3
+        to: 4
+        guards:
+          - type: comments_tagged
+            tag: documentation
+            count: 1
+            hint: "${{intl:guard.omakase.done.comments_tagged.documentation.hint}}"
+      # Regression transitions — no guards.
+      - from: 2
+        to: 1
+      - from: 3
+        to: 1
+      - from: 3
+        to: 2
+      - from: 4
+        to: 3
+      - from: 4
+        to: 2
+      - from: 4
+        to: 1
 
 personas:
   from: ./themes/naruto.yaml#personas

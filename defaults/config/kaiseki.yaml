@@ -112,7 +112,76 @@ config:
       message: "${{intl:notifications.kaiseki.solution_viewed_top.message}}"
 
 workflows:
-  from: ./modules/workflows/kaiseki.yaml
+  - id: 1
+    key: kaiseki
+    name: Kaiseki Workflow
+    defaults:
+      task: {edit: false, delete: false}
+      comment: {edit: false, delete: false}
+    operations:
+      archive:
+        guards:
+          - {type: comments_tagged, tag: documentation, count: 1, hint: "${{intl:guard.common.archive.comments_tagged.documentation.hint}}"}
+      delete:
+        guards:
+          - {type: comments_tagged, tag: peer-review, count: 1, hint: "${{intl:guard.kaiseki.delete.comments_tagged.peer_review.hint}}"}
+    buckets:
+      - id: 1
+        key: requirements
+        name: Requirements
+        position: 1
+        permissions:
+          task: {edit: true, delete: true}
+          comment: {edit: true, delete: true}
+      - id: 2
+        key: planning
+        name: Planning
+        position: 2
+        permissions:
+          task: {edit: true, delete: true}
+          comment: {edit: true, delete: false}
+      - id: 3
+        key: dev
+        name: Development
+        position: 3
+        permissions:
+          comment: {edit: true, delete: true}
+      - {id: 4, key: review, name: Review, position: 4}
+      - {id: 5, key: docs, name: Documentation, position: 5}
+      - {id: 6, key: done, name: Done, position: 6}
+    transitions:
+      - from: 1
+        to: 2
+        guards:
+          - {type: comments_tagged, tag: 5w2h, count: 1, hint: "${{intl:guard.common.planning.comments_tagged.5w2h.hint}}"}
+          - {type: comments_tagged, tag: requirements, count: 1, hint: "${{intl:guard.kaiseki.planning.comments_tagged.requirements.hint}}"}
+          - {type: comments_tagged, tag: acceptance, count: 1, hint: "${{intl:guard.common.planning.comments_tagged.acceptance.hint}}"}
+      - from: 2
+        to: 3
+        guards:
+          - {type: comments_tagged, tag: self-branch, count: 1, hint: "${{intl:guard.common.dev.comments_tagged.self_branch.hint}}"}
+          - {type: comments_tagged, tag: design, count: 1, hint: "${{intl:guard.kaiseki.dev.comments_tagged.design.hint}}"}
+          - {type: blockers_in, buckets: [done, docs], hint: "${{intl:guard.common.dev.blockers_in.hint}}"}
+          - {type: wave_gate, hint: "${{intl:guard.wave_gate.hint}}"}
+      - from: 3
+        to: 4
+        guards:
+          - {type: comments_tagged, tag: resume, count: 1, hint: "${{intl:guard.kaiseki.review.comments_tagged.resume.hint}}"}
+          - {type: comments_tagged, tag: tests-passing, count: 1, hint: "${{intl:guard.kaiseki.review.comments_tagged.tests_passing.hint}}"}
+          - {type: subtasks_complete, hint: "${{intl:guard.subtasks_complete.hint}}"}
+      - from: 4
+        to: 5
+        guards:
+          - {type: comments_tagged, tag: peer-review, count: 1, hint: "${{intl:guard.kaiseki.docs.comments_tagged.peer_review.hint}}"}
+      - from: 5
+        to: 6
+        guards:
+          - {type: comments_tagged, tag: documentation, count: 1, hint: "${{intl:guard.common.done.comments_tagged.documentation.hint}}"}
+          - {type: subtasks_complete, hint: "${{intl:guard.subtasks_complete.hint}}"}
+      - {from: 4, to: 3}
+      - {from: 5, to: 4}
+      - {from: 6, to: 4}
+      - {from: 6, to: 5}
 
 personas:
   from: ./themes/lotr.yaml#personas
