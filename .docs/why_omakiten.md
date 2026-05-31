@@ -81,7 +81,7 @@ The Shewhart ([1939](#shewhart-1939)) / Deming ([1986](#deming-1986)) quality-im
 - **Check** — compare actual against the success measure; analyse the gap.
 - **Act** — adopt, abandon, or adjust based on what the data showed.
 
-The `okt-*` command surface maps cleanly onto PDCA: `okt-imagine` runs Plan, `okt-create` plus the early phase of `okt-implement` are Do, the middle of `okt-implement` is Check, and the final review-and-promote sequence is Act.
+The `okt-*` command surface maps cleanly onto PDCA: `okt-shape` guides Plan by chaining granular discovery commands such as `okt-task-imagine`; `okt-task-create` plus the early phase of `okt-task-implement` are Do; the middle of `okt-task-implement` is Check; and the final review-and-promote sequence is Act.
 
 PDCA is universally recognized, easy to teach, and gives users a stable mental map for every action they take through Omakiten regardless of preset.
 
@@ -99,7 +99,7 @@ Seven questions an interviewer asks before agreeing to file work:
 | **How** | Approach or constraint shaping execution. |
 | **How much** | Budget — effort, money, or time-box. |
 
-Used by the product persona inside `okt-imagine` to surface gaps before work is filed. Vague answers ("the user", "soon", "important") are not accepted — the gap is named and the conversation continues.
+Used by the Owner role inside `okt-task-imagine` to surface gaps before work is filed. Vague answers ("the user", "soon", "important") are not accepted — the gap is named and the conversation continues.
 
 ## <a id="smart"></a>SMART — Success criteria
 
@@ -111,7 +111,7 @@ Doran ([1981](#doran-1981)). A success measure is SMART when it is:
 - **Realistic** — achievable inside the budget named in 5W2H.
 - **Time-related** — anchored to a date, a sprint, or a milestone.
 
-Recorded as a `#smart-success` comment during `okt-imagine`, then re-evaluated during the Check phase to decide whether the work is actually done.
+Recorded as a `#smart-success` comment during `okt-task-imagine`, then re-evaluated during the Check phase to decide whether the work is actually done.
 
 ## <a id="invest"></a>INVEST — User story quality
 
@@ -124,7 +124,7 @@ Wake ([2003](#wake-2003)). Six properties a user story needs:
 - **Small** — fits inside one iteration with room left for review.
 - **Testable** — comes with acceptance criteria the requester can verify.
 
-Checked during `okt-create` after `okt-imagine` clarified what the work is.
+Checked during `okt-task-create` after `okt-task-imagine` clarified what the work is.
 
 ## <a id="moscow"></a>MoSCoW — Prioritization (categorical)
 
@@ -154,7 +154,7 @@ Doerr ([2018](#doerr-2018)). Pairs an aspirational **Objective** (qualitative di
 
 ## How these compose
 
-A typical `okt-imagine` → `okt-create` cycle uses several of these models together: 5W2H surfaces the problem, SMART pins down what success looks like, INVEST checks the resulting story, and MoSCoW or RICE (or both) sets priority against alternatives. PDCA frames the entire loop.
+A typical `okt-task-imagine` → `okt-task-create` cycle uses several of these models together: 5W2H surfaces the problem, SMART pins down what success looks like, INVEST checks the resulting story, and MoSCoW or RICE (or both) sets priority against alternatives. PDCA frames the entire loop.
 
 ---
 

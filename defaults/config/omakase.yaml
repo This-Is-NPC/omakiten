@@ -793,27 +793,11 @@ personas:
 # the discovery flow can sketch freely).
 #
 # The default kit follows a REST-style handoff pattern: each command resolves
-# one role and ends its action text by suggesting the next command. Cycle:
-#
-#   okt → okt-project-resume / okt-task-imagine
-#     okt-task-imagine → okt-task-create
-#       okt-task-create → (move to dev → guard) → okt-task-continue / okt-task-implement
-#         okt-project-resume → okt-task-continue
-#           okt-task-continue → okt-task-implement
-#             okt-task-implement → (move to review → guard)
-#   okt-task-document is parallel — surfaces drift; if material work is needed,
-#   suggests okt-task-create to spin up a documentation task.
-#   okt-config is parallel — orients the agent on the config layout so it can
-#   answer edit questions without guessing; suggests okt-task-implement when the
-#   user has a concrete edit in mind.
-#   okt-task-commit is parallel — drafts Conventional Commits for user-authored
-#   edits made outside the okt-task-implement loop; never auto-pushes.
-#   okt-task-review is parallel — walks the diff with a Fowler/Beck/Martin/
-#   Feathers lens; surfaces findings + refactor opportunities; read-only
-#   (suggests okt-task-implement to apply fixes).
-#   okt-task-check is parallel — discovers test/lint/audit targets, runs them,
-#   emits a tabular pass/fail report; read-only (suggests okt-task-implement
-#   for fixes or okt-task-review for triage).
+# one role and ends its action text by suggesting the next command. The primary
+# loop is orchestrator-shaped (`okt-start` → `okt-shape` → `okt-run` →
+# `okt-audit` → `okt-pause`), while granular `okt-task-*`, `okt-plan-*`,
+# `okt-project-*`, and `okt-note-*` commands remain the surgical drop-down for
+# one exact step.
 mcp_commands:
   global:
     laws:

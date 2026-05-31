@@ -1,6 +1,6 @@
 ---
 name: Comment — Review findings
-description: "Diff-walk findings emitted by okt-review; one row per finding, severity-tagged."
+description: "Diff-walk findings emitted by okt-task-review; one row per finding, severity-tagged."
 entity: comment
 laws:
   - template-fidelity
@@ -17,4 +17,4 @@ laws:
 
 **Summary** — <count by severity, e.g. "2 error, 3 warning, 1 info">
 
-**Next** — <`okt-implement` to apply, `okt-create` to spin a follow-up task, or `okt-review` to re-run after fixes>
+**Next** — <`okt-task-implement` to apply, `okt-task-create` to spin a follow-up task, or `okt-task-review` to re-run after fixes>

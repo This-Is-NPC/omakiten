@@ -12,7 +12,7 @@ package domain
 // When adding a new event: declare the const here with a one-line godoc
 // describing when it fires, the entity_type column value it lands under,
 // and the minimum payload contract; emit it in the canonical service or
-// sqlite layer; document it in `.docs/domain-events.md`.
+// sqlite layer; document it in `.docs/internal/data-model.md`.
 const (
 	// EventTypeComment is the canonical event_type for user/agent
 	// comments recorded against a task. The bare value "comment"

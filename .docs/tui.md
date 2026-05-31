@@ -62,7 +62,7 @@ The TUI consumes the same application services as the CLI and MCP layers — the
 
 The header renders a single chrome with two rows of tiles:
 
-```
+```text
 00 // HOME │ 01 // TASKS   02 // STATS   03 // SETTINGS
                             ─────────
               // general    // logs
@@ -215,7 +215,7 @@ The `c` binding opens a single-line input pre-filled with the focused task's cur
 
 ### Stats › General
 
-Per-AI-model benchmark over a configurable period (errors recorded, errors searched, search-before-record ratio, solutions added, like rate) plus the project's headline `Totals` (tasks / comments / context entries / tags) and `Tokens` (estimated / max + `[BUDGET EXCEEDED]` badge when truncated). The model-breakdown table reads from `app.MetricsService` — same aggregation the `metrics.summary` MCP tool returns.
+Per-AI-model benchmark over a configurable period plus the project's headline `Totals` (tasks / comments / context entries / tags) and `Tokens` (estimated / max + `[BUDGET EXCEEDED]` badge when truncated). The model-breakdown table reads from `app.MetricsService` — same aggregation the `metrics.summary` MCP tool returns: per-model `buckets` (`error_recorded`, `error_searched`, `solution_added`, `solution_liked`, `solution_failed`, `solution_top_viewed`) plus like rate and search-before-record ratio.
 
 | Key | Action |
 |---|---|
@@ -227,7 +227,7 @@ The TUI itself reports `agent_model="human"` so its own activity does not appear
 
 Unified event inspector — every `event_type` the project has recorded inside the snapshot's `views.logs.window_days` window renders through one 5-column row shape:
 
-```
+```text
 TIME · TYPE · ENTITY · WHO · DETAIL
 ```
 
@@ -256,7 +256,7 @@ The wide / compact split lives at the 92-cell `availableWidth()` threshold: term
 
 A single-line chip strip sits above the summary tables:
 
-```
+```text
 // LOGS · FILTER: [ all ] tool-calls domain system   (F cycle)
 ```
 

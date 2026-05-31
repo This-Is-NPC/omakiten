@@ -47,7 +47,7 @@ knobs, see [system.md](system.md).
 
 ## Layer diagram
 
-```
+```text
                   ┌──────────────────────────────┐
                   │     omakase.yaml (disk)      │
                   └──────────────┬───────────────┘

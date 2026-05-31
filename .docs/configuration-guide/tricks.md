@@ -219,7 +219,7 @@ hooks:
     do: notify
 ```
 
-```
+```text
 config.hooks[0].when.verb: "nav" is reserved by the trick palette built-in handler;
 pick a different verb (reserved: [nav op])
 ```

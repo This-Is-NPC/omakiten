@@ -7,7 +7,7 @@ matching `do:` action asynchronously.
 
 This guide covers the YAML schema, the per-action argument contracts,
 and a few worked recipes. For the canonical list of event types,
-inspect `internal/domain/events.go::KnownEventTypes` — the source of
+inspect `internal/domain/event.go::KnownEventTypes` — the source of
 truth for everything an `on:` clause can subscribe to.
 
 ## Schema
@@ -315,7 +315,7 @@ line; only well-formed `${{intl:KEY}}` is substituted.
 
 ## Step-by-step walkthrough — wiring a hook into your workflow
 
-This walkthrough takes you from "I have Omakiten installed" to "a script of mine runs every time event X happens" without writing Go. The canonical action ships in the kit (`exec`) so anything you can run in a shell can react to a task move, a comment, a guard violation, or any other event in `internal/domain/events.go::KnownEventTypes`.
+This walkthrough takes you from "I have Omakiten installed" to "a script of mine runs every time event X happens" without writing Go. The canonical action ships in the kit (`exec`) so anything you can run in a shell can react to a task move, a comment, a guard violation, or any other event in `internal/domain/event.go::KnownEventTypes`.
 
 ### Prerequisites
 
@@ -351,7 +351,7 @@ config:
 
 Notes:
 
-- `on:` must be one of the event types in `internal/domain/events.go::KnownEventTypes`. Typos fail at startup with a `validation_error` pointing at the bad value, so you cannot configure a hook that silently never fires.
+- `on:` must be one of the event types in `internal/domain/event.go::KnownEventTypes`. Typos fail at startup with a `validation_error` pointing at the bad value, so you cannot configure a hook that silently never fires.
 - `argv` is taken **literally**. No shell expansion — write the absolute path of your script there, not `~/scripts/...`.
 - `timeout_ms` is the deadline for your script. Default is `30000` (30 s); shorter is better for hot-path events.
 
@@ -490,7 +490,7 @@ You can comment the YAML block out, or you can shut the channel gate with `confi
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| `okt config show` rejects the bundle with `validation_error` and a path like `config.hooks[0].on` | Event type typo — must match a string in `internal/domain/events.go::KnownEventTypes` | Copy the event name verbatim from the catalog |
+| `okt config show` rejects the bundle with `validation_error` and a path like `config.hooks[0].on` | Event type typo — must match a string in `internal/domain/event.go::KnownEventTypes` | Copy the event name verbatim from the catalog |
 | Hook never fires; nothing in `hook.executed` | (a) Channel gate closed (`config.events.overrides.<event_type>.hook: false`, or inherited from `defaults.hook: false`); (b) `when:` rules out every event; (c) you forgot to restart after editing the YAML | Check the gate first via `okt config show`; `when:` accepts only top-level payload keys; restart the running runtime |
 | `hook.executed.success = false`, `error: "exec /path/foo failed: …"` | Script exited non-zero or could not run | Run the script manually with the same JSON on stdin: `echo '{}' \| /path/foo` |
 | `hook.executed.error: "exec … timed out after 3s"` | Script crossed `timeout_ms` | Lengthen the timeout, or move the slow part into a background job your script kicks off and returns from |
@@ -501,7 +501,7 @@ You can comment the YAML block out, or you can shut the channel gate with `confi
 
 - A new built-in action lands under `internal/hooks/actions/` — add its
   args contract to **Built-in actions**.
-- `internal/domain/events.go::KnownEventTypes` gains or drops an event
+- `internal/domain/event.go::KnownEventTypes` gains or drops an event
   type — sync the `on:` subscriber list and event-payload shape.
 - The hook action registry adds a registration hook or a new validation
   pass at composition-root time.
@@ -515,7 +515,7 @@ You can comment the YAML block out, or you can shut the channel gate with `confi
   in the active profile yaml.
 - [`notifications.md`](notifications.md) — notification cards a hook
   can dispatch via `notification: <slug>`.
-- `internal/domain/events.go::KnownEventTypes` — canonical list of
+- `internal/domain/event.go::KnownEventTypes` — canonical list of
   domain events a hook may subscribe to.
 
 ## Adding a new action

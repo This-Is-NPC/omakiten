@@ -50,7 +50,7 @@
 | `internal/sqlite/` | Right-side adapter: SQLite store, schema migration, all repository implementations, activity logs, events. Sub-package `sqlutil/` carries reusable helpers: NULL coercion (`NullStringOr` / `NullInt64Ptr` / `NullTimePtr`), generic scan closures (`ScanRow[T]` / `ScanAll[T]`), and the typed constraint classifier (`MapSQLiteError` → `ConstraintError{Violation, Table, Field, Cause}` using `modernc.org/sqlite` extended codes) |
 | `internal/agent/` | Protocol-neutral agent service (intents, DTOs, error mapping); imports only `internal/app`, `internal/domain`, `internal/project`, `internal/token` |
 | `internal/agentruntime/` | Composition root for the agent: opens sqlite, configstore, imports bundle, wires `agent.Service` (`runtime.go`) |
-| `internal/agentsetup/` | MCP harness setup writer for the six supported harnesses (`claude-code`, `claude-desktop`, `opencode`, `crush`, `github-copilot`, `codex`); canonical list in `setup.go::SupportedHarnesses` |
+| `internal/agentsetup/` | MCP harness setup writer for the seven supported harnesses (`claude-code`, `claude-desktop`, `opencode`, `crush`, `github-copilot`, `codex`, `cursor`); canonical list in `setup.go::SupportedHarnesses` |
 | `internal/mcp/` | MCP adapter: maps MCP tools/resources/prompts to `agent.Service` calls + JSON-RPC stdio server |
 | `internal/project/` | Active-project resolver (`--project-id`, `--project`, CWD precedence) |
 | `internal/output/` | JSON envelope formatting for machine-parseable CLI output |
@@ -61,7 +61,7 @@
 | `internal/arch/` | Architecture-boundary test (`arch_test.go`) |
 | `internal/testfixtures/` | Shared test helper that loads `config.Bundle` values from per-package `testdata/*.yaml` so test inputs flow through the production parser; convention is documented in [`dev-guide.md` § Test fixtures](dev-guide.md#test-fixtures) |
 | `defaults/` | Embedded default kit assets (laws, skills, personas, templates, themes, notifications, official preset yamls under `config/` — `omakase.yaml` is the canonical kit) plus `defaults/languages/<code>.yaml` (21 bundled CLI/TUI language packs auto-discovered by the installer picker) |
-| `migrations/` | Embedded SQL schema migrations (001–027; latest: `027_tasks_parent_project_fk.sql` adds DB-side triggers that keep sub-task parent links inside the same project. `026_tasks_parent_id.sql` adds nullable `tasks.parent_id`; `025_projects_cascade.sql` rewires project FKs for delete cascades; `024_search_index_plans.sql` extends FTS5 with plans; `023_plans.sql` introduces plans/waves/assignment) |
+| `migrations/` | Embedded SQL schema migrations (001–032; latest: `032_events_comment_log.sql` makes `events` the scoped comment/note log and drops the unreleased standalone notes entity. Recent migrations also add task depth repair, rename `errors.researched`, and wire plans/search/subtasks.) |
 | `dev_env/` | Local TUI/dev runtime state (`mise tui`) |
 | `.docs/` | Documentation, templates, personal notes |
 | `.workflow/` | Per-task requirements/plans/summaries used by the assisted-workflow skills |

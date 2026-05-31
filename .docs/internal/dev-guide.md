@@ -67,7 +67,7 @@ Every task is defined in `.mise.toml` at the repo root. Run with `mise run <name
 | `lint` | `golangci-lint run` against `.golangci.yml`. |
 | `vuln` | `govulncheck ./...`. |
 | `check` | **PR gate.** Depends on `test`, `lint`, `vuln`, `docs:check`. |
-| `docs:refresh` | Runs `go run ./cmd/okt-docs-refresh --root .` to regenerate every embed-fed `.docs/_generated/` page from the live bundle. |
+| `docs:refresh` | Runs `go run ./cmd/okt-docs-refresh --root .` to remove legacy generated-doc artifacts and validate that `.docs/` no longer carries old include/auto markers. |
 | `docs:check` | Same binary with `--check` — exits non-zero on drift; the local merge gate runs this. |
 
 ### Install & local state
@@ -99,14 +99,14 @@ In headless contexts (CI, no `/dev/tty`) the prompt is skipped silently — no h
 
 ## Project Layout
 
-```
+```text
 cmd/                     entry points (okt, okt-docs-refresh, …)
 internal/
   domain/                pure types (no adapter imports)
   app/                   application services, ports
   agent/                 protocol-neutral agent intent layer
   agentruntime/          composition root (DB, config, paths, BundleCache)
-  agentsetup/            MCP harness writer (claude-code, claude-desktop, opencode, crush, github-copilot, codex)
+  agentsetup/            MCP harness writer (claude-code, claude-desktop, opencode, crush, github-copilot, codex, cursor)
   cli/                   cobra commands (delegates to app)
   mcp/                   MCP adapter (delegates to agent.Service)
   tui/                   bubbletea terminal UI
@@ -128,7 +128,7 @@ defaults/                ships into ~/.config/omakiten on first run
   config/                official presets (omakase / izakaya / kaiseki / shokunin)
   languages/             21 bundled CLI/TUI language packs (en / pt-br / jp / …)
   themes/, notifications/, skills/, laws/, personas/, templates/
-migrations/              SQLite schema migrations (001 … 027; 027 scopes sub-task parents by project)
+migrations/              SQLite schema migrations (001 … 032; 032 makes events the scoped comment log)
 scripts/                 install / uninstall / wrapper helpers + tests
 ```
 
@@ -320,7 +320,7 @@ Do **not** tag releases manually; merge the release PR and let the workflow atta
 
 `bin/okt` is installed into `$HOME/.local/bin/okt`, but PATH may resolve `okt` from somewhere else (a stale `go install ./cmd/okt` puts it in `$(go env GOPATH)/bin`). The install task prints a `WARN` when this happens:
 
-```
+```text
 WARN: PATH resolves okt to /home/you/go/bin/okt, not /home/you/.local/bin/okt.
        Remove the stale copy or reorder PATH so $HOME/.local/bin wins.
 ```

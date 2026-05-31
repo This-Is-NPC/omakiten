@@ -12,12 +12,13 @@ import (
 // ResolveCommand assembles the persona/skills/laws/templates package bound to
 // `name` and returns it both structured and rendered as a single markdown
 // message ready for an MCP PromptMessage. The resolution follows the rules
-// documented in `.docs/guards-guide.md`:
+// documented in `.docs/configuration-guide/command-bindings.md`:
 //
 //   - effective laws = global ∪ persona.laws ∪ command.laws ∪ templates[].laws,
 //     minus command.laws_disabled, deduped, in first-seen order;
 //   - persona is the one declared on the command spec (no default);
-//   - skills come from the persona's wiring;
+//   - skills come from the command subset, then legacy persona skills, then
+//     the persona's schema-v2 skill repertoire;
 //   - templates are the slugs declared on the command spec.
 //
 // Missing catalogs degrade gracefully — an unwired runtime still returns the

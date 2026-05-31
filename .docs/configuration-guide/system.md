@@ -4,7 +4,7 @@ The `config:` block in the active profile yaml carries the runtime knobs every s
 
 YAML decoding uses `KnownFields(true)`, so unknown fields fail loud rather than silently. The embedded canonical kit ships as `defaults/config/omakase.yaml`; it is materialized into the user's `<config-dir>/` on first run alongside the other official presets (`izakaya.yaml`, `kaiseki.yaml`, `shokunin.yaml`).
 
-For ConfigRoot precedence, `.active` resolution, and the `<root>/` layout, see [path-resolution.md](path-resolution.md). For per-project layering (`.omakiten/` walk-up, hot-reload, per-project Snapshot), see [project-overrides.md](project-overrides.md). For per-entity wiring (workflows, personas, laws, templates, priorities, severities, views), see [entities.md](entities.md).
+For ConfigRoot precedence, `.active` resolution, and the `<root>/` layout, see [path-resolution.md](path-resolution.md). For per-project layering (`.omakiten/` walk-up, hot-reload, per-project Snapshot), see [project-overrides.md](project-overrides.md). For workflow schema, command bindings, and entity assets, see [workflows.md](workflows.md), [command-bindings.md](command-bindings.md), and [entities.md](entities.md).
 
 ## Contents
 
@@ -52,11 +52,11 @@ mcp_commands: { <slug>: { persona?, laws?, laws_disabled?, templates? } }
 | `version` | int | yes | Must be exactly `1`. Anything else fails validation. |
 | `kit` | object | yes | See [`kit`](#kit). |
 | `config` | object | yes | See sections below. |
-| `workflows` | list | yes | At least one. See [entities.md § workflows](entities.md#workflows). |
+| `workflows` | list | yes | At least one. See [workflows.md](workflows.md). |
 | `skills` / `laws` / `templates` | list of slug strings | no | Strict allowlist when present; **autoload** otherwise. See [entities.md § autoload](entities.md#autoload-custom-overrides-and-slug-rules). |
-| `personas` | list of `PersonaWiring` | no | Persona wiring (skill/law refs); body lives in `personas/<slug>.md`. See [entities.md § personas](entities.md#personas). |
-| `projects` | list of `ProjectWiring` | no | Declarative project wiring; the runtime project list is in SQLite. See [entities.md § projects](entities.md#projects). |
-| `mcp_commands` | map | no | Binds `okt-*` MCP prompts to a persona, laws, and templates. See [entities.md § mcp_commands](entities.md#mcp_commands). |
+| `personas` | list of `PersonaWiring` | no | Role wiring (skill/law refs); body lives in `personas/<slug>.md`. See [entities.md § personas](entities.md#personas) and [command-bindings.md](command-bindings.md). |
+| `projects` | list of `ProjectWiring` | no | Declarative project wiring; the runtime project list is in SQLite. |
+| `mcp_commands` | map | no | Binds `okt-*` MCP prompts to a persona, skills, laws, and templates. See [command-bindings.md](command-bindings.md). |
 
 Two additional inputs are loaded from sibling folders rather than `omakiten.yaml` top-level keys: `notifications/<slug>.yaml` (kit-wide notification cards referenced from `config.hooks`) and `languages/<code>.yaml` (CLI/TUI language packs picked via `config.languages.{cli,tui}`). They appear on the in-memory `Bundle` as `Notifications` and `Languages`, are validated alongside the YAML, and ship under `defaults/notifications/` and `defaults/languages/`.
 
@@ -241,7 +241,7 @@ config:
 
 ## `config.activity_log`
 
-Retention window for the per-call `operation` event log used by the activity feed. **Required block** — disabling retention is not a supported mode (the activity log would grow unbounded). Each `BeginActivityLog` runs a synchronous prune pass after insert; the writer never blocks longer than O(rows-deleted).
+Retention window for per-call tool events (`cli.tool_call`, `mcp.tool_call`, `tui.tool_call`) used by logs and activity feeds. **Required block** — disabling retention is not a supported mode (the tool-call log would grow unbounded). Each tracked call runs a synchronous prune pass after insert; the writer never blocks longer than O(rows-deleted).
 
 ```yaml
 config:
@@ -252,7 +252,7 @@ config:
 
 | Field | Type | Constraint | What it does |
 |---|---|---|---|
-| `max_rows` | int | `> 0` | Hard ceiling on `operation` rows. Older rows are deleted in id-DESC order after every insert. |
+| `max_rows` | int | `> 0` | Hard ceiling on tool-call rows. Older rows are deleted in id-DESC order after every insert. |
 | `max_age_days` | int | `> 0` | Sliding window — rows older than this many days are deleted on every insert. |
 
 ## `config.solutions`
@@ -312,7 +312,7 @@ config:
 | `defaults.hook` | bool | required | Lets the hooks engine consider matching events when true. |
 | `overrides` | map | optional; keys must be known event types | Per-event channel overrides. Omitted channel fields inherit from `defaults`; unknown event names fail validation. |
 
-Domain event names live in `internal/domain/events.go::KnownEventTypes` — that file is the source of truth for what's emittable. For action contracts that consume events, see [hooks.md](hooks.md).
+Domain event names live in `internal/domain/event.go::KnownEventTypes` — that file is the source of truth for what's emittable. For action contracts that consume events, see [hooks.md](hooks.md).
 
 ## `config.hooks`
 
@@ -407,7 +407,7 @@ The runtime applies one substitution; `golang` → `go` works, but if you also d
 | Bad template `default` | `templates.<slug>: default "<kind>" is not in config.template_defaults` |
 | Two templates claiming the same `(default, project)` | `templates.<a> and templates.<b> both declare default="<kind>" (<scope>)` |
 | Bad view sort/filter | `config.views.<view>.* "<v>" is not one of [...]` |
-| Missing/zero `config.views.logs.window_days` | `config.views.logs.window_days: must be > 0 (see defaults/omakiten.yaml)` |
+| Missing/zero `config.views.logs.window_days` | `config.views.logs.window_days: must be > 0 (see defaults/config/omakase.yaml)` |
 | Project laws referencing a non-existent law | `projects.<slug> laws: ref "<slug>" has no matching law file` |
 | Missing/zero `config.sqlite.busy_timeout_ms` | `config.sqlite.busy_timeout_ms: must be > 0 (see defaults/config/omakase.yaml)` |
 | Missing/zero `config.activity_log.{max_rows, max_age_days}` | `config.activity_log.max_rows: must be > 0 (see defaults/config/omakase.yaml)` |
@@ -535,4 +535,4 @@ The file references in this doc point at the source-of-truth code; if behavior e
 - The MCP / TUI / SQLite engine contract changes (new PRAGMA, retention rule, response shape).
 - The `from:` import contract changes (`internal/config/import_resolver.go`) — keep the example here and [path-resolution.md § Modular config imports](path-resolution.md#modular-imports) in sync.
 
-For entity wiring schemas, see [entities.md § update when](entities.md#update-when). For path / layout changes, see [path-resolution.md](path-resolution.md).
+For workflow, command-binding, entity, enum, or view schemas, see the matching guide in this directory. For path / layout changes, see [path-resolution.md](path-resolution.md).
