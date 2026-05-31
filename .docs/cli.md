@@ -328,6 +328,17 @@ The bucket transition is a separate `okt move` (or MCP `tasks.move`) call so pre
 
 To clear an abandoned claim, run `okt assign <task_id>` (no `WHO`) or move the task back to `backlog`.
 
+### Plan maintenance commands
+
+The plan surface also supports maintenance operations for the same WBS model:
+
+- `okt plan edit SLUG [--name NAME] [--slug NEW_SLUG] [--status active|done|abandoned] [--goal-body BODY]` — edits plan metadata and/or goal body. At least one flag is required.
+- `okt plan delete SLUG --confirm` — deletes the plan and its waves; member tasks survive detached from the plan.
+- `okt plan wave-remove WAVE_ID --confirm` — deletes one wave; tasks survive with `wave_id` cleared and remain attached to the plan as unscheduled work.
+- `okt plan wave-rename WAVE_ID NAME` — renames a wave.
+- `okt plan wave-reorder WAVE_ID POSITION` — moves a wave to a 1-based position, swapping on collision.
+- `okt plan unassign TASK_ID` — clears `plan_id` and `wave_id` from a task.
+
 ---
 
 ## Context (handoff state)
@@ -591,14 +602,14 @@ Runs the JSON-RPC 2.0 stdio server (`internal/mcp/server.go:Serve`). No flags. S
 
 ### `okt mcp setup`
 
-Writes the `omakiten` MCP server entry into a harness config file (`internal/agentsetup/setup.go`). Mirrors the `--mcp-*` flags exposed by `okt init` but as standalone subcommand flags (`--harness`, `--config-path`, `--command`, `--dry-run`, `--force`). Supported harnesses: `claude-code` (default), `claude-desktop`, `opencode`, `crush`, `github-copilot`, `codex` (`internal/agentsetup/setup.go::SupportedHarnesses`). Run `okt mcp setup --help` for defaults.
+Writes the `omakiten` MCP server entry into a harness config file (`internal/agentsetup/setup.go`). Mirrors the `--mcp-*` flags exposed by `okt init` but as standalone subcommand flags (`--harness`, `--config-path`, `--command`, `--dry-run`, `--force`). Supported harnesses: `claude-code` (default), `claude-desktop`, `opencode`, `crush`, `github-copilot`, `codex`, `cursor` (`internal/agentsetup/setup.go::SupportedHarnesses`). Run `okt mcp setup --help` for defaults.
 
 ```sh
 okt mcp tools
 okt mcp prompts okt-task-implement
 okt mcp prompts --list
-okt mcp call tasks.list --input '{"bucket_key":"dev"}'
-okt mcp call search --input '{"query":"sqlite race","entity_types":["error","solution"]}'
+okt mcp call tasks.list --input '{"_agent_model":"human-cli","bucket_key":"dev"}'
+okt mcp call search --input '{"_agent_model":"human-cli","query":"sqlite race","entity_types":["error","solution"]}'
 okt mcp setup --harness opencode --dry-run
 okt mcp serve   # invoked by the harness, not by hand
 ```

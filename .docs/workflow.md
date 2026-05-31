@@ -58,17 +58,17 @@ When in doubt, pick **omakase**. It is the canonical kit and the default selecti
 
 Each preset embodies a different process discipline level, but every preset runs the same underlying cycle: [PDCA — Plan-Do-Check-Act](./why_omakiten.md#pdca). Every action through Omakiten maps onto one of the four phases.
 
-The core `okt-*` cycle maps to PDCA phases:
+The user-facing orchestrator loop is `okt-start -> okt-shape -> okt-run -> okt-audit -> okt-pause`. Under that loop, granular task commands map to PDCA phases:
 
 | PDCA phase | `okt-*` command | What happens |
 |---|---|---|
-| **PLAN** | `okt-imagine` | Product-owner persona interrogates the user via [5W2H](./why_omakiten.md#5w2h). Define success in [SMART](./why_omakiten.md#smart) terms. Surface assumptions and gaps. Decide if the request is concrete enough to file. |
-| **PLAN → DO** | `okt-create` | Formalize the imagined work as a task. [INVEST](./why_omakiten.md#invest) checklist on the user story. Acceptance criteria. Prioritization ([MoSCoW](./why_omakiten.md#moscow) or [RICE](./why_omakiten.md#rice)) when alternatives exist. Non-functional requirements named separately when relevant. |
-| **DO** | task in `dev`, `okt-continue`, early `okt-implement` | Execute the planned increment. Test-first, conventional commits, small batches (the engineering discipline each preset enforces). |
-| **ACT** | mid `okt-implement` | Adjust during execution — drive-by cleanup, decision records on divergence, refactors, escalate when guards block. |
-| **CHECK** | end of `okt-implement` → task in `review` → `done` | Verify the outcome against the SMART success metric defined in PLAN. Peer review. Tests passing. Promote to `done` only when the loop closes. |
+| **PLAN** | `okt-task-imagine` | Owner role interrogates the user via [5W2H](./why_omakiten.md#5w2h). Define success in [SMART](./why_omakiten.md#smart) terms. Surface assumptions and gaps. Decide if the request is concrete enough to file. |
+| **PLAN → DO** | `okt-task-create` | Formalize the imagined work as a task. [INVEST](./why_omakiten.md#invest) checklist on the user story. Acceptance criteria. Prioritization ([MoSCoW](./why_omakiten.md#moscow) or [RICE](./why_omakiten.md#rice)) when alternatives exist. Non-functional requirements named separately when relevant. |
+| **DO** | task in `dev`, `okt-task-continue`, early `okt-task-implement` | Execute the planned increment. Test-first, conventional commits, small batches (the engineering discipline each preset enforces). |
+| **ACT** | mid `okt-task-implement` | Adjust during execution — drive-by cleanup, decision records on divergence, refactors, escalate when guards block. |
+| **CHECK** | end of `okt-task-implement` → task in `review` → `done` | Verify the outcome against the SMART success metric defined in PLAN. Peer review. Tests passing. Promote to `done` only when the loop closes. |
 
-`okt-document` and `okt-config` sit outside the main loop — they orient the agent (CHECK-flavored) and read-only.
+`okt-task-document` and `okt-config` sit outside the main loop — they orient the agent (CHECK-flavored) and read-only.
 
 ### What each phase produces
 
@@ -135,7 +135,7 @@ Operations: no guards (archive / delete / unarchive free).
 
 ### Delta vs omakase
 
-Lean spike kit: a single spike-driver persona handles discovery, creation, and implementation; the builder / product-management role split disappears. `okt-create` swaps to `task-spike` with `hypothesis-required` + `yagni-first` laws (no INVEST, no SMART). `okt-implement` runs under `time-boxed-spike` + `tracer-bullet` (no test-evidence, no green-main). `okt-check` and `okt-review` accept yellow / time-boxed findings. Full wiring: [`presets.md`](./presets.md).
+Lean spike kit: discovery, creation, and implementation can all bind to the same lightweight role. `okt-task-create` may use a spike-shaped task template with hypothesis-first laws (no INVEST, no SMART). `okt-task-implement` runs under time-boxed/tracer-bullet constraints (no test-evidence, no green-main). `okt-task-check` and `okt-task-review` accept yellow / time-boxed findings. Exact entity bindings live in the active config, not in this guide.
 
 ### Visible output
 
@@ -197,7 +197,7 @@ backlog ──▶ dev ──▶ review ──▶ done
 | Transition | Guards |
 |---|---|
 | backlog → dev | `comments_tagged: self-branch count=1` · `blockers_in: [done]` · `wave_gate` |
-| dev → review | `comments_tagged: resume count=1` · `comments_tagged: tests-passing count=1` |
+| dev → review | `comments_tagged: resume count=1` · `comments_tagged: tests-passing count=1` · `subtasks_complete` |
 | review → done | `comments_tagged: documentation count=1` |
 | regressions (6 paths) | — |
 
@@ -276,16 +276,16 @@ requirements ──▶ planning ──▶ dev ──▶ review ──▶ docs �
 |---|---|
 | requirements → planning | `comments_tagged: 5w2h` · `comments_tagged: requirements` · `comments_tagged: acceptance` |
 | planning → dev | `comments_tagged: self-branch` · `comments_tagged: design` · `blockers_in: [done, docs]` · `wave_gate` |
-| dev → review | `comments_tagged: resume` · `comments_tagged: tests-passing` |
+| dev → review | `comments_tagged: resume` · `comments_tagged: tests-passing` · `subtasks_complete` |
 | review → docs | `comments_tagged: peer-review` |
-| docs → done | `comments_tagged: documentation` |
+| docs → done | `comments_tagged: documentation` · `subtasks_complete` |
 | regressions | review→dev, docs→review, done→review, done→docs |
 
 Operations: archive requires `#documentation`; delete requires `#peer-review`.
 
 ### Delta vs omakase
 
-Adds two upstream buckets (`requirements`, `planning`) and one downstream bucket (`docs`). The builder role tightens to a methodical, staged-delivery discipline carrying `staged-delivery`, `requirements-elicitation`, `design-documentation`, `decision-records`. The product role gains `requirements-elicitation` + `acceptance-criteria-writing`; `okt-create` enforces `requirements-signed-off` + `acceptance-criteria-required` and uses `task-feature` (not `user-story`). `okt-implement` adds `design-recorded`, `decision-record-on-divergence`, `peer-review-required` with `decision-record` / `design-doc` templates. `okt-review` checks design / decision-record presence. Operations: archive requires `#documentation`, delete requires `#peer-review`. Full wiring: [`presets.md`](./presets.md).
+Adds two upstream buckets (`requirements`, `planning`) and one downstream bucket (`docs`). The Owner role spends more time on requirements and acceptance criteria; the Builder role tightens toward staged delivery, design documentation, and decision records. `okt-task-create`, `okt-task-implement`, and `okt-task-review` can bind stricter laws/templates in the active config. Operations: archive requires `#documentation`, delete requires `#peer-review`.
 
 ### Visible output
 
@@ -350,7 +350,7 @@ All `comment.delete` is denied workflow-wide — audit trail must survive. Corre
 |---|---|
 | requirements → planning | `comments_tagged: 5w2h` · `comments_tagged: requirements` · `comments_tagged: acceptance` |
 | planning → dev | `comments_tagged: self-branch` · `comments_tagged: pre-mortem` · `comments_tagged: risk-assessment` · `blockers_in: [done, docs]` · `wave_gate` |
-| dev → review | `comments_tagged: resume` · `comments_tagged: tests-passing` · `comments_tagged: rollback-plan` |
+| dev → review | `comments_tagged: resume` · `comments_tagged: tests-passing` · `comments_tagged: rollback-plan` · `subtasks_complete` |
 | review → docs | `comments_tagged: peer-review count=2` |
 | docs → done | `comments_tagged: documentation` · `comments_tagged: lessons-learned` |
 | regressions | review→dev, docs→review, done→review |
@@ -359,7 +359,7 @@ Operations: archive requires `#documentation` + `#lessons-learned`; delete requi
 
 ### Delta vs kaiseki
 
-Same six-bucket shape, but every gate is tightened. The builder role hardens to an SRE-grade craft discipline carrying `sre-discipline`, `risk-driven-development`, `postmortem-authoring`, `change-management`, plus the `-strict` variant of TDD. The check and review roles upgrade to `test-driven-development-strict` and gain `coverage-gate` / `dual-review-required`. The product role adds `okr-framing` and uses `task-change-request` under `blast-radius-awareness` + `error-budget-aware`. `okt-implement` adds `pre-mortem-required`, `rollback-plan-mandatory`, `dual-peer-review` with `comment-pre-mortem`, `comment-rollback-plan`, `comment-peer-review-strict`, `comment-tests-passing-strict`, `comment-scribe-correction`. `okt-document` runs `blameless-postmortem` with `comment-postmortem` + `comment-lessons-learned`. Guards: `planning → dev` adds `#pre-mortem` + `#risk-assessment`; `dev → review` adds `#rollback-plan`; `review → docs` requires `#peer-review`×**2**; `docs → done` adds `#lessons-learned`. Operations: archive requires `#documentation` + `#lessons-learned`; delete and unarchive both require `#peer-review`. Full wiring: [`presets.md`](./presets.md).
+Same six-bucket shape, but every gate is tightened. The Owner role frames blast radius and error-budget impact; the Builder role hardens toward SRE-grade change control; Tester and Reviewer roles can bind stricter check/review laws. Guards: `planning → dev` adds `#pre-mortem` + `#risk-assessment`; `dev → review` adds `#rollback-plan`; `review → docs` requires `#peer-review`×**2**; `docs → done` adds `#lessons-learned`. Operations: archive requires `#documentation` + `#lessons-learned`; delete and unarchive both require `#peer-review`.
 
 ### Visible output
 
@@ -428,7 +428,7 @@ Sitting alongside the bucket cycle, a small set of atomic commands carry knowled
 session start ──▶  okt-note-recap (wide)   (read: latest handoff per project)
                        │
                        ▼
-                   okt-resume / okt-continue    (per-project loop, unchanged)
+                   okt-project-resume / okt-task-continue
                        │
                    …work…                       (bucket cycle: dev → review → done)
                        │
@@ -504,8 +504,8 @@ v1 does not auto-reclaim — silent reclaim would hide real-world agent failures
 
 ### Surfaces
 
-- **MCP**: 7 tools under `plans.*` (`create`, `list`, `show`, `add_wave`, `assign_task`, `continue`, `claim_next`). See [MCP Guide § Plans](./mcp.md#plans-wbs-style-multi-agent-orchestration).
-- **CLI**: `okt plan create|list|show|wave-add|assign|claim` and the orthogonal `okt assign <task_id> [who]` for free-text assignment outside the plan flow. See [CLI Guide § Plans](./cli.md#plans).
+- **MCP**: 13 tools under `plans.*` (`create`, `list`, `show`, `add_wave`, `assign_task`, `continue`, `claim_next`, `edit`, `delete`, `remove_wave`, `rename_wave`, `reorder_wave`, `unassign`). See [MCP Guide § Plans](./mcp.md#plans-wbs-style-multi-agent-orchestration).
+- **CLI**: `okt plan create|list|show|wave-add|assign|claim|edit|delete|wave-remove|wave-rename|wave-reorder|unassign` and the orthogonal `okt assign <task_id> [who]` for free-text assignment outside the plan flow. See [CLI Guide § Plans](./cli.md#plans).
 - **TUI**: a fourth sub-tab under `01 // TASKS` — list view first, then a column-per-wave network diagram per plan. See [TUI Guide § Tasks › Plans](./tui.md#tasks--plans).
 - **Search**: `plans.goal_body` is indexed in the unified FTS5 `search_index` so cross-project `search` finds plans by name or any phrase in the goal markdown.
 
@@ -513,40 +513,15 @@ v1 does not auto-reclaim — silent reclaim would hide real-world agent failures
 
 ## Authoring your own preset
 
-The four official presets are starting points. Forking is the expected way to make a preset fit your team.
+The four official presets are starting points. Authoring a preset means choosing a process discipline, then wiring the matching configuration modules:
 
-### Naming convention
-
-| Entity | Pattern | Example |
-|---|---|---|
-| Persona file | `defaults/personas/<slug>.md` — kebab-case | `roy-mustang`, `gandalf-the-grey` |
-| Skill file | `defaults/skills/<slug>.md` — noun or verb-noun | `lean-experimentation`, `staged-delivery` |
-| Law file (shared body) | `defaults/laws/<slug>.md` — descriptive phrase | `template-fidelity`, `green-main-always` |
-| Law file (preset-specific) | `defaults/laws/<slug>.md` — unique phrase, no preset prefix | `yagni-first`, `pre-mortem-required` |
-| Template (shared body) | `defaults/templates/<kind>-<purpose>.md` | `comment-resume`, `pull-request` |
-| Template (preset-specific, kind unique) | `<kind>-<purpose>.md` | `comment-hypothesis`, `comment-postmortem` |
-| Template (preset-specific, kind collides) | `<kind>-<purpose>-<suffix>.md` | `comment-tests-passing` vs `comment-tests-passing-strict` |
-| Workflow yaml | `defaults/config/<preset>.yaml` (canonical) or `<config-dir>/config/custom/<preset>.yaml` (user) | `omakase.yaml`, `my-omakase.yaml` |
-| Tag name in guards | single kebab-case word, no `#` prefix in YAML | `self-branch`, `tests-passing`, `peer-review` |
-
-### Token-friendly principles
-
-Resolved MCP prompts ship inline with every command call. Compact entities keep the prompt window predictable across preset variations.
-
-| Principle | Reason |
+| Concern | Canonical guide |
 |---|---|
-| Keep law bodies compact | Laws ship inline; long prose dominates the prompt |
-| Skills lead with names, defer detail | Skill names ship inline; bodies belong in `templates.show`-style on-demand reads |
-| Persona body is read every turn — favour procedure over prose | Persona is part of every prompt; verbosity multiplies |
-| Templates carry short frontmatter `description`, fetch body JIT | Template body lives behind `templates.show`; the prompt only needs the metadata to know when to fetch |
-| Law `Bad:` / `Good:` examples only on judgment-call laws | Examples earn their bytes only when they teach generalization |
-| Industry abbreviations inline (TBD, DORA, TDD, SRE, SLO, ADR) | Definitions live once in the persona / guide; don't repeat |
-
-The regression test `internal/agentruntime/prompt_budget_test.go` holds each `okt-*` prompt to its current footprint plus headroom — pushing one past its budget forces a deliberate tradeoff (trim entity bodies, add a JIT optimization, or raise the budget with justification). Run `mise run mcp:prompts` to inspect every resolved prompt against the active kit.
-
-### Reuse rule
-
-Reuse a persona / law / skill / template across presets **only when its body is identical**. If a preset needs a stricter variant, create a new entity with a distinct slug — do not parameterize via flags or includes. The runtime distinguishes intent via slug.
+| Workflow buckets, transitions, operations, permissions | [`configuration-guide/workflows.md`](./configuration-guide/workflows.md) |
+| Guard payloads and failures | [`configuration-guide/guards.md`](./configuration-guide/guards.md) |
+| Command-to-role/skill/law/template bindings | [`configuration-guide/command-bindings.md`](./configuration-guide/command-bindings.md) |
+| Skill/law/persona/template asset frontmatter | [`configuration-guide/entities.md`](./configuration-guide/entities.md) |
+| Splitting sections with `from:` imports | [`configuration-guide/path-resolution.md`](./configuration-guide/path-resolution.md#modular-imports) |
 
 ### What workflows do NOT prescribe
 
@@ -565,13 +540,7 @@ Run these locally before activating a custom preset:
 okt config validate <config-dir>/config/custom/<my-preset>.yaml
 ```
 
-The validator rejects:
-
-- Missing required config blocks (mcp / views / priorities / severities / etc.)
-- Contradictory refs in `mcp_commands` (the same law in `laws` and `laws_disabled` on one command). Missing persona / law / template slugs are source warnings, not fatal validation errors.
-- Unknown guard types (only `comments_tagged`, `comments_min`, `blockers_in`, `wave_gate`, `subtasks_complete`)
-- Permissions referencing buckets that do not exist
-- Duplicate ids / values in priorities / severities / buckets
+The validator rejects missing required config blocks, bad enum rows, invalid workflow references, unknown guard types, contradictory `mcp_commands` law rules, and command skills outside the persona repertoire. The field-level rules live in the configuration-guide modules above.
 
 Warnings (non-fatal) flag template slug-vs-name mismatches and other low-severity drift; the runtime still loads but the agent may show a noisier prompt.
 
@@ -590,22 +559,22 @@ The TUI Settings › Config picker writes `.active` for you. The CLI accepts a p
 
 | Scenario | Action |
 |---|---|
-| Your team's process is close to omakase but adds one extra guard | Fork omakase, add the guard, keep the rest |
-| Your team writes ADRs but kaiseki's `comment-design-decision` references "decision record" generically | Fork kaiseki, update the template wording — no need to invent a new preset |
-| Your team has a six-stage flow that does not match kaiseki's stages | Fork kaiseki, rename / reorder buckets, add / remove transitions |
-| Your team has a completely different mental model (e.g. Scrum sprints with retrospectives) | Author a new preset from scratch following the naming convention |
+| Your team's process is close to omakase but adds one extra guard | Fork/import the workflow block and add the guard. |
+| Your team likes omakase workflow but wants different role behavior | Keep the workflow, swap command bindings and personas. |
+| Your team has a six-stage flow that does not match kaiseki's stages | Fork/import a workflow block, rename/reorder buckets, add/remove transitions. |
+| Your team has a different mental model (e.g. Scrum sprints with retrospectives) | Author a new profile and split it into modules once it stabilizes. |
 
 ---
 
 ## See also
 
-- [`configuration-guide/README.md`](./configuration-guide/README.md) — every YAML field with semantics + validation.
+- [`command-surface.md`](./command-surface.md) — stable command tiers, roles, scopes, and write behavior.
+- [`configuration-guide/README.md`](./configuration-guide/README.md) — modular YAML schema map.
+- [`configuration-guide/workflows.md`](./configuration-guide/workflows.md) — workflow schema.
+- [`configuration-guide/command-bindings.md`](./configuration-guide/command-bindings.md) — prompt binding schema.
 - [`configuration-guide/guards.md`](./configuration-guide/guards.md) — guard types and their config.
-- [`presets.md`](./presets.md) — full izakaya wiring.
-- [`presets.md`](./presets.md) — full omakase wiring.
-- [`presets.md`](./presets.md) — full kaiseki wiring.
-- [`presets.md`](./presets.md) — full shokunin wiring.
+- [`presets.md`](./presets.md) — preset discipline and workflow comparison.
 - [`mcp.md`](./mcp.md) — MCP tool surface, prompt anatomy, tuning context cost.
 - [`internal/data-model.md`](./internal/data-model.md) — SQLite schema and migration history.
-- `internal/domain/events.go::KnownEventTypes` — canonical list of `events` payloads.
+- `internal/domain/event.go::KnownEventTypes` — canonical list of `events` payloads.
 - [`why_omakiten.md`](./why_omakiten.md) — every cited work; per-preset "Methodology basis" anchors link here.

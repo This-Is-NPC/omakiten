@@ -215,7 +215,7 @@ The `c` binding opens a single-line input pre-filled with the focused task's cur
 
 ### Stats › General
 
-Per-AI-model benchmark over a configurable period (errors recorded, errors searched, search-before-record ratio, solutions added, like rate) plus the project's headline `Totals` (tasks / comments / context entries / tags) and `Tokens` (estimated / max + `[BUDGET EXCEEDED]` badge when truncated). The model-breakdown table reads from `app.MetricsService` — same aggregation the `metrics.summary` MCP tool returns.
+Per-AI-model benchmark over a configurable period plus the project's headline `Totals` (tasks / comments / context entries / tags) and `Tokens` (estimated / max + `[BUDGET EXCEEDED]` badge when truncated). The model-breakdown table reads from `app.MetricsService` — same aggregation the `metrics.summary` MCP tool returns: per-model `buckets` (`error_recorded`, `error_searched`, `solution_added`, `solution_liked`, `solution_failed`, `solution_top_viewed`) plus like rate and search-before-record ratio.
 
 | Key | Action |
 |---|---|

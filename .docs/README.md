@@ -1,6 +1,6 @@
 # Omakiten documentation
 
-Public documentation for the Omakiten CLI/TUI/MCP toolkit. 22 docs total, grouped by audience.
+Public documentation for the Omakiten CLI/TUI/MCP toolkit. 27 docs total, grouped by audience.
 
 ## Root — orientation and user-facing surfaces
 
@@ -9,6 +9,7 @@ Public documentation for the Omakiten CLI/TUI/MCP toolkit. 22 docs total, groupe
 | [why_omakiten.md](why_omakiten.md) | Positioning, mental models (PDCA / 5W2H / SMART / INVEST / MoSCoW / RICE / OKR), bibliography. | Product framing or referenced mental models change. |
 | [presets.md](presets.md) | Side-by-side comparison of the four official presets (izakaya / omakase / kaiseki / shokunin). | A new preset ships, or a preset's discipline summary shifts. |
 | [workflow.md](workflow.md) | Conceptual workflow loop — PDCA mapping, per-preset walkthrough, plans / multi-agent, defaults. | Workflow concept evolves; preset behavior changes meaningfully. |
+| [command-surface.md](command-surface.md) | Stable `okt-*` command tiers, roles, scopes, and write behavior. | A command is added, removed, renamed, or changes scope/role/write behavior. |
 | [cli.md](cli.md) | `okt` command reference — flags, subcommands, output envelope. | A subcommand or global flag lands. |
 | [tui.md](tui.md) | Terminal UI surfaces — views, key bindings, markdown rendering, the dev-editorial design language. | A view, panel, or key binding changes. |
 | [mcp.md](mcp.md) | MCP surface — tools, resources, prompts, scope controls, per-project routing. | A tool or prompt lands; the dispatch contract changes. |
@@ -20,11 +21,16 @@ Each doc inlines the YAML schema for the feature it teaches. See [configuration-
 | Doc | What it covers |
 |---|---|
 | [system.md](configuration-guide/system.md) | `config.{output,context,workflow,mcp,tui,sqlite,activity_log,solutions,backup,events,search,tag_synonyms}` plus top-level shape and validation. |
-| [entities.md](configuration-guide/entities.md) | Entity wiring — `workflows[]`, `skills`, `laws`, `personas`, `projects`, `templates`, `mcp_commands`, plus enum tables (`priorities`, `severities`), view defaults, `template_defaults`. |
+| [workflows.md](configuration-guide/workflows.md) | Workflow schema — buckets, transitions, operations, task/comment permissions. |
+| [command-bindings.md](configuration-guide/command-bindings.md) | `mcp_commands`, persona skill repertoires, and prompt composition bindings. |
+| [entities.md](configuration-guide/entities.md) | Entity asset loaders — skills, laws, personas, projects, templates, frontmatter, autoload/custom rules. |
+| [enums.md](configuration-guide/enums.md) | `template_defaults`, priority labels, severity labels. |
+| [views.md](configuration-guide/views.md) | View sort/filter/window defaults. |
 | [guards.md](configuration-guide/guards.md) | The five transition-and-operation guard types, their YAML payloads, and how to add a new type. |
 | [subtask-kit.md](configuration-guide/subtask-kit.md) | Per-level kit cascade — `subtask_kit:` shape, validator rules, migration order, `task.bucket_orphaned` event, hook subject metadata, transparency notice. |
 | [hooks.md](configuration-guide/hooks.md) | `config.hooks` schema, the built-in actions (`exec`, `noop`, `notification`), and a step-by-step walkthrough for wiring a hook into your workflow. |
 | [notifications.md](configuration-guide/notifications.md) | TUI notification cards loaded from `notifications/<slug>.yaml` and dispatched from hooks. |
+| [tricks.md](configuration-guide/tricks.md) | Trick palette (`ctrl+k`) command catalog, keybindings, dispatch, hooks, and troubleshooting. |
 | [themes.md](configuration-guide/themes.md) | TUI theme YAML — 8 color tokens, markdown palette, authoring recipe. |
 | [languages.md](configuration-guide/languages.md) | Bundled language packs under `defaults/languages/`, parity rule, scaffolding helper. |
 | [path-resolution.md](configuration-guide/path-resolution.md) | ConfigRoot precedence, `.active` resolution, `<root>/` and `dev_env/` layouts, `okt config <sub>` inspectors, backups. |

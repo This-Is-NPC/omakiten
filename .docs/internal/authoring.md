@@ -4,7 +4,7 @@ Three rules govern edits to `.docs/`:
 
 1. **Every atom of information has one canonical home.** Other docs reference it by anchor link. Copying the text is forbidden.
 2. **Each doc declares "Update when".** Look for the "Update when" section at the bottom of every doc — that names the trigger that should bring you back to edit it.
-3. **No catalogs Omakiten can derive from code.** Domain events, tag vocabulary, per-preset wiring snapshots, and CLI flag dumps should never be hand-maintained. The source files (`internal/domain/events.go`, `defaults/config/<preset>.yaml`, etc.) are the source of truth — link to them and let agents read directly.
+3. **No catalogs Omakiten can derive from code.** Domain events, tag vocabulary, concrete entity catalogs, and CLI flag dumps should never be hand-maintained. The source files (`internal/domain/event.go`, `defaults/config/<preset>.yaml`, entity folders, etc.) are the source of truth — link to them and document the wiring logic instead.
 
 ## Atom map — where each fact lives
 
@@ -16,7 +16,7 @@ Three rules govern edits to `.docs/`:
 | Bundled language packs | `defaults/languages/<code>.yaml` (linked from `configuration-guide/languages.md`) |
 | Per-preset wiring | `defaults/config/<preset>.yaml` (compared in `presets.md`) |
 | Tag vocabulary | walked from `comments_tagged.tag` in preset yamls — no static doc |
-| Domain events | `internal/domain/events.go::KnownEventTypes` (cross-referenced from hooks / events docs) |
+| Domain events | `internal/domain/event.go::KnownEventTypes` (cross-referenced from hooks / events docs) |
 | Mental models + citations | `why_omakiten.md` (canonical) |
 | Filesystem layout + path resolution | `configuration-guide/path-resolution.md` (canonical: `internal/paths/paths.go`) |
 

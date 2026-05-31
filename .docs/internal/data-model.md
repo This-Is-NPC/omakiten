@@ -26,7 +26,7 @@ Schema versions are tracked in `schema_migrations(version)`. Each numbered file 
 | `014_workflow_defaults.sql` | `workflows.defaults_json` (dropped in 020). |
 | `015_priority_id.sql` | Converts `tasks.priority` (TEXT enum) into `tasks.priority_id` (INTEGER → `config.priorities`). Backfill: `1=low`, `2=normal`, `3=high`; YAML label renames never rewrite stored ids. |
 | `016_severity_id.sql` | Same shape as 015 for `laws.severity` → `laws.severity_id` (`1=info`, `2=warning`, `3=error`). `laws` itself dropped in 020; severity id now read from frontmatter at import. |
-| `017_drop_priority_severity_defaults.sql` | Drops the `DEFAULT 2` clauses on `priority_id` / `severity_id` (canonical default lives in `defaults/omakiten.yaml`) and the unused `tasks.workdir` / `tasks.branch` columns. |
+| `017_drop_priority_severity_defaults.sql` | Drops the `DEFAULT 2` clauses on `priority_id` / `severity_id` (canonical default lives in `defaults/config/omakase.yaml`) and the unused `tasks.workdir` / `tasks.branch` columns. |
 | `018_drop_legacy_event_payloads.sql` | Deletes pre-refactor task lifecycle rows so readers don't have to accept the old label-string payload shape. |
 | `019_unify_tool_call_events.sql` | Renames `event_type='operation'` rows to `cli.tool_call` / `mcp.tool_call` / `tui.tool_call` (per `source`). Enriches `payload` so hooks match without SQL column reads. Legacy `operation` columns stay populated for the `metrics.summary` index. |
 | `020_drop_config_tables.sql` | **Phase 2-bis breaking migration.** Drops `config_bundles`, `settings`, `skills`, `personas`, `persona_skills`, `laws`, `workflows`, `workflow_buckets`, `workflow_transitions`. First rewrites `tasks.bucket_id` from the SQL PK to the YAML-declared `local_id` so tasks still resolve. Rebuilds `tasks` to drop the bucket FK. |
@@ -358,7 +358,7 @@ The canonical event-type vocabulary is the `EventType*` constants in `internal/d
 The `events` row carries every column it might need; unused columns are nullable. Three indexes:
 
 - `idx_events_entity(entity_type, entity_id, created_at)` — feeds the per-task activity feed (`task_activity.list` MCP tool, the TUI's activity column, `internal/sqlite/events.go:ListTaskActivity`).
-- `idx_events_type_started(event_type, created_at)` — feeds the operational logs view (`internal/sqlite/activity_logs.go:ListActivityLogs`) and the synchronous pruner.
+- `idx_events_type_started(event_type, created_at)` — feeds the unified logs view (`internal/sqlite/events.go:ListEvents`) and the synchronous tool-call pruner.
 - `idx_events_agent_type(agent_model, event_type, created_at)` — feeds the `metrics.summary` aggregation queries (`internal/sqlite/metrics.go:AgentMetricsSummary`).
 
 ### Pruning policy (`*.tool_call` only)
@@ -379,7 +379,7 @@ Both fields are validator-required (> 0) — disabling retention is not a suppor
 | `comments.list` default (CLI/MCP/TUI) | `entity_type='task' AND event_type='comment'` ordered ascending by id | `internal/sqlite/comments.go:ListComments` |
 | `comments.list` filtered (scope/kind/tag/pinned/query/since/comment_id) | `event_type='comment'` with scope, kind, pinned, tag-join, FTS5 (`search_index`), and `created_at` floor predicates layered on | `internal/sqlite/comments.go:QueryComments` |
 | `task_activity.list` MCP tool, TUI activity column | `entity_type='task'` ordered chronologically (asc default, desc optional) | `internal/sqlite/events.go:ListTaskActivity` |
-| Logs view (TUI), `okt mcp call` history | `event_type IN ('cli.tool_call','mcp.tool_call','tui.tool_call')` ordered desc; legacy `operation` rows still surface for back-compat | `internal/sqlite/activity_logs.go:ListActivityLogs` |
+| Logs view (TUI), `okt logs`, `logs.list` | Unified `EventRow` projection over the selected category/window, ordered by created time, with `domain.SummarizeEvent` supplying the display detail | `internal/sqlite/events.go:ListEvents` |
 | Guard `comments_min` | `count(*) WHERE entity_type='task' AND event_type='comment' AND entity_id=?` | `internal/sqlite/guards.go:CountTaskComments` |
 | Guard `comments_tagged` | join `events` ⨝ `event_tags` ⨝ `tags` filtered by tag name | `internal/sqlite/guards.go:CountTaskCommentsTagged` |
 | `metrics.summary` | `events` grouped by `agent_model`, `event_type`, filtered on the agent-type index | `internal/sqlite/metrics.go:AgentMetricsSummary` |
@@ -487,7 +487,7 @@ The typical layering: `defaults/` ships the kit canonical pack, the user drops o
 
 ## Where to learn more
 
-- Migration sources: `migrations/001_initial.sql` … `migrations/027_tasks_parent_project_fk.sql`.
+- Migration sources: `migrations/001_initial.sql` … `migrations/032_events_comment_log.sql`.
 - Domain types behind every row: `internal/domain/` (`task.go`, `event.go`, `tag.go`, `error_record.go`, `context.go`, `priority_test.go`, `severity_test.go`).
 - Adapter implementations: `internal/sqlite/` (one file per concern — `tasks.go`, `tasks_lifecycle.go` (archive/unarchive/remove), `comments.go`, `dependencies.go`, `events.go`, `tags.go`, `errors.go`, `metrics.go`, `bucket_resolver.go`, `activity_logs.go`, `guards.go`, `contexts.go`, `orphans.go`, `projects.go`, `store.go`).
 - App-level ports the adapter satisfies: `internal/app/ports.go`.
@@ -496,6 +496,6 @@ The typical layering: `defaults/` ships the kit canonical pack, the user drops o
 ## See also
 
 - `architecture.md` — codebase shape.
-- `internal/domain/events.go::KnownEventTypes` — events backed by these schemas.
+- `internal/domain/event.go::KnownEventTypes` — events backed by these schemas.
 - `../configuration-guide/README.md` — schema-level config knobs.
 - `dev-guide.md` — local dev / migration commands.

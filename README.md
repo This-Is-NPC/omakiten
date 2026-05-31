@@ -73,35 +73,38 @@ The important part is the direction of control: you interact with the agents, an
 
 ## The Agent Workflow
 
-Omakiten ships canonical MCP prompts for the common development loop. The happy path is intentionally simple: discover the work, create the task, implement with guardrails, then review the diff.
+Omakiten ships canonical MCP prompts as a command router for agents. The happy path is orchestrator-first: orient the session, shape the work, run the implementation, audit the result, then persist a handoff.
 
 ```mermaid
 flowchart LR
-    imagine["/okt-imagine<br/>Discover the work"]
-    create["/okt-create<br/>Shape and register the task"]
-    implement["/okt-implement<br/>Execute with guardrails"]
-    review["/okt-review<br/>Inspect the diff"]
+    start["/okt-start<br/>Orient the session"]
+    shape["/okt-shape<br/>Shape tasks and plans"]
+    run["/okt-run<br/>Execute with guardrails"]
+    audit["/okt-audit<br/>Review and verify"]
+    pause["/okt-pause<br/>Persist the handoff"]
 
-    imagine --> create --> implement --> review
+    start --> shape --> run --> audit --> pause
 ```
+
+`/okt` is the short form of `/okt-start`. Orchestrators decide the next move and delegate to precise granular commands like `okt-task-*`, `okt-plan-*`, and `okt-note-*` when the step is already known.
 
 ### Daily Command Highlights
 
 | Prompt | Use it when you want to |
 |---|---|
-| `/okt` | Start a session with project identity, active workflow, pending work, recent context, and the suggested next step. |
-| `/okt-imagine` | Clarify the idea before a task exists. The agent asks 5W2H questions and turns success into SMART criteria. |
-| `/okt-create` | Create work with duplicate detection, INVEST validation, and prioritization rationale when alternatives exist. |
-| `/okt-resume` | Come back to a project after a pause and see likely next work, blocked items, and handoff context. |
-| `/okt-continue` | Resume a specific task with dependencies, comments, workflow position, and recent context loaded at once. |
-| `/okt-implement` | Execute approved work with workflow guardrails, bounded self-review, and error retry reporting. |
-| `/okt-review` | Review the current diff with findings, risk notes, and file-level feedback. |
-| `/okt-check` | Discover and run the project's check targets, then report pass/fail clearly. |
-| `/okt-commit` | Draft Conventional Commits from the working tree without pushing. |
-| `/okt-handoff` | Close a session with a structured handoff note covering delta, active work, decisions, and next steps. |
-| `/okt-note` | Capture a free-form knowledge note (project or global) without ceremony. |
-| `/okt-standup` | Render a cross-project standup digest from the latest handoff per project. |
-| `/okt-recap` | Summarise a window of notes and tasks moved to done for retrospectives or release notes. |
+| `/okt` / `/okt-start` | Start a session with project identity, active workflow, pending work, handoff notes, and suggested next commands. |
+| `/okt-shape` | Turn an idea, backlog item, or rough task into validated tasks and ordered plan waves. |
+| `/okt-run` | Drive an approved task or plan through implementation with workflow guardrails. |
+| `/okt-audit` | Coordinate review, security, and quality passes over a task, plan, or diff. |
+| `/okt-pause` | Close the session with a project-scoped handoff note for the next agent. |
+| `/okt-task-continue` | Resume one task with dependencies, comments, workflow position, and recent context loaded at once. |
+| `/okt-task-implement` | Execute an approved increment and record progress, evidence, or follow-up context. |
+| `/okt-task-review` | Review the current diff with findings, risk notes, and file-level feedback. |
+| `/okt-task-check` | Discover and run the project's check targets, then report pass/fail clearly. |
+| `/okt-task-commit` | Draft Conventional Commits from the working tree without pushing. |
+| `/okt-plan-claim` | Atomically reserve the next claimable task from a plan wave. |
+| `/okt-note-free` | Capture a free-form project or universal note without ceremony. |
+| `/okt-note-recap` | Render a recap timeline from notes, handoffs, and completed work. |
 
 Natural language works too:
 
@@ -113,7 +116,7 @@ Natural language works too:
 | "Have we seen this error before?" | Searches tasks, comments, errors, solutions, and context across projects. |
 | "That solution worked." | Confirms the solution as known-good. |
 
-[See the full MCP surface](.docs/mcp.md): 50 tools, 2 resources, and 15 prompts.
+[See the command surface](.docs/command-surface.md) and [full MCP reference](.docs/mcp.md): 53 tools, 2 resources, and 40 prompts.
 
 ---
 
@@ -178,7 +181,7 @@ Each preset is a process discipline, not an architecture prescription. Omakiten 
 | **kaiseki** | Staged delivery, formal sign-offs, documented decisions. | Planned features in serious codebases with multiple stakeholders. |
 | **shokunin** | SRE discipline, pre-mortems, multi-reviewer change control, blameless postmortems. | Regulated environments, irreversible changes, and audit-heavy work. |
 
-Every preset runs `okt-imagine` through 5W2H before work is filed, so you understand what you are building before planning code.
+Presets define workflow discipline and guardrails. Configuration is modular when teams need to customize one part without replacing the whole preset.
 
 ---
 
@@ -220,6 +223,7 @@ Both commands fall back to an interactive picker when called without flags in a 
 |---|---|
 | **Understand the why** | [`.docs/why_omakiten.md`](.docs/why_omakiten.md): positioning, mental models, PDCA, 5W2H, SMART, INVEST, bibliography. |
 | **Compare presets** | [`.docs/presets.md`](.docs/presets.md): side-by-side comparison of the four presets. |
+| **Understand commands** | [`.docs/command-surface.md`](.docs/command-surface.md): command tiers, roles, scopes, and write behavior. |
 | **Configure Omakiten** | [`.docs/configuration-guide/README.md`](.docs/configuration-guide/README.md): one document per feature with inline YAML schemas. |
 | **Contribute** | [`.docs/internal/architecture.md`](.docs/internal/architecture.md): hexagonal architecture, snapshot pattern, data model. |
 | **CLI reference** | [`.docs/cli.md`](.docs/cli.md): flags, subcommands, JSON envelope. |

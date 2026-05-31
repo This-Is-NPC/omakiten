@@ -35,6 +35,7 @@ Supported harnesses (CLI value → config target):
 | `crush` | `~/.config/crush/crush.json` (Linux/macOS) · `%LOCALAPPDATA%\crush\crush.json` (Windows) | JSON | `mcp.omakiten` |
 | `github-copilot` | `<UserConfigDir>/Code/User/mcp.json` (VS Code Copilot Chat, agent mode) | JSON | `servers.omakiten` |
 | `codex` | `~/.codex/config.toml` | TOML | `[mcp_servers.omakiten]` |
+| `cursor` | `~/.cursor/mcp.json` | JSON | `mcpServers.omakiten` |
 
 Setup writes an `omakiten` server entry that runs:
 
@@ -71,7 +72,7 @@ Resolves each `okt-*` prompt through the running agent service (using your activ
 
 ## Tools
 
-The full surface is the source of truth in `internal/mcp/adapter.go::Tools` (the public entry; the inner `tools()` returns the literal table). Currently 50 tools, grouped below.
+The full surface is the source of truth in `internal/mcp/adapter.go::Tools` (the public entry; the inner `tools()` returns the literal table). Currently 53 tools, grouped below.
 
 ### Required `_agent_model` on every call
 
@@ -85,8 +86,8 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 
 | Tool | Purpose |
 |---|---|
-| `project.overview` | Implements `/okt`: active project identity, workflow, pending count, recent context, next-step prompt. |
-| `project.resume` | Implements `/okt-resume`: project distribution, likely next work, blocked/dependent work, recent context. |
+| `project.overview` | Active project identity, workflow, pending count, recent context, and next-step prompt. `okt` / `okt-start` read this as one input, then also inspect tasks, plans, and handoff notes before recommending a command. |
+| `project.resume` | Project distribution, likely next work, blocked/dependent work, recent context. Used by `okt-project-resume`. |
 | `workflow.show` | Active workflow buckets and allowed transitions. |
 | `orphans.migrate` | Rebind tasks whose bucket was deactivated by a workflow swap. First call without `confirmed=true` returns a preview report + `Confirmation` block listing every affected task; retry with `confirmed=true` to apply the rebind. Empty preview short-circuits to a no-op regardless of the flag. Mirrors the CLI `okt workflow orphans` command. |
 
@@ -94,9 +95,9 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 
 | Tool | Purpose |
 |---|---|
-| `tasks.continue` | Implements `/okt-continue #<id>`: task details, dependencies, comments, workflow, context. |
+| `tasks.continue` | Task details, dependencies, comments, workflow, context. Used by `okt-task-continue` and `okt-task-resume`. |
 | `tasks.list` | Lists active project tasks. Optional `bucket_key` scopes by workflow bucket. Optional `parent_id` scopes by sub-task relationship: omit for no filter, pass `null` to return roots only (`parent_id IS NULL`), pass an integer to return direct children of that task id. |
-| `tasks.create_intent` | Implements `/okt-create <description>` with similar-task detection and confirmation gate. Accepts optional `parent_id` to attach the new task as a sub-task in the same call; the parent must belong to the active project and be `state=active`. Sub-tasks inherit the parent's current bucket when `bucket_key` is omitted. The `task.created` event payload carries `parent_id` when set so audit consumers can attribute sub-task creation. |
+| `tasks.create_intent` | Task creation with similar-task detection and confirmation gate. Used by `okt-task-create`. Accepts optional `parent_id` to attach the new task as a sub-task in the same call; the parent must belong to the active project and be `state=active`. Sub-tasks inherit the parent's current bucket when `bucket_key` is omitted. The `task.created` event payload carries `parent_id` when set so audit consumers can attribute sub-task creation. |
 | `tasks.create` | Direct task creation equivalent to `okt add`. Accepts optional `parent_id` to create a sub-task in one call; same parent-must-be-active + bucket-inheritance contract as `tasks.create_intent`. Row + FK land in a single atomic INSERT. |
 | `tasks.move` | Moves a task through allowed workflow transitions. Subject to the `subtasks_complete` guard where wired — promotion is rejected while any direct child sits outside the workflow's final bucket. |
 | `tasks.edit` | Edits a task's title, description, priority, and/or parent. `parent_id` uses a tri-state: omit to leave the column untouched, pass `null` to clear the FK (the task becomes a root), pass an integer to re-parent under that id. Re-parents that would create a cycle (target parent already descends from this task) are rejected with `validation`. At least one of the four optional fields must be provided. Subject to bucket `permissions.task.edit`; bucket moves still go through `tasks.move`. |
@@ -115,6 +116,12 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `plans.assign_task` | Attach an existing task to `(plan_id, wave_id)`. Idempotent re-assign within the same plan. |
 | `plans.continue` | Agent-tailored projection of a plan — overview formatted for an agent picking up work. Overlaps `plans.show` in content; tuned for context-window economy. |
 | `plans.claim_next` | Atomically reserve the next claimable task in the active wave: `BEGIN IMMEDIATE` → SELECT next-claimable-in-active-wave (first-bucket + unassigned) → SET `assigned_to` to the caller's `_agent_model` in the same transaction. The bucket is NOT touched; the task stays in the workflow's first bucket. Returns the claimed task or `{claimed: false}` when nothing is available. Two concurrent `claim_next` calls serialise at the SQLite write lock; the loser re-evaluates and either claims the next task or returns empty. |
+| `plans.edit` | Edit a plan's name, slug, status, and/or `goal_body`. Emits `plan.edited` and `plan.goal_edited` where applicable. |
+| `plans.delete` | Hard-delete a plan. Waves cascade-delete and member tasks survive detached from the plan. Requires `confirmed=true`. |
+| `plans.remove_wave` | Delete a wave. Tasks survive with `wave_id` cleared and stay attached to the plan as unscheduled work. Requires `confirmed=true`. |
+| `plans.rename_wave` | Rename a wave. Emits `plan.wave_renamed`. |
+| `plans.reorder_wave` | Move a wave to a new 1-based position; occupied positions swap. Emits `plan.wave_reordered`. |
+| `plans.unassign` | Detach a task from its plan by clearing `plan_id` and `wave_id`. Emits `plan.task_unassigned` when it changed something. |
 
 `plans.claim_next` requires `_agent_model` like every tool, but the value is also written to `tasks.assigned_to` as the claimant identity. The claim is ownership-only — the bucket transition is a separate `tasks.move` call that goes through the workflow guard pipeline (e.g. omakase requires a self-branch comment before `backlog → dev`). Agents claim, then move; the two steps stay separate so preset-defined guards on the bucket transition remain authoritative. Recovery from a crashed agent is human-driven: `okt assign <id> ""` clears the assignment, or `okt move <id> backlog` clears it via the transition-out hook. v1 explicitly does NOT auto-reclaim.
 
@@ -168,7 +175,7 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `solutions.confirm` | Marks a solution success/failure; `success=true` increments its like counter. |
 | `solutions.list_top` | Lists the top-N most-liked solutions globally. |
 
-> **Breaking change (0.16):** `errors.search` was removed in favour of the unified `search` tool below. The equivalent call is `search(query, entity_types=["error"])`. The unified call still emits the legacy `error.searched` domain event (with `"unified": true` in the payload) so `metrics.summary` keeps producing the search-before-record ratio per model.
+> **Breaking change (0.16 / 0.23):** `errors.search` was removed in favour of the unified `search` tool below. The equivalent call is `search(query, entity_types=["error"])`. The unified call emits `errors.researched` with `entity_type="search"`; the metrics bucket id remains `error_searched` for compatibility.
 
 ### Search (unified FTS5 across content entities)
 
@@ -183,11 +190,18 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `templates.list` | Lists every loaded template (slug, name, default kind, project scope, custom flag); optional `kind`/`project`/`include_body` filters. |
 | `templates.show` | Returns one template by slug, including its full body. **Strict shadow validation:** when an active project resolves (via `project_id` / `project` / `cwd`) and the requested slug refers to a global template that the project shadows with an override of the same `default` kind, the call hard-rejects with `validation_error`. The rejection's `details` name `active_slug` so the agent can re-call directly. Outside any registered project, current slug-only lookup is preserved. An explicit `project` / `project_id` that does not resolve propagates `project_not_found` rather than falling back. |
 
+### Skills (read-only)
+
+| Tool | Purpose |
+|---|---|
+| `skills.list` | Lists every loaded skill by slug, name, and description. Bodies are omitted. |
+| `skills.get` | Returns one skill body by slug. Used by `okt-skill`; rejects unknown slugs with `validation_error`. |
+
 ### Metrics (cross-agent benchmarking)
 
 | Tool | Purpose |
 |---|---|
-| `metrics.summary` | Aggregates per-AI-model behaviour over a period: errors recorded, errors searched, solutions added, like rate, and search-before-record ratio. Period defaults to `30d` (also accepts `7d` and `all`); invalid values fall back to `30d`. Optional `project_id` narrows the view to one project; omit for the cross-project benchmark. Models that never pass `_agent_session_id` report `0.0` for `search_before_record_ratio` even if they search heavily — correlating searches to records requires session continuity, by design. Rows with empty `agent_model` (TUI human, system internals) are excluded. |
+| `metrics.summary` | Aggregates per-AI-model behaviour over a period. Each model row carries a `buckets` map keyed by metric tag (`error_recorded`, `error_searched`, `solution_added`, `solution_liked`, `solution_failed`, `solution_top_viewed`), plus `like_rate`, `search_before_record_ratio`, and `session_correlated_sample`. Period defaults to `30d` (also accepts `7d` and `all`); invalid values fall back to `30d`. Optional `project_id` narrows the view to one project; omit for the cross-project benchmark. Models that never pass `_agent_session_id` report `0.0` for `search_before_record_ratio` even if they search heavily — correlating searches to records requires session continuity, by design. Rows with empty `agent_model` (TUI human, system internals) are excluded. |
 
 ### Progress
 
@@ -206,49 +220,19 @@ Every tool accepts optional project selector fields where useful: `project_id`, 
 
 ## Prompts
 
-`prompts/list` is built from `agent.CommandNames()`; bindings come from `mcp_commands` in the active profile yaml. Each prompt resolves a persona, the persona-or-command skill subset, the union of bound laws, and any bound templates into a single user message — see the worked example below.
+`prompts/list` is built from `agent.CommandNames()` and currently exposes 40 `okt-*` prompts. The stable command tiers, roles, scopes, and write behavior live in [`command-surface.md`](command-surface.md). This MCP guide documents how prompt resolution travels over the protocol and how the rendered prompt is composed.
 
-The v2 surface (#371) is 40 commands across three routing tiers. The router decodes each slug via `agent.DescribeCommand` (`internal/agent/command_registry.go`) into a tier and, for the granular tier, an object namespace. `okt mcp prompts --list` prints this same grouping from the shell.
-
-**Orchestrators** — bare, primary path, cross-object director role; delegates to specialists:
-
-| Prompt | Intent |
-|---|---|
-| `okt` | Smart entry — shortcut to `okt-start`. |
-| `okt-start` | Concierge entry — reads handoff/recap notes + plan/board state, proposes concrete next commands, teaches the options. |
-| `okt-shape` | Owner — shape a raw idea/backlog into ready tasks + an execution plan; chains the discover/define granulars + `okt-plan-create`. |
-| `okt-run` | Owner — drive a plan or task to completion by spawning a Builder subagent per task and reviewing each compact return. |
-| `okt-audit` | Owner — commission a deep assurance pass: spawn Reviewer + Security subagents, aggregate severity-tagged findings. |
-| `okt-pause` | Concierge close — snapshot git + active task + plan into a `kind=handoff` note for the next session. |
-
-**System** — bare, talks to the tool not the project (no object):
-
-| Prompt | Intent |
-|---|---|
-| `okt-help` | Tier-aware guide: the orchestrator/system/granular tiers, the start→shape→run→audit→pause flow, and when to drop to granular. |
-| `okt-config` | Orient on the active Omakiten config layout before edits. |
-| `okt-skill` | Load a skill body via `skills.get` (e.g. `okt-skill commit`), or list the catalog via `skills.list` with no arg. |
-
-**Granular** — object-namespaced (`okt-<object>-<verb>`), power-user, surgical:
-
-| Object | Prompts |
-|---|---|
-| `task` (21) | `okt-task-imagine`, `okt-task-research`, `okt-task-validate`, `okt-task-requirements`, `okt-task-prioritize`, `okt-task-create`, `okt-task-decompose`, `okt-task-estimate`, `okt-task-design`, `okt-task-resume`, `okt-task-continue`, `okt-task-implement`, `okt-task-self-review`, `okt-task-refactor`, `okt-task-document`, `okt-task-debrief`, `okt-task-commit`, `okt-task-review`, `okt-task-secure`, `okt-task-check`, `okt-task-quality` |
-| `project` (2) | `okt-project-resume`, `okt-project-continue` |
-| `plan` (4) | `okt-plan-create`, `okt-plan-show`, `okt-plan-continue`, `okt-plan-claim` |
-| `note` (4) | `okt-note-free`, `okt-note-recap`, `okt-note-list`, `okt-note-show` |
-
-The orchestrators carry the mental flow: `okt`/`okt-start` orient, `okt-shape` plans, `okt-run` drives delegation, `okt-audit` assures, `okt-pause` hands off. Each guiding orchestrator's action text suggests the next downstream command. Granular commands are the surgical drop-down the orchestrators chain — invoke them directly for a single step (e.g. `okt-task-implement`, `okt-plan-claim`) when you do not want the director loop. `okt-run` and `okt-audit` are PROMPTS the consuming agent acts on by spawning subagents (omakiten cannot spawn agents itself); each subagent invokes the granular `okt-task-*` commands itself in its own fresh context.
+Bindings come from `mcp_commands` in the active profile yaml. Each prompt resolves a persona, the command skill subset, the union of bound laws, and any bound templates into a single user message. The binding schema lives in [`configuration-guide/command-bindings.md`](configuration-guide/command-bindings.md).
 
 ## Anatomy of an MCP command
 
 Every `okt-*` prompt follows the same shape — only the bound tools and templates change. The flow is:
 
 1. **Prompt resolution** — the MCP client sends `prompts/get` and the server returns a single composed `PromptMessage`. This message carries the bound persona, the persona's skills, every effective law (global ∪ persona ∪ command ∪ template-bound, minus `laws_disabled`), any bound templates, and the action text ending with a REST-style handoff to the next command.
-2. **Tool calls (zero or more)** — the agent reads the action and calls the tool(s) named there. Most prompts point at one canonical tool (`okt-continue` → `tasks.continue`, `okt` → `project.overview`, etc.); read-only or open-ended ones (`okt-imagine`, `okt-document`) may call several or none.
-3. **REST handoff** — the action text always ends with a pointer at the next prompt in the cycle, so the agent can suggest `/okt-implement` after `/okt-continue`, `/okt-create` after `/okt-imagine`, and so on.
+2. **Tool calls (zero or more)** — the agent reads the action and calls the tool(s) named there. Granular prompts often point at one canonical tool (`okt-task-continue` → `tasks.continue`, `okt-task-create` → `tasks.create_intent`); orchestrators such as `okt-start` and `okt-run` read several surfaces before directing the next step.
+3. **REST handoff** — the action text always ends with a pointer at the next prompt in the cycle, so the agent can suggest `/okt-task-implement` after `/okt-task-continue`, `/okt-task-create` after `/okt-task-imagine`, and so on.
 
-The diagram below traces a concrete invocation — `/okt-continue 42` — but the shape applies to every prompt. Substitute the bound tool name and the DTO returned for the relevant command.
+The diagram below traces a concrete invocation — `/okt-task-continue 42` — but the shape applies to every prompt. Substitute the bound tool name and the DTO returned for the relevant command.
 
 ```mermaid
 sequenceDiagram
@@ -303,7 +287,7 @@ Every prompt invocation injects **at least one message** (the composed prompt) a
 1. **The composed prompt** — one `PromptMessage` (`role: user`, `content.text: <rendered markdown>`). Size is **fixed per prompt** because no per-task data is embedded.
 2. **Tool result(s)** — zero or more, depending on what the action text directs. For prompts tied to a single tool, this is one `ToolResult` carrying a JSON payload whose size **varies** with the underlying data.
 
-For action-heavy prompts (`okt-implement`, `okt-document`) the agent will fan out and call several tools — `progress.record`, `comments.add`, `tasks.move` — each one adding another tool result message to the window. Those are the agent's choice, not the prompt's structure.
+For action-heavy prompts (`okt-task-implement`, `okt-task-document`) the agent will fan out and call several tools — `progress.record`, `comments.add`, `tasks.move` — each one adding another tool result message to the window. Those are the agent's choice, not the prompt's structure.
 
 ### What ships inline vs JIT
 
@@ -406,4 +390,4 @@ Implications:
 ## See also
 
 - [cli.md](cli.md) — sibling CLI surface for the same operations.
-- `internal/domain/events.go::KnownEventTypes` — canonical list of events emitted by MCP tool calls.
+- `internal/domain/event.go::KnownEventTypes` — canonical list of events emitted by MCP tool calls.

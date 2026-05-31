@@ -5,7 +5,11 @@ How to configure Omakiten through the active profile yaml plus the sibling entit
 | Doc | Covers |
 |---|---|
 | [system.md](system.md) | Runtime knobs — `config.{output,context,workflow,mcp,tui,sqlite,activity_log,solutions,backup,events,search,tag_synonyms}` plus top-level shape and validation. |
-| [entities.md](entities.md) | Entity wiring — `workflows[]`, `skills`, `laws`, `personas`, `projects`, `templates`, `mcp_commands`, enum tables (`priorities`, `severities`), view defaults, `template_defaults`, autoload rules. |
+| [workflows.md](workflows.md) | `workflows[]` schema — buckets, transitions, operations, task/comment permissions. |
+| [command-bindings.md](command-bindings.md) | `mcp_commands` and persona skill-repertoire bindings for MCP prompt composition. |
+| [entities.md](entities.md) | Entity asset loaders — skills, laws, personas, projects, templates, frontmatter, autoload/custom rules. |
+| [enums.md](enums.md) | `config.template_defaults`, `config.priorities`, and `config.severities`. |
+| [views.md](views.md) | `config.views` sort/filter/window defaults for board/table/graph/logs/task activity. |
 | [guards.md](guards.md) | The five transition-and-operation guard types, their YAML payloads, failure shapes, and how to add a new type. |
 | [subtask-kit.md](subtask-kit.md) | Per-level kit cascade — `subtask_kit:` shape, validator rules, migration order, `task.bucket_orphaned` event schema, hook subject metadata, transparency notice. |
 | [hooks.md](hooks.md) | Event subscriptions in `config.hooks`, the built-in action contracts (`exec`, `noop`, `notification`), and the `${{intl:KEY}}` interpolation. |
@@ -18,8 +22,8 @@ How to configure Omakiten through the active profile yaml plus the sibling entit
 
 ## Where to start
 
-- **Picked a preset and want to change one knob.** → [system.md](system.md) (runtime knobs) or [entities.md](entities.md) (wiring).
+- **Picked a preset and want to change one knob.** → [system.md](system.md) for runtime knobs, [workflows.md](workflows.md) for buckets/guards, [command-bindings.md](command-bindings.md) for prompt roles, or [entities.md](entities.md) for asset wiring.
 - **Adding a project-local override.** → [project-overrides.md](project-overrides.md) for the layering model, [path-resolution.md](path-resolution.md) for the `.omakiten/` walk-up.
 - **Building a hook or wiring a notification.** → [hooks.md](hooks.md) → [notifications.md](notifications.md).
 - **Authoring a custom theme or translation.** → [themes.md](themes.md) / [languages.md](languages.md).
-- **Stuck on a `guard_violation` error.** → [guards.md](guards.md) (transition guards) or [entities.md § bucket permissions](entities.md#bucket-permissions) (CRUD policy).
+- **Stuck on a `guard_violation` error.** → [guards.md](guards.md) for guard payloads/failures or [workflows.md](workflows.md) for CRUD policy.

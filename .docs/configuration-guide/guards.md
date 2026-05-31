@@ -4,7 +4,7 @@ Guards are policy rules attached to a single workflow **transition**. They run i
 
 Guards live next to transitions in the active profile yaml and are evaluated by `internal/app/guards/evaluator.go` (`Evaluator.EvaluateTransition` / `EvaluateOperation`, dispatched per-guard-type via `runGuards`) against the in-memory `*config.Snapshot` rebuilt on every bundle import. Migration 005 originally persisted the JSON on the `workflow_transitions` row; migration 020 dropped that table along with every other config table, so guards are now read directly from YAML via the Snapshot — there is no SQL mirror. Validation runs at `okt config validate` time via `internal/config/validator.go:validateWorkflows`.
 
-The same guard shapes also drive **operation policies** (`operations.{archive,delete,unarchive}.guards`) — see [Operation guards](#operation-guards) — and the bucket-level CRUD policy lives under a sibling block ([Bucket permissions](#bucket-permissions)).
+The same guard shapes also drive **operation policies** (`operations.{archive,delete,unarchive}.guards`) — see [Operation guards](#operation-guards). Bucket/comment CRUD policy is configured under workflow permissions; this page only documents how permission denials surface as guard failures.
 
 ## Contents
 
@@ -15,10 +15,8 @@ The same guard shapes also drive **operation policies** (`operations.{archive,de
 - [Validation rules (parse-time)](#validation-rules-parse-time)
 - [Worked example (from `defaults/config/omakase.yaml`)](#worked-example-from-defaultsconfigomakaseyaml)
 - [Failure shape](#failure-shape)
-- [Agent guardrails: laws bound to commands and entities](#agent-guardrails-laws-bound-to-commands-and-entities)
 - [Operation guards](#operation-guards)
-- [Bucket permissions](#bucket-permissions)
-- [Comment create + tag-conditional rules](#comment-create--tag-conditional-rules)
+- [Permission policy failures](#permission-policy-failures)
 - [Adding a new guard type](#adding-a-new-guard-type)
 - [See also](#see-also)
 
@@ -298,95 +296,6 @@ Every task-scoped violation also records a `guard.violated` audit event whose pa
 
 The subject block is the same shape `task.created` / `task.moved` / `task.edited` carry — see [`subtask-kit.md § Hook subject metadata`](subtask-kit.md#hook-subject-metadata). Hooks scoped to `SubjectDepth: subtask` therefore match a sub-task guard violation; hooks scoped to `SubjectDepth: root` only match a root-task violation. The depth filter activates as soon as `subtask_kit:` is wired; before that every hook fires regardless of depth (matches pre-cascade behavior).
 
-## Agent guardrails: laws bound to commands and entities
-
-Guards above run on **workflow transitions**. A second class of guardrails runs on **MCP prompt resolution** — when the agent asks for `okt-implement`, the server resolves the bound persona, skills, laws, and templates and ships them in a single PromptMessage. This is where the `template-fidelity` law lives, for example: bound globally to every command so the agent does not invent fields when filling a PR template.
-
-Resolution happens in `agent.Service.ResolveCommand` (`internal/agent/service_command.go`). The MCP adapter (`internal/mcp/adapter.go`) calls it from `prompts/get`.
-
-### What gets composed
-
-For each `okt-*` prompt, the resolver assembles:
-
-| Slot | Source |
-|---|---|
-| Persona | `mcp_commands.<name>.persona` slug |
-| Skills | The persona's `skills:` (wiring) — bodies pulled from `skills/<slug>.md` |
-| Laws | Union of `mcp_commands.global.laws` ∪ `personas.<slug>.laws` ∪ `mcp_commands.<name>.laws` ∪ `templates.<bound>.laws`, deduped, **minus** `mcp_commands.<name>.laws_disabled` |
-| Templates | `mcp_commands.<name>.templates` slugs — bodies pulled from `templates/<slug>.md` |
-| Action | The canonical instruction text for the prompt name |
-
-The merged response is rendered as one markdown body (Persona → Skills → Laws → Templates → Action) so the agent can scan it top-down without paying for multiple prompt messages.
-
-### Wiring location
-
-```yaml
-# active profile yaml
-mcp_commands:
-  global:
-    laws:
-      - template-fidelity        # applies to every okt-* command
-  okt-create:
-    persona: builder
-    templates: [user-story]
-  okt-implement:
-    persona: builder
-    templates: [pull-request]
-  okt-imagine:
-    persona: builder
-    laws_disabled:               # opt out of the global law for discovery
-      - template-fidelity
-```
-
-Per-entity bindings travel with the file:
-
-```yaml
-# templates/pull-request.md
----
-name: Pull Request
-default: pr
-laws:
-  - template-fidelity
----
-```
-
-```yaml
-# personas/builder.md
----
-name: Backend Agent
-laws:
-  - project-scope-only
----
-```
-
-Persona laws declared in frontmatter merge with persona laws declared in the active profile yaml's `personas:` block (union, dedup, frontmatter-first). Template frontmatter laws have no wiring counterpart — they live only in the `.md` file.
-
-### Validation rules (parse-time)
-
-| Rule | Error message shape |
-|---|---|
-| Persona slug on a command does not resolve | `mcp_commands.<name> persona: ref "<slug>" has no matching persona file` |
-| Law slug under `laws:` or `laws_disabled:` does not resolve | `mcp_commands.<name>.laws: ref "<slug>" has no matching law file` |
-| Same slug appears in both `laws:` and `laws_disabled:` on a command | `mcp_commands.<name>: law "<slug>" is in both laws and laws_disabled` |
-| Template slug on a command does not resolve | `mcp_commands.<name>.templates: ref "<slug>" has no matching template file` |
-| Duplicate slug in any list | `mcp_commands.<name>.<list>: duplicate "<slug>"` |
-| Template frontmatter law does not resolve | `templates.<slug> laws: ref "<slug>" has no matching law file` |
-
-The reserved `global` key is treated as a laws-only slot — its persona and templates fields are tolerated but unused.
-
-### The `template-fidelity` default law
-
-`defaults/laws/template-fidelity.md` ships in the bundled kit and is bound to `mcp_commands.global.laws` by default. Its body forbids the agent from inventing fields, links, or claims not present in the template body or the working context — directly addresses the original symptom (agent appending `Closes #40` that the template did not declare). Severity is `warning` because the law is guidance, not server-enforced rejection: the MCP layer ships it inline with the prompt, and an opt-out command (`okt-imagine`) is provided for discovery flows where free sketching is intentional.
-
-### Auto-applying templates on `tasks.create` / `comments.add`
-
-Both tools accept an optional `template_slug` argument. When set, the server resolves the slug against the loaded template catalog and merges the body into the description/comment:
-
-- empty user body ⇒ description = template body verbatim;
-- non-empty user body ⇒ user content first, blank line, template body appended.
-
-Unknown slugs surface as a validation error (no silent fallback). Dynamic placeholders are out of scope for this iteration — the materialized body is the literal template text.
-
 ## Operation guards
 
 The same three guard shapes (`blockers_in`, `comments_min`, `comments_tagged`) also gate **non-flow operations**: archive, delete, unarchive. They live under `workflows[].operations.<op>.guards[]` and apply globally to the operation regardless of which bucket the task currently sits in.
@@ -413,145 +322,35 @@ Evaluation entry point lives in `internal/app/task_service.go` (`Archive`, `Dele
 - `Delete` is a hard cascade delete (comments, tags, dependencies, events). Bucket `permissions.task.delete` AND `operations.delete.guards` both apply.
 - `Unarchive` flips `state` back to `active` while leaving the bucket untouched. Only `operations.unarchive.guards` apply.
 
-## Bucket permissions
+## Permission policy failures
 
-Per-bucket CRUD policy lives under `workflows[].buckets[].permissions` with a workflow-level fallback in `workflows[].defaults`. The resolver lives in `internal/domain/workflow.go` (`Bucket.ResolveTaskPermission` / `Bucket.ResolveCommentPermission` / `Bucket.ResolveCommentCreatePermission`); it walks pointer candidates in priority order and returns the first declared value, with implicit `true` when every candidate is undeclared.
+Task/comment CRUD policy is workflow schema, not a guard type. Configure it under `workflows[].defaults` and `workflows[].buckets[].permissions`; the canonical field reference and resolution order live in [workflows.md](workflows.md#workflow-defaults) and [workflows.md § Comment permissions](workflows.md#comment-permissions).
 
-Comments carry a third operation beyond `edit`/`delete` — **`create`** — and each comment operation accepts a **tag-conditional rule object** instead of (or in addition to) a bare bool. Both land here in [Comment create + tag-conditional rules](#comment-create--tag-conditional-rules) after the task/edit/delete chains below; the [Comment permissions schema](entities.md#comment-permissions) in `entities.md` is the field-by-field reference.
+When a permission denies an operation, the app returns the same error class as transition guards: `guard_violation` with `rule: permissions`. The operation (`task.edit`, `task.delete`, `comment.create`, `comment.edit`, or `comment.delete`) lands in the event payload so consumers can filter on `(operation, rule)`.
 
-**Task** (`(edit, delete)`):
-
-1. `bucket.permissions.task.<edit|delete>` — per-bucket override.
-2. `workflows[].defaults.task.<edit|delete>` — workflow-level fallback.
-3. Implicit `true` — no rule declared anywhere = allowed.
-
-**Comment** (`(edit, delete)`) inherits from task field-by-field at every layer, so the chain is four steps long:
-
-1. `bucket.permissions.comment.<edit|delete>` — per-bucket comment override.
-2. `bucket.permissions.task.<edit|delete>` — same bucket's task field (comment inherits from task at the bucket layer).
-3. `workflows[].defaults.comment.<edit|delete>` — workflow-level comment fallback.
-4. `workflows[].defaults.task.<edit|delete>` — workflow-level task fallback (comment inherits from task at the defaults layer).
-5. Implicit `true` — no rule declared anywhere = allowed.
-
-Declaring `task.edit: false` therefore denies edit on **both** task and comments unless `comment.edit` is set explicitly at the same or a deeper layer.
-
-The chain above is the **task-scoped** comment path (resolved against the comment's bucket via `Bucket.ResolveCommentPermission`). Comments with `scope: project` or `scope: universal` have no bucket — their edit/delete policy is resolved task-lessly against per-scope sub-blocks under `workflows[].defaults.comment` (`domain.ResolveCommentScopePermission`):
-
-```yaml
-defaults:
-  comment:
-    project:   { edit: true,  delete: false }   # project-scoped comments
-    universal: { edit: false, delete: false }    # cross-project comments
-```
-
-Omitting a `project`/`universal` sub-block (or its field) means implicit `true`. These sub-blocks are valid **only** under `workflows[].defaults.comment` — placing them on a bucket's `permissions.comment` or under `defaults.task` is a config validation error.
-
-```yaml
-defaults:
-  task:    { edit: false, delete: false }    # workflow-level: deny by default
-  comment: { edit: false, delete: false }
-buckets:
-  - id: 1
-    key: backlog
-    permissions:
-      task:    { edit: true, delete: true }   # backlog: opt in
-      comment: { edit: true, delete: true }
-  - id: 3
-    key: review
-    permissions:
-      comment: { edit: true }                 # review: only comment edit (delete inherits false)
-```
-
-Violations surface as `guard_violation` with `rule: permissions` and a hint quoting the resolved policy. The active operation (`task.edit`, `task.delete`, `comment.create`, `comment.edit`, `comment.delete`) lands in the event payload — consumers filter on `(operation, rule)` to distinguish a transition denial from a permission denial.
-
-## Comment create + tag-conditional rules
-
-Comments support a third operation, **`create`**, plus a polymorphic value type that lets any comment operation depend on the comment's tags. Both are comment-only: the config validator rejects tag predicates declared under `permissions.task.*` (`rejectTaskTagRules` in `internal/config/validator.go`), so task permissions stay plain bool.
-
-### The `create` operation
-
-`create` gates whether a new comment may be added to the resolved bucket / scope. It is comment-only — tasks have no create permission — so its task-scope resolution chain skips the task-entity fallbacks that `edit`/`delete` inherit (`Bucket.ResolveCommentCreatePolicy` in `internal/domain/workflow.go`):
-
-```
-bucket.permissions.comment.create
-  → defaults.comment.task.create
-  → defaults.comment.create        (flat alias for the task scope)
-  → true                           (implicit: no rule = allow)
-```
-
-Project- and universal-scoped comments have no bucket and resolve task-lessly via `ResolveCommentScopePolicy(defaults, scope, "create")`:
-
-```
-project:   defaults.comment.project.create   → true
-universal: defaults.comment.universal.create → true
-```
-
-The create guard is **bucket-granular**: when the current bucket denies `comment.create` the failure hint names the buckets that *do* allow it so the operator can move the task and retry (`internal/app/workflow_service.go`):
-
-```
-policy: comment.create is not permitted in bucket "done". Move the task to one of: backlog, dev — then retry.
-```
-
-When no bucket allows it at all, the hint instead points at the config knob:
-
-```
-policy: comment.create is not permitted in bucket "done" (no bucket allows it; declare workflows[].buckets[].permissions.comment.create)
-```
-
-### The tag-conditional rule object
-
-Every comment operation value is **either** a bare bool **or** a rule object. A bare bool `b` is exactly equivalent to `{ allow: b }`, so all pre-existing bare-bool configs parse and resolve unchanged. The rule object carries a base verdict plus three tag predicates (`internal/domain/comment_policy.go`, `CommentOpPolicy`):
+Comment operation values can be a bare bool or a rule object. A bare bool `b` is equivalent to `{ allow: b }`. The rule object carries a base verdict plus tag predicates (`internal/domain/comment_policy.go`, `CommentOpPolicy`):
 
 ```yaml
 comment:
   edit:
-    allow: true             # base verdict (default true; false short-circuits to deny)
-    require_tags: [reviewed] # deny unless EVERY listed tag is present
-    deny_tags:    [locked]   # deny if ANY listed tag is present
-    require_any_tag: true    # deny if the evaluated tag set is empty
+    allow: true
+    require_tags: [reviewed]
+    deny_tags: [locked]
+    require_any_tag: true
 ```
 
-The YAML decoder (`internal/config/bundle.go`, `CommentOpPolicy.UnmarshalYAML`) accepts only a scalar bool or a mapping whose keys are the closed set `{allow, require_tags, deny_tags, require_any_tag}` — any other key (e.g. a `require_tag:` typo) is rejected at load with `unknown comment permission rule key`. The validator additionally rejects empty/whitespace tag names in any `require_tags`/`deny_tags` list (`validateCommentTagNames`).
+The decoder accepts only `{allow, require_tags, deny_tags, require_any_tag}`. Unknown keys are rejected at load with `unknown comment permission rule key`, and empty tag names are rejected by `validateCommentTagNames`.
 
-**Evaluation order** (`CommentOpPolicy.Evaluate`): the base `allow` runs first — a `false` short-circuits to deny before any predicate. When the base allows, the predicates apply in order: `require_any_tag` (deny if the tag set is empty) → `require_tags` (deny unless all present) → `deny_tags` (deny if any present). An omitted `allow` defaults to `true`.
+`CommentOpPolicy.Evaluate` runs in this order: base `allow` first; `false` short-circuits. If the base allows, predicates apply as `require_any_tag` -> `require_tags` -> `deny_tags`. For `create`, the evaluated tags are the request payload tags; for `edit` and `delete`, they are the target comment's stored tags.
 
-**Which tag set each operation evaluates against:**
-
-| Operation | Tag set fed to `Evaluate` |
-|---|---|
-| `create` | the **request payload** tags (the tags being attached to the new comment) |
-| `edit` | the **target comment's stored** tags |
-| `delete` | the **target comment's stored** tags |
-
-Tag-conditional denials surface as `guard_violation` with `rule: permissions` and a hint naming the specific predicate that failed (`internal/app/workflow_service.go`):
+Failure hints name the resolved policy or predicate (`internal/app/workflow_service.go`):
 
 ```
+policy: comment.create is not permitted in bucket "done". Move the task to one of: backlog, dev - then retry.
+policy: comment.create is not permitted in bucket "done" (no bucket allows it; declare workflows[].buckets[].permissions.comment.create)
 policy: task comment edit is denied for tag "locked"
 policy: project comment create requires tag "x"
 policy: universal comment create requires at least one tag
-```
-
-### Worked example
-
-The block below denies edits to `locked` comments per bucket, gates project-comment create on a required tag, denies project-comment edit on a tag, requires any tag on universal-comment create, and freezes comment create entirely in the `done` bucket:
-
-```yaml
-workflow:
-  buckets:
-    - key: done
-      permissions:
-        comment:
-          create: false                          # no new comments once done
-          edit:   { allow: true, deny_tags: [locked] }  # but edits allowed unless the comment is tagged `locked`
-  defaults:
-    comment:
-      task:      { create: true, edit: false, delete: false }
-      project:
-        create: { allow: true, require_tags: [x] }   # project comment needs tag `x` in its payload to be created
-        edit:   { allow: true, deny_tags: [y] }      # project comment tagged `y` cannot be edited
-        delete: false
-      universal:
-        create: { allow: true, require_any_tag: true } # universal comment must carry at least one tag
 ```
 
 ## Adding a new guard type
@@ -565,13 +364,13 @@ workflow:
 ## Update when
 
 - A new guard type lands in `internal/app/guards/evaluator.go` — add it to [Guard types](#guard-types) with its YAML shape and failure mode.
-- The comment-permission resolution chain, the `CommentOpPolicy` rule shape, or its per-operation tag source changes (`internal/domain/comment_policy.go`, `internal/domain/workflow.go`, `internal/config/bundle.go`) — update [Comment create + tag-conditional rules](#comment-create--tag-conditional-rules).
+- The comment-permission failure shape, `CommentOpPolicy` rule shape, or its per-operation tag source changes (`internal/domain/comment_policy.go`, `internal/domain/workflow.go`, `internal/config/bundle.go`) — update [Permission policy failures](#permission-policy-failures).
 - Validator rules change in `internal/config/validator.go::validateWorkflows`.
 - `app.WorkflowService.MoveTask` pipeline reorders or adds a step.
-- `guard.violated` event payload gains/drops a field (source: `internal/domain/events.go`).
+- `guard.violated` event payload gains/drops a field (source: `internal/domain/event.go`).
 
 ## See also
 
 - [workflow.md](../workflow.md) — guards per preset; preset-level conceptual flow.
-- [entities.md § workflows](entities.md#workflows) — full schema for `workflows[]`, including the guard slot wiring.
-- `internal/domain/events.go::KnownEventTypes` — source-of-truth for the `guard.violated` payload.
+- [workflows.md](workflows.md) — full schema for `workflows[]`, including the guard slot wiring.
+- `internal/domain/event.go::KnownEventTypes` — source-of-truth for the `guard.violated` payload.
