@@ -12,6 +12,28 @@
 
 * **cli:** rewrite `okt logs` as the unified event inspector with `--category`, `--since`, and `--limit` flags. Default scope is the last `views.logs.window_days` for the active project; `--category` is repeatable and comma-separated and accepts the same chips as the TUI (`task`, `comment`, `plan`, `tag-dep`, `guard`, `audit`, `hook`, `tool_call`, `trick`, `domain`, plus the `all` shortcut).
 
+## [0.24.0](https://github.com/This-Is-NPC/omakiten/compare/v0.23.0...v0.24.0) (2026-05-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* the notes tables are dropped; notes store/MCP/TUI Go code and its behavior tests are removed in a later wave.
+* the nine generic personas no longer ship in defaults. User configs that referenced them by slug must migrate to a themed persona.
+
+### Features
+
+* **agentsetup:** add cursor harness support ([#103](https://github.com/This-Is-NPC/omakiten/issues/103)) ([ad79dfd](https://github.com/This-Is-NPC/omakiten/commit/ad79dfda620ba74c8668c0386c37583406f97330))
+* **config,comment:** modular config imports + comment write policy ([#102](https://github.com/This-Is-NPC/omakiten/issues/102)) ([6d92a89](https://github.com/This-Is-NPC/omakiten/commit/6d92a89e09f4fbfee7d08ec99ffed5df8113fe57))
+* notes entity + handoff/standup/recap atomics ([#97](https://github.com/This-Is-NPC/omakiten/issues/97)) ([8d9b1bb](https://github.com/This-Is-NPC/omakiten/commit/8d9b1bb6e1d5ed9331c9a2a4bd4ec05aa16a5f0f))
+* scoped comment/activity log, project view, and plan management ([#101](https://github.com/This-Is-NPC/omakiten/issues/101)) ([e07a0e9](https://github.com/This-Is-NPC/omakiten/commit/e07a0e9400844e9fe2bd1a242717b453eafd2bb9))
+* workflow v2 — command surface + entity rework + settings catalog ([#100](https://github.com/This-Is-NPC/omakiten/issues/100)) ([570bf93](https://github.com/This-Is-NPC/omakiten/commit/570bf938aabedf33b2b896a9b2010e03d47bd791))
+
+
+### Bug Fixes
+
+* **config:** gate update swap on config health check + locale-aware broken-config errors ([#99](https://github.com/This-Is-NPC/omakiten/issues/99)) ([268dfd8](https://github.com/This-Is-NPC/omakiten/commit/268dfd8d259b29225266fdc2650e2d362d3cac9d))
+* **i18n:** translate cli.update + cli.uninstall × 21 locales; remove orphans ([#106](https://github.com/This-Is-NPC/omakiten/issues/106)) ([057ef2e](https://github.com/This-Is-NPC/omakiten/commit/057ef2e536ec5078e51afb520cf6c096c5a4ed39))
+
 ## [0.23.0](https://github.com/This-Is-NPC/omakiten/compare/v0.22.3...v0.23.0) (2026-05-28)
 
 
