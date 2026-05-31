@@ -901,7 +901,7 @@ keys:
   tui.status.subtask_kit_cleared: "Sub-task kit limpiado (hereda root)"
   tui.status.subtask_kit_already_none: "Sub-task kit ya hereda root"
   tui.status.subtask_kit_switch_failed_fmt: "Fallo al cambiar sub-task kit: %s"
-  tui.kicker.subtask_kit_active_fmt: "Sub-task kit · active: %s"
+  tui.kicker.subtask_kit_active_fmt: "Sub-task kit · activo: %s"
   tui.picker.hint.subtask_kit: "arriba/abajo: mueve · enter: aplicar (hot-reload) · esc: cancelar"
   tui.picker.subtask_kit_none: "ninguno (hereda root)"
   tui.subtask_board.fallback_lane_name: "Todos"
