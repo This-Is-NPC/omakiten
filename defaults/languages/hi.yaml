@@ -34,24 +34,24 @@ keys:
   cli.context.short: "हैंडऑफ़ के लिए project कॉन्टेक्स्ट देखें"
   cli.context.add.short: "project हैंडऑफ़ कॉन्टेक्स्ट प्रविष्टि जोड़ें"
   cli.context.dump.short: "agent के लिए प्रगतिशील कॉन्टेक्स्ट डंप करें"
-  cli.logs.short: "Inspect the unified event log (task, comment, plan, hook, tool_call, guard, …)"
+  cli.logs.short: "एकीकृत इवेंट लॉग देखें (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
-    okt logs reads the unified events table through the same path the TUI Logs
-    inspector uses. The default window is the last Snapshot.LogsWindowDays()
-    days for the active project, all categories included.
-
-    Categories (match the TUI filter chips): task, comment, plan, tag-dep,
-    guard, audit, hook, tool_call, trick, domain. Pass `all` to clear the
-    filter explicitly.
-
-    Output is a JSON envelope; each row carries the 5-field shape
-    (time · event_type · entity · author · summary) where `summary` is the
-    canonical SummarizeEvent string used by the TUI inspector.
-  cli.logs.flag.category: "restrict to one or more event categories (repeatable, comma-separated; `all` clears the filter)"
-  cli.logs.flag.since: "override the default window (e.g. 24h, 30m, 7d)"
-  cli.logs.flag.limit: "cap the number of rows returned (0 = no cap)"
-  cli.err.logs_invalid_category: "unknown event category"
-  cli.err.logs_invalid_since: "invalid --since duration; expected forms like 24h, 30m, 7d"
+    okt logs TUI Logs इंस्पेक्टर के समान पथ से एकीकृत events तालिका पढ़ता है।
+    डिफ़ॉल्ट विंडो सक्रिय project के पिछले Snapshot.LogsWindowDays()
+    दिन हैं, सभी श्रेणियाँ शामिल।
+    
+    श्रेणियाँ (TUI फ़िल्टर चिप्स से मेल): task, comment, plan, tag-dep,
+    guard, audit, hook, tool_call, trick, domain. फ़िल्टर स्पष्ट रूप से
+    हटाने के लिए `all` दें।
+    
+    आउटपुट JSON लिफ़ाफ़ा है; प्रत्येक पंक्ति 5-फ़ील्ड आकार लेती है
+    (time · event_type · entity · author · summary) जहाँ `summary` TUI
+    इंस्पेक्टर द्वारा उपयोग की जाने वाली मानक SummarizeEvent स्ट्रिंग है।
+  cli.logs.flag.category: "एक या अधिक इवेंट श्रेणियों तक सीमित करें (दोहराने योग्य, अल्पविराम से अलग; `all` फ़िल्टर साफ़ करता है)"
+  cli.logs.flag.since: "डिफ़ॉल्ट विंडो बदलें (जैसे 24h, 30m, 7d)"
+  cli.logs.flag.limit: "लौटाई गई पंक्तियों की सीमा (0 = कोई सीमा नहीं)"
+  cli.err.logs_invalid_category: "अज्ञात इवेंट श्रेणी"
+  cli.err.logs_invalid_since: "अमान्य --since अवधि; अपेक्षित रूप जैसे 24h, 30m, 7d"
   cli.depend.short: "task निर्भरताएँ प्रबंधित करें"
   cli.depend.add.short: "task निर्भरता जोड़ें"
   cli.depend.remove.short: "task निर्भरता हटाएँ"
@@ -59,48 +59,46 @@ keys:
   cli.config.short: "कैनोनिकल omakiten.yaml बंडल प्रबंधित करें"
   cli.config.validate.short: "omakiten.yaml फ़ाइल को मान्य करें"
   cli.config.presets.short: "आधिकारिक workflow preset सूचीबद्ध करें"
-  cli.projects.short: "Project lifecycle utilities (delete — destructive ops)"
-  cli.projects.delete.short: "Hard-delete a registered project and every dependent row (irreversible)"
+  cli.projects.short: "Project जीवनचक्र utilities (delete — destructive ops)"
+  cli.projects.delete.short: "Registered project और हर dependent row hard-delete (अपरिवर्तनीय)"
   cli.projects.delete.long: |-
-    Resolve the project by numeric id or slug, write a recovery
-    snapshot to the rolling backups directory, then cascade-delete
-    every dependent row (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
-
-    Backup failure aborts the delete before anything is touched.
-    Filesystem state under <root_path>/.omakiten/ is preserved —
-    only DB rows are removed.
-
-    Without --yes the command prints counters and prompts for
-    confirmation; piping without --yes errors out instead of
-    blocking on stdin.
-  cli.projects.delete.flag.yes: "skip the interactive confirmation and apply the delete non-interactively"
-  cli.projects.delete.counters_fmt: "tasks: %d · comments: %d · plans: %d · tags: %d · activity: %d entries"
-  cli.projects.delete.prompt: "delete project %q? [y/N]:"
-  cli.projects.delete.success_fmt: "project %q deleted · backup → %s"
-  cli.projects.delete.err.no_tty: "interactive confirmation required; pass --yes to skip"
-  cli.projects.delete.err.aborted: "delete aborted; nothing removed"
-  cli.projects.delete.err.not_found: "project not found"
-  cli.db.short: "Database lifecycle utilities (backup, snapshot, restore — sysadmin ops)"
-  cli.db.backup.short: "Write a snapshot of the live SQLite database to the rolling backups directory"
+    Project numeric id या slug से resolve करें, recovery
+    snapshot rolling backups directory में लिखें, फिर cascade-delete
+    हर dependent row (tasks, comments, plans, tag attachments,
+    context entries, errors, activity log)।
+    
+    Backup failure delete को कुछ छुए बिना रोक देता है।
+    <root_path>/.omakiten/ के तहत filesystem state सुरक्षित —
+    केवल DB rows हटते हैं।
+    
+    --yes के बिना command counters दिखाता है और
+    confirmation माँगता है; --yes के बिना pipe stdin पर
+    block करने की बजाय error देता है।
+  cli.projects.delete.flag.yes: "interactive confirmation छोड़कर delete non-interactively लागू करें"
+  cli.projects.delete.counters_fmt: "tasks: %d · comments: %d · plans: %d · tags: %d · गतिविधि: %d प्रविष्टियाँ"
+  cli.projects.delete.prompt: "project %q delete करें? [y/N]:"
+  cli.projects.delete.success_fmt: "project %q हटाया गया · backup → %s"
+  cli.projects.delete.err.no_tty: "interactive confirmation जरूरी; skip के लिए --yes दें"
+  cli.projects.delete.err.aborted: "delete रद्द; कुछ नहीं हटाया"
+  cli.db.short: "Database जीवनचक्र utilities (backup, snapshot, restore — sysadmin ops)"
+  cli.db.backup.short: "सक्रिय SQLite database का snapshot rolling backups directory में लिखें"
   cli.db.backup.long: |-
-    Copy the active SQLite database to a timestamped snapshot under
-    $XDG_STATE_HOME/omakiten/backups/ (default ~/.local/state/omakiten/backups/)
-    and prune older snapshots according to settings.backup.retention_count.
-
-    The copy is atomic: the destination only appears once the body has
-    been written and renamed into place. A previous partial copy never
-    survives a failure.
-
-    --out pins the snapshot path explicitly (parent directories are
-    created as needed). When --out is supplied the retention prune
-    pass is skipped — the user owns the rotation policy outside the
-    default state directory.
-  cli.db.backup.flag.out: "write the snapshot to this explicit file path (skips retention prune)"
-  cli.db.backup.flag.force: "overwrite the target file when --out points at an existing path"
-  cli.db.backup.error.system_path_fmt: "refusing to write backup to system path %q (under %s)"
-  cli.db.backup.error.exists_fmt: "refusing to overwrite existing file %q; pass --force to replace"
-  cli.db.backup.success_fmt: "backup written to %s"
+    सक्रिय SQLite database की timestamped snapshot कॉपी करें
+    $XDG_STATE_HOME/omakiten/backups/ (डिफ़ॉल्ट ~/.local/state/omakiten/backups/)
+    में और settings.backup.retention_count के अनुसार पुराने snapshots prune करें।
+    
+    कॉपी atomic है: destination तभी दिखता है जब body
+    लिखकर rename हो चुका हो। पिछली partial copy
+    failure से बचती नहीं।
+    
+    --out snapshot path स्पष्ट रूप से तय करता है (parent directories
+    जरूरत पर बनते हैं)। --out देने पर retention prune
+    छोड़ दिया जाता है — rotation policy default state directory के बाहर user की है।
+  cli.db.backup.flag.out: "snapshot इस explicit file path पर लिखें (retention prune छोड़ता है)"
+  cli.db.backup.flag.force: "जब --out मौजूद path पर हो तो target file overwrite करें"
+  cli.db.backup.error.system_path_fmt: "system path %q (under %s) पर backup लिखने से इनकार"
+  cli.db.backup.error.exists_fmt: "मौजूदा file %q overwrite करने से इनकार; replace के लिए --force दें"
+  cli.db.backup.success_fmt: "backup %s पर लिखा गया"
   cli.preset.omakase.title: "शेफ़ की पसंद"
   cli.preset.omakase.description: "self-branch, resume, और दस्तावेज़ guard के साथ संतुलित workflow।"
   cli.preset.izakaya.title: "अनौपचारिक"
@@ -151,7 +149,7 @@ keys:
   cli.workflow.short: "workflow कॉन्फ़िगरेशन देखें"
   cli.workflow.show.short: "सक्रिय workflow दिखाएँ"
   cli.workflow.orphan.short: "ऐसे task का पूर्वावलोकन या रीबाइंड करें जिनका bucket workflow स्वैप से निष्क्रिय हो गया हो"
-  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit enabled: MCP commands, personas, laws, templates, and skills still resolve from the project root kit."
+  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit enabled: MCP commands, personas, laws, templates और skills अभी भी project root kit से resolve होते हैं।"
   cli.config.init.long: |-
     चुने गए scope में रूट किया गया एक स्टैंडअलोन config इंस्टॉल सीड करें।
 
@@ -244,14 +242,14 @@ keys:
   cli.task.add.flag.title: "task शीर्षक"
   cli.task.add.flag.description: "task विवरण"
   cli.task.add.flag.bucket: "bucket key (डिफ़ॉल्ट सक्रिय workflow का पहला bucket)"
-  cli.task.add.flag.parent: "optional parent task id; when set, the new row is attached as a sub-task via AddSub (parent must be active and in the same project)"
+  cli.task.add.flag.parent: "वैकल्पिक parent task id; set होने पर नई row sub-task के रूप में AddSub via attach (parent active और same project में हो)"
   cli.task.edit.flag.title: "task शीर्षक"
   cli.task.edit.flag.description: "task विवरण"
   cli.task.edit.flag.priority: "task प्राथमिकता: low, normal, या high"
   cli.task.edit.flag.bucket: "लक्ष्य bucket key"
-  cli.task.edit.flag.parent: "optional re-parent target id; 0 clears the FK (becomes a root); any positive id re-parents with anti-cycle enforcement"
+  cli.task.edit.flag.parent: "वैकल्पिक re-parent target id; 0 FK clear (root); positive id anti-cycle enforcement के साथ re-parents"
   cli.task.list.flag.bucket: "bucket key"
-  cli.task.list.flag.parent: "optional parent filter; omit for no filter, 0 for roots only (parent_id IS NULL), positive id for that parent's direct children"
+  cli.task.list.flag.parent: "वैकल्पिक parent filter; no filter के लिए omit, roots only के लिए 0 (parent_id IS NULL), positive id उस parent के direct children"
   cli.task.move.flag.to: "लक्ष्य bucket key"
   cli.task.delete.flag.confirm: "आवश्यक: विनाशकारी delete की पुष्टि करें"
   cli.comment.add.flag.body: "comment सामग्री"
@@ -344,9 +342,9 @@ keys:
   cli.workflow.orphan.flag.confirm: "रीबाइंड लागू करें; इस flag के बिना कमांड योजना प्रिंट करता है और बाहर निकलता है"
   cli.workflow.orphan.flag.dry-run: "लागू किए बिना माइग्रेशन योजना प्रिंट करें (--confirm अनुपस्थित होने पर डिफ़ॉल्ट)"
   cli.err.config_invalid: "config अमान्य है"
-  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
-  cli.editor.not_configured: "no editor configured; set $VISUAL or $EDITOR"
-  cli.editor.not_found: "configured editor not found on PATH"
+  cli.err.runtime_not_initialised: "config अभी लोड नहीं; --config या `okt init` से फिर चलाएँ"
+  cli.editor.not_configured: "कोई संपादक कॉन्फ़िग नहीं; $VISUAL या $EDITOR सेट करें"
+  cli.editor.not_found: "कॉन्फ़िग संपादक PATH पर नहीं मिला"
   cli.err.config_unreadable: "config फ़ाइल पठनीय नहीं"
   cli.err.init_seeded_config_invalid: "init सीड किया गया config अमान्य है"
   cli.err.invalid_scope: "अमान्य --scope (global या local चाहिए)"
@@ -361,10 +359,7 @@ keys:
   cli.err.task_id_not_numeric: "task id संख्यात्मक होना चाहिए"
   cli.err.task_delete_requires_confirm: "task delete को विनाशकारी cascade को स्वीकार करने के लिए --confirm की आवश्यकता है"
   cli.err.comment_delete_requires_confirm: "comment delete को विनाशकारी ऑपरेशन को स्वीकार करने के लिए --confirm की आवश्यकता है"
-  cli.err.comment_task_scope_requires_id: "task-scope comment requires a TASK_ID argument"
-  cli.err.comment_scope_no_task_id: "project/universal-scope comment must not be given a TASK_ID argument"
-  cli.err.comment_unknown_scope: "unknown comment scope (use task, project, or universal)"
-  cli.err.comment_edit_requires_field: "comment edit requires at least one of --body, --title, --kind, --pinned, --tag"
+  cli.err.comment_edit_requires_field: "टिप्पणी संपादन के लिए --body, --title, --kind, --pinned, --tag में से कम से कम एक चाहिए"
   cli.err.orphans_requires_confirm: "अनाथ माइग्रेशन को --confirm की आवश्यकता है; लागू करने के लिए --confirm के साथ पुनः-रन करें"
   cli.err.unknown_workflow_preset: "अज्ञात workflow preset"
   cli.err.repo_local_already_exists: "repo-local .omakiten पहले से मौजूद है; ओवरराइट करने के लिए --preset-force पास करें"
@@ -409,9 +404,8 @@ keys:
   tui.empty.table_no_tasks: "अभी तक कोई task नहीं। बनाने के लिए n दबाएँ।"
   tui.empty.table_filtered: "कॉन्फ़िगर किए गए तालिका फ़िल्टर से कोई task मेल नहीं खाता।"
   tui.empty.blockers: "कोई blocker नहीं। जोड़ने के लिए b दबाएँ।"
-  tui.empty.sub_tasks: "No sub-tasks. Press n to add one."
   tui.empty.task_no_description: "कोई विवरण नहीं"
-  tui.empty.plan_no_goal: "No goal body"
+  tui.empty.plan_no_goal: "कोई लक्ष्य पाठ नहीं"
   tui.empty.blocker_picker: "इस task को block करने के लिए कोई अन्य task उपलब्ध नहीं।"
   tui.empty.comment_not_found: "comment नहीं मिला। वापस जाने के लिए esc दबाएँ।"
   tui.empty.none: "कोई नहीं"
@@ -435,7 +429,7 @@ keys:
   tui.footer.arm_delete_orphan: "delete तैयार करें (अनाथ)"
   tui.footer.delete_all_orphans: "सभी अनाथ delete करें"
   tui.footer.comment: "comment"
-  tui.footer.sub_task: "sub-task"
+  tui.footer.sub_task: "उप-कार्य"
   tui.footer.focus: "फ़ोकस"
   tui.footer.blockers: "blocker"
   tui.footer.open_comment_activity: "comment खोलें (गतिविधि)"
@@ -466,7 +460,7 @@ keys:
   tui.footer.period_7d_30d_all: "अवधि (7d / 30d / सब)"
   tui.footer.assign: "assign"
   tui.footer.edit_goal: "goal संपादन"
-  tui.footer.view_goal: "goal"
+  tui.footer.view_goal: "लक्ष्य"
   tui.footer.toggle_wave: "wave टॉगल"
   tui.footer.collapse_expand: "समेटें/फैलाएं"
   tui.confirm.entity_delete_fmt: "%s %q delete की पुष्टि करें। हटाने के लिए d फिर से दबाएँ; esc रद्द करता है।"
@@ -474,22 +468,21 @@ keys:
   tui.confirm.comment_delete_fmt: "comment #%d delete की पुष्टि करें। d फिर से दबाएँ; esc रद्द करता है।"
   tui.confirm.task_delete_fmt: "task #%d %q delete की पुष्टि करें। d फिर से दबाएँ; esc रद्द करता है।"
   tui.status.task_deleted_fmt: "task #%d delete किया गया"
-  tui.confirm.home_project_delete_fmt: "Confirm delete project %q (cascade tasks, plans, errors). Press d again; esc cancels. A backup snapshot is written first."
-  tui.notification.project_delete.title_fmt: "Delete project %q?"
-  tui.notification.project_delete.body_fmt: "Tasks: %d · Comments: %d · Plans: %d · Tags: %d · Activity log: %d entries. All permanently removed. Backup will be written to ~/.local/state/omakiten/backups/."
-  notifications.home-project-delete-confirm.description: "Confirm a destructive project delete with one keystroke; shows pre-resolved row counters so the user sees the blast radius."
-  notifications.home-project-delete-confirm.confirm_label: "Delete"
-  notifications.home-project-delete-confirm.cancel_label: "Cancel"
-  notifications.footer.details: "details"
-  notifications.footer.close: "close"
-  notifications.footer.cancel: "cancel"
-  notifications.kitten_orphan_migration.migrate_label: "Migrate"
-  notifications.kitten_orphan_migration.skip_label: "Skip"
-  cli.db.backup.prune_warn_fmt: "prune skipped: %s"
-  tui.status.project_deleted_fmt: "Project %q deleted · backup → %s"
-  tui.status.deleting_project_fmt: "Deleting project %q..."
-  tui.footer.delete_project: "delete project"
-  tui.footer.confirm_delete_project: "confirm delete · esc cancels"
+  tui.confirm.home_project_delete_fmt: "Delete project %q confirm करें (cascade tasks, plans, errors)। d फिर दबाएँ; esc cancel। पहले backup snapshot लिखा जाता है।"
+  tui.notification.project_delete.title_fmt: "Project %q delete करें?"
+  tui.notification.project_delete.body_fmt: "Tasks: %d · Comments: %d · Plans: %d · Tags: %d · Activity log: %d entries. सब permanently removed। Backup ~/.local/state/omakiten/backups/ में लिखा जाएगा।"
+  notifications.home-project-delete-confirm.description: "एक keystroke से destructive project delete confirm; pre-resolved row counters blast radius दिखाते हैं।"
+  notifications.home-project-delete-confirm.confirm_label: "हटाएँ"
+  notifications.footer.details: "विवरण"
+  notifications.footer.close: "बंद"
+  notifications.footer.cancel: "रद्द"
+  notifications.kitten_orphan_migration.migrate_label: "माइग्रेट करें"
+  notifications.kitten_orphan_migration.skip_label: "छोड़ें"
+  cli.db.backup.prune_warn_fmt: "prune छोड़ा गया: %s"
+  tui.status.project_deleted_fmt: "Project %q हटाया गया · backup → %s"
+  tui.status.deleting_project_fmt: "Project %q delete हो रहा है..."
+  tui.footer.delete_project: "project delete"
+  tui.footer.confirm_delete_project: "delete की पुष्टि · esc cancel"
   tui.status.orphan_tags_deleted_fmt: "%d अनाथ tag delete किए गए"
   tui.status.tag_in_use_fmt: "tag %q उपयोग में है (%d संदर्भ) — delete नहीं किया जा सकता"
   tui.status.task_not_found: "task नहीं मिला। वापस जाने के लिए esc दबाएँ।"
@@ -548,17 +541,15 @@ keys:
   tui.help.task_view.switch_focus: "फ़ोकस बदलें (फ़ॉर्म ⇄ गतिविधि)"
   tui.help.task_view.scroll_or_navigate: "विवरण स्क्रॉल करें (फ़ॉर्म) · कार्ड नेविगेट करें (गतिविधि)"
   tui.help.task_view.navigate_activity: "गतिविधि कार्ड नेविगेट करें (कोई भी फ़ोकस)"
-  tui.help.task_view.open_comment: "फ़ोकस्ड comment विस्तार दृश्य में खोलें (गतिविधि)"
   tui.help.task_view.scroll_halfpage: "आधे पृष्ठ से स्क्रॉल करें"
   tui.help.task_view.jump_top_bottom: "ऊपर / नीचे कूदें"
   tui.help.task_view.edit_task: "task संपादित करें"
-  tui.help.task_view.new_subtask: "create sub-task (parent_id pre-filled)"
+  tui.help.task_view.new_subtask: "उप-कार्य बनाएँ (parent_id पहले से भरा)"
   tui.help.task_view.edit_blockers: "blocker संपादित करें"
   tui.help.task_view.add_comment: "comment जोड़ें"
   tui.help.task_view.move: "ले जाएँ"
   tui.help.task_view.toggle_markdown: "markdown रेंडर टॉगल करें (कच्चा ⇄ रेंडर्ड)"
   tui.help.task_view.arm_delete: "task delete तैयार करें (फ़ॉर्म फ़ोकस), फिर पुष्टि करें"
-  tui.help.task_view.back_board: "बोर्ड पर वापस"
   tui.help.comment_view.title: "Comment दृश्य"
   tui.help.comment_view.scroll_body: "सामग्री स्क्रॉल करें"
   tui.help.comment_view.scroll_halfpage: "आधे पृष्ठ से स्क्रॉल करें"
@@ -651,12 +642,12 @@ keys:
   tui.dashboard.plan_progress: "प्रगति"
   tui.dashboard.plan_percent: "प्रतिशत"
   tui.kicker.dependency_graph: "निर्भरता ग्राफ़"
-  tui.kicker.tasks: "Tasks"
-  tui.kicker.stats: "Stats"
+  tui.kicker.tasks: "कार्य"
+  tui.kicker.stats: "आँकड़े"
   tui.kicker.body: "सामग्री"
   tui.kicker.description: "विवरण"
-  tui.kicker.goal: "Goal"
-  tui.kicker.plan_goal_fmt: "Goal · %s"
+  tui.kicker.goal: "लक्ष्य"
+  tui.kicker.plan_goal_fmt: "लक्ष्य · %s"
   tui.kicker.new_comment: "नया comment"
   tui.kicker.comment_fmt: "Comment · #%d"
   tui.kicker.edit_comment_fmt: "Comment संपादित करें · #%d"
@@ -674,7 +665,7 @@ keys:
   tui.row.title: "शीर्षक"
   tui.row.bucket: "Bucket"
   tui.row.priority: "Priority"
-  tui.row.status: "Status"
+  tui.row.status: "स्थिति"
   tui.row.comments: "Comment"
   tui.row.tags: "Tag"
   tui.row.slug: "Slug"
@@ -688,7 +679,7 @@ keys:
   tui.row.entity: "इकाई"
   tui.row.default: "डिफ़ॉल्ट"
   tui.row.blockers: "Blocker"
-  tui.row.sub_tasks: "Sub-tasks"
+  tui.row.sub_tasks: "उप-कार्य"
   tui.stat.tasks: "task"
   tui.stat.comments: "comment"
   tui.stat.context: "कॉन्टेक्स्ट"
@@ -698,15 +689,10 @@ keys:
   tui.stat.since_fmt: "%s से"
   tui.stat.error_badge: "[ERROR]"
   tui.stat.budget_exceeded: "बजट पार"
-  tui.log.total: "कुल"
   tui.log.ok: "ok"
   tui.log.error: "error"
   tui.log.running: "चल रहा"
-  tui.log.cli: "cli"
-  tui.log.mcp: "mcp"
   tui.log.tui: "tui"
-  tui.log.operation_col: "OPERATION"
-  tui.log.project_col: "PROJECT"
   tui.log.refresh_hint: "r रीफ़्रेश · पूर्ण तर्क व्यापक टर्मिनल पर दिखते हैं"
   tui.log.tui_refresh_note: "केवल app सेवा कॉल लॉग होते हैं। TUI रीफ़्रेश और सीधे पठन नहीं दिखाए जाते।"
   tui.log.filter.kicker: "logs · filter"
@@ -722,8 +708,8 @@ keys:
   tui.badge.blockers: "ब्लॉकर्स"
   tui.badge.comment: "टिप्पणी"
   tui.badge.comments: "टिप्पणियाँ"
-  tui.badge.subtask: "sub-task"
-  tui.badge.subtasks: "sub-tasks"
+  tui.badge.subtask: "उप-कार्य"
+  tui.badge.subtasks: "उप-कार्य"
   tui.badge.tokens_fmt: "TOKENS:%d"
   tui.badge.use_fmt: "USE:%d"
   tui.status.comment_deleted_fmt: "comment #%d delete किया गया"
@@ -758,11 +744,8 @@ keys:
   tui.home.then_reopen_prefix: "फिर पुनः-खोलें "
   tui.home.then_reopen_suffix: "।"
   tui.home.okt_tui_cmd: "okt tui"
-  tui.kicker.status: "स्थिति"
-  tui.kicker.sources: "स्रोत"
   tui.kicker.runtime: "रनटाइम"
   tui.kicker.project: "Project"
-  tui.log.column_header_fmt: "// TIME        SRC  %-*s %-*s STATUS  MS   ARGS"
   tui.settings.runtime.version: "okt संस्करण"
   tui.settings.runtime.scope: "scope"
   tui.settings.runtime.config: "config"
@@ -775,7 +758,6 @@ keys:
   tui.settings.runtime.lang_cli: "cli भाषा"
   tui.settings.runtime.lang_tui: "tui भाषा"
   tui.settings.runtime.lang_agent_output: "agent आउटपुट"
-  tui.settings.effective_hint: "केवल पढ़ने योग्य · `$EDITOR <पथ>` से संपादित करें"
   tui.settings.effective.section.output: "आउटपुट"
   tui.settings.effective.section.context: "संदर्भ"
   tui.settings.effective.section.workflow: "workflow"
@@ -796,15 +778,12 @@ keys:
   tui.settings.effective.section.priorities: "प्राथमिकताएँ"
   tui.settings.effective.section.severities: "गंभीरता स्तर"
   tui.settings.effective.section.languages: "भाषाएँ"
-  tui.settings.effective.source.default: "डिफ़ॉल्ट"
-  tui.settings.effective.source.project: "परियोजना"
-  tui.settings.effective.source.env: "परिवेश"
   tui.settings.guards_tab: "गार्ड्स"
   tui.settings.guards_hint: "केवल पढ़ने योग्य · `$EDITOR omakiten.yaml` से संपादित करें"
   tui.settings.guards.header_to: "तक"
   tui.settings.guards.header_from: "से"
   tui.settings.guards.sentinel_disallowed: "—"
-  tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.sentinel_empty: "[खाली]"
   tui.settings.guards.kicker_root: "मूल"
   tui.settings.guards.kicker_subtask: "उपकार्य किट"
   tui.kicker.totals: "कुल योग"
@@ -848,7 +827,6 @@ keys:
   tui.keys.save_comment_desc: "comment सहेजें (नया) · संपादन सहेजें (मौजूदा)"
   tui.keys.insert_newline_desc: "नई पंक्ति डालें"
   tui.keys.cancel_desc: "रद्द करें"
-  tui.keys.submit_bucket_desc: "लक्ष्य bucket key सबमिट करें"
   tui.empty.activity_logging_unavailable: "इस project के लिए गतिविधि लॉगिंग उपलब्ध नहीं है।"
   tui.empty.metrics_unavailable: "मेट्रिक्स रिपॉज़िटरी उपलब्ध नहीं।"
   tui.empty.task_not_found_refresh: "task नहीं मिला। r से रीफ़्रेश करें या बोर्ड पर लौटें।"
@@ -856,7 +834,7 @@ keys:
   tui.status.theme_picker_cancelled: "theme पिकर रद्द किया गया"
   tui.status.default_picker_cancelled: "डिफ़ॉल्ट पिकर रद्द किया गया"
   tui.kicker.new_task: "नया task"
-  tui.kicker.new_subtask_fmt: "New sub-task · parent #%d %s"
+  tui.kicker.new_subtask_fmt: "नया उप-कार्य · मूल #%d %s"
   tui.status.template_add_hint: "template स्वतः-लोड होते हैं — templates/ में एक .md फ़ाइल जोड़ें और रीफ़्रेश करें"
   tui.status.template_remove_hint: "template स्वतः-लोड होते हैं — templates/ से .md फ़ाइल हटाएँ और रीफ़्रेश करें"
   tui.status.nothing_to_open: "खोलने के लिए कुछ नहीं"
@@ -885,24 +863,24 @@ keys:
   tui.status.showing_archived: "आर्काइव किए गए task दिखाए जा रहे हैं"
   tui.status.hiding_archived: "आर्काइव किए गए task छिपाए जा रहे हैं"
   tui.status.new_task: "नया task"
-  tui.status.new_subtask_fmt: "New sub-task of #%d %q"
+  tui.status.new_subtask_fmt: "नया उप-कार्य #%d %q का"
   tui.status.editing_task: "task संपादित किया जा रहा है"
   tui.status.task_title_required: "task शीर्षक आवश्यक है"
   tui.status.no_themes_found: "कोई theme नहीं मिला"
   tui.status.theme_picker: "theme पिकर"
   tui.status.no_config_profiles: "कोई config प्रोफ़ाइल नहीं मिला"
   tui.status.config_picker: "config पिकर"
-  tui.status.no_subtask_kit_profiles: "No sub-task kit profiles found"
-  tui.status.subtask_kit_picker: "Sub-task kit picker"
-  tui.status.subtask_kit_picker_cancelled: "Sub-task kit picker cancelled"
-  tui.status.subtask_kit_switched_fmt: "Sub-task kit set to %s"
-  tui.status.subtask_kit_cleared: "Sub-task kit cleared (inherit root)"
-  tui.status.subtask_kit_already_none: "Sub-task kit already inherits root"
-  tui.status.subtask_kit_switch_failed_fmt: "Sub-task kit switch failed: %s"
-  tui.kicker.subtask_kit_active_fmt: "Sub-task kit · active: %s"
-  tui.picker.hint.subtask_kit: "up/down: move · enter: apply (hot-reload) · esc: cancel"
-  tui.picker.subtask_kit_none: "none (inherit root)"
-  tui.subtask_board.fallback_lane_name: "All"
+  tui.status.no_subtask_kit_profiles: "कोई sub-task kit profiles नहीं मिले"
+  tui.status.subtask_kit_picker: "Sub-task kit चयनकर्ता"
+  tui.status.subtask_kit_picker_cancelled: "Sub-task kit चयनकर्ता रद्द"
+  tui.status.subtask_kit_switched_fmt: "Sub-task kit %s पर सेट"
+  tui.status.subtask_kit_cleared: "Sub-task kit साफ़ (root से विरासत)"
+  tui.status.subtask_kit_already_none: "Sub-task kit पहले से root से विरासत में"
+  tui.status.subtask_kit_switch_failed_fmt: "Sub-task kit स्विच विफल: %s"
+  tui.kicker.subtask_kit_active_fmt: "Sub-task kit · सक्रिय: %s"
+  tui.picker.hint.subtask_kit: "up/down: ले जाएँ · enter: लागू करें (hot-reload) · esc: रद्द करें"
+  tui.picker.subtask_kit_none: "कोई नहीं (inherit root)"
+  tui.subtask_board.fallback_lane_name: "सभी"
   tui.status.no_template_selected: "कोई template चयनित नहीं"
   tui.status.template_not_found: "template नहीं मिला"
   tui.status.template_picker_needs_project: "template डिफ़ॉल्ट असाइन करने के लिए TUI को project के अंदर खोला जाना चाहिए"
@@ -1051,12 +1029,8 @@ keys:
   cli.setup.status.wrapper_skipped: "=> शेल-रैपर इंस्टॉल छोड़ रहा: ~/.bashrc या ~/.zshrc नहीं मिला"
   cli.setup.status.harness_configured: "=> %s के लिए MCP कॉन्फ़िगर कर रहा"
   cli.setup.status.harness_failed: "   (%s छोड़ा, exit %d — मैन्युअल पुनः-रन: %s mcp setup --harness %s --force)"
-  cli.setup.status.complete: "=> शुरू करने के लिए 'okt --help' चलाएँ"
   cli.setup.warn.unknown_preset: "चेतावनी: OKT_PRESET=%s समर्थित preset नहीं है; %s पर वापस आ रहा"
-  cli.setup.warn.unknown_harness: "चेतावनी: अज्ञात harness %q अनदेखा कर रहा"
-  cli.setup.warn.harness_index_oor: "चेतावनी: इंडेक्स %s सीमा से बाहर"
   cli.setup.picker.lang.cli.title: "अपनी CLI भाषा चुनें"
-  cli.setup.picker.lang.tui.title: "अपनी TUI भाषा चुनें"
   cli.setup.picker.agent.title: "Agent आउटपुट भाषा (मुक्त-रूप पाठ, जैसे \"English\" या \"Português (Brasil)\")"
   cli.setup.picker.agent.placeholder: "en"
   cli.setup.picker.preset.title: "अपना workflow preset चुनें"
@@ -1064,78 +1038,77 @@ keys:
   cli.setup.picker.hint.nav: "↑/↓ नेविगेट · enter पुष्टि · ctrl+c बाहर निकलें"
   cli.setup.picker.hint.multi: "↑/↓ नेविगेट · enter टॉगल · tab पुष्टि · ctrl+c बाहर निकलें"
   cli.setup.picker.hint.input: "संपादन के लिए टाइप करें · enter पुष्टि (खाली ठीक) · ctrl+c बाहर निकलें"
+  cli.setup.picker.hint.back: " · esc वापस"
+  cli.setup.picker.step: "चरण"
   cli.setup.picker.aborted: "setup निरस्त; कुछ नहीं लिखा गया"
   cli.setup.picker.no_tty: "इंटरैक्टिव पिकर को TTY चाहिए; हेडलेस इंस्टॉल के लिए OKT_CLI_LANG, OKT_TUI_LANG, OKT_AGENT_LANG, OKT_PRESET, OKT_HARNESSES (या मिलते --flag) प्रदान करें"
 
 # okt uninstall — in-binary counterpart of uninstall.sh / uninstall.ps1.
-  cli.uninstall.short: "Remove the installed okt binary and shell-rc wrapper (data + config preserved by default)"
+  cli.uninstall.short: "इंस्टॉल किया okt binary और shell-rc wrapper हटाएँ (डिफ़ॉल्ट पर data + config सुरक्षित)"
   cli.uninstall.long: |-
-    Remove the binary the installer wrote to $INSTALL_DIR (defaults to
-    ~/.local/bin on POSIX and %LOCALAPPDATA%Programsokt on Windows) and
-    strip the okt() wrapper block from every rc/profile target.
-
-
-    No automatic backup. Run `okt db backup` first if you want a
-    snapshot of the SQLite DB before purging — uninstall removes
-    user-owned data by intent, so the safety net is opt-in via the
-    standalone backup command.
-
-    Local state is preserved unless explicitly opted-out via --purge-data
-    (SQLite DB under $XDG_DATA_HOME/omakiten) or --purge-config (active
-    yaml profile + entity folders under $XDG_CONFIG_HOME/omakiten).
-    --purge is shorthand for both.
-
-    Without flags on a TTY the picker shows what would be deleted with
-    sizes and asks per purge target. --yes skips the picker entirely.
-  cli.uninstall.flag.yes: "skip the interactive picker and apply the resolved flag set non-interactively"
-  cli.uninstall.flag.purge-data: "also delete $XDG_DATA_HOME/omakiten (SQLite DB + WAL/SHM) — irreversible"
-  cli.uninstall.flag.purge-config: "also delete $XDG_CONFIG_HOME/omakiten (active yaml + entity folders) — irreversible"
-  cli.uninstall.flag.purge: "shorthand for --purge-data + --purge-config — irreversible"
-  cli.uninstall.picker.title: "Uninstall okt"
-  cli.uninstall.picker.hint: "↑/↓ navigate · enter toggle · y apply · ctrl+c quit"
-  cli.uninstall.picker.warn: "THIS CANNOT BE UNDONE"
-  cli.uninstall.picker.binary: "binary  %s"
-  cli.uninstall.picker.wrappers: "shell wrappers (rc/profile blocks)"
-  cli.uninstall.picker.data: "data dir  %s  (%s)"
-  cli.uninstall.picker.config: "config dir  %s  (%s)"
-  cli.uninstall.picker.no_tty: "interactive picker needs a TTY; pass --yes (plus optional --purge-* flags) for headless uninstall"
-  cli.uninstall.picker.aborted: "uninstall aborted; nothing removed"
+    installer द्वारा $INSTALL_DIR में लिखा binary हटाता है (डिफ़ॉल्ट
+    POSIX पर ~/.local/bin और Windows पर %LOCALAPPDATA%\Programs\okt) और
+    हर rc/profile लक्ष्य से okt() wrapper ब्लॉक हटाता है।
+    
+    स्थानीय स्थिति तब तक सुरक्षित रहती है जब तक --purge-data से
+    स्पष्ट opt-out न हो ($XDG_DATA_HOME/omakiten में SQLite DB) या --purge-config
+    ($XDG_CONFIG_HOME/omakiten में सक्रिय yaml प्रोफ़ाइल + entity फ़ोल्डर)।
+    --purge दोनों का shorthand है।
+    
+    TTY पर बिना flags के picker दिखाता है कि क्या हटेगा,
+    आकार के साथ, और प्रत्येक purge लक्ष्य पर पूछता है। --yes picker पूरी तरह छोड़ देता है।
+    
+    कोई स्वचालित backup नहीं। purge से पहले SQLite DB का
+    snapshot चाहिए तो पहले `okt db backup` चलाएँ — uninstall जानबूझकर
+    उपयोगकर्ता डेटा हटाता है; सुरक्षा जाल standalone backup कमांड से opt-in है।
+  cli.uninstall.flag.yes: "इंटरैक्टिव picker छोड़ें और resolved flag सेट गैर-इंटरैक्टिव लागू करें"
+  cli.uninstall.flag.purge-data: "$XDG_DATA_HOME/omakiten भी हटाएँ (SQLite DB + WAL/SHM) — अपरिवर्तनीय"
+  cli.uninstall.flag.purge-config: "$XDG_CONFIG_HOME/omakiten भी हटाएँ (सक्रिय yaml + entity फ़ोल्डर) — अपरिवर्तनीय"
+  cli.uninstall.flag.purge: "--purge-data + --purge-config का shorthand — अपरिवर्तनीय"
+  cli.uninstall.picker.title: "okt अनइंस्टॉल करें"
+  cli.uninstall.picker.hint: "↑/↓ नेविगेट · enter टॉगल · y लागू · ctrl+c बाहर"
+  cli.uninstall.picker.warn: "इसे वापस नहीं किया जा सकता"
+  cli.uninstall.picker.binary: "बाइनरी  %s"
+  cli.uninstall.picker.wrappers: "shell wrappers (rc/profile ब्लॉक)"
+  cli.uninstall.picker.data: "डेटा dir  %s  (%s)"
+  cli.uninstall.picker.config: "कॉन्फ़िग dir  %s  (%s)"
+  cli.uninstall.picker.no_tty: "इंटरैक्टिव picker को TTY चाहिए; headless uninstall के लिए --yes (और वैकल्पिक --purge-*) दें"
+  cli.uninstall.picker.aborted: "uninstall रद्द; कुछ नहीं हटाया गया"
 
   # okt update — in-binary counterpart of the curl|bash installer for refresh.
-  cli.update.short: "Fetch the latest okt release and atomically swap the installed binary"
+  cli.update.short: "नवीनतम okt release लाएँ और इंस्टॉल binary को atomically बदलें"
   cli.update.long: |-
-    Detect the running binary's path (os.Executable), query the GitHub
-    releases API for the latest tag, download the matching asset, and
-    atomically replace the binary on disk. The current process exits
-    after the swap; the next invocation runs the new version.
-
-    --check prints `current=<v> latest=<v> action=<noop|upgrade>` and
-    exits 0 without writing. --yes skips the confirmation prompt for
-    non-interactive callers.
-  cli.update.flag.yes: "skip the confirmation prompt and apply the upgrade non-interactively"
-  cli.update.flag.check: "report current vs. latest and exit without writing"
-  cli.update.picker.title: "Update okt"
-  cli.update.picker.line: "current=%s  →  latest=%s"
-  cli.update.picker.hint: "y apply · n cancel · ctrl+c quit"
-  cli.update.picker.no_tty: "interactive confirmation needs a TTY; pass --yes for headless update or --check for a dry-run report"
-  cli.update.picker.aborted: "update aborted; binary unchanged"
-  cli.update.err.fetch_latest: "fetch latest release tag: %s"
-  cli.update.err.download_asset: "download asset %s: %s"
-  cli.update.err.swap_binary: "atomic swap of %s: %s"
-  cli.update.err.unsupported_platform: "no published asset for %s/%s"
-  cli.update.err.extract_asset: "extract %s from archive: %s"
-  cli.update.err.fetch_checksum: "fetch release checksums: %s"
-  cli.update.err.checksum_mismatch: "checksum mismatch: expected %s got %s"
-  cli.update.err.asset_too_large: "asset %s exceeds %d-byte size cap"
-  cli.update.err.windows_unsupported: "okt update not yet supported on Windows; reinstall via install.ps1"
-  cli.update.err.dev_build: "this is a dev build; rebuild from source or install a release"
-  cli.update.err.backup_failed_fmt: "pre-swap backup failed: %s; binary unchanged"
+    चल रहे binary का पथ (os.Executable) पहचानता है, GitHub
+    releases API से नवीनतम tag पूछता है, मेल खाता asset डाउनलोड करता है, और
+    डिस्क पर binary atomically बदलता है। swap के बाद वर्तमान प्रक्रिया
+    समाप्त होती है; अगला invocation नया संस्करण चलाता है।
+    
+    --check `current=<v> latest=<v> action=<noop|upgrade>` प्रिंट करता है और
+    बिना लिखे 0 पर बाहर निकलता है। --yes गैर-इंटरैक्टिव callers के लिए पुष्टि छोड़ता है।
+  cli.update.flag.yes: "पुष्टि prompt छोड़ें और upgrade गैर-इंटरैक्टिव लागू करें"
+  cli.update.flag.check: "वर्तमान vs. नवीनतम रिपोर्ट करें और बिना लिखे बाहर निकलें"
+  cli.update.picker.title: "okt अपडेट करें"
+  cli.update.picker.line: "वर्तमान=%s  →  नवीनतम=%s"
+  cli.update.picker.hint: "y लागू · n रद्द · ctrl+c बाहर"
+  cli.update.picker.no_tty: "इंटरैक्टिव पुष्टि को TTY चाहिए; headless update के लिए --yes या dry-run रिपोर्ट के लिए --check दें"
+  cli.update.picker.aborted: "update रद्द; binary अपरिवर्तित"
+  cli.update.err.fetch_latest: "नवीनतम release tag लाना: %s"
+  cli.update.err.download_asset: "asset %s डाउनलोड: %s"
+  cli.update.err.swap_binary: "%s का atomic swap: %s"
+  cli.update.err.unsupported_platform: "%s/%s के लिए कोई प्रकाशित asset नहीं"
+  cli.update.err.extract_asset: "आर्काइव से %s निकालना: %s"
+  cli.update.err.fetch_checksum: "release checksums लाना: %s"
+  cli.update.err.checksum_mismatch: "checksum मेल नहीं: अपेक्षित %s मिला %s"
+  cli.update.err.asset_too_large: "asset %s %d-बाइट सीमा से अधिक"
+  cli.update.err.windows_unsupported: "Windows पर okt update अभी समर्थित नहीं; install.ps1 से पुनः इंस्टॉल करें"
+  cli.update.err.dev_build: "यह dev build है; source से rebuild करें या release इंस्टॉल करें"
+  cli.update.err.backup_failed_fmt: "pre-swap backup विफल: %s; binary अपरिवर्तित"
 
   # okt config validate --migrate health-check additions (#365).
   cli.config.validate.flag.migrate: "run MigrateLayout + EnsureDefaultFiles before LoadBundle/ValidateBundle so schema backfills land in the report"
-  cli.update.err.stage_binary_fmt: "stage extracted binary for pre-swap health check: %s"
-  cli.update.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); binary unchanged — run `okt config validate --migrate` for details"
-  cli.update.err.config_validation_exec_fmt: "run staged binary health check: %s"
+  cli.update.err.stage_binary_fmt: "pre-swap health check के लिए निकाला binary stage करें: %s"
+  cli.update.err.config_validation_failed_fmt: "config health check विफल (%d त्रुटियाँ, पहली: %s); binary अपरिवर्तित — विवरण के लिए `okt config validate --migrate` चलाएँ"
+  cli.update.err.config_validation_exec_fmt: "staged binary health check चलाएँ: %s"
   cli.tui.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); run `okt config validate --migrate` for details"
   # Remediation hint copy (#367) — %s slot carries the suggested command literal.
   cli.config.validate.remediation.missing_shipped_file: "Restore the shipped default files: %s — your custom/ subtree is preserved; back up direct edits to shipped files first."
@@ -1149,11 +1122,9 @@ keys:
   tui.plans.list.header: "// SLUG             STATUS    पूर्ण/कुल    %    नाम ‹सक्रिय WAVE›"
   tui.plans.list.active_wave_missing: "—"
   tui.plans.network.no_waves_fmt: "अभी कोई wave नहीं। जोड़ें: `okt plan wave-add %s \"<wave-name>\"`."
-  tui.plans.network.header_fmt: "// PLAN · %s · %d/%d · %d%%"
+  tui.plans.network.header_fmt: "// योजना · %s · %d/%d · %d%%"
   tui.plans.network.keymap: "(c assign · e goal संपादन · r ताज़ा करें)"
-  tui.plans.network.wave_header_fmt: "// W%d %s · %d/%d"
   tui.plans.network.active_tag: " ‹सक्रिय›"
-  tui.plans.network.empty_wave: "खाली"
   tui.plans.network.wave_glyph_header_fmt: "%s W%d %s · %d/%d"
   tui.plans.network.column.title: " शीर्षक"
   tui.plans.network.column.bucket: " चरण"
@@ -1167,12 +1138,10 @@ keys:
   tui.plans.network.badge.ready: "तैयार"
   tui.plans.network.deps_footer_prefix: "निर्भरताएं: "
   tui.plans.network.next_claimable_fmt: "▶ अगला उपलब्ध: #%d"
-  tui.plans.kicker: "Plans"
-  tui.plans.status.claim_success_fmt: "plans.claim_next: task #%d %q सौंपी गई"
-  tui.plans.status.claim_empty_fmt: "plans.claim_next: %q में कोई उपलब्ध task नहीं"
+  tui.plans.kicker: "योजनाएँ"
   tui.plans.status.assign_no_task: "plans.assign: कोई task चयनित नहीं"
   tui.plans.assign.status_fmt: "#%d का ज़िम्मेदार (खाली साफ़)"
-  tui.plans.goal.kicker_fmt: "// PLAN GOAL · %s"
+  tui.plans.goal.kicker_fmt: "// योजना लक्ष्य · %s"
   tui.plans.goal.status_fmt: "plan goal · %s · ctrl+s सहेजें · esc रद्द करें"
   tui.plans.goal.hint.ctrl_s: "ctrl+s सहेजता है"
   tui.plans.goal.hint.alt_newline: "alt+enter नई पंक्ति"
@@ -1210,7 +1179,7 @@ keys:
 
   # guard.* — hint strings surfaced in guard.violated payloads.
   guard.wave_gate.hint: "पिछली wave के समाप्त होने की प्रतीक्षा करें — इस plan में पिछली waves की tasks को इसके शुरू होने से पहले Done तक पहुँचना चाहिए।"
-  guard.subtasks_complete.hint: "Move every direct sub-task into the final bucket before promoting the parent."
+  guard.subtasks_complete.hint: "Parent promote करने से पहले हर direct sub-task को final bucket में ले जाएँ।"
   # guard.common.* — hints shared across presets. Per-preset override via
   # the preset-scoped namespace (guard.<preset>.<stage>.<rule>...) when copy diverges.
   guard.common.archive.comments_tagged.documentation.hint: "आर्काइव करने से पहले एक #documentation टिप्पणी जोड़ें जो सारांश करे कि क्या डिलीवर हुआ।"
@@ -1251,31 +1220,31 @@ keys:
   guard.shokunin.review.comments_tagged.rollback_plan.hint: "review से पहले revert चरण, rollback के बाद सत्यापन, और संचार योजना के साथ एक #rollback-plan जोड़ें।"
   guard.shokunin.docs.comments_tagged.peer_review.hint: "स्वतंत्र reviewers (लेखक नहीं) से ≥ 2 अलग-अलग #peer-review टिप्पणियाँ जोड़ें। प्रत्येक में निर्णय, अनुमोदन दायरा, और समीक्षित कलाकृतियों की चेकलिस्ट होती है।"
   guard.shokunin.done.comments_tagged.lessons_learned.hint: "क्या काम किया / क्या नहीं और कोई प्रस्तावित प्रक्रिया परिवर्तन का नाम देने वाली एक #lessons-learned टिप्पणी जोड़ें।"
-  tui.footer.zone: "zone"
-  tui.footer.focus_description: "focus description"
-  tui.footer.enter_zone_action: "act"
-  tui.footer.open_subtask: "open sub-task"
-  tui.footer.back_parent: "back to parent"
-  tui.footer.close_focus: "close focus"
-  tui.footer.toggle_markdown: "toggle markdown"
-  tui.kicker.description_fmt: "Description · #%d"
-  tui.task.description_more_fmt: "+%d more lines · f to focus"
-  tui.help.task_view.open_focused: "open focused item (sub-task drill / comment detail)"
-  tui.help.task_view.focus_description: "open description in focus overlay"
-  tui.help.task_view.back_or_parent: "back to parent task / board"
-  tui.help.description_view.title: "Description focus"
-  tui.help.description_view.scroll_body: "scroll body"
-  tui.help.description_view.scroll_halfpage: "scroll by half page"
-  tui.help.description_view.jump_top_bottom: "jump to top / bottom"
-  tui.help.description_view.toggle_markdown: "toggle markdown render (raw ⇄ rendered)"
-  tui.help.description_view.close: "close focus and return to task"
-  tui.help.task_view.focus_subtasks: "focus sub-tasks pane"
-  tui.help.task_view.send_subtask_done: "send focused sub-task → final bucket"
-  tui.status.subtask_sent_done_fmt: "Sub-task #%d moved to %q"
-  tui.confirm.delete_subtree_fmt: "Confirm delete task #%d %q + %d sub-tasks (%d total). Press d again; esc cancels."
-  tui.status.subtask_already_done_fmt: "Sub-task #%d already in %q"
-  tui.status.no_subtasks_to_focus: "No sub-tasks to focus"
-  tui.taskedit.dirty_discard_prompt: "Discard unsaved edits? Press esc again to discard, ctrl+s to save."
-  tui.taskedit.parent_lookup_invalid: "Parent id must be a positive integer (or empty for root)."
-  tui.taskedit.parent_lookup_self: "Parent cannot be the task itself."
-  tui.taskedit.parent_lookup_not_found: "No task with that id in this project."
+  tui.footer.zone: "ज़ोन"
+  tui.footer.focus_description: "विवरण फ़ोकस"
+  tui.footer.enter_zone_action: "कार्य"
+  tui.footer.open_subtask: "उप-कार्य खोलें"
+  tui.footer.back_parent: "मूल पर वापस"
+  tui.footer.close_focus: "फ़ोकस बंद"
+  tui.footer.toggle_markdown: "markdown टॉगल"
+  tui.kicker.description_fmt: "विवरण · #%d"
+  tui.task.description_more_fmt: "+%d और पंक्तियाँ · f फ़ोकस के लिए"
+  tui.help.task_view.open_focused: "फ़ोकस आइटम खोलें (उप-कार्य / टिप्पणी विवरण)"
+  tui.help.task_view.focus_description: "फ़ोकस ओवरले में विवरण खोलें"
+  tui.help.task_view.back_or_parent: "मूल कार्य / बोर्ड पर वापस"
+  tui.help.description_view.title: "विवरण फ़ोकस"
+  tui.help.description_view.scroll_body: "मुख्य भाग स्क्रॉल"
+  tui.help.description_view.scroll_halfpage: "आधा पृष्ठ"
+  tui.help.description_view.jump_top_bottom: "ऊपर / नीचे जाएँ"
+  tui.help.description_view.toggle_markdown: "markdown टॉगल (कच्चा ⇄ रेंडर)"
+  tui.help.description_view.close: "फ़ोकस बंद कर कार्य पर लौटें"
+  tui.help.task_view.focus_subtasks: "उप-कार्य पैन फ़ोकस"
+  tui.help.task_view.send_subtask_done: "फ़ोकस उप-कार्य → अंतिम bucket भेजें"
+  tui.status.subtask_sent_done_fmt: "उप-कार्य #%d %q में गया"
+  tui.confirm.delete_subtree_fmt: "कार्य #%d %q + %d उप-कार्य (%d कुल) हटाने की पुष्टि करें। d फिर दबाएँ; esc रद्द।"
+  tui.status.subtask_already_done_fmt: "उप-कार्य #%d पहले से %q में"
+  tui.status.no_subtasks_to_focus: "फ़ोकस के लिए कोई उप-कार्य नहीं"
+  tui.taskedit.dirty_discard_prompt: "बिना सहेजे बदलाव छोड़ें? छोड़ने के लिए esc फिर दबाएँ, सहेजने के लिए ctrl+s।"
+  tui.taskedit.parent_lookup_invalid: "मूल id धनात्मक पूर्णांक होना चाहिए (या जड़ के लिए खाली)।"
+  tui.taskedit.parent_lookup_self: "मूल स्वयं कार्य नहीं हो सकता।"
+  tui.taskedit.parent_lookup_not_found: "इस प्रोजेक्ट में उस id का कोई कार्य नहीं।"

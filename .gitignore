@@ -42,6 +42,10 @@ tmp/
 # Stray test-runner caches (not used by this Go repo, but blocked just in case)
 .pytest_cache/
 
+# Python bytecode from scripts/ i18n apply helpers
+__pycache__/
+*.py[cod]
+
 # >>> assisted_workflow >>>
 .workflow
 .opencode

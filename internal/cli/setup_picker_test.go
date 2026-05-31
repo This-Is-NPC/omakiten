@@ -630,6 +630,19 @@ func TestSetupPicker_ViewRendersStepIndicator(t *testing.T) {
 	if got := m.View(); !strings.Contains(got, "step 1/4") {
 		t.Fatalf("lang view: missing 'step 1/4' indicator\n%s", got)
 	}
+	enIdx := -1
+	for i, l := range m.langs {
+		if l.Code == "en" {
+			enIdx = i
+			break
+		}
+	}
+	if enIdx < 0 {
+		t.Fatalf("en not in bundled language options: %+v", m.langs)
+	}
+	for i := 0; i < enIdx; i++ {
+		m = stepThrough(t, m, downMsg())
+	}
 	m = stepThrough(t, m, enterMsg()) // → agent (input view)
 	if got := m.View(); !strings.Contains(got, "step 2/4") {
 		t.Fatalf("agent view: missing 'step 2/4' indicator\n%s", got)
@@ -641,6 +654,39 @@ func TestSetupPicker_ViewRendersStepIndicator(t *testing.T) {
 	m = stepThrough(t, m, enterMsg()) // → harness
 	if got := m.View(); !strings.Contains(got, "step 4/4") {
 		t.Fatalf("harness view: missing 'step 4/4' indicator\n%s", got)
+	}
+}
+
+// TestSetupPicker_ViewLocalizedStepAndBackHint — after picking de the
+// paginator label and back-hint suffix come from the chosen catalog, not
+// hardcoded English literals.
+func TestSetupPicker_ViewLocalizedStepAndBackHint(t *testing.T) {
+	m, err := newSetupPickerModel(setupInputs{}, pickerNeeds{Lang: true, Agent: true, Preset: true, Harness: true})
+	if err != nil {
+		t.Fatalf("newSetupPickerModel: %v", err)
+	}
+	deIdx := -1
+	for i, l := range m.langs {
+		if l.Code == "de" {
+			deIdx = i
+			break
+		}
+	}
+	if deIdx < 0 {
+		t.Fatalf("de not in bundled language options: %+v", m.langs)
+	}
+	for i := 0; i < deIdx; i++ {
+		m = stepThrough(t, m, downMsg())
+	}
+	m = stepThrough(t, m, enterMsg())
+	if m.cliCatalog == nil || m.cliCatalog.Code != "de" {
+		t.Fatalf("cliCatalog: want de got %+v", m.cliCatalog)
+	}
+	if got := m.View(); !strings.Contains(got, "Schritt 2/4") {
+		t.Fatalf("agent view: missing localized step indicator\n%s", got)
+	}
+	if got := m.backHint(); got == "" || !strings.Contains(got, "zurück") {
+		t.Fatalf("backHint after lang confirm: got %q want German esc-back suffix", got)
 	}
 }
 

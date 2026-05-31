@@ -34,24 +34,24 @@ keys:
   cli.context.short: "Inspecciona el contexto del proyecto para handoff"
   cli.context.add.short: "Añade una entrada de contexto de handoff del proyecto"
   cli.context.dump.short: "Dump de contexto progresivo para agentes"
-  cli.logs.short: "Inspect the unified event log (task, comment, plan, hook, tool_call, guard, …)"
+  cli.logs.short: "Inspeccionar el registro unificado de eventos (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
-    okt logs reads the unified events table through the same path the TUI Logs
-    inspector uses. The default window is the last Snapshot.LogsWindowDays()
-    days for the active project, all categories included.
-
-    Categories (match the TUI filter chips): task, comment, plan, tag-dep,
-    guard, audit, hook, tool_call, trick, domain. Pass `all` to clear the
-    filter explicitly.
-
-    Output is a JSON envelope; each row carries the 5-field shape
-    (time · event_type · entity · author · summary) where `summary` is the
-    canonical SummarizeEvent string used by the TUI inspector.
-  cli.logs.flag.category: "restrict to one or more event categories (repeatable, comma-separated; `all` clears the filter)"
-  cli.logs.flag.since: "override the default window (e.g. 24h, 30m, 7d)"
-  cli.logs.flag.limit: "cap the number of rows returned (0 = no cap)"
-  cli.err.logs_invalid_category: "unknown event category"
-  cli.err.logs_invalid_since: "invalid --since duration; expected forms like 24h, 30m, 7d"
+    okt logs lee la tabla unificada de eventos por la misma ruta que el inspector Logs del TUI.
+    La ventana predeterminada son los últimos Snapshot.LogsWindowDays()
+    días del proyecto activo, todas las categorías incluidas.
+    
+    Categorías (coinciden con las fichas de filtro del TUI): task, comment, plan, tag-dep,
+    guard, audit, hook, tool_call, trick, domain. Pasa `all` para borrar
+    el filtro explícitamente.
+    
+    La salida es un sobre JSON; cada fila lleva la forma de 5 campos
+    (time · event_type · entity · author · summary) donde `summary` es la
+    cadena SummarizeEvent canónica del inspector TUI.
+  cli.logs.flag.category: "restringir a una o más categorías de eventos (repetible, separadas por comas; `all` borra el filtro)"
+  cli.logs.flag.since: "anular la ventana predeterminada (p. ej. 24h, 30m, 7d)"
+  cli.logs.flag.limit: "limitar filas devueltas (0 = sin tope)"
+  cli.err.logs_invalid_category: "categoría de evento desconocida"
+  cli.err.logs_invalid_since: "duración --since no válida; formas esperadas como 24h, 30m, 7d"
   cli.depend.short: "Gestiona dependencias de tasks"
   cli.depend.add.short: "Añade una dependencia de task"
   cli.depend.remove.short: "Elimina una dependencia de task"
@@ -59,48 +59,46 @@ keys:
   cli.config.short: "Gestiona el bundle canónico omakiten.yaml"
   cli.config.validate.short: "Valida un archivo omakiten.yaml"
   cli.config.presets.short: "Lista los presets oficiales de workflow"
-  cli.projects.short: "Project lifecycle utilities (delete — destructive ops)"
-  cli.projects.delete.short: "Hard-delete a registered project and every dependent row (irreversible)"
+  cli.projects.short: "Utilidades del ciclo de vida del proyecto (delete — ops destructivas)"
+  cli.projects.delete.short: "Hard-delete de un proyecto registrado y cada fila dependiente (irreversible)"
   cli.projects.delete.long: |-
-    Resolve the project by numeric id or slug, write a recovery
-    snapshot to the rolling backups directory, then cascade-delete
-    every dependent row (tasks, comments, plans, tag attachments,
+    Resuelve el proyecto por id numérico o slug, escribe un snapshot
+    de recuperación en el directorio de backups rotativos y cascade-delete
+    de cada fila dependiente (tasks, comments, plans, tag attachments,
     context entries, errors, activity log).
-
-    Backup failure aborts the delete before anything is touched.
-    Filesystem state under <root_path>/.omakiten/ is preserved —
-    only DB rows are removed.
-
-    Without --yes the command prints counters and prompts for
-    confirmation; piping without --yes errors out instead of
-    blocking on stdin.
-  cli.projects.delete.flag.yes: "skip the interactive confirmation and apply the delete non-interactively"
-  cli.projects.delete.counters_fmt: "tasks: %d · comments: %d · plans: %d · tags: %d · activity: %d entries"
-  cli.projects.delete.prompt: "delete project %q? [y/N]:"
-  cli.projects.delete.success_fmt: "project %q deleted · backup → %s"
-  cli.projects.delete.err.no_tty: "interactive confirmation required; pass --yes to skip"
-  cli.projects.delete.err.aborted: "delete aborted; nothing removed"
-  cli.projects.delete.err.not_found: "project not found"
-  cli.db.short: "Database lifecycle utilities (backup, snapshot, restore — sysadmin ops)"
-  cli.db.backup.short: "Write a snapshot of the live SQLite database to the rolling backups directory"
+    
+    Un fallo de backup aborta el delete antes de tocar nada.
+    El estado del filesystem bajo <root_path>/.omakiten/ se preserva —
+    solo se eliminan filas de DB.
+    
+    Sin --yes el comando imprime contadores y pide
+    confirmación; pipear sin --yes falla en lugar de
+    bloquear en stdin.
+  cli.projects.delete.flag.yes: "omitir la confirmación interactiva y aplicar el delete de forma no interactiva"
+  cli.projects.delete.counters_fmt: "tasks: %d · comments: %d · plans: %d · tags: %d · actividad: %d entradas"
+  cli.projects.delete.prompt: "¿eliminar project %q? [y/N]:"
+  cli.projects.delete.success_fmt: "project %q eliminado · backup → %s"
+  cli.projects.delete.err.no_tty: "confirmación interactiva requerida; pasa --yes para omitir"
+  cli.projects.delete.err.aborted: "delete abortado; nada eliminado"
+  cli.db.short: "Utilidades del ciclo de vida de la base de datos (backup, snapshot, restore — ops de sysadmin)"
+  cli.db.backup.short: "Escribir un snapshot de la base SQLite activa en el directorio de backups rotativos"
   cli.db.backup.long: |-
-    Copy the active SQLite database to a timestamped snapshot under
-    $XDG_STATE_HOME/omakiten/backups/ (default ~/.local/state/omakiten/backups/)
-    and prune older snapshots according to settings.backup.retention_count.
-
-    The copy is atomic: the destination only appears once the body has
-    been written and renamed into place. A previous partial copy never
-    survives a failure.
-
-    --out pins the snapshot path explicitly (parent directories are
-    created as needed). When --out is supplied the retention prune
-    pass is skipped — the user owns the rotation policy outside the
-    default state directory.
-  cli.db.backup.flag.out: "write the snapshot to this explicit file path (skips retention prune)"
-  cli.db.backup.flag.force: "overwrite the target file when --out points at an existing path"
-  cli.db.backup.error.system_path_fmt: "refusing to write backup to system path %q (under %s)"
-  cli.db.backup.error.exists_fmt: "refusing to overwrite existing file %q; pass --force to replace"
-  cli.db.backup.success_fmt: "backup written to %s"
+    Copia la base SQLite activa a un snapshot con marca temporal bajo
+    $XDG_STATE_HOME/omakiten/backups/ (predeterminado ~/.local/state/omakiten/backups/)
+    y prune snapshots antiguos según settings.backup.retention_count.
+    
+    La copia es atómica: el destino solo aparece cuando el contenido
+    se ha escrito y renombrado. Una copia parcial previa nunca
+    sobrevive a un fallo.
+    
+    --out fija la ruta del snapshot explícitamente (se crean directorios
+    padre según haga falta). Con --out se omite el retention prune —
+    el usuario controla la rotación fuera del directorio state predeterminado.
+  cli.db.backup.flag.out: "escribir el snapshot en esta ruta explícita (omite retention prune)"
+  cli.db.backup.flag.force: "sobrescribir el archivo destino cuando --out apunta a una ruta existente"
+  cli.db.backup.error.system_path_fmt: "rechazo de escribir backup en ruta de sistema %q (bajo %s)"
+  cli.db.backup.error.exists_fmt: "rechazo de sobrescribir el archivo existente %q; pasa --force para reemplazar"
+  cli.db.backup.success_fmt: "backup escrito en %s"
   cli.preset.omakase.title: "Elección del chef"
   cli.preset.omakase.description: "Workflow equilibrado con self-branch, resume y guards de documentación."
   cli.preset.izakaya.title: "Casual"
@@ -151,7 +149,7 @@ keys:
   cli.workflow.short: "Inspecciona la configuración del workflow"
   cli.workflow.show.short: "Muestra el workflow activo"
   cli.workflow.orphan.short: "Previsualiza o re-vincula tasks cuyo bucket fue desactivado por un cambio de workflow"
-  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit enabled: MCP commands, personas, laws, templates, and skills still resolve from the project root kit."
+  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit activado: comandos MCP, personas, laws, templates y skills siguen resolviéndose desde el kit raíz del proyecto."
   cli.config.init.long: |-
     Crea un install de config standalone enraizado en el scope elegido.
 
@@ -247,14 +245,14 @@ keys:
   cli.task.add.flag.title: "título de la task"
   cli.task.add.flag.description: "descripción de la task"
   cli.task.add.flag.bucket: "clave del bucket (predeterminado: primer bucket del workflow activo)"
-  cli.task.add.flag.parent: "optional parent task id; when set, the new row is attached as a sub-task via AddSub (parent must be active and in the same project)"
+  cli.task.add.flag.parent: "id de parent task opcional; si se indica, la fila nueva se adjunta como sub-task via AddSub (el parent debe estar activo en el mismo proyecto)"
   cli.task.edit.flag.title: "título de la task"
   cli.task.edit.flag.description: "descripción de la task"
   cli.task.edit.flag.priority: "prioridad de la task: low, normal o high"
   cli.task.edit.flag.bucket: "clave del bucket destino"
-  cli.task.edit.flag.parent: "optional re-parent target id; 0 clears the FK (becomes a root); any positive id re-parents with anti-cycle enforcement"
+  cli.task.edit.flag.parent: "id de re-parent opcional; 0 limpia la FK (pasa a root); id positivo re-parents con anti-cycle enforcement"
   cli.task.list.flag.bucket: "clave del bucket"
-  cli.task.list.flag.parent: "optional parent filter; omit for no filter, 0 for roots only (parent_id IS NULL), positive id for that parent's direct children"
+  cli.task.list.flag.parent: "filtro parent opcional; omitir para sin filtro, 0 solo roots (parent_id IS NULL), id positivo para hijos directos de ese parent"
   cli.task.move.flag.to: "clave del bucket destino"
   cli.task.delete.flag.confirm: "obligatorio: confirma la eliminación destructiva"
   cli.comment.add.flag.body: "cuerpo del comentario"
@@ -347,9 +345,9 @@ keys:
   cli.workflow.orphan.flag.confirm: "aplica el re-vínculo; sin esta flag el comando imprime el plan y sale"
   cli.workflow.orphan.flag.dry-run: "imprime el plan de migración sin aplicar (predeterminado cuando --confirm está ausente)"
   cli.err.config_invalid: "config es inválida"
-  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
-  cli.editor.not_configured: "no editor configured; set $VISUAL or $EDITOR"
-  cli.editor.not_found: "configured editor not found on PATH"
+  cli.err.runtime_not_initialised: "config aún no cargado; vuelve a ejecutar con --config o `okt init`"
+  cli.editor.not_configured: "sin editor configurado; define $VISUAL o $EDITOR"
+  cli.editor.not_found: "editor configurado no encontrado en PATH"
   cli.err.config_unreadable: "archivo de config no pudo ser leído"
   cli.err.init_seeded_config_invalid: "config creada por init es inválida"
   cli.err.invalid_scope: "--scope inválido (usa global o local)"
@@ -364,10 +362,7 @@ keys:
   cli.err.task_id_not_numeric: "id de la task debe ser numérico"
   cli.err.task_delete_requires_confirm: "delete de task requiere --confirm para confirmar el cascade destructivo"
   cli.err.comment_delete_requires_confirm: "delete de comentario requiere --confirm para confirmar la operación destructiva"
-  cli.err.comment_task_scope_requires_id: "task-scope comment requires a TASK_ID argument"
-  cli.err.comment_scope_no_task_id: "project/universal-scope comment must not be given a TASK_ID argument"
-  cli.err.comment_unknown_scope: "unknown comment scope (use task, project, or universal)"
-  cli.err.comment_edit_requires_field: "comment edit requires at least one of --body, --title, --kind, --pinned, --tag"
+  cli.err.comment_edit_requires_field: "editar comentario requiere al menos uno de --body, --title, --kind, --pinned, --tag"
   cli.err.orphans_requires_confirm: "migración de huérfanas requiere --confirm; re-ejecuta con --confirm para aplicar"
   cli.err.unknown_workflow_preset: "preset de workflow desconocido"
   cli.err.repo_local_already_exists: "repo-local .omakiten ya existe; pasa --preset-force para sobrescribir"
@@ -412,9 +407,8 @@ keys:
   tui.empty.table_no_tasks: "Sin tasks aún. Pulsa n para crear una."
   tui.empty.table_filtered: "Ninguna task coincide con el filtro de la tabla."
   tui.empty.blockers: "Sin blockers. Pulsa b para añadir."
-  tui.empty.sub_tasks: "No sub-tasks. Press n to add one."
   tui.empty.task_no_description: "Sin descripción"
-  tui.empty.plan_no_goal: "No goal body"
+  tui.empty.plan_no_goal: "Sin cuerpo de objetivo"
   tui.empty.blocker_picker: "No hay otras tasks disponibles para bloquear esta task."
   tui.empty.comment_not_found: "Comentario no encontrado. Pulsa esc para volver."
   tui.empty.none: "ninguno"
@@ -438,7 +432,7 @@ keys:
   tui.footer.arm_delete_orphan: "armar delete (huérfano)"
   tui.footer.delete_all_orphans: "eliminar todos los huérfanos"
   tui.footer.comment: "comentar"
-  tui.footer.sub_task: "sub-task"
+  tui.footer.sub_task: "subtarea"
   tui.footer.focus: "enfocar"
   tui.footer.blockers: "blockers"
   tui.footer.open_comment_activity: "abrir comentario (actividad)"
@@ -469,7 +463,7 @@ keys:
   tui.footer.period_7d_30d_all: "período (7d / 30d / all)"
   tui.footer.assign: "asignar"
   tui.footer.edit_goal: "editar goal"
-  tui.footer.view_goal: "goal"
+  tui.footer.view_goal: "objetivo"
   tui.footer.toggle_wave: "alternar wave"
   tui.footer.collapse_expand: "colapsar/expandir"
   tui.confirm.entity_delete_fmt: "Confirma delete %s %q. Pulsa d de nuevo para eliminar; esc cancela."
@@ -477,22 +471,21 @@ keys:
   tui.confirm.comment_delete_fmt: "Confirma delete del comentario #%d. Pulsa d de nuevo; esc cancela."
   tui.confirm.task_delete_fmt: "Confirma delete de la task #%d %q. Pulsa d de nuevo; esc cancela."
   tui.status.task_deleted_fmt: "Task #%d eliminada"
-  tui.confirm.home_project_delete_fmt: "Confirm delete project %q (cascade tasks, plans, errors). Press d again; esc cancels. A backup snapshot is written first."
-  tui.notification.project_delete.title_fmt: "Delete project %q?"
-  tui.notification.project_delete.body_fmt: "Tasks: %d · Comments: %d · Plans: %d · Tags: %d · Activity log: %d entries. All permanently removed. Backup will be written to ~/.local/state/omakiten/backups/."
-  notifications.home-project-delete-confirm.description: "Confirm a destructive project delete with one keystroke; shows pre-resolved row counters so the user sees the blast radius."
-  notifications.home-project-delete-confirm.confirm_label: "Delete"
-  notifications.home-project-delete-confirm.cancel_label: "Cancel"
-  notifications.footer.details: "details"
-  notifications.footer.close: "close"
-  notifications.footer.cancel: "cancel"
-  notifications.kitten_orphan_migration.migrate_label: "Migrate"
-  notifications.kitten_orphan_migration.skip_label: "Skip"
-  cli.db.backup.prune_warn_fmt: "prune skipped: %s"
-  tui.status.project_deleted_fmt: "Project %q deleted · backup → %s"
-  tui.status.deleting_project_fmt: "Deleting project %q..."
-  tui.footer.delete_project: "delete project"
-  tui.footer.confirm_delete_project: "confirm delete · esc cancels"
+  tui.confirm.home_project_delete_fmt: "Confirma delete project %q (cascade tasks, plans, errors). Pulsa d de nuevo; esc cancela. Primero se escribe un snapshot backup."
+  tui.notification.project_delete.title_fmt: "¿Eliminar project %q?"
+  tui.notification.project_delete.body_fmt: "Tasks: %d · Comments: %d · Plans: %d · Tags: %d · Activity log: %d entries. Todo eliminado permanentemente. Backup se escribirá en ~/.local/state/omakiten/backups/."
+  notifications.home-project-delete-confirm.description: "Confirma un delete destructivo del proyecto con una tecla; muestra contadores de filas pre-resueltos para ver el radio de impacto."
+  notifications.home-project-delete-confirm.confirm_label: "Eliminar"
+  notifications.footer.details: "detalles"
+  notifications.footer.close: "cerrar"
+  notifications.footer.cancel: "cancelar"
+  notifications.kitten_orphan_migration.migrate_label: "Migrar"
+  notifications.kitten_orphan_migration.skip_label: "Omitir"
+  cli.db.backup.prune_warn_fmt: "prune omitido: %s"
+  tui.status.project_deleted_fmt: "Project %q eliminado · backup → %s"
+  tui.status.deleting_project_fmt: "Eliminando project %q..."
+  tui.footer.delete_project: "eliminar project"
+  tui.footer.confirm_delete_project: "confirmar delete · esc cancela"
   tui.status.orphan_tags_deleted_fmt: "%d tag(s) huérfana(s) eliminada(s)"
   tui.status.tag_in_use_fmt: "Tag %q está en uso (%d referencias) — no se puede eliminar"
   tui.status.task_not_found: "Task no encontrada. Pulsa esc para volver."
@@ -551,17 +544,15 @@ keys:
   tui.help.task_view.switch_focus: "cambia foco (formulario ⇄ actividad)"
   tui.help.task_view.scroll_or_navigate: "desplaza descripción (formulario) · navega cards (actividad)"
   tui.help.task_view.navigate_activity: "navega cards de actividad (cualquier foco)"
-  tui.help.task_view.open_comment: "abre comentario enfocado en detalle (actividad)"
   tui.help.task_view.scroll_halfpage: "desplaza media página"
   tui.help.task_view.jump_top_bottom: "salta al inicio / final"
   tui.help.task_view.edit_task: "editar task"
-  tui.help.task_view.new_subtask: "create sub-task (parent_id pre-filled)"
+  tui.help.task_view.new_subtask: "crear subtarea (parent_id prellenado)"
   tui.help.task_view.edit_blockers: "editar blockers"
   tui.help.task_view.add_comment: "añadir comentario"
   tui.help.task_view.move: "mover"
   tui.help.task_view.toggle_markdown: "alterna render de markdown (raw ⇄ renderizado)"
   tui.help.task_view.arm_delete: "arma delete de la task (foco en formulario), luego confirma"
-  tui.help.task_view.back_board: "vuelve al board"
   tui.help.comment_view.title: "Vista del comentario"
   tui.help.comment_view.scroll_body: "desplaza cuerpo"
   tui.help.comment_view.scroll_halfpage: "desplaza media página"
@@ -654,12 +645,12 @@ keys:
   tui.dashboard.plan_progress: "Progreso"
   tui.dashboard.plan_percent: "Porcentaje"
   tui.kicker.dependency_graph: "Grafo de dependencias"
-  tui.kicker.tasks: "Tasks"
-  tui.kicker.stats: "Stats"
+  tui.kicker.tasks: "Tareas"
+  tui.kicker.stats: "Estadísticas"
   tui.kicker.body: "Cuerpo"
   tui.kicker.description: "Descripción"
-  tui.kicker.goal: "Goal"
-  tui.kicker.plan_goal_fmt: "Goal · %s"
+  tui.kicker.goal: "Objetivo"
+  tui.kicker.plan_goal_fmt: "Objetivo · %s"
   tui.kicker.new_comment: "Nuevo comentario"
   tui.kicker.comment_fmt: "Comentario · #%d"
   tui.kicker.edit_comment_fmt: "Editar comentario · #%d"
@@ -677,7 +668,7 @@ keys:
   tui.row.title: "Título"
   tui.row.bucket: "Bucket"
   tui.row.priority: "Prioridad"
-  tui.row.status: "Status"
+  tui.row.status: "Estado"
   tui.row.comments: "Comentarios"
   tui.row.tags: "Tags"
   tui.row.slug: "Slug"
@@ -691,7 +682,7 @@ keys:
   tui.row.entity: "Entidad"
   tui.row.default: "Predeterminado"
   tui.row.blockers: "Blockers"
-  tui.row.sub_tasks: "Sub-tasks"
+  tui.row.sub_tasks: "Subtareas"
   tui.stat.tasks: "tasks"
   tui.stat.comments: "comentarios"
   tui.stat.context: "contexto"
@@ -701,15 +692,10 @@ keys:
   tui.stat.since_fmt: "desde %s"
   tui.stat.error_badge: "[ERROR]"
   tui.stat.budget_exceeded: "presupuesto excedido"
-  tui.log.total: "total"
   tui.log.ok: "ok"
   tui.log.error: "error"
   tui.log.running: "ejecutando"
-  tui.log.cli: "cli"
-  tui.log.mcp: "mcp"
   tui.log.tui: "tui"
-  tui.log.operation_col: "OPERACIÓN"
-  tui.log.project_col: "PROYECTO"
   tui.log.refresh_hint: "r actualizar · argumentos completos aparecen en terminales más anchas"
   tui.log.tui_refresh_note: "Solo las llamadas de app service se loguean. Refreshes de la TUI y lecturas directas no aparecen."
   tui.log.filter.kicker: "logs · filtro"
@@ -725,8 +711,8 @@ keys:
   tui.badge.blockers: "bloqueadores"
   tui.badge.comment: "comentario"
   tui.badge.comments: "comentarios"
-  tui.badge.subtask: "sub-task"
-  tui.badge.subtasks: "sub-tasks"
+  tui.badge.subtask: "subtarea"
+  tui.badge.subtasks: "subtareas"
   tui.badge.tokens_fmt: "TOKENS:%d"
   tui.badge.use_fmt: "USO:%d"
   tui.status.comment_deleted_fmt: "Comentario #%d eliminado"
@@ -761,11 +747,8 @@ keys:
   tui.home.then_reopen_prefix: "Luego reabre "
   tui.home.then_reopen_suffix: "."
   tui.home.okt_tui_cmd: "okt tui"
-  tui.kicker.status: "Status"
-  tui.kicker.sources: "Fuentes"
   tui.kicker.runtime: "Runtime"
   tui.kicker.project: "Proyecto"
-  tui.log.column_header_fmt: "// TIEMPO      SRC  %-*s %-*s STATUS  MS   ARGS"
   tui.settings.runtime.version: "versión de okt"
   tui.settings.runtime.scope: "scope"
   tui.settings.runtime.config: "config"
@@ -778,7 +761,6 @@ keys:
   tui.settings.runtime.lang_cli: "idioma cli"
   tui.settings.runtime.lang_tui: "idioma tui"
   tui.settings.runtime.lang_agent_output: "salida del agente"
-  tui.settings.effective_hint: "solo lectura · edita con `$EDITOR <ruta>`"
   tui.settings.effective.section.output: "salida"
   tui.settings.effective.section.context: "contexto"
   tui.settings.effective.section.workflow: "workflow"
@@ -799,15 +781,12 @@ keys:
   tui.settings.effective.section.priorities: "prioridades"
   tui.settings.effective.section.severities: "severidades"
   tui.settings.effective.section.languages: "idiomas"
-  tui.settings.effective.source.default: "predeterminado"
-  tui.settings.effective.source.project: "proyecto"
-  tui.settings.effective.source.env: "entorno"
   tui.settings.guards_tab: "guardas"
   tui.settings.guards_hint: "solo lectura · edita con `$EDITOR omakiten.yaml`"
   tui.settings.guards.header_to: "a"
   tui.settings.guards.header_from: "de"
   tui.settings.guards.sentinel_disallowed: "—"
-  tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.sentinel_empty: "[vacío]"
   tui.settings.guards.kicker_root: "raíz"
   tui.settings.guards.kicker_subtask: "kit de subtarea"
   tui.kicker.totals: "Totales"
@@ -851,7 +830,6 @@ keys:
   tui.keys.save_comment_desc: "guarda comentario (nuevo) · guarda edición (existente)"
   tui.keys.insert_newline_desc: "inserta nueva línea"
   tui.keys.cancel_desc: "cancelar"
-  tui.keys.submit_bucket_desc: "envía clave del bucket destino"
   tui.empty.activity_logging_unavailable: "Logging de actividad no está disponible para este proyecto."
   tui.empty.metrics_unavailable: "Repositorio de métricas no disponible."
   tui.empty.task_not_found_refresh: "Task no encontrada. Actualiza con r o vuelve al board."
@@ -859,7 +837,7 @@ keys:
   tui.status.theme_picker_cancelled: "Picker de tema cancelado"
   tui.status.default_picker_cancelled: "Picker de predeterminado cancelado"
   tui.kicker.new_task: "Nueva task"
-  tui.kicker.new_subtask_fmt: "New sub-task · parent #%d %s"
+  tui.kicker.new_subtask_fmt: "Nueva subtarea · padre #%d %s"
   tui.status.template_add_hint: "Templates cargan automáticamente — añade un .md en templates/ y actualiza"
   tui.status.template_remove_hint: "Templates cargan automáticamente — elimina el .md de templates/ y actualiza"
   tui.status.nothing_to_open: "Nada que abrir"
@@ -888,24 +866,24 @@ keys:
   tui.status.showing_archived: "Mostrando tasks archivadas"
   tui.status.hiding_archived: "Ocultando tasks archivadas"
   tui.status.new_task: "Nueva task"
-  tui.status.new_subtask_fmt: "New sub-task of #%d %q"
+  tui.status.new_subtask_fmt: "Nueva subtarea de #%d %q"
   tui.status.editing_task: "Editando task"
   tui.status.task_title_required: "Título de la task es obligatorio"
   tui.status.no_themes_found: "Ningún tema encontrado"
   tui.status.theme_picker: "Picker de tema"
   tui.status.no_config_profiles: "Ningún profile de config encontrado"
   tui.status.config_picker: "Picker de config"
-  tui.status.no_subtask_kit_profiles: "No sub-task kit profiles found"
-  tui.status.subtask_kit_picker: "Sub-task kit picker"
-  tui.status.subtask_kit_picker_cancelled: "Sub-task kit picker cancelled"
-  tui.status.subtask_kit_switched_fmt: "Sub-task kit set to %s"
-  tui.status.subtask_kit_cleared: "Sub-task kit cleared (inherit root)"
-  tui.status.subtask_kit_already_none: "Sub-task kit already inherits root"
-  tui.status.subtask_kit_switch_failed_fmt: "Sub-task kit switch failed: %s"
-  tui.kicker.subtask_kit_active_fmt: "Sub-task kit · active: %s"
-  tui.picker.hint.subtask_kit: "up/down: move · enter: apply (hot-reload) · esc: cancel"
-  tui.picker.subtask_kit_none: "none (inherit root)"
-  tui.subtask_board.fallback_lane_name: "All"
+  tui.status.no_subtask_kit_profiles: "No se encontraron perfiles de sub-task kit"
+  tui.status.subtask_kit_picker: "Selector de sub-task kit"
+  tui.status.subtask_kit_picker_cancelled: "Selector de sub-task kit cancelado"
+  tui.status.subtask_kit_switched_fmt: "Sub-task kit establecido en %s"
+  tui.status.subtask_kit_cleared: "Sub-task kit limpiado (hereda root)"
+  tui.status.subtask_kit_already_none: "Sub-task kit ya hereda root"
+  tui.status.subtask_kit_switch_failed_fmt: "Fallo al cambiar sub-task kit: %s"
+  tui.kicker.subtask_kit_active_fmt: "Sub-task kit · activo: %s"
+  tui.picker.hint.subtask_kit: "arriba/abajo: mueve · enter: aplicar (hot-reload) · esc: cancelar"
+  tui.picker.subtask_kit_none: "ninguno (hereda root)"
+  tui.subtask_board.fallback_lane_name: "Todos"
   tui.status.no_template_selected: "Ningún template seleccionado"
   tui.status.template_not_found: "Template no encontrado"
   tui.status.template_picker_needs_project: "La TUI debe estar abierta dentro de un proyecto para asignar un template predeterminado"
@@ -1055,12 +1033,8 @@ keys:
   cli.setup.status.wrapper_skipped: "=> Omitiendo instalación del wrapper: ningún ~/.bashrc o ~/.zshrc encontrado"
   cli.setup.status.harness_configured: "=> Configurando MCP para %s"
   cli.setup.status.harness_failed: "   (omitido %s, exit %d — re-ejecuta manualmente: %s mcp setup --harness %s --force)"
-  cli.setup.status.complete: "=> Ejecuta 'okt --help' para comenzar"
   cli.setup.warn.unknown_preset: "warn: OKT_PRESET=%s no es un preset soportado; usando %s"
-  cli.setup.warn.unknown_harness: "warn: ignorando harness desconocido %q"
-  cli.setup.warn.harness_index_oor: "warn: índice %s fuera de rango"
   cli.setup.picker.lang.cli.title: "Selecciona el idioma del CLI"
-  cli.setup.picker.lang.tui.title: "Selecciona el idioma de la TUI"
   cli.setup.picker.agent.title: "Idioma de salida del agente (texto libre, ej. \"English\" o \"Español\")"
   cli.setup.picker.agent.placeholder: "en"
   cli.setup.picker.preset.title: "Selecciona el preset de workflow"
@@ -1068,72 +1042,73 @@ keys:
   cli.setup.picker.hint.nav: "↑/↓ navegar · enter confirmar · ctrl+c salir"
   cli.setup.picker.hint.multi: "↑/↓ navegar · enter alternar · tab confirmar · ctrl+c salir"
   cli.setup.picker.hint.input: "escribe para editar · enter confirma (vacío ok) · ctrl+c sale"
+  cli.setup.picker.hint.back: " · esc atrás"
+  cli.setup.picker.step: "paso"
   cli.setup.picker.aborted: "setup abortado; nada fue escrito"
   cli.setup.picker.no_tty: "selector interactivo requiere TTY; define OKT_CLI_LANG, OKT_TUI_LANG, OKT_AGENT_LANG, OKT_PRESET, OKT_HARNESSES (o --flags equivalentes) para instalación headless"
 
 # okt uninstall — in-binary counterpart of uninstall.sh / uninstall.ps1.
-  cli.uninstall.short: "Remove the installed okt binary and shell-rc wrapper (data + config preserved by default)"
+  cli.uninstall.short: "Elimina el binario okt instalado y el wrapper shell-rc (datos + config preservados por defecto)"
   cli.uninstall.long: |-
-    Remove the binary the installer wrote to $INSTALL_DIR (defaults to
-    ~/.local/bin on POSIX and %LOCALAPPDATA%Programsokt on Windows) and
-    strip the okt() wrapper block from every rc/profile target.
-
-
-    No automatic backup. Run `okt db backup` first if you want a
-    snapshot of the SQLite DB before purging — uninstall removes
-    user-owned data by intent, so the safety net is opt-in via the
-    standalone backup command.
-
-    Local state is preserved unless explicitly opted-out via --purge-data
-    (SQLite DB under $XDG_DATA_HOME/omakiten) or --purge-config (active
-    yaml profile + entity folders under $XDG_CONFIG_HOME/omakiten).
-    --purge is shorthand for both.
-
-    Without flags on a TTY the picker shows what would be deleted with
-    sizes and asks per purge target. --yes skips the picker entirely.
-  cli.uninstall.flag.yes: "skip the interactive picker and apply the resolved flag set non-interactively"
-  cli.uninstall.flag.purge-data: "also delete $XDG_DATA_HOME/omakiten (SQLite DB + WAL/SHM) — irreversible"
-  cli.uninstall.flag.purge-config: "also delete $XDG_CONFIG_HOME/omakiten (active yaml + entity folders) — irreversible"
-  cli.uninstall.flag.purge: "shorthand for --purge-data + --purge-config — irreversible"
-  cli.uninstall.picker.title: "Uninstall okt"
-  cli.uninstall.picker.hint: "↑/↓ navigate · enter toggle · y apply · ctrl+c quit"
-  cli.uninstall.picker.warn: "THIS CANNOT BE UNDONE"
-  cli.uninstall.picker.binary: "binary  %s"
-  cli.uninstall.picker.wrappers: "shell wrappers (rc/profile blocks)"
-  cli.uninstall.picker.data: "data dir  %s  (%s)"
-  cli.uninstall.picker.config: "config dir  %s  (%s)"
-  cli.uninstall.picker.no_tty: "interactive picker needs a TTY; pass --yes (plus optional --purge-* flags) for headless uninstall"
-  cli.uninstall.picker.aborted: "uninstall aborted; nothing removed"
+    Elimina el binario que el instalador escribió en $INSTALL_DIR (por defecto
+    ~/.local/bin en POSIX y %LOCALAPPDATA%\Programs\okt en Windows) y
+    retira el bloque wrapper okt() de cada destino rc/profile.
+    
+    El estado local se preserva salvo opt-out explícito via --purge-data
+    (SQLite DB en $XDG_DATA_HOME/omakiten) o --purge-config (perfil yaml
+    activo + carpetas de entidades en $XDG_CONFIG_HOME/omakiten).
+    --purge es atajo para ambos.
+    
+    Sin flags en un TTY el selector muestra qué se eliminaría con
+    tamaños y pregunta por objetivo de purge. --yes omite el selector por completo.
+    
+    Sin backup automático. Ejecuta `okt db backup` antes si quieres un
+    snapshot del SQLite DB antes del purge — la desinstalación elimina
+    datos del usuario a propósito; la red de seguridad es opt-in via el
+    comando de backup standalone.
+  cli.uninstall.flag.yes: "omite el selector interactivo y aplica el conjunto de flags resuelto de forma no interactiva"
+  cli.uninstall.flag.purge-data: "también elimina $XDG_DATA_HOME/omakiten (SQLite DB + WAL/SHM) — irreversible"
+  cli.uninstall.flag.purge-config: "también elimina $XDG_CONFIG_HOME/omakiten (yaml activo + carpetas de entidades) — irreversible"
+  cli.uninstall.flag.purge: "atajo para --purge-data + --purge-config — irreversible"
+  cli.uninstall.picker.title: "Desinstalar okt"
+  cli.uninstall.picker.hint: "↑/↓ navegar · enter alternar · y aplicar · ctrl+c salir"
+  cli.uninstall.picker.warn: "ESTO NO SE PUEDE DESHACER"
+  cli.uninstall.picker.binary: "binario  %s"
+  cli.uninstall.picker.wrappers: "wrappers shell (bloques rc/profile)"
+  cli.uninstall.picker.data: "dir de datos  %s  (%s)"
+  cli.uninstall.picker.config: "dir de config  %s  (%s)"
+  cli.uninstall.picker.no_tty: "selector interactivo requiere TTY; pasa --yes (más --purge-* opcionales) para desinstalación headless"
+  cli.uninstall.picker.aborted: "desinstalación abortada; nada eliminado"
 
   # okt update — in-binary counterpart of the curl|bash installer for refresh.
-  cli.update.short: "Fetch the latest okt release and atomically swap the installed binary"
+  cli.update.short: "Obtiene el release más reciente de okt y reemplaza el binario instalado atómicamente"
   cli.update.long: |-
-    Detect the running binary's path (os.Executable), query the GitHub
-    releases API for the latest tag, download the matching asset, and
-    atomically replace the binary on disk. The current process exits
-    after the swap; the next invocation runs the new version.
-
-    --check prints `current=<v> latest=<v> action=<noop|upgrade>` and
-    exits 0 without writing. --yes skips the confirmation prompt for
-    non-interactive callers.
-  cli.update.flag.yes: "skip the confirmation prompt and apply the upgrade non-interactively"
-  cli.update.flag.check: "report current vs. latest and exit without writing"
-  cli.update.picker.title: "Update okt"
-  cli.update.picker.line: "current=%s  →  latest=%s"
-  cli.update.picker.hint: "y apply · n cancel · ctrl+c quit"
-  cli.update.picker.no_tty: "interactive confirmation needs a TTY; pass --yes for headless update or --check for a dry-run report"
-  cli.update.picker.aborted: "update aborted; binary unchanged"
-  cli.update.err.fetch_latest: "fetch latest release tag: %s"
-  cli.update.err.download_asset: "download asset %s: %s"
-  cli.update.err.swap_binary: "atomic swap of %s: %s"
-  cli.update.err.unsupported_platform: "no published asset for %s/%s"
-  cli.update.err.extract_asset: "extract %s from archive: %s"
-  cli.update.err.fetch_checksum: "fetch release checksums: %s"
-  cli.update.err.checksum_mismatch: "checksum mismatch: expected %s got %s"
-  cli.update.err.asset_too_large: "asset %s exceeds %d-byte size cap"
-  cli.update.err.windows_unsupported: "okt update not yet supported on Windows; reinstall via install.ps1"
-  cli.update.err.dev_build: "this is a dev build; rebuild from source or install a release"
-  cli.update.err.backup_failed_fmt: "pre-swap backup failed: %s; binary unchanged"
+    Detecta la ruta del binario en ejecución (os.Executable), consulta la API de
+    releases de GitHub por la tag más reciente, descarga el asset correspondiente y
+    reemplaza el binario en disco atómicamente. El proceso actual termina
+    después del swap; la siguiente invocación ejecuta la nueva versión.
+    
+    --check imprime `current=<v> latest=<v> action=<noop|upgrade>` y
+    sale con 0 sin escribir. --yes omite el prompt de confirmación para
+    llamadores no interactivos.
+  cli.update.flag.yes: "omite el prompt de confirmación y aplica la actualización de forma no interactiva"
+  cli.update.flag.check: "informa actual vs. más reciente y sale sin escribir"
+  cli.update.picker.title: "Actualizar okt"
+  cli.update.picker.line: "actual=%s  →  última=%s"
+  cli.update.picker.hint: "y aplicar · n cancelar · ctrl+c salir"
+  cli.update.picker.no_tty: "confirmación interactiva requiere TTY; pasa --yes para update headless o --check para informe dry-run"
+  cli.update.picker.aborted: "update abortado; binario sin cambios"
+  cli.update.err.fetch_latest: "obtener tag de release más reciente: %s"
+  cli.update.err.download_asset: "descargar asset %s: %s"
+  cli.update.err.swap_binary: "swap atómico de %s: %s"
+  cli.update.err.unsupported_platform: "ningún asset publicado para %s/%s"
+  cli.update.err.extract_asset: "extraer %s del archivo: %s"
+  cli.update.err.fetch_checksum: "obtener checksums de release: %s"
+  cli.update.err.checksum_mismatch: "checksum no coincide: esperado %s obtenido %s"
+  cli.update.err.asset_too_large: "asset %s supera el límite de %d bytes"
+  cli.update.err.windows_unsupported: "okt update aún no soportado en Windows; reinstala via install.ps1"
+  cli.update.err.dev_build: "esto es un build de dev; recompila desde source o instala un release"
+  cli.update.err.backup_failed_fmt: "backup pre-swap falló: %s; binario sin cambios"
 
   # okt config validate --migrate health-check additions (#365).
   cli.config.validate.flag.migrate: "corre MigrateLayout + EnsureDefaultFiles antes de LoadBundle/ValidateBundle para que los backfills de schema aparezcan en el reporte"
@@ -1155,9 +1130,7 @@ keys:
   tui.plans.network.no_waves_fmt: "Aún no hay waves. Añade una con `okt plan wave-add %s \"<wave-name>\"`."
   tui.plans.network.header_fmt: "// PLAN · %s · %d/%d · %d%%"
   tui.plans.network.keymap: "(c asignar · e editar goal · r recargar)"
-  tui.plans.network.wave_header_fmt: "// W%d %s · %d/%d"
   tui.plans.network.active_tag: " ‹activa›"
-  tui.plans.network.empty_wave: "vacía"
   tui.plans.network.wave_glyph_header_fmt: "%s W%d %s · %d/%d"
   tui.plans.network.column.title: " TÍTULO"
   tui.plans.network.column.bucket: " ETAPA"
@@ -1171,12 +1144,10 @@ keys:
   tui.plans.network.badge.ready: "lista"
   tui.plans.network.deps_footer_prefix: "Dependencias: "
   tui.plans.network.next_claimable_fmt: "▶ próx. disponible: #%d"
-  tui.plans.kicker: "Plans"
-  tui.plans.status.claim_success_fmt: "plans.claim_next: task #%d %q asignada"
-  tui.plans.status.claim_empty_fmt: "plans.claim_next: no hay tasks disponibles en %q"
+  tui.plans.kicker: "Planes"
   tui.plans.status.assign_no_task: "plans.assign: ninguna task seleccionada"
   tui.plans.assign.status_fmt: "responsable de #%d (vacío limpia)"
-  tui.plans.goal.kicker_fmt: "// PLAN GOAL · %s"
+  tui.plans.goal.kicker_fmt: "// OBJETIVO DEL PLAN · %s"
   tui.plans.goal.status_fmt: "plan goal · %s · ctrl+s guardar · esc cancelar"
   tui.plans.goal.hint.ctrl_s: "ctrl+s guarda"
   tui.plans.goal.hint.alt_newline: "alt+enter nueva línea"
@@ -1214,7 +1185,7 @@ keys:
 
   # guard.* — hint strings surfaced in guard.violated payloads.
   guard.wave_gate.hint: "Espera a que la wave anterior termine — las tasks de waves anteriores en el mismo plan deben llegar a Done antes de que esta empiece."
-  guard.subtasks_complete.hint: "Move every direct sub-task into the final bucket before promoting the parent."
+  guard.subtasks_complete.hint: "Mueve cada sub-task directa al bucket final antes de promover el parent."
   # guard.common.* — hints shared across presets. Per-preset override via
   # the preset-scoped namespace (guard.<preset>.<stage>.<rule>...) when copy diverges.
   guard.common.archive.comments_tagged.documentation.hint: "Añade un comentario #documentation resumiendo lo que se entregó antes de archivar."
@@ -1255,31 +1226,31 @@ keys:
   guard.shokunin.review.comments_tagged.rollback_plan.hint: "Añade un #rollback-plan con pasos de reversión, validación post-rollback, y plan de comunicación antes del review."
   guard.shokunin.docs.comments_tagged.peer_review.hint: "Añade ≥ 2 comentarios #peer-review distintos de revisores independientes (no el autor). Cada uno lleva veredicto, alcance de aprobación, y checklist de artefactos revisados."
   guard.shokunin.done.comments_tagged.lessons_learned.hint: "Añade un comentario #lessons-learned nombrando qué funcionó / qué no y cualquier cambio de proceso propuesto."
-  tui.footer.zone: "zone"
-  tui.footer.focus_description: "focus description"
-  tui.footer.enter_zone_action: "act"
-  tui.footer.open_subtask: "open sub-task"
-  tui.footer.back_parent: "back to parent"
-  tui.footer.close_focus: "close focus"
-  tui.footer.toggle_markdown: "toggle markdown"
-  tui.kicker.description_fmt: "Description · #%d"
-  tui.task.description_more_fmt: "+%d more lines · f to focus"
-  tui.help.task_view.open_focused: "open focused item (sub-task drill / comment detail)"
-  tui.help.task_view.focus_description: "open description in focus overlay"
-  tui.help.task_view.back_or_parent: "back to parent task / board"
-  tui.help.description_view.title: "Description focus"
-  tui.help.description_view.scroll_body: "scroll body"
-  tui.help.description_view.scroll_halfpage: "scroll by half page"
-  tui.help.description_view.jump_top_bottom: "jump to top / bottom"
-  tui.help.description_view.toggle_markdown: "toggle markdown render (raw ⇄ rendered)"
-  tui.help.description_view.close: "close focus and return to task"
-  tui.help.task_view.focus_subtasks: "focus sub-tasks pane"
-  tui.help.task_view.send_subtask_done: "send focused sub-task → final bucket"
-  tui.status.subtask_sent_done_fmt: "Sub-task #%d moved to %q"
-  tui.confirm.delete_subtree_fmt: "Confirm delete task #%d %q + %d sub-tasks (%d total). Press d again; esc cancels."
-  tui.status.subtask_already_done_fmt: "Sub-task #%d already in %q"
-  tui.status.no_subtasks_to_focus: "No sub-tasks to focus"
-  tui.taskedit.dirty_discard_prompt: "Discard unsaved edits? Press esc again to discard, ctrl+s to save."
-  tui.taskedit.parent_lookup_invalid: "Parent id must be a positive integer (or empty for root)."
-  tui.taskedit.parent_lookup_self: "Parent cannot be the task itself."
-  tui.taskedit.parent_lookup_not_found: "No task with that id in this project."
+  tui.footer.zone: "zona"
+  tui.footer.focus_description: "enfocar descripción"
+  tui.footer.enter_zone_action: "actuar"
+  tui.footer.open_subtask: "abrir subtarea"
+  tui.footer.back_parent: "volver al padre"
+  tui.footer.close_focus: "cerrar foco"
+  tui.footer.toggle_markdown: "alternar markdown"
+  tui.kicker.description_fmt: "Descripción · #%d"
+  tui.task.description_more_fmt: "+%d líneas más · f para enfocar"
+  tui.help.task_view.open_focused: "abrir elemento enfocado (subtarea / detalle de comentario)"
+  tui.help.task_view.focus_description: "abrir descripción en overlay de foco"
+  tui.help.task_view.back_or_parent: "volver a tarea padre / tablero"
+  tui.help.description_view.title: "Foco de descripción"
+  tui.help.description_view.scroll_body: "desplazar cuerpo"
+  tui.help.description_view.scroll_halfpage: "media página"
+  tui.help.description_view.jump_top_bottom: "ir arriba / abajo"
+  tui.help.description_view.toggle_markdown: "alternar markdown (crudo ⇄ renderizado)"
+  tui.help.description_view.close: "cerrar foco y volver a la tarea"
+  tui.help.task_view.focus_subtasks: "enfocar panel de subtareas"
+  tui.help.task_view.send_subtask_done: "enviar subtarea enfocada → bucket final"
+  tui.status.subtask_sent_done_fmt: "Subtarea #%d movida a %q"
+  tui.confirm.delete_subtree_fmt: "Confirma eliminar tarea #%d %q + %d subtareas (%d en total). Pulsa d otra vez; esc cancela."
+  tui.status.subtask_already_done_fmt: "Subtarea #%d ya está en %q"
+  tui.status.no_subtasks_to_focus: "No hay subtareas para enfocar"
+  tui.taskedit.dirty_discard_prompt: "¿Descartar cambios sin guardar? Pulsa esc otra vez para descartar, ctrl+s para guardar."
+  tui.taskedit.parent_lookup_invalid: "El id padre debe ser un entero positivo (o vacío para raíz)."
+  tui.taskedit.parent_lookup_self: "El padre no puede ser la propia tarea."
+  tui.taskedit.parent_lookup_not_found: "No hay tarea con ese id en este proyecto."

@@ -34,24 +34,24 @@ keys:
   cli.context.short: "检查项目 context 用于交接"
   cli.context.add.short: "添加项目交接 context 条目"
   cli.context.dump.short: "为 agents 输出渐进式 context"
-  cli.logs.short: "Inspect the unified event log (task, comment, plan, hook, tool_call, guard, …)"
+  cli.logs.short: "查看统一事件日志 (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
-    okt logs reads the unified events table through the same path the TUI Logs
-    inspector uses. The default window is the last Snapshot.LogsWindowDays()
-    days for the active project, all categories included.
-
-    Categories (match the TUI filter chips): task, comment, plan, tag-dep,
-    guard, audit, hook, tool_call, trick, domain. Pass `all` to clear the
-    filter explicitly.
-
-    Output is a JSON envelope; each row carries the 5-field shape
-    (time · event_type · entity · author · summary) where `summary` is the
-    canonical SummarizeEvent string used by the TUI inspector.
-  cli.logs.flag.category: "restrict to one or more event categories (repeatable, comma-separated; `all` clears the filter)"
-  cli.logs.flag.since: "override the default window (e.g. 24h, 30m, 7d)"
-  cli.logs.flag.limit: "cap the number of rows returned (0 = no cap)"
-  cli.err.logs_invalid_category: "unknown event category"
-  cli.err.logs_invalid_since: "invalid --since duration; expected forms like 24h, 30m, 7d"
+    okt logs 通过 TUI 日志检查器相同的路径读取统一 events 表。
+    默认窗口为活跃 project 最近 Snapshot.LogsWindowDays()
+    天，包含所有类别。
+    
+    类别（与 TUI 筛选芯片一致）：task、comment、plan、tag-dep、
+    guard、audit、hook、tool_call、trick、domain。传入 `all` 可显式
+    清除筛选。
+    
+    输出为 JSON 信封；每行采用 5 字段形态
+    (time · event_type · entity · author · summary)，其中 `summary` 为
+    TUI 检查器使用的规范 SummarizeEvent 字符串。
+  cli.logs.flag.category: "限制为一个或多个事件类别（可重复，逗号分隔；`all` 清除筛选）"
+  cli.logs.flag.since: "覆盖默认时间窗口（如 24h、30m、7d）"
+  cli.logs.flag.limit: "限制返回行数（0 = 无上限）"
+  cli.err.logs_invalid_category: "未知事件类别"
+  cli.err.logs_invalid_since: "无效的 --since 时长；预期形式如 24h、30m、7d"
   cli.depend.short: "管理 task 依赖"
   cli.depend.add.short: "添加 task 依赖"
   cli.depend.remove.short: "移除 task 依赖"
@@ -59,48 +59,46 @@ keys:
   cli.config.short: "管理规范的 omakiten.yaml bundle"
   cli.config.validate.short: "验证 omakiten.yaml 文件"
   cli.config.presets.short: "列出官方 workflow presets"
-  cli.projects.short: "Project lifecycle utilities (delete — destructive ops)"
-  cli.projects.delete.short: "Hard-delete a registered project and every dependent row (irreversible)"
+  cli.projects.short: "Project 生命周期 utilities (delete — destructive ops)"
+  cli.projects.delete.short: "Hard-delete 已注册 project 及每条依赖行（不可逆）"
   cli.projects.delete.long: |-
-    Resolve the project by numeric id or slug, write a recovery
-    snapshot to the rolling backups directory, then cascade-delete
-    every dependent row (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
-
-    Backup failure aborts the delete before anything is touched.
-    Filesystem state under <root_path>/.omakiten/ is preserved —
-    only DB rows are removed.
-
-    Without --yes the command prints counters and prompts for
-    confirmation; piping without --yes errors out instead of
-    blocking on stdin.
-  cli.projects.delete.flag.yes: "skip the interactive confirmation and apply the delete non-interactively"
-  cli.projects.delete.counters_fmt: "tasks: %d · comments: %d · plans: %d · tags: %d · activity: %d entries"
-  cli.projects.delete.prompt: "delete project %q? [y/N]:"
-  cli.projects.delete.success_fmt: "project %q deleted · backup → %s"
-  cli.projects.delete.err.no_tty: "interactive confirmation required; pass --yes to skip"
-  cli.projects.delete.err.aborted: "delete aborted; nothing removed"
-  cli.projects.delete.err.not_found: "project not found"
-  cli.db.short: "Database lifecycle utilities (backup, snapshot, restore — sysadmin ops)"
-  cli.db.backup.short: "Write a snapshot of the live SQLite database to the rolling backups directory"
+    按数字 id 或 slug 解析 project，将 recovery
+    快照写入 rolling backups 目录，然后 cascade-delete
+    每条依赖行 (tasks, comments, plans, tag attachments,
+    context entries, errors, activity log)。
+    
+    backup 失败会在触碰任何内容前中止 delete。
+    <root_path>/.omakiten/ 下的 filesystem 状态保留 —
+    仅移除 DB 行。
+    
+    无 --yes 时命令打印计数器并提示
+    确认；无 --yes 的 pipe 会报错而非
+    阻塞 stdin。
+  cli.projects.delete.flag.yes: "跳过交互确认并以非交互方式执行 delete"
+  cli.projects.delete.counters_fmt: "tasks: %d · comments: %d · plans: %d · tags: %d · 活动: %d 条"
+  cli.projects.delete.prompt: "删除 project %q? [y/N]:"
+  cli.projects.delete.success_fmt: "project %q 已删除 · backup → %s"
+  cli.projects.delete.err.no_tty: "需要交互确认；传递 --yes 以跳过"
+  cli.projects.delete.err.aborted: "delete 已中止；未移除任何内容"
+  cli.db.short: "Database 生命周期 utilities (backup, snapshot, restore — sysadmin ops)"
+  cli.db.backup.short: "将活跃 SQLite database 的快照写入 rolling backups 目录"
   cli.db.backup.long: |-
-    Copy the active SQLite database to a timestamped snapshot under
-    $XDG_STATE_HOME/omakiten/backups/ (default ~/.local/state/omakiten/backups/)
-    and prune older snapshots according to settings.backup.retention_count.
-
-    The copy is atomic: the destination only appears once the body has
-    been written and renamed into place. A previous partial copy never
-    survives a failure.
-
-    --out pins the snapshot path explicitly (parent directories are
-    created as needed). When --out is supplied the retention prune
-    pass is skipped — the user owns the rotation policy outside the
-    default state directory.
-  cli.db.backup.flag.out: "write the snapshot to this explicit file path (skips retention prune)"
-  cli.db.backup.flag.force: "overwrite the target file when --out points at an existing path"
-  cli.db.backup.error.system_path_fmt: "refusing to write backup to system path %q (under %s)"
-  cli.db.backup.error.exists_fmt: "refusing to overwrite existing file %q; pass --force to replace"
-  cli.db.backup.success_fmt: "backup written to %s"
+    将活跃 SQLite database 复制到带时间戳的快照
+    $XDG_STATE_HOME/omakiten/backups/ (默认 ~/.local/state/omakiten/backups/)
+    并按 settings.backup.retention_count prune 旧快照。
+    
+    复制是 atomic 的：目标仅在本体写入并重命名后出现。
+    先前的部分复制不会从失败中
+    存活。
+    
+    --out 显式固定快照路径（按需创建父目录）。
+    提供 --out 时跳过 retention prune —
+    轮换策略由用户在默认 state 目录外自行管理。
+  cli.db.backup.flag.out: "将快照写入此显式文件路径（跳过 retention prune）"
+  cli.db.backup.flag.force: "当 --out 指向已有路径时覆盖目标文件"
+  cli.db.backup.error.system_path_fmt: "拒绝向系统路径 %q (under %s) 写入 backup"
+  cli.db.backup.error.exists_fmt: "拒绝覆盖已有文件 %q；传递 --force 以替换"
+  cli.db.backup.success_fmt: "backup 已写入 %s"
   cli.preset.omakase.title: "厨师精选"
   cli.preset.omakase.description: "带有 self-branch、resume 和文档 guards 的平衡型 workflow。"
   cli.preset.izakaya.title: "随性"
@@ -151,7 +149,7 @@ keys:
   cli.workflow.short: "检查 workflow 配置"
   cli.workflow.show.short: "显示活动的 workflow"
   cli.workflow.orphan.short: "预览或重新绑定那些 bucket 被 workflow 切换停用的 tasks"
-  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit enabled: MCP commands, personas, laws, templates, and skills still resolve from the project root kit."
+  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit 已启用：MCP commands、personas、laws、templates 和 skills 仍从 project root kit 解析。"
   cli.config.init.long: |-
     在所选 scope 中创建一个独立的 config 安装。
 
@@ -236,14 +234,14 @@ keys:
   cli.task.add.flag.title: "task 标题"
   cli.task.add.flag.description: "task 描述"
   cli.task.add.flag.bucket: "bucket 键(默认:活动 workflow 的第一个 bucket)"
-  cli.task.add.flag.parent: "optional parent task id; when set, the new row is attached as a sub-task via AddSub (parent must be active and in the same project)"
+  cli.task.add.flag.parent: "可选 parent task id；设置后新行通过 AddSub 附加为 sub-task（parent 须在同一 project 中为 active）"
   cli.task.edit.flag.title: "task 标题"
   cli.task.edit.flag.description: "task 描述"
   cli.task.edit.flag.priority: "task 优先级:low、normal 或 high"
   cli.task.edit.flag.bucket: "目标 bucket 键"
-  cli.task.edit.flag.parent: "optional re-parent target id; 0 clears the FK (becomes a root); any positive id re-parents with anti-cycle enforcement"
+  cli.task.edit.flag.parent: "可选 re-parent 目标 id；0 清除 FK（变为 root）；正 id 在 anti-cycle enforcement 下 re-parents"
   cli.task.list.flag.bucket: "bucket 键"
-  cli.task.list.flag.parent: "optional parent filter; omit for no filter, 0 for roots only (parent_id IS NULL), positive id for that parent's direct children"
+  cli.task.list.flag.parent: "可选 parent 筛选；省略表示无筛选，0 仅 roots (parent_id IS NULL)，正 id 表示该 parent 的直接子项"
   cli.task.move.flag.to: "目标 bucket 键"
   cli.task.delete.flag.confirm: "必需:确认破坏性删除"
   cli.comment.add.flag.body: "评论正文"
@@ -336,9 +334,9 @@ keys:
   cli.workflow.orphan.flag.confirm: "应用重新绑定;不带此标志时命令打印计划并退出"
   cli.workflow.orphan.flag.dry-run: "打印迁移计划而不应用(在 --confirm 缺席时为默认)"
   cli.err.config_invalid: "config 无效"
-  cli.err.runtime_not_initialised: "config not yet loaded; rerun with --config or `okt init`"
-  cli.editor.not_configured: "no editor configured; set $VISUAL or $EDITOR"
-  cli.editor.not_found: "configured editor not found on PATH"
+  cli.err.runtime_not_initialised: "config 尚未加载；请用 --config 或 `okt init` 重新运行"
+  cli.editor.not_configured: "未配置编辑器；请设置 $VISUAL 或 $EDITOR"
+  cli.editor.not_found: "配置的编辑器在 PATH 中未找到"
   cli.err.config_unreadable: "config 文件不可读"
   cli.err.init_seeded_config_invalid: "init 种子化的 config 无效"
   cli.err.invalid_scope: "无效的 --scope(使用 global 或 local)"
@@ -353,10 +351,7 @@ keys:
   cli.err.task_id_not_numeric: "task id 必须为数字"
   cli.err.task_delete_requires_confirm: "task 删除需要 --confirm 以确认破坏性 cascade"
   cli.err.comment_delete_requires_confirm: "评论删除需要 --confirm 以确认破坏性操作"
-  cli.err.comment_task_scope_requires_id: "task-scope comment requires a TASK_ID argument"
-  cli.err.comment_scope_no_task_id: "project/universal-scope comment must not be given a TASK_ID argument"
-  cli.err.comment_unknown_scope: "unknown comment scope (use task, project, or universal)"
-  cli.err.comment_edit_requires_field: "comment edit requires at least one of --body, --title, --kind, --pinned, --tag"
+  cli.err.comment_edit_requires_field: "编辑评论至少需要 --body、--title、--kind、--pinned、--tag 之一"
   cli.err.orphans_requires_confirm: "孤儿迁移需要 --confirm;使用 --confirm 重新运行以应用"
   cli.err.unknown_workflow_preset: "未知的 workflow preset"
   cli.err.repo_local_already_exists: "repo-local .omakiten 已存在;传递 --preset-force 以覆盖"
@@ -401,9 +396,8 @@ keys:
   tui.empty.table_no_tasks: "暂无 tasks。按 n 创建一个。"
   tui.empty.table_filtered: "没有 task 匹配已配置的表格过滤器。"
   tui.empty.blockers: "没有 blockers。按 b 添加。"
-  tui.empty.sub_tasks: "No sub-tasks. Press n to add one."
   tui.empty.task_no_description: "无描述"
-  tui.empty.plan_no_goal: "No goal body"
+  tui.empty.plan_no_goal: "无目标正文"
   tui.empty.blocker_picker: "没有其他 tasks 可用于阻塞此 task。"
   tui.empty.comment_not_found: "未找到评论。按 esc 返回。"
   tui.empty.none: "无"
@@ -427,7 +421,7 @@ keys:
   tui.footer.arm_delete_orphan: "准备 delete(孤儿)"
   tui.footer.delete_all_orphans: "删除所有孤儿"
   tui.footer.comment: "评论"
-  tui.footer.sub_task: "sub-task"
+  tui.footer.sub_task: "子任务"
   tui.footer.focus: "聚焦"
   tui.footer.blockers: "blockers"
   tui.footer.open_comment_activity: "打开评论(活动)"
@@ -458,7 +452,7 @@ keys:
   tui.footer.period_7d_30d_all: "周期 (7d / 30d / all)"
   tui.footer.assign: "分配"
   tui.footer.edit_goal: "编辑目标"
-  tui.footer.view_goal: "goal"
+  tui.footer.view_goal: "目标"
   tui.footer.toggle_wave: "切换 wave"
   tui.footer.collapse_expand: "折叠/展开"
   tui.confirm.entity_delete_fmt: "确认 delete %s %q。再次按 d 删除;esc 取消。"
@@ -466,22 +460,21 @@ keys:
   tui.confirm.comment_delete_fmt: "确认 delete 评论 #%d。再次按 d;esc 取消。"
   tui.confirm.task_delete_fmt: "确认 delete task #%d %q。再次按 d;esc 取消。"
   tui.status.task_deleted_fmt: "已删除 task #%d"
-  tui.confirm.home_project_delete_fmt: "Confirm delete project %q (cascade tasks, plans, errors). Press d again; esc cancels. A backup snapshot is written first."
-  tui.notification.project_delete.title_fmt: "Delete project %q?"
-  tui.notification.project_delete.body_fmt: "Tasks: %d · Comments: %d · Plans: %d · Tags: %d · Activity log: %d entries. All permanently removed. Backup will be written to ~/.local/state/omakiten/backups/."
-  notifications.home-project-delete-confirm.description: "Confirm a destructive project delete with one keystroke; shows pre-resolved row counters so the user sees the blast radius."
-  notifications.home-project-delete-confirm.confirm_label: "Delete"
-  notifications.home-project-delete-confirm.cancel_label: "Cancel"
-  notifications.footer.details: "details"
-  notifications.footer.close: "close"
-  notifications.footer.cancel: "cancel"
-  notifications.kitten_orphan_migration.migrate_label: "Migrate"
-  notifications.kitten_orphan_migration.skip_label: "Skip"
-  cli.db.backup.prune_warn_fmt: "prune skipped: %s"
-  tui.status.project_deleted_fmt: "Project %q deleted · backup → %s"
-  tui.status.deleting_project_fmt: "Deleting project %q..."
-  tui.footer.delete_project: "delete project"
-  tui.footer.confirm_delete_project: "confirm delete · esc cancels"
+  tui.confirm.home_project_delete_fmt: "确认 delete project %q (cascade tasks, plans, errors)。再次按 d；esc 取消。会先写入 backup snapshot。"
+  tui.notification.project_delete.title_fmt: "删除 project %q?"
+  tui.notification.project_delete.body_fmt: "Tasks: %d · Comments: %d · Plans: %d · Tags: %d · Activity log: %d entries. 全部永久移除。Backup 将写入 ~/.local/state/omakiten/backups/."
+  notifications.home-project-delete-confirm.description: "一键确认破坏性 project delete；显示预解析行计数以便用户看到影响范围。"
+  notifications.home-project-delete-confirm.confirm_label: "删除"
+  notifications.footer.details: "详情"
+  notifications.footer.close: "关闭"
+  notifications.footer.cancel: "取消"
+  notifications.kitten_orphan_migration.migrate_label: "迁移"
+  notifications.kitten_orphan_migration.skip_label: "跳过"
+  cli.db.backup.prune_warn_fmt: "prune 已跳过: %s"
+  tui.status.project_deleted_fmt: "Project %q 已删除 · backup → %s"
+  tui.status.deleting_project_fmt: "正在删除 project %q..."
+  tui.footer.delete_project: "删除 project"
+  tui.footer.confirm_delete_project: "确认 delete · esc 取消"
   tui.status.orphan_tags_deleted_fmt: "已删除 %d 个孤儿 tag"
   tui.status.tag_in_use_fmt: "Tag %q 在使用中(%d 个引用)— 无法删除"
   tui.status.task_not_found: "未找到 task。按 esc 返回。"
@@ -540,17 +533,15 @@ keys:
   tui.help.task_view.switch_focus: "切换焦点(表单 ⇄ 活动)"
   tui.help.task_view.scroll_or_navigate: "滚动描述(表单)· 导航卡片(活动)"
   tui.help.task_view.navigate_activity: "导航活动卡片(任何焦点)"
-  tui.help.task_view.open_comment: "在详细视图中打开聚焦的评论(活动)"
   tui.help.task_view.scroll_halfpage: "滚动半页"
   tui.help.task_view.jump_top_bottom: "跳到顶部 / 底部"
   tui.help.task_view.edit_task: "编辑 task"
-  tui.help.task_view.new_subtask: "create sub-task (parent_id pre-filled)"
+  tui.help.task_view.new_subtask: "创建子任务（parent_id 已预填）"
   tui.help.task_view.edit_blockers: "编辑 blockers"
   tui.help.task_view.add_comment: "添加评论"
   tui.help.task_view.move: "移动"
   tui.help.task_view.toggle_markdown: "切换 markdown 渲染(原始 ⇄ 渲染)"
   tui.help.task_view.arm_delete: "准备 delete task(表单焦点),然后确认"
-  tui.help.task_view.back_board: "返回 board"
   tui.help.comment_view.title: "评论视图"
   tui.help.comment_view.scroll_body: "滚动正文"
   tui.help.comment_view.scroll_halfpage: "滚动半页"
@@ -643,12 +634,12 @@ keys:
   tui.dashboard.plan_progress: "进度"
   tui.dashboard.plan_percent: "百分比"
   tui.kicker.dependency_graph: "依赖图"
-  tui.kicker.tasks: "Tasks"
-  tui.kicker.stats: "Stats"
+  tui.kicker.tasks: "任务"
+  tui.kicker.stats: "统计"
   tui.kicker.body: "正文"
   tui.kicker.description: "描述"
-  tui.kicker.goal: "Goal"
-  tui.kicker.plan_goal_fmt: "Goal · %s"
+  tui.kicker.goal: "目标"
+  tui.kicker.plan_goal_fmt: "目标 · %s"
   tui.kicker.new_comment: "新评论"
   tui.kicker.comment_fmt: "评论 · #%d"
   tui.kicker.edit_comment_fmt: "编辑评论 · #%d"
@@ -666,7 +657,7 @@ keys:
   tui.row.title: "标题"
   tui.row.bucket: "Bucket"
   tui.row.priority: "优先级"
-  tui.row.status: "Status"
+  tui.row.status: "状态"
   tui.row.comments: "评论"
   tui.row.tags: "Tags"
   tui.row.slug: "Slug"
@@ -680,7 +671,7 @@ keys:
   tui.row.entity: "实体"
   tui.row.default: "默认"
   tui.row.blockers: "Blockers"
-  tui.row.sub_tasks: "Sub-tasks"
+  tui.row.sub_tasks: "子任务"
   tui.stat.tasks: "tasks"
   tui.stat.comments: "评论"
   tui.stat.context: "context"
@@ -690,15 +681,10 @@ keys:
   tui.stat.since_fmt: "自 %s"
   tui.stat.error_badge: "[错误]"
   tui.stat.budget_exceeded: "超出预算"
-  tui.log.total: "总计"
   tui.log.ok: "ok"
   tui.log.error: "错误"
   tui.log.running: "运行中"
-  tui.log.cli: "cli"
-  tui.log.mcp: "mcp"
   tui.log.tui: "tui"
-  tui.log.operation_col: "操作"
-  tui.log.project_col: "项目"
   tui.log.refresh_hint: "r 刷新 · 完整参数在更宽的终端中显示"
   tui.log.tui_refresh_note: "仅 app service 调用被记录。TUI 刷新和直接读取不显示。"
   tui.log.filter.kicker: "logs · 过滤器"
@@ -714,8 +700,8 @@ keys:
   tui.badge.blockers: "阻塞"
   tui.badge.comment: "评论"
   tui.badge.comments: "评论"
-  tui.badge.subtask: "sub-task"
-  tui.badge.subtasks: "sub-tasks"
+  tui.badge.subtask: "子任务"
+  tui.badge.subtasks: "子任务"
   tui.badge.tokens_fmt: "TOKENS:%d"
   tui.badge.use_fmt: "使用:%d"
   tui.status.comment_deleted_fmt: "已删除评论 #%d"
@@ -750,11 +736,8 @@ keys:
   tui.home.then_reopen_prefix: "然后重新打开 "
   tui.home.then_reopen_suffix: "。"
   tui.home.okt_tui_cmd: "okt tui"
-  tui.kicker.status: "状态"
-  tui.kicker.sources: "源"
   tui.kicker.runtime: "Runtime"
   tui.kicker.project: "项目"
-  tui.log.column_header_fmt: "// 时间        SRC  %-*s %-*s STATUS  MS   ARGS"
   tui.settings.runtime.version: "okt 版本"
   tui.settings.runtime.scope: "scope"
   tui.settings.runtime.config: "config"
@@ -767,7 +750,6 @@ keys:
   tui.settings.runtime.lang_cli: "CLI 语言"
   tui.settings.runtime.lang_tui: "TUI 语言"
   tui.settings.runtime.lang_agent_output: "代理输出"
-  tui.settings.effective_hint: "只读 · 通过 `$EDITOR <路径>` 编辑"
   tui.settings.effective.section.output: "输出"
   tui.settings.effective.section.context: "上下文"
   tui.settings.effective.section.workflow: "workflow"
@@ -788,15 +770,12 @@ keys:
   tui.settings.effective.section.priorities: "优先级"
   tui.settings.effective.section.severities: "严重程度"
   tui.settings.effective.section.languages: "语言"
-  tui.settings.effective.source.default: "默认"
-  tui.settings.effective.source.project: "项目"
-  tui.settings.effective.source.env: "环境"
   tui.settings.guards_tab: "守卫"
   tui.settings.guards_hint: "只读 · 通过 `$EDITOR omakiten.yaml` 编辑"
   tui.settings.guards.header_to: "至"
   tui.settings.guards.header_from: "从"
   tui.settings.guards.sentinel_disallowed: "—"
-  tui.settings.guards.sentinel_empty: "[empty]"
+  tui.settings.guards.sentinel_empty: "[空]"
   tui.settings.guards.kicker_root: "根"
   tui.settings.guards.kicker_subtask: "子任务套件"
   tui.kicker.totals: "合计"
@@ -840,7 +819,6 @@ keys:
   tui.keys.save_comment_desc: "保存评论(新)· 保存编辑(现有)"
   tui.keys.insert_newline_desc: "插入换行"
   tui.keys.cancel_desc: "取消"
-  tui.keys.submit_bucket_desc: "提交目标 bucket 键"
   tui.empty.activity_logging_unavailable: "此项目不可用活动日志。"
   tui.empty.metrics_unavailable: "指标仓库不可用。"
   tui.empty.task_not_found_refresh: "未找到 task。用 r 刷新或返回 board。"
@@ -848,7 +826,7 @@ keys:
   tui.status.theme_picker_cancelled: "主题选择器已取消"
   tui.status.default_picker_cancelled: "默认选择器已取消"
   tui.kicker.new_task: "新 task"
-  tui.kicker.new_subtask_fmt: "New sub-task · parent #%d %s"
+  tui.kicker.new_subtask_fmt: "新建子任务 · 父级 #%d %s"
   tui.status.template_add_hint: "Templates 自动加载 — 添加 .md 到 templates/ 并刷新"
   tui.status.template_remove_hint: "Templates 自动加载 — 从 templates/ 删除 .md 并刷新"
   tui.status.nothing_to_open: "无可打开"
@@ -877,24 +855,24 @@ keys:
   tui.status.showing_archived: "显示已归档 tasks"
   tui.status.hiding_archived: "隐藏已归档 tasks"
   tui.status.new_task: "新 task"
-  tui.status.new_subtask_fmt: "New sub-task of #%d %q"
+  tui.status.new_subtask_fmt: "新建 #%d %q 的子任务"
   tui.status.editing_task: "编辑 task"
   tui.status.task_title_required: "Task 标题必需"
   tui.status.no_themes_found: "未找到主题"
   tui.status.theme_picker: "主题选择器"
   tui.status.no_config_profiles: "未找到 config 配置"
   tui.status.config_picker: "Config 选择器"
-  tui.status.no_subtask_kit_profiles: "No sub-task kit profiles found"
-  tui.status.subtask_kit_picker: "Sub-task kit picker"
-  tui.status.subtask_kit_picker_cancelled: "Sub-task kit picker cancelled"
-  tui.status.subtask_kit_switched_fmt: "Sub-task kit set to %s"
-  tui.status.subtask_kit_cleared: "Sub-task kit cleared (inherit root)"
-  tui.status.subtask_kit_already_none: "Sub-task kit already inherits root"
-  tui.status.subtask_kit_switch_failed_fmt: "Sub-task kit switch failed: %s"
-  tui.kicker.subtask_kit_active_fmt: "Sub-task kit · active: %s"
-  tui.picker.hint.subtask_kit: "up/down: move · enter: apply (hot-reload) · esc: cancel"
-  tui.picker.subtask_kit_none: "none (inherit root)"
-  tui.subtask_board.fallback_lane_name: "All"
+  tui.status.no_subtask_kit_profiles: "未找到 sub-task kit 配置文件"
+  tui.status.subtask_kit_picker: "Sub-task kit 选择器"
+  tui.status.subtask_kit_picker_cancelled: "Sub-task kit 选择器已取消"
+  tui.status.subtask_kit_switched_fmt: "Sub-task kit 已设为 %s"
+  tui.status.subtask_kit_cleared: "Sub-task kit 已清除（继承 root）"
+  tui.status.subtask_kit_already_none: "Sub-task kit 已继承 root"
+  tui.status.subtask_kit_switch_failed_fmt: "Sub-task kit 切换失败: %s"
+  tui.kicker.subtask_kit_active_fmt: "子任务 kit · 当前: %s"
+  tui.picker.hint.subtask_kit: "上/下: 移动 · enter: 应用 (hot-reload) · esc: 取消"
+  tui.picker.subtask_kit_none: "无（继承 root）"
+  tui.subtask_board.fallback_lane_name: "全部"
   tui.status.no_template_selected: "未选择 template"
   tui.status.template_not_found: "未找到 template"
   tui.status.template_picker_needs_project: "TUI 必须在项目内打开才能分配 template 默认值"
@@ -1043,12 +1021,8 @@ keys:
   cli.setup.status.wrapper_skipped: "=> 跳过 shell 包装器安装: 未找到 ~/.bashrc 或 ~/.zshrc"
   cli.setup.status.harness_configured: "=> 为 %s 配置 MCP"
   cli.setup.status.harness_failed: "   (已跳过 %s, exit %d — 手动重新运行: %s mcp setup --harness %s --force)"
-  cli.setup.status.complete: "=> 运行 'okt --help' 开始"
   cli.setup.warn.unknown_preset: "warn: OKT_PRESET=%s 不是支持的 preset; 回退到 %s"
-  cli.setup.warn.unknown_harness: "warn: 忽略未知 harness %q"
-  cli.setup.warn.harness_index_oor: "warn: 索引 %s 超出范围"
   cli.setup.picker.lang.cli.title: "选择你的 CLI 语言"
-  cli.setup.picker.lang.tui.title: "选择你的 TUI 语言"
   cli.setup.picker.agent.title: "agent 输出语言(自由文本,例如 \"English\" 或 \"简体中文\")"
   cli.setup.picker.agent.placeholder: "en"
   cli.setup.picker.preset.title: "选择你的 workflow preset"
@@ -1056,78 +1030,77 @@ keys:
   cli.setup.picker.hint.nav: "↑/↓ 导航 · enter 确认 · ctrl+c 退出"
   cli.setup.picker.hint.multi: "↑/↓ 导航 · enter 切换 · tab 确认 · ctrl+c 退出"
   cli.setup.picker.hint.input: "输入以编辑 · enter 确认(空白可以)· ctrl+c 退出"
+  cli.setup.picker.hint.back: " · esc 返回"
+  cli.setup.picker.step: "步骤"
   cli.setup.picker.aborted: "setup 已中止; 未写入任何内容"
   cli.setup.picker.no_tty: "交互式选择器需要 TTY; 为 headless 安装提供 OKT_CLI_LANG、OKT_TUI_LANG、OKT_AGENT_LANG、OKT_PRESET、OKT_HARNESSES(或匹配的 --flags)"
 
 # okt uninstall — in-binary counterpart of uninstall.sh / uninstall.ps1.
-  cli.uninstall.short: "Remove the installed okt binary and shell-rc wrapper (data + config preserved by default)"
+  cli.uninstall.short: "移除已安装的 okt 二进制和 shell-rc wrapper(默认保留数据与 config)"
   cli.uninstall.long: |-
-    Remove the binary the installer wrote to $INSTALL_DIR (defaults to
-    ~/.local/bin on POSIX and %LOCALAPPDATA%Programsokt on Windows) and
-    strip the okt() wrapper block from every rc/profile target.
-
-
-    No automatic backup. Run `okt db backup` first if you want a
-    snapshot of the SQLite DB before purging — uninstall removes
-    user-owned data by intent, so the safety net is opt-in via the
-    standalone backup command.
-
-    Local state is preserved unless explicitly opted-out via --purge-data
-    (SQLite DB under $XDG_DATA_HOME/omakiten) or --purge-config (active
-    yaml profile + entity folders under $XDG_CONFIG_HOME/omakiten).
-    --purge is shorthand for both.
-
-    Without flags on a TTY the picker shows what would be deleted with
-    sizes and asks per purge target. --yes skips the picker entirely.
-  cli.uninstall.flag.yes: "skip the interactive picker and apply the resolved flag set non-interactively"
-  cli.uninstall.flag.purge-data: "also delete $XDG_DATA_HOME/omakiten (SQLite DB + WAL/SHM) — irreversible"
-  cli.uninstall.flag.purge-config: "also delete $XDG_CONFIG_HOME/omakiten (active yaml + entity folders) — irreversible"
-  cli.uninstall.flag.purge: "shorthand for --purge-data + --purge-config — irreversible"
-  cli.uninstall.picker.title: "Uninstall okt"
-  cli.uninstall.picker.hint: "↑/↓ navigate · enter toggle · y apply · ctrl+c quit"
-  cli.uninstall.picker.warn: "THIS CANNOT BE UNDONE"
-  cli.uninstall.picker.binary: "binary  %s"
-  cli.uninstall.picker.wrappers: "shell wrappers (rc/profile blocks)"
-  cli.uninstall.picker.data: "data dir  %s  (%s)"
-  cli.uninstall.picker.config: "config dir  %s  (%s)"
-  cli.uninstall.picker.no_tty: "interactive picker needs a TTY; pass --yes (plus optional --purge-* flags) for headless uninstall"
-  cli.uninstall.picker.aborted: "uninstall aborted; nothing removed"
+    移除 installer 写入 $INSTALL_DIR 的二进制(默认
+    POSIX 为 ~/.local/bin,Windows 为 %LOCALAPPDATA%\Programs\okt),并
+    从每个 rc/profile 目标中剥离 okt() wrapper 块。
+    
+    除非通过 --purge-data 明确 opt-out,
+    ($XDG_DATA_HOME/omakiten 下的 SQLite DB)或 --purge-config(位于
+    $XDG_CONFIG_HOME/omakiten 的活跃 yaml 配置与 entity 文件夹),否则保留本地状态。
+    --purge 是两者的简写。
+    
+    在 TTY 上无 flags 时,picker 会显示将被删除的内容及
+    大小,并按 purge 目标逐项询问。--yes 会完全跳过 picker。
+    
+    无自动 backup。若要在 purge 前为 SQLite DB 做
+    snapshot,请先运行 `okt db backup` — 卸载会按设计删除
+    用户数据;安全网需通过 standalone backup 命令 opt-in。
+  cli.uninstall.flag.yes: "跳过交互式 picker,非交互式应用已解析的 flag 集"
+  cli.uninstall.flag.purge-data: "同时删除 $XDG_DATA_HOME/omakiten(SQLite DB + WAL/SHM)—不可逆"
+  cli.uninstall.flag.purge-config: "同时删除 $XDG_CONFIG_HOME/omakiten(活跃 yaml + entity 文件夹)—不可逆"
+  cli.uninstall.flag.purge: "--purge-data + --purge-config 的简写—不可逆"
+  cli.uninstall.picker.title: "卸载 okt"
+  cli.uninstall.picker.hint: "↑/↓ 导航 · enter 切换 · y 应用 · ctrl+c 退出"
+  cli.uninstall.picker.warn: "此操作无法撤销"
+  cli.uninstall.picker.binary: "二进制  %s"
+  cli.uninstall.picker.wrappers: "shell wrappers(rc/profile 块)"
+  cli.uninstall.picker.data: "数据目录  %s  (%s)"
+  cli.uninstall.picker.config: "config 目录  %s  (%s)"
+  cli.uninstall.picker.no_tty: "交互式 picker 需要 TTY;请传入 --yes(以及可选的 --purge-*)以进行 headless 卸载"
+  cli.uninstall.picker.aborted: "卸载已中止;未移除任何内容"
 
   # okt update — in-binary counterpart of the curl|bash installer for refresh.
-  cli.update.short: "Fetch the latest okt release and atomically swap the installed binary"
+  cli.update.short: "获取最新 okt release 并原子替换已安装的二进制"
   cli.update.long: |-
-    Detect the running binary's path (os.Executable), query the GitHub
-    releases API for the latest tag, download the matching asset, and
-    atomically replace the binary on disk. The current process exits
-    after the swap; the next invocation runs the new version.
-
-    --check prints `current=<v> latest=<v> action=<noop|upgrade>` and
-    exits 0 without writing. --yes skips the confirmation prompt for
-    non-interactive callers.
-  cli.update.flag.yes: "skip the confirmation prompt and apply the upgrade non-interactively"
-  cli.update.flag.check: "report current vs. latest and exit without writing"
-  cli.update.picker.title: "Update okt"
-  cli.update.picker.line: "current=%s  →  latest=%s"
-  cli.update.picker.hint: "y apply · n cancel · ctrl+c quit"
-  cli.update.picker.no_tty: "interactive confirmation needs a TTY; pass --yes for headless update or --check for a dry-run report"
-  cli.update.picker.aborted: "update aborted; binary unchanged"
-  cli.update.err.fetch_latest: "fetch latest release tag: %s"
-  cli.update.err.download_asset: "download asset %s: %s"
-  cli.update.err.swap_binary: "atomic swap of %s: %s"
-  cli.update.err.unsupported_platform: "no published asset for %s/%s"
-  cli.update.err.extract_asset: "extract %s from archive: %s"
-  cli.update.err.fetch_checksum: "fetch release checksums: %s"
-  cli.update.err.checksum_mismatch: "checksum mismatch: expected %s got %s"
-  cli.update.err.asset_too_large: "asset %s exceeds %d-byte size cap"
-  cli.update.err.windows_unsupported: "okt update not yet supported on Windows; reinstall via install.ps1"
-  cli.update.err.dev_build: "this is a dev build; rebuild from source or install a release"
-  cli.update.err.backup_failed_fmt: "pre-swap backup failed: %s; binary unchanged"
+    检测正在运行的二进制路径(os.Executable),查询 GitHub
+    releases API 获取最新 tag,下载匹配的 asset,并
+    原子替换磁盘上的二进制。当前进程在 swap 后
+    退出;下次调用将运行新版本。
+    
+    --check 打印 `current=<v> latest=<v> action=<noop|upgrade>` 并
+    以 0 退出且不写入。--yes 为非交互调用跳过确认提示。
+  cli.update.flag.yes: "跳过确认提示,非交互式应用升级"
+  cli.update.flag.check: "报告当前 vs. 最新版本并退出且不写入"
+  cli.update.picker.title: "更新 okt"
+  cli.update.picker.line: "当前=%s  →  最新=%s"
+  cli.update.picker.hint: "y 应用 · n 取消 · ctrl+c 退出"
+  cli.update.picker.no_tty: "交互式确认需要 TTY;请传入 --yes 进行 headless update,或 --check 获取 dry-run 报告"
+  cli.update.picker.aborted: "update 已中止;二进制未变更"
+  cli.update.err.fetch_latest: "获取最新 release tag: %s"
+  cli.update.err.download_asset: "下载 asset %s: %s"
+  cli.update.err.swap_binary: "原子 swap %s: %s"
+  cli.update.err.unsupported_platform: "没有为 %s/%s 发布的 asset"
+  cli.update.err.extract_asset: "从归档提取 %s: %s"
+  cli.update.err.fetch_checksum: "获取 release checksums: %s"
+  cli.update.err.checksum_mismatch: "checksum 不匹配:期望 %s 实际 %s"
+  cli.update.err.asset_too_large: "asset %s 超过 %d 字节大小上限"
+  cli.update.err.windows_unsupported: "Windows 尚不支持 okt update;请通过 install.ps1 重新安装"
+  cli.update.err.dev_build: "这是 dev build;请从 source 重新构建或安装 release"
+  cli.update.err.backup_failed_fmt: "pre-swap backup 失败: %s;二进制未变更"
 
   # okt config validate --migrate health-check additions (#365).
   cli.config.validate.flag.migrate: "run MigrateLayout + EnsureDefaultFiles before LoadBundle/ValidateBundle so schema backfills land in the report"
-  cli.update.err.stage_binary_fmt: "stage extracted binary for pre-swap health check: %s"
-  cli.update.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); binary unchanged — run `okt config validate --migrate` for details"
-  cli.update.err.config_validation_exec_fmt: "run staged binary health check: %s"
+  cli.update.err.stage_binary_fmt: "为 pre-swap health check 暂存提取的二进制: %s"
+  cli.update.err.config_validation_failed_fmt: "config health check 失败(%d 个错误,首个: %s);二进制未变更 — 运行 `okt config validate --migrate` 查看详情"
+  cli.update.err.config_validation_exec_fmt: "运行 staged binary health check: %s"
   cli.tui.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); run `okt config validate --migrate` for details"
   # Remediation hint copy (#367) — %s slot carries the suggested command literal.
   cli.config.validate.remediation.missing_shipped_file: "Restore the shipped default files: %s — your custom/ subtree is preserved; back up direct edits to shipped files first."
@@ -1141,11 +1114,9 @@ keys:
   tui.plans.list.header: "// SLUG             STATUS    完成/合计   %    名称 ‹活动 WAVE›"
   tui.plans.list.active_wave_missing: "—"
   tui.plans.network.no_waves_fmt: "暂无 wave。 使用 `okt plan wave-add %s \"<wave-name>\"` 添加。"
-  tui.plans.network.header_fmt: "// PLAN · %s · %d/%d · %d%%"
+  tui.plans.network.header_fmt: "// 计划 · %s · %d/%d · %d%%"
   tui.plans.network.keymap: "(c 分配 · e 编辑目标 · r 刷新)"
-  tui.plans.network.wave_header_fmt: "// W%d %s · %d/%d"
   tui.plans.network.active_tag: " ‹活动›"
-  tui.plans.network.empty_wave: "空"
   tui.plans.network.wave_glyph_header_fmt: "%s W%d %s · %d/%d"
   tui.plans.network.column.title: " 标题"
   tui.plans.network.column.bucket: " 阶段"
@@ -1159,12 +1130,10 @@ keys:
   tui.plans.network.badge.ready: "就绪"
   tui.plans.network.deps_footer_prefix: "依赖: "
   tui.plans.network.next_claimable_fmt: "▶ 下一个可领取: #%d"
-  tui.plans.kicker: "Plans"
-  tui.plans.status.claim_success_fmt: "plans.claim_next: task #%d %q 已分配"
-  tui.plans.status.claim_empty_fmt: "plans.claim_next: %q 中没有可认领的 task"
+  tui.plans.kicker: "计划"
   tui.plans.status.assign_no_task: "plans.assign: 未选中 task"
   tui.plans.assign.status_fmt: "#%d 负责人 (空清除)"
-  tui.plans.goal.kicker_fmt: "// PLAN GOAL · %s"
+  tui.plans.goal.kicker_fmt: "// 计划目标 · %s"
   tui.plans.goal.status_fmt: "plan goal · %s · ctrl+s 保存 · esc 取消"
   tui.plans.goal.hint.ctrl_s: "ctrl+s 保存"
   tui.plans.goal.hint.alt_newline: "alt+enter 换行"
@@ -1202,7 +1171,7 @@ keys:
 
   # guard.* — hint strings surfaced in guard.violated payloads.
   guard.wave_gate.hint: "等待前一个 wave 结束 — 同一个 plan 中前面 wave 的 tasks 必须到达 Done，这个才能开始。"
-  guard.subtasks_complete.hint: "Move every direct sub-task into the final bucket before promoting the parent."
+  guard.subtasks_complete.hint: "在提升 parent 之前，将每条直接 sub-task 移入 final bucket。"
   # guard.common.* — hints shared across presets. Per-preset override via
   # the preset-scoped namespace (guard.<preset>.<stage>.<rule>...) when copy diverges.
   guard.common.archive.comments_tagged.documentation.hint: "归档前添加一个 #documentation 评论，总结已交付的内容。"
@@ -1243,31 +1212,31 @@ keys:
   guard.shokunin.review.comments_tagged.rollback_plan.hint: "在 review 前添加一个 #rollback-plan，包含 revert 步骤、rollback 后验证，以及沟通计划。"
   guard.shokunin.docs.comments_tagged.peer_review.hint: "添加 ≥ 2 个不同的 #peer-review 评论，来自独立 reviewer（非作者）。每个携带判定、批准范围，以及已审核工件清单。"
   guard.shokunin.done.comments_tagged.lessons_learned.hint: "添加一个 #lessons-learned 评论，列出什么有效 / 什么无效以及任何提议的流程变更。"
-  tui.footer.zone: "zone"
-  tui.footer.focus_description: "focus description"
-  tui.footer.enter_zone_action: "act"
-  tui.footer.open_subtask: "open sub-task"
-  tui.footer.back_parent: "back to parent"
-  tui.footer.close_focus: "close focus"
-  tui.footer.toggle_markdown: "toggle markdown"
-  tui.kicker.description_fmt: "Description · #%d"
-  tui.task.description_more_fmt: "+%d more lines · f to focus"
-  tui.help.task_view.open_focused: "open focused item (sub-task drill / comment detail)"
-  tui.help.task_view.focus_description: "open description in focus overlay"
-  tui.help.task_view.back_or_parent: "back to parent task / board"
-  tui.help.description_view.title: "Description focus"
-  tui.help.description_view.scroll_body: "scroll body"
-  tui.help.description_view.scroll_halfpage: "scroll by half page"
-  tui.help.description_view.jump_top_bottom: "jump to top / bottom"
-  tui.help.description_view.toggle_markdown: "toggle markdown render (raw ⇄ rendered)"
-  tui.help.description_view.close: "close focus and return to task"
-  tui.help.task_view.focus_subtasks: "focus sub-tasks pane"
-  tui.help.task_view.send_subtask_done: "send focused sub-task → final bucket"
-  tui.status.subtask_sent_done_fmt: "Sub-task #%d moved to %q"
-  tui.confirm.delete_subtree_fmt: "Confirm delete task #%d %q + %d sub-tasks (%d total). Press d again; esc cancels."
-  tui.status.subtask_already_done_fmt: "Sub-task #%d already in %q"
-  tui.status.no_subtasks_to_focus: "No sub-tasks to focus"
-  tui.taskedit.dirty_discard_prompt: "Discard unsaved edits? Press esc again to discard, ctrl+s to save."
-  tui.taskedit.parent_lookup_invalid: "Parent id must be a positive integer (or empty for root)."
-  tui.taskedit.parent_lookup_self: "Parent cannot be the task itself."
-  tui.taskedit.parent_lookup_not_found: "No task with that id in this project."
+  tui.footer.zone: "区域"
+  tui.footer.focus_description: "聚焦描述"
+  tui.footer.enter_zone_action: "操作"
+  tui.footer.open_subtask: "打开子任务"
+  tui.footer.back_parent: "返回父级"
+  tui.footer.close_focus: "关闭聚焦"
+  tui.footer.toggle_markdown: "切换 markdown"
+  tui.kicker.description_fmt: "描述 · #%d"
+  tui.task.description_more_fmt: "另有 +%d 行 · f 聚焦"
+  tui.help.task_view.open_focused: "打开聚焦项（子任务详情 / 评论详情）"
+  tui.help.task_view.focus_description: "在聚焦层打开描述"
+  tui.help.task_view.back_or_parent: "返回父任务 / 看板"
+  tui.help.description_view.title: "描述聚焦"
+  tui.help.description_view.scroll_body: "滚动正文"
+  tui.help.description_view.scroll_halfpage: "半页"
+  tui.help.description_view.jump_top_bottom: "跳到顶 / 底"
+  tui.help.description_view.toggle_markdown: "切换 markdown（原始 ⇄ 渲染）"
+  tui.help.description_view.close: "关闭聚焦并返回任务"
+  tui.help.task_view.focus_subtasks: "聚焦子任务面板"
+  tui.help.task_view.send_subtask_done: "将聚焦的子任务发送到最终 bucket"
+  tui.status.subtask_sent_done_fmt: "子任务 #%d 已移至 %q"
+  tui.confirm.delete_subtree_fmt: "确认删除任务 #%d %q 及 %d 个子任务（共 %d）。再按 d；esc 取消。"
+  tui.status.subtask_already_done_fmt: "子任务 #%d 已在 %q"
+  tui.status.no_subtasks_to_focus: "没有可聚焦的子任务"
+  tui.taskedit.dirty_discard_prompt: "放弃未保存的更改？再按 esc 放弃，ctrl+s 保存。"
+  tui.taskedit.parent_lookup_invalid: "父级 id 须为正整数（根任务留空）。"
+  tui.taskedit.parent_lookup_self: "父级不能是任务自身。"
+  tui.taskedit.parent_lookup_not_found: "此 project 中没有该 id 的任务。"
