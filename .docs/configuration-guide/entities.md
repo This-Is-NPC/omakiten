@@ -229,6 +229,8 @@ defaults:
 
 The resolver picks the first non-`nil` value walking the chain top-to-bottom. Pointer booleans (`*bool`) distinguish "field omitted" from "explicitly `false`" — omitting `delete` flows to the next layer; writing `delete: false` ends the walk with a deny.
 
+Comments also carry a `create` operation alongside `edit`/`delete`, and each comment operation may be a **tag-conditional rule object** rather than a bare bool. See [Comment permissions](#comment-permissions) below for the full create chain, the rule-object shape, and which tag set each operation evaluates against; the [Comment create + tag-conditional rules](guards.md#comment-create--tag-conditional-rules) section in `guards.md` covers the failure hints.
+
 The chain above governs **task-scoped** comments (anchored to the comment's current bucket). Comments also carry a `scope` of `project` or `universal`; these have no bucket, so their edit/delete policy is resolved task-lessly against the workflow defaults via per-scope sub-blocks on `defaults.comment`:
 
 ```yaml
@@ -240,6 +242,60 @@ defaults:
 ```
 
 The flat `comment: {edit, delete}` shape still parses and resolves as the task scope (back-compat); both shapes may coexist. The `task`/`project`/`universal` sub-blocks are valid only under `workflows[].defaults.comment` — declaring them under `defaults.task` or under a bucket's `permissions.comment` is a validation error.
+
+#### Comment permissions
+
+Comment permissions extend the task chain above with a third operation and a polymorphic value type. Both are comment-only — the validator rejects tag predicates under `permissions.task.*` (`rejectTaskTagRules` in `internal/config/validator.go`).
+
+**The `create` operation.** Comments support `create` in addition to `edit`/`delete`. Because tasks have no create permission, the task-scope create chain skips the task-entity fallbacks (`Bucket.ResolveCommentCreatePolicy` in `internal/domain/workflow.go`):
+
+```
+bucket.permissions.comment.create → defaults.comment.task.create → defaults.comment.create → true
+```
+
+Project/universal comments have no bucket and resolve via `ResolveCommentScopePolicy(scope, "create")` → `defaults.comment.<scope>.create` → `true`. The create guard is bucket-granular: a denial in the current bucket reports which buckets *do* allow create so the operator can move the task and retry (see [guards.md § Comment create](guards.md#the-create-operation)).
+
+**The rule object.** Every comment operation value is **either** a bare bool **or** a rule object; a bare bool `b` is exactly equivalent to `{ allow: b }` (full back-compat). The rule object (`CommentOpPolicy` in `internal/domain/comment_policy.go`) carries a base verdict plus three tag predicates:
+
+```yaml
+comment:
+  edit:
+    allow: true              # base verdict (default true; false short-circuits to deny)
+    require_tags: [reviewed]  # deny unless EVERY listed tag is present
+    deny_tags:    [locked]    # deny if ANY listed tag is present
+    require_any_tag: true     # deny if the evaluated tag set is empty
+```
+
+The YAML decoder (`CommentOpPolicy.UnmarshalYAML` in `internal/config/bundle.go`) accepts only a scalar bool or a mapping whose keys are the closed set `{allow, require_tags, deny_tags, require_any_tag}`; any other key (e.g. a `require_tag:` typo) is rejected at load. Empty/whitespace tag names are rejected too (`validateCommentTagNames`).
+
+Evaluation order (`Evaluate`): base `allow` first (a `false` short-circuits to deny) → `require_any_tag` → `require_tags` → `deny_tags`. The tag set fed to evaluation differs per operation:
+
+| Operation | Tag set evaluated |
+|---|---|
+| `create` | the **request payload** tags (tags attached to the new comment) |
+| `edit` | the **target comment's stored** tags |
+| `delete` | the **target comment's stored** tags |
+
+**Worked example** (full create + tag-conditional policy):
+
+```yaml
+workflow:
+  buckets:
+    - key: done
+      permissions:
+        comment:
+          create: false                                  # freeze new comments once done
+          edit:   { allow: true, deny_tags: [locked] }    # edits allowed unless tagged `locked`
+  defaults:
+    comment:
+      task:      { create: true, edit: false, delete: false }
+      project:
+        create: { allow: true, require_tags: [x] }         # create needs payload tag `x`
+        edit:   { allow: true, deny_tags: [y] }            # comment tagged `y` cannot be edited
+        delete: false
+      universal:
+        create: { allow: true, require_any_tag: true }     # create needs at least one tag
+```
 
 There is no hardcoded "first bucket is special" rule anymore. The default kit (`defaults/config/omakase.yaml`) declares the equivalent shape explicitly: strict defaults at the workflow level + an opt-in on the `backlog` bucket.
 

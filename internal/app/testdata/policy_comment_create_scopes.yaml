@@ -1,0 +1,55 @@
+# Scenario: scope-aware, bucket-granular comment CREATE policy (omakiten #404).
+#   - workflows[].defaults.comment declares per-scope create rules:
+#       project:   create=false → project comments cannot be created
+#       universal: create=true  → universal comments may be created
+#   - bucket "backlog" pins permissions.comment.create=true → task create
+#     allowed for a task sitting in backlog.
+#   - bucket "dev" pins permissions.comment.create=false → task create denied
+#     for a task in dev.
+#
+# Proves: task create is bucket-granular (allowed in backlog, denied in dev),
+# project create is denied via defaults, and universal create is allowed via
+# defaults — all task-less scopes resolve without a GetTaskByID call. Mirrors
+# the edit/delete resolution: a deny only happens when a layer explicitly sets
+# comment.create=false; absent any rule, create stays allowed (back-compat).
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default
+config:
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    defaults:
+      comment:
+        project:
+          create: false
+        universal:
+          create: true
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1
+        permissions:
+          comment:
+            create: true
+      - id: 2
+        key: dev
+        name: Development
+        position: 2
+        permissions:
+          comment:
+            create: false
+    transitions:
+      - from: 1
+        to: 2

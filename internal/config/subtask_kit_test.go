@@ -112,6 +112,35 @@ func TestLoadBundleRejectsInvalidSubtaskKitPaths(t *testing.T) {
 	}
 }
 
+// TestResolveSubtaskKitPathAllowsDoubleDotPrefixedSibling pins the boundary the
+// earlier `strings.HasPrefix(rel, "..")` escape check got wrong: a child dir
+// whose name merely begins with ".." (e.g. "..foo") is NOT a parent escape, yet
+// the old check rejected it because filepath.Rel returns "..foo/sub.yaml". The
+// shared escapesDir predicate only treats ".." itself or a "../" ascent as an
+// escape. Drives the import/subtask path-safety extraction (okt-review #380/§drift).
+func TestResolveSubtaskKitPathAllowsDoubleDotPrefixedSibling(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	// A real subdirectory literally named "..foo" — a legal name (only "." and
+	// ".." are special), lexically rooted under configDir, no symlink escape.
+	child := filepath.Join(configDir, "..foo")
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%s): %v", child, err)
+	}
+	sub := filepath.Join(child, "sub.yaml")
+	if err := os.WriteFile(sub, []byte("version: 1\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(%s): %v", sub, err)
+	}
+
+	got, err := resolveSubtaskKitPath(filepath.Join(configDir, "omakase.yaml"), "..foo/sub.yaml")
+	if err != nil {
+		t.Fatalf("resolveSubtaskKitPath() rejected a legal sibling-prefixed path: %v", err)
+	}
+	if want := filepath.Join(configDir, "..foo", "sub.yaml"); got != want {
+		t.Fatalf("resolveSubtaskKitPath() = %q, want %q", got, want)
+	}
+}
+
 func TestLoadBundleRejectsSubtaskKitSymlinkEscape(t *testing.T) {
 	root := t.TempDir()
 	if err := EnsureDefaultFiles(root); err != nil {

@@ -267,13 +267,21 @@ func TestCLICommentGuardDenied(t *testing.T) {
 		"comment", "edit", projID, "-b", "blocked")
 }
 
+func TestCLICommentAddCreateGuardDenied(t *testing.T) {
+	dbPath, configPath := commentTestEnv(t)
+	injectProjectCommentCreateDeny(t, configPath)
+
+	runCLIExpectError(t, dbPath, configPath, "guard_violation",
+		"comment", "add", "--scope", "project", "-b", "blocked")
+}
+
 // injectProjectCommentDeny rewrites the seeded omakase.yaml so the active
 // workflow declares defaults.comment.project.{edit,delete}=false. It targets
 // the verbatim default block shipped in defaults/config/omakase.yaml:
 //
-//	      comment:
-//	        edit: false
-//	        delete: false
+//	comment:
+//	  edit: false
+//	  delete: false
 //
 // replacing it with the same flat fields PLUS a project deny sub-block. The
 // flat fields are kept so the task-scope chain is unchanged; only the
@@ -288,6 +296,25 @@ func injectProjectCommentDeny(t *testing.T, configPath string) {
 	const oldBlock = "      comment:\n        edit: false\n        delete: false\n"
 	const newBlock = "      comment:\n        edit: false\n        delete: false\n" +
 		"        project:\n          edit: false\n          delete: false\n"
+	if !strings.Contains(string(raw), oldBlock) {
+		t.Fatalf("seeded config lacks the expected defaults.comment block; "+
+			"the default omakase.yaml layout changed. content:\n%s", raw)
+	}
+	patched := strings.Replace(string(raw), oldBlock, newBlock, 1)
+	if err := os.WriteFile(configPath, []byte(patched), 0o644); err != nil {
+		t.Fatalf("write patched config %s: %v", configPath, err)
+	}
+}
+
+func injectProjectCommentCreateDeny(t *testing.T, configPath string) {
+	t.Helper()
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read seeded config %s: %v", configPath, err)
+	}
+	const oldBlock = "      comment:\n        edit: false\n        delete: false\n"
+	const newBlock = "      comment:\n        edit: false\n        delete: false\n" +
+		"        project:\n          create: false\n"
 	if !strings.Contains(string(raw), oldBlock) {
 		t.Fatalf("seeded config lacks the expected defaults.comment block; "+
 			"the default omakase.yaml layout changed. content:\n%s", raw)

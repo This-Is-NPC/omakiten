@@ -30,7 +30,7 @@ func LoadBundle(path string) (Bundle, error) {
 func loadBundle(path string, opts loadBundleOptions) (Bundle, error) {
 	rootDir := ConfigRootFromYAMLPath(path)
 
-	wired, fields, err := readWiringDetailed(path)
+	wired, fields, importSources, err := readWiringDetailed(path)
 	if err != nil {
 		return Bundle{}, err
 	}
@@ -77,8 +77,12 @@ func loadBundle(path string, opts loadBundleOptions) (Bundle, error) {
 		Languages:      languages,
 		ActiveTheme:    theme,
 		ActiveThemeErr: themeErr,
-		SourcePaths:    []string{path},
-		Sources:        buildSettingsSources(wired.Config, wired.Kit.Key),
+		// Root profile first, then every file it pulled in via a `from:`
+		// import directive (stable first-encounter order from the resolver).
+		// Hot reload watches all of these — editing an imported file triggers
+		// the same rebuild as editing the root YAML.
+		SourcePaths: append([]string{path}, importSources...),
+		Sources:     buildSettingsSources(wired.Config, wired.Kit.Key),
 	}
 
 	if themeErr != nil {
@@ -193,20 +197,56 @@ func ConfigRootFromYAMLPath(path string) string {
 	return configDir
 }
 
-func readWiringDetailed(path string) (wiring, map[string]struct{}, error) {
+// readWiringDetailed reads, import-expands, and strictly decodes a profile YAML
+// file. It returns the decoded wiring, the set of top-level keys present in the
+// RESOLVED document (used by sub-kit required-field validation), the list of
+// imported source paths (absolute, de-duplicated, first-encounter order), and
+// any error.
+//
+// Import expansion runs BEFORE topLevelYAMLFields and the strict
+// KnownFields(true) decode so both observe the resolved shape: a section pulled
+// in via `from:` is decoded and validated exactly like an inline section. Unknown
+// imported keys fail the same strict decode that rejects unknown inline keys, and
+// required-field checks see the expanded document rather than the raw file that
+// still carries the directive.
+func readWiringDetailed(path string) (wiring, map[string]struct{}, []string, error) {
 	raw, err := readFileBounded(path, MaxWiringFileBytes)
 	if err != nil {
-		return wiring{}, nil, err
+		return wiring{}, nil, nil, err
 	}
-	fields := topLevelYAMLFields(raw)
-	decoder := yaml.NewDecoder(bytes.NewReader(raw))
+
+	// Parse once into a node tree, expand value-level `from:` directives, then
+	// re-encode so the existing strict-decode path runs unchanged over the
+	// resolved YAML.
+	var probe yaml.Node
+	if err := yaml.Unmarshal(raw, &probe); err != nil {
+		return wiring{}, nil, nil, err
+	}
+	resolved, sources, err := resolveImports(&probe, path)
+	if err != nil {
+		return wiring{}, nil, nil, err
+	}
+	// resolveImports returns the canonical root as sources[0] followed by each
+	// imported file. The caller already tracks the (lexical) root path, so drop
+	// the leading root here and surface only the imported files.
+	var importSources []string
+	if len(sources) > 1 {
+		importSources = sources[1:]
+	}
+	resolvedRaw, err := yaml.Marshal(resolved)
+	if err != nil {
+		return wiring{}, nil, nil, fmt.Errorf("re-encode resolved config %q: %w", path, err)
+	}
+
+	fields := topLevelYAMLFields(resolvedRaw)
+	decoder := yaml.NewDecoder(bytes.NewReader(resolvedRaw))
 	decoder.KnownFields(true)
 
 	var w wiring
 	if err := decoder.Decode(&w); err != nil {
-		return wiring{}, nil, err
+		return wiring{}, nil, nil, err
 	}
-	return w, fields, nil
+	return w, fields, importSources, nil
 }
 
 func topLevelYAMLFields(raw []byte) map[string]struct{} {
@@ -272,9 +312,23 @@ func resolveSubtaskKitPath(rootPath, rel string) (string, error) {
 		// produce the canonical error.
 		return joined, nil
 	}
-	rel2, err := filepath.Rel(resolvedRoot, resolvedJoined)
-	if err != nil || strings.HasPrefix(rel2, "..") || rel2 == ".." {
+	if escapesDir(resolvedRoot, resolvedJoined) {
 		return "", fmt.Errorf("subtask_kit %q: resolved path %q escapes config directory %q via symlink", rel, resolvedJoined, resolvedRoot)
 	}
 	return joined, nil
+}
+
+// escapesDir reports whether resolvedChild lies outside resolvedRoot after both
+// have been symlink-resolved. A child escapes when its path relative to the root
+// is ".." itself or begins with a "../" ascent. Shared by resolveSubtaskKitPath
+// and resolveImportPath so the two path-safety routines cannot drift — an earlier
+// `strings.HasPrefix(rel, "..")` form here over-rejected sibling directories whose
+// name merely starts with ".." (e.g. "..foo"), which the import path resolved
+// correctly.
+func escapesDir(resolvedRoot, resolvedChild string) bool {
+	rel, err := filepath.Rel(resolvedRoot, resolvedChild)
+	if err != nil {
+		return true
+	}
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

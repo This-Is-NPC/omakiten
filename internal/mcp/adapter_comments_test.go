@@ -225,17 +225,59 @@ func commentGuardBundle(t *testing.T) config.Bundle {
 	bundle := mcpTestBundle(t)
 	f := false
 	tr := true
+	deny := &config.CommentOpPolicy{Allow: &f}
+	allow := &config.CommentOpPolicy{Allow: &tr}
 	bundle.Workflows[0].Defaults = &config.WorkflowDefaults{
 		Comment: &config.EntityPermission{
-			Task:      &config.EntityPermission{Edit: &f, Delete: &f},
-			Project:   &config.EntityPermission{Edit: &tr, Delete: &tr},
-			Universal: &config.EntityPermission{Edit: &f, Delete: &f},
+			Task:      &config.EntityPermission{Edit: deny, Delete: deny},
+			Project:   &config.EntityPermission{Edit: allow, Delete: allow},
+			Universal: &config.EntityPermission{Edit: deny, Delete: deny},
 		},
 	}
 	bundle.Workflows[0].Buckets[0].Permissions = &config.BucketPermissions{
-		Comment: &config.EntityPermission{Edit: &f},
+		Comment: &config.EntityPermission{Edit: deny},
 	}
 	return bundle
+}
+
+func commentCreateGuardBundle(t *testing.T) config.Bundle {
+	t.Helper()
+	bundle := mcpTestBundle(t)
+	f := false
+	bundle.Workflows[0].Defaults = &config.WorkflowDefaults{
+		Comment: &config.EntityPermission{
+			Project: &config.EntityPermission{Create: &config.CommentOpPolicy{Allow: &f}},
+		},
+	}
+	return bundle
+}
+
+func TestAdapterCommentsAddCreateGuardDenialViaMCP(t *testing.T) {
+	ctx := context.Background()
+	store, project, _ := newMCPProjectWithBundle(t, ctx, "guarded", commentCreateGuardBundle(t))
+	service := agent.NewService(store, agent.ProjectSelector{ProjectID: project.ID})
+	service.SetSnapshot(store.Snapshot())
+	adapter := NewAdapter(service)
+
+	result, err := adapter.CallTool(ctx, "comments.add", withModel(map[string]any{
+		"project":     "guarded",
+		"scope":       "project",
+		"body":        "blocked",
+		"author_type": "agent",
+	}))
+	if err != nil {
+		t.Fatalf("CallTool(comments.add) transport error = %v", err)
+	}
+	if !result.IsError {
+		t.Fatalf("comments.add on denied create scope should be IsError, got: %s", result.Content[0].Text)
+	}
+	var failure map[string]any
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &failure); err != nil {
+		t.Fatalf("comments.add failure payload not JSON: %v", err)
+	}
+	if failure["code"] != "guard_violation" {
+		t.Fatalf("comments.add failure code = %v, want guard_violation; payload=%v", failure["code"], failure)
+	}
 }
 
 // TestAdapterCommentsEditDeleteGuardDenialViaMCP drives the comment policy chain

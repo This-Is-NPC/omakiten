@@ -159,6 +159,7 @@ const (
 	GuardOperationTaskUnarchive  = guards.OperationTaskUnarchive
 	GuardOperationTaskEdit       = guards.OperationTaskEdit
 	GuardOperationTaskDelete     = guards.OperationTaskDelete
+	GuardOperationCommentCreate  = guards.OperationCommentCreate
 	GuardOperationCommentEdit    = guards.OperationCommentEdit
 	GuardOperationCommentDelete  = guards.OperationCommentDelete
 )
@@ -180,35 +181,136 @@ const (
 	EntityComment = "comment"
 )
 
-// PermissionEdit / PermissionDelete identifies the CRUD action being checked.
+// PermissionCreate / PermissionEdit / PermissionDelete identifies the CRUD
+// action being checked.
 const (
-	PermissionEdit   = "edit"
-	PermissionDelete = "delete"
+	PermissionCreate = domain.CommentOpCreate
+	PermissionEdit   = domain.CommentOpEdit
+	PermissionDelete = domain.CommentOpDelete
 )
+
+type currentTaskBucket struct {
+	workflow  domain.Workflow
+	bucketID  int64
+	bucketKey string
+	bucket    domain.Bucket
+}
+
+func (s *WorkflowService) resolveCurrentTaskBucket(ctx context.Context, project domain.ProjectContext, taskID int64) (currentTaskBucket, error) {
+	task, err := s.tasks.GetTaskByID(ctx, project.ID, taskID, s.snap)
+	if err != nil {
+		return currentTaskBucket{}, err
+	}
+	taskSnap := s.snap.For(task)
+	bucketID, bucketKey, err := s.repo.CurrentTaskBucket(ctx, project.ID, taskID, taskSnap)
+	if err != nil {
+		return currentTaskBucket{}, err
+	}
+	workflow := taskSnap.Workflow()
+	current := domain.Bucket{}
+	for _, b := range workflow.Buckets {
+		if b.ID == bucketID {
+			current = b
+			break
+		}
+	}
+	return currentTaskBucket{
+		workflow:  workflow,
+		bucketID:  bucketID,
+		bucketKey: bucketKey,
+		bucket:    current,
+	}, nil
+}
 
 // ResolveBucketPermissions tells the caller whether (entity, operation) is
 // allowed in the bucket the task currently sits in. Returns a descriptive
 // hint when the answer is "no", listing buckets where the operation IS
 // permitted so the agent can suggest a remediation.
 func (s *WorkflowService) ResolveBucketPermissions(ctx context.Context, project domain.ProjectContext, taskID int64, entity, operation string) (bool, string, error) {
-	task, err := s.tasks.GetTaskByID(ctx, project.ID, taskID, s.snap)
+	current, err := s.resolveCurrentTaskBucket(ctx, project, taskID)
 	if err != nil {
 		return false, "", err
 	}
-	taskSnap := s.snap.For(task)
-	currentBucketID, currentBucketKey, err := s.repo.CurrentTaskBucket(ctx, project.ID, taskID, taskSnap)
-	if err != nil {
-		return false, "", err
-	}
-	workflow := taskSnap.Workflow()
 
-	allowed, allowedBuckets := evaluatePermission(workflow, currentBucketID, entity, operation)
+	allowed, allowedBuckets := evaluatePermission(current.workflow, current.bucketID, entity, operation)
 	if allowed {
 		return true, "", nil
 	}
 
-	hint := buildPermissionHint(entity, operation, currentBucketKey, allowedBuckets)
+	hint := buildPermissionHint(entity, operation, current.bucketKey, allowedBuckets)
 	return false, hint, nil
+}
+
+// ResolveCommentBucketPolicy resolves the task-scope comment policy for the
+// bucket the task currently sits in, then evaluates it against tags — the
+// op's relevant tag set (create → request payload tags; edit/delete → the
+// target comment's stored tags). Returns a descriptive hint on denial.
+//
+// This is the tag-aware comment counterpart to ResolveBucketPermissions: the
+// latter evaluates the policy against an empty tag set (sufficient for plain
+// bool policies and the task entity), while this path threads the tag set so
+// require_tags / deny_tags / require_any_tag predicates fire.
+func (s *WorkflowService) ResolveCommentBucketPolicy(ctx context.Context, project domain.ProjectContext, taskID int64, operation string, tags []string) (bool, string, error) {
+	current, err := s.resolveCurrentTaskBucket(ctx, project, taskID)
+	if err != nil {
+		return false, "", err
+	}
+
+	var policy domain.CommentOpPolicy
+	if operation == PermissionCreate {
+		policy = current.bucket.ResolveCommentCreatePolicy(current.workflow.Defaults)
+	} else {
+		policy = current.bucket.ResolveCommentPolicy(current.workflow.Defaults, operation)
+	}
+	if policy.Evaluate(tags) {
+		return true, "", nil
+	}
+	if commentPolicyBaseDenied(policy) {
+		_, allowedBuckets := evaluatePermission(current.workflow, current.bucketID, EntityComment, operation)
+		return false, buildPermissionHint(EntityComment, operation, current.bucketKey, allowedBuckets), nil
+	}
+	hint := commentPolicyHint("task", operation, policy, tags,
+		fmt.Sprintf("declare workflows[].buckets[].permissions.comment.%s in bucket %q", operation, current.bucketKey))
+	return false, hint, nil
+}
+
+// commentPolicyHint builds the denial hint for a comment policy, surfacing the
+// specific predicate that failed (require_tags / deny_tags / require_any_tag)
+// when the base allow passed, or the plain "not permitted" message when allow
+// was false. fallbackDecl is the config-shaped remediation tip.
+func commentPolicyHint(scope, operation string, policy domain.CommentOpPolicy, tags []string, fallbackDecl string) string {
+	if commentPolicyBaseDenied(policy) {
+		return fmt.Sprintf("policy: %s comment %s is not permitted (%s)", scope, operation, fallbackDecl)
+	}
+	if hint, ok := commentPolicyPredicateHint(scope, operation, policy, tags); ok {
+		return hint
+	}
+	return fmt.Sprintf("policy: %s comment %s is not permitted (%s)", scope, operation, fallbackDecl)
+}
+
+func commentPolicyBaseDenied(policy domain.CommentOpPolicy) bool {
+	return policy.Allow != nil && !*policy.Allow
+}
+
+func commentPolicyPredicateHint(scope, operation string, policy domain.CommentOpPolicy, tags []string) (string, bool) {
+	present := make(map[string]struct{}, len(tags))
+	for _, t := range tags {
+		present[t] = struct{}{}
+	}
+	if policy.RequireAnyTag != nil && *policy.RequireAnyTag && len(tags) == 0 {
+		return fmt.Sprintf("policy: %s comment %s requires at least one tag", scope, operation), true
+	}
+	for _, req := range policy.RequireTags {
+		if _, ok := present[req]; !ok {
+			return fmt.Sprintf("policy: %s comment %s requires tag %q", scope, operation, req), true
+		}
+	}
+	for _, deny := range policy.DenyTags {
+		if _, ok := present[deny]; ok {
+			return fmt.Sprintf("policy: %s comment %s is denied for tag %q", scope, operation, deny), true
+		}
+	}
+	return "", false
 }
 
 // ResolveCommentScopePermission answers whether (scope, operation) is allowed
@@ -217,12 +319,26 @@ func (s *WorkflowService) ResolveBucketPermissions(ctx context.Context, project 
 // bucket lookup) per the scope chain documented on
 // domain.ResolveCommentScopePermission. Returns a descriptive hint when the
 // answer is "no" so the caller can surface the offending scope key.
+//
+// This is the tag-blind entry point (it evaluates the resolved policy against
+// an empty tag set); ResolveCommentScopePolicy is the tag-aware variant used by
+// the comment-permission enforcement path.
 func (s *WorkflowService) ResolveCommentScopePermission(scope, operation string) (bool, string) {
+	return s.ResolveCommentScopePolicy(scope, operation, nil)
+}
+
+// ResolveCommentScopePolicy resolves the task-less comment policy for
+// (scope, operation) and evaluates it against tags — the relevant tag set for
+// the op (create → request payload tags; edit/delete → the target comment's
+// stored tags). Returns a descriptive hint when denied so the caller can
+// surface the offending scope key.
+func (s *WorkflowService) ResolveCommentScopePolicy(scope, operation string, tags []string) (bool, string) {
 	defaults := s.snap.Workflow().Defaults
-	if domain.ResolveCommentScopePermission(defaults, scope, operation) {
+	policy := domain.ResolveCommentScopePolicy(defaults, scope, operation)
+	if policy.Evaluate(tags) {
 		return true, ""
 	}
-	hint := fmt.Sprintf("policy: %s comment %s is not permitted (declare workflows[].defaults.comment.%s.%s)", scope, operation, scope, operation)
+	hint := commentPolicyHint(scope, operation, policy, tags, fmt.Sprintf("declare workflows[].defaults.comment.%s.%s", scope, operation))
 	return false, hint
 }
 
@@ -363,15 +479,32 @@ func evaluatePermission(workflow domain.Workflow, currentBucketID int64, entity,
 		return false, nil
 	}
 
-	resolved := func(b domain.Bucket) (bool, bool) {
-		var edit, del bool
+	// resolved returns the (create, edit, delete) policy for a bucket. Create
+	// is comment-only; tasks have no create permission, so the task path leaves
+	// create at its implicit-true default (no rule = allow) and lets the
+	// per-operation switch below pick the relevant field.
+	resolved := func(b domain.Bucket) (create, edit, del bool) {
 		switch entity {
 		case EntityComment:
+			create = b.ResolveCommentCreatePermission(workflow.Defaults)
 			edit, del = b.ResolveCommentPermission(workflow.Defaults)
 		default:
 			edit, del = b.ResolveTaskPermission(workflow.Defaults)
+			create = true
 		}
-		return edit, del
+		return create, edit, del
+	}
+
+	pick := func(create, edit, del bool) bool {
+		switch operation {
+		case PermissionCreate:
+			return create
+		case PermissionEdit:
+			return edit
+		case PermissionDelete:
+			return del
+		}
+		return false
 	}
 
 	var current domain.Bucket
@@ -384,13 +517,7 @@ func evaluatePermission(workflow domain.Workflow, currentBucketID int64, entity,
 
 	allowed := false
 	if current.ID != 0 {
-		edit, del := resolved(current)
-		switch operation {
-		case PermissionEdit:
-			allowed = edit
-		case PermissionDelete:
-			allowed = del
-		}
+		allowed = pick(resolved(current))
 	}
 
 	if allowed {
@@ -402,15 +529,7 @@ func evaluatePermission(workflow domain.Workflow, currentBucketID int64, entity,
 		if b.ID == currentBucketID {
 			continue
 		}
-		edit, del := resolved(b)
-		permitted := false
-		switch operation {
-		case PermissionEdit:
-			permitted = edit
-		case PermissionDelete:
-			permitted = del
-		}
-		if permitted {
+		if pick(resolved(b)) {
 			others = append(others, b.Key)
 		}
 	}

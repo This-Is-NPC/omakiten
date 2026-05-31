@@ -33,6 +33,7 @@ const (
 	OperationTaskUnarchive  = "task.unarchive"
 	OperationTaskEdit       = "task.edit"
 	OperationTaskDelete     = "task.delete"
+	OperationCommentCreate  = "comment.create"
 	OperationCommentEdit    = "comment.edit"
 	OperationCommentDelete  = "comment.delete"
 )

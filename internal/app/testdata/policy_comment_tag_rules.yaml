@@ -1,0 +1,60 @@
+# Scenario: tag-conditional comment guards (omakiten #405).
+#   - defaults.comment.project.create   = {allow, require_tags:[x]}
+#       → project create needs tag x (acceptance 1)
+#   - defaults.comment.universal.create = {allow, require_any_tag:true}
+#       → universal create needs >=1 tag (acceptance 3)
+#   - bucket backlog comment.edit       = {allow, deny_tags:[y]}
+#       → editing a y-tagged task comment in backlog is denied (acceptance 2);
+#         the predicate reads the STORED comment tags.
+#   - bucket done comment.edit          = {allow, deny_tags:[locked]}
+#       → editing a locked-tagged comment on a done-bucket task is denied
+#         (acceptance 4 — bucket + rule combine).
+version: 1
+kit:
+  id: 1
+  key: default
+  name: Default
+config:
+  context:
+    default_level: 2
+    max_tokens: 12000
+  workflow:
+    active: default
+  theme:
+    active: catppuccin
+workflows:
+  - id: 1
+    key: default
+    name: Default
+    defaults:
+      comment:
+        project:
+          create:
+            allow: true
+            require_tags: [x]
+        universal:
+          create:
+            allow: true
+            require_any_tag: true
+    buckets:
+      - id: 1
+        key: backlog
+        name: Backlog
+        position: 1
+        permissions:
+          comment:
+            edit:
+              allow: true
+              deny_tags: [y]
+      - id: 2
+        key: done
+        name: Done
+        position: 2
+        permissions:
+          comment:
+            edit:
+              allow: true
+              deny_tags: [locked]
+    transitions:
+      - from: 1
+        to: 2

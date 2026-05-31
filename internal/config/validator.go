@@ -883,6 +883,21 @@ func validatePermissionScopes(workflow Workflow) error {
 		if hasScopeBlocks(workflow.Defaults.Task) {
 			return fmt.Errorf("workflows.%s.defaults.task: scope sub-blocks (task/project/universal) are only valid under defaults.comment", workflow.Key)
 		}
+		// Task permissions stay plain bool: tag predicates are comment-only.
+		if err := rejectTaskTagRules(workflow.Defaults.Task, fmt.Sprintf("workflows.%s.defaults.task", workflow.Key)); err != nil {
+			return err
+		}
+		// A comment scope sub-block must not itself carry scope sub-blocks:
+		// scopeBlock descends a single level, so a nested scope (e.g.
+		// comment.task.project) decodes cleanly but silently never resolves.
+		if err := rejectNestedScopes(workflow.Defaults.Comment, fmt.Sprintf("workflows.%s.defaults.comment", workflow.Key)); err != nil {
+			return err
+		}
+		// Tag names must be non-empty everywhere they may appear (the comment
+		// block, recursively through its scope sub-blocks).
+		if err := validateCommentTagNames(workflow.Defaults.Comment, fmt.Sprintf("workflows.%s.defaults.comment", workflow.Key)); err != nil {
+			return err
+		}
 	}
 	for _, bucket := range workflow.Buckets {
 		if bucket.Permissions == nil {
@@ -893,6 +908,85 @@ func validatePermissionScopes(workflow Workflow) error {
 		}
 		if hasScopeBlocks(bucket.Permissions.Comment) {
 			return fmt.Errorf("workflows.%s.buckets.%s.permissions.comment: scope sub-blocks (task/project/universal) are only valid under workflow.defaults.comment", workflow.Key, bucket.Key)
+		}
+		if err := rejectTaskTagRules(bucket.Permissions.Task, fmt.Sprintf("workflows.%s.buckets.%s.permissions.task", workflow.Key, bucket.Key)); err != nil {
+			return err
+		}
+		if err := validateCommentTagNames(bucket.Permissions.Comment, fmt.Sprintf("workflows.%s.buckets.%s.permissions.comment", workflow.Key, bucket.Key)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// policyHasTagRules reports whether a comment-op value declares any tag
+// predicate (require_tags / deny_tags / require_any_tag) beyond the plain
+// allow bool.
+func policyHasTagRules(p *CommentOpPolicy) bool {
+	return p != nil && (len(p.RequireTags) > 0 || len(p.DenyTags) > 0 || p.RequireAnyTag != nil)
+}
+
+// rejectTaskTagRules enforces the comment-only semantics: a task permission
+// value may be a bare bool (allow) but never a tag-conditional rule. This keeps
+// permissions.task.* plain bool without forking the shared struct type.
+func rejectTaskTagRules(p *EntityPermission, path string) error {
+	if p == nil {
+		return nil
+	}
+	for op, v := range map[string]*CommentOpPolicy{"create": p.Create, "edit": p.Edit, "delete": p.Delete} {
+		if policyHasTagRules(v) {
+			return fmt.Errorf("%s.%s: tag rules (require_tags/deny_tags/require_any_tag) are only valid on comment permissions", path, op)
+		}
+	}
+	return nil
+}
+
+// validateCommentTagNames walks a comment EntityPermission (and its scope
+// sub-blocks) rejecting any empty/whitespace tag name in a require/deny list,
+// so a `require_tags: [""]` typo fails at load rather than silently never
+// matching.
+func validateCommentTagNames(p *EntityPermission, path string) error {
+	if p == nil {
+		return nil
+	}
+	for op, v := range map[string]*CommentOpPolicy{"create": p.Create, "edit": p.Edit, "delete": p.Delete} {
+		if v == nil {
+			continue
+		}
+		for _, tag := range append(append([]string(nil), v.RequireTags...), v.DenyTags...) {
+			if strings.TrimSpace(tag) == "" {
+				return fmt.Errorf("%s.%s: tag names must be non-empty", path, op)
+			}
+		}
+	}
+	if err := validateCommentTagNames(p.Task, path+".task"); err != nil {
+		return err
+	}
+	if err := validateCommentTagNames(p.Project, path+".project"); err != nil {
+		return err
+	}
+	return validateCommentTagNames(p.Universal, path+".universal")
+}
+
+// rejectNestedScopes enforces that a comment scope sub-block (comment.task /
+// .project / .universal) does not itself declare scope sub-blocks. Scope
+// resolution (scopeBlock) descends exactly one level, so a nested scope like
+// comment.task.project parses but can never be reached — failing it at load
+// turns a silent no-op into a diagnosable config error.
+func rejectNestedScopes(comment *EntityPermission, path string) error {
+	if comment == nil {
+		return nil
+	}
+	for _, s := range []struct {
+		name string
+		sub  *EntityPermission
+	}{
+		{"task", comment.Task},
+		{"project", comment.Project},
+		{"universal", comment.Universal},
+	} {
+		if hasScopeBlocks(s.sub) {
+			return fmt.Errorf("%s.%s: scope sub-blocks must not be nested inside a scope sub-block", path, s.name)
 		}
 	}
 	return nil

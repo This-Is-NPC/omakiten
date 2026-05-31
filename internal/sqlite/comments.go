@@ -558,6 +558,14 @@ WHERE id = ? AND event_type = 'comment' AND (project_id = ? OR project_id IS NUL
 		}
 		return domain.Comment{}, err
 	}
+	// Load stored tags so tag-conditional comment guards (#405) can evaluate
+	// edit/delete against the comment's actual tag set. eventTagsByIDsQ reads
+	// through the open tx so the lookup is consistent with the row just scanned.
+	tagsByEvent, err := eventTagsByIDsQ(ctx, tx, []int64{commentID})
+	if err != nil {
+		return domain.Comment{}, err
+	}
+	c.Tags = tagsByEvent[commentID]
 	return c, nil
 }
 

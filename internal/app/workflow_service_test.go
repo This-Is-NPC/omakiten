@@ -29,6 +29,8 @@ type fakeStores struct {
 	currentBucketKey string
 	currentBucketErr error
 	taskState        domain.TaskState
+	workflowDefaults *config.WorkflowDefaults
+	permissionsByID  map[int64]*config.BucketPermissions
 
 	createCalls  int
 	moveCalls    int
@@ -69,7 +71,11 @@ func (f *fakeStores) Snapshot() *config.Snapshot {
 		if key == "" {
 			key = fmt.Sprintf("bucket-%d", id)
 		}
-		buckets = append(buckets, config.Bucket{ID: int(id), Key: key, Name: key, Position: int(id)})
+		bucket := config.Bucket{ID: int(id), Key: key, Name: key, Position: int(id)}
+		if f.permissionsByID != nil {
+			bucket.Permissions = f.permissionsByID[id]
+		}
+		buckets = append(buckets, bucket)
 	}
 	if f.defaultBucket != "" {
 		// defaultBucket-only fakes never set ids; surface as id=1 so the
@@ -103,6 +109,7 @@ func (f *fakeStores) Snapshot() *config.Snapshot {
 			ID:          1,
 			Key:         "test",
 			Name:        "Test",
+			Defaults:    f.workflowDefaults,
 			Buckets:     buckets,
 			Transitions: transitions,
 		}},
@@ -219,6 +226,46 @@ func newWorkflowServiceForTest(f *fakeStores) *WorkflowService {
 	snap := f.Snapshot()
 	evaluator := guards.NewGuardEvaluator(snap, f, f)
 	return NewWorkflowService(snap, f, evaluator, f, f, nil)
+}
+
+func TestCommentPolicyHintBaseDenyBeatsTagPredicates(t *testing.T) {
+	deny := false
+	policy := domain.CommentOpPolicy{Allow: &deny, RequireTags: []string{"reviewed"}}
+
+	hint := commentPolicyHint("project", PermissionCreate, policy, nil, "declare workflows[].defaults.comment.project.create")
+
+	if !strings.Contains(hint, "is not permitted") {
+		t.Fatalf("hint = %q, want base-deny not-permitted remediation", hint)
+	}
+	if strings.Contains(hint, "requires tag") {
+		t.Fatalf("hint = %q, must not suggest tag remediation when allow=false short-circuits", hint)
+	}
+}
+
+func TestResolveCommentBucketPolicyUsesBucketRemediationForPlainDeny(t *testing.T) {
+	allow := true
+	deny := false
+	f := &fakeStores{
+		defaultBucket:    "backlog",
+		currentBucketID:  2,
+		currentBucketKey: "done",
+		permissionsByID: map[int64]*config.BucketPermissions{
+			1: {Comment: &config.EntityPermission{Create: &config.CommentOpPolicy{Allow: &allow}}},
+			2: {Comment: &config.EntityPermission{Create: &config.CommentOpPolicy{Allow: &deny}}},
+		},
+	}
+	svc := newWorkflowServiceForTest(f)
+
+	allowed, hint, err := svc.ResolveCommentBucketPolicy(context.Background(), domain.ProjectContext{ID: 1}, 5, PermissionCreate, nil)
+	if err != nil {
+		t.Fatalf("ResolveCommentBucketPolicy error = %v", err)
+	}
+	if allowed {
+		t.Fatal("ResolveCommentBucketPolicy allowed = true, want denial")
+	}
+	if !strings.Contains(hint, `comment.create is not permitted in bucket "done"`) || !strings.Contains(hint, "backlog") {
+		t.Fatalf("hint = %q, want bucket remediation naming allowed bucket", hint)
+	}
 }
 
 func TestWorkflowResolveDefaultBucket(t *testing.T) {
