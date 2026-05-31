@@ -74,6 +74,7 @@ personas:
       - code-smells
       - refactoring-catalog
       - security-review-lens
+      - fagan-inspection
       - solid-principles
       - markdown
   # Committer — Conventional Commits, scoped history, never auto-pushes.
@@ -203,7 +204,7 @@ mcp_commands:
     laws: [conventional-commits, no-coauthored-by, link-decision-record]
   okt-task-review:
     persona: elrond
-    skills: [code-smells, refactoring-catalog]
+    skills: [code-smells, refactoring-catalog, fagan-inspection]
     laws: [council-of-elrond-review, design-recorded-check, decision-record-on-divergence]
     templates: [comment-review-findings, comment-refactor-opportunities]
   okt-task-secure:

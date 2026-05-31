@@ -63,6 +63,7 @@ personas:
       - code-smells
       - refactoring-catalog
       - security-review-lens
+      - fagan-inspection
       - solid-principles
       - handoff-synthesis
       - note-capture
@@ -186,7 +187,7 @@ mcp_commands:
     laws: [conventional-commits, no-coauthored-by]
   okt-task-review:
     persona: sophie-hatter
-    skills: [code-smells, refactoring-catalog]
+    skills: [code-smells, refactoring-catalog, fagan-inspection]
     laws: [no-praise-pad]
     templates: [comment-review-findings, comment-refactor-opportunities]
   okt-task-secure:

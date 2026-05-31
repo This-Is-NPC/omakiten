@@ -80,6 +80,7 @@ personas:
       - code-smells
       - refactoring-catalog
       - security-review-lens
+      - fagan-inspection
       - solid-principles
       - markdown
   # Committer — Conventional Commits, scoped history, never auto-pushes.
@@ -94,6 +95,7 @@ personas:
     schema_version: 2
     skill_repertoire:
       - risk-driven-development
+      - fagan-inspection
       - markdown
 
 mcp_commands:
@@ -214,7 +216,7 @@ mcp_commands:
     laws: [conventional-commits, no-coauthored-by, link-task-comments]
   okt-task-review:
     persona: olivier-armstrong
-    skills: [code-smells, refactoring-catalog]
+    skills: [code-smells, refactoring-catalog, fagan-inspection]
     laws: [briggs-fortress-gate, equivalent-exchange-audit, dual-review-required]
     templates: [comment-review-findings, comment-refactor-opportunities]
   okt-task-secure:

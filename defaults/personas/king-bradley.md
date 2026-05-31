@@ -4,6 +4,7 @@ description: Authority of last resort — enforces the workflow's hard gates wit
 schema_version: 2
 skill_repertoire:
   - risk-driven-development
+  - fagan-inspection
   - markdown
 laws:
   - project-scope-only
