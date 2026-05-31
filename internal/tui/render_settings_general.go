@@ -107,9 +107,9 @@ func (m Model) renderSettingsGeneralBody() string {
 // primitive lands here.
 //
 // Source layer (`default` / `project` / `env`) is reserved on the
-// accessor but not yet threaded — the i18n keys exist
-// (`tui.settings.effective.source.*`) so a follow-up wave can light up
-// a third column without touching this composer's call shape.
+// accessor but not yet threaded — i18n keys were removed as orphans;
+// add `tui.settings.effective.source.{default,project,env}` to all 21
+// locale packs before wiring up the third column.
 func (m Model) effectiveConfigSections() [][][]string {
 	snap := m.repos.activeSnapshot()
 	if snap == nil {

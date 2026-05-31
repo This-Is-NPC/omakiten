@@ -142,7 +142,6 @@ func newSetupPickerModel(inputs setupInputs, needs pickerNeeds) (setupPickerMode
 	pager := paginator.New()
 	pager.Type = paginator.Arabic
 	pager.PerPage = 1
-	pager.ArabicFormat = "step %d/%d" // syncedPager overwrites via cli.setup.picker.step
 	pager.TotalPages = len(activeOrder)
 
 	model := setupPickerModel{

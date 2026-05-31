@@ -46,7 +46,7 @@ ORPHAN_KEYS = [
 
 def remove_key(content: str, key: str) -> str:
     quoted = rf"  {re.escape(key)}: \"(?:[^\"\\]|\\.)*\"\n"
-    block = rf"  {re.escape(key)}: \|-\n(?:(?:    .*)?\n)+"
+    block = rf"  {re.escape(key)}: \|[-+]?\n(?:(?:    .*)?\n)+"
     pattern = re.compile(f"(?:{quoted}|{block})")
     new_content, n = pattern.subn("", content)
     if n == 0:
