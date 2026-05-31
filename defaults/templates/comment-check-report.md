@@ -1,6 +1,6 @@
 ---
 name: Comment — Check report
-description: "Tabular pass/fail report emitted by okt-check; one row per discovered target."
+description: "Tabular pass/fail report emitted by okt-task-check; one row per discovered target."
 entity: comment
 laws:
   - template-fidelity
@@ -20,4 +20,4 @@ laws:
 
 **Summary** — <count by status; coverage Δ when measured>
 
-**Next** — <`okt-implement` to fix the failing targets, `okt-review` to triage smells, or `okt-check` to re-run after fixes>
+**Next** — <`okt-task-implement` to fix the failing targets, `okt-task-review` to triage smells, or `okt-task-check` to re-run after fixes>

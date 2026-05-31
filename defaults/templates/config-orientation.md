@@ -159,18 +159,18 @@ config:
 mcp_commands:
   global:
     laws: [template-fidelity, authorize-remote-writes]
-  okt-implement:
+  okt-task-implement:
     persona: builder
     laws: [bounded-self-review, no-silent-behavior-changes, conventional-commits, self-report]
     templates: [pull-request]
-  okt-imagine:
+  okt-task-imagine:
     persona: planner
     laws_disabled: [template-fidelity]
 ```
 
 Reserved entry: `global` (only `laws`). Per-command keys: `persona` (slug), `laws` / `laws_disabled` (slug lists), `templates` (slug list).
 
-Known commands (canonical order): `okt`, `okt-imagine`, `okt-create`, `okt-resume`, `okt-continue`, `okt-implement`, `okt-document`, `okt-config`.
+Known commands and tiers live in `.docs/command-surface.md`; canonical order comes from `internal/agent/command_table.go`. Current examples use the v2 namespaced surface (`okt-start`, `okt-shape`, `okt-run`, `okt-task-create`, `okt-task-implement`, `okt-task-review`, `okt-task-check`, `okt-pause`).
 
 ## Hooks and notifications
 
@@ -255,14 +255,14 @@ Every block plus its sort `field` / `order` is required — the validator reject
 | `config.theme.active` | Which `themes/<slug>.yaml` palette to use | string |
 | `config.tui.token_badge` | Token badge thresholds on entity cards | `yellow_at`, `red_at` |
 | `config.sqlite.busy_timeout_ms` | `PRAGMA busy_timeout` (ms) | > 0 |
-| `config.activity_log` | Per-call `operation` log retention | `max_rows`, `max_age_days` (both > 0) |
+| `config.activity_log` | Per-call tool-event retention (`*.tool_call`) | `max_rows`, `max_age_days` (both > 0) |
 | `config.solutions` | `solutions.list_top` MCP caps | `default_top_limit`, `max_top_limit` |
 | `config.mcp` | MCP response shape | `recent_comment_limit` (> 0), `max_comment_chars` (≥ 0), `include_workflow_in_continue` (`*bool`), `cache_prompts` (`*bool`), `recent_context_limit`, `next_work_limit`, `similar_task_limit` (all > 0) |
 | `config.search.stopwords` | Tokens dropped before similarity scoring | list of lowercase strings |
 | `config.tag_synonyms` | `NormalizeTagName` redirect table | `<non-canonical>: <canonical>` map |
 | `config.template_defaults` | Allowed values for template frontmatter `default:` | list of kind strings |
 
-Every required field is rejected by the validator if missing — error messages point at the embedded kit (`defaults/omakiten.yaml` in older messages, `defaults/config/omakase.yaml` in the actual file) as the canonical reference. There is no in-code fallback at runtime; the validated bundle is the runtime source.
+Every required field is rejected by the validator if missing — error messages point at the embedded canonical kit (`defaults/config/omakase.yaml`). There is no in-code fallback at runtime; the validated bundle is the runtime source.
 
 ## Editing a workflow safely
 
@@ -276,8 +276,9 @@ Every required field is rejected by the validator if missing — error messages 
 
 For deeper detail, fetch the matching guide:
 
-- `.docs/configuration-guide.md` — every yaml field, semantics, validation rules.
-- `.docs/guards-guide.md` — guard kinds, evaluation order, MCP-prompt guardrails.
-- `.docs/mcp-guide.md` — MCP tool surface, prompt anatomy, token costs.
-- `.docs/internal/data-model-guide.md` — SQLite schema and migration history.
-- `.docs/domain-events.md` — `events` table catalog and payload contracts.
+- `.docs/configuration-guide/README.md` — map of modular config guides.
+- `.docs/configuration-guide/workflows.md` — workflow buckets, transitions, permissions, and operation guards.
+- `.docs/configuration-guide/guards.md` — guard kinds, evaluation order, and failure payloads.
+- `.docs/configuration-guide/command-bindings.md` — `mcp_commands` persona/law/template bindings.
+- `.docs/mcp.md` — MCP tool surface and prompt anatomy.
+- `.docs/internal/data-model.md` — SQLite schema, migrations, and the unified `events` log.

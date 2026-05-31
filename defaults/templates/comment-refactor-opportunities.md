@@ -1,6 +1,6 @@
 ---
 name: Comment — Refactor opportunities
-description: "Fowler-named refactor opportunities surfaced by okt-review; each row cites the methodology and the target."
+description: "Fowler-named refactor opportunities surfaced by okt-task-review; each row cites the methodology and the target."
 entity: comment
 laws:
   - template-fidelity
@@ -15,4 +15,4 @@ laws:
 
 **Notes** — defer / pursue rationale per opportunity when effort ≠ S.
 
-**Next** — surface the S-effort items to `okt-implement` as boy-scout drive-bys; spin M/L items into their own `okt-create` tasks.
+**Next** — surface the S-effort items to `okt-task-implement` as boy-scout drive-bys; spin M/L items into their own `okt-task-create` tasks.
