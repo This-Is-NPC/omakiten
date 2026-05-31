@@ -49,32 +49,10 @@ type commandEntry struct {
 // three facets impossible to drift apart.
 //
 // Action texts follow a REST-style hypermedia handoff: each names the canonical
-// tool to call and points at the next command in the flow. The cycle is:
-//
-//	okt → okt-project-resume / okt-task-imagine
-//	  okt-task-imagine → okt-task-create
-//	    okt-task-create → (move to dev) → okt-task-continue / okt-task-implement
-//	      okt-project-resume → okt-task-continue
-//	        okt-task-continue → okt-task-implement
-//	          okt-task-implement → (move to review)
-//	okt-task-document is parallel: surfaces drift; if material work is needed,
-//	suggests `okt-task-create` to spin up a documentation task.
-//	okt-config is parallel: orients the agent on the config layout so it can
-//	answer edit questions without guessing; suggests `okt-task-implement` when
-//	the user has a concrete edit in mind.
-//	okt-task-commit is parallel: drafts Conventional Commits for user-authored
-//	edits made outside the `okt-task-implement` loop; never auto-pushes — the
-//	human owns publication.
-//	okt-task-review is parallel: walks the diff through a Fowler/Beck/Martin/
-//	Feathers lens; surfaces findings + refactor opportunities; read-only,
-//	suggests `okt-task-implement` to apply fixes.
-//	okt-task-check is parallel: discovers test/lint/audit targets, runs them
-//	via Bash, emits a tabular pass/fail report; read-only, suggests
-//	`okt-task-implement` for fixes or `okt-task-review` for triage.
-//	okt-pause is the bare orchestrator close: synthesises a handoff note for
-//	the next session. okt-note-free captures an ad-hoc note. okt-note-recap
-//	renders a recap timeline and, with a wide window (e.g. `day`/cross-project),
-//	folds in the former standup digest — one command spans both.
+// tool to call and points at the next command in the flow. The primary loop is
+// orchestrator-shaped (`okt-start` → `okt-shape` → `okt-run` → `okt-audit` →
+// `okt-pause`), while granular `okt-task-*`, `okt-plan-*`, `okt-project-*`, and
+// `okt-note-*` commands remain the surgical drop-down for one exact step.
 //
 // Action texts deliberately stop short of repeating constraints already
 // declared inline in `## Laws` or role-specific flow already declared in the
