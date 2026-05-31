@@ -115,7 +115,7 @@ workflows:
   from: ./modules/workflows/izakaya.yaml
 
 personas:
-  from: ./modules/howl.yaml#personas
+  from: ./themes/howl.yaml#personas
 
 mcp_commands:
-  from: ./modules/howl.yaml#mcp_commands
+  from: ./themes/howl.yaml#mcp_commands

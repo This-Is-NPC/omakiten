@@ -115,7 +115,7 @@ workflows:
   from: ./modules/workflows/kaiseki.yaml
 
 personas:
-  from: ./modules/lotr.yaml#personas
+  from: ./themes/lotr.yaml#personas
 
 mcp_commands:
-  from: ./modules/lotr.yaml#mcp_commands
+  from: ./themes/lotr.yaml#mcp_commands

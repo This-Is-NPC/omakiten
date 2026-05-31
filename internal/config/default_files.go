@@ -60,8 +60,8 @@ func copyDefaultConfigProfiles(rootDir string, overwrite bool) error {
 // copyEmbeddedDirRecursive copies every file under srcDir in defaults.FS to
 // the corresponding path under dstDir, creating subdirectories as needed.
 // Directories in srcDir are traversed recursively; the custom/ skip used by
-// entity folders is intentionally absent here because config/modules/ is a
-// bundled directory that should always be materialised.
+// entity folders is intentionally absent here because config/modules/ and
+// config/themes/ are bundled directories that should always be materialised.
 func copyEmbeddedDirRecursive(srcDir, dstDir string, overwrite bool) error {
 	entries, err := defaults.FS.ReadDir(srcDir)
 	if err != nil {

@@ -115,7 +115,7 @@ workflows:
   from: ./modules/workflows/shokunin.yaml
 
 personas:
-  from: ./modules/fma.yaml#personas
+  from: ./themes/fma.yaml#personas
 
 mcp_commands:
-  from: ./modules/fma.yaml#mcp_commands
+  from: ./themes/fma.yaml#mcp_commands

@@ -140,7 +140,7 @@ workflows:
   from: ./modules/workflows/omakase.yaml
 
 personas:
-  from: ./modules/naruto.yaml#personas
+  from: ./themes/naruto.yaml#personas
 
 mcp_commands:
-  from: ./modules/naruto.yaml#mcp_commands
+  from: ./themes/naruto.yaml#mcp_commands
