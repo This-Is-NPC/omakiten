@@ -22,6 +22,7 @@ const (
 	CrushHarness         = "crush"
 	GitHubCopilotHarness = "github-copilot"
 	CodexHarness         = "codex"
+	CursorHarness        = "cursor"
 )
 
 type Options struct {
@@ -44,7 +45,7 @@ type Result struct {
 }
 
 func SupportedHarnesses() []string {
-	return []string{ClaudeCodeHarness, ClaudeDesktopHarness, OpenCodeHarness, CrushHarness, GitHubCopilotHarness, CodexHarness}
+	return []string{ClaudeCodeHarness, ClaudeDesktopHarness, OpenCodeHarness, CrushHarness, GitHubCopilotHarness, CodexHarness, CursorHarness}
 }
 
 func Setup(opts Options) (Result, error) {
@@ -161,6 +162,12 @@ func defaultConfigPath(harness string) (string, error) {
 			return "", err
 		}
 		return filepath.Join(home, ".codex", "config.toml"), nil
+	case CursorHarness:
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, ".cursor", "mcp.json"), nil
 	default:
 		return "", domain.NewError(domain.ErrValidation, "no default config path for harness", map[string]any{"harness": harness})
 	}
@@ -195,7 +202,7 @@ func defaultCommand() string {
 
 func entryExists(existing map[string]any, harness string) bool {
 	switch harness {
-	case ClaudeCodeHarness, ClaudeDesktopHarness:
+	case ClaudeCodeHarness, ClaudeDesktopHarness, CursorHarness:
 		mcpServers, err := objectField(existing, "mcpServers")
 		if err != nil || mcpServers == nil {
 			return false
@@ -233,7 +240,7 @@ func mergeHarnessConfig(existing map[string]any, harness, command string, args [
 		out[k] = v
 	}
 	switch harness {
-	case ClaudeCodeHarness, ClaudeDesktopHarness:
+	case ClaudeCodeHarness, ClaudeDesktopHarness, CursorHarness:
 		mcpServers, _ := objectField(out, "mcpServers")
 		if mcpServers == nil {
 			mcpServers = map[string]any{}
