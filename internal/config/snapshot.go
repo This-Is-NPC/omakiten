@@ -122,11 +122,27 @@ func toDomainPermission(in *EntityPermission) *domain.EntityPermission {
 		return nil
 	}
 	return &domain.EntityPermission{
-		Edit:      copyBool(in.Edit),
-		Delete:    copyBool(in.Delete),
+		Create:    toDomainCommentPolicy(in.Create),
+		Edit:      toDomainCommentPolicy(in.Edit),
+		Delete:    toDomainCommentPolicy(in.Delete),
 		Task:      toDomainPermission(in.Task),
 		Project:   toDomainPermission(in.Project),
 		Universal: toDomainPermission(in.Universal),
+	}
+}
+
+// toDomainCommentPolicy converts the YAML polymorphic comment-op value into
+// its runtime form, deep-copying the slices so the immutable snapshot never
+// aliases the parsed bundle. A nil input stays nil (no rule at this layer).
+func toDomainCommentPolicy(in *CommentOpPolicy) *domain.CommentOpPolicy {
+	if in == nil {
+		return nil
+	}
+	return &domain.CommentOpPolicy{
+		Allow:         copyBool(in.Allow),
+		RequireTags:   append([]string(nil), in.RequireTags...),
+		DenyTags:      append([]string(nil), in.DenyTags...),
+		RequireAnyTag: copyBool(in.RequireAnyTag),
 	}
 }
 

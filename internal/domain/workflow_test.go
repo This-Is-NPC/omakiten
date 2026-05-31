@@ -2,16 +2,21 @@ package domain
 
 import "testing"
 
-func boolPtr(b bool) *bool { return &b }
+// boolPtr wraps a bare bool as a fully-declared CommentOpPolicy pointer — the
+// shape EntityPermission's create/edit/delete fields now take. A plain *bool is
+// available via rawBool for the few call sites that still need one.
+func boolPtr(b bool) *CommentOpPolicy { return &CommentOpPolicy{Allow: &b} }
+
+func rawBool(b bool) *bool { return &b }
 
 func TestResolveTaskPermission(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
-		bucket    Bucket
-		defaults  *WorkflowDefaults
-		wantEdit  bool
-		wantDel   bool
+		bucket   Bucket
+		defaults *WorkflowDefaults
+		wantEdit bool
+		wantDel  bool
 	}{
 		"no rule anywhere — implicit allow": {
 			bucket:   Bucket{},
@@ -65,10 +70,10 @@ func TestResolveCommentPermission(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
-		bucket    Bucket
-		defaults  *WorkflowDefaults
-		wantEdit  bool
-		wantDel   bool
+		bucket   Bucket
+		defaults *WorkflowDefaults
+		wantEdit bool
+		wantDel  bool
 	}{
 		"comment falls back to task at bucket layer": {
 			bucket: Bucket{
@@ -167,16 +172,16 @@ func TestResolveCommentScopePermission(t *testing.T) {
 		// task scope, flat back-compat: comment: {edit:false} resolves as task.
 		"task flat edit false (back-compat)": {
 			defaults: &WorkflowDefaults{Comment: &EntityPermission{Edit: boolPtr(false)}},
-			scope:    CommentScopeTask, op: commentOpEdit, want: false,
+			scope:    CommentScopeTask, op: CommentOpEdit, want: false,
 		},
 		"task flat delete defaults true (no rule)": {
 			defaults: &WorkflowDefaults{Comment: &EntityPermission{Edit: boolPtr(false)}},
-			scope:    CommentScopeTask, op: commentOpDelete, want: true,
+			scope:    CommentScopeTask, op: CommentOpDelete, want: true,
 		},
 		// task scope inherits defaults.task when comment is silent.
 		"task inherits defaults.task delete": {
 			defaults: &WorkflowDefaults{Task: &EntityPermission{Delete: boolPtr(false)}},
-			scope:    CommentScopeTask, op: commentOpDelete, want: false,
+			scope:    CommentScopeTask, op: CommentOpDelete, want: false,
 		},
 		// task scope explicit comment.task sub-block beats flat + defaults.task.
 		"task sub-block beats flat": {
@@ -184,53 +189,53 @@ func TestResolveCommentScopePermission(t *testing.T) {
 				Edit: boolPtr(false),
 				Task: &EntityPermission{Edit: boolPtr(true)},
 			}},
-			scope: CommentScopeTask, op: commentOpEdit, want: true,
+			scope: CommentScopeTask, op: CommentOpEdit, want: true,
 		},
 		// project scope: explicit allow.
 		"project edit allowed": {
 			defaults: &WorkflowDefaults{Comment: &EntityPermission{
 				Project: &EntityPermission{Edit: boolPtr(true), Delete: boolPtr(false)},
 			}},
-			scope: CommentScopeProject, op: commentOpEdit, want: true,
+			scope: CommentScopeProject, op: CommentOpEdit, want: true,
 		},
 		"project delete denied": {
 			defaults: &WorkflowDefaults{Comment: &EntityPermission{
 				Project: &EntityPermission{Edit: boolPtr(true), Delete: boolPtr(false)},
 			}},
-			scope: CommentScopeProject, op: commentOpDelete, want: false,
+			scope: CommentScopeProject, op: CommentOpDelete, want: false,
 		},
 		// project scope has no task inheritance — defaults.task is ignored.
 		"project ignores defaults.task": {
 			defaults: &WorkflowDefaults{Task: &EntityPermission{Edit: boolPtr(false)}},
-			scope:    CommentScopeProject, op: commentOpEdit, want: true,
+			scope:    CommentScopeProject, op: CommentOpEdit, want: true,
 		},
 		// universal scope.
 		"universal edit denied": {
 			defaults: &WorkflowDefaults{Comment: &EntityPermission{
 				Universal: &EntityPermission{Edit: boolPtr(false)},
 			}},
-			scope: CommentScopeUniversal, op: commentOpEdit, want: false,
+			scope: CommentScopeUniversal, op: CommentOpEdit, want: false,
 		},
 		"universal delete implicit true": {
 			defaults: &WorkflowDefaults{Comment: &EntityPermission{
 				Universal: &EntityPermission{Edit: boolPtr(false)},
 			}},
-			scope: CommentScopeUniversal, op: commentOpDelete, want: true,
+			scope: CommentScopeUniversal, op: CommentOpDelete, want: true,
 		},
 		// no defaults block — implicit allow everywhere.
 		"nil defaults task edit": {
-			defaults: nil, scope: CommentScopeTask, op: commentOpEdit, want: true,
+			defaults: nil, scope: CommentScopeTask, op: CommentOpEdit, want: true,
 		},
 		"nil defaults project delete": {
-			defaults: nil, scope: CommentScopeProject, op: commentOpDelete, want: true,
+			defaults: nil, scope: CommentScopeProject, op: CommentOpDelete, want: true,
 		},
 		"nil defaults universal edit": {
-			defaults: nil, scope: CommentScopeUniversal, op: commentOpEdit, want: true,
+			defaults: nil, scope: CommentScopeUniversal, op: CommentOpEdit, want: true,
 		},
 		// empty scope falls back to task chain.
 		"empty scope = task": {
 			defaults: &WorkflowDefaults{Comment: &EntityPermission{Edit: boolPtr(false)}},
-			scope:    "", op: commentOpEdit, want: false,
+			scope:    "", op: CommentOpEdit, want: false,
 		},
 	}
 	for name, tc := range cases {
@@ -247,20 +252,20 @@ func TestResolveBoolDirectly(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
-		in   []*bool
+		in   []*CommentOpPolicy
 		want bool
 	}{
-		"all nil — implicit true":     {in: []*bool{nil, nil}, want: true},
-		"first non-nil wins (false)":  {in: []*bool{boolPtr(false), boolPtr(true)}, want: false},
-		"first non-nil wins (true)":   {in: []*bool{nil, boolPtr(true), boolPtr(false)}, want: true},
-		"single nil — implicit true":  {in: []*bool{nil}, want: true},
+		"all nil — implicit true":     {in: []*CommentOpPolicy{nil, nil}, want: true},
+		"first declared wins (false)": {in: []*CommentOpPolicy{boolPtr(false), boolPtr(true)}, want: false},
+		"first declared wins (true)":  {in: []*CommentOpPolicy{nil, boolPtr(true), boolPtr(false)}, want: true},
+		"single nil — implicit true":  {in: []*CommentOpPolicy{nil}, want: true},
 		"empty — implicit true":       {in: nil, want: true},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			if got := resolveBool(tc.in...); got != tc.want {
-				t.Fatalf("resolveBool(%v) = %v, want %v", tc.in, got, tc.want)
+			if got := resolvePolicyBool(tc.in...); got != tc.want {
+				t.Fatalf("resolvePolicyBool(%v) = %v, want %v", tc.in, got, tc.want)
 			}
 		})
 	}

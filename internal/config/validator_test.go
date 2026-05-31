@@ -85,7 +85,7 @@ func TestValidateBundleErrors(t *testing.T) {
 					NextWorkLimit:             5,
 					SimilarTaskLimit:          5,
 				},
-				TUI: TUISettings{TokenBadge: TokenBadgeThresholds{YellowAt: 150, RedAt: 400}},
+				TUI:              TUISettings{TokenBadge: TokenBadgeThresholds{YellowAt: 150, RedAt: 400}},
 				TemplateDefaults: []string{"task"},
 				Priorities: []PriorityDefinition{
 					{ID: 1, Value: "low"},
@@ -194,15 +194,21 @@ func TestValidateBundleErrors(t *testing.T) {
 		{"comment scope sub-block on defaults.task", func(b *Bundle) {
 			tr := true
 			b.Workflows[0].Defaults = &WorkflowDefaults{
-				Task: &EntityPermission{Project: &EntityPermission{Edit: &tr}},
+				Task: &EntityPermission{Project: &EntityPermission{Edit: &CommentOpPolicy{Allow: &tr}}},
 			}
 		}, "scope sub-blocks (task/project/universal) are only valid under defaults.comment"},
 		{"comment scope sub-block on bucket comment", func(b *Bundle) {
 			tr := true
 			b.Workflows[0].Buckets[0].Permissions = &BucketPermissions{
-				Comment: &EntityPermission{Project: &EntityPermission{Edit: &tr}},
+				Comment: &EntityPermission{Project: &EntityPermission{Edit: &CommentOpPolicy{Allow: &tr}}},
 			}
 		}, "scope sub-blocks (task/project/universal) are only valid under workflow.defaults.comment"},
+		{"nested scope sub-block under defaults.comment.task", func(b *Bundle) {
+			tr := true
+			b.Workflows[0].Defaults = &WorkflowDefaults{
+				Comment: &EntityPermission{Task: &EntityPermission{Project: &EntityPermission{Create: &CommentOpPolicy{Allow: &tr}}}},
+			}
+		}, "scope sub-blocks must not be nested inside a scope sub-block"},
 	}
 
 	for _, tc := range tests {
@@ -284,4 +290,3 @@ func TestValidatePrioritiesEnforcesAscendingIDs(t *testing.T) {
 		})
 	}
 }
-

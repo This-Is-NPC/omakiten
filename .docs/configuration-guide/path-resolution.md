@@ -76,6 +76,58 @@ Rationale: defaults refresh overwrites the root copy on every update; the `custo
 
 The migrate-before-resolve order matters: when a previous canonical kit name (`omakiten.yaml`) gets moved into `custom/`, the post-migration resolver finds it there via the custom-before-root precedence. Pre-migration resolution would point at the now-empty root and error at `Import` with `config_invalid`.
 
+## <a id="modular-imports"></a>Modular config imports — value-level `from:`
+
+A profile yaml may split sections into separate files and pull them back in with a value-level `from:` directive. The loader expands every directive **before** strict decoding, so the resolved document is decoded and validated exactly as if the imported content had been written inline. Implementation: `internal/config/import_resolver.go` (expansion) and `internal/config/loader.go::readWiringDetailed` (wiring into the strict-decode path).
+
+### What a directive looks like
+
+A directive is a YAML mapping whose **sole** key is `from`, mapping to a relative path:
+
+```yaml
+config:
+  hooks:
+    from: ./hooks.yml
+workflows:
+  from: ./workflows.yml
+```
+
+At load time each `{ from: <path> }` node is replaced **wholesale** by the root node of the referenced document — scalar, sequence, or mapping. So `config.hooks` above becomes whatever `hooks.yml` declares at its root (a list), and top-level `workflows` becomes whatever `workflows.yml` declares (also a list). The directive node disappears entirely from the resolved tree.
+
+### Replacement semantics (v1)
+
+The directive node is **replaced**, not merged. There is no sibling override, no deep merge, and no list append in v1:
+
+- A sole-key `{ from: ./x.yml }` mapping is the only import form. Its replacement is the imported document root, verbatim.
+- A mapping that carries `from` **plus other keys** is **not** an import. It passes through untouched and is then decoded normally. This is deliberate: a workflow transition is written `{ from: <bucket>, to: <bucket> }`, and `from` there is an ordinary domain field — flagging it as an import would break every real profile. Only a mapping whose single key is `from` is treated as a directive.
+- A mapping that pairs `from` with siblings is fine; a sole-key `from` whose value is empty or non-scalar is a malformed directive and fails the load loudly. There is no "import some keys, override the rest" path.
+
+### Path safety
+
+Path rules mirror the [`subtask_kit` path-safety policy](subtask-kit.md#validator-rules) verbatim (`resolveImportPath` is a copy of `resolveSubtaskKitPath`). A path is resolved relative to the directory of the file that **declared** the directive (nested imports resolve relative to the importing file, not the root profile) and is rejected when it:
+
+- is **absolute**, or
+- contains a **parent-directory (`..`) segment**, or
+- after symlink resolution, **escapes** the declaring file's directory.
+
+Reads are bounded by the wiring-file budget from `internal/config/size_caps.go` (`MaxWiringFileBytes`); an oversized import surfaces the same coded `ErrConfigTooLarge` as an oversized root profile.
+
+### Nesting, cycles, and depth
+
+Imported documents may themselves contain directives. The resolver walks the whole node tree depth-first:
+
+- **Cycle detection** — a file already on the active import chain is rejected with an `import cycle detected: …` error before it is re-read. A file imported from two distinct branches is allowed (it is decoded once per branch but only listed once as a source).
+- **Depth cap** — imports may nest at most **10 levels deep** (`maxImportDepth`; root document is depth 0). A pathologically deep chain is rejected with `import depth exceeds maximum of 10` even if it is acyclic. Ten levels is far beyond any legitimate layout.
+- Every error carries the **import chain** (base names joined by `->`) so the failing directive is identifiable without leaking absolute paths.
+
+### Source tracking and hot reload
+
+`Bundle.SourcePaths` lists the root profile first, then every imported file in first-encounter (depth-first) order, each exactly once. When a `subtask_kit:` is wired, its own imports are tracked too. Hot reload watches every entry in `SourcePaths` by mtime, so **editing an imported file triggers the same rebuild as editing the root profile** — there is no separate watch registration for imports.
+
+### Supported scope
+
+Imports are expanded for the **active profile yaml values** only. Entity body/frontmatter loaders (laws, skills, personas, templates, themes, notifications, languages — see [entities.md](entities.md)) are unchanged and do not honor `from:` unless a future task extends them. Because expansion happens entirely inside the config loader, **the TUI, MCP server, and CLI consume the already-resolved config and need no import awareness** — they see the same materialised `Bundle`/`Snapshot` whether a section was inline or imported.
+
 ## <a id="config-root-from-yaml-path"></a>`ConfigRootFromYAMLPath` recognized shapes
 
 When a `--config` flag points at a yaml file, the resolver derives `<root>` from its path. Recognized shapes:
@@ -178,9 +230,11 @@ The local development workflow mirrors the production root under `dev_env/`:
 - The `okt config <sub>` surface grows or renames a subcommand.
 - Backup filename pattern or retention semantics shift.
 - A new top-level folder lands under `<root>/` or `dev_env/`.
+- `internal/config/import_resolver.go` changes the `from:` directive contract, path-safety policy, depth cap, or cycle handling.
 
 ## See also
 
 - [system.md](system.md) — `config.backup` retention knob and other runtime config.
+- [subtask-kit.md](subtask-kit.md) — the `subtask_kit:` cascade, whose path-safety policy the `from:` import resolver reuses.
 - [project-overrides.md](project-overrides.md) — per-project layering (the architecture above the on-disk layout).
-- `internal/paths/paths.go`, `internal/config/repo_local.go`, `internal/config/loader.go` — implementation.
+- `internal/paths/paths.go`, `internal/config/repo_local.go`, `internal/config/loader.go`, `internal/config/import_resolver.go` — implementation.

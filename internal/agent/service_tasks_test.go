@@ -9,8 +9,8 @@ import (
 
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
-	"omakiten/internal/testfixtures/snapstore"
 	"omakiten/internal/testfixtures"
+	"omakiten/internal/testfixtures/snapstore"
 )
 
 func TestEditTaskHappyPath(t *testing.T) {
@@ -110,14 +110,16 @@ func newAgentFixtureEditLockedToBacklog(t *testing.T) editLockedFixture {
 	// task starts in an editable bucket.
 	falseB := false
 	trueB := true
+	deny := &config.CommentOpPolicy{Allow: &falseB}
+	allow := &config.CommentOpPolicy{Allow: &trueB}
 	bundle.Workflows[0].Defaults = &config.WorkflowDefaults{
-		Task:    &config.EntityPermission{Edit: &falseB, Delete: &falseB},
-		Comment: &config.EntityPermission{Edit: &falseB, Delete: &falseB},
+		Task:    &config.EntityPermission{Edit: deny, Delete: deny},
+		Comment: &config.EntityPermission{Edit: deny, Delete: deny},
 	}
 	for i := range bundle.Workflows[0].Buckets {
 		if bundle.Workflows[0].Buckets[i].Key == "backlog" {
 			bundle.Workflows[0].Buckets[i].Permissions = &config.BucketPermissions{
-				Task: &config.EntityPermission{Edit: &trueB, Delete: &trueB},
+				Task: &config.EntityPermission{Edit: allow, Delete: allow},
 			}
 			break
 		}

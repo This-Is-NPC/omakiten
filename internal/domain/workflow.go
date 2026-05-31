@@ -42,8 +42,14 @@ type BucketPermissions struct {
 }
 
 type EntityPermission struct {
-	Edit   *bool `json:"edit,omitempty"`
-	Delete *bool `json:"delete,omitempty"`
+	// Create/Edit/Delete are CommentOpPolicy values (uniform representation).
+	// For the comment entity they carry the full polymorphic rule (allow +
+	// tag predicates). For the task entity only the base Allow verdict is
+	// ever read; the config validator rejects tag predicates declared under
+	// permissions.task.*, so task-permission semantics stay plain bool.
+	Create *CommentOpPolicy `json:"create,omitempty"`
+	Edit   *CommentOpPolicy `json:"edit,omitempty"`
+	Delete *CommentOpPolicy `json:"delete,omitempty"`
 	// Scopes carries optional per-scope sub-blocks for the comment entity
 	// only (task|project|universal). Task scope reuses the flat Edit/Delete
 	// fields for backward-compat: a flat `comment: {edit,delete}` resolves
@@ -55,11 +61,14 @@ type EntityPermission struct {
 	Universal *EntityPermission `json:"universal,omitempty"`
 }
 
-// CommentScopeEdit / CommentScopeDelete are the op selectors ResolveCommentScopePermission
-// arbitrates over. Mirror the PermissionEdit/Delete strings in the app layer.
+// CommentOpCreate / CommentOpEdit / CommentOpDelete are the only supported
+// comment policy operation selectors. App-layer Permission* constants mirror
+// these values; keeping the symbols in the domain package prevents unknown
+// operation strings from silently falling into edit semantics.
 const (
-	commentOpEdit   = "edit"
-	commentOpDelete = "delete"
+	CommentOpCreate = "create"
+	CommentOpEdit   = "edit"
+	CommentOpDelete = "delete"
 )
 
 // WorkflowOperations declares guards that gate non-flow operations
@@ -85,11 +94,11 @@ type OperationPolicy struct {
 // resolver falls straight to step 3. There is no hardcoded "first bucket
 // is special" rule — the entire policy is data-driven.
 func (b Bucket) ResolveTaskPermission(defaults *WorkflowDefaults) (edit, del bool) {
-	edit = resolveBool(
+	edit = resolvePolicyBool(
 		bucketField(b, taskEdit),
 		defaultsField(defaults, taskEdit),
 	)
-	del = resolveBool(
+	del = resolvePolicyBool(
 		bucketField(b, taskDelete),
 		defaultsField(defaults, taskDelete),
 	)
@@ -104,21 +113,60 @@ func (b Bucket) ResolveTaskPermission(defaults *WorkflowDefaults) (edit, del boo
 // universal comments have no bucket and resolve via
 // ResolveCommentScopePermission against the workflow defaults directly.
 func (b Bucket) ResolveCommentPermission(defaults *WorkflowDefaults) (edit, del bool) {
-	edit = resolveBool(
-		bucketField(b, commentEdit),
-		bucketField(b, taskEdit),
-		defaultsCommentScopeField(defaults, CommentScopeTask, commentOpEdit),
-		defaultsField(defaults, commentEdit),
-		defaultsField(defaults, taskEdit),
+	return b.ResolveCommentPolicy(defaults, CommentOpEdit).Evaluate(nil),
+		b.ResolveCommentPolicy(defaults, CommentOpDelete).Evaluate(nil)
+}
+
+// ResolveCommentPolicy returns the effective task-scope comment policy for the
+// given op (create|edit|delete) as a CommentOpPolicy, returning the winning
+// rule object instead of a pre-evaluated bool. Callers thread the operation's
+// relevant tags into Evaluate to apply the require/deny predicates. Edit/delete
+// comment fields inherit from task at each layer; create delegates to the
+// comment-only create chain.
+func (b Bucket) ResolveCommentPolicy(defaults *WorkflowDefaults, op string) CommentOpPolicy {
+	if op == CommentOpCreate {
+		return b.ResolveCommentCreatePolicy(defaults)
+	}
+	comment, ok := commentField(op)
+	if !ok {
+		return boolPolicy(false)
+	}
+	task, ok := taskField(op)
+	if !ok {
+		return boolPolicy(false)
+	}
+	return resolveCommentPolicy(
+		bucketField(b, comment),
+		bucketField(b, task),
+		defaultsCommentScopeField(defaults, CommentScopeTask, op),
+		defaultsField(defaults, comment),
+		defaultsField(defaults, task),
 	)
-	del = resolveBool(
-		bucketField(b, commentDelete),
-		bucketField(b, taskDelete),
-		defaultsCommentScopeField(defaults, CommentScopeTask, commentOpDelete),
-		defaultsField(defaults, commentDelete),
-		defaultsField(defaults, taskDelete),
+}
+
+// ResolveCommentCreatePermission returns the effective task-scope comment
+// create permission for this bucket. Create is comment-only — tasks have no
+// create permission — so the chain skips the task-entity fallbacks that
+// ResolveCommentPermission walks for edit/delete:
+//
+//	bucket.comment.create → defaults.comment.task.create → defaults.comment.create → true
+//
+// Project- and universal-scoped comments have no bucket and resolve via
+// ResolveCommentScopePermission(scope, "create") instead.
+func (b Bucket) ResolveCommentCreatePermission(defaults *WorkflowDefaults) bool {
+	return b.ResolveCommentCreatePolicy(defaults).Evaluate(nil)
+}
+
+// ResolveCommentCreatePolicy returns the effective task-scope comment create
+// policy as a CommentOpPolicy so callers can thread the request payload tags
+// into Evaluate. Create is comment-only — the chain skips the task-entity
+// fallbacks ResolveCommentPolicy walks for edit/delete.
+func (b Bucket) ResolveCommentCreatePolicy(defaults *WorkflowDefaults) CommentOpPolicy {
+	return resolveCommentPolicy(
+		bucketField(b, commentCreate),
+		defaultsCommentScopeField(defaults, CommentScopeTask, CommentOpCreate),
+		defaultsField(defaults, commentCreate),
 	)
-	return edit, del
 }
 
 // defaultsCommentScopeField extracts defaults.comment.<scope>.<op>, the
@@ -126,14 +174,14 @@ func (b Bucket) ResolveCommentPermission(defaults *WorkflowDefaults) (edit, del 
 // chain so a defaults-driven `defaults.comment.task.{edit,delete}` is honored
 // even when no bucket declares a comment/task override (the #389 designed
 // chain). Returns nil when any layer of the path is absent.
-func defaultsCommentScopeField(defaults *WorkflowDefaults, scope, op string) *bool {
+func defaultsCommentScopeField(defaults *WorkflowDefaults, scope, op string) *CommentOpPolicy {
 	if defaults == nil {
 		return nil
 	}
 	return scopeOpField(scopeBlock(defaults.Comment, scope), op)
 }
 
-// ResolveCommentScopePermission resolves the comment edit/delete policy for a
+// ResolveCommentScopePermission resolves the comment create/edit/delete policy for a
 // given scope (task|project|universal) against the workflow defaults, with no
 // bucket layer. Scope resolution chains:
 //
@@ -141,23 +189,36 @@ func defaultsCommentScopeField(defaults *WorkflowDefaults, scope, op string) *bo
 //	project:   defaults.comment.project.<op> → true
 //	universal: defaults.comment.universal.<op> → true
 //
+// Create skips the defaults.task fallback because tasks have no create permission.
 // The task scope keeps the flat `comment: {edit,delete}` fields as a
 // backward-compatible alias for `comment.task` and still inherits from
 // defaults.task, mirroring the per-bucket task chain at the defaults layer.
 // Project/Universal have no bucket and no task inheritance — an undeclared
 // sub-block falls straight through to the implicit `true` (no rule = allow).
 func ResolveCommentScopePermission(defaults *WorkflowDefaults, scope, op string) bool {
+	return ResolveCommentScopePolicy(defaults, scope, op).Evaluate(nil)
+}
+
+// ResolveCommentScopePolicy resolves the comment policy for a given scope/op
+// against the workflow defaults (no bucket layer) and returns the winning
+// CommentOpPolicy so callers can thread the relevant tag set into Evaluate.
+// Scope chains match ResolveCommentScopePermission; most-specific declared
+// layer wins, with the implicit allowing policy as terminal.
+func ResolveCommentScopePolicy(defaults *WorkflowDefaults, scope, op string) CommentOpPolicy {
+	if !validCommentOp(op) {
+		return boolPolicy(false)
+	}
 	var comment *EntityPermission
 	if defaults != nil {
 		comment = defaults.Comment
 	}
 	switch scope {
 	case CommentScopeProject:
-		return resolveBool(scopeOpField(scopeBlock(comment, CommentScopeProject), op))
+		return resolveCommentPolicy(scopeOpField(scopeBlock(comment, CommentScopeProject), op))
 	case CommentScopeUniversal:
-		return resolveBool(scopeOpField(scopeBlock(comment, CommentScopeUniversal), op))
+		return resolveCommentPolicy(scopeOpField(scopeBlock(comment, CommentScopeUniversal), op))
 	default: // task scope (also the implicit/empty fallback)
-		return resolveBool(
+		return resolveCommentPolicy(
 			scopeOpField(scopeBlock(comment, CommentScopeTask), op),
 			flatOpField(comment, op),
 			defaultsTaskOpField(defaults, op),
@@ -182,52 +243,102 @@ func scopeBlock(comment *EntityPermission, scope string) *EntityPermission {
 	return nil
 }
 
-// scopeOpField extracts the edit/delete pointer from a scope sub-block.
-func scopeOpField(p *EntityPermission, op string) *bool {
+// scopeOpField extracts the create/edit/delete policy pointer from a scope
+// sub-block.
+func scopeOpField(p *EntityPermission, op string) *CommentOpPolicy {
 	if p == nil {
 		return nil
 	}
-	if op == commentOpDelete {
+	switch op {
+	case CommentOpCreate:
+		return p.Create
+	case CommentOpEdit:
+		return p.Edit
+	case CommentOpDelete:
 		return p.Delete
 	}
-	return p.Edit
+	return nil
 }
 
-// flatOpField extracts the flat edit/delete pointer from the comment block —
-// the backward-compatible `comment: {edit,delete}` alias for the task scope.
-func flatOpField(comment *EntityPermission, op string) *bool {
+// flatOpField extracts the flat create/edit/delete policy pointer from the comment
+// block — the backward-compatible `comment: {edit,delete}` alias for the task
+// scope.
+func flatOpField(comment *EntityPermission, op string) *CommentOpPolicy {
 	if comment == nil {
 		return nil
 	}
-	if op == commentOpDelete {
+	switch op {
+	case CommentOpCreate:
+		return comment.Create
+	case CommentOpEdit:
+		return comment.Edit
+	case CommentOpDelete:
 		return comment.Delete
 	}
-	return comment.Edit
+	return nil
 }
 
-// defaultsTaskOpField extracts the defaults.task edit/delete pointer so the
-// task-scope comment chain inherits from defaults.task as the final declared
-// layer before the implicit true.
-func defaultsTaskOpField(defaults *WorkflowDefaults, op string) *bool {
+// defaultsTaskOpField extracts the defaults.task edit/delete policy pointer so
+// the task-scope comment chain inherits from defaults.task as the final
+// declared layer before the implicit true.
+func defaultsTaskOpField(defaults *WorkflowDefaults, op string) *CommentOpPolicy {
 	if defaults == nil || defaults.Task == nil {
 		return nil
 	}
-	if op == commentOpDelete {
+	switch op {
+	case CommentOpCreate:
+		// Tasks have no create permission, so the comment-create chain never
+		// inherits from defaults.task — only the comment layers apply.
+		return nil
+	case CommentOpEdit:
+		return defaults.Task.Edit
+	case CommentOpDelete:
 		return defaults.Task.Delete
 	}
-	return defaults.Task.Edit
+	return nil
 }
 
-// resolveBool walks the candidate pointers in priority order and returns
-// the first non-nil value. When every candidate is nil the implicit
-// fallback is `true` — the documented "no rule = allow" semantics.
-func resolveBool(candidates ...*bool) bool {
-	for _, c := range candidates {
-		if c != nil {
-			return *c
-		}
+// commentField / taskField map an op string (create|edit|delete) to the
+// permField selector for the comment / task entity, so the policy resolvers can
+// drive the shared bucketField/defaultsField extractors without a per-op
+// switch at every call site.
+func commentField(op string) (permField, bool) {
+	switch op {
+	case CommentOpCreate:
+		return commentCreate, true
+	case CommentOpEdit:
+		return commentEdit, true
+	case CommentOpDelete:
+		return commentDelete, true
 	}
-	return true
+	return 0, false
+}
+
+func taskField(op string) (permField, bool) {
+	switch op {
+	case CommentOpEdit:
+		return taskEdit, true
+	case CommentOpDelete:
+		return taskDelete, true
+	}
+	return 0, false
+}
+
+func validCommentOp(op string) bool {
+	switch op {
+	case CommentOpCreate, CommentOpEdit, CommentOpDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+// resolvePolicyBool resolves a chain of policy pointers to a plain bool — the
+// task-permission path, which reads only the base Allow verdict (no tag
+// predicates). Mirrors the legacy resolveBool: first declared layer wins,
+// implicit fallback true.
+func resolvePolicyBool(candidates ...*CommentOpPolicy) bool {
+	return resolveCommentPolicy(candidates...).Evaluate(nil)
 }
 
 // permField is a small enum used by bucketField/defaultsField to pick
@@ -238,25 +349,26 @@ type permField int
 const (
 	taskEdit permField = iota
 	taskDelete
+	commentCreate
 	commentEdit
 	commentDelete
 )
 
-func bucketField(b Bucket, f permField) *bool {
+func bucketField(b Bucket, f permField) *CommentOpPolicy {
 	if b.Permissions == nil {
 		return nil
 	}
 	return entityField(b.Permissions.Task, b.Permissions.Comment, f)
 }
 
-func defaultsField(d *WorkflowDefaults, f permField) *bool {
+func defaultsField(d *WorkflowDefaults, f permField) *CommentOpPolicy {
 	if d == nil {
 		return nil
 	}
 	return entityField(d.Task, d.Comment, f)
 }
 
-func entityField(task, comment *EntityPermission, f permField) *bool {
+func entityField(task, comment *EntityPermission, f permField) *CommentOpPolicy {
 	switch f {
 	case taskEdit:
 		if task == nil {
@@ -268,6 +380,11 @@ func entityField(task, comment *EntityPermission, f permField) *bool {
 			return nil
 		}
 		return task.Delete
+	case commentCreate:
+		if comment == nil {
+			return nil
+		}
+		return comment.Create
 	case commentEdit:
 		if comment == nil {
 			return nil

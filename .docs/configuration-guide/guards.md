@@ -18,6 +18,7 @@ The same guard shapes also drive **operation policies** (`operations.{archive,de
 - [Agent guardrails: laws bound to commands and entities](#agent-guardrails-laws-bound-to-commands-and-entities)
 - [Operation guards](#operation-guards)
 - [Bucket permissions](#bucket-permissions)
+- [Comment create + tag-conditional rules](#comment-create--tag-conditional-rules)
 - [Adding a new guard type](#adding-a-new-guard-type)
 - [See also](#see-also)
 
@@ -414,7 +415,9 @@ Evaluation entry point lives in `internal/app/task_service.go` (`Archive`, `Dele
 
 ## Bucket permissions
 
-Per-bucket CRUD policy lives under `workflows[].buckets[].permissions` with a workflow-level fallback in `workflows[].defaults`. The resolver lives in `internal/domain/workflow.go` (`Bucket.ResolveTaskPermission` / `Bucket.ResolveCommentPermission`); it walks pointer candidates in priority order and returns the first non-nil value, with implicit `true` when every candidate is nil.
+Per-bucket CRUD policy lives under `workflows[].buckets[].permissions` with a workflow-level fallback in `workflows[].defaults`. The resolver lives in `internal/domain/workflow.go` (`Bucket.ResolveTaskPermission` / `Bucket.ResolveCommentPermission` / `Bucket.ResolveCommentCreatePermission`); it walks pointer candidates in priority order and returns the first declared value, with implicit `true` when every candidate is undeclared.
+
+Comments carry a third operation beyond `edit`/`delete` — **`create`** — and each comment operation accepts a **tag-conditional rule object** instead of (or in addition to) a bare bool. Both land here in [Comment create + tag-conditional rules](#comment-create--tag-conditional-rules) after the task/edit/delete chains below; the [Comment permissions schema](entities.md#comment-permissions) in `entities.md` is the field-by-field reference.
 
 **Task** (`(edit, delete)`):
 
@@ -459,7 +462,97 @@ buckets:
       comment: { edit: true }                 # review: only comment edit (delete inherits false)
 ```
 
-Violations surface as `guard_violation` with `rule: permissions` and a hint quoting the resolved policy. The active operation (`task.edit`, `task.delete`, `comment.edit`, `comment.delete`) lands in the event payload — consumers filter on `(operation, rule)` to distinguish a transition denial from a permission denial.
+Violations surface as `guard_violation` with `rule: permissions` and a hint quoting the resolved policy. The active operation (`task.edit`, `task.delete`, `comment.create`, `comment.edit`, `comment.delete`) lands in the event payload — consumers filter on `(operation, rule)` to distinguish a transition denial from a permission denial.
+
+## Comment create + tag-conditional rules
+
+Comments support a third operation, **`create`**, plus a polymorphic value type that lets any comment operation depend on the comment's tags. Both are comment-only: the config validator rejects tag predicates declared under `permissions.task.*` (`rejectTaskTagRules` in `internal/config/validator.go`), so task permissions stay plain bool.
+
+### The `create` operation
+
+`create` gates whether a new comment may be added to the resolved bucket / scope. It is comment-only — tasks have no create permission — so its task-scope resolution chain skips the task-entity fallbacks that `edit`/`delete` inherit (`Bucket.ResolveCommentCreatePolicy` in `internal/domain/workflow.go`):
+
+```
+bucket.permissions.comment.create
+  → defaults.comment.task.create
+  → defaults.comment.create        (flat alias for the task scope)
+  → true                           (implicit: no rule = allow)
+```
+
+Project- and universal-scoped comments have no bucket and resolve task-lessly via `ResolveCommentScopePolicy(defaults, scope, "create")`:
+
+```
+project:   defaults.comment.project.create   → true
+universal: defaults.comment.universal.create → true
+```
+
+The create guard is **bucket-granular**: when the current bucket denies `comment.create` the failure hint names the buckets that *do* allow it so the operator can move the task and retry (`internal/app/workflow_service.go`):
+
+```
+policy: comment.create is not permitted in bucket "done". Move the task to one of: backlog, dev — then retry.
+```
+
+When no bucket allows it at all, the hint instead points at the config knob:
+
+```
+policy: comment.create is not permitted in bucket "done" (no bucket allows it; declare workflows[].buckets[].permissions.comment.create)
+```
+
+### The tag-conditional rule object
+
+Every comment operation value is **either** a bare bool **or** a rule object. A bare bool `b` is exactly equivalent to `{ allow: b }`, so all pre-existing bare-bool configs parse and resolve unchanged. The rule object carries a base verdict plus three tag predicates (`internal/domain/comment_policy.go`, `CommentOpPolicy`):
+
+```yaml
+comment:
+  edit:
+    allow: true             # base verdict (default true; false short-circuits to deny)
+    require_tags: [reviewed] # deny unless EVERY listed tag is present
+    deny_tags:    [locked]   # deny if ANY listed tag is present
+    require_any_tag: true    # deny if the evaluated tag set is empty
+```
+
+The YAML decoder (`internal/config/bundle.go`, `CommentOpPolicy.UnmarshalYAML`) accepts only a scalar bool or a mapping whose keys are the closed set `{allow, require_tags, deny_tags, require_any_tag}` — any other key (e.g. a `require_tag:` typo) is rejected at load with `unknown comment permission rule key`. The validator additionally rejects empty/whitespace tag names in any `require_tags`/`deny_tags` list (`validateCommentTagNames`).
+
+**Evaluation order** (`CommentOpPolicy.Evaluate`): the base `allow` runs first — a `false` short-circuits to deny before any predicate. When the base allows, the predicates apply in order: `require_any_tag` (deny if the tag set is empty) → `require_tags` (deny unless all present) → `deny_tags` (deny if any present). An omitted `allow` defaults to `true`.
+
+**Which tag set each operation evaluates against:**
+
+| Operation | Tag set fed to `Evaluate` |
+|---|---|
+| `create` | the **request payload** tags (the tags being attached to the new comment) |
+| `edit` | the **target comment's stored** tags |
+| `delete` | the **target comment's stored** tags |
+
+Tag-conditional denials surface as `guard_violation` with `rule: permissions` and a hint naming the specific predicate that failed (`internal/app/workflow_service.go`):
+
+```
+policy: task comment edit is denied for tag "locked"
+policy: project comment create requires tag "x"
+policy: universal comment create requires at least one tag
+```
+
+### Worked example
+
+The block below denies edits to `locked` comments per bucket, gates project-comment create on a required tag, denies project-comment edit on a tag, requires any tag on universal-comment create, and freezes comment create entirely in the `done` bucket:
+
+```yaml
+workflow:
+  buckets:
+    - key: done
+      permissions:
+        comment:
+          create: false                          # no new comments once done
+          edit:   { allow: true, deny_tags: [locked] }  # but edits allowed unless the comment is tagged `locked`
+  defaults:
+    comment:
+      task:      { create: true, edit: false, delete: false }
+      project:
+        create: { allow: true, require_tags: [x] }   # project comment needs tag `x` in its payload to be created
+        edit:   { allow: true, deny_tags: [y] }      # project comment tagged `y` cannot be edited
+        delete: false
+      universal:
+        create: { allow: true, require_any_tag: true } # universal comment must carry at least one tag
+```
 
 ## Adding a new guard type
 
@@ -472,6 +565,7 @@ Violations surface as `guard_violation` with `rule: permissions` and a hint quot
 ## Update when
 
 - A new guard type lands in `internal/app/guards/evaluator.go` — add it to [Guard types](#guard-types) with its YAML shape and failure mode.
+- The comment-permission resolution chain, the `CommentOpPolicy` rule shape, or its per-operation tag source changes (`internal/domain/comment_policy.go`, `internal/domain/workflow.go`, `internal/config/bundle.go`) — update [Comment create + tag-conditional rules](#comment-create--tag-conditional-rules).
 - Validator rules change in `internal/config/validator.go::validateWorkflows`.
 - `app.WorkflowService.MoveTask` pipeline reorders or adds a step.
 - `guard.violated` event payload gains/drops a field (source: `internal/domain/events.go`).

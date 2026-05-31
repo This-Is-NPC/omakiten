@@ -9,6 +9,7 @@ For ConfigRoot precedence, `.active` resolution, and the `<root>/` layout, see [
 ## Contents
 
 - [Top-level shape](#top-level-shape)
+- [Splitting sections into files — `from:` imports](#splitting-sections-into-files--from-imports)
 - [`kit`](#kit)
 - [`config.output`](#configoutput)
 - [`config.context`](#configcontext)
@@ -58,6 +59,28 @@ mcp_commands: { <slug>: { persona?, laws?, laws_disabled?, templates? } }
 | `mcp_commands` | map | no | Binds `okt-*` MCP prompts to a persona, laws, and templates. See [entities.md § mcp_commands](entities.md#mcp_commands). |
 
 Two additional inputs are loaded from sibling folders rather than `omakiten.yaml` top-level keys: `notifications/<slug>.yaml` (kit-wide notification cards referenced from `config.hooks`) and `languages/<code>.yaml` (CLI/TUI language packs picked via `config.languages.{cli,tui}`). They appear on the in-memory `Bundle` as `Notifications` and `Languages`, are validated alongside the YAML, and ship under `defaults/notifications/` and `defaults/languages/`.
+
+### Splitting sections into files — `from:` imports
+
+Any value in the active profile may be pulled from a separate file with a value-level `from:` directive. The loader expands directives before strict decoding, so the imported content is decoded and validated exactly as if it had been written inline (unknown keys fail the same `KnownFields(true)` check). The directive node is **replaced wholesale** by the imported document — no sibling override, deep merge, or list append in v1:
+
+```yaml
+config:
+  hooks:
+    from: ./hooks.yml      # config.hooks becomes the list declared at hooks.yml's root
+workflows:
+  from: ./workflows.yml    # top-level workflows becomes the list declared at workflows.yml's root
+```
+
+`hooks.yml` then holds just the section body it replaces — the list of hook entries documented in [`config.hooks`](#confighooks):
+
+```yaml
+# hooks.yml — imported verbatim into config.hooks
+- on: bundle.swapped
+  notification: kitten_orphan_migration
+```
+
+Paths are relative to the declaring file, reject `..`/absolute/symlink-escape, nest up to 10 levels deep, and are cycle-checked. Imported files are watched for hot reload through `Bundle.SourcePaths`, so editing `hooks.yml` rebuilds the snapshot just like editing the root profile. A mapping that carries `from` alongside other keys (such as a workflow transition `{ from: <bucket>, to: <bucket> }`) is **not** an import and passes through unchanged. Full rules: [path-resolution.md § Modular config imports](path-resolution.md#modular-imports).
 
 ### `kit`
 
@@ -510,5 +533,6 @@ The file references in this doc point at the source-of-truth code; if behavior e
 - A new `config.*` field lands in `internal/config/loader.go` / `internal/config/validator.go`.
 - An existing field's validation rule, default value, or allowed range changes.
 - The MCP / TUI / SQLite engine contract changes (new PRAGMA, retention rule, response shape).
+- The `from:` import contract changes (`internal/config/import_resolver.go`) — keep the example here and [path-resolution.md § Modular config imports](path-resolution.md#modular-imports) in sync.
 
 For entity wiring schemas, see [entities.md § update when](entities.md#update-when). For path / layout changes, see [path-resolution.md](path-resolution.md).

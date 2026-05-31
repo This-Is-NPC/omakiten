@@ -1,30 +1,36 @@
 package config
 
+import (
+	"fmt"
+
+	"gopkg.in/yaml.v3"
+)
+
 // Bundle is the in-memory representation of an omakiten config directory.
 // `omakiten.yaml` provides settings, workflows, and reference wiring; per-entity
 // `.md` files (skills/<slug>.md, laws/<slug>.md, personas/<slug>.md) provide the
 // authoring content. The loader merges them into Bundle; the saver splits them
 // back out.
 type Bundle struct {
-	Version       int                       `yaml:"version" json:"version"`
-	Kit           Kit                       `yaml:"kit" json:"kit"`
-	Config        Settings                  `yaml:"config" json:"config"`
-	SubtaskKit    string                    `yaml:"-" json:"subtask_kit,omitempty"`
-	SubtaskBundle *Bundle                   `yaml:"-" json:"subtask_bundle,omitempty"`
-	Skills        []Skill                   `yaml:"-" json:"skills,omitempty"`
-	Personas      []Persona                 `yaml:"-" json:"personas,omitempty"`
-	Laws          []Law                     `yaml:"-" json:"laws,omitempty"`
-	Templates     []TaskTemplate            `yaml:"-" json:"templates,omitempty"`
+	Version       int            `yaml:"version" json:"version"`
+	Kit           Kit            `yaml:"kit" json:"kit"`
+	Config        Settings       `yaml:"config" json:"config"`
+	SubtaskKit    string         `yaml:"-" json:"subtask_kit,omitempty"`
+	SubtaskBundle *Bundle        `yaml:"-" json:"subtask_bundle,omitempty"`
+	Skills        []Skill        `yaml:"-" json:"skills,omitempty"`
+	Personas      []Persona      `yaml:"-" json:"personas,omitempty"`
+	Laws          []Law          `yaml:"-" json:"laws,omitempty"`
+	Templates     []TaskTemplate `yaml:"-" json:"templates,omitempty"`
 	// All* hold the full on-disk catalog (every preset's entity files),
 	// each entry stamped with Active=true when wired into this bundle.
 	// Runtime resolution uses the picked Skills/Personas/Laws/Templates
 	// above; only the Settings catalog view reads All* so the user sees
 	// the complete pool with an active marker, not just the active subset.
-	AllSkills    []Skill        `yaml:"-" json:"-"`
-	AllPersonas  []Persona      `yaml:"-" json:"-"`
-	AllLaws      []Law          `yaml:"-" json:"-"`
-	AllTemplates []TaskTemplate `yaml:"-" json:"-"`
-	Workflows    []Workflow     `yaml:"workflows" json:"workflows,omitempty"`
+	AllSkills     []Skill                   `yaml:"-" json:"-"`
+	AllPersonas   []Persona                 `yaml:"-" json:"-"`
+	AllLaws       []Law                     `yaml:"-" json:"-"`
+	AllTemplates  []TaskTemplate            `yaml:"-" json:"-"`
+	Workflows     []Workflow                `yaml:"workflows" json:"workflows,omitempty"`
 	Projects      []Project                 `yaml:"-" json:"projects,omitempty"`
 	MCPCommands   map[string]MCPCommandSpec `yaml:"-" json:"mcp_commands,omitempty"`
 	Notifications map[string]Notification   `yaml:"-" json:"notifications,omitempty"`
@@ -857,11 +863,76 @@ type BucketPermissions struct {
 // the flat fields after comment.task. These sub-blocks are ignored for the
 // task/bucket entity.
 type EntityPermission struct {
-	Edit      *bool             `yaml:"edit,omitempty" json:"edit,omitempty"`
-	Delete    *bool             `yaml:"delete,omitempty" json:"delete,omitempty"`
+	Create    *CommentOpPolicy  `yaml:"create,omitempty" json:"create,omitempty"`
+	Edit      *CommentOpPolicy  `yaml:"edit,omitempty" json:"edit,omitempty"`
+	Delete    *CommentOpPolicy  `yaml:"delete,omitempty" json:"delete,omitempty"`
 	Task      *EntityPermission `yaml:"task,omitempty" json:"task,omitempty"`
 	Project   *EntityPermission `yaml:"project,omitempty" json:"project,omitempty"`
 	Universal *EntityPermission `yaml:"universal,omitempty" json:"universal,omitempty"`
+}
+
+// CommentOpPolicy is the YAML mirror of domain.CommentOpPolicy: the
+// polymorphic value for one comment op (create|edit|delete). Its custom
+// UnmarshalYAML accepts EITHER a scalar bool (`create: true`, which maps to
+// `{allow: true}` and preserves byte-for-byte back-compat with every existing
+// bare-bool comment/task config) OR a rule mapping
+//
+//	create: { allow: true, require_tags: [x], deny_tags: [y], require_any_tag: true }
+//
+// Unknown keys inside the mapping are rejected at unmarshal time. The base
+// Allow verdict plus the three tag predicates carry through to the runtime via
+// the snapshot mapper.
+type CommentOpPolicy struct {
+	Allow         *bool    `yaml:"allow,omitempty" json:"allow,omitempty"`
+	RequireTags   []string `yaml:"require_tags,omitempty" json:"require_tags,omitempty"`
+	DenyTags      []string `yaml:"deny_tags,omitempty" json:"deny_tags,omitempty"`
+	RequireAnyTag *bool    `yaml:"require_any_tag,omitempty" json:"require_any_tag,omitempty"`
+}
+
+// commentOpPolicyKeys is the closed set of keys allowed inside a rule mapping.
+// Any other key is rejected so a typo (`require_tag:`) fails loudly at load
+// instead of silently resolving to allow.
+var commentOpPolicyKeys = map[string]struct{}{
+	"allow":           {},
+	"require_tags":    {},
+	"deny_tags":       {},
+	"require_any_tag": {},
+}
+
+// UnmarshalYAML decodes a comment-op value that may be a scalar bool or a rule
+// mapping. A scalar bool `b` becomes `{Allow: &b}`; a mapping is decoded into
+// the rule fields after its keys are validated against commentOpPolicyKeys.
+func (p *CommentOpPolicy) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		// The common (and back-compat) case: a bare bool. Anything that is not
+		// a bool scalar is an error — a comment op is never a string/number.
+		var b bool
+		if err := value.Decode(&b); err != nil {
+			return fmt.Errorf("comment permission must be a bool or a rule object: %w", err)
+		}
+		p.Allow = &b
+		return nil
+	case yaml.MappingNode:
+		// Mapping content is [key1, val1, key2, val2, ...]; reject any key
+		// outside the closed rule-key set before decoding.
+		for i := 0; i+1 < len(value.Content); i += 2 {
+			key := value.Content[i].Value
+			if _, ok := commentOpPolicyKeys[key]; !ok {
+				return fmt.Errorf("unknown comment permission rule key %q (allowed: allow, require_tags, deny_tags, require_any_tag)", key)
+			}
+		}
+		// Decode into an alias to avoid recursing into this method.
+		type rawPolicy CommentOpPolicy
+		var raw rawPolicy
+		if err := value.Decode(&raw); err != nil {
+			return err
+		}
+		*p = CommentOpPolicy(raw)
+		return nil
+	default:
+		return fmt.Errorf("comment permission must be a bool or a rule object, got yaml kind %d", value.Kind)
+	}
 }
 
 // WorkflowOperations declares the guards that gate non-flow operations

@@ -88,7 +88,7 @@ func newCommentAddCommand(opts *runtimeOptions) *cobra.Command {
 				for _, raw := range tags {
 					domainTags = append(domainTags, domain.Tag{Name: raw, Label: raw})
 				}
-				comment, err := rt.commentService().AddScoped(ctx, project, domain.CommentWrite{
+				comment, err := rt.commentServiceWithWorkflow(rt.activeWorkflow()).AddScoped(ctx, project, domain.CommentWrite{
 					Scope:      resolvedScope,
 					TaskID:     taskID,
 					Body:       body,

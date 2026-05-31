@@ -128,8 +128,68 @@ func (s *CommentService) AddScoped(ctx context.Context, project domain.ProjectCo
 		return
 	}
 	w.Tags = s.normalizeTags(w.Tags)
+
+	if err = s.enforceCommentCreatePermission(ctx, project, scope, w.TaskID, tagNames(w.Tags)); err != nil {
+		return
+	}
+
 	comment, err = s.repo.AddScopedComment(ctx, w)
 	return
+}
+
+// enforceCommentCreatePermission is the scope-aware create guard, mirroring
+// enforceCommentPermission (edit/remove) but keyed on the write intent's scope
+// and task id rather than an existing comment row. It is a no-op when no
+// workflow service is wired (read-only composition) so legacy callers stay
+// permissive (no rule = allow, back-compat).
+//
+//   - task scope:      bucket-resolved create permission via
+//     ResolveBucketPermissions(taskID, EntityComment, PermissionCreate). A
+//     denial emits a task-scoped guard.violated and returns ErrGuardViolation.
+//   - project scope:   resolved task-lessly (defaults.comment.project.create);
+//     a denial emits a project-scoped guard.violated.
+//   - universal scope: resolved task-lessly (defaults.comment.universal.create);
+//     a denial emits a project-less (universal) guard.violated.
+func (s *CommentService) enforceCommentCreatePermission(ctx context.Context, project domain.ProjectContext, scope string, taskID int64, tags []string) error {
+	if s.workflow == nil {
+		return nil
+	}
+	if scope == "" {
+		scope = domain.CommentScopeTask
+	}
+
+	if scope == domain.CommentScopeTask {
+		allowed, hint, err := s.workflow.ResolveCommentBucketPolicy(ctx, project, taskID, PermissionCreate, tags)
+		if err != nil {
+			return err
+		}
+		if allowed {
+			return nil
+		}
+		taskRow, taskSnap, taskErr := s.workflow.ResolveTaskSnap(ctx, project, taskID)
+		if taskErr != nil {
+			return taskErr
+		}
+		s.workflow.Evaluator().EmitViolatedForTask(ctx, project.ID, taskRow, taskSnap,
+			GuardOperationCommentCreate, GuardRulePermissions, hint,
+			map[string]any{"task_id": taskID, "entity": EntityComment, "operation": PermissionCreate})
+		return domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"task_id": taskID, "hint": hint, "entity": EntityComment, "operation": PermissionCreate})
+	}
+
+	// project / universal: no task, resolve against workflow defaults only.
+	allowed, hint := s.workflow.ResolveCommentScopePolicy(scope, PermissionCreate, tags)
+	if allowed {
+		return nil
+	}
+	target := map[string]any{"entity": EntityComment, "operation": PermissionCreate, "scope": scope}
+	if scope == domain.CommentScopeProject {
+		s.workflow.Evaluator().EmitViolatedForProject(ctx, project.ID, GuardOperationCommentCreate, GuardRulePermissions, hint, target)
+	} else {
+		// Universal comments are stored project-less (project_id IS NULL); the
+		// violation row must match, so pass projectID=0.
+		s.workflow.Evaluator().EmitViolated(ctx, 0, domain.EventEntityUniversal, 0, GuardOperationCommentCreate, GuardRulePermissions, hint, target)
+	}
+	return domain.NewError(domain.ErrGuardViolation, hint, map[string]any{"hint": hint, "entity": EntityComment, "operation": PermissionCreate, "scope": scope})
 }
 
 // Query runs the filterable handoff-log read (scope/kind/tag/FTS/pinned/window,
@@ -149,6 +209,21 @@ func (s *CommentService) Query(ctx context.Context, project domain.ProjectContex
 	}()
 	comments, err = s.repo.QueryComments(ctx, filter)
 	return
+}
+
+// tagNames projects a tag slice to its normalized names — the form the policy
+// predicates (require_tags / deny_tags) compare against. Used to thread the
+// create payload's tags and an existing comment's stored tags into comment
+// permission resolution.
+func tagNames(tags []domain.Tag) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		out = append(out, t.Name)
+	}
+	return out
 }
 
 // normalizeTags applies the per-project synonym table to a tag slice. Tags that
@@ -348,8 +423,10 @@ func (s *CommentService) enforceCommentPermission(ctx context.Context, project d
 		scope = domain.CommentScopeTask
 	}
 
+	storedTags := tagNames(existing.Tags)
+
 	if scope == domain.CommentScopeTask {
-		allowed, hint, err := s.workflow.ResolveBucketPermissions(ctx, project, existing.TaskID, EntityComment, operation)
+		allowed, hint, err := s.workflow.ResolveCommentBucketPolicy(ctx, project, existing.TaskID, operation, storedTags)
 		if err != nil {
 			return err
 		}
@@ -367,7 +444,7 @@ func (s *CommentService) enforceCommentPermission(ctx context.Context, project d
 	}
 
 	// project / universal: no task, resolve against workflow defaults only.
-	allowed, hint := s.workflow.ResolveCommentScopePermission(scope, operation)
+	allowed, hint := s.workflow.ResolveCommentScopePolicy(scope, operation, storedTags)
 	if allowed {
 		return nil
 	}

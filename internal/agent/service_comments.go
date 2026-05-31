@@ -40,7 +40,7 @@ func (s *Service) AddComment(ctx context.Context, input AddCommentInput) (Commen
 	for _, raw := range input.Tags {
 		tags = append(tags, domain.Tag{Name: raw, Label: raw})
 	}
-	comment, err := s.newCommentService().AddScoped(ctx, project, domain.CommentWrite{
+	comment, err := s.newCommentServiceWithWorkflow(s.workflow).AddScoped(ctx, project, domain.CommentWrite{
 		Scope:      scope,
 		TaskID:     input.TaskID,
 		Body:       body,
