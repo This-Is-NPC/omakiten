@@ -59,48 +59,47 @@ keys:
   cli.config.short: "Gestiona el bundle canónico omakiten.yaml"
   cli.config.validate.short: "Valida un archivo omakiten.yaml"
   cli.config.presets.short: "Lista los presets oficiales de workflow"
-  cli.projects.short: "Project lifecycle utilities (delete — destructive ops)"
-  cli.projects.delete.short: "Hard-delete a registered project and every dependent row (irreversible)"
+  cli.projects.short: "Utilidades del ciclo de vida del proyecto (delete — ops destructivas)"
+  cli.projects.delete.short: "Hard-delete de un proyecto registrado y cada fila dependiente (irreversible)"
   cli.projects.delete.long: |-
-    Resolve the project by numeric id or slug, write a recovery
-    snapshot to the rolling backups directory, then cascade-delete
-    every dependent row (tasks, comments, plans, tag attachments,
+    Resuelve el proyecto por id numérico o slug, escribe un snapshot
+    de recuperación en el directorio de backups rotativos y cascade-delete
+    de cada fila dependiente (tasks, comments, plans, tag attachments,
     context entries, errors, activity log).
-
-    Backup failure aborts the delete before anything is touched.
-    Filesystem state under <root_path>/.omakiten/ is preserved —
-    only DB rows are removed.
-
-    Without --yes the command prints counters and prompts for
-    confirmation; piping without --yes errors out instead of
-    blocking on stdin.
-  cli.projects.delete.flag.yes: "skip the interactive confirmation and apply the delete non-interactively"
-  cli.projects.delete.counters_fmt: "tasks: %d · comments: %d · plans: %d · tags: %d · activity: %d entries"
-  cli.projects.delete.prompt: "delete project %q? [y/N]:"
-  cli.projects.delete.success_fmt: "project %q deleted · backup → %s"
-  cli.projects.delete.err.no_tty: "interactive confirmation required; pass --yes to skip"
-  cli.projects.delete.err.aborted: "delete aborted; nothing removed"
-  cli.projects.delete.err.not_found: "project not found"
-  cli.db.short: "Database lifecycle utilities (backup, snapshot, restore — sysadmin ops)"
-  cli.db.backup.short: "Write a snapshot of the live SQLite database to the rolling backups directory"
+    
+    Un fallo de backup aborta el delete antes de tocar nada.
+    El estado del filesystem bajo <root_path>/.omakiten/ se preserva —
+    solo se eliminan filas de DB.
+    
+    Sin --yes el comando imprime contadores y pide
+    confirmación; pipear sin --yes falla en lugar de
+    bloquear en stdin.
+  cli.projects.delete.flag.yes: "omitir la confirmación interactiva y aplicar el delete de forma no interactiva"
+  cli.projects.delete.counters_fmt: "tasks: %d · comments: %d · plans: %d · tags: %d · actividad: %d entradas"
+  cli.projects.delete.prompt: "¿eliminar project %q? [y/N]:"
+  cli.projects.delete.success_fmt: "project %q eliminado · backup → %s"
+  cli.projects.delete.err.no_tty: "confirmación interactiva requerida; pasa --yes para omitir"
+  cli.projects.delete.err.aborted: "delete abortado; nada eliminado"
+  cli.projects.delete.err.not_found: "project no encontrado"
+  cli.db.short: "Utilidades del ciclo de vida de la base de datos (backup, snapshot, restore — ops de sysadmin)"
+  cli.db.backup.short: "Escribir un snapshot de la base SQLite activa en el directorio de backups rotativos"
   cli.db.backup.long: |-
-    Copy the active SQLite database to a timestamped snapshot under
-    $XDG_STATE_HOME/omakiten/backups/ (default ~/.local/state/omakiten/backups/)
-    and prune older snapshots according to settings.backup.retention_count.
-
-    The copy is atomic: the destination only appears once the body has
-    been written and renamed into place. A previous partial copy never
-    survives a failure.
-
-    --out pins the snapshot path explicitly (parent directories are
-    created as needed). When --out is supplied the retention prune
-    pass is skipped — the user owns the rotation policy outside the
-    default state directory.
-  cli.db.backup.flag.out: "write the snapshot to this explicit file path (skips retention prune)"
-  cli.db.backup.flag.force: "overwrite the target file when --out points at an existing path"
-  cli.db.backup.error.system_path_fmt: "refusing to write backup to system path %q (under %s)"
-  cli.db.backup.error.exists_fmt: "refusing to overwrite existing file %q; pass --force to replace"
-  cli.db.backup.success_fmt: "backup written to %s"
+    Copia la base SQLite activa a un snapshot con marca temporal bajo
+    $XDG_STATE_HOME/omakiten/backups/ (predeterminado ~/.local/state/omakiten/backups/)
+    y prune snapshots antiguos según settings.backup.retention_count.
+    
+    La copia es atómica: el destino solo aparece cuando el contenido
+    se ha escrito y renombrado. Una copia parcial previa nunca
+    sobrevive a un fallo.
+    
+    --out fija la ruta del snapshot explícitamente (se crean directorios
+    padre según haga falta). Con --out se omite el retention prune —
+    el usuario controla la rotación fuera del directorio state predeterminado.
+  cli.db.backup.flag.out: "escribir el snapshot en esta ruta explícita (omite retention prune)"
+  cli.db.backup.flag.force: "sobrescribir el archivo destino cuando --out apunta a una ruta existente"
+  cli.db.backup.error.system_path_fmt: "rechazo de escribir backup en ruta de sistema %q (bajo %s)"
+  cli.db.backup.error.exists_fmt: "rechazo de sobrescribir el archivo existente %q; pasa --force para reemplazar"
+  cli.db.backup.success_fmt: "backup escrito en %s"
   cli.preset.omakase.title: "Elección del chef"
   cli.preset.omakase.description: "Workflow equilibrado con self-branch, resume y guards de documentación."
   cli.preset.izakaya.title: "Casual"
@@ -151,7 +150,7 @@ keys:
   cli.workflow.short: "Inspecciona la configuración del workflow"
   cli.workflow.show.short: "Muestra el workflow activo"
   cli.workflow.orphan.short: "Previsualiza o re-vincula tasks cuyo bucket fue desactivado por un cambio de workflow"
-  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit enabled: MCP commands, personas, laws, templates, and skills still resolve from the project root kit."
+  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit activado: comandos MCP, personas, laws, templates y skills siguen resolviéndose desde el kit raíz del proyecto."
   cli.config.init.long: |-
     Crea un install de config standalone enraizado en el scope elegido.
 
@@ -247,14 +246,14 @@ keys:
   cli.task.add.flag.title: "título de la task"
   cli.task.add.flag.description: "descripción de la task"
   cli.task.add.flag.bucket: "clave del bucket (predeterminado: primer bucket del workflow activo)"
-  cli.task.add.flag.parent: "optional parent task id; when set, the new row is attached as a sub-task via AddSub (parent must be active and in the same project)"
+  cli.task.add.flag.parent: "id de parent task opcional; si se indica, la fila nueva se adjunta como sub-task via AddSub (el parent debe estar activo en el mismo proyecto)"
   cli.task.edit.flag.title: "título de la task"
   cli.task.edit.flag.description: "descripción de la task"
   cli.task.edit.flag.priority: "prioridad de la task: low, normal o high"
   cli.task.edit.flag.bucket: "clave del bucket destino"
-  cli.task.edit.flag.parent: "optional re-parent target id; 0 clears the FK (becomes a root); any positive id re-parents with anti-cycle enforcement"
+  cli.task.edit.flag.parent: "id de re-parent opcional; 0 limpia la FK (pasa a root); id positivo re-parents con anti-cycle enforcement"
   cli.task.list.flag.bucket: "clave del bucket"
-  cli.task.list.flag.parent: "optional parent filter; omit for no filter, 0 for roots only (parent_id IS NULL), positive id for that parent's direct children"
+  cli.task.list.flag.parent: "filtro parent opcional; omitir para sin filtro, 0 solo roots (parent_id IS NULL), id positivo para hijos directos de ese parent"
   cli.task.move.flag.to: "clave del bucket destino"
   cli.task.delete.flag.confirm: "obligatorio: confirma la eliminación destructiva"
   cli.comment.add.flag.body: "cuerpo del comentario"
@@ -477,22 +476,22 @@ keys:
   tui.confirm.comment_delete_fmt: "Confirma delete del comentario #%d. Pulsa d de nuevo; esc cancela."
   tui.confirm.task_delete_fmt: "Confirma delete de la task #%d %q. Pulsa d de nuevo; esc cancela."
   tui.status.task_deleted_fmt: "Task #%d eliminada"
-  tui.confirm.home_project_delete_fmt: "Confirm delete project %q (cascade tasks, plans, errors). Press d again; esc cancels. A backup snapshot is written first."
-  tui.notification.project_delete.title_fmt: "Delete project %q?"
-  tui.notification.project_delete.body_fmt: "Tasks: %d · Comments: %d · Plans: %d · Tags: %d · Activity log: %d entries. All permanently removed. Backup will be written to ~/.local/state/omakiten/backups/."
-  notifications.home-project-delete-confirm.description: "Confirm a destructive project delete with one keystroke; shows pre-resolved row counters so the user sees the blast radius."
-  notifications.home-project-delete-confirm.confirm_label: "Delete"
-  notifications.home-project-delete-confirm.cancel_label: "Cancel"
-  notifications.footer.details: "details"
-  notifications.footer.close: "close"
-  notifications.footer.cancel: "cancel"
-  notifications.kitten_orphan_migration.migrate_label: "Migrate"
-  notifications.kitten_orphan_migration.skip_label: "Skip"
-  cli.db.backup.prune_warn_fmt: "prune skipped: %s"
-  tui.status.project_deleted_fmt: "Project %q deleted · backup → %s"
-  tui.status.deleting_project_fmt: "Deleting project %q..."
-  tui.footer.delete_project: "delete project"
-  tui.footer.confirm_delete_project: "confirm delete · esc cancels"
+  tui.confirm.home_project_delete_fmt: "Confirma delete project %q (cascade tasks, plans, errors). Pulsa d de nuevo; esc cancela. Primero se escribe un snapshot backup."
+  tui.notification.project_delete.title_fmt: "¿Eliminar project %q?"
+  tui.notification.project_delete.body_fmt: "Tasks: %d · Comments: %d · Plans: %d · Tags: %d · Activity log: %d entries. Todo eliminado permanentemente. Backup se escribirá en ~/.local/state/omakiten/backups/."
+  notifications.home-project-delete-confirm.description: "Confirma un delete destructivo del proyecto con una tecla; muestra contadores de filas pre-resueltos para ver el radio de impacto."
+  notifications.home-project-delete-confirm.confirm_label: "Eliminar"
+  notifications.home-project-delete-confirm.cancel_label: "Cancelar"
+  notifications.footer.details: "detalles"
+  notifications.footer.close: "cerrar"
+  notifications.footer.cancel: "cancelar"
+  notifications.kitten_orphan_migration.migrate_label: "Migrar"
+  notifications.kitten_orphan_migration.skip_label: "Omitir"
+  cli.db.backup.prune_warn_fmt: "prune omitido: %s"
+  tui.status.project_deleted_fmt: "Project %q eliminado · backup → %s"
+  tui.status.deleting_project_fmt: "Eliminando project %q..."
+  tui.footer.delete_project: "eliminar project"
+  tui.footer.confirm_delete_project: "confirmar delete · esc cancela"
   tui.status.orphan_tags_deleted_fmt: "%d tag(s) huérfana(s) eliminada(s)"
   tui.status.tag_in_use_fmt: "Tag %q está en uso (%d referencias) — no se puede eliminar"
   tui.status.task_not_found: "Task no encontrada. Pulsa esc para volver."
@@ -895,17 +894,17 @@ keys:
   tui.status.theme_picker: "Picker de tema"
   tui.status.no_config_profiles: "Ningún profile de config encontrado"
   tui.status.config_picker: "Picker de config"
-  tui.status.no_subtask_kit_profiles: "No sub-task kit profiles found"
-  tui.status.subtask_kit_picker: "Sub-task kit picker"
-  tui.status.subtask_kit_picker_cancelled: "Sub-task kit picker cancelled"
-  tui.status.subtask_kit_switched_fmt: "Sub-task kit set to %s"
-  tui.status.subtask_kit_cleared: "Sub-task kit cleared (inherit root)"
-  tui.status.subtask_kit_already_none: "Sub-task kit already inherits root"
-  tui.status.subtask_kit_switch_failed_fmt: "Sub-task kit switch failed: %s"
+  tui.status.no_subtask_kit_profiles: "No se encontraron perfiles de sub-task kit"
+  tui.status.subtask_kit_picker: "Selector de sub-task kit"
+  tui.status.subtask_kit_picker_cancelled: "Selector de sub-task kit cancelado"
+  tui.status.subtask_kit_switched_fmt: "Sub-task kit establecido en %s"
+  tui.status.subtask_kit_cleared: "Sub-task kit limpiado (hereda root)"
+  tui.status.subtask_kit_already_none: "Sub-task kit ya hereda root"
+  tui.status.subtask_kit_switch_failed_fmt: "Fallo al cambiar sub-task kit: %s"
   tui.kicker.subtask_kit_active_fmt: "Sub-task kit · active: %s"
-  tui.picker.hint.subtask_kit: "up/down: move · enter: apply (hot-reload) · esc: cancel"
-  tui.picker.subtask_kit_none: "none (inherit root)"
-  tui.subtask_board.fallback_lane_name: "All"
+  tui.picker.hint.subtask_kit: "arriba/abajo: mueve · enter: aplicar (hot-reload) · esc: cancelar"
+  tui.picker.subtask_kit_none: "ninguno (hereda root)"
+  tui.subtask_board.fallback_lane_name: "Todos"
   tui.status.no_template_selected: "Ningún template seleccionado"
   tui.status.template_not_found: "Template no encontrado"
   tui.status.template_picker_needs_project: "La TUI debe estar abierta dentro de un proyecto para asignar un template predeterminado"
@@ -1072,68 +1071,67 @@ keys:
   cli.setup.picker.no_tty: "selector interactivo requiere TTY; define OKT_CLI_LANG, OKT_TUI_LANG, OKT_AGENT_LANG, OKT_PRESET, OKT_HARNESSES (o --flags equivalentes) para instalación headless"
 
 # okt uninstall — in-binary counterpart of uninstall.sh / uninstall.ps1.
-  cli.uninstall.short: "Remove the installed okt binary and shell-rc wrapper (data + config preserved by default)"
+  cli.uninstall.short: "Elimina el binario okt instalado y el wrapper shell-rc (datos + config preservados por defecto)"
   cli.uninstall.long: |-
-    Remove the binary the installer wrote to $INSTALL_DIR (defaults to
-    ~/.local/bin on POSIX and %LOCALAPPDATA%Programsokt on Windows) and
-    strip the okt() wrapper block from every rc/profile target.
-
-
-    No automatic backup. Run `okt db backup` first if you want a
-    snapshot of the SQLite DB before purging — uninstall removes
-    user-owned data by intent, so the safety net is opt-in via the
-    standalone backup command.
-
-    Local state is preserved unless explicitly opted-out via --purge-data
-    (SQLite DB under $XDG_DATA_HOME/omakiten) or --purge-config (active
-    yaml profile + entity folders under $XDG_CONFIG_HOME/omakiten).
-    --purge is shorthand for both.
-
-    Without flags on a TTY the picker shows what would be deleted with
-    sizes and asks per purge target. --yes skips the picker entirely.
-  cli.uninstall.flag.yes: "skip the interactive picker and apply the resolved flag set non-interactively"
-  cli.uninstall.flag.purge-data: "also delete $XDG_DATA_HOME/omakiten (SQLite DB + WAL/SHM) — irreversible"
-  cli.uninstall.flag.purge-config: "also delete $XDG_CONFIG_HOME/omakiten (active yaml + entity folders) — irreversible"
-  cli.uninstall.flag.purge: "shorthand for --purge-data + --purge-config — irreversible"
-  cli.uninstall.picker.title: "Uninstall okt"
-  cli.uninstall.picker.hint: "↑/↓ navigate · enter toggle · y apply · ctrl+c quit"
-  cli.uninstall.picker.warn: "THIS CANNOT BE UNDONE"
-  cli.uninstall.picker.binary: "binary  %s"
-  cli.uninstall.picker.wrappers: "shell wrappers (rc/profile blocks)"
-  cli.uninstall.picker.data: "data dir  %s  (%s)"
-  cli.uninstall.picker.config: "config dir  %s  (%s)"
-  cli.uninstall.picker.no_tty: "interactive picker needs a TTY; pass --yes (plus optional --purge-* flags) for headless uninstall"
-  cli.uninstall.picker.aborted: "uninstall aborted; nothing removed"
+    Elimina el binario que el instalador escribió en $INSTALL_DIR (por defecto
+    ~/.local/bin en POSIX y %LOCALAPPDATA%\Programs\okt en Windows) y
+    retira el bloque wrapper okt() de cada destino rc/profile.
+    
+    El estado local se preserva salvo opt-out explícito via --purge-data
+    (SQLite DB en $XDG_DATA_HOME/omakiten) o --purge-config (perfil yaml
+    activo + carpetas de entidades en $XDG_CONFIG_HOME/omakiten).
+    --purge es atajo para ambos.
+    
+    Sin flags en un TTY el selector muestra qué se eliminaría con
+    tamaños y pregunta por objetivo de purge. --yes omite el selector por completo.
+    
+    Sin backup automático. Ejecuta `okt db backup` antes si quieres un
+    snapshot del SQLite DB antes del purge — la desinstalación elimina
+    datos del usuario a propósito; la red de seguridad es opt-in via el
+    comando de backup standalone.
+  cli.uninstall.flag.yes: "omite el selector interactivo y aplica el conjunto de flags resuelto de forma no interactiva"
+  cli.uninstall.flag.purge-data: "también elimina $XDG_DATA_HOME/omakiten (SQLite DB + WAL/SHM) — irreversible"
+  cli.uninstall.flag.purge-config: "también elimina $XDG_CONFIG_HOME/omakiten (yaml activo + carpetas de entidades) — irreversible"
+  cli.uninstall.flag.purge: "atajo para --purge-data + --purge-config — irreversible"
+  cli.uninstall.picker.title: "Desinstalar okt"
+  cli.uninstall.picker.hint: "↑/↓ navegar · enter alternar · y aplicar · ctrl+c salir"
+  cli.uninstall.picker.warn: "ESTO NO SE PUEDE DESHACER"
+  cli.uninstall.picker.binary: "binario  %s"
+  cli.uninstall.picker.wrappers: "wrappers shell (bloques rc/profile)"
+  cli.uninstall.picker.data: "dir de datos  %s  (%s)"
+  cli.uninstall.picker.config: "dir de config  %s  (%s)"
+  cli.uninstall.picker.no_tty: "selector interactivo requiere TTY; pasa --yes (más --purge-* opcionales) para desinstalación headless"
+  cli.uninstall.picker.aborted: "desinstalación abortada; nada eliminado"
 
   # okt update — in-binary counterpart of the curl|bash installer for refresh.
-  cli.update.short: "Fetch the latest okt release and atomically swap the installed binary"
+  cli.update.short: "Obtiene el release más reciente de okt y reemplaza el binario instalado atómicamente"
   cli.update.long: |-
-    Detect the running binary's path (os.Executable), query the GitHub
-    releases API for the latest tag, download the matching asset, and
-    atomically replace the binary on disk. The current process exits
-    after the swap; the next invocation runs the new version.
-
-    --check prints `current=<v> latest=<v> action=<noop|upgrade>` and
-    exits 0 without writing. --yes skips the confirmation prompt for
-    non-interactive callers.
-  cli.update.flag.yes: "skip the confirmation prompt and apply the upgrade non-interactively"
-  cli.update.flag.check: "report current vs. latest and exit without writing"
-  cli.update.picker.title: "Update okt"
+    Detecta la ruta del binario en ejecución (os.Executable), consulta la API de
+    releases de GitHub por la tag más reciente, descarga el asset correspondiente y
+    reemplaza el binario en disco atómicamente. El proceso actual termina
+    después del swap; la siguiente invocación ejecuta la nueva versión.
+    
+    --check imprime `current=<v> latest=<v> action=<noop|upgrade>` y
+    sale con 0 sin escribir. --yes omite el prompt de confirmación para
+    llamadores no interactivos.
+  cli.update.flag.yes: "omite el prompt de confirmación y aplica la actualización de forma no interactiva"
+  cli.update.flag.check: "informa actual vs. más reciente y sale sin escribir"
+  cli.update.picker.title: "Actualizar okt"
   cli.update.picker.line: "current=%s  →  latest=%s"
-  cli.update.picker.hint: "y apply · n cancel · ctrl+c quit"
-  cli.update.picker.no_tty: "interactive confirmation needs a TTY; pass --yes for headless update or --check for a dry-run report"
-  cli.update.picker.aborted: "update aborted; binary unchanged"
-  cli.update.err.fetch_latest: "fetch latest release tag: %s"
-  cli.update.err.download_asset: "download asset %s: %s"
-  cli.update.err.swap_binary: "atomic swap of %s: %s"
-  cli.update.err.unsupported_platform: "no published asset for %s/%s"
-  cli.update.err.extract_asset: "extract %s from archive: %s"
-  cli.update.err.fetch_checksum: "fetch release checksums: %s"
-  cli.update.err.checksum_mismatch: "checksum mismatch: expected %s got %s"
-  cli.update.err.asset_too_large: "asset %s exceeds %d-byte size cap"
-  cli.update.err.windows_unsupported: "okt update not yet supported on Windows; reinstall via install.ps1"
-  cli.update.err.dev_build: "this is a dev build; rebuild from source or install a release"
-  cli.update.err.backup_failed_fmt: "pre-swap backup failed: %s; binary unchanged"
+  cli.update.picker.hint: "y aplicar · n cancelar · ctrl+c salir"
+  cli.update.picker.no_tty: "confirmación interactiva requiere TTY; pasa --yes para update headless o --check para informe dry-run"
+  cli.update.picker.aborted: "update abortado; binario sin cambios"
+  cli.update.err.fetch_latest: "obtener tag de release más reciente: %s"
+  cli.update.err.download_asset: "descargar asset %s: %s"
+  cli.update.err.swap_binary: "swap atómico de %s: %s"
+  cli.update.err.unsupported_platform: "ningún asset publicado para %s/%s"
+  cli.update.err.extract_asset: "extraer %s del archivo: %s"
+  cli.update.err.fetch_checksum: "obtener checksums de release: %s"
+  cli.update.err.checksum_mismatch: "checksum no coincide: esperado %s obtenido %s"
+  cli.update.err.asset_too_large: "asset %s supera el límite de %d bytes"
+  cli.update.err.windows_unsupported: "okt update aún no soportado en Windows; reinstala via install.ps1"
+  cli.update.err.dev_build: "esto es un build de dev; recompila desde source o instala un release"
+  cli.update.err.backup_failed_fmt: "backup pre-swap falló: %s; binario sin cambios"
 
   # okt config validate --migrate health-check additions (#365).
   cli.config.validate.flag.migrate: "corre MigrateLayout + EnsureDefaultFiles antes de LoadBundle/ValidateBundle para que los backfills de schema aparezcan en el reporte"
@@ -1214,7 +1212,7 @@ keys:
 
   # guard.* — hint strings surfaced in guard.violated payloads.
   guard.wave_gate.hint: "Espera a que la wave anterior termine — las tasks de waves anteriores en el mismo plan deben llegar a Done antes de que esta empiece."
-  guard.subtasks_complete.hint: "Move every direct sub-task into the final bucket before promoting the parent."
+  guard.subtasks_complete.hint: "Mueve cada sub-task directa al bucket final antes de promover el parent."
   # guard.common.* — hints shared across presets. Per-preset override via
   # the preset-scoped namespace (guard.<preset>.<stage>.<rule>...) when copy diverges.
   guard.common.archive.comments_tagged.documentation.hint: "Añade un comentario #documentation resumiendo lo que se entregó antes de archivar."

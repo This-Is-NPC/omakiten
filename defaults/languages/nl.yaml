@@ -59,48 +59,47 @@ keys:
   cli.config.short: "Beheer de canonieke omakiten.yaml bundle"
   cli.config.validate.short: "Valideer een omakiten.yaml bestand"
   cli.config.presets.short: "Toon de officiële workflow presets"
-  cli.projects.short: "Project lifecycle utilities (delete — destructive ops)"
-  cli.projects.delete.short: "Hard-delete a registered project and every dependent row (irreversible)"
+  cli.projects.short: "Project-levenscyclushulpmiddelen (delete — destructieve ops)"
+  cli.projects.delete.short: "Hard-delete van een geregistreerd project en elke afhankelijke rij (onomkeerbaar)"
   cli.projects.delete.long: |-
-    Resolve the project by numeric id or slug, write a recovery
-    snapshot to the rolling backups directory, then cascade-delete
-    every dependent row (tasks, comments, plans, tag attachments,
+    Los het project op via numerieke id of slug, schrijf een recovery-
+    snapshot naar de rollende backup-map en cascade-delete
+    elke afhankelijke rij (tasks, comments, plans, tag attachments,
     context entries, errors, activity log).
-
-    Backup failure aborts the delete before anything is touched.
-    Filesystem state under <root_path>/.omakiten/ is preserved —
-    only DB rows are removed.
-
-    Without --yes the command prints counters and prompts for
-    confirmation; piping without --yes errors out instead of
-    blocking on stdin.
-  cli.projects.delete.flag.yes: "skip the interactive confirmation and apply the delete non-interactively"
-  cli.projects.delete.counters_fmt: "tasks: %d · comments: %d · plans: %d · tags: %d · activity: %d entries"
-  cli.projects.delete.prompt: "delete project %q? [y/N]:"
-  cli.projects.delete.success_fmt: "project %q deleted · backup → %s"
-  cli.projects.delete.err.no_tty: "interactive confirmation required; pass --yes to skip"
-  cli.projects.delete.err.aborted: "delete aborted; nothing removed"
-  cli.projects.delete.err.not_found: "project not found"
-  cli.db.short: "Database lifecycle utilities (backup, snapshot, restore — sysadmin ops)"
-  cli.db.backup.short: "Write a snapshot of the live SQLite database to the rolling backups directory"
+    
+    Backup-fout breekt delete af voordat iets wordt aangeraakt.
+    Filesystem-status onder <root_path>/.omakiten/ blijft behouden —
+    alleen DB-rijen worden verwijderd.
+    
+    Zonder --yes toont het commando tellers en vraagt
+    bevestiging; pipen zonder --yes faalt in plaats van
+    op stdin te blokkeren.
+  cli.projects.delete.flag.yes: "interactieve bevestiging overslaan en delete non-interactief toepassen"
+  cli.projects.delete.counters_fmt: "tasks: %d · comments: %d · plans: %d · tags: %d · activiteit: %d items"
+  cli.projects.delete.prompt: "project %q verwijderen? [y/N]:"
+  cli.projects.delete.success_fmt: "project %q verwijderd · backup → %s"
+  cli.projects.delete.err.no_tty: "interactieve bevestiging vereist; geef --yes om over te slaan"
+  cli.projects.delete.err.aborted: "delete afgebroken; niets verwijderd"
+  cli.projects.delete.err.not_found: "project niet gevonden"
+  cli.db.short: "Database-levenscyclushulpmiddelen (backup, snapshot, restore — sysadmin-ops)"
+  cli.db.backup.short: "Schrijf een snapshot van de actieve SQLite-database naar de rollende backup-map"
   cli.db.backup.long: |-
-    Copy the active SQLite database to a timestamped snapshot under
-    $XDG_STATE_HOME/omakiten/backups/ (default ~/.local/state/omakiten/backups/)
-    and prune older snapshots according to settings.backup.retention_count.
-
-    The copy is atomic: the destination only appears once the body has
-    been written and renamed into place. A previous partial copy never
-    survives a failure.
-
-    --out pins the snapshot path explicitly (parent directories are
-    created as needed). When --out is supplied the retention prune
-    pass is skipped — the user owns the rotation policy outside the
-    default state directory.
-  cli.db.backup.flag.out: "write the snapshot to this explicit file path (skips retention prune)"
-  cli.db.backup.flag.force: "overwrite the target file when --out points at an existing path"
-  cli.db.backup.error.system_path_fmt: "refusing to write backup to system path %q (under %s)"
-  cli.db.backup.error.exists_fmt: "refusing to overwrite existing file %q; pass --force to replace"
-  cli.db.backup.success_fmt: "backup written to %s"
+    Kopieer de actieve SQLite-database naar een snapshot met timestamp onder
+    $XDG_STATE_HOME/omakiten/backups/ (standaard ~/.local/state/omakiten/backups/)
+    en prune oudere snapshots volgens settings.backup.retention_count.
+    
+    De kopie is atomisch: de bestemming verschijnt pas als de inhoud
+    is geschreven en hernoemd. Een eerdere gedeeltelijke kopie overleeft
+    geen fout.
+    
+    --out legt het snapshot-pad expliciet vast (oudermappen worden
+    indien nodig aangemaakt). Met --out wordt retention prune
+    overgeslagen — rotatiebeleid ligt buiten de standaard state-map.
+  cli.db.backup.flag.out: "snapshot naar dit expliciete pad schrijven (sla retention prune over)"
+  cli.db.backup.flag.force: "doelbestand overschrijven wanneer --out naar een bestaand pad wijst"
+  cli.db.backup.error.system_path_fmt: "weigering backup te schrijven naar systeempad %q (onder %s)"
+  cli.db.backup.error.exists_fmt: "weigering bestaand bestand %q te overschrijven; geef --force om te vervangen"
+  cli.db.backup.success_fmt: "backup geschreven naar %s"
   cli.preset.omakase.title: "Keuze van de chef"
   cli.preset.omakase.description: "Uitgebalanceerde workflow met self-branch, resume en documentatie-guards."
   cli.preset.izakaya.title: "Casual"
@@ -151,7 +150,7 @@ keys:
   cli.workflow.short: "Inspecteer de workflow-configuratie"
   cli.workflow.show.short: "Toon de actieve workflow"
   cli.workflow.orphan.short: "Bekijk of herbind tasks waarvan de bucket is gedeactiveerd door een workflow-swap"
-  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit enabled: MCP commands, personas, laws, templates, and skills still resolve from the project root kit."
+  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit ingeschakeld: MCP-commando's, personas, laws, templates en skills worden nog steeds vanuit het project-root-kit opgelost."
   cli.config.init.long: |-
     Seed een standalone config-install geworteld in de gekozen scope.
 
@@ -243,14 +242,14 @@ keys:
   cli.task.add.flag.title: "titel van de task"
   cli.task.add.flag.description: "beschrijving van de task"
   cli.task.add.flag.bucket: "bucket key (default: eerste bucket van de actieve workflow)"
-  cli.task.add.flag.parent: "optional parent task id; when set, the new row is attached as a sub-task via AddSub (parent must be active and in the same project)"
+  cli.task.add.flag.parent: "optionele parent task-id; indien gezet wordt de nieuwe rij als sub-task via AddSub gekoppeld (parent moet actief zijn in hetzelfde project)"
   cli.task.edit.flag.title: "titel van de task"
   cli.task.edit.flag.description: "beschrijving van de task"
   cli.task.edit.flag.priority: "task priority: low, normal of high"
   cli.task.edit.flag.bucket: "target bucket key"
-  cli.task.edit.flag.parent: "optional re-parent target id; 0 clears the FK (becomes a root); any positive id re-parents with anti-cycle enforcement"
+  cli.task.edit.flag.parent: "optionele re-parent doel-id; 0 wist FK (wordt root); positief id re-parents met anti-cycle enforcement"
   cli.task.list.flag.bucket: "bucket key"
-  cli.task.list.flag.parent: "optional parent filter; omit for no filter, 0 for roots only (parent_id IS NULL), positive id for that parent's direct children"
+  cli.task.list.flag.parent: "optioneel parent-filter; weglaten voor geen filter, 0 alleen roots (parent_id IS NULL), positief id voor directe kinderen van die parent"
   cli.task.move.flag.to: "target bucket key"
   cli.task.delete.flag.confirm: "verplicht: bevestig het destructieve delete"
   cli.comment.add.flag.body: "comment-body"
@@ -473,22 +472,22 @@ keys:
   tui.confirm.comment_delete_fmt: "Bevestig delete van comment #%d. Druk nogmaals op d; esc annuleert."
   tui.confirm.task_delete_fmt: "Bevestig delete van task #%d %q. Druk nogmaals op d; esc annuleert."
   tui.status.task_deleted_fmt: "Task #%d verwijderd"
-  tui.confirm.home_project_delete_fmt: "Confirm delete project %q (cascade tasks, plans, errors). Press d again; esc cancels. A backup snapshot is written first."
-  tui.notification.project_delete.title_fmt: "Delete project %q?"
-  tui.notification.project_delete.body_fmt: "Tasks: %d · Comments: %d · Plans: %d · Tags: %d · Activity log: %d entries. All permanently removed. Backup will be written to ~/.local/state/omakiten/backups/."
-  notifications.home-project-delete-confirm.description: "Confirm a destructive project delete with one keystroke; shows pre-resolved row counters so the user sees the blast radius."
-  notifications.home-project-delete-confirm.confirm_label: "Delete"
-  notifications.home-project-delete-confirm.cancel_label: "Cancel"
+  tui.confirm.home_project_delete_fmt: "Bevestig delete project %q (cascade tasks, plans, errors). Druk nogmaals op d; esc annuleert. Eerst wordt een backup-snapshot geschreven."
+  tui.notification.project_delete.title_fmt: "Project %q verwijderen?"
+  tui.notification.project_delete.body_fmt: "Tasks: %d · Comments: %d · Plans: %d · Tags: %d · Activity log: %d entries. Alles permanent verwijderd. Backup wordt geschreven naar ~/.local/state/omakiten/backups/."
+  notifications.home-project-delete-confirm.description: "Bevestig een destructieve project delete met één toets; toont vooraf opgeloste rijtellers zodat de gebruiker de impact ziet."
+  notifications.home-project-delete-confirm.confirm_label: "Verwijderen"
+  notifications.home-project-delete-confirm.cancel_label: "Annuleren"
   notifications.footer.details: "details"
-  notifications.footer.close: "close"
-  notifications.footer.cancel: "cancel"
-  notifications.kitten_orphan_migration.migrate_label: "Migrate"
-  notifications.kitten_orphan_migration.skip_label: "Skip"
-  cli.db.backup.prune_warn_fmt: "prune skipped: %s"
-  tui.status.project_deleted_fmt: "Project %q deleted · backup → %s"
-  tui.status.deleting_project_fmt: "Deleting project %q..."
-  tui.footer.delete_project: "delete project"
-  tui.footer.confirm_delete_project: "confirm delete · esc cancels"
+  notifications.footer.close: "sluiten"
+  notifications.footer.cancel: "annuleren"
+  notifications.kitten_orphan_migration.migrate_label: "Migreren"
+  notifications.kitten_orphan_migration.skip_label: "Overslaan"
+  cli.db.backup.prune_warn_fmt: "prune overgeslagen: %s"
+  tui.status.project_deleted_fmt: "Project %q verwijderd · backup → %s"
+  tui.status.deleting_project_fmt: "Project %q verwijderen..."
+  tui.footer.delete_project: "project verwijderen"
+  tui.footer.confirm_delete_project: "delete bevestigen · esc annuleert"
   tui.status.orphan_tags_deleted_fmt: "%d wees-tag(s) verwijderd"
   tui.status.tag_in_use_fmt: "Tag %q is in gebruik (%d referenties) — kan niet verwijderen"
   tui.status.task_not_found: "Task niet gevonden. Druk op esc om terug te keren."
@@ -891,17 +890,17 @@ keys:
   tui.status.theme_picker: "Thema picker"
   tui.status.no_config_profiles: "Geen config profiles gevonden"
   tui.status.config_picker: "Config picker"
-  tui.status.no_subtask_kit_profiles: "No sub-task kit profiles found"
-  tui.status.subtask_kit_picker: "Sub-task kit picker"
-  tui.status.subtask_kit_picker_cancelled: "Sub-task kit picker cancelled"
-  tui.status.subtask_kit_switched_fmt: "Sub-task kit set to %s"
-  tui.status.subtask_kit_cleared: "Sub-task kit cleared (inherit root)"
-  tui.status.subtask_kit_already_none: "Sub-task kit already inherits root"
-  tui.status.subtask_kit_switch_failed_fmt: "Sub-task kit switch failed: %s"
+  tui.status.no_subtask_kit_profiles: "Geen sub-task kit-profielen gevonden"
+  tui.status.subtask_kit_picker: "Sub-task kit-kiezer"
+  tui.status.subtask_kit_picker_cancelled: "Sub-task kit-kiezer geannuleerd"
+  tui.status.subtask_kit_switched_fmt: "Sub-task kit ingesteld op %s"
+  tui.status.subtask_kit_cleared: "Sub-task kit gewist (erft root)"
+  tui.status.subtask_kit_already_none: "Sub-task kit erft al root"
+  tui.status.subtask_kit_switch_failed_fmt: "Sub-task kit-wissel mislukt: %s"
   tui.kicker.subtask_kit_active_fmt: "Sub-task kit · active: %s"
-  tui.picker.hint.subtask_kit: "up/down: move · enter: apply (hot-reload) · esc: cancel"
-  tui.picker.subtask_kit_none: "none (inherit root)"
-  tui.subtask_board.fallback_lane_name: "All"
+  tui.picker.hint.subtask_kit: "op/neer: verplaats · enter: toepassen (hot-reload) · esc: annuleren"
+  tui.picker.subtask_kit_none: "geen (erft root)"
+  tui.subtask_board.fallback_lane_name: "Alle"
   tui.status.no_template_selected: "Geen template geselecteerd"
   tui.status.template_not_found: "Template niet gevonden"
   tui.status.template_picker_needs_project: "De TUI moet binnen een project geopend zijn om een template-default toe te wijzen"
@@ -1068,74 +1067,73 @@ keys:
   cli.setup.picker.no_tty: "interactieve picker vereist een TTY; geef OKT_CLI_LANG, OKT_TUI_LANG, OKT_AGENT_LANG, OKT_PRESET, OKT_HARNESSES (of bijhorende --flags) voor headless install"
 
 # okt uninstall — in-binary counterpart of uninstall.sh / uninstall.ps1.
-  cli.uninstall.short: "Remove the installed okt binary and shell-rc wrapper (data + config preserved by default)"
+  cli.uninstall.short: "Verwijdert het geïnstalleerde okt-binary en shell-rc-wrapper (data + config standaard behouden)"
   cli.uninstall.long: |-
-    Remove the binary the installer wrote to $INSTALL_DIR (defaults to
-    ~/.local/bin on POSIX and %LOCALAPPDATA%Programsokt on Windows) and
-    strip the okt() wrapper block from every rc/profile target.
-
-
-    No automatic backup. Run `okt db backup` first if you want a
-    snapshot of the SQLite DB before purging — uninstall removes
-    user-owned data by intent, so the safety net is opt-in via the
-    standalone backup command.
-
-    Local state is preserved unless explicitly opted-out via --purge-data
-    (SQLite DB under $XDG_DATA_HOME/omakiten) or --purge-config (active
-    yaml profile + entity folders under $XDG_CONFIG_HOME/omakiten).
-    --purge is shorthand for both.
-
-    Without flags on a TTY the picker shows what would be deleted with
-    sizes and asks per purge target. --yes skips the picker entirely.
-  cli.uninstall.flag.yes: "skip the interactive picker and apply the resolved flag set non-interactively"
-  cli.uninstall.flag.purge-data: "also delete $XDG_DATA_HOME/omakiten (SQLite DB + WAL/SHM) — irreversible"
-  cli.uninstall.flag.purge-config: "also delete $XDG_CONFIG_HOME/omakiten (active yaml + entity folders) — irreversible"
-  cli.uninstall.flag.purge: "shorthand for --purge-data + --purge-config — irreversible"
-  cli.uninstall.picker.title: "Uninstall okt"
-  cli.uninstall.picker.hint: "↑/↓ navigate · enter toggle · y apply · ctrl+c quit"
-  cli.uninstall.picker.warn: "THIS CANNOT BE UNDONE"
+    Verwijdert het binary dat de installer naar $INSTALL_DIR schreef (standaard
+    ~/.local/bin op POSIX en %LOCALAPPDATA%\Programs\okt op Windows) en
+    haalt het okt()-wrapperblok uit elk rc/profile-doel.
+    
+    Lokale staat blijft behouden tenzij expliciet opt-out via --purge-data
+    (SQLite DB onder $XDG_DATA_HOME/omakiten) of --purge-config (actief
+    yaml-profiel + entity-mappen onder $XDG_CONFIG_HOME/omakiten).
+    --purge is shorthand voor beide.
+    
+    Zonder flags op een TTY toont de picker wat verwijderd zou worden met
+    groottes en vraagt per purge-doel. --yes slaat de picker volledig over.
+    
+    Geen automatische backup. Voer eerst `okt db backup` uit als je een
+    snapshot van de SQLite DB wilt vóór purge — deinstallatie verwijdert
+    bewust gebruikersdata; het vangnet is opt-in via het
+    standalone backup-commando.
+  cli.uninstall.flag.yes: "sla de interactieve picker over en pas de opgeloste flag-set non-interactief toe"
+  cli.uninstall.flag.purge-data: "verwijdert ook $XDG_DATA_HOME/omakiten (SQLite DB + WAL/SHM) — onomkeerbaar"
+  cli.uninstall.flag.purge-config: "verwijdert ook $XDG_CONFIG_HOME/omakiten (actief yaml + entity-mappen) — onomkeerbaar"
+  cli.uninstall.flag.purge: "shorthand voor --purge-data + --purge-config — onomkeerbaar"
+  cli.uninstall.picker.title: "okt deïnstalleren"
+  cli.uninstall.picker.hint: "↑/↓ navigeren · enter wisselen · y toepassen · ctrl+c afsluiten"
+  cli.uninstall.picker.warn: "DIT KAN NIET ONGEDAN WORDEN GEMAAKT"
   cli.uninstall.picker.binary: "binary  %s"
-  cli.uninstall.picker.wrappers: "shell wrappers (rc/profile blocks)"
-  cli.uninstall.picker.data: "data dir  %s  (%s)"
-  cli.uninstall.picker.config: "config dir  %s  (%s)"
-  cli.uninstall.picker.no_tty: "interactive picker needs a TTY; pass --yes (plus optional --purge-* flags) for headless uninstall"
-  cli.uninstall.picker.aborted: "uninstall aborted; nothing removed"
+  cli.uninstall.picker.wrappers: "shell-wrappers (rc/profile-blokken)"
+  cli.uninstall.picker.data: "datamap  %s  (%s)"
+  cli.uninstall.picker.config: "configmap  %s  (%s)"
+  cli.uninstall.picker.no_tty: "interactieve picker vereist een TTY; geef --yes (plus optionele --purge-* flags) voor headless deïnstallatie"
+  cli.uninstall.picker.aborted: "deïnstallatie afgebroken; niets verwijderd"
 
   # okt update — in-binary counterpart of the curl|bash installer for refresh.
-  cli.update.short: "Fetch the latest okt release and atomically swap the installed binary"
+  cli.update.short: "Haalt de nieuwste okt-release op en vervangt het geïnstalleerde binary atomisch"
   cli.update.long: |-
-    Detect the running binary's path (os.Executable), query the GitHub
-    releases API for the latest tag, download the matching asset, and
-    atomically replace the binary on disk. The current process exits
-    after the swap; the next invocation runs the new version.
-
-    --check prints `current=<v> latest=<v> action=<noop|upgrade>` and
-    exits 0 without writing. --yes skips the confirmation prompt for
-    non-interactive callers.
-  cli.update.flag.yes: "skip the confirmation prompt and apply the upgrade non-interactively"
-  cli.update.flag.check: "report current vs. latest and exit without writing"
-  cli.update.picker.title: "Update okt"
+    Detecteert het pad van het draaiende binary (os.Executable), bevraagt de GitHub-
+    releases-API voor de nieuwste tag, downloadt het bijbehorende asset en
+    vervangt het binary op schijf atomisch. Het huidige proces stopt
+    na de swap; de volgende aanroep draait de nieuwe versie.
+    
+    --check print `current=<v> latest=<v> action=<noop|upgrade>` en
+    stopt met 0 zonder te schrijven. --yes slaat de bevestiging over voor
+    non-interactieve callers.
+  cli.update.flag.yes: "sla de bevestigingsprompt over en pas de upgrade non-interactief toe"
+  cli.update.flag.check: "rapporteer huidig vs. nieuwste en stop zonder te schrijven"
+  cli.update.picker.title: "okt bijwerken"
   cli.update.picker.line: "current=%s  →  latest=%s"
-  cli.update.picker.hint: "y apply · n cancel · ctrl+c quit"
-  cli.update.picker.no_tty: "interactive confirmation needs a TTY; pass --yes for headless update or --check for a dry-run report"
-  cli.update.picker.aborted: "update aborted; binary unchanged"
-  cli.update.err.fetch_latest: "fetch latest release tag: %s"
-  cli.update.err.download_asset: "download asset %s: %s"
-  cli.update.err.swap_binary: "atomic swap of %s: %s"
-  cli.update.err.unsupported_platform: "no published asset for %s/%s"
-  cli.update.err.extract_asset: "extract %s from archive: %s"
-  cli.update.err.fetch_checksum: "fetch release checksums: %s"
-  cli.update.err.checksum_mismatch: "checksum mismatch: expected %s got %s"
-  cli.update.err.asset_too_large: "asset %s exceeds %d-byte size cap"
-  cli.update.err.windows_unsupported: "okt update not yet supported on Windows; reinstall via install.ps1"
-  cli.update.err.dev_build: "this is a dev build; rebuild from source or install a release"
-  cli.update.err.backup_failed_fmt: "pre-swap backup failed: %s; binary unchanged"
+  cli.update.picker.hint: "y toepassen · n annuleren · ctrl+c afsluiten"
+  cli.update.picker.no_tty: "interactieve bevestiging vereist een TTY; geef --yes voor headless update of --check voor dry-run rapport"
+  cli.update.picker.aborted: "update afgebroken; binary ongewijzigd"
+  cli.update.err.fetch_latest: "nieuwste release-tag ophalen: %s"
+  cli.update.err.download_asset: "asset %s downloaden: %s"
+  cli.update.err.swap_binary: "atomische swap van %s: %s"
+  cli.update.err.unsupported_platform: "geen gepubliceerd asset voor %s/%s"
+  cli.update.err.extract_asset: "%s uit archief extraheren: %s"
+  cli.update.err.fetch_checksum: "release-checksums ophalen: %s"
+  cli.update.err.checksum_mismatch: "checksum komt niet overeen: verwacht %s gekregen %s"
+  cli.update.err.asset_too_large: "asset %s overschrijdt limiet van %d bytes"
+  cli.update.err.windows_unsupported: "okt update nog niet ondersteund op Windows; herinstalleer via install.ps1"
+  cli.update.err.dev_build: "dit is een dev-build; herbouw vanuit source of installeer een release"
+  cli.update.err.backup_failed_fmt: "pre-swap backup mislukt: %s; binary ongewijzigd"
 
   # okt config validate --migrate health-check additions (#365).
   cli.config.validate.flag.migrate: "run MigrateLayout + EnsureDefaultFiles before LoadBundle/ValidateBundle so schema backfills land in the report"
-  cli.update.err.stage_binary_fmt: "stage extracted binary for pre-swap health check: %s"
-  cli.update.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); binary unchanged — run `okt config validate --migrate` for details"
-  cli.update.err.config_validation_exec_fmt: "run staged binary health check: %s"
+  cli.update.err.stage_binary_fmt: "geëxtraheerd binary stagen voor pre-swap health check: %s"
+  cli.update.err.config_validation_failed_fmt: "config health check mislukt (%d fouten, eerste: %s); binary ongewijzigd — voer `okt config validate --migrate` uit voor details"
+  cli.update.err.config_validation_exec_fmt: "health check van staged binary uitvoeren: %s"
   cli.tui.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); run `okt config validate --migrate` for details"
   # Remediation hint copy (#367) — %s slot carries the suggested command literal.
   cli.config.validate.remediation.missing_shipped_file: "Restore the shipped default files: %s — your custom/ subtree is preserved; back up direct edits to shipped files first."
@@ -1210,7 +1208,7 @@ keys:
 
   # guard.* — hint strings surfaced in guard.violated payloads.
   guard.wave_gate.hint: "Wacht tot de vorige wave klaar is — tasks van eerdere waves in hetzelfde plan moeten Done bereiken voordat deze begint."
-  guard.subtasks_complete.hint: "Move every direct sub-task into the final bucket before promoting the parent."
+  guard.subtasks_complete.hint: "Verplaats elke directe sub-task naar de finale bucket voordat de parent wordt gepromoveerd."
   # guard.common.* — hints shared across presets. Per-preset override via
   # the preset-scoped namespace (guard.<preset>.<stage>.<rule>...) when copy diverges.
   guard.common.archive.comments_tagged.documentation.hint: "Voeg een #documentation-comment toe die samenvat wat er is geleverd voordat je archiveert."

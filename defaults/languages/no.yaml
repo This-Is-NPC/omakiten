@@ -59,48 +59,47 @@ keys:
   cli.config.short: "Administrer den kanoniske omakiten.yaml-pakken"
   cli.config.validate.short: "Validér en omakiten.yaml-fil"
   cli.config.presets.short: "List offisielle workflow-presets"
-  cli.projects.short: "Project lifecycle utilities (delete — destructive ops)"
-  cli.projects.delete.short: "Hard-delete a registered project and every dependent row (irreversible)"
+  cli.projects.short: "Prosjekt livssyklus-verktøy (delete — destruktive ops)"
+  cli.projects.delete.short: "Hard-delete et registrert prosjekt og hver avhengig rad (irreversibelt)"
   cli.projects.delete.long: |-
-    Resolve the project by numeric id or slug, write a recovery
-    snapshot to the rolling backups directory, then cascade-delete
-    every dependent row (tasks, comments, plans, tag attachments,
+    Finn prosjektet via numerisk id eller slug, skriv et recovery-
+    snapshot til den rullerende backup-mappen og cascade-delete
+    hver avhengig rad (tasks, comments, plans, tag attachments,
     context entries, errors, activity log).
-
-    Backup failure aborts the delete before anything is touched.
-    Filesystem state under <root_path>/.omakiten/ is preserved —
-    only DB rows are removed.
-
-    Without --yes the command prints counters and prompts for
-    confirmation; piping without --yes errors out instead of
-    blocking on stdin.
-  cli.projects.delete.flag.yes: "skip the interactive confirmation and apply the delete non-interactively"
-  cli.projects.delete.counters_fmt: "tasks: %d · comments: %d · plans: %d · tags: %d · activity: %d entries"
-  cli.projects.delete.prompt: "delete project %q? [y/N]:"
-  cli.projects.delete.success_fmt: "project %q deleted · backup → %s"
-  cli.projects.delete.err.no_tty: "interactive confirmation required; pass --yes to skip"
-  cli.projects.delete.err.aborted: "delete aborted; nothing removed"
-  cli.projects.delete.err.not_found: "project not found"
-  cli.db.short: "Database lifecycle utilities (backup, snapshot, restore — sysadmin ops)"
-  cli.db.backup.short: "Write a snapshot of the live SQLite database to the rolling backups directory"
+    
+    Backup-feil avbryter delete før noe berøres.
+    Filesystem-tilstand under <root_path>/.omakiten/ bevares —
+    kun DB-rader fjernes.
+    
+    Uten --yes skriver kommandoen tellere og ber om
+    bekreftelse; piping uten --yes feiler i stedet for å
+    blokkere på stdin.
+  cli.projects.delete.flag.yes: "hopp over interaktiv bekreftelse og bruk delete non-interaktivt"
+  cli.projects.delete.counters_fmt: "tasks: %d · comments: %d · plans: %d · tags: %d · aktivitet: %d oppføringer"
+  cli.projects.delete.prompt: "slette project %q? [y/N]:"
+  cli.projects.delete.success_fmt: "project %q slettet · backup → %s"
+  cli.projects.delete.err.no_tty: "interaktiv bekreftelse kreves; oppgi --yes for å hoppe over"
+  cli.projects.delete.err.aborted: "delete avbrutt; ingenting fjernet"
+  cli.projects.delete.err.not_found: "project ikke funnet"
+  cli.db.short: "Database livssyklus-verktøy (backup, snapshot, restore — sysadmin-ops)"
+  cli.db.backup.short: "Skriv et snapshot av den aktive SQLite-databasen til den rullerende backup-mappen"
   cli.db.backup.long: |-
-    Copy the active SQLite database to a timestamped snapshot under
-    $XDG_STATE_HOME/omakiten/backups/ (default ~/.local/state/omakiten/backups/)
-    and prune older snapshots according to settings.backup.retention_count.
-
-    The copy is atomic: the destination only appears once the body has
-    been written and renamed into place. A previous partial copy never
-    survives a failure.
-
-    --out pins the snapshot path explicitly (parent directories are
-    created as needed). When --out is supplied the retention prune
-    pass is skipped — the user owns the rotation policy outside the
-    default state directory.
-  cli.db.backup.flag.out: "write the snapshot to this explicit file path (skips retention prune)"
-  cli.db.backup.flag.force: "overwrite the target file when --out points at an existing path"
-  cli.db.backup.error.system_path_fmt: "refusing to write backup to system path %q (under %s)"
-  cli.db.backup.error.exists_fmt: "refusing to overwrite existing file %q; pass --force to replace"
-  cli.db.backup.success_fmt: "backup written to %s"
+    Kopier den aktive SQLite-databasen til et tidsstemplet snapshot under
+    $XDG_STATE_HOME/omakiten/backups/ (standard ~/.local/state/omakiten/backups/)
+    og prune eldre snapshots i henhold til settings.backup.retention_count.
+    
+    Kopien er atomisk: destinasjonen vises først når innholdet er
+    skrevet og omdøpt. En tidligere delvis kopi overlever
+    aldri en feil.
+    
+    --out fastsetter snapshot-stien eksplisitt (foreldremapper opprettes
+    ved behov). Med --out hoppes retention prune over —
+    brukeren eier rotasjonspolicyen utenfor standard state-mappen.
+  cli.db.backup.flag.out: "skriv snapshot til denne eksplisitte filstien (hopper over retention prune)"
+  cli.db.backup.flag.force: "overskriv målfilen når --out peker på en eksisterende sti"
+  cli.db.backup.error.system_path_fmt: "nekter å skrive backup til systemsti %q (under %s)"
+  cli.db.backup.error.exists_fmt: "nekter å overskrive eksisterende fil %q; oppgi --force for å erstatte"
+  cli.db.backup.success_fmt: "backup skrevet til %s"
   cli.preset.omakase.title: "Kokkens valg"
   cli.preset.omakase.description: "Balansert workflow med self-branch, resume og dokumentasjons-guards."
   cli.preset.izakaya.title: "Avslappet"
@@ -151,7 +150,7 @@ keys:
   cli.workflow.short: "Inspiser workflow-konfigurasjon"
   cli.workflow.show.short: "Vis den aktive workflow"
   cli.workflow.orphan.short: "Forhåndsvis eller knytt om tasks hvis bucket ble deaktivert av en workflow-bytte"
-  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit enabled: MCP commands, personas, laws, templates, and skills still resolve from the project root kit."
+  notice.subtask_kit.enabled.mcp_resolves_at_root: "Sub-task kit aktivert: MCP-kommandoer, personas, laws, templates og skills løses fortsatt fra prosjektets root-kit."
   cli.config.init.long: |-
     Frø en frittstående config-installasjon rotet i valgt scope.
 
@@ -242,14 +241,14 @@ keys:
   cli.task.add.flag.title: "task-tittel"
   cli.task.add.flag.description: "task-beskrivelse"
   cli.task.add.flag.bucket: "bucket-nøkkel (default til den aktive workflowens første bucket)"
-  cli.task.add.flag.parent: "optional parent task id; when set, the new row is attached as a sub-task via AddSub (parent must be active and in the same project)"
+  cli.task.add.flag.parent: "valgfri parent task-id; når satt festes den nye raden som sub-task via AddSub (parent må være aktiv i samme prosjekt)"
   cli.task.edit.flag.title: "task-tittel"
   cli.task.edit.flag.description: "task-beskrivelse"
   cli.task.edit.flag.priority: "task-prioritet: low, normal eller high"
   cli.task.edit.flag.bucket: "mål bucket-nøkkel"
-  cli.task.edit.flag.parent: "optional re-parent target id; 0 clears the FK (becomes a root); any positive id re-parents with anti-cycle enforcement"
+  cli.task.edit.flag.parent: "valgfri re-parent mål-id; 0 tømmer FK (blir root); positiv id re-parents med anti-cycle enforcement"
   cli.task.list.flag.bucket: "bucket-nøkkel"
-  cli.task.list.flag.parent: "optional parent filter; omit for no filter, 0 for roots only (parent_id IS NULL), positive id for that parent's direct children"
+  cli.task.list.flag.parent: "valgfritt parent-filter; utelat for intet filter, 0 kun roots (parent_id IS NULL), positiv id for direkte barn av den parent"
   cli.task.move.flag.to: "mål bucket-nøkkel"
   cli.task.delete.flag.confirm: "påkrevd: bekreft den destruktive slettingen"
   cli.comment.add.flag.body: "comment-tekst"
@@ -472,22 +471,22 @@ keys:
   tui.confirm.comment_delete_fmt: "Bekreft sletting comment #%d. Trykk d igjen; esc avbryter."
   tui.confirm.task_delete_fmt: "Bekreft sletting task #%d %q. Trykk d igjen; esc avbryter."
   tui.status.task_deleted_fmt: "Slettet task #%d"
-  tui.confirm.home_project_delete_fmt: "Confirm delete project %q (cascade tasks, plans, errors). Press d again; esc cancels. A backup snapshot is written first."
-  tui.notification.project_delete.title_fmt: "Delete project %q?"
-  tui.notification.project_delete.body_fmt: "Tasks: %d · Comments: %d · Plans: %d · Tags: %d · Activity log: %d entries. All permanently removed. Backup will be written to ~/.local/state/omakiten/backups/."
-  notifications.home-project-delete-confirm.description: "Confirm a destructive project delete with one keystroke; shows pre-resolved row counters so the user sees the blast radius."
-  notifications.home-project-delete-confirm.confirm_label: "Delete"
-  notifications.home-project-delete-confirm.cancel_label: "Cancel"
-  notifications.footer.details: "details"
-  notifications.footer.close: "close"
-  notifications.footer.cancel: "cancel"
-  notifications.kitten_orphan_migration.migrate_label: "Migrate"
-  notifications.kitten_orphan_migration.skip_label: "Skip"
-  cli.db.backup.prune_warn_fmt: "prune skipped: %s"
-  tui.status.project_deleted_fmt: "Project %q deleted · backup → %s"
-  tui.status.deleting_project_fmt: "Deleting project %q..."
-  tui.footer.delete_project: "delete project"
-  tui.footer.confirm_delete_project: "confirm delete · esc cancels"
+  tui.confirm.home_project_delete_fmt: "Bekreft delete project %q (cascade tasks, plans, errors). Trykk d igjen; esc avbryter. Et backup-snapshot skrives først."
+  tui.notification.project_delete.title_fmt: "Slette project %q?"
+  tui.notification.project_delete.body_fmt: "Tasks: %d · Comments: %d · Plans: %d · Tags: %d · Activity log: %d entries. Alt fjernes permanent. Backup skrives til ~/.local/state/omakiten/backups/."
+  notifications.home-project-delete-confirm.description: "Bekreft et destruktivt project delete med ett tastetrykk; viser forhåndsløste radteller så brukeren ser omfanget."
+  notifications.home-project-delete-confirm.confirm_label: "Slett"
+  notifications.home-project-delete-confirm.cancel_label: "Avbryt"
+  notifications.footer.details: "detaljer"
+  notifications.footer.close: "lukk"
+  notifications.footer.cancel: "avbryt"
+  notifications.kitten_orphan_migration.migrate_label: "Migrer"
+  notifications.kitten_orphan_migration.skip_label: "Hopp over"
+  cli.db.backup.prune_warn_fmt: "prune hoppet over: %s"
+  tui.status.project_deleted_fmt: "Project %q slettet · backup → %s"
+  tui.status.deleting_project_fmt: "Sletter project %q..."
+  tui.footer.delete_project: "slett project"
+  tui.footer.confirm_delete_project: "bekreft slett · esc avbryter"
   tui.status.orphan_tags_deleted_fmt: "%d foreldreløs(e) tag(s) slettet"
   tui.status.tag_in_use_fmt: "Tag %q er i bruk (%d referanser) — kan ikke slettes"
   tui.status.task_not_found: "Task ikke funnet. Trykk esc for å gå tilbake."
@@ -890,17 +889,17 @@ keys:
   tui.status.theme_picker: "Tema-velger"
   tui.status.no_config_profiles: "Ingen config-profiler funnet"
   tui.status.config_picker: "Config-velger"
-  tui.status.no_subtask_kit_profiles: "No sub-task kit profiles found"
-  tui.status.subtask_kit_picker: "Sub-task kit picker"
-  tui.status.subtask_kit_picker_cancelled: "Sub-task kit picker cancelled"
-  tui.status.subtask_kit_switched_fmt: "Sub-task kit set to %s"
-  tui.status.subtask_kit_cleared: "Sub-task kit cleared (inherit root)"
-  tui.status.subtask_kit_already_none: "Sub-task kit already inherits root"
-  tui.status.subtask_kit_switch_failed_fmt: "Sub-task kit switch failed: %s"
+  tui.status.no_subtask_kit_profiles: "Ingen sub-task kit-profiler funnet"
+  tui.status.subtask_kit_picker: "Sub-task kit-velger"
+  tui.status.subtask_kit_picker_cancelled: "Sub-task kit-velger avbrutt"
+  tui.status.subtask_kit_switched_fmt: "Sub-task kit satt til %s"
+  tui.status.subtask_kit_cleared: "Sub-task kit tømt (arver root)"
+  tui.status.subtask_kit_already_none: "Sub-task kit arver allerede root"
+  tui.status.subtask_kit_switch_failed_fmt: "Sub-task kit-bytt feilet: %s"
   tui.kicker.subtask_kit_active_fmt: "Sub-task kit · active: %s"
-  tui.picker.hint.subtask_kit: "up/down: move · enter: apply (hot-reload) · esc: cancel"
-  tui.picker.subtask_kit_none: "none (inherit root)"
-  tui.subtask_board.fallback_lane_name: "All"
+  tui.picker.hint.subtask_kit: "opp/ned: flytt · enter: bruk (hot-reload) · esc: avbryt"
+  tui.picker.subtask_kit_none: "ingen (arver root)"
+  tui.subtask_board.fallback_lane_name: "Alle"
   tui.status.no_template_selected: "Ingen template valgt"
   tui.status.template_not_found: "Template ikke funnet"
   tui.status.template_picker_needs_project: "TUI må åpnes inne i et prosjekt for å tilordne en template-default"
@@ -1066,74 +1065,73 @@ keys:
   cli.setup.picker.no_tty: "interaktiv velger trenger en TTY; oppgi OKT_CLI_LANG, OKT_TUI_LANG, OKT_AGENT_LANG, OKT_PRESET, OKT_HARNESSES (eller matchende --flagg) for headless-installasjon"
 
 # okt uninstall — in-binary counterpart of uninstall.sh / uninstall.ps1.
-  cli.uninstall.short: "Remove the installed okt binary and shell-rc wrapper (data + config preserved by default)"
+  cli.uninstall.short: "Fjerner installert okt-binary og shell-rc-wrapper (data + config bevares som standard)"
   cli.uninstall.long: |-
-    Remove the binary the installer wrote to $INSTALL_DIR (defaults to
-    ~/.local/bin on POSIX and %LOCALAPPDATA%Programsokt on Windows) and
-    strip the okt() wrapper block from every rc/profile target.
-
-
-    No automatic backup. Run `okt db backup` first if you want a
-    snapshot of the SQLite DB before purging — uninstall removes
-    user-owned data by intent, so the safety net is opt-in via the
-    standalone backup command.
-
-    Local state is preserved unless explicitly opted-out via --purge-data
-    (SQLite DB under $XDG_DATA_HOME/omakiten) or --purge-config (active
-    yaml profile + entity folders under $XDG_CONFIG_HOME/omakiten).
-    --purge is shorthand for both.
-
-    Without flags on a TTY the picker shows what would be deleted with
-    sizes and asks per purge target. --yes skips the picker entirely.
-  cli.uninstall.flag.yes: "skip the interactive picker and apply the resolved flag set non-interactively"
-  cli.uninstall.flag.purge-data: "also delete $XDG_DATA_HOME/omakiten (SQLite DB + WAL/SHM) — irreversible"
-  cli.uninstall.flag.purge-config: "also delete $XDG_CONFIG_HOME/omakiten (active yaml + entity folders) — irreversible"
-  cli.uninstall.flag.purge: "shorthand for --purge-data + --purge-config — irreversible"
-  cli.uninstall.picker.title: "Uninstall okt"
-  cli.uninstall.picker.hint: "↑/↓ navigate · enter toggle · y apply · ctrl+c quit"
-  cli.uninstall.picker.warn: "THIS CANNOT BE UNDONE"
+    Fjerner binaryet installatoren skrev til $INSTALL_DIR (standard
+    ~/.local/bin på POSIX og %LOCALAPPDATA%\Programs\okt på Windows) og
+    fjerner okt()-wrapperblokken fra hvert rc/profile-mål.
+    
+    Lokal tilstand bevares med mindre du eksplisitt opt-out via --purge-data
+    (SQLite DB under $XDG_DATA_HOME/omakiten) eller --purge-config (aktiv
+    yaml-profil + entity-mapper under $XDG_CONFIG_HOME/omakiten).
+    --purge er shorthand for begge.
+    
+    Uten flagg på en TTY viser pickeren hva som ville blitt slettet med
+    størrelser og spør per purge-mål. --yes hopper helt over pickeren.
+    
+    Ingen automatisk backup. Kjør `okt db backup` først hvis du vil ha et
+    snapshot av SQLite DB før purge — avinstallering fjerner
+    brukerdata med vilje; sikkerhetsnettet er opt-in via den
+    standalone backup-kommandoen.
+  cli.uninstall.flag.yes: "hopp over interaktiv picker og bruk oppløst flaggsett non-interaktivt"
+  cli.uninstall.flag.purge-data: "sletter også $XDG_DATA_HOME/omakiten (SQLite DB + WAL/SHM) — irreversibelt"
+  cli.uninstall.flag.purge-config: "sletter også $XDG_CONFIG_HOME/omakiten (aktiv yaml + entity-mapper) — irreversibelt"
+  cli.uninstall.flag.purge: "shorthand for --purge-data + --purge-config — irreversibelt"
+  cli.uninstall.picker.title: "Avinstaller okt"
+  cli.uninstall.picker.hint: "↑/↓ naviger · enter veksle · y bruk · ctrl+c avslutt"
+  cli.uninstall.picker.warn: "DETTE KAN IKKE ANGRER"
   cli.uninstall.picker.binary: "binary  %s"
-  cli.uninstall.picker.wrappers: "shell wrappers (rc/profile blocks)"
-  cli.uninstall.picker.data: "data dir  %s  (%s)"
-  cli.uninstall.picker.config: "config dir  %s  (%s)"
-  cli.uninstall.picker.no_tty: "interactive picker needs a TTY; pass --yes (plus optional --purge-* flags) for headless uninstall"
-  cli.uninstall.picker.aborted: "uninstall aborted; nothing removed"
+  cli.uninstall.picker.wrappers: "shell-wrappers (rc/profile-blokker)"
+  cli.uninstall.picker.data: "datamappe  %s  (%s)"
+  cli.uninstall.picker.config: "configmappe  %s  (%s)"
+  cli.uninstall.picker.no_tty: "interaktiv picker trenger TTY; oppgi --yes (pluss valgfrie --purge-*) for headless avinstallering"
+  cli.uninstall.picker.aborted: "avinstallering avbrutt; ingenting fjernet"
 
   # okt update — in-binary counterpart of the curl|bash installer for refresh.
-  cli.update.short: "Fetch the latest okt release and atomically swap the installed binary"
+  cli.update.short: "Henter nyeste okt-release og bytter installert binary atomisk"
   cli.update.long: |-
-    Detect the running binary's path (os.Executable), query the GitHub
-    releases API for the latest tag, download the matching asset, and
-    atomically replace the binary on disk. The current process exits
-    after the swap; the next invocation runs the new version.
-
-    --check prints `current=<v> latest=<v> action=<noop|upgrade>` and
-    exits 0 without writing. --yes skips the confirmation prompt for
-    non-interactive callers.
-  cli.update.flag.yes: "skip the confirmation prompt and apply the upgrade non-interactively"
-  cli.update.flag.check: "report current vs. latest and exit without writing"
-  cli.update.picker.title: "Update okt"
+    Finner stien til kjørende binary (os.Executable), spør GitHub
+    releases-API om nyeste tag, laster ned matchende asset og
+    erstatter binary på disk atomisk. Gjeldende prosess avsluttes
+    etter swap; neste kall kjører ny versjon.
+    
+    --check skriver `current=<v> latest=<v> action=<noop|upgrade>` og
+    avslutter med 0 uten å skrive. --yes hopper over bekreftelse for
+    non-interaktive kall.
+  cli.update.flag.yes: "hopp over bekreftelsesprompt og bruk upgrade non-interaktivt"
+  cli.update.flag.check: "rapporter nåværende vs. nyeste og avslutt uten å skrive"
+  cli.update.picker.title: "Oppdater okt"
   cli.update.picker.line: "current=%s  →  latest=%s"
-  cli.update.picker.hint: "y apply · n cancel · ctrl+c quit"
-  cli.update.picker.no_tty: "interactive confirmation needs a TTY; pass --yes for headless update or --check for a dry-run report"
-  cli.update.picker.aborted: "update aborted; binary unchanged"
-  cli.update.err.fetch_latest: "fetch latest release tag: %s"
-  cli.update.err.download_asset: "download asset %s: %s"
-  cli.update.err.swap_binary: "atomic swap of %s: %s"
-  cli.update.err.unsupported_platform: "no published asset for %s/%s"
-  cli.update.err.extract_asset: "extract %s from archive: %s"
-  cli.update.err.fetch_checksum: "fetch release checksums: %s"
-  cli.update.err.checksum_mismatch: "checksum mismatch: expected %s got %s"
-  cli.update.err.asset_too_large: "asset %s exceeds %d-byte size cap"
-  cli.update.err.windows_unsupported: "okt update not yet supported on Windows; reinstall via install.ps1"
-  cli.update.err.dev_build: "this is a dev build; rebuild from source or install a release"
-  cli.update.err.backup_failed_fmt: "pre-swap backup failed: %s; binary unchanged"
+  cli.update.picker.hint: "y bruk · n avbryt · ctrl+c avslutt"
+  cli.update.picker.no_tty: "interaktiv bekreftelse trenger TTY; oppgi --yes for headless update eller --check for dry-run-rapport"
+  cli.update.picker.aborted: "update avbrutt; binary uendret"
+  cli.update.err.fetch_latest: "hent nyeste release-tag: %s"
+  cli.update.err.download_asset: "last ned asset %s: %s"
+  cli.update.err.swap_binary: "atomisk swap av %s: %s"
+  cli.update.err.unsupported_platform: "ingen publisert asset for %s/%s"
+  cli.update.err.extract_asset: "pakk ut %s fra arkiv: %s"
+  cli.update.err.fetch_checksum: "hent release-checksums: %s"
+  cli.update.err.checksum_mismatch: "checksum stemmer ikke: forventet %s fikk %s"
+  cli.update.err.asset_too_large: "asset %s overskrider %d-byte grense"
+  cli.update.err.windows_unsupported: "okt update støttes ikke ennå på Windows; installer på nytt via install.ps1"
+  cli.update.err.dev_build: "dette er et dev-build; bygg på nytt fra source eller installer en release"
+  cli.update.err.backup_failed_fmt: "pre-swap backup mislyktes: %s; binary uendret"
 
   # okt config validate --migrate health-check additions (#365).
   cli.config.validate.flag.migrate: "run MigrateLayout + EnsureDefaultFiles before LoadBundle/ValidateBundle so schema backfills land in the report"
-  cli.update.err.stage_binary_fmt: "stage extracted binary for pre-swap health check: %s"
-  cli.update.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); binary unchanged — run `okt config validate --migrate` for details"
-  cli.update.err.config_validation_exec_fmt: "run staged binary health check: %s"
+  cli.update.err.stage_binary_fmt: "stage utpakket binary for pre-swap health check: %s"
+  cli.update.err.config_validation_failed_fmt: "config health check mislyktes (%d feil, første: %s); binary uendret — kjør `okt config validate --migrate` for detaljer"
+  cli.update.err.config_validation_exec_fmt: "kjør health check for staged binary: %s"
   cli.tui.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); run `okt config validate --migrate` for details"
   # Remediation hint copy (#367) — %s slot carries the suggested command literal.
   cli.config.validate.remediation.missing_shipped_file: "Restore the shipped default files: %s — your custom/ subtree is preserved; back up direct edits to shipped files first."
@@ -1208,7 +1206,7 @@ keys:
 
   # guard.* — hint strings surfaced in guard.violated payloads.
   guard.wave_gate.hint: "Vent til forrige wave er ferdig — tasks fra tidligere waves i samme plan må nå Done før denne starter."
-  guard.subtasks_complete.hint: "Move every direct sub-task into the final bucket before promoting the parent."
+  guard.subtasks_complete.hint: "Flytt hver direkte sub-task til den endelige bucket før parent promoveres."
   # guard.common.* — hints shared across presets. Per-preset override via
   # the preset-scoped namespace (guard.<preset>.<stage>.<rule>...) when copy diverges.
   guard.common.archive.comments_tagged.documentation.hint: "Legg til en #documentation-kommentar som oppsummerer hva som ble levert før du arkiverer."
