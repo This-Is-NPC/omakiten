@@ -1,0 +1,82 @@
+{
+  "ar": {
+    "cli.setup.picker.step": "خطوة",
+    "cli.setup.picker.hint.back": " · esc رجوع"
+  },
+  "da": {
+    "cli.setup.picker.step": "trin",
+    "cli.setup.picker.hint.back": " · esc tilbage"
+  },
+  "de": {
+    "cli.setup.picker.step": "Schritt",
+    "cli.setup.picker.hint.back": " · esc zurück"
+  },
+  "es": {
+    "cli.setup.picker.step": "paso",
+    "cli.setup.picker.hint.back": " · esc atrás"
+  },
+  "fi": {
+    "cli.setup.picker.step": "vaihe",
+    "cli.setup.picker.hint.back": " · esc takaisin"
+  },
+  "fr": {
+    "cli.setup.picker.step": "étape",
+    "cli.setup.picker.hint.back": " · esc retour"
+  },
+  "hi": {
+    "cli.setup.picker.step": "चरण",
+    "cli.setup.picker.hint.back": " · esc वापस"
+  },
+  "it": {
+    "cli.setup.picker.step": "passo",
+    "cli.setup.picker.hint.back": " · esc indietro"
+  },
+  "jp": {
+    "cli.setup.picker.step": "ステップ",
+    "cli.setup.picker.hint.back": " · esc 戻る"
+  },
+  "ko": {
+    "cli.setup.picker.step": "단계",
+    "cli.setup.picker.hint.back": " · esc 뒤로"
+  },
+  "mr": {
+    "cli.setup.picker.step": "पायरी",
+    "cli.setup.picker.hint.back": " · esc मागे"
+  },
+  "nl": {
+    "cli.setup.picker.step": "stap",
+    "cli.setup.picker.hint.back": " · esc terug"
+  },
+  "no": {
+    "cli.setup.picker.step": "trinn",
+    "cli.setup.picker.hint.back": " · esc tilbake"
+  },
+  "pl": {
+    "cli.setup.picker.step": "krok",
+    "cli.setup.picker.hint.back": " · esc wstecz"
+  },
+  "pt-br": {
+    "cli.setup.picker.step": "passo",
+    "cli.setup.picker.hint.back": " · esc voltar"
+  },
+  "ru": {
+    "cli.setup.picker.step": "шаг",
+    "cli.setup.picker.hint.back": " · esc назад"
+  },
+  "sv": {
+    "cli.setup.picker.step": "steg",
+    "cli.setup.picker.hint.back": " · esc tillbaka"
+  },
+  "tr": {
+    "cli.setup.picker.step": "adım",
+    "cli.setup.picker.hint.back": " · esc geri"
+  },
+  "uk": {
+    "cli.setup.picker.step": "крок",
+    "cli.setup.picker.hint.back": " · esc назад"
+  },
+  "zh-cn": {
+    "cli.setup.picker.step": "步骤",
+    "cli.setup.picker.hint.back": " · esc 返回"
+  }
+}

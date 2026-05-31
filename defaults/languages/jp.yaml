@@ -1060,6 +1060,8 @@ keys:
   cli.setup.picker.hint.nav: "↑/↓ 移動 · enter 確定 · ctrl+c 終了"
   cli.setup.picker.hint.multi: "↑/↓ 移動 · enter 切替 · tab 確定 · ctrl+c 終了"
   cli.setup.picker.hint.input: "入力して編集 · enter で確定 (空欄可) · ctrl+c 終了"
+  cli.setup.picker.hint.back: " · esc 戻る"
+  cli.setup.picker.step: "ステップ"
   cli.setup.picker.aborted: "setup を中止しました。何も書き込まれていません"
   cli.setup.picker.no_tty: "対話セレクタは TTY が必要です。ヘッドレスインストールには OKT_CLI_LANG、OKT_TUI_LANG、OKT_AGENT_LANG、OKT_PRESET、OKT_HARNESSES (または対応する --flags) を指定してください"
 
@@ -1109,7 +1111,7 @@ keys:
   cli.update.flag.yes: "確認プロンプトをスキップし、非対話で upgrade を適用"
   cli.update.flag.check: "現在 vs. 最新を報告し、書き込みなしで終了"
   cli.update.picker.title: "okt を更新"
-  cli.update.picker.line: "current=%s  →  latest=%s"
+  cli.update.picker.line: "現在=%s  →  最新=%s"
   cli.update.picker.hint: "y 適用 · n 取消 · ctrl+c 終了"
   cli.update.picker.no_tty: "対話確認には TTY が必要です; headless update は --yes、dry-run レポートは --check を渡してください"
   cli.update.picker.aborted: "update を中止しました; バイナリは変更されていません"

@@ -142,7 +142,7 @@ func newSetupPickerModel(inputs setupInputs, needs pickerNeeds) (setupPickerMode
 	pager := paginator.New()
 	pager.Type = paginator.Arabic
 	pager.PerPage = 1
-	pager.ArabicFormat = "step %d/%d"
+	pager.ArabicFormat = "step %d/%d" // syncedPager overwrites via cli.setup.picker.step
 	pager.TotalPages = len(activeOrder)
 
 	model := setupPickerModel{
@@ -397,6 +397,7 @@ func (m setupPickerModel) syncedPager() setupPickerModel {
 	if idx := m.activeIndex(); idx >= 0 {
 		m.pager.Page = idx
 	}
+	m.pager.ArabicFormat = m.translate("cli.setup.picker.step") + " %d/%d"
 	return m
 }
 
@@ -494,15 +495,15 @@ func (m setupPickerModel) translate(key string) string {
 	return t(key)
 }
 
-// View renders the active screen. The language screen renders only the
-// rows + ctrl+c footer — no title — because the user has no catalog
-// active yet and additional English chrome would not help the
-// non-English caller pick a language. Subsequent screens carry a title
-// + hint resolved through the chosen catalog.
+// View renders the active screen. The language screen uses the package
+// catalog (t) for its title because cliCatalog is not resolved until
+// the user confirms a language; CLI and TUI share one lang step so
+// cli.setup.picker.lang.cli.title is the canonical label. Subsequent
+// screens resolve title + hint through the chosen catalog.
 func (m setupPickerModel) View() string {
 	switch m.step {
 	case stepLang:
-		return m.renderListView("", "ctrl+c quit"+m.backHint(), langRows(m.langs, m.langCursor, m.styles))
+		return m.renderListView(t("cli.setup.picker.lang.cli.title"), "ctrl+c quit"+m.backHint(), langRows(m.langs, m.langCursor, m.styles))
 	case stepAgentLang:
 		m.agentInput.Placeholder = m.translate("cli.setup.picker.agent.placeholder")
 		return m.renderInputView(m.translate("cli.setup.picker.agent.title"), m.translate("cli.setup.picker.hint.input")+m.backHint(), m.agentInput.View())
@@ -520,7 +521,7 @@ func (m setupPickerModel) View() string {
 // does nothing.
 func (m setupPickerModel) backHint() string {
 	if m.activeIndex() > 0 {
-		return " · esc back"
+		return m.translate("cli.setup.picker.hint.back")
 	}
 	return ""
 }
