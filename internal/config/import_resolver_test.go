@@ -352,6 +352,173 @@ func TestResolveImportsNoDirectivePassThrough(t *testing.T) {
 	wantSrc(t, sources, rootPath)
 }
 
+// --- merge_from: tests ---
+
+func TestMergeFromImportsBaseKeys(t *testing.T) {
+	dir := t.TempDir()
+	writeImportYAML(t, dir, "base.yml", "output:\n  minified: true\ncontext:\n  level: 2\n")
+	node, _, _, err := runResolve(t, dir, "config:\n  merge_from: ./base.yml\n  workflow:\n    active: omakase\n")
+	if err != nil {
+		t.Fatalf("resolveImports() error = %v", err)
+	}
+	cfg := mapVal(t, node, "config")
+	// base key not in override should be present
+	if mapVal(t, cfg, "output").Kind != yaml.MappingNode {
+		t.Fatal("config.output missing after merge_from")
+	}
+	if mapVal(t, cfg, "context").Kind != yaml.MappingNode {
+		t.Fatal("config.context missing after merge_from")
+	}
+	// own sibling key must be present
+	if mapVal(t, mapVal(t, cfg, "workflow"), "active").Value != "omakase" {
+		t.Fatal("config.workflow.active lost after merge_from")
+	}
+}
+
+func TestMergeFromSiblingOverridesImported(t *testing.T) {
+	dir := t.TempDir()
+	writeImportYAML(t, dir, "base.yml", "theme:\n  active: default\noutput:\n  minified: false\n")
+	node, _, _, err := runResolve(t, dir, "config:\n  merge_from: ./base.yml\n  theme:\n    active: custom\n")
+	if err != nil {
+		t.Fatalf("resolveImports() error = %v", err)
+	}
+	cfg := mapVal(t, node, "config")
+	// sibling key wins over imported value
+	if got := mapVal(t, mapVal(t, cfg, "theme"), "active").Value; got != "custom" {
+		t.Fatalf("config.theme.active = %q, want custom (sibling override)", got)
+	}
+	// non-conflicting key from base still present
+	if mapVal(t, cfg, "output").Kind != yaml.MappingNode {
+		t.Fatal("config.output missing — base key should survive sibling override")
+	}
+}
+
+func TestMergeFromDeepMergesNestedMapping(t *testing.T) {
+	dir := t.TempDir()
+	writeImportYAML(t, dir, "base.yml", "events:\n  limit: 50\n  defaults:\n    log: true\n")
+	// override only adds `overrides:` to events; the other base keys must survive
+	node, _, _, err := runResolve(t, dir, "config:\n  merge_from: ./base.yml\n  events:\n    overrides:\n      tag.added:\n        log: false\n")
+	if err != nil {
+		t.Fatalf("resolveImports() error = %v", err)
+	}
+	events := mapVal(t, mapVal(t, node, "config"), "events")
+	if mapVal(t, events, "limit").Value != "50" {
+		t.Fatal("events.limit lost after deep merge")
+	}
+	if mapVal(t, events, "defaults").Kind != yaml.MappingNode {
+		t.Fatal("events.defaults lost after deep merge")
+	}
+	if mapVal(t, events, "overrides").Kind != yaml.MappingNode {
+		t.Fatal("events.overrides missing — should come from override sibling")
+	}
+}
+
+func TestMergeFromReplacesListNotAppends(t *testing.T) {
+	dir := t.TempDir()
+	writeImportYAML(t, dir, "base.yml", "hooks:\n  - on: task.created\n  - on: task.moved\n")
+	node, _, _, err := runResolve(t, dir, "config:\n  merge_from: ./base.yml\n  hooks:\n    - on: task.removed\n")
+	if err != nil {
+		t.Fatalf("resolveImports() error = %v", err)
+	}
+	hooks := mapVal(t, mapVal(t, node, "config"), "hooks")
+	if hooks.Kind != yaml.SequenceNode || len(hooks.Content) != 1 {
+		t.Fatalf("hooks = %+v (len %d), want 1-element sequence (sibling replaces, not appends)", hooks, len(hooks.Content))
+	}
+}
+
+func TestMergeFromRejectsNonMappingImport(t *testing.T) {
+	dir := t.TempDir()
+	writeImportYAML(t, dir, "seq.yml", "- a\n- b\n")
+	_, _, _, err := runResolve(t, dir, "config:\n  merge_from: ./seq.yml\n")
+	if err == nil {
+		t.Fatal("resolveImports() error = nil, want rejection for non-mapping import")
+	}
+	if !strings.Contains(err.Error(), "mapping") {
+		t.Fatalf("error = %q, want 'mapping' in message", err.Error())
+	}
+}
+
+func TestMergeFromRecordedInSources(t *testing.T) {
+	dir := t.TempDir()
+	writeImportYAML(t, dir, "base.yml", "x: 1\n")
+	_, sources, rootPath, err := runResolve(t, dir, "config:\n  merge_from: ./base.yml\n")
+	if err != nil {
+		t.Fatalf("resolveImports() error = %v", err)
+	}
+	wantSrc(t, sources, rootPath, canonical(t, filepath.Join(dir, "base.yml")))
+}
+
+func TestMergeFromCycleRejected(t *testing.T) {
+	dir := t.TempDir()
+	writeImportYAML(t, dir, "a.yml", "x:\n  merge_from: ./b.yml\n")
+	writeImportYAML(t, dir, "b.yml", "y:\n  merge_from: ./a.yml\n")
+	_, _, _, err := runResolve(t, dir, "root:\n  merge_from: ./a.yml\n")
+	if err == nil {
+		t.Fatal("resolveImports() error = nil, want cycle rejection")
+	}
+	if !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("error = %q, want cycle", err.Error())
+	}
+}
+
+// --- fragment selector tests ---
+
+func TestFragmentSelectorSelectsSubtree(t *testing.T) {
+	dir := t.TempDir()
+	writeImportYAML(t, dir, "theme.yml", "personas:\n  - slug: foo\ncommands:\n  global:\n    laws: []\n")
+	node, _, _, err := runResolve(t, dir, "personas:\n  from: ./theme.yml#personas\n")
+	if err != nil {
+		t.Fatalf("resolveImports() error = %v", err)
+	}
+	personas := mapVal(t, node, "personas")
+	if personas.Kind != yaml.SequenceNode || len(personas.Content) != 1 {
+		t.Fatalf("personas = %+v, want 1-element sequence", personas)
+	}
+}
+
+func TestFragmentSelectorNotFound(t *testing.T) {
+	dir := t.TempDir()
+	writeImportYAML(t, dir, "theme.yml", "personas:\n  - slug: foo\n")
+	_, _, _, err := runResolve(t, dir, "x:\n  from: ./theme.yml#missing\n")
+	if err == nil {
+		t.Fatal("resolveImports() error = nil, want fragment-not-found rejection")
+	}
+	if !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("error = %q, want fragment name in message", err.Error())
+	}
+}
+
+func TestFragmentSelectorRejectsNonMappingRoot(t *testing.T) {
+	dir := t.TempDir()
+	writeImportYAML(t, dir, "seq.yml", "- a\n- b\n")
+	_, _, _, err := runResolve(t, dir, "x:\n  from: ./seq.yml#key\n")
+	if err == nil {
+		t.Fatal("resolveImports() error = nil, want rejection for non-mapping root")
+	}
+	if !strings.Contains(err.Error(), "not a mapping") {
+		t.Fatalf("error = %q, want 'not a mapping'", err.Error())
+	}
+}
+
+func TestFragmentWithMergeFrom(t *testing.T) {
+	dir := t.TempDir()
+	writeImportYAML(t, dir, "theme.yml", "base:\n  x: 1\n  y: 2\n")
+	node, _, _, err := runResolve(t, dir, "config:\n  merge_from: ./theme.yml#base\n  z: 3\n")
+	if err != nil {
+		t.Fatalf("resolveImports() error = %v", err)
+	}
+	cfg := mapVal(t, node, "config")
+	if mapVal(t, cfg, "x").Value != "1" {
+		t.Fatal("config.x missing after merge_from with fragment")
+	}
+	if mapVal(t, cfg, "y").Value != "2" {
+		t.Fatal("config.y missing after merge_from with fragment")
+	}
+	if mapVal(t, cfg, "z").Value != "3" {
+		t.Fatal("config.z (sibling) missing")
+	}
+}
+
 // mapVal returns the value node for key in a mapping node.
 func mapVal(t *testing.T, m *yaml.Node, key string) *yaml.Node {
 	t.Helper()

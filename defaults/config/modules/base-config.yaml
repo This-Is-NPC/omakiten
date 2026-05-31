@@ -1,0 +1,377 @@
+# Shared config base — merged into every preset via:
+#   config:
+#     merge_from: ./modules/base-config.yaml
+#     workflow:
+#       active: <preset-key>          # only preset-specific override
+#     hooks: [...]                    # preset-specific (uses preset-name intl keys)
+#
+# Keys absent here (workflow:, hooks:) must be declared in the importing preset.
+# Keys present here may be overridden by sibling keys in the importing preset
+# (deep-merge: target wins on conflict, nested mappings are merged recursively).
+output:
+  json_minified: true
+  omit_empty: true
+context:
+  default_level: 2
+  max_tokens: 12000
+# mcp tunes how MCP responses are shaped to fit the agent's context
+# window. Every field is REQUIRED — the validator rejects bundles that
+# omit any. The values below are the canonical kit; tune them in your
+# local omakiten.yaml to compress payloads for narrow contexts.
+mcp:
+  recent_comment_limit: 5            # > 0; cap on comments shipped per call
+  max_comment_chars: 0               # >= 0; 0 = no truncation
+  include_workflow_in_continue: true # ship workflow block in tasks.continue
+  cache_prompts: true                # emit Anthropic cache_control hint
+  recent_context_limit: 3            # > 0; recent context entries shipped
+  next_work_limit: 5                 # > 0; "likely next work" suggestions
+  similar_task_limit: 5              # > 0; similar-task hints on create_intent
+theme:
+  active: omakiten
+# tui tunes terminal UI presentation. token_badge controls the colored TOKENS:N
+# badge on entity cards: above red_at → red; above yellow_at → yellow; else green.
+tui:
+  token_badge:
+    yellow_at: 150
+    red_at: 400
+# sqlite tunes connection-level engine knobs the Store applies at Open.
+# busy_timeout_ms is the value passed to PRAGMA busy_timeout; raise it on
+# systems with concurrent writers or larger DBs that occasionally see
+# "database is locked" errors. Other PRAGMAs (foreign_keys, journal_mode,
+# synchronous) stay in code because they describe correctness invariants
+# rather than user preference.
+sqlite:
+  busy_timeout_ms: 5000
+  # cache_size_kb sets PRAGMA cache_size in negative-kilobyte form.
+  # 1024 KiB of page cache keeps the TUI's hot tables (tasks, events,
+  # task_dependencies) hot across the keystroke read fan-out.
+  cache_size_kb: 1024
+  # mmap_size_bytes sets PRAGMA mmap_size. 0 disables mmap (default)
+  # because mmap interacts poorly with NFS / FUSE mounts; users on
+  # local-only filesystems can raise this to e.g. 268435456 (256 MiB)
+  # for a measurable read-path win on larger databases.
+  mmap_size_bytes: 0
+# activity_log retention: prunes the per-call `operation` event log so
+# the activity feed stays fast.
+activity_log:
+  max_rows: 500
+  max_age_days: 7
+# solutions caps the `solutions.list_top` MCP response shape.
+solutions:
+  default_top_limit: 10
+  max_top_limit: 100
+# backup tunes the rolling DB snapshot. retention_count caps snapshots kept
+# on disk; set to 0 to disable pruning.
+backup:
+  retention_count: 5
+# events tunes the per-event-type domain log. Per-preset overrides (e.g.
+# events.overrides) may be declared as siblings in the importing preset and
+# are deep-merged on top of this base via merge_from semantics.
+events:
+  default_recent_limit: 50
+  defaults:
+    log: true
+    broadcast: true
+    hook: true
+    log_visible: true
+    metric: ""
+    entity_type: ""
+  definitions:
+    comment:
+      category: comment
+      display: "comment added"
+      formatter: comment
+    comment.edited:
+      category: comment
+      display: "comment edited"
+      formatter: comment.edited
+    comment.removed:
+      category: comment
+      display: "comment removed"
+      formatter: comment.removed
+    task.created:
+      category: task
+      display: "task created"
+      formatter: task.created
+    task.moved:
+      category: task
+      display: "task moved"
+      formatter: task.moved
+    task.migrated:
+      category: task
+      display: "task migrated"
+      formatter: task.migrated
+    task.bucket_orphaned:
+      category: task
+      display: "task bucket orphaned"
+      formatter: task.bucket_orphaned
+    task.completed:
+      category: task
+      display: "task completed"
+      formatter: task.completed
+    task.edited:
+      category: task
+      display: "task edited"
+      formatter: task.edited
+    task.removed:
+      category: task
+      display: "task removed"
+      formatter: task.removed
+    task.archived:
+      category: task
+      display: "task archived"
+      formatter: task.archived
+    task.unarchived:
+      category: task
+      display: "task unarchived"
+      formatter: task.unarchived
+    task.assigned:
+      category: task
+      display: "task assigned"
+      formatter: task.assigned
+    task.unassigned:
+      category: task
+      display: "task unassigned"
+      formatter: task.unassigned
+    project.removed:
+      category: audit
+      display: "project removed"
+      formatter: project.removed
+    plan.created:
+      category: plan
+      display: "plan created"
+      formatter: plan.created
+    plan.wave_added:
+      category: plan
+      display: "plan wave added"
+      formatter: plan.wave_added
+    plan.goal_edited:
+      category: plan
+      display: "plan goal edited"
+      formatter: plan.goal_edited
+    plan.done:
+      category: plan
+      display: "plan done"
+      formatter: plan.done
+    plan.abandoned:
+      category: plan
+      display: "plan abandoned"
+      formatter: plan.abandoned
+    plan.edited:
+      category: plan
+      display: "plan edited"
+      formatter: plan.edited
+    plan.deleted:
+      category: plan
+      display: "plan deleted"
+      formatter: plan.deleted
+    plan.wave_removed:
+      category: plan
+      display: "plan wave removed"
+      formatter: plan.wave_removed
+    plan.wave_renamed:
+      category: plan
+      display: "plan wave renamed"
+      formatter: plan.wave_renamed
+    plan.wave_reordered:
+      category: plan
+      display: "plan wave reordered"
+      formatter: plan.wave_reordered
+    plan.task_unassigned:
+      category: plan
+      display: "plan task unassigned"
+      formatter: plan.task_unassigned
+    tag.added:
+      category: tag-dep
+      display: "tag added"
+      formatter: tag.added
+    tag.removed:
+      category: tag-dep
+      display: "tag removed"
+      formatter: tag.removed
+    dependency.added:
+      category: tag-dep
+      display: "dependency added"
+      formatter: dependency.added
+    dependency.removed:
+      category: tag-dep
+      display: "dependency removed"
+      formatter: dependency.removed
+    guard.violated:
+      category: guard
+      display: "guard violated"
+      formatter: guard.violated
+    error.recorded:
+      category: audit
+      display: "error recorded"
+      entity_type: error
+      metric: error_recorded
+      formatter: error.recorded
+    errors.researched:
+      category: audit
+      display: "errors researched"
+      entity_type: search
+      metric: error_searched
+      formatter: errors.researched
+    solution.added:
+      category: audit
+      display: "solution added"
+      entity_type: solution
+      metric: solution_added
+      formatter: solution.added
+    solution.confirmed:
+      category: audit
+      display: "solution confirmed"
+      entity_type: solution
+      formatter: solution.confirmed
+    solution.liked:
+      category: audit
+      display: "solution liked"
+      entity_type: solution
+      metric: solution_liked
+      formatter: solution.liked
+    solution.failed:
+      category: audit
+      display: "solution failed"
+      entity_type: solution
+      metric: solution_failed
+      formatter: solution.failed
+    solution.viewed_top:
+      category: audit
+      display: "solution viewed top"
+      entity_type: solution
+      metric: solution_top_viewed
+      formatter: solution.viewed_top
+    hook.executed:
+      category: hook
+      display: "hook executed"
+      formatter: hook.executed
+    subtask_kit.notice_emitted:
+      category: domain
+      display: "subtask kit notice emitted"
+      formatter: subtask_kit.notice_emitted
+    bundle.swapped:
+      category: domain
+      display: "bundle swapped"
+      formatter: bundle.swapped
+    bundle.imported:
+      category: domain
+      display: "bundle imported"
+      formatter: bundle.imported
+    confirmation.granted:
+      category: audit
+      display: "confirmation granted"
+      formatter: confirmation.granted
+    trick.executed:
+      category: trick
+      display: "trick executed"
+      formatter: trick.executed
+    cli.tool_call:
+      category: tool_call
+      display: "CLI tool call"
+      formatter: cli.tool_call
+    mcp.tool_call:
+      category: tool_call
+      display: "MCP tool call"
+      formatter: mcp.tool_call
+    tui.tool_call:
+      category: tool_call
+      display: "TUI tool call"
+      formatter: tui.tool_call
+    update.healthcheck.passed:
+      category: update
+      display: "update health-check passed"
+      formatter: update.healthcheck.passed
+    update.healthcheck.failed:
+      category: update
+      display: "update health-check failed"
+      formatter: update.healthcheck.failed
+    update.swap.completed:
+      category: update
+      display: "update binary swap completed"
+      formatter: update.swap.completed
+    update.swap.aborted:
+      category: update
+      display: "update binary swap aborted"
+      formatter: update.swap.aborted
+    tui.healthcheck.failed:
+      category: tui
+      display: "tui boot health-check failed"
+      formatter: tui.healthcheck.failed
+# search tunes the heuristics shared across agent-side text ranking.
+search:
+  stopwords:
+    - and
+    - are
+    - for
+    - from
+    - into
+    - the
+    - this
+    - that
+    - with
+# tag_synonyms maps non-canonical tag slugs to their canonical form.
+tag_synonyms:
+  golang: go
+  javascript: js
+  typescript: ts
+  nodejs: node
+  node-js: node
+  postgres: postgresql
+  psql: postgresql
+  mongo: mongodb
+  k8s: kubernetes
+  tf: terraform
+  py: python
+template_defaults: [task, pr, comment-resume, comment-selfbranch, comment-documentation]
+priorities:
+  - id: 1
+    value: low
+    color: success
+  - id: 2
+    value: normal
+    default: true
+    color: info
+  - id: 3
+    value: high
+    color: error
+severities:
+  - id: 1
+    value: info
+    color: info
+  - id: 2
+    value: warning
+    default: true
+    color: warning
+  - id: 3
+    value: error
+    color: error
+# views configures the default sort and filter applied to each view at startup.
+views:
+  board:
+    sort:
+      field: created_at   # id | title | priority | created_at
+      order: desc         # asc | desc
+    filter:
+      priority: []        # subset of config.priorities[].value; [] = all
+  table:
+    sort:
+      field: created_at
+      order: desc
+    filter:
+      priority: []
+      bucket: []          # subset of bucket keys in the active workflow
+  graph:
+    sort:
+      field: id           # id | title (only)
+      order: asc
+  logs:
+    sort:
+      order: desc         # only direction is configurable for logs
+    limit: 50
+    window_days: 30       # default time horizon for the LOGS view (days)
+    filter:
+      source: []          # subset of [cli, tui, mcp]
+  task_activity:
+    sort:
+      order: asc          # asc = chronological | desc = newest first

@@ -54,20 +54,35 @@ func RefreshDefaultFiles(rootDir string) error {
 }
 
 func copyDefaultConfigProfiles(rootDir string, overwrite bool) error {
-	entries, err := defaults.FS.ReadDir("config")
+	return copyEmbeddedDirRecursive("config", filepath.Join(rootDir, "config"), overwrite)
+}
+
+// copyEmbeddedDirRecursive copies every file under srcDir in defaults.FS to
+// the corresponding path under dstDir, creating subdirectories as needed.
+// Directories in srcDir are traversed recursively; the custom/ skip used by
+// entity folders is intentionally absent here because config/modules/ and
+// config/themes/ are bundled directories that should always be materialised.
+func copyEmbeddedDirRecursive(srcDir, dstDir string, overwrite bool) error {
+	entries, err := defaults.FS.ReadDir(srcDir)
 	if err != nil {
 		var pathErr *fs.PathError
 		if errors.As(err, &pathErr) {
 			return nil
 		}
-		return fmt.Errorf("read embedded config profiles: %w", err)
+		return fmt.Errorf("read embedded %s: %w", srcDir, err)
 	}
 	for _, entry := range entries {
+		src := srcDir + "/" + entry.Name()
+		dst := filepath.Join(dstDir, entry.Name())
 		if entry.IsDir() {
+			if err := os.MkdirAll(dst, 0o755); err != nil {
+				return fmt.Errorf("create %s: %w", dst, err)
+			}
+			if err := copyEmbeddedDirRecursive(src, dst, overwrite); err != nil {
+				return err
+			}
 			continue
 		}
-		src := "config/" + entry.Name()
-		dst := filepath.Join(rootDir, "config", entry.Name())
 		if overwrite {
 			if err := copyDefaultOverwrite(dst, src); err != nil {
 				return err

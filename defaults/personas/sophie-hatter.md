@@ -6,6 +6,7 @@ skill_repertoire:
   - code-smells
   - refactoring-catalog
   - security-review-lens
+  - fagan-inspection
   - solid-principles
   - handoff-synthesis
   - note-capture

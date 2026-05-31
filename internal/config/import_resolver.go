@@ -13,6 +13,14 @@ import (
 // by the root node of the referenced YAML document before strict decoding runs.
 const importDirectiveKey = "from"
 
+// mergeFromDirectiveKey is the reserved key that marks a deep-merge import.
+// Unlike importDirectiveKey, it may appear alongside sibling keys inside a
+// mapping; the imported document's keys are merged into the parent mapping as a
+// base layer, with every sibling key taking priority (JSON merge patch
+// semantics). The directive key-value pair is removed from the mapping before
+// the merge so the strict decoder never sees it.
+const mergeFromDirectiveKey = "merge_from"
+
 // maxImportDepth bounds how deeply imports may nest (the root document is
 // depth 0, its imports depth 1, and so on). A fixed cap is defence-in-depth
 // alongside cycle detection: even an acyclic but pathologically deep chain is
@@ -119,8 +127,26 @@ func (r *importResolver) walk(node *yaml.Node, filePath string, chain []string, 
 	// Not a directive: recurse into composite children. Mapping content
 	// alternates key/value; walking both is safe because a key is always a
 	// scalar and never classifies as a directive.
+	//
+	// Mappings get an extra pass first: applyMergeFrom scans for a
+	// merge_from: key and, when found, deep-merges the imported document
+	// into the mapping before the child walk runs. Sequences have no such
+	// directive so they fall straight into the recursive walk.
 	switch node.Kind {
-	case yaml.MappingNode, yaml.SequenceNode:
+	case yaml.MappingNode:
+		var err error
+		node, err = r.applyMergeFrom(node, filePath, chain, depth)
+		if err != nil {
+			return nil, err
+		}
+		for i, child := range node.Content {
+			expanded, err := r.walk(child, filePath, chain, depth)
+			if err != nil {
+				return nil, err
+			}
+			node.Content[i] = expanded
+		}
+	case yaml.SequenceNode:
 		for i, child := range node.Content {
 			expanded, err := r.walk(child, filePath, chain, depth)
 			if err != nil {
@@ -134,13 +160,17 @@ func (r *importResolver) walk(node *yaml.Node, filePath string, chain []string, 
 
 // expand resolves a single directive: validates the path, detects cycles/depth,
 // reads and parses the target under the size cap, records the source, then
-// recurses into the imported document.
+// recurses into the imported document. rel may carry a fragment selector
+// ("./file.yaml#key") which is stripped before path resolution and applied
+// after the full document is resolved.
 func (r *importResolver) expand(rel, fromFile string, chain []string, depth int) (*yaml.Node, error) {
+	filePart, fragment := parseImportPath(rel)
+
 	if depth+1 > maxImportDepth {
 		return nil, fmt.Errorf("import depth exceeds maximum of %d: %s", maxImportDepth, chainContext(append(chain, rel)))
 	}
 
-	abs, err := resolveImportPath(fromFile, rel)
+	abs, err := resolveImportPath(fromFile, filePart)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", chainContext(chain), err)
 	}
@@ -171,6 +201,13 @@ func (r *importResolver) expand(rel, fromFile string, chain []string, depth int)
 	delete(r.visiting, abs)
 	if err != nil {
 		return nil, err
+	}
+
+	if fragment != "" {
+		resolved, err = extractFragment(resolved, fragment, chainContext(append(chain, abs)))
+		if err != nil {
+			return nil, err
+		}
 	}
 	return resolved, nil
 }
@@ -296,4 +333,109 @@ func chainContext(chain []string) string {
 		parts[i] = filepath.Base(p)
 	}
 	return "import chain " + strings.Join(parts, " -> ")
+}
+
+// parseImportPath splits a raw import path into a file path and an optional
+// fragment key. The fragment is the part after the last '#'; if no '#' is
+// present the fragment is empty. Example: "./theme.yaml#personas" →
+// ("./theme.yaml", "personas").
+func parseImportPath(raw string) (path, fragment string) {
+	if i := strings.LastIndex(raw, "#"); i >= 0 {
+		return raw[:i], raw[i+1:]
+	}
+	return raw, ""
+}
+
+// extractFragment navigates node (which must be a MappingNode) to the named
+// top-level key and returns its value node. Returns an error when node is not
+// a mapping or the key is absent.
+func extractFragment(node *yaml.Node, key, context string) (*yaml.Node, error) {
+	if node.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("%s: fragment %q: imported document is not a mapping", context, key)
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return node.Content[i+1], nil
+		}
+	}
+	return nil, fmt.Errorf("%s: fragment %q not found in imported document", context, key)
+}
+
+// applyMergeFrom scans node for a merge_from: key. When found it loads the
+// referenced document, removes the directive key-value pair from node, and
+// deep-merges the imported document's keys into node as a base layer: every
+// key present in node wins; missing keys are added from the import. Nested
+// mappings are merged recursively (JSON merge patch semantics); sequences and
+// scalars are replaced rather than appended.
+//
+// applyMergeFrom is a no-op and returns node unchanged when no merge_from:
+// key is present.
+func (r *importResolver) applyMergeFrom(node *yaml.Node, filePath string, chain []string, depth int) (*yaml.Node, error) {
+	mergeIdx := -1
+	var mergeTarget string
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Kind == yaml.ScalarNode && node.Content[i].Value == mergeFromDirectiveKey {
+			val := node.Content[i+1]
+			if val.Kind != yaml.ScalarNode || strings.TrimSpace(val.Value) == "" {
+				return nil, fmt.Errorf("%s: %q value must be a non-empty scalar path", chainContext(chain), mergeFromDirectiveKey)
+			}
+			mergeTarget = val.Value
+			mergeIdx = i
+			break
+		}
+	}
+	if mergeIdx < 0 {
+		return node, nil
+	}
+
+	// Remove the merge_from: key-value pair before merging so the strict
+	// decoder never sees the directive key.
+	trimmed := make([]*yaml.Node, 0, len(node.Content)-2)
+	trimmed = append(trimmed, node.Content[:mergeIdx]...)
+	trimmed = append(trimmed, node.Content[mergeIdx+2:]...)
+	node.Content = trimmed
+
+	imported, err := r.expand(mergeTarget, filePath, chain, depth)
+	if err != nil {
+		return nil, err
+	}
+
+	// A null import is a no-op.
+	if imported.Kind == yaml.ScalarNode && (imported.Tag == "!!null" || imported.Value == "") {
+		return node, nil
+	}
+	if imported.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("%s: merge_from %q: imported document root must be a mapping (got node kind %d)", chainContext(chain), mergeTarget, imported.Kind)
+	}
+
+	deepMergeInto(node, imported)
+	return node, nil
+}
+
+// deepMergeInto merges base into target in place. For each key in base:
+//   - If the key is absent in target: add it.
+//   - If present in both and both values are MappingNodes: recurse.
+//   - Otherwise: target wins (no change).
+//
+// Both target and base must be MappingNodes.
+func deepMergeInto(target, base *yaml.Node) {
+	targetKeys := make(map[string]int, len(target.Content)/2)
+	for i := 0; i+1 < len(target.Content); i += 2 {
+		targetKeys[target.Content[i].Value] = i + 1
+	}
+
+	for i := 0; i+1 < len(base.Content); i += 2 {
+		k := base.Content[i].Value
+		baseVal := base.Content[i+1]
+		if valIdx, exists := targetKeys[k]; exists {
+			targetVal := target.Content[valIdx]
+			if targetVal.Kind == yaml.MappingNode && baseVal.Kind == yaml.MappingNode {
+				deepMergeInto(targetVal, baseVal)
+			}
+			// non-mapping conflict: target wins, no change
+		} else {
+			target.Content = append(target.Content, base.Content[i], baseVal)
+			targetKeys[k] = len(target.Content) - 1
+		}
+	}
 }

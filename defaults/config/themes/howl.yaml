@@ -1,0 +1,225 @@
+# Izakaya (Howl's Moving Castle) themed roster — personas and mcp_commands.
+# Imported by izakaya.yaml via fragment selectors:
+#   personas:     { from: ./modules/howl.yaml#personas }
+#   mcp_commands: { from: ./modules/howl.yaml#mcp_commands }
+personas:
+  # Concierge + Tester — the hearth-fire that sees every room and routes work,
+  # then proves what burns clean before it ships.
+  - slug: calcifer
+    schema_version: 2
+    skill_repertoire:
+      - pdca-cycle
+      - discovery
+      - regression-detection
+      - coverage-analysis
+      - static-analysis-discipline
+      - test-driven-development
+      - markdown
+  # Ideator — bold notions chased with a cheap probe first.
+  - slug: witch-of-the-waste
+    schema_version: 2
+    skill_repertoire:
+      - discovery
+      - lean-experimentation
+      - five-w-two-h
+      - markdown
+  # Owner + Committer — front-desk steward who decides what work is worth taking
+  # and in what order, then signs each finished job into the record cleanly.
+  - slug: markl
+    schema_version: 2
+    skill_repertoire:
+      - five-w-two-h
+      - smart-goals
+      - staged-delivery
+      - dora-mindset
+      - risk-driven-development
+      - requirements-elicitation
+      - non-functional-requirements
+      - moscow-prioritization
+      - rice-scoring
+      - user-story-writing
+      - invest-stories
+      - conventional-commits-spec
+      - markdown
+  # Builder — small bold strokes, trunk kept green, tidies what he passes through.
+  - slug: howl-pendragon
+    schema_version: 2
+    skill_repertoire:
+      - implementation
+      - test-driven-development
+      - trunk-based-development
+      - continuous-integration
+      - solid-principles
+      - code-smells
+      - refactoring-catalog
+      - castle-tidying
+      - markdown
+  # Reviewer + Scribe — sees the true shape under the mess, says plainly what
+  # needs mending, and keeps the castle's record clear. Repertoire carries all
+  # four #359 note skills so the okt-note-* and okt-pause slots resolve.
+  - slug: sophie-hatter
+    schema_version: 2
+    skill_repertoire:
+      - code-smells
+      - refactoring-catalog
+      - security-review-lens
+      - fagan-inspection
+      - solid-principles
+      - handoff-synthesis
+      - note-capture
+      - standup-digest
+      - recap-timeline
+      - documentation
+      - architecture-mapping
+      - postmortem-authoring
+      - markdown
+
+mcp_commands:
+  global:
+    laws: [template-fidelity, authorize-remote-writes, project-scope-only]
+  # Izakaya (Howl's Moving Castle) slot bindings — #189 W5.3.
+  okt:
+    persona: calcifer
+    skills: [pdca-cycle]
+  okt-start:
+    persona: calcifer
+    skills: [pdca-cycle, discovery]
+  okt-shape:
+    persona: markl
+    skills: [five-w-two-h, smart-goals]
+  okt-audit:
+    persona: markl
+    skills: [risk-driven-development]
+  okt-run:
+    persona: markl
+    skills: [staged-delivery, dora-mindset]
+  okt-task-imagine:
+    persona: witch-of-the-waste
+    skills: [discovery, lean-experimentation]
+    laws_disabled: [template-fidelity]
+  okt-task-research:
+    persona: witch-of-the-waste
+    skills: [discovery]
+    laws_disabled: [template-fidelity]
+  okt-task-validate:
+    persona: witch-of-the-waste
+    skills: [lean-experimentation]
+    laws: [cheap-probe-first]
+    laws_disabled: [template-fidelity]
+  okt-task-requirements:
+    persona: markl
+    skills: [requirements-elicitation, non-functional-requirements]
+  okt-task-prioritize:
+    persona: markl
+    skills: [moscow-prioritization, rice-scoring]
+    templates: [comment-moscow]
+  okt-task-create:
+    persona: markl
+    skills: [user-story-writing, invest-stories, smart-goals]
+    laws: [invest-stories]
+    templates: [user-story, comment-smart-success, comment-moscow]
+  okt-task-decompose:
+    persona: markl
+    skills: [user-story-writing]
+  okt-task-estimate:
+    persona: markl
+    skills: [rice-scoring]
+  okt-task-design:
+    persona: howl-pendragon
+    skills: [solid-principles]
+  okt-project-resume:
+    persona: calcifer
+    skills: [pdca-cycle]
+  okt-project-continue:
+    persona: calcifer
+    skills: [pdca-cycle]
+  okt-plan-create:
+    persona: markl
+    skills: [staged-delivery]
+  okt-plan-show:
+    persona: markl
+    skills: [staged-delivery]
+  okt-plan-continue:
+    persona: markl
+    skills: [staged-delivery]
+  okt-plan-claim:
+    persona: markl
+    skills: [staged-delivery]
+  okt-task-resume:
+    persona: howl-pendragon
+    skills: [implementation]
+  okt-task-continue:
+    persona: howl-pendragon
+    skills: [implementation]
+  okt-task-implement:
+    persona: howl-pendragon
+    skills: [implementation, test-driven-development, trunk-based-development, continuous-integration]
+    laws: [walking-skeleton-first, conventional-commits]
+    templates: [pull-request, comment-tests-passing, comment-refactor-drive-by]
+  okt-task-self-review:
+    persona: howl-pendragon
+    skills: [code-smells, castle-tidying]
+    templates: [comment-refactor-drive-by]
+  okt-task-refactor:
+    persona: howl-pendragon
+    skills: [refactoring-catalog, castle-tidying]
+    templates: [comment-refactor-opportunities]
+  okt-task-document:
+    persona: sophie-hatter
+    skills: [documentation, architecture-mapping]
+  okt-task-debrief:
+    persona: sophie-hatter
+    skills: [postmortem-authoring]
+    laws: [no-praise-pad]
+  okt-help:
+    persona: calcifer
+    skills: [markdown]
+  okt-config:
+    persona: calcifer
+    skills: [markdown]
+    templates: [config-orientation]
+  okt-skill:
+    persona: calcifer
+    skills: [markdown]
+  okt-task-commit:
+    persona: markl
+    skills: [conventional-commits-spec]
+    laws: [conventional-commits, no-coauthored-by]
+  okt-task-review:
+    persona: sophie-hatter
+    skills: [code-smells, refactoring-catalog, fagan-inspection]
+    laws: [no-praise-pad]
+    templates: [comment-review-findings, comment-refactor-opportunities]
+  okt-task-secure:
+    persona: sophie-hatter
+    skills: [security-review-lens]
+    templates: [comment-review-findings]
+  okt-task-check:
+    persona: calcifer
+    skills: [regression-detection, coverage-analysis]
+    laws: [accept-yellow]
+    templates: [comment-check-report]
+  okt-task-quality:
+    persona: calcifer
+    skills: [static-analysis-discipline]
+    laws: [accept-yellow]
+    templates: [comment-review-findings]
+  okt-pause:
+    persona: sophie-hatter
+    skills: [handoff-synthesis]
+    laws: [project-scope-only, no-praise-pad]
+    templates: [note-handoff]
+  okt-note-free:
+    persona: sophie-hatter
+    skills: [note-capture]
+    templates: [note-free]
+  okt-note-recap:
+    persona: sophie-hatter
+    skills: [recap-timeline, standup-digest]
+    templates: [note-recap, note-standup-digest]
+  okt-note-list:
+    persona: sophie-hatter
+    skills: [note-capture]
+  okt-note-show:
+    persona: sophie-hatter
+    skills: [note-capture]

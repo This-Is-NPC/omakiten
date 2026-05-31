@@ -275,9 +275,10 @@ func TestCLICommentAddCreateGuardDenied(t *testing.T) {
 		"comment", "add", "--scope", "project", "-b", "blocked")
 }
 
-// injectProjectCommentDeny rewrites the seeded omakase.yaml so the active
+// injectProjectCommentDeny rewrites the seeded omakase preset so the active
 // workflow declares defaults.comment.project.{edit,delete}=false. It targets
-// the verbatim default block shipped in defaults/config/omakase.yaml:
+// the verbatim default block shipped in defaults/config/omakase.yaml, where the
+// workflow is inlined under the top-level `workflows:` key:
 //
 //	comment:
 //	  edit: false
@@ -289,38 +290,38 @@ func TestCLICommentAddCreateGuardDenied(t *testing.T) {
 // that already exist, so this on-disk edit survives subsequent CLI boots.
 func injectProjectCommentDeny(t *testing.T, configPath string) {
 	t.Helper()
-	raw, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("read seeded config %s: %v", configPath, err)
-	}
-	const oldBlock = "      comment:\n        edit: false\n        delete: false\n"
-	const newBlock = "      comment:\n        edit: false\n        delete: false\n" +
-		"        project:\n          edit: false\n          delete: false\n"
-	if !strings.Contains(string(raw), oldBlock) {
-		t.Fatalf("seeded config lacks the expected defaults.comment block; "+
-			"the default omakase.yaml layout changed. content:\n%s", raw)
-	}
-	patched := strings.Replace(string(raw), oldBlock, newBlock, 1)
-	if err := os.WriteFile(configPath, []byte(patched), 0o644); err != nil {
-		t.Fatalf("write patched config %s: %v", configPath, err)
-	}
+	patchWorkflowCommentBlock(t, configPath,
+		"        project:\n          edit: false\n          delete: false\n")
 }
 
 func injectProjectCommentCreateDeny(t *testing.T, configPath string) {
 	t.Helper()
+	patchWorkflowCommentBlock(t, configPath,
+		"        project:\n          create: false\n")
+}
+
+// patchWorkflowCommentBlock rewrites the seeded omakase preset's verbatim
+// defaults.comment block, appending projectSubBlock (a project deny sub-block)
+// while keeping the flat edit/delete fields so the task-scope chain is
+// unchanged. The workflow is inlined under `workflows:` in
+// defaults/config/omakase.yaml (configPath), so the block sits two extra
+// indent levels deep than a standalone workflow document. EnsureDefaultFiles
+// skips files that already exist, so this on-disk edit survives subsequent CLI
+// boots.
+func patchWorkflowCommentBlock(t *testing.T, configPath, projectSubBlock string) {
+	t.Helper()
 	raw, err := os.ReadFile(configPath)
 	if err != nil {
-		t.Fatalf("read seeded config %s: %v", configPath, err)
+		t.Fatalf("read seeded preset %s: %v", configPath, err)
 	}
 	const oldBlock = "      comment:\n        edit: false\n        delete: false\n"
-	const newBlock = "      comment:\n        edit: false\n        delete: false\n" +
-		"        project:\n          create: false\n"
+	newBlock := oldBlock + projectSubBlock
 	if !strings.Contains(string(raw), oldBlock) {
 		t.Fatalf("seeded config lacks the expected defaults.comment block; "+
 			"the default omakase.yaml layout changed. content:\n%s", raw)
 	}
 	patched := strings.Replace(string(raw), oldBlock, newBlock, 1)
 	if err := os.WriteFile(configPath, []byte(patched), 0o644); err != nil {
-		t.Fatalf("write patched config %s: %v", configPath, err)
+		t.Fatalf("write patched preset %s: %v", configPath, err)
 	}
 }
