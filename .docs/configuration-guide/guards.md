@@ -345,7 +345,7 @@ The decoder accepts only `{allow, require_tags, deny_tags, require_any_tag}`. Un
 
 Failure hints name the resolved policy or predicate (`internal/app/workflow_service.go`):
 
-```
+```text
 policy: comment.create is not permitted in bucket "done". Move the task to one of: backlog, dev - then retry.
 policy: comment.create is not permitted in bucket "done" (no bucket allows it; declare workflows[].buckets[].permissions.comment.create)
 policy: task comment edit is denied for tag "locked"

@@ -47,7 +47,7 @@ Schema versions are tracked in `schema_migrations(version)`. Each numbered file 
 
 The live schema contains fourteen base tables of operational state plus `schema_migrations` and the `search_index` FTS5 virtual table:
 
-```
+```text
 schema_migrations      tags
 projects               task_tags
 tasks                  project_tags
@@ -199,7 +199,7 @@ The active project is resolved by id, slug, or by matching `root_path` to the cu
 
 Post-027 column shape:
 
-```
+```sql
 id           INTEGER PRIMARY KEY AUTOINCREMENT
 project_id   INTEGER NOT NULL REFERENCES projects(id)
 bucket_id    INTEGER                     -- no FK; resolved via Snapshot
@@ -242,7 +242,7 @@ Indexes:
 
 ### `plans`
 
-```
+```sql
 id           INTEGER PRIMARY KEY AUTOINCREMENT
 project_id   INTEGER NOT NULL REFERENCES projects(id)
 slug         TEXT    NOT NULL
@@ -262,7 +262,7 @@ A plan groups child tasks into ordered waves. v1 is **single-project** by design
 
 ### `plan_waves`
 
-```
+```sql
 id       INTEGER PRIMARY KEY AUTOINCREMENT
 plan_id  INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE
 name     TEXT    NOT NULL
@@ -299,7 +299,7 @@ Four join tables attach tags:
 
 ### `errors`, `solutions`, `error_tags`
 
-```
+```text
 errors:    id, description, context, project_id?, created_at,
            source, entrypoint, agent_model, agent_session_id?
 solutions: id, error_id (FK), description, steps,

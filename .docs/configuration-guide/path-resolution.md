@@ -14,7 +14,7 @@ In order, first match wins:
 
 ## `<root>` layout
 
-```
+```text
 <root>/
 ├── config/
 │   ├── .active               one-line state file naming the active profile
@@ -209,7 +209,7 @@ The strict snapshot filename pattern (`<yyyy-mm-dd>T<hh-mm-ss.nnnnnnnnn>Z.db`, w
 
 The local development workflow mirrors the production root under `dev_env/`:
 
-```
+```text
 <repo>/dev_env/
 ├── config/
 ├── laws/

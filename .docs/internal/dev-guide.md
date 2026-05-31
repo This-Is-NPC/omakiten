@@ -99,7 +99,7 @@ In headless contexts (CI, no `/dev/tty`) the prompt is skipped silently — no h
 
 ## Project Layout
 
-```
+```text
 cmd/                     entry points (okt, okt-docs-refresh, …)
 internal/
   domain/                pure types (no adapter imports)
@@ -320,7 +320,7 @@ Do **not** tag releases manually; merge the release PR and let the workflow atta
 
 `bin/okt` is installed into `$HOME/.local/bin/okt`, but PATH may resolve `okt` from somewhere else (a stale `go install ./cmd/okt` puts it in `$(go env GOPATH)/bin`). The install task prints a `WARN` when this happens:
 
-```
+```text
 WARN: PATH resolves okt to /home/you/go/bin/okt, not /home/you/.local/bin/okt.
        Remove the stale copy or reorder PATH so $HOME/.local/bin wins.
 ```

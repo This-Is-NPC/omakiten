@@ -30,7 +30,7 @@ animation block entirely.
 
 ## File layout
 
-```
+```text
 config/
   <active>.yaml            # active profile yaml (e.g. omakase.yaml)
   custom/

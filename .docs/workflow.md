@@ -104,7 +104,7 @@ A preset is **coherent** when its engineering rigor matches its product rigor ma
 
 ### Workflow shape
 
-```
+```text
 backlog ──▶ dev ──▶ done
    ▲        ▲       │
    │        └───────┘
@@ -173,7 +173,7 @@ echo my-izakaya.yaml > ~/.config/omakiten/config/.active
 
 ### Workflow shape
 
-```
+```text
 backlog ──▶ dev ──▶ review ──▶ done
    ▲        ▲        ▲          │
    │        │        └──────────┤  done→review
@@ -250,7 +250,7 @@ echo my-omakase.yaml > ~/.config/omakiten/config/.active
 
 ### Workflow shape
 
-```
+```text
 requirements ──▶ planning ──▶ dev ──▶ review ──▶ docs ──▶ done
                                        ▲          ▲         │
                                        └──────────┴─────────┤  done→review
@@ -322,7 +322,7 @@ echo my-kaiseki.yaml > ~/.config/omakiten/config/.active
 
 ### Workflow shape
 
-```
+```text
 requirements ──▶ planning ──▶ dev ──▶ review ──▶ docs ──▶ done
                                        ▲          ▲         │
                                        │          └─────────┤  done→review
@@ -424,7 +424,7 @@ Sitting alongside the bucket cycle, a small set of atomic commands carry knowled
 
 ### The loop in practice
 
-```
+```text
 session start ──▶  okt-note-recap (wide)   (read: latest handoff per project)
                        │
                        ▼

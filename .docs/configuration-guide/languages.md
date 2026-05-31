@@ -6,7 +6,7 @@ This guide walks a contributor through shipping a new bundled language pack so i
 
 Twenty-one packs live under `defaults/languages/`:
 
-```
+```text
 defaults/languages/
   en.yaml           # English — baseline; the parity test uses this as the source of truth
   es.yaml           # Spanish
@@ -75,7 +75,7 @@ Omakiten's domain vocabulary stays in English even inside translations. Translat
 
 The fixed primitives:
 
-```
+```text
 workflow · preset · bucket · harness · skill · law · persona · agent · MCP ·
 TUI · CLI · tag · blocker · slug · scope · task · comment · frontmatter ·
 hot-reload · cascade · severity
@@ -91,7 +91,7 @@ Translate verbs, adjectives, UI labels, sentence connectors — keep the primiti
 
 Every `%s`, `%d`, `%q`, `%v` is consumed by `fmt.Sprintf` at runtime. Drop one and the binary panics on first use. Reorder them only if the target language requires it and the format verb count stays identical.
 
-```
+```yaml
 en:    "Moved #%d to %s"
 pt-br: "Movida #%d para %s"   # same order, same verbs
 ```
@@ -121,7 +121,7 @@ Keys like `cli.root.long` and `cli.config.init.long` use the YAML block scalar `
 
 Failure mode looks like:
 
-```
+```text
 --- FAIL: TestBundledLanguagePacksHaveIdenticalKeySets
     language_pack_parity_test.go:48: language pack pt-br missing 3 keys (first 5):
         [tui.kicker.totals tui.kicker.tokens tui.stat.total_row_label]
