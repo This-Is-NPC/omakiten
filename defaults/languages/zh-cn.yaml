@@ -141,10 +141,7 @@ keys:
   cli.mcp.prompt.list.orchestrators: "\n编排器 (%d) — 裸命令，指挥路径\n"
   cli.mcp.prompt.list.system: "\n系统 (%d) — 与工具对话，无项目对象\n"
   cli.mcp.prompt.list.granular: "\n细粒度 (%d) — okt-<object>-<verb>，精准\n"
-  cli.mcp.prompt.list.object: |-
-    %s (%d)
-    
-
+  cli.mcp.prompt.list.object: "%s (%d)\n"
   cli.mcp.tools.short: "列出 Omakiten MCP tool 定义"
   cli.mcp.call.short: "使用 JSON 输入对象调用 Omakiten MCP tool"
   cli.mcp.serve.short: "运行 Omakiten MCP stdio 服务器"

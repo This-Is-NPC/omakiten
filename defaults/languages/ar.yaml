@@ -139,10 +139,7 @@ keys:
   cli.mcp.prompt.list.orchestrators: "\nالمنسّقون (%d) — مسار المدير المباشر\n"
   cli.mcp.prompt.list.system: "\nالنظام (%d) — التحدّث إلى الأداة دون كائن مشروع\n"
   cli.mcp.prompt.list.granular: "\nالدقيق (%d) — okt-<object>-<verb>، جراحي\n"
-  cli.mcp.prompt.list.object: |-
-    %s (%d)
-    
-
+  cli.mcp.prompt.list.object: "%s (%d)\n"
   cli.mcp.tools.short: "عرض تعريفات أدوات MCP الخاصة بـ Omakiten"
   cli.mcp.call.short: "استدعاء أداة MCP الخاصة بـ Omakiten بكائن JSON كمدخل"
   cli.mcp.serve.short: "تشغيل خادم MCP الخاص بـ Omakiten عبر stdio"

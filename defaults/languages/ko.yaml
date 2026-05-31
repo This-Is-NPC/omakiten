@@ -139,10 +139,7 @@ keys:
   cli.mcp.prompt.list.orchestrators: "\n오케스트레이터 (%d) — 단순, 디렉터 경로\n"
   cli.mcp.prompt.list.system: "\n시스템 (%d) — 도구와 대화, 프로젝트 객체 없음\n"
   cli.mcp.prompt.list.granular: "\n세분화 (%d) — okt-<object>-<verb>, 정밀\n"
-  cli.mcp.prompt.list.object: |-
-    %s (%d)
-    
-
+  cli.mcp.prompt.list.object: "%s (%d)\n"
   cli.mcp.tools.short: "Omakiten MCP tool 정의 목록"
   cli.mcp.call.short: "JSON 입력 객체로 Omakiten MCP tool 호출"
   cli.mcp.serve.short: "Omakiten MCP stdio 서버 실행"

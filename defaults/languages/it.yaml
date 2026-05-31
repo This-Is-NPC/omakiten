@@ -141,10 +141,7 @@ keys:
   cli.mcp.prompt.list.orchestrators: "\nOrchestratori (%d) — diretto, percorso del direttore\n"
   cli.mcp.prompt.list.system: "\nSistema (%d) — parla con lo strumento, nessun oggetto di progetto\n"
   cli.mcp.prompt.list.granular: "\nGranulare (%d) — okt-<object>-<verb>, chirurgico\n"
-  cli.mcp.prompt.list.object: |-
-    %s (%d)
-    
-
+  cli.mcp.prompt.list.object: "%s (%d)\n"
   cli.mcp.tools.short: "Elenca le definizioni dei tool MCP di Omakiten"
   cli.mcp.call.short: "Chiama un tool MCP di Omakiten con un oggetto JSON in input"
   cli.mcp.serve.short: "Esegue il server MCP di Omakiten in stdio"

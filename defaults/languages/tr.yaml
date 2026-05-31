@@ -139,10 +139,7 @@ keys:
   cli.mcp.prompt.list.orchestrators: "\nOrkestratörler (%d) — yalın, yönetmen yolu\n"
   cli.mcp.prompt.list.system: "\nSistem (%d) — araçla konuş, proje nesnesi yok\n"
   cli.mcp.prompt.list.granular: "\nAyrıntılı (%d) — okt-<object>-<verb>, cerrahi\n"
-  cli.mcp.prompt.list.object: |-
-    %s (%d)
-    
-
+  cli.mcp.prompt.list.object: "%s (%d)\n"
   cli.mcp.tools.short: "Omakiten MCP tool tanımlarını listele"
   cli.mcp.call.short: "Bir Omakiten MCP tool'unu JSON girdi nesnesiyle çağır"
   cli.mcp.serve.short: "Omakiten MCP stdio sunucusunu çalıştır"

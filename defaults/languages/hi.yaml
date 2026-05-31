@@ -141,10 +141,7 @@ keys:
   cli.mcp.prompt.list.orchestrators: "\nऑर्केस्ट्रेटर (%d) — सीधा, डायरेक्टर पथ\n"
   cli.mcp.prompt.list.system: "\nसिस्टम (%d) — टूल से बात करें, कोई प्रोजेक्ट ऑब्जेक्ट नहीं\n"
   cli.mcp.prompt.list.granular: "\nग्रैन्युलर (%d) — okt-<object>-<verb>, सर्जिकल\n"
-  cli.mcp.prompt.list.object: |-
-    %s (%d)
-    
-
+  cli.mcp.prompt.list.object: "%s (%d)\n"
   cli.mcp.tools.short: "Omakiten MCP टूल परिभाषाएँ सूचीबद्ध करें"
   cli.mcp.call.short: "JSON इनपुट ऑब्जेक्ट के साथ Omakiten MCP टूल कॉल करें"
   cli.mcp.serve.short: "Omakiten MCP stdio सर्वर चलाएँ"

@@ -142,10 +142,7 @@ keys:
   cli.mcp.prompt.list.orchestrators: "\nOrkestrerare (%d) — bar, dirigentväg\n"
   cli.mcp.prompt.list.system: "\nSystem (%d) — prata med verktyget, inget projektobjekt\n"
   cli.mcp.prompt.list.granular: "\nGranulär (%d) — okt-<object>-<verb>, kirurgisk\n"
-  cli.mcp.prompt.list.object: |-
-    %s (%d)
-    
-
+  cli.mcp.prompt.list.object: "%s (%d)\n"
   cli.mcp.tools.short: "Lista Omakiten MCP-tool-definitioner"
   cli.mcp.call.short: "Anropa ett Omakiten MCP-tool med ett JSON-input-objekt"
   cli.mcp.serve.short: "Kör Omakiten MCP stdio-servern"
