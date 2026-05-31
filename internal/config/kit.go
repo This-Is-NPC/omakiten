@@ -4,8 +4,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"omakiten/defaults"
+)
+
+// kitCache memoizes resolved kit baselines by candidate key. The embedded
+// defaults are immutable for the life of the process, so a preset resolves
+// to the same Settings every time; every consumer treats the returned value
+// as a read-only baseline and copies out before mutating (see
+// internal/testfixtures.mergeKitDefaults and computeSettingsSources). Caching
+// removes the per-call MkdirTemp + recursive copy + RemoveAll that otherwise
+// ran on the main load path via buildSettingsSources.
+var (
+	kitCacheMu sync.Mutex
+	kitCache   = map[string]Settings{}
 )
 
 // LoadKitConfig parses the embedded `defaults/config/omakase.yaml` and
@@ -50,6 +63,12 @@ func LoadKitConfigByKey(key string) (Settings, error) {
 		return LoadKitConfigByKey("omakase")
 	}
 
+	kitCacheMu.Lock()
+	defer kitCacheMu.Unlock()
+	if cached, ok := kitCache[candidate]; ok {
+		return cached, nil
+	}
+
 	// Preset YAMLs use import directives (merge_from:, from:) that the
 	// resolver must expand before strict decoding. Materialise config/
 	// (including modules/) into a temp dir so the resolver can follow
@@ -61,13 +80,14 @@ func LoadKitConfigByKey(key string) (Settings, error) {
 	defer os.RemoveAll(tmp)
 
 	if err := copyEmbeddedDirRecursive("config", filepath.Join(tmp, "config"), false); err != nil {
-		return Settings{}, fmt.Errorf("parse embedded kit YAML %s: %w", candidate, err)
+		return Settings{}, fmt.Errorf("materialise embedded config %s: %w", candidate, err)
 	}
 
 	w, _, _, err := readWiringDetailed(filepath.Join(tmp, "config", candidate+".yaml"))
 	if err != nil {
 		return Settings{}, fmt.Errorf("parse embedded kit YAML %s: %w", candidate, err)
 	}
+	kitCache[candidate] = w.Config
 	return w.Config, nil
 }
 
