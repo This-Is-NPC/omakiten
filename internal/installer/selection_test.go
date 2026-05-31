@@ -93,7 +93,7 @@ func TestResolvePreset_ShellParity(t *testing.T) {
 // so adding a harness in one place without the other surfaces as a
 // failing unit test rather than a silent installer regression.
 func TestSupportedHarnesses_CountMatchesShell(t *testing.T) {
-	const want = 6
+	const want = 7
 	if got := len(SupportedHarnesses()); got != want {
 		t.Fatalf("SupportedHarnesses: got %d entries, want %d (sync with install.sh SUPPORTED_HARNESSES)", got, want)
 	}

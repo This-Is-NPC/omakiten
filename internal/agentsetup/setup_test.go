@@ -114,7 +114,7 @@ func TestSetupCreatedStatus(t *testing.T) {
 }
 
 func TestSupportedHarnesses(t *testing.T) {
-	want := []string{ClaudeCodeHarness, ClaudeDesktopHarness, OpenCodeHarness, CrushHarness, GitHubCopilotHarness, CodexHarness}
+	want := []string{ClaudeCodeHarness, ClaudeDesktopHarness, OpenCodeHarness, CrushHarness, GitHubCopilotHarness, CodexHarness, CursorHarness}
 	got := SupportedHarnesses()
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("SupportedHarnesses() mismatch (-want +got):\n%s", diff)
@@ -706,5 +706,114 @@ func assertSetupCode(t *testing.T, err error, code domain.ErrorCode) {
 	}
 	if coded.Code != code {
 		t.Fatalf("code = %q, want %q", coded.Code, code)
+	}
+}
+
+// Cursor harness tests
+
+func TestSetupCursorDefaultConfigPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	result, err := Setup(Options{Harness: CursorHarness, Command: "okt"})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	expected := filepath.Join(home, ".cursor", "mcp.json")
+	if result.ConfigPath != expected {
+		t.Fatalf("ConfigPath = %q, want %q", result.ConfigPath, expected)
+	}
+	if _, err := os.Stat(expected); err != nil {
+		t.Fatalf("default config file missing: %v", err)
+	}
+
+	data, _ := os.ReadFile(expected)
+	var written map[string]any
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	servers, ok := written["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcpServers missing or wrong type: %#v", written)
+	}
+	if _, ok := servers["omakiten"]; !ok {
+		t.Fatalf("mcpServers.omakiten missing: %#v", servers)
+	}
+}
+
+func TestSetupCursorPreservesExistingConfigAndRefusesSilentOverwrite(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "mcp.json")
+	existing := []byte(`{"mcpServers":{"other":{"command":"other","args":[]}}}`)
+	if err := os.WriteFile(configPath, existing, 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result, err := Setup(Options{Harness: CursorHarness, ConfigPath: configPath, Command: "okt"})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	if result.Status != "updated" || !result.Changed {
+		t.Fatalf("Setup() = %#v, want updated changed", result)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var written map[string]any
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	servers := written["mcpServers"].(map[string]any)
+	if _, ok := servers["other"]; !ok {
+		t.Fatalf("mcpServers.other missing after setup: %#v", servers)
+	}
+	if _, ok := servers["omakiten"]; !ok {
+		t.Fatalf("mcpServers.omakiten missing after setup: %#v", servers)
+	}
+
+	_, err = Setup(Options{Harness: CursorHarness, ConfigPath: configPath, Command: "okt"})
+	assertSetupCode(t, err, domain.ErrValidation)
+}
+
+func TestSetupCursorForceOverwrite(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "mcp.json")
+	if err := os.WriteFile(configPath, []byte(`{"mcpServers":{"omakiten":{"command":"old","args":["mcp","serve"]}}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	result, err := Setup(Options{Harness: CursorHarness, ConfigPath: configPath, Command: "new-okt", Force: true})
+	if err != nil {
+		t.Fatalf("Setup(force) error = %v", err)
+	}
+	if result.Status != "updated" || !result.Changed {
+		t.Fatalf("Setup(force) = %#v, want updated changed", result)
+	}
+
+	data, _ := os.ReadFile(configPath)
+	var written map[string]any
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	omakiten := written["mcpServers"].(map[string]any)["omakiten"].(map[string]any)
+	if omakiten["command"] != "new-okt" {
+		t.Fatalf("command = %v, want new-okt", omakiten["command"])
+	}
+}
+
+func TestSetupCursorCreatedStatus(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "mcp.json")
+
+	result, err := Setup(Options{Harness: CursorHarness, ConfigPath: configPath, Command: "okt"})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	if result.Status != "created" || !result.Changed {
+		t.Fatalf("Setup() = %#v, want created changed", result)
+	}
+	if _, err := os.Stat(configPath); err != nil {
+		t.Fatalf("config file missing: %v", err)
 	}
 }
