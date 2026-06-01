@@ -29,7 +29,7 @@ Supported harnesses (CLI value → config target):
 
 | Harness | Default config path | Format | Server entry root |
 |---|---|---|---|
-| `claude-code` *(default)* | `~/.claude.json` | JSON | `mcpServers.omakiten` |
+| `claude-code` *(default)* | `~/.claude/.mcp.json` | JSON | `omakiten` (flat root — no `mcpServers` wrapper) |
 | `claude-desktop` | `<UserConfigDir>/Claude/claude_desktop_config.json` | JSON | `mcpServers.omakiten` |
 | `opencode` | `<UserConfigDir>/opencode/opencode.json` | JSON | `mcp.omakiten` |
 | `crush` | `~/.config/crush/crush.json` (Linux/macOS) · `%LOCALAPPDATA%\crush\crush.json` (Windows) | JSON | `mcp.omakiten` |
