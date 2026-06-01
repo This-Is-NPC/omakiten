@@ -12,6 +12,13 @@
 
 * **cli:** rewrite `okt logs` as the unified event inspector with `--category`, `--since`, and `--limit` flags. Default scope is the last `views.logs.window_days` for the active project; `--category` is repeatable and comma-separated and accepts the same chips as the TUI (`task`, `comment`, `plan`, `tag-dep`, `guard`, `audit`, `hook`, `tool_call`, `trick`, `domain`, plus the `all` shortcut).
 
+## [0.24.1](https://github.com/This-Is-NPC/omakiten/compare/v0.24.0...v0.24.1) (2026-06-01)
+
+
+### Bug Fixes
+
+* **agentsetup:** target ~/.claude/.mcp.json for claude-code harness ([#107](https://github.com/This-Is-NPC/omakiten/issues/107)) ([db282e8](https://github.com/This-Is-NPC/omakiten/commit/db282e8c659f445b66d75263368094f4d470e3e1))
+
 ## [0.24.0](https://github.com/This-Is-NPC/omakiten/compare/v0.23.0...v0.24.0) (2026-05-31)
 
 
