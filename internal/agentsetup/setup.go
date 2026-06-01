@@ -135,7 +135,7 @@ func defaultConfigPath(harness string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(home, ".claude.json"), nil
+		return filepath.Join(home, ".claude", ".mcp.json"), nil
 	case ClaudeDesktopHarness:
 		configDir, err := os.UserConfigDir()
 		if err != nil {
@@ -202,7 +202,10 @@ func defaultCommand() string {
 
 func entryExists(existing map[string]any, harness string) bool {
 	switch harness {
-	case ClaudeCodeHarness, ClaudeDesktopHarness, CursorHarness:
+	case ClaudeCodeHarness:
+		_, ok := existing["omakiten"]
+		return ok
+	case ClaudeDesktopHarness, CursorHarness:
 		mcpServers, err := objectField(existing, "mcpServers")
 		if err != nil || mcpServers == nil {
 			return false
@@ -240,7 +243,9 @@ func mergeHarnessConfig(existing map[string]any, harness, command string, args [
 		out[k] = v
 	}
 	switch harness {
-	case ClaudeCodeHarness, ClaudeDesktopHarness, CursorHarness:
+	case ClaudeCodeHarness:
+		out["omakiten"] = map[string]any{"command": command, "args": args}
+	case ClaudeDesktopHarness, CursorHarness:
 		mcpServers, _ := objectField(out, "mcpServers")
 		if mcpServers == nil {
 			mcpServers = map[string]any{}
