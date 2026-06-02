@@ -331,7 +331,7 @@ keys:
   cli.persona.edit.flag.no-edit: "$EDITOR を開かない (フラグ駆動の更新のみ適用)"
   cli.mcp.call.flag.input: "JSON 入力オブジェクト"
   cli.mcp.install.flag.harness: "ターゲット harness (%s)"
-  cli.mcp.install.flag.config-path: "harness config ファイルのパス (デフォルト: harness のデフォルト)"
+  cli.mcp.install.flag.config-path: "harness config ファイルのパス (デフォルト: harness のデフォルト)。書き込み可能な任意のパスを受け付けます。ディレクトリ制限は適用されません — デフォルトは harness の標準の場所です。"
   cli.mcp.install.flag.command: "omakiten を実行するコマンド (デフォルト: 現在の実行ファイル)"
   cli.mcp.install.flag.dry-run: "書き込まずに変更をプレビュー"
   cli.mcp.install.flag.force: "既存の Omakiten MCP config を上書き"

@@ -336,7 +336,7 @@ keys:
   cli.persona.edit.flag.no-edit: "не открывать $EDITOR (применить только обновления флагов)"
   cli.mcp.call.flag.input: "JSON-объект ввода"
   cli.mcp.install.flag.harness: "Целевой harness (%s)"
-  cli.mcp.install.flag.config-path: "Путь файла config harness (по умолчанию: дефолт harness)"
+  cli.mcp.install.flag.config-path: "Путь файла config harness (по умолчанию: дефолт harness). Принимает любой доступный для записи путь; ограничение на каталог не применяется — по умолчанию используется стандартное расположение harness."
   cli.mcp.install.flag.command: "Команда для запуска omakiten (по умолчанию: текущий исполняемый файл)"
   cli.mcp.install.flag.dry-run: "Предпросмотр изменений без записи"
   cli.mcp.install.flag.force: "Перезаписать существующий config Omakiten MCP"

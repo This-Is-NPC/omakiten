@@ -327,7 +327,7 @@ keys:
   cli.persona.edit.flag.no-edit: "不打开 $EDITOR(仅应用标志驱动的更新)"
   cli.mcp.call.flag.input: "JSON 输入对象"
   cli.mcp.install.flag.harness: "目标 harness (%s)"
-  cli.mcp.install.flag.config-path: "harness config 文件路径(默认:harness 默认值)"
+  cli.mcp.install.flag.config-path: "harness config 文件路径(默认:harness 默认值)。接受任何可写路径;不强制目录限制——默认使用 harness 的标准位置。"
   cli.mcp.install.flag.command: "运行 omakiten 的命令(默认:当前可执行文件)"
   cli.mcp.install.flag.dry-run: "预览更改,不写入"
   cli.mcp.install.flag.force: "覆盖现有的 Omakiten MCP config"

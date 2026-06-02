@@ -331,7 +331,7 @@ keys:
   cli.persona.edit.flag.no-edit: "عدم فتح $EDITOR (تطبيق التحديثات المدفوعة بالأعلام فقط)"
   cli.mcp.call.flag.input: "كائن JSON كمدخل"
   cli.mcp.install.flag.harness: "harness الهدف (%s)"
-  cli.mcp.install.flag.config-path: "مسار ملف إعدادات harness (افتراضيًّا: افتراضي harness)"
+  cli.mcp.install.flag.config-path: "مسار ملف إعدادات harness (افتراضيًّا: افتراضي harness). يقبل أي مسار قابل للكتابة؛ لا يُفرض أي تقييد على الدليل — يكون الافتراضي هو الموقع القياسي لـ harness."
   cli.mcp.install.flag.command: "الأمر المستخدم لتشغيل omakiten (افتراضيًّا: التنفيذي الحالي)"
   cli.mcp.install.flag.dry-run: "معاينة التغييرات دون كتابة"
   cli.mcp.install.flag.force: "الكتابة فوق إعدادات Omakiten MCP الموجودة"
