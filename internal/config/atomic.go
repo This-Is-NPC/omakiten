@@ -47,6 +47,16 @@ func WriteAtomic(path string, data []byte) error {
 	}
 	tmpPath := tmp.Name()
 
+	// Register temp-file cleanup immediately after creation, before any operation
+	// that can fail (e.g. the Chmod below). Otherwise an early-return error path
+	// would orphan the temp file in the config dir.
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
 	// Enforce 0o600 explicitly rather than relying on os.CreateTemp's implicit
 	// 0o600 surviving the rename. The invariant — config files are owner-only —
 	// is then guaranteed by this call, not inherited from a runtime default that
@@ -55,13 +65,6 @@ func WriteAtomic(path string, data []byte) error {
 		_ = tmp.Close()
 		return err
 	}
-
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
 
 	if _, err := io.Copy(tmp, bytes.NewReader(data)); err != nil {
 		_ = tmp.Close()

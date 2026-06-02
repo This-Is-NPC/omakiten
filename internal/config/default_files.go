@@ -14,20 +14,30 @@ import (
 // the config/ yaml dir. Order matters only for stable migration iteration.
 var entityFolders = []string{"skills", "laws", "personas", "templates", "themes", "notifications", "languages"}
 
-// hardenDir creates dir (and any missing parents) owner-only (0o700) and chmods
-// it to 0o700 even if it already existed. Unlike WriteAtomic — a generic
-// primitive that must not touch a foreign parent's mode — this helper is only
-// ever called on directories under the omakiten-owned config root, so
-// clobbering a pre-existing mode is both safe and the intended behavior: it
-// keeps the whole omakiten config tree consistently owner-only to match the
-// 0o600 files inside it, closing the file-presence leak even when the tree was
-// first created by an older omakiten (which used 0o755).
+// hardenDir creates dir (and any missing parents) owner-only (0o700), but only
+// tightens the mode of a directory it actually created. A pre-existing dir
+// keeps its current mode and is never clobbered — even when it sits under the
+// config root — because the same path may be a shared dir (e.g. ~/.config when
+// --config points at a yaml outside an omakiten layout), and silently mutating
+// a dir omakiten did not create is a surprising side-effect. This is the same
+// rule WriteAtomic already follows: chmod only what you create.
+//
+// Net effect: a freshly created omakiten config subtree is owner-only (0o700)
+// to match the 0o600 files inside it, closing the file-presence leak on first
+// creation; a pre-existing dir is left untouched.
 func hardenDir(dir string) error {
+	_, statErr := os.Stat(dir)
+	created := os.IsNotExist(statErr)
+	if statErr != nil && !created {
+		return statErr
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	if err := os.Chmod(dir, 0o700); err != nil {
-		return err
+	if created {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return err
+		}
 	}
 	return nil
 }
