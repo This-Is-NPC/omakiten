@@ -106,9 +106,11 @@ func Setup(opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	// config.WriteAtomic creates any missing parent dir (e.g. ~/.claude/) with
-	// 0o700 to match the 0o600 config file, and documents the os.MkdirAll
-	// non-atomicity as a known limitation. See internal/config/atomic.go.
+	// config.WriteAtomic writes the harness config 0o600. If it has to create a
+	// brand-new parent dir it uses 0o700, but it deliberately does NOT chmod a
+	// pre-existing ~/.claude/ (shared with Claude Code) or --config-path parent,
+	// so this path never clobbers a foreign directory mode. See
+	// internal/config/atomic.go.
 	if err := config.WriteAtomic(absConfigPath, data); err != nil {
 		return Result{}, err
 	}
