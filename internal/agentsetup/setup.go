@@ -106,6 +106,9 @@ func Setup(opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	// config.WriteAtomic creates any missing parent dir (e.g. ~/.claude/) with
+	// 0o700 to match the 0o600 config file, and documents the os.MkdirAll
+	// non-atomicity as a known limitation. See internal/config/atomic.go.
 	if err := config.WriteAtomic(absConfigPath, data); err != nil {
 		return Result{}, err
 	}

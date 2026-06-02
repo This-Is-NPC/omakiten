@@ -10,7 +10,17 @@ import (
 // WriteAtomic writes data to path through a temp file + rename, ensuring no
 // reader observes a half-written file.
 func WriteAtomic(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// Create the parent dir with 0o700 (owner-only) to match the 0o600 config
+	// files we write into it: world-listable parents would leak the presence of
+	// those files to other users on shared machines.
+	//
+	// Known limitation: os.MkdirAll is not atomic. On network filesystems or
+	// under concurrent invocation, partial directory state is observable, and an
+	// existing parent dir keeps whatever mode it already has (MkdirAll does not
+	// chmod it). Acceptable for a local single-user CLI; revisit with a
+	// check-then-create + lock-file pattern if the threat model expands to
+	// multi-user or containerized environments.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 
