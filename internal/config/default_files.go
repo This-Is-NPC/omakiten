@@ -14,20 +14,41 @@ import (
 // the config/ yaml dir. Order matters only for stable migration iteration.
 var entityFolders = []string{"skills", "laws", "personas", "templates", "themes", "notifications", "languages"}
 
+// hardenDir creates dir (and any missing parents) owner-only (0o700) and chmods
+// it to 0o700 even if it already existed. Unlike WriteAtomic — a generic
+// primitive that must not touch a foreign parent's mode — this helper is only
+// ever called on directories under the omakiten-owned config root, so
+// clobbering a pre-existing mode is both safe and the intended behavior: it
+// keeps the whole omakiten config tree consistently owner-only to match the
+// 0o600 files inside it, closing the file-presence leak even when the tree was
+// first created by an older omakiten (which used 0o755).
+func hardenDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return err
+	}
+	return nil
+}
+
 // EnsureDefaultFiles materializes the embedded default kit into a config root.
 // Existing files are not overwritten; user-owned custom folders are created.
 func EnsureDefaultFiles(rootDir string) error {
+	if err := hardenDir(rootDir); err != nil {
+		return fmt.Errorf("harden config root: %w", err)
+	}
 	if err := copyDefaultConfigProfiles(rootDir, false); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Join(rootDir, "config", "custom"), 0o755); err != nil {
+	if err := hardenDir(filepath.Join(rootDir, "config", "custom")); err != nil {
 		return fmt.Errorf("create config/custom: %w", err)
 	}
 	for _, sub := range entityFolders {
 		if err := copyDefaultDir(rootDir, sub, false); err != nil {
 			return err
 		}
-		if err := os.MkdirAll(filepath.Join(rootDir, sub, "custom"), 0o755); err != nil {
+		if err := hardenDir(filepath.Join(rootDir, sub, "custom")); err != nil {
 			return fmt.Errorf("create %s/custom: %w", sub, err)
 		}
 	}
@@ -36,17 +57,20 @@ func EnsureDefaultFiles(rootDir string) error {
 
 // RefreshDefaultFiles overwrites every bundled default file while preserving custom/.
 func RefreshDefaultFiles(rootDir string) error {
+	if err := hardenDir(rootDir); err != nil {
+		return fmt.Errorf("harden config root: %w", err)
+	}
 	if err := copyDefaultConfigProfiles(rootDir, true); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Join(rootDir, "config", "custom"), 0o755); err != nil {
+	if err := hardenDir(filepath.Join(rootDir, "config", "custom")); err != nil {
 		return fmt.Errorf("create config/custom: %w", err)
 	}
 	for _, sub := range entityFolders {
 		if err := copyDefaultDir(rootDir, sub, true); err != nil {
 			return err
 		}
-		if err := os.MkdirAll(filepath.Join(rootDir, sub, "custom"), 0o755); err != nil {
+		if err := hardenDir(filepath.Join(rootDir, sub, "custom")); err != nil {
 			return fmt.Errorf("create %s/custom: %w", sub, err)
 		}
 	}
@@ -75,7 +99,7 @@ func copyEmbeddedDirRecursive(srcDir, dstDir string, overwrite bool) error {
 		src := srcDir + "/" + entry.Name()
 		dst := filepath.Join(dstDir, entry.Name())
 		if entry.IsDir() {
-			if err := os.MkdirAll(dst, 0o755); err != nil {
+			if err := hardenDir(dst); err != nil {
 				return fmt.Errorf("create %s: %w", dst, err)
 			}
 			if err := copyEmbeddedDirRecursive(src, dst, overwrite); err != nil {
