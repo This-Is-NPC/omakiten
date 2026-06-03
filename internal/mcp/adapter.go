@@ -236,8 +236,6 @@ func tools() []ToolDefinition {
 		{Name: "dependencies.add", Description: "Add a project-scoped task dependency with cycle prevention.", InputSchema: dependencySchema(false)},
 		{Name: "dependencies.remove", Description: "Remove a task dependency after explicit confirmation.", InputSchema: dependencySchema(true)},
 		{Name: "dependencies.list", Description: "List dependencies for one task or all active project tasks.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Optional task id; omit or set 0 for all")}, nil)},
-		{Name: "context.add", Description: "Add a project handoff context entry.", InputSchema: objectSchema(map[string]any{"body": stringSchema("Context body")}, []string{"body"})},
-		{Name: "context.dump", Description: "Dump compact project context at level 1, 2, or 3.", InputSchema: objectSchema(map[string]any{"level": integerSchema("Context level: 1, 2, or 3")}, nil)},
 		{Name: "workflow.show", Description: "Show the active workflow buckets and allowed transitions.", InputSchema: selectorSchema()},
 		{Name: "orphans.migrate", Description: "Detect tasks whose bucket was deactivated by a workflow swap and rebind them to the active workflow (matching key when preserved, first bucket otherwise). First call without confirmed=true returns a preview report plus a Confirmation block listing every affected task; retry with confirmed=true to apply the rebind. Empty preview short-circuits to a no-op.", InputSchema: objectSchema(map[string]any{"confirmed": booleanSchema("Required true to apply the rebind; first call returns a preview with affected tasks.")}, nil)},
 		{Name: "progress.record", Description: "Record material agent progress through task edits, comments, context entries, and optional workflow movement.", InputSchema: progressSchema()},
@@ -493,18 +491,6 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = service.ListDependencies(ctx, input)
-		}
-	case "context.add":
-		var input agent.AddContextInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.AddContext(ctx, input)
-		}
-	case "context.dump":
-		var input agent.DumpContextInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.DumpContext(ctx, input)
 		}
 	case "workflow.show":
 		var input agent.WorkflowInput
@@ -840,7 +826,6 @@ func progressSchema() map[string]any {
 	props["priority"] = stringSchema("Optional priority: low, normal, or high")
 	props["move_to_bucket"] = stringSchema("Optional target workflow bucket key")
 	props["comment"] = stringSchema("Optional progress comment")
-	props["context"] = stringSchema("Optional project handoff context entry")
 	props["author_type"] = stringSchema("human or agent")
 	return objectSchema(props, nil)
 }

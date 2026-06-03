@@ -32,8 +32,6 @@ func TestToolsIncludePlannedSurface(t *testing.T) {
 		"dependencies.add":    false,
 		"dependencies.remove": false,
 		"dependencies.list":   false,
-		"context.dump":        false,
-		"context.add":         false,
 		"workflow.show":       false,
 		"progress.record":     false,
 		"errors.record":       false,
@@ -197,8 +195,6 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		"dependencies.add",
 		"dependencies.remove",
 		"dependencies.list",
-		"context.add",
-		"context.dump",
 		"workflow.show",
 		"progress.record",
 		"errors.record",
@@ -234,10 +230,6 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 			args = map[string]any{"task_id": 1, "bucket_key": "dev"}
 		case "tasks.create_intent", "tasks.create":
 			args = map[string]any{"description": "test task"}
-		case "context.add":
-			args = map[string]any{"body": "entry"}
-		case "context.dump":
-			args = map[string]any{"level": 1}
 		case "progress.record":
 			args = map[string]any{"task_id": 1, "comment": "note"}
 		case "errors.record":
