@@ -33,7 +33,7 @@ knobs, see [system.md](system.md).
 - The SQL adapter (`*sqlite.Store`) is back to operational state only:
   `tasks`, `events` (with `event_tags`), `task_dependencies`, `tags`
   (with `task_tags` / `project_tags` / `error_tags`), `errors`,
-  `solutions`, `context_entries`, `plans`, `plan_waves` (added by
+  `solutions`, `plans`, `plan_waves` (added by
   `migrations/023_plans.sql`; service layer in
   `internal/sqlite/plans.go`). Migration 009 folded `comments` and
   `activity_logs` into `events`; migration 020 dropped every config
@@ -109,8 +109,8 @@ should reject changes that break any of them.
    no `Set*` mutator. Mutation produces a new pointer; the old one
    keeps serving in-flight callers.
 3. **App services receive `*config.Snapshot` at construction.**
-   `WorkflowService`, `PersonaService`, `SkillService`, `LawService`,
-   `ContextService` all capture the pointer once on construction and
+   `WorkflowService`, `PersonaService`, `SkillService`, and `LawService`
+   all capture the pointer once on construction and
    read through `s.snap.X`. The cache rebuilds the per-project services
    when the bundle changes — a hot-reload returns a fresh
    `*ProjectRuntime` with new service instances bound to the new

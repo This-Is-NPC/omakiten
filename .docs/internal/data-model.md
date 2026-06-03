@@ -2,7 +2,7 @@
 
 Omakiten persists state in a single SQLite file (default `~/.local/share/omakiten/omakiten.db`, pure-Go driver `modernc.org/sqlite`). The schema is owned by the migration files under `migrations/` and applied transactionally on every connect (`internal/sqlite/store.go:Open`).
 
-> **CQRS-like split — post Phase 2-bis.** YAML files (the active profile yaml plus per-entity markdown) are the **only** source of truth for config. SQLite is **operational data only** — tasks, comments, dependencies, context entries, tags, errors, solutions, plans, plan_waves, task assignment, and the unified events log. Migration 020 dropped every config table from the database; the runtime now resolves workflows, buckets, personas, skills, laws, and templates from an in-memory `config.Snapshot` rebuilt on every `ConfigService.Import` (see `.docs/configuration-guide/README.md` § In-memory providers).
+> **CQRS-like split — post Phase 2-bis.** YAML files (the active profile yaml plus per-entity markdown) are the **only** source of truth for config. SQLite is **operational data only** — tasks, comments, dependencies, tags, errors, solutions, plans, plan_waves, task assignment, and the unified events log. Migration 020 dropped every config table from the database; the runtime now resolves workflows, buckets, personas, skills, laws, and templates from an in-memory `config.Snapshot` rebuilt on every `ConfigService.Import` (see `.docs/configuration-guide/README.md` § In-memory providers).
 
 ## Migrations
 
@@ -10,7 +10,7 @@ Schema versions are tracked in `schema_migrations(version)`. Each numbered file 
 
 | File | What it adds |
 |---|---|
-| `001_initial.sql` | Core tables: `projects`, `config_bundles`, `settings`, `skills`, `personas`, `persona_skills`, `laws`, `workflows`, `workflow_buckets`, `workflow_transitions`, `tasks`, `comments`, `task_dependencies`, `context_entries`. |
+| `001_initial.sql` | Core tables: `projects`, `config_bundles`, `settings`, `skills`, `personas`, `persona_skills`, `laws`, `workflows`, `workflow_buckets`, `workflow_transitions`, `tasks`, `comments`, `task_dependencies`, plus the original context-entry table (dropped in 033). |
 | `002_entities.sql` | Adds `description` / `body` / `source_path` to entity tables; law `scope` (`global`/`project`/`persona`); `tasks.workdir` / `tasks.branch` (removed in 017). |
 | `003_activity_logs.sql` | `activity_logs` table (later absorbed into `events`). |
 | `004_tags.sql` | `tags`, `task_tags`, `project_tags`. |
@@ -42,20 +42,21 @@ Schema versions are tracked in `schema_migrations(version)`. Each numbered file 
 | `030_rename_errors_researched.sql` | Renames historical `error.searched` rows to `errors.researched` (event-registry refactor). |
 | `031_notes.sql` | **Never shipped.** Added a standalone `notes` entity (`notes`, `notes_tags`, `notes_fts`, plus `entity_type='note'` search-index triggers). Superseded and fully dropped by 032 before any release. |
 | `032_events_comment_log.sql` | Makes `events` the scoped comment log. Adds `kind` / `title` / `pinned` / `updated_at` columns to `events`, recasts comment scope onto `(entity_type, entity_id, project_id)` — `task`+taskID, `project`+projectID, `universal`+NULL — and **drops the unreleased `notes` entity** (table, join, FTS, triggers; zero rows, no data migration). Recasts the comment `search_index` triggers to index `body + ' ' + title`. |
+| `033_drop_context_entries.sql` | **Drops the context-entry table** and retires its search path. The Go service/store/domain layer was already removed upstream; this migration drops the `'context'` `search_index` mirror triggers and rows, then drops the table. Hard drop — any existing rows are discarded (no backfill). Handoff state now lives in project-scoped comments and `progress.record`. |
 
-## Current schema (post-032)
+## Current schema (post-033)
 
-The live schema contains fourteen base tables of operational state plus `schema_migrations` and the `search_index` FTS5 virtual table:
+The live schema contains thirteen base tables of operational state plus `schema_migrations` and the `search_index` FTS5 virtual table:
 
 ```text
-schema_migrations      tags
-projects               task_tags
-tasks                  project_tags
-task_dependencies      error_tags
-context_entries        event_tags
-errors                 events
-solutions              plans
-plan_waves             search_index (FTS5 virtual)
+schema_migrations      project_tags
+projects               error_tags
+tasks                  event_tags
+task_dependencies      events
+errors                 plans
+solutions              plan_waves
+tags                   search_index (FTS5 virtual)
+task_tags
 ```
 
 The diagram below reflects that shape. Crow's-foot reads as: `||--o{` is one-to-many; pure-junction tables (`*_tags`, `task_dependencies`) sit between the two entities they link.
@@ -100,11 +101,6 @@ erDiagram
         int project_id FK
         int task_id FK
         int depends_on_task_id FK
-    }
-    CONTEXT_ENTRIES {
-        int  id PK
-        int  project_id FK
-        int  token_estimate
     }
     TAGS {
         int  id PK
@@ -152,7 +148,6 @@ erDiagram
     }
 
     PROJECTS ||--o{ TASKS           : owns
-    PROJECTS ||--o{ CONTEXT_ENTRIES : owns
     PROJECTS ||--o{ ERRORS          : "optional scope"
     PROJECTS ||--o{ PROJECT_TAGS    : "tagged via"
     PROJECTS ||--o{ EVENTS          : "optional scope"
@@ -278,10 +273,6 @@ Waves are ordered phases inside a plan. Tasks within a wave run in parallel; wav
 
 `(project_id, task_id, depends_on_task_id)` PK, with `CHECK (task_id != depends_on_task_id)` and dual FKs into `tasks(project_id, id)`. The `app.DependencyService` adds cycle detection in software (`internal/graph/dependency.go:HasCycle`) since SQLite cannot enforce DAG-ness.
 
-### `context_entries`
-
-`id`, `project_id`, `body`, `token_estimate`, `created_at`. Project-scoped handoff notes consumed by `context.dump` (`internal/app/context_service.go`).
-
 ### `tags`
 
 `id`, `name UNIQUE` (kebab-case-normalized via `app.NormalizeTagName`), `label`, `created_at`.
@@ -346,7 +337,7 @@ After migration 009, **comments**, **task lifecycle events**, **operational tele
 | `system` | `bundle.imported` | (null) | A fresh bundle reached the runtime (source-of-truth flipped). `payload={path, hash, workflow_key, workflow_count, persona_count, skill_count, law_count, template_count}`. |
 | `system` | `confirmation.granted` | (null) | TUI dispatched a non-empty `NotificationAction.Command` in response to a user keystroke. `payload={notification_slug, action_id, command}`. |
 | `error` | `error.recorded` | error id | `app.ErrorService.Record` persisted a new error row. `payload={tags, has_context}`. |
-| `search` | `errors.researched` | (null) | `app.SearchService.Search` ran (unified FTS5 across tasks / comments / errors / solutions / context entries). `payload={query, entity_types, result_count, unified}`. |
+| `search` | `errors.researched` | (null) | `app.SearchService.Search` ran (unified FTS5 across tasks / comments / errors / solutions / plans). `payload={query, entity_types, result_count, unified}`. |
 | `solution` | `solution.added` | solution id | `app.ErrorService.AddSolution` persisted a candidate. `payload={error_id}`. |
 | `solution` | `solution.confirmed` | solution id | `ConfirmSolution` ran (regardless of outcome). Co-emits with `solution.liked` or `solution.failed`. `payload={error_id, success, likes}`. |
 | `solution` | `solution.liked` | solution id | `ConfirmSolution(success=true)`. `payload={error_id, likes}`. |
@@ -390,7 +381,7 @@ Both fields are validator-required (> 0) — disabling retention is not a suppor
 `tasks.bucket_id` and `tasks.priority_id` are integer references into per-project YAML data, not SQL FKs.
 
 - **Bucket id → bucket key**: `config.Snapshot.BucketByID(id)` (`internal/config/snapshot.go`). The Snapshot is rebuilt from `config.Bundle.Workflows[*].Buckets[*]` on every `ConfigService.Import` (or hot-reload via `Repositories.Cache.Reload`). The bucket's stable id is the YAML-declared `local_id` (the canonical ids `1=backlog`, `2=dev`, `3=review`, `4=done` for `omakase`; other presets carry their own).
-- **Priority id → priority label**: resolved through the `*domain.EnumRegistry` returned by `ConfigService.Import` and injected into every service that needs labels (`TaskService`, `WorkflowService`, `TUIQueryService`, `ContextService`, agent `Service`). The on-the-wire JSON shape is the raw int id — label projection happens at the DTO boundary so different surfaces (TUI, CLI table, MCP DTO) can resolve to different shapes if they want.
+- **Priority id → priority label**: resolved through the `*domain.EnumRegistry` returned by `ConfigService.Import` and injected into every service that needs labels (`TaskService`, `WorkflowService`, `TUIQueryService`, agent `Service`). The on-the-wire JSON shape is the raw int id — label projection happens at the DTO boundary so different surfaces (TUI, CLI table, MCP DTO) can resolve to different shapes if they want.
 
 A task pointing at a `bucket_id` the active Snapshot cannot resolve is an **orphan**. Orphans surface through `app.OrphanRepository`:
 
