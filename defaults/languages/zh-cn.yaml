@@ -1095,7 +1095,7 @@ keys:
   cli.update.err.stage_binary_fmt: "为 pre-swap health check 暂存提取的二进制: %s"
   cli.update.err.config_validation_failed_fmt: "config health check 失败(%d 个错误,首个: %s);二进制未变更 — 运行 `okt config validate --migrate` 查看详情"
   cli.update.err.config_validation_exec_fmt: "运行 staged binary health check: %s"
-  cli.tui.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); run `okt config validate --migrate` for details"
+  cli.tui.err.config_validation_failed_fmt: "config 健康检查失败（%d 个错误，第一个：%s）；运行 `okt config validate` 以排查原因，运行 `okt config validate --migrate` 以将配置更新到当前版本"
   # Remediation hint copy (#367) — %s slot carries the suggested command literal.
   cli.config.validate.remediation.missing_shipped_file: "Restore the shipped default files: %s — your custom/ subtree is preserved; back up direct edits to shipped files first."
   cli.config.validate.remediation.embedded_default_drift: "Refresh the embedded defaults the running binary expects: %s — your custom/ subtree stays untouched."

@@ -1099,7 +1099,7 @@ keys:
   cli.update.err.stage_binary_fmt: "pre-swap health check 용 추출 바이너리 stage: %s"
   cli.update.err.config_validation_failed_fmt: "config health check 실패(%d 오류, 첫 번째: %s); 바이너리 변경 없음 — 자세히는 `okt config validate --migrate` 실행"
   cli.update.err.config_validation_exec_fmt: "staged binary health check 실행: %s"
-  cli.tui.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); run `okt config validate --migrate` for details"
+  cli.tui.err.config_validation_failed_fmt: "config 상태 점검 실패 (%d개 오류, 첫 번째: %s); 원인을 조사하려면 `okt config validate`를 실행하고, config를 현재 버전으로 업데이트하려면 `okt config validate --migrate`를 실행하세요"
   # Remediation hint copy (#367) — %s slot carries the suggested command literal.
   cli.config.validate.remediation.missing_shipped_file: "Restore the shipped default files: %s — your custom/ subtree is preserved; back up direct edits to shipped files first."
   cli.config.validate.remediation.embedded_default_drift: "Refresh the embedded defaults the running binary expects: %s — your custom/ subtree stays untouched."

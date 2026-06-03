@@ -1105,7 +1105,7 @@ keys:
   cli.update.err.stage_binary_fmt: "preparar binário extraído para health check pré-swap: %s"
   cli.update.err.config_validation_failed_fmt: "health check de config falhou (%d erros, primeiro: %s); binário inalterado — rode `okt config validate --migrate` para detalhes"
   cli.update.err.config_validation_exec_fmt: "executar health check do binário staged: %s"
-  cli.tui.err.config_validation_failed_fmt: "health check de config falhou (%d erros, primeiro: %s); rode `okt config validate --migrate` para detalhes"
+  cli.tui.err.config_validation_failed_fmt: "health check de config falhou (%d erros, primeiro: %s); para investigar a causa rode `okt config validate`, para atualizar seu config para a versão atual rode `okt config validate --migrate`"
   # Remediation hint copy (#367) — %s slot carries the suggested command literal.
   cli.config.validate.remediation.missing_shipped_file: "Restaure os arquivos padrão embarcados: %s — sua subárvore custom/ é preservada; faça backup de edições diretas em arquivos shipped primeiro."
   cli.config.validate.remediation.embedded_default_drift: "Atualize os padrões embarcados que o binário em execução espera: %s — sua subárvore custom/ não é tocada."
