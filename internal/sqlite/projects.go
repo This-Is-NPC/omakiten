@@ -28,6 +28,20 @@ RETURNING id, name, slug, root_path
 	return project, nil
 }
 
+// UpdateProjectDescription persists a new description onto a live
+// (non-archived) project and returns the refreshed row. The
+// projects.description column has existed since migration 002 but had
+// no write path; this restores it. An unknown or archived id matches
+// no row, surfacing ErrProjectNotFound via scanProject's sql.ErrNoRows
+// branch.
+func (s *Store) UpdateProjectDescription(ctx context.Context, id int64, description string) (domain.Project, error) {
+	return s.scanProject(s.db.QueryRowContext(ctx, `
+UPDATE projects SET description = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND archived_at IS NULL
+RETURNING id, name, slug, root_path, description
+`, description, id))
+}
+
 func (s *Store) FindProjectByID(ctx context.Context, id int64) (domain.Project, error) {
 	return s.scanProject(s.db.QueryRowContext(ctx, "SELECT id, name, slug, root_path, description FROM projects WHERE id = ? AND archived_at IS NULL", id))
 }
