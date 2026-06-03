@@ -330,7 +330,7 @@ keys:
   cli.persona.edit.flag.no-edit: "$EDITOR उघडू नका (फक्त flag-चालित अद्यतने लागू करा)"
   cli.mcp.call.flag.input: "JSON input ऑब्जेक्ट"
   cli.mcp.install.flag.harness: "लक्ष्य harness (%s)"
-  cli.mcp.install.flag.config-path: "harness config फाइलचा पथ (डीफॉल्ट: harness डीफॉल्ट)"
+  cli.mcp.install.flag.config-path: "harness config फाइलचा पथ (डीफॉल्ट: harness डीफॉल्ट). कोणताही लिहिण्यायोग्य पथ स्वीकारतो; कोणतेही डिरेक्टरी निर्बंध लागू नाही — डीफॉल्टनुसार harness चे मानक स्थान."
   cli.mcp.install.flag.command: "omakiten चालवण्यासाठी command (डीफॉल्ट: सध्याचा executable)"
   cli.mcp.install.flag.dry-run: "बदलांचे पूर्वावलोकन करा, लिहू नका"
   cli.mcp.install.flag.force: "विद्यमान Omakiten MCP config overwrite करा"

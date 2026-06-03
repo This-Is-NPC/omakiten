@@ -335,7 +335,7 @@ keys:
   cli.persona.edit.flag.no-edit: "älä avaa $EDITORia (sovella vain lipuilta tulevia päivityksiä)"
   cli.mcp.call.flag.input: "JSON-syöteobjekti"
   cli.mcp.install.flag.harness: "Kohde-harness (%s)"
-  cli.mcp.install.flag.config-path: "Polku harnessin config-tiedostoon (oletus: harnessin oletus)"
+  cli.mcp.install.flag.config-path: "Polku harnessin config-tiedostoon (oletus: harnessin oletus). Hyväksyy minkä tahansa kirjoitettavan polun; hakemistorajoitusta ei valvota — oletuksena harnessin vakiosijainti."
   cli.mcp.install.flag.command: "Komento omakitenin suorittamiseksi (oletus: nykyinen suoritettava)"
   cli.mcp.install.flag.dry-run: "Esikatsele muutoksia kirjoittamatta"
   cli.mcp.install.flag.force: "Ylikirjoita olemassa oleva Omakitenin MCP-config"

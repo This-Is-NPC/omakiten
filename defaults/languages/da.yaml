@@ -335,7 +335,7 @@ keys:
   cli.persona.edit.flag.no-edit: "åbn ikke $EDITOR (anvend kun flag-drevne opdateringer)"
   cli.mcp.call.flag.input: "JSON-input-objekt"
   cli.mcp.install.flag.harness: "Mål-harness (%s)"
-  cli.mcp.install.flag.config-path: "Sti til harness-config-fil (default: harness-default)"
+  cli.mcp.install.flag.config-path: "Sti til harness-config-fil (default: harness-default). Accepterer enhver skrivbar sti; ingen mappebegrænsning håndhæves — standard er harnessens standardplacering."
   cli.mcp.install.flag.command: "Kommando til at køre omakiten (default: nuværende eksekverbar)"
   cli.mcp.install.flag.dry-run: "Forhåndsvis ændringer uden at skrive"
   cli.mcp.install.flag.force: "Overskriv eksisterende Omakiten MCP-config"

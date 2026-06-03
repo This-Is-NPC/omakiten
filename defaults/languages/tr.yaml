@@ -332,7 +332,7 @@ keys:
   cli.persona.edit.flag.no-edit: "$EDITOR'ı açma (yalnızca bayrak güdümlü güncellemeleri uygula)"
   cli.mcp.call.flag.input: "JSON girdi nesnesi"
   cli.mcp.install.flag.harness: "Hedef harness (%s)"
-  cli.mcp.install.flag.config-path: "Harness config dosyasının yolu (varsayılan: harness varsayılanı)"
+  cli.mcp.install.flag.config-path: "Harness config dosyasının yolu (varsayılan: harness varsayılanı). Yazılabilir herhangi bir yolu kabul eder; dizin kısıtlaması uygulanmaz — varsayılan olarak harness'in standart konumu kullanılır."
   cli.mcp.install.flag.command: "omakiten'i çalıştıracak komut (varsayılan: mevcut çalıştırılabilir)"
   cli.mcp.install.flag.dry-run: "Değişiklikleri yazmadan önizle"
   cli.mcp.install.flag.force: "Mevcut Omakiten MCP config'in üzerine yaz"
