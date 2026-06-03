@@ -157,9 +157,7 @@ Dispatch rules:
 - Root kit hooks (declared in the project root kit's `config.hooks`) fire only when `subject_depth == 0`.
 - Sub-kit hooks (declared in the sub-kit's `config.hooks`) fire only when `subject_depth >= 1`.
 - The subject is **always** the directly affected task. `AddSub` uses the new child as subject; moving / editing a sub-task uses the sub-task; root-task creation and moves use the root task. Child changes never trigger parent hooks unless the parent itself is touched by the same action.
-- When `subtask_kit:` is absent, every hook fires from the root kit regardless of subject depth — matches pre-#281 behaviour. The depth predicate only activates once a sub-kit is wired.
-
-When no `subtask_kit:` is configured, every event resolves through the root kit regardless of depth — matches the pre-cascade behavior.
+- When `subtask_kit:` is absent, every hook fires from the root kit regardless of subject depth — the legacy flat-kit behaviour. The depth predicate only activates once a sub-kit is wired.
 
 ### `guard.violated` carries the same subject metadata
 
