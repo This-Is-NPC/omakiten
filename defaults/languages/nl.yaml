@@ -62,7 +62,7 @@ keys:
     Los het project op via numerieke id of slug, schrijf een recovery-
     snapshot naar de rollende backup-map en cascade-delete
     elke afhankelijke rij (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Backup-fout breekt delete af voordat iets wordt aangeraakt.
     Filesystem-status onder <root_path>/.omakiten/ blijft behouden —

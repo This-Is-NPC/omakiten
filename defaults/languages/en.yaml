@@ -62,7 +62,7 @@ keys:
     Resolve the project by numeric id or slug, write a recovery
     snapshot to the rolling backups directory, then cascade-delete
     every dependent row (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
 
     Backup failure aborts the delete before anything is touched.
     Filesystem state under <root_path>/.omakiten/ is preserved —

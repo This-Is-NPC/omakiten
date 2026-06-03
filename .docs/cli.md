@@ -17,7 +17,6 @@
 - [Comments](#comments)
 - [Dependencies](#dependencies)
 - [Plans](#plans)
-- [Context (handoff state)](#context-handoff-state)
 - [Logs (event inspector)](#logs-event-inspector)
 - [Workflow](#workflow)
 - [Config](#config)
@@ -600,7 +599,7 @@ okt mcp setup --harness opencode --dry-run
 okt mcp serve   # invoked by the harness, not by hand
 ```
 
-`okt mcp call search` is the CLI handle for the unified FTS5 surface (`internal/app/search_service.go`); it returns BM25-ranked hits with `<mark>...</mark>` snippets across tasks, comments, errors, solutions, and context entries. Pass `entity_types: []` (or omit the key) for an all-five sweep — the legacy `errors.search` MCP tool was retired alongside it.
+`okt mcp call search` is the CLI handle for the unified FTS5 surface (`internal/app/search_service.go`); it returns BM25-ranked hits with `<mark>...</mark>` snippets across tasks, comments, errors, solutions, plans, and notes. Pass `entity_types: []` (or omit the key) for an all-six sweep — the legacy `errors.search` MCP tool was retired alongside it.
 
 The full set of MCP tools, resources, and prompts is documented in `.docs/mcp.md`.
 

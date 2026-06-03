@@ -62,7 +62,7 @@ keys:
     Resolve o projeto por id numérico ou slug, grava um snapshot
     de recovery no diretório de backups rotativos e cascade-delete
     de cada linha dependente (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Falha de backup aborta o delete antes de tocar em algo.
     Estado do filesystem em <root_path>/.omakiten/ é preservado —

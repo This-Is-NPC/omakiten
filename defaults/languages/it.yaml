@@ -62,7 +62,7 @@ keys:
     Risolvi il progetto per id numerico o slug, scrivi uno snapshot
     di recovery nella directory di backup rotativi, poi cascade-delete
     di ogni riga dipendente (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Un fallimento del backup interrompe il delete prima di toccare nulla.
     Lo stato filesystem sotto <root_path>/.omakiten/ è preservato —

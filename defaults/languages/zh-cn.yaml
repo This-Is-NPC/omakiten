@@ -62,7 +62,7 @@ keys:
     按数字 id 或 slug 解析 project，将 recovery
     快照写入 rolling backups 目录，然后 cascade-delete
     每条依赖行 (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log)。
+    errors, activity log)。
     
     backup 失败会在触碰任何内容前中止 delete。
     <root_path>/.omakiten/ 下的 filesystem 状态保留 —

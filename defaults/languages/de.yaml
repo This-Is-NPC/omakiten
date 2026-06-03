@@ -62,7 +62,7 @@ keys:
     Projekt per numerischer id oder slug auflösen, Recovery-
     Snapshot ins rollierende Backup-Verzeichnis schreiben, dann cascade-delete
     jeder abhängigen Zeile (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Backup-Fehler bricht delete ab, bevor etwas angefasst wird.
     Filesystem-Zustand unter <root_path>/.omakiten/ bleibt erhalten —

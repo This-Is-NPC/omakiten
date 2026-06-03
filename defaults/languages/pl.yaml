@@ -62,7 +62,7 @@ keys:
     Rozwiąż projekt po id numerycznym lub slug, zapisz snapshot
     recovery do katalogu rotacyjnych backupów, następnie cascade-delete
     każdego zależnego wiersza (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Błąd backupu przerywa delete, zanim cokolwiek zostanie dotknięte.
     Stan filesystem pod <root_path>/.omakiten/ jest zachowany —

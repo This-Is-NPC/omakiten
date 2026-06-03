@@ -63,7 +63,7 @@ keys:
     Lös projektet via numeriskt id eller slug, skriv en recovery-
     snapshot till den rullande backup-katalogen och cascade-delete
     varje beroende rad (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Backup-fel avbryter delete innan något rörs.
     Filesystem-tillstånd under <root_path>/.omakiten/ bevaras —

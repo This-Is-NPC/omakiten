@@ -62,7 +62,7 @@ keys:
     Project numeric id किंवा slug ने resolve करा, recovery
     snapshot rolling backups directory मध्ये लिहा, नंतर cascade-delete
     प्रत्येक dependent row (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Backup failure delete अगोदर abort. <root_path>/.omakiten/ खालील
     filesystem state preserved — फक्त DB rows काढले.

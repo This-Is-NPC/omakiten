@@ -175,7 +175,7 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 
 | Tool | Purpose |
 |---|---|
-| `search` | Full-text search across `task`, `comment`, `error`, `solution`, and `context` entities using SQLite FTS5. Required `query` is an FTS5 MATCH expression (phrase, prefix*, NEAR, AND/OR/NOT — see [sqlite.org/fts5.html](https://sqlite.org/fts5.html)). Optional `entity_types` restricts the kinds returned (omit or pass an empty list to cover all five). Optional `project` / `project_id` scopes the index to one project; omit both for the cross-project view. Archived tasks (`state='archived'`) are filtered out automatically. Each hit ships `entity_type`, `id`, `score` (negated BM25 so higher is better), `snippet` (matching content with `<mark>…</mark>` highlights), and `project_id`. Capped at 200 hits per call. |
+| `search` | Full-text search across `task`, `comment`, `error`, `solution`, `plan`, and `note` entities using SQLite FTS5. Required `query` is an FTS5 MATCH expression (phrase, prefix*, NEAR, AND/OR/NOT — see [sqlite.org/fts5.html](https://sqlite.org/fts5.html)). Optional `entity_types` restricts the kinds returned (omit or pass an empty list to cover all six). Optional `project` / `project_id` scopes the index to one project; omit both for the cross-project view. Archived tasks (`state='archived'`) are filtered out automatically. Each hit ships `entity_type`, `id`, `score` (negated BM25 so higher is better), `snippet` (matching content with `<mark>…</mark>` highlights), and `project_id`. Capped at 200 hits per call. |
 
 ### Templates (read-only)
 

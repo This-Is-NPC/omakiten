@@ -62,7 +62,7 @@ keys:
     数値 id または slug で project を解決し、recovery
     snapshot をローリング backups ディレクトリに書き、依存する全行
     (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log) を cascade-delete。
+    errors, activity log) を cascade-delete。
     
     backup 失敗は何も触る前に delete を中止。
     <root_path>/.omakiten/ 以下の filesystem 状態は保持 —

@@ -62,7 +62,7 @@ keys:
     숫자 id 또는 slug 로 project 를 해석하고 recovery
     snapshot 을 rolling backups 디렉터리에 쓴 뒤 cascade-delete
     모든 종속 row (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     backup 실패는 아무것도 건드리기 전 delete 중단.
     <root_path>/.omakiten/ 아래 filesystem 상태는 보존 —

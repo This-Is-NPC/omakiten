@@ -62,7 +62,7 @@ keys:
     Résout le projet par id numérique ou slug, écrit un snapshot
     de recovery dans le répertoire de backups rotatifs, puis cascade-delete
     de chaque ligne dépendante (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Un échec de backup annule le delete avant toute modification.
     L'état filesystem sous <root_path>/.omakiten/ est préservé —

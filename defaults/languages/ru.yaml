@@ -62,7 +62,7 @@ keys:
     Найти project по числовому id или slug, записать recovery-
     snapshot в каталог rolling backups, затем cascade-delete
     каждой зависимой строки (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Сбой backup прерывает delete до изменений.
     Состояние filesystem под <root_path>/.omakiten/ сохраняется —

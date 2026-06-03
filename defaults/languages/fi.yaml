@@ -63,7 +63,7 @@ keys:
     Ratkaise projekti numeerisella id:llä tai slugilla, kirjoita recovery-
     snapshot rullaavaan varmuuskopiokansioon ja cascade-delete
     jokainen riippuva rivi (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Backup-virhe keskeyttää deleten ennen kuin mitään kosketetaan.
     Filesystem-tila <root_path>/.omakiten/ alla säilyy —

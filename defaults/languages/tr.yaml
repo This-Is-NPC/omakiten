@@ -62,7 +62,7 @@ keys:
     Project'i sayısal id veya slug ile çöz, recovery
     snapshot'ını rolling backups dizinine yaz, ardından cascade-delete
     her bağımlı satır (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Backup hatası bir şeye dokunmadan delete'i durdurur.
     <root_path>/.omakiten/ altındaki filesystem durumu korunur —

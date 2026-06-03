@@ -62,7 +62,7 @@ keys:
     Знайти project за числовим id або slug, записати recovery-
     snapshot у каталог rolling backups, потім cascade-delete
     кожного залежного рядка (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Збій backup перериває delete до змін.
     Стан filesystem під <root_path>/.omakiten/ збережено —

@@ -62,7 +62,7 @@ keys:
     حلّ المشروع بمعرّف رقمي أو slug، اكتب snapshot
     استرداد إلى مجلد النسخ الاحتياطية المتداولة، ثم cascade-delete
     لكل صف تابع (tasks، comments، plans، tag attachments،
-    context entries، errors، activity log).
+    errors، activity log).
     
     فشل backup يُجهض delete قبل لمس أي شيء.
     حالة filesystem تحت <root_path>/.omakiten/ محفوظة —

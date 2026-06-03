@@ -62,7 +62,7 @@ keys:
     Project numeric id या slug से resolve करें, recovery
     snapshot rolling backups directory में लिखें, फिर cascade-delete
     हर dependent row (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log)।
+    errors, activity log)।
     
     Backup failure delete को कुछ छुए बिना रोक देता है।
     <root_path>/.omakiten/ के तहत filesystem state सुरक्षित —
