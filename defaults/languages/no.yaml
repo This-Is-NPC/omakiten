@@ -31,9 +31,6 @@ keys:
   cli.comment.list.short: "List task-comments"
   cli.comment.edit.short: "Rediger en comment-tekst og erstatt dens tags (underlagt bucket-policy)"
   cli.comment.delete.short: "Hard-slett en comment (underlagt bucket-policy)"
-  cli.context.short: "Inspiser prosjektkontekst for overlevering"
-  cli.context.add.short: "Legg til en oppføring for prosjektoverlevering"
-  cli.context.dump.short: "Dump progressiv kontekst for agents"
   cli.logs.short: "Inspiser den samlede hendelsesloggen (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
     okt logs leser den samlede hendelsestabellen via samme sti som TUI Logs-
@@ -271,8 +268,6 @@ keys:
   cli.comment.edit.flag.body: "ny comment-tekst"
   cli.comment.edit.flag.tag: "tag-navn (gjentakbart; erstatter alle eksisterende tags)"
   cli.comment.delete.flag.confirm: "påkrevd: bekreft den destruktive slettingen"
-  cli.context.add.flag.body: "kontekst-tekst"
-  cli.context.dump.flag.level: "detaljnivå for kontekst: 1, 2 eller 3"
   cli.depend.flag.on: "avhengighets-task-id"
   cli.init.flag.name: "prosjektnavn"
   cli.init.flag.slug: "prosjekt-slug"
@@ -681,7 +676,6 @@ keys:
   tui.row.sub_tasks: "Underoppgaver"
   tui.stat.tasks: "tasks"
   tui.stat.comments: "comments"
-  tui.stat.context: "kontekst"
   tui.stat.tags: "tags"
   tui.stat.estimated: "estimert"
   tui.stat.max: "maks"

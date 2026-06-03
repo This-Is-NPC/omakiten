@@ -31,9 +31,6 @@ keys:
   cli.comment.list.short: "Listaa taskin commentit"
   cli.comment.edit.short: "Muokkaa commentin sisältöä ja korvaa sen tagit (bucket-politiikan alainen)"
   cli.comment.delete.short: "Poista comment pysyvästi (bucket-politiikan alainen)"
-  cli.context.short: "Tarkastele projektin kontekstia luovutusta varten"
-  cli.context.add.short: "Lisää projektin luovutuskontekstimerkintä"
-  cli.context.dump.short: "Tulosta progressiivinen konteksti agenteille"
   cli.logs.short: "Tarkastele yhtenäistä tapahtumalokia (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
     okt logs lukee yhtenäistä tapahtumataulukkoa saman polun kautta kuin TUI Logs -
@@ -272,8 +269,6 @@ keys:
   cli.comment.edit.flag.body: "uusi commentin sisältö"
   cli.comment.edit.flag.tag: "tagin nimi (toistettavissa; korvaa kaikki olemassa olevat tagit)"
   cli.comment.delete.flag.confirm: "vaaditaan: vahvista tuhoava poisto"
-  cli.context.add.flag.body: "kontekstin sisältö"
-  cli.context.dump.flag.level: "kontekstin yksityiskohdan taso: 1, 2 tai 3"
   cli.depend.flag.on: "riippuvuus-taskin id"
   cli.init.flag.name: "projektin nimi"
   cli.init.flag.slug: "projektin slug"
@@ -682,7 +677,6 @@ keys:
   tui.row.sub_tasks: "Alitehtävät"
   tui.stat.tasks: "taskit"
   tui.stat.comments: "commentit"
-  tui.stat.context: "konteksti"
   tui.stat.tags: "tagit"
   tui.stat.estimated: "arvioitu"
   tui.stat.max: "max"

@@ -31,9 +31,6 @@ keys:
   cli.comment.list.short: "task 댓글 목록"
   cli.comment.edit.short: "댓글 본문 편집 및 tags 교체 (bucket policy 적용 대상)"
   cli.comment.delete.short: "댓글을 파괴적으로 삭제 (bucket policy 적용 대상)"
-  cli.context.short: "핸드오프용 프로젝트 context 검사"
-  cli.context.add.short: "프로젝트 핸드오프 context 항목 추가"
-  cli.context.dump.short: "agent 용 점진적 context 덤프"
   cli.logs.short: "통합 이벤트 로그 검사 (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
     okt logs는 TUI Logs 인스펙터와 같은 경로로 통합 events 테이블을 읽습니다.
@@ -266,8 +263,6 @@ keys:
   cli.comment.edit.flag.body: "새 댓글 본문"
   cli.comment.edit.flag.tag: "tag 이름(반복 가능; 모든 기존 tags 교체)"
   cli.comment.delete.flag.confirm: "필수: 파괴적 삭제 확인"
-  cli.context.add.flag.body: "context 본문"
-  cli.context.dump.flag.level: "context 세부 수준: 1, 2 또는 3"
   cli.depend.flag.on: "의존 task 의 id"
   cli.init.flag.name: "프로젝트 이름"
   cli.init.flag.slug: "프로젝트 slug"
@@ -676,7 +671,6 @@ keys:
   tui.row.sub_tasks: "하위 작업"
   tui.stat.tasks: "tasks"
   tui.stat.comments: "댓글"
-  tui.stat.context: "context"
   tui.stat.tags: "tags"
   tui.stat.estimated: "예상"
   tui.stat.max: "최대"

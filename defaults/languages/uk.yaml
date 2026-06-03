@@ -31,9 +31,6 @@ keys:
   cli.comment.list.short: "Показати comments task"
   cli.comment.edit.short: "Редагувати тіло comment і замінити його tags (залежно від політики bucket)"
   cli.comment.delete.short: "Жорстко видалити comment (залежно від політики bucket)"
-  cli.context.short: "Переглянути контекст проєкту для передачі"
-  cli.context.add.short: "Додати запис контексту передачі проєкту"
-  cli.context.dump.short: "Вивантажити прогресивний контекст для agents"
   cli.logs.short: "Переглянути єдиний журнал подій (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
     okt logs читає єдину таблицю подій тим самим шляхом, що й інспектор Logs у TUI.
@@ -269,8 +266,6 @@ keys:
   cli.comment.edit.flag.body: "нове тіло comment"
   cli.comment.edit.flag.tag: "ім'я tag (повторюваний; замінює всі існуючі tags)"
   cli.comment.delete.flag.confirm: "обов'язково: підтвердити деструктивне видалення"
-  cli.context.add.flag.body: "тіло контексту"
-  cli.context.dump.flag.level: "рівень деталізації контексту: 1, 2 або 3"
   cli.depend.flag.on: "id task залежності"
   cli.init.flag.name: "ім'я проєкту"
   cli.init.flag.slug: "slug проєкту"
@@ -679,7 +674,6 @@ keys:
   tui.row.sub_tasks: "Підзадачі"
   tui.stat.tasks: "tasks"
   tui.stat.comments: "comments"
-  tui.stat.context: "контекст"
   tui.stat.tags: "tags"
   tui.stat.estimated: "оцінено"
   tui.stat.max: "макс"

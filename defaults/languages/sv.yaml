@@ -31,9 +31,6 @@ keys:
   cli.comment.list.short: "Lista task-comments"
   cli.comment.edit.short: "Redigera en comment och ersätt dess tags (styrs av bucket policy)"
   cli.comment.delete.short: "Hård-radera en comment (styrs av bucket policy)"
-  cli.context.short: "Inspektera projektkontext för handoff"
-  cli.context.add.short: "Lägg till en projekt-handoff-kontext"
-  cli.context.dump.short: "Dumpa progressiv kontext för agents"
   cli.logs.short: "Granska den samlade händelseloggen (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
     okt logs läser den samlade händelsetabellen via samma väg som TUI Logs-
@@ -271,8 +268,6 @@ keys:
   cli.comment.edit.flag.body: "ny comment-body"
   cli.comment.edit.flag.tag: "tag-namn (upprepningsbart; ersätter alla befintliga tags)"
   cli.comment.delete.flag.confirm: "krävs: bekräfta destruktiv radering"
-  cli.context.add.flag.body: "kontext-body"
-  cli.context.dump.flag.level: "kontext-detaljnivå: 1, 2 eller 3"
   cli.depend.flag.on: "dependency task-id"
   cli.init.flag.name: "projektnamn"
   cli.init.flag.slug: "projekt-slug"
@@ -681,7 +676,6 @@ keys:
   tui.row.sub_tasks: "Underuppgifter"
   tui.stat.tasks: "tasks"
   tui.stat.comments: "comments"
-  tui.stat.context: "kontext"
   tui.stat.tags: "tags"
   tui.stat.estimated: "uppskattat"
   tui.stat.max: "max"

@@ -31,9 +31,6 @@ keys:
   cli.comment.list.short: "Lista los comentarios de la task"
   cli.comment.edit.short: "Edita el cuerpo del comentario y reemplaza sus tags (sujeto a bucket policy)"
   cli.comment.delete.short: "Elimina un comentario de forma destructiva (sujeto a bucket policy)"
-  cli.context.short: "Inspecciona el contexto del proyecto para handoff"
-  cli.context.add.short: "Añade una entrada de contexto de handoff del proyecto"
-  cli.context.dump.short: "Dump de contexto progresivo para agentes"
   cli.logs.short: "Inspeccionar el registro unificado de eventos (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
     okt logs lee la tabla unificada de eventos por la misma ruta que el inspector Logs del TUI.
@@ -275,8 +272,6 @@ keys:
   cli.comment.edit.flag.body: "nuevo cuerpo del comentario"
   cli.comment.edit.flag.tag: "nombre de la tag (repetible; reemplaza todas las tags existentes)"
   cli.comment.delete.flag.confirm: "obligatorio: confirma la eliminación destructiva"
-  cli.context.add.flag.body: "cuerpo del contexto"
-  cli.context.dump.flag.level: "nivel de detalle del contexto: 1, 2 o 3"
   cli.depend.flag.on: "id de la task dependencia"
   cli.init.flag.name: "nombre del proyecto"
   cli.init.flag.slug: "slug del proyecto"
@@ -685,7 +680,6 @@ keys:
   tui.row.sub_tasks: "Subtareas"
   tui.stat.tasks: "tasks"
   tui.stat.comments: "comentarios"
-  tui.stat.context: "contexto"
   tui.stat.tags: "tags"
   tui.stat.estimated: "estimado"
   tui.stat.max: "máx"

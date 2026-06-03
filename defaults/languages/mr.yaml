@@ -31,9 +31,6 @@ keys:
   cli.comment.list.short: "task comment ची सूची दाखवा"
   cli.comment.edit.short: "comment मजकूर संपादित करा आणि त्याचे tag बदला (bucket धोरणाच्या अधीन)"
   cli.comment.delete.short: "comment हार्ड-डिलीट करा (bucket धोरणाच्या अधीन)"
-  cli.context.short: "handoff साठी project context तपासा"
-  cli.context.add.short: "project handoff context नोंद जोडा"
-  cli.context.dump.short: "agent साठी प्रगतीशील context डंप करा"
   cli.logs.short: "एकीकृत इव्हेंट लॉग तपासा (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
     okt logs TUI Logs इन्स्पेक्टरसारखाच मार्गाने एकीकृत events तक्ता वाचतो.
@@ -267,8 +264,6 @@ keys:
   cli.comment.edit.flag.body: "नवीन comment body"
   cli.comment.edit.flag.tag: "tag नाव (पुनरावृत्ती करता येते; सर्व विद्यमान tag बदलतो)"
   cli.comment.delete.flag.confirm: "आवश्यक: विनाशकारी डिलीटची पुष्टी करा"
-  cli.context.add.flag.body: "context body"
-  cli.context.dump.flag.level: "context तपशील स्तर: 1, 2, किंवा 3"
   cli.depend.flag.on: "अवलंबित्व task id"
   cli.init.flag.name: "project नाव"
   cli.init.flag.slug: "project slug"
@@ -677,7 +672,6 @@ keys:
   tui.row.sub_tasks: "उप-कार्ये"
   tui.stat.tasks: "tasks"
   tui.stat.comments: "comments"
-  tui.stat.context: "context"
   tui.stat.tags: "tags"
   tui.stat.estimated: "अंदाजे"
   tui.stat.max: "कमाल"
