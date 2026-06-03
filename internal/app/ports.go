@@ -255,7 +255,7 @@ type MetricsRepository interface {
 }
 
 // SearchRepository exposes the unified FTS5 index that spans tasks,
-// comments, errors, solutions, and context entries. The adapter
+// comments, errors, solutions, plans, and notes. The adapter
 // implements ranking (BM25), snippet rendering, and the implicit
 // `tasks.state='active'` filter; the service layer validates input and
 // resolves the project filter into a numeric id.
@@ -263,7 +263,7 @@ type SearchRepository interface {
 	// Search runs the FTS5 MATCH expression against `search_index` and
 	// returns hits ordered by descending score. projectID == 0 disables
 	// the project filter (cross-project). entityTypes restricts the row
-	// set; an empty slice means "all five types".
+	// set; an empty slice means "all six types".
 	Search(ctx context.Context, query string, projectID int64, entityTypes []domain.SearchEntityType, limit int) ([]domain.SearchHit, error)
 }
 

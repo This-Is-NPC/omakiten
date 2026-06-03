@@ -908,7 +908,7 @@ func recordErrorSchema() map[string]any {
 func searchSchema() map[string]any {
 	props := selectorProperties()
 	props["query"] = stringSchema("FTS5 MATCH expression — phrase, prefix*, NEAR, AND/OR/NOT supported (see sqlite.org/fts5.html). Required.")
-	props["entity_types"] = arrayStringSchema("Optional restriction to a subset of entity types. Allowed: task, comment, error, solution, context. Empty or omitted indexes all five.")
+	props["entity_types"] = arrayStringSchema("Optional restriction to a subset of entity types. Allowed: task, comment, error, solution, plan, note. Empty or omitted indexes all six.")
 	return objectSchema(props, []string{"query"})
 }
 
