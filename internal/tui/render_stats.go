@@ -150,9 +150,11 @@ func (m Model) renderStatsModelPanel() string {
 	return m.styles.panel.Render(strings.Join(rows, "\n"))
 }
 
-// renderStatsBudgetTables renders the Totals (tasks / comments / context
-// entries / tags) and Tokens (estimated / max + a `[BUDGET EXCEEDED]`
-// badge when truncated) blocks as two bordered grid tables. Visually
+// renderStatsBudgetTables renders the Totals (tasks / comments / tags) and
+// Tokens (estimated, plus max + a `[BUDGET EXCEEDED]` badge when a budget
+// ceiling is configured) blocks as two bordered grid tables. The max row is
+// omitted when no token budget is set (`MaxTokens == 0`) so the panel never
+// advertises a misleading "max: 0" ceiling. Visually
 // matches the old Config runtime header from pre-T2 — the user feedback
 // is explicit that text-row layouts read as "loose" next to the model
 // breakdown table immediately above. Side-by-side when the panel is
@@ -164,10 +166,13 @@ func (m Model) renderStatsBudgetTables() string {
 		[2]string{m.t("tui.stat.comments"), fmt.Sprintf("%d", len(m.comments))},
 		[2]string{m.t("tui.stat.tags"), fmt.Sprintf("%d", len(m.tags))},
 	)
-	tokensRows := m.summaryRows(m.t("tui.kicker.tokens"),
-		[2]string{m.t("tui.stat.estimated"), fmt.Sprintf("%d", m.metrics.EstimatedTotal)},
-		[2]string{m.t("tui.stat.max"), fmt.Sprintf("%d", m.metrics.MaxTokens)},
-	)
+	tokensFields := []([2]string){
+		{m.t("tui.stat.estimated"), fmt.Sprintf("%d", m.metrics.EstimatedTotal)},
+	}
+	if m.metrics.MaxTokens > 0 {
+		tokensFields = append(tokensFields, [2]string{m.t("tui.stat.max"), fmt.Sprintf("%d", m.metrics.MaxTokens)})
+	}
+	tokensRows := m.summaryRows(m.t("tui.kicker.tokens"), tokensFields...)
 	if m.metrics.Truncated {
 		tokensRows = append(tokensRows, []string{m.styles.error.Render(m.t("tui.stat.error_badge")), m.styles.error.Render(m.t("tui.stat.budget_exceeded"))})
 	}

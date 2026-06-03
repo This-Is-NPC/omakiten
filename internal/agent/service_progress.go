@@ -19,7 +19,7 @@ func (s *Service) RecordProgress(ctx context.Context, input RecordProgressInput)
 	}
 
 	response := RecordProgressResponse{Project: projectSummary(project)}
-	if input.TaskID > 0 && (input.Title != nil || input.Description != nil || input.Priority != nil || strings.TrimSpace(input.MoveToBucket) != "") {
+	if input.Title != nil || input.Description != nil || input.Priority != nil || strings.TrimSpace(input.MoveToBucket) != "" {
 		update := domain.TaskUpdate{
 			Title:       input.Title,
 			Description: input.Description,

@@ -9,7 +9,6 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	projectresolver "omakiten/internal/project"
-	"omakiten/internal/token"
 )
 
 // ServiceSettings carries the runtime-tunable knobs that shape MCP responses.
@@ -91,7 +90,6 @@ type TemplateCatalog func() []TemplateSummary
 type Service struct {
 	repo               Repository
 	selector           ProjectSelector
-	counter            token.Counter
 	taskTemplateLookup TaskTemplateLookup
 	templateCatalog    TemplateCatalog
 	skillCatalog       SkillCatalog
@@ -142,7 +140,6 @@ func NewService(repo Repository, selector ProjectSelector) *Service {
 	return &Service{
 		repo:     repo,
 		selector: selector,
-		counter:  token.NewCounter(),
 		now:      time.Now,
 		// settings are zero-valued; SetSettings wires the actual knobs.
 	}
