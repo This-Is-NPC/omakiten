@@ -9,7 +9,6 @@ import (
 	"omakiten/internal/config"
 	"omakiten/internal/domain"
 	projectresolver "omakiten/internal/project"
-	"omakiten/internal/token"
 )
 
 // ServiceSettings carries the runtime-tunable knobs that shape MCP responses.
@@ -40,11 +39,6 @@ type ServiceSettings struct {
 	// Sourced from config.mcp.cache_prompts.
 	CachePrompts bool
 
-	// RecentContextLimit caps how many recent context entries flow into
-	// tasks.continue / project.overview / project.resume responses.
-	// Sourced from config.mcp.recent_context_limit (validator-required > 0).
-	RecentContextLimit int
-
 	// NextWorkLimit caps the "likely next work" suggestion list shipped
 	// in project.resume. Sourced from config.mcp.next_work_limit
 	// (validator-required > 0).
@@ -72,7 +66,6 @@ type Repository interface {
 	app.CommentRepository
 	app.EventRepository
 	app.DependencyRepository
-	app.ContextEntryRepository
 	app.TagRepository
 	app.ErrorRepository
 	app.MetricsRepository
@@ -97,7 +90,6 @@ type TemplateCatalog func() []TemplateSummary
 type Service struct {
 	repo               Repository
 	selector           ProjectSelector
-	counter            token.Counter
 	taskTemplateLookup TaskTemplateLookup
 	templateCatalog    TemplateCatalog
 	skillCatalog       SkillCatalog
@@ -148,7 +140,6 @@ func NewService(repo Repository, selector ProjectSelector) *Service {
 	return &Service{
 		repo:     repo,
 		selector: selector,
-		counter:  token.NewCounter(),
 		now:      time.Now,
 		// settings are zero-valued; SetSettings wires the actual knobs.
 	}
@@ -312,15 +303,11 @@ func (s *Service) resolveProject(ctx context.Context, selector ProjectSelector) 
 	return projectresolver.NewResolver(s.repo).Resolve(ctx, projectresolver.ResolveOptions{ProjectID: effective.ProjectID, Project: effective.Project, CWD: effective.CWD})
 }
 
-func (s *Service) projectState(ctx context.Context, project domain.ProjectContext) ([]domain.Task, domain.Workflow, []domain.ContextEntry, error) {
+func (s *Service) projectState(ctx context.Context, project domain.ProjectContext) ([]domain.Task, domain.Workflow, error) {
 	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).List(ctx, project, domain.TaskFilter{})
 	if err != nil {
-		return nil, domain.Workflow{}, nil, err
+		return nil, domain.Workflow{}, err
 	}
 	workflow := s.snapshot.Workflow()
-	entries, err := s.repo.ListContextEntries(ctx, project.ID)
-	if err != nil {
-		return nil, domain.Workflow{}, nil, err
-	}
-	return tasks, workflow, entries, nil
+	return tasks, workflow, nil
 }

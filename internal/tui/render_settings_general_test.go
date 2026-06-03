@@ -206,10 +206,6 @@ func effectiveBundleFixture() config.Bundle {
 				JSONMinified: false,
 				OmitEmpty:    true,
 			},
-			Context: config.ContextSettings{
-				DefaultLevel: 1,
-				MaxTokens:    4096,
-			},
 			Workflow: config.WorkflowSettings{Active: "root"},
 			Theme:    config.ThemeSettings{Active: "omacon"},
 			MCP: config.MCPSettings{
@@ -217,7 +213,6 @@ func effectiveBundleFixture() config.Bundle {
 				MaxCommentChars:           300,
 				IncludeWorkflowInContinue: &includeWF,
 				CachePrompts:              &cachePrompts,
-				RecentContextLimit:        3,
 				NextWorkLimit:             4,
 				SimilarTaskLimit:          6,
 			},

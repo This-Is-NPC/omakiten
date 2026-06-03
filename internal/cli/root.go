@@ -23,7 +23,6 @@ import (
 	"omakiten/internal/paths"
 	projectresolver "omakiten/internal/project"
 	"omakiten/internal/sqlite"
-	"omakiten/internal/token"
 )
 
 type runtimeOptions struct {
@@ -116,10 +115,6 @@ func (r *runtime) personaService() *app.PersonaService {
 	return app.NewPersonaService(r.entityServiceRepos(), r.activeSnapshot())
 }
 
-func (r *runtime) contextService() *app.ContextService {
-	return app.NewContextService(r.store, r.store, r.store, r.store, r.activeSnapshot(), r.tokenCounter(), r.activeRegistry())
-}
-
 // commentService wraps NewCommentService and captures the per-project
 // Snapshot so NormalizeTagName resolves the bundle's alias table
 // without any post-construction setter call.
@@ -177,11 +172,6 @@ func (r *runtime) activeWorkflow() *app.WorkflowService {
 	return app.NewWorkflowServiceFromStore(r.store, r.activeRegistry(), r.activeSnapshot())
 }
 
-
-func (r *runtime) tokenCounter() token.Counter {
-	return token.NewCounter()
-}
-
 func NewRootCommand(version string) *cobra.Command {
 	ensurePkgCatalog()
 	opts := &runtimeOptions{catalog: pkgCatalog}
@@ -211,7 +201,6 @@ func NewRootCommand(version string) *cobra.Command {
 	cmd.AddCommand(newCommentCommand(opts))
 	cmd.AddCommand(newDependCommand(opts))
 	cmd.AddCommand(newPlanCommand(opts))
-	cmd.AddCommand(newContextCommand(opts))
 	cmd.AddCommand(newLogsCommand(opts))
 	cmd.AddCommand(newWorkflowCommand(opts))
 	cmd.AddCommand(newConfigCommand(opts))

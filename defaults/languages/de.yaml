@@ -31,9 +31,6 @@ keys:
   cli.comment.list.short: "Listet die Kommentare der task"
   cli.comment.edit.short: "Bearbeitet den Kommentartext und ersetzt seine tags (unterliegt bucket policy)"
   cli.comment.delete.short: "Löscht einen Kommentar destruktiv (unterliegt bucket policy)"
-  cli.context.short: "Inspiziert Projekt-context für Handoff"
-  cli.context.add.short: "Fügt einen Handoff-context-Eintrag zum Projekt hinzu"
-  cli.context.dump.short: "Dump des progressiven context für Agents"
   cli.logs.short: "Vereinheitlichtes Ereignisprotokoll inspizieren (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
     okt logs liest die vereinheitlichte Ereignistabelle über denselben Pfad wie der TUI-Logs-
@@ -65,7 +62,7 @@ keys:
     Projekt per numerischer id oder slug auflösen, Recovery-
     Snapshot ins rollierende Backup-Verzeichnis schreiben, dann cascade-delete
     jeder abhängigen Zeile (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Backup-Fehler bricht delete ab, bevor etwas angefasst wird.
     Filesystem-Zustand unter <root_path>/.omakiten/ bleibt erhalten —
@@ -277,8 +274,6 @@ keys:
   cli.comment.edit.flag.body: "neuer Kommentartext"
   cli.comment.edit.flag.tag: "tag-Name (wiederholbar; ersetzt alle bestehenden tags)"
   cli.comment.delete.flag.confirm: "erforderlich: bestätigt das destruktive Löschen"
-  cli.context.add.flag.body: "context-Inhalt"
-  cli.context.dump.flag.level: "context-Detaillevel: 1, 2 oder 3"
   cli.depend.flag.on: "ID der abhängigen task"
   cli.init.flag.name: "Projektname"
   cli.init.flag.slug: "Projekt-slug"
@@ -687,7 +682,6 @@ keys:
   tui.row.sub_tasks: "Unteraufgaben"
   tui.stat.tasks: "tasks"
   tui.stat.comments: "Kommentare"
-  tui.stat.context: "Context"
   tui.stat.tags: "tags"
   tui.stat.estimated: "geschätzt"
   tui.stat.max: "max"

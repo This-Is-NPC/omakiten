@@ -14,7 +14,7 @@ import (
 // against the closed set declared in domain.AllSearchEntityTypes,
 // trims the query, and delegates the heavy lifting (BM25 ranking,
 // snippet rendering, implicit task-state filter) to the adapter behind
-// SearchRepository. Empty `entityTypes` is treated as "all five".
+// SearchRepository. Empty `entityTypes` is treated as "all six".
 //
 // When the search covers errors (entity types include "error" or the
 // filter is empty), the service emits the `errors.researched` domain
@@ -89,7 +89,7 @@ func (s *SearchService) Search(ctx context.Context, project domain.ProjectContex
 
 // includesErrorEntity reports whether the filter set covers errors —
 // either via an explicit "error" entry or by being empty (which means
-// "all five entity types").
+// "all six entity types").
 func includesErrorEntity(types []domain.SearchEntityType) bool {
 	if len(types) == 0 {
 		return true
@@ -134,7 +134,7 @@ func normalizeEntityTypes(raw []string) ([]domain.SearchEntityType, error) {
 		if !domain.IsValidSearchEntityType(name) {
 			return nil, domain.NewError(domain.ErrValidation, "invalid entity_type", map[string]any{
 				"value":   name,
-				"allowed": []string{"task", "comment", "error", "solution", "context", "plan", "note"},
+				"allowed": []string{"task", "comment", "error", "solution", "plan", "note"},
 			})
 		}
 		t := domain.SearchEntityType(name)

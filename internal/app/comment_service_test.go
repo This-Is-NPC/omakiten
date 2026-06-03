@@ -11,7 +11,7 @@ import (
 
 func TestCommentServiceAdd(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
@@ -62,7 +62,7 @@ func TestCommentServiceAdd(t *testing.T) {
 
 func TestCommentServiceList(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
@@ -93,7 +93,7 @@ func TestCommentServiceList(t *testing.T) {
 
 func TestCommentServiceAddScoped(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	taskService := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
@@ -305,7 +305,7 @@ func TestUniversalCommentViolationIsProjectLess(t *testing.T) {
 
 func TestCommentServiceQuery(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	service := NewCommentService(store, store.Snapshot())

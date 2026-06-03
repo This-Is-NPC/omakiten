@@ -16,13 +16,12 @@ func TestSetSettingsStoresValuesVerbatim(t *testing.T) {
 	fixture.service.SetSettings(ServiceSettings{
 		RecentCommentLimit: 7,
 		MaxCommentChars:    42,
-		RecentContextLimit: 4,
 		NextWorkLimit:      6,
 		SimilarTaskLimit:   3,
 	})
 	got := fixture.service.settings
 	if got.RecentCommentLimit != 7 || got.MaxCommentChars != 42 ||
-		got.RecentContextLimit != 4 || got.NextWorkLimit != 6 || got.SimilarTaskLimit != 3 {
+		got.NextWorkLimit != 6 || got.SimilarTaskLimit != 3 {
 		t.Fatalf("SetSettings did not store values verbatim: %+v", got)
 	}
 }

@@ -74,7 +74,6 @@ type ContinueTaskResponse struct {
 	Workflow       WorkflowSummary     `json:"workflow"`
 	Dependencies   []DependencySummary `json:"dependencies,omitempty"`
 	Comments       []CommentSummary    `json:"comments,omitempty"`
-	RecentContext  []ContextSnippet    `json:"recent_context,omitempty"`
 	NextStepPrompt string              `json:"next_step_prompt"`
 	// AgentOutputLanguage carries config.languages.agent_output verbatim
 	// so the agent can introspect the directive without re-reading the

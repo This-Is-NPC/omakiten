@@ -7,11 +7,11 @@ import (
 	"omakiten/internal/domain"
 )
 
-// TestSearchIndexBackfillsExistingRows runs against a store that has
-// no pre-existing data; the assertion is that migration 022's CREATE
+// TestSearchIndexCoversCoreEntities runs against a store that has no
+// pre-existing data; the assertion is that migration 022's CREATE
 // triggers fire from the very first INSERT so the index is populated
 // without any explicit backfill step at runtime.
-func TestSearchIndexCoversFiveEntities(t *testing.T) {
+func TestSearchIndexCoversCoreEntities(t *testing.T) {
 	ctx := context.Background()
 	store := openTestStore(t)
 	project := mustUpsertProject(t, store, "P", "p", "/work/p")
@@ -34,10 +34,6 @@ func TestSearchIndexCoversFiveEntities(t *testing.T) {
 		t.Fatalf("AddSolution: %v", err)
 	}
 
-	if _, err := store.AddContextEntry(ctx, project.ID, "context note about tls renewal", 12); err != nil {
-		t.Fatalf("AddContextEntry: %v", err)
-	}
-
 	hits, err := store.Search(ctx, "tls", 0, nil, 200)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
@@ -52,7 +48,6 @@ func TestSearchIndexCoversFiveEntities(t *testing.T) {
 		domain.SearchEntityComment,
 		domain.SearchEntityError,
 		domain.SearchEntitySolution,
-		domain.SearchEntityContext,
 	} {
 		if !seen[expected] {
 			t.Fatalf("Search(tls) missing entity_type=%s; hits=%+v", expected, hits)

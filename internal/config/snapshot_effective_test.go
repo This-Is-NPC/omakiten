@@ -22,10 +22,6 @@ func TestEffectiveTuples_OrderAndCoercion(t *testing.T) {
 			JSONMinified: false,
 			OmitEmpty:    true,
 		},
-		Context: ContextSettings{
-			DefaultLevel: 1,
-			MaxTokens:    4096,
-		},
 		Workflow: WorkflowSettings{Active: "test"},
 		Theme: ThemeSettings{
 			Active: "omacon",
@@ -36,7 +32,6 @@ func TestEffectiveTuples_OrderAndCoercion(t *testing.T) {
 			MaxCommentChars:           300,
 			IncludeWorkflowInContinue: &includeWF,
 			CachePrompts:              &cachePrompts,
-			RecentContextLimit:        3,
 			NextWorkLimit:             4,
 			SimilarTaskLimit:          6,
 		},
@@ -77,7 +72,6 @@ func TestEffectiveTuples_OrderAndCoercion(t *testing.T) {
 	// the sections actually populated above appear in the output.
 	wantPrefix := []string{
 		"output",
-		"context",
 		"workflow",
 		"theme",
 		"template_defaults",
@@ -112,8 +106,6 @@ func TestEffectiveTuples_OrderAndCoercion(t *testing.T) {
 	want := map[string]string{
 		"output.json_minified":               "false",
 		"output.omit_empty":                  "true",
-		"context.default_level":              "1",
-		"context.max_tokens":                 "4096",
 		"theme.active":                       "omacon",
 		"mcp.recent_comment_limit":           "5",
 		"mcp.cache_prompts":                  "true",
@@ -156,8 +148,7 @@ func TestEffectiveTuples_Completeness(t *testing.T) {
 	cachePrompts := true
 	includeWF := true
 	bundle.Config = Settings{
-		Output:  OutputSettings{JSONMinified: true, OmitEmpty: true},
-		Context: ContextSettings{DefaultLevel: 2, MaxTokens: 8192},
+		Output: OutputSettings{JSONMinified: true, OmitEmpty: true},
 		Workflow: WorkflowSettings{
 			Active: "test",
 		},
@@ -167,7 +158,6 @@ func TestEffectiveTuples_Completeness(t *testing.T) {
 			MaxCommentChars:           500,
 			IncludeWorkflowInContinue: &includeWF,
 			CachePrompts:              &cachePrompts,
-			RecentContextLimit:        7,
 			NextWorkLimit:             8,
 			SimilarTaskLimit:          9,
 		},
@@ -233,7 +223,6 @@ func TestEffectiveTuples_SourceNonEmptyOnEveryRow(t *testing.T) {
 		MaxCommentChars:           200,
 		IncludeWorkflowInContinue: boolPtr(true),
 		CachePrompts:              boolPtr(false),
-		RecentContextLimit:        2,
 		NextWorkLimit:             2,
 		SimilarTaskLimit:          2,
 	}
@@ -278,7 +267,6 @@ func TestEffectiveTuples_SourceLayersThreadThrough(t *testing.T) {
 		MaxCommentChars:           300,
 		IncludeWorkflowInContinue: boolPtr(false),
 		CachePrompts:              boolPtr(true),
-		RecentContextLimit:        4,
 		NextWorkLimit:             4,
 		SimilarTaskLimit:          4,
 	}

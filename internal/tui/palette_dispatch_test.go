@@ -230,7 +230,6 @@ func TestDispatchOpenHitUnsupportedTypeStaysInline(t *testing.T) {
 	for _, entityType := range []domain.SearchEntityType{
 		domain.SearchEntityError,
 		domain.SearchEntitySolution,
-		domain.SearchEntityContext,
 		domain.SearchEntityPlan,
 	} {
 		t.Run(string(entityType), func(t *testing.T) {

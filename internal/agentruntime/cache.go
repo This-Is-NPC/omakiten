@@ -553,7 +553,6 @@ func buildProjectRuntime(ctx context.Context, store *sqlite.Store, cs *configsto
 		MaxCommentChars:          bundle.Config.MCP.MaxCommentChars,
 		IncludeWorkflow:          *bundle.Config.MCP.IncludeWorkflowInContinue,
 		CachePrompts:             *bundle.Config.MCP.CachePrompts,
-		RecentContextLimit:       bundle.Config.MCP.RecentContextLimit,
 		NextWorkLimit:            bundle.Config.MCP.NextWorkLimit,
 		SimilarTaskLimit:         bundle.Config.MCP.SimilarTaskLimit,
 		SolutionsTopLimitDefault: bundle.Config.Solutions.DefaultTopLimit,

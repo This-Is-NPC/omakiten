@@ -216,9 +216,10 @@ func containsString(haystack []string, needle string) bool {
 
 func tools() []ToolDefinition {
 	return []ToolDefinition{
-		{Name: "project.overview", Description: "Return active project identity, workflow awareness, pending count, recent context, and next-step prompt.", InputSchema: selectorSchema()},
-		{Name: "project.resume", Description: "Return project distribution, likely next work, blocked work, dependencies, recent context, and workflow state.", InputSchema: selectorSchema()},
-		{Name: "tasks.continue", Description: "Load a project-owned task with dependencies, comments, workflow bucket, and recent handoff context. Set include_workflow=false on subsequent calls in a session where the workflow shape was already loaded by /okt to save tokens.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to continue"), "include_workflow": booleanSchema("Optional override for config.mcp.include_workflow_in_continue. Pass false to skip the workflow block when /okt already loaded it.")}, []string{"task_id"})},
+		{Name: "project.overview", Description: "Return active project identity, workflow awareness, pending count, and next-step prompt.", InputSchema: selectorSchema()},
+		{Name: "project.resume", Description: "Return project distribution, likely next work, blocked work, dependencies, and workflow state.", InputSchema: selectorSchema()},
+		{Name: "project.edit", Description: "Update the active project's description, persisting it to the projects.description column and emitting project.updated when the value changes. Returns the refreshed project DTO with the new description.", InputSchema: editProjectSchema()},
+		{Name: "tasks.continue", Description: "Load a project-owned task with dependencies, comments, and workflow bucket. Set include_workflow=false on subsequent calls in a session where the workflow shape was already loaded by /okt to save tokens.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to continue"), "include_workflow": booleanSchema("Optional override for config.mcp.include_workflow_in_continue. Pass false to skip the workflow block when /okt already loaded it.")}, []string{"task_id"})},
 		{Name: "tasks.list", Description: "List active project tasks, optionally filtered by workflow bucket and/or parent. The parent_id filter is tri-state: omit for no filter (every task), pass null for roots only (parent_id IS NULL), or pass a task id for that parent's direct children.", InputSchema: objectSchema(map[string]any{"bucket_key": stringSchema("Optional workflow bucket key"), "parent_id": nullableIntegerSchema("Optional tri-state parent filter: omit for no filter; pass null for roots only (parent_id IS NULL); pass a task id for direct children of that id.")}, nil)},
 		{Name: "tasks.create_intent", Description: "Create a task intent after checking for similar or related project tasks and requiring confirmation when needed.", InputSchema: createTaskSchema()},
 		{Name: "tasks.create", Description: "Create a task directly through Omakiten's shared task service.", InputSchema: createTaskSchema()},
@@ -236,18 +237,16 @@ func tools() []ToolDefinition {
 		{Name: "dependencies.add", Description: "Add a project-scoped task dependency with cycle prevention.", InputSchema: dependencySchema(false)},
 		{Name: "dependencies.remove", Description: "Remove a task dependency after explicit confirmation.", InputSchema: dependencySchema(true)},
 		{Name: "dependencies.list", Description: "List dependencies for one task or all active project tasks.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Optional task id; omit or set 0 for all")}, nil)},
-		{Name: "context.add", Description: "Add a project handoff context entry.", InputSchema: objectSchema(map[string]any{"body": stringSchema("Context body")}, []string{"body"})},
-		{Name: "context.dump", Description: "Dump compact project context at level 1, 2, or 3.", InputSchema: objectSchema(map[string]any{"level": integerSchema("Context level: 1, 2, or 3")}, nil)},
 		{Name: "workflow.show", Description: "Show the active workflow buckets and allowed transitions.", InputSchema: selectorSchema()},
 		{Name: "orphans.migrate", Description: "Detect tasks whose bucket was deactivated by a workflow swap and rebind them to the active workflow (matching key when preserved, first bucket otherwise). First call without confirmed=true returns a preview report plus a Confirmation block listing every affected task; retry with confirmed=true to apply the rebind. Empty preview short-circuits to a no-op.", InputSchema: objectSchema(map[string]any{"confirmed": booleanSchema("Required true to apply the rebind; first call returns a preview with affected tasks.")}, nil)},
-		{Name: "progress.record", Description: "Record material agent progress through task edits, comments, context entries, and optional workflow movement.", InputSchema: progressSchema()},
+		{Name: "progress.record", Description: "Record material agent progress through task edits, a progress comment, and optional workflow movement.", InputSchema: progressSchema()},
 		{Name: "tags.add", Description: "Add a reusable tag to a task or project. The tag name is normalized to kebab-case and deduplicated automatically.", InputSchema: tagMutationSchema(false)},
 		{Name: "tags.remove", Description: "Remove a tag from a task or project after explicit confirmation.", InputSchema: tagMutationSchema(true)},
 		{Name: "tags.list", Description: "List tags for a specific task or project.", InputSchema: tagListSchema()},
 		{Name: "tags.list_all", Description: "List all tags across all projects with usage counts.", InputSchema: objectSchema(map[string]any{}, nil)},
 		{Name: "tags.merge", Description: "Merge a source tag into a target tag, reassigning all references and deleting the source.", InputSchema: objectSchema(map[string]any{"source_tag_id": integerSchema("Source tag id to merge from (will be deleted)"), "target_tag_id": integerSchema("Target tag id to merge into (canonical)")}, []string{"source_tag_id", "target_tag_id"})},
 		{Name: "errors.record", Description: "Record an error encountered during development with optional context and tags. Errors and their solutions are visible cross-project so the agent can reuse prior fixes.", InputSchema: recordErrorSchema()},
-		{Name: "search", Description: "Full-text search across tasks, comments, errors, solutions, and context entries using SQLite FTS5. Returns BM25-ranked hits with snippets (<mark>...</mark> highlights). Optional `entity_types` filter restricts the indexed kinds; omit `project`/`project_id` for a cross-project view. Archived tasks are filtered out automatically. Replaces the legacy `errors.search` tool — equivalent call: search(query, entity_types=[\"error\"]).", InputSchema: searchSchema()},
+		{Name: "search", Description: "Full-text search across tasks, comments, errors, solutions, plans, and notes using SQLite FTS5. Returns BM25-ranked hits with snippets (<mark>...</mark> highlights). Optional `entity_types` filter restricts the indexed kinds; omit `project`/`project_id` for a cross-project view. Archived tasks are filtered out automatically. Replaces the legacy `errors.search` tool — equivalent call: search(query, entity_types=[\"error\"]).", InputSchema: searchSchema()},
 		{Name: "solutions.add", Description: "Attach a candidate solution to an error. Multiple solutions per error are supported.", InputSchema: addSolutionSchema()},
 		{Name: "solutions.confirm", Description: "Confirm whether a solution worked. success=true marks it as the recommended fix and increments its like counter; success=false marks it as known-bad so the agent does not retry it without new context.", InputSchema: confirmSolutionSchema()},
 		{Name: "solutions.list_top", Description: "List the top N most-liked solutions globally (cross-project). Useful to surface validated fixes and audit recurring patterns. Likes are incremented only by solutions.confirm(success=true).", InputSchema: listTopSolutionsSchema()},
@@ -386,6 +385,12 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		if err == nil {
 			data, err = service.ResumeProject(ctx, input)
 		}
+	case "project.edit":
+		var input agent.EditProjectInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.EditProject(ctx, input)
+		}
 	case "tasks.continue":
 		var input agent.ContinueTaskInput
 		err = decodeArgs(args, &input)
@@ -493,18 +498,6 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = service.ListDependencies(ctx, input)
-		}
-	case "context.add":
-		var input agent.AddContextInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.AddContext(ctx, input)
-		}
-	case "context.dump":
-		var input agent.DumpContextInput
-		err = decodeArgs(args, &input)
-		if err == nil {
-			data, err = service.DumpContext(ctx, input)
 		}
 	case "workflow.show":
 		var input agent.WorkflowInput
@@ -797,6 +790,12 @@ func selectorSchema() map[string]any {
 	return objectSchema(selectorProperties(), nil)
 }
 
+func editProjectSchema() map[string]any {
+	props := selectorProperties()
+	props["description"] = stringSchema("New project description text")
+	return objectSchema(props, []string{"description"})
+}
+
 func showTemplateSchema() map[string]any {
 	props := selectorProperties()
 	props["slug"] = stringSchema("Template slug")
@@ -840,7 +839,6 @@ func progressSchema() map[string]any {
 	props["priority"] = stringSchema("Optional priority: low, normal, or high")
 	props["move_to_bucket"] = stringSchema("Optional target workflow bucket key")
 	props["comment"] = stringSchema("Optional progress comment")
-	props["context"] = stringSchema("Optional project handoff context entry")
 	props["author_type"] = stringSchema("human or agent")
 	return objectSchema(props, nil)
 }
@@ -910,7 +908,7 @@ func recordErrorSchema() map[string]any {
 func searchSchema() map[string]any {
 	props := selectorProperties()
 	props["query"] = stringSchema("FTS5 MATCH expression — phrase, prefix*, NEAR, AND/OR/NOT supported (see sqlite.org/fts5.html). Required.")
-	props["entity_types"] = arrayStringSchema("Optional restriction to a subset of entity types. Allowed: task, comment, error, solution, context. Empty or omitted indexes all five.")
+	props["entity_types"] = arrayStringSchema("Optional restriction to a subset of entity types. Allowed: task, comment, error, solution, plan, note. Empty or omitted indexes all six.")
 	return objectSchema(props, []string{"query"})
 }
 

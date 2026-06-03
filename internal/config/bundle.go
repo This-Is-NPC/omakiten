@@ -158,7 +158,6 @@ type Kit struct {
 
 type Settings struct {
 	Output           OutputSettings      `yaml:"output" json:"output"`
-	Context          ContextSettings     `yaml:"context" json:"context"`
 	Workflow         WorkflowSettings    `yaml:"workflow" json:"workflow"`
 	Theme            ThemeSettings       `yaml:"theme" json:"theme"`
 	TemplateDefaults []string            `yaml:"template_defaults,omitempty" json:"template_defaults,omitempty"`
@@ -351,11 +350,6 @@ type MCPSettings struct {
 	// hint on `prompts/get` content. Required `*bool`.
 	CachePrompts *bool `yaml:"cache_prompts" json:"cache_prompts"`
 
-	// RecentContextLimit caps how many recent context entries flow into
-	// `tasks.continue` / `project.overview` / `project.resume`
-	// responses. Required; validator demands > 0.
-	RecentContextLimit int `yaml:"recent_context_limit" json:"recent_context_limit"`
-
 	// NextWorkLimit caps the "likely next work" suggestion list shipped
 	// in `project.resume`. Required; validator demands > 0.
 	NextWorkLimit int `yaml:"next_work_limit" json:"next_work_limit"`
@@ -376,14 +370,8 @@ func (m MCPSettings) EffectiveIncludeWorkflowInContinue() bool {
 func (m MCPSettings) EffectiveCachePrompts() bool {
 	return m.CachePrompts != nil && *m.CachePrompts
 }
-func (m MCPSettings) EffectiveRecentContextLimit() int { return m.RecentContextLimit }
-func (m MCPSettings) EffectiveNextWorkLimit() int      { return m.NextWorkLimit }
-func (m MCPSettings) EffectiveSimilarTaskLimit() int   { return m.SimilarTaskLimit }
-
-type ContextSettings struct {
-	DefaultLevel int `yaml:"default_level" json:"default_level"`
-	MaxTokens    int `yaml:"max_tokens" json:"max_tokens"`
-}
+func (m MCPSettings) EffectiveNextWorkLimit() int    { return m.NextWorkLimit }
+func (m MCPSettings) EffectiveSimilarTaskLimit() int { return m.SimilarTaskLimit }
 
 // SQLiteSettings tunes the connection-level SQLite knobs the Store applies
 // at Open time. Required block — the kit's defaults/omakiten.yaml ships

@@ -149,7 +149,6 @@ func newAgentFixtureEditLockedToBacklog(t *testing.T) editLockedFixture {
 		RecentCommentLimit: 5,
 		IncludeWorkflow:    true,
 		CachePrompts:       true,
-		RecentContextLimit: 3,
 		NextWorkLimit:      5,
 		SimilarTaskLimit:   5,
 	})

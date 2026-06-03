@@ -130,9 +130,6 @@ func mergeKitDefaults(b *config.Bundle) {
 	if cfg.MCP.RecentCommentLimit == 0 {
 		cfg.MCP.RecentCommentLimit = kit.MCP.RecentCommentLimit
 	}
-	if cfg.MCP.RecentContextLimit == 0 {
-		cfg.MCP.RecentContextLimit = kit.MCP.RecentContextLimit
-	}
 	if cfg.MCP.NextWorkLimit == 0 {
 		cfg.MCP.NextWorkLimit = kit.MCP.NextWorkLimit
 	}

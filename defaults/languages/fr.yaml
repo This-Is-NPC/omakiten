@@ -31,9 +31,6 @@ keys:
   cli.comment.list.short: "Liste les commentaires de la task"
   cli.comment.edit.short: "Édite le corps du commentaire et remplace ses tags (soumis à bucket policy)"
   cli.comment.delete.short: "Supprime un commentaire de manière destructive (soumis à bucket policy)"
-  cli.context.short: "Inspecte le contexte du projet pour handoff"
-  cli.context.add.short: "Ajoute une entrée de contexte handoff du projet"
-  cli.context.dump.short: "Dump du contexte progressif pour les agents"
   cli.logs.short: "Inspecter le journal d'événements unifié (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
     okt logs lit la table d'événements unifiée via le même chemin que l'inspecteur Logs du TUI.
@@ -65,7 +62,7 @@ keys:
     Résout le projet par id numérique ou slug, écrit un snapshot
     de recovery dans le répertoire de backups rotatifs, puis cascade-delete
     de chaque ligne dépendante (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Un échec de backup annule le delete avant toute modification.
     L'état filesystem sous <root_path>/.omakiten/ est préservé —
@@ -272,8 +269,6 @@ keys:
   cli.comment.edit.flag.body: "nouveau corps du commentaire"
   cli.comment.edit.flag.tag: "nom de tag (répétable ; remplace tous les tags existants)"
   cli.comment.delete.flag.confirm: "requis : confirme la suppression destructive"
-  cli.context.add.flag.body: "corps du contexte"
-  cli.context.dump.flag.level: "niveau de détail du contexte : 1, 2 ou 3"
   cli.depend.flag.on: "id de la task dépendance"
   cli.init.flag.name: "nom du projet"
   cli.init.flag.slug: "slug du projet"
@@ -682,7 +677,6 @@ keys:
   tui.row.sub_tasks: "Sous-tâches"
   tui.stat.tasks: "tasks"
   tui.stat.comments: "commentaires"
-  tui.stat.context: "contexte"
   tui.stat.tags: "tags"
   tui.stat.estimated: "estimé"
   tui.stat.max: "max"

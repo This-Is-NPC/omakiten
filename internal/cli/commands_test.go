@@ -25,7 +25,6 @@ func TestCLIOperationalCommands(t *testing.T) {
 	runCLI(t, dbPath, configPath, "comment", "add", "1", "-b", "Remember this")
 	runCLI(t, dbPath, configPath, "comment", "add", "1", "-b", "feat/test", "--tag", "self-branch")
 	runCLI(t, dbPath, configPath, "depend", "add", "2", "-i", "1")
-	runCLI(t, dbPath, configPath, "context", "add", "-b", "handoff note")
 
 	movedShort := runCLI(t, dbPath, configPath, "move", "1", "-t", "dev")
 	if !strings.Contains(movedShort, `"bucket_key":"dev"`) {
@@ -39,20 +38,6 @@ func TestCLIOperationalCommands(t *testing.T) {
 	workflow := runCLI(t, dbPath, configPath, "workflow", "show")
 	if !strings.Contains(workflow, `"workflow"`) || !strings.Contains(workflow, `"transitions"`) {
 		t.Fatalf("workflow show output = %s, want workflow with transitions", workflow)
-	}
-
-	dump := runCLI(t, dbPath, configPath, "context", "dump", "--level", "3")
-	for _, want := range []string{`"context_entries"`, `"dependencies"`, `"comments"`, `"laws"`, `"token_metrics"`} {
-		if !strings.Contains(dump, want) {
-			t.Fatalf("context dump output missing %s: %s", want, dump)
-		}
-	}
-
-	shortDump := runCLI(t, dbPath, configPath, "context", "dump", "-l", "3")
-	for _, want := range []string{`"context_entries"`, `"dependencies"`, `"comments"`, `"laws"`, `"token_metrics"`} {
-		if !strings.Contains(shortDump, want) {
-			t.Fatalf("context dump short flag output missing %s: %s", want, shortDump)
-		}
 	}
 }
 

@@ -11,7 +11,7 @@ import (
 
 func TestTaskServiceAdd(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
@@ -56,7 +56,7 @@ func TestTaskServiceAdd(t *testing.T) {
 
 func TestTaskServiceList(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
@@ -86,7 +86,7 @@ func TestTaskServiceList(t *testing.T) {
 
 func TestTaskServiceMove(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
@@ -119,7 +119,7 @@ func TestTaskServiceMove(t *testing.T) {
 
 func TestTaskServiceEdit(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())

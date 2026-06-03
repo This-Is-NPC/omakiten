@@ -220,7 +220,6 @@ func TestModeMoveSubmitMovesSubtaskNotParent(t *testing.T) {
 		Tasks:        store,
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Cache:        runtimecache.Install(0, store.Snapshot()),
 		Events:       store,

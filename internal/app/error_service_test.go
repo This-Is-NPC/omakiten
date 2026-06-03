@@ -11,7 +11,7 @@ import (
 
 func TestErrorServiceEmitsAttributedDomainEvents(t *testing.T) {
 	ctx := activity.WithAgent(context.Background(), "mcp", "errors_record", "claude-opus-4-7", "sess-42")
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store, store.Snapshot())
@@ -90,7 +90,7 @@ type eventReader interface {
 
 func TestErrorServiceRecordValidatesDescription(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store, store.Snapshot())
@@ -104,13 +104,13 @@ func TestErrorServiceRecordValidatesDescription(t *testing.T) {
 
 func TestErrorServiceRecordNormalizesTags(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	// Rotate the store's snapshot to one that carries the kit's tag-synonym
 	// table before constructing the service so NormalizeTagName resolves the
 	// "Go" / "golang" aliases to the canonical "go" without any setter call.
-	bundle := appTestBundle(t, 1000)
+	bundle := appTestBundle(t)
 	bundle.Config.TagSynonyms = kitSynonyms()
 	if err := store.ImportBundle(ctx, bundle, "test.yaml", "hash"); err != nil {
 		t.Fatalf("ImportBundle: %v", err)
@@ -131,7 +131,7 @@ func TestErrorServiceRecordNormalizesTags(t *testing.T) {
 
 func TestErrorServiceAddSolutionValidates(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store, store.Snapshot())
@@ -152,7 +152,7 @@ func TestErrorServiceAddSolutionValidates(t *testing.T) {
 
 func TestErrorServiceConfirmSolutionRanks(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store, store.Snapshot())
@@ -180,7 +180,7 @@ func TestErrorServiceConfirmSolutionRanks(t *testing.T) {
 
 func TestErrorServiceListTopSolutionsRanksByLikes(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store, store.Snapshot())
@@ -213,7 +213,7 @@ func TestErrorServiceListTopSolutionsRanksByLikes(t *testing.T) {
 
 func TestErrorServiceListTopSolutionsClampsLimit(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	service := NewErrorService(store, store.Snapshot())
@@ -239,7 +239,7 @@ func TestErrorServiceListTopSolutionsClampsLimit(t *testing.T) {
 
 func TestErrorServiceTagEntityIntegration(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	tagService := NewTagService(store, store.Snapshot())
@@ -275,7 +275,7 @@ func TestErrorServiceTagEntityIntegration(t *testing.T) {
 
 func TestErrorServiceTagEntityRequiresEntityID(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	tagService := NewTagService(store, store.Snapshot())

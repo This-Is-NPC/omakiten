@@ -66,14 +66,12 @@ func TestSaveBundleAndLoadRoundTrip(t *testing.T) {
 		Kit:     Kit{ID: 1, Key: "default", Name: "Default"},
 		Config: Settings{
 			Output:   OutputSettings{JSONMinified: true, OmitEmpty: true},
-			Context:  ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
 			Workflow: WorkflowSettings{Active: "default"},
 			Theme:    ThemeSettings{Active: "catppuccin"},
 			MCP: MCPSettings{
 				RecentCommentLimit:        5,
 				IncludeWorkflowInContinue: &tru,
 				CachePrompts:              &tru,
-				RecentContextLimit:        3,
 				NextWorkLimit:             5,
 				SimilarTaskLimit:          5,
 			},
@@ -160,7 +158,6 @@ func TestSaveFullBundle(t *testing.T) {
 		Kit:     Kit{ID: 1, Key: "default", Name: "Default"},
 		Config: Settings{
 			Output:   OutputSettings{JSONMinified: true, OmitEmpty: true},
-			Context:  ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
 			Workflow: WorkflowSettings{Active: "default"},
 			Theme:    ThemeSettings{Active: "catppuccin"},
 		},

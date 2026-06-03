@@ -250,14 +250,13 @@ Every block plus its sort `field` / `order` is required — the validator reject
 | Block | Purpose | Required fields |
 | --- | --- | --- |
 | `config.output` | CLI JSON shape | `json_minified`, `omit_empty` |
-| `config.context` | `context.dump` tunings | `default_level`, `max_tokens` |
 | `config.workflow.active` | Which `workflows[].key` is live | string, must match one workflow |
 | `config.theme.active` | Which `themes/<slug>.yaml` palette to use | string |
 | `config.tui.token_badge` | Token badge thresholds on entity cards | `yellow_at`, `red_at` |
 | `config.sqlite.busy_timeout_ms` | `PRAGMA busy_timeout` (ms) | > 0 |
 | `config.activity_log` | Per-call tool-event retention (`*.tool_call`) | `max_rows`, `max_age_days` (both > 0) |
 | `config.solutions` | `solutions.list_top` MCP caps | `default_top_limit`, `max_top_limit` |
-| `config.mcp` | MCP response shape | `recent_comment_limit` (> 0), `max_comment_chars` (≥ 0), `include_workflow_in_continue` (`*bool`), `cache_prompts` (`*bool`), `recent_context_limit`, `next_work_limit`, `similar_task_limit` (all > 0) |
+| `config.mcp` | MCP response shape | `recent_comment_limit` (> 0), `max_comment_chars` (≥ 0), `include_workflow_in_continue` (`*bool`), `cache_prompts` (`*bool`), `next_work_limit`, `similar_task_limit` (both > 0) |
 | `config.search.stopwords` | Tokens dropped before similarity scoring | list of lowercase strings |
 | `config.tag_synonyms` | `NormalizeTagName` redirect table | `<non-canonical>: <canonical>` map |
 | `config.template_defaults` | Allowed values for template frontmatter `default:` | list of kind strings |

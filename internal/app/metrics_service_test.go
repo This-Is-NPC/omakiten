@@ -9,7 +9,7 @@ import (
 )
 
 func TestMetricsServiceSummaryAggregatesPerModel(t *testing.T) {
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	errService := NewErrorService(store, store.Snapshot())
@@ -112,7 +112,7 @@ func TestMetricsServiceSummaryAggregatesPerModel(t *testing.T) {
 }
 
 func TestMetricsServiceSummaryLikeRateFormula(t *testing.T) {
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	errService := NewErrorService(store, store.Snapshot())
@@ -171,7 +171,7 @@ func TestMetricsServiceSummaryLikeRateFormula(t *testing.T) {
 }
 
 func TestMetricsServiceSummaryDefaultsPeriodTo30d(t *testing.T) {
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	metrics := NewMetricsService(store)

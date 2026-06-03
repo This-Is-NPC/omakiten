@@ -31,9 +31,6 @@ keys:
   cli.comment.list.short: "列出 task 的评论"
   cli.comment.edit.short: "编辑评论正文并替换其 tags(受 bucket policy 约束)"
   cli.comment.delete.short: "破坏性删除评论(受 bucket policy 约束)"
-  cli.context.short: "检查项目 context 用于交接"
-  cli.context.add.short: "添加项目交接 context 条目"
-  cli.context.dump.short: "为 agents 输出渐进式 context"
   cli.logs.short: "查看统一事件日志 (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
     okt logs 通过 TUI 日志检查器相同的路径读取统一 events 表。
@@ -65,7 +62,7 @@ keys:
     按数字 id 或 slug 解析 project，将 recovery
     快照写入 rolling backups 目录，然后 cascade-delete
     每条依赖行 (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log)。
+    errors, activity log)。
     
     backup 失败会在触碰任何内容前中止 delete。
     <root_path>/.omakiten/ 下的 filesystem 状态保留 —
@@ -264,8 +261,6 @@ keys:
   cli.comment.edit.flag.body: "新评论正文"
   cli.comment.edit.flag.tag: "tag 名称(可重复;替换所有现有 tags)"
   cli.comment.delete.flag.confirm: "必需:确认破坏性删除"
-  cli.context.add.flag.body: "context 正文"
-  cli.context.dump.flag.level: "context 详细级别:1、2 或 3"
   cli.depend.flag.on: "依赖 task 的 id"
   cli.init.flag.name: "项目名称"
   cli.init.flag.slug: "项目 slug"
@@ -674,7 +669,6 @@ keys:
   tui.row.sub_tasks: "子任务"
   tui.stat.tasks: "tasks"
   tui.stat.comments: "评论"
-  tui.stat.context: "context"
   tui.stat.tags: "tags"
   tui.stat.estimated: "估算"
   tui.stat.max: "最大"

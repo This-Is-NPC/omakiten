@@ -31,9 +31,6 @@ keys:
   cli.comment.list.short: "List task comments"
   cli.comment.edit.short: "Edit a comment body and replace its tags (subject to bucket policy)"
   cli.comment.delete.short: "Hard-delete a comment (subject to bucket policy)"
-  cli.context.short: "Inspect project context for handoff"
-  cli.context.add.short: "Add a project handoff context entry"
-  cli.context.dump.short: "Dump progressive context for agents"
   cli.logs.short: "Inspect the unified event log (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
     okt logs reads the unified events table through the same path the TUI Logs
@@ -65,7 +62,7 @@ keys:
     Resolve the project by numeric id or slug, write a recovery
     snapshot to the rolling backups directory, then cascade-delete
     every dependent row (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
 
     Backup failure aborts the delete before anything is touched.
     Filesystem state under <root_path>/.omakiten/ is preserved —
@@ -271,8 +268,6 @@ keys:
   cli.comment.edit.flag.kind: "set the comment kind (omit to leave unchanged)"
   cli.comment.edit.flag.pinned: "set the pinned flag (omit to leave unchanged)"
   cli.comment.delete.flag.confirm: "required: confirm the destructive delete"
-  cli.context.add.flag.body: "context body"
-  cli.context.dump.flag.level: "context detail level: 1, 2, or 3"
   cli.depend.flag.on: "dependency task id"
   cli.init.flag.name: "project name"
   cli.init.flag.slug: "project slug"
@@ -701,7 +696,6 @@ keys:
   tui.row.sub_tasks: "Sub-tasks"
   tui.stat.tasks: "tasks"
   tui.stat.comments: "comments"
-  tui.stat.context: "context"
   tui.stat.tags: "tags"
   tui.stat.estimated: "estimated"
   tui.stat.max: "max"

@@ -17,7 +17,6 @@
 - [Comments](#comments)
 - [Dependencies](#dependencies)
 - [Plans](#plans)
-- [Context (handoff state)](#context-handoff-state)
 - [Logs (event inspector)](#logs-event-inspector)
 - [Workflow](#workflow)
 - [Config](#config)
@@ -341,20 +340,6 @@ The plan surface also supports maintenance operations for the same WBS model:
 
 ---
 
-## Context (handoff state)
-
-`internal/cli/context.go`. Backed by `app.ContextService`.
-
-- `okt context add -b BODY` — `--body` required; body is free-form markdown, token-estimated on insert.
-- `okt context dump [-l LEVEL]` — dumps progressive context under the YAML token budget (`config.context.max_tokens`). Levels: `1` = context entries only; `2` (default) adds workflow + tasks + dependencies; `3` adds comments + active laws (`internal/app/context_service.go`).
-
-```sh
-okt context add -b "Resuming from PR #17"
-okt context dump -l 3
-```
-
----
-
 ## Logs (event inspector)
 
 `internal/cli/logs.go`. Reads the unified `events` table via `internal/sqlite.Store.ListEvents` — the same path the TUI Logs inspector consumes — and projects each row through `domain.SummarizeEvent` for the `summary` column.
@@ -614,7 +599,7 @@ okt mcp setup --harness opencode --dry-run
 okt mcp serve   # invoked by the harness, not by hand
 ```
 
-`okt mcp call search` is the CLI handle for the unified FTS5 surface (`internal/app/search_service.go`); it returns BM25-ranked hits with `<mark>...</mark>` snippets across tasks, comments, errors, solutions, and context entries. Pass `entity_types: []` (or omit the key) for an all-five sweep — the legacy `errors.search` MCP tool was retired alongside it.
+`okt mcp call search` is the CLI handle for the unified FTS5 surface (`internal/app/search_service.go`); it returns BM25-ranked hits with `<mark>...</mark>` snippets across tasks, comments, errors, solutions, plans, and notes. Pass `entity_types: []` (or omit the key) for an all-six sweep — the legacy `errors.search` MCP tool was retired alongside it.
 
 The full set of MCP tools, resources, and prompts is documented in `.docs/mcp.md`.
 

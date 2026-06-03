@@ -41,7 +41,6 @@ func planGoalFixture(t *testing.T, goalBody string) Model {
 		Tasks:        store,
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 		Plans:        store,
 		Cache:        runtimecache.Install(0, snap),
 		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), snap),

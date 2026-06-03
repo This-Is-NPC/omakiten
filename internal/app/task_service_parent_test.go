@@ -13,7 +13,7 @@ import (
 func TestTaskServiceAddSubAttachesParent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
@@ -36,7 +36,7 @@ func TestTaskServiceAddSubAttachesParent(t *testing.T) {
 func TestTaskServiceAddSubRejectsMissingParent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
@@ -50,7 +50,7 @@ func TestTaskServiceAddSubRejectsMissingParent(t *testing.T) {
 func TestTaskServiceEditReparent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
@@ -73,7 +73,7 @@ func TestTaskServiceEditReparent(t *testing.T) {
 func TestTaskServiceEditRejectsCycle(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
@@ -90,7 +90,7 @@ func TestTaskServiceEditRejectsCycle(t *testing.T) {
 func TestTaskServiceEditClearsParent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
@@ -113,7 +113,7 @@ func TestTaskServiceEditClearsParent(t *testing.T) {
 func TestTaskServiceAddSubRejectsArchivedParent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
@@ -132,7 +132,7 @@ func TestTaskServiceAddSubRejectsArchivedParent(t *testing.T) {
 func TestTaskServiceAddSubLandsInRootKitFirstBucket_WhenNoCascade(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
@@ -157,7 +157,7 @@ func TestTaskServiceAddSubLandsInRootKitFirstBucket_WhenNoCascade(t *testing.T) 
 func TestTaskServiceAddSubAcceptsExplicitNonParentBucket(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
@@ -185,7 +185,7 @@ func TestTaskServiceAddSubAcceptsExplicitNonParentBucket(t *testing.T) {
 func TestTaskServiceAddSubUsesSubtaskKitFirstBucket(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	bundle := appTestBundle(t, 1000)
+	bundle := appTestBundle(t)
 	bundle.SubtaskBundle = subtaskRuntimeBundle("sub", []config.Bucket{
 		{ID: 10, Key: "todo", Name: "Todo", Position: 1},
 		{ID: 20, Key: "done", Name: "Done", Position: 2},
@@ -239,7 +239,7 @@ func TestTaskServiceMoveSubtaskUsesSubtaskKitTransitions(t *testing.T) {
 func TestTaskServiceEventsCarryDepthMetadata(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	bundle := appTestBundle(t, 1000)
+	bundle := appTestBundle(t)
 	bundle.SubtaskBundle = subtaskRuntimeBundle("sub", []config.Bucket{
 		{ID: 10, Key: "todo", Name: "Todo", Position: 1},
 		{ID: 20, Key: "done", Name: "Done", Position: 2},
@@ -291,7 +291,7 @@ func TestTaskServiceEventsCarryDepthMetadata(t *testing.T) {
 func TestTaskDepth_RootInsertsAtZero(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
@@ -307,7 +307,7 @@ func TestTaskDepth_RootInsertsAtZero(t *testing.T) {
 func TestTaskDepth_SubInsertAtParentDepthPlusOne(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
@@ -327,7 +327,7 @@ func TestTaskDepth_SubInsertAtParentDepthPlusOne(t *testing.T) {
 func TestTaskDepth_GrandchildAtTwo(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
@@ -345,7 +345,7 @@ func TestTaskDepth_GrandchildAtTwo(t *testing.T) {
 func TestTaskDepth_ReparentRecomputesSubtree(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
@@ -392,7 +392,7 @@ func TestTaskDepth_ReparentRecomputesSubtree(t *testing.T) {
 func TestSubjectDepth_GrandchildEmitsTwo(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
@@ -416,7 +416,7 @@ func TestSubjectDepth_GrandchildEmitsTwo(t *testing.T) {
 func TestTaskServiceEditRejectsReparentUnderArchived(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
@@ -436,7 +436,7 @@ func TestTaskServiceEditRejectsReparentUnderArchived(t *testing.T) {
 func TestTaskServiceListParentMode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 	service := NewTaskServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot())
 
@@ -484,7 +484,7 @@ func TestTaskServiceListParentMode(t *testing.T) {
 func TestTaskServiceEditReparentRebindsRootToSubFirstBucket(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	bundle := appTestBundle(t, 1000)
+	bundle := appTestBundle(t)
 	bundle.SubtaskBundle = subtaskRuntimeBundle("sub", []config.Bucket{
 		{ID: 10, Key: "todo", Name: "Todo", Position: 1},
 		{ID: 20, Key: "done", Name: "Done", Position: 2},
@@ -525,7 +525,7 @@ func TestTaskServiceEditReparentRebindsRootToSubFirstBucket(t *testing.T) {
 func TestTaskServiceEditReparentRebindsSubToRootFirstBucket(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	bundle := appTestBundle(t, 1000)
+	bundle := appTestBundle(t)
 	bundle.SubtaskBundle = subtaskRuntimeBundle("sub", []config.Bucket{
 		{ID: 10, Key: "todo", Name: "Todo", Position: 1},
 		{ID: 20, Key: "done", Name: "Done", Position: 2},
@@ -570,7 +570,7 @@ func TestTaskServiceEditReparentRebindsSubToRootFirstBucket(t *testing.T) {
 func TestTaskServiceEditCombinedFieldEditAndReparentReturnsFreshRow(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	bundle := appTestBundle(t, 1000)
+	bundle := appTestBundle(t)
 	bundle.SubtaskBundle = subtaskRuntimeBundle("sub", []config.Bucket{
 		{ID: 10, Key: "todo", Name: "Todo", Position: 1},
 		{ID: 20, Key: "done", Name: "Done", Position: 2},

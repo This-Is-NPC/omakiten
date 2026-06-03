@@ -31,9 +31,6 @@ keys:
   cli.comment.list.short: "task comment सूचीबद्ध करें"
   cli.comment.edit.short: "comment सामग्री संपादित करें और इसके tag बदलें (bucket नीति के अधीन)"
   cli.comment.delete.short: "comment हार्ड-डिलीट करें (bucket नीति के अधीन)"
-  cli.context.short: "हैंडऑफ़ के लिए project कॉन्टेक्स्ट देखें"
-  cli.context.add.short: "project हैंडऑफ़ कॉन्टेक्स्ट प्रविष्टि जोड़ें"
-  cli.context.dump.short: "agent के लिए प्रगतिशील कॉन्टेक्स्ट डंप करें"
   cli.logs.short: "एकीकृत इवेंट लॉग देखें (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
     okt logs TUI Logs इंस्पेक्टर के समान पथ से एकीकृत events तालिका पढ़ता है।
@@ -65,7 +62,7 @@ keys:
     Project numeric id या slug से resolve करें, recovery
     snapshot rolling backups directory में लिखें, फिर cascade-delete
     हर dependent row (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log)।
+    errors, activity log)।
     
     Backup failure delete को कुछ छुए बिना रोक देता है।
     <root_path>/.omakiten/ के तहत filesystem state सुरक्षित —
@@ -272,8 +269,6 @@ keys:
   cli.comment.edit.flag.body: "नई comment सामग्री"
   cli.comment.edit.flag.tag: "tag नाम (दोहराने योग्य; मौजूदा सभी tag बदलता है)"
   cli.comment.delete.flag.confirm: "आवश्यक: विनाशकारी delete की पुष्टि करें"
-  cli.context.add.flag.body: "कॉन्टेक्स्ट सामग्री"
-  cli.context.dump.flag.level: "कॉन्टेक्स्ट विवरण स्तर: 1, 2, या 3"
   cli.depend.flag.on: "निर्भरता task id"
   cli.init.flag.name: "project नाम"
   cli.init.flag.slug: "project slug"
@@ -682,7 +677,6 @@ keys:
   tui.row.sub_tasks: "उप-कार्य"
   tui.stat.tasks: "task"
   tui.stat.comments: "comment"
-  tui.stat.context: "कॉन्टेक्स्ट"
   tui.stat.tags: "tag"
   tui.stat.estimated: "अनुमानित"
   tui.stat.max: "अधिकतम"

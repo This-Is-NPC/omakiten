@@ -78,3 +78,7 @@ func (f fakeProjectRepo) ProjectDeleteCounts(context.Context, int64) (domain.Pro
 func (f fakeProjectRepo) DeleteProject(context.Context, int64) error {
 	return nil
 }
+
+func (f fakeProjectRepo) UpdateProjectDescription(context.Context, int64, string) (domain.Project, error) {
+	return domain.Project{}, nil
+}

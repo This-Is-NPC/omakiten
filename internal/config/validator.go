@@ -64,12 +64,6 @@ func ValidateBundle(bundle Bundle, loadedSkills []Skill, loadedLaws []Law, loade
 	if err := requireKitFields(bundle.Kit); err != nil {
 		return err
 	}
-	if bundle.Config.Context.DefaultLevel < 1 || bundle.Config.Context.DefaultLevel > 3 {
-		return fmt.Errorf("config.context.default_level must be between 1 and 3")
-	}
-	if bundle.Config.Context.MaxTokens < 0 {
-		return fmt.Errorf("config.context.max_tokens cannot be negative")
-	}
 	if strings.TrimSpace(bundle.Config.Workflow.Active) == "" {
 		return fmt.Errorf("config.workflow.active is required")
 	}
@@ -369,9 +363,6 @@ func validateMCPSettings(m MCPSettings) error {
 	}
 	if m.CachePrompts == nil {
 		return fmt.Errorf("config.mcp.cache_prompts: required boolean (see defaults/omakiten.yaml)")
-	}
-	if m.RecentContextLimit <= 0 {
-		return fmt.Errorf("config.mcp.recent_context_limit: must be > 0 (see defaults/omakiten.yaml)")
 	}
 	if m.NextWorkLimit <= 0 {
 		return fmt.Errorf("config.mcp.next_work_limit: must be > 0 (see defaults/omakiten.yaml)")

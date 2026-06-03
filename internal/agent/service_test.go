@@ -28,9 +28,6 @@ func TestOverviewUsesResolvedProjectAndCompactState(t *testing.T) {
 	if overview.PendingCount != 2 {
 		t.Fatalf("Overview().PendingCount = %d, want 2", overview.PendingCount)
 	}
-	if len(overview.RecentContext) != 1 || overview.RecentContext[0].Body != "A context" {
-		t.Fatalf("Overview().RecentContext = %#v, want only A context", overview.RecentContext)
-	}
 	for _, bucket := range overview.TaskBuckets {
 		if bucket.Count > 2 {
 			t.Fatalf("Overview().TaskBuckets = %#v, includes another project", overview.TaskBuckets)
@@ -81,11 +78,6 @@ func TestResumeProjectDoesNotMixProjectState(t *testing.T) {
 	for _, task := range resume.LikelyNextWork {
 		if task.ID == fixture.taskB.ID {
 			t.Fatalf("ResumeProject().LikelyNextWork includes project B task: %#v", resume.LikelyNextWork)
-		}
-	}
-	for _, entry := range resume.RecentContext {
-		if entry.Body == "B context" {
-			t.Fatalf("ResumeProject().RecentContext includes project B context: %#v", resume.RecentContext)
 		}
 	}
 }
@@ -234,46 +226,6 @@ func TestListDependenciesHappyPath(t *testing.T) {
 	}
 }
 
-func TestAddContextHappyPath(t *testing.T) {
-	fixture := newAgentFixture(t)
-
-	resp, err := fixture.service.AddContext(fixture.ctx, AddContextInput{Body: "New context"})
-	if err != nil {
-		t.Fatalf("AddContext() error = %v", err)
-	}
-	if resp.Entry.Body != "New context" {
-		t.Fatalf("AddContext().Entry.Body = %q, want %q", resp.Entry.Body, "New context")
-	}
-}
-
-func TestDumpContextDefaultLevel(t *testing.T) {
-	fixture := newAgentFixture(t)
-
-	// level == 0 should resolve to default (2)
-	dump, err := fixture.service.DumpContext(fixture.ctx, DumpContextInput{})
-	if err != nil {
-		t.Fatalf("DumpContext() error = %v", err)
-	}
-	if dump.Level != 2 {
-		t.Fatalf("DumpContext().Level = %d, want 2", dump.Level)
-	}
-	if len(dump.Tasks) != 2 {
-		t.Fatalf("DumpContext().Tasks len = %d, want 2", len(dump.Tasks))
-	}
-
-	// custom level
-	dump1, err := fixture.service.DumpContext(fixture.ctx, DumpContextInput{Level: 1})
-	if err != nil {
-		t.Fatalf("DumpContext(level 1) error = %v", err)
-	}
-	if dump1.Level != 1 {
-		t.Fatalf("DumpContext().Level = %d, want 1", dump1.Level)
-	}
-	if len(dump1.Tasks) != 0 {
-		t.Fatalf("DumpContext(level 1).Tasks len = %d, want 0", len(dump1.Tasks))
-	}
-}
-
 func TestShowWorkflowHappyPath(t *testing.T) {
 	fixture := newAgentFixture(t)
 
@@ -315,7 +267,7 @@ func TestRecordProgressScenarios(t *testing.T) {
 	_, err := fixture.service.RecordProgress(fixture.ctx, RecordProgressInput{Title: strPtr("new title")})
 	assertCodedError(t, err, domain.ErrValidation)
 
-	// TaskID <= 0 + no context -> error
+	// TaskID <= 0 + no edits -> error
 	_, err = fixture.service.RecordProgress(fixture.ctx, RecordProgressInput{})
 	assertCodedError(t, err, domain.ErrValidation)
 
@@ -338,28 +290,18 @@ func TestRecordProgressScenarios(t *testing.T) {
 		t.Fatalf("RecordProgress(comment).Comment = %#v, want progress note", commentOnly.Comment)
 	}
 
-	// Context only
-	ctxOnly, err := fixture.service.RecordProgress(fixture.ctx, RecordProgressInput{Context: "handoff"})
-	if err != nil {
-		t.Fatalf("RecordProgress(context) error = %v", err)
-	}
-	if ctxOnly.ContextEntry == nil || ctxOnly.ContextEntry.Body != "handoff" {
-		t.Fatalf("RecordProgress(context).ContextEntry = %#v, want handoff", ctxOnly.ContextEntry)
-	}
-
 	// Combined
 	newDesc := "updated desc"
 	combined, err := fixture.service.RecordProgress(fixture.ctx, RecordProgressInput{
 		TaskID:      fixture.taskA1.ID,
 		Description: &newDesc,
 		Comment:     "combined note",
-		Context:     "combined context",
 	})
 	if err != nil {
 		t.Fatalf("RecordProgress(combined) error = %v", err)
 	}
-	if combined.Task == nil || combined.Comment == nil || combined.ContextEntry == nil {
-		t.Fatalf("RecordProgress(combined) = %#v, want all three", combined)
+	if combined.Task == nil || combined.Comment == nil {
+		t.Fatalf("RecordProgress(combined) = %#v, want task and comment", combined)
 	}
 }
 
@@ -449,12 +391,6 @@ func newAgentFixture(t *testing.T) agentFixture {
 	if _, err := store.AddComment(ctx, projectB.ID, taskB.ID, "B comment", "agent", nil); err != nil {
 		t.Fatalf("AddComment(B) error = %v", err)
 	}
-	if _, err := store.AddContextEntry(ctx, projectA.ID, "A context", 2); err != nil {
-		t.Fatalf("AddContextEntry(A) error = %v", err)
-	}
-	if _, err := store.AddContextEntry(ctx, projectB.ID, "B context", 2); err != nil {
-		t.Fatalf("AddContextEntry(B) error = %v", err)
-	}
 
 	// Production wires settings from bundle.Config.MCP via the
 	// composition root; tests construct the service directly so seed
@@ -469,7 +405,6 @@ func newAgentFixture(t *testing.T) agentFixture {
 		MaxCommentChars:    0,
 		IncludeWorkflow:    true,
 		CachePrompts:       true,
-		RecentContextLimit: 3,
 		NextWorkLimit:      5,
 		SimilarTaskLimit:   5,
 	})

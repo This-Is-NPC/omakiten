@@ -51,12 +51,11 @@ type OverviewInput struct {
 }
 
 type OverviewResponse struct {
-	Project        ProjectSummary   `json:"project"`
-	Workflow       WorkflowSummary  `json:"workflow"`
-	PendingCount   int              `json:"pending_count"`
-	TaskBuckets    []BucketCount    `json:"task_buckets,omitempty"`
-	RecentContext  []ContextSnippet `json:"recent_context,omitempty"`
-	NextStepPrompt string           `json:"next_step_prompt"`
+	Project        ProjectSummary  `json:"project"`
+	Workflow       WorkflowSummary `json:"workflow"`
+	PendingCount   int             `json:"pending_count"`
+	TaskBuckets    []BucketCount   `json:"task_buckets,omitempty"`
+	NextStepPrompt string          `json:"next_step_prompt"`
 }
 
 type ResumeProjectInput struct {
@@ -70,10 +69,27 @@ type ResumeProjectResponse struct {
 	LikelyNextWork []TaskSummary       `json:"likely_next_work,omitempty"`
 	BlockedWork    []TaskSummary       `json:"blocked_work,omitempty"`
 	Dependencies   []DependencySummary `json:"dependencies,omitempty"`
-	RecentContext  []ContextSnippet    `json:"recent_context,omitempty"`
 	NextStepPrompt string              `json:"next_step_prompt"`
 }
 
 func projectSummary(project domain.ProjectContext) ProjectSummary {
 	return ProjectSummary{ID: project.ID, Name: project.Name, Slug: project.Slug, RootPath: project.RootPath}
+}
+
+// EditProjectInput carries the project selector plus the new
+// description. Only the description is mutable today — the write path
+// for the projects.description column (schema-only since migration 002)
+// is restored here.
+type EditProjectInput struct {
+	ProjectSelector
+	Description string `json:"description"`
+}
+
+// EditProjectResponse shapes the EditProject result: the refreshed
+// project DTO plus the next-step prompt, mirroring the other project
+// service responses.
+type EditProjectResponse struct {
+	Project        ProjectSummary `json:"project"`
+	Description    string         `json:"description"`
+	NextStepPrompt string         `json:"next_step_prompt"`
 }

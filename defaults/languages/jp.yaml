@@ -31,9 +31,6 @@ keys:
   cli.comment.list.short: "task の comment を一覧表示"
   cli.comment.edit.short: "comment 本文を編集して tag を置き換え (bucket policy に従う)"
   cli.comment.delete.short: "comment を破壊的に削除 (bucket policy に従う)"
-  cli.context.short: "ハンドオフ用のプロジェクト context を確認"
-  cli.context.add.short: "プロジェクトのハンドオフ context エントリを追加"
-  cli.context.dump.short: "agent 向けの段階的 context をダンプ"
   cli.logs.short: "統合イベントログを確認 (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
     okt logs は TUI Logs インスペクターと同じ経路で統合 events テーブルを読みます。
@@ -65,7 +62,7 @@ keys:
     数値 id または slug で project を解決し、recovery
     snapshot をローリング backups ディレクトリに書き、依存する全行
     (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log) を cascade-delete。
+    errors, activity log) を cascade-delete。
     
     backup 失敗は何も触る前に delete を中止。
     <root_path>/.omakiten/ 以下の filesystem 状態は保持 —
@@ -268,8 +265,6 @@ keys:
   cli.comment.edit.flag.body: "新しい comment 本文"
   cli.comment.edit.flag.tag: "tag 名 (繰り返し可。既存の tag を全て置き換え)"
   cli.comment.delete.flag.confirm: "必須: 破壊的削除を確認"
-  cli.context.add.flag.body: "context 本文"
-  cli.context.dump.flag.level: "context の詳細レベル: 1、2、または 3"
   cli.depend.flag.on: "依存 task の id"
   cli.init.flag.name: "プロジェクト名"
   cli.init.flag.slug: "プロジェクトの slug"
@@ -678,7 +673,6 @@ keys:
   tui.row.sub_tasks: "サブタスク"
   tui.stat.tasks: "task"
   tui.stat.comments: "comment"
-  tui.stat.context: "context"
   tui.stat.tags: "tag"
   tui.stat.estimated: "推定"
   tui.stat.max: "最大"

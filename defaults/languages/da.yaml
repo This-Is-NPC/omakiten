@@ -31,9 +31,6 @@ keys:
   cli.comment.list.short: "Lister task-comments"
   cli.comment.edit.short: "Redigerer et comments tekst og erstatter dens tags (underlagt bucket-policy)"
   cli.comment.delete.short: "Sletter et comment hårdt (underlagt bucket-policy)"
-  cli.context.short: "Inspicerer projekt-context til handoff"
-  cli.context.add.short: "Tilføjer en handoff-context-post til projektet"
-  cli.context.dump.short: "Dumper progressivt context til agents"
   cli.logs.short: "Gennemse den samlede hændelseslog (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
     okt logs læser den samlede hændelsestabel via samme sti som TUI Logs-
@@ -66,7 +63,7 @@ keys:
     Find projektet via numerisk id eller slug, skriv et recovery-
     snapshot til den rullende backup-mappe, og cascade-delete
     hver afhængig række (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Backup-fejl afbryder delete før noget røres.
     Filesystem-tilstand under <root_path>/.omakiten/ bevares —
@@ -272,8 +269,6 @@ keys:
   cli.comment.edit.flag.body: "ny comment-tekst"
   cli.comment.edit.flag.tag: "tag-navn (gentageligt; erstatter alle eksisterende tags)"
   cli.comment.delete.flag.confirm: "påkrævet: bekræft den destruktive sletning"
-  cli.context.add.flag.body: "context-tekst"
-  cli.context.dump.flag.level: "context-detaljeniveau: 1, 2 eller 3"
   cli.depend.flag.on: "afhængigheds-task-id"
   cli.init.flag.name: "projektnavn"
   cli.init.flag.slug: "projekt-slug"
@@ -682,7 +677,6 @@ keys:
   tui.row.sub_tasks: "Underopgaver"
   tui.stat.tasks: "tasks"
   tui.stat.comments: "comments"
-  tui.stat.context: "context"
   tui.stat.tags: "tags"
   tui.stat.estimated: "estimeret"
   tui.stat.max: "maks"

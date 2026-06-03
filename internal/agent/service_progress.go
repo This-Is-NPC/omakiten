@@ -14,15 +14,12 @@ func (s *Service) RecordProgress(ctx context.Context, input RecordProgressInput)
 		return RecordProgressResponse{}, err
 	}
 
-	if input.TaskID <= 0 && (input.Title != nil || input.Description != nil || input.Priority != nil || strings.TrimSpace(input.MoveToBucket) != "" || strings.TrimSpace(input.Comment) != "") {
+	if input.TaskID <= 0 {
 		return RecordProgressResponse{}, domain.NewError(domain.ErrValidation, "task_id is required for task edits, comments, and workflow moves", nil)
-	}
-	if input.TaskID <= 0 && strings.TrimSpace(input.Context) == "" {
-		return RecordProgressResponse{}, domain.NewError(domain.ErrValidation, "at least one progress update is required", nil)
 	}
 
 	response := RecordProgressResponse{Project: projectSummary(project)}
-	if input.TaskID > 0 && (input.Title != nil || input.Description != nil || input.Priority != nil || strings.TrimSpace(input.MoveToBucket) != "") {
+	if input.Title != nil || input.Description != nil || input.Priority != nil || strings.TrimSpace(input.MoveToBucket) != "" {
 		update := domain.TaskUpdate{
 			Title:       input.Title,
 			Description: input.Description,
@@ -57,14 +54,6 @@ func (s *Service) RecordProgress(ctx context.Context, input RecordProgressInput)
 		}
 		summary := commentSummary(comment)
 		response.Comment = &summary
-	}
-	if strings.TrimSpace(input.Context) != "" {
-		entry, err := app.NewContextServiceFromRepos(s.contextRepoSet(), s.snapshot, s.counter, s.registry).Add(ctx, project, input.Context)
-		if err != nil {
-			return RecordProgressResponse{}, err
-		}
-		summary := contextSnippet(entry)
-		response.ContextEntry = &summary
 	}
 
 	return response, nil

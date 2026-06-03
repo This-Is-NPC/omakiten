@@ -12,7 +12,6 @@ For ConfigRoot precedence, `.active` resolution, and the `<root>/` layout, see [
 - [Splitting sections into files — `from:` imports](#splitting-sections-into-files--from-imports)
 - [`kit`](#kit)
 - [`config.output`](#configoutput)
-- [`config.context`](#configcontext)
 - [`config.workflow`](#configworkflow)
 - [`config.theme`](#configtheme)
 - [`config.languages`](#configlanguages)
@@ -102,13 +101,6 @@ kit:
 | `json_minified` | bool | When true, CLI envelopes are emitted as a single line (`internal/output/json.go`). |
 | `omit_empty` | bool | Drop empty/zero fields from the JSON envelope. |
 
-## `config.context`
-
-| Field | Type | Range | Effect |
-|---|---|---|---|
-| `default_level` | int | 1, 2, or 3 | Default level for `context.dump` when the caller omits one. Levels: **1** = context entries only · **2** adds workflow + tasks + dependencies · **3** adds comments + active laws (`internal/app/context_service.go`). |
-| `max_tokens` | int | `>= 0` | Token budget for `context.dump`. Truncation is newest-first; the response sets `truncated: true` once the budget is exceeded (`internal/app/context_service.go:contextBudget`). |
-
 ## `config.workflow`
 
 | Field | Required | Effect |
@@ -156,7 +148,6 @@ config:
     max_comment_chars: 0               # int >=0; 0 = no truncation
     include_workflow_in_continue: true # bool; required
     cache_prompts: true                # bool; required
-    recent_context_limit: 3            # int >0
     next_work_limit: 5                 # int >0
     similar_task_limit: 5              # int >0
 ```
@@ -167,7 +158,6 @@ config:
 | `max_comment_chars` | int | `>= 0` | Truncates comment bodies past this many runes when shipped over MCP, appending `…`. Zero disables truncation. Use to bound `tasks.continue` payloads on tasks with verbose `#resume` and `#documentation` comments. Does not affect `comments.list` (which is the read-the-full-thread endpoint). |
 | `include_workflow_in_continue` | `*bool` | required | Toggles the `workflow` block in `tasks.continue` responses. Per-call `include_workflow` argument overrides this default — set false once `/okt` already loaded the workflow shape for the session. |
 | `cache_prompts` | `*bool` | required | Emits a `_meta.anthropic.cache_control` hint on `prompts/get` content. Anthropic-aware MCP clients (recent Claude Code) reuse the cached prompt across calls; unaware clients ignore the hint silently. Disable only to work around a misbehaving client. |
-| `recent_context_limit` | int | `> 0` | Caps how many recent `context.add` entries flow into `tasks.continue` / `project.overview` / `project.resume`. Smaller than `recent_comment_limit` because each entry can be paragraphs of free-form notes. |
 | `next_work_limit` | int | `> 0` | Caps the "likely next work" suggestion list shipped in `project.resume`. Increase for project-overview screens; keep small for narrow agent contexts. |
 | `similar_task_limit` | int | `> 0` | Caps how many similar-task hints `tasks.create_intent` surfaces during the dedup check. Tune up if you frequently create near-duplicate intents and want broader dedup coverage. |
 
@@ -181,7 +171,7 @@ Every field above is required and validated. Missing or out-of-range values fail
 | `max_comment_chars < 0` | `config.mcp.max_comment_chars: must be >= 0 (0 = no truncation)` |
 | `include_workflow_in_continue` omitted | `config.mcp.include_workflow_in_continue: required boolean (see defaults/config/omakase.yaml)` |
 | `cache_prompts` omitted | `config.mcp.cache_prompts: required boolean (see defaults/config/omakase.yaml)` |
-| Same shape for `recent_context_limit / next_work_limit / similar_task_limit`. |
+| Same shape for `next_work_limit / similar_task_limit`. |
 
 ### Worked example — taming a long-lived task
 
@@ -393,8 +383,6 @@ The runtime applies one substitution; `golang` → `go` works, but if you also d
 |---|---|
 | `version != 1` | `version must be 1` |
 | Missing `kit.id` / `kit.key` / `kit.name` | `kit.id must be positive` / `kit.key is required` / `kit.name is required` |
-| Bad context level | `config.context.default_level must be between 1 and 3` |
-| Negative `max_tokens` | `config.context.max_tokens cannot be negative` |
 | Empty `config.workflow.active` | `config.workflow.active is required` |
 | `active` not found | `config.workflow.active "<x>" does not match any workflow` |
 | Duplicated workflow / bucket id or key | `workflows has duplicated id <n>` / `… duplicated key "<k>"` |
@@ -432,7 +420,6 @@ kit:
 
 config:
   output:    { json_minified: true, omit_empty: true }
-  context:   { default_level: 2, max_tokens: 12000 }
   workflow:  { active: omakase }
   theme:     { active: omakiten }
   # template_defaults declares the kinds the user can assign in the TUI

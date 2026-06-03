@@ -118,7 +118,6 @@ func TestNewModelWithEmptyProjectOpensHome(t *testing.T) {
 		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 
 		Tags: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
@@ -157,7 +156,6 @@ func TestHomeHidesTabBar(t *testing.T) {
 		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 
 		Tags: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
@@ -198,7 +196,6 @@ func TestCtrlHReturnsToHome(t *testing.T) {
 		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 
 		Tags: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
@@ -234,7 +231,6 @@ func TestHomeEnterSelectsProject(t *testing.T) {
 		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 
 		Tags: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})
@@ -275,7 +271,6 @@ func TestCtrlHOnHomeReloads(t *testing.T) {
 		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 
 		Tags:    store,
 		Catalog: newTestCatalog(t),
@@ -323,7 +318,6 @@ func TestHomeProjectDeleteArmThenConfirm(t *testing.T) {
 		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 		Tags:         store,
 		Events:       store,
 		DBPath:       dbDir + "/omakiten.db",
@@ -408,7 +402,6 @@ func TestHomeProjectDeleteOverlayConfirm(t *testing.T) {
 		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 		Tags:         store,
 		Events:       store,
 		DBPath:       dbDir + "/omakiten.db",
@@ -507,7 +500,6 @@ func TestHomeProjectDeleteOverlayEscClears(t *testing.T) {
 		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 		Tags:         store,
 		Events:       store,
 		DBPath:       dbDir + "/omakiten.db",
@@ -580,7 +572,6 @@ func TestHomeProjectDeleteSurfacesAuditWarn(t *testing.T) {
 		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 		Tags:         store,
 		Events:       store,
 		Checkpointer: cp,
@@ -644,7 +635,6 @@ func TestHomeProjectDeleteAuditWarnSurvivesBackupFailure(t *testing.T) {
 		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 		Tags:         store,
 		Events:       store,
 		Checkpointer: cp,
@@ -726,7 +716,6 @@ func TestHomeProjectDeleteOverlayPathSurfacesAuditWarn(t *testing.T) {
 		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 		Tags:         store,
 		Events:       store,
 		Checkpointer: cp,
@@ -810,7 +799,6 @@ func TestHomeProjectDeleteRequeriesZeroCountersForAuditTruth(t *testing.T) {
 		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 		Tags:         store,
 		Events:       recorder,
 		DBPath:       dbDir + "/omakiten.db",
@@ -883,7 +871,6 @@ func TestHomeRendersProjectTagBadges(t *testing.T) {
 		Cache:    runtimecache.Install(0, store.Snapshot()), Workflow: app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 
 		Tags: store,
 	}, tuiTestTheme(), token.ApproxCounter{}, config.TokenBadgeThresholds{}, config.MustLoadKitConfig().Priorities, config.MustLoadKitConfig().Severities, NotificationBinding{})

@@ -62,7 +62,6 @@ func TestReloadBundleUsesCacheWhenWired(t *testing.T) {
 		Workflow:     app.NewWorkflowServiceFromStore(store, testfixtures.CanonicalRegistry(), store.Snapshot()),
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 
 		Editor:      editor,
 		BundleStore: files,

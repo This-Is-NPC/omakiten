@@ -3,8 +3,8 @@ package agent
 import "omakiten/internal/domain"
 
 // SearchInput is the MCP shape for the unified `search` tool. EntityTypes
-// is an array of {task, comment, error, solution, context}; empty means
-// "all five". Query is an FTS5 MATCH expression — the adapter forwards
+// is an array of {task, comment, error, solution, plan, note}; empty means
+// "all six". Query is an FTS5 MATCH expression — the adapter forwards
 // it to SQLite verbatim, so callers can use phrase, prefix, NEAR, AND/
 // OR/NOT, and column filters as documented at
 // https://sqlite.org/fts5.html#full_text_query_syntax.

@@ -31,9 +31,6 @@ keys:
   cli.comment.list.short: "Toon comments van een task"
   cli.comment.edit.short: "Bewerk een comment-body en vervang de tags (onderhevig aan bucket policy)"
   cli.comment.delete.short: "Verwijder een comment definitief (onderhevig aan bucket policy)"
-  cli.context.short: "Inspecteer projectcontext voor handoff"
-  cli.context.add.short: "Voeg een handoff-context entry toe aan het project"
-  cli.context.dump.short: "Dump progressieve context voor agents"
   cli.logs.short: "Unified eventlog inspecteren (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
     okt logs leest de uniforme gebeurtenistabel via hetzelfde pad als de TUI Logs-
@@ -65,7 +62,7 @@ keys:
     Los het project op via numerieke id of slug, schrijf een recovery-
     snapshot naar de rollende backup-map en cascade-delete
     elke afhankelijke rij (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Backup-fout breekt delete af voordat iets wordt aangeraakt.
     Filesystem-status onder <root_path>/.omakiten/ blijft behouden —
@@ -271,8 +268,6 @@ keys:
   cli.comment.edit.flag.body: "nieuwe comment body"
   cli.comment.edit.flag.tag: "tag-naam (herhaalbaar; vervangt alle bestaande tags)"
   cli.comment.delete.flag.confirm: "verplicht: bevestig het destructieve delete"
-  cli.context.add.flag.body: "context body"
-  cli.context.dump.flag.level: "detailniveau van context: 1, 2 of 3"
   cli.depend.flag.on: "id van de dependency-task"
   cli.init.flag.name: "naam van het project"
   cli.init.flag.slug: "slug van het project"
@@ -681,7 +676,6 @@ keys:
   tui.row.sub_tasks: "Subtaken"
   tui.stat.tasks: "tasks"
   tui.stat.comments: "comments"
-  tui.stat.context: "context"
   tui.stat.tags: "tags"
   tui.stat.estimated: "geschat"
   tui.stat.max: "max"

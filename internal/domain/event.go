@@ -75,6 +75,13 @@ const (
 	// artefact.
 	EventTypeProjectRemoved = "project.removed"
 
+	// EventTypeProjectUpdated fires when a project's mutable metadata is
+	// rewritten through the canonical service layer — today only the
+	// description column (its write path was restored after living
+	// schema-only since migration 002). EntityType=project (entity_id is
+	// the project id), Payload={description:{from,to}}.
+	EventTypeProjectUpdated = "project.updated"
+
 	// EventTypePlanCreated fires when a plan row is inserted.
 	// EntityType=plan, Payload={slug, name, project_id}.
 	EventTypePlanCreated = "plan.created"

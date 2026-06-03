@@ -100,7 +100,6 @@ func runTUI(ctx context.Context, opts *runtimeOptions, version string) error {
 		Workflow:     app.NewWorkflowServiceFromStore(rt.store, rt.activeRegistry(), rt.activeSnapshot()),
 		Comments:     rt.store,
 		Dependencies: rt.store,
-		Entries:      rt.store,
 		Tags:         rt.store,
 		Editor:       editor,
 		BundleStore:  bundleStore,
@@ -276,4 +275,3 @@ func oktCDPath() string {
 	}
 	return filepath.Join(tmp, "okt-cd-"+strconv.Itoa(os.Getuid()))
 }
-

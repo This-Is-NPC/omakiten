@@ -20,7 +20,7 @@ The trick palette gives keyboard-first power users a single binding (`ctrl+k`) t
 
 Every Tricks-tab submission emits a `trick.executed` event with payload `{verb, operand, raw}` *before* the built-in handler runs. User hooks subscribe to this event via the standard `hooks:` schema so arbitrary verbs become user-defined commands — palette is open by design.
 
-The Search tab wraps `app.SearchService.Search` across the unified FTS5 index (tasks, comments, errors, solutions, context entries, plans). Result list is navigable; Enter on a focused row opens the hit in its TUI detail view when one exists.
+The Search tab wraps `app.SearchService.Search` across the unified FTS5 index (tasks, comments, errors, solutions, plans, notes). Result list is navigable; Enter on a focused row opens the hit in its TUI detail view when one exists.
 
 ## How it works
 

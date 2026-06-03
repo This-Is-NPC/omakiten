@@ -31,9 +31,6 @@ keys:
   cli.comment.list.short: "Task comment'lerini listele"
   cli.comment.edit.short: "Bir comment gövdesini düzenle ve tag'lerini değiştir (bucket politikasına tabidir)"
   cli.comment.delete.short: "Bir comment'i kalıcı sil (bucket politikasına tabidir)"
-  cli.context.short: "Devir teslim için project context'ini incele"
-  cli.context.add.short: "Project devir context girdisi ekle"
-  cli.context.dump.short: "Agent'lar için aşamalı context dök"
   cli.logs.short: "Birleşik olay günlüğünü incele (task, comment, plan, hook, tool_call, guard, …)"
   cli.logs.long: |-
     okt logs, TUI Logs denetçisiyle aynı yoldan birleşik olay tablosunu okur.
@@ -65,7 +62,7 @@ keys:
     Project'i sayısal id veya slug ile çöz, recovery
     snapshot'ını rolling backups dizinine yaz, ardından cascade-delete
     her bağımlı satır (tasks, comments, plans, tag attachments,
-    context entries, errors, activity log).
+    errors, activity log).
     
     Backup hatası bir şeye dokunmadan delete'i durdurur.
     <root_path>/.omakiten/ altındaki filesystem durumu korunur —
@@ -269,8 +266,6 @@ keys:
   cli.comment.edit.flag.body: "yeni comment gövdesi"
   cli.comment.edit.flag.tag: "tag adı (tekrarlanabilir; mevcut tüm tag'leri değiştirir)"
   cli.comment.delete.flag.confirm: "gerekli: yıkıcı silmeyi onayla"
-  cli.context.add.flag.body: "context gövdesi"
-  cli.context.dump.flag.level: "context detay seviyesi: 1, 2 veya 3"
   cli.depend.flag.on: "bağımlılık task id'si"
   cli.init.flag.name: "project adı"
   cli.init.flag.slug: "project slug"
@@ -679,7 +674,6 @@ keys:
   tui.row.sub_tasks: "Alt görevler"
   tui.stat.tasks: "task'lar"
   tui.stat.comments: "comment'ler"
-  tui.stat.context: "context"
   tui.stat.tags: "tag'ler"
   tui.stat.estimated: "tahmini"
   tui.stat.max: "maks"

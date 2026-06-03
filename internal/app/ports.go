@@ -25,12 +25,18 @@ type ProjectRepository interface {
 	ProjectDeleteCounts(ctx context.Context, projectID int64) (domain.ProjectDeleteCounters, error)
 	// DeleteProject hard-deletes a project row and every cascading
 	// dependent row (tasks → task_tags / task_dependencies, plans →
-	// plan_waves, errors → solutions / error_tags, project_tags,
-	// context_entries) in a single transaction. Project-scoped event
+	// plan_waves, errors → solutions / error_tags, project_tags) in a
+	// single transaction. Project-scoped event
 	// rows (activity log, comments, task system events with
 	// project_id set) are explicitly removed because events has no FK
 	// to projects — leaving them would orphan the activity feed.
 	DeleteProject(ctx context.Context, projectID int64) error
+	// UpdateProjectDescription persists a new description onto a live
+	// (non-archived) project and returns the refreshed row. The
+	// projects.description column has existed since migration 002 but
+	// had no write path until this restored it. An unknown or archived
+	// id matches no row and surfaces ErrProjectNotFound.
+	UpdateProjectDescription(ctx context.Context, id int64, description string) (domain.Project, error)
 }
 
 // BackupRunner is the narrow port ProjectService uses to capture a
@@ -210,11 +216,6 @@ type DependencyRepository interface {
 	ListTaskDependencies(ctx context.Context, projectID, taskID int64) ([]domain.TaskDependency, error)
 }
 
-type ContextEntryRepository interface {
-	AddContextEntry(ctx context.Context, projectID int64, body string, tokenEstimate int) (domain.ContextEntry, error)
-	ListContextEntries(ctx context.Context, projectID int64) ([]domain.ContextEntry, error)
-}
-
 type TagRepository interface {
 	FindOrCreateTag(ctx context.Context, name, label string) (domain.Tag, error)
 	ListAllTags(ctx context.Context) ([]domain.Tag, error)
@@ -254,7 +255,7 @@ type MetricsRepository interface {
 }
 
 // SearchRepository exposes the unified FTS5 index that spans tasks,
-// comments, errors, solutions, and context entries. The adapter
+// comments, errors, solutions, plans, and notes. The adapter
 // implements ranking (BM25), snippet rendering, and the implicit
 // `tasks.state='active'` filter; the service layer validates input and
 // resolves the project filter into a numeric id.
@@ -262,7 +263,7 @@ type SearchRepository interface {
 	// Search runs the FTS5 MATCH expression against `search_index` and
 	// returns hits ordered by descending score. projectID == 0 disables
 	// the project filter (cross-project). entityTypes restricts the row
-	// set; an empty slice means "all five types".
+	// set; an empty slice means "all six types".
 	Search(ctx context.Context, query string, projectID int64, entityTypes []domain.SearchEntityType, limit int) ([]domain.SearchHit, error)
 }
 
