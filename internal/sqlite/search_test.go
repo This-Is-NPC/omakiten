@@ -7,11 +7,11 @@ import (
 	"omakiten/internal/domain"
 )
 
-// TestSearchIndexBackfillsExistingRows runs against a store that has
-// no pre-existing data; the assertion is that migration 022's CREATE
+// TestSearchIndexCoversCoreEntities runs against a store that has no
+// pre-existing data; the assertion is that migration 022's CREATE
 // triggers fire from the very first INSERT so the index is populated
 // without any explicit backfill step at runtime.
-func TestSearchIndexCoversFiveEntities(t *testing.T) {
+func TestSearchIndexCoversCoreEntities(t *testing.T) {
 	ctx := context.Background()
 	store := openTestStore(t)
 	project := mustUpsertProject(t, store, "P", "p", "/work/p")
@@ -34,14 +34,6 @@ func TestSearchIndexCoversFiveEntities(t *testing.T) {
 		t.Fatalf("AddSolution: %v", err)
 	}
 
-	// The context_entries table + its search-index triggers outlive the
-	// Go writer that was deleted with the context-entry service layer;
-	// insert directly so the search-coverage assertion still proves the
-	// FTS index spans context rows until the table is dropped.
-	if _, err := store.db.ExecContext(ctx, `INSERT INTO context_entries(project_id, body, token_estimate) VALUES (?, ?, ?)`, project.ID, "context note about tls renewal", 12); err != nil {
-		t.Fatalf("insert context_entries: %v", err)
-	}
-
 	hits, err := store.Search(ctx, "tls", 0, nil, 200)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
@@ -56,7 +48,6 @@ func TestSearchIndexCoversFiveEntities(t *testing.T) {
 		domain.SearchEntityComment,
 		domain.SearchEntityError,
 		domain.SearchEntitySolution,
-		domain.SearchEntityContext,
 	} {
 		if !seen[expected] {
 			t.Fatalf("Search(tls) missing entity_type=%s; hits=%+v", expected, hits)

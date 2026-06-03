@@ -25,8 +25,8 @@ type ProjectRepository interface {
 	ProjectDeleteCounts(ctx context.Context, projectID int64) (domain.ProjectDeleteCounters, error)
 	// DeleteProject hard-deletes a project row and every cascading
 	// dependent row (tasks → task_tags / task_dependencies, plans →
-	// plan_waves, errors → solutions / error_tags, project_tags,
-	// context_entries) in a single transaction. Project-scoped event
+	// plan_waves, errors → solutions / error_tags, project_tags) in a
+	// single transaction. Project-scoped event
 	// rows (activity log, comments, task system events with
 	// project_id set) are explicitly removed because events has no FK
 	// to projects — leaving them would orphan the activity feed.

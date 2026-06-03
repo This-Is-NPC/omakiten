@@ -135,8 +135,8 @@ func (s *Store) ProjectDeleteCounts(ctx context.Context, projectID int64) (domai
 // DeleteProject hard-deletes a project row in a single transaction.
 // The FK CASCADE chain installed by migration 025 takes care of
 // tasks (→ task_tags, task_dependencies), plans (→ plan_waves),
-// errors (→ solutions, error_tags), context_entries, and
-// project_tags. Event rows have no FK to projects so they would
+// errors (→ solutions, error_tags), and project_tags. Event rows
+// have no FK to projects so they would
 // linger as orphans pointing at a gone project_id — we delete them
 // explicitly inside the same transaction so the activity feed stays
 // consistent with the project being gone.

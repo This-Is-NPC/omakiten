@@ -51,6 +51,9 @@ func TestMigration021RecoversOrphanBucketIDsFromEvents(t *testing.T) {
 		// Mark every migration up through 020 as applied so the next
 		// Open only fires 021. This is the exact shape the user's DB
 		// is in: pre-rebind 020 already ran, workflow_buckets is gone.
+		// The search_index-dependent migrations (022/024) are also
+		// pre-marked because this synthetic DB never builds search_index;
+		// 033 joins them since it purges 'context' rows from that table.
 		`INSERT INTO schema_migrations(version) VALUES
 		   ('001_initial.sql'),
 		   ('002_entities.sql'),
@@ -75,7 +78,8 @@ func TestMigration021RecoversOrphanBucketIDsFromEvents(t *testing.T) {
 		   ('022_search_index.sql'),
 		   ('023_plans.sql'),
 		   ('024_search_index_plans.sql'),
-		   ('025_projects_cascade.sql')`,
+		   ('025_projects_cascade.sql'),
+		   ('033_drop_context_entries.sql')`,
 		`INSERT INTO projects (id, slug, name, root_path) VALUES (1, 'p', 'P', '/p')`,
 		// Tasks pointing at SQL-era PKs (the broken state).
 		`INSERT INTO tasks (id, project_id, bucket_id, title, priority_id) VALUES

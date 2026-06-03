@@ -1,9 +1,9 @@
 package domain
 
 // SearchEntityType labels a row inside the unified FTS5 `search_index`.
-// The five values mirror the source tables the index syncs from; any
-// other value is rejected at the service boundary so the SQL filter
-// only sees a closed set.
+// The values mirror the source tables the index syncs from; any other
+// value is rejected at the service boundary so the SQL filter only sees
+// a closed set.
 type SearchEntityType string
 
 const (
@@ -11,7 +11,6 @@ const (
 	SearchEntityComment  SearchEntityType = "comment"
 	SearchEntityError    SearchEntityType = "error"
 	SearchEntitySolution SearchEntityType = "solution"
-	SearchEntityContext  SearchEntityType = "context"
 	SearchEntityPlan     SearchEntityType = "plan"
 	SearchEntityNote     SearchEntityType = "note"
 )
@@ -25,17 +24,16 @@ func AllSearchEntityTypes() []SearchEntityType {
 		SearchEntityComment,
 		SearchEntityError,
 		SearchEntitySolution,
-		SearchEntityContext,
 		SearchEntityPlan,
 		SearchEntityNote,
 	}
 }
 
 // IsValidSearchEntityType reports whether the supplied value matches one
-// of the seven indexed entity types.
+// of the indexed entity types.
 func IsValidSearchEntityType(value string) bool {
 	switch SearchEntityType(value) {
-	case SearchEntityTask, SearchEntityComment, SearchEntityError, SearchEntitySolution, SearchEntityContext, SearchEntityPlan, SearchEntityNote:
+	case SearchEntityTask, SearchEntityComment, SearchEntityError, SearchEntitySolution, SearchEntityPlan, SearchEntityNote:
 		return true
 	}
 	return false
