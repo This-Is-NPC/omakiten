@@ -137,6 +137,10 @@ events:
       category: audit
       display: "project removed"
       formatter: project.removed
+    project.updated:
+      category: audit
+      display: "project updated"
+      formatter: project.updated
     plan.created:
       category: plan
       display: "plan created"

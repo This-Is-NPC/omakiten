@@ -352,6 +352,7 @@ After migration 009, **comments**, **task lifecycle events**, **operational tele
 | `solution` | `solution.liked` | solution id | `ConfirmSolution(success=true)`. `payload={error_id, likes}`. |
 | `solution` | `solution.failed` | solution id | `ConfirmSolution(success=false)`. `payload={error_id, likes}`. |
 | `solution` | `solution.viewed_top` | (null) | `ListTopSolutions` ran. `payload={limit, returned_count}`. |
+| `project` | `project.updated` | project id | `agent.Service.EditProject` rewrote a project's mutable metadata (today only the `description` column, whose write path was restored after living schema-only since migration 002). `payload={description:{from,to}}`. Emitted only when the value actually changed; a no-op edit writes nothing. |
 
 The canonical event-type vocabulary is the `EventType*` constants in `internal/domain/event.go`; the closed set lives in `domain.KnownEventTypes` (consumed by config validation to reject hook overrides referencing typos). `agent_model` and `agent_session_id` are populated from the request context on every domain event (and on every `*.tool_call` row). `metrics.summary` aggregates these rows by `agent_model` to benchmark agent behaviour.
 

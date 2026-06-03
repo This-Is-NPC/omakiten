@@ -7,6 +7,7 @@ import (
 
 func init() {
 	registerFormatter(EventTypeProjectRemoved, summarizeProjectRemoved)
+	registerFormatter(EventTypeProjectUpdated, summarizeProjectUpdated)
 	registerFormatter(EventTypeConfirmationGranted, summarizeConfirmationGranted)
 	registerFormatter(EventTypeErrorRecorded, summarizeErrorRecorded)
 	registerFormatter(EventTypeErrorsResearched, summarizeErrorsResearched)
@@ -30,6 +31,19 @@ func summarizeProjectRemoved(row EventRow) string {
 		return "removed project " + condenseLine(name)
 	}
 	return "project removed"
+}
+
+func summarizeProjectUpdated(row EventRow) string {
+	payload := decodePayload(row.Payload)
+	desc, ok := payload["description"].(map[string]any)
+	if !ok {
+		return "project updated"
+	}
+	to := readString(desc, "to")
+	if to == "" {
+		return "cleared project description"
+	}
+	return "updated project description: " + condenseLine(to)
 }
 
 func summarizeConfirmationGranted(row EventRow) string {

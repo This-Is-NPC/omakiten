@@ -31,6 +31,12 @@ type ProjectRepository interface {
 	// project_id set) are explicitly removed because events has no FK
 	// to projects — leaving them would orphan the activity feed.
 	DeleteProject(ctx context.Context, projectID int64) error
+	// UpdateProjectDescription persists a new description onto a live
+	// (non-archived) project and returns the refreshed row. The
+	// projects.description column has existed since migration 002 but
+	// had no write path until this restored it. An unknown or archived
+	// id matches no row and surfaces ErrProjectNotFound.
+	UpdateProjectDescription(ctx context.Context, id int64, description string) (domain.Project, error)
 }
 
 // BackupRunner is the narrow port ProjectService uses to capture a

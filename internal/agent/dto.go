@@ -75,3 +75,21 @@ type ResumeProjectResponse struct {
 func projectSummary(project domain.ProjectContext) ProjectSummary {
 	return ProjectSummary{ID: project.ID, Name: project.Name, Slug: project.Slug, RootPath: project.RootPath}
 }
+
+// EditProjectInput carries the project selector plus the new
+// description. Only the description is mutable today — the write path
+// for the projects.description column (schema-only since migration 002)
+// is restored here.
+type EditProjectInput struct {
+	ProjectSelector
+	Description string `json:"description"`
+}
+
+// EditProjectResponse shapes the EditProject result: the refreshed
+// project DTO plus the next-step prompt, mirroring the other project
+// service responses.
+type EditProjectResponse struct {
+	Project        ProjectSummary `json:"project"`
+	Description    string         `json:"description"`
+	NextStepPrompt string         `json:"next_step_prompt"`
+}
