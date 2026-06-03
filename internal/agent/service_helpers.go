@@ -57,17 +57,6 @@ func commentSummaries(comments []domain.Comment) []CommentSummary {
 	return out
 }
 
-func contextSnippets(entries []domain.ContextEntry, limit int) []ContextSnippet {
-	if limit > 0 && len(entries) > limit {
-		entries = entries[:limit]
-	}
-	out := make([]ContextSnippet, 0, len(entries))
-	for _, entry := range entries {
-		out = append(out, contextSnippet(entry))
-	}
-	return out
-}
-
 func recentComments(comments []domain.Comment, limit int) []CommentSummary {
 	if limit > 0 && len(comments) > limit {
 		comments = comments[len(comments)-limit:]
@@ -359,4 +348,3 @@ func overlapScore(a, b map[string]struct{}) float64 {
 	}
 	return float64(common) / float64(len(a))
 }
-

@@ -72,7 +72,6 @@ type Repository interface {
 	app.CommentRepository
 	app.EventRepository
 	app.DependencyRepository
-	app.ContextEntryRepository
 	app.TagRepository
 	app.ErrorRepository
 	app.MetricsRepository

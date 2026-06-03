@@ -143,20 +143,6 @@ func TestStoreOperationalDataIsProjectScoped(t *testing.T) {
 	if len(dependencies) != 1 || dependencies[0].DependsOnTaskID != taskA1.ID {
 		t.Fatalf("ListTaskDependencies(A) = %#v, want only A dependency", dependencies)
 	}
-
-	if _, err := store.AddContextEntry(ctx, projectA.ID, "A context", 2); err != nil {
-		t.Fatalf("AddContextEntry(A) error = %v", err)
-	}
-	if _, err := store.AddContextEntry(ctx, projectB.ID, "B context", 2); err != nil {
-		t.Fatalf("AddContextEntry(B) error = %v", err)
-	}
-	entries, err := store.ListContextEntries(ctx, projectA.ID)
-	if err != nil {
-		t.Fatalf("ListContextEntries(A) error = %v", err)
-	}
-	if len(entries) != 1 || entries[0].Body != "A context" {
-		t.Fatalf("ListContextEntries(A) = %#v, want only A context", entries)
-	}
 }
 
 func TestDependencyServiceRejectsCycle(t *testing.T) {

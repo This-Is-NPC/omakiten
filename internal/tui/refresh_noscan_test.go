@@ -104,7 +104,6 @@ func buildRefreshHotPathModel(tb testing.TB) Model {
 		Tasks:        store,
 		Comments:     store,
 		Dependencies: store,
-		Entries:      store,
 		Editor:       noScanEditor,
 		BundleStore:  files,
 		EntityFiles:  files,

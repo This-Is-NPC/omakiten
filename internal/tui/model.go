@@ -533,7 +533,7 @@ func (m *Model) refreshHeavyAfterViewChangeCmd() tea.Cmd {
 	views := m.activeViewSettings()
 	m.views = views
 	cfgSnap := m.repos.activeSnapshot()
-	query := app.NewTUIQueryService(m.repos.Tasks, cfgSnap, m.repos.Dependencies, m.repos.Comments, m.repos.Entries, m.repos.Tags)
+	query := app.NewTUIQueryService(m.repos.Tasks, cfgSnap, m.repos.Dependencies, m.repos.Comments, m.repos.Tags)
 	var plansSvc *app.PlanService
 	if m.repos.Plans != nil {
 		plansSvc = app.NewPlanServiceWithSnapshot(m.repos.Plans, cfgSnap)
@@ -612,7 +612,6 @@ func (m *Model) applyRefreshAfterViewChange(r refreshAfterViewChangeMsg) {
 	m.skills = snap.Skills
 	m.personas = snap.Personas
 	m.templates = snap.Templates
-	m.entries = snap.Entries
 	m.tags = snap.AllTags
 	m.taskTagsMap = snap.TaskTagsByID
 	m.metrics = m.computeMetrics(snap.Settings.MaxTokens)
@@ -1275,7 +1274,7 @@ func (m *Model) refresh() error {
 	// testfixtures/runtimecache.Install. Reads hit r.Cache.Get(r.ProjectID).Snapshot
 	// unconditionally.
 
-	query := app.NewTUIQueryService(m.repos.Tasks, m.repos.activeSnapshot(), m.repos.Dependencies, m.repos.Comments, m.repos.Entries, m.repos.Tags)
+	query := app.NewTUIQueryService(m.repos.Tasks, m.repos.activeSnapshot(), m.repos.Dependencies, m.repos.Comments, m.repos.Tags)
 	snap, err := query.Snapshot(m.ctx, m.project, domain.TaskSort{Field: views.Board.Sort.Field, Order: views.Board.Sort.Order}, app.SnapshotOptions{IncludeArchived: m.includeArchived})
 	if err != nil {
 		return err
@@ -1289,7 +1288,6 @@ func (m *Model) refresh() error {
 	m.skills = snap.Skills
 	m.personas = snap.Personas
 	m.templates = snap.Templates
-	m.entries = snap.Entries
 	m.tags = snap.AllTags
 	m.taskTagsMap = snap.TaskTagsByID
 	m.metrics = m.computeMetrics(snap.Settings.MaxTokens)
@@ -1327,9 +1325,6 @@ func (m *Model) clampPlanCursor() {
 
 func (m Model) computeMetrics(maxTokens int) domain.TokenMetrics {
 	total := 0
-	for _, entry := range m.entries {
-		total += entry.TokenEstimate
-	}
 	for _, law := range m.laws {
 		// m.laws now carries the full catalog; only the active subset is in
 		// the agent context, so inactive entries must not inflate the budget.

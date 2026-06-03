@@ -11,20 +11,6 @@ import (
 // tests pass nil because the assertions do not depend on stopword
 // filtering.
 
-func TestContextSnippets(t *testing.T) {
-	entries := []domain.ContextEntry{
-		{ID: 1, Body: "a"},
-		{ID: 2, Body: "b"},
-		{ID: 3, Body: "c"},
-	}
-	if len(contextSnippets(entries, 0)) != 3 {
-		t.Fatalf("contextSnippets(limit 0) len = %d, want 3", len(contextSnippets(entries, 0)))
-	}
-	if len(contextSnippets(entries, 2)) != 2 {
-		t.Fatalf("contextSnippets(limit 2) len = %d, want 2", len(contextSnippets(entries, 2)))
-	}
-}
-
 func TestRecentComments(t *testing.T) {
 	comments := []domain.Comment{
 		{ID: 1, Body: "first"},

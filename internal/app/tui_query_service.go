@@ -20,7 +20,6 @@ type TUISnapshot struct {
 	Skills       []domain.Skill
 	Personas     []domain.Persona
 	Templates    []config.TaskTemplate
-	Entries      []domain.ContextEntry
 	Settings     domain.ContextSettings
 	AllTags      []domain.Tag
 	TaskTagsByID map[int64][]domain.Tag
@@ -42,13 +41,12 @@ type TUIQueryService struct {
 	snap     *config.Snapshot
 	deps     DependencyRepository
 	comments CommentRepository
-	entries  ContextEntryRepository
 	tags     TagRepository
 }
 
 // NewTUIQueryService wires the TUI read model.
-func NewTUIQueryService(tasks TaskRepository, snap *config.Snapshot, deps DependencyRepository, comments CommentRepository, entries ContextEntryRepository, tags TagRepository) *TUIQueryService {
-	return &TUIQueryService{tasks: tasks, snap: snap, deps: deps, comments: comments, entries: entries, tags: tags}
+func NewTUIQueryService(tasks TaskRepository, snap *config.Snapshot, deps DependencyRepository, comments CommentRepository, tags TagRepository) *TUIQueryService {
+	return &TUIQueryService{tasks: tasks, snap: snap, deps: deps, comments: comments, tags: tags}
 }
 
 // SnapshotOptions tunes the TUI snapshot fetch. IncludeArchived flips the
@@ -62,7 +60,7 @@ type SnapshotOptions struct {
 // activity feeds and the entity views in one shot. Order: tasks first
 // (most likely to fail with a fresh empty store), workflow, dependencies,
 // comments, the entity collections (with on-disk enrichment when the
-// editor is available), context entries + settings, then tag indexes.
+// editor is available), settings, then tag indexes.
 func (s *TUIQueryService) Snapshot(ctx context.Context, project domain.ProjectContext, sort domain.TaskSort, opts ...SnapshotOptions) (TUISnapshot, error) {
 	snap := TUISnapshot{TaskTagsByID: map[int64][]domain.Tag{}}
 
@@ -129,12 +127,6 @@ func (s *TUIQueryService) Snapshot(ctx context.Context, project domain.ProjectCo
 		snap.Templates = append([]config.TaskTemplate(nil), cfgSnap.AllTemplates()...)
 	}
 
-	entries, err := s.entries.ListContextEntries(ctx, project.ID)
-	if err != nil {
-		return snap, err
-	}
-	snap.Entries = entries
-
 	if cfgSnap != nil {
 		snap.Settings = cfgSnap.ContextSettings()
 	}
@@ -171,4 +163,3 @@ func bundleWarningIndex(warnings []config.SourceWarning) map[string]string {
 	}
 	return out
 }
-

@@ -210,11 +210,6 @@ type DependencyRepository interface {
 	ListTaskDependencies(ctx context.Context, projectID, taskID int64) ([]domain.TaskDependency, error)
 }
 
-type ContextEntryRepository interface {
-	AddContextEntry(ctx context.Context, projectID int64, body string, tokenEstimate int) (domain.ContextEntry, error)
-	ListContextEntries(ctx context.Context, projectID int64) ([]domain.ContextEntry, error)
-}
-
 type TagRepository interface {
 	FindOrCreateTag(ctx context.Context, name, label string) (domain.Tag, error)
 	ListAllTags(ctx context.Context) ([]domain.Tag, error)

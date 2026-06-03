@@ -162,7 +162,6 @@ func (m Model) renderStatsBudgetTables() string {
 	totalsRows := m.summaryRows(m.t("tui.kicker.totals"),
 		[2]string{m.t("tui.stat.tasks"), fmt.Sprintf("%d", len(m.tasks))},
 		[2]string{m.t("tui.stat.comments"), fmt.Sprintf("%d", len(m.comments))},
-		[2]string{m.t("tui.stat.context"), fmt.Sprintf("%d", len(m.entries))},
 		[2]string{m.t("tui.stat.tags"), fmt.Sprintf("%d", len(m.tags))},
 	)
 	tokensRows := m.summaryRows(m.t("tui.kicker.tokens"),

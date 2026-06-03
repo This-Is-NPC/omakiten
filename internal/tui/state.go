@@ -38,15 +38,15 @@ const (
 )
 
 const (
-	columnWidth                = 28
-	taskDetailsPanelWidth      = 40
-	taskCommentsPanelMinWidth  = 44
-	taskCommentsPanelMaxWidth  = 96
+	columnWidth               = 28
+	taskDetailsPanelWidth     = 40
+	taskCommentsPanelMinWidth = 44
+	taskCommentsPanelMaxWidth = 96
 	// projectMetaPanelMinWidth floors the project-view metadata column and
 	// gates the side-by-side ↔ stacked decision: the two columns sit
 	// side-by-side only when the terminal can give the meta panel at least
 	// this many cells next to the activity rail (plus the 2-cell gutter).
-	projectMetaPanelMinWidth = 32
+	projectMetaPanelMinWidth   = 32
 	commentInputHeight         = 5
 	taskFormInputWidth         = 72
 	taskDescriptionInputHeight = 8
@@ -72,7 +72,6 @@ type Repositories struct {
 	Workflow     *app.WorkflowService
 	Comments     app.CommentRepository
 	Dependencies app.DependencyRepository
-	Entries      app.ContextEntryRepository
 	Tags         app.TagRepository
 	Editor       *app.BundleEditor
 	BundleStore  app.BundleStore
@@ -256,8 +255,8 @@ type Model struct {
 	moveInputTargetID int64
 	status            string
 	moveMode          bool
-	helpOpen  bool
-	helpAll   bool
+	helpOpen          bool
+	helpAll           bool
 	// paletteOpen tracks the trick palette overlay (#182). When true,
 	// every keypress routes through palette.Model.Update until the
 	// overlay emits palette.DismissMsg (esc) or a SubmitMsg /
@@ -364,17 +363,16 @@ type Model struct {
 	// fall back to "en"; AgentOutput stays empty when unset). Populated
 	// by reloadBundle so Settings › General can render the three rows
 	// without re-reading the snapshot at render time.
-	languages           config.LanguageSettings
-	themePickerOptions       []themeOption
-	configPickerOptions      []configOption
-	subtaskKitPickerOptions  []subtaskKitOption
-	entries             []domain.ContextEntry
-	tags                []domain.Tag
-	taskTagsMap         map[int64][]domain.Tag
-	metrics             domain.TokenMetrics
-	selected            int
-	colIdx              int
-	cardIdx             int
+	languages               config.LanguageSettings
+	themePickerOptions      []themeOption
+	configPickerOptions     []configOption
+	subtaskKitPickerOptions []subtaskKitOption
+	tags                    []domain.Tag
+	taskTagsMap             map[int64][]domain.Tag
+	metrics                 domain.TokenMetrics
+	selected                int
+	colIdx                  int
+	cardIdx                 int
 
 	entityKind    entityKind
 	entityCursors map[entityKind]int
