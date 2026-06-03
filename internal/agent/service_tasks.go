@@ -49,10 +49,6 @@ func (s *Service) ContinueTask(ctx context.Context, input ContinueTaskInput) (Co
 	if err != nil {
 		return ContinueTaskResponse{}, err
 	}
-	entries, err := s.repo.ListContextEntries(ctx, project.ID)
-	if err != nil {
-		return ContinueTaskResponse{}, err
-	}
 
 	var agentOutputLang string
 	if s.snapshot != nil {
@@ -64,7 +60,6 @@ func (s *Service) ContinueTask(ctx context.Context, input ContinueTaskInput) (Co
 		Workflow:            workflowSum,
 		Dependencies:        dependencySummaries(dependencies),
 		Comments:            s.shapedRecentComments(comments),
-		RecentContext:       contextSnippets(entries, s.settings.RecentContextLimit),
 		NextStepPrompt:      fmt.Sprintf("Continue task #%d from this checkpoint, then record material progress with `progress.record`.", task.ID),
 		AgentOutputLanguage: agentOutputLang,
 	}, nil

@@ -28,9 +28,6 @@ func TestOverviewUsesResolvedProjectAndCompactState(t *testing.T) {
 	if overview.PendingCount != 2 {
 		t.Fatalf("Overview().PendingCount = %d, want 2", overview.PendingCount)
 	}
-	if len(overview.RecentContext) != 1 || overview.RecentContext[0].Body != "A context" {
-		t.Fatalf("Overview().RecentContext = %#v, want only A context", overview.RecentContext)
-	}
 	for _, bucket := range overview.TaskBuckets {
 		if bucket.Count > 2 {
 			t.Fatalf("Overview().TaskBuckets = %#v, includes another project", overview.TaskBuckets)
@@ -81,11 +78,6 @@ func TestResumeProjectDoesNotMixProjectState(t *testing.T) {
 	for _, task := range resume.LikelyNextWork {
 		if task.ID == fixture.taskB.ID {
 			t.Fatalf("ResumeProject().LikelyNextWork includes project B task: %#v", resume.LikelyNextWork)
-		}
-	}
-	for _, entry := range resume.RecentContext {
-		if entry.Body == "B context" {
-			t.Fatalf("ResumeProject().RecentContext includes project B context: %#v", resume.RecentContext)
 		}
 	}
 }

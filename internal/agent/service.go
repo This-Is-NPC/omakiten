@@ -312,15 +312,11 @@ func (s *Service) resolveProject(ctx context.Context, selector ProjectSelector) 
 	return projectresolver.NewResolver(s.repo).Resolve(ctx, projectresolver.ResolveOptions{ProjectID: effective.ProjectID, Project: effective.Project, CWD: effective.CWD})
 }
 
-func (s *Service) projectState(ctx context.Context, project domain.ProjectContext) ([]domain.Task, domain.Workflow, []domain.ContextEntry, error) {
+func (s *Service) projectState(ctx context.Context, project domain.ProjectContext) ([]domain.Task, domain.Workflow, error) {
 	tasks, err := app.NewTaskServiceFromStore(s.repo, s.registry, s.snapshot).List(ctx, project, domain.TaskFilter{})
 	if err != nil {
-		return nil, domain.Workflow{}, nil, err
+		return nil, domain.Workflow{}, err
 	}
 	workflow := s.snapshot.Workflow()
-	entries, err := s.repo.ListContextEntries(ctx, project.ID)
-	if err != nil {
-		return nil, domain.Workflow{}, nil, err
-	}
-	return tasks, workflow, entries, nil
+	return tasks, workflow, nil
 }

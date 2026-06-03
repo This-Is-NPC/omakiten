@@ -51,12 +51,11 @@ type OverviewInput struct {
 }
 
 type OverviewResponse struct {
-	Project        ProjectSummary   `json:"project"`
-	Workflow       WorkflowSummary  `json:"workflow"`
-	PendingCount   int              `json:"pending_count"`
-	TaskBuckets    []BucketCount    `json:"task_buckets,omitempty"`
-	RecentContext  []ContextSnippet `json:"recent_context,omitempty"`
-	NextStepPrompt string           `json:"next_step_prompt"`
+	Project        ProjectSummary  `json:"project"`
+	Workflow       WorkflowSummary `json:"workflow"`
+	PendingCount   int             `json:"pending_count"`
+	TaskBuckets    []BucketCount   `json:"task_buckets,omitempty"`
+	NextStepPrompt string          `json:"next_step_prompt"`
 }
 
 type ResumeProjectInput struct {
@@ -70,7 +69,6 @@ type ResumeProjectResponse struct {
 	LikelyNextWork []TaskSummary       `json:"likely_next_work,omitempty"`
 	BlockedWork    []TaskSummary       `json:"blocked_work,omitempty"`
 	Dependencies   []DependencySummary `json:"dependencies,omitempty"`
-	RecentContext  []ContextSnippet    `json:"recent_context,omitempty"`
 	NextStepPrompt string              `json:"next_step_prompt"`
 }
 

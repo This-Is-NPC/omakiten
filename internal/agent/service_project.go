@@ -12,7 +12,7 @@ func (s *Service) Overview(ctx context.Context, input OverviewInput) (OverviewRe
 		return OverviewResponse{}, err
 	}
 
-	tasks, workflow, entries, err := s.projectState(ctx, project)
+	tasks, workflow, err := s.projectState(ctx, project)
 	if err != nil {
 		return OverviewResponse{}, err
 	}
@@ -22,7 +22,6 @@ func (s *Service) Overview(ctx context.Context, input OverviewInput) (OverviewRe
 		Workflow:       workflowSummary(workflow),
 		PendingCount:   pendingCount(workflow, tasks),
 		TaskBuckets:    bucketCounts(workflow, tasks),
-		RecentContext:  contextSnippets(entries, s.settings.RecentContextLimit),
 		NextStepPrompt: "Omakiten is ready. Ask for task details, continue the latest checkpoint, or create a new task intent.",
 	}, nil
 }
@@ -33,7 +32,7 @@ func (s *Service) ResumeProject(ctx context.Context, input ResumeProjectInput) (
 		return ResumeProjectResponse{}, err
 	}
 
-	tasks, workflow, entries, err := s.projectState(ctx, project)
+	tasks, workflow, err := s.projectState(ctx, project)
 	if err != nil {
 		return ResumeProjectResponse{}, err
 	}
@@ -49,7 +48,6 @@ func (s *Service) ResumeProject(ctx context.Context, input ResumeProjectInput) (
 		LikelyNextWork: likelyNextWork(workflow, tasks, s.settings.NextWorkLimit, s.registry),
 		BlockedWork:    blockedWork(tasks, dependencies, s.registry),
 		Dependencies:   dependencySummaries(dependencies),
-		RecentContext:  contextSnippets(entries, s.settings.RecentContextLimit),
 		NextStepPrompt: "Choose a likely next task, inspect blocked work, or ask for `/okt-task-continue #<id>` context.",
 	}, nil
 }
