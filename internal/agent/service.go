@@ -40,11 +40,6 @@ type ServiceSettings struct {
 	// Sourced from config.mcp.cache_prompts.
 	CachePrompts bool
 
-	// RecentContextLimit caps how many recent context entries flow into
-	// tasks.continue / project.overview / project.resume responses.
-	// Sourced from config.mcp.recent_context_limit (validator-required > 0).
-	RecentContextLimit int
-
 	// NextWorkLimit caps the "likely next work" suggestion list shipped
 	// in project.resume. Sourced from config.mcp.next_work_limit
 	// (validator-required > 0).

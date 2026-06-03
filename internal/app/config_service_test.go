@@ -19,7 +19,7 @@ func TestConfigServiceImport(t *testing.T) {
 
 	tmp := t.TempDir()
 	validPath := filepath.Join(tmp, "omakiten.yaml")
-	data, _ := yaml.Marshal(appTestBundle(t, 1000))
+	data, _ := yaml.Marshal(appTestBundle(t))
 	if err := os.WriteFile(validPath, data, 0644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
@@ -66,7 +66,7 @@ func TestConfigServiceImportReturnsParsedBundleAndRegistry(t *testing.T) {
 
 	tmp := t.TempDir()
 	cfgPath := filepath.Join(tmp, "omakiten.yaml")
-	data, _ := yaml.Marshal(appTestBundle(t, 1000))
+	data, _ := yaml.Marshal(appTestBundle(t))
 	if err := os.WriteFile(cfgPath, data, 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -81,10 +81,5 @@ func TestConfigServiceImportReturnsParsedBundleAndRegistry(t *testing.T) {
 	wf := snap.Workflow()
 	if wf.Key == "" || len(wf.Buckets) == 0 {
 		t.Fatalf("Snapshot().Workflow() returned empty after Import: %+v", wf)
-	}
-
-	settings := snap.ContextSettings()
-	if settings.MaxTokens != 1000 {
-		t.Fatalf("Snapshot().ContextSettings().MaxTokens = %d, want 1000", settings.MaxTokens)
 	}
 }

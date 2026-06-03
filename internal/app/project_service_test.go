@@ -51,7 +51,7 @@ func (f *fakeEventRecorder) RecordEntityEvent(_ context.Context, entityType stri
 
 func TestProjectServiceInit(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	service := NewProjectService(store, nil, nil)
@@ -105,7 +105,7 @@ func TestProjectServiceInit(t *testing.T) {
 
 func TestProjectServiceDelete_HappyPath(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	backup := &fakeBackup{path: "/var/state/omakiten/backups/2026-05-21T18-00-00Z.db"}
@@ -144,7 +144,7 @@ func TestProjectServiceDelete_HappyPath(t *testing.T) {
 
 func TestProjectServiceDelete_BackupFailureAbortsDelete(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	sentinel := errors.New("disk full")
@@ -171,7 +171,7 @@ func TestProjectServiceDelete_BackupFailureAbortsDelete(t *testing.T) {
 
 func TestProjectServiceDelete_RequiresBackupRunner(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	svc := NewProjectService(store, nil, nil)
@@ -217,7 +217,7 @@ func (o *orderingCheckpointer) Checkpoint(context.Context) error {
 
 func TestProjectServiceDelete_RunsCheckpointBeforeBackup(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	counters, err := store.ProjectDeleteCounts(ctx, project.ID)
@@ -238,7 +238,7 @@ func TestProjectServiceDelete_RunsCheckpointBeforeBackup(t *testing.T) {
 
 func TestProjectServiceDelete_ContinuesWhenCheckpointFails(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	counters, err := store.ProjectDeleteCounts(ctx, project.ID)
@@ -282,7 +282,7 @@ func (c *countingRepo) ProjectDeleteCounts(ctx context.Context, projectID int64)
 
 func TestProjectServiceDelete_AcceptsCounterSnapshotWithoutRequery(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	counters, err := store.ProjectDeleteCounts(ctx, project.ID)

@@ -97,7 +97,6 @@ func TestLoadBundleRejectsDanglingRef(t *testing.T) {
 kit: { id: 1, key: default, name: Default }
 config:
   output: { json_minified: true, omit_empty: true }
-  context: { default_level: 2, max_tokens: 12000 }
   workflow: { active: default }
   theme: { active: catppuccin }
   mcp:
@@ -105,7 +104,6 @@ config:
     max_comment_chars: 0
     include_workflow_in_continue: true
     cache_prompts: true
-    recent_context_limit: 3
     next_work_limit: 5
     similar_task_limit: 5
   tui:

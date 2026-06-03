@@ -28,12 +28,10 @@ func appTestStore(t *testing.T, bundle config.Bundle) (*snapstore.Store, domain.
 // shape, then layers minimal inline entities (skills/personas/laws) on
 // top. The entity arrays carry `yaml:"-"` in production — they are
 // populated by LoadBundle from per-entity folders, not from the YAML —
-// so tests that need them must wire them in Go. maxTokens varies per
-// test and is overlaid last.
-func appTestBundle(t *testing.T, maxTokens int) config.Bundle {
+// so tests that need them must wire them in Go.
+func appTestBundle(t *testing.T) config.Bundle {
 	t.Helper()
 	bundle, _ := testfixtures.LoadBundle(t, "default.yaml")
-	bundle.Config.Context.MaxTokens = maxTokens
 	bundle.Skills = []config.Skill{{Slug: "go", Name: "Go"}}
 	bundle.Personas = []config.Persona{{Slug: "agent", Name: "Agent", Skills: []string{"go"}}}
 	bundle.Laws = []config.Law{{Slug: "scope", Severity: "error", Body: "Stay in scope.", Scope: "global"}}

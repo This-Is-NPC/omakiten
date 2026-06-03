@@ -917,15 +917,6 @@ func (s *Snapshot) Warnings() []SourceWarning {
 	return out
 }
 
-// ContextSettings returns the resolved context-window block. Used by
-// app.ContextService to clamp recent-context shipments.
-func (s *Snapshot) ContextSettings() domain.ContextSettings {
-	return domain.ContextSettings{
-		DefaultLevel: s.settings.Context.DefaultLevel,
-		MaxTokens:    s.settings.Context.MaxTokens,
-	}
-}
-
 // LogsWindowDays returns the configured LOGS-view default time horizon
 // as a time.Duration (days × 24h). Call sites that need a timestamp
 // floor can do `time.Now().Add(-snap.LogsWindowDays())` without

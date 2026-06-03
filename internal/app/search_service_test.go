@@ -11,7 +11,7 @@ import (
 
 func TestSearchServiceRejectsEmptyQuery(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	svc := NewSearchService(store, store)
@@ -24,7 +24,7 @@ func TestSearchServiceRejectsEmptyQuery(t *testing.T) {
 
 func TestSearchServiceRejectsUnknownEntityType(t *testing.T) {
 	ctx := context.Background()
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	svc := NewSearchService(store, store)
@@ -37,7 +37,7 @@ func TestSearchServiceRejectsUnknownEntityType(t *testing.T) {
 
 func TestSearchServiceEmitsErrorsResearchedForErrorScope(t *testing.T) {
 	ctx := activity.WithAgent(context.Background(), "mcp", "search", "claude-opus-4-7", "sess-1")
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	errSvc := NewErrorService(store, store.Snapshot())
@@ -58,7 +58,7 @@ func TestSearchServiceEmitsErrorsResearchedForErrorScope(t *testing.T) {
 
 func TestSearchServiceSkipsErrorsResearchedWhenScopeExcludesError(t *testing.T) {
 	ctx := activity.WithAgent(context.Background(), "mcp", "search", "claude-opus-4-7", "sess-2")
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	svc := NewSearchService(store, store)
@@ -85,7 +85,7 @@ func TestSearchServiceSkipsErrorsResearchedWhenScopeExcludesError(t *testing.T) 
 // only exercises the per-project path.
 func TestSearchServiceEmitsErrorsResearchedForCrossProjectScope(t *testing.T) {
 	ctx := activity.WithAgent(context.Background(), "mcp", "search", "claude-opus-4-7", "sess-3")
-	store, project := appTestStore(t, appTestBundle(t, 1000))
+	store, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store.Close() }()
 
 	errSvc := NewErrorService(store, store.Snapshot())

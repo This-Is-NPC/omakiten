@@ -11,9 +11,6 @@
 output:
   json_minified: true
   omit_empty: true
-context:
-  default_level: 2
-  max_tokens: 12000
 # mcp tunes how MCP responses are shaped to fit the agent's context
 # window. Every field is REQUIRED — the validator rejects bundles that
 # omit any. The values below are the canonical kit; tune them in your
@@ -23,7 +20,6 @@ mcp:
   max_comment_chars: 0               # >= 0; 0 = no truncation
   include_workflow_in_continue: true # ship workflow block in tasks.continue
   cache_prompts: true                # emit Anthropic cache_control hint
-  recent_context_limit: 3            # > 0; recent context entries shipped
   next_work_limit: 5                 # > 0; "likely next work" suggestions
   similar_task_limit: 5              # > 0; similar-task hints on create_intent
 theme:

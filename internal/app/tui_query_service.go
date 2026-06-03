@@ -20,7 +20,6 @@ type TUISnapshot struct {
 	Skills       []domain.Skill
 	Personas     []domain.Persona
 	Templates    []config.TaskTemplate
-	Settings     domain.ContextSettings
 	AllTags      []domain.Tag
 	TaskTagsByID map[int64][]domain.Tag
 }
@@ -125,10 +124,6 @@ func (s *TUIQueryService) Snapshot(ctx context.Context, project domain.ProjectCo
 		snap.Skills = skills
 		snap.Personas = personas
 		snap.Templates = append([]config.TaskTemplate(nil), cfgSnap.AllTemplates()...)
-	}
-
-	if cfgSnap != nil {
-		snap.Settings = cfgSnap.ContextSettings()
 	}
 
 	if s.tags != nil {

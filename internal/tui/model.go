@@ -614,7 +614,7 @@ func (m *Model) applyRefreshAfterViewChange(r refreshAfterViewChangeMsg) {
 	m.templates = snap.Templates
 	m.tags = snap.AllTags
 	m.taskTagsMap = snap.TaskTagsByID
-	m.metrics = m.computeMetrics(snap.Settings.MaxTokens)
+	m.metrics = m.computeMetrics(0)
 	m.languages = r.langs
 	if r.plansValid {
 		m.plans = r.plans
@@ -1290,7 +1290,7 @@ func (m *Model) refresh() error {
 	m.templates = snap.Templates
 	m.tags = snap.AllTags
 	m.taskTagsMap = snap.TaskTagsByID
-	m.metrics = m.computeMetrics(snap.Settings.MaxTokens)
+	m.metrics = m.computeMetrics(0)
 	if bundleSnap := m.repos.activeSnapshot(); bundleSnap != nil {
 		m.languages = bundleSnap.Settings().EffectiveLanguages()
 	}

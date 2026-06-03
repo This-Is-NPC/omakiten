@@ -356,7 +356,7 @@ func TestResolveImportsNoDirectivePassThrough(t *testing.T) {
 
 func TestMergeFromImportsBaseKeys(t *testing.T) {
 	dir := t.TempDir()
-	writeImportYAML(t, dir, "base.yml", "output:\n  minified: true\ncontext:\n  level: 2\n")
+	writeImportYAML(t, dir, "base.yml", "output:\n  minified: true\ntheme:\n  active: omacon\n")
 	node, _, _, err := runResolve(t, dir, "config:\n  merge_from: ./base.yml\n  workflow:\n    active: omakase\n")
 	if err != nil {
 		t.Fatalf("resolveImports() error = %v", err)
@@ -366,8 +366,8 @@ func TestMergeFromImportsBaseKeys(t *testing.T) {
 	if mapVal(t, cfg, "output").Kind != yaml.MappingNode {
 		t.Fatal("config.output missing after merge_from")
 	}
-	if mapVal(t, cfg, "context").Kind != yaml.MappingNode {
-		t.Fatal("config.context missing after merge_from")
+	if mapVal(t, cfg, "theme").Kind != yaml.MappingNode {
+		t.Fatal("config.theme missing after merge_from")
 	}
 	// own sibling key must be present
 	if mapVal(t, mapVal(t, cfg, "workflow"), "active").Value != "omakase" {

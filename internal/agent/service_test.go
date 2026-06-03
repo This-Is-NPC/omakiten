@@ -405,7 +405,6 @@ func newAgentFixture(t *testing.T) agentFixture {
 		MaxCommentChars:    0,
 		IncludeWorkflow:    true,
 		CachePrompts:       true,
-		RecentContextLimit: 3,
 		NextWorkLimit:      5,
 		SimilarTaskLimit:   5,
 	})

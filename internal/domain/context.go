@@ -5,8 +5,3 @@ type TokenMetrics struct {
 	MaxTokens      int  `json:"max_tokens"`
 	Truncated      bool `json:"truncated,omitempty"`
 }
-
-type ContextSettings struct {
-	DefaultLevel int `json:"default_level"`
-	MaxTokens    int `json:"max_tokens"`
-}

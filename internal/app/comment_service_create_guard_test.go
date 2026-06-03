@@ -92,7 +92,7 @@ func TestCommentServiceCreateGuardBackCompat(t *testing.T) {
 	store := snapstore.Open(t, t.TempDir()+"/create_backcompat.db")
 	defer func() { _ = store.Close() }()
 	// appTestBundle ships a canonical workflow with no comment.create policy.
-	store2, project := appTestStore(t, appTestBundle(t, 2000))
+	store2, project := appTestStore(t, appTestBundle(t))
 	defer func() { _ = store2.Close() }()
 	_ = store
 

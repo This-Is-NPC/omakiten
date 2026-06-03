@@ -22,9 +22,6 @@ kit:
   key: x
   name: X
 config:
-  context:
-    default_level: 2
-    max_tokens: 12000
   workflow:
     active: default
   theme:

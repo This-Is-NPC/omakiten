@@ -158,9 +158,9 @@ func TestClassifyValidationErrorMapsKnownPatterns(t *testing.T) {
 		// the validator emits when a theme slug is unknown still
 		// resolves to theme_not_found.
 		{"active theme \"nope\" not loadable: missing file", "theme_not_found"},
-		{"unknown field 'foo' in config.context", "unknown_schema_key"},
+		{"unknown field 'foo' in config.mcp", "unknown_schema_key"},
 		{"config.workflow.active is required", "missing_required_key"},
-		{"config.context.default_level must be between 1 and 3", "invalid_value"},
+		{"config.sqlite.busy_timeout_ms must be between 1 and 60000", "invalid_value"},
 		{"open /tmp/missing.yaml: no such file or directory", "missing_shipped_file"},
 		{"some unrelated failure", "validation"},
 	}

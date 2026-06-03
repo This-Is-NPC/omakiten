@@ -18,9 +18,6 @@ config:
   output:
     json_minified: true
     omit_empty: true
-  context:
-    default_level: 2
-    max_tokens: 12000
   workflow:
     active: default
   theme:

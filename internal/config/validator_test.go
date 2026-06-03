@@ -73,7 +73,6 @@ func TestValidateBundleErrors(t *testing.T) {
 			Kit:     Kit{ID: 1, Key: "default", Name: "Default"},
 			Config: Settings{
 				Output:   OutputSettings{JSONMinified: true, OmitEmpty: true},
-				Context:  ContextSettings{DefaultLevel: 2, MaxTokens: 12000},
 				Workflow: WorkflowSettings{Active: "default"},
 				Theme:    ThemeSettings{Active: "catppuccin"},
 				MCP: MCPSettings{
@@ -81,7 +80,6 @@ func TestValidateBundleErrors(t *testing.T) {
 					MaxCommentChars:           0,
 					IncludeWorkflowInContinue: &tru,
 					CachePrompts:              &tru,
-					RecentContextLimit:        3,
 					NextWorkLimit:             5,
 					SimilarTaskLimit:          5,
 				},
@@ -134,8 +132,6 @@ func TestValidateBundleErrors(t *testing.T) {
 		wantErr string
 	}{
 		{"wrong version", func(b *Bundle) { b.Version = 2 }, "version must be 1"},
-		{"invalid context level", func(b *Bundle) { b.Config.Context.DefaultLevel = 0 }, "default_level must be between 1 and 3"},
-		{"negative max tokens", func(b *Bundle) { b.Config.Context.MaxTokens = -1 }, "max_tokens cannot be negative"},
 		{"empty workflow active", func(b *Bundle) { b.Config.Workflow.Active = "" }, "workflow.active is required"},
 		{"empty theme active", func(b *Bundle) { b.Config.Theme.Active = "" }, "theme.active is required"},
 		{"missing kit id", func(b *Bundle) { b.Kit.ID = 0 }, "kit.id must be positive"},
