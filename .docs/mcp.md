@@ -86,8 +86,8 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 
 | Tool | Purpose |
 |---|---|
-| `project.overview` | Active project identity, workflow, pending count, recent context, and next-step prompt. `okt` / `okt-start` read this as one input, then also inspect tasks, plans, and handoff notes before recommending a command. |
-| `project.resume` | Project distribution, likely next work, blocked/dependent work, recent context. Used by `okt-project-resume`. |
+| `project.overview` | Active project identity, workflow, pending count, and next-step prompt. `okt` / `okt-start` read this as one input, then also inspect tasks, plans, and handoff notes before recommending a command. |
+| `project.resume` | Project distribution, likely next work, blocked/dependent work. Used by `okt-project-resume`. |
 | `project.edit` | Updates the active project's `description` and persists it to the `projects.description` column, emitting `project.updated` (with the from/to diff) when the value changes. Returns the refreshed project DTO. Restores the project-description write path that was schema-only since migration 002. |
 | `workflow.show` | Active workflow buckets and allowed transitions. |
 | `orphans.migrate` | Rebind tasks whose bucket was deactivated by a workflow swap. First call without `confirmed=true` returns a preview report + `Confirmation` block listing every affected task; retry with `confirmed=true` to apply the rebind. Empty preview short-circuits to a no-op regardless of the flag. Mirrors the CLI `okt workflow orphans` command. |
@@ -96,7 +96,7 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 
 | Tool | Purpose |
 |---|---|
-| `tasks.continue` | Task details, dependencies, comments, workflow, context. Used by `okt-task-continue` and `okt-task-resume`. |
+| `tasks.continue` | Task details, dependencies, comments, workflow. Used by `okt-task-continue` and `okt-task-resume`. |
 | `tasks.list` | Lists active project tasks. Optional `bucket_key` scopes by workflow bucket. Optional `parent_id` scopes by sub-task relationship: omit for no filter, pass `null` to return roots only (`parent_id IS NULL`), pass an integer to return direct children of that task id. |
 | `tasks.create_intent` | Task creation with similar-task detection and confirmation gate. Used by `okt-task-create`. Accepts optional `parent_id` to attach the new task as a sub-task in the same call; the parent must belong to the active project and be `state=active`. Sub-tasks inherit the parent's current bucket when `bucket_key` is omitted. The `task.created` event payload carries `parent_id` when set so audit consumers can attribute sub-task creation. |
 | `tasks.create` | Direct task creation equivalent to `okt add`. Accepts optional `parent_id` to create a sub-task in one call; same parent-must-be-active + bucket-inheritance contract as `tasks.create_intent`. Row + FK land in a single atomic INSERT. |
@@ -150,13 +150,6 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 | `dependencies.remove` | Requires `confirmed=true` before deleting a dependency. |
 | `dependencies.list` | Lists dependencies for one task or all project tasks. |
 
-### Context
-
-| Tool | Purpose |
-|---|---|
-| `context.add` | Adds a project handoff context entry. |
-| `context.dump` | Dumps compact context at level 1, 2, or 3 under a token budget. |
-
 ### Tags
 
 | Tool | Purpose |
@@ -208,7 +201,7 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 
 | Tool | Purpose |
 |---|---|
-| `progress.record` | Records material progress through edits, comments, context, and optional workflow moves in a single call. |
+| `progress.record` | Records material progress through task edits, a progress comment, and optional workflow moves in a single call. |
 
 Every tool accepts optional project selector fields where useful: `project_id`, `project`, and `cwd`. Resolution follows Omakiten's standard order: explicit id, explicit slug, then current working directory inside a registered project root. `tags.list_all`, `errors.*`, `solutions.*`, `templates.list`, and `metrics.summary` are intentionally cross-project and ignore the selector (`metrics.summary` accepts a separate `project_id` filter argument when scoped is desired).
 
@@ -324,7 +317,7 @@ The `mise run mcp:prompts` task renders every resolved prompt to stdout against 
 The default kit follows Anthropic's [context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) guidance. Customizers who add their own commands, laws, or templates should match these conventions so the resolved prompts stay coherent:
 
 - **Right altitude in action texts.** Action text describes the command's contract — name the canonical tool, end with a REST handoff. **Role lives in the persona body** (rendered in `## Persona`); **constraints live in bound laws** (rendered in `## Laws`); **scaffold lives in the templates section**. Action text never restates any of those — `mcp_commands.<cmd>.persona` is configurable, so persona-coupled prose in the action would leak role-specific instructions into prompts that bind a different persona. The persona body is the single source of truth for "how this role works"; the laws are the single source for "what is forbidden / required"; the action is just the command-specific bootstrap and handoff.
-- **Just-in-time over pre-loading.** Template bodies are fetched via `templates.show` rather than embedded inline. The same logic applies to any heavy artifact (long context entries, large dumps): expose a tool, ship the slug, let the agent pull the body when actually needed.
+- **Just-in-time over pre-loading.** Template bodies are fetched via `templates.show` rather than embedded inline. The same logic applies to any heavy artifact (long comment threads, large bodies): expose a tool, ship the slug, let the agent pull the body when actually needed.
 - **Few-shot examples in load-bearing laws.** Laws that govern judgment calls (`template-fidelity`, `conventional-commits`, `no-assumptions`, `self-report`) carry a `Bad:` / `Good:` micro-example after the directive paragraph. Anthropic's principle: examples teach generalization better than abstract rules. Plain text labels (no emoji) keep the prompt readable across terminals and clients.
 - **No conditional logic in prompts.** Anti-pattern: `if returns requires_confirmation, ask the user…`. Instead, the server's response carries an actionable `Reason` field that names the next-step tools — the agent acts on the response shape, not on prompt-side branching. See `agent.Confirmation.Reason` in `internal/agent/dto.go`.
 - **Failure-driven additions.** Add a law or example only after observing a real failure mode. `template-fidelity` was added because the agent fabricated `Closes #40`; `authorize-remote-writes` was added because `git push` is destructive. Don't speculate.
@@ -332,7 +325,7 @@ The default kit follows Anthropic's [context engineering for AI agents](https://
 
 ### Variable tool-result cost
 
-The composed prompt is only half the picture. For prompts that fetch task state, the tool result is the dominant variable. `tasks.continue`, for example, ships the task body (description can be long on rich tasks), the active workflow shape, the dependency list, the most recent comments with full body and tags, the most recent project context entries, and a `next_step_prompt` string. The total grows linearly with comment volume and description length — a fresh task is compact, a long-running one with many `#resume` notes dominates the window.
+The composed prompt is only half the picture. For prompts that fetch task state, the tool result is the dominant variable. `tasks.continue`, for example, ships the task body (description can be long on rich tasks), the active workflow shape, the dependency list, the most recent comments with full body and tags, and a `next_step_prompt` string. The total grows linearly with comment volume and description length — a fresh task is compact, a long-running one with many `#resume` notes dominates the window.
 
 ### Tuning context cost
 
@@ -344,7 +337,6 @@ The biggest variable is the tool result, not the prompt. Seven knobs in `config.
 | `max_comment_chars` (int, default `0`) | Truncates each comment body past N runes with `…`. Set to ~`500` for a hard floor while keeping the latest exchange readable. | High on comment-heavy tasks; nil on terse ones. |
 | `include_workflow_in_continue` (`*bool`, default `true`) | Skips the `workflow` block in `tasks.continue`. The agent already has the workflow from the first `/okt` of the session — set `false` to stop re-shipping. | Fixed per-call; matters on multi-task sessions. |
 | `cache_prompts` (`*bool`, default `true`) | Emits an Anthropic `cache_control` hint on `prompts/get` content. Aware clients reuse the cached prompt across calls. | Bulk of the prompt body on subsequent calls within the cache window. |
-| `recent_context_limit` (int, default `3`) | Caps recent handoff context entries included in checkpoint endpoints. | High when context entries are long prose. |
 | `next_work_limit` (int, default `5`) | Caps likely-next-work suggestions in `project.resume`. | Keeps resume payloads bounded on large projects. |
 | `similar_task_limit` (int, default `5`) | Caps similar-task hints returned by `tasks.create_intent`. | Bounds duplicate-detection chatter. |
 
@@ -383,7 +375,7 @@ Implications:
 ## Scope Controls
 
 - All reads and writes resolve one active `ProjectContext` at intent entry, except for the explicitly cross-project tools listed above (`tags.list_all`, `errors.*`, `solutions.*`, `templates.list`).
-- Tasks, comments, dependencies, context entries, and tags are read or written through project-scoped repositories.
+- Tasks, comments, dependencies, and tags are read or written through project-scoped repositories.
 - Workflow movement goes through `app.WorkflowService.MoveTask` (transition allowance + guards + `task.completed` emission); task edits go through `app.TaskService.Edit`.
 - The core `internal/agent` package has no MCP SDK, package-manager, or transport dependency. The composition root for the MCP server is `internal/agentruntime`; the protocol translation lives in `internal/mcp`.
 - Hexagonal boundaries (no `agent` → `sqlite`/`configstore`/`mcp` imports) are enforced by `internal/arch/arch_test.go` and mirrored as `depguard` rules in `.golangci.yml`.
