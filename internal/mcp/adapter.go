@@ -218,6 +218,7 @@ func tools() []ToolDefinition {
 	return []ToolDefinition{
 		{Name: "project.overview", Description: "Return active project identity, workflow awareness, pending count, recent context, and next-step prompt.", InputSchema: selectorSchema()},
 		{Name: "project.resume", Description: "Return project distribution, likely next work, blocked work, dependencies, recent context, and workflow state.", InputSchema: selectorSchema()},
+		{Name: "project.edit", Description: "Update the active project's description, persisting it to the projects.description column and emitting project.updated when the value changes. Returns the refreshed project DTO with the new description.", InputSchema: editProjectSchema()},
 		{Name: "tasks.continue", Description: "Load a project-owned task with dependencies, comments, workflow bucket, and recent handoff context. Set include_workflow=false on subsequent calls in a session where the workflow shape was already loaded by /okt to save tokens.", InputSchema: objectSchema(map[string]any{"task_id": integerSchema("Task id to continue"), "include_workflow": booleanSchema("Optional override for config.mcp.include_workflow_in_continue. Pass false to skip the workflow block when /okt already loaded it.")}, []string{"task_id"})},
 		{Name: "tasks.list", Description: "List active project tasks, optionally filtered by workflow bucket and/or parent. The parent_id filter is tri-state: omit for no filter (every task), pass null for roots only (parent_id IS NULL), or pass a task id for that parent's direct children.", InputSchema: objectSchema(map[string]any{"bucket_key": stringSchema("Optional workflow bucket key"), "parent_id": nullableIntegerSchema("Optional tri-state parent filter: omit for no filter; pass null for roots only (parent_id IS NULL); pass a task id for direct children of that id.")}, nil)},
 		{Name: "tasks.create_intent", Description: "Create a task intent after checking for similar or related project tasks and requiring confirmation when needed.", InputSchema: createTaskSchema()},
@@ -383,6 +384,12 @@ func (a *Adapter) dispatchTool(ctx context.Context, service *agent.Service, name
 		err = decodeArgs(args, &input)
 		if err == nil {
 			data, err = service.ResumeProject(ctx, input)
+		}
+	case "project.edit":
+		var input agent.EditProjectInput
+		err = decodeArgs(args, &input)
+		if err == nil {
+			data, err = service.EditProject(ctx, input)
 		}
 	case "tasks.continue":
 		var input agent.ContinueTaskInput
@@ -781,6 +788,12 @@ func jsonText(data any) (string, error) {
 
 func selectorSchema() map[string]any {
 	return objectSchema(selectorProperties(), nil)
+}
+
+func editProjectSchema() map[string]any {
+	props := selectorProperties()
+	props["description"] = stringSchema("New project description text")
+	return objectSchema(props, []string{"description"})
 }
 
 func showTemplateSchema() map[string]any {

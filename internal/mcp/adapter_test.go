@@ -24,6 +24,7 @@ func TestToolsIncludePlannedSurface(t *testing.T) {
 		"tasks.create_intent": false,
 		"tasks.continue":      false,
 		"project.resume":      false,
+		"project.edit":        false,
 		"tasks.list":          false,
 		"tasks.create":        false,
 		"tasks.move":          false,
@@ -183,6 +184,7 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 	tools := []string{
 		"project.overview",
 		"project.resume",
+		"project.edit",
 		"tasks.continue",
 		"tasks.list",
 		"tasks.create_intent",
@@ -228,6 +230,8 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 			args = map[string]any{"task_id": 1}
 		case "tasks.move":
 			args = map[string]any{"task_id": 1, "bucket_key": "dev"}
+		case "project.edit":
+			args = map[string]any{"description": "edited via mcp"}
 		case "tasks.create_intent", "tasks.create":
 			args = map[string]any{"description": "test task"}
 		case "progress.record":
@@ -269,6 +273,43 @@ func TestAdapterCallToolAllTools(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CallTool(%s) error = %v", name, err)
 		}
+	}
+}
+
+// TestAdapterProjectEditDispatchUpdatesDescription pins the project.edit
+// dispatch path: calling the tool routes to Service.EditProject, which
+// persists the new description and returns the refreshed project DTO. The
+// payload echoes the edited description (and the unchanged project
+// identity), proving the dispatch reached EditProject rather than a read
+// tool.
+func TestAdapterProjectEditDispatchUpdatesDescription(t *testing.T) {
+	ctx := context.Background()
+	service := newMCPTestService(t, ctx)
+	adapter := NewAdapter(service)
+
+	const want = "restored description via project.edit"
+	result, err := adapter.CallTool(ctx, "project.edit", withModel(map[string]any{"description": want}))
+	if err != nil {
+		t.Fatalf("CallTool(project.edit) error = %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("CallTool(project.edit) returned error: %+v", result)
+	}
+
+	var payload struct {
+		Project struct {
+			Slug string `json:"slug"`
+		} `json:"project"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
+		t.Fatalf("unmarshal project.edit payload: %v / %s", err, result.Content[0].Text)
+	}
+	if payload.Description != want {
+		t.Fatalf("project.edit description = %q, want %q", payload.Description, want)
+	}
+	if payload.Project.Slug != "project" {
+		t.Fatalf("project.edit returned project slug %q, want %q", payload.Project.Slug, "project")
 	}
 }
 

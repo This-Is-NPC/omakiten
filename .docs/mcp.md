@@ -88,6 +88,7 @@ System-internal entry points (`ReadResource`) bypass the coercive check and writ
 |---|---|
 | `project.overview` | Active project identity, workflow, pending count, recent context, and next-step prompt. `okt` / `okt-start` read this as one input, then also inspect tasks, plans, and handoff notes before recommending a command. |
 | `project.resume` | Project distribution, likely next work, blocked/dependent work, recent context. Used by `okt-project-resume`. |
+| `project.edit` | Updates the active project's `description` and persists it to the `projects.description` column, emitting `project.updated` (with the from/to diff) when the value changes. Returns the refreshed project DTO. Restores the project-description write path that was schema-only since migration 002. |
 | `workflow.show` | Active workflow buckets and allowed transitions. |
 | `orphans.migrate` | Rebind tasks whose bucket was deactivated by a workflow swap. First call without `confirmed=true` returns a preview report + `Confirmation` block listing every affected task; retry with `confirmed=true` to apply the rebind. Empty preview short-circuits to a no-op regardless of the flag. Mirrors the CLI `okt workflow orphans` command. |
 
