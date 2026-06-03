@@ -454,9 +454,9 @@ for two distinct migration surfaces:
 Currently backfilled:
 
 - `config.sqlite.cache_size_kb` (kit canonical: 1024) — required since
-  W7 #225.
+  the wiring-schema backfill.
 - `config.sqlite.mmap_size_bytes` (kit canonical: 0) — required since
-  W7 #225.
+  the wiring-schema backfill.
 
 When adding a new required key to the wiring schema, extend
 `migrateSchemaDefaultsInFile` with a `mapValueNode(... ) == nil`

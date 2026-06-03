@@ -130,7 +130,7 @@ The dispatcher emits `trick.executed` with payload `{verb, operand, raw}` and cl
 
 ### Open dispatch table
 
-Locked per #319 D1 — open only entity types that have a TUI detail screen today. Others are inert with an inline hint.
+Locked by design — open only entity types that have a TUI detail screen today. Others are inert with an inline hint.
 
 | Entity type | TUI detail screen | Open behaviour |
 |---|---|---|
@@ -349,7 +349,7 @@ hooks:
 | `ctrl+k` does nothing | A modal input owns the keyboard (comment textarea, move input, task screen, entity screen, help). | Press `esc` to close the modal, then retry `ctrl+k`. |
 | Tricks tab rejects every input | Verb grammar violation (uppercase, leading digit, missing colon, embedded space). | See the [parse error matrix](#parse-error-matrix). Lowercase the verb, single `:` separator, both sides non-empty. |
 | `nav:<code>` hint says `no screen for nav code` | Code is not in the default layout AND not in `tricks.nav` overrides. | See the [default positional layout](#default-positional-layout). Add an override under `tricks.nav` if you want a custom binding. |
-| Search result hint says `<type>: no TUI view` | Entity type has no TUI detail screen today (plan, error, solution, context). | Use the CLI or MCP to inspect those entity types; palette open-dispatch is limited to `task` + `comment` per #319 D1. |
+| Search result hint says `<type>: no TUI view` | Entity type has no TUI detail screen today (plan, error, solution, context). | Use the CLI or MCP to inspect those entity types; palette open-dispatch is limited to `task` + `comment` by design. |
 | User hook does not fire | Most common: hook entry filters on a reserved verb (`nav` / `op`) and was hard-rejected at config load. | Check `omakiten.yaml` load output — the validator quotes the reserved verb in its error message. Rename the verb. |
 | Hook fires but action errors silently | `do: exec` action returns non-zero; the engine logs `hook.executed` with `success: false` and the error message. | Inspect the events feed (Stats · logs) for the most recent `hook.executed` row — the payload carries `error`, `duration_ms`, `action`, `event_type`. |
 | Notification covers palette result list | Working as intended — notification and palette are mutually exclusive overlays. | Dismiss the notification (`esc` / `enter` per its action keys) to restore the palette panel with prior state. |

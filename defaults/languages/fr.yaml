@@ -1108,7 +1108,7 @@ keys:
   cli.update.err.stage_binary_fmt: "préparer le binaire extrait pour le health check pré-swap : %s"
   cli.update.err.config_validation_failed_fmt: "health check de la config a échoué (%d erreurs, première : %s) ; binaire inchangé — lancez `okt config validate --migrate` pour les détails"
   cli.update.err.config_validation_exec_fmt: "exécuter le health check du binaire staged : %s"
-  cli.tui.err.config_validation_failed_fmt: "health check de la config a échoué (%d erreurs, première : %s) ; lancez `okt config validate --migrate` pour les détails"
+  cli.tui.err.config_validation_failed_fmt: "health check de la config a échoué (%d erreurs, première : %s) ; pour investiguer la cause lancez `okt config validate`, pour mettre à jour votre config vers la version actuelle lancez `okt config validate --migrate`"
   # Remediation hint copy (#367) — %s slot carries the suggested command literal.
   cli.config.validate.remediation.missing_shipped_file: "Restaurer les fichiers par défaut embarqués : %s — votre sous-arbre custom/ est préservé ; sauvegardez d'abord les modifications directes aux fichiers shipped."
   cli.config.validate.remediation.embedded_default_drift: "Rafraîchir les defaults embarqués attendus par le binaire en cours : %s — votre sous-arbre custom/ n'est pas touché."

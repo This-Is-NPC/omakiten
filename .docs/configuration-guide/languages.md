@@ -67,7 +67,7 @@ After the three header keys comes `keys:`, a flat map of dotted-path keys to tra
 
 ## Translation conventions
 
-These rules were settled in task #82 / task #119 and are enforced informally by review. The parity test only checks key parity, not content; conventions live here as the authoring contract.
+These rules are settled convention and are enforced informally by review. The parity test only checks key parity, not content; conventions live here as the authoring contract.
 
 ### Preserve primitives in ASCII
 

@@ -1104,7 +1104,7 @@ keys:
   cli.update.err.stage_binary_fmt: "stage extraherat binary för pre-swap health check: %s"
   cli.update.err.config_validation_failed_fmt: "config health check misslyckades (%d fel, första: %s); binary oförändrat — kör `okt config validate --migrate` för detaljer"
   cli.update.err.config_validation_exec_fmt: "kör health check för staged binary: %s"
-  cli.tui.err.config_validation_failed_fmt: "config health check failed (%d errors, first: %s); run `okt config validate --migrate` for details"
+  cli.tui.err.config_validation_failed_fmt: "config-hälsokontroll misslyckades (%d fel, första: %s); kör `okt config validate` för att undersöka orsaken, kör `okt config validate --migrate` för att uppdatera din config till den aktuella versionen"
   # Remediation hint copy (#367) — %s slot carries the suggested command literal.
   cli.config.validate.remediation.missing_shipped_file: "Restore the shipped default files: %s — your custom/ subtree is preserved; back up direct edits to shipped files first."
   cli.config.validate.remediation.embedded_default_drift: "Refresh the embedded defaults the running binary expects: %s — your custom/ subtree stays untouched."

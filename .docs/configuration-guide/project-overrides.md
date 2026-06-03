@@ -4,8 +4,8 @@ Authoritative reference for how Omakiten layers configuration per
 project: how `.omakiten/` is discovered, how each project gets its own
 immutable `*config.Snapshot` in memory, and how hot-reload swaps a
 fresh pointer without poisoning in-flight calls. Captures the
-architectural shape #117 (Phase 2-bis) settled on and the drift from
-#110 that motivated it.
+architectural shape the per-project-snapshot migration settled on and
+the shared-singleton drift that motivated it.
 
 Audience: configurators wanting to override defaults for a single
 project, and contributors editing the agent runtime, the SQL adapter,
@@ -142,8 +142,8 @@ should reject changes that break any of them.
 
 ## Anti-patterns
 
-Captured from the #110 → #117 drift retrospective. Each one was tried
-or considered; each breaks an invariant.
+Captured from the drift retrospective for this migration. Each one was
+tried or considered; each breaks an invariant.
 
 ### Map per-project on the Store
 
@@ -206,7 +206,7 @@ derives.
 
 ### Keep `bundles.go` "shrunk"
 
-Quoting #110:
+Quoting the earlier close-out:
 
 > "methods shrunk to thin delegators (~30–90 LOC each); deferred to a
 > follow-up that rewires services to call providers directly."
@@ -230,10 +230,11 @@ shape: the interface disappears entirely once ProjectRuntime owns the
 snapshot and `Store.RecordEntityEvent(..., EventTypeBundleImported,
 ...)` (`internal/sqlite/events.go:96`) carries the audit side-effect.
 
-## Appendix — #110 drift retrospective
+## Appendix — drift retrospective
 
-#117 exists because #110 closed green by labelling load-bearing work
-"cosmetic". The exact words in the #110 close-out:
+This migration exists because an earlier attempt closed green by
+labelling load-bearing work "cosmetic". The exact words in that
+earlier close-out:
 
 > "Service constructor rewires to take `ProviderSet` directly
 > (pragmatic delegation through Store satisfies all criteria; further
@@ -246,17 +247,17 @@ What was actually load-bearing:
 
 - Without the constructor rewire, services kept asking the Store for
   config. The Store kept its `InMemoryProviders` field. Per-project
-  isolation across #112–#116 worked only for the closures
+  isolation across the follow-up tasks worked only for the closures
   (`SetTemplateCatalog`, `SetSynonyms`, …) — every other surface
   (workflow, bucket-by-key, guards, personas, skills, laws, settings)
   read from the shared singleton.
-- Tasks #112–#116 inherited the violation. The closures for synonyms /
+- Those follow-up tasks inherited the violation. The closures for synonyms /
   stopwords were per-project because they were assigned per-Service;
   every other read still resolved through `Store.Providers()` and saw
   the last imported bundle regardless of which project's call
   dispatched it.
 
-What #117 fixed:
+What the migration fixed:
 
 - Snapshot type lives in `internal/config` as an immutable value-typed
   view.
@@ -280,7 +281,7 @@ a SQL adapter — a hybrid with neither invariant's benefit. The actual
 win (per-project isolation, concurrency safety) only materialises when
 both invariants hold together.
 
-## Appendix — #117 drift-closed addendum
+## Appendix — drift-closed addendum
 
 A self-review after the initial close discovered seven additional
 deviations from the spec letter. They are listed here so the next
@@ -341,7 +342,7 @@ runtime composition root now flows through the Snapshot pointer.
 
 A second self-review (review round 2) flagged three remaining
 violations of the spec letter on `SetXxx` methods that survived the
-first close as "test escape hatches" — the exact rationale the #110
+first close as "test escape hatches" — the exact rationale the drift
 retrospective called out as load-bearing. Round-2 deleted them and
 folds the closures back into `SetSnapshot`:
 
@@ -383,10 +384,10 @@ already-snap-adjacent services, one new field on `ProjectRuntime`
 (`Workflow`). No production caller threads any setter outside the
 single `SetSnapshot` entry point.
 
-## Appendix — Round-2 / W11 shared helpers
+## Appendix — shared helpers
 
-Symbols extracted during Round-2 + W11 to close the "same algorithm
-inlined N times" drift the retrospective flagged. Each entry pins the
+Symbols extracted while closing the "same algorithm inlined N times"
+drift the retrospective flagged. Each entry pins the
 canonical site so future work extends the helper instead of forking a
 new copy.
 
