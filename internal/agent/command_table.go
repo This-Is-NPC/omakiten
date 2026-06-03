@@ -269,8 +269,9 @@ var commandTable = []commandEntry{
 	},
 	{
 		Slug: "okt-project-continue",
-		Action: "Warm-resume the current project from the last session. Assume continuity — you have " +
-			"recent context. Call `project.overview` for the active snapshot and `tasks.list` for in-flight work, then " +
+		Action: "Warm-resume the current project from the last session. Assume continuity — recent " +
+			"project handoffs live in `comments.list` (scope=project). Call `project.overview` for the active " +
+				"snapshot and `tasks.list` for in-flight work, then " +
 			"pick up the most recent open thread without re-deriving the whole project from scratch. Unlike the cold " +
 			"`okt-project-resume` scan, this is the warm hand-back: surface what changed since last session and the " +
 			"immediate next move. Next: suggest `okt-task-continue` with the in-flight task id to read its checkpoint.",
