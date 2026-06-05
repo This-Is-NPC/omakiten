@@ -163,9 +163,19 @@ rm -rf "$HOME/.config/omakiten" "$HOME/.local/share/omakiten"
 [tasks.tui]
 description = "Start the Omakiten TUI with local dev state under dev_env/"
 env = { OMAKITEN_HOME = "dev_env" }
-depends = ["dev:install"]
+# raw = true keeps the TUI attached to the real /dev/tty. mise only honours
+# raw for a task it runs directly — pulling one through a `depends` graph
+# demotes it to captured/prefixed output with no controlling terminal, which
+# is why the old `depends = ["dev:install"]` form failed with
+# "could not open a new TTY". So this task has NO depends; instead it runs the
+# dev_env prep itself via a nested `mise run dev:install` (captured, fine) and
+# then execs the TUI in the raw shell that owns the TTY.
 raw = true
-run = "go run ./cmd/okt init --name Omakiten --slug omakiten >/dev/null && go run ./cmd/okt --project omakiten tui"
+run = '''
+mise run dev:install
+go run ./cmd/okt init --name Omakiten --slug omakiten >/dev/null
+go run ./cmd/okt --project omakiten tui
+'''
 
 [tasks."tui:bare"]
 description = "Open the TUI against existing dev_env/ state — skips dev:install so a previously-set preset / pre-seeded data survives. Use after seeding fixtures (e.g. the plans showcase script)."
