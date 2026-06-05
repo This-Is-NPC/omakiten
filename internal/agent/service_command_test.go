@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -90,43 +92,11 @@ func TestResolveCommandEmptyName(t *testing.T) {
 	}
 }
 
-// TestResolveCommandRestHandoffsPresent guards the REST-style hypermedia
-// pattern: every command's action text must explicitly point at the next
-// command in the cycle. Without this, the agent has no in-prompt hint about
-// where to go after the current step and the workflow becomes guesswork.
-func TestResolveCommandRestHandoffsPresent(t *testing.T) {
-	expectedHandoffs := map[string][]string{
-		// CW4 (#375): `okt` is the bare shortcut to `okt-start`, so both land on
-		// the smart-entry playbook whose next-move handoffs name the actual
-		// commands to run from the current state (continue a task / a plan, or
-		// shape new work).
-		"okt":                {"okt-task-continue", "okt-plan-continue", "okt-shape"},
-		"okt-start":          {"okt-task-continue", "okt-plan-continue", "okt-shape"},
-		"okt-shape":          {"okt-plan-create", "okt-run"},
-		"okt-audit":          {"okt-task-implement", "okt-pause"},
-		"okt-task-imagine":   {"okt-task-create"},
-		"okt-task-create":    {"comment-selfbranch"},
-		"okt-project-resume": {"okt-task-continue"},
-		"okt-task-continue":  {"okt-task-implement"},
-		"okt-task-implement": {"comment-resume"},
-		"okt-task-document":  {"okt-task-create"},
-		"okt-config":         {"templates.show", "config-orientation", "okt-task-implement"},
-		"okt-task-commit":    {"git push"},
-		"okt-task-review":    {"okt-task-implement"},
-		"okt-task-check":     {"okt-task-implement"},
-	}
-	for name, hints := range expectedHandoffs {
-		text := CommandActionFallback(name)
-		if text == "" {
-			t.Fatalf("CommandActionFallback(%s) is empty", name)
-		}
-		for _, hint := range hints {
-			if !strings.Contains(text, hint) {
-				t.Fatalf("action text for %s missing handoff %q:\n%s", name, hint, text)
-			}
-		}
-	}
-}
+// The REST-style handoff contract (every command's playbook names the next
+// command in the cycle) is now an entity-sourced property of the bound
+// okt-<slug>-playbook skills, asserted against the rendered default kit by
+// agentruntime.TestRestHandoffsPresent — the Go layer no longer carries the
+// action prose to check here.
 
 // TestResolveCommandTemplatesJITRendering pins the just-in-time pattern:
 // when a command has a bound template, the rendered Markdown must list the
@@ -199,7 +169,6 @@ func TestRenderCommandMarkdownDropsRedundantStructure(t *testing.T) {
 // body fall back to the description, and configured order is preserved.
 func TestRenderCommandMarkdownSkillBulletWithBody(t *testing.T) {
 	resp := ResolveCommandResponse{
-		Action: "do the thing",
 		Skills: []SkillInfo{
 			{Slug: "go", Name: "Go", Description: "Idiomatic Go.", Body: "Write small functions.\nPrefer composition."},
 			{Slug: "sqlite", Name: "SQLite", Description: "Embedded SQL.", Body: ""},
@@ -346,56 +315,40 @@ func TestResolveCommandFallsBackToSkillRepertoire(t *testing.T) {
 	}
 }
 
-// TestCommandActionsArePersonaAgnostic guards the architectural separation
-// between command action text and persona body across every `okt-*` prompt.
-// Every command's `mcp_commands.<cmd>.persona` is configurable, so no action
-// text may carry persona-specific role prose ("Take the role of an X",
-// persona slug or name). Role-specific flow lives in the persona body, not
-// the action text — swapping the bound persona must change the prompt
-// uniformly without leaving hardcoded role instructions behind.
-func TestCommandActionsArePersonaAgnostic(t *testing.T) {
-	leakedPhrases := []string{
-		"Take the role",
-		"product owner",
-		"documentation curator",
-		"honoring every law",
-	}
-	for _, name := range CommandNames() {
-		action := CommandActionFallback(name)
-		if action == "" {
-			t.Fatalf("CommandActionFallback(%s) is empty", name)
-		}
-		lower := strings.ToLower(action)
-		for _, phrase := range leakedPhrases {
-			if strings.Contains(lower, strings.ToLower(phrase)) {
-				t.Fatalf("%s action leaks persona-specific phrase %q — role prose belongs in the persona body, not the action text:\n%s", name, phrase, action)
-			}
-		}
-	}
-	// Pin okt-implement specifics: bootstrap tool + handoff marker must remain.
-	implementAction := CommandActionFallback("okt-task-implement")
-	for _, want := range []string{"tasks.continue", "comment-resume"} {
-		if !strings.Contains(implementAction, want) {
-			t.Fatalf("okt-implement action missing required marker %q:\n%s", want, implementAction)
-		}
-	}
-}
+// The persona-agnostic contract (command playbooks carry no persona-specific
+// role prose, since the bound persona is configurable) is now an entity-sourced
+// property of the bound okt-<slug>-playbook skills, asserted against the
+// rendered default kit by agentruntime.TestCommandPlaybooksArePersonaAgnostic —
+// the Go layer no longer carries the action prose to check here.
 
-// TestResolveCommandWithoutCatalogsReturnsAction guards the degraded path:
+// TestResolveCommandWithoutCatalogsDegradesGracefully guards the degraded path:
 // when the runtime is unwired (no skills/laws/personas/commands catalogs),
-// ResolveCommand still surfaces the canonical action text so the MCP harness
-// keeps working through partial bootstraps.
-func TestResolveCommandWithoutCatalogsReturnsAction(t *testing.T) {
+// ResolveCommand still resolves a registered command without error so the MCP
+// harness keeps working through partial bootstraps. The command playbook is
+// entity-sourced now, so with no skill catalog there is nothing to render — the
+// description is empty and no persona/skills attach — but resolution must not
+// fail, and an unknown command must still reject.
+func TestResolveCommandWithoutCatalogsDegradesGracefully(t *testing.T) {
 	fixture := newAgentFixture(t)
 	resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt"})
 	if err != nil {
 		t.Fatalf("ResolveCommand() error = %v", err)
 	}
-	if resp.Action == "" {
-		t.Fatal("ResolveCommand.Action empty, want fallback action text")
+	if resp.Name != "okt" {
+		t.Fatalf("ResolveCommand.Name = %q, want okt", resp.Name)
+	}
+	if resp.Description != "" {
+		t.Fatalf("ResolveCommand.Description = %q, want empty when the skill catalog is unwired", resp.Description)
 	}
 	if resp.Persona != nil {
 		t.Fatalf("ResolveCommand.Persona = %+v, want nil when catalogs unwired", resp.Persona)
+	}
+	if len(resp.Skills) != 0 {
+		t.Fatalf("ResolveCommand.Skills = %+v, want none when the skill catalog is unwired", resp.Skills)
+	}
+	// An unknown command still rejects even on the degraded path.
+	if _, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: "okt-bogus"}); err == nil {
+		t.Fatal("ResolveCommand(unknown) error = nil, want validation failure even when unwired")
 	}
 }
 
@@ -451,6 +404,151 @@ func equalStringSlices(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// TestNoGoCommandProseFallback is the no-Go-fallback guard (AC#2 of #603, the
+// automated enforcement of #598's "no hardcoded operational prose in Go"
+// goal). The okt-* command playbook (the operational ## Action prose) and the
+// prompts/list one-liner are ENTITY-SOURCED: they must come solely from the
+// bound okt-<slug>-playbook skill, never from a Go table/fallback. This guard
+// proves Go injects NO such prose, and it is written to FAIL the moment a
+// fallback is reintroduced.
+//
+// It bites on two reintroduction shapes:
+//
+//  1. Behaviourally — it resolves a registered command with the skill catalog
+//     present but EMPTY (no okt-<slug>-playbook skill bound). With entities
+//     absent, the only thing that could populate resp.Description or emit a
+//     playbook/Action body is a Go fallback. The guard asserts both stay empty.
+//     Reintroduce a Go default (e.g. `resp.Description = actionTable[name]` or
+//     a `## Action` render block) and Description becomes non-empty / the body
+//     appears, and this test fails.
+//
+//  2. Structurally — it scans the command_table.go and ResolveCommand source
+//     for the removed-prose symbols (CommandActionFallback, a per-command
+//     Action/Description field, a `## Action` render section). Reintroducing
+//     any of them as a Go symbol trips the scan.
+func TestNoGoCommandProseFallback(t *testing.T) {
+	// --- Behavioural half: entities absent ⇒ no Go-injected prose. ---
+	t.Run("resolution_has_no_go_fallback_with_empty_skill_catalog", func(t *testing.T) {
+		fixture := newAgentFixture(t)
+		// Wire personas + commands but NO skills: the skill catalog is present
+		// yet empty, so no okt-<slug>-playbook body or frontmatter exists. Any
+		// non-empty playbook prose now could only come from Go.
+		fixture.service.SetSnapshot(snapshotWithEntities(t,
+			nil, // skills: deliberately empty
+			[]LawInfo{{Slug: "project-scope-only", Name: "Project scope only", Severity: "error", Body: "Never mix projects."}},
+			[]PersonaInfo{{Slug: "backend-agent", Name: "Backend Agent", Body: "Backend body."}},
+			nil, // templates
+			map[string]MCPCommandBinding{
+				MCPCommandsGlobalKey: {Laws: []string{"project-scope-only"}},
+				"okt":                {Persona: "backend-agent"},
+				"okt-start":          {Persona: "backend-agent"},
+				"okt-task-implement": {Persona: "backend-agent"},
+			},
+		))
+
+		for _, name := range []string{"okt", "okt-start", "okt-task-implement"} {
+			resp, err := fixture.service.ResolveCommand(fixture.ctx, ResolveCommandInput{Name: name})
+			if err != nil {
+				t.Fatalf("ResolveCommand(%s) error = %v", name, err)
+			}
+			// The prompts/list one-liner is entity-sourced only. With no bound
+			// playbook skill it MUST degrade to empty — a non-empty value means
+			// a Go fallback re-injected a hardcoded description.
+			if strings.TrimSpace(resp.Description) != "" {
+				t.Fatalf("%s carries a description %q with an empty skill catalog — a Go fallback re-injected hardcoded prompts/list prose; descriptions must come solely from the bound okt-<slug>-playbook skill frontmatter", name, resp.Description)
+			}
+			// CommandDescription is the dedicated accessor the MCP adapter uses;
+			// it must degrade identically.
+			if got := fixture.service.CommandDescription(name); strings.TrimSpace(got) != "" {
+				t.Fatalf("CommandDescription(%s) = %q with an empty skill catalog — a Go fallback re-injected hardcoded prose", name, got)
+			}
+			// No hardcoded `## Action` playbook section may be rendered — the
+			// playbook is the bound skill body under `## Skills`, and with no
+			// skills there is nothing to render.
+			if strings.Contains(resp.Markdown, "## Action") {
+				t.Fatalf("%s rendered a `## Action` section — the command playbook must be the entity-sourced okt-<slug>-playbook skill body under `## Skills`, never a hardcoded Go Action block:\n%s", name, resp.Markdown)
+			}
+			if strings.Contains(resp.Markdown, "## Skills") {
+				t.Fatalf("%s rendered a `## Skills` section despite an empty skill catalog — Go injected a fallback skill/playbook body:\n%s", name, resp.Markdown)
+			}
+		}
+	})
+
+	// --- Structural half: removed-prose symbols stay out of the Go source. ---
+	t.Run("command_source_carries_no_removed_prose_symbols", func(t *testing.T) {
+		// `go test` runs with the package directory as CWD, so the command
+		// source sits beside this test file.
+		for _, file := range []string{"command_table.go", "service_command.go"} {
+			path := filepath.Join(".", file)
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v — adjust the guard if the file moved", file, err)
+			}
+			// Strip Go comments before scanning so the architectural doc-comments
+			// that legitimately MENTION the removed prose (explaining why it is
+			// gone) do not trip the guard — we only care about live code.
+			code := stripGoComments(string(raw))
+			banned := []struct {
+				token string
+				why   string
+			}{
+				{"CommandActionFallback", "the per-command Go Action fallback was stripped; it must not return"},
+				{"CommandActionEntry", "the per-command Go Action table entry was stripped; it must not return"},
+				{"\"## Action", "the hardcoded `## Action` render section was removed; the playbook is the bound skill body"},
+				{"`## Action", "the hardcoded `## Action` render section was removed; the playbook is the bound skill body"},
+				{"Action string", "command rows carry no Action prose field — the slug is the only column"},
+				{"Action:", "command rows must not be initialised with hardcoded Action prose"},
+			}
+			for _, b := range banned {
+				if strings.Contains(code, b.token) {
+					t.Fatalf("%s contains the removed symbol/prose %q in live code — %s. The okt-* command playbook and description are entity-sourced; reintroducing Go prose breaks the migration.", file, b.token, b.why)
+				}
+			}
+		}
+	})
+}
+
+// stripGoComments removes line (`//`) and block (`/* */`) comments from Go
+// source so the no-fallback guard scans live code only. It does not need to be
+// a full lexer — the command source carries no string literals containing
+// comment delimiters, so the simple state machine below is exact for this use.
+func stripGoComments(src string) string {
+	var b strings.Builder
+	const (
+		code = iota
+		line
+		block
+	)
+	state := code
+	for i := 0; i < len(src); i++ {
+		switch state {
+		case code:
+			if i+1 < len(src) && src[i] == '/' && src[i+1] == '/' {
+				state = line
+				i++
+				continue
+			}
+			if i+1 < len(src) && src[i] == '/' && src[i+1] == '*' {
+				state = block
+				i++
+				continue
+			}
+			b.WriteByte(src[i])
+		case line:
+			if src[i] == '\n' {
+				state = code
+				b.WriteByte(src[i])
+			}
+		case block:
+			if i+1 < len(src) && src[i] == '*' && src[i+1] == '/' {
+				state = code
+				i++
+			}
+		}
+	}
+	return b.String()
 }
 
 // TestCreateTaskWithTemplateSlugMergesBody verifies the auto-apply behavior in

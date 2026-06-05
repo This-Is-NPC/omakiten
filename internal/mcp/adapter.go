@@ -289,13 +289,27 @@ var promptArguments = map[string][]PromptArgument{
 	"okt-task-document":  {{Name: "focus", Description: "Optional area to focus the survey (e.g. 'README', 'architecture')", Required: false}},
 }
 
-func Prompts() []PromptDefinition {
+// Prompts lists every `okt-*` prompt with its entity-sourced one-line
+// description. The description is the frontmatter `description` of the command's
+// bound okt-<slug>-playbook skill, resolved through the wired agent service —
+// there is no hardcoded Go description anymore. When no service is wired (older
+// runtimes / tests), descriptions fall back to empty; the names + arguments
+// still list so prompts/list keeps functioning.
+func (a *Adapter) Prompts() []PromptDefinition {
+	var service *agent.Service
+	if a != nil {
+		service = a.defaultService()
+	}
 	names := agent.CommandNames()
 	out := make([]PromptDefinition, 0, len(names))
 	for _, name := range names {
+		desc := ""
+		if service != nil {
+			desc = service.CommandDescription(name)
+		}
 		out = append(out, PromptDefinition{
 			Name:        name,
-			Description: agent.CommandDescription(name),
+			Description: desc,
 			Arguments:   promptArguments[name],
 		})
 	}
@@ -729,24 +743,22 @@ func (a *Adapter) GetPrompt(ctx context.Context, name string, _ map[string]any) 
 		service = a.defaultService()
 	}
 	if service == nil {
-		text := agent.CommandActionFallback(name)
-		if text == "" {
+		// No service wired (older runtimes / partial bootstraps). The command
+		// playbook is entity-sourced now — there is no hardcoded Go action to
+		// fall back to — so a registered command resolves to an empty,
+		// registered-only message rather than fabricated prose, and an
+		// unregistered name still errors. The cache hint rides along: the empty
+		// body is byte-stable.
+		if !agent.IsRegisteredCommand(name) {
 			return PromptResult{}, fmt.Errorf("unknown MCP prompt %q", name)
 		}
-		// No service wired — emit the cache hint anyway since the prompt is
-		// still byte-stable (it is just the canonical action text). Clients
-		// that cache benefit; clients that don't ignore.
-		return promptResult(text, text, true), nil
+		return promptResult("", "", true), nil
 	}
 	resolved, err := service.ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
 	if err != nil {
 		return PromptResult{}, err
 	}
-	description := resolved.Description
-	if description == "" {
-		description = resolved.Action
-	}
-	return promptResult(description, resolved.Markdown, service.SettingsCachePrompts()), nil
+	return promptResult(resolved.Description, resolved.Markdown, service.SettingsCachePrompts()), nil
 }
 
 func promptResult(description, body string, cacheControl bool) PromptResult {

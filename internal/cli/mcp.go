@@ -97,6 +97,16 @@ func newMCPPromptsCommand(opts *runtimeOptions) *cobra.Command {
 func printPromptSurface(out io.Writer, opts *runtimeOptions) error {
 	names := agent.CommandNames()
 
+	// Descriptions are entity-sourced (the bound okt-<slug>-playbook skill's
+	// frontmatter), so the listing needs a wired runtime to resolve them. Open
+	// the runtime once and reuse its service for every row.
+	rt, err := agentruntime.Open(context.Background(), agentOptions(opts))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rt.Close() }()
+	describe := rt.Service().CommandDescription
+
 	var orchestrators, system []string
 	granular := map[string][]string{}
 	var objectOrder []string
@@ -124,7 +134,7 @@ func printPromptSurface(out io.Writer, opts *runtimeOptions) error {
 	fmt.Fprintf(out, opts.t("cli.mcp.prompt.list.title"), len(names))
 
 	writeRow := func(indent, name string) {
-		fmt.Fprintf(out, "%s%-22s %s\n", indent, name, agent.CommandDescription(name))
+		fmt.Fprintf(out, "%s%-22s %s\n", indent, name, describe(name))
 	}
 
 	fmt.Fprintf(out, opts.t("cli.mcp.prompt.list.orchestrators"), len(orchestrators))
@@ -164,7 +174,16 @@ func newMCPToolsCommand(opts *runtimeOptions) *cobra.Command {
 		Use:   "tools",
 		Short: opts.t("cli.mcp.tools.short"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return writeSuccess(cmd, map[string]any{"tools": mcp.Tools(), "resources": mcp.Resources(), "prompts": mcp.Prompts()})
+			// prompts/list descriptions are entity-sourced via the wired
+			// service, so open a runtime and ask the adapter for the prompt set.
+			ctx := cmd.Context()
+			rt, err := agentruntime.Open(ctx, agentOptions(opts))
+			if err != nil {
+				return err
+			}
+			defer func() { _ = rt.Close() }()
+			adapter := newMCPAdapter(rt)
+			return writeSuccess(cmd, map[string]any{"tools": mcp.Tools(), "resources": mcp.Resources(), "prompts": adapter.Prompts()})
 		},
 	}
 }

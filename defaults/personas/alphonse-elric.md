@@ -11,6 +11,13 @@ skill_repertoire:
   - recap-timeline
   - postmortem-authoring
   - markdown
+  - okt-note-free-playbook
+  - okt-note-list-playbook
+  - okt-note-recap-playbook
+  - okt-note-show-playbook
+  - okt-pause-playbook
+  - okt-task-debrief-playbook
+  - okt-task-document-playbook
 laws:
   - project-scope-only
   - no-praise-pad

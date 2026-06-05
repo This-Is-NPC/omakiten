@@ -62,12 +62,8 @@ func TestKaisekiAragornBuilderIdentity(t *testing.T) {
 		t.Fatalf("okt-task-implement markdown missing Aragorn TONE body:\n%s", resp.Markdown)
 	}
 
-	// Action — non-empty section + field.
-	if !strings.Contains(resp.Markdown, "## Action\n") || strings.TrimSpace(resp.Action) == "" {
-		t.Fatalf("okt-task-implement markdown missing non-empty Action section:\n%s", resp.Markdown)
-	}
-
-	// Skills — bullet-with-body for the declared subset.
+	// Skills — bullet-with-body for the declared subset (and the entity-sourced
+	// playbook renders here too; there is no hardcoded Action section).
 	if len(resp.Skills) == 0 {
 		t.Fatalf("okt-task-implement resolved with no skills — the command-level subset is not wired")
 	}
@@ -138,16 +134,14 @@ func TestKaisekiRosterBindings(t *testing.T) {
 			if resp.Persona.Slug != wantPersona {
 				t.Fatalf("%s persona = %q, want %q", name, resp.Persona.Slug, wantPersona)
 			}
-			// Every command renders a wired persona section, a non-empty
-			// action, and at least one bullet-with-body skill.
+			// Every command renders a wired persona section and at least one
+			// bullet-with-body skill — the entity-sourced playbook is among
+			// them, so a populated Skills set is the new playbook presence check.
 			if !strings.Contains(resp.Markdown, "## Persona — ") {
 				t.Fatalf("%s markdown missing Persona section:\n%s", name, resp.Markdown)
 			}
-			if strings.TrimSpace(resp.Action) == "" {
-				t.Fatalf("%s resolved with empty action", name)
-			}
 			if len(resp.Skills) == 0 {
-				t.Fatalf("%s resolved with no skills — subset not wired", name)
+				t.Fatalf("%s resolved with no skills — subset not wired (and the entity-sourced playbook is missing)", name)
 			}
 		})
 	}

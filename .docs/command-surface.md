@@ -4,7 +4,7 @@ Omakiten's MCP prompt surface is a command router for agents. Command names, tie
 
 Source of truth in code:
 
-- Prompt list and action text: `internal/agent/command_table.go`.
+- Prompt list (command slugs): `internal/agent/command_table.go` — a bare slug table. The operational playbook and the prompts/list description are entity-sourced from each command's bound `okt-<slug>-playbook` skill, not from Go. See [`mcp.md`](mcp.md#prompts) and [`configuration-guide/command-bindings.md`](configuration-guide/command-bindings.md#playbook-skills).
 - Tier routing: `internal/agent/command_registry.go`.
 
 ## Tiers

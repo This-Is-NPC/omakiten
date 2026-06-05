@@ -19,6 +19,19 @@ personas:
       - postmortem-authoring
       - staged-delivery
       - markdown
+      - okt-config-playbook
+      - okt-help-playbook
+      - okt-note-free-playbook
+      - okt-note-list-playbook
+      - okt-note-recap-playbook
+      - okt-note-show-playbook
+      - okt-pause-playbook
+      - okt-project-continue-playbook
+      - okt-project-resume-playbook
+      - okt-skill-playbook
+      - okt-start-playbook
+      - okt-task-debrief-playbook
+      - okt-task-document-playbook
   # Owner — direction, prioritization, requirements, plan authoring.
   - slug: third-hokage
     schema_version: 2
@@ -35,6 +48,18 @@ personas:
       - user-story-writing
       - invest-stories
       - markdown
+      - okt-audit-playbook
+      - okt-plan-claim-playbook
+      - okt-plan-continue-playbook
+      - okt-plan-create-playbook
+      - okt-plan-show-playbook
+      - okt-run-playbook
+      - okt-shape-playbook
+      - okt-task-create-playbook
+      - okt-task-decompose-playbook
+      - okt-task-estimate-playbook
+      - okt-task-prioritize-playbook
+      - okt-task-requirements-playbook
   # Ideator — discovery and cheap experiments.
   - slug: konohamaru-class
     schema_version: 2
@@ -43,6 +68,9 @@ personas:
       - lean-experimentation
       - five-w-two-h
       - markdown
+      - okt-task-imagine-playbook
+      - okt-task-research-playbook
+      - okt-task-validate-playbook
   # Builder — small green increments, opportunistic cleanup.
   - slug: naruto-uzumaki
     schema_version: 2
@@ -55,6 +83,12 @@ personas:
       - code-smells
       - refactoring-catalog
       - markdown
+      - okt-task-continue-playbook
+      - okt-task-design-playbook
+      - okt-task-implement-playbook
+      - okt-task-refactor-playbook
+      - okt-task-resume-playbook
+      - okt-task-self-review-playbook
   # Tester — runs the checks, reports evidence.
   - slug: sakura-haruno
     schema_version: 2
@@ -64,6 +98,8 @@ personas:
       - static-analysis-discipline
       - test-driven-development
       - markdown
+      - okt-task-check-playbook
+      - okt-task-quality-playbook
   # Reviewer — whole-diff read, structural + security lens.
   - slug: kakashi-hatake
     schema_version: 2
@@ -74,12 +110,15 @@ personas:
       - fagan-inspection
       - solid-principles
       - markdown
+      - okt-task-review-playbook
+      - okt-task-secure-playbook
   # Committer — Conventional Commits, scoped history, never auto-pushes.
   - slug: iruka-umino
     schema_version: 2
     skill_repertoire:
       - conventional-commits-spec
       - markdown
+      - okt-task-commit-playbook
 
 mcp_commands:
   global:
@@ -94,6 +133,7 @@ mcp_commands:
     persona: shikamaru-nara
     skills:
       - pdca-cycle
+      - okt-start-playbook
   # Orchestrators that guide. okt-start (Concierge smart entry, shared with the
   # bare `okt` shortcut) and okt-pause (Concierge close) bind shikamaru-nara.
   # okt-shape / okt-audit are Owner orchestrators → third-hokage.
@@ -102,15 +142,18 @@ mcp_commands:
     skills:
       - pdca-cycle
       - discovery
+      - okt-start-playbook
   okt-shape:
     persona: third-hokage
     skills:
       - five-w-two-h
       - smart-goals
+      - okt-shape-playbook
   okt-audit:
     persona: third-hokage
     skills:
       - risk-driven-development
+      - okt-audit-playbook
   # okt-run Owner director — delegates implementation to per-task Builder
   # subagents and reviews their compact returns.
   okt-run:
@@ -118,11 +161,13 @@ mcp_commands:
     skills:
       - staged-delivery
       - dora-mindset
+      - okt-run-playbook
   okt-task-imagine:
     persona: konohamaru-class
     skills:
       - discovery
       - lean-experimentation
+      - okt-task-imagine-playbook
     laws_disabled:
       - template-fidelity
     templates:
@@ -134,12 +179,14 @@ mcp_commands:
     persona: konohamaru-class
     skills:
       - discovery
+      - okt-task-research-playbook
     laws_disabled:
       - template-fidelity
   okt-task-validate:
     persona: konohamaru-class
     skills:
       - lean-experimentation
+      - okt-task-validate-playbook
     laws_disabled:
       - template-fidelity
   okt-task-requirements:
@@ -147,11 +194,13 @@ mcp_commands:
     skills:
       - requirements-elicitation
       - non-functional-requirements
+      - okt-task-requirements-playbook
   okt-task-prioritize:
     persona: third-hokage
     skills:
       - moscow-prioritization
       - rice-scoring
+      - okt-task-prioritize-playbook
     templates:
       - comment-moscow
   okt-task-create:
@@ -160,6 +209,7 @@ mcp_commands:
       - user-story-writing
       - invest-stories
       - smart-goals
+      - okt-task-create-playbook
     laws:
       - invest-stories
       - outcome-over-output
@@ -172,47 +222,58 @@ mcp_commands:
     persona: third-hokage
     skills:
       - user-story-writing
+      - okt-task-decompose-playbook
   okt-task-estimate:
     persona: third-hokage
     skills:
       - rice-scoring
+      - okt-task-estimate-playbook
   okt-task-design:
     persona: naruto-uzumaki
     skills:
       - solid-principles
+      - okt-task-design-playbook
   okt-project-resume:
     persona: shikamaru-nara
     skills:
       - pdca-cycle
+      - okt-project-resume-playbook
   okt-project-continue:
     persona: shikamaru-nara
     skills:
       - pdca-cycle
+      - okt-project-continue-playbook
   # Granular plan commands. Owner role → third-hokage (authors + claims plans).
   okt-plan-create:
     persona: third-hokage
     skills:
       - staged-delivery
+      - okt-plan-create-playbook
   okt-plan-show:
     persona: third-hokage
     skills:
       - staged-delivery
+      - okt-plan-show-playbook
   okt-plan-continue:
     persona: third-hokage
     skills:
       - staged-delivery
+      - okt-plan-continue-playbook
   okt-plan-claim:
     persona: third-hokage
     skills:
       - staged-delivery
+      - okt-plan-claim-playbook
   okt-task-resume:
     persona: naruto-uzumaki
     skills:
       - implementation
+      - okt-task-resume-playbook
   okt-task-continue:
     persona: naruto-uzumaki
     skills:
       - implementation
+      - okt-task-continue-playbook
   okt-task-implement:
     persona: naruto-uzumaki
     skills:
@@ -220,6 +281,7 @@ mcp_commands:
       - test-driven-development
       - trunk-based-development
       - continuous-integration
+      - okt-task-implement-playbook
     laws:
       - bounded-self-review
       - no-silent-behavior-changes
@@ -237,6 +299,7 @@ mcp_commands:
     persona: naruto-uzumaki
     skills:
       - code-smells
+      - okt-task-self-review-playbook
     laws:
       - bounded-self-review
     templates:
@@ -245,6 +308,7 @@ mcp_commands:
     persona: naruto-uzumaki
     skills:
       - refactoring-catalog
+      - okt-task-refactor-playbook
     laws:
       - no-silent-behavior-changes
       - boy-scout-rule
@@ -256,10 +320,12 @@ mcp_commands:
     skills:
       - documentation
       - architecture-mapping
+      - okt-task-document-playbook
   okt-task-debrief:
     persona: shikamaru-nara
     skills:
       - postmortem-authoring
+      - okt-task-debrief-playbook
     laws:
       - no-praise-pad
   # System commands talk to the TOOL, not the project. Concierge/generic role →
@@ -269,21 +335,25 @@ mcp_commands:
     persona: shikamaru-nara
     skills:
       - markdown
+      - okt-help-playbook
   okt-config:
     persona: shikamaru-nara
     skills:
       - markdown
+      - okt-config-playbook
     templates:
       - config-orientation
   okt-skill:
     persona: shikamaru-nara
     skills:
       - markdown
+      - okt-skill-playbook
   # Committer → iruka-umino.
   okt-task-commit:
     persona: iruka-umino
     skills:
       - conventional-commits-spec
+      - okt-task-commit-playbook
     laws:
       - conventional-commits
       - no-coauthored-by
@@ -295,6 +365,7 @@ mcp_commands:
       - code-smells
       - refactoring-catalog
       - fagan-inspection
+      - okt-task-review-playbook
     laws:
       - findings-actionable
       - no-praise-pad
@@ -306,6 +377,7 @@ mcp_commands:
     persona: kakashi-hatake
     skills:
       - security-review-lens
+      - okt-task-secure-playbook
     laws:
       - findings-actionable
       - severity-tagged
@@ -317,6 +389,7 @@ mcp_commands:
     skills:
       - regression-detection
       - coverage-analysis
+      - okt-task-check-playbook
     laws:
       - findings-actionable
       - severity-tagged
@@ -326,6 +399,7 @@ mcp_commands:
     persona: sakura-haruno
     skills:
       - static-analysis-discipline
+      - okt-task-quality-playbook
     laws:
       - findings-actionable
       - severity-tagged
@@ -338,6 +412,7 @@ mcp_commands:
     persona: shikamaru-nara
     skills:
       - handoff-synthesis
+      - okt-pause-playbook
     laws:
       - project-scope-only
       - no-praise-pad
@@ -347,6 +422,7 @@ mcp_commands:
     persona: shikamaru-nara
     skills:
       - note-capture
+      - okt-note-free-playbook
     templates:
       - note-free
   okt-note-recap:
@@ -354,6 +430,7 @@ mcp_commands:
     skills:
       - recap-timeline
       - standup-digest
+      - okt-note-recap-playbook
     templates:
       - note-recap
       - note-standup-digest
@@ -361,7 +438,9 @@ mcp_commands:
     persona: shikamaru-nara
     skills:
       - note-capture
+      - okt-note-list-playbook
   okt-note-show:
     persona: shikamaru-nara
     skills:
       - note-capture
+      - okt-note-show-playbook

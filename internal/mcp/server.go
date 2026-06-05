@@ -168,7 +168,7 @@ func handleRPC(ctx context.Context, adapter *Adapter, request rpcRequest) (rpcRe
 		}
 		base.Result = map[string]any{"contents": result.Content}
 	case "prompts/list":
-		base.Result = map[string]any{"prompts": Prompts()}
+		base.Result = map[string]any{"prompts": adapter.Prompts()}
 	case "prompts/get":
 		var params struct {
 			Name      string         `json:"name"`

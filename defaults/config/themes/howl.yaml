@@ -15,6 +15,14 @@ personas:
       - static-analysis-discipline
       - test-driven-development
       - markdown
+      - okt-config-playbook
+      - okt-help-playbook
+      - okt-project-continue-playbook
+      - okt-project-resume-playbook
+      - okt-skill-playbook
+      - okt-start-playbook
+      - okt-task-check-playbook
+      - okt-task-quality-playbook
   # Ideator — bold notions chased with a cheap probe first.
   - slug: witch-of-the-waste
     schema_version: 2
@@ -23,6 +31,9 @@ personas:
       - lean-experimentation
       - five-w-two-h
       - markdown
+      - okt-task-imagine-playbook
+      - okt-task-research-playbook
+      - okt-task-validate-playbook
   # Owner + Committer — front-desk steward who decides what work is worth taking
   # and in what order, then signs each finished job into the record cleanly.
   - slug: markl
@@ -41,6 +52,19 @@ personas:
       - invest-stories
       - conventional-commits-spec
       - markdown
+      - okt-audit-playbook
+      - okt-plan-claim-playbook
+      - okt-plan-continue-playbook
+      - okt-plan-create-playbook
+      - okt-plan-show-playbook
+      - okt-run-playbook
+      - okt-shape-playbook
+      - okt-task-commit-playbook
+      - okt-task-create-playbook
+      - okt-task-decompose-playbook
+      - okt-task-estimate-playbook
+      - okt-task-prioritize-playbook
+      - okt-task-requirements-playbook
   # Builder — small bold strokes, trunk kept green, tidies what he passes through.
   - slug: howl-pendragon
     schema_version: 2
@@ -54,6 +78,12 @@ personas:
       - refactoring-catalog
       - castle-tidying
       - markdown
+      - okt-task-continue-playbook
+      - okt-task-design-playbook
+      - okt-task-implement-playbook
+      - okt-task-refactor-playbook
+      - okt-task-resume-playbook
+      - okt-task-self-review-playbook
   # Reviewer + Scribe — sees the true shape under the mess, says plainly what
   # needs mending, and keeps the castle's record clear. Repertoire carries all
   # four #359 note skills so the okt-note-* and okt-pause slots resolve.
@@ -73,6 +103,15 @@ personas:
       - architecture-mapping
       - postmortem-authoring
       - markdown
+      - okt-note-free-playbook
+      - okt-note-list-playbook
+      - okt-note-recap-playbook
+      - okt-note-show-playbook
+      - okt-pause-playbook
+      - okt-task-debrief-playbook
+      - okt-task-document-playbook
+      - okt-task-review-playbook
+      - okt-task-secure-playbook
 
 mcp_commands:
   global:
@@ -80,146 +119,146 @@ mcp_commands:
   # Izakaya (Howl's Moving Castle) slot bindings — #189 W5.3.
   okt:
     persona: calcifer
-    skills: [pdca-cycle]
+    skills: [pdca-cycle, okt-start-playbook]
   okt-start:
     persona: calcifer
-    skills: [pdca-cycle, discovery]
+    skills: [pdca-cycle, discovery, okt-start-playbook]
   okt-shape:
     persona: markl
-    skills: [five-w-two-h, smart-goals]
+    skills: [five-w-two-h, smart-goals, okt-shape-playbook]
   okt-audit:
     persona: markl
-    skills: [risk-driven-development]
+    skills: [risk-driven-development, okt-audit-playbook]
   okt-run:
     persona: markl
-    skills: [staged-delivery, dora-mindset]
+    skills: [staged-delivery, dora-mindset, okt-run-playbook]
   okt-task-imagine:
     persona: witch-of-the-waste
-    skills: [discovery, lean-experimentation]
+    skills: [discovery, lean-experimentation, okt-task-imagine-playbook]
     laws_disabled: [template-fidelity]
   okt-task-research:
     persona: witch-of-the-waste
-    skills: [discovery]
+    skills: [discovery, okt-task-research-playbook]
     laws_disabled: [template-fidelity]
   okt-task-validate:
     persona: witch-of-the-waste
-    skills: [lean-experimentation]
+    skills: [lean-experimentation, okt-task-validate-playbook]
     laws: [cheap-probe-first]
     laws_disabled: [template-fidelity]
   okt-task-requirements:
     persona: markl
-    skills: [requirements-elicitation, non-functional-requirements]
+    skills: [requirements-elicitation, non-functional-requirements, okt-task-requirements-playbook]
   okt-task-prioritize:
     persona: markl
-    skills: [moscow-prioritization, rice-scoring]
+    skills: [moscow-prioritization, rice-scoring, okt-task-prioritize-playbook]
     templates: [comment-moscow]
   okt-task-create:
     persona: markl
-    skills: [user-story-writing, invest-stories, smart-goals]
+    skills: [user-story-writing, invest-stories, smart-goals, okt-task-create-playbook]
     laws: [invest-stories]
     templates: [user-story, comment-smart-success, comment-moscow]
   okt-task-decompose:
     persona: markl
-    skills: [user-story-writing]
+    skills: [user-story-writing, okt-task-decompose-playbook]
   okt-task-estimate:
     persona: markl
-    skills: [rice-scoring]
+    skills: [rice-scoring, okt-task-estimate-playbook]
   okt-task-design:
     persona: howl-pendragon
-    skills: [solid-principles]
+    skills: [solid-principles, okt-task-design-playbook]
   okt-project-resume:
     persona: calcifer
-    skills: [pdca-cycle]
+    skills: [pdca-cycle, okt-project-resume-playbook]
   okt-project-continue:
     persona: calcifer
-    skills: [pdca-cycle]
+    skills: [pdca-cycle, okt-project-continue-playbook]
   okt-plan-create:
     persona: markl
-    skills: [staged-delivery]
+    skills: [staged-delivery, okt-plan-create-playbook]
   okt-plan-show:
     persona: markl
-    skills: [staged-delivery]
+    skills: [staged-delivery, okt-plan-show-playbook]
   okt-plan-continue:
     persona: markl
-    skills: [staged-delivery]
+    skills: [staged-delivery, okt-plan-continue-playbook]
   okt-plan-claim:
     persona: markl
-    skills: [staged-delivery]
+    skills: [staged-delivery, okt-plan-claim-playbook]
   okt-task-resume:
     persona: howl-pendragon
-    skills: [implementation]
+    skills: [implementation, okt-task-resume-playbook]
   okt-task-continue:
     persona: howl-pendragon
-    skills: [implementation]
+    skills: [implementation, okt-task-continue-playbook]
   okt-task-implement:
     persona: howl-pendragon
-    skills: [implementation, test-driven-development, trunk-based-development, continuous-integration]
+    skills: [implementation, test-driven-development, trunk-based-development, continuous-integration, okt-task-implement-playbook]
     laws: [walking-skeleton-first, conventional-commits]
     templates: [pull-request, comment-tests-passing, comment-refactor-drive-by]
   okt-task-self-review:
     persona: howl-pendragon
-    skills: [code-smells, castle-tidying]
+    skills: [code-smells, castle-tidying, okt-task-self-review-playbook]
     templates: [comment-refactor-drive-by]
   okt-task-refactor:
     persona: howl-pendragon
-    skills: [refactoring-catalog, castle-tidying]
+    skills: [refactoring-catalog, castle-tidying, okt-task-refactor-playbook]
     templates: [comment-refactor-opportunities]
   okt-task-document:
     persona: sophie-hatter
-    skills: [documentation, architecture-mapping]
+    skills: [documentation, architecture-mapping, okt-task-document-playbook]
   okt-task-debrief:
     persona: sophie-hatter
-    skills: [postmortem-authoring]
+    skills: [postmortem-authoring, okt-task-debrief-playbook]
     laws: [no-praise-pad]
   okt-help:
     persona: calcifer
-    skills: [markdown]
+    skills: [markdown, okt-help-playbook]
   okt-config:
     persona: calcifer
-    skills: [markdown]
+    skills: [markdown, okt-config-playbook]
     templates: [config-orientation]
   okt-skill:
     persona: calcifer
-    skills: [markdown]
+    skills: [markdown, okt-skill-playbook]
   okt-task-commit:
     persona: markl
-    skills: [conventional-commits-spec]
+    skills: [conventional-commits-spec, okt-task-commit-playbook]
     laws: [conventional-commits, no-coauthored-by]
   okt-task-review:
     persona: sophie-hatter
-    skills: [code-smells, refactoring-catalog, fagan-inspection]
+    skills: [code-smells, refactoring-catalog, fagan-inspection, okt-task-review-playbook]
     laws: [no-praise-pad]
     templates: [comment-review-findings, comment-refactor-opportunities]
   okt-task-secure:
     persona: sophie-hatter
-    skills: [security-review-lens]
+    skills: [security-review-lens, okt-task-secure-playbook]
     templates: [comment-review-findings]
   okt-task-check:
     persona: calcifer
-    skills: [regression-detection, coverage-analysis]
+    skills: [regression-detection, coverage-analysis, okt-task-check-playbook]
     laws: [accept-yellow]
     templates: [comment-check-report]
   okt-task-quality:
     persona: calcifer
-    skills: [static-analysis-discipline]
+    skills: [static-analysis-discipline, okt-task-quality-playbook]
     laws: [accept-yellow]
     templates: [comment-review-findings]
   okt-pause:
     persona: sophie-hatter
-    skills: [handoff-synthesis]
+    skills: [handoff-synthesis, okt-pause-playbook]
     laws: [project-scope-only, no-praise-pad]
     templates: [note-handoff]
   okt-note-free:
     persona: sophie-hatter
-    skills: [note-capture]
+    skills: [note-capture, okt-note-free-playbook]
     templates: [note-free]
   okt-note-recap:
     persona: sophie-hatter
-    skills: [recap-timeline, standup-digest]
+    skills: [recap-timeline, standup-digest, okt-note-recap-playbook]
     templates: [note-recap, note-standup-digest]
   okt-note-list:
     persona: sophie-hatter
-    skills: [note-capture]
+    skills: [note-capture, okt-note-list-playbook]
   okt-note-show:
     persona: sophie-hatter
-    skills: [note-capture]
+    skills: [note-capture, okt-note-show-playbook]

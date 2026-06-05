@@ -19,31 +19,37 @@ import (
 //   - persona is the one declared on the command spec (no default);
 //   - skills come from the command subset, then legacy persona skills, then
 //     the persona's schema-v2 skill repertoire;
-//   - templates are the slugs declared on the command spec.
+//   - templates are the slugs declared on the command spec;
+//   - the command playbook is entity-sourced: the prompts/list description comes
+//     from the bound okt-<slug>-playbook skill's frontmatter, and its body
+//     renders among the skills — Go carries no Action/Description prose.
 //
-// Missing catalogs degrade gracefully — an unwired runtime still returns the
-// command's action text so the MCP harness keeps working through the upgrade.
+// Missing catalogs degrade gracefully — an unwired runtime still resolves a
+// registered command (empty description, no persona/skills) so the MCP harness
+// keeps working through the upgrade; an unknown command still rejects.
 func (s *Service) ResolveCommand(_ context.Context, input ResolveCommandInput) (ResolveCommandResponse, error) {
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
 		return ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "command name is required", nil)
 	}
-	entry, known := commandBySlug[name]
-	if !known {
+	if !isKnownCommand(name) {
 		return ResolveCommandResponse{}, domain.NewError(domain.ErrValidation, "unknown MCP command", map[string]any{"name": name})
 	}
 
-	resp := ResolveCommandResponse{
-		Name:        name,
-		Description: entry.Description,
-		Action:      entry.Action,
-	}
+	resp := ResolveCommandResponse{Name: name}
 
 	commands := s.loadCommandCatalog()
 	personas := s.loadPersonaCatalog()
 	skills := s.loadSkillCatalog()
 	laws := s.loadLawCatalog()
 	templates := s.loadTemplateCatalogForCommand()
+
+	// The prompts/list one-liner is entity-sourced: it is the frontmatter
+	// `description` of the bound okt-<slug>-playbook skill, not Go prose. An
+	// unwired runtime (no skill catalog) degrades to an empty description.
+	if pb, ok := skills[playbookSlugForCommand(name)]; ok {
+		resp.Description = pb.Description
+	}
 
 	spec := commands[name]
 	globalSpec := commands[MCPCommandsGlobalKey]
@@ -81,6 +87,21 @@ func (s *Service) ResolveCommand(_ context.Context, input ResolveCommandInput) (
 	}
 	resp.Markdown = renderCommandMarkdown(resp)
 	return resp, nil
+}
+
+// CommandDescription returns the entity-sourced prompts/list one-liner for a
+// command: the frontmatter `description` of its bound okt-<slug>-playbook skill.
+// It returns the empty string for an unknown command or an unwired runtime (no
+// skill catalog / no matching playbook skill) — callers treat empty as "no
+// description available" rather than an error.
+func (s *Service) CommandDescription(name string) string {
+	if !isKnownCommand(name) {
+		return ""
+	}
+	if pb, ok := s.loadSkillCatalog()[playbookSlugForCommand(name)]; ok {
+		return pb.Description
+	}
+	return ""
 }
 
 func (s *Service) loadCommandCatalog() map[string]MCPCommandBinding {
@@ -213,7 +234,12 @@ func effectiveLaws(globalSpec, commandSpec MCPCommandBinding, persona *PersonaIn
 
 // renderCommandMarkdown produces the single PromptMessage body the MCP layer
 // returns. Sections are kept compact and ordered (persona → skills → laws →
-// templates → action) so the agent can scan them top-down without reordering.
+// templates) so the agent can scan them top-down without reordering.
+//
+// There is no `## Action` section anymore: the command's operational playbook
+// is ENTITY-SOURCED. Each command binds an `okt-<slug>-playbook` skill, so the
+// playbook body arrives in the `## Skills` section like any other skill body —
+// the Go layer no longer carries a duplicate copy of the prose.
 //
 // The prompt name and description are NOT echoed in the body — they ship via
 // `prompts/list` metadata in the MCP protocol, which every aware client
@@ -221,9 +247,10 @@ func effectiveLaws(globalSpec, commandSpec MCPCommandBinding, persona *PersonaIn
 // duplicate bytes the agent already has.
 //
 // Skills render as bullet-with-body under `## Skills` — one bullet per skill
-// in configured (persona-wiring) order. Each bullet carries the skill body
-// (the procedural payload) when present; skills without a body fall back to
-// their description, and skills with neither render as a bare name bullet.
+// in configured (persona-wiring) order, the bound playbook skill among them.
+// Each bullet carries the skill body (the procedural payload) when present;
+// skills without a body fall back to their description, and skills with neither
+// render as a bare name bullet.
 //
 // Laws render under `## Laws` (no count parenthetical) — the number is
 // decorative; the agent does not branch on it.
@@ -306,9 +333,6 @@ func renderCommandMarkdown(resp ResolveCommandResponse) string {
 			fmt.Fprintln(&b, line)
 		}
 	}
-
-	openSection("## Action")
-	fmt.Fprintf(&b, "%s\n", resp.Action)
 
 	// Trailing output-language directive: byte-stable per session so the
 	// Anthropic prompt cache hit rate stays high. Skipped entirely when

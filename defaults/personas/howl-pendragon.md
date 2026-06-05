@@ -12,6 +12,12 @@ skill_repertoire:
   - refactoring-catalog
   - castle-tidying
   - markdown
+  - okt-task-continue-playbook
+  - okt-task-design-playbook
+  - okt-task-implement-playbook
+  - okt-task-refactor-playbook
+  - okt-task-resume-playbook
+  - okt-task-self-review-playbook
 laws:
   - project-scope-only
   - workflow-enforced

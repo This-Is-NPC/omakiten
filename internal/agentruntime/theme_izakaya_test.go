@@ -67,15 +67,16 @@ func TestIzakayaBuilderIdentityRenders(t *testing.T) {
 		t.Fatalf("okt-task-implement missing Templates section or JIT fetch hint:\n%s", resp.Markdown)
 	}
 
-	// Non-empty action.
-	if !strings.Contains(resp.Markdown, "## Action\n") || strings.TrimSpace(resp.Action) == "" {
-		t.Fatalf("okt-task-implement missing non-empty Action:\n%s", resp.Markdown)
+	// Entity-sourced playbook renders under Skills (no hardcoded Action).
+	if !strings.Contains(resp.Markdown, "## Skills\n") {
+		t.Fatalf("okt-task-implement missing the Skills section carrying the entity-sourced playbook:\n%s", resp.Markdown)
 	}
 }
 
 // TestIzakayaRepresentativeCommandsRender walks one command per themed role
 // slot and asserts each resolves the expected persona and renders its
-// command-level skill subset as bullet-with-body, plus a wired Action and the
+// command-level skill subset as bullet-with-body, plus the entity-sourced
+// playbook in the Skills section and the
 // global Laws floor. This is the per-preset breadth smoke (AC#7) covering the
 // dual-bound roster (Calcifer Concierge/Tester, Markl Owner/Committer, Sophie
 // Reviewer/Scribe) and the themed Ideator law.
@@ -110,8 +111,8 @@ func TestIzakayaRepresentativeCommandsRender(t *testing.T) {
 			if !strings.Contains(resp.Markdown, "## Persona — ") {
 				t.Fatalf("%s missing Persona section:\n%s", tc.command, resp.Markdown)
 			}
-			if !strings.Contains(resp.Markdown, "## Action\n") || strings.TrimSpace(resp.Action) == "" {
-				t.Fatalf("%s missing non-empty Action:\n%s", tc.command, resp.Markdown)
+			if !strings.Contains(resp.Markdown, "## Skills\n") {
+				t.Fatalf("%s missing the Skills section carrying the entity-sourced playbook:\n%s", tc.command, resp.Markdown)
 			}
 			if !strings.Contains(resp.Markdown, "## Laws\n") || len(resp.Laws) == 0 {
 				t.Fatalf("%s missing Laws floor:\n%s", tc.command, resp.Markdown)

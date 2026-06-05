@@ -76,8 +76,9 @@ func assertSkillsBulletWithBody(t *testing.T, name string, resp agent.ResolveCom
 // TestShokuninPresetSmoke is the AC#7 per-preset smoke gate. It renders a
 // representative slice of the shokunin (FMA Brotherhood) command surface against
 // the embedded shokunin kit and asserts each one carries its expected sections:
-// a wired themed Persona, a non-empty Action + prompts/list description, a Laws
-// section (the global floor reaches every command), and bullet-with-body Skills.
+// a wired themed Persona, the entity-sourced playbook in the Skills section + a
+// prompts/list description, a Laws section (the global floor reaches every
+// command), and bullet-with-body Skills.
 // It is the shokunin sibling of the omakase TestFullCommandSurfaceSmoke — scoped
 // to the representative set named in AC#7, not the full 40, so it stays cheap and
 // preset-local while still proving the themed wiring resolves end-to-end.
@@ -113,11 +114,11 @@ func TestShokuninPresetSmoke(t *testing.T) {
 			if !strings.Contains(resp.Markdown, "## Persona — ") {
 				t.Fatalf("%s markdown missing non-empty Persona section:\n%s", name, resp.Markdown)
 			}
-			if !strings.Contains(resp.Markdown, "## Action\n") || strings.TrimSpace(resp.Action) == "" {
-				t.Fatalf("%s markdown missing non-empty Action section:\n%s", name, resp.Markdown)
+			if !strings.Contains(resp.Markdown, "## Skills\n") {
+				t.Fatalf("%s markdown missing the Skills section carrying the entity-sourced playbook:\n%s", name, resp.Markdown)
 			}
-			if strings.TrimSpace(agent.CommandDescription(name)) == "" {
-				t.Fatalf("%s carries no prompts/list description", name)
+			if strings.TrimSpace(resp.Description) == "" {
+				t.Fatalf("%s carries no prompts/list description (the bound playbook skill's frontmatter)", name)
 			}
 			if !strings.Contains(resp.Markdown, "## Laws\n") || len(resp.Laws) == 0 {
 				t.Fatalf("%s markdown missing non-empty Laws section (the global law floor should reach every command):\n%s", name, resp.Markdown)
@@ -194,9 +195,10 @@ func TestShokuninBuilderIdentity(t *testing.T) {
 		t.Fatalf("okt-task-implement binds templates but carries no templates.show JIT hint:\n%s", resp.Markdown)
 	}
 
-	// Action text lands.
-	if strings.TrimSpace(resp.Action) == "" {
-		t.Fatal("okt-task-implement carries empty action text")
+	// Entity-sourced playbook lands (the bound okt-task-implement-playbook skill
+	// body renders under ## Skills; there is no hardcoded Action text).
+	if !strings.Contains(resp.Markdown, "## Skills\n") {
+		t.Fatalf("okt-task-implement missing the Skills section carrying the entity-sourced playbook:\n%s", resp.Markdown)
 	}
 }
 

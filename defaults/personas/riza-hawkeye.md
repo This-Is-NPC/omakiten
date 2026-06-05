@@ -5,6 +5,7 @@ schema_version: 2
 skill_repertoire:
   - conventional-commits-spec
   - markdown
+  - okt-task-commit-playbook
 laws:
   - project-scope-only
   - workflow-enforced
