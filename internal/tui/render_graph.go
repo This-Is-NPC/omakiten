@@ -95,12 +95,20 @@ func (m Model) renderGraph() string {
 		cursorLineIdx = sel[m.graphCursor.Cursor()]
 	}
 
+	// Bound every DAG row to the panel body width before styling, mirroring
+	// render_table.go's contentWidth derivation. Without this the raw DAG
+	// text (deep indentation + long titles + diamond back-refs) flows past
+	// the panel border, pushing the right edge off-screen. truncateText
+	// trims from the right, so the leading "#<id>" prefix stays visible and
+	// users can still identify the task even when its title is clipped.
+	contentWidth := m.availableWidth() - 4
 	dataRows := make([]string, len(lines))
 	for i, l := range lines {
+		text := truncateText(l.text, contentWidth)
 		if i == cursorLineIdx {
-			dataRows[i] = m.styles.hintAccent.Render(l.text)
+			dataRows[i] = m.styles.hintAccent.Render(text)
 		} else {
-			dataRows[i] = l.text
+			dataRows[i] = text
 		}
 	}
 
