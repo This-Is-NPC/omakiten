@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -90,9 +91,21 @@ func (m Model) renderGraph() string {
 	lines := buildDAGLinesSorted(m.dependencies, m.tasks, m.graphRootLess())
 	sel := dagSelectableIndices(lines)
 
+	// Defensively guard the cursor index against the current selectable
+	// count. refresh() clamps graphCursor via clampGraphCursor, but this is
+	// the value-receiver render path: a stale cursor reassigned between
+	// clamps must never index past sel and panic. Clamp into range here so
+	// the renderer is self-contained.
 	cursorLineIdx := -1
 	if len(sel) > 0 {
-		cursorLineIdx = sel[m.graphCursor.Cursor()]
+		cursor := m.graphCursor.Cursor()
+		if cursor < 0 {
+			cursor = 0
+		}
+		if cursor >= len(sel) {
+			cursor = len(sel) - 1
+		}
+		cursorLineIdx = sel[cursor]
 	}
 
 	// Bound every DAG row to the panel body width before styling, mirroring
@@ -112,8 +125,20 @@ func (m Model) renderGraph() string {
 		}
 	}
 
+	// Bound the kicker/header row to the same contentWidth the DAG rows use:
+	// a long translated dependency_graph label could otherwise exceed the
+	// panel on a narrow terminal and push the right edge off-screen.
+	// Truncate the raw label BEFORE kickerCount styles it (mirrors the DAG
+	// rows, which truncate l.text before styling) so the cut never lands
+	// inside an ANSI escape sequence. The "// " prefix + " · N" suffix
+	// kickerCount adds are short and fixed; reserve room for them so the
+	// composed row stays within contentWidth on a narrow terminal.
+	kickerLabel := m.t("tui.kicker.dependency_graph")
+	if labelBudget := contentWidth - len("//  · ") - len(strconv.Itoa(len(m.dependencies))); labelBudget > 0 {
+		kickerLabel = truncateText(kickerLabel, labelBudget)
+	}
 	rows := []string{
-		m.styles.kickerCount(m.t("tui.kicker.dependency_graph"), len(m.dependencies)),
+		m.styles.kickerCount(kickerLabel, len(m.dependencies)),
 		"",
 	}
 	rows = append(rows, m.sliceScrollRows(dataRows, m.graphList.Scroll(), m.graphViewportRows())...)

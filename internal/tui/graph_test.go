@@ -292,6 +292,74 @@ func TestGraphNavigationAndOpenSurviveWidthFix(t *testing.T) {
 	}
 }
 
+// TestRenderGraphSurvivesStaleCursorAfterDepRemoval pins the crash where
+// refresh() reassigned m.dependencies (e.g. after a dependency is removed
+// while the graph subnav is open) but the graphCursor still pointed past the
+// shrunk selectable-node set. The value-receiver render path indexed
+// sel[graphCursor.Cursor()] without re-clamping, panicking with
+// index-out-of-range. The fix clamps in clampGraphCursor and defensively
+// guards the render-path index.
+func TestRenderGraphSurvivesStaleCursorAfterDepRemoval(t *testing.T) {
+	m := deepLongGraphModel(80)
+	lines := buildDAGLinesSorted(m.dependencies, m.tasks, m.graphRootLess())
+	sel := dagSelectableIndices(lines)
+	if len(sel) < 3 {
+		t.Fatalf("setup: expected >=3 selectable nodes, got %d", len(sel))
+	}
+
+	// Park the cursor on the last selectable node with the FULL item count,
+	// then shrink m.dependencies behind its back — exactly what refresh()
+	// does when a dependency is removed with the graph subnav open. The
+	// cursor's internal itemCount stays stale, so Cursor() now points past
+	// the new selectable set.
+	m.graphCursor = m.graphCursor.WithItemCount(len(sel)).SetCursor(len(sel) - 1)
+	staleCursor := m.graphCursor.Cursor()
+	m.dependencies = m.dependencies[:1] // collapse to a single dependency
+
+	newLines := buildDAGLinesSorted(m.dependencies, m.tasks, m.graphRootLess())
+	newSel := dagSelectableIndices(newLines)
+	if staleCursor < len(newSel) {
+		t.Fatalf("setup: stale cursor %d must exceed new selectable count %d", staleCursor, len(newSel))
+	}
+
+	// The render path must not panic even before the explicit clamp runs.
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("renderGraph panicked with stale cursor: %v", r)
+			}
+		}()
+		_ = m.renderGraph()
+	}()
+
+	// clampGraphCursor (wired into refresh) must pull the cursor back inside
+	// the new selectable window.
+	m.clampGraphCursor()
+	if got := m.graphCursor.Cursor(); got >= len(newSel) || got < 0 {
+		t.Fatalf("after clampGraphCursor: cursor=%d outside [0,%d)", got, len(newSel))
+	}
+}
+
+// TestRenderGraphKickerStaysInsideTerminal pins FINDING 2: the kicker/header
+// row must stay within the terminal width on a narrow terminal even when the
+// translated dependency_graph label is long, mirroring the bound the DAG rows
+// already enforce.
+func TestRenderGraphKickerStaysInsideTerminal(t *testing.T) {
+	for _, width := range []int{28, 36, 44} {
+		width := width
+		t.Run(fmt.Sprintf("width=%d", width), func(t *testing.T) {
+			m := deepLongGraphModel(width)
+			view := m.renderGraph()
+			// The kicker is the first non-blank content row in the panel body.
+			for _, line := range strings.Split(view, "\n") {
+				if w := lipgloss.Width(stripANSI(line)); w > width {
+					t.Fatalf("graph line width %d exceeds terminal width %d:\n%q", w, width, stripANSI(line))
+				}
+			}
+		})
+	}
+}
+
 // assertOrder verifies that a, b, c appear in order within s.
 func assertOrder(t *testing.T, s, a, b, c string) {
 	t.Helper()

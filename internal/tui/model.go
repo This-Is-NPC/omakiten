@@ -625,6 +625,7 @@ func (m *Model) applyRefreshAfterViewChange(r refreshAfterViewChangeMsg) {
 	m.invalidateBoardCaches()
 	m.rebuildBoardCaches()
 	m.clampPlanCursor()
+	m.clampGraphCursor()
 	m.clampSelection()
 	m.clampCardIdx()
 	m.clampEntityCursor()
@@ -1318,6 +1319,7 @@ func (m *Model) refresh() error {
 	m.invalidateBoardCaches()
 	m.rebuildBoardCaches()
 	m.clampPlanCursor()
+	m.clampGraphCursor()
 	m.clampSelection()
 	m.clampCardIdx()
 	m.clampEntityCursor()
@@ -1332,6 +1334,20 @@ func (m *Model) refresh() error {
 // inline. Deleted plans cannot leave the cursor stranded past end.
 func (m *Model) clampPlanCursor() {
 	m.plansCursor = m.plansCursor.WithItemCount(len(m.plans))
+}
+
+// clampGraphCursor keeps graphCursor inside the [0, selectable-1] window
+// after refresh reassigns m.dependencies. The renderer derives its cursor
+// line via sel[graphCursor.Cursor()] (sel = dagSelectableIndices), so a
+// stale cursor pointing past a shrunk selectable set would panic the value-
+// receiver render path. Mirrors clampPlanCursor: route through
+// cursorwindow.WithItemCount using the same selectable-node count the
+// renderer derives. Removing a dependency while the graph subnav is open
+// can no longer strand the cursor past end.
+func (m *Model) clampGraphCursor() {
+	lines := buildDAGLinesSorted(m.dependencies, m.tasks, m.graphRootLess())
+	sel := dagSelectableIndices(lines)
+	m.graphCursor = m.graphCursor.WithItemCount(len(sel))
 }
 
 func (m Model) computeMetrics(maxTokens int) domain.TokenMetrics {
