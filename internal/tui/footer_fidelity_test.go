@@ -103,6 +103,40 @@ func TestCommentEditFooterOmitsHelp(t *testing.T) {
 	}
 }
 
+// TestCommentDetailFooterHidesMutationFromProject pins the audit follow-up:
+// a project/universal comment detail opened from the project overview feed
+// (commentScreenFromProject) keeps `e`/`d` as no-ops in render_comment.go, so
+// the footer must not advertise edit/delete there. A task-owned comment detail
+// still advertises both.
+func TestCommentDetailFooterHidesMutationFromProject(t *testing.T) {
+	t.Parallel()
+
+	taskOwned := newFooterFidelityModel(t)
+	taskOwned.commentScreenOpen = true
+	taskTokens := taskOwned.footerTokens()
+	if _, ok := footerKeyLabel(taskTokens, "e"); !ok {
+		t.Fatalf("task-owned comment detail must advertise e edit; tokens=%v", taskTokens)
+	}
+	if _, ok := footerKeyLabel(taskTokens, "d"); !ok {
+		t.Fatalf("task-owned comment detail must advertise d delete; tokens=%v", taskTokens)
+	}
+
+	fromProject := newFooterFidelityModel(t)
+	fromProject.commentScreenOpen = true
+	fromProject.commentScreenFromProject = true
+	projectTokens := fromProject.footerTokens()
+	if _, ok := footerKeyLabel(projectTokens, "e"); ok {
+		t.Fatalf("project-feed comment detail must not advertise e edit (no-op); tokens=%v", projectTokens)
+	}
+	if _, ok := footerKeyLabel(projectTokens, "d"); ok {
+		t.Fatalf("project-feed comment detail must not advertise d delete (no-op); tokens=%v", projectTokens)
+	}
+	// Scroll/back/help must still be present in the read-only footer.
+	if _, ok := footerKeyLabel(projectTokens, "j/k"); !ok {
+		t.Fatalf("project-feed comment detail must still advertise scroll; tokens=%v", projectTokens)
+	}
+}
+
 // TestEntityViewFooterKindAware pins AC #3: the entity detail footer
 // advertises only the actions valid for the open entity kind.
 //   - `d` (arm delete): law / skill / persona, NOT template (template's

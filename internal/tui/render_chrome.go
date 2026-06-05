@@ -308,19 +308,28 @@ func (m Model) footerTokens() []footerToken {
 			m.helpToken(),
 		}
 	case m.commentScreenOpen:
-		deleteLabel := m.t("tui.footer.arm_delete")
-		if m.commentDeletePendingID != 0 {
-			deleteLabel = m.t("tui.footer.confirm_delete")
+		tokens := []footerToken{}
+		// Project/universal comment detail opened from the project overview is
+		// read-only, so edit/delete are no-ops there — advertise them only when
+		// the detail is task-owned and the keys actually fire.
+		if !m.commentScreenFromProject {
+			deleteLabel := m.t("tui.footer.arm_delete")
+			if m.commentDeletePendingID != 0 {
+				deleteLabel = m.t("tui.footer.confirm_delete")
+			}
+			tokens = append(tokens,
+				footerToken{key: "e", label: m.t("tui.footer.edit"), primary: true},
+				footerToken{key: "d", label: deleteLabel, primary: m.commentDeletePendingID != 0},
+			)
 		}
-		return []footerToken{
-			{key: "e", label: m.t("tui.footer.edit"), primary: true},
-			{key: "d", label: deleteLabel, primary: m.commentDeletePendingID != 0},
-			{key: "j/k", label: m.t("tui.footer.scroll")},
-			{key: "pgup/pgdn", label: m.t("tui.footer.page")},
-			{key: "g/G", label: m.t("tui.footer.top_bottom")},
+		tokens = append(tokens,
+			footerToken{key: "j/k", label: m.t("tui.footer.scroll")},
+			footerToken{key: "pgup/pgdn", label: m.t("tui.footer.page")},
+			footerToken{key: "g/G", label: m.t("tui.footer.top_bottom")},
 			m.escBack(),
 			m.helpToken(),
-		}
+		)
+		return tokens
 	case m.taskScreen == taskScreenView:
 		escLabel := m.escBack()
 		if len(m.taskViewStack) > 0 {
