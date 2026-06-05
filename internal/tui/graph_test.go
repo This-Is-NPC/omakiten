@@ -360,6 +360,58 @@ func TestRenderGraphKickerStaysInsideTerminal(t *testing.T) {
 	}
 }
 
+// TestRenderGraphBottomBorderStaysVisible pins the vertical-overflow half of
+// the #591 graph regression. graphViewportRows must size the DAG window from
+// the same live-chrome budget the other panels use (panelViewportRows). The
+// prior hand-rolled `chrome := 12` assumed a 5-line screen header and a +1
+// status line; both undercounted the real chrome, so the graph over-rendered
+// and clampViewToHeight chopped the panel's bottom border off the bottom of
+// the terminal — the missing-lower-border the user reported. The panel's
+// closing border row must survive in the composed, height-clamped View().
+func TestRenderGraphBottomBorderStaysVisible(t *testing.T) {
+	// Heights stay above panelViewportRows' 4-row floor; below it the helper
+	// intentionally returns 0 and falls back to clamp-chop on a tiny terminal.
+	for _, height := range []int{20, 24, 30, 40} {
+		height := height
+		t.Run(fmt.Sprintf("height=%d", height), func(t *testing.T) {
+			m := deepLongGraphModel(100)
+			m.height = height
+			m.top = topTasks
+			m.sub = subGraph
+
+			// The panel's bottom border is the last non-blank line renderGraph
+			// emits — capture it independently of the glyph used.
+			panelLines := strings.Split(strings.TrimRight(stripANSI(m.renderGraph()), "\n"), "\n")
+			border := ""
+			for i := len(panelLines) - 1; i >= 0; i-- {
+				if strings.TrimSpace(panelLines[i]) != "" {
+					border = panelLines[i]
+					break
+				}
+			}
+			if border == "" {
+				t.Fatal("setup: renderGraph produced no non-blank lines")
+			}
+
+			viewLines := strings.Split(stripANSI(m.View()), "\n")
+			if len(viewLines) > height {
+				t.Fatalf("View rendered %d lines, exceeds terminal height %d", len(viewLines), height)
+			}
+			found := false
+			for _, l := range viewLines {
+				if l == border {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("graph panel bottom border %q was clamped off the View at height %d:\n%s",
+					border, height, strings.Join(viewLines, "\n"))
+			}
+		})
+	}
+}
+
 // assertOrder verifies that a, b, c appear in order within s.
 func assertOrder(t *testing.T, s, a, b, c string) {
 	t.Helper()

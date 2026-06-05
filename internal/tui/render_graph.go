@@ -60,21 +60,15 @@ func (m *Model) syncGraphScroll(sel []int, totalLines int) {
 
 // graphViewportRows returns how many DAG lines fit in the graph panel viewport.
 // Returns 0 when the terminal is too small to scroll.
+//
+// Sources its chrome from the shared `panelViewportRows` helper so the budget
+// tracks the live screen header / status / nav strip instead of a hard-coded
+// guess. The prior hand-rolled `chrome := 12` assumed a 5-line header and a
+// +1 status line; both undercounted the real chrome, so the graph
+// over-rendered and its bottom panel border fell off the terminal. Panel
+// chrome here = 2 borders + 2 header rows (kicker + blank) = 4.
 func (m Model) graphViewportRows() int {
-	if m.height <= 0 {
-		return 0
-	}
-	// 5 screen header + 1 leading blank + 2 footer + 2 panel borders
-	// + 2 panel header rows (kicker + blank) = 12.
-	chrome := 12
-	if m.status != "" {
-		chrome++
-	}
-	rows := m.height - chrome
-	if rows < 4 {
-		return 0
-	}
-	return rows
+	return m.panelViewportRows(4)
 }
 
 func (m Model) renderGraph() string {
