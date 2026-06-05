@@ -82,9 +82,21 @@ func wrapWords(s string, firstWidth, restWidth int) []string {
 			if current != "" {
 				flush()
 			}
-			for _, frag := range hardWrapToken(word, limitFor()) {
-				current = frag
-				flush()
+			// `limit` was captured BEFORE the flush above, so it still holds
+			// the width of the line this fragment run STARTS on (firstWidth
+			// when this token opens a fresh first line, restWidth otherwise).
+			// Re-reading limitFor() here would always yield restWidth once the
+			// flush pushed a line, under-filling firstWidth. The first fragment
+			// fills `limit`; every fragment after it lands on a subsequent line
+			// so it is sized to restWidth.
+			frags := hardWrapToken(word, limit)
+			current = frags[0]
+			flush()
+			if rest := strings.Join(frags[1:], ""); rest != "" {
+				for _, frag := range hardWrapToken(rest, restWidth) {
+					current = frag
+					flush()
+				}
 			}
 			continue
 		}

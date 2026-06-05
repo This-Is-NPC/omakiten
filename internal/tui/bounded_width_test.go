@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -89,6 +90,56 @@ func TestWrapWordsHardWrapsWideGlyphToken(t *testing.T) {
 	for i, line := range lines {
 		if w := lipgloss.Width(line); w > width {
 			t.Fatalf("wrapWords line %d %q has visible width %d, exceeds column %d", i, line, w, width)
+		}
+	}
+}
+
+// TestWrapWordsHardWrapsFirstLineToFirstWidth guards the first-line sizing
+// fix: an overlong token that starts a fresh first line must be hard-wrapped
+// against firstWidth, not restWidth. With firstWidth > restWidth, the prior
+// code re-read the limit after an internal flush and under-filled the first
+// line to restWidth.
+func TestWrapWordsHardWrapsFirstLineToFirstWidth(t *testing.T) {
+	const firstWidth = 20
+	const restWidth = 8
+	token := strings.Repeat("z", 60)
+	lines := wrapWords(token, firstWidth, restWidth)
+	if len(lines) < 2 {
+		t.Fatalf("expected the overlong token to wrap across multiple lines; got %d", len(lines))
+	}
+	// First fragment must fill firstWidth (no spaces, so it should be exactly
+	// firstWidth cells), proving it was not sized to restWidth.
+	if w := lipgloss.Width(lines[0]); w != firstWidth {
+		t.Fatalf("first line %q width %d, want firstWidth %d (under-fill regression)", lines[0], w, firstWidth)
+	}
+	// Subsequent fragments stay within restWidth.
+	for i := 1; i < len(lines); i++ {
+		if w := lipgloss.Width(lines[i]); w > restWidth {
+			t.Fatalf("line %d %q width %d exceeds restWidth %d", i, lines[i], w, restWidth)
+		}
+	}
+	if joined := strings.Join(lines, ""); joined != token {
+		t.Fatalf("hard-wrapped fragments lost data:\n got %q\nwant %q", joined, token)
+	}
+}
+
+// TestTruncatePathHeadTruncationRuneSafe guards the head-truncation branch of
+// truncatePath against byte-index slicing: a multibyte/CJK leaf directory must
+// be cut on a rune boundary, yielding valid UTF-8 within the visible width.
+func TestTruncatePathHeadTruncationRuneSafe(t *testing.T) {
+	// Leaf is all wide glyphs so even the leaf alone overflows the width,
+	// forcing the head-truncate branch ("…" + tail-by-width).
+	path := "/home/user/" + strings.Repeat("漢", 30)
+	for _, width := range []int{6, 9, 12, 15} {
+		out := truncatePath(path, width)
+		if !utf8.ValidString(out) {
+			t.Fatalf("truncatePath(width=%d) = %q is not valid UTF-8 (byte-slice regression)", width, out)
+		}
+		if w := lipgloss.Width(out); w > width {
+			t.Fatalf("truncatePath(width=%d) = %q has visible width %d, exceeds bound %d", width, out, w, width)
+		}
+		if !strings.HasPrefix(out, "…") {
+			t.Fatalf("truncatePath(width=%d) = %q should keep the head ellipsis", width, out)
 		}
 	}
 }

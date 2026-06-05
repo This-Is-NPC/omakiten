@@ -415,6 +415,7 @@ func (m Model) footerTokens() []footerToken {
 		}
 		tokens = append(tokens,
 			footerToken{key: "j/k", label: m.t("tui.footer.scroll")},
+			footerToken{key: "M", label: m.t("tui.footer.toggle_markdown")},
 			footerToken{key: "r", label: m.t("tui.footer.refresh")},
 			m.escBack(),
 		)

@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"omakiten/internal/app"
 	"omakiten/internal/domain"
@@ -384,8 +385,13 @@ func truncatePath(path string, width int) string {
 	parts := strings.Split(path, "/")
 	tail := parts[len(parts)-1]
 	if lipgloss.Width(tail)+2 > width {
-		// Even the leaf is too wide — head-truncate it.
-		return "…" + tail[len(tail)-(width-1):]
+		// Even the leaf is too wide — head-truncate it. The cut walks
+		// runes from the end (not byte index) and tracks accumulated
+		// visible cell width, reserving one cell for the leading
+		// ellipsis. A byte slice here would split a multibyte glyph
+		// mid-rune (invalid UTF-8) and miscount width on wide glyphs,
+		// defeating the bound.
+		return "…" + tailByWidth(tail, width-1)
 	}
 	for i := len(parts) - 2; i >= 0; i-- {
 		candidate := "…/" + strings.Join(parts[i:], "/")
@@ -394,6 +400,33 @@ func truncatePath(path string, width int) string {
 		}
 	}
 	return "…/" + tail
+}
+
+// tailByWidth returns the trailing run of s whose visible cell width is at
+// most maxWidth, cut on a rune boundary. It mirrors the cell-accounting in
+// truncateText (ansi.StringWidth per rune) but keeps the END of the string
+// instead of the head — the leaf directory name is the recognisable part.
+// Walking runes (never byte slicing) guarantees the result is valid UTF-8
+// and never exceeds maxWidth display cells even when s contains wide glyphs.
+func tailByWidth(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	if ansi.StringWidth(s) <= maxWidth {
+		return s
+	}
+	runes := []rune(s)
+	width := 0
+	start := len(runes)
+	for i := len(runes) - 1; i >= 0; i-- {
+		rw := ansi.StringWidth(string(runes[i]))
+		if width+rw > maxWidth {
+			break
+		}
+		width += rw
+		start = i
+	}
+	return string(runes[start:])
 }
 
 func (m Model) renderHomeEmptyHint() string {

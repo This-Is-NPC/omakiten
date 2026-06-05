@@ -171,6 +171,16 @@ func TestEntityViewFooterKindAware(t *testing.T) {
 			if _, ok := footerKeyLabel(tokens, "e"); !ok {
 				t.Fatalf("%s entity footer must advertise e (edit); tokens=%v", tc.name, tokens)
 			}
+			// `M` (toggle markdown) is handled for every entity kind in
+			// entity_screen.go, so the footer must advertise it regardless of
+			// kind (audit follow-up: handler had no footer hint).
+			mLabel, ok := footerKeyLabel(tokens, "M")
+			if !ok {
+				t.Fatalf("%s entity footer must advertise M (toggle markdown); tokens=%v", tc.name, tokens)
+			}
+			if mLabel != m.t("tui.footer.toggle_markdown") {
+				t.Errorf("%s: M label = %q, want toggle-markdown", tc.name, mLabel)
+			}
 			if got := footerHasFragment(tokens, "d"); got != tc.wantDel {
 				t.Errorf("%s: d advertised=%v, want %v; tokens=%v", tc.name, got, tc.wantDel, tokens)
 			}
