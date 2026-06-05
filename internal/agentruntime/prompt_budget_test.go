@@ -287,6 +287,117 @@ func TestFullCommandSurfaceSmoke(t *testing.T) {
 	}
 }
 
+// defaultPresets are the four shipped configuration presets, keyed by the
+// config basename that selects them (the same convention the per-theme smoke
+// tests use). The default-kit coverage gate renders the full 40-command
+// surface against EACH of them so a binding that lands in one preset's theme
+// but is forgotten in another fails here rather than only in the preset the
+// other gates happen to exercise (omakase).
+var defaultPresets = []string{"omakase", "izakaya", "kaiseki", "shokunin"}
+
+// TestDefaultKitCoversAllCommandsEntitySourced is the AC#8 (#598) / AC#3 (#603)
+// default-kit coverage gate: for EVERY shipped preset, all 40 `okt-*` commands
+// must resolve a non-empty, marker-carrying prompt sourced ENTIRELY from
+// entities. The load-bearing markers asserted per command are exactly the ones
+// the entity pipeline (and only the entity pipeline) can produce:
+//
+//   - a non-empty prompts/list description — the bound okt-<slug>-playbook
+//     skill's frontmatter `description`. The Go layer carries no Description
+//     fallback (see agent.TestNoGoCommandProseFallback), so a non-empty value
+//     here proves the playbook skill is bound and its frontmatter flowed
+//     through.
+//   - the playbook body rendered as a `- **<label>** — <head>` bullet under
+//     `## Skills`. The command playbook is no longer a hardcoded `## Action`
+//     section; it arrives solely as the bound okt-<slug>-playbook skill body.
+//     Matching the bullet head verbatim proves the entity body actually
+//     shipped into the rendered prompt for this exact preset.
+//
+// Together these assert AC#8 of #598 — "the default configured entities still
+// provide the required behavior markers" — across all four presets, the
+// breadth complement to the depth phrase-pins in the CW3-CW7 gates (which run
+// against omakase only).
+func TestDefaultKitCoversAllCommandsEntitySourced(t *testing.T) {
+	names := agent.CommandNames()
+	if len(names) != 40 {
+		t.Fatalf("expected the v2 surface to carry 40 commands, got %d — update this gate and the docs if the surface changed deliberately", len(names))
+	}
+
+	for _, preset := range defaultPresets {
+		preset := preset
+		t.Run(preset, func(t *testing.T) {
+			ctx := context.Background()
+			tmp := t.TempDir()
+			rt, err := Open(ctx, Options{
+				DBPath:     filepath.Join(tmp, "data", "omakiten.db"),
+				ConfigPath: filepath.Join(tmp, "config", preset+".yaml"),
+				CWD:        tmp,
+			})
+			if err != nil {
+				t.Fatalf("Open(%s) error = %v", preset, err)
+			}
+			t.Cleanup(func() { _ = rt.Close() })
+
+			for _, name := range names {
+				name := name
+				t.Run(name, func(t *testing.T) {
+					resp, err := rt.Service().ResolveCommand(ctx, agent.ResolveCommandInput{Name: name})
+					if err != nil {
+						t.Fatalf("ResolveCommand(%s) error = %v", name, err)
+					}
+
+					// Non-empty rendered prompt.
+					if strings.TrimSpace(resp.Markdown) == "" {
+						t.Fatalf("%s/%s resolved to an empty prompt", preset, name)
+					}
+
+					// Entity-sourced prompts/list description (playbook frontmatter).
+					if strings.TrimSpace(resp.Description) == "" {
+						t.Fatalf("%s/%s carries no prompts/list description — the bound okt-<slug>-playbook skill frontmatter did not flow through (the Go layer has no Description fallback)", preset, name)
+					}
+
+					// Entity-sourced playbook body, rendered as a bullet-with-body
+					// under ## Skills. `okt` shares okt-start's playbook.
+					wantPlaybook := name
+					if wantPlaybook == "okt" {
+						wantPlaybook = "okt-start"
+					}
+					wantPlaybook += "-playbook"
+
+					var body string
+					for _, sk := range resp.Skills {
+						if sk.Slug == wantPlaybook {
+							body = strings.TrimSpace(sk.Body)
+							break
+						}
+					}
+					if body == "" {
+						t.Fatalf("%s/%s did not bind a non-empty %s playbook skill — the entity-sourced playbook is missing for this preset", preset, name, wantPlaybook)
+					}
+					if !strings.Contains(resp.Markdown, "## Skills\n") {
+						t.Fatalf("%s/%s markdown missing the Skills section that carries the entity-sourced playbook:\n%s", preset, name, resp.Markdown)
+					}
+					head := body
+					if idx := strings.IndexByte(head, '\n'); idx >= 0 {
+						head = head[:idx]
+					}
+					// The bullet label is the skill's Name when set, else its slug.
+					label := wantPlaybook
+					for _, sk := range resp.Skills {
+						if sk.Slug == wantPlaybook && sk.Name != "" {
+							label = sk.Name
+							break
+						}
+					}
+					wantBullet := "- **" + label + "** — " + head
+					if !strings.Contains(resp.Markdown, wantBullet) {
+						t.Fatalf("%s/%s did not render its entity-sourced playbook marker (expected bullet head %q):\n%s", preset, name, wantBullet, resp.Markdown)
+					}
+				})
+			}
+		})
+	}
+}
+
 // TestCW5DistinctCommandPairs pins the AC#2/#3/#4 distinctness contracts:
 // cold-resume vs warm-continue, mechanical check vs human-lens quality, and
 // author self-review vs third-party review must each carry materially
