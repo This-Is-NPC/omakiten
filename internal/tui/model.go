@@ -62,14 +62,17 @@ func NewModel(ctx context.Context, project domain.ProjectContext, repos Reposito
 		tokenBadgeYellow: yellow,
 		tokenBadgeRed:    red,
 		entityKind:       entityKindLaw,
-		entityCursors:    map[entityKind]int{entityKindLaw: 0, entityKindPersona: 0, entityKindSkill: 0, entityKindTag: 0},
-		homePicker:       picker.New(picker.Single),
-		priorities:       priorities,
-		severities:       severities,
-		registry:         domain.NewEnumRegistry(priorityPairs, severityPairs),
-		markdown:         newMarkdownRenderer(tokensFromTheme(theme)),
-		markdownRendered: true,
-		notifications:    notifications.Notifications,
+		// -1 = "no project activity card selected" until the activity zone
+		// takes focus (mirrors activityCursor's -1 sentinel for the task feed).
+		projectActivityCursor: -1,
+		entityCursors:         map[entityKind]int{entityKindLaw: 0, entityKindPersona: 0, entityKindSkill: 0, entityKindTag: 0},
+		homePicker:            picker.New(picker.Single),
+		priorities:            priorities,
+		severities:            severities,
+		registry:              domain.NewEnumRegistry(priorityPairs, severityPairs),
+		markdown:              newMarkdownRenderer(tokensFromTheme(theme)),
+		markdownRendered:      true,
+		notifications:         notifications.Notifications,
 		// Pre-allocated style-by-kind-by-width cache; value-receiver
 		// render paths read + write through this so the
 		// lipgloss.Style.Width(N) allocation only fires once per

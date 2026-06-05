@@ -222,9 +222,18 @@ func (m Model) activityRowsForRender(events []domain.Event) []string {
 // short-circuits when warm. Kept separate so the cache hit path is a
 // pure map read with zero card-render work.
 func (m Model) activityRowsForRenderUncached(events []domain.Event) []string {
+	return m.activityRowsForRenderWithCursor(events, m.activityCursor)
+}
+
+// activityRowsForRenderWithCursor renders the event cards with an explicit
+// focused index instead of reading m.activityCursor. The task feed passes
+// m.activityCursor (via activityRowsForRenderUncached); the project-view
+// activity feed passes m.projectActivityCursor so the two feeds draw their
+// own focused-card accent border without the task cursor leaking across.
+func (m Model) activityRowsForRenderWithCursor(events []domain.Event, cursor int) []string {
 	rows := make([]string, 0, len(events))
 	for i, ev := range events {
-		focused := i == m.activityCursor
+		focused := i == cursor
 		if ev.EventType == domain.EventTypeComment {
 			rows = append(rows, m.renderCommentCardSelected(eventToComment(ev), focused))
 			continue

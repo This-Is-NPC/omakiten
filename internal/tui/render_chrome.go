@@ -417,6 +417,7 @@ func (m Model) footerTokens() []footerToken {
 		if m.projectFocus == projectFocusActivity {
 			tokens = append(tokens,
 				footerToken{key: "j/k", label: m.t("tui.footer.scroll")},
+				footerToken{key: "enter", label: m.t("tui.footer.open_comment_activity")},
 				footerToken{key: "pgup/pgdn", label: m.t("tui.footer.page")},
 				footerToken{key: "g/G", label: m.t("tui.footer.top_bottom")},
 			)

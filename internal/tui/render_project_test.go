@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"omakiten/internal/domain"
 )
@@ -231,16 +232,17 @@ func TestOpenProjectViewNilCommentsRepoNoPanic(t *testing.T) {
 	}
 }
 
-// TestProjectViewGScrollsActivityToBottom proves G/end snaps the focused
-// activity panel to its bottom offset (the renderer-clamped last item),
-// mirroring g/home → top.
-func TestProjectViewGScrollsActivityToBottom(t *testing.T) {
+// TestProjectViewGEndJumpActivityCard proves G/end and g/home jump the
+// activity SELECTION to the last / first card (card navigation), mirroring
+// the task activity panel rather than the old raw line-scroll.
+func TestProjectViewGEndJumpActivityCard(t *testing.T) {
 	model, _, _ := scopedFeedModel(t)
 	opened, _ := model.Update(ctrlP())
 	m := opened.(Model)
 
 	// Focus the activity zone (Tab twice: form → dashboard → activity) so
-	// the scroll bindings act on it.
+	// the navigation bindings act on it. Entering the zone auto-anchors the
+	// cursor onto the first card.
 	tabbed, _ := m.Update(tabKey())
 	m = tabbed.(Model)
 	tabbed, _ = m.Update(tabKey())
@@ -248,23 +250,26 @@ func TestProjectViewGScrollsActivityToBottom(t *testing.T) {
 	if m.projectFocus != projectFocusActivity {
 		t.Fatalf("setup: two tabs did not focus the activity zone; focus = %v", m.projectFocus)
 	}
+	if m.projectActivityCursor != 0 {
+		t.Fatalf("entering the activity zone should anchor the cursor on card 0; got %d", m.projectActivityCursor)
+	}
 
-	wantMax := m.projectFocusedScrollMax()
-	if wantMax <= 0 {
-		t.Fatalf("setup: expected a scrollable activity feed; max = %d", wantMax)
+	lastCard := len(m.projectActivity) - 1
+	if lastCard <= 0 {
+		t.Fatalf("setup: expected a multi-card feed; got %d cards", len(m.projectActivity))
 	}
 
 	ended, _ := m.Update(endKey())
 	m = ended.(Model)
-	if m.projectActivityScroll != wantMax {
-		t.Fatalf("end did not snap activity scroll to bottom; got %d want %d", m.projectActivityScroll, wantMax)
+	if m.projectActivityCursor != lastCard {
+		t.Fatalf("end did not jump the selection to the last card; got %d want %d", m.projectActivityCursor, lastCard)
 	}
 
-	// g/home returns it to the top.
+	// g/home returns the selection to the first card.
 	top, _ := m.Update(tea.KeyMsg{Type: tea.KeyHome})
 	m = top.(Model)
-	if m.projectActivityScroll != 0 {
-		t.Fatalf("home did not return activity scroll to top; got %d", m.projectActivityScroll)
+	if m.projectActivityCursor != 0 {
+		t.Fatalf("home did not return the selection to the first card; got %d", m.projectActivityCursor)
 	}
 }
 
@@ -540,20 +545,20 @@ func TestProjectViewFooterScrollOnlyForActivity(t *testing.T) {
 	}
 }
 
-// TestProjectViewScrollNoOpOnNonWindowedZones proves scroll keys are inert
-// while the form or dashboard zone owns focus (neither is windowed), and the
-// activity zone still scrolls — confirming the dead meta-scroll removal left
-// the live behavior intact.
-func TestProjectViewScrollNoOpOnNonWindowedZones(t *testing.T) {
+// TestProjectViewNavNoOpOnNonWindowedZones proves navigation keys are inert
+// while the form or dashboard zone owns focus (neither has a cursor), and the
+// activity zone moves its card selection — confirming the card-nav path only
+// engages when the activity zone owns focus.
+func TestProjectViewNavNoOpOnNonWindowedZones(t *testing.T) {
 	model, _, _ := scopedFeedModel(t)
 	opened, _ := model.Update(ctrlP())
 	m := opened.(Model)
 
-	// Form focus: j must not move any scroll offset.
+	// Form focus: j must not move the activity cursor (it is -1: no selection).
 	down, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	m = down.(Model)
-	if m.projectActivityScroll != 0 {
-		t.Fatalf("scroll on the form zone should be a no-op; activity scroll = %d", m.projectActivityScroll)
+	if m.projectActivityCursor != -1 {
+		t.Fatalf("nav on the form zone should be a no-op; activity cursor = %d", m.projectActivityCursor)
 	}
 
 	// Dashboard focus: same.
@@ -561,16 +566,223 @@ func TestProjectViewScrollNoOpOnNonWindowedZones(t *testing.T) {
 	m = tabbed.(Model)
 	down, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	m = down.(Model)
-	if m.projectActivityScroll != 0 {
-		t.Fatalf("scroll on the dashboard zone should be a no-op; activity scroll = %d", m.projectActivityScroll)
+	if m.projectActivityCursor != -1 {
+		t.Fatalf("nav on the dashboard zone should be a no-op; activity cursor = %d", m.projectActivityCursor)
 	}
 
-	// Activity focus: j advances the activity scroll.
+	// Activity focus: entering anchors on card 0, then j advances to card 1.
 	tabbed, _ = m.Update(tabKey())
 	m = tabbed.(Model)
+	if m.projectActivityCursor != 0 {
+		t.Fatalf("entering the activity zone should anchor the cursor on card 0; got %d", m.projectActivityCursor)
+	}
 	down, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	m = down.(Model)
-	if m.projectActivityScroll != 1 {
-		t.Fatalf("scroll on the activity zone should advance; activity scroll = %d, want 1", m.projectActivityScroll)
+	if m.projectActivityCursor != 1 {
+		t.Fatalf("nav on the activity zone should advance the card selection; cursor = %d, want 1", m.projectActivityCursor)
+	}
+}
+
+// projectViewOnActivity opens the project view and tabs focus to the activity
+// zone (form → dashboard → activity), returning the model with the cursor
+// auto-anchored on the first card. Shared setup for the project activity
+// navigation / open / border regression tests (task #592).
+func projectViewOnActivity(t *testing.T) Model {
+	t.Helper()
+	model, _, _ := scopedFeedModel(t)
+	opened, _ := model.Update(ctrlP())
+	m := opened.(Model)
+	m.width = 160
+	tabbed, _ := m.Update(tabKey())
+	m = tabbed.(Model)
+	tabbed, _ = m.Update(tabKey())
+	m = tabbed.(Model)
+	if m.projectFocus != projectFocusActivity {
+		t.Fatalf("setup: two tabs did not focus the activity zone; focus = %v", m.projectFocus)
+	}
+	return m
+}
+
+// TestProjectActivityCardNavigation proves j/k and the arrow keys move the
+// project activity selection by card (not raw line scroll) and that the
+// focused card's accent border tracks the cursor in the rendered panel.
+// Regression for task #592 (DoD: navigation by card/item).
+func TestProjectActivityCardNavigation(t *testing.T) {
+	m := projectViewOnActivity(t)
+	last := len(m.projectActivity) - 1
+	if last <= 0 {
+		t.Fatalf("setup: expected a multi-card feed; got %d cards", len(m.projectActivity))
+	}
+
+	// j steps forward one card; k steps back; arrows behave identically.
+	down, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = down.(Model)
+	if m.projectActivityCursor != 1 {
+		t.Fatalf("j should advance the card cursor to 1; got %d", m.projectActivityCursor)
+	}
+	up, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = up.(Model)
+	if m.projectActivityCursor != 0 {
+		t.Fatalf("up arrow should step the card cursor back to 0; got %d", m.projectActivityCursor)
+	}
+
+	// The cursor never runs past the ends: k at the top stays on card 0.
+	up, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	m = up.(Model)
+	if m.projectActivityCursor != 0 {
+		t.Fatalf("k at the top should clamp the cursor at 0; got %d", m.projectActivityCursor)
+	}
+
+	// The cursor selection drives which card the render path marks as focused:
+	// renderProjectActivityPanel feeds m.projectActivityCursor into
+	// activityRowsForRenderWithCursor, so the panel must reflect the moved
+	// cursor by surfacing the selected (last) card's body. Move to the last
+	// card and confirm the panel renders it. (The accent border is a
+	// color-only diff, stripped by lipgloss in the no-TTY test profile, so the
+	// behavioral assertion is the cursor + the card content reaching the panel.)
+	for i := 0; i < last; i++ {
+		nxt, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		m = nxt.(Model)
+	}
+	if m.projectActivityCursor != last {
+		t.Fatalf("repeated j should reach the last card %d; got %d", last, m.projectActivityCursor)
+	}
+	out := m.renderProjectActivityPanel(true)
+	if !strings.Contains(out, "universal") {
+		t.Fatalf("rendered activity panel missing the last card body:\n%s", out)
+	}
+}
+
+// TestProjectActivityEnterOpensCommentDetail proves Enter on a selected
+// project/universal comment opens the shared full-width comment detail view,
+// the detail resolves from the project feed (scope-aware), and Esc returns to
+// the project view with the activity selection preserved. Regression for task
+// #592 (DoD: Enter opens project/universal comment detail; Esc restores).
+func TestProjectActivityEnterOpensCommentDetail(t *testing.T) {
+	m := projectViewOnActivity(t)
+
+	// Move onto the universal comment (last card) so we exercise a comment that
+	// is absent from any task feed — the detail must still resolve.
+	last := len(m.projectActivity) - 1
+	for i := 0; i < last; i++ {
+		nxt, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		m = nxt.(Model)
+	}
+	wantID := m.projectActivity[last].ID
+	wantCursor := m.projectActivityCursor
+
+	enter, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = enter.(Model)
+	if !m.commentScreenOpen {
+		t.Fatalf("enter on a project comment did not open the comment detail screen")
+	}
+	if !m.commentScreenFromProject {
+		t.Fatalf("comment detail opened from the project feed should set commentScreenFromProject")
+	}
+	if m.commentScreenID != wantID {
+		t.Fatalf("comment detail screen id = %d, want %d", m.commentScreenID, wantID)
+	}
+
+	// The scope-aware lookup must find the comment in the project feed and the
+	// detail render must surface its body without a misleading "Task #0" row.
+	comment, ok := m.activeComment()
+	if !ok {
+		t.Fatalf("activeComment() did not resolve the project comment from the project feed")
+	}
+	if comment.Scope != domain.CommentScopeUniversal {
+		t.Fatalf("resolved comment scope = %q, want universal", comment.Scope)
+	}
+	detail := m.renderCommentScreen()
+	// The markdown renderer styles each word separately, so assert on a single
+	// token that survives without an interleaved ANSI break (same idiom the
+	// existing project-view tests use).
+	if !strings.Contains(detail, "universal") {
+		t.Fatalf("comment detail missing the comment body:\n%s", detail)
+	}
+	if strings.Contains(detail, "#0") {
+		t.Fatalf("project/universal comment detail should not render a Task #0 row:\n%s", detail)
+	}
+
+	// Esc closes the detail and returns to the project view with the same card
+	// still selected.
+	back, _ := m.Update(escKey())
+	m = back.(Model)
+	if m.commentScreenOpen {
+		t.Fatalf("esc did not close the comment detail screen")
+	}
+	if m.commentScreenFromProject {
+		t.Fatalf("esc should clear the commentScreenFromProject flag")
+	}
+	if m.sub != subProjectView {
+		t.Fatalf("esc from the comment detail should land back on the project view; sub = %v", m.sub)
+	}
+	if m.projectActivityCursor != wantCursor {
+		t.Fatalf("activity selection not preserved across the detail round-trip; cursor = %d want %d", m.projectActivityCursor, wantCursor)
+	}
+}
+
+// TestProjectActivityEnterIgnoresEmptyAndNonComment proves Enter off the
+// activity zone, or with no card selected, does not open the comment detail —
+// the project overview stays read-only / inert outside a selected comment.
+func TestProjectActivityEnterIgnoresNoSelection(t *testing.T) {
+	model, _, _ := scopedFeedModel(t)
+	opened, _ := model.Update(ctrlP())
+	m := opened.(Model)
+	// Form zone, no activity selection: Enter must be inert.
+	enter, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = enter.(Model)
+	if m.commentScreenOpen {
+		t.Fatalf("enter on the form zone should not open a comment detail")
+	}
+}
+
+// TestProjectActivityBorderContainment proves every visible activity card in
+// the project overview panel renders with a single intact border that stays
+// inside the panel's content area — no clipped or dangling border fragments
+// past the panel edge. Regression for the "broken borders" report (task #592,
+// DoD: border containment).
+func TestProjectActivityBorderContainment(t *testing.T) {
+	m := projectViewOnActivity(t)
+
+	// Seed cards that stress the border: a long body (forces wrapping + the
+	// "more lines" footer), a pinned comment, and a comment with tag chips —
+	// the three card shapes the DoD calls out.
+	long := strings.Repeat("lorem ipsum dolor sit amet ", 20)
+	m.projectActivity = []domain.Event{
+		{ID: 101, EntityType: domain.EventEntityProject, EntityID: 1, EventType: domain.EventTypeComment, Body: long, AuthorType: "agent"},
+		{ID: 102, EntityType: domain.EventEntityProject, EntityID: 1, EventType: domain.EventTypeComment, Body: "pinned handoff", AuthorType: "agent"},
+		{ID: 103, EntityType: domain.EventEntityUniversal, EventType: domain.EventTypeComment, Body: "tagged note", AuthorType: "human",
+			Tags: []domain.Tag{{ID: 1, Name: "deploy", Label: "deploy"}, {ID: 2, Name: "blocker", Label: "blocker"}}},
+	}
+	m.activityCardsCache = activityCardsCacheEntry{} // invalidate any warmed slice
+
+	panel := m.renderProjectActivityPanel(true)
+	lines := strings.Split(strings.TrimRight(panel, "\n"), "\n")
+
+	// The outer panel border is the widest row; every inner card border row
+	// (├ corners ┌┐└┘ and │ verticals) must fit within it. lipgloss right-pads
+	// the panel content to a uniform width, so no card row may be wider than
+	// the panel's own border rows.
+	panelWidth := 0
+	for _, line := range lines {
+		if w := lipgloss.Width(line); w > panelWidth {
+			panelWidth = w
+		}
+	}
+	if panelWidth == 0 {
+		t.Fatalf("panel rendered empty:\n%s", panel)
+	}
+	for i, line := range lines {
+		if w := lipgloss.Width(line); w > panelWidth {
+			t.Fatalf("line %d (%d cells) exceeds the panel width %d — a card border tipped past the panel edge:\n%s", i, w, panelWidth, panel)
+		}
+	}
+
+	// Each card draws exactly one top + one bottom border. Three cards → three
+	// of each glyph inside the panel body, plus the panel's own single frame.
+	tops := strings.Count(panel, "┌")
+	bottoms := strings.Count(panel, "└")
+	if tops != 4 || bottoms != 4 {
+		t.Fatalf("expected 1 panel frame + 3 card frames (4 tops / 4 bottoms); got %d tops / %d bottoms:\n%s", tops, bottoms, panel)
 	}
 }

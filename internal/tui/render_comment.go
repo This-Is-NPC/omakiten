@@ -102,18 +102,30 @@ func (m *Model) openCommentScreen() {
 	m.commentScreen = detailscreen.New(0)
 }
 
-// closeCommentScreen returns the user to the task detail view with the
+// closeCommentScreen returns the user to the underlying view with the
 // activity cursor still on the comment they were reading. Editing state
 // is also reset so re-opening the same comment lands on the read view.
+//
+// Scope-aware: when the overlay was opened from the project-view activity
+// feed (commentScreenFromProject) the project activity cursor survives the
+// round-trip and its scroll is re-synced; otherwise the task feed's cursor
+// is re-synced. This keeps esc landing the user back on the same card on
+// both surfaces without the task re-sync running against an unrelated feed.
 func (m *Model) closeCommentScreen() {
+	fromProject := m.commentScreenFromProject
 	m.commentScreenOpen = false
 	m.commentScreenID = 0
+	m.commentScreenFromProject = false
 	m.commentScreen = detailscreen.New(0)
 	m.commentScreenEditing = false
 	m.commentEditID = 0
-	// activityCursor survives the round-trip (so esc lands the user back on
-	// the same comment); re-sync so any stale scroll from before the overlay
-	// gets corrected against the current viewport budget.
+	// The relevant cursor survives the round-trip (so esc lands the user back
+	// on the same comment); re-sync the owning feed so any stale scroll from
+	// before the overlay gets corrected against the current viewport budget.
+	if fromProject {
+		m.syncProjectActivityScrollToCursor()
+		return
+	}
 	m.syncActivityScrollToCursor()
 }
 
@@ -121,11 +133,21 @@ func (m *Model) closeCommentScreen() {
 // looked up from the loaded activity feed. Falls back to false when the
 // screen is open but the underlying event has been removed (refresh after
 // delete) — caller renders a "not found" placeholder in that case.
+//
+// Scope-aware: a comment opened from the project-view feed
+// (commentScreenFromProject) is resolved against m.projectActivity so
+// project/universal comments (which have no owning task and are absent from
+// the task feed) render their detail. eventToComment rides the scope back
+// onto Comment so the detail view suppresses the misleading "Task #0" row.
 func (m Model) activeComment() (domain.Comment, bool) {
 	if !m.commentScreenOpen || m.commentScreenID <= 0 {
 		return domain.Comment{}, false
 	}
-	for _, ev := range m.activityForTaskInView(m.taskID) {
+	events := m.activityForTaskInView(m.taskID)
+	if m.commentScreenFromProject {
+		events = m.projectActivity
+	}
+	for _, ev := range events {
 		if ev.ID == m.commentScreenID && ev.EventType == domain.EventTypeComment {
 			return eventToComment(ev), true
 		}
@@ -146,11 +168,20 @@ func (m Model) updateCommentScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 	case "e":
+		// Project/universal comment detail opened from the project overview
+		// stays read-only for mutation keys (the overview is read-only in v1
+		// and these comments have no owning task to gate edit/delete on).
+		if m.commentScreenFromProject {
+			return m, nil
+		}
 		if comment, ok := m.activeComment(); ok {
 			m.openCommentEdit(comment)
 		}
 		return m, nil
 	case "d":
+		if m.commentScreenFromProject {
+			return m, nil
+		}
 		if comment, ok := m.activeComment(); ok {
 			m.armOrConfirmCommentDelete(comment)
 		}
