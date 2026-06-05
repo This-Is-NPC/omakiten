@@ -228,11 +228,11 @@ func (m Model) homeColumnInner() int {
 	// Never exceed what the terminal can actually show: when the terminal is
 	// narrower than the min floor, the column shrinks with it (bounded
 	// fallback) instead of overflowing.
-	if cap := available - 2; columnInner > cap {
-		if cap < 1 {
-			cap = 1
+	if maxInner := available - 2; columnInner > maxInner {
+		if maxInner < 1 {
+			maxInner = 1
 		}
-		columnInner = cap
+		columnInner = maxInner
 	}
 	return columnInner
 }

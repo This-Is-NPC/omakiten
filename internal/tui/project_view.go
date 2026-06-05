@@ -329,7 +329,7 @@ func (m Model) visibleProjectActivityCardRange() (int, int, bool) {
 	if len(m.projectActivity) == 0 {
 		return 0, 0, false
 	}
-	ranges := cardLineRanges(m.activityRowsForRender(m.projectActivity))
+	ranges := cardLineRanges(m.activityRowsForRenderWithCursor(m.projectActivity, m.projectActivityCursor))
 	viewport := m.projectActivityViewportLines()
 	if viewport <= 0 {
 		return 0, 0, false
@@ -362,7 +362,7 @@ func (m *Model) syncProjectActivityScrollToCursor() {
 	if m.projectActivityCursor < 0 || m.projectActivityCursor >= len(m.projectActivity) {
 		return
 	}
-	cards := m.activityRowsForRender(m.projectActivity)
+	cards := m.activityRowsForRenderWithCursor(m.projectActivity, m.projectActivityCursor)
 	body := flattenActivityCards(cards)
 	ranges := cardLineRanges(cards)
 	viewport := m.projectActivityViewportLines()
